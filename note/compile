@@ -1,11 +1,26 @@
-# 1. アセンブル (nasmはそのまま)
+# [1] アセンブル
 nasm -f elf32 boot.s -o boot.o
 
-# 2. コンパイル (i686-elf-gcc を使用)
-i686-elf-gcc -c kernel.c -o kernel.o -ffreestanding -O2 -Wall -Wextra
+# [2] コンパイル
+i686-elf-gcc -c kernel.c -o kernel.o -ffreestanding -O2 -Wall -m32
 
-# 3. リンク (i686-elf-ld を使用)
+# [3] リンク (ここで kernel.bin が生成されます)
 i686-elf-ld -T link.ld -o kernel.bin boot.o kernel.o
 
+# [4] kernel.bin ができたか確認 (なければここでエラーが出ます)
+ls -l kernel.bin
 
-qemu-system-i386 -kernel kernel.bin
+# [5] ISO用のフォルダ構造を作成
+mkdir -p isodir/boot/grub
+
+# [6] ファイルをコピー
+cp kernel.bin isodir/boot/
+cp grub.cfg isodir/boot/grub/
+
+# [7] ISOイメージを生成 (i686-elf-grub-mkrescue を使用)
+i686-elf-grub-mkrescue -o os.iso isodir
+
+# [8] os.iso ができたか確認
+ls -l os.iso
+
+qemu-system-i386 -cdrom os.iso -vga std -display cocoa
