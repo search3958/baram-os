@@ -1,16 +1,29 @@
-OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
 
-SECTIONS {
-    /* 1MBから配置を開始するが、.multibootを先頭に持ってくる */
+SECTIONS
+{
+    /* 1MBから配置を開始（標準的な位置） */
     . = 1M;
 
-    .text : {
-        /* ここで最初にmultibootセクションを結合する */
-        KEEP(*(.multiboot))
+    .text BLOCK(4K) : ALIGN(4K)
+    {
+        *(.multiboot)
         *(.text)
     }
 
-    .data : { *(.data) }
-    .bss  : { *(.bss) }
+    .rodata BLOCK(4K) : ALIGN(4K)
+    {
+        *(.rodata)
+    }
+
+    .data BLOCK(4K) : ALIGN(4K)
+    {
+        *(.data)
+    }
+
+    .bss BLOCK(4K) : ALIGN(4K)
+    {
+        *(COMMON)
+        *(.bss)
+    }
 }

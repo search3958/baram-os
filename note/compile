@@ -23,4 +23,4 @@ i686-elf-grub-mkrescue -o os.iso isodir
 # [8] os.iso ができたか確認
 ls -l os.iso
 
-qemu-system-i386 -cdrom os.iso -vga std -display cocoa
+qemu-system-i386 -cdrom os.iso -m 1G -vga std -global VGA.vgamem_mb=64 -display cocoa
