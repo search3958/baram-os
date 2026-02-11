@@ -1,0 +1,11 @@
+# 1. アセンブル (nasmはそのまま)
+nasm -f elf32 boot.s -o boot.o
+
+# 2. コンパイル (i686-elf-gcc を使用)
+i686-elf-gcc -c kernel.c -o kernel.o -ffreestanding -O2 -Wall -Wextra
+
+# 3. リンク (i686-elf-ld を使用)
+i686-elf-ld -T link.ld -o kernel.bin boot.o kernel.o
+
+
+qemu-system-i386 -kernel kernel.bin
