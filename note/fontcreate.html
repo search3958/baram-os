@@ -2,18 +2,21 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>8x16 2bit Font Generator (Strict)</title>
+    <title>8x16 Font Generator (OX String Output)</title>
     <style>
         body { font-family: sans-serif; background: #1a1a1a; color: #eee; padding: 20px; }
         .box { background: #333; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
         canvas { background: #000; border: 1px solid #fff; image-rendering: pixelated; width: 128px; height: 256px; }
-        textarea { width: 100%; height: 200px; background: #000; color: #0f0; font-family: monospace; }
+        textarea { width: 100%; height: 500px; background: #000; color: #0f0; font-family: monospace; font-size: 11px; white-space: pre; overflow-x: auto; }
         .preview-group { display: flex; gap: 30px; align-items: flex-start; }
+        button { padding: 10px 20px; cursor: pointer; background: #444; color: #fff; border: 1px solid #666; font-weight: bold; }
+        button:hover { background: #555; }
+        input { background: #222; color: #fff; border: 1px solid #666; padding: 5px; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>8x16 2bit Font Generator (Strict Order)</h1>
+        <h1>8x16 Font Generator (OX文字列出力版)</h1>
         <div class="preview-group">
             <div>
                 <label>確認文字:</label><br>
@@ -21,17 +24,17 @@
                 <canvas id="cvs" width="8" height="16"></canvas>
             </div>
             <div style="flex-grow:1">
-                <p>現在のビット配置仕様:</p>
+                <p>出力仕様:</p>
                 <ul>
-                    <li>1行 = 2バイト</li>
-                    <li>Byte[0]: ピクセル0(ビット7-6) 〜 ピクセル3(ビット1-0)</li>
-                    <li>Byte[1]: ピクセル4(ビット7-6) 〜 ピクセル7(ビット1-0)</li>
+                    <li>1文字 = 128文字の文字列 (8x16ピクセルを1行に結合)</li>
+                    <li><b>O:</b> 背景 (黒) / <b>X:</b> 文字 (白)</li>
+                    <li>C言語の `const char*` 配列形式で出力</li>
                 </ul>
-                <button id="genBtn" style="padding:10px 20px; cursor:pointer;">全256文字 出力</button>
+                <button id="genBtn">全256文字をOX文字列で生成</button>
             </div>
         </div>
     </div>
-    <textarea id="out" readonly></textarea>
+    <textarea id="out" readonly placeholder="結果がここに出力されます。"></textarea>
 
 <script>
 const cvs = document.getElementById('cvs');
@@ -39,50 +42,55 @@ const ctx = cvs.getContext('2d', {alpha: false});
 const charInput = document.getElementById('char');
 const out = document.getElementById('out');
 
+// 캔버스に描画
 function render(char) {
     ctx.fillStyle = "black";
     ctx.fillRect(0, 0, 8, 16);
     ctx.fillStyle = "white";
-    // 確実に中央、かつ8x16に収まるフォントサイズ
-    ctx.font = "14px monospace";
+    // 等幅フォントを指定
+    ctx.font = "14px 'Courier New', monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(char, 4, 8);
 }
 
+// OX文字列の生成
 function generateCharData(char) {
     render(char);
     const imgData = ctx.getImageData(0, 0, 8, 16).data;
-    let bytes = [];
+    let oxString = "";
 
     for (let y = 0; y < 16; y++) {
-        let b = [0, 0]; // 1行2バイト
         for (let x = 0; x < 8; x++) {
             const i = (y * 8 + x) * 4;
-            // 4階調(0-3)
-            const val = Math.floor(imgData[i] / 64);
-            
-            const byteIdx = x < 4 ? 0 : 1;
-            const bitShift = (3 - (x % 4)) * 2;
-            b[byteIdx] |= (val << bitShift);
+            // 輝度が一定以上ならX、それ以外はO
+            const brightness = imgData[i]; 
+            oxString += (brightness > 127) ? "X" : "O";
         }
-        bytes.push("0x" + b[0].toString(16).toUpperCase().padStart(2, '0'));
-        bytes.push("0x" + b[1].toString(16).toUpperCase().padStart(2, '0'));
     }
-    return bytes.join(", ");
+    return `"${oxString}"`;
 }
 
+// リアルタイムプレビュー
 charInput.oninput = () => render(charInput.value);
+
+// 全データ生成
 document.getElementById('genBtn').onclick = () => {
-    let res = "const unsigned char font_table[256][32] = {\n";
-    for(let i=0; i<256; i++) {
-        const c = String.fromCharCode(i);
-        res += `    { ${generateCharData(c)} }, // [${i}] '${(i<32?' ':c)}'\n`;
-    }
-    res += "};";
-    out.value = res;
-    alert("完了しました。");
+    out.value = "生成中...";
+    setTimeout(() => {
+        let res = "/* 8x16 Font String Table (128 chars per line) */\n";
+        res += "const char* font_table[256] = {\n";
+        for(let i=0; i<256; i++) {
+            const c = String.fromCharCode(i);
+            const displayChar = (i < 32 || i > 126) ? '?' : c;
+            res += `    ${generateCharData(c)}, // [${i.toString().padStart(3, ' ')}] '${displayChar}'\n`;
+        }
+        res += "};";
+        out.value = res;
+    }, 10);
 };
+
+// 初期表示
 render("A");
 </script>
 </body>

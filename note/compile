@@ -1,20 +1,22 @@
-# 掃除
+# 1. 掃除
 rm -f *.o kernel.bin os.iso
 rm -rf isodir
 
-# ビルド
+# 2. PSFフォントをオブジェクト化
+i686-elf-objcopy -I binary -O elf32-i386 -B i386 batarde.psf font.o
+
+# 3. ビルド (boot & kernel)
 nasm -f elf32 boot.s -o boot.o
 i686-elf-gcc -c kernel.c -o kernel.o -ffreestanding -O2 -Wall -m32
-i686-elf-gcc -c font.c -o font.o -ffreestanding -O2 -Wall -m32
 
-# リンク (★font.o, kernel.o, boot.o 全て入れる)
+# 4. リンク
 i686-elf-ld -T link.ld -o kernel.bin boot.o kernel.o font.o
 
-# ISO作成
+# 5. ISO作成 (エラーが出たら i686-elf-grub-mkrescue に変更)
 mkdir -p isodir/boot/grub
 cp kernel.bin isodir/boot/
 cp grub.cfg isodir/boot/grub/
 i686-elf-grub-mkrescue -o os.iso isodir
 
-# 実行
-qemu-system-i386 -cdrom os.iso -m 1G -vga std -display cocoa
+# 6. 実行
+qemu-system-i386 -cdrom os.iso -m 512M -vga std
