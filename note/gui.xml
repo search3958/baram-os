@@ -1,6 +1,0 @@
-<square bg="#800" p="0,0" s="100%,100%">
-    <square bg="#fee" p="0,calc(100% - 20)" s="100%,20">
-        <text color="#000" p="4,4" align="left">Start</text>
-    </square>
-    <text color="#ffe" p="16,16" align="left">Hello, GUI</text>
-</square>
