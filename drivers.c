@@ -205,6 +205,39 @@ void irq_install() {
     idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8E);
 }
 
+// ==========================================
+// キーボード入力デモ用
+// ==========================================
+#define KEYBUF_SIZE 256
+volatile char keybuf[KEYBUF_SIZE];
+volatile int keybuf_len = 0;
+
+// US配列スキャンコード→ASCII (一部のみ)
+static const char scancode_to_ascii[128] = {
+    0, 0, '1','2','3','4','5','6','7','8','9','0','-','=',0,0,
+    'q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s',
+    'd','f','g','h','j','k','l',';','\'',0,'z','x','c','v','b','n',
+    'm',',','.','/',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+};
+
+static void keyboard_handler(struct regs *r) {
+    uint8_t scancode = inb(0x60);
+    if (scancode < 128) {
+        char c = scancode_to_ascii[scancode];
+        if (c && keybuf_len < KEYBUF_SIZE) {
+            keybuf[keybuf_len++] = c;
+        }
+    }
+}
+
+void keyboard_install() {
+    irq_install_handler(1, keyboard_handler);
+}
+
+// ==========================================
+// IRQ (irq.c)
+// ==========================================
+
 static void default_irq_handler(struct regs *r) {
 }
 

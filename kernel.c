@@ -23,6 +23,10 @@ static uint32_t cursor_bg[CURSOR_WIDTH * CURSOR_HEIGHT];
 static int32_t old_mouse_x = -1, old_mouse_y = -1;
 
 extern void set_framebuffer_info(uint32_t* fb, uint32_t width, uint32_t height, uint32_t pitch);
+extern volatile char keybuf[];
+extern volatile int keybuf_len;
+extern void keyboard_install();
+extern void draw_char8x8(int x, int y, char c, uint32_t color);
 
 void draw_debug_rect(int x, int y, int w, int h, uint32_t color) {
     for (int py = 0; py < h; py++) {
@@ -130,9 +134,15 @@ void kmain(uint32_t magic, struct multiboot_info* mbi) {
         }
     }
 
-    // "Hello, baram!" を左上に白色で表示
-    draw_string8x8(10, 10, "Hello, baram!", ARGB(255, 255, 255, 255));
-    
+    keyboard_install(); // キーボード割り込み登録
+
+    // 画面中央に "Hello, baram!" を表示
+    const char* demo_str = "Hello, baram!";
+    int demo_len = 14; // strlen("Hello, baram!")
+    int demo_x = (screen_width - demo_len * 8) / 2;
+    int demo_y = (screen_height - 8) / 2 - 16;
+    draw_string8x8(demo_x, demo_y, demo_str, ARGB(255, 255, 255, 255));
+
     /* ★ デバッグ用：各ステップで色を表示 */
 
     /* Step 1: idt_install() 前 */
@@ -182,6 +192,13 @@ void kmain(uint32_t magic, struct multiboot_info* mbi) {
                     row[target_x] = debug_color;
                 }
             }
+        }
+
+        // キーボード入力バッファを画面中央下に表示
+        int buf_x = (screen_width - keybuf_len * 8) / 2;
+        int buf_y = (screen_height - 8) / 2 + 16;
+        for (int i = 0; i < keybuf_len; i++) {
+            draw_char8x8(buf_x + i * 8, buf_y, keybuf[i], ARGB(255, 255, 255, 0));
         }
     }
 }
