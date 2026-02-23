@@ -1,44 +1,122 @@
 #include "drivers.h"
+#include "font8x8_basic.h"
 #include <stdint.h>
 #include <stddef.h>
 
 // ==========================================
-// グローバル変数：クラッシュ情報
+// グラフィックス・バックバッファ
 // ==========================================
 
-static uint32_t* g_framebuffer = NULL;
-static uint32_t g_screen_width = 0;
-static uint32_t g_screen_height = 0;
-static uint32_t g_screen_pitch = 0;
+static uint32_t* g_vram = NULL;
+static uint32_t g_vram_width = 0;
+static uint32_t g_vram_height = 0;
+static uint32_t g_vram_pitch = 0;
+
+// バックバッファ (1280x720 32bpp = 約3.6MB)
+static uint32_t g_backbuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+
+// レイヤー管理 (将来的に動的化も可能)
+#define MAX_LAYERS 8
+static layer_t* g_layers[MAX_LAYERS];
+static int g_num_layers = 0;
 
 void set_framebuffer_info(uint32_t* fb, uint32_t width, uint32_t height, uint32_t pitch) {
-    g_framebuffer = fb;
-    g_screen_width = width;
-    g_screen_height = height;
-    g_screen_pitch = pitch;
+    g_vram = fb;
+    g_vram_width = width;
+    g_vram_height = height;
+    g_vram_pitch = pitch;
 }
 
-#define ARGB(a, r, g, b) (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
+void register_layer(layer_t* layer) {
+    if (g_num_layers < MAX_LAYERS) {
+        g_layers[g_num_layers++] = layer;
+    }
+}
 
-void fill_screen(uint32_t color) {
-    if (!g_framebuffer) return;
-    for (uint32_t y = 0; y < g_screen_height; y++) {
-        uint32_t* row = (uint32_t*)((uint8_t*)g_framebuffer + y * g_screen_pitch);
-        for (uint32_t x = 0; x < g_screen_width; x++) {
-            row[x] = color;
+// 全レイヤーをバックバッファに合成し、VRAMに転送
+void screen_refresh() {
+    if (!g_vram) return;
+
+    // 1. バックバッファを一旦背景色でクリア（あるいは最初のレイヤーで埋める）
+    // 今回は kernel.c で背景レイヤーを管理させる
+
+    for (int i = 0; i < g_num_layers; i++) {
+        layer_t* l = g_layers[i];
+        if (!l->active || !l->buffer) continue;
+
+        for (int y = 0; y < l->height; y++) {
+            int screen_y = l->y + y;
+            if (screen_y < 0 || screen_y >= (int)g_vram_height) continue;
+
+            for (int x = 0; x < l->width; x++) {
+                int screen_x = l->x + x;
+                if (screen_x < 0 || screen_x >= (int)g_vram_width) continue;
+
+                uint32_t color = l->buffer[y * l->width + x];
+                if (l->transparent != 0 && color == l->transparent) continue;
+
+                g_backbuffer[screen_y * SCREEN_WIDTH + screen_x] = color;
+            }
+        }
+    }
+
+    // 最後にマウスを合成（マウス専用レイヤーがない場合の簡易実装）
+    uint32_t white = 0xFFFFFFFF;
+    for (int my = 0; my < 15; my++) {
+        for (int mx = 0; mx < 10; mx++) {
+            int sx = mouse_x + mx;
+            int sy = mouse_y + my;
+            if (sx >= 0 && sx < (int)g_vram_width && sy >= 0 && sy < (int)g_vram_height) {
+                g_backbuffer[sy * SCREEN_WIDTH + sx] = white;
+            }
+        }
+    }
+
+    // バックバッファからVRAMへ転送 (Flip)
+    for (uint32_t y = 0; y < g_vram_height; y++) {
+        uint32_t* dest = (uint32_t*)((uint8_t*)g_vram + y * g_vram_pitch);
+        uint32_t* src = &g_backbuffer[y * SCREEN_WIDTH];
+        for (uint32_t x = 0; x < g_vram_width; x++) {
+            dest[x] = src[x];
         }
     }
 }
 
-void delay_ms(uint32_t ms) {
-    volatile uint32_t count = 0;
-    for (uint32_t i = 0; i < ms * 10000; i++) {
-        count++;
+void layer_fill(layer_t* layer, uint32_t color) {
+    for (int i = 0; i < layer->width * layer->height; i++) {
+        layer->buffer[i] = color;
+    }
+}
+
+void layer_draw_char(layer_t* layer, int x, int y, char c, uint32_t color, uint32_t bg_color) {
+    if (c < 0 || c > 127) return;
+    for (int row = 0; row < 8; row++) {
+        uint8_t bits = font8x8_basic[(int)c][row];
+        for (int col = 0; col < 8; col++) {
+            int px = x + col;
+            int py = y + row;
+            if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
+                if (bits & (1 << col)) {
+                    layer->buffer[py * layer->width + px] = color;
+                } else if (bg_color != TRANSPARENT_COLOR) {
+                    layer->buffer[py * layer->width + px] = bg_color;
+                }
+            }
+        }
+    }
+}
+
+void layer_draw_string(layer_t* layer, int x, int y, const char* str, uint32_t color, uint32_t bg_color) {
+    int cx = x;
+    while (*str) {
+        layer_draw_char(layer, cx, y, *str, color, bg_color);
+        cx += 8;
+        str++;
     }
 }
 
 // ==========================================
-// IDT (idt.c)
+// IDT / IRQ
 // ==========================================
 
 struct idt_entry idt[256];
@@ -72,10 +150,6 @@ void idt_install() {
     );
 }
 
-// ==========================================
-// IRQ (irq.c)
-// ==========================================
-
 irq_handler_t irq_routines[16] = {0};
 
 void irq_install_handler(int irq, irq_handler_t handler) {
@@ -97,7 +171,7 @@ void pic_remap(void) {
     outb(0xA1, 0x02);
     outb(0xA1, 0x01);
 
-    outb(0x21, 0xFB); // 11111011 (IRQ2: Cascade enabled)
+    outb(0x21, 0xFB); 
     outb(0xA1, 0xFF);
 }
 
@@ -209,15 +283,13 @@ void enable_interrupts() {
     __asm__ __volatile__ ("sti");
 }
 
-
 // ==========================================
-// キーボード入力デモ用
+// キーボード
 // ==========================================
 #define KEYBUF_SIZE 256
 volatile char keybuf[KEYBUF_SIZE];
 volatile int keybuf_len = 0;
 
-// US配列スキャンコード→ASCII (一部のみ)
 static const char scancode_to_ascii[128] = {
     0, 0, '1','2','3','4','5','6','7','8','9','0','-','=',0,0,
     'q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s',
@@ -237,18 +309,14 @@ static void keyboard_handler(struct regs *r) {
 
 void keyboard_install() {
     irq_install_handler(1, keyboard_handler);
-    // PICのIRQ1（キーボード）マスク解除
     uint8_t mask = inb(0x21);
-    mask &= ~(1 << 1); // IRQ1を有効化
+    mask &= ~(1 << 1);
     outb(0x21, mask);
 }
 
 // ==========================================
-// IRQ (irq.c)
+// 割り込み共通
 // ==========================================
-
-static void default_irq_handler(struct regs *r) {
-}
 
 void irq_handler(struct regs *r) {
     void (*handler)(struct regs *r);
@@ -257,8 +325,6 @@ void irq_handler(struct regs *r) {
     handler = irq_routines[irq_num];
     if (handler) {
         handler(r);
-    } else {
-        default_irq_handler(r);
     }
 
     if (irq_num >= 8) {
@@ -268,57 +334,28 @@ void irq_handler(struct regs *r) {
 }
 
 void exception_handler(struct regs *r) {
-    uint32_t exception_num = r->int_no;
-    
-    uint32_t exception_colors[] = {
-        ARGB(255, 255, 0, 0),
-        ARGB(255, 255, 127, 0),
-        ARGB(255, 255, 255, 0),
-        ARGB(255, 127, 255, 0),
-        ARGB(255, 0, 255, 0),
-        ARGB(255, 0, 255, 127),
-        ARGB(255, 0, 255, 255),
-        ARGB(255, 0, 127, 255),
-        ARGB(255, 0, 0, 255),
-        ARGB(255, 127, 0, 255),
-        ARGB(255, 255, 0, 255),
-        ARGB(255, 255, 0, 127),
-        ARGB(255, 200, 0, 100),
-        ARGB(255, 128, 128, 0),
-        ARGB(255, 128, 0, 128),
-        ARGB(255, 64, 64, 64),
-    };
-    
-    uint32_t color;
-    if (exception_num < 16) {
-        color = exception_colors[exception_num];
-    } else {
-        color = ARGB(255, 64, 64, 64);
-    }
-    
-    fill_screen(color);
-    delay_ms(500);
+    // 例外発生時は画面を白くするなどの簡易処理
+    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) g_backbuffer[i] = 0xFFFFFFFF;
+    screen_refresh();
+    while(1);
 }
+
+// ==========================================
+// マウス
+// ==========================================
 
 volatile int32_t mouse_x = 0;
 volatile int32_t mouse_y = 0;
-
 static uint8_t mouse_cycle = 0;
 static int8_t  mouse_packet[3];
-
 volatile uint32_t mouse_interrupt_counter = 0;
 
 void mouse_wait(uint8_t a_type) {
-    // a_type: 0=送信, 1=受信
     uint32_t timeout = 100000;
     if (a_type == 0) {
-        while (timeout--) {
-            if ((inb(0x64) & 2) == 0) return;
-        }
+        while (timeout--) if ((inb(0x64) & 2) == 0) return;
     } else {
-        while (timeout--) {
-            if ((inb(0x64) & 1) == 1) return;
-        }
+        while (timeout--) if ((inb(0x64) & 1) == 1) return;
     }
 }
 
@@ -349,7 +386,6 @@ static void mouse_handler(struct regs *r) {
         case 2:
             mouse_packet[2] = data;
             mouse_cycle = 0;
-            // マウス座標更新
             int dx = mouse_packet[1];
             int dy = mouse_packet[2];
             if (mouse_packet[0] & 0x10) dx -= 256;
@@ -358,29 +394,28 @@ static void mouse_handler(struct regs *r) {
             mouse_y -= dy;
             if (mouse_x < 0) mouse_x = 0;
             if (mouse_y < 0) mouse_y = 0;
+            if (mouse_x > SCREEN_WIDTH - 1) mouse_x = SCREEN_WIDTH - 1;
+            if (mouse_y > SCREEN_HEIGHT - 1) mouse_y = SCREEN_HEIGHT - 1;
             break;
     }
 }
 
 void mouse_install() {
-    // マウス有効化
     mouse_wait(0);
-    outb(0x64, 0xA8); // マウス割り込み有効化
+    outb(0x64, 0xA8);
     mouse_wait(0);
-    outb(0x64, 0x20); // コマンドバイト読み出し
+    outb(0x64, 0x20);
     mouse_wait(1);
     uint8_t status = inb(0x60);
-    status |= 2; // IRQ12有効化
+    status |= 2;
     mouse_wait(0);
     outb(0x64, 0x60);
     mouse_wait(0);
     outb(0x60, status);
-    // マウス初期化
-    mouse_write(0xF6); mouse_read(); // デフォルト設定
-    mouse_write(0xF4); mouse_read(); // データ報告有効化
+    mouse_write(0xF6); mouse_read();
+    mouse_write(0xF4); mouse_read();
     irq_install_handler(12, mouse_handler);
-    // PICのIRQ12（マウス）マスク解除
     uint8_t mask = inb(0xA1);
-    mask &= ~(1 << 4); // IRQ12を有効化
+    mask &= ~(1 << 4);
     outb(0xA1, mask);
 }
