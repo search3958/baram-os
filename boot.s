@@ -13,11 +13,21 @@ align 4
     dd 32                ; depth (32-bit ARGB)
 
 section .text
-global _start, idt_load
+global _start
 extern kmain
 
 _start:
     cli
+    lgdt [gdt_ptr]            ; GDTをロード
+    jmp 0x08:.reload_segments ; コードセグメントを反映
+
+.reload_segments:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
     mov esp, stack_space
     
     ; 引数をスタックに積む (C言語の引数は右から左)
@@ -30,11 +40,23 @@ _start:
     hlt
     jmp .halt
 
-; Cから呼び出される idt_load(struct idt_ptr* idtp)
-idt_load:
-    mov eax, [esp+4]   ; スタックから引数(idtp)を取得
-    lidt [eax]         ; IDTをロード
-    ret                ; Cの呼び出し元に戻る
+; GDTの定義
+section .data
+align 4
+gdt_start:
+    ; Null記述子
+    dd 0, 0
+    ; コードセグメント (0x08): base=0, limit=0xffffffff, type=0x9A, flags=0xCF
+    dw 0xFFFF, 0x0000
+    db 0x00, 0x9A, 0xCF, 0x00
+    ; データセグメント (0x10): base=0, limit=0xffffffff, type=0x92, flags=0xCF
+    dw 0xFFFF, 0x0000
+    db 0x00, 0x92, 0xCF, 0x00
+gdt_end:
+
+gdt_ptr:
+    dw gdt_end - gdt_start - 1
+    dd gdt_start
 
 section .bss
 align 16

@@ -21,6 +21,8 @@ static uint32_t* video_mem_global;
 static uint32_t screen_width, screen_height, screen_pitch;
 static uint32_t cursor_bg[CURSOR_WIDTH * CURSOR_HEIGHT];
 static int32_t old_mouse_x = -1, old_mouse_y = -1;
+static int prev_keybuf_len = 0;
+static int hide_mouse = 0;
 
 extern void set_framebuffer_info(uint32_t* fb, uint32_t width, uint32_t height, uint32_t pitch);
 extern volatile char keybuf[];
@@ -134,31 +136,15 @@ void kmain(uint32_t magic, struct multiboot_info* mbi) {
         }
     }
 
-    keyboard_install(); // キーボード割り込み登録
-
-    // 画面中央に "Hello, baram!" を表示
-    const char* demo_str = "Hello, baram!";
-    int demo_len = 14; // strlen("Hello, baram!")
-    int demo_x = (screen_width - demo_len * 8) / 2;
-    int demo_y = (screen_height - 8) / 2 - 16;
-    draw_string8x8(demo_x, demo_y, demo_str, ARGB(255, 255, 255, 255));
-
-    /* ★ デバッグ用：各ステップで色を表示 */
-
-    /* Step 1: idt_install() 前 */
-    draw_debug_rect(10, screen_height - 20, 20, 20, ARGB(255, 255, 0, 0));
-
     idt_install();
-
-    /* Step 2: idt_install() 後 */
-    draw_debug_rect(35, screen_height - 20, 20, 20, ARGB(255, 255, 255, 0));
-
     irq_install();
-
-    /* Step 3: irq_install() 後 */
-    draw_debug_rect(60, screen_height - 20, 20, 20, ARGB(255, 0, 255, 0));
-
+    keyboard_install();
     mouse_install();
+
+    enable_interrupts(); // 全ての準備が整ってから割り込みを許可
+
+    /* Step 2: idt_install() & irq_install() 後 */
+    draw_debug_rect(35, screen_height - 20, 20, 20, ARGB(255, 255, 255, 0));
 
     /* Step 4: mouse_install() 後 */
     draw_debug_rect(85, screen_height - 20, 20, 20, ARGB(255, 0, 255, 255));
@@ -171,12 +157,28 @@ void kmain(uint32_t magic, struct multiboot_info* mbi) {
             mouse_y = screen_height - CURSOR_HEIGHT;
         }
 
-        if (old_mouse_x != mouse_x || old_mouse_y != mouse_y) {
-            restore_cursor_bg();
-            save_cursor_bg();
-            draw_cursor();
-            old_mouse_x = mouse_x;
-            old_mouse_y = mouse_y;
+        // キーボード入力バッファを画面中央下に表示
+        int buf_x = (screen_width - keybuf_len * 8) / 2;
+        int buf_y = (screen_height - 8) / 2 + 16;
+        for (int i = 0; i < keybuf_len; i++) {
+            draw_char8x8(buf_x + i * 8, buf_y, keybuf[i], ARGB(255, 255, 255, 0));
+        }
+
+        // 入力が増えたらマウス非表示
+        if (keybuf_len > prev_keybuf_len) {
+            hide_mouse = 1;
+        }
+        prev_keybuf_len = keybuf_len;
+
+        // マウスポインター描画
+        if (!hide_mouse) {
+            if (old_mouse_x != mouse_x || old_mouse_y != mouse_y) {
+                restore_cursor_bg();
+                save_cursor_bg();
+                draw_cursor();
+                old_mouse_x = mouse_x;
+                old_mouse_y = mouse_y;
+            }
         }
 
         uint8_t red_val = (mouse_interrupt_counter % 256);
@@ -192,13 +194,6 @@ void kmain(uint32_t magic, struct multiboot_info* mbi) {
                     row[target_x] = debug_color;
                 }
             }
-        }
-
-        // キーボード入力バッファを画面中央下に表示
-        int buf_x = (screen_width - keybuf_len * 8) / 2;
-        int buf_y = (screen_height - 8) / 2 + 16;
-        for (int i = 0; i < keybuf_len; i++) {
-            draw_char8x8(buf_x + i * 8, buf_y, keybuf[i], ARGB(255, 255, 255, 0));
         }
     }
 }

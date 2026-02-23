@@ -97,7 +97,7 @@ void pic_remap(void) {
     outb(0xA1, 0x02);
     outb(0xA1, 0x01);
 
-    outb(0x21, 0xFF);
+    outb(0x21, 0xFB); // 11111011 (IRQ2: Cascade enabled)
     outb(0xA1, 0xFF);
 }
 
@@ -205,6 +205,11 @@ void irq_install() {
     idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8E);
 }
 
+void enable_interrupts() {
+    __asm__ __volatile__ ("sti");
+}
+
+
 // ==========================================
 // キーボード入力デモ用
 // ==========================================
@@ -217,7 +222,7 @@ static const char scancode_to_ascii[128] = {
     0, 0, '1','2','3','4','5','6','7','8','9','0','-','=',0,0,
     'q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s',
     'd','f','g','h','j','k','l',';','\'',0,'z','x','c','v','b','n',
-    'm',',','.','/',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    'm',',','.','/',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
 static void keyboard_handler(struct regs *r) {
@@ -232,6 +237,10 @@ static void keyboard_handler(struct regs *r) {
 
 void keyboard_install() {
     irq_install_handler(1, keyboard_handler);
+    // PICのIRQ1（キーボード）マスク解除
+    uint8_t mask = inb(0x21);
+    mask &= ~(1 << 1); // IRQ1を有効化
+    outb(0x21, mask);
 }
 
 // ==========================================
@@ -300,17 +309,78 @@ static int8_t  mouse_packet[3];
 volatile uint32_t mouse_interrupt_counter = 0;
 
 void mouse_wait(uint8_t a_type) {
+    // a_type: 0=送信, 1=受信
+    uint32_t timeout = 100000;
+    if (a_type == 0) {
+        while (timeout--) {
+            if ((inb(0x64) & 2) == 0) return;
+        }
+    } else {
+        while (timeout--) {
+            if ((inb(0x64) & 1) == 1) return;
+        }
+    }
 }
 
 void mouse_write(uint8_t a_write) {
+    mouse_wait(0);
+    outb(0x64, 0xD4);
+    mouse_wait(0);
+    outb(0x60, a_write);
 }
 
 uint8_t mouse_read() {
-    return 0;
+    mouse_wait(1);
+    return inb(0x60);
 }
 
 static void mouse_handler(struct regs *r) {
+    mouse_interrupt_counter++;
+    uint8_t data = inb(0x60);
+    switch (mouse_cycle) {
+        case 0:
+            mouse_packet[0] = data;
+            mouse_cycle++;
+            break;
+        case 1:
+            mouse_packet[1] = data;
+            mouse_cycle++;
+            break;
+        case 2:
+            mouse_packet[2] = data;
+            mouse_cycle = 0;
+            // マウス座標更新
+            int dx = mouse_packet[1];
+            int dy = mouse_packet[2];
+            if (mouse_packet[0] & 0x10) dx -= 256;
+            if (mouse_packet[0] & 0x20) dy -= 256;
+            mouse_x += dx;
+            mouse_y -= dy;
+            if (mouse_x < 0) mouse_x = 0;
+            if (mouse_y < 0) mouse_y = 0;
+            break;
+    }
 }
 
 void mouse_install() {
+    // マウス有効化
+    mouse_wait(0);
+    outb(0x64, 0xA8); // マウス割り込み有効化
+    mouse_wait(0);
+    outb(0x64, 0x20); // コマンドバイト読み出し
+    mouse_wait(1);
+    uint8_t status = inb(0x60);
+    status |= 2; // IRQ12有効化
+    mouse_wait(0);
+    outb(0x64, 0x60);
+    mouse_wait(0);
+    outb(0x60, status);
+    // マウス初期化
+    mouse_write(0xF6); mouse_read(); // デフォルト設定
+    mouse_write(0xF4); mouse_read(); // データ報告有効化
+    irq_install_handler(12, mouse_handler);
+    // PICのIRQ12（マウス）マスク解除
+    uint8_t mask = inb(0xA1);
+    mask &= ~(1 << 4); // IRQ12を有効化
+    outb(0xA1, mask);
 }
