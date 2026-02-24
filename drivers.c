@@ -2,6 +2,10 @@
 #include "font8x8_basic.h"
 #include <stdint.h>
 #include <stddef.h>
+#define NANOSVG_IMPLEMENTATION
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvg.h"
+#include "nanosvgrast.h"
 
 // ==========================================
 // グラフィックス・バックバッファ
@@ -113,6 +117,25 @@ void layer_draw_string(layer_t* layer, int x, int y, const char* str, uint32_t c
         cx += 8;
         str++;
     }
+}
+
+// SVG描画関数
+void layer_draw_svg(layer_t* layer, const char* svg_str, float scale) {
+    NSVGimage* image = nsvgParse((char*)svg_str, "px", 96.0f);
+    if (!image) return;
+    NSVGrasterizer* rast = nsvgCreateRasterizer();
+    if (!rast) {
+        nsvgDelete(image);
+        return;
+    }
+    // RGBAバッファを一時確保
+    int w = layer->width;
+    int h = layer->height;
+    unsigned char* img = (unsigned char*)layer->buffer;
+    // 直接layerバッファに描画（32bit RGBA前提）
+    nsvgRasterize(rast, image, 0, 0, scale, img, w, h, w * 4);
+    nsvgDeleteRasterizer(rast);
+    nsvgDelete(image);
 }
 
 // ==========================================
@@ -294,7 +317,7 @@ static const char scancode_to_ascii[128] = {
     0, 0, '1','2','3','4','5','6','7','8','9','0','-','=',0,0,
     'q','w','e','r','t','y','u','i','o','p','[',']','\\',0,'a','s',
     'd','f','g','h','j','k','l',';','\'',0,'z','x','c','v','b','n',
-    'm',',','.','/',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    'm',',','.','/',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
 static void keyboard_handler(struct regs *r) {

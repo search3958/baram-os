@@ -70,4 +70,7 @@ extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
 extern volatile uint32_t mouse_interrupt_counter;
 
+void layer_draw_svg(layer_t* layer, const char* svg_str, float scale);
+void keyboard_install(void);
+
 #endif
