@@ -175,7 +175,9 @@ void pic_remap(void) {
   outb(0xA1, 0x02);
   outb(0xA1, 0x01);
 
-  outb(0x21, 0xFB);
+  // IRQ0(timer) と IRQ2(slave PIC cascade) を有効化。
+  // IRQ1(keyboard) / IRQ12(mouse) は各 install 時に有効化する。
+  outb(0x21, 0xFA);
   outb(0xA1, 0xFF);
 }
 

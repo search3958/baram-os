@@ -1,4 +1,5 @@
 #include "drivers.h"
+#include "svg_pixels.h"
 #include <stddef.h>
 
 // ThorVGがリンクエラーになるため、一旦スタブ（空関数）を定義してビルドを通します
@@ -48,7 +49,7 @@ void timer_phase(int hz) {
 
 // レイヤー用
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
-static uint32_t svg_buf[191 * 142];
+static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 
 extern void register_layer(layer_t *layer);
@@ -73,18 +74,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   register_layer(&desktop);
 
   // 2. SVG表示エリア (左上)
-  // 現在リンクエラーのためテキストで代用。
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
   svg_layer.x = 10;
   svg_layer.y = 10;
-  svg_layer.width = 191;
-  svg_layer.height = 142;
+  svg_layer.width = SVG_WIDTH;
+  svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
   svg_layer.active = 1;
-  layer_fill(&svg_layer, 0xFFFBF8FF); // SVG背景色
-  layer_draw_string(&svg_layer, 5, 60, " SVG Area (TOP-L) ", 0xFF000000,
-                    TRANSPARENT_COLOR);
+  memcpy(svg_layer.buffer, svg_pixels, sizeof(svg_pixels));
   register_layer(&svg_layer);
 
   // 3. 点滅ボックス (左下)
