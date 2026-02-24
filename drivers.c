@@ -39,8 +39,9 @@ void screen_refresh() {
   if (!g_vram)
     return;
 
-  // 1. バックバッファを一旦背景色でクリア（あるいは最初のレイヤーで埋める）
-  // 今回は kernel.c で背景レイヤーを管理させる
+  // 1. バックバッファを毎フレームクリア（active=0レイヤーの残像防止）
+  for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+    g_backbuffer[i] = 0xFF000000;
 
   for (int i = 0; i < g_num_layers; i++) {
     layer_t *l = g_layers[i];
