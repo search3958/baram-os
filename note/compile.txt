@@ -1,0 +1,10 @@
+nasm -f elf32 boot.s -o boot.o
+nasm -f elf32 isr.s -o isr.o
+i686-elf-gcc -I. -c kernel.c -o kernel.o -ffreestanding -O2 -Wall -m32
+i686-elf-gcc -I. -c drivers.c -o drivers.o -ffreestanding -O2 -Wall -m32
+i686-elf-ld -T link.ld -o kernel.bin boot.o isr.o kernel.o drivers.o
+mkdir -p isodir/boot/grub
+cp kernel.bin isodir/boot/
+cp grub.cfg isodir/boot/grub/
+i686-elf-grub-mkrescue -o os.iso isodir
+qemu-system-i386 -cdrom os.iso -vga std -m 512 -display cocoa
