@@ -1,13 +1,14 @@
-; isr.s - 割り込みサービスルーチン（修正版：例外情報表示対応）
+; isr.s - 割り込み・例外サービスルーチン
 section .text
 
-; CのIRQハンドラをインポート
 extern irq_handler
 extern exception_handler
 
-; 共通の割り込み処理スタブ
+; ========== IRQ 共通スタブ ==========
+; isr.s の IRQ スタブでは push byte 0 / push byte N を使う
+; → irq_common_stub から戻る際に add esp, 8 でそれを除去する
 irq_common_stub:
-    pusha
+    pusha           ; eax,ecx,edx,ebx,esp_orig,ebp,esi,edi をプッシュ
     push ds
     push es
     push fs
@@ -19,20 +20,19 @@ irq_common_stub:
     mov fs, ax
     mov gs, ax
 
-    mov eax, esp
-    push eax
+    push esp        ; struct regs * を渡す
     call irq_handler
-    add esp, 4
+    add esp, 4      ; push esp の分だけ戻す
 
     pop gs
     pop fs
     pop es
     pop ds
     popa
-    add esp, 8
+    add esp, 8      ; IRQスタブが push した int_no + err_code の 8 バイト
     iret
 
-; 共通の例外処理スタブ（0-31）
+; ========== 例外 共通スタブ ==========
 exception_common_stub:
     pusha
     push ds
@@ -46,8 +46,7 @@ exception_common_stub:
     mov fs, ax
     mov gs, ax
 
-    mov eax, esp
-    push eax
+    push esp
     call exception_handler
     add esp, 4
 
@@ -59,72 +58,71 @@ exception_common_stub:
     add esp, 8
     iret
 
-; IRQハンドラスタブを生成するためのマクロ
+; ========== IRQ マクロ ==========
 %macro IRQ_HANDLER 1
 global irq%1
 irq%1:
     cli
-    push byte 0
-    push byte 32 + %1
+    push dword 0            ; err_code (ダミー)
+    push dword (32 + %1)   ; int_no
     jmp irq_common_stub
 %endmacro
 
-; 例外ハンドラスタブを生成するためのマクロ
-; エラーコードなしの例外用
-%macro EXCEPTION_HANDLER_NO_ERROR 1
+; ========== 例外マクロ ==========
+; エラーコードなし
+%macro EXCEPTION_NO_ERR 1
 global isr%1
 isr%1:
     cli
-    push byte 0      ; エラーコードがないので 0 をプッシュ
-    push byte %1     ; 例外番号
+    push dword 0    ; err_code ダミー
+    push dword %1   ; int_no
     jmp exception_common_stub
 %endmacro
 
-; エラーコードありの例外用
-%macro EXCEPTION_HANDLER_WITH_ERROR 1
+; エラーコードあり (CPUが既にプッシュ済み)
+%macro EXCEPTION_WITH_ERR 1
 global isr%1
 isr%1:
     cli
-    ; エラーコードは既にスタックに積まれている
-    push byte %1     ; 例外番号
+    push dword %1   ; int_no (err_code はCPUが積んだ)
     jmp exception_common_stub
 %endmacro
 
-; 例外 0-31 のためのスタブを生成
-EXCEPTION_HANDLER_NO_ERROR 0    ; Divide by zero
-EXCEPTION_HANDLER_NO_ERROR 1    ; Debug
-EXCEPTION_HANDLER_NO_ERROR 2    ; NMI
-EXCEPTION_HANDLER_NO_ERROR 3    ; Breakpoint
-EXCEPTION_HANDLER_NO_ERROR 4    ; Overflow
-EXCEPTION_HANDLER_NO_ERROR 5    ; Bound range exceeded
-EXCEPTION_HANDLER_NO_ERROR 6    ; Invalid opcode
-EXCEPTION_HANDLER_NO_ERROR 7    ; Device not available
-EXCEPTION_HANDLER_WITH_ERROR 8  ; Double fault
-EXCEPTION_HANDLER_NO_ERROR 9    ; Coprocessor segment overrun
-EXCEPTION_HANDLER_WITH_ERROR 10 ; Invalid TSS
-EXCEPTION_HANDLER_WITH_ERROR 11 ; Segment not present
-EXCEPTION_HANDLER_WITH_ERROR 12 ; Stack-segment fault
-EXCEPTION_HANDLER_WITH_ERROR 13 ; General protection fault
-EXCEPTION_HANDLER_WITH_ERROR 14 ; Page fault
-EXCEPTION_HANDLER_NO_ERROR 15   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 16   ; x87 FPU error
-EXCEPTION_HANDLER_WITH_ERROR 17 ; Alignment check
-EXCEPTION_HANDLER_NO_ERROR 18   ; Machine check
-EXCEPTION_HANDLER_NO_ERROR 19   ; SIMD FP exception
-EXCEPTION_HANDLER_NO_ERROR 20   ; Virtualization exception
-EXCEPTION_HANDLER_NO_ERROR 21   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 22   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 23   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 24   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 25   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 26   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 27   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 28   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 29   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 30   ; Reserved
-EXCEPTION_HANDLER_NO_ERROR 31   ; Reserved
+; ========== 例外 0-31 ==========
+EXCEPTION_NO_ERR   0    ; #DE  Divide by zero
+EXCEPTION_NO_ERR   1    ; #DB  Debug
+EXCEPTION_NO_ERR   2    ;      NMI
+EXCEPTION_NO_ERR   3    ; #BP  Breakpoint
+EXCEPTION_NO_ERR   4    ; #OF  Overflow
+EXCEPTION_NO_ERR   5    ; #BR  Bound range exceeded
+EXCEPTION_NO_ERR   6    ; #UD  Invalid opcode
+EXCEPTION_NO_ERR   7    ; #NM  Device not available
+EXCEPTION_WITH_ERR 8    ; #DF  Double fault
+EXCEPTION_NO_ERR   9    ;      Coprocessor segment overrun
+EXCEPTION_WITH_ERR 10   ; #TS  Invalid TSS
+EXCEPTION_WITH_ERR 11   ; #NP  Segment not present
+EXCEPTION_WITH_ERR 12   ; #SS  Stack-segment fault
+EXCEPTION_WITH_ERR 13   ; #GP  General protection fault
+EXCEPTION_WITH_ERR 14   ; #PF  Page fault
+EXCEPTION_NO_ERR   15   ;      Reserved
+EXCEPTION_NO_ERR   16   ; #MF  x87 FPU error
+EXCEPTION_WITH_ERR 17   ; #AC  Alignment check
+EXCEPTION_NO_ERR   18   ; #MC  Machine check
+EXCEPTION_NO_ERR   19   ; #XF  SIMD FP exception
+EXCEPTION_NO_ERR   20   ;      Virtualization
+EXCEPTION_NO_ERR   21   ;      Reserved
+EXCEPTION_NO_ERR   22   ;      Reserved
+EXCEPTION_NO_ERR   23   ;      Reserved
+EXCEPTION_NO_ERR   24   ;      Reserved
+EXCEPTION_NO_ERR   25   ;      Reserved
+EXCEPTION_NO_ERR   26   ;      Reserved
+EXCEPTION_NO_ERR   27   ;      Reserved
+EXCEPTION_NO_ERR   28   ;      Reserved
+EXCEPTION_NO_ERR   29   ;      Reserved
+EXCEPTION_NO_ERR   30   ;      Reserved
+EXCEPTION_NO_ERR   31   ;      Reserved
 
-; IRQ 0-15 のためのスタブを生成
+; ========== IRQ 0-15 ==========
 IRQ_HANDLER 0
 IRQ_HANDLER 1
 IRQ_HANDLER 2
