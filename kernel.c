@@ -19,6 +19,7 @@
 #define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
 #define BASE_BG_COLOR 0xFF8B0000u
 #define HOVER_SCALE 1.2f
+#define HOVER_EASE 0.1f
 
 typedef struct {
   NSVGshape *shape;
@@ -648,7 +649,8 @@ static int svg_init(layer_t *layer) {
 }
 
 static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
-                              int hover_index) {
+                              int hover_index, float hover_scale,
+                              float hover_offx, float hover_offy) {
   if (!g_svg_ready || rw <= 0 || rh <= 0)
     return;
 
@@ -744,11 +746,11 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
     }
 
     if (src_rgba && src_w > 0 && src_h > 0) {
-      float scale = HOVER_SCALE;
+      float scale = hover_scale;
       int dst_w = (int)ceilf((float)src_w * scale);
       int dst_h = (int)ceilf((float)src_h * scale);
-      int center_x = src_x + src_w / 2;
-      int center_y = src_y + src_h / 2;
+      int center_x = (int)((float)(src_x + src_w / 2) + hover_offx);
+      int center_y = (int)((float)(src_y + src_h / 2) + hover_offy);
       int dst_x0 = center_x - dst_w / 2;
       int dst_y0 = center_y - dst_h / 2;
       int dst_x1 = dst_x0 + dst_w;
@@ -798,8 +800,9 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
   }
 }
 
-static int svg_get_shape_rect_scaled(int index, float scale, int *x, int *y,
-                                     int *w, int *h) {
+static int svg_get_shape_rect_scaled(int index, float scale, float offx,
+                                     float offy, int *x, int *y, int *w,
+                                     int *h) {
   if (!g_svg_cache || index < 0 || index >= g_svg_shape_count)
     return 0;
   svg_shape_cache_t *c = &g_svg_cache[index];
@@ -848,14 +851,29 @@ static int svg_get_shape_rect_scaled(int index, float scale, int *x, int *y,
     return 0;
   int dst_w = (int)ceilf((float)src_w * scale);
   int dst_h = (int)ceilf((float)src_h * scale);
-  int center_x = src_x + src_w / 2;
-  int center_y = src_y + src_h / 2;
+  int center_x = (int)((float)(src_x + src_w / 2) + offx);
+  int center_y = (int)((float)(src_y + src_h / 2) + offy);
   int x0 = center_x - dst_w / 2;
   int y0 = center_y - dst_h / 2;
   *x = x0;
   *y = y0;
   *w = dst_w;
   *h = dst_h;
+  return 1;
+}
+
+static int svg_get_shape_center(int index, float *cx, float *cy) {
+  if (!g_svg_cache || index < 0 || index >= g_svg_shape_count)
+    return 0;
+  NSVGshape *s = g_svg_cache[index].shape;
+  if (!s || (s->flags & NSVG_FLAGS_VISIBLE) == 0)
+    return 0;
+  float x0 = s->bounds[0];
+  float y0 = s->bounds[1];
+  float x1 = s->bounds[2];
+  float y1 = s->bounds[3];
+  *cx = ((x0 + x1) * 0.5f) * g_svg_scale + g_svg_tx;
+  *cy = ((y0 + y1) * 0.5f) * g_svg_scale + g_svg_ty;
   return 1;
 }
 
@@ -1034,6 +1052,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int last_hover = -2;
   int last_mouse_x = -1;
   int last_mouse_y = -1;
+  int active_hover = -1;
+  float hover_scale = 1.0f;
+  float hover_target_scale = 1.0f;
+  float hover_offx = 0.0f;
+  float hover_offy = 0.0f;
+  float hover_target_offx = 0.0f;
+  float hover_target_offy = 0.0f;
+  uint32_t last_anim_tick = 0;
+  int last_draw_x = 0, last_draw_y = 0, last_draw_w = 0, last_draw_h = 0;
+  int have_draw = 0;
   while (1) {
     int need_refresh = 0;
 
@@ -1051,44 +1079,90 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       need_refresh = 1;
       int hover = svg_pick_shape(&svg_layer, mx, my);
       if (hover != last_hover) {
-        int rx = 0, ry = 0, rw = 0, rh = 0;
-        int have = 0;
-        int x, y, w, h;
-        if (svg_get_shape_rect_scaled(last_hover, HOVER_SCALE, &x, &y, &w,
-                                      &h)) {
-          rx = x;
-          ry = y;
-          rw = w;
-          rh = h;
-          have = 1;
+        last_hover = hover;
+        if (hover >= 0) {
+          active_hover = hover;
+          hover_scale = 1.0f;
+          hover_offx = 0.0f;
+          hover_offy = 0.0f;
+          hover_target_scale = HOVER_SCALE;
+        } else {
+          hover_target_scale = 1.0f;
         }
-        if (svg_get_shape_rect_scaled(hover, HOVER_SCALE, &x, &y, &w, &h)) {
-          if (!have) {
-            rx = x;
-            ry = y;
-            rw = w;
-            rh = h;
-            have = 1;
-          } else {
-            int x0 = rx < x ? rx : x;
-            int y0 = ry < y ? ry : y;
-            int x1 = (rx + rw) > (x + w) ? (rx + rw) : (x + w);
-            int y1 = (ry + rh) > (y + h) ? (ry + rh) : (y + h);
+      }
+      last_mouse_x = mx;
+      last_mouse_y = my;
+    }
+
+    if (active_hover >= 0) {
+      if (last_hover >= 0) {
+        hover_target_scale = HOVER_SCALE;
+        float cx = 0.0f, cy = 0.0f;
+        if (svg_get_shape_center(active_hover, &cx, &cy)) {
+          hover_target_offx = ((float)mx - cx) * 0.2f;
+          hover_target_offy = ((float)my - cy) * 0.2f;
+        } else {
+          hover_target_offx = 0.0f;
+          hover_target_offy = 0.0f;
+        }
+      } else {
+        hover_target_scale = 1.0f;
+        hover_target_offx = 0.0f;
+        hover_target_offy = 0.0f;
+      }
+
+      if (timer_ticks != last_anim_tick || need_refresh) {
+        uint32_t dt = timer_ticks - last_anim_tick;
+        if (dt == 0)
+          dt = 1;
+        last_anim_tick = timer_ticks;
+        for (uint32_t i = 0; i < dt; ++i) {
+          hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
+          hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
+          hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
+        }
+
+        int x, y, w, h;
+        if (svg_get_shape_rect_scaled(active_hover, hover_scale, hover_offx,
+                                      hover_offy, &x, &y, &w, &h)) {
+          int rx = x, ry = y, rw = w, rh = h;
+          if (have_draw) {
+            int x0 = (last_draw_x < x) ? last_draw_x : x;
+            int y0 = (last_draw_y < y) ? last_draw_y : y;
+            int x1 = (last_draw_x + last_draw_w > x + w)
+                         ? (last_draw_x + last_draw_w)
+                         : (x + w);
+            int y1 = (last_draw_y + last_draw_h > y + h)
+                         ? (last_draw_y + last_draw_h)
+                         : (y + h);
             rx = x0;
             ry = y0;
             rw = x1 - x0;
             rh = y1 - y0;
           }
-        }
-        if (have) {
-          svg_update_region(&svg_layer, rx, ry, rw, rh, hover);
+          svg_update_region(&svg_layer, rx, ry, rw, rh, active_hover,
+                            hover_scale, hover_offx, hover_offy);
           screen_mark_static_dirty();
           need_refresh = 1;
+          last_draw_x = x;
+          last_draw_y = y;
+          last_draw_w = w;
+          last_draw_h = h;
+          have_draw = 1;
         }
-        last_hover = hover;
+
+        if (last_hover < 0 && (fabsf(hover_scale - 1.0f) < 0.01f) &&
+            (fabsf(hover_offx) < 0.5f) && (fabsf(hover_offy) < 0.5f)) {
+          if (have_draw) {
+            svg_update_region(&svg_layer, last_draw_x, last_draw_y, last_draw_w,
+                              last_draw_h, -1, 1.0f, 0.0f, 0.0f);
+            screen_mark_static_dirty();
+            need_refresh = 1;
+          }
+          active_hover = -1;
+          have_draw = 0;
+        }
       }
-      last_mouse_x = mx;
-      last_mouse_y = my;
     }
 
     if (timer_ticks - last_stat_tick >= 100) {
