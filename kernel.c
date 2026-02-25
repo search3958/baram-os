@@ -18,6 +18,7 @@
 #define SVG_WIDTH NOTE_TEST_SVG_WIDTH
 #define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
 #define BASE_BG_COLOR 0xFF8B0000u
+#define HOVER_SCALE 1.2f
 
 typedef struct {
   NSVGshape *shape;
@@ -34,7 +35,8 @@ static NSVGrasterizer *g_svg_rast = NULL;
 static unsigned char *g_svg_rgba = NULL;
 static svg_shape_cache_t *g_svg_cache = NULL;
 static int g_svg_shape_count = 0;
-static int g_svg_cache_complete = 1;
+static unsigned char *g_svg_hover_buf = NULL;
+static size_t g_svg_hover_buf_cap = 0;
 static float g_svg_scale = 1.0f;
 static float g_svg_tx = 0.0f;
 static float g_svg_ty = 0.0f;
@@ -42,6 +44,13 @@ static int g_svg_ready = 0;
 
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
+
+// レイヤー用
+static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
+static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
+static uint32_t blink_buf[50 * 50];
+static uint32_t hud_buf[240 * 16];
 
 // メモリアロケータ
 static char heap[1024 * 1024 * 4];
@@ -555,7 +564,6 @@ static int svg_init(layer_t *layer) {
   if (count > 0) {
     g_svg_cache =
         (svg_shape_cache_t *)malloc(sizeof(svg_shape_cache_t) * (size_t)count);
-    g_svg_cache_complete = (g_svg_cache != NULL);
     if (g_svg_cache) {
       int i = 0;
       for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
@@ -587,7 +595,10 @@ static int svg_init(layer_t *layer) {
       float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
       float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
 
-      const int pad = 2;
+      float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
+      int pad = (int)ceilf(padf);
+      if (pad < 2)
+        pad = 2;
       int x0 = (int)floorf(x0f) - pad;
       int y0 = (int)floorf(y0f) - pad;
       int x1 = (int)ceilf(x1f) + pad;
@@ -604,17 +615,13 @@ static int svg_init(layer_t *layer) {
 
       int w = x1 - x0;
       int h = y1 - y0;
-      if (w <= 0 || h <= 0) {
-        g_svg_cache_complete = 0;
+      if (w <= 0 || h <= 0)
         continue;
-      }
 
       unsigned char *buf =
           (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-      if (!buf) {
-        g_svg_cache_complete = 0;
+      if (!buf)
         continue;
-      }
 
       c->rgba = buf;
       c->x = x0;
@@ -634,6 +641,8 @@ static int svg_init(layer_t *layer) {
   }
 
   svg_render_full(layer);
+  memcpy(svg_base_buf, layer->buffer,
+         sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
   return 1;
 }
@@ -642,10 +651,6 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
                               int hover_index) {
   if (!g_svg_ready || rw <= 0 || rh <= 0)
     return;
-  if (!g_svg_cache_complete) {
-    svg_render_full(layer);
-    return;
-  }
 
   int x0 = rx;
   int y0 = ry;
@@ -665,73 +670,192 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
     return;
 
   for (int y = y0; y < y1; ++y) {
-    uint32_t *row = &layer->buffer[y * layer->width];
+    uint32_t *dst = &layer->buffer[y * layer->width + x0];
+    uint32_t *src = &svg_base_buf[y * layer->width + x0];
     for (int x = x0; x < x1; ++x) {
-      row[x] = BASE_BG_COLOR;
+      *dst++ = *src++;
     }
   }
 
-  for (int i = 0; i < g_svg_shape_count; ++i) {
-    svg_shape_cache_t *c = &g_svg_cache[i];
-    if (!c->rgba)
-      continue;
+  if (hover_index >= 0) {
+    // Draw hovered shape scaled up on top.
+    svg_shape_cache_t *c = &g_svg_cache[hover_index];
+    unsigned char *src_rgba = NULL;
+    int src_x = 0, src_y = 0, src_w = 0, src_h = 0;
 
-    int sx0 = c->x;
-    int sy0 = c->y;
-    int sx1 = c->x + c->w;
-    int sy1 = c->y + c->h;
+    if (c->rgba && c->w > 0 && c->h > 0) {
+      src_rgba = c->rgba;
+      src_x = c->x;
+      src_y = c->y;
+      src_w = c->w;
+      src_h = c->h;
+    } else if (c->shape) {
+      float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx;
+      float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty;
+      float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
+      float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
 
-    int ix0 = (x0 > sx0) ? x0 : sx0;
-    int iy0 = (y0 > sy0) ? y0 : sy0;
-    int ix1 = (x1 < sx1) ? x1 : sx1;
-    int iy1 = (y1 < sy1) ? y1 : sy1;
+      float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
+      int pad = (int)ceilf(padf);
+      if (pad < 2)
+        pad = 2;
+      int x0 = (int)floorf(x0f) - pad;
+      int y0 = (int)floorf(y0f) - pad;
+      int x1 = (int)ceilf(x1f) + pad;
+      int y1 = (int)ceilf(y1f) + pad;
 
-    if (ix0 >= ix1 || iy0 >= iy1)
-      continue;
+      if (x0 < 0)
+        x0 = 0;
+      if (y0 < 0)
+        y0 = 0;
+      if (x1 > layer->width)
+        x1 = layer->width;
+      if (y1 > layer->height)
+        y1 = layer->height;
 
-    for (int y = iy0; y < iy1; ++y) {
-      int sy = y - c->y;
-      int src_row = sy * c->w;
-      uint32_t *dst = &layer->buffer[y * layer->width];
-      for (int x = ix0; x < ix1; ++x) {
-        int sx = x - c->x;
-        size_t idx = (size_t)(src_row + sx) * 4;
-        uint8_t sa = c->rgba[idx + 3];
-        if (sa == 0)
-          continue;
-        if (i == hover_index)
-          sa = (uint8_t)(sa / 2);
+      int w = x1 - x0;
+      int h = y1 - y0;
+      if (w > 0 && h > 0) {
+        size_t bytes = (size_t)w * (size_t)h * 4;
+        if (bytes > g_svg_hover_buf_cap) {
+          g_svg_hover_buf = (unsigned char *)realloc(g_svg_hover_buf, bytes);
+          if (g_svg_hover_buf)
+            g_svg_hover_buf_cap = bytes;
+        }
+        if (g_svg_hover_buf && g_svg_hover_buf_cap >= bytes) {
+          for (int i = 0; i < g_svg_shape_count; ++i)
+            g_svg_cache[i].shape->flags = 0;
+          c->shape->flags = NSVG_FLAGS_VISIBLE;
 
-        uint8_t sr = c->rgba[idx + 0];
-        uint8_t sg = c->rgba[idx + 1];
-        uint8_t sb = c->rgba[idx + 2];
+          nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx - (float)x0,
+                        g_svg_ty - (float)y0, g_svg_scale, g_svg_hover_buf, w,
+                        h, w * 4);
 
-        uint32_t d = dst[x];
-        uint8_t dr = (d >> 16) & 0xFF;
-        uint8_t dg = (d >> 8) & 0xFF;
-        uint8_t db = d & 0xFF;
+          for (int i = 0; i < g_svg_shape_count; ++i)
+            g_svg_cache[i].shape->flags = g_svg_cache[i].flags;
 
-        uint8_t out_r = (uint8_t)((sr * sa + dr * (255 - sa)) / 255);
-        uint8_t out_g = (uint8_t)((sg * sa + dg * (255 - sa)) / 255);
-        uint8_t out_b = (uint8_t)((sb * sa + db * (255 - sa)) / 255);
+          src_rgba = g_svg_hover_buf;
+          src_x = x0;
+          src_y = y0;
+          src_w = w;
+          src_h = h;
+        }
+      }
+    }
 
-        dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
-                 ((uint32_t)out_g << 8) | (uint32_t)out_b;
+    if (src_rgba && src_w > 0 && src_h > 0) {
+      float scale = HOVER_SCALE;
+      int dst_w = (int)ceilf((float)src_w * scale);
+      int dst_h = (int)ceilf((float)src_h * scale);
+      int center_x = src_x + src_w / 2;
+      int center_y = src_y + src_h / 2;
+      int dst_x0 = center_x - dst_w / 2;
+      int dst_y0 = center_y - dst_h / 2;
+      int dst_x1 = dst_x0 + dst_w;
+      int dst_y1 = dst_y0 + dst_h;
+
+      if (dst_x0 < x0)
+        dst_x0 = x0;
+      if (dst_y0 < y0)
+        dst_y0 = y0;
+      if (dst_x1 > x1)
+        dst_x1 = x1;
+      if (dst_y1 > y1)
+        dst_y1 = y1;
+
+      for (int y = dst_y0; y < dst_y1; ++y) {
+        uint32_t *dst = &layer->buffer[y * layer->width];
+        for (int x = dst_x0; x < dst_x1; ++x) {
+          float sx = (float)(x - (center_x - dst_w / 2)) / scale;
+          float sy = (float)(y - (center_y - dst_h / 2)) / scale;
+          int isx = (int)sx;
+          int isy = (int)sy;
+          if (isx < 0 || isy < 0 || isx >= src_w || isy >= src_h)
+            continue;
+          size_t idx = (size_t)(isy * src_w + isx) * 4;
+          uint8_t sa = src_rgba[idx + 3];
+          if (sa == 0)
+            continue;
+
+          uint8_t sr = src_rgba[idx + 0];
+          uint8_t sg = src_rgba[idx + 1];
+          uint8_t sb = src_rgba[idx + 2];
+
+          uint32_t d = dst[x];
+          uint8_t dr = (d >> 16) & 0xFF;
+          uint8_t dg = (d >> 8) & 0xFF;
+          uint8_t db = d & 0xFF;
+
+          uint8_t out_r = (uint8_t)((sr * sa + dr * (255 - sa)) / 255);
+          uint8_t out_g = (uint8_t)((sg * sa + dg * (255 - sa)) / 255);
+          uint8_t out_b = (uint8_t)((sb * sa + db * (255 - sa)) / 255);
+
+          dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
+                   ((uint32_t)out_g << 8) | (uint32_t)out_b;
+        }
       }
     }
   }
 }
 
-static int svg_get_shape_rect(int index, int *x, int *y, int *w, int *h) {
+static int svg_get_shape_rect_scaled(int index, float scale, int *x, int *y,
+                                     int *w, int *h) {
   if (!g_svg_cache || index < 0 || index >= g_svg_shape_count)
     return 0;
   svg_shape_cache_t *c = &g_svg_cache[index];
-  if (!c->rgba || c->w <= 0 || c->h <= 0)
+  int src_x = 0;
+  int src_y = 0;
+  int src_w = 0;
+  int src_h = 0;
+
+  if (c->rgba && c->w > 0 && c->h > 0) {
+    src_x = c->x;
+    src_y = c->y;
+    src_w = c->w;
+    src_h = c->h;
+  } else if (c->shape) {
+    float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx;
+    float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty;
+    float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
+    float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
+
+    float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
+    int pad = (int)ceilf(padf);
+    if (pad < 2)
+      pad = 2;
+
+    int x0 = (int)floorf(x0f) - pad;
+    int y0 = (int)floorf(y0f) - pad;
+    int x1 = (int)ceilf(x1f) + pad;
+    int y1 = (int)ceilf(y1f) + pad;
+
+    if (x0 < 0)
+      x0 = 0;
+    if (y0 < 0)
+      y0 = 0;
+    if (x1 > SVG_WIDTH)
+      x1 = SVG_WIDTH;
+    if (y1 > SVG_HEIGHT)
+      y1 = SVG_HEIGHT;
+
+    src_x = x0;
+    src_y = y0;
+    src_w = x1 - x0;
+    src_h = y1 - y0;
+  }
+
+  if (src_w <= 0 || src_h <= 0)
     return 0;
-  *x = c->x;
-  *y = c->y;
-  *w = c->w;
-  *h = c->h;
+  int dst_w = (int)ceilf((float)src_w * scale);
+  int dst_h = (int)ceilf((float)src_h * scale);
+  int center_x = src_x + src_w / 2;
+  int center_y = src_y + src_h / 2;
+  int x0 = center_x - dst_w / 2;
+  int y0 = center_y - dst_h / 2;
+  *x = x0;
+  *y = y0;
+  *w = dst_w;
+  *h = dst_h;
   return 1;
 }
 
@@ -776,12 +900,6 @@ void timer_phase(int hz) {
   outb(0x40, divisor & 0xFF);
   outb(0x40, (divisor >> 8) & 0xFF);
 }
-
-// レイヤー用
-static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
-static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
-static uint32_t blink_buf[50 * 50];
-static uint32_t hud_buf[240 * 16];
 
 static char *append_uint(char *p, unsigned int v) {
   char tmp[10];
@@ -936,14 +1054,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int rx = 0, ry = 0, rw = 0, rh = 0;
         int have = 0;
         int x, y, w, h;
-        if (svg_get_shape_rect(last_hover, &x, &y, &w, &h)) {
+        if (svg_get_shape_rect_scaled(last_hover, HOVER_SCALE, &x, &y, &w,
+                                      &h)) {
           rx = x;
           ry = y;
           rw = w;
           rh = h;
           have = 1;
         }
-        if (svg_get_shape_rect(hover, &x, &y, &w, &h)) {
+        if (svg_get_shape_rect_scaled(hover, HOVER_SCALE, &x, &y, &w, &h)) {
           if (!have) {
             rx = x;
             ry = y;
