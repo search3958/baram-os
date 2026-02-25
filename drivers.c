@@ -67,16 +67,24 @@ void screen_refresh() {
     }
   }
 
-  // 最後にマウスを合成（マウス専用レイヤーがない場合の簡易実装）
-  uint32_t white = 0xFFFFFFFF;
-  for (int my = 0; my < 15; my++) {
-    for (int mx = 0; mx < 10; mx++) {
+  // 最後にマウスを合成（白枠・黒背景の正方形）
+  const int cursor_size = 12;
+  const uint32_t white = 0xFFFFFFFF;
+  const uint32_t black = 0xFF000000;
+  for (int my = 0; my < cursor_size; my++) {
+    for (int mx = 0; mx < cursor_size; mx++) {
       int sx = mouse_x + mx;
       int sy = mouse_y + my;
-      if (sx >= 0 && sx < (int)g_vram_width && sy >= 0 &&
-          sy < (int)g_vram_height) {
-        g_backbuffer[sy * SCREEN_WIDTH + sx] = white;
+      if (sx < 0 || sx >= (int)g_vram_width || sy < 0 ||
+          sy >= (int)g_vram_height) {
+        continue;
       }
+      uint32_t color = black;
+      if (mx == 0 || my == 0 || mx == cursor_size - 1 ||
+          my == cursor_size - 1) {
+        color = white;
+      }
+      g_backbuffer[sy * SCREEN_WIDTH + sx] = color;
     }
   }
 
@@ -356,7 +364,7 @@ void exception_handler(struct regs *r) {
 volatile int32_t mouse_x = 0;
 volatile int32_t mouse_y = 0;
 static uint8_t mouse_cycle = 0;
-static int8_t mouse_packet[3];
+static uint8_t mouse_packet[3];
 volatile uint32_t mouse_interrupt_counter = 0;
 
 void mouse_wait(uint8_t a_type) {
@@ -389,6 +397,11 @@ static void mouse_handler(struct regs *r) {
   uint8_t data = inb(0x60);
   switch (mouse_cycle) {
   case 0:
+    // Bit 3 must be set in the first byte; otherwise resync.
+    if ((data & 0x08) == 0) {
+      mouse_cycle = 0;
+      break;
+    }
     mouse_packet[0] = data;
     mouse_cycle++;
     break;
@@ -399,12 +412,12 @@ static void mouse_handler(struct regs *r) {
   case 2:
     mouse_packet[2] = data;
     mouse_cycle = 0;
-    int dx = mouse_packet[1];
-    int dy = mouse_packet[2];
-    if (mouse_packet[0] & 0x10)
-      dx -= 256;
-    if (mouse_packet[0] & 0x20)
-      dy -= 256;
+    // Ignore packets with overflow to avoid jumps.
+    if (mouse_packet[0] & 0xC0) {
+      break;
+    }
+    int dx = (int8_t)mouse_packet[1];
+    int dy = (int8_t)mouse_packet[2];
     mouse_x += dx;
     mouse_y -= dy;
     if (mouse_x < 0)

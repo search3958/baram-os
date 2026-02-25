@@ -1,3 +1,11 @@
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>  // malloc, free, realloc
+#include <string.h>  // memcpy, memset
+#include <stdio.h>   // FILE
+#include <math.h>    // sinf, cosf
+#include <stdarg.h>  // va_list
+
 #include "drivers.h"
 #include "svg_data.h"
 #include <stddef.h>
@@ -162,6 +170,31 @@ long strtol(const char *nptr, char **endptr, int base) {
   return val * sign;
 }
 
+long long strtoll(const char *nptr, char **endptr, int base) {
+  (void)base;
+  const char *s = nptr;
+  while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' || *s == '\f' ||
+         *s == '\v') {
+    s++;
+  }
+  int sign = 1;
+  if (*s == '-') {
+    sign = -1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+
+  long long val = 0;
+  while (*s >= '0' && *s <= '9') {
+    val = val * 10 + (*s - '0');
+    s++;
+  }
+  if (endptr)
+    *endptr = (char *)s;
+  return val * sign;
+}
+
 double fabs(double x) { return x < 0.0 ? -x : x; }
 float fabsf(float x) { return x < 0.0f ? -x : x; }
 
@@ -205,6 +238,228 @@ double pow(double base, double exp) {
   return neg ? 1.0 / result : result;
 }
 
+float floorf(float x) {
+  int i = (int)x;
+  if ((float)i > x)
+    i--;
+  return (float)i;
+}
+
+float ceilf(float x) {
+  int i = (int)x;
+  if ((float)i < x)
+    i++;
+  return (float)i;
+}
+
+float roundf(float x) {
+  return (x >= 0.0f) ? floorf(x + 0.5f) : ceilf(x - 0.5f);
+}
+
+float fmodf(float x, float y) {
+  if (y == 0.0f)
+    return 0.0f;
+  int q = (int)(x / y);
+  return x - (float)q * y;
+}
+
+static float wrap_pi(float x) {
+  const float pi = 3.14159265358979323846f;
+  const float two_pi = 6.28318530717958647692f;
+  while (x > pi)
+    x -= two_pi;
+  while (x < -pi)
+    x += two_pi;
+  return x;
+}
+
+float sinf(float x) {
+  x = wrap_pi(x);
+  float x2 = x * x;
+  return x * (1.0f - x2 / 6.0f + (x2 * x2) / 120.0f -
+              (x2 * x2 * x2) / 5040.0f);
+}
+
+float cosf(float x) {
+  x = wrap_pi(x);
+  float x2 = x * x;
+  return 1.0f - x2 / 2.0f + (x2 * x2) / 24.0f -
+         (x2 * x2 * x2) / 720.0f;
+}
+
+float tanf(float x) {
+  float c = cosf(x);
+  if (c == 0.0f)
+    return 0.0f;
+  return sinf(x) / c;
+}
+
+static float atan_approx(float z) {
+  const float pi = 3.14159265358979323846f;
+  if (z > 1.0f)
+    return (pi * 0.5f) - atan_approx(1.0f / z);
+  if (z < -1.0f)
+    return -(pi * 0.5f) - atan_approx(1.0f / z);
+  return z / (1.0f + 0.28f * z * z);
+}
+
+float atan2f(float y, float x) {
+  const float pi = 3.14159265358979323846f;
+  if (x > 0.0f)
+    return atan_approx(y / x);
+  if (x < 0.0f) {
+    if (y >= 0.0f)
+      return atan_approx(y / x) + pi;
+    return atan_approx(y / x) - pi;
+  }
+  if (y > 0.0f)
+    return pi * 0.5f;
+  if (y < 0.0f)
+    return -pi * 0.5f;
+  return 0.0f;
+}
+
+float acosf(float x) {
+  const float pi = 3.14159265358979323846f;
+  if (x <= -1.0f)
+    return pi;
+  if (x >= 1.0f)
+    return 0.0f;
+  return atan2f(sqrtf(1.0f - x * x), x);
+}
+
+int isnan(double x) { return x != x; }
+
+static void swap_bytes(unsigned char *a, unsigned char *b, size_t size) {
+  while (size--) {
+    unsigned char tmp = *a;
+    *a++ = *b;
+    *b++ = tmp;
+  }
+}
+
+void qsort(void *base, size_t nmemb, size_t size,
+           int (*compar)(const void *, const void *)) {
+  unsigned char *arr = (unsigned char *)base;
+  for (size_t i = 1; i < nmemb; ++i) {
+    size_t j = i;
+    while (j > 0) {
+      unsigned char *a = arr + (j - 1) * size;
+      unsigned char *b = arr + j * size;
+      if (compar(a, b) <= 0)
+        break;
+      swap_bytes(a, b, size);
+      --j;
+    }
+  }
+}
+
+FILE *fopen(const char *path, const char *mode) {
+  (void)path;
+  (void)mode;
+  return NULL;
+}
+
+int fclose(FILE *stream) {
+  (void)stream;
+  return 0;
+}
+
+size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+  (void)ptr;
+  (void)size;
+  (void)nmemb;
+  (void)stream;
+  return 0;
+}
+
+int fseek(FILE *stream, long offset, int whence) {
+  (void)stream;
+  (void)offset;
+  (void)whence;
+  return -1;
+}
+
+long ftell(FILE *stream) {
+  (void)stream;
+  return -1;
+}
+
+int fprintf(FILE *stream, const char *format, ...) {
+  (void)stream;
+  (void)format;
+  return 0;
+}
+
+static int hex_value(char c) {
+  if (c >= '0' && c <= '9')
+    return c - '0';
+  if (c >= 'a' && c <= 'f')
+    return 10 + (c - 'a');
+  if (c >= 'A' && c <= 'F')
+    return 10 + (c - 'A');
+  return -1;
+}
+
+int sscanf(const char *str, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+
+  int matched = 0;
+  if (strcmp(format, "#%2x%2x%2x") == 0) {
+    if (str && str[0] == '#') {
+      int v0 = hex_value(str[1]);
+      int v1 = hex_value(str[2]);
+      int v2 = hex_value(str[3]);
+      int v3 = hex_value(str[4]);
+      int v4 = hex_value(str[5]);
+      int v5 = hex_value(str[6]);
+      if (v0 >= 0 && v1 >= 0 && v2 >= 0 && v3 >= 0 && v4 >= 0 && v5 >= 0) {
+        unsigned int *r = va_arg(args, unsigned int *);
+        unsigned int *g = va_arg(args, unsigned int *);
+        unsigned int *b = va_arg(args, unsigned int *);
+        *r = (unsigned int)((v0 << 4) | v1);
+        *g = (unsigned int)((v2 << 4) | v3);
+        *b = (unsigned int)((v4 << 4) | v5);
+        matched = 3;
+      }
+    }
+  } else if (strcmp(format, "#%1x%1x%1x") == 0) {
+    if (str && str[0] == '#') {
+      int v0 = hex_value(str[1]);
+      int v1 = hex_value(str[2]);
+      int v2 = hex_value(str[3]);
+      if (v0 >= 0 && v1 >= 0 && v2 >= 0) {
+        unsigned int *r = va_arg(args, unsigned int *);
+        unsigned int *g = va_arg(args, unsigned int *);
+        unsigned int *b = va_arg(args, unsigned int *);
+        *r = (unsigned int)v0;
+        *g = (unsigned int)v1;
+        *b = (unsigned int)v2;
+        matched = 3;
+      }
+    }
+  } else if (strcmp(format, "rgb(%u, %u, %u)") == 0) {
+    if (str && strncmp(str, "rgb(", 4) == 0) {
+      const char *p = str + 4;
+      unsigned int *r = va_arg(args, unsigned int *);
+      unsigned int *g = va_arg(args, unsigned int *);
+      unsigned int *b = va_arg(args, unsigned int *);
+      *r = (unsigned int)strtoll(p, (char **)&p, 10);
+      while (*p == ' ' || *p == ',')
+        p++;
+      *g = (unsigned int)strtoll(p, (char **)&p, 10);
+      while (*p == ' ' || *p == ',')
+        p++;
+      *b = (unsigned int)strtoll(p, (char **)&p, 10);
+      matched = 3;
+    }
+  }
+
+  va_end(args);
+  return matched;
+}
+
 static void draw_svg_layer(layer_t *layer) {
   layer_fill(layer, 0xFFFBF8FF);
 
@@ -232,8 +487,8 @@ static void draw_svg_layer(layer_t *layer) {
   float scale_y =
       image->height > 0.0f ? (float)layer->height / image->height : 1.0f;
   float scale = scale_x < scale_y ? scale_x : scale_y;
-  float tx = ((float)layer->width - image->width * scale) * 0.5f;
-  float ty = ((float)layer->height - image->height * scale) * 0.5f;
+  float tx = 0.0f;
+  float ty = 0.0f;
 
   nsvgRasterize(rast, image, tx, ty, scale, rgba, layer->width, layer->height,
                 layer->width * 4);
@@ -302,8 +557,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   // 2. SVG表示エリア (左上)
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
-  svg_layer.x = 10;
-  svg_layer.y = 10;
+  svg_layer.x = 0;
+  svg_layer.y = 0;
   svg_layer.width = SVG_WIDTH;
   svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
