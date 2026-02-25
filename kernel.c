@@ -34,10 +34,14 @@ static NSVGrasterizer *g_svg_rast = NULL;
 static unsigned char *g_svg_rgba = NULL;
 static svg_shape_cache_t *g_svg_cache = NULL;
 static int g_svg_shape_count = 0;
+static int g_svg_cache_complete = 1;
 static float g_svg_scale = 1.0f;
 static float g_svg_tx = 0.0f;
 static float g_svg_ty = 0.0f;
 static int g_svg_ready = 0;
+
+static volatile uint32_t idle_ticks = 0;
+static volatile int cpu_idle = 0;
 
 // メモリアロケータ
 static char heap[1024 * 1024 * 4];
@@ -551,6 +555,7 @@ static int svg_init(layer_t *layer) {
   if (count > 0) {
     g_svg_cache =
         (svg_shape_cache_t *)malloc(sizeof(svg_shape_cache_t) * (size_t)count);
+    g_svg_cache_complete = (g_svg_cache != NULL);
     if (g_svg_cache) {
       int i = 0;
       for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
@@ -582,10 +587,11 @@ static int svg_init(layer_t *layer) {
       float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
       float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
 
-      int x0 = (int)floorf(x0f);
-      int y0 = (int)floorf(y0f);
-      int x1 = (int)ceilf(x1f);
-      int y1 = (int)ceilf(y1f);
+      const int pad = 2;
+      int x0 = (int)floorf(x0f) - pad;
+      int y0 = (int)floorf(y0f) - pad;
+      int x1 = (int)ceilf(x1f) + pad;
+      int y1 = (int)ceilf(y1f) + pad;
 
       if (x0 < 0)
         x0 = 0;
@@ -598,13 +604,17 @@ static int svg_init(layer_t *layer) {
 
       int w = x1 - x0;
       int h = y1 - y0;
-      if (w <= 0 || h <= 0)
+      if (w <= 0 || h <= 0) {
+        g_svg_cache_complete = 0;
         continue;
+      }
 
       unsigned char *buf =
           (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-      if (!buf)
+      if (!buf) {
+        g_svg_cache_complete = 0;
         continue;
+      }
 
       c->rgba = buf;
       c->x = x0;
@@ -632,6 +642,10 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
                               int hover_index) {
   if (!g_svg_ready || rw <= 0 || rh <= 0)
     return;
+  if (!g_svg_cache_complete) {
+    svg_render_full(layer);
+    return;
+  }
 
   int x0 = rx;
   int y0 = ry;
@@ -750,7 +764,11 @@ static int svg_pick_shape(layer_t *layer, int screen_x, int screen_y) {
 
 // タイマー設定 (0.1秒点滅用)
 volatile uint32_t timer_ticks = 0;
-void timer_handler(struct regs *r) { timer_ticks++; }
+void timer_handler(struct regs *r) {
+  timer_ticks++;
+  if (cpu_idle)
+    idle_ticks++;
+}
 
 void timer_phase(int hz) {
   int divisor = 1193180 / hz;
@@ -763,6 +781,55 @@ void timer_phase(int hz) {
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
+static uint32_t hud_buf[240 * 16];
+
+static char *append_uint(char *p, unsigned int v) {
+  char tmp[10];
+  int n = 0;
+  if (v == 0) {
+    *p++ = '0';
+    return p;
+  }
+  while (v > 0 && n < (int)sizeof(tmp)) {
+    tmp[n++] = (char)('0' + (v % 10));
+    v /= 10;
+  }
+  while (n-- > 0) {
+    *p++ = tmp[n];
+  }
+  return p;
+}
+
+static void hud_update(layer_t *hud, unsigned int cpu_percent,
+                       unsigned int mem_used_kb, unsigned int mem_total_kb) {
+  layer_fill(hud, 0xFF000000);
+
+  char line1[24];
+  char line2[32];
+  char *p = line1;
+  *p++ = 'C';
+  *p++ = 'P';
+  *p++ = 'U';
+  *p++ = ' ';
+  p = append_uint(p, cpu_percent);
+  *p++ = '%';
+  *p = '\0';
+
+  p = line2;
+  *p++ = 'M';
+  *p++ = 'E';
+  *p++ = 'M';
+  *p++ = ' ';
+  p = append_uint(p, mem_used_kb);
+  *p++ = '/';
+  p = append_uint(p, mem_total_kb);
+  *p++ = 'K';
+  *p++ = 'B';
+  *p = '\0';
+
+  layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
+  layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
+}
 
 extern void register_layer(layer_t *layer);
 extern void screen_mark_static_dirty();
@@ -817,6 +884,20 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&blink_layer, 0xFF0000FF); // 青
   register_layer(&blink_layer);
 
+  // 4. HUD (右上: CPU/MEM)
+  layer_t hud_layer;
+  hud_layer.buffer = hud_buf;
+  hud_layer.width = 240;
+  hud_layer.height = 16;
+  hud_layer.x = SCREEN_WIDTH - hud_layer.width - 4;
+  hud_layer.y = 4;
+  hud_layer.transparent = 0;
+  hud_layer.active = 1;
+  hud_layer.dynamic = 1;
+  hud_update(&hud_layer, 0, (unsigned int)(heap_ptr / 1024),
+             (unsigned int)(sizeof(heap) / 1024));
+  register_layer(&hud_layer);
+
   idt_install();
   irq_install();
   irq_install_handler(0, timer_handler);
@@ -827,21 +908,29 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   uint32_t last_blink_tick = 0;
   int blink_state = 1;
+  uint32_t last_stat_tick = 0;
+  uint32_t last_idle_tick = 0;
+  unsigned int cpu_percent = 0;
+  unsigned int mem_total_kb = (unsigned int)(sizeof(heap) / 1024);
 
   int last_hover = -2;
   int last_mouse_x = -1;
   int last_mouse_y = -1;
   while (1) {
+    int need_refresh = 0;
+
     // 0.1秒(10 ticks)ごとに点滅
     if (timer_ticks - last_blink_tick >= 10) {
       blink_state = !blink_state;
       blink_layer.active = blink_state;
       last_blink_tick = timer_ticks;
+      need_refresh = 1;
     }
 
     int mx = mouse_x;
     int my = mouse_y;
     if (mx != last_mouse_x || my != last_mouse_y) {
+      need_refresh = 1;
       int hover = svg_pick_shape(&svg_layer, mx, my);
       if (hover != last_hover) {
         int rx = 0, ry = 0, rw = 0, rh = 0;
@@ -875,12 +964,35 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         if (have) {
           svg_update_region(&svg_layer, rx, ry, rw, rh, hover);
           screen_mark_static_dirty();
+          need_refresh = 1;
         }
         last_hover = hover;
       }
       last_mouse_x = mx;
       last_mouse_y = my;
     }
-    screen_refresh();
+
+    if (timer_ticks - last_stat_tick >= 100) {
+      uint32_t total = timer_ticks - last_stat_tick;
+      uint32_t idle = idle_ticks - last_idle_tick;
+      if (total > 0) {
+        uint32_t idle_pct = (idle * 100u) / total;
+        cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+      }
+      hud_update(&hud_layer, cpu_percent, (unsigned int)(heap_ptr / 1024),
+                 mem_total_kb);
+      last_stat_tick = timer_ticks;
+      last_idle_tick = idle_ticks;
+      need_refresh = 1;
+    }
+
+    if (need_refresh) {
+      cpu_idle = 0;
+      screen_refresh();
+    } else {
+      cpu_idle = 1;
+      __asm__ __volatile__("hlt");
+      cpu_idle = 0;
+    }
   }
 }
