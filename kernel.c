@@ -1,27 +1,57 @@
 #include "drivers.h"
-#include "svg_pixels.h"
+#include "svg_data.h"
 #include <stddef.h>
 
-// ThorVGがリンクエラーになるため、一旦スタブ（空関数）を定義してビルドを通します
-// 本来は ThorVG のライブラリ (.a や .o) をリンクする必要があります
-typedef void *Tvg_Canvas;
-typedef void *Tvg_Paint;
-typedef int Tvg_Result;
-#define TVG_RESULT_SUCCESS 0
+#define NANOSVG_IMPLEMENTATION
+#include "nanosvg/nanosvg.h"
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvg/nanosvgrast.h"
+
+#define SVG_WIDTH NOTE_TEST_SVG_WIDTH
+#define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
 
 // メモリアロケータ
 static char heap[1024 * 1024 * 4];
 static uint32_t heap_ptr = 0;
+typedef struct {
+  void *ptr;
+  size_t size;
+} alloc_entry_t;
+static alloc_entry_t allocs[1024];
+static size_t alloc_count = 0;
+void *memcpy(void *dest, const void *src, size_t n);
 void *malloc(size_t size) {
   size = (size + 7) & ~7;
   if (heap_ptr + size > sizeof(heap))
     return NULL;
   void *ptr = &heap[heap_ptr];
   heap_ptr += size;
+  if (alloc_count < (sizeof(allocs) / sizeof(allocs[0]))) {
+    allocs[alloc_count].ptr = ptr;
+    allocs[alloc_count].size = size;
+    alloc_count++;
+  } else {
+    return NULL;
+  }
   return ptr;
 }
 void free(void *ptr) {}
-void *realloc(void *ptr, size_t size) { return malloc(size); }
+void *realloc(void *ptr, size_t size) {
+  if (!ptr)
+    return malloc(size);
+  for (size_t i = 0; i < alloc_count; ++i) {
+    if (allocs[i].ptr == ptr) {
+      if (size <= allocs[i].size)
+        return ptr;
+      void *next = malloc(size);
+      if (!next)
+        return NULL;
+      memcpy(next, ptr, allocs[i].size);
+      return next;
+    }
+  }
+  return malloc(size);
+}
 void *memset(void *s, int c, size_t n) {
   unsigned char *p = s;
   while (n--)
@@ -34,6 +64,202 @@ void *memcpy(void *dest, const void *src, size_t n) {
   while (n--)
     *d++ = *s++;
   return dest;
+}
+
+size_t strlen(const char *s) {
+  size_t n = 0;
+  if (!s)
+    return 0;
+  while (s[n])
+    n++;
+  return n;
+}
+
+int strcmp(const char *a, const char *b) {
+  while (*a && (*a == *b)) {
+    a++;
+    b++;
+  }
+  return (unsigned char)*a - (unsigned char)*b;
+}
+
+int strncmp(const char *a, const char *b, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    unsigned char ca = (unsigned char)a[i];
+    unsigned char cb = (unsigned char)b[i];
+    if (ca != cb || ca == 0 || cb == 0)
+      return (int)ca - (int)cb;
+  }
+  return 0;
+}
+
+char *strncpy(char *dst, const char *src, size_t n) {
+  size_t i = 0;
+  for (; i < n && src[i]; ++i)
+    dst[i] = src[i];
+  for (; i < n; ++i)
+    dst[i] = '\0';
+  return dst;
+}
+
+char *strchr(const char *s, int c) {
+  for (; *s; ++s) {
+    if (*s == (char)c)
+      return (char *)s;
+  }
+  return c == 0 ? (char *)s : NULL;
+}
+
+char *strrchr(const char *s, int c) {
+  const char *last = NULL;
+  for (; *s; ++s) {
+    if (*s == (char)c)
+      last = s;
+  }
+  if (c == 0)
+    return (char *)s;
+  return (char *)last;
+}
+
+char *strstr(const char *haystack, const char *needle) {
+  if (!*needle)
+    return (char *)haystack;
+  for (const char *h = haystack; *h; ++h) {
+    const char *h2 = h;
+    const char *n = needle;
+    while (*h2 && *n && (*h2 == *n)) {
+      h2++;
+      n++;
+    }
+    if (!*n)
+      return (char *)h;
+  }
+  return NULL;
+}
+
+long strtol(const char *nptr, char **endptr, int base) {
+  (void)base;
+  const char *s = nptr;
+  while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' || *s == '\f' ||
+         *s == '\v') {
+    s++;
+  }
+  int sign = 1;
+  if (*s == '-') {
+    sign = -1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+
+  long val = 0;
+  while (*s >= '0' && *s <= '9') {
+    val = val * 10 + (*s - '0');
+    s++;
+  }
+  if (endptr)
+    *endptr = (char *)s;
+  return val * sign;
+}
+
+double fabs(double x) { return x < 0.0 ? -x : x; }
+float fabsf(float x) { return x < 0.0f ? -x : x; }
+
+double sqrt(double x) {
+  if (x <= 0.0)
+    return 0.0;
+  double r = x;
+  for (int i = 0; i < 16; ++i)
+    r = 0.5 * (r + x / r);
+  return r;
+}
+
+float sqrtf(float x) {
+  if (x <= 0.0f)
+    return 0.0f;
+  float r = x;
+  for (int i = 0; i < 12; ++i)
+    r = 0.5f * (r + x / r);
+  return r;
+}
+
+double pow(double base, double exp) {
+  long e = (long)exp;
+  if ((double)e != exp)
+    return 0.0;
+  if (e == 0)
+    return 1.0;
+  int neg = 0;
+  if (e < 0) {
+    neg = 1;
+    e = -e;
+  }
+  double result = 1.0;
+  double b = base;
+  while (e) {
+    if (e & 1)
+      result *= b;
+    b *= b;
+    e >>= 1;
+  }
+  return neg ? 1.0 / result : result;
+}
+
+static void draw_svg_layer(layer_t *layer) {
+  layer_fill(layer, 0xFFFBF8FF);
+
+  char *svg_copy = (char *)malloc(note_test_svg_len + 1);
+  if (!svg_copy)
+    return;
+  memcpy(svg_copy, note_test_svg, note_test_svg_len);
+  svg_copy[note_test_svg_len] = '\0';
+
+  NSVGimage *image = nsvgParse(svg_copy, "px", 96.0f);
+  if (!image)
+    return;
+
+  NSVGrasterizer *rast = nsvgCreateRasterizer();
+  if (!rast)
+    return;
+
+  unsigned char *rgba =
+      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
+  if (!rgba)
+    return;
+
+  float scale_x =
+      image->width > 0.0f ? (float)layer->width / image->width : 1.0f;
+  float scale_y =
+      image->height > 0.0f ? (float)layer->height / image->height : 1.0f;
+  float scale = scale_x < scale_y ? scale_x : scale_y;
+  float tx = ((float)layer->width - image->width * scale) * 0.5f;
+  float ty = ((float)layer->height - image->height * scale) * 0.5f;
+
+  nsvgRasterize(rast, image, tx, ty, scale, rgba, layer->width, layer->height,
+                layer->width * 4);
+
+  const uint32_t bg = 0xFFFBF8FF;
+  for (int y = 0; y < layer->height; ++y) {
+    for (int x = 0; x < layer->width; ++x) {
+      size_t idx = (size_t)(y * layer->width + x) * 4;
+      uint8_t r = rgba[idx + 0];
+      uint8_t g = rgba[idx + 1];
+      uint8_t b = rgba[idx + 2];
+      uint8_t a = rgba[idx + 3];
+
+      uint8_t bg_r = (bg >> 16) & 0xFF;
+      uint8_t bg_g = (bg >> 8) & 0xFF;
+      uint8_t bg_b = bg & 0xFF;
+
+      uint8_t out_r = (uint8_t)((r * a + bg_r * (255 - a)) / 255);
+      uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
+      uint8_t out_b = (uint8_t)((b * a + bg_b * (255 - a)) / 255);
+
+      layer->buffer[y * layer->width + x] =
+          (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) |
+          (uint32_t)out_b;
+    }
+  }
 }
 
 // タイマー設定 (0.1秒点滅用)
@@ -82,7 +308,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
   svg_layer.active = 1;
-  memcpy(svg_layer.buffer, svg_pixels, sizeof(svg_pixels));
+  draw_svg_layer(&svg_layer);
   register_layer(&svg_layer);
 
   // 3. 点滅ボックス (左下)
