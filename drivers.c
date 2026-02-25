@@ -2,6 +2,7 @@
 #include "font8x8_basic.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 // ==========================================
 // グラフィックス・バックバッファ
@@ -12,8 +13,12 @@ static uint32_t g_vram_width = 0;
 static uint32_t g_vram_height = 0;
 static uint32_t g_vram_pitch = 0;
 
-// バックバッファ (1280x720 32bpp = 約3.6MB)
-static uint32_t g_backbuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+// バックバッファ (トリプルバッファ)
+static uint32_t g_backbuffers[3][SCREEN_WIDTH * SCREEN_HEIGHT];
+static int g_back_index = 0;
+// 静的レイヤー合成用バッファ
+static uint32_t g_staticbuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
+static int g_static_dirty = 1;
 
 // レイヤー管理 (将来的に動的化も可能)
 #define MAX_LAYERS 8
@@ -34,37 +39,58 @@ void register_layer(layer_t *layer) {
   }
 }
 
+void screen_mark_static_dirty() { g_static_dirty = 1; }
+
+static void compose_layer(uint32_t *dest, const layer_t *l) {
+  if (!l->active || !l->buffer)
+    return;
+
+  for (int y = 0; y < l->height; y++) {
+    int screen_y = l->y + y;
+    if (screen_y < 0 || screen_y >= (int)g_vram_height)
+      continue;
+
+    for (int x = 0; x < l->width; x++) {
+      int screen_x = l->x + x;
+      if (screen_x < 0 || screen_x >= (int)g_vram_width)
+        continue;
+
+      uint32_t color = l->buffer[y * l->width + x];
+      if (l->transparent != 0 && color == l->transparent)
+        continue;
+
+      dest[screen_y * SCREEN_WIDTH + screen_x] = color;
+    }
+  }
+}
+
 // 全レイヤーをバックバッファに合成し、VRAMに転送
 void screen_refresh() {
   if (!g_vram)
     return;
 
-  // 1. バックバッファを毎フレームクリア（active=0レイヤーの残像防止）
-  for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-    g_backbuffer[i] = 0xFF000000;
+  if (g_static_dirty) {
+    for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+      g_staticbuffer[i] = 0xFF000000;
+
+    for (int i = 0; i < g_num_layers; i++) {
+      layer_t *l = g_layers[i];
+      if (l->dynamic)
+        continue;
+      compose_layer(g_staticbuffer, l);
+    }
+    g_static_dirty = 0;
+  }
+
+  uint32_t *g_backbuffer = g_backbuffers[g_back_index];
+  memcpy(g_backbuffer, g_staticbuffer,
+         sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
 
   for (int i = 0; i < g_num_layers; i++) {
     layer_t *l = g_layers[i];
-    if (!l->active || !l->buffer)
+    if (!l->dynamic)
       continue;
-
-    for (int y = 0; y < l->height; y++) {
-      int screen_y = l->y + y;
-      if (screen_y < 0 || screen_y >= (int)g_vram_height)
-        continue;
-
-      for (int x = 0; x < l->width; x++) {
-        int screen_x = l->x + x;
-        if (screen_x < 0 || screen_x >= (int)g_vram_width)
-          continue;
-
-        uint32_t color = l->buffer[y * l->width + x];
-        if (l->transparent != 0 && color == l->transparent)
-          continue;
-
-        g_backbuffer[screen_y * SCREEN_WIDTH + screen_x] = color;
-      }
-    }
+    compose_layer(g_backbuffer, l);
   }
 
   // 最後にマウスを合成（白枠・黒背景の正方形）
@@ -96,6 +122,8 @@ void screen_refresh() {
       dest[x] = src[x];
     }
   }
+
+  g_back_index = (g_back_index + 1) % 3;
 }
 
 void layer_fill(layer_t *layer, uint32_t color) {
@@ -351,7 +379,8 @@ void irq_handler(struct regs *r) {
 void exception_handler(struct regs *r) {
   // 例外発生時は画面を白くするなどの簡易処理
   for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-    g_backbuffer[i] = 0xFFFFFFFF;
+    g_staticbuffer[i] = 0xFFFFFFFF;
+  g_static_dirty = 0;
   screen_refresh();
   while (1)
     ;

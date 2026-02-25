@@ -15,6 +15,7 @@ typedef struct {
   int width, height;
   uint32_t transparent; // 透明色（0の場合は透明なし）
   int active;
+  int dynamic; // 1: 毎フレーム更新対象
 } layer_t;
 
 // --- IO (io.h) ---
@@ -62,6 +63,7 @@ void enable_interrupts();
 void set_framebuffer_info(uint32_t *fb, uint32_t width, uint32_t height,
                           uint32_t pitch);
 void screen_refresh(); // バッファを合成してVRAMに反映
+void screen_mark_static_dirty(); // 静的レイヤーの再合成要求
 void layer_fill(layer_t *layer, uint32_t color);
 void layer_draw_char(layer_t *layer, int x, int y, char c, uint32_t color,
                      uint32_t bg_color);

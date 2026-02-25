@@ -17,6 +17,18 @@
 
 #define SVG_WIDTH NOTE_TEST_SVG_WIDTH
 #define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
+#define BASE_BG_COLOR 0xFF8B0000u
+
+static NSVGimage *g_svg_image = NULL;
+static NSVGrasterizer *g_svg_rast = NULL;
+static unsigned char *g_svg_rgba = NULL;
+static NSVGshape **g_svg_shapes = NULL;
+static float *g_svg_opacity = NULL;
+static int g_svg_shape_count = 0;
+static float g_svg_scale = 1.0f;
+static float g_svg_tx = 0.0f;
+static float g_svg_ty = 0.0f;
+static int g_svg_ready = 0;
 
 // メモリアロケータ
 static char heap[1024 * 1024 * 4];
@@ -460,47 +472,87 @@ int sscanf(const char *str, const char *format, ...) {
   return matched;
 }
 
-static void draw_svg_layer(layer_t *layer) {
-  layer_fill(layer, 0xFFFBF8FF);
+static int svg_init(layer_t *layer) {
+  if (g_svg_ready)
+    return 1;
+
+  layer_fill(layer, BASE_BG_COLOR);
 
   char *svg_copy = (char *)malloc(note_test_svg_len + 1);
   if (!svg_copy)
-    return;
+    return 0;
   memcpy(svg_copy, note_test_svg, note_test_svg_len);
   svg_copy[note_test_svg_len] = '\0';
 
-  NSVGimage *image = nsvgParse(svg_copy, "px", 96.0f);
-  if (!image)
-    return;
+  g_svg_image = nsvgParse(svg_copy, "px", 96.0f);
+  if (!g_svg_image)
+    return 0;
 
-  NSVGrasterizer *rast = nsvgCreateRasterizer();
-  if (!rast)
-    return;
+  g_svg_rast = nsvgCreateRasterizer();
+  if (!g_svg_rast)
+    return 0;
 
-  unsigned char *rgba =
-      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-  if (!rgba)
-    return;
+  g_svg_rgba = (unsigned char *)malloc(
+      (size_t)layer->width * (size_t)layer->height * 4);
+  if (!g_svg_rgba)
+    return 0;
 
   float scale_x =
-      image->width > 0.0f ? (float)layer->width / image->width : 1.0f;
+      g_svg_image->width > 0.0f ? (float)layer->width / g_svg_image->width
+                                : 1.0f;
   float scale_y =
-      image->height > 0.0f ? (float)layer->height / image->height : 1.0f;
-  float scale = scale_x < scale_y ? scale_x : scale_y;
-  float tx = 0.0f;
-  float ty = 0.0f;
+      g_svg_image->height > 0.0f ? (float)layer->height / g_svg_image->height
+                                 : 1.0f;
+  g_svg_scale = scale_x < scale_y ? scale_x : scale_y;
+  g_svg_tx = 0.0f;
+  g_svg_ty = 0.0f;
 
-  nsvgRasterize(rast, image, tx, ty, scale, rgba, layer->width, layer->height,
-                layer->width * 4);
+  int count = 0;
+  for (NSVGshape *s = g_svg_image->shapes; s; s = s->next)
+    count++;
 
-  const uint32_t bg = 0xFFFBF8FF;
+  if (count > 0) {
+    g_svg_shapes = (NSVGshape **)malloc(sizeof(NSVGshape *) * (size_t)count);
+    g_svg_opacity = (float *)malloc(sizeof(float) * (size_t)count);
+    if (g_svg_shapes && g_svg_opacity) {
+      int i = 0;
+      for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
+        g_svg_shapes[i] = s;
+        g_svg_opacity[i] = s->opacity;
+        i++;
+      }
+      g_svg_shape_count = count;
+    }
+  }
+
+  g_svg_ready = 1;
+  return 1;
+}
+
+static void svg_apply_hover(int hover_index) {
+  for (int i = 0; i < g_svg_shape_count; ++i) {
+    g_svg_shapes[i]->opacity = g_svg_opacity[i];
+  }
+  if (hover_index >= 0 && hover_index < g_svg_shape_count) {
+    g_svg_shapes[hover_index]->opacity = g_svg_opacity[hover_index] * 0.5f;
+  }
+}
+
+static void svg_render(layer_t *layer) {
+  if (!g_svg_ready)
+    return;
+
+  nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx, g_svg_ty, g_svg_scale,
+                g_svg_rgba, layer->width, layer->height, layer->width * 4);
+
+  const uint32_t bg = BASE_BG_COLOR;
   for (int y = 0; y < layer->height; ++y) {
     for (int x = 0; x < layer->width; ++x) {
       size_t idx = (size_t)(y * layer->width + x) * 4;
-      uint8_t r = rgba[idx + 0];
-      uint8_t g = rgba[idx + 1];
-      uint8_t b = rgba[idx + 2];
-      uint8_t a = rgba[idx + 3];
+      uint8_t r = g_svg_rgba[idx + 0];
+      uint8_t g = g_svg_rgba[idx + 1];
+      uint8_t b = g_svg_rgba[idx + 2];
+      uint8_t a = g_svg_rgba[idx + 3];
 
       uint8_t bg_r = (bg >> 16) & 0xFF;
       uint8_t bg_g = (bg >> 8) & 0xFF;
@@ -515,6 +567,33 @@ static void draw_svg_layer(layer_t *layer) {
           (uint32_t)out_b;
     }
   }
+}
+
+static int svg_pick_shape(layer_t *layer, int screen_x, int screen_y) {
+  if (!g_svg_ready)
+    return -1;
+  if (screen_x < layer->x || screen_y < layer->y ||
+      screen_x >= layer->x + layer->width ||
+      screen_y >= layer->y + layer->height) {
+    return -1;
+  }
+
+  float lx = (float)(screen_x - layer->x);
+  float ly = (float)(screen_y - layer->y);
+  float ix = (lx - g_svg_tx) / g_svg_scale;
+  float iy = (ly - g_svg_ty) / g_svg_scale;
+
+  int hit = -1;
+  for (int i = 0; i < g_svg_shape_count; ++i) {
+    NSVGshape *s = g_svg_shapes[i];
+    if (!s)
+      continue;
+    if (ix >= s->bounds[0] && ix <= s->bounds[2] && iy >= s->bounds[1] &&
+        iy <= s->bounds[3]) {
+      hit = i;
+    }
+  }
+  return hit;
 }
 
 // タイマー設定 (0.1秒点滅用)
@@ -534,8 +613,11 @@ static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 
 extern void register_layer(layer_t *layer);
+extern void screen_mark_static_dirty();
 extern volatile char keybuf[];
 extern volatile int keybuf_len;
+extern volatile int32_t mouse_x;
+extern volatile int32_t mouse_y;
 
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
   set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
@@ -551,7 +633,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   desktop.height = SCREEN_HEIGHT;
   desktop.transparent = 0;
   desktop.active = 1;
-  layer_fill(&desktop, 0xFFFF0000);
+  desktop.dynamic = 0;
+  layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
   // 2. SVG表示エリア (左上)
@@ -563,7 +646,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
   svg_layer.active = 1;
-  draw_svg_layer(&svg_layer);
+  svg_layer.dynamic = 0;
+  if (svg_init(&svg_layer)) {
+    svg_apply_hover(-1);
+    svg_render(&svg_layer);
+    screen_mark_static_dirty();
+  }
   register_layer(&svg_layer);
 
   // 3. 点滅ボックス (左下)
@@ -575,6 +663,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   blink_layer.height = 50;
   blink_layer.transparent = 0;
   blink_layer.active = 1;
+  blink_layer.dynamic = 1;
   layer_fill(&blink_layer, 0xFF0000FF); // 青
   register_layer(&blink_layer);
 
@@ -589,12 +678,29 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   uint32_t last_blink_tick = 0;
   int blink_state = 1;
 
+  int last_hover = -2;
+  int last_mouse_x = -1;
+  int last_mouse_y = -1;
   while (1) {
     // 0.1秒(10 ticks)ごとに点滅
     if (timer_ticks - last_blink_tick >= 10) {
       blink_state = !blink_state;
       blink_layer.active = blink_state;
       last_blink_tick = timer_ticks;
+    }
+
+    int mx = mouse_x;
+    int my = mouse_y;
+    if (mx != last_mouse_x || my != last_mouse_y) {
+      int hover = svg_pick_shape(&svg_layer, mx, my);
+      if (hover != last_hover) {
+        svg_apply_hover(hover);
+        svg_render(&svg_layer);
+        screen_mark_static_dirty();
+        last_hover = hover;
+      }
+      last_mouse_x = mx;
+      last_mouse_y = my;
     }
     screen_refresh();
   }
