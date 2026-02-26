@@ -34,6 +34,14 @@ typedef struct {
   int h;
 } svg_shape_cache_t;
 
+// multiboot_mod_list 構造体定義 (multiboot仕様)
+typedef struct multiboot_mod_list {
+  uint32_t mod_start;
+  uint32_t mod_end;
+  uint32_t string;
+  uint32_t reserved;
+} multiboot_mod_list;
+
 static NSVGimage *g_svg_image = NULL;
 static NSVGrasterizer *g_svg_rast = NULL;
 static unsigned char *g_svg_rgba = NULL;
@@ -968,6 +976,13 @@ static void hud_font_init(void *font_data) {
     return;
   }
 
+  // 1024単位のem正規化座標でSVGを生成
+  const int EM = 1024;
+  float scale = stbtt_ScaleForMappingEmToPixels(&g_font_info, (float)EM);
+  int ascent, descent, lineGap;
+  stbtt_GetFontVMetrics(&g_font_info, &ascent, &descent, &lineGap);
+  float baseline = (float)ascent * scale;
+
   const char *chars = "0123456789CPU MEM/KB%";
   while (*chars) {
     unsigned char c = (unsigned char)*chars++;
@@ -978,51 +993,57 @@ static void hud_font_init(void *font_data) {
 
     stbtt_vertex *vertices;
     int num_verts = stbtt_GetGlyphShape(&g_font_info, glyph, &vertices);
-    
+    if (num_verts <= 0) continue;
+
     char svg_buf[4096];
     char *p = svg_buf;
-    p = hud_append_str(p, "<svg><path d=\"");
-    
+    // SVGヘッダ(viewBox指定: 0 0 1024 1024)
+    p = hud_append_str(p, "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\"><path d=\"");
+
     for (int i = 0; i < num_verts; ++i) {
       stbtt_vertex *v = &vertices[i];
+      float x = v->x * scale;
+      float y = EM - (v->y * scale); // Y反転し下基準
+      float cx = v->cx * scale;
+      float cy = EM - (v->cy * scale);
+      float cx1 = v->cx1 * scale;
+      float cy1 = EM - (v->cy1 * scale);
       if (v->type == STBTT_vmove) {
         p = hud_append_str(p, "M");
-        p = hud_append_int(p, v->x);
+        p = hud_append_int(p, (int)x);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->y); // Flip Y
+        p = hud_append_int(p, (int)y);
       } else if (v->type == STBTT_vline) {
         p = hud_append_str(p, "L");
-        p = hud_append_int(p, v->x);
+        p = hud_append_int(p, (int)x);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->y);
+        p = hud_append_int(p, (int)y);
       } else if (v->type == STBTT_vcurve) {
         p = hud_append_str(p, "Q");
-        p = hud_append_int(p, v->cx);
+        p = hud_append_int(p, (int)cx);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->cy);
+        p = hud_append_int(p, (int)cy);
         p = hud_append_str(p, " ");
-        p = hud_append_int(p, v->x);
+        p = hud_append_int(p, (int)x);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->y);
+        p = hud_append_int(p, (int)y);
       } else if (v->type == STBTT_vcubic) {
         p = hud_append_str(p, "C");
-        p = hud_append_int(p, v->cx);
+        p = hud_append_int(p, (int)cx);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->cy);
+        p = hud_append_int(p, (int)cy);
         p = hud_append_str(p, " ");
-        p = hud_append_int(p, v->cx1); // Note: cx1 is specialized field? No, stbtt_vertex has cx,cy,cx1,cy1? 
-        // stb_truetype.h defines vertex as x,y,cx,cy,cx1,cy1,type.
+        p = hud_append_int(p, (int)cx1);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->cy1);
+        p = hud_append_int(p, (int)cy1);
         p = hud_append_str(p, " ");
-        p = hud_append_int(p, v->x);
+        p = hud_append_int(p, (int)x);
         p = hud_append_str(p, ",");
-        p = hud_append_int(p, -v->y);
+        p = hud_append_int(p, (int)y);
       }
     }
     stbtt_FreeShape(&g_font_info, vertices);
-
-    p = hud_append_str(p, "\" fill=\"#FFFFFF\" /></svg>");
+    p = hud_append_str(p, "\" fill=\"#FFFFFF\"/></svg>");
     *p = '\0';
     g_hud_font_images[c] = nsvgParse(svg_buf, "px", 96.0f);
   }
@@ -1034,17 +1055,12 @@ static void hud_draw_svg_string(layer_t *layer, int x, int y, const char *str,
   while (*str) {
     unsigned char c = (unsigned char)*str;
     NSVGimage *img = g_hud_font_images[c];
-    
     int adv, lsb;
     stbtt_GetCodepointHMetrics(&g_font_info, c, &adv, &lsb);
-    
     if (img) {
       memset(g_char_rgba_buf, 0, 24 * 24 * 4);
-      // TTF coords are large (units per em ~1000-2048). Scale down significantly.
-      // And we need to translate because we flipped Y.
-      // 0.015f scale is approx 1000 -> 15px.
-      nsvgRasterize(g_svg_rast, img, 5, 20, 0.012f, g_char_rgba_buf, 24, 24, 24 * 4);
-
+      float svg_scale = (24.0f / 1024.0f) * scale; // 1024em→24px
+      nsvgRasterize(g_svg_rast, img, 0, 0, svg_scale, g_char_rgba_buf, 24, 24, 24 * 4);
       for (int cy = 0; cy < 24; cy++) {
         for (int cx = 0; cx < 24; cx++) {
           int lx = cur_x + cx;
@@ -1055,12 +1071,10 @@ static void hud_draw_svg_string(layer_t *layer, int x, int y, const char *str,
               uint8_t r = g_char_rgba_buf[(cy * 24 + cx) * 4 + 0];
               uint8_t g = g_char_rgba_buf[(cy * 24 + cx) * 4 + 1];
               uint8_t b = g_char_rgba_buf[(cy * 24 + cx) * 4 + 2];
-
               uint32_t bg = layer->buffer[ly * layer->width + lx];
               uint8_t br = (bg >> 16) & 0xFF;
               uint8_t bg_g = (bg >> 8) & 0xFF;
               uint8_t bb = bg & 0xFF;
-
               uint8_t out_r = (uint8_t)((r * a + br * (255 - a)) / 255);
               uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
               uint8_t out_b = (uint8_t)((b * a + bb * (255 - a)) / 255);
@@ -1072,7 +1086,7 @@ static void hud_draw_svg_string(layer_t *layer, int x, int y, const char *str,
         }
       }
     }
-    cur_x += (int)((float)adv * 0.012f);
+    cur_x += (int)(24.0f * scale); // 24px単位で進める
     str++;
   }
 }
