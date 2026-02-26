@@ -10,6 +10,25 @@
 #include "svg_data.h"
 #include <stddef.h>
 
+static void *nsvg_alloc(size_t size) {
+  return malloc(size);
+}
+
+static void *nsvg_realloc(void *ptr, size_t size) {
+  void *new_ptr = realloc(ptr, size);
+  if (!new_ptr)
+    return ptr;
+  return new_ptr;
+}
+
+static void nsvg_free(void *ptr) {
+  free(ptr);
+}
+
+#define NSVG_MALLOC nsvg_alloc
+#define NSVG_REALLOC nsvg_realloc
+#define NSVG_FREE nsvg_free
+
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
@@ -669,11 +688,6 @@ static void svg_render_full(layer_t *layer) {
 static int svg_init(layer_t *layer) {
   if (g_svg_ready)
     return 1;
-
-  // 一旦クラッシュ回避のため SVG パースをスキップ
-  snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Skipped");
-  hud_error_active = 1;
-  return 0;
 
   const uint32_t start_ticks = timer_ticks;
   const uint32_t timeout_ticks = 500; // 5秒 (timer_phase(100) 前提)
