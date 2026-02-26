@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>TTF to C-Struct Path Extractor (Fixed)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #eee; padding: 20px; }
+        #upload-box { border: 3px dashed #444; padding: 40px; text-align: center; cursor: pointer; background: #252525; border-radius: 10px; transition: 0.3s; }
+        #upload-box:hover { border-color: #0ff; background: #333; }
+        #preview-container { display: flex; flex-wrap: wrap; gap: 5px; margin: 20px 0; max-height: 250px; overflow-y: auto; background: #000; padding: 10px; border: 1px solid #333; }
+        .glyph-item { width: 35px; height: 35px; border: 1px solid #444; display: flex; align-items: center; justify-content: center; background: #fff; color: #000; font-size: 18px; border-radius: 3px; }
+        textarea { width: 100%; height: 450px; background: #0a0a0a; color: #00ff41; border: 1px solid #333; padding: 15px; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.4; border-radius: 5px; }
+        .status { color: #0ff; font-weight: bold; margin: 10px 0; font-family: monospace; }
+        h2 { border-left: 5px solid #0ff; padding-left: 15px; }
+    </style>
+</head>
+<body>
+
+<h2>TTF to C-Struct Path Extractor</h2>
+<div id="upload-box">TTFファイルをドロップまたはクリックで選択</div>
+<input type="file" id="file-input" style="display:none" accept=".ttf">
+
+<div class="status" id="status">Ready.</div>
+<div id="preview-container"></div>
+<textarea id="output" readonly placeholder="ここにC言語の構造体が出力されます..."></textarea>
+
+<script>
+const fileInput = document.getElementById('file-input');
+const uploadBox = document.getElementById('upload-box');
+const output = document.getElementById('output');
+const status = document.getElementById('status');
+const preview = document.getElementById('preview-container');
+
+uploadBox.onclick = () => fileInput.click();
+fileInput.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => processTTF(ev.target.result, file.name);
+    reader.readAsArrayBuffer(file);
+};
+
+function processTTF(buffer, filename) {
+    const v = new DataView(buffer);
+    const tables = {};
+    const numTables = v.getUint16(4);
+    
+    for(let i=0; i<numTables; i++) {
+        let o = 12 + (i*16);
+        let tag = String.fromCharCode(v.getUint8(o),v.getUint8(o+1),v.getUint8(o+2),v.getUint8(o+3));
+        tables[tag] = { off: v.getUint32(o+8), len: v.getUint32(o+12) };
+    }
+
+    // headテーブルからインデックス形式取得
+    const indexToLocFormat = v.getInt16(tables['head'].off + 50);
+    const unitsPerEm = v.getUint16(tables['head'].off + 18);
+
+    // cmap解析 (Format 4)
+    const cmapOff = tables['cmap'].off;
+    const numSubtables = v.getUint16(cmapOff + 2);
+    let subtableOff = 0;
+    for(let i=0; i<numSubtables; i++) {
+        const platformID = v.getUint16(cmapOff + 4 + i*8);
+        const encodingID = v.getUint16(cmapOff + 4 + i*8 + 2);
+        if(platformID === 3 && encodingID === 1) { // Windows Unicode
+            subtableOff = cmapOff + v.getUint32(cmapOff + 4 + i*8 + 4);
+            break;
+        }
+    }
+
+    const charMap = {};
+    if(subtableOff && v.getUint16(subtableOff) === 4) {
+        const segCount = v.getUint16(subtableOff + 6) / 2;
+        const endCodes = [], startCodes = [], idDeltas = [], idRangeOffs = [];
+        for(let i=0; i<segCount; i++) endCodes.push(v.getUint16(subtableOff + 14 + i*2));
+        for(let i=0; i<segCount; i++) startCodes.push(v.getUint16(subtableOff + 16 + segCount*2 + i*2));
+        for(let i=0; i<segCount; i++) idDeltas.push(v.getUint16(subtableOff + 16 + segCount*4 + i*2));
+        const idRangeOffsStart = subtableOff + 16 + segCount*6;
+        for(let i=0; i<segCount; i++) idRangeOffs.push(v.getUint16(idRangeOffsStart + i*2));
+
+        for(let i=0; i<segCount; i++) {
+            for(let code=startCodes[i]; code<=endCodes[i] && code < 0xFFFF; code++) {
+                let gid = 0;
+                if (idRangeOffs[i] === 0) {
+                    gid = (code + idDeltas[i]) & 0xFFFF;
+                } else {
+                    const addr = idRangeOffsStart + i*2 + idRangeOffs[i] + (code - startCodes[i]) * 2;
+                    gid = v.getUint16(addr);
+                    if (gid !== 0) gid = (gid + idDeltas[i]) & 0xFFFF;
+                }
+                if(gid > 0) charMap[code] = gid;
+            }
+        }
+    }
+
+    const locaOff = tables['loca'].off;
+    const glyfOff = tables['glyf'].off;
+
+    let cCode = `/* Auto-generated from ${filename} */\n`;
+    cCode += `#include <stdint.h>\n\n`;
+    cCode += `typedef struct { uint16_t code; const char* svg; } Glyph;\n\n`;
+    cCode += `const Glyph font_glyphs[] = {\n`;
+
+    preview.innerHTML = "";
+    let count = 0;
+
+    Object.keys(charMap).sort((a,b)=>a-b).forEach(code => {
+        const gid = charMap[code];
+        const start = indexToLocFormat === 0 ? v.getUint16(locaOff + gid*2) * 2 : v.getUint32(locaOff + gid*4);
+        const end = indexToLocFormat === 0 ? v.getUint16(locaOff + (gid+1)*2) * 2 : v.getUint32(locaOff + (gid+1)*4);
+        
+        if (start !== end) {
+            const glyphPath = parseGlyph(v, glyfOff + start, unitsPerEm);
+            if (glyphPath) {
+                cCode += `    { 0x${parseInt(code).toString(16).toUpperCase()}, "${glyphPath}" },\n`;
+                const div = document.createElement('div');
+                div.className = 'glyph-item';
+                div.innerText = String.fromCharCode(code);
+                preview.appendChild(div);
+                count++;
+            }
+        }
+    });
+
+    cCode += `    { 0, 0 }\n};\n`;
+    output.value = cCode;
+    status.innerText = `解析成功: ${count} 文字のパスを抽出しました (EM Scale: ${unitsPerEm})`;
+}
+
+// 簡易的なglyf解析 (輪郭抽出)
+function parseGlyph(v, off, em) {
+    const numContours = v.getInt16(off);
+    if (numContours <= 0) return null; // 複合グリフはスキップ（簡易版）
+
+    let ptr = off + 10;
+    const endPts = [];
+    for(let i=0; i<numContours; i++) {
+        endPts.push(v.getUint16(ptr));
+        ptr += 2;
+    }
+    const instrLen = v.getUint16(ptr);
+    ptr += 2 + instrLen;
+
+    const numPoints = endPts[numContours - 1] + 1;
+    const flags = [];
+    for(let i=0; i<numPoints; i++) {
+        const flag = v.getUint8(ptr++);
+        flags.push(flag);
+        if (flag & 8) { // Repeat flag
+            const rep = v.getUint8(ptr++);
+            for(let j=0; j<rep; j++) flags.push(flag), i++;
+        }
+    }
+
+    const coords = [];
+    let x = 0, y = 0;
+    // X-Coordinates
+    for(let i=0; i<numPoints; i++) {
+        const f = flags[i];
+        if (f & 2) { // Short
+            const dx = v.getUint8(ptr++);
+            x += (f & 16) ? dx : -dx;
+        } else if (!(f & 16)) {
+            x += v.getInt16(ptr);
+            ptr += 2;
+        }
+        coords.push({ x, y: 0, on: !!(f & 1) });
+    }
+    // Y-Coordinates
+    for(let i=0; i<numPoints; i++) {
+        const f = flags[i];
+        if (f & 4) { // Short
+            const dy = v.getUint8(ptr++);
+            y += (f & 32) ? dy : -dy;
+        } else if (!(f & 32)) {
+            y += v.getInt16(ptr);
+            ptr += 2;
+        }
+        coords[i].y = y;
+    }
+
+    // SVGパスへ変換 (座標は 1000x1000 基準に正規化し、Y軸を反転)
+    let path = "";
+    let startIdx = 0;
+    const scale = 1000 / em;
+
+    for(let i=0; i<numContours; i++) {
+        const endIdx = endPts[i];
+        for(let j=startIdx; j<=endIdx; j++) {
+            const p = coords[j];
+            const px = Math.round(p.x * scale);
+            const py = Math.round(1000 - (p.y * scale)); // Y軸反転
+            path += (j === startIdx ? "M" : "L") + `${px} ${py} `;
+        }
+        path += "Z ";
+        startIdx = endIdx + 1;
+    }
+    return path.trim();
+}
+</script>
+</body>
+</html>

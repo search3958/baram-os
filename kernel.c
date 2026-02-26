@@ -9,6 +9,7 @@
 #include "drivers.h"
 #include "svg_data.h"
 #include <stddef.h>
+#include "fonts.h"
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
@@ -967,6 +968,16 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
 }
 
+// キー入力バッファ
+#define KEYBUF_MAX 256
+static char keybuf_str[KEYBUF_MAX] = "";
+
+void draw_test_and_keys(layer_t *layer) {
+  layer_fill(layer, 0xFFFFFFFF); // 白背景
+  layer_draw_string(layer, 20, 20, "テスト", 0xFF000000, 0xFFFFFFFF);
+  layer_draw_string(layer, 20, 60, keybuf_str, 0xFF000000, 0xFFFFFFFF);
+}
+
 extern void register_layer(layer_t *layer);
 extern void screen_mark_static_dirty();
 extern volatile char keybuf[];
@@ -1058,6 +1069,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_update(&hud_layer, 0, (unsigned int)(heap_ptr / 1024),
              (unsigned int)(sizeof(heap) / 1024));
   register_layer(&hud_layer);
+
+  // レイヤー初期化後にテスト文字列を描画
+  draw_test_and_keys(&hud_layer);
 
   idt_install();
   irq_install();
@@ -1188,6 +1202,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           have_draw = 0;
         }
       }
+    }
+
+    // キー入力監視
+    if (keybuf_len > 0) {
+      int len = keybuf_len;
+      if (len > KEYBUF_MAX - 1) len = KEYBUF_MAX - 1;
+      memcpy(keybuf_str, keybuf, len);
+      keybuf_str[len] = '\0';
+      draw_test_and_keys(&hud_layer);
+      need_refresh = 1;
+      keybuf_len = 0;
     }
 
     if (timer_ticks - last_stat_tick >= 100) {
