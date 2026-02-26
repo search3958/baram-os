@@ -7,4 +7,5 @@ mkdir -p isodir/boot/grub
 cp kernel.bin isodir/boot/
 cp grub.cfg isodir/boot/grub/
 i686-elf-grub-mkrescue -o os.iso isodir
-qemu-system-i386 -cdrom os.iso -vga std -m 512 -display cocoa
+qemu-system-i386 -cdrom os.iso -vga std -m 512 -display cocoa \
+-icount shift=auto,align=on,sleep=on
