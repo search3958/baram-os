@@ -145,7 +145,8 @@ int __fixdfsi(double d) {
   return r;
 }
 
-// long double 用の libgcc ヘルパは使わないので未定義のままでよい（参照もしていない）
+// long double 用の libgcc
+// ヘルパは使わないので未定義のままでよい（参照もしていない）
 
 // レイヤー用
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -154,18 +155,24 @@ static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 static uint32_t hud_buf[240 * 16];
 
+// 起動中の進捗表示に使うデスクトップレイヤー
+static layer_t *g_boot_status_layer = NULL;
+
+// 進捗表示関数のプロトタイプ（C89 の暗黙宣言を避ける）
+static void boot_status_update(int stage, int total_stages, const char *label);
+
 // メモリアロケータ
 #undef memcpy
 #undef memset
 #undef strncpy
 
-static char heap[1024 * 1024 * 4];
+static char heap[1024 * 1024 * 16];
 static uint32_t heap_ptr = 0;
 typedef struct {
   void *ptr;
   size_t size;
 } alloc_entry_t;
-static alloc_entry_t allocs[1024];
+static alloc_entry_t allocs[8192];
 static size_t alloc_count = 0;
 void *memcpy(void *dest, const void *src, size_t n);
 void *malloc(size_t size) {
@@ -406,6 +413,12 @@ float fmodf(float x, float y) {
 static float wrap_pi(float x) {
   const float pi = 3.14159265358979323846f;
   const float two_pi = 6.28318530717958647692f;
+
+  if (isnan((double)x))
+    return 0.0f;
+  if (x > 1e12f || x < -1e12f)
+    return 0.0f; // 極端に大きい値は大まかに 0 に（無限ループ防止）
+
   while (x > pi)
     x -= two_pi;
   while (x < -pi)
@@ -631,22 +644,27 @@ static int svg_init(layer_t *layer) {
   if (g_svg_ready)
     return 1;
 
+  boot_status_update(41, 100, "SVG: CLEAR LAYER");
   layer_fill(layer, BASE_BG_COLOR);
 
+  boot_status_update(42, 100, "SVG: COPY SOURCE");
   char *svg_copy = (char *)malloc(note_test_svg_len + 1);
   if (!svg_copy)
     return 0;
   memcpy(svg_copy, note_test_svg, note_test_svg_len);
   svg_copy[note_test_svg_len] = '\0';
 
+  boot_status_update(44, 100, "SVG: PARSE");
   g_svg_image = nsvgParse(svg_copy, "px", 96.0f);
   if (!g_svg_image)
     return 0;
 
+  boot_status_update(46, 100, "SVG: RASTERIZER");
   g_svg_rast = nsvgCreateRasterizer();
   if (!g_svg_rast)
     return 0;
 
+  boot_status_update(48, 100, "SVG: RGBA BUFFER");
   g_svg_rgba =
       (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
   if (!g_svg_rgba)
@@ -662,11 +680,13 @@ static int svg_init(layer_t *layer) {
   g_svg_tx = 0.0f;
   g_svg_ty = 0.0f;
 
+  boot_status_update(52, 100, "SVG: COUNT SHAPES");
   int count = 0;
   for (NSVGshape *s = g_svg_image->shapes; s; s = s->next)
     count++;
 
   if (count > 0) {
+    boot_status_update(54, 100, "SVG: ALLOC CACHE");
     g_svg_cache =
         (svg_shape_cache_t *)malloc(sizeof(svg_shape_cache_t) * (size_t)count);
     if (g_svg_cache) {
@@ -686,6 +706,7 @@ static int svg_init(layer_t *layer) {
   }
 
   if (g_svg_cache) {
+    boot_status_update(56, 100, "SVG: PRE-RENDER");
     for (int i = 0; i < g_svg_shape_count; ++i) {
       g_svg_cache[i].shape->flags = 0;
     }
@@ -744,10 +765,13 @@ static int svg_init(layer_t *layer) {
     }
   }
 
+  boot_status_update(60, 100, "SVG: RENDER FULL");
   svg_render_full(layer);
   memcpy(svg_base_buf, layer->buffer,
          sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
+
+  boot_status_update(65, 100, "SVG: DONE");
   return 1;
 }
 
@@ -873,8 +897,10 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
       for (int y = dst_y0; y < dst_y1; ++y) {
         uint32_t *dst = &layer->buffer[y * layer->width];
         for (int x = dst_x0; x < dst_x1; ++x) {
-          float sx = ((float)x - ((float)center_x - (float)dst_w * 0.5f)) / scale;
-          float sy = ((float)y - ((float)center_y - (float)dst_h * 0.5f)) / scale;
+          float sx =
+              ((float)x - ((float)center_x - (float)dst_w * 0.5f)) / scale;
+          float sy =
+              ((float)y - ((float)center_y - (float)dst_h * 0.5f)) / scale;
           int isx = (int)sx;
           int isy = (int)sy;
           if (isx < 0 || isy < 0 || isx >= src_w || isy >= src_h)
@@ -1042,8 +1068,8 @@ static char *append_uint(char *p, unsigned int v) {
 }
 
 // 起動中の進捗をデスクトップ左上に表示（例: STAGE 3: DESKTOP READY (50%)）
-static void boot_status_update(layer_t *desktop, int stage, int total_stages,
-                               const char *label) {
+static void boot_status_update(int stage, int total_stages, const char *label) {
+  layer_t *desktop = g_boot_status_layer;
   if (!desktop || !desktop->buffer)
     return;
 
@@ -1250,25 +1276,27 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
+  // 進捗表示で使うレイヤーを登録
+  g_boot_status_layer = &desktop;
+
   // 進捗表示: デスクトップレイヤー作成完了 (全 6 ステージ中の 3)
-  boot_status_update(&desktop, 3, 6, "DESKTOP READY");
+  boot_status_update(3, 6, "DESKTOP READY");
 
   // 2. SVG表示エリア (左上)
-  // ※現在フリーズ原因切り分けのため、一時的に SVG レイヤーの初期化をスキップする。
   layer_t svg_layer;
-  svg_layer.buffer = NULL;
+  svg_layer.buffer = svg_buf;
   svg_layer.x = 0;
   svg_layer.y = 0;
-  svg_layer.width = 0;
-  svg_layer.height = 0;
+  svg_layer.width = SVG_WIDTH;
+  svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
-  svg_layer.active = 0;
-  svg_layer.dynamic = 0;
-  // svg_init(&svg_layer);
-  // register_layer(&svg_layer);
+  svg_layer.active = 1;
+  svg_layer.dynamic = 1;
+  svg_init(&svg_layer);
+  register_layer(&svg_layer);
 
-  // 進捗表示: SVG レイヤー（現状スキップ）
-  boot_status_update(&desktop, 4, 6, "SVG (SKIPPED)");
+  // 進捗表示: SVG レイヤー初期化完了
+  boot_status_update(4, 6, "SVG READY");
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -1299,7 +1327,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   draw_test_and_keys(&hud_layer);
 
   // 進捗表示: HUD レイヤー作成完了
-  boot_status_update(&desktop, 5, 6, "HUD READY");
+  boot_status_update(5, 6, "HUD READY");
 
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
@@ -1325,7 +1353,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   screen_refresh(); // 最初の描画
 
   // 進捗表示: メインループ突入
-  boot_status_update(&desktop, 6, 6, "MAIN LOOP");
+  boot_status_update(6, 6, "MAIN LOOP");
 
   while (1) {
     int need_refresh = 0;
