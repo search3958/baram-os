@@ -8,10 +8,7 @@
 
 #include "drivers.h"
 #include "svg_data.h"
-
-// Font related headers
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "include/stb_truetype.h"
+#include <stddef.h>
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
@@ -34,14 +31,6 @@ typedef struct {
   int h;
 } svg_shape_cache_t;
 
-// multiboot_mod_list 構造体定義 (multiboot仕様)
-typedef struct multiboot_mod_list {
-  uint32_t mod_start;
-  uint32_t mod_end;
-  uint32_t string;
-  uint32_t reserved;
-} multiboot_mod_list;
-
 static NSVGimage *g_svg_image = NULL;
 static NSVGrasterizer *g_svg_rast = NULL;
 static unsigned char *g_svg_rgba = NULL;
@@ -57,14 +46,14 @@ static int g_svg_ready = 0;
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
 
-// Layers
+// レイヤー用
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 static uint32_t hud_buf[240 * 16];
 
-// Memory Allocator
+// メモリアロケータ
 static char heap[1024 * 1024 * 4];
 static uint32_t heap_ptr = 0;
 typedef struct {
@@ -73,7 +62,6 @@ typedef struct {
 } alloc_entry_t;
 static alloc_entry_t allocs[1024];
 static size_t alloc_count = 0;
-
 void *memcpy(void *dest, const void *src, size_t n);
 void *malloc(size_t size) {
   size = (size + 7) & ~7;
@@ -121,7 +109,6 @@ void *memcpy(void *dest, const void *src, size_t n) {
   return dest;
 }
 
-// LibC stubs
 size_t strlen(const char *s) {
   size_t n = 0;
   if (!s)
@@ -243,7 +230,6 @@ long long strtoll(const char *nptr, char **endptr, int base) {
   return val * sign;
 }
 
-// Math stubs
 double fabs(double x) { return x < 0.0 ? -x : x; }
 float fabsf(float x) { return x < 0.0f ? -x : x; }
 
@@ -950,147 +936,6 @@ static char *append_uint(char *p, unsigned int v) {
   return p;
 }
 
-static char *hud_append_str(char *p, const char *s) {
-  while (*s)
-    *p++ = *s++;
-  return p;
-}
-
-static char *hud_append_int(char *p, int v) {
-  if (v < 0) {
-    *p++ = '-';
-    v = -v;
-  }
-  return append_uint(p, (unsigned int)v);
-}
-
-// HUD描画用の静的バッファ
-static NSVGimage *g_hud_font_images[128] = {0};
-static unsigned char g_char_rgba_buf[24 * 24 * 4];
-static stbtt_fontinfo g_font_info;
-static unsigned char *g_font_buffer = NULL;
-
-static void hud_font_init(void *font_data) {
-  g_font_buffer = (unsigned char *)font_data;
-  if (!stbtt_InitFont(&g_font_info, g_font_buffer, stbtt_GetFontOffsetForIndex(g_font_buffer, 0))) {
-    return;
-  }
-
-  // 1024単位のem正規化座標でSVGを生成
-  const int EM = 1024;
-  float scale = stbtt_ScaleForMappingEmToPixels(&g_font_info, (float)EM);
-  int ascent, descent, lineGap;
-  stbtt_GetFontVMetrics(&g_font_info, &ascent, &descent, &lineGap);
-  float baseline = (float)ascent * scale;
-
-  const char *chars = "0123456789CPU MEM/KB%";
-  while (*chars) {
-    unsigned char c = (unsigned char)*chars++;
-    if (g_hud_font_images[c]) continue;
-
-    int glyph = stbtt_FindGlyphIndex(&g_font_info, c);
-    if (glyph == 0) continue;
-
-    stbtt_vertex *vertices;
-    int num_verts = stbtt_GetGlyphShape(&g_font_info, glyph, &vertices);
-    if (num_verts <= 0) continue;
-
-    char svg_buf[4096];
-    char *p = svg_buf;
-    // SVGヘッダ(viewBox指定: 0 0 1024 1024)
-    p = hud_append_str(p, "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\"><path d=\"");
-
-    for (int i = 0; i < num_verts; ++i) {
-      stbtt_vertex *v = &vertices[i];
-      float x = v->x * scale;
-      float y = EM - (v->y * scale); // Y反転し下基準
-      float cx = v->cx * scale;
-      float cy = EM - (v->cy * scale);
-      float cx1 = v->cx1 * scale;
-      float cy1 = EM - (v->cy1 * scale);
-      if (v->type == STBTT_vmove) {
-        p = hud_append_str(p, "M");
-        p = hud_append_int(p, (int)x);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)y);
-      } else if (v->type == STBTT_vline) {
-        p = hud_append_str(p, "L");
-        p = hud_append_int(p, (int)x);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)y);
-      } else if (v->type == STBTT_vcurve) {
-        p = hud_append_str(p, "Q");
-        p = hud_append_int(p, (int)cx);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)cy);
-        p = hud_append_str(p, " ");
-        p = hud_append_int(p, (int)x);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)y);
-      } else if (v->type == STBTT_vcubic) {
-        p = hud_append_str(p, "C");
-        p = hud_append_int(p, (int)cx);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)cy);
-        p = hud_append_str(p, " ");
-        p = hud_append_int(p, (int)cx1);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)cy1);
-        p = hud_append_str(p, " ");
-        p = hud_append_int(p, (int)x);
-        p = hud_append_str(p, ",");
-        p = hud_append_int(p, (int)y);
-      }
-    }
-    stbtt_FreeShape(&g_font_info, vertices);
-    p = hud_append_str(p, "\" fill=\"#FFFFFF\"/></svg>");
-    *p = '\0';
-    g_hud_font_images[c] = nsvgParse(svg_buf, "px", 96.0f);
-  }
-}
-
-static void hud_draw_svg_string(layer_t *layer, int x, int y, const char *str,
-                                float scale, uint32_t color) {
-  int cur_x = x;
-  while (*str) {
-    unsigned char c = (unsigned char)*str;
-    NSVGimage *img = g_hud_font_images[c];
-    int adv, lsb;
-    stbtt_GetCodepointHMetrics(&g_font_info, c, &adv, &lsb);
-    if (img) {
-      memset(g_char_rgba_buf, 0, 24 * 24 * 4);
-      float svg_scale = (24.0f / 1024.0f) * scale; // 1024em→24px
-      nsvgRasterize(g_svg_rast, img, 0, 0, svg_scale, g_char_rgba_buf, 24, 24, 24 * 4);
-      for (int cy = 0; cy < 24; cy++) {
-        for (int cx = 0; cx < 24; cx++) {
-          int lx = cur_x + cx;
-          int ly = y + cy;
-          if (lx < layer->width && ly < layer->height) {
-            uint8_t a = g_char_rgba_buf[(cy * 24 + cx) * 4 + 3];
-            if (a > 0) {
-              uint8_t r = g_char_rgba_buf[(cy * 24 + cx) * 4 + 0];
-              uint8_t g = g_char_rgba_buf[(cy * 24 + cx) * 4 + 1];
-              uint8_t b = g_char_rgba_buf[(cy * 24 + cx) * 4 + 2];
-              uint32_t bg = layer->buffer[ly * layer->width + lx];
-              uint8_t br = (bg >> 16) & 0xFF;
-              uint8_t bg_g = (bg >> 8) & 0xFF;
-              uint8_t bb = bg & 0xFF;
-              uint8_t out_r = (uint8_t)((r * a + br * (255 - a)) / 255);
-              uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
-              uint8_t out_b = (uint8_t)((b * a + bb * (255 - a)) / 255);
-              layer->buffer[ly * layer->width + lx] =
-                  (0xFFu << 24) | ((uint32_t)out_r << 16) |
-                  ((uint32_t)out_g << 8) | (uint32_t)out_b;
-            }
-          }
-        }
-      }
-    }
-    cur_x += (int)(24.0f * scale); // 24px単位で進める
-    str++;
-  }
-}
-
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
   layer_fill(hud, 0xFF000000);
@@ -1118,9 +963,8 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   *p++ = 'B';
   *p = '\0';
 
-  // TTF render via SVG paths
-  hud_draw_svg_string(hud, 2, -2, line1, 1.0f, 0xFFFFFFFF);
-  hud_draw_svg_string(hud, 120, -2, line2, 1.0f, 0xFFFFFFFF);
+  layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
+  layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
 }
 
 extern void register_layer(layer_t *layer);
@@ -1198,15 +1042,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&blink_layer, 0xFF0000FF); // 青
   register_layer(&blink_layer);
 
-  // Load TTF module
-  void *ttf_data = NULL;
-  if (mbi->flags & 0x08) { // mods_count is valid
-      struct multiboot_mod_list *mods = (struct multiboot_mod_list *)(uintptr_t)mbi->mods_addr;
-      if (mbi->mods_count > 0) {
-          ttf_data = (void *)(uintptr_t)mods[0].mod_start;
-      }
-  }
-
   // 4. HUD (右上: CPU/MEM)
   layer_t hud_layer;
   hud_layer.buffer = hud_buf;
@@ -1217,11 +1052,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_layer.transparent = 0;
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
-  
-  if (ttf_data) {
-      hud_font_init(ttf_data);
-  }
-  
   hud_update(&hud_layer, 0, (unsigned int)(heap_ptr / 1024),
              (unsigned int)(sizeof(heap) / 1024));
   register_layer(&hud_layer);
