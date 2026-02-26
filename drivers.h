@@ -84,6 +84,9 @@ void layer_draw_char(layer_t *layer, int x, int y, char c, uint32_t color,
 void layer_draw_string(layer_t *layer, int x, int y, const char *str,
                        uint32_t color, uint32_t bg_color);
 
+// 画面全体に ASCII テキストでエラーメッセージを 5 秒表示
+void show_error_message(const char *msg);
+
 // --- Mouse ---
 void mouse_install();
 void keyboard_install();
