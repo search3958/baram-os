@@ -161,6 +161,10 @@ static uint32_t blink_buf[50 * 50];
 static uint32_t hud_buf[240 * 16];
 
 // メモリアロケータ
+#undef memcpy
+#undef memset
+#undef strncpy
+
 static char heap[1024 * 1024 * 4];
 static uint32_t heap_ptr = 0;
 typedef struct {
@@ -854,8 +858,10 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
       float scale = hover_scale;
       int dst_w = (int)ceilf((float)src_w * scale);
       int dst_h = (int)ceilf((float)src_h * scale);
-      int center_x = (int)((float)(src_x + src_w / 2) + hover_offx);
-      int center_y = (int)((float)(src_y + src_h / 2) + hover_offy);
+      float src_center_x = (float)src_x + (float)src_w * 0.5f;
+      float src_center_y = (float)src_y + (float)src_h * 0.5f;
+      int center_x = (int)(src_center_x + hover_offx);
+      int center_y = (int)(src_center_y + hover_offy);
       int dst_x0 = center_x - dst_w / 2;
       int dst_y0 = center_y - dst_h / 2;
       int dst_x1 = dst_x0 + dst_w;
@@ -873,8 +879,8 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
       for (int y = dst_y0; y < dst_y1; ++y) {
         uint32_t *dst = &layer->buffer[y * layer->width];
         for (int x = dst_x0; x < dst_x1; ++x) {
-          float sx = (float)(x - (center_x - dst_w / 2)) / scale;
-          float sy = (float)(y - (center_y - dst_h / 2)) / scale;
+          float sx = ((float)x - ((float)center_x - (float)dst_w * 0.5f)) / scale;
+          float sy = ((float)y - ((float)center_y - (float)dst_h * 0.5f)) / scale;
           int isx = (int)sx;
           int isy = (int)sy;
           if (isx < 0 || isy < 0 || isx >= src_w || isy >= src_h)
@@ -1192,6 +1198,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                        mbi->framebuffer_width, mbi->framebuffer_height,
                        mbi->framebuffer_pitch);
 
+  // 割り込み・デバイス初期化
+  idt_install();
+  irq_install();
+  irq_install_handler(0, timer_handler);
+  timer_phase(100); // 100Hz
+  keyboard_install();
+  mouse_install();
+  enable_interrupts();
+
   // 1. 背景 (赤)
   layer_t desktop;
   desktop.buffer = desktop_buf;
@@ -1242,6 +1257,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
   register_layer(&hud_layer);
+
+  // 起動直後から HUD にテスト文字列を表示しておく
+  draw_test_and_keys(&hud_layer);
 
   uint32_t last_blink_tick = 0;
   int blink_state = 0;

@@ -25,6 +25,9 @@ static uint32_t g_page_size_bytes = 0;
 static int g_display_page = 0;
 static int g_draw_page = 1;
 
+// x86 向け I/O ポートアクセス。Apple Silicon 等の非 x86 環境で動く clangd では
+// レジスタ制約 'a' などが無効になるため、ホスト側ではダミー版を使う。
+#if defined(__i386__) || defined(__x86_64__)
 static inline void outw(uint16_t port, uint16_t val) {
   __asm__ __volatile__("outw %w0, %w1" : : "a"(val), "Nd"(port));
 }
@@ -34,6 +37,17 @@ static inline uint16_t inw(uint16_t port) {
   __asm__ __volatile__("inw %w1, %w0" : "=a"(ret) : "Nd"(port));
   return ret;
 }
+#else
+static inline void outw(uint16_t port, uint16_t val) {
+  (void)port;
+  (void)val;
+}
+
+static inline uint16_t inw(uint16_t port) {
+  (void)port;
+  return 0;
+}
+#endif
 
 #define BGA_INDEX 0x01CE
 #define BGA_DATA 0x01CF
