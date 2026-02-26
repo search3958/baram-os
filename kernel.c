@@ -122,6 +122,8 @@ double __divdf3(double a, double b) {
 }
 int __gtdf2(double a, double b) { return a > b; }
 int __ltdf2(double a, double b) { return a < b; }
+int __nedf2(double a, double b) { return a != b; }
+int __ledf2(double a, double b) { return a <= b; }
 double __floatsidf(int i) {
   double r;
   __asm__("fildl %1; fstpl %0" : "=m"(r) : "m"(i));
@@ -143,15 +145,7 @@ int __fixdfsi(double d) {
   return r;
 }
 
-// i686 では通常 long double は 80bit (xf)
-long double __extendsftf2(float f) { return (long double)f; }
-float __trunctfsf2(long double d) { return (float)d; }
-long double __extenddftf2(double d) { return (long double)d; }
-double __trunctfdf2(long double d) { return (double)d; }
-long double __multf3(long double a, long double b) { return a * b; }
-long double __addtf3(long double a, long double b) { return a + b; }
-long double __subtf3(long double a, long double b) { return a - b; }
-long double __divtf3(long double a, long double b) { return a / b; }
+// long double 用の libgcc ヘルパは使わないので未定義のままでよい（参照もしていない）
 
 // レイヤー用
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -1047,6 +1041,42 @@ static char *append_uint(char *p, unsigned int v) {
   return p;
 }
 
+// 起動中の進捗をデスクトップ左上に表示（例: STAGE 3: DESKTOP READY (50%)）
+static void boot_status_update(layer_t *desktop, int stage, int total_stages,
+                               const char *label) {
+  if (!desktop || !desktop->buffer)
+    return;
+
+  char line[64];
+  char *p = line;
+
+  const char *head = "STAGE ";
+  while (*head)
+    *p++ = *head++;
+  p = append_uint(p, (unsigned int)stage);
+  *p++ = ':';
+  *p++ = ' ';
+
+  while (*label)
+    *p++ = *label++;
+
+  *p++ = ' ';
+  *p++ = '(';
+  unsigned int percent = 0;
+  if (total_stages > 0) {
+    percent = (unsigned int)(stage * 100 / total_stages);
+  }
+  p = append_uint(p, percent);
+  *p++ = '%';
+  *p++ = ')';
+  *p = '\0';
+
+  // 背景色で塗りつぶしながら描画して見やすくする
+  layer_draw_string(desktop, 4, 4, line, 0xFFFFFFFF, BASE_BG_COLOR);
+  screen_mark_static_dirty();
+  screen_refresh();
+}
+
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
   layer_fill(hud, 0xFF000000);
@@ -1220,18 +1250,25 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
+  // 進捗表示: デスクトップレイヤー作成完了 (全 6 ステージ中の 3)
+  boot_status_update(&desktop, 3, 6, "DESKTOP READY");
+
   // 2. SVG表示エリア (左上)
+  // ※現在フリーズ原因切り分けのため、一時的に SVG レイヤーの初期化をスキップする。
   layer_t svg_layer;
-  svg_layer.buffer = svg_buf;
+  svg_layer.buffer = NULL;
   svg_layer.x = 0;
   svg_layer.y = 0;
-  svg_layer.width = SVG_WIDTH;
-  svg_layer.height = SVG_HEIGHT;
+  svg_layer.width = 0;
+  svg_layer.height = 0;
   svg_layer.transparent = 0;
-  svg_layer.active = 1;
-  svg_layer.dynamic = 1;
-  svg_init(&svg_layer);
-  register_layer(&svg_layer);
+  svg_layer.active = 0;
+  svg_layer.dynamic = 0;
+  // svg_init(&svg_layer);
+  // register_layer(&svg_layer);
+
+  // 進捗表示: SVG レイヤー（現状スキップ）
+  boot_status_update(&desktop, 4, 6, "SVG (SKIPPED)");
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -1261,6 +1298,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   // 起動直後から HUD にテスト文字列を表示しておく
   draw_test_and_keys(&hud_layer);
 
+  // 進捗表示: HUD レイヤー作成完了
+  boot_status_update(&desktop, 5, 6, "HUD READY");
+
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
   uint32_t last_stat_tick = 0;
@@ -1283,6 +1323,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int have_draw = 0;
 
   screen_refresh(); // 最初の描画
+
+  // 進捗表示: メインループ突入
+  boot_status_update(&desktop, 6, 6, "MAIN LOOP");
+
   while (1) {
     int need_refresh = 0;
 
