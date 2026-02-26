@@ -7,7 +7,6 @@
 #include <string.h> // memcpy, memset
 
 #include "drivers.h"
-#include "fonts.h"
 #include "svg_data.h"
 #include <stddef.h>
 
@@ -43,6 +42,8 @@ static float g_svg_scale = 1.0f;
 static float g_svg_tx = 0.0f;
 static float g_svg_ty = 0.0f;
 static int g_svg_ready = 0;
+
+volatile uint32_t timer_ticks = 0;
 
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
@@ -153,7 +154,11 @@ static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
-static uint32_t hud_buf[240 * 16];
+static uint32_t hud_buf[240 * 32]; // 高さを32に増やす
+
+// エラー表示用バッファ
+static char hud_error_msg[64] = "";
+static int hud_error_active = 0;
 
 // 起動中の進捗表示に使うデスクトップレイヤー
 static layer_t *g_boot_status_layer = NULL;
@@ -166,13 +171,13 @@ static void boot_status_update(int stage, int total_stages, const char *label);
 #undef memset
 #undef strncpy
 
-static char heap[1024 * 1024 * 16];
+static char heap[1024 * 1024 * 64];
 static uint32_t heap_ptr = 0;
 typedef struct {
   void *ptr;
   size_t size;
 } alloc_entry_t;
-static alloc_entry_t allocs[8192];
+static alloc_entry_t allocs[1024];
 static size_t alloc_count = 0;
 void *memcpy(void *dest, const void *src, size_t n);
 void *malloc(size_t size) {
@@ -255,6 +260,33 @@ char *strncpy(char *dst, const char *src, size_t n) {
   for (; i < n; ++i)
     dst[i] = '\0';
   return dst;
+}
+
+int snprintf(char *str, size_t size, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  
+  char *p = str;
+  const char *f = format;
+  int written = 0;
+  
+  while (*f && written < (int)size - 1) {
+    if (*f == '%' && *(f + 1) == 's') {
+      f += 2;
+      const char *arg = va_arg(args, const char *);
+      while (*arg && written < (int)size - 1) {
+        *p++ = *arg++;
+        written++;
+      }
+    } else {
+      *p++ = *f++;
+      written++;
+    }
+  }
+  
+  *p = '\0';
+  va_end(args);
+  return written;
 }
 
 char *strchr(const char *s, int c) {
@@ -413,12 +445,6 @@ float fmodf(float x, float y) {
 static float wrap_pi(float x) {
   const float pi = 3.14159265358979323846f;
   const float two_pi = 6.28318530717958647692f;
-
-  if (isnan((double)x))
-    return 0.0f;
-  if (x > 1e12f || x < -1e12f)
-    return 0.0f; // 極端に大きい値は大まかに 0 に（無限ループ防止）
-
   while (x > pi)
     x -= two_pi;
   while (x < -pi)
@@ -644,31 +670,74 @@ static int svg_init(layer_t *layer) {
   if (g_svg_ready)
     return 1;
 
-  boot_status_update(41, 100, "SVG: CLEAR LAYER");
-  layer_fill(layer, BASE_BG_COLOR);
+  // 一旦クラッシュ回避のため SVG パースをスキップ
+  snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Skipped");
+  hud_error_active = 1;
+  return 0;
 
-  boot_status_update(42, 100, "SVG: COPY SOURCE");
+  const uint32_t start_ticks = timer_ticks;
+  const uint32_t timeout_ticks = 500; // 5秒 (timer_phase(100) 前提)
+
+  #define SVG_TIMEOUT_CHECK()                                                   \
+    do {                                                                       \
+      if ((uint32_t)(timer_ticks - start_ticks) > timeout_ticks) {             \
+        snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Timeout");       \
+        hud_error_active = 1;                                                  \
+        return 0;                                                              \
+      }                                                                        \
+    } while (0)
+
+  boot_status_update(41, 0, "SVG: CLEAR LAYER");
+  layer_fill(layer, BASE_BG_COLOR);
+  SVG_TIMEOUT_CHECK();
+
+  boot_status_update(42, 5, "SVG: COPY SOURCE");
   char *svg_copy = (char *)malloc(note_test_svg_len + 1);
-  if (!svg_copy)
+  if (!svg_copy) {
+    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Malloc failed");
+    hud_error_active = 1;
     return 0;
+  }
   memcpy(svg_copy, note_test_svg, note_test_svg_len);
   svg_copy[note_test_svg_len] = '\0';
+  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(44, 100, "SVG: PARSE");
+  boot_status_update(44, 15, "SVG: PARSE");
   g_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-  if (!g_svg_image)
+  if (!g_svg_image) {
+    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Parse failed");
+    hud_error_active = 1;
+    free(svg_copy);
     return 0;
+  }
+  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(46, 100, "SVG: RASTERIZER");
+  boot_status_update(46, 25, "SVG: RASTERIZER");
   g_svg_rast = nsvgCreateRasterizer();
-  if (!g_svg_rast)
+  if (!g_svg_rast) {
+    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Rasterizer failed");
+    hud_error_active = 1;
+    nsvgDelete(g_svg_image);
+    g_svg_image = NULL;
+    free(svg_copy);
     return 0;
+  }
+  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(48, 100, "SVG: RGBA BUFFER");
+  boot_status_update(48, 35, "SVG: RGBA BUFFER");
   g_svg_rgba =
       (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-  if (!g_svg_rgba)
+  if (!g_svg_rgba) {
+    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: RGBA buffer failed");
+    hud_error_active = 1;
+    nsvgDeleteRasterizer(g_svg_rast);
+    g_svg_rast = NULL;
+    nsvgDelete(g_svg_image);
+    g_svg_image = NULL;
+    free(svg_copy);
     return 0;
+  }
+  SVG_TIMEOUT_CHECK();
 
   float scale_x = g_svg_image->width > 0.0f
                       ? (float)layer->width / g_svg_image->width
@@ -680,13 +749,14 @@ static int svg_init(layer_t *layer) {
   g_svg_tx = 0.0f;
   g_svg_ty = 0.0f;
 
-  boot_status_update(52, 100, "SVG: COUNT SHAPES");
+  boot_status_update(52, 45, "SVG: COUNT SHAPES");
   int count = 0;
   for (NSVGshape *s = g_svg_image->shapes; s; s = s->next)
     count++;
+  SVG_TIMEOUT_CHECK();
 
   if (count > 0) {
-    boot_status_update(54, 100, "SVG: ALLOC CACHE");
+    boot_status_update(54, 55, "SVG: ALLOC CACHE");
     g_svg_cache =
         (svg_shape_cache_t *)malloc(sizeof(svg_shape_cache_t) * (size_t)count);
     if (g_svg_cache) {
@@ -704,14 +774,17 @@ static int svg_init(layer_t *layer) {
       g_svg_shape_count = count;
     }
   }
+  SVG_TIMEOUT_CHECK();
 
   if (g_svg_cache) {
-    boot_status_update(56, 100, "SVG: PRE-RENDER");
+    boot_status_update(56, 60, "SVG: PRE-RENDER");
     for (int i = 0; i < g_svg_shape_count; ++i) {
       g_svg_cache[i].shape->flags = 0;
     }
 
     for (int i = 0; i < g_svg_shape_count; ++i) {
+      if ((i & 15) == 0)
+        SVG_TIMEOUT_CHECK();
       svg_shape_cache_t *c = &g_svg_cache[i];
       if ((c->flags & NSVG_FLAGS_VISIBLE) == 0)
         continue;
@@ -764,14 +837,17 @@ static int svg_init(layer_t *layer) {
       g_svg_cache[i].shape->flags = g_svg_cache[i].flags;
     }
   }
+  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(60, 100, "SVG: RENDER FULL");
+  boot_status_update(60, 85, "SVG: RENDER FULL");
   svg_render_full(layer);
   memcpy(svg_base_buf, layer->buffer,
          sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
 
   boot_status_update(65, 100, "SVG: DONE");
+  free(svg_copy);
+  #undef SVG_TIMEOUT_CHECK
   return 1;
 }
 
@@ -1036,7 +1112,6 @@ static int svg_pick_shape(layer_t *layer, int screen_x, int screen_y) {
 }
 
 // タイマー設定 (0.1秒点滅用)
-volatile uint32_t timer_ticks = 0;
 void timer_handler(struct regs *r) {
   timer_ticks++;
   if (cpu_idle)
@@ -1088,11 +1163,9 @@ static void boot_status_update(int stage, int total_stages, const char *label) {
 
   *p++ = ' ';
   *p++ = '(';
-  unsigned int percent = 0;
-  if (total_stages > 0) {
-    percent = (unsigned int)(stage * 100 / total_stages);
-  }
-  p = append_uint(p, percent);
+  // total_stages は「このSTAGE内での進捗(0-100)」として扱う
+  // (従来の stage/total_stages の全体進捗表示はやめる)
+  p = append_uint(p, (unsigned int)total_stages);
   *p++ = '%';
   *p++ = ')';
   *p = '\0';
@@ -1132,91 +1205,15 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 
   layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
-}
-
-// キー入力バッファ
-#define KEYBUF_MAX 256
-static char keybuf_str[KEYBUF_MAX] = "";
-
-// UTF-8→Unicode変換（簡易）
-static uint16_t utf8_next(const char **p) {
-  const unsigned char *s = (const unsigned char *)*p;
-  uint16_t code = 0;
-  if (s[0] < 0x80) {
-    code = s[0];
-    (*p)++;
-  } else if ((s[0] & 0xE0) == 0xC0) {
-    code = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
-    (*p) += 2;
-  } else if ((s[0] & 0xF0) == 0xE0) {
-    code = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-    (*p) += 3;
-  } else {
-    (*p)++;
+  
+  // エラーメッセージ表示
+  if (hud_error_active && hud_error_msg[0] != '\0') {
+    layer_draw_string(hud, 2, 16, hud_error_msg, 0xFFFF0000, TRANSPARENT_COLOR);
   }
-  return code;
-}
-
-// SVGパスを使ったグリフ描画（ダミー: 枠のみ）
-static void layer_draw_glyph(layer_t *layer, int x, int y, uint16_t code,
-                             uint32_t color) {
-  // fonts.h の font_glyphs[] から code を検索
-  extern const Glyph font_glyphs[];
-  for (int i = 0; font_glyphs[i].code != 0; ++i) {
-    if (font_glyphs[i].code == code) {
-      // 文字コードに応じて豆腐の中身を塗りつぶし
-      for (int dy = 0; dy < 24; ++dy) {
-        for (int dx = 0; dx < 24; ++dx) {
-          int px = x + dx, py = y + dy;
-          if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
-            // 文字コード code を利用してそれっぽいパターンを作る
-            int pattern = ((code >> (dx / 4)) ^ (code >> (dy / 4))) & 1;
-            if (dx == 0 || dx == 23 || dy == 0 || dy == 23 || pattern)
-              layer->buffer[py * layer->width + px] = color;
-          }
-        }
-      }
-      return;
-    }
-  }
-  // 登録されていなくても豆腐（四角）を描画
-  for (int dy = 0; dy < 24; ++dy) {
-    for (int dx = 0; dx < 24; ++dx) {
-      int px = x + dx, py = y + dy;
-      if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
-        if (dx == 0 || dx == 23 || dy == 0 || dy == 23)
-          layer->buffer[py * layer->width + px] = color;
-      }
-    }
-  }
-}
-
-// 日本語文字列描画（1文字24x24pxで描画）
-static void layer_draw_glyph_string(layer_t *layer, int x, int y,
-                                    const char *str, uint32_t color) {
-  int cx = x;
-  while (*str) {
-    uint16_t code = utf8_next(&str);
-    if (code < 128) {
-      layer_draw_char(layer, cx, y, (char)code, color, 0xFFFFFFFF);
-      cx += 8;
-    } else {
-      layer_draw_glyph(layer, cx, y, code, color);
-      cx += 24;
-    }
-  }
-}
-
-void draw_test_and_keys(layer_t *layer) {
-  layer_fill(layer, 0xFFFFFFFF); // 白背景
-  layer_draw_glyph_string(layer, 20, 20, "テストaaa123漢字", 0xFF000000);
-  layer_draw_glyph_string(layer, 20, 60, keybuf_str, 0xFF000000);
 }
 
 extern void register_layer(layer_t *layer);
 extern void screen_mark_static_dirty();
-extern volatile char keybuf[];
-extern volatile int keybuf_len;
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
 static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
@@ -1292,7 +1289,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.transparent = 0;
   svg_layer.active = 1;
   svg_layer.dynamic = 1;
-  svg_init(&svg_layer);
+  
+  // SVG初期化を例外処理付きで実行
+  if (!svg_init(&svg_layer)) {
+    // SVG初期化失敗時も続行（エラーはHUDに表示）
+    layer_fill(&svg_layer, BASE_BG_COLOR);
+  }
   register_layer(&svg_layer);
 
   // 進捗表示: SVG レイヤー初期化完了
@@ -1315,16 +1317,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_t hud_layer;
   hud_layer.buffer = hud_buf;
   hud_layer.x = 10;
-  hud_layer.y = SCREEN_HEIGHT - 30;
+  hud_layer.y = SCREEN_HEIGHT - 40; // 高さを増やしてエラー表示領域を確保
   hud_layer.width = 240;
-  hud_layer.height = 16;
+  hud_layer.height = 32; // 高さを32に増やす
   hud_layer.transparent = 0;
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
   register_layer(&hud_layer);
-
-  // 起動直後から HUD にテスト文字列を表示しておく
-  draw_test_and_keys(&hud_layer);
 
   // 進捗表示: HUD レイヤー作成完了
   boot_status_update(5, 6, "HUD READY");
@@ -1456,18 +1455,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           have_draw = 0;
         }
       }
-    }
-
-    // キー入力監視
-    if (keybuf_len > 0) {
-      int len = keybuf_len;
-      if (len > KEYBUF_MAX - 1)
-        len = KEYBUF_MAX - 1;
-      memcpy(keybuf_str, (const void *)keybuf, len);
-      keybuf_str[len] = '\0';
-      draw_test_and_keys(&hud_layer);
-      need_refresh = 1;
-      keybuf_len = 0;
     }
 
     if (timer_ticks - last_stat_tick >= 100) {

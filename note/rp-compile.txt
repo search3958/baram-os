@@ -12,7 +12,7 @@ cp grub.cfg isodir/boot/grub/
 i686-elf-grub-mkrescue -o os.iso isodir
 
 qemu-system-i386 -cdrom os.iso -vga std \
--m 1G \
+-m 2G \
 -smp 4 \
 -cpu coreduo \
 -rtc base=localtime \

@@ -60,5 +60,5 @@ gdt_ptr:
 
 section .bss
 align 16
-resb 32768
+resb 8192
 stack_space:
