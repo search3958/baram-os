@@ -4,7 +4,7 @@ nasm -f elf32 isr.s -o isr.o
 i686-elf-gcc -I. -c kernel.c -o kernel.o -ffreestanding -O3 -Wall -m32 -march=pentium4 -mno-80387
 i686-elf-gcc -I. -c drivers.c -o drivers.o -ffreestanding -O3 -Wall -m32 -march=pentium4 -mno-80387
 
-i686-elf-gcc -T link.ld -o kernel.bin boot.o isr.o kernel.o drivers.o -ffreestanding -O3 -m32 -nostdlib -lgcc
+i686-elf-gcc -T link.ld -o kernel.bin boot.o isr.o kernel.o drivers.o -ffreestanding -O3 -m32 -nostdlib -static-libgcc -lgcc
 
 mkdir -p isodir/boot/grub
 cp kernel.bin isodir/boot/

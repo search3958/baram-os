@@ -973,7 +973,6 @@ extern volatile char keybuf[];
 extern volatile int keybuf_len;
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
-
 static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
   if (!mbi)
     return;
@@ -990,12 +989,16 @@ static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
     }
   }
 }
-
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
 
   // SVG描画などの初期化より前に、まず赤画面を出す
-  fill_framebuffer_red_early(mbi);
+  for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
+    fill_framebuffer_red_early(mbi);
+    for (volatile int j = 0; j < 1000000; ++j) { __asm__ __volatile__("nop"); }
+  }
+
+  fill_framebuffer_red_early(mbi); // 最後にもう一度赤で塗る
 
   set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
                        mbi->framebuffer_width, mbi->framebuffer_height,
