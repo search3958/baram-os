@@ -19,9 +19,6 @@ typedef struct {
 } layer_t;
 
 // --- IO (io.h) ---
-// x86 専用の I/O ポートアクセス。Apple Silicon など非 x86 環境で動く clangd では
-// 'a' レジスタ制約が無効なため、ホスト側ではダミー実装を使う。
-#if defined(__i386__) || defined(__x86_64__)
 static inline uint8_t inb(uint16_t port) {
   uint8_t ret;
   __asm__ __volatile__("inb %w1, %b0" : "=a"(ret) : "Nd"(port));
@@ -31,17 +28,6 @@ static inline uint8_t inb(uint16_t port) {
 static inline void outb(uint16_t port, uint8_t val) {
   __asm__ __volatile__("outb %b0, %w1" : : "a"(val), "Nd"(port));
 }
-#else
-static inline uint8_t inb(uint16_t port) {
-  (void)port;
-  return 0;
-}
-
-static inline void outb(uint16_t port, uint8_t val) {
-  (void)port;
-  (void)val;
-}
-#endif
 
 // --- IDT/IRQ ---
 struct idt_entry {
@@ -83,9 +69,6 @@ void layer_draw_char(layer_t *layer, int x, int y, char c, uint32_t color,
                      uint32_t bg_color);
 void layer_draw_string(layer_t *layer, int x, int y, const char *str,
                        uint32_t color, uint32_t bg_color);
-
-// 画面全体に ASCII テキストでエラーメッセージを 5 秒表示
-void show_error_message(const char *msg);
 
 // --- Mouse ---
 void mouse_install();

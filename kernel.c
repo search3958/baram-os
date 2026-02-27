@@ -7,32 +7,9 @@
 #include <string.h> // memcpy, memset
 
 #include "drivers.h"
+#include "fonts.h"
 #include "svg_data.h"
 #include <stddef.h>
-
-static void *nsvg_alloc(size_t size) {
-  if (size == 0)
-    size = 1;
-  if (size > (32u * 1024u * 1024u))
-    return NULL;
-  return malloc(size);
-}
-
-static void *nsvg_realloc(void *ptr, size_t size) {
-  if (size == 0)
-    size = 1;
-  if (size > (32u * 1024u * 1024u))
-    return NULL;
-  return realloc(ptr, size);
-}
-
-static void nsvg_free(void *ptr) {
-  free(ptr);
-}
-
-#define NSVG_MALLOC nsvg_alloc
-#define NSVG_REALLOC nsvg_realloc
-#define NSVG_FREE nsvg_free
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
@@ -66,8 +43,6 @@ static float g_svg_scale = 1.0f;
 static float g_svg_tx = 0.0f;
 static float g_svg_ty = 0.0f;
 static int g_svg_ready = 0;
-
-volatile uint32_t timer_ticks = 0;
 
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
@@ -147,8 +122,6 @@ double __divdf3(double a, double b) {
 }
 int __gtdf2(double a, double b) { return a > b; }
 int __ltdf2(double a, double b) { return a < b; }
-int __nedf2(double a, double b) { return a != b; }
-int __ledf2(double a, double b) { return a <= b; }
 double __floatsidf(int i) {
   double r;
   __asm__("fildl %1; fstpl %0" : "=m"(r) : "m"(i));
@@ -170,32 +143,25 @@ int __fixdfsi(double d) {
   return r;
 }
 
-// long double 用の libgcc
-// ヘルパは使わないので未定義のままでよい（参照もしていない）
+// i686 では通常 long double は 80bit (xf)
+long double __extendsftf2(float f) { return (long double)f; }
+float __trunctfsf2(long double d) { return (float)d; }
+long double __extenddftf2(double d) { return (long double)d; }
+double __trunctfdf2(long double d) { return (double)d; }
+long double __multf3(long double a, long double b) { return a * b; }
+long double __addtf3(long double a, long double b) { return a + b; }
+long double __subtf3(long double a, long double b) { return a - b; }
+long double __divtf3(long double a, long double b) { return a / b; }
 
 // レイヤー用
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
-static uint32_t hud_buf[240 * 32]; // 高さを32に増やす
-
-// エラー表示用バッファ
-static char hud_error_msg[64] = "";
-static int hud_error_active = 0;
-
-// 起動中の進捗表示に使うデスクトップレイヤー
-static layer_t *g_boot_status_layer = NULL;
-
-// 進捗表示関数のプロトタイプ（C89 の暗黙宣言を避ける）
-static void boot_status_update(int stage, int total_stages, const char *label);
+static uint32_t hud_buf[240 * 16];
 
 // メモリアロケータ
-#undef memcpy
-#undef memset
-#undef strncpy
-
-static char heap[1024 * 1024 * 64];
+static char heap[1024 * 1024 * 4];
 static uint32_t heap_ptr = 0;
 typedef struct {
   void *ptr;
@@ -284,33 +250,6 @@ char *strncpy(char *dst, const char *src, size_t n) {
   for (; i < n; ++i)
     dst[i] = '\0';
   return dst;
-}
-
-int snprintf(char *str, size_t size, const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  
-  char *p = str;
-  const char *f = format;
-  int written = 0;
-  
-  while (*f && written < (int)size - 1) {
-    if (*f == '%' && *(f + 1) == 's') {
-      f += 2;
-      const char *arg = va_arg(args, const char *);
-      while (*arg && written < (int)size - 1) {
-        *p++ = *arg++;
-        written++;
-      }
-    } else {
-      *p++ = *f++;
-      written++;
-    }
-  }
-  
-  *p = '\0';
-  va_end(args);
-  return written;
 }
 
 char *strchr(const char *s, int c) {
@@ -694,73 +633,26 @@ static int svg_init(layer_t *layer) {
   if (g_svg_ready)
     return 1;
 
-  snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Disabled");
-  hud_error_active = 1;
-  return 0;
-
-  const uint32_t start_ticks = timer_ticks;
-  const uint32_t timeout_ticks = 500; // 5秒 (timer_phase(100) 前提)
-
-  #define SVG_TIMEOUT_CHECK()                                                   \
-    do {                                                                       \
-      if ((uint32_t)(timer_ticks - start_ticks) > timeout_ticks) {             \
-        snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Timeout");       \
-        hud_error_active = 1;                                                  \
-        return 0;                                                              \
-      }                                                                        \
-    } while (0)
-
-  boot_status_update(41, 0, "SVG: CLEAR LAYER");
   layer_fill(layer, BASE_BG_COLOR);
-  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(42, 5, "SVG: COPY SOURCE");
   char *svg_copy = (char *)malloc(note_test_svg_len + 1);
-  if (!svg_copy) {
-    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Malloc failed");
-    hud_error_active = 1;
+  if (!svg_copy)
     return 0;
-  }
   memcpy(svg_copy, note_test_svg, note_test_svg_len);
   svg_copy[note_test_svg_len] = '\0';
-  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(44, 15, "SVG: PARSE");
   g_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-  if (!g_svg_image) {
-    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Parse failed");
-    hud_error_active = 1;
-    free(svg_copy);
+  if (!g_svg_image)
     return 0;
-  }
-  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(46, 25, "SVG: RASTERIZER");
   g_svg_rast = nsvgCreateRasterizer();
-  if (!g_svg_rast) {
-    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: Rasterizer failed");
-    hud_error_active = 1;
-    nsvgDelete(g_svg_image);
-    g_svg_image = NULL;
-    free(svg_copy);
+  if (!g_svg_rast)
     return 0;
-  }
-  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(48, 35, "SVG: RGBA BUFFER");
   g_svg_rgba =
       (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-  if (!g_svg_rgba) {
-    snprintf(hud_error_msg, sizeof(hud_error_msg), "SVG: RGBA buffer failed");
-    hud_error_active = 1;
-    nsvgDeleteRasterizer(g_svg_rast);
-    g_svg_rast = NULL;
-    nsvgDelete(g_svg_image);
-    g_svg_image = NULL;
-    free(svg_copy);
+  if (!g_svg_rgba)
     return 0;
-  }
-  SVG_TIMEOUT_CHECK();
 
   float scale_x = g_svg_image->width > 0.0f
                       ? (float)layer->width / g_svg_image->width
@@ -772,14 +664,11 @@ static int svg_init(layer_t *layer) {
   g_svg_tx = 0.0f;
   g_svg_ty = 0.0f;
 
-  boot_status_update(52, 45, "SVG: COUNT SHAPES");
   int count = 0;
   for (NSVGshape *s = g_svg_image->shapes; s; s = s->next)
     count++;
-  SVG_TIMEOUT_CHECK();
 
   if (count > 0) {
-    boot_status_update(54, 55, "SVG: ALLOC CACHE");
     g_svg_cache =
         (svg_shape_cache_t *)malloc(sizeof(svg_shape_cache_t) * (size_t)count);
     if (g_svg_cache) {
@@ -797,17 +686,13 @@ static int svg_init(layer_t *layer) {
       g_svg_shape_count = count;
     }
   }
-  SVG_TIMEOUT_CHECK();
 
   if (g_svg_cache) {
-    boot_status_update(56, 60, "SVG: PRE-RENDER");
     for (int i = 0; i < g_svg_shape_count; ++i) {
       g_svg_cache[i].shape->flags = 0;
     }
 
     for (int i = 0; i < g_svg_shape_count; ++i) {
-      if ((i & 15) == 0)
-        SVG_TIMEOUT_CHECK();
       svg_shape_cache_t *c = &g_svg_cache[i];
       if ((c->flags & NSVG_FLAGS_VISIBLE) == 0)
         continue;
@@ -860,17 +745,11 @@ static int svg_init(layer_t *layer) {
       g_svg_cache[i].shape->flags = g_svg_cache[i].flags;
     }
   }
-  SVG_TIMEOUT_CHECK();
 
-  boot_status_update(60, 85, "SVG: RENDER FULL");
   svg_render_full(layer);
   memcpy(svg_base_buf, layer->buffer,
          sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
-
-  boot_status_update(65, 100, "SVG: DONE");
-  free(svg_copy);
-  #undef SVG_TIMEOUT_CHECK
   return 1;
 }
 
@@ -975,10 +854,8 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
       float scale = hover_scale;
       int dst_w = (int)ceilf((float)src_w * scale);
       int dst_h = (int)ceilf((float)src_h * scale);
-      float src_center_x = (float)src_x + (float)src_w * 0.5f;
-      float src_center_y = (float)src_y + (float)src_h * 0.5f;
-      int center_x = (int)(src_center_x + hover_offx);
-      int center_y = (int)(src_center_y + hover_offy);
+      int center_x = (int)((float)(src_x + src_w / 2) + hover_offx);
+      int center_y = (int)((float)(src_y + src_h / 2) + hover_offy);
       int dst_x0 = center_x - dst_w / 2;
       int dst_y0 = center_y - dst_h / 2;
       int dst_x1 = dst_x0 + dst_w;
@@ -996,10 +873,8 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
       for (int y = dst_y0; y < dst_y1; ++y) {
         uint32_t *dst = &layer->buffer[y * layer->width];
         for (int x = dst_x0; x < dst_x1; ++x) {
-          float sx =
-              ((float)x - ((float)center_x - (float)dst_w * 0.5f)) / scale;
-          float sy =
-              ((float)y - ((float)center_y - (float)dst_h * 0.5f)) / scale;
+          float sx = (float)(x - (center_x - dst_w / 2)) / scale;
+          float sy = (float)(y - (center_y - dst_h / 2)) / scale;
           int isx = (int)sx;
           int isy = (int)sy;
           if (isx < 0 || isy < 0 || isx >= src_w || isy >= src_h)
@@ -1135,6 +1010,7 @@ static int svg_pick_shape(layer_t *layer, int screen_x, int screen_y) {
 }
 
 // タイマー設定 (0.1秒点滅用)
+volatile uint32_t timer_ticks = 0;
 void timer_handler(struct regs *r) {
   timer_ticks++;
   if (cpu_idle)
@@ -1163,40 +1039,6 @@ static char *append_uint(char *p, unsigned int v) {
     *p++ = tmp[n];
   }
   return p;
-}
-
-// 起動中の進捗をデスクトップ左上に表示（例: STAGE 3: DESKTOP READY (50%)）
-static void boot_status_update(int stage, int total_stages, const char *label) {
-  layer_t *desktop = g_boot_status_layer;
-  if (!desktop || !desktop->buffer)
-    return;
-
-  char line[64];
-  char *p = line;
-
-  const char *head = "STAGE ";
-  while (*head)
-    *p++ = *head++;
-  p = append_uint(p, (unsigned int)stage);
-  *p++ = ':';
-  *p++ = ' ';
-
-  while (*label)
-    *p++ = *label++;
-
-  *p++ = ' ';
-  *p++ = '(';
-  // total_stages は「このSTAGE内での進捗(0-100)」として扱う
-  // (従来の stage/total_stages の全体進捗表示はやめる)
-  p = append_uint(p, (unsigned int)total_stages);
-  *p++ = '%';
-  *p++ = ')';
-  *p = '\0';
-
-  // 背景色で塗りつぶしながら描画して見やすくする
-  layer_draw_string(desktop, 4, 4, line, 0xFFFFFFFF, BASE_BG_COLOR);
-  screen_mark_static_dirty();
-  screen_refresh();
 }
 
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
@@ -1228,15 +1070,91 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 
   layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
-  
-  // エラーメッセージ表示
-  if (hud_error_active && hud_error_msg[0] != '\0') {
-    layer_draw_string(hud, 2, 16, hud_error_msg, 0xFFFF0000, TRANSPARENT_COLOR);
+}
+
+// キー入力バッファ
+#define KEYBUF_MAX 256
+static char keybuf_str[KEYBUF_MAX] = "";
+
+// UTF-8→Unicode変換（簡易）
+static uint16_t utf8_next(const char **p) {
+  const unsigned char *s = (const unsigned char *)*p;
+  uint16_t code = 0;
+  if (s[0] < 0x80) {
+    code = s[0];
+    (*p)++;
+  } else if ((s[0] & 0xE0) == 0xC0) {
+    code = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+    (*p) += 2;
+  } else if ((s[0] & 0xF0) == 0xE0) {
+    code = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+    (*p) += 3;
+  } else {
+    (*p)++;
   }
+  return code;
+}
+
+// SVGパスを使ったグリフ描画（ダミー: 枠のみ）
+static void layer_draw_glyph(layer_t *layer, int x, int y, uint16_t code,
+                             uint32_t color) {
+  // fonts.h の font_glyphs[] から code を検索
+  extern const Glyph font_glyphs[];
+  for (int i = 0; font_glyphs[i].code != 0; ++i) {
+    if (font_glyphs[i].code == code) {
+      // 文字コードに応じて豆腐の中身を塗りつぶし
+      for (int dy = 0; dy < 24; ++dy) {
+        for (int dx = 0; dx < 24; ++dx) {
+          int px = x + dx, py = y + dy;
+          if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
+            // 文字コード code を利用してそれっぽいパターンを作る
+            int pattern = ((code >> (dx / 4)) ^ (code >> (dy / 4))) & 1;
+            if (dx == 0 || dx == 23 || dy == 0 || dy == 23 || pattern)
+              layer->buffer[py * layer->width + px] = color;
+          }
+        }
+      }
+      return;
+    }
+  }
+  // 登録されていなくても豆腐（四角）を描画
+  for (int dy = 0; dy < 24; ++dy) {
+    for (int dx = 0; dx < 24; ++dx) {
+      int px = x + dx, py = y + dy;
+      if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
+        if (dx == 0 || dx == 23 || dy == 0 || dy == 23)
+          layer->buffer[py * layer->width + px] = color;
+      }
+    }
+  }
+}
+
+// 日本語文字列描画（1文字24x24pxで描画）
+static void layer_draw_glyph_string(layer_t *layer, int x, int y,
+                                    const char *str, uint32_t color) {
+  int cx = x;
+  while (*str) {
+    uint16_t code = utf8_next(&str);
+    if (code < 128) {
+      layer_draw_char(layer, cx, y, (char)code, color, 0xFFFFFFFF);
+      cx += 8;
+    } else {
+      layer_draw_glyph(layer, cx, y, code, color);
+      cx += 24;
+    }
+  }
+}
+
+void draw_test_and_keys(layer_t *layer) {
+  layer_fill(layer, 0xFFFFFFFF); // 白背景
+  layer_draw_glyph_string(layer, 20, 20, "テストaaa123漢字", 0xFF000000);
+  layer_draw_glyph_string(layer, 20, 60, keybuf_str, 0xFF000000);
 }
 
 extern void register_layer(layer_t *layer);
 extern void screen_mark_static_dirty();
+extern volatile char keybuf[];
+extern volatile int keybuf_len;
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
 static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
@@ -1274,15 +1192,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                        mbi->framebuffer_width, mbi->framebuffer_height,
                        mbi->framebuffer_pitch);
 
-  // 割り込み・デバイス初期化
-  idt_install();
-  irq_install();
-  irq_install_handler(0, timer_handler);
-  timer_phase(100); // 100Hz
-  keyboard_install();
-  mouse_install();
-  enable_interrupts();
-
   // 1. 背景 (赤)
   layer_t desktop;
   desktop.buffer = desktop_buf;
@@ -1296,12 +1205,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
-  // 進捗表示で使うレイヤーを登録
-  g_boot_status_layer = &desktop;
-
-  // 進捗表示: デスクトップレイヤー作成完了 (全 6 ステージ中の 3)
-  boot_status_update(3, 6, "DESKTOP READY");
-
   // 2. SVG表示エリア (左上)
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
@@ -1312,16 +1215,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.transparent = 0;
   svg_layer.active = 1;
   svg_layer.dynamic = 1;
-  
-  // SVG初期化を例外処理付きで実行
-  if (!svg_init(&svg_layer)) {
-    // SVG初期化失敗時も続行（エラーはHUDに表示）
-    layer_fill(&svg_layer, BASE_BG_COLOR);
-  }
+  svg_init(&svg_layer);
   register_layer(&svg_layer);
-
-  // 進捗表示: SVG レイヤー初期化完了
-  boot_status_update(4, 6, "SVG READY");
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -1340,16 +1235,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_t hud_layer;
   hud_layer.buffer = hud_buf;
   hud_layer.x = 10;
-  hud_layer.y = SCREEN_HEIGHT - 40; // 高さを増やしてエラー表示領域を確保
+  hud_layer.y = SCREEN_HEIGHT - 30;
   hud_layer.width = 240;
-  hud_layer.height = 32; // 高さを32に増やす
+  hud_layer.height = 16;
   hud_layer.transparent = 0;
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
   register_layer(&hud_layer);
-
-  // 進捗表示: HUD レイヤー作成完了
-  boot_status_update(5, 6, "HUD READY");
 
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
@@ -1373,10 +1265,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int have_draw = 0;
 
   screen_refresh(); // 最初の描画
-
-  // 進捗表示: メインループ突入
-  boot_status_update(6, 6, "MAIN LOOP");
-
   while (1) {
     int need_refresh = 0;
 
@@ -1478,6 +1366,18 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           have_draw = 0;
         }
       }
+    }
+
+    // キー入力監視
+    if (keybuf_len > 0) {
+      int len = keybuf_len;
+      if (len > KEYBUF_MAX - 1)
+        len = KEYBUF_MAX - 1;
+      memcpy(keybuf_str, (const void *)keybuf, len);
+      keybuf_str[len] = '\0';
+      draw_test_and_keys(&hud_layer);
+      need_refresh = 1;
+      keybuf_len = 0;
     }
 
     if (timer_ticks - last_stat_tick >= 100) {

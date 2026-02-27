@@ -25,9 +25,6 @@ static uint32_t g_page_size_bytes = 0;
 static int g_display_page = 0;
 static int g_draw_page = 1;
 
-// x86 向け I/O ポートアクセス。Apple Silicon 等の非 x86 環境で動く clangd では
-// レジスタ制約 'a' などが無効になるため、ホスト側ではダミー版を使う。
-#if defined(__i386__) || defined(__x86_64__)
 static inline void outw(uint16_t port, uint16_t val) {
   __asm__ __volatile__("outw %w0, %w1" : : "a"(val), "Nd"(port));
 }
@@ -37,17 +34,6 @@ static inline uint16_t inw(uint16_t port) {
   __asm__ __volatile__("inw %w1, %w0" : "=a"(ret) : "Nd"(port));
   return ret;
 }
-#else
-static inline void outw(uint16_t port, uint16_t val) {
-  (void)port;
-  (void)val;
-}
-
-static inline uint16_t inw(uint16_t port) {
-  (void)port;
-  return 0;
-}
-#endif
 
 #define BGA_INDEX 0x01CE
 #define BGA_DATA 0x01CF
@@ -209,73 +195,6 @@ void screen_refresh() {
       for (uint32_t x = 0; x < g_vram_width; x++) {
         dest[x] = src[x];
       }
-    }
-  }
-}
-
-// 画面全体にエラーメッセージ（ASCII, font8x8_basic）を 5 秒間表示し、その後戻る。
-// レイヤーではなく直接バックバッファを使うので、どこからでも呼び出せる。
-void show_error_message(const char *msg) {
-  if (!g_vram)
-    return;
-
-  // g_staticbuffer を黒で塗りつぶし
-  for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
-    g_staticbuffer[i] = 0xFF000000;
-  }
-
-  // 一時レイヤーとして扱い、既存の 8x8 描画ルーチンを流用
-  layer_t tmp;
-  tmp.buffer = g_staticbuffer;
-  tmp.x = 0;
-  tmp.y = 0;
-  tmp.width = SCREEN_WIDTH;
-  tmp.height = SCREEN_HEIGHT;
-  tmp.transparent = 0;
-  tmp.active = 1;
-  tmp.dynamic = 0;
-
-  int y = 16;
-  const char *p = msg;
-  while (*p && y < (int)SCREEN_HEIGHT - 8) {
-    char line[128];
-    int n = 0;
-    while (*p && *p != '\n' && n < (int)(sizeof(line) - 1)) {
-      line[n++] = *p++;
-    }
-    line[n] = '\0';
-    layer_draw_string(&tmp, 16, y, line, 0xFFFFFFFF, 0xFF000000);
-    y += 10;
-    if (*p == '\n')
-      p++;
-  }
-
-  // g_staticbuffer をそのまま VRAM に転送
-  uint32_t *back = g_backbuffer_ram;
-  if (g_page_flip_enabled) {
-    back = (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_display_page);
-  }
-  memcpy(back, g_staticbuffer,
-         sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
-
-  for (uint32_t y2 = 0; y2 < g_vram_height; y2++) {
-    uint32_t *dest = (uint32_t *)((uint8_t *)g_vram + y2 * g_vram_pitch);
-    uint32_t *src = &back[y2 * SCREEN_WIDTH];
-    for (uint32_t x2 = 0; x2 < g_vram_width; x2++) {
-      dest[x2] = src[x2];
-    }
-  }
-
-  // おおよそ 5 秒待つ
-  extern volatile uint32_t timer_ticks;
-  uint32_t start = timer_ticks;
-  if (start == 0) {
-    for (volatile uint64_t i = 0; i < 500000000ULL; ++i) {
-      __asm__ __volatile__("nop");
-    }
-  } else {
-    while ((timer_ticks - start) < 500) {
-      __asm__ __volatile__("nop");
     }
   }
 }
@@ -530,42 +449,14 @@ void irq_handler(struct regs *r) {
   outb(0x20, 0x20);
 }
 
-// 簡易 10 進数変換（0〜2^32-1）
-static char *append_uint32(char *p, uint32_t v) {
-  char tmp[10];
-  int n = 0;
-  if (v == 0) {
-    *p++ = '0';
-    return p;
-  }
-  while (v > 0 && n < (int)sizeof(tmp)) {
-    tmp[n++] = (char)('0' + (v % 10));
-    v /= 10;
-  }
-  while (n-- > 0) {
-    *p++ = tmp[n];
-  }
-  return p;
-}
-
 void exception_handler(struct regs *r) {
-  // すべての CPU 例外（0〜31）は isr.s からここに来る
-  // 例外番号とエラーコードを表示して 5 秒待ち、その後は元のフローに戻す
-  char msg[128];
-  char *p = msg;
-  const char *head = "EXCEPTION ";
-  while (*head)
-    *p++ = *head++;
-  p = append_uint32(p, r->int_no);
-  const char *mid = " ERR=";
-  head = mid;
-  while (*head)
-    *p++ = *head++;
-  p = append_uint32(p, r->err_code);
-  *p = '\0';
-
-  show_error_message(msg);
-  // 戻ることで CPU は例外発生地点に復帰する（多くの場合は再度同じ例外が起こる）
+  // 例外発生時は画面を白くするなどの簡易処理
+  for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+    g_staticbuffer[i] = 0xFFFFFFFF;
+  g_static_dirty = 0;
+  screen_refresh();
+  while (1)
+    ;
 }
 
 // ==========================================
