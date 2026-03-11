@@ -1587,12 +1587,22 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             // Enter: warpdesktopと入力されていたら次世代モードへ移行
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
               current_os_mode = OS_MODE_NEXTGEN;
-              layer_fill(&desktop, 0xFF1E1E1E); // ダークテーマな背景に変更
+              layer_fill(&desktop, 0xFF808080); // 灰色背景
               svg_layer.active = 0;   // パフォーマンス考慮: SVGの更新停止
               blink_layer.active = 0; // 点滅停止
+
+              const char *msg = "Warp Desktopを起動中";
+              int msg_len = 0;
+              while (msg[msg_len]) {
+                keybuf_str[msg_len] = msg[msg_len];
+                msg_len++;
+              }
+              keybuf_str[msg_len] = '\0';
+              text_layer_redraw(&text_layer, 32.0f);
+            } else {
+              keybuf_str[0] = '\0';
+              text_layer_redraw(&text_layer, 32.0f); // テキストクリア
             }
-            keybuf_str[0] = '\0';
-            text_layer_redraw(&text_layer, 32.0f); // テキストクリア
             need_refresh = 1;
           } else if (c == '\b') {
             // Backspace: 末尾を削除
@@ -1613,26 +1623,29 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           }
         }
         keybuf_len = 0;
-        // フォントサイズ: マウスY座標から計算
-        {
-          int my_now = (int)mouse_y;
-          if (my_now < 0)
-            my_now = 0;
-          if (my_now >= SCREEN_HEIGHT)
-            my_now = SCREEN_HEIGHT - 1;
-          float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
-                                    (float)(SCREEN_HEIGHT - 1);
-          text_layer_redraw(&text_layer, fsize);
+
+        if (current_os_mode == OS_MODE_WARPDESKTOP) {
+          // フォントサイズ: マウスY座標から計算 (WarpDesktopモードのみ)
+          {
+            int my_now = (int)mouse_y;
+            if (my_now < 0)
+              my_now = 0;
+            if (my_now >= SCREEN_HEIGHT)
+              my_now = SCREEN_HEIGHT - 1;
+            float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
+                                      (float)(SCREEN_HEIGHT - 1);
+            text_layer_redraw(&text_layer, fsize);
+          }
+          // HUD 3行目も更新
+          {
+            int bx, by;
+            for (by = 16; by < 24; by++)
+              for (bx = 0; bx < 240; bx++)
+                hud_layer.buffer[by * 240 + bx] = 0xFF000000;
+          }
+          layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
+                            TRANSPARENT_COLOR);
         }
-        // HUD 3行目も更新
-        {
-          int bx, by;
-          for (by = 16; by < 24; by++)
-            for (bx = 0; bx < 240; bx++)
-              hud_layer.buffer[by * 240 + bx] = 0xFF000000;
-        }
-        layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
-                          TRANSPARENT_COLOR);
         need_refresh = 1;
       }
 
@@ -1652,6 +1665,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
     } else if (current_os_mode == OS_MODE_NEXTGEN) {
       // 新モード：最低限の機能のみ更新し、高パフォーマンスを維持
+
+      // マウスの動きを監視してポインタ更新を描画に反映 (角つき＝コマ落ちを防止)
+      int mx = mouse_x;
+      int my = mouse_y;
+      if (mx != last_mouse_x || my != last_mouse_y) {
+        need_refresh = 1;
+        last_mouse_x = mx;
+        last_mouse_y = my;
+      }
+
       if (keybuf_len > 0) {
         for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
@@ -1662,6 +1685,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             svg_layer.active = 1;
             blink_layer.active = 1;
             keybuf_str[0] = '\0';
+            text_layer_redraw(&text_layer, 32.0f); // 追加でクリア反映
             need_refresh = 1;
           }
         }
