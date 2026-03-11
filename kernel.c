@@ -9,6 +9,7 @@
 #include "drivers.h"
 #include "fonts.h"
 #include "svg_data.h"
+#include "warp_ui.h"
 #include <stddef.h>
 
 #define NANOSVG_IMPLEMENTATION
@@ -179,6 +180,7 @@ static uint32_t hud_buf[240 * 24];
 #define TEXT_LAYER_W SCREEN_WIDTH
 #define TEXT_LAYER_H SCREEN_HEIGHT
 static uint32_t text_buf[TEXT_LAYER_W * TEXT_LAYER_H];
+static uint32_t nextgen_ui_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 // stbtt フォント
 static stbtt_fontinfo g_font;
 static int g_font_ready = 0;
@@ -541,7 +543,6 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 int fseek(FILE *stream, long offset, int whence) {
   (void)stream;
   (void)offset;
-  (void)whence;
   return -1;
 }
 
@@ -774,6 +775,59 @@ static int svg_init(layer_t *layer) {
   memcpy(svg_base_buf, layer->buffer,
          sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
+  return 1;
+}
+
+static NSVGimage *g_nextgen_svg_image = NULL;
+static unsigned char *g_nextgen_svg_rgba = NULL;
+
+static int svg_init_nextgen(layer_t *layer) {
+  char *svg_copy = (char *)malloc(sizeof(warp_ui_svg));
+  if (!svg_copy)
+    return 0;
+  memcpy(svg_copy, warp_ui_svg, sizeof(warp_ui_svg));
+
+  g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
+  if (!g_nextgen_svg_image)
+    return 0;
+
+  g_nextgen_svg_rgba =
+      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
+  if (!g_nextgen_svg_rgba)
+    return 0;
+
+  memset(g_nextgen_svg_rgba, 0,
+         (size_t)layer->width * (size_t)layer->height * 4);
+
+  if (!g_svg_rast) {
+    g_svg_rast = nsvgCreateRasterizer();
+  }
+  nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f, g_nextgen_svg_rgba,
+                layer->width, layer->height, layer->width * 4);
+
+  // Background #f5f5f5
+  const uint32_t bg = 0xFFF5F5F5;
+  uint8_t bg_r = (bg >> 16) & 0xFF;
+  uint8_t bg_g = (bg >> 8) & 0xFF;
+  uint8_t bg_b = bg & 0xFF;
+
+  for (int y = 0; y < layer->height; ++y) {
+    for (int x = 0; x < layer->width; ++x) {
+      size_t index = (size_t)(y * layer->width + x) * 4;
+      uint8_t r = g_nextgen_svg_rgba[index + 0];
+      uint8_t g = g_nextgen_svg_rgba[index + 1];
+      uint8_t b = g_nextgen_svg_rgba[index + 2];
+      uint8_t a = g_nextgen_svg_rgba[index + 3];
+
+      uint8_t out_r = (uint8_t)((r * a + bg_r * (255 - a)) / 255);
+      uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
+      uint8_t out_b = (uint8_t)((b * a + bg_b * (255 - a)) / 255);
+
+      layer->buffer[y * layer->width + x] =
+          (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) |
+          (uint32_t)out_b;
+    }
+  }
   return 1;
 }
 
@@ -1325,6 +1379,7 @@ extern volatile int keybuf_len;
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
 extern volatile uint8_t mouse_buttons;
+extern volatile uint8_t mouse_buttons;
 static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
   if (!mbi)
     return;
@@ -1438,8 +1493,29 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   }
   register_layer(&text_layer);
 
+  // 6. 次世代UI SVGレイヤー
+  layer_t nextgen_ui_layer;
+  nextgen_ui_layer.buffer = nextgen_ui_buf;
+  nextgen_ui_layer.x = 0;
+  nextgen_ui_layer.y = 0;
+  nextgen_ui_layer.width = SCREEN_WIDTH;
+  nextgen_ui_layer.height = SCREEN_HEIGHT;
+  nextgen_ui_layer.transparent = TRANSPARENT_COLOR; // 透過
+  nextgen_ui_layer.active = 0;                      // 最初は非表示
+  nextgen_ui_layer.dynamic = 1;
+  {
+    int i;
+    for (i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
+      nextgen_ui_buf[i] = TRANSPARENT_COLOR;
+    }
+  }
+  register_layer(&nextgen_ui_layer);
+
   // フォント初期化
   font_init(mbi);
+
+  // 次世代SVGレイヤー構築
+  svg_init_nextgen(&nextgen_ui_layer);
 
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
@@ -1591,18 +1667,48 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             // Enter: warpdesktopと入力されていたら次世代モードへ移行
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
               current_os_mode = OS_MODE_NEXTGEN;
-              layer_fill(&desktop, 0xFF808080); // 灰色背景
+              layer_fill(&desktop, 0xFFF5F5F5); // WarpBackground
               svg_layer.active = 0;   // パフォーマンス考慮: SVGの更新停止
               blink_layer.active = 0; // 点滅停止
 
-              const char *msg = "Warp Desktopを起動中";
-              int msg_len = 0;
-              while (msg[msg_len]) {
-                keybuf_str[msg_len] = msg[msg_len];
-                msg_len++;
-              }
-              keybuf_str[msg_len] = '\0';
-              text_layer_redraw(&text_layer, 32.0f);
+              nextgen_ui_layer.active = 1; // UI表示
+
+              // ヘッダーテキスト
+              layer_draw_glyph_string(&text_layer, 24, 46, "Warp Demo",
+                                      0xFF121212);
+              layer_draw_glyph_string(&text_layer, 1008, 46, "!",
+                                      0xFF121212); // ボタン代替
+
+              // Card 1
+              layer_draw_glyph_string(&text_layer, 264, 134, "内容変更",
+                                      0xFF121212);
+              layer_draw_glyph_string(&text_layer, 264, 164,
+                                      "クリックにより表示内容が変わります",
+                                      0xFF121212);
+              layer_draw_glyph_string(&text_layer, 280, 206, "OK",
+                                      0xFFFFFFFF); // 👍代わり
+              layer_draw_glyph_string(&text_layer, 368, 206, "NG",
+                                      0xFFFFFFFF); // 🤔代わり
+              layer_draw_glyph_string(&text_layer, 280, 254, "Click",
+                                      0xFFFFFFFF);
+
+              // Card 2
+              layer_draw_glyph_string(&text_layer, 264, 314, "button",
+                                      0xFF121212);
+              layer_draw_glyph_string(&text_layer, 264, 344, "通常ボタン",
+                                      0xFF121212);
+              layer_draw_glyph_string(&text_layer, 280, 366, "戻る",
+                                      0xFFFFFFFF);
+              layer_draw_glyph_string(&text_layer, 550, 366, "注文",
+                                      0xFF0A56D0);
+              layer_draw_glyph_string(&text_layer, 280, 414,
+                                      "button(text:\"戻る\")", 0xFF121212);
+
+              // Card 3
+              layer_draw_glyph_string(&text_layer, 264, 494, "複数画面",
+                                      0xFF121212);
+              layer_draw_glyph_string(&text_layer, 280, 550,
+                                      "Screen1に移動する", 0xFFFFFFFF);
             } else {
               keybuf_str[0] = '\0';
               text_layer_redraw(&text_layer, 32.0f); // テキストクリア
