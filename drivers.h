@@ -62,8 +62,12 @@ void enable_interrupts();
 // --- Graphics & Layers ---
 void set_framebuffer_info(uint32_t *fb, uint32_t width, uint32_t height,
                           uint32_t pitch);
-void screen_refresh(); // バッファを合成してVRAMに反映
-void screen_mark_static_dirty(); // 静的レイヤーの再合成要求
+void screen_refresh();
+void screen_mark_static_dirty();
+// ダーティレクトAPI
+void screen_mark_dirty_rect(int x, int y, int w, int h);
+void screen_mark_layer_dirty(const layer_t *l);
+void screen_mark_all_dirty(void);
 void layer_fill(layer_t *layer, uint32_t color);
 void layer_draw_char(layer_t *layer, int x, int y, char c, uint32_t color,
                      uint32_t bg_color);

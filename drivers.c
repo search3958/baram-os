@@ -13,9 +13,8 @@ static uint32_t g_vram_width = 0;
 static uint32_t g_vram_height = 0;
 static uint32_t g_vram_pitch = 0;
 
-// バックバッファ (最小限: 1枚)
+// バックバッファ (2枚: staticキャッシュ + compositeバッファ)
 static uint32_t g_backbuffer_ram[SCREEN_WIDTH * SCREEN_HEIGHT];
-// 静的レイヤー合成用バッファ
 static uint32_t g_staticbuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 static int g_static_dirty = 1;
 
@@ -25,16 +24,67 @@ static uint32_t g_page_size_bytes = 0;
 static int g_display_page = 0;
 static int g_draw_page = 1;
 
+// ==========================================
+// ダーティレクト管理
+// (変化した画面領域だけblitする)
+// ==========================================
+static int g_drx0 = 0, g_dry0 = 0, g_drx1 = 0, g_dry1 = 0;
+
+static void dirty_expand(int x0, int y0, int x1, int y1) {
+  if (x0 < 0)
+    x0 = 0;
+  if (y0 < 0)
+    y0 = 0;
+  if (x1 > SCREEN_WIDTH)
+    x1 = SCREEN_WIDTH;
+  if (y1 > SCREEN_HEIGHT)
+    y1 = SCREEN_HEIGHT;
+  if (x0 >= x1 || y0 >= y1)
+    return;
+  if (x0 < g_drx0)
+    g_drx0 = x0;
+  if (y0 < g_dry0)
+    g_dry0 = y0;
+  if (x1 > g_drx1)
+    g_drx1 = x1;
+  if (y1 > g_dry1)
+    g_dry1 = y1;
+}
+
+static void dirty_reset(void) {
+  g_drx0 = SCREEN_WIDTH;
+  g_dry0 = SCREEN_HEIGHT;
+  g_drx1 = 0;
+  g_dry1 = 0;
+}
+
+void screen_mark_dirty_rect(int x, int y, int w, int h) {
+  dirty_expand(x, y, x + w, y + h);
+}
+
+void screen_mark_layer_dirty(const layer_t *l) {
+  if (l && l->active)
+    dirty_expand(l->x, l->y, l->x + l->width, l->y + l->height);
+}
+
+void screen_mark_all_dirty(void) {
+  g_drx0 = 0;
+  g_dry0 = 0;
+  g_drx1 = SCREEN_WIDTH;
+  g_dry1 = SCREEN_HEIGHT;
+}
+
+// ==========================================
+// BGA / ページフリップ
+// ==========================================
 static inline void outw(uint16_t port, uint16_t val) {
   __asm__ __volatile__("outw %w0, %w1" : : "a"(val), "Nd"(port));
 }
-
 static inline uint16_t inw(uint16_t port) {
   uint16_t ret;
   __asm__ __volatile__("inw %w1, %w0" : "=a"(ret) : "Nd"(port));
   return ret;
 }
-
 #define BGA_INDEX 0x01CE
 #define BGA_DATA 0x01CF
 #define BGA_REG_ID 0x00
@@ -44,43 +94,36 @@ static inline uint16_t inw(uint16_t port) {
 #define BGA_REG_Y_OFFSET 0x09
 #define BGA_ID_MIN 0xB0C0
 #define BGA_ID_MAX 0xB0C5
-
-static inline uint16_t bga_read(uint16_t index) {
-  outw(BGA_INDEX, index);
+static inline uint16_t bga_read(uint16_t i) {
+  outw(BGA_INDEX, i);
   return inw(BGA_DATA);
 }
-
-static inline void bga_write(uint16_t index, uint16_t value) {
-  outw(BGA_INDEX, index);
-  outw(BGA_DATA, value);
+static inline void bga_write(uint16_t i, uint16_t v) {
+  outw(BGA_INDEX, i);
+  outw(BGA_DATA, v);
 }
 
-static void try_enable_page_flip() {
+static void try_enable_page_flip(void) {
   uint16_t id = bga_read(BGA_REG_ID);
   if (id < BGA_ID_MIN || id > BGA_ID_MAX)
     return;
-
-  uint16_t virt_w = (uint16_t)g_vram_width;
-  uint16_t virt_h = (uint16_t)(g_vram_height * 2);
-
-  bga_write(BGA_REG_VIRT_WIDTH, virt_w);
-  bga_write(BGA_REG_VIRT_HEIGHT, virt_h);
-
-  if (bga_read(BGA_REG_VIRT_WIDTH) != virt_w ||
-      bga_read(BGA_REG_VIRT_HEIGHT) != virt_h) {
+  uint16_t vw = (uint16_t)g_vram_width;
+  uint16_t vh = (uint16_t)(g_vram_height * 2);
+  bga_write(BGA_REG_VIRT_WIDTH, vw);
+  bga_write(BGA_REG_VIRT_HEIGHT, vh);
+  if (bga_read(BGA_REG_VIRT_WIDTH) != vw || bga_read(BGA_REG_VIRT_HEIGHT) != vh)
     return;
-  }
-
   bga_write(BGA_REG_X_OFFSET, 0);
   bga_write(BGA_REG_Y_OFFSET, 0);
-
   g_page_size_bytes = g_vram_pitch * g_vram_height;
   g_display_page = 0;
   g_draw_page = 1;
   g_page_flip_enabled = 1;
 }
 
-// レイヤー管理 (将来的に動的化も可能)
+// ==========================================
+// レイヤー管理
+// ==========================================
 #define MAX_LAYERS 8
 static layer_t *g_layers[MAX_LAYERS];
 static int g_num_layers = 0;
@@ -97,108 +140,146 @@ void set_framebuffer_info(uint32_t *fb, uint32_t width, uint32_t height,
 }
 
 void register_layer(layer_t *layer) {
-  if (g_num_layers < MAX_LAYERS) {
+  if (g_num_layers < MAX_LAYERS)
     g_layers[g_num_layers++] = layer;
-  }
 }
 
-void screen_mark_static_dirty() { g_static_dirty = 1; }
+void screen_mark_static_dirty(void) {
+  g_static_dirty = 1;
+  screen_mark_all_dirty(); // 静的レイヤー更新は全画面再描画
+}
 
-static void compose_layer(uint32_t *dest, const layer_t *l) {
+// ==========================================
+// 領域限定レイヤー合成 (ダーティレクト用)
+// ==========================================
+static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
+                                 int ry0, int rx1, int ry1) {
   if (!l->active || !l->buffer)
     return;
 
-  for (int y = 0; y < l->height; y++) {
-    int screen_y = l->y + y;
-    if (screen_y < 0 || screen_y >= (int)g_vram_height)
-      continue;
+  // レイヤー領域とダーティ領域の交差
+  int x0 = l->x > rx0 ? l->x : rx0;
+  int y0 = l->y > ry0 ? l->y : ry0;
+  int x1 = (l->x + l->width) < rx1 ? (l->x + l->width) : rx1;
+  int y1 = (l->y + l->height) < ry1 ? (l->y + l->height) : ry1;
+  if (x0 >= x1 || y0 >= y1)
+    return;
 
-    for (int x = 0; x < l->width; x++) {
-      int screen_x = l->x + x;
-      if (screen_x < 0 || screen_x >= (int)g_vram_width)
+  int lw = l->width;
+  uint32_t ltrans = l->transparent;
+  for (int y = y0; y < y1; y++) {
+    int ly = y - l->y;
+    const uint32_t *src = &l->buffer[ly * lw + (x0 - l->x)];
+    uint32_t *dst = &dest[y * SCREEN_WIDTH + x0];
+    int count = x1 - x0;
+    while (count--) {
+      uint32_t c = *src++;
+      if ((c >> 24) == 0) {
+        dst++;
         continue;
-
-      uint32_t color = l->buffer[y * l->width + x];
-      // アルファ=0のピクセルは常に透明（text_layerなど）
-      if ((color >> 24) == 0)
+      } // alpha=0 透明
+      if (ltrans && c == ltrans) {
+        dst++;
         continue;
-      // transparent色と一致する場合もスキップ
-      if (l->transparent != 0 && color == l->transparent)
-        continue;
-
-      dest[screen_y * SCREEN_WIDTH + screen_x] = color;
+      } // 指定透明色
+      *dst++ = c;
     }
   }
 }
 
-// 全レイヤーをバックバッファに合成し、VRAMに転送
-void screen_refresh() {
+// ==========================================
+// 画面更新 (ダーティレクトのみblit)
+// ==========================================
+void screen_refresh(void) {
   if (!g_vram)
     return;
 
+  // 静的レイヤーが汚れていたら全画面再合成
   if (g_static_dirty) {
-    for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-      g_staticbuffer[i] = 0xFF000000;
-
+    uint32_t *s = g_staticbuffer;
+    int total = SCREEN_WIDTH * SCREEN_HEIGHT;
+    for (int i = 0; i < total; i++)
+      s[i] = 0xFF000000;
     for (int i = 0; i < g_num_layers; i++) {
-      layer_t *l = g_layers[i];
-      if (l->dynamic)
-        continue;
-      compose_layer(g_staticbuffer, l);
+      if (!g_layers[i]->dynamic)
+        compose_layer_region(g_staticbuffer, g_layers[i], 0, 0, SCREEN_WIDTH,
+                             SCREEN_HEIGHT);
     }
     g_static_dirty = 0;
+    screen_mark_all_dirty();
   }
 
-  uint32_t *g_backbuffer = g_backbuffer_ram;
-  if (g_page_flip_enabled) {
-    g_backbuffer =
-        (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_draw_page);
-  }
-
-  memcpy(g_backbuffer, g_staticbuffer,
-         sizeof(uint32_t) * SCREEN_WIDTH * SCREEN_HEIGHT);
-
-  for (int i = 0; i < g_num_layers; i++) {
-    layer_t *l = g_layers[i];
-    if (!l->dynamic)
-      continue;
-    compose_layer(g_backbuffer, l);
-  }
-
-  // 最後にマウスを合成（白枠・黒背景の正方形）
+  // カーソルの前回位置もdirtyに含める
+  static int prev_cx = -1, prev_cy = -1;
   const int cursor_size = 12;
-  const uint32_t white = 0xFFFFFFFF;
-  const uint32_t black = 0xFF000000;
-  for (int my = 0; my < cursor_size; my++) {
-    for (int mx = 0; mx < cursor_size; mx++) {
-      int sx = mouse_x + mx;
-      int sy = mouse_y + my;
-      if (sx < 0 || sx >= (int)g_vram_width || sy < 0 ||
-          sy >= (int)g_vram_height) {
-        continue;
-      }
-      uint32_t color = black;
-      if (mx == 0 || my == 0 || mx == cursor_size - 1 ||
-          my == cursor_size - 1) {
-        color = white;
-      }
-      g_backbuffer[sy * SCREEN_WIDTH + sx] = color;
-    }
+  if (prev_cx >= 0)
+    dirty_expand(prev_cx, prev_cy, prev_cx + cursor_size,
+                 prev_cy + cursor_size);
+  int cx = (int)mouse_x, cy = (int)mouse_y;
+  dirty_expand(cx, cy, cx + cursor_size, cy + cursor_size);
+
+  // ダーティ領域がなければ終了
+  int dx0 = g_drx0, dy0 = g_dry0, dx1 = g_drx1, dy1 = g_dry1;
+  dirty_reset();
+  if (dx0 >= dx1 || dy0 >= dy1)
+    return;
+
+  // バックバッファ選択
+  uint32_t *bb = g_backbuffer_ram;
+  if (g_page_flip_enabled)
+    bb = (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_draw_page);
+
+  // ダーティ領域だけ staticbuffer → backbuffer にコピー
+  for (int y = dy0; y < dy1; y++) {
+    uint32_t *s = &g_staticbuffer[y * SCREEN_WIDTH + dx0];
+    uint32_t *d = &bb[y * SCREEN_WIDTH + dx0];
+    int n = dx1 - dx0;
+    while (n--)
+      *d++ = *s++;
   }
 
+  // 動的レイヤーをダーティ領域に合成
+  for (int i = 0; i < g_num_layers; i++) {
+    if (g_layers[i]->dynamic)
+      compose_layer_region(bb, g_layers[i], dx0, dy0, dx1, dy1);
+  }
+
+  // カーソル描画 (ダーティ領域内だけ)
+  {
+    const uint32_t white = 0xFFFFFFFF, black = 0xFF000000;
+    for (int my = 0; my < cursor_size; my++) {
+      int sy = cy + my;
+      if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height)
+        continue;
+      for (int mx = 0; mx < cursor_size; mx++) {
+        int sx = cx + mx;
+        if (sx < dx0 || sx >= dx1 || sx < 0 || sx >= (int)g_vram_width)
+          continue;
+        uint32_t color = (mx == 0 || my == 0 || mx == cursor_size - 1 ||
+                          my == cursor_size - 1)
+                             ? white
+                             : black;
+        bb[sy * SCREEN_WIDTH + sx] = color;
+      }
+    }
+    prev_cx = cx;
+    prev_cy = cy;
+  }
+
+  // VRAMへblit (ダーティ行だけ)
   if (g_page_flip_enabled) {
     bga_write(BGA_REG_X_OFFSET, 0);
     bga_write(BGA_REG_Y_OFFSET, (uint16_t)(g_draw_page * g_vram_height));
     g_display_page = g_draw_page;
     g_draw_page = 1 - g_draw_page;
   } else {
-    // バックバッファからVRAMへ転送 (Blit)
-    for (uint32_t y = 0; y < g_vram_height; y++) {
+    for (int y = dy0; y < dy1; y++) {
       uint32_t *dest = (uint32_t *)((uint8_t *)g_vram + y * g_vram_pitch);
-      uint32_t *src = &g_backbuffer[y * SCREEN_WIDTH];
-      for (uint32_t x = 0; x < g_vram_width; x++) {
-        dest[x] = src[x];
-      }
+      uint32_t *src = &bb[y * SCREEN_WIDTH + dx0];
+      uint32_t *dst = &dest[dx0];
+      int n = dx1 - dx0;
+      while (n--)
+        *dst++ = *src++;
     }
   }
 }

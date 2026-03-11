@@ -1461,182 +1461,226 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int last_draw_x = 0, last_draw_y = 0, last_draw_w = 0, last_draw_h = 0;
   int have_draw = 0;
 
+  typedef enum { OS_MODE_WARPDESKTOP, OS_MODE_NEXTGEN } os_mode_t;
+  os_mode_t current_os_mode = OS_MODE_WARPDESKTOP;
+
   screen_refresh(); // 最初の描画
   while (1) {
     int need_refresh = 0;
 
-    // 0.1秒(10 ticks)ごとに点滅
-    if (timer_ticks - last_blink_tick >= 10) {
-      blink_state = !blink_state;
-      blink_layer.active = blink_state;
-      last_blink_tick = timer_ticks;
-      need_refresh = 1;
-    }
-
-    int mx = mouse_x;
-    int my = mouse_y;
-    if (mx != last_mouse_x || my != last_mouse_y) {
-      need_refresh = 1;
-      int hover = svg_pick_shape(&svg_layer, mx, my);
-      if (hover != last_hover) {
-        last_hover = hover;
-        if (hover >= 0) {
-          active_hover = hover;
-          hover_scale = 1.0f;
-          hover_offx = 0.0f;
-          hover_offy = 0.0f;
-          hover_target_scale = HOVER_SCALE;
-        } else {
-          hover_target_scale = 1.0f;
-        }
-      }
-      last_mouse_x = mx;
-      last_mouse_y = my;
-      // Y座標が変わったとき、文字があればフォントサイズを更新
-      if (keybuf_str[0] != '\0') {
-        int my_clamp =
-            my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
-        float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) /
-                                  (float)(SCREEN_HEIGHT - 1);
-        text_layer_redraw(&text_layer, fsize);
+    if (current_os_mode == OS_MODE_WARPDESKTOP) {
+      // 0.1秒(10 ticks)ごとに点滅
+      if (timer_ticks - last_blink_tick >= 10) {
+        blink_state = !blink_state;
+        blink_layer.active = blink_state;
+        last_blink_tick = timer_ticks;
         need_refresh = 1;
       }
-    }
 
-    if (active_hover >= 0) {
-      if (last_hover >= 0) {
-        hover_target_scale = HOVER_SCALE;
-        float cx = 0.0f, cy = 0.0f;
-        if (svg_get_shape_center(active_hover, &cx, &cy)) {
-          hover_target_offx = ((float)mx - cx) * 0.2f;
-          hover_target_offy = ((float)my - cy) * 0.2f;
+      int mx = mouse_x;
+      int my = mouse_y;
+      if (mx != last_mouse_x || my != last_mouse_y) {
+        need_refresh = 1;
+        int hover = svg_pick_shape(&svg_layer, mx, my);
+        if (hover != last_hover) {
+          last_hover = hover;
+          if (hover >= 0) {
+            active_hover = hover;
+            hover_scale = 1.0f;
+            hover_offx = 0.0f;
+            hover_offy = 0.0f;
+            hover_target_scale = HOVER_SCALE;
+          } else {
+            hover_target_scale = 1.0f;
+          }
+        }
+        last_mouse_x = mx;
+        last_mouse_y = my;
+        // Y座標が変わったとき、文字があればフォントサイズを更新
+        if (keybuf_str[0] != '\0') {
+          int my_clamp =
+              my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
+          float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) /
+                                    (float)(SCREEN_HEIGHT - 1);
+          text_layer_redraw(&text_layer, fsize);
+          need_refresh = 1;
+        }
+      }
+
+      if (active_hover >= 0) {
+        if (last_hover >= 0) {
+          hover_target_scale = HOVER_SCALE;
+          float cx = 0.0f, cy = 0.0f;
+          if (svg_get_shape_center(active_hover, &cx, &cy)) {
+            hover_target_offx = ((float)mx - cx) * 0.2f;
+            hover_target_offy = ((float)my - cy) * 0.2f;
+          } else {
+            hover_target_offx = 0.0f;
+            hover_target_offy = 0.0f;
+          }
         } else {
+          hover_target_scale = 1.0f;
           hover_target_offx = 0.0f;
           hover_target_offy = 0.0f;
         }
-      } else {
-        hover_target_scale = 1.0f;
-        hover_target_offx = 0.0f;
-        hover_target_offy = 0.0f;
-      }
 
-      if (timer_ticks != last_anim_tick || need_refresh) {
-        uint32_t dt = timer_ticks - last_anim_tick;
-        if (dt == 0)
-          dt = 1;
-        last_anim_tick = timer_ticks;
-        for (uint32_t i = 0; i < dt; ++i) {
-          hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
-          hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
-          hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
-        }
-
-        int x, y, w, h;
-        if (svg_get_shape_rect_scaled(active_hover, hover_scale, hover_offx,
-                                      hover_offy, &x, &y, &w, &h)) {
-          int rx = x, ry = y, rw = w, rh = h;
-          if (have_draw) {
-            int x0 = (last_draw_x < x) ? last_draw_x : x;
-            int y0 = (last_draw_y < y) ? last_draw_y : y;
-            int x1 = (last_draw_x + last_draw_w > x + w)
-                         ? (last_draw_x + last_draw_w)
-                         : (x + w);
-            int y1 = (last_draw_y + last_draw_h > y + h)
-                         ? (last_draw_y + last_draw_h)
-                         : (y + h);
-            rx = x0;
-            ry = y0;
-            rw = x1 - x0;
-            rh = y1 - y0;
+        if (timer_ticks != last_anim_tick || need_refresh) {
+          uint32_t dt = timer_ticks - last_anim_tick;
+          if (dt == 0)
+            dt = 1;
+          last_anim_tick = timer_ticks;
+          for (uint32_t i = 0; i < dt; ++i) {
+            hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
+            hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
+            hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
           }
-          svg_update_region(&svg_layer, rx, ry, rw, rh, active_hover,
-                            hover_scale, hover_offx, hover_offy);
-          screen_mark_static_dirty();
-          need_refresh = 1;
-          last_draw_x = x;
-          last_draw_y = y;
-          last_draw_w = w;
-          last_draw_h = h;
-          have_draw = 1;
-        }
 
-        if (last_hover < 0 && (fabsf(hover_scale - 1.0f) < 0.01f) &&
-            (fabsf(hover_offx) < 0.5f) && (fabsf(hover_offy) < 0.5f)) {
-          if (have_draw) {
-            svg_update_region(&svg_layer, last_draw_x, last_draw_y, last_draw_w,
-                              last_draw_h, -1, 1.0f, 0.0f, 0.0f);
+          int x, y, w, h;
+          if (svg_get_shape_rect_scaled(active_hover, hover_scale, hover_offx,
+                                        hover_offy, &x, &y, &w, &h)) {
+            int rx = x, ry = y, rw = w, rh = h;
+            if (have_draw) {
+              int x0 = (last_draw_x < x) ? last_draw_x : x;
+              int y0 = (last_draw_y < y) ? last_draw_y : y;
+              int x1 = (last_draw_x + last_draw_w > x + w)
+                           ? (last_draw_x + last_draw_w)
+                           : (x + w);
+              int y1 = (last_draw_y + last_draw_h > y + h)
+                           ? (last_draw_y + last_draw_h)
+                           : (y + h);
+              rx = x0;
+              ry = y0;
+              rw = x1 - x0;
+              rh = y1 - y0;
+            }
+            svg_update_region(&svg_layer, rx, ry, rw, rh, active_hover,
+                              hover_scale, hover_offx, hover_offy);
             screen_mark_static_dirty();
             need_refresh = 1;
+            last_draw_x = x;
+            last_draw_y = y;
+            last_draw_w = w;
+            last_draw_h = h;
+            have_draw = 1;
           }
-          active_hover = -1;
-          have_draw = 0;
-        }
-      }
-    }
 
-    // キー入力監視
-    if (keybuf_len > 0) {
-      int i;
-      for (i = 0; i < keybuf_len; i++) {
-        char c = (char)keybuf[i];
-        if (c == '\n') {
-          // Enter: バッファリセット
-          keybuf_str[0] = '\0';
-        } else if (c == '\b') {
-          // Backspace: 末尾を削除
-          int len = 0;
-          while (keybuf_str[len])
-            len++;
-          if (len > 0)
-            keybuf_str[len - 1] = '\0';
-        } else {
-          // 通常文字: 末尾に追加
-          int len = 0;
-          while (keybuf_str[len])
-            len++;
-          if (len < KEYBUF_MAX - 1) {
-            keybuf_str[len] = c;
-            keybuf_str[len + 1] = '\0';
+          if (last_hover < 0 && (fabsf(hover_scale - 1.0f) < 0.01f) &&
+              (fabsf(hover_offx) < 0.5f) && (fabsf(hover_offy) < 0.5f)) {
+            if (have_draw) {
+              svg_update_region(&svg_layer, last_draw_x, last_draw_y,
+                                last_draw_w, last_draw_h, -1, 1.0f, 0.0f, 0.0f);
+              screen_mark_static_dirty();
+              need_refresh = 1;
+            }
+            active_hover = -1;
+            have_draw = 0;
           }
         }
       }
-      keybuf_len = 0;
-      // フォントサイズ: マウスY座標から計算
-      {
-        int my_now = (int)mouse_y;
-        if (my_now < 0)
-          my_now = 0;
-        if (my_now >= SCREEN_HEIGHT)
-          my_now = SCREEN_HEIGHT - 1;
-        float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
-                                  (float)(SCREEN_HEIGHT - 1);
-        text_layer_redraw(&text_layer, fsize);
-      }
-      // HUD 3行目も更新
-      {
-        int bx, by;
-        for (by = 16; by < 24; by++)
-          for (bx = 0; bx < 240; bx++)
-            hud_layer.buffer[by * 240 + bx] = 0xFF000000;
-      }
-      layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
-                        TRANSPARENT_COLOR);
-      need_refresh = 1;
-    }
 
-    if (timer_ticks - last_stat_tick >= 100) {
-      uint32_t total = timer_ticks - last_stat_tick;
-      uint32_t idle = idle_ticks - last_idle_tick;
-      if (total > 0) {
-        uint32_t idle_pct = (idle * 100u) / total;
-        cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+      // キー入力監視
+      if (keybuf_len > 0) {
+        int i;
+        for (i = 0; i < keybuf_len; i++) {
+          char c = (char)keybuf[i];
+          if (c == '\n') {
+            // Enter: 次世代モードへ移行 (Extensibility for new UI)
+            current_os_mode = OS_MODE_NEXTGEN;
+            layer_fill(&desktop, 0xFF1E1E1E); // ダークテーマな背景に変更
+            svg_layer.active = 0;   // パフォーマンス考慮: SVGの更新停止
+            blink_layer.active = 0; // 点滅停止
+
+            keybuf_str[0] = '\0';
+            text_layer_redraw(&text_layer, 32.0f); // テキストクリア
+            need_refresh = 1;
+          } else if (c == '\b') {
+            // Backspace: 末尾を削除
+            int len = 0;
+            while (keybuf_str[len])
+              len++;
+            if (len > 0)
+              keybuf_str[len - 1] = '\0';
+          } else {
+            // 通常文字: 末尾に追加
+            int len = 0;
+            while (keybuf_str[len])
+              len++;
+            if (len < KEYBUF_MAX - 1) {
+              keybuf_str[len] = c;
+              keybuf_str[len + 1] = '\0';
+            }
+          }
+        }
+        keybuf_len = 0;
+        // フォントサイズ: マウスY座標から計算
+        {
+          int my_now = (int)mouse_y;
+          if (my_now < 0)
+            my_now = 0;
+          if (my_now >= SCREEN_HEIGHT)
+            my_now = SCREEN_HEIGHT - 1;
+          float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
+                                    (float)(SCREEN_HEIGHT - 1);
+          text_layer_redraw(&text_layer, fsize);
+        }
+        // HUD 3行目も更新
+        {
+          int bx, by;
+          for (by = 16; by < 24; by++)
+            for (bx = 0; bx < 240; bx++)
+              hud_layer.buffer[by * 240 + bx] = 0xFF000000;
+        }
+        layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
+                          TRANSPARENT_COLOR);
+        need_refresh = 1;
       }
-      hud_update(&hud_layer, cpu_percent, (unsigned int)(heap_ptr / 1024),
-                 mem_total_kb);
-      last_stat_tick = timer_ticks;
-      last_idle_tick = idle_ticks;
-      need_refresh = 1;
-    }
+
+      if (timer_ticks - last_stat_tick >= 100) {
+        uint32_t total = timer_ticks - last_stat_tick;
+        uint32_t idle = idle_ticks - last_idle_tick;
+        if (total > 0) {
+          uint32_t idle_pct = (idle * 100u) / total;
+          cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+        }
+        hud_update(&hud_layer, cpu_percent, (unsigned int)(heap_ptr / 1024),
+                   mem_total_kb);
+        last_stat_tick = timer_ticks;
+        last_idle_tick = idle_ticks;
+        need_refresh = 1;
+      }
+
+    } else if (current_os_mode == OS_MODE_NEXTGEN) {
+      // 新モード：最低限の機能のみ更新し、高パフォーマンスを維持
+      if (keybuf_len > 0) {
+        for (int i = 0; i < keybuf_len; i++) {
+          char c = (char)keybuf[i];
+          if (c == '\n') {
+            // Enterでもとのモードに戻る (テスト・拡張性確保)
+            current_os_mode = OS_MODE_WARPDESKTOP;
+            layer_fill(&desktop, BASE_BG_COLOR);
+            svg_layer.active = 1;
+            blink_layer.active = 1;
+            keybuf_str[0] = '\0';
+            need_refresh = 1;
+          }
+        }
+        keybuf_len = 0;
+      }
+
+      if (timer_ticks - last_stat_tick >= 100) {
+        uint32_t total = timer_ticks - last_stat_tick;
+        uint32_t idle = idle_ticks - last_idle_tick;
+        if (total > 0) {
+          uint32_t idle_pct = (idle * 100u) / total;
+          cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+        }
+        hud_update(&hud_layer, cpu_percent, (unsigned int)(heap_ptr / 1024),
+                   mem_total_kb);
+        last_stat_tick = timer_ticks;
+        last_idle_tick = idle_ticks;
+        need_refresh = 1;
+      }
+    } // end mode switch
 
     if (need_refresh) {
       cpu_idle = 0;
