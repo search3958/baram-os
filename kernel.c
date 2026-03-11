@@ -16,6 +16,22 @@
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvg/nanosvgrast.h"
 
+// stb_truetype
+#define STB_TRUETYPE_IMPLEMENTATION
+#define STBTT_malloc(x, u) malloc(x)
+#define STBTT_free(x, u) free(x)
+#define STBTT_assert(x)
+// double版数学関数をfloat版にリダイレクト（カーネルにはdouble版がない）
+#define STBTT_ifloor(x) ((int)floorf((float)(x)))
+#define STBTT_iceil(x) ((int)ceilf((float)(x)))
+#define STBTT_sqrt(x) sqrtf((float)(x))
+#define STBTT_pow(x, y) ((float)pow((double)(x), (double)(y)))
+#define STBTT_fmod(x, y) fmodf((float)(x), (float)(y))
+#define STBTT_cos(x) cosf((float)(x))
+#define STBTT_acos(x) acosf((float)(x))
+#define STBTT_fabs(x) fabsf((float)(x))
+#include "stb_truetype.h"
+
 #define SVG_WIDTH NOTE_TEST_SVG_WIDTH
 #define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
 #define BASE_BG_COLOR 0xFF8B0000u
@@ -159,9 +175,17 @@ static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 static uint32_t hud_buf[240 * 24];
+// 文字レイヤー (全画面 透過)
+#define TEXT_LAYER_W SCREEN_WIDTH
+#define TEXT_LAYER_H SCREEN_HEIGHT
+static uint32_t text_buf[TEXT_LAYER_W * TEXT_LAYER_H];
+// stbtt フォント
+static stbtt_fontinfo g_font;
+static int g_font_ready = 0;
+static const char *g_font_error = NULL;
 
 // メモリアロケータ
-static char heap[1024 * 1024 * 4];
+static char heap[1024 * 1024 * 12]; // 12MB
 static uint32_t heap_ptr = 0;
 typedef struct {
   void *ptr;
@@ -1074,8 +1098,149 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 
   layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
-  // 3行目: 入力文字
-  layer_draw_string(hud, 2, 16, keybuf_str, 0xFFFFFFFF, TRANSPARENT_COLOR);
+  // 3行目: 入力文字 (フォント未使用のフォールバック表示)
+  if (!g_font_ready && g_font_error) {
+    layer_draw_string(hud, 2, 16, g_font_error, 0xFF0000FF, TRANSPARENT_COLOR);
+  }
+}
+
+// Multiboot module エントリ
+typedef struct {
+  uint32_t mod_start;
+  uint32_t mod_end;
+  uint32_t string;
+  uint32_t reserved;
+} __attribute__((packed)) multiboot_module_t;
+
+// フォント初期化 (Multibootモジュールから)
+static int font_init(struct multiboot_info *mbi) {
+  if (!mbi) {
+    g_font_error = "ERR:no mbi";
+    return 0;
+  }
+  if (!(mbi->flags & 0x8)) {
+    g_font_error = "ERR:no mods flag";
+    return 0;
+  }
+  if (mbi->mods_count == 0) {
+    g_font_error = "ERR:no modules";
+    return 0;
+  }
+  multiboot_module_t *mod = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+  unsigned char *ttf = (unsigned char *)(uintptr_t)mod->mod_start;
+  uint32_t ttf_size = mod->mod_end - mod->mod_start;
+  if (ttf_size < 12) {
+    g_font_error = "ERR:ttf too small";
+    return 0;
+  }
+  if (!stbtt_InitFont(&g_font, ttf, stbtt_GetFontOffsetForIndex(ttf, 0))) {
+    g_font_error = "ERR:stbtt_InitFont";
+    return 0;
+  }
+  g_font_ready = 1;
+  return 1;
+}
+
+// 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
+static void text_layer_redraw(layer_t *text_layer, float font_size) {
+  // 透明でクリア
+  int i;
+  for (i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++)
+    text_layer->buffer[i] = TRANSPARENT_COLOR;
+
+  if (!g_font_ready || keybuf_str[0] == '\0')
+    return;
+
+  // フォントサイズのガード（0・負にならないよう保証）
+  if (font_size < 8.0f)
+    font_size = 8.0f;
+  if (font_size > 300.0f)
+    font_size = 300.0f;
+
+  // 文字サイズ
+  float scale = stbtt_ScaleForPixelHeight(&g_font, font_size);
+
+  int ascent, descent, line_gap;
+  stbtt_GetFontVMetrics(&g_font, &ascent, &descent, &line_gap);
+  int baseline = (int)(ascent * scale);
+
+  // 全体の幅を計算してX中央揃え
+  const char *p = keybuf_str;
+  int total_w = 0;
+  while (*p) {
+    uint16_t codepoint;
+    const unsigned char *s = (const unsigned char *)p;
+    if (s[0] < 0x80) {
+      codepoint = s[0];
+      p++;
+    } else if ((s[0] & 0xE0) == 0xC0) {
+      codepoint = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+      p += 2;
+    } else if ((s[0] & 0xF0) == 0xE0) {
+      codepoint = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+      p += 3;
+    } else {
+      p++;
+      continue;
+    }
+    int adv, lsb;
+    stbtt_GetCodepointHMetrics(&g_font, codepoint, &adv, &lsb);
+    total_w += (int)(adv * scale);
+  }
+
+  int start_x = (TEXT_LAYER_W - total_w) / 2;
+  int start_y = (TEXT_LAYER_H / 2) - baseline;
+  if (start_x < 0)
+    start_x = 4;
+
+  // 各文字をレンダリング
+  int cx = start_x;
+  p = keybuf_str;
+  while (*p) {
+    uint16_t codepoint;
+    const unsigned char *s = (const unsigned char *)p;
+    if (s[0] < 0x80) {
+      codepoint = s[0];
+      p++;
+    } else if ((s[0] & 0xE0) == 0xC0) {
+      codepoint = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
+      p += 2;
+    } else if ((s[0] & 0xF0) == 0xE0) {
+      codepoint = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+      p += 3;
+    } else {
+      p++;
+      continue;
+    }
+
+    int bw, bh, bx, by;
+    unsigned char *bitmap = stbtt_GetCodepointBitmap(
+        &g_font, 0, scale, (int)codepoint, &bw, &bh, &bx, &by);
+    if (bitmap) {
+      int dx, dy;
+      for (dy = 0; dy < bh; dy++) {
+        int py = start_y + baseline + by + dy;
+        if (py < 0 || py >= TEXT_LAYER_H)
+          continue;
+        for (dx = 0; dx < bw; dx++) {
+          int px = cx + bx + dx;
+          if (px < 0 || px >= TEXT_LAYER_W)
+            continue;
+          uint8_t alpha = bitmap[dy * bw + dx];
+          if (alpha < 64) // 黒文字: 閾値以下は透明
+            continue;
+          // 黒(0x000000)でソリッド描画
+          uint32_t color = 0xFF000000u;
+          text_layer->buffer[py * TEXT_LAYER_W + px] = color;
+        }
+      }
+      stbtt_FreeBitmap(bitmap, NULL);
+    }
+
+    int adv, lsb;
+    stbtt_GetCodepointHMetrics(&g_font, codepoint, &adv, &lsb);
+    cx += (int)(adv * scale);
+  }
 }
 
 // UTF-8→Unicode変換（簡易）
@@ -1255,6 +1420,26 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&hud_layer, 0xFF000000);
   register_layer(&hud_layer);
 
+  // 5. 文字レイヤー (SVGの上, 透過)
+  layer_t text_layer;
+  text_layer.buffer = text_buf;
+  text_layer.x = 0;
+  text_layer.y = 0;
+  text_layer.width = TEXT_LAYER_W;
+  text_layer.height = TEXT_LAYER_H;
+  text_layer.transparent = TRANSPARENT_COLOR; // 黒(0)を透明视
+  text_layer.active = 1;
+  text_layer.dynamic = 1;
+  {
+    int ti;
+    for (ti = 0; ti < TEXT_LAYER_W * TEXT_LAYER_H; ti++)
+      text_buf[ti] = TRANSPARENT_COLOR;
+  }
+  register_layer(&text_layer);
+
+  // フォント初期化
+  font_init(mbi);
+
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
   uint32_t last_stat_tick = 0;
@@ -1307,6 +1492,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
       last_mouse_x = mx;
       last_mouse_y = my;
+      // Y座標が変わったとき、文字があればフォントサイズを更新
+      if (keybuf_str[0] != '\0') {
+        int my_clamp =
+            my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
+        float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) /
+                                  (float)(SCREEN_HEIGHT - 1);
+        text_layer_redraw(&text_layer, fsize);
+        need_refresh = 1;
+      }
     }
 
     if (active_hover >= 0) {
@@ -1407,15 +1601,27 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
       }
       keybuf_len = 0;
-      // HUDの3行目（y=16〜23）だけを黒で塗り直してから文字を描画
+      // フォントサイズ: マウスY座標から計算
+      {
+        int my_now = (int)mouse_y;
+        if (my_now < 0)
+          my_now = 0;
+        if (my_now >= SCREEN_HEIGHT)
+          my_now = SCREEN_HEIGHT - 1;
+        float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
+                                  (float)(SCREEN_HEIGHT - 1);
+        text_layer_redraw(&text_layer, fsize);
+      }
+      // HUD 3行目も更新
       {
         int bx, by;
         for (by = 16; by < 24; by++)
           for (bx = 0; bx < 240; bx++)
             hud_layer.buffer[by * 240 + bx] = 0xFF000000;
       }
-      layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
-                        TRANSPARENT_COLOR);
+      if (!g_font_ready)
+        layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
+                          TRANSPARENT_COLOR);
       need_refresh = 1;
     }
 
