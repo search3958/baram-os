@@ -551,6 +551,7 @@ void exception_handler(struct regs *r) {
 
 volatile int32_t mouse_x = 0;
 volatile int32_t mouse_y = 0;
+volatile uint8_t mouse_buttons = 0;
 static uint8_t mouse_cycle = 0;
 static uint8_t mouse_packet[3];
 volatile uint32_t mouse_interrupt_counter = 0;
@@ -604,6 +605,7 @@ static void mouse_handler(struct regs *r) {
     if (mouse_packet[0] & 0xC0) {
       break;
     }
+    mouse_buttons = mouse_packet[0] & 0x07;
     int dx = (int8_t)mouse_packet[1];
     int dy = (int8_t)mouse_packet[2];
     mouse_x += dx;

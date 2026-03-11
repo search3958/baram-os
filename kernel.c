@@ -1324,6 +1324,7 @@ extern volatile char keybuf[];
 extern volatile int keybuf_len;
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
+extern volatile uint8_t mouse_buttons;
 static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
   if (!mbi)
     return;
@@ -1460,6 +1461,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   uint32_t last_anim_tick = 0;
   int last_draw_x = 0, last_draw_y = 0, last_draw_w = 0, last_draw_h = 0;
   int have_draw = 0;
+
+  uint8_t prev_mouse_buttons = 0;
+  int nextgen_bg_dark = 0;
 
   typedef enum { OS_MODE_WARPDESKTOP, OS_MODE_NEXTGEN } os_mode_t;
   os_mode_t current_os_mode = OS_MODE_WARPDESKTOP;
@@ -1675,20 +1679,20 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         last_mouse_y = my;
       }
 
-      if (keybuf_len > 0) {
-        for (int i = 0; i < keybuf_len; i++) {
-          char c = (char)keybuf[i];
-          if (c == '\n') {
-            // Enterでもとのモードに戻る (テスト・拡張性確保)
-            current_os_mode = OS_MODE_WARPDESKTOP;
-            layer_fill(&desktop, BASE_BG_COLOR);
-            svg_layer.active = 1;
-            blink_layer.active = 1;
-            keybuf_str[0] = '\0';
-            text_layer_redraw(&text_layer, 32.0f); // 追加でクリア反映
-            need_refresh = 1;
-          }
+      uint8_t curr_btns = mouse_buttons;
+      if (curr_btns != prev_mouse_buttons) {
+        if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
+          // 左クリックが押された瞬間
+          nextgen_bg_dark = !nextgen_bg_dark;
+          layer_fill(&desktop, nextgen_bg_dark ? 0xFF404040 : 0xFF808080);
+          screen_mark_static_dirty(); // 背景全体を確実に再描画させる
         }
+        prev_mouse_buttons = curr_btns;
+        need_refresh = 1;
+      }
+
+      if (keybuf_len > 0) {
+        // NEXTGENモードではキー入力（Enter含む）があっても元のモードに戻さない
         keybuf_len = 0;
       }
 
