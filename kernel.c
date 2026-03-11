@@ -1584,12 +1584,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         for (i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
           if (c == '\n') {
-            // Enter: 次世代モードへ移行 (Extensibility for new UI)
-            current_os_mode = OS_MODE_NEXTGEN;
-            layer_fill(&desktop, 0xFF1E1E1E); // ダークテーマな背景に変更
-            svg_layer.active = 0;   // パフォーマンス考慮: SVGの更新停止
-            blink_layer.active = 0; // 点滅停止
-
+            // Enter: warpdesktopと入力されていたら次世代モードへ移行
+            if (strcmp(keybuf_str, "warpdesktop") == 0) {
+              current_os_mode = OS_MODE_NEXTGEN;
+              layer_fill(&desktop, 0xFF1E1E1E); // ダークテーマな背景に変更
+              svg_layer.active = 0;   // パフォーマンス考慮: SVGの更新停止
+              blink_layer.active = 0; // 点滅停止
+            }
             keybuf_str[0] = '\0';
             text_layer_redraw(&text_layer, 32.0f); // テキストクリア
             need_refresh = 1;
