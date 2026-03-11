@@ -158,7 +158,7 @@ static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
-static uint32_t hud_buf[240 * 16];
+static uint32_t hud_buf[240 * 24];
 
 // メモリアロケータ
 static char heap[1024 * 1024 * 4];
@@ -1041,6 +1041,10 @@ static char *append_uint(char *p, unsigned int v) {
   return p;
 }
 
+// キー入力バッファ
+#define KEYBUF_MAX 256
+static char keybuf_str[KEYBUF_MAX] = "";
+
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
   layer_fill(hud, 0xFF000000);
@@ -1070,11 +1074,9 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 
   layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
+  // 3行目: 入力文字
+  layer_draw_string(hud, 2, 16, keybuf_str, 0xFFFFFFFF, TRANSPARENT_COLOR);
 }
-
-// キー入力バッファ
-#define KEYBUF_MAX 256
-static char keybuf_str[KEYBUF_MAX] = "";
 
 // UTF-8→Unicode変換（簡易）
 static uint16_t utf8_next(const char **p) {
@@ -1188,6 +1190,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   enable_fpu();
 
+  // 割り込み初期化（これがないとキーボードもタイマーも動かない）
+  idt_install();
+  irq_install();
+  irq_install_handler(0, timer_handler);
+  timer_phase(100); // 100Hz
+  keyboard_install();
+  mouse_install();
+  enable_interrupts();
+
   set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
                        mbi->framebuffer_width, mbi->framebuffer_height,
                        mbi->framebuffer_pitch);
@@ -1231,16 +1242,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&blink_layer, 0xFF0000FF); // 青色
   register_layer(&blink_layer);
 
-  // 4. HUD (左下)
+  // 4. HUD (左下) - CPU / MEM / 入力文字
   layer_t hud_layer;
   hud_layer.buffer = hud_buf;
   hud_layer.x = 10;
   hud_layer.y = SCREEN_HEIGHT - 30;
   hud_layer.width = 240;
-  hud_layer.height = 16;
+  hud_layer.height = 24;
   hud_layer.transparent = 0;
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
+  layer_fill(&hud_layer, 0xFF000000);
   register_layer(&hud_layer);
 
   uint32_t last_blink_tick = 0;
@@ -1370,14 +1382,41 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
     // キー入力監視
     if (keybuf_len > 0) {
-      int len = keybuf_len;
-      if (len > KEYBUF_MAX - 1)
-        len = KEYBUF_MAX - 1;
-      memcpy(keybuf_str, (const void *)keybuf, len);
-      keybuf_str[len] = '\0';
-      draw_test_and_keys(&hud_layer);
-      need_refresh = 1;
+      int i;
+      for (i = 0; i < keybuf_len; i++) {
+        char c = (char)keybuf[i];
+        if (c == '\n') {
+          // Enter: バッファリセット
+          keybuf_str[0] = '\0';
+        } else if (c == '\b') {
+          // Backspace: 末尾を削除
+          int len = 0;
+          while (keybuf_str[len])
+            len++;
+          if (len > 0)
+            keybuf_str[len - 1] = '\0';
+        } else {
+          // 通常文字: 末尾に追加
+          int len = 0;
+          while (keybuf_str[len])
+            len++;
+          if (len < KEYBUF_MAX - 1) {
+            keybuf_str[len] = c;
+            keybuf_str[len + 1] = '\0';
+          }
+        }
+      }
       keybuf_len = 0;
+      // HUDの3行目（y=16〜23）だけを黒で塗り直してから文字を描画
+      {
+        int bx, by;
+        for (by = 16; by < 24; by++)
+          for (bx = 0; bx < 240; bx++)
+            hud_layer.buffer[by * 240 + bx] = 0xFF000000;
+      }
+      layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
+                        TRANSPARENT_COLOR);
+      need_refresh = 1;
     }
 
     if (timer_ticks - last_stat_tick >= 100) {
