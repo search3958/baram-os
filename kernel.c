@@ -1619,9 +1619,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           for (bx = 0; bx < 240; bx++)
             hud_layer.buffer[by * 240 + bx] = 0xFF000000;
       }
-      if (!g_font_ready)
-        layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
-                          TRANSPARENT_COLOR);
+      layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
+                        TRANSPARENT_COLOR);
       need_refresh = 1;
     }
 
