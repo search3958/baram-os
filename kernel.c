@@ -198,57 +198,104 @@ static stbtt_fontinfo g_font;
 static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
-// メモリアロケータ
-static char heap[1024 * 1024 * 64]; // 64MB
-static uint32_t heap_ptr = 0;
-typedef struct {
-  void *ptr;
-  size_t size;
-} alloc_entry_t;
-static alloc_entry_t allocs[2048];
-static size_t alloc_count = 0;
+// メモリアロケータ (フリーリスト方式)
+static char heap[1024 * 1024 * 32]; // 32MB
+
+typedef struct block_header {
+  size_t size;        // このブロックのデータサイズ (ヘッダ除く)
+  int    used;        // 1=使用中, 0=空き
+} block_header_t;
+
+#define BLOCK_HDR_SIZE (sizeof(block_header_t))
+
+static int heap_initialized = 0;
+
+static void heap_init(void) {
+  block_header_t *first = (block_header_t *)heap;
+  first->size = sizeof(heap) - BLOCK_HDR_SIZE;
+  first->used = 0;
+  heap_initialized = 1;
+}
 
 void *malloc(size_t size) {
+  if (!heap_initialized) heap_init();
+  if (size == 0) return NULL;
+  // 8バイトアライメント
   size = (size + 7) & ~7;
-  if (heap_ptr + size > sizeof(heap))
-    return NULL;
-  void *ptr = &heap[heap_ptr];
-  heap_ptr += size;
-  if (alloc_count < (sizeof(allocs) / sizeof(allocs[0]))) {
-    allocs[alloc_count].ptr = ptr;
-    allocs[alloc_count].size = size;
-    alloc_count++;
-  } else {
-    // 追跡しきれない場合は NULL
-    return NULL;
+
+  char *p = heap;
+  char *end = heap + sizeof(heap);
+
+  while (p + BLOCK_HDR_SIZE <= end) {
+    block_header_t *hdr = (block_header_t *)p;
+    if (!hdr->used && hdr->size >= size) {
+      // このブロックを分割できるか確認
+      size_t remaining = hdr->size - size;
+      if (remaining > BLOCK_HDR_SIZE + 8) {
+        // 後ろに新しい空きブロックを作る
+        block_header_t *next = (block_header_t *)(p + BLOCK_HDR_SIZE + size);
+        next->size = remaining - BLOCK_HDR_SIZE;
+        next->used = 0;
+        hdr->size = size;
+      }
+      hdr->used = 1;
+      return p + BLOCK_HDR_SIZE;
+    }
+    p += BLOCK_HDR_SIZE + hdr->size;
   }
-  return ptr;
+  return NULL; // 枯渇
 }
 
 void free(void *ptr) {
   if (!ptr) return;
-  // 簡易的な解放: 最後のアロケーションであればポインタを戻す
-  if (alloc_count > 0 && allocs[alloc_count - 1].ptr == ptr) {
-    heap_ptr -= allocs[alloc_count - 1].size;
-    alloc_count--;
-  }
-}
-void *realloc(void *ptr, size_t size) {
-  if (!ptr)
-    return malloc(size);
-  for (size_t i = 0; i < alloc_count; ++i) {
-    if (allocs[i].ptr == ptr) {
-      if (size <= allocs[i].size)
-        return ptr;
-      void *next = malloc(size);
-      if (!next)
-        return NULL;
-      memcpy(next, ptr, allocs[i].size);
-      return next;
+  block_header_t *hdr = (block_header_t *)((char *)ptr - BLOCK_HDR_SIZE);
+  hdr->used = 0;
+
+  // 隣接する空きブロックをマージ (前方向)
+  char *p = heap;
+  char *end = heap + sizeof(heap);
+  while (p + BLOCK_HDR_SIZE <= end) {
+    block_header_t *cur = (block_header_t *)p;
+    char *next_p = p + BLOCK_HDR_SIZE + cur->size;
+    if (!cur->used && next_p + BLOCK_HDR_SIZE <= end) {
+      block_header_t *next = (block_header_t *)next_p;
+      if (!next->used) {
+        // マージ
+        cur->size += BLOCK_HDR_SIZE + next->size;
+        continue; // 同じ位置から再チェック
+      }
     }
+    p = next_p;
   }
-  return malloc(size);
 }
+
+void *realloc(void *ptr, size_t size) {
+  if (!ptr) return malloc(size);
+  if (size == 0) { free(ptr); return NULL; }
+  block_header_t *hdr = (block_header_t *)((char *)ptr - BLOCK_HDR_SIZE);
+  if (hdr->size >= size) return ptr; // 既に十分なサイズ
+  void *next = malloc(size);
+  if (!next) return NULL;
+  memcpy(next, ptr, hdr->size < size ? hdr->size : size);
+  free(ptr);
+  return next;
+}
+
+uint32_t get_used_memory(void) {
+  if (!heap_initialized) return 0;
+  uint32_t used = 0;
+  char *p = heap;
+  char *end = heap + sizeof(heap);
+  while (p + BLOCK_HDR_SIZE <= end) {
+    block_header_t *hdr = (block_header_t *)p;
+    if (hdr->used) {
+      used += hdr->size + BLOCK_HDR_SIZE;
+    }
+    p += BLOCK_HDR_SIZE + hdr->size;
+  }
+  return used;
+}
+
 void *memset(void *s, int c, size_t n) {
   unsigned char *p = s;
   while (n--)
@@ -854,16 +901,13 @@ static void redraw_warp_svg(layer_t *layer) {
     warp_engine_update(layer->width, layer->height);
     const char *svg_str = warp_engine_get_svg();
 
-    if (g_nextgen_svg_image) {
-      nsvgDelete(g_nextgen_svg_image);
-      g_nextgen_svg_image = NULL;
-    }
-
-    char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
-    if (svg_copy) {
-      memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
-      g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-      free(svg_copy);
+    if (g_nextgen_svg_image == NULL) {
+      char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
+      if (svg_copy) {
+        memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
+        g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
+        // svg_copy は意図的に free しない (nsvgParse が内部参照するため)
+      }
     }
 
     if (!g_nextgen_svg_image) {
@@ -1952,7 +1996,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, (unsigned int)(heap_ptr / 1024),
+        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024),
                    mem_total_kb);
         last_stat_tick = timer_ticks;
         last_idle_tick = idle_ticks;
@@ -2064,7 +2108,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, (unsigned int)(heap_ptr / 1024),
+        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024),
                    mem_total_kb);
         last_stat_tick = timer_ticks;
         last_idle_tick = idle_ticks;
