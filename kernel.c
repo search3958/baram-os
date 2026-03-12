@@ -1294,6 +1294,29 @@ static int font_init(struct multiboot_info *mbi) {
   return 1;
 }
 
+// 2つの色をアルファ値(0-255)で合成するヘルパー
+static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
+  if (alpha == 0) return bg;
+  if (alpha == 255) return (fg | 0xFF000000u);
+
+  uint32_t a_bg = (bg >> 24) & 0xFF;
+  if (a_bg == 0) {
+    // 背景が透明な場合は、フォントのアルファをそのままレイヤーのアルファとして使う
+    return ((uint32_t)alpha << 24) | (fg & 0x00FFFFFFu);
+  }
+
+  // 背景が不透明な場合の通常のブレンド
+  uint32_t rb_fg = (fg & 0x00FF00FFu);
+  uint32_t g_fg  = (fg & 0x0000FF00u);
+  uint32_t rb_bg = (bg & 0x00FF00FFu);
+  uint32_t g_bg  = (bg & 0x0000FF00u);
+
+  uint32_t rb_out = (rb_fg * alpha + rb_bg * (255 - alpha)) >> 8;
+  uint32_t g_out  = (g_fg * alpha + g_bg * (255 - alpha)) >> 8;
+
+  return (0xFF000000u) | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+}
+
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
 static void text_layer_redraw(layer_t *text_layer, float font_size) {
   // 透明でクリア
@@ -1380,11 +1403,10 @@ static void text_layer_redraw(layer_t *text_layer, float font_size) {
           if (px < 0 || px >= TEXT_LAYER_W)
             continue;
           uint8_t alpha = bitmap[dy * bw + dx];
-          if (alpha < 64) // 黒文字: 閾値以下は透明
-            continue;
-          // 黒(0x000000)でソリッド描画
-          uint32_t color = 0xFF000000u;
-          text_layer->buffer[py * TEXT_LAYER_W + px] = color;
+          if (alpha == 0) continue;
+          
+          uint32_t bg = text_layer->buffer[py * TEXT_LAYER_W + px];
+          text_layer->buffer[py * TEXT_LAYER_W + px] = blend_colors(bg, 0x00000000u, alpha);
         }
       }
       stbtt_FreeBitmap(bitmap, NULL);
@@ -1440,9 +1462,10 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
           if (dpx < 0 || dpx >= layer->width)
             continue;
           uint8_t alpha = bitmap[dy * bw + dx];
-          if (alpha < 64)
-            continue;
-          layer->buffer[dpy * layer->width + dpx] = color;
+          if (alpha == 0) continue;
+
+          uint32_t bg = layer->buffer[dpy * layer->width + dpx];
+          layer->buffer[dpy * layer->width + dpx] = blend_colors(bg, color, alpha);
         }
       }
       stbtt_FreeBitmap(bitmap, NULL);

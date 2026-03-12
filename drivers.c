@@ -174,15 +174,33 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
     int count = x1 - x0;
     while (count--) {
       uint32_t c = *src++;
-      if ((c >> 24) == 0) {
+      uint32_t a = (c >> 24) & 0xFF;
+      if (a == 0) {
         dst++;
         continue;
-      } // alpha=0 透明
+      } // 全透明
+
       if (ltrans && c == ltrans) {
         dst++;
         continue;
       } // 指定透明色
-      *dst++ = c;
+
+      if (a == 255) {
+        *dst++ = c;
+        continue;
+      } // 不透明
+
+      // アルファブレンド (高速近似: /256)
+      uint32_t d = *dst;
+      uint32_t rb_c = (c & 0x00FF00FFu);
+      uint32_t g_c  = (c & 0x0000FF00u);
+      uint32_t rb_d = (d & 0x00FF00FFu);
+      uint32_t g_d  = (d & 0x0000FF00u);
+
+      uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
+      uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
+
+      *dst++ = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
     }
   }
 }
