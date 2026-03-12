@@ -193,15 +193,15 @@ static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
 // メモリアロケータ
-static char heap[1024 * 1024 * 12]; // 12MB
+static char heap[1024 * 1024 * 16]; // 16MB
 static uint32_t heap_ptr = 0;
 typedef struct {
   void *ptr;
   size_t size;
 } alloc_entry_t;
-static alloc_entry_t allocs[1024];
+static alloc_entry_t allocs[2048];
 static size_t alloc_count = 0;
-void *memcpy(void *dest, const void *src, size_t n);
+
 void *malloc(size_t size) {
   size = (size + 7) & ~7;
   if (heap_ptr + size > sizeof(heap))
@@ -213,11 +213,20 @@ void *malloc(size_t size) {
     allocs[alloc_count].size = size;
     alloc_count++;
   } else {
+    // 追跡しきれない場合は NULL
     return NULL;
   }
   return ptr;
 }
-void free(void *ptr) {}
+
+void free(void *ptr) {
+  if (!ptr) return;
+  // 簡易的な解放: 最後のアロケーションであればポインタを戻す
+  if (alloc_count > 0 && allocs[alloc_count - 1].ptr == ptr) {
+    heap_ptr -= allocs[alloc_count - 1].size;
+    alloc_count--;
+  }
+}
 void *realloc(void *ptr, size_t size) {
   if (!ptr)
     return malloc(size);
@@ -847,6 +856,7 @@ static void redraw_warp_svg(layer_t *layer) {
   memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
 
   g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
+  free(svg_copy);
   if (!g_nextgen_svg_image) {
     strncpy(g_last_svg_parse_status, "ParseErr", 63);
     return;
@@ -883,6 +893,9 @@ static void redraw_warp_svg(layer_t *layer) {
           (uint32_t)out_b;
     }
   }
+  
+  // WarpEngine で管理されているテキストをTTFで描画
+  warp_engine_draw_texts(layer);
 }
 
 static int svg_init_nextgen(layer_t *layer) {

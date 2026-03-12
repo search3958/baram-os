@@ -4,11 +4,8 @@ screen(
     Header(
     text:"Warp Demo"
 
-    button(
-        --headerText:"こんにちは"
-        text:"みなさん，"+--headerText
     )
-    )
+
 
     text(
     text:"これは新しい、ネイティブとWeb技術が融合する言語です。気になる反応は"+--mainText

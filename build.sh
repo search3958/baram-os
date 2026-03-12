@@ -15,9 +15,7 @@ echo "$CURRENT_BN" > "$BN_FILE"
 # ヘッダファイル生成
 echo "#define BUILD_NUMBER $CURRENT_BN" > build_no.h
 
-echo "-------------------------------------------"
-echo "  🚀 BaramOS Build #$CURRENT_BN Starting"
-echo "-------------------------------------------"
+echo "  🚀 BaramOS Build #$CURRENT_BN"
 
 # --- 2. 出力ディレクトリの準備 ---
 mkdir -p output
@@ -49,9 +47,7 @@ cp ui/main.warp output/isodir/boot/
 # --- 7. ISOイメージ作成 ---
 i686-elf-grub-mkrescue -o output/os.iso output/isodir || exit 1
 
-echo "-------------------------------------------"
-echo "  ✅ Build #$CURRENT_BN Success!"
-echo "-------------------------------------------"
+echo "  ✅ Build #$CURRENT_BN Success"
 
 # --- 8. QEMU起動 ---
 qemu-system-i386 -cdrom output/os.iso -vga std \
