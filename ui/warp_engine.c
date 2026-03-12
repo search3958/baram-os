@@ -636,14 +636,12 @@ void warp_engine_update(int width, int height) {
 
 const char *warp_engine_get_svg(void) { return g_svg_output; }
 
-extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str,
-                           float font_size, uint32_t color);
+extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str, float font_size, uint32_t color);
 
-void warp_engine_draw_texts(layer_t *layer) {
+void warp_engine_draw_texts(layer_t *layer, int off_x, int off_y) {
   if (!layer) return;
   for (int i = 0; i < g_texts_count; i++) {
-    layer_draw_ttf(layer, g_texts[i].x, g_texts[i].y, g_texts[i].text,
-                   g_texts[i].size, g_texts[i].color);
+    layer_draw_ttf(layer, g_texts[i].x + off_x, g_texts[i].y + off_y, g_texts[i].text, g_texts[i].size, g_texts[i].color);
   }
 }
 

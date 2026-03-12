@@ -65,6 +65,12 @@ static float g_svg_tx = 0.0f;
 static float g_svg_ty = 0.0f;
 static int g_svg_ready = 0;
 
+static float g_scroll_x = 0.0f;
+static float g_scroll_y = 0.0f;
+static float g_target_scroll_x = 0.0f;
+static float g_target_scroll_y = 0.0f;
+#define SCROLL_EASE 0.15f
+
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
 
@@ -642,7 +648,7 @@ int sscanf(const char *str, const char *format, ...) {
 }
 
 static void svg_render_full(layer_t *layer) {
-  nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx, g_svg_ty, g_svg_scale,
+  nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx + g_scroll_x, g_svg_ty + g_scroll_y, g_svg_scale,
                 g_svg_rgba, layer->width, layer->height, layer->width * 4);
 
   const uint32_t bg = BASE_BG_COLOR;
@@ -802,6 +808,7 @@ static uint32_t g_mod_count = 0;
 static NSVGimage *g_nextgen_svg_image = NULL;
 static unsigned char *g_nextgen_svg_rgba = NULL;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
+static int g_svg_dirty = 1;
 
 // Multiboot module エントリ
 typedef struct {
@@ -843,32 +850,40 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
 }
 
 static void redraw_warp_svg(layer_t *layer) {
-  warp_engine_update(layer->width, layer->height);
-  const char *svg_str = warp_engine_get_svg();
+  if (g_svg_dirty) {
+    warp_engine_update(layer->width, layer->height);
+    const char *svg_str = warp_engine_get_svg();
 
-  if (g_nextgen_svg_image) {
-    nsvgDelete(g_nextgen_svg_image);
+    if (g_nextgen_svg_image) {
+      nsvgDelete(g_nextgen_svg_image);
+      g_nextgen_svg_image = NULL;
+    }
+
+    char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
+    if (svg_copy) {
+      memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
+      g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
+      free(svg_copy);
+    }
+
+    if (!g_nextgen_svg_image) {
+      strncpy(g_last_svg_parse_status, "ParseErr", 63);
+    } else {
+      strncpy(g_last_svg_parse_status, "OK", 63);
+    }
+    g_svg_dirty = 0;
   }
 
-  char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
-  if (!svg_copy)
-    return;
-  memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
-
-  g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-  free(svg_copy);
-  if (!g_nextgen_svg_image) {
-    strncpy(g_last_svg_parse_status, "ParseErr", 63);
-    return;
-  }
-  strncpy(g_last_svg_parse_status, "OK", 63);
+  if (!g_nextgen_svg_image) return;
 
   if (!g_svg_rast) {
     g_svg_rast = nsvgCreateRasterizer();
   }
-  memset(g_nextgen_svg_rgba, 0,
-         (size_t)layer->width * (size_t)layer->height * 4);
-  nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f, g_nextgen_svg_rgba,
+
+  memset(g_nextgen_svg_rgba, 0, (size_t)layer->width * (size_t)layer->height * 4);
+  
+  // スクロール位置を考慮してラスタライズ
+  nsvgRasterize(g_svg_rast, g_nextgen_svg_image, (float)g_scroll_x, (float)g_scroll_y, 1.0f, g_nextgen_svg_rgba,
                 layer->width, layer->height, layer->width * 4);
 
   const uint32_t bg = 0xFFF5F5F5;
@@ -877,25 +892,29 @@ static void redraw_warp_svg(layer_t *layer) {
   uint8_t bg_b = bg & 0xFF;
 
   for (int y = 0; y < layer->height; ++y) {
+    uint32_t *line = &layer->buffer[y * layer->width];
+    unsigned char *rgba_line = &g_nextgen_svg_rgba[y * layer->width * 4];
     for (int x = 0; x < layer->width; ++x) {
-      size_t index = (size_t)(y * layer->width + x) * 4;
-      uint8_t r = g_nextgen_svg_rgba[index + 0];
-      uint8_t g = g_nextgen_svg_rgba[index + 1];
-      uint8_t b = g_nextgen_svg_rgba[index + 2];
-      uint8_t a = g_nextgen_svg_rgba[index + 3];
+      uint8_t a = rgba_line[x * 4 + 3];
+      if (a == 0) {
+        line[x] = bg;
+        continue;
+      }
+      if (a == 255) {
+        line[x] = (0xFFu << 24) | ((uint32_t)rgba_line[x * 4 + 0] << 16) | ((uint32_t)rgba_line[x * 4 + 1] << 8) | (uint32_t)rgba_line[x * 4 + 2];
+        continue;
+      }
+      uint8_t r = rgba_line[x * 4 + 0];
+      uint8_t g = rgba_line[x * 4 + 1];
+      uint8_t b = rgba_line[x * 4 + 2];
 
       uint8_t out_r = (uint8_t)((r * a + bg_r * (255 - a)) / 255);
       uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
       uint8_t out_b = (uint8_t)((b * a + bg_b * (255 - a)) / 255);
 
-      layer->buffer[y * layer->width + x] =
-          (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) |
-          (uint32_t)out_b;
+      line[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
     }
   }
-  
-  // WarpEngine で管理されているテキストをTTFで描画
-  warp_engine_draw_texts(layer);
 }
 
 static int svg_init_nextgen(layer_t *layer) {
@@ -990,8 +1009,8 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
             g_svg_cache[i].shape->flags = 0;
           c->shape->flags = NSVG_FLAGS_VISIBLE;
 
-          nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx - (float)x0,
-                        g_svg_ty - (float)y0, g_svg_scale, g_svg_hover_buf, w,
+          nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx + g_scroll_x - (float)x0,
+                        g_svg_ty + g_scroll_y - (float)y0, g_svg_scale, g_svg_hover_buf, w,
                         h, w * 4);
 
           for (int i = 0; i < g_svg_shape_count; ++i)
@@ -1078,10 +1097,10 @@ static int svg_get_shape_rect_scaled(int index, float scale, float offx,
     src_w = c->w;
     src_h = c->h;
   } else if (c->shape) {
-    float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx;
-    float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty;
-    float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
-    float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
+    float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx + g_scroll_x;
+    float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty + g_scroll_y;
+    float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx + g_scroll_x;
+    float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty + g_scroll_y;
 
     float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
     int pad = (int)ceilf(padf);
@@ -1133,8 +1152,8 @@ static int svg_get_shape_center(int index, float *cx, float *cy) {
   float y0 = s->bounds[1];
   float x1 = s->bounds[2];
   float y1 = s->bounds[3];
-  *cx = ((x0 + x1) * 0.5f) * g_svg_scale + g_svg_tx;
-  *cy = ((y0 + y1) * 0.5f) * g_svg_scale + g_svg_ty;
+  *cx = ((x0 + x1) * 0.5f) * g_svg_scale + g_svg_tx + g_scroll_x;
+  *cy = ((y0 + y1) * 0.5f) * g_svg_scale + g_svg_ty + g_scroll_y;
   return 1;
 }
 
@@ -1149,8 +1168,8 @@ static int svg_pick_shape(layer_t *layer, int screen_x, int screen_y) {
 
   float lx = (float)(screen_x - layer->x);
   float ly = (float)(screen_y - layer->y);
-  float ix = (lx - g_svg_tx) / g_svg_scale;
-  float iy = (ly - g_svg_ty) / g_svg_scale;
+  float ix = (lx - g_svg_tx - g_scroll_x) / g_svg_scale;
+  float iy = (ly - g_svg_ty - g_scroll_y) / g_svg_scale;
 
   int hit = -1;
   for (int i = 0; i < g_svg_shape_count; ++i) {
@@ -1535,7 +1554,7 @@ static void nextgen_ui_redraw_text(layer_t *text_layer) {
     text_layer->buffer[i] = TRANSPARENT_COLOR;
   }
 
-  warp_engine_draw_texts(text_layer);
+  warp_engine_draw_texts(text_layer, g_scroll_x, g_scroll_y);
 }
 
 void draw_test_and_keys(layer_t *layer) {
@@ -1783,6 +1802,19 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
             hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
             hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
+            
+            // スクロールアニメーション
+            float dx = (g_target_scroll_x - g_scroll_x) * SCROLL_EASE;
+            float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
+            if (fabsf(dx) < 0.1f) g_scroll_x = g_target_scroll_x; else g_scroll_x += dx;
+            if (fabsf(dy) < 0.1f) g_scroll_y = g_target_scroll_y; else g_scroll_y += dy;
+          }
+
+          if (fabsf(g_target_scroll_x - g_scroll_x) > 0.1f || fabsf(g_target_scroll_y - g_scroll_y) > 0.1f) {
+            svg_render_full(&svg_layer);
+            memcpy(svg_base_buf, svg_layer.buffer, sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+            screen_mark_static_dirty();
+            need_refresh = 1;
           }
 
           int x, y, w, h;
@@ -1833,16 +1865,30 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int i;
         for (i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == '\n') {
+          if (c == KEY_UP) {
+            g_target_scroll_y += 100.0f;
+          } else if (c == KEY_DOWN) {
+            g_target_scroll_y -= 100.0f;
+          } else if (c == KEY_LEFT) {
+            g_target_scroll_x += 100.0f;
+          } else if (c == KEY_RIGHT) {
+            g_target_scroll_x -= 100.0f;
+          } else if (c == '\n') {
             // Enter: warpdesktopと入力されていたら次世代モードへ移行
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
               current_os_mode = OS_MODE_WARPDESKTOP;
+              g_scroll_x = 0.0f;
+              g_scroll_y = 0.0f;
+              g_target_scroll_x = 0.0f;
+              g_target_scroll_y = 0.0f;
               layer_fill(&desktop, 0xFFF5F5F5); // WarpBackground
               svg_layer.active = 0;        // パフォーマンス考慮: SVGの更新停止
               blink_layer.active = 0;      // 点滅停止
               nextgen_ui_layer.active = 1; // UI表示
               keybuf_str[0] = '\0';        // 入力バッファをクリア
               screen_mark_static_dirty();  // 静的レイヤー変更を画面に反映
+              
+              g_svg_dirty = 1; // SVGをパースし直す
               redraw_warp_svg(&nextgen_ui_layer);
               nextgen_ui_redraw_text(&text_layer);
               screen_mark_all_dirty();
@@ -1887,6 +1933,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         need_refresh = 1;
       }
 
+      // マウススクロール (CLASSICモード)
+      if (mouse_scroll != 0) {
+        g_target_scroll_y += (float)mouse_scroll * 60.0f;
+        mouse_scroll = 0;
+        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
+        if (g_target_scroll_y < -5000.0f) g_target_scroll_y = -5000.0f;
+        need_refresh = 1;
+      }
+
       if (timer_ticks - last_stat_tick >= 100) {
         uint32_t total = timer_ticks - last_stat_tick;
         uint32_t idle = idle_ticks - last_idle_tick;
@@ -1913,11 +1968,42 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         last_mouse_y = my;
       }
 
+      // マウススクロールの監視
+      if (mouse_scroll != 0) {
+        g_target_scroll_y += (float)mouse_scroll * 60.0f;
+        mouse_scroll = 0;
+        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
+        if (g_target_scroll_y < -5000.0f) g_target_scroll_y = -5000.0f;
+        need_refresh = 1;
+      }
+
       uint8_t curr_btns = mouse_buttons;
+      
+      // スクロールアニメーション (WARPDESKTOP)
+      if (timer_ticks != last_anim_tick) {
+        uint32_t dt = timer_ticks - last_anim_tick;
+        last_anim_tick = timer_ticks;
+        int moved = 0;
+        for (uint32_t i = 0; i < dt; i++) {
+          float dx = (g_target_scroll_x - g_scroll_x) * SCROLL_EASE;
+          float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
+          if (fabsf(dx) > 0.1f) { g_scroll_x += dx; moved = 1; } else g_scroll_x = g_target_scroll_x;
+          if (fabsf(dy) > 0.1f) { g_scroll_y += dy; moved = 1; } else g_scroll_y = g_target_scroll_y;
+        }
+        if (moved) {
+          redraw_warp_svg(&nextgen_ui_layer);
+          nextgen_ui_redraw_text(&text_layer);
+          screen_mark_static_dirty();
+          screen_mark_all_dirty();
+          need_refresh = 1;
+        }
+      }
+
       if (curr_btns != prev_mouse_buttons) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
-          // 左クリックが押された瞬間
-          warp_engine_click(mx, my);
+          // 左クリックが押された瞬間 (スクロール位置を考慮してクリック判定)
+          warp_engine_click(mx - g_scroll_x, my - g_scroll_y);
+          g_svg_dirty = 1; // UIが変わった可能性があるため再パース
           redraw_warp_svg(&nextgen_ui_layer);
           nextgen_ui_redraw_text(&text_layer);
           screen_mark_static_dirty(); // 背景全体を確実に再描画させる
@@ -1932,7 +2018,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int i;
         for (i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == '\b') {
+          if (c == KEY_UP) {
+            g_target_scroll_y += 100.0f;
+          } else if (c == KEY_DOWN) {
+            g_target_scroll_y -= 100.0f;
+          } else if (c == KEY_LEFT) {
+            g_target_scroll_x += 100.0f;
+          } else if (c == KEY_RIGHT) {
+            g_target_scroll_x -= 100.0f;
+          } else if (c == '\b') {
             int len = 0;
             while (keybuf_str[len])
               len++;
@@ -1952,6 +2046,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           }
         }
         keybuf_len = 0;
+
+        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
+        if (g_target_scroll_x > 0.0f) g_target_scroll_x = 0.0f;
 
         // 入力内容をUIに反映
         nextgen_ui_redraw_text(&text_layer);

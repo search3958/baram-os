@@ -79,7 +79,14 @@ void mouse_install();
 void keyboard_install();
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
+extern volatile int32_t mouse_scroll;
 extern volatile uint32_t mouse_interrupt_counter;
+
+// Arrow key custom ASCII codes
+#define KEY_UP    0x11
+#define KEY_DOWN  0x12
+#define KEY_LEFT  0x13
+#define KEY_RIGHT 0x14
 
 // --- Multiboot ---
 struct multiboot_info {

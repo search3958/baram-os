@@ -510,7 +510,7 @@ static const char scancode_to_ascii[128] = {
     0,   0,    '1',  '2', '3', '4', '5', '6', '7', '8', '9', '0', '-',
     '=', '\b', 0,    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
     '[', ']',  '\n', 0,   'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l',
-    ';', '\'', 0,    'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
+    ';', '\'', '`',  0,   '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
     0,   '*',  0,    ' ', 0,   0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -518,11 +518,34 @@ static const char scancode_to_ascii[128] = {
     0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0};
 
 static void keyboard_handler(struct regs *r) {
+  static int extended = 0;
   uint8_t scancode = inb(0x60);
-  if (scancode < 128) {
-    char c = scancode_to_ascii[scancode];
-    if (c && keybuf_len < KEYBUF_SIZE) {
-      keybuf[keybuf_len++] = c;
+
+  if (scancode == 0xE0) {
+    extended = 1;
+    return;
+  }
+
+  if (scancode & 0x80) {
+    // Key release
+    extended = 0;
+  } else {
+    if (extended) {
+      char c = 0;
+      if (scancode == 0x48) c = KEY_UP;
+      else if (scancode == 0x50) c = KEY_DOWN;
+      else if (scancode == 0x4B) c = KEY_LEFT;
+      else if (scancode == 0x4D) c = KEY_RIGHT;
+      
+      if (c && keybuf_len < KEYBUF_SIZE) {
+        keybuf[keybuf_len++] = c;
+      }
+      extended = 0;
+    } else if (scancode < 128) {
+      char c = scancode_to_ascii[scancode];
+      if (c && keybuf_len < KEYBUF_SIZE) {
+        keybuf[keybuf_len++] = c;
+      }
     }
   }
 }
@@ -569,9 +592,11 @@ void exception_handler(struct regs *r) {
 
 volatile int32_t mouse_x = 0;
 volatile int32_t mouse_y = 0;
+volatile int32_t mouse_scroll = 0;
 volatile uint8_t mouse_buttons = 0;
 static uint8_t mouse_cycle = 0;
-static uint8_t mouse_packet[3];
+static uint8_t mouse_packet[4];
+static int mouse_has_wheel = 0;
 volatile uint32_t mouse_interrupt_counter = 0;
 
 void mouse_wait(uint8_t a_type) {
@@ -604,11 +629,7 @@ static void mouse_handler(struct regs *r) {
   uint8_t data = inb(0x60);
   switch (mouse_cycle) {
   case 0:
-    // Bit 3 must be set in the first byte; otherwise resync.
-    if ((data & 0x08) == 0) {
-      mouse_cycle = 0;
-      break;
-    }
+    if ((data & 0x08) == 0) return;
     mouse_packet[0] = data;
     mouse_cycle++;
     break;
@@ -618,26 +639,38 @@ static void mouse_handler(struct regs *r) {
     break;
   case 2:
     mouse_packet[2] = data;
-    mouse_cycle = 0;
-    // Ignore packets with overflow to avoid jumps.
-    if (mouse_packet[0] & 0xC0) {
-      break;
+    if (mouse_has_wheel) {
+      mouse_cycle++;
+    } else {
+      mouse_cycle = 0;
+      goto process_packet;
     }
-    mouse_buttons = mouse_packet[0] & 0x07;
-    int dx = (int8_t)mouse_packet[1];
-    int dy = (int8_t)mouse_packet[2];
-    mouse_x += dx;
-    mouse_y -= dy;
-    if (mouse_x < 0)
-      mouse_x = 0;
-    if (mouse_y < 0)
-      mouse_y = 0;
-    if (mouse_x > SCREEN_WIDTH - 1)
-      mouse_x = SCREEN_WIDTH - 1;
-    if (mouse_y > SCREEN_HEIGHT - 1)
-      mouse_y = SCREEN_HEIGHT - 1;
     break;
+  case 3:
+    mouse_packet[3] = data;
+    mouse_cycle = 0;
+    goto process_packet;
   }
+  return;
+
+process_packet:
+  if (mouse_packet[0] & 0xC0) return;
+  mouse_buttons = mouse_packet[0] & 0x07;
+  int dx = (int8_t)mouse_packet[1];
+  int dy = (int8_t)mouse_packet[2];
+  
+  if (mouse_has_wheel) {
+    int8_t scroll = (int8_t)(mouse_packet[3] & 0x0F);
+    if (mouse_packet[3] & 0x08) scroll -= 16;
+    mouse_scroll += scroll;
+  }
+
+  mouse_x += dx;
+  mouse_y -= dy;
+  if (mouse_x < 0) mouse_x = 0;
+  if (mouse_y < 0) mouse_y = 0;
+  if (mouse_x > SCREEN_WIDTH - 1) mouse_x = SCREEN_WIDTH - 1;
+  if (mouse_y > SCREEN_HEIGHT - 1) mouse_y = SCREEN_HEIGHT - 1;
 }
 
 void mouse_install() {
@@ -652,10 +685,18 @@ void mouse_install() {
   outb(0x64, 0x60);
   mouse_wait(0);
   outb(0x60, status);
-  mouse_write(0xF6);
-  mouse_read();
-  mouse_write(0xF4);
-  mouse_read();
+  
+  mouse_write(0xF6); mouse_read();
+  
+  // Try enabling scroll wheel
+  mouse_write(0xF3); mouse_read(); mouse_write(200); mouse_read();
+  mouse_write(0xF3); mouse_read(); mouse_write(100); mouse_read();
+  mouse_write(0xF3); mouse_read(); mouse_write(80);  mouse_read();
+  mouse_write(0xF2); mouse_read();
+  uint8_t id = mouse_read();
+  if (id == 3) mouse_has_wheel = 1;
+
+  mouse_write(0xF4); mouse_read();
   irq_install_handler(12, mouse_handler);
   uint8_t mask = inb(0xA1);
   mask &= ~(1 << 4);
