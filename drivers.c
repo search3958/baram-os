@@ -193,12 +193,12 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
       // アルファブレンド (高速近似: /256)
       uint32_t d = *dst;
       uint32_t rb_c = (c & 0x00FF00FFu);
-      uint32_t g_c  = (c & 0x0000FF00u);
+      uint32_t g_c = (c & 0x0000FF00u);
       uint32_t rb_d = (d & 0x00FF00FFu);
-      uint32_t g_d  = (d & 0x0000FF00u);
+      uint32_t g_d = (d & 0x0000FF00u);
 
       uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
-      uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
+      uint32_t g_out = (g_c * a + g_d * (255 - a)) >> 8;
 
       *dst++ = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
     }
@@ -278,14 +278,17 @@ void screen_refresh(void) {
   if (g_cursor_bitmap) {
     for (int my = 0; my < g_cursor_h; my++) {
       int sy = cy + my;
-      if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height) continue;
+      if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height)
+        continue;
       for (int mx = 0; mx < g_cursor_w; mx++) {
         int sx = cx + mx;
-        if (sx < dx0 || sx >= dx1 || sx < 0 || sx >= (int)g_vram_width) continue;
-        
+        if (sx < dx0 || sx >= dx1 || sx < 0 || sx >= (int)g_vram_width)
+          continue;
+
         uint32_t c = g_cursor_bitmap[my * g_cursor_w + mx];
         uint8_t a = (c >> 24) & 0xFF;
-        if (a == 0) continue;
+        if (a == 0)
+          continue;
         if (a == 255) {
           bb[sy * SCREEN_WIDTH + sx] = c;
         } else {
@@ -294,14 +297,15 @@ void screen_refresh(void) {
           uint32_t rb_c = (c & 0x00FF00FFu), g_c = (c & 0x0000FF00u);
           uint32_t rb_d = (d & 0x00FF00FFu), g_d = (d & 0x0000FF00u);
           uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
-          uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
-          bb[sy * SCREEN_WIDTH + sx] = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+          uint32_t g_out = (g_c * a + g_d * (255 - a)) >> 8;
+          bb[sy * SCREEN_WIDTH + sx] =
+              0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
         }
       }
     }
   } else {
     const uint32_t white = 0xFFFFFFFF, black = 0xFF000000;
-    const int cursor_size = 12;
+    const int cursor_size = 64;
     for (int my = 0; my < cursor_size; my++) {
       int sy = cy + my;
       if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height)
@@ -544,15 +548,15 @@ volatile char keybuf[KEYBUF_SIZE];
 volatile int keybuf_len = 0;
 
 static const char scancode_to_ascii[128] = {
-    0,   0,    '1',  '2', '3', '4', '5', '6', '7', '8', '9', '0', '-',
-    '=', '\b', 0,    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
-    '[', ']',  '\n', 0,   'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l',
-    ';', '\'', '`',  0,   '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
-    0,   '*',  0,    ' ', 0,   0,   0,   0,   0,   0,   0,   0,   0,
-    0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-    0,   0,    0,    0,   0,   0,   0,   0,   0,   0,   0};
+    0,   0,    '1',  '2', '3',  '4', '5', '6', '7', '8', '9', '0', '-',
+    '=', '\b', 0,    'q', 'w',  'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
+    '[', ']',  '\n', 0,   'a',  's', 'd', 'f', 'g', 'h', 'j', 'k', 'l',
+    ';', '\'', '`',  0,   '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',',
+    '.', '/',  0,    '*', 0,    ' ', 0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0};
 
 static void keyboard_handler(struct regs *r) {
   static int extended = 0;
@@ -569,11 +573,15 @@ static void keyboard_handler(struct regs *r) {
   } else {
     if (extended) {
       char c = 0;
-      if (scancode == 0x48) c = KEY_UP;
-      else if (scancode == 0x50) c = KEY_DOWN;
-      else if (scancode == 0x4B) c = KEY_LEFT;
-      else if (scancode == 0x4D) c = KEY_RIGHT;
-      
+      if (scancode == 0x48)
+        c = KEY_UP;
+      else if (scancode == 0x50)
+        c = KEY_DOWN;
+      else if (scancode == 0x4B)
+        c = KEY_LEFT;
+      else if (scancode == 0x4D)
+        c = KEY_RIGHT;
+
       if (c && keybuf_len < KEYBUF_SIZE) {
         keybuf[keybuf_len++] = c;
       }
@@ -666,7 +674,8 @@ static void mouse_handler(struct regs *r) {
   uint8_t data = inb(0x60);
   switch (mouse_cycle) {
   case 0:
-    if ((data & 0x08) == 0) return;
+    if ((data & 0x08) == 0)
+      return;
     mouse_packet[0] = data;
     mouse_cycle++;
     break;
@@ -691,23 +700,29 @@ static void mouse_handler(struct regs *r) {
   return;
 
 process_packet:
-  if (mouse_packet[0] & 0xC0) return;
+  if (mouse_packet[0] & 0xC0)
+    return;
   mouse_buttons = mouse_packet[0] & 0x07;
   int dx = (int8_t)mouse_packet[1];
   int dy = (int8_t)mouse_packet[2];
-  
+
   if (mouse_has_wheel) {
     int8_t scroll = (int8_t)(mouse_packet[3] & 0x0F);
-    if (mouse_packet[3] & 0x08) scroll -= 16;
+    if (mouse_packet[3] & 0x08)
+      scroll -= 16;
     mouse_scroll += scroll;
   }
 
   mouse_x += dx;
   mouse_y -= dy;
-  if (mouse_x < 0) mouse_x = 0;
-  if (mouse_y < 0) mouse_y = 0;
-  if (mouse_x > SCREEN_WIDTH - 1) mouse_x = SCREEN_WIDTH - 1;
-  if (mouse_y > SCREEN_HEIGHT - 1) mouse_y = SCREEN_HEIGHT - 1;
+  if (mouse_x < 0)
+    mouse_x = 0;
+  if (mouse_y < 0)
+    mouse_y = 0;
+  if (mouse_x > SCREEN_WIDTH - 1)
+    mouse_x = SCREEN_WIDTH - 1;
+  if (mouse_y > SCREEN_HEIGHT - 1)
+    mouse_y = SCREEN_HEIGHT - 1;
 }
 
 void mouse_install() {
@@ -722,18 +737,31 @@ void mouse_install() {
   outb(0x64, 0x60);
   mouse_wait(0);
   outb(0x60, status);
-  
-  mouse_write(0xF6); mouse_read();
-  
-  // Try enabling scroll wheel
-  mouse_write(0xF3); mouse_read(); mouse_write(200); mouse_read();
-  mouse_write(0xF3); mouse_read(); mouse_write(100); mouse_read();
-  mouse_write(0xF3); mouse_read(); mouse_write(80);  mouse_read();
-  mouse_write(0xF2); mouse_read();
-  uint8_t id = mouse_read();
-  if (id == 3) mouse_has_wheel = 1;
 
-  mouse_write(0xF4); mouse_read();
+  mouse_write(0xF6);
+  mouse_read();
+
+  // Try enabling scroll wheel
+  mouse_write(0xF3);
+  mouse_read();
+  mouse_write(200);
+  mouse_read();
+  mouse_write(0xF3);
+  mouse_read();
+  mouse_write(100);
+  mouse_read();
+  mouse_write(0xF3);
+  mouse_read();
+  mouse_write(80);
+  mouse_read();
+  mouse_write(0xF2);
+  mouse_read();
+  uint8_t id = mouse_read();
+  if (id == 3)
+    mouse_has_wheel = 1;
+
+  mouse_write(0xF4);
+  mouse_read();
   irq_install_handler(12, mouse_handler);
   uint8_t mask = inb(0xA1);
   mask &= ~(1 << 4);
@@ -747,7 +775,9 @@ void sys_restart(void) {
     good = inb(0x64);
   }
   outb(0x64, 0xFE);
-  
+
   // フォールバック: HLT ループ
-  while(1) { __asm__ __volatile__("hlt"); }
+  while (1) {
+    __asm__ __volatile__("hlt");
+  }
 }

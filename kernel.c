@@ -1635,6 +1635,47 @@ static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
     }
   }
 }
+// ボックスブラー (アルファチャンネルのみ)
+static void box_blur_alpha(unsigned char *data, int w, int h, int radius) {
+  if (radius <= 0) return;
+  unsigned char *tmp = (unsigned char *)malloc((size_t)w * (size_t)h);
+  if (!tmp) return;
+
+  for (int pass = 0; pass < 3; pass++) { // 3回繰り返してガウスブラーに近づける
+    // 横方向
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        int sum = 0;
+        int count = 0;
+        for (int dx = -radius; dx <= radius; dx++) {
+          int nx = x + dx;
+          if (nx >= 0 && nx < w) {
+            sum += data[(y * w + nx) * 4 + 3];
+            count++;
+          }
+        }
+        tmp[y * w + x] = (unsigned char)(sum / count);
+      }
+    }
+    // 縦方向
+    for (int x = 0; x < w; x++) {
+      for (int y = 0; y < h; y++) {
+        int sum = 0;
+        int count = 0;
+        for (int dy = -radius; dy <= radius; dy++) {
+          int ny = y + dy;
+          if (ny >= 0 && ny < h) {
+            sum += tmp[ny * w + x];
+            count++;
+          }
+        }
+        data[(y * w + x) * 4 + 3] = (unsigned char)(sum / count);
+      }
+    }
+  }
+  free(tmp);
+}
+
 static void cursor_init(void) {
   const char *cursor_svg = 
     "<svg width=\"298\" height=\"352\" viewBox=\"0 0 298 352\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
@@ -1647,31 +1688,59 @@ static void cursor_init(void) {
   NSVGimage *img = nsvgParse((char *)cursor_svg, "px", 96.0f);
   if (!img) return;
 
-  // 縦24px程度にスケール
-  int h = 24;
-  float scale = (float)h / img->height;
-  int w = (int)(img->width * scale);
+  // 縦48px程度にスケール。シャドウのために余白を追加
+  int target_h = 48;
+  float scale = (float)target_h / img->height;
+  int target_w = (int)(img->width * scale);
+  
+  int padding = 16;
+  int w = target_w + padding * 2;
+  int h = target_h + padding * 2;
 
   uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
   if (!buf) { nsvgDelete(img); return; }
 
   NSVGrasterizer *rast = nsvgCreateRasterizer();
   unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-  if (rast && rgba) {
-    nsvgRasterize(rast, img, 0, 0, scale, rgba, w, h, w * 4);
-    // RGBA -> ARGB (またはお使いのレイヤー形式) に変換
+  unsigned char *shadow_rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+
+  if (rast && rgba && shadow_rgba) {
+    // 1. シャドウ用のラスタライズ (オフセット込)
+    memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
+    nsvgRasterize(rast, img, (float)padding + 2.0f, (float)padding + 4.0f, scale, shadow_rgba, w, h, w * 4);
+    box_blur_alpha(shadow_rgba, w, h, 4); // ブラー適用
+
+    // 2. 本体をラスタライズ
+    memset(rgba, 0, (size_t)w * (size_t)h * 4);
+    nsvgRasterize(rast, img, (float)padding, (float)padding, scale, rgba, w, h, w * 4);
+
+    // 3. 合成 (影 -> 本体)
     for (int i = 0; i < w * h; i++) {
-      uint8_t r = rgba[i * 4 + 0];
-      uint8_t g = rgba[i * 4 + 1];
-      uint8_t b = rgba[i * 4 + 2];
-      uint8_t a = rgba[i * 4 + 3];
-      buf[i] = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+      // 影の色 (黒, 透過度はブラー後のアルファ * 0.5)
+      uint8_t shadow_a = (uint8_t)(shadow_rgba[i * 4 + 3] * 0.5f);
+      uint8_t r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+
+      if (a == 255) {
+        buf[i] = (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+      } else {
+        // アルファブレンドで合成
+        uint8_t out_a = a + (shadow_a * (255 - a) / 255);
+        if (out_a == 0) {
+          buf[i] = 0;
+        } else {
+          uint8_t out_r = (uint8_t)((r * a + 0 * (out_a - a)) / out_a);
+          uint8_t out_g = (uint8_t)((g * a + 0 * (out_a - a)) / out_a);
+          uint8_t out_b = (uint8_t)((b * a + 0 * (out_a - a)) / out_a);
+          buf[i] = ((uint32_t)out_a << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+        }
+      }
     }
     set_cursor_bitmap(buf, w, h);
   }
   
   if (rast) nsvgDeleteRasterizer(rast);
   if (rgba) free(rgba);
+  if (shadow_rgba) free(shadow_rgba);
   nsvgDelete(img);
 }
 
