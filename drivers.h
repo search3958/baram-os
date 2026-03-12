@@ -121,5 +121,6 @@ struct multiboot_info {
 } __attribute__((packed));
 
 void sys_restart(void);
+void set_cursor_bitmap(uint32_t *bitmap, int w, int h);
 
 #endif

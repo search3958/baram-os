@@ -205,6 +205,17 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
   }
 }
 
+// --- Cursor ---
+static uint32_t *g_cursor_bitmap = NULL;
+static int g_cursor_w = 0;
+static int g_cursor_h = 0;
+
+void set_cursor_bitmap(uint32_t *bitmap, int w, int h) {
+  g_cursor_bitmap = bitmap;
+  g_cursor_w = w;
+  g_cursor_h = h;
+}
+
 // ==========================================
 // 画面更新 (ダーティレクトのみblit)
 // ==========================================
@@ -229,12 +240,13 @@ void screen_refresh(void) {
 
   // カーソルの前回位置もdirtyに含める
   static int prev_cx = -1, prev_cy = -1;
-  const int cursor_size = 12;
+  int cur_w = g_cursor_bitmap ? g_cursor_w : 12;
+  int cur_h = g_cursor_bitmap ? g_cursor_h : 12;
+
   if (prev_cx >= 0)
-    dirty_expand(prev_cx, prev_cy, prev_cx + cursor_size,
-                 prev_cy + cursor_size);
+    dirty_expand(prev_cx, prev_cy, prev_cx + cur_w, prev_cy + cur_h);
   int cx = (int)mouse_x, cy = (int)mouse_y;
-  dirty_expand(cx, cy, cx + cursor_size, cy + cursor_size);
+  dirty_expand(cx, cy, cx + cur_w, cy + cur_h);
 
   // ダーティ領域がなければ終了
   int dx0 = g_drx0, dy0 = g_dry0, dx1 = g_drx1, dy1 = g_dry1;
@@ -263,8 +275,33 @@ void screen_refresh(void) {
   }
 
   // カーソル描画 (ダーティ領域内だけ)
-  {
+  if (g_cursor_bitmap) {
+    for (int my = 0; my < g_cursor_h; my++) {
+      int sy = cy + my;
+      if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height) continue;
+      for (int mx = 0; mx < g_cursor_w; mx++) {
+        int sx = cx + mx;
+        if (sx < dx0 || sx >= dx1 || sx < 0 || sx >= (int)g_vram_width) continue;
+        
+        uint32_t c = g_cursor_bitmap[my * g_cursor_w + mx];
+        uint8_t a = (c >> 24) & 0xFF;
+        if (a == 0) continue;
+        if (a == 255) {
+          bb[sy * SCREEN_WIDTH + sx] = c;
+        } else {
+          // アルファブレンド
+          uint32_t d = bb[sy * SCREEN_WIDTH + sx];
+          uint32_t rb_c = (c & 0x00FF00FFu), g_c = (c & 0x0000FF00u);
+          uint32_t rb_d = (d & 0x00FF00FFu), g_d = (d & 0x0000FF00u);
+          uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
+          uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
+          bb[sy * SCREEN_WIDTH + sx] = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+        }
+      }
+    }
+  } else {
     const uint32_t white = 0xFFFFFFFF, black = 0xFF000000;
+    const int cursor_size = 12;
     for (int my = 0; my < cursor_size; my++) {
       int sy = cy + my;
       if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height)
@@ -280,9 +317,9 @@ void screen_refresh(void) {
         bb[sy * SCREEN_WIDTH + sx] = color;
       }
     }
-    prev_cx = cx;
-    prev_cy = cy;
   }
+  prev_cx = cx;
+  prev_cy = cy;
 
   // VRAMへblit (ダーティ行だけ)
   if (g_page_flip_enabled) {

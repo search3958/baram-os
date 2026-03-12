@@ -199,7 +199,7 @@ static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
 // メモリアロケータ (フリーリスト方式)
-static char heap[1024 * 1024 * 32]; // 32MB
+static char heap[1024 * 1024 * 128]; // 128MB に拡大
 
 typedef struct block_header {
   size_t size;        // このブロックのデータサイズ (ヘッダ除く)
@@ -853,7 +853,9 @@ static int g_warp_mod_found = 0;
 static uint32_t g_mod_count = 0;
 
 static NSVGimage *g_nextgen_svg_image = NULL;
-static unsigned char *g_nextgen_svg_rgba = NULL;
+static unsigned char *g_nextgen_full_rgba = NULL;
+static int g_nextgen_full_w = 0;
+static int g_nextgen_full_h = 0;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 static int g_svg_dirty = 1;
 
@@ -901,76 +903,84 @@ static void redraw_warp_svg(layer_t *layer) {
     warp_engine_update(layer->width, layer->height);
     const char *svg_str = warp_engine_get_svg();
 
-    if (g_nextgen_svg_image == NULL) {
-      char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
-      if (svg_copy) {
-        memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
-        g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-        // svg_copy は意図的に free しない (nsvgParse が内部参照するため)
-      }
+    if (g_nextgen_svg_image) {
+      nsvgDelete(g_nextgen_svg_image);
+      g_nextgen_svg_image = NULL;
     }
 
-    if (!g_nextgen_svg_image) {
-      strncpy(g_last_svg_parse_status, "ParseErr", 63);
-    } else {
+    char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
+    if (svg_copy) {
+      memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
+      g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
+      free(svg_copy);
+    }
+
+    if (g_nextgen_svg_image) {
+      int full_w = (int)g_nextgen_svg_image->width;
+      int full_h = (int)g_nextgen_svg_image->height;
+      if (full_w < layer->width) full_w = layer->width;
+      if (full_h < layer->height) full_h = layer->height;
+
+      // キャッシュバッファの確保・再確保
+      if (!g_nextgen_full_rgba || g_nextgen_full_w != full_w || g_nextgen_full_h != full_h) {
+        if (g_nextgen_full_rgba) free(g_nextgen_full_rgba);
+        g_nextgen_full_rgba = (unsigned char *)malloc((size_t)full_w * (size_t)full_h * 4);
+        g_nextgen_full_w = full_w;
+        g_nextgen_full_h = full_h;
+      }
+
+      if (g_nextgen_full_rgba) {
+        if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+        memset(g_nextgen_full_rgba, 0, (size_t)full_w * (size_t)full_h * 4);
+        nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f, g_nextgen_full_rgba,
+                      full_w, full_h, full_w * 4);
+      }
       strncpy(g_last_svg_parse_status, "OK", 63);
+    } else {
+      strncpy(g_last_svg_parse_status, "ParseErr", 63);
     }
     g_svg_dirty = 0;
   }
 
-  if (!g_nextgen_svg_image) return;
-
-  if (!g_svg_rast) {
-    g_svg_rast = nsvgCreateRasterizer();
-  }
-
-  memset(g_nextgen_svg_rgba, 0, (size_t)layer->width * (size_t)layer->height * 4);
-  
-  // スクロール位置を考慮してラスタライズ
-  nsvgRasterize(g_svg_rast, g_nextgen_svg_image, floorf(g_scroll_x), floorf(g_scroll_y), 1.0f, g_nextgen_svg_rgba,
-                layer->width, layer->height, layer->width * 4);
+  if (!g_nextgen_full_rgba) return;
 
   const uint32_t bg = 0xFFF5F5F5;
   uint8_t bg_r = (bg >> 16) & 0xFF;
   uint8_t bg_g = (bg >> 8) & 0xFF;
   uint8_t bg_b = bg & 0xFF;
 
+  int scroll_x = (int)floorf(g_scroll_x);
+  int scroll_y = (int)floorf(g_scroll_y);
+
   for (int y = 0; y < layer->height; ++y) {
-    uint32_t *line = &layer->buffer[y * layer->width];
-    unsigned char *rgba_line = &g_nextgen_svg_rgba[y * layer->width * 4];
+    uint32_t *line_dst = &layer->buffer[y * layer->width];
+    int src_y = y - scroll_y;
+    if (src_y < 0 || src_y >= g_nextgen_full_h) {
+      for (int x = 0; x < layer->width; x++) line_dst[x] = bg;
+      continue;
+    }
+    unsigned char *line_src = &g_nextgen_full_rgba[src_y * g_nextgen_full_w * 4];
     for (int x = 0; x < layer->width; ++x) {
-      uint8_t a = rgba_line[x * 4 + 3];
-      if (a == 0) {
-        line[x] = bg;
-        continue;
+      int src_x = x - scroll_x;
+      if (src_x < 0 || src_x >= g_nextgen_full_w) {
+        line_dst[x] = bg; continue;
       }
-      if (a == 255) {
-        line[x] = (0xFFu << 24) | ((uint32_t)rgba_line[x * 4 + 0] << 16) | ((uint32_t)rgba_line[x * 4 + 1] << 8) | (uint32_t)rgba_line[x * 4 + 2];
-        continue;
+      unsigned char *rgba = &line_src[src_x * 4];
+      uint8_t a = rgba[3];
+      if (a == 0) { line_dst[x] = bg; }
+      else if (a == 255) { line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) | ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2]; }
+      else {
+        uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
+        uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
+        uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
+        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
       }
-      uint8_t r = rgba_line[x * 4 + 0];
-      uint8_t g = rgba_line[x * 4 + 1];
-      uint8_t b = rgba_line[x * 4 + 2];
-
-      uint8_t out_r = (uint8_t)((r * a + bg_r * (255 - a)) / 255);
-      uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
-      uint8_t out_b = (uint8_t)((b * a + bg_b * (255 - a)) / 255);
-
-      line[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
     }
   }
-
-  // WarpEngine で管理されているテキストをこのレイヤーに直接描画
-  // スクロールオフセット (g_scroll_x, g_scroll_y) をそのまま加算
-  warp_engine_draw_texts(layer, (int)floorf(g_scroll_x), (int)floorf(g_scroll_y));
+  warp_engine_draw_texts(layer, scroll_x, scroll_y);
 }
 
 static int svg_init_nextgen(layer_t *layer) {
-  g_nextgen_svg_rgba =
-      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-  if (!g_nextgen_svg_rgba)
-    return 0;
-
   warp_engine_init(g_warp_buffer);
   redraw_warp_svg(layer);
   return 1;
@@ -1625,6 +1635,46 @@ static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
     }
   }
 }
+static void cursor_init(void) {
+  const char *cursor_svg = 
+    "<svg width=\"298\" height=\"352\" viewBox=\"0 0 298 352\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
+    "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 68.2928Z\" stroke=\"white\" stroke-width=\"27\" stroke-linecap=\"round\"/>"
+    "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"white\" stroke-width=\"53\" stroke-linecap=\"round\"/>"
+    "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 68.2928Z\" fill=\"black\"/>"
+    "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"black\" stroke-width=\"25\" stroke-linecap=\"round\"/>"
+    "</svg>";
+
+  NSVGimage *img = nsvgParse((char *)cursor_svg, "px", 96.0f);
+  if (!img) return;
+
+  // 縦24px程度にスケール
+  int h = 24;
+  float scale = (float)h / img->height;
+  int w = (int)(img->width * scale);
+
+  uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
+  if (!buf) { nsvgDelete(img); return; }
+
+  NSVGrasterizer *rast = nsvgCreateRasterizer();
+  unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+  if (rast && rgba) {
+    nsvgRasterize(rast, img, 0, 0, scale, rgba, w, h, w * 4);
+    // RGBA -> ARGB (またはお使いのレイヤー形式) に変換
+    for (int i = 0; i < w * h; i++) {
+      uint8_t r = rgba[i * 4 + 0];
+      uint8_t g = rgba[i * 4 + 1];
+      uint8_t b = rgba[i * 4 + 2];
+      uint8_t a = rgba[i * 4 + 3];
+      buf[i] = ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+    }
+    set_cursor_bitmap(buf, w, h);
+  }
+  
+  if (rast) nsvgDeleteRasterizer(rast);
+  if (rgba) free(rgba);
+  nsvgDelete(img);
+}
+
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
   if (mbi) g_mbi_flags = mbi->flags;
@@ -1641,7 +1691,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   enable_fpu();
 
-  // 割り込み初期化（これがないとキーボードもタイマーも動かない）
+  // 割り込み初期化
   idt_install();
   irq_install();
   irq_install_handler(0, timer_handler);
@@ -1653,6 +1703,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
                        mbi->framebuffer_width, mbi->framebuffer_height,
                        mbi->framebuffer_pitch);
+
+  // カーソル初期化
+  cursor_init();
 
   // 1. 背景 (赤)
   layer_t desktop;

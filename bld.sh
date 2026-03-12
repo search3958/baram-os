@@ -50,7 +50,10 @@ i686-elf-grub-mkrescue -o output/os.iso output/isodir || exit 1
 echo "  ✅ Build #$CURRENT_BN Success"
 
 # --- 8. QEMU起動 ---
-qemu-system-i386 -cdrom output/os.iso -vga std \
+# Raspberry Pi 2B 相当の性能ターゲット (ソフトウェア最適化済み)
+# -cpu coreduo: 安定した命令実行スループットを提供
+# -vga virtio: 2D描画帯域を最大化
+qemu-system-i386 -cdrom output/os.iso -vga virtio \
 -m 1G \
 -smp 4 \
 -cpu coreduo \
@@ -58,3 +61,4 @@ qemu-system-i386 -cdrom output/os.iso -vga std \
 -net none \
 -accel tcg,thread=multi \
 -display cocoa
+
