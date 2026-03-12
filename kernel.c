@@ -807,18 +807,29 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     return;
   g_mod_count = mbi->mods_count;
   multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+  
+  int found_idx = -1;
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
     // モジュール名に "main.warp" が含まれているか、あるいは末尾が一致するか確認
     if (s && (strstr(s, "main.warp") || strstr(s, "MAIN.WARP"))) {
-      uint32_t size = mods[i].mod_end - mods[i].mod_start;
-      if (size > sizeof(g_warp_buffer) - 1)
-        size = sizeof(g_warp_buffer) - 1;
-      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-      g_warp_buffer[size] = '\0';
-      g_warp_mod_found = 1;
+      found_idx = i;
       break;
     }
+  }
+
+  // 文字列で見つからなかった場合、モジュールが2つあれば強制的に2番目を使用 (Fallback)
+  if (found_idx == -1 && mbi->mods_count >= 2) {
+      found_idx = 1;
+  }
+
+  if (found_idx != -1) {
+      uint32_t size = mods[found_idx].mod_end - mods[found_idx].mod_start;
+      if (size > sizeof(g_warp_buffer) - 1)
+        size = sizeof(g_warp_buffer) - 1;
+      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[found_idx].mod_start, size);
+      g_warp_buffer[size] = '\0';
+      g_warp_mod_found = 1;
   }
 }
 
