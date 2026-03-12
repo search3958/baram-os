@@ -1,0 +1,652 @@
+#include "warp_engine.h"
+#include <stddef.h>
+
+#define MAX_VARS 32
+#define MAX_NODES 128
+#define MAX_TEXTS 64
+
+static int warp_strlen(const char *s) {
+  int n = 0;
+  while (s[n])
+    n++;
+  return n;
+}
+
+static char *warp_strcpy(char *dest, const char *src) {
+  char *d = dest;
+  while ((*d++ = *src++))
+    ;
+  return dest;
+}
+
+static char *warp_strncpy(char *dest, const char *src, size_t n) {
+  size_t i;
+  for (i = 0; i < n && src[i] != '\0'; i++)
+    dest[i] = src[i];
+  for (; i < n; i++)
+    dest[i] = '\0';
+  return dest;
+}
+
+static char *warp_strcat(char *dest, const char *src) {
+  char *d = dest;
+  while (*d)
+    d++;
+  while ((*d++ = *src++))
+    ;
+  return dest;
+}
+
+static char *warp_strncat(char *dest, const char *src, size_t n) {
+  char *d = dest;
+  while (*d)
+    d++;
+  size_t i;
+  for (i = 0; i < n && src[i] != '\0'; i++)
+    *d++ = src[i];
+  *d = '\0';
+  return dest;
+}
+
+static int warp_strcmp(const char *s1, const char *s2) {
+  while (*s1 && (*s1 == *s2)) {
+    s1++;
+    s2++;
+  }
+  return *(const unsigned char *)s1 - *(const unsigned char *)s2;
+}
+
+static int warp_strncmp(const char *s1, const char *s2, size_t n) {
+  if (n == 0)
+    return 0;
+  do {
+    if (*s1 != *s2++)
+      return *(const unsigned char *)s1 - *(const unsigned char *)--s2;
+    if (*s1++ == 0)
+      break;
+  } while (--n != 0);
+  return 0;
+}
+
+static char *warp_strchr(const char *s, int c) {
+  while (*s != (char)c) {
+    if (!*s++)
+      return NULL;
+  }
+  return (char *)s;
+}
+
+static char *append_uint(char *p, unsigned int v) {
+  char tmp[10];
+  int n = 0;
+  if (v == 0) {
+    *p++ = '0';
+    return p;
+  }
+  while (v > 0 && n < (int)sizeof(tmp)) {
+    tmp[n++] = (char)('0' + (v % 10));
+    v /= 10;
+  }
+  while (n-- > 0) {
+    *p++ = tmp[n];
+  }
+  *p = '\0';
+  return p;
+}
+
+static char *append_int(char *p, int v) {
+  if (v < 0) {
+    *p++ = '-';
+    v = -v;
+  }
+  return append_uint(p, (unsigned int)v);
+}
+
+static void warp_memset(void *s, int c, size_t n) {
+  unsigned char *p = s;
+  while (n--)
+    *p++ = (unsigned char)c;
+}
+
+struct {
+  char key[64];
+  char val[256];
+} g_state[MAX_VARS];
+int g_state_count = 0;
+
+void set_state(const char *key, const char *val) {
+  for (int i = 0; i < g_state_count; i++) {
+    if (warp_strcmp(g_state[i].key, key) == 0) {
+      warp_strncpy(g_state[i].val, val, 255);
+      return;
+    }
+  }
+  if (g_state_count < MAX_VARS) {
+    warp_strncpy(g_state[g_state_count].key, key, 63);
+    warp_strncpy(g_state[g_state_count].val, val, 255);
+    g_state_count++;
+  }
+}
+
+const char *get_state(const char *key) {
+  for (int i = 0; i < g_state_count; i++) {
+    if (warp_strcmp(g_state[i].key, key) == 0)
+      return g_state[i].val;
+  }
+  return "";
+}
+
+typedef struct warp_node {
+  char type_name[32];
+
+  char props_keys[8][32];
+  char props_vals[8][256];
+  int props_count;
+
+  char event_oneclick[128];
+
+  struct warp_node *children[16];
+  int children_count;
+
+  int x, y, w, h;
+} warp_node_t;
+
+static warp_node_t g_nodes[MAX_NODES];
+static int g_nodes_count = 0;
+warp_node_t *g_root_node = NULL;
+
+static void eval_expr(const char *expr, char *out, int max_len) {
+  out[0] = '\0';
+  const char *p = expr;
+  while (*p) {
+    if (*p == '+') {
+      p++;
+      continue;
+    }
+    if (*p == '"') {
+      p++;
+      while (*p && *p != '"') {
+        int len = warp_strlen(out);
+        if (len < max_len - 1) {
+          if (*p == '\\') {
+            p++;
+            if (*p == 'n') {
+              out[len] = '\n';
+              out[len + 1] = '\0';
+              p++;
+              continue;
+            }
+          }
+          out[len] = *p;
+          out[len + 1] = '\0';
+        }
+        p++;
+      }
+      if (*p == '"')
+        p++;
+    } else if (warp_strncmp(p, "--", 2) == 0) {
+      char var[64];
+      int i = 0;
+      while (*p && *p != '"' && *p != '+' && *p != ' ' && *p != ')') {
+        var[i++] = *p++;
+      }
+      var[i] = '\0';
+      const char *val = get_state(var);
+      warp_strncat(out, val, max_len - warp_strlen(out) - 1);
+    } else {
+      int len = warp_strlen(out);
+      if (len < max_len - 1) {
+        out[len] = *p;
+        out[len + 1] = '\0';
+      }
+      p++;
+    }
+  }
+}
+
+static void get_evaluated_prop(warp_node_t *node, const char *key, char *out,
+                               int max_len) {
+  out[0] = '\0';
+  for (int i = 0; i < node->props_count; i++) {
+    if (warp_strcmp(node->props_keys[i], key) == 0) {
+      eval_expr(node->props_vals[i], out, max_len);
+      return;
+    }
+  }
+}
+
+typedef enum { TK_WORD, TK_STR, TK_PUNCT, TK_EOF } tk_type;
+typedef struct {
+  tk_type type;
+  char val[256];
+} token_t;
+
+static const char *g_src_ptr;
+
+static token_t next_token() {
+  token_t tk;
+  tk.type = TK_EOF;
+  tk.val[0] = 0;
+  while (*g_src_ptr == ' ' || *g_src_ptr == '\n' || *g_src_ptr == '\r' ||
+         *g_src_ptr == '\t')
+    g_src_ptr++;
+  if (!*g_src_ptr)
+    return tk;
+
+  if (*g_src_ptr == '"' || *g_src_ptr == '\'') {
+    char quote = *g_src_ptr++;
+    int i = 0;
+    tk.type = TK_STR;
+    while (*g_src_ptr && *g_src_ptr != quote) {
+      if (*g_src_ptr == '\\') {
+        g_src_ptr++;
+        if (*g_src_ptr == 'n') {
+          tk.val[i++] = '\\';
+          tk.val[i++] = 'n';
+          g_src_ptr++;
+          continue;
+        }
+      }
+      tk.val[i++] = *g_src_ptr++;
+    }
+    if (*g_src_ptr == quote)
+      g_src_ptr++;
+    tk.val[i] = 0;
+    return tk;
+  }
+  if (*g_src_ptr == '(' || *g_src_ptr == ')' || *g_src_ptr == ':' ||
+      *g_src_ptr == '=' || *g_src_ptr == '+') {
+    tk.type = TK_PUNCT;
+    tk.val[0] = *g_src_ptr++;
+    tk.val[1] = 0;
+    return tk;
+  }
+  tk.type = TK_WORD;
+  int i = 0;
+  while (*g_src_ptr && *g_src_ptr != ' ' && *g_src_ptr != '\n' &&
+         *g_src_ptr != '\r' && *g_src_ptr != '\t' && *g_src_ptr != '(' &&
+         *g_src_ptr != ')' && *g_src_ptr != ':' && *g_src_ptr != '=' &&
+         *g_src_ptr != '+' && *g_src_ptr != '"' && *g_src_ptr != '\'') {
+    tk.val[i++] = *g_src_ptr++;
+  }
+  tk.val[i] = 0;
+  return tk;
+}
+
+#define MAX_TOKENS 1024
+static token_t g_tokens[MAX_TOKENS];
+static int g_token_count = 0;
+static int g_token_pos = 0;
+
+static warp_node_t *alloc_node() {
+  if (g_nodes_count < MAX_NODES) {
+    warp_node_t *n = &g_nodes[g_nodes_count++];
+    warp_memset(n, 0, sizeof(warp_node_t));
+    return n;
+  }
+  return NULL;
+}
+
+static warp_node_t *parse_node() {
+  if (g_token_pos >= g_token_count)
+    return NULL;
+  token_t t = g_tokens[g_token_pos];
+
+  if (g_token_pos + 1 < g_token_count &&
+      g_tokens[g_token_pos + 1].val[0] == '(') {
+    warp_node_t *node = alloc_node();
+    if (!node)
+      return NULL;
+    warp_strcpy(node->type_name, t.val);
+    g_token_pos += 2;
+
+    while (g_token_pos < g_token_count && g_tokens[g_token_pos].val[0] != ')') {
+      token_t child_start = g_tokens[g_token_pos];
+      if (g_token_pos + 1 < g_token_count &&
+          g_tokens[g_token_pos + 1].val[0] == '(') {
+        warp_node_t *child = parse_node();
+        if (child) {
+          if (node->children_count < 16) {
+            node->children[node->children_count++] = child;
+          }
+        }
+        continue;
+      }
+      if (g_token_pos + 1 < g_token_count &&
+          g_tokens[g_token_pos + 1].val[0] == ':') {
+        char key[64];
+        warp_strcpy(key, child_start.val);
+        g_token_pos += 2;
+
+        char expr[256];
+        expr[0] = '\0';
+        while (g_token_pos < g_token_count) {
+          if (g_tokens[g_token_pos].val[0] == ')')
+            break;
+          if (g_token_pos + 1 < g_token_count &&
+              g_tokens[g_token_pos + 1].val[0] == '(')
+            break;
+          if (g_token_pos + 1 < g_token_count &&
+              g_tokens[g_token_pos + 1].val[0] == ':')
+            break;
+
+          if (g_tokens[g_token_pos].type == TK_STR) {
+            warp_strcat(expr, "\"");
+            warp_strcat(expr, g_tokens[g_token_pos].val);
+            warp_strcat(expr, "\"");
+          } else {
+            warp_strcat(expr, g_tokens[g_token_pos].val);
+          }
+          g_token_pos++;
+        }
+
+        if (warp_strcmp(key, "oneClick") == 0) {
+          warp_strcpy(node->event_oneclick, expr);
+        } else {
+          if (node->props_count < 8) {
+            warp_strcpy(node->props_keys[node->props_count], key);
+            warp_strcpy(node->props_vals[node->props_count], expr);
+            node->props_count++;
+          }
+        }
+        continue;
+      }
+      g_token_pos++;
+    }
+    g_token_pos++; // skip ')'
+    return node;
+  }
+  g_token_pos++;
+  return NULL;
+}
+
+static void init_state_from_ast(warp_node_t *node) {
+  for (int i = 0; i < node->props_count; i++) {
+    if (warp_strncmp(node->props_keys[i], "--", 2) == 0) {
+      char val[256];
+      eval_expr(node->props_vals[i], val, sizeof(val));
+      set_state(node->props_keys[i], val);
+    }
+  }
+  for (int i = 0; i < node->children_count; i++) {
+    init_state_from_ast(node->children[i]);
+  }
+}
+
+typedef struct {
+  int x, y;
+  char text[256];
+  uint32_t color;
+  float size;
+} text_draw_t;
+
+static text_draw_t g_texts[MAX_TEXTS];
+static int g_texts_count = 0;
+static char g_svg_output[16384];
+
+static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
+  node->x = px;
+  node->y = py;
+  node->w = limit_w;
+
+  int cy = py;
+  if (warp_strcmp(node->type_name, "screen") == 0) {
+    cy += 20;
+    for (int i = 0; i < node->children_count; i++) {
+      cy += layout_node(node->children[i], px + 20, cy, limit_w - 40) + 10;
+    }
+    node->h = cy - py;
+    return node->h;
+  } else if (warp_strcmp(node->type_name, "Header") == 0) {
+    node->h = 60;
+    char text[128];
+    get_evaluated_prop(node, "text", text, sizeof(text));
+
+    if (g_texts_count < MAX_TEXTS) {
+      g_texts[g_texts_count].x = px + 20;
+      g_texts[g_texts_count].y = py + 15;
+      warp_strcpy(g_texts[g_texts_count].text, text);
+      g_texts[g_texts_count].color = 0xFF222222;
+      g_texts[g_texts_count].size = 28;
+      g_texts_count++;
+    }
+
+    int cx = px + limit_w - 20;
+    for (int i = node->children_count - 1; i >= 0; i--) {
+      warp_node_t *child = node->children[i];
+      int cw = 200;
+      if (warp_strcmp(child->type_name, "button") == 0)
+        cw = 160;
+      cx -= cw;
+      child->x = cx;
+      child->y = py + 10;
+      child->w = cw;
+      layout_node(child, cx, py + 10, cw);
+      cx -= 10;
+    }
+    return node->h;
+  } else if (warp_strcmp(node->type_name, "card") == 0) {
+    cy += 16;
+    char title[128];
+    get_evaluated_prop(node, "text", title, sizeof(title));
+
+    if (title[0] != '\0' && g_texts_count < MAX_TEXTS) {
+      g_texts[g_texts_count].x = px + 16;
+      g_texts[g_texts_count].y = cy + 4;
+      warp_strcpy(g_texts[g_texts_count].text, title);
+      g_texts[g_texts_count].color = 0xFF000000;
+      g_texts[g_texts_count].size = 22;
+      g_texts_count++;
+      cy += 40;
+    } else {
+      cy += 10;
+    }
+
+    int cx = px + 16;
+    for (int i = 0; i < node->children_count; i++) {
+      cy += layout_node(node->children[i], cx, cy, limit_w - 32) + 16;
+    }
+    node->h = cy - py;
+    return node->h;
+  } else if (warp_strcmp(node->type_name, "text") == 0) {
+    char text[256];
+    get_evaluated_prop(node, "text", text, sizeof(text));
+
+    if (g_texts_count < MAX_TEXTS) {
+      g_texts[g_texts_count].x = px + 4;
+      g_texts[g_texts_count].y = py + 4;
+      warp_strcpy(g_texts[g_texts_count].text, text);
+      g_texts[g_texts_count].color = 0xFF333333;
+      g_texts[g_texts_count].size = 18;
+      g_texts_count++;
+    }
+    node->h = 24;
+    return node->h;
+  } else if (warp_strcmp(node->type_name, "button") == 0) {
+    node->h = 44;
+    char text[128];
+    get_evaluated_prop(node, "text", text, sizeof(text));
+
+    if (g_texts_count < MAX_TEXTS) {
+      g_texts[g_texts_count].x = px + 16;
+      g_texts[g_texts_count].y = py + 11;
+      warp_strcpy(g_texts[g_texts_count].text, text);
+      g_texts[g_texts_count].color = 0xFFFFFFFF; // white
+      g_texts[g_texts_count].size = 18;
+      g_texts_count++;
+    }
+    return node->h;
+  }
+  node->h = 20;
+  return node->h;
+}
+
+static void emit_rect(int x, int y, int w, int h, int rx, const char *fill,
+                      const char *extra) {
+  char buf[256];
+  warp_strcpy(buf, "<rect x=\"");
+  char *p = buf + warp_strlen(buf);
+  p = append_int(p, x);
+  warp_strcpy(p, "\" y=\"");
+  p += warp_strlen(p);
+  p = append_int(p, y);
+  warp_strcpy(p, "\" width=\"");
+  p += warp_strlen(p);
+  p = append_int(p, w);
+  warp_strcpy(p, "\" height=\"");
+  p += warp_strlen(p);
+  p = append_int(p, h);
+  warp_strcpy(p, "\" rx=\"");
+  p += warp_strlen(p);
+  p = append_int(p, rx);
+  warp_strcpy(p, "\" fill=\"");
+  p += warp_strlen(p);
+  warp_strcpy(p, fill);
+  p += warp_strlen(p);
+  warp_strcpy(p, "\" ");
+  p += warp_strlen(p);
+  warp_strcpy(p, extra);
+  p += warp_strlen(p);
+  warp_strcpy(p, " />\n");
+  warp_strncat(g_svg_output, buf,
+               sizeof(g_svg_output) - warp_strlen(g_svg_output) - 1);
+}
+
+static void emit_svg(warp_node_t *node) {
+  if (!node)
+    return;
+
+  if (warp_strcmp(node->type_name, "screen") == 0) {
+    warp_strncat(g_svg_output,
+                 "<rect x=\"0\" y=\"0\" width=\"100%\" height=\"100%\" "
+                 "fill=\"#f5f5f5\" />\n",
+                 sizeof(g_svg_output) - warp_strlen(g_svg_output) - 1);
+  } else if (warp_strcmp(node->type_name, "Header") == 0) {
+    emit_rect(node->x, node->y, node->w, node->h, 0, "#ffffff",
+              "opacity=\"0.5\"");
+  } else if (warp_strcmp(node->type_name, "card") == 0) {
+    char color[64];
+    get_evaluated_prop(node, "color", color, sizeof(color));
+    if (warp_strcmp(color, "black") == 0) {
+      emit_rect(node->x, node->y, node->w, node->h, 6, "#222222", "");
+    } else {
+      emit_rect(node->x, node->y, node->w, node->h, 6, "#ffffff", "");
+    }
+  } else if (warp_strcmp(node->type_name, "button") == 0) {
+    emit_rect(node->x, node->y, node->w, node->h, 3, "#0000ff", "");
+  }
+
+  if (warp_strcmp(node->type_name, "card") == 0) {
+    char color[64];
+    get_evaluated_prop(node, "color", color, sizeof(color));
+    if (warp_strcmp(color, "black") == 0) {
+      for (int i = 0; i < g_texts_count; i++) {
+        if (g_texts[i].x >= node->x && g_texts[i].x <= node->x + node->w &&
+            g_texts[i].y >= node->y && g_texts[i].y <= node->y + node->h) {
+          g_texts[i].color = 0xFFFFFFFF;
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i < node->children_count; i++) {
+    emit_svg(node->children[i]);
+  }
+}
+
+void warp_engine_init(const char *code) {
+  g_nodes_count = 0;
+  g_state_count = 0;
+  g_token_count = 0;
+  g_token_pos = 0;
+  warp_memset(g_texts, 0, sizeof(g_texts));
+
+  g_src_ptr = code;
+  while (1) {
+    token_t tk = next_token();
+    if (tk.type == TK_EOF || g_token_count >= MAX_TOKENS)
+      break;
+    g_tokens[g_token_count++] = tk;
+  }
+
+  g_token_pos = 0;
+  g_root_node = parse_node();
+
+  if (g_root_node) {
+    init_state_from_ast(g_root_node);
+  }
+
+  warp_engine_update();
+}
+
+void warp_engine_update(void) {
+  g_texts_count = 0;
+  g_svg_output[0] = '\0';
+  warp_strcat(g_svg_output, "<svg width=\"800\" height=\"600\" "
+                            "xmlns=\"http://www.w3.org/2000/svg\">\n");
+
+  if (g_root_node) {
+    layout_node(g_root_node, 0, 0, 800);
+    emit_svg(g_root_node);
+  }
+
+  warp_strcat(g_svg_output, "</svg>");
+}
+
+const char *warp_engine_get_svg(void) { return g_svg_output; }
+
+// external reference
+extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str,
+                           float font_size, uint32_t color);
+
+void warp_engine_draw_texts(layer_t *layer) {
+  for (int i = 0; i < g_texts_count; i++) {
+    layer_draw_ttf(layer, g_texts[i].x, g_texts[i].y, g_texts[i].text,
+                   g_texts[i].size, g_texts[i].color);
+  }
+}
+
+static void execute_action(const char *action) {
+  if (warp_strncmp(action, "--", 2) == 0) {
+    char *eq = warp_strchr(action, '=');
+    if (eq) {
+      char key[64];
+      int len = eq - action;
+      if (len >= 64)
+        len = 63;
+      warp_strncpy(key, action, len);
+      key[len] = '\0';
+
+      char val_expr[256];
+      warp_strncpy(val_expr, eq + 1, sizeof(val_expr) - 1);
+
+      char val[256];
+      eval_expr(val_expr, val, sizeof(val));
+      set_state(key, val);
+    }
+  }
+}
+
+static void check_clicks(warp_node_t *node, int x, int y) {
+  if (!node)
+    return;
+
+  if (x >= node->x && x <= node->x + node->w && y >= node->y &&
+      y <= node->y + node->h) {
+
+    if (node->event_oneclick[0] != '\0') {
+      execute_action(node->event_oneclick);
+    }
+  }
+
+  for (int i = 0; i < node->children_count; i++) {
+    check_clicks(node->children[i], x, y);
+  }
+}
+
+void warp_engine_click(int x, int y) {
+  if (g_root_node) {
+    check_clicks(g_root_node, x, y);
+    warp_engine_update();
+  }
+}

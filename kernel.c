@@ -9,13 +9,14 @@
 #include "drivers.h"
 #include "fonts.h"
 #include "svg_data.h"
-#include "warp_ui.h"
+
 #include <stddef.h>
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvg/nanosvgrast.h"
+#include "warp_engine.h"
 
 // stb_truetype
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -781,31 +782,82 @@ static int svg_init(layer_t *layer) {
 static NSVGimage *g_nextgen_svg_image = NULL;
 static unsigned char *g_nextgen_svg_rgba = NULL;
 
-static int svg_init_nextgen(layer_t *layer) {
-  char *svg_copy = (char *)malloc(sizeof(warp_ui_svg));
+const char *const warp_ui_code =
+    "screen(\n"
+    "    id:main\n"
+    "\n"
+    "    Header(\n"
+    "    text:\"Warp Demo\"\n"
+    "\n"
+    "    button(\n"
+    "        --headerText:\"こんにちは\"\n"
+    "        text:\"みなさん，\"+--headerText\n"
+    "    )\n"
+    "    )\n"
+    "\n"
+    "    text(\n"
+    "    "
+    "text:"
+    "\"これは新しい、ネイティブとWeb技術が融合する言語です。気になる反応は\"+--"
+    "mainText\n"
+    "    --mainText:\"...\"\n"
+    "    )\n"
+    "\n"
+    "    card(\n"
+    "    text:\"内容変更\"\n"
+    "    text(\n"
+    "        text:\"クリックにより表示内容が変更されます\"\n"
+    "    )\n"
+    "        button(\n"
+    "            text:\"GOOD\"\n"
+    "            oneClick:--mainText=\"良いみたいです!\"\n"
+    "        )\n"
+    "        button(\n"
+    "            text:\"BAD\"\n"
+    "            oneClick:--mainText=\"あまり良くないようですね。\"\n"
+    "        )\n"
+    "    )\n"
+    "\n"
+    "    card(\n"
+    "        text:\"button\"\n"
+    "        text(\n"
+    "            text:\"通常ボタン\"\n"
+    "        )\n"
+    "        card(\n"
+    "            text:\"使用例\"\n"
+    "            color:black\n"
+    "            text(\n"
+    "                text:\"button\\(\\n\\ \\ text\\:\\\"戻る\\\"\\n\\)\"\n"
+    "            )\n"
+    "        )\n"
+    "    )\n"
+    ")";
+
+static void redraw_warp_svg(layer_t *layer) {
+  warp_engine_update();
+  const char *svg_str = warp_engine_get_svg();
+
+  if (g_nextgen_svg_image) {
+    nsvgDelete(g_nextgen_svg_image);
+  }
+
+  char *svg_copy = (char *)malloc(strlen(svg_str) + 1);
   if (!svg_copy)
-    return 0;
-  memcpy(svg_copy, warp_ui_svg, sizeof(warp_ui_svg));
+    return;
+  memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
 
   g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
   if (!g_nextgen_svg_image)
-    return 0;
-
-  g_nextgen_svg_rgba =
-      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-  if (!g_nextgen_svg_rgba)
-    return 0;
-
-  memset(g_nextgen_svg_rgba, 0,
-         (size_t)layer->width * (size_t)layer->height * 4);
+    return;
 
   if (!g_svg_rast) {
     g_svg_rast = nsvgCreateRasterizer();
   }
+  memset(g_nextgen_svg_rgba, 0,
+         (size_t)layer->width * (size_t)layer->height * 4);
   nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f, g_nextgen_svg_rgba,
                 layer->width, layer->height, layer->width * 4);
 
-  // Background #f5f5f5
   const uint32_t bg = 0xFFF5F5F5;
   uint8_t bg_r = (bg >> 16) & 0xFF;
   uint8_t bg_g = (bg >> 8) & 0xFF;
@@ -828,6 +880,16 @@ static int svg_init_nextgen(layer_t *layer) {
           (uint32_t)out_b;
     }
   }
+}
+
+static int svg_init_nextgen(layer_t *layer) {
+  g_nextgen_svg_rgba =
+      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
+  if (!g_nextgen_svg_rgba)
+    return 0;
+
+  warp_engine_init(warp_ui_code);
+  redraw_warp_svg(layer);
   return 1;
 }
 
@@ -1316,6 +1378,44 @@ static uint16_t utf8_next(const char **p) {
   return code;
 }
 
+void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
+                    float font_size, uint32_t color) {
+  if (!g_font_ready || !str)
+    return;
+  float scale = stbtt_ScaleForPixelHeight(&g_font, font_size);
+  int ascent, descent, line_gap;
+  stbtt_GetFontVMetrics(&g_font, &ascent, &descent, &line_gap);
+  int baseline = (int)(ascent * scale);
+  int cx = px;
+  const char *p = str;
+  while (*p) {
+    uint16_t codepoint = utf8_next(&p);
+    int bw, bh, bx, by;
+    unsigned char *bitmap = stbtt_GetCodepointBitmap(
+        &g_font, 0, scale, (int)codepoint, &bw, &bh, &bx, &by);
+    if (bitmap) {
+      for (int dy = 0; dy < bh; dy++) {
+        int dpy = py + baseline + by + dy;
+        if (dpy < 0 || dpy >= layer->height)
+          continue;
+        for (int dx = 0; dx < bw; dx++) {
+          int dpx = cx + bx + dx;
+          if (dpx < 0 || dpx >= layer->width)
+            continue;
+          uint8_t alpha = bitmap[dy * bw + dx];
+          if (alpha < 64)
+            continue;
+          layer->buffer[dpy * layer->width + dpx] = color;
+        }
+      }
+      stbtt_FreeBitmap(bitmap, NULL);
+    }
+    int adv, lsb;
+    stbtt_GetCodepointHMetrics(&g_font, codepoint, &adv, &lsb);
+    cx += (int)(adv * scale);
+  }
+}
+
 // SVGパスを使ったグリフ描画（ダミー: 枠のみ）
 static void layer_draw_glyph(layer_t *layer, int x, int y, uint16_t code,
                              uint32_t color) {
@@ -1357,13 +1457,25 @@ static void layer_draw_glyph_string(layer_t *layer, int x, int y,
   while (*str) {
     uint16_t code = utf8_next(&str);
     if (code < 128) {
-      layer_draw_char(layer, cx, y, (char)code, color, 0xFFFFFFFF);
+      layer_draw_char(layer, cx, y, (char)code, color, TRANSPARENT_COLOR);
       cx += 8;
     } else {
       layer_draw_glyph(layer, cx, y, code, color);
       cx += 24;
     }
   }
+}
+
+static void nextgen_ui_redraw_text(layer_t *text_layer) {
+  if (!text_layer || !text_layer->buffer)
+    return;
+
+  // クリア
+  for (int i = 0; i < text_layer->width * text_layer->height; i++) {
+    text_layer->buffer[i] = TRANSPARENT_COLOR;
+  }
+
+  warp_engine_draw_texts(text_layer);
 }
 
 void draw_test_and_keys(layer_t *layer) {
@@ -1476,24 +1588,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&hud_layer, 0xFF000000);
   register_layer(&hud_layer);
 
-  // 5. 文字レイヤー (SVGの上, 透過)
-  layer_t text_layer;
-  text_layer.buffer = text_buf;
-  text_layer.x = 0;
-  text_layer.y = 0;
-  text_layer.width = TEXT_LAYER_W;
-  text_layer.height = TEXT_LAYER_H;
-  text_layer.transparent = TRANSPARENT_COLOR; // 黒(0)を透明视
-  text_layer.active = 1;
-  text_layer.dynamic = 1;
-  {
-    int ti;
-    for (ti = 0; ti < TEXT_LAYER_W * TEXT_LAYER_H; ti++)
-      text_buf[ti] = TRANSPARENT_COLOR;
-  }
-  register_layer(&text_layer);
-
-  // 6. 次世代UI SVGレイヤー
+  // 5. 次世代UI SVGレイヤー
   layer_t nextgen_ui_layer;
   nextgen_ui_layer.buffer = nextgen_ui_buf;
   nextgen_ui_layer.x = 0;
@@ -1510,6 +1605,23 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     }
   }
   register_layer(&nextgen_ui_layer);
+
+  // 6. 文字レイヤー (SVG・次世代UIの上, 透過)
+  layer_t text_layer;
+  text_layer.buffer = text_buf;
+  text_layer.x = 0;
+  text_layer.y = 0;
+  text_layer.width = TEXT_LAYER_W;
+  text_layer.height = TEXT_LAYER_H;
+  text_layer.transparent = TRANSPARENT_COLOR; // 透明
+  text_layer.active = 1;
+  text_layer.dynamic = 1;
+  {
+    int ti;
+    for (ti = 0; ti < TEXT_LAYER_W * TEXT_LAYER_H; ti++)
+      text_buf[ti] = TRANSPARENT_COLOR;
+  }
+  register_layer(&text_layer);
 
   // フォント初期化
   font_init(mbi);
@@ -1539,7 +1651,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int have_draw = 0;
 
   uint8_t prev_mouse_buttons = 0;
-  int nextgen_bg_dark = 0;
 
   typedef enum { OS_MODE_WARPDESKTOP, OS_MODE_NEXTGEN } os_mode_t;
   os_mode_t current_os_mode = OS_MODE_WARPDESKTOP;
@@ -1668,47 +1779,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
               current_os_mode = OS_MODE_NEXTGEN;
               layer_fill(&desktop, 0xFFF5F5F5); // WarpBackground
-              svg_layer.active = 0;   // パフォーマンス考慮: SVGの更新停止
-              blink_layer.active = 0; // 点滅停止
-
+              svg_layer.active = 0;        // パフォーマンス考慮: SVGの更新停止
+              blink_layer.active = 0;      // 点滅停止
               nextgen_ui_layer.active = 1; // UI表示
-
-              // ヘッダーテキスト
-              layer_draw_glyph_string(&text_layer, 24, 46, "Warp Demo",
-                                      0xFF121212);
-              layer_draw_glyph_string(&text_layer, 1008, 46, "!",
-                                      0xFF121212); // ボタン代替
-
-              // Card 1
-              layer_draw_glyph_string(&text_layer, 264, 134, "内容変更",
-                                      0xFF121212);
-              layer_draw_glyph_string(&text_layer, 264, 164,
-                                      "クリックにより表示内容が変わります",
-                                      0xFF121212);
-              layer_draw_glyph_string(&text_layer, 280, 206, "OK",
-                                      0xFFFFFFFF); // 👍代わり
-              layer_draw_glyph_string(&text_layer, 368, 206, "NG",
-                                      0xFFFFFFFF); // 🤔代わり
-              layer_draw_glyph_string(&text_layer, 280, 254, "Click",
-                                      0xFFFFFFFF);
-
-              // Card 2
-              layer_draw_glyph_string(&text_layer, 264, 314, "button",
-                                      0xFF121212);
-              layer_draw_glyph_string(&text_layer, 264, 344, "通常ボタン",
-                                      0xFF121212);
-              layer_draw_glyph_string(&text_layer, 280, 366, "戻る",
-                                      0xFFFFFFFF);
-              layer_draw_glyph_string(&text_layer, 550, 366, "注文",
-                                      0xFF0A56D0);
-              layer_draw_glyph_string(&text_layer, 280, 414,
-                                      "button(text:\"戻る\")", 0xFF121212);
-
-              // Card 3
-              layer_draw_glyph_string(&text_layer, 264, 494, "複数画面",
-                                      0xFF121212);
-              layer_draw_glyph_string(&text_layer, 280, 550,
-                                      "Screen1に移動する", 0xFFFFFFFF);
+              keybuf_str[0] = '\0';        // 入力バッファをクリア
+              nextgen_ui_redraw_text(&text_layer);
             } else {
               keybuf_str[0] = '\0';
               text_layer_redraw(&text_layer, 32.0f); // テキストクリア
@@ -1789,8 +1864,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       if (curr_btns != prev_mouse_buttons) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
           // 左クリックが押された瞬間
-          nextgen_bg_dark = !nextgen_bg_dark;
-          layer_fill(&desktop, nextgen_bg_dark ? 0xFF404040 : 0xFF808080);
+          warp_engine_click(mx, my);
+          redraw_warp_svg(&nextgen_ui_layer);
+          nextgen_ui_redraw_text(&text_layer);
           screen_mark_static_dirty(); // 背景全体を確実に再描画させる
         }
         prev_mouse_buttons = curr_btns;
@@ -1798,8 +1874,34 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
 
       if (keybuf_len > 0) {
-        // NEXTGENモードではキー入力（Enter含む）があっても元のモードに戻さない
+        // NEXTGENモードでも入力を受け付ける (文字描画を可能にする)
+        int i;
+        for (i = 0; i < keybuf_len; i++) {
+          char c = (char)keybuf[i];
+          if (c == '\b') {
+            int len = 0;
+            while (keybuf_str[len])
+              len++;
+            if (len > 0)
+              keybuf_str[len - 1] = '\0';
+          } else if (c == '\n') {
+            // Enterで何かリアクションしてもいいが、一旦クリア
+            keybuf_str[0] = '\0';
+          } else {
+            int len = 0;
+            while (keybuf_str[len])
+              len++;
+            if (len < KEYBUF_MAX - 1) {
+              keybuf_str[len] = c;
+              keybuf_str[len + 1] = '\0';
+            }
+          }
+        }
         keybuf_len = 0;
+
+        // 入力内容をUIに反映
+        nextgen_ui_redraw_text(&text_layer);
+        need_refresh = 1;
       }
 
       if (timer_ticks - last_stat_tick >= 100) {
