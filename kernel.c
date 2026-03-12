@@ -56,6 +56,9 @@ typedef struct {
 static NSVGimage *g_svg_image = NULL;
 static NSVGrasterizer *g_svg_rast = NULL;
 static unsigned char *g_svg_rgba = NULL;
+static unsigned char *g_svg_full_rgba = NULL; // ドキュメント全体のキャッシュ
+static int g_svg_full_w = 0;
+static int g_svg_full_h = 0;
 static svg_shape_cache_t *g_svg_cache = NULL;
 static int g_svg_shape_count = 0;
 static unsigned char *g_svg_hover_buf = NULL;
@@ -694,30 +697,86 @@ int sscanf(const char *str, const char *format, ...) {
   return matched;
 }
 
+// 2つの色を線形補間
+static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t) {
+  uint8_t r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF, a1 = (c1 >> 24) & 0xFF;
+  uint8_t r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF, a2 = (c2 >> 24) & 0xFF;
+  uint8_t r = (uint8_t)(r1 + (r2 - r1) * t);
+  uint8_t g = (uint8_t)(g1 + (g2 - g1) * t);
+  uint8_t b = (uint8_t)(b1 + (b2 - b1) * t);
+  uint8_t a = (uint8_t)(a1 + (a2 - a1) * t);
+  return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+static void apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2) {
+  float cx = (float)rx + (float)rw / 2.0f;
+  float cy = (float)ry + (float)rh / 2.0f;
+  const float PI = 3.14159265f;
+
+  for (int y = ry; y < ry + rh; y++) {
+    if (y < 0 || y >= h) continue;
+    for (int x = rx; x < rx + rw; x++) {
+      if (x < 0 || x >= w) continue;
+      
+      // 元のアルファ値をマスクとして使用
+      uint8_t mask = data[(y * w + x) * 4 + 3];
+      if (mask == 0) continue;
+
+      float dx = (float)x - cx;
+      float dy = (float)y - cy;
+      float angle = atan2f(dy, dx); // -PI to PI
+      float t = (angle + PI) / (2.0f * PI); // 0 to 1
+      
+      uint32_t color = lerp_color(c1, c2, t);
+      uint8_t r = (color >> 16) & 0xFF;
+      uint8_t g = (color >> 8) & 0xFF;
+      uint8_t b = color & 0xFF;
+      uint8_t a = (uint8_t)((color >> 24) & 0xFF);
+
+      // マスク（図形の形）を考慮して書き込み
+      size_t idx = (size_t)(y * w + x) * 4;
+      data[idx + 0] = r;
+      data[idx + 1] = g;
+      data[idx + 2] = b;
+      data[idx + 3] = (uint8_t)(a * mask / 255);
+    }
+  }
+}
+
 static void svg_render_full(layer_t *layer) {
-  nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx + g_scroll_x, g_svg_ty + g_scroll_y, g_svg_scale,
-                g_svg_rgba, layer->width, layer->height, layer->width * 4);
+  if (!g_svg_full_rgba) return;
 
   const uint32_t bg = BASE_BG_COLOR;
   uint8_t bg_r = (bg >> 16) & 0xFF;
   uint8_t bg_g = (bg >> 8) & 0xFF;
   uint8_t bg_b = bg & 0xFF;
 
+  int scroll_x = (int)floorf(g_scroll_x);
+  int scroll_y = (int)floorf(g_scroll_y);
+
   for (int y = 0; y < layer->height; ++y) {
+    uint32_t *line_dst = &layer->buffer[y * layer->width];
+    int src_y = y - scroll_y;
+    if (src_y < 0 || src_y >= g_svg_full_h) {
+      for (int x = 0; x < layer->width; x++) line_dst[x] = bg;
+      continue;
+    }
+    unsigned char *line_src = &g_svg_full_rgba[src_y * g_svg_full_w * 4];
     for (int x = 0; x < layer->width; ++x) {
-      size_t idx = (size_t)(y * layer->width + x) * 4;
-      uint8_t r = g_svg_rgba[idx + 0];
-      uint8_t g = g_svg_rgba[idx + 1];
-      uint8_t b = g_svg_rgba[idx + 2];
-      uint8_t a = g_svg_rgba[idx + 3];
-
-      uint8_t out_r = (uint8_t)((r * a + bg_r * (255 - a)) / 255);
-      uint8_t out_g = (uint8_t)((g * a + bg_g * (255 - a)) / 255);
-      uint8_t out_b = (uint8_t)((b * a + bg_b * (255 - a)) / 255);
-
-      layer->buffer[y * layer->width + x] =
-          (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) |
-          (uint32_t)out_b;
+      int src_x = x - scroll_x;
+      if (src_x < 0 || src_x >= g_svg_full_w) {
+        line_dst[x] = bg; continue;
+      }
+      unsigned char *rgba = &line_src[src_x * 4];
+      uint8_t a = rgba[3];
+      if (a == 0) { line_dst[x] = bg; }
+      else if (a == 255) { line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) | ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2]; }
+      else {
+        uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
+        uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
+        uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
+        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+      }
     }
   }
 }
@@ -742,102 +801,38 @@ static int svg_init(layer_t *layer) {
   if (!g_svg_rast)
     return 0;
 
-  g_svg_rgba =
-      (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-  if (!g_svg_rgba)
-    return 0;
+  // 全体サイズを計算 (CLASSICモードでは1280x5000pxを上限に)
+  g_svg_full_w = (int)g_svg_image->width;
+  g_svg_full_h = (int)g_svg_image->height;
+  if (g_svg_full_w < layer->width) g_svg_full_w = layer->width;
+  if (g_svg_full_h < 5000) g_svg_full_h = 5000;
 
-  float scale_x = g_svg_image->width > 0.0f
-                      ? (float)layer->width / g_svg_image->width
-                      : 1.0f;
-  float scale_y = g_svg_image->height > 0.0f
-                      ? (float)layer->height / g_svg_image->height
-                      : 1.0f;
-  g_svg_scale = scale_x < scale_y ? scale_x : scale_y;
+  g_svg_full_rgba = (unsigned char *)malloc((size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+  if (!g_svg_full_rgba) return 0;
+  
+  memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+  nsvgRasterize(g_svg_rast, g_svg_image, 0, 0, 1.0f, g_svg_full_rgba, g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+
+  // --- 追加: Conic Gradient ポストプロセス (CLASSICモード用) ---
+  for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
+    if (s->id[0] == 'c' && strncmp(s->id, "conic", 5) == 0) {
+      int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
+      int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
+      
+      uint32_t c1 = 0xFF00C9FF, c2 = 0xFF92FE9D; // Blue to Green
+      if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
+      else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
+      
+      apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx, ry, rw, rh, c1, c2);
+    }
+  }
+
+  // 互換性のためのバッファ
+  g_svg_rgba = (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
+
+  g_svg_scale = 1.0f;
   g_svg_tx = 0.0f;
   g_svg_ty = 0.0f;
-
-  int count = 0;
-  for (NSVGshape *s = g_svg_image->shapes; s; s = s->next)
-    count++;
-
-  if (count > 0) {
-    g_svg_cache =
-        (svg_shape_cache_t *)malloc(sizeof(svg_shape_cache_t) * (size_t)count);
-    if (g_svg_cache) {
-      int i = 0;
-      for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
-        g_svg_cache[i].shape = s;
-        g_svg_cache[i].rgba = NULL;
-        g_svg_cache[i].flags = s->flags;
-        g_svg_cache[i].x = 0;
-        g_svg_cache[i].y = 0;
-        g_svg_cache[i].w = 0;
-        g_svg_cache[i].h = 0;
-        i++;
-      }
-      g_svg_shape_count = count;
-    }
-  }
-
-  if (g_svg_cache) {
-    for (int i = 0; i < g_svg_shape_count; ++i) {
-      g_svg_cache[i].shape->flags = 0;
-    }
-
-    for (int i = 0; i < g_svg_shape_count; ++i) {
-      svg_shape_cache_t *c = &g_svg_cache[i];
-      if ((c->flags & NSVG_FLAGS_VISIBLE) == 0)
-        continue;
-
-      float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx;
-      float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty;
-      float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
-      float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
-
-      float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
-      int pad = (int)ceilf(padf);
-      if (pad < 2)
-        pad = 2;
-      int x0 = (int)floorf(x0f) - pad;
-      int y0 = (int)floorf(y0f) - pad;
-      int x1 = (int)ceilf(x1f) + pad;
-      int y1 = (int)ceilf(y1f) + pad;
-
-      if (x0 < 0)
-        x0 = 0;
-      if (y0 < 0)
-        y0 = 0;
-      if (x1 > layer->width)
-        x1 = layer->width;
-      if (y1 > layer->height)
-        y1 = layer->height;
-
-      int w = x1 - x0;
-      int h = y1 - y0;
-      if (w <= 0 || h <= 0)
-        continue;
-
-      unsigned char *buf = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-      if (!buf)
-        continue;
-
-      c->rgba = buf;
-      c->x = x0;
-      c->y = y0;
-      c->w = w;
-      c->h = h;
-
-      c->shape->flags = NSVG_FLAGS_VISIBLE;
-      nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx - (float)x0,
-                    g_svg_ty - (float)y0, g_svg_scale, buf, w, h, w * 4);
-      c->shape->flags = 0;
-    }
-
-    for (int i = 0; i < g_svg_shape_count; ++i) {
-      g_svg_cache[i].shape->flags = g_svg_cache[i].flags;
-    }
-  }
 
   svg_render_full(layer);
   memcpy(svg_base_buf, layer->buffer,
@@ -934,6 +929,23 @@ static void redraw_warp_svg(layer_t *layer) {
         memset(g_nextgen_full_rgba, 0, (size_t)full_w * (size_t)full_h * 4);
         nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f, g_nextgen_full_rgba,
                       full_w, full_h, full_w * 4);
+
+        // --- 追加: Conic Gradient ポストプロセス ---
+        for (NSVGshape *s = g_nextgen_svg_image->shapes; s; s = s->next) {
+          if (s->id[0] == 'c' && strncmp(s->id, "conic", 5) == 0) {
+            // 他のシェイプを一時的に非表示にして、このシェイプのマスクを取得
+            // (既に全体がラスタライズされているので、特定の色で塗られている場所を判定するのも手だが
+            //  ここではより正確に bounds を使ってその範囲を再計算する)
+            int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
+            int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
+            
+            // 簡易的な色指定 (将来的に ID から解析可能)
+            uint32_t c1 = 0xFF00C9FF, c2 = 0xFF92FE9D; // Blue to Green
+            if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
+            
+            apply_conic_gradient(g_nextgen_full_rgba, full_w, full_h, rx, ry, rw, rh, c1, c2);
+          }
+        }
       }
       strncpy(g_last_svg_parse_status, "OK", 63);
     } else {
