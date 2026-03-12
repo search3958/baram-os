@@ -199,7 +199,7 @@ static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
 // メモリアロケータ
-static char heap[1024 * 1024 * 16]; // 16MB
+static char heap[1024 * 1024 * 64]; // 64MB
 static uint32_t heap_ptr = 0;
 typedef struct {
   void *ptr;
@@ -883,7 +883,7 @@ static void redraw_warp_svg(layer_t *layer) {
   memset(g_nextgen_svg_rgba, 0, (size_t)layer->width * (size_t)layer->height * 4);
   
   // スクロール位置を考慮してラスタライズ
-  nsvgRasterize(g_svg_rast, g_nextgen_svg_image, (float)g_scroll_x, (float)g_scroll_y, 1.0f, g_nextgen_svg_rgba,
+  nsvgRasterize(g_svg_rast, g_nextgen_svg_image, floorf(g_scroll_x), floorf(g_scroll_y), 1.0f, g_nextgen_svg_rgba,
                 layer->width, layer->height, layer->width * 4);
 
   const uint32_t bg = 0xFFF5F5F5;
@@ -915,6 +915,10 @@ static void redraw_warp_svg(layer_t *layer) {
       line[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
     }
   }
+
+  // WarpEngine で管理されているテキストをこのレイヤーに直接描画
+  // スクロールオフセット (g_scroll_x, g_scroll_y) をそのまま加算
+  warp_engine_draw_texts(layer, (int)floorf(g_scroll_x), (int)floorf(g_scroll_y));
 }
 
 static int svg_init_nextgen(layer_t *layer) {
@@ -1424,8 +1428,9 @@ static void text_layer_redraw(layer_t *text_layer, float font_size) {
           uint8_t alpha = bitmap[dy * bw + dx];
           if (alpha == 0) continue;
           
-          uint32_t bg = text_layer->buffer[py * TEXT_LAYER_W + px];
-          text_layer->buffer[py * TEXT_LAYER_W + px] = blend_colors(bg, 0x00000000u, alpha);
+          size_t idx = (size_t)py * (size_t)TEXT_LAYER_W + (size_t)px;
+          uint32_t bg = text_layer->buffer[idx];
+          text_layer->buffer[idx] = blend_colors(bg, 0x00000000u, alpha);
         }
       }
       stbtt_FreeBitmap(bitmap, NULL);
@@ -1458,7 +1463,7 @@ static uint16_t utf8_next(const char **p) {
 
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color) {
-  if (!g_font_ready || !str)
+  if (!g_font_ready || !str || !layer || !layer->buffer)
     return;
   float scale = stbtt_ScaleForPixelHeight(&g_font, font_size);
   int ascent, descent, line_gap;
@@ -1474,15 +1479,16 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
     if (bitmap) {
       for (int dy = 0; dy < bh; dy++) {
         int dpy = py + baseline + by + dy;
-        if (dpy < 0 || dpy >= layer->height)
+        if (dpy < 0 || dpy >= (int)layer->height)
           continue;
         for (int dx = 0; dx < bw; dx++) {
           int dpx = cx + bx + dx;
-          if (dpx < 0 || dpx >= layer->width)
+          if (dpx < 0 || dpx >= (int)layer->width)
             continue;
           uint8_t alpha = bitmap[dy * bw + dx];
           if (alpha == 0) continue;
 
+          // 負の座標や範囲外アクセスを防止
           uint32_t bg = layer->buffer[dpy * layer->width + dpx];
           layer->buffer[dpy * layer->width + dpx] = blend_colors(bg, color, alpha);
         }
@@ -1543,18 +1549,6 @@ static void layer_draw_glyph_string(layer_t *layer, int x, int y,
       cx += 24;
     }
   }
-}
-
-static void nextgen_ui_redraw_text(layer_t *text_layer) {
-  if (!text_layer || !text_layer->buffer)
-    return;
-
-  // クリア
-  for (int i = 0; i < text_layer->width * text_layer->height; i++) {
-    text_layer->buffer[i] = TRANSPARENT_COLOR;
-  }
-
-  warp_engine_draw_texts(text_layer, g_scroll_x, g_scroll_y);
 }
 
 void draw_test_and_keys(layer_t *layer) {
@@ -1815,6 +1809,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             memcpy(svg_base_buf, svg_layer.buffer, sizeof(uint32_t) * svg_layer.width * svg_layer.height);
             screen_mark_static_dirty();
             need_refresh = 1;
+
+            // スクロール中もテキストレイヤーを再描画して、表示の消失を防ぐ
+            if (keybuf_str[0] != '\0') {
+              int my_now = (int)mouse_y;
+              if (my_now < 0) my_now = 0;
+              if (my_now >= SCREEN_HEIGHT) my_now = SCREEN_HEIGHT - 1;
+              float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) / (float)(SCREEN_HEIGHT - 1);
+              text_layer_redraw(&text_layer, fsize);
+            }
           }
 
           int x, y, w, h;
@@ -1885,12 +1888,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               svg_layer.active = 0;        // パフォーマンス考慮: SVGの更新停止
               blink_layer.active = 0;      // 点滅停止
               nextgen_ui_layer.active = 1; // UI表示
+              text_layer.active = 0;       // 次世代モードでは専用レイヤーを使わず統合
               keybuf_str[0] = '\0';        // 入力バッファをクリア
               screen_mark_static_dirty();  // 静的レイヤー変更を画面に反映
               
               g_svg_dirty = 1; // SVGをパースし直す
               redraw_warp_svg(&nextgen_ui_layer);
-              nextgen_ui_redraw_text(&text_layer);
               screen_mark_all_dirty();
             } else {
               keybuf_str[0] = '\0';
@@ -1992,7 +1995,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
         if (moved) {
           redraw_warp_svg(&nextgen_ui_layer);
-          nextgen_ui_redraw_text(&text_layer);
           screen_mark_static_dirty();
           screen_mark_all_dirty();
           need_refresh = 1;
@@ -2005,7 +2007,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           warp_engine_click(mx - g_scroll_x, my - g_scroll_y);
           g_svg_dirty = 1; // UIが変わった可能性があるため再パース
           redraw_warp_svg(&nextgen_ui_layer);
-          nextgen_ui_redraw_text(&text_layer);
           screen_mark_static_dirty(); // 背景全体を確実に再描画させる
           screen_mark_all_dirty();
         }
@@ -2033,8 +2034,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             if (len > 0)
               keybuf_str[len - 1] = '\0';
           } else if (c == '\n') {
-            // Enterで何かリアクションしてもいいが、一旦クリア
             keybuf_str[0] = '\0';
+            g_svg_dirty = 1; // 変更を反映
           } else {
             int len = 0;
             while (keybuf_str[len])
@@ -2042,6 +2043,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             if (len < KEYBUF_MAX - 1) {
               keybuf_str[len] = c;
               keybuf_str[len + 1] = '\0';
+              g_svg_dirty = 1; // 変更を反映
             }
           }
         }
@@ -2051,7 +2053,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         if (g_target_scroll_x > 0.0f) g_target_scroll_x = 0.0f;
 
         // 入力内容をUIに反映
-        nextgen_ui_redraw_text(&text_layer);
+        redraw_warp_svg(&nextgen_ui_layer);
         need_refresh = 1;
       }
 

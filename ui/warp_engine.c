@@ -8,7 +8,8 @@
 
 static int warp_strlen(const char *s) {
   int n = 0;
-  if (!s) return 0;
+  if (!s)
+    return 0;
   while (s[n])
     n++;
   return n;
@@ -162,8 +163,8 @@ static void eval_expr(const char *expr, char *out, int max_len) {
   const char *p = expr;
   while (*p) {
     if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') {
-        p++;
-        continue;
+      p++;
+      continue;
     }
     if (*p == '+') {
       p++;
@@ -182,7 +183,8 @@ static void eval_expr(const char *expr, char *out, int max_len) {
               out[len] = *p;
             }
             out[len + 1] = '\0';
-            if (*p) p++;
+            if (*p)
+              p++;
             continue;
           }
           out[len] = *p;
@@ -195,7 +197,8 @@ static void eval_expr(const char *expr, char *out, int max_len) {
     } else if (warp_strncmp(p, "--", 2) == 0) {
       char var[64];
       int i = 0;
-      while (*p && *p != '"' && *p != '+' && *p != ' ' && *p != ')' && *p != '=' && i < 63) {
+      while (*p && *p != '"' && *p != '+' && *p != ' ' && *p != ')' &&
+             *p != '=' && i < 63) {
         var[i++] = *p++;
       }
       var[i] = '\0';
@@ -270,11 +273,12 @@ static token_t next_token() {
   }
   tk.type = TK_WORD;
   int i = 0;
-  // Support for non-ASCII characters in words if they are not quoted (though usually they are quoted)
-  while (*g_src_ptr && (unsigned char)*g_src_ptr > 32 && 
-         *g_src_ptr != '(' && *g_src_ptr != ')' && *g_src_ptr != ':' && 
-         *g_src_ptr != '=' && *g_src_ptr != '+' && *g_src_ptr != ',' && 
-         *g_src_ptr != '"' && *g_src_ptr != '\'' && i < 511) {
+  // Support for non-ASCII characters in words if they are not quoted (though
+  // usually they are quoted)
+  while (*g_src_ptr && (unsigned char)*g_src_ptr > 32 && *g_src_ptr != '(' &&
+         *g_src_ptr != ')' && *g_src_ptr != ':' && *g_src_ptr != '=' &&
+         *g_src_ptr != '+' && *g_src_ptr != ',' && *g_src_ptr != '"' &&
+         *g_src_ptr != '\'' && i < 511) {
     tk.val[i++] = *g_src_ptr++;
   }
   tk.val[i] = 0;
@@ -351,7 +355,8 @@ static warp_node_t *parse_node() {
           g_token_pos++;
         }
 
-        if (warp_strcmp(key, "oneClick") == 0 || warp_strcmp(key, "onClick") == 0) {
+        if (warp_strcmp(key, "oneClick") == 0 ||
+            warp_strcmp(key, "onClick") == 0) {
           warp_strcpy(node->event_oneclick, expr);
         } else {
           if (node->props_count < 16) {
@@ -364,7 +369,8 @@ static warp_node_t *parse_node() {
       }
       g_token_pos++;
     }
-    if (g_token_pos < g_token_count) g_token_pos++; // skip ')'
+    if (g_token_pos < g_token_count)
+      g_token_pos++; // skip ')'
     return node;
   }
   g_token_pos++;
@@ -372,7 +378,8 @@ static warp_node_t *parse_node() {
 }
 
 static void init_state_from_ast(warp_node_t *node) {
-  if (!node) return;
+  if (!node)
+    return;
   for (int i = 0; i < node->props_count; i++) {
     if (warp_strncmp(node->props_keys[i], "--", 2) == 0) {
       char val[512];
@@ -397,7 +404,8 @@ static int g_texts_count = 0;
 static char g_svg_output[32768];
 
 static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
-  if (!node) return 0;
+  if (!node)
+    return 0;
   node->x = px;
   node->y = py;
   node->w = limit_w;
@@ -455,7 +463,8 @@ static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
       cy += layout_node(node->children[i], cx, cy, limit_w - 32) + 16;
     }
     node->h = cy - py + 10;
-    if (node->h < 40) node->h = 40;
+    if (node->h < 40)
+      node->h = 40;
     return node->h;
   } else if (warp_strcmp(node->type_name, "text") == 0) {
     char text[512];
@@ -472,7 +481,8 @@ static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
     node->h = 24;
     // Multi-line estimate
     int len = warp_strlen(text);
-    if (len > 40) node->h = (len / 40 + 1) * 24;
+    if (len > 40)
+      node->h = (len / 40 + 1) * 24;
     return node->h;
   } else if (warp_strcmp(node->type_name, "button") == 0) {
     node->h = 44;
@@ -536,10 +546,12 @@ static void emit_svg(warp_node_t *node) {
   } else if (warp_strcmp(node->type_name, "card") == 0) {
     char color[64];
     get_evaluated_prop(node, "color", color, sizeof(color));
-    const char* fill = "#ffffff";
-    if (warp_strcmp(color, "black") == 0) fill = "#222222";
-    emit_rect(node->x, node->y, node->w, node->h, 8, fill, "stroke=\"#dddddd\" stroke-width=\"1\"");
-    
+    const char *fill = "#ffffff";
+    if (warp_strcmp(color, "black") == 0)
+      fill = "#222222";
+    emit_rect(node->x, node->y, node->w, node->h, 8, fill,
+              "stroke=\"#dddddd\" stroke-width=\"1\"");
+
     if (warp_strcmp(color, "black") == 0) {
       for (int i = 0; i < g_texts_count; i++) {
         if (g_texts[i].x >= node->x && g_texts[i].x <= node->x + node->w &&
@@ -549,7 +561,7 @@ static void emit_svg(warp_node_t *node) {
       }
     }
   } else if (warp_strcmp(node->type_name, "button") == 0) {
-    emit_rect(node->x, node->y, node->w, node->h, 6, "#007aff", "");
+    emit_rect(node->x, node->y, node->w, node->h, 12, "#007aff", "");
   }
 
   for (int i = 0; i < node->children_count; i++) {
@@ -559,24 +571,24 @@ static void emit_svg(warp_node_t *node) {
 
 static char g_engine_status[128] = "Idle";
 
-const char* warp_engine_get_status(void) {
-    return g_engine_status;
-}
+const char *warp_engine_get_status(void) { return g_engine_status; }
 
 static void update_status_info() {
-    char buf[128];
-    buf[0] = '\0';
-    warp_strcat(buf, "Nodes:");
-    char n_str[16];
-    append_int(n_str, g_nodes_count);
-    warp_strcat(buf, n_str);
-    warp_strcat(buf, " Tokens:");
-    append_int(n_str, g_token_count);
-    warp_strcat(buf, n_str);
-    warp_strcat(buf, " State:");
-    if (g_root_node) warp_strcat(buf, "OK");
-    else warp_strcat(buf, "NoRoot");
-    warp_strncpy(g_engine_status, buf, 127);
+  char buf[128];
+  buf[0] = '\0';
+  warp_strcat(buf, "Nodes:");
+  char n_str[16];
+  append_int(n_str, g_nodes_count);
+  warp_strcat(buf, n_str);
+  warp_strcat(buf, " Tokens:");
+  append_int(n_str, g_token_count);
+  warp_strcat(buf, n_str);
+  warp_strcat(buf, " State:");
+  if (g_root_node)
+    warp_strcat(buf, "OK");
+  else
+    warp_strcat(buf, "NoRoot");
+  warp_strncpy(g_engine_status, buf, 127);
 }
 
 void warp_engine_init(const char *code) {
@@ -595,8 +607,10 @@ void warp_engine_init(const char *code) {
   g_src_ptr = code;
   while (1) {
     token_t tk = next_token();
-    if (tk.type == TK_EOF) break;
-    if (g_token_count >= MAX_TOKENS) break;
+    if (tk.type == TK_EOF)
+      break;
+    if (g_token_count >= MAX_TOKENS)
+      break;
     g_tokens[g_token_count++] = tk;
   }
 
@@ -606,7 +620,7 @@ void warp_engine_init(const char *code) {
   if (g_root_node) {
     init_state_from_ast(g_root_node);
   }
-  
+
   update_status_info();
   warp_engine_update(1280, 720);
 }
@@ -614,7 +628,7 @@ void warp_engine_init(const char *code) {
 void warp_engine_update(int width, int height) {
   g_texts_count = 0;
   g_svg_output[0] = '\0';
-  
+
   char w_str[16], h_str[16];
   append_int(w_str, width);
   append_int(h_str, height);
@@ -636,18 +650,30 @@ void warp_engine_update(int width, int height) {
 
 const char *warp_engine_get_svg(void) { return g_svg_output; }
 
-extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str, float font_size, uint32_t color);
+extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str,
+                           float font_size, uint32_t color);
 
 void warp_engine_draw_texts(layer_t *layer, int off_x, int off_y) {
-  if (!layer) return;
+  if (!layer)
+    return;
   for (int i = 0; i < g_texts_count; i++) {
-    layer_draw_ttf(layer, g_texts[i].x + off_x, g_texts[i].y + off_y, g_texts[i].text, g_texts[i].size, g_texts[i].color);
+    layer_draw_ttf(layer, g_texts[i].x + off_x, g_texts[i].y + off_y,
+                   g_texts[i].text, g_texts[i].size, g_texts[i].color);
   }
 }
 
+extern void sys_restart(void);
+
 static void execute_action(const char *action) {
   if (!action || !action[0]) return;
+
+  if (warp_strcmp(action, "restart(now)") == 0) {
+    sys_restart();
+    return;
+  }
+
   if (warp_strncmp(action, "--", 2) == 0) {
+
     char *eq = warp_strchr(action, '=');
     if (eq) {
       char key[64];
@@ -690,4 +716,3 @@ void warp_engine_click(int x, int y) {
     warp_engine_update(1280, 720);
   }
 }
-

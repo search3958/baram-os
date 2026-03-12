@@ -702,3 +702,15 @@ void mouse_install() {
   mask &= ~(1 << 4);
   outb(0xA1, mask);
 }
+
+void sys_restart(void) {
+  // 8042 キーボードコントローラを使用したリセット
+  uint8_t good = 0x02;
+  while (good & 0x02) {
+    good = inb(0x64);
+  }
+  outb(0x64, 0xFE);
+  
+  // フォールバック: HLT ループ
+  while(1) { __asm__ __volatile__("hlt"); }
+}

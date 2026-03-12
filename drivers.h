@@ -120,4 +120,6 @@ struct multiboot_info {
   uint8_t color_info[6];
 } __attribute__((packed));
 
+void sys_restart(void);
+
 #endif

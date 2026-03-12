@@ -2,8 +2,11 @@ screen(
     id:main
 
     Header(
-    text:"Warp Demo"
-
+    text:"Warp Demo" 
+        button(
+            text:"再起動"
+            oneClick:restart(now)
+        )
     )
 
 
