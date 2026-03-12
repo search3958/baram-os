@@ -781,57 +781,24 @@ static int svg_init(layer_t *layer) {
 
 static NSVGimage *g_nextgen_svg_image = NULL;
 static unsigned char *g_nextgen_svg_rgba = NULL;
+static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 
-const char *const warp_ui_code =
-    "screen(\n"
-    "    id:main\n"
-    "\n"
-    "    Header(\n"
-    "    text:\"Warp Demo\"\n"
-    "\n"
-    "    button(\n"
-    "        --headerText:\"こんにちは\"\n"
-    "        text:\"みなさん，\"+--headerText\n"
-    "    )\n"
-    "    )\n"
-    "\n"
-    "    text(\n"
-    "    "
-    "text:"
-    "\"これは新しい、ネイティブとWeb技術が融合する言語です。気になる反応は\"+--"
-    "mainText\n"
-    "    --mainText:\"...\"\n"
-    "    )\n"
-    "\n"
-    "    card(\n"
-    "    text:\"内容変更\"\n"
-    "    text(\n"
-    "        text:\"クリックにより表示内容が変更されます\"\n"
-    "    )\n"
-    "        button(\n"
-    "            text:\"GOOD\"\n"
-    "            oneClick:--mainText=\"良いみたいです!\"\n"
-    "        )\n"
-    "        button(\n"
-    "            text:\"BAD\"\n"
-    "            oneClick:--mainText=\"あまり良くないようですね。\"\n"
-    "        )\n"
-    "    )\n"
-    "\n"
-    "    card(\n"
-    "        text:\"button\"\n"
-    "        text(\n"
-    "            text:\"通常ボタン\"\n"
-    "        )\n"
-    "        card(\n"
-    "            text:\"使用例\"\n"
-    "            color:black\n"
-    "            text(\n"
-    "                text:\"button\\(\\n\\ \\ text\\:\\\"戻る\\\"\\n\\)\"\n"
-    "            )\n"
-    "        )\n"
-    "    )\n"
-    ")";
+static void warp_ui_mod_init(struct multiboot_info *mbi) {
+  if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
+    return;
+  multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+  for (uint32_t i = 0; i < mbi->mods_count; i++) {
+    const char *s = (const char *)(uintptr_t)mods[i].string;
+    if (s && strstr(s, "main.warp")) {
+      uint32_t size = mods[i].mod_end - mods[i].mod_start;
+      if (size > sizeof(g_warp_buffer) - 1)
+        size = sizeof(g_warp_buffer) - 1;
+      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+      g_warp_buffer[size] = '\0';
+      break;
+    }
+  }
+}
 
 static void redraw_warp_svg(layer_t *layer) {
   warp_engine_update();
@@ -888,7 +855,7 @@ static int svg_init_nextgen(layer_t *layer) {
   if (!g_nextgen_svg_rgba)
     return 0;
 
-  warp_engine_init(warp_ui_code);
+  warp_engine_init(g_warp_buffer);
   redraw_warp_svg(layer);
   return 1;
 }
@@ -1625,6 +1592,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // フォント初期化
   font_init(mbi);
+  warp_ui_mod_init(mbi);
 
   // 次世代SVGレイヤー構築
   svg_init_nextgen(&nextgen_ui_layer);

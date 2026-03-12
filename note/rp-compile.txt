@@ -11,6 +11,7 @@ mkdir -p isodir/boot/grub
 cp kernel.bin isodir/boot/
 cp grub.cfg isodir/boot/grub/
 cp MPLUS2-Regular.ttf isodir/boot/
+cp warp_ui/main.warp isodir/boot/
 i686-elf-grub-mkrescue -o os.iso isodir
 
 qemu-system-i386 -cdrom os.iso -vga std \
