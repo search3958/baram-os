@@ -7,8 +7,8 @@
 #include <string.h> // memcpy, memset
 
 #include "drivers.h"
-#include "fonts.h"
-#include "svg_data.h"
+#include "font/fonts.h"
+#include "ui/svg_data.h"
 
 #include <stddef.h>
 
@@ -16,7 +16,10 @@
 #include "nanosvg/nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvg/nanosvgrast.h"
-#include "warp_engine.h"
+#ifndef BUILD_NUMBER
+#include "build_no.h"
+#endif
+#include "ui/warp_engine.h"
 
 // stb_truetype
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -32,7 +35,7 @@
 #define STBTT_cos(x) cosf((float)(x))
 #define STBTT_acos(x) acosf((float)(x))
 #define STBTT_fabs(x) fabsf((float)(x))
-#include "stb_truetype.h"
+#include "font/stb_truetype.h"
 
 #define SVG_WIDTH NOTE_TEST_SVG_WIDTH
 #define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
@@ -176,7 +179,9 @@ static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
-static uint32_t hud_buf[240 * 24];
+#define HUD_W 320
+#define HUD_H 64
+static uint32_t hud_buf[HUD_W * HUD_H];
 // 文字レイヤー (全画面 透過)
 #define TEXT_LAYER_W SCREEN_WIDTH
 #define TEXT_LAYER_H SCREEN_HEIGHT
@@ -779,29 +784,46 @@ static int svg_init(layer_t *layer) {
   return 1;
 }
 
+typedef enum { OS_MODE_CLASSIC, OS_MODE_WARPDESKTOP } os_mode_t;
+static os_mode_t current_os_mode = OS_MODE_CLASSIC;
+static char g_last_svg_parse_status[64] = "None";
+static int g_warp_mod_found = 0;
+static uint32_t g_mod_count = 0;
+
 static NSVGimage *g_nextgen_svg_image = NULL;
 static unsigned char *g_nextgen_svg_rgba = NULL;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 
+// Multiboot module エントリ
+typedef struct {
+  uint32_t mod_start;
+  uint32_t mod_end;
+  uint32_t string;
+  uint32_t reserved;
+} __attribute__((packed)) multiboot_module_t;
+
 static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
     return;
+  g_mod_count = mbi->mods_count;
   multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
-    if (s && strstr(s, "main.warp")) {
+    // モジュール名に "main.warp" が含まれているか、あるいは末尾が一致するか確認
+    if (s && (strstr(s, "main.warp") || strstr(s, "MAIN.WARP"))) {
       uint32_t size = mods[i].mod_end - mods[i].mod_start;
       if (size > sizeof(g_warp_buffer) - 1)
         size = sizeof(g_warp_buffer) - 1;
       memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
       g_warp_buffer[size] = '\0';
+      g_warp_mod_found = 1;
       break;
     }
   }
 }
 
 static void redraw_warp_svg(layer_t *layer) {
-  warp_engine_update();
+  warp_engine_update(layer->width, layer->height);
   const char *svg_str = warp_engine_get_svg();
 
   if (g_nextgen_svg_image) {
@@ -814,8 +836,11 @@ static void redraw_warp_svg(layer_t *layer) {
   memcpy(svg_copy, svg_str, strlen(svg_str) + 1);
 
   g_nextgen_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-  if (!g_nextgen_svg_image)
+  if (!g_nextgen_svg_image) {
+    strncpy(g_last_svg_parse_status, "ParseErr", 63);
     return;
+  }
+  strncpy(g_last_svg_parse_status, "OK", 63);
 
   if (!g_svg_rast) {
     g_svg_rast = nsvgCreateRasterizer();
@@ -1152,48 +1177,69 @@ static char *append_uint(char *p, unsigned int v) {
 #define KEYBUF_MAX 256
 static char keybuf_str[KEYBUF_MAX] = "";
 
+static uint32_t g_mbi_flags = 0;
+
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
   layer_fill(hud, 0xFF000000);
 
-  char line1[24];
-  char line2[32];
+  char line1[64], line2[64], line3[64], line4[64], line5[64];
+  
+  // 1行目: "BaramOS Build <AutoNumber>"
   char *p = line1;
-  *p++ = 'C';
-  *p++ = 'P';
-  *p++ = 'U';
-  *p++ = ' ';
-  p = append_uint(p, cpu_percent);
-  *p++ = '%';
+  const char *title = "BaramOS Build ";
+  while (*title) *p++ = *title++;
+  p = append_uint(p, BUILD_NUMBER);
   *p = '\0';
 
+  // 2行目: "CPU: xx% MEM: xx/xxKB"
   p = line2;
-  *p++ = 'M';
-  *p++ = 'E';
-  *p++ = 'M';
-  *p++ = ' ';
-  p = append_uint(p, mem_used_kb);
-  *p++ = '/';
-  p = append_uint(p, mem_total_kb);
-  *p++ = 'K';
-  *p++ = 'B';
+  *p++ = 'C'; *p++ = 'P'; *p++ = 'U'; *p++ = ':'; *p++ = ' ';
+  p = append_uint(p, cpu_percent);
+  *p++ = '%'; *p++ = ' '; *p++ = 'M'; *p++ = 'E'; *p++ = 'M'; *p++ = ':'; *p++ = ' ';
+  p = append_uint(p, mem_used_kb); *p++ = '/'; p = append_uint(p, mem_total_kb); *p++ = 'K'; *p++ = 'B'; *p = '\0';
+
+  // 3行目: "M:<MODE> SVG:<SVG> Mod:<OK>(<CNT>) F:<FLAGS>"
+  p = line3;
+  *p++ = 'M'; *p++ = ':';
+  const char* m_name = (current_os_mode == OS_MODE_CLASSIC) ? "CLS" : "WDP";
+  while(*m_name) *p++ = *m_name++;
+  *p++ = ' '; *p++ = 'S'; *p++ = ':';
+  const char* s_status = g_last_svg_parse_status; while(*s_status) *p++ = *s_status++;
+  *p++ = ' '; *p++ = 'M'; *p++ = ':';
+  if (g_warp_mod_found) { *p++ = 'O'; *p++ = 'K'; } else { *p++ = 'N'; *p++ = 'G'; }
+  *p++ = '('; p = append_uint(p, g_mod_count); *p++ = ')';
+  *p++ = ' '; *p++ = 'F'; *p++ = ':';
+  // Flagsを16進数っぽく表示 (簡易)
+  p = append_uint(p, g_mbi_flags);
+  *p = '\0';
+
+  // 4行目: "Warp: <WarpEngineStatus>"
+  p = line4;
+  const char *w_label = "Warp: ";
+  while (*w_label)
+    *p++ = *w_label++;
+  const char *w_status = warp_engine_get_status();
+  while (*w_status)
+    *p++ = *w_status++;
+  *p = '\0';
+
+  // 5行目: "Input: <keybuf_str>"
+  p = line5;
+  const char *k_label = "Input: ";
+  while (*k_label)
+    *p++ = *k_label++;
+  const char *k_str = keybuf_str;
+  while (*k_str)
+    *p++ = *k_str++;
   *p = '\0';
 
   layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
-  // 3行目: 入力文字 (フォント未使用のフォールバック表示)
-  if (!g_font_ready && g_font_error) {
-    layer_draw_string(hud, 2, 16, g_font_error, 0xFF0000FF, TRANSPARENT_COLOR);
-  }
+  layer_draw_string(hud, 2, 16, line3, 0xFF00FF00, TRANSPARENT_COLOR);
+  layer_draw_string(hud, 2, 24, line4, 0xFFFFFF00, TRANSPARENT_COLOR);
+  layer_draw_string(hud, 2, 32, line5, 0xFF00FFFF, TRANSPARENT_COLOR);
 }
-
-// Multiboot module エントリ
-typedef struct {
-  uint32_t mod_start;
-  uint32_t mod_end;
-  uint32_t string;
-  uint32_t reserved;
-} __attribute__((packed)) multiboot_module_t;
 
 // フォント初期化 (Multibootモジュールから)
 static int font_init(struct multiboot_info *mbi) {
@@ -1477,6 +1523,7 @@ static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
 }
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
+  if (mbi) g_mbi_flags = mbi->flags;
 
   // SVG描画などの初期化より前に、まず赤画面を出す
   for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
@@ -1542,18 +1589,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&blink_layer, 0xFF0000FF); // 青色
   register_layer(&blink_layer);
 
-  // 4. HUD (左下) - CPU / MEM / 入力文字
+  // 4. HUD (左下) - CPU / MEM / モード / ステータス
   layer_t hud_layer;
   hud_layer.buffer = hud_buf;
   hud_layer.x = 10;
-  hud_layer.y = SCREEN_HEIGHT - 30;
-  hud_layer.width = 240;
-  hud_layer.height = 24;
+  hud_layer.y = SCREEN_HEIGHT - (HUD_H + 10);
+  hud_layer.width = HUD_W;
+  hud_layer.height = HUD_H;
   hud_layer.transparent = 0;
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
   layer_fill(&hud_layer, 0xFF000000);
-  register_layer(&hud_layer);
 
   // 5. 次世代UI SVGレイヤー
   layer_t nextgen_ui_layer;
@@ -1572,6 +1618,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     }
   }
   register_layer(&nextgen_ui_layer);
+  register_layer(&hud_layer); // HUDを上に！
 
   // 6. 文字レイヤー (SVG・次世代UIの上, 透過)
   layer_t text_layer;
@@ -1620,14 +1667,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   uint8_t prev_mouse_buttons = 0;
 
-  typedef enum { OS_MODE_WARPDESKTOP, OS_MODE_NEXTGEN } os_mode_t;
-  os_mode_t current_os_mode = OS_MODE_WARPDESKTOP;
-
   screen_refresh(); // 最初の描画
   while (1) {
     int need_refresh = 0;
 
-    if (current_os_mode == OS_MODE_WARPDESKTOP) {
+    if (current_os_mode == OS_MODE_CLASSIC) {
       // 0.1秒(10 ticks)ごとに点滅
       if (timer_ticks - last_blink_tick >= 10) {
         blink_state = !blink_state;
@@ -1745,13 +1789,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           if (c == '\n') {
             // Enter: warpdesktopと入力されていたら次世代モードへ移行
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
-              current_os_mode = OS_MODE_NEXTGEN;
+              current_os_mode = OS_MODE_WARPDESKTOP;
               layer_fill(&desktop, 0xFFF5F5F5); // WarpBackground
               svg_layer.active = 0;        // パフォーマンス考慮: SVGの更新停止
               blink_layer.active = 0;      // 点滅停止
               nextgen_ui_layer.active = 1; // UI表示
               keybuf_str[0] = '\0';        // 入力バッファをクリア
+              screen_mark_static_dirty();  // 静的レイヤー変更を画面に反映
+              redraw_warp_svg(&nextgen_ui_layer);
               nextgen_ui_redraw_text(&text_layer);
+              screen_mark_all_dirty();
             } else {
               keybuf_str[0] = '\0';
               text_layer_redraw(&text_layer, 32.0f); // テキストクリア
@@ -1777,8 +1824,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
         keybuf_len = 0;
 
-        if (current_os_mode == OS_MODE_WARPDESKTOP) {
-          // フォントサイズ: マウスY座標から計算 (WarpDesktopモードのみ)
+        if (current_os_mode == OS_MODE_CLASSIC) {
+          // フォントサイズ: マウスY座標から計算 (CLASSICモードのみ)
           {
             int my_now = (int)mouse_y;
             if (my_now < 0)
@@ -1789,15 +1836,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                                       (float)(SCREEN_HEIGHT - 1);
             text_layer_redraw(&text_layer, fsize);
           }
-          // HUD 3行目も更新
-          {
-            int bx, by;
-            for (by = 16; by < 24; by++)
-              for (bx = 0; bx < 240; bx++)
-                hud_layer.buffer[by * 240 + bx] = 0xFF000000;
-          }
-          layer_draw_string(&hud_layer, 2, 16, keybuf_str, 0xFFFFFFFF,
-                            TRANSPARENT_COLOR);
         }
         need_refresh = 1;
       }
@@ -1816,8 +1854,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         need_refresh = 1;
       }
 
-    } else if (current_os_mode == OS_MODE_NEXTGEN) {
-      // 新モード：最低限の機能のみ更新し、高パフォーマンスを維持
+    } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
+      // WarpDesktopモード：最低限の機能のみ更新し、高パフォーマンスを維持
 
       // マウスの動きを監視してポインタ更新を描画に反映 (角つき＝コマ落ちを防止)
       int mx = mouse_x;
@@ -1836,13 +1874,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           redraw_warp_svg(&nextgen_ui_layer);
           nextgen_ui_redraw_text(&text_layer);
           screen_mark_static_dirty(); // 背景全体を確実に再描画させる
+          screen_mark_all_dirty();
         }
         prev_mouse_buttons = curr_btns;
         need_refresh = 1;
       }
 
       if (keybuf_len > 0) {
-        // NEXTGENモードでも入力を受け付ける (文字描画を可能にする)
+        // WARPDESKTOPモードでも入力を受け付ける (文字描画を可能にする)
         int i;
         for (i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
