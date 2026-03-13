@@ -104,7 +104,9 @@ static int g_svg_dirty = 1;
 
 // --- 前方宣言 ---
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
-static void apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2);
+static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
+                                 int ry, int rw, int rh, uint32_t c1,
+                                 uint32_t c2);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
 
@@ -236,8 +238,8 @@ static const char *g_font_error = NULL;
 static char heap[1024 * 1024 * 128]; // 128MB に拡大
 
 typedef struct block_header {
-  size_t size;        // このブロックのデータサイズ (ヘッダ除く)
-  int    used;        // 1=使用中, 0=空き
+  size_t size; // このブロックのデータサイズ (ヘッダ除く)
+  int used;    // 1=使用中, 0=空き
 } block_header_t;
 
 #define BLOCK_HDR_SIZE (sizeof(block_header_t))
@@ -252,8 +254,10 @@ static void heap_init(void) {
 }
 
 void *malloc(size_t size) {
-  if (!heap_initialized) heap_init();
-  if (size == 0) return NULL;
+  if (!heap_initialized)
+    heap_init();
+  if (size == 0)
+    return NULL;
   // 8バイトアライメント
   size = (size + 7) & ~7;
 
@@ -281,7 +285,8 @@ void *malloc(size_t size) {
 }
 
 void free(void *ptr) {
-  if (!ptr) return;
+  if (!ptr)
+    return;
   block_header_t *hdr = (block_header_t *)((char *)ptr - BLOCK_HDR_SIZE);
   hdr->used = 0;
 
@@ -304,19 +309,26 @@ void free(void *ptr) {
 }
 
 void *realloc(void *ptr, size_t size) {
-  if (!ptr) return malloc(size);
-  if (size == 0) { free(ptr); return NULL; }
+  if (!ptr)
+    return malloc(size);
+  if (size == 0) {
+    free(ptr);
+    return NULL;
+  }
   block_header_t *hdr = (block_header_t *)((char *)ptr - BLOCK_HDR_SIZE);
-  if (hdr->size >= size) return ptr; // 既に十分なサイズ
+  if (hdr->size >= size)
+    return ptr; // 既に十分なサイズ
   void *next = malloc(size);
-  if (!next) return NULL;
+  if (!next)
+    return NULL;
   memcpy(next, ptr, hdr->size < size ? hdr->size : size);
   free(ptr);
   return next;
 }
 
 uint32_t get_used_memory(void) {
-  if (!heap_initialized) return 0;
+  if (!heap_initialized)
+    return 0;
   uint32_t used = 0;
   char *p = heap;
   char *end = heap + sizeof(heap);
@@ -730,34 +742,42 @@ int sscanf(const char *str, const char *format, ...) {
 
 // 2つの色を線形補間
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t) {
-  uint8_t r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF, a1 = (c1 >> 24) & 0xFF;
-  uint8_t r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF, a2 = (c2 >> 24) & 0xFF;
+  uint8_t r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF,
+          a1 = (c1 >> 24) & 0xFF;
+  uint8_t r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF,
+          a2 = (c2 >> 24) & 0xFF;
   uint8_t r = (uint8_t)(r1 + (r2 - r1) * t);
   uint8_t g = (uint8_t)(g1 + (g2 - g1) * t);
   uint8_t b = (uint8_t)(b1 + (b2 - b1) * t);
   uint8_t a = (uint8_t)(a1 + (a2 - a1) * t);
-  return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+  return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) |
+         (uint32_t)b;
 }
 
-static void apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2) {
+static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
+                                 int ry, int rw, int rh, uint32_t c1,
+                                 uint32_t c2) {
   float cx = (float)rx + (float)rw / 2.0f;
   float cy = (float)ry + (float)rh / 2.0f;
   const float PI = 3.14159265f;
 
   for (int y = ry; y < ry + rh; y++) {
-    if (y < 0 || y >= h) continue;
+    if (y < 0 || y >= h)
+      continue;
     for (int x = rx; x < rx + rw; x++) {
-      if (x < 0 || x >= w) continue;
-      
+      if (x < 0 || x >= w)
+        continue;
+
       // 元のアルファ値をマスクとして使用
       uint8_t mask = data[(y * w + x) * 4 + 3];
-      if (mask == 0) continue;
+      if (mask == 0)
+        continue;
 
       float dx = (float)x - cx;
       float dy = (float)y - cy;
-      float angle = atan2f(dy, dx); // -PI to PI
+      float angle = atan2f(dy, dx);         // -PI to PI
       float t = (angle + PI) / (2.0f * PI); // 0 to 1
-      
+
       uint32_t color = lerp_color(c1, c2, t);
       uint8_t r = (color >> 16) & 0xFF;
       uint8_t g = (color >> 8) & 0xFF;
@@ -775,7 +795,8 @@ static void apply_conic_gradient(unsigned char *data, int w, int h, int rx, int 
 }
 
 static void svg_render_full(layer_t *layer) {
-  if (!g_svg_full_rgba) return;
+  if (!g_svg_full_rgba)
+    return;
 
   const uint32_t bg = BASE_BG_COLOR;
   uint8_t bg_r = (bg >> 16) & 0xFF;
@@ -789,42 +810,57 @@ static void svg_render_full(layer_t *layer) {
     uint32_t *line_dst = &layer->buffer[y * layer->width];
     int src_y = y - scroll_y;
     if (src_y < 0 || src_y >= g_svg_full_h) {
-      for (int x = 0; x < layer->width; x++) line_dst[x] = bg;
+      for (int x = 0; x < layer->width; x++)
+        line_dst[x] = bg;
       continue;
     }
     unsigned char *line_src = &g_svg_full_rgba[src_y * g_svg_full_w * 4];
     for (int x = 0; x < layer->width; ++x) {
       int src_x = x - scroll_x;
       if (src_x < 0 || src_x >= g_svg_full_w) {
-        line_dst[x] = bg; continue;
+        line_dst[x] = bg;
+        continue;
       }
       unsigned char *rgba = &line_src[src_x * 4];
       uint8_t a = rgba[3];
-      if (a == 0) { line_dst[x] = bg; }
-      else if (a == 255) { line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) | ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2]; }
-      else {
+      if (a == 0) {
+        line_dst[x] = bg;
+      } else if (a == 255) {
+        line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
+                      ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
+      } else {
         uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
         uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
         uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
-        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
+                      ((uint32_t)out_g << 8) | (uint32_t)out_b;
       }
     }
   }
 }
 
+// SVGソースからrgba(r,g,b,a)の色を抽出する
+static uint32_t parse_rgba_smart(const char *str, int color_index) {
+  if (!str) return 0xFFFFFFFF;
+  const char *p = str;
+  for (int i = 0; i <= color_index; i++) {
+    const char *next = strstr(p, "rgba(");
+    if (!next) return (i == 0) ? 0xFF5CA8FF : 0xFFFFFFFF; 
+    p = next + 5;
+  }
+  int r = (int)strtoll(p, (char**)&p, 10); while(*p==','||*p==' ') p++;
+  int g = (int)strtoll(p, (char**)&p, 10); while(*p==','||*p==' ') p++;
+  int b = (int)strtoll(p, (char**)&p, 10);
+  return (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
 static int svg_init(layer_t *layer) {
   if (g_svg_ready) return 1;
+  layer_fill(layer, 0xFF000000); 
 
-  layer_fill(layer, 0xFF000000); // 初期化前に背景を黒にする
+  if (!g_bootlogo_found || g_bootlogo_buffer[0] == '\0') return 0;
 
-  const char *svg_to_parse = NULL;
-  if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
-    svg_to_parse = g_bootlogo_buffer;
-  } else {
-    svg_to_parse = "<svg width=\"400\" height=\"200\" viewBox=\"0 0 400 200\" xmlns=\"http://www.w3.org/2000/svg\"><text x=\"200\" y=\"120\" fill=\"white\" font-family=\"sans-serif\" font-size=\"64\" text-anchor=\"middle\">BaramOS</text></svg>";
-  }
-
-  g_svg_image = nsvgParse((char *)svg_to_parse, "px", 96.0f);
+  g_svg_image = nsvgParse(g_bootlogo_buffer, "px", 96.0f);
   if (!g_svg_image) return 0;
 
   if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
@@ -837,57 +873,80 @@ static int svg_init(layer_t *layer) {
     g_svg_full_rgba = (unsigned char *)malloc((size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
   }
   if (!g_svg_full_rgba) return 0;
-  
   memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
 
-  // ロゴを中央に配置
   float tx = (g_svg_full_w - g_svg_image->width) / 2.0f;
   float ty = (g_svg_full_h - g_svg_image->height) / 2.0f;
   nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, 1.0f, g_svg_full_rgba, g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
 
-  if (!g_svg_rgba) {
-    g_svg_rgba = (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
+  // --- 自動グラデーション抽出ロジック ---
+  const char *conic_pos = strstr(g_bootlogo_buffer, "conic-gradient");
+  if (conic_pos) {
+    // 3番目と4番目のrgbaを抽出 ( bootlogo.svg の色の意図を汲む )
+    uint32_t c1 = parse_rgba_smart(conic_pos, 2);
+    uint32_t c2 = parse_rgba_smart(conic_pos, 3);
+    
+    for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
+      if (s->fill.type != NSVG_PAINT_NONE) {
+        int rx = (int)(s->bounds[0] + tx);
+        int ry = (int)(s->bounds[1] + ty);
+        int rw = (int)(s->bounds[2] - s->bounds[0]);
+        int rh = (int)(s->bounds[3] - s->bounds[1]);
+        if (rw > 0 && rh > 0) {
+          apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx, ry, rw, rh, c1, c2);
+        }
+      }
+    }
   }
 
+  if (!g_svg_rgba) g_svg_rgba = (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
   g_svg_scale = 1.0f; g_svg_tx = 0.0f; g_svg_ty = 0.0f;
   svg_render_full(layer);
   memcpy(svg_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
-  
   g_svg_ready = 1;
   return 1;
 }
 
 static void warp_ui_mod_init(struct multiboot_info *mbi) {
-  if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
-    return;
+  if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0) return;
   g_mod_count = mbi->mods_count;
   multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
-  
+
+  // 1. 文字列マッチングによる識別
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
-    if (s && (strstr(s, "main.warp") || strstr(s, "MAIN.WARP"))) {
-      uint32_t size = mods[i].mod_end - mods[i].mod_start;
-      if (size > sizeof(g_warp_buffer) - 1) size = sizeof(g_warp_buffer) - 1;
-      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-      g_warp_buffer[size] = '\0';
-      g_warp_mod_found = 1;
-    }
-    else if (s && (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG"))) {
-      uint32_t size = mods[i].mod_end - mods[i].mod_start;
-      if (size > sizeof(g_bootlogo_buffer) - 1) size = sizeof(g_bootlogo_buffer) - 1;
-      memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-      g_bootlogo_buffer[size] = '\0';
-      g_bootlogo_found = 1;
+    if (s) {
+      if (strstr(s, "main.warp") || strstr(s, "MAIN.WARP") || strstr(s, "warp") || strstr(s, "WARP")) {
+        uint32_t size = mods[i].mod_end - mods[i].mod_start;
+        if (size > 32767) size = 32767;
+        memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+        g_warp_buffer[size] = '\0';
+        g_warp_mod_found = 1;
+      } else if (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG") || strstr(s, ".svg") || strstr(s, ".SVG")) {
+        uint32_t size = mods[i].mod_end - mods[i].mod_start;
+        if (size > 65535) size = 65535;
+        memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+        g_bootlogo_buffer[size] = '\0';
+        g_bootlogo_found = 1;
+      }
     }
   }
 
-  // 堅牢なフォールバック
+  // 2. 根本解決: 文字列マッチングが失敗した場合、grub.cfg の定義順序に基づいたインデックスで割り当てる
+  // Index 0: Font, Index 1: main.warp, Index 2: bootlogo.svg
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
-      uint32_t size = mods[1].mod_end - mods[1].mod_start;
-      if (size > sizeof(g_warp_buffer) - 1) size = sizeof(g_warp_buffer) - 1;
-      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[1].mod_start, size);
-      g_warp_buffer[size] = '\0';
-      g_warp_mod_found = 1;
+    uint32_t size = mods[1].mod_end - mods[1].mod_start;
+    if (size > 32767) size = 32767;
+    memcpy(g_warp_buffer, (void *)(uintptr_t)mods[1].mod_start, size);
+    g_warp_buffer[size] = '\0';
+    g_warp_mod_found = 1;
+  }
+  if (!g_bootlogo_found && mbi->mods_count >= 3) {
+    uint32_t size = mods[2].mod_end - mods[2].mod_start;
+    if (size > 65535) size = 65535;
+    memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
+    g_bootlogo_buffer[size] = '\0';
+    g_bootlogo_found = 1;
   }
 }
 
@@ -911,22 +970,28 @@ static void redraw_warp_svg(layer_t *layer) {
     if (g_nextgen_svg_image) {
       int full_w = (int)g_nextgen_svg_image->width;
       int full_h = (int)g_nextgen_svg_image->height;
-      if (full_w < layer->width) full_w = layer->width;
-      if (full_h < layer->height) full_h = layer->height;
+      if (full_w < layer->width)
+        full_w = layer->width;
+      if (full_h < layer->height)
+        full_h = layer->height;
 
       // キャッシュバッファの確保・再確保
-      if (!g_nextgen_full_rgba || g_nextgen_full_w != full_w || g_nextgen_full_h != full_h) {
-        if (g_nextgen_full_rgba) free(g_nextgen_full_rgba);
-        g_nextgen_full_rgba = (unsigned char *)malloc((size_t)full_w * (size_t)full_h * 4);
+      if (!g_nextgen_full_rgba || g_nextgen_full_w != full_w ||
+          g_nextgen_full_h != full_h) {
+        if (g_nextgen_full_rgba)
+          free(g_nextgen_full_rgba);
+        g_nextgen_full_rgba =
+            (unsigned char *)malloc((size_t)full_w * (size_t)full_h * 4);
         g_nextgen_full_w = full_w;
         g_nextgen_full_h = full_h;
       }
 
       if (g_nextgen_full_rgba) {
-        if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+        if (!g_svg_rast)
+          g_svg_rast = nsvgCreateRasterizer();
         memset(g_nextgen_full_rgba, 0, (size_t)full_w * (size_t)full_h * 4);
-        nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f, g_nextgen_full_rgba,
-                      full_w, full_h, full_w * 4);
+        nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f,
+                      g_nextgen_full_rgba, full_w, full_h, full_w * 4);
 
         // --- 追加: Conic Gradient ポストプロセス ---
         for (NSVGshape *s = g_nextgen_svg_image->shapes; s; s = s->next) {
@@ -935,13 +1000,25 @@ static void redraw_warp_svg(layer_t *layer) {
             // (既に全体がラスタライズされているので、特定の色で塗られている場所を判定するのも手だが
             //  ここではより正確に bounds を使ってその範囲を再計算する)
             int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
-            int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
-            
+            int rw = (int)(s->bounds[2] - s->bounds[0]),
+                rh = (int)(s->bounds[3] - s->bounds[1]);
+
             // 簡易的な色指定 (将来的に ID から解析可能)
-            uint32_t c1 = 0xFF00C9FF, c2 = 0xFF92FE9D; // Blue to Green
-            if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
-            
-            apply_conic_gradient(g_nextgen_full_rgba, full_w, full_h, rx, ry, rw, rh, c1, c2);
+            uint32_t c1 = 0xFF5CA8FF,
+                     c2 = 0xFFFFFFFF; // Blue to White (bootlogo.svg)
+            if (strstr(s->id, "black")) {
+              c1 = 0xFF434343;
+              c2 = 0xFF000000;
+            } else if (strstr(s->id, "red")) {
+              c1 = 0xFFFF416C;
+              c2 = 0xFFFF4B2B;
+            } else if (strstr(s->id, "green")) {
+              c1 = 0xFF00C9FF;
+              c2 = 0xFF92FE9D;
+            }
+
+            apply_conic_gradient(g_nextgen_full_rgba, full_w, full_h, rx, ry,
+                                 rw, rh, c1, c2);
           }
         }
       }
@@ -952,7 +1029,8 @@ static void redraw_warp_svg(layer_t *layer) {
     g_svg_dirty = 0;
   }
 
-  if (!g_nextgen_full_rgba) return;
+  if (!g_nextgen_full_rgba)
+    return;
 
   const uint32_t bg = 0xFFF5F5F5;
   uint8_t bg_r = (bg >> 16) & 0xFF;
@@ -966,24 +1044,31 @@ static void redraw_warp_svg(layer_t *layer) {
     uint32_t *line_dst = &layer->buffer[y * layer->width];
     int src_y = y - scroll_y;
     if (src_y < 0 || src_y >= g_nextgen_full_h) {
-      for (int x = 0; x < layer->width; x++) line_dst[x] = bg;
+      for (int x = 0; x < layer->width; x++)
+        line_dst[x] = bg;
       continue;
     }
-    unsigned char *line_src = &g_nextgen_full_rgba[src_y * g_nextgen_full_w * 4];
+    unsigned char *line_src =
+        &g_nextgen_full_rgba[src_y * g_nextgen_full_w * 4];
     for (int x = 0; x < layer->width; ++x) {
       int src_x = x - scroll_x;
       if (src_x < 0 || src_x >= g_nextgen_full_w) {
-        line_dst[x] = bg; continue;
+        line_dst[x] = bg;
+        continue;
       }
       unsigned char *rgba = &line_src[src_x * 4];
       uint8_t a = rgba[3];
-      if (a == 0) { line_dst[x] = bg; }
-      else if (a == 255) { line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) | ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2]; }
-      else {
+      if (a == 0) {
+        line_dst[x] = bg;
+      } else if (a == 255) {
+        line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
+                      ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
+      } else {
         uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
         uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
         uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
-        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
+                      ((uint32_t)out_g << 8) | (uint32_t)out_b;
       }
     }
   }
@@ -1077,9 +1162,10 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
             g_svg_cache[i].shape->flags = 0;
           c->shape->flags = NSVG_FLAGS_VISIBLE;
 
-          nsvgRasterize(g_svg_rast, g_svg_image, g_svg_tx + g_scroll_x - (float)x0,
-                        g_svg_ty + g_scroll_y - (float)y0, g_svg_scale, g_svg_hover_buf, w,
-                        h, w * 4);
+          nsvgRasterize(g_svg_rast, g_svg_image,
+                        g_svg_tx + g_scroll_x - (float)x0,
+                        g_svg_ty + g_scroll_y - (float)y0, g_svg_scale,
+                        g_svg_hover_buf, w, h, w * 4);
 
           for (int i = 0; i < g_svg_shape_count; ++i)
             g_svg_cache[i].shape->flags = g_svg_cache[i].flags;
@@ -1295,32 +1381,66 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   layer_fill(hud, 0xFF000000);
 
   char line1[64], line2[64], line3[64], line4[64], line5[64];
-  
+
   // 1行目: "BaramOS Build <AutoNumber>"
   char *p = line1;
   const char *title = "BaramOS Build ";
-  while (*title) *p++ = *title++;
+  while (*title)
+    *p++ = *title++;
   p = append_uint(p, BUILD_NUMBER);
   *p = '\0';
 
   // 2行目: "CPU: xx% MEM: xx/xxKB"
   p = line2;
-  *p++ = 'C'; *p++ = 'P'; *p++ = 'U'; *p++ = ':'; *p++ = ' ';
+  *p++ = 'C';
+  *p++ = 'P';
+  *p++ = 'U';
+  *p++ = ':';
+  *p++ = ' ';
   p = append_uint(p, cpu_percent);
-  *p++ = '%'; *p++ = ' '; *p++ = 'M'; *p++ = 'E'; *p++ = 'M'; *p++ = ':'; *p++ = ' ';
-  p = append_uint(p, mem_used_kb); *p++ = '/'; p = append_uint(p, mem_total_kb); *p++ = 'K'; *p++ = 'B'; *p = '\0';
+  *p++ = '%';
+  *p++ = ' ';
+  *p++ = 'M';
+  *p++ = 'E';
+  *p++ = 'M';
+  *p++ = ':';
+  *p++ = ' ';
+  p = append_uint(p, mem_used_kb);
+  *p++ = '/';
+  p = append_uint(p, mem_total_kb);
+  *p++ = 'K';
+  *p++ = 'B';
+  *p = '\0';
 
   // 3行目: "M:<MODE> SVG:<SVG> Mod:<OK>(<CNT>) F:<FLAGS>"
   p = line3;
-  *p++ = 'M'; *p++ = ':';
-  const char* m_name = (current_os_mode == OS_MODE_CLASSIC) ? "CLS" : "WDP";
-  while(*m_name) *p++ = *m_name++;
-  *p++ = ' '; *p++ = 'S'; *p++ = ':';
-  const char* s_status = g_last_svg_parse_status; while(*s_status) *p++ = *s_status++;
-  *p++ = ' '; *p++ = 'M'; *p++ = ':';
-  if (g_warp_mod_found) { *p++ = 'O'; *p++ = 'K'; } else { *p++ = 'N'; *p++ = 'G'; }
-  *p++ = '('; p = append_uint(p, g_mod_count); *p++ = ')';
-  *p++ = ' '; *p++ = 'F'; *p++ = ':';
+  *p++ = 'M';
+  *p++ = ':';
+  const char *m_name = (current_os_mode == OS_MODE_CLASSIC) ? "CLS" : "WDP";
+  while (*m_name)
+    *p++ = *m_name++;
+  *p++ = ' ';
+  *p++ = 'S';
+  *p++ = ':';
+  const char *s_status = g_last_svg_parse_status;
+  while (*s_status)
+    *p++ = *s_status++;
+  *p++ = ' ';
+  *p++ = 'M';
+  *p++ = ':';
+  if (g_warp_mod_found) {
+    *p++ = 'O';
+    *p++ = 'K';
+  } else {
+    *p++ = 'N';
+    *p++ = 'G';
+  }
+  *p++ = '(';
+  p = append_uint(p, g_mod_count);
+  *p++ = ')';
+  *p++ = ' ';
+  *p++ = 'F';
+  *p++ = ':';
   // Flagsを16進数っぽく表示 (簡易)
   p = append_uint(p, g_mbi_flags);
   *p = '\0';
@@ -1383,8 +1503,10 @@ static int font_init(struct multiboot_info *mbi) {
 
 // 2つの色をアルファ値(0-255)で合成するヘルパー
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
-  if (alpha == 0) return bg;
-  if (alpha == 255) return (fg | 0xFF000000u);
+  if (alpha == 0)
+    return bg;
+  if (alpha == 255)
+    return (fg | 0xFF000000u);
 
   uint32_t a_bg = (bg >> 24) & 0xFF;
   if (a_bg == 0) {
@@ -1394,12 +1516,12 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
 
   // 背景が不透明な場合の通常のブレンド
   uint32_t rb_fg = (fg & 0x00FF00FFu);
-  uint32_t g_fg  = (fg & 0x0000FF00u);
+  uint32_t g_fg = (fg & 0x0000FF00u);
   uint32_t rb_bg = (bg & 0x00FF00FFu);
-  uint32_t g_bg  = (bg & 0x0000FF00u);
+  uint32_t g_bg = (bg & 0x0000FF00u);
 
   uint32_t rb_out = (rb_fg * alpha + rb_bg * (255 - alpha)) >> 8;
-  uint32_t g_out  = (g_fg * alpha + g_bg * (255 - alpha)) >> 8;
+  uint32_t g_out = (g_fg * alpha + g_bg * (255 - alpha)) >> 8;
 
   return (0xFF000000u) | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
 }
@@ -1490,8 +1612,9 @@ static void text_layer_redraw(layer_t *text_layer, float font_size) {
           if (px < 0 || px >= TEXT_LAYER_W)
             continue;
           uint8_t alpha = bitmap[dy * bw + dx];
-          if (alpha == 0) continue;
-          
+          if (alpha == 0)
+            continue;
+
           size_t idx = (size_t)py * (size_t)TEXT_LAYER_W + (size_t)px;
           uint32_t bg = text_layer->buffer[idx];
           text_layer->buffer[idx] = blend_colors(bg, 0x00000000u, alpha);
@@ -1550,11 +1673,13 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
           if (dpx < 0 || dpx >= (int)layer->width)
             continue;
           uint8_t alpha = bitmap[dy * bw + dx];
-          if (alpha == 0) continue;
+          if (alpha == 0)
+            continue;
 
           // 負の座標や範囲外アクセスを防止
           uint32_t bg = layer->buffer[dpy * layer->width + dpx];
-          layer->buffer[dpy * layer->width + dpx] = blend_colors(bg, color, alpha);
+          layer->buffer[dpy * layer->width + dpx] =
+              blend_colors(bg, color, alpha);
         }
       }
       stbtt_FreeBitmap(bitmap, NULL);
@@ -1647,9 +1772,11 @@ static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
 }
 // ボックスブラー (アルファチャンネルのみ)
 static void box_blur_alpha(unsigned char *data, int w, int h, int radius) {
-  if (radius <= 0) return;
+  if (radius <= 0)
+    return;
   unsigned char *tmp = (unsigned char *)malloc((size_t)w * (size_t)h);
-  if (!tmp) return;
+  if (!tmp)
+    return;
 
   for (int pass = 0; pass < 3; pass++) { // 3回繰り返してガウスブラーに近づける
     // 横方向
@@ -1687,51 +1814,78 @@ static void box_blur_alpha(unsigned char *data, int w, int h, int radius) {
 }
 
 static void cursor_init(void) {
-  const char *cursor_svg = 
-    "<svg width=\"298\" height=\"352\" viewBox=\"0 0 298 352\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
-    "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 68.2928Z\" stroke=\"white\" stroke-width=\"27\" stroke-linecap=\"round\"/>"
-    "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"white\" stroke-width=\"53\" stroke-linecap=\"round\"/>"
-    "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 68.2928Z\" fill=\"black\"/>"
-    "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"black\" stroke-width=\"25\" stroke-linecap=\"round\"/>"
-    "</svg>";
+  const char *cursor_svg =
+      "<svg width=\"298\" height=\"352\" viewBox=\"0 0 298 352\" fill=\"none\" "
+      "xmlns=\"http://www.w3.org/2000/svg\">"
+      "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 "
+      "98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 "
+      "190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 "
+      "197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 "
+      "144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 "
+      "59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 "
+      "100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 "
+      "68.2928Z\" stroke=\"white\" stroke-width=\"27\" "
+      "stroke-linecap=\"round\"/>"
+      "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"white\" "
+      "stroke-width=\"53\" stroke-linecap=\"round\"/>"
+      "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 "
+      "98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 "
+      "190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 "
+      "197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 "
+      "144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 "
+      "59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 "
+      "100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 "
+      "68.2928Z\" fill=\"black\"/>"
+      "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"black\" "
+      "stroke-width=\"25\" stroke-linecap=\"round\"/>"
+      "</svg>";
 
   NSVGimage *img = nsvgParse((char *)cursor_svg, "px", 96.0f);
-  if (!img) return;
+  if (!img)
+    return;
 
   // 縦48px程度にスケール。シャドウのために余白を追加
   int target_h = 48;
   float scale = (float)target_h / img->height;
   int target_w = (int)(img->width * scale);
-  
+
   int padding = 16;
   int w = target_w + padding * 2;
   int h = target_h + padding * 2;
 
   uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
-  if (!buf) { nsvgDelete(img); return; }
+  if (!buf) {
+    nsvgDelete(img);
+    return;
+  }
 
   NSVGrasterizer *rast = nsvgCreateRasterizer();
   unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-  unsigned char *shadow_rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+  unsigned char *shadow_rgba =
+      (unsigned char *)malloc((size_t)w * (size_t)h * 4);
 
   if (rast && rgba && shadow_rgba) {
     // 1. シャドウ用のラスタライズ (オフセット込)
     memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
-    nsvgRasterize(rast, img, (float)padding + 2.0f, (float)padding + 4.0f, scale, shadow_rgba, w, h, w * 4);
+    nsvgRasterize(rast, img, (float)padding + 2.0f, (float)padding + 4.0f,
+                  scale, shadow_rgba, w, h, w * 4);
     box_blur_alpha(shadow_rgba, w, h, 4); // ブラー適用
 
     // 2. 本体をラスタライズ
     memset(rgba, 0, (size_t)w * (size_t)h * 4);
-    nsvgRasterize(rast, img, (float)padding, (float)padding, scale, rgba, w, h, w * 4);
+    nsvgRasterize(rast, img, (float)padding, (float)padding, scale, rgba, w, h,
+                  w * 4);
 
     // 3. 合成 (影 -> 本体)
     for (int i = 0; i < w * h; i++) {
       // 影の色 (黒, 透過度はブラー後のアルファ * 0.5)
       uint8_t shadow_a = (uint8_t)(shadow_rgba[i * 4 + 3] * 0.5f);
-      uint8_t r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+      uint8_t r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2],
+              a = rgba[i * 4 + 3];
 
       if (a == 255) {
-        buf[i] = (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+        buf[i] = (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) |
+                 (uint32_t)b;
       } else {
         // アルファブレンドで合成
         uint8_t out_a = a + (shadow_a * (255 - a) / 255);
@@ -1741,22 +1895,27 @@ static void cursor_init(void) {
           uint8_t out_r = (uint8_t)((r * a + 0 * (out_a - a)) / out_a);
           uint8_t out_g = (uint8_t)((g * a + 0 * (out_a - a)) / out_a);
           uint8_t out_b = (uint8_t)((b * a + 0 * (out_a - a)) / out_a);
-          buf[i] = ((uint32_t)out_a << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+          buf[i] = ((uint32_t)out_a << 24) | ((uint32_t)out_r << 16) |
+                   ((uint32_t)out_g << 8) | (uint32_t)out_b;
         }
       }
     }
     set_cursor_bitmap(buf, w, h);
   }
-  
-  if (rast) nsvgDeleteRasterizer(rast);
-  if (rgba) free(rgba);
-  if (shadow_rgba) free(shadow_rgba);
+
+  if (rast)
+    nsvgDeleteRasterizer(rast);
+  if (rgba)
+    free(rgba);
+  if (shadow_rgba)
+    free(shadow_rgba);
   nsvgDelete(img);
 }
 
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
-  if (mbi) g_mbi_flags = mbi->flags;
+  if (mbi)
+    g_mbi_flags = mbi->flags;
 
   // SVG描画などの初期化より前に、まず赤画面を出す
   for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
@@ -1779,6 +1938,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   mouse_install();
   enable_interrupts();
 
+  // モジュールとフォントの初期化を最優先で行う
+  font_init(mbi);
+  warp_ui_mod_init(mbi);
+
   set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
                        mbi->framebuffer_width, mbi->framebuffer_height,
                        mbi->framebuffer_pitch);
@@ -1786,7 +1949,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   // カーソル初期化
   cursor_init();
 
-  // 1. 背景 (赤)
+  // 1. 背景 (黒)
   layer_t desktop;
   desktop.buffer = desktop_buf;
   desktop.x = 0;
@@ -1799,7 +1962,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
-  // 2. SVG表示エリア (左上)
+  // 2. SVG表示エリア (ロゴ用)
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
   svg_layer.x = 0;
@@ -1808,10 +1971,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
   svg_layer.active = 1;
-  svg_layer.dynamic = 0; // 静的に変更 (背景ロゴとして機能)
+  svg_layer.dynamic = 0;
   svg_init(&svg_layer);
   register_layer(&svg_layer);
-  screen_mark_static_dirty(); // 初回のロゴ描画を強制
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -1849,7 +2011,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   nextgen_ui_layer.active = 0;
   nextgen_ui_layer.dynamic = 1;
   {
-    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) nextgen_ui_buf[i] = TRANSPARENT_COLOR;
+    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+      nextgen_ui_buf[i] = TRANSPARENT_COLOR;
   }
   register_layer(&nextgen_ui_layer);
   register_layer(&hud_layer); // HUDを上に
@@ -1865,14 +2028,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   text_layer.active = 1;
   text_layer.dynamic = 1;
   {
-    for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++) text_buf[i] = TRANSPARENT_COLOR;
+    for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++)
+      text_buf[i] = TRANSPARENT_COLOR;
   }
-  register_layer(&text_layer);
-
-  // フォント初期化
-  font_init(mbi);
-  warp_ui_mod_init(mbi);
-
   // 次世代SVGレイヤー構築
   svg_init_nextgen(&nextgen_ui_layer);
 
@@ -1890,13 +2048,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int last_hover = -2;
   int last_mouse_x = -1;
   int last_mouse_y = -1;
-  int active_hover = -1;
-  float hover_scale = 1.0f;
-  float hover_target_scale = 1.0f;
-  float hover_offx = 0.0f;
-  float hover_offy = 0.0f;
-  float hover_target_offx = 0.0f;
-  float hover_target_offy = 0.0f;
   uint32_t last_anim_tick = 0;
   uint8_t prev_mouse_buttons = 0;
 
@@ -1916,18 +2067,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int hover = svg_pick_shape(&svg_layer, mx, my);
         if (hover != last_hover) {
           last_hover = hover;
-          if (hover >= 0) {
-            active_hover = hover;
-            hover_target_scale = HOVER_SCALE;
-          } else {
-            hover_target_scale = 1.0f;
-          }
         }
         last_mouse_x = mx;
         last_mouse_y = my;
         if (keybuf_str[0] != '\0') {
-          int my_clamp = my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
-          float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) / (float)(SCREEN_HEIGHT - 1);
+          int my_clamp =
+              my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
+          float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) /
+                                    (float)(SCREEN_HEIGHT - 1);
           text_layer_redraw(&text_layer, fsize);
         }
       }
@@ -1937,15 +2084,18 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         last_anim_tick = timer_ticks;
         int moved = 0;
         for (uint32_t i = 0; i < dt; ++i) {
-          hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
-          hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
-          hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
           float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) < 0.1f) g_scroll_y = g_target_scroll_y; else { g_scroll_y += dy; moved = 1; }
+          if (fabsf(dy) < 0.1f)
+            g_scroll_y = g_target_scroll_y;
+          else {
+            g_scroll_y += dy;
+            moved = 1;
+          }
         }
         if (moved) {
           svg_render_full(&svg_layer);
-          memcpy(svg_base_buf, svg_layer.buffer, sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+          memcpy(svg_base_buf, svg_layer.buffer,
+                 sizeof(uint32_t) * svg_layer.width * svg_layer.height);
           screen_mark_static_dirty();
         }
       }
@@ -1953,32 +2103,49 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       if (keybuf_len > 0) {
         for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == KEY_UP) g_target_scroll_y += 100.0f;
-          else if (c == KEY_DOWN) g_target_scroll_y -= 100.0f;
+          if (c == KEY_UP)
+            g_target_scroll_y += 100.0f;
+          else if (c == KEY_DOWN)
+            g_target_scroll_y -= 100.0f;
           else if (c == '\n') {
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
               current_os_mode = OS_MODE_WARPDESKTOP;
-              g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
+              g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y =
+                  0.0f;
               layer_fill(&desktop, 0xFFF5F5F5);
-              svg_layer.active = 0; blink_layer.active = 0; nextgen_ui_layer.active = 1; text_layer.active = 0;
+              svg_layer.active = 0;
+              blink_layer.active = 0;
+              nextgen_ui_layer.active = 1;
+              text_layer.active = 0;
               keybuf_str[0] = '\0';
-              g_svg_dirty = 1; redraw_warp_svg(&nextgen_ui_layer);
+              g_svg_dirty = 1;
+              redraw_warp_svg(&nextgen_ui_layer);
               screen_mark_static_dirty();
             } else {
               keybuf_str[0] = '\0';
               text_layer_redraw(&text_layer, 32.0f);
             }
           } else if (c == '\b') {
-            int len = strlen(keybuf_str); if (len > 0) keybuf_str[len - 1] = '\0';
+            int len = strlen(keybuf_str);
+            if (len > 0)
+              keybuf_str[len - 1] = '\0';
           } else {
-            int len = strlen(keybuf_str); if (len < KEYBUF_MAX - 1) { keybuf_str[len] = c; keybuf_str[len + 1] = '\0'; }
+            int len = strlen(keybuf_str);
+            if (len < KEYBUF_MAX - 1) {
+              keybuf_str[len] = c;
+              keybuf_str[len + 1] = '\0';
+            }
           }
         }
         keybuf_len = 0;
         if (current_os_mode == OS_MODE_CLASSIC) {
           int my_now = (int)mouse_y;
-          if (my_now < 0) my_now = 0; else if (my_now >= SCREEN_HEIGHT) my_now = SCREEN_HEIGHT - 1;
-          float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) / (float)(SCREEN_HEIGHT - 1);
+          if (my_now < 0)
+            my_now = 0;
+          else if (my_now >= SCREEN_HEIGHT)
+            my_now = SCREEN_HEIGHT - 1;
+          float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
+                                    (float)(SCREEN_HEIGHT - 1);
           text_layer_redraw(&text_layer, fsize);
         }
       }
@@ -1990,15 +2157,18 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024), mem_total_kb);
-        last_stat_tick = timer_ticks; last_idle_tick = idle_ticks;
+        hud_update(&hud_layer, cpu_percent,
+                   (unsigned int)(get_used_memory() / 1024), mem_total_kb);
+        last_stat_tick = timer_ticks;
+        last_idle_tick = idle_ticks;
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
       if (mouse_scroll != 0) {
         g_target_scroll_y += (float)mouse_scroll * 60.0f;
         mouse_scroll = 0;
-        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
+        if (g_target_scroll_y > 0.0f)
+          g_target_scroll_y = 0.0f;
       }
 
       if (timer_ticks != last_anim_tick) {
@@ -2007,16 +2177,22 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int moved = 0;
         for (uint32_t i = 0; i < dt; i++) {
           float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) > 0.1f) { g_scroll_y += dy; moved = 1; } else g_scroll_y = g_target_scroll_y;
+          if (fabsf(dy) > 0.1f) {
+            g_scroll_y += dy;
+            moved = 1;
+          } else
+            g_scroll_y = g_target_scroll_y;
         }
-        if (moved) redraw_warp_svg(&nextgen_ui_layer);
+        if (moved)
+          redraw_warp_svg(&nextgen_ui_layer);
       }
 
       uint8_t curr_btns = mouse_buttons;
       if (curr_btns != prev_mouse_buttons) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
           warp_engine_click(mouse_x - g_scroll_x, mouse_y - g_scroll_y);
-          g_svg_dirty = 1; redraw_warp_svg(&nextgen_ui_layer);
+          g_svg_dirty = 1;
+          redraw_warp_svg(&nextgen_ui_layer);
         }
         prev_mouse_buttons = curr_btns;
       }
@@ -2024,14 +2200,30 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       if (keybuf_len > 0) {
         for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == KEY_UP) g_target_scroll_y += 100.0f;
-          else if (c == KEY_DOWN) g_target_scroll_y -= 100.0f;
-          else if (c == '\b') { int len = strlen(keybuf_str); if (len > 0) keybuf_str[len - 1] = '\0'; }
-          else if (c == '\n') { keybuf_str[0] = '\0'; g_svg_dirty = 1; redraw_warp_svg(&nextgen_ui_layer); }
-          else { int len = strlen(keybuf_str); if (len < KEYBUF_MAX - 1) { keybuf_str[len] = c; keybuf_str[len + 1] = '\0'; g_svg_dirty = 1; } }
+          if (c == KEY_UP)
+            g_target_scroll_y += 100.0f;
+          else if (c == KEY_DOWN)
+            g_target_scroll_y -= 100.0f;
+          else if (c == '\b') {
+            int len = strlen(keybuf_str);
+            if (len > 0)
+              keybuf_str[len - 1] = '\0';
+          } else if (c == '\n') {
+            keybuf_str[0] = '\0';
+            g_svg_dirty = 1;
+            redraw_warp_svg(&nextgen_ui_layer);
+          } else {
+            int len = strlen(keybuf_str);
+            if (len < KEYBUF_MAX - 1) {
+              keybuf_str[len] = c;
+              keybuf_str[len + 1] = '\0';
+              g_svg_dirty = 1;
+            }
+          }
         }
         keybuf_len = 0;
-        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
+        if (g_target_scroll_y > 0.0f)
+          g_target_scroll_y = 0.0f;
         redraw_warp_svg(&nextgen_ui_layer);
       }
 
@@ -2042,8 +2234,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024), mem_total_kb);
-        last_stat_tick = timer_ticks; last_idle_tick = idle_ticks;
+        hud_update(&hud_layer, cpu_percent,
+                   (unsigned int)(get_used_memory() / 1024), mem_total_kb);
+        last_stat_tick = timer_ticks;
+        last_idle_tick = idle_ticks;
       }
     }
 
