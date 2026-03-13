@@ -53,10 +53,21 @@ typedef struct {
   int h;
 } svg_shape_cache_t;
 
+// Multiboot module エントリ
+typedef struct {
+  uint32_t mod_start;
+  uint32_t mod_end;
+  uint32_t string;
+  uint32_t reserved;
+} __attribute__((packed)) multiboot_module_t;
+
+typedef enum { OS_MODE_CLASSIC, OS_MODE_WARPDESKTOP } os_mode_t;
+
+// --- グローバル変数 (Classic) ---
 static NSVGimage *g_svg_image = NULL;
 static NSVGrasterizer *g_svg_rast = NULL;
 static unsigned char *g_svg_rgba = NULL;
-static unsigned char *g_svg_full_rgba = NULL; // ドキュメント全体のキャッシュ
+static unsigned char *g_svg_full_rgba = NULL;
 static int g_svg_full_w = 0;
 static int g_svg_full_h = 0;
 static svg_shape_cache_t *g_svg_cache = NULL;
@@ -76,6 +87,26 @@ static float g_target_scroll_y = 0.0f;
 
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
+
+// --- グローバル変数 (Nextgen/Warp) ---
+static os_mode_t current_os_mode = OS_MODE_CLASSIC;
+static char g_last_svg_parse_status[64] = "None";
+static int g_warp_mod_found = 0;
+static uint32_t g_mod_count = 0;
+static NSVGimage *g_nextgen_svg_image = NULL;
+static unsigned char *g_nextgen_full_rgba = NULL;
+static int g_nextgen_full_w = 0;
+static int g_nextgen_full_h = 0;
+static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
+static char g_bootlogo_buffer[65536] = "";
+static int g_bootlogo_found = 0;
+static int g_svg_dirty = 1;
+
+// --- 前方宣言 ---
+static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
+static void apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2);
+static void svg_render_full(layer_t *layer);
+static void redraw_warp_svg(layer_t *layer);
 
 // FPU有効化
 void enable_fpu() {
@@ -782,85 +813,49 @@ static void svg_render_full(layer_t *layer) {
 }
 
 static int svg_init(layer_t *layer) {
-  if (g_svg_ready)
-    return 1;
+  if (g_svg_ready) return 1;
 
-  layer_fill(layer, BASE_BG_COLOR);
+  layer_fill(layer, 0xFF000000); // 初期化前に背景を黒にする
 
-  char *svg_copy = (char *)malloc(note_test_svg_len + 1);
-  if (!svg_copy)
-    return 0;
-  memcpy(svg_copy, note_test_svg, note_test_svg_len);
-  svg_copy[note_test_svg_len] = '\0';
+  const char *svg_to_parse = NULL;
+  if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
+    svg_to_parse = g_bootlogo_buffer;
+  } else {
+    svg_to_parse = "<svg width=\"400\" height=\"200\" viewBox=\"0 0 400 200\" xmlns=\"http://www.w3.org/2000/svg\"><text x=\"200\" y=\"120\" fill=\"white\" font-family=\"sans-serif\" font-size=\"64\" text-anchor=\"middle\">BaramOS</text></svg>";
+  }
 
-  g_svg_image = nsvgParse(svg_copy, "px", 96.0f);
-  if (!g_svg_image)
-    return 0;
+  g_svg_image = nsvgParse((char *)svg_to_parse, "px", 96.0f);
+  if (!g_svg_image) return 0;
 
-  g_svg_rast = nsvgCreateRasterizer();
-  if (!g_svg_rast)
-    return 0;
+  if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+  if (!g_svg_rast) return 0;
 
-  // 全体サイズを計算 (CLASSICモードでは1280x5000pxを上限に)
-  g_svg_full_w = (int)g_svg_image->width;
-  g_svg_full_h = (int)g_svg_image->height;
-  if (g_svg_full_w < layer->width) g_svg_full_w = layer->width;
-  if (g_svg_full_h < 5000) g_svg_full_h = 5000;
+  g_svg_full_w = layer->width;
+  g_svg_full_h = layer->height;
 
-  g_svg_full_rgba = (unsigned char *)malloc((size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+  if (!g_svg_full_rgba) {
+    g_svg_full_rgba = (unsigned char *)malloc((size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+  }
   if (!g_svg_full_rgba) return 0;
   
   memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
-  nsvgRasterize(g_svg_rast, g_svg_image, 0, 0, 1.0f, g_svg_full_rgba, g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
 
-  // --- 追加: Conic Gradient ポストプロセス (CLASSICモード用) ---
-  for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
-    if (s->id[0] == 'c' && strncmp(s->id, "conic", 5) == 0) {
-      int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
-      int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
-      
-      uint32_t c1 = 0xFF00C9FF, c2 = 0xFF92FE9D; // Blue to Green
-      if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
-      else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
-      
-      apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx, ry, rw, rh, c1, c2);
-    }
+  // ロゴを中央に配置
+  float tx = (g_svg_full_w - g_svg_image->width) / 2.0f;
+  float ty = (g_svg_full_h - g_svg_image->height) / 2.0f;
+  nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, 1.0f, g_svg_full_rgba, g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+
+  if (!g_svg_rgba) {
+    g_svg_rgba = (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
   }
 
-  // 互換性のためのバッファ
-  g_svg_rgba = (unsigned char *)malloc((size_t)layer->width * (size_t)layer->height * 4);
-
-  g_svg_scale = 1.0f;
-  g_svg_tx = 0.0f;
-  g_svg_ty = 0.0f;
-
+  g_svg_scale = 1.0f; g_svg_tx = 0.0f; g_svg_ty = 0.0f;
   svg_render_full(layer);
-  memcpy(svg_base_buf, layer->buffer,
-         sizeof(uint32_t) * layer->width * layer->height);
+  memcpy(svg_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
+  
   g_svg_ready = 1;
   return 1;
 }
-
-typedef enum { OS_MODE_CLASSIC, OS_MODE_WARPDESKTOP } os_mode_t;
-static os_mode_t current_os_mode = OS_MODE_CLASSIC;
-static char g_last_svg_parse_status[64] = "None";
-static int g_warp_mod_found = 0;
-static uint32_t g_mod_count = 0;
-
-static NSVGimage *g_nextgen_svg_image = NULL;
-static unsigned char *g_nextgen_full_rgba = NULL;
-static int g_nextgen_full_w = 0;
-static int g_nextgen_full_h = 0;
-static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
-static int g_svg_dirty = 1;
-
-// Multiboot module エントリ
-typedef struct {
-  uint32_t mod_start;
-  uint32_t mod_end;
-  uint32_t string;
-  uint32_t reserved;
-} __attribute__((packed)) multiboot_module_t;
 
 static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
@@ -868,26 +863,29 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   g_mod_count = mbi->mods_count;
   multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
   
-  int found_idx = -1;
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
-    // モジュール名に "main.warp" が含まれているか、あるいは末尾が一致するか確認
     if (s && (strstr(s, "main.warp") || strstr(s, "MAIN.WARP"))) {
-      found_idx = i;
-      break;
+      uint32_t size = mods[i].mod_end - mods[i].mod_start;
+      if (size > sizeof(g_warp_buffer) - 1) size = sizeof(g_warp_buffer) - 1;
+      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+      g_warp_buffer[size] = '\0';
+      g_warp_mod_found = 1;
+    }
+    else if (s && (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG"))) {
+      uint32_t size = mods[i].mod_end - mods[i].mod_start;
+      if (size > sizeof(g_bootlogo_buffer) - 1) size = sizeof(g_bootlogo_buffer) - 1;
+      memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+      g_bootlogo_buffer[size] = '\0';
+      g_bootlogo_found = 1;
     }
   }
 
-  // 文字列で見つからなかった場合、モジュールが2つあれば強制的に2番目を使用 (Fallback)
-  if (found_idx == -1 && mbi->mods_count >= 2) {
-      found_idx = 1;
-  }
-
-  if (found_idx != -1) {
-      uint32_t size = mods[found_idx].mod_end - mods[found_idx].mod_start;
-      if (size > sizeof(g_warp_buffer) - 1)
-        size = sizeof(g_warp_buffer) - 1;
-      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[found_idx].mod_start, size);
+  // 堅牢なフォールバック
+  if (!g_warp_mod_found && mbi->mods_count >= 2) {
+      uint32_t size = mods[1].mod_end - mods[1].mod_start;
+      if (size > sizeof(g_warp_buffer) - 1) size = sizeof(g_warp_buffer) - 1;
+      memcpy(g_warp_buffer, (void *)(uintptr_t)mods[1].mod_start, size);
       g_warp_buffer[size] = '\0';
       g_warp_mod_found = 1;
   }

@@ -17,7 +17,6 @@ screen(
 
     card(
     text:"内容変更"
-    gradient:"conic"
     text(
         text:"クリックにより表示内容が変更されます"
     )
@@ -39,7 +38,6 @@ screen(
         card(
             text:"使用例"
             color:black
-            gradient:"conic_black"
             text(
                 text:"button\(
                 \n\ \ text\:\"戻る\"
