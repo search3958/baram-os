@@ -803,8 +803,8 @@ static void svg_render_full(layer_t *layer) {
   uint8_t bg_g = (bg >> 8) & 0xFF;
   uint8_t bg_b = bg & 0xFF;
 
-  int scroll_x = (int)floorf(g_scroll_x);
-  int scroll_y = (int)floorf(g_scroll_y);
+  int scroll_x = (int)roundf(g_scroll_x);
+  int scroll_y = (int)roundf(g_scroll_y);
 
   for (int y = 0; y < layer->height; ++y) {
     uint32_t *line_dst = &layer->buffer[y * layer->width];
@@ -1037,8 +1037,8 @@ static void redraw_warp_svg(layer_t *layer) {
   uint8_t bg_g = (bg >> 8) & 0xFF;
   uint8_t bg_b = bg & 0xFF;
 
-  int scroll_x = (int)floorf(g_scroll_x);
-  int scroll_y = (int)floorf(g_scroll_y);
+  int scroll_x = (int)roundf(g_scroll_x);
+  int scroll_y = (int)roundf(g_scroll_y);
 
   for (int y = 0; y < layer->height; ++y) {
     uint32_t *line_dst = &layer->buffer[y * layer->width];
@@ -2085,9 +2085,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int moved = 0;
         for (uint32_t i = 0; i < dt; ++i) {
           float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) < 0.1f)
-            g_scroll_y = g_target_scroll_y;
-          else {
+          if (fabsf(dy) < 0.05f) {
+            if (g_scroll_y != g_target_scroll_y) {
+              g_scroll_y = g_target_scroll_y;
+              moved = 1;
+            }
+          } else {
             g_scroll_y += dy;
             moved = 1;
           }
@@ -2177,15 +2180,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int moved = 0;
         for (uint32_t i = 0; i < dt; i++) {
           float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) > 0.1f) {
+          if (fabsf(dy) < 0.05f) {
+            if (g_scroll_y != g_target_scroll_y) { g_scroll_y = g_target_scroll_y; moved = 1; }
+          } else {
             g_scroll_y += dy;
             moved = 1;
-          } else
-            g_scroll_y = g_target_scroll_y;
+          }
         }
-        if (moved)
-          redraw_warp_svg(&nextgen_ui_layer);
+        if (moved) redraw_warp_svg(&nextgen_ui_layer);
       }
+
 
       uint8_t curr_btns = mouse_buttons;
       if (curr_btns != prev_mouse_buttons) {
