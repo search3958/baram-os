@@ -217,130 +217,74 @@ void set_cursor_bitmap(uint32_t *bitmap, int w, int h) {
 }
 
 // ==========================================
-// 画面更新 (ダーティレクトのみblit)
+// 画面更新 (常時全画面転送 - 60fpsターゲット)
 // ==========================================
 void screen_refresh(void) {
-  if (!g_vram)
-    return;
+  if (!g_vram) return;
 
-  // 静的レイヤーが汚れていたら全画面再合成
+  // 静的レイヤーの合成 (変更がある場合のみ staticbuffer を更新)
   if (g_static_dirty) {
     uint32_t *s = g_staticbuffer;
     int total = SCREEN_WIDTH * SCREEN_HEIGHT;
-    for (int i = 0; i < total; i++)
-      s[i] = 0xFF000000;
+    for (int i = 0; i < total; i++) s[i] = 0xFF000000;
     for (int i = 0; i < g_num_layers; i++) {
-      if (!g_layers[i]->dynamic)
-        compose_layer_region(g_staticbuffer, g_layers[i], 0, 0, SCREEN_WIDTH,
-                             SCREEN_HEIGHT);
+      if (!g_layers[i]->dynamic && g_layers[i]->active)
+        compose_layer_region(g_staticbuffer, g_layers[i], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     }
     g_static_dirty = 0;
-    screen_mark_all_dirty();
   }
 
-  // カーソルの前回位置もdirtyに含める
-  static int prev_cx = -1, prev_cy = -1;
-  int cur_w = g_cursor_bitmap ? g_cursor_w : 12;
-  int cur_h = g_cursor_bitmap ? g_cursor_h : 12;
-
-  if (prev_cx >= 0)
-    dirty_expand(prev_cx, prev_cy, prev_cx + cur_w, prev_cy + cur_h);
-  int cx = (int)mouse_x, cy = (int)mouse_y;
-  dirty_expand(cx, cy, cx + cur_w, cy + cur_h);
-
-  // ダーティ領域がなければ終了
-  int dx0 = g_drx0, dy0 = g_dry0, dx1 = g_drx1, dy1 = g_dry1;
-  dirty_reset();
-  if (dx0 >= dx1 || dy0 >= dy1)
-    return;
-
-  // バックバッファ選択
+  // バックバッファ(BB)の準備
   uint32_t *bb = g_backbuffer_ram;
   if (g_page_flip_enabled)
     bb = (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_draw_page);
 
-  // ダーティ領域だけ staticbuffer → backbuffer にコピー
-  for (int y = dy0; y < dy1; y++) {
-    uint32_t *s = &g_staticbuffer[y * SCREEN_WIDTH + dx0];
-    uint32_t *d = &bb[y * SCREEN_WIDTH + dx0];
-    int n = dx1 - dx0;
-    while (n--)
-      *d++ = *s++;
-  }
+  // 1. 静的バッファをBBに全コピー (高速な4バイト単位コピー)
+  memcpy(bb, g_staticbuffer, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
 
-  // 動的レイヤーをダーティ領域に合成
+  // 2. 動的レイヤーをBBに全合成
   for (int i = 0; i < g_num_layers; i++) {
-    if (g_layers[i]->dynamic)
-      compose_layer_region(bb, g_layers[i], dx0, dy0, dx1, dy1);
+    if (g_layers[i]->dynamic && g_layers[i]->active)
+      compose_layer_region(bb, g_layers[i], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
   }
 
-  // カーソル描画 (ダーティ領域内だけ)
+  // 3. カーソル描画 (ARGBブレンド)
   if (g_cursor_bitmap) {
+    int cx = (int)mouse_x, cy = (int)mouse_y;
     for (int my = 0; my < g_cursor_h; my++) {
       int sy = cy + my;
-      if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height)
-        continue;
+      if (sy < 0 || sy >= SCREEN_HEIGHT) continue;
       for (int mx = 0; mx < g_cursor_w; mx++) {
         int sx = cx + mx;
-        if (sx < dx0 || sx >= dx1 || sx < 0 || sx >= (int)g_vram_width)
-          continue;
-
+        if (sx < 0 || sx >= SCREEN_WIDTH) continue;
         uint32_t c = g_cursor_bitmap[my * g_cursor_w + mx];
         uint8_t a = (c >> 24) & 0xFF;
-        if (a == 0)
-          continue;
-        if (a == 255) {
-          bb[sy * SCREEN_WIDTH + sx] = c;
-        } else {
-          // アルファブレンド
+        if (a == 0) continue;
+        if (a == 255) { bb[sy * SCREEN_WIDTH + sx] = c; }
+        else {
           uint32_t d = bb[sy * SCREEN_WIDTH + sx];
           uint32_t rb_c = (c & 0x00FF00FFu), g_c = (c & 0x0000FF00u);
           uint32_t rb_d = (d & 0x00FF00FFu), g_d = (d & 0x0000FF00u);
           uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
-          uint32_t g_out = (g_c * a + g_d * (255 - a)) >> 8;
-          bb[sy * SCREEN_WIDTH + sx] =
-              0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+          uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
+          bb[sy * SCREEN_WIDTH + sx] = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
         }
       }
     }
-  } else {
-    const uint32_t white = 0xFFFFFFFF, black = 0xFF000000;
-    const int cursor_size = 64;
-    for (int my = 0; my < cursor_size; my++) {
-      int sy = cy + my;
-      if (sy < dy0 || sy >= dy1 || sy < 0 || sy >= (int)g_vram_height)
-        continue;
-      for (int mx = 0; mx < cursor_size; mx++) {
-        int sx = cx + mx;
-        if (sx < dx0 || sx >= dx1 || sx < 0 || sx >= (int)g_vram_width)
-          continue;
-        uint32_t color = (mx == 0 || my == 0 || mx == cursor_size - 1 ||
-                          my == cursor_size - 1)
-                             ? white
-                             : black;
-        bb[sy * SCREEN_WIDTH + sx] = color;
-      }
-    }
   }
-  prev_cx = cx;
-  prev_cy = cy;
 
-  // VRAMへblit (ダーティ行だけ)
+  // 4. VRAMへ一気に転送
   if (g_page_flip_enabled) {
     bga_write(BGA_REG_X_OFFSET, 0);
     bga_write(BGA_REG_Y_OFFSET, (uint16_t)(g_draw_page * g_vram_height));
     g_display_page = g_draw_page;
     g_draw_page = 1 - g_draw_page;
   } else {
-    for (int y = dy0; y < dy1; y++) {
-      uint32_t *dest = (uint32_t *)((uint8_t *)g_vram + y * g_vram_pitch);
-      uint32_t *src = &bb[y * SCREEN_WIDTH + dx0];
-      uint32_t *dst = &dest[dx0];
-      int n = dx1 - dx0;
-      while (n--)
-        *dst++ = *src++;
-    }
+    memcpy(g_vram, bb, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   }
+  
+  // ダーティレクトはリセット
+  dirty_reset();
 }
 
 void layer_fill(layer_t *layer, uint32_t color) {

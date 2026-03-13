@@ -39,7 +39,7 @@
 
 #define SVG_WIDTH NOTE_TEST_SVG_WIDTH
 #define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
-#define BASE_BG_COLOR 0xFF8B0000u
+#define BASE_BG_COLOR 0xFF000000u
 #define HOVER_SCALE 1.2f
 #define HOVER_EASE 0.1f
 
@@ -1808,9 +1808,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.height = SVG_HEIGHT;
   svg_layer.transparent = 0;
   svg_layer.active = 1;
-  svg_layer.dynamic = 1;
+  svg_layer.dynamic = 0; // 静的に変更 (背景ロゴとして機能)
   svg_init(&svg_layer);
   register_layer(&svg_layer);
+  screen_mark_static_dirty(); // 初回のロゴ描画を強制
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -1844,32 +1845,27 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   nextgen_ui_layer.y = 0;
   nextgen_ui_layer.width = SCREEN_WIDTH;
   nextgen_ui_layer.height = SCREEN_HEIGHT;
-  nextgen_ui_layer.transparent = TRANSPARENT_COLOR; // 透過
-  nextgen_ui_layer.active = 0;                      // 最初は非表示
+  nextgen_ui_layer.transparent = TRANSPARENT_COLOR;
+  nextgen_ui_layer.active = 0;
   nextgen_ui_layer.dynamic = 1;
   {
-    int i;
-    for (i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
-      nextgen_ui_buf[i] = TRANSPARENT_COLOR;
-    }
+    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) nextgen_ui_buf[i] = TRANSPARENT_COLOR;
   }
   register_layer(&nextgen_ui_layer);
-  register_layer(&hud_layer); // HUDを上に！
+  register_layer(&hud_layer); // HUDを上に
 
-  // 6. 文字レイヤー (SVG・次世代UIの上, 透過)
+  // 6. 文字レイヤー
   layer_t text_layer;
   text_layer.buffer = text_buf;
   text_layer.x = 0;
   text_layer.y = 0;
   text_layer.width = TEXT_LAYER_W;
   text_layer.height = TEXT_LAYER_H;
-  text_layer.transparent = TRANSPARENT_COLOR; // 透明
+  text_layer.transparent = TRANSPARENT_COLOR;
   text_layer.active = 1;
   text_layer.dynamic = 1;
   {
-    int ti;
-    for (ti = 0; ti < TEXT_LAYER_W * TEXT_LAYER_H; ti++)
-      text_buf[ti] = TRANSPARENT_COLOR;
+    for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++) text_buf[i] = TRANSPARENT_COLOR;
   }
   register_layer(&text_layer);
 
@@ -1879,6 +1875,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // 次世代SVGレイヤー構築
   svg_init_nextgen(&nextgen_ui_layer);
+
+  // 初回描画を確実に実行
+  screen_mark_static_dirty();
+  screen_mark_all_dirty();
 
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
@@ -1898,36 +1898,26 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   float hover_target_offx = 0.0f;
   float hover_target_offy = 0.0f;
   uint32_t last_anim_tick = 0;
-  int last_draw_x = 0, last_draw_y = 0, last_draw_w = 0, last_draw_h = 0;
-  int have_draw = 0;
-
   uint8_t prev_mouse_buttons = 0;
 
-  screen_refresh(); // 最初の描画
+  // メインループ (常時60fpsターゲット)
   while (1) {
-    int need_refresh = 0;
-
     if (current_os_mode == OS_MODE_CLASSIC) {
       // 0.1秒(10 ticks)ごとに点滅
       if (timer_ticks - last_blink_tick >= 10) {
         blink_state = !blink_state;
         blink_layer.active = blink_state;
         last_blink_tick = timer_ticks;
-        need_refresh = 1;
       }
 
       int mx = mouse_x;
       int my = mouse_y;
       if (mx != last_mouse_x || my != last_mouse_y) {
-        need_refresh = 1;
         int hover = svg_pick_shape(&svg_layer, mx, my);
         if (hover != last_hover) {
           last_hover = hover;
           if (hover >= 0) {
             active_hover = hover;
-            hover_scale = 1.0f;
-            hover_offx = 0.0f;
-            hover_offy = 0.0f;
             hover_target_scale = HOVER_SCALE;
           } else {
             hover_target_scale = 1.0f;
@@ -1935,190 +1925,62 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
         last_mouse_x = mx;
         last_mouse_y = my;
-        // Y座標が変わったとき、文字があればフォントサイズを更新
         if (keybuf_str[0] != '\0') {
-          int my_clamp =
-              my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
-          float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) /
-                                    (float)(SCREEN_HEIGHT - 1);
+          int my_clamp = my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
+          float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) / (float)(SCREEN_HEIGHT - 1);
           text_layer_redraw(&text_layer, fsize);
-          need_refresh = 1;
         }
       }
 
-      if (active_hover >= 0) {
-        if (last_hover >= 0) {
-          hover_target_scale = HOVER_SCALE;
-          float cx = 0.0f, cy = 0.0f;
-          if (svg_get_shape_center(active_hover, &cx, &cy)) {
-            hover_target_offx = ((float)mx - cx) * 0.2f;
-            hover_target_offy = ((float)my - cy) * 0.2f;
-          } else {
-            hover_target_offx = 0.0f;
-            hover_target_offy = 0.0f;
-          }
-        } else {
-          hover_target_scale = 1.0f;
-          hover_target_offx = 0.0f;
-          hover_target_offy = 0.0f;
+      if (timer_ticks != last_anim_tick) {
+        uint32_t dt = timer_ticks - last_anim_tick;
+        last_anim_tick = timer_ticks;
+        int moved = 0;
+        for (uint32_t i = 0; i < dt; ++i) {
+          hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
+          hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
+          hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
+          float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
+          if (fabsf(dy) < 0.1f) g_scroll_y = g_target_scroll_y; else { g_scroll_y += dy; moved = 1; }
         }
-
-        if (timer_ticks != last_anim_tick || need_refresh) {
-          uint32_t dt = timer_ticks - last_anim_tick;
-          if (dt == 0)
-            dt = 1;
-          last_anim_tick = timer_ticks;
-          for (uint32_t i = 0; i < dt; ++i) {
-            hover_scale += (hover_target_scale - hover_scale) * HOVER_EASE;
-            hover_offx += (hover_target_offx - hover_offx) * HOVER_EASE;
-            hover_offy += (hover_target_offy - hover_offy) * HOVER_EASE;
-            
-            // スクロールアニメーション
-            float dx = (g_target_scroll_x - g_scroll_x) * SCROLL_EASE;
-            float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-            if (fabsf(dx) < 0.1f) g_scroll_x = g_target_scroll_x; else g_scroll_x += dx;
-            if (fabsf(dy) < 0.1f) g_scroll_y = g_target_scroll_y; else g_scroll_y += dy;
-          }
-
-          if (fabsf(g_target_scroll_x - g_scroll_x) > 0.1f || fabsf(g_target_scroll_y - g_scroll_y) > 0.1f) {
-            svg_render_full(&svg_layer);
-            memcpy(svg_base_buf, svg_layer.buffer, sizeof(uint32_t) * svg_layer.width * svg_layer.height);
-            screen_mark_static_dirty();
-            need_refresh = 1;
-
-            // スクロール中もテキストレイヤーを再描画して、表示の消失を防ぐ
-            if (keybuf_str[0] != '\0') {
-              int my_now = (int)mouse_y;
-              if (my_now < 0) my_now = 0;
-              if (my_now >= SCREEN_HEIGHT) my_now = SCREEN_HEIGHT - 1;
-              float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) / (float)(SCREEN_HEIGHT - 1);
-              text_layer_redraw(&text_layer, fsize);
-            }
-          }
-
-          int x, y, w, h;
-          if (svg_get_shape_rect_scaled(active_hover, hover_scale, hover_offx,
-                                        hover_offy, &x, &y, &w, &h)) {
-            int rx = x, ry = y, rw = w, rh = h;
-            if (have_draw) {
-              int x0 = (last_draw_x < x) ? last_draw_x : x;
-              int y0 = (last_draw_y < y) ? last_draw_y : y;
-              int x1 = (last_draw_x + last_draw_w > x + w)
-                           ? (last_draw_x + last_draw_w)
-                           : (x + w);
-              int y1 = (last_draw_y + last_draw_h > y + h)
-                           ? (last_draw_y + last_draw_h)
-                           : (y + h);
-              rx = x0;
-              ry = y0;
-              rw = x1 - x0;
-              rh = y1 - y0;
-            }
-            svg_update_region(&svg_layer, rx, ry, rw, rh, active_hover,
-                              hover_scale, hover_offx, hover_offy);
-            screen_mark_static_dirty();
-            need_refresh = 1;
-            last_draw_x = x;
-            last_draw_y = y;
-            last_draw_w = w;
-            last_draw_h = h;
-            have_draw = 1;
-          }
-
-          if (last_hover < 0 && (fabsf(hover_scale - 1.0f) < 0.01f) &&
-              (fabsf(hover_offx) < 0.5f) && (fabsf(hover_offy) < 0.5f)) {
-            if (have_draw) {
-              svg_update_region(&svg_layer, last_draw_x, last_draw_y,
-                                last_draw_w, last_draw_h, -1, 1.0f, 0.0f, 0.0f);
-              screen_mark_static_dirty();
-              need_refresh = 1;
-            }
-            active_hover = -1;
-            have_draw = 0;
-          }
+        if (moved) {
+          svg_render_full(&svg_layer);
+          memcpy(svg_base_buf, svg_layer.buffer, sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+          screen_mark_static_dirty();
         }
       }
 
-      // キー入力監視
       if (keybuf_len > 0) {
-        int i;
-        for (i = 0; i < keybuf_len; i++) {
+        for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == KEY_UP) {
-            g_target_scroll_y += 100.0f;
-          } else if (c == KEY_DOWN) {
-            g_target_scroll_y -= 100.0f;
-          } else if (c == KEY_LEFT) {
-            g_target_scroll_x += 100.0f;
-          } else if (c == KEY_RIGHT) {
-            g_target_scroll_x -= 100.0f;
-          } else if (c == '\n') {
-            // Enter: warpdesktopと入力されていたら次世代モードへ移行
+          if (c == KEY_UP) g_target_scroll_y += 100.0f;
+          else if (c == KEY_DOWN) g_target_scroll_y -= 100.0f;
+          else if (c == '\n') {
             if (strcmp(keybuf_str, "warpdesktop") == 0) {
               current_os_mode = OS_MODE_WARPDESKTOP;
-              g_scroll_x = 0.0f;
-              g_scroll_y = 0.0f;
-              g_target_scroll_x = 0.0f;
-              g_target_scroll_y = 0.0f;
-              layer_fill(&desktop, 0xFFF5F5F5); // WarpBackground
-              svg_layer.active = 0;        // パフォーマンス考慮: SVGの更新停止
-              blink_layer.active = 0;      // 点滅停止
-              nextgen_ui_layer.active = 1; // UI表示
-              text_layer.active = 0;       // 次世代モードでは専用レイヤーを使わず統合
-              keybuf_str[0] = '\0';        // 入力バッファをクリア
-              screen_mark_static_dirty();  // 静的レイヤー変更を画面に反映
-              
-              g_svg_dirty = 1; // SVGをパースし直す
-              redraw_warp_svg(&nextgen_ui_layer);
-              screen_mark_all_dirty();
+              g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
+              layer_fill(&desktop, 0xFFF5F5F5);
+              svg_layer.active = 0; blink_layer.active = 0; nextgen_ui_layer.active = 1; text_layer.active = 0;
+              keybuf_str[0] = '\0';
+              g_svg_dirty = 1; redraw_warp_svg(&nextgen_ui_layer);
+              screen_mark_static_dirty();
             } else {
               keybuf_str[0] = '\0';
-              text_layer_redraw(&text_layer, 32.0f); // テキストクリア
+              text_layer_redraw(&text_layer, 32.0f);
             }
-            need_refresh = 1;
           } else if (c == '\b') {
-            // Backspace: 末尾を削除
-            int len = 0;
-            while (keybuf_str[len])
-              len++;
-            if (len > 0)
-              keybuf_str[len - 1] = '\0';
+            int len = strlen(keybuf_str); if (len > 0) keybuf_str[len - 1] = '\0';
           } else {
-            // 通常文字: 末尾に追加
-            int len = 0;
-            while (keybuf_str[len])
-              len++;
-            if (len < KEYBUF_MAX - 1) {
-              keybuf_str[len] = c;
-              keybuf_str[len + 1] = '\0';
-            }
+            int len = strlen(keybuf_str); if (len < KEYBUF_MAX - 1) { keybuf_str[len] = c; keybuf_str[len + 1] = '\0'; }
           }
         }
         keybuf_len = 0;
-
         if (current_os_mode == OS_MODE_CLASSIC) {
-          // フォントサイズ: マウスY座標から計算 (CLASSICモードのみ)
-          {
-            int my_now = (int)mouse_y;
-            if (my_now < 0)
-              my_now = 0;
-            if (my_now >= SCREEN_HEIGHT)
-              my_now = SCREEN_HEIGHT - 1;
-            float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
-                                      (float)(SCREEN_HEIGHT - 1);
-            text_layer_redraw(&text_layer, fsize);
-          }
+          int my_now = (int)mouse_y;
+          if (my_now < 0) my_now = 0; else if (my_now >= SCREEN_HEIGHT) my_now = SCREEN_HEIGHT - 1;
+          float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) / (float)(SCREEN_HEIGHT - 1);
+          text_layer_redraw(&text_layer, fsize);
         }
-        need_refresh = 1;
-      }
-
-      // マウススクロール (CLASSICモード)
-      if (mouse_scroll != 0) {
-        g_target_scroll_y += (float)mouse_scroll * 60.0f;
-        mouse_scroll = 0;
-        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
-        if (g_target_scroll_y < -5000.0f) g_target_scroll_y = -5000.0f;
-        need_refresh = 1;
       }
 
       if (timer_ticks - last_stat_tick >= 100) {
@@ -2128,109 +1990,49 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024),
-                   mem_total_kb);
-        last_stat_tick = timer_ticks;
-        last_idle_tick = idle_ticks;
-        need_refresh = 1;
+        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024), mem_total_kb);
+        last_stat_tick = timer_ticks; last_idle_tick = idle_ticks;
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
-      // WarpDesktopモード：最低限の機能のみ更新し、高パフォーマンスを維持
-
-      // マウスの動きを監視してポインタ更新を描画に反映 (角つき＝コマ落ちを防止)
-      int mx = mouse_x;
-      int my = mouse_y;
-      if (mx != last_mouse_x || my != last_mouse_y) {
-        need_refresh = 1;
-        last_mouse_x = mx;
-        last_mouse_y = my;
-      }
-
-      // マウススクロールの監視
       if (mouse_scroll != 0) {
         g_target_scroll_y += (float)mouse_scroll * 60.0f;
         mouse_scroll = 0;
         if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
-        if (g_target_scroll_y < -5000.0f) g_target_scroll_y = -5000.0f;
-        need_refresh = 1;
       }
 
-      uint8_t curr_btns = mouse_buttons;
-      
-      // スクロールアニメーション (WARPDESKTOP)
       if (timer_ticks != last_anim_tick) {
         uint32_t dt = timer_ticks - last_anim_tick;
         last_anim_tick = timer_ticks;
         int moved = 0;
         for (uint32_t i = 0; i < dt; i++) {
-          float dx = (g_target_scroll_x - g_scroll_x) * SCROLL_EASE;
           float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dx) > 0.1f) { g_scroll_x += dx; moved = 1; } else g_scroll_x = g_target_scroll_x;
           if (fabsf(dy) > 0.1f) { g_scroll_y += dy; moved = 1; } else g_scroll_y = g_target_scroll_y;
         }
-        if (moved) {
-          redraw_warp_svg(&nextgen_ui_layer);
-          screen_mark_static_dirty();
-          screen_mark_all_dirty();
-          need_refresh = 1;
-        }
+        if (moved) redraw_warp_svg(&nextgen_ui_layer);
       }
 
+      uint8_t curr_btns = mouse_buttons;
       if (curr_btns != prev_mouse_buttons) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
-          // 左クリックが押された瞬間 (スクロール位置を考慮してクリック判定)
-          warp_engine_click(mx - g_scroll_x, my - g_scroll_y);
-          g_svg_dirty = 1; // UIが変わった可能性があるため再パース
-          redraw_warp_svg(&nextgen_ui_layer);
-          screen_mark_static_dirty(); // 背景全体を確実に再描画させる
-          screen_mark_all_dirty();
+          warp_engine_click(mouse_x - g_scroll_x, mouse_y - g_scroll_y);
+          g_svg_dirty = 1; redraw_warp_svg(&nextgen_ui_layer);
         }
         prev_mouse_buttons = curr_btns;
-        need_refresh = 1;
       }
 
       if (keybuf_len > 0) {
-        // WARPDESKTOPモードでも入力を受け付ける (文字描画を可能にする)
-        int i;
-        for (i = 0; i < keybuf_len; i++) {
+        for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == KEY_UP) {
-            g_target_scroll_y += 100.0f;
-          } else if (c == KEY_DOWN) {
-            g_target_scroll_y -= 100.0f;
-          } else if (c == KEY_LEFT) {
-            g_target_scroll_x += 100.0f;
-          } else if (c == KEY_RIGHT) {
-            g_target_scroll_x -= 100.0f;
-          } else if (c == '\b') {
-            int len = 0;
-            while (keybuf_str[len])
-              len++;
-            if (len > 0)
-              keybuf_str[len - 1] = '\0';
-          } else if (c == '\n') {
-            keybuf_str[0] = '\0';
-            g_svg_dirty = 1; // 変更を反映
-          } else {
-            int len = 0;
-            while (keybuf_str[len])
-              len++;
-            if (len < KEYBUF_MAX - 1) {
-              keybuf_str[len] = c;
-              keybuf_str[len + 1] = '\0';
-              g_svg_dirty = 1; // 変更を反映
-            }
-          }
+          if (c == KEY_UP) g_target_scroll_y += 100.0f;
+          else if (c == KEY_DOWN) g_target_scroll_y -= 100.0f;
+          else if (c == '\b') { int len = strlen(keybuf_str); if (len > 0) keybuf_str[len - 1] = '\0'; }
+          else if (c == '\n') { keybuf_str[0] = '\0'; g_svg_dirty = 1; redraw_warp_svg(&nextgen_ui_layer); }
+          else { int len = strlen(keybuf_str); if (len < KEYBUF_MAX - 1) { keybuf_str[len] = c; keybuf_str[len + 1] = '\0'; g_svg_dirty = 1; } }
         }
         keybuf_len = 0;
-
         if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
-        if (g_target_scroll_x > 0.0f) g_target_scroll_x = 0.0f;
-
-        // 入力内容をUIに反映
         redraw_warp_svg(&nextgen_ui_layer);
-        need_refresh = 1;
       }
 
       if (timer_ticks - last_stat_tick >= 100) {
@@ -2240,21 +2042,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024),
-                   mem_total_kb);
-        last_stat_tick = timer_ticks;
-        last_idle_tick = idle_ticks;
-        need_refresh = 1;
+        hud_update(&hud_layer, cpu_percent, (unsigned int)(get_used_memory() / 1024), mem_total_kb);
+        last_stat_tick = timer_ticks; last_idle_tick = idle_ticks;
       }
-    } // end mode switch
-
-    if (need_refresh) {
-      cpu_idle = 0;
-      screen_refresh();
-    } else {
-      cpu_idle = 1;
-      __asm__ __volatile__("hlt");
-      cpu_idle = 0;
     }
+
+    // 常時再描画
+    cpu_idle = 0;
+    screen_refresh();
   }
 }
