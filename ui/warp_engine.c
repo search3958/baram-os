@@ -506,140 +506,226 @@ static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
   node->h = 20;
   return node->h;
 }
+/* 文字列をコピーし、コピー後の末尾（'\0'の位置）のポインタを返すヘルパー */
+static char *warp_stpcpy(char *dest, const char *src) {
+  while ((*dest = *src)) {
+    dest++;
+    src++;
+  }
+  return dest;
+}
+
+/* 比例定数テーブル (H=40 モデル基準) */
+static const float K_X[] = {1.498f,  3.381f,  7.456f, 12.630f,
+                            17.368f, 21.770f, 30.573f};
+static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
+                            16.619f, 18.502f, 20.000f};
 
 static void emit_squircle_shape(int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra) {
-  float fw = (float)w;
-  float fh = (float)h;
-  float fx = (float)x;
-  float fy = (float)y;
+  float fw = (float)w, fh = (float)h;
+  float fx = (float)x, fy = (float)y;
 
-  // 角の半径 (デフォルト14)
-  float r = (radius > 0) ? radius : 14.0f;
+  /* スケール判定 (H=46以上なら 1.15倍モデルを使用) */
+  float s = (fh >= 46.0f) ? 1.15f : 1.0f;
 
-  // 短辺チェック - 短辺が2*r未満の場合は半径を調整
-  float min_side = (fw < fh) ? fw : fh;
-  if (min_side < 2.0f * r) {
-    r = min_side / 2.0f;
-  }
+  /* 境界点の計算 */
+  float edge_x = K_X[6] * s;
+  float edge_y = K_Y[6] * s;
 
-  // スクワークルの魔法の数値 (ベジェ曲線の制御点比率)
-  // これらはiOSのスクワークルの数学的定義から
-  float c = 0.447715f * r; // ≈ (√2 - 1) * 4/3 * r
+  /* 特定の地点での変化（ピンチ処理） */
+  if (edge_x > fw / 2.0f)
+    edge_x = fw / 2.0f;
+  if (edge_y > fh / 2.0f)
+    edge_y = fh / 2.0f;
 
   char buf[8192];
   char *p = buf;
 
-  warp_strcpy(p, "<path d=\"M ");
-  p += warp_strlen(p);
-
-  // 開始点: 右辺中央
+  /* パス開始：右辺の中央 */
+  p = warp_stpcpy(p, "<path d=\"M ");
   p = append_fixed3(p, fx + fw);
   *p++ = ',';
   p = append_fixed3(p, fy + fh / 2.0f);
 
-  // === 右辺 → 右下コーナー ===
-  warp_strcpy(p, " L ");
-  p += 3;
+  /* --- 第1コーナー：右下 --- */
+  p = warp_stpcpy(p, " L ");
   p = append_fixed3(p, fx + fw);
   *p++ = ',';
-  p = append_fixed3(p, fy + fh - r);
-
-  // 右下コーナー (1つのベジェ曲線)
-  warp_strcpy(p, " C ");
-  p += 3;
+  p = append_fixed3(p, fy + fh - edge_y);
+  p = warp_stpcpy(p, " C ");
   p = append_fixed3(p, fx + fw);
   *p++ = ',';
-  p = append_fixed3(p, fy + fh - r + c);
-  *p++ = ' ';
-  p = append_fixed3(p, fx + fw - r + c);
-  *p++ = ',';
-  p = append_fixed3(p, fy + fh);
-  *p++ = ' ';
-  p = append_fixed3(p, fx + fw - r);
-  *p++ = ',';
-  p = append_fixed3(p, fy + fh);
-
-  // === 下辺 ===
-  warp_strcpy(p, " L ");
-  p += 3;
-  p = append_fixed3(p, fx + r);
-  *p++ = ',';
-  p = append_fixed3(p, fy + fh);
-
-  // 左下コーナー
-  warp_strcpy(p, " C ");
-  p += 3;
-  p = append_fixed3(p, fx + r - c);
-  *p++ = ',';
-  p = append_fixed3(p, fy + fh);
-  *p++ = ' ';
-  p = append_fixed3(p, fx);
-  *p++ = ',';
-  p = append_fixed3(p, fy + fh - r + c);
-  *p++ = ' ';
-  p = append_fixed3(p, fx);
-  *p++ = ',';
-  p = append_fixed3(p, fy + fh - r);
-
-  // === 左辺 ===
-  warp_strcpy(p, " L ");
-  p += 3;
-  p = append_fixed3(p, fx);
-  *p++ = ',';
-  p = append_fixed3(p, fy + r);
-
-  // 左上コーナー
-  warp_strcpy(p, " C ");
-  p += 3;
-  p = append_fixed3(p, fx);
-  *p++ = ',';
-  p = append_fixed3(p, fy + r - c);
-  *p++ = ' ';
-  p = append_fixed3(p, fx + r - c);
-  *p++ = ',';
-  p = append_fixed3(p, fy);
-  *p++ = ' ';
-  p = append_fixed3(p, fx + r);
-  *p++ = ',';
-  p = append_fixed3(p, fy);
-
-  // === 上辺 ===
-  warp_strcpy(p, " L ");
-  p += 3;
-  p = append_fixed3(p, fx + fw - r);
-  *p++ = ',';
-  p = append_fixed3(p, fy);
-
-  // 右上コーナー
-  warp_strcpy(p, " C ");
-  p += 3;
-  p = append_fixed3(p, fx + fw - r + c);
-  *p++ = ',';
-  p = append_fixed3(p, fy);
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[0] * s);
   *p++ = ' ';
   p = append_fixed3(p, fx + fw);
   *p++ = ',';
-  p = append_fixed3(p, fy + r - c);
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[1] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - K_X[0] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[2] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + fw - K_X[1] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[3] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - K_X[2] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[4] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - K_X[3] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[5] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + fw - K_X[4] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - K_X[5] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - edge_x);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh);
+
+  /* --- 第2コーナー：左下 --- */
+  p = warp_stpcpy(p, " L ");
+  p = append_fixed3(p, fx + edge_x);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[5]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[4]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[3]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[5] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[2]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[4] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[1]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[3] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[0]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[2] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[1] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y + K_Y[0] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx);
+  *p++ = ',';
+  p = append_fixed3(p, fy + fh - edge_y);
+
+  /* --- 第3コーナー：左上 --- */
+  p = warp_stpcpy(p, " L ");
+  p = append_fixed3(p, fx);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[0] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[1] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + K_X[0] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[2] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + K_X[1] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[3] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + K_X[2] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[4] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + K_X[3] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[5] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + K_X[4] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + K_X[5] * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + edge_x);
+  *p++ = ',';
+  p = append_fixed3(p, fy);
+
+  /* --- 第4コーナー：右上 --- */
+  p = warp_stpcpy(p, " L ");
+  p = append_fixed3(p, fx + fw - edge_x);
+  *p++ = ',';
+  p = append_fixed3(p, fy);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[5]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[4]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[3]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[5] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[2]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[4] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[1]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[3] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[0]) * s);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[2] * s);
+  p = warp_stpcpy(p, " C ");
+  p = append_fixed3(p, fx + fw);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y - K_Y[1] * s);
   *p++ = ' ';
   p = append_fixed3(p, fx + fw);
   *p++ = ',';
-  p = append_fixed3(p, fy + r);
+  p = append_fixed3(p, fy + edge_y - K_Y[0] * s);
+  *p++ = ' ';
+  p = append_fixed3(p, fx + fw);
+  *p++ = ',';
+  p = append_fixed3(p, fy + edge_y);
 
-  warp_strcpy(p, " Z\" fill=\"");
-  p += 10;
-  warp_strcpy(p, fill);
-  p += warp_strlen(p);
-  warp_strcpy(p, "\" ");
-  p += 2;
-  warp_strcpy(p, extra);
-  p += warp_strlen(p);
-  warp_strcpy(p, " />\n");
+  /* 閉じ */
+  p = warp_stpcpy(p, " Z\" fill=\"");
+  p = warp_stpcpy(p, fill);
+  p = warp_stpcpy(p, "\" ");
+  p = warp_stpcpy(p, extra);
+  p = warp_stpcpy(p, " />\n");
 
   warp_strncat(g_svg_output, buf,
                sizeof(g_svg_output) - warp_strlen(g_svg_output) - 1);
 }
-
 static void emit_svg(warp_node_t *node) {
   if (!node)
     return;
@@ -653,7 +739,7 @@ static void emit_svg(warp_node_t *node) {
     eval_attr(node, "color", color, sizeof(color));
     eval_attr(node, "gradient", gradient, sizeof(gradient));
     eval_attr(node, "radius", rad_str, sizeof(rad_str));
-    float radius = (rad_str[0] != '\0') ? (float)warp_strtol(rad_str) : 23.0f;
+    float radius = (rad_str[0] != '\0') ? (float)warp_strtol(rad_str) : 32.0f;
     const char *fill = "#ffffff";
     if (warp_strcmp(color, "black") == 0)
       fill = "#222222";
