@@ -2085,7 +2085,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // メインループ (常時60fpsターゲット)
   while (1) {
-    // 自動ブート判定 (3秒後)
     if (!auto_booted && current_os_mode == OS_MODE_CLASSIC &&
         (timer_ticks - boot_start_tick > 60)) {
       current_os_mode = OS_MODE_WARPDESKTOP;

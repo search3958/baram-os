@@ -273,17 +273,19 @@ void screen_refresh(void) {
     }
   }
 
-  // 4. VRAMへ一気に転送
+  // 4. VRAMへ一気に転送 (ティアリング防止のため、BBが完成してから行う)
   if (g_page_flip_enabled) {
-    bga_write(BGA_REG_X_OFFSET, 0);
+    // 描画が完了したバッファのアドレスをBGAにセット (一瞬で切り替わる)
     bga_write(BGA_REG_Y_OFFSET, (uint16_t)(g_draw_page * g_vram_height));
     g_display_page = g_draw_page;
     g_draw_page = 1 - g_draw_page;
   } else {
+    // ページフリップが使えない場合は memcpy で一気に転送
+    // (この memcpy 中にスキャンラインが通るとティアリングが起きるが、
+    //  バックバッファですべて合成済みなので「描きかけ」は見えなくなる)
     memcpy(g_vram, bb, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   }
   
-  // ダーティレクトはリセット
   dirty_reset();
 }
 
