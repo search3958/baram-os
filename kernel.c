@@ -43,6 +43,10 @@
 #define HOVER_SCALE 1.2f
 #define HOVER_EASE 0.1f
 
+// Mouse Hotspot Correction
+#define MOUSE_HOTSPOT_X 28
+#define MOUSE_HOTSPOT_Y 21
+
 typedef struct {
   NSVGshape *shape;
   unsigned char *rgba;
@@ -371,10 +375,34 @@ int strcmp(const char *a, const char *b) {
   return (unsigned char)*a - (unsigned char)*b;
 }
 
+static int tolower(int c) {
+  if (c >= 'A' && c <= 'Z')
+    return c + ('a' - 'A');
+  return c;
+}
+
+int strcasecmp(const char *a, const char *b) {
+  while (*a && (tolower((unsigned char)*a) == tolower((unsigned char)*b))) {
+    a++;
+    b++;
+  }
+  return tolower((unsigned char)*a) - tolower((unsigned char)*b);
+}
+
 int strncmp(const char *a, const char *b, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     unsigned char ca = (unsigned char)a[i];
     unsigned char cb = (unsigned char)b[i];
+    if (ca != cb || ca == 0 || cb == 0)
+      return (int)ca - (int)cb;
+  }
+  return 0;
+}
+
+int strncasecmp(const char *a, const char *b, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    unsigned char ca = (unsigned char)tolower((unsigned char)a[i]);
+    unsigned char cb = (unsigned char)tolower((unsigned char)b[i]);
     if (ca != cb || ca == 0 || cb == 0)
       return (int)ca - (int)cb;
   }
@@ -388,6 +416,26 @@ char *strncpy(char *dst, const char *src, size_t n) {
   for (; i < n; ++i)
     dst[i] = '\0';
   return dst;
+}
+
+char *strcat(char *dest, const char *src) {
+  char *d = dest;
+  while (*d)
+    d++;
+  while ((*d++ = *src++))
+    ;
+  return dest;
+}
+
+char *strncat(char *dest, const char *src, size_t n) {
+  char *d = dest;
+  while (*d)
+    d++;
+  size_t i;
+  for (i = 0; i < n && src[i]; i++)
+    *d++ = src[i];
+  *d = '\0';
+  return dest;
 }
 
 char *strchr(const char *s, int c) {
@@ -1448,6 +1496,34 @@ static char keybuf_str[KEYBUF_MAX] = "";
 
 static uint32_t g_mbi_flags = 0;
 
+static void handle_command(const char *cmd) {
+  if (strncasecmp(cmd, "dev ", 4) == 0) {
+    const char *kv = cmd + 4;
+    char key[64], val[64];
+    const char *eq = strchr(kv, '=');
+    if (eq) {
+      int klen = eq - kv;
+      if (klen >= 64) klen = 63;
+      strncpy(key, kv, klen);
+      key[klen] = '\0';
+      
+      char full_key[128] = "dev ";
+      strncat(full_key, key, 127 - 4);
+      
+      strncpy(val, eq + 1, 63);
+      val[63] = '\0';
+      
+      for (int i = 0; i < g_window_count; i++) {
+        if (g_windows[i].warp_ctx) {
+          warp_context_set_state(g_windows[i].warp_ctx, full_key, val);
+          g_windows[i].is_dirty = 1;
+        }
+      }
+      g_svg_dirty = 1;
+    }
+  }
+}
+
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
   layer_fill(hud, 0xFF000000);
@@ -2174,8 +2250,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         last_blink_tick = timer_ticks;
       }
 
-      int mx = mouse_x;
-      int my = mouse_y;
+      int mx = mouse_x + MOUSE_HOTSPOT_X;
+      int my = mouse_y + MOUSE_HOTSPOT_Y;
       if (mx != last_mouse_x || my != last_mouse_y) {
         int hover = svg_pick_shape(&svg_layer, mx, my);
         if (hover != last_hover) {
@@ -2224,6 +2300,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           else if (c == KEY_DOWN)
             g_target_scroll_y -= 100.0f;
           else if (c == '\n') {
+            handle_command(keybuf_str);
             keybuf_str[0] = '\0';
             text_layer_redraw(&text_layer, 32.0f);
           } else if (c == '\b') {
@@ -2308,31 +2385,34 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
           // Press
           int hit_index = -1;
+          int hx = mouse_x + MOUSE_HOTSPOT_X;
+          int hy = mouse_y + MOUSE_HOTSPOT_Y;
+          
           for (int i = g_window_count - 1; i >= 0; i--) {
             window_t *win = &g_windows[i];
             
             // 1. Resize Handle (bottom-right)
-            if (mouse_x >= win->x + win->w - 16 && mouse_x < win->x + win->w &&
-                mouse_y >= win->y + win->h - 16 && mouse_y < win->y + win->h) {
+            if (hx >= win->x + win->w - 16 && hx < win->x + win->w &&
+                hy >= win->y + win->h - 16 && hy < win->y + win->h) {
               hit_index = i;
               g_windows[hit_index].is_resizing = 1;
               break;
             }
             
             // 2. Title Bar (Move, Close, Maximize)
-            if (mouse_x >= win->x && mouse_x < win->x + win->w &&
-                mouse_y >= win->y - 32 && mouse_y < win->y) {
+            if (hx >= win->x && hx < win->x + win->w &&
+                hy >= win->y - 32 && hy < win->y) {
               hit_index = i;
               window_t *hwin = &g_windows[hit_index];
               
               // Close check (far right)
-              if (mouse_x > hwin->x + hwin->w - 32) {
+              if (hx > hwin->x + hwin->w - 32) {
                 g_active_window_index = hit_index;
                 close_active_window();
                 hit_index = -2; // Mark as handled
               } 
               // Maximize check
-              else if (mouse_x > hwin->x + hwin->w - 64) {
+              else if (hx > hwin->x + hwin->w - 64) {
                 if (hwin->is_maximized) {
                   hwin->x = hwin->old_x; hwin->y = hwin->old_y;
                   hwin->w = hwin->old_w; hwin->h = hwin->old_h;
@@ -2354,10 +2434,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             }
             
             // 3. Content
-            if (mouse_x >= win->x && mouse_x < win->x + win->w &&
-                mouse_y >= win->y && mouse_y < win->y + win->h) {
+            if (hx >= win->x && hx < win->x + win->w &&
+                hy >= win->y && hy < win->y + win->h) {
               hit_index = i;
-              warp_context_click(win->warp_ctx, mouse_x - win->x, mouse_y - win->y - (int)win->scroll_y);
+              warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
               win->is_dirty = 1;
               break;
             }
@@ -2373,7 +2453,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             g_active_window_index = g_window_count - 1;
           } else if (hit_index == -1) {
             // Wallpaper click (real click, not just missed window)
-            add_window("New Warp", mouse_x - 50, mouse_y + 50, 400, 300);
+            add_window("New Warp", hx - 50, hy + 50, 400, 300);
           }
           g_svg_dirty = 1;
           redraw_warp_svg(&nextgen_ui_layer);
@@ -2387,9 +2467,18 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         prev_mouse_buttons = curr_btns;
       }
 
-      // Drag/Resize movement
+      // Drag/Resize movement or pointcheck mouse update
       if (g_active_window_index >= 0 && (mouse_dx != 0 || mouse_dy != 0)) {
         window_t *awin = &g_windows[g_active_window_index];
+        if (awin->warp_ctx) {
+          int hx = mouse_x + MOUSE_HOTSPOT_X;
+          int hy = mouse_y + MOUSE_HOTSPOT_Y;
+          warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+          if (warp_context_is_dirty(awin->warp_ctx)) {
+            awin->is_dirty = 1;
+            g_svg_dirty = 1;
+          }
+        }
         if (awin->is_dragging) {
           awin->x += mouse_dx; awin->y += mouse_dy;
           g_svg_dirty = 1;
@@ -2415,6 +2504,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             if (len > 0)
               keybuf_str[len - 1] = '\0';
           } else if (c == '\n') {
+            handle_command(keybuf_str);
             keybuf_str[0] = '\0';
             g_svg_dirty = 1;
             redraw_warp_svg(&nextgen_ui_layer);

@@ -22,6 +22,8 @@ void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int
 void warp_context_click(warp_context_t* ctx, int x, int y);
 int warp_context_is_dirty(warp_context_t* ctx);
 void warp_context_clear_dirty(warp_context_t* ctx);
+void warp_context_set_state(warp_context_t* ctx, const char* key, const char* val);
+void warp_context_set_mouse(warp_context_t* ctx, int x, int y);
 int warp_context_get_node_count(warp_context_t* ctx);
 void warp_context_get_node_info(warp_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* is_dirty);
 const char* warp_context_get_node_prev_svg(warp_context_t* ctx, int index); // Dummy for compatibility if needed

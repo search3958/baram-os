@@ -57,6 +57,20 @@ static int warp_strcmp(const char *s1, const char *s2) {
   return *(const unsigned char *)s1 - *(const unsigned char *)s2;
 }
 
+static int warp_tolower(int c) {
+  if (c >= 'A' && c <= 'Z')
+    return c + ('a' - 'A');
+  return c;
+}
+
+static int warp_strcasecmp(const char *s1, const char *s2) {
+  while (*s1 && (warp_tolower((unsigned char)*s1) == warp_tolower((unsigned char)*s2))) {
+    s1++;
+    s2++;
+  }
+  return warp_tolower((unsigned char)*s1) - warp_tolower((unsigned char)*s2);
+}
+
 static int warp_strncmp(const char *s1, const char *s2, size_t n) {
   if (n == 0)
     return 0;
@@ -65,6 +79,19 @@ static int warp_strncmp(const char *s1, const char *s2, size_t n) {
       return *(const unsigned char *)s1 - *(const unsigned char *)--s2;
     if (*s1++ == 0)
       break;
+  } while (--n != 0);
+  return 0;
+}
+
+static int warp_strncasecmp(const char *s1, const char *s2, size_t n) {
+  if (n == 0)
+    return 0;
+  do {
+    if (warp_tolower((unsigned char)*s1) != warp_tolower((unsigned char)*s2))
+      return warp_tolower((unsigned char)*s1) - warp_tolower((unsigned char)*s2);
+    if (*s1++ == 0)
+      break;
+    s2++;
   } while (--n != 0);
   return 0;
 }
@@ -261,15 +288,16 @@ struct warp_context {
   int engine_dirty;
   char engine_status[128];
   char node_svg_buf[4096];
+  int mouse_x, mouse_y;
 };
 
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
-  if (warp_strcmp(key, "_currentScreen") == 0) {
+  if (warp_strcasecmp(key, "_currentScreen") == 0) {
     warp_strncpy(ctx->current_screen, val, 63);
     return;
   }
   for (int i = 0; i < ctx->state_count; i++) {
-    if (warp_strcmp(ctx->state[i].key, key) == 0) {
+    if (warp_strcasecmp(ctx->state[i].key, key) == 0) {
       warp_strncpy(ctx->state[i].val, val, 511);
       return;
     }
@@ -282,10 +310,10 @@ static void set_state(warp_context_t *ctx, const char *key, const char *val) {
 }
 
 static const char *get_state(warp_context_t *ctx, const char *key) {
-  if (warp_strcmp(key, "_currentScreen") == 0)
+  if (warp_strcasecmp(key, "_currentScreen") == 0)
     return ctx->current_screen;
   for (int i = 0; i < ctx->state_count; i++) {
-    if (warp_strcmp(ctx->state[i].key, key) == 0)
+    if (warp_strcasecmp(ctx->state[i].key, key) == 0)
       return ctx->state[i].val;
   }
   return "";
@@ -948,6 +976,21 @@ static void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int 
   warp_strncat(dest, buf, dest_size - warp_strlen(dest) - 1);
 }
 
+void warp_context_set_state(warp_context_t *ctx, const char *key, const char *val) {
+  set_state(ctx, key, val);
+  ctx->engine_dirty = 1;
+}
+
+void warp_context_set_mouse(warp_context_t* ctx, int x, int y) {
+  if (ctx->mouse_x != x || ctx->mouse_y != y) {
+    ctx->mouse_x = x;
+    ctx->mouse_y = y;
+    if (warp_strcasecmp(get_state(ctx, "dev pointcheck"), "true") == 0) {
+      ctx->engine_dirty = 1;
+    }
+  }
+}
+
 static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *dest, int dest_size) {
   if (!node) return;
   const char *id = get_attr(node, "id");
@@ -998,10 +1041,38 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
         emit_svg_recursive(ctx, h->children[k], dest, dest_size);
     }
   }
+
+  // Draw hitboxes if dev eventCheck=true
+  if (warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0) {
+    int has_hitbox = (node->event_oneclick[0] != '\0' || 
+                      node->event_longpress[0] != '\0' || 
+                      warp_strcmp(node->tag, "button") == 0 || 
+                      warp_strcmp(node->tag, "tonalButton") == 0);
+    if (has_hitbox && node->w > 0 && node->h > 0) {
+      char rect[256];
+      char *p = rect;
+      p = warp_stpcpy(p, "<rect x=\"");
+      p = append_int(p, node->x); p = warp_stpcpy(p, "\" y=\"");
+      p = append_int(p, node->y); p = warp_stpcpy(p, "\" width=\"");
+      p = append_int(p, node->w); p = warp_stpcpy(p, "\" height=\"");
+      p = append_int(p, node->h); p = warp_stpcpy(p, "\" fill=\"red\" opacity=\"0.4\" stroke=\"red\" stroke-width=\"2\" />\n");
+      warp_strncat(dest, rect, dest_size - warp_strlen(dest) - 1);
+    }
+  }
 }
 
 static void emit_svg(warp_context_t *ctx, warp_node_t *node) {
   emit_svg_recursive(ctx, node, ctx->svg_output, sizeof(ctx->svg_output));
+
+  // Draw pointcheck 3x3 green box at mouse position
+  if (warp_strcasecmp(get_state(ctx, "dev pointcheck"), "true") == 0) {
+    char rect[128];
+    char *p = rect;
+    p = warp_stpcpy(p, "<rect x=\"");
+    p = append_int(p, ctx->mouse_x - 1); p = warp_stpcpy(p, "\" y=\"");
+    p = append_int(p, ctx->mouse_y - 1); p = warp_stpcpy(p, "\" width=\"3\" height=\"3\" fill=\"#00FF00\" />\n");
+    warp_strncat(ctx->svg_output, rect, sizeof(ctx->svg_output) - warp_strlen(ctx->svg_output) - 1);
+  }
 }
 
 static void update_status_info(warp_context_t *ctx) {
