@@ -1137,7 +1137,7 @@ static void redraw_warp_svg(layer_t *layer) {
     
     if (win->rgba_buffer) {
       int title_h = 32;
-      uint32_t theme = (i == g_active_window_index) ? 0xFF0A56D0 : 0xFF808080;
+      uint32_t theme = (i == g_active_window_index) ? 0xFFFFFFFF : 0xFFE0E0E0;
       
       // Title bar
       for (int dy = -title_h; dy < 0; dy++) {
@@ -1149,12 +1149,68 @@ static void redraw_warp_svg(layer_t *layer) {
           dst++;
         }
       }
-      layer_draw_ttf(layer, win->x + 8, win->y - 24, win->title, 16, 0xFFFFFFFF);
+      layer_draw_ttf(layer, win->x + 60, win->y - 24, win->title, 16, 0xFF333333);
       
-      // Buttons
-      int btn_size = 24;
-      layer_draw_ttf(layer, win->x + win->w - btn_size - 4, win->y - 24, "X", 16, 0xFFFFFFFF);
-      layer_draw_ttf(layer, win->x + win->w - btn_size * 2 - 8, win->y - 24, "M", 16, 0xFFFFFFFF);
+      // Buttons (Circles on the left with Anti-Aliasing)
+      float btn_r = 7.0f;
+      int btn_y = win->y - 16;
+      int i_r = (int)btn_r + 1;
+
+      // Draw Red button (Close) - #FC2836
+      int red_center_x = win->x + 22;
+      for (int dy = -i_r; dy <= i_r; dy++) {
+        for (int dx = -i_r; dx <= i_r; dx++) {
+          float dist = sqrtf((float)(dx*dx + dy*dy));
+          float alpha_f = 0.0f;
+          if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
+          else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
+          
+          if (alpha_f > 0.0f) {
+            int px = red_center_x + dx;
+            int py = btn_y + dy;
+            if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
+              if (alpha_f >= 1.0f) {
+                layer->buffer[py * layer->width + px] = 0xFFFF2836;
+              } else {
+                uint32_t bg = layer->buffer[py * layer->width + px];
+                uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+                uint8_t r_out = (uint8_t)(0xFC * alpha_f + r_b * (1.0f - alpha_f));
+                uint8_t g_out = (uint8_t)(0x28 * alpha_f + g_b * (1.0f - alpha_f));
+                uint8_t b_out = (uint8_t)(0x36 * alpha_f + b_b * (1.0f - alpha_f));
+                layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+              }
+            }
+          }
+        }
+      }
+
+      // Draw Green button (Maximize) - #2ECC46
+      int green_center_x = win->x + 48;
+      for (int dy = -i_r; dy <= i_r; dy++) {
+        for (int dx = -i_r; dx <= i_r; dx++) {
+          float dist = sqrtf((float)(dx*dx + dy*dy));
+          float alpha_f = 0.0f;
+          if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
+          else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
+          
+          if (alpha_f > 0.0f) {
+            int px = green_center_x + dx;
+            int py = btn_y + dy;
+            if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
+              if (alpha_f >= 1.0f) {
+                layer->buffer[py * layer->width + px] = 0xFF2ECC46;
+              } else {
+                uint32_t bg = layer->buffer[py * layer->width + px];
+                uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+                uint8_t r_out = (uint8_t)(0x2E * alpha_f + r_b * (1.0f - alpha_f));
+                uint8_t g_out = (uint8_t)(0xCC * alpha_f + g_b * (1.0f - alpha_f));
+                uint8_t b_out = (uint8_t)(0x46 * alpha_f + b_b * (1.0f - alpha_f));
+                layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+              }
+            }
+          }
+        }
+      }
       
       // Content with scroll offset
       int sy_int = (int)roundf(win->scroll_y);
@@ -2405,14 +2461,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               hit_index = i;
               window_t *hwin = &g_windows[hit_index];
               
-              // Close check (far right)
-              if (hx > hwin->x + hwin->w - 32) {
+              // Close check (left, Red button)
+              if (hx >= hwin->x + 10 && hx < hwin->x + 32) {
                 g_active_window_index = hit_index;
                 close_active_window();
                 hit_index = -2; // Mark as handled
               } 
-              // Maximize check
-              else if (hx > hwin->x + hwin->w - 64) {
+              // Maximize check (left, Green button)
+              else if (hx >= hwin->x + 32 && hx < hwin->x + 56) {
                 if (hwin->is_maximized) {
                   hwin->x = hwin->old_x; hwin->y = hwin->old_y;
                   hwin->w = hwin->old_w; hwin->h = hwin->old_h;
@@ -2427,7 +2483,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                 hwin->is_dirty = 1;
               } 
               // Drag start (only if not maximized)
-              else if (!hwin->is_maximized) {
+              else if (!hwin->is_maximized && hx >= hwin->x + 56) {
                 hwin->is_dragging = 1;
               }
               break;
