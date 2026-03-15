@@ -30,10 +30,17 @@ const char* warp_context_get_node_prev_svg(warp_context_t* ctx, int index); // D
 const char* warp_context_get_node_svg(warp_context_t* ctx, int index);
 void warp_context_get_node_prev_rect(warp_context_t* ctx, int index, int* x, int* y, int* w, int* h);
 const char* warp_context_get_status(warp_context_t* ctx);
-
-// Header data for system title bar integration
 int warp_context_get_header_info(warp_context_t* ctx, char* out_text, int max_len, int* out_action_count);
 void warp_context_get_header_action_info(warp_context_t* ctx, int action_index, char* out_text, int max_len);
 void warp_context_click_header_action(warp_context_t* ctx, int action_index);
+
+// Squircle rendering helpers for consistent UI
+char *warp_stpcpy(char *dest, const char *src);
+char *warp_strcat(char *dest, const char *src);
+char *warp_strncat(char *dest, const char *src, size_t n);
+char *append_fixed3(char *p, float v);
+char *append_int(char *p, int v);
+void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
+                                const char *fill, const char *extra);
 
 #endif

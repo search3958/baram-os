@@ -27,7 +27,7 @@ static char *warp_strncpy(char *dest, const char *src, size_t n) {
   return dest;
 }
 
-static char *warp_strcat(char *dest, const char *src) {
+char *warp_strcat(char *dest, const char *src) {
   char *d = dest;
   while (*d)
     d++;
@@ -36,7 +36,7 @@ static char *warp_strcat(char *dest, const char *src) {
   return dest;
 }
 
-static char *warp_strncat(char *dest, const char *src, size_t n) {
+char *warp_strncat(char *dest, const char *src, size_t n) {
   if (n <= 0)
     return dest;
   char *d = dest;
@@ -144,7 +144,7 @@ static char *append_uint(char *p, unsigned int v) {
   return p;
 }
 
-static char *append_int(char *p, int v) {
+char *append_int(char *p, int v) {
   unsigned int uv;
   if (v < 0) {
     *p++ = '-';
@@ -155,7 +155,15 @@ static char *append_int(char *p, int v) {
   return append_uint(p, uv);
 }
 
-static char *append_fixed3(char *p, float v) {
+char *warp_stpcpy(char *dest, const char *src) {
+  while ((*dest = *src)) {
+    dest++;
+    src++;
+  }
+  return dest;
+}
+
+char *append_fixed3(char *p, float v) {
   int i = (int)v;
   float f_part = v - (float)i;
   if (f_part < 0)
@@ -873,20 +881,12 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
   return node->h;
 }
 
-static char *warp_stpcpy(char *dest, const char *src) {
-  while ((*dest = *src)) {
-    dest++;
-    src++;
-  }
-  return dest;
-}
-
 static const float K_X[] = {1.498f,  3.381f,  7.456f, 12.630f,
                             17.368f, 21.770f, 30.573f};
 static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
                             16.619f, 18.502f, 20.000f};
 
-static void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
+void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra) {
   float fw = (float)w, fh = (float)h;
   float fx = (float)x, fy = (float)y;

@@ -1082,6 +1082,7 @@ typedef struct {
   int shadow_cache_w, shadow_cache_h;
   uint32_t *frame_cache;   // Title bar + rounded corners frame
   int frame_cache_w, frame_cache_h;
+  uint8_t *window_mask;    // Alpha mask for the entire window shape (squircle)
 } window_t;
 
 #define MAX_WINDOWS 8
@@ -1147,27 +1148,38 @@ static void window_update_caches(window_t *win) {
   uint32_t theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
   for (int y = 0; y < fh; y++) {
     for (int x = 0; x < fw; x++) {
-      float alpha_f = 1.0f;
-      float fdx = (float)x, fdy = (float)y;
-      if (fdx < win_r && fdy < win_r) {
-        float dist = sqrtf((fdx - win_r) * (fdx - win_r) + (fdy - win_r) * (fdy - win_r));
-        if (dist > win_r + 0.5f) alpha_f = 0.0f;
-        else if (dist > win_r - 0.5f) alpha_f = win_r + 0.5f - dist;
-      } else if (fdx > (float)fw - win_r - 1.0f && fdy < win_r) {
-        float dist = sqrtf((fdx - ((float)fw - win_r - 1.0f)) * (fdx - ((float)fw - win_r - 1.0f)) + (fdy - win_r) * (fdy - win_r));
-        if (dist > win_r + 0.5f) alpha_f = 0.0f;
-        else if (dist > win_r - 0.5f) alpha_f = win_r + 0.5f - dist;
+      win->frame_cache[y * fw + x] = 0xFF000000 | theme;
+    }
+  }
+
+  // 3. Update Window Mask Cache (Squircle)
+  int mw = win->w;
+  int mh = win->h + title_h;
+  if (!win->window_mask || win->buffer_w != win->w || win->buffer_h != mh) {
+    if (win->window_mask) free(win->window_mask);
+    win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
+    
+    char svg_buf[4096];
+    svg_buf[0] = '\0';
+    char w_str[16], h_str[16];
+    append_int(w_str, mw);
+    append_int(h_str, mh);
+    warp_strcat(svg_buf, "<svg width=\""); warp_strcat(svg_buf, w_str);
+    warp_strcat(svg_buf, "\" height=\""); warp_strcat(svg_buf, h_str);
+    warp_strcat(svg_buf, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
+    emit_squircle_shape_to(svg_buf, sizeof(svg_buf), 0, 0, mw, mh, 20.0f, "black", "");
+    warp_strcat(svg_buf, "</svg>");
+    
+    NSVGimage *mask_img = nsvgParse(svg_buf, "px", 96.0f);
+    if (mask_img) {
+      if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+      unsigned char *rgba_mask = (unsigned char *)malloc((size_t)mw * (size_t)mh * 4);
+      nsvgRasterize(g_svg_rast, mask_img, 0, 0, 1.0f, rgba_mask, mw, mh, mw * 4);
+      for (int i = 0; i < mw * mh; i++) {
+        win->window_mask[i] = rgba_mask[i * 4 + 3]; // Use alpha channel
       }
-      
-      uint32_t color = theme;
-      if (alpha_f < 1.0f) {
-        // Use a special value to indicate "blend with background"
-        // Since frame_cache is 32-bit ARGB, we store alpha here.
-        uint8_t a_val = (uint8_t)(alpha_f * 255.0f);
-        win->frame_cache[y * fw + x] = ((uint32_t)a_val << 24) | (color & 0x00FFFFFF);
-      } else {
-        win->frame_cache[y * fw + x] = 0xFF000000 | color;
-      }
+      free(rgba_mask);
+      nsvgDelete(mask_img);
     }
   }
 }
@@ -1231,6 +1243,7 @@ static void add_window(const char *title, int x, int y, int w, int h) {
   win->rgba_buffer = NULL;
   win->shadow_cache = NULL;
   win->frame_cache = NULL;
+  win->window_mask = NULL;
   win->is_dirty = 1;
   win->is_maximized = 0;
   win->is_dragging = 0;
@@ -1244,6 +1257,9 @@ static void close_active_window() {
   window_t *win = &g_windows[g_active_window_index];
   if (win->warp_ctx) warp_context_destroy(win->warp_ctx);
   if (win->rgba_buffer) free(win->rgba_buffer);
+  if (win->shadow_cache) free(win->shadow_cache);
+  if (win->frame_cache) free(win->frame_cache);
+  if (win->window_mask) free(win->window_mask);
   
   for (int i = g_active_window_index; i < g_window_count - 1; i++) {
     g_windows[i] = g_windows[i+1];
@@ -1313,7 +1329,7 @@ static void redraw_warp_svg(layer_t *layer) {
           if (px < 0 || px >= layer->width) continue;
           
           uint32_t color = src_frame[dy * win->w + dx];
-          uint8_t alpha = (color >> 24) & 0xFF;
+          uint8_t alpha = win->window_mask[dy * win->w + dx]; // Use mask for corners
           if (alpha == 255) {
             dst_line[px] = color;
           } else if (alpha > 0) {
@@ -1405,9 +1421,8 @@ static void redraw_warp_svg(layer_t *layer) {
         }
       }
 
-      // 5. Content with scroll offset and bottom corners
+      // 5. Content with scroll offset and squircle corners
       int sy_int = (int)roundf(win->scroll_y);
-      float r_corner_val = 20.0f;
       for (int dy = 0; dy < win->h; dy++) {
         int py = win->y + dy;
         if (py < 0 || py >= layer->height) continue;
@@ -1416,7 +1431,11 @@ static void redraw_warp_svg(layer_t *layer) {
         
         if (src_y < 0 || src_y >= win->buffer_h) {
           for (int dx = 0; dx < win->w; dx++) {
-            if (win->x + dx >= 0 && win->x + dx < layer->width) dst_line[win->x + dx] = 0xFFFFFFFF;
+            if (win->x + dx >= 0 && win->x + dx < layer->width) {
+              uint8_t alpha = win->window_mask[(dy + title_h) * win->w + dx];
+              if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
+              else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
+            }
           }
           continue;
         }
@@ -1426,24 +1445,11 @@ static void redraw_warp_svg(layer_t *layer) {
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
 
-          float alpha_f = 1.0f;
-          float fdx = (float)dx, fdy = (float)dy;
-          if (fdy > (float)win->h - r_corner_val - 1.0f) {
-            if (fdx < r_corner_val) {
-              float dist = sqrtf((fdx - r_corner_val) * (fdx - r_corner_val) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
-              if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
-              else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
-            } else if (fdx > (float)win->w - r_corner_val - 1.0f) {
-              float dist = sqrtf((fdx - ((float)win->w - r_corner_val - 1.0f)) * (fdx - ((float)win->w - r_corner_val - 1.0f)) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
-              if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
-              else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
-            }
-          }
-
-          if (alpha_f >= 1.0f) {
+          uint8_t alpha = win->window_mask[(dy + title_h) * win->w + dx];
+          if (alpha == 255) {
             dst_line[px] = src_content[dx];
-          } else if (alpha_f > 0.0f) {
-            dst_line[px] = blend_colors(dst_line[px], src_content[dx], (uint8_t)(alpha_f * 255));
+          } else if (alpha > 0) {
+            dst_line[px] = blend_colors(dst_line[px], src_content[dx], alpha);
           }
         }
       }
