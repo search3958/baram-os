@@ -908,13 +908,18 @@ static uint32_t parse_rgba_smart(const char *str, int color_index) {
   return (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-static int svg_init(layer_t *layer) {
-  if (g_svg_ready)
+static int svg_init(layer_t *layer, int load_wallpaper) {
+  if (g_svg_ready && !load_wallpaper)
     return 1;
+  
+  if (load_wallpaper) {
+    g_svg_ready = 0; // 重走初期化
+  }
+
   layer_fill(layer, 0xFF000000);
 
   const char* svg_data = NULL;
-  if (g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
+  if (load_wallpaper && g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
     svg_data = g_wallpaper_buffer;
   } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
     svg_data = g_bootlogo_buffer;
@@ -923,6 +928,7 @@ static int svg_init(layer_t *layer) {
   if (!svg_data)
     return 0;
 
+  if (g_svg_image) nsvgDelete(g_svg_image);
   g_svg_image = nsvgParse((char*)svg_data, "px", 96.0f);
   if (!g_svg_image)
     return 0;
@@ -946,7 +952,7 @@ static int svg_init(layer_t *layer) {
   float scale = 1.0f;
   float tx = 0.0f, ty = 0.0f;
 
-  if (g_wallpaper_found && svg_data == g_wallpaper_buffer) {
+  if (load_wallpaper && svg_data == g_wallpaper_buffer) {
     // "Center Cover" logic
     float scale_x = (float)g_svg_full_w / g_svg_image->width;
     float scale_y = (float)g_svg_full_h / g_svg_image->height;
@@ -963,7 +969,7 @@ static int svg_init(layer_t *layer) {
                 g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
 
   // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
-  if (svg_data == g_bootlogo_buffer) {
+  if (!load_wallpaper && svg_data == g_bootlogo_buffer) {
     const char *conic_pos = strstr(g_bootlogo_buffer, "conic-gradient");
     if (conic_pos) {
       uint32_t c1 = parse_rgba_smart(conic_pos, 2);
@@ -1099,7 +1105,7 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
 static void window_update_caches(window_t *win) {
   int title_h = 40;
   int shadow_size = 48;
-  float win_r = 20.0f;
+  float win_r = 30.0f; // Adjusted for Squircle shadow approximation
   
   // 1. Update Shadow Cache (Alpha only) - Optimized with symmetry
   int sw = win->w + shadow_size * 2;
@@ -1155,34 +1161,36 @@ static void window_update_caches(window_t *win) {
   uint32_t theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
   for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = 0xFF000000 | theme;
 
-  // 3. Update Window Mask Cache (Squircle) - Optimized with direct SDF
+  // 3. Update Window Mask Cache (Squircle) - Reverted to SVG for exact Warp shape
   int mw = win->w;
   int mh = win->h + title_h;
   if (!win->window_mask || win->buffer_w != win->w || win->buffer_h != mh) {
     if (win->window_mask) free(win->window_mask);
     win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
     
-    float half_mw = (float)mw / 2.0f;
-    float half_mh = (float)mh / 2.0f;
-    for (int y = 0; y <= mh / 2; y++) {
-      for (int x = 0; x <= mw / 2; x++) {
-        float qx = fabsf((float)x - half_mw) - (half_mw - win_r);
-        float qy = fabsf((float)y - half_mh) - (half_mh - win_r);
-        float mx = (qx > 0.0f) ? qx : 0.0f;
-        float my = (qy > 0.0f) ? qy : 0.0f;
-        float inner = (qx > qy) ? qx : qy;
-        if (inner > 0.0f) inner = 0.0f;
-        float dist = sqrtf(mx*mx + my*my) + inner - win_r;
-        
-        uint8_t alpha = 255;
-        if (dist > 0.5f) alpha = 0;
-        else if (dist > -0.5f) alpha = (uint8_t)((0.5f - dist) * 255.0f);
-        
-        win->window_mask[y * mw + x] = alpha;
-        win->window_mask[y * mw + (mw - 1 - x)] = alpha;
-        win->window_mask[(mh - 1 - y) * mw + x] = alpha;
-        win->window_mask[(mh - 1 - y) * mw + (mw - 1 - x)] = alpha;
+    char svg_buf[4096];
+    svg_buf[0] = '\0';
+    char w_str[16], h_str[16];
+    append_int(w_str, mw);
+    append_int(h_str, mh);
+    warp_strcat(svg_buf, "<svg width=\""); warp_strcat(svg_buf, w_str);
+    warp_strcat(svg_buf, "\" height=\""); warp_strcat(svg_buf, h_str);
+    warp_strcat(svg_buf, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
+    emit_squircle_shape_to(svg_buf, sizeof(svg_buf), 0, 0, mw, mh, 32.0f, "black", "");
+    warp_strcat(svg_buf, "</svg>");
+    
+    NSVGimage *mask_img = nsvgParse(svg_buf, "px", 96.0f);
+    if (mask_img) {
+      if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+      unsigned char *rgba_mask = (unsigned char *)malloc((size_t)mw * (size_t)mh * 4);
+      if (rgba_mask) {
+        nsvgRasterize(g_svg_rast, mask_img, 0, 0, 1.0f, rgba_mask, mw, mh, mw * 4);
+        for (int i = 0; i < mw * mh; i++) {
+          win->window_mask[i] = rgba_mask[i * 4 + 3]; // Use alpha channel
+        }
+        free(rgba_mask);
       }
+      nsvgDelete(mask_img);
     }
   }
 }
@@ -1282,7 +1290,7 @@ static void draw_wallpaper(layer_t *layer) {
   if (g_svg_ready) {
     memcpy(layer->buffer, svg_base_buf, sizeof(uint32_t) * layer->width * layer->height);
   } else {
-    layer_fill(layer, 0xFF000000);
+    layer_fill(layer, 0x00000000); // Transparent fallback
   }
 }
 
@@ -1322,11 +1330,13 @@ static void redraw_warp_svg(layer_t *layer) {
             
             int px = sx_start + dx;
             uint32_t bg = dst_line[px];
-            // Shadow is black (0,0,0), so we just darken the background
+            uint32_t a_bg = bg >> 24;
             uint32_t inv_alpha = 255 - alpha;
+            // Shadow is black (0,0,0), so we just darken the background
             uint32_t rb = (bg & 0xFF00FFu) * inv_alpha >> 8;
             uint32_t g = ((bg >> 8) & 0xFF) * inv_alpha >> 8;
-            dst_line[px] = (0xFF000000u) | (rb & 0xFF00FFu) | (g << 8);
+            uint32_t a_out = alpha + (a_bg * inv_alpha >> 8);
+            dst_line[px] = (a_out << 24) | (rb & 0xFF00FFu) | (g << 8);
           }
         }
       }
@@ -1513,6 +1523,7 @@ static void redraw_warp_svg(layer_t *layer) {
 }
 
 static int svg_init_nextgen(layer_t *layer) {
+  svg_init(layer, 1); // Load and render wallpaper
   // Start with one default window
   add_window("Main Warp", 100, 100, 600, 400);
   redraw_warp_svg(layer);
@@ -2454,7 +2465,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.transparent = 0;
   svg_layer.active = 1;
   svg_layer.dynamic = 0;
-  svg_init(&svg_layer);
+  svg_init(&svg_layer, 0);
   register_layer(&svg_layer);
 
   // 3. 点滅インジケータ (右下)
@@ -2513,9 +2524,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++)
       text_buf[i] = TRANSPARENT_COLOR;
   }
-  // 次世代SVGレイヤー構築
-  svg_init_nextgen(&nextgen_ui_layer);
-
   // 初回描画を確実に実行
   screen_mark_static_dirty();
   screen_mark_all_dirty();
@@ -2539,7 +2547,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   // メインループ (常時60fpsターゲット)
   while (1) {
     if (!auto_booted && current_os_mode == OS_MODE_CLASSIC &&
-        (timer_ticks - boot_start_tick > 60)) {
+        (timer_ticks - boot_start_tick > 50)) {
       current_os_mode = OS_MODE_WARPDESKTOP;
       g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
       layer_fill(&desktop, 0xFFF5F5F5);
@@ -2549,7 +2557,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       text_layer.active = 0;
       keybuf_str[0] = '\0';
       g_svg_dirty = 1;
-      redraw_warp_svg(&nextgen_ui_layer);
+      svg_init_nextgen(&nextgen_ui_layer);
       screen_mark_static_dirty();
       auto_booted = 1;
     }
