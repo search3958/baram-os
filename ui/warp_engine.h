@@ -12,18 +12,21 @@
 #define MAX_SCRIPT_BLOCKS 16
 #define MAX_DYNAMIC_NODES 32
 
-const char* warp_engine_get_status(void);
-void warp_engine_init(const char* code);
-void warp_engine_update(int width, int height);
-const char* warp_engine_get_svg(void);
-void warp_engine_draw_texts(layer_t* layer, int off_x, int off_y);
-void warp_engine_click(int x, int y);
+typedef struct warp_context warp_context_t;
 
-int warp_engine_is_dirty(void);
-void warp_engine_clear_dirty(void);
-int warp_engine_get_node_count(void);
-void warp_engine_get_node_info(int index, int* x, int* y, int* w, int* h, int* is_dirty);
-const char* warp_engine_get_node_svg(int index);
-void warp_engine_get_node_prev_rect(int index, int* x, int* y, int* w, int* h);
+warp_context_t* warp_context_create(const char* code);
+void warp_context_destroy(warp_context_t* ctx);
+void warp_context_update(warp_context_t* ctx, int width, int height);
+const char* warp_context_get_svg(warp_context_t* ctx);
+void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int off_y);
+void warp_context_click(warp_context_t* ctx, int x, int y);
+int warp_context_is_dirty(warp_context_t* ctx);
+void warp_context_clear_dirty(warp_context_t* ctx);
+int warp_context_get_node_count(warp_context_t* ctx);
+void warp_context_get_node_info(warp_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* is_dirty);
+const char* warp_context_get_node_prev_svg(warp_context_t* ctx, int index); // Dummy for compatibility if needed
+const char* warp_context_get_node_svg(warp_context_t* ctx, int index);
+void warp_context_get_node_prev_rect(warp_context_t* ctx, int index, int* x, int* y, int* w, int* h);
+const char* warp_context_get_status(warp_context_t* ctx);
 
 #endif

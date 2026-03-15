@@ -93,10 +93,6 @@ static os_mode_t current_os_mode = OS_MODE_CLASSIC;
 static char g_last_svg_parse_status[64] = "None";
 static int g_warp_mod_found = 0;
 static uint32_t g_mod_count = 0;
-static NSVGimage *g_nextgen_svg_image = NULL;
-static unsigned char *g_nextgen_full_rgba = NULL;
-static int g_nextgen_full_w = 0;
-static int g_nextgen_full_h = 0;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
@@ -109,6 +105,8 @@ static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
                                  uint32_t c2);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
+void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
+                    float font_size, uint32_t color);
 
 // FPU有効化
 void enable_fpu() {
@@ -978,102 +976,163 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   }
 }
 
-static void redraw_warp_svg(layer_t *layer) {
-  if (g_svg_dirty) {
-    warp_engine_update(layer->width, layer->height);
-    const char *svg_str = warp_engine_get_svg();
-    
-    // 全パース (動的レイアウト対応のため、dirty 時は一度パース)
-    if (g_nextgen_svg_image) nsvgDelete(g_nextgen_svg_image);
-    g_nextgen_svg_image = nsvgParse((char*)svg_str, "px", 96.0f);
-    
-    if (g_nextgen_svg_image) {
-      int full_w = (int)g_nextgen_svg_image->width;
-      int full_h = (int)g_nextgen_svg_image->height;
-      if (full_w < layer->width) full_w = layer->width;
-      if (full_h < layer->height) full_h = layer->height;
-      
-      if (!g_nextgen_full_rgba || g_nextgen_full_w != full_w || g_nextgen_full_h != full_h) {
-        if (g_nextgen_full_rgba) free(g_nextgen_full_rgba);
-        g_nextgen_full_rgba = (unsigned char *)malloc((size_t)full_w * (size_t)full_h * 4);
-        g_nextgen_full_w = full_w;
-        g_nextgen_full_h = full_h;
-      }
-    }
+typedef struct {
+  int x, y, w, h;
+  int old_x, old_y, old_w, old_h; // For restoration from maximized state
+  int is_maximized;
+  char title[64];
+  warp_context_t *warp_ctx;
+  unsigned char *rgba_buffer;
+  int buffer_w, buffer_h;
+  int is_dirty;
+  int is_dragging;
+  int is_resizing;
+  int drag_off_x, drag_off_y;
+} window_t;
 
-    if (g_nextgen_full_rgba && g_nextgen_svg_image) {
+#define MAX_WINDOWS 8
+static window_t g_windows[MAX_WINDOWS];
+static int g_window_count = 0;
+static int g_active_window_index = -1;
+
+static void window_redraw(window_t *win) {
+  if (!win->warp_ctx) return;
+  warp_context_update(win->warp_ctx, win->w, win->h);
+  
+  if (!win->rgba_buffer || win->buffer_w != win->w || win->buffer_h != win->h) {
+    if (win->rgba_buffer) free(win->rgba_buffer);
+    win->rgba_buffer = (unsigned char *)malloc((size_t)win->w * (size_t)win->h * 4);
+    win->buffer_w = win->w;
+    win->buffer_h = win->h;
+  }
+  
+  if (win->rgba_buffer) {
+    const uint32_t bg = 0xFFFFFFFF; // Window background
+    for (int i = 0; i < win->w * win->h; i++) ((uint32_t*)win->rgba_buffer)[i] = bg;
+    
+    const char *svg = warp_context_get_svg(win->warp_ctx);
+    NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
+    if (img) {
       if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+      nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, win->rgba_buffer, win->w, win->h, win->w * 4);
+      nsvgDelete(img);
       
-      const uint32_t bg_native = 0xFFF5F5F5;
-      
-      // 1. 全クリア (文字の重ね描きによるアンチエイリアス劣化を防止)
-      for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
-        ((uint32_t*)g_nextgen_full_rgba)[i] = bg_native;
-      }
-      
-      // 2. 全ラスタライズ (NanoSVG: RGBA)
-      nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f,
-                    g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
-      
-      // 3. 全 R/B スワップ (RGBA -> Native BGRA)
-      unsigned char *p = g_nextgen_full_rgba;
-      for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
+      // R/B Swap
+      unsigned char *p = win->rgba_buffer;
+      for (int i = 0; i < win->w * win->h; i++) {
         unsigned char r = p[0], b = p[2];
         p[0] = b; p[2] = r; p += 4;
       }
       
-      // 4. 文字描画 (グリフキャッシュにより高速)
       layer_t temp_layer;
-      temp_layer.buffer = (uint32_t*)g_nextgen_full_rgba;
-      temp_layer.width = g_nextgen_full_w;
-      temp_layer.height = g_nextgen_full_h;
-      warp_engine_draw_texts(&temp_layer, 0, 0);
+      temp_layer.buffer = (uint32_t*)win->rgba_buffer;
+      temp_layer.width = win->w;
+      temp_layer.height = win->h;
+      warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+    }
+  }
+  win->is_dirty = 0;
+}
 
-      // 5. グラデーション適用
-      for (NSVGshape *s = g_nextgen_svg_image->shapes; s; s = s->next) {
-        if (s->id[0] == 'c' && strncmp(s->id, "conic", 5) == 0) {
-          int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
-          int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
-          uint32_t c1 = 0xFF5CA8FF, c2 = 0xFFFFFFFF;
-          if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
-          else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
-          else if (strstr(s->id, "green")) { c1 = 0xFF00C9FF; c2 = 0xFF92FE9D; }
-          apply_conic_gradient(g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, rx, ry, rw, rh, c1, c2);
+static void add_window(const char *title, int x, int y, int w, int h) {
+  if (g_window_count >= MAX_WINDOWS) return;
+  window_t *win = &g_windows[g_window_count++];
+  win->x = x; win->y = y; win->w = w; win->h = h;
+  strncpy(win->title, title, 63);
+  win->warp_ctx = warp_context_create(g_warp_buffer);
+  win->rgba_buffer = NULL;
+  win->is_dirty = 1;
+  win->is_maximized = 0;
+  win->is_dragging = 0;
+  win->is_resizing = 0;
+  g_active_window_index = g_window_count - 1;
+}
+
+static void close_active_window() {
+  if (g_active_window_index < 0) return;
+  window_t *win = &g_windows[g_active_window_index];
+  if (win->warp_ctx) warp_context_destroy(win->warp_ctx);
+  if (win->rgba_buffer) free(win->rgba_buffer);
+  
+  for (int i = g_active_window_index; i < g_window_count - 1; i++) {
+    g_windows[i] = g_windows[i+1];
+  }
+  g_window_count--;
+  g_active_window_index = g_window_count - 1;
+  g_svg_dirty = 1;
+}
+
+static void draw_wallpaper(layer_t *layer) {
+  // Use existing bootlogo as wallpaper
+  if (g_svg_ready) {
+    memcpy(layer->buffer, svg_base_buf, sizeof(uint32_t) * layer->width * layer->height);
+  } else {
+    layer_fill(layer, 0xFF000000);
+  }
+}
+
+static void redraw_warp_svg(layer_t *layer) {
+  draw_wallpaper(layer);
+  
+  for (int i = 0; i < g_window_count; i++) {
+    window_t *win = &g_windows[i];
+    if (win->is_dirty) window_redraw(win);
+    
+    if (win->rgba_buffer) {
+      int title_h = 32;
+      uint32_t theme = (i == g_active_window_index) ? 0xFF0A56D0 : 0xFF808080;
+      
+      // Title bar
+      for (int dy = -title_h; dy < 0; dy++) {
+        int py = win->y + dy;
+        if (py < 0 || py >= layer->height) continue;
+        uint32_t *dst = &layer->buffer[py * layer->width + win->x];
+        for (int dx = 0; dx < win->w; dx++) {
+          if (win->x + dx >= 0 && win->x + dx < layer->width) *dst = theme;
+          dst++;
         }
       }
-    }
-    warp_engine_clear_dirty();
-    g_svg_dirty = 0;
-  }
-
-  if (!g_nextgen_full_rgba) return;
-
-  const uint32_t bg = 0xFFF5F5F5;
-  int scroll_x = (int)roundf(g_scroll_x);
-  int scroll_y = (int)roundf(g_scroll_y);
-
-  for (int y = 0; y < layer->height; ++y) {
-    uint32_t *line_dst = &layer->buffer[y * layer->width];
-    int src_y = y - scroll_y;
-    if (src_y < 0 || src_y >= g_nextgen_full_h) {
-      for (int x = 0; x < layer->width; x++) line_dst[x] = bg;
-      continue;
-    }
-    uint32_t *line_src = (uint32_t*)&g_nextgen_full_rgba[src_y * g_nextgen_full_w * 4];
-    int src_x = -scroll_x;
-    if (src_x == 0 && layer->width <= g_nextgen_full_w) {
-      memcpy(line_dst, line_src, layer->width * 4);
-    } else {
-      for (int x = 0; x < layer->width; x++) {
-        int sx = x + src_x;
-        line_dst[x] = (sx >= 0 && sx < g_nextgen_full_w) ? line_src[sx] : bg;
+      layer_draw_ttf(layer, win->x + 8, win->y - 24, win->title, 16, 0xFFFFFFFF);
+      
+      // Buttons (Close and Maximize)
+      // Close [X] at far right
+      int btn_size = 24;
+      int close_x = win->x + win->w - btn_size - 4;
+      int max_x = close_x - btn_size - 4;
+      layer_draw_ttf(layer, close_x + 4, win->y - 24, "X", 16, 0xFFFFFFFF);
+      layer_draw_ttf(layer, max_x + 4, win->y - 24, "M", 16, 0xFFFFFFFF);
+      
+      // Content
+      for (int dy = 0; dy < win->h; dy++) {
+        int py = win->y + dy;
+        if (py < 0 || py >= layer->height) continue;
+        uint32_t *dst = &layer->buffer[py * layer->width + win->x];
+        uint32_t *src = (uint32_t*)&win->rgba_buffer[dy * win->w * 4];
+        for (int dx = 0; dx < win->w; dx++) {
+          if (win->x + dx >= 0 && win->x + dx < layer->width) *dst = *src;
+          dst++; src++;
+        }
+      }
+      
+      // Resize handle at bottom-right
+      if (i == g_active_window_index) {
+        int handle_s = 12;
+        for (int dy = win->h - handle_s; dy < win->h; dy++) {
+          int py = win->y + dy;
+          if (py < 0 || py >= layer->height) continue;
+          for (int dx = win->w - handle_s; dx < win->w; dx++) {
+            int px = win->x + dx;
+            if (px >= 0 && px < layer->width) layer->buffer[py * layer->width + px] = 0xFFCCCCCC;
+          }
+        }
       }
     }
   }
 }
 
 static int svg_init_nextgen(layer_t *layer) {
-  warp_engine_init(g_warp_buffer);
+  // Start with one default window
+  add_window("Main Warp", 100, 100, 600, 400);
   redraw_warp_svg(layer);
   return 1;
 }
@@ -1447,7 +1506,7 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   const char *w_label = "Warp: ";
   while (*w_label)
     *p++ = *w_label++;
-  const char *w_status = warp_engine_get_status();
+  const char *w_status = "OK";
   while (*w_status)
     *p++ = *w_status++;
   *p = '\0';
@@ -2219,13 +2278,118 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
 
       uint8_t curr_btns = mouse_buttons;
+      static int last_mouse_x = -1, last_mouse_y = -1;
+      int mouse_dx = (last_mouse_x == -1) ? 0 : mouse_x - last_mouse_x;
+      int mouse_dy = (last_mouse_y == -1) ? 0 : mouse_y - last_mouse_y;
+      last_mouse_x = mouse_x; last_mouse_y = mouse_y;
+
       if (curr_btns != prev_mouse_buttons) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
-          warp_engine_click(mouse_x - g_scroll_x, mouse_y - g_scroll_y);
-          g_svg_dirty = 1;
-          redraw_warp_svg(&nextgen_ui_layer);
+          // Click start
+          int hit = -1;
+          for (int i = g_window_count - 1; i >= 0; i--) {
+            window_t *win = &g_windows[i];
+            
+            // 1. Resize handle check (bottom-right)
+            if (mouse_x >= win->x + win->w - 16 && mouse_x < win->x + win->w &&
+                mouse_y >= win->y + win->h - 16 && mouse_y < win->y + win->h) {
+              hit = i;
+              // Bring to front
+              if (i != g_window_count - 1) {
+                window_t tmp = g_windows[i];
+                for (int j = i; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
+                g_windows[g_window_count - 1] = tmp;
+              }
+              g_active_window_index = g_window_count - 1;
+              g_windows[g_active_window_index].is_resizing = 1;
+              break;
+            }
+
+            // 2. Title bar check
+            if (mouse_x >= win->x && mouse_x < win->x + win->w &&
+                mouse_y >= win->y - 32 && mouse_y < win->y) {
+              hit = i;
+              if (i != g_window_count - 1) {
+                window_t tmp = g_windows[i];
+                for (int j = i; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
+                g_windows[g_window_count - 1] = tmp;
+              }
+              g_active_window_index = g_window_count - 1;
+              window_t *awin = &g_windows[g_active_window_index];
+              
+              // Close button check
+              if (mouse_x > awin->x + awin->w - 32) {
+                close_active_window();
+              } 
+              // Maximize button check
+              else if (mouse_x > awin->x + awin->w - 64) {
+                if (awin->is_maximized) {
+                  awin->x = awin->old_x; awin->y = awin->old_y;
+                  awin->w = awin->old_w; awin->h = awin->old_h;
+                  awin->is_maximized = 0;
+                } else {
+                  awin->old_x = awin->x; awin->old_y = awin->y;
+                  awin->old_w = awin->w; awin->old_h = awin->h;
+                  awin->x = 0; awin->y = 32; awin->w = nextgen_ui_layer.width; awin->h = nextgen_ui_layer.height - 32;
+                  awin->is_maximized = 1;
+                }
+                awin->is_dirty = 1;
+              } else {
+                awin->is_dragging = 1;
+              }
+              break;
+            }
+            
+            // 3. Content check
+            if (mouse_x >= win->x && mouse_x < win->x + win->w &&
+                mouse_y >= win->y && mouse_y < win->y + win->h) {
+              hit = i;
+              if (i != g_window_count - 1) {
+                window_t tmp = g_windows[i];
+                for (int j = i; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
+                g_windows[g_window_count - 1] = tmp;
+              }
+              g_active_window_index = g_window_count - 1;
+              warp_context_click(g_windows[g_active_window_index].warp_ctx, 
+                                mouse_x - g_windows[g_active_window_index].x, 
+                                mouse_y - g_windows[g_active_window_index].y);
+              g_windows[g_active_window_index].is_dirty = 1;
+              break;
+            }
+          }
+          if (hit == -1 && g_window_count < MAX_WINDOWS) {
+            add_window("New Window", mouse_x - 50, mouse_y + 50, 400, 300);
+          }
+        } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
+          // Click end
+          if (g_active_window_index >= 0) {
+            g_windows[g_active_window_index].is_dragging = 0;
+            g_windows[g_active_window_index].is_resizing = 0;
+          }
         }
         prev_mouse_buttons = curr_btns;
+      }
+
+      // Handle continuous dragging/resizing
+      if (g_active_window_index >= 0) {
+        window_t *awin = &g_windows[g_active_window_index];
+        if (awin->is_dragging) {
+          awin->x += mouse_dx;
+          awin->y += mouse_dy;
+          g_svg_dirty = 1;
+        } else if (awin->is_resizing) {
+          awin->w += mouse_dx;
+          awin->h += mouse_dy;
+          if (awin->w < 100) awin->w = 100;
+          if (awin->h < 64) awin->h = 64;
+          awin->is_dirty = 1;
+          g_svg_dirty = 1;
+        }
+      }
+      
+      if (mouse_dx != 0 || mouse_dy != 0) {
+        g_svg_dirty = 1;
+        redraw_warp_svg(&nextgen_ui_layer);
       }
 
       if (keybuf_len > 0) {
