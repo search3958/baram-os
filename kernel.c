@@ -1175,36 +1175,66 @@ static void redraw_warp_svg(layer_t *layer) {
     if (win->is_dirty) window_redraw(win);
     
     if (win->rgba_buffer) {
-      // Draw Window Shadow (Optimized)
+      // Draw Window Shadow (Single-pass Rounded SDF)
       int shadow_size = 48;
-      for (int s = shadow_size; s > 0; s--) {
-        uint8_t alpha = (uint8_t)(2.5 * (shadow_size - s + 1) / shadow_size);
-        int sx = win->x - s + 0;
-        int sy = win->y - 40 - s + 8;
-        int sw = win->w + s * 2;
-        int sh = win->h + 40 + s * 2;
-        
-        for (int dy = 0; dy < sh; dy++) {
-          int py = sy + dy;
-          if (py < 0 || py >= layer->height) continue;
+      float win_r = 20.0f;
+      int win_x = win->x;
+      int win_y = win->y;
+      int win_w = win->w - 1;
+      int win_h = win->h - 20;
+      
+      int shadow_offset_x = 0;
+      int shadow_offset_y = 8;
+      
+      int min_x = win_x - shadow_size + shadow_offset_x;
+      int max_x = win_x + win_w + shadow_size + shadow_offset_x;
+      int min_y = win_y - shadow_size + shadow_offset_y;
+      int max_y = win_y + win_h + shadow_size + shadow_offset_y;
+      
+      for (int py = min_y; py < max_y; py++) {
+        if (py < 0 || py >= layer->height) continue;
+        uint32_t *line = &layer->buffer[py * layer->width];
+        for (int px = min_x; px < max_x; px++) {
+          if (px < 0 || px >= layer->width) continue;
           
-          // Only process lines that actually contain shadow
-          for (int dx = 0; dx < sw; dx++) {
-            int px = sx + dx;
-            if (px < 0 || px >= layer->width) continue;
+          // 1. Skip window interior (with rounded corners)
+          if (px >= win_x && px < win_x + win_w && py >= win_y && py < win_y + win_h) {
+            float dx_in = 0, dy_in = 0;
+            if (px < win_x + (int)win_r) dx_in = (win_x + win_r) - (float)px;
+            else if (px > win_x + win_w - (int)win_r - 1) dx_in = (float)px - (win_x + win_w - win_r - 1);
+            if (py < win_y + (int)win_r) dy_in = (win_y + win_r) - (float)py;
+            else if (py > win_y + win_h - (int)win_r - 1) dy_in = (float)py - (win_y + win_h - win_r - 1);
             
-            // Skip the area covered by the window
-            if (px >= win->x && px < win->x + win->w && py >= win->y - 40 && py < win->y + win->h) {
-              dx = win->x + win->w - sx - 1; // Jump to the right side of the window
-              continue;
+            if (dx_in > 0 && dy_in > 0) {
+              if (sqrtf(dx_in*dx_in + dy_in*dy_in) <= win_r) continue; // Inside corner
+            } else {
+              continue; // Inside body
             }
-
-            uint32_t bg = layer->buffer[py * layer->width + px];
-            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-            uint8_t r_out = (uint8_t)(r_b * (255 - alpha) / 255);
-            uint8_t g_out = (uint8_t)(g_b * (255 - alpha) / 255);
-            uint8_t b_out = (uint8_t)(b_b * (255 - alpha) / 255);
-            layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+          }
+          
+          // 2. Calculate shadow distance to rounded rect
+          float tx = (float)(px - shadow_offset_x);
+          float ty = (float)(py - shadow_offset_y);
+          float qx = fabsf(tx - (win_x + win_w / 2.0f)) - (win_w / 2.0f - win_r);
+          float qy = fabsf(ty - (win_y + win_h / 2.0f)) - (win_h / 2.0f - win_r);
+          float mx = (qx > 0.0f) ? qx : 0.0f;
+          float my = (qy > 0.0f) ? qy : 0.0f;
+          float inner = (qx > qy) ? qx : qy;
+          if (inner > 0.0f) inner = 0.0f;
+          float dist = sqrtf(mx*mx + my*my) + inner - win_r;
+          
+          if (dist > 0 && dist < (float)shadow_size) {
+            float d_ratio = dist / (float)shadow_size;
+            // Smooth quadratic falloff
+            uint8_t alpha = (uint8_t)(64.0f * (1.0f - d_ratio) * (1.0f - d_ratio));
+            if (alpha > 0) {
+              uint32_t bg = line[px];
+              uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+              uint8_t r_out = (uint8_t)(r_b * (255 - alpha) / 255);
+              uint8_t g_out = (uint8_t)(g_b * (255 - alpha) / 255);
+              uint8_t b_out = (uint8_t)(b_b * (255 - alpha) / 255);
+              line[px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+            }
           }
         }
       }
@@ -1212,14 +1242,38 @@ static void redraw_warp_svg(layer_t *layer) {
       int title_h = 40;
       uint32_t theme = (i == g_active_window_index) ? 0xFFF5F5F5 : 0xFFE0E0E0;
       
-      // Title bar
+      // Title bar with rounded corners (20px)
+      float r_corner = 20.0f;
       for (int dy = -title_h; dy < 0; dy++) {
         int py = win->y + dy;
         if (py < 0 || py >= layer->height) continue;
-        uint32_t *dst = &layer->buffer[py * layer->width + win->x];
         for (int dx = 0; dx < win->w; dx++) {
-          if (win->x + dx >= 0 && win->x + dx < layer->width) *dst = theme;
-          dst++;
+          int px = win->x + dx;
+          if (px < 0 || px >= layer->width) continue;
+
+          float alpha_f = 1.0f;
+          float fdx = (float)dx, fdy = (float)(dy + title_h);
+          if (fdx < r_corner && fdy < r_corner) {
+            float dist = sqrtf((fdx - r_corner) * (fdx - r_corner) + (fdy - r_corner) * (fdy - r_corner));
+            if (dist > r_corner + 0.5f) alpha_f = 0.0f;
+            else if (dist > r_corner - 0.5f) alpha_f = r_corner + 0.5f - dist;
+          } else if (fdx > (float)win->w - r_corner - 1.0f && fdy < r_corner) {
+            float dist = sqrtf((fdx - ((float)win->w - r_corner - 1.0f)) * (fdx - ((float)win->w - r_corner - 1.0f)) + (fdy - r_corner) * (fdy - r_corner));
+            if (dist > r_corner + 0.5f) alpha_f = 0.0f;
+            else if (dist > r_corner - 0.5f) alpha_f = r_corner + 0.5f - dist;
+          }
+
+          if (alpha_f >= 1.0f) {
+            layer->buffer[py * layer->width + px] = theme;
+          } else if (alpha_f > 0.0f) {
+            uint32_t bg = layer->buffer[py * layer->width + px];
+            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+            uint8_t r_t = (theme >> 16) & 0xFF, g_t = (theme >> 8) & 0xFF, b_t = theme & 0xFF;
+            uint8_t r_out = (uint8_t)(r_t * alpha_f + r_b * (1.0f - alpha_f));
+            uint8_t g_out = (uint8_t)(g_t * alpha_f + g_b * (1.0f - alpha_f));
+            uint8_t b_out = (uint8_t)(b_t * alpha_f + b_b * (1.0f - alpha_f));
+            layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+          }
         }
       }
       
@@ -1307,7 +1361,7 @@ static void redraw_warp_svg(layer_t *layer) {
       int i_r = (int)btn_r + 1;
 
       // Draw Red button (Close) - #FC2836
-      int red_center_x = win->x + 22;
+      int red_center_x = win->x + 20;
       for (int dy = -i_r; dy <= i_r; dy++) {
         for (int dx = -i_r; dx <= i_r; dx++) {
           float dist = sqrtf((float)(dx*dx + dy*dy));
@@ -1335,7 +1389,7 @@ static void redraw_warp_svg(layer_t *layer) {
       }
 
       // Draw Green button (Maximize) - #2ECC46
-      int green_center_x = win->x + 48;
+      int green_center_x = win->x + 44;
       for (int dy = -i_r; dy <= i_r; dy++) {
         for (int dx = -i_r; dx <= i_r; dx++) {
           float dist = sqrtf((float)(dx*dx + dy*dy));
@@ -1376,11 +1430,38 @@ static void redraw_warp_svg(layer_t *layer) {
           continue;
         }
 
-        uint32_t *dst = &layer->buffer[py * layer->width + win->x];
-        uint32_t *src = (uint32_t*)&win->rgba_buffer[src_y * win->w * 4];
         for (int dx = 0; dx < win->w; dx++) {
-          if (win->x + dx >= 0 && win->x + dx < layer->width) *dst = *src;
-          dst++; src++;
+          int px = win->x + dx;
+          if (px < 0 || px >= layer->width) continue;
+
+          float alpha_f = 1.0f;
+          float fdx = (float)dx, fdy = (float)dy;
+          float r_corner_val = 20.0f;
+          // Bottom-left corner
+          if (fdx < r_corner_val && fdy > (float)win->h - r_corner_val - 1.0f) {
+            float dist = sqrtf((fdx - r_corner_val) * (fdx - r_corner_val) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
+            if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
+            else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
+          } 
+          // Bottom-right corner
+          else if (fdx > (float)win->w - r_corner_val - 1.0f && fdy > (float)win->h - r_corner_val - 1.0f) {
+            float dist = sqrtf((fdx - ((float)win->w - r_corner_val - 1.0f)) * (fdx - ((float)win->w - r_corner_val - 1.0f)) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
+            if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
+            else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
+          }
+
+          uint32_t src_color = ((uint32_t*)win->rgba_buffer)[src_y * win->w + dx];
+          if (alpha_f >= 1.0f) {
+            layer->buffer[py * layer->width + px] = src_color;
+          } else if (alpha_f > 0.0f) {
+            uint32_t bg = layer->buffer[py * layer->width + px];
+            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+            uint8_t r_s = (src_color >> 16) & 0xFF, g_s = (src_color >> 8) & 0xFF, b_s = src_color & 0xFF;
+            uint8_t r_out = (uint8_t)(r_s * alpha_f + r_b * (1.0f - alpha_f));
+            uint8_t g_out = (uint8_t)(g_s * alpha_f + g_b * (1.0f - alpha_f));
+            uint8_t b_out = (uint8_t)(b_s * alpha_f + b_b * (1.0f - alpha_f));
+            layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+          }
         }
       }
       
@@ -2611,13 +2692,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               hit_index = i;
               window_t *hwin = &g_windows[hit_index];
               
-              // Close check (left, Red button)
-              if (hx >= hwin->x + 10 && hx < hwin->x + 32) {
+              // Close check (left, Red button center at 20px)
+              if (hx >= hwin->x + 8 && hx < hwin->x + 32) {
                 g_active_window_index = hit_index;
                 close_active_window();
                 hit_index = -2; // Mark as handled
               } 
-              // Maximize check (left, Green button)
+              // Maximize check (left, Green button center at 44px)
               else if (hx >= hwin->x + 32 && hx < hwin->x + 56) {
                 if (hwin->is_maximized) {
                   hwin->x = hwin->old_x; hwin->y = hwin->old_y;
