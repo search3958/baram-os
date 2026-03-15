@@ -1076,12 +1076,101 @@ typedef struct {
   int is_resizing;
   float scroll_x, scroll_y;
   float target_scroll_x, target_scroll_y;
+  
+  // Caching for performance
+  uint8_t *shadow_cache;   // Alpha mask for the shadow
+  int shadow_cache_w, shadow_cache_h;
+  uint32_t *frame_cache;   // Title bar + rounded corners frame
+  int frame_cache_w, frame_cache_h;
 } window_t;
 
 #define MAX_WINDOWS 8
 static window_t g_windows[MAX_WINDOWS];
 static int g_window_count = 0;
 static int g_active_window_index = -1;
+
+// Forward declaration for blending
+static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
+
+static void window_update_caches(window_t *win) {
+  int title_h = 40;
+  int shadow_size = 48;
+  float win_r = 20.0f;
+  
+  // 1. Update Shadow Cache (Alpha only)
+  int sw = win->w + shadow_size * 2;
+  int sh = win->h + title_h + shadow_size * 2;
+  if (!win->shadow_cache || win->shadow_cache_w != sw || win->shadow_cache_h != sh) {
+    if (win->shadow_cache) free(win->shadow_cache);
+    win->shadow_cache = (uint8_t *)malloc((size_t)sw * (size_t)sh);
+    win->shadow_cache_w = sw;
+    win->shadow_cache_h = sh;
+    
+    // Calculate SDF Shadow once
+    float win_w_f = (float)win->w;
+    float win_h_f = (float)(win->h + title_h);
+    float cx = (float)sw / 2.0f;
+    float cy = (float)sh / 2.0f;
+    
+    for (int y = 0; y < sh; y++) {
+      for (int x = 0; x < sw; x++) {
+        float qx = fabsf((float)x - cx) - (win_w_f / 2.0f - win_r);
+        float qy = fabsf((float)y - cy) - (win_h_f / 2.0f - win_r);
+        float mx = (qx > 0.0f) ? qx : 0.0f;
+        float my = (qy > 0.0f) ? qy : 0.0f;
+        float inner = (qx > qy) ? qx : qy;
+        if (inner > 0.0f) inner = 0.0f;
+        float dist = sqrtf(mx*mx + my*my) + inner - win_r;
+        
+        uint8_t alpha = 0;
+        if (dist <= 0.0f) {
+          alpha = 64;
+        } else if (dist < (float)shadow_size) {
+          float d_ratio = dist / (float)shadow_size;
+          alpha = (uint8_t)(64.0f * (1.0f - d_ratio) * (1.0f - d_ratio));
+        }
+        win->shadow_cache[y * sw + x] = alpha;
+      }
+    }
+  }
+  
+  // 2. Update Frame Cache (Title bar with rounded corners)
+  int fw = win->w;
+  int fh = title_h; // Title bar only for now, as content can scroll
+  if (!win->frame_cache || win->frame_cache_w != fw || win->frame_cache_h != fh) {
+    if (win->frame_cache) free(win->frame_cache);
+    win->frame_cache = (uint32_t *)malloc((size_t)fw * (size_t)fh * 4);
+    win->frame_cache_w = fw;
+    win->frame_cache_h = fh;
+  }
+  
+  uint32_t theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
+  for (int y = 0; y < fh; y++) {
+    for (int x = 0; x < fw; x++) {
+      float alpha_f = 1.0f;
+      float fdx = (float)x, fdy = (float)y;
+      if (fdx < win_r && fdy < win_r) {
+        float dist = sqrtf((fdx - win_r) * (fdx - win_r) + (fdy - win_r) * (fdy - win_r));
+        if (dist > win_r + 0.5f) alpha_f = 0.0f;
+        else if (dist > win_r - 0.5f) alpha_f = win_r + 0.5f - dist;
+      } else if (fdx > (float)fw - win_r - 1.0f && fdy < win_r) {
+        float dist = sqrtf((fdx - ((float)fw - win_r - 1.0f)) * (fdx - ((float)fw - win_r - 1.0f)) + (fdy - win_r) * (fdy - win_r));
+        if (dist > win_r + 0.5f) alpha_f = 0.0f;
+        else if (dist > win_r - 0.5f) alpha_f = win_r + 0.5f - dist;
+      }
+      
+      uint32_t color = theme;
+      if (alpha_f < 1.0f) {
+        // Use a special value to indicate "blend with background"
+        // Since frame_cache is 32-bit ARGB, we store alpha here.
+        uint8_t a_val = (uint8_t)(alpha_f * 255.0f);
+        win->frame_cache[y * fw + x] = ((uint32_t)a_val << 24) | (color & 0x00FFFFFF);
+      } else {
+        win->frame_cache[y * fw + x] = 0xFF000000 | color;
+      }
+    }
+  }
+}
 
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx) return;
@@ -1126,6 +1215,9 @@ static void window_redraw(window_t *win) {
   }
   nsvgDelete(img);
   win->is_dirty = 0;
+  
+  // Update caches after redraw
+  window_update_caches(win);
 }
 
 static void add_window(const char *title, int x, int y, int w, int h) {
@@ -1137,11 +1229,14 @@ static void add_window(const char *title, int x, int y, int w, int h) {
   strncpy(win->title, title, 63);
   win->warp_ctx = warp_context_create(g_warp_buffer);
   win->rgba_buffer = NULL;
+  win->shadow_cache = NULL;
+  win->frame_cache = NULL;
   win->is_dirty = 1;
   win->is_maximized = 0;
   win->is_dragging = 0;
   win->is_resizing = 0;
   g_active_window_index = g_window_count - 1;
+  window_update_caches(win);
 }
 
 static void close_active_window() {
@@ -1174,116 +1269,66 @@ static void redraw_warp_svg(layer_t *layer) {
     window_t *win = &g_windows[i];
     if (win->is_dirty) window_redraw(win);
     
-    if (win->rgba_buffer) {
-      // Draw Window Shadow (Single-pass Rounded SDF)
+    if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
+      int title_h = 40;
       int shadow_size = 48;
-      float win_r = 20.0f;
-      int win_x = win->x;
-      int win_y = win->y;
-      int win_w = win->w - 1;
-      int win_h = win->h - 20;
       
-      int shadow_offset_x = 0;
-      int shadow_offset_y = 8;
+      // 1. Draw Window Shadow from Cache
+      int sw = win->shadow_cache_w;
+      int sh = win->shadow_cache_h;
+      int sx_start = win->x - shadow_size;
+      int sy_start = win->y - title_h - shadow_size + 8; // Offset Y by 8
       
-      int min_x = win_x - shadow_size + shadow_offset_x;
-      int max_x = win_x + win_w + shadow_size + shadow_offset_x;
-      int min_y = win_y - shadow_size + shadow_offset_y;
-      int max_y = win_y + win_h + shadow_size + shadow_offset_y;
-      
-      for (int py = min_y; py < max_y; py++) {
+      for (int dy = 0; dy < sh; dy++) {
+        int py = sy_start + dy;
         if (py < 0 || py >= layer->height) continue;
-        uint32_t *line = &layer->buffer[py * layer->width];
-        for (int px = min_x; px < max_x; px++) {
+        
+        uint32_t *dst_line = &layer->buffer[py * layer->width];
+        uint8_t *src_mask = &win->shadow_cache[dy * sw];
+        
+        for (int dx = 0; dx < sw; dx++) {
+          int px = sx_start + dx;
           if (px < 0 || px >= layer->width) continue;
           
-          // 1. Skip window interior (with rounded corners)
-          if (px >= win_x && px < win_x + win_w && py >= win_y && py < win_y + win_h) {
-            float dx_in = 0, dy_in = 0;
-            if (px < win_x + (int)win_r) dx_in = (win_x + win_r) - (float)px;
-            else if (px > win_x + win_w - (int)win_r - 1) dx_in = (float)px - (win_x + win_w - win_r - 1);
-            if (py < win_y + (int)win_r) dy_in = (win_y + win_r) - (float)py;
-            else if (py > win_y + win_h - (int)win_r - 1) dy_in = (float)py - (win_y + win_h - win_r - 1);
-            
-            if (dx_in > 0 && dy_in > 0) {
-              if (sqrtf(dx_in*dx_in + dy_in*dy_in) <= win_r) continue; // Inside corner
-            } else {
-              continue; // Inside body
-            }
-          }
+          uint8_t alpha = src_mask[dx];
+          if (alpha == 0) continue;
           
-          // 2. Calculate shadow distance to rounded rect
-          float tx = (float)(px - shadow_offset_x);
-          float ty = (float)(py - shadow_offset_y);
-          float qx = fabsf(tx - (win_x + win_w / 2.0f)) - (win_w / 2.0f - win_r);
-          float qy = fabsf(ty - (win_y + win_h / 2.0f)) - (win_h / 2.0f - win_r);
-          float mx = (qx > 0.0f) ? qx : 0.0f;
-          float my = (qy > 0.0f) ? qy : 0.0f;
-          float inner = (qx > qy) ? qx : qy;
-          if (inner > 0.0f) inner = 0.0f;
-          float dist = sqrtf(mx*mx + my*my) + inner - win_r;
-          
-          if (dist > 0 && dist < (float)shadow_size) {
-            float d_ratio = dist / (float)shadow_size;
-            // Smooth quadratic falloff
-            uint8_t alpha = (uint8_t)(64.0f * (1.0f - d_ratio) * (1.0f - d_ratio));
-            if (alpha > 0) {
-              uint32_t bg = line[px];
-              uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-              uint8_t r_out = (uint8_t)(r_b * (255 - alpha) / 255);
-              uint8_t g_out = (uint8_t)(g_b * (255 - alpha) / 255);
-              uint8_t b_out = (uint8_t)(b_b * (255 - alpha) / 255);
-              line[px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
-            }
-          }
+          uint32_t bg = dst_line[px];
+          uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+          uint8_t r_out = (uint8_t)(r_b * (255 - alpha) / 255);
+          uint8_t g_out = (uint8_t)(g_b * (255 - alpha) / 255);
+          uint8_t b_out = (uint8_t)(b_b * (255 - alpha) / 255);
+          dst_line[px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
         }
       }
 
-      int title_h = 40;
-      uint32_t theme = (i == g_active_window_index) ? 0xFFF5F5F5 : 0xFFE0E0E0;
-      
-      // Title bar with rounded corners (20px)
-      float r_corner = 20.0f;
-      for (int dy = -title_h; dy < 0; dy++) {
-        int py = win->y + dy;
+      // 2. Draw Title Bar from Cache
+      uint32_t *src_frame = win->frame_cache;
+      for (int dy = 0; dy < title_h; dy++) {
+        int py = win->y - title_h + dy;
         if (py < 0 || py >= layer->height) continue;
+        uint32_t *dst_line = &layer->buffer[py * layer->width];
         for (int dx = 0; dx < win->w; dx++) {
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
-
-          float alpha_f = 1.0f;
-          float fdx = (float)dx, fdy = (float)(dy + title_h);
-          if (fdx < r_corner && fdy < r_corner) {
-            float dist = sqrtf((fdx - r_corner) * (fdx - r_corner) + (fdy - r_corner) * (fdy - r_corner));
-            if (dist > r_corner + 0.5f) alpha_f = 0.0f;
-            else if (dist > r_corner - 0.5f) alpha_f = r_corner + 0.5f - dist;
-          } else if (fdx > (float)win->w - r_corner - 1.0f && fdy < r_corner) {
-            float dist = sqrtf((fdx - ((float)win->w - r_corner - 1.0f)) * (fdx - ((float)win->w - r_corner - 1.0f)) + (fdy - r_corner) * (fdy - r_corner));
-            if (dist > r_corner + 0.5f) alpha_f = 0.0f;
-            else if (dist > r_corner - 0.5f) alpha_f = r_corner + 0.5f - dist;
-          }
-
-          if (alpha_f >= 1.0f) {
-            layer->buffer[py * layer->width + px] = theme;
-          } else if (alpha_f > 0.0f) {
-            uint32_t bg = layer->buffer[py * layer->width + px];
-            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-            uint8_t r_t = (theme >> 16) & 0xFF, g_t = (theme >> 8) & 0xFF, b_t = theme & 0xFF;
-            uint8_t r_out = (uint8_t)(r_t * alpha_f + r_b * (1.0f - alpha_f));
-            uint8_t g_out = (uint8_t)(g_t * alpha_f + g_b * (1.0f - alpha_f));
-            uint8_t b_out = (uint8_t)(b_t * alpha_f + b_b * (1.0f - alpha_f));
-            layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+          
+          uint32_t color = src_frame[dy * win->w + dx];
+          uint8_t alpha = (color >> 24) & 0xFF;
+          if (alpha == 255) {
+            dst_line[px] = color;
+          } else if (alpha > 0) {
+            dst_line[px] = blend_colors(dst_line[px], color, alpha);
           }
         }
       }
       
-      // Title bar content
+      // 3. Title bar content
       char header_text[128];
       int action_count = 0;
       if (win->warp_ctx && warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count)) {
         layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
         
-        // Actions on the right (with Anti-Aliasing and card style)
+        // Actions on the right (Buttons)
         int ax = win->x + win->w - 12;
         for (int j = 0; j < action_count; j++) {
           char act_text[64];
@@ -1293,7 +1338,7 @@ static void redraw_warp_svg(layer_t *layer) {
           int btn_h = 26; 
           ax -= btn_w;
           
-          float r = 8.0f; // corner radius
+          float r = 8.0f; // button radius
           for (int dy = 0; dy < btn_h; dy++) {
             int py = win->y - 33 + dy; 
             if (py < 0 || py >= layer->height) continue;
@@ -1305,46 +1350,27 @@ static void redraw_warp_svg(layer_t *layer) {
               float fdx = (float)dx, fdy = (float)dy;
               float fbw = (float)btn_w, fbh = (float)btn_h;
 
-              // Anti-aliased rounded corner logic
-              int is_border = 0;
               if (fdx < r && fdy < r) {
                 float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-r)*(fdy-r));
                 if (dist > r + 0.5f) alpha_f = 0.0f;
                 else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
               } else if (fdx > fbw-r-1.0f && fdy < r) {
                 float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-r)*(fdy-r));
                 if (dist > r + 0.5f) alpha_f = 0.0f;
                 else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
               } else if (fdx < r && fdy > fbh-r-1.0f) {
                 float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
                 if (dist > r + 0.5f) alpha_f = 0.0f;
                 else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
               } else if (fdx > fbw-r-1.0f && fdy > fbh-r-1.0f) {
                 float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
                 if (dist > r + 0.5f) alpha_f = 0.0f;
                 else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
-              } else {
-                // Straight edges border
-                if (fdx < 1.0f || fdx > fbw-2.0f || fdy < 1.0f || fdy > fbh-2.0f) is_border = 1;
               }
 
               if (alpha_f > 0.0f) {
-                uint32_t btn_color = is_border ? 0xFFDDDDDD : 0xFFFFFFFF;
-                if (alpha_f >= 1.0f) {
-                  layer->buffer[py * layer->width + px] = btn_color;
-                } else {
-                  uint32_t bg = layer->buffer[py * layer->width + px];
-                  uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-                  uint8_t r_f = (btn_color >> 16) & 0xFF, g_f = (btn_color >> 8) & 0xFF, b_f = btn_color & 0xFF;
-                  uint8_t r_out = (uint8_t)(r_f * alpha_f + r_b * (1.0f - alpha_f));
-                  uint8_t g_out = (uint8_t)(g_f * alpha_f + g_b * (1.0f - alpha_f));
-                  uint8_t b_out = (uint8_t)(b_f * alpha_f + b_b * (1.0f - alpha_f));
-                  layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
-                }
+                uint32_t btn_color = 0xFFFFFFFF;
+                layer->buffer[py * layer->width + px] = blend_colors(layer->buffer[py * layer->width + px], btn_color, (uint8_t)(alpha_f * 255));
               }
             }
           }
@@ -1355,117 +1381,74 @@ static void redraw_warp_svg(layer_t *layer) {
         layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
       }
       
-      // Buttons (Circles on the left with Anti-Aliasing)
+      // 4. Draw control circles
       float btn_r = 7.0f;
       int btn_y = win->y - 20;
       int i_r = (int)btn_r + 1;
-
-      // Draw Red button (Close) - #FC2836
-      int red_center_x = win->x + 20;
-      for (int dy = -i_r; dy <= i_r; dy++) {
-        for (int dx = -i_r; dx <= i_r; dx++) {
-          float dist = sqrtf((float)(dx*dx + dy*dy));
-          float alpha_f = 0.0f;
-          if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
-          else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
-          
-          if (alpha_f > 0.0f) {
-            int px = red_center_x + dx;
-            int py = btn_y + dy;
-            if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
-              if (alpha_f >= 1.0f) {
-                layer->buffer[py * layer->width + px] = 0xFFFF2836;
-              } else {
-                uint32_t bg = layer->buffer[py * layer->width + px];
-                uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-                uint8_t r_out = (uint8_t)(0xFC * alpha_f + r_b * (1.0f - alpha_f));
-                uint8_t g_out = (uint8_t)(0x28 * alpha_f + g_b * (1.0f - alpha_f));
-                uint8_t b_out = (uint8_t)(0x36 * alpha_f + b_b * (1.0f - alpha_f));
-                layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+      uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
+      int centers_x[] = {win->x + 20, win->x + 44};
+      for (int k = 0; k < 2; k++) {
+        for (int dy = -i_r; dy <= i_r; dy++) {
+          for (int dx = -i_r; dx <= i_r; dx++) {
+            float dist = sqrtf((float)(dx*dx + dy*dy));
+            float alpha_f = 0.0f;
+            if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
+            else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
+            if (alpha_f > 0.0f) {
+              int px = centers_x[k] + dx;
+              int py = btn_y + dy;
+              if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
+                layer->buffer[py * layer->width + px] = blend_colors(layer->buffer[py * layer->width + px], colors[k], (uint8_t)(alpha_f * 255));
               }
             }
           }
         }
       }
 
-      // Draw Green button (Maximize) - #2ECC46
-      int green_center_x = win->x + 44;
-      for (int dy = -i_r; dy <= i_r; dy++) {
-        for (int dx = -i_r; dx <= i_r; dx++) {
-          float dist = sqrtf((float)(dx*dx + dy*dy));
-          float alpha_f = 0.0f;
-          if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
-          else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
-          
-          if (alpha_f > 0.0f) {
-            int px = green_center_x + dx;
-            int py = btn_y + dy;
-            if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
-              if (alpha_f >= 1.0f) {
-                layer->buffer[py * layer->width + px] = 0xFF2ECC46;
-              } else {
-                uint32_t bg = layer->buffer[py * layer->width + px];
-                uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-                uint8_t r_out = (uint8_t)(0x2E * alpha_f + r_b * (1.0f - alpha_f));
-                uint8_t g_out = (uint8_t)(0xCC * alpha_f + g_b * (1.0f - alpha_f));
-                uint8_t b_out = (uint8_t)(0x46 * alpha_f + b_b * (1.0f - alpha_f));
-                layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
-              }
-            }
-          }
-        }
-      }
-      
-      // Content with scroll offset
+      // 5. Content with scroll offset and bottom corners
       int sy_int = (int)roundf(win->scroll_y);
+      float r_corner_val = 20.0f;
       for (int dy = 0; dy < win->h; dy++) {
         int py = win->y + dy;
         if (py < 0 || py >= layer->height) continue;
-        
         int src_y = dy - sy_int;
+        uint32_t *dst_line = &layer->buffer[py * layer->width];
+        
         if (src_y < 0 || src_y >= win->buffer_h) {
           for (int dx = 0; dx < win->w; dx++) {
-            if (win->x + dx >= 0 && win->x + dx < layer->width) layer->buffer[py * layer->width + win->x + dx] = 0xFFFFFFFF;
+            if (win->x + dx >= 0 && win->x + dx < layer->width) dst_line[win->x + dx] = 0xFFFFFFFF;
           }
           continue;
         }
 
+        uint32_t *src_content = (uint32_t*)&win->rgba_buffer[src_y * win->w * 4];
         for (int dx = 0; dx < win->w; dx++) {
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
 
           float alpha_f = 1.0f;
           float fdx = (float)dx, fdy = (float)dy;
-          float r_corner_val = 20.0f;
-          // Bottom-left corner
-          if (fdx < r_corner_val && fdy > (float)win->h - r_corner_val - 1.0f) {
-            float dist = sqrtf((fdx - r_corner_val) * (fdx - r_corner_val) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
-            if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
-            else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
-          } 
-          // Bottom-right corner
-          else if (fdx > (float)win->w - r_corner_val - 1.0f && fdy > (float)win->h - r_corner_val - 1.0f) {
-            float dist = sqrtf((fdx - ((float)win->w - r_corner_val - 1.0f)) * (fdx - ((float)win->w - r_corner_val - 1.0f)) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
-            if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
-            else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
+          if (fdy > (float)win->h - r_corner_val - 1.0f) {
+            if (fdx < r_corner_val) {
+              float dist = sqrtf((fdx - r_corner_val) * (fdx - r_corner_val) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
+              if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
+              else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
+            } else if (fdx > (float)win->w - r_corner_val - 1.0f) {
+              float dist = sqrtf((fdx - ((float)win->w - r_corner_val - 1.0f)) * (fdx - ((float)win->w - r_corner_val - 1.0f)) + (fdy - ((float)win->h - r_corner_val - 1.0f)) * (fdy - ((float)win->h - r_corner_val - 1.0f)));
+              if (dist > r_corner_val + 0.5f) alpha_f = 0.0f;
+              else if (dist > r_corner_val - 0.5f) alpha_f = r_corner_val + 0.5f - dist;
+            }
           }
 
-          uint32_t src_color = ((uint32_t*)win->rgba_buffer)[src_y * win->w + dx];
           if (alpha_f >= 1.0f) {
-            layer->buffer[py * layer->width + px] = src_color;
+            dst_line[px] = src_content[dx];
           } else if (alpha_f > 0.0f) {
-            uint32_t bg = layer->buffer[py * layer->width + px];
-            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-            uint8_t r_s = (src_color >> 16) & 0xFF, g_s = (src_color >> 8) & 0xFF, b_s = src_color & 0xFF;
-            uint8_t r_out = (uint8_t)(r_s * alpha_f + r_b * (1.0f - alpha_f));
-            uint8_t g_out = (uint8_t)(g_s * alpha_f + g_b * (1.0f - alpha_f));
-            uint8_t b_out = (uint8_t)(b_s * alpha_f + b_b * (1.0f - alpha_f));
-            layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+            dst_line[px] = blend_colors(dst_line[px], src_content[dx], (uint8_t)(alpha_f * 255));
           }
         }
       }
       
-      // Handle
+      // 6. Handle
       if (i == g_active_window_index) {
         int handle_s = 12;
         for (int dy = win->h - handle_s; dy < win->h; dy++) {
@@ -1473,7 +1456,7 @@ static void redraw_warp_svg(layer_t *layer) {
           if (py < 0 || py >= layer->height) continue;
           for (int dx = win->w - handle_s; dx < win->w; dx++) {
             int px = win->x + dx;
-            if (px >= 0 && px < layer->width) layer->buffer[py * layer->width + px] = 0xFFCCCCCC;
+            if (px >= 0 && px < layer->width) layer->buffer[py * layer->width + px] = blend_colors(layer->buffer[py * layer->width + px], 0xFFCCCCCC, 255);
           }
         }
       }
