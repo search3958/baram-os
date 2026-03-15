@@ -1107,7 +1107,7 @@ static void window_update_caches(window_t *win) {
   int shadow_size = 48;
   float win_r = 20.0f;
   
-  // 1. Update Shadow Cache (Alpha only)
+  // 1. Update Shadow Cache (Alpha only) - Optimized with symmetry
   int sw = win->w + shadow_size * 2;
   int sh = win->h + title_h + shadow_size * 2;
   if (!win->shadow_cache || win->shadow_cache_w != sw || win->shadow_cache_h != sh) {
@@ -1116,16 +1116,16 @@ static void window_update_caches(window_t *win) {
     win->shadow_cache_w = sw;
     win->shadow_cache_h = sh;
     
-    // Calculate SDF Shadow once
     float win_w_f = (float)win->w;
     float win_h_f = (float)(win->h + title_h);
-    float cx = (float)sw / 2.0f;
-    float cy = (float)sh / 2.0f;
+    float half_sw = (float)sw / 2.0f;
+    float half_sh = (float)sh / 2.0f;
     
-    for (int y = 0; y < sh; y++) {
-      for (int x = 0; x < sw; x++) {
-        float qx = fabsf((float)x - cx) - (win_w_f / 2.0f - win_r);
-        float qy = fabsf((float)y - cy) - (win_h_f / 2.0f - win_r);
+    // Calculate only one quadrant and mirror
+    for (int y = 0; y <= sh / 2; y++) {
+      for (int x = 0; x <= sw / 2; x++) {
+        float qx = fabsf((float)x - half_sw) - (win_w_f / 2.0f - win_r);
+        float qy = fabsf((float)y - half_sh) - (win_h_f / 2.0f - win_r);
         float mx = (qx > 0.0f) ? qx : 0.0f;
         float my = (qy > 0.0f) ? qy : 0.0f;
         float inner = (qx > qy) ? qx : qy;
@@ -1139,14 +1139,18 @@ static void window_update_caches(window_t *win) {
           float d_ratio = dist / (float)shadow_size;
           alpha = (uint8_t)(64.0f * (1.0f - d_ratio) * (1.0f - d_ratio));
         }
+        
         win->shadow_cache[y * sw + x] = alpha;
+        win->shadow_cache[y * sw + (sw - 1 - x)] = alpha;
+        win->shadow_cache[(sh - 1 - y) * sw + x] = alpha;
+        win->shadow_cache[(sh - 1 - y) * sw + (sw - 1 - x)] = alpha;
       }
     }
   }
   
-  // 2. Update Frame Cache (Title bar with rounded corners)
+  // 2. Update Frame Cache (Title bar)
   int fw = win->w;
-  int fh = title_h; // Title bar only for now, as content can scroll
+  int fh = title_h;
   if (!win->frame_cache || win->frame_cache_w != fw || win->frame_cache_h != fh) {
     if (win->frame_cache) free(win->frame_cache);
     win->frame_cache = (uint32_t *)malloc((size_t)fw * (size_t)fh * 4);
@@ -1155,40 +1159,36 @@ static void window_update_caches(window_t *win) {
   }
   
   uint32_t theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
-  for (int y = 0; y < fh; y++) {
-    for (int x = 0; x < fw; x++) {
-      win->frame_cache[y * fw + x] = 0xFF000000 | theme;
-    }
-  }
+  for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = 0xFF000000 | theme;
 
-  // 3. Update Window Mask Cache (Squircle)
+  // 3. Update Window Mask Cache (Squircle) - Optimized with direct SDF
   int mw = win->w;
   int mh = win->h + title_h;
   if (!win->window_mask || win->buffer_w != win->w || win->buffer_h != mh) {
     if (win->window_mask) free(win->window_mask);
     win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
     
-    char svg_buf[4096];
-    svg_buf[0] = '\0';
-    char w_str[16], h_str[16];
-    append_int(w_str, mw);
-    append_int(h_str, mh);
-    warp_strcat(svg_buf, "<svg width=\""); warp_strcat(svg_buf, w_str);
-    warp_strcat(svg_buf, "\" height=\""); warp_strcat(svg_buf, h_str);
-    warp_strcat(svg_buf, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-    emit_squircle_shape_to(svg_buf, sizeof(svg_buf), 0, 0, mw, mh, 20.0f, "black", "");
-    warp_strcat(svg_buf, "</svg>");
-    
-    NSVGimage *mask_img = nsvgParse(svg_buf, "px", 96.0f);
-    if (mask_img) {
-      if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-      unsigned char *rgba_mask = (unsigned char *)malloc((size_t)mw * (size_t)mh * 4);
-      nsvgRasterize(g_svg_rast, mask_img, 0, 0, 1.0f, rgba_mask, mw, mh, mw * 4);
-      for (int i = 0; i < mw * mh; i++) {
-        win->window_mask[i] = rgba_mask[i * 4 + 3]; // Use alpha channel
+    float half_mw = (float)mw / 2.0f;
+    float half_mh = (float)mh / 2.0f;
+    for (int y = 0; y <= mh / 2; y++) {
+      for (int x = 0; x <= mw / 2; x++) {
+        float qx = fabsf((float)x - half_mw) - (half_mw - win_r);
+        float qy = fabsf((float)y - half_mh) - (half_mh - win_r);
+        float mx = (qx > 0.0f) ? qx : 0.0f;
+        float my = (qy > 0.0f) ? qy : 0.0f;
+        float inner = (qx > qy) ? qx : qy;
+        if (inner > 0.0f) inner = 0.0f;
+        float dist = sqrtf(mx*mx + my*my) + inner - win_r;
+        
+        uint8_t alpha = 255;
+        if (dist > 0.5f) alpha = 0;
+        else if (dist > -0.5f) alpha = (uint8_t)((0.5f - dist) * 255.0f);
+        
+        win->window_mask[y * mw + x] = alpha;
+        win->window_mask[y * mw + (mw - 1 - x)] = alpha;
+        win->window_mask[(mh - 1 - y) * mw + x] = alpha;
+        win->window_mask[(mh - 1 - y) * mw + (mw - 1 - x)] = alpha;
       }
-      free(rgba_mask);
-      nsvgDelete(mask_img);
     }
   }
 }
@@ -1293,6 +1293,7 @@ static void draw_wallpaper(layer_t *layer) {
 }
 
 static void redraw_warp_svg(layer_t *layer) {
+  if (!g_svg_dirty) return;
   draw_wallpaper(layer);
   
   for (int i = 0; i < g_window_count; i++) {
@@ -1311,47 +1312,49 @@ static void redraw_warp_svg(layer_t *layer) {
         int sx_start = win->x - shadow_size;
         int sy_start = win->y - title_h - shadow_size + 8; // Offset Y by 8
         
-        for (int dy = 0; dy < sh; dy++) {
+        int y0 = (sy_start < 0) ? -sy_start : 0;
+        int y1 = (sy_start + sh > layer->height) ? layer->height - sy_start : sh;
+        int x0 = (sx_start < 0) ? -sx_start : 0;
+        int x1 = (sx_start + sw > layer->width) ? layer->width - sx_start : sw;
+
+        for (int dy = y0; dy < y1; dy++) {
           int py = sy_start + dy;
-          if (py < 0 || py >= layer->height) continue;
-          
           uint32_t *dst_line = &layer->buffer[py * layer->width];
           uint8_t *src_mask = &win->shadow_cache[dy * sw];
           
-          for (int dx = 0; dx < sw; dx++) {
-            int px = sx_start + dx;
-            if (px < 0 || px >= layer->width) continue;
-            
+          for (int dx = x0; dx < x1; dx++) {
             uint8_t alpha = src_mask[dx];
             if (alpha == 0) continue;
             
+            int px = sx_start + dx;
             uint32_t bg = dst_line[px];
-            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
-            uint8_t r_out = (uint8_t)(r_b * (255 - alpha) / 255);
-            uint8_t g_out = (uint8_t)(g_b * (255 - alpha) / 255);
-            uint8_t b_out = (uint8_t)(b_b * (255 - alpha) / 255);
-            dst_line[px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+            // Shadow is black (0,0,0), so we just darken the background
+            uint32_t inv_alpha = 255 - alpha;
+            uint32_t rb = (bg & 0xFF00FFu) * inv_alpha >> 8;
+            uint32_t g = ((bg >> 8) & 0xFF) * inv_alpha >> 8;
+            dst_line[px] = (0xFF000000u) | (rb & 0xFF00FFu) | (g << 8);
           }
         }
       }
 
       // 2. Draw Title Bar from Cache
       uint32_t *src_frame = win->frame_cache;
-      for (int dy = 0; dy < title_h; dy++) {
+      int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
+      int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
+      int tx0 = (win->x < 0) ? -win->x : 0;
+      int tx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
+
+      for (int dy = ty0; dy < ty1; dy++) {
         int py = win->y - title_h + dy;
-        if (py < 0 || py >= layer->height) continue;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
-        for (int dx = 0; dx < win->w; dx++) {
+        uint32_t *src_line = &src_frame[dy * win->w];
+        uint8_t *mask_line = &win->window_mask[dy * win->w];
+        for (int dx = tx0; dx < tx1; dx++) {
           int px = win->x + dx;
-          if (px < 0 || px >= layer->width) continue;
-          
-          uint32_t color = src_frame[dy * win->w + dx];
-          uint8_t alpha = win->is_maximized ? 255 : win->window_mask[dy * win->w + dx]; // Ignore mask if maximized
-          if (alpha == 255) {
-            dst_line[px] = color;
-          } else if (alpha > 0) {
-            dst_line[px] = blend_colors(dst_line[px], color, alpha);
-          }
+          uint32_t color = src_line[dx];
+          uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+          if (alpha == 255) dst_line[px] = color;
+          else if (alpha > 0) dst_line[px] = blend_colors(dst_line[px], color, alpha);
         }
       }
       
@@ -1372,13 +1375,16 @@ static void redraw_warp_svg(layer_t *layer) {
           ax -= btn_w;
           
           float r = 8.0f; // button radius
-          for (int dy = 0; dy < btn_h; dy++) {
+          int ay0 = (win->y - 33 < 0) ? -(win->y - 33) : 0;
+          int ay1 = (win->y - 33 + btn_h > layer->height) ? (layer->height - (win->y - 33)) : btn_h;
+          int ax0 = (ax < 0) ? -ax : 0;
+          int ax1 = (ax + btn_w > layer->width) ? (layer->width - ax) : btn_w;
+
+          for (int dy = ay0; dy < ay1; dy++) {
             int py = win->y - 33 + dy; 
-            if (py < 0 || py >= layer->height) continue;
-            for (int dx = 0; dx < btn_w; dx++) {
+            uint32_t *dst_line = &layer->buffer[py * layer->width];
+            for (int dx = ax0; dx < ax1; dx++) {
               int px = ax + dx;
-              if (px < 0 || px >= layer->width) continue;
-              
               float alpha_f = 1.0f;
               float fdx = (float)dx, fdy = (float)dy;
               float fbw = (float)btn_w, fbh = (float)btn_h;
@@ -1402,8 +1408,7 @@ static void redraw_warp_svg(layer_t *layer) {
               }
 
               if (alpha_f > 0.0f) {
-                uint32_t btn_color = 0xFFFFFFFF;
-                layer->buffer[py * layer->width + px] = blend_colors(layer->buffer[py * layer->width + px], btn_color, (uint8_t)(alpha_f * 255));
+                dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, (uint8_t)(alpha_f * 255));
               }
             }
           }
@@ -1421,18 +1426,22 @@ static void redraw_warp_svg(layer_t *layer) {
       uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
       int centers_x[] = {win->x + 20, win->x + 44};
       for (int k = 0; k < 2; k++) {
-        for (int dy = -i_r; dy <= i_r; dy++) {
-          for (int dx = -i_r; dx <= i_r; dx++) {
+        int cy0 = (btn_y - i_r < 0) ? -(btn_y - i_r) : -i_r;
+        int cy1 = (btn_y + i_r >= layer->height) ? (layer->height - 1 - btn_y) : i_r;
+        int cx0 = (centers_x[k] - i_r < 0) ? -(centers_x[k] - i_r) : -i_r;
+        int cx1 = (centers_x[k] + i_r >= layer->width) ? (layer->width - 1 - centers_x[k]) : i_r;
+
+        for (int dy = cy0; dy <= cy1; dy++) {
+          int py = btn_y + dy;
+          uint32_t *dst_line = &layer->buffer[py * layer->width];
+          for (int dx = cx0; dx <= cx1; dx++) {
             float dist = sqrtf((float)(dx*dx + dy*dy));
             float alpha_f = 0.0f;
             if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
             else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
             if (alpha_f > 0.0f) {
               int px = centers_x[k] + dx;
-              int py = btn_y + dy;
-              if (px >= 0 && px < layer->width && py >= 0 && py < layer->height) {
-                layer->buffer[py * layer->width + px] = blend_colors(layer->buffer[py * layer->width + px], colors[k], (uint8_t)(alpha_f * 255));
-              }
+              dst_line[px] = blend_colors(dst_line[px], colors[k], (uint8_t)(alpha_f * 255));
             }
           }
         }
@@ -1440,9 +1449,13 @@ static void redraw_warp_svg(layer_t *layer) {
 
       // 5. Content with scroll offset and squircle corners
       int sy_int = (int)roundf(win->scroll_y);
-      for (int dy = 0; dy < win->h; dy++) {
+      int cy0 = (win->y < 0) ? -win->y : 0;
+      int cy1 = (win->y + win->h > layer->height) ? (layer->height - win->y) : win->h;
+      int cx0 = (win->x < 0) ? -win->x : 0;
+      int cx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
+
+      for (int dy = cy0; dy < cy1; dy++) {
         int py = win->y + dy;
-        if (py < 0 || py >= layer->height) continue;
         int src_y = dy - sy_int;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
         
@@ -1451,40 +1464,34 @@ static void redraw_warp_svg(layer_t *layer) {
         int frozen_h = win->is_resizing ? win->resize_h : win->h;
 
         if (src_y < 0 || src_y >= win->buffer_h || (win->is_resizing && (dy >= frozen_h || src_y >= frozen_h))) {
-          for (int dx = 0; dx < win->w; dx++) {
-            if (win->x + dx >= 0 && win->x + dx < layer->width) {
-              uint8_t alpha = win->is_maximized ? 255 : win->window_mask[(dy + title_h) * win->w + dx];
-              uint32_t color = 0xFFFFFFFF; // White background
-              if (alpha == 255) dst_line[win->x + dx] = color;
-              else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], color, alpha);
-            }
+          uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
+          for (int dx = cx0; dx < cx1; dx++) {
+            uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+            if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
+            else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
           }
           continue;
         }
 
         uint32_t *src_content = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
-        for (int dx = 0; dx < win->w; dx++) {
-          int px = win->x + dx;
-          if (px < 0 || px >= layer->width) continue;
+        uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
+        uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
 
-          uint8_t alpha = win->is_maximized ? 255 : win->window_mask[(dy + title_h) * win->w + dx];
+        for (int dx = cx0; dx < cx1; dx++) {
+          int px = win->x + dx;
+          uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
           if (alpha > 0) {
             uint32_t color;
             if (win->is_resizing && dx >= frozen_w) {
-              color = 0xFFFFFFFF; // Areas outside old bounds are white
+              color = 0xFFFFFFFF; 
             } else {
-              color = src_content[dx]; // Access old content within frozen bounds
-              if (win->fade_alpha > 0.0f) {
-                // Blend with white based on fade_alpha
-                color = blend_colors(color, 0xFFFFFFFF, (uint8_t)(win->fade_alpha * 255));
+              color = src_content[dx];
+              if (fade_alpha_u8 > 0) {
+                color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
               }
             }
-            
-            if (alpha == 255) {
-              dst_line[px] = color;
-            } else {
-              dst_line[px] = blend_colors(dst_line[px], color, alpha);
-            }
+            if (alpha == 255) dst_line[px] = color;
+            else dst_line[px] = blend_colors(dst_line[px], color, alpha);
           }
         }
       }
@@ -1492,17 +1499,23 @@ static void redraw_warp_svg(layer_t *layer) {
       // 6. Handle
       if (i == g_active_window_index) {
         int handle_s = 12;
-        for (int dy = win->h - handle_s; dy < win->h; dy++) {
+        int hy0 = (win->h - handle_s < cy0) ? cy0 : win->h - handle_s;
+        int hy1 = (win->h > cy1) ? cy1 : win->h;
+        int hx0 = (win->w - handle_s < cx0) ? cx0 : win->w - handle_s;
+        int hx1 = (win->w > cx1) ? cx1 : win->w;
+
+        for (int dy = hy0; dy < hy1; dy++) {
           int py = win->y + dy;
-          if (py < 0 || py >= layer->height) continue;
-          for (int dx = win->w - handle_s; dx < win->w; dx++) {
+          uint32_t *dst_line = &layer->buffer[py * layer->width];
+          for (int dx = hx0; dx < hx1; dx++) {
             int px = win->x + dx;
-            if (px >= 0 && px < layer->width) layer->buffer[py * layer->width + px] = blend_colors(layer->buffer[py * layer->width + px], 0xFFCCCCCC, 255);
+            dst_line[px] = blend_colors(dst_line[px], 0xFFCCCCCC, 255);
           }
         }
       }
     }
   }
+  g_svg_dirty = 0;
 }
 
 static int svg_init_nextgen(layer_t *layer) {
@@ -1963,27 +1976,21 @@ static int font_init(struct multiboot_info *mbi) {
 
 // 2つの色をアルファ値(0-255)で合成するヘルパー
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
-  if (alpha == 0)
-    return bg;
-  if (alpha == 255)
-    return (fg | 0xFF000000u);
+  if (alpha == 0) return bg;
+  if (alpha == 255) return (fg | 0xFF000000u);
 
   uint32_t a_bg = (bg >> 24) & 0xFF;
-  if (a_bg == 0) {
-    // 背景が透明な場合は、フォントのアルファをそのままレイヤーのアルファとして使う
-    return ((uint32_t)alpha << 24) | (fg & 0x00FFFFFFu);
-  }
+  if (a_bg == 0) return ((uint32_t)alpha << 24) | (fg & 0x00FFFFFFu);
 
-  // 背景が不透明な場合の通常のブレンド
-  uint32_t rb_fg = (fg & 0x00FF00FFu);
-  uint32_t g_fg = (fg & 0x0000FF00u);
-  uint32_t rb_bg = (bg & 0x00FF00FFu);
-  uint32_t g_bg = (bg & 0x0000FF00u);
+  uint32_t rb_bg = bg & 0xFF00FFu;
+  uint32_t g_bg = (bg >> 8) & 0xFF;
+  uint32_t rb_fg = fg & 0xFF00FFu;
+  uint32_t g_fg = (fg >> 8) & 0xFF;
 
-  uint32_t rb_out = (rb_fg * alpha + rb_bg * (255 - alpha)) >> 8;
-  uint32_t g_out = (g_fg * alpha + g_bg * (255 - alpha)) >> 8;
+  uint32_t rb_out = (rb_bg + (((rb_fg - rb_bg) * alpha) >> 8)) & 0xFF00FFu;
+  uint32_t g_out = (g_bg + (((g_fg - g_bg) * alpha) >> 8)) & 0xFF;
 
-  return (0xFF000000u) | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+  return 0xFF000000u | (g_out << 8) | rb_out;
 }
 
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
@@ -2705,7 +2712,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             }
           }
         }
-        if (moved) redraw_warp_svg(&nextgen_ui_layer);
+        if (moved) g_svg_dirty = 1;
       }
 
       // 3. Mouse Interaction
@@ -2816,7 +2823,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             add_window("New Warp", hx - 50, hy + 50, 400, 300);
           }
           g_svg_dirty = 1;
-          redraw_warp_svg(&nextgen_ui_layer);
         } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
           // Release
           for (int i = 0; i < g_window_count; i++) {
@@ -2854,7 +2860,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           window_update_caches(awin); 
           g_svg_dirty = 1;
         }
-        if (g_svg_dirty) redraw_warp_svg(&nextgen_ui_layer);
       }
 
       if (keybuf_len > 0) {
@@ -2872,7 +2877,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             handle_command(keybuf_str);
             keybuf_str[0] = '\0';
             g_svg_dirty = 1;
-            redraw_warp_svg(&nextgen_ui_layer);
           } else {
             int len = strlen(keybuf_str);
             if (len < KEYBUF_MAX - 1) {
@@ -2885,8 +2889,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         keybuf_len = 0;
         if (g_target_scroll_y > 0.0f)
           g_target_scroll_y = 0.0f;
-        redraw_warp_svg(&nextgen_ui_layer);
       }
+
+      if (g_svg_dirty) redraw_warp_svg(&nextgen_ui_layer);
 
       if (timer_ticks - last_stat_tick >= 100) {
         uint32_t total = timer_ticks - last_stat_tick;
