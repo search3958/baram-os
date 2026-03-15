@@ -806,7 +806,7 @@ static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
       const char *c_prop = get_attr(node, "color");
       const char *hex = get_color_hex(c_prop);
       if (warp_strcmp(node->tag, "tonalButton") == 0)
-        g_texts[g_texts_count].color = hex ? 0xFF000000 : 0xFF0A56D0;
+        g_texts[g_texts_count].color = 0xFF121212;
       else
         g_texts[g_texts_count].color = 0xFFFFFFFF;
       g_texts[g_texts_count].size = 16;

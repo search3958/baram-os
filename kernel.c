@@ -1010,10 +1010,21 @@ static void redraw_warp_svg(layer_t *layer) {
     if (g_nextgen_full_rgba && g_nextgen_svg_image) {
       if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
       
+      const uint32_t bg_color_native = 0xFFF5F5F5; // System native (ARGB)
+      
       if (size_changed) {
-        memset(g_nextgen_full_rgba, 0, (size_t)g_nextgen_full_w * (size_t)g_nextgen_full_h * 4);
+        for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
+          ((uint32_t*)g_nextgen_full_rgba)[i] = bg_color_native;
+        }
         nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f,
                       g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
+        
+        // Full buffer R/B swap
+        unsigned char *p = g_nextgen_full_rgba;
+        for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
+          unsigned char r = p[0], b = p[2];
+          p[0] = b; p[2] = r; p += 4;
+        }
         for(int i=0; i<MAX_NODES; i++) { if(g_node_svg_cache[i]) { nsvgDelete(g_node_svg_cache[i]); g_node_svg_cache[i]=NULL; } }
       } else {
         int node_count = warp_engine_get_node_count();
@@ -1026,12 +1037,13 @@ static void redraw_warp_svg(layer_t *layer) {
             int rs[2][4] = {{px, py, pw, ph}, {x, y, w, h}};
             for (int r=0; r<2; r++) {
               int rx=rs[r][0], ry=rs[r][1], rw=rs[r][2], rh=rs[r][3];
+              if (rw <= 0 || rh <= 0) continue;
               for (int dy = ry; dy < ry + rh && dy < g_nextgen_full_h; dy++) {
                 if (dy < 0) continue;
-                unsigned char *p = &g_nextgen_full_rgba[(dy * g_nextgen_full_w + rx) * 4];
+                uint32_t *p = (uint32_t*)&g_nextgen_full_rgba[(dy * g_nextgen_full_w + rx) * 4];
                 for (int dx = rx; dx < rx + rw && dx < g_nextgen_full_w; dx++) {
-                  if (dx < 0) { p+=4; continue; }
-                  p[0] = 0xF5; p[1] = 0xF5; p[2] = 0xF5; p[3] = 0xFF; p += 4;
+                  if (dx < 0) { p++; continue; }
+                  *p++ = bg_color_native;
                 }
               }
             }
@@ -1040,6 +1052,16 @@ static void redraw_warp_svg(layer_t *layer) {
             if (g_node_svg_cache[i]) {
               nsvgRasterize(g_svg_rast, g_node_svg_cache[i], 0, 0, 1.0f,
                             g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
+              // Partial buffer R/B swap
+              for (int dy = y; dy < y + h && dy < g_nextgen_full_h; dy++) {
+                if (dy < 0) continue;
+                unsigned char *p = &g_nextgen_full_rgba[(dy * g_nextgen_full_w + x) * 4];
+                for (int dx = x; dx < x + w && dx < g_nextgen_full_w; dx++) {
+                  if (dx < 0) { p += 4; continue; }
+                  unsigned char r = p[0], b = p[2];
+                  p[0] = b; p[2] = r; p += 4;
+                }
+              }
             }
           }
         }
@@ -1080,14 +1102,9 @@ static void redraw_warp_svg(layer_t *layer) {
     g_svg_dirty = 0;
   }
 
-  if (!g_nextgen_full_rgba)
-    return;
+  if (!g_nextgen_full_rgba) return;
 
   const uint32_t bg = 0xFFF5F5F5;
-  uint8_t bg_r = (bg >> 16) & 0xFF;
-  uint8_t bg_g = (bg >> 8) & 0xFF;
-  uint8_t bg_b = bg & 0xFF;
-
   int scroll_x = (int)roundf(g_scroll_x);
   int scroll_y = (int)roundf(g_scroll_y);
 
@@ -1095,32 +1112,17 @@ static void redraw_warp_svg(layer_t *layer) {
     uint32_t *line_dst = &layer->buffer[y * layer->width];
     int src_y = y - scroll_y;
     if (src_y < 0 || src_y >= g_nextgen_full_h) {
-      for (int x = 0; x < layer->width; x++)
-        line_dst[x] = bg;
+      for (int x = 0; x < layer->width; x++) line_dst[x] = bg;
       continue;
     }
-    unsigned char *line_src =
-        &g_nextgen_full_rgba[src_y * g_nextgen_full_w * 4];
-    for (int x = 0; x < layer->width; ++x) {
-      int src_x = x - scroll_x;
-      if (src_x < 0 || src_x >= g_nextgen_full_w) {
-        line_dst[x] = bg;
-        continue;
-      }
-      unsigned char *rgba = &line_src[src_x * 4];
-      uint8_t a = rgba[3];
-      if (a == 0) {
-        line_dst[x] = bg;
-      } else if (a == 255) {
-        // NanoSVG (RGBA) -> BaramOS (ARGB/ABGR) swap R/B
-        line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
-                      ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
-      } else {
-        uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
-        uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
-        uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
-        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
-                      ((uint32_t)out_g << 8) | (uint32_t)out_b;
+    uint32_t *line_src = (uint32_t*)&g_nextgen_full_rgba[src_y * g_nextgen_full_w * 4];
+    int src_x = -scroll_x;
+    if (src_x == 0 && layer->width <= g_nextgen_full_w) {
+      memcpy(line_dst, line_src, layer->width * 4);
+    } else {
+      for (int x = 0; x < layer->width; x++) {
+        int sx = x + src_x;
+        line_dst[x] = (sx >= 0 && sx < g_nextgen_full_w) ? line_src[sx] : bg;
       }
     }
   }
