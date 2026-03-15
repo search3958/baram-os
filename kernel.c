@@ -908,13 +908,18 @@ static uint32_t parse_rgba_smart(const char *str, int color_index) {
   return (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-static int svg_init(layer_t *layer) {
-  if (g_svg_ready)
+static int svg_init(layer_t *layer, int load_wallpaper) {
+  if (g_svg_ready && !load_wallpaper)
     return 1;
+  
+  if (load_wallpaper) {
+    g_svg_ready = 0; // 重走初期化
+  }
+
   layer_fill(layer, 0xFF000000);
 
   const char* svg_data = NULL;
-  if (g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
+  if (load_wallpaper && g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
     svg_data = g_wallpaper_buffer;
   } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
     svg_data = g_bootlogo_buffer;
@@ -923,6 +928,7 @@ static int svg_init(layer_t *layer) {
   if (!svg_data)
     return 0;
 
+  if (g_svg_image) nsvgDelete(g_svg_image);
   g_svg_image = nsvgParse((char*)svg_data, "px", 96.0f);
   if (!g_svg_image)
     return 0;
@@ -946,7 +952,7 @@ static int svg_init(layer_t *layer) {
   float scale = 1.0f;
   float tx = 0.0f, ty = 0.0f;
 
-  if (g_wallpaper_found && svg_data == g_wallpaper_buffer) {
+  if (load_wallpaper && svg_data == g_wallpaper_buffer) {
     // "Center Cover" logic
     float scale_x = (float)g_svg_full_w / g_svg_image->width;
     float scale_y = (float)g_svg_full_h / g_svg_image->height;
@@ -963,7 +969,7 @@ static int svg_init(layer_t *layer) {
                 g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
 
   // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
-  if (svg_data == g_bootlogo_buffer) {
+  if (!load_wallpaper && svg_data == g_bootlogo_buffer) {
     const char *conic_pos = strstr(g_bootlogo_buffer, "conic-gradient");
     if (conic_pos) {
       uint32_t c1 = parse_rgba_smart(conic_pos, 2);
@@ -1500,6 +1506,7 @@ static void redraw_warp_svg(layer_t *layer) {
 }
 
 static int svg_init_nextgen(layer_t *layer) {
+  svg_init(layer, 1); // Load and render wallpaper
   // Start with one default window
   add_window("Main Warp", 100, 100, 600, 400);
   redraw_warp_svg(layer);
@@ -2447,7 +2454,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.transparent = 0;
   svg_layer.active = 1;
   svg_layer.dynamic = 0;
-  svg_init(&svg_layer);
+  svg_init(&svg_layer, 0);
   register_layer(&svg_layer);
 
   // 3. 点滅インジケータ (右下)
@@ -2506,9 +2513,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++)
       text_buf[i] = TRANSPARENT_COLOR;
   }
-  // 次世代SVGレイヤー構築
-  svg_init_nextgen(&nextgen_ui_layer);
-
   // 初回描画を確実に実行
   screen_mark_static_dirty();
   screen_mark_all_dirty();
@@ -2532,7 +2536,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   // メインループ (常時60fpsターゲット)
   while (1) {
     if (!auto_booted && current_os_mode == OS_MODE_CLASSIC &&
-        (timer_ticks - boot_start_tick > 60)) {
+        (timer_ticks - boot_start_tick > 50)) {
       current_os_mode = OS_MODE_WARPDESKTOP;
       g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
       layer_fill(&desktop, 0xFFF5F5F5);
@@ -2542,7 +2546,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       text_layer.active = 0;
       keybuf_str[0] = '\0';
       g_svg_dirty = 1;
-      redraw_warp_svg(&nextgen_ui_layer);
+      svg_init_nextgen(&nextgen_ui_layer);
       screen_mark_static_dirty();
       auto_booted = 1;
     }
