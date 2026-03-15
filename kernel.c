@@ -1136,8 +1136,8 @@ static void redraw_warp_svg(layer_t *layer) {
     if (win->is_dirty) window_redraw(win);
     
     if (win->rgba_buffer) {
-      int title_h = 32;
-      uint32_t theme = (i == g_active_window_index) ? 0xFFFFFFFF : 0xFFE0E0E0;
+      int title_h = 40;
+      uint32_t theme = (i == g_active_window_index) ? 0xFFF5F5F5 : 0xFFE0E0E0;
       
       // Title bar
       for (int dy = -title_h; dy < 0; dy++) {
@@ -1149,11 +1149,88 @@ static void redraw_warp_svg(layer_t *layer) {
           dst++;
         }
       }
-      layer_draw_ttf(layer, win->x + 60, win->y - 24, win->title, 16, 0xFF333333);
+      
+      // Title bar content
+      char header_text[128];
+      int action_count = 0;
+      if (win->warp_ctx && warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count)) {
+        layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
+        
+        // Actions on the right (with Anti-Aliasing and card style)
+        int ax = win->x + win->w - 12;
+        for (int j = 0; j < action_count; j++) {
+          char act_text[64];
+          warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+          int text_w = strlen(act_text) * 9; 
+          int btn_w = text_w + 24;
+          int btn_h = 26; 
+          ax -= btn_w;
+          
+          float r = 8.0f; // corner radius
+          for (int dy = 0; dy < btn_h; dy++) {
+            int py = win->y - 33 + dy; 
+            if (py < 0 || py >= layer->height) continue;
+            for (int dx = 0; dx < btn_w; dx++) {
+              int px = ax + dx;
+              if (px < 0 || px >= layer->width) continue;
+              
+              float alpha_f = 1.0f;
+              float fdx = (float)dx, fdy = (float)dy;
+              float fbw = (float)btn_w, fbh = (float)btn_h;
+
+              // Anti-aliased rounded corner logic
+              int is_border = 0;
+              if (fdx < r && fdy < r) {
+                float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-r)*(fdy-r));
+                if (dist > r + 0.5f) alpha_f = 0.0f;
+                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
+              } else if (fdx > fbw-r-1.0f && fdy < r) {
+                float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-r)*(fdy-r));
+                if (dist > r + 0.5f) alpha_f = 0.0f;
+                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
+              } else if (fdx < r && fdy > fbh-r-1.0f) {
+                float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
+                if (dist > r + 0.5f) alpha_f = 0.0f;
+                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
+              } else if (fdx > fbw-r-1.0f && fdy > fbh-r-1.0f) {
+                float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
+                if (dist > r + 0.5f) alpha_f = 0.0f;
+                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                if (dist > r - 1.5f && dist <= r + 0.5f) is_border = 1;
+              } else {
+                // Straight edges border
+                if (fdx < 1.0f || fdx > fbw-2.0f || fdy < 1.0f || fdy > fbh-2.0f) is_border = 1;
+              }
+
+              if (alpha_f > 0.0f) {
+                uint32_t btn_color = is_border ? 0xFFDDDDDD : 0xFFFFFFFF;
+                if (alpha_f >= 1.0f) {
+                  layer->buffer[py * layer->width + px] = btn_color;
+                } else {
+                  uint32_t bg = layer->buffer[py * layer->width + px];
+                  uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+                  uint8_t r_f = (btn_color >> 16) & 0xFF, g_f = (btn_color >> 8) & 0xFF, b_f = btn_color & 0xFF;
+                  uint8_t r_out = (uint8_t)(r_f * alpha_f + r_b * (1.0f - alpha_f));
+                  uint8_t g_out = (uint8_t)(g_f * alpha_f + g_b * (1.0f - alpha_f));
+                  uint8_t b_out = (uint8_t)(b_f * alpha_f + b_b * (1.0f - alpha_f));
+                  layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+                }
+              }
+            }
+          }
+          layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, 0xFF000000);
+          ax -= 10;
+        }
+      } else {
+        layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
+      }
       
       // Buttons (Circles on the left with Anti-Aliasing)
       float btn_r = 7.0f;
-      int btn_y = win->y - 16;
+      int btn_y = win->y - 20;
       int i_r = (int)btn_r + 1;
 
       // Draw Red button (Close) - #FC2836
@@ -2457,7 +2534,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             
             // 2. Title Bar (Move, Close, Maximize)
             if (hx >= win->x && hx < win->x + win->w &&
-                hy >= win->y - 32 && hy < win->y) {
+                hy >= win->y - 40 && hy < win->y) {
               hit_index = i;
               window_t *hwin = &g_windows[hit_index];
               
@@ -2476,15 +2553,38 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                 } else {
                   hwin->old_x = hwin->x; hwin->old_y = hwin->y;
                   hwin->old_w = hwin->w; hwin->old_h = hwin->h;
-                  hwin->x = 0; hwin->y = 32; 
-                  hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 32;
+                  hwin->x = 0; hwin->y = 40; 
+                  hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40;
                   hwin->is_maximized = 1;
                 }
                 hwin->is_dirty = 1;
               } 
-              // Drag start (only if not maximized)
-              else if (!hwin->is_maximized && hx >= hwin->x + 56) {
-                hwin->is_dragging = 1;
+              // Header actions check (right side)
+              else {
+                int handled = 0;
+                char header_text[128];
+                int action_count = 0;
+                if (hwin->warp_ctx && warp_context_get_header_info(hwin->warp_ctx, header_text, sizeof(header_text), &action_count)) {
+                  int ax = hwin->x + hwin->w - 12;
+                  for (int j = 0; j < action_count; j++) {
+                    char act_text[64];
+                    warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
+                    int text_w = strlen(act_text) * 9;
+                    int btn_w = text_w + 24;
+                    ax -= btn_w;
+                    if (hx >= ax && hx < ax + btn_w) {
+                      warp_context_click_header_action(hwin->warp_ctx, j);
+                      hwin->is_dirty = 1;
+                      handled = 1;
+                      hit_index = -2;
+                      break;
+                    }
+                    ax -= 10;
+                  }
+                }
+                if (!handled && !hwin->is_maximized && hx >= hwin->x + 56) {
+                  hwin->is_dragging = 1;
+                }
               }
               break;
             }

@@ -732,15 +732,11 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
 
   if (warp_strcmp(node->tag, "screen") == 0) {
     int start_y = py;
-    for (int i = 0; i < node->children_count; i++) {
-      if (warp_strcmp(node->children[i]->tag, "Header") == 0) {
-        start_y += 80;
-        break;
-      }
-    }
+    // Header is now handled by the system title bar, so it doesn't take space here.
     cy = start_y;
     for (int i = 0; i < node->children_count; i++) {
       if (warp_strcmp(node->children[i]->tag, "Header") == 0) {
+        // Still layout header to update its state/children, but it won't affect cy
         layout_node(ctx, node->children[i], px, py, limit_w);
         continue;
       }
@@ -748,24 +744,10 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
     }
     node->h = cy - py + 24;
   } else if (warp_strcmp(node->tag, "Header") == 0) {
-    node->h = 64;
-    char text[128];
-    eval_attr(ctx, node, "text", text, sizeof(text));
-    if (text[0] != '\0' && ctx->texts_count < MAX_TEXTS) {
-      ctx->texts[ctx->texts_count].x = px + 24;
-      ctx->texts[ctx->texts_count].y = py + 18;
-      warp_strcpy(ctx->texts[ctx->texts_count].text, text);
-      ctx->texts[ctx->texts_count].color = 0xFF121212;
-      ctx->texts[ctx->texts_count].size = 24;
-      ctx->texts_count++;
-    }
-    int cx = px + limit_w - 24;
+    node->h = 0; // Header itself takes no space in the content area
+    // Header children (actions) layout
     for (int i = 0; i < node->children_count; i++) {
-      warp_node_t *child = node->children[i];
-      int cw = 120;
-      cx -= cw;
-      layout_node(ctx, child, cx, py + 12, cw);
-      cx -= 8;
+      layout_node(ctx, node->children[i], 0, 0, 120);
     }
   } else if (warp_strcmp(node->tag, "card") == 0) {
     cy += 12;
@@ -821,15 +803,21 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
     node->h = lines * 24;
   } else if (warp_strcmp(node->tag, "button") == 0 ||
              warp_strcmp(node->tag, "tonalButton") == 0) {
-    char width_prop[32];
-    eval_attr(ctx, node, "width", width_prop, sizeof(width_prop));
-    if (warp_strcmp(width_prop, "max") == 0)
-      node->w = limit_w;
-    else
-      node->w = 140;
-    node->h = 40;
     char text[128];
     eval_attr(ctx, node, "text", text, sizeof(text));
+    
+    char width_prop[32];
+    eval_attr(ctx, node, "width", width_prop, sizeof(width_prop));
+    if (warp_strcmp(width_prop, "max") == 0) {
+      node->w = limit_w;
+    } else {
+      // Fit content: estimate width from text length + padding
+      int text_w = warp_strlen(text) * 9; // Rough estimate for 16px font
+      node->w = text_w + 32; // 16px padding on each side
+      if (node->w < 60) node->w = 60; // Minimum width
+    }
+    node->h = 40;
+    
     if (text[0] != '\0' && ctx->texts_count < MAX_TEXTS) {
       ctx->texts[ctx->texts_count].x = px + 16;
       ctx->texts[ctx->texts_count].y = py + 10;
@@ -1033,14 +1021,8 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     }
   }
 
-  for (int i = 0; i < node->children_count; i++) {
-    if (warp_strcmp(node->children[i]->tag, "Header") == 0) {
-      warp_node_t *h = node->children[i];
-      emit_squircle_shape_to(dest, dest_size, h->x, h->y, h->w, h->h, 0, "#f5f5f5", "opacity=\"0.9\"");
-      for (int k = 0; k < h->children_count; k++)
-        emit_svg_recursive(ctx, h->children[k], dest, dest_size);
-    }
-  }
+  // Header background and content are now NOT handled here.
+  // System title bar handles it.
 
   // Draw hitboxes if dev eventCheck=true
   if (warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0) {
@@ -1581,3 +1563,43 @@ const char* warp_context_get_node_svg(warp_context_t* ctx, int index) {
 const char* warp_context_get_status(warp_context_t* ctx) {
   return ctx->engine_status;
 }
+
+static warp_node_t* find_header_node(warp_context_t* ctx) {
+  for (int i = 0; i < ctx->nodes_count; i++) {
+    warp_node_t* n = &ctx->nodes[i];
+    if (warp_strcmp(n->tag, "Header") == 0) {
+      return n;
+    }
+  }
+  return NULL;
+}
+
+int warp_context_get_header_info(warp_context_t* ctx, char* out_text, int max_len, int* out_action_count) {
+  warp_node_t* h = find_header_node(ctx);
+  if (!h) return 0;
+  
+  eval_attr(ctx, h, "text", out_text, max_len);
+  *out_action_count = h->children_count;
+  return 1;
+}
+
+void warp_context_get_header_action_info(warp_context_t* ctx, int action_index, char* out_text, int max_len) {
+  warp_node_t* h = find_header_node(ctx);
+  if (!h || action_index < 0 || action_index >= h->children_count) {
+    out_text[0] = '\0';
+    return;
+  }
+  warp_node_t* action = h->children[action_index];
+  eval_attr(ctx, action, "text", out_text, max_len);
+}
+
+void warp_context_click_header_action(warp_context_t* ctx, int action_index) {
+  warp_node_t* h = find_header_node(ctx);
+  if (!h || action_index < 0 || action_index >= h->children_count) return;
+  warp_node_t* action = h->children[action_index];
+  if (action->event_oneclick[0] != '\0') {
+    execute_action(ctx, action->event_oneclick);
+    ctx->engine_dirty = 1;
+  }
+}
+

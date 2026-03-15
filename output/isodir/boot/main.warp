@@ -10,6 +10,9 @@ screen(
         text:"⚠️"+--headerText
         oneClick:--headerText="Please wait",reset(now)
     )
+    button(
+        text:"Button"
+    )
     )
 
     text(
