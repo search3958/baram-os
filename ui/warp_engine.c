@@ -803,8 +803,6 @@ static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
       g_texts[g_texts_count].x = px + 16;
       g_texts[g_texts_count].y = py + 10;
       warp_strcpy(g_texts[g_texts_count].text, text);
-      const char *c_prop = get_attr(node, "color");
-      const char *hex = get_color_hex(c_prop);
       if (warp_strcmp(node->tag, "tonalButton") == 0)
         g_texts[g_texts_count].color = 0xFF121212;
       else
@@ -850,9 +848,11 @@ static int layout_node(warp_node_t *node, int px, int py, int limit_w) {
     node->is_dirty = 1;
     g_engine_dirty = 1;
   } else {
-      node->is_dirty = 0;
+    // If layout/state hasn't changed, but children might be dirty
+    node->is_dirty = 0;
   }
 
+  // Text is also part of node state, so state_hash handles it.
   return node->h;
 }
 

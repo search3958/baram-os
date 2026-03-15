@@ -978,23 +978,18 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   }
 }
 
-static NSVGimage* g_node_svg_cache[MAX_NODES];
-
 static void redraw_warp_svg(layer_t *layer) {
   if (g_svg_dirty) {
     warp_engine_update(layer->width, layer->height);
     const char *svg_str = warp_engine_get_svg();
     
-    int size_changed = 0;
-    int full_w = layer->width, full_h = layer->height;
-    
-    // We still need the full image for some logic (like dimensions and conic gradients)
+    // 全パース (動的レイアウト対応のため、dirty 時は一度パース)
     if (g_nextgen_svg_image) nsvgDelete(g_nextgen_svg_image);
     g_nextgen_svg_image = nsvgParse((char*)svg_str, "px", 96.0f);
     
     if (g_nextgen_svg_image) {
-      full_w = (int)g_nextgen_svg_image->width;
-      full_h = (int)g_nextgen_svg_image->height;
+      int full_w = (int)g_nextgen_svg_image->width;
+      int full_h = (int)g_nextgen_svg_image->height;
       if (full_w < layer->width) full_w = layer->width;
       if (full_h < layer->height) full_h = layer->height;
       
@@ -1003,98 +998,47 @@ static void redraw_warp_svg(layer_t *layer) {
         g_nextgen_full_rgba = (unsigned char *)malloc((size_t)full_w * (size_t)full_h * 4);
         g_nextgen_full_w = full_w;
         g_nextgen_full_h = full_h;
-        size_changed = 1;
       }
     }
 
     if (g_nextgen_full_rgba && g_nextgen_svg_image) {
       if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
       
-      const uint32_t bg_color_native = 0xFFF5F5F5; // System native (ARGB)
+      const uint32_t bg_native = 0xFFF5F5F5;
       
-      if (size_changed) {
-        for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
-          ((uint32_t*)g_nextgen_full_rgba)[i] = bg_color_native;
-        }
-        nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f,
-                      g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
-        
-        // Full buffer R/B swap
-        unsigned char *p = g_nextgen_full_rgba;
-        for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
-          unsigned char r = p[0], b = p[2];
-          p[0] = b; p[2] = r; p += 4;
-        }
-        for(int i=0; i<MAX_NODES; i++) { if(g_node_svg_cache[i]) { nsvgDelete(g_node_svg_cache[i]); g_node_svg_cache[i]=NULL; } }
-      } else {
-        int node_count = warp_engine_get_node_count();
-        for (int i = 0; i < node_count && i < MAX_NODES; i++) {
-          int x, y, w, h, dirty;
-          warp_engine_get_node_info(i, &x, &y, &w, &h, &dirty);
-          if (dirty) {
-            int px, py, pw, ph;
-            warp_engine_get_node_prev_rect(i, &px, &py, &pw, &ph);
-            int rs[2][4] = {{px, py, pw, ph}, {x, y, w, h}};
-            for (int r=0; r<2; r++) {
-              int rx=rs[r][0], ry=rs[r][1], rw=rs[r][2], rh=rs[r][3];
-              if (rw <= 0 || rh <= 0) continue;
-              for (int dy = ry; dy < ry + rh && dy < g_nextgen_full_h; dy++) {
-                if (dy < 0) continue;
-                uint32_t *p = (uint32_t*)&g_nextgen_full_rgba[(dy * g_nextgen_full_w + rx) * 4];
-                for (int dx = rx; dx < rx + rw && dx < g_nextgen_full_w; dx++) {
-                  if (dx < 0) { p++; continue; }
-                  *p++ = bg_color_native;
-                }
-              }
-            }
-            if (g_node_svg_cache[i]) nsvgDelete(g_node_svg_cache[i]);
-            g_node_svg_cache[i] = nsvgParse((char*)warp_engine_get_node_svg(i), "px", 96.0f);
-            if (g_node_svg_cache[i]) {
-              nsvgRasterize(g_svg_rast, g_node_svg_cache[i], 0, 0, 1.0f,
-                            g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
-              // Partial buffer R/B swap
-              for (int dy = y; dy < y + h && dy < g_nextgen_full_h; dy++) {
-                if (dy < 0) continue;
-                unsigned char *p = &g_nextgen_full_rgba[(dy * g_nextgen_full_w + x) * 4];
-                for (int dx = x; dx < x + w && dx < g_nextgen_full_w; dx++) {
-                  if (dx < 0) { p += 4; continue; }
-                  unsigned char r = p[0], b = p[2];
-                  p[0] = b; p[2] = r; p += 4;
-                }
-              }
-            }
-          }
-        }
+      // 1. 全クリア (文字の重ね描きによるアンチエイリアス劣化を防止)
+      for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
+        ((uint32_t*)g_nextgen_full_rgba)[i] = bg_native;
       }
       
+      // 2. 全ラスタライズ (NanoSVG: RGBA)
+      nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f,
+                    g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
+      
+      // 3. 全 R/B スワップ (RGBA -> Native BGRA)
+      unsigned char *p = g_nextgen_full_rgba;
+      for (int i = 0; i < g_nextgen_full_w * g_nextgen_full_h; i++) {
+        unsigned char r = p[0], b = p[2];
+        p[0] = b; p[2] = r; p += 4;
+      }
+      
+      // 4. 文字描画 (グリフキャッシュにより高速)
       layer_t temp_layer;
       temp_layer.buffer = (uint32_t*)g_nextgen_full_rgba;
       temp_layer.width = g_nextgen_full_w;
       temp_layer.height = g_nextgen_full_h;
       warp_engine_draw_texts(&temp_layer, 0, 0);
 
+      // 5. グラデーション適用
       for (NSVGshape *s = g_nextgen_svg_image->shapes; s; s = s->next) {
         if (s->id[0] == 'c' && strncmp(s->id, "conic", 5) == 0) {
           int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
           int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
-          int needs_update = size_changed;
-          if (!needs_update) {
-            int node_count = warp_engine_get_node_count();
-            for (int i = 0; i < node_count; i++) {
-              int nx, ny, nw, nh, ndirty;
-              warp_engine_get_node_info(i, &nx, &ny, &nw, &nh, &ndirty);
-              if (ndirty && !(nx > rx + rw || nx + nw < rx || ny > ry + rh || ny + nh < ry)) {
-                needs_update = 1; break;
-              }
-            }
-          }
-          if (needs_update) {
-            uint32_t c1 = 0xFF5CA8FF, c2 = 0xFFFFFFFF;
-            if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
-            else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
-            else if (strstr(s->id, "green")) { c1 = 0xFF00C9FF; c2 = 0xFF92FE9D; }
-            apply_conic_gradient(g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, rx, ry, rw, rh, c1, c2);
-          }
+          uint32_t c1 = 0xFF5CA8FF, c2 = 0xFFFFFFFF;
+          if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
+          else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
+          else if (strstr(s->id, "green")) { c1 = 0xFF00C9FF; c2 = 0xFF92FE9D; }
+          apply_conic_gradient(g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, rx, ry, rw, rh, c1, c2);
         }
       }
     }
@@ -1701,8 +1645,37 @@ static uint16_t utf8_next(const char **p) {
   return code;
 }
 
+// --- グリフキャッシュ ---
+typedef struct {
+  uint16_t codepoint;
+  float size;
+  int bw, bh, bx, by, adv;
+  unsigned char *bitmap;
+} glyph_cache_t;
+#define MAX_GLYPH_CACHE 1024
+static glyph_cache_t g_glyph_cache[MAX_GLYPH_CACHE];
+static int g_glyph_cache_count = 0;
+
+static glyph_cache_t* get_glyph(uint16_t codepoint, float size) {
+  for (int i = 0; i < g_glyph_cache_count; i++) {
+    if (g_glyph_cache[i].codepoint == codepoint && g_glyph_cache[i].size == size)
+      return &g_glyph_cache[i];
+  }
+  if (g_glyph_cache_count >= MAX_GLYPH_CACHE) return NULL;
+
+  glyph_cache_t *gc = &g_glyph_cache[g_glyph_cache_count++];
+  float scale = stbtt_ScaleForPixelHeight(&g_font, size);
+  gc->bitmap = stbtt_GetCodepointBitmap(&g_font, 0, scale, (int)codepoint, &gc->bw, &gc->bh, &gc->bx, &gc->by);
+  int adv_tmp, lsb_tmp;
+  stbtt_GetCodepointHMetrics(&g_font, codepoint, &adv_tmp, &lsb_tmp);
+  gc->adv = (int)(adv_tmp * scale);
+  gc->codepoint = codepoint;
+  gc->size = size;
+  return gc;
+}
+
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
-                    float font_size, uint32_t color) {
+                     float font_size, uint32_t color) {
   if (!g_font_ready || !str || !layer || !layer->buffer)
     return;
   float scale = stbtt_ScaleForPixelHeight(&g_font, font_size);
@@ -1712,37 +1685,29 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
   int cx = px;
   const char *p = str;
   while (*p) {
-    uint16_t codepoint = utf8_next(&p);
-    int bw, bh, bx, by;
-    unsigned char *bitmap = stbtt_GetCodepointBitmap(
-        &g_font, 0, scale, (int)codepoint, &bw, &bh, &bx, &by);
-    if (bitmap) {
-      for (int dy = 0; dy < bh; dy++) {
-        int dpy = py + baseline + by + dy;
+    uint16_t cp = utf8_next(&p);
+    glyph_cache_t *gc = get_glyph(cp, font_size);
+    if (gc && gc->bitmap) {
+      for (int dy = 0; dy < gc->bh; dy++) {
+        int dpy = py + baseline + gc->by + dy;
         if (dpy < 0 || dpy >= (int)layer->height)
           continue;
-        for (int dx = 0; dx < bw; dx++) {
-          int dpx = cx + bx + dx;
+        for (int dx = 0; dx < gc->bw; dx++) {
+          int dpx = cx + gc->bx + dx;
           if (dpx < 0 || dpx >= (int)layer->width)
             continue;
-          uint8_t alpha = bitmap[dy * bw + dx];
+          uint8_t alpha = gc->bitmap[dy * gc->bw + dx];
           if (alpha == 0)
             continue;
-
-          // 負の座標や範囲外アクセスを防止
           uint32_t bg = layer->buffer[dpy * layer->width + dpx];
           layer->buffer[dpy * layer->width + dpx] =
               blend_colors(bg, color, alpha);
         }
       }
-      stbtt_FreeBitmap(bitmap, NULL);
+      cx += gc->adv;
     }
-    int adv, lsb;
-    stbtt_GetCodepointHMetrics(&g_font, codepoint, &adv, &lsb);
-    cx += (int)(adv * scale);
   }
 }
-
 // SVGパスを使ったグリフ描画（ダミー: 枠のみ）
 static void layer_draw_glyph(layer_t *layer, int x, int y, uint16_t code,
                              uint32_t color) {
