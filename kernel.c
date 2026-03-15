@@ -20,6 +20,7 @@
 #include "build_no.h"
 #endif
 #include "ui/warp_engine.h"
+#include "ui/warp1_engine.h"
 
 // stb_truetype
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -98,6 +99,8 @@ static char g_last_svg_parse_status[64] = "None";
 static int g_warp_mod_found = 0;
 static uint32_t g_mod_count = 0;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
+static char g_warp1_buffer[32768] = "screen{ id:(main), text:(\"Warp1 module not found\") }";
+static int g_warp1_mod_found = 0;
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
 static char g_wallpaper_buffer[131072] = "";
@@ -1021,6 +1024,13 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
         memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_warp_buffer[size] = '\0';
         g_warp_mod_found = 1;
+      } else if (strstr(s, "new.warp1") || strstr(s, "NEW.WARP1")) {
+        uint32_t size = mods[i].mod_end - mods[i].mod_start;
+        if (size > 32767)
+          size = 32767;
+        memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+        g_warp1_buffer[size] = '\0';
+        g_warp1_mod_found = 1;
       } else if (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG") ||
                  strstr(s, ".svg") || strstr(s, ".SVG")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
@@ -1075,6 +1085,8 @@ typedef struct {
   int is_maximized;
   char title[64];
   warp_context_t *warp_ctx;
+  warp1_context_t *warp1_ctx;
+  int is_warp1;
   unsigned char *rgba_buffer;
   int buffer_w, buffer_h;
   int is_dirty;
@@ -1196,11 +1208,15 @@ static void window_update_caches(window_t *win) {
 }
 
 static void window_redraw(window_t *win) {
-  if (!win->warp_ctx) return;
-  // Use window width for layout. The engine will calculate the necessary height.
-  warp_context_update(win->warp_ctx, win->w, win->h);
+  if (!win->warp_ctx && !win->warp1_ctx) return;
   
-  const char *svg = warp_context_get_svg(win->warp_ctx);
+  if (win->is_warp1) {
+    warp1_context_update(win->warp1_ctx, win->w, win->h);
+  } else {
+    warp_context_update(win->warp_ctx, win->w, win->h);
+  }
+  
+  const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
   NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
   if (!img) return;
 
@@ -1234,7 +1250,11 @@ static void window_redraw(window_t *win) {
     temp_layer.buffer = (uint32_t*)win->rgba_buffer;
     temp_layer.width = win->w;
     temp_layer.height = win->buffer_h;
-    warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+    if (win->is_warp1) {
+      warp1_context_draw_texts(win->warp1_ctx, &temp_layer, 0, 0);
+    } else {
+      warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+    }
   }
   nsvgDelete(img);
   win->is_dirty = 0;
@@ -1244,14 +1264,21 @@ static void window_redraw(window_t *win) {
   window_update_caches(win);
 }
 
-static void add_window(const char *title, int x, int y, int w, int h) {
+static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
   if (g_window_count >= MAX_WINDOWS) return;
   window_t *win = &g_windows[g_window_count++];
   win->x = x; win->y = y; win->w = w; win->h = h;
   win->scroll_x = 0; win->scroll_y = 0;
   win->target_scroll_x = 0; win->target_scroll_y = 0;
   strncpy(win->title, title, 63);
-  win->warp_ctx = warp_context_create(g_warp_buffer);
+  win->is_warp1 = is_warp1;
+  if (is_warp1) {
+    win->warp1_ctx = warp1_context_create(g_warp1_buffer);
+    win->warp_ctx = NULL;
+  } else {
+    win->warp_ctx = warp_context_create(g_warp_buffer);
+    win->warp1_ctx = NULL;
+  }
   win->rgba_buffer = NULL;
   win->shadow_cache = NULL;
   win->frame_cache = NULL;
@@ -1272,6 +1299,7 @@ static void close_active_window() {
   if (g_active_window_index < 0) return;
   window_t *win = &g_windows[g_active_window_index];
   if (win->warp_ctx) warp_context_destroy(win->warp_ctx);
+  if (win->warp1_ctx) warp1_context_destroy(win->warp1_ctx);
   if (win->rgba_buffer) free(win->rgba_buffer);
   if (win->shadow_cache) free(win->shadow_cache);
   if (win->frame_cache) free(win->frame_cache);
@@ -1365,14 +1393,22 @@ static void redraw_warp_svg(layer_t *layer) {
       // 3. Title bar content
       char header_text[128];
       int action_count = 0;
-      if (win->warp_ctx && warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count)) {
+      int has_header = 0;
+      if (win->is_warp1) {
+        if (win->warp1_ctx) has_header = warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
+      } else {
+        if (win->warp_ctx) has_header = warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
+      }
+      
+      if (has_header) {
         layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
         
         // Actions on the right (Buttons)
         int ax = win->x + win->w - 12;
         for (int j = 0; j < action_count; j++) {
           char act_text[64];
-          warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+          if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
+          else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
           int text_w = strlen(act_text) * 9; 
           int btn_w = text_w + 24;
           int btn_h = 26; 
@@ -1525,7 +1561,7 @@ static void redraw_warp_svg(layer_t *layer) {
 static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
   // Start with one default window
-  add_window("Main Warp", 100, 100, 600, 400);
+  add_window("Main Warp", 100, 100, 600, 400, 0);
   redraw_warp_svg(layer);
   return 1;
 }
@@ -2543,6 +2579,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   uint32_t boot_start_tick = timer_ticks;
   int auto_booted = 0;
+  int auto_warp1_booted = 0;
 
   // メインループ (常時60fpsターゲット)
   while (1) {
@@ -2560,6 +2597,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       svg_init_nextgen(&nextgen_ui_layer);
       screen_mark_static_dirty();
       auto_booted = 1;
+    }
+
+    if (auto_booted && !auto_warp1_booted && (timer_ticks - boot_start_tick > 500)) {
+      add_window("New Warp 1", 200, 200, 600, 400, 1);
+      g_svg_dirty = 1;
+      auto_warp1_booted = 1;
     }
 
     if (current_os_mode == OS_MODE_CLASSIC) {
@@ -2779,16 +2822,25 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                 int handled = 0;
                 char header_text[128];
                 int action_count = 0;
-                if (hwin->warp_ctx && warp_context_get_header_info(hwin->warp_ctx, header_text, sizeof(header_text), &action_count)) {
+                int has_header = 0;
+                if (hwin->is_warp1) {
+                  if (hwin->warp1_ctx) has_header = warp1_context_get_header_info(hwin->warp1_ctx, header_text, sizeof(header_text), &action_count);
+                } else {
+                  if (hwin->warp_ctx) has_header = warp_context_get_header_info(hwin->warp_ctx, header_text, sizeof(header_text), &action_count);
+                }
+                
+                if (has_header) {
                   int ax = hwin->x + hwin->w - 12;
                   for (int j = 0; j < action_count; j++) {
                     char act_text[64];
-                    warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
+                    if (hwin->is_warp1) warp1_context_get_header_action_info(hwin->warp1_ctx, j, act_text, sizeof(act_text));
+                    else warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
                     int text_w = strlen(act_text) * 9;
                     int btn_w = text_w + 24;
                     ax -= btn_w;
                     if (hx >= ax && hx < ax + btn_w) {
-                      warp_context_click_header_action(hwin->warp_ctx, j);
+                      if (hwin->is_warp1) warp1_context_click_header_action(hwin->warp1_ctx, j);
+                      else warp_context_click_header_action(hwin->warp_ctx, j);
                       hwin->is_dirty = 1;
                       handled = 1;
                       hit_index = -2;
@@ -2808,7 +2860,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             if (hx >= win->x && hx < win->x + win->w &&
                 hy >= win->y && hy < win->y + win->h) {
               hit_index = i;
-              warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+              if (win->is_warp1) {
+                warp1_context_click(win->warp1_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+              } else {
+                warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+              }
               win->is_dirty = 1;
               break;
             }
@@ -2824,7 +2880,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             g_active_window_index = g_window_count - 1;
           } else if (hit_index == -1) {
             // Wallpaper click (real click, not just missed window)
-            add_window("New Warp", hx - 50, hy + 50, 400, 300);
+            add_window("New Warp", hx - 50, hy + 50, 400, 300, 0);
           }
           g_svg_dirty = 1;
         } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
@@ -2844,13 +2900,23 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       // Drag/Resize movement or pointcheck mouse update
       if (g_active_window_index >= 0 && (mouse_dx != 0 || mouse_dy != 0)) {
         window_t *awin = &g_windows[g_active_window_index];
-        if (awin->warp_ctx) {
-          int hx = mouse_x + MOUSE_HOTSPOT_X;
-          int hy = mouse_y + MOUSE_HOTSPOT_Y;
-          warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-          if (warp_context_is_dirty(awin->warp_ctx)) {
-            awin->is_dirty = 1;
-            g_svg_dirty = 1;
+        int hx = mouse_x + MOUSE_HOTSPOT_X;
+        int hy = mouse_y + MOUSE_HOTSPOT_Y;
+        if (awin->is_warp1) {
+          if (awin->warp1_ctx) {
+            warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+            if (warp1_context_is_dirty(awin->warp1_ctx)) {
+              awin->is_dirty = 1;
+              g_svg_dirty = 1;
+            }
+          }
+        } else {
+          if (awin->warp_ctx) {
+            warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+            if (warp_context_is_dirty(awin->warp_ctx)) {
+              awin->is_dirty = 1;
+              g_svg_dirty = 1;
+            }
           }
         }
         if (awin->is_dragging) {

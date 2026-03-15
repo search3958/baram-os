@@ -32,10 +32,11 @@ CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=penti
 i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || exit 1
 i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || exit 1
 i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || exit 1
+i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || exit 1
 
 # --- 5. カーネルのリンク ---
 i686-elf-gcc -T link.ld -o output/kernel.bin \
-    output/boot.o output/isr.o output/kernel.o output/drivers.o output/warp_engine.o \
+    output/boot.o output/isr.o output/kernel.o output/drivers.o output/warp_engine.o output/warp1_engine.o \
     -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || exit 1
 
 # --- 6. ISOディレクトリへのファイル配置 ---
@@ -43,6 +44,7 @@ cp output/kernel.bin output/isodir/boot/
 cp grub.cfg output/isodir/boot/grub/
 cp font/MPLUS2-Regular.ttf output/isodir/boot/
 cp ui/main.warp output/isodir/boot/
+cp ui/new.warp1 output/isodir/boot/
 
 # bootlogo.svg を配置
 if [ -f "bootlogo.svg" ]; then
