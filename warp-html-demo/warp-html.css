@@ -1,0 +1,113 @@
+body {
+    --warp-color-background: #f5f5f5;
+    background: var(--warp-color-background);
+    padding-top: 80px;
+    margin: 0px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap:8px;
+}
+
+.warp-app-container {
+    padding: 24px;
+    max-width: 800px;
+    font-family: 'Roboto', 'Segoe UI', sans-serif;
+    color: #121212
+}
+
+.warp-header {
+    display: flex;
+    align-items: center;
+    background: var(--warp-color-background);
+    padding: 24px;
+    gap: 24px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: calc(100% - 48px);
+    justify-content: space-between
+}
+
+.warp-header-title {
+    margin: 0;
+    font-size: 1.375rem;
+    font-weight: 500
+}
+
+.warp-header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center
+}
+
+.warp-header-actions button {
+    box-shadow: none !important;
+    --warp-color-primary: #0000000f;
+    color: #000
+}
+
+.warp-text {
+    line-height: 1.5;
+    font-size: 1rem
+}
+
+.warp-card {
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 24px;
+    margin-bottom: 20px;
+    corner-shape: superellipse(1.6);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap:8px;
+    box-shadow: 0px 1px 16px rgba(0, 0, 0, 0.05)
+}
+
+.warp-card-title {
+    margin: 0 0 16px 0;
+    font-size: 1.25rem;
+    font-weight: 500
+}
+
+.warp-hstack {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+}
+
+.warp-button {
+    --warp-color-primary: #0a56d0;
+    background-color: var(--warp-color-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 16px;
+    height: 40px;
+    padding: 0 24px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    corner-shape: superellipse(1.6);
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0px 1px 6px rgba(0, 0, 0, 0.1)
+}
+
+.warp-button:hover {
+    box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.2)
+}
+
+.warp-button:active {
+    box-shadow: none
+}
+
+.warp-button.tonal {
+    --warp-color-primary: #0a56d013;
+    color: #0a56d0;
+    box-shadow: none !important;
+}

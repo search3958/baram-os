@@ -1,14 +1,16 @@
+
 screen(
     id:main
 
     Header(
-    text:"Warp Demo" 
-        button(
-            text:"再起動"
-            oneClick:restart(now)
-        )
-    )
+    text:"Warp Demo"
 
+    button(
+        --headerText:""
+        text:"⚠️"+--headerText
+        oneClick:--headerText="Please wait",reset(now)
+    )
+    )
 
     text(
     text:"これは新しい、ネイティブとWeb技術が融合する言語です。気になる反応は"+--mainText
@@ -20,13 +22,22 @@ screen(
     text(
         text:"クリックにより表示内容が変更されます"
     )
+    hStack(
         button(
-            text:"GOOD"
+            text:"👍"
             oneClick:--mainText="良いみたいです!"
         )
         button(
-            text:"BAD"
+            text:"🤔"
             oneClick:--mainText="あまり良くないようですね。"
+        )
+    )
+        button(
+            text:"Click"
+            --color:yellow
+            color:--color
+            oneClick:--color=red
+            longPress:--color=blue
         )
     )
 
@@ -34,6 +45,15 @@ screen(
         text:"button"
         text(
             text:"通常ボタン"
+        )
+        hStack(
+            button(
+                text:"戻る"
+            )
+            tonalButton(
+                text:"注文"
+                width:max
+            )
         )
         card(
             text:"使用例"
@@ -44,5 +64,172 @@ screen(
                 \n\)"
             )
         )
+    )
+
+    card(
+        text:"複数画面"
+        button(
+            text:"Screen1に移動する"
+            oneClick:setScreen(screen1)
+        )
+
+    )
+
+    card(
+        text:"小計算機"
+        text(
+            --calc:
+            text:--calc
+            id:calcDebug
+            color:gray
+        )
+        text(
+            --calc-a:0
+            text:--calc-a
+        )
+        hStack(
+            tonalButton(
+                text:"1"
+                oneClick:--calc=--calc+"1"
+            )
+            tonalButton(
+                text:"2"
+                oneClick:--calc=--calc+"2"
+            )
+            tonalButton(
+                text:"3"
+                oneClick:--calc=--calc+"3"
+            )
+            button(
+                text:"+"
+                oneClick:--calc=--calc+"+"
+            )
+        )
+        hStack(
+            tonalButton(
+                text:"4"
+                oneClick:--calc=--calc+"4"
+            )
+            tonalButton(
+                text:"5"
+                oneClick:--calc=--calc+"5"
+            )
+            tonalButton(
+                text:"6"
+                oneClick:--calc=--calc+"6"
+            )
+            button(
+                text:"-"
+                oneClick:--calc=--calc+"-"
+            )
+        )
+        hStack(
+            tonalButton(
+                text:"7"
+                oneClick:--calc=--calc+"7"
+            )
+            tonalButton(
+                text:"8"
+                oneClick:--calc=--calc+"8"
+            )
+            tonalButton(
+                text:"9"
+                oneClick:--calc=--calc+"9"
+            )
+            button(
+                text:"×"
+                oneClick:--calc=--calc+"*"
+            )
+        )
+        hStack(
+            tonalButton(
+                text:"0"
+                oneClick:--calc=--calc+"0"
+            )
+            button(
+                text:"="
+                oneClick:--calc-a=calc(--calc)
+                color:yellow
+            )
+            tonalButton(
+                text:"C"
+                oneClick:--calc=0,--calc-a=0
+                color:yellow
+            )
+            button(
+                text:"÷"
+                oneClick:--calc=--calc+"/"
+            )
+        )
+        button(
+            --calcButtontext:"途中式を非表示"
+            --calcDebugHide:false
+            text:--calcButtontext
+            oneClick:script(calcText)
+        )
+    )
+    )
+
+    card(
+        text:"要素追加"
+        hStack(
+            button(
+                text:"追加"
+                oneClick:--cb=add,script(ctrl)
+            )
+            button(
+                text:"1つ削除"
+                oneClick:--cb=del,script(ctrl)
+            )
+            button(
+                text:"クリア"
+                oneClick:--cb=clr,script(ctrl)
+            )
+        )
+        vStack(
+            id:cList
+        )
+
+    )
+)
+@ctrl(
+    if:--cb=add(
+        add(cList:'button(text:"ボタンを追加")')
+    )
+    if:--cb=del(
+        del(cList:button)
+    )
+    if:--cb=clr(
+        clr(cList)
+    )
+)
+
+@calcText(
+    if:--calcDebugHide=false(
+        --calcButtontext="途中式を表示",
+        hide(calcDebug),
+        --calcDebugHide=true
+    )
+    elseIf:--calcDebugHide=true(
+        --calcButtontext="途中式を非表示",
+        show(calcDebug),
+        --calcDebugHide=false
+    )
+)
+
+screen(
+    id:screen1
+
+    Header(
+    text:"Screen"
+    )
+
+    text(
+        text:"Screen1の内容です。"
+    )
+
+    button(
+        text:"mainに戻る"
+        oneClick:setScreen(main)
     )
 )
