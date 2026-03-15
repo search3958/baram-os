@@ -168,7 +168,6 @@ screen(
             oneClick:script(calcText)
         )
     )
-    )
 
     card(
         text:"要素追加"

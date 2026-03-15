@@ -870,24 +870,6 @@ static const float K_X[] = {1.498f,  3.381f,  7.456f, 12.630f,
 static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
                             16.619f, 18.502f, 20.000f};
 
-static void emit_svg_to_buf(warp_node_t *node, char *buf, int buf_size) {
-  if (!node)
-    return;
-  const char *id = get_attr(node, "id");
-  if (!get_visibility(id))
-    return;
-
-  // Temporarily swap g_svg_output to use the provided buffer
-  char *old_output_ptr = g_svg_output;
-  // This is a bit risky but given the single-threaded nature and controlled calls, it works.
-  // A better way is to pass the buffer to all emit_* functions.
-  // For now, let's just make a localized emit function that uses a temp buffer.
-  
-  // Note: Since emit_squircle_shape and emit_svg are recursive and use g_svg_output,
-  // we need to be careful. Let's refactor emit_svg to take a destination.
-}
-
-// Refactored emit functions to take a destination buffer
 static void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra) {
   float fw = (float)w, fh = (float)h;
@@ -898,7 +880,7 @@ static void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int 
   if (edge_x > fw / 2.0f) edge_x = fw / 2.0f;
   if (edge_y > fh / 2.0f) edge_y = fh / 2.0f;
   
-  char buf[2048]; // Reduced size to save stack
+  char buf[2048];
   char *p = buf;
   p = warp_stpcpy(p, "<path d=\"M ");
   p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + fh / 2.0f);

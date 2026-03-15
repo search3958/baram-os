@@ -1014,7 +1014,6 @@ static void redraw_warp_svg(layer_t *layer) {
         memset(g_nextgen_full_rgba, 0, (size_t)g_nextgen_full_w * (size_t)g_nextgen_full_h * 4);
         nsvgRasterize(g_svg_rast, g_nextgen_svg_image, 0, 0, 1.0f,
                       g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
-        // Clear node cache on size change
         for(int i=0; i<MAX_NODES; i++) { if(g_node_svg_cache[i]) { nsvgDelete(g_node_svg_cache[i]); g_node_svg_cache[i]=NULL; } }
       } else {
         int node_count = warp_engine_get_node_count();
@@ -1024,62 +1023,55 @@ static void redraw_warp_svg(layer_t *layer) {
           if (dirty) {
             int px, py, pw, ph;
             warp_engine_get_node_prev_rect(i, &px, &py, &pw, &ph);
-            
-            // Clear BOTH old and new regions to be safe if moved
-            int rects[2][4] = {{px, py, pw, ph}, {x, y, w, h}};
+            int rs[2][4] = {{px, py, pw, ph}, {x, y, w, h}};
             for (int r=0; r<2; r++) {
-                int rx=rects[r][0], ry=rects[r][1], rw=rects[r][2], rh=rects[r][3];
-                for (int dy = ry; dy < ry + rh && dy < g_nextgen_full_h; dy++) {
-                    if (dy < 0) continue;
-                    unsigned char *p = &g_nextgen_full_rgba[(dy * g_nextgen_full_w + rx) * 4];
-                    for (int dx = rx; dx < rx + rw && dx < g_nextgen_full_w; dx++) {
-                        if (dx < 0) { p+=4; continue; }
-                        p[0] = 0xF5; p[1] = 0xF5; p[2] = 0xF5; p[3] = 0xFF;
-                        p += 4;
-                    }
+              int rx=rs[r][0], ry=rs[r][1], rw=rs[r][2], rh=rs[r][3];
+              for (int dy = ry; dy < ry + rh && dy < g_nextgen_full_h; dy++) {
+                if (dy < 0) continue;
+                unsigned char *p = &g_nextgen_full_rgba[(dy * g_nextgen_full_w + rx) * 4];
+                for (int dx = rx; dx < rx + rw && dx < g_nextgen_full_w; dx++) {
+                  if (dx < 0) { p+=4; continue; }
+                  p[0] = 0xF5; p[1] = 0xF5; p[2] = 0xF5; p[3] = 0xFF; p += 4;
                 }
+              }
             }
-
-            // Update cache and rasterize
             if (g_node_svg_cache[i]) nsvgDelete(g_node_svg_cache[i]);
-            const char* node_svg = warp_engine_get_node_svg(i);
-            g_node_svg_cache[i] = nsvgParse((char*)node_svg, "px", 96.0f);
-            
+            g_node_svg_cache[i] = nsvgParse((char*)warp_engine_get_node_svg(i), "px", 96.0f);
             if (g_node_svg_cache[i]) {
-                nsvgRasterize(g_svg_rast, g_node_svg_cache[i], 0, 0, 1.0f,
-                              g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
+              nsvgRasterize(g_svg_rast, g_node_svg_cache[i], 0, 0, 1.0f,
+                            g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, g_nextgen_full_w * 4);
             }
           }
         }
       }
       
-      // Conic Gradient: Only update if the shape's bounds intersect a dirty node
+      layer_t temp_layer;
+      temp_layer.buffer = (uint32_t*)g_nextgen_full_rgba;
+      temp_layer.width = g_nextgen_full_w;
+      temp_layer.height = g_nextgen_full_h;
+      warp_engine_draw_texts(&temp_layer, 0, 0);
+
       for (NSVGshape *s = g_nextgen_svg_image->shapes; s; s = s->next) {
         if (s->id[0] == 'c' && strncmp(s->id, "conic", 5) == 0) {
           int rx = (int)s->bounds[0], ry = (int)s->bounds[1];
           int rw = (int)(s->bounds[2] - s->bounds[0]), rh = (int)(s->bounds[3] - s->bounds[1]);
-          
           int needs_update = size_changed;
           if (!needs_update) {
-              int node_count = warp_engine_get_node_count();
-              for (int i = 0; i < node_count; i++) {
-                  int nx, ny, nw, nh, ndirty;
-                  warp_engine_get_node_info(i, &nx, &ny, &nw, &nh, &ndirty);
-                  if (ndirty) {
-                      // Simple AABB intersection
-                      if (!(nx > rx + rw || nx + nw < rx || ny > ry + rh || ny + nh < ry)) {
-                          needs_update = 1; break;
-                      }
-                  }
+            int node_count = warp_engine_get_node_count();
+            for (int i = 0; i < node_count; i++) {
+              int nx, ny, nw, nh, ndirty;
+              warp_engine_get_node_info(i, &nx, &ny, &nw, &nh, &ndirty);
+              if (ndirty && !(nx > rx + rw || nx + nw < rx || ny > ry + rh || ny + nh < ry)) {
+                needs_update = 1; break;
               }
+            }
           }
-          
           if (needs_update) {
-              uint32_t c1 = 0xFF5CA8FF, c2 = 0xFFFFFFFF;
-              if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
-              else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
-              else if (strstr(s->id, "green")) { c1 = 0xFF00C9FF; c2 = 0xFF92FE9D; }
-              apply_conic_gradient(g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, rx, ry, rw, rh, c1, c2);
+            uint32_t c1 = 0xFF5CA8FF, c2 = 0xFFFFFFFF;
+            if (strstr(s->id, "black")) { c1 = 0xFF434343; c2 = 0xFF000000; }
+            else if (strstr(s->id, "red")) { c1 = 0xFFFF416C; c2 = 0xFFFF4B2B; }
+            else if (strstr(s->id, "green")) { c1 = 0xFF00C9FF; c2 = 0xFF92FE9D; }
+            apply_conic_gradient(g_nextgen_full_rgba, g_nextgen_full_w, g_nextgen_full_h, rx, ry, rw, rh, c1, c2);
           }
         }
       }
@@ -1120,6 +1112,7 @@ static void redraw_warp_svg(layer_t *layer) {
       if (a == 0) {
         line_dst[x] = bg;
       } else if (a == 255) {
+        // NanoSVG (RGBA) -> BaramOS (ARGB/ABGR) swap R/B
         line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
                       ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
       } else {
@@ -1131,7 +1124,6 @@ static void redraw_warp_svg(layer_t *layer) {
       }
     }
   }
-  warp_engine_draw_texts(layer, scroll_x, scroll_y);
 }
 
 static int svg_init_nextgen(layer_t *layer) {
