@@ -978,7 +978,7 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
 
 typedef struct {
   int x, y, w, h;
-  int old_x, old_y, old_w, old_h; // For restoration from maximized state
+  int old_x, old_y, old_w, old_h;
   int is_maximized;
   char title[64];
   warp_context_t *warp_ctx;
@@ -987,7 +987,8 @@ typedef struct {
   int is_dirty;
   int is_dragging;
   int is_resizing;
-  int drag_off_x, drag_off_y;
+  float scroll_x, scroll_y;
+  float target_scroll_x, target_scroll_y;
 } window_t;
 
 #define MAX_WINDOWS 8
@@ -997,40 +998,46 @@ static int g_active_window_index = -1;
 
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx) return;
+  // Use window width for layout. The engine will calculate the necessary height.
   warp_context_update(win->warp_ctx, win->w, win->h);
   
-  if (!win->rgba_buffer || win->buffer_w != win->w || win->buffer_h != win->h) {
+  const char *svg = warp_context_get_svg(win->warp_ctx);
+  NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
+  if (!img) return;
+
+  // Content height is determined by the SVG itself
+  int content_h = (int)img->height;
+  if (content_h < win->h) content_h = win->h;
+
+  // Re-allocate buffer if width changed or height grew
+  if (!win->rgba_buffer || win->buffer_w != win->w || win->buffer_h != content_h) {
     if (win->rgba_buffer) free(win->rgba_buffer);
-    win->rgba_buffer = (unsigned char *)malloc((size_t)win->w * (size_t)win->h * 4);
+    win->rgba_buffer = (unsigned char *)malloc((size_t)win->w * (size_t)content_h * 4);
     win->buffer_w = win->w;
-    win->buffer_h = win->h;
+    win->buffer_h = content_h;
   }
   
   if (win->rgba_buffer) {
-    const uint32_t bg = 0xFFFFFFFF; // Window background
-    for (int i = 0; i < win->w * win->h; i++) ((uint32_t*)win->rgba_buffer)[i] = bg;
+    const uint32_t bg = 0xFFFFFFFF;
+    for (int i = 0; i < win->w * win->buffer_h; i++) ((uint32_t*)win->rgba_buffer)[i] = bg;
     
-    const char *svg = warp_context_get_svg(win->warp_ctx);
-    NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
-    if (img) {
-      if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-      nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, win->rgba_buffer, win->w, win->h, win->w * 4);
-      nsvgDelete(img);
-      
-      // R/B Swap
-      unsigned char *p = win->rgba_buffer;
-      for (int i = 0; i < win->w * win->h; i++) {
-        unsigned char r = p[0], b = p[2];
-        p[0] = b; p[2] = r; p += 4;
-      }
-      
-      layer_t temp_layer;
-      temp_layer.buffer = (uint32_t*)win->rgba_buffer;
-      temp_layer.width = win->w;
-      temp_layer.height = win->h;
-      warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+    if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+    nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, win->rgba_buffer, win->w, win->buffer_h, win->w * 4);
+    
+    // R/B Swap to system native
+    unsigned char *p = win->rgba_buffer;
+    for (int i = 0; i < win->w * win->buffer_h; i++) {
+      unsigned char r = p[0], b = p[2];
+      p[0] = b; p[2] = r; p += 4;
     }
+    
+    layer_t temp_layer;
+    temp_layer.buffer = (uint32_t*)win->rgba_buffer;
+    temp_layer.width = win->w;
+    temp_layer.height = win->buffer_h;
+    warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
   }
+  nsvgDelete(img);
   win->is_dirty = 0;
 }
 
@@ -1038,6 +1045,8 @@ static void add_window(const char *title, int x, int y, int w, int h) {
   if (g_window_count >= MAX_WINDOWS) return;
   window_t *win = &g_windows[g_window_count++];
   win->x = x; win->y = y; win->w = w; win->h = h;
+  win->scroll_x = 0; win->scroll_y = 0;
+  win->target_scroll_x = 0; win->target_scroll_y = 0;
   strncpy(win->title, title, 63);
   win->warp_ctx = warp_context_create(g_warp_buffer);
   win->rgba_buffer = NULL;
@@ -1094,27 +1103,34 @@ static void redraw_warp_svg(layer_t *layer) {
       }
       layer_draw_ttf(layer, win->x + 8, win->y - 24, win->title, 16, 0xFFFFFFFF);
       
-      // Buttons (Close and Maximize)
-      // Close [X] at far right
+      // Buttons
       int btn_size = 24;
-      int close_x = win->x + win->w - btn_size - 4;
-      int max_x = close_x - btn_size - 4;
-      layer_draw_ttf(layer, close_x + 4, win->y - 24, "X", 16, 0xFFFFFFFF);
-      layer_draw_ttf(layer, max_x + 4, win->y - 24, "M", 16, 0xFFFFFFFF);
+      layer_draw_ttf(layer, win->x + win->w - btn_size - 4, win->y - 24, "X", 16, 0xFFFFFFFF);
+      layer_draw_ttf(layer, win->x + win->w - btn_size * 2 - 8, win->y - 24, "M", 16, 0xFFFFFFFF);
       
-      // Content
+      // Content with scroll offset
+      int sy_int = (int)roundf(win->scroll_y);
       for (int dy = 0; dy < win->h; dy++) {
         int py = win->y + dy;
         if (py < 0 || py >= layer->height) continue;
+        
+        int src_y = dy - sy_int;
+        if (src_y < 0 || src_y >= win->buffer_h) {
+          for (int dx = 0; dx < win->w; dx++) {
+            if (win->x + dx >= 0 && win->x + dx < layer->width) layer->buffer[py * layer->width + win->x + dx] = 0xFFFFFFFF;
+          }
+          continue;
+        }
+
         uint32_t *dst = &layer->buffer[py * layer->width + win->x];
-        uint32_t *src = (uint32_t*)&win->rgba_buffer[dy * win->w * 4];
+        uint32_t *src = (uint32_t*)&win->rgba_buffer[src_y * win->w * 4];
         for (int dx = 0; dx < win->w; dx++) {
           if (win->x + dx >= 0 && win->x + dx < layer->width) *dst = *src;
           dst++; src++;
         }
       }
       
-      // Resize handle at bottom-right
+      // Handle
       if (i == g_active_window_index) {
         int handle_s = 12;
         for (int dy = win->h - handle_s; dy < win->h; dy++) {
@@ -2250,33 +2266,38 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
-      if (mouse_scroll != 0) {
-        g_target_scroll_y += (float)mouse_scroll * 60.0f;
+      // 1. Scroll Handling (Active Window)
+      if (mouse_scroll != 0 && g_active_window_index >= 0) {
+        g_windows[g_active_window_index].target_scroll_y += (float)mouse_scroll * 60.0f;
         mouse_scroll = 0;
-        if (g_target_scroll_y > 0.0f)
-          g_target_scroll_y = 0.0f;
+        if (g_windows[g_active_window_index].target_scroll_y > 0.0f)
+          g_windows[g_active_window_index].target_scroll_y = 0.0f;
       }
 
+      // 2. Window Animation (Smooth Scroll)
       if (timer_ticks != last_anim_tick) {
         uint32_t dt = timer_ticks - last_anim_tick;
         last_anim_tick = timer_ticks;
         int moved = 0;
-        for (uint32_t i = 0; i < dt; i++) {
-          float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) < 0.05f) {
-            if (g_scroll_y != g_target_scroll_y) {
-              g_scroll_y = g_target_scroll_y;
+        for (int i = 0; i < g_window_count; i++) {
+          window_t *win = &g_windows[i];
+          for (uint32_t j = 0; j < dt; j++) {
+            float dy = (win->target_scroll_y - win->scroll_y) * SCROLL_EASE;
+            if (fabsf(dy) < 0.05f) {
+              if (win->scroll_y != win->target_scroll_y) {
+                win->scroll_y = win->target_scroll_y;
+                moved = 1;
+              }
+            } else {
+              win->scroll_y += dy;
               moved = 1;
             }
-          } else {
-            g_scroll_y += dy;
-            moved = 1;
           }
         }
-        if (moved)
-          redraw_warp_svg(&nextgen_ui_layer);
+        if (moved) redraw_warp_svg(&nextgen_ui_layer);
       }
 
+      // 3. Mouse Interaction
       uint8_t curr_btns = mouse_buttons;
       static int last_mouse_x = -1, last_mouse_y = -1;
       int mouse_dx = (last_mouse_x == -1) ? 0 : mouse_x - last_mouse_x;
@@ -2285,111 +2306,101 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
       if (curr_btns != prev_mouse_buttons) {
         if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
-          // Click start
-          int hit = -1;
+          // Press
+          int hit_index = -1;
           for (int i = g_window_count - 1; i >= 0; i--) {
             window_t *win = &g_windows[i];
             
-            // 1. Resize handle check (bottom-right)
+            // 1. Resize Handle (bottom-right)
             if (mouse_x >= win->x + win->w - 16 && mouse_x < win->x + win->w &&
                 mouse_y >= win->y + win->h - 16 && mouse_y < win->y + win->h) {
-              hit = i;
-              // Bring to front
-              if (i != g_window_count - 1) {
-                window_t tmp = g_windows[i];
-                for (int j = i; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
-                g_windows[g_window_count - 1] = tmp;
-              }
-              g_active_window_index = g_window_count - 1;
-              g_windows[g_active_window_index].is_resizing = 1;
+              hit_index = i;
+              g_windows[hit_index].is_resizing = 1;
               break;
             }
-
-            // 2. Title bar check
+            
+            // 2. Title Bar (Move, Close, Maximize)
             if (mouse_x >= win->x && mouse_x < win->x + win->w &&
                 mouse_y >= win->y - 32 && mouse_y < win->y) {
-              hit = i;
-              if (i != g_window_count - 1) {
-                window_t tmp = g_windows[i];
-                for (int j = i; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
-                g_windows[g_window_count - 1] = tmp;
-              }
-              g_active_window_index = g_window_count - 1;
-              window_t *awin = &g_windows[g_active_window_index];
+              hit_index = i;
+              window_t *hwin = &g_windows[hit_index];
               
-              // Close button check
-              if (mouse_x > awin->x + awin->w - 32) {
+              // Close check (far right)
+              if (mouse_x > hwin->x + hwin->w - 32) {
+                g_active_window_index = hit_index;
                 close_active_window();
+                hit_index = -2; // Mark as handled
               } 
-              // Maximize button check
-              else if (mouse_x > awin->x + awin->w - 64) {
-                if (awin->is_maximized) {
-                  awin->x = awin->old_x; awin->y = awin->old_y;
-                  awin->w = awin->old_w; awin->h = awin->old_h;
-                  awin->is_maximized = 0;
+              // Maximize check
+              else if (mouse_x > hwin->x + hwin->w - 64) {
+                if (hwin->is_maximized) {
+                  hwin->x = hwin->old_x; hwin->y = hwin->old_y;
+                  hwin->w = hwin->old_w; hwin->h = hwin->old_h;
+                  hwin->is_maximized = 0;
                 } else {
-                  awin->old_x = awin->x; awin->old_y = awin->y;
-                  awin->old_w = awin->w; awin->old_h = awin->h;
-                  awin->x = 0; awin->y = 32; awin->w = nextgen_ui_layer.width; awin->h = nextgen_ui_layer.height - 32;
-                  awin->is_maximized = 1;
+                  hwin->old_x = hwin->x; hwin->old_y = hwin->y;
+                  hwin->old_w = hwin->w; hwin->old_h = hwin->h;
+                  hwin->x = 0; hwin->y = 32; 
+                  hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 32;
+                  hwin->is_maximized = 1;
                 }
-                awin->is_dirty = 1;
-              } else {
-                awin->is_dragging = 1;
+                hwin->is_dirty = 1;
+              } 
+              // Drag start (only if not maximized)
+              else if (!hwin->is_maximized) {
+                hwin->is_dragging = 1;
               }
               break;
             }
             
-            // 3. Content check
+            // 3. Content
             if (mouse_x >= win->x && mouse_x < win->x + win->w &&
                 mouse_y >= win->y && mouse_y < win->y + win->h) {
-              hit = i;
-              if (i != g_window_count - 1) {
-                window_t tmp = g_windows[i];
-                for (int j = i; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
-                g_windows[g_window_count - 1] = tmp;
-              }
-              g_active_window_index = g_window_count - 1;
-              warp_context_click(g_windows[g_active_window_index].warp_ctx, 
-                                mouse_x - g_windows[g_active_window_index].x, 
-                                mouse_y - g_windows[g_active_window_index].y);
-              g_windows[g_active_window_index].is_dirty = 1;
+              hit_index = i;
+              warp_context_click(win->warp_ctx, mouse_x - win->x, mouse_y - win->y - (int)win->scroll_y);
+              win->is_dirty = 1;
               break;
             }
           }
-          if (hit == -1 && g_window_count < MAX_WINDOWS) {
-            add_window("New Window", mouse_x - 50, mouse_y + 50, 400, 300);
+          
+          if (hit_index >= 0) {
+            // Bring hit window to front
+            if (hit_index != g_window_count - 1) {
+              window_t tmp = g_windows[hit_index];
+              for (int j = hit_index; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
+              g_windows[g_window_count - 1] = tmp;
+            }
+            g_active_window_index = g_window_count - 1;
+          } else if (hit_index == -1) {
+            // Wallpaper click (real click, not just missed window)
+            add_window("New Warp", mouse_x - 50, mouse_y + 50, 400, 300);
           }
+          g_svg_dirty = 1;
+          redraw_warp_svg(&nextgen_ui_layer);
         } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
-          // Click end
-          if (g_active_window_index >= 0) {
-            g_windows[g_active_window_index].is_dragging = 0;
-            g_windows[g_active_window_index].is_resizing = 0;
+          // Release
+          for (int i = 0; i < g_window_count; i++) {
+            g_windows[i].is_dragging = 0;
+            g_windows[i].is_resizing = 0;
           }
         }
         prev_mouse_buttons = curr_btns;
       }
 
-      // Handle continuous dragging/resizing
-      if (g_active_window_index >= 0) {
+      // Drag/Resize movement
+      if (g_active_window_index >= 0 && (mouse_dx != 0 || mouse_dy != 0)) {
         window_t *awin = &g_windows[g_active_window_index];
         if (awin->is_dragging) {
-          awin->x += mouse_dx;
-          awin->y += mouse_dy;
+          awin->x += mouse_dx; awin->y += mouse_dy;
           g_svg_dirty = 1;
         } else if (awin->is_resizing) {
-          awin->w += mouse_dx;
-          awin->h += mouse_dy;
+          awin->w += mouse_dx; awin->h += mouse_dy;
           if (awin->w < 100) awin->w = 100;
           if (awin->h < 64) awin->h = 64;
           awin->is_dirty = 1;
           g_svg_dirty = 1;
         }
-      }
-      
-      if (mouse_dx != 0 || mouse_dy != 0) {
-        g_svg_dirty = 1;
-        redraw_warp_svg(&nextgen_ui_layer);
+        if (g_svg_dirty) redraw_warp_svg(&nextgen_ui_layer);
       }
 
       if (keybuf_len > 0) {
