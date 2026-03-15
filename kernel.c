@@ -100,6 +100,8 @@ static uint32_t g_mod_count = 0;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
+static char g_wallpaper_buffer[131072] = "";
+static int g_wallpaper_found = 0;
 static int g_svg_dirty = 1;
 
 // --- 前方宣言 ---
@@ -911,10 +913,17 @@ static int svg_init(layer_t *layer) {
     return 1;
   layer_fill(layer, 0xFF000000);
 
-  if (!g_bootlogo_found || g_bootlogo_buffer[0] == '\0')
+  const char* svg_data = NULL;
+  if (g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
+    svg_data = g_wallpaper_buffer;
+  } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
+    svg_data = g_bootlogo_buffer;
+  }
+
+  if (!svg_data)
     return 0;
 
-  g_svg_image = nsvgParse(g_bootlogo_buffer, "px", 96.0f);
+  g_svg_image = nsvgParse((char*)svg_data, "px", 96.0f);
   if (!g_svg_image)
     return 0;
 
@@ -934,27 +943,42 @@ static int svg_init(layer_t *layer) {
     return 0;
   memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
 
-  float tx = (g_svg_full_w - g_svg_image->width) / 2.0f;
-  float ty = (g_svg_full_h - g_svg_image->height) / 2.0f;
-  nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, 1.0f, g_svg_full_rgba,
+  float scale = 1.0f;
+  float tx = 0.0f, ty = 0.0f;
+
+  if (g_wallpaper_found && svg_data == g_wallpaper_buffer) {
+    // "Center Cover" logic
+    float scale_x = (float)g_svg_full_w / g_svg_image->width;
+    float scale_y = (float)g_svg_full_h / g_svg_image->height;
+    scale = (scale_x > scale_y) ? scale_x : scale_y;
+    tx = (g_svg_full_w - g_svg_image->width * scale) / 2.0f;
+    ty = (g_svg_full_h - g_svg_image->height * scale) / 2.0f;
+  } else {
+    // Center logic for logo
+    tx = (g_svg_full_w - g_svg_image->width) / 2.0f;
+    ty = (g_svg_full_h - g_svg_image->height) / 2.0f;
+  }
+
+  nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, scale, g_svg_full_rgba,
                 g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
 
-  // --- 自動グラデーション抽出ロジック ---
-  const char *conic_pos = strstr(g_bootlogo_buffer, "conic-gradient");
-  if (conic_pos) {
-    // 3番目と4番目のrgbaを抽出 ( bootlogo.svg の色の意図を汲む )
-    uint32_t c1 = parse_rgba_smart(conic_pos, 2);
-    uint32_t c2 = parse_rgba_smart(conic_pos, 3);
+  // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
+  if (svg_data == g_bootlogo_buffer) {
+    const char *conic_pos = strstr(g_bootlogo_buffer, "conic-gradient");
+    if (conic_pos) {
+      uint32_t c1 = parse_rgba_smart(conic_pos, 2);
+      uint32_t c2 = parse_rgba_smart(conic_pos, 3);
 
-    for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
-      if (s->fill.type != NSVG_PAINT_NONE) {
-        int rx = (int)(s->bounds[0] + tx);
-        int ry = (int)(s->bounds[1] + ty);
-        int rw = (int)(s->bounds[2] - s->bounds[0]);
-        int rh = (int)(s->bounds[3] - s->bounds[1]);
-        if (rw > 0 && rh > 0) {
-          apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
-                               ry, rw, rh, c1, c2);
+      for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
+        if (s->fill.type != NSVG_PAINT_NONE) {
+          int rx = (int)(s->bounds[0] * scale + tx);
+          int ry = (int)(s->bounds[1] * scale + ty);
+          int rw = (int)((s->bounds[2] - s->bounds[0]) * scale);
+          int rh = (int)((s->bounds[3] - s->bounds[1]) * scale);
+          if (rw > 0 && rh > 0) {
+            apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
+                                 ry, rw, rh, c1, c2);
+          }
         }
       }
     }
@@ -999,13 +1023,20 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
         memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_bootlogo_buffer[size] = '\0';
         g_bootlogo_found = 1;
+      } else if (strstr(s, "wallpaper_1.svg") || strstr(s, "WALLPAPER_1.SVG")) {
+        uint32_t size = mods[i].mod_end - mods[i].mod_start;
+        if (size > 131071)
+          size = 131071;
+        memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+        g_wallpaper_buffer[size] = '\0';
+        g_wallpaper_found = 1;
       }
     }
   }
 
   // 2. 根本解決: 文字列マッチングが失敗した場合、grub.cfg
   // の定義順序に基づいたインデックスで割り当てる Index 0: Font, Index 1:
-  // main.warp, Index 2: bootlogo.svg
+  // main.warp, Index 2: bootlogo.svg, Index 3: wallpaper_1.svg
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
     uint32_t size = mods[1].mod_end - mods[1].mod_start;
     if (size > 32767)
@@ -1021,6 +1052,14 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
     g_bootlogo_buffer[size] = '\0';
     g_bootlogo_found = 1;
+  }
+  if (!g_wallpaper_found && mbi->mods_count >= 4) {
+    uint32_t size = mods[3].mod_end - mods[3].mod_start;
+    if (size > 131071)
+      size = 131071;
+    memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[3].mod_start, size);
+    g_wallpaper_buffer[size] = '\0';
+    g_wallpaper_found = 1;
   }
 }
 
@@ -1136,6 +1175,40 @@ static void redraw_warp_svg(layer_t *layer) {
     if (win->is_dirty) window_redraw(win);
     
     if (win->rgba_buffer) {
+      // Draw Window Shadow (Optimized)
+      int shadow_size = 48;
+      for (int s = shadow_size; s > 0; s--) {
+        uint8_t alpha = (uint8_t)(2.5 * (shadow_size - s + 1) / shadow_size);
+        int sx = win->x - s + 0;
+        int sy = win->y - 40 - s + 8;
+        int sw = win->w + s * 2;
+        int sh = win->h + 40 + s * 2;
+        
+        for (int dy = 0; dy < sh; dy++) {
+          int py = sy + dy;
+          if (py < 0 || py >= layer->height) continue;
+          
+          // Only process lines that actually contain shadow
+          for (int dx = 0; dx < sw; dx++) {
+            int px = sx + dx;
+            if (px < 0 || px >= layer->width) continue;
+            
+            // Skip the area covered by the window
+            if (px >= win->x && px < win->x + win->w && py >= win->y - 40 && py < win->y + win->h) {
+              dx = win->x + win->w - sx - 1; // Jump to the right side of the window
+              continue;
+            }
+
+            uint32_t bg = layer->buffer[py * layer->width + px];
+            uint8_t r_b = (bg >> 16) & 0xFF, g_b = (bg >> 8) & 0xFF, b_b = bg & 0xFF;
+            uint8_t r_out = (uint8_t)(r_b * (255 - alpha) / 255);
+            uint8_t g_out = (uint8_t)(g_b * (255 - alpha) / 255);
+            uint8_t b_out = (uint8_t)(b_b * (255 - alpha) / 255);
+            layer->buffer[py * layer->width + px] = (0xFFu << 24) | (r_out << 16) | (g_out << 8) | b_out;
+          }
+        }
+      }
+
       int title_h = 40;
       uint32_t theme = (i == g_active_window_index) ? 0xFFF5F5F5 : 0xFFE0E0E0;
       

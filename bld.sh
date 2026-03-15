@@ -53,6 +53,11 @@ else
     echo '<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="100" r="80" fill="#00a5ff" /><text x="100" y="115" fill="white" font-family="sans-serif" font-size="40" text-anchor="middle">B</text></svg>' > output/isodir/boot/bootlogo.svg
 fi
 
+# wallpaper_1.svg を配置
+if [ -f "ui/wallpaper_1.svg" ]; then
+    cp ui/wallpaper_1.svg output/isodir/boot/
+fi
+
 # --- 7. ISOイメージ作成 ---
 i686-elf-grub-mkrescue -o output/os.iso output/isodir || exit 1
 
