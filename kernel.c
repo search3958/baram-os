@@ -2697,16 +2697,22 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
       }
 
-      // Classic モード：トラックパッドのスクロール量に直接追従（アニメーション維持）
+      // Classic モード：トラックパッドのスクロール量に直接追従（1px 単位）
       if (mouse_scroll != 0) {
         g_target_scroll_y += (float)mouse_scroll * 30.0f;
         mouse_scroll = 0;
+        // 上限：0, 下限：コンテンツ高さ - 画面高さ
+        int content_h = g_svg_full_h;
+        int min_scroll = SCREEN_HEIGHT - content_h;
+        if (min_scroll > 0) min_scroll = 0; // コンテンツが画面より小さい場合はスクロール不可
+        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
+        if (g_target_scroll_y < (float)min_scroll) g_target_scroll_y = (float)min_scroll;
       }
 
-      // スクロールアニメーション
+      // スクロールアニメーション（1px 単位で補間）
       if (g_target_scroll_y != g_scroll_y) {
         float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-        if (fabsf(dy) < 0.05f) {
+        if (fabsf(dy) < 1.0f) {
           g_scroll_y = g_target_scroll_y;
         } else {
           g_scroll_y += dy;
@@ -2768,7 +2774,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
-      // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従
+      // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従（1px 単位）
       if (mouse_scroll != 0 && g_active_window_index >= 0) {
         window_t *win = &g_windows[g_active_window_index];
         float scroll_amount = (float)mouse_scroll * 30.0f;
@@ -2779,8 +2785,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             ? warp1_context_get_target_scroll_y(win->warp1_ctx)
             : warp_context_get_target_scroll_y(win->warp_ctx);
 
-        // 新しいターゲットスクロールを計算（制限なし）
+        // 新しいターゲットスクロールを計算
         float new_target = current_target + scroll_amount;
+
+        // 上限・下限制限
+        int content_h = win->is_warp1
+            ? warp1_context_get_content_height(win->warp1_ctx)
+            : warp_context_get_content_height(win->warp_ctx);
+        int min_scroll = win->h - content_h;
+        if (min_scroll > 0) min_scroll = 0;
+        if (new_target > 0.0f) new_target = 0.0f;
+        if (new_target < (float)min_scroll) new_target = (float)min_scroll;
 
         // コンテキストに設定
         if (win->is_warp1) {
@@ -2827,10 +2842,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           }
         }
 
-        // スクロールアニメーション
+        // スクロールアニメーション（1px 単位で補間）
         if (win->target_scroll_y != win->scroll_y) {
           float dy = (win->target_scroll_y - win->scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) < 0.05f) {
+          if (fabsf(dy) < 1.0f) {
             win->scroll_y = win->target_scroll_y;
           } else {
             win->scroll_y += dy;
