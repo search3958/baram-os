@@ -106,6 +106,7 @@ static int g_bootlogo_found = 0;
 static char g_wallpaper_buffer[131072] = "";
 static int g_wallpaper_found = 0;
 static int g_svg_dirty = 1;
+static char g_hud_status[64] = "Idle";
 
 // --- 前方宣言 ---
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
@@ -1006,6 +1007,28 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   return 1;
 }
 
+const char *g_hardcoded_warp1 = 
+"screen{\n"
+"    id: (main),\n"
+"    Header{\n"
+"        text: (\"Warp1 Embedded Demo\"),\n"
+"        button{\n"
+"            --headerText: (\"\"),\n"
+"            text: (\"⚠️\" + --headerText),\n"
+"            oneClick: (--headerText = \"Please wait\", reset{now})\n"
+"        }\n"
+"    },\n"
+"    card{\n"
+"        text: (\"Status\"),\n"
+"        text{ text: (\"Warp1 is running from embedded code.\") }\n"
+"    },\n"
+"    button{\n"
+"        text: (\"FAB\"),\n"
+"        frame: (width = 100vw - 40, height = 40),\n"
+"        position: (bottom = 20, left = 20)\n"
+"    }\n"
+"}";
+
 static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
     return;
@@ -1016,33 +1039,27 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
     if (s) {
-      if (strstr(s, "main.warp") || strstr(s, "MAIN.WARP") ||
-          strstr(s, "warp") || strstr(s, "WARP")) {
+      if (strstr(s, "main.warp") || strstr(s, "MAIN.WARP")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 32767)
-          size = 32767;
+        if (size > 32767) size = 32767;
         memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_warp_buffer[size] = '\0';
         g_warp_mod_found = 1;
       } else if (strstr(s, "new.warp1") || strstr(s, "NEW.WARP1")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 32767)
-          size = 32767;
+        if (size > 32767) size = 32767;
         memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_warp1_buffer[size] = '\0';
         g_warp1_mod_found = 1;
-      } else if (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG") ||
-                 strstr(s, ".svg") || strstr(s, ".SVG")) {
+      } else if (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 65535)
-          size = 65535;
+        if (size > 65535) size = 65535;
         memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_bootlogo_buffer[size] = '\0';
         g_bootlogo_found = 1;
       } else if (strstr(s, "wallpaper_1.svg") || strstr(s, "WALLPAPER_1.SVG")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 131071)
-          size = 131071;
+        if (size > 131071) size = 131071;
         memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_wallpaper_buffer[size] = '\0';
         g_wallpaper_found = 1;
@@ -1050,32 +1067,37 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     }
   }
 
-  // 2. 根本解決: 文字列マッチングが失敗した場合、grub.cfg
-  // の定義順序に基づいたインデックスで割り当てる Index 0: Font, Index 1:
-  // main.warp, Index 2: bootlogo.svg, Index 3: wallpaper_1.svg
+  // 2. インデックスベースのフォールバック (grub.cfg の定義順)
+  // 0: Font, 1: main.warp, 2: new.warp1, 3: bootlogo.svg, 4: wallpaper_1.svg
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
     uint32_t size = mods[1].mod_end - mods[1].mod_start;
-    if (size > 32767)
-      size = 32767;
+    if (size > 32767) size = 32767;
     memcpy(g_warp_buffer, (void *)(uintptr_t)mods[1].mod_start, size);
-    g_warp_buffer[size] = '\0';
-    g_warp_mod_found = 1;
+    g_warp_buffer[size] = '\0'; g_warp_mod_found = 1;
   }
-  if (!g_bootlogo_found && mbi->mods_count >= 3) {
+  if (!g_warp1_mod_found && mbi->mods_count >= 3) {
     uint32_t size = mods[2].mod_end - mods[2].mod_start;
-    if (size > 65535)
-      size = 65535;
-    memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
-    g_bootlogo_buffer[size] = '\0';
-    g_bootlogo_found = 1;
+    if (size > 32767) size = 32767;
+    memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
+    g_warp1_buffer[size] = '\0'; g_warp1_mod_found = 1;
   }
-  if (!g_wallpaper_found && mbi->mods_count >= 4) {
+  if (!g_bootlogo_found && mbi->mods_count >= 4) {
     uint32_t size = mods[3].mod_end - mods[3].mod_start;
-    if (size > 131071)
-      size = 131071;
-    memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[3].mod_start, size);
-    g_wallpaper_buffer[size] = '\0';
-    g_wallpaper_found = 1;
+    if (size > 65535) size = 65535;
+    memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[3].mod_start, size);
+    g_bootlogo_buffer[size] = '\0'; g_bootlogo_found = 1;
+  }
+  if (!g_wallpaper_found && mbi->mods_count >= 5) {
+    uint32_t size = mods[4].mod_end - mods[4].mod_start;
+    if (size > 131071) size = 131071;
+    memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[4].mod_start, size);
+    g_wallpaper_buffer[size] = '\0'; g_wallpaper_found = 1;
+  }
+
+  // ファイルが見つからない場合の最終手段 (Warp1)
+  if (!g_warp1_mod_found) {
+    strncpy(g_warp1_buffer, g_hardcoded_warp1, 32767);
+    g_warp1_mod_found = 1;
   }
 }
 
@@ -1210,15 +1232,22 @@ static void window_update_caches(window_t *win) {
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
   
+  strncpy(g_hud_status, "EngineUpdate", 63);
   if (win->is_warp1) {
     warp1_context_update(win->warp1_ctx, win->w, win->h);
   } else {
     warp_context_update(win->warp_ctx, win->w, win->h);
   }
   
+  strncpy(g_hud_status, "SVGGen", 63);
   const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
+  
+  strncpy(g_hud_status, "NSVGParse", 63);
   NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
-  if (!img) return;
+  if (!img) {
+    strncpy(g_hud_status, "ParseErr", 63);
+    return;
+  }
 
   // Content height is determined by the SVG itself
   int content_h = (int)img->height;
@@ -1226,6 +1255,7 @@ static void window_redraw(window_t *win) {
 
   // Re-allocate buffer if width changed or height grew
   if (!win->rgba_buffer || win->buffer_w != win->w || win->buffer_h != content_h) {
+    strncpy(g_hud_status, "Alloc", 63);
     if (win->rgba_buffer) free(win->rgba_buffer);
     win->rgba_buffer = (unsigned char *)malloc((size_t)win->w * (size_t)content_h * 4);
     win->buffer_w = win->w;
@@ -1233,12 +1263,15 @@ static void window_redraw(window_t *win) {
   }
   
   if (win->rgba_buffer) {
+    strncpy(g_hud_status, "ClearBG", 63);
     const uint32_t bg = 0xFFFFFFFF;
     for (int i = 0; i < win->w * win->buffer_h; i++) ((uint32_t*)win->rgba_buffer)[i] = bg;
     
+    strncpy(g_hud_status, "NSVGRast", 63);
     if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
     nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, win->rgba_buffer, win->w, win->buffer_h, win->w * 4);
     
+    strncpy(g_hud_status, "RBSwap", 63);
     // R/B Swap to system native
     unsigned char *p = win->rgba_buffer;
     for (int i = 0; i < win->w * win->buffer_h; i++) {
@@ -1246,6 +1279,7 @@ static void window_redraw(window_t *win) {
       p[0] = b; p[2] = r; p += 4;
     }
     
+    strncpy(g_hud_status, "TxtDraw", 63);
     layer_t temp_layer;
     temp_layer.buffer = (uint32_t*)win->rgba_buffer;
     temp_layer.width = win->w;
@@ -1260,6 +1294,7 @@ static void window_redraw(window_t *win) {
   win->is_dirty = 0;
   win->is_calculating = 0; // Layout/Calculation is done, allow fade back
   
+  strncpy(g_hud_status, "Idle", 63);
   // Update caches after redraw
   window_update_caches(win);
 }
@@ -1958,12 +1993,12 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   p = append_uint(p, g_mbi_flags);
   *p = '\0';
 
-  // 4行目: "Warp: <WarpEngineStatus>"
+  // 4行目: "Status: <g_hud_status>"
   p = line4;
-  const char *w_label = "Warp: ";
+  const char *w_label = "Status: ";
   while (*w_label)
     *p++ = *w_label++;
-  const char *w_status = "OK";
+  const char *w_status = g_hud_status;
   while (*w_status)
     *p++ = *w_status++;
   *p = '\0';

@@ -1,13 +1,11 @@
 #!/bin/bash
 
 # --- 1. ビルド番号の自動更新 ---
-# ファイルが存在しない場合は0からスタート
 BN_FILE=".build_no"
 if [ ! -f "$BN_FILE" ]; then
     echo "0" > "$BN_FILE"
 fi
 
-# 現在の番号を読み込んで+1
 PREV_BN=$(cat "$BN_FILE")
 CURRENT_BN=$((PREV_BN + 1))
 echo "$CURRENT_BN" > "$BN_FILE"
@@ -26,7 +24,6 @@ nasm -f elf32 arch/boot.s -o output/boot.o
 nasm -f elf32 arch/isr.s -o output/isr.o
 
 # --- 4. C言語のコンパイル ---
-# -DBUILD_NUMBER は CFLAGS に含める
 CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
 
 i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || exit 1
@@ -65,16 +62,26 @@ i686-elf-grub-mkrescue -o output/os.iso output/isodir || exit 1
 
 echo "  ✅ Build #$CURRENT_BN Success"
 
-# --- 8. QEMU起動 ---
-# Raspberry Pi 2B 相当の性能ターゲット (ソフトウェア最適化済み)
-# -cpu coreduo: 安定した命令実行スループットを提供
-# -vga virtio: 2D描画帯域を最大化
-qemu-system-i386 -cdrom output/os.iso -vga virtio \
--m 1G \
--smp 4 \
--cpu coreduo \
--rtc base=localtime \
--net none \
--accel tcg,thread=multi \
--display cocoa
+# --- 8. QEMU起動設定 (究極高速化) ---
+# デフォルト
+Q_CPU="coreduo"
+Q_ACCEL="-accel tcg,thread=multi"
 
+if [ "$1" = "max" ]; then
+    echo "  🔥 MAX Performance Mode: Tuning TCG for Apple Silicon..."
+    # 1. CPUを 'max' に設定: QEMUがエミュレートできる全機能を解放
+    Q_CPU="max"
+    # 2. tb-sizeを1GBに拡大: 翻訳済みコードをすべてメモリに保持し、再翻訳を排除
+    # 3. thread=multi: ホストのマルチコアを最大限活用
+    Q_ACCEL="-accel tcg,thread=multi,tb-size=1024"
+fi
+
+qemu-system-i386 -cdrom output/os.iso \
+    -vga virtio \
+    -m 2G \
+    -smp 4 \
+    $Q_ACCEL \
+    -cpu $Q_CPU \
+    -rtc base=localtime \
+    -net none \
+    -display cocoa

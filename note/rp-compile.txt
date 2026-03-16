@@ -19,6 +19,7 @@ cp output/kernel.bin output/isodir/boot/
 cp grub.cfg output/isodir/boot/grub/
 cp font/MPLUS2-Regular.ttf output/isodir/boot/
 cp ui/main.warp output/isodir/boot/
+cp ui/new.warp1 output/isodir/boot/
 
 
 i686-elf-grub-mkrescue -o output/os.iso output/isodir
