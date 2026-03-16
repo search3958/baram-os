@@ -1,3 +1,4 @@
+//こちらはwarp1-新しい方です。
 #include "warp1_engine.h"
 #include "warp_engine.h"
 #include <stddef.h>
@@ -56,13 +57,16 @@ struct warp1_context {
     int mouse_x, mouse_y; int win_w, win_h;
 };
 
+static int w1_tolower(int c) { if (c >= 'A' && c <= 'Z') return c + ('a' - 'A'); return c; }
+static int w1_strcasecmp(const char *s1, const char *s2) { while (*s1 && (w1_tolower(*s1) == w1_tolower(*s2))) { s1++; s2++; } return w1_tolower(*s1) - w1_tolower(*s2); }
+
 // --- 3. Global State ---
 static struct { char key[64]; char val[512]; } g_w1_globals[MAX_VARS];
 static int g_w1_global_count = 0;
 
 static void set_w1_global(const char *key, const char *val) {
     for (int i = 0; i < g_w1_global_count; i++) {
-        if (w1_strcmp(g_w1_globals[i].key, key) == 0) { w1_strncpy(g_w1_globals[i].val, val, 511); return; }
+        if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) { w1_strncpy(g_w1_globals[i].val, val, 511); return; }
     }
     if (g_w1_global_count < MAX_VARS) {
         w1_strncpy(g_w1_globals[g_w1_global_count].key, key, 63);
@@ -71,16 +75,16 @@ static void set_w1_global(const char *key, const char *val) {
 }
 
 static const char *get_w1_global(const char *key) {
-    for (int i = 0; i < g_w1_global_count; i++) { if (w1_strcmp(g_w1_globals[i].key, key) == 0) return g_w1_globals[i].val; }
+    for (int i = 0; i < g_w1_global_count; i++) { if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) return g_w1_globals[i].val; }
     return "";
 }
 
 // --- 4. Logic & Parser ---
 static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
     if (w1_strncmp(key, "~~", 2) == 0) { set_w1_global(key, val); return; }
-    if (w1_strcmp(key, "_currentScreen") == 0) { w1_strncpy(ctx->current_screen, val, 63); return; }
+    if (w1_strcasecmp(key, "_currentScreen") == 0) { w1_strncpy(ctx->current_screen, val, 63); return; }
     for (int i = 0; i < ctx->state_count; i++) {
-        if (w1_strcmp(ctx->state[i].key, key) == 0) { w1_strncpy(ctx->state[i].val, val, 511); return; }
+        if (w1_strcasecmp(ctx->state[i].key, key) == 0) { w1_strncpy(ctx->state[i].val, val, 511); return; }
     }
     if (ctx->state_count < MAX_VARS) {
         w1_strncpy(ctx->state[ctx->state_count].key, key, 63);
@@ -90,8 +94,8 @@ static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
 
 static const char *get_state(warp1_context_t *ctx, const char *key) {
     if (w1_strncmp(key, "~~", 2) == 0) return get_w1_global(key);
-    if (w1_strcmp(key, "_currentScreen") == 0) return ctx->current_screen;
-    for (int i = 0; i < ctx->state_count; i++) { if (w1_strcmp(ctx->state[i].key, key) == 0) return ctx->state[i].val; }
+    if (w1_strcasecmp(key, "_currentScreen") == 0) return ctx->current_screen;
+    for (int i = 0; i < ctx->state_count; i++) { if (w1_strcasecmp(ctx->state[i].key, key) == 0) return ctx->state[i].val; }
     return "";
 }
 
@@ -208,7 +212,8 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
         } else if (w1_strncmp(act, "script{", 7) == 0) {
             char sname[64]; w1_strncpy(sname, act + 7, 63); char *end = w1_strchr(sname, '}');
             if (end) { *end = '\0'; } execute_script1(ctx, sname);
-        } else if (w1_strchr(act, '.')) {
+        } else if (w1_strncmp(act, "wait", 4) == 0) { /* sync engine: no-op */ }
+        else if (w1_strchr(act, '.') && !w1_strncmp(act, "--", 2) && !w1_strncmp(act, "~~", 2)) {
             char *dot = w1_strchr(act, '.'); *dot = '\0'; char *id = act; char *method = dot + 1;
             char *open_b = w1_strchr(method, '{');
             if (open_b) {
@@ -233,16 +238,16 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
                     long res = eval_math1(m_expanded); extern char *append_int(char *p, int v); append_int(val, (int)res);
                 } else if (w1_strstr(rhs, ".replace{")) {
                     char *m_dot = w1_strstr(rhs, ".replace{"); *m_dot = '\0';
-                    char base[256], args[256]; eval_expr(ctx, rhs, base, 255);
+                    char base_expr[256], base[256]; w1_strcpy(base_expr, rhs); eval_expr(ctx, base_expr, base, 255);
                     char *m_open = m_dot + 9; char *m_close = w1_strchr(m_open, '}');
-                    if (m_close) *m_close = '\0'; w1_strcpy(args, m_open);
-                    char old_s[128], new_s[128]; char *comma = w1_strchr(args, ',');
+                    if (m_close) *m_close = '\0';
+                    char old_s[128], new_s[128]; char *comma = w1_strchr(m_open, ',');
                     if (comma) {
-                        *comma = '\0'; eval_expr(ctx, args, old_s, 127); eval_expr(ctx, comma + 1, new_s, 127);
+                        *comma = '\0'; eval_expr(ctx, m_open, old_s, 127); eval_expr(ctx, comma + 1, new_s, 127);
                         char *found = w1_strstr(base, old_s);
                         if (found && old_s[0]) {
                             int head = found - base; int old_len = w1_strlen(old_s);
-                            w1_strncpy(val, base, head); val[head] = '\0';
+                            w1_strncpy(val, base, (size_t)head); val[head] = '\0';
                             w1_strcat(val, new_s); w1_strcat(val, found + old_len);
                         } else { w1_strcpy(val, base); }
                     } else { w1_strcpy(val, base); }
@@ -412,17 +417,52 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             w1_strcpy(ctx->texts[ctx->texts_count].text, text); ctx->texts[ctx->texts_count].size = 16;
             ctx->texts[ctx->texts_count].color = (w1_strcmp(node->tag, "tonalButton") == 0) ? 0xFF0a56d0 : 0xFFFFFFFF; ctx->texts_count++;
         }
+    
     } else if (w1_strcmp(node->tag, "switch") == 0) {
-        node->w = 48; node->h = 24;
+        // スイッチの標準サイズを定義
+        node->w = 48; 
+        node->h = 24;
     } else if (w1_strcmp(node->tag, "slider") == 0) {
-        node->w = limit_w; node->h = 30;
+        // スライダーは横幅一杯、高さは操作しやすい32px程度を確保
+        node->w = limit_w; 
+        node->h = 32; 
     } else if (w1_strcmp(node->tag, "input") == 0) {
-        node->w = limit_w; node->h = 48;
-        char placeholder[128]; eval_attr(ctx, node, "placeholder", placeholder, 127);
+        // 入力フォームのボックスサイズを確保
+        node->w = limit_w; 
+        node->h = 48; 
+        
+        char out_var[128], val[256], placeholder[128];
+        eval_attr(ctx, node, "output", out_var, 127); 
+        eval_attr(ctx, node, "placeholder", placeholder, 127);
+        
+        val[0] = '\0'; 
+        if (out_var[0]) { w1_strcpy(val, get_state(ctx, out_var)); }
+        
+        char id[64], content_key[128]; 
+        eval_attr(ctx, node, "id", id, 63);
+        if (id[0]) {
+            w1_strcpy(content_key, "--"); 
+            w1_strcat(content_key, id); 
+            w1_strcat(content_key, "Content");
+            const char *cv = get_state(ctx, content_key); 
+            if (cv[0]) w1_strcpy(val, cv);
+        }
+
+        // ボックス内でのテキスト描画位置を調整（中央付近に）
         if (ctx->texts_count < MAX_TEXTS) {
-            ctx->texts[ctx->texts_count].x = node->x + 12; ctx->texts[ctx->texts_count].y = node->y + 14;
-            w1_strcpy(ctx->texts[ctx->texts_count].text, placeholder); ctx->texts[ctx->texts_count].size = 16;
-            ctx->texts[ctx->texts_count].color = 0xFF888888; ctx->texts_count++;
+            ctx->texts[ctx->texts_count].x = node->x + 12; 
+            // y軸のオフセットを調整してテキストがボックス内に収まるように
+            ctx->texts[ctx->texts_count].y = node->y + 16; 
+            
+            if (val[0]) { 
+                w1_strcpy(ctx->texts[ctx->texts_count].text, val); 
+                ctx->texts[ctx->texts_count].color = 0xFF333333; 
+            } else { 
+                w1_strcpy(ctx->texts[ctx->texts_count].text, placeholder); 
+                ctx->texts[ctx->texts_count].color = 0xFF888888; 
+            }
+            ctx->texts[ctx->texts_count].size = 16; 
+            ctx->texts_count++;
         }
     } else if (w1_strcmp(node->tag, "text") == 0) {
         char text[256]; eval_attr(ctx, node, "text", text, 255);
@@ -440,6 +480,9 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             if (h > max_h) { max_h = h; } cx += node->children[i]->w + 8;
         }
         node->h = max_h;
+    } else if (w1_strcmp(node->tag, "vStack") == 0) {
+        for (int i = 0; i < node->children_count; i++) { cy += layout_node1(ctx, node->children[i], px, cy, limit_w) + 8; }
+        node->h = cy - py;
     } else { for (int i = 0; i < node->children_count; i++) { cy += layout_node1(ctx, node->children[i], px, cy, limit_w) + 4; } node->h = cy - py; }
     return node->h;
 }
@@ -473,34 +516,92 @@ static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int 
     emit_squircle_shape_to(dest, size, x, y, w, h, radius, fill, extra);
 }
 
+
+
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
     if (!node) return;
-    const char *id_attr = ""; for(int i=0;i<node->attrs_count;i++) if(w1_strcmp(node->attrs[i].key, "id")==0) id_attr = node->attrs[i].value;
+    const char *id_attr = ""; 
+    for(int i=0;i<node->attrs_count;i++) {
+        if(w1_strcmp(node->attrs[i].key, "id")==0) {
+            id_attr = node->attrs[i].value;
+        }
+    }
     
     if (w1_strcmp(node->tag, "screen") == 0) {
         char real_id[64]; eval_expr(ctx, id_attr, real_id, 63);
         if (w1_strcmp(real_id, ctx->current_screen) != 0) return;
         emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, "#f5f5f5", "");
-    } else if (w1_strcmp(node->tag, "card") == 0) { emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "stroke=\"#dddddd\""); }
-    else if (w1_strcmp(node->tag, "button") == 0) { emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", ""); }
-    else if (w1_strcmp(node->tag, "tonalButton") == 0) { emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", "opacity=\"0.1\""); }
-    else if (w1_strcmp(node->tag, "switch") == 0) {
-        char val[128]; eval_attr(ctx, node, "status", val, 127);
-        int on = w1_strstr(val, "true") != NULL;
-        emit_rect1(dest, dest_size, node->x, node->y, node->w, node->h, on ? "#0a56d0" : "#dddddd", "rx=\"12\"");
-        emit_rect1(dest, dest_size, node->x + (on ? 28 : 4), node->y + 4, 16, 16, "#ffffff", "rx=\"8\"");
+        
+    } else if (w1_strcmp(node->tag, "card") == 0) { 
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "stroke=\"#dddddd\" stroke-width=\"1\""); 
+        
+    } else if (w1_strcmp(node->tag, "button") == 0) { 
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", ""); 
+        
+    } else if (w1_strcmp(node->tag, "tonalButton") == 0) { 
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", "opacity=\"0.1\""); 
+        
+    } else if (w1_strcmp(node->tag, "switch") == 0) {
+        // スイッチの描画 - squircle を使用
+        char val[128]; 
+        eval_attr(ctx, node, "status", val, 127);
+        int on = (w1_strstr(val, "true") != NULL);
+        
+        // トラック（背景）- 角丸矩形
+        const char *track_color = on ? "#0a56d0" : "#dddddd";
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, track_color, "");
+        
+        // ノブ（丸いボタン部分）- より丸く
+        int knob_x = node->x + (on ? node->w - 20 : 4);
+        int knob_y = node->y + 4;
+        emit_squircle_shape1(dest, dest_size, knob_x, knob_y, 16, 16, 8.0f, "#ffffff", "");
+        
     } else if (w1_strcmp(node->tag, "slider") == 0) {
-        char val[128]; eval_attr(ctx, node, "status", val, 127);
-        int v = (int)w1_strtol(val); if (v < 0) v = 0; if (v > 100) v = 100;
-        emit_rect1(dest, dest_size, node->x, node->y + 13, node->w, 4, "#dddddd", "rx=\"2\"");
-        emit_rect1(dest, dest_size, node->x + (node->w * v / 100) - 10, node->y + 5, 20, 20, "#0a56d0", "rx=\"10\"");
+        // スライダーの描画 - squircle を使用
+        char val[128]; 
+        eval_attr(ctx, node, "status", val, 127);
+        int v = (int)w1_strtol(val); 
+        if (v < 0) v = 0; 
+        if (v > 100) v = 100;
+        
+        // トラック（背景の線）- 細い角丸矩形
+        emit_squircle_shape1(dest, dest_size, node->x, node->y + 14, node->w, 4, 2.0f, "#dddddd", "");
+        
+        // ノブ（操作する丸）- 完全な円形
+        int knob_x = node->x + (node->w * v / 100) - 10;
+        if (knob_x < node->x - 10) knob_x = node->x - 10;
+        if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
+        emit_squircle_shape1(dest, dest_size, knob_x, node->y + 6, 20, 20, 10.0f, "#0a56d0", "");
+        
     } else if (w1_strcmp(node->tag, "input") == 0) {
-        emit_rect1(dest, dest_size, node->x, node->y, node->w, node->h, "#ffffff", "stroke=\"#dddddd\" rx=\"8\"");
+        // 入力フォームの描画 - 角丸矩形
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 8.0f, "#ffffff", "stroke=\"#dddddd\" stroke-width=\"1\"");
     }
-    for (int i = 0; i < node->children_count; i++) { if (w1_strcmp(node->children[i]->tag, "Header") != 0) emit_svg_recursive1(ctx, node->children[i], dest, dest_size); }
+    
+    // 子要素の描画
+    for (int i = 0; i < node->children_count; i++) { 
+        if (w1_strcmp(node->children[i]->tag, "Header") != 0) {
+            emit_svg_recursive1(ctx, node->children[i], dest, dest_size); 
+        }
+    }
+ 
+    // dev eventCheckのヒットボックス表示
+    if (w1_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0) {
+        int has_hitbox = (node->event_oneclick[0] != '\0' || 
+                          w1_strcmp(node->tag, "button") == 0 ||
+                          w1_strcmp(node->tag, "tonalButton") == 0 ||
+                          w1_strcmp(node->tag, "switch") == 0 ||
+                          w1_strcmp(node->tag, "slider") == 0 ||
+                          w1_strcmp(node->tag, "input") == 0);
+        if (has_hitbox && node->w > 0 && node->h > 0) {
+            // 半透明の赤い矩形（角丸なし）
+            emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 0.0f, "red", "opacity=\"0.4\" stroke=\"red\" stroke-width=\"2\"");
+        }
+    }
 }
 
-// --- 6. Public API ---
+
+
 warp1_context_t* warp1_context_create(const char* code) {
     warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
     for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
@@ -543,27 +644,55 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
     }
 }
 
+
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     for (int i = 0; i < ctx->nodes_count; i++) {
         warp1_node_t *n = &ctx->nodes[i];
         if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
-            if (n->event_oneclick[0]) { execute_action1(ctx, n->event_oneclick); break; }
+            
+            // 通常のonClick処理
+            if (n->event_oneclick[0]) { 
+                execute_action1(ctx, n->event_oneclick); 
+                break; 
+            }
+            
+            // switchの処理
             if (w1_strcmp(n->tag, "switch") == 0) {
-                char out_var[128], status[128]; eval_attr(ctx, n, "output", out_var, 127); eval_attr(ctx, n, "status", status, 127);
+                char out_var[128], status[128]; 
+                eval_attr(ctx, n, "output", out_var, 127); 
+                eval_attr(ctx, n, "status", status, 127);
                 if (out_var[0]) {
-                    int on = w1_strstr(status, "true") != NULL;
+                    int on = (w1_strstr(status, "true") != NULL);
                     set_state(ctx, out_var, on ? "false" : "true");
                 }
                 break;
             }
+            
+            // sliderの処理
             if (w1_strcmp(n->tag, "slider") == 0) {
-                char out_var[128]; eval_attr(ctx, n, "output", out_var, 127);
+                char out_var[128]; 
+                eval_attr(ctx, n, "output", out_var, 127);
                 if (out_var[0]) {
                     int val = (x - n->x) * 100 / n->w;
-                    if (val < 0) val = 0; if (val > 100) val = 100;
-                    char val_str[16]; extern char *append_int(char *p, int v); append_int(val_str, val);
+                    // 範囲チェック（警告修正：ブロック化）
+                    if (val < 0) {
+                        val = 0;
+                    }
+                    if (val > 100) {
+                        val = 100;
+                    }
+                    char val_str[16]; 
+                    extern char *append_int(char *p, int v); 
+                    append_int(val_str, val);
                     set_state(ctx, out_var, val_str);
                 }
+                break;
+            }
+            
+            // inputの処理（現状は何もしない - システム側でキーボード入力を処理する必要がある）
+            if (w1_strcmp(n->tag, "input") == 0) {
+                // 入力フィールドがクリックされたことを記録したい場合はここで処理
+                // 例: set_state(ctx, "--focusedInput", id);
                 break;
             }
         }

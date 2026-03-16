@@ -1,3 +1,4 @@
+//こちらはclassic warp-古い方です。
 #include "warp_engine.h"
 #include <stddef.h>
 #include <stdlib.h>

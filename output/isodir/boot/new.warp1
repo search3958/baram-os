@@ -2,7 +2,7 @@ screen{
     id: (main),
     
     Header{
-        text: ("Warp Demo"),
+        text: ("Warp Demo v1"),
         
         button{
             --headerText: (""),
@@ -324,7 +324,7 @@ screen{
     id: (screen1),
     
     Header{
-        text: ("Screen")
+        text: ("Screen1")
     },
     
     text{
