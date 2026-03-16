@@ -15,6 +15,14 @@ screen{
         text: ("これは新しい、ネイティブとWeb技術が融合する言語です。気になる反応は" + --mainText),
         --mainText: ("...")
     },
+
+    switch{
+        id: (testSwitch),
+        
+output: (--testVal),
+ 
+status: (--testVal)
+   }
     
     card{
         text: ("内容変更"),

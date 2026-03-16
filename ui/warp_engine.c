@@ -1071,10 +1071,11 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
 
   // Draw hitboxes if dev eventCheck=true
   if (warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0) {
-    int has_hitbox = (node->event_oneclick[0] != '\0' || 
-                      node->event_longpress[0] != '\0' || 
-                      warp_strcmp(node->tag, "button") == 0 || 
-                      warp_strcmp(node->tag, "tonalButton") == 0);
+    int has_hitbox = (node->event_oneclick[0] != '\0' ||
+                      node->event_longpress[0] != '\0' ||
+                      warp_strcmp(node->tag, "button") == 0 ||
+                      warp_strcmp(node->tag, "tonalButton") == 0 ||
+                      warp_strcmp(node->tag, "switch") == 0);
     if (has_hitbox && node->w > 0 && node->h > 0) {
       char rect[256];
       char *p = rect;

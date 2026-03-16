@@ -429,8 +429,8 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの標準サイズを定義（44x44）
-        node->w = 48;
-        node->h = 48;
+        node->w = 44;
+        node->h = 44;
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーは横幅一杯、高さは操作しやすい32px程度を確保
         node->w = limit_w; 
@@ -604,8 +604,8 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         }
     }
  
-    // dev eventCheckのヒットボックス表示
-    if (w1_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0) {
+    // dev clickCheckのヒットボックス表示
+    if (w1_strcmp(get_state(ctx, "dev clickCheck"), "true") == 0) {
         int has_hitbox = (node->event_oneclick[0] != '\0' || 
                           w1_strcmp(node->tag, "button") == 0 ||
                           w1_strcmp(node->tag, "tonalButton") == 0 ||
@@ -752,7 +752,7 @@ void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
 }
 
 int warp1_context_is_dev_event_check(warp1_context_t* ctx) {
-    return w1_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0;
+    return w1_strcmp(get_state(ctx, "dev clickCheck"), "true") == 0;
 }
 
 // Screen-based scroll management
