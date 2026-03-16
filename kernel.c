@@ -88,7 +88,7 @@ static float g_scroll_x = 0.0f;
 static float g_scroll_y = 0.0f;
 static float g_target_scroll_x = 0.0f;
 static float g_target_scroll_y = 0.0f;
-#define SCROLL_EASE 0.15f
+#define SCROLL_EASE 0.4f
 
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
@@ -2641,7 +2641,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   int last_hover = -2;
   int last_mouse_x = -1;
   int last_mouse_y = -1;
-  uint32_t last_anim_tick = 0;
   uint8_t prev_mouse_buttons = 0;
 
   uint32_t boot_start_tick = timer_ticks;
@@ -2698,28 +2697,24 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
       }
 
-      if (timer_ticks != last_anim_tick) {
-        uint32_t dt = timer_ticks - last_anim_tick;
-        last_anim_tick = timer_ticks;
-        int moved = 0;
-        for (uint32_t i = 0; i < dt; ++i) {
-          float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) < 0.05f) {
-            if (g_scroll_y != g_target_scroll_y) {
-              g_scroll_y = g_target_scroll_y;
-              moved = 1;
-            }
-          } else {
-            g_scroll_y += dy;
-            moved = 1;
-          }
+      // Classic モード：トラックパッドのスクロール量に直接追従（アニメーション維持）
+      if (mouse_scroll != 0) {
+        g_target_scroll_y += (float)mouse_scroll * 30.0f;
+        mouse_scroll = 0;
+      }
+
+      // スクロールアニメーション
+      if (g_target_scroll_y != g_scroll_y) {
+        float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
+        if (fabsf(dy) < 0.05f) {
+          g_scroll_y = g_target_scroll_y;
+        } else {
+          g_scroll_y += dy;
         }
-        if (moved) {
-          svg_render_full(&svg_layer);
-          memcpy(svg_base_buf, svg_layer.buffer,
-                 sizeof(uint32_t) * svg_layer.width * svg_layer.height);
-          screen_mark_static_dirty();
-        }
+        svg_render_full(&svg_layer);
+        memcpy(svg_base_buf, svg_layer.buffer,
+               sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+        screen_mark_static_dirty();
       }
 
       if (keybuf_len > 0) {
@@ -2773,61 +2768,77 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
-      // 1. Scroll Handling (Active Window)
+      // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従
       if (mouse_scroll != 0 && g_active_window_index >= 0) {
-        g_windows[g_active_window_index].target_scroll_y += (float)mouse_scroll * 60.0f;
+        window_t *win = &g_windows[g_active_window_index];
+        float scroll_amount = (float)mouse_scroll * 30.0f;
         mouse_scroll = 0;
-        if (g_windows[g_active_window_index].target_scroll_y > 0.0f)
-          g_windows[g_active_window_index].target_scroll_y = 0.0f;
+
+        // コンテキストから現在のターゲットスクロールを取得
+        float current_target = win->is_warp1
+            ? warp1_context_get_target_scroll_y(win->warp1_ctx)
+            : warp_context_get_target_scroll_y(win->warp_ctx);
+
+        // 新しいターゲットスクロールを計算（制限なし）
+        float new_target = current_target + scroll_amount;
+
+        // コンテキストに設定
+        if (win->is_warp1) {
+          warp1_context_set_target_scroll_y(win->warp1_ctx, new_target);
+        } else {
+          warp_context_set_target_scroll_y(win->warp_ctx, new_target);
+        }
+        win->target_scroll_y = new_target;
       }
 
       // 2. Window Animation (Smooth Scroll)
-      if (timer_ticks != last_anim_tick) {
-        uint32_t dt = timer_ticks - last_anim_tick;
-        last_anim_tick = timer_ticks;
-        int moved = 0;
-        for (int i = 0; i < g_window_count; i++) {
-          window_t *win = &g_windows[i];
+      int moved = 0;
+      for (int i = 0; i < g_window_count; i++) {
+        window_t *win = &g_windows[i];
 
-          // Resize/Calculating Fade (0.5s = ~50 ticks at 100Hz, or use dt)
-          float fade_speed = (float)dt * 0.02f; // 50 ticks for full fade
-          if (win->is_resizing) {
-            if (win->fade_alpha < 1.0f) {
-              win->fade_alpha += fade_speed;
-              if (win->fade_alpha > 1.0f) win->fade_alpha = 1.0f;
-              moved = 1;
-              g_svg_dirty = 1; // Mark SVG dirty to force redraw for fade
-            }
-          } else if (win->is_calculating) {
-            // Keep at 1.0 during heavy calculation
-            if (win->fade_alpha < 1.0f) {
-                win->fade_alpha = 1.0f;
-                moved = 1;
-                g_svg_dirty = 1;
-            }
-          } else {
-            if (win->fade_alpha > 0.0f) {
-              win->fade_alpha -= fade_speed;
-              if (win->fade_alpha < 0.0f) win->fade_alpha = 0.0f;
-              moved = 1;
-              g_svg_dirty = 1; // Mark SVG dirty to force redraw for fade back
-            }
+        // コンテキストからスクロール状態を同期
+        if (win->warp1_ctx) {
+          win->target_scroll_y = warp1_context_get_target_scroll_y(win->warp1_ctx);
+        } else if (win->warp_ctx) {
+          win->target_scroll_y = warp_context_get_target_scroll_y(win->warp_ctx);
+        }
+
+        // Resize/Calculating Fade
+        float fade_speed = 0.02f;
+        if (win->is_resizing) {
+          if (win->fade_alpha < 1.0f) {
+            win->fade_alpha += fade_speed;
+            if (win->fade_alpha > 1.0f) win->fade_alpha = 1.0f;
+            moved = 1;
+            g_svg_dirty = 1;
           }
-
-          for (uint32_t j = 0; j < dt; j++) {            float dy = (win->target_scroll_y - win->scroll_y) * SCROLL_EASE;
-            if (fabsf(dy) < 0.05f) {
-              if (win->scroll_y != win->target_scroll_y) {
-                win->scroll_y = win->target_scroll_y;
-                moved = 1;
-              }
-            } else {
-              win->scroll_y += dy;
-              moved = 1;
-            }
+        } else if (win->is_calculating) {
+          if (win->fade_alpha < 1.0f) {
+            win->fade_alpha = 1.0f;
+            moved = 1;
+            g_svg_dirty = 1;
+          }
+        } else {
+          if (win->fade_alpha > 0.0f) {
+            win->fade_alpha -= fade_speed;
+            if (win->fade_alpha < 0.0f) win->fade_alpha = 0.0f;
+            moved = 1;
+            g_svg_dirty = 1;
           }
         }
-        if (moved) g_svg_dirty = 1;
+
+        // スクロールアニメーション
+        if (win->target_scroll_y != win->scroll_y) {
+          float dy = (win->target_scroll_y - win->scroll_y) * SCROLL_EASE;
+          if (fabsf(dy) < 0.05f) {
+            win->scroll_y = win->target_scroll_y;
+          } else {
+            win->scroll_y += dy;
+          }
+          moved = 1;
+        }
       }
+      if (moved) g_svg_dirty = 1;
 
       // 3. Mouse Interaction
       uint8_t curr_btns = mouse_buttons;

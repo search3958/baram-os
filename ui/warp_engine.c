@@ -298,6 +298,13 @@ struct warp_context {
   char engine_status[128];
   char node_svg_buf[4096];
   int mouse_x, mouse_y;
+
+  // Screen management (separate SVG per screen)
+  char screen_ids[MAX_SCREENS][64];
+  char screen_svgs[MAX_SCREENS][65536];
+  int screen_content_heights[MAX_SCREENS];
+  float screen_scroll_ys[MAX_SCREENS];
+  int screen_count;
 };
 
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
@@ -1219,6 +1226,7 @@ static void execute_action(warp_context_t *ctx, const char *action_str) {
       char *end = warp_strchr(screen, ')');
       if (end)
         *end = '\0';
+      // 画面切り替え - スクロール状態は画面ごとに保持される
       warp_strncpy(ctx->current_screen, screen, 63);
     } else if (warp_strncmp(act, "show(", 5) == 0) {
       char id[64];
@@ -1388,9 +1396,10 @@ warp_context_t* warp_context_create(const char* code) {
   warp_context_t* ctx = (warp_context_t*)malloc(sizeof(warp_context_t));
   if (!ctx) return NULL;
   warp_memset(ctx, 0, sizeof(warp_context_t));
-  
+
   warp_strcpy(ctx->current_screen, "main");
   warp_strcpy(ctx->engine_status, "Idle");
+  ctx->screen_count = 0;
 
   if (!code || !code[0]) {
     warp_strncpy(ctx->engine_status, "Err: No Code", 127);
@@ -1432,8 +1441,9 @@ void warp_context_destroy(warp_context_t* ctx) {
 void warp_context_update(warp_context_t* ctx, int width, int height) {
   ctx->texts_count = 0;
   ctx->svg_output[0] = '\0';
-  ctx->engine_dirty = 0; // Reset dirty before layout
-  
+  ctx->engine_dirty = 0;
+
+  // Build SVG for current screen only
   int total_h = height;
   for (int i = 0; i < ctx->root_nodes_count; i++) {
     warp_node_t *node = ctx->root_nodes[i];
@@ -1446,7 +1456,7 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
     if (h > total_h)
       total_h = h;
   }
-  
+
   char w_str[16], h_str[16];
   append_int(w_str, width);
   append_int(h_str, total_h);
@@ -1466,6 +1476,25 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
     emit_svg(ctx, node);
   }
   warp_strcat(ctx->svg_output, "</svg>");
+
+  // Register/update current screen in screen list
+  int screen_idx = -1;
+  for (int i = 0; i < ctx->screen_count; i++) {
+    if (warp_strcmp(ctx->screen_ids[i], ctx->current_screen) == 0) {
+      screen_idx = i;
+      break;
+    }
+  }
+  if (screen_idx < 0 && ctx->screen_count < MAX_SCREENS) {
+    screen_idx = ctx->screen_count++;
+    warp_strncpy(ctx->screen_ids[screen_idx], ctx->current_screen, 63);
+    ctx->screen_scroll_ys[screen_idx] = 0.0f;
+  }
+  if (screen_idx >= 0) {
+    warp_strncpy(ctx->screen_svgs[screen_idx], ctx->svg_output, 65535);
+    ctx->screen_content_heights[screen_idx] = total_h;
+  }
+
   update_status_info(ctx);
 }
 
@@ -1606,5 +1635,65 @@ void warp_context_click_header_action(warp_context_t* ctx, int action_index) {
 
 int warp_context_is_dev_event_check(warp_context_t* ctx) {
   return warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0;
+}
+
+// Screen-based scroll management
+const char* warp_context_get_screen_svg(warp_context_t* ctx, const char* screen_id, int* content_height) {
+  if (!ctx || !screen_id) return NULL;
+  for (int i = 0; i < ctx->screen_count; i++) {
+    if (warp_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+      if (content_height) *content_height = ctx->screen_content_heights[i];
+      return ctx->screen_svgs[i];
+    }
+  }
+  return NULL;
+}
+
+void warp_context_set_screen_scroll(warp_context_t* ctx, const char* screen_id, float scroll_y) {
+  if (!ctx || !screen_id) return;
+  for (int i = 0; i < ctx->screen_count; i++) {
+    if (warp_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+      ctx->screen_scroll_ys[i] = scroll_y;
+      return;
+    }
+  }
+}
+
+float warp_context_get_screen_scroll(warp_context_t* ctx, const char* screen_id) {
+  if (!ctx || !screen_id) return 0.0f;
+  for (int i = 0; i < ctx->screen_count; i++) {
+    if (warp_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+      return ctx->screen_scroll_ys[i];
+    }
+  }
+  return 0.0f;
+}
+
+// Legacy scroll API (for backward compatibility)
+float warp_context_get_scroll_y(warp_context_t* ctx) {
+  if (!ctx) return 0.0f;
+  return warp_context_get_screen_scroll(ctx, ctx->current_screen);
+}
+
+void warp_context_set_scroll_y(warp_context_t* ctx, float y) {
+  if (!ctx) return;
+  warp_context_set_screen_scroll(ctx, ctx->current_screen, y);
+}
+
+float warp_context_get_target_scroll_y(warp_context_t* ctx) {
+  if (!ctx) return 0.0f;
+  return warp_context_get_screen_scroll(ctx, ctx->current_screen);
+}
+
+void warp_context_set_target_scroll_y(warp_context_t* ctx, float y) {
+  if (!ctx) return;
+  warp_context_set_screen_scroll(ctx, ctx->current_screen, y);
+}
+
+int warp_context_get_content_height(warp_context_t* ctx) {
+  if (!ctx) return 0;
+  int h = 0;
+  warp_context_get_screen_svg(ctx, ctx->current_screen, &h);
+  return h;
 }
 

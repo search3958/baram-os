@@ -11,6 +11,7 @@
 #define MAX_SCRIPTS 16
 #define MAX_SCRIPT_BLOCKS 16
 #define MAX_DYNAMIC_NODES 32
+#define MAX_SCREENS 8
 
 typedef struct warp_context warp_context_t;
 
@@ -34,6 +35,14 @@ int warp_context_get_header_info(warp_context_t* ctx, char* out_text, int max_le
 void warp_context_get_header_action_info(warp_context_t* ctx, int action_index, char* out_text, int max_len);
 void warp_context_click_header_action(warp_context_t* ctx, int action_index);
 int warp_context_is_dev_event_check(warp_context_t* ctx);
+float warp_context_get_scroll_y(warp_context_t* ctx);
+void warp_context_set_scroll_y(warp_context_t* ctx, float y);
+float warp_context_get_target_scroll_y(warp_context_t* ctx);
+void warp_context_set_target_scroll_y(warp_context_t* ctx, float y);
+int warp_context_get_content_height(warp_context_t* ctx);
+const char* warp_context_get_screen_svg(warp_context_t* ctx, const char* screen_id, int* content_height);
+void warp_context_set_screen_scroll(warp_context_t* ctx, const char* screen_id, float scroll_y);
+float warp_context_get_screen_scroll(warp_context_t* ctx, const char* screen_id);
 
 // Squircle rendering helpers for consistent UI
 char *warp_stpcpy(char *dest, const char *src);

@@ -55,6 +55,13 @@ struct warp1_context {
     struct { int x, y; char text[512]; uint32_t color; float size; } texts[MAX_TEXTS]; int texts_count;
     char svg_output[65536]; int engine_dirty; char engine_status[128];
     int mouse_x, mouse_y; int win_w, win_h;
+    
+    // Screen management (separate SVG per screen)
+    char screen_ids[MAX_SCREENS][64];
+    char screen_svgs[MAX_SCREENS][65536];
+    int screen_content_heights[MAX_SCREENS];
+    float screen_scroll_ys[MAX_SCREENS];
+    int screen_count;
 };
 
 static int w1_tolower(int c) { if (c >= 'A' && c <= 'Z') return c + ('a' - 'A'); return c; }
@@ -208,7 +215,9 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
         if (w1_strncmp(act, "reset{", 6) == 0) { extern void sys_restart(void); sys_restart(); }
         else if (w1_strncmp(act, "setScreen{", 10) == 0) {
             char scr[64]; w1_strncpy(scr, act + 10, 63); char *end = w1_strchr(scr, '}');
-            if (end) { *end = '\0'; } set_state(ctx, "_currentScreen", scr);
+            if (end) { *end = '\0'; }
+            // 画面切り替え - スクロール状態は画面ごとに保持される
+            set_state(ctx, "_currentScreen", scr);
         } else if (w1_strncmp(act, "script{", 7) == 0) {
             char sname[64]; w1_strncpy(sname, act + 7, 63); char *end = w1_strchr(sname, '}');
             if (end) { *end = '\0'; } execute_script1(ctx, sname);
@@ -415,7 +424,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             ctx->texts[ctx->texts_count].x = node->x + (node->w - text_w) / 2;
             ctx->texts[ctx->texts_count].y = node->y + 10;
             w1_strcpy(ctx->texts[ctx->texts_count].text, text); ctx->texts[ctx->texts_count].size = 16;
-            ctx->texts[ctx->texts_count].color = (w1_strcmp(node->tag, "tonalButton") == 0) ? 0xFF0a56d0 : 0xFFFFFFFF; ctx->texts_count++;
+            ctx->texts[ctx->texts_count].color = (w1_strcmp(node->tag, "tonalButton") == 0) ? 0xFF000000 : 0xFFFEFFFF; ctx->texts_count++;
         }
     
     } else if (w1_strcmp(node->tag, "switch") == 0) {
@@ -530,16 +539,16 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
     if (w1_strcmp(node->tag, "screen") == 0) {
         char real_id[64]; eval_expr(ctx, id_attr, real_id, 63);
         if (w1_strcmp(real_id, ctx->current_screen) != 0) return;
-        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, "#f5f5f5", "");
-        
-    } else if (w1_strcmp(node->tag, "card") == 0) { 
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "stroke=\"#dddddd\" stroke-width=\"1\""); 
-        
-    } else if (w1_strcmp(node->tag, "button") == 0) { 
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", ""); 
-        
-    } else if (w1_strcmp(node->tag, "tonalButton") == 0) { 
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", "opacity=\"0.1\""); 
+        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, "#f1f2f2", "");
+
+    } else if (w1_strcmp(node->tag, "card") == 0) {
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "");
+
+    } else if (w1_strcmp(node->tag, "button") == 0) {
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0A60FF", "");
+
+    } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#000000", "opacity=\"0.1\"");
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの描画 - 長方形
@@ -548,7 +557,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         int on = (w1_strstr(val, "true") != NULL);
 
         // トラック（背景）
-        const char *track_color = on ? "#0a56d0" : "#dddddd";
+        const char *track_color = on ? "#0A60FF" : "#dddddd";
         char rect_buf[256]; char *p = rect_buf;
         p = w1_strcpy(p, "<rect x=\""); p = append_int(p, node->x);
         p = w1_strcat(p, "\" y=\""); p = append_int(p, node->y);
@@ -582,7 +591,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         int knob_x = node->x + (node->w * v / 100) - 10;
         if (knob_x < node->x - 10) knob_x = node->x - 10;
         if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
-        emit_squircle_shape1(dest, dest_size, knob_x, node->y + 6, 20, 20, 10.0f, "#0a56d0", "");
+        emit_squircle_shape1(dest, dest_size, knob_x, node->y + 6, 20, 20, 10.0f, "#0A60FF", "");
         
     } else if (w1_strcmp(node->tag, "input") == 0) {
         // 入力フォームの描画 - 角丸矩形
@@ -616,6 +625,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
 warp1_context_t* warp1_context_create(const char* code) {
     warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
     for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
+    ctx->screen_count = 0;
     ctx->src_ptr = code; while(1) {
         token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
         ctx->tokens[ctx->token_count++] = tk;
@@ -645,6 +655,21 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
     w1_strcat(ctx->svg_output, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
     for (int i = 0; i < ctx->root_nodes_count; i++) emit_svg_recursive1(ctx, ctx->root_nodes[i], ctx->svg_output, sizeof(ctx->svg_output));
     w1_strcat(ctx->svg_output, "</svg>");
+    
+    // Register/update current screen in screen list
+    int screen_idx = -1;
+    for (int i = 0; i < ctx->screen_count; i++) {
+        if (w1_strcmp(ctx->screen_ids[i], ctx->current_screen) == 0) { screen_idx = i; break; }
+    }
+    if (screen_idx < 0 && ctx->screen_count < MAX_SCREENS) {
+        screen_idx = ctx->screen_count++;
+        w1_strncpy(ctx->screen_ids[screen_idx], ctx->current_screen, 63);
+        ctx->screen_scroll_ys[screen_idx] = 0.0f;
+    }
+    if (screen_idx >= 0) {
+        w1_strncpy(ctx->screen_svgs[screen_idx], ctx->svg_output, 65535);
+        ctx->screen_content_heights[screen_idx] = total_h;
+    }
 }
 
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
@@ -729,4 +754,64 @@ void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
 
 int warp1_context_is_dev_event_check(warp1_context_t* ctx) {
     return w1_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0;
+}
+
+// Screen-based scroll management
+const char* warp1_context_get_screen_svg(warp1_context_t* ctx, const char* screen_id, int* content_height) {
+    if (!ctx || !screen_id) return NULL;
+    for (int i = 0; i < ctx->screen_count; i++) {
+        if (w1_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+            if (content_height) *content_height = ctx->screen_content_heights[i];
+            return ctx->screen_svgs[i];
+        }
+    }
+    return NULL;
+}
+
+void warp1_context_set_screen_scroll(warp1_context_t* ctx, const char* screen_id, float scroll_y) {
+    if (!ctx || !screen_id) return;
+    for (int i = 0; i < ctx->screen_count; i++) {
+        if (w1_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+            ctx->screen_scroll_ys[i] = scroll_y;
+            return;
+        }
+    }
+}
+
+float warp1_context_get_screen_scroll(warp1_context_t* ctx, const char* screen_id) {
+    if (!ctx || !screen_id) return 0.0f;
+    for (int i = 0; i < ctx->screen_count; i++) {
+        if (w1_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+            return ctx->screen_scroll_ys[i];
+        }
+    }
+    return 0.0f;
+}
+
+// Legacy scroll API (for backward compatibility)
+float warp1_context_get_scroll_y(warp1_context_t* ctx) {
+    if (!ctx) return 0.0f;
+    return warp1_context_get_screen_scroll(ctx, ctx->current_screen);
+}
+
+void warp1_context_set_scroll_y(warp1_context_t* ctx, float y) {
+    if (!ctx) return;
+    warp1_context_set_screen_scroll(ctx, ctx->current_screen, y);
+}
+
+float warp1_context_get_target_scroll_y(warp1_context_t* ctx) {
+    if (!ctx) return 0.0f;
+    return warp1_context_get_screen_scroll(ctx, ctx->current_screen);
+}
+
+void warp1_context_set_target_scroll_y(warp1_context_t* ctx, float y) {
+    if (!ctx) return;
+    warp1_context_set_screen_scroll(ctx, ctx->current_screen, y);
+}
+
+int warp1_context_get_content_height(warp1_context_t* ctx) {
+    if (!ctx) return 0;
+    int h = 0;
+    warp1_context_get_screen_svg(ctx, ctx->current_screen, &h);
+    return h;
 }
