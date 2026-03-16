@@ -105,6 +105,18 @@ static char *warp_strchr(const char *s, int c) {
   return (char *)s;
 }
 
+static char *warp_strstr(const char *haystack, const char *needle) {
+  if (!*needle) return (char *)haystack;
+  for (; *haystack; haystack++) {
+    if (*haystack == *needle) {
+      const char *h, *n;
+      for (h = haystack, n = needle; *h && *n && *h == *n; h++, n++);
+      if (!*n) return (char *)haystack;
+    }
+  }
+  return NULL;
+}
+
 static long warp_strtol(const char *s) {
   long res = 0;
   int sign = 1;
@@ -1011,6 +1023,31 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
       emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, fill, "opacity=\"0.1\"");
     else
       emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, fill, "");
+  } else if (warp_strcmp(node->tag, "switch") == 0) {
+    // スイッチの描画 - 角丸なし四角形（radius=0）- 44x44
+    char val[128];
+    eval_attr(ctx, node, "status", val, 127);
+    int on = (warp_strstr(val, "true") != NULL);
+
+    // 背景（角丸なし四角形）
+    const char *bg_color = on ? "#0A60FF" : "#dddddd";
+    int size = 44;
+    int x = node->x + (node->w - size) / 2;
+    int y = node->y + (node->h - size) / 2;
+    emit_squircle_shape_to(dest, dest_size, x, y, size, size, 0.0f, bg_color, "");
+
+    // チェックマーク（true の場合のみ）
+    if (on) {
+      char check_buf[512];
+      char *p = check_buf;
+      p = warp_stpcpy(p, "<path d=\"M");
+      p = append_int(p, x + 12); p = warp_stpcpy(p, " ");
+      p = append_int(p, y + 22);
+      p = warp_stpcpy(p, " L"); p = append_int(p, x + 20); p = warp_stpcpy(p, " "); p = append_int(p, y + 30);
+      p = warp_stpcpy(p, " L"); p = append_int(p, x + 34); p = warp_stpcpy(p, " "); p = append_int(p, y + 14);
+      p = warp_stpcpy(p, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
+      warp_strncat(dest, check_buf, dest_size - warp_strlen(dest) - 1);
+    }
   }
 
   for (int i = 0; i < node->children_count; i++) {
@@ -1385,6 +1422,16 @@ static void check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
   }
   if (x >= node->x && x <= node->x + node->w && y >= node->y &&
       y <= node->y + node->h) {
+    if (warp_strcmp(node->tag, "switch") == 0) {
+      char out_var[128], status[128];
+      eval_attr(ctx, node, "output", out_var, 127);
+      eval_attr(ctx, node, "status", status, 127);
+      if (out_var[0]) {
+        int on = (warp_strstr(status, "true") != NULL);
+        set_state(ctx, out_var, on ? "false" : "true");
+        return;
+      }
+    }
     if (node->event_oneclick[0] != '\0') {
       execute_action(ctx, node->event_oneclick);
       return;

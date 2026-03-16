@@ -428,9 +428,9 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         }
     
     } else if (w1_strcmp(node->tag, "switch") == 0) {
-        // スイッチの標準サイズを定義
+        // スイッチの標準サイズを定義（44x44）
         node->w = 48;
-        node->h = 24;
+        node->h = 48;
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーは横幅一杯、高さは操作しやすい32px程度を確保
         node->w = limit_w; 
@@ -551,30 +551,29 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#000000", "opacity=\"0.1\"");
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
-        // スイッチの描画 - 長方形
+        // スイッチの描画 - 角丸なし四角形（radius=0）
         char val[128];
         eval_attr(ctx, node, "status", val, 127);
         int on = (w1_strstr(val, "true") != NULL);
 
-        // トラック（背景）
-        const char *track_color = on ? "#0A60FF" : "#dddddd";
-        char rect_buf[256]; char *p = rect_buf;
-        p = w1_strcpy(p, "<rect x=\""); p = append_int(p, node->x);
-        p = w1_strcat(p, "\" y=\""); p = append_int(p, node->y);
-        p = w1_strcat(p, "\" width=\""); p = append_int(p, node->w);
-        p = w1_strcat(p, "\" height=\""); p = append_int(p, node->h);
-        p = w1_strcat(p, "\" fill=\""); p = w1_strcat(p, track_color);
-        p = w1_strcat(p, "\" />\n");
-        w1_strncat(dest, rect_buf, (size_t)(dest_size - w1_strlen(dest) - 1));
+        // 背景（角丸なし四角形）- 44x44
+        const char *bg_color = on ? "#0A60FF" : "#dddddd";
+        int size = 44;
+        int x = node->x + (node->w - size) / 2;
+        int y = node->y + (node->h - size) / 2;
+        emit_squircle_shape1(dest, dest_size, x, y, size, size, 0.0f, bg_color, "");
 
-        // ノブ（四角いボタン部分）
-        int knob_x = node->x + (on ? node->w - 20 : 4);
-        int knob_y = node->y + 4;
-        p = rect_buf;
-        p = w1_strcpy(p, "<rect x=\""); p = append_int(p, knob_x);
-        p = w1_strcat(p, "\" y=\""); p = append_int(p, knob_y);
-        p = w1_strcat(p, "\" width=\"16\" height=\"16\" fill=\"#ffffff\" />\n");
-        w1_strncat(dest, rect_buf, (size_t)(dest_size - w1_strlen(dest) - 1));
+        // チェックマーク（true の場合のみ）
+        if (on) {
+            char check_buf[512]; char *p = check_buf;
+            p = w1_strcpy(p, "<path d=\"M");
+            p = append_int(p, x + 12); p = w1_strcat(p, " ");
+            p = append_int(p, y + 22);
+            p = w1_strcat(p, " L"); p = append_int(p, x + 20); p = w1_strcat(p, " "); p = append_int(p, y + 30);
+            p = w1_strcat(p, " L"); p = append_int(p, x + 34); p = w1_strcat(p, " "); p = append_int(p, y + 14);
+            p = w1_strcat(p, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
+            w1_strncat(dest, check_buf, (size_t)(dest_size - w1_strlen(dest) - 1));
+        }
         
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーの描画 - squircle を使用
