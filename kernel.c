@@ -48,6 +48,7 @@
 #define MOUSE_HOTSPOT_X 28
 #define MOUSE_HOTSPOT_Y 21
 
+
 typedef struct {
   NSVGshape *shape;
   unsigned char *rgba;
@@ -107,6 +108,10 @@ static char g_wallpaper_buffer[131072] = "";
 static int g_wallpaper_found = 0;
 static int g_svg_dirty = 1;
 static char g_hud_status[64] = "Idle";
+
+static int g_dragging_slider = 0;
+static int g_dragging_window = -1;
+ 
 
 // --- 前方宣言 ---
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
@@ -2482,9 +2487,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     g_mbi_flags = mbi->flags;
 
   // SVG描画などの初期化より前に、まず赤画面を出す
-  for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
+  for (int i = 0; i < 3; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
     fill_framebuffer_red_early(mbi);
-    for (volatile int j = 0; j < 1000000; ++j) {
+    for (volatile int j = 0; j < 3; ++j) {
       __asm__ __volatile__("nop");
     }
   }
@@ -2891,86 +2896,154 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               break;
             }
             
+            // ===== kmain.c の該当部分を以下に置き換え =====
+
+// マウスボタン押下時の "3. Content" ブロック:
             // 3. Content
             if (hx >= win->x && hx < win->x + win->w &&
                 hy >= win->y && hy < win->y + win->h) {
-              hit_index = i;
-              if (win->is_warp1) {
-                warp1_context_click(win->warp1_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
-              } else {
-                warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
-              }
-              win->is_dirty = 1;
-              break;
+                hit_index = i;
+                
+                // Slider チェック（ドラッグフラグを立てる）
+                int slider_hit = 0;
+                if (win->is_warp1 && win->warp1_ctx) {
+                    int rx = hx - win->x;
+                    int ry = hy - win->y - (int)win->scroll_y;
+                    if (warp1_find_slider_at(win->warp1_ctx, rx, ry)) {
+                        g_dragging_slider = 1;
+                        g_dragging_window = i;
+                        slider_hit = 1;
+                    }
+                }
+                
+                // 通常のクリック処理
+                if (!slider_hit) {
+                    if (win->is_warp1) {
+                        warp1_context_click(win->warp1_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+                    } else {
+                        warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+                    }
+                    win->is_dirty = 1;
+                }
+                break;
             }
-          }
-          
-          if (hit_index >= 0) {
-            // Bring hit window to front
-            if (hit_index != g_window_count - 1) {
-              window_t tmp = g_windows[hit_index];
-              for (int j = hit_index; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
-              g_windows[g_window_count - 1] = tmp;
-            }
-            g_active_window_index = g_window_count - 1;
-          } else if (hit_index == -1) {
-            // Wallpaper click (real click, not just missed window)
-            add_window("New Warp", hx - 50, hy + 50, 400, 300, 0);
-          }
-          g_svg_dirty = 1;
-        } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
-          // Release
-          for (int i = 0; i < g_window_count; i++) {
-            if (g_windows[i].is_resizing) {
-              g_windows[i].is_calculating = 1;
-              g_windows[i].is_dirty = 1; // Trigger final layout
-            }
-            g_windows[i].is_dragging = 0;
-            g_windows[i].is_resizing = 0;
           }
         }
-        prev_mouse_buttons = curr_btns;
       }
 
-      // Drag/Resize movement or pointcheck mouse update
+// マウス移動時の Slider ドラッグ処理:
       if (g_active_window_index >= 0 && (mouse_dx != 0 || mouse_dy != 0)) {
-        window_t *awin = &g_windows[g_active_window_index];
-        int hx = mouse_x + MOUSE_HOTSPOT_X;
-        int hy = mouse_y + MOUSE_HOTSPOT_Y;
-        if (awin->is_warp1) {
-          if (awin->warp1_ctx) {
+    window_t *awin = &g_windows[g_active_window_index];
+    int hx = mouse_x + MOUSE_HOTSPOT_X;
+    int hy = mouse_y + MOUSE_HOTSPOT_Y;
+    
+    // Slider ドラッグ中の処理
+    if (g_dragging_slider && g_dragging_window == g_active_window_index) {
+        if (awin->is_warp1 && awin->warp1_ctx) {
+            int rx = hx - awin->x;
+            int ry = hy - awin->y - (int)awin->scroll_y;
+            int changed = 0;
+            warp1_slider_set_value_at(awin->warp1_ctx, rx, ry, &changed);
+            if (changed) {
+                awin->is_dirty = 1;
+                g_svg_dirty = 1;
+            }
+        }
+    }
+    
+    // 既存の pointcheck 処理
+    if (awin->is_warp1) {
+        if (awin->warp1_ctx) {
             warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
             if (warp1_context_is_dirty(awin->warp1_ctx)) {
-              awin->is_dirty = 1;
-              g_svg_dirty = 1;
+                awin->is_dirty = 1;
+                g_svg_dirty = 1;
             }
-          }
-        } else {
-          if (awin->warp_ctx) {
+        }
+    } else {
+        if (awin->warp_ctx) {
             warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
             if (warp_context_is_dirty(awin->warp_ctx)) {
-              awin->is_dirty = 1;
-              g_svg_dirty = 1;
+                awin->is_dirty = 1;
+                g_svg_dirty = 1;
             }
-          }
         }
-        if (awin->is_dragging) {
-          awin->x += mouse_dx; awin->y += mouse_dy;
-          g_svg_dirty = 1;
-        } else if (awin->is_resizing) {
-          awin->w += mouse_dx; awin->h += mouse_dy;
-          if (awin->w < 100) awin->w = 100;
-          if (awin->h < 64) awin->h = 64;
-          // Don't set is_dirty here to keep SVG content frozen
-          window_update_caches(awin); 
-          g_svg_dirty = 1;
-        }
-      }
+    }
+    
+    // 既存のドラッグ/リサイズ処理
+    if (awin->is_dragging) {
+        awin->x += mouse_dx; awin->y += mouse_dy;
+        g_svg_dirty = 1;
+    } else if (awin->is_resizing) {
+        awin->w += mouse_dx; awin->h += mouse_dy;
+        if (awin->w < 100) awin->w = 100;
+        if (awin->h < 64) awin->h = 64;
+        window_update_caches(awin); 
+        g_svg_dirty = 1;
+    }
+}
 
-      if (keybuf_len > 0) {
-        for (int i = 0; i < keybuf_len; i++) {
-          char c = (char)keybuf[i];
-          if (c == KEY_UP)
+
+// キーボード入力処理:
+      for (int i = 0; i < keybuf_len; i++) {
+        char c = (char)keybuf[i];
+        
+        // フォーカスされた input があるかチェック
+        if (g_active_window_index >= 0) {
+            window_t *awin = &g_windows[g_active_window_index];
+            const char *focused_id = NULL;
+            
+            if (awin->is_warp1 && awin->warp1_ctx) {
+                focused_id = warp1_context_get_state(awin->warp1_ctx, "--focusedInput");
+            }
+            
+            if (focused_id && focused_id[0]) {
+                // input にフォーカスがある場合
+                char content_key[128];
+                content_key[0] = '-'; content_key[1] = '-'; content_key[2] = '\0';
+                strcat(content_key, focused_id);
+                strcat(content_key, "Content");
+                
+                if (c == '\b') {
+                    // バックスペース
+                    const char *current = warp1_context_get_state(awin->warp1_ctx, content_key);
+                    if (current) {
+                        int len = strlen(current);
+                        if (len > 0) {
+                            char new_val[512];
+                            strncpy(new_val, current, len - 1);
+                            new_val[len - 1] = '\0';
+                            warp1_context_set_state(awin->warp1_ctx, content_key, new_val);
+                            awin->is_dirty = 1;
+                            g_svg_dirty = 1;
+                        }
+                    }
+                } else if (c == '\n') {
+                    // Enter でフォーカス解除
+                    warp1_context_set_state(awin->warp1_ctx, "--focusedInput", "");
+                } else if (c >= 32 && c < 127) {
+                    // 通常の文字入力
+                    const char *current = warp1_context_get_state(awin->warp1_ctx, content_key);
+                    if (current) {
+                        char new_val[512];
+                        strncpy(new_val, current, 511);
+                        new_val[511] = '\0';
+                        int len = strlen(new_val);
+                        if (len < 511) {
+                            new_val[len] = c;
+                            new_val[len + 1] = '\0';
+                        }
+                        warp1_context_set_state(awin->warp1_ctx, content_key, new_val);
+                        awin->is_dirty = 1;
+                        g_svg_dirty = 1;
+                    }
+                }
+                continue; // input に入力したのでグローバル処理をスキップ
+            }
+        }
+        
+        // グローバルキーボード処理
+        if (c == KEY_UP)
             g_target_scroll_y += 100.0f;
           else if (c == KEY_DOWN)
             g_target_scroll_y -= 100.0f;
@@ -3016,4 +3089,3 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     cpu_idle = 0;
     screen_refresh();
   }
-}

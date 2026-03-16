@@ -33,4 +33,8 @@ int warp1_context_get_header_info(warp1_context_t* ctx, char* out_text, int max_
 void warp1_context_get_header_action_info(warp1_context_t* ctx, int action_index, char* out_text, int max_len);
 void warp1_context_click_header_action(warp1_context_t* ctx, int action_index);
 
+int warp1_find_slider_at(warp1_context_t* ctx, int x, int y);
+void warp1_slider_set_value_at(warp1_context_t* ctx, int x, int y, int* out_changed);
+const char* warp1_context_get_state(warp1_context_t* ctx, const char* key);
 #endif
+
