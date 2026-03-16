@@ -11,6 +11,13 @@
 #include "ui/svg_data.h"
 
 #include <stddef.h>
+// デバッグ用グローバル
+static struct multiboot_info *g_mbi_debug = NULL;
+
+// プロトタイプ宣言（staticを一致させる）
+static void fb_clear_color(struct multiboot_info *mbi, uint32_t color);
+#define FPU_HELPER __attribute__((noinline, optimize("no-tree-loop-distribute-patterns")))
+
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
@@ -111,7 +118,7 @@ static char g_hud_status[64] = "Idle";
 
 static int g_dragging_slider = 0;
 static int g_dragging_window = -1;
- 
+
 
 // --- 前方宣言 ---
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
@@ -139,59 +146,61 @@ void enable_fpu() {
 
 // ソフトウェア浮動小数点のヘルパー関数をハードウェアFPU(インラインアセンブリ)で実装
 // ターゲット属性が効かない環境でも直接命令を発行することで無限再帰を避ける
-float __mulsf3(float a, float b) {
+float FPU_HELPER __mulsf3(float a, float b) {
   float r;
   __asm__("flds %1; fmuls %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-float __addsf3(float a, float b) {
+float FPU_HELPER __addsf3(float a, float b) {
   float r;
   __asm__("flds %1; fadds %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-float __subsf3(float a, float b) {
+float FPU_HELPER __subsf3(float a, float b) {
   float r;
   __asm__("flds %1; fsubs %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-float __divsf3(float a, float b) {
+float FPU_HELPER __divsf3(float a, float b) {
   float r;
   __asm__("flds %1; fdivs %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-int __gtsf2(float a, float b) { return a > b; }
-int __ltsf2(float a, float b) { return a < b; }
-int __nesf2(float a, float b) { return a != b; }
-int __eqsf2(float a, float b) { return a == b; }
-int __gesf2(float a, float b) { return a >= b; }
-int __lesf2(float a, float b) { return a <= b; }
-float __floatsisf(int i) {
+int FPU_HELPER __gtsf2(float a, float b) { return a > b; }
+int FPU_HELPER __ltsf2(float a, float b) { return a < b; }
+int FPU_HELPER __nesf2(float a, float b) { return a != b; }
+int FPU_HELPER __eqsf2(float a, float b) { return a == b; }
+int FPU_HELPER __gesf2(float a, float b) { return a >= b; }
+int FPU_HELPER __lesf2(float a, float b) { return a <= b; }
+float FPU_HELPER __floatsisf(int i) {
   float r;
   __asm__("fildl %1; fstps %0" : "=m"(r) : "m"(i));
   return r;
 }
-int __fixsfsi(float f) {
+// float を int に直すヘルパー (FPU_HELPERを確実に付与)
+int FPU_HELPER __fixsfsi(float f) {
   int r;
-  __asm__("flds %1; fistpl %0" : "=m"(r) : "m"(f));
+  __asm__ __volatile__("flds %1; fistpl %0" : "=m"(r) : "m"(f));
   return r;
 }
 
-double __muldf3(double a, double b) {
+
+double FPU_HELPER __muldf3(double a, double b) {
   double r;
   __asm__("fldl %1; fmull %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-double __adddf3(double a, double b) {
+double FPU_HELPER __adddf3(double a, double b) {
   double r;
   __asm__("fldl %1; faddl %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-double __subdf3(double a, double b) {
+double FPU_HELPER __subdf3(double a, double b) {
   double r;
   __asm__("fldl %1; fsubl %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-double __divdf3(double a, double b) {
+double FPU_HELPER __divdf3(double a, double b) {
   double r;
   __asm__("fldl %1; fdivl %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
@@ -213,9 +222,11 @@ float __truncdfsf2(double d) {
   __asm__("fldl %1; fstps %0" : "=m"(r) : "m"(d));
   return r;
 }
-int __fixdfsi(double d) {
+
+// double 版も同様
+int FPU_HELPER __fixdfsi(double d) {
   int r;
-  __asm__("fldl %1; fistpl %0" : "=m"(r) : "m"(d));
+  __asm__ __volatile__("fldl %1; fistpl %0" : "=m"(r) : "m"(d));
   return r;
 }
 
@@ -247,8 +258,9 @@ static stbtt_fontinfo g_font;
 static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
-// メモリアロケータ (フリーリスト方式)
-static char heap[1024 * 1024 * 128]; // 128MB に拡大
+// 128MBはOSカーネルとしては巨大すぎるため、一旦サイズを絞る
+#define HEAP_SIZE (1024 * 1024 * 128) 
+static char heap[HEAP_SIZE];
 
 typedef struct block_header {
   size_t size; // このブロックのデータサイズ (ヘッダ除く)
@@ -279,10 +291,25 @@ void *malloc(size_t size) {
 
   while (p + BLOCK_HDR_SIZE <= end) {
     block_header_t *hdr = (block_header_t *)p;
+    
+    // 未使用ブロックを見つけたら、可能な限り後ろの未使用ブロックと連結する(アドホック・マージ)
+    if (!hdr->used) {
+      char *next_p = p + BLOCK_HDR_SIZE + hdr->size;
+      while (next_p + BLOCK_HDR_SIZE <= end) {
+        block_header_t *next = (block_header_t *)next_p;
+        if (!next->used) {
+          hdr->size += BLOCK_HDR_SIZE + next->size;
+          next_p = p + BLOCK_HDR_SIZE + hdr->size;
+        } else {
+          break;
+        }
+      }
+    }
+
     if (!hdr->used && hdr->size >= size) {
       // このブロックを分割できるか確認
       size_t remaining = hdr->size - size;
-      if (remaining > BLOCK_HDR_SIZE + 8) {
+      if (remaining >= BLOCK_HDR_SIZE + 8) {
         // 後ろに新しい空きブロックを作る
         block_header_t *next = (block_header_t *)(p + BLOCK_HDR_SIZE + size);
         next->size = remaining - BLOCK_HDR_SIZE;
@@ -302,23 +329,7 @@ void free(void *ptr) {
     return;
   block_header_t *hdr = (block_header_t *)((char *)ptr - BLOCK_HDR_SIZE);
   hdr->used = 0;
-
-  // 隣接する空きブロックをマージ (前方向)
-  char *p = heap;
-  char *end = heap + sizeof(heap);
-  while (p + BLOCK_HDR_SIZE <= end) {
-    block_header_t *cur = (block_header_t *)p;
-    char *next_p = p + BLOCK_HDR_SIZE + cur->size;
-    if (!cur->used && next_p + BLOCK_HDR_SIZE <= end) {
-      block_header_t *next = (block_header_t *)next_p;
-      if (!next->used) {
-        // マージ
-        cur->size += BLOCK_HDR_SIZE + next->size;
-        continue; // 同じ位置から再チェック
-      }
-    }
-    p = next_p;
-  }
+  // マージはmalloc時に行うため、ここでは何もしない(O(1))
 }
 
 void *realloc(void *ptr, size_t size) {
@@ -356,16 +367,30 @@ uint32_t get_used_memory(void) {
 }
 
 void *memset(void *s, int c, size_t n) {
-  unsigned char *p = s;
-  while (n--)
-    *p++ = (unsigned char)c;
+  uint32_t val = (uint8_t)c;
+  val |= (val << 8);
+  val |= (val << 16);
+  uint32_t *p4 = (uint32_t *)s;
+  size_t n4 = n / 4;
+  while (n4--)
+    *p4++ = val;
+  uint8_t *p1 = (uint8_t *)p4;
+  size_t n1 = n % 4;
+  while (n1--)
+    *p1++ = (uint8_t)c;
   return s;
 }
 void *memcpy(void *dest, const void *src, size_t n) {
-  unsigned char *d = dest;
-  const unsigned char *s = src;
-  while (n--)
-    *d++ = *s++;
+  uint32_t *d4 = (uint32_t *)dest;
+  const uint32_t *s4 = (const uint32_t *)src;
+  size_t n4 = n / 4;
+  while (n4--)
+    *d4++ = *s4++;
+  uint8_t *d1 = (uint8_t *)d4;
+  const uint8_t *s1 = (const uint8_t *)s4;
+  size_t n1 = n % 4;
+  while (n1--)
+    *d1++ = *s1++;
   return dest;
 }
 
@@ -918,6 +943,23 @@ static uint32_t parse_rgba_smart(const char *str, int color_index) {
 }
 
 static int svg_init(layer_t *layer, int load_wallpaper) {
+    if (g_svg_ready && !load_wallpaper) return 1;
+    if (load_wallpaper) g_svg_ready = 0;
+
+    layer_fill(layer, 0xFF000000);
+
+    const char* svg_data = NULL; // ここで宣言されている
+    if (load_wallpaper && g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
+        svg_data = g_wallpaper_buffer;
+    } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
+        svg_data = g_bootlogo_buffer;
+    }
+
+    // チェックはこの位置で行う
+    if (!svg_data) {
+        if (g_mbi_debug) fb_clear_color(g_mbi_debug, 0xFFFF0000); // 赤
+        return 0;
+    }
   if (g_svg_ready && !load_wallpaper)
     return 1;
   
@@ -927,7 +969,6 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
 
   layer_fill(layer, 0xFF000000);
 
-  const char* svg_data = NULL;
   if (load_wallpaper && g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
     svg_data = g_wallpaper_buffer;
   } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
@@ -2480,43 +2521,49 @@ static void cursor_init(void) {
     free(shadow_rgba);
   nsvgDelete(img);
 }
+static void fb_clear_color(struct multiboot_info *mbi, uint32_t color) {
+    if (!mbi || !(mbi->flags & (1 << 12))) return;
+    uint32_t *fb = (uint32_t *)(uintptr_t)mbi->framebuffer_addr;
+    if (!fb) return;
+    uint32_t width = mbi->framebuffer_width;
+    uint32_t height = mbi->framebuffer_height;
+    uint32_t pitch = mbi->framebuffer_pitch / 4;
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) fb[y * pitch + x] = color;
+    }
+}
 
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
-  (void)magic;
-  if (mbi)
-    g_mbi_flags = mbi->flags;
+  g_mbi_debug = mbi;
+    (void)magic;
+    
+    // 1. 開始: 赤
+    fb_clear_color(mbi, 0xFF8B0000); 
 
-  // SVG描画などの初期化より前に、まず赤画面を出す
-  for (int i = 0; i < 3; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
-    fill_framebuffer_red_early(mbi);
-    for (volatile int j = 0; j < 3; ++j) {
-      __asm__ __volatile__("nop");
-    }
-  }
+    enable_fpu();
+    idt_install();
+    irq_install();
+    irq_install_handler(0, timer_handler);
+    timer_phase(100);
+    keyboard_install();
+    mouse_install();
+    enable_interrupts();
 
-  fill_framebuffer_red_early(mbi); // 最後にもう一度赤で塗る
+    // 2. 割り込みOK: 緑
+    fb_clear_color(mbi, 0xFF00FF00); 
 
-  enable_fpu();
+    font_init(mbi);
+    warp_ui_mod_init(mbi);
 
-  // 割り込み初期化
-  idt_install();
-  irq_install();
-  irq_install_handler(0, timer_handler);
-  timer_phase(100); // 100Hz
-  keyboard_install();
-  mouse_install();
-  enable_interrupts();
+    set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
+                         mbi->framebuffer_width, mbi->framebuffer_height,
+                         mbi->framebuffer_pitch);
 
-  // モジュールとフォントの初期化を最優先で行う
-  font_init(mbi);
-  warp_ui_mod_init(mbi);
+    // 3. 基本設定OK: 青
+    fb_clear_color(mbi, 0xFF0000FF); 
+    
+    //cursor_init();
 
-  set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
-                       mbi->framebuffer_width, mbi->framebuffer_height,
-                       mbi->framebuffer_pitch);
-
-  // カーソル初期化
-  cursor_init();
 
   // 1. 背景 (黒)
   layer_t desktop;
@@ -2531,6 +2578,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
+
+
   // 2. SVG表示エリア (ロゴ用)
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
@@ -2543,6 +2592,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.dynamic = 0;
   svg_init(&svg_layer, 0);
   register_layer(&svg_layer);
+
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -2569,6 +2619,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_layer.dynamic = 1;
   layer_fill(&hud_layer, 0xFF000000);
 
+
+
   // 5. 次世代UI SVGレイヤー
   layer_t nextgen_ui_layer;
   nextgen_ui_layer.buffer = nextgen_ui_buf;
@@ -2586,6 +2638,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   register_layer(&nextgen_ui_layer);
   register_layer(&hud_layer); // HUDを上に
 
+  
+
   // 6. 文字レイヤー
   layer_t text_layer;
   text_layer.buffer = text_buf;
@@ -2601,6 +2655,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       text_buf[i] = TRANSPARENT_COLOR;
   }
   // 初回描画を確実に実行
+
   screen_mark_static_dirty();
   screen_mark_all_dirty();
 

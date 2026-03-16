@@ -3,6 +3,7 @@
 #include "warp_engine.h"
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
 // --- 1. Internal Utilities ---
 static int w1_strlen(const char *s) { int n=0; if(!s) return 0; while(s[n]) n++; return n; }
@@ -281,7 +282,7 @@ static token1_t next_token(warp1_context_t *ctx) {
 static warp1_node_t *alloc_node(warp1_context_t *ctx) {
     if (ctx->nodes_count < MAX_NODES) {
         warp1_node_t *n = &ctx->nodes[ctx->nodes_count++];
-        for(int i=0;i<(int)sizeof(warp1_node_t);i++) { ((char*)n)[i] = 0; }
+        memset(n, 0, sizeof(warp1_node_t)); // ループはやめて memset を使う
         return n;
     }
     return NULL;
@@ -603,20 +604,38 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
 
 
 warp1_context_t* warp1_context_create(const char* code) {
-    warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
-    for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
-    ctx->src_ptr = code; while(1) {
-        token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
+    warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); 
+    if (!ctx) return NULL;
+
+    // memset で一括ゼロクリア（これが一番速い）
+    memset(ctx, 0, sizeof(warp1_context_t)); 
+
+    // --- 【削除】 以下の for ループは絶対に消してください ---
+    // for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
+    // -----------------------------------------------------
+
+    ctx->src_ptr = code; 
+    while(1) {
+        token1_t tk = next_token(ctx); 
+        if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
         ctx->tokens[ctx->token_count++] = tk;
     }
-    ctx->token_pos = 0; while (ctx->token_pos < ctx->token_count) {
-        warp1_node_t *node = parse_node(ctx); if (node && ctx->root_nodes_count < 16) ctx->root_nodes[ctx->root_nodes_count++] = node;
+    
+    ctx->token_pos = 0; 
+    while (ctx->token_pos < ctx->token_count) {
+        warp1_node_t *node = parse_node(ctx); 
+        if (node && ctx->root_nodes_count < 16) ctx->root_nodes[ctx->root_nodes_count++] = node;
     }
+
     if (ctx->root_nodes_count > 0) {
         for (int i = 0; i < ctx->root_nodes_count; i++) init_state_from_ast1(ctx, ctx->root_nodes[i]);
-        char id[64]; eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); w1_strcpy(ctx->current_screen, id[0]?id:"main");
+        char id[64]; 
+        eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); 
+        w1_strcpy(ctx->current_screen, id[0] ? id : "main");
     }
-    warp1_context_update(ctx, 1280, 720); return ctx;
+
+    warp1_context_update(ctx, 1280, 720); 
+    return ctx;
 }
 
 void warp1_context_destroy(warp1_context_t* ctx) { if (ctx) free(ctx); }
