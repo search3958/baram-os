@@ -3,7 +3,6 @@
 #include "warp_engine.h"
 #include <stddef.h>
 #include <stdlib.h>
-#include <string.h>
 
 // --- 1. Internal Utilities ---
 static int w1_strlen(const char *s) { int n=0; if(!s) return 0; while(s[n]) n++; return n; }
@@ -282,7 +281,7 @@ static token1_t next_token(warp1_context_t *ctx) {
 static warp1_node_t *alloc_node(warp1_context_t *ctx) {
     if (ctx->nodes_count < MAX_NODES) {
         warp1_node_t *n = &ctx->nodes[ctx->nodes_count++];
-        memset(n, 0, sizeof(warp1_node_t)); // ループはやめて memset を使う
+        for(int i=0;i<(int)sizeof(warp1_node_t);i++) { ((char*)n)[i] = 0; }
         return n;
     }
     return NULL;
@@ -421,7 +420,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの標準サイズを定義
-        node->w = 48; 
+        node->w = 48;
         node->h = 24;
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーは横幅一杯、高さは操作しやすい32px程度を確保
@@ -543,19 +542,30 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", "opacity=\"0.1\""); 
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
-        // スイッチの描画 - squircle を使用
-        char val[128]; 
+        // スイッチの描画 - 長方形
+        char val[128];
         eval_attr(ctx, node, "status", val, 127);
         int on = (w1_strstr(val, "true") != NULL);
-        
-        // トラック（背景）- 角丸矩形
+
+        // トラック（背景）
         const char *track_color = on ? "#0a56d0" : "#dddddd";
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, track_color, "");
-        
-        // ノブ（丸いボタン部分）- より丸く
+        char rect_buf[256]; char *p = rect_buf;
+        p = w1_strcpy(p, "<rect x=\""); p = append_int(p, node->x);
+        p = w1_strcat(p, "\" y=\""); p = append_int(p, node->y);
+        p = w1_strcat(p, "\" width=\""); p = append_int(p, node->w);
+        p = w1_strcat(p, "\" height=\""); p = append_int(p, node->h);
+        p = w1_strcat(p, "\" fill=\""); p = w1_strcat(p, track_color);
+        p = w1_strcat(p, "\" />\n");
+        w1_strncat(dest, rect_buf, (size_t)(dest_size - w1_strlen(dest) - 1));
+
+        // ノブ（四角いボタン部分）
         int knob_x = node->x + (on ? node->w - 20 : 4);
         int knob_y = node->y + 4;
-        emit_squircle_shape1(dest, dest_size, knob_x, knob_y, 16, 16, 8.0f, "#ffffff", "");
+        p = rect_buf;
+        p = w1_strcpy(p, "<rect x=\""); p = append_int(p, knob_x);
+        p = w1_strcat(p, "\" y=\""); p = append_int(p, knob_y);
+        p = w1_strcat(p, "\" width=\"16\" height=\"16\" fill=\"#ffffff\" />\n");
+        w1_strncat(dest, rect_buf, (size_t)(dest_size - w1_strlen(dest) - 1));
         
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーの描画 - squircle を使用
@@ -596,7 +606,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
                           w1_strcmp(node->tag, "input") == 0);
         if (has_hitbox && node->w > 0 && node->h > 0) {
             // 半透明の赤い矩形（角丸なし）
-            emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 0.0f, "red", "opacity=\"0.4\" stroke=\"red\" stroke-width=\"2\"");
+            emit_rect1(dest, dest_size, node->x, node->y, node->w, node->h, "red", "opacity=\"0.4\" stroke=\"red\" stroke-width=\"2\"");
         }
     }
 }
@@ -604,38 +614,20 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
 
 
 warp1_context_t* warp1_context_create(const char* code) {
-    warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); 
-    if (!ctx) return NULL;
-
-    // memset で一括ゼロクリア（これが一番速い）
-    memset(ctx, 0, sizeof(warp1_context_t)); 
-
-    // --- 【削除】 以下の for ループは絶対に消してください ---
-    // for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
-    // -----------------------------------------------------
-
-    ctx->src_ptr = code; 
-    while(1) {
-        token1_t tk = next_token(ctx); 
-        if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
+    warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
+    for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
+    ctx->src_ptr = code; while(1) {
+        token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
         ctx->tokens[ctx->token_count++] = tk;
     }
-    
-    ctx->token_pos = 0; 
-    while (ctx->token_pos < ctx->token_count) {
-        warp1_node_t *node = parse_node(ctx); 
-        if (node && ctx->root_nodes_count < 16) ctx->root_nodes[ctx->root_nodes_count++] = node;
+    ctx->token_pos = 0; while (ctx->token_pos < ctx->token_count) {
+        warp1_node_t *node = parse_node(ctx); if (node && ctx->root_nodes_count < 16) ctx->root_nodes[ctx->root_nodes_count++] = node;
     }
-
     if (ctx->root_nodes_count > 0) {
         for (int i = 0; i < ctx->root_nodes_count; i++) init_state_from_ast1(ctx, ctx->root_nodes[i]);
-        char id[64]; 
-        eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); 
-        w1_strcpy(ctx->current_screen, id[0] ? id : "main");
+        char id[64]; eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); w1_strcpy(ctx->current_screen, id[0]?id:"main");
     }
-
-    warp1_context_update(ctx, 1280, 720); 
-    return ctx;
+    warp1_context_update(ctx, 1280, 720); return ctx;
 }
 
 void warp1_context_destroy(warp1_context_t* ctx) { if (ctx) free(ctx); }
@@ -664,72 +656,43 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 }
 
 
-
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     for (int i = 0; i < ctx->nodes_count; i++) {
         warp1_node_t *n = &ctx->nodes[i];
-        
-        // ヒットテスト
         if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
-            
-            // 1. 通常の onClick 処理
-            if (n->event_oneclick[0]) { 
-                execute_action1(ctx, n->event_oneclick); 
-                break; 
-            }
-            
-            // 2. switch の処理
             if (w1_strcmp(n->tag, "switch") == 0) {
-                char out_var[128], status[128]; 
-                eval_attr(ctx, n, "output", out_var, 127); 
+                char out_var[128], status[128];
+                eval_attr(ctx, n, "output", out_var, 127);
                 eval_attr(ctx, n, "status", status, 127);
                 if (out_var[0]) {
-                    // "true" または "false" をトグル
                     int on = (w1_strstr(status, "true") != NULL);
                     set_state(ctx, out_var, on ? "false" : "true");
-                    ctx->engine_dirty = 1;
                 }
                 break;
             }
-            
-            // 3. slider の処理
             if (w1_strcmp(n->tag, "slider") == 0) {
-                char out_var[128]; 
+                char out_var[128];
                 eval_attr(ctx, n, "output", out_var, 127);
                 if (out_var[0]) {
-                    // クリック位置から値を計算
-                    int val = ((x - n->x) * 100) / n->w;
-                    if (val < 0) {
-                        val = 0;
-                    }
-                    if (val > 100) {
-                        val = 100;
-                    }
-                    char val_str[16]; 
-                    extern char *append_int(char *p, int v); 
-                    val_str[0] = '\0';
+                    int val = (x - n->x) * 100 / n->w;
+                    if (val < 0) val = 0;
+                    if (val > 100) val = 100;
+                    char val_str[16];
+                    extern char *append_int(char *p, int v);
                     append_int(val_str, val);
                     set_state(ctx, out_var, val_str);
-                    ctx->engine_dirty = 1;
                 }
                 break;
             }
-            
-            // 4. input の処理（現状はフォーカスのみ）
-            if (w1_strcmp(n->tag, "input") == 0) {
-                char id[64];
-                eval_attr(ctx, n, "id", id, 63);
-                if (id[0]) {
-                    // フォーカス状態を設定
-                    set_state(ctx, "--focusedInput", id);
-                }
+            if (w1_strcmp(n->tag, "input") == 0) { break; }
+            if (n->event_oneclick[0]) {
+                execute_action1(ctx, n->event_oneclick);
                 break;
             }
         }
     }
     warp1_context_update(ctx, ctx->win_w, ctx->win_h);
 }
- 
 
 int warp1_context_is_dirty(warp1_context_t* ctx) { return ctx->engine_dirty; }
 void warp1_context_clear_dirty(warp1_context_t* ctx) { ctx->engine_dirty = 0; }
@@ -764,53 +727,6 @@ void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
     if (h->children[i]->event_oneclick[0]) execute_action1(ctx, h->children[i]->event_oneclick);
 }
 
-// warp1_engine.c の最後に以下を追加:
-
-// Slider がクリック位置にあるかチェック
-int warp1_find_slider_at(warp1_context_t* ctx, int x, int y) {
-    if (!ctx) return 0;
-    
-    for (int i = 0; i < ctx->nodes_count; i++) {
-        warp1_node_t *n = &ctx->nodes[i];
-        if (w1_strcmp(n->tag, "slider") == 0) {
-            if (x >= n->x && x <= n->x + n->w &&
-                y >= n->y && y <= n->y + n->h) {
-                return 1; // Hit
-            }
-        }
-    }
-    return 0;
-}
-
-// Slider の値をマウス位置から設定
-void warp1_slider_set_value_at(warp1_context_t* ctx, int x, int y, int* out_changed) {
-    if (!ctx || !out_changed) return;
-    *out_changed = 0;
-    
-    for (int i = 0; i < ctx->nodes_count; i++) {
-        warp1_node_t *n = &ctx->nodes[i];
-        if (w1_strcmp(n->tag, "slider") == 0) {
-            // Y軸の範囲チェック
-            if (y >= n->y && y <= n->y + n->h) {
-                char out_var[128];
-                eval_attr(ctx, n, "output", out_var, 127);
-                if (out_var[0]) {
-                    int val = ((x - n->x) * 100) / n->w;
-                    if (val < 0) val = 0;
-                    if (val > 100) val = 100;
-                    
-                    char val_str[16];
-                    val_str[0] = '\0';
-                    append_int(val_str, val);
-                    set_state(ctx, out_var, val_str);
-                    *out_changed = 1;
-                    return;
-                }
-            }
-        }
-    }
-}
-const char* warp1_context_get_state(warp1_context_t* ctx, const char* key) {
-    if (!ctx) return "";
-    return get_state(ctx, key);
+int warp1_context_is_dev_event_check(warp1_context_t* ctx) {
+    return w1_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0;
 }

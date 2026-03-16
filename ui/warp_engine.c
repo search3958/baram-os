@@ -1604,3 +1604,7 @@ void warp_context_click_header_action(warp_context_t* ctx, int action_index) {
   }
 }
 
+int warp_context_is_dev_event_check(warp_context_t* ctx) {
+  return warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0;
+}
+

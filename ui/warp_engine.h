@@ -33,6 +33,7 @@ const char* warp_context_get_status(warp_context_t* ctx);
 int warp_context_get_header_info(warp_context_t* ctx, char* out_text, int max_len, int* out_action_count);
 void warp_context_get_header_action_info(warp_context_t* ctx, int action_index, char* out_text, int max_len);
 void warp_context_click_header_action(warp_context_t* ctx, int action_index);
+int warp_context_is_dev_event_check(warp_context_t* ctx);
 
 // Squircle rendering helpers for consistent UI
 char *warp_stpcpy(char *dest, const char *src);

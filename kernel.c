@@ -11,13 +11,6 @@
 #include "ui/svg_data.h"
 
 #include <stddef.h>
-// デバッグ用グローバル
-static struct multiboot_info *g_mbi_debug = NULL;
-
-// プロトタイプ宣言（staticを一致させる）
-static void fb_clear_color(struct multiboot_info *mbi, uint32_t color);
-#define FPU_HELPER __attribute__((noinline, optimize("no-tree-loop-distribute-patterns")))
-
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
@@ -54,7 +47,6 @@ static void fb_clear_color(struct multiboot_info *mbi, uint32_t color);
 // Mouse Hotspot Correction
 #define MOUSE_HOTSPOT_X 28
 #define MOUSE_HOTSPOT_Y 21
-
 
 typedef struct {
   NSVGshape *shape;
@@ -116,10 +108,6 @@ static int g_wallpaper_found = 0;
 static int g_svg_dirty = 1;
 static char g_hud_status[64] = "Idle";
 
-static int g_dragging_slider = 0;
-static int g_dragging_window = -1;
-
-
 // --- 前方宣言 ---
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
 static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
@@ -146,61 +134,59 @@ void enable_fpu() {
 
 // ソフトウェア浮動小数点のヘルパー関数をハードウェアFPU(インラインアセンブリ)で実装
 // ターゲット属性が効かない環境でも直接命令を発行することで無限再帰を避ける
-float FPU_HELPER __mulsf3(float a, float b) {
+float __mulsf3(float a, float b) {
   float r;
   __asm__("flds %1; fmuls %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-float FPU_HELPER __addsf3(float a, float b) {
+float __addsf3(float a, float b) {
   float r;
   __asm__("flds %1; fadds %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-float FPU_HELPER __subsf3(float a, float b) {
+float __subsf3(float a, float b) {
   float r;
   __asm__("flds %1; fsubs %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-float FPU_HELPER __divsf3(float a, float b) {
+float __divsf3(float a, float b) {
   float r;
   __asm__("flds %1; fdivs %2; fstps %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-int FPU_HELPER __gtsf2(float a, float b) { return a > b; }
-int FPU_HELPER __ltsf2(float a, float b) { return a < b; }
-int FPU_HELPER __nesf2(float a, float b) { return a != b; }
-int FPU_HELPER __eqsf2(float a, float b) { return a == b; }
-int FPU_HELPER __gesf2(float a, float b) { return a >= b; }
-int FPU_HELPER __lesf2(float a, float b) { return a <= b; }
-float FPU_HELPER __floatsisf(int i) {
+int __gtsf2(float a, float b) { return a > b; }
+int __ltsf2(float a, float b) { return a < b; }
+int __nesf2(float a, float b) { return a != b; }
+int __eqsf2(float a, float b) { return a == b; }
+int __gesf2(float a, float b) { return a >= b; }
+int __lesf2(float a, float b) { return a <= b; }
+float __floatsisf(int i) {
   float r;
   __asm__("fildl %1; fstps %0" : "=m"(r) : "m"(i));
   return r;
 }
-// float を int に直すヘルパー (FPU_HELPERを確実に付与)
-int FPU_HELPER __fixsfsi(float f) {
+int __fixsfsi(float f) {
   int r;
-  __asm__ __volatile__("flds %1; fistpl %0" : "=m"(r) : "m"(f));
+  __asm__("flds %1; fistpl %0" : "=m"(r) : "m"(f));
   return r;
 }
 
-
-double FPU_HELPER __muldf3(double a, double b) {
+double __muldf3(double a, double b) {
   double r;
   __asm__("fldl %1; fmull %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-double FPU_HELPER __adddf3(double a, double b) {
+double __adddf3(double a, double b) {
   double r;
   __asm__("fldl %1; faddl %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-double FPU_HELPER __subdf3(double a, double b) {
+double __subdf3(double a, double b) {
   double r;
   __asm__("fldl %1; fsubl %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
 }
-double FPU_HELPER __divdf3(double a, double b) {
+double __divdf3(double a, double b) {
   double r;
   __asm__("fldl %1; fdivl %2; fstpl %0" : "=m"(r) : "m"(a), "m"(b));
   return r;
@@ -222,11 +208,9 @@ float __truncdfsf2(double d) {
   __asm__("fldl %1; fstps %0" : "=m"(r) : "m"(d));
   return r;
 }
-
-// double 版も同様
-int FPU_HELPER __fixdfsi(double d) {
+int __fixdfsi(double d) {
   int r;
-  __asm__ __volatile__("fldl %1; fistpl %0" : "=m"(r) : "m"(d));
+  __asm__("fldl %1; fistpl %0" : "=m"(r) : "m"(d));
   return r;
 }
 
@@ -258,9 +242,8 @@ static stbtt_fontinfo g_font;
 static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
-// 128MBはOSカーネルとしては巨大すぎるため、一旦サイズを絞る
-#define HEAP_SIZE (1024 * 1024 * 128) 
-static char heap[HEAP_SIZE];
+// メモリアロケータ (フリーリスト方式)
+static char heap[1024 * 1024 * 128]; // 128MB に拡大
 
 typedef struct block_header {
   size_t size; // このブロックのデータサイズ (ヘッダ除く)
@@ -291,25 +274,10 @@ void *malloc(size_t size) {
 
   while (p + BLOCK_HDR_SIZE <= end) {
     block_header_t *hdr = (block_header_t *)p;
-    
-    // 未使用ブロックを見つけたら、可能な限り後ろの未使用ブロックと連結する(アドホック・マージ)
-    if (!hdr->used) {
-      char *next_p = p + BLOCK_HDR_SIZE + hdr->size;
-      while (next_p + BLOCK_HDR_SIZE <= end) {
-        block_header_t *next = (block_header_t *)next_p;
-        if (!next->used) {
-          hdr->size += BLOCK_HDR_SIZE + next->size;
-          next_p = p + BLOCK_HDR_SIZE + hdr->size;
-        } else {
-          break;
-        }
-      }
-    }
-
     if (!hdr->used && hdr->size >= size) {
       // このブロックを分割できるか確認
       size_t remaining = hdr->size - size;
-      if (remaining >= BLOCK_HDR_SIZE + 8) {
+      if (remaining > BLOCK_HDR_SIZE + 8) {
         // 後ろに新しい空きブロックを作る
         block_header_t *next = (block_header_t *)(p + BLOCK_HDR_SIZE + size);
         next->size = remaining - BLOCK_HDR_SIZE;
@@ -329,7 +297,23 @@ void free(void *ptr) {
     return;
   block_header_t *hdr = (block_header_t *)((char *)ptr - BLOCK_HDR_SIZE);
   hdr->used = 0;
-  // マージはmalloc時に行うため、ここでは何もしない(O(1))
+
+  // 隣接する空きブロックをマージ (前方向)
+  char *p = heap;
+  char *end = heap + sizeof(heap);
+  while (p + BLOCK_HDR_SIZE <= end) {
+    block_header_t *cur = (block_header_t *)p;
+    char *next_p = p + BLOCK_HDR_SIZE + cur->size;
+    if (!cur->used && next_p + BLOCK_HDR_SIZE <= end) {
+      block_header_t *next = (block_header_t *)next_p;
+      if (!next->used) {
+        // マージ
+        cur->size += BLOCK_HDR_SIZE + next->size;
+        continue; // 同じ位置から再チェック
+      }
+    }
+    p = next_p;
+  }
 }
 
 void *realloc(void *ptr, size_t size) {
@@ -367,30 +351,16 @@ uint32_t get_used_memory(void) {
 }
 
 void *memset(void *s, int c, size_t n) {
-  uint32_t val = (uint8_t)c;
-  val |= (val << 8);
-  val |= (val << 16);
-  uint32_t *p4 = (uint32_t *)s;
-  size_t n4 = n / 4;
-  while (n4--)
-    *p4++ = val;
-  uint8_t *p1 = (uint8_t *)p4;
-  size_t n1 = n % 4;
-  while (n1--)
-    *p1++ = (uint8_t)c;
+  unsigned char *p = s;
+  while (n--)
+    *p++ = (unsigned char)c;
   return s;
 }
 void *memcpy(void *dest, const void *src, size_t n) {
-  uint32_t *d4 = (uint32_t *)dest;
-  const uint32_t *s4 = (const uint32_t *)src;
-  size_t n4 = n / 4;
-  while (n4--)
-    *d4++ = *s4++;
-  uint8_t *d1 = (uint8_t *)d4;
-  const uint8_t *s1 = (const uint8_t *)s4;
-  size_t n1 = n % 4;
-  while (n1--)
-    *d1++ = *s1++;
+  unsigned char *d = dest;
+  const unsigned char *s = src;
+  while (n--)
+    *d++ = *s++;
   return dest;
 }
 
@@ -943,23 +913,6 @@ static uint32_t parse_rgba_smart(const char *str, int color_index) {
 }
 
 static int svg_init(layer_t *layer, int load_wallpaper) {
-    if (g_svg_ready && !load_wallpaper) return 1;
-    if (load_wallpaper) g_svg_ready = 0;
-
-    layer_fill(layer, 0xFF000000);
-
-    const char* svg_data = NULL; // ここで宣言されている
-    if (load_wallpaper && g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
-        svg_data = g_wallpaper_buffer;
-    } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
-        svg_data = g_bootlogo_buffer;
-    }
-
-    // チェックはこの位置で行う
-    if (!svg_data) {
-        if (g_mbi_debug) fb_clear_color(g_mbi_debug, 0xFFFF0000); // 赤
-        return 0;
-    }
   if (g_svg_ready && !load_wallpaper)
     return 1;
   
@@ -969,6 +922,7 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
 
   layer_fill(layer, 0xFF000000);
 
+  const char* svg_data = NULL;
   if (load_wallpaper && g_wallpaper_found && g_wallpaper_buffer[0] != '\0') {
     svg_data = g_wallpaper_buffer;
   } else if (g_bootlogo_found && g_bootlogo_buffer[0] != '\0') {
@@ -1277,14 +1231,14 @@ static void window_update_caches(window_t *win) {
 
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
-  
+
   strncpy(g_hud_status, "EngineUpdate", 63);
   if (win->is_warp1) {
     warp1_context_update(win->warp1_ctx, win->w, win->h);
   } else {
     warp_context_update(win->warp_ctx, win->w, win->h);
   }
-  
+
   strncpy(g_hud_status, "SVGGen", 63);
   const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
   
@@ -1535,6 +1489,38 @@ static void redraw_warp_svg(layer_t *layer) {
           }
           layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, 0xFF000000);
           ax -= 10;
+        }
+
+        // dev eventCheck: draw hitboxes for header action buttons
+        int is_dev_check = 0;
+        if (win->is_warp1 && win->warp1_ctx) {
+          is_dev_check = warp1_context_is_dev_event_check(win->warp1_ctx);
+        } else if (!win->is_warp1 && win->warp_ctx) {
+          is_dev_check = warp_context_is_dev_event_check(win->warp_ctx);
+        }
+        if (is_dev_check) {
+          ax = win->x + win->w - 12;
+          for (int j = 0; j < action_count; j++) {
+            char act_text[64];
+            if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
+            else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+            int text_w = strlen(act_text) * 9;
+            int btn_w = text_w + 24;
+            int btn_h = 26;
+            ax -= btn_w;
+            // Draw semi-transparent red rectangle for hitbox
+            for (int by = 0; by < btn_h; by++) {
+              int py = win->y - 33 + by;
+              if (py < 0 || py >= layer->height) continue;
+              uint32_t *dst_line = &layer->buffer[py * layer->width];
+              for (int bx = 0; bx < btn_w; bx++) {
+                int px = ax + bx;
+                if (px < 0 || px >= layer->width) continue;
+                dst_line[px] = 0x40FF0000; // Semi-transparent red
+              }
+            }
+            ax -= 10;
+          }
         }
       } else {
         layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
@@ -2521,49 +2507,43 @@ static void cursor_init(void) {
     free(shadow_rgba);
   nsvgDelete(img);
 }
-static void fb_clear_color(struct multiboot_info *mbi, uint32_t color) {
-    if (!mbi || !(mbi->flags & (1 << 12))) return;
-    uint32_t *fb = (uint32_t *)(uintptr_t)mbi->framebuffer_addr;
-    if (!fb) return;
-    uint32_t width = mbi->framebuffer_width;
-    uint32_t height = mbi->framebuffer_height;
-    uint32_t pitch = mbi->framebuffer_pitch / 4;
-    for (uint32_t y = 0; y < height; ++y) {
-        for (uint32_t x = 0; x < width; ++x) fb[y * pitch + x] = color;
-    }
-}
 
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
-  g_mbi_debug = mbi;
-    (void)magic;
-    
-    // 1. 開始: 赤
-    fb_clear_color(mbi, 0xFF8B0000); 
+  (void)magic;
+  if (mbi)
+    g_mbi_flags = mbi->flags;
 
-    enable_fpu();
-    idt_install();
-    irq_install();
-    irq_install_handler(0, timer_handler);
-    timer_phase(100);
-    keyboard_install();
-    mouse_install();
-    enable_interrupts();
+  // SVG描画などの初期化より前に、まず赤画面を出す
+  for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
+    fill_framebuffer_red_early(mbi);
+    for (volatile int j = 0; j < 1000000; ++j) {
+      __asm__ __volatile__("nop");
+    }
+  }
 
-    // 2. 割り込みOK: 緑
-    fb_clear_color(mbi, 0xFF00FF00); 
+  fill_framebuffer_red_early(mbi); // 最後にもう一度赤で塗る
 
-    font_init(mbi);
-    warp_ui_mod_init(mbi);
+  enable_fpu();
 
-    set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
-                         mbi->framebuffer_width, mbi->framebuffer_height,
-                         mbi->framebuffer_pitch);
+  // 割り込み初期化
+  idt_install();
+  irq_install();
+  irq_install_handler(0, timer_handler);
+  timer_phase(100); // 100Hz
+  keyboard_install();
+  mouse_install();
+  enable_interrupts();
 
-    // 3. 基本設定OK: 青
-    fb_clear_color(mbi, 0xFF0000FF); 
-    
-    //cursor_init();
+  // モジュールとフォントの初期化を最優先で行う
+  font_init(mbi);
+  warp_ui_mod_init(mbi);
 
+  set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
+                       mbi->framebuffer_width, mbi->framebuffer_height,
+                       mbi->framebuffer_pitch);
+
+  // カーソル初期化
+  cursor_init();
 
   // 1. 背景 (黒)
   layer_t desktop;
@@ -2578,8 +2558,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_fill(&desktop, BASE_BG_COLOR);
   register_layer(&desktop);
 
-
-
   // 2. SVG表示エリア (ロゴ用)
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
@@ -2592,7 +2570,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.dynamic = 0;
   svg_init(&svg_layer, 0);
   register_layer(&svg_layer);
-
 
   // 3. 点滅インジケータ (右下)
   layer_t blink_layer;
@@ -2619,8 +2596,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_layer.dynamic = 1;
   layer_fill(&hud_layer, 0xFF000000);
 
-
-
   // 5. 次世代UI SVGレイヤー
   layer_t nextgen_ui_layer;
   nextgen_ui_layer.buffer = nextgen_ui_buf;
@@ -2638,8 +2613,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   register_layer(&nextgen_ui_layer);
   register_layer(&hud_layer); // HUDを上に
 
-  
-
   // 6. 文字レイヤー
   layer_t text_layer;
   text_layer.buffer = text_buf;
@@ -2655,7 +2628,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       text_buf[i] = TRANSPARENT_COLOR;
   }
   // 初回描画を確実に実行
-
   screen_mark_static_dirty();
   screen_mark_all_dirty();
 
@@ -2694,7 +2666,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       auto_booted = 1;
     }
 
-    if (auto_booted && !auto_warp1_booted && (timer_ticks - boot_start_tick > 500)) {
+    if (auto_booted && !auto_warp1_booted && (timer_ticks - boot_start_tick > 50)) {
       add_window("New Warp 1", 200, 200, 600, 400, 1);
       g_svg_dirty = 1;
       auto_warp1_booted = 1;
@@ -2951,154 +2923,86 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               break;
             }
             
-            // ===== kmain.c の該当部分を以下に置き換え =====
-
-// マウスボタン押下時の "3. Content" ブロック:
             // 3. Content
             if (hx >= win->x && hx < win->x + win->w &&
                 hy >= win->y && hy < win->y + win->h) {
-                hit_index = i;
-                
-                // Slider チェック（ドラッグフラグを立てる）
-                int slider_hit = 0;
-                if (win->is_warp1 && win->warp1_ctx) {
-                    int rx = hx - win->x;
-                    int ry = hy - win->y - (int)win->scroll_y;
-                    if (warp1_find_slider_at(win->warp1_ctx, rx, ry)) {
-                        g_dragging_slider = 1;
-                        g_dragging_window = i;
-                        slider_hit = 1;
-                    }
-                }
-                
-                // 通常のクリック処理
-                if (!slider_hit) {
-                    if (win->is_warp1) {
-                        warp1_context_click(win->warp1_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
-                    } else {
-                        warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
-                    }
-                    win->is_dirty = 1;
-                }
-                break;
+              hit_index = i;
+              if (win->is_warp1) {
+                warp1_context_click(win->warp1_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+              } else {
+                warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
+              }
+              win->is_dirty = 1;
+              break;
+            }
+          }
+          
+          if (hit_index >= 0) {
+            // Bring hit window to front
+            if (hit_index != g_window_count - 1) {
+              window_t tmp = g_windows[hit_index];
+              for (int j = hit_index; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
+              g_windows[g_window_count - 1] = tmp;
+            }
+            g_active_window_index = g_window_count - 1;
+          } else if (hit_index == -1) {
+            // Wallpaper click (real click, not just missed window)
+            add_window("New Warp", hx - 50, hy + 50, 400, 300, 0);
+          }
+          g_svg_dirty = 1;
+        } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
+          // Release
+          for (int i = 0; i < g_window_count; i++) {
+            if (g_windows[i].is_resizing) {
+              g_windows[i].is_calculating = 1;
+              g_windows[i].is_dirty = 1; // Trigger final layout
+            }
+            g_windows[i].is_dragging = 0;
+            g_windows[i].is_resizing = 0;
+          }
+        }
+        prev_mouse_buttons = curr_btns;
+      }
+
+      // Drag/Resize movement or pointcheck mouse update
+      if (g_active_window_index >= 0 && (mouse_dx != 0 || mouse_dy != 0)) {
+        window_t *awin = &g_windows[g_active_window_index];
+        int hx = mouse_x + MOUSE_HOTSPOT_X;
+        int hy = mouse_y + MOUSE_HOTSPOT_Y;
+        if (awin->is_warp1) {
+          if (awin->warp1_ctx) {
+            warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+            if (warp1_context_is_dirty(awin->warp1_ctx)) {
+              awin->is_dirty = 1;
+              g_svg_dirty = 1;
+            }
+          }
+        } else {
+          if (awin->warp_ctx) {
+            warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+            if (warp_context_is_dirty(awin->warp_ctx)) {
+              awin->is_dirty = 1;
+              g_svg_dirty = 1;
             }
           }
         }
+        if (awin->is_dragging) {
+          awin->x += mouse_dx; awin->y += mouse_dy;
+          g_svg_dirty = 1;
+        } else if (awin->is_resizing) {
+          awin->w += mouse_dx; awin->h += mouse_dy;
+          if (awin->w < 100) awin->w = 100;
+          if (awin->h < 64) awin->h = 64;
+          // Don't set is_dirty here to keep SVG content frozen
+          window_update_caches(awin); 
+          g_svg_dirty = 1;
+        }
       }
 
-// マウス移動時の Slider ドラッグ処理:
-      if (g_active_window_index >= 0 && (mouse_dx != 0 || mouse_dy != 0)) {
-    window_t *awin = &g_windows[g_active_window_index];
-    int hx = mouse_x + MOUSE_HOTSPOT_X;
-    int hy = mouse_y + MOUSE_HOTSPOT_Y;
-    
-    // Slider ドラッグ中の処理
-    if (g_dragging_slider && g_dragging_window == g_active_window_index) {
-        if (awin->is_warp1 && awin->warp1_ctx) {
-            int rx = hx - awin->x;
-            int ry = hy - awin->y - (int)awin->scroll_y;
-            int changed = 0;
-            warp1_slider_set_value_at(awin->warp1_ctx, rx, ry, &changed);
-            if (changed) {
-                awin->is_dirty = 1;
-                g_svg_dirty = 1;
-            }
-        }
-    }
-    
-    // 既存の pointcheck 処理
-    if (awin->is_warp1) {
-        if (awin->warp1_ctx) {
-            warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-            if (warp1_context_is_dirty(awin->warp1_ctx)) {
-                awin->is_dirty = 1;
-                g_svg_dirty = 1;
-            }
-        }
-    } else {
-        if (awin->warp_ctx) {
-            warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-            if (warp_context_is_dirty(awin->warp_ctx)) {
-                awin->is_dirty = 1;
-                g_svg_dirty = 1;
-            }
-        }
-    }
-    
-    // 既存のドラッグ/リサイズ処理
-    if (awin->is_dragging) {
-        awin->x += mouse_dx; awin->y += mouse_dy;
-        g_svg_dirty = 1;
-    } else if (awin->is_resizing) {
-        awin->w += mouse_dx; awin->h += mouse_dy;
-        if (awin->w < 100) awin->w = 100;
-        if (awin->h < 64) awin->h = 64;
-        window_update_caches(awin); 
-        g_svg_dirty = 1;
-    }
-}
-
-
-// キーボード入力処理:
-      for (int i = 0; i < keybuf_len; i++) {
-        char c = (char)keybuf[i];
-        
-        // フォーカスされた input があるかチェック
-        if (g_active_window_index >= 0) {
-            window_t *awin = &g_windows[g_active_window_index];
-            const char *focused_id = NULL;
-            
-            if (awin->is_warp1 && awin->warp1_ctx) {
-                focused_id = warp1_context_get_state(awin->warp1_ctx, "--focusedInput");
-            }
-            
-            if (focused_id && focused_id[0]) {
-                // input にフォーカスがある場合
-                char content_key[128];
-                content_key[0] = '-'; content_key[1] = '-'; content_key[2] = '\0';
-                strcat(content_key, focused_id);
-                strcat(content_key, "Content");
-                
-                if (c == '\b') {
-                    // バックスペース
-                    const char *current = warp1_context_get_state(awin->warp1_ctx, content_key);
-                    if (current) {
-                        int len = strlen(current);
-                        if (len > 0) {
-                            char new_val[512];
-                            strncpy(new_val, current, len - 1);
-                            new_val[len - 1] = '\0';
-                            warp1_context_set_state(awin->warp1_ctx, content_key, new_val);
-                            awin->is_dirty = 1;
-                            g_svg_dirty = 1;
-                        }
-                    }
-                } else if (c == '\n') {
-                    // Enter でフォーカス解除
-                    warp1_context_set_state(awin->warp1_ctx, "--focusedInput", "");
-                } else if (c >= 32 && c < 127) {
-                    // 通常の文字入力
-                    const char *current = warp1_context_get_state(awin->warp1_ctx, content_key);
-                    if (current) {
-                        char new_val[512];
-                        strncpy(new_val, current, 511);
-                        new_val[511] = '\0';
-                        int len = strlen(new_val);
-                        if (len < 511) {
-                            new_val[len] = c;
-                            new_val[len + 1] = '\0';
-                        }
-                        warp1_context_set_state(awin->warp1_ctx, content_key, new_val);
-                        awin->is_dirty = 1;
-                        g_svg_dirty = 1;
-                    }
-                }
-                continue; // input に入力したのでグローバル処理をスキップ
-            }
-        }
-        
-        // グローバルキーボード処理
-        if (c == KEY_UP)
+      if (keybuf_len > 0) {
+        for (int i = 0; i < keybuf_len; i++) {
+          char c = (char)keybuf[i];
+          if (c == KEY_UP)
             g_target_scroll_y += 100.0f;
           else if (c == KEY_DOWN)
             g_target_scroll_y -= 100.0f;
@@ -3144,3 +3048,4 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     cpu_idle = 0;
     screen_refresh();
   }
+}

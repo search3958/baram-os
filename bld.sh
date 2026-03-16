@@ -77,7 +77,7 @@ if [ "$1" = "max" ]; then
 fi
 
 qemu-system-i386 -cdrom output/os.iso \
-    -vga std \
+    -vga virtio \
     -m 2G \
     -smp 4 \
     $Q_ACCEL \
