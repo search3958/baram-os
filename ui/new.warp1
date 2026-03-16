@@ -110,16 +110,12 @@ screen{
         
         button{
             text: ("スイッチを無効化"),
-            oneClick: (--switchMain = --switchMain + "Disabled"
-                
-            )
+            oneClick: (--switchMain = --switchMain + "Disabled")
         },
         
         button{
             text: ("スイッチを有効化"),
-            oneClick: (
-                --switchMain = --switchMain.replace{"Disabled", ""}
-            )
+            oneClick: (--switchMain = --switchMain.replace{"Disabled", ""})
         },
         
         slider{

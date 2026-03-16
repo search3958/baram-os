@@ -217,6 +217,8 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
                 if (w1_strcmp(method, "changeContent") == 0) {
                     char val[256]; eval_expr(ctx, args, val, 255);
                     char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Content"); set_state(ctx, key, val);
+                } else if (w1_strcmp(method, "setStatus") == 0) {
+                    char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Status"); set_state(ctx, key, args);
                 }
             }
         } else if (w1_strncmp(act, "--", 2) == 0 || w1_strncmp(act, "~~", 2) == 0) {
@@ -229,6 +231,21 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
                     if (m_end) *m_end = '\0';
                     char m_expanded[512]; eval_expr(ctx, m_expr, m_expanded, 511);
                     long res = eval_math1(m_expanded); extern char *append_int(char *p, int v); append_int(val, (int)res);
+                } else if (w1_strstr(rhs, ".replace{")) {
+                    char *m_dot = w1_strstr(rhs, ".replace{"); *m_dot = '\0';
+                    char base[256], args[256]; eval_expr(ctx, rhs, base, 255);
+                    char *m_open = m_dot + 9; char *m_close = w1_strchr(m_open, '}');
+                    if (m_close) *m_close = '\0'; w1_strcpy(args, m_open);
+                    char old_s[128], new_s[128]; char *comma = w1_strchr(args, ',');
+                    if (comma) {
+                        *comma = '\0'; eval_expr(ctx, args, old_s, 127); eval_expr(ctx, comma + 1, new_s, 127);
+                        char *found = w1_strstr(base, old_s);
+                        if (found && old_s[0]) {
+                            int head = found - base; int old_len = w1_strlen(old_s);
+                            w1_strncpy(val, base, head); val[head] = '\0';
+                            w1_strcat(val, new_s); w1_strcat(val, found + old_len);
+                        } else { w1_strcpy(val, base); }
+                    } else { w1_strcpy(val, base); }
                 } else { eval_expr(ctx, rhs, val, 255); }
                 set_state(ctx, act, val);
             }
@@ -386,11 +403,26 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         node->h = cy - py + 12;
     } else if (w1_strcmp(node->tag, "button") == 0 || w1_strcmp(node->tag, "tonalButton") == 0) {
         node->h = 40; char text[128]; eval_attr(ctx, node, "text", text, 127);
-        node->w = w1_strlen(text) * 10 + 32; if (node->w > limit_w) node->w = limit_w;
+        int text_w = w1_strlen(text) * 9;
+        node->w = text_w + 32; if (node->w < 80) node->w = 80;
+        if (node->w > limit_w) node->w = limit_w;
         if (ctx->texts_count < MAX_TEXTS) {
-            ctx->texts[ctx->texts_count].x = node->x + 16; ctx->texts[ctx->texts_count].y = node->y + 10;
+            ctx->texts[ctx->texts_count].x = node->x + (node->w - text_w) / 2;
+            ctx->texts[ctx->texts_count].y = node->y + 10;
             w1_strcpy(ctx->texts[ctx->texts_count].text, text); ctx->texts[ctx->texts_count].size = 16;
             ctx->texts[ctx->texts_count].color = (w1_strcmp(node->tag, "tonalButton") == 0) ? 0xFF0a56d0 : 0xFFFFFFFF; ctx->texts_count++;
+        }
+    } else if (w1_strcmp(node->tag, "switch") == 0) {
+        node->w = 48; node->h = 24;
+    } else if (w1_strcmp(node->tag, "slider") == 0) {
+        node->w = limit_w; node->h = 30;
+    } else if (w1_strcmp(node->tag, "input") == 0) {
+        node->w = limit_w; node->h = 48;
+        char placeholder[128]; eval_attr(ctx, node, "placeholder", placeholder, 127);
+        if (ctx->texts_count < MAX_TEXTS) {
+            ctx->texts[ctx->texts_count].x = node->x + 12; ctx->texts[ctx->texts_count].y = node->y + 14;
+            w1_strcpy(ctx->texts[ctx->texts_count].text, placeholder); ctx->texts[ctx->texts_count].size = 16;
+            ctx->texts[ctx->texts_count].color = 0xFF888888; ctx->texts_count++;
         }
     } else if (w1_strcmp(node->tag, "text") == 0) {
         char text[256]; eval_attr(ctx, node, "text", text, 255);
@@ -412,6 +444,35 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     return node->h;
 }
 
+static void init_state_from_ast1(warp1_context_t *ctx, warp1_node_t *node) {
+    if (!node) return;
+    for (int i = 0; i < node->attrs_count; i++) {
+        if (node->attrs[i].key[0] == '-' && node->attrs[i].key[1] == '-') {
+            char val[512]; eval_expr(ctx, node->attrs[i].value, val, 511);
+            set_state(ctx, node->attrs[i].key, val);
+        }
+    }
+    for (int i = 0; i < node->children_count; i++) init_state_from_ast1(ctx, node->children[i]);
+}
+
+static void emit_rect1(char *dest, int size, int x, int y, int w, int h, const char *fill, const char *extra) {
+    char buf[256]; char *p = buf;
+    p = w1_strcpy(p, "<rect x=\""); p = append_int(p, x);
+    p = w1_strcat(p, "\" y=\""); p = append_int(p, y);
+    p = w1_strcat(p, "\" width=\""); p = append_int(p, w);
+    p = w1_strcat(p, "\" height=\""); p = append_int(p, h);
+    p = w1_strcat(p, "\" fill=\""); p = w1_strcat(p, fill);
+    p = w1_strcat(p, "\" "); p = w1_strcat(p, extra);
+    p = w1_strcat(p, " />\n");
+    w1_strncat(dest, buf, (size_t)(size - w1_strlen(dest) - 1));
+}
+
+static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int h, float radius, const char *fill, const char *extra) {
+    // Forward to common engine helper
+    extern void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius, const char *fill, const char *extra);
+    emit_squircle_shape_to(dest, size, x, y, w, h, radius, fill, extra);
+}
+
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
     if (!node) return;
     const char *id_attr = ""; for(int i=0;i<node->attrs_count;i++) if(w1_strcmp(node->attrs[i].key, "id")==0) id_attr = node->attrs[i].value;
@@ -419,20 +480,22 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
     if (w1_strcmp(node->tag, "screen") == 0) {
         char real_id[64]; eval_expr(ctx, id_attr, real_id, 63);
         if (w1_strcmp(real_id, ctx->current_screen) != 0) return;
-        emit_squircle_shape_to(dest, dest_size, 0, 0, node->w, node->h, 0, "#f5f5f5", "");
-    } else if (w1_strcmp(node->tag, "card") == 0) { emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "stroke=\"#dddddd\""); }
-    else if (w1_strcmp(node->tag, "button") == 0) { emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", ""); }
-    else if (w1_strcmp(node->tag, "tonalButton") == 0) { emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", "opacity=\"0.1\""); }
+        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, "#f5f5f5", "");
+    } else if (w1_strcmp(node->tag, "card") == 0) { emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "stroke=\"#dddddd\""); }
+    else if (w1_strcmp(node->tag, "button") == 0) { emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", ""); }
+    else if (w1_strcmp(node->tag, "tonalButton") == 0) { emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0a56d0", "opacity=\"0.1\""); }
     else if (w1_strcmp(node->tag, "switch") == 0) {
-        emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, "#dddddd", "");
-        emit_squircle_shape_to(dest, dest_size, node->x + 4, node->y + 4, 16, 16, 8.0f, "#ffffff", "");
+        char val[128]; eval_attr(ctx, node, "status", val, 127);
+        int on = w1_strstr(val, "true") != NULL;
+        emit_rect1(dest, dest_size, node->x, node->y, node->w, node->h, on ? "#0a56d0" : "#dddddd", "rx=\"12\"");
+        emit_rect1(dest, dest_size, node->x + (on ? 28 : 4), node->y + 4, 16, 16, "#ffffff", "rx=\"8\"");
     } else if (w1_strcmp(node->tag, "slider") == 0) {
-        char rect[128]; extern char *append_int(char *p, int v); char *p = rect;
-        p = w1_strcpy(p, "<rect x=\""); p = append_int(p, node->x); p = w1_strcat(p, "\" y=\"");
-        p = append_int(p, node->y + 13); p = w1_strcat(p, "\" width=\""); p = append_int(p, node->w);
-        p = w1_strcat(p, "\" height=\"4\" fill=\"#dddddd\" rx=\"2\" />\n");
-        w1_strncat(dest, rect, (size_t)(dest_size - w1_strlen(dest) - 1));
-        emit_squircle_shape_to(dest, dest_size, node->x + node->w/2, node->y + 5, 20, 20, 10.0f, "#0a56d0", "");
+        char val[128]; eval_attr(ctx, node, "status", val, 127);
+        int v = (int)w1_strtol(val); if (v < 0) v = 0; if (v > 100) v = 100;
+        emit_rect1(dest, dest_size, node->x, node->y + 13, node->w, 4, "#dddddd", "rx=\"2\"");
+        emit_rect1(dest, dest_size, node->x + (node->w * v / 100) - 10, node->y + 5, 20, 20, "#0a56d0", "rx=\"10\"");
+    } else if (w1_strcmp(node->tag, "input") == 0) {
+        emit_rect1(dest, dest_size, node->x, node->y, node->w, node->h, "#ffffff", "stroke=\"#dddddd\" rx=\"8\"");
     }
     for (int i = 0; i < node->children_count; i++) { if (w1_strcmp(node->children[i]->tag, "Header") != 0) emit_svg_recursive1(ctx, node->children[i], dest, dest_size); }
 }
@@ -448,7 +511,10 @@ warp1_context_t* warp1_context_create(const char* code) {
     ctx->token_pos = 0; while (ctx->token_pos < ctx->token_count) {
         warp1_node_t *node = parse_node(ctx); if (node && ctx->root_nodes_count < 16) ctx->root_nodes[ctx->root_nodes_count++] = node;
     }
-    if (ctx->root_nodes_count > 0) { char id[64]; eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); w1_strcpy(ctx->current_screen, id[0]?id:"main"); }
+    if (ctx->root_nodes_count > 0) {
+        for (int i = 0; i < ctx->root_nodes_count; i++) init_state_from_ast1(ctx, ctx->root_nodes[i]);
+        char id[64]; eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); w1_strcpy(ctx->current_screen, id[0]?id:"main");
+    }
     warp1_context_update(ctx, 1280, 720); return ctx;
 }
 
@@ -480,7 +546,27 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     for (int i = 0; i < ctx->nodes_count; i++) {
         warp1_node_t *n = &ctx->nodes[i];
-        if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h && n->event_oneclick[0]) { execute_action1(ctx, n->event_oneclick); break; }
+        if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
+            if (n->event_oneclick[0]) { execute_action1(ctx, n->event_oneclick); break; }
+            if (w1_strcmp(n->tag, "switch") == 0) {
+                char out_var[128], status[128]; eval_attr(ctx, n, "output", out_var, 127); eval_attr(ctx, n, "status", status, 127);
+                if (out_var[0]) {
+                    int on = w1_strstr(status, "true") != NULL;
+                    set_state(ctx, out_var, on ? "false" : "true");
+                }
+                break;
+            }
+            if (w1_strcmp(n->tag, "slider") == 0) {
+                char out_var[128]; eval_attr(ctx, n, "output", out_var, 127);
+                if (out_var[0]) {
+                    int val = (x - n->x) * 100 / n->w;
+                    if (val < 0) val = 0; if (val > 100) val = 100;
+                    char val_str[16]; extern char *append_int(char *p, int v); append_int(val_str, val);
+                    set_state(ctx, out_var, val_str);
+                }
+                break;
+            }
+        }
     }
     warp1_context_update(ctx, ctx->win_w, ctx->win_h);
 }
