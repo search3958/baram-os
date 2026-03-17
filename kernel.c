@@ -352,16 +352,27 @@ uint32_t get_used_memory(void) {
 }
 
 void *memset(void *s, int c, size_t n) {
-  unsigned char *p = s;
-  while (n--)
-    *p++ = (unsigned char)c;
+  uint32_t val = (uint8_t)c;
+  val |= (val << 8);
+  val |= (val << 16);
+  uint32_t *p32 = (uint32_t *)s;
+  size_t n32 = n / 4;
+  size_t rem = n % 4;
+  __asm__ __volatile__("rep stosl" : "+D"(p32), "+c"(n32) : "a"(val) : "memory");
+  unsigned char *p8 = (unsigned char *)p32;
+  while (rem--) *p8++ = (uint8_t)c;
   return s;
 }
+
 void *memcpy(void *dest, const void *src, size_t n) {
-  unsigned char *d = dest;
-  const unsigned char *s = src;
-  while (n--)
-    *d++ = *s++;
+  uint32_t *d32 = (uint32_t *)dest;
+  const uint32_t *s32 = (const uint32_t *)src;
+  size_t n32 = n / 4;
+  size_t rem = n % 4;
+  __asm__ __volatile__("rep movsl" : "+S"(s32), "+D"(d32), "+c"(n32) : : "memory");
+  unsigned char *d8 = (unsigned char *)d32;
+  const unsigned char *s8 = (const unsigned char *)s32;
+  while (rem--) *d8++ = *s8++;
   return dest;
 }
 
@@ -1414,14 +1425,11 @@ static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
   draw_wallpaper(layer);
   
-  // Draw windows in order: non-active first, active last (on top)
-  // First pass: draw all windows except active one
   for (int i = 0; i < g_window_count; i++) {
-    if (i == g_active_window_index) continue;  // Skip active window
     window_t *win = &g_windows[i];
     // IMPORTANT: Only redraw SVG if NOT resizing. Frame caches (mask/titlebar) are updated in move block.
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
-
+    
     if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
       int title_h = 40;
       int shadow_size = 48;
@@ -1638,241 +1646,22 @@ static void redraw_warp_svg(layer_t *layer) {
           }
         }
       }
-    }
-  }
-
-  // Second pass: draw active window last (on top)
-  if (g_active_window_index >= 0 && g_active_window_index < g_window_count) {
-    window_t *win = &g_windows[g_active_window_index];
-    if (win->is_dirty && !win->is_resizing) window_redraw(win);
-
-    if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
-      int title_h = 40;
-      int shadow_size = 48;
-
-      // 1. Draw Window Shadow from Cache
-      if (!win->is_maximized) {
-        int sw = win->shadow_cache_w;
-        int sh = win->shadow_cache_h;
-        int sx_start = win->x - shadow_size;
-        int sy_start = win->y - title_h - shadow_size + 8;
-
-        int y0 = (sy_start < 0) ? -sy_start : 0;
-        int y1 = (sy_start + sh > layer->height) ? layer->height - sy_start : sh;
-        int x0 = (sx_start < 0) ? -sx_start : 0;
-        int x1 = (sx_start + sw > layer->width) ? layer->width - sx_start : sw;
-
-        for (int dy = y0; dy < y1; dy++) {
-          int py = sy_start + dy;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          uint8_t *src_mask = &win->shadow_cache[dy * sw];
-
-          for (int dx = x0; dx < x1; dx++) {
-            uint8_t alpha = src_mask[dx];
-            if (alpha == 0) continue;
-
-            int px = sx_start + dx;
-            uint32_t bg = dst_line[px];
-            uint32_t a_bg = bg >> 24;
-            uint32_t inv_alpha = 255 - alpha;
-            uint32_t rb = (bg & 0xFF00FFu) * inv_alpha >> 8;
-            uint32_t g = ((bg >> 8) & 0xFF) * inv_alpha >> 8;
-            uint32_t a_out = alpha + (a_bg * inv_alpha >> 8);
-            dst_line[px] = (a_out << 24) | (rb & 0xFF00FFu) | (g << 8);
-          }
-        }
-      }
-
-      // 2. Draw Title Bar from Cache
-      uint32_t *src_frame = win->frame_cache;
-      int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
-      int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
-      int tx0 = (win->x < 0) ? -win->x : 0;
-      int tx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
-
-      for (int dy = ty0; dy < ty1; dy++) {
-        int py = win->y - title_h + dy;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-        uint32_t *src_line = &src_frame[dy * win->w];
-        uint8_t *mask_line = &win->window_mask[dy * win->w];
-        for (int dx = tx0; dx < tx1; dx++) {
-          int px = win->x + dx;
-          uint32_t color = src_line[dx];
-          uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-          if (alpha == 255) dst_line[px] = color;
-          else if (alpha > 0) dst_line[px] = blend_colors(dst_line[px], color, alpha);
-        }
-      }
-
-      // 3. Title bar content
-      char header_text[128];
-      int action_count = 0;
-      int has_header = 0;
-      if (win->is_warp1) {
-        if (win->warp1_ctx) has_header = warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
-      } else {
-        if (win->warp_ctx) has_header = warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
-      }
-
-      if (has_header) {
-        layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
-
-        // Actions on the right (Buttons)
-        int ax = win->x + win->w - 12;
-        for (int j = 0; j < action_count; j++) {
-          char act_text[64];
-          if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-          else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-          int text_w = strlen(act_text) * 9;
-          int btn_w = text_w + 24;
-          int btn_h = 26;
-          ax -= btn_w;
-
-          float r = 8.0f;
-          int ay0 = (win->y - 33 < 0) ? -(win->y - 33) : 0;
-          int ay1 = (win->y - 33 + btn_h > layer->height) ? (layer->height - (win->y - 33)) : btn_h;
-          int ax0 = (ax < 0) ? -ax : 0;
-          int ax1 = (ax + btn_w > layer->width) ? (layer->width - ax) : btn_w;
-
-          for (int dy = ay0; dy < ay1; dy++) {
-            int py = win->y - 33 + dy;
-            uint32_t *dst_line = &layer->buffer[py * layer->width];
-            for (int dx = ax0; dx < ax1; dx++) {
-              int px = ax + dx;
-              float alpha_f = 1.0f;
-              float fdx = (float)dx, fdy = (float)dy;
-              float fbw = (float)btn_w, fbh = (float)btn_h;
-
-              if (fdx < r && fdy < r) {
-                float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-r)*(fdy-r));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              } else if (fdx > fbw-r-1.0f && fdy < r) {
-                float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-r)*(fdy-r));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              } else if (fdx < r && fdy > fbh-r-1.0f) {
-                float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              } else if (fdx > fbw-r-1.0f && fdy > fbh-r-1.0f) {
-                float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              }
-
-              if (alpha_f > 0.0f) {
-                dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, (uint8_t)(alpha_f * 255));
-              }
-            }
-          }
-          layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, 0xFF000000);
-          ax -= 10;
-        }
-
-        // Header action buttons click handling
-        ax = win->x + win->w - 12;
-        for (int j = 0; j < action_count; j++) {
-            char act_text[64];
-            if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-            else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-            int text_w = strlen(act_text) * 9;
-            int btn_w = text_w + 24;
-            ax -= btn_w;
-            ax -= 10;
-        }
-      } else {
-        layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
-      }
-
-      // 4. Draw control circles
-      float btn_r = 7.0f;
-      int btn_y = win->y - 20;
-      int i_r = (int)btn_r + 1;
-      uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
-      int centers_x[] = {win->x + 20, win->x + 44};
-      for (int k = 0; k < 2; k++) {
-        int cy0 = (btn_y - i_r < 0) ? -(btn_y - i_r) : -i_r;
-        int cy1 = (btn_y + i_r >= layer->height) ? (layer->height - 1 - btn_y) : i_r;
-        int cx0 = (centers_x[k] - i_r < 0) ? -(centers_x[k] - i_r) : -i_r;
-        int cx1 = (centers_x[k] + i_r >= layer->width) ? (layer->width - 1 - centers_x[k]) : i_r;
-
-        for (int dy = cy0; dy <= cy1; dy++) {
-          int py = btn_y + dy;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          for (int dx = cx0; dx <= cx1; dx++) {
-            float dist = sqrtf((float)(dx*dx + dy*dy));
-            float alpha_f = 0.0f;
-            if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
-            else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
-            if (alpha_f > 0.0f) {
-              int px = centers_x[k] + dx;
-              dst_line[px] = blend_colors(dst_line[px], colors[k], (uint8_t)(alpha_f * 255));
-            }
-          }
-        }
-      }
-
-      // 5. Content with scroll offset and squircle corners
-      int sy_int = (int)roundf(win->scroll_y);
-      int cy0 = (win->y < 0) ? -win->y : 0;
-      int cy1 = (win->y + win->h > layer->height) ? (layer->height - win->y) : win->h;
-      int cx0 = (win->x < 0) ? -win->x : 0;
-      int cx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
-
-      for (int dy = cy0; dy < cy1; dy++) {
-        int py = win->y + dy;
-        int src_y = dy - sy_int;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-
-        int frozen_w = win->is_resizing ? win->resize_w : win->w;
-        int frozen_h = win->is_resizing ? win->resize_h : win->h;
-
-        if (src_y < 0 || src_y >= win->buffer_h || (win->is_resizing && (dy >= frozen_h || src_y >= frozen_h))) {
-          uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
-          for (int dx = cx0; dx < cx1; dx++) {
-            uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-            if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
-            else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
-          }
-          continue;
-        }
-
-        uint32_t *src_line = &((uint32_t*)win->rgba_buffer)[src_y * win->w];
-        uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
-
-        for (int dx = cx0; dx < cx1; dx++) {
-          int px = win->x + dx;
-          uint32_t color;
-          uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-
-          if (dx < frozen_w && src_y < frozen_h) {
-            color = src_line[dx];
-            if (win->fade_alpha > 0.0f) {
-              uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255.0f);
-              color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
-            }
-          } else {
-            color = 0xFFFFFFFF;
-          }
-          if (alpha == 255) dst_line[px] = color;
-          else dst_line[px] = blend_colors(dst_line[px], color, alpha);
-        }
-      }
-
+      
       // 6. Handle
-      int handle_s = 12;
-      int hy0 = (win->h - handle_s < cy0) ? cy0 : win->h - handle_s;
-      int hy1 = (win->h > cy1) ? cy1 : win->h;
-      int hx0 = (win->w - handle_s < cx0) ? cx0 : win->w - handle_s;
-      int hx1 = (win->w > cx1) ? cx1 : win->w;
+      if (i == g_active_window_index) {
+        int handle_s = 12;
+        int hy0 = (win->h - handle_s < cy0) ? cy0 : win->h - handle_s;
+        int hy1 = (win->h > cy1) ? cy1 : win->h;
+        int hx0 = (win->w - handle_s < cx0) ? cx0 : win->w - handle_s;
+        int hx1 = (win->w > cx1) ? cx1 : win->w;
 
-      for (int dy = hy0; dy < hy1; dy++) {
-        int py = win->y + dy;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-        for (int dx = hx0; dx < hx1; dx++) {
-          int px = win->x + dx;
-          dst_line[px] = blend_colors(dst_line[px], 0xFFCCCCCC, 255);
+        for (int dy = hy0; dy < hy1; dy++) {
+          int py = win->y + dy;
+          uint32_t *dst_line = &layer->buffer[py * layer->width];
+          for (int dx = hx0; dx < hx1; dx++) {
+            int px = win->x + dx;
+            dst_line[px] = blend_colors(dst_line[px], 0xFFCCCCCC, 255);
+          }
         }
       }
     }
