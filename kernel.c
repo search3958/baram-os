@@ -2995,6 +2995,19 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       if (keybuf_len > 0) {
         for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
+
+          // Warp1 ウィンドウへのキー入力転送
+          if (g_active_window_index >= 0) {
+            window_t *awin = &g_windows[g_active_window_index];
+            if (awin->is_warp1 && awin->warp1_ctx) {
+              // TODO: ウィンドウがキー入力を受けるべき状態か判定が必要かもしれない
+              warp1_context_key_input(awin->warp1_ctx, c);
+              awin->is_dirty = 1; // 追記: ウィンドウ自体の再描画が必要
+              g_svg_dirty = 1;
+              continue; // Warp1 が処理した場合は以後の処理（コマンドライン等）をスキップ
+            }
+          }
+
           if (c == KEY_UP)
             g_target_scroll_y += 100.0f;
           else if (c == KEY_DOWN)

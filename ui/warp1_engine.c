@@ -56,6 +56,8 @@ struct warp1_context {
     char svg_output[65536]; int engine_dirty; char engine_status[128];
     int mouse_x, mouse_y; int win_w, win_h;
     
+    int focused_node_idx; // -1: none
+    
     // Screen management (separate SVG per screen)
     char screen_ids[MAX_SCREENS][64];
     char screen_svgs[MAX_SCREENS][65536];
@@ -527,7 +529,15 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         node->h = 48; 
         
         char out_var[128], val[256], placeholder[128];
-        eval_attr(ctx, node, "output", out_var, 127); 
+        const char *out_var_raw = get_attr1(node, "output");
+        if (out_var_raw[0] == '(') {
+            w1_strncpy(out_var, out_var_raw + 1, 127);
+            char *end = w1_strchr(out_var, ')');
+            if (end) *end = '\0';
+        } else {
+            w1_strncpy(out_var, out_var_raw, 127);
+        }
+
         eval_attr(ctx, node, "placeholder", placeholder, 127);
         
         val[0] = '\0'; 
@@ -691,7 +701,23 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         
     } else if (w1_strcmp(node->tag, "input") == 0) {
         // 入力フォームの描画 - 角丸矩形
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 8.0f, "#ffffff", "stroke=\"#dddddd\" stroke-width=\"1\"");
+        const char *stroke = "#dddddd";
+        const char *stroke_w = "1";
+        
+        // フォーカスされている場合は枠線を強調
+        for (int i = 0; i < ctx->nodes_count; i++) {
+            if (&ctx->nodes[i] == node && ctx->focused_node_idx == i) {
+                stroke = "#0A60FF";
+                stroke_w = "2";
+                break;
+            }
+        }
+        
+        char extra[128];
+        w1_strcpy(extra, "stroke=\""); w1_strcat(extra, stroke);
+        w1_strcat(extra, "\" stroke-width=\""); w1_strcat(extra, stroke_w); w1_strcat(extra, "\"");
+        
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 8.0f, "#ffffff", extra);
     }
     
     // 子要素の描画
@@ -705,6 +731,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
 warp1_context_t* warp1_context_create(const char* code) {
     warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
     for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
+    ctx->focused_node_idx = -1;
     ctx->screen_count = 0;
     // システムログを初期化
     set_w1_global("--warpSystemLog", "System started");
@@ -795,6 +822,11 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
         warp1_node_t *n = &ctx->nodes[i];
         if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
             clicked = 1;
+            
+            // フォーカスをリセット。inputをクリックした場合のみ後でセットされる。
+            int old_focus = ctx->focused_node_idx;
+            ctx->focused_node_idx = -1;
+
             if (w1_strcmp(n->tag, "switch") == 0) {
                 const char *out_var_raw = get_attr1(n, "output");
                 char out_var[128]; 
@@ -844,7 +876,11 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                 add_system_log("Clicked: slider");
                 break;
             }
-            if (w1_strcmp(n->tag, "input") == 0) { add_system_log("Clicked: input"); break; }
+            if (w1_strcmp(n->tag, "input") == 0) { 
+                ctx->focused_node_idx = i;
+                add_system_log("Clicked: input (focused)"); 
+                break; 
+            }
             if (w1_strcmp(n->tag, "card") == 0) { add_system_log("Clicked: card"); break; }
             if (w1_strcmp(n->tag, "button") == 0 || w1_strcmp(n->tag, "tonalButton") == 0) {
                 if (n->event_oneclick[0]) {
@@ -862,10 +898,49 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
         }
     }
     if (!clicked) {
+        ctx->focused_node_idx = -1;
         add_system_log("Clicked: background");
     }
     warp1_context_update(ctx, ctx->win_w, ctx->win_h);
 }
+
+void warp1_context_key_input(warp1_context_t* ctx, char c) {
+    if (ctx->focused_node_idx < 0 || ctx->focused_node_idx >= ctx->nodes_count) return;
+    warp1_node_t *n = &ctx->nodes[ctx->focused_node_idx];
+    if (w1_strcmp(n->tag, "input") != 0) return;
+
+    const char *out_var_raw = get_attr1(n, "output");
+    char out_var[128];
+    if (out_var_raw[0] == '(') {
+        w1_strncpy(out_var, out_var_raw + 1, 127);
+        char *end = w1_strchr(out_var, ')');
+        if (end) *end = '\0';
+    } else {
+        w1_strncpy(out_var, out_var_raw, 127);
+    }
+    
+    if (!out_var[0]) return;
+
+    char val[512];
+    w1_strcpy(val, get_state(ctx, out_var));
+    int len = w1_strlen(val);
+
+    if (c == 8 || c == 127) { // Backspace
+        if (len > 0) {
+            val[len - 1] = '\0';
+            set_state(ctx, out_var, val);
+        }
+    } else if (c >= 32 && c <= 126) { // Printables
+        if (len < 511) {
+            val[len] = c;
+            val[len + 1] = '\0';
+            set_state(ctx, out_var, val);
+        }
+    }
+
+    warp1_context_update(ctx, ctx->win_w, ctx->win_h);
+}
+
 
 int warp1_context_is_dirty(warp1_context_t* ctx) { return ctx->engine_dirty; }
 void warp1_context_clear_dirty(warp1_context_t* ctx) { ctx->engine_dirty = 0; }
