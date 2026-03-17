@@ -96,18 +96,29 @@ static volatile int cpu_idle = 0;
 // --- グローバル変数 (Nextgen/Warp) ---
 static os_mode_t current_os_mode = OS_MODE_CLASSIC;
 static char g_last_svg_parse_status[64] = "None";
+
+typedef struct {
+  char name[64];
+  uint32_t start;
+  uint32_t size;
+} warp_module_t;
+
+#define MAX_WARP_MODULES 32
+static warp_module_t g_warp_modules[MAX_WARP_MODULES];
+static uint32_t g_warp_module_count = 0;
+
 static int g_warp_mod_found = 0;
 static uint32_t g_mod_count = 0;
-static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
-static char g_warp1_buffer[32768] = "screen{ id:(main), text:(\"Warp1 module not found\") }";
-static char g_terminal_warp_buffer[32768] = "screen{ id:(main), text:(\"Terminal module not found\") }";
-static char g_menubar_warp_buffer[32768] = "screen{ id:(menubar), text:(\"Menubar module not found\") }";
+static char g_warp_buffer[32768] = "screen(text:\"Main warp module (warpc) not found. Check build.\")";
+static char g_warp1_buffer[32768] = "screen{ id:(main), text:(\"Generic warp module not found.\") }";
+static char g_terminal_warp_buffer[32768] = "screen{ id:(main), text:(\"Terminal app (terminal.warp) not found.\") }";
+static char g_menubar_warp_buffer[32768] = "screen{ id:(menubar), text:(\"Menubar app (menubar.warp) not found.\") }";
 static int g_warp1_mod_found = 0;
 static int g_terminal_mod_found = 0;
 static int g_menubar_mod_found = 0;
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
-static char g_wallpaper_buffer[131072] = "";
+static char g_wallpaper_buffer[262144] = ""; // Increased for high-res wallpapers
 static int g_wallpaper_found = 0;
 static int g_svg_dirty = 1;
 static char g_hud_status[64] = "Idle";
@@ -119,6 +130,7 @@ static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
                                  uint32_t c2);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
+static char *append_uint(char *p, unsigned int v);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1);
@@ -380,6 +392,29 @@ size_t strlen(const char *s) {
   while (s[n])
     n++;
   return n;
+}
+
+size_t strlcpy(char *dst, const char *src, size_t siz) {
+  size_t len = strlen(src);
+  if (siz > 0) {
+    size_t n = (len >= siz) ? siz - 1 : len;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+  }
+  return len;
+}
+
+size_t strlcat(char *dst, const char *src, size_t siz) {
+  size_t dlen = strlen(dst);
+  size_t slen = strlen(src);
+  if (dlen >= siz) return siz + slen;
+  if (slen < siz - dlen) {
+    memcpy(dst + dlen, src, slen + 1);
+  } else {
+    memcpy(dst + dlen, src, siz - dlen - 1);
+    dst[siz - 1] = '\0';
+  }
+  return dlen + slen;
 }
 
 int strcmp(const char *a, const char *b) {
@@ -1006,37 +1041,27 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   if (!g_svg_rgba)
     g_svg_rgba = (unsigned char *)malloc((size_t)layer->width *
                                          (size_t)layer->height * 4);
-  g_svg_scale = 1.0f;
-  g_svg_tx = 0.0f;
-  g_svg_ty = 0.0f;
-  svg_render_full(layer);
+
+  // If loading wallpaper, we want to skip the normal scrolling-aware svg_render_full
+  // and instead use the result of nsvgRasterize directly for the base buffer.
+  if (load_wallpaper && svg_data == g_wallpaper_buffer) {
+    uint32_t *dst = (uint32_t *)layer->buffer;
+    uint32_t *src = (uint32_t *)g_svg_full_rgba;
+    for (int i = 0; i < layer->width * layer->height; i++) {
+      dst[i] = src[i];
+    }
+  } else {
+    g_svg_scale = 1.0f;
+    g_svg_tx = 0.0f;
+    g_svg_ty = 0.0f;
+    svg_render_full(layer);
+  }
+
   memcpy(svg_base_buf, layer->buffer,
          sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
   return 1;
 }
-
-const char *g_hardcoded_warp1 = 
-"screen{\n"
-"    id: (main),\n"
-"    Header{\n"
-"        text: (\"Warp1 Embedded Demo\"),\n"
-"        button{\n"
-"            --headerText: (\"\"),\n"
-"            text: (\"⚠️\" + --headerText),\n"
-"            oneClick: (--headerText = \"Please wait\", reset{now})\n"
-"        }\n"
-"    },\n"
-"    card{\n"
-"        text: (\"Status\"),\n"
-"        text{ text: (\"Warp1 is running from embedded code.\") }\n"
-"    },\n"
-"    button{\n"
-"        text: (\"FAB\"),\n"
-"        frame: (width = 100vw - 40, height = 40),\n"
-"        position: (bottom = 20, left = 20)\n"
-"    }\n"
-"}";
 
 static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
@@ -1044,93 +1069,130 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   g_mod_count = mbi->mods_count;
   multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
 
+  g_warp_module_count = 0;
+
   // 1. 文字列マッチングによる識別
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
-    if (s) {
-      if (strstr(s, "warpc") || strstr(s, "WARPC")) {
-        uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 32767) size = 32767;
-        memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-        g_warp_buffer[size] = '\0';
-        g_warp_mod_found = 1;
-      } else if (strstr(s, "terminal") || strstr(s, "TERMINAL")) {
-        uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 32767) size = 32767;
-        memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-        g_terminal_warp_buffer[size] = '\0';
-        g_terminal_mod_found = 1;
-      } else if (strstr(s, "menubar") || strstr(s, "MENUBAR")) {
-        uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 32767) size = 32767;
-        memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-        g_menubar_warp_buffer[size] = '\0';
-        g_menubar_mod_found = 1;
-      } else if (strstr(s, "warp") || strstr(s, "WARP")) {
-        // warpc が先に判定されるので、ここに来るのは .warp 拡張子のみ
-        uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 32767) size = 32767;
-        memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-        g_warp1_buffer[size] = '\0';
-        g_warp1_mod_found = 1;
-      } else if (strstr(s, "logo") || strstr(s, "LOGO")) {
-        uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 65535) size = 65535;
-        memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-        g_bootlogo_buffer[size] = '\0';
-        g_bootlogo_found = 1;
-      } else if (strstr(s, "wall") || strstr(s, "WALL")) {
-        uint32_t size = mods[i].mod_end - mods[i].mod_start;
-        if (size > 131071) size = 131071;
-        memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
-        g_wallpaper_buffer[size] = '\0';
-        g_wallpaper_found = 1;
+    uint32_t start = mods[i].mod_start;
+    uint32_t end = mods[i].mod_end;
+    uint32_t size = end - start;
+    if (size == 0) continue;
+
+    // ストア用に全モジュールを記録
+    if (g_warp_module_count < MAX_WARP_MODULES) {
+      char mod_name[64] = "";
+      if (s) {
+        const char *filename = s;
+        const char *last_slash = strrchr(s, '/');
+        if (last_slash) filename = last_slash + 1;
+        strlcpy(mod_name, filename, 63);
+        
+        // Truncate at first space
+        char *space = strchr(mod_name, ' ');
+        if (space) *space = '\0';
+      }
+      
+      // If name is still empty, give it a placeholder
+      if (mod_name[0] == '\0') {
+        strlcpy(mod_name, "mod_", 63);
+        char buf[16];
+        char *p = append_uint(buf, i);
+        *p = '\0';
+        strlcat(mod_name, buf, 63);
+      }
+
+      strncpy(g_warp_modules[g_warp_module_count].name, mod_name, 63);
+      g_warp_modules[g_warp_module_count].start = start;
+      g_warp_modules[g_warp_module_count].size = size;
+      g_warp_module_count++;
+
+      // Core modules identification (using the same logic as before)
+      if (s) {
+        if (strstr(s, "main.warpc") || strstr(s, "warpc") || strstr(s, "WARPC")) {
+          if (size > 32767) size = 32767;
+          memcpy(g_warp_buffer, (void *)(uintptr_t)start, size);
+          g_warp_buffer[size] = '\0';
+          g_warp_mod_found = 1;
+        } else if (strstr(s, "terminal")) {
+          if (size > 32767) size = 32767;
+          memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)start, size);
+          g_terminal_warp_buffer[size] = '\0';
+          g_terminal_mod_found = 1;
+        } else if (strstr(s, "menubar")) {
+          if (size > 32767) size = 32767;
+          memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)start, size);
+          g_menubar_warp_buffer[size] = '\0';
+          g_menubar_mod_found = 1;
+        } else if (strstr(s, "test.warp")) {
+          if (size > 32767) size = 32767;
+          memcpy(g_warp1_buffer, (void *)(uintptr_t)start, size);
+          g_warp1_buffer[size] = '\0';
+          g_warp1_mod_found = 1;
+        } else if (strstr(s, ".warp") || strstr(s, "WARP")) {
+          if (!g_warp1_mod_found) {
+             if (size > 32767) size = 32767;
+             memcpy(g_warp1_buffer, (void *)(uintptr_t)start, size);
+             g_warp1_buffer[size] = '\0';
+             g_warp1_mod_found = 1;
+          }
+        } else if (strstr(s, "logo") || strstr(s, "LOGO")) {
+          if (size > 65535) size = 65535;
+          memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
+          g_bootlogo_buffer[size] = '\0';
+          g_bootlogo_found = 1;
+        } else if (strstr(s, "wall") || strstr(s, "WALL") || strstr(s, "paper")) {
+          if (size > 262143) size = 262143;
+          memcpy(g_wallpaper_buffer, (void *)(uintptr_t)start, size);
+          g_wallpaper_buffer[size] = '\0';
+          g_wallpaper_found = 1;
+        }
       }
     }
   }
 
-  // 状態を HUD に反映 (デバッグ用)
-  if (g_warp_mod_found && g_warp1_mod_found && g_bootlogo_found) {
-    strncpy(g_hud_status, "AllModsFound", 63);
-  } else {
-    strncpy(g_hud_status, "SomeModsMissing", 63);
-  }
-
+  // 2. インデックスによるフォールバック (文字列マッチングに失敗した場合)
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
     uint32_t size = mods[1].mod_end - mods[1].mod_start;
     if (size > 32767) size = 32767;
     memcpy(g_warp_buffer, (void *)(uintptr_t)mods[1].mod_start, size);
     g_warp_buffer[size] = '\0'; g_warp_mod_found = 1;
-  }
-  if (!g_warp1_mod_found && mbi->mods_count >= 3) {
-    uint32_t size = mods[2].mod_end - mods[2].mod_start;
-    if (size > 32767) size = 32767;
-    memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
-    g_warp1_buffer[size] = '\0'; g_warp1_mod_found = 1;
+    if (g_warp_module_count > 1) strlcpy(g_warp_modules[1].name, "main.warpc", 63);
   }
   if (!g_terminal_mod_found && mbi->mods_count >= 4) {
     uint32_t size = mods[3].mod_end - mods[3].mod_start;
     if (size > 32767) size = 32767;
     memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)mods[3].mod_start, size);
     g_terminal_warp_buffer[size] = '\0'; g_terminal_mod_found = 1;
+    if (g_warp_module_count > 3) strlcpy(g_warp_modules[3].name, "terminal.warp", 63);
+  }
+  if (!g_menubar_mod_found && mbi->mods_count >= 3) { // 順番を調整 2:main, 3:menubar, 4:terminal かな？
+    uint32_t size = mods[2].mod_end - mods[2].mod_start;
+    if (size > 32767) size = 32767;
+    memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
+    g_menubar_warp_buffer[size] = '\0'; g_menubar_mod_found = 1;
+    if (g_warp_module_count > 2) strlcpy(g_warp_modules[2].name, "menubar.warp", 63);
   }
   if (!g_bootlogo_found && mbi->mods_count >= 5) {
     uint32_t size = mods[4].mod_end - mods[4].mod_start;
     if (size > 65535) size = 65535;
     memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[4].mod_start, size);
     g_bootlogo_buffer[size] = '\0'; g_bootlogo_found = 1;
+    if (g_warp_module_count > 4) strlcpy(g_warp_modules[4].name, "bootlogo.svg", 63);
   }
   if (!g_wallpaper_found && mbi->mods_count >= 6) {
     uint32_t size = mods[5].mod_end - mods[5].mod_start;
-    if (size > 131071) size = 131071;
+    if (size > 262143) size = 262143;
     memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[5].mod_start, size);
     g_wallpaper_buffer[size] = '\0'; g_wallpaper_found = 1;
+    if (g_warp_module_count > 5) strlcpy(g_warp_modules[5].name, "wallpaper.svg", 63);
   }
 
-  // ファイルが見つからない場合の最終手段 (Warp1)
-  if (!g_warp1_mod_found) {
-    strncpy(g_warp1_buffer, g_hardcoded_warp1, 32767);
-    g_warp1_mod_found = 1;
+  // 状態を HUD に反映
+  if (g_warp_mod_found && g_terminal_mod_found && g_bootlogo_found) {
+    strncpy(g_hud_status, "AllCoreModsFound", 63);
+  } else {
+    strncpy(g_hud_status, "CoreModsMissing", 63);
   }
 }
 
@@ -1189,31 +1251,87 @@ void set_pending_command(const char *cmd) {
 static int g_dev_pointer_check = 0;
 
 static void handle_terminal_command(const char *cmd) {
-  const char *file = NULL;
+  char trimmed[256];
+  strncpy(trimmed, cmd, 255);
+  trimmed[255] = '\0';
+  
+  // Trim trailing whitespace/newlines
+  int len = strlen(trimmed);
+  while (len > 0 && (trimmed[len-1] == ' ' || trimmed[len-1] == '\n' || trimmed[len-1] == '\r')) {
+    trimmed[len-1] = '\0';
+    len--;
+  }
 
-  if (strncmp(cmd, "warp ", 5) == 0) {
-    file = cmd + 5;
-  } else if (strncmp(cmd, "./", 2) == 0) {
-    file = cmd + 2;
-  } else if (strstr(cmd, ".warp") || strstr(cmd, ".warpc")) {
-    file = cmd;
+  const char *file = NULL;
+  if (strncmp(trimmed, "warp ", 5) == 0) {
+    file = trimmed + 5;
+  } else if (strncmp(trimmed, "./", 2) == 0) {
+    file = trimmed + 2;
+  } else if (strstr(trimmed, ".warp") || strstr(trimmed, ".warpc")) {
+    file = trimmed;
   }
 
   if (file) {
-    if (strstr(file, ".warpc")) {
-      add_window(file, 150, 150, 600, 400, 0);
-    } else if (strstr(file, ".warp")) {
-      add_window(file, 200, 200, 600, 400, 1);
+    // Check if the file exists in modules
+    int found = 0;
+    int mod_idx = -1;
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      // Try exact match or case-insensitive match
+      if (strcasecmp(g_warp_modules[i].name, file) == 0 || strstr(g_warp_modules[i].name, file)) {
+        found = 1;
+        mod_idx = i;
+        break;
+      }
     }
-  } else if (strcmp(cmd, "reboot") == 0) {
+
+    if (found) {
+      // Use the canonical name from the module list
+      const char *canonical_name = g_warp_modules[mod_idx].name;
+      if (strstr(canonical_name, ".warpc")) {
+        add_window(canonical_name, 150, 150, 600, 400, 0);
+      } else {
+        add_window(canonical_name, 200, 200, 600, 400, 1);
+      }
+    } else if (strstr(file, "terminal") && g_terminal_mod_found) {
+      add_window("Terminal", 200, 200, 600, 400, 1);
+    } else if (strstr(file, "menubar") && g_menubar_mod_found) {
+      add_window("Menubar", 0, 0, 1280, 32, 1);
+    } else {
+      char err[512] = "Not found. Modules: ";
+      for (uint32_t i = 0; i < g_warp_module_count; i++) {
+        strlcat(err, g_warp_modules[i].name, 511);
+        if (i < g_warp_module_count - 1) strlcat(err, ", ", 511);
+      }
+      set_w1_global("--warpSystemLog", err);
+    }
+  } else if (strcmp(trimmed, "ls") == 0 || strcmp(trimmed, "list") == 0) {
+    char list_buf[512] = "Mods: ";
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      if (i > 0) strlcat(list_buf, ", ", 511);
+      strlcat(list_buf, g_warp_modules[i].name, 511);
+      
+      // Data preview (first 4 bytes)
+      strlcat(list_buf, "(", 511);
+      const char *data = (const char *)(uintptr_t)g_warp_modules[i].start;
+      char hex[5] = "....";
+      for(int j=0; j<4; j++) {
+        unsigned char c = (unsigned char)data[j];
+        if (c >= 32 && c <= 126) hex[j] = c;
+        else hex[j] = '?';
+      }
+      strlcat(list_buf, hex, 511);
+      strlcat(list_buf, ")", 511);
+    }
+    set_w1_global("--warpSystemLog", list_buf);
+  } else if (strcmp(trimmed, "reboot") == 0) {
     extern void sys_restart(void);
     sys_restart();
-  } else if (strcmp(cmd, "exit") == 0) {
+  } else if (strcmp(trimmed, "exit") == 0) {
     close_active_window();
-  } else if (strcmp(cmd, "help") == 0) {
-    set_w1_global("--warpSystemLog", "Available commands: <file.warp>, ./<file.warp>, warp <file>, reboot, exit, help");
-  } else if (strncmp(cmd, "dev pointerCheck=", 17) == 0) {
-    const char *val = cmd + 17;
+  } else if (strcmp(trimmed, "help") == 0) {
+    set_w1_global("--warpSystemLog", "Available commands: <file.warp>, ./<file.warp>, warp <file>, reboot, exit, help, ls");
+  } else if (strncmp(trimmed, "dev pointerCheck=", 17) == 0) {
+    const char *val = trimmed + 17;
     if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
     else g_dev_pointer_check = 0;
     strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
@@ -1426,23 +1544,61 @@ static void window_redraw(window_t *win) {
 
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
   if (g_window_count >= MAX_WINDOWS) return;
+
+  // Existence check for files (unless they are special system windows)
+  const char *buf_to_use = NULL;
+  static char temp_mod_buf[32768];
+  
+  int is_special = 0;
+  if (strstr(title, "Terminal") || strstr(title, "terminal")) {
+    is_special = 1;
+    if (g_terminal_mod_found) buf_to_use = g_terminal_warp_buffer;
+  } else if (strstr(title, "Menubar") || strstr(title, "menubar")) {
+    is_special = 1;
+    if (g_menubar_mod_found) buf_to_use = g_menubar_warp_buffer;
+  }
+
+  if (!is_special) {
+    int found = 0;
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      if (strcasecmp(g_warp_modules[i].name, title) == 0 || strstr(g_warp_modules[i].name, title)) {
+        uint32_t size = g_warp_modules[i].size;
+        if (size > 32767) size = 32767;
+        memcpy(temp_mod_buf, (void *)(uintptr_t)g_warp_modules[i].start, size);
+        temp_mod_buf[size] = '\0';
+        buf_to_use = temp_mod_buf;
+        found = 1;
+        break;
+      }
+    }
+    if (!found) return;
+  }
+
   window_t *win = &g_windows[g_window_count++];
   win->x = x; win->y = y; win->w = w; win->h = h;
   win->scroll_x = 0; win->scroll_y = 0;
   win->target_scroll_x = 0; win->target_scroll_y = 0;
   strncpy(win->title, title, 63);
   win->is_warp1 = is_warp1;
+
   if (is_warp1) {
     if (strstr(title, "Terminal") || strstr(title, "terminal")) {
       win->warp1_ctx = warp1_context_create(g_terminal_warp_buffer);
+    } else if (buf_to_use) {
+      win->warp1_ctx = warp1_context_create(buf_to_use);
     } else {
       win->warp1_ctx = warp1_context_create(g_warp1_buffer);
     }
     win->warp_ctx = NULL;
   } else {
-    win->warp_ctx = warp_context_create(g_warp_buffer);
+    if (buf_to_use) {
+      win->warp_ctx = warp_context_create(buf_to_use);
+    } else {
+      win->warp_ctx = warp_context_create(g_warp_buffer);
+    }
     win->warp1_ctx = NULL;
   }
+
   win->rgba_buffer = NULL;
   win->buffer_w = 0;
   win->buffer_h = 0;
@@ -2703,7 +2859,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   uint32_t boot_start_tick = timer_ticks;
   int auto_booted = 0;
-  int auto_warp1_booted = 0;
 
   // メインループ (常時60fpsターゲット)
   while (1) {
@@ -2728,7 +2883,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       svg_init_nextgen(&nextgen_ui_layer);
       screen_mark_static_dirty();
       auto_booted = 1;
-      auto_warp1_booted = 1;
     }
 
     if (current_os_mode == OS_MODE_CLASSIC) {

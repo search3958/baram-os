@@ -85,30 +85,64 @@ do_build_and_run() {
     show_progress 8
 
     # 6. ISO ディレクトリへのファイル配置
+    mkdir -p output/isodir/boot/grub
     cp output/kernel.bin output/isodir/boot/
     show_progress 9
-    cp grub.cfg output/isodir/boot/grub/
-    cp font/MPLUS2-Regular.ttf output/isodir/boot/
     
-    # 拡張子変更に対応 (.warpc と .warp)
-    cp ui/main.warpc output/isodir/boot/
-    cp ui/new.warp output/isodir/boot/
-    cp ui/terminal.warp output/isodir/boot/
-    cp ui/menubar.warp output/isodir/boot/
+    # Generate grub.cfg dynamically
+    GRUB_CFG="output/isodir/boot/grub/grub.cfg"
+    cat > "$GRUB_CFG" <<EOF
+set timeout=0
+set default=0
+set quiet=1
+set gfxmode=1280x720x32,auto
+set gfxpayload=keep
+terminal_output gfxterm
+menuentry "baram-os" {
+    multiboot /boot/kernel.bin
+    module /boot/MPLUS2-Regular.ttf
+EOF
 
+    if [ -f "font/MPLUS2-Regular.ttf" ]; then
+        cp font/MPLUS2-Regular.ttf output/isodir/boot/
+    fi
+    
+    # Automatically include ALL .warp and .warpc files from ui/
+    for f in ui/*.warp ui/*.warpc; do
+        [ -e "$f" ] || continue
+        NAME=$(basename "$f")
+        cp "$f" output/isodir/boot/
+        echo "    module /boot/$NAME $NAME" >> "$GRUB_CFG"
+    done
+
+    # Handle SVG assets
     if [ -f "bootlogo.svg" ]; then
         cp bootlogo.svg output/isodir/boot/
+        echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
     elif [ -f "ui/bootlogo.svg" ]; then
         cp ui/bootlogo.svg output/isodir/boot/
+        echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
     else
         echo '<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="100" r="80" fill="#00a5ff" /><text x="100" y="115" fill="white" font-family="sans-serif" font-size="40" text-anchor="middle">B</text></svg>' > output/isodir/boot/bootlogo.svg
+        echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
     fi
+
+    # Include all other SVGs (including wallpaper)
+    for f in ui/*.svg; do
+        [ -e "$f" ] || continue
+        NAME=$(basename "$f")
+        if [ "$NAME" != "bootlogo.svg" ]; then
+            cp "$f" output/isodir/boot/
+            echo "    module /boot/$NAME $NAME" >> "$GRUB_CFG"
+        fi
+    done
+
     show_progress 10
 
-    if [ -f "ui/wallpaper_1.svg" ]; then
-        cp ui/wallpaper_1.svg output/isodir/boot/
-    fi
-
+    # End grub.cfg
+    echo "    boot" >> "$GRUB_CFG"
+    echo "}" >> "$GRUB_CFG"
+    
     # 7. ISO イメージ作成
     i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
     show_progress 11
@@ -137,11 +171,24 @@ do_build_and_run() {
 
 # --- メインループ ---
 clear
+
+# Sync warp symlinks on startup
+if [ -f "warp_launcher.sh" ]; then
+    ./warp_launcher.sh > /dev/null
+fi
+
+# Determine initial action
+INITIAL_CMD=""
+if [ "$1" = "r" ] || [ "$2" = "r" ]; then
+    INITIAL_CMD="r"
+fi
+
 echo "========================================"
 echo "  🚀 BaramOS Interactive Build System"
 echo "  [r]: Build & Run (ビルド・再起動)"
 echo "  [c]: Stop (停止)"
 echo "  [q]: Quit (終了)"
+echo "  💡 Hint: You can run apps directly via ./appname.warp"
 echo "========================================"
 if [ "$PERF_MODE" = "max" ]; then
     echo "  🔥 Performance Mode: MAX"
@@ -149,6 +196,12 @@ fi
 
 # 終了時のクリーンアップ
 trap "stop_current; exit" SIGINT SIGTERM
+
+# Initial action
+if [ "$INITIAL_CMD" = "r" ]; then
+    do_build_and_run &
+    CURRENT_PID=$!
+fi
 
 while true; do
     # 1文字の入力を待機 (非表示・サイレント)
