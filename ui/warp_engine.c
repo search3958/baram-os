@@ -1463,13 +1463,36 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
         const char *current = get_state(ctx, out_var);
         int on = (warp_strstr(current, "true") != NULL);
         set_state(ctx, out_var, on ? "false" : "true");
-        add_system_log(ctx, "Switch clicked");
-        return 1;
       }
+      add_system_log(ctx, "Clicked: switch");
+      return 1;
+    }
+    if (warp_strcmp(node->tag, "slider") == 0) {
+      add_system_log(ctx, "Clicked: slider");
+      return 1;
+    }
+    if (warp_strcmp(node->tag, "input") == 0) {
+      add_system_log(ctx, "Clicked: input");
+      return 1;
+    }
+    if (warp_strcmp(node->tag, "card") == 0) {
+      add_system_log(ctx, "Clicked: card");
+      return 1;
+    }
+    if (warp_strcmp(node->tag, "button") == 0 || warp_strcmp(node->tag, "tonalButton") == 0) {
+      if (node->event_oneclick[0] != '\0') {
+        execute_action(ctx, node->event_oneclick);
+      }
+      add_system_log(ctx, "Clicked: button");
+      return 1;
+    }
+    if (warp_strcmp(node->tag, "text") == 0) {
+      add_system_log(ctx, "Clicked: text");
+      return 1;
     }
     if (node->event_oneclick[0] != '\0') {
       execute_action(ctx, node->event_oneclick);
-      add_system_log(ctx, "Button clicked");
+      add_system_log(ctx, "Clicked: element");
       return 1;
     }
   }
@@ -1595,8 +1618,32 @@ void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int
   if (!layer)
     return;
   for (int i = 0; i < ctx->texts_count; i++) {
-    layer_draw_ttf(layer, ctx->texts[i].x + off_x, ctx->texts[i].y + off_y,
-                   ctx->texts[i].text, ctx->texts[i].size, ctx->texts[i].color);
+    const char *text = ctx->texts[i].text;
+    int x = ctx->texts[i].x + off_x;
+    int y = ctx->texts[i].y + off_y;
+    int line_h = 20;  // 行間
+    const char *line_start = text;
+    const char *p = text;
+    while (*p) {
+      if (*p == '\n') {
+        // 行を出力
+        char line_buf[512];
+        int len = p - line_start;
+        if (len > 511) len = 511;
+        warp_strncpy(line_buf, line_start, len);
+        line_buf[len] = '\0';
+        layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
+        y += line_h;
+        line_start = p + 1;
+      }
+      p++;
+    }
+    // 最後の行
+    if (*line_start) {
+      char line_buf[512];
+      warp_strncpy(line_buf, line_start, 511);
+      layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
+    }
   }
 }
 

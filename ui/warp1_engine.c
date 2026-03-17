@@ -626,28 +626,12 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
     }
     
     // 子要素の描画
-    for (int i = 0; i < node->children_count; i++) { 
+    for (int i = 0; i < node->children_count; i++) {
         if (w1_strcmp(node->children[i]->tag, "Header") != 0) {
-            emit_svg_recursive1(ctx, node->children[i], dest, dest_size); 
-        }
-    }
- 
-    // devClickCheckのヒットボックス表示
-    if (w1_strcmp(get_state(ctx, "devClickCheck"), "true") == 0) {
-        int has_hitbox = (node->event_oneclick[0] != '\0' || 
-                          w1_strcmp(node->tag, "button") == 0 ||
-                          w1_strcmp(node->tag, "tonalButton") == 0 ||
-                          w1_strcmp(node->tag, "switch") == 0 ||
-                          w1_strcmp(node->tag, "slider") == 0 ||
-                          w1_strcmp(node->tag, "input") == 0);
-        if (has_hitbox && node->w > 0 && node->h > 0) {
-            // 半透明の赤い矩形（角丸なし）
-            emit_rect1(dest, dest_size, node->x, node->y, node->w, node->h, "red", "opacity=\"0.4\" stroke=\"red\" stroke-width=\"2\"");
+            emit_svg_recursive1(ctx, node->children[i], dest, dest_size);
         }
     }
 }
-
-
 
 warp1_context_t* warp1_context_create(const char* code) {
     warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
@@ -703,9 +687,34 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
 
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy) {
+    extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
     for (int i = 0; i < ctx->texts_count; i++) {
-        extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
-        layer_draw_ttf(layer, ctx->texts[i].x + ox, ctx->texts[i].y + oy, ctx->texts[i].text, ctx->texts[i].size, ctx->texts[i].color);
+        const char *text = ctx->texts[i].text;
+        int x = ctx->texts[i].x + ox;
+        int y = ctx->texts[i].y + oy;
+        int line_h = 20;  // 行間
+        const char *line_start = text;
+        const char *p = text;
+        while (*p) {
+            if (*p == '\n') {
+                // 行を出力
+                char line_buf[512];
+                int len = p - line_start;
+                if (len > 511) len = 511;
+                w1_strncpy(line_buf, line_start, len);
+                line_buf[len] = '\0';
+                layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
+                y += line_h;
+                line_start = p + 1;
+            }
+            p++;
+        }
+        // 最後の行
+        if (*line_start) {
+            char line_buf[512];
+            w1_strncpy(line_buf, line_start, 511);
+            layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
+        }
     }
 }
 
@@ -723,8 +732,8 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                     const char *current = get_state(ctx, out_var);
                     int on = (w1_strstr(current, "true") != NULL);
                     set_state(ctx, out_var, on ? "false" : "true");
-                    add_system_log("Switch clicked");
                 }
+                add_system_log("Clicked: switch");
                 break;
             }
             if (w1_strcmp(n->tag, "slider") == 0) {
@@ -738,20 +747,29 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                     extern char *append_int(char *p, int v);
                     append_int(val_str, val);
                     set_state(ctx, out_var, val_str);
-                    add_system_log("Slider moved");
                 }
+                add_system_log("Clicked: slider");
                 break;
             }
-            if (w1_strcmp(n->tag, "input") == 0) { add_system_log("Input clicked"); break; }
+            if (w1_strcmp(n->tag, "input") == 0) { add_system_log("Clicked: input"); break; }
+            if (w1_strcmp(n->tag, "card") == 0) { add_system_log("Clicked: card"); break; }
+            if (w1_strcmp(n->tag, "button") == 0 || w1_strcmp(n->tag, "tonalButton") == 0) {
+                if (n->event_oneclick[0]) {
+                    execute_action1(ctx, n->event_oneclick);
+                }
+                add_system_log("Clicked: button");
+                break;
+            }
+            if (w1_strcmp(n->tag, "text") == 0) { add_system_log("Clicked: text"); break; }
             if (n->event_oneclick[0]) {
                 execute_action1(ctx, n->event_oneclick);
-                add_system_log("Button clicked");
+                add_system_log("Clicked: element");
                 break;
             }
         }
     }
     if (!clicked) {
-        add_system_log("Background clicked");
+        add_system_log("Clicked: background");
     }
     warp1_context_update(ctx, ctx->win_w, ctx->win_h);
 }
@@ -787,10 +805,6 @@ void warp1_context_get_header_action_info(warp1_context_t* ctx, int i, char* t, 
 void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
     warp1_node_t *h = find_header_node1(ctx); if (!h || i < 0 || i >= h->children_count) return;
     if (h->children[i]->event_oneclick[0]) execute_action1(ctx, h->children[i]->event_oneclick);
-}
-
-int warp1_context_is_dev_event_check(warp1_context_t* ctx) {
-    return w1_strcmp(get_state(ctx, "devClickCheck"), "true") == 0;
 }
 
 // Screen-based scroll management

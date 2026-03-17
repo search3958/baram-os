@@ -16,12 +16,7 @@ screen{
             oneClick: (devClickCheck = "true")
         }
     },
-
-    text{
-        text: ("Warp1 が起動しました"),
-        color: (blue)
-    },
-
+    
     text{
         text: ("これは新しい、ネイティブと Web 技術が融合する言語です。気になる反応は" + --mainText),
         --mainText: ("...")

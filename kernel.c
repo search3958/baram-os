@@ -1491,16 +1491,9 @@ static void redraw_warp_svg(layer_t *layer) {
           ax -= 10;
         }
 
-        // dev eventCheck: draw hitboxes for header action buttons
-        int is_dev_check = 0;
-        if (win->is_warp1 && win->warp1_ctx) {
-          is_dev_check = warp1_context_is_dev_event_check(win->warp1_ctx);
-        } else if (!win->is_warp1 && win->warp_ctx) {
-          is_dev_check = warp_context_is_dev_event_check(win->warp_ctx);
-        }
-        if (is_dev_check) {
-          ax = win->x + win->w - 12;
-          for (int j = 0; j < action_count; j++) {
+        // Header action buttons click handling
+        ax = win->x + win->w - 12;
+        for (int j = 0; j < action_count; j++) {
             char act_text[64];
             if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
             else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
@@ -1508,19 +1501,7 @@ static void redraw_warp_svg(layer_t *layer) {
             int btn_w = text_w + 24;
             int btn_h = 26;
             ax -= btn_w;
-            // Draw semi-transparent red rectangle for hitbox
-            for (int by = 0; by < btn_h; by++) {
-              int py = win->y - 33 + by;
-              if (py < 0 || py >= layer->height) continue;
-              uint32_t *dst_line = &layer->buffer[py * layer->width];
-              for (int bx = 0; bx < btn_w; bx++) {
-                int px = ax + bx;
-                if (px < 0 || px >= layer->width) continue;
-                dst_line[px] = 0x40FF0000; // Semi-transparent red
-              }
-            }
             ax -= 10;
-          }
         }
       } else {
         layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
