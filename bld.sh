@@ -137,6 +137,12 @@ EOF
         fi
     done
 
+    # Include OS settings if present
+    if [ -f "@.os_settings.json" ]; then
+        cp "@.os_settings.json" output/isodir/boot/
+        echo "    module /boot/@.os_settings.json @.os_settings.json" >> "$GRUB_CFG"
+    fi
+
     show_progress 10
 
     # End grub.cfg

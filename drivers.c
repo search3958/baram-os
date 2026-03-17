@@ -210,6 +210,7 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
 static uint32_t *g_cursor_bitmap = NULL;
 static int g_cursor_w = 0;
 static int g_cursor_h = 0;
+extern int g_dev_pointer_check;
 
 void set_cursor_bitmap(uint32_t *bitmap, int w, int h) {
   g_cursor_bitmap = bitmap;
@@ -250,7 +251,7 @@ void screen_refresh(void) {
   }
 
   // 3. カーソル描画 (ARGBブレンド)
-  if (g_cursor_bitmap) {
+  if (g_cursor_bitmap && g_dev_pointer_check) {
     int cx = (int)mouse_x, cy = (int)mouse_y;
     for (int my = 0; my < g_cursor_h; my++) {
       int sy = cy + my;

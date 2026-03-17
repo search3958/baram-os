@@ -1,0 +1,54 @@
+screen{
+    id: (main),
+
+    hStack{
+        button{
+            text: ("BaramOS"),
+        },
+        tonalButton{
+            text: ("再起動"),
+            oneClick: (setScreen{reboot})
+        },
+        tonalButton{
+            text: ("ターミナル"),
+            oneClick: (run{warp terminal.warp})
+        },
+        tonalButton{
+            text: ("showHUD"),
+            oneClick: (~~dev/showHUD = true)
+        },
+        tonalButton{
+            text: ("hideHUD"),
+            oneClick: (~~dev/showHUD = false)
+        },
+        tonalButton{
+            text: ("dark"),
+            oneClick: (~~main/dark = true)
+        },
+        tonalButton{
+            text: ("light"),
+            oneClick: (~~main/dark = false)
+        }
+    }
+}
+
+screen{
+    id: (reboot),
+
+    hStack{
+
+        tonalButton{
+            text: ("<"),
+            oneClick: (setScreen{main})
+        },
+        text{
+            text:("正気か？")
+        }
+
+        Button{
+            text: ("キャンセル"),
+            oneClick: (setScreen{main})
+        }
+
+    }
+}

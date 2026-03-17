@@ -70,30 +70,21 @@ static int w1_tolower(int c) { if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
 static int w1_strcasecmp(const char *s1, const char *s2) { while (*s1 && (w1_tolower(*s1) == w1_tolower(*s2))) { s1++; s2++; } return w1_tolower(*s1) - w1_tolower(*s2); }
 
 // --- 3. Global State ---
-static struct { char key[64]; char val[512]; } g_w1_globals[MAX_VARS];
-static int g_w1_global_count = 0;
-
-void set_w1_global(const char *key, const char *val) {
-    for (int i = 0; i < g_w1_global_count; i++) {
-        if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) { w1_strncpy(g_w1_globals[i].val, val, 511); return; }
-    }
-    if (g_w1_global_count < MAX_VARS) {
-        w1_strncpy(g_w1_globals[g_w1_global_count].key, key, 63);
-        w1_strncpy(g_w1_globals[g_w1_global_count].val, val, 511);
-        g_w1_global_count++;
-    }
-}
-
-
-
-const char *get_w1_global(const char *key) {
-    for (int i = 0; i < g_w1_global_count; i++) { if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) return g_w1_globals[i].val; }
-    return "";
-}
+// set_w1_global / get_w1_global are now defined in kernel.c and provided via warp_engine.h
 
 // --- 4. Logic & Parser ---
 static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
-    if (w1_strncmp(key, "~~", 2) == 0 || w1_strncmp(key, "--", 2) == 0) { set_w1_global(key, val); return; }
+    if (w1_strncmp(key, "~~", 2) == 0 || w1_strncmp(key, "--", 2) == 0) {
+        // 特殊な接頭辞の処理
+        if (w1_strncmp(key, "~~dev/pointerCheck", 18) == 0) {
+            // ここでカーネル側のフラグを更新するような仕組みが必要
+            // 現状はグローバル変数に保存するのみ
+            set_w1_global(key, val);
+            return;
+        }
+        set_w1_global(key, val);
+        return;
+    }
     if (w1_strcasecmp(key, "_currentScreen") == 0) { w1_strncpy(ctx->current_screen, val, 63); return; }
     for (int i = 0; i < ctx->state_count; i++) {
         if (w1_strcasecmp(ctx->state[i].key, key) == 0) { w1_strncpy(ctx->state[i].val, val, 511); return; }
@@ -105,7 +96,10 @@ static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
 }
 
 static const char *get_state(warp1_context_t *ctx, const char *key) {
-    if (w1_strncmp(key, "~~", 2) == 0) return get_w1_global(key);
+    if (w1_strncmp(key, "~~", 2) == 0) {
+        // ~~dev/pointerCheck などの値をグローバルから取得
+        return get_w1_global(key);
+    }
     if (w1_strncmp(key, "--", 2) == 0) return get_w1_global(key);
     if (w1_strcasecmp(key, "_currentScreen") == 0) return ctx->current_screen;
     for (int i = 0; i < ctx->state_count; i++) { if (w1_strcasecmp(ctx->state[i].key, key) == 0) return ctx->state[i].val; }
@@ -460,6 +454,9 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     if (!node) return 0;
     node->x = px; node->y = py; node->w = limit_w; int cy = py;
     
+    const char *dark_val = get_state(ctx, "~~main/dark");
+    int is_dark = (w1_strcmp(dark_val, "true") == 0);
+
     char frame_v[128], pos_v[128]; eval_attr(ctx, node, "frame", frame_v, 127); eval_attr(ctx, node, "position", pos_v, 127);
     if (frame_v[0]) {
         if (w1_strstr(frame_v, "width")) node->w = (w1_strstr(frame_v, "100vw")) ? ctx->win_w - 40 : 200;
@@ -481,7 +478,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         if (title[0] && ctx->texts_count < MAX_TEXTS) {
             ctx->texts[ctx->texts_count].x = px + 24; ctx->texts[ctx->texts_count].y = cy + 4;
             w1_strcpy(ctx->texts[ctx->texts_count].text, title); ctx->texts[ctx->texts_count].size = 20;
-            ctx->texts[ctx->texts_count].color = 0xFF121212; ctx->texts_count++; cy += 36;
+            ctx->texts[ctx->texts_count].color = is_dark ? 0xFFEEEEEE : 0xFF121212; ctx->texts_count++; cy += 36;
         }
         for (int i = 0; i < node->children_count; i++) { cy += layout_node1(ctx, node->children[i], px + 24, cy, limit_w - 48) + 8; }
         node->h = cy - py + 12;
@@ -494,7 +491,12 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             ctx->texts[ctx->texts_count].x = node->x + (node->w - text_w) / 2;
             ctx->texts[ctx->texts_count].y = node->y + 10;
             w1_strcpy(ctx->texts[ctx->texts_count].text, text); ctx->texts[ctx->texts_count].size = 16;
-            ctx->texts[ctx->texts_count].color = (w1_strcmp(node->tag, "tonalButton") == 0) ? 0xFF000000 : 0xFFFEFFFF; ctx->texts_count++;
+            if (w1_strcmp(node->tag, "tonalButton") == 0) {
+                ctx->texts[ctx->texts_count].color = is_dark ? 0xFFFFFFFF : 0xFF000000;
+            } else {
+                ctx->texts[ctx->texts_count].color = 0xFFFEFFFF;
+            }
+            ctx->texts_count++;
         }
     
     } else if (w1_strcmp(node->tag, "switch") == 0) {
@@ -555,7 +557,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
                         w1_strcat(ctx->texts[ctx->texts_count].text, "|");
                     }
                 }
-                ctx->texts[ctx->texts_count].color = 0xFF333333; 
+                ctx->texts[ctx->texts_count].color = is_dark ? 0xFFCCCCCC : 0xFF333333; 
             } else { 
                 w1_strcpy(ctx->texts[ctx->texts_count].text, placeholder); 
                 // フォーカス中なら空でもカーソルを表示
@@ -570,7 +572,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
                         w1_strcpy(ctx->texts[ctx->texts_count].text, "|");
                     }
                 }
-                ctx->texts[ctx->texts_count].color = 0xFF888888; 
+                ctx->texts[ctx->texts_count].color = is_dark ? 0xFF666666 : 0xFF888888; 
             }
             ctx->texts[ctx->texts_count].size = 16; 
             ctx->texts_count++;
@@ -580,7 +582,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         if (ctx->texts_count < MAX_TEXTS) {
             ctx->texts[ctx->texts_count].x = px; ctx->texts[ctx->texts_count].y = py;
             w1_strcpy(ctx->texts[ctx->texts_count].text, text); ctx->texts[ctx->texts_count].size = 16;
-            ctx->texts[ctx->texts_count].color = 0xFF333333; ctx->texts_count++;
+            ctx->texts[ctx->texts_count].color = is_dark ? 0xFFCCCCCC : 0xFF333333; ctx->texts_count++;
         }
         int lines = 1; for (int i = 0; text[i]; i++) if (text[i] == '\n') lines++;
         node->h = lines * 22;
@@ -638,19 +640,22 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         }
     }
     
+    const char *dark_val = get_state(ctx, "~~main/dark");
+    int is_dark = (w1_strcmp(dark_val, "true") == 0);
+
     if (w1_strcmp(node->tag, "screen") == 0) {
         char real_id[64]; eval_expr(ctx, id_attr, real_id, 63);
         if (w1_strcmp(real_id, ctx->current_screen) != 0) return;
-        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, "#f1f2f2", "");
+        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, is_dark ? "#121212" : "#f1f2f2", "");
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, "#ffffff", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
 
     } else if (w1_strcmp(node->tag, "button") == 0) {
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0A60FF", "");
 
     } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#000000", "opacity=\"0.1\"");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの描画

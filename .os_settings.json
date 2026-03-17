@@ -1,0 +1,13 @@
+{
+  "dev": {
+    "pointerCheck": false,
+    "eventCheck": false,
+    "showHUD": true
+  },
+  "firstboot": [
+    "warp topbar.warp"
+  ],
+  "main": {
+    "dark": false
+  }
+}

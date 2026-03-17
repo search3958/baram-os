@@ -120,6 +120,14 @@ static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
 static char g_wallpaper_buffer[262144] = ""; // Increased for high-res wallpapers
 static int g_wallpaper_found = 0;
+static char g_os_settings_buffer[16384] = "";
+static int g_os_settings_found = 0;
+
+// OS Settings (mapped from @.os_settings.json)
+int g_dev_pointer_check = 1;
+static int g_dev_event_check = 0;
+static int g_dev_show_hud = 1;
+
 static int g_svg_dirty = 1;
 static char g_hud_status[64] = "Idle";
 
@@ -136,6 +144,102 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1);
 static void close_active_window();
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
+void set_pending_command(const char *cmd);
+
+// --- Global State Store (Sync with UI) ---
+typedef struct { char key[64]; char val[512]; } global_var_t;
+#define MAX_GLOBAL_VARS 128
+static global_var_t g_global_vars[MAX_GLOBAL_VARS];
+static int g_global_var_count = 0;
+
+void set_w1_global(const char *key, const char *val) {
+  // Sync dev flags
+  if (strcmp(key, "~~dev/pointerCheck") == 0) {
+    g_dev_pointer_check = (strcmp(val, "true") == 0);
+  } else if (strcmp(key, "~~dev/eventCheck") == 0) {
+    g_dev_event_check = (strcmp(val, "true") == 0);
+  } else if (strcmp(key, "~~dev/showHUD") == 0) {
+    g_dev_show_hud = (strcmp(val, "true") == 0);
+  }
+
+  for (int i = 0; i < g_global_var_count; i++) {
+    if (strcmp(g_global_vars[i].key, key) == 0) {
+      strncpy(g_global_vars[i].val, val, 511);
+      return;
+    }
+  }
+  if (g_global_var_count < MAX_GLOBAL_VARS) {
+    strncpy(g_global_vars[g_global_var_count].key, key, 63);
+    strncpy(g_global_vars[g_global_var_count].val, val, 511);
+    g_global_var_count++;
+  }
+}
+
+const char *get_w1_global(const char *key) {
+  // Return current state of dev flags if requested
+  if (strcmp(key, "~~dev/pointerCheck") == 0) return g_dev_pointer_check ? "true" : "false";
+  if (strcmp(key, "~~dev/eventCheck") == 0) return g_dev_event_check ? "true" : "false";
+  if (strcmp(key, "~~dev/showHUD") == 0) return g_dev_show_hud ? "true" : "false";
+
+  for (int i = 0; i < g_global_var_count; i++) {
+    if (strcmp(g_global_vars[i].key, key) == 0) return g_global_vars[i].val;
+  }
+  return "";
+}
+
+// --- Simple JSON Parser for OS Settings ---
+static void parse_os_settings() {
+  if (!g_os_settings_found) return;
+  
+  // Dev flags
+  if (strstr(g_os_settings_buffer, "\"pointerCheck\": true")) set_w1_global("~~dev/pointerCheck", "true");
+  else if (strstr(g_os_settings_buffer, "\"pointerCheck\": false")) set_w1_global("~~dev/pointerCheck", "false");
+  
+  if (strstr(g_os_settings_buffer, "\"eventCheck\": true")) set_w1_global("~~dev/eventCheck", "true");
+  else if (strstr(g_os_settings_buffer, "\"eventCheck\": false")) set_w1_global("~~dev/eventCheck", "false");
+  
+  if (strstr(g_os_settings_buffer, "\"showHUD\": true")) set_w1_global("~~dev/showHUD", "true");
+  else if (strstr(g_os_settings_buffer, "\"showHUD\": false")) set_w1_global("~~dev/showHUD", "false");
+
+  // Firstboot commands (More robust parsing)
+  const char *fb_key = strstr(g_os_settings_buffer, "\"firstboot\"");
+  if (fb_key) {
+    const char *p = strstr(fb_key, ":");
+    if (p) {
+        p++; // skip ':'
+        while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+        if (*p == '[') {
+            p++; // skip '['
+            while (*p && *p != ']') {
+                while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')) p++;
+                if (*p == '\"') {
+                    p++; // skip '\"'
+                    const char *start = p;
+                    while (*p && *p != '\"') p++;
+                    if (*p == '\"') {
+                        char cmd[128];
+                        int len = p - start;
+                        if (len > 127) len = 127;
+                        memcpy(cmd, start, len);
+                        cmd[len] = '\0';
+                        set_pending_command(cmd);
+                        
+                        char log[160] = "FirstbootCmd: ";
+                        strlcat(log, cmd, 159);
+                        set_w1_global("--warpSystemLog", log);
+                        
+                        p++; // skip '\"'
+                    }
+                } else if (*p == ']') {
+                    break;
+                } else {
+                    p++;
+                }
+            }
+        }
+    }
+  }
+}
 
 // FPU有効化
 void enable_fpu() {
@@ -1150,6 +1254,13 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
             g_wallpaper_buffer[size] = '\0';
             g_wallpaper_found = 1;
           }
+        } else if (strstr(s, "os_settings") || strstr(s, ".json")) {
+          if (!g_os_settings_found) {
+            if (size > 16383) size = 16383;
+            memcpy(g_os_settings_buffer, (void *)(uintptr_t)start, size);
+            g_os_settings_buffer[size] = '\0';
+            g_os_settings_found = 1;
+          }
         }
       }
     }
@@ -1191,6 +1302,9 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     g_wallpaper_buffer[size] = '\0'; g_wallpaper_found = 1;
     if (g_warp_module_count > 5) strlcpy(g_warp_modules[5].name, "wallpaper.svg", 63);
   }
+
+  // OS 設定をパース
+  parse_os_settings();
 
   // 状態を HUD に反映
   if (g_warp_mod_found && g_terminal_mod_found && g_bootlogo_found) {
@@ -1239,20 +1353,18 @@ static window_t g_windows[MAX_WINDOWS];
 static int g_window_count = 0;
 static int g_active_window_index = -1;
 // --- ターミナル・コマンド処理 ---
-static char g_pending_command[256] = "";
-static int g_has_pending_command = 0;
-// static int g_terminal_mode = 0; // 1: ターミナル入力待機中
-// static char g_terminal_input[256] = "";
-// static int g_terminal_ptr = 0;
+#define MAX_PENDING_COMMANDS 8
+static char g_pending_commands[MAX_PENDING_COMMANDS][256];
+static int g_pending_command_count = 0;
 
 void set_pending_command(const char *cmd) {
-  if (!cmd || g_has_pending_command) return;
-  strncpy(g_pending_command, cmd, 255);
-  g_has_pending_command = 1;
+  if (!cmd || g_pending_command_count >= MAX_PENDING_COMMANDS) return;
+  strncpy(g_pending_commands[g_pending_command_count], cmd, 255);
+  g_pending_command_count++;
 }
 
 // デバッグ用フラグ
-static int g_dev_pointer_check = 0;
+// g_dev_pointer_check is defined earlier as non-static
 
 static void handle_terminal_command(const char *cmd) {
   char trimmed[256];
@@ -2190,6 +2302,11 @@ static void handle_command(const char *cmd) {
 
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
+  if (!g_dev_show_hud) {
+    hud->active = 0;
+    return;
+  }
+  hud->active = 1;
   layer_fill(hud, 0xFF000000);
 
   char line1[64], line2[64], line3[64], line4[64];
@@ -2220,13 +2337,23 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   while (*s_status) *p++ = *s_status++;
   *p = '\0';
 
-  // 4行目: Status
+  // 4行目: Status & Mouse
   p = line4;
-  const char *w_label = "Status: ";
+  const char *w_label = "S: ";
   while (*w_label) *p++ = *w_label++;
   const char *w_status = g_hud_status;
-  while (*w_status)
-    *p++ = *w_status++;
+  while (*w_status) *p++ = *w_status++;
+  
+  *p++ = ' '; *p++ = 'M'; *p++ = ':';
+  p = append_uint(p, (unsigned int)mouse_x);
+  *p++ = ',';
+  p = append_uint(p, (unsigned int)mouse_y);
+  *p++ = ' '; *p++ = 'I'; *p++ = ':';
+  p = append_uint(p, (unsigned int)mouse_interrupt_counter);
+  
+  if (g_dev_event_check) {
+    *p++ = ' '; *p++ = '('; *p++ = 'E'; *p++ = 'V'; *p++ = ')';
+  }
   *p = '\0';
 
   // 5行目以降: System Log (Warp)
@@ -2810,7 +2937,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_layer.width = HUD_W;
   hud_layer.height = g_hud_current_h;
   hud_layer.transparent = 0;
-  hud_layer.active = 1;
+  hud_layer.active = g_dev_show_hud;
   hud_layer.dynamic = 1;
   layer_fill(&hud_layer, 0xFF000000);
 
@@ -2866,10 +2993,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // メインループ (常時60fpsターゲット)
   while (1) {
-    if (g_has_pending_command) {
-      handle_terminal_command(g_pending_command);
-      g_pending_command[0] = '\0';
-      g_has_pending_command = 0;
+    if (g_pending_command_count > 0) {
+      // Process one command at a time from the head
+      handle_terminal_command(g_pending_commands[0]);
+      // Shift queue
+      for (int i = 0; i < g_pending_command_count - 1; i++) {
+        strncpy(g_pending_commands[i], g_pending_commands[i+1], 255);
+      }
+      g_pending_command_count--;
       g_svg_dirty = 1;
     }
 

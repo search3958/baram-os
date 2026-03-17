@@ -144,12 +144,12 @@ screen{
 
         button{
             text: ("保存"),
-            oneClick: (~~name = --inputMain, --saveStatus = "保存完了", wait: (1), --saveStatus = null)
+            oneClick: (~~data/testapp-data/name = --inputMain, --saveStatus = "保存完了", wait: (1), --saveStatus = null)
         },
 
         button{
             text: ("復元"),
-            oneClick: (nameInput.changeContent{~~name}, --saveStatus = "復元完了", wait: (1), --saveStatus = null)
+            oneClick: (nameInput.changeContent{~~data/testapp-data/name}, --saveStatus = "復元完了", wait: (1), --saveStatus = null)
         },
 
         text{

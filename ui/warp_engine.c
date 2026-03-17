@@ -771,6 +771,9 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
   node->w = limit_w;
   int cy = py;
 
+  const char *dark_val = get_state(ctx, "~~main/dark");
+  int is_dark = (warp_strcmp(dark_val, "true") == 0);
+
   if (warp_strcmp(node->tag, "screen") == 0) {
     int start_y = py;
     // Header is now handled by the system title bar, so it doesn't take space here.
@@ -800,7 +803,7 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       warp_strcpy(ctx->texts[ctx->texts_count].text, title);
       const char *c_prop = get_attr(node, "color");
       const char *hex = get_color_hex(c_prop);
-      ctx->texts[ctx->texts_count].color = hex ? 0xFF000000 : 0xFF121212;
+      ctx->texts[ctx->texts_count].color = hex ? 0xFF000000 : (is_dark ? 0xFFEEEEEE : 0xFF121212);
       ctx->texts[ctx->texts_count].size = 20;
       ctx->texts_count++;
       cy += 36;
@@ -830,7 +833,7 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       warp_strcpy(ctx->texts[ctx->texts_count].text, text);
       const char *c_prop = get_attr(node, "color");
       const char *hex = get_color_hex(c_prop);
-      ctx->texts[ctx->texts_count].color = hex ? 0xFF000000 : 0xFF333333;
+      ctx->texts[ctx->texts_count].color = hex ? 0xFF000000 : (is_dark ? 0xFFCCCCCC : 0xFF333333);
       ctx->texts[ctx->texts_count].size = 18;
       ctx->texts_count++;
     }
@@ -864,7 +867,7 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       ctx->texts[ctx->texts_count].y = py + 10;
       warp_strcpy(ctx->texts[ctx->texts_count].text, text);
       if (warp_strcmp(node->tag, "tonalButton") == 0)
-        ctx->texts[ctx->texts_count].color = 0xFF121212;
+        ctx->texts[ctx->texts_count].color = is_dark ? 0xFFFFFFFF : 0xFF121212;
       else
         ctx->texts[ctx->texts_count].color = 0xFFFFFFFF;
       ctx->texts[ctx->texts_count].size = 16;
@@ -1017,13 +1020,16 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
   const char *id = get_attr(node, "id");
   if (!get_visibility(ctx, id)) return;
   
+  const char *dark_val = get_state(ctx, "~~main/dark");
+  int is_dark = (warp_strcmp(dark_val, "true") == 0);
+
   if (warp_strcmp(node->tag, "screen") == 0) {
     if (warp_strcmp(id, ctx->current_screen) != 0) return;
     char bg_color[32], bg_opacity[16];
     eval_attr(ctx, node, "backgroundColor", bg_color, sizeof(bg_color));
     eval_attr(ctx, node, "backgroundOpacity", bg_opacity, sizeof(bg_opacity));
     
-    const char *fill = bg_color[0] ? bg_color : "#f5f5f5";
+    const char *fill = bg_color[0] ? bg_color : (is_dark ? "#121212" : "#f5f5f5");
     char extra[64] = "";
     if (bg_opacity[0]) {
       warp_strcpy(extra, "opacity=\"");
@@ -1036,17 +1042,24 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
   } else if (warp_strcmp(node->tag, "card") == 0) {
     const char *c_prop = get_attr(node, "color");
     const char *hex = get_color_hex(c_prop);
-    const char *fill = hex ? hex : "#ffffff";
-    char extra[256] = "stroke=\"#dddddd\" stroke-width=\"1\"";
+    const char *fill = hex ? hex : (is_dark ? "#1e1e1e" : "#ffffff");
+    char extra[256];
+    if (is_dark) {
+        warp_strcpy(extra, "stroke=\"#333333\" stroke-width=\"1\"");
+    } else {
+        warp_strcpy(extra, "stroke=\"#dddddd\" stroke-width=\"1\"");
+    }
     emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, fill, extra);
   } else if (warp_strcmp(node->tag, "button") == 0 || warp_strcmp(node->tag, "tonalButton") == 0) {
     const char *c_prop = get_attr(node, "color");
     const char *hex = get_color_hex(c_prop);
     const char *fill = hex ? hex : "#0a56d0";
-    if (warp_strcmp(node->tag, "tonalButton") == 0)
-      emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, fill, "opacity=\"0.1\"");
-    else
+    if (warp_strcmp(node->tag, "tonalButton") == 0) {
+      const char *tonal_fill = is_dark ? "#ffffff" : "#000000";
+      emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, tonal_fill, "opacity=\"0.1\"");
+    } else {
       emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, fill, "");
+    }
   } else if (warp_strcmp(node->tag, "switch") == 0) {
     // スイッチの描画 - 角丸なし四角形（radius=0）- 44x44
     char out_var[128];

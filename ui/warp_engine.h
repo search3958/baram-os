@@ -36,6 +36,11 @@ void warp_context_get_header_action_info(warp_context_t* ctx, int action_index, 
 void warp_context_click_header_action(warp_context_t* ctx, int action_index);
 int warp_context_is_dev_event_check(warp_context_t* ctx);
 float warp_context_get_scroll_y(warp_context_t* ctx);
+
+// Global State / Settings Sync
+void set_w1_global(const char *key, const char *val);
+const char *get_w1_global(const char *key);
+
 void warp_context_set_scroll_y(warp_context_t* ctx, float y);
 float warp_context_get_target_scroll_y(warp_context_t* ctx);
 void warp_context_set_target_scroll_y(warp_context_t* ctx, float y);
