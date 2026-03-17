@@ -17,6 +17,8 @@ typedef struct warp1_context warp1_context_t;
 
 warp1_context_t* warp1_context_create(const char* code);
 void warp1_context_destroy(warp1_context_t* ctx);
+void set_w1_global(const char *key, const char *val);
+const char *get_w1_global(const char *key);
 void warp1_context_update(warp1_context_t* ctx, int width, int height);
 const char* warp1_context_get_svg(warp1_context_t* ctx);
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int off_x, int off_y);

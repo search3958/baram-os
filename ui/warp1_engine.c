@@ -73,18 +73,17 @@ static int w1_strcasecmp(const char *s1, const char *s2) { while (*s1 && (w1_tol
 static struct { char key[64]; char val[512]; } g_w1_globals[MAX_VARS];
 static int g_w1_global_count = 0;
 
-static void set_w1_global(const char *key, const char *val);
-const char *get_w1_global(const char *key);
-
-static void set_w1_global(const char *key, const char *val) {
+void set_w1_global(const char *key, const char *val) {
     for (int i = 0; i < g_w1_global_count; i++) {
         if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) { w1_strncpy(g_w1_globals[i].val, val, 511); return; }
     }
     if (g_w1_global_count < MAX_VARS) {
         w1_strncpy(g_w1_globals[g_w1_global_count].key, key, 63);
-        w1_strncpy(g_w1_globals[g_w1_global_count].val, val, 511); g_w1_global_count++;
+        w1_strncpy(g_w1_globals[g_w1_global_count].val, val, 511);
+        g_w1_global_count++;
     }
 }
+
 
 
 const char *get_w1_global(const char *key) {
@@ -185,12 +184,22 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
             int rem = max_len - w1_strlen(out) - 1; 
             if (rem > 0) w1_strncat(out, val, (size_t)rem);
         } else {
-            char word[64]; int i = 0;
-            while (*p && (unsigned char)*p > 32 && *p != '\"' && *p != '\'' && *p != '+' && *p != ')' && *p != ',' && *p != '}' && i < 63)
+            char word[256]; int i = 0;
+            // 単語（未クオートの文字列）として空白を含めて読み込む。
+            // ただし、'+' や '}' などの制御記号で止める。
+            while (*p && *p != '\"' && *p != '\'' && *p != '+' && *p != ')' && *p != ',' && *p != '}' && i < 255)
                 word[i++] = *p++;
             word[i] = '\0';
-            if (i == 0 && *p) { 
-                // Skip one char if it's not a word part to prevent infinite loop
+            
+            // 末尾の空白を削除（トークン間の空白は無視したいため）
+            int wi = i - 1;
+            while (wi >= 0 && (word[wi] == ' ' || word[wi] == '\t' || word[wi] == '\n' || word[wi] == '\r')) {
+                word[wi] = '\0';
+                wi--;
+            }
+
+            if (word[0] == '\0' && *p) { 
+                // 何も読み込めなかったが文字がある場合は1文字スキップして無限ループ防止
                 p++; 
             } else if (w1_strcmp(word, "null") != 0) { 
                 int rem = max_len - w1_strlen(out) - 1; 
@@ -261,8 +270,15 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
         } else if (w1_strncmp(act, "script{", 7) == 0) {
             char sname[64]; w1_strncpy(sname, act + 7, 63); char *end = w1_strchr(sname, '}');
             if (end) { *end = '\0'; } execute_script1(ctx, sname);
-        } else if (w1_strncmp(act, "wait", 4) == 0) { /* sync engine: no-op */ }
-        else if (w1_strchr(act, '.') && !w1_strncmp(act, "--", 2) && !w1_strncmp(act, "~~", 2)) {
+        } else if (w1_strncmp(act, "run{", 4) == 0) {
+            char expr[256]; w1_strncpy(expr, act + 4, 255); char *end = w1_strchr(expr, '}');
+            if (end) { *end = '\0'; }
+            char cmd[256];
+            eval_expr(ctx, expr, cmd, 255);
+            // カーネル側で定義されたコマンド設定関数を呼び出し
+            extern void set_pending_command(const char *cmd);
+            set_pending_command(cmd);
+        } else if (w1_strchr(act, '.')) {
             char *dot = w1_strchr(act, '.'); *dot = '\0'; char *id = act; char *method = dot + 1;
             char *open_b = w1_strchr(method, '{');
             if (open_b) {

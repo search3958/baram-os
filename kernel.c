@@ -100,7 +100,9 @@ static int g_warp_mod_found = 0;
 static uint32_t g_mod_count = 0;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 static char g_warp1_buffer[32768] = "screen{ id:(main), text:(\"Warp1 module not found\") }";
+static char g_terminal_warp_buffer[32768] = "screen{ id:(main), text:(\"Terminal module not found\") }";
 static int g_warp1_mod_found = 0;
+static int g_terminal_mod_found = 0;
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
 static char g_wallpaper_buffer[131072] = "";
@@ -117,6 +119,9 @@ static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
+static void add_window(const char *title, int x, int y, int w, int h, int is_warp1);
+static void close_active_window();
+static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
 
 // FPU有効化
 void enable_fpu() {
@@ -1047,6 +1052,12 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
         memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_warp_buffer[size] = '\0';
         g_warp_mod_found = 1;
+      } else if (strstr(s, "terminal") || strstr(s, "TERMINAL")) {
+        uint32_t size = mods[i].mod_end - mods[i].mod_start;
+        if (size > 32767) size = 32767;
+        memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+        g_terminal_warp_buffer[size] = '\0';
+        g_terminal_mod_found = 1;
       } else if (strstr(s, "warp") || strstr(s, "WARP")) {
         // warpc が先に判定されるので、ここに来るのは .warp 拡張子のみ
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
@@ -1078,7 +1089,7 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   }
 
   // 2. インデックスベースのフォールバック (grub.cfg の定義順)
-  // 0: Font, 1: main.warpc, 2: new.warp, 3: bootlogo.svg, 4: wallpaper_1.svg
+  // 0: Font, 1: main.warpc, 2: new.warp, 3: terminal.warp, 4: bootlogo.svg, 5: wallpaper_1.svg
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
     uint32_t size = mods[1].mod_end - mods[1].mod_start;
     if (size > 32767) size = 32767;
@@ -1091,16 +1102,22 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[2].mod_start, size);
     g_warp1_buffer[size] = '\0'; g_warp1_mod_found = 1;
   }
-  if (!g_bootlogo_found && mbi->mods_count >= 4) {
+  if (!g_terminal_mod_found && mbi->mods_count >= 4) {
     uint32_t size = mods[3].mod_end - mods[3].mod_start;
+    if (size > 32767) size = 32767;
+    memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)mods[3].mod_start, size);
+    g_terminal_warp_buffer[size] = '\0'; g_terminal_mod_found = 1;
+  }
+  if (!g_bootlogo_found && mbi->mods_count >= 5) {
+    uint32_t size = mods[4].mod_end - mods[4].mod_start;
     if (size > 65535) size = 65535;
-    memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[3].mod_start, size);
+    memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[4].mod_start, size);
     g_bootlogo_buffer[size] = '\0'; g_bootlogo_found = 1;
   }
-  if (!g_wallpaper_found && mbi->mods_count >= 5) {
-    uint32_t size = mods[4].mod_end - mods[4].mod_start;
+  if (!g_wallpaper_found && mbi->mods_count >= 6) {
+    uint32_t size = mods[5].mod_end - mods[5].mod_start;
     if (size > 131071) size = 131071;
-    memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[4].mod_start, size);
+    memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[5].mod_start, size);
     g_wallpaper_buffer[size] = '\0'; g_wallpaper_found = 1;
   }
 
@@ -1147,9 +1164,53 @@ typedef struct {
 static window_t g_windows[MAX_WINDOWS];
 static int g_window_count = 0;
 static int g_active_window_index = -1;
+// --- ターミナル・コマンド処理 ---
+static char g_pending_command[256] = "";
+static int g_has_pending_command = 0;
+// static int g_terminal_mode = 0; // 1: ターミナル入力待機中
+// static char g_terminal_input[256] = "";
+// static int g_terminal_ptr = 0;
 
-// Forward declaration for blending
-static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
+void set_pending_command(const char *cmd) {
+  if (!cmd || g_has_pending_command) return;
+  strncpy(g_pending_command, cmd, 255);
+  g_has_pending_command = 1;
+}
+
+// デバッグ用フラグ
+static int g_dev_pointer_check = 0;
+
+static void handle_terminal_command(const char *cmd) {
+  const char *file = NULL;
+
+  if (strncmp(cmd, "warp ", 5) == 0) {
+    file = cmd + 5;
+  } else if (strncmp(cmd, "./", 2) == 0) {
+    file = cmd + 2;
+  } else if (strstr(cmd, ".warp") || strstr(cmd, ".warpc")) {
+    file = cmd;
+  }
+
+  if (file) {
+    if (strstr(file, ".warpc")) {
+      add_window(file, 150, 150, 600, 400, 0);
+    } else if (strstr(file, ".warp")) {
+      add_window(file, 200, 200, 600, 400, 1);
+    }
+  } else if (strcmp(cmd, "reboot") == 0) {
+    extern void sys_restart(void);
+    sys_restart();
+  } else if (strcmp(cmd, "exit") == 0) {
+    close_active_window();
+  } else if (strcmp(cmd, "help") == 0) {
+    set_w1_global("--warpSystemLog", "Available commands: <file.warp>, ./<file.warp>, warp <file>, reboot, exit, help");
+  } else if (strncmp(cmd, "dev pointerCheck=", 17) == 0) {
+    const char *val = cmd + 17;
+    if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
+    else g_dev_pointer_check = 0;
+    strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
+  }
+}
 
 static void window_update_caches(window_t *win) {
   int title_h = 40;
@@ -1364,7 +1425,11 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   strncpy(win->title, title, 63);
   win->is_warp1 = is_warp1;
   if (is_warp1) {
-    win->warp1_ctx = warp1_context_create(g_warp1_buffer);
+    if (strstr(title, "Terminal") || strstr(title, "terminal")) {
+      win->warp1_ctx = warp1_context_create(g_terminal_warp_buffer);
+    } else {
+      win->warp1_ctx = warp1_context_create(g_warp1_buffer);
+    }
     win->warp_ctx = NULL;
   } else {
     win->warp_ctx = warp_context_create(g_warp_buffer);
@@ -1669,8 +1734,8 @@ static void redraw_warp_svg(layer_t *layer) {
 
 static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
-  // Start with one default window
-  add_window("Main Warp", 100, 100, 600, 400, 0);
+  // Terminalのみ自動で起動するように設定
+  add_window("Terminal", 200, 200, 600, 400, 1);
   redraw_warp_svg(layer);
   return 1;
 }
@@ -1971,31 +2036,7 @@ static char keybuf_str[KEYBUF_MAX] = "";
 static uint32_t g_mbi_flags = 0;
 
 static void handle_command(const char *cmd) {
-  if (strncasecmp(cmd, "dev ", 4) == 0) {
-    const char *kv = cmd + 4;
-    char key[64], val[64];
-    const char *eq = strchr(kv, '=');
-    if (eq) {
-      int klen = eq - kv;
-      if (klen >= 64) klen = 63;
-      strncpy(key, kv, klen);
-      key[klen] = '\0';
-      
-      char full_key[128] = "dev ";
-      strncat(full_key, key, 127 - 4);
-      
-      strncpy(val, eq + 1, 63);
-      val[63] = '\0';
-      
-      for (int i = 0; i < g_window_count; i++) {
-        if (g_windows[i].warp_ctx) {
-          warp_context_set_state(g_windows[i].warp_ctx, full_key, val);
-          g_windows[i].is_dirty = 1;
-        }
-      }
-      g_svg_dirty = 1;
-    }
-  }
+  handle_terminal_command(cmd);
 }
 
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
@@ -2677,6 +2718,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // メインループ (常時60fpsターゲット)
   while (1) {
+    if (g_has_pending_command) {
+      handle_terminal_command(g_pending_command);
+      g_pending_command[0] = '\0';
+      g_has_pending_command = 0;
+      g_svg_dirty = 1;
+    }
+
     if (!auto_booted && current_os_mode == OS_MODE_CLASSIC &&
         (timer_ticks - boot_start_tick > 50)) {
       current_os_mode = OS_MODE_WARPDESKTOP;
@@ -3000,8 +3048,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             }
             g_active_window_index = g_window_count - 1;
           } else if (hit_index == -1) {
-            // Wallpaper click (real click, not just missed window)
-            add_window("New Warp", hx - 50, hy + 50, 400, 300, 0);
+            // Wallpaper click: do nothing
           }
           g_svg_dirty = 1;
         } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {

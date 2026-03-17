@@ -93,6 +93,7 @@ do_build_and_run() {
     # 拡張子変更に対応 (.warpc と .warp)
     cp ui/main.warpc output/isodir/boot/
     cp ui/new.warp output/isodir/boot/
+    cp ui/terminal.warp output/isodir/boot/
 
     if [ -f "bootlogo.svg" ]; then
         cp bootlogo.svg output/isodir/boot/
