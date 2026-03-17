@@ -637,16 +637,24 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#000000", "opacity=\"0.1\"");
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
-        // スイッチの描画 - 角丸なし四角形（radius=0）
-        char out_var[128];
-        eval_attr(ctx, node, "output", out_var, 127);
+        // スイッチの描画
+        const char *out_var_raw = get_attr1(node, "output");
+        char out_var[128]; 
+        if (out_var_raw[0] == '(') {
+            w1_strncpy(out_var, out_var_raw + 1, 127);
+            char *end = w1_strchr(out_var, ')');
+            if (end) *end = '\0';
+        } else {
+            w1_strncpy(out_var, out_var_raw, 127);
+        }
         
-        // output 変数の状態を取得（status がなくても動作）
         const char *val = get_state(ctx, out_var);
         int on = (w1_strstr(val, "true") != NULL);
+        int disabled = (w1_strstr(val, "Disabled") != NULL);
 
-        // 背景（角丸なし四角形）- 44x44
+        // 背景
         const char *bg_color = on ? "#0A60FF" : "#dddddd";
+        if (disabled) bg_color = on ? "#80A0FF" : "#eeeeee"; // 無効時は色を薄く
         int size = 44;
         int x = node->x + (node->w - size) / 2;
         int y = node->y + (node->h - size) / 2;
