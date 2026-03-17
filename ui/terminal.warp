@@ -1,0 +1,22 @@
+screen{
+    id: (main),
+    
+    input{
+        --inputMain: (""),
+        output: (--terminalInput),
+        placeholder: ("ターミナル")
+    },
+
+    button{
+        text: ("実行"),
+        oneClick: (run:(--terminalInput))
+    },
+    button{
+        text: ("クリア"),
+        oneClick: (--warpTerminalOutput:(""))
+    },
+
+    text{
+        text: --warpTerminalOutput,
+    }
+}

@@ -6,8 +6,6 @@
 #define NOTE_TEST_SVG_WIDTH 1280
 #define NOTE_TEST_SVG_HEIGHT 720
 
-// CLASSICモード用のテストSVG
-// ID="conic" を付与することで、カーネル側で円錐状グラデーションを適用します
 static const unsigned char note_test_svg[] = 
     "<svg width=\"1280\" height=\"720\" viewBox=\"0 0 1280 720\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
     "<rect width=\"1280\" height=\"720\" fill=\"#1a1a1a\"/>"

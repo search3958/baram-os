@@ -11,12 +11,12 @@ UIにはスムースコーナーが採用されより自然な体験が得られ
 ### Multiboot Modules
 Baram OS は、GRUB から渡される Multiboot モジュールを利用して外部リソースを読み込みます。
 - **モジュール 1**: フォントファイル (`MPLUS2-Regular.ttf`)
-- **モジュール 2**: UI 定義ファイル (`main.warp`)
+- **モジュール 2**: UI 定義ファイル (`main.warpc`)
 
 これらは起動時にカーネルによって自動的にメモリへマッピングされ、レンダリングエンジンによって使用されます。
 
 ### グラフィックス・パイプライン
-1. Warp Engine が `.warp` ファイルを読み込み、木を構築。
+1. Warp Engine が `.warpc` または `.warp` ファイルを読み込み、木を構築。
 2. 必要に応じて SVG データをラスタライズ。
 3. `stb_truetype` を使用してフォントをビットマップ化。
 4. ダーティレクト管理により、変更があった部分のみをフレームバッファへ転送。
@@ -24,9 +24,10 @@ Baram OS は、GRUB から渡される Multiboot モジュールを利用して�
 ## 📂 ディレクトリ構成
 
 - `kernel.c`: カーネルのエントリポイント、描画ループ、イベント処理、モジュールロード。
-- `warp_engine.c`: UI エンジンのコアロジック（`.warp` ファイルのパースと状態管理）。
+- `warp_engine.c`: UI エンジンのコアロジック（`.warpc` ファイルのパースと状態管理）。
+- `warp1_engine.c`: 次世代 UI エンジンのコアロジック（`.warp` ファイルのパース）。
 - `drivers.c/h`: 各種ハードウェアドライバ（VBE, PS/2 Mouse/KB, PIT）とグラフィックス層。
-- `ui/`: Warp Engine 用の UI 定義ファイル。`main.warp` がメインの UI です。
+- `ui/`: Warp Engine 用の UI 定義ファイル。`main.warpc` がメインの UI です。
 - `font/`: TrueType フォントとレンダリングライブラリ（`stb_truetype`）。
 - `nanosvg/`: SVG デコードおよびラスタライズライブラリ。
 - `arch/`: CPU 依存のアセンブリコード（ブートコード、ISR）。

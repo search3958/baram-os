@@ -352,27 +352,17 @@ uint32_t get_used_memory(void) {
 }
 
 void *memset(void *s, int c, size_t n) {
-  uint32_t val = (uint8_t)c;
-  val |= (val << 8);
-  val |= (val << 16);
-  uint32_t *p32 = (uint32_t *)s;
-  size_t n32 = n / 4;
-  size_t rem = n % 4;
-  __asm__ __volatile__("rep stosl" : "+D"(p32), "+c"(n32) : "a"(val) : "memory");
-  unsigned char *p8 = (unsigned char *)p32;
-  while (rem--) *p8++ = (uint8_t)c;
+  unsigned char *p = (unsigned char *)s;
+  while (n--)
+    *p++ = (unsigned char)c;
   return s;
 }
 
 void *memcpy(void *dest, const void *src, size_t n) {
-  uint32_t *d32 = (uint32_t *)dest;
-  const uint32_t *s32 = (const uint32_t *)src;
-  size_t n32 = n / 4;
-  size_t rem = n % 4;
-  __asm__ __volatile__("rep movsl" : "+S"(s32), "+D"(d32), "+c"(n32) : : "memory");
-  unsigned char *d8 = (unsigned char *)d32;
-  const unsigned char *s8 = (const unsigned char *)s32;
-  while (rem--) *d8++ = *s8++;
+  unsigned char *d = (unsigned char *)dest;
+  const unsigned char *s = (const unsigned char *)src;
+  while (n--)
+    *d++ = *s++;
   return dest;
 }
 
@@ -1051,25 +1041,26 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   for (uint32_t i = 0; i < mbi->mods_count; i++) {
     const char *s = (const char *)(uintptr_t)mods[i].string;
     if (s) {
-      if (strstr(s, "main.warp") || strstr(s, "MAIN.WARP")) {
+      if (strstr(s, "warpc") || strstr(s, "WARPC")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
         if (size > 32767) size = 32767;
         memcpy(g_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_warp_buffer[size] = '\0';
         g_warp_mod_found = 1;
-      } else if (strstr(s, "new.warp1") || strstr(s, "NEW.WARP1")) {
+      } else if (strstr(s, "warp") || strstr(s, "WARP")) {
+        // warpc が先に判定されるので、ここに来るのは .warp 拡張子のみ
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
         if (size > 32767) size = 32767;
         memcpy(g_warp1_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_warp1_buffer[size] = '\0';
         g_warp1_mod_found = 1;
-      } else if (strstr(s, "bootlogo.svg") || strstr(s, "BOOTLOGO.SVG")) {
+      } else if (strstr(s, "logo") || strstr(s, "LOGO")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
         if (size > 65535) size = 65535;
         memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_bootlogo_buffer[size] = '\0';
         g_bootlogo_found = 1;
-      } else if (strstr(s, "wallpaper_1.svg") || strstr(s, "WALLPAPER_1.SVG")) {
+      } else if (strstr(s, "wall") || strstr(s, "WALL")) {
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
         if (size > 131071) size = 131071;
         memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
@@ -1079,8 +1070,15 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     }
   }
 
+  // 状態を HUD に反映 (デバッグ用)
+  if (g_warp_mod_found && g_warp1_mod_found && g_bootlogo_found) {
+    strncpy(g_hud_status, "AllModsFound", 63);
+  } else {
+    strncpy(g_hud_status, "SomeModsMissing", 63);
+  }
+
   // 2. インデックスベースのフォールバック (grub.cfg の定義順)
-  // 0: Font, 1: main.warp, 2: new.warp1, 3: bootlogo.svg, 4: wallpaper_1.svg
+  // 0: Font, 1: main.warpc, 2: new.warp, 3: bootlogo.svg, 4: wallpaper_1.svg
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
     uint32_t size = mods[1].mod_end - mods[1].mod_start;
     if (size > 32767) size = 32767;

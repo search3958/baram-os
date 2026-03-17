@@ -56,6 +56,7 @@ do_build_and_run() {
     echo "  🚀 BaramOS Build #$CURRENT_BN 開始"
 
     # 2. 出力ディレクトリの準備
+    rm -rf output/isodir
     mkdir -p output/isodir/boot/grub
     show_progress 1
 
@@ -88,8 +89,10 @@ do_build_and_run() {
     show_progress 9
     cp grub.cfg output/isodir/boot/grub/
     cp font/MPLUS2-Regular.ttf output/isodir/boot/
-    cp ui/main.warp output/isodir/boot/
-    cp ui/new.warp1 output/isodir/boot/
+    
+    # 拡張子変更に対応 (.warpc と .warp)
+    cp ui/main.warpc output/isodir/boot/
+    cp ui/new.warp output/isodir/boot/
 
     if [ -f "bootlogo.svg" ]; then
         cp bootlogo.svg output/isodir/boot/

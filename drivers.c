@@ -86,14 +86,6 @@ static inline uint16_t inw(uint16_t port) {
   return ret;
 }
 
-static inline void wait_vsync(void) {
-  // 画面走査の終わり（垂直同期）を待つ
-  while (inb(0x3DA) & 0x08)
-    ;
-  while (!(inb(0x3DA) & 0x08))
-    ;
-}
-
 #define BGA_INDEX 0x01CE
 #define BGA_DATA 0x01CF
 #define BGA_REG_ID 0x00
@@ -283,8 +275,6 @@ void screen_refresh(void) {
   }
 
   // 4. VRAMへ一気に転送 (ティアリング防止のため、BBが完成してから行う)
-  wait_vsync(); // VSyncを待ってから一気に切り替え/転送
-
   if (g_page_flip_enabled) {
     // 描画が完了したバッファのアドレスをBGAにセット (一瞬で切り替わる)
     bga_write(BGA_REG_Y_OFFSET, (uint16_t)(g_draw_page * g_vram_height));
@@ -292,7 +282,6 @@ void screen_refresh(void) {
     g_draw_page = 1 - g_draw_page;
   } else {
     // ページフリップが使えない場合は memcpy で一気に転送
-    // (アセンブリ化した高速memcpyにより、VSync同期で瞬時に反映されます)
     memcpy(g_vram, bb, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
   }
   
