@@ -12,7 +12,7 @@ screen{
     },
 
     button{
-        text: ("Execute"),
+        text: ("実行"),
         oneClick: (run{--terminalInput})
     }
 }

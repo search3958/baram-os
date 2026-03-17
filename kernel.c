@@ -1137,15 +1137,19 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
              g_warp1_mod_found = 1;
           }
         } else if (strstr(s, "logo") || strstr(s, "LOGO")) {
-          if (size > 65535) size = 65535;
-          memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
-          g_bootlogo_buffer[size] = '\0';
-          g_bootlogo_found = 1;
+          if (!g_bootlogo_found) {
+            if (size > 65535) size = 65535;
+            memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
+            g_bootlogo_buffer[size] = '\0';
+            g_bootlogo_found = 1;
+          }
         } else if (strstr(s, "wall") || strstr(s, "WALL") || strstr(s, "paper")) {
-          if (size > 262143) size = 262143;
-          memcpy(g_wallpaper_buffer, (void *)(uintptr_t)start, size);
-          g_wallpaper_buffer[size] = '\0';
-          g_wallpaper_found = 1;
+          if (!g_wallpaper_found) {
+            if (size > 262143) size = 262143;
+            memcpy(g_wallpaper_buffer, (void *)(uintptr_t)start, size);
+            g_wallpaper_buffer[size] = '\0';
+            g_wallpaper_found = 1;
+          }
         }
       }
     }
