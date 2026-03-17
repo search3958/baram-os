@@ -22,11 +22,6 @@ screen{
         --mainText: ("...")
     },
 
-    text{
-        text: (--warpSystemLog),
-        color: (gray)
-    },
-
     switch{
         id: (testSwitch),
         output: (--testVal),

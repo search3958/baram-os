@@ -25,6 +25,7 @@ int warp1_context_is_dirty(warp1_context_t* ctx);
 void warp1_context_clear_dirty(warp1_context_t* ctx);
 void warp1_context_set_state(warp1_context_t* ctx, const char* key, const char* val);
 void warp1_context_set_mouse(warp1_context_t* ctx, int x, int y);
+const char* get_w1_global(const char* key);
 int warp1_context_get_node_count(warp1_context_t* ctx);
 void warp1_context_get_node_info(warp1_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* is_dirty);
 const char* warp1_context_get_node_svg(warp1_context_t* ctx, int index);

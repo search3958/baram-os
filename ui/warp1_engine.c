@@ -72,7 +72,7 @@ static struct { char key[64]; char val[512]; } g_w1_globals[MAX_VARS];
 static int g_w1_global_count = 0;
 
 static void set_w1_global(const char *key, const char *val);
-static const char *get_w1_global(const char *key);
+const char *get_w1_global(const char *key);
 
 static void set_w1_global(const char *key, const char *val) {
     for (int i = 0; i < g_w1_global_count; i++) {
@@ -87,30 +87,43 @@ static void set_w1_global(const char *key, const char *val) {
 static void add_system_log(const char *msg) {
     // 既存のログを取得
     const char *old_log = get_w1_global("--warpSystemLog");
-    char new_log[512] = "";
-    // 新規ログを前に追加（最大 5 行）
-    w1_strncpy(new_log, msg, 511);
-    w1_strcat(new_log, "\n");
+    char new_log[1024] = "";
+    
     if (old_log && old_log[0]) {
-        int lines = 0;
-        const char *p = old_log;
-        while (*p && lines < 4) {
-            if (*p == '\n') lines++;
-            p++;
+        w1_strncpy(new_log, old_log, 1023);
+        // 末尾が改行でないなら改行を追加
+        int len = w1_strlen(new_log);
+        if (len > 0 && new_log[len-1] != '\n') {
+            w1_strcat(new_log, "\n");
         }
-        w1_strncat(new_log, old_log, 511 - w1_strlen(new_log));
+        w1_strcat(new_log, msg);
+    } else {
+        w1_strncpy(new_log, msg, 1023);
     }
+    
+    // 最大行数制限（例：20行まで）
+    int lines = 0;
+    for (int i = 0; new_log[i]; i++) if (new_log[i] == '\n') lines++;
+    if (lines >= 20) {
+        char *first_nl = w1_strchr(new_log, '\n');
+        if (first_nl) {
+            char tmp[1024];
+            w1_strcpy(tmp, first_nl + 1);
+            w1_strcpy(new_log, tmp);
+        }
+    }
+
     set_w1_global("--warpSystemLog", new_log);
 }
 
-static const char *get_w1_global(const char *key) {
+const char *get_w1_global(const char *key) {
     for (int i = 0; i < g_w1_global_count; i++) { if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) return g_w1_globals[i].val; }
     return "";
 }
 
 // --- 4. Logic & Parser ---
 static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
-    if (w1_strncmp(key, "~~", 2) == 0) { set_w1_global(key, val); return; }
+    if (w1_strncmp(key, "~~", 2) == 0 || w1_strncmp(key, "--", 2) == 0) { set_w1_global(key, val); return; }
     if (w1_strcasecmp(key, "_currentScreen") == 0) { w1_strncpy(ctx->current_screen, val, 63); return; }
     for (int i = 0; i < ctx->state_count; i++) {
         if (w1_strcasecmp(ctx->state[i].key, key) == 0) { w1_strncpy(ctx->state[i].val, val, 511); return; }
@@ -123,9 +136,12 @@ static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
 
 static const char *get_state(warp1_context_t *ctx, const char *key) {
     if (w1_strncmp(key, "~~", 2) == 0) return get_w1_global(key);
-    if (w1_strncmp(key, "--", 2) == 0) return get_w1_global(key);  // --変数もグローバルから取得
+    if (w1_strncmp(key, "--", 2) == 0) return get_w1_global(key);
     if (w1_strcasecmp(key, "_currentScreen") == 0) return ctx->current_screen;
     for (int i = 0; i < ctx->state_count; i++) { if (w1_strcasecmp(ctx->state[i].key, key) == 0) return ctx->state[i].val; }
+    // 接頭辞がない場合もグローバルから探す
+    const char *global_val = get_w1_global(key);
+    if (global_val && global_val[0]) return global_val;
     return "";
 }
 
@@ -144,9 +160,13 @@ static long eval_math1(const char *s) {
     while (*p) {
         while (*p == ' ' || *p == '\t') p++;
         if (!*p) break;
-        char op = *p++; long v = w1_strtol(p);
-        if (op == '+') res += v; else if (op == '-') res -= v;
-        else if (op == '*') res *= v; else if (op == '/' && v != 0) res /= v;
+        char op = *p++; 
+        while (*p == ' ' || *p == '\t') p++;
+        long v = w1_strtol(p);
+        if (op == '+') res += v; 
+        else if (op == '-') res -= v;
+        else if (op == '*') res *= v; 
+        else if (op == '/' && v != 0) res /= v;
         while (*p && (*p == ' ' || *p == '\t' || *p == '-' || (*p >= '0' && *p <= '9'))) p++;
     }
     return res;
@@ -155,19 +175,32 @@ static long eval_math1(const char *s) {
 static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max_len) {
     out[0] = '\0'; const char *p = expr;
     while (*p) {
-        if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') { p++; continue; }
-        if (*p == '+') { p++; continue; }
+        while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
+        if (!*p) break;
+
+        if (*p == '+') {
+            p++;
+            continue; 
+        }
+
         if (*p == '\"' || *p == '\'') {
-            char quote = *p++; while (*p && *p != quote) {
+            char quote = *p++; 
+            while (*p && *p != quote) {
                 int len = w1_strlen(out);
                 if (len < max_len - 1) {
                     if (*p == '\\') {
-                        p++; if (*p == 'n') out[len] = '\n'; else if (*p == '\"') out[len] = '\"';
-                        else if (*p == '\'') out[len] = '\''; else if (*p == '\\') out[len] = '\\';
+                        p++; 
+                        if (*p == 'n') out[len] = '\n'; 
+                        else if (*p == '\"') out[len] = '\"';
+                        else if (*p == '\'') out[len] = '\''; 
+                        else if (*p == '\\') out[len] = '\\';
                         else { out[len] = *p; }
-                        out[len + 1] = '\0'; if (*p) p++; continue;
+                        out[len + 1] = '\0'; 
+                        if (*p) p++; 
+                        continue;
                     }
-                    out[len] = *p; out[len + 1] = '\0';
+                    out[len] = *p; 
+                    out[len + 1] = '\0';
                 }
                 p++;
             }
@@ -176,17 +209,31 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
             char var[64]; int i = 0;
             while (*p && *p != '\"' && *p != '\'' && *p != '+' && *p != ' ' && *p != ')' && *p != ',' && *p != '}' && i < 63)
                 var[i++] = *p++;
-            var[i] = '\0'; const char *val = get_state(ctx, var);
-            int rem = max_len - w1_strlen(out) - 1; if (rem > 0) w1_strncat(out, val, (size_t)rem);
+            var[i] = '\0'; 
+            const char *val = get_state(ctx, var);
+            int rem = max_len - w1_strlen(out) - 1; 
+            if (rem > 0) w1_strncat(out, val, (size_t)rem);
         } else {
             char word[64]; int i = 0;
-            while (*p && *p != '\"' && *p != '\'' && *p != '+' && *p != ' ' && *p != ')' && *p != ',' && *p != '}' && i < 63)
+            while (*p && (unsigned char)*p > 32 && *p != '\"' && *p != '\'' && *p != '+' && *p != ')' && *p != ',' && *p != '}' && i < 63)
                 word[i++] = *p++;
             word[i] = '\0';
-            if (i == 0 && *p) { p++; } // Skip separator if no word was read
-            else if (w1_strcmp(word, "null") != 0) { int rem = max_len - w1_strlen(out) - 1; if (rem > 0) w1_strncat(out, word, (size_t)rem); }
+            if (i == 0 && *p) { 
+                // Skip one char if it's not a word part to prevent infinite loop
+                p++; 
+            } else if (w1_strcmp(word, "null") != 0) { 
+                int rem = max_len - w1_strlen(out) - 1; 
+                if (rem > 0) w1_strncat(out, word, (size_t)rem); 
+            }
         }
     }
+}
+
+static const char *get_attr1(warp1_node_t *node, const char *key) {
+    for (int i = 0; i < node->attrs_count; i++) {
+        if (w1_strcmp(node->attrs[i].key, key) == 0) return node->attrs[i].value;
+    }
+    return "";
 }
 
 static void eval_attr(warp1_context_t *ctx, warp1_node_t *node, const char *key, char *buf, int size) {
@@ -237,10 +284,10 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
         char *act = act_buf; while (*act == ' ' || *act == '\t') act++;
 
         if (w1_strncmp(act, "reset{", 6) == 0) { extern void sys_restart(void); sys_restart(); }
+        else if (w1_strncmp(act, "clear{", 6) == 0) { set_w1_global("--warpSystemLog", ""); }
         else if (w1_strncmp(act, "setScreen{", 10) == 0) {
             char scr[64]; w1_strncpy(scr, act + 10, 63); char *end = w1_strchr(scr, '}');
             if (end) { *end = '\0'; }
-            // 画面切り替え - スクロール状態は画面ごとに保持される
             set_state(ctx, "_currentScreen", scr);
         } else if (w1_strncmp(act, "script{", 7) == 0) {
             char sname[64]; w1_strncpy(sname, act + 7, 63); char *end = w1_strchr(sname, '}');
@@ -259,10 +306,23 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
                     char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Status"); set_state(ctx, key, args);
                 }
             }
-        } else if (w1_strncmp(act, "--", 2) == 0 || w1_strncmp(act, "~~", 2) == 0) {
-            char *eq = w1_strchr(act, '='); if (!eq) eq = w1_strchr(act, ':');
+        } else {
+            // 代入文 (var = val) の処理
+            char *eq = w1_strchr(act, '='); 
+            if (!eq) eq = w1_strchr(act, ':');
             if (eq) {
-                *eq = '\0'; char *rhs = eq + 1; while (*rhs == ' ') rhs++;
+                *eq = '\0'; 
+                char *var_name = act; 
+                char *rhs = eq + 1;
+                
+                // 変数名の前後の空白を削除
+                while (*var_name == ' ' || *var_name == '\t' || *var_name == '\n' || *var_name == '\r') var_name++;
+                char *v_end = var_name + w1_strlen(var_name) - 1;
+                while (v_end >= var_name && (*v_end == ' ' || *v_end == '\t' || *v_end == '\n' || *v_end == '\r')) { *v_end = '\0'; v_end--; }
+
+                // 右辺の前の空白を削除
+                while (*rhs == ' ' || *rhs == '\t' || *rhs == '\n' || *rhs == '\r') rhs++;
+                
                 char val[256];
                 if (w1_strncmp(rhs, "calc{", 5) == 0) {
                     char m_expr[256]; w1_strncpy(m_expr, rhs + 5, 255); char *m_end = w1_strchr(m_expr, '}');
@@ -285,7 +345,8 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
                         } else { w1_strcpy(val, base); }
                     } else { w1_strcpy(val, base); }
                 } else { eval_expr(ctx, rhs, val, 255); }
-                set_state(ctx, act, val);
+                
+                set_state(ctx, var_name, val);
             }
         }
     }
@@ -692,7 +753,7 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
         const char *text = ctx->texts[i].text;
         int x = ctx->texts[i].x + ox;
         int y = ctx->texts[i].y + oy;
-        int line_h = 20;  // 行間
+        float line_h = ctx->texts[i].size * 1.2f;
         const char *line_start = text;
         const char *p = text;
         while (*p) {
@@ -721,24 +782,48 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     int clicked = 0;
-    for (int i = 0; i < ctx->nodes_count; i++) {
+    // 逆順（手前に描画されたものから）でチェック
+    for (int i = ctx->nodes_count - 1; i >= 0; i--) {
         warp1_node_t *n = &ctx->nodes[i];
         if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
             clicked = 1;
             if (w1_strcmp(n->tag, "switch") == 0) {
-                char out_var[128];
-                eval_attr(ctx, n, "output", out_var, 127);
+                const char *out_var_raw = get_attr1(n, "output");
+                char out_var[128]; 
+                // 括弧 "(...)" がある場合は中身を抽出
+                if (out_var_raw[0] == '(') {
+                    w1_strncpy(out_var, out_var_raw + 1, 127);
+                    char *end = w1_strchr(out_var, ')');
+                    if (end) *end = '\0';
+                } else {
+                    w1_strncpy(out_var, out_var_raw, 127);
+                }
+
                 if (out_var[0]) {
                     const char *current = get_state(ctx, out_var);
-                    int on = (w1_strstr(current, "true") != NULL);
-                    set_state(ctx, out_var, on ? "false" : "true");
+                    // "Disabled"が含まれる場合はクリックさせない
+                    if (w1_strstr(current, "Disabled") == NULL) {
+                        int on = (w1_strstr(current, "true") != NULL);
+                        set_state(ctx, out_var, on ? "false" : "true");
+                        if (n->event_oneclick[0]) {
+                            execute_action1(ctx, n->event_oneclick);
+                        }
+                    }
                 }
                 add_system_log("Clicked: switch");
                 break;
             }
             if (w1_strcmp(n->tag, "slider") == 0) {
+                const char *out_var_raw = get_attr1(n, "output");
                 char out_var[128];
-                eval_attr(ctx, n, "output", out_var, 127);
+                if (out_var_raw[0] == '(') {
+                    w1_strncpy(out_var, out_var_raw + 1, 127);
+                    char *end = w1_strchr(out_var, ')');
+                    if (end) *end = '\0';
+                } else {
+                    w1_strncpy(out_var, out_var_raw, 127);
+                }
+
                 if (out_var[0]) {
                     int val = (x - n->x) * 100 / n->w;
                     if (val < 0) val = 0;

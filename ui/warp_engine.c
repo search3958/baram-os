@@ -1457,12 +1457,27 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
   if (x >= node->x && x <= node->x + node->w && y >= node->y &&
       y <= node->y + node->h) {
     if (warp_strcmp(node->tag, "switch") == 0) {
+      const char *out_var_raw = get_attr(node, "output");
       char out_var[128];
-      eval_attr(ctx, node, "output", out_var, 127);
+      // 括弧 "(...)" がある場合は中身を抽出
+      if (out_var_raw[0] == '(') {
+        warp_strncpy(out_var, out_var_raw + 1, 127);
+        char *end = warp_strchr(out_var, ')');
+        if (end) *end = '\0';
+      } else {
+        warp_strncpy(out_var, out_var_raw, 127);
+      }
+
       if (out_var[0]) {
         const char *current = get_state(ctx, out_var);
-        int on = (warp_strstr(current, "true") != NULL);
-        set_state(ctx, out_var, on ? "false" : "true");
+        // "Disabled"が含まれる場合はクリックさせない
+        if (warp_strstr(current, "Disabled") == NULL) {
+          int on = (warp_strstr(current, "true") != NULL);
+          set_state(ctx, out_var, on ? "false" : "true");
+          if (node->event_oneclick[0] != '\0') {
+            execute_action(ctx, node->event_oneclick);
+          }
+        }
       }
       add_system_log(ctx, "Clicked: switch");
       return 1;

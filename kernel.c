@@ -230,8 +230,9 @@ static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 #define HUD_W 320
-#define HUD_H 64
-static uint32_t hud_buf[HUD_W * HUD_H];
+#define HUD_H_MAX 240
+static uint32_t hud_buf[HUD_W * HUD_H_MAX];
+static int g_hud_current_h = 64;
 // 文字レイヤー (全画面 透過)
 #define TEXT_LAYER_W SCREEN_WIDTH
 #define TEXT_LAYER_H SCREEN_HEIGHT
@@ -1499,7 +1500,6 @@ static void redraw_warp_svg(layer_t *layer) {
             else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
             int text_w = strlen(act_text) * 9;
             int btn_w = text_w + 24;
-            int btn_h = 26;
             ax -= btn_w;
             ax -= 10;
         }
@@ -1941,96 +1941,82 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
                        unsigned int mem_used_kb, unsigned int mem_total_kb) {
   layer_fill(hud, 0xFF000000);
 
-  char line1[64], line2[64], line3[64], line4[64], line5[64];
+  char line1[64], line2[64], line3[64], line4[64];
 
-  // 1行目: "BaramOS Build <AutoNumber>"
+  // 1行目: Build Info
   char *p = line1;
   const char *title = "BaramOS Build ";
-  while (*title)
-    *p++ = *title++;
+  while (*title) *p++ = *title++;
   p = append_uint(p, BUILD_NUMBER);
   *p = '\0';
 
-  // 2行目: "CPU: xx% MEM: xx/xxKB"
+  // 2行目: CPU/MEM
   p = line2;
-  *p++ = 'C';
-  *p++ = 'P';
-  *p++ = 'U';
-  *p++ = ':';
-  *p++ = ' ';
+  *p++ = 'C'; *p++ = 'P'; *p++ = 'U'; *p++ = ':'; *p++ = ' ';
   p = append_uint(p, cpu_percent);
-  *p++ = '%';
-  *p++ = ' ';
-  *p++ = 'M';
-  *p++ = 'E';
-  *p++ = 'M';
-  *p++ = ':';
-  *p++ = ' ';
+  *p++ = '%'; *p++ = ' '; *p++ = 'M'; *p++ = 'E'; *p++ = 'M'; *p++ = ':'; *p++ = ' ';
   p = append_uint(p, mem_used_kb);
-  *p++ = '/';
-  p = append_uint(p, mem_total_kb);
-  *p++ = 'K';
-  *p++ = 'B';
-  *p = '\0';
+  *p++ = '/'; p = append_uint(p, mem_total_kb);
+  *p++ = 'K'; *p++ = 'B'; *p = '\0';
 
-  // 3行目: "M:<MODE> SVG:<SVG> Mod:<OK>(<CNT>) F:<FLAGS>"
+  // 3行目: Engine Status
   p = line3;
-  *p++ = 'M';
-  *p++ = ':';
+  *p++ = 'M'; *p++ = ':';
   const char *m_name = (current_os_mode == OS_MODE_CLASSIC) ? "CLS" : "WDP";
-  while (*m_name)
-    *p++ = *m_name++;
-  *p++ = ' ';
-  *p++ = 'S';
-  *p++ = ':';
+  while (*m_name) *p++ = *m_name++;
+  *p++ = ' '; *p++ = 'S'; *p++ = ':';
   const char *s_status = g_last_svg_parse_status;
-  while (*s_status)
-    *p++ = *s_status++;
-  *p++ = ' ';
-  *p++ = 'M';
-  *p++ = ':';
-  if (g_warp_mod_found) {
-    *p++ = 'O';
-    *p++ = 'K';
-  } else {
-    *p++ = 'N';
-    *p++ = 'G';
-  }
-  *p++ = '(';
-  p = append_uint(p, g_mod_count);
-  *p++ = ')';
-  *p++ = ' ';
-  *p++ = 'F';
-  *p++ = ':';
-  // Flagsを16進数っぽく表示 (簡易)
-  p = append_uint(p, g_mbi_flags);
+  while (*s_status) *p++ = *s_status++;
   *p = '\0';
 
-  // 4行目: "Status: <g_hud_status>"
+  // 4行目: Status
   p = line4;
   const char *w_label = "Status: ";
-  while (*w_label)
-    *p++ = *w_label++;
+  while (*w_label) *p++ = *w_label++;
   const char *w_status = g_hud_status;
   while (*w_status)
     *p++ = *w_status++;
   *p = '\0';
 
-  // 5行目: "Input: <keybuf_str>"
-  p = line5;
-  const char *k_label = "Input: ";
-  while (*k_label)
-    *p++ = *k_label++;
-  const char *k_str = keybuf_str;
-  while (*k_str)
-    *p++ = *k_str++;
-  *p = '\0';
+  // 5行目以降: System Log (Warp)
+  const char *sys_log = get_w1_global("--warpSystemLog");
+  char log_lines[20][64];
+  for(int i=0; i<20; i++) log_lines[i][0] = '\0';
+  
+  int log_count = 0;
+  if (sys_log && sys_log[0]) {
+    const char *ls = sys_log;
+    while (*ls && log_count < 20) {
+      char *ld = log_lines[log_count];
+      int count = 0;
+      while (*ls && *ls != '\n' && count < 63) {
+        *ld++ = *ls++;
+        count++;
+      }
+      *ld = '\0';
+      if (*ls == '\n') ls++;
+      log_count++;
+    }
+  }
+
+  // 高さの計算 (基本4行(32px) + ログ行数 * 8px + 余白)
+  int new_h = 32 + log_count * 8 + 8;
+  if (new_h > HUD_H_MAX) new_h = HUD_H_MAX;
+  if (new_h < 64) new_h = 64;
+  
+  // HUDの位置を調整（下から上に伸びる）
+  hud->height = new_h;
+  hud->y = SCREEN_HEIGHT - (new_h + 10);
+  g_hud_current_h = new_h;
 
   layer_draw_string(hud, 2, 0, line1, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 16, line3, 0xFF00FF00, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 24, line4, 0xFFFFFF00, TRANSPARENT_COLOR);
-  layer_draw_string(hud, 2, 32, line5, 0xFF00FFFF, TRANSPARENT_COLOR);
+  
+  for (int i = 0; i < log_count; i++) {
+    layer_draw_string(hud, 2, 32 + i * 8, log_lines[i], 0xFF00FFFF, TRANSPARENT_COLOR);
+  }
 }
 
 // フォント初期化 (Multibootモジュールから)
@@ -2569,9 +2555,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   layer_t hud_layer;
   hud_layer.buffer = hud_buf;
   hud_layer.x = 10;
-  hud_layer.y = SCREEN_HEIGHT - (HUD_H + 10);
+  hud_layer.y = SCREEN_HEIGHT - (g_hud_current_h + 10);
   hud_layer.width = HUD_W;
-  hud_layer.height = HUD_H;
+  hud_layer.height = g_hud_current_h;
   hud_layer.transparent = 0;
   hud_layer.active = 1;
   hud_layer.dynamic = 1;
