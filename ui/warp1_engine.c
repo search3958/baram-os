@@ -71,6 +71,9 @@ static int w1_strcasecmp(const char *s1, const char *s2) { while (*s1 && (w1_tol
 static struct { char key[64]; char val[512]; } g_w1_globals[MAX_VARS];
 static int g_w1_global_count = 0;
 
+static void set_w1_global(const char *key, const char *val);
+static const char *get_w1_global(const char *key);
+
 static void set_w1_global(const char *key, const char *val) {
     for (int i = 0; i < g_w1_global_count; i++) {
         if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) { w1_strncpy(g_w1_globals[i].val, val, 511); return; }
@@ -79,6 +82,25 @@ static void set_w1_global(const char *key, const char *val) {
         w1_strncpy(g_w1_globals[g_w1_global_count].key, key, 63);
         w1_strncpy(g_w1_globals[g_w1_global_count].val, val, 511); g_w1_global_count++;
     }
+}
+
+static void add_system_log(const char *msg) {
+    // 既存のログを取得
+    const char *old_log = get_w1_global("--warpSystemLog");
+    char new_log[512] = "";
+    // 新規ログを前に追加（最大 5 行）
+    w1_strncpy(new_log, msg, 511);
+    w1_strcat(new_log, "\n");
+    if (old_log && old_log[0]) {
+        int lines = 0;
+        const char *p = old_log;
+        while (*p && lines < 4) {
+            if (*p == '\n') lines++;
+            p++;
+        }
+        w1_strncat(new_log, old_log, 511 - w1_strlen(new_log));
+    }
+    set_w1_global("--warpSystemLog", new_log);
 }
 
 static const char *get_w1_global(const char *key) {
@@ -101,6 +123,7 @@ static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
 
 static const char *get_state(warp1_context_t *ctx, const char *key) {
     if (w1_strncmp(key, "~~", 2) == 0) return get_w1_global(key);
+    if (w1_strncmp(key, "--", 2) == 0) return get_w1_global(key);  // --変数もグローバルから取得
     if (w1_strcasecmp(key, "_currentScreen") == 0) return ctx->current_screen;
     for (int i = 0; i < ctx->state_count; i++) { if (w1_strcasecmp(ctx->state[i].key, key) == 0) return ctx->state[i].val; }
     return "";
@@ -196,6 +219,7 @@ static void execute_script1(warp1_context_t *ctx, const char *name) {
 
 static void execute_action1(warp1_context_t *ctx, const char *action_str) {
     if (!action_str || !action_str[0]) return;
+    add_system_log("Action executed");
     char buf[1024]; w1_strncpy(buf, action_str, 1023); buf[1023] = '\0'; char *p = buf;
     while (*p) {
         char *start = p; int paren = 0, brace = 0, in_q = 0;
@@ -431,6 +455,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         // スイッチの標準サイズを定義（44x44）
         node->w = 44;
         node->h = 44;
+        return node->h;
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーは横幅一杯、高さは操作しやすい32px程度を確保
         node->w = limit_w; 
@@ -552,8 +577,11 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの描画 - 角丸なし四角形（radius=0）
-        char val[128];
-        eval_attr(ctx, node, "status", val, 127);
+        char out_var[128];
+        eval_attr(ctx, node, "output", out_var, 127);
+        
+        // output 変数の状態を取得（status がなくても動作）
+        const char *val = get_state(ctx, out_var);
         int on = (w1_strstr(val, "true") != NULL);
 
         // 背景（角丸なし四角形）- 44x44
@@ -604,8 +632,8 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         }
     }
  
-    // dev clickCheckのヒットボックス表示
-    if (w1_strcmp(get_state(ctx, "dev clickCheck"), "true") == 0) {
+    // devClickCheckのヒットボックス表示
+    if (w1_strcmp(get_state(ctx, "devClickCheck"), "true") == 0) {
         int has_hitbox = (node->event_oneclick[0] != '\0' || 
                           w1_strcmp(node->tag, "button") == 0 ||
                           w1_strcmp(node->tag, "tonalButton") == 0 ||
@@ -625,6 +653,8 @@ warp1_context_t* warp1_context_create(const char* code) {
     warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
     for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
     ctx->screen_count = 0;
+    // システムログを初期化
+    set_w1_global("--warpSystemLog", "System started");
     ctx->src_ptr = code; while(1) {
         token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
         ctx->tokens[ctx->token_count++] = tk;
@@ -681,16 +711,19 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 
 
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
+    int clicked = 0;
     for (int i = 0; i < ctx->nodes_count; i++) {
         warp1_node_t *n = &ctx->nodes[i];
         if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
+            clicked = 1;
             if (w1_strcmp(n->tag, "switch") == 0) {
-                char out_var[128], status[128];
+                char out_var[128];
                 eval_attr(ctx, n, "output", out_var, 127);
-                eval_attr(ctx, n, "status", status, 127);
                 if (out_var[0]) {
-                    int on = (w1_strstr(status, "true") != NULL);
+                    const char *current = get_state(ctx, out_var);
+                    int on = (w1_strstr(current, "true") != NULL);
                     set_state(ctx, out_var, on ? "false" : "true");
+                    add_system_log("Switch clicked");
                 }
                 break;
             }
@@ -705,15 +738,20 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                     extern char *append_int(char *p, int v);
                     append_int(val_str, val);
                     set_state(ctx, out_var, val_str);
+                    add_system_log("Slider moved");
                 }
                 break;
             }
-            if (w1_strcmp(n->tag, "input") == 0) { break; }
+            if (w1_strcmp(n->tag, "input") == 0) { add_system_log("Input clicked"); break; }
             if (n->event_oneclick[0]) {
                 execute_action1(ctx, n->event_oneclick);
+                add_system_log("Button clicked");
                 break;
             }
         }
+    }
+    if (!clicked) {
+        add_system_log("Background clicked");
     }
     warp1_context_update(ctx, ctx->win_w, ctx->win_h);
 }
@@ -752,7 +790,7 @@ void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
 }
 
 int warp1_context_is_dev_event_check(warp1_context_t* ctx) {
-    return w1_strcmp(get_state(ctx, "dev clickCheck"), "true") == 0;
+    return w1_strcmp(get_state(ctx, "devClickCheck"), "true") == 0;
 }
 
 // Screen-based scroll management

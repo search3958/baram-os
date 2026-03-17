@@ -319,6 +319,29 @@ struct warp_context {
   int screen_count;
 };
 
+// 前方宣言
+static void set_state(warp_context_t *ctx, const char *key, const char *val);
+static const char *get_state(warp_context_t *ctx, const char *key);
+
+static void add_system_log(warp_context_t *ctx, const char *msg) {
+  // 既存のログを取得
+  const char *old_log = get_state(ctx, "--warpSystemLog");
+  char new_log[512] = "";
+  // 新規ログを前に追加（最大 5 行）
+  warp_strncpy(new_log, msg, 511);
+  warp_strcat(new_log, "\n");
+  if (old_log && old_log[0]) {
+    int lines = 0;
+    const char *p = old_log;
+    while (*p && lines < 4) {
+      if (*p == '\n') lines++;
+      p++;
+    }
+    warp_strncat(new_log, old_log, 511 - warp_strlen(new_log));
+  }
+  set_state(ctx, "--warpSystemLog", new_log);
+}
+
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
   if (warp_strcasecmp(key, "_currentScreen") == 0) {
     warp_strncpy(ctx->current_screen, val, 63);
@@ -1025,8 +1048,11 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
       emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, fill, "");
   } else if (warp_strcmp(node->tag, "switch") == 0) {
     // スイッチの描画 - 角丸なし四角形（radius=0）- 44x44
-    char val[128];
-    eval_attr(ctx, node, "status", val, 127);
+    char out_var[128];
+    eval_attr(ctx, node, "output", out_var, 127);
+    
+    // output 変数の状態を取得（status がなくても動作）
+    const char *val = get_state(ctx, out_var);
     int on = (warp_strstr(val, "true") != NULL);
 
     // 背景（角丸なし四角形）
@@ -1069,8 +1095,8 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
   // Header background and content are now NOT handled here.
   // System title bar handles it.
 
-  // Draw hitboxes if dev eventCheck=true
-  if (warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0) {
+  // Draw hitboxes if devEventCheck=true
+  if (warp_strcmp(get_state(ctx, "devEventCheck"), "true") == 0) {
     int has_hitbox = (node->event_oneclick[0] != '\0' ||
                       node->event_longpress[0] != '\0' ||
                       warp_strcmp(node->tag, "button") == 0 ||
@@ -1405,39 +1431,49 @@ static void execute_action(warp_context_t *ctx, const char *action_str) {
   }
 }
 
-static void check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
+static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
   if (!node)
-    return;
+    return 0;
   const char *id = get_attr(node, "id");
   if (!get_visibility(ctx, id))
-    return;
-  for (int i = node->children_count - 1; i >= 0; i--)
-    check_clicks(ctx, node->children[i], x, y);
+    return 0;
+  // 子ノードからチェック（逆順）
+  for (int i = node->children_count - 1; i >= 0; i--) {
+    if (check_clicks(ctx, node->children[i], x, y))
+      return 1;
+  }
+  // dynamic nodes
   if (id[0] != '\0') {
     for (int i = 0; i < ctx->dynamic_nodes_count; i++) {
       if (warp_strcmp(ctx->dynamic_nodes[i].target_id, id) == 0) {
-        for (int j = ctx->dynamic_nodes[i].node_count - 1; j >= 0; j--)
-          check_clicks(ctx, ctx->dynamic_nodes[i].nodes[j], x, y);
+        for (int j = ctx->dynamic_nodes[i].node_count - 1; j >= 0; j--) {
+          if (check_clicks(ctx, ctx->dynamic_nodes[i].nodes[j], x, y))
+            return 1;
+        }
       }
     }
   }
+  // このノードのヒット判定
   if (x >= node->x && x <= node->x + node->w && y >= node->y &&
       y <= node->y + node->h) {
     if (warp_strcmp(node->tag, "switch") == 0) {
-      char out_var[128], status[128];
+      char out_var[128];
       eval_attr(ctx, node, "output", out_var, 127);
-      eval_attr(ctx, node, "status", status, 127);
       if (out_var[0]) {
-        int on = (warp_strstr(status, "true") != NULL);
+        const char *current = get_state(ctx, out_var);
+        int on = (warp_strstr(current, "true") != NULL);
         set_state(ctx, out_var, on ? "false" : "true");
-        return;
+        add_system_log(ctx, "Switch clicked");
+        return 1;
       }
     }
     if (node->event_oneclick[0] != '\0') {
       execute_action(ctx, node->event_oneclick);
-      return;
+      add_system_log(ctx, "Button clicked");
+      return 1;
     }
   }
+  return 0;
 }
 
 warp_context_t* warp_context_create(const char* code) {
@@ -1448,6 +1484,8 @@ warp_context_t* warp_context_create(const char* code) {
   warp_strcpy(ctx->current_screen, "main");
   warp_strcpy(ctx->engine_status, "Idle");
   ctx->screen_count = 0;
+  // システムログを初期化
+  set_state(ctx, "--warpSystemLog", "System started");
 
   if (!code || !code[0]) {
     warp_strncpy(ctx->engine_status, "Err: No Code", 127);
@@ -1563,6 +1601,7 @@ void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int
 }
 
 void warp_context_click(warp_context_t* ctx, int x, int y) {
+  int clicked = 0;
   for (int i = 0; i < ctx->root_nodes_count; i++) {
     warp_node_t *node = ctx->root_nodes[i];
     if (warp_strcmp(node->tag, "screen") == 0) {
@@ -1570,7 +1609,13 @@ void warp_context_click(warp_context_t* ctx, int x, int y) {
       if (warp_strcmp(id, ctx->current_screen) != 0)
         continue;
     }
-    check_clicks(ctx, node, x, y);
+    if (check_clicks(ctx, node, x, y)) {
+      clicked = 1;
+      break;
+    }
+  }
+  if (!clicked) {
+    add_system_log(ctx, "Background clicked");
   }
   warp_context_update(ctx, 1280, 720);
 }
@@ -1682,7 +1727,7 @@ void warp_context_click_header_action(warp_context_t* ctx, int action_index) {
 }
 
 int warp_context_is_dev_event_check(warp_context_t* ctx) {
-  return warp_strcmp(get_state(ctx, "dev eventCheck"), "true") == 0;
+  return warp_strcmp(get_state(ctx, "devEventCheck"), "true") == 0;
 }
 
 // Screen-based scroll management
