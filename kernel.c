@@ -1120,13 +1120,18 @@ typedef struct {
   int is_calculating;    // Calculation state after resize
   float scroll_x, scroll_y;
   float target_scroll_x, target_scroll_y;
-  
+
   // Caching for performance
   uint8_t *shadow_cache;   // Alpha mask for the shadow
   int shadow_cache_w, shadow_cache_h;
   uint32_t *frame_cache;   // Title bar + rounded corners frame
   int frame_cache_w, frame_cache_h;
   uint8_t *window_mask;    // Alpha mask for the entire window shape (squircle)
+  
+  // SVG caching for performance
+  char *last_svg_str;      // Cached SVG string to detect changes
+  uint32_t *raster_cache;  // Rasterized SVG cache
+  int raster_cache_w, raster_cache_h;
 } window_t;
 
 #define MAX_WINDOWS 8
@@ -1233,71 +1238,112 @@ static void window_update_caches(window_t *win) {
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
-  strncpy(g_hud_status, "EngineUpdate", 63);
+  // Check if update is needed (engine_dirty flag)
+  int needs_update = 0;
   if (win->is_warp1) {
-    warp1_context_update(win->warp1_ctx, win->w, win->h);
+    needs_update = warp1_context_is_dirty(win->warp1_ctx);
   } else {
-    warp_context_update(win->warp_ctx, win->w, win->h);
+    needs_update = warp_context_is_dirty(win->warp_ctx);
+  }
+  
+  if (needs_update) {
+    strncpy(g_hud_status, "EngineUpdate", 63);
+    if (win->is_warp1) {
+      warp1_context_update(win->warp1_ctx, win->w, win->h);
+      warp1_context_clear_dirty(win->warp1_ctx);
+    } else {
+      warp_context_update(win->warp_ctx, win->w, win->h);
+      warp_context_clear_dirty(win->warp_ctx);
+    }
+  } else {
+    strncpy(g_hud_status, "Cached", 63);
   }
 
   strncpy(g_hud_status, "SVGGen", 63);
   const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
-  
-  strncpy(g_hud_status, "NSVGParse", 63);
-  NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
-  if (!img) {
-    strncpy(g_hud_status, "ParseErr", 63);
-    return;
+
+  // Check if SVG string changed
+  int svg_changed = 1;
+  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0) {
+    svg_changed = 0;
   }
 
-  // Content height is determined by the SVG itself
-  int content_h = (int)img->height;
-  if (content_h < win->h) content_h = win->h;
+  if (svg_changed) {
+    strncpy(g_hud_status, "NSVGParse", 63);
+    NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
+    if (!img) {
+      strncpy(g_hud_status, "ParseErr", 63);
+      return;
+    }
 
-  // Re-allocate buffer if width changed or height grew
-  if (!win->rgba_buffer || win->buffer_w != win->w || win->buffer_h != content_h) {
-    strncpy(g_hud_status, "Alloc", 63);
-    if (win->rgba_buffer) free(win->rgba_buffer);
-    win->rgba_buffer = (unsigned char *)malloc((size_t)win->w * (size_t)content_h * 4);
-    win->buffer_w = win->w;
-    win->buffer_h = content_h;
-  }
-  
-  if (win->rgba_buffer) {
-    strncpy(g_hud_status, "ClearBG", 63);
-    const uint32_t bg = 0xFFFFFFFF;
-    for (int i = 0; i < win->w * win->buffer_h; i++) ((uint32_t*)win->rgba_buffer)[i] = bg;
-    
-    strncpy(g_hud_status, "NSVGRast", 63);
-    if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-    nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, win->rgba_buffer, win->w, win->buffer_h, win->w * 4);
-    
-    strncpy(g_hud_status, "RBSwap", 63);
-    // R/B Swap to system native
-    unsigned char *p = win->rgba_buffer;
-    for (int i = 0; i < win->w * win->buffer_h; i++) {
-      unsigned char r = p[0], b = p[2];
-      p[0] = b; p[2] = r; p += 4;
+    // Content height is determined by the SVG itself
+    int content_h = (int)img->height;
+    if (content_h < win->h) content_h = win->h;
+
+    // Allocate/Resize SVG raster cache
+    if (!win->raster_cache || win->raster_cache_w != win->w || win->raster_cache_h != content_h) {
+      if (win->raster_cache) free(win->raster_cache);
+      win->raster_cache = (uint32_t *)malloc((size_t)win->w * (size_t)content_h * 4);
+      win->raster_cache_w = win->w;
+      win->raster_cache_h = content_h;
     }
-    
-    strncpy(g_hud_status, "TxtDraw", 63);
-    layer_t temp_layer;
-    temp_layer.buffer = (uint32_t*)win->rgba_buffer;
-    temp_layer.width = win->w;
-    temp_layer.height = win->buffer_h;
-    if (win->is_warp1) {
-      warp1_context_draw_texts(win->warp1_ctx, &temp_layer, 0, 0);
-    } else {
-      warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+
+    // Rasterize SVG into cache
+    if (win->raster_cache) {
+      strncpy(g_hud_status, "ClearCache", 63);
+      for (int i = 0; i < win->w * content_h; i++) win->raster_cache[i] = 0xFFFFFFFF;
+
+      strncpy(g_hud_status, "NSVGRast", 63);
+      if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
+      nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, (unsigned char*)win->raster_cache, win->w, content_h, win->w * 4);
+
+      strncpy(g_hud_status, "RBSwap", 63);
+      unsigned char *p = (unsigned char*)win->raster_cache;
+      for (int i = 0; i < win->w * content_h; i++) {
+        unsigned char r = p[0], b = p[2];
+        p[0] = b; p[2] = r; p += 4;
+      }
+    }
+
+    // Update SVG string cache
+    if (win->last_svg_str) free(win->last_svg_str);
+    size_t svg_len = strlen(svg);
+    win->last_svg_str = (char*)malloc(svg_len + 1);
+    if (win->last_svg_str) memcpy(win->last_svg_str, svg, svg_len + 1);
+
+    nsvgDelete(img);
+  }
+
+  // Prepare RGBA buffer (copy from raster cache and draw text)
+  if (win->raster_cache) {
+    if (!win->rgba_buffer || win->buffer_w != win->raster_cache_w || win->buffer_h != win->raster_cache_h) {
+      if (win->rgba_buffer) free(win->rgba_buffer);
+      win->rgba_buffer = (unsigned char *)malloc((size_t)win->raster_cache_w * (size_t)win->raster_cache_h * 4);
+      win->buffer_w = win->raster_cache_w;
+      win->buffer_h = win->raster_cache_h;
+      win->is_dirty = 1; // Force redraw after allocation
+    }
+
+    // Only composite text if SVG changed or forced redraw
+    if (svg_changed || win->is_dirty) {
+      memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
+
+      strncpy(g_hud_status, "TxtDraw", 63);
+      layer_t temp_layer;
+      temp_layer.buffer = (uint32_t*)win->rgba_buffer;
+      temp_layer.width = win->buffer_w;
+      temp_layer.height = win->buffer_h;
+      if (win->is_warp1) {
+        warp1_context_draw_texts(win->warp1_ctx, &temp_layer, 0, 0);
+      } else {
+        warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+      }
     }
   }
-  nsvgDelete(img);
+
   win->is_dirty = 0;
-  win->is_calculating = 0; // Layout/Calculation is done, allow fade back
-  
+  win->is_calculating = 0;
   strncpy(g_hud_status, "Idle", 63);
-  // Update caches after redraw
-  window_update_caches(win);
 }
 
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
@@ -1316,6 +1362,10 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
     win->warp1_ctx = NULL;
   }
   win->rgba_buffer = NULL;
+  win->last_svg_str = NULL;
+  win->raster_cache = NULL;
+  win->raster_cache_w = 0;
+  win->raster_cache_h = 0;
   win->shadow_cache = NULL;
   win->frame_cache = NULL;
   win->window_mask = NULL;
@@ -1337,6 +1387,8 @@ static void close_active_window() {
   if (win->warp_ctx) warp_context_destroy(win->warp_ctx);
   if (win->warp1_ctx) warp1_context_destroy(win->warp1_ctx);
   if (win->rgba_buffer) free(win->rgba_buffer);
+  if (win->last_svg_str) free(win->last_svg_str);
+  if (win->raster_cache) free(win->raster_cache);
   if (win->shadow_cache) free(win->shadow_cache);
   if (win->frame_cache) free(win->frame_cache);
   if (win->window_mask) free(win->window_mask);

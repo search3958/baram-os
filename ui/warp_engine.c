@@ -168,6 +168,14 @@ char *append_int(char *p, int v) {
   return append_uint(p, uv);
 }
 
+char *append_hex8(char *p, uint8_t v) {
+  const char *hex = "0123456789ABCDEF";
+  *p++ = hex[(v >> 4) & 0xF];
+  *p++ = hex[v & 0xF];
+  *p = '\0';
+  return p;
+}
+
 char *warp_stpcpy(char *dest, const char *src) {
   while ((*dest = *src)) {
     dest++;
@@ -323,24 +331,6 @@ struct warp_context {
 static void set_state(warp_context_t *ctx, const char *key, const char *val);
 static const char *get_state(warp_context_t *ctx, const char *key);
 
-static void add_system_log(warp_context_t *ctx, const char *msg) {
-  // 既存のログを取得
-  const char *old_log = get_state(ctx, "--warpSystemLog");
-  char new_log[512] = "";
-  // 新規ログを前に追加（最大 5 行）
-  warp_strncpy(new_log, msg, 511);
-  warp_strcat(new_log, "\n");
-  if (old_log && old_log[0]) {
-    int lines = 0;
-    const char *p = old_log;
-    while (*p && lines < 4) {
-      if (*p == '\n') lines++;
-      p++;
-    }
-    warp_strncat(new_log, old_log, 511 - warp_strlen(new_log));
-  }
-  set_state(ctx, "--warpSystemLog", new_log);
-}
 
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
   if (warp_strcasecmp(key, "_currentScreen") == 0) {
@@ -1479,35 +1469,28 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
           }
         }
       }
-      add_system_log(ctx, "Clicked: switch");
       return 1;
     }
     if (warp_strcmp(node->tag, "slider") == 0) {
-      add_system_log(ctx, "Clicked: slider");
       return 1;
     }
     if (warp_strcmp(node->tag, "input") == 0) {
-      add_system_log(ctx, "Clicked: input");
       return 1;
     }
     if (warp_strcmp(node->tag, "card") == 0) {
-      add_system_log(ctx, "Clicked: card");
       return 1;
     }
     if (warp_strcmp(node->tag, "button") == 0 || warp_strcmp(node->tag, "tonalButton") == 0) {
       if (node->event_oneclick[0] != '\0') {
         execute_action(ctx, node->event_oneclick);
       }
-      add_system_log(ctx, "Clicked: button");
       return 1;
     }
     if (warp_strcmp(node->tag, "text") == 0) {
-      add_system_log(ctx, "Clicked: text");
       return 1;
     }
     if (node->event_oneclick[0] != '\0') {
       execute_action(ctx, node->event_oneclick);
-      add_system_log(ctx, "Clicked: element");
       return 1;
     }
   }
@@ -1523,7 +1506,6 @@ warp_context_t* warp_context_create(const char* code) {
   warp_strcpy(ctx->engine_status, "Idle");
   ctx->screen_count = 0;
   // システムログを初期化
-  set_state(ctx, "--warpSystemLog", "System started");
 
   if (!code || !code[0]) {
     warp_strncpy(ctx->engine_status, "Err: No Code", 127);
@@ -1633,32 +1615,7 @@ void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int
   if (!layer)
     return;
   for (int i = 0; i < ctx->texts_count; i++) {
-    const char *text = ctx->texts[i].text;
-    int x = ctx->texts[i].x + off_x;
-    int y = ctx->texts[i].y + off_y;
-    int line_h = 20;  // 行間
-    const char *line_start = text;
-    const char *p = text;
-    while (*p) {
-      if (*p == '\n') {
-        // 行を出力
-        char line_buf[512];
-        int len = p - line_start;
-        if (len > 511) len = 511;
-        warp_strncpy(line_buf, line_start, len);
-        line_buf[len] = '\0';
-        layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
-        y += line_h;
-        line_start = p + 1;
-      }
-      p++;
-    }
-    // 最後の行
-    if (*line_start) {
-      char line_buf[512];
-      warp_strncpy(line_buf, line_start, 511);
-      layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
-    }
+    layer_draw_ttf(layer, ctx->texts[i].x + off_x, ctx->texts[i].y + off_y, ctx->texts[i].text, ctx->texts[i].size, ctx->texts[i].color);
   }
 }
 
@@ -1677,9 +1634,8 @@ void warp_context_click(warp_context_t* ctx, int x, int y) {
     }
   }
   if (!clicked) {
-    add_system_log(ctx, "Background clicked");
   }
-  warp_context_update(ctx, 1280, 720);
+  ctx->engine_dirty = 1;
 }
 
 int warp_context_is_dirty(warp_context_t* ctx) {

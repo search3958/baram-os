@@ -86,37 +86,6 @@ static void set_w1_global(const char *key, const char *val) {
     }
 }
 
-static void add_system_log(const char *msg) {
-    // 既存のログを取得
-    const char *old_log = get_w1_global("--warpSystemLog");
-    char new_log[1024] = "";
-    
-    if (old_log && old_log[0]) {
-        w1_strncpy(new_log, old_log, 1023);
-        // 末尾が改行でないなら改行を追加
-        int len = w1_strlen(new_log);
-        if (len > 0 && new_log[len-1] != '\n') {
-            w1_strcat(new_log, "\n");
-        }
-        w1_strcat(new_log, msg);
-    } else {
-        w1_strncpy(new_log, msg, 1023);
-    }
-    
-    // 最大行数制限（例：20行まで）
-    int lines = 0;
-    for (int i = 0; new_log[i]; i++) if (new_log[i] == '\n') lines++;
-    if (lines >= 20) {
-        char *first_nl = w1_strchr(new_log, '\n');
-        if (first_nl) {
-            char tmp[1024];
-            w1_strcpy(tmp, first_nl + 1);
-            w1_strcpy(new_log, tmp);
-        }
-    }
-
-    set_w1_global("--warpSystemLog", new_log);
-}
 
 const char *get_w1_global(const char *key) {
     for (int i = 0; i < g_w1_global_count; i++) { if (w1_strcasecmp(g_w1_globals[i].key, key) == 0) return g_w1_globals[i].val; }
@@ -268,7 +237,6 @@ static void execute_script1(warp1_context_t *ctx, const char *name) {
 
 static void execute_action1(warp1_context_t *ctx, const char *action_str) {
     if (!action_str || !action_str[0]) return;
-    add_system_log("Action executed");
     char buf[1024]; w1_strncpy(buf, action_str, 1023); buf[1023] = '\0'; char *p = buf;
     while (*p) {
         char *start = p; int paren = 0, brace = 0, in_q = 0;
@@ -286,7 +254,6 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
         char *act = act_buf; while (*act == ' ' || *act == '\t') act++;
 
         if (w1_strncmp(act, "reset{", 6) == 0) { extern void sys_restart(void); sys_restart(); }
-        else if (w1_strncmp(act, "clear{", 6) == 0) { set_w1_global("--warpSystemLog", ""); }
         else if (w1_strncmp(act, "setScreen{", 10) == 0) {
             char scr[64]; w1_strncpy(scr, act + 10, 63); char *end = w1_strchr(scr, '}');
             if (end) { *end = '\0'; }
@@ -556,14 +523,37 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         // ボックス内でのテキスト描画位置を調整（中央付近に）
         if (ctx->texts_count < MAX_TEXTS) {
             ctx->texts[ctx->texts_count].x = node->x + 12; 
-            // y軸のオフセットを調整してテキストがボックス内に収まるように
             ctx->texts[ctx->texts_count].y = node->y + 16; 
             
             if (val[0]) { 
                 w1_strcpy(ctx->texts[ctx->texts_count].text, val); 
+                // フォーカス中かつ点滅タイミングならカーソルを追加
+                int is_focused = 0;
+                for (int j = 0; j < ctx->nodes_count; j++) {
+                    if (&ctx->nodes[j] == node && ctx->focused_node_idx == j) { is_focused = 1; break; }
+                }
+                if (is_focused) {
+                    const char *ticks_s = get_w1_global("--warpTicks");
+                    long ticks = w1_strtol(ticks_s);
+                    if ((ticks / 30) % 2 == 0) {
+                        w1_strcat(ctx->texts[ctx->texts_count].text, "|");
+                    }
+                }
                 ctx->texts[ctx->texts_count].color = 0xFF333333; 
             } else { 
                 w1_strcpy(ctx->texts[ctx->texts_count].text, placeholder); 
+                // フォーカス中なら空でもカーソルを表示
+                int is_focused = 0;
+                for (int j = 0; j < ctx->nodes_count; j++) {
+                    if (&ctx->nodes[j] == node && ctx->focused_node_idx == j) { is_focused = 1; break; }
+                }
+                if (is_focused) {
+                    const char *ticks_s = get_w1_global("--warpTicks");
+                    long ticks = w1_strtol(ticks_s);
+                    if ((ticks / 30) % 2 == 0) {
+                        w1_strcpy(ctx->texts[ctx->texts_count].text, "|");
+                    }
+                }
                 ctx->texts[ctx->texts_count].color = 0xFF888888; 
             }
             ctx->texts[ctx->texts_count].size = 16; 
@@ -734,7 +724,6 @@ warp1_context_t* warp1_context_create(const char* code) {
     ctx->focused_node_idx = -1;
     ctx->screen_count = 0;
     // システムログを初期化
-    set_w1_global("--warpSystemLog", "System started");
     ctx->src_ptr = code; while(1) {
         token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
         ctx->tokens[ctx->token_count++] = tk;
@@ -785,32 +774,7 @@ const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy) {
     extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
     for (int i = 0; i < ctx->texts_count; i++) {
-        const char *text = ctx->texts[i].text;
-        int x = ctx->texts[i].x + ox;
-        int y = ctx->texts[i].y + oy;
-        float line_h = ctx->texts[i].size * 1.2f;
-        const char *line_start = text;
-        const char *p = text;
-        while (*p) {
-            if (*p == '\n') {
-                // 行を出力
-                char line_buf[512];
-                int len = p - line_start;
-                if (len > 511) len = 511;
-                w1_strncpy(line_buf, line_start, len);
-                line_buf[len] = '\0';
-                layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
-                y += line_h;
-                line_start = p + 1;
-            }
-            p++;
-        }
-        // 最後の行
-        if (*line_start) {
-            char line_buf[512];
-            w1_strncpy(line_buf, line_start, 511);
-            layer_draw_ttf(layer, x, y, line_buf, ctx->texts[i].size, ctx->texts[i].color);
-        }
+        layer_draw_ttf(layer, ctx->texts[i].x + ox, ctx->texts[i].y + oy, ctx->texts[i].text, ctx->texts[i].size, ctx->texts[i].color);
     }
 }
 
@@ -824,7 +788,6 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
             clicked = 1;
             
             // フォーカスをリセット。inputをクリックした場合のみ後でセットされる。
-            int old_focus = ctx->focused_node_idx;
             ctx->focused_node_idx = -1;
 
             if (w1_strcmp(n->tag, "switch") == 0) {
@@ -850,7 +813,6 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                         }
                     }
                 }
-                add_system_log("Clicked: switch");
                 break;
             }
             if (w1_strcmp(n->tag, "slider") == 0) {
@@ -873,38 +835,63 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                     append_int(val_str, val);
                     set_state(ctx, out_var, val_str);
                 }
-                add_system_log("Clicked: slider");
                 break;
             }
             if (w1_strcmp(n->tag, "input") == 0) { 
                 ctx->focused_node_idx = i;
-                add_system_log("Clicked: input (focused)"); 
                 break; 
             }
-            if (w1_strcmp(n->tag, "card") == 0) { add_system_log("Clicked: card"); break; }
             if (w1_strcmp(n->tag, "button") == 0 || w1_strcmp(n->tag, "tonalButton") == 0) {
                 if (n->event_oneclick[0]) {
                     execute_action1(ctx, n->event_oneclick);
                 }
-                add_system_log("Clicked: button");
                 break;
             }
-            if (w1_strcmp(n->tag, "text") == 0) { add_system_log("Clicked: text"); break; }
             if (n->event_oneclick[0]) {
                 execute_action1(ctx, n->event_oneclick);
-                add_system_log("Clicked: element");
                 break;
             }
         }
     }
     if (!clicked) {
         ctx->focused_node_idx = -1;
-        add_system_log("Clicked: background");
     }
-    warp1_context_update(ctx, ctx->win_w, ctx->win_h);
+    // 状態変化があった場合のみ更新
+    ctx->engine_dirty = 1;
 }
 
 void warp1_context_key_input(warp1_context_t* ctx, char c) {
+    // デバッグログ: 入力された文字のコードを表示
+    char key_msg[32] = "Key: 0x";
+    extern char *append_hex8(char *p, uint8_t v);
+    append_hex8(key_msg + 7, (uint8_t)c);
+
+    uint8_t uc = (uint8_t)c;
+    // 矢印キー（drivers.h の定義: 0x11〜0x14）によるフォーカス移動
+    if (uc == 0x11 || uc == 0x13) { // UP or LEFT -> 前の input へ
+        int start = (ctx->focused_node_idx <= 0) ? ctx->nodes_count - 1 : ctx->focused_node_idx - 1;
+        for (int i = 0; i < ctx->nodes_count; i++) {
+            int idx = (start - i + ctx->nodes_count) % ctx->nodes_count;
+            if (w1_strcmp(ctx->nodes[idx].tag, "input") == 0) {
+                ctx->focused_node_idx = idx;
+                break;
+            }
+        }
+        ctx->engine_dirty = 1;
+        return;
+    }
+    if (uc == 0x12 || uc == 0x14 || uc == '\t') { // DOWN or RIGHT or TAB -> 次の input へ
+        int start = (ctx->focused_node_idx < 0) ? 0 : ctx->focused_node_idx + 1;
+        for (int i = 0; i < ctx->nodes_count; i++) {
+            int idx = (start + i) % ctx->nodes_count;
+            if (w1_strcmp(ctx->nodes[idx].tag, "input") == 0) {
+                ctx->focused_node_idx = idx;
+                ctx->engine_dirty = 1;
+                return;
+            }
+        }
+    }
+
     if (ctx->focused_node_idx < 0 || ctx->focused_node_idx >= ctx->nodes_count) return;
     warp1_node_t *n = &ctx->nodes[ctx->focused_node_idx];
     if (w1_strcmp(n->tag, "input") != 0) return;
@@ -919,13 +906,19 @@ void warp1_context_key_input(warp1_context_t* ctx, char c) {
         w1_strncpy(out_var, out_var_raw, 127);
     }
     
-    if (!out_var[0]) return;
+    if (!out_var[0]) {
+        return;
+    }
 
     char val[512];
-    w1_strcpy(val, get_state(ctx, out_var));
+    const char *current_val = get_state(ctx, out_var);
+    w1_strcpy(val, current_val);
     int len = w1_strlen(val);
 
-    if (c == 8 || c == 127) { // Backspace
+    char log_tmp[128] = "Input to: ";
+    w1_strcat(log_tmp, out_var);
+
+    if (uc == 8 || uc == 127) { // Backspace
         if (len > 0) {
             val[len - 1] = '\0';
             set_state(ctx, out_var, val);
@@ -938,7 +931,7 @@ void warp1_context_key_input(warp1_context_t* ctx, char c) {
         }
     }
 
-    warp1_context_update(ctx, ctx->win_w, ctx->win_h);
+    ctx->engine_dirty = 1;
 }
 
 
