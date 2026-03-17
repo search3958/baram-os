@@ -94,6 +94,7 @@ do_build_and_run() {
     cp ui/main.warpc output/isodir/boot/
     cp ui/new.warp output/isodir/boot/
     cp ui/terminal.warp output/isodir/boot/
+    cp ui/menubar.warp output/isodir/boot/
 
     if [ -f "bootlogo.svg" ]; then
         cp bootlogo.svg output/isodir/boot/

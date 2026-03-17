@@ -1019,7 +1019,18 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
   
   if (warp_strcmp(node->tag, "screen") == 0) {
     if (warp_strcmp(id, ctx->current_screen) != 0) return;
-    emit_squircle_shape_to(dest, dest_size, 0, 0, node->w, node->h, 0, "#f5f5f5", "");
+    char bg_color[32], bg_opacity[16];
+    eval_attr(ctx, node, "backgroundColor", bg_color, sizeof(bg_color));
+    eval_attr(ctx, node, "backgroundOpacity", bg_opacity, sizeof(bg_opacity));
+    
+    const char *fill = bg_color[0] ? bg_color : "#f5f5f5";
+    char extra[64] = "";
+    if (bg_opacity[0]) {
+      warp_strcpy(extra, "opacity=\"");
+      warp_strcat(extra, bg_opacity);
+      warp_strcat(extra, "\"");
+    }
+    emit_squircle_shape_to(dest, dest_size, 0, 0, node->w, node->h, 0, fill, extra);
   } else if (warp_strcmp(node->tag, "Header") == 0) {
     // Header background and content handled at the end
   } else if (warp_strcmp(node->tag, "card") == 0) {

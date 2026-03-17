@@ -101,8 +101,10 @@ static uint32_t g_mod_count = 0;
 static char g_warp_buffer[32768] = "screen(text:\"Warp module not found\")";
 static char g_warp1_buffer[32768] = "screen{ id:(main), text:(\"Warp1 module not found\") }";
 static char g_terminal_warp_buffer[32768] = "screen{ id:(main), text:(\"Terminal module not found\") }";
+static char g_menubar_warp_buffer[32768] = "screen{ id:(menubar), text:(\"Menubar module not found\") }";
 static int g_warp1_mod_found = 0;
 static int g_terminal_mod_found = 0;
+static int g_menubar_mod_found = 0;
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
 static char g_wallpaper_buffer[131072] = "";
@@ -1058,6 +1060,12 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
         memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
         g_terminal_warp_buffer[size] = '\0';
         g_terminal_mod_found = 1;
+      } else if (strstr(s, "menubar") || strstr(s, "MENUBAR")) {
+        uint32_t size = mods[i].mod_end - mods[i].mod_start;
+        if (size > 32767) size = 32767;
+        memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)mods[i].mod_start, size);
+        g_menubar_warp_buffer[size] = '\0';
+        g_menubar_mod_found = 1;
       } else if (strstr(s, "warp") || strstr(s, "WARP")) {
         // warpc が先に判定されるので、ここに来るのは .warp 拡張子のみ
         uint32_t size = mods[i].mod_end - mods[i].mod_start;
@@ -1088,8 +1096,6 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     strncpy(g_hud_status, "SomeModsMissing", 63);
   }
 
-  // 2. インデックスベースのフォールバック (grub.cfg の定義順)
-  // 0: Font, 1: main.warpc, 2: new.warp, 3: terminal.warp, 4: bootlogo.svg, 5: wallpaper_1.svg
   if (!g_warp_mod_found && mbi->mods_count >= 2) {
     uint32_t size = mods[1].mod_end - mods[1].mod_start;
     if (size > 32767) size = 32767;
@@ -1146,6 +1152,8 @@ typedef struct {
   int is_calculating;    // Calculation state after resize
   float scroll_x, scroll_y;
   float target_scroll_x, target_scroll_y;
+  int no_decoration;
+  int is_menubar;
 
   // Caching for performance
   uint8_t *shadow_cache;   // Alpha mask for the shadow
@@ -1213,8 +1221,8 @@ static void handle_terminal_command(const char *cmd) {
 }
 
 static void window_update_caches(window_t *win) {
-  int title_h = 40;
-  int shadow_size = 48;
+  int title_h = win->no_decoration ? 0 : 40;
+  int shadow_size = win->no_decoration ? 0 : 48;
   float win_r = 30.0f; // Adjusted for Squircle shadow approximation
   
   // 1. Update Shadow Cache (Alpha only) - Optimized with symmetry
@@ -1311,9 +1319,9 @@ static void window_redraw(window_t *win) {
   // Check if update is needed (engine_dirty flag)
   int needs_update = 0;
   if (win->is_warp1) {
-    needs_update = warp1_context_is_dirty(win->warp1_ctx);
+    needs_update = warp1_context_is_dirty(win->warp1_ctx) || (win->rgba_buffer == NULL);
   } else {
-    needs_update = warp_context_is_dirty(win->warp_ctx);
+    needs_update = warp_context_is_dirty(win->warp_ctx) || (win->rgba_buffer == NULL);
   }
   
   if (needs_update) {
@@ -1334,7 +1342,7 @@ static void window_redraw(window_t *win) {
 
   // Check if SVG string changed
   int svg_changed = 1;
-  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0) {
+  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0 && win->rgba_buffer) {
     svg_changed = 0;
   }
 
@@ -1436,6 +1444,8 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
     win->warp1_ctx = NULL;
   }
   win->rgba_buffer = NULL;
+  win->buffer_w = 0;
+  win->buffer_h = 0;
   win->last_svg_str = NULL;
   win->raster_cache = NULL;
   win->raster_cache_w = 0;
@@ -1451,6 +1461,18 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->resize_h = h;
   win->fade_alpha = 0.0f;
   win->is_calculating = 0;
+  win->no_decoration = 0;
+  win->is_menubar = 0;
+
+  if (strstr(title, "Menubar") || strstr(title, "menubar")) {
+    win->is_menubar = 1;
+    win->no_decoration = 1;
+    win->x = 0; win->y = 0; win->w = SCREEN_WIDTH; win->h = 32;
+    if (win->warp1_ctx) warp1_context_destroy(win->warp1_ctx);
+    win->warp1_ctx = warp1_context_create(g_menubar_warp_buffer);
+    win->is_warp1 = 1;
+  }
+
   g_active_window_index = g_window_count - 1;
   window_update_caches(win);
 }
@@ -1490,15 +1512,14 @@ static void redraw_warp_svg(layer_t *layer) {
   
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
-    // IMPORTANT: Only redraw SVG if NOT resizing. Frame caches (mask/titlebar) are updated in move block.
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
     
     if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
-      int title_h = 40;
-      int shadow_size = 48;
+      int title_h = win->no_decoration ? 0 : 40;
+      int shadow_size = win->no_decoration ? 0 : 48;
       
       // 1. Draw Window Shadow from Cache
-      if (!win->is_maximized) {
+      if (!win->is_maximized && !win->no_decoration) {
         int sw = win->shadow_cache_w;
         int sh = win->shadow_cache_h;
         int sx_start = win->x - shadow_size;
@@ -1513,16 +1534,13 @@ static void redraw_warp_svg(layer_t *layer) {
           int py = sy_start + dy;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
           uint8_t *src_mask = &win->shadow_cache[dy * sw];
-          
           for (int dx = x0; dx < x1; dx++) {
             uint8_t alpha = src_mask[dx];
             if (alpha == 0) continue;
-            
             int px = sx_start + dx;
             uint32_t bg = dst_line[px];
             uint32_t a_bg = bg >> 24;
             uint32_t inv_alpha = 255 - alpha;
-            // Shadow is black (0,0,0), so we just darken the background
             uint32_t rb = (bg & 0xFF00FFu) * inv_alpha >> 8;
             uint32_t g = ((bg >> 8) & 0xFF) * inv_alpha >> 8;
             uint32_t a_out = alpha + (a_bg * inv_alpha >> 8);
@@ -1532,130 +1550,112 @@ static void redraw_warp_svg(layer_t *layer) {
       }
 
       // 2. Draw Title Bar from Cache
-      uint32_t *src_frame = win->frame_cache;
-      int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
-      int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
-      int tx0 = (win->x < 0) ? -win->x : 0;
-      int tx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
+      if (!win->no_decoration) {
+        uint32_t *src_frame = win->frame_cache;
+        int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
+        int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
+        int tx0 = (win->x < 0) ? -win->x : 0;
+        int tx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
 
-      for (int dy = ty0; dy < ty1; dy++) {
-        int py = win->y - title_h + dy;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-        uint32_t *src_line = &src_frame[dy * win->w];
-        uint8_t *mask_line = &win->window_mask[dy * win->w];
-        for (int dx = tx0; dx < tx1; dx++) {
-          int px = win->x + dx;
-          uint32_t color = src_line[dx];
-          uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-          if (alpha == 255) dst_line[px] = color;
-          else if (alpha > 0) dst_line[px] = blend_colors(dst_line[px], color, alpha);
-        }
-      }
-      
-      // 3. Title bar content
-      char header_text[128];
-      int action_count = 0;
-      int has_header = 0;
-      if (win->is_warp1) {
-        if (win->warp1_ctx) has_header = warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
-      } else {
-        if (win->warp_ctx) has_header = warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
-      }
-      
-      if (has_header) {
-        layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
-        
-        // Actions on the right (Buttons)
-        int ax = win->x + win->w - 12;
-        for (int j = 0; j < action_count; j++) {
-          char act_text[64];
-          if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-          else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-          int text_w = strlen(act_text) * 9; 
-          int btn_w = text_w + 24;
-          int btn_h = 26; 
-          ax -= btn_w;
-          
-          float r = 8.0f; // button radius
-          int ay0 = (win->y - 33 < 0) ? -(win->y - 33) : 0;
-          int ay1 = (win->y - 33 + btn_h > layer->height) ? (layer->height - (win->y - 33)) : btn_h;
-          int ax0 = (ax < 0) ? -ax : 0;
-          int ax1 = (ax + btn_w > layer->width) ? (layer->width - ax) : btn_w;
-
-          for (int dy = ay0; dy < ay1; dy++) {
-            int py = win->y - 33 + dy; 
-            uint32_t *dst_line = &layer->buffer[py * layer->width];
-            for (int dx = ax0; dx < ax1; dx++) {
-              int px = ax + dx;
-              float alpha_f = 1.0f;
-              float fdx = (float)dx, fdy = (float)dy;
-              float fbw = (float)btn_w, fbh = (float)btn_h;
-
-              if (fdx < r && fdy < r) {
-                float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-r)*(fdy-r));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              } else if (fdx > fbw-r-1.0f && fdy < r) {
-                float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-r)*(fdy-r));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              } else if (fdx < r && fdy > fbh-r-1.0f) {
-                float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              } else if (fdx > fbw-r-1.0f && fdy > fbh-r-1.0f) {
-                float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
-                if (dist > r + 0.5f) alpha_f = 0.0f;
-                else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-              }
-
-              if (alpha_f > 0.0f) {
-                dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, (uint8_t)(alpha_f * 255));
-              }
-            }
+        for (int dy = ty0; dy < ty1; dy++) {
+          int py = win->y - title_h + dy;
+          uint32_t *dst_line = &layer->buffer[py * layer->width];
+          uint32_t *src_line = &src_frame[dy * win->w];
+          uint8_t *mask_line = &win->window_mask[dy * win->w];
+          for (int dx = tx0; dx < tx1; dx++) {
+            int px = win->x + dx;
+            uint32_t color = src_line[dx];
+            uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+            if (alpha == 255) dst_line[px] = color;
+            else if (alpha > 0) dst_line[px] = blend_colors(dst_line[px], color, alpha);
           }
-          layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, 0xFF000000);
-          ax -= 10;
         }
-
-        // Header action buttons click handling
-        ax = win->x + win->w - 12;
-        for (int j = 0; j < action_count; j++) {
+      
+        // 3. Title bar content
+        char header_text[128];
+        int action_count = 0;
+        int has_header = 0;
+        if (win->is_warp1) {
+          if (win->warp1_ctx) has_header = warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
+        } else {
+          if (win->warp_ctx) has_header = warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
+        }
+        
+        if (has_header) {
+          layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
+          int ax = win->x + win->w - 12;
+          for (int j = 0; j < action_count; j++) {
             char act_text[64];
             if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
             else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-            int text_w = strlen(act_text) * 9;
+            int text_w = strlen(act_text) * 9; 
             int btn_w = text_w + 24;
+            int btn_h = 26; 
             ax -= btn_w;
-            ax -= 10;
-        }
-      } else {
-        layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
-      }
-      
-      // 4. Draw control circles
-      float btn_r = 7.0f;
-      int btn_y = win->y - 20;
-      int i_r = (int)btn_r + 1;
-      uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
-      int centers_x[] = {win->x + 20, win->x + 44};
-      for (int k = 0; k < 2; k++) {
-        int cy0 = (btn_y - i_r < 0) ? -(btn_y - i_r) : -i_r;
-        int cy1 = (btn_y + i_r >= layer->height) ? (layer->height - 1 - btn_y) : i_r;
-        int cx0 = (centers_x[k] - i_r < 0) ? -(centers_x[k] - i_r) : -i_r;
-        int cx1 = (centers_x[k] + i_r >= layer->width) ? (layer->width - 1 - centers_x[k]) : i_r;
+            
+            float r = 8.0f;
+            int ay0 = (win->y - 33 < 0) ? -(win->y - 33) : 0;
+            int ay1 = (win->y - 33 + btn_h > layer->height) ? (layer->height - (win->y - 33)) : btn_h;
+            int ax0 = (ax < 0) ? -ax : 0;
+            int ax1 = (ax + btn_w > layer->width) ? (layer->width - ax) : btn_w;
 
-        for (int dy = cy0; dy <= cy1; dy++) {
-          int py = btn_y + dy;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          for (int dx = cx0; dx <= cx1; dx++) {
-            float dist = sqrtf((float)(dx*dx + dy*dy));
-            float alpha_f = 0.0f;
-            if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
-            else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
-            if (alpha_f > 0.0f) {
-              int px = centers_x[k] + dx;
-              dst_line[px] = blend_colors(dst_line[px], colors[k], (uint8_t)(alpha_f * 255));
+            for (int dy = ay0; dy < ay1; dy++) {
+              int py = win->y - 33 + dy; 
+              uint32_t *dst_line = &layer->buffer[py * layer->width];
+              for (int dx = ax0; dx < ax1; dx++) {
+                int px = ax + dx;
+                float alpha_f = 1.0f;
+                float fdx = (float)dx, fdy = (float)dy, fbw = (float)btn_w, fbh = (float)btn_h;
+                if (fdx < r && fdy < r) {
+                  float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-r)*(fdy-r));
+                  if (dist > r + 0.5f) alpha_f = 0.0f;
+                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                } else if (fdx > fbw-r-1.0f && fdy < r) {
+                  float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-r)*(fdy-r));
+                  if (dist > r + 0.5f) alpha_f = 0.0f;
+                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                } else if (fdx < r && fdy > fbh-r-1.0f) {
+                  float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
+                  if (dist > r + 0.5f) alpha_f = 0.0f;
+                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                } else if (fdx > fbw-r-1.0f && fdy > fbh-r-1.0f) {
+                  float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
+                  if (dist > r + 0.5f) alpha_f = 0.0f;
+                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
+                }
+                if (alpha_f > 0.0f) dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, (uint8_t)(alpha_f * 255));
+              }
+            }
+            layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, 0xFF000000);
+            ax -= 10;
+          }
+        } else {
+          layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
+        }
+        
+        // 4. Draw control circles
+        float btn_r = 7.0f;
+        int btn_y = win->y - 20;
+        int i_r = (int)btn_r + 1;
+        uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
+        int centers_x[] = {win->x + 20, win->x + 44};
+        for (int k = 0; k < 2; k++) {
+          int cy0 = (btn_y - i_r < 0) ? -(btn_y - i_r) : -i_r;
+          int cy1 = (btn_y + i_r >= layer->height) ? (layer->height - 1 - btn_y) : i_r;
+          int cx0 = (centers_x[k] - i_r < 0) ? -(centers_x[k] - i_r) : -i_r;
+          int cx1 = (centers_x[k] + i_r >= layer->width) ? (layer->width - 1 - centers_x[k]) : i_r;
+          for (int dy = cy0; dy <= cy1; dy++) {
+            int py = btn_y + dy;
+            uint32_t *dst_line = &layer->buffer[py * layer->width];
+            for (int dx = cx0; dx <= cx1; dx++) {
+              float dist = sqrtf((float)(dx*dx + dy*dy));
+              float alpha_f = 0.0f;
+              if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
+              else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
+              if (alpha_f > 0.0f) {
+                int px = centers_x[k] + dx;
+                dst_line[px] = blend_colors(dst_line[px], colors[k], (uint8_t)(alpha_f * 255));
+              }
             }
           }
         }
@@ -1672,15 +1672,13 @@ static void redraw_warp_svg(layer_t *layer) {
         int py = win->y + dy;
         int src_y = dy - sy_int;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
-        
-        // Use frozen dimensions for source lookup during resizing
         int frozen_w = win->is_resizing ? win->resize_w : win->w;
         int frozen_h = win->is_resizing ? win->resize_h : win->h;
 
         if (src_y < 0 || src_y >= win->buffer_h || (win->is_resizing && (dy >= frozen_h || src_y >= frozen_h))) {
           uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
           for (int dx = cx0; dx < cx1; dx++) {
-            uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+            uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
             if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
             else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
           }
@@ -1690,20 +1688,12 @@ static void redraw_warp_svg(layer_t *layer) {
         uint32_t *src_content = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
         uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
-
         for (int dx = cx0; dx < cx1; dx++) {
           int px = win->x + dx;
-          uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+          uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
           if (alpha > 0) {
-            uint32_t color;
-            if (win->is_resizing && dx >= frozen_w) {
-              color = 0xFFFFFFFF; 
-            } else {
-              color = src_content[dx];
-              if (fade_alpha_u8 > 0) {
-                color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
-              }
-            }
+            uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content[dx];
+            if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
             if (alpha == 255) dst_line[px] = color;
             else dst_line[px] = blend_colors(dst_line[px], color, alpha);
           }
@@ -1711,20 +1701,16 @@ static void redraw_warp_svg(layer_t *layer) {
       }
       
       // 6. Handle
-      if (i == g_active_window_index) {
+      if (i == g_active_window_index && !win->no_decoration) {
         int handle_s = 12;
         int hy0 = (win->h - handle_s < cy0) ? cy0 : win->h - handle_s;
         int hy1 = (win->h > cy1) ? cy1 : win->h;
         int hx0 = (win->w - handle_s < cx0) ? cx0 : win->w - handle_s;
         int hx1 = (win->w > cx1) ? cx1 : win->w;
-
         for (int dy = hy0; dy < hy1; dy++) {
           int py = win->y + dy;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
-          for (int dx = hx0; dx < hx1; dx++) {
-            int px = win->x + dx;
-            dst_line[px] = blend_colors(dst_line[px], 0xFFCCCCCC, 255);
-          }
+          for (int dx = hx0; dx < hx1; dx++) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFCCCCCC, 255);
         }
       }
     }
@@ -1734,8 +1720,11 @@ static void redraw_warp_svg(layer_t *layer) {
 
 static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
-  // Terminalのみ自動で起動するように設定
-  add_window("Terminal", 200, 200, 600, 400, 1);
+  
+  // Execute startup commands
+  handle_terminal_command("warp terminal.warp");
+  handle_terminal_command("warp menubar.warp");
+  
   redraw_warp_svg(layer);
   return 1;
 }
@@ -2739,11 +2728,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       svg_init_nextgen(&nextgen_ui_layer);
       screen_mark_static_dirty();
       auto_booted = 1;
-    }
-
-    if (auto_booted && !auto_warp1_booted && (timer_ticks - boot_start_tick > 50)) {
-      add_window("New Warp 1", 200, 200, 600, 400, 1);
-      g_svg_dirty = 1;
       auto_warp1_booted = 1;
     }
 
@@ -2949,8 +2933,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             window_t *win = &g_windows[i];
             
             // 1. Resize Handle (bottom-right)
-            if (hx >= win->x + win->w - 16 && hx < win->x + win->w &&
+            if (!win->is_menubar && hx >= win->x + win->w - 16 && hx < win->x + win->w &&
                 hy >= win->y + win->h - 16 && hy < win->y + win->h) {
+
               hit_index = i;
               g_windows[hit_index].is_resizing = 1;
               g_windows[hit_index].resize_w = win->w; // Capture current w
