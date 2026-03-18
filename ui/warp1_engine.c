@@ -650,7 +650,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, is_dark ? "#121212" : "#f1f2f2", "");
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 0.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
 
     } else if (w1_strcmp(node->tag, "button") == 0) {
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0A60FF", "");

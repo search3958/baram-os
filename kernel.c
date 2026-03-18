@@ -429,8 +429,6 @@ long double __divtf3(long double a, long double b) { return a / b; }
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
-static uint32_t wallpaper_base_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
-static int g_wallpaper_ready = 0;
 static uint32_t blink_buf[50 * 50];
 #define HUD_W 320
 #define HUD_H_MAX 240
@@ -1226,24 +1224,12 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
     g_svg_rgba = (unsigned char *)malloc((size_t)layer->width *
                                          (size_t)layer->height * 4);
 
-  // If loading wallpaper, we want to skip the normal scrolling-aware svg_render_full
-  // and instead use the result of nsvgRasterize directly for the base buffer.
-  if (load_wallpaper && svg_data == g_wallpaper_buffer) {
-    uint32_t *dst = (uint32_t *)layer->buffer;
-    uint32_t *src = (uint32_t *)g_svg_full_rgba;
-    for (int i = 0; i < layer->width * layer->height; i++) {
-      dst[i] = src[i];
-    }
-    memcpy(wallpaper_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
-    g_wallpaper_ready = 1;
-  } else {
-    g_svg_scale = 1.0f;
-    g_svg_tx = 0.0f;
-    g_svg_ty = 0.0f;
-    svg_render_full(layer);
-    memcpy(svg_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
-    g_svg_ready = 1;
-  }
+  g_svg_scale = 1.0f;
+  g_svg_tx = 0.0f;
+  g_svg_ty = 0.0f;
+  svg_render_full(layer);
+  memcpy(svg_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
+  g_svg_ready = 1;
 
   return 1;
 }
@@ -1385,7 +1371,8 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     if (size > 262143) size = 262143;
     memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[5].mod_start, size);
     g_wallpaper_buffer[size] = '\0'; g_wallpaper_found = 1;
-    if (g_warp_module_count > 5) strlcpy(g_warp_modules[5].name, "wallpaper.svg", 63);
+    if (g_warp_module_count > 5) strlcpy(g_warp_modules[5].name, "wallpaper_1.svg", 63);
+    set_w1_global("--warpSystemLog", "WallpaperLoadedByIndex!");
   }
 
   // OS 設定をパース
@@ -1631,36 +1618,37 @@ static void window_update_caches(window_t *win) {
     theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
   }
   for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = theme;
-  // 3. Update Window Mask Cache (Squircle) - Reverted to SVG for exact Warp shape
+  // 3. Update Window Mask Cache (Mathematical Squircle for perfect Anti-Aliasing)
   int mw = win->w;
   int mh = win->h + title_h;
   if (!win->window_mask || win->buffer_w != win->w || win->buffer_h != mh) {
     if (win->window_mask) free(win->window_mask);
     win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
     
-    char svg_buf[4096];
-    svg_buf[0] = '\0';
-    char w_str[16], h_str[16];
-    append_int(w_str, mw);
-    append_int(h_str, mh);
-    warp_strcat(svg_buf, "<svg width=\""); warp_strcat(svg_buf, w_str);
-    warp_strcat(svg_buf, "\" height=\""); warp_strcat(svg_buf, h_str);
-    warp_strcat(svg_buf, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-    emit_squircle_shape_to(svg_buf, sizeof(svg_buf), 0, 0, mw, mh, 32.0f, "black", "");
-    warp_strcat(svg_buf, "</svg>");
-    
-    NSVGimage *mask_img = nsvgParse(svg_buf, "px", 96.0f);
-    if (mask_img) {
-      if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-      unsigned char *rgba_mask = (unsigned char *)malloc((size_t)mw * (size_t)mh * 4);
-      if (rgba_mask) {
-        nsvgRasterize(g_svg_rast, mask_img, 0, 0, 1.0f, rgba_mask, mw, mh, mw * 4);
-        for (int i = 0; i < mw * mh; i++) {
-          win->window_mask[i] = rgba_mask[i * 4 + 3]; // Use alpha channel
+    float rw = (float)mw, rh = (float)mh;
+    float r = 32.0f; // Corner radius
+    for (int y = 0; y < mh; y++) {
+      float fy = (float)y + 0.5f; // Pixel center
+      for (int x = 0; x < mw; x++) {
+        float fx = (float)x + 0.5f;
+        // Distance to rounded rect corners
+        float dx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
+        float dy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
+        
+        float dist;
+        if (dx > 0 && dy > 0) {
+          // Squircle (Apple style) distance approximation: x^4 + y^4 = r^4
+          dist = sqrtf(sqrtf(dx*dx*dx*dx + dy*dy*dy*dy)) - r;
+        } else {
+          dist = (dx > dy ? dx : dy) - r;
         }
-        free(rgba_mask);
+        
+        // Coverage-based anti-aliasing
+        float alpha_f = 0.5f - dist;
+        if (alpha_f < 0.0f) alpha_f = 0.0f;
+        else if (alpha_f > 1.0f) alpha_f = 1.0f;
+        win->window_mask[y * mw + x] = (uint8_t)(alpha_f * 255.0f);
       }
-      nsvgDelete(mask_img);
     }
   }
 }
@@ -1888,10 +1876,7 @@ static void close_active_window() {
 }
 
 static void draw_wallpaper(layer_t *layer) {
-  // Use rasterized wallpaper if available
-  if (g_wallpaper_ready) {
-    memcpy(layer->buffer, wallpaper_base_buf, sizeof(uint32_t) * layer->width * layer->height);
-  } else if (g_svg_ready) {
+  if (g_svg_ready) {
     memcpy(layer->buffer, svg_base_buf, sizeof(uint32_t) * layer->width * layer->height);
   } else {
     layer_fill(layer, 0x00000000); // Transparent fallback
@@ -1961,8 +1946,7 @@ static void redraw_warp_svg(layer_t *layer) {
             int px = win->x + dx;
             uint32_t color = src_line[dx];
             uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-            if (alpha == 255) dst_line[px] = color;
-            else if (alpha > 0) dst_line[px] = blend_colors(dst_line[px], color, alpha);
+            dst_line[px] = blend_colors(dst_line[px], color, alpha);
           }
         }
       
@@ -2086,12 +2070,9 @@ static void redraw_warp_svg(layer_t *layer) {
         for (int dx = cx0; dx < cx1; dx++) {
           int px = win->x + dx;
           uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
-          if (alpha > 0) {
-            uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content[dx];
-            if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
-            if (alpha == 255) dst_line[px] = color;
-            else dst_line[px] = blend_colors(dst_line[px], color, alpha);
-          }
+          uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content[dx];
+          if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
+          dst_line[px] = blend_colors(dst_line[px], color, alpha);
         }
       }
       
@@ -2554,18 +2535,16 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
   if (alpha == 0) return bg;
   if (alpha == 255) return (fg | 0xFF000000u);
 
-  uint32_t a_bg = (bg >> 24) & 0xFF;
-  if (a_bg == 0) return ((uint32_t)alpha << 24) | (fg & 0x00FFFFFFu);
-
+  uint32_t inv_alpha = 255 - alpha;
   uint32_t rb_bg = bg & 0xFF00FFu;
   uint32_t g_bg = (bg >> 8) & 0xFF;
   uint32_t rb_fg = fg & 0xFF00FFu;
   uint32_t g_fg = (fg >> 8) & 0xFF;
 
-  uint32_t rb_out = (rb_bg + (((rb_fg - rb_bg) * alpha) >> 8)) & 0xFF00FFu;
-  uint32_t g_out = (g_bg + (((g_fg - g_bg) * alpha) >> 8)) & 0xFF;
+  uint32_t rb_out = ((rb_fg * alpha) + (rb_bg * inv_alpha)) >> 8;
+  uint32_t g_out = ((g_fg * alpha) + (g_bg * inv_alpha)) >> 8;
 
-  return 0xFF000000u | (g_out << 8) | rb_out;
+  return 0xFF000000u | (rb_out & 0xFF00FFu) | ((g_out & 0xFF) << 8);
 }
 
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
@@ -3133,9 +3112,18 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
     if (!auto_booted && g_os_settings_found && current_os_mode == OS_MODE_CLASSIC &&
         (timer_ticks - boot_start_tick > 50)) {
+      
       current_os_mode = OS_MODE_WARPDESKTOP;
       g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
-      layer_fill(&desktop, 0xFFF5F5F5);
+      
+      // テーマに合わせて背景色を決定
+      const char *dark_val = get_w1_global("~~main/dark");
+      uint32_t bg_color = (strcmp(dark_val, "true") == 0) ? 0xFF121212 : 0xFFF5F5F5;
+      for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) desktop_buf[i] = bg_color;
+      
+      extern void screen_mark_static_dirty(void);
+      screen_mark_static_dirty();
+      
       svg_layer.active = 0;
       blink_layer.active = 0;
       nextgen_ui_layer.active = 1;
@@ -3145,6 +3133,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       svg_init_nextgen(&nextgen_ui_layer);
       screen_mark_static_dirty();
       auto_booted = 1;
+      set_w1_global("--warpSystemLog", "DesktopReady.");
     }
 
     if (current_os_mode == OS_MODE_CLASSIC) {

@@ -127,15 +127,21 @@ EOF
         echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
     fi
 
-    # Include all other SVGs (including wallpaper)
+    # Include all other SVGs
     for f in ui/*.svg; do
         [ -e "$f" ] || continue
         NAME=$(basename "$f")
-        if [ "$NAME" != "bootlogo.svg" ]; then
+        if [ "$NAME" != "bootlogo.svg" ] && [ "$NAME" != "wallpaper_1.svg" ]; then
             cp "$f" output/isodir/boot/
             echo "    module /boot/$NAME $NAME" >> "$GRUB_CFG"
         fi
     done
+
+    # Include wallpaper explicitly to ensure it's found
+    if [ -f "ui/wallpaper_1.svg" ]; then
+        cp ui/wallpaper_1.svg output/isodir/boot/wallpaper_1.svg
+        echo "    module /boot/wallpaper_1.svg wallpaper_1.svg" >> "$GRUB_CFG"
+    fi
 
     # Include OS settings if present
     if [ -f ".os_settings.json" ]; then

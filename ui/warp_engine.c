@@ -1089,7 +1089,7 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     } else {
         warp_strcpy(extra, "stroke=\"#dddddd\" stroke-width=\"1\"");
     }
-    emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, 32.0f, fill, extra);
+    emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, 0.0f, fill, extra);
   } else if (warp_strcmp(node->tag, "button") == 0 || warp_strcmp(node->tag, "tonalButton") == 0) {
     const char *c_prop = get_attr(node, "color");
     const char *hex = get_color_hex(c_prop);
