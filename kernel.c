@@ -234,6 +234,10 @@ typedef struct window_struct {
   int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
   void *dynamic_file_ptr;  // Pointer to on-demand loaded file data from storage
+
+  // Unified caching for inactive windows (RAM optimization)
+  uint32_t *unified_buffer; // Baked RGBA image (shadow + frame + content)
+  int unified_w, unified_h;
 } window_t;
 
 static void window_update_caches(window_t *win);
@@ -1429,6 +1433,15 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
   g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
+  
+  // Wallpaper loading
+  uint32_t wp_size = 0;
+  void *wp_ptr = fs_read_file("wallpaper_1.svg", &wp_size);
+  if (wp_ptr) {
+      g_wallpaper_ptr = wp_ptr;
+      g_wallpaper_size = wp_size;
+      g_wallpaper_found = 1;
+  }
 
   if (g_warp_ptr) g_warp_mod_found = 1;
   
@@ -1661,36 +1674,133 @@ void set_w1_global(const char *key, const char *val) {
   }
 }
 
+static void window_set_all_dirty() {
+  for (int i = 0; i < g_window_count; i++) {
+    g_windows[i].is_dirty = 1;
+  }
+  g_svg_dirty = 1;
+}
+
+static void window_clear_caches(window_t *win) {
+  if (win->shadow_cache) { free(win->shadow_cache); win->shadow_cache = NULL; }
+  if (win->frame_cache) { free(win->frame_cache); win->frame_cache = NULL; }
+  if (win->window_mask) { free(win->window_mask); win->window_mask = NULL; }
+  if (win->rgba_buffer) { free(win->rgba_buffer); win->rgba_buffer = NULL; }
+  if (win->raster_cache) { free(win->raster_cache); win->raster_cache = NULL; }
+}
+
+static void window_bake(window_t *win) {
+  if (!win->shadow_cache || !win->frame_cache || !win->rgba_buffer || !win->window_mask) return;
+
+  float scale = win->render_scale;
+  int title_h = win->no_decoration ? 0 : 40;
+  int shadow_size = win->no_decoration ? 0 : 48;
+  
+  int full_sw = win->w + shadow_size * 2;
+  int full_sh = win->h + title_h + shadow_size * 2;
+  int sw = (int)((float)full_sw * scale);
+  int sh = (int)((float)full_sh * scale);
+  if (sw < 1) sw = 1; if (sh < 1) sh = 1;
+
+  if (win->unified_buffer) free(win->unified_buffer);
+  win->unified_buffer = (uint32_t*)malloc((size_t)sw * (size_t)sh * 4);
+  win->unified_w = sw;
+  win->unified_h = sh;
+
+  // Clear unified buffer with transparent black
+  for (int i = 0; i < sw * sh; i++) win->unified_buffer[i] = 0x00000000;
+
+  // 1. Bake Shadow (offset Y by 8)
+  int shadow_off_y = (int)(8.0f * scale);
+  for (int y = 0; y < win->shadow_cache_h; y++) {
+    int py = y + shadow_off_y;
+    if (py >= sh) break;
+    for (int x = 0; x < win->shadow_cache_w; x++) {
+      uint8_t alpha = win->shadow_cache[y * win->shadow_cache_w + x];
+      if (alpha > 0) win->unified_buffer[py * sw + x] = (uint32_t)alpha << 24;
+    }
+  }
+
+  // 2. Bake Frame (Title Bar)
+  int frame_x = (int)((float)shadow_size * scale);
+  int frame_y = (int)((float)shadow_size * scale);
+  int mw = (int)((float)win->w * scale);
+  if (mw < 1 && win->w > 0) mw = 1;
+
+  for (int dy = 0; dy < win->frame_cache_h; dy++) {
+    int py = frame_y + dy;
+    uint32_t *src_line = &win->frame_cache[dy * win->frame_cache_w];
+    uint8_t *mask_line = &win->window_mask[dy * mw];
+    for (int dx = 0; dx < win->frame_cache_w; dx++) {
+      int px = frame_x + dx;
+      uint32_t color = src_line[dx];
+      uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
+    }
+  }
+
+  // 3. Bake Content
+  int content_y = frame_y + (int)((float)title_h * scale);
+  int mh = (int)((float)(win->h + title_h) * scale);
+  for (int dy = 0; dy < win->buffer_h; dy++) {
+    int py = content_y + dy;
+    if (py >= sh) break;
+    uint32_t *src_line = (uint32_t*)&win->rgba_buffer[dy * win->buffer_w * 4];
+    int mask_y = (int)((float)title_h * scale) + dy;
+    if (mask_y >= mh) mask_y = mh - 1;
+    uint8_t *mask_line = &win->window_mask[mask_y * mw];
+    for (int dx = 0; dx < win->buffer_w; dx++) {
+      int px = frame_x + dx;
+      if (px >= sw) break;
+      uint32_t color = src_line[dx];
+      uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
+      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
+    }
+  }
+
+  // 4. Cleanup individual caches to save RAM
+  window_clear_caches(win);
+}
+
 static void window_update_caches(window_t *win) {
+  float scale = win->render_scale;
+  if (scale <= 0.0f) scale = 1.0f;
+
   int title_h = win->no_decoration ? 0 : 40;
   int shadow_size = win->no_decoration ? 0 : 48;
   float win_r = 30.0f; // Adjusted for Squircle shadow approximation
-  
-  // 1. Update Shadow Cache (Alpha only) - Optimized with symmetry
-  int sw = win->w + shadow_size * 2;
-  int sh = win->h + title_h + shadow_size * 2;
+
+  // 1. Update Shadow Cache
+  int full_sw = win->w + shadow_size * 2;
+  int full_sh = win->h + title_h + shadow_size * 2;
+  int sw = (int)((float)full_sw * scale);
+  int sh = (int)((float)full_sh * scale);
+  if (sw < 1) sw = 1;
+  if (sh < 1) sh = 1;
+
   if (!win->shadow_cache || win->shadow_cache_w != sw || win->shadow_cache_h != sh) {
     if (win->shadow_cache) free(win->shadow_cache);
     win->shadow_cache = (uint8_t *)malloc((size_t)sw * (size_t)sh);
     win->shadow_cache_w = sw;
     win->shadow_cache_h = sh;
-    
+
     float win_w_f = (float)win->w;
     float win_h_f = (float)(win->h + title_h);
-    float half_sw = (float)sw / 2.0f;
-    float half_sh = (float)sh / 2.0f;
-    
-    // Calculate only one quadrant and mirror
-    for (int y = 0; y <= sh / 2; y++) {
-      for (int x = 0; x <= sw / 2; x++) {
-        float qx = fabsf((float)x - half_sw) - (win_w_f / 2.0f - win_r);
-        float qy = fabsf((float)y - half_sh) - (win_h_f / 2.0f - win_r);
+    float half_sw = (float)full_sw / 2.0f;
+    float half_sh = (float)full_sh / 2.0f;
+
+    for (int y = 0; y < sh; y++) {
+      float fy = (float)y / scale;
+      for (int x = 0; x < sw; x++) {
+        float fx = (float)x / scale;
+        float qx = fabsf(fx - half_sw) - (win_w_f / 2.0f - win_r);
+        float qy = fabsf(fy - half_sh) - (win_h_f / 2.0f - win_r);
         float mx = (qx > 0.0f) ? qx : 0.0f;
         float my = (qy > 0.0f) ? qy : 0.0f;
         float inner = (qx > qy) ? qx : qy;
         if (inner > 0.0f) inner = 0.0f;
         float dist = sqrtf(mx*mx + my*my) + inner - win_r;
-        
+
         uint8_t alpha = 0;
         if (dist <= 0.0f) {
           alpha = 64;
@@ -1698,18 +1808,19 @@ static void window_update_caches(window_t *win) {
           float d_ratio = dist / (float)shadow_size;
           alpha = (uint8_t)(64.0f * (1.0f - d_ratio) * (1.0f - d_ratio));
         }
-        
         win->shadow_cache[y * sw + x] = alpha;
-        win->shadow_cache[y * sw + (sw - 1 - x)] = alpha;
-        win->shadow_cache[(sh - 1 - y) * sw + x] = alpha;
-        win->shadow_cache[(sh - 1 - y) * sw + (sw - 1 - x)] = alpha;
       }
     }
   }
-  
-  // 2. Update Frame Cache (Title bar)
-  int fw = win->w;
-  int fh = title_h;
+
+  // 2. Update Frame Cache
+  int full_fw = win->w;
+  int full_fh = title_h;
+  int fw = (int)((float)full_fw * scale);
+  int fh = (int)((float)full_fh * scale);
+  if (fw < 1 && full_fw > 0) fw = 1;
+  if (fh < 1 && full_fh > 0) fh = 1;
+
   if (!win->frame_cache || win->frame_cache_w != fw || win->frame_cache_h != fh) {
     if (win->frame_cache) free(win->frame_cache);
     win->frame_cache = (uint32_t *)malloc((size_t)fw * (size_t)fh * 4);
@@ -1727,32 +1838,111 @@ static void window_update_caches(window_t *win) {
     theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
   }
   for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = theme;
-  // 3. Update Window Mask Cache (Mathematical Squircle for perfect Anti-Aliasing)
-  int mw = win->w;
-  int mh = win->h + title_h;
-  if (!win->window_mask || win->buffer_w != win->w || win->buffer_h != mh) {
+
+  // Render Title Bar content into frame_cache
+  if (fh > 0) {
+    layer_t frame_l;
+    frame_l.buffer = win->frame_cache;
+    frame_l.width = fw;
+    frame_l.height = fh;
+
+    char header_text[128];
+    int action_count = 0;
+    int has_header = 0;
+    if (win->is_warp1) {
+      if (win->warp1_ctx) has_header = warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
+    } else {
+      if (win->warp_ctx) has_header = warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
+    }
+
+    if (has_header) {
+      layer_draw_ttf(&frame_l, (int)(70.0f * scale), (int)(12.0f * scale), header_text, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      int ax = win->w - 12;
+      for (int j = 0; j < action_count; j++) {
+        char act_text[64];
+        if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
+        else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+        int text_w = strlen(act_text) * 9; 
+        int btn_w = text_w + 24;
+        int btn_h = 26; 
+        ax -= btn_w;
+
+        // Draw button background
+        int bx = (int)((float)ax * scale);
+        int by = (int)(7.0f * scale);
+        int bw = (int)((float)btn_w * scale);
+        int bh = (int)((float)btn_h * scale);
+        for (int dy = 0; dy < bh; dy++) {
+          for (int dx = 0; dx < bw; dx++) {
+             frame_l.buffer[(by + dy) * fw + (bx + dx)] = is_dark ? 0xFF444444 : 0xFFFFFFFF;
+          }
+        }
+        layer_draw_ttf(&frame_l, bx + (int)(12.0f * scale), by + (int)(7.0f * scale), act_text, 14.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF000000);
+        ax -= 10;
+      }
+    } else {
+      layer_draw_ttf(&frame_l, (int)(70.0f * scale), (int)(12.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+    }
+
+    // Control circles with Anti-Aliasing
+    float btn_r = 7.0f;
+    int btn_y = 20;
+    uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
+    int centers_x[] = {20, 44};
+    for (int k = 0; k < 2; k++) {
+      float cx = (float)centers_x[k] * scale;
+      float cy = (float)btn_y * scale;
+      float cr = btn_r * scale;
+      int i_r = (int)cr + 2; 
+
+      for (int dy = -i_r; dy <= i_r; dy++) {
+        for (int dx = -i_r; dx <= i_r; dx++) {
+          int px = (int)cx + dx;
+          int py = (int)cy + dy;
+          if (px >= 0 && px < fw && py >= 0 && py < fh) {
+            float dist = sqrtf((float)(dx*dx + dy*dy));
+            float alpha_f = 0.5f - (dist - cr);
+            if (alpha_f < 0.0f) alpha_f = 0.0f;
+            else if (alpha_f > 1.0f) alpha_f = 1.0f;
+
+            if (alpha_f > 0.0f) {
+              frame_l.buffer[py * fw + px] = blend_colors(frame_l.buffer[py * fw + px], colors[k], (uint8_t)(alpha_f * 255));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Update Window Mask Cache
+  int full_mw = win->w;
+  int full_mh = win->h + title_h;
+  int mw = (int)((float)full_mw * scale);
+  int mh = (int)((float)full_mh * scale);
+  if (mw < 1 && full_mw > 0) mw = 1;
+  if (mh < 1 && full_mh > 0) mh = 1;
+
+  // We use buffer_w as a proxy for scaled width and a temporary check for total height
+  if (!win->window_mask || win->buffer_w != mw || win->shadow_cache_h != sh) { // sh is a safe proxy for scale change
     if (win->window_mask) free(win->window_mask);
     win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
-    
-    float rw = (float)mw, rh = (float)mh;
+
+    float rw = (float)full_mw, rh = (float)full_mh;
     float r = 32.0f; // Corner radius
     for (int y = 0; y < mh; y++) {
-      float fy = (float)y + 0.5f; // Pixel center
+      float fy = (float)y / scale + 0.5f; 
       for (int x = 0; x < mw; x++) {
-        float fx = (float)x + 0.5f;
-        // Distance to rounded rect corners
+        float fx = (float)x / scale + 0.5f;
         float dx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
         float dy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
-        
+
         float dist;
         if (dx > 0 && dy > 0) {
-          // Squircle (Apple style) distance approximation: x^4 + y^4 = r^4
           dist = sqrtf(sqrtf(dx*dx*dx*dx + dy*dy*dy*dy)) - r;
         } else {
           dist = (dx > dy ? dx : dy) - r;
         }
-        
-        // Coverage-based anti-aliasing
+
         float alpha_f = 0.5f - dist;
         if (alpha_f < 0.0f) alpha_f = 0.0f;
         else if (alpha_f > 1.0f) alpha_f = 1.0f;
@@ -1766,12 +1956,17 @@ static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
   int is_active = (win == &g_windows[g_active_window_index]);
-  float target_scale = is_active ? 1.0f : 0.5f;
+  float target_scale = is_active ? 1.0f : 0.5f; // 4 pixels for 1 color (2x2)
+
   
   // If resolution scale changed, force update
   if (win->render_scale != target_scale) {
     win->is_dirty = 1;
     win->render_scale = target_scale;
+    if (target_scale > 0.5f) { // If becoming active
+        if (win->unified_buffer) { free(win->unified_buffer); win->unified_buffer = NULL; }
+    }
+    window_update_caches(win);
   }
 
   // Check if update is needed (engine_dirty flag)
@@ -1882,6 +2077,10 @@ static void window_redraw(window_t *win) {
     }
   }
 
+  if (win->render_scale <= 0.5f) {
+      window_bake(win);
+  }
+
   win->is_dirty = 0;
   win->is_calculating = 0;
   strncpy(g_hud_status, "Idle", 63);
@@ -1943,6 +2142,8 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->shadow_cache = NULL;
   win->frame_cache = NULL;
   win->window_mask = NULL;
+  win->unified_buffer = NULL;
+  win->unified_w = 0; win->unified_h = 0;
   win->is_dirty = 1;
   win->is_maximized = 0;
   win->is_dragging = 0;
@@ -1951,6 +2152,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->resize_h = h;
   win->fade_alpha = 0.0f;
   win->is_calculating = 0;
+  win->render_scale = 1.0f;
   win->no_decoration = 0;
   win->is_menubar = 0;
 
@@ -1962,6 +2164,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   }
 
   g_active_window_index = g_window_count - 1;
+  window_set_all_dirty();
   window_update_caches(win);
 }
 
@@ -1977,13 +2180,14 @@ static void close_active_window() {
   if (win->frame_cache) free(win->frame_cache);
   if (win->window_mask) free(win->window_mask);
   if (win->dynamic_file_ptr) free(win->dynamic_file_ptr);
+  if (win->unified_buffer) free(win->unified_buffer);
   
   for (int i = g_active_window_index; i < g_window_count - 1; i++) {
     g_windows[i] = g_windows[i+1];
   }
   g_window_count--;
   g_active_window_index = g_window_count - 1;
-  g_svg_dirty = 1;
+  window_set_all_dirty();
 }
 
 static void draw_wallpaper(layer_t *layer) {
@@ -2002,31 +2206,76 @@ static void redraw_warp_svg(layer_t *layer) {
   const char *dark_val = get_w1_global("~~main/dark");
   int is_dark = (strcmp(dark_val, "true") == 0);
 
-  for (int i = 0; i < g_window_count; i++) {    window_t *win = &g_windows[i];
+  for (int i = 0; i < g_window_count; i++) {
+    window_t *win = &g_windows[i];
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
+
+    // If we have a unified (baked) buffer, draw it directly and skip individual caches
+    if (win->unified_buffer) {
+        int title_h = win->no_decoration ? 0 : 40;
+        int shadow_size = win->no_decoration ? 0 : 48;
+        float scale = win->render_scale;
+        
+        int sx_start = win->x - shadow_size;
+        int sy_start = win->y - title_h - shadow_size + 8;
+        
+        int full_sw = win->w + shadow_size * 2;
+        int full_sh = win->h + title_h + shadow_size * 2;
+
+        int y0 = (sy_start < 0) ? -sy_start : 0;
+        int y1 = (sy_start + full_sh > layer->height) ? layer->height - sy_start : full_sh;
+        int x0 = (sx_start < 0) ? -sx_start : 0;
+        int x1 = (sx_start + full_sw > layer->width) ? layer->width - sx_start : full_sw;
+
+        for (int dy = y0; dy < y1; dy++) {
+            int py = sy_start + dy;
+            uint32_t *dst_line = &layer->buffer[py * layer->width];
+            int scaled_dy = (int)((float)dy * scale);
+            if (scaled_dy >= win->unified_h) scaled_dy = win->unified_h - 1;
+            uint32_t *src_line = &win->unified_buffer[scaled_dy * win->unified_w];
+            
+            for (int dx = x0; dx < x1; dx++) {
+                int px = sx_start + dx;
+                int scaled_dx = (int)((float)dx * scale);
+                if (scaled_dx >= win->unified_w) scaled_dx = win->unified_w - 1;
+                uint32_t color = src_line[scaled_dx];
+                uint8_t alpha = (uint8_t)(color >> 24);
+                if (alpha == 0) continue;
+                if (alpha == 255) dst_line[px] = color;
+                else dst_line[px] = blend_colors(dst_line[px], color, alpha);
+            }
+        }
+        continue; // Skip individual blitting
+    }
     
     if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
+      float scale = win->render_scale;
       
       // 1. Draw Window Shadow from Cache
       if (!win->is_maximized && !win->no_decoration) {
+        int full_sw = win->w + shadow_size * 2;
+        int full_sh = win->h + title_h + shadow_size * 2;
         int sw = win->shadow_cache_w;
-        int sh = win->shadow_cache_h;
         int sx_start = win->x - shadow_size;
         int sy_start = win->y - title_h - shadow_size + 8; // Offset Y by 8
         
         int y0 = (sy_start < 0) ? -sy_start : 0;
-        int y1 = (sy_start + sh > layer->height) ? layer->height - sy_start : sh;
+        int y1 = (sy_start + full_sh > layer->height) ? layer->height - sy_start : full_sh;
         int x0 = (sx_start < 0) ? -sx_start : 0;
-        int x1 = (sx_start + sw > layer->width) ? layer->width - sx_start : sw;
+        int x1 = (sx_start + full_sw > layer->width) ? layer->width - sx_start : full_sw;
 
         for (int dy = y0; dy < y1; dy++) {
           int py = sy_start + dy;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
-          uint8_t *src_mask = &win->shadow_cache[dy * sw];
+          int scaled_dy = (int)((float)dy * scale);
+          if (scaled_dy >= win->shadow_cache_h) scaled_dy = win->shadow_cache_h - 1;
+          uint8_t *src_mask = &win->shadow_cache[scaled_dy * sw];
           for (int dx = x0; dx < x1; dx++) {
-            uint8_t alpha = src_mask[dx];
+            int scaled_dx = (int)((float)dx * scale);
+            if (scaled_dx >= sw) scaled_dx = sw - 1;
+            uint8_t alpha = src_mask[scaled_dx];
             if (alpha == 0) continue;
             int px = sx_start + dx;
             uint32_t bg = dst_line[px];
@@ -2048,105 +2297,23 @@ static void redraw_warp_svg(layer_t *layer) {
         int tx0 = (win->x < 0) ? -win->x : 0;
         int tx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
 
+        int mw = (int)((float)win->w * scale);
+        if (mw < 1 && win->w > 0) mw = 1;
+
         for (int dy = ty0; dy < ty1; dy++) {
           int py = win->y - title_h + dy;
+          int scaled_dy = (int)((float)dy * scale);
+          if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
-          uint32_t *src_line = &src_frame[dy * win->w];
-          uint8_t *mask_line = &win->window_mask[dy * win->w];
+          uint32_t *src_line = &src_frame[scaled_dy * win->frame_cache_w];
+          uint8_t *mask_line = &win->window_mask[scaled_dy * mw];
           for (int dx = tx0; dx < tx1; dx++) {
             int px = win->x + dx;
-            uint32_t color = src_line[dx];
-            uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
+            int scaled_dx = (int)((float)dx * scale);
+            if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
+            uint32_t color = src_line[scaled_dx];
+            uint8_t alpha = win->is_maximized ? 255 : mask_line[scaled_dx];
             dst_line[px] = blend_colors(dst_line[px], color, alpha);
-          }
-        }
-      
-        // 3. Title bar content
-        char header_text[128];
-        int action_count = 0;
-        int has_header = 0;
-        if (win->is_warp1) {
-          if (win->warp1_ctx) has_header = warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
-        } else {
-          if (win->warp_ctx) has_header = warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
-        }
-        
-        if (has_header) {
-          layer_draw_ttf(layer, win->x + 70, win->y - 28, header_text, 16, 0xFF333333);
-          int ax = win->x + win->w - 12;
-          for (int j = 0; j < action_count; j++) {
-            char act_text[64];
-            if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-            else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-            int text_w = strlen(act_text) * 9; 
-            int btn_w = text_w + 24;
-            int btn_h = 26; 
-            ax -= btn_w;
-            
-            float r = 8.0f;
-            int ay0 = (win->y - 33 < 0) ? -(win->y - 33) : 0;
-            int ay1 = (win->y - 33 + btn_h > layer->height) ? (layer->height - (win->y - 33)) : btn_h;
-            int ax0 = (ax < 0) ? -ax : 0;
-            int ax1 = (ax + btn_w > layer->width) ? (layer->width - ax) : btn_w;
-
-            for (int dy = ay0; dy < ay1; dy++) {
-              int py = win->y - 33 + dy; 
-              uint32_t *dst_line = &layer->buffer[py * layer->width];
-              for (int dx = ax0; dx < ax1; dx++) {
-                int px = ax + dx;
-                float alpha_f = 1.0f;
-                float fdx = (float)dx, fdy = (float)dy, fbw = (float)btn_w, fbh = (float)btn_h;
-                if (fdx < r && fdy < r) {
-                  float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-r)*(fdy-r));
-                  if (dist > r + 0.5f) alpha_f = 0.0f;
-                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                } else if (fdx > fbw-r-1.0f && fdy < r) {
-                  float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-r)*(fdy-r));
-                  if (dist > r + 0.5f) alpha_f = 0.0f;
-                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                } else if (fdx < r && fdy > fbh-r-1.0f) {
-                  float dist = sqrtf((fdx-r)*(fdx-r) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
-                  if (dist > r + 0.5f) alpha_f = 0.0f;
-                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                } else if (fdx > fbw-r-1.0f && fdy > fbh-r-1.0f) {
-                  float dist = sqrtf((fdx-(fbw-r-1.0f))*(fdx-(fbw-r-1.0f)) + (fdy-(fbh-r-1.0f))*(fdy-(fbh-r-1.0f)));
-                  if (dist > r + 0.5f) alpha_f = 0.0f;
-                  else if (dist > r - 0.5f) alpha_f = r + 0.5f - dist;
-                }
-                if (alpha_f > 0.0f) dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, (uint8_t)(alpha_f * 255));
-              }
-            }
-            layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, is_dark ? 0xFFEEEEEE : 0xFF000000);
-            ax -= 10;
-          }
-        } else {
-          layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, is_dark ? 0xFFEEEEEE : 0xFF333333);
-        }
-        
-        // 4. Draw control circles
-        float btn_r = 7.0f;
-        int btn_y = win->y - 20;
-        int i_r = (int)btn_r + 1;
-        uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
-        int centers_x[] = {win->x + 20, win->x + 44};
-        for (int k = 0; k < 2; k++) {
-          int cy0 = (btn_y - i_r < 0) ? -(btn_y - i_r) : -i_r;
-          int cy1 = (btn_y + i_r >= layer->height) ? (layer->height - 1 - btn_y) : i_r;
-          int cx0 = (centers_x[k] - i_r < 0) ? -(centers_x[k] - i_r) : -i_r;
-          int cx1 = (centers_x[k] + i_r >= layer->width) ? (layer->width - 1 - centers_x[k]) : i_r;
-          for (int dy = cy0; dy <= cy1; dy++) {
-            int py = btn_y + dy;
-            uint32_t *dst_line = &layer->buffer[py * layer->width];
-            for (int dx = cx0; dx <= cx1; dx++) {
-              float dist = sqrtf((float)(dx*dx + dy*dy));
-              float alpha_f = 0.0f;
-              if (dist <= btn_r - 0.5f) alpha_f = 1.0f;
-              else if (dist <= btn_r + 0.5f) alpha_f = (btn_r + 0.5f - dist);
-              if (alpha_f > 0.0f) {
-                int px = centers_x[k] + dx;
-                dst_line[px] = blend_colors(dst_line[px], colors[k], (uint8_t)(alpha_f * 255));
-              }
-            }
           }
         }
       }
@@ -2165,10 +2332,19 @@ static void redraw_warp_svg(layer_t *layer) {
         int frozen_h = win->is_resizing ? win->resize_h : win->h;
 
         int sy_raw = dy - sy_int;
+        int scaled_mw = (int)((float)win->w * scale);
+        if (scaled_mw < 1 && win->w > 0) scaled_mw = 1;
+
         if (sy_raw < 0 || sy_raw >= win->h || (win->is_resizing && (dy >= frozen_h || sy_raw >= frozen_h))) {
-          uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
+          int full_mh = win->h + title_h;
+          int mh = (int)((float)full_mh * scale);
+          int scaled_mask_y = (int)((float)(dy + title_h) * scale);
+          if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
+          uint8_t *mask_line = &win->window_mask[scaled_mask_y * scaled_mw];
           for (int dx = cx0; dx < cx1; dx++) {
-            uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
+            int scaled_dx = (int)((float)dx * scale);
+            if (scaled_dx >= scaled_mw) scaled_dx = scaled_mw - 1;
+            uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[scaled_dx];
             if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
             else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
           }
@@ -2176,20 +2352,27 @@ static void redraw_warp_svg(layer_t *layer) {
         }
 
         // Map screen-space y to buffer-space y
-        int src_y = (int)((float)sy_raw * win->render_scale);
+        int src_y = (int)((float)sy_raw * scale);
         if (src_y < 0) src_y = 0;
         if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
 
         uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
-        uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
+        
+        int full_mh = win->h + title_h;
+        int mh = (int)((float)full_mh * scale);
+        int scaled_mask_y = (int)((float)(dy + title_h) * scale);
+        if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
+        uint8_t *mask_line = &win->window_mask[scaled_mask_y * scaled_mw];
+        
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
         for (int dx = cx0; dx < cx1; dx++) {
           int px = win->x + dx;
-          uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
+          int scaled_dx = (int)((float)dx * scale);
+          if (scaled_dx >= scaled_mw) scaled_dx = scaled_mw - 1;
+          uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[scaled_dx];
           
           // Map screen-space x to buffer-space x
-          int src_x = (int)((float)dx * win->render_scale);
-          if (src_x < 0) src_x = 0;
+          int src_x = scaled_dx;
           if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
 
           uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content_line[src_x];
@@ -3613,12 +3796,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               window_t tmp = g_windows[hit_index];
               for (int j = hit_index; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
               g_windows[g_window_count - 1] = tmp;
+              g_active_window_index = g_window_count - 1;
+              window_set_all_dirty();
+            } else {
+              g_active_window_index = g_window_count - 1;
+              // No need to set all dirty if already active, but keep g_svg_dirty
+              g_svg_dirty = 1;
             }
-            g_active_window_index = g_window_count - 1;
           } else if (hit_index == -1) {
             // Wallpaper click: do nothing
           }
-          g_svg_dirty = 1;
         } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
           // Release
           for (int i = 0; i < g_window_count; i++) {
