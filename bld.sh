@@ -89,6 +89,21 @@ do_build_and_run() {
     cp output/kernel.bin output/isodir/boot/
     show_progress 9
     
+    # --- Create initrd.tar ---
+    INITRD_DIR="output/initrd_tmp"
+    rm -rf "$INITRD_DIR"
+    mkdir -p "$INITRD_DIR"
+    
+    # Copy all resources to temp dir
+    cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
+    [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
+    [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
+    [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
+    
+    # Create tar (using basic tar, no compression)
+    (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
+    rm -rf "$INITRD_DIR"
+
     # Generate grub.cfg dynamically
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
@@ -101,57 +116,13 @@ terminal_output gfxterm
 menuentry "baram-os" {
     multiboot /boot/kernel.bin
     module /boot/MPLUS2-Regular.ttf
+    module /boot/initrd.tar initrd
 EOF
 
     if [ -f "font/MPLUS2-Regular.ttf" ]; then
         cp font/MPLUS2-Regular.ttf output/isodir/boot/
     fi
     
-    # Automatically include ALL .warp and .warpc files from ui/
-    for f in ui/*.warp ui/*.warpc; do
-        [ -e "$f" ] || continue
-        NAME=$(basename "$f")
-        cp "$f" output/isodir/boot/
-        echo "    module /boot/$NAME $NAME" >> "$GRUB_CFG"
-    done
-
-    # Handle SVG assets
-    if [ -f "bootlogo.svg" ]; then
-        cp bootlogo.svg output/isodir/boot/
-        echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
-    elif [ -f "ui/bootlogo.svg" ]; then
-        cp ui/bootlogo.svg output/isodir/boot/
-        echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
-    else
-        echo '<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="100" r="80" fill="#00a5ff" /><text x="100" y="115" fill="white" font-family="sans-serif" font-size="40" text-anchor="middle">B</text></svg>' > output/isodir/boot/bootlogo.svg
-        echo "    module /boot/bootlogo.svg bootlogo.svg" >> "$GRUB_CFG"
-    fi
-
-    # Include all other SVGs
-    for f in ui/*.svg; do
-        [ -e "$f" ] || continue
-        NAME=$(basename "$f")
-        if [ "$NAME" != "bootlogo.svg" ] && [ "$NAME" != "wallpaper_1.svg" ]; then
-            cp "$f" output/isodir/boot/
-            echo "    module /boot/$NAME $NAME" >> "$GRUB_CFG"
-        fi
-    done
-
-    # Include wallpaper explicitly to ensure it's found
-    if [ -f "ui/wallpaper_1.svg" ]; then
-        cp ui/wallpaper_1.svg output/isodir/boot/wallpaper_1.svg
-        echo "    module /boot/wallpaper_1.svg wallpaper_1.svg" >> "$GRUB_CFG"
-    fi
-
-    # Include OS settings if present
-    if [ -f ".os_settings.json" ]; then
-        cp ".os_settings.json" output/isodir/boot/os_settings.json
-        echo "    module /boot/os_settings.json os_settings.json" >> "$GRUB_CFG"
-    elif [ -f "os_settings.json" ]; then
-        cp "os_settings.json" output/isodir/boot/os_settings.json
-        echo "    module /boot/os_settings.json os_settings.json" >> "$GRUB_CFG"
-    fi
-
     show_progress 10
 
     # End grub.cfg
