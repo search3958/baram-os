@@ -712,7 +712,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         
     } else if (w1_strcmp(node->tag, "input") == 0) {
         // 入力フォームの描画 - 角丸矩形
-        const char *stroke = "#dddddd";
+        const char *stroke = is_dark ? "#555555" : "#dddddd";
         const char *stroke_w = "1";
         
         // フォーカスされている場合は枠線を強調
@@ -728,7 +728,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         w1_strcpy(extra, "stroke=\""); w1_strcat(extra, stroke);
         w1_strcat(extra, "\" stroke-width=\""); w1_strcat(extra, stroke_w); w1_strcat(extra, "\"");
         
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 8.0f, "#ffffff", extra);
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 8.0f, is_dark ? "#333333" : "#ffffff", extra);
     }
     
     // 子要素の描画

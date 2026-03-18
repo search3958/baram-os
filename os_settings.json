@@ -8,6 +8,6 @@
     "warp topbar.warp"
   ],
   "main": {
-    "dark": false
+    "dark": true
   }
 }

@@ -138,9 +138,12 @@ EOF
     done
 
     # Include OS settings if present
-    if [ -f "@.os_settings.json" ]; then
-        cp "@.os_settings.json" output/isodir/boot/
-        echo "    module /boot/@.os_settings.json @.os_settings.json" >> "$GRUB_CFG"
+    if [ -f ".os_settings.json" ]; then
+        cp ".os_settings.json" output/isodir/boot/os_settings.json
+        echo "    module /boot/os_settings.json os_settings.json" >> "$GRUB_CFG"
+    elif [ -f "os_settings.json" ]; then
+        cp "os_settings.json" output/isodir/boot/os_settings.json
+        echo "    module /boot/os_settings.json os_settings.json" >> "$GRUB_CFG"
     fi
 
     show_progress 10

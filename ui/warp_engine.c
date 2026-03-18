@@ -873,6 +873,31 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       ctx->texts[ctx->texts_count].size = 16;
       ctx->texts_count++;
     }
+  } else if (warp_strcmp(node->tag, "input") == 0) {
+    node->w = limit_w;
+    node->h = 48;
+    
+    char out_var[128], val[256], placeholder[128];
+    eval_attr(ctx, node, "output", out_var, 127);
+    eval_attr(ctx, node, "placeholder", placeholder, 127);
+    
+    val[0] = '\0';
+    if (out_var[0]) { warp_strcpy(val, get_state(ctx, out_var)); }
+    
+    if (ctx->texts_count < MAX_TEXTS) {
+      ctx->texts[ctx->texts_count].x = node->x + 12;
+      ctx->texts[ctx->texts_count].y = node->y + 16;
+      
+      if (val[0]) {
+        warp_strcpy(ctx->texts[ctx->texts_count].text, val);
+        ctx->texts[ctx->texts_count].color = is_dark ? 0xFFCCCCCC : 0xFF333333;
+      } else {
+        warp_strcpy(ctx->texts[ctx->texts_count].text, placeholder);
+        ctx->texts[ctx->texts_count].color = is_dark ? 0xFF666666 : 0xFF888888;
+      }
+      ctx->texts[ctx->texts_count].size = 16;
+      ctx->texts_count++;
+    }
   } else if (warp_strcmp(node->tag, "hStack") == 0) {
     int cx = px;
     int max_h = 0;
@@ -1088,6 +1113,17 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
       p = warp_stpcpy(p, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
       warp_strncat(dest, check_buf, dest_size - warp_strlen(dest) - 1);
     }
+  } else if (warp_strcmp(node->tag, "input") == 0) {
+    // 入力フォームの描画 - 角丸矩形
+    const char *stroke = is_dark ? "#555555" : "#dddddd";
+    const char *stroke_w = "1";
+    
+    // フォーカス判定があればここで強調 (Classicエンジンでは現状簡易)
+    char extra[128];
+    warp_strcpy(extra, "stroke=\""); warp_strcat(extra, stroke);
+    warp_strcat(extra, "\" stroke-width=\""); warp_strcat(extra, stroke_w); warp_strcat(extra, "\"");
+    
+    emit_squircle_shape_to(dest, dest_size, node->x, node->y, node->w, node->h, 8.0f, is_dark ? "#333333" : "#ffffff", extra);
   }
 
   for (int i = 0; i < node->children_count; i++) {

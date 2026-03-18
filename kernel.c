@@ -103,7 +103,7 @@ typedef struct {
   uint32_t size;
 } warp_module_t;
 
-#define MAX_WARP_MODULES 32
+#define MAX_WARP_MODULES 512
 static warp_module_t g_warp_modules[MAX_WARP_MODULES];
 static uint32_t g_warp_module_count = 0;
 
@@ -113,7 +113,6 @@ static char g_warp_buffer[32768] = "screen(text:\"Main warp module (warpc) not f
 static char g_warp1_buffer[32768] = "screen{ id:(main), text:(\"Generic warp module not found.\") }";
 static char g_terminal_warp_buffer[32768] = "screen{ id:(main), text:(\"Terminal app (terminal.warp) not found.\") }";
 static char g_menubar_warp_buffer[32768] = "screen{ id:(menubar), text:(\"Menubar app (menubar.warp) not found.\") }";
-static int g_warp1_mod_found = 0;
 static int g_terminal_mod_found = 0;
 static int g_menubar_mod_found = 0;
 static char g_bootlogo_buffer[65536] = "";
@@ -123,7 +122,7 @@ static int g_wallpaper_found = 0;
 static char g_os_settings_buffer[16384] = "";
 static int g_os_settings_found = 0;
 
-// OS Settings (mapped from @.os_settings.json)
+// OS Settings (mapped from @os_settings.json)
 int g_dev_pointer_check = 1;
 static int g_dev_event_check = 0;
 static int g_dev_show_hud = 1;
@@ -141,10 +140,52 @@ static void redraw_warp_svg(layer_t *layer);
 static char *append_uint(char *p, unsigned int v);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
+
+// Window Management
+typedef struct window_struct {
+  int x, y, w, h;
+  int old_x, old_y, old_w, old_h;
+  int is_maximized;
+  char title[64];
+  warp_context_t *warp_ctx;
+  warp1_context_t *warp1_ctx;
+  int is_warp1;
+  unsigned char *rgba_buffer;
+  int buffer_w, buffer_h;
+  int is_dirty;
+  int is_dragging;
+  int is_resizing;
+  int resize_w, resize_h; // Frozen dimensions during resize
+  float fade_alpha;      // Fade to white: 0.0 (content) to 1.0 (white)
+  int is_calculating;    // Calculation state after resize
+  float scroll_x, scroll_y;
+  float target_scroll_x, target_scroll_y;
+  int no_decoration;
+  int is_menubar;
+
+  // Caching for performance
+  uint8_t *shadow_cache;   // Alpha mask for the shadow
+  int shadow_cache_w, shadow_cache_h;
+  uint32_t *frame_cache;   // Title bar + rounded corners frame
+  int frame_cache_w, frame_cache_h;
+  uint8_t *window_mask;    // Alpha mask for the entire window shape (squircle)
+  
+  // SVG caching for performance
+  char *last_svg_str;      // Cached SVG string to detect changes
+  uint32_t *raster_cache;  // Rasterized SVG cache
+  int raster_cache_w, raster_cache_h;
+} window_t;
+
+static void window_update_caches(window_t *win);
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1);
 static void close_active_window();
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
 void set_pending_command(const char *cmd);
+
+#define MAX_WINDOWS 8
+static window_t g_windows[MAX_WINDOWS];
+static int g_window_count = 0;
+static int g_active_window_index = -1;
 
 // --- Global State Store (Sync with UI) ---
 typedef struct { char key[64]; char val[512]; } global_var_t;
@@ -152,28 +193,7 @@ typedef struct { char key[64]; char val[512]; } global_var_t;
 static global_var_t g_global_vars[MAX_GLOBAL_VARS];
 static int g_global_var_count = 0;
 
-void set_w1_global(const char *key, const char *val) {
-  // Sync dev flags
-  if (strcmp(key, "~~dev/pointerCheck") == 0) {
-    g_dev_pointer_check = (strcmp(val, "true") == 0);
-  } else if (strcmp(key, "~~dev/eventCheck") == 0) {
-    g_dev_event_check = (strcmp(val, "true") == 0);
-  } else if (strcmp(key, "~~dev/showHUD") == 0) {
-    g_dev_show_hud = (strcmp(val, "true") == 0);
-  }
-
-  for (int i = 0; i < g_global_var_count; i++) {
-    if (strcmp(g_global_vars[i].key, key) == 0) {
-      strncpy(g_global_vars[i].val, val, 511);
-      return;
-    }
-  }
-  if (g_global_var_count < MAX_GLOBAL_VARS) {
-    strncpy(g_global_vars[g_global_var_count].key, key, 63);
-    strncpy(g_global_vars[g_global_var_count].val, val, 511);
-    g_global_var_count++;
-  }
-}
+void set_w1_global(const char *key, const char *val);
 
 const char *get_w1_global(const char *key) {
   // Return current state of dev flags if requested
@@ -188,30 +208,84 @@ const char *get_w1_global(const char *key) {
 }
 
 // --- Simple JSON Parser for OS Settings ---
-static void parse_os_settings() {
-  if (!g_os_settings_found) return;
-  
-  // Dev flags
-  if (strstr(g_os_settings_buffer, "\"pointerCheck\": true")) set_w1_global("~~dev/pointerCheck", "true");
-  else if (strstr(g_os_settings_buffer, "\"pointerCheck\": false")) set_w1_global("~~dev/pointerCheck", "false");
-  
-  if (strstr(g_os_settings_buffer, "\"eventCheck\": true")) set_w1_global("~~dev/eventCheck", "true");
-  else if (strstr(g_os_settings_buffer, "\"eventCheck\": false")) set_w1_global("~~dev/eventCheck", "false");
-  
-  if (strstr(g_os_settings_buffer, "\"showHUD\": true")) set_w1_global("~~dev/showHUD", "true");
-  else if (strstr(g_os_settings_buffer, "\"showHUD\": false")) set_w1_global("~~dev/showHUD", "false");
+static const char* json_skip_ws(const char* p) {
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+    return p;
+}
 
-  // Firstboot commands (More robust parsing)
-  const char *fb_key = strstr(g_os_settings_buffer, "\"firstboot\"");
+// --- OS Settings Fallback (C-embedded) ---
+static const char* g_default_os_settings = 
+"{\n"
+"  \"dev\": {\n"
+"    \"pointerCheck\": true,\n"
+"    \"eventCheck\": false,\n"
+"    \"showHUD\": true\n"
+"  },\n"
+"  \"firstboot\": [\n"
+"    \"warp topbar.warp\"\n"
+"  ],\n"
+"  \"main\": {\n"
+"    \"dark\": true\n"
+"  }\n"
+"}";
+
+static void parse_os_settings() {
+  const char* buf = g_os_settings_found ? g_os_settings_buffer : g_default_os_settings;
+  
+  if (g_os_settings_found) {
+    set_w1_global("--warpSystemLog", "SettingsFileFound!");
+  } else {
+    set_w1_global("--warpSystemLog", "UsingEmbeddedSettings.");
+  }
+  
+  // Robust check for "dark" key
+  const char *dark_key = strstr(buf, "\"dark\"");
+  if (dark_key) {
+    const char *p = json_skip_ws(dark_key + 6);
+    if (*p == ':') {
+        p = json_skip_ws(p + 1);
+        if (strncmp(p, "true", 4) == 0 || strncmp(p, "\"true\"", 6) == 0) {
+            set_w1_global("~~main/dark", "true");
+        } else {
+            set_w1_global("~~main/dark", "false");
+        }
+    }
+  }
+
+  // Dev flags
+  const char *ptr_key = strstr(buf, "\"pointerCheck\"");
+  if (ptr_key) {
+    const char *p = json_skip_ws(ptr_key + 14);
+    if (*p == ':') {
+        p = json_skip_ws(p + 1);
+        if (strncmp(p, "true", 4) == 0) {
+            set_w1_global("~~dev/pointerCheck", "true");
+            g_dev_pointer_check = 1;
+        } else if (strncmp(p, "false", 5) == 0) {
+            set_w1_global("~~dev/pointerCheck", "false");
+            g_dev_pointer_check = 0;
+        }
+    }
+  }
+  
+  if (strstr(buf, "\"eventCheck\": true")) set_w1_global("~~dev/eventCheck", "true");
+  else if (strstr(buf, "\"eventCheck\": false")) set_w1_global("~~dev/eventCheck", "false");
+  
+  if (strstr(buf, "\"showHUD\": true")) set_w1_global("~~dev/showHUD", "true");
+  else if (strstr(buf, "\"showHUD\": false")) set_w1_global("~~dev/showHUD", "false");
+
+  // Firstboot commands
+  const char *fb_key = strstr(buf, "\"firstboot\"");
   if (fb_key) {
     const char *p = strstr(fb_key, ":");
     if (p) {
         p++; // skip ':'
-        while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
+        p = json_skip_ws(p);
         if (*p == '[') {
             p++; // skip '['
             while (*p && *p != ']') {
-                while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')) p++;
+                p = json_skip_ws(p);
+                if (*p == ',') { p++; p = json_skip_ws(p); }
                 if (*p == '\"') {
                     p++; // skip '\"'
                     const char *start = p;
@@ -223,11 +297,6 @@ static void parse_os_settings() {
                         memcpy(cmd, start, len);
                         cmd[len] = '\0';
                         set_pending_command(cmd);
-                        
-                        char log[160] = "FirstbootCmd: ";
-                        strlcat(log, cmd, 159);
-                        set_w1_global("--warpSystemLog", log);
-                        
                         p++; // skip '\"'
                     }
                 } else if (*p == ']') {
@@ -239,6 +308,15 @@ static void parse_os_settings() {
         }
     }
   }
+  
+  // Status Log for debug
+  const char* is_dark = get_w1_global("~~main/dark");
+  char startup_msg[128] = "OSReady Theme:";
+  strlcat(startup_msg, is_dark, 127);
+  set_w1_global("--warpSystemLog", startup_msg);
+  
+  // 常にブートを許可
+  g_os_settings_found = 1; 
 }
 
 // FPU有効化
@@ -351,6 +429,8 @@ long double __divtf3(long double a, long double b) { return a / b; }
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
+static uint32_t wallpaper_base_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static int g_wallpaper_ready = 0;
 static uint32_t blink_buf[50 * 50];
 #define HUD_W 320
 #define HUD_H_MAX 240
@@ -1154,16 +1234,17 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
     for (int i = 0; i < layer->width * layer->height; i++) {
       dst[i] = src[i];
     }
+    memcpy(wallpaper_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
+    g_wallpaper_ready = 1;
   } else {
     g_svg_scale = 1.0f;
     g_svg_tx = 0.0f;
     g_svg_ty = 0.0f;
     svg_render_full(layer);
+    memcpy(svg_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
+    g_svg_ready = 1;
   }
 
-  memcpy(svg_base_buf, layer->buffer,
-         sizeof(uint32_t) * layer->width * layer->height);
-  g_svg_ready = 1;
   return 1;
 }
 
@@ -1210,58 +1291,62 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
       g_warp_modules[g_warp_module_count].start = start;
       g_warp_modules[g_warp_module_count].size = size;
       g_warp_module_count++;
+    }
 
-      // Core modules identification (using the same logic as before)
-      if (s) {
-        if (strstr(s, "main.warpc") || strstr(s, "warpc") || strstr(s, "WARPC")) {
+    // Core modules identification (Always check regardless of g_warp_module_count)
+    if (s) {
+      if (strstr(s, "main.warpc") || strstr(s, "warpc")) {
+        if (!g_warp_mod_found) {
           if (size > 32767) size = 32767;
           memcpy(g_warp_buffer, (void *)(uintptr_t)start, size);
           g_warp_buffer[size] = '\0';
           g_warp_mod_found = 1;
-        } else if (strstr(s, "terminal")) {
+        }
+      } else if (strstr(s, "terminal")) {
+        if (!g_terminal_mod_found) {
           if (size > 32767) size = 32767;
           memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)start, size);
           g_terminal_warp_buffer[size] = '\0';
           g_terminal_mod_found = 1;
-        } else if (strstr(s, "menubar")) {
+        }
+      } else if (strstr(s, "menubar")) {
+        if (!g_menubar_mod_found) {
           if (size > 32767) size = 32767;
           memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)start, size);
           g_menubar_warp_buffer[size] = '\0';
           g_menubar_mod_found = 1;
-        } else if (strstr(s, "test.warp")) {
-          if (size > 32767) size = 32767;
-          memcpy(g_warp1_buffer, (void *)(uintptr_t)start, size);
-          g_warp1_buffer[size] = '\0';
-          g_warp1_mod_found = 1;
-        } else if (strstr(s, ".warp") || strstr(s, "WARP")) {
-          if (!g_warp1_mod_found) {
-             if (size > 32767) size = 32767;
-             memcpy(g_warp1_buffer, (void *)(uintptr_t)start, size);
-             g_warp1_buffer[size] = '\0';
-             g_warp1_mod_found = 1;
-          }
-        } else if (strstr(s, "logo") || strstr(s, "LOGO")) {
-          if (!g_bootlogo_found) {
-            if (size > 65535) size = 65535;
-            memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
-            g_bootlogo_buffer[size] = '\0';
-            g_bootlogo_found = 1;
-          }
-        } else if (strstr(s, "wall") || strstr(s, "WALL") || strstr(s, "paper")) {
-          if (!g_wallpaper_found) {
-            if (size > 262143) size = 262143;
-            memcpy(g_wallpaper_buffer, (void *)(uintptr_t)start, size);
-            g_wallpaper_buffer[size] = '\0';
-            g_wallpaper_found = 1;
-          }
-        } else if (strstr(s, "os_settings") || strstr(s, ".json")) {
-          if (!g_os_settings_found) {
-            if (size > 16383) size = 16383;
-            memcpy(g_os_settings_buffer, (void *)(uintptr_t)start, size);
-            g_os_settings_buffer[size] = '\0';
-            g_os_settings_found = 1;
-          }
         }
+      } else if (strstr(s, "os_settings.json") || strstr(s, "settings") || strstr(s, ".json")) {
+        if (!g_os_settings_found) {
+          if (size > 16383) size = 16383;
+          memcpy(g_os_settings_buffer, (void *)(uintptr_t)start, size);
+          g_os_settings_buffer[size] = '\0';
+          g_os_settings_found = 1;
+          set_w1_global("--warpSystemLog", "SettingsFileFound!");
+        }
+      } else if (strstr(s, "logo")) {
+        if (!g_bootlogo_found) {
+          if (size > 65535) size = 65535;
+          memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
+          g_bootlogo_buffer[size] = '\0';
+          g_bootlogo_found = 1;
+        }
+      }
+    }
+  }
+
+  // Fallback for settings: check all modules for typical JSON content if not found by name
+  if (!g_os_settings_found) {
+    for (uint32_t i = 0; i < mbi->mods_count; i++) {
+      const char *data = (const char *)(uintptr_t)mods[i].mod_start;
+      uint32_t size = mods[i].mod_end - mods[i].mod_start;
+      if (size > 5 && data[0] == '{') {
+        if (size > 16383) size = 16383;
+        memcpy(g_os_settings_buffer, data, size);
+        g_os_settings_buffer[size] = '\0';
+        g_os_settings_found = 1;
+        set_w1_global("--warpSystemLog", "SettingsFoundByContent!");
+        break;
       }
     }
   }
@@ -1314,44 +1399,6 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   }
 }
 
-typedef struct {
-  int x, y, w, h;
-  int old_x, old_y, old_w, old_h;
-  int is_maximized;
-  char title[64];
-  warp_context_t *warp_ctx;
-  warp1_context_t *warp1_ctx;
-  int is_warp1;
-  unsigned char *rgba_buffer;
-  int buffer_w, buffer_h;
-  int is_dirty;
-  int is_dragging;
-  int is_resizing;
-  int resize_w, resize_h; // Frozen dimensions during resize
-  float fade_alpha;      // Fade to white: 0.0 (content) to 1.0 (white)
-  int is_calculating;    // Calculation state after resize
-  float scroll_x, scroll_y;
-  float target_scroll_x, target_scroll_y;
-  int no_decoration;
-  int is_menubar;
-
-  // Caching for performance
-  uint8_t *shadow_cache;   // Alpha mask for the shadow
-  int shadow_cache_w, shadow_cache_h;
-  uint32_t *frame_cache;   // Title bar + rounded corners frame
-  int frame_cache_w, frame_cache_h;
-  uint8_t *window_mask;    // Alpha mask for the entire window shape (squircle)
-  
-  // SVG caching for performance
-  char *last_svg_str;      // Cached SVG string to detect changes
-  uint32_t *raster_cache;  // Rasterized SVG cache
-  int raster_cache_w, raster_cache_h;
-} window_t;
-
-#define MAX_WINDOWS 8
-static window_t g_windows[MAX_WINDOWS];
-static int g_window_count = 0;
-static int g_active_window_index = -1;
 // --- ターミナル・コマンド処理 ---
 #define MAX_PENDING_COMMANDS 8
 static char g_pending_commands[MAX_PENDING_COMMANDS][256];
@@ -1451,6 +1498,70 @@ static void handle_terminal_command(const char *cmd) {
     if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
     else g_dev_pointer_check = 0;
     strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
+  } else if (strncmp(trimmed, "dev dark=", 9) == 0) {
+    const char *val = trimmed + 9;
+    set_w1_global("~~json/main/dark", val);
+    strncpy(g_hud_status, (strcmp(val, "true") == 0) ? "Dark:ON" : "Dark:OFF", 63);
+    for (int i = 0; i < g_window_count; i++) {
+      window_update_caches(&g_windows[i]);
+      g_windows[i].is_dirty = 1;
+    }
+    g_svg_dirty = 1;
+  }
+}
+
+static void sync_all_window_themes() {
+  static int last_is_dark = -1;
+  const char *dark_val = get_w1_global("~~main/dark");
+  int is_dark = (strcmp(dark_val, "true") == 0);
+  
+  if (is_dark != last_is_dark) {
+    for (int i = 0; i < g_window_count; i++) {
+      window_update_caches(&g_windows[i]);
+      g_windows[i].is_dirty = 1;
+    }
+    last_is_dark = is_dark;
+  }
+}
+
+void set_w1_global(const char *key, const char *val) {
+  // Sync dev flags
+  if (strcmp(key, "~~dev/pointerCheck") == 0) {
+    g_dev_pointer_check = (strcmp(val, "true") == 0);
+  } else if (strcmp(key, "~~dev/eventCheck") == 0) {
+    g_dev_event_check = (strcmp(val, "true") == 0);
+  } else if (strcmp(key, "~~dev/showHUD") == 0) {
+    g_dev_show_hud = (strcmp(val, "true") == 0);
+  }
+
+  int theme_changed = (strcmp(key, "~~json/main/dark") == 0);
+
+  for (int i = 0; i < g_global_var_count; i++) {
+    if (strcmp(g_global_vars[i].key, key) == 0) {
+      if (strcmp(g_global_vars[i].val, val) != 0) {
+        strncpy(g_global_vars[i].val, val, 511);
+        if (theme_changed) {
+          for (int j = 0; j < g_window_count; j++) {
+            window_update_caches(&g_windows[j]);
+            g_windows[j].is_dirty = 1;
+          }
+          g_svg_dirty = 1;
+        }
+      }
+      return;
+    }
+  }
+  if (g_global_var_count < MAX_GLOBAL_VARS) {
+    strncpy(g_global_vars[g_global_var_count].key, key, 63);
+    strncpy(g_global_vars[g_global_var_count].val, val, 511);
+    g_global_var_count++;
+    if (theme_changed) {
+      for (int j = 0; j < g_window_count; j++) {
+        window_update_caches(&g_windows[j]);
+        g_windows[j].is_dirty = 1;
+      }
+      g_svg_dirty = 1;
+    }
   }
 }
 
@@ -1509,10 +1620,17 @@ static void window_update_caches(window_t *win) {
     win->frame_cache_w = fw;
     win->frame_cache_h = fh;
   }
-  
-  uint32_t theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
-  for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = 0xFF000000 | theme;
 
+  const char *dark_val = get_w1_global("~~main/dark");
+  int is_dark = (strcmp(dark_val, "true") == 0);
+
+  uint32_t theme;
+  if (is_dark) {
+    theme = (win == &g_windows[g_active_window_index]) ? 0xFF1E1E1E : 0xFF333333;
+  } else {
+    theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
+  }
+  for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = theme;
   // 3. Update Window Mask Cache (Squircle) - Reverted to SVG for exact Warp shape
   int mw = win->w;
   int mh = win->h + title_h;
@@ -1770,8 +1888,10 @@ static void close_active_window() {
 }
 
 static void draw_wallpaper(layer_t *layer) {
-  // Use existing bootlogo as wallpaper
-  if (g_svg_ready) {
+  // Use rasterized wallpaper if available
+  if (g_wallpaper_ready) {
+    memcpy(layer->buffer, wallpaper_base_buf, sizeof(uint32_t) * layer->width * layer->height);
+  } else if (g_svg_ready) {
     memcpy(layer->buffer, svg_base_buf, sizeof(uint32_t) * layer->width * layer->height);
   } else {
     layer_fill(layer, 0x00000000); // Transparent fallback
@@ -1780,6 +1900,7 @@ static void draw_wallpaper(layer_t *layer) {
 
 static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
+  sync_all_window_themes();
   draw_wallpaper(layer);
   
   for (int i = 0; i < g_window_count; i++) {
@@ -2993,8 +3114,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // メインループ (常時60fpsターゲット)
   while (1) {
-    if (g_pending_command_count > 0) {
+    if (auto_booted && g_pending_command_count > 0) {
       // Process one command at a time from the head
+      char log[256] = "ExecFirstboot: ";
+      strlcat(log, g_pending_commands[0], 255);
+      set_w1_global("--warpSystemLog", log);
+      
       handle_terminal_command(g_pending_commands[0]);
       // Shift queue
       for (int i = 0; i < g_pending_command_count - 1; i++) {
@@ -3004,7 +3129,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       g_svg_dirty = 1;
     }
 
-    if (!auto_booted && current_os_mode == OS_MODE_CLASSIC &&
+    if (!auto_booted && g_os_settings_found && current_os_mode == OS_MODE_CLASSIC &&
         (timer_ticks - boot_start_tick > 50)) {
       current_os_mode = OS_MODE_WARPDESKTOP;
       g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;

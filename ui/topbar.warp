@@ -48,7 +48,11 @@ screen{
         Button{
             text: ("キャンセル"),
             oneClick: (setScreen{main})
-        }
+        },
 
+        tonalButton{
+            text: ("再起動"),
+            oneClick: (reset{now})
+        }
     }
 }
