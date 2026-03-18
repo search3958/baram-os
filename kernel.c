@@ -174,6 +174,7 @@ typedef struct window_struct {
   char *last_svg_str;      // Cached SVG string to detect changes
   uint32_t *raster_cache;  // Rasterized SVG cache
   int raster_cache_w, raster_cache_h;
+  float render_scale;      // Scale at which the buffer was rendered
 } window_t;
 
 static void window_update_caches(window_t *win);
@@ -1704,6 +1705,15 @@ static void window_update_caches(window_t *win) {
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
+  int is_active = (win == &g_windows[g_active_window_index]);
+  float target_scale = is_active ? 1.0f : 0.5f;
+  
+  // If resolution scale changed, force update
+  if (win->render_scale != target_scale) {
+    win->is_dirty = 1;
+    win->render_scale = target_scale;
+  }
+
   // Check if update is needed (engine_dirty flag)
   int needs_update = 0;
   if (win->is_warp1) {
@@ -1730,7 +1740,7 @@ static void window_redraw(window_t *win) {
 
   // Check if SVG string changed
   int svg_changed = 1;
-  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0 && win->rgba_buffer) {
+  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0 && win->rgba_buffer && !win->is_dirty) {
     svg_changed = 0;
   }
 
@@ -1746,26 +1756,31 @@ static void window_redraw(window_t *win) {
     int content_h = (int)img->height;
     if (content_h < win->h) content_h = win->h;
 
+    int scaled_w = (int)((float)win->w * target_scale);
+    int scaled_h = (int)((float)content_h * target_scale);
+    if (scaled_w < 1) scaled_w = 1;
+    if (scaled_h < 1) scaled_h = 1;
+
     // Allocate/Resize SVG raster cache
-    if (!win->raster_cache || win->raster_cache_w != win->w || win->raster_cache_h != content_h) {
+    if (!win->raster_cache || win->raster_cache_w != scaled_w || win->raster_cache_h != scaled_h) {
       if (win->raster_cache) free(win->raster_cache);
-      win->raster_cache = (uint32_t *)malloc((size_t)win->w * (size_t)content_h * 4);
-      win->raster_cache_w = win->w;
-      win->raster_cache_h = content_h;
+      win->raster_cache = (uint32_t *)malloc((size_t)scaled_w * (size_t)scaled_h * 4);
+      win->raster_cache_w = scaled_w;
+      win->raster_cache_h = scaled_h;
     }
 
     // Rasterize SVG into cache
     if (win->raster_cache) {
       strncpy(g_hud_status, "ClearCache", 63);
-      for (int i = 0; i < win->w * content_h; i++) win->raster_cache[i] = 0xFFFFFFFF;
+      for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0xFFFFFFFF;
 
       strncpy(g_hud_status, "NSVGRast", 63);
       if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-      nsvgRasterize(g_svg_rast, img, 0, 0, 1.0f, (unsigned char*)win->raster_cache, win->w, content_h, win->w * 4);
+      nsvgRasterize(g_svg_rast, img, 0, 0, target_scale, (unsigned char*)win->raster_cache, scaled_w, scaled_h, scaled_w * 4);
 
       strncpy(g_hud_status, "RBSwap", 63);
       unsigned char *p = (unsigned char*)win->raster_cache;
-      for (int i = 0; i < win->w * content_h; i++) {
+      for (int i = 0; i < scaled_w * scaled_h; i++) {
         unsigned char r = p[0], b = p[2];
         p[0] = b; p[2] = r; p += 4;
       }
@@ -1800,9 +1815,9 @@ static void window_redraw(window_t *win) {
       temp_layer.width = win->buffer_w;
       temp_layer.height = win->buffer_h;
       if (win->is_warp1) {
-        warp1_context_draw_texts(win->warp1_ctx, &temp_layer, 0, 0);
+        warp1_context_draw_texts(win->warp1_ctx, &temp_layer, 0, 0, win->render_scale); 
       } else {
-        warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0);
+        warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0, win->render_scale);
       }
     }
   }
@@ -2097,12 +2112,12 @@ static void redraw_warp_svg(layer_t *layer) {
 
       for (int dy = cy0; dy < cy1; dy++) {
         int py = win->y + dy;
-        int src_y = dy - sy_int;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
         int frozen_w = win->is_resizing ? win->resize_w : win->w;
         int frozen_h = win->is_resizing ? win->resize_h : win->h;
 
-        if (src_y < 0 || src_y >= win->buffer_h || (win->is_resizing && (dy >= frozen_h || src_y >= frozen_h))) {
+        int sy_raw = dy - sy_int;
+        if (sy_raw < 0 || sy_raw >= win->h || (win->is_resizing && (dy >= frozen_h || sy_raw >= frozen_h))) {
           uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
           for (int dx = cx0; dx < cx1; dx++) {
             uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
@@ -2112,13 +2127,24 @@ static void redraw_warp_svg(layer_t *layer) {
           continue;
         }
 
-        uint32_t *src_content = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
+        // Map screen-space y to buffer-space y
+        int src_y = (int)((float)sy_raw * win->render_scale);
+        if (src_y < 0) src_y = 0;
+        if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
+
+        uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
         uint8_t *mask_line = &win->window_mask[(dy + title_h) * win->w];
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
         for (int dx = cx0; dx < cx1; dx++) {
           int px = win->x + dx;
           uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
-          uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content[dx];
+          
+          // Map screen-space x to buffer-space x
+          int src_x = (int)((float)dx * win->render_scale);
+          if (src_x < 0) src_x = 0;
+          if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
+
+          uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content_line[src_x];
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
           dst_line[px] = blend_colors(dst_line[px], color, alpha);
         }

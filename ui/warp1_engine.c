@@ -881,10 +881,10 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
 }
 
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
-void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy) {
+void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy, float scale) {
     extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
     for (int i = 0; i < ctx->texts_count; i++) {
-        layer_draw_ttf(layer, ctx->texts[i].x + ox, ctx->texts[i].y + oy, ctx->texts[i].text, ctx->texts[i].size, ctx->texts[i].color);
+        layer_draw_ttf(layer, (int)((float)ctx->texts[i].x * scale) + ox, (int)((float)ctx->texts[i].y * scale) + oy, ctx->texts[i].text, ctx->texts[i].size * scale, ctx->texts[i].color);
     }
 }
 

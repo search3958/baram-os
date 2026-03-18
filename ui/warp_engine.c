@@ -1764,11 +1764,11 @@ const char* warp_context_get_svg(warp_context_t* ctx) {
 extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str,
                            float font_size, uint32_t color);
 
-void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int off_y) {
+void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int off_y, float scale) {
   if (!layer)
     return;
   for (int i = 0; i < ctx->texts_count; i++) {
-    layer_draw_ttf(layer, ctx->texts[i].x + off_x, ctx->texts[i].y + off_y, ctx->texts[i].text, ctx->texts[i].size, ctx->texts[i].color);
+    layer_draw_ttf(layer, (int)((float)ctx->texts[i].x * scale) + off_x, (int)((float)ctx->texts[i].y * scale) + off_y, ctx->texts[i].text, ctx->texts[i].size * scale, ctx->texts[i].color);
   }
 }
 
