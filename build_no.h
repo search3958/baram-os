@@ -1,1 +1,1 @@
-#define BUILD_NUMBER 530
+#define BUILD_NUMBER 532

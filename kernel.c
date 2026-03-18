@@ -492,7 +492,9 @@ static int g_font_ready = 0;
 static const char *g_font_error = NULL;
 
 // メモリアロケータ (フリーリスト方式)
-static char heap[1024 * 1024 * 128]; // 128MB に拡大
+extern char _kernel_end[];
+static char *heap_ptr = NULL;
+static size_t heap_total_size = 0;
 
 typedef struct block_header {
   size_t size; // このブロックのデータサイズ (ヘッダ除く)
@@ -503,23 +505,25 @@ typedef struct block_header {
 
 static int heap_initialized = 0;
 
-static void heap_init(void) {
-  block_header_t *first = (block_header_t *)heap;
-  first->size = sizeof(heap) - BLOCK_HDR_SIZE;
+static void heap_init(void *start, size_t size) {
+  heap_ptr = (char *)start;
+  heap_total_size = size;
+  block_header_t *first = (block_header_t *)heap_ptr;
+  first->size = heap_total_size - BLOCK_HDR_SIZE;
   first->used = 0;
   heap_initialized = 1;
 }
 
 void *malloc(size_t size) {
   if (!heap_initialized)
-    heap_init();
+    return NULL;
   if (size == 0)
     return NULL;
   // 8バイトアライメント
   size = (size + 7) & ~7;
 
-  char *p = heap;
-  char *end = heap + sizeof(heap);
+  char *p = heap_ptr;
+  char *end = heap_ptr + heap_total_size;
 
   while (p + BLOCK_HDR_SIZE <= end) {
     block_header_t *hdr = (block_header_t *)p;
@@ -548,8 +552,8 @@ void free(void *ptr) {
   hdr->used = 0;
 
   // 隣接する空きブロックをマージ (前方向)
-  char *p = heap;
-  char *end = heap + sizeof(heap);
+  char *p = heap_ptr;
+  char *end = heap_ptr + heap_total_size;
   while (p + BLOCK_HDR_SIZE <= end) {
     block_header_t *cur = (block_header_t *)p;
     char *next_p = p + BLOCK_HDR_SIZE + cur->size;
@@ -587,8 +591,8 @@ uint32_t get_used_memory(void) {
   if (!heap_initialized)
     return 0;
   uint32_t used = 0;
-  char *p = heap;
-  char *end = heap + sizeof(heap);
+  char *p = heap_ptr;
+  char *end = heap_ptr + heap_total_size;
   while (p + BLOCK_HDR_SIZE <= end) {
     block_header_t *hdr = (block_header_t *)p;
     if (hdr->used) {
@@ -597,6 +601,34 @@ uint32_t get_used_memory(void) {
     p += BLOCK_HDR_SIZE + hdr->size;
   }
   return used;
+}
+
+uint32_t get_static_memory_usage(void) {
+    uint32_t size = 0;
+    size += sizeof(desktop_buf);
+    size += sizeof(svg_buf);
+    size += sizeof(svg_base_buf);
+    size += sizeof(blink_buf);
+    size += sizeof(hud_buf);
+    size += sizeof(text_buf);
+    size += sizeof(nextgen_ui_buf);
+    // その他のグローバル配列
+    size += sizeof(g_warp_modules);
+    size += sizeof(g_warp_buffer);
+    size += sizeof(g_warp1_buffer);
+    size += sizeof(g_terminal_warp_buffer);
+    size += sizeof(g_menubar_warp_buffer);
+    size += sizeof(g_bootlogo_buffer);
+    size += sizeof(g_wallpaper_buffer);
+    size += sizeof(g_os_settings_buffer);
+    size += sizeof(g_windows);
+    size += sizeof(g_global_vars);
+    return size;
+}
+
+uint32_t get_kernel_image_size(void) {
+    // 1MB から _kernel_end まで
+    return (uint32_t)((uintptr_t)_kernel_end - 0x100000);
 }
 
 void *memset(void *s, int c, size_t n) {
@@ -2479,7 +2511,7 @@ static void handle_command(const char *cmd) {
 }
 
 static void hud_update(layer_t *hud, unsigned int cpu_percent,
-                       unsigned int mem_used_kb, unsigned int mem_total_kb) {
+                       unsigned int mem_total_kb) {
   if (!g_dev_show_hud) {
     hud->active = 0;
     return;
@@ -2487,7 +2519,7 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   hud->active = 1;
   layer_fill(hud, 0xFF000000);
 
-  char line1[64], line2[64], line3[64], line4[64];
+  char line1[64], line2[64], line3[64], line4[64], line5[64];
 
   // 1行目: Build Info
   char *p = line1;
@@ -2496,17 +2528,33 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   p = append_uint(p, BUILD_NUMBER);
   *p = '\0';
 
-  // 2行目: CPU/MEM
+  // 2行目: CPU/MEM (Total Used / Total Available)
+  uint32_t kernel_size = get_kernel_image_size();
+  uint32_t static_size = get_static_memory_usage();
+  uint32_t heap_used = get_used_memory();
+  uint32_t modules_size = 0;
+  for (uint32_t i = 0; i < g_warp_module_count; i++) modules_size += g_warp_modules[i].size;
+
+  uint32_t total_used_kb = (kernel_size + static_size + heap_used + modules_size) / 1024;
+  
   p = line2;
   *p++ = 'C'; *p++ = 'P'; *p++ = 'U'; *p++ = ':'; *p++ = ' ';
   p = append_uint(p, cpu_percent);
-  *p++ = '%'; *p++ = ' '; *p++ = 'M'; *p++ = 'E'; *p++ = 'M'; *p++ = ':'; *p++ = ' ';
-  p = append_uint(p, mem_used_kb);
+  *p++ = '%'; *p++ = ' '; *p++ = 'R'; *p++ = 'A'; *p++ = 'M'; *p++ = ':'; *p++ = ' ';
+  p = append_uint(p, total_used_kb);
   *p++ = '/'; p = append_uint(p, mem_total_kb);
   *p++ = 'K'; *p++ = 'B'; *p = '\0';
 
-  // 3行目: Engine Status
+  // 3行目: Memory Breakdown (K:Kernel, S:Static, H:Heap, M:Mods)
   p = line3;
+  *p++ = 'K'; *p++ = ':'; p = append_uint(p, kernel_size / 1024);
+  *p++ = ' '; *p++ = 'S'; *p++ = ':'; p = append_uint(p, static_size / 1024);
+  *p++ = ' '; *p++ = 'H'; *p++ = ':'; p = append_uint(p, heap_used / 1024);
+  *p++ = ' '; *p++ = 'M'; *p++ = ':'; p = append_uint(p, modules_size / 1024);
+  *p = '\0';
+
+  // 4行目: Engine Status
+  p = line4;
   *p++ = 'M'; *p++ = ':';
   const char *m_name = (current_os_mode == OS_MODE_CLASSIC) ? "CLS" : "WDP";
   while (*m_name) *p++ = *m_name++;
@@ -2515,8 +2563,8 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   while (*s_status) *p++ = *s_status++;
   *p = '\0';
 
-  // 4行目: Status & Mouse
-  p = line4;
+  // 5行目: Status & Mouse
+  p = line5;
   const char *w_label = "S: ";
   while (*w_label) *p++ = *w_label++;
   const char *w_status = g_hud_status;
@@ -2526,12 +2574,6 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   p = append_uint(p, (unsigned int)mouse_x);
   *p++ = ',';
   p = append_uint(p, (unsigned int)mouse_y);
-  *p++ = ' '; *p++ = 'I'; *p++ = ':';
-  p = append_uint(p, (unsigned int)mouse_interrupt_counter);
-  
-  if (g_dev_event_check) {
-    *p++ = ' '; *p++ = '('; *p++ = 'E'; *p++ = 'V'; *p++ = ')';
-  }
   *p = '\0';
 
   // 5行目以降: System Log (Warp)
@@ -2569,9 +2611,10 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   layer_draw_string(hud, 2, 8, line2, 0xFFFFFFFF, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 16, line3, 0xFF00FF00, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 24, line4, 0xFFFFFF00, TRANSPARENT_COLOR);
+  layer_draw_string(hud, 2, 32, line5, 0xFFFFFFFF, TRANSPARENT_COLOR);
   
   for (int i = 0; i < log_count; i++) {
-    layer_draw_string(hud, 2, 32 + i * 8, log_lines[i], 0xFF00FFFF, TRANSPARENT_COLOR);
+    layer_draw_string(hud, 2, 40 + i * 8, log_lines[i], 0xFF00FFFF, TRANSPARENT_COLOR);
   }
 }
 
@@ -3034,6 +3077,24 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   if (mbi)
     g_mbi_flags = mbi->flags;
 
+  // 動的ヒープの初期化
+  uintptr_t heap_start = (uintptr_t)_kernel_end;
+  if (mbi->flags & 0x8 && mbi->mods_count > 0) {
+      multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+      for (uint32_t i = 0; i < mbi->mods_count; i++) {
+          if (mods[i].mod_end > heap_start) {
+              heap_start = mods[i].mod_end;
+          }
+      }
+  }
+  // 4KBアライメント
+  heap_start = (heap_start + 4095) & ~4095;
+  uint32_t mem_total_kb = mbi->mem_upper;
+  uintptr_t heap_end = 0x100000 + mem_total_kb * 1024;
+  if (heap_end > heap_start) {
+      heap_init((void*)heap_start, heap_end - heap_start);
+  }
+
   // SVG描画などの初期化より前に、まず赤画面を出す
   for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
     fill_framebuffer_red_early(mbi);
@@ -3155,9 +3216,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   uint32_t last_blink_tick = 0;
   int blink_state = 0;
   uint32_t last_stat_tick = 0;
-  uint32_t last_idle_tick = 0;
+  uint32_t last_idle_tick = idle_ticks;
   unsigned int cpu_percent = 0;
-  uint32_t mem_total_kb = mbi->mem_upper;
 
   int last_hover = -2;
   int last_mouse_x = -1;
@@ -3306,8 +3366,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent,
-                   (unsigned int)(get_used_memory() / 1024), mem_total_kb);
+        hud_update(&hud_layer, cpu_percent, mem_total_kb);
         last_stat_tick = timer_ticks;
         last_idle_tick = idle_ticks;
       }
@@ -3615,8 +3674,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           uint32_t idle_pct = (idle * 100u) / total;
           cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent,
-                   (unsigned int)(get_used_memory() / 1024), mem_total_kb);
+        hud_update(&hud_layer, cpu_percent, mem_total_kb);
         last_stat_tick = timer_ticks;
         last_idle_tick = idle_ticks;
       }

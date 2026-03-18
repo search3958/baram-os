@@ -13,4 +13,7 @@ SECTIONS {
 
     .data : { *(.data) }
     .bss  : { *(.bss) }
+
+    . = ALIGN(4096);
+    _kernel_end = .;
 }
