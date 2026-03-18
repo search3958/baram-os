@@ -276,6 +276,8 @@ typedef struct {
   char val[512];
 } token_t;
 
+typedef struct { char id[64]; int token_index; } screen_info_t;
+
 struct warp_context {
   struct {
     char key[64];
@@ -284,6 +286,9 @@ struct warp_context {
   int state_count;
 
   char current_screen[64];
+  char parsed_screen_id[64];
+  screen_info_t screens[MAX_SCREENS];
+  int screens_count_scanned;
 
   visibility_t visibility[MAX_VARS];
   int visibility_count;
@@ -330,6 +335,8 @@ struct warp_context {
 // 前方宣言
 static void set_state(warp_context_t *ctx, const char *key, const char *val);
 static const char *get_state(warp_context_t *ctx, const char *key);
+static void parse_current_screen_classic(warp_context_t *ctx);
+static void skip_block_classic(warp_context_t *ctx);
 
 
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
@@ -1041,6 +1048,9 @@ void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int 
 
 void warp_context_set_state(warp_context_t *ctx, const char *key, const char *val) {
   set_state(ctx, key, val);
+  if (warp_strcasecmp(key, "_currentScreen") == 0) {
+    parse_current_screen_classic(ctx);
+  }
   ctx->engine_dirty = 1;
 }
 
@@ -1063,7 +1073,6 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
   int is_dark = (warp_strcmp(dark_val, "true") == 0);
 
   if (warp_strcmp(node->tag, "screen") == 0) {
-    if (warp_strcmp(id, ctx->current_screen) != 0) return;
     char bg_color[32], bg_opacity[16];
     eval_attr(ctx, node, "backgroundColor", bg_color, sizeof(bg_color));
     eval_attr(ctx, node, "backgroundOpacity", bg_opacity, sizeof(bg_opacity));
@@ -1571,6 +1580,46 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
   return 0;
 }
 
+static void skip_block_classic(warp_context_t *ctx) {
+  if (ctx->token_pos + 1 >= ctx->token_count || ctx->tokens[ctx->token_pos + 1].val[0] != '(') {
+    ctx->token_pos++;
+    return;
+  }
+  ctx->token_pos += 2;
+  int depth = 1;
+  while (ctx->token_pos < ctx->token_count && depth > 0) {
+    if (ctx->tokens[ctx->token_pos].type == TK_PUNCT) {
+      if (ctx->tokens[ctx->token_pos].val[0] == '(') depth++;
+      else if (ctx->tokens[ctx->token_pos].val[0] == ')') depth--;
+    }
+    ctx->token_pos++;
+  }
+}
+
+static void parse_current_screen_classic(warp_context_t *ctx) {
+  if (warp_strcmp(ctx->current_screen, ctx->parsed_screen_id) == 0 && ctx->root_nodes_count > 0) return;
+
+  // Clear current UI tree
+  ctx->nodes_count = 0;
+  ctx->root_nodes_count = 0;
+  ctx->texts_count = 0;
+  ctx->dynamic_nodes_count = 0;
+
+  for (int i = 0; i < ctx->screens_count_scanned; i++) {
+    if (warp_strcmp(ctx->screens[i].id, ctx->current_screen) == 0) {
+      ctx->token_pos = ctx->screens[i].token_index;
+      warp_node_t *node = parse_node(ctx);
+      if (node && ctx->root_nodes_count < 16) {
+        ctx->root_nodes[ctx->root_nodes_count++] = node;
+        init_state_from_ast(ctx, node);
+      }
+      warp_strcpy(ctx->parsed_screen_id, ctx->current_screen);
+      return;
+    }
+  }
+  ctx->parsed_screen_id[0] = '\0';
+}
+
 warp_context_t* warp_context_create(const char* code) {
   warp_context_t* ctx = (warp_context_t*)malloc(sizeof(warp_context_t));
   if (!ctx) return NULL;
@@ -1579,7 +1628,8 @@ warp_context_t* warp_context_create(const char* code) {
   warp_strcpy(ctx->current_screen, "main");
   warp_strcpy(ctx->engine_status, "Idle");
   ctx->screen_count = 0;
-  // システムログを初期化
+  ctx->screens_count_scanned = 0;
+  ctx->parsed_screen_id[0] = '\0';
 
   if (!code || !code[0]) {
     warp_strncpy(ctx->engine_status, "Err: No Code", 127);
@@ -1593,24 +1643,56 @@ warp_context_t* warp_context_create(const char* code) {
       break;
     ctx->tokens[ctx->token_count++] = tk;
   }
+  
   ctx->token_pos = 0;
   while (ctx->token_pos < ctx->token_count) {
-    warp_node_t *node = parse_node(ctx);
-    if (node && ctx->root_nodes_count < 16)
-      ctx->root_nodes[ctx->root_nodes_count++] = node;
-  }
-  if (ctx->root_nodes_count > 0) {
-    for (int i = 0; i < ctx->root_nodes_count; i++) {
-      init_state_from_ast(ctx, ctx->root_nodes[i]);
-      if (i == 0 && warp_strcmp(ctx->root_nodes[i]->tag, "screen") == 0) {
-        const char *id = get_attr(ctx->root_nodes[i], "id");
-        if (id[0] != '\0')
-          warp_strncpy(ctx->current_screen, id, 63);
+    if (ctx->tokens[ctx->token_pos].type == TK_AT) {
+      parse_script(ctx);
+    } else if (ctx->tokens[ctx->token_pos].type == TK_WORD && warp_strcmp(ctx->tokens[ctx->token_pos].val, "screen") == 0) {
+      char screen_id[64] = "main";
+      int start_pos = ctx->token_pos;
+      if (ctx->token_pos + 1 < ctx->token_count && ctx->tokens[ctx->token_pos + 1].val[0] == '(') {
+        int j = ctx->token_pos + 2;
+        int depth = 1;
+        while (j < ctx->token_count && depth > 0) {
+          if (ctx->tokens[j].type == TK_PUNCT) {
+            if (ctx->tokens[j].val[0] == '(') depth++;
+            else if (ctx->tokens[j].val[0] == ')') depth--;
+          }
+          if (depth == 1 && ctx->tokens[j].type == TK_WORD && 
+                   warp_strcmp(ctx->tokens[j].val, "id") == 0 &&
+                   j + 1 < ctx->token_count && ctx->tokens[j+1].val[0] == ':') {
+            int k = j + 2;
+            if (k < ctx->token_count && ctx->tokens[k].val[0] == '(') k++;
+            if (k < ctx->token_count && ctx->tokens[k].type != TK_PUNCT) {
+              warp_strncpy(screen_id, ctx->tokens[k].val, 63);
+            }
+          }
+          j++;
+        }
+        if (ctx->screens_count_scanned < MAX_SCREENS) {
+          warp_strncpy(ctx->screens[ctx->screens_count_scanned].id, screen_id[0] ? screen_id : "main", 63);
+          ctx->screens[ctx->screens_count_scanned].token_index = start_pos;
+          ctx->screens_count_scanned++;
+        }
+        ctx->token_pos = j;
+      } else {
+        ctx->token_pos++;
       }
+    } else {
+      skip_block_classic(ctx);
     }
   }
+
+  if (ctx->screens_count_scanned > 0) {
+    warp_strcpy(ctx->current_screen, ctx->screens[0].id);
+    parse_current_screen_classic(ctx);
+  } else {
+    warp_strcpy(ctx->current_screen, "main");
+  }
+
   update_status_info(ctx);
-  ctx->engine_dirty = 1; // 最初の描画時に計算させる
+  ctx->engine_dirty = 1;
   return ctx;
 }
 
@@ -1619,6 +1701,7 @@ void warp_context_destroy(warp_context_t* ctx) {
 }
 
 void warp_context_update(warp_context_t* ctx, int width, int height) {
+  parse_current_screen_classic(ctx);
   ctx->texts_count = 0;
   ctx->svg_output[0] = '\0';
   ctx->engine_dirty = 0;
@@ -1629,11 +1712,6 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
   int total_h = height;
   for (int i = 0; i < ctx->root_nodes_count; i++) {
     warp_node_t *node = ctx->root_nodes[i];
-    if (warp_strcmp(node->tag, "screen") == 0) {
-      const char *id = get_attr(node, "id");
-      if (warp_strcmp(id, ctx->current_screen) != 0)
-        continue;
-    }
     int h = layout_node(ctx, node, 0, 0, width);
     if (h > total_h)
       total_h = h;
@@ -1695,14 +1773,10 @@ void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int
 }
 
 void warp_context_click(warp_context_t* ctx, int x, int y) {
+  parse_current_screen_classic(ctx);
   int clicked = 0;
   for (int i = 0; i < ctx->root_nodes_count; i++) {
     warp_node_t *node = ctx->root_nodes[i];
-    if (warp_strcmp(node->tag, "screen") == 0) {
-      const char *id = get_attr(node, "id");
-      if (warp_strcmp(id, ctx->current_screen) != 0)
-        continue;
-    }
     if (check_clicks(ctx, node, x, y)) {
       clicked = 1;
       break;

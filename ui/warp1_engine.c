@@ -45,9 +45,15 @@ typedef struct { char name[64]; script_block1_t blocks[MAX_SCRIPT_BLOCKS]; int b
 typedef enum { TK1_WORD, TK1_STR, TK1_PUNCT, TK1_AT, TK1_EOF } tk1_type;
 typedef struct { tk1_type type; char val[512]; } token1_t;
 
+typedef struct { char id[64]; int token_index; } w1_screen_info_t;
+
 struct warp1_context {
     struct { char key[64]; char val[512]; } state[MAX_VARS]; int state_count;
     char current_screen[64];
+    char parsed_screen_id[64];
+    w1_screen_info_t screens[MAX_SCREENS];
+    int screens_count;
+
     warp1_node_t nodes[MAX_NODES]; int nodes_count;
     warp1_node_t *root_nodes[16]; int root_nodes_count;
     script1_t scripts[MAX_SCRIPTS]; int scripts_count;
@@ -644,8 +650,6 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
     int is_dark = (w1_strcmp(dark_val, "true") == 0);
 
     if (w1_strcmp(node->tag, "screen") == 0) {
-        char real_id[64]; eval_expr(ctx, id_attr, real_id, 63);
-        if (w1_strcmp(real_id, ctx->current_screen) != 0) return;
         emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, is_dark ? "#121212" : "#f1f2f2", "");
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
@@ -739,35 +743,120 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
     }
 }
 
+static void skip_block1(warp1_context_t *ctx) {
+    if (ctx->token_pos + 1 >= ctx->token_count || ctx->tokens[ctx->token_pos + 1].val[0] != '{') {
+        ctx->token_pos++;
+        return;
+    }
+    ctx->token_pos += 2;
+    int depth = 1;
+    while (ctx->token_pos < ctx->token_count && depth > 0) {
+        if (ctx->tokens[ctx->token_pos].type == TK1_PUNCT) {
+            if (ctx->tokens[ctx->token_pos].val[0] == '{') depth++;
+            else if (ctx->tokens[ctx->token_pos].val[0] == '}') depth--;
+        }
+        ctx->token_pos++;
+    }
+}
+
+static void parse_current_screen1(warp1_context_t *ctx) {
+    if (w1_strcmp(ctx->current_screen, ctx->parsed_screen_id) == 0 && ctx->root_nodes_count > 0) return;
+    
+    // Clear current UI tree
+    ctx->nodes_count = 0;
+    ctx->root_nodes_count = 0;
+    ctx->texts_count = 0;
+    
+    for (int i = 0; i < ctx->screens_count; i++) {
+        if (w1_strcmp(ctx->screens[i].id, ctx->current_screen) == 0) {
+            ctx->token_pos = ctx->screens[i].token_index;
+            warp1_node_t *node = parse_node(ctx);
+            if (node && ctx->root_nodes_count < 16) {
+                ctx->root_nodes[ctx->root_nodes_count++] = node;
+                init_state_from_ast1(ctx, node);
+            }
+            w1_strcpy(ctx->parsed_screen_id, ctx->current_screen);
+            return;
+        }
+    }
+    // If not found, clear current screen ID
+    ctx->parsed_screen_id[0] = '\0';
+}
+
 warp1_context_t* warp1_context_create(const char* code) {
     warp1_context_t* ctx = (warp1_context_t*)malloc(sizeof(warp1_context_t)); if (!ctx) return NULL;
-    for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
+    extern void *memset(void *s, int c, size_t n);
+    memset(ctx, 0, sizeof(warp1_context_t));
     ctx->focused_node_idx = -1;
     ctx->screen_count = 0;
-    ctx->engine_dirty = 1; // 最初の描画時に計算させる
-    // システムログを初期化
-    ctx->src_ptr = code; while(1) {
+    ctx->screens_count = 0;
+    ctx->parsed_screen_id[0] = '\0';
+    ctx->engine_dirty = 1;
+
+    ctx->src_ptr = code;
+    while(1) {
         token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
         ctx->tokens[ctx->token_count++] = tk;
     }
-    ctx->token_pos = 0; while (ctx->token_pos < ctx->token_count) {
-        warp1_node_t *node = parse_node(ctx); if (node && ctx->root_nodes_count < 16) ctx->root_nodes[ctx->root_nodes_count++] = node;
+    
+    ctx->token_pos = 0;
+    while (ctx->token_pos < ctx->token_count) {
+        if (ctx->tokens[ctx->token_pos].type == TK1_AT) {
+            parse_script(ctx);
+        } else if (ctx->tokens[ctx->token_pos].type == TK1_WORD && w1_strcmp(ctx->tokens[ctx->token_pos].val, "screen") == 0) {
+            // Found a screen, scan for ID
+            char screen_id[64] = "main";
+            int start_pos = ctx->token_pos;
+            if (ctx->token_pos + 1 < ctx->token_count && ctx->tokens[ctx->token_pos + 1].val[0] == '{') {
+                int j = ctx->token_pos + 2;
+                int depth = 1;
+                while (j < ctx->token_count && depth > 0) {
+                    if (ctx->tokens[j].type == TK1_PUNCT) {
+                        if (ctx->tokens[j].val[0] == '{') depth++;
+                        else if (ctx->tokens[j].val[0] == '}') depth--;
+                    }
+                    if (depth == 1 && ctx->tokens[j].type == TK1_WORD && 
+                             w1_strcmp(ctx->tokens[j].val, "id") == 0 &&
+                             j + 1 < ctx->token_count && ctx->tokens[j+1].val[0] == ':') {
+                        int k = j + 2;
+                        if (k < ctx->token_count && ctx->tokens[k].val[0] == '(') k++;
+                        if (k < ctx->token_count && ctx->tokens[k].type != TK1_PUNCT) {
+                            w1_strncpy(screen_id, ctx->tokens[k].val, 63);
+                        }
+                    }
+                    j++;
+                }
+                if (ctx->screens_count < MAX_SCREENS) {
+                    w1_strncpy(ctx->screens[ctx->screens_count].id, screen_id[0] ? screen_id : "main", 63);
+                    ctx->screens[ctx->screens_count].token_index = start_pos;
+                    ctx->screens_count++;
+                }
+                ctx->token_pos = j;
+            } else {
+                ctx->token_pos++;
+            }
+        } else {
+            skip_block1(ctx);
+        }
     }
-    if (ctx->root_nodes_count > 0) {
-        for (int i = 0; i < ctx->root_nodes_count; i++) init_state_from_ast1(ctx, ctx->root_nodes[i]);
-        char id[64]; eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); w1_strcpy(ctx->current_screen, id[0]?id:"main");
+
+    if (ctx->screens_count > 0) {
+        w1_strcpy(ctx->current_screen, ctx->screens[0].id);
+        parse_current_screen1(ctx);
+    } else {
+        w1_strcpy(ctx->current_screen, "main");
     }
+    
     return ctx;
 }
 
 void warp1_context_destroy(warp1_context_t* ctx) { if (ctx) free(ctx); }
 
 void warp1_context_update(warp1_context_t* ctx, int width, int height) {
+    parse_current_screen1(ctx);
     ctx->texts_count = 0; ctx->svg_output[0] = '\0'; ctx->win_w = width; ctx->win_h = height;
     int total_h = height;
     for (int i = 0; i < ctx->root_nodes_count; i++) {
-        char id[64]; eval_attr(ctx, ctx->root_nodes[i], "id", id, 63);
-        if (w1_strcmp(id, ctx->current_screen) != 0) continue;
         int h = layout_node1(ctx, ctx->root_nodes[i], 0, 0, width); if (h > total_h) total_h = h;
     }
     extern char *append_int(char *p, int v); char w_str[16], h_str[16]; append_int(w_str, width); append_int(h_str, total_h);
@@ -801,6 +890,7 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 
 
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
+    parse_current_screen1(ctx);
     int clicked = 0;
     // 逆順（手前に描画されたものから）でチェック
     for (int i = ctx->nodes_count - 1; i >= 0; i--) {
@@ -958,7 +1048,13 @@ void warp1_context_key_input(warp1_context_t* ctx, char c) {
 
 int warp1_context_is_dirty(warp1_context_t* ctx) { return ctx->engine_dirty; }
 void warp1_context_clear_dirty(warp1_context_t* ctx) { ctx->engine_dirty = 0; }
-void warp1_context_set_state(warp1_context_t* ctx, const char* k, const char* v) { set_state(ctx, k, v); ctx->engine_dirty = 1; }
+void warp1_context_set_state(warp1_context_t* ctx, const char* k, const char* v) { 
+    set_state(ctx, k, v); 
+    if (w1_strcasecmp(k, "_currentScreen") == 0) {
+        parse_current_screen1(ctx);
+    }
+    ctx->engine_dirty = 1; 
+}
 void warp1_context_set_mouse(warp1_context_t* ctx, int x, int y) { ctx->mouse_x = x; ctx->mouse_y = y; }
 int warp1_context_get_node_count(warp1_context_t* ctx) { return ctx->nodes_count; }
 void warp1_context_get_node_info(warp1_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* d) {
