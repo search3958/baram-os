@@ -250,8 +250,8 @@ void screen_refresh(void) {
       compose_layer_region(bb, g_layers[i], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
   }
 
-  // 3. カーソル描画 (ARGBブレンド)
-  if (g_cursor_bitmap && g_dev_pointer_check) {
+  // 3. カーソル描画 (ARGBブレンド) - 常に表示
+  if (g_cursor_bitmap) {
     int cx = (int)mouse_x, cy = (int)mouse_y;
     for (int my = 0; my < g_cursor_h; my++) {
       int sy = cy + my;
@@ -270,6 +270,19 @@ void screen_refresh(void) {
           uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
           uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
           bb[sy * SCREEN_WIDTH + sx] = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+        }
+      }
+    }
+  }
+
+  // 3b. Pointer Check (3x3 Box) - デバッグ用
+  if (g_dev_pointer_check) {
+    int hx = (int)mouse_x + 28, hy = (int)mouse_y + 21; // Hotspot position
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        int py = hy + dy, px = hx + dx;
+        if (px >= 0 && px < SCREEN_WIDTH && py >= 0 && py < SCREEN_HEIGHT) {
+          bb[py * SCREEN_WIDTH + px] = 0xFFFF0000; // Red box
         }
       }
     }

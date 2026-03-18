@@ -117,7 +117,7 @@ static int g_terminal_mod_found = 0;
 static int g_menubar_mod_found = 0;
 static char g_bootlogo_buffer[65536] = "";
 static int g_bootlogo_found = 0;
-static char g_wallpaper_buffer[262144] = ""; // Increased for high-res wallpapers
+static char g_wallpaper_buffer[1048576] = ""; // Increased to 1MB for high-res wallpapers
 static int g_wallpaper_found = 0;
 static char g_os_settings_buffer[16384] = "";
 static int g_os_settings_found = 0;
@@ -267,6 +267,52 @@ static void parse_os_settings() {
         }
     }
   }
+
+  // Wallpaper key
+  const char *wp_key = strstr(buf, "\"wallpaper\"");
+  if (wp_key) {
+    const char *p = json_skip_ws(wp_key + 11);
+    if (*p == ':') {
+      p = json_skip_ws(p + 1);
+      p = json_skip_ws(p);
+      if (*p == '\"') {
+        p++; // skip '\"'
+        const char *start = p;
+        while (*p && *p != '\"') p++;
+        if (*p == '\"') {
+          char wp_name[64];
+          int len = p - start;
+          if (len > 63) len = 63;
+          memcpy(wp_name, start, len);
+          wp_name[len] = '\0';
+          set_w1_global("~~main/wallpaper", wp_name);
+          
+          // Try to load this wallpaper from modules
+          int found_module = 0;
+          for (uint32_t i = 0; i < g_warp_module_count; i++) {
+            if (strcmp(g_warp_modules[i].name, wp_name) == 0) {
+              uint32_t size = g_warp_modules[i].size;
+              if (size > 1048575) size = 1048575; // Leave space for \0
+              memcpy(g_wallpaper_buffer, (void *)(uintptr_t)g_warp_modules[i].start, size);
+              g_wallpaper_buffer[size] = '\0';
+              g_wallpaper_found = 1;
+              
+              char log_msg[128] = "WallpaperSet:";
+              strlcat(log_msg, wp_name, 127);
+              set_w1_global("--warpSystemLog", log_msg);
+              found_module = 1;
+              break;
+            }
+          }
+          if (!found_module) {
+            char log_msg[128] = "WallpaperNotFound:";
+            strlcat(log_msg, wp_name, 127);
+            set_w1_global("--warpSystemLog", log_msg);
+          }
+        }
+      }
+    }
+  }
   
   if (strstr(buf, "\"eventCheck\": true")) set_w1_global("~~dev/eventCheck", "true");
   else if (strstr(buf, "\"eventCheck\": false")) set_w1_global("~~dev/eventCheck", "false");
@@ -310,9 +356,9 @@ static void parse_os_settings() {
   }
   
   // Status Log for debug
-  const char* is_dark = get_w1_global("~~main/dark");
+  const char* dark_val = get_w1_global("~~main/dark");
   char startup_msg[128] = "OSReady Theme:";
-  strlcat(startup_msg, is_dark, 127);
+  strlcat(startup_msg, dark_val, 127);
   set_w1_global("--warpSystemLog", startup_msg);
   
   // 常にブートを許可
@@ -1279,46 +1325,56 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
       g_warp_module_count++;
     }
 
-    // Core modules identification (Always check regardless of g_warp_module_count)
-    if (s) {
-      if (strstr(s, "main.warpc") || strstr(s, "warpc")) {
-        if (!g_warp_mod_found) {
-          if (size > 32767) size = 32767;
-          memcpy(g_warp_buffer, (void *)(uintptr_t)start, size);
-          g_warp_buffer[size] = '\0';
-          g_warp_mod_found = 1;
-        }
-      } else if (strstr(s, "terminal")) {
-        if (!g_terminal_mod_found) {
-          if (size > 32767) size = 32767;
-          memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)start, size);
-          g_terminal_warp_buffer[size] = '\0';
-          g_terminal_mod_found = 1;
-        }
-      } else if (strstr(s, "menubar")) {
-        if (!g_menubar_mod_found) {
-          if (size > 32767) size = 32767;
-          memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)start, size);
-          g_menubar_warp_buffer[size] = '\0';
-          g_menubar_mod_found = 1;
-        }
-      } else if (strstr(s, "os_settings.json") || strstr(s, "settings") || strstr(s, ".json")) {
-        if (!g_os_settings_found) {
-          if (size > 16383) size = 16383;
-          memcpy(g_os_settings_buffer, (void *)(uintptr_t)start, size);
-          g_os_settings_buffer[size] = '\0';
-          g_os_settings_found = 1;
-          set_w1_global("--warpSystemLog", "SettingsFileFound!");
-        }
-      } else if (strstr(s, "logo")) {
-        if (!g_bootlogo_found) {
-          if (size > 65535) size = 65535;
-          memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
-          g_bootlogo_buffer[size] = '\0';
-          g_bootlogo_found = 1;
+      // Core modules identification (Always check regardless of g_warp_module_count)
+      if (s) {
+        if (strstr(s, "main.warpc") || strstr(s, "warpc")) {
+          if (!g_warp_mod_found) {
+            if (size > 32767) size = 32767;
+            memcpy(g_warp_buffer, (void *)(uintptr_t)start, size);
+            g_warp_buffer[size] = '\0';
+            g_warp_mod_found = 1;
+          }
+        } else if (strstr(s, "terminal")) {
+          if (!g_terminal_mod_found) {
+            if (size > 32767) size = 32767;
+            memcpy(g_terminal_warp_buffer, (void *)(uintptr_t)start, size);
+            g_terminal_warp_buffer[size] = '\0';
+            g_terminal_mod_found = 1;
+          }
+        } else if (strstr(s, "menubar")) {
+          if (!g_menubar_mod_found) {
+            if (size > 32767) size = 32767;
+            memcpy(g_menubar_warp_buffer, (void *)(uintptr_t)start, size);
+            g_menubar_warp_buffer[size] = '\0';
+            g_menubar_mod_found = 1;
+          }
+        } else if (strstr(s, "os_settings.json") || strstr(s, "settings") || strstr(s, ".json")) {
+          if (!g_os_settings_found) {
+            if (size > 16383) size = 16383;
+            memcpy(g_os_settings_buffer, (void *)(uintptr_t)start, size);
+            g_os_settings_buffer[size] = '\0';
+            g_os_settings_found = 1;
+            set_w1_global("--warpSystemLog", "SettingsFileFound!");
+          }
+        } else if (strstr(s, "logo")) {
+          if (!g_bootlogo_found) {
+            if (size > 65535) size = 65535;
+            memcpy(g_bootlogo_buffer, (void *)(uintptr_t)start, size);
+            g_bootlogo_buffer[size] = '\0';
+            g_bootlogo_found = 1;
+          }
+        } else if (strstr(s, "wall") || strstr(s, "paper") || strstr(s, "svg")) {
+          // 壁紙候補として読み込む（後で settings で上書きされる可能性もあるが、まずはこれを確保）
+          if (!g_wallpaper_found) {
+            uint32_t copy_size = size;
+            if (copy_size > 1048575) copy_size = 1048575;
+            memcpy(g_wallpaper_buffer, (void *)(uintptr_t)start, copy_size);
+            g_wallpaper_buffer[copy_size] = '\0';
+            g_wallpaper_found = 1;
+            set_w1_global("--warpSystemLog", "WallpaperCandidateLoaded.");
+          }
         }
       }
-    }
   }
 
   // Fallback for settings: check all modules for typical JSON content if not found by name
@@ -1365,14 +1421,6 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
     memcpy(g_bootlogo_buffer, (void *)(uintptr_t)mods[4].mod_start, size);
     g_bootlogo_buffer[size] = '\0'; g_bootlogo_found = 1;
     if (g_warp_module_count > 4) strlcpy(g_warp_modules[4].name, "bootlogo.svg", 63);
-  }
-  if (!g_wallpaper_found && mbi->mods_count >= 6) {
-    uint32_t size = mods[5].mod_end - mods[5].mod_start;
-    if (size > 262143) size = 262143;
-    memcpy(g_wallpaper_buffer, (void *)(uintptr_t)mods[5].mod_start, size);
-    g_wallpaper_buffer[size] = '\0'; g_wallpaper_found = 1;
-    if (g_warp_module_count > 5) strlcpy(g_warp_modules[5].name, "wallpaper_1.svg", 63);
-    set_w1_global("--warpSystemLog", "WallpaperLoadedByIndex!");
   }
 
   // OS 設定をパース

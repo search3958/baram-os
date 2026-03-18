@@ -1,0 +1,14 @@
+{
+  "dev": {
+    "pointerCheck": false,
+    "eventCheck": false,
+    "showHUD": true
+  },
+  "firstboot": [
+    "warp topbar.warp"
+  ],
+  "main": {
+    "dark": true,
+    "wallpaper": "wallpaper_1.svg"
+  }
+}
