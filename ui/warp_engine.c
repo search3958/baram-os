@@ -322,7 +322,6 @@ struct warp_context {
 
   // Screen management (separate SVG per screen)
   char screen_ids[MAX_SCREENS][64];
-  char screen_svgs[MAX_SCREENS][65536];
   int screen_content_heights[MAX_SCREENS];
   float screen_scroll_ys[MAX_SCREENS];
   int screen_count;
@@ -1611,7 +1610,7 @@ warp_context_t* warp_context_create(const char* code) {
     }
   }
   update_status_info(ctx);
-  warp_context_update(ctx, 1280, 720);
+  ctx->engine_dirty = 1; // 最初の描画時に計算させる
   return ctx;
 }
 
@@ -1660,7 +1659,7 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
   }
   warp_strcat(ctx->svg_output, "</svg>");
 
-  // Register/update current screen in screen list
+  // Register/update current screen in screen list (height and scroll only, no SVG string)
   int screen_idx = -1;
   for (int i = 0; i < ctx->screen_count; i++) {
     if (warp_strcmp(ctx->screen_ids[i], ctx->current_screen) == 0) {
@@ -1674,7 +1673,6 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
     ctx->screen_scroll_ys[screen_idx] = 0.0f;
   }
   if (screen_idx >= 0) {
-    warp_strncpy(ctx->screen_svgs[screen_idx], ctx->svg_output, 65535);
     ctx->screen_content_heights[screen_idx] = total_h;
   }
 
@@ -1828,11 +1826,17 @@ int warp_context_is_dev_event_check(warp_context_t* ctx) {
 // Screen-based scroll management
 const char* warp_context_get_screen_svg(warp_context_t* ctx, const char* screen_id, int* content_height) {
   if (!ctx || !screen_id) return NULL;
-  for (int i = 0; i < ctx->screen_count; i++) {
-    if (warp_strcmp(ctx->screen_ids[i], screen_id) == 0) {
-      if (content_height) *content_height = ctx->screen_content_heights[i];
-      return ctx->screen_svgs[i];
+  if (warp_strcmp(ctx->current_screen, screen_id) == 0) {
+    if (content_height) {
+      *content_height = 0;
+      for (int i = 0; i < ctx->screen_count; i++) {
+        if (warp_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+          *content_height = ctx->screen_content_heights[i];
+          break;
+        }
+      }
     }
+    return ctx->svg_output;
   }
   return NULL;
 }

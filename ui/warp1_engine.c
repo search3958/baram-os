@@ -60,7 +60,6 @@ struct warp1_context {
     
     // Screen management (separate SVG per screen)
     char screen_ids[MAX_SCREENS][64];
-    char screen_svgs[MAX_SCREENS][65536];
     int screen_content_heights[MAX_SCREENS];
     float screen_scroll_ys[MAX_SCREENS];
     int screen_count;
@@ -745,6 +744,7 @@ warp1_context_t* warp1_context_create(const char* code) {
     for(int i=0;i<(int)sizeof(warp1_context_t);i++) { ((char*)ctx)[i] = 0; }
     ctx->focused_node_idx = -1;
     ctx->screen_count = 0;
+    ctx->engine_dirty = 1; // 最初の描画時に計算させる
     // システムログを初期化
     ctx->src_ptr = code; while(1) {
         token1_t tk = next_token(ctx); if (tk.type == TK1_EOF || ctx->token_count >= MAX_TOKENS) break;
@@ -757,7 +757,7 @@ warp1_context_t* warp1_context_create(const char* code) {
         for (int i = 0; i < ctx->root_nodes_count; i++) init_state_from_ast1(ctx, ctx->root_nodes[i]);
         char id[64]; eval_attr(ctx, ctx->root_nodes[0], "id", id, 63); w1_strcpy(ctx->current_screen, id[0]?id:"main");
     }
-    warp1_context_update(ctx, 1280, 720); return ctx;
+    return ctx;
 }
 
 void warp1_context_destroy(warp1_context_t* ctx) { if (ctx) free(ctx); }
@@ -776,7 +776,7 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
     for (int i = 0; i < ctx->root_nodes_count; i++) emit_svg_recursive1(ctx, ctx->root_nodes[i], ctx->svg_output, sizeof(ctx->svg_output));
     w1_strcat(ctx->svg_output, "</svg>");
     
-    // Register/update current screen in screen list
+    // Register/update current screen in screen list (height and scroll only, no SVG string)
     int screen_idx = -1;
     for (int i = 0; i < ctx->screen_count; i++) {
         if (w1_strcmp(ctx->screen_ids[i], ctx->current_screen) == 0) { screen_idx = i; break; }
@@ -787,7 +787,6 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
         ctx->screen_scroll_ys[screen_idx] = 0.0f;
     }
     if (screen_idx >= 0) {
-        w1_strncpy(ctx->screen_svgs[screen_idx], ctx->svg_output, 65535);
         ctx->screen_content_heights[screen_idx] = total_h;
     }
 }
@@ -993,11 +992,17 @@ void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
 // Screen-based scroll management
 const char* warp1_context_get_screen_svg(warp1_context_t* ctx, const char* screen_id, int* content_height) {
     if (!ctx || !screen_id) return NULL;
-    for (int i = 0; i < ctx->screen_count; i++) {
-        if (w1_strcmp(ctx->screen_ids[i], screen_id) == 0) {
-            if (content_height) *content_height = ctx->screen_content_heights[i];
-            return ctx->screen_svgs[i];
+    if (w1_strcmp(ctx->current_screen, screen_id) == 0) {
+        if (content_height) {
+            *content_height = 0;
+            for (int i = 0; i < ctx->screen_count; i++) {
+                if (w1_strcmp(ctx->screen_ids[i], screen_id) == 0) {
+                    *content_height = ctx->screen_content_heights[i];
+                    break;
+                }
+            }
         }
+        return ctx->svg_output;
     }
     return NULL;
 }
