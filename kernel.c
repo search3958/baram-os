@@ -531,7 +531,7 @@ long double __divtf3(long double a, long double b) { return a / b; }
 
 // レイヤー用
 static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
-static uint32_t svg_buf[SVG_WIDTH * SVG_HEIGHT];
+static uint32_t *svg_buf = NULL; // 動的確保に変更
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
 #define HUD_W 320
@@ -663,7 +663,6 @@ uint32_t get_used_memory(void) {
 uint32_t get_static_memory_usage(void) {
     uint32_t size = 0;
     size += sizeof(desktop_buf);
-    size += sizeof(svg_buf);
     size += sizeof(svg_base_buf);
     size += sizeof(blink_buf);
     size += sizeof(hud_buf);
@@ -3084,6 +3083,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   register_layer(&desktop);
 
   // 2. SVG表示エリア (ロゴ用)
+  svg_buf = (uint32_t *)malloc(SVG_WIDTH * SVG_HEIGHT * 4);
   layer_t svg_layer;
   svg_layer.buffer = svg_buf;
   svg_layer.x = 0;
@@ -3093,7 +3093,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   svg_layer.transparent = 0;
   svg_layer.active = 1;
   svg_layer.dynamic = 0;
-  svg_init(&svg_layer, 0);
+  if (svg_buf) svg_init(&svg_layer, 0);
   register_layer(&svg_layer);
 
   // 3. 点滅インジケータ (右下)
@@ -3202,6 +3202,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       screen_mark_static_dirty();
       
       svg_layer.active = 0;
+      if (svg_buf) {
+          free(svg_buf);
+          svg_buf = NULL;
+          svg_layer.buffer = NULL;
+      }
       blink_layer.active = 0;
       nextgen_ui_layer.active = 1;
       text_layer.active = 0;
