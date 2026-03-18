@@ -281,7 +281,7 @@ static const char* json_skip_ws(const char* p) {
 static const char* g_default_os_settings = 
 "{\n"
 "  \"dev\": {\n"
-"    \"pointerCheck\": true,\n"
+"    \"pointerCheck\": false,\n"
 "    \"eventCheck\": false,\n"
 "    \"showHUD\": true\n"
 "  },\n"
@@ -537,7 +537,7 @@ long double __subtf3(long double a, long double b) { return a - b; }
 long double __divtf3(long double a, long double b) { return a / b; }
 
 // レイヤー用
-static uint32_t desktop_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static uint32_t main_screen_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t *svg_buf = NULL; // 動的確保に変更
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
@@ -545,11 +545,10 @@ static uint32_t blink_buf[50 * 50];
 #define HUD_H_MAX 240
 static uint32_t hud_buf[HUD_W * HUD_H_MAX];
 static int g_hud_current_h = 64;
-// 文字レイヤー (全画面 透過)
+// 文字レイヤー (透過処理用)
 #define TEXT_LAYER_W SCREEN_WIDTH
 #define TEXT_LAYER_H SCREEN_HEIGHT
-static uint32_t text_buf[TEXT_LAYER_W * TEXT_LAYER_H];
-static uint32_t nextgen_ui_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static uint32_t text_layer_buf[TEXT_LAYER_W * TEXT_LAYER_H];
 // stbtt フォント
 static stbtt_fontinfo g_font;
 static int g_font_ready = 0;
@@ -669,12 +668,11 @@ uint32_t get_used_memory(void) {
 
 uint32_t get_static_memory_usage(void) {
     uint32_t size = 0;
-    size += sizeof(desktop_buf);
+    size += sizeof(main_screen_buf);
     size += sizeof(svg_base_buf);
     size += sizeof(blink_buf);
     size += sizeof(hud_buf);
-    size += sizeof(text_buf);
-    size += sizeof(nextgen_ui_buf);
+    size += sizeof(text_layer_buf);
     // その他のグローバル配列
     size += sizeof(g_warp_modules);
     size += sizeof(g_windows);
@@ -3351,7 +3349,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // 1. 背景 (黒)
   layer_t desktop;
-  desktop.buffer = desktop_buf;
+  desktop.buffer = main_screen_buf;
   desktop.x = 0;
   desktop.y = 0;
   desktop.width = SCREEN_WIDTH;
@@ -3403,7 +3401,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // 5. 次世代UI SVGレイヤー
   layer_t nextgen_ui_layer;
-  nextgen_ui_layer.buffer = nextgen_ui_buf;
+  nextgen_ui_layer.buffer = main_screen_buf;
   nextgen_ui_layer.x = 0;
   nextgen_ui_layer.y = 0;
   nextgen_ui_layer.width = SCREEN_WIDTH;
@@ -3413,14 +3411,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   nextgen_ui_layer.dynamic = 1;
   {
     for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
-      nextgen_ui_buf[i] = TRANSPARENT_COLOR;
+      main_screen_buf[i] = TRANSPARENT_COLOR;
   }
   register_layer(&nextgen_ui_layer);
   register_layer(&hud_layer); // HUDを上に
 
   // 6. 文字レイヤー
   layer_t text_layer;
-  text_layer.buffer = text_buf;
+  text_layer.buffer = text_layer_buf;
   text_layer.x = 0;
   text_layer.y = 0;
   text_layer.width = TEXT_LAYER_W;
@@ -3430,7 +3428,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   text_layer.dynamic = 1;
   {
     for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++)
-      text_buf[i] = TRANSPARENT_COLOR;
+      text_layer_buf[i] = TRANSPARENT_COLOR;
   }
   // 初回描画を確実に実行
   screen_mark_static_dirty();
@@ -3476,7 +3474,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       // テーマに合わせて背景色を決定
       const char *dark_val = get_w1_global("~~main/dark");
       uint32_t bg_color = (strcmp(dark_val, "true") == 0) ? 0xFF121212 : 0xFFF5F5F5;
-      for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) desktop_buf[i] = bg_color;
+      for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) main_screen_buf[i] = bg_color;
       
       extern void screen_mark_static_dirty(void);
       screen_mark_static_dirty();
