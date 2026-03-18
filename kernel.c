@@ -233,6 +233,7 @@ typedef struct window_struct {
   uint32_t *raster_cache;  // Rasterized SVG cache
   int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
+  void *dynamic_file_ptr;  // Pointer to on-demand loaded file data from storage
 } window_t;
 
 static void window_update_caches(window_t *win);
@@ -1368,86 +1369,90 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (!mbi) return;
   mbi_ptr = mbi;
   
-  const char *tar_start = NULL;
-  size_t tar_size = 0;
-  int loaded_from_storage = 0;
-
-  // 1. まずストレージ（ディスク）から探す
   ata_init();
   fs_init();
-  uint32_t disk_tar_size = 0;
-  void *disk_tar_data = fs_read_file("initrd.tar", &disk_tar_size);
 
-  if (disk_tar_data && disk_tar_size > 0) {
-      tar_start = (const char *)disk_tar_data;
-      tar_size = disk_tar_size;
-      loaded_from_storage = 1;
-      set_w1_global("--warpSystemLog", "Booted from Storage (Disk).");
+  // 1. ストレージに個別ファイルがあるか確認（代表として main.warpc）
+  uint32_t test_size = 0;
+  void *test_ptr = fs_read_file("main.warpc", &test_size);
+  
+  if (test_ptr) {
+      free(test_ptr); // 確認用なので一旦解放
+      set_w1_global("--warpSystemLog", "INITRD: [STORAGE-MODE] Loading individual files...");
   } else {
-      if (disk_tar_size > 0) {
-          set_w1_global("--warpSystemLog", "DiskLoadFailed (Memory?). Falling back to RAM.");
+      // 2. なければRAMディスクから「展開インストール」
+      const char *ram_tar_ptr = NULL;
+      uint32_t ram_tar_size = 0;
+      if (mbi->flags & 0x8) {
+          multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+          for (uint32_t i = 0; i < mbi->mods_count; i++) {
+            const char *s = (const char *)(uintptr_t)mods[i].string;
+            if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+              ram_tar_ptr = (const char *)(uintptr_t)mods[i].mod_start;
+              ram_tar_size = mods[i].mod_end - mods[i].mod_start;
+              break;
+            }
+          }
       }
-      // 2. なければRAM（Multibootモジュール）から探す
-      if (!(mbi->flags & 0x8) || mbi->mods_count == 0) return;
-      multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
-      for (uint32_t i = 0; i < mbi->mods_count; i++) {
-        const char *s = (const char *)(uintptr_t)mods[i].string;
-        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
-          tar_start = (const char *)(uintptr_t)mods[i].mod_start;
-          tar_size = mods[i].mod_end - mods[i].mod_start;
-          break;
-        }
+
+      if (ram_tar_ptr) {
+          set_w1_global("--warpSystemLog", "INITRD: [INSTALLING] Extracting TAR to Storage...");
+          fs_format();
+          // TARを展開して個別に保存
+          const char *p = ram_tar_ptr;
+          const char *end = ram_tar_ptr + ram_tar_size;
+          while (p + 512 <= end) {
+              tar_header_t *h = (tar_header_t *)p;
+              if (h->name[0] == '\0') break;
+              uint32_t f_size = octal_to_int(h->size, 12);
+              if (h->typeflag == '0' || h->typeflag == '\0') {
+                  fs_write_file(h->name, p + 512, f_size);
+              }
+              p += 512 + ((f_size + 511) & ~511);
+          }
+          set_w1_global("--warpSystemLog", "INITRD: [SUCCESS] Extracted to Disk.");
+          
+          // RAMディスクの参照を即座に消す（これでメモリ計算から除外される）
+          multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+          for (uint32_t i = 0; i < mbi->mods_count; i++) {
+              const char *s = (const char *)(uintptr_t)mods[i].string;
+              if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+                  mods[i].mod_end = mods[i].mod_start;
+              }
+          }
       }
-      set_w1_global("--warpSystemLog", "Booted from RAM (Initrd).");
   }
 
-  if (!tar_start) {
-    set_w1_global("--warpSystemLog", "No initrd found!");
-    return;
-  }
+  // 3. ストレージ（またはインストール直後のディスク）から必要なファイルだけをロード
+  g_warp_ptr = fs_read_file("main.warpc", &g_warp_size);
+  g_terminal_warp_ptr = fs_read_file("terminal.warp", &g_terminal_warp_size);
+  g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
+  g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
+  g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
 
-  // Parse TAR to fill module list (for 'ls' command etc)
-  g_warp_module_count = 0;
-  const char *p = tar_start;
-  const char *end = tar_start + tar_size;
-  while (p + 512 <= end && g_warp_module_count < MAX_WARP_MODULES) {
-    tar_header_t *h = (tar_header_t *)p;
-    if (h->name[0] == '\0') break;
-    uint32_t size = octal_to_int(h->size, 12);
-    
-    strncpy(g_warp_modules[g_warp_module_count].name, h->name, 63);
-    g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)(p + 512);
-    g_warp_modules[g_warp_module_count].size = size;
-    g_warp_module_count++;
-    
-    p += 512 + ((size + 511) & ~511);
-  }
-
-  // Identify core modules
-  g_warp_ptr = tar_find_file(tar_start, tar_size, "main.warpc", &g_warp_size);
   if (g_warp_ptr) g_warp_mod_found = 1;
-
-  g_terminal_warp_ptr = tar_find_file(tar_start, tar_size, "terminal.warp", &g_terminal_warp_size);
-  if (g_terminal_warp_ptr) g_terminal_mod_found = 1;
-
-  g_menubar_warp_ptr = tar_find_file(tar_start, tar_size, "menubar.warp", &g_menubar_warp_size);
-  if (g_menubar_warp_ptr) g_menubar_mod_found = 1;
-
-  g_bootlogo_ptr = tar_find_file(tar_start, tar_size, "bootlogo.svg", &g_bootlogo_size);
-  if (g_bootlogo_ptr) g_bootlogo_found = 1;
-
-  g_os_settings_ptr = tar_find_file(tar_start, tar_size, "os_settings.json", &g_os_settings_size);
-  if (g_os_settings_ptr) g_os_settings_found = 1;
-
-  // OS 設定をパース
-  parse_os_settings();
-
-  // 状態を HUD に反映
-  if (g_warp_mod_found && g_terminal_mod_found) {
-    strncpy(g_hud_status, "InitrdLoaded", 63);
-  } else {
-    strncpy(g_hud_status, "InitrdMissingCore", 63);
+  
+  // モジュールリストもストレージから再構築
+  g_warp_module_count = 0;
+  for (uint32_t i = 0; i < g_sb.num_files && g_warp_module_count < MAX_WARP_MODULES; i++) {
+      fs_entry_t *fe = &g_sb.entries[i];
+      strncpy(g_warp_modules[g_warp_module_count].name, fe->name, 63);
+      // ストレージからのオンデマンド読み込みを簡略化するため、
+      // ここではポインタを NULL にし、実行時に読み込む仕組み（既に add_window 等で対応済）にします。
+      // もしくは、代表的なものだけをここでロード済みポインタとしてセットします。
+      g_warp_modules[g_warp_module_count].start = 0; 
+      g_warp_modules[g_warp_module_count].size = fe->size_bytes;
+      
+      // 既に個別ロードした主要ファイル（main.warpc等）のポインタを反映
+      if (strcmp(fe->name, "main.warpc") == 0) g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)g_warp_ptr;
+      else if (strcmp(fe->name, "terminal.warp") == 0) g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)g_terminal_warp_ptr;
+      
+      g_warp_module_count++;
   }
+
+  parse_os_settings();
+  
+  if (g_warp_mod_found) strncpy(g_hud_status, "DiskMode", 63);
 }
 
 // --- ターミナル・コマンド処理 ---
@@ -1618,10 +1623,17 @@ void set_w1_global(const char *key, const char *val) {
     g_dev_show_hud = (strcmp(val, "true") == 0);
   }
 
+  int is_log = (strcmp(key, "--warpSystemLog") == 0);
   int theme_changed = (strcmp(key, "~~json/main/dark") == 0);
 
   for (int i = 0; i < g_global_var_count; i++) {
     if (strcmp(g_global_vars[i].key, key) == 0) {
+      if (is_log) {
+        // Append log with newline
+        strlcat(g_global_vars[i].val, "\n", 511);
+        strlcat(g_global_vars[i].val, val, 511);
+        return;
+      }
       if (strcmp(g_global_vars[i].val, val) != 0) {
         strncpy(g_global_vars[i].val, val, 511);
         if (theme_changed) {
@@ -1878,6 +1890,7 @@ static void window_redraw(window_t *win) {
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
   if (g_window_count >= MAX_WINDOWS) return;
 
+  void *dynamic_ptr = NULL;
   const char *buf_to_use = NULL;
   
   if (strstr(title, "Terminal") || strstr(title, "terminal")) {
@@ -1889,7 +1902,14 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   if (!buf_to_use) {
     for (uint32_t i = 0; i < g_warp_module_count; i++) {
       if (strcasecmp(g_warp_modules[i].name, title) == 0 || strstr(g_warp_modules[i].name, title)) {
-        buf_to_use = (const char *)(uintptr_t)g_warp_modules[i].start;
+        if (g_warp_modules[i].start != 0) {
+            buf_to_use = (const char *)(uintptr_t)g_warp_modules[i].start;
+        } else {
+            // ストレージからオンデマンド読み込み
+            uint32_t sz = 0;
+            dynamic_ptr = fs_read_file(g_warp_modules[i].name, &sz);
+            buf_to_use = (const char *)dynamic_ptr;
+        }
         break;
       }
     }
@@ -1903,6 +1923,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->target_scroll_x = 0; win->target_scroll_y = 0;
   strncpy(win->title, title, 63);
   win->is_warp1 = is_warp1;
+  win->dynamic_file_ptr = dynamic_ptr; // トラック
 
   if (is_warp1) {
     win->warp1_ctx = warp1_context_create(buf_to_use);
@@ -1955,6 +1976,7 @@ static void close_active_window() {
   if (win->shadow_cache) free(win->shadow_cache);
   if (win->frame_cache) free(win->frame_cache);
   if (win->window_mask) free(win->window_mask);
+  if (win->dynamic_file_ptr) free(win->dynamic_file_ptr);
   
   for (int i = g_active_window_index; i < g_window_count - 1; i++) {
     g_windows[i] = g_windows[i+1];
@@ -2557,14 +2579,26 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   while (*s_status) *p++ = *s_status++;
   *p = '\0';
 
-  // 5行目: Status & Mouse
+  // 5行目: Status & Storage
   p = line5;
   const char *w_label = "S: ";
   while (*w_label) *p++ = *w_label++;
   const char *w_status = g_hud_status;
   while (*w_status) *p++ = *w_status++;
   
-  *p++ = ' '; *p++ = 'M'; *p++ = ':';
+  *p++ = ' '; *p++ = 'D'; *p++ = ':';
+  uint32_t disk_used = 0, disk_total = 0;
+  fs_get_usage(&disk_used, &disk_total);
+  p = append_uint(p, disk_used / 1024);
+  *p++ = '/';
+  p = append_uint(p, disk_total / 1024);
+  *p++ = 'K';
+  *p = '\0';
+
+  // 6行目: Mouse
+  char line6[64];
+  p = line6;
+  *p++ = 'M'; *p++ = ':';
   p = append_uint(p, (unsigned int)mouse_x);
   *p++ = ',';
   p = append_uint(p, (unsigned int)mouse_y);
@@ -2578,7 +2612,16 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   int log_count = 0;
   if (sys_log && sys_log[0]) {
     const char *ls = sys_log;
-    while (*ls && log_count < 20) {
+    // Skip old logs if too many (keep last 10)
+    int total_newlines = 0;
+    while (*ls) { if (*ls == '\n') total_newlines++; ls++; }
+    ls = sys_log;
+    if (total_newlines > 10) {
+      int skip = total_newlines - 10;
+      while (skip > 0 && *ls) { if (*ls == '\n') skip--; ls++; }
+    }
+    
+    while (*ls && log_count < 10) {
       char *ld = log_lines[log_count];
       int count = 0;
       while (*ls && *ls != '\n' && count < 63) {
@@ -2591,8 +2634,8 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
     }
   }
 
-  // 高さの計算 (基本4行(32px) + ログ行数 * 8px + 余白)
-  int new_h = 32 + log_count * 8 + 8;
+  // 高さの計算 (基本6行(48px) + ログ行数 * 8px + 余白)
+  int new_h = 48 + log_count * 8 + 8;
   if (new_h > HUD_H_MAX) new_h = HUD_H_MAX;
   if (new_h < 64) new_h = 64;
   
@@ -2606,9 +2649,10 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
   layer_draw_string(hud, 2, 16, line3, 0xFF00FF00, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 24, line4, 0xFFFFFF00, TRANSPARENT_COLOR);
   layer_draw_string(hud, 2, 32, line5, 0xFFFFFFFF, TRANSPARENT_COLOR);
+  layer_draw_string(hud, 2, 40, line6, 0xFFFFFFFF, TRANSPARENT_COLOR);
   
   for (int i = 0; i < log_count; i++) {
-    layer_draw_string(hud, 2, 40 + i * 8, log_lines[i], 0xFF00FFFF, TRANSPARENT_COLOR);
+    layer_draw_string(hud, 2, 48 + i * 8, log_lines[i], 0xFF00FFFF, TRANSPARENT_COLOR);
   }
 }
 

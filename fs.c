@@ -8,7 +8,7 @@
 #define SUPERBLOCK_SECTORS 16
 #define DATA_START_LBA 16
 
-static fs_superblock_t g_sb;
+fs_superblock_t g_sb;
 
 void fs_init() {
     // Read superblock from disk
@@ -111,6 +111,16 @@ void* fs_read_file(const char *name, uint32_t *out_size) {
         }
     }
     return NULL;
+}
+
+void fs_get_usage(uint32_t *used_bytes, uint32_t *total_bytes) {
+    uint32_t used = 0;
+    for (uint32_t i = 0; i < g_sb.num_files; i++) {
+        used += g_sb.entries[i].size_bytes;
+    }
+    if (used_bytes) *used_bytes = used;
+    // 64MB as set in bld.sh
+    if (total_bytes) *total_bytes = 64 * 1024 * 1024;
 }
 
 void fs_list_files() {
