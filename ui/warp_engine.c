@@ -318,6 +318,7 @@ struct warp_context {
   char engine_status[128];
   char node_svg_buf[4096];
   int mouse_x, mouse_y;
+  int win_w, win_h;
 
   // Screen management (separate SVG per screen)
   char screen_ids[MAX_SCREENS][64];
@@ -787,6 +788,7 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       cy += layout_node(ctx, node->children[i], px + 24, cy, limit_w - 48) + 12;
     }
     node->h = cy - py + 24;
+    if (node->h < ctx->win_h) node->h = ctx->win_h;
   } else if (warp_strcmp(node->tag, "Header") == 0) {
     node->h = 0; // Header itself takes no space in the content area
     // Header children (actions) layout
@@ -949,6 +951,19 @@ static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
 
 void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra) {
+  if (radius == 0.0f) {
+    char rect[256];
+    char *p = rect;
+    p = warp_stpcpy(p, "<rect x=\"");
+    p = append_int(p, x); p = warp_stpcpy(p, "\" y=\"");
+    p = append_int(p, y); p = warp_stpcpy(p, "\" width=\"");
+    p = append_int(p, w); p = warp_stpcpy(p, "\" height=\"");
+    p = append_int(p, h); p = warp_stpcpy(p, "\" fill=\"");
+    p = warp_stpcpy(p, fill); p = warp_stpcpy(p, "\" ");
+    p = warp_stpcpy(p, extra); p = warp_stpcpy(p, " />\n");
+    warp_strncat(dest, rect, dest_size - warp_strlen(dest) - 1);
+    return;
+  }
   float fw = (float)w, fh = (float)h;
   float fx = (float)x, fy = (float)y;
   float s = (fh >= 46.0f) ? 1.15f : 1.0f;
@@ -1608,6 +1623,8 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
   ctx->texts_count = 0;
   ctx->svg_output[0] = '\0';
   ctx->engine_dirty = 0;
+  ctx->win_w = width;
+  ctx->win_h = height;
 
   // Build SVG for current screen only
   int total_h = height;

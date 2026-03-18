@@ -1902,9 +1902,11 @@ static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
   sync_all_window_themes();
   draw_wallpaper(layer);
-  
-  for (int i = 0; i < g_window_count; i++) {
-    window_t *win = &g_windows[i];
+
+  const char *dark_val = get_w1_global("~~main/dark");
+  int is_dark = (strcmp(dark_val, "true") == 0);
+
+  for (int i = 0; i < g_window_count; i++) {    window_t *win = &g_windows[i];
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
     
     if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
@@ -2019,11 +2021,11 @@ static void redraw_warp_svg(layer_t *layer) {
                 if (alpha_f > 0.0f) dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, (uint8_t)(alpha_f * 255));
               }
             }
-            layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, 0xFF000000);
+            layer_draw_ttf(layer, ax + 12, win->y - 26, act_text, 14, is_dark ? 0xFFEEEEEE : 0xFF000000);
             ax -= 10;
           }
         } else {
-          layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, 0xFF333333);
+          layer_draw_ttf(layer, win->x + 70, win->y - 28, win->title, 16, is_dark ? 0xFFEEEEEE : 0xFF333333);
         }
         
         // 4. Draw control circles

@@ -22,11 +22,11 @@ screen{
             oneClick: (~~dev/showHUD = false)
         },
         tonalButton{
-            text: ("dark"),
+            text: ("ダーク"),
             oneClick: (~~main/dark = true)
         },
         tonalButton{
-            text: ("light"),
+            text: ("ライト"),
             oneClick: (~~main/dark = false)
         }
     }
@@ -42,10 +42,10 @@ screen{
             oneClick: (setScreen{main})
         },
         text{
-            text:("正気か？")
+            text:("再起動します。正気ですね？")
         }
 
-        Button{
+        tonalButton{
             text: ("キャンセル"),
             oneClick: (setScreen{main})
         },

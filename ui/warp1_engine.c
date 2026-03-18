@@ -473,6 +473,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             cy += layout_node1(ctx, node->children[i], node->x + 24, cy, limit_w - 48) + 12;
         }
         node->h = cy - py + 24;
+        if (node->h < ctx->win_h) node->h = ctx->win_h;
     } else if (w1_strcmp(node->tag, "card") == 0) {
         cy += 12; char title[128]; eval_attr(ctx, node, "text", title, 127);
         if (title[0] && ctx->texts_count < MAX_TEXTS) {
