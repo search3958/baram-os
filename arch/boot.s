@@ -55,5 +55,5 @@ gdt_ptr:
 
 section .bss
 align 16
-resb 8192
+resb 65536 ; 64KB Stack
 stack_space:

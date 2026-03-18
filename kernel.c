@@ -9,6 +9,8 @@
 #include "drivers.h"
 #include "font/fonts.h"
 #include "ui/svg_data.h"
+#include "storage.h"
+#include "fs.h"
 
 #include <stddef.h>
 
@@ -1363,26 +1365,44 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
 }
 
 static void warp_ui_mod_init(struct multiboot_info *mbi) {
-  if (!mbi || !(mbi->flags & 0x8) || mbi->mods_count == 0)
-    return;
+  if (!mbi) return;
   mbi_ptr = mbi;
-  g_mod_count = mbi->mods_count;
-  multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
-
-  // Find initrd module
+  
   const char *tar_start = NULL;
   size_t tar_size = 0;
-  for (uint32_t i = 0; i < mbi->mods_count; i++) {
-    const char *s = (const char *)(uintptr_t)mods[i].string;
-    if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
-      tar_start = (const char *)(uintptr_t)mods[i].mod_start;
-      tar_size = mods[i].mod_end - mods[i].mod_start;
-      break;
-    }
+  int loaded_from_storage = 0;
+
+  // 1. まずストレージ（ディスク）から探す
+  ata_init();
+  fs_init();
+  uint32_t disk_tar_size = 0;
+  void *disk_tar_data = fs_read_file("initrd.tar", &disk_tar_size);
+
+  if (disk_tar_data && disk_tar_size > 0) {
+      tar_start = (const char *)disk_tar_data;
+      tar_size = disk_tar_size;
+      loaded_from_storage = 1;
+      set_w1_global("--warpSystemLog", "Booted from Storage (Disk).");
+  } else {
+      if (disk_tar_size > 0) {
+          set_w1_global("--warpSystemLog", "DiskLoadFailed (Memory?). Falling back to RAM.");
+      }
+      // 2. なければRAM（Multibootモジュール）から探す
+      if (!(mbi->flags & 0x8) || mbi->mods_count == 0) return;
+      multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+      for (uint32_t i = 0; i < mbi->mods_count; i++) {
+        const char *s = (const char *)(uintptr_t)mods[i].string;
+        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+          tar_start = (const char *)(uintptr_t)mods[i].mod_start;
+          tar_size = mods[i].mod_end - mods[i].mod_start;
+          break;
+        }
+      }
+      set_w1_global("--warpSystemLog", "Booted from RAM (Initrd).");
   }
 
   if (!tar_start) {
-    set_w1_global("--warpSystemLog", "InitrdNotFound!");
+    set_w1_global("--warpSystemLog", "No initrd found!");
     return;
   }
 
@@ -1538,6 +1558,39 @@ static void handle_terminal_command(const char *cmd) {
       g_windows[i].is_dirty = 1;
     }
     g_svg_dirty = 1;
+  } else if (strcmp(trimmed, "storage sync") == 0) {
+    if (!mbi_ptr) {
+        set_w1_global("--warpSystemLog", "Error: No multiboot info");
+        return;
+    }
+    
+    // Lazy Init
+    ata_init();
+    fs_init();
+    
+    // Find initrd.tar in memory
+    const char *tar_data = NULL;
+    uint32_t tar_size = 0;
+    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+    for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
+        const char *s = (const char *)(uintptr_t)mods[i].string;
+        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+            tar_data = (const char *)(uintptr_t)mods[i].mod_start;
+            tar_size = mods[i].mod_end - mods[i].mod_start;
+            break;
+        }
+    }
+    if (tar_data) {
+        fs_format();
+        fs_write_file("initrd.tar", tar_data, tar_size);
+        set_w1_global("--warpSystemLog", "Storage Synced (initrd.tar saved)");
+    } else {
+        set_w1_global("--warpSystemLog", "Error: initrd.tar not found in RAM");
+    }
+  } else if (strcmp(trimmed, "storage ls") == 0) {
+    ata_init();
+    fs_init();
+    fs_list_files();
   }
 }
 

@@ -73,6 +73,8 @@ do_build_and_run() {
     show_progress 4
     i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
     show_progress 5
+    i686-elf-gcc $CFLAGS -c storage.c -o output/storage.o || return 1
+    i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
     i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
     show_progress 6
     i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
@@ -80,7 +82,7 @@ do_build_and_run() {
 
     # 5. カーネルのリンク
     i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/kernel.o output/drivers.o output/warp_engine.o output/warp1_engine.o \
+        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 8
 
@@ -133,6 +135,11 @@ EOF
     i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
     show_progress 11
 
+    # Disk image for storage (64MB)
+    if [ ! -f "output/os.img" ]; then
+        dd if=/dev/zero of=output/os.img bs=1M count=64
+    fi
+
     echo -e "\n  ✅ Build #$CURRENT_BN Success"
 
     # 8. QEMU 起動
@@ -145,6 +152,7 @@ EOF
     fi
 
     qemu-system-i386 -cdrom output/os.iso \
+        -hda output/os.img \
         -vga virtio \
         -m 2G \
         -smp 4 \
