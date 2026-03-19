@@ -203,6 +203,10 @@ static char *append_uint(char *p, unsigned int v);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
 
+int atoi(const char *nptr) {
+  return (int)strtol(nptr, (char **)NULL, 10);
+}
+
 // Window Management
 typedef struct window_struct {
   int x, y, w, h;
@@ -217,6 +221,9 @@ typedef struct window_struct {
   int is_dirty;
   int is_dragging;
   int is_resizing;
+  int is_movable;
+  int is_resizing_enabled;
+  int is_always_full_res;
   int resize_w, resize_h; // Frozen dimensions during resize
   float fade_alpha;      // Fade to white: 0.0 (content) to 1.0 (white)
   int is_calculating;    // Calculation state after resize
@@ -2028,7 +2035,7 @@ static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
   int is_active = (win == &g_windows[g_active_window_index]);
-  float target_scale = is_active ? 1.0f : 0.5f; // 4 pixels for 1 color (2x2)
+  float target_scale = (is_active || win->is_always_full_res) ? 1.0f : 0.5f; // 4 pixels for 1 color (2x2)
 
   
   // If resolution scale changed, force update
@@ -2158,6 +2165,57 @@ static void window_redraw(window_t *win) {
   strncpy(g_hud_status, "Idle", 63);
 }
 
+static void parse_baram_config(window_t *win, const char *code) {
+  if (!code) return;
+  const char *tag = "baram-os-config";
+  const char *pos = strstr(code, tag);
+  if (!pos) return;
+
+  const char *p = strstr(pos, "{");
+  if (!p) return;
+  p++; // Skip '{'
+
+  int brace_level = 1;
+  while (*p && brace_level > 0) {
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')) p++;
+    if (!*p || *p == '}') break;
+
+    // key:("value") の形式を簡易パース
+    char key[64] = {0};
+    int i = 0;
+    while (*p && *p != ':' && *p != ' ' && i < 63) key[i++] = *p++;
+    key[i] = '\0';
+
+    while (*p && (*p == ':' || *p == ' ' || *p == '(' || *p == '\"')) p++;
+    
+    char val[64] = {0};
+    i = 0;
+    while (*p && *p != '\"' && *p != ')' && *p != ' ' && *p != ',' && *p != '}' && i < 63) val[i++] = *p++;
+    val[i] = '\0';
+
+    // 設定の適用
+    if (strcmp(key, "height") == 0) win->h = atoi(val);
+    else if (strcmp(key, "width") == 0) {
+      if (strstr(val, "vw")) win->w = (atoi(val) * SCREEN_WIDTH) / 100;
+      else win->w = atoi(val);
+    }
+    else if (strcmp(key, "left") == 0) win->x = atoi(val);
+    else if (strcmp(key, "top") == 0) win->y = atoi(val);
+    else if (strcmp(key, "showBar") == 0) win->no_decoration = (strcmp(val, "false") == 0);
+    else if (strcmp(key, "move") == 0) win->is_movable = (strcmp(val, "true") == 0);
+    else if (strcmp(key, "resize") == 0) win->is_resizing_enabled = (strcmp(val, "true") == 0); 
+    else if (strcmp(key, "front") == 0) win->is_always_full_res = (strcmp(val, "true") == 0);
+
+    // 次の項目へ
+    while (*p && *p != ',' && *p != '}') {
+        if (*p == '{') brace_level++;
+        if (*p == '}') { brace_level--; if (brace_level <= 0) break; }
+        p++;
+    }
+    if (*p == ',') p++;
+  }
+}
+
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
   if (g_window_count >= MAX_WINDOWS) return;
 
@@ -2230,6 +2288,12 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->render_scale = 1.0f;
   win->no_decoration = 0;
   win->is_menubar = 0;
+  win->is_movable = 1; // Default
+  win->is_resizing_enabled = 1; // Default
+  win->is_always_full_res = 0; // Default
+
+  // Apply baram-os-config from source code if available
+  parse_baram_config(win, buf_to_use);
 
   if (strstr(title, "Menubar") || strstr(title, "menubar")) {
     win->is_menubar = 1;
@@ -2320,7 +2384,7 @@ static void redraw_warp_svg(layer_t *layer) {
         continue; // Skip individual blitting
     }
     
-    if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
+    if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
       float scale = win->render_scale;

@@ -1,21 +1,56 @@
 #!/bin/bash
 
-# --- 進捗表示関数 ---
+# --- 進捗表示・ターミナル管理変数 ---
 TOTAL_STEPS=12
 SPINNER_CHARS=("/" "-" "\\" "|")
 SPINNER_INDEX=0
 
+# --- ターミナル管理機能 ---
+init_terminal() {
+    local rows=$(tput lines)
+    if [ -n "$rows" ] && [ "$rows" -gt 2 ]; then
+        # 画面の最終行を除いた範囲をスクロール領域に設定
+        # これにより、ビルドログは普通に上から下へ流れ、最下行は固定されます
+        printf "\033[1;$(($rows - 1))r"
+    fi
+}
+
+cleanup_terminal() {
+    printf "\033[r" # スクロール範囲の設定を解除（通常の状態に戻す）
+}
+
+draw_footer() {
+    local mode=$1
+    local step=$2
+    local rows=$(tput lines)
+    [ -z "$rows" ] && return
+    
+    # カーソル位置を保存して最下行へ移動、行消去
+    printf "\033[s"
+    printf "\033[${rows};0H\033[K"
+    
+    if [ "$mode" = "progress" ]; then
+        local percent=$((step * 100 / TOTAL_STEPS))
+        local filled=$((percent / 10))
+        local empty=$((10 - filled))
+        local bar=""
+        for ((i=0; i<filled; i++)); do bar+="="; done
+        for ((i=0; i<empty; i++)); do bar+="-"; done
+        local spinner=${SPINNER_CHARS[$SPINNER_INDEX]}
+        SPINNER_INDEX=$(( (SPINNER_INDEX + 1) % 4 ))
+        printf "  \e[1;36m${spinner} [${bar}] %2d%% 完了\e[0m" "$percent"
+    else
+        printf "  \e[1;33m[r] Build & Run  [c] Stop  [k] Clear  [q] Quit\e[0m"
+        if [ "$PERF_MODE" = "max" ]; then
+            printf "  \e[1;31m 🔥 MAX PERF\e[0m"
+        fi
+    fi
+    # 保存したカーソル位置（ログ出力の末尾など）に戻る
+    printf "\033[u"
+}
+
 show_progress() {
-    local step=$1
-    local percent=$((step * 100 / TOTAL_STEPS))
-    local filled=$((percent / 10))
-    local empty=$((10 - filled))
-    local bar=""
-    for ((i=0; i<filled; i++)); do bar+="="; done
-    for ((i=0; i<empty; i++)); do bar+="-"; done
-    local spinner=${SPINNER_CHARS[$SPINNER_INDEX]}
-    SPINNER_INDEX=$(( (SPINNER_INDEX + 1) % 4 ))
-    printf "\r  ${spinner} [${bar}] %2d%% 完了" "$percent"
+    draw_footer "progress" "$1"
 }
 
 # --- 管理変数 ---
@@ -28,17 +63,18 @@ fi
 # 現在実行中のビルド/QEMUプロセスを停止する関数
 stop_current() {
     if [ "$CURRENT_PID" -ne 0 ]; then
-        # 子プロセスグループ全体を終了
         pkill -P $CURRENT_PID 2>/dev/null
         kill $CURRENT_PID 2>/dev/null
         wait $CURRENT_PID 2>/dev/null
         CURRENT_PID=0
         echo -e "\n  🛑 停止しました"
+        draw_footer "menu"
     fi
 }
 
 # ビルドと実行の本体
 do_build_and_run() {
+    draw_footer "progress" 0
     # 1. ビルド番号の自動更新
     BN_FILE=".build_no"
     if [ ! -f "$BN_FILE" ]; then
@@ -49,14 +85,13 @@ do_build_and_run() {
     CURRENT_BN=$((PREV_BN + 1))
     echo "$CURRENT_BN" > "$BN_FILE"
 
-    # ヘッダファイル生成
     echo "#define BUILD_NUMBER $CURRENT_BN" > build_no.h
 
     echo ""
     echo "  🚀 BaramOS Build #$CURRENT_BN 開始"
 
     # 2. 出力ディレクトリの準備
-    rm -rf output/isodir
+    rm -rf output
     mkdir -p output/isodir/boot/grub
     show_progress 1
 
@@ -69,6 +104,7 @@ do_build_and_run() {
     # 4. C 言語のコンパイル
     CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
 
+    # ログは普通に出力される
     i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || return 1
     show_progress 4
     i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
@@ -96,32 +132,25 @@ do_build_and_run() {
     rm -rf "$INITRD_DIR"
     mkdir -p "$INITRD_DIR"
     
-    # .app_files に基づいてファイルをコピー
     if [ -f ".app_files" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
-            # 空行やコメントをスキップ
             [[ -z "$line" || "$line" =~ ^# ]] && continue
-            # ui/ ディレクトリから検索してコピー
             if [ -f "ui/$line" ]; then
                 cp "ui/$line" "$INITRD_DIR/"
             fi
         done < ".app_files"
     else
-        # フォールバック
         cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
     fi
 
-    # SVGアセットを明示的に追加
     cp ui/*.svg "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
     
-    # Create tar (using basic tar, no compression)
     (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
     rm -rf "$INITRD_DIR"
 
-    # Generate grub.cfg dynamically
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
 set timeout=0
@@ -141,8 +170,6 @@ EOF
     fi
     
     show_progress 10
-
-    # End grub.cfg
     echo "    boot" >> "$GRUB_CFG"
     echo "}" >> "$GRUB_CFG"
     
@@ -150,17 +177,16 @@ EOF
     i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
     show_progress 11
 
-    # Disk image for storage (64MB)
     if [ ! -f "output/os.img" ]; then
         dd if=/dev/zero of=output/os.img bs=1M count=64
     fi
 
     echo -e "\n  ✅ Build #$CURRENT_BN Success"
+    draw_footer "menu"
 
     # 8. QEMU 起動
     Q_CPU="coreduo"
     Q_ACCEL="-accel tcg,thread=multi"
-
     if [ "$PERF_MODE" = "max" ]; then
         Q_CPU="max"
         Q_ACCEL="-accel tcg,thread=multi,tb-size=1024"
@@ -179,14 +205,13 @@ EOF
 }
 
 # --- メインループ ---
+init_terminal
 clear
 
-# Sync warp symlinks on startup
 if [ -f "warp_launcher.sh" ]; then
     ./warp_launcher.sh > /dev/null
 fi
 
-# Determine initial action
 INITIAL_CMD=""
 if [ "$1" = "r" ] || [ "$2" = "r" ]; then
     INITIAL_CMD="r"
@@ -196,6 +221,7 @@ echo "========================================"
 echo "  🚀 BaramOS Interactive Build System"
 echo "  [r]: Build & Run (ビルド・再起動)"
 echo "  [c]: Stop (停止)"
+echo "  [k]: Clear (ログ消去)"
 echo "  [q]: Quit (終了)"
 echo "  💡 Hint: You can run apps directly via ./appname.warp"
 echo "========================================"
@@ -203,17 +229,15 @@ if [ "$PERF_MODE" = "max" ]; then
     echo "  🔥 Performance Mode: MAX"
 fi
 
-# 終了時のクリーンアップ
-trap "stop_current; exit" SIGINT SIGTERM
+trap "stop_current; cleanup_terminal; echo; exit" SIGINT SIGTERM
 
-# Initial action
 if [ "$INITIAL_CMD" = "r" ]; then
     do_build_and_run &
     CURRENT_PID=$!
 fi
 
 while true; do
-    # 1文字の入力を待機 (非表示・サイレント)
+    draw_footer "menu"
     read -n 1 -s cmd
     case "$cmd" in
         r)
@@ -224,8 +248,15 @@ while true; do
         c)
             stop_current
             ;;
+        k)
+            # 画面を消去し、固定メニューを再描画
+            clear
+            init_terminal
+            draw_footer "menu"
+            ;;
         q)
             stop_current
+            cleanup_terminal
             echo "  👋 終了します"
             exit 0
             ;;

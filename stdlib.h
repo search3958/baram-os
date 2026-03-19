@@ -10,6 +10,7 @@ extern "C" {
 void *malloc(size_t size);
 void free(void *ptr);
 void *realloc(void *ptr, size_t size);
+int atoi(const char *nptr);
 long strtol(const char *nptr, char **endptr, int base);
 long long strtoll(const char *nptr, char **endptr, int base);
 void qsort(void *base, size_t nmemb, size_t size,

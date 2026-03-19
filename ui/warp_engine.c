@@ -782,9 +782,8 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
   int is_dark = (warp_strcmp(dark_val, "true") == 0);
 
   if (warp_strcmp(node->tag, "screen") == 0) {
-    int start_y = py;
-    // Header is now handled by the system title bar, so it doesn't take space here.
-    cy = start_y;
+    // Add 16px top padding
+    cy = py + 16;
     for (int i = 0; i < node->children_count; i++) {
       if (warp_strcmp(node->children[i]->tag, "Header") == 0) {
         // Still layout header to update its state/children, but it won't affect cy
@@ -793,7 +792,8 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       }
       cy += layout_node(ctx, node->children[i], px + 24, cy, limit_w - 48) + 12;
     }
-    node->h = cy - py + 24;
+    // Add 16px bottom padding
+    node->h = cy - py + 4; // cy already has +12 from the last element, so +4 makes it +16 total
     if (node->h < ctx->win_h) node->h = ctx->win_h;
   } else if (warp_strcmp(node->tag, "Header") == 0) {
     node->h = 0; // Header itself takes no space in the content area

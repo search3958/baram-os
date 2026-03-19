@@ -1,3 +1,16 @@
+baram-os-config{
+    height:("75"),
+    width:("100vw"),
+    left:("0"),
+    top:("0"),
+    showBar:(false),
+    resize:(false),
+    move:(false),
+    background:(#00000033),
+    dark:(true),
+    front:(true)
+},
+
 screen{
     id: (main),
 
@@ -10,24 +23,12 @@ screen{
             oneClick: (setScreen{reboot})
         },
         tonalButton{
-            text: ("ターミナル"),
-            oneClick: (run{warp terminal.warp})
+            text: ("コマンド"),
+            oneClick: (setScreen{terminal})
         },
         tonalButton{
-            text: ("showHUD"),
-            oneClick: (~~dev/showHUD = true)
-        },
-        tonalButton{
-            text: ("hideHUD"),
-            oneClick: (~~dev/showHUD = false)
-        },
-        tonalButton{
-            text: ("ダーク"),
-            oneClick: (~~main/dark = true)
-        },
-        tonalButton{
-            text: ("ライト"),
-            oneClick: (~~main/dark = false)
+            text: ("外観モード"),
+            oneClick: (setScreen{mode})
         }
     }
 }
@@ -55,4 +56,52 @@ screen{
             oneClick: (reset{now})
         }
     }
-}
+},
+
+
+screen{
+    id: (terminal),
+
+    hStack{
+        tonalButton{
+            text: ("<"),
+            oneClick: (setScreen{main})
+        },
+        input{
+            --terminalInput: (""),
+            output: (--terminalInput),
+            placeholder: ("コマンドを入力...")
+        },
+
+        button{
+            text: ("実行"),
+            oneClick: (run{--terminalInput})
+        }
+    }
+},
+
+
+screen{
+    id: (mode),
+
+    hStack{
+
+        tonalButton{
+            text: ("<"),
+            oneClick: (setScreen{main})
+        },
+        text{
+            text:("外観モード")
+        }
+
+        tonalButton{
+            text: ("ライト"),
+            oneClick: (~~main/dark = false)
+        },
+
+        tonalButton{
+            text: ("ダーク"),
+            oneClick: (~~main/dark = true)
+        }
+    }
+},

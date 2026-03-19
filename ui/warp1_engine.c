@@ -475,12 +475,15 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     }
 
     if (w1_strcmp(node->tag, "screen") == 0) {
+        // Add 16px top padding
+        cy = py + 16;
         for (int i = 0; i < node->children_count; i++) {
             if (w1_strcmp(node->children[i]->tag, "Header") == 0) continue;
             cy += layout_node1(ctx, node->children[i], node->x + 24, cy, limit_w - 48) + 12;
         }
-        int content_h = cy - py + 24;
-        node->h = (content_h > ctx->win_h) ? content_h : ctx->win_h;
+        // Add 16px bottom padding
+        node->h = cy - py + 4; // cy already has +12 from the last element, so +4 makes it +16 total
+        if (node->h < ctx->win_h) node->h = ctx->win_h;
     } else if (w1_strcmp(node->tag, "card") == 0) {
         cy += 12; char title[128]; eval_attr(ctx, node, "text", title, 127);
         if (title[0] && ctx->texts_count < MAX_TEXTS) {
