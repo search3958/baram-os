@@ -157,9 +157,13 @@ typedef struct {
 
 static uint32_t octal_to_int(const char *s, int len) {
     uint32_t res = 0;
-    for (int i = 0; i < len; i++) {
+    int i = 0;
+    // Skip leading spaces or nulls
+    while (i < len && (s[i] == ' ' || s[i] == '\0')) i++;
+    while (i < len) {
         if (s[i] < '0' || s[i] > '7') break;
         res = res * 8 + (s[i] - '0');
+        i++;
     }
     return res;
 }
@@ -1398,21 +1402,29 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
       }
 
       if (ram_tar_ptr) {
-          set_w1_global("--warpSystemLog", "INITRD: [INSTALLING] Extracting TAR to Storage...");
+          char msg[128];
+          snprintf(msg, sizeof(msg), "INITRD: Found at 0x%x, size %d", (uint32_t)ram_tar_ptr, ram_tar_size);
+          set_w1_global("--warpSystemLog", msg);
+          
           fs_format();
-          // TARを展開して個別に保存
           const char *p = ram_tar_ptr;
           const char *end = ram_tar_ptr + ram_tar_size;
+          int extracted_count = 0;
           while (p + 512 <= end) {
               tar_header_t *h = (tar_header_t *)p;
               if (h->name[0] == '\0') break;
               uint32_t f_size = octal_to_int(h->size, 12);
               if (h->typeflag == '0' || h->typeflag == '\0') {
                   fs_write_file(h->name, p + 512, f_size);
+                  extracted_count++;
               }
               p += 512 + ((f_size + 511) & ~511);
           }
-          set_w1_global("--warpSystemLog", "INITRD: [SUCCESS] Extracted to Disk.");
+          snprintf(msg, sizeof(msg), "INITRD: Extracted %d files to Disk.", extracted_count);
+          set_w1_global("--warpSystemLog", msg);
+      } else {
+          set_w1_global("--warpSystemLog", "INITRD: Error - Module not found in Multiboot info.");
+      }
           
           // RAMディスクの参照を即座に消す（これでメモリ計算から除外される）
           multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
@@ -2124,9 +2136,11 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
 
   if (is_warp1) {
     win->warp1_ctx = warp1_context_create(buf_to_use);
+    if (!win->warp1_ctx) set_w1_global("--warpSystemLog", "Warp1: Context creation FAILED.");
     win->warp_ctx = NULL;
   } else {
     win->warp_ctx = warp_context_create(buf_to_use);
+    if (!win->warp_ctx) set_w1_global("--warpSystemLog", "ClassicWarp: Context creation FAILED.");
     win->warp1_ctx = NULL;
   }
 
