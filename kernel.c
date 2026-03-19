@@ -1165,8 +1165,10 @@ int snprintf(char *str, size_t size, const char *format, ...) {
       p++;
       if (*p == 's') {
         const char *s = va_arg(args, const char *);
+        if (!s) s = "(null)";
         while (*s && (size_t)n < size - 1) str[n++] = *s++;
-      } else if (*p == 'd') {
+      }
+ else if (*p == 'd') {
         int d = va_arg(args, int);
         if (d < 0) {
           if ((size_t)n < size - 1) str[n++] = '-';
