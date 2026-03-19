@@ -143,44 +143,46 @@ static long eval_math1(const char *s) {
 
 static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max_len) {
     out[0] = '\0'; const char *p = expr;
-    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++; // Skip leading
-
     while (*p) {
+        // 1. 引用符の処理（完全保護）
         if (*p == '\"' || *p == '\'') {
-            char quote = *p++; 
+            char quote = *p++;
             while (*p && *p != quote) {
                 int len = w1_strlen(out);
                 if (len < max_len - 1) {
+                    // エスケープシーケンスのみ解釈
                     if (*p == '\\') {
-                        p++; 
-                        if (*p == 'n') out[len] = '\n'; 
+                        p++;
+                        if (*p == 'n') out[len] = '\n';
                         else if (*p == '\"') out[len] = '\"';
-                        else if (*p == '\'') out[len] = '\''; 
+                        else if (*p == '\'') out[len] = '\'';
                         else if (*p == '\\') out[len] = '\\';
                         else out[len] = *p;
-                        out[len + 1] = '\0'; 
-                        if (*p) p++; 
-                        continue;
+                    } else {
+                        out[len] = *p;
                     }
-                    out[len] = *p; 
                     out[len + 1] = '\0';
                 }
                 p++;
             }
             if (*p == quote) p++;
-        } else if (w1_strncmp(p, "--", 2) == 0 || w1_strncmp(p, "~~", 2) == 0) {
+        } 
+        // 2. 変数の処理（引用符の外側のみ）
+        else if (w1_strncmp(p, "--", 2) == 0 || w1_strncmp(p, "~~", 2) == 0) {
             char var[64]; int i = 0;
             while (*p && *p != '\"' && *p != '\'' && *p != '+' && *p != ' ' && *p != ')' && *p != ',' && *p != '}' && i < 63)
                 var[i++] = *p++;
-            var[i] = '\0'; 
+            var[i] = '\0';
             const char *val = get_state(ctx, var);
-            int rem = max_len - w1_strlen(out) - 1; 
+            int rem = max_len - w1_strlen(out) - 1;
             if (rem > 0) w1_strncat(out, val, (size_t)rem);
-        } else if (*p == '+') {
+        }
+        // 3. 結合演算子のスキップ
+        else if (*p == '+') {
             p++;
-            while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++; // Skip spaces after '+'
-        } else {
-            // Keep spaces and other characters as part of the string
+        }
+        // 4. その他の文字（空白含む）をそのまま保持
+        else {
             int len = w1_strlen(out);
             if (len < max_len - 1) {
                 out[len] = *p;
@@ -188,12 +190,6 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
             }
             p++;
         }
-    }
-    // Trim trailing spaces
-    int len = w1_strlen(out);
-    while (len > 0 && (out[len-1] == ' ' || out[len-1] == '\t' || out[len-1] == '\n' || out[len-1] == '\r')) {
-        out[len-1] = '\0';
-        len--;
     }
 }
 

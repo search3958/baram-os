@@ -96,8 +96,23 @@ do_build_and_run() {
     rm -rf "$INITRD_DIR"
     mkdir -p "$INITRD_DIR"
     
-    # Copy all resources to temp dir
-    cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
+    # .app_files に基づいてファイルをコピー
+    if [ -f ".app_files" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            # 空行やコメントをスキップ
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            # ui/ ディレクトリから検索してコピー
+            if [ -f "ui/$line" ]; then
+                cp "ui/$line" "$INITRD_DIR/"
+            fi
+        done < ".app_files"
+    else
+        # フォールバック
+        cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
+    fi
+
+    # SVGアセットを明示的に追加
+    cp ui/*.svg "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
