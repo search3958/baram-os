@@ -277,33 +277,17 @@ static const char* json_skip_ws(const char* p) {
     return p;
 }
 
-// --- OS Settings Fallback (C-embedded) ---
-static const char* g_default_os_settings = 
-"{\n"
-"  \"dev\": {\n"
-"    \"pointerCheck\": false,\n"
-"    \"eventCheck\": false,\n"
-"    \"showHUD\": true\n"
-"  },\n"
-"  \"firstboot\": [\n"
-"    \"warp topbar.warp\"\n"
-"  ],\n"
-"  \"main\": {\n"
-"    \"dark\": true\n"
-"  }\n"
-"}";
-
 static void parse_os_settings() {
-  const char* buf = g_os_settings_found ? g_os_settings_ptr : g_default_os_settings;
-  
-  if (g_os_settings_found) {
-    set_w1_global("--warpSystemLog", "SettingsInInitrd.");
-  } else {
-    set_w1_global("--warpSystemLog", "UsingEmbeddedSettings.");
+  if (!g_os_settings_found || !g_os_settings_ptr) {
+    set_w1_global("--warpSystemLog", "NoSettingsFound.");
+    return;
   }
-  
+  const char* buf = g_os_settings_ptr;
+  set_w1_global("--warpSystemLog", "SettingsLoaded.");
+
   // Robust check for "dark" key
   const char *dark_key = strstr(buf, "\"dark\"");
+
   if (dark_key) {
     const char *p = json_skip_ws(dark_key + 6);
     if (*p == ':') {
@@ -1431,6 +1415,7 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
   g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
+  if (g_os_settings_ptr) g_os_settings_found = 1;
   
   // Wallpaper loading
   uint32_t wp_size = 0;
@@ -1698,7 +1683,8 @@ static void window_bake(window_t *win) {
   int full_sh = win->h + title_h + shadow_size * 2;
   int sw = (int)((float)full_sw * scale);
   int sh = (int)((float)full_sh * scale);
-  if (sw < 1) sw = 1; if (sh < 1) sh = 1;
+  if (sw < 1) { sw = 1; }
+  if (sh < 1) { sh = 1; }
 
   if (win->unified_buffer) free(win->unified_buffer);
   win->unified_buffer = (uint32_t*)malloc((size_t)sw * (size_t)sh * 4);
@@ -1722,7 +1708,7 @@ static void window_bake(window_t *win) {
   // 2. Bake Frame (Title Bar)
   int frame_x = (int)((float)shadow_size * scale);
   int frame_y = (int)((float)shadow_size * scale);
-  int mw = (int)((float)win->w * scale);
+  int mw = win->buffer_w; // Use buffer_w which is already scaled
   if (mw < 1 && win->w > 0) mw = 1;
 
   for (int dy = 0; dy < win->frame_cache_h; dy++) {
@@ -1738,20 +1724,27 @@ static void window_bake(window_t *win) {
   }
 
   // 3. Bake Content
-  int content_y = frame_y + (int)((float)title_h * scale);
-  int mh = (int)((float)(win->h + title_h) * scale);
+  int content_y_off = (int)((float)title_h * scale);
+  int mh_visible = (int)((float)win->h * scale);
+  
   for (int dy = 0; dy < win->buffer_h; dy++) {
-    int py = content_y + dy;
-    if (py >= sh) break;
+    int py = frame_y + content_y_off + dy;
+    if (py >= sh || dy >= mh_visible) break; // Only bake visible portion
+    
     uint32_t *src_line = (uint32_t*)&win->rgba_buffer[dy * win->buffer_w * 4];
-    int mask_y = (int)((float)title_h * scale) + dy;
-    if (mask_y >= mh) mask_y = mh - 1;
+    int mask_y = content_y_off + dy;
     uint8_t *mask_line = &win->window_mask[mask_y * mw];
+    
     for (int dx = 0; dx < win->buffer_w; dx++) {
       int px = frame_x + dx;
       if (px >= sw) break;
+      
       uint32_t color = src_line[dx];
       uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
+      
+      // Ensure the baked buffer has correct alpha
+      if (alpha == 0) continue;
+      // Always use blend_colors to ensure consistent alpha handling (forcing 0xFF000000 for opaque pixels)
       win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
     }
   }
@@ -2201,9 +2194,6 @@ static void redraw_warp_svg(layer_t *layer) {
   sync_all_window_themes();
   draw_wallpaper(layer);
 
-  const char *dark_val = get_w1_global("~~main/dark");
-  int is_dark = (strcmp(dark_val, "true") == 0);
-
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
@@ -2228,21 +2218,50 @@ static void redraw_warp_svg(layer_t *layer) {
         for (int dy = y0; dy < y1; dy++) {
             int py = sy_start + dy;
             uint32_t *dst_line = &layer->buffer[py * layer->width];
-            int scaled_dy = (int)((float)dy * scale);
-            if (scaled_dy >= win->unified_h) scaled_dy = win->unified_h - 1;
-            uint32_t *src_line = &win->unified_buffer[scaled_dy * win->unified_w];
-            
+
+            float fy = (float)dy * scale;
+            int y0_idx = (int)fy;
+            int y1_idx = (y0_idx + 1 < win->unified_h) ? y0_idx + 1 : y0_idx;
+            float wy = fy - (float)y0_idx;
+
             for (int dx = x0; dx < x1; dx++) {
                 int px = sx_start + dx;
-                int scaled_dx = (int)((float)dx * scale);
-                if (scaled_dx >= win->unified_w) scaled_dx = win->unified_w - 1;
-                uint32_t color = src_line[scaled_dx];
-                uint8_t alpha = (uint8_t)(color >> 24);
+                float fx = (float)dx * scale;
+                int x0_idx = (int)fx;
+                int x1_idx = (x0_idx + 1 < win->unified_w) ? x0_idx + 1 : x0_idx;
+                float wx = fx - (float)x0_idx;
+
+                uint32_t c00 = win->unified_buffer[y0_idx * win->unified_w + x0_idx];
+                uint32_t c10 = win->unified_buffer[y0_idx * win->unified_w + x1_idx];
+                uint32_t c01 = win->unified_buffer[y1_idx * win->unified_w + x0_idx];
+                uint32_t c11 = win->unified_buffer[y1_idx * win->unified_w + x1_idx];
+
+                // Bilinear interpolation for each channel
+                uint32_t r = (uint32_t)((float)((c00 >> 16) & 0xFF) * (1.0f - wx) * (1.0f - wy) +
+                                       (float)((c10 >> 16) & 0xFF) * wx * (1.0f - wy) +
+                                       (float)((c01 >> 16) & 0xFF) * (1.0f - wx) * wy +
+                                       (float)((c11 >> 16) & 0xFF) * wx * wy);
+                uint32_t g = (uint32_t)((float)((c00 >> 8) & 0xFF) * (1.0f - wx) * (1.0f - wy) +
+                                       (float)((c10 >> 8) & 0xFF) * wx * (1.0f - wy) +
+                                       (float)((c01 >> 8) & 0xFF) * (1.0f - wx) * wy +
+                                       (float)((c11 >> 8) & 0xFF) * wx * wy);
+                uint32_t b = (uint32_t)((float)(c00 & 0xFF) * (1.0f - wx) * (1.0f - wy) +
+                                       (float)(c10 & 0xFF) * wx * (1.0f - wy) +
+                                       (float)(c01 & 0xFF) * (1.0f - wx) * wy +
+                                       (float)(c11 & 0xFF) * wx * wy);
+                uint32_t a = (uint32_t)((float)((c00 >> 24) & 0xFF) * (1.0f - wx) * (1.0f - wy) +
+                                       (float)((c10 >> 24) & 0xFF) * wx * (1.0f - wy) +
+                                       (float)((c01 >> 24) & 0xFF) * (1.0f - wx) * wy +
+                                       (float)((c11 >> 24) & 0xFF) * wx * wy);
+
+                uint32_t color = (a << 24) | (r << 16) | (g << 8) | b;
+                uint8_t alpha = (uint8_t)a;
                 if (alpha == 0) continue;
                 if (alpha == 255) dst_line[px] = color;
                 else dst_line[px] = blend_colors(dst_line[px], color, alpha);
             }
         }
+
         continue; // Skip individual blitting
     }
     
