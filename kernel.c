@@ -1167,8 +1167,7 @@ int snprintf(char *str, size_t size, const char *format, ...) {
         const char *s = va_arg(args, const char *);
         if (!s) s = "(null)";
         while (*s && (size_t)n < size - 1) str[n++] = *s++;
-      }
- else if (*p == 'd') {
+      } else if (*p == 'd') {
         int d = va_arg(args, int);
         if (d < 0) {
           if ((size_t)n < size - 1) str[n++] = '-';
@@ -1619,20 +1618,13 @@ static void handle_terminal_command(const char *cmd) {
     close_active_window();
   } else if (strcmp(start_ptr, "help") == 0) {
     set_w1_global("--warpSystemLog", "Commands: <file.warp>, warp <file>, reboot, exit, help, ls");
-  } else {
-    // 未知のコマンド
-    char err[256] = "Unknown: ";
-    strlcat(err, start_ptr, 255);
-    set_w1_global("--warpSystemLog", err);
-  }
-}
- else if (strncmp(trimmed, "dev pointerCheck=", 17) == 0) {
-    const char *val = trimmed + 17;
+  } else if (strncmp(start_ptr, "dev pointerCheck=", 17) == 0) {
+    const char *val = start_ptr + 17;
     if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
     else g_dev_pointer_check = 0;
     strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
-  } else if (strncmp(trimmed, "dev dark=", 9) == 0) {
-    const char *val = trimmed + 9;
+  } else if (strncmp(start_ptr, "dev dark=", 9) == 0) {
+    const char *val = start_ptr + 9;
     set_w1_global("~~json/main/dark", val);
     strncpy(g_hud_status, (strcmp(val, "true") == 0) ? "Dark:ON" : "Dark:OFF", 63);
     for (int i = 0; i < g_window_count; i++) {
@@ -1640,17 +1632,13 @@ static void handle_terminal_command(const char *cmd) {
       g_windows[i].is_dirty = 1;
     }
     g_svg_dirty = 1;
-  } else if (strcmp(trimmed, "storage sync") == 0) {
+  } else if (strcmp(start_ptr, "storage sync") == 0) {
     if (!mbi_ptr) {
         set_w1_global("--warpSystemLog", "Error: No multiboot info");
         return;
     }
-    
-    // Lazy Init
     ata_init();
     fs_init();
-    
-    // Find initrd.tar in memory
     const char *tar_data = NULL;
     uint32_t tar_size = 0;
     multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
@@ -1669,10 +1657,15 @@ static void handle_terminal_command(const char *cmd) {
     } else {
         set_w1_global("--warpSystemLog", "Error: initrd.tar not found in RAM");
     }
-  } else if (strcmp(trimmed, "storage ls") == 0) {
+  } else if (strcmp(start_ptr, "storage ls") == 0) {
     ata_init();
     fs_init();
     fs_list_files();
+  } else {
+    // 未知のコマンド
+    char err[256] = "Unknown: ";
+    strlcat(err, start_ptr, 255);
+    set_w1_global("--warpSystemLog", err);
   }
 }
 
