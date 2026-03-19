@@ -1422,9 +1422,6 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
           }
           snprintf(msg, sizeof(msg), "INITRD: Extracted %d files to Disk.", extracted_count);
           set_w1_global("--warpSystemLog", msg);
-      } else {
-          set_w1_global("--warpSystemLog", "INITRD: Error - Module not found in Multiboot info.");
-      }
           
           // RAMディスクの参照を即座に消す（これでメモリ計算から除外される）
           multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
@@ -1434,6 +1431,8 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
                   mods[i].mod_end = mods[i].mod_start;
               }
           }
+      } else {
+          set_w1_global("--warpSystemLog", "INITRD: Error - Module not found in Multiboot info.");
       }
   }
 
