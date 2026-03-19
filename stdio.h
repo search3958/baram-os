@@ -28,6 +28,7 @@ int fseek(FILE *stream, long offset, int whence);
 long ftell(FILE *stream);
 int fprintf(FILE *stream, const char *format, ...);
 int sscanf(const char *str, const char *format, ...);
+int snprintf(char *str, size_t size, const char *format, ...);
 
 #ifdef __cplusplus
 }

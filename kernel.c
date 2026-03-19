@@ -1155,6 +1155,52 @@ int sscanf(const char *str, const char *format, ...) {
   return matched;
 }
 
+int snprintf(char *str, size_t size, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  int n = 0;
+  const char *p = format;
+  while (*p && (size_t)n < size - 1) {
+    if (*p == '%') {
+      p++;
+      if (*p == 's') {
+        const char *s = va_arg(args, const char *);
+        while (*s && (size_t)n < size - 1) str[n++] = *s++;
+      } else if (*p == 'd') {
+        int d = va_arg(args, int);
+        if (d < 0) {
+          if ((size_t)n < size - 1) str[n++] = '-';
+          d = -d;
+        }
+        char buf[16];
+        int i = 0;
+        if (d == 0) buf[i++] = '0';
+        while (d > 0) { buf[i++] = (d % 10) + '0'; d /= 10; }
+        while (i > 0 && (size_t)n < size - 1) str[n++] = buf[--i];
+      } else if (*p == 'x') {
+        unsigned int x = va_arg(args, unsigned int);
+        char buf[16];
+        int i = 0;
+        if (x == 0) buf[i++] = '0';
+        while (x > 0) {
+          int r = x % 16;
+          buf[i++] = (r < 10) ? (r + '0') : (r - 10 + 'a');
+          x /= 16;
+        }
+        while (i > 0 && (size_t)n < size - 1) str[n++] = buf[--i];
+      } else if (*p == '%') {
+        str[n++] = '%';
+      }
+      p++;
+    } else {
+      str[n++] = *p++;
+    }
+  }
+  str[n] = '\0';
+  va_end(args);
+  return n;
+}
+
 // 2つの色を線形補間
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t) {
   uint8_t r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF,
@@ -1709,7 +1755,8 @@ static void window_bake(window_t *win) {
   int full_sh = win->h + title_h + shadow_size * 2;
   int sw = (int)((float)full_sw * scale);
   int sh = (int)((float)full_sh * scale);
-  if (sw < 1) sw = 1; if (sh < 1) sh = 1;
+  if (sw < 1) sw = 1;
+  if (sh < 1) sh = 1;
 
   if (win->unified_buffer) free(win->unified_buffer);
   win->unified_buffer = (uint32_t*)malloc((size_t)sw * (size_t)sh * 4);
@@ -2213,9 +2260,6 @@ static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
   sync_all_window_themes();
   draw_wallpaper(layer);
-
-  const char *dark_val = get_w1_global("~~main/dark");
-  int is_dark = (strcmp(dark_val, "true") == 0);
 
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
