@@ -1548,86 +1548,85 @@ void set_pending_command(const char *cmd) {
 // g_dev_pointer_check is defined earlier as non-static
 
 static void handle_terminal_command(const char *cmd) {
+  if (!cmd || !cmd[0]) return;
+
   char trimmed[256];
   strncpy(trimmed, cmd, 255);
   trimmed[255] = '\0';
-  
-  // Trim trailing whitespace/newlines
-  int len = strlen(trimmed);
-  while (len > 0 && (trimmed[len-1] == ' ' || trimmed[len-1] == '\n' || trimmed[len-1] == '\r')) {
-    trimmed[len-1] = '\0';
-    len--;
+
+  // 先頭と末尾の空白・改行を除去
+  char *start_ptr = trimmed;
+  while (*start_ptr == ' ' || *start_ptr == '\t' || *start_ptr == '\n' || *start_ptr == '\r') start_ptr++;
+  char *end_ptr = start_ptr + strlen(start_ptr) - 1;
+  while (end_ptr > start_ptr && (*end_ptr == ' ' || *end_ptr == '\t' || *end_ptr == '\n' || *end_ptr == '\r')) {
+    *end_ptr = '\0';
+    end_ptr--;
   }
 
   const char *file = NULL;
-  if (strncmp(trimmed, "warp ", 5) == 0) {
-    file = trimmed + 5;
-  } else if (strncmp(trimmed, "./", 2) == 0) {
-    file = trimmed + 2;
-  } else if (strstr(trimmed, ".warp") || strstr(trimmed, ".warpc")) {
-    file = trimmed;
+  if (strncmp(start_ptr, "warp ", 5) == 0) {
+    file = start_ptr + 5;
+  } else if (strncmp(start_ptr, "./", 2) == 0) {
+    file = start_ptr + 2;
+  } else if (strstr(start_ptr, ".warp") || strstr(start_ptr, ".warpc")) {
+    file = start_ptr;
   }
 
   if (file) {
-    // Check if the file exists in modules
-    int found = 0;
+    // モジュールリストから検索
     int mod_idx = -1;
     for (uint32_t i = 0; i < g_warp_module_count; i++) {
-      // Try exact match or case-insensitive match
-      if (strcasecmp(g_warp_modules[i].name, file) == 0 || strstr(g_warp_modules[i].name, file)) {
-        found = 1;
+      if (strcasecmp(g_warp_modules[i].name, file) == 0) {
         mod_idx = i;
         break;
       }
     }
-
-    if (found) {
-      // Use the canonical name from the module list
-      const char *canonical_name = g_warp_modules[mod_idx].name;
-      if (strstr(canonical_name, ".warpc")) {
-        add_window(canonical_name, 150, 150, 600, 400, 0);
-      } else {
-        add_window(canonical_name, 200, 200, 600, 400, 1);
+    // 完全一致がなければ部分一致を探す（ただし ._ 隠しファイルは除外）
+    if (mod_idx == -1) {
+      for (uint32_t i = 0; i < g_warp_module_count; i++) {
+        if (strstr(g_warp_modules[i].name, file) && g_warp_modules[i].name[0] != '.') {
+          mod_idx = i;
+          break;
+        }
       }
-    } else if (strstr(file, "terminal") && g_terminal_mod_found) {
+    }
+
+    if (mod_idx != -1) {
+      const char *canonical_name = g_warp_modules[mod_idx].name;
+      int is_warp1 = (strstr(canonical_name, ".warpc") == NULL);
+      add_window(canonical_name, 200, 200, 640, 480, is_warp1);
+    } else if ((strstr(file, "terminal") || strstr(file, "Terminal")) && g_terminal_mod_found) {
       add_window("Terminal", 200, 200, 600, 400, 1);
-    } else if (strstr(file, "menubar") && g_menubar_mod_found) {
+    } else if ((strstr(file, "menubar") || strstr(file, "Menubar")) && g_menubar_mod_found) {
       add_window("Menubar", 0, 0, 1280, 32, 1);
     } else {
-      char err[512] = "Not found. Modules: ";
-      for (uint32_t i = 0; i < g_warp_module_count; i++) {
-        strlcat(err, g_warp_modules[i].name, 511);
-        if (i < g_warp_module_count - 1) strlcat(err, ", ", 511);
-      }
+      char err[512] = "Not found: ";
+      strlcat(err, file, 511);
       set_w1_global("--warpSystemLog", err);
     }
-  } else if (strcmp(trimmed, "ls") == 0 || strcmp(trimmed, "list") == 0) {
+  } else if (strcmp(start_ptr, "ls") == 0 || strcmp(start_ptr, "list") == 0) {
+    // ... 既存の ls 処理 ...
     char list_buf[512] = "Mods: ";
     for (uint32_t i = 0; i < g_warp_module_count; i++) {
       if (i > 0) strlcat(list_buf, ", ", 511);
       strlcat(list_buf, g_warp_modules[i].name, 511);
-      
-      // Data preview (first 4 bytes)
-      strlcat(list_buf, "(", 511);
-      const char *data = (const char *)(uintptr_t)g_warp_modules[i].start;
-      char hex[5] = "....";
-      for(int j=0; j<4; j++) {
-        unsigned char c = (unsigned char)data[j];
-        if (c >= 32 && c <= 126) hex[j] = c;
-        else hex[j] = '?';
-      }
-      strlcat(list_buf, hex, 511);
-      strlcat(list_buf, ")", 511);
     }
     set_w1_global("--warpSystemLog", list_buf);
-  } else if (strcmp(trimmed, "reboot") == 0) {
+  } else if (strcmp(start_ptr, "reboot") == 0) {
     extern void sys_restart(void);
     sys_restart();
-  } else if (strcmp(trimmed, "exit") == 0) {
+  } else if (strcmp(start_ptr, "exit") == 0) {
     close_active_window();
-  } else if (strcmp(trimmed, "help") == 0) {
-    set_w1_global("--warpSystemLog", "Available commands: <file.warp>, ./<file.warp>, warp <file>, reboot, exit, help, ls");
-  } else if (strncmp(trimmed, "dev pointerCheck=", 17) == 0) {
+  } else if (strcmp(start_ptr, "help") == 0) {
+    set_w1_global("--warpSystemLog", "Commands: <file.warp>, warp <file>, reboot, exit, help, ls");
+  } else {
+    // 未知のコマンド
+    char err[256] = "Unknown: ";
+    strlcat(err, start_ptr, 255);
+    set_w1_global("--warpSystemLog", err);
+  }
+}
+ else if (strncmp(trimmed, "dev pointerCheck=", 17) == 0) {
     const char *val = trimmed + 17;
     if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
     else g_dev_pointer_check = 0;
