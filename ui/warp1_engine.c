@@ -637,27 +637,32 @@ static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int 
 
 
 
-// warp1_engine.c の修正 - emit_svg_recursive1 関数内
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
     if (!node) return;
+    const char *id_attr = ""; 
+    for(int i=0;i<node->attrs_count;i++) {
+        if(w1_strcmp(node->attrs[i].key, "id")==0) {
+            id_attr = node->attrs[i].value;
+        }
+    }
     
     const char *dark_val = get_state(ctx, "~~main/dark");
     int is_dark = (w1_strcmp(dark_val, "true") == 0);
 
     if (w1_strcmp(node->tag, "screen") == 0) {
-        // スクリーン全体の背景を確実に描画
-        emit_rect1(dest, dest_size, 0, 0, node->w, node->h, is_dark ? "#121212" : "#f1f2f2", "");
+        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, is_dark ? "#121212" : "#f1f2f2", "");
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 16.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 0.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
 
     } else if (w1_strcmp(node->tag, "button") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, "#0A60FF", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0A60FF", "");
 
     } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
+        // スイッチの描画
         const char *out_var_raw = get_attr1(node, "output");
         char out_var[128]; 
         if (out_var_raw[0] == '(') {
@@ -672,13 +677,15 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         int on = (w1_strstr(val, "true") != NULL);
         int disabled = (w1_strstr(val, "Disabled") != NULL);
 
+        // 背景
         const char *bg_color = on ? "#0A60FF" : "#dddddd";
-        if (disabled) bg_color = on ? "#80A0FF" : "#eeeeee";
+        if (disabled) bg_color = on ? "#80A0FF" : "#eeeeee"; // 無効時は色を薄く
         int size = 44;
         int x = node->x + (node->w - size) / 2;
         int y = node->y + (node->h - size) / 2;
-        emit_squircle_shape1(dest, dest_size, x, y, size, size, 22.0f, bg_color, "");
+        emit_squircle_shape1(dest, dest_size, x, y, size, size, 0.0f, bg_color, "");
 
+        // チェックマーク（true の場合のみ）
         if (on) {
             char check_buf[512]; char *p = check_buf;
             p = w1_strcpy(p, "<path d=\"M");
@@ -686,28 +693,33 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
             p = append_int(p, y + 22);
             p = w1_strcat(p, " L"); p = append_int(p, x + 20); p = w1_strcat(p, " "); p = append_int(p, y + 30);
             p = w1_strcat(p, " L"); p = append_int(p, x + 34); p = w1_strcat(p, " "); p = append_int(p, y + 14);
-            p = w1_strcat(p, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n");
+            p = w1_strcat(p, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
             w1_strncat(dest, check_buf, (size_t)(dest_size - w1_strlen(dest) - 1));
         }
         
     } else if (w1_strcmp(node->tag, "slider") == 0) {
+        // スライダーの描画 - squircle を使用
         char val[128]; 
         eval_attr(ctx, node, "status", val, 127);
         int v = (int)w1_strtol(val); 
         if (v < 0) v = 0; 
         if (v > 100) v = 100;
         
+        // トラック（背景の線）- 細い角丸矩形
         emit_squircle_shape1(dest, dest_size, node->x, node->y + 14, node->w, 4, 2.0f, "#dddddd", "");
         
+        // ノブ（操作する丸）- 完全な円形
         int knob_x = node->x + (node->w * v / 100) - 10;
         if (knob_x < node->x - 10) knob_x = node->x - 10;
         if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
         emit_squircle_shape1(dest, dest_size, knob_x, node->y + 6, 20, 20, 10.0f, "#0A60FF", "");
         
     } else if (w1_strcmp(node->tag, "input") == 0) {
+        // 入力フォームの描画 - 角丸矩形
         const char *stroke = is_dark ? "#555555" : "#dddddd";
         const char *stroke_w = "1";
         
+        // フォーカスされている場合は枠線を強調
         for (int i = 0; i < ctx->nodes_count; i++) {
             if (&ctx->nodes[i] == node && ctx->focused_node_idx == i) {
                 stroke = "#0A60FF";
@@ -730,8 +742,6 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         }
     }
 }
-
-
 
 static void skip_block1(warp1_context_t *ctx) {
     if (ctx->token_pos + 1 >= ctx->token_count || ctx->tokens[ctx->token_pos + 1].val[0] != '{') {

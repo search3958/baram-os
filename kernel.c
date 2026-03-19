@@ -109,9 +109,16 @@ typedef struct {
 static warp_module_t g_warp_modules[MAX_WARP_MODULES];
 static uint32_t g_warp_module_count = 0;
 
+static int g_warp_mod_found = 0;
 static uint32_t g_mod_count = 0;
 
 // Files are now pointers to TAR archive instead of copied buffers
+static const char *g_warp_ptr = NULL;
+static uint32_t g_warp_size = 0;
+static const char *g_terminal_warp_ptr = NULL;
+static uint32_t g_terminal_warp_size = 0;
+static const char *g_menubar_warp_ptr = NULL;
+static uint32_t g_menubar_warp_size = 0;
 static const char *g_bootlogo_ptr = NULL;
 static uint32_t g_bootlogo_size = 0;
 static const char *g_wallpaper_ptr = NULL;
@@ -119,6 +126,8 @@ static uint32_t g_wallpaper_size = 0;
 static const char *g_os_settings_ptr = NULL;
 static uint32_t g_os_settings_size = 0;
 
+static int g_terminal_mod_found = 0;
+static int g_menubar_mod_found = 0;
 static int g_bootlogo_found = 0;
 static int g_wallpaper_found = 0;
 static int g_os_settings_found = 0;
@@ -232,7 +241,7 @@ typedef struct window_struct {
 } window_t;
 
 static void window_update_caches(window_t *win);
-static void add_window(const char *title, int x, int y, int w, int h, int is_warp1, int no_decoration);
+static void add_window(const char *title, int x, int y, int w, int h, int is_warp1);
 static void close_active_window();
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
 void set_pending_command(const char *cmd);
@@ -326,36 +335,27 @@ static void parse_os_settings() {
           wp_name[len] = '\0';
           set_w1_global("~~main/wallpaper", wp_name);
           
-          // ストレージからロード試行
-          uint32_t wp_sz = 0;
-          void *wp_data = fs_read_file(wp_name, &wp_sz);
-          if (wp_data) {
-              g_wallpaper_ptr = (const char *)wp_data;
-              g_wallpaper_size = wp_sz;
-              g_wallpaper_found = 1;
-              set_w1_global("--warpSystemLog", "WallpaperSetFromDisk.");
-          } else {
-              // 失敗したらTARから探す
-              const char *tar_start = NULL;
-              size_t tar_size = 0;
-              for (uint32_t i = 0; i < g_mod_count; i++) {
-                multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
-                const char *mod_str = (const char *)(uintptr_t)mods[i].string;
-                if (mod_str && (strstr(mod_str, "initrd") || strstr(mod_str, "tar"))) {
-                  tar_start = (const char *)(uintptr_t)mods[i].mod_start;
-                  tar_size = mods[i].mod_end - mods[i].mod_start;
-                  break;
-                }
-              }
-              if (tar_start) {
-                  uint32_t size = 0;
-                  const char *file_ptr = tar_find_file(tar_start, tar_size, wp_name, &size);
-                  if (file_ptr) {
-                      g_wallpaper_ptr = file_ptr;
-                      g_wallpaper_size = size;
-                      g_wallpaper_found = 1;
-                      set_w1_global("--warpSystemLog", "WallpaperSetFromInitrd.");
-                  }
+          // Try to load this wallpaper from TAR modules (initrd)
+          const char *tar_start = NULL;
+          size_t tar_size = 0;
+          for (uint32_t i = 0; i < g_mod_count; i++) {
+            multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+            const char *mod_str = (const char *)(uintptr_t)mods[i].string;
+            if (mod_str && (strstr(mod_str, "initrd") || strstr(mod_str, "tar"))) {
+              tar_start = (const char *)(uintptr_t)mods[i].mod_start;
+              tar_size = mods[i].mod_end - mods[i].mod_start;
+              break;
+            }
+          }
+          
+          if (tar_start) {
+              uint32_t size = 0;
+              const char *file_ptr = tar_find_file(tar_start, tar_size, wp_name, &size);
+              if (file_ptr) {
+                  g_wallpaper_ptr = file_ptr;
+                  g_wallpaper_size = size;
+                  g_wallpaper_found = 1;
+                  set_w1_global("--warpSystemLog", "WallpaperSetFromInitrd.");
               }
           }
         }
@@ -363,42 +363,16 @@ static void parse_os_settings() {
     }
   }
   
-  // Dev flags: eventCheck
-  const char *ev_key = strstr(buf, "\"eventCheck\"");
-  if (ev_key) {
-    const char *p = json_skip_ws(ev_key + 12);
-    if (*p == ':') {
-        p = json_skip_ws(p + 1);
-        if (strncmp(p, "true", 4) == 0) {
-            set_w1_global("~~dev/eventCheck", "true");
-            g_dev_event_check = 1;
-        } else if (strncmp(p, "false", 5) == 0) {
-            set_w1_global("~~dev/eventCheck", "false");
-            g_dev_event_check = 0;
-        }
-    }
-  }
-
-  // Dev flags: showHUD
-  const char *hud_key = strstr(buf, "\"showHUD\"");
-  if (hud_key) {
-    const char *p = json_skip_ws(hud_key + 9);
-    if (*p == ':') {
-        p = json_skip_ws(p + 1);
-        if (strncmp(p, "true", 4) == 0) {
-            set_w1_global("~~dev/showHUD", "true");
-            g_dev_show_hud = 1;
-        } else if (strncmp(p, "false", 5) == 0) {
-            set_w1_global("~~dev/showHUD", "false");
-            g_dev_show_hud = 0;
-        }
-    }
-  }
+  if (strstr(buf, "\"eventCheck\": true")) set_w1_global("~~dev/eventCheck", "true");
+  else if (strstr(buf, "\"eventCheck\": false")) set_w1_global("~~dev/eventCheck", "false");
+  
+  if (strstr(buf, "\"showHUD\": true")) set_w1_global("~~dev/showHUD", "true");
+  else if (strstr(buf, "\"showHUD\": false")) set_w1_global("~~dev/showHUD", "false");
 
   // Firstboot commands
   const char *fb_key = strstr(buf, "\"firstboot\"");
   if (fb_key) {
-    const char *p = strstr(fb_key + 11, ":");
+    const char *p = strstr(fb_key, ":");
     if (p) {
         p++; // skip ':'
         p = json_skip_ws(p);
@@ -1384,103 +1358,97 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   ata_init();
   fs_init();
 
-  // 1. RAMディスクから展開 (未インストールの時のみ)
-  if (mbi->flags & 0x8) {
-    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
-    const char *ram_tar_ptr = NULL;
-    uint32_t ram_tar_size = 0;
-    for (uint32_t i = 0; i < mbi->mods_count; i++) {
-      const char *s = (const char *)(uintptr_t)mods[i].string;
-      if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
-        ram_tar_ptr = (const char *)(uintptr_t)mods[i].mod_start;
-        ram_tar_size = mods[i].mod_end - mods[i].mod_start;
-        break;
+  // 1. ストレージに個別ファイルがあるか確認（代表として main.warpc）
+  uint32_t test_size = 0;
+  void *test_ptr = fs_read_file("main.warpc", &test_size);
+  
+  if (test_ptr) {
+      free(test_ptr); // 確認用なので一旦解放
+      set_w1_global("--warpSystemLog", "INITRD: [STORAGE-MODE] Loading individual files...");
+  } else {
+      // 2. なければRAMディスクから「展開インストール」
+      const char *ram_tar_ptr = NULL;
+      uint32_t ram_tar_size = 0;
+      if (mbi->flags & 0x8) {
+          multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+          for (uint32_t i = 0; i < mbi->mods_count; i++) {
+            const char *s = (const char *)(uintptr_t)mods[i].string;
+            if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+              ram_tar_ptr = (const char *)(uintptr_t)mods[i].mod_start;
+              ram_tar_size = mods[i].mod_end - mods[i].mod_start;
+              break;
+            }
+          }
       }
-    }
 
-    if (ram_tar_ptr) {
-      uint32_t sz = 0;
-      void *test = fs_read_file("os_settings.json", &sz);
-      if (!test) {
-        set_w1_global("--warpSystemLog", "INITRD: Extracting to Storage...");
-        fs_format();
-        const char *p = ram_tar_ptr;
-        const char *end = ram_tar_ptr + ram_tar_size;
-        while (p + 512 <= end) {
-          tar_header_t *h = (tar_header_t *)p;
-          if (h->name[0] == '\0') break;
-          uint32_t f_size = octal_to_int(h->size, 12);
-          if (h->typeflag == '0' || h->typeflag == '\0') fs_write_file(h->name, p + 512, f_size);
-          p += 512 + ((f_size + 511) & ~511);
-        }
-      } else {
-        free(test);
+      if (ram_tar_ptr) {
+          set_w1_global("--warpSystemLog", "INITRD: [INSTALLING] Extracting TAR to Storage...");
+          fs_format();
+          // TARを展開して個別に保存
+          const char *p = ram_tar_ptr;
+          const char *end = ram_tar_ptr + ram_tar_size;
+          while (p + 512 <= end) {
+              tar_header_t *h = (tar_header_t *)p;
+              if (h->name[0] == '\0') break;
+              uint32_t f_size = octal_to_int(h->size, 12);
+              if (h->typeflag == '0' || h->typeflag == '\0') {
+                  fs_write_file(h->name, p + 512, f_size);
+              }
+              p += 512 + ((f_size + 511) & ~511);
+          }
+          set_w1_global("--warpSystemLog", "INITRD: [SUCCESS] Extracted to Disk.");
+          
+          // RAMディスクの参照を即座に消す（これでメモリ計算から除外される）
+          multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+          for (uint32_t i = 0; i < mbi->mods_count; i++) {
+              const char *s = (const char *)(uintptr_t)mods[i].string;
+              if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+                  mods[i].mod_end = mods[i].mod_start;
+              }
+          }
       }
-    }
   }
 
-  // 2. モジュールリストをストレージから構築 (すべて start=0 のオンデマンド形式)
+  // 3. ストレージ（またはインストール直後のディスク）から必要なファイルだけをロード
+  g_warp_ptr = fs_read_file("main.warpc", &g_warp_size);
+  g_terminal_warp_ptr = fs_read_file("terminal.warp", &g_terminal_warp_size);
+  g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
+  g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
+  g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
+  if (g_os_settings_ptr) g_os_settings_found = 1;
+  
+  // Wallpaper loading
+  uint32_t wp_size = 0;
+  void *wp_ptr = fs_read_file("wallpaper_1.svg", &wp_size);
+  if (wp_ptr) {
+      g_wallpaper_ptr = wp_ptr;
+      g_wallpaper_size = wp_size;
+      g_wallpaper_found = 1;
+  }
+
+  if (g_warp_ptr) g_warp_mod_found = 1;
+  
+  // モジュールリストもストレージから再構築
   g_warp_module_count = 0;
   for (uint32_t i = 0; i < g_sb.num_files && g_warp_module_count < MAX_WARP_MODULES; i++) {
-    strncpy(g_warp_modules[g_warp_module_count].name, g_sb.entries[i].name, 63);
-    g_warp_modules[g_warp_module_count].start = 0; 
-    g_warp_modules[g_warp_module_count].size = g_sb.entries[i].size_bytes;
-    g_warp_module_count++;
+      fs_entry_t *fe = &g_sb.entries[i];
+      strncpy(g_warp_modules[g_warp_module_count].name, fe->name, 63);
+      // ストレージからのオンデマンド読み込みを簡略化するため、
+      // ここではポインタを NULL にし、実行時に読み込む仕組み（既に add_window 等で対応済）にします。
+      // もしくは、代表的なものだけをここでロード済みポインタとしてセットします。
+      g_warp_modules[g_warp_module_count].start = 0; 
+      g_warp_modules[g_warp_module_count].size = fe->size_bytes;
+      
+      // 既に個別ロードした主要ファイル（main.warpc等）のポインタを反映
+      if (strcmp(fe->name, "main.warpc") == 0) g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)g_warp_ptr;
+      else if (strcmp(fe->name, "terminal.warp") == 0) g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)g_terminal_warp_ptr;
+      
+      g_warp_module_count++;
   }
 
-  // 3. 設定ロードとパース (開発中はInitrdの最新設定を優先)
-  uint32_t settings_sz = 0;
-  char *settings_buf = NULL;
-
-  if (mbi->flags & 0x8) {
-    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
-    for (uint32_t i = 0; i < mbi->mods_count; i++) {
-      const char *s = (const char *)(uintptr_t)mods[i].string;
-      if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
-        const char *tar_data = tar_find_file((const char *)(uintptr_t)mods[i].mod_start,
-                                             mods[i].mod_end - mods[i].mod_start,
-                                             "os_settings.json", &settings_sz);
-        if (tar_data) {
-          settings_buf = (char *)malloc(settings_sz + 1);
-          if (settings_buf) {
-            memcpy(settings_buf, tar_data, settings_sz);
-            settings_buf[settings_sz] = '\0';
-            set_w1_global("--warpSystemLog", "Settings: From Initrd (Forced).");
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  if (!settings_buf) {
-    settings_buf = (char *)fs_read_file("os_settings.json", &settings_sz);
-    if (settings_buf) set_w1_global("--warpSystemLog", "Settings: From Disk.");
-  }
-
-  if (settings_buf) {
-    g_os_settings_ptr = settings_buf;
-    g_os_settings_size = settings_sz;
-    g_os_settings_found = 1;
-    parse_os_settings();
-  } else {
-    set_w1_global("--warpSystemLog", "Settings: NOT FOUND.");
-  }
-
-  // 4. ロゴと壁紙のロード (絶対に必要なもの)
-  g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
-  if (g_bootlogo_ptr) g_bootlogo_found = 1;
-
-  if (!g_wallpaper_ptr) { // parse_os_settingsでロードされなかった場合
-    uint32_t wp_sz = 0;
-    g_wallpaper_ptr = fs_read_file("wallpaper_1.svg", &wp_sz);
-    if (g_wallpaper_ptr) {
-      g_wallpaper_size = wp_sz;
-      g_wallpaper_found = 1;
-    }
-  }
-
-  if (g_warp_module_count > 0) strncpy(g_hud_status, "DiskMode", 63);
+  parse_os_settings();
+  
+  if (g_warp_mod_found) strncpy(g_hud_status, "DiskMode", 63);
 }
 
 // --- ターミナル・コマンド処理 ---
@@ -1497,88 +1465,133 @@ void set_pending_command(const char *cmd) {
 // デバッグ用フラグ
 // g_dev_pointer_check is defined earlier as non-static
 
-static int os_atoi(const char *s) {
-  int n = 0, neg = (*s == '-');
-  if (neg) s++;
-  while (*s >= '0' && *s <= '9') n = n * 10 + (*s++ - '0');
-  return neg ? -n : n;
-}
-
-static int parse_coord(const char *val, int total) {
-  if (!val) return 0;
-  int n = os_atoi(val);
-  if (strstr(val, "vw") || strstr(val, "%")) return (n * SCREEN_WIDTH) / 100;
-  if (strstr(val, "vh")) return (n * SCREEN_HEIGHT) / 100;
-  return n;
-}
-
 static void handle_terminal_command(const char *cmd) {
-  // 確実にログを出す（バッファオーバーフロー防止）
-  set_w1_global("--warpSystemLog", "HTC_START");
   char trimmed[256];
   strncpy(trimmed, cmd, 255);
   trimmed[255] = '\0';
+  
+  // Trim trailing whitespace/newlines
   int len = strlen(trimmed);
-  while (len > 0 && (trimmed[len-1] <= 32)) trimmed[--len] = '\0';
+  while (len > 0 && (trimmed[len-1] == ' ' || trimmed[len-1] == '\n' || trimmed[len-1] == '\r')) {
+    trimmed[len-1] = '\0';
+    len--;
+  }
 
-  const char *file_part = NULL;
-  if (strncmp(trimmed, "warp ", 5) == 0) file_part = trimmed + 5;
-  else if (strstr(trimmed, ".warp") || strstr(trimmed, ".warpc")) file_part = trimmed;
-  else if (strncmp(trimmed, "./", 2) == 0) file_part = trimmed + 2;
+  const char *file = NULL;
+  if (strncmp(trimmed, "warp ", 5) == 0) {
+    file = trimmed + 5;
+  } else if (strncmp(trimmed, "./", 2) == 0) {
+    file = trimmed + 2;
+  } else if (strstr(trimmed, ".warp") || strstr(trimmed, ".warpc")) {
+    file = trimmed;
+  }
 
-  if (file_part) {
-    set_w1_global("--warpSystemLog", "HTC_FILEPART");
-    char name[64] = "";
-    int i = 0;
-    while (file_part[i] && file_part[i] != ' ' && i < 63) { name[i] = file_part[i]; i++; }
-    name[i] = '\0';
-    int x=-1, y=-1, w=-1, h=-1, t=-1, b=-1, l=-1, r=-1, nd=0;
-    const char *p = file_part + i;
-    while (*p) {
-      while (*p == ' ') p++;
-      const char *k = p;
-      while (*p && *p != '=') p++;
-      if (*p != '=') {
-          while(*p && *p != ' ') p++;
-          continue;
+  if (file) {
+    // Check if the file exists in modules
+    int found = 0;
+    int mod_idx = -1;
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      // Try exact match or case-insensitive match
+      if (strcasecmp(g_warp_modules[i].name, file) == 0 || strstr(g_warp_modules[i].name, file)) {
+        found = 1;
+        mod_idx = i;
+        break;
       }
-      char key[32], val[32];
-      int kl = (p-k > 31) ? 31 : p-k;
-      strncpy(key, k, kl); key[kl] = '\0';
-      p++; const char *v = p;
-      while (*p && *p != ' ' && *p != '\n') p++;
-      int vl = (p-v > 31) ? 31 : p-v;
-      strncpy(val, v, vl); val[vl] = '\0';
-
-      if (!strcmp(key, "x")) x = parse_coord(val, SCREEN_WIDTH);
-      else if (!strcmp(key, "y")) y = parse_coord(val, SCREEN_HEIGHT);
-      else if (!strcmp(key, "w") || !strcmp(key, "width")) w = parse_coord(val, SCREEN_WIDTH);
-      else if (!strcmp(key, "h") || !strcmp(key, "height")) h = parse_coord(val, SCREEN_HEIGHT);
-      else if (!strcmp(key, "top")) t = parse_coord(val, SCREEN_HEIGHT);
-      else if (!strcmp(key, "bottom")) b = parse_coord(val, SCREEN_HEIGHT);
-      else if (!strcmp(key, "left")) l = parse_coord(val, SCREEN_WIDTH);
-      else if (!strcmp(key, "right")) r = parse_coord(val, SCREEN_WIDTH);
-      else if (!strcmp(key, "no_decoration")) nd = (!strcmp(val, "true") || !strcmp(val, "1"));
     }
 
-    int is_warp1 = strstr(name, ".warpc") ? 0 : 1;
-    if (w == -1) w = (l != -1 && r != -1) ? SCREEN_WIDTH - r - l : 600;
-    if (h == -1) h = (t != -1 && b != -1) ? SCREEN_HEIGHT - b - t : 400;
-    if (x == -1) x = (l != -1) ? l : (r != -1 ? SCREEN_WIDTH - r - w : 200);
-    if (y == -1) y = (t != -1) ? t : (b != -1 ? SCREEN_HEIGHT - b - h : 200);
-
-    set_w1_global("--warpSystemLog", "HTC_CALLADWIN");
-    add_window(name, x, y, w, h, is_warp1, nd);
-    set_w1_global("--warpSystemLog", "HTC_AFTERADWIN");
+    if (found) {
+      // Use the canonical name from the module list
+      const char *canonical_name = g_warp_modules[mod_idx].name;
+      if (strstr(canonical_name, ".warpc")) {
+        add_window(canonical_name, 150, 150, 600, 400, 0);
+      } else {
+        add_window(canonical_name, 200, 200, 600, 400, 1);
+      }
+    } else if (strstr(file, "terminal") && g_terminal_mod_found) {
+      add_window("Terminal", 200, 200, 600, 400, 1);
+    } else if (strstr(file, "menubar") && g_menubar_mod_found) {
+      add_window("Menubar", 0, 0, 1280, 32, 1);
+    } else {
+      char err[512] = "Not found. Modules: ";
+      for (uint32_t i = 0; i < g_warp_module_count; i++) {
+        strlcat(err, g_warp_modules[i].name, 511);
+        if (i < g_warp_module_count - 1) strlcat(err, ", ", 511);
+      }
+      set_w1_global("--warpSystemLog", err);
+    }
   } else if (strcmp(trimmed, "ls") == 0 || strcmp(trimmed, "list") == 0) {
-    fs_list_files();
+    char list_buf[512] = "Mods: ";
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      if (i > 0) strlcat(list_buf, ", ", 511);
+      strlcat(list_buf, g_warp_modules[i].name, 511);
+      
+      // Data preview (first 4 bytes)
+      strlcat(list_buf, "(", 511);
+      const char *data = (const char *)(uintptr_t)g_warp_modules[i].start;
+      char hex[5] = "....";
+      for(int j=0; j<4; j++) {
+        unsigned char c = (unsigned char)data[j];
+        if (c >= 32 && c <= 126) hex[j] = c;
+        else hex[j] = '?';
+      }
+      strlcat(list_buf, hex, 511);
+      strlcat(list_buf, ")", 511);
+    }
+    set_w1_global("--warpSystemLog", list_buf);
   } else if (strcmp(trimmed, "reboot") == 0) {
     extern void sys_restart(void);
     sys_restart();
   } else if (strcmp(trimmed, "exit") == 0) {
     close_active_window();
   } else if (strcmp(trimmed, "help") == 0) {
-    set_w1_global("--warpSystemLog", "Available commands: <file.warp>, warp <file>, reboot, exit, help, ls");
+    set_w1_global("--warpSystemLog", "Available commands: <file.warp>, ./<file.warp>, warp <file>, reboot, exit, help, ls");
+  } else if (strncmp(trimmed, "dev pointerCheck=", 17) == 0) {
+    const char *val = trimmed + 17;
+    if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
+    else g_dev_pointer_check = 0;
+    strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
+  } else if (strncmp(trimmed, "dev dark=", 9) == 0) {
+    const char *val = trimmed + 9;
+    set_w1_global("~~json/main/dark", val);
+    strncpy(g_hud_status, (strcmp(val, "true") == 0) ? "Dark:ON" : "Dark:OFF", 63);
+    for (int i = 0; i < g_window_count; i++) {
+      window_update_caches(&g_windows[i]);
+      g_windows[i].is_dirty = 1;
+    }
+    g_svg_dirty = 1;
+  } else if (strcmp(trimmed, "storage sync") == 0) {
+    if (!mbi_ptr) {
+        set_w1_global("--warpSystemLog", "Error: No multiboot info");
+        return;
+    }
+    
+    // Lazy Init
+    ata_init();
+    fs_init();
+    
+    // Find initrd.tar in memory
+    const char *tar_data = NULL;
+    uint32_t tar_size = 0;
+    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+    for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
+        const char *s = (const char *)(uintptr_t)mods[i].string;
+        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+            tar_data = (const char *)(uintptr_t)mods[i].mod_start;
+            tar_size = mods[i].mod_end - mods[i].mod_start;
+            break;
+        }
+    }
+    if (tar_data) {
+        fs_format();
+        fs_write_file("initrd.tar", tar_data, tar_size);
+        set_w1_global("--warpSystemLog", "Storage Synced (initrd.tar saved)");
+    } else {
+        set_w1_global("--warpSystemLog", "Error: initrd.tar not found in RAM");
+    }
+  } else if (strcmp(trimmed, "storage ls") == 0) {
+    ata_init();
+    fs_init();
+    fs_list_files();
   }
 }
 
@@ -1655,24 +1668,12 @@ static void window_clear_caches(window_t *win) {
   if (win->shadow_cache) { free(win->shadow_cache); win->shadow_cache = NULL; }
   if (win->frame_cache) { free(win->frame_cache); win->frame_cache = NULL; }
   if (win->window_mask) { free(win->window_mask); win->window_mask = NULL; }
-  // rgba_buffer は保持する（再描画時に再利用するため）
-  // raster_cache は保持する（SVG 再描画時に再利用するため）
+  if (win->rgba_buffer) { free(win->rgba_buffer); win->rgba_buffer = NULL; }
+  if (win->raster_cache) { free(win->raster_cache); win->raster_cache = NULL; }
 }
 
 static void window_bake(window_t *win) {
-  // unified_buffer が既にあれば再ベーク不要
-  if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
-    return;
-  }
-  
-  // 必要なキャッシュがなければ再構築
-  if (!win->shadow_cache || !win->frame_cache || !win->window_mask) {
-    window_update_caches(win);
-  }
-  // それでも揃っていなければ戻す
-  if (!win->shadow_cache || !win->frame_cache || !win->window_mask) return;
-  // rgba_buffer も必要
-  if (!win->rgba_buffer) return;
+  if (!win->shadow_cache || !win->frame_cache || !win->rgba_buffer || !win->window_mask) return;
 
   float scale = win->render_scale;
   int title_h = win->no_decoration ? 0 : 40;
@@ -1700,33 +1701,25 @@ static void window_bake(window_t *win) {
     if (py >= sh) break;
     for (int x = 0; x < win->shadow_cache_w; x++) {
       uint8_t alpha = win->shadow_cache[y * win->shadow_cache_w + x];
-      if (alpha > 0) {
-        // Shadow is black with alpha
-        win->unified_buffer[py * sw + x] = ((uint32_t)alpha << 24);
-      }
+      if (alpha > 0) win->unified_buffer[py * sw + x] = (uint32_t)alpha << 24;
     }
   }
 
   // 2. Bake Frame (Title Bar)
   int frame_x = (int)((float)shadow_size * scale);
   int frame_y = (int)((float)shadow_size * scale);
-  int mw = win->buffer_w;
+  int mw = win->buffer_w; // Use buffer_w which is already scaled
   if (mw < 1 && win->w > 0) mw = 1;
 
   for (int dy = 0; dy < win->frame_cache_h; dy++) {
     int py = frame_y + dy;
-    if (py >= sh) break;
     uint32_t *src_line = &win->frame_cache[dy * win->frame_cache_w];
     uint8_t *mask_line = &win->window_mask[dy * mw];
     for (int dx = 0; dx < win->frame_cache_w; dx++) {
       int px = frame_x + dx;
-      if (px >= sw) break;
       uint32_t color = src_line[dx];
       uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-      if (alpha > 0) {
-        // Blend properly, preserving alpha channel from blend_colors result
-        win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
-      }
+      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
     }
   }
 
@@ -1736,11 +1729,10 @@ static void window_bake(window_t *win) {
   
   for (int dy = 0; dy < win->buffer_h; dy++) {
     int py = frame_y + content_y_off + dy;
-    if (py >= sh || dy >= mh_visible) break;
+    if (py >= sh || dy >= mh_visible) break; // Only bake visible portion
     
     uint32_t *src_line = (uint32_t*)&win->rgba_buffer[dy * win->buffer_w * 4];
     int mask_y = content_y_off + dy;
-    if (mask_y >= (int)((float)(win->h + title_h) * scale)) break;
     uint8_t *mask_line = &win->window_mask[mask_y * mw];
     
     for (int dx = 0; dx < win->buffer_w; dx++) {
@@ -1750,20 +1742,16 @@ static void window_bake(window_t *win) {
       uint32_t color = src_line[dx];
       uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
       
-      if (alpha > 0) {
-        // Blend properly, preserving alpha channel from blend_colors result
-        win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
-      }
+      // Ensure the baked buffer has correct alpha
+      if (alpha == 0) continue;
+      // Always use blend_colors to ensure consistent alpha handling (forcing 0xFF000000 for opaque pixels)
+      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
     }
   }
 
   // 4. Cleanup individual caches to save RAM
   window_clear_caches(win);
-  
-  // unified_buffer にベークされたので、is_dirty をクリア
-  win->is_dirty = 0;
 }
-
 
 static void window_update_caches(window_t *win) {
   float scale = win->render_scale;
@@ -1955,32 +1943,24 @@ static void window_update_caches(window_t *win) {
   }
 }
 
-
-// kernel.c の window_redraw 修正（ログを保持）
 static void window_redraw(window_t *win) {
-  if (!win->warp_ctx && !win->warp1_ctx) {
-    set_w1_global("--warpSystemLog", "WinRedraw:NoCtx");
-    return;
-  }
-  
-  set_w1_global("--warpSystemLog", "WinRedraw:Start");
+  if (!win->warp_ctx && !win->warp1_ctx) return;
+
   int is_active = (win == &g_windows[g_active_window_index]);
-  float target_scale = is_active ? 1.0f : 0.5f;
+  float target_scale = is_active ? 1.0f : 0.5f; // 4 pixels for 1 color (2x2)
+
   
+  // If resolution scale changed, force update
   if (win->render_scale != target_scale) {
-    set_w1_global("--warpSystemLog", "WinRedraw:ScaleChange");
     win->is_dirty = 1;
     win->render_scale = target_scale;
-    if (target_scale > 0.5f) {
-        if (win->unified_buffer) { 
-          free(win->unified_buffer); 
-          win->unified_buffer = NULL; 
-          set_w1_global("--warpSystemLog", "WinRedraw:UnifiedFreed");
-        }
+    if (target_scale > 0.5f) { // If becoming active
+        if (win->unified_buffer) { free(win->unified_buffer); win->unified_buffer = NULL; }
     }
     window_update_caches(win);
   }
 
+  // Check if update is needed (engine_dirty flag)
   int needs_update = 0;
   if (win->is_warp1) {
     needs_update = warp1_context_is_dirty(win->warp1_ctx) || (win->rgba_buffer == NULL);
@@ -1989,7 +1969,7 @@ static void window_redraw(window_t *win) {
   }
   
   if (needs_update) {
-    set_w1_global("--warpSystemLog", "WinRedraw:EngineUpdate");
+    strncpy(g_hud_status, "EngineUpdate", 63);
     if (win->is_warp1) {
       warp1_context_update(win->warp1_ctx, win->w, win->h);
       warp1_context_clear_dirty(win->warp1_ctx);
@@ -1997,45 +1977,28 @@ static void window_redraw(window_t *win) {
       warp_context_update(win->warp_ctx, win->w, win->h);
       warp_context_clear_dirty(win->warp_ctx);
     }
+  } else {
+    strncpy(g_hud_status, "Cached", 63);
   }
 
-  set_w1_global("--warpSystemLog", "WinRedraw:GetSVG");
+  strncpy(g_hud_status, "SVGGen", 63);
   const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
-  
-  char svglog[64] = "SVG:";
-  if (!svg) strlcat(svglog, "NULL", 63);
-  else if (svg[0] == '\0') strlcat(svglog, "EMPTY", 63);
-  else { 
-    strlcat(svglog, "OK(", 63); 
-    char tmp[16]; 
-    int n = strlen(svg), idx = 0; 
-    if (n == 0) { tmp[idx++] = '0'; } 
-    else { 
-      char buf[16]; 
-      int bi=0; 
-      while(n>0){buf[bi++]='0'+(n%10);n/=10;} 
-      while(bi>0)tmp[idx++]=buf[--bi]; 
-    } 
-    tmp[idx] = '\0'; 
-    strlcat(svglog, tmp, 63); 
-    strlcat(svglog, ")", 63); 
-  }
-  set_w1_global("--warpSystemLog", svglog);
 
+  // Check if SVG string changed
   int svg_changed = 1;
-  if (win->last_svg_str && svg && strcmp(win->last_svg_str, svg) == 0 && win->rgba_buffer && !win->is_dirty) {
+  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0 && win->rgba_buffer && !win->is_dirty) {
     svg_changed = 0;
-    set_w1_global("--warpSystemLog", "WinRedraw:SVGCached");
   }
 
-  if (svg_changed && svg && svg[0]) {
-    set_w1_global("--warpSystemLog", "WinRedraw:ParseSVG");
+  if (svg_changed) {
+    strncpy(g_hud_status, "NSVGParse", 63);
     NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
     if (!img) {
-      set_w1_global("--warpSystemLog", "WinRedraw:ParseFail");
+      strncpy(g_hud_status, "ParseErr", 63);
       return;
     }
 
+    // Content height is determined by the SVG itself
     int content_h = (int)img->height;
     if (content_h < win->h) content_h = win->h;
 
@@ -2044,27 +2007,24 @@ static void window_redraw(window_t *win) {
     if (scaled_w < 1) scaled_w = 1;
     if (scaled_h < 1) scaled_h = 1;
 
+    // Allocate/Resize SVG raster cache
     if (!win->raster_cache || win->raster_cache_w != scaled_w || win->raster_cache_h != scaled_h) {
-      set_w1_global("--warpSystemLog", "WinRedraw:AllocRaster");
       if (win->raster_cache) free(win->raster_cache);
       win->raster_cache = (uint32_t *)malloc((size_t)scaled_w * (size_t)scaled_h * 4);
       win->raster_cache_w = scaled_w;
       win->raster_cache_h = scaled_h;
-      if (!win->raster_cache) {
-        set_w1_global("--warpSystemLog", "WinRedraw:MallocFail");
-      }
     }
 
+    // Rasterize SVG into cache
     if (win->raster_cache) {
-      set_w1_global("--warpSystemLog", "WinRedraw:Rasterize");
+      strncpy(g_hud_status, "ClearCache", 63);
       for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0xFFFFFFFF;
 
+      strncpy(g_hud_status, "NSVGRast", 63);
       if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-      set_w1_global("--warpSystemLog", "WinRedraw:BeforeNSVG");
       nsvgRasterize(g_svg_rast, img, 0, 0, target_scale, (unsigned char*)win->raster_cache, scaled_w, scaled_h, scaled_w * 4);
-      set_w1_global("--warpSystemLog", "WinRedraw:AfterNSVG");
 
-      set_w1_global("--warpSystemLog", "WinRedraw:RGBASwap");
+      strncpy(g_hud_status, "RBSwap", 63);
       unsigned char *p = (unsigned char*)win->raster_cache;
       for (int i = 0; i < scaled_w * scaled_h; i++) {
         unsigned char r = p[0], b = p[2];
@@ -2072,6 +2032,7 @@ static void window_redraw(window_t *win) {
       }
     }
 
+    // Update SVG string cache
     if (win->last_svg_str) free(win->last_svg_str);
     size_t svg_len = strlen(svg);
     win->last_svg_str = (char*)malloc(svg_len + 1);
@@ -2080,21 +2041,21 @@ static void window_redraw(window_t *win) {
     nsvgDelete(img);
   }
 
+  // Prepare RGBA buffer (copy from raster cache and draw text)
   if (win->raster_cache) {
     if (!win->rgba_buffer || win->buffer_w != win->raster_cache_w || win->buffer_h != win->raster_cache_h) {
-      set_w1_global("--warpSystemLog", "WinRedraw:AllocRGBA");
       if (win->rgba_buffer) free(win->rgba_buffer);
       win->rgba_buffer = (unsigned char *)malloc((size_t)win->raster_cache_w * (size_t)win->raster_cache_h * 4);
       win->buffer_w = win->raster_cache_w;
       win->buffer_h = win->raster_cache_h;
-      win->is_dirty = 1;
+      win->is_dirty = 1; // Force redraw after allocation
     }
 
+    // Only composite text if SVG changed or forced redraw
     if (svg_changed || win->is_dirty) {
-      set_w1_global("--warpSystemLog", "WinRedraw:CopyRaster");
       memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
 
-      set_w1_global("--warpSystemLog", "WinRedraw:DrawText");
+      strncpy(g_hud_status, "TxtDraw", 63);
       layer_t temp_layer;
       temp_layer.buffer = (uint32_t*)win->rgba_buffer;
       temp_layer.width = win->buffer_w;
@@ -2108,67 +2069,43 @@ static void window_redraw(window_t *win) {
   }
 
   if (win->render_scale <= 0.5f) {
-      set_w1_global("--warpSystemLog", "WinRedraw:Baking");
       window_bake(win);
   }
 
   win->is_dirty = 0;
   win->is_calculating = 0;
-  set_w1_global("--warpSystemLog", "WinRedraw:Done");
+  strncpy(g_hud_status, "Idle", 63);
 }
 
-
-
-static void add_window(const char *title, int x, int y, int w, int h, int is_warp1, int no_decoration) {
+static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
   if (g_window_count >= MAX_WINDOWS) return;
 
   void *dynamic_ptr = NULL;
   const char *buf_to_use = NULL;
   
-  // Try to find file by name in modules
-  for (uint32_t i = 0; i < g_warp_module_count; i++) {
-    if (strcasecmp(g_warp_modules[i].name, title) == 0 || strstr(g_warp_modules[i].name, title)) {
-      if (g_warp_modules[i].start != 0) {
-          buf_to_use = (const char *)(uintptr_t)g_warp_modules[i].start;
-      } else {
-          //ストレージから読み込み
-          uint32_t sz = 0;
-          dynamic_ptr = fs_read_file(g_warp_modules[i].name, &sz);
-          buf_to_use = (const char *)dynamic_ptr;
-      }
-      break;
-    }
-  }
-
-  // Fallback 1: direct storage read
-  if (!buf_to_use && (strstr(title, ".warp") || strstr(title, ".warpc"))) {
-      uint32_t sz = 0;
-      dynamic_ptr = fs_read_file(title, &sz);
-      buf_to_use = (const char *)dynamic_ptr;
-  }
-  
-  // Fallback 2: Read from initrd tar directly
-  if (!buf_to_use && mbi_ptr && (mbi_ptr->flags & 0x8)) {
-    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
-    for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
-      const char *s = (const char *)(uintptr_t)mods[i].string;
-      if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
-        uint32_t tar_size = mods[i].mod_end - mods[i].mod_start;
-        const char *tar_data = tar_find_file((const char *)(uintptr_t)mods[i].mod_start, tar_size, title, &g_warp_modules[0].size);
-        if (tar_data) {
-          buf_to_use = tar_data;
-          break;
-        }
-      }
-    }
+  if (strstr(title, "Terminal") || strstr(title, "terminal")) {
+    if (g_terminal_mod_found) buf_to_use = g_terminal_warp_ptr;
+  } else if (strstr(title, "Menubar") || strstr(title, "menubar")) {
+    if (g_menubar_mod_found) buf_to_use = g_menubar_warp_ptr;
   }
 
   if (!buf_to_use) {
-    char dbg[128] = "add_window:NULL:";
-    strlcat(dbg, title, 127);
-    set_w1_global("--warpSystemLog", dbg);
-    return;
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      if (strcasecmp(g_warp_modules[i].name, title) == 0 || strstr(g_warp_modules[i].name, title)) {
+        if (g_warp_modules[i].start != 0) {
+            buf_to_use = (const char *)(uintptr_t)g_warp_modules[i].start;
+        } else {
+            // ストレージからオンデマンド読み込み
+            uint32_t sz = 0;
+            dynamic_ptr = fs_read_file(g_warp_modules[i].name, &sz);
+            buf_to_use = (const char *)dynamic_ptr;
+        }
+        break;
+      }
+    }
   }
+
+  if (!buf_to_use) return;
 
   window_t *win = &g_windows[g_window_count++];
   win->x = x; win->y = y; win->w = w; win->h = h;
@@ -2176,24 +2113,19 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->target_scroll_x = 0; win->target_scroll_y = 0;
   strncpy(win->title, title, 63);
   win->is_warp1 = is_warp1;
-  win->dynamic_file_ptr = dynamic_ptr;
+  win->dynamic_file_ptr = dynamic_ptr; // トラック
 
   if (is_warp1) {
     win->warp1_ctx = warp1_context_create(buf_to_use);
     win->warp_ctx = NULL;
-    if (!win->warp1_ctx) {
-      char dbg[64] = "warp1_ctx:NULL:";
-      strlcat(dbg, title, 63);
-      set_w1_global("--warpSystemLog", dbg);
-    }
   } else {
     win->warp_ctx = warp_context_create(buf_to_use);
     win->warp1_ctx = NULL;
   }
 
-  win->rgba_buffer = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-  memset(win->rgba_buffer, 0, (size_t)w * (size_t)h * 4);
-  win->buffer_w = w; win->buffer_h = h;
+  win->rgba_buffer = NULL;
+  win->buffer_w = 0;
+  win->buffer_h = 0;
   win->last_svg_str = NULL;
   win->raster_cache = NULL;
   win->raster_cache_w = 0;
@@ -2212,12 +2144,14 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->fade_alpha = 0.0f;
   win->is_calculating = 0;
   win->render_scale = 1.0f;
-  win->no_decoration = no_decoration;
+  win->no_decoration = 0;
   win->is_menubar = 0;
 
-  if (strstr(title, "bar.warp")) {
+  if (strstr(title, "Menubar") || strstr(title, "menubar")) {
     win->is_menubar = 1;
     win->no_decoration = 1;
+    win->x = 0; win->y = 0; win->w = SCREEN_WIDTH; win->h = 32;
+    win->is_warp1 = 1;
   }
 
   g_active_window_index = g_window_count - 1;
@@ -2255,70 +2189,17 @@ static void draw_wallpaper(layer_t *layer) {
   }
 }
 
-
-// redraw_warp_svg も同様にログを保持
 static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
-  
-  char wclog[64] = "Redraw:WinCnt=";
-  char tmp[16];
-  int n = g_window_count, idx = 0;
-  if (n == 0) { tmp[idx++] = '0'; }
-  else { char buf[16]; int bi=0; while(n>0){buf[bi++]='0'+(n%10);n/=10;} while(bi>0)tmp[idx++]=buf[--bi]; }
-  tmp[idx] = '\0';
-  strlcat(wclog, tmp, 63);
-  set_w1_global("--warpSystemLog", wclog);
-  
   sync_all_window_themes();
   draw_wallpaper(layer);
 
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
-    
-    char wlog[64] = "Win[";
-    char tmp2[16];
-    n = i; idx = 0;
-    if (n == 0) { tmp2[idx++] = '0'; }
-    else { char buf[16]; int bi=0; while(n>0){buf[bi++]='0'+(n%10);n/=10;} while(bi>0)tmp2[idx++]=buf[--bi]; }
-    tmp2[idx] = '\0';
-    strlcat(wlog, tmp2, 63);
-    strlcat(wlog, "]D=", 63);
-    n = win->is_dirty; idx = 0;
-    if (n == 0) { tmp2[idx++] = '0'; }
-    else { char buf[16]; int bi=0; while(n>0){buf[bi++]='0'+(n%10);n/=10;} while(bi>0)tmp2[idx++]=buf[--bi]; }
-    tmp2[idx] = '\0';
-    strlcat(wlog, tmp2, 63);
-    set_w1_global("--warpSystemLog", wlog);
-    
-    if (win->is_dirty && !win->is_resizing) {
-      set_w1_global("--warpSystemLog", "Redraw:CallingWR");
-      window_redraw(win);
-      set_w1_global("--warpSystemLog", "Redraw:WRDone");
-    }
+    if (win->is_dirty && !win->is_resizing) window_redraw(win);
 
-    // unified_buffer があれば描画
-    if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
-        char ublog[64] = "Win[";
-        char tmp3[16];
-        n = i; idx = 0;
-        if (n == 0) { tmp3[idx++] = '0'; }
-        else { char buf[16]; int bi=0; while(n>0){buf[bi++]='0'+(n%10);n/=10;} while(bi>0)tmp3[idx++]=buf[--bi]; }
-        tmp3[idx] = '\0';
-        strlcat(ublog, tmp3, 63);
-        strlcat(ublog, "]Unified:", 63);
-        n = win->unified_w; idx = 0;
-        if (n == 0) { tmp3[idx++] = '0'; }
-        else { char buf[16]; int bi=0; while(n>0){buf[bi++]='0'+(n%10);n/=10;} while(bi>0)tmp3[idx++]=buf[--bi]; }
-        tmp3[idx] = '\0';
-        strlcat(ublog, tmp3, 63);
-        strlcat(ublog, "x", 63);
-        n = win->unified_h; idx = 0;
-        if (n == 0) { tmp3[idx++] = '0'; }
-        else { char buf[16]; int bi=0; while(n>0){buf[bi++]='0'+(n%10);n/=10;} while(bi>0)tmp3[idx++]=buf[--bi]; }
-        tmp3[idx] = '\0';
-        strlcat(ublog, tmp3, 63);
-        set_w1_global("--warpSystemLog", ublog);
-        
+    // If we have a unified (baked) buffer, draw it directly and skip individual caches
+    if (win->unified_buffer) {
         int title_h = win->no_decoration ? 0 : 40;
         int shadow_size = win->no_decoration ? 0 : 48;
         float scale = win->render_scale;
@@ -2336,7 +2217,6 @@ static void redraw_warp_svg(layer_t *layer) {
 
         for (int dy = y0; dy < y1; dy++) {
             int py = sy_start + dy;
-            if (py < 0 || py >= layer->height) continue;
             uint32_t *dst_line = &layer->buffer[py * layer->width];
 
             float fy = (float)dy * scale;
@@ -2346,8 +2226,6 @@ static void redraw_warp_svg(layer_t *layer) {
 
             for (int dx = x0; dx < x1; dx++) {
                 int px = sx_start + dx;
-                if (px < 0 || px >= layer->width) continue;
-                
                 float fx = (float)dx * scale;
                 int x0_idx = (int)fx;
                 int x1_idx = (x0_idx + 1 < win->unified_w) ? x0_idx + 1 : x0_idx;
@@ -2358,6 +2236,7 @@ static void redraw_warp_svg(layer_t *layer) {
                 uint32_t c01 = win->unified_buffer[y1_idx * win->unified_w + x0_idx];
                 uint32_t c11 = win->unified_buffer[y1_idx * win->unified_w + x1_idx];
 
+                // Bilinear interpolation for each channel
                 uint32_t r = (uint32_t)((float)((c00 >> 16) & 0xFF) * (1.0f - wx) * (1.0f - wy) +
                                        (float)((c10 >> 16) & 0xFF) * wx * (1.0f - wy) +
                                        (float)((c01 >> 16) & 0xFF) * (1.0f - wx) * wy +
@@ -2375,31 +2254,29 @@ static void redraw_warp_svg(layer_t *layer) {
                                        (float)((c01 >> 24) & 0xFF) * (1.0f - wx) * wy +
                                        (float)((c11 >> 24) & 0xFF) * wx * wy);
 
+                uint32_t color = (a << 24) | (r << 16) | (g << 8) | b;
                 uint8_t alpha = (uint8_t)a;
                 if (alpha == 0) continue;
-                
-                uint32_t color = (a << 24) | (r << 16) | (g << 8) | b;
-                dst_line[px] = blend_colors(dst_line[px], color, alpha);
+                if (alpha == 255) dst_line[px] = color;
+                else dst_line[px] = blend_colors(dst_line[px], color, alpha);
             }
         }
 
-        continue;
-    
+        continue; // Skip individual blitting
     }
     
-    // Individual rendering (active windows)
     if (win->rgba_buffer && win->shadow_cache && win->frame_cache) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
       float scale = win->render_scale;
       
-      // 1. Shadow
+      // 1. Draw Window Shadow from Cache
       if (!win->is_maximized && !win->no_decoration) {
         int full_sw = win->w + shadow_size * 2;
         int full_sh = win->h + title_h + shadow_size * 2;
         int sw = win->shadow_cache_w;
         int sx_start = win->x - shadow_size;
-        int sy_start = win->y - title_h - shadow_size + 8;
+        int sy_start = win->y - title_h - shadow_size + 8; // Offset Y by 8
         
         int y0 = (sy_start < 0) ? -sy_start : 0;
         int y1 = (sy_start + full_sh > layer->height) ? layer->height - sy_start : full_sh;
@@ -2408,7 +2285,6 @@ static void redraw_warp_svg(layer_t *layer) {
 
         for (int dy = y0; dy < y1; dy++) {
           int py = sy_start + dy;
-          if (py < 0 || py >= layer->height) continue;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
           int scaled_dy = (int)((float)dy * scale);
           if (scaled_dy >= win->shadow_cache_h) scaled_dy = win->shadow_cache_h - 1;
@@ -2419,7 +2295,6 @@ static void redraw_warp_svg(layer_t *layer) {
             uint8_t alpha = src_mask[scaled_dx];
             if (alpha == 0) continue;
             int px = sx_start + dx;
-            if (px < 0 || px >= layer->width) continue;
             uint32_t bg = dst_line[px];
             uint32_t a_bg = bg >> 24;
             uint32_t inv_alpha = 255 - alpha;
@@ -2431,7 +2306,7 @@ static void redraw_warp_svg(layer_t *layer) {
         }
       }
 
-      // 2. Title Bar
+      // 2. Draw Title Bar from Cache
       if (!win->no_decoration) {
         uint32_t *src_frame = win->frame_cache;
         int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
@@ -2444,7 +2319,6 @@ static void redraw_warp_svg(layer_t *layer) {
 
         for (int dy = ty0; dy < ty1; dy++) {
           int py = win->y - title_h + dy;
-          if (py < 0 || py >= layer->height) continue;
           int scaled_dy = (int)((float)dy * scale);
           if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
@@ -2452,7 +2326,6 @@ static void redraw_warp_svg(layer_t *layer) {
           uint8_t *mask_line = &win->window_mask[scaled_dy * mw];
           for (int dx = tx0; dx < tx1; dx++) {
             int px = win->x + dx;
-            if (px < 0 || px >= layer->width) continue;
             int scaled_dx = (int)((float)dx * scale);
             if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
             uint32_t color = src_line[scaled_dx];
@@ -2462,7 +2335,7 @@ static void redraw_warp_svg(layer_t *layer) {
         }
       }
 
-      // 3. Content
+      // 5. Content with scroll offset and squircle corners
       int sy_int = (int)roundf(win->scroll_y);
       int cy0 = (win->y < 0) ? -win->y : 0;
       int cy1 = (win->y + win->h > layer->height) ? (layer->height - win->y) : win->h;
@@ -2471,7 +2344,6 @@ static void redraw_warp_svg(layer_t *layer) {
 
       for (int dy = cy0; dy < cy1; dy++) {
         int py = win->y + dy;
-        if (py < 0 || py >= layer->height) continue;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
         int frozen_w = win->is_resizing ? win->resize_w : win->w;
         int frozen_h = win->is_resizing ? win->resize_h : win->h;
@@ -2487,17 +2359,16 @@ static void redraw_warp_svg(layer_t *layer) {
           if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
           uint8_t *mask_line = &win->window_mask[scaled_mask_y * scaled_mw];
           for (int dx = cx0; dx < cx1; dx++) {
-            int px = win->x + dx;
-            if (px < 0 || px >= layer->width) continue;
             int scaled_dx = (int)((float)dx * scale);
             if (scaled_dx >= scaled_mw) scaled_dx = scaled_mw - 1;
             uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[scaled_dx];
-            if (alpha == 255) dst_line[px] = 0xFFFFFFFF;
-            else if (alpha > 0) dst_line[px] = blend_colors(dst_line[px], 0xFFFFFFFF, alpha);
+            if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
+            else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
           }
           continue;
         }
 
+        // Map screen-space y to buffer-space y
         int src_y = (int)((float)sy_raw * scale);
         if (src_y < 0) src_y = 0;
         if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
@@ -2513,11 +2384,11 @@ static void redraw_warp_svg(layer_t *layer) {
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
         for (int dx = cx0; dx < cx1; dx++) {
           int px = win->x + dx;
-          if (px < 0 || px >= layer->width) continue;
           int scaled_dx = (int)((float)dx * scale);
           if (scaled_dx >= scaled_mw) scaled_dx = scaled_mw - 1;
           uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[scaled_dx];
           
+          // Map screen-space x to buffer-space x
           int src_x = scaled_dx;
           if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
 
@@ -2527,7 +2398,7 @@ static void redraw_warp_svg(layer_t *layer) {
         }
       }
       
-      // 4. Resize Handle
+      // 6. Handle
       if (i == g_active_window_index && !win->no_decoration) {
         int handle_s = 12;
         int hy0 = (win->h - handle_s < cy0) ? cy0 : win->h - handle_s;
@@ -2536,13 +2407,8 @@ static void redraw_warp_svg(layer_t *layer) {
         int hx1 = (win->w > cx1) ? cx1 : win->w;
         for (int dy = hy0; dy < hy1; dy++) {
           int py = win->y + dy;
-          if (py < 0 || py >= layer->height) continue;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
-          for (int dx = hx0; dx < hx1; dx++) {
-            int px = win->x + dx;
-            if (px < 0 || px >= layer->width) continue;
-            dst_line[px] = blend_colors(dst_line[px], 0xFFCCCCCC, 255);
-          }
+          for (int dx = hx0; dx < hx1; dx++) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFCCCCCC, 255);
         }
       }
     }
@@ -2550,9 +2416,12 @@ static void redraw_warp_svg(layer_t *layer) {
   g_svg_dirty = 0;
 }
 
-
 static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
+  
+  // Execute startup commands
+  handle_terminal_command("warp terminal.warp");
+  handle_terminal_command("warp menubar.warp");
   
   redraw_warp_svg(layer);
   return 1;
@@ -3465,8 +3334,15 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       heap_init((void*)heap_start, heap_end - heap_start);
   }
 
-  // 起動時のデバッグ表示を最小限に
-  fill_framebuffer_red_early(mbi);
+  // SVG描画などの初期化より前に、まず赤画面を出す
+  for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
+    fill_framebuffer_red_early(mbi);
+    for (volatile int j = 0; j < 1000000; ++j) {
+      __asm__ __volatile__("nop");
+    }
+  }
+
+  fill_framebuffer_red_early(mbi); // 最後にもう一度赤で塗る
 
   enable_fpu();
 
@@ -3590,12 +3466,26 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   uint32_t boot_start_tick = timer_ticks;
   int auto_booted = 0;
-  int firstboot_executed = 0;
 
   // メインループ (常時60fpsターゲット)
   while (1) {
+    if (auto_booted && g_pending_command_count > 0) {
+      // Process one command at a time from the head
+      char log[256] = "ExecFirstboot: ";
+      strlcat(log, g_pending_commands[0], 255);
+      set_w1_global("--warpSystemLog", log);
+      
+      handle_terminal_command(g_pending_commands[0]);
+      // Shift queue
+      for (int i = 0; i < g_pending_command_count - 1; i++) {
+        strncpy(g_pending_commands[i], g_pending_commands[i+1], 255);
+      }
+      g_pending_command_count--;
+      g_svg_dirty = 1;
+    }
+
     if (!auto_booted && g_os_settings_found && current_os_mode == OS_MODE_CLASSIC &&
-        (timer_ticks - boot_start_tick > 5)) {
+        (timer_ticks - boot_start_tick > 50)) {
       
       current_os_mode = OS_MODE_WARPDESKTOP;
       g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
@@ -3623,24 +3513,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       screen_mark_static_dirty();
       auto_booted = 1;
       set_w1_global("--warpSystemLog", "DesktopReady.");
-    }
-
-    // firstboot コマンドを OS_MODE_WARPDESKTOP 遷移後に実行
-    if (auto_booted && !firstboot_executed && g_pending_command_count > 0) {
-      char log[256] = "ExecFirstboot: ";
-      strlcat(log, g_pending_commands[0], 255);
-      set_w1_global("--warpSystemLog", log);
-
-      handle_terminal_command(g_pending_commands[0]);
-      // Shift queue
-      for (int i = 0; i < g_pending_command_count - 1; i++) {
-        strncpy(g_pending_commands[i], g_pending_commands[i+1], 255);
-      }
-      g_pending_command_count--;
-      g_svg_dirty = 1;
-      window_set_all_dirty();
-      firstboot_executed = 1;
-      set_w1_global("--warpSystemLog", "Firstboot:Done");
     }
 
     if (current_os_mode == OS_MODE_CLASSIC) {
