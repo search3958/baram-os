@@ -150,7 +150,6 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
             while (*p && *p != quote) {
                 int len = w1_strlen(out);
                 if (len < max_len - 1) {
-                    // エスケープシーケンスのみ解釈
                     if (*p == '\\') {
                         p++;
                         if (*p == 'n') out[len] = '\n';
@@ -367,19 +366,30 @@ static void parse_script(warp1_context_t *ctx) {
                     while (p > 0 && ctx->token_pos < ctx->token_count) {
                         if (ctx->tokens[ctx->token_pos].val[0] == '(') p++;
                         else if (ctx->tokens[ctx->token_pos].val[0] == ')') p--;
-                        if (p > 0) { w1_strcat(b->condition, ctx->tokens[ctx->token_pos].val); ctx->token_pos++; }
+                        if (p > 0) {
+                            if (ctx->tokens[ctx->token_pos].type == TK1_STR) w1_strcat(b->condition, "\"");
+                            w1_strcat(b->condition, ctx->tokens[ctx->token_pos].val);
+                            if (ctx->tokens[ctx->token_pos].type == TK1_STR) w1_strcat(b->condition, "\"");
+                            ctx->token_pos++;
+                        }
                     }
                     if (ctx->token_pos < ctx->token_count) { ctx->token_pos++; }
                 }
                 if (ctx->token_pos < ctx->token_count && ctx->tokens[ctx->token_pos].val[0] == '{') {
                     ctx->token_pos++; int bc = 1;
+                    tk1_type prev_type = TK1_EOF;
                     while (bc > 0 && ctx->token_pos < ctx->token_count) {
                         if (ctx->tokens[ctx->token_pos].val[0] == '{') bc++;
                         else if (ctx->tokens[ctx->token_pos].val[0] == '}') bc--;
                         if (bc > 0) {
-                            if (ctx->tokens[ctx->token_pos].type == TK1_STR) w1_strcat(b->actions, "\"");
+                            tk1_type cur_type = ctx->tokens[ctx->token_pos].type;
+                            if (b->actions[0] != '\0' && (prev_type == TK1_WORD || prev_type == TK1_STR) && (cur_type == TK1_WORD || cur_type == TK1_STR)) {
+                                w1_strcat(b->actions, " ");
+                            }
+                            if (cur_type == TK1_STR) w1_strcat(b->actions, "\"");
                             w1_strcat(b->actions, ctx->tokens[ctx->token_pos].val);
-                            if (ctx->tokens[ctx->token_pos].type == TK1_STR) w1_strcat(b->actions, "\"");
+                            if (cur_type == TK1_STR) w1_strcat(b->actions, "\"");
+                            prev_type = cur_type;
                             ctx->token_pos++;
                         }
                     }
@@ -409,18 +419,25 @@ static warp1_node_t *parse_node(warp1_context_t *ctx) {
                 char expr[512] = "";
                 if (ctx->tokens[ctx->token_pos].val[0] == '(') {
                     ctx->token_pos++; int p = 1;
+                    tk1_type prev_type = TK1_EOF;
                     while (p > 0 && ctx->token_pos < ctx->token_count) {
                         if (ctx->tokens[ctx->token_pos].val[0] == '(') p++;
                         else if (ctx->tokens[ctx->token_pos].val[0] == ')') p--;
                         if (p > 0) {
-                            if (ctx->tokens[ctx->token_pos].type == TK1_STR) w1_strcat(expr, "\"");
+                            tk1_type cur_type = ctx->tokens[ctx->token_pos].type;
+                            if (expr[0] != '\0' && (prev_type == TK1_WORD || prev_type == TK1_STR) && (cur_type == TK1_WORD || cur_type == TK1_STR)) {
+                                w1_strcat(expr, " ");
+                            }
+                            if (cur_type == TK1_STR) w1_strcat(expr, "\"");
                             w1_strcat(expr, ctx->tokens[ctx->token_pos].val);
-                            if (ctx->tokens[ctx->token_pos].type == TK1_STR) w1_strcat(expr, "\"");
+                            if (cur_type == TK1_STR) w1_strcat(expr, "\"");
+                            prev_type = cur_type;
                             ctx->token_pos++;
                         }
                     }
                     if (ctx->token_pos < ctx->token_count) { ctx->token_pos++; }
-                } else { w1_strcat(expr, ctx->tokens[ctx->token_pos].val); ctx->token_pos++; }
+                }
+ else { w1_strcat(expr, ctx->tokens[ctx->token_pos].val); ctx->token_pos++; }
                 if (w1_strcmp(key, "oneClick") == 0) { w1_strncpy(node->event_oneclick, expr, 511); }
                 else {
                     if (node->attrs_count < 16) {
@@ -462,8 +479,8 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             if (w1_strcmp(node->children[i]->tag, "Header") == 0) continue;
             cy += layout_node1(ctx, node->children[i], node->x + 24, cy, limit_w - 48) + 12;
         }
-        node->h = cy - py + 24;
-        if (node->h < ctx->win_h) node->h = ctx->win_h;
+        int content_h = cy - py + 24;
+        node->h = (content_h > ctx->win_h) ? content_h : ctx->win_h;
     } else if (w1_strcmp(node->tag, "card") == 0) {
         cy += 12; char title[128]; eval_attr(ctx, node, "text", title, 127);
         if (title[0] && ctx->texts_count < MAX_TEXTS) {
@@ -638,7 +655,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, is_dark ? "#121212" : "#f1f2f2", "");
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 0.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
 
     } else if (w1_strcmp(node->tag, "button") == 0) {
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, -1.0f, "#0A60FF", "");
