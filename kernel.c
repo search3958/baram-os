@@ -1461,6 +1461,14 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
           while (p + 512 <= end) {
               tar_header_t *h = (tar_header_t *)p;
               if (h->name[0] == '\0') break;
+              
+              // macOSのメタデータファイル (._*) をスキップ
+              if (h->name[0] == '.' && h->name[1] == '_') {
+                  uint32_t skip_size = octal_to_int(h->size, 12);
+                  p += 512 + ((skip_size + 511) & ~511);
+                  continue;
+              }
+
               uint32_t f_size = octal_to_int(h->size, 12);
               if (h->typeflag == '0' || h->typeflag == '\0') {
                   fs_write_file(h->name, p + 512, f_size);
@@ -2150,19 +2158,20 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   void *dynamic_ptr = NULL;
   const char *buf_to_use = NULL;
   
-  if (strstr(title, "Terminal") || strstr(title, "terminal")) {
+  if (strcasecmp(title, "Terminal") == 0) {
     if (g_terminal_mod_found) buf_to_use = g_terminal_warp_ptr;
-  } else if (strstr(title, "Menubar") || strstr(title, "menubar")) {
+  } else if (strcasecmp(title, "Menubar") == 0) {
     if (g_menubar_mod_found) buf_to_use = g_menubar_warp_ptr;
   }
 
   if (!buf_to_use) {
     for (uint32_t i = 0; i < g_warp_module_count; i++) {
-      if (strcasecmp(g_warp_modules[i].name, title) == 0 || strstr(g_warp_modules[i].name, title)) {
+      // 完全一致または拡張子を含めた一致を確認し、._ で始まるファイルは除外する
+      if (strcasecmp(g_warp_modules[i].name, title) == 0 || 
+          (strstr(g_warp_modules[i].name, title) && g_warp_modules[i].name[0] != '.')) {
         if (g_warp_modules[i].start != 0) {
             buf_to_use = (const char *)(uintptr_t)g_warp_modules[i].start;
         } else {
-            // ストレージからオンデマンド読み込み
             uint32_t sz = 0;
             dynamic_ptr = fs_read_file(g_warp_modules[i].name, &sz);
             buf_to_use = (const char *)dynamic_ptr;
