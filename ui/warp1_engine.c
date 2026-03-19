@@ -143,15 +143,9 @@ static long eval_math1(const char *s) {
 
 static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max_len) {
     out[0] = '\0'; const char *p = expr;
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++; // Skip leading
+
     while (*p) {
-        while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
-        if (!*p) break;
-
-        if (*p == '+') {
-            p++;
-            continue; 
-        }
-
         if (*p == '\"' || *p == '\'') {
             char quote = *p++; 
             while (*p && *p != quote) {
@@ -163,7 +157,7 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
                         else if (*p == '\"') out[len] = '\"';
                         else if (*p == '\'') out[len] = '\''; 
                         else if (*p == '\\') out[len] = '\\';
-                        else { out[len] = *p; }
+                        else out[len] = *p;
                         out[len + 1] = '\0'; 
                         if (*p) p++; 
                         continue;
@@ -182,29 +176,24 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
             const char *val = get_state(ctx, var);
             int rem = max_len - w1_strlen(out) - 1; 
             if (rem > 0) w1_strncat(out, val, (size_t)rem);
+        } else if (*p == '+') {
+            p++;
+            while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++; // Skip spaces after '+'
         } else {
-            char word[256]; int i = 0;
-            // 単語（未クオートの文字列）として空白を含めて読み込む。
-            // ただし、'+' や '}' などの制御記号で止める。
-            while (*p && *p != '\"' && *p != '\'' && *p != '+' && *p != ')' && *p != ',' && *p != '}' && i < 255)
-                word[i++] = *p++;
-            word[i] = '\0';
-            
-            // 末尾の空白を削除（トークン間の空白は無視したいため）
-            int wi = i - 1;
-            while (wi >= 0 && (word[wi] == ' ' || word[wi] == '\t' || word[wi] == '\n' || word[wi] == '\r')) {
-                word[wi] = '\0';
-                wi--;
+            // Keep spaces and other characters as part of the string
+            int len = w1_strlen(out);
+            if (len < max_len - 1) {
+                out[len] = *p;
+                out[len + 1] = '\0';
             }
-
-            if (word[0] == '\0' && *p) { 
-                // 何も読み込めなかったが文字がある場合は1文字スキップして無限ループ防止
-                p++; 
-            } else if (w1_strcmp(word, "null") != 0) { 
-                int rem = max_len - w1_strlen(out) - 1; 
-                if (rem > 0) w1_strncat(out, word, (size_t)rem); 
-            }
+            p++;
         }
+    }
+    // Trim trailing spaces
+    int len = w1_strlen(out);
+    while (len > 0 && (out[len-1] == ' ' || out[len-1] == '\t' || out[len-1] == '\n' || out[len-1] == '\r')) {
+        out[len-1] = '\0';
+        len--;
     }
 }
 

@@ -1572,10 +1572,23 @@ static void handle_terminal_command(const char *cmd) {
   }
 
   if (file) {
+    // 引用符があれば除去する
+    char filename[128];
+    strncpy(filename, file, 127);
+    filename[127] = '\0';
+    
+    char *f_ptr = filename;
+    if (f_ptr[0] == '\"' || f_ptr[0] == '\'') {
+        char q = f_ptr[0];
+        f_ptr++;
+        char *q_end = strrchr(f_ptr, q);
+        if (q_end) *q_end = '\0';
+    }
+
     // モジュールリストから検索
     int mod_idx = -1;
     for (uint32_t i = 0; i < g_warp_module_count; i++) {
-      if (strcasecmp(g_warp_modules[i].name, file) == 0) {
+      if (strcasecmp(g_warp_modules[i].name, f_ptr) == 0) {
         mod_idx = i;
         break;
       }
@@ -1583,7 +1596,7 @@ static void handle_terminal_command(const char *cmd) {
     // 完全一致がなければ部分一致を探す（ただし ._ 隠しファイルは除外）
     if (mod_idx == -1) {
       for (uint32_t i = 0; i < g_warp_module_count; i++) {
-        if (strstr(g_warp_modules[i].name, file) && g_warp_modules[i].name[0] != '.') {
+        if (strstr(g_warp_modules[i].name, f_ptr) && g_warp_modules[i].name[0] != '.') {
           mod_idx = i;
           break;
         }
@@ -1594,13 +1607,14 @@ static void handle_terminal_command(const char *cmd) {
       const char *canonical_name = g_warp_modules[mod_idx].name;
       int is_warp1 = (strstr(canonical_name, ".warpc") == NULL);
       add_window(canonical_name, 200, 200, 640, 480, is_warp1);
-    } else if ((strstr(file, "terminal") || strstr(file, "Terminal")) && g_terminal_mod_found) {
+    } else if (strcasecmp(f_ptr, "terminal.warp") == 0 || strcasecmp(f_ptr, "terminal") == 0) {
       add_window("Terminal", 200, 200, 600, 400, 1);
-    } else if ((strstr(file, "menubar") || strstr(file, "Menubar")) && g_menubar_mod_found) {
+    } else if (strcasecmp(f_ptr, "menubar.warp") == 0 || strcasecmp(f_ptr, "topbar.warp") == 0 || strcasecmp(f_ptr, "menubar") == 0) {
+      // menubar.warp が見つからない場合は topbar.warp を探す
       add_window("Menubar", 0, 0, 1280, 32, 1);
     } else {
       char err[512] = "Not found: ";
-      strlcat(err, file, 511);
+      strlcat(err, f_ptr, 511);
       set_w1_global("--warpSystemLog", err);
     }
   } else if (strcmp(start_ptr, "ls") == 0 || strcmp(start_ptr, "list") == 0) {
