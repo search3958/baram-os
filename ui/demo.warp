@@ -1,80 +1,29 @@
 screen{
     id: (main),
-    padding: (20),
-
     vStack{
-        // 1. Calc & Dynamic Units (OS側で事前に計算され --calcWidth に代入されている前提)
         text{
-            text: ("Calc Demo: Width is 100vw - 40px"),
+            text: ("Demo: OS Base Integration"),
             size: (18)
         },
-        rect{
-            width: (--calcWidth),
-            height: (2),
-            color: ("#5CA8FF")
+        card{
+            id: (calcBar),
+            text: ("Calculation Demo")
         },
-
-        spacer{ height: (20) },
-
-        // 2. Persistent Variables (OS側の script でトグル)
-        hStack{
-            text{ text: ("Theme: " + ~~main/dark) },
-            button{
-                text: ("Toggle Dark Mode"),
-                oneClick: (script{os_toggle_dark})
-            }
-        },
-
-        spacer{ height: (20) },
-
-        // 3. Asynchronous wait (OS側のアクションキューで制御)
-        vStack{
-            text{ text: ("Status: " + --asyncStatus) },
-            button{
-                text: ("Trigger 2s Wait"),
-                oneClick: (
-                    script{os_set_waiting},
-                    script{os_wait_2s_then_complete}
-                )
-            }
-        },
-
-        spacer{ height: (20) },
-
-        // 4. OS Native Editor Placeholder
-        // エンジンに textArea がなくても、id を指定した rect を OS が検出し、
-        // その上にエディタのレンダリングを直接重ねる (Overlay方式)
-        text{ text: ("OS Native Editor Overlay:") },
-        rect{
-            id: (editorSurface),
-            width: (max),
-            height: (200),
-            color: ("#1E1E1E")
-        },
-
-        spacer{ height: (20) },
-
-        // 5. Navigation via OS History
-        hStack{
-            button{
-                text: ("Settings"),
-                oneClick: (script{os_navigate_to_settings})
-            },
-            button{
-                text: ("Back"),
-                oneClick: (script{os_screen_back})
-            }
-        }
-    }
-}
-
-screen{
-    id: (settings),
-    vStack{
-        text{ text: ("Settings"), size: (24) },
         button{
-            text: ("Return"),
-            oneClick: (script{os_screen_back})
+            text: ("Toggle Dark"),
+            oneClick: (run{os_toggle_dark})
+        },
+        button{
+            text: ("Wait Test"),
+            oneClick: (run{os_wait_test})
+        },
+        card{
+            id: (editorSurface),
+            text: ("Editor Area")
+        },
+        button{
+            text: ("Back"),
+            oneClick: (run{os_back})
         }
     }
 }
