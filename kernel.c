@@ -207,6 +207,24 @@ int atoi(const char *nptr) {
   return (int)strtol(nptr, (char **)NULL, 10);
 }
 
+static uint32_t parse_hex_color(const char *hex) {
+  if (hex[0] == '#') hex++;
+  int len = strlen(hex);
+  uint32_t val = (uint32_t)strtoll(hex, NULL, 16);
+  if (len == 6) {
+    // RRGGBB -> FFRRGGBB
+    return 0xFF000000 | val;
+  } else if (len == 8) {
+    // RRGGBBAA -> AARRGGBB
+    uint8_t r = (val >> 24) & 0xFF;
+    uint8_t g = (val >> 16) & 0xFF;
+    uint8_t b = (val >> 8) & 0xFF;
+    uint8_t a = val & 0xFF;
+    return (a << 24) | (r << 16) | (g << 8) | b;
+  }
+  return val;
+}
+
 // Window Management
 typedef struct window_struct {
   int x, y, w, h;
@@ -224,6 +242,9 @@ typedef struct window_struct {
   int is_movable;
   int is_resizing_enabled;
   int is_always_full_res;
+  int is_sticky;
+  uint32_t background_color;
+  int force_dark;
   int resize_w, resize_h; // Frozen dimensions during resize
   float fade_alpha;      // Fade to white: 0.0 (content) to 1.0 (white)
   int is_calculating;    // Calculation state after resize
@@ -1209,6 +1230,14 @@ int snprintf(char *str, size_t size, const char *format, ...) {
   return n;
 }
 
+int sprintf(char *str, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  int n = snprintf(str, 1024 * 64, format, args); // Use a large buffer size
+  va_end(args);
+  return n;
+}
+
 // 2つの色を線形補間
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t) {
   uint8_t r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF,
@@ -1693,17 +1722,26 @@ static void handle_terminal_command(const char *cmd) {
 static void sync_all_window_themes() {
   static int last_is_dark = -1;
   const char *dark_val = get_w1_global("~~main/dark");
-  int is_dark = (strcmp(dark_val, "true") == 0);
-  
-  if (is_dark != last_is_dark) {
+  int system_dark = (strcmp(dark_val, "true") == 0);
+
+  if (system_dark != last_is_dark) {
     for (int i = 0; i < g_window_count; i++) {
-      window_update_caches(&g_windows[i]);
-      g_windows[i].is_dirty = 1;
+      window_t *win = &g_windows[i];
+      int win_dark = (win->force_dark != -1) ? win->force_dark : system_dark;
+      const char *target = win_dark ? "true" : "false";
+
+      if (win->is_warp1 && win->warp1_ctx) {
+        warp1_context_set_state(win->warp1_ctx, "~~main/dark", target);
+      } else if (win->warp_ctx) {
+        warp_context_set_state(win->warp_ctx, "~~main/dark", target);
+      }
+
+      window_update_caches(win);
+      win->is_dirty = 1;
     }
-    last_is_dark = is_dark;
+    last_is_dark = system_dark;
   }
 }
-
 void set_w1_global(const char *key, const char *val) {
   // Sync dev flags
   if (strcmp(key, "~~dev/pointerCheck") == 0) {
@@ -2204,7 +2242,12 @@ static void parse_baram_config(window_t *win, const char *code) {
     else if (strcmp(key, "showBar") == 0) win->no_decoration = (strcmp(val, "false") == 0);
     else if (strcmp(key, "move") == 0) win->is_movable = (strcmp(val, "true") == 0);
     else if (strcmp(key, "resize") == 0) win->is_resizing_enabled = (strcmp(val, "true") == 0); 
-    else if (strcmp(key, "front") == 0) win->is_always_full_res = (strcmp(val, "true") == 0);
+    else if (strcmp(key, "front") == 0) {
+      win->is_always_full_res = (strcmp(val, "true") == 0);
+      win->is_sticky = (strcmp(val, "true") == 0);
+    }
+    else if (strcmp(key, "background") == 0) win->background_color = parse_hex_color(val);
+    else if (strcmp(key, "dark") == 0) win->force_dark = (strcmp(val, "true") == 0);
 
     // 次の項目へ
     while (*p && *p != ',' && *p != '}') {
@@ -2291,6 +2334,9 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->is_movable = 1; // Default
   win->is_resizing_enabled = 1; // Default
   win->is_always_full_res = 0; // Default
+  win->is_sticky = 0; // Default
+  win->background_color = 0xFFFFFFFF; // Default white
+  win->force_dark = -1; // -1 means follow system
 
   // Apply baram-os-config from source code if available
   parse_baram_config(win, buf_to_use);
@@ -2337,204 +2383,116 @@ static void draw_wallpaper(layer_t *layer) {
   }
 }
 
-static void redraw_warp_svg(layer_t *layer) {
-  if (!g_svg_dirty) return;
-  sync_all_window_themes();
-  draw_wallpaper(layer);
-
-  for (int i = 0; i < g_window_count; i++) {
-    window_t *win = &g_windows[i];
-    if (win->is_dirty && !win->is_resizing) window_redraw(win);
-
-    // If we have a unified (baked) buffer, draw it directly and skip individual caches
-    if (win->unified_buffer) {
-        int title_h = win->no_decoration ? 0 : 40;
-        int shadow_size = win->no_decoration ? 0 : 48;
-        float scale = win->render_scale;
-        
-        int sx_start = win->x - shadow_size;
-        int sy_start = win->y - title_h - shadow_size + 8;
-        
-        int full_sw = win->w + shadow_size * 2;
-        int full_sh = win->h + title_h + shadow_size * 2;
-
-        int y0 = (sy_start < 0) ? -sy_start : 0;
-        int y1 = (sy_start + full_sh > layer->height) ? layer->height - sy_start : full_sh;
-        int x0 = (sx_start < 0) ? -sx_start : 0;
-        int x1 = (sx_start + full_sw > layer->width) ? layer->width - sx_start : full_sw;
-
-        for (int dy = y0; dy < y1; dy++) {
-            int py = sy_start + dy;
-            uint32_t *dst_line = &layer->buffer[py * layer->width];
-            int scaled_dy = (int)((float)dy * scale);
-            if (scaled_dy >= win->unified_h) scaled_dy = win->unified_h - 1;
-            uint32_t *src_line = &win->unified_buffer[scaled_dy * win->unified_w];
-            
-            for (int dx = x0; dx < x1; dx++) {
-                int px = sx_start + dx;
-                int scaled_dx = (int)((float)dx * scale);
-                if (scaled_dx >= win->unified_w) scaled_dx = win->unified_w - 1;
-                uint32_t color = src_line[scaled_dx];
-                uint8_t alpha = (uint8_t)(color >> 24);
-                if (alpha == 0) continue;
-                if (alpha == 255) dst_line[px] = color;
-                else dst_line[px] = blend_colors(dst_line[px], color, alpha);
-            }
-        }
-        continue; // Skip individual blitting
-    }
-    
+static void draw_single_window(layer_t *layer, window_t *win) {
     if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
       float scale = win->render_scale;
-      
-      // 1. Draw Window Shadow from Cache
-      if (!win->is_maximized && !win->no_decoration) {
-        int full_sw = win->w + shadow_size * 2;
-        int full_sh = win->h + title_h + shadow_size * 2;
-        int sw = win->shadow_cache_w;
-        int sx_start = win->x - shadow_size;
-        int sy_start = win->y - title_h - shadow_size + 8; // Offset Y by 8
-        
-        int y0 = (sy_start < 0) ? -sy_start : 0;
-        int y1 = (sy_start + full_sh > layer->height) ? layer->height - sy_start : full_sh;
-        int x0 = (sx_start < 0) ? -sx_start : 0;
-        int x1 = (sx_start + full_sw > layer->width) ? layer->width - sx_start : full_sw;
 
+      if (!win->is_maximized && !win->no_decoration && win->shadow_cache) {
+        int sx_start = win->x - shadow_size;
+        int sy_start = win->y - title_h - shadow_size + 8;
+        int y0 = (sy_start < 0) ? -sy_start : 0;
+        int y1 = (sy_start + (win->h + title_h + shadow_size * 2) > layer->height) ? layer->height - sy_start : (win->h + title_h + shadow_size * 2);
+        int x0 = (sx_start < 0) ? -sx_start : 0;
+        int x1 = (sx_start + (win->w + shadow_size * 2) > layer->width) ? layer->width - sx_start : (win->w + shadow_size * 2);
         for (int dy = y0; dy < y1; dy++) {
           int py = sy_start + dy;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
           int scaled_dy = (int)((float)dy * scale);
           if (scaled_dy >= win->shadow_cache_h) scaled_dy = win->shadow_cache_h - 1;
-          uint8_t *src_mask = &win->shadow_cache[scaled_dy * sw];
+          uint8_t *src_mask = &win->shadow_cache[scaled_dy * win->shadow_cache_w];
           for (int dx = x0; dx < x1; dx++) {
             int scaled_dx = (int)((float)dx * scale);
-            if (scaled_dx >= sw) scaled_dx = sw - 1;
+            if (scaled_dx >= win->shadow_cache_w) scaled_dx = win->shadow_cache_w - 1;
             uint8_t alpha = src_mask[scaled_dx];
             if (alpha == 0) continue;
-            int px = sx_start + dx;
-            uint32_t bg = dst_line[px];
-            uint32_t a_bg = bg >> 24;
-            uint32_t inv_alpha = 255 - alpha;
-            uint32_t rb = (bg & 0xFF00FFu) * inv_alpha >> 8;
-            uint32_t g = ((bg >> 8) & 0xFF) * inv_alpha >> 8;
-            uint32_t a_out = alpha + (a_bg * inv_alpha >> 8);
-            dst_line[px] = (a_out << 24) | (rb & 0xFF00FFu) | (g << 8);
+            dst_line[sx_start + dx] = blend_colors(dst_line[sx_start + dx], 0, alpha);
           }
         }
       }
 
-      // 2. Draw Title Bar from Cache
-      if (!win->no_decoration) {
-        uint32_t *src_frame = win->frame_cache;
+      if (!win->no_decoration && win->frame_cache) {
         int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
         int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
-        int tx0 = (win->x < 0) ? -win->x : 0;
-        int tx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
-
         int mw = (int)((float)win->w * scale);
         if (mw < 1 && win->w > 0) mw = 1;
-
         for (int dy = ty0; dy < ty1; dy++) {
           int py = win->y - title_h + dy;
           int scaled_dy = (int)((float)dy * scale);
           if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
-          uint32_t *src_line = &src_frame[scaled_dy * win->frame_cache_w];
+          uint32_t *src_line = &win->frame_cache[scaled_dy * win->frame_cache_w];
           uint8_t *mask_line = &win->window_mask[scaled_dy * mw];
-          for (int dx = tx0; dx < tx1; dx++) {
+          for (int dx = 0; dx < win->w; dx++) {
             int px = win->x + dx;
+            if (px < 0 || px >= layer->width) continue;
             int scaled_dx = (int)((float)dx * scale);
             if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
-            uint32_t color = src_line[scaled_dx];
             uint8_t alpha = win->is_maximized ? 255 : mask_line[scaled_dx];
-            dst_line[px] = blend_colors(dst_line[px], color, alpha);
+            dst_line[px] = blend_colors(dst_line[px], src_line[scaled_dx], alpha);
           }
         }
       }
 
-      // 5. Content with scroll offset and squircle corners
-      int sy_int = (int)roundf(win->scroll_y);
       int cy0 = (win->y < 0) ? -win->y : 0;
       int cy1 = (win->y + win->h > layer->height) ? (layer->height - win->y) : win->h;
-      int cx0 = (win->x < 0) ? -win->x : 0;
-      int cx1 = (win->x + win->w > layer->width) ? (layer->width - win->x) : win->w;
-
+      int mw = (int)((float)win->w * scale);
+      if (mw < 1 && win->w > 0) mw = 1;
+      int mh = (int)((float)(win->h + title_h) * scale);
       for (int dy = cy0; dy < cy1; dy++) {
         int py = win->y + dy;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
-        int frozen_w = win->is_resizing ? win->resize_w : win->w;
-        int frozen_h = win->is_resizing ? win->resize_h : win->h;
-
-        int sy_raw = dy - sy_int;
-        int scaled_mw = (int)((float)win->w * scale);
-        if (scaled_mw < 1 && win->w > 0) scaled_mw = 1;
-
-        if (sy_raw < 0 || sy_raw >= win->h || (win->is_resizing && (dy >= frozen_h || sy_raw >= frozen_h))) {
-          int full_mh = win->h + title_h;
-          int mh = (int)((float)full_mh * scale);
-          int scaled_mask_y = (int)((float)(dy + title_h) * scale);
-          if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
-          uint8_t *mask_line = &win->window_mask[scaled_mask_y * scaled_mw];
-          for (int dx = cx0; dx < cx1; dx++) {
-            int scaled_dx = (int)((float)dx * scale);
-            if (scaled_dx >= scaled_mw) scaled_dx = scaled_mw - 1;
-            uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[scaled_dx];
-            if (alpha == 255) dst_line[win->x + dx] = 0xFFFFFFFF;
-            else if (alpha > 0) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFFFFFFF, alpha);
-          }
-          continue;
-        }
-
-        // Map screen-space y to buffer-space y
-        int src_y = (int)((float)sy_raw * scale);
-        if (src_y < 0) src_y = 0;
+        int src_y = (int)((float)dy * scale);
         if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
-
         uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
-        
-        int full_mh = win->h + title_h;
-        int mh = (int)((float)full_mh * scale);
         int scaled_mask_y = (int)((float)(dy + title_h) * scale);
         if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
-        uint8_t *mask_line = &win->window_mask[scaled_mask_y * scaled_mw];
-        
+        uint8_t *mask_line = &win->window_mask[scaled_mask_y * mw];
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
-        for (int dx = cx0; dx < cx1; dx++) {
+        for (int dx = 0; dx < win->w; dx++) {
           int px = win->x + dx;
-          int scaled_dx = (int)((float)dx * scale);
-          if (scaled_dx >= scaled_mw) scaled_dx = scaled_mw - 1;
-          uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[scaled_dx];
-          
-          // Map screen-space x to buffer-space x
-          int src_x = scaled_dx;
+          if (px < 0 || px >= layer->width) continue;
+          int src_x = (int)((float)dx * scale);
           if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
-
-          uint32_t color = (win->is_resizing && dx >= frozen_w) ? 0xFFFFFFFF : src_content_line[src_x];
+          uint32_t color = src_content_line[src_x];
+          uint8_t content_a = (uint8_t)(color >> 24);
+          
+          // Blend content over window background
+          color = blend_colors(win->background_color, color, content_a);
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
-          dst_line[px] = blend_colors(dst_line[px], color, alpha);
-        }
-      }
-      
-      // 6. Handle
-      if (i == g_active_window_index && !win->no_decoration) {
-        int handle_s = 12;
-        int hy0 = (win->h - handle_s < cy0) ? cy0 : win->h - handle_s;
-        int hy1 = (win->h > cy1) ? cy1 : win->h;
-        int hx0 = (win->w - handle_s < cx0) ? cx0 : win->w - handle_s;
-        int hx1 = (win->w > cx1) ? cx1 : win->w;
-        for (int dy = hy0; dy < hy1; dy++) {
-          int py = win->y + dy;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          for (int dx = hx0; dx < hx1; dx++) dst_line[win->x + dx] = blend_colors(dst_line[win->x + dx], 0xFFCCCCCC, 255);
+          
+          uint8_t final_alpha = (uint8_t)(color >> 24);
+          if (!win->is_maximized && !win->no_decoration) {
+              int scaled_dx = (int)((float)dx * scale);
+              if (scaled_dx >= mw) scaled_dx = mw - 1;
+              uint8_t mask_a = mask_line[scaled_dx];
+              final_alpha = (uint8_t)((uint32_t)final_alpha * mask_a / 255);
+          }
+          dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
         }
       }
     }
+}
+
+static void redraw_warp_svg(layer_t *layer) {
+  if (!g_svg_dirty) return;
+  sync_all_window_themes();
+  draw_wallpaper(layer);
+  for (int i = 0; i < g_window_count; i++) {
+    window_t *win = &g_windows[i];
+    if (win->is_sticky) continue;
+    if (win->is_dirty && !win->is_resizing) window_redraw(win);
+    draw_single_window(layer, win);
+  }
+  for (int i = 0; i < g_window_count; i++) {
+    window_t *win = &g_windows[i];
+    if (!win->is_sticky) continue;
+    if (win->is_dirty && !win->is_resizing) window_redraw(win);
+    draw_single_window(layer, win);
   }
   g_svg_dirty = 0;
 }
-
 static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
   
@@ -3831,116 +3789,76 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           int hx = mouse_x + MOUSE_HOTSPOT_X;
           int hy = mouse_y + MOUSE_HOTSPOT_Y;
           
+          // 1. Check Sticky Windows first (top-most)
           for (int i = g_window_count - 1; i >= 0; i--) {
             window_t *win = &g_windows[i];
-            
-            // 1. Resize Handle (bottom-right)
-            if (!win->is_menubar && hx >= win->x + win->w - 16 && hx < win->x + win->w &&
-                hy >= win->y + win->h - 16 && hy < win->y + win->h) {
-
-              hit_index = i;
-              g_windows[hit_index].is_resizing = 1;
-              g_windows[hit_index].resize_w = win->w; // Capture current w
-              g_windows[hit_index].resize_h = win->h; // Capture current h
-              g_svg_dirty = 1; // Force animation update
-              break;
+            if (!win->is_sticky) continue;
+            if (hx >= win->x && hx < win->x + win->w && hy >= (win->y - (win->no_decoration ? 0 : 40)) && hy < win->y + win->h) {
+                hit_index = i; break;
             }
-            
-            // 2. Title Bar (Move, Close, Maximize)
-            if (hx >= win->x && hx < win->x + win->w &&
-                hy >= win->y - 40 && hy < win->y) {
-              hit_index = i;
-              window_t *hwin = &g_windows[hit_index];
+          }
+
+          // 2. Check Regular Windows
+          if (hit_index == -1) {
+            for (int i = g_window_count - 1; i >= 0; i--) {
+              window_t *win = &g_windows[i];
+              if (win->is_sticky) continue;
               
-              // Close check (left, Red button center at 20px)
-              if (hx >= hwin->x + 8 && hx < hwin->x + 32) {
-                g_active_window_index = hit_index;
-                close_active_window();
-                hit_index = -2; // Mark as handled
-              } 
-              // Maximize check (left, Green button center at 44px)
+              // Resize Handle
+              if (!win->is_menubar && hx >= win->x + win->w - 16 && hx < win->x + win->w && hy >= win->y + win->h - 16 && hy < win->y + win->h) {
+                hit_index = i; g_windows[hit_index].is_resizing = 1; g_windows[hit_index].resize_w = win->w; g_windows[hit_index].resize_h = win->h; g_svg_dirty = 1; break;
+              }
+              // Window area (Title + Content)
+              if (hx >= win->x && hx < win->x + win->w && hy >= (win->y - (win->no_decoration ? 0 : 40)) && hy < win->y + win->h) {
+                hit_index = i; break;
+              }
+            }
+          }
+          
+          if (hit_index >= 0) {
+            window_t *hwin = &g_windows[hit_index];
+            // Title Bar check
+            if (hy < hwin->y && !hwin->no_decoration) {
+              if (hx >= hwin->x + 8 && hx < hwin->x + 32) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
               else if (hx >= hwin->x + 32 && hx < hwin->x + 56) {
-                if (hwin->is_maximized) {
-                  hwin->x = hwin->old_x; hwin->y = hwin->old_y;
-                  hwin->w = hwin->old_w; hwin->h = hwin->old_h;
-                  hwin->is_maximized = 0;
-                } else {
-                  hwin->old_x = hwin->x; hwin->old_y = hwin->y;
-                  hwin->old_w = hwin->w; hwin->old_h = hwin->h;
-                  hwin->x = 0; hwin->y = 40; 
-                  hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40;
-                  hwin->is_maximized = 1;
-                }
+                if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
+                else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
                 hwin->is_dirty = 1;
-              } 
-              // Header actions check (right side)
-              else {
+              } else {
                 int handled = 0;
-                char header_text[128];
-                int action_count = 0;
-                int has_header = 0;
-                if (hwin->is_warp1) {
-                  if (hwin->warp1_ctx) has_header = warp1_context_get_header_info(hwin->warp1_ctx, header_text, sizeof(header_text), &action_count);
-                } else {
-                  if (hwin->warp_ctx) has_header = warp_context_get_header_info(hwin->warp_ctx, header_text, sizeof(header_text), &action_count);
-                }
-                
+                char header_text[128]; int action_count = 0; int has_header = 0;
+                if (hwin->is_warp1) { if (hwin->warp1_ctx) has_header = warp1_context_get_header_info(hwin->warp1_ctx, header_text, sizeof(header_text), &action_count); } 
+                else { if (hwin->warp_ctx) has_header = warp_context_get_header_info(hwin->warp_ctx, header_text, sizeof(header_text), &action_count); }
                 if (has_header) {
                   int ax = hwin->x + hwin->w - 12;
                   for (int j = 0; j < action_count; j++) {
                     char act_text[64];
                     if (hwin->is_warp1) warp1_context_get_header_action_info(hwin->warp1_ctx, j, act_text, sizeof(act_text));
                     else warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
-                    int text_w = strlen(act_text) * 9;
-                    int btn_w = text_w + 24;
-                    ax -= btn_w;
-                    if (hx >= ax && hx < ax + btn_w) {
-                      if (hwin->is_warp1) warp1_context_click_header_action(hwin->warp1_ctx, j);
-                      else warp_context_click_header_action(hwin->warp_ctx, j);
-                      hwin->is_dirty = 1;
-                      handled = 1;
-                      hit_index = -2;
-                      break;
-                    }
+                    int text_w = strlen(act_text) * 9; int btn_w = text_w + 24; ax -= btn_w;
+                    if (hx >= ax && hx < ax + btn_w) { if (hwin->is_warp1) warp1_context_click_header_action(hwin->warp1_ctx, j); else warp_context_click_header_action(hwin->warp_ctx, j); hwin->is_dirty = 1; handled = 1; hit_index = -2; break; }
                     ax -= 10;
                   }
                 }
-                if (!handled && !hwin->is_maximized && hx >= hwin->x + 56) {
-                  hwin->is_dragging = 1;
-                }
+                if (!handled && !hwin->is_maximized && hx >= hwin->x + 56 && hwin->is_movable) hwin->is_dragging = 1;
               }
-              break;
-            }
-            
-            // 3. Content
-            if (hx >= win->x && hx < win->x + win->w &&
-                hy >= win->y && hy < win->y + win->h) {
-              hit_index = i;
-              if (win->is_warp1) {
-                warp1_context_click(win->warp1_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
-              } else {
-                warp_context_click(win->warp_ctx, hx - win->x, hy - win->y - (int)win->scroll_y);
-              }
-              win->is_dirty = 1;
-              break;
+            } else if (hy >= hwin->y) {
+              if (hwin->is_warp1) warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - hwin->y - (int)hwin->scroll_y);
+              else warp_context_click(hwin->warp_ctx, hx - hwin->x, hy - hwin->y - (int)hwin->scroll_y);
+              hwin->is_dirty = 1;
             }
           }
           
           if (hit_index >= 0) {
-            // Bring hit window to front
-            if (hit_index != g_window_count - 1) {
+            if (!g_windows[hit_index].is_sticky && hit_index != g_window_count - 1) {
               window_t tmp = g_windows[hit_index];
-              for (int j = hit_index; j < g_window_count - 1; j++) g_windows[j] = g_windows[j+1];
-              g_windows[g_window_count - 1] = tmp;
-              g_active_window_index = g_window_count - 1;
-              window_set_all_dirty();
-            } else {
-              g_active_window_index = g_window_count - 1;
-              // No need to set all dirty if already active, but keep g_svg_dirty
-              g_svg_dirty = 1;
-            }
-          } else if (hit_index == -1) {
-            // Wallpaper click: do nothing
+              int target_pos = g_window_count - 1;
+              while (target_pos > 0 && g_windows[target_pos].is_sticky) target_pos--;
+              if (hit_index < target_pos) {
+                for (int j = hit_index; j < target_pos; j++) g_windows[j] = g_windows[j+1];
+                g_windows[target_pos] = tmp; g_active_window_index = target_pos; window_set_all_dirty();
+              }
+            } else { g_active_window_index = hit_index; g_svg_dirty = 1; }
           }
         } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
           // Release

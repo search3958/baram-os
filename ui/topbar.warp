@@ -6,7 +6,7 @@ baram-os-config{
     showBar:(false),
     resize:(false),
     move:(false),
-    background:(#00000033),
+    background:(#00000011),
     dark:(true),
     front:(true)
 },
