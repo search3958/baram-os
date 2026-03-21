@@ -2277,6 +2277,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
 
   void *dynamic_ptr = NULL;
   const char *buf_to_use = NULL;
+  int previous_active = g_active_window_index;
   
   if (strcasecmp(title, "Terminal") == 0) {
     if (g_terminal_mod_found) buf_to_use = g_terminal_warp_ptr;
@@ -2362,7 +2363,8 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
     win->is_warp1 = 1;
   }
 
-  g_active_window_index = g_window_count - 1;
+  if (!win->is_sticky) g_active_window_index = g_window_count - 1;
+  else g_active_window_index = previous_active;
   window_set_all_dirty();
   window_update_caches(win);
 }
@@ -3017,6 +3019,12 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
   uint32_t g_out = ((g_fg * alpha) + (g_bg * inv_alpha)) >> 8;
 
   return 0xFF000000u | (rb_out & 0xFF00FFu) | ((g_out & 0xFF) << 8);
+}
+
+static int point_in_titlebar_button(int hx, int hy, window_t *win, int center_x) {
+  int dx = hx - (win->x + center_x);
+  int dy = hy - (win->y - 20);
+  return (dx * dx + dy * dy) <= (9 * 9);
 }
 
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
@@ -3879,8 +3887,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             window_t *hwin = &g_windows[hit_index];
             // Title Bar check
             if (hy < hwin->y && !hwin->no_decoration) {
-              if (hx >= hwin->x + 8 && hx < hwin->x + 32) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
-              else if (hx >= hwin->x + 32 && hx < hwin->x + 56) {
+              if (point_in_titlebar_button(hx, hy, hwin, 20)) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
+              else if (point_in_titlebar_button(hx, hy, hwin, 44)) {
                 if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
                 else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
                 hwin->is_dirty = 1;
