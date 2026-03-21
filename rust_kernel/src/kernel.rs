@@ -6,8 +6,13 @@ unsafe extern "C" {
     fn warp_context_set_state(ctx: *mut c_void, key: *const c_char, val: *const c_char);
     fn warp1_context_set_state(ctx: *mut c_void, key: *const c_char, val: *const c_char);
     fn kernel_window_update_caches(win: *mut RustWindow);
-    fn kernel_bootstrap(magic: u32, mbi: *mut c_void);
-    fn kernel_main_iteration();
+    fn kernel_bootstrap_c(magic: u32, mbi: *mut c_void);
+    fn kernel_process_pending_commands() -> i32;
+    fn kernel_try_autoboot_to_desktop() -> i32;
+    fn kernel_get_current_os_mode() -> i32;
+    fn kernel_main_iteration_classic();
+    fn kernel_main_iteration_desktop();
+    fn kernel_finish_iteration();
     fn get_w1_global(key: *const c_char) -> *const c_char;
     fn set_w1_global(key: *const c_char, val: *const c_char);
     fn set_pending_command(cmd: *const c_char);
@@ -177,9 +182,16 @@ pub unsafe fn sync_all_window_themes(
 }
 
 pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
-    kernel_bootstrap(magic, mbi);
+    kernel_bootstrap_c(magic, mbi);
     loop {
-        kernel_main_iteration();
+        kernel_process_pending_commands();
+        kernel_try_autoboot_to_desktop();
+        if kernel_get_current_os_mode() == 0 {
+            kernel_main_iteration_classic();
+        } else {
+            kernel_main_iteration_desktop();
+        }
+        kernel_finish_iteration();
     }
 }
 

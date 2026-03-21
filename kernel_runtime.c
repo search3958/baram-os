@@ -2947,7 +2947,7 @@ void kernel_bootstrap(uint32_t magic, struct multiboot_info *mbi) {
   g_kmain_window_last_mouse_y = -1;
 }
 
-void kernel_main_iteration(void) {
+int kernel_process_pending_commands(void) {
     if (g_kmain_auto_booted && g_pending_command_count > 0) {
       // Process one command at a time from the head
       char log[256] = "ExecFirstboot: ";
@@ -2961,8 +2961,12 @@ void kernel_main_iteration(void) {
       }
       g_pending_command_count--;
       g_svg_dirty = 1;
+      return 1;
     }
+    return 0;
+}
 
+int kernel_try_autoboot_to_desktop(void) {
     if (!g_kmain_auto_booted && g_os_settings_found && current_os_mode == OS_MODE_CLASSIC &&
         (timer_ticks - g_kmain_boot_start_tick > 50)) {
       
@@ -2992,9 +2996,16 @@ void kernel_main_iteration(void) {
       screen_mark_static_dirty();
       g_kmain_auto_booted = 1;
       set_w1_global("--warpSystemLog", "DesktopReady.");
+      return 1;
     }
+    return 0;
+}
 
-    if (current_os_mode == OS_MODE_CLASSIC) {
+int kernel_get_current_os_mode(void) {
+  return (int)current_os_mode;
+}
+
+void kernel_main_iteration_classic(void) {
       // 0.1秒(10 ticks)ごとに点滅
       if (timer_ticks - g_kmain_last_blink_tick >= 10) {
         g_kmain_blink_state = !g_kmain_blink_state;
@@ -3094,8 +3105,9 @@ void kernel_main_iteration(void) {
         g_kmain_last_stat_tick = timer_ticks;
         g_kmain_last_idle_tick = idle_ticks;
       }
+}
 
-    } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
+void kernel_main_iteration_desktop(void) {
       // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従（1px 単位）
       if (mouse_scroll != 0 && g_active_window_index >= 0) {
         window_t *win = &g_windows[g_active_window_index];
@@ -3385,9 +3397,13 @@ void kernel_main_iteration(void) {
         g_kmain_last_stat_tick = timer_ticks;
         g_kmain_last_idle_tick = idle_ticks;
       }
-    }
+}
 
-    // 常時再描画
-    cpu_idle = 0;
-    screen_refresh();
+void kernel_finish_iteration(void) {
+  cpu_idle = 0;
+  screen_refresh();
+}
+
+void kernel_bootstrap_c(uint32_t magic, struct multiboot_info *mbi) {
+  kernel_bootstrap(magic, mbi);
 }
