@@ -183,6 +183,7 @@ extern const char *rust_kernel_find_global(const char *key, const void *vars, in
 extern int rust_kernel_upsert_global(const char *key, const char *val, void *vars, int max_vars, int *count, int append_mode);
 extern int rust_kernel_sync_all_window_themes(void *windows, int count, int *last_is_dark, int system_dark);
 extern void rust_kernel_parse_os_settings(const char *buf);
+extern void rust_kernel_handle_terminal_command(const char *cmd);
 
 static uint32_t octal_to_int(const char *s, int len) {
     return rust_foundation_octal_to_int(s, len);
@@ -1462,140 +1463,75 @@ void set_pending_command(const char *cmd) {
 // g_dev_pointer_check is defined earlier as non-static
 
 static void handle_terminal_command(const char *cmd) {
-  if (!cmd || !cmd[0]) return;
+  rust_kernel_handle_terminal_command(cmd);
+}
 
-  char trimmed[256];
-  strncpy(trimmed, cmd, 255);
-  trimmed[255] = '\0';
+void kernel_add_window_for_command(const char *title, int x, int y, int w, int h, int is_warp1) {
+  add_window(title, x, y, w, h, is_warp1);
+}
 
-  // 先頭と末尾の空白・改行を除去
-  char *start_ptr = trimmed;
-  while (*start_ptr == ' ' || *start_ptr == '\t' || *start_ptr == '\n' || *start_ptr == '\r') start_ptr++;
-  char *end_ptr = start_ptr + strlen(start_ptr) - 1;
-  while (end_ptr > start_ptr && (*end_ptr == ' ' || *end_ptr == '\t' || *end_ptr == '\n' || *end_ptr == '\r')) {
-    *end_ptr = '\0';
-    end_ptr--;
+void kernel_close_active_window_for_command(void) {
+  close_active_window();
+}
+
+const char *kernel_find_warp_module(const char *name, int *out_is_warp1) {
+  if (!name) return NULL;
+  for (uint32_t i = 0; i < g_warp_module_count; i++) {
+    if (strcasecmp(g_warp_modules[i].name, name) == 0) {
+      if (out_is_warp1) *out_is_warp1 = (strstr(g_warp_modules[i].name, ".warpc") == NULL);
+      return g_warp_modules[i].name;
+    }
   }
-
-  const char *file = NULL;
-  if (strncmp(start_ptr, "warp ", 5) == 0) {
-    file = start_ptr + 5;
-  } else if (strncmp(start_ptr, "./", 2) == 0) {
-    file = start_ptr + 2;
-  } else if (strstr(start_ptr, ".warp") || strstr(start_ptr, ".warpc")) {
-    file = start_ptr;
+  for (uint32_t i = 0; i < g_warp_module_count; i++) {
+    if (strstr(g_warp_modules[i].name, name) && g_warp_modules[i].name[0] != '.') {
+      if (out_is_warp1) *out_is_warp1 = (strstr(g_warp_modules[i].name, ".warpc") == NULL);
+      return g_warp_modules[i].name;
+    }
   }
+  return NULL;
+}
 
-  if (file) {
-    // 引用符があれば除去する
-    char filename[128];
-    strncpy(filename, file, 127);
-    filename[127] = '\0';
-    
-    char *f_ptr = filename;
-    if (f_ptr[0] == '\"' || f_ptr[0] == '\'') {
-        char q = f_ptr[0];
-        f_ptr++;
-        char *q_end = strrchr(f_ptr, q);
-        if (q_end) *q_end = '\0';
-    }
+void kernel_list_warp_modules(char *out_buf, int out_buf_len) {
+  if (!out_buf || out_buf_len <= 0) return;
+  strncpy(out_buf, "Mods: ", out_buf_len - 1);
+  out_buf[out_buf_len - 1] = '\0';
+  for (uint32_t i = 0; i < g_warp_module_count; i++) {
+    if (i > 0) strlcat(out_buf, ", ", (size_t)out_buf_len - 1);
+    strlcat(out_buf, g_warp_modules[i].name, (size_t)out_buf_len - 1);
+  }
+}
 
-    // モジュールリストから検索
-    int mod_idx = -1;
-    for (uint32_t i = 0; i < g_warp_module_count; i++) {
-      if (strcasecmp(g_warp_modules[i].name, f_ptr) == 0) {
-        mod_idx = i;
-        break;
-      }
+void kernel_storage_sync_command(void) {
+  if (!mbi_ptr) {
+    set_w1_global("--warpSystemLog", "Error: No multiboot info");
+    return;
+  }
+  ata_init();
+  fs_init();
+  const char *tar_data = NULL;
+  uint32_t tar_size = 0;
+  multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+  for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
+    const char *s = (const char *)(uintptr_t)mods[i].string;
+    if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+      tar_data = (const char *)(uintptr_t)mods[i].mod_start;
+      tar_size = mods[i].mod_end - mods[i].mod_start;
+      break;
     }
-    // 完全一致がなければ部分一致を探す（ただし ._ 隠しファイルは除外）
-    if (mod_idx == -1) {
-      for (uint32_t i = 0; i < g_warp_module_count; i++) {
-        if (strstr(g_warp_modules[i].name, f_ptr) && g_warp_modules[i].name[0] != '.') {
-          mod_idx = i;
-          break;
-        }
-      }
-    }
-
-    if (mod_idx != -1) {
-      const char *canonical_name = g_warp_modules[mod_idx].name;
-      int is_warp1 = (strstr(canonical_name, ".warpc") == NULL);
-      add_window(canonical_name, 200, 200, 640, 480, is_warp1);
-    } else if (strcasecmp(f_ptr, "terminal.warp") == 0 || strcasecmp(f_ptr, "terminal") == 0) {
-      add_window("Terminal", 200, 200, 600, 400, 1);
-    } else if (strcasecmp(f_ptr, "menubar.warp") == 0 || strcasecmp(f_ptr, "topbar.warp") == 0 || strcasecmp(f_ptr, "menubar") == 0) {
-      // menubar.warp が見つからない場合は topbar.warp を探す
-      add_window("Menubar", 0, 0, 1280, 32, 1);
-    } else {
-      char err[512] = "Not found: ";
-      strlcat(err, f_ptr, 511);
-      set_w1_global("--warpSystemLog", err);
-    }
-  } else if (strcmp(start_ptr, "ls") == 0 || strcmp(start_ptr, "list") == 0) {
-    // ... 既存の ls 処理 ...
-    char list_buf[512] = "Mods: ";
-    for (uint32_t i = 0; i < g_warp_module_count; i++) {
-      if (i > 0) strlcat(list_buf, ", ", 511);
-      strlcat(list_buf, g_warp_modules[i].name, 511);
-    }
-    set_w1_global("--warpSystemLog", list_buf);
-  } else if (strcmp(start_ptr, "reboot") == 0) {
-    extern void sys_restart(void);
-    sys_restart();
-  } else if (strcmp(start_ptr, "exit") == 0) {
-    close_active_window();
-  } else if (strcmp(start_ptr, "help") == 0) {
-    set_w1_global("--warpSystemLog", "Commands: <file.warp>, warp <file>, reboot, exit, help, ls");
-  } else if (strncmp(start_ptr, "dev pointerCheck=", 17) == 0) {
-    const char *val = start_ptr + 17;
-    if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
-    else g_dev_pointer_check = 0;
-    strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
-  } else if (strncmp(start_ptr, "dev dark=", 9) == 0) {
-    const char *val = start_ptr + 9;
-    set_w1_global("~~main/dark", val);
-    strncpy(g_hud_status, (strcmp(val, "true") == 0) ? "Dark:ON" : "Dark:OFF", 63);
-    for (int i = 0; i < g_window_count; i++) {
-      window_update_caches(&g_windows[i]);
-      g_windows[i].is_dirty = 1;
-    }
-    g_svg_dirty = 1;
-  } else if (strcmp(start_ptr, "storage sync") == 0) {
-    if (!mbi_ptr) {
-        set_w1_global("--warpSystemLog", "Error: No multiboot info");
-        return;
-    }
-    ata_init();
-    fs_init();
-    const char *tar_data = NULL;
-    uint32_t tar_size = 0;
-    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
-    for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
-        const char *s = (const char *)(uintptr_t)mods[i].string;
-        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
-            tar_data = (const char *)(uintptr_t)mods[i].mod_start;
-            tar_size = mods[i].mod_end - mods[i].mod_start;
-            break;
-        }
-    }
-    if (tar_data) {
-        fs_format();
-        fs_write_file("initrd.tar", tar_data, tar_size);
-        set_w1_global("--warpSystemLog", "Storage Synced (initrd.tar saved)");
-    } else {
-        set_w1_global("--warpSystemLog", "Error: initrd.tar not found in RAM");
-    }
-  } else if (strcmp(start_ptr, "storage ls") == 0) {
-    ata_init();
-    fs_init();
-    fs_list_files();
+  }
+  if (tar_data) {
+    fs_format();
+    fs_write_file("initrd.tar", tar_data, tar_size);
+    set_w1_global("--warpSystemLog", "Storage Synced (initrd.tar saved)");
   } else {
-    // 未知のコマンド
-    char err[256] = "Unknown: ";
-    strlcat(err, start_ptr, 255);
-    set_w1_global("--warpSystemLog", err);
+    set_w1_global("--warpSystemLog", "Error: initrd.tar not found in RAM");
   }
+}
+
+void kernel_storage_ls_command(void) {
+  ata_init();
+  fs_init();
+  fs_list_files();
 }
 
 void set_w1_global(const char *key, const char *val) {

@@ -167,3 +167,8 @@ pub unsafe extern "C" fn kmain(magic: u32, mbi: *mut core::ffi::c_void) -> ! {
 pub unsafe extern "C" fn rust_kernel_parse_os_settings(buf: *const c_char) {
     kernel::parse_os_settings(buf);
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_kernel_handle_terminal_command(cmd: *const c_char) {
+    kernel::handle_terminal_command(cmd);
+}

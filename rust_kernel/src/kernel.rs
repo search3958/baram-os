@@ -13,6 +13,14 @@ unsafe extern "C" {
     fn set_pending_command(cmd: *const c_char);
     fn kernel_load_wallpaper_from_settings(name: *const c_char);
     fn kernel_mark_os_settings_ready();
+    fn kernel_add_window_for_command(title: *const c_char, x: i32, y: i32, w: i32, h: i32, is_warp1: i32);
+    fn kernel_close_active_window_for_command();
+    fn kernel_find_warp_module(name: *const c_char, out_is_warp1: *mut i32) -> *const c_char;
+    fn kernel_list_warp_modules(out_buf: *mut c_char, out_buf_len: i32);
+    fn kernel_storage_sync_command();
+    fn kernel_storage_ls_command();
+    fn sys_restart();
+    fn kernel_set_hud_status(status: *const c_char);
 }
 
 #[repr(C)]
@@ -319,6 +327,121 @@ pub unsafe fn parse_os_settings(buf: *const c_char) {
     msg[end.min(msg.len() - 1)] = 0;
     set_w1_global(c"--warpSystemLog".as_ptr(), msg.as_ptr());
     kernel_mark_os_settings_ready();
+}
+
+fn trim_ascii(bytes: &[u8]) -> &[u8] {
+    let mut start = 0usize;
+    let mut end = bytes.len();
+    while start < end && matches!(bytes[start], b' ' | b'\t' | b'\n' | b'\r') {
+        start += 1;
+    }
+    while end > start && matches!(bytes[end - 1], b' ' | b'\t' | b'\n' | b'\r') {
+        end -= 1;
+    }
+    &bytes[start..end]
+}
+
+pub unsafe fn handle_terminal_command(cmd: *const c_char) {
+    if cmd.is_null() {
+        return;
+    }
+    let raw = CStr::from_ptr(cmd).to_bytes();
+    let trimmed = trim_ascii(raw);
+    if trimmed.is_empty() {
+        return;
+    }
+
+    let mut file: Option<&[u8]> = None;
+    if trimmed.starts_with(b"warp ") {
+        file = Some(trim_ascii(&trimmed[5..]));
+    } else if trimmed.starts_with(b"./") {
+        file = Some(trim_ascii(&trimmed[2..]));
+    } else if find_token(trimmed, b".warp").is_some() || find_token(trimmed, b".warpc").is_some() {
+        file = Some(trimmed);
+    }
+
+    if let Some(mut file_name) = file {
+        if file_name.len() >= 2 && ((file_name[0] == b'"' && *file_name.last().unwrap() == b'"') || (file_name[0] == b'\'' && *file_name.last().unwrap() == b'\'')) {
+            file_name = &file_name[1..file_name.len() - 1];
+        }
+        let copy_len = core::cmp::min(file_name.len(), 127);
+        let mut filename = [0 as c_char; 128];
+        copy_c_string(&mut filename, &file_name[..copy_len]);
+
+        let mut is_warp1 = 0i32;
+        let canonical_name = kernel_find_warp_module(filename.as_ptr(), &mut is_warp1);
+        if !canonical_name.is_null() {
+            kernel_add_window_for_command(canonical_name, 200, 200, 640, 480, is_warp1);
+            return;
+        }
+
+        let lower = file_name;
+        if lower.eq_ignore_ascii_case(b"terminal.warp") || lower.eq_ignore_ascii_case(b"terminal") {
+            kernel_add_window_for_command(c"Terminal".as_ptr(), 200, 200, 600, 400, 1);
+            return;
+        }
+        if lower.eq_ignore_ascii_case(b"menubar.warp") || lower.eq_ignore_ascii_case(b"topbar.warp") || lower.eq_ignore_ascii_case(b"menubar") {
+            kernel_add_window_for_command(c"Menubar".as_ptr(), 0, 0, 1280, 32, 1);
+            return;
+        }
+
+        let mut err = [0 as c_char; 512];
+        copy_c_string(&mut err, b"Not found: ");
+        let mut end = c_buf_len(&err);
+        let mut i = 0usize;
+        while end + 1 < err.len() && i < file_name.len() {
+            err[end] = file_name[i] as c_char;
+            end += 1;
+            i += 1;
+        }
+        err[end.min(err.len() - 1)] = 0;
+        set_w1_global(c"--warpSystemLog".as_ptr(), err.as_ptr());
+        return;
+    }
+
+    if trimmed.eq_ignore_ascii_case(b"ls") || trimmed.eq_ignore_ascii_case(b"list") {
+        let mut list_buf = [0 as c_char; 512];
+        kernel_list_warp_modules(list_buf.as_mut_ptr(), list_buf.len() as i32);
+        set_w1_global(c"--warpSystemLog".as_ptr(), list_buf.as_ptr());
+    } else if trimmed == b"reboot" {
+        sys_restart();
+    } else if trimmed == b"exit" {
+        kernel_close_active_window_for_command();
+    } else if trimmed == b"help" {
+        set_w1_global(c"--warpSystemLog".as_ptr(), c"Commands: <file.warp>, warp <file>, reboot, exit, help, ls".as_ptr());
+    } else if trimmed.starts_with(b"dev pointerCheck=") {
+        let value = &trimmed[17..];
+        if value == b"true" {
+            kernel_set_hud_status(c"PtrCheck:ON".as_ptr());
+        } else {
+            kernel_set_hud_status(c"PtrCheck:OFF".as_ptr());
+        }
+        let mut buf = [0 as c_char; 6];
+        copy_c_string(&mut buf, if value == b"true" { b"true" } else { b"false" });
+        set_w1_global(c"~~dev/pointerCheck".as_ptr(), buf.as_ptr());
+    } else if trimmed.starts_with(b"dev dark=") {
+        let value = &trimmed[9..];
+        let mut buf = [0 as c_char; 6];
+        copy_c_string(&mut buf, if value == b"true" { b"true" } else { b"false" });
+        set_w1_global(c"~~main/dark".as_ptr(), buf.as_ptr());
+        kernel_set_hud_status(if value == b"true" { c"Dark:ON".as_ptr() } else { c"Dark:OFF".as_ptr() });
+    } else if trimmed == b"storage sync" {
+        kernel_storage_sync_command();
+    } else if trimmed == b"storage ls" {
+        kernel_storage_ls_command();
+    } else {
+        let mut err = [0 as c_char; 256];
+        copy_c_string(&mut err, b"Unknown: ");
+        let mut end = c_buf_len(&err);
+        let mut i = 0usize;
+        while end + 1 < err.len() && i < trimmed.len() {
+            err[end] = trimmed[i] as c_char;
+            end += 1;
+            i += 1;
+        }
+        err[end.min(err.len() - 1)] = 0;
+        set_w1_global(c"--warpSystemLog".as_ptr(), err.as_ptr());
+    }
 }
 
 pub unsafe fn append_uint(mut p: *mut u8, mut v: u32) -> *mut u8 {
