@@ -104,6 +104,11 @@ pub unsafe extern "C" fn rust_windows_draw_single_window(layer: *mut RustLayer, 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rust_windows_redraw_window(win: *mut RustWindow, is_active: i32) {
+    windows::redraw_window(win, is_active);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rust_windows_update_window_caches(win: *mut RustWindow, is_active: i32) {
     windows::update_window_caches(win, is_active);
 }

@@ -9,10 +9,25 @@ unsafe extern "C" {
     fn fabsf(v: f32) -> f32;
     fn get_w1_global(key: *const c_char) -> *const c_char;
     fn layer_draw_ttf(layer: *mut RustLayer, px: i32, py: i32, s: *const c_char, font_size: f32, color: u32);
+    fn warp_context_update(ctx: *mut c_void, width: i32, height: i32);
+    fn warp_context_get_svg(ctx: *mut c_void) -> *const c_char;
+    fn warp_context_draw_texts(ctx: *mut c_void, layer: *mut RustLayer, off_x: i32, off_y: i32, scale: f32);
+    fn warp_context_is_dirty(ctx: *mut c_void) -> i32;
+    fn warp_context_clear_dirty(ctx: *mut c_void);
     fn warp_context_get_header_info(ctx: *mut c_void, out_text: *mut c_char, max_len: i32, out_action_count: *mut i32) -> i32;
     fn warp_context_get_header_action_info(ctx: *mut c_void, action_index: i32, out_text: *mut c_char, max_len: i32);
+    fn warp1_context_update(ctx: *mut c_void, width: i32, height: i32);
+    fn warp1_context_get_svg(ctx: *mut c_void) -> *const c_char;
+    fn warp1_context_draw_texts(ctx: *mut c_void, layer: *mut RustLayer, off_x: i32, off_y: i32, scale: f32);
+    fn warp1_context_is_dirty(ctx: *mut c_void) -> i32;
+    fn warp1_context_clear_dirty(ctx: *mut c_void);
     fn warp1_context_get_header_info(ctx: *mut c_void, out_text: *mut c_char, max_len: i32, out_action_count: *mut i32) -> i32;
     fn warp1_context_get_header_action_info(ctx: *mut c_void, action_index: i32, out_text: *mut c_char, max_len: i32);
+    fn kernel_set_hud_status(status: *const c_char);
+    fn kernel_svg_parse(svg: *const c_char) -> *mut c_void;
+    fn kernel_svg_delete(image: *mut c_void);
+    fn kernel_svg_height(image: *mut c_void) -> i32;
+    fn kernel_svg_rasterize(image: *mut c_void, dst: *mut u8, w: i32, h: i32, scale: f32);
 }
 
 #[repr(C)]
@@ -414,6 +429,13 @@ fn c_str_eq(ptr: *const c_char, s: &[u8]) -> bool {
     }
 }
 
+fn c_ptr_eq(a: *const c_char, b: *const c_char) -> bool {
+    if a.is_null() || b.is_null() {
+        return false;
+    }
+    unsafe { core::ffi::CStr::from_ptr(a).to_bytes() == core::ffi::CStr::from_ptr(b).to_bytes() }
+}
+
 unsafe fn c_buf_len(ptr: *const c_char) -> i32 {
     if ptr.is_null() {
         return 0;
@@ -641,4 +663,191 @@ pub unsafe fn update_window_caches(win: *mut RustWindow, is_active: i32) {
             y += 1;
         }
     }
+}
+
+pub unsafe fn redraw_window(win: *mut RustWindow, is_active: i32) {
+    if win.is_null() {
+        return;
+    }
+    let win = &mut *win;
+    if win.warp_ctx.is_null() && win.warp1_ctx.is_null() {
+        return;
+    }
+
+    let target_scale = 1.0f32;
+    if win.render_scale != target_scale {
+        win.is_dirty = 1;
+        win.render_scale = target_scale;
+        update_window_caches(win, is_active);
+    }
+
+    if is_active != 0 && !win.unified_buffer.is_null() {
+        free(win.unified_buffer as *mut c_void);
+        win.unified_buffer = core::ptr::null_mut();
+        win.unified_w = 0;
+        win.unified_h = 0;
+    }
+
+    let needs_update = if win.is_warp1 != 0 {
+        warp1_context_is_dirty(win.warp1_ctx) != 0 || win.rgba_buffer.is_null()
+    } else {
+        warp_context_is_dirty(win.warp_ctx) != 0 || win.rgba_buffer.is_null()
+    };
+
+    if needs_update {
+        kernel_set_hud_status(b"EngineUpdate\0".as_ptr() as *const c_char);
+        if win.is_warp1 != 0 {
+            warp1_context_update(win.warp1_ctx, win.w, win.h);
+            warp1_context_clear_dirty(win.warp1_ctx);
+        } else {
+            warp_context_update(win.warp_ctx, win.w, win.h);
+            warp_context_clear_dirty(win.warp_ctx);
+        }
+    } else {
+        kernel_set_hud_status(b"Cached\0".as_ptr() as *const c_char);
+    }
+
+    kernel_set_hud_status(b"SVGGen\0".as_ptr() as *const c_char);
+    let svg = if win.is_warp1 != 0 {
+        warp1_context_get_svg(win.warp1_ctx)
+    } else {
+        warp_context_get_svg(win.warp_ctx)
+    };
+    if svg.is_null() {
+        return;
+    }
+
+    let svg_changed = win.last_svg_str.is_null() || !c_ptr_eq(win.last_svg_str, svg);
+    if svg_changed {
+        kernel_set_hud_status(b"NSVGParse\0".as_ptr() as *const c_char);
+        let img = kernel_svg_parse(svg);
+        if img.is_null() {
+            kernel_set_hud_status(b"ParseErr\0".as_ptr() as *const c_char);
+            return;
+        }
+
+        if !win.svg_image_cache.is_null() {
+            kernel_svg_delete(win.svg_image_cache);
+        }
+        win.svg_image_cache = img;
+
+        if !win.last_svg_str.is_null() {
+            free(win.last_svg_str as *mut c_void);
+        }
+        let svg_bytes = core::ffi::CStr::from_ptr(svg).to_bytes_with_nul();
+        win.last_svg_str = malloc(svg_bytes.len()) as *mut c_char;
+        if !win.last_svg_str.is_null() {
+            core::ptr::copy_nonoverlapping(
+                svg_bytes.as_ptr(),
+                win.last_svg_str as *mut u8,
+                svg_bytes.len(),
+            );
+        }
+    }
+
+    if win.svg_image_cache.is_null() {
+        kernel_set_hud_status(b"ParseMiss\0".as_ptr() as *const c_char);
+        return;
+    }
+
+    let mut content_h = kernel_svg_height(win.svg_image_cache);
+    if content_h < win.h {
+        content_h = win.h;
+    }
+
+    let mut scaled_w = (win.w as f32 * target_scale) as i32;
+    let mut scaled_h = (content_h as f32 * target_scale) as i32;
+    if scaled_w < 1 {
+        scaled_w = 1;
+    }
+    if scaled_h < 1 {
+        scaled_h = 1;
+    }
+
+    let raster_size_changed =
+        win.raster_cache.is_null() || win.raster_cache_w != scaled_w || win.raster_cache_h != scaled_h;
+    if raster_size_changed {
+        if !win.raster_cache.is_null() {
+            free(win.raster_cache as *mut c_void);
+        }
+        win.raster_cache = malloc((scaled_w as usize) * (scaled_h as usize) * 4usize) as *mut u32;
+        win.raster_cache_w = scaled_w;
+        win.raster_cache_h = scaled_h;
+    }
+
+    if !win.raster_cache.is_null() && (svg_changed || raster_size_changed) {
+        kernel_set_hud_status(b"ClearCache\0".as_ptr() as *const c_char);
+        let mut i = 0i32;
+        while i < scaled_w * scaled_h {
+            *win.raster_cache.add(i as usize) = 0xffff_ffff;
+            i += 1;
+        }
+
+        kernel_set_hud_status(b"NSVGRast\0".as_ptr() as *const c_char);
+        kernel_svg_rasterize(
+            win.svg_image_cache,
+            win.raster_cache as *mut u8,
+            scaled_w,
+            scaled_h,
+            target_scale,
+        );
+
+        kernel_set_hud_status(b"RBSwap\0".as_ptr() as *const c_char);
+        let mut p = win.raster_cache as *mut u8;
+        let mut n = 0i32;
+        while n < scaled_w * scaled_h {
+            let r = *p;
+            let b = *p.add(2);
+            *p = b;
+            *p.add(2) = r;
+            p = p.add(4);
+            n += 1;
+        }
+    }
+
+    if !win.raster_cache.is_null() {
+        if win.rgba_buffer.is_null() || win.buffer_w != win.raster_cache_w || win.buffer_h != win.raster_cache_h {
+            if !win.rgba_buffer.is_null() {
+                free(win.rgba_buffer as *mut c_void);
+            }
+            win.rgba_buffer =
+                malloc((win.raster_cache_w as usize) * (win.raster_cache_h as usize) * 4usize) as *mut u8;
+            win.buffer_w = win.raster_cache_w;
+            win.buffer_h = win.raster_cache_h;
+            win.is_dirty = 1;
+        }
+
+        if !win.rgba_buffer.is_null() && (svg_changed || win.is_dirty != 0) {
+            core::ptr::copy_nonoverlapping(
+                win.raster_cache as *const u8,
+                win.rgba_buffer,
+                (win.buffer_w as usize) * (win.buffer_h as usize) * 4usize,
+            );
+
+            kernel_set_hud_status(b"TxtDraw\0".as_ptr() as *const c_char);
+            let mut temp_layer = RustLayer {
+                buffer: win.rgba_buffer as *mut u32,
+                x: 0,
+                y: 0,
+                width: win.buffer_w,
+                height: win.buffer_h,
+                transparent: 0,
+                active: 0,
+                dynamic: 0,
+            };
+            if win.is_warp1 != 0 {
+                warp1_context_draw_texts(win.warp1_ctx, &mut temp_layer, 0, 0, win.render_scale);
+            } else {
+                warp_context_draw_texts(win.warp_ctx, &mut temp_layer, 0, 0, win.render_scale);
+            }
+        }
+    }
+
+    if should_bake_inactive(is_active, win.buffer_h, win.h, win.scroll_y, win.target_scroll_y) != 0 {
+        bake_window(win);
+    }
+
+    win.is_dirty = 0;
+    win.is_calculating = 0;
+    kernel_set_hud_status(b"Idle\0".as_ptr() as *const c_char);
 }

@@ -93,8 +93,10 @@ do_build_and_run() {
 
     # 6. カーネルのリンク
     i686-elf-gcc -T link.ld -o output/kernel.bin \
+        -Wl,--start-group \
         output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
         rust_kernel/target/i686-unknown-linux-gnu/release/librust_kernel.a \
+        -Wl,--end-group \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 11
 
