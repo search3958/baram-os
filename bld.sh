@@ -78,7 +78,7 @@ do_build_and_run() {
     # 5. C 言語のコンパイル
     CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
 
-    i686-elf-gcc $CFLAGS -c kernel_runtime.c -o output/kernel.o || return 1
+    i686-elf-gcc $CFLAGS -c kernel_shim.c -o output/kernel_shim.o || return 1
     show_progress 5
     i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
     show_progress 6
@@ -93,10 +93,10 @@ do_build_and_run() {
 
     # 6. カーネルのリンク
     i686-elf-gcc -T link.ld -o output/kernel.bin \
-        -Wl,--start-group \
-        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
+        output/boot.o output/isr.o \
+        output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
         rust_kernel/target/i686-unknown-linux-gnu/release/librust_kernel.a \
-        -Wl,--end-group \
+        output/kernel_shim.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 11
 

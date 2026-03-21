@@ -2,9 +2,9 @@ use core::ffi::{c_char, c_int};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct GlobalVar {
-    key: [u8; 64],
-    val: [u8; 512],
+pub struct GlobalVar {
+    pub key: [u8; 64],
+    pub val: [u8; 512],
 }
 
 const MAX_GLOBAL_VARS: usize = 128;
@@ -24,6 +24,18 @@ static mut G_PENDING_COMMANDS: [[u8; PENDING_COMMAND_LEN]; MAX_PENDING_COMMANDS]
     [[0; PENDING_COMMAND_LEN]; MAX_PENDING_COMMANDS];
 static mut G_PENDING_COMMAND_COUNT: usize = 0;
 static mut G_HUD_STATUS: [u8; HUD_STATUS_LEN] = [0; HUD_STATUS_LEN];
+
+// SVG and rendering state
+static mut G_SVG_DIRTY: c_int = 1;
+static mut G_SCROLL_X: f32 = 0.0;
+static mut G_SCROLL_Y: f32 = 0.0;
+static mut G_TARGET_SCROLL_X: f32 = 0.0;
+static mut G_TARGET_SCROLL_Y: f32 = 0.0;
+
+// Timer and CPU state
+static mut TIMER_TICKS: u32 = 0;
+static mut CPU_IDLE: c_int = 0;
+static mut IDLE_TICKS: u32 = 0;
 
 fn str_len(ptr: *const c_char) -> usize {
     if ptr.is_null() {
@@ -228,4 +240,65 @@ pub unsafe fn set_global_literal(key: &[u8], val: &[u8]) {
     copy_bytes_to_buf(&mut key_buf, key);
     copy_bytes_to_buf(&mut val_buf, val);
     set_global_value(key_buf.as_ptr() as *const c_char, val_buf.as_ptr() as *const c_char);
+}
+
+// Additional state accessors
+pub unsafe fn get_svg_dirty() -> c_int {
+    G_SVG_DIRTY
+}
+
+pub unsafe fn set_svg_dirty(dirty: c_int) {
+    G_SVG_DIRTY = dirty;
+}
+
+pub unsafe fn get_scroll_y() -> f32 {
+    G_SCROLL_Y
+}
+
+pub unsafe fn set_scroll_y(y: f32) {
+    G_SCROLL_Y = y;
+}
+
+pub unsafe fn get_target_scroll_y() -> f32 {
+    G_TARGET_SCROLL_Y
+}
+
+pub unsafe fn set_target_scroll_y(y: f32) {
+    G_TARGET_SCROLL_Y = y;
+}
+
+pub unsafe fn get_timer_ticks() -> u32 {
+    TIMER_TICKS
+}
+
+pub unsafe fn set_timer_ticks(ticks: u32) {
+    TIMER_TICKS = ticks;
+}
+
+pub unsafe fn get_cpu_idle() -> c_int {
+    CPU_IDLE
+}
+
+pub unsafe fn set_cpu_idle(idle: c_int) {
+    CPU_IDLE = idle;
+}
+
+pub unsafe fn get_idle_ticks() -> u32 {
+    IDLE_TICKS
+}
+
+pub unsafe fn set_idle_ticks(ticks: u32) {
+    IDLE_TICKS = ticks;
+}
+
+pub unsafe fn get_dev_pointer_check() -> c_int {
+    G_DEV_POINTER_CHECK
+}
+
+pub unsafe fn get_dev_event_check() -> c_int {
+    G_DEV_EVENT_CHECK
+}
+
+pub unsafe fn get_dev_show_hud() -> c_int {
+    G_DEV_SHOW_HUD
 }

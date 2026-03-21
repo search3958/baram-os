@@ -1,3 +1,6 @@
+//! Runtime utilities - math, string, and memory functions
+//! This module provides low-level utilities needed for the kernel
+
 use core::ffi::{c_char, c_int, c_void};
 use core::mem::size_of;
 
@@ -16,17 +19,19 @@ fn block_hdr_size() -> usize {
     size_of::<BlockHeader>()
 }
 
-unsafe fn heap_init() {
+pub unsafe fn heap_init(addr: *mut c_void, size: usize) {
     if HEAP_INITIALIZED {
         return;
     }
-    let first = RUST_HEAP.as_mut_ptr() as *mut BlockHeader;
-    (*first).size = RUST_HEAP_SIZE - block_hdr_size();
+    // Use provided heap address instead of static array
+    let heap_ptr = addr as *mut u8;
+    let first = heap_ptr as *mut BlockHeader;
+    (*first).size = size - block_hdr_size();
     (*first).used = 0;
     HEAP_INITIALIZED = true;
 }
 
-fn tolower_ascii(c: c_int) -> c_int {
+pub fn tolower_ascii(c: c_int) -> c_int {
     if c >= b'A' as c_int && c <= b'Z' as c_int {
         c + (b'a' - b'A') as c_int
     } else {
@@ -50,10 +55,20 @@ pub unsafe fn rt_malloc(size: usize) -> *mut c_void {
     if size == 0 {
         return core::ptr::null_mut();
     }
-    heap_init();
+    if !HEAP_INITIALIZED {
+        return core::ptr::null_mut();
+    }
+    
+    // 8-byte alignment
     let size = (size + 7) & !7usize;
-    let start = RUST_HEAP.as_mut_ptr();
-    let end = start.add(RUST_HEAP_SIZE);
+    
+    // Get heap boundaries from the first block header
+    let start = (&mut RUST_HEAP as *mut u8);
+    let first = start as *const BlockHeader;
+    let heap_base = start;
+    let heap_size = (*first).size + block_hdr_size();
+    let end = heap_base.add(heap_size);
+    
     let mut p = start;
     while p.add(block_hdr_size()) <= end {
         let hdr = p as *mut BlockHeader;
@@ -77,12 +92,19 @@ pub unsafe fn rt_free(ptr: *mut c_void) {
     if ptr.is_null() {
         return;
     }
-    heap_init();
-    let start = RUST_HEAP.as_mut_ptr();
-    let end = start.add(RUST_HEAP_SIZE);
+    if !HEAP_INITIALIZED {
+        return;
+    }
+    
+    let start = (&mut RUST_HEAP as *mut u8);
+    let first = start as *const BlockHeader;
+    let heap_size = (*first).size + block_hdr_size();
+    let end = start.add(heap_size);
+    
     let hdr = (ptr as *mut u8).sub(block_hdr_size()) as *mut BlockHeader;
     (*hdr).used = 0;
 
+    // Merge adjacent free blocks
     let mut p = start;
     while p.add(block_hdr_size()) <= end {
         let cur = p as *mut BlockHeader;
@@ -242,6 +264,40 @@ pub unsafe fn rt_strlcat(dst: *mut c_char, src: *const c_char, siz: usize) -> us
 
 pub fn rt_rust_eh_personality() {}
 
+// Math functions
+fn wrap_pi(x: f32) -> f32 {
+    const PI: f32 = core::f32::consts::PI;
+    const TWO_PI: f32 = 2.0 * PI;
+    let mut x = x;
+    while x > PI {
+        x -= TWO_PI;
+    }
+    while x < -PI {
+        x += TWO_PI;
+    }
+    x
+}
+
+pub fn rt_sinf(x: f32) -> f32 {
+    let x = wrap_pi(x);
+    let x2 = x * x;
+    x * (1.0 - x2 / 6.0 + (x2 * x2) / 120.0 - (x2 * x2 * x2) / 5040.0)
+}
+
+pub fn rt_cosf(x: f32) -> f32 {
+    let x = wrap_pi(x);
+    let x2 = x * x;
+    1.0 - x2 / 2.0 + (x2 * x2) / 24.0 - (x2 * x2 * x2) / 720.0
+}
+
+pub fn rt_tanf(x: f32) -> f32 {
+    let c = rt_cosf(x);
+    if c == 0.0 {
+        return 0.0;
+    }
+    rt_sinf(x) / c
+}
+
 fn atan_approx(z: f32) -> f32 {
     const PI: f32 = core::f32::consts::PI;
     if z > 1.0 {
@@ -271,4 +327,64 @@ pub fn rt_atan2f(y: f32, x: f32) -> f32 {
         return -PI * 0.5;
     }
     0.0
+}
+
+pub fn rt_acosf(x: f32) -> f32 {
+    const PI: f32 = core::f32::consts::PI;
+    if x <= -1.0 {
+        return PI;
+    }
+    if x >= 1.0 {
+        return 0.0;
+    }
+    rt_atan2f(rt_sqrtf(1.0 - x * x), x)
+}
+
+pub fn rt_sqrtf(x: f32) -> f32 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let mut r = x;
+    for _ in 0..12 {
+        r = 0.5 * (r + x / r);
+    }
+    r
+}
+
+pub fn rt_floorf(x: f32) -> f32 {
+    let i = x as i32;
+    if (i as f32) < x {
+        (i - 1) as f32
+    } else {
+        i as f32
+    }
+}
+
+pub fn rt_ceilf(x: f32) -> f32 {
+    let i = x as i32;
+    if (i as f32) > x {
+        (i + 1) as f32
+    } else {
+        i as f32
+    }
+}
+
+pub fn rt_roundf(x: f32) -> f32 {
+    if x >= 0.0 {
+        rt_floorf(x + 0.5)
+    } else {
+        rt_ceilf(x - 0.5)
+    }
+}
+
+pub fn rt_fmodf(x: f32, y: f32) -> f32 {
+    if y == 0.0 {
+        return 0.0;
+    }
+    let q = (x / y) as i32;
+    x - (q as f32) * y
+}
+
+pub fn rt_fabsf(x: f32) -> f32 {
+    if x < 0.0 { -x } else { x }
 }

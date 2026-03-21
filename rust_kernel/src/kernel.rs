@@ -23,7 +23,100 @@ unsafe extern "C" {
     fn kernel_storage_sync_command();
     fn kernel_storage_ls_command();
     fn sys_restart();
+    fn idt_install();
+    fn irq_install();
+    fn irq_install_handler(irq: i32, handler: unsafe extern "C" fn(*mut c_void));
+    fn timer_phase(hz: i32);
+    fn keyboard_install();
+    fn mouse_install();
+    fn enable_interrupts();
+    fn font_init(mbi: *mut c_void);
+    fn warp_ui_mod_init(mbi: *mut c_void);
+    fn set_framebuffer_info(fb: *mut u32, w: u32, h: u32, pitch: u32);
+    fn cursor_init();
+    fn register_layer(layer: *mut crate::windows::RustLayer);
+    fn screen_mark_static_dirty();
+    fn screen_mark_all_dirty();
+    fn layer_fill(layer: *mut crate::windows::RustLayer, color: u32);
+    fn svg_init(layer: *mut crate::windows::RustLayer, mode: i32);
+    fn svg_init_nextgen(layer: *mut crate::windows::RustLayer);
+    fn svg_pick_shape(layer: *mut crate::windows::RustLayer, x: i32, y: i32) -> i32;
+    fn svg_render_full(layer: *mut crate::windows::RustLayer);
+    fn hud_update(layer: *mut crate::windows::RustLayer, cpu: u32, mem: u32);
+    fn text_layer_redraw(layer: *mut crate::windows::RustLayer, font_size: f32);
+    fn handle_command(cmd: *const c_char);
+    fn screen_refresh();
+    fn rt_malloc(size: usize) -> *mut c_void;
+    fn heap_init(addr: *mut c_void, size: usize);
 }
+
+#[repr(C)]
+struct MultibootInfo {
+    flags: u32,
+    mem_lower: u32,
+    mem_upper: u32,
+    boot_device: u32,
+    cmdline: u32,
+    mods_count: u32,
+    mods_addr: u32,
+    syms: [u32; 4],
+    mmap_length: u32,
+    mmap_addr: u32,
+    drives_length: u32,
+    drives_addr: u32,
+    config_table: u32,
+    boot_loader_name: u32,
+    apm_table: u32,
+    vbe_control_info: u32,
+    vbe_mode_info: u32,
+    vbe_mode: u16,
+    vbe_interface_seg: u16,
+    vbe_interface_off: u16,
+    vbe_interface_len: u16,
+    framebuffer_addr: u64,
+    framebuffer_pitch: u32,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
+    framebuffer_bpp: u8,
+    framebuffer_type: u8,
+    color_info: [u8; 6],
+}
+
+#[repr(C)]
+struct MultibootModule {
+    mod_start: u32,
+    mod_end: u32,
+    string: u32,
+    reserved: u32,
+}
+
+extern "C" {
+    static _kernel_end: u8;
+}
+
+static mut G_MBI: *mut MultibootInfo = core::ptr::null_mut();
+static mut G_DESKTOP_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
+    buffer: core::ptr::null_mut(),
+    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
+};
+static mut G_SVG_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
+    buffer: core::ptr::null_mut(),
+    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
+};
+static mut G_HUD_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
+    buffer: core::ptr::null_mut(),
+    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
+};
+static mut G_NEXTGEN_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
+    buffer: core::ptr::null_mut(),
+    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
+};
+static mut G_TEXT_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
+    buffer: core::ptr::null_mut(),
+    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
+};
+
+unsafe extern "C" fn dummy_timer_handler(_r: *mut c_void) {}
 
 #[repr(C)]
 pub struct RustGlobalVar {
@@ -179,8 +272,73 @@ pub unsafe fn sync_all_window_themes(
 }
 
 pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
-    kernel_bootstrap_c(magic, mbi);
+    let mbi = mbi as *mut MultibootInfo;
+    G_MBI = mbi;
+
+    // 1. ヒープ初期化
+    let mut heap_start = (&_kernel_end as *const u8 as usize + 4095) & !4095;
+    if !mbi.is_null() && ((*mbi).flags & 0x8) != 0 {
+        let mods_count = (*mbi).mods_count;
+        let mods_addr = (*mbi).mods_addr as *const MultibootModule;
+        let mods = core::slice::from_raw_parts(mods_addr, mods_count as usize);
+        for m in mods {
+            if m.mod_end as usize > heap_start {
+                heap_start = (m.mod_end as usize + 4095) & !4095;
+            }
+        }
+    }
+    let mem_upper = if !mbi.is_null() { (*mbi).mem_upper } else { 0 };
+    let heap_end = 0x100000 + (mem_upper as usize) * 1024;
+    if heap_end > heap_start {
+        heap_init(heap_start as *mut c_void, heap_end - heap_start);
+    }
+
+    // 2. ドライバー初期化
+    idt_install();
+    irq_install();
+    // irq_install_handler(0, dummy_timer_handler); // C側で定義されているので不要、もしくは宣言が必要
+    timer_phase(100);
+    keyboard_install();
+    mouse_install();
+    enable_interrupts();
+
+    // 3. グラフィックス初期化
+    if !mbi.is_null() {
+        set_framebuffer_info(
+            (*mbi).framebuffer_addr as *mut u32,
+            (*mbi).framebuffer_width,
+            (*mbi).framebuffer_height,
+            (*mbi).framebuffer_pitch,
+        );
+    }
+    font_init(mbi as *mut c_void);
+    warp_ui_mod_init(mbi as *mut c_void);
+    cursor_init();
+
+    // 4. レイヤー設定 (各バッファを rt_malloc で確保)
+    let screen_w = 1280; // 仮定
+    let screen_h = 720;
+    
+    let main_buf = rt_malloc(screen_w * screen_h * 4) as *mut u32;
+    G_DESKTOP_LAYER = crate::windows::RustLayer {
+        buffer: main_buf, x: 0, y: 0, width: screen_w as i32, height: screen_h as i32,
+        transparent: 0, active: 1, dynamic: 0,
+    };
+    layer_fill(&mut G_DESKTOP_LAYER, 0xFF000000);
+    register_layer(&mut G_DESKTOP_LAYER);
+
+    let svg_w = 1024; let svg_h = 768; // 仮
+    let svg_buf = rt_malloc(svg_w * svg_h * 4) as *mut u32;
+    G_SVG_LAYER = crate::windows::RustLayer {
+        buffer: svg_buf, x: 0, y: 0, width: svg_w as i32, height: svg_h as i32,
+        transparent: 0, active: 1, dynamic: 0,
+    };
+    svg_init(&mut G_SVG_LAYER, 0);
+    register_layer(&mut G_SVG_LAYER);
+
+    // メインループ
     loop {
+        // C側のイテレーション関数を一時的に呼ぶが、最終的にはこれらもRustに移植する
         kernel_process_pending_commands();
         kernel_try_autoboot_to_desktop();
         if kernel_get_current_os_mode() == 0 {
@@ -189,6 +347,7 @@ pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
             kernel_main_iteration_desktop();
         }
         kernel_finish_iteration();
+        screen_refresh();
     }
 }
 
