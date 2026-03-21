@@ -1,14 +1,13 @@
 use core::ffi::{c_char, c_void};
 
 use crate::graphics::blend_colors;
+use crate::runtime::{rt_free, rt_malloc};
+use crate::state::{get_global_ptr, set_hud_status};
 
 unsafe extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
     fn sqrtf(v: f32) -> f32;
     fn fabsf(v: f32) -> f32;
-    fn get_w1_global(key: *const c_char) -> *const c_char;
-    fn layer_draw_ttf(layer: *mut RustLayer, px: i32, py: i32, s: *const c_char, font_size: f32, color: u32);
+    fn layer_draw_string(layer: *mut RustLayer, x: i32, y: i32, s: *const c_char, color: u32, bg_color: u32);
     fn warp_context_update(ctx: *mut c_void, width: i32, height: i32);
     fn warp_context_get_svg(ctx: *mut c_void) -> *const c_char;
     fn warp_context_draw_texts(ctx: *mut c_void, layer: *mut RustLayer, off_x: i32, off_y: i32, scale: f32);
@@ -23,11 +22,22 @@ unsafe extern "C" {
     fn warp1_context_clear_dirty(ctx: *mut c_void);
     fn warp1_context_get_header_info(ctx: *mut c_void, out_text: *mut c_char, max_len: i32, out_action_count: *mut i32) -> i32;
     fn warp1_context_get_header_action_info(ctx: *mut c_void, action_index: i32, out_text: *mut c_char, max_len: i32);
-    fn kernel_set_hud_status(status: *const c_char);
     fn kernel_svg_parse(svg: *const c_char) -> *mut c_void;
     fn kernel_svg_delete(image: *mut c_void);
     fn kernel_svg_height(image: *mut c_void) -> i32;
     fn kernel_svg_rasterize(image: *mut c_void, dst: *mut u8, w: i32, h: i32, scale: f32);
+}
+
+unsafe fn get_w1_global(key: *const c_char) -> *const c_char {
+    get_global_ptr(key)
+}
+
+unsafe fn kernel_set_hud_status(status: *const c_char) {
+    set_hud_status(status);
+}
+
+unsafe fn layer_draw_ttf(layer: *mut RustLayer, px: i32, py: i32, s: *const c_char, _font_size: f32, color: u32) {
+    layer_draw_string(layer, px, py, s, color, 0);
 }
 
 #[repr(C)]
@@ -132,23 +142,23 @@ pub unsafe fn clear_cached_buffers(win: *mut RustWindow) {
     }
     let win = &mut *win;
     if !win.shadow_cache.is_null() {
-        free(win.shadow_cache as *mut c_void);
+        rt_free(win.shadow_cache as *mut c_void);
         win.shadow_cache = core::ptr::null_mut();
     }
     if !win.frame_cache.is_null() {
-        free(win.frame_cache as *mut c_void);
+        rt_free(win.frame_cache as *mut c_void);
         win.frame_cache = core::ptr::null_mut();
     }
     if !win.window_mask.is_null() {
-        free(win.window_mask as *mut c_void);
+        rt_free(win.window_mask as *mut c_void);
         win.window_mask = core::ptr::null_mut();
     }
     if !win.rgba_buffer.is_null() {
-        free(win.rgba_buffer as *mut c_void);
+        rt_free(win.rgba_buffer as *mut c_void);
         win.rgba_buffer = core::ptr::null_mut();
     }
     if !win.raster_cache.is_null() {
-        free(win.raster_cache as *mut c_void);
+        rt_free(win.raster_cache as *mut c_void);
         win.raster_cache = core::ptr::null_mut();
     }
     win.buffer_w = 0;
@@ -177,9 +187,9 @@ pub unsafe fn bake_window(win: *mut RustWindow) {
     if sh < 1 { sh = 1; }
 
     if !win.unified_buffer.is_null() {
-        free(win.unified_buffer as *mut c_void);
+        rt_free(win.unified_buffer as *mut c_void);
     }
-    win.unified_buffer = malloc((sw as usize) * (sh as usize) * 4usize) as *mut u32;
+    win.unified_buffer = rt_malloc((sw as usize) * (sh as usize) * 4usize) as *mut u32;
     if win.unified_buffer.is_null() {
         win.unified_w = 0;
         win.unified_h = 0;
@@ -466,9 +476,9 @@ pub unsafe fn update_window_caches(win: *mut RustWindow, is_active: i32) {
 
     if win.shadow_cache.is_null() || win.shadow_cache_w != sw || win.shadow_cache_h != sh {
         if !win.shadow_cache.is_null() {
-            free(win.shadow_cache as *mut c_void);
+            rt_free(win.shadow_cache as *mut c_void);
         }
-        win.shadow_cache = malloc((sw as usize) * (sh as usize)) as *mut u8;
+        win.shadow_cache = rt_malloc((sw as usize) * (sh as usize)) as *mut u8;
         win.shadow_cache_w = sw;
         win.shadow_cache_h = sh;
 
@@ -514,9 +524,9 @@ pub unsafe fn update_window_caches(win: *mut RustWindow, is_active: i32) {
 
     if win.frame_cache.is_null() || win.frame_cache_w != fw || win.frame_cache_h != fh {
         if !win.frame_cache.is_null() {
-            free(win.frame_cache as *mut c_void);
+            rt_free(win.frame_cache as *mut c_void);
         }
-        win.frame_cache = malloc((fw as usize) * (fh as usize) * 4usize) as *mut u32;
+        win.frame_cache = rt_malloc((fw as usize) * (fh as usize) * 4usize) as *mut u32;
         win.frame_cache_w = fw;
         win.frame_cache_h = fh;
     }
@@ -635,9 +645,9 @@ pub unsafe fn update_window_caches(win: *mut RustWindow, is_active: i32) {
 
     if win.window_mask.is_null() || win.buffer_w != mw || win.shadow_cache_h != sh {
         if !win.window_mask.is_null() {
-            free(win.window_mask as *mut c_void);
+            rt_free(win.window_mask as *mut c_void);
         }
-        win.window_mask = malloc((mw as usize) * (mh as usize)) as *mut u8;
+        win.window_mask = rt_malloc((mw as usize) * (mh as usize)) as *mut u8;
         let rw = full_mw as f32;
         let rh = full_mh as f32;
         let r = 32.0f32;
@@ -682,7 +692,7 @@ pub unsafe fn redraw_window(win: *mut RustWindow, is_active: i32) {
     }
 
     if is_active != 0 && !win.unified_buffer.is_null() {
-        free(win.unified_buffer as *mut c_void);
+        rt_free(win.unified_buffer as *mut c_void);
         win.unified_buffer = core::ptr::null_mut();
         win.unified_w = 0;
         win.unified_h = 0;
@@ -732,10 +742,10 @@ pub unsafe fn redraw_window(win: *mut RustWindow, is_active: i32) {
         win.svg_image_cache = img;
 
         if !win.last_svg_str.is_null() {
-            free(win.last_svg_str as *mut c_void);
+            rt_free(win.last_svg_str as *mut c_void);
         }
         let svg_bytes = core::ffi::CStr::from_ptr(svg).to_bytes_with_nul();
-        win.last_svg_str = malloc(svg_bytes.len()) as *mut c_char;
+        win.last_svg_str = rt_malloc(svg_bytes.len()) as *mut c_char;
         if !win.last_svg_str.is_null() {
             core::ptr::copy_nonoverlapping(
                 svg_bytes.as_ptr(),
@@ -768,9 +778,9 @@ pub unsafe fn redraw_window(win: *mut RustWindow, is_active: i32) {
         win.raster_cache.is_null() || win.raster_cache_w != scaled_w || win.raster_cache_h != scaled_h;
     if raster_size_changed {
         if !win.raster_cache.is_null() {
-            free(win.raster_cache as *mut c_void);
+            rt_free(win.raster_cache as *mut c_void);
         }
-        win.raster_cache = malloc((scaled_w as usize) * (scaled_h as usize) * 4usize) as *mut u32;
+        win.raster_cache = rt_malloc((scaled_w as usize) * (scaled_h as usize) * 4usize) as *mut u32;
         win.raster_cache_w = scaled_w;
         win.raster_cache_h = scaled_h;
     }
@@ -808,10 +818,10 @@ pub unsafe fn redraw_window(win: *mut RustWindow, is_active: i32) {
     if !win.raster_cache.is_null() {
         if win.rgba_buffer.is_null() || win.buffer_w != win.raster_cache_w || win.buffer_h != win.raster_cache_h {
             if !win.rgba_buffer.is_null() {
-                free(win.rgba_buffer as *mut c_void);
+                rt_free(win.rgba_buffer as *mut c_void);
             }
             win.rgba_buffer =
-                malloc((win.raster_cache_w as usize) * (win.raster_cache_h as usize) * 4usize) as *mut u8;
+                rt_malloc((win.raster_cache_w as usize) * (win.raster_cache_h as usize) * 4usize) as *mut u8;
             win.buffer_w = win.raster_cache_w;
             win.buffer_h = win.raster_cache_h;
             win.is_dirty = 1;

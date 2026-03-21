@@ -1,11 +1,12 @@
 use core::ffi::{c_char, c_void, CStr};
 
+use crate::state::{enqueue_pending_command, get_global_ptr, set_global_value, set_hud_status};
+use crate::windows::update_window_caches;
 use crate::windows::RustWindow;
 
 unsafe extern "C" {
     fn warp_context_set_state(ctx: *mut c_void, key: *const c_char, val: *const c_char);
     fn warp1_context_set_state(ctx: *mut c_void, key: *const c_char, val: *const c_char);
-    fn kernel_window_update_caches(win: *mut RustWindow);
     fn kernel_bootstrap_c(magic: u32, mbi: *mut c_void);
     fn kernel_process_pending_commands() -> i32;
     fn kernel_try_autoboot_to_desktop() -> i32;
@@ -13,9 +14,6 @@ unsafe extern "C" {
     fn kernel_main_iteration_classic();
     fn kernel_main_iteration_desktop();
     fn kernel_finish_iteration();
-    fn get_w1_global(key: *const c_char) -> *const c_char;
-    fn set_w1_global(key: *const c_char, val: *const c_char);
-    fn set_pending_command(cmd: *const c_char);
     fn kernel_load_wallpaper_from_settings(name: *const c_char);
     fn kernel_mark_os_settings_ready();
     fn kernel_add_window_for_command(title: *const c_char, x: i32, y: i32, w: i32, h: i32, is_warp1: i32);
@@ -25,7 +23,6 @@ unsafe extern "C" {
     fn kernel_storage_sync_command();
     fn kernel_storage_ls_command();
     fn sys_restart();
-    fn kernel_set_hud_status(status: *const c_char);
 }
 
 #[repr(C)]
@@ -173,7 +170,7 @@ pub unsafe fn sync_all_window_themes(
             warp_context_set_state(win.warp_ctx, key, target);
         }
 
-        kernel_window_update_caches(win as *mut RustWindow);
+        update_window_caches(win as *mut RustWindow, 0);
         win.is_dirty = 1;
     }
 
@@ -218,6 +215,22 @@ fn find_token(bytes: &[u8], token: &[u8]) -> Option<usize> {
 
 unsafe fn set_global_lit(key: &'static [u8], val: &'static [u8]) {
     set_w1_global(key.as_ptr() as *const c_char, val.as_ptr() as *const c_char);
+}
+
+unsafe fn set_w1_global(key: *const c_char, val: *const c_char) {
+    set_global_value(key, val);
+}
+
+unsafe fn get_w1_global(key: *const c_char) -> *const c_char {
+    get_global_ptr(key)
+}
+
+unsafe fn set_pending_command(cmd: *const c_char) {
+    enqueue_pending_command(cmd);
+}
+
+unsafe fn kernel_set_hud_status(status: *const c_char) {
+    set_hud_status(status);
 }
 
 pub unsafe fn parse_os_settings(buf: *const c_char) {

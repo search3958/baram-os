@@ -1,9 +1,8 @@
 use core::ffi::c_void;
 
+use crate::runtime::{rt_atan2f, rt_free, rt_malloc};
+
 unsafe extern "C" {
-    fn atan2f(y: f32, x: f32) -> f32;
-    fn malloc(size: usize) -> *mut c_void;
-    fn free(ptr: *mut c_void);
 }
 
 pub fn lerp_color(c1: u32, c2: u32, t: f32) -> u32 {
@@ -74,7 +73,7 @@ pub unsafe fn apply_conic_gradient(
                     if mask != 0 {
                         let dx = x as f32 - cx;
                         let dy = y as f32 - cy;
-                        let angle = atan2f(dy, dx);
+                        let angle = rt_atan2f(dy, dx);
                         let t = (angle + PI) / (2.0 * PI);
                         let color = lerp_color(c1, c2, t);
                         let idx = ((y * w + x) * 4) as isize;
@@ -97,7 +96,7 @@ pub unsafe fn box_blur_alpha(data: *mut u8, w: i32, h: i32, radius: i32) {
         return;
     }
 
-    let tmp = malloc((w as usize) * (h as usize)) as *mut u8;
+    let tmp = rt_malloc((w as usize) * (h as usize)) as *mut u8;
     if tmp.is_null() {
         return;
     }
@@ -150,5 +149,5 @@ pub unsafe fn box_blur_alpha(data: *mut u8, w: i32, h: i32, radius: i32) {
         pass += 1;
     }
 
-    free(tmp as *mut c_void);
+    rt_free(tmp as *mut c_void);
 }
