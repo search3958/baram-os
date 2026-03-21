@@ -27,6 +27,7 @@ unsafe extern "C" {
     fn irq_install();
     fn irq_install_handler(irq: i32, handler: unsafe extern "C" fn(*mut c_void));
     fn timer_phase(hz: i32);
+    fn timer_handler(r: *mut c_void);
     fn keyboard_install();
     fn mouse_install();
     fn enable_interrupts();
@@ -293,7 +294,7 @@ pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
     // 2. ドライバー初期化
     idt_install();
     irq_install();
-    // irq_install_handler(0, dummy_timer_handler); // C側で定義されているので不要、もしくは宣言が必要
+    irq_install_handler(0, timer_handler);
     timer_phase(100);
     keyboard_install();
     mouse_install();
