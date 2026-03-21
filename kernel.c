@@ -174,6 +174,9 @@ extern uint32_t rust_graphics_blend_colors(uint32_t bg, uint32_t fg, uint8_t alp
 extern void rust_graphics_box_blur_alpha(unsigned char *data, int w, int h, int radius);
 extern int rust_windows_should_bake_inactive(int is_active, int buffer_h, int window_h, float scroll_y, float target_scroll_y);
 extern int rust_windows_compute_content_src_y(int dy, float scroll_y, float scale, int buffer_h);
+extern void rust_windows_clear_cached_buffers(void *win);
+extern void rust_windows_bake_window(void *win);
+extern void rust_windows_draw_single_window(layer_t *layer, void *win);
 extern void rust_warp_parse_baram_config(const char *code, int screen_width, rust_window_config_t *cfg);
 extern char *rust_kernel_append_uint(char *p, unsigned int v);
 
@@ -1773,89 +1776,11 @@ static void window_set_all_dirty() {
 }
 
 static void window_clear_caches(window_t *win) {
-  if (win->shadow_cache) { free(win->shadow_cache); win->shadow_cache = NULL; }
-  if (win->frame_cache) { free(win->frame_cache); win->frame_cache = NULL; }
-  if (win->window_mask) { free(win->window_mask); win->window_mask = NULL; }
-  if (win->rgba_buffer) { free(win->rgba_buffer); win->rgba_buffer = NULL; }
-  if (win->raster_cache) { free(win->raster_cache); win->raster_cache = NULL; }
-  win->buffer_w = 0;
-  win->buffer_h = 0;
-  win->raster_cache_w = 0;
-  win->raster_cache_h = 0;
+  rust_windows_clear_cached_buffers(win);
 }
 
 static void window_bake(window_t *win) {
-  if (!win->shadow_cache || !win->frame_cache || !win->rgba_buffer || !win->window_mask) return;
-
-  float scale = win->render_scale;
-  int title_h = win->no_decoration ? 0 : 40;
-  int shadow_size = win->no_decoration ? 0 : 48;
-  
-  int full_sw = win->w + shadow_size * 2;
-  int full_sh = win->h + title_h + shadow_size * 2;
-  int sw = (int)((float)full_sw * scale);
-  int sh = (int)((float)full_sh * scale);
-  if (sw < 1) sw = 1;
-  if (sh < 1) sh = 1;
-
-  if (win->unified_buffer) free(win->unified_buffer);
-  win->unified_buffer = (uint32_t*)malloc((size_t)sw * (size_t)sh * 4);
-  win->unified_w = sw;
-  win->unified_h = sh;
-
-  // Clear unified buffer with transparent black
-  for (int i = 0; i < sw * sh; i++) win->unified_buffer[i] = 0x00000000;
-
-  // 1. Bake Shadow (offset Y by 8)
-  int shadow_off_y = (int)(8.0f * scale);
-  for (int y = 0; y < win->shadow_cache_h; y++) {
-    int py = y + shadow_off_y;
-    if (py >= sh) break;
-    for (int x = 0; x < win->shadow_cache_w; x++) {
-      uint8_t alpha = win->shadow_cache[y * win->shadow_cache_w + x];
-      if (alpha > 0) win->unified_buffer[py * sw + x] = (uint32_t)alpha << 24;
-    }
-  }
-
-  // 2. Bake Frame (Title Bar)
-  int frame_x = (int)((float)shadow_size * scale);
-  int frame_y = (int)((float)shadow_size * scale);
-  int mw = (int)((float)win->w * scale);
-  if (mw < 1 && win->w > 0) mw = 1;
-
-  for (int dy = 0; dy < win->frame_cache_h; dy++) {
-    int py = frame_y + dy;
-    uint32_t *src_line = &win->frame_cache[dy * win->frame_cache_w];
-    uint8_t *mask_line = &win->window_mask[dy * mw];
-    for (int dx = 0; dx < win->frame_cache_w; dx++) {
-      int px = frame_x + dx;
-      uint32_t color = src_line[dx];
-      uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
-    }
-  }
-
-  // 3. Bake Content
-  int content_y = frame_y + (int)((float)title_h * scale);
-  int mh = (int)((float)(win->h + title_h) * scale);
-  for (int dy = 0; dy < win->buffer_h; dy++) {
-    int py = content_y + dy;
-    if (py >= sh) break;
-    uint32_t *src_line = (uint32_t*)&win->rgba_buffer[dy * win->buffer_w * 4];
-    int mask_y = (int)((float)title_h * scale) + dy;
-    if (mask_y >= mh) mask_y = mh - 1;
-    uint8_t *mask_line = &win->window_mask[mask_y * mw];
-    for (int dx = 0; dx < win->buffer_w; dx++) {
-      int px = frame_x + dx;
-      if (px >= sw) break;
-      uint32_t color = src_line[dx];
-      uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
-      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
-    }
-  }
-
-  // 4. Cleanup individual caches to save RAM
-  window_clear_caches(win);
+  rust_windows_bake_window(win);
 }
 
 static void window_update_caches(window_t *win) {
@@ -2347,120 +2272,7 @@ static void draw_wallpaper(layer_t *layer) {
 }
 
 static void draw_single_window(layer_t *layer, window_t *win) {
-    if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
-      int title_h = win->no_decoration ? 0 : 40;
-      int shadow_size = win->no_decoration ? 0 : 48;
-      int start_x = win->x - shadow_size;
-      int start_y = win->y - title_h - shadow_size;
-      int x0 = (start_x < 0) ? -start_x : 0;
-      int y0 = (start_y < 0) ? -start_y : 0;
-      int x1 = start_x + win->unified_w > layer->width ? layer->width - start_x : win->unified_w;
-      int y1 = start_y + win->unified_h > layer->height ? layer->height - start_y : win->unified_h;
-
-      for (int dy = y0; dy < y1; dy++) {
-        int py = start_y + dy;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-        uint32_t *src_line = &win->unified_buffer[dy * win->unified_w];
-        for (int dx = x0; dx < x1; dx++) {
-          int px = start_x + dx;
-          uint32_t color = src_line[dx];
-          uint8_t alpha = (uint8_t)(color >> 24);
-          if (alpha == 0) continue;
-          dst_line[px] = blend_colors(dst_line[px], color, alpha);
-        }
-      }
-      return;
-    }
-
-    if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
-      int title_h = win->no_decoration ? 0 : 40;
-      int shadow_size = win->no_decoration ? 0 : 48;
-      float scale = win->render_scale;
-
-      if (!win->is_maximized && !win->no_decoration && win->shadow_cache) {
-        int sx_start = win->x - shadow_size;
-        int sy_start = win->y - title_h - shadow_size + 8;
-        int y0 = (sy_start < 0) ? -sy_start : 0;
-        int y1 = (sy_start + (win->h + title_h + shadow_size * 2) > layer->height) ? layer->height - sy_start : (win->h + title_h + shadow_size * 2);
-        int x0 = (sx_start < 0) ? -sx_start : 0;
-        int x1 = (sx_start + (win->w + shadow_size * 2) > layer->width) ? layer->width - sx_start : (win->w + shadow_size * 2);
-        for (int dy = y0; dy < y1; dy++) {
-          int py = sy_start + dy;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          int scaled_dy = (int)((float)dy * scale);
-          if (scaled_dy >= win->shadow_cache_h) scaled_dy = win->shadow_cache_h - 1;
-          uint8_t *src_mask = &win->shadow_cache[scaled_dy * win->shadow_cache_w];
-          for (int dx = x0; dx < x1; dx++) {
-            int scaled_dx = (int)((float)dx * scale);
-            if (scaled_dx >= win->shadow_cache_w) scaled_dx = win->shadow_cache_w - 1;
-            uint8_t alpha = src_mask[scaled_dx];
-            if (alpha == 0) continue;
-            dst_line[sx_start + dx] = blend_colors(dst_line[sx_start + dx], 0, alpha);
-          }
-        }
-      }
-
-      if (!win->no_decoration && win->frame_cache) {
-        int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
-        int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
-        int mw = (int)((float)win->w * scale);
-        if (mw < 1 && win->w > 0) mw = 1;
-        for (int dy = ty0; dy < ty1; dy++) {
-          int py = win->y - title_h + dy;
-          int scaled_dy = (int)((float)dy * scale);
-          if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          uint32_t *src_line = &win->frame_cache[scaled_dy * win->frame_cache_w];
-          uint8_t *mask_line = &win->window_mask[scaled_dy * mw];
-          for (int dx = 0; dx < win->w; dx++) {
-            int px = win->x + dx;
-            if (px < 0 || px >= layer->width) continue;
-            int scaled_dx = (int)((float)dx * scale);
-            if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
-            uint8_t alpha = win->is_maximized ? 255 : mask_line[scaled_dx];
-            dst_line[px] = blend_colors(dst_line[px], src_line[scaled_dx], alpha);
-          }
-        }
-      }
-
-      int cy0 = (win->y < 0) ? -win->y : 0;
-      int cy1 = (win->y + win->h > layer->height) ? (layer->height - win->y) : win->h;
-      int mw = (int)((float)win->w * scale);
-      if (mw < 1 && win->w > 0) mw = 1;
-      int mh = (int)((float)(win->h + title_h) * scale);
-      for (int dy = cy0; dy < cy1; dy++) {
-        int py = win->y + dy;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-        int src_y = rust_windows_compute_content_src_y(dy, win->scroll_y, scale, win->buffer_h);
-        if (src_y < 0) continue;
-        uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
-        int scaled_mask_y = (int)((float)(dy + title_h) * scale);
-        if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
-        uint8_t *mask_line = &win->window_mask[scaled_mask_y * mw];
-        uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
-        for (int dx = 0; dx < win->w; dx++) {
-          int px = win->x + dx;
-          if (px < 0 || px >= layer->width) continue;
-          int src_x = (int)((float)dx * scale);
-          if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
-          uint32_t color = src_content_line[src_x];
-          uint8_t content_a = (uint8_t)(color >> 24);
-          
-          // Blend content over window background
-          color = blend_colors(win->background_color, color, content_a);
-          if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
-          
-          uint8_t final_alpha = (uint8_t)(color >> 24);
-          if (!win->is_maximized && !win->no_decoration) {
-              int scaled_dx = (int)((float)dx * scale);
-              if (scaled_dx >= mw) scaled_dx = mw - 1;
-              uint8_t mask_a = mask_line[scaled_dx];
-              final_alpha = (uint8_t)((uint32_t)final_alpha * mask_a / 255);
-          }
-          dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
-        }
-      }
-    }
+    rust_windows_draw_single_window(layer, win);
 }
 
 static void redraw_warp_svg(layer_t *layer) {

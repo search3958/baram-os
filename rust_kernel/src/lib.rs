@@ -9,6 +9,7 @@ mod windows;
 use core::ffi::{c_char, c_uchar};
 use core::panic::PanicInfo;
 use warp::RustWindowConfig;
+use windows::{RustLayer, RustWindow};
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -84,6 +85,21 @@ pub extern "C" fn rust_windows_compute_content_src_y(
     buffer_h: i32,
 ) -> i32 {
     windows::compute_content_src_y(dy, scroll_y, scale, buffer_h)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_windows_clear_cached_buffers(win: *mut RustWindow) {
+    windows::clear_cached_buffers(win);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_windows_bake_window(win: *mut RustWindow) {
+    windows::bake_window(win);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_windows_draw_single_window(layer: *mut RustLayer, win: *mut RustWindow) {
+    windows::draw_single_window(layer, win);
 }
 
 #[no_mangle]
