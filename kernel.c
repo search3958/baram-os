@@ -2395,6 +2395,31 @@ static void draw_wallpaper(layer_t *layer) {
 }
 
 static void draw_single_window(layer_t *layer, window_t *win) {
+    if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
+      int title_h = win->no_decoration ? 0 : 40;
+      int shadow_size = win->no_decoration ? 0 : 48;
+      int start_x = win->x - shadow_size;
+      int start_y = win->y - title_h - shadow_size;
+      int x0 = (start_x < 0) ? -start_x : 0;
+      int y0 = (start_y < 0) ? -start_y : 0;
+      int x1 = start_x + win->unified_w > layer->width ? layer->width - start_x : win->unified_w;
+      int y1 = start_y + win->unified_h > layer->height ? layer->height - start_y : win->unified_h;
+
+      for (int dy = y0; dy < y1; dy++) {
+        int py = start_y + dy;
+        uint32_t *dst_line = &layer->buffer[py * layer->width];
+        uint32_t *src_line = &win->unified_buffer[dy * win->unified_w];
+        for (int dx = x0; dx < x1; dx++) {
+          int px = start_x + dx;
+          uint32_t color = src_line[dx];
+          uint8_t alpha = (uint8_t)(color >> 24);
+          if (alpha == 0) continue;
+          dst_line[px] = blend_colors(dst_line[px], color, alpha);
+        }
+      }
+      return;
+    }
+
     if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
