@@ -155,33 +155,34 @@ typedef struct {
     char prefix[155];
 } __attribute__((packed)) tar_header_t;
 
+typedef struct {
+  int x, y, w, h;
+  int no_decoration;
+  int is_movable;
+  int is_resizing_enabled;
+  int is_always_full_res;
+  int is_sticky;
+  uint32_t background_color;
+  int force_dark;
+} rust_window_config_t;
+
+extern uint32_t rust_foundation_octal_to_int(const char *s, int len);
+extern const char *rust_foundation_tar_find_file(const char *tar_data, size_t tar_size, const char *filename, uint32_t *out_size);
+extern uint32_t rust_graphics_lerp_color(uint32_t c1, uint32_t c2, float t);
+extern void rust_graphics_apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2);
+extern uint32_t rust_graphics_blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
+extern void rust_graphics_box_blur_alpha(unsigned char *data, int w, int h, int radius);
+extern int rust_windows_should_bake_inactive(int is_active, int buffer_h, int window_h, float scroll_y, float target_scroll_y);
+extern int rust_windows_compute_content_src_y(int dy, float scroll_y, float scale, int buffer_h);
+extern void rust_warp_parse_baram_config(const char *code, int screen_width, rust_window_config_t *cfg);
+extern char *rust_kernel_append_uint(char *p, unsigned int v);
+
 static uint32_t octal_to_int(const char *s, int len) {
-    uint32_t res = 0;
-    int i = 0;
-    // Skip leading spaces or nulls
-    while (i < len && (s[i] == ' ' || s[i] == '\0')) i++;
-    while (i < len) {
-        if (s[i] < '0' || s[i] > '7') break;
-        res = res * 8 + (s[i] - '0');
-        i++;
-    }
-    return res;
+    return rust_foundation_octal_to_int(s, len);
 }
 
 static const char* tar_find_file(const char *tar_data, size_t tar_size, const char *filename, uint32_t *out_size) {
-    const char *p = tar_data;
-    const char *end = tar_data + tar_size;
-    while (p + 512 <= end) {
-        tar_header_t *h = (tar_header_t *)p;
-        if (h->name[0] == '\0') break;
-        uint32_t size = octal_to_int(h->size, 12);
-        if (strcmp(h->name, filename) == 0) {
-            if (out_size) *out_size = size;
-            return p + 512;
-        }
-        p += 512 + ((size + 511) & ~511);
-    }
-    return NULL;
+    return rust_foundation_tar_find_file(tar_data, tar_size, filename, out_size);
 }
 
 // OS Settings (mapped from initrd)
@@ -807,6 +808,20 @@ int strncasecmp(const char *a, const char *b, size_t n) {
   return 0;
 }
 
+int memcmp(const void *a, const void *b, size_t n) {
+  const unsigned char *pa = (const unsigned char *)a;
+  const unsigned char *pb = (const unsigned char *)b;
+  for (size_t i = 0; i < n; ++i) {
+    if (pa[i] != pb[i])
+      return (int)pa[i] - (int)pb[i];
+  }
+  return 0;
+}
+
+int bcmp(const void *a, const void *b, size_t n) { return memcmp(a, b, n); }
+
+void rust_eh_personality(void) {}
+
 char *strncpy(char *dst, const char *src, size_t n) {
   size_t i = 0;
   for (; i < n && src[i]; ++i)
@@ -1241,56 +1256,13 @@ int sprintf(char *str, const char *format, ...) {
 
 // 2つの色を線形補間
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t) {
-  uint8_t r1 = (c1 >> 16) & 0xFF, g1 = (c1 >> 8) & 0xFF, b1 = c1 & 0xFF,
-          a1 = (c1 >> 24) & 0xFF;
-  uint8_t r2 = (c2 >> 16) & 0xFF, g2 = (c2 >> 8) & 0xFF, b2 = c2 & 0xFF,
-          a2 = (c2 >> 24) & 0xFF;
-  uint8_t r = (uint8_t)(r1 + (r2 - r1) * t);
-  uint8_t g = (uint8_t)(g1 + (g2 - g1) * t);
-  uint8_t b = (uint8_t)(b1 + (b2 - b1) * t);
-  uint8_t a = (uint8_t)(a1 + (a2 - a1) * t);
-  return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) |
-         (uint32_t)b;
+  return rust_graphics_lerp_color(c1, c2, t);
 }
 
 static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
                                  int ry, int rw, int rh, uint32_t c1,
                                  uint32_t c2) {
-  float cx = (float)rx + (float)rw / 2.0f;
-  float cy = (float)ry + (float)rh / 2.0f;
-  const float PI = 3.14159265f;
-
-  for (int y = ry; y < ry + rh; y++) {
-    if (y < 0 || y >= h)
-      continue;
-    for (int x = rx; x < rx + rw; x++) {
-      if (x < 0 || x >= w)
-        continue;
-
-      // 元のアルファ値をマスクとして使用
-      uint8_t mask = data[(y * w + x) * 4 + 3];
-      if (mask == 0)
-        continue;
-
-      float dx = (float)x - cx;
-      float dy = (float)y - cy;
-      float angle = atan2f(dy, dx);         // -PI to PI
-      float t = (angle + PI) / (2.0f * PI); // 0 to 1
-
-      uint32_t color = lerp_color(c1, c2, t);
-      uint8_t r = (color >> 16) & 0xFF;
-      uint8_t g = (color >> 8) & 0xFF;
-      uint8_t b = color & 0xFF;
-      uint8_t a = (uint8_t)((color >> 24) & 0xFF);
-
-      // マスク（図形の形）を考慮して書き込み
-      size_t idx = (size_t)(y * w + x) * 4;
-      data[idx + 0] = r;
-      data[idx + 1] = g;
-      data[idx + 2] = b;
-      data[idx + 3] = (uint8_t)(a * mask / 255);
-    }
-  }
+  rust_graphics_apply_conic_gradient(data, w, h, rx, ry, rw, rh, c1, c2);
 }
 
 static void svg_render_full(layer_t *layer) {
@@ -2207,7 +2179,7 @@ static void window_redraw(window_t *win) {
     }
   }
 
-  if (!is_active) {
+  if (rust_windows_should_bake_inactive(is_active ? 1 : 0, win->buffer_h, win->h, win->scroll_y, win->target_scroll_y)) {
     window_bake(win);
   }
 
@@ -2217,59 +2189,33 @@ static void window_redraw(window_t *win) {
 }
 
 static void parse_baram_config(window_t *win, const char *code) {
-  if (!code) return;
-  const char *tag = "baram-os-config";
-  const char *pos = strstr(code, tag);
-  if (!pos) return;
+  rust_window_config_t cfg;
+  if (!win) return;
+  cfg.x = win->x;
+  cfg.y = win->y;
+  cfg.w = win->w;
+  cfg.h = win->h;
+  cfg.no_decoration = win->no_decoration;
+  cfg.is_movable = win->is_movable;
+  cfg.is_resizing_enabled = win->is_resizing_enabled;
+  cfg.is_always_full_res = win->is_always_full_res;
+  cfg.is_sticky = win->is_sticky;
+  cfg.background_color = win->background_color;
+  cfg.force_dark = win->force_dark;
 
-  const char *p = strstr(pos, "{");
-  if (!p) return;
-  p++; // Skip '{'
+  rust_warp_parse_baram_config(code, SCREEN_WIDTH, &cfg);
 
-  int brace_level = 1;
-  while (*p && brace_level > 0) {
-    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',')) p++;
-    if (!*p || *p == '}') break;
-
-    // key:("value") の形式を簡易パース
-    char key[64] = {0};
-    int i = 0;
-    while (*p && *p != ':' && *p != ' ' && i < 63) key[i++] = *p++;
-    key[i] = '\0';
-
-    while (*p && (*p == ':' || *p == ' ' || *p == '(' || *p == '\"')) p++;
-    
-    char val[64] = {0};
-    i = 0;
-    while (*p && *p != '\"' && *p != ')' && *p != ' ' && *p != ',' && *p != '}' && i < 63) val[i++] = *p++;
-    val[i] = '\0';
-
-    // 設定の適用
-    if (strcmp(key, "height") == 0) win->h = atoi(val);
-    else if (strcmp(key, "width") == 0) {
-      if (strstr(val, "vw")) win->w = (atoi(val) * SCREEN_WIDTH) / 100;
-      else win->w = atoi(val);
-    }
-    else if (strcmp(key, "left") == 0) win->x = atoi(val);
-    else if (strcmp(key, "top") == 0) win->y = atoi(val);
-    else if (strcmp(key, "showBar") == 0) win->no_decoration = (strcmp(val, "false") == 0);
-    else if (strcmp(key, "move") == 0) win->is_movable = (strcmp(val, "true") == 0);
-    else if (strcmp(key, "resize") == 0) win->is_resizing_enabled = (strcmp(val, "true") == 0); 
-    else if (strcmp(key, "front") == 0) {
-      win->is_always_full_res = (strcmp(val, "true") == 0);
-      win->is_sticky = (strcmp(val, "true") == 0);
-    }
-    else if (strcmp(key, "background") == 0) win->background_color = parse_hex_color(val);
-    else if (strcmp(key, "dark") == 0) win->force_dark = (strcmp(val, "true") == 0);
-
-    // 次の項目へ
-    while (*p && *p != ',' && *p != '}') {
-        if (*p == '{') brace_level++;
-        if (*p == '}') { brace_level--; if (brace_level <= 0) break; }
-        p++;
-    }
-    if (*p == ',') p++;
-  }
+  win->x = cfg.x;
+  win->y = cfg.y;
+  win->w = cfg.w;
+  win->h = cfg.h;
+  win->no_decoration = cfg.no_decoration;
+  win->is_movable = cfg.is_movable;
+  win->is_resizing_enabled = cfg.is_resizing_enabled;
+  win->is_always_full_res = cfg.is_always_full_res;
+  win->is_sticky = cfg.is_sticky;
+  win->background_color = cfg.background_color;
+  win->force_dark = cfg.force_dark;
 }
 
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
@@ -2483,8 +2429,8 @@ static void draw_single_window(layer_t *layer, window_t *win) {
       for (int dy = cy0; dy < cy1; dy++) {
         int py = win->y + dy;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
-        int src_y = (int)((float)dy * scale);
-        if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
+        int src_y = rust_windows_compute_content_src_y(dy, win->scroll_y, scale, win->buffer_h);
+        if (src_y < 0) continue;
         uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
         int scaled_mask_y = (int)((float)(dy + title_h) * scale);
         if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
@@ -2817,20 +2763,7 @@ void timer_phase(int hz) {
 }
 
 static char *append_uint(char *p, unsigned int v) {
-  char tmp[10];
-  int n = 0;
-  if (v == 0) {
-    *p++ = '0';
-    return p;
-  }
-  while (v > 0 && n < (int)sizeof(tmp)) {
-    tmp[n++] = (char)('0' + (v % 10));
-    v /= 10;
-  }
-  while (n-- > 0) {
-    *p++ = tmp[n];
-  }
-  return p;
+  return rust_kernel_append_uint(p, v);
 }
 
 // キー入力バッファ
@@ -3004,19 +2937,7 @@ static int font_init(struct multiboot_info *mbi) {
 
 // 2つの色をアルファ値(0-255)で合成するヘルパー
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
-  if (alpha == 0) return bg;
-  if (alpha == 255) return (fg | 0xFF000000u);
-
-  uint32_t inv_alpha = 255 - alpha;
-  uint32_t rb_bg = bg & 0xFF00FFu;
-  uint32_t g_bg = (bg >> 8) & 0xFF;
-  uint32_t rb_fg = fg & 0xFF00FFu;
-  uint32_t g_fg = (fg >> 8) & 0xFF;
-
-  uint32_t rb_out = ((rb_fg * alpha) + (rb_bg * inv_alpha)) >> 8;
-  uint32_t g_out = ((g_fg * alpha) + (g_bg * inv_alpha)) >> 8;
-
-  return 0xFF000000u | (rb_out & 0xFF00FFu) | ((g_out & 0xFF) << 8);
+  return rust_graphics_blend_colors(bg, fg, alpha);
 }
 
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
@@ -3287,45 +3208,7 @@ static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
 
 // ボックスブラー (アルファチャンネルのみ)
 static void box_blur_alpha(unsigned char *data, int w, int h, int radius) {
-  if (radius <= 0)
-    return;
-  unsigned char *tmp = (unsigned char *)malloc((size_t)w * (size_t)h);
-  if (!tmp)
-    return;
-
-  for (int pass = 0; pass < 3; pass++) { // 3回繰り返してガウスブラーに近づける
-    // 横方向
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        int sum = 0;
-        int count = 0;
-        for (int dx = -radius; dx <= radius; dx++) {
-          int nx = x + dx;
-          if (nx >= 0 && nx < w) {
-            sum += data[(y * w + nx) * 4 + 3];
-            count++;
-          }
-        }
-        tmp[y * w + x] = (unsigned char)(sum / count);
-      }
-    }
-    // 縦方向
-    for (int x = 0; x < w; x++) {
-      for (int y = 0; y < h; y++) {
-        int sum = 0;
-        int count = 0;
-        for (int dy = -radius; dy <= radius; dy++) {
-          int ny = y + dy;
-          if (ny >= 0 && ny < h) {
-            sum += tmp[ny * w + x];
-            count++;
-          }
-        }
-        data[(y * w + x) * 4 + 3] = (unsigned char)(sum / count);
-      }
-    }
-  }
-  free(tmp);
+  rust_graphics_box_blur_alpha(data, w, h, radius);
 }
 
 static void cursor_init(void) {
