@@ -78,7 +78,7 @@ do_build_and_run() {
     # 5. C 言語のコンパイル
     CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
 
-    i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || return 1
+    i686-elf-gcc $CFLAGS -c kernel_runtime.c -o output/kernel.o || return 1
     show_progress 5
     i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
     show_progress 6
