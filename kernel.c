@@ -184,6 +184,7 @@ extern char *rust_kernel_append_uint(char *p, unsigned int v);
 extern const char *rust_kernel_find_global(const char *key, const void *vars, int count);
 extern int rust_kernel_upsert_global(const char *key, const char *val, void *vars, int max_vars, int *count, int append_mode);
 extern int rust_kernel_sync_all_window_themes(void *windows, int count, int *last_is_dark, int system_dark);
+extern void rust_kernel_run_kmain(uint32_t magic, void *mbi);
 
 static uint32_t octal_to_int(const char *s, int len) {
     return rust_foundation_octal_to_int(s, len);
@@ -2955,7 +2956,27 @@ static void cursor_init(void) {
   nsvgDelete(img);
 }
 
-void kmain(uint32_t magic, struct multiboot_info *mbi) {
+static layer_t g_kmain_svg_layer;
+static layer_t g_kmain_blink_layer;
+static layer_t g_kmain_hud_layer;
+static layer_t g_kmain_nextgen_ui_layer;
+static layer_t g_kmain_text_layer;
+static uint32_t g_kmain_mem_total_kb = 0;
+static uint32_t g_kmain_last_blink_tick = 0;
+static int g_kmain_blink_state = 0;
+static uint32_t g_kmain_last_stat_tick = 0;
+static uint32_t g_kmain_last_idle_tick = 0;
+static unsigned int g_kmain_cpu_percent = 0;
+static int g_kmain_classic_last_hover = -2;
+static int g_kmain_classic_last_mouse_x = -1;
+static int g_kmain_classic_last_mouse_y = -1;
+static uint8_t g_kmain_prev_mouse_buttons = 0;
+static uint32_t g_kmain_boot_start_tick = 0;
+static int g_kmain_auto_booted = 0;
+static int g_kmain_window_last_mouse_x = -1;
+static int g_kmain_window_last_mouse_y = -1;
+
+void kernel_bootstrap(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
   mbi_ptr = mbi;
   if (mbi)
@@ -2973,8 +2994,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   }
   // 4KBアライメント
   heap_start = (heap_start + 4095) & ~4095;
-  uint32_t mem_total_kb = mbi->mem_upper;
-  uintptr_t heap_end = 0x100000 + mem_total_kb * 1024;
+  g_kmain_mem_total_kb = mbi->mem_upper;
+  uintptr_t heap_end = 0x100000 + g_kmain_mem_total_kb * 1024;
   if (heap_end > heap_start) {
       heap_init((void*)heap_start, heap_end - heap_start);
   }
@@ -3026,70 +3047,65 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // 2. SVG表示エリア (ロゴ用)
   svg_buf = (uint32_t *)malloc(SVG_WIDTH * SVG_HEIGHT * 4);
-  layer_t svg_layer;
-  svg_layer.buffer = svg_buf;
-  svg_layer.x = 0;
-  svg_layer.y = 0;
-  svg_layer.width = SVG_WIDTH;
-  svg_layer.height = SVG_HEIGHT;
-  svg_layer.transparent = 0;
-  svg_layer.active = 1;
-  svg_layer.dynamic = 0;
-  if (svg_buf) svg_init(&svg_layer, 0);
-  register_layer(&svg_layer);
+  g_kmain_svg_layer.buffer = svg_buf;
+  g_kmain_svg_layer.x = 0;
+  g_kmain_svg_layer.y = 0;
+  g_kmain_svg_layer.width = SVG_WIDTH;
+  g_kmain_svg_layer.height = SVG_HEIGHT;
+  g_kmain_svg_layer.transparent = 0;
+  g_kmain_svg_layer.active = 1;
+  g_kmain_svg_layer.dynamic = 0;
+  if (svg_buf) svg_init(&g_kmain_svg_layer, 0);
+  register_layer(&g_kmain_svg_layer);
 
   // 3. 点滅インジケータ (右下)
-  layer_t blink_layer;
-  blink_layer.buffer = blink_buf;
-  blink_layer.x = SCREEN_WIDTH - 60;
-  blink_layer.y = SCREEN_HEIGHT - 60;
-  blink_layer.width = 50;
-  blink_layer.height = 50;
-  blink_layer.transparent = 0;
-  blink_layer.active = 1;
-  blink_layer.dynamic = 1;
-  layer_fill(&blink_layer, 0xFF0000FF); // 青色
-  register_layer(&blink_layer);
+  g_kmain_blink_layer.buffer = blink_buf;
+  g_kmain_blink_layer.x = SCREEN_WIDTH - 60;
+  g_kmain_blink_layer.y = SCREEN_HEIGHT - 60;
+  g_kmain_blink_layer.width = 50;
+  g_kmain_blink_layer.height = 50;
+  g_kmain_blink_layer.transparent = 0;
+  g_kmain_blink_layer.active = 1;
+  g_kmain_blink_layer.dynamic = 1;
+  layer_fill(&g_kmain_blink_layer, 0xFF0000FF); // 青色
+  register_layer(&g_kmain_blink_layer);
 
   // 4. HUD (左下) - CPU / MEM / モード / ステータス
-  layer_t hud_layer;
-  hud_layer.buffer = hud_buf;
-  hud_layer.x = 10;
-  hud_layer.y = SCREEN_HEIGHT - (g_hud_current_h + 10);
-  hud_layer.width = HUD_W;
-  hud_layer.height = g_hud_current_h;
-  hud_layer.transparent = 0;
-  hud_layer.active = g_dev_show_hud;
-  hud_layer.dynamic = 1;
-  layer_fill(&hud_layer, 0xFF000000);
+  g_kmain_hud_layer.buffer = hud_buf;
+  g_kmain_hud_layer.x = 10;
+  g_kmain_hud_layer.y = SCREEN_HEIGHT - (g_hud_current_h + 10);
+  g_kmain_hud_layer.width = HUD_W;
+  g_kmain_hud_layer.height = g_hud_current_h;
+  g_kmain_hud_layer.transparent = 0;
+  g_kmain_hud_layer.active = g_dev_show_hud;
+  g_kmain_hud_layer.dynamic = 1;
+  layer_fill(&g_kmain_hud_layer, 0xFF000000);
 
   // 5. 次世代UI SVGレイヤー
-  layer_t nextgen_ui_layer;
-  nextgen_ui_layer.buffer = main_screen_buf;
-  nextgen_ui_layer.x = 0;
-  nextgen_ui_layer.y = 0;
-  nextgen_ui_layer.width = SCREEN_WIDTH;
-  nextgen_ui_layer.height = SCREEN_HEIGHT;
-  nextgen_ui_layer.transparent = TRANSPARENT_COLOR;
-  nextgen_ui_layer.active = 0;
-  nextgen_ui_layer.dynamic = 1;
+  g_kmain_nextgen_ui_layer.buffer = main_screen_buf;
+  g_kmain_nextgen_ui_layer.x = 0;
+  g_kmain_nextgen_ui_layer.y = 0;
+  g_kmain_nextgen_ui_layer.width = SCREEN_WIDTH;
+  g_kmain_nextgen_ui_layer.height = SCREEN_HEIGHT;
+  g_kmain_nextgen_ui_layer.transparent = TRANSPARENT_COLOR;
+  g_kmain_nextgen_ui_layer.active = 0;
+  g_kmain_nextgen_ui_layer.dynamic = 1;
   {
     for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
       main_screen_buf[i] = TRANSPARENT_COLOR;
   }
-  register_layer(&nextgen_ui_layer);
-  register_layer(&hud_layer); // HUDを上に
+  register_layer(&g_kmain_nextgen_ui_layer);
+  register_layer(&g_kmain_hud_layer); // HUDを上に
 
   // 6. 文字レイヤー
-  layer_t text_layer;
-  text_layer.buffer = text_layer_buf;
-  text_layer.x = 0;
-  text_layer.y = 0;
-  text_layer.width = TEXT_LAYER_W;
-  text_layer.height = TEXT_LAYER_H;
-  text_layer.transparent = TRANSPARENT_COLOR;
-  text_layer.active = 1;
-  text_layer.dynamic = 1;
+  g_kmain_text_layer.buffer = text_layer_buf;
+  g_kmain_text_layer.x = 0;
+  g_kmain_text_layer.y = 0;
+  g_kmain_text_layer.width = TEXT_LAYER_W;
+  g_kmain_text_layer.height = TEXT_LAYER_H;
+  g_kmain_text_layer.transparent = TRANSPARENT_COLOR;
+  g_kmain_text_layer.active = 1;
+  g_kmain_text_layer.dynamic = 1;
   {
     for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++)
       text_layer_buf[i] = TRANSPARENT_COLOR;
@@ -3097,24 +3113,23 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   // 初回描画を確実に実行
   screen_mark_static_dirty();
   screen_mark_all_dirty();
+  g_kmain_last_blink_tick = 0;
+  g_kmain_blink_state = 0;
+  g_kmain_last_stat_tick = 0;
+  g_kmain_last_idle_tick = idle_ticks;
+  g_kmain_cpu_percent = 0;
+  g_kmain_classic_last_hover = -2;
+  g_kmain_classic_last_mouse_x = -1;
+  g_kmain_classic_last_mouse_y = -1;
+  g_kmain_prev_mouse_buttons = 0;
+  g_kmain_boot_start_tick = timer_ticks;
+  g_kmain_auto_booted = 0;
+  g_kmain_window_last_mouse_x = -1;
+  g_kmain_window_last_mouse_y = -1;
+}
 
-  uint32_t last_blink_tick = 0;
-  int blink_state = 0;
-  uint32_t last_stat_tick = 0;
-  uint32_t last_idle_tick = idle_ticks;
-  unsigned int cpu_percent = 0;
-
-  int last_hover = -2;
-  int last_mouse_x = -1;
-  int last_mouse_y = -1;
-  uint8_t prev_mouse_buttons = 0;
-
-  uint32_t boot_start_tick = timer_ticks;
-  int auto_booted = 0;
-
-  // メインループ (常時60fpsターゲット)
-  while (1) {
-    if (auto_booted && g_pending_command_count > 0) {
+void kernel_main_iteration(void) {
+    if (g_kmain_auto_booted && g_pending_command_count > 0) {
       // Process one command at a time from the head
       char log[256] = "ExecFirstboot: ";
       strlcat(log, g_pending_commands[0], 255);
@@ -3129,8 +3144,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       g_svg_dirty = 1;
     }
 
-    if (!auto_booted && g_os_settings_found && current_os_mode == OS_MODE_CLASSIC &&
-        (timer_ticks - boot_start_tick > 50)) {
+    if (!g_kmain_auto_booted && g_os_settings_found && current_os_mode == OS_MODE_CLASSIC &&
+        (timer_ticks - g_kmain_boot_start_tick > 50)) {
       
       current_os_mode = OS_MODE_WARPDESKTOP;
       g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
@@ -3143,46 +3158,46 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       extern void screen_mark_static_dirty(void);
       screen_mark_static_dirty();
       
-      svg_layer.active = 0;
+      g_kmain_svg_layer.active = 0;
       if (svg_buf) {
           free(svg_buf);
           svg_buf = NULL;
-          svg_layer.buffer = NULL;
+          g_kmain_svg_layer.buffer = NULL;
       }
-      blink_layer.active = 0;
-      nextgen_ui_layer.active = 1;
-      text_layer.active = 0;
+      g_kmain_blink_layer.active = 0;
+      g_kmain_nextgen_ui_layer.active = 1;
+      g_kmain_text_layer.active = 0;
       keybuf_str[0] = '\0';
       g_svg_dirty = 1;
-      svg_init_nextgen(&nextgen_ui_layer);
+      svg_init_nextgen(&g_kmain_nextgen_ui_layer);
       screen_mark_static_dirty();
-      auto_booted = 1;
+      g_kmain_auto_booted = 1;
       set_w1_global("--warpSystemLog", "DesktopReady.");
     }
 
     if (current_os_mode == OS_MODE_CLASSIC) {
       // 0.1秒(10 ticks)ごとに点滅
-      if (timer_ticks - last_blink_tick >= 10) {
-        blink_state = !blink_state;
-        blink_layer.active = blink_state;
-        last_blink_tick = timer_ticks;
+      if (timer_ticks - g_kmain_last_blink_tick >= 10) {
+        g_kmain_blink_state = !g_kmain_blink_state;
+        g_kmain_blink_layer.active = g_kmain_blink_state;
+        g_kmain_last_blink_tick = timer_ticks;
       }
 
       int mx = mouse_x + MOUSE_HOTSPOT_X;
       int my = mouse_y + MOUSE_HOTSPOT_Y;
-      if (mx != last_mouse_x || my != last_mouse_y) {
-        int hover = svg_pick_shape(&svg_layer, mx, my);
-        if (hover != last_hover) {
-          last_hover = hover;
+      if (mx != g_kmain_classic_last_mouse_x || my != g_kmain_classic_last_mouse_y) {
+        int hover = svg_pick_shape(&g_kmain_svg_layer, mx, my);
+        if (hover != g_kmain_classic_last_hover) {
+          g_kmain_classic_last_hover = hover;
         }
-        last_mouse_x = mx;
-        last_mouse_y = my;
+        g_kmain_classic_last_mouse_x = mx;
+        g_kmain_classic_last_mouse_y = my;
         if (keybuf_str[0] != '\0') {
           int my_clamp =
               my < 0 ? 0 : (my >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : my);
           float fsize = 16.0f + (float)my_clamp * (200.0f - 16.0f) /
                                     (float)(SCREEN_HEIGHT - 1);
-          text_layer_redraw(&text_layer, fsize);
+          text_layer_redraw(&g_kmain_text_layer, fsize);
         }
       }
 
@@ -3206,9 +3221,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         } else {
           g_scroll_y += dy;
         }
-        svg_render_full(&svg_layer);
-        memcpy(svg_base_buf, svg_layer.buffer,
-               sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+        svg_render_full(&g_kmain_svg_layer);
+        memcpy(svg_base_buf, g_kmain_svg_layer.buffer,
+               sizeof(uint32_t) * g_kmain_svg_layer.width * g_kmain_svg_layer.height);
         screen_mark_static_dirty();
       }
 
@@ -3222,7 +3237,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           else if (c == '\n') {
             handle_command(keybuf_str);
             keybuf_str[0] = '\0';
-            text_layer_redraw(&text_layer, 32.0f);
+            text_layer_redraw(&g_kmain_text_layer, 32.0f);
           } else if (c == '\b') {
 
             int len = strlen(keybuf_str);
@@ -3245,20 +3260,20 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             my_now = SCREEN_HEIGHT - 1;
           float fsize = 16.0f + (float)my_now * (200.0f - 16.0f) /
                                     (float)(SCREEN_HEIGHT - 1);
-          text_layer_redraw(&text_layer, fsize);
+          text_layer_redraw(&g_kmain_text_layer, fsize);
         }
       }
 
-      if (timer_ticks - last_stat_tick >= 100) {
-        uint32_t total = timer_ticks - last_stat_tick;
-        uint32_t idle = idle_ticks - last_idle_tick;
+      if (timer_ticks - g_kmain_last_stat_tick >= 100) {
+        uint32_t total = timer_ticks - g_kmain_last_stat_tick;
+        uint32_t idle = idle_ticks - g_kmain_last_idle_tick;
         if (total > 0) {
           uint32_t idle_pct = (idle * 100u) / total;
-          cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+          g_kmain_cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, mem_total_kb);
-        last_stat_tick = timer_ticks;
-        last_idle_tick = idle_ticks;
+        hud_update(&g_kmain_hud_layer, g_kmain_cpu_percent, g_kmain_mem_total_kb);
+        g_kmain_last_stat_tick = timer_ticks;
+        g_kmain_last_idle_tick = idle_ticks;
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
@@ -3345,13 +3360,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
       // 3. Mouse Interaction
       uint8_t curr_btns = mouse_buttons;
-      static int last_mouse_x = -1, last_mouse_y = -1;
-      int mouse_dx = (last_mouse_x == -1) ? 0 : mouse_x - last_mouse_x;
-      int mouse_dy = (last_mouse_y == -1) ? 0 : mouse_y - last_mouse_y;
-      last_mouse_x = mouse_x; last_mouse_y = mouse_y;
+      int mouse_dx = (g_kmain_window_last_mouse_x == -1) ? 0 : mouse_x - g_kmain_window_last_mouse_x;
+      int mouse_dy = (g_kmain_window_last_mouse_y == -1) ? 0 : mouse_y - g_kmain_window_last_mouse_y;
+      g_kmain_window_last_mouse_x = mouse_x; g_kmain_window_last_mouse_y = mouse_y;
 
-      if (curr_btns != prev_mouse_buttons) {
-        if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
+      if (curr_btns != g_kmain_prev_mouse_buttons) {
+        if ((curr_btns & 1) && !(g_kmain_prev_mouse_buttons & 1)) {
           // Press
           int hit_index = -1;
           int hx = mouse_x + MOUSE_HOTSPOT_X;
@@ -3410,7 +3424,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               if (hx >= hwin->x + 8 && hx < hwin->x + 32) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
               else if (hx >= hwin->x + 32 && hx < hwin->x + 56) {
                 if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
-                else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
+                else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = g_kmain_nextgen_ui_layer.width; hwin->h = g_kmain_nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
                 hwin->is_dirty = 1;
               } else {
                 int handled = 0;
@@ -3448,7 +3462,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               }
             } else { g_active_window_index = hit_index; g_svg_dirty = 1; }
           }
-        } else if (!(curr_btns & 1) && (prev_mouse_buttons & 1)) {
+        } else if (!(curr_btns & 1) && (g_kmain_prev_mouse_buttons & 1)) {
           // Release
           for (int i = 0; i < g_window_count; i++) {
             if (g_windows[i].is_resizing) {
@@ -3459,7 +3473,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             g_windows[i].is_resizing = 0;
           }
         }
-        prev_mouse_buttons = curr_btns;
+        g_kmain_prev_mouse_buttons = curr_btns;
       }
 
       // Drag/Resize movement or pointcheck mouse update
@@ -3539,23 +3553,26 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           g_target_scroll_y = 0.0f;
       }
 
-      if (g_svg_dirty) redraw_warp_svg(&nextgen_ui_layer);
+      if (g_svg_dirty) redraw_warp_svg(&g_kmain_nextgen_ui_layer);
 
-      if (timer_ticks - last_stat_tick >= 100) {
-        uint32_t total = timer_ticks - last_stat_tick;
-        uint32_t idle = idle_ticks - last_idle_tick;
+      if (timer_ticks - g_kmain_last_stat_tick >= 100) {
+        uint32_t total = timer_ticks - g_kmain_last_stat_tick;
+        uint32_t idle = idle_ticks - g_kmain_last_idle_tick;
         if (total > 0) {
           uint32_t idle_pct = (idle * 100u) / total;
-          cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+          g_kmain_cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
         }
-        hud_update(&hud_layer, cpu_percent, mem_total_kb);
-        last_stat_tick = timer_ticks;
-        last_idle_tick = idle_ticks;
+        hud_update(&g_kmain_hud_layer, g_kmain_cpu_percent, g_kmain_mem_total_kb);
+        g_kmain_last_stat_tick = timer_ticks;
+        g_kmain_last_idle_tick = idle_ticks;
       }
     }
 
     // 常時再描画
     cpu_idle = 0;
     screen_refresh();
-  }
+}
+
+void kmain(uint32_t magic, struct multiboot_info *mbi) {
+  rust_kernel_run_kmain(magic, mbi);
 }

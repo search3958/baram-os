@@ -6,6 +6,8 @@ unsafe extern "C" {
     fn warp_context_set_state(ctx: *mut c_void, key: *const c_char, val: *const c_char);
     fn warp1_context_set_state(ctx: *mut c_void, key: *const c_char, val: *const c_char);
     fn kernel_window_update_caches(win: *mut RustWindow);
+    fn kernel_bootstrap(magic: u32, mbi: *mut c_void);
+    fn kernel_main_iteration();
 }
 
 #[repr(C)]
@@ -159,6 +161,13 @@ pub unsafe fn sync_all_window_themes(
 
     *last_is_dark = system_dark;
     1
+}
+
+pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
+    kernel_bootstrap(magic, mbi);
+    loop {
+        kernel_main_iteration();
+    }
 }
 
 pub unsafe fn append_uint(mut p: *mut u8, mut v: u32) -> *mut u8 {
