@@ -2078,17 +2078,21 @@ static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
   int is_active = (win == &g_windows[g_active_window_index]);
-  float target_scale = (is_active || win->is_always_full_res) ? 1.0f : 0.5f; // 4 pixels for 1 color (2x2)
+  float target_scale = 1.0f;
 
   
   // If resolution scale changed, force update
   if (win->render_scale != target_scale) {
     win->is_dirty = 1;
     win->render_scale = target_scale;
-    if (target_scale > 0.5f) { // If becoming active
-        if (win->unified_buffer) { free(win->unified_buffer); win->unified_buffer = NULL; }
-    }
     window_update_caches(win);
+  }
+
+  if (is_active && win->unified_buffer) {
+    free(win->unified_buffer);
+    win->unified_buffer = NULL;
+    win->unified_w = 0;
+    win->unified_h = 0;
   }
 
   // Check if update is needed (engine_dirty flag)
@@ -2203,8 +2207,8 @@ static void window_redraw(window_t *win) {
     }
   }
 
-  if (win->render_scale <= 0.5f) {
-      window_bake(win);
+  if (!is_active) {
+    window_bake(win);
   }
 
   win->is_dirty = 0;
