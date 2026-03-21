@@ -3854,6 +3854,24 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           }
           
           if (hit_index >= 0) {
+            if (!g_windows[hit_index].is_sticky && hit_index != g_active_window_index) {
+              int target_pos = g_window_count - 1;
+              while (target_pos > 0 && g_windows[target_pos].is_sticky) target_pos--;
+              if (hit_index < target_pos) {
+                window_t tmp = g_windows[hit_index];
+                for (int j = hit_index; j < target_pos; j++) g_windows[j] = g_windows[j+1];
+                g_windows[target_pos] = tmp;
+                g_active_window_index = target_pos;
+                window_set_all_dirty();
+              } else {
+                g_active_window_index = hit_index;
+                g_svg_dirty = 1;
+              }
+              hit_index = -2;
+            }
+          }
+
+          if (hit_index >= 0) {
             window_t *hwin = &g_windows[hit_index];
             // Title Bar check
             if (hy < hwin->y && !hwin->no_decoration) {
