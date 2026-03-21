@@ -103,6 +103,11 @@ pub unsafe extern "C" fn rust_windows_draw_single_window(layer: *mut RustLayer, 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rust_windows_update_window_caches(win: *mut RustWindow, is_active: i32) {
+    windows::update_window_caches(win, is_active);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rust_warp_parse_baram_config(
     code: *const c_char,
     screen_width: i32,

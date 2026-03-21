@@ -5,6 +5,14 @@ use crate::graphics::blend_colors;
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
+    fn sqrtf(v: f32) -> f32;
+    fn fabsf(v: f32) -> f32;
+    fn get_w1_global(key: *const c_char) -> *const c_char;
+    fn layer_draw_ttf(layer: *mut RustLayer, px: i32, py: i32, s: *const c_char, font_size: f32, color: u32);
+    fn warp_context_get_header_info(ctx: *mut c_void, out_text: *mut c_char, max_len: i32, out_action_count: *mut i32) -> i32;
+    fn warp_context_get_header_action_info(ctx: *mut c_void, action_index: i32, out_text: *mut c_char, max_len: i32);
+    fn warp1_context_get_header_info(ctx: *mut c_void, out_text: *mut c_char, max_len: i32, out_action_count: *mut i32) -> i32;
+    fn warp1_context_get_header_action_info(ctx: *mut c_void, action_index: i32, out_text: *mut c_char, max_len: i32);
 }
 
 #[repr(C)]
@@ -393,5 +401,244 @@ pub unsafe fn draw_single_window(layer: *mut RustLayer, win: *mut RustWindow) {
             }
         }
         dy += 1;
+    }
+}
+
+fn c_str_eq(ptr: *const c_char, s: &[u8]) -> bool {
+    if ptr.is_null() {
+        return false;
+    }
+    unsafe {
+        let bytes = core::ffi::CStr::from_ptr(ptr).to_bytes();
+        bytes == s
+    }
+}
+
+unsafe fn c_buf_len(ptr: *const c_char) -> i32 {
+    if ptr.is_null() {
+        return 0;
+    }
+    core::ffi::CStr::from_ptr(ptr).to_bytes().len() as i32
+}
+
+pub unsafe fn update_window_caches(win: *mut RustWindow, is_active: i32) {
+    if win.is_null() {
+        return;
+    }
+    let win = &mut *win;
+    let mut scale = win.render_scale;
+    if scale <= 0.0 {
+        scale = 1.0;
+    }
+
+    let title_h = if win.no_decoration != 0 { 0 } else { 40 };
+    let shadow_size = if win.no_decoration != 0 { 0 } else { 48 };
+    let win_r = 30.0f32;
+
+    let full_sw = win.w + shadow_size * 2;
+    let full_sh = win.h + title_h + shadow_size * 2;
+    let mut sw = ((full_sw as f32) * scale) as i32;
+    let mut sh = ((full_sh as f32) * scale) as i32;
+    if sw < 1 { sw = 1; }
+    if sh < 1 { sh = 1; }
+
+    if win.shadow_cache.is_null() || win.shadow_cache_w != sw || win.shadow_cache_h != sh {
+        if !win.shadow_cache.is_null() {
+            free(win.shadow_cache as *mut c_void);
+        }
+        win.shadow_cache = malloc((sw as usize) * (sh as usize)) as *mut u8;
+        win.shadow_cache_w = sw;
+        win.shadow_cache_h = sh;
+
+        let win_w_f = win.w as f32;
+        let win_h_f = (win.h + title_h) as f32;
+        let half_sw = full_sw as f32 / 2.0;
+        let half_sh = full_sh as f32 / 2.0;
+
+        let mut y = 0i32;
+        while y < sh {
+            let fy = y as f32 / scale;
+            let mut x = 0i32;
+            while x < sw {
+                let fx = x as f32 / scale;
+                let qx = fabsf(fx - half_sw) - (win_w_f / 2.0 - win_r);
+                let qy = fabsf(fy - half_sh) - (win_h_f / 2.0 - win_r);
+                let mx = if qx > 0.0 { qx } else { 0.0 };
+                let my = if qy > 0.0 { qy } else { 0.0 };
+                let mut inner = if qx > qy { qx } else { qy };
+                if inner > 0.0 { inner = 0.0; }
+                let dist = sqrtf(mx * mx + my * my) + inner - win_r;
+
+                let mut alpha = 0u8;
+                if dist <= 0.0 {
+                    alpha = 64;
+                } else if dist < shadow_size as f32 {
+                    let d_ratio = dist / shadow_size as f32;
+                    alpha = (64.0 * (1.0 - d_ratio) * (1.0 - d_ratio)) as u8;
+                }
+                *win.shadow_cache.add((y * sw + x) as usize) = alpha;
+                x += 1;
+            }
+            y += 1;
+        }
+    }
+
+    let full_fw = win.w;
+    let full_fh = title_h;
+    let mut fw = ((full_fw as f32) * scale) as i32;
+    let mut fh = ((full_fh as f32) * scale) as i32;
+    if fw < 1 && full_fw > 0 { fw = 1; }
+    if fh < 1 && full_fh > 0 { fh = 1; }
+
+    if win.frame_cache.is_null() || win.frame_cache_w != fw || win.frame_cache_h != fh {
+        if !win.frame_cache.is_null() {
+            free(win.frame_cache as *mut c_void);
+        }
+        win.frame_cache = malloc((fw as usize) * (fh as usize) * 4usize) as *mut u32;
+        win.frame_cache_w = fw;
+        win.frame_cache_h = fh;
+    }
+
+    let dark_key = b"~~main/dark\0";
+    let is_dark = c_str_eq(get_w1_global(dark_key.as_ptr() as *const c_char), b"true");
+    let theme = if is_dark {
+        if is_active != 0 { 0xff1e1e1e } else { 0xff333333 }
+    } else {
+        if is_active != 0 { 0xfff5f5f5 } else { 0xffe0e0e0 }
+    };
+    let mut i = 0i32;
+    while i < fw * fh {
+        *win.frame_cache.add(i as usize) = theme;
+        i += 1;
+    }
+
+    if fh > 0 {
+        let mut frame_l = RustLayer {
+            buffer: win.frame_cache,
+            x: 0,
+            y: 0,
+            width: fw,
+            height: fh,
+            transparent: 0,
+            active: 0,
+            dynamic: 0,
+        };
+
+        let mut header_text = [0 as c_char; 128];
+        let mut action_count = 0i32;
+        let has_header = if win.is_warp1 != 0 {
+            if !win.warp1_ctx.is_null() {
+                warp1_context_get_header_info(win.warp1_ctx, header_text.as_mut_ptr(), 128, &mut action_count)
+            } else { 0 }
+        } else if !win.warp_ctx.is_null() {
+            warp_context_get_header_info(win.warp_ctx, header_text.as_mut_ptr(), 128, &mut action_count)
+        } else { 0 };
+
+        if has_header != 0 {
+            layer_draw_ttf(&mut frame_l, (70.0 * scale) as i32, (12.0 * scale) as i32, header_text.as_ptr(), 16.0 * scale, if is_dark { 0xffeeeeee } else { 0xff333333 });
+            let mut ax = win.w - 12;
+            let mut j = 0i32;
+            while j < action_count {
+                let mut act_text = [0 as c_char; 64];
+                if win.is_warp1 != 0 {
+                    warp1_context_get_header_action_info(win.warp1_ctx, j, act_text.as_mut_ptr(), 64);
+                } else {
+                    warp_context_get_header_action_info(win.warp_ctx, j, act_text.as_mut_ptr(), 64);
+                }
+                let text_w = c_buf_len(act_text.as_ptr()) * 9;
+                let btn_w = text_w + 24;
+                let btn_h = 26;
+                ax -= btn_w;
+                let bx = (ax as f32 * scale) as i32;
+                let by = (7.0 * scale) as i32;
+                let bw = (btn_w as f32 * scale) as i32;
+                let bh = (btn_h as f32 * scale) as i32;
+                let mut dy = 0i32;
+                while dy < bh {
+                    let mut dx = 0i32;
+                    while dx < bw {
+                        *frame_l.buffer.add(((by + dy) * fw + (bx + dx)) as usize) = if is_dark { 0xff444444 } else { 0xffffffff };
+                        dx += 1;
+                    }
+                    dy += 1;
+                }
+                layer_draw_ttf(&mut frame_l, bx + (12.0 * scale) as i32, by + (7.0 * scale) as i32, act_text.as_ptr(), 14.0 * scale, if is_dark { 0xffeeeeee } else { 0xff000000 });
+                ax -= 10;
+                j += 1;
+            }
+        } else {
+            layer_draw_ttf(&mut frame_l, (70.0 * scale) as i32, (12.0 * scale) as i32, win.title.as_ptr(), 16.0 * scale, if is_dark { 0xffeeeeee } else { 0xff333333 });
+        }
+
+        let colors = [0xffff2836u32, 0xff2ecc46u32];
+        let centers_x = [20i32, 44i32];
+        let btn_r = 7.0f32;
+        let btn_y = 20i32;
+        let mut k = 0usize;
+        while k < 2 {
+            let cx = centers_x[k] as f32 * scale;
+            let cy = btn_y as f32 * scale;
+            let cr = btn_r * scale;
+            let i_r = cr as i32 + 2;
+            let mut dy = -i_r;
+            while dy <= i_r {
+                let mut dx = -i_r;
+                while dx <= i_r {
+                    let px = cx as i32 + dx;
+                    let py = cy as i32 + dy;
+                    if px >= 0 && px < fw && py >= 0 && py < fh {
+                        let dist = sqrtf((dx * dx + dy * dy) as f32);
+                        let mut alpha_f = 0.5 - (dist - cr);
+                        if alpha_f < 0.0 { alpha_f = 0.0; }
+                        else if alpha_f > 1.0 { alpha_f = 1.0; }
+                        if alpha_f > 0.0 {
+                            let dst = frame_l.buffer.add((py * fw + px) as usize);
+                            *dst = blend_colors(*dst, colors[k], (alpha_f * 255.0) as u8);
+                        }
+                    }
+                    dx += 1;
+                }
+                dy += 1;
+            }
+            k += 1;
+        }
+    }
+
+    let full_mw = win.w;
+    let full_mh = win.h + title_h;
+    let mut mw = ((full_mw as f32) * scale) as i32;
+    let mut mh = ((full_mh as f32) * scale) as i32;
+    if mw < 1 && full_mw > 0 { mw = 1; }
+    if mh < 1 && full_mh > 0 { mh = 1; }
+
+    if win.window_mask.is_null() || win.buffer_w != mw || win.shadow_cache_h != sh {
+        if !win.window_mask.is_null() {
+            free(win.window_mask as *mut c_void);
+        }
+        win.window_mask = malloc((mw as usize) * (mh as usize)) as *mut u8;
+        let rw = full_mw as f32;
+        let rh = full_mh as f32;
+        let r = 32.0f32;
+        let mut y = 0i32;
+        while y < mh {
+            let fy = y as f32 / scale + 0.5;
+            let mut x = 0i32;
+            while x < mw {
+                let fx = x as f32 / scale + 0.5;
+                let dx = fabsf(fx - rw / 2.0) - (rw / 2.0 - r);
+                let dy = fabsf(fy - rh / 2.0) - (rh / 2.0 - r);
+                let dist = if dx > 0.0 && dy > 0.0 {
+                    sqrtf(sqrtf(dx * dx * dx * dx + dy * dy * dy * dy)) - r
+                } else {
+                    (if dx > dy { dx } else { dy }) - r
+                };
+                let mut alpha_f = 0.5 - dist;
+                if alpha_f < 0.0 { alpha_f = 0.0; }
+                else if alpha_f > 1.0 { alpha_f = 1.0; }
+                *win.window_mask.add((y * mw + x) as usize) = (alpha_f * 255.0) as u8;
+                x += 1;
+            }
+            y += 1;
+        }
     }
 }
