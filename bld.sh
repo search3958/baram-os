@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- 進捗表示関数 (垂れ流し版) ---
-TOTAL_STEPS=13
+TOTAL_STEPS=12
 SPINNER_CHARS=("/" "-" "\\" "|")
 SPINNER_INDEX=0
 
@@ -40,10 +40,6 @@ stop_current() {
 
 # ビルドと実行の本体
 do_build_and_run() {
-    if [ -f "$HOME/.cargo/env" ]; then
-        . "$HOME/.cargo/env"
-    fi
-
     # 1. ビルド番号の自動更新
     BN_FILE=".build_no"
     if [ ! -f "$BN_FILE" ]; then
@@ -71,36 +67,29 @@ do_build_and_run() {
     nasm -f elf32 arch/isr.s -o output/isr.o
     show_progress 3
 
-    # 4. Rust staticlib のビルド
-    cargo build --manifest-path rust_kernel/Cargo.toml --target i686-unknown-linux-gnu --release || return 1
-    show_progress 4
-
-    # 5. C 言語のコンパイル
+    # 4. C 言語のコンパイル
     CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
 
-    i686-elf-gcc $CFLAGS -c kernel_shim.c -o output/kernel_shim.o || return 1
-    show_progress 5
+    i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || return 1
+    show_progress 4
     i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
-    show_progress 6
+    show_progress 5
     i686-elf-gcc $CFLAGS -c storage.c -o output/storage.o || return 1
-    show_progress 7
+    show_progress 6
     i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
-    show_progress 8
+    show_progress 7
     i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
-    show_progress 9
+    show_progress 8
     i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    show_progress 9
+
+    # 5. カーネルのリンク
+    i686-elf-gcc -T link.ld -o output/kernel.bin \
+        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
+        -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 10
 
-    # 6. カーネルのリンク
-    i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o \
-        output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
-        rust_kernel/target/i686-unknown-linux-gnu/release/librust_kernel.a \
-        output/kernel_shim.o \
-        -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
-    show_progress 11
-
-    # 7. ISO ディレクトリへのファイル配置
+    # 6. ISO ディレクトリへのファイル配置
     mkdir -p output/isodir/boot/grub
     cp output/kernel.bin output/isodir/boot/
     
@@ -138,11 +127,11 @@ EOF
         cp font/MPLUS2-Regular.ttf output/isodir/boot/
     fi
     
-    show_progress 12
+    show_progress 11
     
-    # 8. ISO イメージ作成
+    # 7. ISO イメージ作成
     i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
-    show_progress 13
+    show_progress 12
 
     # Disk image for storage
     if [ ! -f "output/os.img" ]; then
