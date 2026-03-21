@@ -92,29 +92,26 @@ struct MultibootModule {
 
 extern "C" {
     static _kernel_end: u8;
+    fn get_desktop_layer() -> *mut crate::windows::RustLayer;
+    fn get_svg_layer() -> *mut crate::windows::RustLayer;
+    fn get_blink_layer() -> *mut crate::windows::RustLayer;
+    fn get_hud_layer() -> *mut crate::windows::RustLayer;
+    fn get_text_layer() -> *mut crate::windows::RustLayer;
+    fn get_main_screen_buf() -> *mut u32;
+    fn get_svg_base_buf() -> *mut u32;
+    fn get_blink_buf() -> *mut u32;
+    fn get_hud_buf() -> *mut u32;
+    fn get_text_layer_buf() -> *mut u32;
+    fn get_hud_current_h() -> i32;
+    fn get_screen_width() -> i32;
+    fn get_screen_height() -> i32;
+    fn init_static_layers();
 }
 
 static mut G_MBI: *mut MultibootInfo = core::ptr::null_mut();
-static mut G_DESKTOP_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
-    buffer: core::ptr::null_mut(),
-    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
-};
-static mut G_SVG_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
-    buffer: core::ptr::null_mut(),
-    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
-};
-static mut G_HUD_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
-    buffer: core::ptr::null_mut(),
-    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
-};
-static mut G_NEXTGEN_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
-    buffer: core::ptr::null_mut(),
-    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
-};
-static mut G_TEXT_LAYER: crate::windows::RustLayer = crate::windows::RustLayer {
-    buffer: core::ptr::null_mut(),
-    x: 0, y: 0, width: 0, height: 0, transparent: 0, active: 0, dynamic: 0,
-};
+
+// These are now managed by C in kernel_shim.c
+// Static layer declarations removed - using C-managed layers instead
 
 unsafe extern "C" fn dummy_timer_handler(_r: *mut c_void) {}
 
@@ -315,26 +312,8 @@ pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
     warp_ui_mod_init(mbi as *mut c_void);
     cursor_init();
 
-    // 4. レイヤー設定 (各バッファを rt_malloc で確保)
-    let screen_w = 1280; // 仮定
-    let screen_h = 720;
-    
-    let main_buf = rt_malloc(screen_w * screen_h * 4) as *mut u32;
-    G_DESKTOP_LAYER = crate::windows::RustLayer {
-        buffer: main_buf, x: 0, y: 0, width: screen_w as i32, height: screen_h as i32,
-        transparent: 0, active: 1, dynamic: 0,
-    };
-    layer_fill(&mut G_DESKTOP_LAYER, 0xFF000000);
-    register_layer(&mut G_DESKTOP_LAYER);
-
-    let svg_w = 1024; let svg_h = 768; // 仮
-    let svg_buf = rt_malloc(svg_w * svg_h * 4) as *mut u32;
-    G_SVG_LAYER = crate::windows::RustLayer {
-        buffer: svg_buf, x: 0, y: 0, width: svg_w as i32, height: svg_h as i32,
-        transparent: 0, active: 1, dynamic: 0,
-    };
-    svg_init(&mut G_SVG_LAYER, 0);
-    register_layer(&mut G_SVG_LAYER);
+    // 4. 静的レイヤーの初期化 (C 側で管理)
+    init_static_layers();
 
     // メインループ
     loop {

@@ -1,4 +1,5 @@
 // Kernel shim - provides C implementations for functions called from Rust
+// Based on original kernel_runtime.c functionality
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -9,7 +10,66 @@
 #include "storage.h"
 #include "fs.h"
 
-// Memory allocator (must come before stb_truetype)
+// Forward declarations
+void register_layer(layer_t *layer);
+void screen_mark_static_dirty(void);
+void layer_fill(layer_t *layer, uint32_t color);
+void ata_init(void);
+void fs_init(void);
+void *fs_read_file(const char *name, uint32_t *size);
+void rust_graphics_apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2);
+static float atan_approx_local(float z);
+
+// =====================================================
+// Static buffers (from original kernel_runtime.c)
+// =====================================================
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
+#define SVG_WIDTH 1024
+#define SVG_HEIGHT 768
+
+static uint32_t main_screen_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
+static uint32_t blink_buf[50 * 50];
+#define HUD_W 320
+#define HUD_H_MAX 240
+static uint32_t hud_buf[HUD_W * HUD_H_MAX];
+static int g_hud_current_h = 64;
+#define TEXT_LAYER_W SCREEN_WIDTH
+#define TEXT_LAYER_H SCREEN_HEIGHT
+static uint32_t text_layer_buf[TEXT_LAYER_W * TEXT_LAYER_H];
+
+// Static layer structures
+static layer_t g_desktop_layer;
+static layer_t g_svg_layer;
+static layer_t g_blink_layer;
+static layer_t g_hud_layer;
+static layer_t g_text_layer;
+
+// Global state
+static volatile uint32_t timer_ticks = 0;
+static volatile int cpu_idle = 0;
+static volatile uint32_t idle_ticks = 0;
+
+// SVG state
+static void *g_svg_image = NULL;
+static void *g_svg_rast = NULL;
+static unsigned char *g_svg_full_rgba = NULL;
+static int g_svg_full_w = 0;
+static int g_svg_full_h = 0;
+static int g_svg_ready = 0;
+
+// File pointers from initrd
+static const char *g_bootlogo_ptr = NULL;
+static uint32_t g_bootlogo_size = 0;
+static const char *g_wallpaper_ptr = NULL;
+static uint32_t g_wallpaper_size = 0;
+static int g_bootlogo_found = 0;
+static int g_wallpaper_found = 0;
+
+// =====================================================
+// Memory allocator (from original kernel_runtime.c)
+// =====================================================
 extern char _kernel_end[];
 static char *heap_ptr = NULL;
 static size_t heap_size = 0;
@@ -91,79 +151,9 @@ void *realloc(void *ptr, size_t size) {
     return next;
 }
 
-// Simple math functions for stb_truetype (must come before stb_truetype)
-static float sqrtf_local(float x);
-static float powf_local(float x, float y);
-static float cosf_local(float x);
-static float sinf_local(float x);
-static float acosf_local(float x);
-static float fabsf_local(float x);
-static float fmodf_local(float x, float y);
-static float atan2f_local(float y, float x);
-static float atan_approx_local(float z);
-
-static float sqrtf_local(float x) {
-    if (x <= 0.0f) return 0.0f;
-    float r = x;
-    for (int i = 0; i < 10; i++) r = 0.5f * (r + x / r);
-    return r;
-}
-
-static float powf_local(float x, float y) {
-    if (y == 0.5f) return sqrtf_local(x);
-    if (y == 1.0f) return x;
-    if (y == 2.0f) return x * x;
-    return x;
-}
-
-static float cosf_local(float x) {
-    float x2 = x * x;
-    return 1.0f - x2/2.0f + x2*x2/24.0f - x2*x2*x2/720.0f;
-}
-
-static float sinf_local(float x) {
-    float x2 = x * x;
-    return x * (1.0f - x2/6.0f + x2*x2/120.0f);
-}
-
-static float acosf_local(float x) {
-    return sqrtf_local(1.0f - x * x);
-}
-
-static float fabsf_local(float x) {
-    return x < 0.0f ? -x : x;
-}
-
-static float fmodf_local(float x, float y) {
-    if (y == 0.0f) return 0.0f;
-    int q = (int)(x / y);
-    return x - (float)q * y;
-}
-
-// stb_truetype implementation
-#define STB_TRUETYPE_IMPLEMENTATION
-#define STBTT_malloc(x, u) malloc(x)
-#define STBTT_free(x, u) free(x)
-#define STBTT_assert(x)
-#define STBTT_ifloor(x) ((int)(x))
-#define STBTT_iceil(x) ((int)((x) + 1))
-#define STBTT_sqrt(x) sqrtf_local(x)
-#define STBTT_pow(x, y) powf_local(x, y)
-#define STBTT_fmod(x, y) fmodf_local(x, y)
-#define STBTT_cos(x) cosf_local(x)
-#define STBTT_acos(x) acosf_local(x)
-#define STBTT_fabs(x) fabsf_local(x)
-#include "font/stb_truetype.h"
-
-// Multiboot module entry
-typedef struct {
-    uint32_t mod_start;
-    uint32_t mod_end;
-    uint32_t string;
-    uint32_t reserved;
-} __attribute__((packed)) multiboot_module_t;
-
-// Memory functions
+// =====================================================
+// Memory and string functions
+// =====================================================
 void *memcpy(void *dest, const void *src, size_t n) {
     unsigned char *d = (unsigned char *)dest;
     const unsigned char *s = (const unsigned char *)src;
@@ -177,7 +167,6 @@ void *memset(void *s, int c, size_t n) {
     return s;
 }
 
-// String functions
 size_t strlen(const char *s) {
     size_t n = 0;
     if (!s) return 0;
@@ -209,6 +198,24 @@ int strcasecmp(const char *a, const char *b) {
         a++; b++;
     }
     return (unsigned char)*a - (unsigned char)*b;
+}
+
+char *strchr(const char *s, int c) {
+    for (; *s; ++s) {
+        if (*s == (char)c) return (char *)s;
+    }
+    return c == 0 ? (char *)s : NULL;
+}
+
+char *strstr(const char *haystack, const char *needle) {
+    if (!*needle) return (char *)haystack;
+    for (const char *h = haystack; *h; ++h) {
+        const char *h2 = h;
+        const char *n = needle;
+        while (*h2 && *n && (*h2 == *n)) { h2++; n++; }
+        if (!*n) return (char *)h;
+    }
+    return NULL;
 }
 
 char *strncpy(char *dst, const char *src, size_t n) {
@@ -254,7 +261,186 @@ int bcmp(const void *a, const void *b, size_t n) {
     return memcmp(a, b, n);
 }
 
+long strtol(const char *nptr, char **endptr, int base) {
+    (void)base;
+    const char *s = nptr;
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    int sign = 1;
+    if (*s == '-') { sign = -1; s++; }
+    else if (*s == '+') { s++; }
+    long val = 0;
+    while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
+    if (endptr) *endptr = (char *)s;
+    return val * sign;
+}
+
+long long strtoll(const char *nptr, char **endptr, int base) {
+    (void)base;
+    const char *s = nptr;
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    int sign = 1;
+    if (*s == '-') { sign = -1; s++; }
+    else if (*s == '+') { s++; }
+    long long val = 0;
+    while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
+    if (endptr) *endptr = (char *)s;
+    return val * sign;
+}
+
+// =====================================================
+// Math functions
+// =====================================================
+static float sqrtf_local(float x) {
+    if (x <= 0.0f) return 0.0f;
+    float r = x;
+    for (int i = 0; i < 10; i++) r = 0.5f * (r + x / r);
+    return r;
+}
+
+static float powf_local(float x, float y) {
+    if (y == 0.5f) return sqrtf_local(x);
+    if (y == 1.0f) return x;
+    if (y == 2.0f) return x * x;
+    return x;
+}
+
+static float cosf_local(float x) {
+    float x2 = x * x;
+    return 1.0f - x2/2.0f + x2*x2/24.0f - x2*x2*x2/720.0f;
+}
+
+static float sinf_local(float x) {
+    float x2 = x * x;
+    return x * (1.0f - x2/6.0f + x2*x2/120.0f);
+}
+
+static float fabsf_local(float x) {
+    return x < 0.0f ? -x : x;
+}
+
+static float fmodf_local(float x, float y) {
+    if (y == 0.0f) return 0.0f;
+    int q = (int)(x / y);
+    return x - (float)q * y;
+}
+
+static float atan2f_local(float y, float x) {
+    const float pi = 3.14159265358979323846f;
+    if (x > 0.0f) return atan_approx_local(y / x);
+    if (x < 0.0f) {
+        if (y >= 0.0f) return atan_approx_local(y / x) + pi;
+        return atan_approx_local(y / x) - pi;
+    }
+    if (y > 0.0f) return pi * 0.5f;
+    if (y < 0.0f) return -pi * 0.5f;
+    return 0.0f;
+}
+
+static float atan_approx_local(float z) {
+    const float pi = 3.14159265358979323846f;
+    if (z > 1.0f) return (pi * 0.5f) - atan_approx_local(1.0f / z);
+    if (z < -1.0f) return -(pi * 0.5f) - atan_approx_local(1.0f / z);
+    return z / (1.0f + 0.28f * z * z);
+}
+
+// Standard math function wrappers for nanosvg/stb
+float sqrtf(float x) { return sqrtf_local(x); }
+float cosf(float x) { return cosf_local(x); }
+float sinf(float x) { return sinf_local(x); }
+float acosf(float x) {
+    const float pi = 3.14159265358979323846f;
+    if (x <= -1.0f) return pi;
+    if (x >= 1.0f) return 0.0f;
+    return atan2f_local(sqrtf_local(1.0f - x * x), x);
+}
+float fabsf(float x) { return fabsf_local(x); }
+float floorf(float x) {
+    int i = (int)x;
+    if ((float)i > x) i--;
+    return (float)i;
+}
+float ceilf(float x) {
+    int i = (int)x;
+    if ((float)i < x) i++;
+    return (float)i;
+}
+float roundf(float x) {
+    return (x >= 0.0f) ? floorf(x + 0.5f) : ceilf(x - 0.5f);
+}
+float tanf(float x) {
+    float c = cosf_local(x);
+    if (c == 0.0f) return 0.0f;
+    return sinf_local(x) / c;
+}
+float atan2f(float y, float x) { return atan2f_local(y, x); }
+float fmodf(float x, float y) { return fmodf_local(x, y); }
+double pow(double base, double exp) {
+    long e = (long)exp;
+    if ((double)e != exp) return 1.0;
+    if (e == 0) return 1.0;
+    int neg = 0;
+    if (e < 0) { neg = 1; e = -e; }
+    double result = 1.0;
+    double b = base;
+    while (e) {
+        if (e & 1) result *= b;
+        b *= b;
+        e >>= 1;
+    }
+    return neg ? 1.0 / result : result;
+}
+double sqrt(double x) { return (double)sqrtf_local((float)x); }
+double fabs(double x) { return x < 0.0 ? -x : x; }
+int isnan(double x) { return x != x; }
+
+// =====================================================
+// stb_truetype implementation
+// =====================================================
+#define STB_TRUETYPE_IMPLEMENTATION
+#define STBTT_malloc(x, u) malloc(x)
+#define STBTT_free(x, u) free(x)
+#define STBTT_assert(x)
+#define STBTT_ifloor(x) ((int)(x))
+#define STBTT_iceil(x) ((int)((x) + 1))
+#define STBTT_sqrt(x) sqrtf_local(x)
+#define STBTT_pow(x, y) powf_local(x, y)
+#define STBTT_fmod(x, y) fmodf_local(x, y)
+#define STBTT_cos(x) cosf_local(x)
+#define STBTT_acos(x) acosf(x)
+#define STBTT_fabs(x) fabsf_local(x)
+#include "font/stb_truetype.h"
+
+// =====================================================
+// nanosvg implementation
+// =====================================================
+#define NANOSVG_IMPLEMENTATION
+#include "nanosvg/nanosvg.h"
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvg/nanosvgrast.h"
+
+// =====================================================
+// Multiboot module entry
+// =====================================================
+typedef struct {
+    uint32_t mod_start;
+    uint32_t mod_end;
+    uint32_t string;
+    uint32_t reserved;
+} __attribute__((packed)) multiboot_module_t;
+
+// =====================================================
+// Timer handler
+// =====================================================
+void timer_handler(struct regs *r) {
+    (void)r;
+    timer_ticks++;
+    if (cpu_idle)
+        idle_ticks++;
+}
+
+// =====================================================
 // Font functions
+// =====================================================
 static stbtt_fontinfo g_font;
 static int g_font_ready = 0;
 
@@ -262,10 +448,9 @@ int font_init(struct multiboot_info *mbi) {
     if (!mbi) return 0;
     if (!(mbi->flags & 0x8)) return 0;
     if (mbi->mods_count == 0) return 0;
-    
+
     multiboot_module_t *mod = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
     unsigned char *ttf = (unsigned char *)(uintptr_t)mod->mod_start;
-    uint32_t ttf_size = mod->mod_end - mod->mod_start;
     
     if (!stbtt_InitFont(&g_font, ttf, stbtt_GetFontOffsetForIndex(ttf, 0))) {
         return 0;
@@ -337,12 +522,248 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str, float font_
     }
 }
 
-// SVG functions (using nanosvg)
-#define NANOSVG_IMPLEMENTATION
-#include "nanosvg/nanosvg.h"
-#define NANOSVGRAST_IMPLEMENTATION
-#include "nanosvg/nanosvgrast.h"
+// =====================================================
+// Graphics helper functions
+// =====================================================
+uint32_t rust_graphics_lerp_color(uint32_t c1, uint32_t c2, float t);
+void rust_graphics_apply_conic_gradient(unsigned char *data, int w, int h, int rx, int ry, int rw, int rh, uint32_t c1, uint32_t c2);
 
+static uint32_t parse_rgba_smart(const char *str, int color_index) {
+    if (!str) return 0xFFFFFFFF;
+    const char *p = str;
+    for (int i = 0; i <= color_index; i++) {
+        const char *next = strstr(p, "rgba(");
+        if (!next) return (i == 0) ? 0xFF5CA8FF : 0xFFFFFFFF;
+        p = next + 5;
+    }
+    int r = (int)strtoll(p, (char **)&p, 10);
+    while (*p == ',' || *p == ' ') p++;
+    int g = (int)strtoll(p, (char **)&p, 10);
+    while (*p == ',' || *p == ' ') p++;
+    int b = (int)strtoll(p, (char **)&p, 10);
+    return (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+// =====================================================
+// SVG functions
+// =====================================================
+int svg_init(layer_t *layer, int load_wallpaper) {
+    if (g_svg_ready && !load_wallpaper)
+        return 1;
+    
+    if (load_wallpaper) {
+        g_svg_ready = 0;
+    }
+
+    layer_fill(layer, 0xFF000000);
+
+    const char* svg_data = NULL;
+    if (load_wallpaper && g_wallpaper_found && g_wallpaper_ptr) {
+        svg_data = g_wallpaper_ptr;
+    } else if (g_bootlogo_found && g_bootlogo_ptr) {
+        svg_data = g_bootlogo_ptr;
+    }
+
+    if (!svg_data)
+        return 0;
+
+    if (g_svg_image) nsvgDelete((NSVGimage *)g_svg_image);
+    g_svg_image = nsvgParse((char*)svg_data, "px", 96.0f);
+    if (!g_svg_image)
+        return 0;
+
+    if (!g_svg_rast)
+        g_svg_rast = nsvgCreateRasterizer();
+    if (!g_svg_rast)
+        return 0;
+
+    g_svg_full_w = layer->width;
+    g_svg_full_h = layer->height;
+
+    if (!g_svg_full_rgba) {
+        g_svg_full_rgba = (unsigned char *)malloc((size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+    }
+    if (!g_svg_full_rgba)
+        return 0;
+    memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+
+    float scale = 1.0f;
+    float tx = 0.0f, ty = 0.0f;
+
+    if (load_wallpaper && svg_data == g_wallpaper_ptr) {
+        float scale_x = (float)g_svg_full_w / ((NSVGimage *)g_svg_image)->width;
+        float scale_y = (float)g_svg_full_h / ((NSVGimage *)g_svg_image)->height;
+        scale = (scale_x > scale_y) ? scale_x : scale_y;
+        tx = (g_svg_full_w - ((NSVGimage *)g_svg_image)->width * scale) / 2.0f;
+        ty = (g_svg_full_h - ((NSVGimage *)g_svg_image)->height * scale) / 2.0f;
+    } else {
+        tx = (g_svg_full_w - ((NSVGimage *)g_svg_image)->width) / 2.0f;
+        ty = (g_svg_full_h - ((NSVGimage *)g_svg_image)->height) / 2.0f;
+    }
+
+    nsvgRasterize((NSVGrasterizer *)g_svg_rast, (NSVGimage *)g_svg_image, tx, ty, scale, g_svg_full_rgba,
+                  g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+
+    // Apply conic gradient for bootlogo
+    if (!load_wallpaper && svg_data == g_bootlogo_ptr) {
+        const char *conic_pos = strstr(g_bootlogo_ptr, "conic-gradient");
+        if (conic_pos) {
+            uint32_t c1 = parse_rgba_smart(conic_pos, 2);
+            uint32_t c2 = parse_rgba_smart(conic_pos, 3);
+
+            for (NSVGshape *s = ((NSVGimage *)g_svg_image)->shapes; s; s = s->next) {
+                if (s->fill.type != NSVG_PAINT_NONE) {
+                    int rx = (int)(s->bounds[0] * scale + tx);
+                    int ry = (int)(s->bounds[1] * scale + ty);
+                    int rw = (int)((s->bounds[2] - s->bounds[0]) * scale);
+                    int rh = (int)((s->bounds[3] - s->bounds[1]) * scale);
+                    if (rw > 0 && rh > 0) {
+                        rust_graphics_apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
+                                     ry, rw, rh, c1, c2);
+                    }
+                }
+            }
+        }
+    }
+
+    // Copy to svg_base_buf
+    for (int y = 0; y < SVG_HEIGHT && y < g_svg_full_h; y++) {
+        for (int x = 0; x < SVG_WIDTH && x < g_svg_full_w; x++) {
+            unsigned char *rgba = &g_svg_full_rgba[y * g_svg_full_w * 4 + x * 4];
+            uint8_t a = rgba[3];
+            if (a == 0) {
+                svg_base_buf[y * SVG_WIDTH + x] = 0xFF000000;
+            } else if (a == 255) {
+                svg_base_buf[y * SVG_WIDTH + x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
+                      ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
+            } else {
+                uint32_t bg = 0xFF000000;
+                uint8_t bg_r = (bg >> 16) & 0xFF;
+                uint8_t bg_g = (bg >> 8) & 0xFF;
+                uint8_t bg_b = bg & 0xFF;
+                uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
+                uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
+                uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
+                svg_base_buf[y * SVG_WIDTH + x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
+                      ((uint32_t)out_g << 8) | (uint32_t)out_b;
+            }
+        }
+    }
+
+    g_svg_ready = 1;
+    return 1;
+}
+
+// =====================================================
+// Global variable store (for Rust interop)
+// =====================================================
+#define MAX_GLOBAL_VARS 128
+static struct { char key[64]; char val[512]; } g_global_vars[MAX_GLOBAL_VARS];
+static int g_global_var_count = 0;
+// g_dev_* variables are defined later as global for drivers.c access
+extern int g_dev_pointer_check;
+extern int g_dev_event_check;
+extern int g_dev_show_hud;
+
+const char *get_w1_global(const char *key) {
+    if (!key) return "";
+    if (strcmp(key, "~~dev/pointerCheck") == 0) return g_dev_pointer_check ? "true" : "false";
+    if (strcmp(key, "~~dev/eventCheck") == 0) return g_dev_event_check ? "true" : "false";
+    if (strcmp(key, "~~dev/showHUD") == 0) return g_dev_show_hud ? "true" : "false";
+    for (int i = 0; i < g_global_var_count; i++) {
+        if (strcmp(g_global_vars[i].key, key) == 0) {
+            return g_global_vars[i].val;
+        }
+    }
+    return "";
+}
+
+void set_w1_global(const char *key, const char *val) {
+    if (!key || !val) return;
+    if (strcmp(key, "~~dev/pointerCheck") == 0) {
+        g_dev_pointer_check = (strcmp(val, "true") == 0);
+        return;
+    }
+    if (strcmp(key, "~~dev/eventCheck") == 0) {
+        g_dev_event_check = (strcmp(val, "true") == 0);
+        return;
+    }
+    if (strcmp(key, "~~dev/showHUD") == 0) {
+        g_dev_show_hud = (strcmp(val, "true") == 0);
+        return;
+    }
+    const char *effective_key = key;
+    int is_log = (strcmp(key, "--warpSystemLog") == 0);
+    if (strcmp(key, "~~json/main/dark") == 0) effective_key = "~~main/dark";
+    for (int i = 0; i < g_global_var_count; i++) {
+        if (strcmp(g_global_vars[i].key, effective_key) == 0) {
+            if (is_log) {
+                size_t len = strlen(g_global_vars[i].val);
+                if (len > 0 && len < 511) {
+                    g_global_vars[i].val[len] = '\n';
+                    strlcat(g_global_vars[i].val, val, 512);
+                } else {
+                    strlcpy(g_global_vars[i].val, val, 512);
+                }
+            } else {
+                strlcpy(g_global_vars[i].val, val, 512);
+            }
+            return;
+        }
+    }
+    if (g_global_var_count < MAX_GLOBAL_VARS) {
+        int idx = g_global_var_count++;
+        strlcpy(g_global_vars[idx].key, effective_key, 64);
+        if (is_log) {
+            g_global_vars[idx].val[0] = '\0';
+            strlcat(g_global_vars[idx].val, val, 512);
+        } else {
+            strlcpy(g_global_vars[idx].val, val, 512);
+        }
+    }
+}
+
+// =====================================================
+// Stub functions for Rust interop
+// =====================================================
+void kernel_mark_os_settings_ready(void) {
+    set_w1_global("--warpSystemLog", "OS settings ready");
+}
+
+void warp_ui_mod_init(struct multiboot_info *mbi) {
+    // Initialize storage and filesystem
+    ata_init();
+    fs_init();
+    
+    // Load files from storage
+    g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
+    g_wallpaper_ptr = fs_read_file("wallpaper_1.svg", &g_wallpaper_size);
+    if (g_bootlogo_ptr) g_bootlogo_found = 1;
+    if (g_wallpaper_ptr) g_wallpaper_found = 1;
+    
+    (void)mbi;
+}
+
+void timer_phase(int hz) {
+    int divisor = 1193180 / hz;
+    outb(0x43, 0x36);
+    outb(0x40, divisor & 0xFF);
+    outb(0x40, (divisor >> 8) & 0xFF);
+}
+
+void cursor_init(void) { }
+
+void kernel_finish_iteration(void) {
+    cpu_idle = 0;
+}
+
+int kernel_process_pending_commands(void) { return 0; }
+int kernel_try_autoboot_to_desktop(void) { return 0; }
+int kernel_get_current_os_mode(void) { return 0; }
+void kernel_main_iteration_classic(void) { }
+void kernel_main_iteration_desktop(void) { }
+
+// Missing functions for Rust interop
 void *kernel_svg_parse(const char *svg) {
     if (!svg) return NULL;
     return nsvgParse((char *)svg, "px", 96.0f);
@@ -366,162 +787,29 @@ void kernel_svg_rasterize(void *image, unsigned char *dst, int w, int h, float s
     }
 }
 
-// State accessors (forward to Rust)
-extern int rt_get_dev_pointer_check(void);
-extern int rt_get_dev_event_check(void);
-extern int rt_get_dev_show_hud(void);
-extern float rt_get_scroll_y(void);
-extern void rt_set_scroll_y(float y);
-extern float rt_get_target_scroll_y(void);
-extern void rt_set_target_scroll_y(float y);
-extern uint32_t rt_get_timer_ticks(void);
-extern void rt_set_timer_ticks(uint32_t ticks);
-extern int rt_get_cpu_idle(void);
-extern void rt_set_cpu_idle(int idle);
-extern uint32_t rt_get_idle_ticks(void);
-extern void rt_set_idle_ticks(uint32_t ticks);
-extern int rt_get_svg_dirty(void);
-extern void rt_set_svg_dirty(int dirty);
-
-const char *get_w1_global(const char *key);
-void set_w1_global(const char *key, const char *val);
-void set_pending_command(const char *cmd);
-
-// Kernel command functions (forward to Rust)
-extern void rust_kernel_handle_terminal_command(const char *cmd);
-extern void rust_kernel_parse_os_settings(const char *buf);
-
-void kernel_load_wallpaper_from_settings(const char *wp_name);
-void kernel_mark_os_settings_ready(void);
-void kernel_add_window_for_command(const char *title, int x, int y, int w, int h, int is_warp1);
-void kernel_close_active_window_for_command(void);
-const char *kernel_find_warp_module(const char *name, int *out_is_warp1);
-void kernel_list_warp_modules(char *out_buf, int out_buf_len);
-void kernel_storage_sync_command(void);
-void kernel_storage_ls_command(void);
-
-// Main iteration functions
-void kernel_main_iteration_classic(void);
-void kernel_main_iteration_desktop(void);
-void kernel_finish_iteration(void);
-int kernel_process_pending_commands(void);
-int kernel_try_autoboot_to_desktop(void);
-int kernel_get_current_os_mode(void);
-
-// SVG init functions
-int svg_init(layer_t *layer, int mode);
-void svg_init_nextgen(layer_t *layer);
-
-// Screen functions
-void screen_refresh(void);
-void screen_mark_static_dirty(void);
-void screen_mark_all_dirty(void);
-
-// Layer functions
-void layer_fill(layer_t *layer, uint32_t color);
-
-// Cursor
-void cursor_init(void);
-
-// IRQ
-void idt_install(void);
-void irq_install(void);
-void timer_phase(int hz);
-void keyboard_install(void);
-void mouse_install(void);
-void enable_interrupts(void);
-
-// System
-void sys_restart(void);
-
-// Warp UI init
-void warp_ui_mod_init(struct multiboot_info *mbi);
-
-// Set framebuffer info
-void set_framebuffer_info(uint32_t *fb, uint32_t width, uint32_t height, uint32_t pitch);
-
-// Register layer
-void register_layer(layer_t *layer);
-
-// Global state (shared with Rust) - exported for drivers.c
-int g_dev_pointer_check = 1;
-int g_dev_event_check = 0;
-int g_dev_show_hud = 1;
-
-// Simple global variable store
-#define MAX_GLOBAL_VARS 128
-static struct { char key[64]; char val[512]; } g_global_vars[MAX_GLOBAL_VARS];
-static int g_global_var_count = 0;
-
-const char *get_w1_global(const char *key) {
-    if (!key) return "";
-    
-    // Dev flags
-    if (strcmp(key, "~~dev/pointerCheck") == 0) return g_dev_pointer_check ? "true" : "false";
-    if (strcmp(key, "~~dev/eventCheck") == 0) return g_dev_event_check ? "true" : "false";
-    if (strcmp(key, "~~dev/showHUD") == 0) return g_dev_show_hud ? "true" : "false";
-    
-    // Search global vars
-    for (int i = 0; i < g_global_var_count; i++) {
-        if (strcmp(g_global_vars[i].key, key) == 0) {
-            return g_global_vars[i].val;
-        }
-    }
-    return "";
+void kernel_load_wallpaper_from_settings(const char *wp_name) {
+    (void)wp_name;
 }
 
-void set_w1_global(const char *key, const char *val) {
-    if (!key || !val) return;
-    
-    // Update dev flags
-    if (strcmp(key, "~~dev/pointerCheck") == 0) {
-        g_dev_pointer_check = (strcmp(val, "true") == 0);
-        return;
-    }
-    if (strcmp(key, "~~dev/eventCheck") == 0) {
-        g_dev_event_check = (strcmp(val, "true") == 0);
-        return;
-    }
-    if (strcmp(key, "~~dev/showHUD") == 0) {
-        g_dev_show_hud = (strcmp(val, "true") == 0);
-        return;
-    }
-    
-    // Handle log appending
-    const char *effective_key = key;
-    int is_log = (strcmp(key, "--warpSystemLog") == 0);
-    if (strcmp(key, "~~json/main/dark") == 0) effective_key = "~~main/dark";
-    
-    // Search existing
-    for (int i = 0; i < g_global_var_count; i++) {
-        if (strcmp(g_global_vars[i].key, effective_key) == 0) {
-            if (is_log) {
-                // Append with newline
-                size_t len = strlen(g_global_vars[i].val);
-                if (len > 0 && len < 511) {
-                    g_global_vars[i].val[len] = '\n';
-                    strlcat(g_global_vars[i].val, val, 512);
-                } else {
-                    strlcpy(g_global_vars[i].val, val, 512);
-                }
-            } else {
-                strlcpy(g_global_vars[i].val, val, 512);
-            }
-            return;
-        }
-    }
-    
-    // Add new
-    if (g_global_var_count < MAX_GLOBAL_VARS) {
-        int idx = g_global_var_count++;
-        strlcpy(g_global_vars[idx].key, effective_key, 64);
-        if (is_log) {
-            g_global_vars[idx].val[0] = '\0';
-            strlcat(g_global_vars[idx].val, val, 512);
-        } else {
-            strlcpy(g_global_vars[idx].val, val, 512);
-        }
-    }
+void kernel_list_warp_modules(char *out_buf, int out_buf_len) {
+    if (!out_buf || out_buf_len <= 0) return;
+    strlcpy(out_buf, "Mods: (none)", out_buf_len);
+}
+
+void kernel_close_active_window_for_command(void) { }
+void kernel_storage_sync_command(void) {
+    set_w1_global("--warpSystemLog", "Storage sync not implemented");
+}
+void kernel_storage_ls_command(void) { fs_list_files(); }
+
+const char *kernel_find_warp_module(const char *name, int *out_is_warp1) {
+    (void)name;
+    if (out_is_warp1) *out_is_warp1 = 0;
+    return NULL;
+}
+
+void kernel_add_window_for_command(const char *title, int x, int y, int w, int h, int is_warp1) {
+    (void)title; (void)x; (void)y; (void)w; (void)h; (void)is_warp1;
 }
 
 #define MAX_PENDING_COMMANDS 8
@@ -534,197 +822,10 @@ void set_pending_command(const char *cmd) {
     g_pending_command_count++;
 }
 
-int kernel_process_pending_commands(void) {
-    // This is called from Rust - for now just return 0
-    return 0;
-}
-
-int kernel_try_autoboot_to_desktop(void) {
-    // This is called from Rust - for now just return 0
-    return 0;
-}
-
-int kernel_get_current_os_mode(void) {
-    // Return 0 for classic mode
-    return 0;
-}
-
-void kernel_main_iteration_classic(void) {
-    // Classic mode iteration - minimal implementation
-}
-
-void kernel_main_iteration_desktop(void) {
-    // Desktop mode iteration - minimal implementation
-}
-
-void kernel_finish_iteration(void) {
-    rt_set_cpu_idle(0);
-    screen_refresh();
-}
-
-void kernel_load_wallpaper_from_settings(const char *wp_name) {
-    // Stub - wallpaper loading handled elsewhere
-    (void)wp_name;
-}
-
-void kernel_mark_os_settings_ready(void) {
-    set_w1_global("--warpSystemLog", "OS settings ready");
-}
-
-void kernel_add_window_for_command(const char *title, int x, int y, int w, int h, int is_warp1) {
-    // Stub - window management handled in Rust
-    (void)title; (void)x; (void)y; (void)w; (void)h; (void)is_warp1;
-}
-
-void kernel_close_active_window_for_command(void) {
-    // Stub
-}
-
-const char *kernel_find_warp_module(const char *name, int *out_is_warp1) {
-    // Stub - module lookup handled elsewhere
-    (void)name;
-    if (out_is_warp1) *out_is_warp1 = 0;
-    return NULL;
-}
-
-void kernel_list_warp_modules(char *out_buf, int out_buf_len) {
-    if (!out_buf || out_buf_len <= 0) return;
-    strlcpy(out_buf, "Mods: (none)", out_buf_len);
-}
-
-void kernel_storage_sync_command(void) {
-    set_w1_global("--warpSystemLog", "Storage sync not implemented");
-}
-
-void kernel_storage_ls_command(void) {
-    fs_list_files();
-}
-
-// Additional string functions needed by nanosvg
-char *strchr(const char *s, int c) {
-    for (; *s; ++s) {
-        if (*s == (char)c) return (char *)s;
-    }
-    return c == 0 ? (char *)s : NULL;
-}
-
-char *strstr(const char *haystack, const char *needle) {
-    if (!*needle) return (char *)haystack;
-    for (const char *h = haystack; *h; ++h) {
-        const char *h2 = h;
-        const char *n = needle;
-        while (*h2 && *n && (*h2 == *n)) { h2++; n++; }
-        if (!*n) return (char *)h;
-    }
-    return NULL;
-}
-
-long strtol(const char *nptr, char **endptr, int base) {
-    (void)base;
-    const char *s = nptr;
-    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
-    int sign = 1;
-    if (*s == '-') { sign = -1; s++; }
-    else if (*s == '+') { s++; }
-    long val = 0;
-    while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
-    if (endptr) *endptr = (char *)s;
-    return val * sign;
-}
-
-long long strtoll(const char *nptr, char **endptr, int base) {
-    (void)base;
-    const char *s = nptr;
-    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
-    int sign = 1;
-    if (*s == '-') { sign = -1; s++; }
-    else if (*s == '+') { s++; }
-    long long val = 0;
-    while (*s >= '0' && *s <= '9') { val = val * 10 + (*s - '0'); s++; }
-    if (endptr) *endptr = (char *)s;
-    return val * sign;
-}
-
-// Math functions needed by nanosvg - provide standard names
-double pow(double base, double exp) {
-    long e = (long)exp;
-    if ((double)e != exp) return 1.0;
-    if (e == 0) return 1.0;
-    int neg = 0;
-    if (e < 0) { neg = 1; e = -e; }
-    double result = 1.0;
-    double b = base;
-    while (e) {
-        if (e & 1) result *= b;
-        b *= b;
-        e >>= 1;
-    }
-    return neg ? 1.0 / result : result;
-}
-
-// Standard math function wrappers for nanosvg
-float sqrtf(float x) { return sqrtf_local(x); }
-float cosf(float x) { return cosf_local(x); }
-float sinf(float x) { return sinf_local(x); }
-double sqrt(double x) { return (double)sqrtf_local((float)x); }
-
-float acosf(float x) {
-    const float pi = 3.14159265358979323846f;
-    if (x <= -1.0f) return pi;
-    if (x >= 1.0f) return 0.0f;
-    return atan2f_local(sqrtf_local(1.0f - x * x), x);
-}
-
-static float atan2f_local(float y, float x) {
-    const float pi = 3.14159265358979323846f;
-    if (x > 0.0f) return atan_approx_local(y / x);
-    if (x < 0.0f) {
-        if (y >= 0.0f) return atan_approx_local(y / x) + pi;
-        return atan_approx_local(y / x) - pi;
-    }
-    if (y > 0.0f) return pi * 0.5f;
-    if (y < 0.0f) return -pi * 0.5f;
-    return 0.0f;
-}
-
-static float atan_approx_local(float z) {
-    const float pi = 3.14159265358979323846f;
-    if (z > 1.0f) return (pi * 0.5f) - atan_approx_local(1.0f / z);
-    if (z < -1.0f) return -(pi * 0.5f) - atan_approx_local(1.0f / z);
-    return z / (1.0f + 0.28f * z * z);
-}
-
-double fabs(double x) { return x < 0.0 ? -x : x; }
-
-float fabsf(float x) { return x < 0.0f ? -x : x; }
-
-float floorf(float x) {
-    int i = (int)x;
-    if ((float)i > x) i--;
-    return (float)i;
-}
-
-float ceilf(float x) {
-    int i = (int)x;
-    if ((float)i < x) i++;
-    return (float)i;
-}
-
-float roundf(float x) {
-    return (x >= 0.0f) ? floorf(x + 0.5f) : ceilf(x - 0.5f);
-}
-
-int isnan(double x) { return x != x; }
-
-float tanf(float x) {
-    float c = cosf_local(x);
-    if (c == 0.0f) return 0.0f;
-    return sinf_local(x) / c;
-}
-
-float atan2f(float y, float x) { return atan2f_local(y, x); }
-
-float fmodf(float x, float y) { return fmodf_local(x, y); }
+// Export g_dev_pointer_check for drivers.c
+int g_dev_pointer_check = 1;
+int g_dev_event_check = 0;
+int g_dev_show_hud = 1;
 
 // qsort implementation
 static void swap_bytes(unsigned char *a, unsigned char *b, size_t size) {
@@ -749,7 +850,7 @@ void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, co
     }
 }
 
-// Stub file I/O functions (not used in kernel)
+// Stub file I/O functions
 FILE *fopen(const char *path, const char *mode) { (void)path; (void)mode; return NULL; }
 int fclose(FILE *stream) { (void)stream; return 0; }
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) { (void)ptr; (void)size; (void)nmemb; (void)stream; return 0; }
@@ -757,24 +858,89 @@ int fseek(FILE *stream, long offset, int whence) { (void)stream; (void)offset; (
 long ftell(FILE *stream) { (void)stream; return -1; }
 int sscanf(const char *str, const char *format, ...) { (void)str; (void)format; return 0; }
 
-// Timer phase
-void timer_phase(int hz) {
-    int divisor = 1193180 / hz;
-    outb(0x43, 0x36);
-    outb(0x40, divisor & 0xFF);
-    outb(0x40, (divisor >> 8) & 0xFF);
-}
+// =====================================================
+// Accessor functions for Rust
+// =====================================================
+layer_t *get_desktop_layer(void) { return &g_desktop_layer; }
+layer_t *get_svg_layer(void) { return &g_svg_layer; }
+layer_t *get_blink_layer(void) { return &g_blink_layer; }
+layer_t *get_hud_layer(void) { return &g_hud_layer; }
+layer_t *get_text_layer(void) { return &g_text_layer; }
+uint32_t *get_main_screen_buf(void) { return main_screen_buf; }
+uint32_t *get_svg_base_buf(void) { return svg_base_buf; }
+uint32_t *get_blink_buf(void) { return blink_buf; }
+uint32_t *get_hud_buf(void) { return hud_buf; }
+uint32_t *get_text_layer_buf(void) { return text_layer_buf; }
+int get_hud_current_h(void) { return g_hud_current_h; }
+int get_screen_width(void) { return SCREEN_WIDTH; }
+int get_screen_height(void) { return SCREEN_HEIGHT; }
 
-// Cursor init stub
-void cursor_init(void) { }
+// =====================================================
+// Initialize static layers for Rust
+// =====================================================
+void init_static_layers(void) {
+    // Desktop layer (main screen)
+    g_desktop_layer.buffer = main_screen_buf;
+    g_desktop_layer.x = 0;
+    g_desktop_layer.y = 0;
+    g_desktop_layer.width = SCREEN_WIDTH;
+    g_desktop_layer.height = SCREEN_HEIGHT;
+    g_desktop_layer.transparent = 0;
+    g_desktop_layer.active = 1;
+    g_desktop_layer.dynamic = 0;
+    layer_fill(&g_desktop_layer, 0xFF000000);
+    register_layer(&g_desktop_layer);
 
-// Stub for warp_ui_mod_init - implemented in storage.c
-void warp_ui_mod_init(struct multiboot_info *mbi) {
-    (void)mbi;
-}
+    // SVG layer (logo/boot screen)
+    g_svg_layer.buffer = svg_base_buf;
+    g_svg_layer.x = 0;
+    g_svg_layer.y = 0;
+    g_svg_layer.width = SVG_WIDTH;
+    g_svg_layer.height = SVG_HEIGHT;
+    g_svg_layer.transparent = 0;
+    g_svg_layer.active = 1;
+    g_svg_layer.dynamic = 0;
+    svg_init(&g_svg_layer, 0);
+    register_layer(&g_svg_layer);
 
-// Stub for svg_init
-int svg_init(layer_t *layer, int mode) {
-    (void)layer; (void)mode;
-    return 1;
+    // Blink layer (debug indicator)
+    g_blink_layer.buffer = blink_buf;
+    g_blink_layer.x = SCREEN_WIDTH - 60;
+    g_blink_layer.y = SCREEN_HEIGHT - 60;
+    g_blink_layer.width = 50;
+    g_blink_layer.height = 50;
+    g_blink_layer.transparent = 0;
+    g_blink_layer.active = 1;
+    g_blink_layer.dynamic = 1;
+    layer_fill(&g_blink_layer, 0xFF0000FF);
+    register_layer(&g_blink_layer);
+
+    // HUD layer
+    g_hud_layer.buffer = hud_buf;
+    g_hud_layer.x = 10;
+    g_hud_layer.y = SCREEN_HEIGHT - (g_hud_current_h + 10);
+    g_hud_layer.width = HUD_W;
+    g_hud_layer.height = g_hud_current_h;
+    g_hud_layer.transparent = 0;
+    g_hud_layer.active = 1;
+    g_hud_layer.dynamic = 1;
+    layer_fill(&g_hud_layer, 0xFF000000);
+    register_layer(&g_hud_layer);
+
+    // Text layer (keyboard input display)
+    g_text_layer.buffer = text_layer_buf;
+    g_text_layer.x = 0;
+    g_text_layer.y = 0;
+    g_text_layer.width = TEXT_LAYER_W;
+    g_text_layer.height = TEXT_LAYER_H;
+    g_text_layer.transparent = 0x00000000;
+    g_text_layer.active = 1;
+    g_text_layer.dynamic = 1;
+    for (int i = 0; i < TEXT_LAYER_W * TEXT_LAYER_H; i++) {
+        text_layer_buf[i] = 0x00000000;
+    }
+    register_layer(&g_text_layer);
+    
+    // Mark static layers as dirty to trigger initial render
+    screen_mark_static_dirty();
 }
