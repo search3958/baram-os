@@ -8,6 +8,11 @@ unsafe extern "C" {
     fn kernel_window_update_caches(win: *mut RustWindow);
     fn kernel_bootstrap(magic: u32, mbi: *mut c_void);
     fn kernel_main_iteration();
+    fn get_w1_global(key: *const c_char) -> *const c_char;
+    fn set_w1_global(key: *const c_char, val: *const c_char);
+    fn set_pending_command(cmd: *const c_char);
+    fn kernel_load_wallpaper_from_settings(name: *const c_char);
+    fn kernel_mark_os_settings_ready();
 }
 
 #[repr(C)]
@@ -168,6 +173,152 @@ pub unsafe fn run_kmain(magic: u32, mbi: *mut c_void) -> ! {
     loop {
         kernel_main_iteration();
     }
+}
+
+fn skip_ws(bytes: &[u8], mut idx: usize) -> usize {
+    while idx < bytes.len() && matches!(bytes[idx], b' ' | b'\t' | b'\n' | b'\r') {
+        idx += 1;
+    }
+    idx
+}
+
+fn find_token(bytes: &[u8], token: &[u8]) -> Option<usize> {
+    if token.is_empty() || bytes.len() < token.len() {
+        return None;
+    }
+    let mut i = 0usize;
+    while i + token.len() <= bytes.len() {
+        if &bytes[i..i + token.len()] == token {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+unsafe fn set_global_lit(key: &'static [u8], val: &'static [u8]) {
+    set_w1_global(key.as_ptr() as *const c_char, val.as_ptr() as *const c_char);
+}
+
+pub unsafe fn parse_os_settings(buf: *const c_char) {
+    if buf.is_null() {
+        return;
+    }
+    let bytes = CStr::from_ptr(buf).to_bytes();
+
+    if find_token(bytes, b"\"dark\"").is_some() {
+        if let Some(pos) = find_token(bytes, b"\"dark\"") {
+            let mut i = skip_ws(bytes, pos + 6);
+            if i < bytes.len() && bytes[i] == b':' {
+                i = skip_ws(bytes, i + 1);
+                if i + 4 <= bytes.len() && &bytes[i..i + 4] == b"true" {
+                    set_global_lit(b"~~main/dark\0", b"true\0");
+                } else {
+                    set_global_lit(b"~~main/dark\0", b"false\0");
+                }
+            }
+        }
+    }
+
+    if let Some(pos) = find_token(bytes, b"\"pointerCheck\"") {
+        let mut i = skip_ws(bytes, pos + 14);
+        if i < bytes.len() && bytes[i] == b':' {
+            i = skip_ws(bytes, i + 1);
+            if i + 4 <= bytes.len() && &bytes[i..i + 4] == b"true" {
+                set_global_lit(b"~~dev/pointerCheck\0", b"true\0");
+            } else if i + 5 <= bytes.len() && &bytes[i..i + 5] == b"false" {
+                set_global_lit(b"~~dev/pointerCheck\0", b"false\0");
+            }
+        }
+    }
+
+    if let Some(pos) = find_token(bytes, b"\"wallpaper\"") {
+        let mut i = skip_ws(bytes, pos + 11);
+        if i < bytes.len() && bytes[i] == b':' {
+            i = skip_ws(bytes, i + 1);
+            if i < bytes.len() && bytes[i] == b'"' {
+                i += 1;
+                let start = i;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += 1;
+                }
+                if i > start {
+                    let len = core::cmp::min(i - start, 63);
+                    let mut wp = [0 as c_char; 64];
+                    copy_c_string(&mut wp, &bytes[start..start + len]);
+                    set_w1_global(c"~~main/wallpaper".as_ptr(), wp.as_ptr());
+                    kernel_load_wallpaper_from_settings(wp.as_ptr());
+                }
+            }
+        }
+    }
+
+    if find_token(bytes, b"\"eventCheck\": true").is_some() {
+        set_global_lit(b"~~dev/eventCheck\0", b"true\0");
+    } else if find_token(bytes, b"\"eventCheck\": false").is_some() {
+        set_global_lit(b"~~dev/eventCheck\0", b"false\0");
+    }
+
+    if find_token(bytes, b"\"showHUD\": true").is_some() {
+        set_global_lit(b"~~dev/showHUD\0", b"true\0");
+    } else if find_token(bytes, b"\"showHUD\": false").is_some() {
+        set_global_lit(b"~~dev/showHUD\0", b"false\0");
+    }
+
+    if let Some(pos) = find_token(bytes, b"\"firstboot\"") {
+        let mut i = pos;
+        while i < bytes.len() && bytes[i] != b'[' {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'[' {
+            i += 1;
+            while i < bytes.len() && bytes[i] != b']' {
+                i = skip_ws(bytes, i);
+                if i < bytes.len() && bytes[i] == b',' {
+                    i += 1;
+                    continue;
+                }
+                if i < bytes.len() && bytes[i] == b'"' {
+                    i += 1;
+                    let start = i;
+                    while i < bytes.len() && bytes[i] != b'"' {
+                        i += 1;
+                    }
+                    if i > start {
+                        let len = core::cmp::min(i - start, 127);
+                        let mut cmd = [0 as c_char; 128];
+                        copy_c_string(&mut cmd, &bytes[start..start + len]);
+                        set_pending_command(cmd.as_ptr());
+                    }
+                    if i < bytes.len() {
+                        i += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    let dark_val = get_w1_global(c"~~main/dark".as_ptr());
+    let theme = if dark_val.is_null() {
+        c"false".as_ptr()
+    } else {
+        dark_val
+    };
+    let mut msg = [0 as c_char; 128];
+    copy_c_string(&mut msg, b"OSReady Theme:");
+    let mut end = c_buf_len(&msg);
+    let theme_bytes = CStr::from_ptr(theme).to_bytes();
+    let mut i = 0usize;
+    while end + 1 < msg.len() && i < theme_bytes.len() {
+        msg[end] = theme_bytes[i] as c_char;
+        end += 1;
+        i += 1;
+    }
+    msg[end.min(msg.len() - 1)] = 0;
+    set_w1_global(c"--warpSystemLog".as_ptr(), msg.as_ptr());
+    kernel_mark_os_settings_ready();
 }
 
 pub unsafe fn append_uint(mut p: *mut u8, mut v: u32) -> *mut u8 {

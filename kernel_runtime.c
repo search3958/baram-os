@@ -182,6 +182,7 @@ extern char *rust_kernel_append_uint(char *p, unsigned int v);
 extern const char *rust_kernel_find_global(const char *key, const void *vars, int count);
 extern int rust_kernel_upsert_global(const char *key, const char *val, void *vars, int max_vars, int *count, int append_mode);
 extern int rust_kernel_sync_all_window_themes(void *windows, int count, int *last_is_dark, int system_dark);
+extern void rust_kernel_parse_os_settings(const char *buf);
 
 static uint32_t octal_to_int(const char *s, int len) {
     return rust_foundation_octal_to_int(s, len);
@@ -334,139 +335,39 @@ static const char* g_default_os_settings =
 
 static void parse_os_settings() {
   const char* buf = g_os_settings_found ? g_os_settings_ptr : g_default_os_settings;
-  
-  if (g_os_settings_found) {
-    set_w1_global("--warpSystemLog", "SettingsInInitrd.");
-  } else {
-    set_w1_global("--warpSystemLog", "UsingEmbeddedSettings.");
-  }
-  
-  // Robust check for "dark" key
-  const char *dark_key = strstr(buf, "\"dark\"");
-  if (dark_key) {
-    const char *p = json_skip_ws(dark_key + 6);
-    if (*p == ':') {
-        p = json_skip_ws(p + 1);
-        if (strncmp(p, "true", 4) == 0 || strncmp(p, "\"true\"", 6) == 0) {
-            set_w1_global("~~main/dark", "true");
-        } else {
-            set_w1_global("~~main/dark", "false");
-        }
+  if (g_os_settings_found) set_w1_global("--warpSystemLog", "SettingsInInitrd.");
+  else set_w1_global("--warpSystemLog", "UsingEmbeddedSettings.");
+  rust_kernel_parse_os_settings(buf);
+}
+
+void kernel_load_wallpaper_from_settings(const char *wp_name) {
+  if (!wp_name || !mbi_ptr) return;
+  const char *tar_start = NULL;
+  size_t tar_size = 0;
+  for (uint32_t i = 0; i < g_mod_count; i++) {
+    multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+    const char *mod_str = (const char *)(uintptr_t)mods[i].string;
+    if (mod_str && (strstr(mod_str, "initrd") || strstr(mod_str, "tar"))) {
+      tar_start = (const char *)(uintptr_t)mods[i].mod_start;
+      tar_size = mods[i].mod_end - mods[i].mod_start;
+      break;
     }
   }
 
-  // Dev flags
-  const char *ptr_key = strstr(buf, "\"pointerCheck\"");
-  if (ptr_key) {
-    const char *p = json_skip_ws(ptr_key + 14);
-    if (*p == ':') {
-        p = json_skip_ws(p + 1);
-        if (strncmp(p, "true", 4) == 0) {
-            set_w1_global("~~dev/pointerCheck", "true");
-            g_dev_pointer_check = 1;
-        } else if (strncmp(p, "false", 5) == 0) {
-            set_w1_global("~~dev/pointerCheck", "false");
-            g_dev_pointer_check = 0;
-        }
+  if (tar_start) {
+    uint32_t size = 0;
+    const char *file_ptr = tar_find_file(tar_start, tar_size, wp_name, &size);
+    if (file_ptr) {
+      g_wallpaper_ptr = file_ptr;
+      g_wallpaper_size = size;
+      g_wallpaper_found = 1;
+      set_w1_global("--warpSystemLog", "WallpaperSetFromInitrd.");
     }
   }
+}
 
-  // Wallpaper key
-  const char *wp_key = strstr(buf, "\"wallpaper\"");
-  if (wp_key) {
-    const char *p = json_skip_ws(wp_key + 11);
-    if (*p == ':') {
-      p = json_skip_ws(p + 1);
-      p = json_skip_ws(p);
-      if (*p == '\"') {
-        p++; // skip '\"'
-        const char *start = p;
-        while (*p && *p != '\"') p++;
-        if (*p == '\"') {
-          char wp_name[64];
-          int len = p - start;
-          if (len > 63) len = 63;
-          memcpy(wp_name, start, len);
-          wp_name[len] = '\0';
-          set_w1_global("~~main/wallpaper", wp_name);
-          
-          // Try to load this wallpaper from TAR modules (initrd)
-          const char *tar_start = NULL;
-          size_t tar_size = 0;
-          for (uint32_t i = 0; i < g_mod_count; i++) {
-            multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
-            const char *mod_str = (const char *)(uintptr_t)mods[i].string;
-            if (mod_str && (strstr(mod_str, "initrd") || strstr(mod_str, "tar"))) {
-              tar_start = (const char *)(uintptr_t)mods[i].mod_start;
-              tar_size = mods[i].mod_end - mods[i].mod_start;
-              break;
-            }
-          }
-          
-          if (tar_start) {
-              uint32_t size = 0;
-              const char *file_ptr = tar_find_file(tar_start, tar_size, wp_name, &size);
-              if (file_ptr) {
-                  g_wallpaper_ptr = file_ptr;
-                  g_wallpaper_size = size;
-                  g_wallpaper_found = 1;
-                  set_w1_global("--warpSystemLog", "WallpaperSetFromInitrd.");
-              }
-          }
-        }
-      }
-    }
-  }
-  
-  if (strstr(buf, "\"eventCheck\": true")) set_w1_global("~~dev/eventCheck", "true");
-  else if (strstr(buf, "\"eventCheck\": false")) set_w1_global("~~dev/eventCheck", "false");
-  
-  if (strstr(buf, "\"showHUD\": true")) set_w1_global("~~dev/showHUD", "true");
-  else if (strstr(buf, "\"showHUD\": false")) set_w1_global("~~dev/showHUD", "false");
-
-  // Firstboot commands
-  const char *fb_key = strstr(buf, "\"firstboot\"");
-  if (fb_key) {
-    const char *p = strstr(fb_key, ":");
-    if (p) {
-        p++; // skip ':'
-        p = json_skip_ws(p);
-        if (*p == '[') {
-            p++; // skip '['
-            while (*p && *p != ']') {
-                p = json_skip_ws(p);
-                if (*p == ',') { p++; p = json_skip_ws(p); }
-                if (*p == '\"') {
-                    p++; // skip '\"'
-                    const char *start = p;
-                    while (*p && *p != '\"') p++;
-                    if (*p == '\"') {
-                        char cmd[128];
-                        int len = p - start;
-                        if (len > 127) len = 127;
-                        memcpy(cmd, start, len);
-                        cmd[len] = '\0';
-                        set_pending_command(cmd);
-                        p++; // skip '\"'
-                    }
-                } else if (*p == ']') {
-                    break;
-                } else {
-                    p++;
-                }
-            }
-        }
-    }
-  }
-  
-  // Status Log for debug
-  const char* dark_val = get_w1_global("~~main/dark");
-  char startup_msg[128] = "OSReady Theme:";
-  strlcat(startup_msg, dark_val, 127);
-  set_w1_global("--warpSystemLog", startup_msg);
-  
-  // 常にブートを許可
-  g_os_settings_found = 1; 
+void kernel_mark_os_settings_ready(void) {
+  g_os_settings_found = 1;
 }
 
 // FPU有効化
