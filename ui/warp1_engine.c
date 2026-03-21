@@ -261,19 +261,6 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
             // カーネル側で定義されたコマンド設定関数を呼び出し
             extern void set_pending_command(const char *cmd);
             set_pending_command(cmd);
-        } else if (w1_strchr(act, '.')) {
-            char *dot = w1_strchr(act, '.'); *dot = '\0'; char *id = act; char *method = dot + 1;
-            char *open_b = w1_strchr(method, '{');
-            if (open_b) {
-                *open_b = '\0'; char *args = open_b + 1; char *close_b = w1_strchr(args, '}');
-                if (close_b) { *close_b = '\0'; }
-                if (w1_strcmp(method, "changeContent") == 0) {
-                    char val[256]; eval_expr(ctx, args, val, 255);
-                    char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Content"); set_state(ctx, key, val);
-                } else if (w1_strcmp(method, "setStatus") == 0) {
-                    char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Status"); set_state(ctx, key, args);
-                }
-            }
         } else {
             // 代入文 (var = val) の処理
             char *eq = w1_strchr(act, '='); 
@@ -315,6 +302,19 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
                 } else { eval_expr(ctx, rhs, val, 255); }
                 
                 set_state(ctx, var_name, val);
+            } else if (w1_strchr(act, '.')) {
+                char *dot = w1_strchr(act, '.'); *dot = '\0'; char *id = act; char *method = dot + 1;
+                char *open_b = w1_strchr(method, '{');
+                if (open_b) {
+                    *open_b = '\0'; char *args = open_b + 1; char *close_b = w1_strchr(args, '}');
+                    if (close_b) { *close_b = '\0'; }
+                    if (w1_strcmp(method, "changeContent") == 0) {
+                        char val[256]; eval_expr(ctx, args, val, 255);
+                        char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Content"); set_state(ctx, key, val);
+                    } else if (w1_strcmp(method, "setStatus") == 0) {
+                        char key[128] = "--"; w1_strcat(key, id); w1_strcat(key, "Status"); set_state(ctx, key, args);
+                    }
+                }
             }
         }
     }

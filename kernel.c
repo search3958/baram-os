@@ -1648,7 +1648,7 @@ static void handle_terminal_command(const char *cmd) {
     strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
   } else if (strncmp(start_ptr, "dev dark=", 9) == 0) {
     const char *val = start_ptr + 9;
-    set_w1_global("~~json/main/dark", val);
+    set_w1_global("~~main/dark", val);
     strncpy(g_hud_status, (strcmp(val, "true") == 0) ? "Dark:ON" : "Dark:OFF", 63);
     for (int i = 0; i < g_window_count; i++) {
       window_update_caches(&g_windows[i]);
@@ -1726,10 +1726,12 @@ void set_w1_global(const char *key, const char *val) {
   }
 
   int is_log = (strcmp(key, "--warpSystemLog") == 0);
-  int theme_changed = (strcmp(key, "~~json/main/dark") == 0);
+  const char *effective_key = key;
+  if (strcmp(key, "~~json/main/dark") == 0) effective_key = "~~main/dark";
+  int theme_changed = (strcmp(effective_key, "~~main/dark") == 0);
 
   for (int i = 0; i < g_global_var_count; i++) {
-    if (strcmp(g_global_vars[i].key, key) == 0) {
+    if (strcmp(g_global_vars[i].key, effective_key) == 0) {
       if (is_log) {
         // Append log with newline
         strlcat(g_global_vars[i].val, "\n", 511);
@@ -1750,7 +1752,7 @@ void set_w1_global(const char *key, const char *val) {
     }
   }
   if (g_global_var_count < MAX_GLOBAL_VARS) {
-    strncpy(g_global_vars[g_global_var_count].key, key, 63);
+    strncpy(g_global_vars[g_global_var_count].key, effective_key, 63);
     strncpy(g_global_vars[g_global_var_count].val, val, 511);
     g_global_var_count++;
     if (theme_changed) {

@@ -340,6 +340,10 @@ static void skip_block_classic(warp_context_t *ctx);
 
 
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
+  if (warp_strncmp(key, "~~", 2) == 0 || warp_strncmp(key, "--", 2) == 0) {
+    set_w1_global(key, val);
+    return;
+  }
   if (warp_strcasecmp(key, "_currentScreen") == 0) {
     warp_strncpy(ctx->current_screen, val, 63);
     return;
@@ -358,11 +362,18 @@ static void set_state(warp_context_t *ctx, const char *key, const char *val) {
 }
 
 static const char *get_state(warp_context_t *ctx, const char *key) {
+  if (warp_strncmp(key, "~~", 2) == 0 || warp_strncmp(key, "--", 2) == 0)
+    return get_w1_global(key);
   if (warp_strcasecmp(key, "_currentScreen") == 0)
     return ctx->current_screen;
   for (int i = 0; i < ctx->state_count; i++) {
     if (warp_strcasecmp(ctx->state[i].key, key) == 0)
       return ctx->state[i].val;
+  }
+  {
+    const char *global_val = get_w1_global(key);
+    if (global_val && global_val[0])
+      return global_val;
   }
   return "";
 }
@@ -1278,6 +1289,42 @@ static char *evaluate_rhs(warp_context_t *ctx, const char *expr, char *out, int 
     append_int(out, (int)res);
     return out;
   }
+  if (warp_strstr(expr, ".replace{")) {
+    char tmp[512], base_expr[256], base[512];
+    char old_s[128], new_s[128];
+    warp_strncpy(tmp, expr, sizeof(tmp) - 1);
+    tmp[sizeof(tmp) - 1] = '\0';
+    char *dot = warp_strstr(tmp, ".replace{");
+    if (dot) {
+      *dot = '\0';
+      warp_strncpy(base_expr, tmp, sizeof(base_expr) - 1);
+      base_expr[sizeof(base_expr) - 1] = '\0';
+      eval_expr(ctx, base_expr, base, sizeof(base));
+      char *open = dot + 9;
+      char *close = warp_strchr(open, '}');
+      if (close)
+        *close = '\0';
+      char *comma = warp_strchr(open, ',');
+      if (comma) {
+        *comma = '\0';
+        eval_expr(ctx, open, old_s, sizeof(old_s));
+        eval_expr(ctx, comma + 1, new_s, sizeof(new_s));
+        char *found = warp_strstr(base, old_s);
+        if (found && old_s[0]) {
+          int head = (int)(found - base);
+          int old_len = warp_strlen(old_s);
+          warp_strncpy(out, base, head);
+          out[head] = '\0';
+          warp_strncat(out, new_s, max_len - warp_strlen(out) - 1);
+          warp_strncat(out, found + old_len, max_len - warp_strlen(out) - 1);
+        } else {
+          warp_strncpy(out, base, max_len - 1);
+          out[max_len - 1] = '\0';
+        }
+        return out;
+      }
+    }
+  }
   eval_expr(ctx, expr, out, max_len);
   return out;
 }
@@ -1485,7 +1532,7 @@ static void execute_action(warp_context_t *ctx, const char *action_str) {
           break;
         }
       }
-    } else if (warp_strncmp(act, "--", 2) == 0) {
+    } else if (warp_strncmp(act, "--", 2) == 0 || warp_strncmp(act, "~~", 2) == 0) {
       char *eq = warp_strchr(act, '=');
       if (!eq)
         eq = warp_strchr(act, ':');
@@ -1962,4 +2009,3 @@ int warp_context_get_content_height(warp_context_t* ctx) {
   warp_context_get_screen_svg(ctx, ctx->current_screen, &h);
   return h;
 }
-
