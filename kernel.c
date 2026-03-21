@@ -180,6 +180,9 @@ extern void rust_windows_draw_single_window(layer_t *layer, void *win);
 extern void rust_windows_update_window_caches(void *win, int is_active);
 extern void rust_warp_parse_baram_config(const char *code, int screen_width, rust_window_config_t *cfg);
 extern char *rust_kernel_append_uint(char *p, unsigned int v);
+extern const char *rust_kernel_find_global(const char *key, const void *vars, int count);
+extern int rust_kernel_upsert_global(const char *key, const char *val, void *vars, int max_vars, int *count, int append_mode);
+extern int rust_kernel_sync_all_window_themes(void *windows, int count, int *last_is_dark, int system_dark);
 
 static uint32_t octal_to_int(const char *s, int len) {
     return rust_foundation_octal_to_int(s, len);
@@ -303,9 +306,8 @@ const char *get_w1_global(const char *key) {
   if (strcmp(key, "~~dev/eventCheck") == 0) return g_dev_event_check ? "true" : "false";
   if (strcmp(key, "~~dev/showHUD") == 0) return g_dev_show_hud ? "true" : "false";
 
-  for (int i = 0; i < g_global_var_count; i++) {
-    if (strcmp(g_global_vars[i].key, key) == 0) return g_global_vars[i].val;
-  }
+  const char *value = rust_kernel_find_global(key, g_global_vars, g_global_var_count);
+  if (value) return value;
   return "";
 }
 
@@ -1700,24 +1702,7 @@ static void sync_all_window_themes() {
   static int last_is_dark = -1;
   const char *dark_val = get_w1_global("~~main/dark");
   int system_dark = (strcmp(dark_val, "true") == 0);
-
-  if (system_dark != last_is_dark) {
-    for (int i = 0; i < g_window_count; i++) {
-      window_t *win = &g_windows[i];
-      int win_dark = (win->force_dark != -1) ? win->force_dark : system_dark;
-      const char *target = win_dark ? "true" : "false";
-
-      if (win->is_warp1 && win->warp1_ctx) {
-        warp1_context_set_state(win->warp1_ctx, "~~main/dark", target);
-      } else if (win->warp_ctx) {
-        warp_context_set_state(win->warp_ctx, "~~main/dark", target);
-      }
-
-      window_update_caches(win);
-      win->is_dirty = 1;
-    }
-    last_is_dark = system_dark;
-  }
+  rust_kernel_sync_all_window_themes(g_windows, g_window_count, &last_is_dark, system_dark);
 }
 void set_w1_global(const char *key, const char *val) {
   // Sync dev flags
@@ -1734,38 +1719,13 @@ void set_w1_global(const char *key, const char *val) {
   if (strcmp(key, "~~json/main/dark") == 0) effective_key = "~~main/dark";
   int theme_changed = (strcmp(effective_key, "~~main/dark") == 0);
 
-  for (int i = 0; i < g_global_var_count; i++) {
-    if (strcmp(g_global_vars[i].key, effective_key) == 0) {
-      if (is_log) {
-        // Append log with newline
-        strlcat(g_global_vars[i].val, "\n", 511);
-        strlcat(g_global_vars[i].val, val, 511);
-        return;
-      }
-      if (strcmp(g_global_vars[i].val, val) != 0) {
-        strncpy(g_global_vars[i].val, val, 511);
-        if (theme_changed) {
-          for (int j = 0; j < g_window_count; j++) {
-            window_update_caches(&g_windows[j]);
-            g_windows[j].is_dirty = 1;
-          }
-          g_svg_dirty = 1;
-        }
-      }
-      return;
+  int changed = rust_kernel_upsert_global(effective_key, val, g_global_vars, MAX_GLOBAL_VARS, &g_global_var_count, is_log ? 1 : 0);
+  if (changed && theme_changed) {
+    for (int j = 0; j < g_window_count; j++) {
+      window_update_caches(&g_windows[j]);
+      g_windows[j].is_dirty = 1;
     }
-  }
-  if (g_global_var_count < MAX_GLOBAL_VARS) {
-    strncpy(g_global_vars[g_global_var_count].key, effective_key, 63);
-    strncpy(g_global_vars[g_global_var_count].val, val, 511);
-    g_global_var_count++;
-    if (theme_changed) {
-      for (int j = 0; j < g_window_count; j++) {
-        window_update_caches(&g_windows[j]);
-        g_windows[j].is_dirty = 1;
-      }
-      g_svg_dirty = 1;
-    }
+    g_svg_dirty = 1;
   }
 }
 
@@ -1949,6 +1909,10 @@ static void window_update_caches(window_t *win) {
       }
     }
   }
+}
+
+void kernel_window_update_caches(window_t *win) {
+  window_update_caches(win);
 }
 
 static void window_redraw(window_t *win) {

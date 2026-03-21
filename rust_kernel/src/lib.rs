@@ -8,6 +8,7 @@ mod windows;
 
 use core::ffi::{c_char, c_uchar};
 use core::panic::PanicInfo;
+use kernel::RustGlobalVar;
 use warp::RustWindowConfig;
 use windows::{RustLayer, RustWindow};
 
@@ -119,4 +120,35 @@ pub unsafe extern "C" fn rust_warp_parse_baram_config(
 #[no_mangle]
 pub unsafe extern "C" fn rust_kernel_append_uint(p: *mut c_char, v: u32) -> *mut c_char {
     kernel::append_uint(p as *mut u8, v) as *mut c_char
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_kernel_find_global(
+    key: *const c_char,
+    vars: *const RustGlobalVar,
+    count: i32,
+) -> *const c_char {
+    kernel::find_global(key, vars, count)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_kernel_upsert_global(
+    key: *const c_char,
+    val: *const c_char,
+    vars: *mut RustGlobalVar,
+    max_vars: i32,
+    count: *mut i32,
+    append_mode: i32,
+) -> i32 {
+    kernel::upsert_global(key, val, vars, max_vars, count, append_mode)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_kernel_sync_all_window_themes(
+    windows: *mut RustWindow,
+    count: i32,
+    last_is_dark: *mut i32,
+    system_dark: i32,
+) -> i32 {
+    kernel::sync_all_window_themes(windows, count, last_is_dark, system_dark)
 }
