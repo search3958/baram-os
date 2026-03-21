@@ -863,15 +863,15 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
     if (warp_strcmp(width_prop, "max") == 0) {
       node->w = limit_w;
     } else {
-      // Fit content: estimate width from text length + padding
-      int text_w = warp_strlen(text) * 9; // Rough estimate for 16px font
-      node->w = text_w + 32; // 16px padding on each side
-      if (node->w < 60) node->w = 60; // Minimum width
+      int text_w = measure_ttf_width(text, 16.0f);
+      node->w = text_w + 32;
+      if (node->w < 70) node->w = 70;
     }
     node->h = 40;
     
     if (text[0] != '\0' && ctx->texts_count < MAX_TEXTS) {
-      ctx->texts[ctx->texts_count].x = px + 16;
+      int text_w = measure_ttf_width(text, 16.0f);
+      ctx->texts[ctx->texts_count].x = px + (node->w - text_w) / 2;
       ctx->texts[ctx->texts_count].y = py + 10;
       warp_strcpy(ctx->texts[ctx->texts_count].text, text);
       if (warp_strcmp(node->tag, "tonalButton") == 0)
@@ -1962,4 +1962,3 @@ int warp_context_get_content_height(warp_context_t* ctx) {
   warp_context_get_screen_svg(ctx, ctx->current_screen, &h);
   return h;
 }
-

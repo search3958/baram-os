@@ -57,5 +57,6 @@ char *append_fixed3(char *p, float v);
 char *append_int(char *p, int v);
 void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra);
+int measure_ttf_width(const char *str, float font_size);
 
 #endif

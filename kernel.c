@@ -2539,7 +2539,7 @@ static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
   
   // Execute startup commands
-  handle_terminal_command("warp terminal.warp");
+  handle_terminal_command("warp new.warp");
   handle_terminal_command("warp menubar.warp");
   
   redraw_warp_svg(layer);
@@ -3211,6 +3211,21 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
       cx += gc->adv;
     }
   }
+}
+
+int measure_ttf_width(const char *str, float font_size) {
+  if (!g_font_ready || !str)
+    return 0;
+
+  int width = 0;
+  const char *p = str;
+  while (*p) {
+    uint16_t cp = utf8_next(&p);
+    glyph_cache_t *gc = get_glyph(cp, font_size);
+    if (gc)
+      width += gc->adv;
+  }
+  return width;
 }
 // SVGパスを使ったグリフ描画（ダミー: 枠のみ）
 static void layer_draw_glyph(layer_t *layer, int x, int y, uint16_t code,

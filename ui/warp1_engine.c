@@ -73,7 +73,6 @@ struct warp1_context {
 
 static int w1_tolower(int c) { if (c >= 'A' && c <= 'Z') return c + ('a' - 'A'); return c; }
 static int w1_strcasecmp(const char *s1, const char *s2) { while (*s1 && (w1_tolower(*s1) == w1_tolower(*s2))) { s1++; s2++; } return w1_tolower(*s1) - w1_tolower(*s2); }
-
 // --- 3. Global State ---
 // set_w1_global / get_w1_global are now defined in kernel.c and provided via warp_engine.h
 
@@ -495,8 +494,8 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         node->h = cy - py + 12;
     } else if (w1_strcmp(node->tag, "button") == 0 || w1_strcmp(node->tag, "tonalButton") == 0) {
         node->h = 40; char text[128]; eval_attr(ctx, node, "text", text, 127);
-        int text_w = w1_strlen(text) * 9;
-        node->w = text_w + 32; if (node->w < 80) node->w = 80;
+        int text_w = measure_ttf_width(text, 16.0f);
+        node->w = text_w + 32; if (node->w < 70) node->w = 70;
         if (node->w > limit_w) node->w = limit_w;
         if (ctx->texts_count < MAX_TEXTS) {
             ctx->texts[ctx->texts_count].x = node->x + (node->w - text_w) / 2;
@@ -639,8 +638,6 @@ static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int 
     extern void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius, const char *fill, const char *extra);
     emit_squircle_shape_to(dest, size, x, y, w, h, radius, fill, extra);
 }
-
-
 
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
     if (!node) return;
