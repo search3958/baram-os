@@ -174,8 +174,6 @@ extern uint32_t rust_graphics_blend_colors(uint32_t bg, uint32_t fg, uint8_t alp
 extern void rust_graphics_box_blur_alpha(unsigned char *data, int w, int h, int radius);
 extern int rust_windows_should_bake_inactive(int is_active, int buffer_h, int window_h, float scroll_y, float target_scroll_y);
 extern int rust_windows_compute_content_src_y(int dy, float scroll_y, float scale, int buffer_h);
-extern void rust_windows_clear_cached_buffers(void *win);
-extern void rust_windows_bake_window(void *win);
 extern void rust_windows_draw_single_window(layer_t *layer, void *win);
 extern void rust_windows_redraw_window(void *win, int is_active);
 extern void rust_windows_update_window_caches(void *win, int is_active);
@@ -1700,12 +1698,6 @@ static void handle_terminal_command(const char *cmd) {
   }
 }
 
-static void sync_all_window_themes() {
-  static int last_is_dark = -1;
-  const char *dark_val = get_w1_global("~~main/dark");
-  int system_dark = (strcmp(dark_val, "true") == 0);
-  rust_kernel_sync_all_window_themes(g_windows, g_window_count, &last_is_dark, system_dark);
-}
 void set_w1_global(const char *key, const char *val) {
   // Sync dev flags
   if (strcmp(key, "~~dev/pointerCheck") == 0) {
@@ -1736,14 +1728,6 @@ static void window_set_all_dirty() {
     g_windows[i].is_dirty = 1;
   }
   g_svg_dirty = 1;
-}
-
-static void window_clear_caches(window_t *win) {
-  rust_windows_clear_cached_buffers(win);
-}
-
-static void window_bake(window_t *win) {
-  rust_windows_bake_window(win);
 }
 
 static void window_update_caches(window_t *win) {
@@ -1943,10 +1927,6 @@ void kernel_svg_rasterize(void *image, unsigned char *dst, int w, int h, float s
   nsvgRasterize(g_svg_rast, (NSVGimage *)image, 0, 0, scale, dst, w, h, w * 4);
 }
 
-static void window_redraw(window_t *win) {
-  rust_windows_redraw_window(win, (win == &g_windows[g_active_window_index]) ? 1 : 0);
-}
-
 static void parse_baram_config(window_t *win, const char *code) {
   rust_window_config_t cfg;
   if (!win) return;
@@ -2103,25 +2083,28 @@ static void draw_wallpaper(layer_t *layer) {
   }
 }
 
-static void draw_single_window(layer_t *layer, window_t *win) {
-    rust_windows_draw_single_window(layer, win);
-}
-
 static void redraw_warp_svg(layer_t *layer) {
+  static int last_is_dark = -1;
   if (!g_svg_dirty) return;
-  sync_all_window_themes();
+  const char *dark_val = get_w1_global("~~main/dark");
+  int system_dark = (strcmp(dark_val, "true") == 0);
+  rust_kernel_sync_all_window_themes(g_windows, g_window_count, &last_is_dark, system_dark);
   draw_wallpaper(layer);
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
     if (win->is_sticky) continue;
-    if (win->is_dirty && !win->is_resizing) window_redraw(win);
-    draw_single_window(layer, win);
+    if (win->is_dirty && !win->is_resizing) {
+      rust_windows_redraw_window(win, (win == &g_windows[g_active_window_index]) ? 1 : 0);
+    }
+    rust_windows_draw_single_window(layer, win);
   }
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
     if (!win->is_sticky) continue;
-    if (win->is_dirty && !win->is_resizing) window_redraw(win);
-    draw_single_window(layer, win);
+    if (win->is_dirty && !win->is_resizing) {
+      rust_windows_redraw_window(win, (win == &g_windows[g_active_window_index]) ? 1 : 0);
+    }
+    rust_windows_draw_single_window(layer, win);
   }
   g_svg_dirty = 0;
 }
