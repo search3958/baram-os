@@ -159,6 +159,6 @@ pub unsafe extern "C" fn rust_kernel_sync_all_window_themes(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rust_kernel_run_kmain(magic: u32, mbi: *mut core::ffi::c_void) -> ! {
+pub unsafe extern "C" fn kmain(magic: u32, mbi: *mut core::ffi::c_void) -> ! {
     kernel::run_kmain(magic, mbi)
 }

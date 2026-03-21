@@ -182,7 +182,6 @@ extern char *rust_kernel_append_uint(char *p, unsigned int v);
 extern const char *rust_kernel_find_global(const char *key, const void *vars, int count);
 extern int rust_kernel_upsert_global(const char *key, const char *val, void *vars, int max_vars, int *count, int append_mode);
 extern int rust_kernel_sync_all_window_themes(void *windows, int count, int *last_is_dark, int system_dark);
-extern void rust_kernel_run_kmain(uint32_t magic, void *mbi);
 
 static uint32_t octal_to_int(const char *s, int len) {
     return rust_foundation_octal_to_int(s, len);
@@ -3554,8 +3553,4 @@ void kernel_main_iteration(void) {
     // 常時再描画
     cpu_idle = 0;
     screen_refresh();
-}
-
-void kmain(uint32_t magic, struct multiboot_info *mbi) {
-  rust_kernel_run_kmain(magic, mbi);
 }
