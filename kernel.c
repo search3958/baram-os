@@ -1864,10 +1864,15 @@ static void window_bake(window_t *win) {
   // 3. Bake Content
   int content_y = frame_y + (int)((float)title_h * scale);
   int mh = (int)((float)(win->h + title_h) * scale);
-  for (int dy = 0; dy < win->buffer_h; dy++) {
+  int viewport_h = (int)((float)win->h * scale);
+  int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
+  if (scroll_offset_y < 0) scroll_offset_y = 0;
+  for (int dy = 0; dy < viewport_h; dy++) {
     int py = content_y + dy;
     if (py >= sh) break;
-    uint32_t *src_line = (uint32_t*)&win->rgba_buffer[dy * win->buffer_w * 4];
+    int src_y = scroll_offset_y + dy;
+    if (src_y >= win->buffer_h) break;
+    uint32_t *src_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
     int mask_y = (int)((float)title_h * scale) + dy;
     if (mask_y >= mh) mask_y = mh - 1;
     uint8_t *mask_line = &win->window_mask[mask_y * mw];
@@ -2400,16 +2405,36 @@ static void draw_wallpaper(layer_t *layer) {
   }
 }
 
-static void draw_single_window(layer_t *layer, window_t *win) {
+static void get_window_draw_bounds(window_t *win, int *x0, int *y0, int *x1, int *y1) {
+  int title_h = win->no_decoration ? 0 : 40;
+  int shadow_size = win->no_decoration ? 0 : 48;
+  *x0 = win->x - shadow_size;
+  *y0 = win->y - title_h - shadow_size;
+  *x1 = win->x + win->w + shadow_size;
+  *y1 = win->y + win->h + shadow_size;
+}
+
+static int rects_intersect(int ax0, int ay0, int ax1, int ay1, int bx0, int by0, int bx1, int by1) {
+  return ax0 < bx1 && ax1 > bx0 && ay0 < by1 && ay1 > by0;
+}
+
+static void redraw_warp_region(layer_t *layer, int rx0, int ry0, int rx1, int ry1);
+
+static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int clip_y0, int clip_x1, int clip_y1) {
     if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
       int start_x = win->x - shadow_size;
       int start_y = win->y - title_h - shadow_size;
-      int x0 = (start_x < 0) ? -start_x : 0;
-      int y0 = (start_y < 0) ? -start_y : 0;
-      int x1 = start_x + win->unified_w > layer->width ? layer->width - start_x : win->unified_w;
-      int y1 = start_y + win->unified_h > layer->height ? layer->height - start_y : win->unified_h;
+      int x0 = (start_x < clip_x0) ? (clip_x0 - start_x) : 0;
+      int y0 = (start_y < clip_y0) ? (clip_y0 - start_y) : 0;
+      int x1 = start_x + win->unified_w > clip_x1 ? clip_x1 - start_x : win->unified_w;
+      int y1 = start_y + win->unified_h > clip_y1 ? clip_y1 - start_y : win->unified_h;
+      if (x0 < 0) x0 = 0;
+      if (y0 < 0) y0 = 0;
+      if (x1 > win->unified_w) x1 = win->unified_w;
+      if (y1 > win->unified_h) y1 = win->unified_h;
+      if (x0 >= x1 || y0 >= y1) return;
 
       for (int dy = y0; dy < y1; dy++) {
         int py = start_y + dy;
@@ -2434,10 +2459,13 @@ static void draw_single_window(layer_t *layer, window_t *win) {
       if (!win->is_maximized && !win->no_decoration && win->shadow_cache) {
         int sx_start = win->x - shadow_size;
         int sy_start = win->y - title_h - shadow_size + 8;
-        int y0 = (sy_start < 0) ? -sy_start : 0;
-        int y1 = (sy_start + (win->h + title_h + shadow_size * 2) > layer->height) ? layer->height - sy_start : (win->h + title_h + shadow_size * 2);
-        int x0 = (sx_start < 0) ? -sx_start : 0;
-        int x1 = (sx_start + (win->w + shadow_size * 2) > layer->width) ? layer->width - sx_start : (win->w + shadow_size * 2);
+        int y0 = (sy_start < clip_y0) ? (clip_y0 - sy_start) : 0;
+        int y1 = (sy_start + (win->h + title_h + shadow_size * 2) > clip_y1) ? clip_y1 - sy_start : (win->h + title_h + shadow_size * 2);
+        int x0 = (sx_start < clip_x0) ? (clip_x0 - sx_start) : 0;
+        int x1 = (sx_start + (win->w + shadow_size * 2) > clip_x1) ? clip_x1 - sx_start : (win->w + shadow_size * 2);
+        if (x0 < 0) x0 = 0;
+        if (y0 < 0) y0 = 0;
+        if (x1 <= x0 || y1 <= y0) goto skip_shadow;
         for (int dy = y0; dy < y1; dy++) {
           int py = sy_start + dy;
           uint32_t *dst_line = &layer->buffer[py * layer->width];
@@ -2453,10 +2481,11 @@ static void draw_single_window(layer_t *layer, window_t *win) {
           }
         }
       }
+skip_shadow:
 
       if (!win->no_decoration && win->frame_cache) {
-        int ty0 = (win->y - title_h < 0) ? -(win->y - title_h) : 0;
-        int ty1 = (win->y < layer->height) ? title_h : (layer->height - (win->y - title_h));
+        int ty0 = (win->y - title_h < clip_y0) ? (clip_y0 - (win->y - title_h)) : 0;
+        int ty1 = (win->y > clip_y1) ? 0 : ((win->y < clip_y1) ? title_h : (clip_y1 - (win->y - title_h)));
         int mw = (int)((float)win->w * scale);
         if (mw < 1 && win->w > 0) mw = 1;
         for (int dy = ty0; dy < ty1; dy++) {
@@ -2466,7 +2495,9 @@ static void draw_single_window(layer_t *layer, window_t *win) {
           uint32_t *dst_line = &layer->buffer[py * layer->width];
           uint32_t *src_line = &win->frame_cache[scaled_dy * win->frame_cache_w];
           uint8_t *mask_line = &win->window_mask[scaled_dy * mw];
-          for (int dx = 0; dx < win->w; dx++) {
+          int dx0 = (win->x < clip_x0) ? (clip_x0 - win->x) : 0;
+          int dx1 = (win->x + win->w > clip_x1) ? (clip_x1 - win->x) : win->w;
+          for (int dx = dx0; dx < dx1; dx++) {
             int px = win->x + dx;
             if (px < 0 || px >= layer->width) continue;
             int scaled_dx = (int)((float)dx * scale);
@@ -2477,22 +2508,26 @@ static void draw_single_window(layer_t *layer, window_t *win) {
         }
       }
 
-      int cy0 = (win->y < 0) ? -win->y : 0;
-      int cy1 = (win->y + win->h > layer->height) ? (layer->height - win->y) : win->h;
+      int cy0 = (win->y < clip_y0) ? (clip_y0 - win->y) : 0;
+      int cy1 = (win->y + win->h > clip_y1) ? (clip_y1 - win->y) : win->h;
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)(win->h + title_h) * scale);
+      int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
+      if (scroll_offset_y < 0) scroll_offset_y = 0;
       for (int dy = cy0; dy < cy1; dy++) {
         int py = win->y + dy;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
-        int src_y = (int)((float)dy * scale);
-        if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
+        int src_y = scroll_offset_y + (int)((float)dy * scale);
+        if (src_y >= win->buffer_h) break;
         uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
         int scaled_mask_y = (int)((float)(dy + title_h) * scale);
         if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
         uint8_t *mask_line = &win->window_mask[scaled_mask_y * mw];
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
-        for (int dx = 0; dx < win->w; dx++) {
+        int dx0 = (win->x < clip_x0) ? (clip_x0 - win->x) : 0;
+        int dx1 = (win->x + win->w > clip_x1) ? (clip_x1 - win->x) : win->w;
+        for (int dx = dx0; dx < dx1; dx++) {
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
           int src_x = (int)((float)dx * scale);
@@ -2517,6 +2552,34 @@ static void draw_single_window(layer_t *layer, window_t *win) {
     }
 }
 
+static void redraw_warp_region(layer_t *layer, int rx0, int ry0, int rx1, int ry1) {
+  if (!g_svg_ready) return;
+  if (rx0 < 0) rx0 = 0;
+  if (ry0 < 0) ry0 = 0;
+  if (rx1 > layer->width) rx1 = layer->width;
+  if (ry1 > layer->height) ry1 = layer->height;
+  if (rx0 >= rx1 || ry0 >= ry1) return;
+
+  for (int y = ry0; y < ry1; y++) {
+    uint32_t *dst = &layer->buffer[y * layer->width + rx0];
+    uint32_t *src = &svg_base_buf[y * layer->width + rx0];
+    for (int x = rx0; x < rx1; x++) *dst++ = *src++;
+  }
+
+  for (int pass = 0; pass < 2; pass++) {
+    for (int i = 0; i < g_window_count; i++) {
+      window_t *win = &g_windows[i];
+      if ((pass == 0 && win->is_sticky) || (pass == 1 && !win->is_sticky)) continue;
+      int wx0, wy0, wx1, wy1;
+      get_window_draw_bounds(win, &wx0, &wy0, &wx1, &wy1);
+      if (!rects_intersect(rx0, ry0, rx1, ry1, wx0, wy0, wx1, wy1)) continue;
+      if (win->is_dirty && !win->is_resizing) window_redraw(win);
+      draw_single_window(layer, win, rx0, ry0, rx1, ry1);
+    }
+  }
+  screen_mark_dirty_rect(rx0, ry0, rx1 - rx0, ry1 - ry0);
+}
+
 static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
   sync_all_window_themes();
@@ -2525,15 +2588,16 @@ static void redraw_warp_svg(layer_t *layer) {
     window_t *win = &g_windows[i];
     if (win->is_sticky) continue;
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
-    draw_single_window(layer, win);
+    draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
     if (!win->is_sticky) continue;
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
-    draw_single_window(layer, win);
+    draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
   g_svg_dirty = 0;
+  screen_mark_layer_dirty(layer);
 }
 static int svg_init_nextgen(layer_t *layer) {
   svg_init(layer, 1); // Load and render wallpaper
@@ -2952,6 +3016,7 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
       log_count++;
     }
   }
+  screen_mark_layer_dirty(hud);
 
   // 高さの計算 (基本6行(48px) + ログ行数 * 8px + 余白)
   int new_h = 48 + log_count * 8 + 8;
@@ -3791,6 +3856,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
       // 2. Window Animation (Smooth Scroll)
       int moved = 0;
+      int scroll_rx0 = nextgen_ui_layer.width;
+      int scroll_ry0 = nextgen_ui_layer.height;
+      int scroll_rx1 = 0;
+      int scroll_ry1 = 0;
       for (int i = 0; i < g_window_count; i++) {
         window_t *win = &g_windows[i];
 
@@ -3827,16 +3896,22 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
         // スクロールアニメーション（1px 単位で補間）
         if (win->target_scroll_y != win->scroll_y) {
+          int bx0, by0, bx1, by1;
+          get_window_draw_bounds(win, &bx0, &by0, &bx1, &by1);
           float dy = (win->target_scroll_y - win->scroll_y) * SCROLL_EASE;
           if (fabsf(dy) < 1.0f) {
             win->scroll_y = win->target_scroll_y;
           } else {
             win->scroll_y += dy;
           }
+          if (bx0 < scroll_rx0) scroll_rx0 = bx0;
+          if (by0 < scroll_ry0) scroll_ry0 = by0;
+          if (bx1 > scroll_rx1) scroll_rx1 = bx1;
+          if (by1 > scroll_ry1) scroll_ry1 = by1;
           moved = 1;
         }
       }
-      if (moved) g_svg_dirty = 1;
+      if (moved) redraw_warp_region(&nextgen_ui_layer, scroll_rx0, scroll_ry0, scroll_rx1, scroll_ry1);
 
       // 3. Mouse Interaction
       uint8_t curr_btns = mouse_buttons;

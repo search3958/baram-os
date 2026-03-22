@@ -223,6 +223,24 @@ void set_cursor_bitmap(uint32_t *bitmap, int w, int h) {
 // ==========================================
 void screen_refresh(void) {
   if (!g_vram) return;
+  static int prev_cursor_x = -1;
+  static int prev_cursor_y = -1;
+
+  int cx = (int)mouse_x;
+  int cy = (int)mouse_y;
+  if (g_cursor_bitmap) {
+    if (prev_cursor_x >= 0 && prev_cursor_y >= 0) {
+      dirty_expand(prev_cursor_x, prev_cursor_y, prev_cursor_x + g_cursor_w,
+                   prev_cursor_y + g_cursor_h);
+    }
+    dirty_expand(cx, cy, cx + g_cursor_w, cy + g_cursor_h);
+  }
+
+  if (!g_static_dirty && g_drx0 >= g_drx1 && g_dry0 >= g_dry1) {
+    prev_cursor_x = cx;
+    prev_cursor_y = cy;
+    return;
+  }
 
   // 静的レイヤーの合成 (変更がある場合のみ staticbuffer を更新)
   if (g_static_dirty) {
@@ -238,27 +256,36 @@ void screen_refresh(void) {
 
   // バックバッファ(BB)の準備
   uint32_t *bb = g_backbuffer_ram;
-  if (g_page_flip_enabled)
-    bb = (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_draw_page);
+  int rx0 = g_drx0;
+  int ry0 = g_dry0;
+  int rx1 = g_drx1;
+  int ry1 = g_dry1;
+  if (rx0 < 0) rx0 = 0;
+  if (ry0 < 0) ry0 = 0;
+  if (rx1 > SCREEN_WIDTH) rx1 = SCREEN_WIDTH;
+  if (ry1 > SCREEN_HEIGHT) ry1 = SCREEN_HEIGHT;
 
-  // 1. 静的バッファをBBに全コピー (高速な4バイト単位コピー)
-  memcpy(bb, g_staticbuffer, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
+  // 1. 静的バッファをBBに必要領域だけコピー
+  for (int y = ry0; y < ry1; y++) {
+    uint32_t *dst = &bb[y * SCREEN_WIDTH + rx0];
+    uint32_t *src = &g_staticbuffer[y * SCREEN_WIDTH + rx0];
+    memcpy(dst, src, (size_t)(rx1 - rx0) * 4);
+  }
 
-  // 2. 動的レイヤーをBBに全合成
+  // 2. 動的レイヤーを必要領域だけ合成
   for (int i = 0; i < g_num_layers; i++) {
     if (g_layers[i]->dynamic && g_layers[i]->active)
-      compose_layer_region(bb, g_layers[i], 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+      compose_layer_region(bb, g_layers[i], rx0, ry0, rx1, ry1);
   }
 
   // 3. カーソル描画 (ARGBブレンド) - 常に表示
   if (g_cursor_bitmap) {
-    int cx = (int)mouse_x, cy = (int)mouse_y;
     for (int my = 0; my < g_cursor_h; my++) {
       int sy = cy + my;
-      if (sy < 0 || sy >= SCREEN_HEIGHT) continue;
+      if (sy < ry0 || sy >= ry1) continue;
       for (int mx = 0; mx < g_cursor_w; mx++) {
         int sx = cx + mx;
-        if (sx < 0 || sx >= SCREEN_WIDTH) continue;
+        if (sx < rx0 || sx >= rx1) continue;
         uint32_t c = g_cursor_bitmap[my * g_cursor_w + mx];
         uint8_t a = (c >> 24) & 0xFF;
         if (a == 0) continue;
@@ -281,24 +308,30 @@ void screen_refresh(void) {
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         int py = hy + dy, px = hx + dx;
-        if (px >= 0 && px < SCREEN_WIDTH && py >= 0 && py < SCREEN_HEIGHT) {
+        if (px >= rx0 && px < rx1 && py >= ry0 && py < ry1) {
           bb[py * SCREEN_WIDTH + px] = 0xFFFF0000; // Red box
         }
       }
     }
   }
 
-  // 4. VRAMへ一気に転送 (ティアリング防止のため、BBが完成してから行う)
+  // 4. VRAMへ転送
   if (g_page_flip_enabled) {
-    // 描画が完了したバッファのアドレスをBGAにセット (一瞬で切り替わる)
+    uint32_t *page = (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_draw_page);
+    memcpy(page, bb, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
     bga_write(BGA_REG_Y_OFFSET, (uint16_t)(g_draw_page * g_vram_height));
     g_display_page = g_draw_page;
     g_draw_page = 1 - g_draw_page;
   } else {
-    // ページフリップが使えない場合は memcpy で一気に転送
-    memcpy(g_vram, bb, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
+    for (int y = ry0; y < ry1; y++) {
+      uint32_t *dst = &g_vram[y * SCREEN_WIDTH + rx0];
+      uint32_t *src = &bb[y * SCREEN_WIDTH + rx0];
+      memcpy(dst, src, (size_t)(rx1 - rx0) * 4);
+    }
   }
   
+  prev_cursor_x = cx;
+  prev_cursor_y = cy;
   dirty_reset();
 }
 
