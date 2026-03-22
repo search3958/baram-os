@@ -193,12 +193,16 @@ static int g_svg_dirty = 1;
 static char g_hud_status[64] = "Idle";
 
 // --- 前方宣言 ---
+struct window_struct;
 static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
 static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
                                  int ry, int rw, int rh, uint32_t c1,
                                  uint32_t c2);
+static uint32_t composite_premultiplied_over_bg(uint32_t bg, uint32_t fg);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
+static void bg_preview_update(layer_t *preview);
+static void window_redraw(struct window_struct *win);
 static char *append_uint(char *p, unsigned int v);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
@@ -578,6 +582,12 @@ static uint32_t blink_buf[50 * 50];
 #define HUD_H_MAX 240
 static uint32_t hud_buf[HUD_W * HUD_H_MAX];
 static int g_hud_current_h = 64;
+#define BG_PREVIEW_W 208
+#define BG_PREVIEW_H 152
+#define BG_PREVIEW_SCALE_DIV 8
+#define WINDOW_BLUR_SAMPLE_SIZE 60
+#define WINDOW_BLUR_SPACING 30
+static uint32_t bg_preview_buf[BG_PREVIEW_W * BG_PREVIEW_H];
 // 文字レイヤー (透過処理用)
 #define TEXT_LAYER_W SCREEN_WIDTH
 #define TEXT_LAYER_H SCREEN_HEIGHT
@@ -1744,6 +1754,10 @@ static void sync_all_window_themes() {
   }
 }
 void set_w1_global(const char *key, const char *val) {
+  if (strcmp(key, "~~json/main/dark") == 0) {
+    set_w1_global("~~main/dark", val);
+  }
+
   // Sync dev flags
   if (strcmp(key, "~~dev/pointerCheck") == 0) {
     g_dev_pointer_check = (strcmp(val, "true") == 0);
@@ -1754,7 +1768,7 @@ void set_w1_global(const char *key, const char *val) {
   }
 
   int is_log = (strcmp(key, "--warpSystemLog") == 0);
-  int theme_changed = (strcmp(key, "~~json/main/dark") == 0);
+  int theme_changed = (strcmp(key, "~~main/dark") == 0);
 
   for (int i = 0; i < g_global_var_count; i++) {
     if (strcmp(g_global_vars[i].key, key) == 0) {
@@ -1881,7 +1895,8 @@ static void window_bake(window_t *win) {
       if (px >= sw) break;
       uint32_t color = src_line[dx];
       uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
-      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
+      uint32_t composited = composite_premultiplied_over_bg(win->unified_buffer[py * sw + px], color);
+      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], composited, alpha);
     }
   }
 
@@ -2093,7 +2108,8 @@ static void window_redraw(window_t *win) {
     window_update_caches(win);
   }
 
-  if (is_active && win->unified_buffer) {
+  if ((is_active || ((uint8_t)(win->background_color >> 24) < 255)) &&
+      win->unified_buffer) {
     free(win->unified_buffer);
     win->unified_buffer = NULL;
     win->unified_w = 0;
@@ -2171,7 +2187,7 @@ static void window_redraw(window_t *win) {
 
   if (win->raster_cache && (svg_changed || raster_size_changed)) {
     strncpy(g_hud_status, "ClearCache", 63);
-    for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0xFFFFFFFF;
+    for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0x00000000;
 
     strncpy(g_hud_status, "NSVGRast", 63);
     if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
@@ -2212,7 +2228,7 @@ static void window_redraw(window_t *win) {
     }
   }
 
-  if (!is_active) {
+  if (!is_active && ((uint8_t)(win->background_color >> 24) == 255)) {
     window_bake(win);
   }
 
@@ -2355,7 +2371,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->is_resizing_enabled = 1; // Default
   win->is_always_full_res = 0; // Default
   win->is_sticky = 0; // Default
-  win->background_color = 0xFFFFFFFF; // Default white
+  win->background_color = 0xBFFFFFFF; // Default white, about 75% opacity
   win->force_dark = -1; // -1 means follow system
 
   // Apply baram-os-config from source code if available
@@ -2403,6 +2419,376 @@ static void draw_wallpaper(layer_t *layer) {
   } else {
     layer_fill(layer, 0x00000000); // Transparent fallback
   }
+}
+
+static uint32_t sample_wallpaper_pixel(int x, int y) {
+  if (!g_svg_ready || x < 0 || y < 0 || x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT)
+    return BASE_BG_COLOR;
+  return svg_base_buf[y * SCREEN_WIDTH + x];
+}
+
+static uint32_t get_window_background_color(window_t *win) {
+  if (!win)
+    return 0xBFFFFFFFu;
+  if (win->background_color != 0xBFFFFFFFu)
+    return win->background_color;
+
+  const char *dark_val = get_w1_global("~~main/dark");
+  int system_dark = (strcmp(dark_val, "true") == 0);
+  int win_dark = (win->force_dark != -1) ? win->force_dark : system_dark;
+  return win_dark ? 0xBF121212u : 0xBFFFFFFFu;
+}
+
+static int window_index_of(window_t *target) {
+  if (!target)
+    return -1;
+  for (int i = 0; i < g_window_count; i++) {
+    if (&g_windows[i] == target)
+      return i;
+  }
+  return -1;
+}
+
+static uint32_t composite_window_pixel(uint32_t dst, window_t *win, int px, int py) {
+  if (!win)
+    return dst;
+
+  if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
+    int title_h = win->no_decoration ? 0 : 40;
+    int shadow_size = win->no_decoration ? 0 : 48;
+    int start_x = win->x - shadow_size;
+    int start_y = win->y - title_h - shadow_size;
+    int local_x = px - start_x;
+    int local_y = py - start_y;
+    if (local_x < 0 || local_y < 0 || local_x >= win->unified_w || local_y >= win->unified_h)
+      return dst;
+    uint32_t color = win->unified_buffer[local_y * win->unified_w + local_x];
+    uint8_t alpha = (uint8_t)(color >> 24);
+    if (alpha == 0)
+      return dst;
+    return blend_colors(dst, color, alpha);
+  }
+
+  if (!win->rgba_buffer)
+    return dst;
+
+  int title_h = win->no_decoration ? 0 : 40;
+  int shadow_size = win->no_decoration ? 0 : 48;
+  float scale = win->render_scale;
+
+  if (!win->is_maximized && !win->no_decoration && win->shadow_cache) {
+    int sx_start = win->x - shadow_size;
+    int sy_start = win->y - title_h - shadow_size + 8;
+    int local_x = px - sx_start;
+    int local_y = py - sy_start;
+    if (local_x >= 0 && local_y >= 0 &&
+        local_x < win->w + shadow_size * 2 &&
+        local_y < win->h + title_h + shadow_size * 2) {
+      int scaled_dx = (int)((float)local_x * scale);
+      int scaled_dy = (int)((float)local_y * scale);
+      if (scaled_dx >= win->shadow_cache_w) scaled_dx = win->shadow_cache_w - 1;
+      if (scaled_dy >= win->shadow_cache_h) scaled_dy = win->shadow_cache_h - 1;
+      if (scaled_dx >= 0 && scaled_dy >= 0) {
+        uint8_t alpha = win->shadow_cache[scaled_dy * win->shadow_cache_w + scaled_dx];
+        if (alpha != 0)
+          dst = blend_colors(dst, 0, alpha);
+      }
+    }
+  }
+
+  if (!win->no_decoration && win->frame_cache &&
+      py >= win->y - title_h && py < win->y &&
+      px >= win->x && px < win->x + win->w) {
+    int dx = px - win->x;
+    int dy = py - (win->y - title_h);
+    int scaled_dx = (int)((float)dx * scale);
+    int scaled_dy = (int)((float)dy * scale);
+    int mw = (int)((float)win->w * scale);
+    if (mw < 1 && win->w > 0) mw = 1;
+    if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
+    if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
+    if (scaled_dx >= 0 && scaled_dy >= 0) {
+      uint8_t alpha = 255;
+      if (!win->is_maximized && win->window_mask) {
+        alpha = win->window_mask[scaled_dy * mw + scaled_dx];
+      }
+      dst = blend_colors(dst, win->frame_cache[scaled_dy * win->frame_cache_w + scaled_dx], alpha);
+    }
+  }
+
+  if (py >= win->y && py < win->y + win->h &&
+      px >= win->x && px < win->x + win->w) {
+    int dx = px - win->x;
+    int dy = py - win->y;
+    int mw = (int)((float)win->w * scale);
+    if (mw < 1 && win->w > 0) mw = 1;
+    int mh = (int)((float)(win->h + title_h) * scale);
+    int src_x = (int)((float)dx * scale);
+    int src_y = (int)roundf(-win->scroll_y * scale) + (int)((float)dy * scale);
+    if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
+    if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
+    if (src_x >= 0 && src_y >= 0) {
+      uint32_t color = ((uint32_t *)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+      uint32_t bg_color = get_window_background_color(win);
+      uint32_t surface_bg = blend_colors(dst, bg_color, (uint8_t)(bg_color >> 24));
+      color = composite_premultiplied_over_bg(surface_bg, color);
+      if (win->fade_alpha > 0.0f) {
+        uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
+        color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
+      }
+
+      uint8_t final_alpha = 255;
+      if (!win->is_maximized && !win->no_decoration && win->window_mask) {
+        int scaled_dx = (int)((float)dx * scale);
+        int scaled_mask_y = (int)((float)(dy + title_h) * scale);
+        if (scaled_dx >= mw) scaled_dx = mw - 1;
+        if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
+        if (scaled_dx >= 0 && scaled_mask_y >= 0) {
+          uint8_t mask_a = win->window_mask[scaled_mask_y * mw + scaled_dx];
+          final_alpha = (uint8_t)((uint32_t)final_alpha * mask_a / 255);
+        }
+      }
+      dst = blend_colors(dst, color, final_alpha);
+    }
+  }
+
+  return dst;
+}
+
+static uint32_t sample_backdrop_pixel(window_t *target, int px, int py) {
+  uint32_t color = sample_wallpaper_pixel(px, py);
+  int target_index = window_index_of(target);
+  if (target_index < 0)
+    return color;
+
+  for (int i = 0; i < target_index; i++) {
+    window_t *win = &g_windows[i];
+    if (win->is_sticky)
+      continue;
+    if (win->is_dirty && !win->is_resizing)
+      window_redraw(win);
+    color = composite_window_pixel(color, win, px, py);
+  }
+  return color;
+}
+
+static uint32_t sample_backdrop_blur(window_t *target, int sx0, int sy0, int sx1, int sy1) {
+  uint32_t sum_r = 0;
+  uint32_t sum_g = 0;
+  uint32_t sum_b = 0;
+  uint32_t count = 0;
+
+  if (sx0 < 0) sx0 = 0;
+  if (sy0 < 0) sy0 = 0;
+  if (sx1 > SCREEN_WIDTH) sx1 = SCREEN_WIDTH;
+  if (sy1 > SCREEN_HEIGHT) sy1 = SCREEN_HEIGHT;
+  if (sx0 >= sx1 || sy0 >= sy1)
+    return BASE_BG_COLOR;
+
+  for (int y = sy0; y < sy1; y++) {
+    for (int x = sx0; x < sx1; x++) {
+      uint32_t color = sample_backdrop_pixel(target, x, y);
+      sum_r += (color >> 16) & 0xFF;
+      sum_g += (color >> 8) & 0xFF;
+      sum_b += color & 0xFF;
+      count++;
+    }
+  }
+
+  if (count == 0)
+    return BASE_BG_COLOR;
+
+  return 0xFF000000u |
+         ((sum_r / count) << 16) |
+         ((sum_g / count) << 8) |
+         (sum_b / count);
+}
+
+static uint32_t blend_colors_fixed(uint32_t c0, uint32_t c1, int alpha255) {
+  if (alpha255 <= 0) return c0;
+  if (alpha255 >= 255) return c1;
+  return blend_colors(c0, c1, (uint8_t)alpha255);
+}
+
+static uint32_t composite_premultiplied_over_bg(uint32_t bg, uint32_t fg) {
+  uint8_t alpha = (uint8_t)(fg >> 24);
+  if (alpha == 0)
+    return bg;
+  if (alpha == 255)
+    return 0xFF000000u | (fg & 0x00FFFFFFu);
+
+  uint32_t inv_alpha = 255 - alpha;
+  uint32_t br = (bg >> 16) & 0xFF;
+  uint32_t bg_g = (bg >> 8) & 0xFF;
+  uint32_t bb = bg & 0xFF;
+  uint32_t fr = (fg >> 16) & 0xFF;
+  uint32_t fg_g = (fg >> 8) & 0xFF;
+  uint32_t fb = fg & 0xFF;
+
+  uint32_t out_r = fr + ((br * inv_alpha) >> 8);
+  uint32_t out_g = fg_g + ((bg_g * inv_alpha) >> 8);
+  uint32_t out_b = fb + ((bb * inv_alpha) >> 8);
+  if (out_r > 255) out_r = 255;
+  if (out_g > 255) out_g = 255;
+  if (out_b > 255) out_b = 255;
+
+  return 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
+}
+
+static uint32_t sample_blur_cache(const uint32_t *blur_cache, int blur_cols,
+                                  int blur_rows, int dx, int dy) {
+  if (!blur_cache || blur_cols <= 0 || blur_rows <= 0)
+    return BASE_BG_COLOR;
+
+  int fx = dx % WINDOW_BLUR_SPACING;
+  int fy = dy % WINDOW_BLUR_SPACING;
+  int x0 = dx / WINDOW_BLUR_SPACING;
+  int y0 = dy / WINDOW_BLUR_SPACING;
+  int x1 = x0 + 1;
+  int y1 = y0 + 1;
+  if (x0 < 0) x0 = 0;
+  if (y0 < 0) y0 = 0;
+  if (x0 >= blur_cols) x0 = blur_cols - 1;
+  if (y0 >= blur_rows) y0 = blur_rows - 1;
+  if (x1 >= blur_cols) x1 = blur_cols - 1;
+  if (y1 >= blur_rows) y1 = blur_rows - 1;
+
+  uint32_t c00 = blur_cache[y0 * blur_cols + x0];
+  uint32_t c10 = blur_cache[y0 * blur_cols + x1];
+  uint32_t c01 = blur_cache[y1 * blur_cols + x0];
+  uint32_t c11 = blur_cache[y1 * blur_cols + x1];
+
+  uint32_t top = blend_colors_fixed(c00, c10, fx * 255 / (WINDOW_BLUR_SPACING - 1));
+  uint32_t bottom = blend_colors_fixed(c01, c11, fx * 255 / (WINDOW_BLUR_SPACING - 1));
+  return blend_colors_fixed(top, bottom, fy * 255 / (WINDOW_BLUR_SPACING - 1));
+}
+
+static void fill_rect_rgba(layer_t *layer, int x, int y, int w, int h, uint32_t color) {
+  if (!layer || !layer->buffer || w <= 0 || h <= 0)
+    return;
+  int x0 = x < 0 ? 0 : x;
+  int y0 = y < 0 ? 0 : y;
+  int x1 = x + w;
+  int y1 = y + h;
+  if (x1 > layer->width) x1 = layer->width;
+  if (y1 > layer->height) y1 = layer->height;
+  if (x0 >= x1 || y0 >= y1)
+    return;
+  uint8_t alpha = (uint8_t)(color >> 24);
+  for (int py = y0; py < y1; py++) {
+    uint32_t *dst = &layer->buffer[py * layer->width + x0];
+    for (int px = x0; px < x1; px++) {
+      if (alpha == 255) *dst = color;
+      else *dst = blend_colors(*dst, color, alpha);
+      dst++;
+    }
+  }
+}
+
+static void stroke_rect(layer_t *layer, int x, int y, int w, int h, uint32_t color) {
+  fill_rect_rgba(layer, x, y, w, 1, color);
+  fill_rect_rgba(layer, x, y + h - 1, w, 1, color);
+  fill_rect_rgba(layer, x, y, 1, h, color);
+  fill_rect_rgba(layer, x + w - 1, y, 1, h, color);
+}
+
+static void bg_preview_update(layer_t *preview) {
+  if (!preview || !preview->buffer)
+    return;
+
+  int was_active = preview->active;
+  int old_x = preview->x;
+  int old_y = preview->y;
+  int old_w = preview->width;
+  int old_h = preview->height;
+
+  for (int i = 0; i < preview->width * preview->height; i++)
+    preview->buffer[i] = TRANSPARENT_COLOR;
+
+  if (g_active_window_index < 0 || g_active_window_index >= g_window_count) {
+    preview->active = 0;
+    if (was_active)
+      screen_mark_dirty_rect(old_x, old_y, old_w, old_h);
+    return;
+  }
+
+  window_t *active = &g_windows[g_active_window_index];
+  if (active->is_sticky) {
+    preview->active = 0;
+    if (was_active)
+      screen_mark_dirty_rect(old_x, old_y, old_w, old_h);
+    return;
+  }
+
+  int src_x = active->x;
+  int src_y = active->y - (active->no_decoration ? 0 : 40);
+  int src_w = active->w;
+  int src_h = active->h + (active->no_decoration ? 0 : 40);
+  if (src_w <= 0 || src_h <= 0) {
+    preview->active = 0;
+    if (was_active)
+      screen_mark_dirty_rect(old_x, old_y, old_w, old_h);
+    return;
+  }
+
+  int thumb_w = src_w / BG_PREVIEW_SCALE_DIV;
+  int thumb_h = src_h / BG_PREVIEW_SCALE_DIV;
+  if (thumb_w < 32) thumb_w = 32;
+  if (thumb_h < 24) thumb_h = 24;
+
+  int inner_max_w = preview->width - 16;
+  int inner_max_h = preview->height - 24;
+  if (thumb_w > inner_max_w) {
+    thumb_h = thumb_h * inner_max_w / thumb_w;
+    thumb_w = inner_max_w;
+  }
+  if (thumb_h > inner_max_h) {
+    thumb_w = thumb_w * inner_max_h / thumb_h;
+    thumb_h = inner_max_h;
+  }
+  if (thumb_w < 1 || thumb_h < 1) {
+    preview->active = 0;
+    if (was_active)
+      screen_mark_dirty_rect(old_x, old_y, old_w, old_h);
+    return;
+  }
+
+  preview->active = 1;
+  preview->x = SCREEN_WIDTH - preview->width - 10;
+  preview->y = SCREEN_HEIGHT - preview->height - 10;
+
+  fill_rect_rgba(preview, 0, 0, preview->width, preview->height, 0xA0000000u);
+  stroke_rect(preview, 0, 0, preview->width, preview->height, 0x90FFFFFFu);
+  layer_draw_string(preview, 8, 6, "BG", 0xFFFFFFFF, TRANSPARENT_COLOR);
+
+  int thumb_x = (preview->width - thumb_w) / 2;
+  int thumb_y = 18 + (inner_max_h - thumb_h) / 2;
+  fill_rect_rgba(preview, thumb_x - 3, thumb_y - 3, thumb_w + 6, thumb_h + 6, 0xCC0B0B0Bu);
+  stroke_rect(preview, thumb_x - 3, thumb_y - 3, thumb_w + 6, thumb_h + 6, 0x70FFFFFFu);
+
+  for (int y = 0; y < thumb_h; y++) {
+    int sy = src_y + ((y * src_h) / thumb_h);
+    if (sy < 0) sy = 0;
+    if (sy >= SCREEN_HEIGHT) sy = SCREEN_HEIGHT - 1;
+    for (int x = 0; x < thumb_w; x++) {
+      int sx = src_x + ((x * src_w) / thumb_w);
+      if (sx < 0) sx = 0;
+      if (sx >= SCREEN_WIDTH) sx = SCREEN_WIDTH - 1;
+
+      uint32_t color = sample_wallpaper_pixel(sx, sy);
+      for (int i = 0; i < g_active_window_index; i++) {
+        window_t *win = &g_windows[i];
+        if (win->is_sticky)
+          continue;
+        if (win->is_dirty && !win->is_resizing)
+          window_redraw(win);
+        color = composite_window_pixel(color, win, sx, sy);
+      }
+      preview->buffer[(thumb_y + y) * preview->width + (thumb_x + x)] = color;
+    }
+  }
+
+  screen_mark_layer_dirty(preview);
 }
 
 static void get_window_draw_bounds(window_t *win, int *x0, int *y0, int *x1, int *y1) {
@@ -2513,6 +2899,29 @@ skip_shadow:
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)(win->h + title_h) * scale);
+      uint32_t *blur_cache = NULL;
+      int blur_cols = 0;
+      int blur_rows = 0;
+      uint32_t bg_color = get_window_background_color(win);
+      if (win->w > 0 && win->h > 0) {
+        blur_cols = (win->w + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
+        blur_rows = (win->h + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
+        blur_cache = (uint32_t *)malloc((size_t)blur_cols * (size_t)blur_rows * sizeof(uint32_t));
+        if (blur_cache) {
+          for (int by = 0; by < blur_rows; by++) {
+            int sample_y = win->y + by * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
+            for (int bx = 0; bx < blur_cols; bx++) {
+              int sample_x = win->x + bx * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
+              int sx0 = sample_x - WINDOW_BLUR_SAMPLE_SIZE / 2;
+              int sy0 = sample_y - WINDOW_BLUR_SAMPLE_SIZE / 2;
+              int sx1 = sx0 + WINDOW_BLUR_SAMPLE_SIZE;
+              int sy1 = sy0 + WINDOW_BLUR_SAMPLE_SIZE;
+              blur_cache[by * blur_cols + bx] =
+                  sample_backdrop_blur(win, sx0, sy0, sx1, sy1);
+            }
+          }
+        }
+      }
       int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
       if (scroll_offset_y < 0) scroll_offset_y = 0;
       for (int dy = cy0; dy < cy1; dy++) {
@@ -2533,13 +2942,17 @@ skip_shadow:
           int src_x = (int)((float)dx * scale);
           if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
           uint32_t color = src_content_line[src_x];
-          uint8_t content_a = (uint8_t)(color >> 24);
-          
-          // Blend content over window background
-          color = blend_colors(win->background_color, color, content_a);
+
+          uint32_t surface_bg = dst_line[px];
+          if (blur_cache && blur_cols > 0) {
+            surface_bg = sample_blur_cache(blur_cache, blur_cols, blur_rows, dx, dy);
+          }
+          surface_bg = blend_colors(surface_bg, bg_color, (uint8_t)(bg_color >> 24));
+
+          color = composite_premultiplied_over_bg(surface_bg, color);
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
           
-          uint8_t final_alpha = (uint8_t)(color >> 24);
+          uint8_t final_alpha = 255;
           if (!win->is_maximized && !win->no_decoration) {
               int scaled_dx = (int)((float)dx * scale);
               if (scaled_dx >= mw) scaled_dx = mw - 1;
@@ -2549,6 +2962,7 @@ skip_shadow:
           dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
         }
       }
+      if (blur_cache) free(blur_cache);
     }
 }
 
@@ -3623,6 +4037,18 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   hud_layer.dynamic = 1;
   layer_fill(&hud_layer, 0xFF000000);
 
+  layer_t bg_preview_layer;
+  bg_preview_layer.buffer = bg_preview_buf;
+  bg_preview_layer.x = SCREEN_WIDTH - BG_PREVIEW_W - 10;
+  bg_preview_layer.y = SCREEN_HEIGHT - BG_PREVIEW_H - 10;
+  bg_preview_layer.width = BG_PREVIEW_W;
+  bg_preview_layer.height = BG_PREVIEW_H;
+  bg_preview_layer.transparent = TRANSPARENT_COLOR;
+  bg_preview_layer.active = 0;
+  bg_preview_layer.dynamic = 1;
+  for (int i = 0; i < BG_PREVIEW_W * BG_PREVIEW_H; i++)
+    bg_preview_buf[i] = TRANSPARENT_COLOR;
+
   // 5. 次世代UI SVGレイヤー
   layer_t nextgen_ui_layer;
   nextgen_ui_layer.buffer = main_screen_buf;
@@ -3638,6 +4064,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       main_screen_buf[i] = TRANSPARENT_COLOR;
   }
   register_layer(&nextgen_ui_layer);
+  register_layer(&bg_preview_layer);
   register_layer(&hud_layer); // HUDを上に
 
   // 6. 文字レイヤー
@@ -3721,6 +4148,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     }
 
     if (current_os_mode == OS_MODE_CLASSIC) {
+      if (bg_preview_layer.active) {
+        screen_mark_dirty_rect(bg_preview_layer.x, bg_preview_layer.y,
+                               bg_preview_layer.width, bg_preview_layer.height);
+        bg_preview_layer.active = 0;
+      }
       // 0.1秒(10 ticks)ごとに点滅
       if (timer_ticks - last_blink_tick >= 10) {
         blink_state = !blink_state;
@@ -4109,7 +4541,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           g_target_scroll_y = 0.0f;
       }
 
-      if (g_svg_dirty) redraw_warp_svg(&nextgen_ui_layer);
+      if (g_svg_dirty) {
+        redraw_warp_svg(&nextgen_ui_layer);
+        bg_preview_update(&bg_preview_layer);
+      }
 
       if (timer_ticks - last_stat_tick >= 100) {
         uint32_t total = timer_ticks - last_stat_tick;

@@ -652,7 +652,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
     int is_dark = (w1_strcmp(dark_val, "true") == 0);
 
     if (w1_strcmp(node->tag, "screen") == 0) {
-        emit_squircle_shape1(dest, dest_size, 0, 0, node->w, node->h, 0, is_dark ? "#121212" : "#f1f2f2", "");
+        // Let the window backdrop show through instead of painting a full-screen base.
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, 12.0f, is_dark ? "#1e1e1e" : "#ffffff", "");
