@@ -1,6 +1,7 @@
 # Baram OS
 
-Baram OS は、UI とグラフィックスに特化した x86 アーキテクチャ（32-bit）向けのOSです。
+Baram OS は、UI とグラフィックスに特化した x86 アーキテクチャ向けのOSです。
+現在は `bld.sh` で 64-bit、`bld32.sh` で 32-bit をビルドできる構成になっています。
 独自の宣言型 UI エンジン「Warp Engine」を搭載し、低スペックなデバイスでもなるべく高解像度でのスムーズなグラフィックス体験を目指しています。
 
 ### 先進的なGUI
@@ -26,11 +27,11 @@ Baram OS は、GRUB から渡される Multiboot モジュールを利用して�
 - `kernel.c`: カーネルのエントリポイント、描画ループ、イベント処理、モジュールロード。
 - `warp_engine.c`: UI エンジンのコアロジック（`.warpc` ファイルのパースと状態管理）。
 - `warp1_engine.c`: 次世代 UI エンジンのコアロジック（`.warp` ファイルのパース）。
-- `drivers.c/h`: 各種ハードウェアドライバ（VBE, PS/2 Mouse/KB, PIT）とグラフィックス層。
+- `drivers.c/h`: 各種ハードウェアドライバ（VBE, PS/2 Mouse/KB, PIT）とグラフィックス層。32/64bit の IDT/IRQ に対応。
 - `ui/`: Warp Engine 用の UI 定義ファイル。`main.warpc` がメインの UI です。
 - `font/`: TrueType フォントとレンダリングライブラリ（`stb_truetype`）。
 - `nanosvg/`: SVG デコードおよびラスタライズライブラリ。
-- `arch/`: CPU 依存のアセンブリコード（ブートコード、ISR）。
+- `arch/`: CPU 依存のアセンブリコード（32-bit/64-bit のブートコード、ISR）。
 
 ## 📝 ライセンス
 このプロジェクトは学習および研究目的で開発されています。

@@ -5,6 +5,9 @@
 #include <stdio.h>  // FILE
 #include <stdlib.h> // malloc, free, realloc
 #include <string.h> // memcpy, memset
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
 
 #include "drivers.h"
 #include "font/fonts.h"
@@ -101,7 +104,7 @@ static char g_last_svg_parse_status[64] = "None";
 
 typedef struct {
   char name[64];
-  uint32_t start;
+  uintptr_t start;
   uint32_t size;
 } warp_module_t;
 
@@ -1303,6 +1306,111 @@ static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
   }
 }
 
+#ifdef __SSE2__
+static inline __m128i div255_epu16_sse2(__m128i v) {
+  v = _mm_add_epi16(v, _mm_set1_epi16(128));
+  v = _mm_add_epi16(v, _mm_srli_epi16(v, 8));
+  return _mm_srli_epi16(v, 8);
+}
+
+static inline __m128i replicate_alpha_words_sse2(__m128i px) {
+  px = _mm_shufflelo_epi16(px, _MM_SHUFFLE(3, 3, 3, 3));
+  return _mm_shufflehi_epi16(px, _MM_SHUFFLE(3, 3, 3, 3));
+}
+
+static inline __m128i swap_rb_words_sse2(__m128i px) {
+  px = _mm_shufflelo_epi16(px, _MM_SHUFFLE(3, 0, 1, 2));
+  return _mm_shufflehi_epi16(px, _MM_SHUFFLE(3, 0, 1, 2));
+}
+#endif
+
+static inline void fill_u32_span(uint32_t *dst, int count, uint32_t color) {
+#ifdef __SSE2__
+  __m128i packed = _mm_set1_epi32((int)color);
+  int x = 0;
+  for (; x + 4 <= count; x += 4) {
+    _mm_storeu_si128((__m128i *)(dst + x), packed);
+  }
+  for (; x < count; ++x) {
+    dst[x] = color;
+  }
+#else
+  for (int x = 0; x < count; ++x) {
+    dst[x] = color;
+  }
+#endif
+}
+
+static inline uint32_t blend_rgba_over_opaque_bg_scalar(const unsigned char *rgba,
+                                                        uint32_t bg,
+                                                        uint8_t bg_r,
+                                                        uint8_t bg_g,
+                                                        uint8_t bg_b) {
+  uint8_t a = rgba[3];
+  if (a == 0) {
+    return bg;
+  }
+  if (a == 255) {
+    return (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
+           ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
+  }
+
+  uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
+  uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
+  uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
+  return (0xFFu << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) |
+         (uint32_t)out_b;
+}
+
+#ifdef __SSE2__
+static void blend_rgba_span_over_opaque_bg_sse2(uint32_t *dst,
+                                                const unsigned char *src,
+                                                int count, uint32_t bg,
+                                                uint8_t bg_r, uint8_t bg_g,
+                                                uint8_t bg_b) {
+  const __m128i zero = _mm_setzero_si128();
+  const __m128i bg_vec =
+      _mm_setr_epi16(bg_r, bg_g, bg_b, 255, bg_r, bg_g, bg_b, 255);
+  const __m128i alpha_max = _mm_set1_epi16(255);
+  const __m128i rgb_mask =
+      _mm_setr_epi16(0xFFFF, 0xFFFF, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0xFFFF, 0);
+  const __m128i alpha_fill =
+      _mm_setr_epi16(0, 0, 0, 255, 0, 0, 0, 255);
+
+  int x = 0;
+  for (; x + 4 <= count; x += 4) {
+    __m128i rgba = _mm_loadu_si128((const __m128i *)(src + x * 4));
+    __m128i lo = _mm_unpacklo_epi8(rgba, zero);
+    __m128i hi = _mm_unpackhi_epi8(rgba, zero);
+
+    __m128i alpha_lo = replicate_alpha_words_sse2(lo);
+    __m128i alpha_hi = replicate_alpha_words_sse2(hi);
+    __m128i inv_alpha_lo = _mm_sub_epi16(alpha_max, alpha_lo);
+    __m128i inv_alpha_hi = _mm_sub_epi16(alpha_max, alpha_hi);
+
+    lo = _mm_add_epi16(_mm_mullo_epi16(lo, alpha_lo),
+                       _mm_mullo_epi16(bg_vec, inv_alpha_lo));
+    hi = _mm_add_epi16(_mm_mullo_epi16(hi, alpha_hi),
+                       _mm_mullo_epi16(bg_vec, inv_alpha_hi));
+
+    lo = div255_epu16_sse2(lo);
+    hi = div255_epu16_sse2(hi);
+
+    lo = swap_rb_words_sse2(lo);
+    hi = swap_rb_words_sse2(hi);
+
+    lo = _mm_or_si128(_mm_and_si128(lo, rgb_mask), alpha_fill);
+    hi = _mm_or_si128(_mm_and_si128(hi, rgb_mask), alpha_fill);
+
+    _mm_storeu_si128((__m128i *)(dst + x), _mm_packus_epi16(lo, hi));
+  }
+
+  for (; x < count; ++x) {
+    dst[x] = blend_rgba_over_opaque_bg_scalar(src + x * 4, bg, bg_r, bg_g, bg_b);
+  }
+}
+#endif
+
 static void svg_render_full(layer_t *layer) {
   if (!g_svg_full_rgba)
     return;
@@ -1314,36 +1422,47 @@ static void svg_render_full(layer_t *layer) {
 
   int scroll_x = (int)roundf(g_scroll_x);
   int scroll_y = (int)roundf(g_scroll_y);
+  int visible_x0 = scroll_x;
+  int visible_x1 = scroll_x + g_svg_full_w;
+  if (visible_x0 < 0)
+    visible_x0 = 0;
+  if (visible_x1 > layer->width)
+    visible_x1 = layer->width;
+  if (visible_x0 > layer->width)
+    visible_x0 = layer->width;
+  if (visible_x1 < 0)
+    visible_x1 = 0;
 
   for (int y = 0; y < layer->height; ++y) {
     uint32_t *line_dst = &layer->buffer[y * layer->width];
     int src_y = y - scroll_y;
     if (src_y < 0 || src_y >= g_svg_full_h) {
-      for (int x = 0; x < layer->width; x++)
-        line_dst[x] = bg;
+      fill_u32_span(line_dst, layer->width, bg);
       continue;
     }
-    unsigned char *line_src = &g_svg_full_rgba[src_y * g_svg_full_w * 4];
-    for (int x = 0; x < layer->width; ++x) {
-      int src_x = x - scroll_x;
-      if (src_x < 0 || src_x >= g_svg_full_w) {
-        line_dst[x] = bg;
-        continue;
+
+    if (visible_x0 > 0) {
+      fill_u32_span(line_dst, visible_x0, bg);
+    }
+
+    if (visible_x1 > visible_x0) {
+      unsigned char *line_src =
+          &g_svg_full_rgba[(src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
+#ifdef __SSE2__
+      blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, line_src,
+                                          visible_x1 - visible_x0, bg, bg_r,
+                                          bg_g, bg_b);
+#else
+      for (int x = visible_x0; x < visible_x1; ++x) {
+        const unsigned char *rgba = line_src + (x - visible_x0) * 4;
+        line_dst[x] =
+            blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
       }
-      unsigned char *rgba = &line_src[src_x * 4];
-      uint8_t a = rgba[3];
-      if (a == 0) {
-        line_dst[x] = bg;
-      } else if (a == 255) {
-        line_dst[x] = (0xFFu << 24) | ((uint32_t)rgba[0] << 16) |
-                      ((uint32_t)rgba[1] << 8) | (uint32_t)rgba[2];
-      } else {
-        uint8_t out_r = (uint8_t)((rgba[0] * a + bg_r * (255 - a)) / 255);
-        uint8_t out_g = (uint8_t)((rgba[1] * a + bg_g * (255 - a)) / 255);
-        uint8_t out_b = (uint8_t)((rgba[2] * a + bg_b * (255 - a)) / 255);
-        line_dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
-                      ((uint32_t)out_g << 8) | (uint32_t)out_b;
-      }
+#endif
+    }
+
+    if (visible_x1 < layer->width) {
+      fill_u32_span(line_dst + visible_x1, layer->width - visible_x1, bg);
     }
   }
 }
@@ -1414,10 +1533,10 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   float tx = 0.0f, ty = 0.0f;
 
   if (load_wallpaper && svg_data == g_wallpaper_ptr) {
-    // "Center Cover" logic
+    // "Center Cover" logic (with 103% zoom)
     float scale_x = (float)g_svg_full_w / g_svg_image->width;
     float scale_y = (float)g_svg_full_h / g_svg_image->height;
-    scale = (scale_x > scale_y) ? scale_x : scale_y;
+    scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f; 
     tx = (g_svg_full_w - g_svg_image->width * scale) / 2.0f;
     ty = (g_svg_full_h - g_svg_image->height * scale) / 2.0f;
   } else {
@@ -1497,7 +1616,7 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
 
       if (ram_tar_ptr) {
           char msg[128];
-          snprintf(msg, sizeof(msg), "INITRD: Found at 0x%x, size %d", (uint32_t)ram_tar_ptr, ram_tar_size);
+          snprintf(msg, sizeof(msg), "INITRD: Found, size %d", ram_tar_size);
           set_w1_global("--warpSystemLog", msg);
           
           fs_format();
@@ -1568,8 +1687,8 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
       g_warp_modules[g_warp_module_count].size = fe->size_bytes;
       
       // 既に個別ロードした主要ファイル（main.warpc等）のポインタを反映
-      if (strcmp(fe->name, "main.warpc") == 0) g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)g_warp_ptr;
-      else if (strcmp(fe->name, "terminal.warp") == 0) g_warp_modules[g_warp_module_count].start = (uint32_t)(uintptr_t)g_terminal_warp_ptr;
+      if (strcmp(fe->name, "main.warpc") == 0) g_warp_modules[g_warp_module_count].start = (uintptr_t)g_warp_ptr;
+      else if (strcmp(fe->name, "terminal.warp") == 0) g_warp_modules[g_warp_module_count].start = (uintptr_t)g_terminal_warp_ptr;
       
       g_warp_module_count++;
   }

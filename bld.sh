@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# --- 進捗表示関数 (垂れ流し版) ---
 TOTAL_STEPS=100
 SPINNER_CHARS=("/" "-" "\\" "|")
 SPINNER_INDEX=0
@@ -22,17 +21,14 @@ show_progress() {
     done
 }
 
-# --- 管理変数 ---
 CURRENT_PID=0
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
     PERF_MODE="max"
 fi
 
-# 現在実行中のビルド/QEMUプロセスを停止する関数
 stop_current() {
     if [ "$CURRENT_PID" -ne 0 ]; then
-        # 子プロセスグループ全体を終了
         pkill -P $CURRENT_PID 2>/dev/null
         kill $CURRENT_PID 2>/dev/null
         wait $CURRENT_PID 2>/dev/null
@@ -41,9 +37,98 @@ stop_current() {
     fi
 }
 
-# ビルドと実行の本体
+resolve_x64_toolchain() {
+    if command -v x86_64-elf-gcc >/dev/null 2>&1 && command -v x86_64-elf-grub-mkrescue >/dev/null 2>&1; then
+        CC="x86_64-elf-gcc"
+        GRUB_MKRESCUE="x86_64-elf-grub-mkrescue"
+        LD_IS_CLANG=0
+        return 0
+    fi
+
+    if command -v clang >/dev/null 2>&1 && command -v grub-mkrescue >/dev/null 2>&1; then
+        CC="clang --target=x86_64-elf"
+        GRUB_MKRESCUE="grub-mkrescue"
+        LD_IS_CLANG=1
+        return 0
+    fi
+
+    if command -v clang >/dev/null 2>&1 && command -v i686-elf-grub-mkrescue >/dev/null 2>&1; then
+        CC="clang --target=x86_64-elf"
+        GRUB_MKRESCUE="i686-elf-grub-mkrescue"
+        LD_IS_CLANG=1
+        return 0
+    fi
+
+    return 1
+}
+
+check_x64_linker() {
+    if command -v x86_64-elf-gcc >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if command -v ld.lld >/dev/null 2>&1 || command -v x86_64-elf-ld >/dev/null 2>&1; then
+        return 0
+    fi
+
+    return 1
+}
+
+compile_c() {
+    local src=$1
+    local out=$2
+    local flags=$3
+
+    if [ "$LD_IS_CLANG" -eq 1 ]; then
+        clang --target=x86_64-elf $flags -c "$src" -o "$out"
+    else
+        $CC $flags -c "$src" -o "$out"
+    fi
+}
+
+link_kernel() {
+    local LLD_CMD=""
+    if command -v ld.lld >/dev/null 2>&1; then
+        LLD_CMD="ld.lld"
+    elif command -v lld >/dev/null 2>&1; then
+        LLD_CMD="lld"
+    fi
+
+    if [ "$LD_IS_CLANG" -eq 1 ]; then
+        if [ -n "$LLD_CMD" ]; then
+            # macOS の clang はデフォルトで Mach-O リンカを呼ぼうとするため、
+            # 直接 lld を呼ぶか、-fuse-ld にフルパスまたは適切な指定が必要です。
+            # ここでは直接 lld (ELF 用) を使用する設定を試みます。
+            clang --target=x86_64-elf -fuse-ld="$LLD_CMD" -T link64.ld -o output/kernel.bin \
+                output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
+                -ffreestanding -O2 -nostdlib -static-libgcc -lgcc 2>/dev/null || \
+            $LLD_CMD -T link64.ld -o output/kernel.bin \
+                output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o
+            return $?
+        fi
+        echo "  ❌ 64-bit linker が見つかりません (ld.lld または x86_64-elf ツールチェーンが必要です)"
+        return 1
+    fi
+
+    $CC -T link64.ld -o output/kernel.bin \
+        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
+        -ffreestanding -O2 -m64 -mcmodel=kernel -mno-red-zone -nostdlib -static-libgcc -lgcc
+}
+
 do_build_and_run() {
-    # 1. ビルド番号の自動更新
+    if ! resolve_x64_toolchain; then
+        echo "  ❌ 64-bit ビルド用ツールチェーンが見つかりません"
+        echo "     必要: x86_64-elf-gcc + x86_64-elf-grub-mkrescue"
+        echo "     代替: clang + ld.lld + grub-mkrescue"
+        return 1
+    fi
+
+    if ! check_x64_linker; then
+        echo "  ❌ この環境では 64-bit ELF リンカが未導入です"
+        echo "     32-bit は ./bld32.sh で引き続きビルドできます"
+        return 1
+    fi
+
     BN_FILE=".build_no"
     if [ ! -f "$BN_FILE" ]; then
         echo "0" > "$BN_FILE"
@@ -52,66 +137,56 @@ do_build_and_run() {
     PREV_BN=$(cat "$BN_FILE")
     CURRENT_BN=$((PREV_BN + 1))
     echo "$CURRENT_BN" > "$BN_FILE"
-
-    # ヘッダファイル生成
     echo "#define BUILD_NUMBER $CURRENT_BN" > build_no.h
 
-    CURRENT_PERCENT=0 # 進捗リセット
+    CURRENT_PERCENT=0
 
     echo ""
-    echo "  🚀 BaramOS Build #$CURRENT_BN 開始"
+    echo "  🚀 BaramOS Build #$CURRENT_BN 開始 (64-bit)"
 
-    # 2. 出力ディレクトリの準備
     rm -rf output
     mkdir -p output/isodir/boot/grub
     show_progress 10
 
-    # 3. アセンブラのコンパイル
-    nasm -f elf32 arch/boot.s -o output/boot.o
+    nasm -f elf64 arch/boot64.s -o output/boot.o || return 1
     show_progress 15
-    nasm -f elf32 arch/isr.s -o output/isr.o
+    nasm -f elf64 arch/isr64.s -o output/isr.o || return 1
     show_progress 20
 
-    # 4. C 言語のコンパイル
-    CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
+    COMMON_CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m64 -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie -DBUILD_NUMBER=$CURRENT_BN"
+    KERNEL_CFLAGS="$COMMON_CFLAGS -msse2"
 
-    i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || return 1
+    compile_c kernel.c output/kernel.o "$KERNEL_CFLAGS" || return 1
     show_progress 40
-    i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
+    compile_c drivers.c output/drivers.o "$COMMON_CFLAGS" || return 1
     show_progress 50
-    i686-elf-gcc $CFLAGS -c storage.c -o output/storage.o || return 1
+    compile_c storage.c output/storage.o "$COMMON_CFLAGS" || return 1
     show_progress 55
-    i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
+    compile_c fs.c output/fs.o "$COMMON_CFLAGS" || return 1
     show_progress 60
-    i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
+    compile_c ui/warp_engine.c output/warp_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 70
-    i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    compile_c ui/warp1_engine.c output/warp1_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 80
 
-    # 5. カーネルのリンク
-    i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
-        -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
+    link_kernel || return 1
     show_progress 85
 
-    # 6. ISO ディレクトリへのファイル配置
     mkdir -p output/isodir/boot/grub
     cp output/kernel.bin output/isodir/boot/
-    
-    # --- Create initrd.tar ---
+
     INITRD_DIR="output/initrd_tmp"
     rm -rf "$INITRD_DIR"
     mkdir -p "$INITRD_DIR"
-    
+
     cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
-    
+
     (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
     rm -rf "$INITRD_DIR"
 
-    # Generate grub.cfg
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
 set timeout=0
@@ -120,7 +195,7 @@ set quiet=1
 set gfxmode=1280x720x32,auto
 set gfxpayload=keep
 terminal_output gfxterm
-menuentry "baram-os" {
+menuentry "baram-os (64-bit)" {
     multiboot /boot/kernel.bin
     module /boot/MPLUS2-Regular.ttf
     module /boot/initrd.tar initrd
@@ -131,23 +206,20 @@ EOF
     if [ -f "font/MPLUS2-Regular.ttf" ]; then
         cp font/MPLUS2-Regular.ttf output/isodir/boot/
     fi
-    
-    show_progress 90
-    
-    # 7. ISO イメージ作成
-    i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
-    show_progress 100
-    echo "" # ここで改行を入れて進捗バーを確定させる
 
-    # Disk image for storage
+    show_progress 90
+
+    $GRUB_MKRESCUE -o output/os.iso output/isodir || return 1
+    show_progress 100
+    echo ""
+
     if [ ! -f "output/os.img" ]; then
         dd if=/dev/zero of=output/os.img bs=1M count=64 2>/dev/null
     fi
 
     echo "  ✅ Build #$CURRENT_BN Success"
 
-    # 8. QEMU 起動
-    Q_CPU="coreduo"
+    Q_CPU="qemu64"
     Q_ACCEL="-accel tcg,thread=multi"
 
     if [ "$PERF_MODE" = "max" ]; then
@@ -155,7 +227,7 @@ EOF
         Q_ACCEL="-accel tcg,thread=multi,tb-size=1024"
     fi
 
-    qemu-system-i386 -cdrom output/os.iso \
+    qemu-system-x86_64 -cdrom output/os.iso \
         -hda output/os.img \
         -vga virtio \
         -m 2G \
@@ -167,41 +239,34 @@ EOF
         -display cocoa
 }
 
-# --- メインループ ---
-# clear を削除 (過去のログを残すため)
-
-# Sync warp symlinks on startup
 if [ -f "warp_launcher.sh" ]; then
     ./warp_launcher.sh > /dev/null
 fi
 
-# Determine initial action
 INITIAL_CMD=""
 if [ "$1" = "r" ] || [ "$2" = "r" ]; then
     INITIAL_CMD="r"
 fi
 
 echo "========================================"
-echo "  🚀 BaramOS Interactive Build System (Streaming Mode)"
+echo "  🚀 BaramOS Interactive Build System (64-bit)"
 echo "  [r]: Build & Run"
 echo "  [c]: Stop"
 echo "  [q]: Quit"
 echo "========================================"
+echo "  ℹ️  32-bit build は ./bld32.sh を使用"
 if [ "$PERF_MODE" = "max" ]; then
     echo "  🔥 Performance Mode: MAX"
 fi
 
-# 終了時のクリーンアップ
 trap "stop_current; exit" SIGINT SIGTERM
 
-# Initial action
 if [ "$INITIAL_CMD" = "r" ]; then
     do_build_and_run &
     CURRENT_PID=$!
 fi
 
 while true; do
-    # 1文字の入力を待機 (非表示・サイレント)
     read -n 1 -s cmd
     case "$cmd" in
         r)

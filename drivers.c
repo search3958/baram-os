@@ -401,23 +401,40 @@ struct idt_entry idt[256];
 struct idt_ptr idtp;
 
 void idt_set_gate(uint8_t num, uintptr_t base, uint16_t sel, uint8_t flags) {
+#ifdef __x86_64__
+  idt[num].base_lo = (base & 0xFFFF);
+  idt[num].base_mid = (base >> 16) & 0xFFFF;
+  idt[num].base_hi = (uint32_t)(base >> 32);
+  idt[num].sel = sel;
+  idt[num].ist = 0;
+  idt[num].flags = flags;
+  idt[num].reserved = 0;
+#else
   idt[num].base_lo = (base & 0xFFFF);
   idt[num].base_hi = (base >> 16) & 0xFFFF;
   idt[num].sel = sel;
   idt[num].always0 = 0;
   idt[num].flags = flags;
+#endif
 }
 
 void idt_install() {
   idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
-  idtp.base = (uint32_t)(uintptr_t)&idt;
+  idtp.base = (uintptr_t)&idt;
 
   for (int i = 0; i < 256; i++) {
     idt[i].base_lo = 0;
-    idt[i].base_hi = 0;
     idt[i].sel = 0;
-    idt[i].always0 = 0;
     idt[i].flags = 0;
+#ifdef __x86_64__
+    idt[i].ist = 0;
+    idt[i].base_mid = 0;
+    idt[i].base_hi = 0;
+    idt[i].reserved = 0;
+#else
+    idt[i].base_hi = 0;
+    idt[i].always0 = 0;
+#endif
   }
 
   __asm__ __volatile__("lidt %0" : : "m"(idtp) : "memory");
