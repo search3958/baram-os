@@ -2260,11 +2260,25 @@ static void window_redraw(window_t *win) {
     if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
     nsvgRasterize(g_svg_rast, win->svg_image_cache, 0, 0, target_scale, (unsigned char*)win->raster_cache, scaled_w, scaled_h, scaled_w * 4);
 
-    strncpy(g_hud_status, "RBSwap", 63);
+    strncpy(g_hud_status, "RBSwap+PreMul", 63);
     unsigned char *p = (unsigned char*)win->raster_cache;
     for (int i = 0; i < scaled_w * scaled_h; i++) {
-      unsigned char r = p[0], b = p[2];
-      p[0] = b; p[2] = r; p += 4;
+      uint8_t a = p[3];
+      if (a == 255) {
+        // 不透明：RGB入れ替えのみ
+        uint8_t r = p[0], b = p[2];
+        p[0] = b; p[2] = r;
+      } else if (a == 0) {
+        // 完全透明：クリア
+        p[0] = 0; p[1] = 0; p[2] = 0;
+      } else {
+        // 乗算済みアルファ：(color * alpha) >> 8
+        uint8_t r = p[0], g = p[1], b = p[2];
+        p[0] = (uint8_t)((uint32_t)b * a >> 8);
+        p[1] = (uint8_t)((uint32_t)g * a >> 8);
+        p[2] = (uint8_t)((uint32_t)r * a >> 8);
+      }
+      p += 4;
     }
   }
 
@@ -2676,6 +2690,27 @@ static uint32_t blend_colors_fixed(uint32_t c0, uint32_t c1, int alpha255) {
   return blend_colors(c0, c1, (uint8_t)alpha255);
 }
 
+static uint32_t blend_rgb_over_opaque_premul(uint32_t bg, uint32_t fg_premul) {
+  uint32_t alpha = (fg_premul >> 24) & 0xFFu;
+  if (alpha == 0) return bg | 0xFF000000u;
+  if (alpha == 255) return fg_premul | 0xFF000000u;
+
+  uint32_t inv_alpha = 255 - alpha;
+  uint32_t bg_r = (bg >> 16) & 0xFFu;
+  uint32_t bg_g = (bg >> 8) & 0xFFu;
+  uint32_t bg_b = bg & 0xFFu;
+
+  uint32_t fg_r = (fg_premul >> 16) & 0xFFu;
+  uint32_t fg_g = (fg_premul >> 8) & 0xFFu;
+  uint32_t fg_b = fg_premul & 0xFFu;
+
+  uint32_t out_r = fg_r + ((bg_r * inv_alpha) >> 8);
+  uint32_t out_g = fg_g + ((bg_g * inv_alpha) >> 8);
+  uint32_t out_b = fg_b + ((bg_b * inv_alpha) >> 8);
+
+  return 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
+}
+
 static uint32_t blend_rgb_over_opaque(uint32_t bg, uint32_t fg, uint8_t alpha) {
   if (alpha == 0) return bg | 0xFF000000u;
   if (alpha == 255) return (fg & 0x00FFFFFFu) | 0xFF000000u;
@@ -3008,8 +3043,7 @@ skip_shadow:
           surface_bg = blend_colors(surface_bg, bg_color, (uint8_t)(bg_color >> 24));
 
           {
-            uint8_t color_alpha = (uint8_t)(color >> 24);
-            color = blend_colors(surface_bg, color, color_alpha);
+            color = blend_rgb_over_opaque_premul(surface_bg, color);
           }
           if (text_overlay && dy < text_overlay_h && dx < text_overlay_w) {
             uint32_t text_px = text_overlay[dy * text_overlay_w + dx];

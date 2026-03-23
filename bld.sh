@@ -1,22 +1,25 @@
 #!/bin/bash
 
 # --- 進捗表示関数 (垂れ流し版) ---
-TOTAL_STEPS=12
+TOTAL_STEPS=100
 SPINNER_CHARS=("/" "-" "\\" "|")
 SPINNER_INDEX=0
+CURRENT_PERCENT=0
 
 show_progress() {
-    local step=$1
-    local percent=$((step * 100 / TOTAL_STEPS))
-    local filled=$((percent / 10))
-    local empty=$((10 - filled))
-    local bar=""
-    for ((i=0; i<filled; i++)); do bar+="="; done
-    for ((i=0; i<empty; i++)); do bar+="-"; done
-    local spinner=${SPINNER_CHARS[$SPINNER_INDEX]}
-    SPINNER_INDEX=$(( (SPINNER_INDEX + 1) % 4 ))
-    # \r を削除し、改行でログとして残るように変更
-    printf "  ${spinner} [${bar}] %2d%% 完了\n" "$percent"
+    local target=$1
+    while [ $CURRENT_PERCENT -lt $target ]; do
+        CURRENT_PERCENT=$((CURRENT_PERCENT + 1))
+        local filled=$((CURRENT_PERCENT / 10))
+        local empty=$((10 - filled))
+        local bar=""
+        for ((i=0; i<filled; i++)); do bar+="="; done
+        for ((i=0; i<empty; i++)); do bar+="-"; done
+        local spinner=${SPINNER_CHARS[$SPINNER_INDEX]}
+        SPINNER_INDEX=$(( (SPINNER_INDEX + 1) % 4 ))
+        printf "\r\e[K  ${spinner} [${bar}] %3d%% 完了" "$CURRENT_PERCENT"
+        sleep 0.002
+    done
 }
 
 # --- 管理変数 ---
@@ -53,41 +56,43 @@ do_build_and_run() {
     # ヘッダファイル生成
     echo "#define BUILD_NUMBER $CURRENT_BN" > build_no.h
 
+    CURRENT_PERCENT=0 # 進捗リセット
+
     echo ""
     echo "  🚀 BaramOS Build #$CURRENT_BN 開始"
 
     # 2. 出力ディレクトリの準備
-    rm -rf output/isodir
+    rm -rf output
     mkdir -p output/isodir/boot/grub
-    show_progress 1
+    show_progress 10
 
     # 3. アセンブラのコンパイル
     nasm -f elf32 arch/boot.s -o output/boot.o
-    show_progress 2
+    show_progress 15
     nasm -f elf32 arch/isr.s -o output/isr.o
-    show_progress 3
+    show_progress 20
 
     # 4. C 言語のコンパイル
     CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
 
     i686-elf-gcc $CFLAGS -c kernel.c -o output/kernel.o || return 1
-    show_progress 4
+    show_progress 40
     i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
-    show_progress 5
+    show_progress 50
     i686-elf-gcc $CFLAGS -c storage.c -o output/storage.o || return 1
-    show_progress 6
+    show_progress 55
     i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
-    show_progress 7
+    show_progress 60
     i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
-    show_progress 8
+    show_progress 70
     i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
-    show_progress 9
+    show_progress 80
 
     # 5. カーネルのリンク
     i686-elf-gcc -T link.ld -o output/kernel.bin \
         output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
-    show_progress 10
+    show_progress 85
 
     # 6. ISO ディレクトリへのファイル配置
     mkdir -p output/isodir/boot/grub
@@ -127,11 +132,12 @@ EOF
         cp font/MPLUS2-Regular.ttf output/isodir/boot/
     fi
     
-    show_progress 11
+    show_progress 90
     
     # 7. ISO イメージ作成
     i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
-    show_progress 12
+    show_progress 100
+    echo "" # ここで改行を入れて進捗バーを確定させる
 
     # Disk image for storage
     if [ ! -f "output/os.img" ]; then
