@@ -198,6 +198,7 @@ static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
 static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
                                  int ry, int rw, int rh, uint32_t c1,
                                  uint32_t c2);
+static uint32_t blend_rgb_over_opaque(uint32_t bg, uint32_t fg, uint8_t alpha);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
 static void bg_preview_update(layer_t *preview);
@@ -1680,9 +1681,16 @@ static void handle_terminal_command(const char *cmd) {
     set_w1_global("--warpSystemLog", "Commands: <file.warp>, warp <file>, reboot, exit, help, ls");
   } else if (strncmp(start_ptr, "dev pointerCheck=", 17) == 0) {
     const char *val = start_ptr + 17;
-    if (strcmp(val, "true") == 0) g_dev_pointer_check = 1;
-    else g_dev_pointer_check = 0;
+    set_w1_global("~~dev/pointerCheck", (strcmp(val, "true") == 0) ? "true" : "false");
     strncpy(g_hud_status, g_dev_pointer_check ? "PtrCheck:ON" : "PtrCheck:OFF", 63);
+  } else if (strncmp(start_ptr, "dev eventCheck=", 15) == 0) {
+    const char *val = start_ptr + 15;
+    set_w1_global("~~dev/eventCheck", (strcmp(val, "true") == 0) ? "true" : "false");
+    strncpy(g_hud_status, g_dev_event_check ? "EvtCheck:ON" : "EvtCheck:OFF", 63);
+  } else if (strncmp(start_ptr, "dev showHUD=", 12) == 0 || strncmp(start_ptr, "dev showhud=", 12) == 0) {
+    const char *val = start_ptr + 12;
+    set_w1_global("~~dev/showHUD", (strcmp(val, "true") == 0) ? "true" : "false");
+    strncpy(g_hud_status, g_dev_show_hud ? "HUD:ON" : "HUD:OFF", 63);
   } else if (strncmp(start_ptr, "dev dark=", 9) == 0) {
     const char *val = start_ptr + 9;
     set_w1_global("~~json/main/dark", val);
@@ -1953,7 +1961,7 @@ static void window_bake(window_t *win) {
         uint8_t mask_alpha = (win->is_maximized || win->no_decoration) ? 255 : text_mask_line[x];
         uint8_t final_alpha = (uint8_t)((uint32_t)alpha * mask_alpha / 255);
         win->unified_buffer[py * sw + px] =
-            blend_colors(win->unified_buffer[py * sw + px], text_px, final_alpha);
+            blend_rgb_over_opaque(win->unified_buffer[py * sw + px], text_px, final_alpha);
       }
     }
     free(text_overlay);
@@ -2621,11 +2629,16 @@ static uint32_t sample_backdrop_pixel(window_t *target, int px, int py) {
   return color;
 }
 
-static uint32_t sample_backdrop_blur(window_t *target, int sx0, int sy0, int sx1, int sy1) {
+static uint32_t sample_backdrop_blur(window_t *target, int center_x, int center_y, int radius) {
   uint32_t sum_r = 0;
   uint32_t sum_g = 0;
   uint32_t sum_b = 0;
   uint32_t count = 0;
+  int sx0 = center_x - radius;
+  int sy0 = center_y - radius;
+  int sx1 = center_x + radius;
+  int sy1 = center_y + radius;
+  int radius_sq = radius * radius;
 
   if (sx0 < 0) sx0 = 0;
   if (sy0 < 0) sy0 = 0;
@@ -2636,6 +2649,10 @@ static uint32_t sample_backdrop_blur(window_t *target, int sx0, int sy0, int sx1
 
   for (int y = sy0; y < sy1; y++) {
     for (int x = sx0; x < sx1; x++) {
+      int dx = x - center_x;
+      int dy = y - center_y;
+      if (dx * dx + dy * dy > radius_sq)
+        continue;
       uint32_t color = sample_backdrop_pixel(target, x, y);
       sum_r += (color >> 16) & 0xFF;
       sum_g += (color >> 8) & 0xFF;
@@ -2657,6 +2674,24 @@ static uint32_t blend_colors_fixed(uint32_t c0, uint32_t c1, int alpha255) {
   if (alpha255 <= 0) return c0;
   if (alpha255 >= 255) return c1;
   return blend_colors(c0, c1, (uint8_t)alpha255);
+}
+
+static uint32_t blend_rgb_over_opaque(uint32_t bg, uint32_t fg, uint8_t alpha) {
+  if (alpha == 0) return bg | 0xFF000000u;
+  if (alpha == 255) return (fg & 0x00FFFFFFu) | 0xFF000000u;
+
+  uint32_t inv_alpha = 255 - alpha;
+  uint32_t bg_r = (bg >> 16) & 0xFFu;
+  uint32_t bg_g = (bg >> 8) & 0xFFu;
+  uint32_t bg_b = bg & 0xFFu;
+  uint32_t fg_r = (fg >> 16) & 0xFFu;
+  uint32_t fg_g = (fg >> 8) & 0xFFu;
+  uint32_t fg_b = fg & 0xFFu;
+
+  uint32_t out_r = (fg_r * alpha + bg_r * inv_alpha) >> 8;
+  uint32_t out_g = (fg_g * alpha + bg_g * inv_alpha) >> 8;
+  uint32_t out_b = (fg_b * alpha + bg_b * inv_alpha) >> 8;
+  return 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
 }
 
 static uint32_t sample_blur_cache(const uint32_t *blur_cache, int blur_cols,
@@ -2939,12 +2974,8 @@ skip_shadow:
             int sample_y = win->y + by * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
             for (int bx = 0; bx < blur_cols; bx++) {
               int sample_x = win->x + bx * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
-              int sx0 = sample_x - WINDOW_BLUR_SAMPLE_SIZE / 2;
-              int sy0 = sample_y - WINDOW_BLUR_SAMPLE_SIZE / 2;
-              int sx1 = sx0 + WINDOW_BLUR_SAMPLE_SIZE;
-              int sy1 = sy0 + WINDOW_BLUR_SAMPLE_SIZE;
               blur_cache[by * blur_cols + bx] =
-                  sample_backdrop_blur(win, sx0, sy0, sx1, sy1);
+                  sample_backdrop_blur(win, sample_x, sample_y, WINDOW_BLUR_SAMPLE_SIZE / 2);
             }
           }
         }
@@ -2984,7 +3015,7 @@ skip_shadow:
             uint32_t text_px = text_overlay[dy * text_overlay_w + dx];
             uint8_t text_alpha = (uint8_t)(text_px >> 24);
             if (text_alpha != 0) {
-              color = blend_colors(color, text_px, text_alpha);
+              color = blend_rgb_over_opaque(color, text_px, text_alpha);
             }
           }
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);

@@ -504,7 +504,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
             if (w1_strcmp(node->tag, "tonalButton") == 0) {
                 ctx->texts[ctx->texts_count].color = is_dark ? 0xFFFFFFFF : 0xFF000000;
             } else {
-                ctx->texts[ctx->texts_count].color = 0xFFFEFFFF;
+                ctx->texts[ctx->texts_count].color = 0xFFFFFFFF;
             }
             ctx->texts_count++;
         }
