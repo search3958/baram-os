@@ -278,6 +278,16 @@ typedef struct window_struct {
   // Unified caching for inactive windows (RAM optimization)
   uint32_t *unified_buffer; // Baked RGBA image (shadow + frame + content)
   int unified_w, unified_h;
+
+  // Text overlay cache
+  uint32_t *text_overlay_cache;
+  int text_overlay_cache_w, text_overlay_cache_h;
+  float text_overlay_last_scroll_y;
+
+  // Blur cache
+  uint32_t *blur_cache;
+  int blur_cache_cols, blur_cache_rows;
+  int blur_last_x, blur_last_y, blur_last_w, blur_last_h;
 } window_t;
 
 static void window_update_caches(window_t *win);
@@ -578,6 +588,9 @@ long double __divtf3(long double a, long double b) { return a / b; }
 
 // レイヤー用
 static uint32_t main_screen_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static uint32_t desktop_composite_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static int desktop_composite_dirty = 1;
+static int desktop_composite_last_active_index = -1;
 static uint32_t *svg_buf = NULL; // 動的確保に変更
 static uint32_t svg_base_buf[SVG_WIDTH * SVG_HEIGHT];
 static uint32_t blink_buf[50 * 50];
@@ -2545,6 +2558,14 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->window_mask = NULL;
   win->unified_buffer = NULL;
   win->unified_w = 0; win->unified_h = 0;
+  win->text_overlay_cache = NULL;
+  win->text_overlay_cache_w = 0;
+  win->text_overlay_cache_h = 0;
+  win->text_overlay_last_scroll_y = -9999.0f;
+  win->blur_cache = NULL;
+  win->blur_cache_cols = 0;
+  win->blur_cache_rows = 0;
+  win->blur_last_x = -1; win->blur_last_y = -1; win->blur_last_w = -1; win->blur_last_h = -1;
   win->is_dirty = 1;
   win->is_maximized = 0;
   win->is_dragging = 0;
@@ -2593,6 +2614,8 @@ static void close_active_window() {
   if (win->window_mask) free(win->window_mask);
   if (win->dynamic_file_ptr) free(win->dynamic_file_ptr);
   if (win->unified_buffer) free(win->unified_buffer);
+  if (win->text_overlay_cache) free(win->text_overlay_cache);
+  if (win->blur_cache) free(win->blur_cache);
   
   for (int i = g_active_window_index; i < g_window_count - 1; i++) {
     g_windows[i] = g_windows[i+1];
@@ -2746,6 +2769,13 @@ static uint32_t composite_window_pixel(uint32_t dst, window_t *win, int px, int 
 }
 
 static uint32_t sample_backdrop_pixel(window_t *target, int px, int py) {
+  if (target == &g_windows[g_active_window_index] && !desktop_composite_dirty && 
+      desktop_composite_last_active_index == g_active_window_index) {
+    if (px >= 0 && px < SCREEN_WIDTH && py >= 0 && py < SCREEN_HEIGHT) {
+      return desktop_composite_buf[py * SCREEN_WIDTH + px];
+    }
+  }
+
   uint32_t color = sample_wallpaper_pixel(px, py);
   int target_index = window_index_of(target);
   if (target_index < 0)
@@ -3112,28 +3142,51 @@ skip_shadow:
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)(win->h + title_h) * scale);
-      uint32_t *blur_cache = NULL;
-      int blur_cols = 0;
-      int blur_rows = 0;
-      uint32_t bg_color = get_window_background_color(win);
-      int text_overlay_w = 0;
-      int text_overlay_h = 0;
-      uint32_t *text_overlay = build_window_text_overlay(win, &text_overlay_w, &text_overlay_h);
-      if (win->w > 0 && win->h > 0) {
-        blur_cols = (win->w + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
-        blur_rows = (win->h + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
-        blur_cache = (uint32_t *)malloc((size_t)blur_cols * (size_t)blur_rows * sizeof(uint32_t));
-        if (blur_cache) {
+      // --- Optimized Blur Cache ---
+      int blur_cols = (win->w + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
+      int blur_rows = (win->h + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
+
+      if (win->is_dragging) {
+        // Skip recomputing blur during drag; use old cache or NULL
+      } else if (!win->blur_cache || win->blur_cache_cols != blur_cols || win->blur_cache_rows != blur_rows ||
+                 win->blur_last_w != win->w || win->blur_last_h != win->h ||
+                 (win->is_dirty && !win->is_resizing)) {
+
+        if (win->blur_cache) free(win->blur_cache);
+        win->blur_cache = (uint32_t *)malloc((size_t)blur_cols * (size_t)blur_rows * sizeof(uint32_t));
+        win->blur_cache_cols = blur_cols;
+        win->blur_cache_rows = blur_rows;
+        win->blur_last_w = win->w;
+        win->blur_last_h = win->h;
+
+        if (win->blur_cache) {
           for (int by = 0; by < blur_rows; by++) {
             int sample_y = win->y + by * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
             for (int bx = 0; bx < blur_cols; bx++) {
               int sample_x = win->x + bx * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
-              blur_cache[by * blur_cols + bx] =
+              win->blur_cache[by * blur_cols + bx] =
                   sample_backdrop_blur(win, sample_x, sample_y, WINDOW_BLUR_SAMPLE_SIZE / 2);
             }
           }
         }
       }
+      uint32_t *blur_cache = win->blur_cache;
+      uint32_t bg_color = get_window_background_color(win);
+
+      // --- Optimized Text Overlay Cache ---
+      if (!win->text_overlay_cache || win->text_overlay_cache_w != win->w || 
+          win->text_overlay_cache_h != win->h || win->text_overlay_last_scroll_y != win->scroll_y) {
+        if (win->text_overlay_cache) free(win->text_overlay_cache);
+        int text_w = 0, text_h = 0;
+        win->text_overlay_cache = build_window_text_overlay(win, &text_w, &text_h);
+        win->text_overlay_cache_w = text_w;
+        win->text_overlay_cache_h = text_h;
+        win->text_overlay_last_scroll_y = win->scroll_y;
+      }
+      uint32_t *text_overlay = win->text_overlay_cache;
+      int text_overlay_w = win->text_overlay_cache_w;
+      int text_overlay_h = win->text_overlay_cache_h;
+
       int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
       if (scroll_offset_y < 0) scroll_offset_y = 0;
       for (int dy = cy0; dy < cy1; dy++) {
@@ -3183,8 +3236,6 @@ skip_shadow:
           dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
         }
       }
-      if (text_overlay) free(text_overlay);
-      if (blur_cache) free(blur_cache);
     }
 }
 
@@ -3219,19 +3270,46 @@ static void redraw_warp_region(layer_t *layer, int rx0, int ry0, int rx1, int ry
 static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
   sync_all_window_themes();
-  draw_wallpaper(layer);
+
+  int active_idx = g_active_window_index;
+  int below_active_dirty = 0;
   for (int i = 0; i < g_window_count; i++) {
-    window_t *win = &g_windows[i];
-    if (win->is_sticky) continue;
+    if (i < active_idx && g_windows[i].is_dirty && !g_windows[i].is_resizing) below_active_dirty = 1;
+  }
+
+  if (desktop_composite_dirty || below_active_dirty || active_idx != desktop_composite_last_active_index) {
+    layer_t temp_layer = *layer;
+    temp_layer.buffer = desktop_composite_buf;
+    
+    draw_wallpaper(&temp_layer);
+    for (int i = 0; i < g_window_count; i++) {
+      window_t *win = &g_windows[i];
+      if (win->is_sticky) continue;
+      if (i >= active_idx) break; // Only draw below active
+      if (win->is_dirty && !win->is_resizing) window_redraw(win);
+      draw_single_window(&temp_layer, win, 0, 0, temp_layer.width, temp_layer.height);
+    }
+    desktop_composite_dirty = 0;
+    desktop_composite_last_active_index = active_idx;
+  }
+
+  memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);
+
+  // Draw the active window and windows above it (sticky windows)
+  if (active_idx >= 0 && active_idx < g_window_count) {
+    window_t *win = &g_windows[active_idx];
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
     draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
+
   for (int i = 0; i < g_window_count; i++) {
     window_t *win = &g_windows[i];
     if (!win->is_sticky) continue;
+    if (i == active_idx) continue; // Already drawn if it was active (unlikely for sticky)
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
     draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
+
   g_svg_dirty = 0;
   screen_mark_layer_dirty(layer);
 }
@@ -4698,23 +4776,27 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         window_t *awin = &g_windows[g_active_window_index];
         int hx = mouse_x + MOUSE_HOTSPOT_X;
         int hy = mouse_y + MOUSE_HOTSPOT_Y;
-        if (awin->is_warp1) {
-          if (awin->warp1_ctx) {
-            warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-            if (warp1_context_is_dirty(awin->warp1_ctx)) {
-              awin->is_dirty = 1;
-              g_svg_dirty = 1;
+        
+        if (!awin->is_dragging && !awin->is_resizing) {
+          if (awin->is_warp1) {
+            if (awin->warp1_ctx) {
+              warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+              if (warp1_context_is_dirty(awin->warp1_ctx)) {
+                awin->is_dirty = 1;
+                g_svg_dirty = 1;
+              }
             }
-          }
-        } else {
-          if (awin->warp_ctx) {
-            warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-            if (warp_context_is_dirty(awin->warp_ctx)) {
-              awin->is_dirty = 1;
-              g_svg_dirty = 1;
+          } else {
+            if (awin->warp_ctx) {
+              warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+              if (warp_context_is_dirty(awin->warp_ctx)) {
+                awin->is_dirty = 1;
+                g_svg_dirty = 1;
+              }
             }
           }
         }
+
         if (awin->is_dragging) {
           awin->x += mouse_dx; awin->y += mouse_dy;
           g_svg_dirty = 1;

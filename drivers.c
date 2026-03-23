@@ -193,6 +193,17 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
 
       uint32_t d = *dst;
       uint32_t da = (d >> 24) & 0xFFu;
+      
+      if (da == 255) {
+        // Fast path for opaque destination
+        uint32_t inv_a = 255 - a;
+        uint32_t out_r = (((c >> 16) & 0xFFu) * a + ((d >> 16) & 0xFFu) * inv_a) >> 8;
+        uint32_t out_g = (((c >> 8) & 0xFFu) * a + ((d >> 8) & 0xFFu) * inv_a) >> 8;
+        uint32_t out_b = ((c & 0xFFu) * a + (d & 0xFFu) * inv_a) >> 8;
+        *dst++ = 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
+        continue;
+      }
+
       uint32_t out_a = a + ((da * (255 - a)) >> 8);
       if (out_a == 0) {
         *dst++ = 0;
