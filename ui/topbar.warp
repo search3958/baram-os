@@ -17,7 +17,7 @@ screen{
     hStack{
         button{
             text: ("BaramOS"),
-            oneClick: (run{setting.warp})
+            oneClick: (run{"warp setting.warp"})
         },
         tonalButton{
             text: ("再起動"),

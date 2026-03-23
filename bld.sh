@@ -224,7 +224,7 @@ EOF
 
     if [ "$PERF_MODE" = "max" ]; then
         Q_CPU="max"
-        Q_ACCEL="-accel tcg,thread=multi,tb-size=1024"
+        Q_ACCEL="-accel tcg,thread=multi,tb-size=2048"
     fi
 
     qemu-system-x86_64 -cdrom output/os.iso \
