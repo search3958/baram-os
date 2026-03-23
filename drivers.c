@@ -191,17 +191,27 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
         continue;
       } // 不透明
 
-      // アルファブレンド (高速近似: /256)
       uint32_t d = *dst;
-      uint32_t rb_c = (c & 0x00FF00FFu);
-      uint32_t g_c = (c & 0x0000FF00u);
-      uint32_t rb_d = (d & 0x00FF00FFu);
-      uint32_t g_d = (d & 0x0000FF00u);
+      uint32_t da = (d >> 24) & 0xFFu;
+      uint32_t out_a = a + ((da * (255 - a)) >> 8);
+      if (out_a == 0) {
+        *dst++ = 0;
+        continue;
+      }
 
-      uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
-      uint32_t g_out = (g_c * a + g_d * (255 - a)) >> 8;
+      uint32_t cr = (c >> 16) & 0xFFu;
+      uint32_t cg = (c >> 8) & 0xFFu;
+      uint32_t cb = c & 0xFFu;
+      uint32_t dr = (d >> 16) & 0xFFu;
+      uint32_t dg = (d >> 8) & 0xFFu;
+      uint32_t db = d & 0xFFu;
+      uint32_t d_contrib = da * (255 - a);
 
-      *dst++ = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+      uint32_t out_r = (cr * a * 255u + dr * d_contrib) / (out_a * 255u);
+      uint32_t out_g = (cg * a * 255u + dg * d_contrib) / (out_a * 255u);
+      uint32_t out_b = (cb * a * 255u + db * d_contrib) / (out_a * 255u);
+
+      *dst++ = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
     }
   }
 }
@@ -292,11 +302,23 @@ void screen_refresh(void) {
         if (a == 255) { bb[sy * SCREEN_WIDTH + sx] = c; }
         else {
           uint32_t d = bb[sy * SCREEN_WIDTH + sx];
-          uint32_t rb_c = (c & 0x00FF00FFu), g_c = (c & 0x0000FF00u);
-          uint32_t rb_d = (d & 0x00FF00FFu), g_d = (d & 0x0000FF00u);
-          uint32_t rb_out = (rb_c * a + rb_d * (255 - a)) >> 8;
-          uint32_t g_out  = (g_c * a + g_d * (255 - a)) >> 8;
-          bb[sy * SCREEN_WIDTH + sx] = 0xFF000000u | (rb_out & 0x00FF00FFu) | (g_out & 0x0000FF00u);
+          uint32_t da = (d >> 24) & 0xFFu;
+          uint32_t out_a = a + ((da * (255 - a)) >> 8);
+          if (out_a == 0) {
+            bb[sy * SCREEN_WIDTH + sx] = 0;
+            continue;
+          }
+          uint32_t cr = (c >> 16) & 0xFFu;
+          uint32_t cg = (c >> 8) & 0xFFu;
+          uint32_t cb = c & 0xFFu;
+          uint32_t dr = (d >> 16) & 0xFFu;
+          uint32_t dg = (d >> 8) & 0xFFu;
+          uint32_t db = d & 0xFFu;
+          uint32_t d_contrib = da * (255 - a);
+          uint32_t out_r = (cr * a * 255u + dr * d_contrib) / (out_a * 255u);
+          uint32_t out_g = (cg * a * 255u + dg * d_contrib) / (out_a * 255u);
+          uint32_t out_b = (cb * a * 255u + db * d_contrib) / (out_a * 255u);
+          bb[sy * SCREEN_WIDTH + sx] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
         }
       }
     }

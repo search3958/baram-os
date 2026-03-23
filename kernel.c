@@ -198,7 +198,6 @@ static uint32_t lerp_color(uint32_t c1, uint32_t c2, float t);
 static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
                                  int ry, int rw, int rh, uint32_t c1,
                                  uint32_t c2);
-static uint32_t composite_premultiplied_over_bg(uint32_t bg, uint32_t fg);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
 static void bg_preview_update(layer_t *preview);
@@ -1824,6 +1823,40 @@ static void window_clear_caches(window_t *win) {
   win->raster_cache_h = 0;
 }
 
+static uint32_t *build_window_text_overlay(window_t *win, int *out_w, int *out_h) {
+  if (!win || (!win->warp_ctx && !win->warp1_ctx))
+    return NULL;
+
+  int overlay_w = win->w;
+  int overlay_h = win->h;
+  if (overlay_w <= 0 || overlay_h <= 0)
+    return NULL;
+
+  uint32_t *overlay = (uint32_t *)malloc((size_t)overlay_w * (size_t)overlay_h * sizeof(uint32_t));
+  if (!overlay)
+    return NULL;
+
+  for (int i = 0; i < overlay_w * overlay_h; i++)
+    overlay[i] = 0x00000000u;
+
+  layer_t text_layer;
+  text_layer.buffer = overlay;
+  text_layer.width = overlay_w;
+  text_layer.height = overlay_h;
+
+  int scroll_offset_y = (int)roundf(-win->scroll_y * win->render_scale);
+  if (scroll_offset_y < 0) scroll_offset_y = 0;
+  if (win->is_warp1) {
+    warp1_context_draw_texts(win->warp1_ctx, &text_layer, 0, -scroll_offset_y, win->render_scale);
+  } else {
+    warp_context_draw_texts(win->warp_ctx, &text_layer, 0, -scroll_offset_y, win->render_scale);
+  }
+
+  if (out_w) *out_w = overlay_w;
+  if (out_h) *out_h = overlay_h;
+  return overlay;
+}
+
 static void window_bake(window_t *win) {
   if (!win->shadow_cache || !win->frame_cache || !win->rgba_buffer || !win->window_mask) return;
 
@@ -1894,10 +1927,36 @@ static void window_bake(window_t *win) {
       int px = frame_x + dx;
       if (px >= sw) break;
       uint32_t color = src_line[dx];
+      uint8_t content_alpha = (uint8_t)(color >> 24);
       uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
-      uint32_t composited = composite_premultiplied_over_bg(win->unified_buffer[py * sw + px], color);
+      uint32_t composited = blend_colors(win->unified_buffer[py * sw + px], color, content_alpha);
       win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], composited, alpha);
     }
+  }
+
+  int text_w = 0, text_h = 0;
+  uint32_t *text_overlay = build_window_text_overlay(win, &text_w, &text_h);
+  if (text_overlay) {
+    for (int y = 0; y < text_h; y++) {
+      int py = content_y + y;
+      if (py >= sh) break;
+      int mask_y = (int)((float)title_h * scale) + y;
+      if (mask_y >= mh) mask_y = mh - 1;
+      uint8_t *text_mask_line = &win->window_mask[mask_y * mw];
+      for (int x = 0; x < text_w; x++) {
+        int px = frame_x + x;
+        if (px >= sw) break;
+        uint32_t text_px = text_overlay[y * text_w + x];
+        uint8_t alpha = (uint8_t)(text_px >> 24);
+        if (alpha == 0)
+          continue;
+        uint8_t mask_alpha = (win->is_maximized || win->no_decoration) ? 255 : text_mask_line[x];
+        uint8_t final_alpha = (uint8_t)((uint32_t)alpha * mask_alpha / 255);
+        win->unified_buffer[py * sw + px] =
+            blend_colors(win->unified_buffer[py * sw + px], text_px, final_alpha);
+      }
+    }
+    free(text_overlay);
   }
 
   // 4. Cleanup individual caches to save RAM
@@ -2211,20 +2270,9 @@ static void window_redraw(window_t *win) {
       win->is_dirty = 1; // Force redraw after allocation
     }
 
-    // Only composite text if SVG changed or forced redraw
+    // Copy rasterized vector content; text is composited later onto the final surface.
     if (svg_changed || win->is_dirty) {
       memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
-
-      strncpy(g_hud_status, "TxtDraw", 63);
-      layer_t temp_layer;
-      temp_layer.buffer = (uint32_t*)win->rgba_buffer;
-      temp_layer.width = win->buffer_w;
-      temp_layer.height = win->buffer_h;
-      if (win->is_warp1) {
-        warp1_context_draw_texts(win->warp1_ctx, &temp_layer, 0, 0, win->render_scale); 
-      } else {
-        warp_context_draw_texts(win->warp_ctx, &temp_layer, 0, 0, win->render_scale);
-      }
     }
   }
 
@@ -2529,9 +2577,10 @@ static uint32_t composite_window_pixel(uint32_t dst, window_t *win, int px, int 
     if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
     if (src_x >= 0 && src_y >= 0) {
       uint32_t color = ((uint32_t *)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+      uint8_t color_alpha = (uint8_t)(color >> 24);
       uint32_t bg_color = get_window_background_color(win);
       uint32_t surface_bg = blend_colors(dst, bg_color, (uint8_t)(bg_color >> 24));
-      color = composite_premultiplied_over_bg(surface_bg, color);
+      color = blend_colors(surface_bg, color, color_alpha);
       if (win->fade_alpha > 0.0f) {
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
         color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
@@ -2608,31 +2657,6 @@ static uint32_t blend_colors_fixed(uint32_t c0, uint32_t c1, int alpha255) {
   if (alpha255 <= 0) return c0;
   if (alpha255 >= 255) return c1;
   return blend_colors(c0, c1, (uint8_t)alpha255);
-}
-
-static uint32_t composite_premultiplied_over_bg(uint32_t bg, uint32_t fg) {
-  uint8_t alpha = (uint8_t)(fg >> 24);
-  if (alpha == 0)
-    return bg;
-  if (alpha == 255)
-    return 0xFF000000u | (fg & 0x00FFFFFFu);
-
-  uint32_t inv_alpha = 255 - alpha;
-  uint32_t br = (bg >> 16) & 0xFF;
-  uint32_t bg_g = (bg >> 8) & 0xFF;
-  uint32_t bb = bg & 0xFF;
-  uint32_t fr = (fg >> 16) & 0xFF;
-  uint32_t fg_g = (fg >> 8) & 0xFF;
-  uint32_t fb = fg & 0xFF;
-
-  uint32_t out_r = fr + ((br * inv_alpha) >> 8);
-  uint32_t out_g = fg_g + ((bg_g * inv_alpha) >> 8);
-  uint32_t out_b = fb + ((bb * inv_alpha) >> 8);
-  if (out_r > 255) out_r = 255;
-  if (out_g > 255) out_g = 255;
-  if (out_b > 255) out_b = 255;
-
-  return 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
 }
 
 static uint32_t sample_blur_cache(const uint32_t *blur_cache, int blur_cols,
@@ -2903,6 +2927,9 @@ skip_shadow:
       int blur_cols = 0;
       int blur_rows = 0;
       uint32_t bg_color = get_window_background_color(win);
+      int text_overlay_w = 0;
+      int text_overlay_h = 0;
+      uint32_t *text_overlay = build_window_text_overlay(win, &text_overlay_w, &text_overlay_h);
       if (win->w > 0 && win->h > 0) {
         blur_cols = (win->w + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
         blur_rows = (win->h + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
@@ -2949,7 +2976,17 @@ skip_shadow:
           }
           surface_bg = blend_colors(surface_bg, bg_color, (uint8_t)(bg_color >> 24));
 
-          color = composite_premultiplied_over_bg(surface_bg, color);
+          {
+            uint8_t color_alpha = (uint8_t)(color >> 24);
+            color = blend_colors(surface_bg, color, color_alpha);
+          }
+          if (text_overlay && dy < text_overlay_h && dx < text_overlay_w) {
+            uint32_t text_px = text_overlay[dy * text_overlay_w + dx];
+            uint8_t text_alpha = (uint8_t)(text_px >> 24);
+            if (text_alpha != 0) {
+              color = blend_colors(color, text_px, text_alpha);
+            }
+          }
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
           
           uint8_t final_alpha = 255;
@@ -2962,6 +2999,7 @@ skip_shadow:
           dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
         }
       }
+      if (text_overlay) free(text_overlay);
       if (blur_cache) free(blur_cache);
     }
 }
@@ -3486,18 +3524,25 @@ static int font_init(struct multiboot_info *mbi) {
 // 2つの色をアルファ値(0-255)で合成するヘルパー
 static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
   if (alpha == 0) return bg;
-  if (alpha == 255) return (fg | 0xFF000000u);
+  uint32_t bg_alpha = (bg >> 24) & 0xFFu;
+  if (alpha == 255 && bg_alpha == 0) return fg;
 
-  uint32_t inv_alpha = 255 - alpha;
-  uint32_t rb_bg = bg & 0xFF00FFu;
-  uint32_t g_bg = (bg >> 8) & 0xFF;
-  uint32_t rb_fg = fg & 0xFF00FFu;
-  uint32_t g_fg = (fg >> 8) & 0xFF;
+  uint32_t out_alpha = alpha + ((bg_alpha * (255 - alpha)) >> 8);
+  if (out_alpha == 0) return 0;
 
-  uint32_t rb_out = ((rb_fg * alpha) + (rb_bg * inv_alpha)) >> 8;
-  uint32_t g_out = ((g_fg * alpha) + (g_bg * inv_alpha)) >> 8;
+  uint32_t fg_r = (fg >> 16) & 0xFFu;
+  uint32_t fg_g = (fg >> 8) & 0xFFu;
+  uint32_t fg_b = fg & 0xFFu;
+  uint32_t bg_r = (bg >> 16) & 0xFFu;
+  uint32_t bg_g = (bg >> 8) & 0xFFu;
+  uint32_t bg_b = bg & 0xFFu;
+  uint32_t bg_contrib = bg_alpha * (255 - alpha);
 
-  return 0xFF000000u | (rb_out & 0xFF00FFu) | ((g_out & 0xFF) << 8);
+  uint32_t out_r = (fg_r * alpha * 255u + bg_r * bg_contrib) / (out_alpha * 255u);
+  uint32_t out_g = (fg_g * alpha * 255u + bg_g * bg_contrib) / (out_alpha * 255u);
+  uint32_t out_b = (fg_b * alpha * 255u + bg_b * bg_contrib) / (out_alpha * 255u);
+
+  return (out_alpha << 24) | (out_r << 16) | (out_g << 8) | out_b;
 }
 
 static int point_in_titlebar_button(int hx, int hy, window_t *win, int center_x) {
