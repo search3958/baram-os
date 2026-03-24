@@ -47,4 +47,8 @@ const char* warp1_context_get_screen_svg(warp1_context_t* ctx, const char* scree
 void warp1_context_set_screen_scroll(warp1_context_t* ctx, const char* screen_id, float scroll_y);
 float warp1_context_get_screen_scroll(warp1_context_t* ctx, const char* screen_id);
 
+// Dynamic Node API
+void warp1_context_add_node(warp1_context_t* ctx, const char* parent_id, const char* tag, const char* id);
+void warp1_context_set_attr(warp1_context_t* ctx, const char* id, const char* key, const char* val);
+
 #endif

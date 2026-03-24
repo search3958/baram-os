@@ -1152,3 +1152,73 @@ int warp1_context_get_content_height(warp1_context_t* ctx) {
     warp1_context_get_screen_svg(ctx, ctx->current_screen, &h);
     return h;
 }
+
+void warp1_context_add_node(warp1_context_t* ctx, const char* parent_id, const char* tag, const char* id) {
+    if (ctx->nodes_count >= MAX_NODES) return;
+    warp1_node_t *node = &ctx->nodes[ctx->nodes_count++];
+    for (int i = 0; i < (int)sizeof(warp1_node_t); i++) ((char*)node)[i] = 0;
+    w1_strncpy(node->tag, tag, 31);
+    node->is_dynamic = 1;
+    node->is_dirty = 1;
+
+    // IDを属性としてセット
+    w1_strncpy(node->attrs[0].key, "id", 31);
+    w1_strncpy(node->attrs[0].value, id, 255);
+    node->attrs_count = 1;
+
+    // 親を探す
+    warp1_node_t *parent = NULL;
+    for (int i = 0; i < ctx->nodes_count - 1; i++) {
+        for (int j = 0; j < ctx->nodes[i].attrs_count; j++) {
+            if (w1_strcmp(ctx->nodes[i].attrs[j].key, "id") == 0 &&
+                w1_strcmp(ctx->nodes[i].attrs[j].value, parent_id) == 0) {
+                parent = &ctx->nodes[i];
+                break;
+            }
+        }
+        if (parent) break;
+    }
+
+    if (parent && parent->children_count < 64) {
+        parent->children[parent->children_count++] = node;
+    } else {
+        // 親が見つからない場合はルート
+        if (ctx->root_nodes_count < 16) {
+            ctx->root_nodes[ctx->root_nodes_count++] = node;
+        }
+    }
+    ctx->engine_dirty = 1;
+}
+
+void warp1_context_set_attr(warp1_context_t* ctx, const char* id, const char* key, const char* val) {
+    if (!ctx || !id || !key || !val) return;
+    warp1_node_t *node = NULL;
+    for (int i = 0; i < ctx->nodes_count; i++) {
+        for (int j = 0; j < ctx->nodes[i].attrs_count; j++) {
+            if (w1_strcmp(ctx->nodes[i].attrs[j].key, "id") == 0 &&
+                w1_strcmp(ctx->nodes[i].attrs[j].value, id) == 0) {
+                node = &ctx->nodes[i];
+                break;
+            }
+        }
+        if (node) break;
+    }
+    if (!node) return;
+
+    for (int i = 0; i < node->attrs_count; i++) {
+        if (w1_strcmp(node->attrs[i].key, key) == 0) {
+            w1_strncpy(node->attrs[i].value, val, 255);
+            node->is_dirty = 1;
+            ctx->engine_dirty = 1;
+            return;
+        }
+    }
+
+    if (node->attrs_count < 16) {
+        w1_strncpy(node->attrs[node->attrs_count].key, key, 31);
+        w1_strncpy(node->attrs[node->attrs_count].value, val, 255);
+        node->attrs_count++;
+        node->is_dirty = 1;
+        ctx->engine_dirty = 1;
+    }
+}

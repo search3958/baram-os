@@ -2439,6 +2439,19 @@ static void window_redraw(window_t *win) {
   strncpy(g_hud_status, "Idle", 63);
 }
 
+typedef struct {
+  const char *name;
+  void (*init_func)(void *ctx);
+} app_registry_t;
+
+// External from files.c
+extern void init_file_manager(void *ctx);
+
+static const app_registry_t g_app_registry[] = {
+  {"files.c", init_file_manager},
+  {NULL, NULL}
+};
+
 static void parse_baram_config(window_t *win, const char *code) {
   if (!code) return;
   const char *tag = "baram-os-config";
@@ -2457,7 +2470,10 @@ static void parse_baram_config(window_t *win, const char *code) {
     // key:("value") の形式を簡易パース
     char key[64] = {0};
     int i = 0;
-    while (*p && *p != ':' && *p != ' ' && i < 63) key[i++] = *p++;
+    while (*p && *p != ':' && *p != ' ' && i < 63) {
+        if (*p == '}') break;
+        key[i++] = *p++;
+    }
     key[i] = '\0';
 
     while (*p && (*p == ':' || *p == ' ' || *p == '(' || *p == '\"')) p++;
@@ -2484,6 +2500,15 @@ static void parse_baram_config(window_t *win, const char *code) {
     }
     else if (strcmp(key, "background") == 0) win->background_color = parse_hex_color(val);
     else if (strcmp(key, "dark") == 0) win->force_dark = (strcmp(val, "true") == 0);
+    else if (strcmp(key, "c") == 0) {
+      // App binding: Find and call the init function from registry
+      for (int r = 0; g_app_registry[r].name != NULL; r++) {
+        if (strcmp(g_app_registry[r].name, val) == 0) {
+          if (win->warp1_ctx) g_app_registry[r].init_func(win->warp1_ctx);
+          break;
+        }
+      }
+    }
 
     // 次の項目へ
     while (*p && *p != ',' && *p != '}') {
@@ -2494,6 +2519,8 @@ static void parse_baram_config(window_t *win, const char *code) {
     if (*p == ',') p++;
   }
 }
+
+// External from files.c (Removed redundant extern, now at top with registry)
 
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1) {
   if (g_window_count >= MAX_WINDOWS) return;
@@ -2596,6 +2623,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
 
   if (!win->is_sticky) g_active_window_index = g_window_count - 1;
   else g_active_window_index = previous_active;
+
   window_set_all_dirty();
   window_update_caches(win);
 }
@@ -3146,11 +3174,11 @@ skip_shadow:
       int blur_cols = (win->w + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
       int blur_rows = (win->h + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
 
-      if (win->is_dragging) {
+      if (0) { // Always recompute blur for now to fix stale background
         // Skip recomputing blur during drag; use old cache or NULL
       } else if (!win->blur_cache || win->blur_cache_cols != blur_cols || win->blur_cache_rows != blur_rows ||
                  win->blur_last_w != win->w || win->blur_last_h != win->h ||
-                 (win->is_dirty && !win->is_resizing)) {
+                 (win->is_dirty && !win->is_resizing) || win->is_dragging) {
 
         if (win->blur_cache) free(win->blur_cache);
         win->blur_cache = (uint32_t *)malloc((size_t)blur_cols * (size_t)blur_rows * sizeof(uint32_t));

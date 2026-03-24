@@ -6,7 +6,6 @@ baram-os-config{
     showBar:(false),
     resize:(false),
     move:(false),
-    background:(#00000011),
     dark:(true),
     front:(true)
 },
@@ -16,8 +15,8 @@ screen{
 
     hStack{
         button{
-            text: ("BaramOS"),
-            oneClick: (run{"warp setting.warp"})
+            text: ("Baram 0S"),
+            oneClick: (setScreen{baram})
         },
         tonalButton{
             text: ("再起動"),
@@ -33,6 +32,36 @@ screen{
         }
     }
 }
+
+
+screen{
+    id: (baram),
+
+    hStack{
+
+        tonalButton{
+            text: ("<"),
+            oneClick: (setScreen{main})
+        },
+
+        button{
+            text: ("設定"),
+            oneClick: (run{"warp setting.warp"})
+        },
+        button{
+            text: ("ターミナル"),
+            oneClick: (run{"warp terminal.warp"})
+        },
+        button{
+            text: ("ファイルマネージャー"),
+            oneClick: (run{"warp files.warp"})
+        },
+        button{
+            text: ("Warp Demo"),
+            oneClick: (run{"warp new.warp"})
+        },
+    }
+},
 
 screen{
     id: (reboot),
