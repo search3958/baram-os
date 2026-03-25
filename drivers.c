@@ -3,6 +3,88 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#ifdef __aarch64__
+#define UART0_DR   0x09000000
+#define GIC_DIST_BASE 0x08000000
+#define GIC_CPU_BASE  0x08010000
+#define FW_CFG_BASE   0x09020000
+
+void uart_putc(char c) {
+  while (mmio_read32(UART0_DR + 0x18) & (1 << 5)); // Wait if FIFO full
+  mmio_write32(UART0_DR, c);
+}
+
+void uart_puts(const char *s) {
+  while (*s) uart_putc(*s++);
+}
+
+// fw_cfg helpers
+static void fw_cfg_select(uint16_t key) {
+  mmio_write16(FW_CFG_BASE + 8, ((key & 0xFF) << 8) | (key >> 8));
+}
+
+static void fw_cfg_read(void *buf, size_t len) {
+  uint8_t *p = (uint8_t *)buf;
+  for (size_t i = 0; i < len; i++) {
+    p[i] = mmio_read8(FW_CFG_BASE);
+  }
+}
+
+static void fw_cfg_write(const void *buf, size_t len) {
+  const uint8_t *p = (const uint8_t *)buf;
+  for (size_t i = 0; i < len; i++) {
+    mmio_write8(FW_CFG_BASE, p[i]);
+  }
+}
+
+typedef struct {
+  uint64_t addr;
+  uint32_t fourcc;
+  uint32_t flags;
+  uint32_t width;
+  uint32_t height;
+  uint32_t stride;
+} __attribute__((packed)) ramfb_cfg_t;
+
+void ramfb_init(uint32_t *fb, uint32_t w, uint32_t h) {
+  ramfb_cfg_t cfg;
+  cfg.addr = (uintptr_t)fb;
+  cfg.fourcc = 0x34325258; // DRM_FORMAT_XRGB8888 (Little Endian)
+  cfg.flags = 0;
+  cfg.width = w;
+  cfg.height = h;
+  cfg.stride = w * 4;
+
+  // Need to find "etc/ramfb" index. Usually it is not fixed.
+  // For QEMU virt, common index for ramfb is 0x0020 (standard key).
+  fw_cfg_select(0x0020);
+  fw_cfg_write(&cfg, sizeof(cfg));
+  uart_puts("RamFB initialized.\n");
+}
+
+static void gic_init() {
+  // Simple GICv2 initialization
+  mmio_write32(GIC_DIST_BASE + 0x000, 1); // Enable Distributor
+  mmio_write32(GIC_CPU_BASE + 0x000, 1);  // Enable CPU Interface
+  
+  // Enable IRQ 30 (Physical Non-Secure Timer)
+  mmio_write32(GIC_DIST_BASE + 0x100 + (30 / 32) * 4, (1 << (30 % 32)));
+  // Enable IRQ 33 (UART0)
+  mmio_write32(GIC_DIST_BASE + 0x100 + (33 / 32) * 4, (1 << (33 % 32)));
+  
+  // UART0: Enable RX interrupt
+  mmio_write32(UART0_DR + 0x38, (1 << 4)); // IMSC: RXIM
+}
+
+// Timer setup
+void arm_timer_init(uint32_t hz) {
+  uint64_t freq;
+  __asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
+  uint32_t ticks = (uint32_t)(freq / hz);
+  __asm__ __volatile__("msr cntp_tval_el0, %0" : : "r"((uint64_t)ticks));
+  __asm__ __volatile__("msr cntp_ctl_el0, %0" : : "r"(1ULL)); // Enable
+}
+#endif
 
 // ==========================================
 // グラフィックス・バックバッファ
@@ -78,12 +160,18 @@ void screen_mark_all_dirty(void) {
 // BGA / ページフリップ / VSync
 // ==========================================
 static inline void outw(uint16_t port, uint16_t val) {
+#ifndef __aarch64__
   __asm__ __volatile__("outw %w0, %w1" : : "a"(val), "Nd"(port));
+#endif
 }
 static inline uint16_t inw(uint16_t port) {
+#ifdef __aarch64__
+  return 0;
+#else
   uint16_t ret;
   __asm__ __volatile__("inw %w1, %w0" : "=a"(ret) : "Nd"(port));
   return ret;
+#endif
 }
 
 #define BGA_INDEX 0x01CE
@@ -408,28 +496,39 @@ void layer_draw_string(layer_t *layer, int x, int y, const char *str,
 // IDT / IRQ
 // ==========================================
 
+#ifndef __aarch64__
 struct idt_entry idt[256];
 struct idt_ptr idtp;
+#endif
 
 void idt_set_gate(uint8_t num, uintptr_t base, uint16_t sel, uint8_t flags) {
-#ifdef __x86_64__
-  idt[num].base_lo = (base & 0xFFFF);
-  idt[num].base_mid = (base >> 16) & 0xFFFF;
-  idt[num].base_hi = (uint32_t)(base >> 32);
-  idt[num].sel = sel;
-  idt[num].ist = 0;
-  idt[num].flags = flags;
-  idt[num].reserved = 0;
+#ifdef __aarch64__
+  // No IDT on ARM64
 #else
   idt[num].base_lo = (base & 0xFFFF);
-  idt[num].base_hi = (base >> 16) & 0xFFFF;
   idt[num].sel = sel;
+#ifdef __x86_64__
+  idt[num].ist = 0;
+  idt[num].flags = flags;
+  idt[num].base_mid = (base >> 16) & 0xFFFF;
+  idt[num].base_hi = (base >> 32) & 0xFFFFFFFF;
+  idt[num].reserved = 0;
+#else
   idt[num].always0 = 0;
   idt[num].flags = flags;
+  idt[num].base_hi = (base >> 16) & 0xFFFF;
+#endif
 #endif
 }
 
+
 void idt_install() {
+#ifdef __aarch64__
+  extern void *vector_table;
+  uintptr_t v = (uintptr_t)&vector_table;
+  __asm__ __volatile__("msr vbar_el1, %0" : : "r"(v) : "memory");
+  gic_init();
+#else
   idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
   idtp.base = (uintptr_t)&idt;
 
@@ -449,6 +548,7 @@ void idt_install() {
   }
 
   __asm__ __volatile__("lidt %0" : : "m"(idtp) : "memory");
+#endif
 }
 
 irq_handler_t irq_routines[16] = {0};
@@ -527,6 +627,7 @@ extern void isr30();
 extern void isr31();
 
 void irq_install() {
+#ifndef __aarch64__
   pic_remap();
 
   idt_set_gate(32, (uintptr_t)irq0, 0x08, 0x8E);
@@ -578,9 +679,16 @@ void irq_install() {
   idt_set_gate(29, (uintptr_t)isr29, 0x08, 0x8E);
   idt_set_gate(30, (uintptr_t)isr30, 0x08, 0x8E);
   idt_set_gate(31, (uintptr_t)isr31, 0x08, 0x8E);
+#endif
 }
 
-void enable_interrupts() { __asm__ __volatile__("sti"); }
+void enable_interrupts() {
+#ifdef __aarch64__
+  __asm__ __volatile__("msr daifclr, #2");
+#else
+  __asm__ __volatile__("sti");
+#endif
+}
 
 // ==========================================
 // キーボード
@@ -648,7 +756,51 @@ void keyboard_install() {
 // 割り込み共通
 // ==========================================
 
+#ifdef __aarch64__
+extern volatile char keybuf[];
+extern volatile int keybuf_len;
+
+void irq_handler_c(struct regs *r) {
+  // ARM64 IRQ handling (GIC)
+  uint32_t iar = mmio_read32(GIC_CPU_BASE + 0x00C);
+  uint32_t irq_num = iar & 0x3FF;
+
+  if (irq_num == 30) {
+    // Physical Timer
+    timer_handler(r);
+    // Reload timer
+    uint64_t freq;
+    __asm__ __volatile__("mrs %0, cntfrq_el0" : "=r"(freq));
+    uint32_t ticks = (uint32_t)(freq / 100); // 100Hz
+    __asm__ __volatile__("msr cntp_tval_el0, %0" : : "r"((uint64_t)ticks));
+  } else if (irq_num == 33) {
+    // UART0 interrupt
+    while (!(mmio_read32(UART0_DR + 0x18) & (1 << 4))) { // While RX not empty
+      char c = (char)mmio_read32(UART0_DR);
+      if (keybuf_len < 256) {
+        keybuf[keybuf_len++] = c;
+      }
+    }
+  } else if (irq_num < 16) {
+    void (*handler)(struct regs *r) = irq_routines[irq_num];
+    if (handler) handler(r);
+  }
+
+  mmio_write32(GIC_CPU_BASE + 0x010, iar); // End of Interrupt
+}
+
+void exception_handler_c(struct regs *r) {
+  // Simple halt for exceptions
+  for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
+    g_staticbuffer[i] = 0xFFFF0000; // Red screen on exception
+  g_static_dirty = 0;
+  screen_refresh();
+  while (1);
+}
+#endif
+
 void irq_handler(struct regs *r) {
+#ifndef __aarch64__
   void (*handler)(struct regs *r);
   int irq_num = r->int_no - 32;
 
@@ -661,6 +813,7 @@ void irq_handler(struct regs *r) {
     outb(0xA0, 0x20);
   }
   outb(0x20, 0x20);
+#endif
 }
 
 void exception_handler(struct regs *r) {
@@ -811,6 +964,11 @@ void mouse_install() {
 }
 
 void sys_restart(void) {
+#ifdef __aarch64__
+  while (1) {
+    __asm__ __volatile__("wfi");
+  }
+#else
   // 8042 キーボードコントローラを使用したリセット
   uint8_t good = 0x02;
   while (good & 0x02) {
@@ -822,4 +980,5 @@ void sys_restart(void) {
   while (1) {
     __asm__ __volatile__("hlt");
   }
+#endif
 }

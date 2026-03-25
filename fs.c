@@ -50,7 +50,6 @@ int fs_write_file(const char *name, const void *data, uint32_t size) {
     }
 
     // Write file data
-    uint32_t sectors_needed = (size + 511) / 512;
     
     // We can only write in 255 sector chunks with ATA PIO LBA28
     uint32_t remaining_size = size;

@@ -64,7 +64,11 @@ int ata_read_sectors(uint32_t lba, uint32_t count, void *buffer) {
 
             for (int i = 0; i < 256; i++) {
                 uint16_t data;
+#ifdef __aarch64__
+                data = 0; // No ATA on ARM64 yet
+#else
                 __asm__ __volatile__("inw %w1, %w0" : "=a"(data) : "Nd"(ATA_PRIMARY_DATA));
+#endif
                 buf[j * 256 + i] = data;
             }
         }
@@ -100,7 +104,11 @@ int ata_write_sectors(uint32_t lba, uint32_t count, const void *buffer) {
 
             for (int i = 0; i < 256; i++) {
                 uint16_t data = buf[j * 256 + i];
+#ifdef __aarch64__
+                (void)data; // No ATA on ARM64 yet
+#else
                 __asm__ __volatile__("outw %w0, %w1" : : "a"(data), "Nd"(ATA_PRIMARY_DATA));
+#endif
             }
         }
         

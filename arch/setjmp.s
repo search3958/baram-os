@@ -1,33 +1,36 @@
-BITS 64
+BITS 32
 section .text
 global setjmp
 global longjmp
 
 setjmp:
-    mov [rdi], rbx
-    mov [rdi + 8], rbp
-    mov [rdi + 16], r12
-    mov [rdi + 24], r13
-    mov [rdi + 32], r14
-    mov [rdi + 40], r15
-    lea rdx, [rsp + 8]
-    mov [rdi + 48], rdx
-    mov rdx, [rsp]
-    mov [rdi + 56], rdx
+    mov edx, [esp + 4] ; jmp_buf pointer
+    mov [edx], ebx
+    mov [edx + 8], esi
+    mov [edx + 16], edi
+    mov [edx + 24], ebp
+    
+    ; Stack pointer as it will be after 'ret'
+    lea ecx, [esp + 4]
+    mov [edx + 32], ecx
+    
+    ; Return address (eip)
+    mov ecx, [esp]
+    mov [edx + 40], ecx
+    
     xor eax, eax
     ret
 
 longjmp:
-    mov rax, rsi
+    mov edx, [esp + 4] ; jmp_buf pointer
+    mov eax, [esp + 8] ; val
     test eax, eax
     jnz .non_zero
     inc eax
 .non_zero:
-    mov rbx, [rdi]
-    mov rbp, [rdi + 8]
-    mov r12, [rdi + 16]
-    mov r13, [rdi + 24]
-    mov r14, [rdi + 32]
-    mov r15, [rdi + 40]
-    mov rsp, [rdi + 48]
-    jmp [rdi + 56]
+    mov ebx, [edx]
+    mov esi, [edx + 8]
+    mov edi, [edx + 16]
+    mov ebp, [edx + 24]
+    mov esp, [edx + 32]
+    jmp [edx + 40]

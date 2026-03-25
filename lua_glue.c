@@ -112,7 +112,11 @@ size_t strftime(char *s, size_t max, const char *format, const struct tm *tm) {
 void abort(void) {
     extern void set_w1_global(const char *key, const char *val);
     set_w1_global("--warpSystemLog", "LUA ABORT CALLED");
+#ifdef __aarch64__
+    while(1) { __asm__("wfi"); }
+#else
     while(1) { __asm__("hlt"); }
+#endif
 }
 
 void exit(int status) {

@@ -641,12 +641,6 @@ static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int 
 
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
     if (!node) return;
-    const char *id_attr = ""; 
-    for(int i=0;i<node->attrs_count;i++) {
-        if(w1_strcmp(node->attrs[i].key, "id")==0) {
-            id_attr = node->attrs[i].value;
-        }
-    }
     
     const char *dark_val = get_state(ctx, "~~main/dark");
     int is_dark = (w1_strcmp(dark_val, "true") == 0);

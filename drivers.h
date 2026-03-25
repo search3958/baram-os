@@ -19,6 +19,26 @@ typedef struct {
 } layer_t;
 
 // --- IO (io.h) ---
+#ifdef __aarch64__
+static inline uint8_t mmio_read8(uintptr_t addr) {
+  return *(volatile uint8_t *)addr;
+}
+static inline void mmio_write8(uintptr_t addr, uint8_t val) {
+  *(volatile uint8_t *)addr = val;
+}
+static inline void mmio_write16(uintptr_t addr, uint16_t val) {
+  *(volatile uint16_t *)addr = val;
+}
+static inline uint32_t mmio_read32(uintptr_t addr) {
+  return *(volatile uint32_t *)addr;
+}
+static inline void mmio_write32(uintptr_t addr, uint32_t val) {
+  *(volatile uint32_t *)addr = val;
+}
+// Placeholder for x86 compatibility if needed, but ARM64 uses MMIO
+static inline uint8_t inb(uint16_t port) { return 0; }
+static inline void outb(uint16_t port, uint8_t val) { }
+#else
 static inline uint8_t inb(uint16_t port) {
   uint8_t ret;
   __asm__ __volatile__("inb %w1, %b0" : "=a"(ret) : "Nd"(port));
@@ -28,9 +48,17 @@ static inline uint8_t inb(uint16_t port) {
 static inline void outb(uint16_t port, uint8_t val) {
   __asm__ __volatile__("outb %b0, %w1" : : "a"(val), "Nd"(port));
 }
+#endif
 
 // --- IDT/IRQ ---
-#ifdef __x86_64__
+#ifdef __aarch64__
+struct regs {
+  uint64_t x[31];
+  uint64_t sp;
+  uint64_t pc;
+  uint64_t pstate;
+};
+#elif defined(__x86_64__)
 struct idt_entry {
   uint16_t base_lo;
   uint16_t sel;
@@ -82,6 +110,7 @@ void irq_install_handler(int irq, irq_handler_t handler);
 void irq_uninstall_handler(int irq);
 void irq_install();
 void enable_interrupts();
+void timer_handler(struct regs *r);
 
 // --- Graphics & Layers ---
 void set_framebuffer_info(uint32_t *fb, uint32_t width, uint32_t height,

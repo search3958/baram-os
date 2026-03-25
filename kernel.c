@@ -482,6 +482,9 @@ static void parse_os_settings() {
 
 // FPU有効化
 void enable_fpu() {
+#ifdef __aarch64__
+  // Handled in boot_arm64.s
+#else
   unsigned long cr0;
   __asm__ __volatile__("mov %%cr0, %0" : "=r"(cr0));
   cr0 &= ~(1 << 2); // EM ビット解除 (エミュレーション無効)
@@ -492,9 +495,11 @@ void enable_fpu() {
   cr4 |= (3 << 9); // OSFXSR と OSXMMEXCPT ビット設定
   __asm__ __volatile__("mov %0, %%cr4" : : "r"(cr4));
   __asm__ __volatile__("finit");
+#endif
 }
 
 // ソフトウェア浮動小数点のヘルパー関数をハードウェアFPU(インラインアセンブリ)で実装
+#ifndef __aarch64__
 // ターゲット属性が効かない環境でも直接命令を発行することで無限再帰を避ける
 float __mulsf3(float a, float b) {
   float r;
@@ -557,7 +562,7 @@ int __gtdf2(double a, double b) { return a > b; }
 int __ltdf2(double a, double b) { return a < b; }
 double __floatsidf(int i) {
   double r;
-  __asm__("fildl %1; fstpl %0" : "=m"(r) : "m"(i));
+  __asm__("fildl %1; fstps %0" : "=m"(r) : "m"(i));
   return r;
 }
 double __extendsfdf2(float f) {
@@ -585,6 +590,7 @@ long double __multf3(long double a, long double b) { return a * b; }
 long double __addtf3(long double a, long double b) { return a + b; }
 long double __subtf3(long double a, long double b) { return a - b; }
 long double __divtf3(long double a, long double b) { return a / b; }
+#endif
 
 // レイヤー用
 static uint32_t main_screen_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -3797,9 +3803,11 @@ void timer_handler(struct regs *r) {
 
 void timer_phase(int hz) {
   int divisor = 1193180 / hz;
+#ifndef __aarch64__
   outb(0x43, 0x36);
   outb(0x40, divisor & 0xFF);
   outb(0x40, (divisor >> 8) & 0xFF);
+#endif
 }
 
 static char *append_uint(char *p, unsigned int v) {
@@ -3962,6 +3970,20 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 
 // フォント初期化 (Multibootモジュールから)
 static int font_init(struct multiboot_info *mbi) {
+#ifdef __aarch64__
+  uint32_t size = 0;
+  void *data = fs_read_file("MPLUS2-Regular.ttf", &size);
+  if (data) {
+    if (stbtt_InitFont(&g_font, (unsigned char *)data, 0)) {
+      g_font_ready = 1;
+      return 1;
+    }
+    g_font_error = "ERR:stbtt_InitFont ARM";
+  } else {
+    g_font_error = "ERR:font not found in FS";
+  }
+  return 0;
+#else
   if (!mbi) {
     g_font_error = "ERR:no mbi";
     return 0;
@@ -3987,6 +4009,7 @@ static int font_init(struct multiboot_info *mbi) {
   }
   g_font_ready = 1;
   return 1;
+#endif
 }
 
 // 2つの色をアルファ値(0-255)で合成するヘルパー
@@ -4442,15 +4465,84 @@ static void cursor_init(void) {
   nsvgDelete(img);
 }
 
+#ifdef __aarch64__
+extern void uart_puts(const char *s);
+#endif
+
+#ifdef __aarch64__
+extern unsigned char _binary_initrd_bin_start[];
+extern size_t _binary_initrd_bin_size;
+#endif
+
+static void warp_ui_mod_init_embedded() {
+#ifdef __aarch64__
+  const char *tar_start = (const char *)_binary_initrd_bin_start;
+  size_t tar_size = _binary_initrd_bin_size;
+  
+  uart_puts("Loading embedded initrd...\r\n");
+  
+  // Format and extract to in-memory FS
+  fs_format();
+  const char *p = tar_start;
+  const char *end = tar_start + tar_size;
+  while (p + 512 <= end) {
+      tar_header_t *h = (tar_header_t *)p;
+      if (h->name[0] == '\0') break;
+      if (h->name[0] == '.' && h->name[1] == '_') {
+          uint32_t skip_size = octal_to_int(h->size, 12);
+          p += 512 + ((skip_size + 511) & ~511);
+          continue;
+      }
+      uint32_t f_size = octal_to_int(h->size, 12);
+      if (h->typeflag == '0' || h->typeflag == '\0') {
+          fs_write_file(h->name, p + 512, f_size);
+      }
+      p += 512 + ((f_size + 511) & ~511);
+  }
+
+  // Load essential files
+  g_warp_ptr = fs_read_file("main.warpc", &g_warp_size);
+  g_terminal_warp_ptr = fs_read_file("terminal.warp", &g_terminal_warp_size);
+  g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
+  g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
+  g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
+  
+  uint32_t wp_size = 0;
+  void *wp_ptr = fs_read_file("wallpaper_1.svg", &wp_size);
+  if (wp_ptr) { g_wallpaper_ptr = wp_ptr; g_wallpaper_size = wp_size; g_wallpaper_found = 1; }
+  
+  if (g_warp_ptr) g_warp_mod_found = 1;
+  parse_os_settings();
+#endif
+}
+
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
+#ifdef __aarch64__
+  uart_puts("\r\n--- BaramOS ARM64 Booting ---\r\n");
+#endif
   mbi_ptr = mbi;
-  if (mbi)
+  uint32_t mem_total_kb = 0;
+#ifdef __aarch64__
+  g_mbi_flags = 0;
+  mem_total_kb = 1024 * 1024; // 1GB
+#else
+  if (mbi) {
     g_mbi_flags = mbi->flags;
+    mem_total_kb = mbi->mem_upper;
+  } else {
+    mem_total_kb = 65536;
+  }
+#endif
 
   // 動的ヒープの初期化
   uintptr_t heap_start = (uintptr_t)_kernel_end;
-  if (mbi->flags & 0x8 && mbi->mods_count > 0) {
+#ifdef __aarch64__
+  // ARM64 QEMU virt: assume at least 1GB RAM
+  uintptr_t heap_end = 0x40000000ULL + (uintptr_t)mem_total_kb * 1024;
+  heap_init((void*)heap_start, heap_end - heap_start);
+#else
+  if (mbi && (mbi->flags & 0x8) && mbi->mods_count > 0) {
       multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
       for (uint32_t i = 0; i < mbi->mods_count; i++) {
           if (mods[i].mod_end > heap_start) {
@@ -4460,13 +4552,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   }
   // 4KBアライメント
   heap_start = (heap_start + 4095) & ~4095;
-  uint32_t mem_total_kb = mbi->mem_upper;
-  uintptr_t heap_end = 0x100000 + mem_total_kb * 1024;
+  uintptr_t heap_end = 0x100000 + (uintptr_t)mem_total_kb * 1024;
   if (heap_end > heap_start) {
       heap_init((void*)heap_start, heap_end - heap_start);
   }
+#endif
 
   // SVG描画などの初期化より前に、まず赤画面を出す
+#ifndef __aarch64__
   for (int i = 0; i < 30; ++i) { // 約0.3秒間、赤で塗りつぶし続ける
     fill_framebuffer_red_early(mbi);
     for (volatile int j = 0; j < 1000000; ++j) {
@@ -4475,25 +4568,43 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   }
 
   fill_framebuffer_red_early(mbi); // 最後にもう一度赤で塗る
+#endif
 
   enable_fpu();
 
   // 割り込み初期化
   idt_install();
   irq_install();
+#ifndef __aarch64__
   irq_install_handler(0, timer_handler);
   timer_phase(100); // 100Hz
+#endif
   keyboard_install();
   mouse_install();
   enable_interrupts();
 
   // モジュールとフォントの初期化を最優先で行う
+#ifdef __aarch64__
+  warp_ui_mod_init_embedded();
+  font_init(NULL);
+#else
   font_init(mbi);
   warp_ui_mod_init(mbi);
+#endif
 
+#ifdef __aarch64__
+  // ARM64 QEMU virt: use ramfb
+  extern void ramfb_init(uint32_t *fb, uint32_t w, uint32_t h);
+  extern void arm_timer_init(uint32_t hz);
+  // メインスクリーンバッファを直接 RamFB に紐付ける
+  set_framebuffer_info(main_screen_buf, SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * 4);
+  ramfb_init(main_screen_buf, SCREEN_WIDTH, SCREEN_HEIGHT);
+  arm_timer_init(100);
+#else
   set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
                        mbi->framebuffer_width, mbi->framebuffer_height,
                        mbi->framebuffer_pitch);
+#endif
 
   // カーソル初期化
   cursor_init();
