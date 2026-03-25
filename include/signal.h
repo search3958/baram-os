@@ -1,19 +1,26 @@
-#include <stddef.h>
-#ifndef HIDDEN_DEF
-#define HIDDEN_DEF
-#define hidden static
+#ifndef OS_SIGNAL_H
+#define OS_SIGNAL_H
+
+#ifdef __cplusplus
+extern "C" {
 #endif
-#ifndef SIGNAL_H
-#define SIGNAL_H
 
-#include "signal.h"
+typedef int sig_atomic_t;
+typedef unsigned long sigset_t;
 
-hidden int __sigaction(int, const struct sigaction *, struct sigaction *);
+struct sigaction {
+    void (*sa_handler)(int);
+    sigset_t sa_mask;
+    int sa_flags;
+    void (*sa_restorer)(void);
+};
 
-hidden void __block_all_sigs(void *);
-hidden void __block_app_sigs(void *);
-hidden void __restore_sigs(void *);
+#define SIG_DFL ((void (*)(int))0)
+#define SIG_IGN ((void (*)(int))1)
+#define SIG_ERR ((void (*)(int))-1)
 
-hidden void __get_handler_set(sigset_t *);
+#ifdef __cplusplus
+}
+#endif
 
 #endif

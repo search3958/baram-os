@@ -100,10 +100,10 @@ link_kernel() {
             # 直接 lld を呼ぶか、-fuse-ld にフルパスまたは適切な指定が必要です。
             # ここでは直接 lld (ELF 用) を使用する設定を試みます。
             clang --target=x86_64-elf -fuse-ld="$LLD_CMD" -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o \
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o \
                 -ffreestanding -O2 -nostdlib -static-libgcc -lgcc 2>/dev/null || \
             $LLD_CMD -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o
             return $?
         fi
         echo "  ❌ 64-bit linker が見つかりません (ld.lld または x86_64-elf ツールチェーンが必要です)"
@@ -111,7 +111,7 @@ link_kernel() {
     fi
 
     $CC -T link64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o \
         -ffreestanding -O2 -m64 -mcmodel=kernel -mno-red-zone -nostdlib -static-libgcc -lgcc
 }
 
@@ -151,10 +151,12 @@ do_build_and_run() {
     nasm -f elf64 arch/boot64.s -o output/boot.o || return 1
     show_progress 15
     nasm -f elf64 arch/isr64.s -o output/isr.o || return 1
+    nasm -f elf64 arch/setjmp.s -o output/setjmp.o || return 1
     show_progress 20
 
-    COMMON_CFLAGS="-I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m64 -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie -DBUILD_NUMBER=$CURRENT_BN"
+    COMMON_CFLAGS="-Iinclude -I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m64 -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie -DBUILD_NUMBER=$CURRENT_BN"
     KERNEL_CFLAGS="$COMMON_CFLAGS -msse2"
+    LUA_CFLAGS="$COMMON_CFLAGS -DLUA_USE_C89 -DLUA_LIB -DLUA_CORE -Ilua-master"
 
     compile_c kernel.c output/kernel.o "$KERNEL_CFLAGS" || return 1
     show_progress 40
@@ -169,7 +171,11 @@ do_build_and_run() {
     compile_c ui/warp1_engine.c output/warp1_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 75
     compile_c files.c output/files.o "$COMMON_CFLAGS" || return 1
+    show_progress 78
+    compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
+    compile_c lua_glue.c output/lua_glue.o "$LUA_CFLAGS" || return 1
+    show_progress 82
 
     link_kernel || return 1
     show_progress 85
@@ -181,7 +187,7 @@ do_build_and_run() {
     rm -rf "$INITRD_DIR"
     mkdir -p "$INITRD_DIR"
 
-    cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
+    cp ui/*.warp ui/*.warpc ui/*.svg ui/*.lua "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"

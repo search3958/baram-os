@@ -833,6 +833,13 @@ int strncasecmp(const char *a, const char *b, size_t n) {
   return 0;
 }
 
+char *strcpy(char *dst, const char *src) {
+  char *d = dst;
+  while ((*d++ = *src++))
+    ;
+  return dst;
+}
+
 char *strncpy(char *dst, const char *src, size_t n) {
   size_t i = 0;
   for (; i < n && src[i]; ++i)
@@ -881,6 +888,77 @@ char *strrchr(const char *s, int c) {
   return (char *)last;
 }
 
+size_t strspn(const char *s, const char *accept) {
+  const char *p;
+  const char *a;
+  size_t count = 0;
+  for (p = s; *p != '\0'; ++p) {
+    for (a = accept; *a != '\0'; ++a) {
+      if (*p == *a)
+        break;
+    }
+    if (*a == '\0')
+      return count;
+    ++count;
+  }
+  return count;
+}
+
+size_t strcspn(const char *s, const char *reject) {
+  const char *p;
+  const char *r;
+  size_t count = 0;
+  for (p = s; *p != '\0'; ++p) {
+    for (r = reject; *r != '\0'; ++r) {
+      if (*p == *r)
+        return count;
+    }
+    ++count;
+  }
+  return count;
+}
+
+char *strpbrk(const char *s, const char *accept) {
+  while (*s != '\0') {
+    const char *a = accept;
+    while (*a != '\0') {
+      if (*a++ == *s)
+        return (char *)s;
+    }
+    ++s;
+  }
+  return NULL;
+}
+
+char *strtok(char *str, const char *delim) {
+  static char *last;
+  if (str == NULL)
+    str = last;
+  if (str == NULL)
+    return NULL;
+
+  str += strspn(str, delim);
+  if (*str == '\0') {
+    last = NULL;
+    return NULL;
+  }
+
+  char *token = str;
+  str = strpbrk(token, delim);
+  if (str == NULL) {
+    last = NULL;
+  } else {
+    *str = '\0';
+    last = str + 1;
+  }
+  return token;
+}
+
+char *strerror(int errnum) {
+  (void)errnum;
+  return "Unknown error";
+}
+
 char *strstr(const char *haystack, const char *needle) {
   if (!*needle)
     return (char *)haystack;
@@ -897,8 +975,44 @@ char *strstr(const char *haystack, const char *needle) {
   return NULL;
 }
 
+int memcmp(const void *s1, const void *s2, size_t n) {
+  const unsigned char *p1 = (const unsigned char *)s1;
+  const unsigned char *p2 = (const unsigned char *)s2;
+  while (n--) {
+    if (*p1 != *p2)
+      return *p1 - *p2;
+    p1++;
+    p2++;
+  }
+  return 0;
+}
+
+void *memmove(void *dest, const void *src, size_t n) {
+  unsigned char *d = (unsigned char *)dest;
+  const unsigned char *s = (const unsigned char *)src;
+  if (d < s) {
+    while (n--)
+      *d++ = *s++;
+  } else {
+    d += n;
+    s += n;
+    while (n--)
+      *--d = *--s;
+  }
+  return dest;
+}
+
+void *memchr(const void *s, int c, size_t n) {
+  const unsigned char *p = (const unsigned char *)s;
+  while (n--) {
+    if (*p == (unsigned char)c)
+      return (void *)p;
+    p++;
+  }
+  return NULL;
+}
+
 long strtol(const char *nptr, char **endptr, int base) {
-  (void)base;
   const char *s = nptr;
   while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' || *s == '\f' ||
          *s == '\v') {
@@ -912,9 +1026,40 @@ long strtol(const char *nptr, char **endptr, int base) {
     s++;
   }
 
+  if (base == 0) {
+    if (*s == '0') {
+      if (s[1] == 'x' || s[1] == 'X') {
+        base = 16;
+        s += 2;
+      } else {
+        base = 8;
+        s++;
+      }
+    } else {
+      base = 10;
+    }
+  } else if (base == 16) {
+    if (*s == '0' && (s[1] == 'x' || s[1] == 'X')) {
+      s += 2;
+    }
+  }
+
   long val = 0;
-  while (*s >= '0' && *s <= '9') {
-    val = val * 10 + (*s - '0');
+  while (*s) {
+    int digit;
+    if (*s >= '0' && *s <= '9')
+      digit = *s - '0';
+    else if (*s >= 'a' && *s <= 'f')
+      digit = *s - 'a' + 10;
+    else if (*s >= 'A' && *s <= 'F')
+      digit = *s - 'A' + 10;
+    else
+      break;
+
+    if (digit >= base)
+      break;
+
+    val = val * base + digit;
     s++;
   }
   if (endptr)
@@ -923,7 +1068,6 @@ long strtol(const char *nptr, char **endptr, int base) {
 }
 
 long long strtoll(const char *nptr, char **endptr, int base) {
-  (void)base;
   const char *s = nptr;
   while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' || *s == '\f' ||
          *s == '\v') {
@@ -937,9 +1081,40 @@ long long strtoll(const char *nptr, char **endptr, int base) {
     s++;
   }
 
+  if (base == 0) {
+    if (*s == '0') {
+      if (s[1] == 'x' || s[1] == 'X') {
+        base = 16;
+        s += 2;
+      } else {
+        base = 8;
+        s++;
+      }
+    } else {
+      base = 10;
+    }
+  } else if (base == 16) {
+    if (*s == '0' && (s[1] == 'x' || s[1] == 'X')) {
+      s += 2;
+    }
+  }
+
   long long val = 0;
-  while (*s >= '0' && *s <= '9') {
-    val = val * 10 + (*s - '0');
+  while (*s) {
+    int digit;
+    if (*s >= '0' && *s <= '9')
+      digit = *s - '0';
+    else if (*s >= 'a' && *s <= 'f')
+      digit = *s - 'a' + 10;
+    else if (*s >= 'A' && *s <= 'F')
+      digit = *s - 'A' + 10;
+    else
+      break;
+
+    if (digit >= base)
+      break;
+
+    val = val * base + digit;
     s++;
   }
   if (endptr)
@@ -2500,6 +2675,9 @@ static void parse_baram_config(window_t *win, const char *code) {
     }
     else if (strcmp(key, "background") == 0) win->background_color = parse_hex_color(val);
     else if (strcmp(key, "dark") == 0) win->force_dark = (strcmp(val, "true") == 0);
+    else if (strcmp(key, "lua") == 0) {
+      if (win->warp1_ctx) run_lua_script(win->warp1_ctx, val);
+    }
     else if (strcmp(key, "c") == 0) {
       // App binding: Find and call the init function from registry
       for (int r = 0; g_app_registry[r].name != NULL; r++) {

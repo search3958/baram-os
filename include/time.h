@@ -1,20 +1,27 @@
+#ifndef _TIME_H
+#define _TIME_H
 #include <stddef.h>
-#ifndef HIDDEN_DEF
-#define HIDDEN_DEF
-#define hidden static
-#endif
-#ifndef TIME_H
-#define TIME_H
-
-#include "time.h"
-
-hidden int __clock_gettime(clockid_t, struct timespec *);
-hidden int __clock_nanosleep(clockid_t, int, const struct timespec *, struct timespec *);
-
-hidden char *__asctime_r(const struct tm *, char *);
-hidden struct tm *__gmtime_r(const time_t *restrict, struct tm *restrict);
-hidden struct tm *__localtime_r(const time_t *restrict, struct tm *restrict);
-
-hidden size_t __strftime_l(char *restrict, size_t, const char *restrict, const struct tm *restrict, locale_t);
-
+typedef long time_t;
+typedef long clock_t;
+struct tm {
+  int tm_sec;
+  int tm_min;
+  int tm_hour;
+  int tm_mday;
+  int tm_mon;
+  int tm_year;
+  int tm_wday;
+  int tm_yday;
+  int tm_isdst;
+};
+time_t time(time_t *t);
+clock_t clock(void);
+double difftime(time_t time1, time_t time0);
+char *asctime(const struct tm *tm);
+char *ctime(const time_t *timep);
+struct tm *gmtime(const time_t *timep);
+struct tm *localtime(const time_t *timep);
+time_t mktime(struct tm *tm);
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
+#define CLOCKS_PER_SEC 100
 #endif

@@ -51,4 +51,6 @@ float warp1_context_get_screen_scroll(warp1_context_t* ctx, const char* screen_i
 void warp1_context_add_node(warp1_context_t* ctx, const char* parent_id, const char* tag, const char* id);
 void warp1_context_set_attr(warp1_context_t* ctx, const char* id, const char* key, const char* val);
 
+void run_lua_script(warp1_context_t *ctx, const char *filename);
+
 #endif
