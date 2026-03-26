@@ -1,0 +1,16 @@
+baram-os-config{
+    lua:("test.lua")
+}
+screen{
+    id:("main"),
+    card{
+        text:("Lua Test"),
+        text{ text:("If you see this, Lua might have run.") },
+        button{ text:("Reload"), oneClick:(script{reload}) }
+    }
+}
+@reload{
+    if:(1=1){
+        run{("warp test_lua.warp")}
+    }
+}
