@@ -2488,7 +2488,7 @@ static void window_redraw(window_t *win) {
     window_update_caches(win);
   }
 
-  if ((is_active || ((uint8_t)(win->background_color >> 24) < 255)) &&
+  if ((is_active || ((uint8_t)(win->background_color >> 24) < 255) || win->is_dirty) &&
       win->unified_buffer) {
     free(win->unified_buffer);
     win->unified_buffer = NULL;
@@ -2512,6 +2512,13 @@ static void window_redraw(window_t *win) {
     } else {
       warp_context_update(win->warp_ctx, win->w, win->h);
       warp_context_clear_dirty(win->warp_ctx);
+    }
+    // Content changed, invalidate text overlay cache
+    if (win->text_overlay_cache) {
+      free(win->text_overlay_cache);
+      win->text_overlay_cache = NULL;
+      win->text_overlay_cache_w = 0;
+      win->text_overlay_cache_h = 0;
     }
   } else {
     strncpy(g_hud_status, "Cached", 63);
@@ -3386,8 +3393,13 @@ skip_shadow:
       uint32_t bg_color = get_window_background_color(win);
 
       // --- Optimized Text Overlay Cache ---
-      if (!win->text_overlay_cache || win->text_overlay_cache_w != win->w || 
-          win->text_overlay_cache_h != win->h || win->text_overlay_last_scroll_y != win->scroll_y) {
+      // Rebuild text overlay when: cache missing, size changed, scroll changed, or window is dirty (content changed)
+      int text_cache_dirty = !win->text_overlay_cache || 
+                             win->text_overlay_cache_w != win->w ||
+                             win->text_overlay_cache_h != win->h || 
+                             win->text_overlay_last_scroll_y != win->scroll_y ||
+                             win->is_dirty;
+      if (text_cache_dirty) {
         if (win->text_overlay_cache) free(win->text_overlay_cache);
         int text_w = 0, text_h = 0;
         win->text_overlay_cache = build_window_text_overlay(win, &text_w, &text_h);

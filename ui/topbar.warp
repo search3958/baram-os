@@ -16,18 +16,22 @@ screen{
     hStack{
         button{
             text: ("Baram 0S"),
+            radius: (0%),
             oneClick: (setScreen{baram})
         },
         tonalButton{
             text: ("再起動"),
+            radius: (100%),
             oneClick: (setScreen{reboot})
         },
         tonalButton{
             text: ("コマンド"),
+            radius: (0%),
             oneClick: (setScreen{terminal})
         },
         tonalButton{
             text: ("外観モード"),
+            radius: (12),
             oneClick: (setScreen{mode})
         }
     }

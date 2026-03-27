@@ -957,6 +957,7 @@ static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
 
 void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra) {
+  // radius: -1=デフォルト，0=矩形，1-999=ピクセル値，1000+=パーセンテージ (1050=50%, 1100=100%)
   if (radius == 0.0f) {
     char rect[256];
     char *p = rect;
@@ -970,11 +971,122 @@ void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int 
     warp_strncat(dest, rect, dest_size - warp_strlen(dest) - 1);
     return;
   }
+  
   float fw = (float)w, fh = (float)h;
   float fx = (float)x, fy = (float)y;
+  
+  // 最小辺の半分（100% = パスが崩壊しない最大値）
+  float min_edge = (fw < fh) ? fw : fh;
+  float max_possible_radius = min_edge / 2.0f;
+  
+  // radius の解決
+  float radius_px;
+  if (radius == -1.0f) {
+    // デフォルト：自動（元のロジックを使用）
+    float s = (fh >= 46.0f) ? 1.15f : 1.0f;
+    float edge_x = K_X[6] * s;
+    float edge_y = K_Y[6] * s;
+    if (edge_x > fw / 2.0f) edge_x = fw / 2.0f;
+    if (edge_y > fh / 2.0f) edge_y = fh / 2.0f;
+    
+    char buf[2048];
+    char *p = buf;
+    p = warp_stpcpy(p, "<path d=\"M ");
+    p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + fh / 2.0f);
+    p = warp_stpcpy(p, " L ");
+    p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[0] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[1] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - K_X[0] * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[2] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + fw - K_X[1] * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[3] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - K_X[2] * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[4] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - K_X[3] * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[5] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + fw - K_X[4] * s); *p++ = ','; p = append_fixed3(p, fy + fh);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - K_X[5] * s); *p++ = ','; p = append_fixed3(p, fy + fh);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - edge_x); *p++ = ','; p = append_fixed3(p, fy + fh);
+    p = warp_stpcpy(p, " L ");
+    p = append_fixed3(p, fx + edge_x); *p++ = ','; p = append_fixed3(p, fy + fh);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[5]) * s); *p++ = ','; p = append_fixed3(p, fy + fh);
+    *p++ = ' '; p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[4]) * s); *p++ = ','; p = append_fixed3(p, fy + fh);
+    *p++ = ' '; p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[3]) * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[5] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[2]) * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[4] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[1]) * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[3] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + edge_x - (K_X[6] - K_X[0]) * s); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[2] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[1] * s);
+    *p++ = ' '; p = append_fixed3(p, fx); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y + K_Y[0] * s);
+    *p++ = ' '; p = append_fixed3(p, fx); *p++ = ','; p = append_fixed3(p, fy + fh - edge_y);
+    p = warp_stpcpy(p, " L ");
+    p = append_fixed3(p, fx); *p++ = ','; p = append_fixed3(p, fy + edge_y);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[0] * s);
+    *p++ = ' '; p = append_fixed3(p, fx); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[1] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + K_X[0] * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[2] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + K_X[1] * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[3] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + K_X[2] * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[4] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + K_X[3] * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[5] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + K_X[4] * s); *p++ = ','; p = append_fixed3(p, fy);
+    *p++ = ' '; p = append_fixed3(p, fx + K_X[5] * s); *p++ = ','; p = append_fixed3(p, fy);
+    *p++ = ' '; p = append_fixed3(p, fx + edge_x); *p++ = ','; p = append_fixed3(p, fy);
+    p = warp_stpcpy(p, " L ");
+    p = append_fixed3(p, fx + fw - edge_x); *p++ = ','; p = append_fixed3(p, fy);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[5]) * s); *p++ = ','; p = append_fixed3(p, fy);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[4]) * s); *p++ = ','; p = append_fixed3(p, fy);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[3]) * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[5] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[2]) * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[4] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[1]) * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[3] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw - edge_x + (K_X[6] - K_X[0]) * s); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[2] * s);
+    p = warp_stpcpy(p, " C ");
+    p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[1] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + edge_y - K_Y[0] * s);
+    *p++ = ' '; p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + edge_y);
+    p = warp_stpcpy(p, " L ");
+    p = append_fixed3(p, fx + fw); *p++ = ','; p = append_fixed3(p, fy + fh / 2.0f);
+    p = warp_stpcpy(p, " Z\" fill=\"");
+    p = warp_stpcpy(p, fill); p = warp_stpcpy(p, "\" ");
+    p = warp_stpcpy(p, extra); p = warp_stpcpy(p, " />\n");
+    warp_strncat(dest, buf, dest_size - warp_strlen(dest) - 1);
+    return;
+  } else if (radius >= 1000.0f) {
+    // パーセンテージ表記
+    float radius_pct = radius - 1000.0f;
+    if (radius_pct > 100.0f) radius_pct = 100.0f;
+    if (radius_pct < 0.0f) radius_pct = 0.0f;
+    radius_px = (min_edge * radius_pct) / 100.0f;
+  } else {
+    // ピクセル値
+    radius_px = radius;
+  }
+  
+  // 上限制限：短辺の半分を超えない
+  if (radius_px > max_possible_radius) radius_px = max_possible_radius;
+  
+  // edge_x, edge_y を radius から逆算
+  // K_X[6], K_Y[6] はデフォルトの corner size（約 30.573, 20.0）
+  // radius_px を元にスケーリング
   float s = (fh >= 46.0f) ? 1.15f : 1.0f;
-  float edge_x = K_X[6] * s;
-  float edge_y = K_Y[6] * s;
+  float default_radius = 12.0f * s; // デフォルト radius
+  float scale = (default_radius > 0.0f) ? (radius_px / default_radius) : 1.0f;
+  
+  // scale が大きすぎる場合は制限（元の corner が矩形の半分を超えないように）
+  float max_scale_x = (fw / 2.0f) / (K_X[6] * s);
+  float max_scale_y = (fh / 2.0f) / (K_Y[6] * s);
+  float max_scale = (max_scale_x < max_scale_y) ? max_scale_x : max_scale_y;
+  if (scale > max_scale) scale = max_scale;
+  if (scale < 0.0f) scale = 0.0f;
+  
+  float edge_x = K_X[6] * s * scale;
+  float edge_y = K_Y[6] * s * scale;
+  
   if (edge_x > fw / 2.0f) edge_x = fw / 2.0f;
   if (edge_y > fh / 2.0f) edge_y = fh / 2.0f;
   
