@@ -87,6 +87,25 @@ void arm_timer_init(uint32_t hz) {
 #endif
 
 // ==========================================
+// BGA / ページフリップ / VSync
+// ==========================================
+void outw(uint16_t port, uint16_t val) {
+#ifndef __aarch64__
+  __asm__ __volatile__("outw %w0, %w1" : : "a"(val), "Nd"(port));
+#endif
+}
+
+uint16_t inw(uint16_t port) {
+#ifdef __aarch64__
+  return 0;
+#else
+  uint16_t ret;
+  __asm__ __volatile__("inw %w1, %w0" : "=a"(ret) : "Nd"(port));
+  return ret;
+#endif
+}
+
+// ==========================================
 // グラフィックス・バックバッファ
 // ==========================================
 
@@ -274,6 +293,15 @@ void screen_refresh(void) {
   if (!g_vram) return;
   static int prev_cursor_x = -1;
   static int prev_cursor_y = -1;
+  int visible_width = SCREEN_WIDTH;
+  int visible_height = SCREEN_HEIGHT;
+
+  if (g_vram_width && g_vram_width < (uint32_t)visible_width)
+    visible_width = (int)g_vram_width;
+  if (g_vram_height && g_vram_height < (uint32_t)visible_height)
+    visible_height = (int)g_vram_height;
+  if (visible_width <= 0 || visible_height <= 0)
+    return;
 
   int cx = (int)mouse_x;
   int cy = (int)mouse_y;
@@ -311,8 +339,14 @@ void screen_refresh(void) {
   int ry1 = g_dry1;
   if (rx0 < 0) rx0 = 0;
   if (ry0 < 0) ry0 = 0;
-  if (rx1 > SCREEN_WIDTH) rx1 = SCREEN_WIDTH;
-  if (ry1 > SCREEN_HEIGHT) ry1 = SCREEN_HEIGHT;
+  if (rx1 > visible_width) rx1 = visible_width;
+  if (ry1 > visible_height) ry1 = visible_height;
+  if (rx0 >= rx1 || ry0 >= ry1) {
+    prev_cursor_x = cx;
+    prev_cursor_y = cy;
+    dirty_reset();
+    return;
+  }
 
   // 1. 静的バッファをBBに必要領域だけコピー
   for (int y = ry0; y < ry1; y++) {
@@ -377,8 +411,11 @@ void screen_refresh(void) {
   }
 
   // 4. VRAMへ転送 (Dirty Rect領域のみコピー)
+  uint32_t vram_stride = g_vram_pitch ? (g_vram_pitch / 4) : g_vram_width;
+  if (!vram_stride)
+    vram_stride = SCREEN_WIDTH;
   for (int y = ry0; y < ry1; y++) {
-    uint32_t *dst = &g_vram[y * SCREEN_WIDTH + rx0];
+    uint32_t *dst = &g_vram[(size_t)y * vram_stride + rx0];
     uint32_t *src = &bb[y * SCREEN_WIDTH + rx0];
     memcpy(dst, src, (size_t)(rx1 - rx0) * 4);
   }

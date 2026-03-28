@@ -1391,9 +1391,7 @@ int sscanf(const char *str, const char *format, ...) {
   return matched;
 }
 
-int snprintf(char *str, size_t size, const char *format, ...) {
-  va_list args;
-  va_start(args, format);
+int vsnprintf(char *str, size_t size, const char *format, va_list args) {
   int n = 0;
   const char *p = format;
   while (*p && (size_t)n < size - 1) {
@@ -1401,30 +1399,40 @@ int snprintf(char *str, size_t size, const char *format, ...) {
       p++;
       if (*p == 's') {
         const char *s = va_arg(args, const char *);
-        if (!s) s = "(null)";
-        while (*s && (size_t)n < size - 1) str[n++] = *s++;
+        if (!s)
+          s = "(null)";
+        while (*s && (size_t)n < size - 1)
+          str[n++] = *s++;
       } else if (*p == 'd') {
         int d = va_arg(args, int);
         if (d < 0) {
-          if ((size_t)n < size - 1) str[n++] = '-';
+          if ((size_t)n < size - 1)
+            str[n++] = '-';
           d = -d;
         }
         char buf[16];
         int i = 0;
-        if (d == 0) buf[i++] = '0';
-        while (d > 0) { buf[i++] = (d % 10) + '0'; d /= 10; }
-        while (i > 0 && (size_t)n < size - 1) str[n++] = buf[--i];
+        if (d == 0)
+          buf[i++] = '0';
+        while (d > 0) {
+          buf[i++] = (d % 10) + '0';
+          d /= 10;
+        }
+        while (i > 0 && (size_t)n < size - 1)
+          str[n++] = buf[--i];
       } else if (*p == 'x') {
         unsigned int x = va_arg(args, unsigned int);
         char buf[16];
         int i = 0;
-        if (x == 0) buf[i++] = '0';
+        if (x == 0)
+          buf[i++] = '0';
         while (x > 0) {
           int r = x % 16;
           buf[i++] = (r < 10) ? (r + '0') : (r - 10 + 'a');
           x /= 16;
         }
-        while (i > 0 && (size_t)n < size - 1) str[n++] = buf[--i];
+        while (i > 0 && (size_t)n < size - 1)
+          str[n++] = buf[--i];
       } else if (*p == '%') {
         str[n++] = '%';
       }
@@ -1434,6 +1442,13 @@ int snprintf(char *str, size_t size, const char *format, ...) {
     }
   }
   str[n] = '\0';
+  return n;
+}
+
+int snprintf(char *str, size_t size, const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  int n = vsnprintf(str, size, format, args);
   va_end(args);
   return n;
 }
@@ -1441,7 +1456,7 @@ int snprintf(char *str, size_t size, const char *format, ...) {
 int sprintf(char *str, const char *format, ...) {
   va_list args;
   va_start(args, format);
-  int n = snprintf(str, 1024 * 64, format, args); // Use a large buffer size
+  int n = vsnprintf(str, 1024 * 64, format, args); // Use a large buffer size
   va_end(args);
   return n;
 }
@@ -4319,7 +4334,7 @@ extern volatile int32_t mouse_y;
 extern volatile uint8_t mouse_buttons;
 extern volatile uint8_t mouse_buttons;
 static void fill_framebuffer_red_early(struct multiboot_info *mbi) {
-  if (!mbi)
+  if (!mbi || !(mbi->flags & (1 << 12)))
     return;
 
   uint32_t *fb = (uint32_t *)(uintptr_t)mbi->framebuffer_addr;
@@ -4545,6 +4560,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   } else {
     mem_total_kb = 65536;
   }
+  // kernel.c は -msse2 でビルドされているため、最適化で初期化コードにも
+  // SSE 命令が出る。ログ出力や文字列処理より前に有効化しておく。
+  enable_fpu();
 #endif
 
   // 動的ヒープの初期化
@@ -4564,9 +4582,69 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   }
   // 4KBアライメント
   heap_start = (heap_start + 4095) & ~4095;
-  uintptr_t heap_end = 0x100000 + (uintptr_t)mem_total_kb * 1024;
-  if (heap_end > heap_start) {
-      heap_init((void*)heap_start, heap_end - heap_start);
+  uintptr_t heap_floor = heap_start;
+  uintptr_t heap_end = 0;
+
+  // メモリマップの解析 (UEFI対応への準備)
+  if (mbi && (mbi->flags & (1 << 6))) {
+    struct multiboot_mmap_entry *mmap = (struct multiboot_mmap_entry *)(uintptr_t)mbi->mmap_addr;
+    uint32_t mmap_len = mbi->mmap_length;
+    int found_heap = 0;
+    
+    struct multiboot_mmap_entry *mmap_curr = mmap;
+    uintptr_t mmap_limit = (uintptr_t)mmap + mmap_len;
+
+    set_w1_global("--warpSystemLog", "Parsing Memory Map...");
+
+    while ((uintptr_t)mmap_curr < mmap_limit) {
+      if (mmap_curr->size < 20) break; // Safety check
+
+      // Type 1: Available RAM
+      if (mmap_curr->type == 1) {
+        uint64_t entry_start = mmap_curr->addr;
+        uint64_t entry_end = mmap_curr->addr + mmap_curr->len;
+
+        // カーネル末尾を含む利用可能領域だけをヒープ候補にする。
+        // ここで heap_start 自体を別の領域へ飛ばすと、未マップ領域を掴んで
+        // 起動直後の malloc でクラッシュしやすい。
+        if (entry_start <= (uint64_t)heap_floor &&
+            entry_end > (uint64_t)heap_floor) {
+          uintptr_t actual_end =
+              (entry_end > 0xFFFFFFFFULL) ? 0xFFFFFFFFU : (uintptr_t)entry_end;
+
+          if (actual_end > heap_floor &&
+              (!found_heap || actual_end > heap_end)) {
+            heap_end = actual_end;
+            found_heap = 1;
+          }
+        }
+      }
+
+      // デバッグログ: 特定の条件（大きい領域など）のみ記録
+      if (mmap_curr->len > 1024 * 1024) {
+          char mmap_msg[128];
+          snprintf(mmap_msg, sizeof(mmap_msg), "MMAP: %x-%x T%d", (uint32_t)mmap_curr->addr, (uint32_t)(mmap_curr->addr + mmap_curr->len), mmap_curr->type);
+          set_w1_global("--warpSystemLog", mmap_msg);
+      }
+
+      mmap_curr = (struct multiboot_mmap_entry *)((uintptr_t)mmap_curr + mmap_curr->size + 4);
+    }
+    if (found_heap) {
+      char msg[128];
+      snprintf(msg, sizeof(msg), "Heap Settled: %x - %x (%d MB)",
+               heap_floor, heap_end,
+               (uint32_t)((heap_end - heap_floor) / (1024 * 1024)));
+      set_w1_global("--warpSystemLog", msg);
+      heap_init((void*)heap_floor, heap_end - heap_floor);
+    }
+  } 
+  
+  // メモリマップが見つからない、または失敗した場合は従来の mem_upper を信じる
+  if (!heap_initialized) {
+    heap_end = 0x100000 + (uintptr_t)mem_total_kb * 1024;
+    if (heap_end > heap_floor) {
+        heap_init((void*)heap_floor, heap_end - heap_floor);
+    }
   }
 #endif
 
@@ -4581,9 +4659,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   fill_framebuffer_red_early(mbi); // 最後にもう一度赤で塗る
 #endif
-
-  enable_fpu();
-
   // 割り込み初期化
   idt_install();
   irq_install();

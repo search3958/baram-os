@@ -50,6 +50,9 @@ static inline void outb(uint16_t port, uint8_t val) {
 }
 #endif
 
+void outw(uint16_t port, uint16_t val);
+uint16_t inw(uint16_t port);
+
 // --- IDT/IRQ ---
 #ifdef __aarch64__
 struct regs {
@@ -142,6 +145,13 @@ extern volatile uint32_t mouse_interrupt_counter;
 #define KEY_RIGHT 0x14
 
 // --- Multiboot ---
+struct multiboot_mmap_entry {
+  uint32_t size;
+  uint64_t addr;
+  uint64_t len;
+  uint32_t type;
+} __attribute__((packed));
+
 struct multiboot_info {
   uint32_t flags;
   uint32_t mem_lower;
