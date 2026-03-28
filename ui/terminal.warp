@@ -8,7 +8,8 @@ screen{
     input{
         --terminalInput: (""),
         output: (--terminalInput),
-        placeholder: ("Enter command...")
+        placeholder: ("Enter command..."),
+        radius: (100%)
     },
 
     button{

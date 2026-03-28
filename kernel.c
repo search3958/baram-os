@@ -206,6 +206,7 @@ static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
 static void bg_preview_update(layer_t *preview);
 static void window_redraw(struct window_struct *win);
+static uint32_t sample_backdrop_pixel(struct window_struct *target, int px, int py);
 static char *append_uint(char *p, unsigned int v);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
@@ -344,6 +345,7 @@ static const char* g_default_os_settings =
 "}";
 
 static void parse_os_settings() {
+  g_os_settings_found = (g_os_settings_ptr != NULL && g_os_settings_size > 0);
   const char* buf = g_os_settings_found ? g_os_settings_ptr : g_default_os_settings;
   
   if (g_os_settings_found) {
@@ -476,8 +478,7 @@ static void parse_os_settings() {
   strlcat(startup_msg, dark_val, 127);
   set_w1_global("--warpSystemLog", startup_msg);
   
-  // 常にブートを許可
-  g_os_settings_found = 1; 
+  // 設定ファイルが読めたかどうかは fs_read_file の結果を維持する
 }
 
 // FPU有効化
@@ -595,6 +596,74 @@ long double __divtf3(long double a, long double b) { return a / b; }
 // レイヤー用
 static uint32_t main_screen_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t desktop_composite_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
+static uint32_t *desktop_blurred_buf = NULL;
+static uint32_t *desktop_blur_tmp = NULL;
+#define BLUR_W (SCREEN_WIDTH / 2)
+#define BLUR_H (SCREEN_HEIGHT / 2)
+
+static void update_desktop_blur() {
+    if (!desktop_blurred_buf) desktop_blurred_buf = (uint32_t *)malloc(BLUR_W * BLUR_H * 4);
+    if (!desktop_blur_tmp) desktop_blur_tmp = (uint32_t *)malloc(BLUR_W * BLUR_H * 4);
+    if (!desktop_blurred_buf || !desktop_blur_tmp) return;
+
+    // 1. Downsample 2x (2x2 average for a smoother base)
+    for (int y = 0; y < BLUR_H; y++) {
+        uint32_t *src0 = &desktop_composite_buf[(y*2)*SCREEN_WIDTH];
+        uint32_t *src1 = &desktop_composite_buf[(y*2+1)*SCREEN_WIDTH];
+        uint32_t *dst = &desktop_blurred_buf[y * BLUR_W];
+        for (int x = 0; x < BLUR_W; x++) {
+            uint32_t c00 = src0[x*2], c01 = src0[x*2+1];
+            uint32_t c10 = src1[x*2], c11 = src1[x*2+1];
+            uint32_t r = ((c00>>16&0xFF) + (c01>>16&0xFF) + (c10>>16&0xFF) + (c11>>16&0xFF)) >> 2;
+            uint32_t g = ((c00>>8&0xFF) + (c01>>8&0xFF) + (c10>>8&0xFF) + (c11>>8&0xFF)) >> 2;
+            uint32_t b = ((c00&0xFF) + (c01&0xFF) + (c10&0xFF) + (c11&0xFF)) >> 2;
+            dst[x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+        }
+    }
+    
+    // 2. Horizontal Box Blur (Radius 2 on downsampled -> approx 5px on full)
+    for (int y = 0; y < BLUR_H; y++) {
+        for (int x = 0; x < BLUR_W; x++) {
+            int r_sum=0, g_sum=0, b_sum=0, count=0;
+            for (int dx = -2; dx <= 2; dx++) {
+                int nx = x + dx;
+                if (nx >= 0 && nx < BLUR_W) {
+                    uint32_t c = desktop_blurred_buf[y * BLUR_W + nx];
+                    r_sum += (c>>16)&0xFF; g_sum += (c>>8)&0xFF; b_sum += c&0xFF;
+                    count++;
+                }
+            }
+            desktop_blur_tmp[y * BLUR_W + x] = 0xFF000000 | ((r_sum/count)<<16) | ((g_sum/count)<<8) | (b_sum/count);
+
+        }
+    }
+    // 3. Vertical Box Blur
+    for (int x = 0; x < BLUR_W; x++) {
+        for (int y = 0; y < BLUR_H; y++) {
+            int r_sum=0, g_sum=0, b_sum=0, count=0;
+            for (int dy = -2; dy <= 2; dy++) {
+                int ny = y + dy;
+                if (ny >= 0 && ny < BLUR_H) {
+                    uint32_t c = desktop_blur_tmp[ny * BLUR_W + x];
+                    r_sum += (c>>16)&0xFF; g_sum += (c>>8)&0xFF; b_sum += c&0xFF;
+                    count++;
+                }
+            }
+            desktop_blurred_buf[y * BLUR_W + x] = 0xFF000000 | ((r_sum/count)<<16) | ((g_sum/count)<<8) | (b_sum/count);
+        }
+    }
+}
+
+static uint32_t sample_blurred_backdrop(int x, int y) {
+    if (!desktop_blurred_buf) return sample_backdrop_pixel(&g_windows[g_active_window_index], x, y);
+    int bx = x >> 1;
+    int by = y >> 1;
+    if (bx < 0) bx = 0; if (by < 0) by = 0;
+    if (bx >= BLUR_W) bx = BLUR_W - 1;
+    if (by >= BLUR_H) by = BLUR_H - 1;
+    return desktop_blurred_buf[by * BLUR_W + bx];
+}
+
 static int desktop_composite_dirty = 1;
 static int desktop_composite_last_active_index = -1;
 static uint32_t *svg_buf = NULL; // 動的確保に変更
@@ -608,7 +677,7 @@ static int g_hud_current_h = 64;
 #define BG_PREVIEW_H 152
 #define BG_PREVIEW_SCALE_DIV 8
 #define WINDOW_BLUR_SAMPLE_SIZE 60
-#define WINDOW_BLUR_SPACING 30
+#define WINDOW_BLUR_SPACING 15
 static uint32_t bg_preview_buf[BG_PREVIEW_W * BG_PREVIEW_H];
 // 文字レイヤー (透過処理用)
 #define TEXT_LAYER_W SCREEN_WIDTH
@@ -3376,35 +3445,10 @@ skip_shadow:
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)(win->h + title_h) * scale);
-      // --- Optimized Blur Cache ---
-      int blur_cols = (win->w + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
-      int blur_rows = (win->h + WINDOW_BLUR_SPACING - 1) / WINDOW_BLUR_SPACING;
 
-      if (0) { // Always recompute blur for now to fix stale background
-        // Skip recomputing blur during drag; use old cache or NULL
-      } else if (!win->blur_cache || win->blur_cache_cols != blur_cols || win->blur_cache_rows != blur_rows ||
-                 win->blur_last_w != win->w || win->blur_last_h != win->h ||
-                 (win->is_dirty && !win->is_resizing) || win->is_dragging) {
-
-        if (win->blur_cache) free(win->blur_cache);
-        win->blur_cache = (uint32_t *)malloc((size_t)blur_cols * (size_t)blur_rows * sizeof(uint32_t));
-        win->blur_cache_cols = blur_cols;
-        win->blur_cache_rows = blur_rows;
-        win->blur_last_w = win->w;
-        win->blur_last_h = win->h;
-
-        if (win->blur_cache) {
-          for (int by = 0; by < blur_rows; by++) {
-            int sample_y = win->y + by * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
-            for (int bx = 0; bx < blur_cols; bx++) {
-              int sample_x = win->x + bx * WINDOW_BLUR_SPACING + WINDOW_BLUR_SPACING / 2;
-              win->blur_cache[by * blur_cols + bx] =
-                  sample_backdrop_blur(win, sample_x, sample_y, WINDOW_BLUR_SAMPLE_SIZE / 2);
-            }
-          }
-        }
-      }
-      uint32_t *blur_cache = win->blur_cache;
+      // --- Glass Distortion Effect (4th Power) ---
+      // Instead of blur, we now use a coordinate distortion effect near the window edges.
+      // The blur_cache is no longer used for this effect.
       uint32_t bg_color = get_window_background_color(win);
 
       // --- Optimized Text Overlay Cache ---
@@ -3448,8 +3492,52 @@ skip_shadow:
           uint32_t color = src_content_line[src_x];
 
           uint32_t surface_bg = dst_line[px];
-          if (blur_cache && blur_cols > 0) {
-            surface_bg = sample_blur_cache(blur_cache, blur_cols, blur_rows, dx, dy);
+          if (win == &g_windows[g_active_window_index]) {
+            // Glass Distortion Effect (10 Layers, 1px Spacing)
+            float fx = (float)dx + 0.5f;
+            float fy = (float)dy + 0.5f;
+            float rw = (float)win->w;
+            float rh = (float)win->h;
+            float r = 32.0f; // Corner radius matching window
+            
+            float qx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
+            float qy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
+            
+            float d_in;
+            if (qx > 0.0f && qy > 0.0f) {
+                d_in = r - sqrtf(qx*qx + qy*qy);
+            } else {
+                float dist_to_rect_edge_x = rw/2.0f - fabsf(fx - rw/2.0f);
+                float dist_to_rect_edge_y = rh/2.0f - fabsf(fy - rh/2.0f);
+                d_in = (dist_to_rect_edge_x < dist_to_rect_edge_y) ? dist_to_rect_edge_x : dist_to_rect_edge_y;
+            }
+
+            int num_layers = 10;
+            int layer_idx = (int)d_in;
+            if (layer_idx < 0) layer_idx = 0;
+            if (layer_idx >= num_layers) layer_idx = num_layers - 1;
+            
+            float t = (float)layer_idx / (float)(num_layers - 1);
+            float dist_curve = 1.0f - t;
+            float distortion_factor = dist_curve * dist_curve * dist_curve * dist_curve;
+            float max_glass_scale = 2.5f;
+            float glass_scale = 1.0f + (max_glass_scale - 1.0f) * distortion_factor;
+
+            int center_x = win->x + win->w / 2;
+            int center_y = win->y + win->h / 2;
+            int sx = center_x + (int)((float)(px - center_x) / glass_scale);
+            int sy = center_y + (int)((float)(py - center_y) / glass_scale);
+
+            // Sample from blurred backdrop buffer for high performance
+            surface_bg = sample_blurred_backdrop(sx, sy);
+
+            // Subtle white layer borders (1px) matching glass.html style
+            if (d_in < (float)num_layers) {
+                float dist_to_step = d_in - (float)layer_idx;
+                if (dist_to_step < 0.15f) {
+                    surface_bg = blend_colors(surface_bg, 0xFFFFFFFF, (uint8_t)(30 * (1.0f - t)));
+                }
+            }
           }
           surface_bg = blend_colors(surface_bg, bg_color, (uint8_t)(bg_color >> 24));
 
@@ -3530,6 +3618,7 @@ static void redraw_warp_svg(layer_t *layer) {
     }
     desktop_composite_dirty = 0;
     desktop_composite_last_active_index = active_idx;
+    update_desktop_blur();
   }
 
   memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);

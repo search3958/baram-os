@@ -1,2 +1,46 @@
-
---- BaramOS ARM64 Booting ---
+A
+--- BaramOS x86 Booting ---
+magic=0x00000600 addr=0x02292200
+stage: boot_info_ready
+mbi is NULL!
+stage: heap_ready
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+fill_red: mbi is NULL
+stage: early_fb_done
+stage: idt_done
+stage: irq_done
+stage: interrupts_enabled
+mod_init: mbi is NULL
+stage: modules_ready
+mbi is NULL in FB selection
+stage: fb_selected
+stage: entering_loop

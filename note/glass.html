@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Glass Layer - 4th Power Distortion</title>
+    <style>
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #0a0a0a; }
+        canvas { background: #000; box-shadow: 0 0 60px rgba(0,0,0,0.8); cursor: crosshair; }
+    </style>
+</head>
+<body>
+
+<canvas id="glassCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('glassCanvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+
+    // --- 設定 ---
+    const boxW = 500;
+    const boxH = 500;
+    const borderRadius = 60;
+    const layers = 30;     // 30個のレイヤー
+    const insetStep = 1.5;   // 1pxずつ内側へ
+    const maxScale = 2.5;  // 最外層の最大拡大率
+
+    img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        draw();
+    };
+    img.onerror = () => {
+        canvas.width = 800;
+        canvas.height = 800;
+        draw();
+    };
+    img.src = 'test.png';
+
+    let isHovering = false;
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const startX = (canvas.width - boxW) / 2;
+        const startY = (canvas.height - boxH) / 2;
+
+        const inside = x > startX && x < startX + boxW && y > startY && y < startY + boxH;
+        if (inside !== isHovering) {
+            isHovering = inside;
+            draw();
+        }
+    });
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. 背景
+        if (img.complete && img.naturalWidth !== 0) {
+            ctx.drawImage(img, 0, 0);
+        } else {
+            ctx.fillStyle = '#200'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        const startX = (canvas.width - boxW) / 2;
+        const startY = (canvas.height - boxH) / 2;
+
+        // 2. レイヤー描画
+        for (let i = 0; i < layers; i++) {
+            const inset = i * insetStep;
+            const cw = boxW - (inset * 2);
+            const ch = boxH - (inset * 2);
+            const cx = startX + inset;
+            const cy = startY + inset;
+            const r = Math.max(0, borderRadius - inset);
+
+            ctx.save();
+
+            // クリップ
+            ctx.beginPath();
+            ctx.roundRect(cx, cy, cw, ch, r);
+            ctx.clip();
+
+            // --- 拡大率の計算（4乗のカーブ） ---
+            // t は 0.0 (最外層) から 1.0 (最内層) に向かう
+            const t = i / (layers - 1);
+            // (1-t)^4 を使うことで、i=0付近で急激に変化し、後半は緩やかになる
+            const distortion = Math.pow(1 - t, 4);
+            const scale = 1 + (maxScale - 1) * distortion;
+
+            if (img.complete && img.naturalWidth !== 0) {
+                const sw = img.width / scale;
+                const sh = img.height / scale;
+                const sx = (img.width - sw) / 2;
+                const sy = (img.height - sh) / 2;
+                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+            }
+
+            // ホバー時のデバッグ色分け（1px刻みのシマシマ）
+            if (isHovering) {
+                ctx.fillStyle = (i % 2 === 0) ? 'rgba(0, 0, 0, 0.3)' : 'rgba(255, 255, 255, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // 境界線（1pxなので非常に細い）
+            ctx.strokeStyle = isHovering ? 'rgba(0, 255, 255, 0.5)' : `rgba(255, 255, 255, ${0.15 * (1 - t)})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke(); 
+
+            ctx.restore();
+        }
+    }
+
+    draw();
+</script>
+
+</body>
+</html>
