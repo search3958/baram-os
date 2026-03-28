@@ -6,9 +6,11 @@
 
 // --- 1. Internal Utilities ---
 static int w1_strlen(const char *s) { int n=0; if(!s) return 0; while(s[n]) n++; return n; }
-static char *w1_strcpy(char *d, const char *s) { char *p=d; while((*p++=*s++)); return d; }
+static char *w1_strcpy(char *d, const char *s) { char *p=d; while((*p++=*s++))
+; return d; }
 static char *w1_strncpy(char *d, const char *s, size_t n) { size_t i; for(i=0;i<n&&s[i];i++) d[i]=s[i]; for(;i<n;i++) d[i]=0; return d; }
-static char *w1_strcat(char *d, const char *s) { char *p=d; while(*p) p++; while((*p++=*s++)); return d; }
+static char *w1_strcat(char *d, const char *s) { char *p=d; while(*p) p++; while((*p++=*s++))
+; return d; }
 static char *w1_strncat(char *d, const char *s, size_t n) { char *p=d; while(*p) p++; size_t i; for(i=0;i<n&&s[i];i++) { *p++=s[i]; } *p=0; return d; }
 static int w1_strcmp(const char *a, const char *b) { while(*a&&*a==*b){a++;b++;} return *(unsigned char*)a-*(unsigned char*)b; }
 static int w1_strncmp(const char *a, const char *b, size_t n) { for(size_t i=0;i<n;i++){if(a[i]!=b[i]||!a[i])return (unsigned char)a[i]-(unsigned char)b[i];} return 0; }

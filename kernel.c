@@ -620,8 +620,6 @@ static void downsample_2x_sse2(uint32_t *dst, const uint32_t *src0, const uint32
         
         // Sum all 4 pixels (s0[0], s0[1], s1[0], s1[1])
         __m128i sum_lo = _mm_add_epi16(_mm_add_epi16(s0_lo, s0_hi), _mm_add_epi16(s1_lo, s1_hi));
-        __m128i sum_hi = _mm_add_epi16(_mm_add_epi16(_mm_unpacklo_epi8(s0, zero), _mm_unpackhi_epi8(s0, zero)),
-                                        _mm_add_epi16(_mm_unpacklo_epi8(s1, zero), _mm_unpackhi_epi8(s1, zero)));
         
         // Divide by 4 (right shift 2)
         __m128i avg = _mm_srli_epi16(sum_lo, 2);
@@ -649,8 +647,6 @@ static void downsample_2x_sse2(uint32_t *dst, const uint32_t *src0, const uint32
 
 // SSE2 optimized horizontal box blur (sliding window - much faster than nested loops)
 static void hblur_sse2(uint32_t *dst, const uint32_t *src, int w, int h, int radius) {
-    const int diameter = radius * 2 + 1;
-    
     for (int y = 0; y < h; y++) {
         const uint32_t *src_row = &src[y * w];
         uint32_t *dst_row = &dst[y * w];
@@ -2568,7 +2564,6 @@ static void window_update_caches(window_t *win) {
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
-  int is_active = (win == &g_windows[g_active_window_index]);
   float target_scale = 1.0f;
 
   // If resolution scale changed, force update
@@ -3337,6 +3332,9 @@ static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int c
       int shadow_size = win->no_decoration ? 0 : 48;
       float scale = win->render_scale;
 
+      int full_y0 = win->y - title_h;
+      int full_h = win->h + title_h;
+
       if (!win->is_maximized && !win->no_decoration && win->shadow_cache) {
         int sx_start = win->x - shadow_size;
         int sy_start = win->y - title_h - shadow_size + 8;
@@ -3362,17 +3360,14 @@ static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int c
           }
         }
       }
-      
-      int full_y0 = win->y - title_h;
-      int full_h = win->h + title_h;
+
+skip_shadow:;
       int cy0 = (full_y0 < clip_y0) ? (clip_y0 - full_y0) : 0;
       int cy1 = (full_y0 + full_h > clip_y1) ? (clip_y1 - full_y0) : full_h;
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)full_h * scale);
       uint32_t bg_color = get_window_background_color(win);
-
-skip_shadow:;
 
       // --- Optimized Text Overlay Cache ---
       // Rebuild text overlay when: cache missing, size changed, scroll changed, or window is dirty (content changed)

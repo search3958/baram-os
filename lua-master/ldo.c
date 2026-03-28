@@ -154,6 +154,8 @@ l_noret luaD_throwbaselevel (lua_State *L, TStatus errcode) {
       L->errorJmp = L->errorJmp->previous;
   }
   luaD_throw(L, errcode);
+  for (;;) { }  /* should never reach here */
+  __builtin_unreachable();
 }
 
 
