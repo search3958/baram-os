@@ -16,7 +16,6 @@ screen{
     hStack{
         button{
             text: ("Baram 0S"),
-            radius: (0%),
             oneClick: (setScreen{baram})
         },
         tonalButton{
@@ -26,7 +25,6 @@ screen{
         },
         tonalButton{
             text: ("コマンド"),
-            radius: (0%),
             oneClick: (setScreen{terminal})
         },
         tonalButton{

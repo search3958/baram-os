@@ -4613,9 +4613,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   ramfb_init(main_screen_buf, SCREEN_WIDTH, SCREEN_HEIGHT);
   arm_timer_init(100);
 #else
-  set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
-                       mbi->framebuffer_width, mbi->framebuffer_height,
-                       mbi->framebuffer_pitch);
+  if (mbi->flags & (1 << 12)) {
+    // Multiboot 提供のフレームバッファを使用
+    set_framebuffer_info((uint32_t *)(uintptr_t)mbi->framebuffer_addr,
+                         mbi->framebuffer_width, mbi->framebuffer_height,
+                         mbi->framebuffer_pitch);
+  } else {
+    // フレームバッファがない場合はメインバッファで代用（描画は見えないがクラッシュ回避）
+    set_framebuffer_info(main_screen_buf, SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * 4);
+    set_w1_global("--warpSystemLog", "NoMultibootFB!");
+  }
 #endif
 
   // カーソル初期化

@@ -100,11 +100,8 @@ static uint32_t g_backbuffer_ram[SCREEN_WIDTH * SCREEN_HEIGHT];
 static uint32_t g_staticbuffer[SCREEN_WIDTH * SCREEN_HEIGHT];
 static int g_static_dirty = 1;
 
-// ページフリップ (Bochs/QEMU VBE) 用
-static int g_page_flip_enabled = 0;
-static uint32_t g_page_size_bytes = 0;
-static int g_display_page = 0;
-static int g_draw_page = 1;
+// ページフリップ用 (UEFI/標準FBでは基本無効)
+// BGA固有の変数を削除
 
 // ==========================================
 // ダーティレクト管理
@@ -157,60 +154,6 @@ void screen_mark_all_dirty(void) {
 }
 
 // ==========================================
-// BGA / ページフリップ / VSync
-// ==========================================
-static inline void outw(uint16_t port, uint16_t val) {
-#ifndef __aarch64__
-  __asm__ __volatile__("outw %w0, %w1" : : "a"(val), "Nd"(port));
-#endif
-}
-static inline uint16_t inw(uint16_t port) {
-#ifdef __aarch64__
-  return 0;
-#else
-  uint16_t ret;
-  __asm__ __volatile__("inw %w1, %w0" : "=a"(ret) : "Nd"(port));
-  return ret;
-#endif
-}
-
-#define BGA_INDEX 0x01CE
-#define BGA_DATA 0x01CF
-#define BGA_REG_ID 0x00
-#define BGA_REG_VIRT_WIDTH 0x06
-#define BGA_REG_VIRT_HEIGHT 0x07
-#define BGA_REG_X_OFFSET 0x08
-#define BGA_REG_Y_OFFSET 0x09
-#define BGA_ID_MIN 0xB0C0
-#define BGA_ID_MAX 0xB0C5
-static inline uint16_t bga_read(uint16_t i) {
-  outw(BGA_INDEX, i);
-  return inw(BGA_DATA);
-}
-static inline void bga_write(uint16_t i, uint16_t v) {
-  outw(BGA_INDEX, i);
-  outw(BGA_DATA, v);
-}
-
-static void try_enable_page_flip(void) {
-  uint16_t id = bga_read(BGA_REG_ID);
-  if (id < BGA_ID_MIN || id > BGA_ID_MAX)
-    return;
-  uint16_t vw = (uint16_t)g_vram_width;
-  uint16_t vh = (uint16_t)(g_vram_height * 2);
-  bga_write(BGA_REG_VIRT_WIDTH, vw);
-  bga_write(BGA_REG_VIRT_HEIGHT, vh);
-  if (bga_read(BGA_REG_VIRT_WIDTH) != vw || bga_read(BGA_REG_VIRT_HEIGHT) != vh)
-    return;
-  bga_write(BGA_REG_X_OFFSET, 0);
-  bga_write(BGA_REG_Y_OFFSET, 0);
-  g_page_size_bytes = g_vram_pitch * g_vram_height;
-  g_display_page = 0;
-  g_draw_page = 1;
-  g_page_flip_enabled = 1;
-}
-
-// ==========================================
 // レイヤー管理
 // ==========================================
 #define MAX_LAYERS 8
@@ -223,9 +166,6 @@ void set_framebuffer_info(uint32_t *fb, uint32_t width, uint32_t height,
   g_vram_width = width;
   g_vram_height = height;
   g_vram_pitch = pitch;
-  g_page_flip_enabled = 0;
-  g_page_size_bytes = g_vram_pitch * g_vram_height;
-  try_enable_page_flip();
 }
 
 void register_layer(layer_t *layer) {
@@ -436,19 +376,11 @@ void screen_refresh(void) {
     }
   }
 
-  // 4. VRAMへ転送
-  if (g_page_flip_enabled) {
-    uint32_t *page = (uint32_t *)((uint8_t *)g_vram + g_page_size_bytes * g_draw_page);
-    memcpy(page, bb, SCREEN_WIDTH * SCREEN_HEIGHT * 4);
-    bga_write(BGA_REG_Y_OFFSET, (uint16_t)(g_draw_page * g_vram_height));
-    g_display_page = g_draw_page;
-    g_draw_page = 1 - g_draw_page;
-  } else {
-    for (int y = ry0; y < ry1; y++) {
-      uint32_t *dst = &g_vram[y * SCREEN_WIDTH + rx0];
-      uint32_t *src = &bb[y * SCREEN_WIDTH + rx0];
-      memcpy(dst, src, (size_t)(rx1 - rx0) * 4);
-    }
+  // 4. VRAMへ転送 (Dirty Rect領域のみコピー)
+  for (int y = ry0; y < ry1; y++) {
+    uint32_t *dst = &g_vram[y * SCREEN_WIDTH + rx0];
+    uint32_t *src = &bb[y * SCREEN_WIDTH + rx0];
+    memcpy(dst, src, (size_t)(rx1 - rx0) * 4);
   }
   
   prev_cursor_x = cx;
