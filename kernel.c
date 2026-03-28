@@ -7,6 +7,9 @@
 #include <string.h> // memcpy, memset
 #ifdef __SSE2__
 #include <emmintrin.h>
+#define ALIGN16 __attribute__((aligned(16)))
+#else
+#define ALIGN16
 #endif
 
 #include "drivers.h"
@@ -275,10 +278,6 @@ typedef struct window_struct {
   int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
   void *dynamic_file_ptr;  // Pointer to on-demand loaded file data from storage
-
-  // Unified caching for inactive windows (RAM optimization)
-  uint32_t *unified_buffer; // Baked RGBA image (shadow + frame + content)
-  int unified_w, unified_h;
 
   // Text overlay cache
   uint32_t *text_overlay_cache;
@@ -601,12 +600,118 @@ static uint32_t *desktop_blur_tmp = NULL;
 #define BLUR_W (SCREEN_WIDTH / 2)
 #define BLUR_H (SCREEN_HEIGHT / 2)
 
+#ifdef __SSE2__
+#include <emmintrin.h>
+
+// SSE2 optimized downsample: 4 pixels at once
+static void downsample_2x_sse2(uint32_t *dst, const uint32_t *src0, const uint32_t *src1, int w) {
+    int x = 0;
+    for (; x + 4 <= w; x += 4) {
+        // Load 4 pixels from each row
+        __m128i s0 = _mm_loadu_si128((__m128i*)&src0[x*2]);
+        __m128i s1 = _mm_loadu_si128((__m128i*)&src1[x*2]);
+        
+        // Unpack to separate RGB channels
+        __m128i zero = _mm_setzero_si128();
+        __m128i s0_lo = _mm_unpacklo_epi8(s0, zero);
+        __m128i s0_hi = _mm_unpackhi_epi8(s0, zero);
+        __m128i s1_lo = _mm_unpacklo_epi8(s1, zero);
+        __m128i s1_hi = _mm_unpackhi_epi8(s1, zero);
+        
+        // Sum all 4 pixels (s0[0], s0[1], s1[0], s1[1])
+        __m128i sum_lo = _mm_add_epi16(_mm_add_epi16(s0_lo, s0_hi), _mm_add_epi16(s1_lo, s1_hi));
+        __m128i sum_hi = _mm_add_epi16(_mm_add_epi16(_mm_unpacklo_epi8(s0, zero), _mm_unpackhi_epi8(s0, zero)),
+                                        _mm_add_epi16(_mm_unpacklo_epi8(s1, zero), _mm_unpackhi_epi8(s1, zero)));
+        
+        // Divide by 4 (right shift 2)
+        __m128i avg = _mm_srli_epi16(sum_lo, 2);
+        
+        // Pack back to 8-bit
+        __m128i result = _mm_packus_epi16(avg, avg);
+        
+        // Store every other pixel (we sampled 2x2, store 1x)
+        uint32_t tmp[4];
+        _mm_storeu_si128((__m128i*)tmp, result);
+        for (int i = 0; i < 4; i++) {
+            dst[x+i] = 0xFF000000 | (tmp[i] & 0x00FFFFFF);
+        }
+    }
+    // Scalar remainder
+    for (; x < w; x++) {
+        uint32_t c00 = src0[x*2], c01 = src0[x*2+1];
+        uint32_t c10 = src1[x*2], c11 = src1[x*2+1];
+        uint32_t r = ((c00>>16&0xFF) + (c01>>16&0xFF) + (c10>>16&0xFF) + (c11>>16&0xFF)) >> 2;
+        uint32_t g = ((c00>>8&0xFF) + (c01>>8&0xFF) + (c10>>8&0xFF) + (c11>>8&0xFF)) >> 2;
+        uint32_t b = ((c00&0xFF) + (c01&0xFF) + (c10&0xFF) + (c11&0xFF)) >> 2;
+        dst[x] = 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+}
+
+// SSE2 optimized horizontal box blur (sliding window - much faster than nested loops)
+static void hblur_sse2(uint32_t *dst, const uint32_t *src, int w, int h, int radius) {
+    const int diameter = radius * 2 + 1;
+    
+    for (int y = 0; y < h; y++) {
+        const uint32_t *src_row = &src[y * w];
+        uint32_t *dst_row = &dst[y * w];
+        
+        // Initialize sum for first pixel using sliding window
+        uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
+        int count = 0;
+        
+        // Initial window for x=0
+        for (int dx = -radius; dx <= radius && dx < w; dx++) {
+            int nx = dx;
+            if (nx >= 0) {
+                uint32_t c = src_row[nx];
+                r_sum += (c>>16)&0xFF;
+                g_sum += (c>>8)&0xFF;
+                b_sum += c&0xFF;
+                count++;
+            }
+        }
+        
+        // Process each pixel with sliding window (O(1) per pixel instead of O(radius))
+        for (int x = 0; x < w; x++) {
+            dst_row[x] = 0xFF000000 | ((r_sum/count) << 16) | ((g_sum/count) << 8) | (b_sum/count);
+            
+            // Slide window: remove leftmost pixel, add rightmost pixel
+            int remove_x = x - radius;
+            int add_x = x + radius + 1;
+            
+            if (remove_x >= 0) {
+                uint32_t c = src_row[remove_x];
+                r_sum -= (c>>16)&0xFF;
+                g_sum -= (c>>8)&0xFF;
+                b_sum -= c&0xFF;
+                count--;
+            }
+            if (add_x < w) {
+                uint32_t c = src_row[add_x];
+                r_sum += (c>>16)&0xFF;
+                g_sum += (c>>8)&0xFF;
+                b_sum += c&0xFF;
+                count++;
+            }
+        }
+    }
+}
+#endif
+
 static void update_desktop_blur() {
     if (!desktop_blurred_buf) desktop_blurred_buf = (uint32_t *)malloc(BLUR_W * BLUR_H * 4);
     if (!desktop_blur_tmp) desktop_blur_tmp = (uint32_t *)malloc(BLUR_W * BLUR_H * 4);
     if (!desktop_blurred_buf || !desktop_blur_tmp) return;
 
     // 1. Downsample 2x (2x2 average for a smoother base)
+#ifdef __SSE2__
+    for (int y = 0; y < BLUR_H; y++) {
+        uint32_t *src0 = &desktop_composite_buf[(y*2)*SCREEN_WIDTH];
+        uint32_t *src1 = &desktop_composite_buf[(y*2+1)*SCREEN_WIDTH];
+        uint32_t *dst = &desktop_blurred_buf[y * BLUR_W];
+        downsample_2x_sse2(dst, src0, src1, BLUR_W);
+    }
+#else
     for (int y = 0; y < BLUR_H; y++) {
         uint32_t *src0 = &desktop_composite_buf[(y*2)*SCREEN_WIDTH];
         uint32_t *src1 = &desktop_composite_buf[(y*2+1)*SCREEN_WIDTH];
@@ -620,8 +725,14 @@ static void update_desktop_blur() {
             dst[x] = 0xFF000000 | (r << 16) | (g << 8) | b;
         }
     }
-    
+#endif
+
     // 2. Horizontal Box Blur (Radius 9 on downsampled -> approx 22.5px on full)
+#ifdef __SSE2__
+    hblur_sse2(desktop_blur_tmp, desktop_blurred_buf, BLUR_W, BLUR_H, 9);
+    // 3. Vertical Box Blur (transpose approach - same as hblur on transposed)
+    hblur_sse2(desktop_blurred_buf, desktop_blur_tmp, BLUR_H, BLUR_W, 9);
+#else
     for (int y = 0; y < BLUR_H; y++) {
         for (int x = 0; x < BLUR_W; x++) {
             int r_sum=0, g_sum=0, b_sum=0, count=0;
@@ -651,6 +762,7 @@ static void update_desktop_blur() {
             desktop_blurred_buf[y * BLUR_W + x] = 0xFF000000 | ((r_sum/count)<<16) | ((g_sum/count)<<8) | (b_sum/count);
         }
     }
+#endif
 
 }
 
@@ -2263,112 +2375,6 @@ static uint32_t *build_window_text_overlay(window_t *win, int *out_w, int *out_h
   return overlay;
 }
 
-static void window_bake(window_t *win) {
-  if (!win->shadow_cache || !win->frame_cache || !win->rgba_buffer || !win->window_mask) return;
-
-  float scale = win->render_scale;
-  int title_h = win->no_decoration ? 0 : 40;
-  int shadow_size = win->no_decoration ? 0 : 48;
-  
-  int full_sw = win->w + shadow_size * 2;
-  int full_sh = win->h + title_h + shadow_size * 2;
-  int sw = (int)((float)full_sw * scale);
-  int sh = (int)((float)full_sh * scale);
-  if (sw < 1) sw = 1;
-  if (sh < 1) sh = 1;
-
-  if (win->unified_buffer) free(win->unified_buffer);
-  win->unified_buffer = (uint32_t*)malloc((size_t)sw * (size_t)sh * 4);
-  win->unified_w = sw;
-  win->unified_h = sh;
-
-  // Clear unified buffer with transparent black
-  for (int i = 0; i < sw * sh; i++) win->unified_buffer[i] = 0x00000000;
-
-  // 1. Bake Shadow (offset Y by 8)
-  int shadow_off_y = (int)(8.0f * scale);
-  for (int y = 0; y < win->shadow_cache_h; y++) {
-    int py = y + shadow_off_y;
-    if (py >= sh) break;
-    for (int x = 0; x < win->shadow_cache_w; x++) {
-      uint8_t alpha = win->shadow_cache[y * win->shadow_cache_w + x];
-      if (alpha > 0) win->unified_buffer[py * sw + x] = (uint32_t)alpha << 24;
-    }
-  }
-
-  // 2. Bake Frame (Title Bar)
-  int frame_x = (int)((float)shadow_size * scale);
-  int frame_y = (int)((float)shadow_size * scale);
-  int mw = (int)((float)win->w * scale);
-  if (mw < 1 && win->w > 0) mw = 1;
-
-  for (int dy = 0; dy < win->frame_cache_h; dy++) {
-    int py = frame_y + dy;
-    uint32_t *src_line = &win->frame_cache[dy * win->frame_cache_w];
-    uint8_t *mask_line = &win->window_mask[dy * mw];
-    for (int dx = 0; dx < win->frame_cache_w; dx++) {
-      int px = frame_x + dx;
-      uint32_t color = src_line[dx];
-      uint8_t alpha = win->is_maximized ? 255 : mask_line[dx];
-      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], color, alpha);
-    }
-  }
-
-  // 3. Bake Content
-  int content_y = frame_y + (int)((float)title_h * scale);
-  int mh = (int)((float)(win->h + title_h) * scale);
-  int viewport_h = (int)((float)win->h * scale);
-  int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
-  if (scroll_offset_y < 0) scroll_offset_y = 0;
-  for (int dy = 0; dy < viewport_h; dy++) {
-    int py = content_y + dy;
-    if (py >= sh) break;
-    int src_y = scroll_offset_y + dy;
-    if (src_y >= win->buffer_h) break;
-    uint32_t *src_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
-    int mask_y = (int)((float)title_h * scale) + dy;
-    if (mask_y >= mh) mask_y = mh - 1;
-    uint8_t *mask_line = &win->window_mask[mask_y * mw];
-    for (int dx = 0; dx < win->buffer_w; dx++) {
-      int px = frame_x + dx;
-      if (px >= sw) break;
-      uint32_t color = src_line[dx];
-      uint8_t content_alpha = (uint8_t)(color >> 24);
-      uint8_t alpha = (win->is_maximized || win->no_decoration) ? 255 : mask_line[dx];
-      uint32_t composited = blend_colors(win->unified_buffer[py * sw + px], color, content_alpha);
-      win->unified_buffer[py * sw + px] = blend_colors(win->unified_buffer[py * sw + px], composited, alpha);
-    }
-  }
-
-  int text_w = 0, text_h = 0;
-  uint32_t *text_overlay = build_window_text_overlay(win, &text_w, &text_h);
-  if (text_overlay) {
-    for (int y = 0; y < text_h; y++) {
-      int py = content_y + y;
-      if (py >= sh) break;
-      int mask_y = (int)((float)title_h * scale) + y;
-      if (mask_y >= mh) mask_y = mh - 1;
-      uint8_t *text_mask_line = &win->window_mask[mask_y * mw];
-      for (int x = 0; x < text_w; x++) {
-        int px = frame_x + x;
-        if (px >= sw) break;
-        uint32_t text_px = text_overlay[y * text_w + x];
-        uint8_t alpha = (uint8_t)(text_px >> 24);
-        if (alpha == 0)
-          continue;
-        uint8_t mask_alpha = (win->is_maximized || win->no_decoration) ? 255 : text_mask_line[x];
-        uint8_t final_alpha = (uint8_t)((uint32_t)alpha * mask_alpha / 255);
-        win->unified_buffer[py * sw + px] =
-            blend_rgb_over_opaque(win->unified_buffer[py * sw + px], text_px, final_alpha);
-      }
-    }
-    free(text_overlay);
-  }
-
-  // 4. Cleanup individual caches to save RAM
-  window_clear_caches(win);
-}
-
 static void window_update_caches(window_t *win) {
   float scale = win->render_scale;
   if (scale <= 0.0f) scale = 1.0f;
@@ -2565,20 +2571,11 @@ static void window_redraw(window_t *win) {
   int is_active = (win == &g_windows[g_active_window_index]);
   float target_scale = 1.0f;
 
-  
   // If resolution scale changed, force update
   if (win->render_scale != target_scale) {
     win->is_dirty = 1;
     win->render_scale = target_scale;
     window_update_caches(win);
-  }
-
-  if ((is_active || ((uint8_t)(win->background_color >> 24) < 255) || win->is_dirty) &&
-      win->unified_buffer) {
-    free(win->unified_buffer);
-    win->unified_buffer = NULL;
-    win->unified_w = 0;
-    win->unified_h = 0;
   }
 
   // Check if update is needed (engine_dirty flag)
@@ -2703,9 +2700,8 @@ static void window_redraw(window_t *win) {
     }
   }
 
-  if (!is_active && ((uint8_t)(win->background_color >> 24) == 255)) {
-    window_bake(win);
-  }
+  // Keep caches for inactive windows to render same as active
+  // No baking - use normal render path for both active and inactive
 
   win->is_dirty = 0;
   win->is_calculating = 0;
@@ -2859,8 +2855,6 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->shadow_cache = NULL;
   win->frame_cache = NULL;
   win->window_mask = NULL;
-  win->unified_buffer = NULL;
-  win->unified_w = 0; win->unified_h = 0;
   win->text_overlay_cache = NULL;
   win->text_overlay_cache_w = 0;
   win->text_overlay_cache_h = 0;
@@ -2917,7 +2911,6 @@ static void close_active_window() {
   if (win->frame_cache) free(win->frame_cache);
   if (win->window_mask) free(win->window_mask);
   if (win->dynamic_file_ptr) free(win->dynamic_file_ptr);
-  if (win->unified_buffer) free(win->unified_buffer);
   if (win->text_overlay_cache) free(win->text_overlay_cache);
   if (win->blur_cache) free(win->blur_cache);
   
@@ -2968,22 +2961,6 @@ static int window_index_of(window_t *target) {
 static uint32_t composite_window_pixel(uint32_t dst, window_t *win, int px, int py) {
   if (!win)
     return dst;
-
-  if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
-    int title_h = win->no_decoration ? 0 : 40;
-    int shadow_size = win->no_decoration ? 0 : 48;
-    int start_x = win->x - shadow_size;
-    int start_y = win->y - title_h - shadow_size;
-    int local_x = px - start_x;
-    int local_y = py - start_y;
-    if (local_x < 0 || local_y < 0 || local_x >= win->unified_w || local_y >= win->unified_h)
-      return dst;
-    uint32_t color = win->unified_buffer[local_y * win->unified_w + local_x];
-    uint8_t alpha = (uint8_t)(color >> 24);
-    if (alpha == 0)
-      return dst;
-    return blend_colors(dst, color, alpha);
-  }
 
   if (!win->rgba_buffer)
     return dst;
@@ -3354,36 +3331,7 @@ static int rects_intersect(int ax0, int ay0, int ax1, int ay1, int bx0, int by0,
 static void redraw_warp_region(layer_t *layer, int rx0, int ry0, int rx1, int ry1);
 
 static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int clip_y0, int clip_x1, int clip_y1) {
-    if (win->unified_buffer && win->unified_w > 0 && win->unified_h > 0) {
-      int title_h = win->no_decoration ? 0 : 40;
-      int shadow_size = win->no_decoration ? 0 : 48;
-      int start_x = win->x - shadow_size;
-      int start_y = win->y - title_h - shadow_size;
-      int x0 = (start_x < clip_x0) ? (clip_x0 - start_x) : 0;
-      int y0 = (start_y < clip_y0) ? (clip_y0 - start_y) : 0;
-      int x1 = start_x + win->unified_w > clip_x1 ? clip_x1 - start_x : win->unified_w;
-      int y1 = start_y + win->unified_h > clip_y1 ? clip_y1 - start_y : win->unified_h;
-      if (x0 < 0) x0 = 0;
-      if (y0 < 0) y0 = 0;
-      if (x1 > win->unified_w) x1 = win->unified_w;
-      if (y1 > win->unified_h) y1 = win->unified_h;
-      if (x0 >= x1 || y0 >= y1) return;
-
-      for (int dy = y0; dy < y1; dy++) {
-        int py = start_y + dy;
-        uint32_t *dst_line = &layer->buffer[py * layer->width];
-        uint32_t *src_line = &win->unified_buffer[dy * win->unified_w];
-        for (int dx = x0; dx < x1; dx++) {
-          int px = start_x + dx;
-          uint32_t color = src_line[dx];
-          uint8_t alpha = (uint8_t)(color >> 24);
-          if (alpha == 0) continue;
-          dst_line[px] = blend_colors(dst_line[px], color, alpha);
-        }
-      }
-      return;
-    }
-
+    // Use normal render path for all windows (active and inactive)
     if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
       int title_h = win->no_decoration ? 0 : 40;
       int shadow_size = win->no_decoration ? 0 : 48;
