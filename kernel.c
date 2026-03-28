@@ -621,11 +621,11 @@ static void update_desktop_blur() {
         }
     }
     
-    // 2. Horizontal Box Blur (Radius 2 on downsampled -> approx 5px on full)
+    // 2. Horizontal Box Blur (Radius 9 on downsampled -> approx 22.5px on full)
     for (int y = 0; y < BLUR_H; y++) {
         for (int x = 0; x < BLUR_W; x++) {
             int r_sum=0, g_sum=0, b_sum=0, count=0;
-            for (int dx = -2; dx <= 2; dx++) {
+            for (int dx = -9; dx <= 9; dx++) {
                 int nx = x + dx;
                 if (nx >= 0 && nx < BLUR_W) {
                     uint32_t c = desktop_blurred_buf[y * BLUR_W + nx];
@@ -634,14 +634,13 @@ static void update_desktop_blur() {
                 }
             }
             desktop_blur_tmp[y * BLUR_W + x] = 0xFF000000 | ((r_sum/count)<<16) | ((g_sum/count)<<8) | (b_sum/count);
-
         }
     }
     // 3. Vertical Box Blur
     for (int x = 0; x < BLUR_W; x++) {
         for (int y = 0; y < BLUR_H; y++) {
             int r_sum=0, g_sum=0, b_sum=0, count=0;
-            for (int dy = -2; dy <= 2; dy++) {
+            for (int dy = -9; dy <= 9; dy++) {
                 int ny = y + dy;
                 if (ny >= 0 && ny < BLUR_H) {
                     uint32_t c = desktop_blur_tmp[ny * BLUR_W + x];
@@ -652,6 +651,7 @@ static void update_desktop_blur() {
             desktop_blurred_buf[y * BLUR_W + x] = 0xFF000000 | ((r_sum/count)<<16) | ((g_sum/count)<<8) | (b_sum/count);
         }
     }
+
 }
 
 static uint32_t sample_blurred_backdrop(int x, int y) {
@@ -3413,43 +3413,17 @@ static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int c
           }
         }
       }
-skip_shadow:
-
-      if (!win->no_decoration && win->frame_cache) {
-        int ty0 = (win->y - title_h < clip_y0) ? (clip_y0 - (win->y - title_h)) : 0;
-        int ty1 = (win->y > clip_y1) ? 0 : ((win->y < clip_y1) ? title_h : (clip_y1 - (win->y - title_h)));
-        int mw = (int)((float)win->w * scale);
-        if (mw < 1 && win->w > 0) mw = 1;
-        for (int dy = ty0; dy < ty1; dy++) {
-          int py = win->y - title_h + dy;
-          int scaled_dy = (int)((float)dy * scale);
-          if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
-          uint32_t *dst_line = &layer->buffer[py * layer->width];
-          uint32_t *src_line = &win->frame_cache[scaled_dy * win->frame_cache_w];
-          uint8_t *mask_line = &win->window_mask[scaled_dy * mw];
-          int dx0 = (win->x < clip_x0) ? (clip_x0 - win->x) : 0;
-          int dx1 = (win->x + win->w > clip_x1) ? (clip_x1 - win->x) : win->w;
-          for (int dx = dx0; dx < dx1; dx++) {
-            int px = win->x + dx;
-            if (px < 0 || px >= layer->width) continue;
-            int scaled_dx = (int)((float)dx * scale);
-            if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
-            uint8_t alpha = win->is_maximized ? 255 : mask_line[scaled_dx];
-            dst_line[px] = blend_colors(dst_line[px], src_line[scaled_dx], alpha);
-          }
-        }
-      }
-
-      int cy0 = (win->y < clip_y0) ? (clip_y0 - win->y) : 0;
-      int cy1 = (win->y + win->h > clip_y1) ? (clip_y1 - win->y) : win->h;
+      
+      int full_y0 = win->y - title_h;
+      int full_h = win->h + title_h;
+      int cy0 = (full_y0 < clip_y0) ? (clip_y0 - full_y0) : 0;
+      int cy1 = (full_y0 + full_h > clip_y1) ? (clip_y1 - full_y0) : full_h;
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
-      int mh = (int)((float)(win->h + title_h) * scale);
-
-      // --- Glass Distortion Effect (4th Power) ---
-      // Instead of blur, we now use a coordinate distortion effect near the window edges.
-      // The blur_cache is no longer used for this effect.
+      int mh = (int)((float)full_h * scale);
       uint32_t bg_color = get_window_background_color(win);
+
+skip_shadow:;
 
       // --- Optimized Text Overlay Cache ---
       // Rebuild text overlay when: cache missing, size changed, scroll changed, or window is dirty (content changed)
@@ -3473,32 +3447,28 @@ skip_shadow:
       int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
       if (scroll_offset_y < 0) scroll_offset_y = 0;
       for (int dy = cy0; dy < cy1; dy++) {
-        int py = win->y + dy;
+        int py = full_y0 + dy;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
-        int src_y = scroll_offset_y + (int)((float)dy * scale);
-        if (src_y >= win->buffer_h) break;
-        uint32_t *src_content_line = (uint32_t*)&win->rgba_buffer[src_y * win->buffer_w * 4];
-        int scaled_mask_y = (int)((float)(dy + title_h) * scale);
+        
+        int scaled_mask_y = (int)((float)dy * scale);
         if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
         uint8_t *mask_line = &win->window_mask[scaled_mask_y * mw];
         uint8_t fade_alpha_u8 = (uint8_t)(win->fade_alpha * 255);
         int dx0 = (win->x < clip_x0) ? (clip_x0 - win->x) : 0;
         int dx1 = (win->x + win->w > clip_x1) ? (clip_x1 - win->x) : win->w;
+        
         for (int dx = dx0; dx < dx1; dx++) {
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
-          int src_x = (int)((float)dx * scale);
-          if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
-          uint32_t color = src_content_line[src_x];
 
           uint32_t surface_bg = dst_line[px];
           if (win == &g_windows[g_active_window_index]) {
-            // Glass Distortion Effect (10 Layers, 1px Spacing)
+            // Glass Distortion Effect (20 Layers, 1px Spacing)
             float fx = (float)dx + 0.5f;
             float fy = (float)dy + 0.5f;
             float rw = (float)win->w;
-            float rh = (float)win->h;
-            float r = 32.0f; // Corner radius matching window
+            float rh = (float)full_h;
+            float r = 16.0f; // Half corner radius (approx 16px)
             
             float qx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
             float qy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
@@ -3512,45 +3482,66 @@ skip_shadow:
                 d_in = (dist_to_rect_edge_x < dist_to_rect_edge_y) ? dist_to_rect_edge_x : dist_to_rect_edge_y;
             }
 
-            int num_layers = 10;
-            int layer_idx = (int)d_in;
+            int num_layers = 30;
+            float spacing = 3.0f;
+            int layer_idx = (int)(d_in / spacing);
             if (layer_idx < 0) layer_idx = 0;
             if (layer_idx >= num_layers) layer_idx = num_layers - 1;
             
             float t = (float)layer_idx / (float)(num_layers - 1);
             float dist_curve = 1.0f - t;
-            float distortion_factor = dist_curve * dist_curve * dist_curve * dist_curve;
-            float max_glass_scale = 2.5f;
+            float distortion_factor = dist_curve * dist_curve * dist_curve * dist_curve * dist_curve;
+            float max_glass_scale = 2.0f; 
             float glass_scale = 1.0f + (max_glass_scale - 1.0f) * distortion_factor;
 
             int center_x = win->x + win->w / 2;
-            int center_y = win->y + win->h / 2;
+            int center_y = full_y0 + full_h / 2;
             int sx = center_x + (int)((float)(px - center_x) / glass_scale);
             int sy = center_y + (int)((float)(py - center_y) / glass_scale);
 
             // Sample from blurred backdrop buffer for high performance
             surface_bg = sample_blurred_backdrop(sx, sy);
 
-            // Subtle white layer borders (1px) matching glass.html style
-            if (d_in < (float)num_layers) {
-                float dist_to_step = d_in - (float)layer_idx;
-                if (dist_to_step < 0.15f) {
-                    surface_bg = blend_colors(surface_bg, 0xFFFFFFFF, (uint8_t)(30 * (1.0f - t)));
+            // Subtle white layer borders matching spacing (sharper 0.3px line)
+            if (d_in < (float)num_layers * spacing) {
+                float dist_to_step = fmodf(d_in, spacing);
+                if (dist_to_step < 0.3f) {
+                    surface_bg = blend_colors(surface_bg, 0xFFFFFFFF, (uint8_t)(25 * (1.0f - t)));
                 }
             }
           }
           surface_bg = blend_colors(surface_bg, bg_color, (uint8_t)(bg_color >> 24));
 
-          {
-            color = blend_rgb_over_opaque_premul(surface_bg, color);
-          }
-          if (text_overlay && dy < text_overlay_h && dx < text_overlay_w) {
-            uint32_t text_px = text_overlay[dy * text_overlay_w + dx];
-            uint8_t text_alpha = (uint8_t)(text_px >> 24);
-            if (text_alpha != 0) {
-              color = blend_rgb_over_opaque(color, text_px, text_alpha);
+          uint32_t color;
+          if (dy < title_h) {
+            // Title Bar pixel
+            int scaled_dx = (int)((float)dx * scale);
+            int scaled_dy = (int)((float)dy * scale);
+            if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
+            if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
+            color = win->frame_cache[scaled_dy * win->frame_cache_w + scaled_dx];
+            // Frames in frame_cache are NOT premultiplied, they are opaque themes.
+            surface_bg = blend_colors(surface_bg, color, 255);
+            color = surface_bg;
+          } else {
+            // Content pixel
+            int content_dy = dy - title_h;
+            int src_x = (int)((float)dx * scale);
+            int src_y = scroll_offset_y + (int)((float)content_dy * scale);
+            if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
+            if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
+            uint32_t content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+            color = blend_rgb_over_opaque_premul(surface_bg, content_color);
+
+            if (text_overlay && content_dy < text_overlay_h && dx < text_overlay_w) {
+              uint32_t text_px = text_overlay[content_dy * text_overlay_w + dx];
+              uint8_t text_alpha = (uint8_t)(text_px >> 24);
+              if (text_alpha != 0) {
+                color = blend_rgb_over_opaque(color, text_px, text_alpha);
+              }
             }
           }
+
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
           
           uint8_t final_alpha = 255;
