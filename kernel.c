@@ -1940,6 +1940,7 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   g_terminal_warp_ptr = fs_read_file("terminal.warp", &g_terminal_warp_size);
   g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
   g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
+  if (g_bootlogo_ptr) g_bootlogo_found = 1;
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
   
   // Wallpaper loading
@@ -3614,19 +3615,33 @@ static void redraw_warp_svg(layer_t *layer) {
 
   memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);
 
-  // Draw the active window and windows above it (sticky windows)
+  // 1. Draw sticky windows FIRST if active window is maximized
+  int active_is_max = (active_idx >= 0 && g_windows[active_idx].is_maximized);
+  if (active_is_max) {
+    for (int i = 0; i < g_window_count; i++) {
+      window_t *win = &g_windows[i];
+      if (!win->is_sticky) continue;
+      if (win->is_dirty && !win->is_resizing) window_redraw(win);
+      draw_single_window(layer, win, 0, 0, layer->width, layer->height);
+    }
+  }
+
+  // 2. Draw active window
   if (active_idx >= 0 && active_idx < g_window_count) {
     window_t *win = &g_windows[active_idx];
     if (win->is_dirty && !win->is_resizing) window_redraw(win);
     draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
 
-  for (int i = 0; i < g_window_count; i++) {
-    window_t *win = &g_windows[i];
-    if (!win->is_sticky) continue;
-    if (i == active_idx) continue; // Already drawn if it was active (unlikely for sticky)
-    if (win->is_dirty && !win->is_resizing) window_redraw(win);
-    draw_single_window(layer, win, 0, 0, layer->width, layer->height);
+  // 3. Draw sticky windows LAST if active window is NOT maximized (standard behavior)
+  if (!active_is_max) {
+    for (int i = 0; i < g_window_count; i++) {
+      window_t *win = &g_windows[i];
+      if (!win->is_sticky) continue;
+      if (i == active_idx) continue;
+      if (win->is_dirty && !win->is_resizing) window_redraw(win);
+      draw_single_window(layer, win, 0, 0, layer->width, layer->height);
+    }
   }
 
   g_svg_dirty = 0;
