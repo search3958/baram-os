@@ -25,13 +25,12 @@ $CC $CFLAGS -c storage.c -o output/storage.o
 $CC $CFLAGS -c fs.c -o output/fs.o
 $CC $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o
 $CC $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o
-$CC $CFLAGS -c files.c -o output/files.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
 $CC $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o
 
 echo "Linking..."
 $LD -T link.ld -o output/kernel.bin \
-    output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o \
+    output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o \
     -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc
 
 echo "i686 Build Success: output/kernel.bin created."

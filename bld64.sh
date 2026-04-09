@@ -100,10 +100,10 @@ link_kernel() {
             # 直接 lld を呼ぶか、-fuse-ld にフルパスまたは適切な指定が必要です。
             # ここでは直接 lld (ELF 用) を使用する設定を試みます。
             clang --target=x86_64-elf -fuse-ld="$LLD_CMD" -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o \
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o \
                 -ffreestanding -O2 -nostdlib -static-libgcc -lgcc 2>/dev/null || \
             $LLD_CMD -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o
             return $?
         fi
         echo "  ❌ 64-bit linker が見つかりません (ld.lld または x86_64-elf ツールチェーンが必要です)"
@@ -170,7 +170,6 @@ do_build_and_run() {
     show_progress 70
     compile_c ui/warp1_engine.c output/warp1_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    compile_c files.c output/files.o "$COMMON_CFLAGS" || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -326,7 +325,6 @@ do_build_only() {
     show_progress 70
     compile_c ui/warp1_engine.c output/warp1_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    compile_c files.c output/files.o "$COMMON_CFLAGS" || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80

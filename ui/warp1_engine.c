@@ -6,11 +6,9 @@
 
 // --- 1. Internal Utilities ---
 static int w1_strlen(const char *s) { int n=0; if(!s) return 0; while(s[n]) n++; return n; }
-static char *w1_strcpy(char *d, const char *s) { char *p=d; while((*p++=*s++))
-; return d; }
+static char *w1_strcpy(char *d, const char *s) { char *p=d; while((*p++=*s++)) { } return d; }
 static char *w1_strncpy(char *d, const char *s, size_t n) { size_t i; for(i=0;i<n&&s[i];i++) d[i]=s[i]; for(;i<n;i++) d[i]=0; return d; }
-static char *w1_strcat(char *d, const char *s) { char *p=d; while(*p) p++; while((*p++=*s++))
-; return d; }
+static char *w1_strcat(char *d, const char *s) { char *p=d; while(*p) p++; while((*p++=*s++)) { } return d; }
 static char *w1_strncat(char *d, const char *s, size_t n) { char *p=d; while(*p) p++; size_t i; for(i=0;i<n&&s[i];i++) { *p++=s[i]; } *p=0; return d; }
 static int w1_strcmp(const char *a, const char *b) { while(*a&&*a==*b){a++;b++;} return *(unsigned char*)a-*(unsigned char*)b; }
 static int w1_strncmp(const char *a, const char *b, size_t n) { for(size_t i=0;i<n;i++){if(a[i]!=b[i]||!a[i])return (unsigned char)a[i]-(unsigned char)b[i];} return 0; }
@@ -1073,13 +1071,22 @@ void warp1_context_key_input(warp1_context_t* ctx, char c) {
 
 int warp1_context_is_dirty(warp1_context_t* ctx) { return ctx->engine_dirty; }
 void warp1_context_clear_dirty(warp1_context_t* ctx) { ctx->engine_dirty = 0; }
-void warp1_context_set_state(warp1_context_t* ctx, const char* k, const char* v) { 
-    set_state(ctx, k, v); 
+void warp1_context_set_state(warp1_context_t* ctx, const char* k, const char* v) {
+    set_state(ctx, k, v);
     if (w1_strcasecmp(k, "_currentScreen") == 0) {
         parse_current_screen1(ctx);
     }
-    ctx->engine_dirty = 1; 
+    ctx->engine_dirty = 1;
 }
+
+const char* warp1_context_get_state(warp1_context_t* ctx, const char* k) {
+    return get_state(ctx, k);
+}
+
+void warp1_context_mark_dirty(warp1_context_t* ctx) {
+    if (ctx) ctx->engine_dirty = 1;
+}
+
 void warp1_context_set_mouse(warp1_context_t* ctx, int x, int y) { ctx->mouse_x = x; ctx->mouse_y = y; }
 int warp1_context_get_node_count(warp1_context_t* ctx) { return ctx->nodes_count; }
 void warp1_context_get_node_info(warp1_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* d) {

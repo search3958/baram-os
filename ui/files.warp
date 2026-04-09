@@ -1,25 +1,32 @@
 baram-os-config{
-    c:("files.c")
+    lua:("files.lua")
 }
 
 screen {
     id: (files_main),
     backgroundColor: (#1a1a1a),
-    
-    // ヘッダー部分
+
     hStack {
         padding: (20),
         text {
             text: ("File Manager"),
             size: (20),
             color: (#ffffff)
+        },
+        spacer { width: (max) },
+        text {
+            --status: ("Ready"),
+            text: (--status),
+            color: (#00ff00),
+            size: (14)
         }
     },
-    
-    // ファイルリスト表示エリア
+
+    // ファイルリスト - Lua で動的に追加
     vStack {
         id: (file_list),
         padding: (15),
-        spacing: (10)
+        spacing: (10),
+        fill: (true)
     }
 }

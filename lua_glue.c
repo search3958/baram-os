@@ -178,6 +178,19 @@ static int l_warp_set_state(lua_State *L) {
     return 0;
 }
 
+static int l_warp_get_state(lua_State *L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "WARP1_CTX");
+    warp1_context_t *ctx = (warp1_context_t *)lua_touserdata(L, -1);
+    const char *key = luaL_checkstring(L, 1);
+    if (ctx) {
+        const char *val = warp1_context_get_state(ctx, key);
+        lua_pushstring(L, val ? val : "");
+        return 1;
+    }
+    lua_pushstring(L, "");
+    return 1;
+}
+
 static int l_warp_add_node(lua_State *L) {
     lua_getfield(L, LUA_REGISTRYINDEX, "WARP1_CTX");
     warp1_context_t *ctx = (warp1_context_t *)lua_touserdata(L, -1);
@@ -217,6 +230,7 @@ void run_lua_script(warp1_context_t *ctx, const char *filename) {
     // Register BaramOS API
     lua_newtable(L);
     lua_pushcfunction(L, l_warp_set_state); lua_setfield(L, -2, "setState");
+    lua_pushcfunction(L, l_warp_get_state); lua_setfield(L, -2, "getState");
     lua_pushcfunction(L, l_warp_add_node);  lua_setfield(L, -2, "addNode");
     lua_pushcfunction(L, l_warp_set_attr);  lua_setfield(L, -2, "setAttr");
     lua_setglobal(L, "warp");
@@ -248,6 +262,9 @@ void run_lua_script(warp1_context_t *ctx, const char *filename) {
     }
 
     lua_close(L);
+    
+    // Mark context as dirty after Lua script execution
+    warp1_context_mark_dirty(ctx);
 }
 
 // Map root stdio functions to their kernel implementations if necessary

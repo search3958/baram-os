@@ -1,0 +1,86 @@
+baram-os-config{
+    lua:("textedit.lua")
+}
+
+screen {
+    id: (main),
+
+    // ヘッダー
+    hStack {
+        padding: (15),
+        spacing: (10),
+
+        text {
+            text: ("📝 Text Editor"),
+            size: (18),
+            color: (#ffffff)
+        },
+
+        spacer { width: (max) },
+
+        button {
+            text: ("📂 開く"),
+            oneClick: (--status = "ファイルを開く機能は準備中です")
+        },
+
+        button {
+            text: ("💾 保存"),
+            oneClick: (--status = "保存機能は準備中です")
+        }
+    },
+
+    line { color: (#444444), height: (1) },
+
+    // ファイル名表示
+    hStack {
+        padding: (10),
+        spacing: (10),
+
+        text { text: ("ファイル:"), color: (#aaaaaa), size: (14) },
+        text {
+            --current_file: ("(新規ファイル)"),
+            text: (--current_file),
+            color: (#ffffff),
+            size: (14)
+        },
+        spacer { width: (max) },
+        text {
+            --status: ("Ready"),
+            text: (--status),
+            color: (#00ff00),
+            size: (14)
+        }
+    },
+
+    // テキスト入力エリア（1 行）
+    vStack {
+        padding: (15),
+        spacing: (5),
+        fill: (true),
+
+        input {
+            id: (editor),
+            --editor_text: (""),
+            output: (--editor_text),
+            placeholder: ("ここにテキストを入力してください..."),
+            backgroundColor: (#1a1a1a),
+            textColor: (#ffffff),
+            fontSize: (14),
+            multiline: (true),
+            fill: (true)
+        }
+    },
+
+    // フッター
+    hStack {
+        padding: (10),
+        backgroundColor: (#1a1a1a),
+
+        text {
+            --char_count: ("文字数：0"),
+            text: (--char_count),
+            color: (#888888),
+            size: (12)
+        }
+    }
+}

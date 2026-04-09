@@ -11,6 +11,6 @@ screen{
 }
 @reload{
     if:(1=1){
-        run{("warp test_lua.warp")}
+        run{("warp test-lua.warp")}
     }
 }

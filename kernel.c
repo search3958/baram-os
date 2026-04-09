@@ -2171,13 +2171,57 @@ static void handle_terminal_command(const char *cmd) {
       set_w1_global("--warpSystemLog", err);
     }
   } else if (strcmp(start_ptr, "ls") == 0 || strcmp(start_ptr, "list") == 0) {
-    // ... 既存の ls 処理 ...
     char list_buf[512] = "Mods: ";
     for (uint32_t i = 0; i < g_warp_module_count; i++) {
       if (i > 0) strlcat(list_buf, ", ", 511);
       strlcat(list_buf, g_warp_modules[i].name, 511);
     }
     set_w1_global("--warpSystemLog", list_buf);
+  } else if (strncmp(start_ptr, "os_delete_file:", 15) == 0) {
+    // ファイル削除コマンド
+    const char *filename = start_ptr + 15;
+    char msg[256];
+    // 実際には fs_delete_file(filename) などを実装する必要がある
+    // 現在はログ出力のみ
+    snprintf(msg, sizeof(msg), "Delete requested: %s", filename);
+    set_w1_global("--warpSystemLog", msg);
+  } else if (strncmp(start_ptr, "os_open_file:", 13) == 0) {
+    // ファイルを開くコマンド
+    const char *filename = start_ptr + 13;
+    // 引用符を除去
+    char clean_name[128];
+    strncpy(clean_name, filename, 127);
+    clean_name[127] = '\0';
+    char *p = clean_name;
+    if (p[0] == '"') {
+      memmove(p, p+1, strlen(p));
+      char *end = strrchr(p, '"');
+      if (end) *end = '\0';
+    }
+    // モジュールリストから検索してウィンドウを開く
+    int mod_idx = -1;
+    for (uint32_t i = 0; i < g_warp_module_count; i++) {
+      if (strcasecmp(g_warp_modules[i].name, clean_name) == 0) {
+        mod_idx = i;
+        break;
+      }
+    }
+    if (mod_idx != -1) {
+      const char *canonical_name = g_warp_modules[mod_idx].name;
+      int is_warp1 = (strstr(canonical_name, ".warpc") == NULL);
+      add_window(canonical_name, 200, 200, 640, 480, is_warp1);
+      char msg[256];
+      snprintf(msg, sizeof(msg), "Opened: %s", clean_name);
+      set_w1_global("--warpSystemLog", msg);
+    } else {
+      char err[256];
+      snprintf(err, sizeof(err), "File not found: %s", clean_name);
+      set_w1_global("--warpSystemLog", err);
+    }
+  } else if (strncmp(start_ptr, "os_show_log:", 12) == 0) {
+    // ログ表示コマンド
+    const char *msg = start_ptr + 12;
+    set_w1_global("--warpSystemLog", msg);
   } else if (strcmp(start_ptr, "reboot") == 0) {
     extern void sys_restart(void);
     sys_restart();
@@ -2708,11 +2752,7 @@ typedef struct {
   void (*init_func)(void *ctx);
 } app_registry_t;
 
-// External from files.c
-extern void init_file_manager(void *ctx);
-
 static const app_registry_t g_app_registry[] = {
-  {"files.c", init_file_manager},
   {NULL, NULL}
 };
 

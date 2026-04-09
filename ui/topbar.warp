@@ -62,6 +62,10 @@ screen{
             text: ("Warp Demo"),
             oneClick: (run{"warp new.warp"})
         },
+        button{
+            text: ("テキストエディタ"),
+            oneClick: (run{"warp textedit.warp"})
+        },
     }
 },
 

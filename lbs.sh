@@ -82,7 +82,6 @@ do_build_and_run() {
     show_progress 70
     $CC $COMMON_CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
     show_progress 75
-    $CC $COMMON_CFLAGS -c files.c -o output/files.o || return 1
     show_progress 78
     $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
     show_progress 80
@@ -116,7 +115,7 @@ EOF
     $AS -c output/initrd.s -o output/initrd.o || return 1
 
     $LD -T link_arm64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o output/initrd.o || return 1
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o output/initrd.o || return 1
 
     show_progress 100
     echo ""
@@ -204,7 +203,6 @@ do_build_only() {
     show_progress 70
     $CC $COMMON_CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
     show_progress 75
-    $CC $COMMON_CFLAGS -c files.c -o output/files.o || return 1
     show_progress 78
     $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
     show_progress 80
@@ -238,7 +236,7 @@ EOF
     $AS -c output/initrd.s -o output/initrd.o || return 1
 
     $LD -T link_arm64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o output/initrd.o || return 1
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o output/initrd.o || return 1
 
     show_progress 100
     echo ""

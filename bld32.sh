@@ -80,7 +80,6 @@ do_build_and_run() {
     show_progress 70
     i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
     show_progress 75
-    i686-elf-gcc $CFLAGS -c files.c -o output/files.o || return 1
     show_progress 78
     LUA_CFLAGS="$CFLAGS -DLUA_USE_C89   -Ilua-master"
     i686-elf-gcc $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
@@ -89,7 +88,7 @@ do_build_and_run() {
     show_progress 82
 
     i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o output/lua.o output/lua_glue.o \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 85
 
@@ -224,7 +223,6 @@ do_build_only() {
     show_progress 55
     i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
     show_progress 60
-    i686-elf-gcc $CFLAGS -c files.c -o output/files.o || return 1
     show_progress 65
     i686-elf-gcc $CFLAGS -DLUA_USE_C89   -Ilua-master -c lua_impl.c -o output/lua.o || return 1
     show_progress 68
@@ -236,7 +234,7 @@ do_build_only() {
     show_progress 80
 
     i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/files.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 100
     echo ""
