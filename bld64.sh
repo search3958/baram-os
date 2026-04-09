@@ -100,10 +100,10 @@ link_kernel() {
             # 直接 lld を呼ぶか、-fuse-ld にフルパスまたは適切な指定が必要です。
             # ここでは直接 lld (ELF 用) を使用する設定を試みます。
             clang --target=x86_64-elf -fuse-ld="$LLD_CMD" -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o \
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/tess_bucketalloc.o output/tess_dict.o output/tess_geom.o output/tess_mesh.o output/tess_priorityq.o output/tess_sweep.o output/tess_tess.o output/lua.o output/lua_glue.o \
                 -ffreestanding -O2 -nostdlib -static-libgcc -lgcc 2>/dev/null || \
             $LLD_CMD -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/tess_bucketalloc.o output/tess_dict.o output/tess_geom.o output/tess_mesh.o output/tess_priorityq.o output/tess_sweep.o output/tess_tess.o output/lua.o output/lua_glue.o
             return $?
         fi
         echo "  ❌ 64-bit linker が見つかりません (ld.lld または x86_64-elf ツールチェーンが必要です)"
@@ -111,7 +111,7 @@ link_kernel() {
     fi
 
     $CC -T link64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/tess_bucketalloc.o output/tess_dict.o output/tess_geom.o output/tess_mesh.o output/tess_priorityq.o output/tess_sweep.o output/tess_tess.o output/lua.o output/lua_glue.o \
         -ffreestanding -O2 -m64 -mcmodel=kernel -mno-red-zone -nostdlib -static-libgcc -lgcc
 }
 
@@ -174,6 +174,14 @@ do_build_and_run() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
+    compile_c gpu/gpu_svg.c output/gpu_svg.o "$COMMON_CFLAGS" || return 1
+    compile_c gpu/libtess2/Source/bucketalloc.c output/tess_bucketalloc.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/dict.c output/tess_dict.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/geom.c output/tess_geom.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/mesh.c output/tess_mesh.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/priorityq.c output/tess_priorityq.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/sweep.c output/tess_sweep.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/tess.c output/tess_tess.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -230,24 +238,26 @@ EOF
 
     echo "  ✅ Build #$CURRENT_BN Success"
 
-    Q_CPU="qemu64"
-    Q_ACCEL="-accel tcg,thread=multi"
+    Q_CPU="max"
+    Q_ACCEL="-accel hvf"
+    Q_SMP="-smp 4,cores=4,threads=1"
 
     if [ "$PERF_MODE" = "max" ]; then
         Q_CPU="max"
-        Q_ACCEL="-accel tcg,thread=multi,tb-size=2048"
+        Q_ACCEL="-accel hvf"
+        Q_SMP="-smp 4,cores=4,threads=1"
     fi
 
     qemu-system-x86_64 -cdrom output/os.iso \
         -hda output/os.img \
         -vga virtio \
         -m 2G \
-        -smp 4 \
+        $Q_SMP \
         $Q_ACCEL \
         -cpu $Q_CPU \
         -rtc base=localtime \
         -net none \
-        -display cocoa
+        -display cocoa,show-cursor=off
 }
 
 if [ -f "warp_launcher.sh" ]; then
@@ -332,6 +342,14 @@ do_build_only() {
     compile_c gpu/gpu_driver.c output/gpu_driver.o "$COMMON_CFLAGS" || return 1
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
+    compile_c gpu/gpu_svg.c output/gpu_svg.o "$COMMON_CFLAGS" || return 1
+    compile_c gpu/libtess2/Source/bucketalloc.c output/tess_bucketalloc.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/dict.c output/tess_dict.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/geom.c output/tess_geom.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/mesh.c output/tess_mesh.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/priorityq.c output/tess_priorityq.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/sweep.c output/tess_sweep.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
+    compile_c gpu/libtess2/Source/tess.c output/tess_tess.o "$COMMON_CFLAGS -Igpu/libtess2/Include" || return 1
     show_progress 75
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1

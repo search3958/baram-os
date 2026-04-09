@@ -23,6 +23,7 @@
 // GPU blur support
 #include "gpu/gpu_driver.h"
 #include "gpu/gpu_blur.h"
+#include "gpu/gpu_svg.h"
 
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
@@ -1850,9 +1851,23 @@ static void blend_rgba_span_over_opaque_bg_sse2(uint32_t *dst,
 }
 #endif
 
+// GPU SVG texture
+static gpu_resource_t g_svg_gpu_texture;
+static int g_svg_gpu_ready = 0;
+static gpu_svg_renderer_t g_gpu_svg_renderer;
+static int g_gpu_svg_initialized = 0;
+
 static void svg_render_full(layer_t *layer) {
   if (!g_svg_full_rgba)
     return;
+
+  // GPU-accelerated SVG render: upload to GPU texture once, then blit
+  if (g_gpu_available && !g_svg_gpu_ready) {
+      gpu_create_resource(g_svg_full_w, g_svg_full_h, &g_svg_gpu_texture);
+      gpu_upload_texture(&g_svg_gpu_texture, g_svg_full_rgba, 
+                         g_svg_full_w * g_svg_full_h * 4);
+      g_svg_gpu_ready = 1;
+  }
 
   const uint32_t bg = BASE_BG_COLOR;
   uint8_t bg_r = (bg >> 16) & 0xFF;
@@ -1885,19 +1900,35 @@ static void svg_render_full(layer_t *layer) {
     }
 
     if (visible_x1 > visible_x0) {
-      unsigned char *line_src =
-          &g_svg_full_rgba[(src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
+      // GPU download with scroll offset (blit from GPU texture)
+      if (g_svg_gpu_ready) {
+          unsigned char *gpu_line = &((unsigned char*)g_svg_gpu_texture.cpu_ptr)[
+              (src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
 #ifdef __SSE2__
-      blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, line_src,
-                                          visible_x1 - visible_x0, bg, bg_r,
-                                          bg_g, bg_b);
+          blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, gpu_line,
+                                              visible_x1 - visible_x0, bg, bg_r,
+                                              bg_g, bg_b);
 #else
-      for (int x = visible_x0; x < visible_x1; ++x) {
-        const unsigned char *rgba = line_src + (x - visible_x0) * 4;
-        line_dst[x] =
-            blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
-      }
+          for (int x = visible_x0; x < visible_x1; ++x) {
+              const unsigned char *rgba = gpu_line + (x - visible_x0) * 4;
+              line_dst[x] = blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
+          }
 #endif
+      } else {
+          unsigned char *line_src =
+              &g_svg_full_rgba[(src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
+#ifdef __SSE2__
+          blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, line_src,
+                                              visible_x1 - visible_x0, bg, bg_r,
+                                              bg_g, bg_b);
+#else
+          for (int x = visible_x0; x < visible_x1; ++x) {
+              const unsigned char *rgba = line_src + (x - visible_x0) * 4;
+              line_dst[x] =
+                  blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
+          }
+#endif
+      }
     }
 
     if (visible_x1 < layer->width) {
@@ -1975,7 +2006,7 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
     // "Center Cover" logic (with 103% zoom)
     float scale_x = (float)g_svg_full_w / g_svg_image->width;
     float scale_y = (float)g_svg_full_h / g_svg_image->height;
-    scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f; 
+    scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
     tx = (g_svg_full_w - g_svg_image->width * scale) / 2.0f;
     ty = (g_svg_full_h - g_svg_image->height * scale) / 2.0f;
   } else {
@@ -1984,8 +2015,21 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
     ty = (g_svg_full_h - g_svg_image->height) / 2.0f;
   }
 
-  nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, scale, g_svg_full_rgba,
-                g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+  // GPU SVG rendering: Bezier→Tessellation→GPU triangles
+  if (g_gpu_available && !g_gpu_svg_initialized) {
+      gpu_svg_init(&g_gpu_svg_renderer, g_svg_full_w, g_svg_full_h);
+      g_gpu_svg_initialized = 1;
+  }
+  
+  if (g_gpu_svg_initialized) {
+      // GPU path render: Bezier flatten → libtess2 triangulation → GPU fill
+      gpu_svg_render(&g_gpu_svg_renderer, g_svg_image, scale, tx, ty,
+                     (uint32_t*)g_svg_full_rgba, g_svg_full_w, g_svg_full_h);
+  } else {
+      // Fallback to nanosvg CPU rasterizer
+      nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, scale, g_svg_full_rgba,
+                    g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+  }
 
   // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
   if (!load_wallpaper && svg_data == g_bootlogo_ptr) {
@@ -4365,6 +4409,52 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
     uint16_t cp = utf8_next(&p);
     glyph_cache_t *gc = get_glyph(cp, font_size);
     if (gc && gc->bitmap) {
+#ifdef __SSE2__
+      // SIMD-accelerated glyph rendering: 8 pixels at once
+      for (int dy = 0; dy < gc->bh; dy++) {
+        int dpy = py + baseline + gc->by + dy;
+        if (dpy < 0 || dpy >= (int)layer->height)
+          continue;
+        int dx = 0;
+        while (dx + 8 <= gc->bw) {
+          int dpx = cx + gc->bx + dx;
+          if (dpx < 0 || dpx + 7 >= (int)layer->width) { dx++; continue; }
+          
+          // Load 8 alpha values
+          uint8_t *alpha_ptr = &gc->bitmap[dy * gc->bw + dx];
+          __m128i alphas = _mm_loadl_epi64((__m128i*)alpha_ptr);
+          
+          // Check if any alpha is non-zero (fast skip)
+          __m128i zero = _mm_setzero_si128();
+          __m128i cmp = _mm_cmpeq_epi8(alphas, zero);
+          int mask = _mm_movemask_epi8(cmp);
+          
+          if (mask != 0xFF) {
+            // At least one pixel needs blending
+            uint32_t *dst = &layer->buffer[dpy * layer->width + dpx];
+            for (int i = 0; i < 8; i++) {
+              uint8_t a = alpha_ptr[i];
+              if (a) {
+                uint32_t bg = dst[i];
+                dst[i] = blend_colors(bg, color, a);
+              }
+            }
+          }
+          dx += 8;
+        }
+        // Scalar remainder
+        for (; dx < gc->bw; dx++) {
+          int dpx = cx + gc->bx + dx;
+          if (dpx < 0 || dpx >= (int)layer->width)
+            continue;
+          uint8_t alpha = gc->bitmap[dy * gc->bw + dx];
+          if (alpha == 0)
+            continue;
+          uint32_t bg = layer->buffer[dpy * layer->width + dpx];
+          layer->buffer[dpy * layer->width + dpx] = blend_colors(bg, color, alpha);
+        }
+      }
+#else
       for (int dy = 0; dy < gc->bh; dy++) {
         int dpy = py + baseline + gc->by + dy;
         if (dpy < 0 || dpy >= (int)layer->height)
@@ -4377,10 +4467,10 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
           if (alpha == 0)
             continue;
           uint32_t bg = layer->buffer[dpy * layer->width + dpx];
-          layer->buffer[dpy * layer->width + dpx] =
-              blend_colors(bg, color, alpha);
+          layer->buffer[dpy * layer->width + dpx] = blend_colors(bg, color, alpha);
         }
       }
+#endif
       cx += gc->adv;
     }
   }

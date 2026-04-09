@@ -28,12 +28,20 @@ $CC $COMMON_CFLAGS -c ui/warp_engine.c -o output/warp_engine.o
 $CC $COMMON_CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o
 $CC $COMMON_CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o
 $CC $COMMON_CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o
+$CC $COMMON_CFLAGS -c gpu/gpu_svg.c -o output/gpu_svg.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/bucketalloc.c -o output/tess_bucketalloc.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/dict.c -o output/tess_dict.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/geom.c -o output/tess_geom.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/mesh.c -o output/tess_mesh.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/priorityq.c -o output/tess_priorityq.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/sweep.c -o output/tess_sweep.o
+$CC $COMMON_CFLAGS -Igpu/libtess2/Include -c gpu/libtess2/Source/tess.c -o output/tess_tess.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
 $CC $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o
 
 echo "Linking..."
 $LD -T link64.ld -o output/kernel.bin \
-    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o
+    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/tess_bucketalloc.o output/tess_dict.o output/tess_geom.o output/tess_mesh.o output/tess_priorityq.o output/tess_sweep.o output/tess_tess.o output/lua.o output/lua_glue.o
 
 echo "x86_64 Build Success: output/kernel.bin created."
 ls -l output/kernel.bin

@@ -3,6 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#ifdef __x86_64__
+#include <emmintrin.h>
+#endif
 #ifdef __aarch64__
 #define UART0_DR   0x09000000
 #define GIC_DIST_BASE 0x08000000
@@ -410,14 +413,25 @@ void screen_refresh(void) {
     }
   }
 
-  // 4. VRAMへ転送 (Dirty Rect領域のみコピー)
+  // 4. VRAMへ転送 (Dirty Rect領域のみコピー - SIMD)
   uint32_t vram_stride = g_vram_pitch ? (g_vram_pitch / 4) : g_vram_width;
-  if (!vram_stride)
-    vram_stride = SCREEN_WIDTH;
+  if (!vram_stride) vram_stride = SCREEN_WIDTH;
   for (int y = ry0; y < ry1; y++) {
     uint32_t *dst = &g_vram[(size_t)y * vram_stride + rx0];
     uint32_t *src = &bb[y * SCREEN_WIDTH + rx0];
-    memcpy(dst, src, (size_t)(rx1 - rx0) * 4);
+    int count = rx1 - rx0;
+#ifdef __x86_64__
+    int i = 0;
+    for (; i + 8 <= count; i += 8) {
+      __m128i v0 = _mm_loadu_si128((__m128i*)&src[i]);
+      __m128i v1 = _mm_loadu_si128((__m128i*)&src[i+4]);
+      _mm_storeu_si128((__m128i*)&dst[i], v0);
+      _mm_storeu_si128((__m128i*)&dst[i+4], v1);
+    }
+    for (; i < count; i++) dst[i] = src[i];
+#else
+    memcpy(dst, src, (size_t)count * 4);
+#endif
   }
   
   prev_cursor_x = cx;
@@ -426,9 +440,22 @@ void screen_refresh(void) {
 }
 
 void layer_fill(layer_t *layer, uint32_t color) {
+#ifdef __x86_64__
+  // SIMD: 4 pixels at once (16 bytes)
+  int total = layer->width * layer->height;
+  int i = 0;
+  __m128i color_vec = _mm_set1_epi32(color);
+  for (; i + 4 <= total; i += 4) {
+    _mm_storeu_si128((__m128i*)&layer->buffer[i], color_vec);
+  }
+  for (; i < total; i++) {
+    layer->buffer[i] = color;
+  }
+#else
   for (int i = 0; i < layer->width * layer->height; i++) {
     layer->buffer[i] = color;
   }
+#endif
 }
 
 void layer_draw_char(layer_t *layer, int x, int y, char c, uint32_t color,
