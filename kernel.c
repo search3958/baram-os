@@ -658,44 +658,63 @@ static void hblur_sse2(uint32_t *dst, const uint32_t *src, int w, int h, int rad
     for (int y = 0; y < h; y++) {
         const uint32_t *src_row = &src[y * w];
         uint32_t *dst_row = &dst[y * w];
-        
-        // Initialize sum for first pixel using sliding window
+
         uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
         int count = 0;
-        
-        // Initial window for x=0
+
         for (int dx = -radius; dx <= radius && dx < w; dx++) {
-            int nx = dx;
-            if (nx >= 0) {
-                uint32_t c = src_row[nx];
-                r_sum += (c>>16)&0xFF;
-                g_sum += (c>>8)&0xFF;
-                b_sum += c&0xFF;
+            if (dx >= 0) {
+                uint32_t c = src_row[dx];
+                r_sum += (c>>16)&0xFF; g_sum += (c>>8)&0xFF; b_sum += c&0xFF;
                 count++;
             }
         }
-        
-        // Process each pixel with sliding window (O(1) per pixel instead of O(radius))
+
         for (int x = 0; x < w; x++) {
             dst_row[x] = 0xFF000000 | ((r_sum/count) << 16) | ((g_sum/count) << 8) | (b_sum/count);
-            
-            // Slide window: remove leftmost pixel, add rightmost pixel
+
             int remove_x = x - radius;
             int add_x = x + radius + 1;
-            
+
             if (remove_x >= 0) {
                 uint32_t c = src_row[remove_x];
-                r_sum -= (c>>16)&0xFF;
-                g_sum -= (c>>8)&0xFF;
-                b_sum -= c&0xFF;
-                count--;
+                r_sum -= (c>>16)&0xFF; g_sum -= (c>>8)&0xFF; b_sum -= c&0xFF; count--;
             }
             if (add_x < w) {
                 uint32_t c = src_row[add_x];
-                r_sum += (c>>16)&0xFF;
-                g_sum += (c>>8)&0xFF;
-                b_sum += c&0xFF;
+                r_sum += (c>>16)&0xFF; g_sum += (c>>8)&0xFF; b_sum += c&0xFF; count++;
+            }
+        }
+    }
+}
+
+// SSE2 optimized vertical box blur
+static void vblur_sse2(uint32_t *dst, const uint32_t *src, int w, int h, int radius) {
+    for (int x = 0; x < w; x++) {
+        uint32_t r_sum = 0, g_sum = 0, b_sum = 0;
+        int count = 0;
+
+        for (int dy = -radius; dy <= radius && dy < h; dy++) {
+            if (dy >= 0) {
+                uint32_t c = src[dy * w + x];
+                r_sum += (c>>16)&0xFF; g_sum += (c>>8)&0xFF; b_sum += c&0xFF;
                 count++;
+            }
+        }
+
+        for (int y = 0; y < h; y++) {
+            dst[y * w + x] = 0xFF000000 | ((r_sum/count) << 16) | ((g_sum/count) << 8) | (b_sum/count);
+
+            int remove_y = y - radius;
+            int add_y = y + radius + 1;
+
+            if (remove_y >= 0) {
+                uint32_t c = src[remove_y * w + x];
+                r_sum -= (c>>16)&0xFF; g_sum -= (c>>8)&0xFF; b_sum -= c&0xFF; count--;
+            }
+            if (add_y < h) {
+                uint32_t c = src[add_y * w + x];
+                r_sum += (c>>16)&0xFF; g_sum += (c>>8)&0xFF; b_sum += c&0xFF; count++;
             }
         }
     }
@@ -760,8 +779,8 @@ static void update_desktop_blur() {
     // 2. Horizontal Box Blur (Radius 9 on downsampled -> approx 22.5px on full)
 #ifdef __SSE2__
     hblur_sse2(desktop_blur_tmp, desktop_blurred_buf, BLUR_W, BLUR_H, 9);
-    // 3. Vertical Box Blur (transpose approach - same as hblur on transposed)
-    hblur_sse2(desktop_blurred_buf, desktop_blur_tmp, BLUR_H, BLUR_W, 9);
+    // 3. Vertical Box Blur
+    vblur_sse2(desktop_blurred_buf, desktop_blur_tmp, BLUR_W, BLUR_H, 9);
 #else
     for (int y = 0; y < BLUR_H; y++) {
         for (int x = 0; x < BLUR_W; x++) {
