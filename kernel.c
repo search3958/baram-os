@@ -20,6 +20,10 @@
 
 #include <stddef.h>
 
+// GPU blur support
+#include "gpu/gpu_driver.h"
+#include "gpu/gpu_blur.h"
+
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg/nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
@@ -600,6 +604,10 @@ static uint32_t *desktop_blur_tmp = NULL;
 #define BLUR_W (SCREEN_WIDTH / 2)
 #define BLUR_H (SCREEN_HEIGHT / 2)
 
+// GPU blur context
+static gpu_blur_context_t g_gpu_blur_ctx;
+static int g_gpu_blur_initialized = 0;
+
 #ifdef __SSE2__
 #include <emmintrin.h>
 
@@ -699,7 +707,33 @@ static void update_desktop_blur() {
     if (!desktop_blur_tmp) desktop_blur_tmp = (uint32_t *)malloc(BLUR_W * BLUR_H * 4);
     if (!desktop_blurred_buf || !desktop_blur_tmp) return;
 
-    // 1. Downsample 2x (2x2 average for a smoother base)
+    // Try GPU blur first, fall back to CPU if not available or fails
+    if (g_gpu_available && !g_gpu_blur_initialized) {
+        int ret = gpu_blur_init(&g_gpu_blur_ctx, SCREEN_WIDTH, SCREEN_HEIGHT, 9);
+        if (ret == 0) {
+            g_gpu_blur_initialized = 1;
+            set_w1_global("--blurMode", "GPU-Accelerated");
+        } else {
+            set_w1_global("--blurMode", "CPU-SSE2-Fallback");
+        }
+    }
+
+    if (g_gpu_available && g_gpu_blur_initialized) {
+        // GPU-accelerated blur path
+        int ret = gpu_blur_execute(&g_gpu_blur_ctx,
+                                   desktop_composite_buf,
+                                   desktop_blurred_buf,
+                                   SCREEN_WIDTH, SCREEN_HEIGHT);
+        if (ret != 0) {
+            // GPU failed, fall back to CPU
+            set_w1_global("--blurError", "GPUExecuteFailed");
+            g_gpu_blur_initialized = 0;
+        } else {
+            return; // GPU blur succeeded
+        }
+    }
+
+    // CPU blur path (SSE2 or scalar)
 #ifdef __SSE2__
     for (int y = 0; y < BLUR_H; y++) {
         uint32_t *src0 = &desktop_composite_buf[(y*2)*SCREEN_WIDTH];
