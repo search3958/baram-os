@@ -2614,16 +2614,16 @@ static void window_update_caches(window_t *win) {
     }
 
     if (has_header) {
-      layer_draw_ttf(&frame_l, (int)(103.0f * scale), (int)(18.0f * scale), header_text, 20.8f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      layer_draw_ttf(&frame_l, (int)(111.0f * scale), (int)(23.0f * scale), header_text, 20.8f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
       int ax = win->w - 16;
       for (int j = 0; j < action_count; j++) {
         char act_text[64];
         if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
         else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-        int text_w = strlen(act_text) * 9; 
-        int btn_w = text_w + 32;
-        int btn_h = 32; 
-        ax -= btn_w;
+         int text_w = strlen(act_text) * 9; 
+         int btn_w = text_w + 42;
+         int btn_h = 42; 
+         ax -= btn_w;
 
         // Draw pill-shaped button background (capsule SDF, max corner radius)
         int bx = (int)((float)ax * scale);
@@ -2654,13 +2654,13 @@ static void window_update_caches(window_t *win) {
         ax -= 6;
       }
     } else {
-      layer_draw_ttf(&frame_l, (int)(103.0f * scale), (int)(12.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      layer_draw_ttf(&frame_l, (int)(111.0f * scale), (int)(20.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
     }
 
-    // Control buttons - 32x32 capsule, same bg color as action buttons
-    int ctrl_size = 32;
-    int ctrl_y = 14;
-    int ctrl_gap = 6; // Reverted to 6px
+    // Control buttons - 42x42 capsule
+    int ctrl_size = 42;
+    int ctrl_y = 13;
+    int ctrl_gap = 10;
     int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; 
     uint32_t ctrl_bg_marker = is_dark ? 0x01444444 : 0x01FFFFFF;
     uint32_t ctrl_icon_color = is_dark ? 0xFFEEEEEE : 0xFF333333;
@@ -2692,8 +2692,8 @@ static void window_update_caches(window_t *win) {
     {
       float cx = (float)(ctrl_positions[0] + ctrl_size / 2) * scale;
       float cy = (float)(ctrl_y + ctrl_size / 2) * scale;
-      float h = 3.5f * scale; // half size
-      float stroke_r = 0.8f * scale;
+      float h = 4.5f * scale; // half size (1.3x)
+      float stroke_r = 1.0f * scale;
       int extent = (int)(h + stroke_r + 2.0f);
       for (int dy = -extent; dy <= extent; dy++) {
         for (int dx = -extent; dx <= extent; dx++) {
@@ -3704,15 +3704,15 @@ skip_shadow:;
                   // Button center detection for Glass Effect
                   int cx = -1, cy = -1;
                   
-                  // Left side control buttons
-                  int ctrl_positions[] = {14, 14 + 32 + 6};
-                  for (int k = 0; k < 2; k++) {
-                      if (dx >= ctrl_positions[k] && dx < ctrl_positions[k] + 32) {
-                          cx = win->x + ctrl_positions[k] + 16;
-                          cy = win->y - title_h + 14 + 16;
-                          break;
-                      }
-                  }
+                   // Left side control buttons
+                   int ctrl_positions[] = {14, 14 + 42 + 10};
+                   for (int k = 0; k < 2; k++) {
+                       if (dx >= ctrl_positions[k] && dx < ctrl_positions[k] + 42) {
+                           cx = win->x + ctrl_positions[k] + 21;
+                           cy = win->y - title_h + 13 + 21;
+                           break;
+                       }
+                   }
                   
                   // Right side custom buttons
                   if (cx == -1 && (win->warp1_ctx || win->warp_ctx)) {
@@ -3739,7 +3739,7 @@ skip_shadow:;
                       // Optimized Glass Effect: 6 layers, 0.5px spacing
                        float rdx = (float)(win->x + dx - cx);
                        float rdy = (float)(win->y - title_h + dy - cy);
-                       float max_dist = 16.0f * scale; 
+                       float max_dist = 21.0f * scale; 
                       
                        // Capsule shape SDF for button glass effect (not circular)
                        float btn_half_width;
@@ -4448,9 +4448,11 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
 }
 
 static int point_in_titlebar_button(int hx, int hy, window_t *win, int center_x) {
-  int dx = hx - (win->x + center_x);
-  int dy = hy - (win->y - 30);
-  return (dx * dx + dy * dy) <= (16 * 16);
+    int x = win->x + center_x;
+    int y = win->y - 60 + 13 + 21;
+    int dx = hx - x;
+    int dy = hy - y;
+    return dx*dx + dy*dy < 21*21;
 }
 
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
