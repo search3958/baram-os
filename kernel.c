@@ -2660,8 +2660,8 @@ static void window_update_caches(window_t *win) {
     // Control buttons - 32x32 capsule, same bg color as action buttons
     int ctrl_size = 32;
     int ctrl_y = 14;
-    int ctrl_gap = 6;
-    int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; // left edges shifted right +3px
+    int ctrl_gap = 2; // Reduced spacing
+    int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; 
     uint32_t ctrl_bg_marker = is_dark ? 0x01444444 : 0x01FFFFFF;
     uint32_t ctrl_icon_color = is_dark ? 0xFFEEEEEE : 0xFF333333;
     for (int k = 0; k < 2; k++) {
@@ -3744,16 +3744,19 @@ skip_shadow:;
                   }
 
                   if (cx != -1) {
-                      // Glass distortion: Sample window's OWN content with magnification
-                      float glass_scale = 1.6f;
+                      // Optimized Glass Effect: 6 layers, 0.5px spacing
                       float rdx = (float)(win->x + dx - cx);
                       float rdy = (float)(win->y - title_h + dy - cy);
+                      float dist_from_center = sqrtf(rdx*rdx + rdy*rdy);
+                      float max_dist = 16.0f * scale; 
                       
-                      // Calculate sampling coordinates in local window space, distorted by glass
-                      int gdx = (cx - win->x) + (int)(rdx / glass_scale);
-                      int gdy = (cy - (win->y - title_h)) + (int)(rdy / glass_scale);
+                      // Magnification gradient: 1.0x to 1.4x (subtler)
+                      float dynamic_scale = 1.0f + (dist_from_center / max_dist) * 0.4f;
                       
-                      // Sample the window's own rendered content (RGBA buffer + Text) at distorted coords
+                      // Calculate sampling coordinates
+                      int gdx = (cx - win->x) + (int)(rdx / dynamic_scale);
+                      int gdy = (cy - (win->y - title_h)) + (int)(rdy / dynamic_scale);
+                      
                       int g_src_x = (int)((float)gdx * scale);
                       int g_src_y = scroll_offset_y + (int)((float)gdy * scale);
                       if (g_src_x < 0) g_src_x = 0; if (g_src_y < 0) g_src_y = 0;
@@ -3769,12 +3772,14 @@ skip_shadow:;
                           if (g_text_a != 0) g_color = blend_rgb_over_opaque(g_color, g_text, g_text_a);
                       }
                       
-                      // The 'glass' base is the distorted window content tinted by the window's bg color
-                      uint32_t glass_base = blend_colors(g_color, win_bg, (uint8_t)(win_bg >> 24));
+                      uint32_t win_bg_glass = get_window_background_color(win);
+                      uint32_t glass_base = blend_colors(g_color, win_bg_glass, (uint8_t)(win_bg_glass >> 24));
                       
-                      // Final step: Overlay the button icon/text from frame_cache
-                      // If frame_a is the marker (1), it's just the glass area.
-                      // If frame_a > 1, it's the actual button content (icon/text).
+                      // 6-layer interpolation for glass borders
+                      float d_in = (max_dist - dist_from_center);
+                      int layer_idx = (int)(d_in / (0.5f * scale)); 
+                      if (layer_idx > 6) layer_idx = 6;
+                      
                       if (frame_a == 1) {
                           color = glass_base;
                       } else {
