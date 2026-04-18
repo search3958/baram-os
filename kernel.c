@@ -2631,7 +2631,8 @@ static void window_update_caches(window_t *win) {
         int bw = (int)((float)btn_w * scale);
         int bh = (int)((float)btn_h * scale);
         float pr = bh / 2.0f;
-        uint32_t btn_color = is_dark ? 0xFF444444 : 0xFFFFFFFF;
+        // Use alpha=1 as a marker for the glass effect area in the cache
+        uint32_t btn_marker = (is_dark ? 0x01444444 : 0x01FFFFFF); 
         for (int dy_i = 0; dy_i < bh; dy_i++) {
           for (int dx_i = 0; dx_i < bw; dx_i++) {
             float ffx = (float)dx_i + 0.5f;
@@ -2645,7 +2646,7 @@ static void window_update_caches(window_t *win) {
             if (alpha_f > 0.0f) {
               frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
                 frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
-                btn_color, (uint8_t)(alpha_f * 255.0f));
+                btn_marker, (uint8_t)(alpha_f * 255.0f));
             }
           }
         }
@@ -2661,7 +2662,7 @@ static void window_update_caches(window_t *win) {
     int ctrl_y = 14;
     int ctrl_gap = 6;
     int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; // left edges shifted right +3px
-    uint32_t ctrl_bg = is_dark ? 0xFF444444 : 0xFFFFFFFF;
+    uint32_t ctrl_bg_marker = is_dark ? 0x01444444 : 0x01FFFFFF;
     uint32_t ctrl_icon_color = is_dark ? 0xFFEEEEEE : 0xFF333333;
     for (int k = 0; k < 2; k++) {
       int bx = (int)((float)ctrl_positions[k] * scale);
@@ -2682,7 +2683,7 @@ static void window_update_caches(window_t *win) {
           if (alpha_f > 0.0f) {
             frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
               frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
-              ctrl_bg, (uint8_t)(alpha_f * 255.0f));
+              ctrl_bg_marker, (uint8_t)(alpha_f * 255.0f));
           }
         }
       }
@@ -3706,7 +3707,83 @@ skip_shadow:;
               if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
               uint32_t frame_px = win->frame_cache[scaled_dy * win->frame_cache_w + scaled_dx];
               uint8_t frame_a = (uint8_t)(frame_px >> 24);
-              color = blend_colors(color, frame_px, frame_a);
+
+              if (frame_a > 0) {
+                  // Button center detection for Glass Effect
+                  int cx = -1, cy = -1;
+                  
+                  // Left side control buttons
+                  int ctrl_positions[] = {14, 14 + 32 + 6};
+                  for (int k = 0; k < 2; k++) {
+                      if (dx >= ctrl_positions[k] && dx < ctrl_positions[k] + 32) {
+                          cx = win->x + ctrl_positions[k] + 16;
+                          cy = win->y - title_h + 14 + 16;
+                          break;
+                      }
+                  }
+                  
+                  // Right side custom buttons
+                  if (cx == -1 && (win->warp1_ctx || win->warp_ctx)) {
+                      char header_text[128]; int action_count = 0;
+                      if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
+                      else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
+                      int ax = win->w - 16;
+                      for (int j = 0; j < action_count; j++) {
+                          char act_text[64];
+                          if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
+                          else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+                          int btn_w = strlen(act_text) * 9 + 32;
+                          ax -= btn_w;
+                          if (dx >= ax && dx < ax + btn_w) {
+                              cx = win->x + ax + btn_w / 2;
+                              cy = win->y - title_h + 14 + 16;
+                              break;
+                          }
+                          ax -= 6;
+                      }
+                  }
+
+                  if (cx != -1) {
+                      // Glass distortion: Sample window's OWN content with magnification
+                      float glass_scale = 1.6f;
+                      float rdx = (float)(win->x + dx - cx);
+                      float rdy = (float)(win->y - title_h + dy - cy);
+                      
+                      // Calculate sampling coordinates in local window space, distorted by glass
+                      int gdx = (cx - win->x) + (int)(rdx / glass_scale);
+                      int gdy = (cy - (win->y - title_h)) + (int)(rdy / glass_scale);
+                      
+                      // Sample the window's own rendered content (RGBA buffer + Text) at distorted coords
+                      int g_src_x = (int)((float)gdx * scale);
+                      int g_src_y = scroll_offset_y + (int)((float)gdy * scale);
+                      if (g_src_x < 0) g_src_x = 0; if (g_src_y < 0) g_src_y = 0;
+                      if (g_src_x >= win->buffer_w) g_src_x = win->buffer_w - 1;
+                      if (g_src_y >= win->buffer_h) g_src_y = win->buffer_h - 1;
+                      
+                      uint32_t g_content = ((uint32_t*)win->rgba_buffer)[g_src_y * win->buffer_w + g_src_x];
+                      uint32_t g_color = blend_rgb_over_opaque_premul(surface_bg, g_content);
+                      
+                      if (text_overlay && gdy < text_overlay_h && gdx < text_overlay_w && gdx >= 0 && gdy >= 0) {
+                          uint32_t g_text = text_overlay[gdy * text_overlay_w + gdx];
+                          uint8_t g_text_a = (uint8_t)(g_text >> 24);
+                          if (g_text_a != 0) g_color = blend_rgb_over_opaque(g_color, g_text, g_text_a);
+                      }
+                      
+                      // The 'glass' base is the distorted window content tinted by the window's bg color
+                      uint32_t glass_base = blend_colors(g_color, win_bg, (uint8_t)(win_bg >> 24));
+                      
+                      // Final step: Overlay the button icon/text from frame_cache
+                      // If frame_a is the marker (1), it's just the glass area.
+                      // If frame_a > 1, it's the actual button content (icon/text).
+                      if (frame_a == 1) {
+                          color = glass_base;
+                      } else {
+                          color = blend_colors(glass_base, frame_px, frame_a);
+                      }
+                  } else {
+                      color = blend_colors(color, frame_px, frame_a);
+                  }
+              }
           }
 
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
