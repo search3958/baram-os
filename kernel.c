@@ -2651,7 +2651,7 @@ static void window_update_caches(window_t *win) {
           }
         }
         layer_draw_ttf(&frame_l, bx + (int)(14.0f * scale), by + (int)(8.0f * scale), act_text, 18.2f * scale, is_dark ? 0xFFEEEEEE : 0xFF000000);
-        ax -= 6;
+        ax -= 10;
       }
     } else {
       layer_draw_ttf(&frame_l, (int)(111.0f * scale), (int)(20.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
@@ -3714,26 +3714,26 @@ skip_shadow:;
                        }
                    }
                   
-                  // Right side custom buttons
-                  if (cx == -1 && (win->warp1_ctx || win->warp_ctx)) {
-                      char header_text[128]; int action_count = 0;
-                      if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
-                      else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
-                      int ax = win->w - 16;
-                      for (int j = 0; j < action_count; j++) {
-                          char act_text[64];
-                          if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-                          else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-                          int btn_w = strlen(act_text) * 9 + 32;
-                          ax -= btn_w;
-                          if (dx >= ax && dx < ax + btn_w) {
-                              cx = win->x + ax + btn_w / 2;
-                              cy = win->y - title_h + 14 + 16;
-                              break;
-                          }
-                          ax -= 6;
-                      }
-                  }
+                   // Right side custom buttons
+                   if (cx == -1 && (win->warp1_ctx || win->warp_ctx)) {
+                       char header_text[128]; int action_count = 0;
+                       if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
+                       else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
+                       int ax = win->w - 16;
+                       for (int j = 0; j < action_count; j++) {
+                           char act_text[64];
+                           if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
+                           else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+                           int btn_w = strlen(act_text) * 9 + 42;
+                           ax -= btn_w;
+                           if (dx >= ax && dx < ax + btn_w) {
+                               cx = win->x + ax + btn_w / 2;
+                               cy = win->y - title_h + 13 + 21;
+                               break;
+                           }
+                           ax -= 10;
+                       }
+                   }
 
                   if (cx != -1) {
                       // Optimized Glass Effect: 6 layers, 0.5px spacing
@@ -5561,12 +5561,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             
             // Title Bar check (Top Overlay Layer)
             if (hy < hwin->y && !hwin->no_decoration) {
-              if (point_in_titlebar_button(hx, hy, hwin, 26)) { 
+              if (point_in_titlebar_button(hx, hy, hwin, 35)) { 
                   g_active_window_index = hit_index; 
                   close_active_window(); 
                   hit_index = -2; 
                   handled = 1;
-              } else if (point_in_titlebar_button(hx, hy, hwin, 64)) {
+              } else if (point_in_titlebar_button(hx, hy, hwin, 35 + 42 + 10)) {
                 if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
                 else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
                 hwin->is_dirty = 1;
