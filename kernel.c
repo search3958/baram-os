@@ -3737,19 +3737,66 @@ skip_shadow:;
 
                   if (cx != -1) {
                       // Optimized Glass Effect: 6 layers, 0.5px spacing
-                      float rdx = (float)(win->x + dx - cx);
-                      float rdy = (float)(win->y - title_h + dy - cy);
-                      float dist_from_center = sqrtf(rdx*rdx + rdy*rdy);
-                      float max_dist = 16.0f * scale; 
+                       float rdx = (float)(win->x + dx - cx);
+                       float rdy = (float)(win->y - title_h + dy - cy);
+                       float max_dist = 16.0f * scale; 
                       
+                       // Capsule shape SDF for button glass effect (not circular)
+                       float btn_half_width;
+                       float btn_center_x = cx;
+                       
+                       // Check if this is a control button or action button
+                       if (dx >= 14 && dx < 14 + 32 + 6 + 32) {
+                           // Control buttons are perfect circles 32x32
+                           btn_half_width = 16.0f;
+                       } else {
+                           // Action buttons are capsule shape - calculate actual bounds
+                           char header_text[128]; int action_count = 0;
+                           if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
+                           else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
+                           int ax = win->w - 16;
+                           for (int j = 0; j < action_count; j++) {
+                               char act_text[64];
+                               if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
+                               else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
+                               int btn_w = strlen(act_text) * 9 + 32;
+                               ax -= btn_w;
+                               if (dx >= ax && dx < ax + btn_w) {
+                                   btn_center_x = win->x + ax + btn_w / 2;
+                                   btn_half_width = btn_w / 2.0f;
+                                   break;
+                               }
+                               ax -= 6;
+                           }
+                       }
+                       
+                       // Capsule SDF calculation with proper distortion
+                       float rx = win->x + dx - btn_center_x;
+                       float ry = win->y - title_h + dy - cy;
+                       
+                       float px = fabsf(rx);
+                       float py = fabsf(ry);
+                       float half_rect = btn_half_width - 16.0f;
+                       if (half_rect < 0) half_rect = 0;
+                       
+                       // Calculate capsule SDF
+                       if (px > half_rect) px -= half_rect;
+                       else px = 0;
+                       
+                       float dist_from_center = sqrtf(px*px + py*py);
+                       
                        // Magnification gradient: 1.0x at center to 1.7x at edge, 4th power curve
                        float t = dist_from_center / max_dist;
                        float curve = t * t * t * t;
                        float dynamic_scale = 1.0f + curve * 0.7f;
+                       
+                       // Apply distortion exactly like window side
+                       float distort_x = btn_center_x + (int)(rx / dynamic_scale);
+                       float distort_y = cy + (int)(ry / dynamic_scale);
                       
-                      // Calculate sampling coordinates
-                      int gdx = (cx - win->x) + (int)(rdx / dynamic_scale);
-                      int gdy = (cy - (win->y - title_h)) + (int)(rdy / dynamic_scale);
+                       // Calculate sampling coordinates using distorted position
+                       int gdx = (int)(distort_x - win->x);
+                       int gdy = (int)(distort_y - (win->y - title_h));
                       
                       int g_src_x = (int)((float)gdx * scale);
                       int g_src_y = scroll_offset_y + (int)((float)gdy * scale);
