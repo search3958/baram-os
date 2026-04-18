@@ -3647,10 +3647,8 @@ skip_shadow:;
             if (layer_idx >= num_layers) layer_idx = num_layers - 1;
             
             float t = (float)layer_idx / (float)(num_layers - 1);
-            float dist_curve = 1.0f - t;
-            float distortion_factor = dist_curve * dist_curve * dist_curve * dist_curve * dist_curve;
-            float max_glass_scale = 2.0f; 
-            float glass_scale = 1.0f + (max_glass_scale - 1.0f) * distortion_factor;
+            float curve = t * t * t * t;
+            float glass_scale = 1.0f + curve * 0.7f;
 
             int center_x = win->x + win->w / 2;
             int center_y = full_y0 + full_h / 2;
@@ -3660,13 +3658,7 @@ skip_shadow:;
             // Sample from blurred backdrop buffer for high performance
             surface_bg = sample_blurred_backdrop(sx, sy);
 
-            // Subtle white layer borders matching spacing (sharper 0.3px line)
-            if (d_in < (float)num_layers * spacing) {
-                float dist_to_step = fmodf(d_in, spacing);
-                if (dist_to_step < 0.3f) {
-                    surface_bg = blend_colors(surface_bg, 0xFFFFFFFF, (uint8_t)(25 * (1.0f - t)));
-                }
-            }
+
           }
           uint32_t win_bg = get_window_background_color(win);
           surface_bg = blend_colors(surface_bg, win_bg, (uint8_t)(win_bg >> 24));
@@ -3750,8 +3742,10 @@ skip_shadow:;
                       float dist_from_center = sqrtf(rdx*rdx + rdy*rdy);
                       float max_dist = 16.0f * scale; 
                       
-                      // Magnification gradient: 1.0x to 1.4x (subtler)
-                      float dynamic_scale = 1.0f + (dist_from_center / max_dist) * 0.4f;
+                       // Magnification gradient: 1.0x at center to 1.7x at edge, 4th power curve
+                       float t = dist_from_center / max_dist;
+                       float curve = t * t * t * t;
+                       float dynamic_scale = 1.0f + curve * 0.7f;
                       
                       // Calculate sampling coordinates
                       int gdx = (cx - win->x) + (int)(rdx / dynamic_scale);
@@ -3772,13 +3766,8 @@ skip_shadow:;
                           if (g_text_a != 0) g_color = blend_rgb_over_opaque(g_color, g_text, g_text_a);
                       }
                       
-                      uint32_t win_bg_glass = get_window_background_color(win);
-                      uint32_t glass_base = blend_colors(g_color, win_bg_glass, (uint8_t)(win_bg_glass >> 24));
-                      
-                      // 6-layer interpolation for glass borders
-                      float d_in = (max_dist - dist_from_center);
-                      int layer_idx = (int)(d_in / (0.5f * scale)); 
-                      if (layer_idx > 6) layer_idx = 6;
+                       uint32_t win_bg_glass = get_window_background_color(win);
+                       uint32_t glass_base = blend_colors(g_color, win_bg_glass, (uint8_t)(win_bg_glass >> 24));
                       
                       if (frame_a == 1) {
                           color = glass_base;
