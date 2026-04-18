@@ -3661,18 +3661,7 @@ skip_shadow:;
           uint32_t win_bg = get_window_background_color(win);
           surface_bg = blend_colors(surface_bg, win_bg, (uint8_t)(win_bg >> 24));
 
-          // 1. Apply header gradient background UNDER content
-          if (dy < title_h || win->is_menubar) {
-              const char *dark_val = get_w1_global("~~main/dark");
-              int is_dark = (strcmp(dark_val, "true") == 0);
-              uint32_t grad_base = is_dark ? 0x00000000u : 0x00FFFFFFu;
-              float alpha_f = 1.0f - ((float)dy / (float)(win->is_menubar ? full_h : title_h));
-              if (alpha_f < 0.0f) alpha_f = 0.0f;
-              uint8_t alpha = (uint8_t)(alpha_f * 255.0f);
-              surface_bg = blend_colors(surface_bg, grad_base, alpha);
-          }
-
-          // 2. Base Content Rendering (Warp UI)
+          // 1. Base Content Rendering (Warp UI)
           int src_x = (int)((float)dx * scale);
           int src_y = scroll_offset_y + (int)((float)dy * scale);
           if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
@@ -3689,8 +3678,19 @@ skip_shadow:;
               }
           }
 
+          // 2. Apply header gradient OVER content but UNDER system buttons
+          if (dy < title_h || win->is_menubar) {
+              const char *dark_val = get_w1_global("~~main/dark");
+              int is_dark = (strcmp(dark_val, "true") == 0);
+              uint32_t grad_base = is_dark ? 0x00000000u : 0x00FFFFFFu;
+              float alpha_f = 1.0f - ((float)dy / (float)(win->is_menubar ? full_h : title_h));
+              if (alpha_f < 0.0f) alpha_f = 0.0f;
+              uint8_t alpha = (uint8_t)(alpha_f * 255.0f);
+              color = blend_colors(color, grad_base, alpha);
+          }
+
           if (dy < title_h) {
-              // 3. System buttons OVER everything
+              // 3. System buttons / Header text from frame_cache (Top-most)
               int scaled_dx = (int)((float)dx * scale);
               int scaled_dy = (int)((float)dy * scale);
               if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
