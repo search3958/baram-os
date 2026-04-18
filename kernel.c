@@ -29,6 +29,19 @@
 #include "nanosvg/nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvg/nanosvgrast.h"
+
+// Distance to line segment
+static float dist_to_line_segment(float px, float py, float ax, float ay, float bx, float by) {
+  float dx = bx - ax;
+  float dy = by - ay;
+  float len2 = dx*dx + dy*dy;
+  if (len2 == 0.0f) return sqrtf((px-ax)*(px-ax) + (py-ay)*(py-ay));
+  float t = ((px - ax)*dx + (py - ay)*dy) / len2;
+  t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+  float cx = ax + t*dx;
+  float cy = ay + t*dy;
+  return sqrtf((px-cx)*(px-cx) + (py-cy)*(py-cy));
+}
 #ifndef BUILD_NUMBER
 #include "build_no.h"
 #endif
@@ -344,7 +357,7 @@ static const char* g_default_os_settings =
 "    \"warp topbar.warp\"\n"
 "  ],\n"
 "  \"main\": {\n"
-"    \"dark\": true\n"
+"    \"dark\": false\n"
 "  }\n"
 "}";
 
@@ -2679,30 +2692,27 @@ static void window_update_caches(window_t *win) {
         }
       }
     }
-    // Close button X icon (7x7, thick round strokes with AA)
+    // Close button X icon (two 45-degree lines with AA)
     {
       float cx = (float)(ctrl_positions[0] + ctrl_size / 2) * scale;
       float cy = (float)(ctrl_y + ctrl_size / 2) * scale;
-      float icon_half = 3.5f * scale;
-      float stroke_r = 1.2f * scale;
-      int extent = (int)(icon_half + stroke_r + 2.0f);
-      for (int dy_i = -extent; dy_i <= extent; dy_i++) {
-        for (int dx_i = -extent; dx_i <= extent; dx_i++) {
-          float px = cx + (float)dx_i;
-          float py = cy + (float)dy_i;
+      float h = 3.5f * scale; // half size
+      float stroke_r = 0.8f * scale;
+      int extent = (int)(h + stroke_r + 2.0f);
+      for (int dy = -extent; dy <= extent; dy++) {
+        for (int dx = -extent; dx <= extent; dx++) {
+          float px = cx + (float)dx;
+          float py = cy + (float)dy;
           if ((int)px < 0 || (int)px >= fw || (int)py < 0 || (int)py >= fh) continue;
-          // Diagonal 1: from (cx-h, cy-h) to (cx+h, cy+h)
-          float t1 = ((px - (cx - icon_half)) + (py - (cy - icon_half))) / (2.0f * icon_half);
-          float d1;
-          if (t1 < 0.0f) d1 = sqrtf((px-(cx-icon_half))*(px-(cx-icon_half)) + (py-(cy-icon_half))*(py-(cy-icon_half)));
-          else if (t1 > 1.0f) d1 = sqrtf((px-(cx+icon_half))*(px-(cx+icon_half)) + (py-(cy+icon_half))*(py-(cy+icon_half)));
-          else { float proj_x = cx - icon_half + t1 * 2.0f * icon_half; float proj_y = cy - icon_half + t1 * 2.0f * icon_half; d1 = sqrtf((px-proj_x)*(px-proj_x)+(py-proj_y)*(py-proj_y)); }
-          // Diagonal 2: from (cx-h, cy+h) to (cx+h, cy-h)
-          float t2 = ((px - (cx - icon_half)) - (py - (cy + icon_half))) / (2.0f * icon_half);
-          float d2;
-          if (t2 < 0.0f) d2 = sqrtf((px-(cx-icon_half))*(px-(cx-icon_half)) + (py-(cy+icon_half))*(py-(cy+icon_half)));
-          else if (t2 > 1.0f) d2 = sqrtf((px-(cx+icon_half))*(px-(cx+icon_half)) + (py-(cy-icon_half))*(py-(cy-icon_half)));
-          else { float proj_x2 = cx - icon_half + t2 * 2.0f * icon_half; float proj_y2 = cy + icon_half - t2 * 2.0f * icon_half; d2 = sqrtf((px-proj_x2)*(px-proj_x2)+(py-proj_y2)*(py-proj_y2)); }
+
+          // Line 1: 45 degrees (cx-h, cy-h) to (cx+h, cy+h)
+          float p1x = cx - h, p1y = cy - h, p2x = cx + h, p2y = cy + h;
+          float d1 = dist_to_line_segment(px, py, p1x, p1y, p2x, p2y);
+
+          // Line 2: -45 degrees (cx-h, cy+h) to (cx+h, cy-h)
+          float p3x = cx - h, p3y = cy + h, p4x = cx + h, p4y = cy - h;
+          float d2 = dist_to_line_segment(px, py, p3x, p3y, p4x, p4y);
+
           float min_d = (d1 < d2) ? d1 : d2;
           float alpha_f = stroke_r + 0.5f - min_d;
           if (alpha_f > 1.0f) alpha_f = 1.0f;

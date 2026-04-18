@@ -8,7 +8,7 @@
     "warp topbar.warp"
   ],
   "main": {
-    "dark": true,
+    "dark": false,
     "wallpaper": "wallpaper_2.svg"
   }
 }
