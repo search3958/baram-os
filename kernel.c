@@ -2660,7 +2660,7 @@ static void window_update_caches(window_t *win) {
     // Control buttons - 32x32 capsule, same bg color as action buttons
     int ctrl_size = 32;
     int ctrl_y = 14;
-    int ctrl_gap = 2; // Reduced spacing
+    int ctrl_gap = 6; // Reverted to 6px
     int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; 
     uint32_t ctrl_bg_marker = is_dark ? 0x01444444 : 0x01FFFFFF;
     uint32_t ctrl_icon_color = is_dark ? 0xFFEEEEEE : 0xFF333333;

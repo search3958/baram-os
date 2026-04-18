@@ -21,3 +21,7 @@ output/isodir/boot/initrd.tar
 output/isodir/boot/kernel.bin
 output/kernel.bin
 output/kernel.o
+output/isodir/boot/initrd.tar
+output/isodir/boot/kernel.bin
+output/kernel.bin
+output/kernel.o
