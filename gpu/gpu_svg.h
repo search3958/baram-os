@@ -4,9 +4,9 @@
 #include <stdint.h>
 
 // GPU SVG path rasterizer
-// 1. Flatten Bezier paths to line segments (CPU)
-// 2. Tessellate to triangles (libtess2, CPU)  
-// 3. Upload triangles to GPU, render (GPU fill)
+// 1. Uses nanosvg to parse SVG
+// 2. Uses nanosvgrast to rasterize to buffer
+// 3. (Future) Upload to GPU for acceleration
 
 typedef struct {
     float *vertices;    // Triangle vertices (x, y, r, g, b, a)

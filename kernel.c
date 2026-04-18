@@ -2022,7 +2022,7 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   }
   
   if (g_gpu_svg_initialized) {
-      // GPU path render: Bezier flatten → libtess2 triangulation → GPU fill
+      // GPU path render: Uses nanosvgrast for high-quality SVG rasterization
       gpu_svg_render(&g_gpu_svg_renderer, g_svg_image, scale, tx, ty,
                      (uint32_t*)g_svg_full_rgba, g_svg_full_w, g_svg_full_h);
   } else {

@@ -45,7 +45,7 @@ int gpu_init(void) {
 
     gpu_gl_mmio = (volatile uint32_t*)VIRTIO_GPU_GL_BASE;
 
-    uint32_t status = gpu_gl_read(VIRTIO_GPU_GL_STATUS);
+    gpu_gl_read(VIRTIO_GPU_GL_STATUS);
     gl_context_id = 1;
     gpu_gl_write(VIRTIO_GPU_GL_CONTEXT, gl_context_id);
     gl_fbo_id = 1;
