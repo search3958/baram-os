@@ -2606,8 +2606,8 @@ static void window_update_caches(window_t *win) {
     }
 
     if (has_header) {
-      layer_draw_ttf(&frame_l, (int)(90.0f * scale), (int)(18.0f * scale), header_text, 20.8f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
-      int ax = win->w - 12;
+      layer_draw_ttf(&frame_l, (int)(103.0f * scale), (int)(18.0f * scale), header_text, 20.8f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      int ax = win->w - 16;
       for (int j = 0; j < action_count; j++) {
         char act_text[64];
         if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
@@ -2622,16 +2622,15 @@ static void window_update_caches(window_t *win) {
         int by = (int)(14.0f * scale);
         int bw = (int)((float)btn_w * scale);
         int bh = (int)((float)btn_h * scale);
-        float pr = bh / 2.0f;  // pill radius = half height
+        float pr = bh / 2.0f;
         uint32_t btn_color = is_dark ? 0xFF444444 : 0xFFFFFFFF;
         for (int dy_i = 0; dy_i < bh; dy_i++) {
           for (int dx_i = 0; dx_i < bw; dx_i++) {
-            float fx = (float)dx_i + 0.5f;
-            float fy = (float)dy_i + 0.5f;
-            // Capsule: clamp x to [pr, bw-pr], measure dist to midline
-            float seg_x = (fx < pr) ? pr : ((fx > bw - pr) ? bw - pr : fx);
-            float ddx = fx - seg_x;
-            float ddy = fy - pr;
+            float ffx = (float)dx_i + 0.5f;
+            float ffy = (float)dy_i + 0.5f;
+            float seg_x = (ffx < pr) ? pr : ((ffx > bw - pr) ? bw - pr : ffx);
+            float ddx = ffx - seg_x;
+            float ddy = ffy - pr;
             float dist_to_seg = sqrtf(ddx*ddx + ddy*ddy);
             float alpha_f = pr + 0.5f - dist_to_seg;
             if (alpha_f > 1.0f) alpha_f = 1.0f;
@@ -2643,18 +2642,19 @@ static void window_update_caches(window_t *win) {
           }
         }
         layer_draw_ttf(&frame_l, bx + (int)(14.0f * scale), by + (int)(8.0f * scale), act_text, 18.2f * scale, is_dark ? 0xFFEEEEEE : 0xFF000000);
-        ax -= 10;
+        ax -= 6;
       }
     } else {
-      layer_draw_ttf(&frame_l, (int)(90.0f * scale), (int)(12.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      layer_draw_ttf(&frame_l, (int)(103.0f * scale), (int)(12.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
     }
 
-    // Control buttons - 32x32 capsule (same size as action buttons)
+    // Control buttons - 32x32 capsule, same bg color as action buttons
     int ctrl_size = 32;
     int ctrl_y = 14;
     int ctrl_gap = 6;
-    int ctrl_positions[] = {10, 10 + ctrl_size + ctrl_gap}; // left edges: 10, 48
-    uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
+    int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; // left edges shifted right +3px
+    uint32_t ctrl_bg = is_dark ? 0xFF444444 : 0xFFFFFFFF;
+    uint32_t ctrl_icon_color = is_dark ? 0xFFEEEEEE : 0xFF333333;
     for (int k = 0; k < 2; k++) {
       int bx = (int)((float)ctrl_positions[k] * scale);
       int by = (int)((float)ctrl_y * scale);
@@ -2663,18 +2663,52 @@ static void window_update_caches(window_t *win) {
       float pr = bh / 2.0f;
       for (int dy_i = 0; dy_i < bh; dy_i++) {
         for (int dx_i = 0; dx_i < bw; dx_i++) {
-          float fx = (float)dx_i + 0.5f;
-          float fy = (float)dy_i + 0.5f;
-          float seg_x = (fx < pr) ? pr : ((fx > bw - pr) ? bw - pr : fx);
-          float ddx = fx - seg_x;
-          float ddy = fy - pr;
+          float ffx = (float)dx_i + 0.5f;
+          float ffy = (float)dy_i + 0.5f;
+          float seg_x = (ffx < pr) ? pr : ((ffx > bw - pr) ? bw - pr : ffx);
+          float ddx = ffx - seg_x;
+          float ddy = ffy - pr;
           float dist_to_seg = sqrtf(ddx*ddx + ddy*ddy);
           float alpha_f = pr + 0.5f - dist_to_seg;
           if (alpha_f > 1.0f) alpha_f = 1.0f;
           if (alpha_f > 0.0f) {
             frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
               frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
-              colors[k], (uint8_t)(alpha_f * 255.0f));
+              ctrl_bg, (uint8_t)(alpha_f * 255.0f));
+          }
+        }
+      }
+    }
+    // Close button X icon (7x7, thick round strokes with AA)
+    {
+      float cx = (float)(ctrl_positions[0] + ctrl_size / 2) * scale;
+      float cy = (float)(ctrl_y + ctrl_size / 2) * scale;
+      float icon_half = 3.5f * scale;
+      float stroke_r = 1.2f * scale;
+      int extent = (int)(icon_half + stroke_r + 2.0f);
+      for (int dy_i = -extent; dy_i <= extent; dy_i++) {
+        for (int dx_i = -extent; dx_i <= extent; dx_i++) {
+          float px = cx + (float)dx_i;
+          float py = cy + (float)dy_i;
+          if ((int)px < 0 || (int)px >= fw || (int)py < 0 || (int)py >= fh) continue;
+          // Diagonal 1: from (cx-h, cy-h) to (cx+h, cy+h)
+          float t1 = ((px - (cx - icon_half)) + (py - (cy - icon_half))) / (2.0f * icon_half);
+          float d1;
+          if (t1 < 0.0f) d1 = sqrtf((px-(cx-icon_half))*(px-(cx-icon_half)) + (py-(cy-icon_half))*(py-(cy-icon_half)));
+          else if (t1 > 1.0f) d1 = sqrtf((px-(cx+icon_half))*(px-(cx+icon_half)) + (py-(cy+icon_half))*(py-(cy+icon_half)));
+          else { float proj_x = cx - icon_half + t1 * 2.0f * icon_half; float proj_y = cy - icon_half + t1 * 2.0f * icon_half; d1 = sqrtf((px-proj_x)*(px-proj_x)+(py-proj_y)*(py-proj_y)); }
+          // Diagonal 2: from (cx-h, cy+h) to (cx+h, cy-h)
+          float t2 = ((px - (cx - icon_half)) - (py - (cy + icon_half))) / (2.0f * icon_half);
+          float d2;
+          if (t2 < 0.0f) d2 = sqrtf((px-(cx-icon_half))*(px-(cx-icon_half)) + (py-(cy+icon_half))*(py-(cy+icon_half)));
+          else if (t2 > 1.0f) d2 = sqrtf((px-(cx+icon_half))*(px-(cx+icon_half)) + (py-(cy-icon_half))*(py-(cy-icon_half)));
+          else { float proj_x2 = cx - icon_half + t2 * 2.0f * icon_half; float proj_y2 = cy + icon_half - t2 * 2.0f * icon_half; d2 = sqrtf((px-proj_x2)*(px-proj_x2)+(py-proj_y2)*(py-proj_y2)); }
+          float min_d = (d1 < d2) ? d1 : d2;
+          float alpha_f = stroke_r + 0.5f - min_d;
+          if (alpha_f > 1.0f) alpha_f = 1.0f;
+          if (alpha_f > 0.0f) {
+            int ipx = (int)px, ipy = (int)py;
+            frame_l.buffer[ipy * fw + ipx] = blend_colors(frame_l.buffer[ipy * fw + ipx], ctrl_icon_color, (uint8_t)(alpha_f * 255.0f));
           }
         }
       }
