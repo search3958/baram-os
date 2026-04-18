@@ -3335,6 +3335,10 @@ static uint32_t blend_rgb_over_opaque_premul(uint32_t bg, uint32_t fg_premul) {
   uint32_t out_g = fg_g + ((bg_g * inv_alpha) >> 8);
   uint32_t out_b = fg_b + ((bg_b * inv_alpha) >> 8);
 
+  if (out_r > 255) out_r = 255;
+  if (out_g > 255) out_g = 255;
+  if (out_b > 255) out_b = 255;
+
   return 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
 }
 
@@ -3353,6 +3357,11 @@ static uint32_t blend_rgb_over_opaque(uint32_t bg, uint32_t fg, uint8_t alpha) {
   uint32_t out_r = (fg_r * alpha + bg_r * inv_alpha) >> 8;
   uint32_t out_g = (fg_g * alpha + bg_g * inv_alpha) >> 8;
   uint32_t out_b = (fg_b * alpha + bg_b * inv_alpha) >> 8;
+
+  if (out_r > 255) out_r = 255;
+  if (out_g > 255) out_g = 255;
+  if (out_b > 255) out_b = 255;
+
   return 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
 }
 
@@ -4311,6 +4320,11 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
   uint32_t out_r = (fg_r * alpha * 255u + bg_r * bg_contrib) / (out_alpha * 255u);
   uint32_t out_g = (fg_g * alpha * 255u + bg_g * bg_contrib) / (out_alpha * 255u);
   uint32_t out_b = (fg_b * alpha * 255u + bg_b * bg_contrib) / (out_alpha * 255u);
+
+  if (out_r > 255) out_r = 255;
+  if (out_g > 255) out_g = 255;
+  if (out_b > 255) out_b = 255;
+  if (out_alpha > 255) out_alpha = 255;
 
   return (out_alpha << 24) | (out_r << 16) | (out_g << 8) | out_b;
 }
