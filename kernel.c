@@ -2516,7 +2516,7 @@ static void window_update_caches(window_t *win) {
   float scale = win->render_scale;
   if (scale <= 0.0f) scale = 1.0f;
 
-  int title_h = win->no_decoration ? 0 : 40;
+  int title_h = win->no_decoration ? 0 : 60;
   int shadow_size = win->no_decoration ? 0 : 48;
   float win_r = 30.0f; // Adjusted for Squircle shadow approximation
 
@@ -2606,58 +2606,75 @@ static void window_update_caches(window_t *win) {
     }
 
     if (has_header) {
-      layer_draw_ttf(&frame_l, (int)(70.0f * scale), (int)(12.0f * scale), header_text, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      layer_draw_ttf(&frame_l, (int)(90.0f * scale), (int)(18.0f * scale), header_text, 20.8f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
       int ax = win->w - 12;
       for (int j = 0; j < action_count; j++) {
         char act_text[64];
         if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
         else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
         int text_w = strlen(act_text) * 9; 
-        int btn_w = text_w + 24;
-        int btn_h = 26; 
+        int btn_w = text_w + 32;
+        int btn_h = 32; 
         ax -= btn_w;
 
-        // Draw button background
+        // Draw pill-shaped button background (capsule SDF, max corner radius)
         int bx = (int)((float)ax * scale);
-        int by = (int)(7.0f * scale);
+        int by = (int)(14.0f * scale);
         int bw = (int)((float)btn_w * scale);
         int bh = (int)((float)btn_h * scale);
-        for (int dy = 0; dy < bh; dy++) {
-          for (int dx = 0; dx < bw; dx++) {
-             frame_l.buffer[(by + dy) * fw + (bx + dx)] = is_dark ? 0xFF444444 : 0xFFFFFFFF;
+        float pr = bh / 2.0f;  // pill radius = half height
+        uint32_t btn_color = is_dark ? 0xFF444444 : 0xFFFFFFFF;
+        for (int dy_i = 0; dy_i < bh; dy_i++) {
+          for (int dx_i = 0; dx_i < bw; dx_i++) {
+            float fx = (float)dx_i + 0.5f;
+            float fy = (float)dy_i + 0.5f;
+            // Capsule: clamp x to [pr, bw-pr], measure dist to midline
+            float seg_x = (fx < pr) ? pr : ((fx > bw - pr) ? bw - pr : fx);
+            float ddx = fx - seg_x;
+            float ddy = fy - pr;
+            float dist_to_seg = sqrtf(ddx*ddx + ddy*ddy);
+            float alpha_f = pr + 0.5f - dist_to_seg;
+            if (alpha_f > 1.0f) alpha_f = 1.0f;
+            if (alpha_f > 0.0f) {
+              frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
+                frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
+                btn_color, (uint8_t)(alpha_f * 255.0f));
+            }
           }
         }
-        layer_draw_ttf(&frame_l, bx + (int)(12.0f * scale), by + (int)(7.0f * scale), act_text, 14.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF000000);
+        layer_draw_ttf(&frame_l, bx + (int)(14.0f * scale), by + (int)(8.0f * scale), act_text, 18.2f * scale, is_dark ? 0xFFEEEEEE : 0xFF000000);
         ax -= 10;
       }
     } else {
-      layer_draw_ttf(&frame_l, (int)(70.0f * scale), (int)(12.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
+      layer_draw_ttf(&frame_l, (int)(90.0f * scale), (int)(12.0f * scale), win->title, 16.0f * scale, is_dark ? 0xFFEEEEEE : 0xFF333333);
     }
 
-    // Control circles with Anti-Aliasing
-    float btn_r = 7.0f;
-    int btn_y = 20;
+    // Control buttons - 32x32 capsule (same size as action buttons)
+    int ctrl_size = 32;
+    int ctrl_y = 14;
+    int ctrl_gap = 6;
+    int ctrl_positions[] = {10, 10 + ctrl_size + ctrl_gap}; // left edges: 10, 48
     uint32_t colors[] = {0xFFFF2836, 0xFF2ECC46};
-    int centers_x[] = {20, 44};
     for (int k = 0; k < 2; k++) {
-      float cx = (float)centers_x[k] * scale;
-      float cy = (float)btn_y * scale;
-      float cr = btn_r * scale;
-      int i_r = (int)cr + 2; 
-
-      for (int dy = -i_r; dy <= i_r; dy++) {
-        for (int dx = -i_r; dx <= i_r; dx++) {
-          int px = (int)cx + dx;
-          int py = (int)cy + dy;
-          if (px >= 0 && px < fw && py >= 0 && py < fh) {
-            float dist = sqrtf((float)(dx*dx + dy*dy));
-            float alpha_f = 0.5f - (dist - cr);
-            if (alpha_f < 0.0f) alpha_f = 0.0f;
-            else if (alpha_f > 1.0f) alpha_f = 1.0f;
-
-            if (alpha_f > 0.0f) {
-              frame_l.buffer[py * fw + px] = blend_colors(frame_l.buffer[py * fw + px], colors[k], (uint8_t)(alpha_f * 255));
-            }
+      int bx = (int)((float)ctrl_positions[k] * scale);
+      int by = (int)((float)ctrl_y * scale);
+      int bw = (int)((float)ctrl_size * scale);
+      int bh = (int)((float)ctrl_size * scale);
+      float pr = bh / 2.0f;
+      for (int dy_i = 0; dy_i < bh; dy_i++) {
+        for (int dx_i = 0; dx_i < bw; dx_i++) {
+          float fx = (float)dx_i + 0.5f;
+          float fy = (float)dy_i + 0.5f;
+          float seg_x = (fx < pr) ? pr : ((fx > bw - pr) ? bw - pr : fx);
+          float ddx = fx - seg_x;
+          float ddy = fy - pr;
+          float dist_to_seg = sqrtf(ddx*ddx + ddy*ddy);
+          float alpha_f = pr + 0.5f - dist_to_seg;
+          if (alpha_f > 1.0f) alpha_f = 1.0f;
+          if (alpha_f > 0.0f) {
+            frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
+              frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
+              colors[k], (uint8_t)(alpha_f * 255.0f));
           }
         }
       }
@@ -2678,7 +2695,7 @@ static void window_update_caches(window_t *win) {
     win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
 
     float rw = (float)full_mw, rh = (float)full_mh;
-    float r = 32.0f; // Corner radius
+    float r = 47.5f; // Corner radius (0.5px inward correction)
     for (int y = 0; y < mh; y++) {
       float fy = (float)y / scale + 0.5f; 
       for (int x = 0; x < mw; x++) {
@@ -2688,7 +2705,10 @@ static void window_update_caches(window_t *win) {
 
         float dist;
         if (dx > 0 && dy > 0) {
-          dist = sqrtf(sqrtf(dx*dx*dx*dx + dy*dy*dy*dy)) - r;
+          // Blend L4 (squircle) and L2 (circle) for softer squircle effect
+          float l2 = sqrtf(dx*dx + dy*dy);
+          float l4 = sqrtf(sqrtf(dx*dx*dx*dx + dy*dy*dy*dy));
+          dist = (l2 * 0.4f + l4 * 0.6f) - r;
         } else {
           dist = (dx > dy ? dx : dy) - r;
         }
@@ -3097,7 +3117,7 @@ static uint32_t composite_window_pixel(uint32_t dst, window_t *win, int px, int 
   if (!win->rgba_buffer)
     return dst;
 
-  int title_h = win->no_decoration ? 0 : 40;
+  int title_h = win->no_decoration ? 0 : 60;
   int shadow_size = win->no_decoration ? 0 : 48;
   float scale = win->render_scale;
 
@@ -3448,7 +3468,7 @@ static void bg_preview_update(layer_t *preview) {
 }
 
 static void get_window_draw_bounds(window_t *win, int *x0, int *y0, int *x1, int *y1) {
-  int title_h = win->no_decoration ? 0 : 40;
+  int title_h = win->no_decoration ? 0 : 60;
   int shadow_size = win->no_decoration ? 0 : 48;
   *x0 = win->x - shadow_size;
   *y0 = win->y - title_h - shadow_size;
@@ -3465,7 +3485,7 @@ static void redraw_warp_region(layer_t *layer, int rx0, int ry0, int rx1, int ry
 static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int clip_y0, int clip_x1, int clip_y1) {
     // Use normal render path for all windows (active and inactive)
     if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
-      int title_h = win->no_decoration ? 0 : 40;
+      int title_h = win->no_decoration ? 0 : 60;
       int shadow_size = win->no_decoration ? 0 : 48;
       float scale = win->render_scale;
 
@@ -3549,14 +3569,17 @@ skip_shadow:;
             float fy = (float)dy + 0.5f;
             float rw = (float)win->w;
             float rh = (float)full_h;
-            float r = 16.0f; // Half corner radius (approx 16px)
+            float r = 47.5f; // Corner radius (0.5px inward correction, must match window_mask)
             
             float qx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
             float qy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
             
             float d_in;
             if (qx > 0.0f && qy > 0.0f) {
-                d_in = r - sqrtf(qx*qx + qy*qy);
+                // Blended squircle (60% L4 + 40% L2) to match window_mask shape
+                float l2 = sqrtf(qx*qx + qy*qy);
+                float l4 = sqrtf(sqrtf(qx*qx*qx*qx + qy*qy*qy*qy));
+                d_in = r - (l2 * 0.4f + l4 * 0.6f);
             } else {
                 float dist_to_rect_edge_x = rw/2.0f - fabsf(fx - rw/2.0f);
                 float dist_to_rect_edge_y = rh/2.0f - fabsf(fy - rh/2.0f);
@@ -4240,8 +4263,8 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
 
 static int point_in_titlebar_button(int hx, int hy, window_t *win, int center_x) {
   int dx = hx - (win->x + center_x);
-  int dy = hy - (win->y - 20);
-  return (dx * dx + dy * dy) <= (9 * 9);
+  int dy = hy - (win->y - 30);
+  return (dx * dx + dy * dy) <= (16 * 16);
 }
 
 // 文字レイヤーを更新: keybuf_str を画面中央にTTFレンダリング
@@ -5348,8 +5371,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             window_t *hwin = &g_windows[hit_index];
             // Title Bar check
             if (hy < hwin->y && !hwin->no_decoration) {
-              if (point_in_titlebar_button(hx, hy, hwin, 20)) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
-              else if (point_in_titlebar_button(hx, hy, hwin, 44)) {
+              if (point_in_titlebar_button(hx, hy, hwin, 26)) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
+              else if (point_in_titlebar_button(hx, hy, hwin, 64)) {
                 if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
                 else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
                 hwin->is_dirty = 1;
