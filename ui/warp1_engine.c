@@ -3,6 +3,7 @@
 #include "warp_engine.h"
 #include <stddef.h>
 #include <stdlib.h>
+#include <math.h>
 
 // --- 1. Internal Utilities ---
 static int w1_strlen(const char *s) { int n=0; if(!s) return 0; while(s[n]) n++; return n; }
@@ -62,7 +63,7 @@ struct warp1_context {
     struct { int x, y; char text[512]; uint32_t color; float size; } texts[MAX_TEXTS]; int texts_count;
     char svg_output[65536]; int engine_dirty; char engine_status[128];
     int mouse_x, mouse_y; int win_w, win_h;
-    
+
     int focused_node_idx; // -1: none
     
     // Screen management (separate SVG per screen)
@@ -496,8 +497,9 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     }
 
     if (w1_strcmp(node->tag, "screen") == 0) {
-        // Add 16px top padding
-        cy = py + 16;
+        const char *has_header = get_state(ctx, "~~internal/has_header");
+        int padding = (w1_strcmp(has_header, "true") == 0) ? 60 : 16;
+        cy = py + padding;
         for (int i = 0; i < node->children_count; i++) {
             if (w1_strcmp(node->children[i]->tag, "Header") == 0) continue;
             cy += layout_node1(ctx, node->children[i], node->x + 24, cy, limit_w - 48) + 12;
@@ -654,6 +656,8 @@ static void emit_rect1(char *dest, int size, int x, int y, int w, int h, const c
     p = w1_strcat(p, " />\n");
     w1_strncat(dest, buf, (size_t)(size - w1_strlen(dest) - 1));
 }
+
+
 
 static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int h, float radius, const char *fill, const char *extra) {
     // Forward to common engine helper

@@ -2,6 +2,7 @@
 #include "warp_engine.h"
 #include <stddef.h>
 #include <stdlib.h>
+#include <math.h>
 
 static int warp_strlen(const char *s) {
   int n = 0;
@@ -782,8 +783,9 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
   int is_dark = (warp_strcmp(dark_val, "true") == 0);
 
   if (warp_strcmp(node->tag, "screen") == 0) {
-    // Add 16px top padding
-    cy = py + 16;
+    const char *has_header = get_state(ctx, "~~internal/has_header");
+    int padding = (warp_strcmp(has_header, "true") == 0) ? 60 : 16;
+    cy = py + padding;
     for (int i = 0; i < node->children_count; i++) {
       if (warp_strcmp(node->children[i]->tag, "Header") == 0) {
         // Still layout header to update its state/children, but it won't affect cy
@@ -954,6 +956,8 @@ static const float K_X[] = {1.498f,  3.381f,  7.456f, 12.630f,
                             17.368f, 21.770f, 30.573f};
 static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
                             16.619f, 18.502f, 20.000f};
+
+
 
 void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius,
                                 const char *fill, const char *extra) {
@@ -1188,14 +1192,9 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     char bg_color[32], bg_opacity[16];
     eval_attr(ctx, node, "backgroundColor", bg_color, sizeof(bg_color));
     eval_attr(ctx, node, "backgroundOpacity", bg_opacity, sizeof(bg_opacity));
-    
-    const char *fill = bg_color[0] ? bg_color : (is_dark ? "#121212" : "#f5f5f5");
+
+    const char *fill = "transparent";
     char extra[64] = "";
-    if (bg_opacity[0]) {
-      warp_strcpy(extra, "opacity=\"");
-      warp_strcat(extra, bg_opacity);
-      warp_strcat(extra, "\"");
-    }
     emit_squircle_shape_to(dest, dest_size, 0, 0, node->w, node->h, 0, fill, extra);
   } else if (warp_strcmp(node->tag, "Header") == 0) {
     // Header background and content handled at the end

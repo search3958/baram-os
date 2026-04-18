@@ -2495,8 +2495,9 @@ static uint32_t *build_window_text_overlay(window_t *win, int *out_w, int *out_h
   if (!win || (!win->warp_ctx && !win->warp1_ctx))
     return NULL;
 
+  int title_h = win->no_decoration ? 0 : 60;
   int overlay_w = win->w;
-  int overlay_h = win->h;
+  int overlay_h = win->h + title_h; // Full window area
   if (overlay_w <= 0 || overlay_h <= 0)
     return NULL;
 
@@ -2594,13 +2595,7 @@ static void window_update_caches(window_t *win) {
   const char *dark_val = get_w1_global("~~main/dark");
   int is_dark = (strcmp(dark_val, "true") == 0);
 
-  uint32_t theme;
-  if (is_dark) {
-    theme = (win == &g_windows[g_active_window_index]) ? 0xFF1E1E1E : 0xFF333333;
-  } else {
-    theme = (win == &g_windows[g_active_window_index]) ? 0xFFF5F5F5 : 0xFFE0E0E0;
-  }
-  for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = theme;
+  for (int i = 0; i < fw * fh; i++) win->frame_cache[i] = 0x00000000;
 
   // Render Title Bar content into frame_cache
   if (fh > 0) {
@@ -2788,11 +2783,15 @@ static void window_redraw(window_t *win) {
   
   if (needs_update) {
     strncpy(g_hud_status, "EngineUpdate", 63);
+    int title_h = win->no_decoration ? 0 : 60;
+    const char *has_header_str = (title_h > 0) ? "true" : "false";
     if (win->is_warp1) {
-      warp1_context_update(win->warp1_ctx, win->w, win->h);
+      warp1_context_set_state(win->warp1_ctx, "~~internal/has_header", has_header_str);
+      warp1_context_update(win->warp1_ctx, win->w, win->h + title_h);
       warp1_context_clear_dirty(win->warp1_ctx);
     } else {
-      warp_context_update(win->warp_ctx, win->w, win->h);
+      warp_context_set_state(win->warp_ctx, "~~internal/has_header", has_header_str);
+      warp_context_update(win->warp_ctx, win->w, win->h + title_h);
       warp_context_clear_dirty(win->warp_ctx);
     }
     // Content changed, invalidate text overlay cache
@@ -2838,8 +2837,9 @@ static void window_redraw(window_t *win) {
   }
 
   // Content height is determined by the cached SVG itself
+  int title_h = win->no_decoration ? 0 : 60;
   int content_h = (int)win->svg_image_cache->height;
-  if (content_h < win->h) content_h = win->h;
+  if (content_h < win->h + title_h) content_h = win->h + title_h;
 
   int scaled_w = (int)((float)win->w * target_scale);
   int scaled_h = (int)((float)content_h * target_scale);
@@ -3135,6 +3135,7 @@ static uint32_t sample_wallpaper_pixel(int x, int y) {
 static uint32_t get_window_background_color(window_t *win) {
   if (!win)
     return 0xBFFFFFFFu;
+  if (win->is_menubar) return 0x00000000u;
   if (win->background_color != 0xBFFFFFFFu)
     return win->background_color;
 
@@ -3568,7 +3569,6 @@ skip_shadow:;
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)full_h * scale);
-      uint32_t bg_color = get_window_background_color(win);
 
       // --- Optimized Text Overlay Cache ---
       // Rebuild text overlay when: cache missing, size changed, scroll changed, or window is dirty (content changed)
@@ -3658,36 +3658,46 @@ skip_shadow:;
                 }
             }
           }
-          surface_bg = blend_colors(surface_bg, bg_color, (uint8_t)(bg_color >> 24));
+          uint32_t win_bg = get_window_background_color(win);
+          surface_bg = blend_colors(surface_bg, win_bg, (uint8_t)(win_bg >> 24));
 
-          uint32_t color;
-          if (dy < title_h) {
-            // Title Bar pixel
-            int scaled_dx = (int)((float)dx * scale);
-            int scaled_dy = (int)((float)dy * scale);
-            if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
-            if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
-            color = win->frame_cache[scaled_dy * win->frame_cache_w + scaled_dx];
-            // Frames in frame_cache are NOT premultiplied, they are opaque themes.
-            surface_bg = blend_colors(surface_bg, color, 255);
-            color = surface_bg;
-          } else {
-            // Content pixel
-            int content_dy = dy - title_h;
-            int src_x = (int)((float)dx * scale);
-            int src_y = scroll_offset_y + (int)((float)content_dy * scale);
-            if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
-            if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
-            uint32_t content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
-            color = blend_rgb_over_opaque_premul(surface_bg, content_color);
+          // 1. Apply header gradient background UNDER content
+          if (dy < title_h || win->is_menubar) {
+              const char *dark_val = get_w1_global("~~main/dark");
+              int is_dark = (strcmp(dark_val, "true") == 0);
+              uint32_t grad_base = is_dark ? 0x00000000u : 0x00FFFFFFu;
+              float alpha_f = 1.0f - ((float)dy / (float)(win->is_menubar ? full_h : title_h));
+              if (alpha_f < 0.0f) alpha_f = 0.0f;
+              uint8_t alpha = (uint8_t)(alpha_f * 255.0f);
+              surface_bg = blend_colors(surface_bg, grad_base, alpha);
+          }
 
-            if (text_overlay && content_dy < text_overlay_h && dx < text_overlay_w) {
-              uint32_t text_px = text_overlay[content_dy * text_overlay_w + dx];
+          // 2. Base Content Rendering (Warp UI)
+          int src_x = (int)((float)dx * scale);
+          int src_y = scroll_offset_y + (int)((float)dy * scale);
+          if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
+          if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
+          uint32_t content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+          
+          uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
+
+          if (text_overlay && dy < text_overlay_h && dx < text_overlay_w) {
+              uint32_t text_px = text_overlay[dy * text_overlay_w + dx];
               uint8_t text_alpha = (uint8_t)(text_px >> 24);
               if (text_alpha != 0) {
-                color = blend_rgb_over_opaque(color, text_px, text_alpha);
+                  color = blend_rgb_over_opaque(color, text_px, text_alpha);
               }
-            }
+          }
+
+          if (dy < title_h) {
+              // 3. System buttons OVER everything
+              int scaled_dx = (int)((float)dx * scale);
+              int scaled_dy = (int)((float)dy * scale);
+              if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
+              if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
+              uint32_t frame_px = win->frame_cache[scaled_dy * win->frame_cache_w + scaled_dx];
+              uint8_t frame_a = (uint8_t)(frame_px >> 24);
+              color = blend_colors(color, frame_px, frame_a);
           }
 
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
@@ -5413,15 +5423,21 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
           if (hit_index >= 0) {
             window_t *hwin = &g_windows[hit_index];
-            // Title Bar check
+            int handled = 0;
+            
+            // Title Bar check (Top Overlay Layer)
             if (hy < hwin->y && !hwin->no_decoration) {
-              if (point_in_titlebar_button(hx, hy, hwin, 26)) { g_active_window_index = hit_index; close_active_window(); hit_index = -2; } 
-              else if (point_in_titlebar_button(hx, hy, hwin, 64)) {
+              if (point_in_titlebar_button(hx, hy, hwin, 26)) { 
+                  g_active_window_index = hit_index; 
+                  close_active_window(); 
+                  hit_index = -2; 
+                  handled = 1;
+              } else if (point_in_titlebar_button(hx, hy, hwin, 64)) {
                 if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
                 else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
                 hwin->is_dirty = 1;
+                handled = 1;
               } else {
-                int handled = 0;
                 char header_text[128]; int action_count = 0; int has_header = 0;
                 if (hwin->is_warp1) { if (hwin->warp1_ctx) has_header = warp1_context_get_header_info(hwin->warp1_ctx, header_text, sizeof(header_text), &action_count); } 
                 else { if (hwin->warp_ctx) has_header = warp_context_get_header_info(hwin->warp_ctx, header_text, sizeof(header_text), &action_count); }
@@ -5436,12 +5452,21 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                     ax -= 10;
                   }
                 }
-                if (!handled && !hwin->is_maximized && hx >= hwin->x + 56 && hwin->is_movable) hwin->is_dragging = 1;
               }
-            } else if (hy >= hwin->y) {
-              if (hwin->is_warp1) warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - hwin->y - (int)hwin->scroll_y);
-              else warp_context_click(hwin->warp_ctx, hx - hwin->x, hy - hwin->y - (int)hwin->scroll_y);
+            }
+
+            // If not handled by system buttons, check Warp UI content (Base Layer)
+            if (!handled) {
+              int title_h = hwin->no_decoration ? 0 : 60;
+              // Pass click to Warp engine, coordinates relative to full window top (including header)
+              if (hwin->is_warp1) warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y);
+              else warp_context_click(hwin->warp_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y);
               hwin->is_dirty = 1;
+
+              // Also check for dragging if in header but didn't hit a button
+              if (hy < hwin->y && !hwin->no_decoration && !hwin->is_maximized && hx >= hwin->x + 56 && hwin->is_movable) {
+                hwin->is_dragging = 1;
+              }
             }
           }
           
