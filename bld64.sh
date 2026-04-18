@@ -239,12 +239,12 @@ EOF
     echo "  ✅ Build #$CURRENT_BN Success"
 
     Q_CPU="max"
-    Q_ACCEL="-accel hvf"
+    Q_ACCEL="-accel tcg,thread=multi"
     Q_SMP="-smp 4,cores=4,threads=1"
 
     if [ "$PERF_MODE" = "max" ]; then
         Q_CPU="max"
-        Q_ACCEL="-accel hvf"
+        Q_ACCEL="-accel tcg,thread=multi,tb-size=1024"
         Q_SMP="-smp 4,cores=4,threads=1"
     fi
 
