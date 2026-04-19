@@ -32,6 +32,13 @@ static char *w1_strstr(const char *haystack, const char *needle) {
 #undef MAX_TOKENS
 #define MAX_TOKENS 4096
 
+// --- Optimization Cache Structures ---
+typedef struct {
+    int node_idx;
+    int y;
+    int h;
+} warp1_layout_cache_entry_t;
+
 typedef struct warp1_attr { char key[32]; char value[256]; } warp1_attr_t;
 typedef struct warp1_node {
     char tag[32]; warp1_attr_t attrs[16]; int attrs_count;
@@ -62,10 +69,17 @@ struct warp1_context {
     const char *src_ptr; token1_t tokens[MAX_TOKENS]; int token_count; int token_pos;
     struct { int x, y; char text[512]; uint32_t color; float size; } texts[MAX_TEXTS]; int texts_count;
     char svg_output[65536]; int engine_dirty; char engine_status[128];
-    int mouse_x, mouse_y; int win_w, win_h;
+    int mouse_x, mouse_y; int win_w, win_h; int last_total_h;
 
     int focused_node_idx; // -1: none
     
+    // Optimization Cache
+    int layout_valid;
+    int last_win_w;
+    
+    warp1_layout_cache_entry_t layout_cache[MAX_NODES];
+    int layout_cache_count;
+
     // Screen management (separate SVG per screen)
     char screen_ids[MAX_SCREENS][64];
     int screen_content_heights[MAX_SCREENS];
@@ -99,6 +113,7 @@ static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
         w1_strncpy(ctx->state[ctx->state_count].key, key, 63);
         w1_strncpy(ctx->state[ctx->state_count].val, val, 511); ctx->state_count++;
     }
+    ctx->engine_dirty = 1;
 }
 
 static const char *get_state(warp1_context_t *ctx, const char *key) {
@@ -660,9 +675,7 @@ static void emit_rect1(char *dest, int size, int x, int y, int w, int h, const c
 
 
 static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int h, float radius, const char *fill, const char *extra) {
-    // Forward to common engine helper
-    extern void emit_squircle_shape_to(char *dest, int dest_size, int x, int y, int w, int h, float radius, const char *fill, const char *extra);
-    emit_squircle_shape_to(dest, size, x, y, w, h, radius, fill, extra);
+    emit_squircle_shape_to(dest + w1_strlen(dest), x, y, w, h, radius, fill, extra);
 }
 
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
@@ -818,6 +831,8 @@ warp1_context_t* warp1_context_create(const char* code) {
     ctx->screens_count = 0;
     ctx->parsed_screen_id[0] = '\0';
     ctx->engine_dirty = 1;
+    ctx->layout_valid = 0;
+    ctx->last_win_w = -1;
 
     ctx->src_ptr = code;
     while(1) {
@@ -878,19 +893,93 @@ warp1_context_t* warp1_context_create(const char* code) {
 
 void warp1_context_destroy(warp1_context_t* ctx) { if (ctx) free(ctx); }
 
+// --- Optimized SVG Builder ---
+typedef struct {
+    char *buf;
+    int pos;
+    int max;
+} w1_builder_t;
+
+static void b_str(w1_builder_t *b, const char *s) {
+    if (!s) return;
+    while (*s && b->pos < b->max - 1) b->buf[b->pos++] = *s++;
+    b->buf[b->pos] = 0;
+}
+
+static void b_int(w1_builder_t *b, int v) {
+    char tmp[16]; extern char *append_int(char *p, int v);
+    append_int(tmp, v);
+    b_str(b, tmp);
+}
+
+static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1_builder_t *b) {
+    if (!node) return;
+    const char *dark_val = get_state(ctx, "~~main/dark");
+    int is_dark = (w1_strcmp(dark_val, "true") == 0);
+
+    if (w1_strcmp(node->tag, "card") == 0) {
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "");
+        b->pos = (int)(p - b->buf);
+    } else if (w1_strcmp(node->tag, "button") == 0) {
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", "");
+        b->pos = (int)(p - b->buf);
+    } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
+        b->pos = (int)(p - b->buf);
+    } else if (w1_strcmp(node->tag, "input") == 0) {
+        char extra[128];
+        int is_focused = 0;
+        for (int i = 0; i < ctx->nodes_count; i++) { if (&ctx->nodes[i] == node && ctx->focused_node_idx == i) { is_focused = 1; break; } }
+        w1_strcpy(extra, "stroke=\"");
+        w1_strcat(extra, is_focused ? "#0A60FF" : (is_dark ? "#555555" : "#dddddd"));
+        w1_strcat(extra, "\" stroke-width=\""); w1_strcat(extra, is_focused ? "2" : "1"); w1_strcat(extra, "\"");
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, (node->radius < 0) ? 8.0f : node->radius, is_dark ? "#333333" : "#ffffff", extra);
+        b->pos = (int)(p - b->buf);
+    }
+    for (int i = 0; i < node->children_count; i++) emit_svg_recursive_fast(ctx, node->children[i], b);
+}
+
+void warp1_context_invalidate_layout(warp1_context_t *ctx) {
+    if (!ctx) return;
+    ctx->layout_valid = 0;
+}
+
 void warp1_context_update(warp1_context_t* ctx, int width, int height) {
     parse_current_screen1(ctx);
-    ctx->texts_count = 0; ctx->svg_output[0] = '\0'; ctx->win_w = width; ctx->win_h = height;
-    int total_h = height;
-    for (int i = 0; i < ctx->root_nodes_count; i++) {
-        int h = layout_node1(ctx, ctx->root_nodes[i], 0, 0, width); if (h > total_h) total_h = h;
+    ctx->win_w = width; ctx->win_h = height;
+
+    // 1. Skip layout if cached and window width hasn't changed
+    if (!ctx->layout_valid || width != ctx->last_win_w) {
+        ctx->texts_count = 0;
+        int total_h = height;
+        for (int i = 0; i < ctx->root_nodes_count; i++) {
+            int h = layout_node1(ctx, ctx->root_nodes[i], 0, 0, width); if (h > total_h) total_h = h;
+        }
+        
+        // Update Layout Cache
+        ctx->layout_cache_count = 0;
+        for (int i = 0; i < ctx->nodes_count && i < MAX_NODES; i++) {
+            ctx->layout_cache[i].node_idx = i;
+            ctx->layout_cache[i].y = ctx->nodes[i].y;
+            ctx->layout_cache[i].h = ctx->nodes[i].h;
+            ctx->layout_cache_count++;
+        }
+        ctx->last_total_h = total_h;
+        ctx->last_win_w = width;
+        ctx->layout_valid = 1;
+        ctx->engine_dirty = 1; // Re-layout requires new SVG
     }
-    extern char *append_int(char *p, int v); char w_str[16], h_str[16]; append_int(w_str, width); append_int(h_str, total_h);
-    w1_strcpy(ctx->svg_output, "<svg width=\""); w1_strcat(ctx->svg_output, w_str); w1_strcat(ctx->svg_output, "\" height=\""); w1_strcat(ctx->svg_output, h_str);
-    w1_strcat(ctx->svg_output, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-    for (int i = 0; i < ctx->root_nodes_count; i++) emit_svg_recursive1(ctx, ctx->root_nodes[i], ctx->svg_output, sizeof(ctx->svg_output));
-    w1_strcat(ctx->svg_output, "</svg>");
-    
+
+    // 2. Efficiently build SVG using builder pointer
+    if (ctx->engine_dirty) {
+        w1_builder_t b = { ctx->svg_output, 0, sizeof(ctx->svg_output) };
+        b_str(&b, "<svg width=\""); b_int(&b, width); b_str(&b, "\" height=\""); b_int(&b, ctx->last_total_h);
+        b_str(&b, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
+        for (int i = 0; i < ctx->root_nodes_count; i++) emit_svg_recursive_fast(ctx, ctx->root_nodes[i], &b);
+        b_str(&b, "</svg>");
+        ctx->engine_dirty = 0;
+    }
+
     // Register/update current screen in screen list (height and scroll only, no SVG string)
     int screen_idx = -1;
     for (int i = 0; i < ctx->screen_count; i++) {
@@ -902,15 +991,31 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
         ctx->screen_scroll_ys[screen_idx] = 0.0f;
     }
     if (screen_idx >= 0) {
-        ctx->screen_content_heights[screen_idx] = total_h;
+        ctx->screen_content_heights[screen_idx] = ctx->last_total_h;
     }
+}
+
+void warp1_context_scroll_update(warp1_context_t* ctx, float new_scroll_y) {
+    // Fast path: No layout, No SVG rebuild. Just update scroll state.
+    if (ctx) warp1_context_set_screen_scroll(ctx, ctx->current_screen, new_scroll_y);
 }
 
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy, float scale) {
     extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
+    float scroll_y = warp1_context_get_scroll_y(ctx);
+    
+    // 3. Viewport clipping for text rendering
+    int viewport_h = layer->height;
+
     for (int i = 0; i < ctx->texts_count; i++) {
-        layer_draw_ttf(layer, (int)((float)ctx->texts[i].x * scale) + ox, (int)((float)ctx->texts[i].y * scale) + oy, ctx->texts[i].text, ctx->texts[i].size * scale, ctx->texts[i].color);
+        int ty = (int)(((float)ctx->texts[i].y - scroll_y) * scale);
+        
+        // Viewport clipping: Skip if text is outside the vertical bounds (with 40px margin)
+        if (ty + 60 < 0 || ty > viewport_h + 40) continue;
+
+        layer_draw_ttf(layer, (int)((float)ctx->texts[i].x * scale) + ox, ty + oy, 
+                       ctx->texts[i].text, ctx->texts[i].size * scale, ctx->texts[i].color);
     }
 }
 

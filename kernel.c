@@ -4960,6 +4960,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           } else {
             win->scroll_y += dy;
           }
+
+          // アニメーション中の現在のスクロール位置をエンジンに同期（テキスト描画ズレ防止）
+          if (win->is_warp1) warp1_context_scroll_update(win->warp1_ctx, win->scroll_y);
+          else warp_context_set_scroll_y(win->warp_ctx, win->scroll_y);
+
           if (bx0 < scroll_rx0) scroll_rx0 = bx0;
           if (by0 < scroll_ry0) scroll_ry0 = by0;
           if (bx1 > scroll_rx1) scroll_rx1 = bx1;
