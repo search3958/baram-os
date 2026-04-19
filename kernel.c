@@ -2496,6 +2496,32 @@ static void window_update_caches(window_t *win) {
         }
       }
     }
+    // Maximize button - icon (one horizontal line)
+    {
+      float cx = (float)(ctrl_positions[1] + ctrl_size / 2) * scale;
+      float cy = (float)(ctrl_y + ctrl_size / 2) * scale;
+      float h = 4.5f * scale; // half size
+      float stroke_r = 1.0f * scale;
+      int extent = (int)(h + stroke_r + 2.0f);
+      for (int dy = -extent; dy <= extent; dy++) {
+        for (int dx = -extent; dx <= extent; dx++) {
+          float px = cx + (float)dx;
+          float py = cy + (float)dy;
+          if ((int)px < 0 || (int)px >= fw || (int)py < 0 || (int)py >= fh) continue;
+
+          // Horizontal line: (cx-h, cy) to (cx+h, cy)
+          float p1x = cx - h, p1y = cy, p2x = cx + h, p2y = cy;
+          float d = dist_to_line_segment(px, py, p1x, p1y, p2x, p2y);
+
+          float alpha_f = stroke_r + 0.5f - d;
+          if (alpha_f > 1.0f) alpha_f = 1.0f;
+          if (alpha_f > 0.0f) {
+            int ipx = (int)px, ipy = (int)py;
+            frame_l.buffer[ipy * fw + ipx] = blend_colors(frame_l.buffer[ipy * fw + ipx], ctrl_icon_color, (uint8_t)(alpha_f * 255.0f));
+          }
+        }
+      }
+    }
   }
 
   // 3. Update Window Mask Cache
