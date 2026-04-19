@@ -72,7 +72,6 @@ struct warp1_context {
     int mouse_x, mouse_y; int win_w, win_h; int last_total_h;
 
     int focused_node_idx; // -1: none
-    int hovered_node_idx; // -1: none
     
     // Optimization Cache
     int layout_valid;
@@ -834,7 +833,6 @@ warp1_context_t* warp1_context_create(const char* code) {
     extern void *memset(void *s, int c, size_t n);
     memset(ctx, 0, sizeof(warp1_context_t));
     ctx->focused_node_idx = -1;
-    ctx->hovered_node_idx = -1;
     ctx->screen_count = 0;
     ctx->screens_count = 0;
     ctx->parsed_screen_id[0] = '\0';
@@ -1215,34 +1213,7 @@ void warp1_context_mark_dirty(warp1_context_t* ctx) {
     if (ctx) ctx->engine_dirty = 1;
 }
 
-void warp1_context_set_mouse(warp1_context_t* ctx, int x, int y) {
-    ctx->mouse_x = x; ctx->mouse_y = y;
-    int old_hover = ctx->hovered_node_idx;
-
-    // ヒットテスト (button, tonalButton のみを対象)
-    ctx->hovered_node_idx = -1;
-    for (int i = ctx->nodes_count - 1; i >= 0; i--) {
-        warp1_node_t *n = &ctx->nodes[i];
-        if (n->w <= 0 || n->h <= 0) continue;
-        if (x >= n->x && x <= n->x + n->w && y >= n->y && y <= n->y + n->h) {
-            if (w1_strcmp(n->tag, "button") == 0 || w1_strcmp(n->tag, "tonalButton") == 0) {
-                ctx->hovered_node_idx = i;
-                break;
-            }
-        }
-    }
-    
-    // ホバー状態が変わった時だけエンジンをdirtyにする（全体ラスタライズ用）
-    if (ctx->hovered_node_idx != old_hover) {
-        ctx->engine_dirty = 1;
-    }
-}
-
-int warp1_context_get_hovered_node_index(warp1_context_t* ctx) {
-    if (!ctx) return -1;
-    return ctx->hovered_node_idx;
-}
-
+void warp1_context_set_mouse(warp1_context_t* ctx, int x, int y) { ctx->mouse_x = x; ctx->mouse_y = y; }
 int warp1_context_get_node_count(warp1_context_t* ctx) { return ctx->nodes_count; }
 void warp1_context_get_node_info(warp1_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* d) {
     if (index < 0 || index >= ctx->nodes_count) return;

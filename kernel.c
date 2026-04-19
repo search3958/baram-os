@@ -232,9 +232,6 @@ static char *append_uint(char *p, unsigned int v);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
 
-// Warp1 engine accessors
-extern int warp1_context_get_hovered_node_index(warp1_context_t* ctx);
-
 int atoi(const char *nptr) {
   return (int)strtol(nptr, (char **)NULL, 10);
 }
@@ -3372,64 +3369,6 @@ skip_shadow:;
           dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
         }
       }
-
-      // --- 完全ビットマップベースの独立拡大オーバーレイ (毎フレーム実行パス) ---
-      int h_idx = -1;
-      if (win->is_warp1 && win->warp1_ctx) {
-          h_idx = warp1_context_get_hovered_node_index(win->warp1_ctx);
-      }
-      
-      if (h_idx != -1 && !win->is_resizing) {
-          int nx, ny, nw, nh, nd;
-          warp1_context_get_node_info(win->warp1_ctx, h_idx, &nx, &ny, &nw, &nh, &nd);
-          
-          // 固定小数点 (16.16) による超高速サンプリング
-          const int inv_scale_fp = (10 * 65536) / 12; // 1.2倍の逆数 (約0.833)
-          int snw = (nw * 12) / 10;
-          int snh = (nh * 12) / 10;
-          int offx = (snw - nw) / 2;
-          int offy = (snh - nh) / 2;
-
-          // スクリーン上の最終的な描画開始位置
-          int start_px = win->x + nx - offx;
-          int start_py = (win->y - title_h) + ny - offy + (int)win->scroll_y;
-
-          int v_fp = 0;
-          for (int dy = 0; dy < snh; dy++) {
-              int py = start_py + dy;
-              int sy_node = v_fp >> 16;
-              v_fp += inv_scale_fp;
-
-              if (py < clip_y0 || py >= clip_y1) continue;
-
-              uint32_t *dst_line = &layer->buffer[py * layer->width];
-              int sy_buf = (ny + sy_node);
-              if (sy_buf < 0 || sy_buf >= win->buffer_h) continue;
-
-              // ラスタライズ済みのウィンドウ内容から行を直接取得
-              uint32_t *src_row = (uint32_t*)(win->rgba_buffer + (size_t)sy_buf * win->buffer_w * 4);
-
-              int u_fp = 0;
-              for (int dx = 0; dx < snw; dx++) {
-                  int px = start_px + dx;
-                  int sx_node = u_fp >> 16;
-                  u_fp += inv_scale_fp;
-
-                  if (px < clip_x0 || px >= clip_x1) continue;
-
-                  int sx_buf = (nx + sx_node);
-                  if (sx_buf < 0 || sx_buf >= win->buffer_w) continue;
-
-                  uint32_t pix = src_row[sx_buf];
-                  uint8_t sa = (uint8_t)(pix >> 24);
-                  if (sa > 0) {
-                      // ビットマップレベルで白を約20%ブレンドして「美白」にする
-                      uint32_t whitened = blend_colors(pix, 0xFFFFFFFF, 50);
-                      dst_line[px] = blend_colors(dst_line[px], whitened, sa);
-                  }
-              }
-          }
-      }
     }
 }
 
@@ -3468,7 +3407,6 @@ static void redraw_warp_svg(layer_t *layer) {
   int active_idx = g_active_window_index;
   int below_active_dirty = 0;
   for (int i = 0; i < g_window_count; i++) {
-    int window_was_dirty = g_windows[i].is_dirty; // Capture current dirty state
     window_t *win = &g_windows[i];
     // エンジン内部で状態（画面等）が変わっていたらOS側のDirtyを立てる
     if (win->is_warp1 && win->warp1_ctx && warp1_context_is_dirty(win->warp1_ctx)) win->is_dirty = 1;
@@ -3476,9 +3414,6 @@ static void redraw_warp_svg(layer_t *layer) {
 
     int active_is_sticky = (active_idx >= 0 && g_windows[active_idx].is_sticky);
     int contributes_to_bg = (!win->is_sticky && (active_is_sticky || i < active_idx));
-    if (win->is_dirty && !window_was_dirty) { // If a window just became dirty
-        g_svg_dirty = 1; // Force a full screen redraw
-    }
     if (contributes_to_bg && win->is_dirty && !win->is_resizing) below_active_dirty = 1;
   }
 
@@ -3527,12 +3462,7 @@ static void redraw_warp_svg(layer_t *layer) {
     draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
 
-  // g_svg_dirty をクリアする前に、まだダーティなウィンドウがないか確認する
-  int any_window_dirty = 0;
-  for (int i = 0; i < g_window_count; i++) {
-    if (g_windows[i].is_dirty || (g_windows[i].is_warp1 && g_windows[i].warp1_ctx && warp1_context_is_dirty(g_windows[i].warp1_ctx))) { any_window_dirty = 1; break; }
-  }
-  if (!any_window_dirty) g_svg_dirty = 0;
+  g_svg_dirty = 0;
   screen_mark_layer_dirty(layer);
 }
 static int svg_init_nextgen(layer_t *layer) {
@@ -5376,12 +5306,8 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         if (!awin->is_dragging && !awin->is_resizing) {
           if (awin->is_warp1) {
             if (awin->warp1_ctx) {
-              int th = awin->no_decoration ? 0 : 60;
-              // エンジンの(0,0)はヘッダーを含めたウィンドウ左上のため、(y - th)を基準にする
-              warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - (awin->y - th) - (int)awin->scroll_y);
-              
-              // ★ 常に再描画: ホバー中なら g_svg_dirty を立て続けてオーバーレイを維持
-              if (warp1_context_get_hovered_node_index(awin->warp1_ctx) != -1) g_svg_dirty = 1;
+              warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
+              // マウス移動だけでは dirty にしない（ホバー等の状態変化時のみエンジンが dirty を返す）
               if (warp1_context_is_dirty(awin->warp1_ctx)) awin->is_dirty = 1;
             }
           } else {
