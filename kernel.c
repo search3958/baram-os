@@ -2556,29 +2556,40 @@ static void window_redraw(window_t *win) {
     window_update_caches(win);
   }
 
-  // Check if update is needed (engine_dirty flag)
-  int needs_update = 0;
+  // ★ 重要な変更: リサイズ(layout) vs スクロール(render)を区別
+  int needs_layout_update = 0;
   if (win->is_warp1) {
-    needs_update = warp1_context_is_dirty(win->warp1_ctx) || (win->rgba_buffer == NULL);
+    needs_layout_update = win->is_dirty || (win->rgba_buffer == NULL);
   } else {
-    needs_update = warp_context_is_dirty(win->warp_ctx) || (win->rgba_buffer == NULL);
+    needs_layout_update = win->is_dirty || (win->rgba_buffer == NULL);
   }
-  
-  if (needs_update) {
-    strncpy(g_hud_status, "EngineUpdate", 63);
+
+  if (needs_layout_update) {
+    strncpy(g_hud_status, "LayoutUpdate", 63);
     int title_h = win->no_decoration ? 0 : 60;
     const char *has_header_str = (title_h > 0) ? "true" : "false";
     if (win->is_warp1) {
       warp1_context_set_state(win->warp1_ctx, "~~internal/has_header", has_header_str);
       warp1_context_update(win->warp1_ctx, win->w, win->h + title_h);
-      warp1_context_clear_dirty(win->warp1_ctx);
     } else {
       warp_context_set_state(win->warp_ctx, "~~internal/has_header", has_header_str);
       warp_context_update(win->warp_ctx, win->w, win->h + title_h);
-      warp_context_clear_dirty(win->warp_ctx);
     }
+    win->is_dirty = 0; // レイアウト計算完了
+  }
+
+  // Check if rendering is needed (engine_dirty flag)
+  int needs_render = 0;
+  if (win->is_warp1) {
+    needs_render = warp1_context_is_dirty(win->warp1_ctx) || (win->rgba_buffer == NULL);
   } else {
+    needs_render = warp_context_is_dirty(win->warp_ctx) || (win->rgba_buffer == NULL);
+  }
+
+  if (!needs_render) {
     strncpy(g_hud_status, "Cached", 63);
+    win->is_calculating = 0;
+    return;
   }
 
   strncpy(g_hud_status, "SVGGen", 63);
@@ -2670,7 +2681,7 @@ static void window_redraw(window_t *win) {
       win->is_dirty = 1; // Force redraw after allocation
     }
 
-    if (svg_changed || win->is_dirty || needs_update) {
+    if (svg_changed || win->is_dirty || needs_layout_update) {
       memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
       
       // ここでテキストもバッファに直接描き込む。これで「表示内容そのまま」が完成する。
@@ -3103,6 +3114,27 @@ skip_shadow:;
       int mw = (int)((float)win->w * scale);
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)full_h * scale);
+      
+      // ★ 修正1: ループ外でヘッダー情報を一度だけ取得
+      int action_count = 0;
+      int action_btn_x[16];
+      int action_btn_w[16];
+      if (!win->no_decoration) {
+          char dummy[128];
+          if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, dummy, 128, &action_count);
+          else warp_context_get_header_info(win->warp_ctx, dummy, 128, &action_count);
+          
+          int cur_ax = win->w - 16;
+          for (int j = 0; j < action_count && j < 16; j++) {
+              char at[64];
+              if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, at, 64);
+              else warp_context_get_header_action_info(win->warp_ctx, j, at, 64);
+              action_btn_w[j] = strlen(at) * 9 + 42;
+              cur_ax -= action_btn_w[j];
+              action_btn_x[j] = cur_ax;
+              cur_ax -= 10;
+          }
+      }
 
       // テキストは事前合成済みのため、ループ内のオーバーレイ処理は不要。
       int is_dark = (strcmp(get_w1_global("~~main/dark"), "true") == 0);
@@ -3203,35 +3235,26 @@ skip_shadow:;
                       if (inv_d > 0) { float sa = inv_d * inv_d * inv_d; if (sa > s_alpha_val) s_alpha_val = sa; }
                   }
               }
-              if (win->is_warp1 || win->warp_ctx) {
-                  char ht[128]; int ac = 0;
-        if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, ht, 128, &ac);
-        else warp_context_get_header_info(win->warp_ctx, ht, 128, &ac);
-        
-        int sax = win->w - 16;
-        for (int j = 0; j < ac; j++) {
-            char at[64];
-            if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, at, 64);
-            else warp_context_get_header_action_info(win->warp_ctx, j, at, 64);
-            
-            int bw = strlen(at) * 9 + 42;
-            sax -= bw;
-            
-            // ボタンの矩形領域の計算
-            float bbx = (float)sax, bbw = (float)bw, bbr = 21.0f;
-            float seg_x = ((float)dx < bbx + bbr) ? bbx + bbr : (((float)dx > bbx + bbw - bbr) ? bbx + bbw - bbr : (float)dx);
-            float ddx = (float)dx - seg_x;
-            float ddy = sy - (14 + 21); // center y is 35
-            float dist = sqrtf(ddx * ddx + ddy * ddy);
-            
-            float d_norm = (dist - 19.0f) / s_blur;
-            if (d_norm < 0.0f) d_norm = 0.0f;
-            if (d_norm < 1.0f) {
-                float inv_d = 1.0f - d_norm;
-                float sa = inv_d * inv_d * inv_d; // 3乗
-                if (sa > s_alpha_val) s_alpha_val = sa;
-            }
-            sax -= 10; // ボタン間のマージン
+              
+              // ★ 修正2: 事前取得した情報を使い、必要な範囲のみ影計算を実行
+              if (action_count > 0 && dx > win->w - 200) {
+                  for (int j = 0; j < action_count; j++) {
+                      int ax = action_btn_x[j];
+                      int bw = action_btn_w[j];
+                      if (dx < ax - 30 || dx > ax + bw + 30) continue;
+                      float bbx = (float)ax, bbw = (float)bw, bbr = 21.0f;
+                      float seg_x = ((float)dx < bbx + bbr) ? bbx + bbr : (((float)dx > bbx + bbw - bbr) ? bbx + bbw - bbr : (float)dx);
+                      float ddx = (float)dx - seg_x;
+                      float ddy = sy - 35.0f;
+                      float dist_sq = ddx * ddx + ddy * ddy;
+                      if (dist_sq < 1849.0f) {
+                          float d_norm = (sqrtf(dist_sq) - 19.0f) / s_blur;
+                          if (d_norm < 1.0f) {
+                              float inv_d = 1.0f - (d_norm < 0.0f ? 0.0f : d_norm);
+                              float sa = inv_d * inv_d * inv_d;
+                              if (sa > s_alpha_val) s_alpha_val = sa;
+                          }
+                      }
                   }
               }
               if (s_alpha_val > 0.0f) color = blend_colors(color, 0xFF000000, (uint8_t)(s_alpha_val * 13.0f));
@@ -3261,24 +3284,16 @@ skip_shadow:;
                    }
                   
                    // Right side custom buttons
-                   if (cx == -1 && (win->warp1_ctx || win->warp_ctx)) {
-                       char header_text[128]; int action_count = 0;
-                       if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
-                       else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
-                       int ax = win->w - 16;
+                   if (cx == -1) {
                        for (int j = 0; j < action_count; j++) {
-                           char at[64];
-                           if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, at, sizeof(at));
-                           else warp_context_get_header_action_info(win->warp_ctx, j, at, sizeof(at));
-                           int btn_w = strlen(at) * 9 + 42;
-                           ax -= btn_w;
-                           if (dx >= ax && dx < ax + btn_w) {
-                               cx = ax + btn_w / 2;
+                           int ax = action_btn_x[j];
+                           int bw = action_btn_w[j];
+                           if (dx >= ax && dx < ax + bw) {
+                               cx = ax + bw / 2;
                                bcy = 13 + 21;
-                               btn_half_width = (float)btn_w / 2.0f;
+                               btn_half_width = (float)bw / 2.0f;
                                break;
                            }
-                           ax -= 10;
                        }
                    }
 
@@ -3288,9 +3303,12 @@ skip_shadow:;
                        float rx_l = (float)(dx - cx), ry_l = (float)(dy - bcy);
                        float f_px = fabsf(rx_l), f_py = fabsf(ry_l);
                        float h_rect = btn_half_width - 21.0f;
-                       if (h_rect < 0) h_rect = 0;
-                       if (f_px > h_rect) f_px -= h_rect; else f_px = 0;
-                       float d_scale = 1.0f + powf(sqrtf(f_px*f_px + f_py*f_py) / max_dist, 4) * 0.7f;
+                       if (h_rect < 0.0f) h_rect = 0.0f;
+                       f_px = (f_px > h_rect) ? f_px - h_rect : 0.0f;
+                       
+                       // ★ 修正3: powf(sqrt(x), 4) を x*x に置き換えて高速化
+                       float d_sq_norm = (f_px*f_px + f_py*f_py) / (max_dist * max_dist);
+                       float d_scale = 1.0f + (d_sq_norm * d_sq_norm) * 0.7f; 
 
                        int gx = (int)((float)cx * scale + (rx_l * scale / d_scale));
                        int gy = scroll_offset_y + (int)((float)bcy * scale + (ry_l * scale / d_scale));

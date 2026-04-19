@@ -76,6 +76,7 @@ struct warp1_context {
     // Optimization Cache
     int layout_valid;
     int last_win_w;
+    int cached_width;
     
     warp1_layout_cache_entry_t layout_cache[MAX_NODES];
     int layout_cache_count;
@@ -945,11 +946,15 @@ void warp1_context_invalidate_layout(warp1_context_t *ctx) {
 }
 
 void warp1_context_update(warp1_context_t* ctx, int width, int height) {
-    parse_current_screen1(ctx);
-    ctx->win_w = width; ctx->win_h = height;
+    if (!ctx) return;
 
     // 1. Skip layout if cached and window width hasn't changed
-    if (!ctx->layout_valid || width != ctx->last_win_w) {
+    if (ctx->layout_valid && width == ctx->cached_width && ctx->layout_cache_count > 0) {
+        // Layout is valid. 
+    } else {
+        // Layout is NOT valid or width changed. Re-calculate.
+        parse_current_screen1(ctx);
+        ctx->win_w = width; ctx->win_h = height;
         ctx->texts_count = 0;
         int total_h = height;
         for (int i = 0; i < ctx->root_nodes_count; i++) {
@@ -965,9 +970,24 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
             ctx->layout_cache_count++;
         }
         ctx->last_total_h = total_h;
-        ctx->last_win_w = width;
+        ctx->cached_width = width;
+        ctx->last_win_w = width; // Keep for compatibility
         ctx->layout_valid = 1;
         ctx->engine_dirty = 1; // Re-layout requires new SVG
+
+        // Register/update current screen in screen list
+        int screen_idx = -1;
+        for (int i = 0; i < ctx->screen_count; i++) {
+            if (w1_strcmp(ctx->screen_ids[i], ctx->current_screen) == 0) { screen_idx = i; break; }
+        }
+        if (screen_idx < 0 && ctx->screen_count < MAX_SCREENS) {
+            screen_idx = ctx->screen_count++;
+            w1_strncpy(ctx->screen_ids[screen_idx], ctx->current_screen, 63);
+            ctx->screen_scroll_ys[screen_idx] = 0.0f;
+        }
+        if (screen_idx >= 0) {
+            ctx->screen_content_heights[screen_idx] = ctx->last_total_h;
+        }
     }
 
     // 2. Efficiently build SVG using builder pointer
@@ -977,27 +997,16 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
         b_str(&b, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
         for (int i = 0; i < ctx->root_nodes_count; i++) emit_svg_recursive_fast(ctx, ctx->root_nodes[i], &b);
         b_str(&b, "</svg>");
-        ctx->engine_dirty = 0;
-    }
-
-    // Register/update current screen in screen list (height and scroll only, no SVG string)
-    int screen_idx = -1;
-    for (int i = 0; i < ctx->screen_count; i++) {
-        if (w1_strcmp(ctx->screen_ids[i], ctx->current_screen) == 0) { screen_idx = i; break; }
-    }
-    if (screen_idx < 0 && ctx->screen_count < MAX_SCREENS) {
-        screen_idx = ctx->screen_count++;
-        w1_strncpy(ctx->screen_ids[screen_idx], ctx->current_screen, 63);
-        ctx->screen_scroll_ys[screen_idx] = 0.0f;
-    }
-    if (screen_idx >= 0) {
-        ctx->screen_content_heights[screen_idx] = ctx->last_total_h;
+        // engine_dirty will be cleared by the kernel after rendering
     }
 }
 
 void warp1_context_scroll_update(warp1_context_t* ctx, float new_scroll_y) {
-    // Fast path: No layout, No SVG rebuild. Just update scroll state.
-    if (ctx) warp1_context_set_screen_scroll(ctx, ctx->current_screen, new_scroll_y);
+    if (!ctx) return;
+    // スクロール値をセット
+    warp1_context_set_screen_scroll(ctx, ctx->current_screen, new_scroll_y);
+    // 描画フラグをセット（レイアウト再計算は不要）
+    ctx->engine_dirty = 1;
 }
 
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
