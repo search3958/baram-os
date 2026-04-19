@@ -3417,7 +3417,9 @@ static void redraw_warp_svg(layer_t *layer) {
     if (win->is_warp1 && win->warp1_ctx && warp1_context_is_dirty(win->warp1_ctx)) win->is_dirty = 1;
     else if (!win->is_warp1 && win->warp_ctx && warp_context_is_dirty(win->warp_ctx)) win->is_dirty = 1;
 
-    if (i < active_idx && win->is_dirty && !win->is_resizing) below_active_dirty = 1;
+    int active_is_sticky = (active_idx >= 0 && g_windows[active_idx].is_sticky);
+    int contributes_to_bg = (!win->is_sticky && (active_is_sticky || i < active_idx));
+    if (contributes_to_bg && win->is_dirty && !win->is_resizing) below_active_dirty = 1;
   }
 
   if (desktop_composite_dirty || below_active_dirty || active_idx != desktop_composite_last_active_index) {
@@ -3428,7 +3430,7 @@ static void redraw_warp_svg(layer_t *layer) {
     for (int i = 0; i < g_window_count; i++) {
       window_t *win = &g_windows[i];
       if (win->is_sticky) continue;
-      if (i >= active_idx) break; // Only draw below active
+      if (i == active_idx) break; // アクティブなウィンドウの手前までを描画（アクティブがスティッキーなら全通常窓を描画）
       if (win->is_dirty && !win->is_resizing) window_redraw(win);
       draw_single_window(&temp_layer, win, 0, 0, temp_layer.width, temp_layer.height);
     }
@@ -3456,14 +3458,13 @@ static void redraw_warp_svg(layer_t *layer) {
   }
 
   // 3. Draw sticky windows LAST if active window is NOT maximized (standard behavior)
-  if (!active_is_max) {
-    for (int i = 0; i < g_window_count; i++) {
-      window_t *win = &g_windows[i];
-      if (!win->is_sticky) continue;
-      if (i == active_idx) continue;
-      if (win->is_dirty && !win->is_resizing) window_redraw(win);
-      draw_single_window(layer, win, 0, 0, layer->width, layer->height);
-    }
+  // 最大化時でもスティッキーウィンドウ（メニューバー等）は常に最前面に表示する
+  for (int i = 0; i < g_window_count; i++) {
+    window_t *win = &g_windows[i];
+    if (!win->is_sticky) continue;
+    if (i == active_idx) continue;
+    if (win->is_dirty && !win->is_resizing) window_redraw(win);
+    draw_single_window(layer, win, 0, 0, layer->width, layer->height);
   }
 
   g_svg_dirty = 0;
