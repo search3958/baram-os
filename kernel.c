@@ -2735,7 +2735,7 @@ static void window_update_caches(window_t *win) {
     win->window_mask = (uint8_t *)malloc((size_t)mw * (size_t)mh);
 
     float rw = (float)full_mw, rh = (float)full_mh;
-    float r = 47.5f; // Corner radius (0.5px inward correction)
+    float r = 40.0f; // Corner radius (0.5px inward correction)
     for (int y = 0; y < mh; y++) {
       float fy = (float)y / scale + 0.5f; 
       for (int x = 0; x < mw; x++) {
