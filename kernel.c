@@ -3695,8 +3695,71 @@ skip_shadow:;
               color = blend_colors(color, grad_base, header_grad_alpha);
           }
 
+          // 3. Procedural Button Shadow Layer (Black, 24px blur, no offset)
+if (dy < title_h + 30 && !win->no_decoration) {
+    float s_alpha_val = 0.0f;
+    float s_blur = 24.0f;
+    float sy = (float)dy; // オフセット(3px)を削除
+
+    // --- Control buttons (Left side) ---
+    int cps[] = {14, 14 + 42 + 10};
+    for (int k = 0; k < 2; k++) {
+        float dx_c = (float)dx - (cps[k] + 21);
+        float dy_c = sy - (13 + 21); // center y is 34
+        float dist = sqrtf(dx_c * dx_c + dy_c * dy_c);
+        
+        float d_norm = (dist - 19.0f) / s_blur;
+        if (d_norm < 0.0f) d_norm = 0.0f;
+        if (d_norm < 1.0f) {
+            float inv_d = 1.0f - d_norm;
+            float sa = inv_d * inv_d * inv_d; // 3乗で急激な変化
+            if (sa > s_alpha_val) s_alpha_val = sa;
+        }
+    }
+    
+    // --- Action buttons (Right side) ---
+    if (win->warp1_ctx || win->warp_ctx) {
+        char ht[128]; 
+        int ac = 0; // アクションボタンの個数
+        if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, ht, 128, &ac);
+        else warp_context_get_header_info(win->warp_ctx, ht, 128, &ac);
+        
+        int sax = win->w - 16;
+        for (int j = 0; j < ac; j++) {
+            char at[64];
+            if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, at, 64);
+            else warp_context_get_header_action_info(win->warp_ctx, j, at, 64);
+            
+            int bw = strlen(at) * 9 + 42;
+            sax -= bw;
+            
+            // ボタンの矩形領域の計算
+            float bbx = (float)sax, bbw = (float)bw, bbr = 21.0f;
+            float seg_x = ((float)dx < bbx + bbr) ? bbx + bbr : (((float)dx > bbx + bbw - bbr) ? bbx + bbw - bbr : (float)dx);
+            float ddx = (float)dx - seg_x;
+            float ddy = sy - (14 + 21); // center y is 35
+            float dist = sqrtf(ddx * ddx + ddy * ddy);
+            
+            float d_norm = (dist - 19.0f) / s_blur;
+            if (d_norm < 0.0f) d_norm = 0.0f;
+            if (d_norm < 1.0f) {
+                float inv_d = 1.0f - d_norm;
+                float sa = inv_d * inv_d * inv_d; // 3乗
+                if (sa > s_alpha_val) s_alpha_val = sa;
+            }
+            sax -= 10; // ボタン間のマージン
+        }
+    }
+
+    if (s_alpha_val > 0.0f) {
+        // 最終的な描画色へのブレンディング
+        // 40.0f の部分を大きくするとより暗くなります
+        color = blend_colors(color, 0xFF000000, (uint8_t)(s_alpha_val * 13.0f));
+    }
+}
+
           if (dy < title_h) {
-              // 3. System buttons / Header text from frame_cache (Top-most)
+              // 4. System buttons / Header text from frame_cache (Top-most)
               int scaled_dx = (int)((float)dx * scale);
               int scaled_dy = (int)((float)dy * scale);
               if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
