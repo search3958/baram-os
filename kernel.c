@@ -3135,7 +3135,7 @@ static uint32_t sample_wallpaper_pixel(int x, int y) {
 
 static uint32_t get_window_background_color(window_t *win) {
   if (!win)
-    return 0xBFFFFFFFu;
+    return 0xFFF6F6F6u;
   if (win->is_menubar) return 0x00000000u;
   if (win->background_color != 0xBFFFFFFFu)
     return win->background_color;
@@ -3143,7 +3143,7 @@ static uint32_t get_window_background_color(window_t *win) {
   const char *dark_val = get_w1_global("~~main/dark");
   int system_dark = (strcmp(dark_val, "true") == 0);
   int win_dark = (win->force_dark != -1) ? win->force_dark : system_dark;
-  return win_dark ? 0xBF121212u : 0xBFFFFFFFu;
+  return win_dark ? 0xFF000000u : 0xFFF6F6F6u;
 }
 
 static int window_index_of(window_t *target) {
@@ -3626,52 +3626,9 @@ skip_shadow:;
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
 
-          uint32_t surface_bg = dst_line[px];
-          if (win == &g_windows[g_active_window_index]) {
-            // Glass Distortion Effect (20 Layers, 1px Spacing)
-            float fx = (float)dx + 0.5f;
-            float fy = (float)dy + 0.5f;
-            float rw = (float)win->w;
-            float rh = (float)full_h;
-            float r = 47.5f; // Corner radius (0.5px inward correction, must match window_mask)
-            
-            float qx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
-            float qy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
-            
-            float d_in;
-            if (qx > 0.0f && qy > 0.0f) {
-                // Blended squircle (60% L4 + 40% L2) to match window_mask shape
-                float l2 = sqrtf(qx*qx + qy*qy);
-                float l4 = sqrtf(sqrtf(qx*qx*qx*qx + qy*qy*qy*qy));
-                d_in = r - (l2 * 0.4f + l4 * 0.6f);
-            } else {
-                float dist_to_rect_edge_x = rw/2.0f - fabsf(fx - rw/2.0f);
-                float dist_to_rect_edge_y = rh/2.0f - fabsf(fy - rh/2.0f);
-                d_in = (dist_to_rect_edge_x < dist_to_rect_edge_y) ? dist_to_rect_edge_x : dist_to_rect_edge_y;
-            }
-
-            int num_layers = 30;
-            float spacing = 3.0f;
-            int layer_idx = (int)(d_in / spacing);
-            if (layer_idx < 0) layer_idx = 0;
-            if (layer_idx >= num_layers) layer_idx = num_layers - 1;
-            
-            float t = (float)layer_idx / (float)(num_layers - 1);
-            float curve = t * t * t * t;
-            float glass_scale = 1.0f + curve * 0.7f;
-
-            int center_x = win->x + win->w / 2;
-            int center_y = full_y0 + full_h / 2;
-            int sx = center_x + (int)((float)(px - center_x) / glass_scale);
-            int sy = center_y + (int)((float)(py - center_y) / glass_scale);
-
-            // Sample from blurred backdrop buffer for high performance
-            surface_bg = sample_blurred_backdrop(sx, sy);
-
-
-          }
+          // ウィンドウ全体の背景：デスクトップサンプリングを廃止し、完全単色化
           uint32_t win_bg = get_window_background_color(win);
-          surface_bg = blend_colors(surface_bg, win_bg, (uint8_t)(win_bg >> 24));
+          uint32_t surface_bg = win_bg;
 
           // 1. Base Content Rendering (Warp UI)
           int src_x = (int)((float)dx * scale);
@@ -3768,15 +3725,15 @@ if (dy < title_h + 30 && !win->no_decoration) {
               uint8_t frame_a = (uint8_t)(frame_px >> 24);
 
               if (frame_a > 0) {
-                  // Button center detection for Glass Effect
-                  int cx = -1, cy = -1;
-                  
+                   int cx = -1, bcy = -1;
+                   float btn_half_width = 21.0f;
+                   
                    // Left side control buttons
                    int ctrl_positions[] = {14, 14 + 42 + 10};
                    for (int k = 0; k < 2; k++) {
                        if (dx >= ctrl_positions[k] && dx < ctrl_positions[k] + 42) {
-                           cx = win->x + ctrl_positions[k] + 21;
-                           cy = win->y - title_h + 13 + 21;
+                           cx = ctrl_positions[k] + 21;
+                           bcy = 13 + 21;
                            break;
                        }
                    }
@@ -3788,117 +3745,60 @@ if (dy < title_h + 30 && !win->no_decoration) {
                        else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
                        int ax = win->w - 16;
                        for (int j = 0; j < action_count; j++) {
-                           char act_text[64];
-                           if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-                           else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-                           int btn_w = strlen(act_text) * 9 + 42;
+                           char at[64];
+                           if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, at, sizeof(at));
+                           else warp_context_get_header_action_info(win->warp_ctx, j, at, sizeof(at));
+                           int btn_w = strlen(at) * 9 + 42;
                            ax -= btn_w;
                            if (dx >= ax && dx < ax + btn_w) {
-                               cx = win->x + ax + btn_w / 2;
-                               cy = win->y - title_h + 13 + 21;
+                               cx = ax + btn_w / 2;
+                               bcy = 13 + 21;
+                               btn_half_width = (float)btn_w / 2.0f;
                                break;
                            }
                            ax -= 10;
                        }
                    }
 
+                  uint32_t g_color = color; // デフォルトは現在のフラットな色
                   if (cx != -1) {
-                      // Optimized Glass Effect: 6 layers, 0.5px spacing
-                       float rdx = (float)(win->x + dx - cx);
-                       float rdy = (float)(win->y - title_h + dy - cy);
+                       // 2. ボタン内部の歪み計算（ウィンドウ自身のUIをサンプリング）
                        float max_dist = 21.0f * scale; 
-                      
-                       // Capsule shape SDF for button glass effect (not circular)
-                       float btn_half_width;
-                       float btn_center_x = cx;
+                       float rx_local = (float)(dx - cx);
+                       float ry_local = (float)(dy - bcy);
+                       float f_px = fabsf(rx_local);
+                       float f_py = fabsf(ry_local);
+                       float h_rect = btn_half_width - 21.0f;
+                       if (h_rect < 0) h_rect = 0;
+                       if (f_px > h_rect) f_px -= h_rect; else f_px = 0;
                        
-                       // Check if this is a control button or action button
-                       if (dx >= 14 && dx < 14 + 32 + 6 + 32) {
-                           // Control buttons are perfect circles 32x32
-                           btn_half_width = 16.0f;
-                       } else {
-                           // Action buttons are capsule shape - calculate actual bounds
-                           char header_text[128]; int action_count = 0;
-                           if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, header_text, sizeof(header_text), &action_count);
-                           else warp_context_get_header_info(win->warp_ctx, header_text, sizeof(header_text), &action_count);
-                           int ax = win->w - 16;
-                           for (int j = 0; j < action_count; j++) {
-                               char act_text[64];
-                               if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
-                               else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-                               int btn_w = strlen(act_text) * 9 + 32;
-                               ax -= btn_w;
-                               if (dx >= ax && dx < ax + btn_w) {
-                                   btn_center_x = win->x + ax + btn_w / 2;
-                                   btn_half_width = btn_w / 2.0f;
-                                   break;
-                               }
-                               ax -= 6;
-                           }
+                       float d_center = sqrtf(f_px*f_px + f_py*f_py);
+                       float t_dist = d_center / max_dist;
+                       float d_scale = 1.0f + (t_dist * t_dist * t_dist * t_dist) * 0.7f;
+                       
+                       // ウィンドウバッファ内でのサンプリング座標を計算
+                       int gx = (int)((float)cx * scale + (rx_local * scale / d_scale));
+                       int gy = scroll_offset_y + (int)((float)bcy * scale + (ry_local * scale / d_scale));
+                       
+                       if (gx >= 0 && gx < win->buffer_w && gy >= 0 && gy < win->buffer_h) {
+                           g_color = ((uint32_t*)win->rgba_buffer)[gy * win->buffer_w + gx];
+                           g_color = blend_rgb_over_opaque_premul(win_bg, g_color);
                        }
-                       
-                       // Capsule SDF calculation with proper distortion
-                       float rx = win->x + dx - btn_center_x;
-                       float ry = win->y - title_h + dy - cy;
-                       
-                       float px = fabsf(rx);
-                       float py = fabsf(ry);
-                       float half_rect = btn_half_width - 16.0f;
-                       if (half_rect < 0) half_rect = 0;
-                       
-                       // Calculate capsule SDF
-                       if (px > half_rect) px -= half_rect;
-                       else px = 0;
-                       
-                       float dist_from_center = sqrtf(px*px + py*py);
-                       
-                       // Magnification gradient: 1.0x at center to 1.7x at edge, 4th power curve
-                       float t = dist_from_center / max_dist;
-                       float curve = t * t * t * t;
-                       float dynamic_scale = 1.0f + curve * 0.7f;
-                       
-                       // Apply distortion exactly like window side
-                       float distort_x = btn_center_x + (int)(rx / dynamic_scale);
-                       float distort_y = cy + (int)(ry / dynamic_scale);
-                      
-                       // Calculate sampling coordinates using distorted position
-                       int gdx = (int)(distort_x - win->x);
-                       int gdy = (int)(distort_y - (win->y - title_h));
-                      
-                      int g_src_x = (int)((float)gdx * scale);
-                      int g_src_y = scroll_offset_y + (int)((float)gdy * scale);
-                      if (g_src_x < 0) g_src_x = 0; if (g_src_y < 0) g_src_y = 0;
-                      if (g_src_x >= win->buffer_w) g_src_x = win->buffer_w - 1;
-                      if (g_src_y >= win->buffer_h) g_src_y = win->buffer_h - 1;
-                      
-                      uint32_t g_content = ((uint32_t*)win->rgba_buffer)[g_src_y * win->buffer_w + g_src_x];
-                      uint32_t g_color = blend_rgb_over_opaque_premul(surface_bg, g_content);
-                      
-                      if (text_overlay && gdy < text_overlay_h && gdx < text_overlay_w && gdx >= 0 && gdy >= 0) {
-                          uint32_t g_text = text_overlay[gdy * text_overlay_w + gdx];
-                          uint8_t g_text_a = (uint8_t)(g_text >> 24);
-                          if (g_text_a != 0) g_color = blend_rgb_over_opaque(g_color, g_text, g_text_a);
-                      }
-                      
-                       uint32_t win_bg_glass = get_window_background_color(win);
-                       uint32_t glass_base = blend_colors(g_color, win_bg_glass, (uint8_t)(win_bg_glass >> 24));
-                      
-                       // グラスボタンの色にもヘッダーグラデーションを適用してアンチエイリアスの色浮きを防止
-                       if (header_grad_alpha > 0) glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
+                  }
+
+                  uint32_t glass_base = blend_colors(g_color, win_bg, 160);
+                  if (header_grad_alpha > 0) glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
 
                       uint32_t marker_rgb = is_dark ? 0x444444 : 0xFFFFFF;
                       if (frame_a == 1) {
                           color = glass_base;
                       } else if ((frame_px & 0x00FFFFFF) == marker_rgb) {
-                          // ガラスボタン自体のアンチエイリアス縁: 歪み前の背景(color)と歪み後のボタン(glass_base)をブレンド
+                          // AA縁: 現在のタイトル背景(color)とグラス色(glass_base)をブレンド
                           color = blend_colors(color, glass_base, frame_a);
                       } else {
-                          // アイコンやテキスト: 歪み後のボタン背景の上にコンテンツを合成
+                          // アイコン
                           color = blend_colors(glass_base, frame_px, frame_a);
                       }
-                  } else {
-                      color = blend_colors(color, frame_px, frame_a);
-                  }
               }
           }
 
@@ -3969,7 +3869,8 @@ static void redraw_warp_svg(layer_t *layer) {
     }
     desktop_composite_dirty = 0;
     desktop_composite_last_active_index = active_idx;
-    update_desktop_blur();
+    // ウィンドウ背景のグラス効果廃止に伴い、重いブラー更新を停止
+    // update_desktop_blur();
   }
 
   memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);
