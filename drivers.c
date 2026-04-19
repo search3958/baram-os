@@ -284,6 +284,9 @@ static int g_cursor_h = 0;
 static uint32_t *g_resize_cursor_bitmap = NULL;
 static int g_resize_cursor_w = 0;
 static int g_resize_cursor_h = 0;
+static uint32_t *g_resize_nesw_cursor_bitmap = NULL;
+static int g_resize_nesw_cursor_w = 0;
+static int g_resize_nesw_cursor_h = 0;
 static int g_current_cursor_type = CURSOR_TYPE_DEFAULT;
 
 extern int g_dev_pointer_check;
@@ -298,6 +301,12 @@ void set_resize_cursor_bitmap(uint32_t *bitmap, int w, int h) {
   g_resize_cursor_bitmap = bitmap;
   g_resize_cursor_w = w;
   g_resize_cursor_h = h;
+}
+
+void set_resize_nesw_cursor_bitmap(uint32_t *bitmap, int w, int h) {
+  g_resize_nesw_cursor_bitmap = bitmap;
+  g_resize_nesw_cursor_w = w;
+  g_resize_nesw_cursor_h = h;
 }
 
 void set_cursor_type(int type) {
@@ -324,9 +333,19 @@ void screen_refresh(void) {
   int cx = (int)mouse_x;
   int cy = (int)mouse_y;
   
-  uint32_t *cur_bmp = (g_current_cursor_type == CURSOR_TYPE_RESIZE && g_resize_cursor_bitmap) ? g_resize_cursor_bitmap : g_cursor_bitmap;
-  int cur_w = (g_current_cursor_type == CURSOR_TYPE_RESIZE) ? g_resize_cursor_w : g_cursor_w;
-  int cur_h = (g_current_cursor_type == CURSOR_TYPE_RESIZE) ? g_resize_cursor_h : g_cursor_h;
+  uint32_t *cur_bmp = g_cursor_bitmap;
+  int cur_w = g_cursor_w;
+  int cur_h = g_cursor_h;
+
+  if (g_current_cursor_type == CURSOR_TYPE_RESIZE_NWSE && g_resize_cursor_bitmap) {
+    cur_bmp = g_resize_cursor_bitmap;
+    cur_w = g_resize_cursor_w;
+    cur_h = g_resize_cursor_h;
+  } else if (g_current_cursor_type == CURSOR_TYPE_RESIZE_NESW && g_resize_nesw_cursor_bitmap) {
+    cur_bmp = g_resize_nesw_cursor_bitmap;
+    cur_w = g_resize_nesw_cursor_w;
+    cur_h = g_resize_nesw_cursor_h;
+  }
 
   if (cur_bmp) {
     if (prev_cursor_x >= 0 && prev_cursor_y >= 0) {

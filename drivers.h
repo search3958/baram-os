@@ -188,8 +188,10 @@ void set_cursor_bitmap(uint32_t *bitmap, int w, int h);
 
 // Cursor types
 #define CURSOR_TYPE_DEFAULT 0
-#define CURSOR_TYPE_RESIZE  1
+#define CURSOR_TYPE_RESIZE_NWSE 1
+#define CURSOR_TYPE_RESIZE_NESW 2
 void set_cursor_type(int type);
 void set_resize_cursor_bitmap(uint32_t *bitmap, int w, int h);
+void set_resize_nesw_cursor_bitmap(uint32_t *bitmap, int w, int h);
 
 #endif

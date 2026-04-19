@@ -268,6 +268,7 @@ typedef struct window_struct {
   int is_dirty;
   int is_dragging;
   int is_resizing;
+  int resize_mode; // 1:BR, 2:BL, 3:TR, 4:TL
   int is_movable;
   int is_resizing_enabled;
   int is_always_full_res;
@@ -4499,6 +4500,17 @@ static void resize_cursor_init(void) {
       }
     }
     set_resize_cursor_bitmap(buf, w, h);
+
+    // Create flipped version for BL/TR corners (NE-SW)
+    uint32_t *flipped_buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
+    if (flipped_buf) {
+      for (int fy = 0; fy < h; fy++) {
+        for (int fx = 0; fx < w; fx++) {
+          flipped_buf[fy * w + (w - 1 - fx)] = buf[fy * w + fx];
+        }
+      }
+      set_resize_nesw_cursor_bitmap(flipped_buf, w, h);
+    }
   }
   if (rast) nsvgDeleteRasterizer(rast);
   if (rgba) free(rgba);
@@ -5082,15 +5094,31 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             for (int i = g_window_count - 1; i >= 0; i--) {
               window_t *win = &g_windows[i];
               if (win->is_sticky) continue;
+              int title_h = win->no_decoration ? 0 : 60;
               
               // Resize Handle
               if (!win->is_menubar && i == g_active_window_index &&
-                  hx >= win->x + win->w - 16 && hx < win->x + win->w &&
-                  hy >= win->y + win->h - 16 && hy < win->y + win->h) {
-                hit_index = i; g_windows[hit_index].is_resizing = 1; g_windows[hit_index].resize_w = win->w; g_windows[hit_index].resize_h = win->h; g_svg_dirty = 1; break;
+                  hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 &&
+                  hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) {
+                hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 1; break;
+              }
+              if (!win->is_menubar && i == g_active_window_index &&
+                  hx >= win->x - 8 && hx < win->x + 24 &&
+                  hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) {
+                hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 2; break;
+              }
+              if (!win->is_menubar && i == g_active_window_index &&
+                  hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 &&
+                  hy >= win->y - title_h - 8 && hy < win->y - title_h + 8) {
+                hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 3; break;
+              }
+              if (!win->is_menubar && i == g_active_window_index &&
+                  hx >= win->x - 8 && hx < win->x + 24 &&
+                  hy >= win->y - title_h - 8 && hy < win->y - title_h + 8) {
+                hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 4; break;
               }
               // Window area (Title + Content)
-              if (hx >= win->x && hx < win->x + win->w && hy >= (win->y - (win->no_decoration ? 0 : 40)) && hy < win->y + win->h) {
+              if (hx >= win->x && hx < win->x + win->w && hy >= (win->y - title_h) && hy < win->y + win->h) {
                 hit_index = i; break;
               }
             }
@@ -5112,6 +5140,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               }
               hit_index = -2;
             }
+          }
+          
+          if (hit_index >= 0 && g_windows[hit_index].is_resizing) {
+            g_windows[hit_index].resize_w = g_windows[hit_index].w;
+            g_windows[hit_index].resize_h = g_windows[hit_index].h;
+            g_svg_dirty = 1;
+            hit_index = -2;
           }
 
           if (hit_index >= 0) {
@@ -5195,17 +5230,22 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int hy = mouse_y + MOUSE_HOTSPOT_Y;
 
         // ポインター種別の更新
-        int is_on_resize_handle = 0;
+        int cursor_type = CURSOR_TYPE_DEFAULT;
         for (int i = g_window_count - 1; i >= 0; i--) {
             window_t *win = &g_windows[i];
-            if (!win->is_menubar && i == g_active_window_index &&
-                hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 &&
-                hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) {
-                is_on_resize_handle = 1;
-                break;
+            if (!win->is_menubar && i == g_active_window_index) {
+                int th = win->no_decoration ? 0 : 60;
+                if ((hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 && hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) ||
+                    (hx >= win->x - 8 && hx < win->x + 24 && hy >= win->y - th - 8 && hy < win->y - th + 8)) {
+                    cursor_type = CURSOR_TYPE_RESIZE_NWSE; break;
+                }
+                if ((hx >= win->x - 8 && hx < win->x + 24 && hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) ||
+                    (hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 && hy >= win->y - th - 8 && hy < win->y - th + 8)) {
+                    cursor_type = CURSOR_TYPE_RESIZE_NESW; break;
+                }
             }
         }
-        set_cursor_type(is_on_resize_handle ? CURSOR_TYPE_RESIZE : CURSOR_TYPE_DEFAULT);
+        set_cursor_type(cursor_type);
         
         if (!awin->is_dragging && !awin->is_resizing) {
           if (awin->is_warp1) {
@@ -5226,7 +5266,16 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           awin->x += mouse_dx; awin->y += mouse_dy;
           g_svg_dirty = 1;
         } else if (awin->is_resizing) {
-          awin->w += mouse_dx; awin->h += mouse_dy;
+          if (awin->resize_mode == 1) { // BR
+            awin->w += mouse_dx; awin->h += mouse_dy;
+          } else if (awin->resize_mode == 2) { // BL
+            awin->x += mouse_dx; awin->w -= mouse_dx; awin->h += mouse_dy;
+          } else if (awin->resize_mode == 3) { // TR
+            awin->w += mouse_dx; awin->y += mouse_dy; awin->h -= mouse_dy;
+          } else if (awin->resize_mode == 4) { // TL
+            awin->x += mouse_dx; awin->w -= mouse_dx; awin->y += mouse_dy; awin->h -= mouse_dy;
+          }
+          
           if (awin->w < 100) awin->w = 100;
           if (awin->h < 64) awin->h = 64;
           // Don't set is_dirty here to keep SVG content frozen
