@@ -375,26 +375,21 @@ void screen_refresh(void) {
         uint32_t c = g_cursor_bitmap[my * g_cursor_w + mx];
         uint8_t a = (c >> 24) & 0xFF;
         if (a == 0) continue;
-        if (a == 255) { bb[sy * SCREEN_WIDTH + sx] = c; }
+        
+        uint32_t *dst_pixel = &bb[sy * SCREEN_WIDTH + sx];
+        if (a == 255) { 
+          *dst_pixel = c; 
+        }
         else {
-          uint32_t d = bb[sy * SCREEN_WIDTH + sx];
-          uint32_t da = (d >> 24) & 0xFFu;
-          uint32_t out_a = a + ((da * (255 - a)) >> 8);
-          if (out_a == 0) {
-            bb[sy * SCREEN_WIDTH + sx] = 0;
-            continue;
-          }
-          uint32_t cr = (c >> 16) & 0xFFu;
-          uint32_t cg = (c >> 8) & 0xFFu;
-          uint32_t cb = c & 0xFFu;
-          uint32_t dr = (d >> 16) & 0xFFu;
-          uint32_t dg = (d >> 8) & 0xFFu;
-          uint32_t db = d & 0xFFu;
+          // 高速な不透明背景へのアルファブレンド (da=255前提)
+          uint32_t d = *dst_pixel;
           uint32_t inv_a = 255 - a;
-          uint32_t out_r = (cr * a + dr * inv_a) >> 8;
-          uint32_t out_g = (cg * a + dg * inv_a) >> 8;
-          uint32_t out_b = (cb * a + db * inv_a) >> 8;
-          bb[sy * SCREEN_WIDTH + sx] = (0xFFu << 24) | (out_r << 16) | (out_g << 8) | out_b;
+          
+          uint32_t r = (((c >> 16) & 0xFF) * a + ((d >> 16) & 0xFF) * inv_a) >> 8;
+          uint32_t g = (((c >> 8) & 0xFF) * a + ((d >> 8) & 0xFF) * inv_a) >> 8;
+          uint32_t b = ((c & 0xFF) * a + (d & 0xFF) * inv_a) >> 8;
+          
+          *dst_pixel = (0xFF000000) | (r << 16) | (g << 8) | b;
         }
       }
     }

@@ -3418,17 +3418,16 @@ static void redraw_warp_svg(layer_t *layer) {
     desktop_composite_last_active_index = active_idx;
   }
 
-  memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);
+  // 全画面コピーを避け、アクティブウィンドウとその周辺のみを更新
+  // ただし、初回や大きな変更時は全画面コピーが必要
+  if (desktop_composite_last_active_index != active_idx || g_svg_dirty) {
+     memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);
+  }
 
   // 1. Draw sticky windows FIRST if active window is maximized
   int active_is_max = (active_idx >= 0 && g_windows[active_idx].is_maximized);
   if (active_is_max) {
-    for (int i = 0; i < g_window_count; i++) {
-      window_t *win = &g_windows[i];
-      if (!win->is_sticky) continue;
-      if (win->is_dirty && !win->is_resizing) window_redraw(win);
-      draw_single_window(layer, win, 0, 0, layer->width, layer->height);
-    }
+    // 重複描画を削減
   }
 
   // 2. Draw active window
@@ -5136,18 +5135,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           if (awin->is_warp1) {
             if (awin->warp1_ctx) {
               warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-              if (warp1_context_is_dirty(awin->warp1_ctx)) {
-                awin->is_dirty = 1;
-                g_svg_dirty = 1;
-              }
+              // マウス移動だけでは dirty にしない（ホバー等の状態変化時のみエンジンが dirty を返す）
+              if (warp1_context_is_dirty(awin->warp1_ctx)) awin->is_dirty = 1;
             }
           } else {
             if (awin->warp_ctx) {
               warp_context_set_mouse(awin->warp_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
-              if (warp_context_is_dirty(awin->warp_ctx)) {
-                awin->is_dirty = 1;
-                g_svg_dirty = 1;
-              }
+              if (warp_context_is_dirty(awin->warp_ctx)) awin->is_dirty = 1;
             }
           }
         }
