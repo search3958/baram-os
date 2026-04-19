@@ -3137,7 +3137,7 @@ static uint32_t sample_wallpaper_pixel(int x, int y) {
 
 static uint32_t get_window_background_color(window_t *win) {
   if (!win)
-    return 0xFFF6F6F6u;
+    return 0xFFF2F2F6u;
   if (win->is_menubar) return 0x00000000u;
   if (win->background_color != 0xBFFFFFFFu)
     return win->background_color;
@@ -3145,7 +3145,7 @@ static uint32_t get_window_background_color(window_t *win) {
   const char *dark_val = get_w1_global("~~main/dark");
   int system_dark = (strcmp(dark_val, "true") == 0);
   int win_dark = (win->force_dark != -1) ? win->force_dark : system_dark;
-  return win_dark ? 0xFF000000u : 0xFFF6F6F6u;
+  return win_dark ? 0xFF000000u : 0xFFF2F2F6u;
 }
 
 static int window_index_of(window_t *target) {
@@ -3610,55 +3610,9 @@ skip_shadow:;
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
 
-          uint32_t surface_bg = dst_line[px];
-          // ヘッダー部分のみに限定してグラス歪みエフェクトを適用
-          if (win == &g_windows[g_active_window_index] && dy < title_h) {
-            // Glass Distortion Effect (20 Layers, 1px Spacing)
-            float fx = (float)dx + 0.5f;
-            float fy = (float)dy + 0.5f;
-            float rw = (float)win->w;
-            float rh = (float)full_h;
-            float r = 47.5f; // Corner radius (0.5px inward correction, must match window_mask)
-            
-            float qx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
-            float qy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
-            
-            float d_in;
-            if (qx > 0.0f && qy > 0.0f) {
-                // Blended squircle (60% L4 + 40% L2) to match window_mask shape
-                float l2 = sqrtf(qx*qx + qy*qy);
-                float l4 = sqrtf(sqrtf(qx*qx*qx*qx + qy*qy*qy*qy));
-                d_in = r - (l2 * 0.4f + l4 * 0.6f);
-            } else {
-                float dist_to_rect_edge_x = rw/2.0f - fabsf(fx - rw/2.0f);
-                float dist_to_rect_edge_y = rh/2.0f - fabsf(fy - rh/2.0f);
-                d_in = (dist_to_rect_edge_x < dist_to_rect_edge_y) ? dist_to_rect_edge_x : dist_to_rect_edge_y;
-            }
-
-            int num_layers = 30;
-            float spacing = 3.0f;
-            int layer_idx = (int)(d_in / spacing);
-            if (layer_idx < 0) layer_idx = 0;
-            if (layer_idx >= num_layers) layer_idx = num_layers - 1;
-            
-            float t = (float)layer_idx / (float)(num_layers - 1);
-            float curve = t * t * t * t;
-            float glass_scale = 1.0f + curve * 0.7f;
-
-            int center_x = win->x + win->w / 2;
-            int center_y = full_y0 + full_h / 2;
-            int sx = center_x + (int)((float)(px - center_x) / glass_scale);
-            int sy = center_y + (int)((float)(py - center_y) / glass_scale);
-
-            // Sample from blurred backdrop buffer for high performance
-            surface_bg = sample_blurred_backdrop(sx, sy);
-
-
-          }
+          // ウィンドウ全体の背景：背後を完全に無視し、指定色の単色塗り潰しとする
           uint32_t win_bg = get_window_background_color(win);
-          // ヘッダーは半透明(160)、ボディは get_window_background_color の不透明度(255)を使用
-          uint8_t bg_alpha = (dy < title_h && !win->no_decoration) ? 160 : (uint8_t)(win_bg >> 24);
-          surface_bg = blend_colors(surface_bg, win_bg, bg_alpha);
+          uint32_t surface_bg = win_bg;
 
           // 1. Base Content Rendering (Warp UI)
           int src_x = (int)((float)dx * scale);
@@ -3670,7 +3624,7 @@ skip_shadow:;
           // 1. 基本の色（背景色 + 合成済みコンテンツ）
           uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
 
-          // 2. Apply header gradient OVER content but UNDER system buttons
+          // 2. トップバーのグラデーションを適用
           if (header_grad_alpha > 0) {
               color = blend_colors(color, grad_base, header_grad_alpha);
           }
@@ -3800,8 +3754,12 @@ if (dy < title_h + 30 && !win->no_decoration) {
                                        ((uint32_t*)win->rgba_buffer)[gy * win->buffer_w + gx] : 0;
                        
                        uint32_t g_color = blend_rgb_over_opaque_premul(win_bg, g_px);
-                       glass_base = blend_colors(g_color, win_bg, 160);
-                       if (header_grad_alpha > 0) glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
+                       glass_base = blend_colors(g_color, win_bg, 180);
+
+                       // グラスボタンの色にもグラデーションを適用して背景と完全に馴染ませる
+                       if (header_grad_alpha > 0) {
+                           glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
+                       }
                   }
 
                       uint32_t marker_rgb = is_dark ? 0x444444 : 0xFFFFFF;
