@@ -257,6 +257,7 @@ static uint32_t parse_hex_color(const char *hex) {
 // Window Management
 typedef struct window_struct {
   int x, y, w, h;
+  int old_w, old_h;
   int old_is_resizing_enabled;
   char title[64];
   warp_context_t *warp_ctx;
@@ -5230,10 +5231,28 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             // Title Bar check (Top Overlay Layer)
             if (hy < hwin->y && !hwin->no_decoration) {
               if (point_in_titlebar_button(hx, hy, hwin, 35)) { 
-                  // Close button - decoration only
+                  g_active_window_index = hit_index; 
+                  close_active_window(); 
+                  hit_index = -2; 
                   handled = 1;
               } else if (point_in_titlebar_button(hx, hy, hwin, 35 + 42 + 10)) {
-                  // Maximize button - decoration only
+                  // Pure dimension resize toggle
+                  if (hwin->w == 300 && hwin->h == 240) {
+                      // Already 300x300, restore original size
+                      if (hwin->old_w > 0 && hwin->old_h > 0) {
+                          hwin->w = hwin->old_w; hwin->h = hwin->old_h;
+                          hwin->is_resizing_enabled = hwin->old_is_resizing_enabled;
+                      }
+                  } else {
+                      // Not 300x300, save current dimensions and resize to 300x300
+                      hwin->old_w = hwin->w; hwin->old_h = hwin->h;
+                      hwin->old_is_resizing_enabled = hwin->is_resizing_enabled;
+                      hwin->w = 300; hwin->h = 240; 
+                      hwin->is_resizing_enabled = 0;
+                  }
+                  window_update_caches(hwin);
+                  hwin->is_dirty = 1;
+                  g_svg_dirty = 1;
                   handled = 1;
               } else {
                 char header_text[128]; int action_count = 0; int has_header = 0;
