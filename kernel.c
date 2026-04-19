@@ -617,8 +617,8 @@ static uint32_t desktop_composite_buf[SCREEN_WIDTH * SCREEN_HEIGHT];
 #define BLUR_H (SCREEN_HEIGHT / 2)
 
 // GPU blur context
-static gpu_blur_context_t g_gpu_blur_ctx;
-static int g_gpu_blur_initialized = 0;
+// static gpu_blur_context_t g_gpu_blur_ctx;
+// static int g_gpu_blur_initialized = 0;
 
 static int desktop_composite_dirty = 1;
 static int desktop_composite_last_active_index = -1;
@@ -1944,7 +1944,7 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   
   // Wallpaper loading
   uint32_t wp_size = 0;
-  void *wp_ptr = fs_read_file("wallpaper_1.svg", &wp_size);
+  void *wp_ptr = fs_read_file("wallpaper_2.svg", &wp_size);
   if (wp_ptr) {
       g_wallpaper_ptr = wp_ptr;
       g_wallpaper_size = wp_size;
@@ -2854,7 +2854,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->is_resizing_enabled = 1; // Default
   win->is_always_full_res = 0; // Default
   win->is_sticky = 0; // Default
-  win->background_color = 0xBFFFFFFF; // Default white, about 75% opacity
+  win->background_color = 0xFFFFFFFF; // Default opaque white
   win->force_dark = -1; // -1 means follow system
 
   // Apply baram-os-config from source code if available
@@ -2916,7 +2916,7 @@ static uint32_t get_window_background_color(window_t *win) {
   if (!win)
     return 0xFFF2F2F6u;
   if (win->is_menubar) return 0x00000000u;
-  if (win->background_color != 0xBFFFFFFFu)
+  if (win->background_color != 0xFFFFFFFFu)
     return win->background_color;
 
   const char *dark_val = get_w1_global("~~main/dark");
@@ -3338,7 +3338,16 @@ if (dy < title_h + 30 && !win->no_decoration) {
               int scaled_dx = (int)((float)dx * scale);
               if (scaled_dx >= mw) scaled_dx = mw - 1;
               uint8_t mask_a = mask_line[scaled_dx];
-              final_alpha = (uint8_t)((uint32_t)final_alpha * mask_a / 255);
+              if (mask_a == 255) {
+                  // 角丸の範囲外（中央付近）ならブレンドせずに直接書き込む
+                  if (fade_alpha_u8 == 0) {
+                      dst_line[px] = color | 0xFF000000u;
+                      continue;
+                  }
+                  final_alpha = 255;
+              } else {
+                  final_alpha = (uint8_t)((uint32_t)final_alpha * mask_a / 255);
+              }
           }
           dst_line[px] = blend_colors(dst_line[px], color, final_alpha);
         }
@@ -3936,15 +3945,15 @@ static inline uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
   uint32_t bg_r = (bg >> 16) & 0xFFu;
   uint32_t bg_g = (bg >> 8) & 0xFFu;
   uint32_t bg_b = bg & 0xFFu;
-  uint32_t bg_contrib = bg_alpha * (255 - alpha);
 
-  uint32_t out_r = (fg_r * alpha * 255u + bg_r * bg_contrib) / (out_alpha * 255u);
-  uint32_t out_g = (fg_g * alpha * 255u + bg_g * bg_contrib) / (out_alpha * 255u);
-  uint32_t out_b = (fg_b * alpha * 255u + bg_b * bg_contrib) / (out_alpha * 255u);
+  // 高速なアルファ合成（割り算を回避）
+  // 背景が不透明(out_alpha=255)な場合が多いため、より単純化可能ですが、
+  // 汎用性を維持しつつ計算コストを下げます。
+  uint32_t inv_a = 255 - alpha;
+  uint32_t out_r = (fg_r * alpha + bg_r * inv_a + 128) >> 8;
+  uint32_t out_g = (fg_g * alpha + bg_g * inv_a + 128) >> 8;
+  uint32_t out_b = (fg_b * alpha + bg_b * inv_a + 128) >> 8;
 
-  if (out_r > 255) out_r = 255;
-  if (out_g > 255) out_g = 255;
-  if (out_b > 255) out_b = 255;
   if (out_alpha > 255) out_alpha = 255;
 
   return (out_alpha << 24) | (out_r << 16) | (out_g << 8) | out_b;
@@ -4470,7 +4479,7 @@ static void warp_ui_mod_init_embedded() {
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
   
   uint32_t wp_size = 0;
-  void *wp_ptr = fs_read_file("wallpaper_1.svg", &wp_size);
+  void *wp_ptr = fs_read_file("wallpaper_2.svg", &wp_size);
   if (wp_ptr) { g_wallpaper_ptr = wp_ptr; g_wallpaper_size = wp_size; g_wallpaper_found = 1; }
   
   if (g_warp_ptr) g_warp_mod_found = 1;

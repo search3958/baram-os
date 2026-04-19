@@ -675,8 +675,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         // Let the window backdrop show through instead of painting a full-screen base.
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
-        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "fill-opacity=\"0.6\"");
-
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "");
     } else if (w1_strcmp(node->tag, "button") == 0) {
         emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", "");
 
