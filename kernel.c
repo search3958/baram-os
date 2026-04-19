@@ -3310,13 +3310,26 @@ skip_shadow:;
                        float d_sq_norm = (f_px*f_px + f_py*f_py) / (max_dist * max_dist);
                        float d_scale = 1.0f + (d_sq_norm * d_sq_norm) * 0.7f; 
 
-                       int gx = (int)((float)cx * scale + (rx_l * scale / d_scale));
-                       int gy = scroll_offset_y + (int)((float)bcy * scale + (ry_l * scale / d_scale));
+                       float fgx = (float)cx * scale + (rx_l * scale / d_scale);
+                       float fgy = (float)scroll_offset_y + (float)bcy * scale + (ry_l * scale / d_scale);
                        
-                       uint32_t g_px = (gx>=0 && gx<win->buffer_w && gy>=0 && gy<win->buffer_h) ? 
-                                       ((uint32_t*)win->rgba_buffer)[gy * win->buffer_w + gx] : 0;
+                       // グラスエフェクト用のブラーサンプリング (3x3 grid)
+                       // 加工（歪み計算）前のソースから周辺ピクセルを混ぜることで、曇りガラス表現を実現
+                       float gr = 1.0f * scale; // サンプリング間隔
+                       uint32_t rs = 0, gs = 0, bs = 0, as = 0;
+                       for (int iy = -1; iy <= 1; iy++) {
+                           for (int ix = -1; ix <= 1; ix++) {
+                               int sx = (int)(fgx + (float)ix * gr);
+                               int sy = (int)(fgy + (float)iy * gr);
+                               if (sx < 0) sx = 0; if (sx >= win->buffer_w) sx = win->buffer_w - 1;
+                               if (sy < 0) sy = 0; if (sy >= win->buffer_h) sy = win->buffer_h - 1;
+                               uint32_t c = ((uint32_t*)win->rgba_buffer)[sy * win->buffer_w + sx];
+                               as += (c >> 24) & 0xFF; rs += (c >> 16) & 0xFF; gs += (c >> 8) & 0xFF; bs += c & 0xFF;
+                           }
+                       }
+                       uint32_t blurred_px = ((as / 9) << 24) | ((rs / 9) << 16) | ((gs / 9) << 8) | (bs / 9);
                        
-                       uint32_t g_color = blend_rgb_over_opaque_premul(win_bg, g_px);
+                       uint32_t g_color = blend_rgb_over_opaque_premul(win_bg, blurred_px);
                        glass_base = blend_colors(g_color, win_bg, 180);
 
                        // グラスボタンの色にもグラデーションを適用して背景と完全に馴染ませる
