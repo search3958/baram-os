@@ -257,8 +257,7 @@ static uint32_t parse_hex_color(const char *hex) {
 // Window Management
 typedef struct window_struct {
   int x, y, w, h;
-  int old_x, old_y, old_w, old_h;
-  int is_maximized;
+  int old_is_resizing_enabled;
   char title[64];
   warp_context_t *warp_ctx;
   warp1_context_t *warp1_ctx;
@@ -2872,11 +2871,8 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->blur_cache_rows = 0;
   win->blur_last_x = -1; win->blur_last_y = -1; win->blur_last_w = -1; win->blur_last_h = -1;
   win->is_dirty = 1;
-  win->is_maximized = 0;
   win->is_dragging = 0;
   win->is_resizing = 0;
-  win->resize_w = w;
-  win->resize_h = h;
   win->fade_alpha = 0.0f;
   win->is_calculating = 0;
   win->render_scale = 1.0f;
@@ -3097,13 +3093,13 @@ static void draw_single_window(layer_t *layer, window_t *win, int clip_x0, int c
     // Use normal render path for all windows (active and inactive)
     if (win->rgba_buffer && (win->no_decoration || (win->shadow_cache && win->frame_cache))) {
       int title_h = win->no_decoration ? 0 : 60;
-      int shadow_size = win->no_decoration ? 0 : 48;
       float scale = win->render_scale;
 
       int full_y0 = win->y - title_h;
       int full_h = win->h + title_h;
 
-      if (!win->is_maximized && !win->no_decoration && win->shadow_cache) {
+      if (!win->no_decoration && win->shadow_cache) {
+        int shadow_size = win->no_decoration ? 0 : 48;
         int sx_start = win->x - shadow_size;
         int sy_start = win->y - title_h - shadow_size + 8;
         int y0 = (sy_start < clip_y0) ? (clip_y0 - sy_start) : 0;
@@ -3377,8 +3373,9 @@ skip_shadow:;
           }
           
           uint8_t final_alpha = 255;
-          if (!win->is_maximized && !win->no_decoration) {
+          if (!win->no_decoration) {
               int scaled_dx = (int)((float)dx * scale);
+
               if (scaled_dx >= mw) scaled_dx = mw - 1;
               uint8_t mask_a = mask_line[scaled_dx];
               if (mask_a == 255) {
@@ -3465,12 +3462,7 @@ static void redraw_warp_svg(layer_t *layer) {
      memcpy(layer->buffer, desktop_composite_buf, (size_t)layer->width * (size_t)layer->height * 4);
   }
 
-  // 1. Draw sticky windows FIRST if active window is maximized
-  int active_is_max = (active_idx >= 0 && g_windows[active_idx].is_maximized);
-  if (active_is_max) {
-    // 重複描画を削減
-  }
-
+  // 1. Draw sticky windows
   // 2. Draw active window
   if (active_idx >= 0 && active_idx < g_window_count) {
     window_t *win = &g_windows[active_idx];
@@ -5238,15 +5230,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             // Title Bar check (Top Overlay Layer)
             if (hy < hwin->y && !hwin->no_decoration) {
               if (point_in_titlebar_button(hx, hy, hwin, 35)) { 
-                  g_active_window_index = hit_index; 
-                  close_active_window(); 
-                  hit_index = -2; 
+                  // Close button - decoration only
                   handled = 1;
               } else if (point_in_titlebar_button(hx, hy, hwin, 35 + 42 + 10)) {
-                if (hwin->is_maximized) { hwin->x = hwin->old_x; hwin->y = hwin->old_y; hwin->w = hwin->old_w; hwin->h = hwin->old_h; hwin->is_maximized = 0; } 
-                else { hwin->old_x = hwin->x; hwin->old_y = hwin->y; hwin->old_w = hwin->w; hwin->old_h = hwin->h; hwin->x = 0; hwin->y = 40; hwin->w = nextgen_ui_layer.width; hwin->h = nextgen_ui_layer.height - 40; hwin->is_maximized = 1; }
-                hwin->is_dirty = 1;
-                handled = 1;
+                  // Maximize button - decoration only
+                  handled = 1;
               } else {
                 char header_text[128]; int action_count = 0; int has_header = 0;
                 if (hwin->is_warp1) { if (hwin->warp1_ctx) has_header = warp1_context_get_header_info(hwin->warp1_ctx, header_text, sizeof(header_text), &action_count); } 
@@ -5274,7 +5262,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               hwin->is_dirty = 1;
 
               // Also check for dragging if in header but didn't hit a button
-              if (hy < hwin->y && !hwin->no_decoration && !hwin->is_maximized && hx >= hwin->x + 56 && hwin->is_movable) {
+              if (hy < hwin->y && !hwin->no_decoration && hx >= hwin->x + 56 && hwin->is_movable) {
                 hwin->is_dragging = 1;
               }
             }
