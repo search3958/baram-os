@@ -3174,41 +3174,37 @@ skip_shadow:;
           } else {
               content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
           }
-          
-          // 1. 基本の色（背景色 + 合成済みコンテンツ）
-          uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
 
-          // 2. トップバーのグラデーションを適用
-          if (header_grad_alpha > 0) {
-              color = blend_colors(color, grad_base, header_grad_alpha);
+          // 超高速パス: ウィンドウ中央、非リサイズ時、不透明ピクセルの場合
+          uint8_t mask_a = mask_line[(int)((float)dx * scale)];
+          if (mask_a == 255 && dy >= title_h && fade_alpha_u8 == 0 && !win->is_resizing && !win->is_calculating) {
+              uint8_t content_a = (content_color >> 24);
+              if (content_a == 255) {
+                  dst_line[px] = content_color | 0xFF000000u;
+                  continue;
+              }
           }
+          
+          uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
+          if (header_grad_alpha > 0) color = blend_colors(color, grad_base, header_grad_alpha);
 
-          // 3. Procedural Button Shadow Layer (Black, 24px blur, no offset)
-if (dy < title_h + 30 && !win->no_decoration) {
-    float s_alpha_val = 0.0f;
-    float s_blur = 24.0f;
-    float sy = (float)dy; // オフセット(3px)を削除
-
-    // --- Control buttons (Left side) ---
-    int cps[] = {14, 14 + 42 + 10};
-    for (int k = 0; k < 2; k++) {
-        float dx_c = (float)dx - (cps[k] + 21);
-        float dy_c = sy - (13 + 21); // center y is 34
-        float dist = sqrtf(dx_c * dx_c + dy_c * dy_c);
-        
-        float d_norm = (dist - 19.0f) / s_blur;
-        if (d_norm < 0.0f) d_norm = 0.0f;
-        if (d_norm < 1.0f) {
-            float inv_d = 1.0f - d_norm;
-            float sa = inv_d * inv_d * inv_d; // 3乗で急激な変化
-            if (sa > s_alpha_val) s_alpha_val = sa;
-        }
-    }
-    
-    // --- Action buttons (Right side) ---
-    if (win->warp1_ctx || win->warp_ctx) {
-        char ht[128]; 
-        int ac = 0; // アクションボタンの個数
+          // 3. Shadow Layer (SDFの計算コストを削減するため、範囲外ならスキップ)
+          if (dy < title_h + 30 && !win->no_decoration) {
+              float s_alpha_val = 0.0f;
+              float s_blur = 24.0f;
+              float sy = (float)dy;
+              int cps[] = {14, 14 + 42 + 10};
+              for (int k = 0; k < 2; k++) {
+                  float dx_c = (float)dx - (cps[k] + 21);
+                  float dy_c = sy - 34;
+                  float dist_sq = dx_c * dx_c + dy_c * dy_c;
+                  if (dist_sq < 1849.0f) { // (19+24)^2 = 1849 
+                      float inv_d = 1.0f - (sqrtf(dist_sq) - 19.0f) / 24.0f;
+                      if (inv_d > 0) { float sa = inv_d * inv_d * inv_d; if (sa > s_alpha_val) s_alpha_val = sa; }
+                  }
+              }
+              if (win->is_warp1 || win->warp_ctx) {
+                  char ht[128]; int ac = 0;
         if (win->is_warp1) warp1_context_get_header_info(win->warp1_ctx, ht, 128, &ac);
         else warp_context_get_header_info(win->warp_ctx, ht, 128, &ac);
         
@@ -3236,15 +3232,10 @@ if (dy < title_h + 30 && !win->no_decoration) {
                 if (sa > s_alpha_val) s_alpha_val = sa;
             }
             sax -= 10; // ボタン間のマージン
+                  }
+              }
+              if (s_alpha_val > 0.0f) color = blend_colors(color, 0xFF000000, (uint8_t)(s_alpha_val * 13.0f));
         }
-    }
-
-    if (s_alpha_val > 0.0f) {
-        // 最終的な描画色へのブレンディング
-        // 40.0f の部分を大きくするとより暗くなります
-        color = blend_colors(color, 0xFF000000, (uint8_t)(s_alpha_val * 13.0f));
-    }
-}
 
           // 4. システムボタンとグラス歪み
           if (dy < title_h && !win->no_decoration) {

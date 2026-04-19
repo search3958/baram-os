@@ -266,13 +266,13 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
       uint32_t dr = (d >> 16) & 0xFFu;
       uint32_t dg = (d >> 8) & 0xFFu;
       uint32_t db = d & 0xFFu;
-      uint32_t d_contrib = da * (255 - a);
+      uint32_t inv_a = 255 - a;
 
-      uint32_t out_r = (cr * a * 255u + dr * d_contrib) / (out_a * 255u);
-      uint32_t out_g = (cg * a * 255u + dg * d_contrib) / (out_a * 255u);
-      uint32_t out_b = (cb * a * 255u + db * d_contrib) / (out_a * 255u);
+      uint32_t out_r = (cr * a + dr * inv_a + 128) >> 8;
+      uint32_t out_g = (cg * a + dg * inv_a + 128) >> 8;
+      uint32_t out_b = (cb * a + db * inv_a + 128) >> 8;
 
-      *dst++ = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+      *dst++ = (out_a << 24) | ((out_r > 255 ? 255 : out_r) << 16) | ((out_g > 255 ? 255 : out_g) << 8) | (out_b > 255 ? 255 : out_b);
     }
   }
 }
