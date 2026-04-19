@@ -1195,8 +1195,11 @@ int warp1_context_is_dirty(warp1_context_t* ctx) { return ctx->engine_dirty; }
 void warp1_context_clear_dirty(warp1_context_t* ctx) { ctx->engine_dirty = 0; }
 void warp1_context_set_state(warp1_context_t* ctx, const char* k, const char* v) {
     set_state(ctx, k, v);
-    if (w1_strcasecmp(k, "_currentScreen") == 0) {
+    // システム変数（~~で始まるテーマ設定など）や画面切り替え時はレイアウトを再計算する
+    if (w1_strncmp(k, "~~", 2) == 0 || w1_strcasecmp(k, "_currentScreen") == 0) {
         ctx->layout_valid = 0;
+    }
+    if (w1_strcasecmp(k, "_currentScreen") == 0) {
         parse_current_screen1(ctx);
     }
     ctx->engine_dirty = 1;

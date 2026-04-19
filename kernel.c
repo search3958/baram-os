@@ -2191,6 +2191,7 @@ static void sync_all_window_themes() {
 
       if (win->is_warp1 && win->warp1_ctx) {
         warp1_context_set_state(win->warp1_ctx, "~~main/dark", target);
+        warp1_context_mark_dirty(win->warp1_ctx);
       } else if (win->warp_ctx) {
         warp_context_set_state(win->warp_ctx, "~~main/dark", target);
       }
