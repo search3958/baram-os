@@ -3599,11 +3599,21 @@ skip_shadow:;
       int text_overlay_w = win->text_overlay_cache_w;
       int text_overlay_h = win->text_overlay_cache_h;
 
+      int is_dark = (strcmp(get_w1_global("~~main/dark"), "true") == 0);
+
       int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
       if (scroll_offset_y < 0) scroll_offset_y = 0;
       for (int dy = cy0; dy < cy1; dy++) {
         int py = full_y0 + dy;
         uint32_t *dst_line = &layer->buffer[py * layer->width];
+
+        uint32_t grad_base = is_dark ? 0x00000000u : 0x00FFFFFFu;
+        uint8_t header_grad_alpha = 0;
+        if (dy < title_h || win->is_menubar) {
+            float alpha_f = 1.0f - ((float)dy / (float)(win->is_menubar ? full_h : title_h));
+            if (alpha_f < 0.0f) alpha_f = 0.0f;
+            header_grad_alpha = (uint8_t)(alpha_f * 255.0f);
+        }
         
         int scaled_mask_y = (int)((float)dy * scale);
         if (scaled_mask_y >= mh) scaled_mask_y = mh - 1;
@@ -3681,14 +3691,8 @@ skip_shadow:;
           }
 
           // 2. Apply header gradient OVER content but UNDER system buttons
-          if (dy < title_h || win->is_menubar) {
-              const char *dark_val = get_w1_global("~~main/dark");
-              int is_dark = (strcmp(dark_val, "true") == 0);
-              uint32_t grad_base = is_dark ? 0x00000000u : 0x00FFFFFFu;
-              float alpha_f = 1.0f - ((float)dy / (float)(win->is_menubar ? full_h : title_h));
-              if (alpha_f < 0.0f) alpha_f = 0.0f;
-              uint8_t alpha = (uint8_t)(alpha_f * 255.0f);
-              color = blend_colors(color, grad_base, alpha);
+          if (header_grad_alpha > 0) {
+              color = blend_colors(color, grad_base, header_grad_alpha);
           }
 
           if (dy < title_h) {
@@ -3816,9 +3820,17 @@ skip_shadow:;
                        uint32_t win_bg_glass = get_window_background_color(win);
                        uint32_t glass_base = blend_colors(g_color, win_bg_glass, (uint8_t)(win_bg_glass >> 24));
                       
+                       // グラスボタンの色にもヘッダーグラデーションを適用してアンチエイリアスの色浮きを防止
+                       if (header_grad_alpha > 0) glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
+
+                      uint32_t marker_rgb = is_dark ? 0x444444 : 0xFFFFFF;
                       if (frame_a == 1) {
                           color = glass_base;
+                      } else if ((frame_px & 0x00FFFFFF) == marker_rgb) {
+                          // ガラスボタン自体のアンチエイリアス縁: 歪み前の背景(color)と歪み後のボタン(glass_base)をブレンド
+                          color = blend_colors(color, glass_base, frame_a);
                       } else {
+                          // アイコンやテキスト: 歪み後のボタン背景の上にコンテンツを合成
                           color = blend_colors(glass_base, frame_px, frame_a);
                       }
                   } else {
