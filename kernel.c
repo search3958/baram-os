@@ -4448,6 +4448,64 @@ static void cursor_init(void) {
   nsvgDelete(img);
 }
 
+static void resize_cursor_init(void) {
+  const char *resize_svg =
+      "<svg width=\"319\" height=\"307\" viewBox=\"0 0 319 307\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
+      "<path d=\"M96.7002 73V121.123C96.7002 133.239 96.7002 139.297 99.0961 142.102C101.175 144.536 104.294 145.828 107.485 145.577C111.163 145.288 115.446 141.004 124.014 132.436L172.137 84.3137C180.704 75.7462 184.988 71.4624 185.277 67.7846C185.528 64.5934 184.237 61.4749 181.803 59.3959C178.997 57 172.939 57 160.823 57H112.7C107.1 57 104.299 57 102.16 58.0899C100.279 59.0487 98.7489 60.5785 97.7901 62.4601C96.7002 64.5992 96.7002 67.3995 96.7002 73Z\" stroke=\"white\" stroke-width=\"27\" stroke-linecap=\"round\"/>"
+      "<path d=\"M218.991 179.072L113.825 74.3452\" stroke=\"white\" stroke-width=\"56\"/>"
+      "<path d=\"M96.7002 73V121.123C96.7002 133.239 96.7002 139.297 99.0961 142.102C101.175 144.536 104.294 145.828 107.485 145.577C111.163 145.288 115.446 141.004 124.014 132.436L172.137 84.3137C180.704 75.7462 184.988 71.4624 185.277 67.7846C185.528 64.5934 184.237 61.4749 181.803 59.3959C178.997 57 172.939 57 160.823 57H112.7C107.1 57 104.299 57 102.16 58.0899C100.279 59.0487 98.7489 60.5785 97.7901 62.4601C96.7002 64.5992 96.7002 67.3995 96.7002 73Z\" fill=\"black\"/>"
+      "<path d=\"M233.7 178V129.877C233.7 117.761 233.7 111.703 231.304 108.898C229.225 106.464 226.107 105.172 222.916 105.423C219.238 105.712 214.954 109.996 206.386 118.564L158.264 166.686C149.696 175.254 145.413 179.538 145.123 183.215C144.872 186.407 146.164 189.525 148.598 191.604C151.403 194 157.461 194 169.578 194H217.7C223.301 194 226.101 194 228.24 192.91C230.122 191.951 231.652 190.422 232.61 188.54C233.7 186.401 233.7 183.601 233.7 178Z\" stroke=\"white\" stroke-width=\"27\" stroke-linecap=\"round\"/>"
+      "<path d=\"M233.7 178V129.877C233.7 117.761 233.7 111.703 231.304 108.898C229.225 106.464 226.107 105.172 222.916 105.423C219.238 105.712 214.954 109.996 206.386 118.564L158.264 166.686C149.696 175.254 145.413 179.538 145.123 183.215C144.872 186.407 146.164 189.525 148.598 191.604C151.403 194 157.461 194 169.578 194H217.7C223.301 194 226.101 194 228.24 192.91C230.122 191.951 231.652 190.422 232.61 188.54C233.7 186.401 233.7 183.601 233.7 178Z\" fill=\"black\"/>"
+      "<path d=\"M218.991 179.072L113.825 74.3452\" stroke=\"black\" stroke-width=\"29\"/>"
+      "</svg>";
+
+  NSVGimage *img = nsvgParse((char *)resize_svg, "px", 96.0f);
+  if (!img) return;
+
+  int target_h = 42;
+  float scale = (float)target_h / img->height;
+  int target_w = (int)(img->width * scale);
+  int padding = 12;
+  int w = target_w + padding * 2;
+  int h = target_h + padding * 2;
+
+  uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
+  NSVGrasterizer *rast = nsvgCreateRasterizer();
+  unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+  unsigned char *shadow_rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+
+  if (rast && rgba && shadow_rgba && buf) {
+    memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
+    nsvgRasterize(rast, img, (float)padding + 2.0f, (float)padding + 3.0f, scale, shadow_rgba, w, h, w * 4);
+    box_blur_alpha(shadow_rgba, w, h, 4);
+
+    memset(rgba, 0, (size_t)w * (size_t)h * 4);
+    nsvgRasterize(rast, img, (float)padding, (float)padding, scale, rgba, w, h, w * 4);
+
+    for (int i = 0; i < w * h; i++) {
+      uint8_t shadow_a = (uint8_t)(shadow_rgba[i * 4 + 3] * 0.4f);
+      uint8_t r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
+      if (a == 255) {
+        buf[i] = (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+      } else {
+        uint8_t out_a = a + (shadow_a * (255 - a) / 255);
+        if (out_a == 0) buf[i] = 0;
+        else {
+          uint8_t out_r = (uint8_t)((r * a) / out_a);
+          uint8_t out_g = (uint8_t)((g * a) / out_a);
+          uint8_t out_b = (uint8_t)((b * a) / out_a);
+          buf[i] = ((uint32_t)out_a << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
+        }
+      }
+    }
+    set_resize_cursor_bitmap(buf, w, h);
+  }
+  if (rast) nsvgDeleteRasterizer(rast);
+  if (rgba) free(rgba);
+  if (shadow_rgba) free(shadow_rgba);
+  nsvgDelete(img);
+}
+
 #ifdef __aarch64__
 extern void uart_puts(const char *s);
 #endif
@@ -4658,6 +4716,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // カーソル初期化
   cursor_init();
+  resize_cursor_init();
 
   // 1. 背景 (黒)
   layer_t desktop;
@@ -5134,6 +5193,19 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         window_t *awin = &g_windows[g_active_window_index];
         int hx = mouse_x + MOUSE_HOTSPOT_X;
         int hy = mouse_y + MOUSE_HOTSPOT_Y;
+
+        // ポインター種別の更新
+        int is_on_resize_handle = 0;
+        for (int i = g_window_count - 1; i >= 0; i--) {
+            window_t *win = &g_windows[i];
+            if (!win->is_menubar && i == g_active_window_index &&
+                hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 &&
+                hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) {
+                is_on_resize_handle = 1;
+                break;
+            }
+        }
+        set_cursor_type(is_on_resize_handle ? CURSOR_TYPE_RESIZE : CURSOR_TYPE_DEFAULT);
         
         if (!awin->is_dragging && !awin->is_resizing) {
           if (awin->is_warp1) {

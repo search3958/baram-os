@@ -281,12 +281,27 @@ static void compose_layer_region(uint32_t *dest, const layer_t *l, int rx0,
 static uint32_t *g_cursor_bitmap = NULL;
 static int g_cursor_w = 0;
 static int g_cursor_h = 0;
+static uint32_t *g_resize_cursor_bitmap = NULL;
+static int g_resize_cursor_w = 0;
+static int g_resize_cursor_h = 0;
+static int g_current_cursor_type = CURSOR_TYPE_DEFAULT;
+
 extern int g_dev_pointer_check;
 
 void set_cursor_bitmap(uint32_t *bitmap, int w, int h) {
   g_cursor_bitmap = bitmap;
   g_cursor_w = w;
   g_cursor_h = h;
+}
+
+void set_resize_cursor_bitmap(uint32_t *bitmap, int w, int h) {
+  g_resize_cursor_bitmap = bitmap;
+  g_resize_cursor_w = w;
+  g_resize_cursor_h = h;
+}
+
+void set_cursor_type(int type) {
+  g_current_cursor_type = type;
 }
 
 // ==========================================
@@ -308,12 +323,16 @@ void screen_refresh(void) {
 
   int cx = (int)mouse_x;
   int cy = (int)mouse_y;
-  if (g_cursor_bitmap) {
+  
+  uint32_t *cur_bmp = (g_current_cursor_type == CURSOR_TYPE_RESIZE && g_resize_cursor_bitmap) ? g_resize_cursor_bitmap : g_cursor_bitmap;
+  int cur_w = (g_current_cursor_type == CURSOR_TYPE_RESIZE) ? g_resize_cursor_w : g_cursor_w;
+  int cur_h = (g_current_cursor_type == CURSOR_TYPE_RESIZE) ? g_resize_cursor_h : g_cursor_h;
+
+  if (cur_bmp) {
     if (prev_cursor_x >= 0 && prev_cursor_y >= 0) {
-      dirty_expand(prev_cursor_x, prev_cursor_y, prev_cursor_x + g_cursor_w,
-                   prev_cursor_y + g_cursor_h);
+      dirty_expand(prev_cursor_x, prev_cursor_y, prev_cursor_x + cur_w, prev_cursor_y + cur_h);
     }
-    dirty_expand(cx, cy, cx + g_cursor_w, cy + g_cursor_h);
+    dirty_expand(cx, cy, cx + cur_w, cy + cur_h);
   }
 
   if (!g_static_dirty && g_drx0 >= g_drx1 && g_dry0 >= g_dry1) {
@@ -365,14 +384,14 @@ void screen_refresh(void) {
   }
 
   // 3. カーソル描画 (ARGBブレンド) - 常に表示
-  if (g_cursor_bitmap) {
-    for (int my = 0; my < g_cursor_h; my++) {
+  if (cur_bmp) {
+    for (int my = 0; my < cur_h; my++) {
       int sy = cy + my;
       if (sy < ry0 || sy >= ry1) continue;
-      for (int mx = 0; mx < g_cursor_w; mx++) {
+      for (int mx = 0; mx < cur_w; mx++) {
         int sx = cx + mx;
         if (sx < rx0 || sx >= rx1) continue;
-        uint32_t c = g_cursor_bitmap[my * g_cursor_w + mx];
+        uint32_t c = cur_bmp[my * cur_w + mx];
         uint8_t a = (c >> 24) & 0xFF;
         if (a == 0) continue;
         

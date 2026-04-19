@@ -186,4 +186,10 @@ struct multiboot_info {
 void sys_restart(void);
 void set_cursor_bitmap(uint32_t *bitmap, int w, int h);
 
+// Cursor types
+#define CURSOR_TYPE_DEFAULT 0
+#define CURSOR_TYPE_RESIZE  1
+void set_cursor_type(int type);
+void set_resize_cursor_bitmap(uint32_t *bitmap, int w, int h);
+
 #endif
