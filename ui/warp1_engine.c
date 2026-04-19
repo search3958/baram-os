@@ -1012,18 +1012,18 @@ void warp1_context_scroll_update(warp1_context_t* ctx, float new_scroll_y) {
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy, float scale) {
     extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
-    float scroll_y = warp1_context_get_scroll_y(ctx);
     
     // 3. Viewport clipping for text rendering
     int viewport_h = layer->height;
 
     for (int i = 0; i < ctx->texts_count; i++) {
-        int ty = (int)(((float)ctx->texts[i].y - scroll_y) * scale);
+        int tx = (int)((float)ctx->texts[i].x * scale) + ox;
+        int ty = (int)((float)ctx->texts[i].y * scale) + oy;
         
         // Viewport clipping: Skip if text is outside the vertical bounds (with 40px margin)
         if (ty + 60 < 0 || ty > viewport_h + 40) continue;
 
-        layer_draw_ttf(layer, (int)((float)ctx->texts[i].x * scale) + ox, ty + oy, 
+        layer_draw_ttf(layer, tx, ty, 
                        ctx->texts[i].text, ctx->texts[i].size * scale, ctx->texts[i].color);
     }
 }

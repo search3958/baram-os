@@ -2294,12 +2294,10 @@ static uint32_t *build_window_text_overlay(window_t *win, int *out_w, int *out_h
   text_layer.width = overlay_w;
   text_layer.height = overlay_h;
 
-  int scroll_offset_y = (int)roundf(-win->scroll_y * win->render_scale);
-  if (scroll_offset_y < 0) scroll_offset_y = 0;
   if (win->is_warp1) {
-    warp1_context_draw_texts(win->warp1_ctx, &text_layer, 0, -scroll_offset_y, win->render_scale);
+    warp1_context_draw_texts(win->warp1_ctx, &text_layer, 0, (int)(win->scroll_y * win->render_scale), win->render_scale);
   } else {
-    warp_context_draw_texts(win->warp_ctx, &text_layer, 0, -scroll_offset_y, win->render_scale);
+    warp_context_draw_texts(win->warp_ctx, &text_layer, 0, (int)(win->scroll_y * win->render_scale), win->render_scale);
   }
 
   if (out_w) *out_w = overlay_w;
