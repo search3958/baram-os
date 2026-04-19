@@ -10,6 +10,7 @@ float fabsf(float x);
 double sqrt(double x);
 float sqrtf(float x);
 double pow(double base, double exp);
+float powf(float base, float exp);
 double floor(double x);
 double sin(double x);
 double cos(double x);

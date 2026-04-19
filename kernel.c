@@ -1415,6 +1415,10 @@ double pow(double base, double exp) {
   return neg ? 1.0 / result : result;
 }
 
+float powf(float base, float exp) {
+  return (float)pow((double)base, (double)exp);
+}
+
 float floorf(float x) {
   int i = (int)x;
   if ((float)i > x)
@@ -2631,8 +2635,8 @@ static void window_update_caches(window_t *win) {
         int bw = (int)((float)btn_w * scale);
         int bh = (int)((float)btn_h * scale);
         float pr = bh / 2.0f;
-        // Use alpha=1 as a marker for the glass effect area in the cache
-        uint32_t btn_marker = (is_dark ? 0x01444444 : 0x01FFFFFF); 
+        
+        uint32_t marker_rgb = is_dark ? 0x444444 : 0xFFFFFF;
         for (int dy_i = 0; dy_i < bh; dy_i++) {
           for (int dx_i = 0; dx_i < bw; dx_i++) {
             float ffx = (float)dx_i + 0.5f;
@@ -2644,9 +2648,10 @@ static void window_update_caches(window_t *win) {
             float alpha_f = pr + 0.5f - dist_to_seg;
             if (alpha_f > 1.0f) alpha_f = 1.0f;
             if (alpha_f > 0.0f) {
-              frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
-                frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
-                btn_marker, (uint8_t)(alpha_f * 255.0f));
+              uint8_t a = (uint8_t)(alpha_f * 255.0f);
+              // 内部は alpha=1 (レンズマーカー), 縁は alpha=2..255 (AAマーカー)
+              uint8_t marker_a = (a >= 254) ? 1 : (a < 2 ? 2 : a);
+              frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = (marker_a << 24) | marker_rgb;
             }
           }
         }
@@ -2662,7 +2667,7 @@ static void window_update_caches(window_t *win) {
     int ctrl_y = 13;
     int ctrl_gap = 10;
     int ctrl_positions[] = {14, 14 + ctrl_size + ctrl_gap}; 
-    uint32_t ctrl_bg_marker = is_dark ? 0x01444444 : 0x01FFFFFF;
+    uint32_t marker_rgb = is_dark ? 0x444444 : 0xFFFFFF;
     uint32_t ctrl_icon_color = is_dark ? 0xFFEEEEEE : 0xFF333333;
     for (int k = 0; k < 2; k++) {
       int bx = (int)((float)ctrl_positions[k] * scale);
@@ -2681,9 +2686,9 @@ static void window_update_caches(window_t *win) {
           float alpha_f = pr + 0.5f - dist_to_seg;
           if (alpha_f > 1.0f) alpha_f = 1.0f;
           if (alpha_f > 0.0f) {
-            frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = blend_colors(
-              frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)],
-              ctrl_bg_marker, (uint8_t)(alpha_f * 255.0f));
+            uint8_t a = (uint8_t)(alpha_f * 255.0f);
+            uint8_t marker_a = (a >= 254) ? 1 : (a < 2 ? 2 : a);
+            frame_l.buffer[(by + dy_i) * fw + (bx + dx_i)] = (marker_a << 24) | marker_rgb;
           }
         }
       }
@@ -2795,13 +2800,6 @@ static void window_redraw(window_t *win) {
       warp_context_update(win->warp_ctx, win->w, win->h + title_h);
       warp_context_clear_dirty(win->warp_ctx);
     }
-    // Content changed, invalidate text overlay cache
-    if (win->text_overlay_cache) {
-      free(win->text_overlay_cache);
-      win->text_overlay_cache = NULL;
-      win->text_overlay_cache_w = 0;
-      win->text_overlay_cache_h = 0;
-    }
   } else {
     strncpy(g_hud_status, "Cached", 63);
   }
@@ -2885,7 +2883,7 @@ static void window_redraw(window_t *win) {
     }
   }
 
-  // Prepare RGBA buffer (copy from raster cache and draw text)
+  // Prepare RGBA buffer (Flatten content: SVG + Text)
   if (win->raster_cache) {
     if (!win->rgba_buffer || win->buffer_w != win->raster_cache_w || win->buffer_h != win->raster_cache_h) {
       if (win->rgba_buffer) free(win->rgba_buffer);
@@ -2895,9 +2893,13 @@ static void window_redraw(window_t *win) {
       win->is_dirty = 1; // Force redraw after allocation
     }
 
-    // Copy rasterized vector content; text is composited later onto the final surface.
-    if (svg_changed || win->is_dirty) {
+    if (svg_changed || win->is_dirty || needs_update) {
       memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
+      
+      // ここでテキストもバッファに直接描き込む。これで「表示内容そのまま」が完成する。
+      layer_t temp_l = { (uint32_t*)win->rgba_buffer, 0, 0, win->buffer_w, win->buffer_h, 0, 1, 0 };
+      if (win->is_warp1) warp1_context_draw_texts(win->warp1_ctx, &temp_l, 0, 0, target_scale);
+      else warp_context_draw_texts(win->warp_ctx, &temp_l, 0, 0, target_scale);
     }
   }
 
@@ -3580,25 +3582,7 @@ skip_shadow:;
       if (mw < 1 && win->w > 0) mw = 1;
       int mh = (int)((float)full_h * scale);
 
-      // --- Optimized Text Overlay Cache ---
-      // Rebuild text overlay when: cache missing, size changed, scroll changed, or window is dirty (content changed)
-      int text_cache_dirty = !win->text_overlay_cache || 
-                             win->text_overlay_cache_w != win->w ||
-                             win->text_overlay_cache_h != win->h || 
-                             win->text_overlay_last_scroll_y != win->scroll_y ||
-                             win->is_dirty;
-      if (text_cache_dirty) {
-        if (win->text_overlay_cache) free(win->text_overlay_cache);
-        int text_w = 0, text_h = 0;
-        win->text_overlay_cache = build_window_text_overlay(win, &text_w, &text_h);
-        win->text_overlay_cache_w = text_w;
-        win->text_overlay_cache_h = text_h;
-        win->text_overlay_last_scroll_y = win->scroll_y;
-      }
-      uint32_t *text_overlay = win->text_overlay_cache;
-      int text_overlay_w = win->text_overlay_cache_w;
-      int text_overlay_h = win->text_overlay_cache_h;
-
+      // テキストは事前合成済みのため、ループ内のオーバーレイ処理は不要。
       int is_dark = (strcmp(get_w1_global("~~main/dark"), "true") == 0);
 
       int scroll_offset_y = (int)roundf(-win->scroll_y * scale);
@@ -3626,9 +3610,55 @@ skip_shadow:;
           int px = win->x + dx;
           if (px < 0 || px >= layer->width) continue;
 
-          // ウィンドウ全体の背景：デスクトップサンプリングを廃止し、完全単色化
+          uint32_t surface_bg = dst_line[px];
+          // ヘッダー部分のみに限定してグラス歪みエフェクトを適用
+          if (win == &g_windows[g_active_window_index] && dy < title_h) {
+            // Glass Distortion Effect (20 Layers, 1px Spacing)
+            float fx = (float)dx + 0.5f;
+            float fy = (float)dy + 0.5f;
+            float rw = (float)win->w;
+            float rh = (float)full_h;
+            float r = 47.5f; // Corner radius (0.5px inward correction, must match window_mask)
+            
+            float qx = fabsf(fx - rw/2.0f) - (rw/2.0f - r);
+            float qy = fabsf(fy - rh/2.0f) - (rh/2.0f - r);
+            
+            float d_in;
+            if (qx > 0.0f && qy > 0.0f) {
+                // Blended squircle (60% L4 + 40% L2) to match window_mask shape
+                float l2 = sqrtf(qx*qx + qy*qy);
+                float l4 = sqrtf(sqrtf(qx*qx*qx*qx + qy*qy*qy*qy));
+                d_in = r - (l2 * 0.4f + l4 * 0.6f);
+            } else {
+                float dist_to_rect_edge_x = rw/2.0f - fabsf(fx - rw/2.0f);
+                float dist_to_rect_edge_y = rh/2.0f - fabsf(fy - rh/2.0f);
+                d_in = (dist_to_rect_edge_x < dist_to_rect_edge_y) ? dist_to_rect_edge_x : dist_to_rect_edge_y;
+            }
+
+            int num_layers = 30;
+            float spacing = 3.0f;
+            int layer_idx = (int)(d_in / spacing);
+            if (layer_idx < 0) layer_idx = 0;
+            if (layer_idx >= num_layers) layer_idx = num_layers - 1;
+            
+            float t = (float)layer_idx / (float)(num_layers - 1);
+            float curve = t * t * t * t;
+            float glass_scale = 1.0f + curve * 0.7f;
+
+            int center_x = win->x + win->w / 2;
+            int center_y = full_y0 + full_h / 2;
+            int sx = center_x + (int)((float)(px - center_x) / glass_scale);
+            int sy = center_y + (int)((float)(py - center_y) / glass_scale);
+
+            // Sample from blurred backdrop buffer for high performance
+            surface_bg = sample_blurred_backdrop(sx, sy);
+
+
+          }
           uint32_t win_bg = get_window_background_color(win);
-          uint32_t surface_bg = win_bg;
+          // ヘッダーは半透明(160)、ボディは get_window_background_color の不透明度(255)を使用
+          uint8_t bg_alpha = (dy < title_h && !win->no_decoration) ? 160 : (uint8_t)(win_bg >> 24);
+          surface_bg = blend_colors(surface_bg, win_bg, bg_alpha);
 
           // 1. Base Content Rendering (Warp UI)
           int src_x = (int)((float)dx * scale);
@@ -3637,15 +3667,8 @@ skip_shadow:;
           if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
           uint32_t content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
           
+          // 1. 基本の色（背景色 + 合成済みコンテンツ）
           uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
-
-          if (text_overlay && dy < text_overlay_h && dx < text_overlay_w) {
-              uint32_t text_px = text_overlay[dy * text_overlay_w + dx];
-              uint8_t text_alpha = (uint8_t)(text_px >> 24);
-              if (text_alpha != 0) {
-                  color = blend_rgb_over_opaque(color, text_px, text_alpha);
-              }
-          }
 
           // 2. Apply header gradient OVER content but UNDER system buttons
           if (header_grad_alpha > 0) {
@@ -3715,17 +3738,17 @@ if (dy < title_h + 30 && !win->no_decoration) {
     }
 }
 
-          if (dy < title_h) {
-              // 4. System buttons / Header text from frame_cache (Top-most)
-              int scaled_dx = (int)((float)dx * scale);
-              int scaled_dy = (int)((float)dy * scale);
-              if (scaled_dx >= win->frame_cache_w) scaled_dx = win->frame_cache_w - 1;
-              if (scaled_dy >= win->frame_cache_h) scaled_dy = win->frame_cache_h - 1;
-              uint32_t frame_px = win->frame_cache[scaled_dy * win->frame_cache_w + scaled_dx];
+          // 4. システムボタンとグラス歪み
+          if (dy < title_h && !win->no_decoration) {
+              int f_sx = (int)((float)dx * scale);
+              int f_sy = (int)((float)dy * scale);
+              if (f_sx >= win->frame_cache_w) f_sx = win->frame_cache_w - 1;
+              if (f_sy >= win->frame_cache_h) f_sy = win->frame_cache_h - 1;
+              uint32_t frame_px = win->frame_cache[f_sy * win->frame_cache_w + f_sx];
               uint8_t frame_a = (uint8_t)(frame_px >> 24);
 
               if (frame_a > 0) {
-                   int cx = -1, bcy = -1;
+                   int cx = -1, bcy = 0;
                    float btn_half_width = 21.0f;
                    
                    // Left side control buttons
@@ -3760,48 +3783,39 @@ if (dy < title_h + 30 && !win->no_decoration) {
                        }
                    }
 
-                  uint32_t g_color = color; // デフォルトは現在のフラットな色
+                  uint32_t glass_base = color; // デフォルトは歪みなし
                   if (cx != -1) {
-                       // 2. ボタン内部の歪み計算（ウィンドウ自身のUIをサンプリング）
                        float max_dist = 21.0f * scale; 
-                       float rx_local = (float)(dx - cx);
-                       float ry_local = (float)(dy - bcy);
-                       float f_px = fabsf(rx_local);
-                       float f_py = fabsf(ry_local);
+                       float rx_l = (float)(dx - cx), ry_l = (float)(dy - bcy);
+                       float f_px = fabsf(rx_l), f_py = fabsf(ry_l);
                        float h_rect = btn_half_width - 21.0f;
                        if (h_rect < 0) h_rect = 0;
                        if (f_px > h_rect) f_px -= h_rect; else f_px = 0;
-                       
-                       float d_center = sqrtf(f_px*f_px + f_py*f_py);
-                       float t_dist = d_center / max_dist;
-                       float d_scale = 1.0f + (t_dist * t_dist * t_dist * t_dist) * 0.7f;
-                       
-                       // ウィンドウバッファ内でのサンプリング座標を計算
-                       int gx = (int)((float)cx * scale + (rx_local * scale / d_scale));
-                       int gy = scroll_offset_y + (int)((float)bcy * scale + (ry_local * scale / d_scale));
-                       
-                       if (gx >= 0 && gx < win->buffer_w && gy >= 0 && gy < win->buffer_h) {
-                           g_color = ((uint32_t*)win->rgba_buffer)[gy * win->buffer_w + gx];
-                           g_color = blend_rgb_over_opaque_premul(win_bg, g_color);
-                       }
-                  }
+                       float d_scale = 1.0f + powf(sqrtf(f_px*f_px + f_py*f_py) / max_dist, 4) * 0.7f;
 
-                  uint32_t glass_base = blend_colors(g_color, win_bg, 160);
-                  if (header_grad_alpha > 0) glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
+                       int gx = (int)((float)cx * scale + (rx_l * scale / d_scale));
+                       int gy = scroll_offset_y + (int)((float)bcy * scale + (ry_l * scale / d_scale));
+                       
+                       uint32_t g_px = (gx>=0 && gx<win->buffer_w && gy>=0 && gy<win->buffer_h) ? 
+                                       ((uint32_t*)win->rgba_buffer)[gy * win->buffer_w + gx] : 0;
+                       
+                       uint32_t g_color = blend_rgb_over_opaque_premul(win_bg, g_px);
+                       glass_base = blend_colors(g_color, win_bg, 160);
+                       if (header_grad_alpha > 0) glass_base = blend_colors(glass_base, grad_base, header_grad_alpha);
+                  }
 
                       uint32_t marker_rgb = is_dark ? 0x444444 : 0xFFFFFF;
                       if (frame_a == 1) {
                           color = glass_base;
                       } else if ((frame_px & 0x00FFFFFF) == marker_rgb) {
-                          // AA縁: 現在のタイトル背景(color)とグラス色(glass_base)をブレンド
+                          // アンチエイリアス：現在の背景(color)と歪み後の色をブレンド
                           color = blend_colors(color, glass_base, frame_a);
                       } else {
-                          // アイコン
+                          // ボタン上のアイコン等
                           color = blend_colors(glass_base, frame_px, frame_a);
                       }
               }
           }
-
           if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
           
           uint8_t final_alpha = 255;
