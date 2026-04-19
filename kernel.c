@@ -346,31 +346,18 @@ static const char* json_skip_ws(const char* p) {
     return p;
 }
 
-// --- OS Settings Fallback (C-embedded) ---
-static const char* g_default_os_settings = 
-"{\n"
-"  \"dev\": {\n"
-"    \"pointerCheck\": false,\n"
-"    \"eventCheck\": false,\n"
-"    \"showHUD\": true\n"
-"  },\n"
-"  \"firstboot\": [\n"
-"    \"warp topbar.warp\"\n"
-"  ],\n"
-"  \"main\": {\n"
-"    \"dark\": false\n"
-"  }\n"
-"}";
 
 static void parse_os_settings() {
   g_os_settings_found = (g_os_settings_ptr != NULL && g_os_settings_size > 0);
-  const char* buf = g_os_settings_found ? g_os_settings_ptr : g_default_os_settings;
   
-  if (g_os_settings_found) {
-    set_w1_global("--warpSystemLog", "SettingsInInitrd.");
-  } else {
-    set_w1_global("--warpSystemLog", "UsingEmbeddedSettings.");
+  if (!g_os_settings_found) {
+      set_w1_global("--warpSystemLog", "CRITICAL: os_settings.json NOT FOUND.");
+      return;
   }
+
+  const char* buf = g_os_settings_ptr;
+  set_w1_global("--warpSystemLog", "SettingsLoaded.");
+  
   
   // Robust check for "dark" key
   const char *dark_key = strstr(buf, "\"dark\"");
@@ -442,6 +429,18 @@ static void parse_os_settings() {
                   g_wallpaper_size = size;
                   g_wallpaper_found = 1;
                   set_w1_global("--warpSystemLog", "WallpaperSetFromInitrd.");
+              }
+          }
+
+          // Fallback to reading from the filesystem if not found in initrd modules
+          if (!g_wallpaper_found) {
+              uint32_t size = 0;
+              void *file_ptr = fs_read_file(wp_name, &size);
+              if (file_ptr) {
+                  g_wallpaper_ptr = file_ptr;
+                  g_wallpaper_size = size;
+                  g_wallpaper_found = 1;
+                  set_w1_global("--warpSystemLog", "WallpaperSetFromStorage.");
               }
           }
         }
@@ -1943,15 +1942,6 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (g_bootlogo_ptr) g_bootlogo_found = 1;
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
   
-  // Wallpaper loading
-  uint32_t wp_size = 0;
-  void *wp_ptr = fs_read_file("wallpaper_2.svg", &wp_size);
-  if (wp_ptr) {
-      g_wallpaper_ptr = wp_ptr;
-      g_wallpaper_size = wp_size;
-      g_wallpaper_found = 1;
-  }
-
   if (g_warp_ptr) g_warp_mod_found = 1;
   
   // モジュールリストもストレージから再構築
@@ -4573,10 +4563,6 @@ static void warp_ui_mod_init_embedded() {
   g_menubar_warp_ptr = fs_read_file("menubar.warp", &g_menubar_warp_size);
   g_bootlogo_ptr = fs_read_file("bootlogo.svg", &g_bootlogo_size);
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
-  
-  uint32_t wp_size = 0;
-  void *wp_ptr = fs_read_file("wallpaper_2.svg", &wp_size);
-  if (wp_ptr) { g_wallpaper_ptr = wp_ptr; g_wallpaper_size = wp_size; g_wallpaper_found = 1; }
   
   if (g_warp_ptr) g_warp_mod_found = 1;
   parse_os_settings();
