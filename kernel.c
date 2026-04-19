@@ -3141,7 +3141,39 @@ skip_shadow:;
           int src_y = scroll_offset_y + (int)((float)dy * scale);
           if (src_x >= win->buffer_w) src_x = win->buffer_w - 1;
           if (src_y >= win->buffer_h) src_y = win->buffer_h - 1;
-          uint32_t content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+          uint32_t content_color;
+          if (win->is_resizing || win->is_calculating) {
+              // 超高品質円形ブラー (25点 Poisson-like Spiral Sampling)
+              // タイトルバー背面も含め全体に適用
+              float r = 30.0f * scale; 
+              static const float ox[] = {
+                  0.00f, 0.12f, -0.10f, 0.04f, 0.04f, -0.10f, 0.25f, -0.24f, 0.20f, -0.15f, 0.08f, 0.00f, -0.08f, 0.15f, -0.20f, 0.24f, -0.25f, 0.50f, -0.49f, 0.46f, -0.42f, 0.35f, -0.28f, 0.19f, -0.10f
+              };
+              static const float oy[] = {
+                  0.00f, 0.00f, 0.07f, -0.12f, 0.12f, -0.07f, 0.00f, 0.08f, -0.15f, 0.20f, -0.24f, 0.25f, -0.24f, 0.20f, -0.15f, 0.08f, -0.00f, 0.00f, 0.10f, -0.19f, 0.28f, -0.35f, 0.42f, -0.46f, 0.49f
+              };
+              
+              uint32_t rs = 0, gs = 0, bs = 0, as = 0;
+              for (int i = 0; i < 25; i++) {
+                  int sx = src_x + (int)(ox[i] * r);
+                  int sy = src_y + (int)(oy[i] * r);
+                  
+                  // ウィンドウバッファ内でのクランプ
+                  if (sx < 0) sx = 0; 
+                  if (sx >= win->buffer_w) sx = win->buffer_w - 1;
+                  if (sy < 0) sy = 0; 
+                  if (sy >= win->buffer_h) sy = win->buffer_h - 1;
+                  
+                  uint32_t c = ((uint32_t*)win->rgba_buffer)[sy * win->buffer_w + sx];
+                  as += (c >> 24) & 0xFF;
+                  rs += (c >> 16) & 0xFF;
+                  gs += (c >> 8) & 0xFF;
+                  bs += c & 0xFF;
+              }
+              content_color = ((as / 25) << 24) | ((rs / 25) << 16) | ((gs / 25) << 8) | (bs / 25);
+          } else {
+              content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+          }
           
           // 1. 基本の色（背景色 + 合成済みコンテンツ）
           uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
@@ -3296,7 +3328,10 @@ if (dy < title_h + 30 && !win->no_decoration) {
                       }
               }
           }
-          if (fade_alpha_u8 > 0) color = blend_colors(color, 0xFFFFFFFF, fade_alpha_u8);
+          if (fade_alpha_u8 > 0) {
+              uint32_t overlay_color = is_dark ? 0x00000000u : 0x00FFFFFFu;
+              color = blend_colors(color, overlay_color, fade_alpha_u8);
+          }
           
           uint8_t final_alpha = 255;
           if (!win->is_maximized && !win->no_decoration) {
@@ -4902,28 +4937,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           win->target_scroll_y = warp_context_get_target_scroll_y(win->warp_ctx);
         }
 
-        // Resize/Calculating Fade
-        float fade_speed = 0.02f;
-        if (win->is_resizing) {
-          if (win->fade_alpha < 1.0f) {
-            win->fade_alpha += fade_speed;
-            if (win->fade_alpha > 1.0f) win->fade_alpha = 1.0f;
+        // Resize/Calculating Fade (Instant semi-transparent overlay)
+        if (win->is_resizing || win->is_calculating) {
+            if (win->fade_alpha != 0.5f) {
+                win->fade_alpha = 0.5f; // 即座に50%の透明度へ
+                moved = 1;
+                g_svg_dirty = 1;
+            }
+        } else if (win->fade_alpha != 0.0f) {
+            win->fade_alpha = 0.0f; // 即座に元に戻す
             moved = 1;
             g_svg_dirty = 1;
-          }
-        } else if (win->is_calculating) {
-          if (win->fade_alpha < 1.0f) {
-            win->fade_alpha = 1.0f;
-            moved = 1;
-            g_svg_dirty = 1;
-          }
-        } else {
-          if (win->fade_alpha > 0.0f) {
-            win->fade_alpha -= fade_speed;
-            if (win->fade_alpha < 0.0f) win->fade_alpha = 0.0f;
-            moved = 1;
-            g_svg_dirty = 1;
-          }
         }
 
         // スクロールアニメーション（1px 単位で補間）
