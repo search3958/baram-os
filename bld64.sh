@@ -254,7 +254,7 @@ EOF
     qemu-system-x86_64 -cdrom output/os.iso \
         -drive file=output/os.img,format=raw \
         -vga virtio \
-        -m 2G \
+        -m 0.5G \
         $Q_SMP \
         $Q_ACCEL \
         -cpu $Q_CPU \
