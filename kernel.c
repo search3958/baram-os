@@ -3397,7 +3397,12 @@ static void redraw_warp_svg(layer_t *layer) {
   int active_idx = g_active_window_index;
   int below_active_dirty = 0;
   for (int i = 0; i < g_window_count; i++) {
-    if (i < active_idx && g_windows[i].is_dirty && !g_windows[i].is_resizing) below_active_dirty = 1;
+    window_t *win = &g_windows[i];
+    // エンジン内部で状態（画面等）が変わっていたらOS側のDirtyを立てる
+    if (win->is_warp1 && win->warp1_ctx && warp1_context_is_dirty(win->warp1_ctx)) win->is_dirty = 1;
+    else if (!win->is_warp1 && win->warp_ctx && warp_context_is_dirty(win->warp_ctx)) win->is_dirty = 1;
+
+    if (i < active_idx && win->is_dirty && !win->is_resizing) below_active_dirty = 1;
   }
 
   if (desktop_composite_dirty || below_active_dirty || active_idx != desktop_composite_last_active_index) {

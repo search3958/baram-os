@@ -106,7 +106,12 @@ static void set_state(warp1_context_t *ctx, const char *key, const char *val) {
         set_w1_global(key, val);
         return;
     }
-    if (w1_strcasecmp(key, "_currentScreen") == 0) { w1_strncpy(ctx->current_screen, val, 63); return; }
+    if (w1_strcasecmp(key, "_currentScreen") == 0) { 
+        w1_strncpy(ctx->current_screen, val, 63); 
+        ctx->layout_valid = 0; // 新しい画面のためにレイアウトを再計算させる
+        ctx->engine_dirty = 1;
+        return; 
+    }
     for (int i = 0; i < ctx->state_count; i++) {
         if (w1_strcasecmp(ctx->state[i].key, key) == 0) { w1_strncpy(ctx->state[i].val, val, 511); return; }
     }
@@ -1191,6 +1196,7 @@ void warp1_context_clear_dirty(warp1_context_t* ctx) { ctx->engine_dirty = 0; }
 void warp1_context_set_state(warp1_context_t* ctx, const char* k, const char* v) {
     set_state(ctx, k, v);
     if (w1_strcasecmp(k, "_currentScreen") == 0) {
+        ctx->layout_valid = 0;
         parse_current_screen1(ctx);
     }
     ctx->engine_dirty = 1;
