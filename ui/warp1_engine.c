@@ -510,10 +510,10 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     
     const char *minimized_val = get_state(ctx, "~~internal/minimized");
     int is_minimized = (w1_strcmp(minimized_val, "true") == 0);
-    int side_padding = is_minimized ? 0 : 24;
+    int side_padding = is_minimized ? 2 : 24;
 
     if (frame_v[0]) {
-        if (w1_strstr(frame_v, "width")) node->w = (w1_strstr(frame_v, "100vw")) ? ctx->win_w - (is_minimized ? 0 : 40) : 200;
+        if (w1_strstr(frame_v, "width")) node->w = (w1_strstr(frame_v, "100vw")) ? ctx->win_w - (is_minimized ? 4 : 40) : 200;
         if (w1_strstr(frame_v, "height")) node->h = 40;
     }
     if (pos_v[0]) {
@@ -523,7 +523,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
 
     if (w1_strcmp(node->tag, "screen") == 0) {
         const char *has_header = get_state(ctx, "~~internal/has_header");
-        int padding = (w1_strcmp(has_header, "true") == 0) ? 60 : (is_minimized ? 0 : 16);
+        int padding = (w1_strcmp(has_header, "true") == 0) ? 60 : (is_minimized ? 2 : 16);
         cy = py + padding;
         for (int i = 0; i < node->children_count; i++) {
             if (w1_strcmp(node->children[i]->tag, "Header") == 0) continue;

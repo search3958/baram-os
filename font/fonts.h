@@ -1,4 +1,4 @@
-/* Auto-generated from LINESeedJP-Regular.ttf */
+/* Auto-generated from IBMPlexSansJP-Regular.ttf */
 #include <stdint.h>
 
 typedef struct { uint16_t code; const char* svg; } Glyph;

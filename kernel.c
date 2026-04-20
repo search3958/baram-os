@@ -3934,7 +3934,7 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 static int font_init(struct multiboot_info *mbi) {
 #ifdef __aarch64__
   uint32_t size = 0;
-  void *data = fs_read_file("MPLUS2-Regular.ttf", &size);
+  void *data = fs_read_file("IBMPlexSansJP-Regular.ttf", &size);
   if (data) {
     if (stbtt_InitFont(&g_font, (unsigned char *)data, 0)) {
       g_font_ready = 1;

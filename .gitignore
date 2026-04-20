@@ -11,7 +11,7 @@ output/fs.o
 output/isodir/boot/grub/grub.cfg
 output/isodir/boot/initrd.tar
 output/isodir/boot/kernel.bin
-output/isodir/boot/MPLUS2-Regular.ttf
+output/isodir/boot/IBMPlexSansJP-Regular.ttf
 *.bin
 output/isodir/boot/initrd.tar
 output/isodir/boot/kernel.bin

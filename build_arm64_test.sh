@@ -33,7 +33,7 @@ INITRD_DIR="output/initrd_tmp"
 rm -rf "$INITRD_DIR"
 mkdir -p "$INITRD_DIR"
 cp ui/*.warp ui/*.warpc ui/*.svg ui/*.lua "$INITRD_DIR/" 2>/dev/null || true
-[ -f "font/MPLUS2-Regular.ttf" ] && cp font/MPLUS2-Regular.ttf "$INITRD_DIR/"
+[ -f "font/IBMPlexSansJP-Regular.ttf" ] && cp font/IBMPlexSansJP-Regular.ttf "$INITRD_DIR/"
 [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
 [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
 (cd "$INITRD_DIR" && tar -cf ../initrd.tar *)
