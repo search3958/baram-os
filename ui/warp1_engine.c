@@ -646,20 +646,12 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         int lines = 1; for (int i = 0; text[i]; i++) if (text[i] == '\n') lines++;
         node->h = lines * 22;
     } else if (w1_strcmp(node->tag, "hStack") == 0) {
-        int cx = px; int cy_offset = 0; int row_max_h = 0;
+        int cx = px; int max_h = 0; int div = node->children_count ? node->children_count : 1;
         for (int i = 0; i < node->children_count; i++) {
-            warp1_node_t *child = node->children[i];
-            int h = layout_node1(ctx, child, cx, py + cy_offset, limit_w);
-            if (cx + child->w > px + limit_w && i > 0) {
-                cy_offset += row_max_h + 8;
-                cx = px;
-                row_max_h = 0;
-                h = layout_node1(ctx, child, cx, py + cy_offset, limit_w);
-            }
-            if (h > row_max_h) row_max_h = h;
-            cx += child->w + 8;
+            int h = layout_node1(ctx, node->children[i], cx, py, limit_w / div);
+            if (h > max_h) { max_h = h; } cx += node->children[i]->w + 8;
         }
-        node->h = cy_offset + row_max_h;
+        node->h = max_h;
     } else if (w1_strcmp(node->tag, "vStack") == 0) {
         for (int i = 0; i < node->children_count; i++) { cy += layout_node1(ctx, node->children[i], px, cy, limit_w) + 8; }
         node->h = cy - py;
