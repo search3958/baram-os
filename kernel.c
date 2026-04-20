@@ -5062,7 +5062,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従（1px 単位）
       if (mouse_scroll != 0 && g_active_window_index >= 0) {
         window_t *win = &g_windows[g_active_window_index];
-        float scroll_amount = (float)mouse_scroll * 30.0f;
+        float scroll_amount = (float)mouse_scroll * 4.0f;
         mouse_scroll = 0;
 
         // コンテキストから現在のターゲットスクロールを取得
