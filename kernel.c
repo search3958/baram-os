@@ -2589,11 +2589,14 @@ static void window_redraw(window_t *win) {
     strncpy(g_hud_status, "LayoutUpdate", 63);
     int title_h = win->no_decoration ? 0 : 60;
     const char *has_header_str = (title_h > 0) ? "true" : "false";
+    const char *minimized_str = (win->w == 300 && win->h == 240) ? "true" : "false";
     if (win->is_warp1) {
       warp1_context_set_state(win->warp1_ctx, "~~internal/has_header", has_header_str);
+      warp1_context_set_state(win->warp1_ctx, "~~internal/minimized", minimized_str);
       warp1_context_update(win->warp1_ctx, win->w, win->h + title_h);
     } else {
       warp_context_set_state(win->warp_ctx, "~~internal/has_header", has_header_str);
+      warp_context_set_state(win->warp_ctx, "~~internal/minimized", minimized_str);
       warp_context_update(win->warp_ctx, win->w, win->h + title_h);
     }
     win->is_dirty = 0; // レイアウト計算完了

@@ -508,22 +508,26 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         }
     }
     
+    const char *minimized_val = get_state(ctx, "~~internal/minimized");
+    int is_minimized = (w1_strcmp(minimized_val, "true") == 0);
+    int side_padding = is_minimized ? 0 : 24;
+
     if (frame_v[0]) {
-        if (w1_strstr(frame_v, "width")) node->w = (w1_strstr(frame_v, "100vw")) ? ctx->win_w - 40 : 200;
+        if (w1_strstr(frame_v, "width")) node->w = (w1_strstr(frame_v, "100vw")) ? ctx->win_w - (is_minimized ? 0 : 40) : 200;
         if (w1_strstr(frame_v, "height")) node->h = 40;
     }
     if (pos_v[0]) {
         if (w1_strstr(pos_v, "bottom")) node->y = ctx->win_h - 60;
-        if (w1_strstr(pos_v, "left")) node->x = 20;
+        if (w1_strstr(pos_v, "left")) node->x = is_minimized ? 0 : 20;
     }
 
     if (w1_strcmp(node->tag, "screen") == 0) {
         const char *has_header = get_state(ctx, "~~internal/has_header");
-        int padding = (w1_strcmp(has_header, "true") == 0) ? 60 : 16;
+        int padding = (w1_strcmp(has_header, "true") == 0) ? 60 : (is_minimized ? 0 : 16);
         cy = py + padding;
         for (int i = 0; i < node->children_count; i++) {
             if (w1_strcmp(node->children[i]->tag, "Header") == 0) continue;
-            cy += layout_node1(ctx, node->children[i], node->x + 24, cy, limit_w - 48) + 12;
+            cy += layout_node1(ctx, node->children[i], node->x + side_padding, cy, limit_w - side_padding * 2) + 12;
         }
         // Add 16px bottom padding
         node->h = cy - py + 4; // cy already has +12 from the last element, so +4 makes it +16 total
@@ -531,11 +535,11 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
     } else if (w1_strcmp(node->tag, "card") == 0) {
         cy += 12; char title[128]; eval_attr(ctx, node, "text", title, 127);
         if (title[0] && ctx->texts_count < MAX_TEXTS) {
-            ctx->texts[ctx->texts_count].x = px + 24; ctx->texts[ctx->texts_count].y = cy + 4;
+            ctx->texts[ctx->texts_count].x = px + side_padding; ctx->texts[ctx->texts_count].y = cy + 4;
             w1_strcpy(ctx->texts[ctx->texts_count].text, title); ctx->texts[ctx->texts_count].size = 20;
             ctx->texts[ctx->texts_count].color = is_dark ? 0xFFEEEEEE : 0xFF121212; ctx->texts_count++; cy += 36;
         }
-        for (int i = 0; i < node->children_count; i++) { cy += layout_node1(ctx, node->children[i], px + 24, cy, limit_w - 48) + 8; }
+        for (int i = 0; i < node->children_count; i++) { cy += layout_node1(ctx, node->children[i], px + side_padding, cy, limit_w - side_padding * 2) + 8; }
         node->h = cy - py + 12;
     } else if (w1_strcmp(node->tag, "button") == 0 || w1_strcmp(node->tag, "tonalButton") == 0) {
         node->h = 40; char text[128]; eval_attr(ctx, node, "text", text, 127);
