@@ -5172,22 +5172,22 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               int title_h = win->no_decoration ? 0 : 60;
               
               // Resize Handle
-              if (!win->is_menubar && i == g_active_window_index &&
+              if (!win->is_menubar && i == g_active_window_index && win->is_resizing_enabled &&
                   hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 &&
                   hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) {
                 hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 1; break;
               }
-              if (!win->is_menubar && i == g_active_window_index &&
+              if (!win->is_menubar && i == g_active_window_index && win->is_resizing_enabled &&
                   hx >= win->x - 8 && hx < win->x + 24 &&
                   hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) {
                 hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 2; break;
               }
-              if (!win->is_menubar && i == g_active_window_index &&
+              if (!win->is_menubar && i == g_active_window_index && win->is_resizing_enabled &&
                   hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 &&
                   hy >= win->y - title_h - 8 && hy < win->y - title_h + 8) {
                 hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 3; break;
               }
-              if (!win->is_menubar && i == g_active_window_index &&
+              if (!win->is_menubar && i == g_active_window_index && win->is_resizing_enabled &&
                   hx >= win->x - 8 && hx < win->x + 24 &&
                   hy >= win->y - title_h - 8 && hy < win->y - title_h + 8) {
                 hit_index = i; g_windows[i].is_resizing = 1; g_windows[i].resize_mode = 4; break;
@@ -5322,7 +5322,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         int cursor_type = CURSOR_TYPE_DEFAULT;
         for (int i = g_window_count - 1; i >= 0; i--) {
             window_t *win = &g_windows[i];
-            if (!win->is_menubar && i == g_active_window_index) {
+            if (!win->is_menubar && i == g_active_window_index && win->is_resizing_enabled) {
                 int th = win->no_decoration ? 0 : 60;
                 if ((hx >= win->x + win->w - 24 && hx < win->x + win->w + 8 && hy >= win->y + win->h - 24 && hy < win->y + win->h + 8) ||
                     (hx >= win->x - 8 && hx < win->x + 24 && hy >= win->y - th - 8 && hy < win->y - th + 8)) {
