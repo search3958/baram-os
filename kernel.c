@@ -4198,15 +4198,31 @@ static glyph_cache_t* get_glyph(uint32_t codepoint, float size) {
   if (g_glyph_cache_count >= MAX_GLYPH_CACHE) return NULL;
 
   glyph_cache_t *gc = &g_glyph_cache[g_glyph_cache_count++];
+  
+  // 1. 優先するフォントを決定
   stbtt_fontinfo *font = &g_font;
   if (g_emoji_font_ready && is_emoji(codepoint)) {
     font = &g_emoji_font;
   }
 
+  // 2. 優先フォントにグリフがない場合、もう一方にフォールバック
+  if (stbtt_FindGlyphIndex(font, (int)codepoint) == 0) {
+    if (font == &g_font && g_emoji_font_ready) {
+      if (stbtt_FindGlyphIndex(&g_emoji_font, (int)codepoint) != 0) {
+        font = &g_emoji_font;
+      }
+    } else if (font == &g_emoji_font && g_font_ready) {
+      if (stbtt_FindGlyphIndex(&g_font, (int)codepoint) != 0) {
+        font = &g_font;
+      }
+    }
+  }
+
+  // 3. 決定したフォントでビットマップ生成
   float scale = stbtt_ScaleForPixelHeight(font, size);
   gc->bitmap = stbtt_GetCodepointBitmap(font, 0, scale, (int)codepoint, &gc->bw, &gc->bh, &gc->bx, &gc->by);
   int adv_tmp, lsb_tmp;
-  stbtt_GetCodepointHMetrics(font, codepoint, &adv_tmp, &lsb_tmp);
+  stbtt_GetCodepointHMetrics(font, (int)codepoint, &adv_tmp, &lsb_tmp);
   gc->adv = (int)(adv_tmp * scale);
   gc->codepoint = codepoint;
   gc->size = size;

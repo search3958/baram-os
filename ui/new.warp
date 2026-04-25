@@ -11,9 +11,7 @@ screen{
         },
         
         button{
-            --headerText: ("🐛"),
-            text: (--headerText),
-            oneClick: (devClickCheck = "true")
+            text: ("👍問題ない"),
         }
     },
     
@@ -21,6 +19,10 @@ screen{
         text: ("これは新しい、ネイティブと Web 技術が融合する言語です。気になる反応は" + --mainText),
         --mainText: ("...")
     },
+
+        button{
+            text: ("👍問題ない"),
+        },
     card{
         text: ("内容変更"),
 
