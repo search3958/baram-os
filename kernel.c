@@ -642,8 +642,11 @@ static int g_hud_current_h = 64;
 static uint32_t text_layer_buf[TEXT_LAYER_W * TEXT_LAYER_H];
 // stbtt フォント
 static stbtt_fontinfo g_font;
+static stbtt_fontinfo g_emoji_font;
 static int g_font_ready = 0;
+static int g_emoji_font_ready = 0;
 static const char *g_font_error = NULL;
+static const char *g_emoji_font_error = NULL;
 
 // メモリアロケータ (フリーリスト方式)
 extern char _kernel_end[];
@@ -3938,13 +3941,24 @@ static int font_init(struct multiboot_info *mbi) {
   if (data) {
     if (stbtt_InitFont(&g_font, (unsigned char *)data, 0)) {
       g_font_ready = 1;
-      return 1;
+    } else {
+      g_font_error = "ERR:stbtt_InitFont ARM";
     }
-    g_font_error = "ERR:stbtt_InitFont ARM";
   } else {
     g_font_error = "ERR:font not found in FS";
   }
-  return 0;
+
+  size = 0;
+  void *emoji_data = fs_read_file("NotoEmoji-Regular.ttf", &size);
+  if (emoji_data) {
+    if (stbtt_InitFont(&g_emoji_font, (unsigned char *)emoji_data, 0)) {
+      g_emoji_font_ready = 1;
+    } else {
+      g_emoji_font_error = "ERR:stbtt_InitFont Emoji ARM";
+    }
+  }
+
+  return g_font_ready;
 #else
   if (!mbi) {
     g_font_error = "ERR:no mbi";
@@ -3958,19 +3972,36 @@ static int font_init(struct multiboot_info *mbi) {
     g_font_error = "ERR:no modules";
     return 0;
   }
-  multiboot_module_t *mod = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
-  unsigned char *ttf = (unsigned char *)(uintptr_t)mod->mod_start;
-  uint32_t ttf_size = mod->mod_end - mod->mod_start;
-  if (ttf_size < 12) {
-    g_font_error = "ERR:ttf too small";
-    return 0;
+
+  multiboot_module_t *mods = (multiboot_module_t *)(uintptr_t)mbi->mods_addr;
+  for (uint32_t i = 0; i < mbi->mods_count; i++) {
+    unsigned char *ttf = (unsigned char *)(uintptr_t)mods[i].mod_start;
+    uint32_t ttf_size = mods[i].mod_end - mods[i].mod_start;
+    const char *cmdline = (const char *)(uintptr_t)mods[i].string;
+
+    if (ttf_size > 12 && ttf[0] == 0x00 && ttf[1] == 0x01 && ttf[2] == 0x00 && ttf[3] == 0x00) { // Simple TTF magic check
+      if (!g_font_ready) {
+        if (stbtt_InitFont(&g_font, ttf, stbtt_GetFontOffsetForIndex(ttf, 0))) {
+          g_font_ready = 1;
+        }
+      } else if (!g_emoji_font_ready) {
+        // Assume second TTF is emoji font if not already loaded
+        // Or check cmdline if available
+        if (cmdline && strstr(cmdline, "NotoEmoji")) {
+           if (stbtt_InitFont(&g_emoji_font, ttf, stbtt_GetFontOffsetForIndex(ttf, 0))) {
+             g_emoji_font_ready = 1;
+           }
+        } else if (!cmdline || !strstr(cmdline, "HarmonyOS")) {
+           if (stbtt_InitFont(&g_emoji_font, ttf, stbtt_GetFontOffsetForIndex(ttf, 0))) {
+             g_emoji_font_ready = 1;
+           }
+        }
+      }
+    }
   }
-  if (!stbtt_InitFont(&g_font, ttf, stbtt_GetFontOffsetForIndex(ttf, 0))) {
-    g_font_error = "ERR:stbtt_InitFont";
-    return 0;
-  }
-  g_font_ready = 1;
-  return 1;
+
+  if (!g_font_ready) g_font_error = "ERR:stbtt_InitFont";
+  return g_font_ready;
 #endif
 }
 
@@ -4114,10 +4145,10 @@ static void text_layer_redraw(layer_t *text_layer, float font_size) {
   }
 }
 
-// UTF-8→Unicode変換（簡易）
-static uint16_t utf8_next(const char **p) {
+// UTF-8→Unicode変換
+static uint32_t utf8_next(const char **p) {
   const unsigned char *s = (const unsigned char *)*p;
-  uint16_t code = 0;
+  uint32_t code = 0;
   if (s[0] < 0x80) {
     code = s[0];
     (*p)++;
@@ -4127,6 +4158,9 @@ static uint16_t utf8_next(const char **p) {
   } else if ((s[0] & 0xF0) == 0xE0) {
     code = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
     (*p) += 3;
+  } else if ((s[0] & 0xF8) == 0xF0) {
+    code = ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+    (*p) += 4;
   } else {
     (*p)++;
   }
@@ -4135,7 +4169,7 @@ static uint16_t utf8_next(const char **p) {
 
 // --- グリフキャッシュ ---
 typedef struct {
-  uint16_t codepoint;
+  uint32_t codepoint;
   float size;
   int bw, bh, bx, by, adv;
   unsigned char *bitmap;
@@ -4144,7 +4178,19 @@ typedef struct {
 static glyph_cache_t g_glyph_cache[MAX_GLYPH_CACHE];
 static int g_glyph_cache_count = 0;
 
-static glyph_cache_t* get_glyph(uint16_t codepoint, float size) {
+static int is_emoji(uint32_t cp) {
+  // Common emoji ranges
+  if (cp >= 0x1F300 && cp <= 0x1F9FF) return 1; // Misc Symbols and Pictographs, Emoticons, etc.
+  if (cp >= 0x2600 && cp <= 0x27BF) return 1;  // Misc Symbols, Dingbats
+  if (cp >= 0x1FA70 && cp <= 0x1FAFF) return 1; // Symbols and Pictographs Extended-A
+  if (cp >= 0x1F000 && cp <= 0x1F2FF) return 1; // Mahjong, Domino, Playing Cards, Enclosed Alphanumeric Suppl, etc.
+  if (cp >= 0x1F680 && cp <= 0x1F6FF) return 1; // Transport and Map Symbols
+  if (cp >= 0x1F7E0 && cp <= 0x1F7EB) return 1; // Geometric Shapes Extended
+  if (cp >= 0x231A && cp <= 0x23F3) return 1;   // Some Misc Technical
+  return 0;
+}
+
+static glyph_cache_t* get_glyph(uint32_t codepoint, float size) {
   for (int i = 0; i < g_glyph_cache_count; i++) {
     if (g_glyph_cache[i].codepoint == codepoint && g_glyph_cache[i].size == size)
       return &g_glyph_cache[i];
@@ -4152,10 +4198,15 @@ static glyph_cache_t* get_glyph(uint16_t codepoint, float size) {
   if (g_glyph_cache_count >= MAX_GLYPH_CACHE) return NULL;
 
   glyph_cache_t *gc = &g_glyph_cache[g_glyph_cache_count++];
-  float scale = stbtt_ScaleForPixelHeight(&g_font, size);
-  gc->bitmap = stbtt_GetCodepointBitmap(&g_font, 0, scale, (int)codepoint, &gc->bw, &gc->bh, &gc->bx, &gc->by);
+  stbtt_fontinfo *font = &g_font;
+  if (g_emoji_font_ready && is_emoji(codepoint)) {
+    font = &g_emoji_font;
+  }
+
+  float scale = stbtt_ScaleForPixelHeight(font, size);
+  gc->bitmap = stbtt_GetCodepointBitmap(font, 0, scale, (int)codepoint, &gc->bw, &gc->bh, &gc->bx, &gc->by);
   int adv_tmp, lsb_tmp;
-  stbtt_GetCodepointHMetrics(&g_font, codepoint, &adv_tmp, &lsb_tmp);
+  stbtt_GetCodepointHMetrics(font, codepoint, &adv_tmp, &lsb_tmp);
   gc->adv = (int)(adv_tmp * scale);
   gc->codepoint = codepoint;
   gc->size = size;
@@ -4173,7 +4224,7 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
   int cx = px;
   const char *p = str;
   while (*p) {
-    uint16_t cp = utf8_next(&p);
+    uint32_t cp = utf8_next(&p);
     glyph_cache_t *gc = get_glyph(cp, font_size);
     if (gc && gc->bitmap) {
 #ifdef __SSE2__
@@ -4250,7 +4301,7 @@ int measure_ttf_width(const char *str, float font_size) {
   int width = 0;
   const char *p = str;
   while (*p) {
-    uint16_t cp = utf8_next(&p);
+    uint32_t cp = utf8_next(&p);
     glyph_cache_t *gc = get_glyph(cp, font_size);
     if (gc)
       width += gc->adv;
@@ -4258,12 +4309,12 @@ int measure_ttf_width(const char *str, float font_size) {
   return width;
 }
 // SVGパスを使ったグリフ描画（ダミー: 枠のみ）
-static void layer_draw_glyph(layer_t *layer, int x, int y, uint16_t code,
+static void layer_draw_glyph(layer_t *layer, int x, int y, uint32_t code,
                              uint32_t color) {
   // fonts.h の font_glyphs[] から code を検索
   extern const Glyph font_glyphs[];
   for (int i = 0; font_glyphs[i].code != 0; ++i) {
-    if (font_glyphs[i].code == code) {
+    if (font_glyphs[i].code == (uint16_t)code) {
       // 文字コードに応じて豆腐の中身を塗りつぶし
       for (int dy = 0; dy < 24; ++dy) {
         for (int dx = 0; dx < 24; ++dx) {
@@ -4296,7 +4347,7 @@ static void layer_draw_glyph_string(layer_t *layer, int x, int y,
                                     const char *str, uint32_t color) {
   int cx = x;
   while (*str) {
-    uint16_t code = utf8_next(&str);
+    uint32_t code = utf8_next(&str);
     if (code < 128) {
       layer_draw_char(layer, cx, y, (char)code, color, TRANSPARENT_COLOR);
       cx += 8;

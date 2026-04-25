@@ -118,6 +118,7 @@ terminal_output gfxterm
 menuentry "baram-os (32-bit)" {
     multiboot /boot/kernel.bin
     module /boot/HarmonyOS_Sans_Regular.ttf
+    module /boot/NotoEmoji-Regular.ttf
     module /boot/initrd.tar initrd
     boot
 }
@@ -125,6 +126,9 @@ EOF
 
     if [ -f "font/HarmonyOS_Sans_Regular.ttf" ]; then
         cp font/HarmonyOS_Sans_Regular.ttf output/isodir/boot/
+    fi
+    if [ -f "font/NotoEmoji-Regular.ttf" ]; then
+        cp font/NotoEmoji-Regular.ttf output/isodir/boot/
     fi
 
     show_progress 90
