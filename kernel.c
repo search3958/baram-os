@@ -3934,7 +3934,7 @@ static void hud_update(layer_t *hud, unsigned int cpu_percent,
 static int font_init(struct multiboot_info *mbi) {
 #ifdef __aarch64__
   uint32_t size = 0;
-  void *data = fs_read_file("IBMPlexSansJP-Regular.ttf", &size);
+  void *data = fs_read_file("HarmonyOS_Sans_Regular.ttf", &size);
   if (data) {
     if (stbtt_InitFont(&g_font, (unsigned char *)data, 0)) {
       g_font_ready = 1;
@@ -4554,14 +4554,14 @@ extern void uart_puts(const char *s);
 #endif
 
 #ifdef __aarch64__
-extern unsigned char _binary_initrd_bin_start[];
-extern size_t _binary_initrd_bin_size;
+extern unsigned char _binary_output_initrd_tar_start[];
+extern size_t _binary_output_initrd_tar_size;
 #endif
 
 static void warp_ui_mod_init_embedded() {
 #ifdef __aarch64__
-  const char *tar_start = (const char *)_binary_initrd_bin_start;
-  size_t tar_size = _binary_initrd_bin_size;
+  const char *tar_start = (const char *)_binary_output_initrd_tar_start;
+  size_t tar_size = _binary_output_initrd_tar_size;
   
   uart_puts("Loading embedded initrd...\r\n");
   
@@ -4600,6 +4600,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
   (void)magic;
 #ifdef __aarch64__
   uart_puts("\r\n--- BaramOS ARM64 Booting ---\r\n");
+  // Test fw_cfg
+  extern void fw_cfg_select(uint16_t key);
+  extern void fw_cfg_read(void *buf, size_t len);
+  fw_cfg_select(0x0000);
+  char sig[4];
+  fw_cfg_read(sig, 4);
+  if (sig[0] == 'Q' && sig[1] == 'E' && sig[2] == 'M' && sig[3] == 'U') {
+    uart_puts("fw_cfg OK\n");
+  } else {
+    uart_puts("fw_cfg FAIL\n");
+  }
 #endif
   mbi_ptr = mbi;
   uint32_t mem_total_kb = 0;

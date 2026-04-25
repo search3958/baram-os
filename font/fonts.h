@@ -1,4 +1,4 @@
-/* Auto-generated from IBMPlexSansJP-Regular.ttf */
+/* Auto-generated from HarmonyOS_Sans_Regular.ttf */
 #include <stdint.h>
 
 typedef struct { uint16_t code; const char* svg; } Glyph;

@@ -22,11 +22,11 @@ void uart_puts(const char *s) {
 }
 
 // fw_cfg helpers
-static void fw_cfg_select(uint16_t key) {
-  mmio_write16(FW_CFG_BASE + 8, ((key & 0xFF) << 8) | (key >> 8));
+void fw_cfg_select(uint16_t key) {
+  mmio_write16(FW_CFG_BASE + 8, __builtin_bswap16(key));  // big-endian for arm MMIO
 }
 
-static void fw_cfg_read(void *buf, size_t len) {
+void fw_cfg_read(void *buf, size_t len) {
   uint8_t *p = (uint8_t *)buf;
   for (size_t i = 0; i < len; i++) {
     p[i] = mmio_read8(FW_CFG_BASE);
@@ -41,6 +41,37 @@ static void fw_cfg_write(const void *buf, size_t len) {
 }
 
 typedef struct {
+  uint32_t size;      // big-endian
+  uint16_t select;    // big-endian
+  uint16_t reserved;
+  char name[56];
+} __attribute__((packed)) fw_cfg_file_t;
+
+static uint16_t fw_cfg_find_file(const char *filename) {
+  fw_cfg_select(0x0019);  // FW_CFG_FILE_DIR
+  uint32_t count;
+  fw_cfg_read(&count, sizeof(count));
+  count = __builtin_bswap32(count);  // big-endian to host
+
+  uart_puts("fw_cfg count: ");
+  if (count == 0) uart_puts("0");
+  else if (count == 1) uart_puts("1");
+  else uart_puts("many");
+  uart_puts("\n");
+
+  for (uint32_t i = 0; i < count; i++) {
+    fw_cfg_file_t file;
+    fw_cfg_read(&file, sizeof(file));
+    uart_puts(file.name);
+    uart_puts("\n");
+    if (strcmp(file.name, filename) == 0) {
+      return __builtin_bswap16(file.select);  // big-endian to host
+    }
+  }
+  return 0;
+}
+
+typedef struct {
   uint64_t addr;
   uint32_t fourcc;
   uint32_t flags;
@@ -50,6 +81,12 @@ typedef struct {
 } __attribute__((packed)) ramfb_cfg_t;
 
 void ramfb_init(uint32_t *fb, uint32_t w, uint32_t h) {
+  uint16_t select = fw_cfg_find_file("etc/ramfb");
+  if (select == 0) {
+    uart_puts("RamFB not found in fw_cfg.\n");
+    return;
+  }
+
   ramfb_cfg_t cfg;
   cfg.addr = (uintptr_t)fb;
   cfg.fourcc = 0x34325258; // DRM_FORMAT_XRGB8888 (Little Endian)
@@ -58,9 +95,7 @@ void ramfb_init(uint32_t *fb, uint32_t w, uint32_t h) {
   cfg.height = h;
   cfg.stride = w * 4;
 
-  // Need to find "etc/ramfb" index. Usually it is not fixed.
-  // For QEMU virt, common index for ramfb is 0x0020 (standard key).
-  fw_cfg_select(0x0020);
+  fw_cfg_select(select);
   fw_cfg_write(&cfg, sizeof(cfg));
   uart_puts("RamFB initialized.\n");
 }
