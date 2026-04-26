@@ -2,7 +2,8 @@
   "dev": {
     "pointerCheck": false,
     "eventCheck": false,
-    "showHUD": true
+    "showHUD": true,
+    "scrollSpeed": "1"
   },
   "firstboot": [
     "warp topbar.warp"

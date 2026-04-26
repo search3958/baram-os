@@ -226,6 +226,7 @@ static const char* tar_find_file(const char *tar_data, size_t tar_size, const ch
 int g_dev_pointer_check = 1;
 static int g_dev_event_check = 0;
 static int g_dev_show_hud = 1;
+static int g_dev_scroll_speed = 5;
 
 static int g_svg_dirty = 1;
 static char g_hud_status[64] = "Idle";
@@ -305,7 +306,10 @@ static float convert_scroll_event_to_delta(scroll_input_state_t *state,
   state->burst_events++;
   state->burst_steps += steps;
 
-  float per_step = 5.0f;
+  float base_per_step = (float)g_dev_scroll_speed;
+  if (base_per_step < 1.0f) base_per_step = 1.0f;
+
+  float per_step = base_per_step;
   if (state->burst_events > 1) {
     float span = (float)(event->tick - state->burst_first_tick);
     float avg_gap = span / (float)(state->burst_events - 1);
@@ -313,11 +317,11 @@ static float convert_scroll_event_to_delta(scroll_input_state_t *state,
     float burst_gain = 1.0f + (float)(state->burst_events - 1) * 0.08f;
     per_step *= cadence_gain * burst_gain;
   }
-  if (per_step > 72.0f) per_step = 72.0f;
+  if (per_step > base_per_step * 14.4f) per_step = base_per_step * 14.4f;
 
   float step_gain = 1.0f + (float)(steps - 1) * 0.35f;
   float delta = per_step * (float)steps * step_gain;
-  if (delta > 720.0f) delta = 720.0f;
+  if (delta > base_per_step * 144.0f) delta = base_per_step * 144.0f;
 
   state->last_tick = event->tick;
   state->last_serial = event->serial;
@@ -488,6 +492,11 @@ const char *get_w1_global(const char *key) {
   if (strcmp(key, "~~dev/pointerCheck") == 0) return g_dev_pointer_check ? "true" : "false";
   if (strcmp(key, "~~dev/eventCheck") == 0) return g_dev_event_check ? "true" : "false";
   if (strcmp(key, "~~dev/showHUD") == 0) return g_dev_show_hud ? "true" : "false";
+  if (strcmp(key, "~~dev/scrollSpeed") == 0) {
+    static char scroll_speed_buf[16];
+    snprintf(scroll_speed_buf, sizeof(scroll_speed_buf), "%d", g_dev_scroll_speed);
+    return scroll_speed_buf;
+  }
 
   for (int i = 0; i < g_global_var_count; i++) {
     if (strcmp(g_global_vars[i].key, key) == 0) return g_global_vars[i].val;
@@ -499,6 +508,25 @@ const char *get_w1_global(const char *key) {
 static const char* json_skip_ws(const char* p) {
     while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) p++;
     return p;
+}
+
+static int parse_json_int_or_string(const char *p, int *out_value) {
+    if (!p || !out_value) return 0;
+
+    p = json_skip_ws(p);
+    if (*p == '\"') p++;
+
+    char num_buf[16];
+    int len = 0;
+    while (*p && len < (int)(sizeof(num_buf) - 1)) {
+        if (*p < '0' || *p > '9') break;
+        num_buf[len++] = *p++;
+    }
+    num_buf[len] = '\0';
+
+    if (len == 0) return 0;
+    *out_value = atoi(num_buf);
+    return 1;
 }
 
 
@@ -609,6 +637,23 @@ static void parse_os_settings() {
   
   if (strstr(buf, "\"showHUD\": true")) set_w1_global("~~dev/showHUD", "true");
   else if (strstr(buf, "\"showHUD\": false")) set_w1_global("~~dev/showHUD", "false");
+
+  const char *scroll_key = strstr(buf, "\"scrollSpeed\"");
+  if (scroll_key) {
+    const char *p = json_skip_ws(scroll_key + 13);
+    if (*p == ':') {
+      int scroll_speed = 0;
+      p = json_skip_ws(p + 1);
+      if (parse_json_int_or_string(p, &scroll_speed)) {
+        if (scroll_speed < 1) scroll_speed = 1;
+        if (scroll_speed > 64) scroll_speed = 64;
+
+        char scroll_speed_buf[16];
+        snprintf(scroll_speed_buf, sizeof(scroll_speed_buf), "%d", scroll_speed);
+        set_w1_global("~~dev/scrollSpeed", scroll_speed_buf);
+      }
+    }
+  }
 
   // Firstboot commands
   const char *fb_key = strstr(buf, "\"firstboot\"");
@@ -2370,6 +2415,11 @@ void set_w1_global(const char *key, const char *val) {
     g_dev_event_check = (strcmp(val, "true") == 0);
   } else if (strcmp(key, "~~dev/showHUD") == 0) {
     g_dev_show_hud = (strcmp(val, "true") == 0);
+  } else if (strcmp(key, "~~dev/scrollSpeed") == 0) {
+    int scroll_speed = atoi(val);
+    if (scroll_speed < 1) scroll_speed = 1;
+    if (scroll_speed > 64) scroll_speed = 64;
+    g_dev_scroll_speed = scroll_speed;
   }
 
   int is_log = (strcmp(key, "--warpSystemLog") == 0);
