@@ -1066,6 +1066,40 @@ static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
 
 
 
+char* emit_rounded_rect_to(char *p, int x, int y, int w, int h, float radius,
+                           const char *fill, const char *extra) {
+  float fw = (float)w, fh = (float)h;
+  float min_edge = (fw < fh) ? fw : fh;
+  float max_possible_radius = min_edge / 2.0f;
+  float radius_px;
+
+  if (radius == -1.0f) {
+    float s = (fh >= 46.0f) ? 1.15f : 1.0f;
+    radius_px = 12.0f * s;
+  } else if (radius >= 1000.0f) {
+    float radius_pct = radius - 1000.0f;
+    if (radius_pct > 100.0f) radius_pct = 100.0f;
+    if (radius_pct < 0.0f) radius_pct = 0.0f;
+    radius_px = (max_possible_radius * radius_pct) / 100.0f;
+  } else {
+    radius_px = radius;
+  }
+
+  if (radius_px < 0.0f) radius_px = 0.0f;
+  if (radius_px > max_possible_radius) radius_px = max_possible_radius;
+
+  p = warp_stpcpy(p, "<rect x=\"");
+  p = append_int(p, x); p = warp_stpcpy(p, "\" y=\"");
+  p = append_int(p, y); p = warp_stpcpy(p, "\" width=\"");
+  p = append_int(p, w); p = warp_stpcpy(p, "\" height=\"");
+  p = append_int(p, h); p = warp_stpcpy(p, "\" rx=\"");
+  p = append_fixed3(p, radius_px); p = warp_stpcpy(p, "\" ry=\"");
+  p = append_fixed3(p, radius_px); p = warp_stpcpy(p, "\" fill=\"");
+  p = warp_stpcpy(p, fill); p = warp_stpcpy(p, "\" ");
+  p = warp_stpcpy(p, extra); p = warp_stpcpy(p, " />\n");
+  return p;
+}
+
 char* emit_squircle_shape_to(char *p, int x, int y, int w, int h, float radius,
                              const char *fill, const char *extra) {
   // radius: -1=デフォルト，0=矩形，1-999=ピクセル値，1000+=パーセンテージ
@@ -1310,16 +1344,16 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     } else {
         warp_strcpy(extra, "stroke=\"#dddddd\" stroke-width=\"1\"");
     }
-    emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, 0.0f, fill, extra);
+    emit_rounded_rect_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, 12.0f, fill, extra);
   } else if (warp_strcmp(node->tag, "button") == 0 || warp_strcmp(node->tag, "tonalButton") == 0) {
     const char *c_prop = get_attr(node, "color");
     const char *hex = get_color_hex(c_prop);
     const char *fill = hex ? hex : "#0a56d0";
     if (warp_strcmp(node->tag, "tonalButton") == 0) {
       const char *tonal_fill = is_dark ? "#ffffff" : "#000000";
-      emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, -1.0f, tonal_fill, "opacity=\"0.1\"");
+      emit_rounded_rect_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, -1.0f, tonal_fill, "opacity=\"0.1\"");
     } else {
-      emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, -1.0f, fill, "");
+      emit_rounded_rect_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, -1.0f, fill, "");
     }
   } else if (warp_strcmp(node->tag, "switch") == 0) {
     // スイッチの描画
@@ -1337,7 +1371,7 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     int size = 44;
     int x = node->x + (node->w - size) / 2;
     int y = node->y + (node->h - size) / 2;
-    emit_squircle_shape_to(dest + warp_strlen(dest), x, y, size, size, 1050.0f,
+    emit_rounded_rect_to(dest + warp_strlen(dest), x, y, size, size, 1050.0f,
                            bg_color, disabled ? "opacity=\"0.5\"" : "");
 
     // チェックマーク（true の場合のみ）
@@ -1360,12 +1394,12 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     if (v < 0) v = 0;
     if (v > 100) v = 100;
 
-    emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y + 14, node->w, 4, 2.0f, "#dddddd", "");
+    emit_rounded_rect_to(dest + warp_strlen(dest), node->x, node->y + 14, node->w, 4, 2.0f, "#dddddd", "");
 
     int knob_x = node->x + (node->w * v / 100) - 10;
     if (knob_x < node->x - 10) knob_x = node->x - 10;
     if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
-    emit_squircle_shape_to(dest + warp_strlen(dest), knob_x, node->y + 6, 20, 20, 10.0f, "#0A60FF", "");
+    emit_rounded_rect_to(dest + warp_strlen(dest), knob_x, node->y + 6, 20, 20, 10.0f, "#0A60FF", "");
   } else if (warp_strcmp(node->tag, "input") == 0) {
     // 入力フォームの描画 - 角丸矩形
     const char *stroke = is_dark ? "#555555" : "#dddddd";
@@ -1376,7 +1410,7 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     warp_strcpy(extra, "stroke=\""); warp_strcat(extra, stroke);
     warp_strcat(extra, "\" stroke-width=\""); warp_strcat(extra, stroke_w); warp_strcat(extra, "\"");
     
-    emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, 8.0f, is_dark ? "#333333" : "#ffffff", extra);
+    emit_rounded_rect_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, 8.0f, is_dark ? "#333333" : "#ffffff", extra);
   }
 
   for (int i = 0; i < node->children_count; i++) {

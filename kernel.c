@@ -258,6 +258,18 @@ static void reset_scroll_input_state(scroll_input_state_t *state) {
   state->burst_steps = 0;
 }
 
+static int count_substring_occurrences(const char *haystack, const char *needle) {
+  if (!haystack || !needle || !needle[0]) return 0;
+  int count = 0;
+  size_t needle_len = strlen(needle);
+  const char *p = haystack;
+  while ((p = strstr(p, needle)) != NULL) {
+    count++;
+    p += needle_len;
+  }
+  return count;
+}
+
 static float clamp_scroll_offset(float scroll_y, int viewport_h, int content_h) {
   int min_scroll = viewport_h - content_h;
   if (min_scroll > 0) min_scroll = 0;
@@ -2851,6 +2863,13 @@ static void window_redraw(window_t *win) {
 
   strncpy(g_hud_status, "SVGGen", 63);
   const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
+  int svg_rects = count_substring_occurrences(svg, "<rect");
+  int svg_paths = count_substring_occurrences(svg, "<path");
+  int svg_circles = count_substring_occurrences(svg, "<circle");
+  size_t svg_len = svg ? strlen(svg) : 0;
+  snprintf(g_last_svg_parse_status, sizeof(g_last_svg_parse_status), "%s R%d P%d C%d L%u",
+           win->is_warp1 ? "W1" : "W0",
+           svg_rects, svg_paths, svg_circles, (unsigned)svg_len);
 
   // Check if SVG string changed
   int svg_changed = 1;
@@ -2870,7 +2889,6 @@ static void window_redraw(window_t *win) {
     win->svg_image_cache = img;
 
     if (win->last_svg_str) free(win->last_svg_str);
-    size_t svg_len = strlen(svg);
     win->last_svg_str = (char*)malloc(svg_len + 1);
     if (win->last_svg_str) memcpy(win->last_svg_str, svg, svg_len + 1);
   }
@@ -2898,6 +2916,7 @@ static void window_redraw(window_t *win) {
     win->raster_cache_h = scaled_h;
   }
 
+  int raster_empty = 0;
   if (win->raster_cache && (svg_changed || raster_size_changed)) {
     strncpy(g_hud_status, "ClearCache", 63);
     for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0x00000000;
@@ -2906,6 +2925,16 @@ static void window_redraw(window_t *win) {
     gpu_svg_rasterize(win->svg_image_cache, target_scale, 0.0f, 0.0f,
                       (unsigned char*)win->raster_cache, scaled_w, scaled_h,
                       scaled_w * 4);
+
+    int alpha_pixels = 0;
+    unsigned char *scan = (unsigned char*)win->raster_cache;
+    for (int i = 0; i < scaled_w * scaled_h; i++) {
+      if (scan[i * 4 + 3] != 0) alpha_pixels++;
+    }
+    if (alpha_pixels == 0) {
+      raster_empty = 1;
+      strncpy(g_hud_status, "RasterEmpty", 63);
+    }
 
     strncpy(g_hud_status, "RBSwap+PreMul", 63);
     unsigned char *p = (unsigned char*)win->raster_cache;
@@ -2954,7 +2983,8 @@ static void window_redraw(window_t *win) {
 
   win->is_dirty = 0;
   win->is_calculating = 0;
-  strncpy(g_hud_status, "Idle", 63);
+  if (raster_empty) strncpy(g_hud_status, "RasterEmpty", 63);
+  else strncpy(g_hud_status, "Idle", 63);
 }
 
 static void request_window_interaction_refresh(window_t *win) {
