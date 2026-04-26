@@ -2399,8 +2399,8 @@ static void window_update_caches(window_t *win) {
         char act_text[64];
         if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, act_text, sizeof(act_text));
         else warp_context_get_header_action_info(win->warp_ctx, j, act_text, sizeof(act_text));
-         int text_w = strlen(act_text) * 9; 
-         int btn_w = text_w + 42;
+         int text_w = measure_ttf_width(act_text, 18.2f); 
+         int btn_w = text_w + 32;
          int btn_h = 42; 
          ax -= btn_w;
 
@@ -3153,7 +3153,7 @@ skip_shadow:;
               char at[64];
               if (win->is_warp1) warp1_context_get_header_action_info(win->warp1_ctx, j, at, 64);
               else warp_context_get_header_action_info(win->warp_ctx, j, at, 64);
-              action_btn_w[j] = strlen(at) * 9 + 42;
+              action_btn_w[j] = measure_ttf_width(at, 18.2f) + 32;
               cur_ax -= action_btn_w[j];
               action_btn_x[j] = cur_ax;
               cur_ax -= 10;
@@ -4145,26 +4145,24 @@ static void text_layer_redraw(layer_t *text_layer, float font_size) {
   }
 }
 
-// UTF-8→Unicode変換
+// UTF-8→Unicode変換 (堅牢版)
 static uint32_t utf8_next(const char **p) {
   const unsigned char *s = (const unsigned char *)*p;
-  uint32_t code = 0;
-  if (s[0] < 0x80) {
-    code = s[0];
-    (*p)++;
-  } else if ((s[0] & 0xE0) == 0xC0) {
-    code = ((s[0] & 0x1F) << 6) | (s[1] & 0x3F);
-    (*p) += 2;
-  } else if ((s[0] & 0xF0) == 0xE0) {
-    code = ((s[0] & 0x0F) << 12) | ((s[1] & 0x3F) << 6) | (s[2] & 0x3F);
-    (*p) += 3;
-  } else if ((s[0] & 0xF8) == 0xF0) {
-    code = ((s[0] & 0x07) << 18) | ((s[1] & 0x3F) << 12) | ((s[2] & 0x3F) << 6) | (s[3] & 0x3F);
-    (*p) += 4;
-  } else {
-    (*p)++;
+  if (!s || !*s) return 0;
+  uint32_t c = 0;
+  int len = 0;
+  if (s[0] < 0x80) { c = s[0]; len = 1; }
+  else if ((s[0] & 0xE0) == 0xC0) { c = s[0] & 0x1F; len = 2; }
+  else if ((s[0] & 0xF0) == 0xE0) { c = s[0] & 0x0F; len = 3; }
+  else if ((s[0] & 0xF8) == 0xF0) { c = s[0] & 0x07; len = 4; }
+  else { (*p)++; return 0; }
+
+  for (int i = 1; i < len; i++) {
+    if ((s[i] & 0xC0) != 0x80) { (*p)++; return 0; }
+    c = (c << 6) | (s[i] & 0x3F);
   }
-  return code;
+  *p += len;
+  return c;
 }
 
 // --- グリフキャッシュ ---
@@ -4173,59 +4171,67 @@ typedef struct {
   float size;
   int bw, bh, bx, by, adv;
   unsigned char *bitmap;
+  stbtt_fontinfo *font;
 } glyph_cache_t;
 #define MAX_GLYPH_CACHE 1024
 static glyph_cache_t g_glyph_cache[MAX_GLYPH_CACHE];
 static int g_glyph_cache_count = 0;
 
 static int is_emoji(uint32_t cp) {
-  // Common emoji ranges
-  if (cp >= 0x1F300 && cp <= 0x1F9FF) return 1; // Misc Symbols and Pictographs, Emoticons, etc.
-  if (cp >= 0x2600 && cp <= 0x27BF) return 1;  // Misc Symbols, Dingbats
-  if (cp >= 0x1FA70 && cp <= 0x1FAFF) return 1; // Symbols and Pictographs Extended-A
-  if (cp >= 0x1F000 && cp <= 0x1F2FF) return 1; // Mahjong, Domino, Playing Cards, Enclosed Alphanumeric Suppl, etc.
-  if (cp >= 0x1F680 && cp <= 0x1F6FF) return 1; // Transport and Map Symbols
-  if (cp >= 0x1F7E0 && cp <= 0x1F7EB) return 1; // Geometric Shapes Extended
-  if (cp >= 0x231A && cp <= 0x23F3) return 1;   // Some Misc Technical
+  if (cp < 0x2000) return 0;
+  if (cp >= 0x1F300 && cp <= 0x1F9FF) return 1;
+  if (cp >= 0x2600 && cp <= 0x27BF) return 1;
+  if (cp >= 0x1FA70 && cp <= 0x1FAFF) return 1;
+  if (cp >= 0x1F000 && cp <= 0x1F2FF) return 1;
+  if (cp >= 0x1F680 && cp <= 0x1F6FF) return 1;
   return 0;
 }
 
 static glyph_cache_t* get_glyph(uint32_t codepoint, float size) {
+  if (codepoint == 0) return NULL;
   for (int i = 0; i < g_glyph_cache_count; i++) {
     if (g_glyph_cache[i].codepoint == codepoint && g_glyph_cache[i].size == size)
       return &g_glyph_cache[i];
   }
-  if (g_glyph_cache_count >= MAX_GLYPH_CACHE) return NULL;
 
-  glyph_cache_t *gc = &g_glyph_cache[g_glyph_cache_count++];
-  
-  // 1. 優先するフォントを決定
+  // FIFO方式で確実にメモリを解放
+  static int evict_idx = 0;
+  glyph_cache_t *gc;
+  if (g_glyph_cache_count < MAX_GLYPH_CACHE) {
+    gc = &g_glyph_cache[g_glyph_cache_count++];
+  } else {
+    gc = &g_glyph_cache[evict_idx];
+    if (gc->bitmap) {
+      STBTT_free(gc->bitmap, NULL);
+      gc->bitmap = NULL;
+    }
+    evict_idx = (evict_idx + 1) % MAX_GLYPH_CACHE;
+  }
+
   stbtt_fontinfo *font = &g_font;
   if (g_emoji_font_ready && is_emoji(codepoint)) {
     font = &g_emoji_font;
   }
 
-  // 2. 優先フォントにグリフがない場合、もう一方にフォールバック
   if (stbtt_FindGlyphIndex(font, (int)codepoint) == 0) {
     if (font == &g_font && g_emoji_font_ready) {
-      if (stbtt_FindGlyphIndex(&g_emoji_font, (int)codepoint) != 0) {
-        font = &g_emoji_font;
-      }
+      if (stbtt_FindGlyphIndex(&g_emoji_font, (int)codepoint) != 0) font = &g_emoji_font;
     } else if (font == &g_emoji_font && g_font_ready) {
-      if (stbtt_FindGlyphIndex(&g_font, (int)codepoint) != 0) {
-        font = &g_font;
-      }
+      if (stbtt_FindGlyphIndex(&g_font, (int)codepoint) != 0) font = &g_font;
     }
   }
 
-  // 3. 決定したフォントでビットマップ生成
   float scale = stbtt_ScaleForPixelHeight(font, size);
-  gc->bitmap = stbtt_GetCodepointBitmap(font, 0, scale, (int)codepoint, &gc->bw, &gc->bh, &gc->bx, &gc->by);
+  gc->bitmap = stbtt_GetCodepointBitmap(font, scale, scale, (int)codepoint, &gc->bw, &gc->bh, &gc->bx, &gc->by);
+  
   int adv_tmp, lsb_tmp;
   stbtt_GetCodepointHMetrics(font, (int)codepoint, &adv_tmp, &lsb_tmp);
   gc->adv = (int)(adv_tmp * scale);
+  if (gc->adv < 0) gc->adv = 0;
+
   gc->codepoint = codepoint;
   gc->size = size;
+  gc->font = font;
   return gc;
 }
 
@@ -4233,16 +4239,19 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                      float font_size, uint32_t color) {
   if (!g_font_ready || !str || !layer || !layer->buffer)
     return;
-  float scale = stbtt_ScaleForPixelHeight(&g_font, font_size);
-  int ascent, descent, line_gap;
-  stbtt_GetFontVMetrics(&g_font, &ascent, &descent, &line_gap);
-  int baseline = (int)(ascent * scale);
+  
   int cx = px;
   const char *p = str;
   while (*p) {
     uint32_t cp = utf8_next(&p);
     glyph_cache_t *gc = get_glyph(cp, font_size);
     if (gc && gc->bitmap) {
+      // Get baseline for THIS glyph's font
+      float scale = stbtt_ScaleForPixelHeight(gc->font, font_size);
+      int ascent, descent, line_gap;
+      stbtt_GetFontVMetrics(gc->font, &ascent, &descent, &line_gap);
+      int baseline = (int)(ascent * scale);
+
 #ifdef __SSE2__
       // SIMD-accelerated glyph rendering: 8 pixels at once
       for (int dy = 0; dy < gc->bh; dy++) {
@@ -4311,7 +4320,7 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
 }
 
 int measure_ttf_width(const char *str, float font_size) {
-  if (!g_font_ready || !str)
+  if (!(g_font_ready || g_emoji_font_ready) || !str)
     return 0;
 
   int width = 0;
@@ -4322,6 +4331,7 @@ int measure_ttf_width(const char *str, float font_size) {
     if (gc)
       width += gc->adv;
   }
+  
   return width;
 }
 // SVGパスを使ったグリフ描画（ダミー: 枠のみ）
@@ -5345,7 +5355,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                     char act_text[64];
                     if (hwin->is_warp1) warp1_context_get_header_action_info(hwin->warp1_ctx, j, act_text, sizeof(act_text));
                     else warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
-                    int text_w = strlen(act_text) * 9; int btn_w = text_w + 24; ax -= btn_w;
+                    int text_w = measure_ttf_width(act_text, 18.2f); int btn_w = text_w + 32; ax -= btn_w;
                     if (hx >= ax && hx < ax + btn_w) { if (hwin->is_warp1) warp1_context_click_header_action(hwin->warp1_ctx, j); else warp_context_click_header_action(hwin->warp_ctx, j); hwin->is_dirty = 1; handled = 1; hit_index = -2; break; }
                     ax -= 10;
                   }

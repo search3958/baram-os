@@ -798,10 +798,28 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
     node->h = cy - py + 4; // cy already has +12 from the last element, so +4 makes it +16 total
     if (node->h < ctx->win_h) node->h = ctx->win_h;
   } else if (warp_strcmp(node->tag, "Header") == 0) {
-    node->h = 0; // Header itself takes no space in the content area
-    // Header children (actions) layout
+    node->h = 0;
+    // Header actions: position from right to left
+    int action_x = limit_w - 12;
     for (int i = 0; i < node->children_count; i++) {
-      layout_node(ctx, node->children[i], 0, 0, 120);
+      warp_node_t *act = node->children[i];
+      // Save current texts_count to find text entry later
+      int tc_before = ctx->texts_count;
+      
+      // Use regular layout logic with a large enough limit to avoid clipping
+      layout_node(ctx, act, 0, 8, 200); 
+      
+      // Shift x position to right-aligned action_x
+      action_x -= act->w;
+      int shift = action_x - act->x;
+      act->x = action_x;
+      
+      // Adjust text position if it was added
+      if (ctx->texts_count > tc_before) {
+        ctx->texts[tc_before].x += shift;
+      }
+      
+      action_x -= 8;
     }
   } else if (warp_strcmp(node->tag, "card") == 0) {
     cy += 12;
@@ -868,6 +886,7 @@ static int layout_node(warp_context_t *ctx, warp_node_t *node, int px, int py, i
       int text_w = measure_ttf_width(text, 16.0f);
       node->w = text_w + 32;
       if (node->w < 70) node->w = 70;
+      if (node->w > limit_w) node->w = limit_w; // Ensure we don't exceed given limit
     }
     node->h = 40;
     
@@ -1189,7 +1208,8 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
     char extra[64] = "";
     emit_squircle_shape_to(dest + warp_strlen(dest), 0, 0, node->w, node->h, 0, fill, extra);
   } else if (warp_strcmp(node->tag, "Header") == 0) {
-    // Header background and content handled at the end
+    // Header background and content handled by system title bar
+    return;
   } else if (warp_strcmp(node->tag, "card") == 0) {
     const char *c_prop = get_attr(node, "color");
     const char *hex = get_color_hex(c_prop);
