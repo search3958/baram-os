@@ -959,6 +959,33 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
     } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
         char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
         b->pos = (int)(p - b->buf);
+    } else if (w1_strcmp(node->tag, "switch") == 0) {
+        char out_var[128];
+        get_switch_state_key1(node, out_var, sizeof(out_var));
+
+        const char *val = get_state(ctx, out_var);
+        int on = (w1_strstr(val, "true") != NULL);
+        int disabled = (w1_strstr(val, "Disabled") != NULL);
+
+        const char *bg_color = on ? "#0A60FF" : "#dddddd";
+        if (disabled) bg_color = on ? "#80A0FF" : "#eeeeee";
+
+        int size = 44;
+        int x = node->x + (node->w - size) / 2;
+        int y = node->y + (node->h - size) / 2;
+        float sw_radius = (node->radius < 0.0f) ? 1050.0f : node->radius;
+
+        char *p = emit_squircle_shape_to(b->buf + b->pos, x, y, size, size, sw_radius, bg_color, disabled ? "opacity=\"0.5\"" : "");
+        b->pos = (int)(p - b->buf);
+
+        if (on) {
+            b_str(b, "<path d=\"M");
+            b_int(b, x + 12); b_str(b, " ");
+            b_int(b, y + 22);
+            b_str(b, " L"); b_int(b, x + 20); b_str(b, " "); b_int(b, y + 30);
+            b_str(b, " L"); b_int(b, x + 34); b_str(b, " "); b_int(b, y + 14);
+            b_str(b, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
+        }
     } else if (w1_strcmp(node->tag, "input") == 0) {
         char extra[128];
         int is_focused = 0;
@@ -1063,6 +1090,7 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     parse_current_screen1(ctx);
+    ctx->layout_valid = 0;
     int clicked = 0;
     // 逆順（手前に描画されたものから）でチェック
     for (int i = ctx->nodes_count - 1; i >= 0; i--) {
@@ -1136,6 +1164,7 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
 }
 
 void warp1_context_key_input(warp1_context_t* ctx, char c) {
+    ctx->layout_valid = 0;
     // デバッグログ: 入力された文字のコードを表示
     char key_msg[32] = "Key: 0x";
     extern char *append_hex8(char *p, uint8_t v);
@@ -1259,6 +1288,7 @@ void warp1_context_get_header_action_info(warp1_context_t* ctx, int i, char* t, 
 
 void warp1_context_click_header_action(warp1_context_t* ctx, int i) {
     warp1_node_t *h = find_header_node1(ctx); if (!h || i < 0 || i >= h->children_count) return;
+    ctx->layout_valid = 0;
     if (h->children[i]->event_oneclick[0]) execute_action1(ctx, h->children[i]->event_oneclick);
 }
 

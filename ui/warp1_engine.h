@@ -49,6 +49,7 @@ int warp1_context_get_content_height(warp1_context_t* ctx);
 const char* warp1_context_get_screen_svg(warp1_context_t* ctx, const char* screen_id, int* content_height);
 void warp1_context_set_screen_scroll(warp1_context_t* ctx, const char* screen_id, float scroll_y);
 float warp1_context_get_screen_scroll(warp1_context_t* ctx, const char* screen_id);
+void warp1_context_invalidate_layout(warp1_context_t* ctx);
 
 // Dynamic Node API
 void warp1_context_add_node(warp1_context_t* ctx, const char* parent_id, const char* tag, const char* id);

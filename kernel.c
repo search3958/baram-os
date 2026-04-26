@@ -5657,7 +5657,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                     if (hwin->is_warp1) warp1_context_get_header_action_info(hwin->warp1_ctx, j, act_text, sizeof(act_text));
                     else warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
                     int text_w = measure_ttf_width(act_text, 18.2f); int btn_w = text_w + 32; ax -= btn_w;
-                    if (hx >= ax && hx < ax + btn_w) { if (hwin->is_warp1) warp1_context_click_header_action(hwin->warp1_ctx, j); else warp_context_click_header_action(hwin->warp_ctx, j); hwin->is_dirty = 1; handled = 1; hit_index = -2; break; }
+                    if (hx >= ax && hx < ax + btn_w) { if (hwin->is_warp1) { warp1_context_invalidate_layout(hwin->warp1_ctx); warp1_context_click_header_action(hwin->warp1_ctx, j); } else warp_context_click_header_action(hwin->warp_ctx, j); hwin->is_dirty = 1; handled = 1; hit_index = -2; break; }
                     ax -= 10;
                   }
                 }
@@ -5668,7 +5668,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             if (!handled) {
               int title_h = hwin->no_decoration ? 0 : 60;
               // Pass click to Warp engine, coordinates relative to full window top (including header)
-              if (hwin->is_warp1) warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y);
+              if (hwin->is_warp1) { warp1_context_invalidate_layout(hwin->warp1_ctx); warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y); }
               else warp_context_click(hwin->warp_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y);
               hwin->is_dirty = 1;
 
