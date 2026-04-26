@@ -258,6 +258,32 @@ static void get_switch_state_key1(warp1_node_t *node, char *buf, int size) {
     }
 }
 
+static void get_slider_state_key1(warp1_node_t *node, char *buf, int size) {
+    const char *raw = get_attr1(node, "status");
+    if (!raw[0]) raw = get_attr1(node, "output");
+    if (!raw[0] || size <= 0) {
+        if (size > 0) buf[0] = '\0';
+        return;
+    }
+
+    while (*raw == ' ' || *raw == '\t' || *raw == '\n' || *raw == '\r') raw++;
+
+    if (*raw == '(') {
+        w1_strncpy(buf, raw + 1, (size_t)(size - 1));
+        buf[size - 1] = '\0';
+        char *end = w1_strchr(buf, ')');
+        if (end) *end = '\0';
+    } else {
+        w1_strncpy(buf, raw, (size_t)(size - 1));
+        buf[size - 1] = '\0';
+    }
+
+    int len = w1_strlen(buf);
+    while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' || buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+        buf[--len] = '\0';
+    }
+}
+
 static void execute_action1(warp1_context_t *ctx, const char *action_str);
 static void execute_script1(warp1_context_t *ctx, const char *name) {
     for (int i = 0; i < ctx->scripts_count; i++) {
@@ -768,8 +794,9 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
 
     } else if (w1_strcmp(node->tag, "slider") == 0) {
         // スライダーの描画 - squircle を使用
-        char val[128];
-        eval_attr(ctx, node, "status", val, 127);
+        char key[128];
+        get_slider_state_key1(node, key, sizeof(key));
+        const char *val = get_state(ctx, key);
         int v = (int)w1_strtol(val);
         if (v < 0) v = 0;
         if (v > 100) v = 100;
@@ -986,6 +1013,24 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
             b_str(b, " L"); b_int(b, x + 34); b_str(b, " "); b_int(b, y + 14);
             b_str(b, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
         }
+    } else if (w1_strcmp(node->tag, "slider") == 0) {
+        char key[128];
+        get_slider_state_key1(node, key, sizeof(key));
+        const char *val = get_state(ctx, key);
+        int v = (int)w1_strtol(val);
+        if (v < 0) v = 0;
+        if (v > 100) v = 100;
+
+        float track_radius = (node->radius < 0.0f) ? 2.0f : node->radius;
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y + 14, node->w, 4, track_radius, "#dddddd", "");
+        b->pos = (int)(p - b->buf);
+
+        int knob_x = node->x + (node->w * v / 100) - 10;
+        if (knob_x < node->x - 10) knob_x = node->x - 10;
+        if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
+        float knob_radius = (node->radius < 0.0f) ? 10.0f : node->radius;
+        p = emit_squircle_shape_to(b->buf + b->pos, knob_x, node->y + 6, 20, 20, knob_radius, "#0A60FF", "");
+        b->pos = (int)(p - b->buf);
     } else if (w1_strcmp(node->tag, "input") == 0) {
         char extra[128];
         int is_focused = 0;
@@ -1119,15 +1164,8 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                 break;
             }
             if (w1_strcmp(n->tag, "slider") == 0) {
-                const char *out_var_raw = get_attr1(n, "output");
                 char out_var[128];
-                if (out_var_raw[0] == '(') {
-                    w1_strncpy(out_var, out_var_raw + 1, 127);
-                    char *end = w1_strchr(out_var, ')');
-                    if (end) *end = '\0';
-                } else {
-                    w1_strncpy(out_var, out_var_raw, 127);
-                }
+                get_slider_state_key1(n, out_var, sizeof(out_var));
 
                 if (out_var[0]) {
                     int val = (x - n->x) * 100 / n->w;

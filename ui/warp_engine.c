@@ -534,6 +534,37 @@ static void get_switch_state_key(warp_node_t *node, char *buf, int size) {
   }
 }
 
+static void get_slider_state_key(warp_node_t *node, char *buf, int size) {
+  const char *raw = get_attr(node, "status");
+  if (!raw[0])
+    raw = get_attr(node, "output");
+  if (!raw[0] || size <= 0) {
+    if (size > 0)
+      buf[0] = '\0';
+    return;
+  }
+
+  while (*raw == ' ' || *raw == '\t' || *raw == '\n' || *raw == '\r')
+    raw++;
+
+  if (*raw == '(') {
+    warp_strncpy(buf, raw + 1, size - 1);
+    buf[size - 1] = '\0';
+    char *end = warp_strchr(buf, ')');
+    if (end)
+      *end = '\0';
+  } else {
+    warp_strncpy(buf, raw, size - 1);
+    buf[size - 1] = '\0';
+  }
+
+  int len = warp_strlen(buf);
+  while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' ||
+                     buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+    buf[--len] = '\0';
+  }
+}
+
 static token_t next_token(warp_context_t *ctx) {
   token_t tk;
   tk.type = TK_EOF;
@@ -1301,6 +1332,20 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
       p = warp_stpcpy(p, "\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n");
       warp_strncat(dest, check_buf, dest_size - warp_strlen(dest) - 1);
     }
+  } else if (warp_strcmp(node->tag, "slider") == 0) {
+    char key[128];
+    get_slider_state_key(node, key, sizeof(key));
+    const char *val = get_state(ctx, key);
+    int v = (int)warp_strtol(val);
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+
+    emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y + 14, node->w, 4, 2.0f, "#dddddd", "");
+
+    int knob_x = node->x + (node->w * v / 100) - 10;
+    if (knob_x < node->x - 10) knob_x = node->x - 10;
+    if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
+    emit_squircle_shape_to(dest + warp_strlen(dest), knob_x, node->y + 6, 20, 20, 10.0f, "#0A60FF", "");
   } else if (warp_strcmp(node->tag, "input") == 0) {
     // 入力フォームの描画 - 角丸矩形
     const char *stroke = is_dark ? "#555555" : "#dddddd";
@@ -1763,6 +1808,19 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
       return 1;
     }
     if (warp_strcmp(node->tag, "slider") == 0) {
+      char out_var[128];
+      get_slider_state_key(node, out_var, sizeof(out_var));
+      if (out_var[0]) {
+        int val = (x - node->x) * 100 / node->w;
+        if (val < 0) val = 0;
+        if (val > 100) val = 100;
+        char val_str[16];
+        append_int(val_str, val);
+        set_state(ctx, out_var, val_str);
+        if (node->event_oneclick[0] != '\0') {
+          execute_action(ctx, node->event_oneclick);
+        }
+      }
       return 1;
     }
     if (warp_strcmp(node->tag, "input") == 0) {

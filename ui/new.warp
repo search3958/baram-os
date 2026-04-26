@@ -127,7 +127,6 @@ screen{
         slider{
             --sliderMain: (50),
             status: (--sliderMain),
-            output: (--sliderMain),
             max: (100),
             step: (0.5)
         },
