@@ -30,9 +30,9 @@ Baram OS は、GRUB から渡される Multiboot モジュールを利用して�
 - `drivers.c/h`: 各種ハードウェアドライバ（VBE, PS/2 Mouse/KB, PIT）とグラフィックス層。32/64bit の IDT/IRQ に対応。
 - `ui/`: Warp Engine 用の UI 定義ファイル。`main.warpc` がメインの UI です。
 - `font/`: TrueType フォントとレンダリングライブラリ（`stb_truetype`）。
-- `nanosvg/`: SVG デコードおよびラスタライズライブラリ。
+- `lunasvg/`: SVG デコードおよびラスタライズライブラリ。
 - `arch/`: CPU 依存のアセンブリコード（32-bit/64-bit のブートコード、ISR）。
 
 ## 📝 ライセンス
 このプロジェクトは学習および研究目的で開発されています。
-各種ライブラリ（NanoSVG, stb_truetype等）はそれぞれのライセンスに従います。
+各種ライブラリ（LunaSVG, stb_truetype等）はそれぞれのライセンスに従います。
