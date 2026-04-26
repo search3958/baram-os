@@ -24,15 +24,18 @@ screen{
         },
         tonalButton{
             text: ("コマンド"),
+            radius: (50%),
             oneClick: (setScreen{terminal})
         },
         tonalButton{
             text: ("外観モード"),
             radius: (12),
+            radius: (20%),
             oneClick: (setScreen{mode})
         },
         tonalButton{
             text: ("ロック"),
+            radius: (0%),
             oneClick: (run{"vlock"})
         },
     }
