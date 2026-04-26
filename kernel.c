@@ -245,6 +245,7 @@ static void redraw_warp_svg(layer_t *layer);
 static void draw_wallpaper(layer_t *layer);
 static void bg_preview_update(layer_t *preview);
 static void window_redraw(struct window_struct *win);
+static void request_window_interaction_refresh(struct window_struct *win);
 static uint32_t sample_backdrop_pixel(struct window_struct *target, int px, int py);
 static char *append_uint(char *p, unsigned int v);
 static void lock_state_enter(void);
@@ -321,6 +322,7 @@ typedef struct window_struct {
   int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
   void *dynamic_file_ptr;  // Pointer to on-demand loaded file data from storage
+  uint32_t interaction_refresh_until_tick;
 
   // Text overlay cache
   uint32_t *text_overlay_cache;
@@ -2756,6 +2758,13 @@ static void window_redraw(window_t *win) {
   strncpy(g_hud_status, "Idle", 63);
 }
 
+static void request_window_interaction_refresh(window_t *win) {
+  if (!win) return;
+  win->interaction_refresh_until_tick = timer_ticks + 20;
+  win->is_dirty = 1;
+  g_svg_dirty = 1;
+}
+
 typedef struct {
   const char *name;
   void (*init_func)(void *ctx);
@@ -2915,6 +2924,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->render_scale = 1.0f;
   win->no_decoration = 0;
   win->is_menubar = 0;
+  win->interaction_refresh_until_tick = 0;
   win->is_movable = 1; // Default
   win->is_resizing_enabled = 1; // Default
   win->is_always_full_res = 0; // Default
@@ -5409,6 +5419,14 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
       lock_state_update();
 
+      for (int i = 0; i < g_window_count; i++) {
+        window_t *win = &g_windows[i];
+        if (win->interaction_refresh_until_tick > timer_ticks) {
+          win->is_dirty = 1;
+          g_svg_dirty = 1;
+        }
+      }
+
       if (lock_state_is_visible()) {
         uint8_t curr_btns = mouse_buttons;
         if (curr_btns != prev_mouse_buttons) {
@@ -5601,9 +5619,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                 g_windows[target_pos] = tmp;
                 g_active_window_index = target_pos;
                 window_set_all_dirty();
+                request_window_interaction_refresh(&g_windows[target_pos]);
               } else {
                 g_active_window_index = hit_index;
-                g_svg_dirty = 1;
+                request_window_interaction_refresh(&g_windows[hit_index]);
               }
               hit_index = -2;
             }
@@ -5643,8 +5662,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                       hwin->is_resizing_enabled = 0;
                   }
                   window_update_caches(hwin);
-                  hwin->is_dirty = 1;
-                  g_svg_dirty = 1;
+                  request_window_interaction_refresh(hwin);
                   handled = 1;
               } else {
                 char header_text[128]; int action_count = 0; int has_header = 0;
@@ -5657,7 +5675,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                     if (hwin->is_warp1) warp1_context_get_header_action_info(hwin->warp1_ctx, j, act_text, sizeof(act_text));
                     else warp_context_get_header_action_info(hwin->warp_ctx, j, act_text, sizeof(act_text));
                     int text_w = measure_ttf_width(act_text, 18.2f); int btn_w = text_w + 32; ax -= btn_w;
-                    if (hx >= ax && hx < ax + btn_w) { if (hwin->is_warp1) { warp1_context_invalidate_layout(hwin->warp1_ctx); warp1_context_click_header_action(hwin->warp1_ctx, j); } else warp_context_click_header_action(hwin->warp_ctx, j); hwin->is_dirty = 1; handled = 1; hit_index = -2; break; }
+                    if (hx >= ax && hx < ax + btn_w) { if (hwin->is_warp1) { warp1_context_invalidate_layout(hwin->warp1_ctx); warp1_context_click_header_action(hwin->warp1_ctx, j); } else warp_context_click_header_action(hwin->warp_ctx, j); request_window_interaction_refresh(hwin); handled = 1; hit_index = -2; break; }
                     ax -= 10;
                   }
                 }
@@ -5670,7 +5688,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               // Pass click to Warp engine, coordinates relative to full window top (including header)
               if (hwin->is_warp1) { warp1_context_invalidate_layout(hwin->warp1_ctx); warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y); }
               else warp_context_click(hwin->warp_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y);
-              hwin->is_dirty = 1;
+              request_window_interaction_refresh(hwin);
 
               // Also check for dragging if in header but didn't hit a button
               if (hy < hwin->y && !hwin->no_decoration && hx >= hwin->x + 56 && hwin->is_movable) {
