@@ -110,6 +110,8 @@ typedef struct {
   char time_label[16];
 } os_lock_state_t;
 
+#define LOCK_TRANSITION_TICKS 50u
+
 // --- グローバル変数 (Classic) ---
 static NSVGimage *g_svg_image = NULL;
 static NSVGrasterizer *g_svg_rast = NULL;
@@ -3369,13 +3371,8 @@ static void lock_state_start_transition(lock_transition_t transition, int target
   g_lock_state.transition = transition;
   g_lock_state.target_locked = target_locked;
   g_lock_state.transition_started_at = timer_ticks;
-  g_lock_state.transition_duration_ticks = 0;
-  g_lock_state.transition_progress = target_locked ? 1.0f : 0.0f;
-
-  if (g_lock_state.transition_duration_ticks == 0) {
-    g_lock_state.transition = LOCK_TRANSITION_IDLE;
-    g_lock_state.is_locked = target_locked;
-  }
+  g_lock_state.transition_duration_ticks = LOCK_TRANSITION_TICKS;
+  g_lock_state.transition_progress = target_locked ? 0.0f : 1.0f;
 }
 
 static void lock_state_enter(void) {
@@ -3427,6 +3424,19 @@ static void lock_state_update(void) {
 
 static int lock_state_is_visible(void) {
   return g_lock_state.is_locked || g_lock_state.transition != LOCK_TRANSITION_IDLE;
+}
+
+static uint32_t scale_color_alpha(uint32_t color, float factor) {
+  if (factor <= 0.0f)
+    return color & 0x00FFFFFFu;
+  if (factor >= 1.0f)
+    return color;
+
+  uint32_t alpha = (color >> 24) & 0xFFu;
+  uint32_t scaled = (uint32_t)(alpha * factor);
+  if (scaled > 255u)
+    scaled = 255u;
+  return (scaled << 24) | (color & 0x00FFFFFFu);
 }
 
 static void lock_screen_get_unlock_button_rect(int *x, int *y, int *w, int *h) {
@@ -3500,31 +3510,34 @@ static void draw_lock_screen(layer_t *layer) {
 
   draw_wallpaper(layer);
 
-  const char *dark_val = get_w1_global("~~main/dark");
-  int is_dark = (strcmp(dark_val, "true") == 0);
+  float fade = g_lock_state.transition_progress;
+  if (fade < 0.0f) fade = 0.0f;
+  if (fade > 1.0f) fade = 1.0f;
+
   fill_rect_rgba(layer, 0, 0, layer->width, layer->height,
-                 is_dark ? 0x66000000u : 0x48FFFFFFu);
+                 scale_color_alpha(0x99000000u, fade));
 
   lock_state_refresh_clock();
 
-  int time_w = measure_ttf_width(g_lock_state.time_label, 48.0f);
+  float time_size = 88.0f;
+  uint32_t text_color = scale_color_alpha(0xFFFFFFFFu, fade);
+  int time_w = measure_ttf_width(g_lock_state.time_label, time_size);
   int time_x = (SCREEN_WIDTH - time_w) / 2;
-  int time_y = 54;
-  layer_draw_ttf(layer, time_x, time_y, g_lock_state.time_label, 48.0f,
-                 is_dark ? 0xFFFFFFFFu : 0xFF111111u);
+  int time_y = (SCREEN_HEIGHT / 2) - 86;
+  layer_draw_ttf(layer, time_x, time_y, g_lock_state.time_label, time_size,
+                 text_color);
 
   const char *button_label = "ロック解除";
   int bx, by, bw, bh;
   lock_screen_get_unlock_button_rect(&bx, &by, &bw, &bh);
   draw_capsule_outline(layer, bx, by, bw, bh,
-                       is_dark ? 0x66353535u : 0xB8FFFFFFu,
-                       is_dark ? 0x66FFFFFFu : 0x22000000u);
+                       scale_color_alpha(0xA0000000u, fade),
+                       scale_color_alpha(0x55FFFFFFu, fade));
 
   int label_w = measure_ttf_width(button_label, 22.0f);
   int label_x = bx + (bw - label_w) / 2;
   int label_y = by + 12;
-  layer_draw_ttf(layer, label_x, label_y, button_label, 22.0f,
-                 is_dark ? 0xFFFFFFFFu : 0xFF111111u);
+  layer_draw_ttf(layer, label_x, label_y, button_label, 22.0f, text_color);
 }
 
 static void get_window_draw_bounds(window_t *win, int *x0, int *y0, int *x1, int *y1) {
