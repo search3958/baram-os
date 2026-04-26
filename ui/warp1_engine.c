@@ -166,6 +166,10 @@ static long eval_math1(const char *s) {
 static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max_len) {
     out[0] = '\0'; const char *p = expr;
     while (*p) {
+        if (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') {
+            p++;
+            continue;
+        }
         // 1. 引用符の処理（完全保護）
         if (*p == '\"' || *p == '\'') {
             char quote = *p++;
@@ -202,7 +206,7 @@ static void eval_expr(warp1_context_t *ctx, const char *expr, char *out, int max
         else if (*p == '+') {
             p++;
         }
-        // 4. その他の文字（空白含む）をそのまま保持
+        // 4. bareword や記号はそのまま保持
         else {
             int len = w1_strlen(out);
             if (len < max_len - 1) {
@@ -226,6 +230,32 @@ static void eval_attr(warp1_context_t *ctx, warp1_node_t *node, const char *key,
         if (w1_strcmp(node->attrs[i].key, key) == 0) { eval_expr(ctx, node->attrs[i].value, buf, size); return; }
     }
     buf[0] = '\0';
+}
+
+static void get_switch_state_key1(warp1_node_t *node, char *buf, int size) {
+    const char *raw = get_attr1(node, "status");
+    if (!raw[0]) raw = get_attr1(node, "output");
+    if (!raw[0] || size <= 0) {
+        if (size > 0) buf[0] = '\0';
+        return;
+    }
+
+    while (*raw == ' ' || *raw == '\t' || *raw == '\n' || *raw == '\r') raw++;
+
+    if (*raw == '(') {
+        w1_strncpy(buf, raw + 1, (size_t)(size - 1));
+        buf[size - 1] = '\0';
+        char *end = w1_strchr(buf, ')');
+        if (end) *end = '\0';
+    } else {
+        w1_strncpy(buf, raw, (size_t)(size - 1));
+        buf[size - 1] = '\0';
+    }
+
+    int len = w1_strlen(buf);
+    while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' || buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+        buf[--len] = '\0';
+    }
 }
 
 static void execute_action1(warp1_context_t *ctx, const char *action_str);
@@ -283,7 +313,7 @@ static void execute_action1(warp1_context_t *ctx, const char *action_str) {
             // カーネル側で定義されたコマンド設定関数を呼び出し
             extern void set_pending_command(const char *cmd);
             set_pending_command(cmd);
-        } else if (w1_strchr(act, '.')) {
+        } else if (!w1_strchr(act, '=') && !w1_strchr(act, ':') && w1_strchr(act, '.')) {
             char *dot = w1_strchr(act, '.'); *dot = '\0'; char *id = act; char *method = dot + 1;
             char *open_b = w1_strchr(method, '{');
             if (open_b) {
@@ -707,15 +737,8 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの描画
-        const char *out_var_raw = get_attr1(node, "output");
         char out_var[128];
-        if (out_var_raw[0] == '(') {
-            w1_strncpy(out_var, out_var_raw + 1, 127);
-            char *end = w1_strchr(out_var, ')');
-            if (end) *end = '\0';
-        } else {
-            w1_strncpy(out_var, out_var_raw, 127);
-        }
+        get_switch_state_key1(node, out_var, sizeof(out_var));
 
         const char *val = get_state(ctx, out_var);
         int on = (w1_strstr(val, "true") != NULL);
@@ -729,7 +752,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         int y = node->y + (node->h - size) / 2;
         // switch は radius 属性を使う（デフォルトは 50% で円形に）
         float sw_radius = (node->radius < 0.0f) ? 1050.0f : node->radius; // デフォルト 50%
-        emit_squircle_shape1(dest, dest_size, x, y, size, size, sw_radius, bg_color, "");
+        emit_squircle_shape1(dest, dest_size, x, y, size, size, sw_radius, bg_color, disabled ? "opacity=\"0.5\"" : "");
 
         // チェックマーク（true の場合のみ）
         if (on) {
@@ -1051,16 +1074,8 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
             ctx->focused_node_idx = -1;
 
             if (w1_strcmp(n->tag, "switch") == 0) {
-                const char *out_var_raw = get_attr1(n, "output");
-                char out_var[128]; 
-                // 括弧 "(...)" がある場合は中身を抽出
-                if (out_var_raw[0] == '(') {
-                    w1_strncpy(out_var, out_var_raw + 1, 127);
-                    char *end = w1_strchr(out_var, ')');
-                    if (end) *end = '\0';
-                } else {
-                    w1_strncpy(out_var, out_var_raw, 127);
-                }
+                char out_var[128];
+                get_switch_state_key1(n, out_var, sizeof(out_var));
 
                 if (out_var[0]) {
                     const char *current = get_state(ctx, out_var);

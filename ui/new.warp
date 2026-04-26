@@ -107,8 +107,7 @@ screen{
 
         switch{
             --switchMain: (falseDisabled),
-            status: (--switchMain),
-            output: (--switchMain)
+            status: (--switchMain)
         },
 
         text{
@@ -141,7 +140,8 @@ screen{
             --inputMain: ("私の名前はです。"),
             output: (--inputMain),
             placeholder: ("自己紹介文を入力"),
-            id: (nameInput)
+            id: (nameInput),
+            radius: (100%)
         },
 
         button{

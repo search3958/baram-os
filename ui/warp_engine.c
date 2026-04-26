@@ -472,7 +472,7 @@ static void eval_expr(warp_context_t *ctx, const char *expr, char *out, int max_
       }
       if (*p == '\"')
         p++;
-    } else if (warp_strncmp(p, "--", 2) == 0) {
+    } else if (warp_strncmp(p, "--", 2) == 0 || warp_strncmp(p, "~~", 2) == 0) {
       char var[64];
       int i = 0;
       while (*p && *p != '\"' && *p != '+' && *p != ' ' && *p != ')' &&
@@ -483,8 +483,14 @@ static void eval_expr(warp_context_t *ctx, const char *expr, char *out, int max_
       int remaining = max_len - warp_strlen(out) - 1;
       if (remaining > 0)
         warp_strncat(out, val, remaining);
-    } else
+    } else {
+      int len = warp_strlen(out);
+      if (len < max_len - 1) {
+        out[len] = *p;
+        out[len + 1] = '\0';
+      }
       p++;
+    }
   }
 }
 
@@ -495,6 +501,37 @@ static void eval_attr(warp_context_t *ctx, warp_node_t *node, const char *key, c
     return;
   }
   eval_expr(ctx, val, buf, size);
+}
+
+static void get_switch_state_key(warp_node_t *node, char *buf, int size) {
+  const char *raw = get_attr(node, "status");
+  if (!raw[0])
+    raw = get_attr(node, "output");
+  if (!raw[0] || size <= 0) {
+    if (size > 0)
+      buf[0] = '\0';
+    return;
+  }
+
+  while (*raw == ' ' || *raw == '\t' || *raw == '\n' || *raw == '\r')
+    raw++;
+
+  if (*raw == '(') {
+    warp_strncpy(buf, raw + 1, size - 1);
+    buf[size - 1] = '\0';
+    char *end = warp_strchr(buf, ')');
+    if (end)
+      *end = '\0';
+  } else {
+    warp_strncpy(buf, raw, size - 1);
+    buf[size - 1] = '\0';
+  }
+
+  int len = warp_strlen(buf);
+  while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' ||
+                     buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+    buf[--len] = '\0';
+  }
 }
 
 static token_t next_token(warp_context_t *ctx) {
@@ -1234,20 +1271,23 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
       emit_squircle_shape_to(dest + warp_strlen(dest), node->x, node->y, node->w, node->h, -1.0f, fill, "");
     }
   } else if (warp_strcmp(node->tag, "switch") == 0) {
-    // スイッチの描画 - 角丸なし四角形（radius=0）- 44x44
+    // スイッチの描画
     char out_var[128];
-    eval_attr(ctx, node, "output", out_var, 127);
-    
-    // output 変数の状態を取得（status がなくても動作）
+    get_switch_state_key(node, out_var, sizeof(out_var));
+
     const char *val = get_state(ctx, out_var);
     int on = (warp_strstr(val, "true") != NULL);
+    int disabled = (warp_strstr(val, "Disabled") != NULL);
 
-    // 背景（角丸なし四角形）
+    // 背景
     const char *bg_color = on ? "#0A60FF" : "#dddddd";
+    if (disabled)
+      bg_color = on ? "#80A0FF" : "#eeeeee";
     int size = 44;
     int x = node->x + (node->w - size) / 2;
     int y = node->y + (node->h - size) / 2;
-    emit_squircle_shape_to(dest + warp_strlen(dest), x, y, size, size, 0.0f, bg_color, "");
+    emit_squircle_shape_to(dest + warp_strlen(dest), x, y, size, size, 1050.0f,
+                           bg_color, disabled ? "opacity=\"0.5\"" : "");
 
     // チェックマーク（true の場合のみ）
     if (on) {
@@ -1378,6 +1418,57 @@ static long eval_calc_expr(const char *s) {
 }
 
 static char *evaluate_rhs(warp_context_t *ctx, const char *expr, char *out, int max_len) {
+  const char *replace = warp_strstr(expr, ".replace{");
+  if (replace) {
+    char base_expr[256], old_expr[128], new_expr[128];
+    char base[512], old_val[128], new_val[128];
+    int base_len = replace - expr;
+    if (base_len >= (int)sizeof(base_expr))
+      base_len = (int)sizeof(base_expr) - 1;
+    warp_strncpy(base_expr, expr, base_len);
+    base_expr[base_len] = '\0';
+
+    const char *args = replace + 9;
+    const char *close = warp_strchr(args, '}');
+    const char *comma = warp_strchr(args, ',');
+    if (!close || !comma || comma > close) {
+      eval_expr(ctx, expr, out, max_len);
+      return out;
+    }
+
+    int old_len = comma - args;
+    if (old_len >= (int)sizeof(old_expr))
+      old_len = (int)sizeof(old_expr) - 1;
+    warp_strncpy(old_expr, args, old_len);
+    old_expr[old_len] = '\0';
+
+    int new_len = close - (comma + 1);
+    if (new_len >= (int)sizeof(new_expr))
+      new_len = (int)sizeof(new_expr) - 1;
+    warp_strncpy(new_expr, comma + 1, new_len);
+    new_expr[new_len] = '\0';
+
+    eval_expr(ctx, base_expr, base, sizeof(base));
+    eval_expr(ctx, old_expr, old_val, sizeof(old_val));
+    eval_expr(ctx, new_expr, new_val, sizeof(new_val));
+
+    char *found = old_val[0] ? warp_strstr(base, old_val) : NULL;
+    if (!found) {
+      warp_strncpy(out, base, max_len - 1);
+      out[max_len - 1] = '\0';
+      return out;
+    }
+
+    int head = found - base;
+    int old_val_len = warp_strlen(old_val);
+    out[0] = '\0';
+    if (head > 0)
+      warp_strncat(out, base, head);
+    warp_strncat(out, new_val, max_len - warp_strlen(out) - 1);
+    warp_strncat(out, found + old_val_len, max_len - warp_strlen(out) - 1);
+    return out;
+  }
+
   if (warp_strncmp(expr, "calc(", 5) == 0) {
     const char *p = expr + 5;
     char sub_expr[512] = "";
@@ -1655,16 +1746,8 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
   if (x >= node->x && x <= node->x + node->w && y >= node->y &&
       y <= node->y + node->h) {
     if (warp_strcmp(node->tag, "switch") == 0) {
-      const char *out_var_raw = get_attr(node, "output");
       char out_var[128];
-      // 括弧 "(...)" がある場合は中身を抽出
-      if (out_var_raw[0] == '(') {
-        warp_strncpy(out_var, out_var_raw + 1, 127);
-        char *end = warp_strchr(out_var, ')');
-        if (end) *end = '\0';
-      } else {
-        warp_strncpy(out_var, out_var_raw, 127);
-      }
+      get_switch_state_key(node, out_var, sizeof(out_var));
 
       if (out_var[0]) {
         const char *current = get_state(ctx, out_var);
