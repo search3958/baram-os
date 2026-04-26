@@ -14,7 +14,7 @@ screen{
 
     hStack{
         button{
-            text: ("태양바람0S"),
+            text: ("Baram 0S"),
             oneClick: (setScreen{baram})
         },
         tonalButton{
@@ -29,7 +29,6 @@ screen{
         },
         tonalButton{
             text: ("外観モード"),
-            radius: (12),
             radius: (20%),
             oneClick: (setScreen{mode})
         },

@@ -980,7 +980,8 @@ static const float K_Y[] = {0.800f,  3.600f,  7.370f, 12.544f,
 
 char* emit_squircle_shape_to(char *p, int x, int y, int w, int h, float radius,
                              const char *fill, const char *extra) {
-  // radius: -1=デフォルト，0=矩形，1-999=ピクセル値，1000+=パーセンテージ (1050=50%, 1100=100%)
+  // radius: -1=デフォルト，0=矩形，1-999=ピクセル値，1000+=パーセンテージ
+  // パーセンテージは「取りうる最大角丸（短辺の半分）」に対する割合として扱う。
   if (radius == 0.0f) {
     p = warp_stpcpy(p, "<rect x=\"");
     p = append_int(p, x); p = warp_stpcpy(p, "\" y=\"");
@@ -1078,7 +1079,7 @@ char* emit_squircle_shape_to(char *p, int x, int y, int w, int h, float radius,
     float radius_pct = radius - 1000.0f;
     if (radius_pct > 100.0f) radius_pct = 100.0f;
     if (radius_pct < 0.0f) radius_pct = 0.0f;
-    radius_px = (min_edge * radius_pct) / 100.0f;
+    radius_px = (max_possible_radius * radius_pct) / 100.0f;
   } else {
     // ピクセル値
     radius_px = radius;
