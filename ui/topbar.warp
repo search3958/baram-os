@@ -30,7 +30,11 @@ screen{
             text: ("外観モード"),
             radius: (12),
             oneClick: (setScreen{mode})
-        }
+        },
+        tonalButton{
+            text: ("ロック"),
+            oneClick: (run{"vlock"})
+        },
     }
 }
 

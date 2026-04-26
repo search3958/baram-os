@@ -93,6 +93,22 @@ typedef struct {
 } __attribute__((packed)) multiboot_module_t;
 
 typedef enum { OS_MODE_CLASSIC, OS_MODE_WARPDESKTOP } os_mode_t;
+typedef enum {
+  LOCK_TRANSITION_IDLE,
+  LOCK_TRANSITION_LOCKING,
+  LOCK_TRANSITION_UNLOCKING
+} lock_transition_t;
+
+typedef struct {
+  int is_locked;
+  int target_locked;
+  lock_transition_t transition;
+  float transition_progress;
+  uint32_t transition_started_at;
+  uint32_t transition_duration_ticks;
+  uint32_t last_clock_tick;
+  char time_label[16];
+} os_lock_state_t;
 
 // --- グローバル変数 (Classic) ---
 static NSVGimage *g_svg_image = NULL;
@@ -122,6 +138,7 @@ static volatile int cpu_idle = 0;
 // --- グローバル変数 (Nextgen/Warp) ---
 static os_mode_t current_os_mode = OS_MODE_CLASSIC;
 static char g_last_svg_parse_status[64] = "None";
+static os_lock_state_t g_lock_state = {0, 0, LOCK_TRANSITION_IDLE, 0.0f, 0, 0, 0, "00:00"};
 
 typedef struct {
   char name[64];
@@ -225,12 +242,19 @@ static void apply_conic_gradient(unsigned char *data, int w, int h, int rx,
 static uint32_t blend_rgb_over_opaque(uint32_t bg, uint32_t fg, uint8_t alpha);
 static void svg_render_full(layer_t *layer);
 static void redraw_warp_svg(layer_t *layer);
+static void draw_wallpaper(layer_t *layer);
 static void bg_preview_update(layer_t *preview);
 static void window_redraw(struct window_struct *win);
 static uint32_t sample_backdrop_pixel(struct window_struct *target, int px, int py);
 static char *append_uint(char *p, unsigned int v);
+static void lock_state_enter(void);
+static void lock_state_request_unlock(void);
+static void lock_state_update(void);
+static int lock_state_is_visible(void);
 void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
                     float font_size, uint32_t color);
+int measure_ttf_width(const char *str, float font_size);
+extern volatile uint32_t timer_ticks;
 
 int atoi(const char *nptr) {
   return (int)strtol(nptr, (char **)NULL, 10);
@@ -2112,13 +2136,19 @@ static void handle_terminal_command(const char *cmd) {
     // ログ表示コマンド
     const char *msg = start_ptr + 12;
     set_w1_global("--warpSystemLog", msg);
+  } else if (strcmp(start_ptr, "vlock") == 0 || strcmp(start_ptr, "lock") == 0) {
+    lock_state_enter();
+    set_w1_global("--warpSystemLog", "Screen locked.");
+  } else if (strcmp(start_ptr, "unlock") == 0) {
+    lock_state_request_unlock();
+    set_w1_global("--warpSystemLog", "Unlock requested.");
   } else if (strcmp(start_ptr, "reboot") == 0) {
     extern void sys_restart(void);
     sys_restart();
   } else if (strcmp(start_ptr, "exit") == 0) {
     close_active_window();
   } else if (strcmp(start_ptr, "help") == 0) {
-    set_w1_global("--warpSystemLog", "Commands: <file.warp>, warp <file>, reboot, exit, help, ls");
+    set_w1_global("--warpSystemLog", "Commands: <file.warp>, warp <file>, vlock, reboot, exit, help, ls");
   } else if (strncmp(start_ptr, "dev pointerCheck=", 17) == 0) {
     const char *val = start_ptr + 17;
     set_w1_global("~~dev/pointerCheck", (strcmp(val, "true") == 0) ? "true" : "false");
@@ -3081,6 +3111,229 @@ static void stroke_rect(layer_t *layer, int x, int y, int w, int h, uint32_t col
   fill_rect_rgba(layer, x + w - 1, y, 1, h, color);
 }
 
+static int bcd_to_int(uint8_t v) {
+  return ((v >> 4) * 10) + (v & 0x0F);
+}
+
+static int read_display_clock(int *out_hour, int *out_minute) {
+  if (!out_hour || !out_minute)
+    return 0;
+
+#ifdef __aarch64__
+  uint32_t seconds = timer_ticks / 100;
+  *out_hour = (int)((seconds / 3600) % 24);
+  *out_minute = (int)((seconds / 60) % 60);
+  return 1;
+#else
+  outb(0x70, 0x0A);
+  if (inb(0x71) & 0x80)
+    return 0;
+
+  outb(0x70, 0x04);
+  uint8_t hour = inb(0x71);
+  outb(0x70, 0x02);
+  uint8_t minute = inb(0x71);
+  outb(0x70, 0x0B);
+  uint8_t status_b = inb(0x71);
+
+  if ((status_b & 0x04) == 0) {
+    hour = (uint8_t)bcd_to_int(hour);
+    minute = (uint8_t)bcd_to_int(minute);
+  }
+
+  if ((status_b & 0x02) == 0) {
+    int is_pm = hour & 0x80;
+    hour &= 0x7F;
+    if (is_pm && hour < 12) hour = (uint8_t)(hour + 12);
+    if (!is_pm && hour == 12) hour = 0;
+  }
+
+  *out_hour = hour % 24;
+  *out_minute = minute % 60;
+  return 1;
+#endif
+}
+
+static void lock_state_refresh_clock(void) {
+  uint32_t second_tick = timer_ticks / 100;
+  if (g_lock_state.last_clock_tick == second_tick && g_lock_state.time_label[0] != '\0')
+    return;
+
+  int hour = 0;
+  int minute = 0;
+  if (!read_display_clock(&hour, &minute)) {
+    uint32_t seconds = timer_ticks / 100;
+    hour = (int)((seconds / 3600) % 24);
+    minute = (int)((seconds / 60) % 60);
+  }
+
+  snprintf(g_lock_state.time_label, sizeof(g_lock_state.time_label), "%02d:%02d", hour, minute);
+  g_lock_state.last_clock_tick = second_tick;
+  g_svg_dirty = 1;
+}
+
+static void lock_state_start_transition(lock_transition_t transition, int target_locked) {
+  g_lock_state.transition = transition;
+  g_lock_state.target_locked = target_locked;
+  g_lock_state.transition_started_at = timer_ticks;
+  g_lock_state.transition_duration_ticks = 0;
+  g_lock_state.transition_progress = target_locked ? 1.0f : 0.0f;
+
+  if (g_lock_state.transition_duration_ticks == 0) {
+    g_lock_state.transition = LOCK_TRANSITION_IDLE;
+    g_lock_state.is_locked = target_locked;
+  }
+}
+
+static void lock_state_enter(void) {
+  if (g_lock_state.is_locked && g_lock_state.target_locked)
+    return;
+  g_lock_state.is_locked = 1;
+  lock_state_refresh_clock();
+  lock_state_start_transition(LOCK_TRANSITION_LOCKING, 1);
+  set_cursor_type(CURSOR_TYPE_DEFAULT);
+  g_svg_dirty = 1;
+  screen_mark_all_dirty();
+}
+
+static void lock_state_request_unlock(void) {
+  if (!g_lock_state.is_locked && !g_lock_state.target_locked)
+    return;
+  lock_state_start_transition(LOCK_TRANSITION_UNLOCKING, 0);
+  g_svg_dirty = 1;
+  screen_mark_all_dirty();
+}
+
+static void lock_state_update(void) {
+  if (g_lock_state.is_locked || g_lock_state.target_locked)
+    lock_state_refresh_clock();
+
+  if (g_lock_state.transition == LOCK_TRANSITION_IDLE)
+    return;
+
+  if (g_lock_state.transition_duration_ticks == 0) {
+    g_lock_state.is_locked = g_lock_state.target_locked;
+    g_lock_state.transition = LOCK_TRANSITION_IDLE;
+    return;
+  }
+
+  uint32_t elapsed = timer_ticks - g_lock_state.transition_started_at;
+  if (elapsed >= g_lock_state.transition_duration_ticks) {
+    g_lock_state.is_locked = g_lock_state.target_locked;
+    g_lock_state.transition_progress = g_lock_state.target_locked ? 1.0f : 0.0f;
+    g_lock_state.transition = LOCK_TRANSITION_IDLE;
+    g_svg_dirty = 1;
+    return;
+  }
+
+  float t = (float)elapsed / (float)g_lock_state.transition_duration_ticks;
+  g_lock_state.transition_progress =
+      (g_lock_state.transition == LOCK_TRANSITION_LOCKING) ? t : (1.0f - t);
+  g_svg_dirty = 1;
+}
+
+static int lock_state_is_visible(void) {
+  return g_lock_state.is_locked || g_lock_state.transition != LOCK_TRANSITION_IDLE;
+}
+
+static void lock_screen_get_unlock_button_rect(int *x, int *y, int *w, int *h) {
+  int bw = 220;
+  int bh = 58;
+  if (x) *x = (SCREEN_WIDTH - bw) / 2;
+  if (y) *y = SCREEN_HEIGHT - 112;
+  if (w) *w = bw;
+  if (h) *h = bh;
+}
+
+static int lock_screen_hit_unlock_button(int px, int py) {
+  int x, y, w, h;
+  lock_screen_get_unlock_button_rect(&x, &y, &w, &h);
+  return px >= x && px < x + w && py >= y && py < y + h;
+}
+
+static void draw_capsule_outline(layer_t *layer, int x, int y, int w, int h,
+                                 uint32_t fill_color, uint32_t stroke_color) {
+  if (!layer || !layer->buffer || w <= 0 || h <= 0)
+    return;
+
+  float radius = (float)h * 0.5f;
+  float cx0 = (float)x + radius;
+  float cx1 = (float)(x + w) - radius;
+  float cy = (float)y + radius;
+  float inner_radius = radius - 1.5f;
+
+  for (int py = y; py < y + h; py++) {
+    if (py < 0 || py >= layer->height)
+      continue;
+    for (int px = x; px < x + w; px++) {
+      if (px < 0 || px >= layer->width)
+        continue;
+
+      float fx = (float)px + 0.5f;
+      float fy = (float)py + 0.5f;
+      float seg_x = fx;
+      if (seg_x < cx0) seg_x = cx0;
+      if (seg_x > cx1) seg_x = cx1;
+
+      float dx = fx - seg_x;
+      float dy = fy - cy;
+      float dist = sqrtf(dx * dx + dy * dy);
+      float fill_alpha = radius + 0.5f - dist;
+      if (fill_alpha > 1.0f) fill_alpha = 1.0f;
+      if (fill_alpha < 0.0f) fill_alpha = 0.0f;
+      if (fill_alpha > 0.0f) {
+        layer->buffer[py * layer->width + px] =
+            blend_colors(layer->buffer[py * layer->width + px], fill_color,
+                         (uint8_t)(fill_alpha * ((fill_color >> 24) & 0xFF)));
+      }
+
+      float stroke_alpha = inner_radius + 0.5f - dist;
+      if (stroke_alpha > 1.0f) stroke_alpha = 1.0f;
+      if (stroke_alpha < 0.0f) stroke_alpha = 0.0f;
+      if (fill_alpha > 0.0f && stroke_alpha < 1.0f) {
+        float ring = 1.0f - stroke_alpha;
+        if (ring > 1.0f) ring = 1.0f;
+        layer->buffer[py * layer->width + px] =
+            blend_colors(layer->buffer[py * layer->width + px], stroke_color,
+                         (uint8_t)(ring * ((stroke_color >> 24) & 0xFF)));
+      }
+    }
+  }
+}
+
+static void draw_lock_screen(layer_t *layer) {
+  if (!layer || !layer->buffer)
+    return;
+
+  draw_wallpaper(layer);
+
+  const char *dark_val = get_w1_global("~~main/dark");
+  int is_dark = (strcmp(dark_val, "true") == 0);
+  fill_rect_rgba(layer, 0, 0, layer->width, layer->height,
+                 is_dark ? 0x66000000u : 0x48FFFFFFu);
+
+  lock_state_refresh_clock();
+
+  int time_w = measure_ttf_width(g_lock_state.time_label, 48.0f);
+  int time_x = (SCREEN_WIDTH - time_w) / 2;
+  int time_y = 54;
+  layer_draw_ttf(layer, time_x, time_y, g_lock_state.time_label, 48.0f,
+                 is_dark ? 0xFFFFFFFFu : 0xFF111111u);
+
+  const char *button_label = "ロック解除";
+  int bx, by, bw, bh;
+  lock_screen_get_unlock_button_rect(&bx, &by, &bw, &bh);
+  draw_capsule_outline(layer, bx, by, bw, bh,
+                       is_dark ? 0x66353535u : 0xB8FFFFFFu,
+                       is_dark ? 0x66FFFFFFu : 0x22000000u);
+
+  int label_w = measure_ttf_width(button_label, 22.0f);
+  int label_x = bx + (bw - label_w) / 2;
+  int label_y = by + 12;
+  layer_draw_ttf(layer, label_x, label_y, button_label, 22.0f,
+                 is_dark ? 0xFFFFFFFFu : 0xFF111111u);
+}
+
 static void get_window_draw_bounds(window_t *win, int *x0, int *y0, int *x1, int *y1) {
   int title_h = win->no_decoration ? 0 : 60;
   int shadow_size = win->no_decoration ? 0 : 48;
@@ -3433,6 +3686,13 @@ static void redraw_warp_region(layer_t *layer, int rx0, int ry0, int rx1, int ry
 static void redraw_warp_svg(layer_t *layer) {
   if (!g_svg_dirty) return;
   sync_all_window_themes();
+
+  if (lock_state_is_visible()) {
+    draw_lock_screen(layer);
+    g_svg_dirty = 0;
+    screen_mark_layer_dirty(layer);
+    return;
+  }
 
   int active_idx = g_active_window_index;
   int below_active_dirty = 0;
@@ -5147,6 +5407,47 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       }
 
     } else if (current_os_mode == OS_MODE_WARPDESKTOP) {
+      lock_state_update();
+
+      if (lock_state_is_visible()) {
+        uint8_t curr_btns = mouse_buttons;
+        if (curr_btns != prev_mouse_buttons) {
+          if ((curr_btns & 1) && !(prev_mouse_buttons & 1)) {
+            int hx = mouse_x + MOUSE_HOTSPOT_X;
+            int hy = mouse_y + MOUSE_HOTSPOT_Y;
+            if (lock_screen_hit_unlock_button(hx, hy)) {
+              lock_state_request_unlock();
+            }
+          }
+          prev_mouse_buttons = curr_btns;
+        }
+
+        if (keybuf_len > 0) {
+          keybuf_len = 0;
+          keybuf_str[0] = '\0';
+        }
+
+        set_cursor_type(CURSOR_TYPE_DEFAULT);
+        g_target_scroll_y = 0.0f;
+
+        if (g_svg_dirty) {
+          redraw_warp_svg(&nextgen_ui_layer);
+        }
+
+        if (timer_ticks - last_stat_tick >= 100) {
+          uint32_t total = timer_ticks - last_stat_tick;
+          uint32_t idle = idle_ticks - last_idle_tick;
+          if (total > 0) {
+            uint32_t idle_pct = (idle * 100u) / total;
+            cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+          }
+          hud_update(&hud_layer, cpu_percent, mem_total_kb);
+          last_stat_tick = timer_ticks;
+          last_idle_tick = idle_ticks;
+        }
+        goto warpdesktop_frame_done;
+      }
+
       // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従（1px 単位）
       if (mouse_scroll != 0 && g_active_window_index >= 0) {
         window_t *win = &g_windows[g_active_window_index];
@@ -5521,6 +5822,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         last_stat_tick = timer_ticks;
         last_idle_tick = idle_ticks;
       }
+warpdesktop_frame_done:;
     }
 
     // 常時再描画
