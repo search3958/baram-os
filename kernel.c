@@ -3355,7 +3355,12 @@ static void lock_state_refresh_clock(void) {
     minute = (int)((seconds / 60) % 60);
   }
 
-  snprintf(g_lock_state.time_label, sizeof(g_lock_state.time_label), "%02d:%02d", hour, minute);
+  g_lock_state.time_label[0] = (char)('0' + ((hour / 10) % 10));
+  g_lock_state.time_label[1] = (char)('0' + (hour % 10));
+  g_lock_state.time_label[2] = ':';
+  g_lock_state.time_label[3] = (char)('0' + ((minute / 10) % 10));
+  g_lock_state.time_label[4] = (char)('0' + (minute % 10));
+  g_lock_state.time_label[5] = '\0';
   g_lock_state.last_clock_tick = second_tick;
   g_svg_dirty = 1;
 }
