@@ -1,14 +1,21 @@
 #!/bin/bash
 set -e
 mkdir -p output
+LUNASVG_OBJECTS=""
 BN_FILE=".build_no"
 if [ ! -f "$BN_FILE" ]; then echo "0" > "$BN_FILE"; fi
 CURRENT_BN=$(cat "$BN_FILE")
 echo "#define BUILD_NUMBER $CURRENT_BN" > build_no.h
 
-CC="clang --target=aarch64-elf"
-AS="clang --target=aarch64-elf"
-LD="ld.lld"
+if [ -x "/opt/homebrew/bin/aarch64-elf-gcc" ] && [ -x "/opt/homebrew/bin/aarch64-elf-as" ] && [ -x "/opt/homebrew/bin/aarch64-elf-ld" ]; then
+    CC="/opt/homebrew/bin/aarch64-elf-gcc"
+    AS="/opt/homebrew/bin/aarch64-elf-as"
+    LD="/opt/homebrew/bin/aarch64-elf-ld"
+else
+    CC="clang --target=aarch64-elf"
+    AS="clang --target=aarch64-elf"
+    LD="ld.lld"
+fi
 
 echo "Assembling arch files..."
 $AS -c arch/boot_arm64.s -o output/boot.o
@@ -25,8 +32,12 @@ $CC $COMMON_CFLAGS -c storage.c -o output/storage.o
 $CC $COMMON_CFLAGS -c fs.c -o output/fs.o
 $CC $COMMON_CFLAGS -c ui/warp_engine.c -o output/warp_engine.o
 $CC $COMMON_CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o
+$CC $COMMON_CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o
+$CC $COMMON_CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
 $CC $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o
+bash scripts/build_lunasvg.sh aarch64-elf output
+LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
 
 echo "Preparing initrd..."
 INITRD_DIR="output/initrd_tmp"
@@ -54,7 +65,7 @@ $AS -c output/initrd.s -o output/initrd.o
 
 echo "Linking..."
 $LD -T link_arm64.ld -o output/kernel.bin \
-    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o output/initrd.o
+    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS
 
 echo "ARM64 Build Success: output/kernel.bin created."
 ls -l output/kernel.bin

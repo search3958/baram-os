@@ -22,10 +22,28 @@ show_progress() {
 }
 
 CURRENT_PID=0
+LUNASVG_OBJECTS=""
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
     PERF_MODE="max"
 fi
+
+find_tool() {
+    local tool="$1"
+    if command -v "$tool" >/dev/null 2>&1; then
+        command -v "$tool"
+        return 0
+    fi
+    if [ -x "/opt/homebrew/bin/$tool" ]; then
+        printf '%s\n' "/opt/homebrew/bin/$tool"
+        return 0
+    fi
+    if [ -x "/opt/homebrew/opt/llvm/bin/$tool" ]; then
+        printf '%s\n' "/opt/homebrew/opt/llvm/bin/$tool"
+        return 0
+    fi
+    return 1
+}
 
 stop_current() {
     if [ "$CURRENT_PID" -ne 0 ]; then
@@ -38,24 +56,35 @@ stop_current() {
 }
 
 resolve_arm64_toolchain() {
-    if command -v aarch64-elf-gcc >/dev/null 2>&1; then
-        CC="aarch64-elf-gcc"
-        LD="aarch64-elf-ld"
-        AS="aarch64-elf-as"
+    local found_cc found_ld found_as
+
+    found_cc=$(find_tool aarch64-elf-gcc) || found_cc=""
+    found_ld=$(find_tool aarch64-elf-ld) || found_ld=""
+    found_as=$(find_tool aarch64-elf-as) || found_as=""
+    if [ -n "$found_cc" ] && [ -n "$found_ld" ] && [ -n "$found_as" ]; then
+        CC="$found_cc"
+        LD="$found_ld"
+        AS="$found_as"
         return 0
     fi
 
-    if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-        CC="aarch64-linux-gnu-gcc"
-        LD="aarch64-linux-gnu-ld"
-        AS="aarch64-linux-gnu-as"
+    found_cc=$(find_tool aarch64-linux-gnu-gcc) || found_cc=""
+    found_ld=$(find_tool aarch64-linux-gnu-ld) || found_ld=""
+    found_as=$(find_tool aarch64-linux-gnu-as) || found_as=""
+    if [ -n "$found_cc" ] && [ -n "$found_ld" ] && [ -n "$found_as" ]; then
+        CC="$found_cc"
+        LD="$found_ld"
+        AS="$found_as"
         return 0
     fi
 
-    if command -v clang >/dev/null 2>&1; then
-        CC="clang --target=aarch64-elf"
-        LD="ld.lld"
-        AS="aarch64-elf-as"
+    found_cc=$(find_tool clang) || found_cc=""
+    found_ld=$(find_tool ld.lld) || found_ld=""
+    found_as=$(find_tool aarch64-elf-as) || found_as=""
+    if [ -n "$found_cc" ] && [ -n "$found_ld" ] && [ -n "$found_as" ]; then
+        CC="$found_cc --target=aarch64-elf"
+        LD="$found_ld"
+        AS="$found_as"
         return 0
     fi
 
@@ -85,10 +114,12 @@ link_kernel() {
     rm -rf "$INITRD_DIR"
 
     # Convert to binary object
-    aarch64-elf-objcopy -I binary -O elf64-littleaarch64 -B aarch64 output/initrd.tar output/initrd.o
+    local OBJCOPY
+    OBJCOPY=$(find_tool aarch64-elf-objcopy) || return 1
+    "$OBJCOPY" -I binary -O elf64-littleaarch64 -B aarch64 output/initrd.tar output/initrd.o
 
     $CC -T link_arm64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/lua.o output/lua_glue.o output/initrd.o \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -nostdlib -static-libgcc -lgcc
 }
 
@@ -146,7 +177,8 @@ do_build_and_run() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    compile_c gpu/gpu_svg.c output/gpu_svg.o "$COMMON_CFLAGS" || return 1
+    bash scripts/build_lunasvg.sh aarch64-elf output || return 1
+    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -247,7 +279,8 @@ do_build_only() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    compile_c gpu/gpu_svg.c output/gpu_svg.o "$COMMON_CFLAGS" || return 1
+    bash scripts/build_lunasvg.sh aarch64-elf output || return 1
+    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80

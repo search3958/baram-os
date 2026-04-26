@@ -25,11 +25,6 @@
 #include "gpu/gpu_blur.h"
 #include "gpu/gpu_svg.h"
 
-#define NANOSVG_IMPLEMENTATION
-#include "nanosvg/nanosvg.h"
-#define NANOSVGRAST_IMPLEMENTATION
-#include "nanosvg/nanosvgrast.h"
-
 // Distance to line segment
 static float dist_to_line_segment(float px, float py, float ax, float ay, float bx, float by) {
   float dx = bx - ax;
@@ -74,16 +69,6 @@ static float dist_to_line_segment(float px, float py, float ax, float ay, float 
 #define MOUSE_HOTSPOT_X 28
 #define MOUSE_HOTSPOT_Y 21
 
-typedef struct {
-  NSVGshape *shape;
-  unsigned char *rgba;
-  uint8_t flags;
-  int x;
-  int y;
-  int w;
-  int h;
-} svg_shape_cache_t;
-
 // Multiboot module エントリ
 typedef struct {
   uint32_t mod_start;
@@ -113,16 +98,11 @@ typedef struct {
 #define LOCK_TRANSITION_TICKS 50u
 
 // --- グローバル変数 (Classic) ---
-static NSVGimage *g_svg_image = NULL;
-static NSVGrasterizer *g_svg_rast = NULL;
+static gpu_svg_document_t *g_svg_image = NULL;
 static unsigned char *g_svg_rgba = NULL;
 static unsigned char *g_svg_full_rgba = NULL;
 static int g_svg_full_w = 0;
 static int g_svg_full_h = 0;
-static svg_shape_cache_t *g_svg_cache = NULL;
-static int g_svg_shape_count = 0;
-static unsigned char *g_svg_hover_buf = NULL;
-static size_t g_svg_hover_buf_cap = 0;
 static float g_svg_scale = 1.0f;
 static float g_svg_tx = 0.0f;
 static float g_svg_ty = 0.0f;
@@ -406,7 +386,7 @@ typedef struct window_struct {
   
   // SVG caching for performance
   char *last_svg_str;      // Cached SVG string to detect changes
-  NSVGimage *svg_image_cache; // Parsed SVG cache reused across rerasterization
+  gpu_svg_document_t *svg_image_cache; // Parsed SVG cache reused across rerasterization
   uint32_t *raster_cache;  // Rasterized SVG cache
   int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
@@ -1367,6 +1347,10 @@ double sqrt(double x) {
   return r;
 }
 
+double hypot(double x, double y) {
+  return sqrt(x * x + y * y);
+}
+
 float sqrtf(float x) {
   if (x <= 0.0f)
     return 0.0f;
@@ -1420,11 +1404,19 @@ float roundf(float x) {
   return (x >= 0.0f) ? floorf(x + 0.5f) : ceilf(x - 0.5f);
 }
 
+long lroundf(float x) {
+  return (long)roundf(x);
+}
+
 float fmodf(float x, float y) {
   if (y == 0.0f)
     return 0.0f;
   int q = (int)(x / y);
   return x - (float)q * y;
+}
+
+float hypotf(float x, float y) {
+  return sqrtf(x * x + y * y);
 }
 
 static float wrap_pi(float x) {
@@ -1501,6 +1493,14 @@ static void swap_bytes(unsigned char *a, unsigned char *b, size_t size) {
   }
 }
 
+void *calloc(size_t nmemb, size_t size) {
+  size_t total = nmemb * size;
+  void *ptr = malloc(total);
+  if (ptr)
+    memset(ptr, 0, total);
+  return ptr;
+}
+
 void qsort(void *base, size_t nmemb, size_t size,
            int (*compar)(const void *, const void *)) {
   unsigned char *arr = (unsigned char *)base;
@@ -1515,6 +1515,32 @@ void qsort(void *base, size_t nmemb, size_t size,
       --j;
     }
   }
+}
+
+void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
+              int (*compar)(const void *, const void *)) {
+  size_t low = 0;
+  size_t high = nmemb;
+  const unsigned char *arr = (const unsigned char *)base;
+
+  while (low < high) {
+    size_t mid = low + (high - low) / 2;
+    const void *elem = arr + mid * size;
+    int cmp = compar(key, elem);
+    if (cmp == 0)
+      return (void *)elem;
+    if (cmp < 0)
+      high = mid;
+    else
+      low = mid + 1;
+  }
+
+  return NULL;
+}
+
+int atexit(void (*func)(void)) {
+  (void)func;
+  return 0;
 }
 
 FILE *fopen(const char *path, const char *mode) {
@@ -1978,14 +2004,9 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   if (!svg_data)
     return 0;
 
-  if (g_svg_image) nsvgDelete(g_svg_image);
-  g_svg_image = nsvgParse((char*)svg_data, "px", 96.0f);
+  if (g_svg_image) gpu_svg_delete(g_svg_image);
+  g_svg_image = gpu_svg_parse(svg_data);
   if (!g_svg_image)
-    return 0;
-
-  if (!g_svg_rast)
-    g_svg_rast = nsvgCreateRasterizer();
-  if (!g_svg_rast)
     return 0;
 
   g_svg_full_w = layer->width;
@@ -2004,15 +2025,19 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
 
   if (load_wallpaper && svg_data == g_wallpaper_ptr) {
     // "Center Cover" logic (with 103% zoom)
-    float scale_x = (float)g_svg_full_w / g_svg_image->width;
-    float scale_y = (float)g_svg_full_h / g_svg_image->height;
+    float svg_w = gpu_svg_width(g_svg_image);
+    float svg_h = gpu_svg_height(g_svg_image);
+    if (svg_w <= 0.0f || svg_h <= 0.0f)
+      return 0;
+    float scale_x = (float)g_svg_full_w / svg_w;
+    float scale_y = (float)g_svg_full_h / svg_h;
     scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
-    tx = (g_svg_full_w - g_svg_image->width * scale) / 2.0f;
-    ty = (g_svg_full_h - g_svg_image->height * scale) / 2.0f;
+    tx = (g_svg_full_w - svg_w * scale) / 2.0f;
+    ty = (g_svg_full_h - svg_h * scale) / 2.0f;
   } else {
     // Center logic for logo
-    tx = (g_svg_full_w - g_svg_image->width) / 2.0f;
-    ty = (g_svg_full_h - g_svg_image->height) / 2.0f;
+    tx = (g_svg_full_w - gpu_svg_width(g_svg_image)) / 2.0f;
+    ty = (g_svg_full_h - gpu_svg_height(g_svg_image)) / 2.0f;
   }
 
   // GPU SVG rendering: Bezier→Tessellation→GPU triangles
@@ -2022,13 +2047,11 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   }
   
   if (g_gpu_svg_initialized) {
-      // GPU path render: Uses nanosvgrast for high-quality SVG rasterization
       gpu_svg_render(&g_gpu_svg_renderer, g_svg_image, scale, tx, ty,
                      (uint32_t*)g_svg_full_rgba, g_svg_full_w, g_svg_full_h);
   } else {
-      // Fallback to nanosvg CPU rasterizer
-      nsvgRasterize(g_svg_rast, g_svg_image, tx, ty, scale, g_svg_full_rgba,
-                    g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+      gpu_svg_rasterize(g_svg_image, scale, tx, ty, g_svg_full_rgba,
+                        g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
   }
 
   // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
@@ -2038,17 +2061,13 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
       uint32_t c1 = parse_rgba_smart(conic_pos, 2);
       uint32_t c2 = parse_rgba_smart(conic_pos, 3);
 
-      for (NSVGshape *s = g_svg_image->shapes; s; s = s->next) {
-        if (s->fill.type != NSVG_PAINT_NONE) {
-          int rx = (int)(s->bounds[0] * scale + tx);
-          int ry = (int)(s->bounds[1] * scale + ty);
-          int rw = (int)((s->bounds[2] - s->bounds[0]) * scale);
-          int rh = (int)((s->bounds[3] - s->bounds[1]) * scale);
-          if (rw > 0 && rh > 0) {
-            apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
-                                 ry, rw, rh, c1, c2);
-          }
-        }
+      int rx = (int)floorf(tx);
+      int ry = (int)floorf(ty);
+      int rw = (int)ceilf(gpu_svg_width(g_svg_image) * scale);
+      int rh = (int)ceilf(gpu_svg_height(g_svg_image) * scale);
+      if (rw > 0 && rh > 0) {
+        apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
+                             ry, rw, rh, c1, c2);
       }
     }
   }
@@ -2840,14 +2859,14 @@ static void window_redraw(window_t *win) {
   }
 
   if (svg_changed) {
-    strncpy(g_hud_status, "NSVGParse", 63);
-    NSVGimage *img = nsvgParse((char*)svg, "px", 96.0f);
+    strncpy(g_hud_status, "SVGParse", 63);
+    gpu_svg_document_t *img = gpu_svg_parse(svg);
     if (!img) {
       strncpy(g_hud_status, "ParseErr", 63);
       return;
     }
 
-    if (win->svg_image_cache) nsvgDelete(win->svg_image_cache);
+    if (win->svg_image_cache) gpu_svg_delete(win->svg_image_cache);
     win->svg_image_cache = img;
 
     if (win->last_svg_str) free(win->last_svg_str);
@@ -2863,7 +2882,7 @@ static void window_redraw(window_t *win) {
 
   // Content height is determined by the cached SVG itself
   int title_h = win->no_decoration ? 0 : 60;
-  int content_h = (int)win->svg_image_cache->height;
+  int content_h = (int)ceilf(gpu_svg_height(win->svg_image_cache));
   if (content_h < win->h + title_h) content_h = win->h + title_h;
 
   int scaled_w = (int)((float)win->w * target_scale);
@@ -2883,9 +2902,10 @@ static void window_redraw(window_t *win) {
     strncpy(g_hud_status, "ClearCache", 63);
     for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0x00000000;
 
-    strncpy(g_hud_status, "NSVGRast", 63);
-    if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-    nsvgRasterize(g_svg_rast, win->svg_image_cache, 0, 0, target_scale, (unsigned char*)win->raster_cache, scaled_w, scaled_h, scaled_w * 4);
+    strncpy(g_hud_status, "SVGRaster", 63);
+    gpu_svg_rasterize(win->svg_image_cache, target_scale, 0.0f, 0.0f,
+                      (unsigned char*)win->raster_cache, scaled_w, scaled_h,
+                      scaled_w * 4);
 
     strncpy(g_hud_status, "RBSwap+PreMul", 63);
     unsigned char *p = (unsigned char*)win->raster_cache;
@@ -3136,7 +3156,7 @@ static void close_active_window() {
   if (win->warp1_ctx) warp1_context_destroy(win->warp1_ctx);
   if (win->rgba_buffer) free(win->rgba_buffer);
   if (win->last_svg_str) free(win->last_svg_str);
-  if (win->svg_image_cache) nsvgDelete(win->svg_image_cache);
+  if (win->svg_image_cache) gpu_svg_delete(win->svg_image_cache);
   if (win->raster_cache) free(win->raster_cache);
   if (win->shadow_cache) free(win->shadow_cache);
   if (win->frame_cache) free(win->frame_cache);
@@ -3970,6 +3990,10 @@ static int svg_init_nextgen(layer_t *layer) {
 static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
                               int hover_index, float hover_scale,
                               float hover_offx, float hover_offy) {
+  (void)hover_index;
+  (void)hover_scale;
+  (void)hover_offx;
+  (void)hover_offy;
   if (!g_svg_ready || rw <= 0 || rh <= 0)
     return;
 
@@ -3997,231 +4021,34 @@ static void svg_update_region(layer_t *layer, int rx, int ry, int rw, int rh,
       *dst++ = *src++;
     }
   }
-
-  if (hover_index >= 0) {
-    // Draw hovered shape scaled up on top.
-    svg_shape_cache_t *c = &g_svg_cache[hover_index];
-    unsigned char *src_rgba = NULL;
-    int src_x = 0, src_y = 0, src_w = 0, src_h = 0;
-
-    if (c->rgba && c->w > 0 && c->h > 0) {
-      src_rgba = c->rgba;
-      src_x = c->x;
-      src_y = c->y;
-      src_w = c->w;
-      src_h = c->h;
-    } else if (c->shape) {
-      float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx;
-      float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty;
-      float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx;
-      float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty;
-
-      float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
-      int pad = (int)ceilf(padf);
-      if (pad < 2)
-        pad = 2;
-      int x0 = (int)floorf(x0f) - pad;
-      int y0 = (int)floorf(y0f) - pad;
-      int x1 = (int)ceilf(x1f) + pad;
-      int y1 = (int)ceilf(y1f) + pad;
-
-      if (x0 < 0)
-        x0 = 0;
-      if (y0 < 0)
-        y0 = 0;
-      if (x1 > layer->width)
-        x1 = layer->width;
-      if (y1 > layer->height)
-        y1 = layer->height;
-
-      int w = x1 - x0;
-      int h = y1 - y0;
-      if (w > 0 && h > 0) {
-        size_t bytes = (size_t)w * (size_t)h * 4;
-        if (bytes > g_svg_hover_buf_cap) {
-          g_svg_hover_buf = (unsigned char *)realloc(g_svg_hover_buf, bytes);
-          if (g_svg_hover_buf)
-            g_svg_hover_buf_cap = bytes;
-        }
-        if (g_svg_hover_buf && g_svg_hover_buf_cap >= bytes) {
-          for (int i = 0; i < g_svg_shape_count; ++i)
-            g_svg_cache[i].shape->flags = 0;
-          c->shape->flags = NSVG_FLAGS_VISIBLE;
-
-          nsvgRasterize(g_svg_rast, g_svg_image,
-                        g_svg_tx + g_scroll_x - (float)x0,
-                        g_svg_ty + g_scroll_y - (float)y0, g_svg_scale,
-                        g_svg_hover_buf, w, h, w * 4);
-
-          for (int i = 0; i < g_svg_shape_count; ++i)
-            g_svg_cache[i].shape->flags = g_svg_cache[i].flags;
-
-          src_rgba = g_svg_hover_buf;
-          src_x = x0;
-          src_y = y0;
-          src_w = w;
-          src_h = h;
-        }
-      }
-    }
-
-    if (src_rgba && src_w > 0 && src_h > 0) {
-      float scale = hover_scale;
-      int dst_w = (int)ceilf((float)src_w * scale);
-      int dst_h = (int)ceilf((float)src_h * scale);
-      int center_x = (int)((float)(src_x + src_w / 2) + hover_offx);
-      int center_y = (int)((float)(src_y + src_h / 2) + hover_offy);
-      int dst_x0 = center_x - dst_w / 2;
-      int dst_y0 = center_y - dst_h / 2;
-      int dst_x1 = dst_x0 + dst_w;
-      int dst_y1 = dst_y0 + dst_h;
-
-      if (dst_x0 < x0)
-        dst_x0 = x0;
-      if (dst_y0 < y0)
-        dst_y0 = y0;
-      if (dst_x1 > x1)
-        dst_x1 = x1;
-      if (dst_y1 > y1)
-        dst_y1 = y1;
-
-      for (int y = dst_y0; y < dst_y1; ++y) {
-        uint32_t *dst = &layer->buffer[y * layer->width];
-        for (int x = dst_x0; x < dst_x1; ++x) {
-          float sx = (float)(x - (center_x - dst_w / 2)) / scale;
-          float sy = (float)(y - (center_y - dst_h / 2)) / scale;
-          int isx = (int)sx;
-          int isy = (int)sy;
-          if (isx < 0 || isy < 0 || isx >= src_w || isy >= src_h)
-            continue;
-          size_t idx = (size_t)(isy * src_w + isx) * 4;
-          uint8_t sa = src_rgba[idx + 3];
-          if (sa == 0)
-            continue;
-
-          uint8_t sr = src_rgba[idx + 0];
-          uint8_t sg = src_rgba[idx + 1];
-          uint8_t sb = src_rgba[idx + 2];
-
-          uint32_t d = dst[x];
-          uint8_t dr = (d >> 16) & 0xFF;
-          uint8_t dg = (d >> 8) & 0xFF;
-          uint8_t db = d & 0xFF;
-
-          uint8_t out_r = (uint8_t)((sr * sa + dr * (255 - sa)) / 255);
-          uint8_t out_g = (uint8_t)((sg * sa + dg * (255 - sa)) / 255);
-          uint8_t out_b = (uint8_t)((sb * sa + db * (255 - sa)) / 255);
-
-          dst[x] = (0xFFu << 24) | ((uint32_t)out_r << 16) |
-                   ((uint32_t)out_g << 8) | (uint32_t)out_b;
-        }
-      }
-    }
-  }
 }
 
 static int svg_get_shape_rect_scaled(int index, float scale, float offx,
                                      float offy, int *x, int *y, int *w,
                                      int *h) {
-  if (!g_svg_cache || index < 0 || index >= g_svg_shape_count)
-    return 0;
-  svg_shape_cache_t *c = &g_svg_cache[index];
-  int src_x = 0;
-  int src_y = 0;
-  int src_w = 0;
-  int src_h = 0;
-
-  if (c->rgba && c->w > 0 && c->h > 0) {
-    src_x = c->x;
-    src_y = c->y;
-    src_w = c->w;
-    src_h = c->h;
-  } else if (c->shape) {
-    float x0f = c->shape->bounds[0] * g_svg_scale + g_svg_tx + g_scroll_x;
-    float y0f = c->shape->bounds[1] * g_svg_scale + g_svg_ty + g_scroll_y;
-    float x1f = c->shape->bounds[2] * g_svg_scale + g_svg_tx + g_scroll_x;
-    float y1f = c->shape->bounds[3] * g_svg_scale + g_svg_ty + g_scroll_y;
-
-    float padf = c->shape->strokeWidth * g_svg_scale + 3.0f;
-    int pad = (int)ceilf(padf);
-    if (pad < 2)
-      pad = 2;
-
-    int x0 = (int)floorf(x0f) - pad;
-    int y0 = (int)floorf(y0f) - pad;
-    int x1 = (int)ceilf(x1f) + pad;
-    int y1 = (int)ceilf(y1f) + pad;
-
-    if (x0 < 0)
-      x0 = 0;
-    if (y0 < 0)
-      y0 = 0;
-    if (x1 > SVG_WIDTH)
-      x1 = SVG_WIDTH;
-    if (y1 > SVG_HEIGHT)
-      y1 = SVG_HEIGHT;
-
-    src_x = x0;
-    src_y = y0;
-    src_w = x1 - x0;
-    src_h = y1 - y0;
-  }
-
-  if (src_w <= 0 || src_h <= 0)
-    return 0;
-  int dst_w = (int)ceilf((float)src_w * scale);
-  int dst_h = (int)ceilf((float)src_h * scale);
-  int center_x = (int)((float)(src_x + src_w / 2) + offx);
-  int center_y = (int)((float)(src_y + src_h / 2) + offy);
-  int x0 = center_x - dst_w / 2;
-  int y0 = center_y - dst_h / 2;
-  *x = x0;
-  *y = y0;
-  *w = dst_w;
-  *h = dst_h;
-  return 1;
+  (void)index;
+  (void)scale;
+  (void)offx;
+  (void)offy;
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+  return 0;
 }
 
 static int svg_get_shape_center(int index, float *cx, float *cy) {
-  if (!g_svg_cache || index < 0 || index >= g_svg_shape_count)
-    return 0;
-  NSVGshape *s = g_svg_cache[index].shape;
-  if (!s || (s->flags & NSVG_FLAGS_VISIBLE) == 0)
-    return 0;
-  float x0 = s->bounds[0];
-  float y0 = s->bounds[1];
-  float x1 = s->bounds[2];
-  float y1 = s->bounds[3];
-  *cx = ((x0 + x1) * 0.5f) * g_svg_scale + g_svg_tx + g_scroll_x;
-  *cy = ((y0 + y1) * 0.5f) * g_svg_scale + g_svg_ty + g_scroll_y;
-  return 1;
+  (void)index;
+  (void)cx;
+  (void)cy;
+  return 0;
 }
 
 static int svg_pick_shape(layer_t *layer, int screen_x, int screen_y) {
-  if (!g_svg_ready)
-    return -1;
-  if (screen_x < layer->x || screen_y < layer->y ||
-      screen_x >= layer->x + layer->width ||
-      screen_y >= layer->y + layer->height) {
-    return -1;
-  }
-
-  float lx = (float)(screen_x - layer->x);
-  float ly = (float)(screen_y - layer->y);
-  float ix = (lx - g_svg_tx - g_scroll_x) / g_svg_scale;
-  float iy = (ly - g_svg_ty - g_scroll_y) / g_svg_scale;
-
-  int hit = -1;
-  for (int i = 0; i < g_svg_shape_count; ++i) {
-    NSVGshape *s = g_svg_cache[i].shape;
-    if (!s || (s->flags & NSVG_FLAGS_VISIBLE) == 0)
-      continue;
-    if (ix >= s->bounds[0] && ix <= s->bounds[2] && iy >= s->bounds[1] &&
-        iy <= s->bounds[3]) {
-      hit = i;
-    }
-  }
-  return hit;
+  (void)layer;
+  (void)screen_x;
+  (void)screen_y;
+  return -1;
 }
 
 // タイマー設定 (0.1秒点滅用)
@@ -4951,14 +4778,20 @@ static void cursor_init(void) {
       "stroke-width=\"25\" stroke-linecap=\"round\"/>"
       "</svg>";
 
-  NSVGimage *img = nsvgParse((char *)cursor_svg, "px", 96.0f);
+  gpu_svg_document_t *img = gpu_svg_parse(cursor_svg);
   if (!img)
     return;
 
   // 縦48px程度にスケール。シャドウのために余白を追加
   int target_h = 48;
-  float scale = (float)target_h / img->height;
-  int target_w = (int)(img->width * scale);
+  float svg_h = gpu_svg_height(img);
+  float svg_w = gpu_svg_width(img);
+  if (svg_h <= 0.0f || svg_w <= 0.0f) {
+    gpu_svg_delete(img);
+    return;
+  }
+  float scale = (float)target_h / svg_h;
+  int target_w = (int)(svg_w * scale);
 
   int padding = 16;
   int w = target_w + padding * 2;
@@ -4966,26 +4799,25 @@ static void cursor_init(void) {
 
   uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
   if (!buf) {
-    nsvgDelete(img);
+    gpu_svg_delete(img);
     return;
   }
 
-  NSVGrasterizer *rast = nsvgCreateRasterizer();
   unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
   unsigned char *shadow_rgba =
       (unsigned char *)malloc((size_t)w * (size_t)h * 4);
 
-  if (rast && rgba && shadow_rgba) {
+  if (rgba && shadow_rgba) {
     // 1. シャドウ用のラスタライズ (オフセット込)
     memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
-    nsvgRasterize(rast, img, (float)padding + 2.0f, (float)padding + 4.0f,
-                  scale, shadow_rgba, w, h, w * 4);
+    gpu_svg_rasterize(img, scale, (float)padding + 2.0f, (float)padding + 4.0f,
+                      shadow_rgba, w, h, w * 4);
     box_blur_alpha(shadow_rgba, w, h, 4); // ブラー適用
 
     // 2. 本体をラスタライズ
     memset(rgba, 0, (size_t)w * (size_t)h * 4);
-    nsvgRasterize(rast, img, (float)padding, (float)padding, scale, rgba, w, h,
-                  w * 4);
+    gpu_svg_rasterize(img, scale, (float)padding, (float)padding, rgba, w, h,
+                      w * 4);
 
     // 3. 合成 (影 -> 本体)
     for (int i = 0; i < w * h; i++) {
@@ -5014,13 +4846,11 @@ static void cursor_init(void) {
     set_cursor_bitmap(buf, w, h);
   }
 
-  if (rast)
-    nsvgDeleteRasterizer(rast);
   if (rgba)
     free(rgba);
   if (shadow_rgba)
     free(shadow_rgba);
-  nsvgDelete(img);
+  gpu_svg_delete(img);
 }
 
 static void resize_cursor_init(void) {
@@ -5034,28 +4864,35 @@ static void resize_cursor_init(void) {
       "<path d=\"M218.991 179.072L113.825 74.3452\" stroke=\"black\" stroke-width=\"29\"/>"
       "</svg>";
 
-  NSVGimage *img = nsvgParse((char *)resize_svg, "px", 96.0f);
+  gpu_svg_document_t *img = gpu_svg_parse(resize_svg);
   if (!img) return;
 
   int target_h = 42;
-  float scale = (float)target_h / img->height;
-  int target_w = (int)(img->width * scale);
+  float svg_h = gpu_svg_height(img);
+  float svg_w = gpu_svg_width(img);
+  if (svg_h <= 0.0f || svg_w <= 0.0f) {
+    gpu_svg_delete(img);
+    return;
+  }
+  float scale = (float)target_h / svg_h;
+  int target_w = (int)(svg_w * scale);
   int padding = 12;
   int w = target_w + padding * 2;
   int h = target_h + padding * 2;
 
   uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
-  NSVGrasterizer *rast = nsvgCreateRasterizer();
   unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
   unsigned char *shadow_rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
 
-  if (rast && rgba && shadow_rgba && buf) {
+  if (rgba && shadow_rgba && buf) {
     memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
-    nsvgRasterize(rast, img, (float)padding + 2.0f, (float)padding + 3.0f, scale, shadow_rgba, w, h, w * 4);
+    gpu_svg_rasterize(img, scale, (float)padding + 2.0f, (float)padding + 3.0f,
+                      shadow_rgba, w, h, w * 4);
     box_blur_alpha(shadow_rgba, w, h, 4);
 
     memset(rgba, 0, (size_t)w * (size_t)h * 4);
-    nsvgRasterize(rast, img, (float)padding, (float)padding, scale, rgba, w, h, w * 4);
+    gpu_svg_rasterize(img, scale, (float)padding, (float)padding, rgba, w, h,
+                      w * 4);
 
     for (int i = 0; i < w * h; i++) {
       uint8_t shadow_a = (uint8_t)(shadow_rgba[i * 4 + 3] * 0.4f);
@@ -5086,10 +4923,9 @@ static void resize_cursor_init(void) {
       set_resize_nesw_cursor_bitmap(flipped_buf, w, h);
     }
   }
-  if (rast) nsvgDeleteRasterizer(rast);
   if (rgba) free(rgba);
   if (shadow_rgba) free(shadow_rgba);
-  nsvgDelete(img);
+  gpu_svg_delete(img);
 }
 
 #ifdef __aarch64__
@@ -5424,13 +5260,13 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
         static int error_rendered = 0;
         if (!error_rendered) {
-            NSVGimage *img = nsvgParse((char*)g_error_svg, "px", 96.0f);
+            gpu_svg_document_t *img = gpu_svg_parse(g_error_svg);
             if (img) {
-                if (!g_svg_rast) g_svg_rast = nsvgCreateRasterizer();
-                float tx = (float)(SCREEN_WIDTH - (int)img->width) / 2.0f;
-                float ty = (float)(SCREEN_HEIGHT - (int)img->height) / 2.0f;
+                float tx = (float)(SCREEN_WIDTH - (int)gpu_svg_width(img)) / 2.0f;
+                float ty = (float)(SCREEN_HEIGHT - (int)gpu_svg_height(img)) / 2.0f;
                 // 直接メインバッファにラスタライズ
-                nsvgRasterize(g_svg_rast, img, tx, ty, 1.0f, (unsigned char*)main_screen_buf, SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * 4);
+                gpu_svg_rasterize(img, 1.0f, tx, ty, (unsigned char*)main_screen_buf,
+                                  SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * 4);
                 
                 // RGBA -> BGRA (Little Endian ARGB) 変換
                 unsigned char *p = (unsigned char*)main_screen_buf;
@@ -5439,7 +5275,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                     p[0] = b; p[2] = r;
                     p += 4;
                 }
-                nsvgDelete(img);
+                gpu_svg_delete(img);
             }
             screen_mark_static_dirty();
             error_rendered = 1;

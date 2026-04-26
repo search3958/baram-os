@@ -23,10 +23,35 @@ show_progress() {
 }
 
 CURRENT_PID=0
+LUNASVG_OBJECTS=""
+NASM="nasm"
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
     PERF_MODE="max"
 fi
+
+find_tool() {
+    local tool="$1"
+    if command -v "$tool" >/dev/null 2>&1; then
+        command -v "$tool"
+        return 0
+    fi
+    if [ -x "/opt/homebrew/bin/$tool" ]; then
+        printf '%s\n' "/opt/homebrew/bin/$tool"
+        return 0
+    fi
+    return 1
+}
+
+if [ -x "/opt/homebrew/bin/nasm" ]; then
+    NASM="/opt/homebrew/bin/nasm"
+fi
+
+resolve_i686_toolchain() {
+    I686_CC=$(find_tool i686-elf-gcc) || return 1
+    I686_GRUB=$(find_tool i686-elf-grub-mkrescue) || return 1
+    return 0
+}
 
 stop_current() {
     if [ "$CURRENT_PID" -ne 0 ]; then
@@ -39,6 +64,12 @@ stop_current() {
 }
 
 do_build_and_run() {
+    if ! resolve_i686_toolchain; then
+        echo "  ❌ 32-bit ビルド用ツールチェーンが見つかりません"
+        echo "     必要: i686-elf-gcc + i686-elf-grub-mkrescue"
+        return 1
+    fi
+
     BN_FILE=".build_no"
     if [ ! -f "$BN_FILE" ]; then
         echo "0" > "$BN_FILE"
@@ -58,37 +89,43 @@ do_build_and_run() {
     mkdir -p output/isodir/boot/grub
     show_progress 10
 
-    nasm -f elf32 arch/boot.s -o output/boot.o || return 1
+    "$NASM" -f elf32 arch/boot.s -o output/boot.o || return 1
     show_progress 15
-    nasm -f elf32 arch/isr.s -o output/isr.o || return 1
+    "$NASM" -f elf32 arch/isr.s -o output/isr.o || return 1
     show_progress 18
-    nasm -f elf32 arch/setjmp.s -o output/setjmp.o || return 1
+    "$NASM" -f elf32 arch/setjmp.s -o output/setjmp.o || return 1
     show_progress 20
 
     CFLAGS="-Iinclude -I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
     KERNEL_CFLAGS="$CFLAGS -msse2"
 
-    i686-elf-gcc $KERNEL_CFLAGS -c kernel.c -o output/kernel.o || return 1
+    "$I686_CC" $KERNEL_CFLAGS -c kernel.c -o output/kernel.o || return 1
     show_progress 40
-    i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
+    "$I686_CC" $CFLAGS -c drivers.c -o output/drivers.o || return 1
     show_progress 50
-    i686-elf-gcc $CFLAGS -c storage.c -o output/storage.o || return 1
+    "$I686_CC" $CFLAGS -c storage.c -o output/storage.o || return 1
     show_progress 55
-    i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
+    "$I686_CC" $CFLAGS -c fs.c -o output/fs.o || return 1
     show_progress 60
-    i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
+    "$I686_CC" $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
     show_progress 70
-    i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    "$I686_CC" $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    show_progress 72
+    "$I686_CC" $CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o || return 1
+    show_progress 74
+    "$I686_CC" $CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o || return 1
     show_progress 75
+    bash scripts/build_lunasvg.sh i686-elf output || return 1
+    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 78
     LUA_CFLAGS="$CFLAGS -DLUA_USE_C89   -Ilua-master"
-    i686-elf-gcc $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
+    "$I686_CC" $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
     show_progress 80
-    i686-elf-gcc $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o || return 1
+    "$I686_CC" $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o || return 1
     show_progress 82
 
-    i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/lua.o output/lua_glue.o \
+    "$I686_CC" -T link.ld -o output/kernel.bin \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 85
 
@@ -133,7 +170,7 @@ EOF
 
     show_progress 90
 
-    i686-elf-grub-mkrescue -o output/os.iso output/isodir || return 1
+    "$I686_GRUB" -o output/os.iso output/isodir || return 1
     show_progress 100
     echo ""
 
@@ -190,6 +227,12 @@ if [ "$INITIAL_CMD" = "r" ]; then
 fi
 
 do_build_only() {
+    if ! resolve_i686_toolchain; then
+        echo "  ❌ 32-bit ビルド用ツールチェーンが見つかりません"
+        echo "     必要: i686-elf-gcc + i686-elf-grub-mkrescue"
+        return 1
+    fi
+
     BN_FILE=".build_no"
     if [ ! -f "$BN_FILE" ]; then
         echo "0" > "$BN_FILE"
@@ -209,36 +252,40 @@ do_build_only() {
     mkdir -p output/isodir/boot/grub
     show_progress 10
 
-    nasm -f elf32 arch/boot.s -o output/boot.o || return 1
+    "$NASM" -f elf32 arch/boot.s -o output/boot.o || return 1
     show_progress 15
-    nasm -f elf32 arch/isr.s -o output/isr.o || return 1
+    "$NASM" -f elf32 arch/isr.s -o output/isr.o || return 1
     show_progress 18
-    nasm -f elf32 arch/setjmp.s -o output/setjmp.o || return 1
+    "$NASM" -f elf32 arch/setjmp.s -o output/setjmp.o || return 1
     show_progress 20
 
     CFLAGS="-Iinclude -I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m32 -march=pentium4 -mno-sse -mno-sse2 -mstackrealign -DBUILD_NUMBER=$CURRENT_BN"
     KERNEL_CFLAGS="$CFLAGS -msse2"
 
-    i686-elf-gcc $KERNEL_CFLAGS -c kernel.c -o output/kernel.o || return 1
+    "$I686_CC" $KERNEL_CFLAGS -c kernel.c -o output/kernel.o || return 1
     show_progress 40
-    i686-elf-gcc $CFLAGS -c drivers.c -o output/drivers.o || return 1
+    "$I686_CC" $CFLAGS -c drivers.c -o output/drivers.o || return 1
     show_progress 50
-    i686-elf-gcc $CFLAGS -c storage.c -o output/storage.o || return 1
+    "$I686_CC" $CFLAGS -c storage.c -o output/storage.o || return 1
     show_progress 55
-    i686-elf-gcc $CFLAGS -c fs.c -o output/fs.o || return 1
+    "$I686_CC" $CFLAGS -c fs.c -o output/fs.o || return 1
     show_progress 60
+    "$I686_CC" $CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o || return 1
     show_progress 65
-    i686-elf-gcc $CFLAGS -DLUA_USE_C89   -Ilua-master -c lua_impl.c -o output/lua.o || return 1
+    "$I686_CC" $CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o || return 1
+    "$I686_CC" $CFLAGS -DLUA_USE_C89   -Ilua-master -c lua_impl.c -o output/lua.o || return 1
     show_progress 68
-    i686-elf-gcc $CFLAGS -DLUA_USE_C89   -Ilua-master -c lua_glue.c -o output/lua_glue.o || return 1
+    "$I686_CC" $CFLAGS -DLUA_USE_C89   -Ilua-master -c lua_glue.c -o output/lua_glue.o || return 1
     show_progress 70
-    i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
+    "$I686_CC" $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
     show_progress 75
-    i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    "$I686_CC" $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    bash scripts/build_lunasvg.sh i686-elf output || return 1
+    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 80
 
-    i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o \
+    "$I686_CC" -T link.ld -o output/kernel.bin \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 100
     echo ""

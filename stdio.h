@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-typedef struct FILE {
+typedef struct baram_FILE {
   int dummy;
 } FILE;
 
@@ -34,7 +34,7 @@ extern FILE *stdout;
 extern FILE *stderr;
 
 int remove(const char *filename);
-int rename(const char *old, const char *new);
+int rename(const char *oldname, const char *newname);
 char *tmpnam(char *s);
 FILE *fopen(const char *path, const char *mode);
 FILE *freopen(const char *path, const char *mode, FILE *stream);

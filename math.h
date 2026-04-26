@@ -1,9 +1,34 @@
 #ifndef OS_MATH_H
 #define OS_MATH_H
 
+#ifndef FP_NAN
+#define FP_NAN 0
+#endif
+#ifndef FP_INFINITE
+#define FP_INFINITE 1
+#endif
+#ifndef FP_NORMAL
+#define FP_NORMAL 2
+#endif
+#ifndef FP_SUBNORMAL
+#define FP_SUBNORMAL 3
+#endif
+#ifndef FP_ZERO
+#define FP_ZERO 4
+#endif
+#ifndef INFINITY
+#define INFINITY (__builtin_inff())
+#endif
+#ifndef NAN
+#define NAN (__builtin_nanf(""))
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef float float_t;
+typedef double double_t;
 
 double fabs(double x);
 float fabsf(float x);
@@ -28,10 +53,13 @@ float tanf(float x);
 float floorf(float x);
 float ceilf(float x);
 float roundf(float x);
+long lroundf(float x);
 double ceil(double x);
 #define HUGE_VAL (__builtin_huge_val())
 double fmod(double x, double y);
+double hypot(double x, double y);
 float fmodf(float x, float y);
+float hypotf(float x, float y);
 float acosf(float x);
 float atan2f(float y, float x);
 double ldexp(double x, int exp);

@@ -14,7 +14,7 @@ screen{
 
     hStack{
         button{
-            text: ("Baram 0S"),
+            text: ("Baram OS"),
             oneClick: (setScreen{baram})
         },
         tonalButton{

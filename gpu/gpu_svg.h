@@ -2,11 +2,9 @@
 #define GPU_SVG_H
 
 #include <stdint.h>
+#include <stddef.h>
 
-// GPU SVG path rasterizer
-// 1. Uses nanosvg to parse SVG
-// 2. Uses nanosvgrast to rasterize to buffer
-// 3. (Future) Upload to GPU for acceleration
+typedef struct gpu_svg_document gpu_svg_document_t;
 
 typedef struct {
     float *vertices;    // Triangle vertices (x, y, r, g, b, a)
@@ -19,20 +17,32 @@ typedef struct {
     float tx, ty;
 } gpu_svg_renderer_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Initialize GPU SVG renderer
 int gpu_svg_init(gpu_svg_renderer_t *renderer, int width, int height);
 
-// Render SVG from parsed nanosvg image to GPU
-// This function:
-// 1. Extracts Bezier paths from NSVGimage
-// 2. Flattens to line segments
-// 3. Tessellates to triangles
-// 4. Uploads to GPU
-int gpu_svg_render(gpu_svg_renderer_t *renderer, void *svg_image, 
+gpu_svg_document_t *gpu_svg_parse(const char *svg_data);
+void gpu_svg_delete(gpu_svg_document_t *document);
+float gpu_svg_width(const gpu_svg_document_t *document);
+float gpu_svg_height(const gpu_svg_document_t *document);
+
+int gpu_svg_rasterize(const gpu_svg_document_t *document,
+                      float scale, float tx, float ty,
+                      unsigned char *out_rgba,
+                      int buf_w, int buf_h, int stride);
+
+int gpu_svg_render(gpu_svg_renderer_t *renderer, const gpu_svg_document_t *document,
                    float scale, float tx, float ty,
                    uint32_t *out_buffer, int buf_w, int buf_h);
 
 // Cleanup
 void gpu_svg_cleanup(gpu_svg_renderer_t *renderer);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // GPU_SVG_H

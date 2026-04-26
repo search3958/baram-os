@@ -1,6 +1,11 @@
 #ifndef _TIME_H
 #define _TIME_H
 #include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef long time_t;
 typedef long clock_t;
 struct tm {
@@ -14,6 +19,7 @@ struct tm {
   int tm_yday;
   int tm_isdst;
 };
+typedef struct tm tm;
 time_t time(time_t *t);
 clock_t clock(void);
 double difftime(time_t time1, time_t time0);
@@ -24,4 +30,9 @@ struct tm *localtime(const time_t *timep);
 time_t mktime(struct tm *tm);
 size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
 #define CLOCKS_PER_SEC 100
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

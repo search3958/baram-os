@@ -22,9 +22,32 @@ show_progress() {
 }
 
 CURRENT_PID=0
+LUNASVG_OBJECTS=""
+NASM="nasm"
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
     PERF_MODE="max"
+fi
+
+find_tool() {
+    local tool="$1"
+    if command -v "$tool" >/dev/null 2>&1; then
+        command -v "$tool"
+        return 0
+    fi
+    if [ -x "/opt/homebrew/bin/$tool" ]; then
+        printf '%s\n' "/opt/homebrew/bin/$tool"
+        return 0
+    fi
+    if [ -x "/opt/homebrew/opt/llvm/bin/$tool" ]; then
+        printf '%s\n' "/opt/homebrew/opt/llvm/bin/$tool"
+        return 0
+    fi
+    return 1
+}
+
+if [ -x "/opt/homebrew/bin/nasm" ]; then
+    NASM="/opt/homebrew/bin/nasm"
 fi
 
 stop_current() {
@@ -38,23 +61,31 @@ stop_current() {
 }
 
 resolve_x64_toolchain() {
-    if command -v x86_64-elf-gcc >/dev/null 2>&1 && command -v x86_64-elf-grub-mkrescue >/dev/null 2>&1; then
-        CC="x86_64-elf-gcc"
-        GRUB_MKRESCUE="x86_64-elf-grub-mkrescue"
+    local found_cc found_grub
+
+    found_cc=$(find_tool x86_64-elf-gcc) || found_cc=""
+    found_grub=$(find_tool x86_64-elf-grub-mkrescue) || found_grub=""
+    if [ -n "$found_cc" ] && [ -n "$found_grub" ]; then
+        CC="$found_cc"
+        GRUB_MKRESCUE="$found_grub"
         LD_IS_CLANG=0
         return 0
     fi
 
-    if command -v clang >/dev/null 2>&1 && command -v grub-mkrescue >/dev/null 2>&1; then
-        CC="clang --target=x86_64-elf"
-        GRUB_MKRESCUE="grub-mkrescue"
+    found_cc=$(find_tool clang) || found_cc=""
+    found_grub=$(find_tool grub-mkrescue) || found_grub=""
+    if [ -n "$found_cc" ] && [ -n "$found_grub" ]; then
+        CC="$found_cc --target=x86_64-elf"
+        GRUB_MKRESCUE="$found_grub"
         LD_IS_CLANG=1
         return 0
     fi
 
-    if command -v clang >/dev/null 2>&1 && command -v i686-elf-grub-mkrescue >/dev/null 2>&1; then
-        CC="clang --target=x86_64-elf"
-        GRUB_MKRESCUE="i686-elf-grub-mkrescue"
+    found_cc=$(find_tool clang) || found_cc=""
+    found_grub=$(find_tool i686-elf-grub-mkrescue) || found_grub=""
+    if [ -n "$found_cc" ] && [ -n "$found_grub" ]; then
+        CC="$found_cc --target=x86_64-elf"
+        GRUB_MKRESCUE="$found_grub"
         LD_IS_CLANG=1
         return 0
     fi
@@ -63,11 +94,11 @@ resolve_x64_toolchain() {
 }
 
 check_x64_linker() {
-    if command -v x86_64-elf-gcc >/dev/null 2>&1; then
+    if find_tool x86_64-elf-gcc >/dev/null 2>&1; then
         return 0
     fi
 
-    if command -v ld.lld >/dev/null 2>&1 || command -v x86_64-elf-ld >/dev/null 2>&1; then
+    if find_tool ld.lld >/dev/null 2>&1 || find_tool x86_64-elf-ld >/dev/null 2>&1; then
         return 0
     fi
 
@@ -88,10 +119,10 @@ compile_c() {
 
 link_kernel() {
     local LLD_CMD=""
-    if command -v ld.lld >/dev/null 2>&1; then
-        LLD_CMD="ld.lld"
-    elif command -v lld >/dev/null 2>&1; then
-        LLD_CMD="lld"
+    if LLD_CMD=$(find_tool ld.lld 2>/dev/null); then
+        :
+    elif LLD_CMD=$(find_tool lld 2>/dev/null); then
+        :
     fi
 
     if [ "$LD_IS_CLANG" -eq 1 ]; then
@@ -100,10 +131,10 @@ link_kernel() {
             # 直接 lld を呼ぶか、-fuse-ld にフルパスまたは適切な指定が必要です。
             # ここでは直接 lld (ELF 用) を使用する設定を試みます。
             clang --target=x86_64-elf -fuse-ld="$LLD_CMD" -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/lua.o output/lua_glue.o \
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
                 -ffreestanding -O2 -nostdlib -static-libgcc -lgcc 2>/dev/null || \
             $LLD_CMD -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/lua.o output/lua_glue.o
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS
             return $?
         fi
         echo "  ❌ 64-bit linker が見つかりません (ld.lld または x86_64-elf ツールチェーンが必要です)"
@@ -111,7 +142,7 @@ link_kernel() {
     fi
 
     $CC -T link64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/gpu_svg.o output/lua.o output/lua_glue.o \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -m64 -mcmodel=kernel -mno-red-zone -nostdlib -static-libgcc -lgcc
 }
 
@@ -148,10 +179,10 @@ do_build_and_run() {
     mkdir -p output/isodir/boot/grub
     show_progress 10
 
-    nasm -f elf64 arch/boot64.s -o output/boot.o || return 1
+    "$NASM" -f elf64 arch/boot64.s -o output/boot.o || return 1
     show_progress 15
-    nasm -f elf64 arch/isr64.s -o output/isr.o || return 1
-    nasm -f elf64 arch/setjmp64.s -o output/setjmp.o || return 1
+    "$NASM" -f elf64 arch/isr64.s -o output/isr.o || return 1
+    "$NASM" -f elf64 arch/setjmp64.s -o output/setjmp.o || return 1
     show_progress 20
 
     COMMON_CFLAGS="-Iinclude -I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m64 -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie -DBUILD_NUMBER=$CURRENT_BN"
@@ -174,7 +205,8 @@ do_build_and_run() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    compile_c gpu/gpu_svg.c output/gpu_svg.o "$COMMON_CFLAGS" || return 1
+    bash scripts/build_lunasvg.sh x86_64-elf output || return 1
+    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -324,10 +356,10 @@ do_build_only() {
     mkdir -p output/isodir/boot/grub
     show_progress 10
 
-    nasm -f elf64 arch/boot64.s -o output/boot.o || return 1
+    "$NASM" -f elf64 arch/boot64.s -o output/boot.o || return 1
     show_progress 15
-    nasm -f elf64 arch/isr64.s -o output/isr.o || return 1
-    nasm -f elf64 arch/setjmp64.s -o output/setjmp.o || return 1
+    "$NASM" -f elf64 arch/isr64.s -o output/isr.o || return 1
+    "$NASM" -f elf64 arch/setjmp64.s -o output/setjmp.o || return 1
     show_progress 20
 
     COMMON_CFLAGS="-Iinclude -I. -Iui -ffreestanding -O2 -Wall -Wno-unused-function -m64 -mno-red-zone -mcmodel=kernel -fno-pic -fno-pie -DBUILD_NUMBER=$CURRENT_BN"
@@ -349,7 +381,8 @@ do_build_only() {
     compile_c gpu/gpu_driver.c output/gpu_driver.o "$COMMON_CFLAGS" || return 1
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
-    compile_c gpu/gpu_svg.c output/gpu_svg.o "$COMMON_CFLAGS" || return 1
+    bash scripts/build_lunasvg.sh x86_64-elf output || return 1
+    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 75
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
