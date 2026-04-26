@@ -128,9 +128,6 @@ static int g_svg_ready = 0;
 
 static float g_scroll_x = 0.0f;
 static float g_scroll_y = 0.0f;
-static float g_target_scroll_x = 0.0f;
-static float g_target_scroll_y = 0.0f;
-#define SCROLL_EASE 0.4f
 
 static volatile uint32_t idle_ticks = 0;
 static volatile int cpu_idle = 0;
@@ -257,6 +254,92 @@ void layer_draw_ttf(layer_t *layer, int px, int py, const char *str,
 int measure_ttf_width(const char *str, float font_size);
 extern volatile uint32_t timer_ticks;
 
+typedef struct {
+  uint32_t burst_first_tick;
+  uint32_t last_tick;
+  uint32_t last_serial;
+  int last_dir;
+  int burst_events;
+  int burst_steps;
+} scroll_input_state_t;
+
+static scroll_input_state_t g_classic_scroll_input = {0, 0, 0, 0, 0, 0};
+
+static void reset_scroll_input_state(scroll_input_state_t *state) {
+  if (!state) return;
+  state->burst_first_tick = 0;
+  state->last_tick = 0;
+  state->last_serial = 0;
+  state->last_dir = 0;
+  state->burst_events = 0;
+  state->burst_steps = 0;
+}
+
+static float clamp_scroll_offset(float scroll_y, int viewport_h, int content_h) {
+  int min_scroll = viewport_h - content_h;
+  if (min_scroll > 0) min_scroll = 0;
+  if (scroll_y > 0.0f) return 0.0f;
+  if (scroll_y < (float)min_scroll) return (float)min_scroll;
+  return scroll_y;
+}
+
+static float convert_scroll_event_to_delta(scroll_input_state_t *state,
+                                           const wheel_scroll_event_t *event) {
+  if (!state || !event || event->steps == 0) return 0.0f;
+
+  int dir = (event->steps > 0) ? 1 : -1;
+  int steps = (event->steps > 0) ? event->steps : -event->steps;
+  uint32_t tick_gap = state->last_tick ? (event->tick - state->last_tick) : 0;
+  uint32_t serial_gap = state->last_serial ? (event->serial - state->last_serial) : 0;
+  int same_burst = state->last_serial != 0 &&
+                   dir == state->last_dir &&
+                   tick_gap <= 18 &&
+                   serial_gap <= 8;
+
+  if (!same_burst) {
+    state->burst_first_tick = event->tick;
+    state->burst_events = 0;
+    state->burst_steps = 0;
+  }
+
+  state->burst_events++;
+  state->burst_steps += steps;
+
+  float per_step = 5.0f;
+  if (state->burst_events > 1) {
+    float span = (float)(event->tick - state->burst_first_tick);
+    float avg_gap = span / (float)(state->burst_events - 1);
+    float cadence_gain = 1.0f + 10.0f / (avg_gap + 3.0f);
+    float burst_gain = 1.0f + (float)(state->burst_events - 1) * 0.08f;
+    per_step *= cadence_gain * burst_gain;
+  }
+  if (per_step > 72.0f) per_step = 72.0f;
+
+  float step_gain = 1.0f + (float)(steps - 1) * 0.35f;
+  float delta = per_step * (float)steps * step_gain;
+  if (delta > 720.0f) delta = 720.0f;
+
+  state->last_tick = event->tick;
+  state->last_serial = event->serial;
+  state->last_dir = dir;
+  return (float)dir * delta;
+}
+
+static float consume_scroll_events(scroll_input_state_t *state) {
+  wheel_scroll_event_t event;
+  float total = 0.0f;
+  while (mouse_pop_scroll_event(&event)) {
+    total += convert_scroll_event_to_delta(state, &event);
+  }
+  return total;
+}
+
+static void discard_scroll_events(void) {
+  wheel_scroll_event_t event;
+  while (mouse_pop_scroll_event(&event)) {
+  }
+}
+
 int atoi(const char *nptr) {
   return (int)strtol(nptr, (char **)NULL, 10);
 }
@@ -304,9 +387,9 @@ typedef struct window_struct {
   float fade_alpha;      // Fade to white: 0.0 (content) to 1.0 (white)
   int is_calculating;    // Calculation state after resize
   float scroll_x, scroll_y;
-  float target_scroll_x, target_scroll_y;
   int no_decoration;
   int is_menubar;
+  int is_slider_dragging;
 
   // Caching for performance
   uint8_t *shadow_cache;   // Alpha mask for the shadow
@@ -328,12 +411,54 @@ typedef struct window_struct {
   uint32_t *text_overlay_cache;
   int text_overlay_cache_w, text_overlay_cache_h;
   float text_overlay_last_scroll_y;
+  scroll_input_state_t scroll_input;
 
   // Blur cache
   uint32_t *blur_cache;
   int blur_cache_cols, blur_cache_rows;
   int blur_last_x, blur_last_y, blur_last_w, blur_last_h;
 } window_t;
+
+static float get_window_context_scroll_y(window_t *win) {
+  if (!win) return 0.0f;
+  if (win->is_warp1 && win->warp1_ctx) return warp1_context_get_scroll_y(win->warp1_ctx);
+  if (win->warp_ctx) return warp_context_get_scroll_y(win->warp_ctx);
+  return 0.0f;
+}
+
+static int get_window_content_height(window_t *win) {
+  if (!win) return 0;
+  if (win->is_warp1 && win->warp1_ctx) return warp1_context_get_content_height(win->warp1_ctx);
+  if (win->warp_ctx) return warp_context_get_content_height(win->warp_ctx);
+  return 0;
+}
+
+static void set_window_context_scroll_y(window_t *win, float scroll_y) {
+  if (!win) return;
+  if (win->is_warp1 && win->warp1_ctx) {
+    warp1_context_set_scroll_y(win->warp1_ctx, scroll_y);
+  } else if (win->warp_ctx) {
+    warp_context_set_scroll_y(win->warp_ctx, scroll_y);
+  }
+}
+
+static void sync_window_scroll_from_context(window_t *win) {
+  if (!win) return;
+  float scroll_y = get_window_context_scroll_y(win);
+  scroll_y = clamp_scroll_offset(scroll_y, win->h, get_window_content_height(win));
+  set_window_context_scroll_y(win, scroll_y);
+  win->scroll_y = scroll_y;
+}
+
+static int apply_window_scroll_delta(window_t *win, float delta) {
+  if (!win || delta == 0.0f) return 0;
+  float current = get_window_context_scroll_y(win);
+  float next = clamp_scroll_offset(current + delta, win->h, get_window_content_height(win));
+  if (fabsf(next - current) < 0.01f) return 0;
+  set_window_context_scroll_y(win, next);
+  win->scroll_y = next;
+  return 1;
+}
 
 static int g_critical_error_mode = 0;
 static const char* g_error_svg = 
@@ -2637,6 +2762,8 @@ static void window_redraw(window_t *win) {
     win->is_dirty = 0; // レイアウト計算完了
   }
 
+  sync_window_scroll_from_context(win);
+
   // Check if rendering is needed (engine_dirty flag)
   int needs_render = 0;
   if (win->is_warp1) {
@@ -2882,7 +3009,6 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   window_t *win = &g_windows[g_window_count++];
   win->x = x; win->y = y; win->w = w; win->h = h;
   win->scroll_x = 0; win->scroll_y = 0;
-  win->target_scroll_x = 0; win->target_scroll_y = 0;
   strncpy(win->title, title, 63);
   win->is_warp1 = is_warp1;
   win->dynamic_file_ptr = dynamic_ptr; // トラック
@@ -2912,6 +3038,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->text_overlay_cache_w = 0;
   win->text_overlay_cache_h = 0;
   win->text_overlay_last_scroll_y = -9999.0f;
+  reset_scroll_input_state(&win->scroll_input);
   win->blur_cache = NULL;
   win->blur_cache_cols = 0;
   win->blur_cache_rows = 0;
@@ -2919,6 +3046,7 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->is_dirty = 1;
   win->is_dragging = 0;
   win->is_resizing = 0;
+  win->is_slider_dragging = 0;
   win->fade_alpha = 0.0f;
   win->is_calculating = 0;
   win->render_scale = 1.0f;
@@ -5288,7 +5416,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         (timer_ticks - boot_start_tick > 50)) {
       
       current_os_mode = OS_MODE_WARPDESKTOP;
-      g_scroll_x = g_scroll_y = g_target_scroll_x = g_target_scroll_y = 0.0f;
+      g_scroll_x = g_scroll_y = 0.0f;
+      reset_scroll_input_state(&g_classic_scroll_input);
+      discard_scroll_events();
       
       // テーマに合わせて背景色を決定
       const char *dark_val = get_w1_global("~~main/dark");
@@ -5341,39 +5471,35 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
       }
 
-      // Classic モード：トラックパッドのスクロール量に直接追従（1px 単位）
-      if (mouse_scroll != 0) {
-        g_target_scroll_y += (float)mouse_scroll * 30.0f;
-        mouse_scroll = 0;
-        // 上限：0, 下限：コンテンツ高さ - 画面高さ
-        int content_h = g_svg_full_h;
-        int min_scroll = SCREEN_HEIGHT - content_h;
-        if (min_scroll > 0) min_scroll = 0; // コンテンツが画面より小さい場合はスクロール不可
-        if (g_target_scroll_y > 0.0f) g_target_scroll_y = 0.0f;
-        if (g_target_scroll_y < (float)min_scroll) g_target_scroll_y = (float)min_scroll;
-      }
-
-      // スクロールアニメーション（1px 単位で補間）
-      if (g_target_scroll_y != g_scroll_y) {
-        float dy = (g_target_scroll_y - g_scroll_y) * SCROLL_EASE;
-        if (fabsf(dy) < 1.0f) {
-          g_scroll_y = g_target_scroll_y;
-        } else {
-          g_scroll_y += dy;
+      // Classic モードのスクロールを入力からその場で反映
+      {
+        float scroll_delta = consume_scroll_events(&g_classic_scroll_input);
+        if (scroll_delta != 0.0f) {
+          g_scroll_y += scroll_delta;
+          g_scroll_y = clamp_scroll_offset(g_scroll_y, SCREEN_HEIGHT, g_svg_full_h);
+          svg_render_full(&svg_layer);
+          memcpy(svg_base_buf, svg_layer.buffer,
+                 sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+          screen_mark_static_dirty();
         }
-        svg_render_full(&svg_layer);
-        memcpy(svg_base_buf, svg_layer.buffer,
-               sizeof(uint32_t) * svg_layer.width * svg_layer.height);
-        screen_mark_static_dirty();
       }
 
       if (keybuf_len > 0) {
         for (int i = 0; i < keybuf_len; i++) {
           char c = (char)keybuf[i];
-          if (c == KEY_UP)
-            g_target_scroll_y += 100.0f;
-          else if (c == KEY_DOWN)
-            g_target_scroll_y -= 100.0f;
+          if (c == KEY_UP) {
+            g_scroll_y = clamp_scroll_offset(g_scroll_y + 120.0f, SCREEN_HEIGHT, g_svg_full_h);
+            svg_render_full(&svg_layer);
+            memcpy(svg_base_buf, svg_layer.buffer,
+                   sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+            screen_mark_static_dirty();
+          } else if (c == KEY_DOWN) {
+            g_scroll_y = clamp_scroll_offset(g_scroll_y - 120.0f, SCREEN_HEIGHT, g_svg_full_h);
+            svg_render_full(&svg_layer);
+            memcpy(svg_base_buf, svg_layer.buffer,
+                   sizeof(uint32_t) * svg_layer.width * svg_layer.height);
+            screen_mark_static_dirty();
+          }
           else if (c == '\n') {
             handle_command(keybuf_str);
             keybuf_str[0] = '\0';
@@ -5446,7 +5572,9 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
 
         set_cursor_type(CURSOR_TYPE_DEFAULT);
-        g_target_scroll_y = 0.0f;
+        g_scroll_y = 0.0f;
+        discard_scroll_events();
+        reset_scroll_input_state(&g_classic_scroll_input);
 
         if (g_svg_dirty) {
           redraw_warp_svg(&nextgen_ui_layer);
@@ -5466,39 +5594,20 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         goto warpdesktop_frame_done;
       }
 
-      // 1. Scroll Handling (Active Window) - トラックパッドの量に直接追従（1px 単位）
-      if (mouse_scroll != 0 && g_active_window_index >= 0) {
+      // 1. Scroll Handling (Active Window)
+      if (g_active_window_index >= 0) {
         window_t *win = &g_windows[g_active_window_index];
-        float scroll_amount = (float)mouse_scroll * 15.0f;
-        mouse_scroll = 0;
-
-        // コンテキストから現在のターゲットスクロールを取得
-        float current_target = win->is_warp1
-            ? warp1_context_get_target_scroll_y(win->warp1_ctx)
-            : warp_context_get_target_scroll_y(win->warp_ctx);
-
-        // 新しいターゲットスクロールを計算
-        float new_target = current_target + scroll_amount;
-
-        // 上限・下限制限
-        int content_h = win->is_warp1
-            ? warp1_context_get_content_height(win->warp1_ctx)
-            : warp_context_get_content_height(win->warp_ctx);
-        int min_scroll = win->h - content_h;
-        if (min_scroll > 0) min_scroll = 0;
-        if (new_target > 0.0f) new_target = 0.0f;
-        if (new_target < (float)min_scroll) new_target = (float)min_scroll;
-
-        // コンテキストに設定
-        if (win->is_warp1) {
-          warp1_context_set_target_scroll_y(win->warp1_ctx, new_target);
-        } else {
-          warp_context_set_target_scroll_y(win->warp_ctx, new_target);
+        float scroll_amount = consume_scroll_events(&win->scroll_input);
+        if (apply_window_scroll_delta(win, scroll_amount)) {
+          int bx0, by0, bx1, by1;
+          get_window_draw_bounds(win, &bx0, &by0, &bx1, &by1);
+          redraw_warp_region(&nextgen_ui_layer, bx0, by0, bx1, by1);
         }
-        win->target_scroll_y = new_target;
+      } else {
+        discard_scroll_events();
       }
 
-      // 2. Window Animation (Smooth Scroll)
+      // 2. Non-scroll invalidation
       int moved = 0;
       int scroll_rx0 = nextgen_ui_layer.width;
       int scroll_ry0 = nextgen_ui_layer.height;
@@ -5507,46 +5616,29 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
       for (int i = 0; i < g_window_count; i++) {
         window_t *win = &g_windows[i];
 
-        // コンテキストからスクロール状態を同期
-        if (win->warp1_ctx) {
-          win->target_scroll_y = warp1_context_get_target_scroll_y(win->warp1_ctx);
-        } else if (win->warp_ctx) {
-          win->target_scroll_y = warp_context_get_target_scroll_y(win->warp_ctx);
-        }
-
         // Resize/Calculating Fade (Instant semi-transparent overlay)
         if (win->is_resizing || win->is_calculating) {
             if (win->fade_alpha != 0.5f) {
+                int bx0, by0, bx1, by1;
+                get_window_draw_bounds(win, &bx0, &by0, &bx1, &by1);
+                if (bx0 < scroll_rx0) scroll_rx0 = bx0;
+                if (by0 < scroll_ry0) scroll_ry0 = by0;
+                if (bx1 > scroll_rx1) scroll_rx1 = bx1;
+                if (by1 > scroll_ry1) scroll_ry1 = by1;
                 win->fade_alpha = 0.5f; // 即座に50%の透明度へ
                 moved = 1;
                 g_svg_dirty = 1;
             }
         } else if (win->fade_alpha != 0.0f) {
+            int bx0, by0, bx1, by1;
+            get_window_draw_bounds(win, &bx0, &by0, &bx1, &by1);
+            if (bx0 < scroll_rx0) scroll_rx0 = bx0;
+            if (by0 < scroll_ry0) scroll_ry0 = by0;
+            if (bx1 > scroll_rx1) scroll_rx1 = bx1;
+            if (by1 > scroll_ry1) scroll_ry1 = by1;
             win->fade_alpha = 0.0f; // 即座に元に戻す
             moved = 1;
             g_svg_dirty = 1;
-        }
-
-        // スクロールアニメーション（1px 単位で補間）
-        if (win->target_scroll_y != win->scroll_y) {
-          int bx0, by0, bx1, by1;
-          get_window_draw_bounds(win, &bx0, &by0, &bx1, &by1);
-          float dy = (win->target_scroll_y - win->scroll_y) * SCROLL_EASE;
-          if (fabsf(dy) < 1.0f) {
-            win->scroll_y = win->target_scroll_y;
-          } else {
-            win->scroll_y += dy;
-          }
-
-          // アニメーション中の現在のスクロール位置をエンジンに同期（テキスト描画ズレ防止）
-          if (win->is_warp1) warp1_context_scroll_update(win->warp1_ctx, win->scroll_y);
-          else warp_context_set_scroll_y(win->warp_ctx, win->scroll_y);
-
-          if (bx0 < scroll_rx0) scroll_rx0 = bx0;
-          if (by0 < scroll_ry0) scroll_ry0 = by0;
-          if (bx1 > scroll_rx1) scroll_rx1 = bx1;
-          if (by1 > scroll_ry1) scroll_ry1 = by1;
-          moved = 1;
         }
       }
       if (moved) redraw_warp_region(&nextgen_ui_layer, scroll_rx0, scroll_ry0, scroll_rx1, scroll_ry1);
@@ -5618,10 +5710,12 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
                 for (int j = hit_index; j < target_pos; j++) g_windows[j] = g_windows[j+1];
                 g_windows[target_pos] = tmp;
                 g_active_window_index = target_pos;
+                reset_scroll_input_state(&g_windows[target_pos].scroll_input);
                 window_set_all_dirty();
                 request_window_interaction_refresh(&g_windows[target_pos]);
               } else {
                 g_active_window_index = hit_index;
+                reset_scroll_input_state(&g_windows[hit_index].scroll_input);
                 request_window_interaction_refresh(&g_windows[hit_index]);
               }
               hit_index = -2;
@@ -5689,9 +5783,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
               if (hwin->is_warp1) { warp1_context_invalidate_layout(hwin->warp1_ctx); warp1_context_click(hwin->warp1_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y); }
               else warp_context_click(hwin->warp_ctx, hx - hwin->x, hy - (hwin->y - title_h) - (int)hwin->scroll_y);
               request_window_interaction_refresh(hwin);
+              hwin->is_slider_dragging = 0;
+              if (hwin->is_warp1) {
+                int sx, sy, sw, sh;
+                if (warp1_context_get_active_slider_rect(hwin->warp1_ctx, &sx, &sy, &sw, &sh)) hwin->is_slider_dragging = 1;
+              } else {
+                int sx, sy, sw, sh;
+                if (warp_context_get_active_slider_rect(hwin->warp_ctx, &sx, &sy, &sw, &sh)) hwin->is_slider_dragging = 1;
+              }
 
               // Also check for dragging if in header but didn't hit a button
-              if (hy < hwin->y && !hwin->no_decoration && hx >= hwin->x + 56 && hwin->is_movable) {
+              if (!hwin->is_slider_dragging && hy < hwin->y && !hwin->no_decoration && hx >= hwin->x + 56 && hwin->is_movable) {
                 hwin->is_dragging = 1;
               }
             }
@@ -5717,6 +5819,11 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             }
             g_windows[i].is_dragging = 0;
             g_windows[i].is_resizing = 0;
+            if (g_windows[i].is_slider_dragging) {
+              if (g_windows[i].is_warp1) warp1_context_end_slider_drag(g_windows[i].warp1_ctx);
+              else warp_context_end_slider_drag(g_windows[i].warp_ctx);
+            }
+            g_windows[i].is_slider_dragging = 0;
           }
         }
         prev_mouse_buttons = curr_btns;
@@ -5746,7 +5853,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         }
         set_cursor_type(cursor_type);
         
-        if (!awin->is_dragging && !awin->is_resizing) {
+        if (!awin->is_slider_dragging && !awin->is_dragging && !awin->is_resizing) {
           if (awin->is_warp1) {
             if (awin->warp1_ctx) {
               warp1_context_set_mouse(awin->warp1_ctx, hx - awin->x, hy - awin->y - (int)awin->scroll_y);
@@ -5761,7 +5868,35 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           }
         }
 
-        if (awin->is_dragging) {
+        if (awin->is_slider_dragging) {
+          int local_x = hx - awin->x;
+          int local_y = hy - awin->y - (int)awin->scroll_y;
+          int changed = 0;
+          int sx, sy, sw, sh;
+          if (awin->is_warp1) {
+            changed = warp1_context_drag_active_slider(awin->warp1_ctx, local_x, local_y);
+            if (changed && warp1_context_get_active_slider_rect(awin->warp1_ctx, &sx, &sy, &sw, &sh)) {
+              request_window_interaction_refresh(awin);
+              int title_h = awin->no_decoration ? 0 : 60;
+              redraw_warp_region(&nextgen_ui_layer,
+                                 awin->x + sx - 24,
+                                 (awin->y - title_h) + sy - (int)awin->scroll_y - 24,
+                                 awin->x + sx + sw + 24,
+                                 (awin->y - title_h) + sy + sh - (int)awin->scroll_y + 24);
+            }
+          } else {
+            changed = warp_context_drag_active_slider(awin->warp_ctx, local_x, local_y);
+            if (changed && warp_context_get_active_slider_rect(awin->warp_ctx, &sx, &sy, &sw, &sh)) {
+              request_window_interaction_refresh(awin);
+              int title_h = awin->no_decoration ? 0 : 60;
+              redraw_warp_region(&nextgen_ui_layer,
+                                 awin->x + sx - 24,
+                                 (awin->y - title_h) + sy - (int)awin->scroll_y - 24,
+                                 awin->x + sx + sw + 24,
+                                 (awin->y - title_h) + sy + sh - (int)awin->scroll_y + 24);
+            }
+          }
+        } else if (awin->is_dragging) {
           awin->x += mouse_dx; awin->y += mouse_dy;
           g_svg_dirty = 1;
         } else if (awin->is_resizing) {
@@ -5799,11 +5934,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
             }
           }
 
-          if (c == KEY_UP)
-            g_target_scroll_y += 100.0f;
-          else if (c == KEY_DOWN)
-            g_target_scroll_y -= 100.0f;
-          else if (c == '\b') {
+          if (c == KEY_UP || c == KEY_DOWN) {
+            if (g_active_window_index >= 0) {
+              window_t *swin = &g_windows[g_active_window_index];
+              float delta = (c == KEY_UP) ? 120.0f : -120.0f;
+              if (apply_window_scroll_delta(swin, delta)) {
+                int bx0, by0, bx1, by1;
+                get_window_draw_bounds(swin, &bx0, &by0, &bx1, &by1);
+                redraw_warp_region(&nextgen_ui_layer, bx0, by0, bx1, by1);
+              }
+            }
+          } else if (c == '\b') {
             int len = strlen(keybuf_str);
             if (len > 0)
               keybuf_str[len - 1] = '\0';
@@ -5821,8 +5962,6 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           }
         }
         keybuf_len = 0;
-        if (g_target_scroll_y > 0.0f)
-          g_target_scroll_y = 0.0f;
       }
 
       if (g_svg_dirty) {

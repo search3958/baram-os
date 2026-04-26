@@ -72,6 +72,7 @@ struct warp1_context {
     int mouse_x, mouse_y; int win_w, win_h; int last_total_h;
 
     int focused_node_idx; // -1: none
+    int active_slider_idx; // -1: none
     
     // Optimization Cache
     int layout_valid;
@@ -282,6 +283,25 @@ static void get_slider_state_key1(warp1_node_t *node, char *buf, int size) {
     while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' || buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
         buf[--len] = '\0';
     }
+}
+
+static int update_slider_value1(warp1_context_t *ctx, warp1_node_t *node, int x) {
+    char out_var[128];
+    get_slider_state_key1(node, out_var, sizeof(out_var));
+    if (!out_var[0] || node->w <= 0) return 0;
+
+    int val = (x - node->x) * 100 / node->w;
+    if (val < 0) val = 0;
+    if (val > 100) val = 100;
+
+    char val_str[16];
+    append_int(val_str, val);
+    const char *current = get_state(ctx, out_var);
+    if (w1_strcmp(current, val_str) == 0) return 0;
+
+    set_state(ctx, out_var, val_str);
+    ctx->engine_dirty = 1;
+    return 1;
 }
 
 static void execute_action1(warp1_context_t *ctx, const char *action_str);
@@ -947,6 +967,7 @@ warp1_context_t* warp1_context_create(const char* code) {
     } else {
         w1_strcpy(ctx->current_screen, "main");
     }
+    ctx->active_slider_idx = -1;
     
     return ctx;
 }
@@ -1105,14 +1126,6 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
     }
 }
 
-void warp1_context_scroll_update(warp1_context_t* ctx, float new_scroll_y) {
-    if (!ctx) return;
-    // スクロール値をセット
-    warp1_context_set_screen_scroll(ctx, ctx->current_screen, new_scroll_y);
-    // 描画フラグをセット（レイアウト再計算は不要）
-    ctx->engine_dirty = 1;
-}
-
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy, float scale) {
     extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
@@ -1136,6 +1149,7 @@ void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int 
 void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     parse_current_screen1(ctx);
     ctx->layout_valid = 0;
+    ctx->active_slider_idx = -1;
     int clicked = 0;
     // 逆順（手前に描画されたものから）でチェック
     for (int i = ctx->nodes_count - 1; i >= 0; i--) {
@@ -1164,37 +1178,31 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
                 break;
             }
             if (w1_strcmp(n->tag, "slider") == 0) {
-                char out_var[128];
-                get_slider_state_key1(n, out_var, sizeof(out_var));
-
-                if (out_var[0]) {
-                    int val = (x - n->x) * 100 / n->w;
-                    if (val < 0) val = 0;
-                    if (val > 100) val = 100;
-                    char val_str[16];
-                    extern char *append_int(char *p, int v);
-                    append_int(val_str, val);
-                    set_state(ctx, out_var, val_str);
-                }
+                ctx->active_slider_idx = i;
+                update_slider_value1(ctx, n, x);
                 break;
             }
             if (w1_strcmp(n->tag, "input") == 0) { 
+                ctx->active_slider_idx = -1;
                 ctx->focused_node_idx = i;
                 break; 
             }
             if (w1_strcmp(n->tag, "button") == 0 || w1_strcmp(n->tag, "tonalButton") == 0) {
+                ctx->active_slider_idx = -1;
                 if (n->event_oneclick[0]) {
                     execute_action1(ctx, n->event_oneclick);
                 }
                 break;
             }
             if (n->event_oneclick[0]) {
+                ctx->active_slider_idx = -1;
                 execute_action1(ctx, n->event_oneclick);
                 break;
             }
         }
     }
     if (!clicked) {
+        ctx->active_slider_idx = -1;
         ctx->focused_node_idx = -1;
     }
     // 状態変化があった場合のみ更新
@@ -1299,6 +1307,30 @@ void warp1_context_mark_dirty(warp1_context_t* ctx) {
     if (ctx) ctx->engine_dirty = 1;
 }
 
+int warp1_context_drag_active_slider(warp1_context_t* ctx, int x, int y) {
+    (void)y;
+    if (!ctx || ctx->active_slider_idx < 0 || ctx->active_slider_idx >= ctx->nodes_count) return 0;
+    warp1_node_t *n = &ctx->nodes[ctx->active_slider_idx];
+    if (w1_strcmp(n->tag, "slider") != 0) return 0;
+    return update_slider_value1(ctx, n, x);
+}
+
+void warp1_context_end_slider_drag(warp1_context_t* ctx) {
+    if (!ctx) return;
+    ctx->active_slider_idx = -1;
+}
+
+int warp1_context_get_active_slider_rect(warp1_context_t* ctx, int* x, int* y, int* w, int* h) {
+    if (!ctx || ctx->active_slider_idx < 0 || ctx->active_slider_idx >= ctx->nodes_count) return 0;
+    warp1_node_t *n = &ctx->nodes[ctx->active_slider_idx];
+    if (w1_strcmp(n->tag, "slider") != 0) return 0;
+    if (x) *x = n->x;
+    if (y) *y = n->y;
+    if (w) *w = n->w;
+    if (h) *h = n->h;
+    return 1;
+}
+
 void warp1_context_set_mouse(warp1_context_t* ctx, int x, int y) { ctx->mouse_x = x; ctx->mouse_y = y; }
 int warp1_context_get_node_count(warp1_context_t* ctx) { return ctx->nodes_count; }
 void warp1_context_get_node_info(warp1_context_t* ctx, int index, int* x, int* y, int* w, int* h, int* d) {
@@ -1375,16 +1407,6 @@ float warp1_context_get_scroll_y(warp1_context_t* ctx) {
 }
 
 void warp1_context_set_scroll_y(warp1_context_t* ctx, float y) {
-    if (!ctx) return;
-    warp1_context_set_screen_scroll(ctx, ctx->current_screen, y);
-}
-
-float warp1_context_get_target_scroll_y(warp1_context_t* ctx) {
-    if (!ctx) return 0.0f;
-    return warp1_context_get_screen_scroll(ctx, ctx->current_screen);
-}
-
-void warp1_context_set_target_scroll_y(warp1_context_t* ctx, float y) {
     if (!ctx) return;
     warp1_context_set_screen_scroll(ctx, ctx->current_screen, y);
 }

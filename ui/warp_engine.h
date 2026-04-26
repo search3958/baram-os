@@ -42,12 +42,13 @@ void set_w1_global(const char *key, const char *val);
 const char *get_w1_global(const char *key);
 
 void warp_context_set_scroll_y(warp_context_t* ctx, float y);
-float warp_context_get_target_scroll_y(warp_context_t* ctx);
-void warp_context_set_target_scroll_y(warp_context_t* ctx, float y);
 int warp_context_get_content_height(warp_context_t* ctx);
 const char* warp_context_get_screen_svg(warp_context_t* ctx, const char* screen_id, int* content_height);
 void warp_context_set_screen_scroll(warp_context_t* ctx, const char* screen_id, float scroll_y);
 float warp_context_get_screen_scroll(warp_context_t* ctx, const char* screen_id);
+int warp_context_drag_active_slider(warp_context_t* ctx, int x, int y);
+void warp_context_end_slider_drag(warp_context_t* ctx);
+int warp_context_get_active_slider_rect(warp_context_t* ctx, int* x, int* y, int* w, int* h);
 
 // Squircle rendering helpers for consistent UI
 char *warp_stpcpy(char *dest, const char *src);

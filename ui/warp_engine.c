@@ -325,6 +325,7 @@ struct warp_context {
   char node_svg_buf[4096];
   int mouse_x, mouse_y;
   int win_w, win_h;
+  int active_slider_idx;
 
   // Screen management (separate SVG per screen)
   char screen_ids[MAX_SCREENS][64];
@@ -563,6 +564,25 @@ static void get_slider_state_key(warp_node_t *node, char *buf, int size) {
                      buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
     buf[--len] = '\0';
   }
+}
+
+static int update_slider_value(warp_context_t *ctx, warp_node_t *node, int x) {
+  char out_var[128];
+  get_slider_state_key(node, out_var, sizeof(out_var));
+  if (!out_var[0] || node->w <= 0) return 0;
+
+  int val = (x - node->x) * 100 / node->w;
+  if (val < 0) val = 0;
+  if (val > 100) val = 100;
+
+  char val_str[16];
+  append_int(val_str, val);
+  const char *current = get_state(ctx, out_var);
+  if (warp_strcmp(current, val_str) == 0) return 0;
+
+  set_state(ctx, out_var, val_str);
+  ctx->engine_dirty = 1;
+  return 1;
 }
 
 static token_t next_token(warp_context_t *ctx) {
@@ -1808,18 +1828,15 @@ static int check_clicks(warp_context_t *ctx, warp_node_t *node, int x, int y) {
       return 1;
     }
     if (warp_strcmp(node->tag, "slider") == 0) {
-      char out_var[128];
-      get_slider_state_key(node, out_var, sizeof(out_var));
-      if (out_var[0]) {
-        int val = (x - node->x) * 100 / node->w;
-        if (val < 0) val = 0;
-        if (val > 100) val = 100;
-        char val_str[16];
-        append_int(val_str, val);
-        set_state(ctx, out_var, val_str);
-        if (node->event_oneclick[0] != '\0') {
-          execute_action(ctx, node->event_oneclick);
+      for (int i = 0; i < ctx->nodes_count; i++) {
+        if (&ctx->nodes[i] == node) {
+          ctx->active_slider_idx = i;
+          break;
         }
+      }
+      update_slider_value(ctx, node, x);
+      if (node->event_oneclick[0] != '\0') {
+        execute_action(ctx, node->event_oneclick);
       }
       return 1;
     }
@@ -1956,6 +1973,7 @@ warp_context_t* warp_context_create(const char* code) {
   } else {
     warp_strcpy(ctx->current_screen, "main");
   }
+  ctx->active_slider_idx = -1;
 
   update_status_info(ctx);
   ctx->engine_dirty = 1;
@@ -2040,6 +2058,7 @@ void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int
 
 void warp_context_click(warp_context_t* ctx, int x, int y) {
   parse_current_screen_classic(ctx);
+  ctx->active_slider_idx = -1;
   int clicked = 0;
   for (int i = 0; i < ctx->root_nodes_count; i++) {
     warp_node_t *node = ctx->root_nodes[i];
@@ -2051,6 +2070,30 @@ void warp_context_click(warp_context_t* ctx, int x, int y) {
   if (!clicked) {
   }
   ctx->engine_dirty = 1;
+}
+
+int warp_context_drag_active_slider(warp_context_t* ctx, int x, int y) {
+  (void)y;
+  if (!ctx || ctx->active_slider_idx < 0 || ctx->active_slider_idx >= ctx->nodes_count) return 0;
+  warp_node_t *n = &ctx->nodes[ctx->active_slider_idx];
+  if (warp_strcmp(n->tag, "slider") != 0) return 0;
+  return update_slider_value(ctx, n, x);
+}
+
+void warp_context_end_slider_drag(warp_context_t* ctx) {
+  if (!ctx) return;
+  ctx->active_slider_idx = -1;
+}
+
+int warp_context_get_active_slider_rect(warp_context_t* ctx, int* x, int* y, int* w, int* h) {
+  if (!ctx || ctx->active_slider_idx < 0 || ctx->active_slider_idx >= ctx->nodes_count) return 0;
+  warp_node_t *n = &ctx->nodes[ctx->active_slider_idx];
+  if (warp_strcmp(n->tag, "slider") != 0) return 0;
+  if (x) *x = n->x;
+  if (y) *y = n->y;
+  if (w) *w = n->w;
+  if (h) *h = n->h;
+  return 1;
 }
 
 int warp_context_is_dirty(warp_context_t* ctx) {
@@ -2208,16 +2251,6 @@ float warp_context_get_scroll_y(warp_context_t* ctx) {
 }
 
 void warp_context_set_scroll_y(warp_context_t* ctx, float y) {
-  if (!ctx) return;
-  warp_context_set_screen_scroll(ctx, ctx->current_screen, y);
-}
-
-float warp_context_get_target_scroll_y(warp_context_t* ctx) {
-  if (!ctx) return 0.0f;
-  return warp_context_get_screen_scroll(ctx, ctx->current_screen);
-}
-
-void warp_context_set_target_scroll_y(warp_context_t* ctx, float y) {
   if (!ctx) return;
   warp_context_set_screen_scroll(ctx, ctx->current_screen, y);
 }

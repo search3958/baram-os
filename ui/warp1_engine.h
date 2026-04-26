@@ -20,7 +20,6 @@ void warp1_context_destroy(warp1_context_t* ctx);
 void set_w1_global(const char *key, const char *val);
 const char *get_w1_global(const char *key);
 void warp1_context_update(warp1_context_t* ctx, int width, int height);
-void warp1_context_scroll_update(warp1_context_t* ctx, float new_scroll_y);
 const char* warp1_context_get_svg(warp1_context_t* ctx);
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int off_x, int off_y, float scale);
 void warp1_context_click(warp1_context_t* ctx, int x, int y);
@@ -43,13 +42,14 @@ void warp1_context_click_header_action(warp1_context_t* ctx, int action_index);
 int warp1_context_is_dev_event_check(warp1_context_t* ctx);
 float warp1_context_get_scroll_y(warp1_context_t* ctx);
 void warp1_context_set_scroll_y(warp1_context_t* ctx, float y);
-float warp1_context_get_target_scroll_y(warp1_context_t* ctx);
-void warp1_context_set_target_scroll_y(warp1_context_t* ctx, float y);
 int warp1_context_get_content_height(warp1_context_t* ctx);
 const char* warp1_context_get_screen_svg(warp1_context_t* ctx, const char* screen_id, int* content_height);
 void warp1_context_set_screen_scroll(warp1_context_t* ctx, const char* screen_id, float scroll_y);
 float warp1_context_get_screen_scroll(warp1_context_t* ctx, const char* screen_id);
 void warp1_context_invalidate_layout(warp1_context_t* ctx);
+int warp1_context_drag_active_slider(warp1_context_t* ctx, int x, int y);
+void warp1_context_end_slider_drag(warp1_context_t* ctx);
+int warp1_context_get_active_slider_rect(warp1_context_t* ctx, int* x, int* y, int* w, int* h);
 
 // Dynamic Node API
 void warp1_context_add_node(warp1_context_t* ctx, const char* parent_id, const char* tag, const char* id);

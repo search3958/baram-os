@@ -896,12 +896,41 @@ void exception_handler(struct regs *r) {
 
 volatile int32_t mouse_x = 0;
 volatile int32_t mouse_y = 0;
-volatile int32_t mouse_scroll = 0;
 volatile uint8_t mouse_buttons = 0;
 static uint8_t mouse_cycle = 0;
 static uint8_t mouse_packet[4];
 static int mouse_has_wheel = 0;
 volatile uint32_t mouse_interrupt_counter = 0;
+extern volatile uint32_t timer_ticks;
+
+#define WHEEL_SCROLL_QUEUE_CAPACITY 64
+static volatile wheel_scroll_event_t g_wheel_scroll_queue[WHEEL_SCROLL_QUEUE_CAPACITY];
+static volatile uint32_t g_wheel_scroll_head = 0;
+static volatile uint32_t g_wheel_scroll_tail = 0;
+static volatile uint32_t g_wheel_scroll_serial = 0;
+
+static void push_wheel_scroll_event(int16_t steps) {
+  if (steps == 0) return;
+
+  uint32_t next_head = (g_wheel_scroll_head + 1) % WHEEL_SCROLL_QUEUE_CAPACITY;
+  if (next_head == g_wheel_scroll_tail) {
+    g_wheel_scroll_tail = (g_wheel_scroll_tail + 1) % WHEEL_SCROLL_QUEUE_CAPACITY;
+  }
+
+  g_wheel_scroll_queue[g_wheel_scroll_head].steps = steps;
+  g_wheel_scroll_queue[g_wheel_scroll_head].tick = timer_ticks;
+  g_wheel_scroll_queue[g_wheel_scroll_head].serial = ++g_wheel_scroll_serial;
+  g_wheel_scroll_head = next_head;
+}
+
+int mouse_pop_scroll_event(wheel_scroll_event_t *event) {
+  if (!event) return 0;
+  if (g_wheel_scroll_tail == g_wheel_scroll_head) return 0;
+
+  *event = g_wheel_scroll_queue[g_wheel_scroll_tail];
+  g_wheel_scroll_tail = (g_wheel_scroll_tail + 1) % WHEEL_SCROLL_QUEUE_CAPACITY;
+  return 1;
+}
 
 void mouse_wait(uint8_t a_type) {
   uint32_t timeout = 100000;
@@ -969,7 +998,7 @@ process_packet:
     int8_t scroll = (int8_t)(mouse_packet[3] & 0x0F);
     if (mouse_packet[3] & 0x08)
       scroll -= 16;
-    mouse_scroll += scroll;
+    push_wheel_scroll_event((int16_t)scroll);
   }
 
   mouse_x += dx;

@@ -131,12 +131,18 @@ void layer_draw_string(layer_t *layer, int x, int y, const char *str,
                        uint32_t color, uint32_t bg_color);
 
 // --- Mouse ---
+typedef struct {
+  int16_t steps;
+  uint32_t tick;
+  uint32_t serial;
+} wheel_scroll_event_t;
+
 void mouse_install();
 void keyboard_install();
 extern volatile int32_t mouse_x;
 extern volatile int32_t mouse_y;
-extern volatile int32_t mouse_scroll;
 extern volatile uint32_t mouse_interrupt_counter;
+int mouse_pop_scroll_event(wheel_scroll_event_t *event);
 
 // Arrow key custom ASCII codes
 #define KEY_UP    0x11
