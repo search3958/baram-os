@@ -94,6 +94,7 @@ do_build_and_run() {
     rm -rf "$INITRD_DIR"
     mkdir -p "$INITRD_DIR"
     cp ui/*.warp ui/*.warpc ui/*.svg ui/*.lua "$INITRD_DIR/" 2>/dev/null
+    cp ui/*.bmp ui/*.png ui/*.jpg ui/*.jpeg ui/*.tga ui/*.gif "$INITRD_DIR/" 2>/dev/null
     [ -f "font/HarmonyOS_Sans_Regular.ttf" ] && cp font/HarmonyOS_Sans_Regular.ttf "$INITRD_DIR/"
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
@@ -215,6 +216,7 @@ do_build_only() {
     rm -rf "$INITRD_DIR"
     mkdir -p "$INITRD_DIR"
     cp ui/*.warp ui/*.warpc ui/*.svg ui/*.lua "$INITRD_DIR/" 2>/dev/null
+    cp ui/*.bmp ui/*.png ui/*.jpg ui/*.jpeg ui/*.tga ui/*.gif "$INITRD_DIR/" 2>/dev/null
     [ -f "font/HarmonyOS_Sans_Regular.ttf" ] && cp font/HarmonyOS_Sans_Regular.ttf "$INITRD_DIR/"
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"

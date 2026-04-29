@@ -772,8 +772,40 @@ static const char scancode_to_ascii[128] = {
     0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0};
 
+static const char scancode_to_ascii_shift[128] = {
+    0,   0,    '!',  '@', '#',  '$', '%', '^', '&', '*', '(', ')', '_',
+    '+', '\b', 0,    'Q', 'W',  'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P',
+    '{', '}',  '\n', 0,   'A',  'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L',
+    ':', '"',  '~',  0,   '|',  'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<',
+    '>', '?',  0,    '*', 0,    ' ', 0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,    0,    0,   0,    0,   0,   0,   0,   0,   0,   0,   0};
+
+static void keyboard_push_char(char c) {
+  if (c && keybuf_len < KEYBUF_SIZE) {
+    keybuf[keybuf_len++] = c;
+  }
+}
+
+static int keyboard_is_modifier_scancode(uint8_t scancode, int extended) {
+  if (extended) {
+    return scancode == 0x1D || // Right Ctrl
+           scancode == 0x38 || // Right Alt / Option
+           scancode == 0x5B || // Left GUI / Command / Super
+           scancode == 0x5C || // Right GUI / Command / Super
+           scancode == 0x5D;   // Menu
+  }
+
+  return scancode == 0x1D || // Left Ctrl
+         scancode == 0x38 || // Left Alt / Option
+         scancode == 0x3A;   // Caps Lock
+}
+
 static void keyboard_handler(struct regs *r) {
   static int extended = 0;
+  static uint8_t shift_state = 0;
   uint8_t scancode = inb(0x60);
 
   if (scancode == 0xE0) {
@@ -783,8 +815,29 @@ static void keyboard_handler(struct regs *r) {
 
   if (scancode & 0x80) {
     // Key release
+    uint8_t released = scancode & 0x7F;
+    if (!extended && released == 0x2A)
+      shift_state &= (uint8_t)~1;
+    else if (!extended && released == 0x36)
+      shift_state &= (uint8_t)~2;
     extended = 0;
   } else {
+    if (!extended && scancode == 0x2A) {
+      shift_state |= 1;
+      extended = 0;
+      return;
+    }
+    if (!extended && scancode == 0x36) {
+      shift_state |= 2;
+      extended = 0;
+      return;
+    }
+
+    if (keyboard_is_modifier_scancode(scancode, extended)) {
+      extended = 0;
+      return;
+    }
+
     if (extended) {
       char c = 0;
       if (scancode == 0x48)
@@ -796,15 +849,12 @@ static void keyboard_handler(struct regs *r) {
       else if (scancode == 0x4D)
         c = KEY_RIGHT;
 
-      if (c && keybuf_len < KEYBUF_SIZE) {
-        keybuf[keybuf_len++] = c;
-      }
+      keyboard_push_char(c);
       extended = 0;
     } else if (scancode < 128) {
-      char c = scancode_to_ascii[scancode];
-      if (c && keybuf_len < KEYBUF_SIZE) {
-        keybuf[keybuf_len++] = c;
-      }
+      char c = shift_state ? scancode_to_ascii_shift[scancode]
+                           : scancode_to_ascii[scancode];
+      keyboard_push_char(c);
     }
   }
 }

@@ -43,6 +43,15 @@ static float dist_to_line_segment(float px, float py, float ax, float ay, float 
 #include "ui/warp_engine.h"
 #include "ui/warp1_engine.h"
 
+// stb_image for non-SVG wallpapers
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#define STBI_ASSERT(x)
+#define STBI_MALLOC(sz) malloc(sz)
+#define STBI_REALLOC(p, sz) realloc(p, sz)
+#define STBI_FREE(p) free(p)
+#include "stb_image.h"
+
 // stb_truetype
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_malloc(x, u) malloc(x)
@@ -143,6 +152,7 @@ static const char *g_bootlogo_ptr = NULL;
 static uint32_t g_bootlogo_size = 0;
 static const char *g_wallpaper_ptr = NULL;
 static uint32_t g_wallpaper_size = 0;
+static char g_wallpaper_name[64] = "";
 static const char *g_os_settings_ptr = NULL;
 static uint32_t g_os_settings_size = 0;
 
@@ -584,6 +594,7 @@ static void parse_os_settings() {
           if (len > 63) len = 63;
           memcpy(wp_name, start, len);
           wp_name[len] = '\0';
+          memcpy(g_wallpaper_name, wp_name, len + 1);
           set_w1_global("~~main/wallpaper", wp_name);
           
           // Try to load this wallpaper from TAR modules (initrd)
@@ -1996,6 +2007,196 @@ static uint32_t parse_rgba_smart(const char *str, int color_index) {
   return (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
+static int ascii_tolower_char(int c) {
+  return (c >= 'A' && c <= 'Z') ? (c + ('a' - 'A')) : c;
+}
+
+static int str_ends_with_ci(const char *s, const char *suffix) {
+  if (!s || !suffix)
+    return 0;
+  size_t slen = strlen(s);
+  size_t suffix_len = strlen(suffix);
+  if (suffix_len > slen)
+    return 0;
+  s += slen - suffix_len;
+  for (size_t i = 0; i < suffix_len; i++) {
+    if (ascii_tolower_char((unsigned char)s[i]) !=
+        ascii_tolower_char((unsigned char)suffix[i]))
+      return 0;
+  }
+  return 1;
+}
+
+static int wallpaper_data_is_svg(const char *name, const char *data, uint32_t size) {
+  if (str_ends_with_ci(name, ".svg"))
+    return 1;
+  if (!data || size == 0)
+    return 0;
+
+  uint32_t i = 0;
+  while (i < size && (data[i] == ' ' || data[i] == '\t' || data[i] == '\r' ||
+                     data[i] == '\n'))
+    i++;
+  if (i + 4 <= size && memcmp(data + i, "<svg", 4) == 0)
+    return 1;
+  if (i + 5 <= size && memcmp(data + i, "<?xml", 5) == 0)
+    return 1;
+  return 0;
+}
+
+static uint16_t read_le16(const unsigned char *p) {
+  return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+static uint32_t read_le32(const unsigned char *p) {
+  return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+         ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static int32_t read_le32s(const unsigned char *p) {
+  return (int32_t)read_le32(p);
+}
+
+static int render_bmp_wallpaper_to_rgba(const char *data, uint32_t size,
+                                        unsigned char *dst, int dst_w,
+                                        int dst_h) {
+  if (!data || !dst || size < 54 || dst_w <= 0 || dst_h <= 0)
+    return 0;
+
+  const unsigned char *bytes = (const unsigned char *)data;
+  if (bytes[0] != 'B' || bytes[1] != 'M')
+    return 0;
+
+  uint32_t pixel_offset = read_le32(bytes + 10);
+  uint32_t dib_size = read_le32(bytes + 14);
+  int32_t src_w_signed = read_le32s(bytes + 18);
+  int32_t src_h_signed = read_le32s(bytes + 22);
+  uint16_t planes = read_le16(bytes + 26);
+  uint16_t bpp = read_le16(bytes + 28);
+  uint32_t compression = read_le32(bytes + 30);
+
+  int supported_compression =
+      (compression == 0) || (compression == 3 && bpp == 32);
+
+  if (dib_size < 40 || src_w_signed <= 0 || src_h_signed == 0 ||
+      planes != 1 || (bpp != 24 && bpp != 32) || !supported_compression ||
+      pixel_offset >= size)
+    return 0;
+
+  int src_w = src_w_signed;
+  int src_h = (src_h_signed < 0) ? -src_h_signed : src_h_signed;
+  int top_down = (src_h_signed < 0);
+  uint32_t row_stride = (((uint32_t)src_w * bpp + 31) / 32) * 4;
+  if (row_stride == 0 || pixel_offset + row_stride * (uint32_t)src_h > size)
+    return 0;
+
+  float scale_x = (float)dst_w / (float)src_w;
+  float scale_y = (float)dst_h / (float)src_h;
+  float scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
+  float src_visible_w = (float)dst_w / scale;
+  float src_visible_h = (float)dst_h / scale;
+  float src_x0 = ((float)src_w - src_visible_w) * 0.5f;
+  float src_y0 = ((float)src_h - src_visible_h) * 0.5f;
+
+  for (int y = 0; y < dst_h; y++) {
+    int sy = (int)floorf(src_y0 + ((float)y + 0.5f) / scale);
+    if (sy < 0)
+      sy = 0;
+    if (sy >= src_h)
+      sy = src_h - 1;
+
+    int file_y = top_down ? sy : (src_h - 1 - sy);
+    const unsigned char *src_row = bytes + pixel_offset +
+                                   (uint32_t)file_y * row_stride;
+    unsigned char *dst_row = dst + (size_t)y * (size_t)dst_w * 4;
+
+    for (int x = 0; x < dst_w; x++) {
+      int sx = (int)floorf(src_x0 + ((float)x + 0.5f) / scale);
+      if (sx < 0)
+        sx = 0;
+      if (sx >= src_w)
+        sx = src_w - 1;
+
+      const unsigned char *src_px = src_row + (size_t)sx * (bpp / 8);
+      unsigned char *dst_px = dst_row + (size_t)x * 4;
+      dst_px[0] = src_px[2];
+      dst_px[1] = src_px[1];
+      dst_px[2] = src_px[0];
+      dst_px[3] = (bpp == 32 && src_px[3] != 0) ? src_px[3] : 255;
+    }
+  }
+
+  return 1;
+}
+
+static int render_bitmap_wallpaper_to_rgba(const char *data, uint32_t size,
+                                           unsigned char *dst, int dst_w,
+                                           int dst_h) {
+  if (!data || !dst || size == 0 || dst_w <= 0 || dst_h <= 0)
+    return 0;
+
+  if (size >= 2 && data[0] == 'B' && data[1] == 'M')
+    return render_bmp_wallpaper_to_rgba(data, size, dst, dst_w, dst_h);
+
+  int src_w = 0, src_h = 0, src_comp = 0;
+  unsigned char *src = stbi_load_from_memory((const stbi_uc *)data, (int)size,
+                                             &src_w, &src_h, &src_comp, 4);
+  if (!src || src_w <= 0 || src_h <= 0) {
+    if (src)
+      stbi_image_free(src);
+    return 0;
+  }
+
+  int force_opaque_alpha = (src_comp < 4);
+  if (!force_opaque_alpha) {
+    force_opaque_alpha = 1;
+    size_t pixel_count = (size_t)src_w * (size_t)src_h;
+    for (size_t i = 0; i < pixel_count; i++) {
+      if (src[i * 4 + 3] != 0) {
+        force_opaque_alpha = 0;
+        break;
+      }
+    }
+  }
+
+  float scale_x = (float)dst_w / (float)src_w;
+  float scale_y = (float)dst_h / (float)src_h;
+  float scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
+  float src_visible_w = (float)dst_w / scale;
+  float src_visible_h = (float)dst_h / scale;
+  float src_x0 = ((float)src_w - src_visible_w) * 0.5f;
+  float src_y0 = ((float)src_h - src_visible_h) * 0.5f;
+
+  for (int y = 0; y < dst_h; y++) {
+    float sy_f = src_y0 + ((float)y + 0.5f) / scale;
+    int sy = (int)floorf(sy_f);
+    if (sy < 0)
+      sy = 0;
+    if (sy >= src_h)
+      sy = src_h - 1;
+
+    unsigned char *dst_row = dst + (size_t)y * (size_t)dst_w * 4;
+    for (int x = 0; x < dst_w; x++) {
+      float sx_f = src_x0 + ((float)x + 0.5f) / scale;
+      int sx = (int)floorf(sx_f);
+      if (sx < 0)
+        sx = 0;
+      if (sx >= src_w)
+        sx = src_w - 1;
+
+      const unsigned char *src_px = src + ((size_t)sy * (size_t)src_w + sx) * 4;
+      unsigned char *dst_px = dst_row + (size_t)x * 4;
+      dst_px[0] = src_px[0];
+      dst_px[1] = src_px[1];
+      dst_px[2] = src_px[2];
+      dst_px[3] = force_opaque_alpha ? 255 : src_px[3];
+    }
+  }
+
+  stbi_image_free(src);
+  return 1;
+}
+
 static int svg_init(layer_t *layer, int load_wallpaper) {
   if (g_svg_ready && !load_wallpaper)
     return 1;
@@ -2006,19 +2207,19 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
 
   layer_fill(layer, 0xFF000000);
 
-  const char* svg_data = NULL;
+  const char* image_data = NULL;
+  uint32_t image_size = 0;
+  int image_is_wallpaper = 0;
   if (load_wallpaper && g_wallpaper_found && g_wallpaper_ptr) {
-    svg_data = g_wallpaper_ptr;
+    image_data = g_wallpaper_ptr;
+    image_size = g_wallpaper_size;
+    image_is_wallpaper = 1;
   } else if (g_bootlogo_found && g_bootlogo_ptr) {
-    svg_data = g_bootlogo_ptr;
+    image_data = g_bootlogo_ptr;
+    image_size = g_bootlogo_size;
   }
 
-  if (!svg_data)
-    return 0;
-
-  if (g_svg_image) gpu_svg_delete(g_svg_image);
-  g_svg_image = gpu_svg_parse(svg_data);
-  if (!g_svg_image)
+  if (!image_data)
     return 0;
 
   g_svg_full_w = layer->width;
@@ -2031,57 +2232,79 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   if (!g_svg_full_rgba)
     return 0;
   memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
+  g_svg_gpu_ready = 0;
 
-  float scale = 1.0f;
-  float tx = 0.0f, ty = 0.0f;
+  int use_svg = !image_is_wallpaper ||
+                wallpaper_data_is_svg(g_wallpaper_name, image_data, image_size);
 
-  if (load_wallpaper && svg_data == g_wallpaper_ptr) {
-    // "Center Cover" logic (with 103% zoom)
-    float svg_w = gpu_svg_width(g_svg_image);
-    float svg_h = gpu_svg_height(g_svg_image);
-    if (svg_w <= 0.0f || svg_h <= 0.0f)
+  if (use_svg) {
+    if (g_svg_image) gpu_svg_delete(g_svg_image);
+    g_svg_image = gpu_svg_parse(image_data);
+    if (!g_svg_image)
       return 0;
-    float scale_x = (float)g_svg_full_w / svg_w;
-    float scale_y = (float)g_svg_full_h / svg_h;
-    scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
-    tx = (g_svg_full_w - svg_w * scale) / 2.0f;
-    ty = (g_svg_full_h - svg_h * scale) / 2.0f;
-  } else {
-    // Center logic for logo
-    tx = (g_svg_full_w - gpu_svg_width(g_svg_image)) / 2.0f;
-    ty = (g_svg_full_h - gpu_svg_height(g_svg_image)) / 2.0f;
-  }
 
-  // GPU SVG rendering: Bezier→Tessellation→GPU triangles
-  if (g_gpu_available && !g_gpu_svg_initialized) {
-      gpu_svg_init(&g_gpu_svg_renderer, g_svg_full_w, g_svg_full_h);
-      g_gpu_svg_initialized = 1;
-  }
-  
-  if (g_gpu_svg_initialized) {
-      gpu_svg_render(&g_gpu_svg_renderer, g_svg_image, scale, tx, ty,
-                     (uint32_t*)g_svg_full_rgba, g_svg_full_w, g_svg_full_h);
-  } else {
-      gpu_svg_rasterize(g_svg_image, scale, tx, ty, g_svg_full_rgba,
-                        g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
-  }
+    float scale = 1.0f;
+    float tx = 0.0f, ty = 0.0f;
 
-  // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
-  if (!load_wallpaper && svg_data == g_bootlogo_ptr) {
-    const char *conic_pos = strstr(g_bootlogo_ptr, "conic-gradient");
-    if (conic_pos) {
-      uint32_t c1 = parse_rgba_smart(conic_pos, 2);
-      uint32_t c2 = parse_rgba_smart(conic_pos, 3);
+    if (image_is_wallpaper) {
+      // "Center Cover" logic (with 103% zoom)
+      float svg_w = gpu_svg_width(g_svg_image);
+      float svg_h = gpu_svg_height(g_svg_image);
+      if (svg_w <= 0.0f || svg_h <= 0.0f)
+        return 0;
+      float scale_x = (float)g_svg_full_w / svg_w;
+      float scale_y = (float)g_svg_full_h / svg_h;
+      scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
+      tx = (g_svg_full_w - svg_w * scale) / 2.0f;
+      ty = (g_svg_full_h - svg_h * scale) / 2.0f;
+    } else {
+      // Center logic for logo
+      tx = (g_svg_full_w - gpu_svg_width(g_svg_image)) / 2.0f;
+      ty = (g_svg_full_h - gpu_svg_height(g_svg_image)) / 2.0f;
+    }
 
-      int rx = (int)floorf(tx);
-      int ry = (int)floorf(ty);
-      int rw = (int)ceilf(gpu_svg_width(g_svg_image) * scale);
-      int rh = (int)ceilf(gpu_svg_height(g_svg_image) * scale);
-      if (rw > 0 && rh > 0) {
-        apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
-                             ry, rw, rh, c1, c2);
+    // GPU SVG rendering: Bezier→Tessellation→GPU triangles
+    if (g_gpu_available && !g_gpu_svg_initialized) {
+        gpu_svg_init(&g_gpu_svg_renderer, g_svg_full_w, g_svg_full_h);
+        g_gpu_svg_initialized = 1;
+    }
+
+    if (g_gpu_svg_initialized) {
+        gpu_svg_render(&g_gpu_svg_renderer, g_svg_image, scale, tx, ty,
+                       (uint32_t*)g_svg_full_rgba, g_svg_full_w, g_svg_full_h);
+    } else {
+        gpu_svg_rasterize(g_svg_image, scale, tx, ty, g_svg_full_rgba,
+                          g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
+    }
+
+    // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
+    if (!load_wallpaper && image_data == g_bootlogo_ptr) {
+      const char *conic_pos = strstr(g_bootlogo_ptr, "conic-gradient");
+      if (conic_pos) {
+        uint32_t c1 = parse_rgba_smart(conic_pos, 2);
+        uint32_t c2 = parse_rgba_smart(conic_pos, 3);
+
+        int rx = (int)floorf(tx);
+        int ry = (int)floorf(ty);
+        int rw = (int)ceilf(gpu_svg_width(g_svg_image) * scale);
+        int rh = (int)ceilf(gpu_svg_height(g_svg_image) * scale);
+        if (rw > 0 && rh > 0) {
+          apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
+                               ry, rw, rh, c1, c2);
+        }
       }
     }
+  } else {
+    if (g_svg_image) {
+      gpu_svg_delete(g_svg_image);
+      g_svg_image = NULL;
+    }
+    if (!render_bitmap_wallpaper_to_rgba(image_data, image_size, g_svg_full_rgba,
+                                         g_svg_full_w, g_svg_full_h)) {
+      set_w1_global("--warpSystemLog", "BitmapWallpaperDecodeFailed.");
+      return 0;
+    }
+    set_w1_global("--warpSystemLog", "BitmapWallpaperReady.");
   }
 
   if (!g_svg_rgba)

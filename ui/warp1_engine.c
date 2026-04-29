@@ -72,6 +72,8 @@ struct warp1_context {
     int mouse_x, mouse_y; int win_w, win_h; int last_total_h;
 
     int focused_node_idx; // -1: none
+    char focused_input_key[128];
+    int input_cursor;
     int active_slider_idx; // -1: none
     
     // Optimization Cache
@@ -283,6 +285,147 @@ static void get_slider_state_key1(warp1_node_t *node, char *buf, int size) {
     while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' || buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
         buf[--len] = '\0';
     }
+}
+
+static void get_input_state_key1(warp1_node_t *node, char *buf, int size) {
+    const char *raw = get_attr1(node, "output");
+    if (!raw[0] || size <= 0) {
+        if (size > 0) buf[0] = '\0';
+        return;
+    }
+
+    while (*raw == ' ' || *raw == '\t' || *raw == '\n' || *raw == '\r') raw++;
+
+    if (*raw == '(') {
+        w1_strncpy(buf, raw + 1, (size_t)(size - 1));
+        buf[size - 1] = '\0';
+        char *end = w1_strchr(buf, ')');
+        if (end) *end = '\0';
+    } else {
+        w1_strncpy(buf, raw, (size_t)(size - 1));
+        buf[size - 1] = '\0';
+    }
+
+    int len = w1_strlen(buf);
+    while (len > 0 && (buf[len - 1] == ' ' || buf[len - 1] == '\t' || buf[len - 1] == '\n' || buf[len - 1] == '\r')) {
+        buf[--len] = '\0';
+    }
+}
+
+static int w1_utf8_char_len(unsigned char c) {
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static int w1_utf8_clamp_boundary(const char *s, int pos) {
+    int len = w1_strlen(s);
+    if (pos < 0) pos = 0;
+    if (pos > len) pos = len;
+    while (pos > 0 && (((unsigned char)s[pos] & 0xC0) == 0x80)) pos--;
+    return pos;
+}
+
+static int w1_utf8_prev_boundary(const char *s, int pos) {
+    pos = w1_utf8_clamp_boundary(s, pos);
+    if (pos <= 0) return 0;
+    pos--;
+    while (pos > 0 && (((unsigned char)s[pos] & 0xC0) == 0x80)) pos--;
+    return pos;
+}
+
+static int w1_utf8_next_boundary(const char *s, int pos) {
+    int len = w1_strlen(s);
+    pos = w1_utf8_clamp_boundary(s, pos);
+    if (pos >= len) return len;
+    int next = pos + w1_utf8_char_len((unsigned char)s[pos]);
+    if (next > len) next = len;
+    return w1_utf8_clamp_boundary(s, next);
+}
+
+static void sync_input_cursor1(warp1_context_t *ctx, const char *key, const char *val) {
+    if (w1_strcmp(ctx->focused_input_key, key) != 0) {
+        w1_strncpy(ctx->focused_input_key, key, sizeof(ctx->focused_input_key) - 1);
+        ctx->focused_input_key[sizeof(ctx->focused_input_key) - 1] = '\0';
+        ctx->input_cursor = w1_strlen(val);
+    }
+    ctx->input_cursor = w1_utf8_clamp_boundary(val, ctx->input_cursor);
+}
+
+static int is_node_focused1(warp1_context_t *ctx, warp1_node_t *node) {
+    for (int i = 0; i < ctx->nodes_count; i++) {
+        if (&ctx->nodes[i] == node && ctx->focused_node_idx == i) return 1;
+    }
+    return 0;
+}
+
+static int input_cursor_visible1(void) {
+    const char *ticks_s = get_w1_global("--warpTicks");
+    long ticks = w1_strtol(ticks_s);
+    return ((ticks / 30) % 2 == 0);
+}
+
+static void build_input_text1(warp1_context_t *ctx, const char *key, const char *val, int focused, char *out, int size) {
+    if (size <= 0) return;
+    out[0] = '\0';
+    if (!focused || !input_cursor_visible1()) {
+        w1_strncpy(out, val, (size_t)(size - 1));
+        out[size - 1] = '\0';
+        return;
+    }
+
+    sync_input_cursor1(ctx, key, val);
+    int cursor = ctx->input_cursor;
+    int out_i = 0;
+    for (int i = 0; val[i] && i < cursor && out_i < size - 1; i++) {
+        out[out_i++] = val[i];
+    }
+    if (out_i < size - 1) out[out_i++] = '|';
+    for (int i = cursor; val[i] && out_i < size - 1; i++) {
+        out[out_i++] = val[i];
+    }
+    out[out_i] = '\0';
+}
+
+static void focus_input_node1(warp1_context_t *ctx, int idx) {
+    ctx->focused_node_idx = idx;
+    ctx->focused_input_key[0] = '\0';
+    ctx->input_cursor = 0;
+    if (idx < 0 || idx >= ctx->nodes_count) return;
+    warp1_node_t *node = &ctx->nodes[idx];
+    if (w1_strcmp(node->tag, "input") != 0) return;
+    char key[128];
+    get_input_state_key1(node, key, sizeof(key));
+    if (key[0]) {
+        const char *val = get_state(ctx, key);
+        sync_input_cursor1(ctx, key, val);
+    }
+}
+
+static int focus_input_relative1(warp1_context_t *ctx, int direction) {
+    int start;
+    if (direction < 0) {
+        start = (ctx->focused_node_idx <= 0) ? ctx->nodes_count - 1 : ctx->focused_node_idx - 1;
+        for (int i = 0; i < ctx->nodes_count; i++) {
+            int idx = (start - i + ctx->nodes_count) % ctx->nodes_count;
+            if (w1_strcmp(ctx->nodes[idx].tag, "input") == 0) {
+                focus_input_node1(ctx, idx);
+                return 1;
+            }
+        }
+    } else {
+        start = (ctx->focused_node_idx < 0) ? 0 : ctx->focused_node_idx + 1;
+        for (int i = 0; i < ctx->nodes_count; i++) {
+            int idx = (start + i) % ctx->nodes_count;
+            if (w1_strcmp(ctx->nodes[idx].tag, "input") == 0) {
+                focus_input_node1(ctx, idx);
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 static int update_slider_value1(warp1_context_t *ctx, warp1_node_t *node, int x) {
@@ -649,14 +792,7 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         node->h = 48; 
         
         char out_var[128], val[256], placeholder[128];
-        const char *out_var_raw = get_attr1(node, "output");
-        if (out_var_raw[0] == '(') {
-            w1_strncpy(out_var, out_var_raw + 1, 127);
-            char *end = w1_strchr(out_var, ')');
-            if (end) *end = '\0';
-        } else {
-            w1_strncpy(out_var, out_var_raw, 127);
-        }
+        get_input_state_key1(node, out_var, sizeof(out_var));
 
         eval_attr(ctx, node, "placeholder", placeholder, 127);
         
@@ -677,35 +813,15 @@ static int layout_node1(warp1_context_t *ctx, warp1_node_t *node, int px, int py
         if (ctx->texts_count < MAX_TEXTS) {
             ctx->texts[ctx->texts_count].x = node->x + 12; 
             ctx->texts[ctx->texts_count].y = node->y + 16; 
+            int is_focused = is_node_focused1(ctx, node);
             
             if (val[0]) { 
-                w1_strcpy(ctx->texts[ctx->texts_count].text, val); 
-                // フォーカス中かつ点滅タイミングならカーソルを追加
-                int is_focused = 0;
-                for (int j = 0; j < ctx->nodes_count; j++) {
-                    if (&ctx->nodes[j] == node && ctx->focused_node_idx == j) { is_focused = 1; break; }
-                }
-                if (is_focused) {
-                    const char *ticks_s = get_w1_global("--warpTicks");
-                    long ticks = w1_strtol(ticks_s);
-                    if ((ticks / 30) % 2 == 0) {
-                        w1_strcat(ctx->texts[ctx->texts_count].text, "|");
-                    }
-                }
+                build_input_text1(ctx, out_var, val, is_focused, ctx->texts[ctx->texts_count].text, sizeof(ctx->texts[ctx->texts_count].text));
                 ctx->texts[ctx->texts_count].color = is_dark ? 0xFFCCCCCC : 0xFF333333; 
             } else { 
                 w1_strcpy(ctx->texts[ctx->texts_count].text, placeholder); 
-                // フォーカス中なら空でもカーソルを表示
-                int is_focused = 0;
-                for (int j = 0; j < ctx->nodes_count; j++) {
-                    if (&ctx->nodes[j] == node && ctx->focused_node_idx == j) { is_focused = 1; break; }
-                }
-                if (is_focused) {
-                    const char *ticks_s = get_w1_global("--warpTicks");
-                    long ticks = w1_strtol(ticks_s);
-                    if ((ticks / 30) % 2 == 0) {
-                        w1_strcpy(ctx->texts[ctx->texts_count].text, "|");
-                    }
+                if (is_focused && input_cursor_visible1()) {
+                    w1_strcpy(ctx->texts[ctx->texts_count].text, "|");
                 }
                 ctx->texts[ctx->texts_count].color = is_dark ? 0xFF666666 : 0xFF888888; 
             }
@@ -838,12 +954,9 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         const char *stroke_w = "1";
 
         // フォーカスされている場合は枠線を強調
-        for (int i = 0; i < ctx->nodes_count; i++) {
-            if (&ctx->nodes[i] == node && ctx->focused_node_idx == i) {
-                stroke = "#0A60FF";
-                stroke_w = "2";
-                break;
-            }
+        if (is_node_focused1(ctx, node)) {
+            stroke = "#0A60FF";
+            stroke_w = "2";
         }
 
         char extra[128];
@@ -907,6 +1020,9 @@ warp1_context_t* warp1_context_create(const char* code) {
     extern void *memset(void *s, int c, size_t n);
     memset(ctx, 0, sizeof(warp1_context_t));
     ctx->focused_node_idx = -1;
+    ctx->focused_input_key[0] = '\0';
+    ctx->input_cursor = 0;
+    ctx->active_slider_idx = -1;
     ctx->screen_count = 0;
     ctx->screens_count = 0;
     ctx->parsed_screen_id[0] = '\0';
@@ -1054,8 +1170,7 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
         b->pos = (int)(p - b->buf);
     } else if (w1_strcmp(node->tag, "input") == 0) {
         char extra[128];
-        int is_focused = 0;
-        for (int i = 0; i < ctx->nodes_count; i++) { if (&ctx->nodes[i] == node && ctx->focused_node_idx == i) { is_focused = 1; break; } }
+        int is_focused = is_node_focused1(ctx, node);
         w1_strcpy(extra, "stroke=\"");
         w1_strcat(extra, is_focused ? "#0A60FF" : (is_dark ? "#555555" : "#dddddd"));
         w1_strcat(extra, "\" stroke-width=\""); w1_strcat(extra, is_focused ? "2" : "1"); w1_strcat(extra, "\"");
@@ -1159,6 +1274,8 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
             
             // フォーカスをリセット。inputをクリックした場合のみ後でセットされる。
             ctx->focused_node_idx = -1;
+            ctx->focused_input_key[0] = '\0';
+            ctx->input_cursor = 0;
 
             if (w1_strcmp(n->tag, "switch") == 0) {
                 char out_var[128];
@@ -1184,7 +1301,7 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
             }
             if (w1_strcmp(n->tag, "input") == 0) { 
                 ctx->active_slider_idx = -1;
-                ctx->focused_node_idx = i;
+                focus_input_node1(ctx, i);
                 break; 
             }
             if (w1_strcmp(n->tag, "button") == 0 || w1_strcmp(n->tag, "tonalButton") == 0) {
@@ -1204,6 +1321,8 @@ void warp1_context_click(warp1_context_t* ctx, int x, int y) {
     if (!clicked) {
         ctx->active_slider_idx = -1;
         ctx->focused_node_idx = -1;
+        ctx->focused_input_key[0] = '\0';
+        ctx->input_cursor = 0;
     }
     // 状態変化があった場合のみ更新
     ctx->engine_dirty = 1;
@@ -1217,44 +1336,29 @@ void warp1_context_key_input(warp1_context_t* ctx, char c) {
     append_hex8(key_msg + 7, (uint8_t)c);
 
     uint8_t uc = (uint8_t)c;
-    // 矢印キー（drivers.h の定義: 0x11〜0x14）によるフォーカス移動
-    if (uc == 0x11 || uc == 0x13) { // UP or LEFT -> 前の input へ
-        int start = (ctx->focused_node_idx <= 0) ? ctx->nodes_count - 1 : ctx->focused_node_idx - 1;
-        for (int i = 0; i < ctx->nodes_count; i++) {
-            int idx = (start - i + ctx->nodes_count) % ctx->nodes_count;
-            if (w1_strcmp(ctx->nodes[idx].tag, "input") == 0) {
-                ctx->focused_node_idx = idx;
-                break;
-            }
+    if (ctx->focused_node_idx < 0 || ctx->focused_node_idx >= ctx->nodes_count) {
+        if (uc == KEY_UP || uc == KEY_LEFT) {
+            focus_input_relative1(ctx, -1);
+        } else if (uc == KEY_DOWN || uc == KEY_RIGHT || uc == '\t') {
+            focus_input_relative1(ctx, 1);
         }
         ctx->engine_dirty = 1;
         return;
     }
-    if (uc == 0x12 || uc == 0x14 || uc == '\t') { // DOWN or RIGHT or TAB -> 次の input へ
-        int start = (ctx->focused_node_idx < 0) ? 0 : ctx->focused_node_idx + 1;
-        for (int i = 0; i < ctx->nodes_count; i++) {
-            int idx = (start + i) % ctx->nodes_count;
-            if (w1_strcmp(ctx->nodes[idx].tag, "input") == 0) {
-                ctx->focused_node_idx = idx;
-                ctx->engine_dirty = 1;
-                return;
-            }
-        }
-    }
 
-    if (ctx->focused_node_idx < 0 || ctx->focused_node_idx >= ctx->nodes_count) return;
     warp1_node_t *n = &ctx->nodes[ctx->focused_node_idx];
-    if (w1_strcmp(n->tag, "input") != 0) return;
-
-    const char *out_var_raw = get_attr1(n, "output");
-    char out_var[128];
-    if (out_var_raw[0] == '(') {
-        w1_strncpy(out_var, out_var_raw + 1, 127);
-        char *end = w1_strchr(out_var, ')');
-        if (end) *end = '\0';
-    } else {
-        w1_strncpy(out_var, out_var_raw, 127);
+    if (w1_strcmp(n->tag, "input") != 0) {
+        if (uc == KEY_UP || uc == KEY_LEFT) {
+            focus_input_relative1(ctx, -1);
+        } else if (uc == KEY_DOWN || uc == KEY_RIGHT || uc == '\t') {
+            focus_input_relative1(ctx, 1);
+        }
+        ctx->engine_dirty = 1;
+        return;
     }
+
+    char out_var[128];
+    get_input_state_key1(n, out_var, sizeof(out_var));
     
     if (!out_var[0]) {
         return;
@@ -1264,19 +1368,37 @@ void warp1_context_key_input(warp1_context_t* ctx, char c) {
     const char *current_val = get_state(ctx, out_var);
     w1_strcpy(val, current_val);
     int len = w1_strlen(val);
+    sync_input_cursor1(ctx, out_var, val);
 
     char log_tmp[128] = "Input to: ";
     w1_strcat(log_tmp, out_var);
 
-    if (uc == 8 || uc == 127) { // Backspace
-        if (len > 0) {
-            val[len - 1] = '\0';
+    if (uc == KEY_LEFT) {
+        ctx->input_cursor = w1_utf8_prev_boundary(val, ctx->input_cursor);
+    } else if (uc == KEY_RIGHT) {
+        ctx->input_cursor = w1_utf8_next_boundary(val, ctx->input_cursor);
+    } else if (uc == KEY_UP) {
+        focus_input_relative1(ctx, -1);
+    } else if (uc == KEY_DOWN || uc == '\t') {
+        focus_input_relative1(ctx, 1);
+    } else if (uc == 8 || uc == 127) { // Backspace
+        if (ctx->input_cursor > 0) {
+            int prev = w1_utf8_prev_boundary(val, ctx->input_cursor);
+            int remove_len = ctx->input_cursor - prev;
+            for (int i = prev; i + remove_len <= len; i++) {
+                val[i] = val[i + remove_len];
+            }
+            ctx->input_cursor = prev;
             set_state(ctx, out_var, val);
         }
     } else if (c >= 32 && c <= 126) { // Printables
         if (len < 511) {
-            val[len] = c;
-            val[len + 1] = '\0';
+            int cursor = w1_utf8_clamp_boundary(val, ctx->input_cursor);
+            for (int i = len; i >= cursor; i--) {
+                val[i + 1] = val[i];
+            }
+            val[cursor] = c;
+            ctx->input_cursor = cursor + 1;
             set_state(ctx, out_var, val);
         }
     }
