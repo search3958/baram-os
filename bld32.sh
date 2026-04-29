@@ -111,6 +111,8 @@ do_build_and_run() {
     show_progress 70
     "$I686_CC" $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
     show_progress 72
+    "$I686_CC" $CFLAGS -c ui/warp_draw.c -o output/warp_draw.o || return 1
+    show_progress 73
     "$I686_CC" $CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o || return 1
     show_progress 74
     "$I686_CC" $CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o || return 1
@@ -125,7 +127,7 @@ do_build_and_run() {
     show_progress 82
 
     "$I686_CC" -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 85
 
@@ -281,12 +283,13 @@ do_build_only() {
     "$I686_CC" $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
     show_progress 75
     "$I686_CC" $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    "$I686_CC" $CFLAGS -c ui/warp_draw.c -o output/warp_draw.o || return 1
     bash scripts/build_lunasvg.sh i686-elf output || return 1
     LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
     show_progress 80
 
     "$I686_CC" -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 100
     echo ""

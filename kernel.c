@@ -42,6 +42,7 @@ static float dist_to_line_segment(float px, float py, float ax, float ay, float 
 #endif
 #include "ui/warp_engine.h"
 #include "ui/warp1_engine.h"
+#include "ui/warp_draw.h"
 
 // stb_image for non-SVG wallpapers
 #define STB_IMAGE_IMPLEMENTATION
@@ -268,18 +269,6 @@ static void reset_scroll_input_state(scroll_input_state_t *state) {
   state->burst_steps = 0;
 }
 
-static int count_substring_occurrences(const char *haystack, const char *needle) {
-  if (!haystack || !needle || !needle[0]) return 0;
-  int count = 0;
-  size_t needle_len = strlen(needle);
-  const char *p = haystack;
-  while ((p = strstr(p, needle)) != NULL) {
-    count++;
-    p += needle_len;
-  }
-  return count;
-}
-
 static float clamp_scroll_offset(float scroll_y, int viewport_h, int content_h) {
   int min_scroll = viewport_h - content_h;
   if (min_scroll > 0) min_scroll = 0;
@@ -406,10 +395,8 @@ typedef struct window_struct {
   int frame_cache_w, frame_cache_h;
   uint8_t *window_mask;    // Alpha mask for the entire window shape (squircle)
   
-  // SVG caching for performance
-  char *last_svg_str;      // Cached SVG string to detect changes
-  gpu_svg_document_t *svg_image_cache; // Parsed SVG cache reused across rerasterization
-  uint32_t *raster_cache;  // Rasterized SVG cache
+  // Native WarpUI raster cache
+  uint32_t *raster_cache;
   int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
   void *dynamic_file_ptr;  // Pointer to on-demand loaded file data from storage
@@ -2239,7 +2226,8 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
 
   if (use_svg) {
     if (g_svg_image) gpu_svg_delete(g_svg_image);
-    g_svg_image = gpu_svg_parse(image_data);
+    g_svg_image = image_size ? gpu_svg_parse_data(image_data, image_size)
+                             : gpu_svg_parse(image_data);
     if (!g_svg_image)
       return 0;
 
@@ -3077,6 +3065,8 @@ static void window_redraw(window_t *win) {
   } else {
     needs_render = warp_context_is_dirty(win->warp_ctx) || (win->rgba_buffer == NULL);
   }
+  if (needs_layout_update)
+    needs_render = 1;
 
   if (!needs_render) {
     strncpy(g_hud_status, "Cached", 63);
@@ -3084,46 +3074,16 @@ static void window_redraw(window_t *win) {
     return;
   }
 
-  strncpy(g_hud_status, "SVGGen", 63);
-  const char *svg = win->is_warp1 ? warp1_context_get_svg(win->warp1_ctx) : warp_context_get_svg(win->warp_ctx);
-  int svg_rects = count_substring_occurrences(svg, "<rect");
-  int svg_paths = count_substring_occurrences(svg, "<path");
-  int svg_circles = count_substring_occurrences(svg, "<circle");
-  size_t svg_len = svg ? strlen(svg) : 0;
-  snprintf(g_last_svg_parse_status, sizeof(g_last_svg_parse_status), "%s R%d P%d C%d L%u",
-           win->is_warp1 ? "W1" : "W0",
-           svg_rects, svg_paths, svg_circles, (unsigned)svg_len);
+  strncpy(g_hud_status, "WarpOps", 63);
+  int op_count = 0;
+  const warp_draw_op_t *ops = win->is_warp1
+      ? warp1_context_get_draw_ops(win->warp1_ctx, &op_count)
+      : warp_context_get_draw_ops(win->warp_ctx, &op_count);
+  snprintf(g_last_svg_parse_status, sizeof(g_last_svg_parse_status), "%s OPS%d",
+           win->is_warp1 ? "W1" : "W0", op_count);
 
-  // Check if SVG string changed
-  int svg_changed = 1;
-  if (win->last_svg_str && strcmp(win->last_svg_str, svg) == 0) {
-    svg_changed = 0;
-  }
-
-  if (svg_changed) {
-    strncpy(g_hud_status, "SVGParse", 63);
-    gpu_svg_document_t *img = gpu_svg_parse(svg);
-    if (!img) {
-      strncpy(g_hud_status, "ParseErr", 63);
-      return;
-    }
-
-    if (win->svg_image_cache) gpu_svg_delete(win->svg_image_cache);
-    win->svg_image_cache = img;
-
-    if (win->last_svg_str) free(win->last_svg_str);
-    win->last_svg_str = (char*)malloc(svg_len + 1);
-    if (win->last_svg_str) memcpy(win->last_svg_str, svg, svg_len + 1);
-  }
-
-  if (!win->svg_image_cache) {
-    strncpy(g_hud_status, "ParseMiss", 63);
-    return;
-  }
-
-  // Content height is determined by the cached SVG itself
   int title_h = win->no_decoration ? 0 : 60;
-  int content_h = (int)ceilf(gpu_svg_height(win->svg_image_cache));
+  int content_h = get_window_content_height(win);
   if (content_h < win->h + title_h) content_h = win->h + title_h;
 
   int scaled_w = (int)((float)win->w * target_scale);
@@ -3140,14 +3100,13 @@ static void window_redraw(window_t *win) {
   }
 
   int raster_empty = 0;
-  if (win->raster_cache && (svg_changed || raster_size_changed)) {
+  if (win->raster_cache && (needs_render || raster_size_changed)) {
     strncpy(g_hud_status, "ClearCache", 63);
-    for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0x00000000;
 
-    strncpy(g_hud_status, "SVGRaster", 63);
-    gpu_svg_rasterize_premul(win->svg_image_cache, target_scale, 0.0f, 0.0f,
-                             (unsigned char*)win->raster_cache, scaled_w, scaled_h,
-                             scaled_w * 4);
+    strncpy(g_hud_status, "WarpRaster", 63);
+    warp_draw_rasterize_premul(ops, op_count, target_scale, 0.0f, 0.0f,
+                               (unsigned char*)win->raster_cache, scaled_w, scaled_h,
+                               scaled_w * 4);
 
     int alpha_pixels = 0;
     unsigned char *scan = (unsigned char*)win->raster_cache;
@@ -3172,7 +3131,7 @@ static void window_redraw(window_t *win) {
       win->is_dirty = 1; // Force redraw after allocation
     }
 
-    if (svg_changed || win->is_dirty || needs_layout_update) {
+    if (needs_render || win->is_dirty || needs_layout_update) {
       memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
       
       // ここでテキストもバッファに直接描き込む。これで「表示内容そのまま」が完成する。
@@ -3187,6 +3146,8 @@ static void window_redraw(window_t *win) {
 
   win->is_dirty = 0;
   win->is_calculating = 0;
+  if (win->is_warp1) warp1_context_clear_dirty(win->warp1_ctx);
+  else warp_context_clear_dirty(win->warp_ctx);
   if (raster_empty) strncpy(g_hud_status, "RasterEmpty", 63);
   else strncpy(g_hud_status, "Idle", 63);
 }
@@ -3332,8 +3293,6 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->rgba_buffer = NULL;
   win->buffer_w = 0;
   win->buffer_h = 0;
-  win->last_svg_str = NULL;
-  win->svg_image_cache = NULL;
   win->raster_cache = NULL;
   win->raster_cache_w = 0;
   win->raster_cache_h = 0;
@@ -3389,8 +3348,6 @@ static void close_active_window() {
   if (win->warp_ctx) warp_context_destroy(win->warp_ctx);
   if (win->warp1_ctx) warp1_context_destroy(win->warp1_ctx);
   if (win->rgba_buffer) free(win->rgba_buffer);
-  if (win->last_svg_str) free(win->last_svg_str);
-  if (win->svg_image_cache) gpu_svg_delete(win->svg_image_cache);
   if (win->raster_cache) free(win->raster_cache);
   if (win->shadow_cache) free(win->shadow_cache);
   if (win->frame_cache) free(win->frame_cache);

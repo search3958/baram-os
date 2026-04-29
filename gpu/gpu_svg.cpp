@@ -8,11 +8,41 @@
 #include <cmath>
 #include <memory>
 #include <vector>
+
+enum class LightShapeType {
+    Rect,
+    Squircle
+};
+
+struct LightShapeOp {
+    LightShapeType type;
+    float x;
+    float y;
+    float w;
+    float h;
+    float rx;
+    float ry;
+    float radius;
+    float stroke_w;
+    bool has_fill;
+    bool has_stroke;
+    unsigned char fr;
+    unsigned char fg;
+    unsigned char fb;
+    unsigned char fa;
+    unsigned char sr;
+    unsigned char sg;
+    unsigned char sb;
+    unsigned char sa;
+};
+
 struct gpu_svg_document {
     std::unique_ptr<lunasvg::Document> document;
     float width;
     float height;
     char* source;
+    bool lightweight;
+    std::vector<LightShapeOp> light_ops;
 };
 
 static const float SQUIRCLE_KX[] = {1.498f, 3.381f, 7.456f, 12.630f, 17.368f, 21.770f, 30.573f};
@@ -94,6 +124,33 @@ static float parse_attr_float(const char* tag, const char* attr, float fallback)
     return result * static_cast<float>(sign);
 }
 
+static bool source_contains(const char* source, const char* needle)
+{
+    return source != nullptr && std::strstr(source, needle) != nullptr;
+}
+
+static bool can_use_lightweight_renderer(const char* source)
+{
+    if(source == nullptr)
+        return false;
+    if(!source_contains(source, "<!--BARAM_SQUIRCLE ") && !source_contains(source, "<rect"))
+        return false;
+
+    // The lightweight path only covers the simple Warp UI geometry that this
+    // file already rasterizes manually. Anything else stays on lunaSVG.
+    static const char* unsupported[] = {
+        "<path", "<circle", "<ellipse", "<line", "<polyline", "<polygon",
+        "<text", "<image", "<use", "<g", "<defs", "<linearGradient",
+        "<radialGradient", "<style", "<clipPath", "<mask", "<filter",
+        "fill=\"red\"", "stroke=\"red\""
+    };
+    for(size_t i = 0; i < sizeof(unsupported) / sizeof(unsupported[0]); ++i) {
+        if(source_contains(source, unsupported[i]))
+            return false;
+    }
+    return true;
+}
+
 static bool find_marker_bounds(const char* source, const char* marker, const char*& start, const char*& end)
 {
     if(source == nullptr || marker == nullptr)
@@ -162,6 +219,63 @@ static bool parse_paint_rgba(const char* tag, const char* attr, const char* opac
         alpha_base = 255u;
     a = static_cast<unsigned char>((alpha_base * static_cast<unsigned>(opacity * 255.0f + 0.5f) + 127u) / 255u);
     return a != 0;
+}
+
+static void parse_lightweight_ops(const char* source, std::vector<LightShapeOp>& ops)
+{
+    ops.clear();
+    if(source == nullptr)
+        return;
+
+    const char* p = source;
+    const char* squircle_marker = "<!--BARAM_SQUIRCLE ";
+    const size_t squircle_marker_len = std::strlen(squircle_marker);
+    while(*p) {
+        if(std::strncmp(p, "<rect", 5) == 0) {
+            const char* tag_end = std::strchr(p, '>');
+            if(tag_end == nullptr)
+                break;
+
+            LightShapeOp op = {};
+            op.type = LightShapeType::Rect;
+            op.x = parse_attr_float(p, "x", 0.0f);
+            op.y = parse_attr_float(p, "y", 0.0f);
+            op.w = parse_attr_float(p, "width", 0.0f);
+            op.h = parse_attr_float(p, "height", 0.0f);
+            op.rx = parse_attr_float(p, "rx", 0.0f);
+            op.ry = parse_attr_float(p, "ry", op.rx);
+            op.stroke_w = parse_attr_float(p, "stroke-width", 0.0f);
+            op.has_fill = parse_paint_rgba(p, "fill", "fill-opacity", op.fr, op.fg, op.fb, op.fa);
+            op.has_stroke = parse_paint_rgba(p, "stroke", "stroke-opacity", op.sr, op.sg, op.sb, op.sa);
+            if(op.w > 0.0f && op.h > 0.0f && (op.has_fill || (op.has_stroke && op.stroke_w > 0.0f)))
+                ops.push_back(op);
+            p = tag_end + 1;
+            continue;
+        }
+
+        if(std::strncmp(p, squircle_marker, squircle_marker_len) == 0) {
+            const char* marker_end = std::strstr(p, "-->");
+            if(marker_end == nullptr)
+                break;
+
+            LightShapeOp op = {};
+            op.type = LightShapeType::Squircle;
+            op.x = parse_attr_float(p, "x", 0.0f);
+            op.y = parse_attr_float(p, "y", 0.0f);
+            op.w = parse_attr_float(p, "w", 0.0f);
+            op.h = parse_attr_float(p, "h", 0.0f);
+            op.radius = parse_attr_float(p, "radius", -1.0f);
+            op.stroke_w = parse_attr_float(p, "stroke-width", 0.0f);
+            op.has_fill = parse_paint_rgba(p, "fill", "fill-opacity", op.fr, op.fg, op.fb, op.fa);
+            op.has_stroke = parse_paint_rgba(p, "stroke", "stroke-opacity", op.sr, op.sg, op.sb, op.sa);
+            if(op.w > 0.0f && op.h > 0.0f && (op.has_fill || (op.has_stroke && op.stroke_w > 0.0f)))
+                ops.push_back(op);
+            p = marker_end + 3;
+            continue;
+        }
+
+        ++p;
+    }
 }
 
 static void blend_pixel(unsigned char* px,
@@ -825,6 +939,154 @@ static void rasterize_squircle_markers_premul(const gpu_svg_document_t* document
     }
 }
 
+static void rasterize_light_ops_rgba(const gpu_svg_document_t* document,
+                                     float scale, float tx, float ty,
+                                     unsigned char* out_rgba, int buf_w, int buf_h, int stride)
+{
+    if(document == nullptr)
+        return;
+
+    for(const LightShapeOp& op : document->light_ops) {
+        if(op.type == LightShapeType::Rect) {
+            int sx = static_cast<int>(op.x * scale + tx);
+            int sy = static_cast<int>(op.y * scale + ty);
+            int sw = static_cast<int>(op.w * scale + 0.999f);
+            int sh = static_cast<int>(op.h * scale + 0.999f);
+            int srx = static_cast<int>(op.rx * scale + 0.5f);
+            int sry = static_cast<int>(op.ry * scale + 0.5f);
+            if(srx > sw / 2) srx = sw / 2;
+            if(sry > sh / 2) sry = sh / 2;
+            if(srx < 0) srx = 0;
+            if(sry < 0) sry = 0;
+            if(op.has_fill)
+                fill_rounded_rect_fallback(out_rgba, buf_w, buf_h, stride, sx, sy, sw, sh, srx, sry, op.fr, op.fg, op.fb, op.fa);
+            if(op.has_stroke && op.stroke_w > 0.0f) {
+                int ssw = static_cast<int>(op.stroke_w * scale + 0.5f);
+                if(ssw < 1) ssw = 1;
+                stroke_rounded_rect_fallback(out_rgba, buf_w, buf_h, stride, sx, sy, sw, sh, srx, sry, ssw, op.sr, op.sg, op.sb, op.sa);
+            }
+            continue;
+        }
+
+        std::vector<SquirclePoint> outer;
+        build_squircle_polygon(op.x * scale + tx, op.y * scale + ty,
+                               static_cast<int>(op.w * scale + 0.999f),
+                               static_cast<int>(op.h * scale + 0.999f),
+                               op.radius, outer);
+        std::vector<SquirclePoint> inner;
+        int ssw = static_cast<int>(op.stroke_w * scale + 0.5f);
+        if(ssw < 1) ssw = 1;
+        if(op.has_stroke && op.stroke_w > 0.0f &&
+           op.w * scale - 2.0f * ssw > 0.0f && op.h * scale - 2.0f * ssw > 0.0f) {
+            build_squircle_polygon(op.x * scale + tx + ssw, op.y * scale + ty + ssw,
+                                   static_cast<int>(op.w * scale + 0.999f) - ssw * 2,
+                                   static_cast<int>(op.h * scale + 0.999f) - ssw * 2,
+                                   op.radius, inner);
+        }
+
+        int min_x = static_cast<int>(op.x * scale + tx);
+        int min_y = static_cast<int>(op.y * scale + ty);
+        int max_x = min_x + static_cast<int>(op.w * scale + 0.999f);
+        int max_y = min_y + static_cast<int>(op.h * scale + 0.999f);
+        if(min_x < 0) min_x = 0;
+        if(min_y < 0) min_y = 0;
+        if(max_x > buf_w) max_x = buf_w;
+        if(max_y > buf_h) max_y = buf_h;
+        for(int yy = min_y; yy < max_y; ++yy) {
+            unsigned char* row = out_rgba + static_cast<size_t>(yy) * static_cast<size_t>(stride);
+            for(int xx = min_x; xx < max_x; ++xx) {
+                unsigned char outer_cov = squircle_coverage(xx, yy, outer);
+                if(outer_cov == 0)
+                    continue;
+                unsigned char inner_cov = inner.empty() ? 0 : squircle_coverage(xx, yy, inner);
+                if(op.has_fill) {
+                    unsigned char final_a = static_cast<unsigned char>((static_cast<unsigned>(op.fa) * outer_cov + 127u) / 255u);
+                    blend_pixel(row + xx * 4, op.fr, op.fg, op.fb, final_a);
+                }
+                if(op.has_stroke && outer_cov > inner_cov) {
+                    unsigned char edge_cov = static_cast<unsigned char>(outer_cov - inner_cov);
+                    unsigned char final_a = static_cast<unsigned char>((static_cast<unsigned>(op.sa) * edge_cov + 127u) / 255u);
+                    blend_pixel(row + xx * 4, op.sr, op.sg, op.sb, final_a);
+                }
+            }
+        }
+    }
+}
+
+static void rasterize_light_ops_premul(const gpu_svg_document_t* document,
+                                       float scale, float tx, float ty,
+                                       unsigned char* out_argb, int buf_w, int buf_h, int stride)
+{
+    if(document == nullptr)
+        return;
+
+    for(const LightShapeOp& op : document->light_ops) {
+        if(op.type == LightShapeType::Rect) {
+            int sx = static_cast<int>(op.x * scale + tx);
+            int sy = static_cast<int>(op.y * scale + ty);
+            int sw = static_cast<int>(op.w * scale + 0.999f);
+            int sh = static_cast<int>(op.h * scale + 0.999f);
+            int srx = static_cast<int>(op.rx * scale + 0.5f);
+            int sry = static_cast<int>(op.ry * scale + 0.5f);
+            if(srx > sw / 2) srx = sw / 2;
+            if(sry > sh / 2) sry = sh / 2;
+            if(srx < 0) srx = 0;
+            if(sry < 0) sry = 0;
+            if(op.has_fill)
+                fill_rounded_rect_fallback_premul(out_argb, buf_w, buf_h, stride, sx, sy, sw, sh, srx, sry, op.fr, op.fg, op.fb, op.fa);
+            if(op.has_stroke && op.stroke_w > 0.0f) {
+                int ssw = static_cast<int>(op.stroke_w * scale + 0.5f);
+                if(ssw < 1) ssw = 1;
+                stroke_rounded_rect_fallback_premul(out_argb, buf_w, buf_h, stride, sx, sy, sw, sh, srx, sry, ssw, op.sr, op.sg, op.sb, op.sa);
+            }
+            continue;
+        }
+
+        std::vector<SquirclePoint> outer;
+        build_squircle_polygon(op.x * scale + tx, op.y * scale + ty,
+                               static_cast<int>(op.w * scale + 0.999f),
+                               static_cast<int>(op.h * scale + 0.999f),
+                               op.radius, outer);
+        std::vector<SquirclePoint> inner;
+        int ssw = static_cast<int>(op.stroke_w * scale + 0.5f);
+        if(ssw < 1) ssw = 1;
+        if(op.has_stroke && op.stroke_w > 0.0f &&
+           op.w * scale - 2.0f * ssw > 0.0f && op.h * scale - 2.0f * ssw > 0.0f) {
+            build_squircle_polygon(op.x * scale + tx + ssw, op.y * scale + ty + ssw,
+                                   static_cast<int>(op.w * scale + 0.999f) - ssw * 2,
+                                   static_cast<int>(op.h * scale + 0.999f) - ssw * 2,
+                                   op.radius, inner);
+        }
+
+        int min_x = static_cast<int>(op.x * scale + tx);
+        int min_y = static_cast<int>(op.y * scale + ty);
+        int max_x = min_x + static_cast<int>(op.w * scale + 0.999f);
+        int max_y = min_y + static_cast<int>(op.h * scale + 0.999f);
+        if(min_x < 0) min_x = 0;
+        if(min_y < 0) min_y = 0;
+        if(max_x > buf_w) max_x = buf_w;
+        if(max_y > buf_h) max_y = buf_h;
+        for(int yy = min_y; yy < max_y; ++yy) {
+            uint32_t* row = reinterpret_cast<uint32_t*>(out_argb + static_cast<size_t>(yy) * static_cast<size_t>(stride));
+            for(int xx = min_x; xx < max_x; ++xx) {
+                unsigned char outer_cov = squircle_coverage(xx, yy, outer);
+                if(outer_cov == 0)
+                    continue;
+                unsigned char inner_cov = inner.empty() ? 0 : squircle_coverage(xx, yy, inner);
+                if(op.has_fill) {
+                    unsigned char final_a = static_cast<unsigned char>((static_cast<unsigned>(op.fa) * outer_cov + 127u) / 255u);
+                    blend_pixel_argb_premul(&row[xx], op.fr, op.fg, op.fb, final_a);
+                }
+                if(op.has_stroke && outer_cov > inner_cov) {
+                    unsigned char edge_cov = static_cast<unsigned char>(outer_cov - inner_cov);
+                    unsigned char final_a = static_cast<unsigned char>((static_cast<unsigned>(op.sa) * edge_cov + 127u) / 255u);
+                    blend_pixel_argb_premul(&row[xx], op.sr, op.sg, op.sb, final_a);
+                }
+            }
+        }
+    }
+}
+
 static bool buffer_has_alpha(const unsigned char* out_rgba, int buf_w, int buf_h, int stride)
 {
     if(out_rgba == nullptr)
@@ -860,18 +1122,47 @@ gpu_svg_document_t* gpu_svg_parse(const char* svg_data)
     if(svg_data == nullptr)
         return nullptr;
 
-    auto document = lunasvg::Document::loadFromData(svg_data, std::strlen(svg_data));
-    if(!document)
+    return gpu_svg_parse_data(svg_data, std::strlen(svg_data));
+}
+
+gpu_svg_document_t* gpu_svg_parse_data(const char* svg_data, size_t svg_len)
+{
+    if(svg_data == nullptr || svg_len == 0)
         return nullptr;
 
+    char* source = static_cast<char*>(std::malloc(svg_len + 1));
+    if(source == nullptr)
+        return nullptr;
+    std::memcpy(source, svg_data, svg_len);
+    source[svg_len] = '\0';
+
     gpu_svg_document_t* result = new gpu_svg_document_t;
+    result->width = 0.0f;
+    result->height = 0.0f;
+    result->source = source;
+    result->lightweight = false;
+
+    if(can_use_lightweight_renderer(source)) {
+        result->width = parse_attr_float(source, "width", 0.0f);
+        result->height = parse_attr_float(source, "height", 0.0f);
+        parse_lightweight_ops(source, result->light_ops);
+        if(result->width > 0.0f && result->height > 0.0f && !result->light_ops.empty()) {
+            result->lightweight = true;
+            return result;
+        }
+    }
+
+    auto document = lunasvg::Document::loadFromData(svg_data, svg_len);
+    if(!document)
+    {
+        std::free(result->source);
+        delete result;
+        return nullptr;
+    }
+
     result->width = document->width();
     result->height = document->height();
     result->document = std::move(document);
-    size_t svg_len = std::strlen(svg_data);
-    result->source = static_cast<char*>(std::malloc(svg_len + 1));
-    if(result->source != nullptr)
-        std::memcpy(result->source, svg_data, svg_len + 1);
     return result;
 }
 
@@ -897,20 +1188,27 @@ int gpu_svg_rasterize(const gpu_svg_document_t* document,
                       unsigned char* out_rgba,
                       int buf_w, int buf_h, int stride)
 {
-    if(document == nullptr || document->document == nullptr || out_rgba == nullptr)
+    if(document == nullptr || out_rgba == nullptr)
         return -1;
     if(buf_w <= 0 || buf_h <= 0 || stride < buf_w * 4)
         return -1;
 
     std::memset(out_rgba, 0, (size_t)stride * (size_t)buf_h);
-    lunasvg::Bitmap bitmap(out_rgba, buf_w, buf_h, stride);
-    bitmap.clear(0x00000000u);
-    document->document->render(bitmap, lunasvg::Matrix(scale, 0.0f, 0.0f, scale, tx, ty));
-    bitmap.convertToRGBA();
+    if(document->lightweight) {
+        rasterize_light_ops_rgba(document, scale, tx, ty, out_rgba, buf_w, buf_h, stride);
+        return 0;
+    }
+
+    if(document->document != nullptr) {
+        lunasvg::Bitmap bitmap(out_rgba, buf_w, buf_h, stride);
+        bitmap.clear(0x00000000u);
+        document->document->render(bitmap, lunasvg::Matrix(scale, 0.0f, 0.0f, scale, tx, ty));
+        bitmap.convertToRGBA();
+    }
     if(document->source != nullptr && std::strstr(document->source, "<!--BARAM_SQUIRCLE ") != nullptr) {
         rasterize_squircle_markers_rgba(document, scale, tx, ty, out_rgba, buf_w, buf_h, stride);
     }
-    if(!buffer_has_alpha(out_rgba, buf_w, buf_h, stride) && document->source != nullptr) {
+    if((document->lightweight || !buffer_has_alpha(out_rgba, buf_w, buf_h, stride)) && document->source != nullptr) {
         if(std::strstr(document->source, "<rect") != nullptr)
             rasterize_rect_fallback(document, scale, tx, ty, out_rgba, buf_w, buf_h, stride);
     }
@@ -922,19 +1220,26 @@ int gpu_svg_rasterize_premul(const gpu_svg_document_t* document,
                              unsigned char* out_argb_premul,
                              int buf_w, int buf_h, int stride)
 {
-    if(document == nullptr || document->document == nullptr || out_argb_premul == nullptr)
+    if(document == nullptr || out_argb_premul == nullptr)
         return -1;
     if(buf_w <= 0 || buf_h <= 0 || stride < buf_w * 4)
         return -1;
 
     std::memset(out_argb_premul, 0, static_cast<size_t>(stride) * static_cast<size_t>(buf_h));
-    lunasvg::Bitmap bitmap(out_argb_premul, buf_w, buf_h, stride);
-    bitmap.clear(0x00000000u);
-    document->document->render(bitmap, lunasvg::Matrix(scale, 0.0f, 0.0f, scale, tx, ty));
+    if(document->lightweight) {
+        rasterize_light_ops_premul(document, scale, tx, ty, out_argb_premul, buf_w, buf_h, stride);
+        return 0;
+    }
+
+    if(document->document != nullptr) {
+        lunasvg::Bitmap bitmap(out_argb_premul, buf_w, buf_h, stride);
+        bitmap.clear(0x00000000u);
+        document->document->render(bitmap, lunasvg::Matrix(scale, 0.0f, 0.0f, scale, tx, ty));
+    }
     if(document->source != nullptr && std::strstr(document->source, "<!--BARAM_SQUIRCLE ") != nullptr) {
         rasterize_squircle_markers_premul(document, scale, tx, ty, out_argb_premul, buf_w, buf_h, stride);
     }
-    if(!buffer_has_alpha(out_argb_premul, buf_w, buf_h, stride) && document->source != nullptr) {
+    if((document->lightweight || !buffer_has_alpha(out_argb_premul, buf_w, buf_h, stride)) && document->source != nullptr) {
         if(std::strstr(document->source, "<rect") != nullptr)
             rasterize_rect_fallback_premul(document, scale, tx, ty, out_argb_premul, buf_w, buf_h, stride);
     }

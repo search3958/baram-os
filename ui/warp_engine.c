@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+#define WARP_MAX_DRAW_OPS 2048
+
 static int warp_strlen(const char *s) {
   int n = 0;
   if (!s)
@@ -320,6 +322,8 @@ struct warp_context {
   int texts_count;
 
   char svg_output[65536];
+  warp_draw_op_t draw_ops[WARP_MAX_DRAW_OPS];
+  int draw_ops_count;
   int engine_dirty;
   char engine_status[128];
   char node_svg_buf[4096];
@@ -1436,6 +1440,150 @@ static void emit_svg_recursive(warp_context_t *ctx, warp_node_t *node, char *des
   }
 }
 
+static unsigned char hex_nibble(const char c) {
+  if (c >= '0' && c <= '9') return (unsigned char)(c - '0');
+  if (c >= 'a' && c <= 'f') return (unsigned char)(c - 'a' + 10);
+  if (c >= 'A' && c <= 'F') return (unsigned char)(c - 'A' + 10);
+  return 0;
+}
+
+static void parse_hex_rgba(const char *hex, float opacity,
+                           unsigned char *r, unsigned char *g, unsigned char *b, unsigned char *a) {
+  if (opacity < 0.0f) opacity = 0.0f;
+  if (opacity > 1.0f) opacity = 1.0f;
+  *r = *g = *b = 0;
+  *a = (unsigned char)(opacity * 255.0f + 0.5f);
+  if (!hex || hex[0] != '#') return;
+  if (hex[1] && hex[2] && hex[3] && !hex[4]) {
+    *r = (unsigned char)((hex_nibble(hex[1]) << 4) | hex_nibble(hex[1]));
+    *g = (unsigned char)((hex_nibble(hex[2]) << 4) | hex_nibble(hex[2]));
+    *b = (unsigned char)((hex_nibble(hex[3]) << 4) | hex_nibble(hex[3]));
+    return;
+  }
+  if (hex[1] && hex[2] && hex[3] && hex[4] && hex[5] && hex[6]) {
+    *r = (unsigned char)((hex_nibble(hex[1]) << 4) | hex_nibble(hex[2]));
+    *g = (unsigned char)((hex_nibble(hex[3]) << 4) | hex_nibble(hex[4]));
+    *b = (unsigned char)((hex_nibble(hex[5]) << 4) | hex_nibble(hex[6]));
+  }
+}
+
+static void append_squircle_op(warp_context_t *ctx, int x, int y, int w, int h,
+                               float radius, const char *fill, float opacity,
+                               const char *stroke, float stroke_width) {
+  if (!ctx || ctx->draw_ops_count >= WARP_MAX_DRAW_OPS || w <= 0 || h <= 0) return;
+  warp_draw_op_t *op = &ctx->draw_ops[ctx->draw_ops_count++];
+  *op = (warp_draw_op_t){0};
+  op->type = WARP_DRAW_SQUIRCLE;
+  op->x = (float)x; op->y = (float)y; op->w = (float)w; op->h = (float)h;
+  op->radius = radius;
+  if (fill && fill[0] == '#') {
+    op->has_fill = 1;
+    parse_hex_rgba(fill, opacity, &op->fr, &op->fg, &op->fb, &op->fa);
+  }
+  if (stroke && stroke[0] == '#' && stroke_width > 0.0f) {
+    op->has_stroke = 1;
+    op->stroke_width = stroke_width;
+    parse_hex_rgba(stroke, opacity, &op->sr, &op->sg, &op->sb, &op->sa);
+  }
+}
+
+static void append_line_op(warp_context_t *ctx, int x1, int y1, int x2, int y2,
+                           const char *stroke, float stroke_width, float opacity) {
+  if (!ctx || ctx->draw_ops_count >= WARP_MAX_DRAW_OPS || !stroke || stroke[0] != '#') return;
+  warp_draw_op_t *op = &ctx->draw_ops[ctx->draw_ops_count++];
+  *op = (warp_draw_op_t){0};
+  op->type = WARP_DRAW_LINE;
+  op->x = (float)x1; op->y = (float)y1; op->x2 = (float)x2; op->y2 = (float)y2;
+  op->stroke_width = stroke_width;
+  op->has_stroke = 1;
+  parse_hex_rgba(stroke, opacity, &op->sr, &op->sg, &op->sb, &op->sa);
+}
+
+static void emit_draw_recursive(warp_context_t *ctx, warp_node_t *node) {
+  if (!node) return;
+  const char *id = get_attr(node, "id");
+  if (!get_visibility(ctx, id)) return;
+
+  const char *dark_val = get_state(ctx, "~~main/dark");
+  int is_dark = (warp_strcmp(dark_val, "true") == 0);
+
+  if (warp_strcmp(node->tag, "Header") == 0) {
+    return;
+  } else if (warp_strcmp(node->tag, "card") == 0) {
+    const char *c_prop = get_attr(node, "color");
+    const char *hex = get_color_hex(c_prop);
+    const char *fill = hex ? hex : (is_dark ? "#1e1e1e" : "#ffffff");
+    append_squircle_op(ctx, node->x, node->y, node->w, node->h, 12.0f, fill, 1.0f,
+                       is_dark ? "#333333" : "#dddddd", 1.0f);
+  } else if (warp_strcmp(node->tag, "button") == 0 || warp_strcmp(node->tag, "tonalButton") == 0) {
+    const char *c_prop = get_attr(node, "color");
+    const char *hex = get_color_hex(c_prop);
+    const char *fill = hex ? hex : "#0a56d0";
+    if (warp_strcmp(node->tag, "tonalButton") == 0)
+      append_squircle_op(ctx, node->x, node->y, node->w, node->h, -1.0f, is_dark ? "#ffffff" : "#000000", 0.1f, NULL, 0.0f);
+    else
+      append_squircle_op(ctx, node->x, node->y, node->w, node->h, -1.0f, fill, 1.0f, NULL, 0.0f);
+  } else if (warp_strcmp(node->tag, "switch") == 0) {
+    char out_var[128];
+    get_switch_state_key(node, out_var, sizeof(out_var));
+    const char *val = get_state(ctx, out_var);
+    int on = (warp_strstr(val, "true") != NULL);
+    int disabled = (warp_strstr(val, "Disabled") != NULL);
+    const char *bg_color = on ? "#0A60FF" : "#dddddd";
+    if (disabled) bg_color = on ? "#80A0FF" : "#eeeeee";
+    int size = 44;
+    int x = node->x + (node->w - size) / 2;
+    int y = node->y + (node->h - size) / 2;
+    append_squircle_op(ctx, x, y, size, size, 1050.0f, bg_color, disabled ? 0.5f : 1.0f, NULL, 0.0f);
+    if (on) {
+      append_line_op(ctx, x + 12, y + 22, x + 20, y + 30, "#ffffff", 4.0f, 1.0f);
+      append_line_op(ctx, x + 20, y + 30, x + 34, y + 14, "#ffffff", 4.0f, 1.0f);
+    }
+  } else if (warp_strcmp(node->tag, "slider") == 0) {
+    char key[128];
+    get_slider_state_key(node, key, sizeof(key));
+    const char *val = get_state(ctx, key);
+    int v = (int)warp_strtol(val);
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    append_squircle_op(ctx, node->x, node->y + 14, node->w, 4, 2.0f, "#dddddd", 1.0f, NULL, 0.0f);
+    int knob_x = node->x + (node->w * v / 100) - 10;
+    if (knob_x < node->x - 10) knob_x = node->x - 10;
+    if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
+    append_squircle_op(ctx, knob_x, node->y + 6, 20, 20, 10.0f, "#0A60FF", 1.0f, NULL, 0.0f);
+  } else if (warp_strcmp(node->tag, "input") == 0) {
+    append_squircle_op(ctx, node->x, node->y, node->w, node->h, 8.0f,
+                       is_dark ? "#333333" : "#ffffff", 1.0f,
+                       is_dark ? "#555555" : "#dddddd", 1.0f);
+  }
+
+  for (int i = 0; i < node->children_count; i++) {
+    if (warp_strcmp(node->children[i]->tag, "Header") != 0)
+      emit_draw_recursive(ctx, node->children[i]);
+  }
+
+  if (id[0] != '\0') {
+    for (int i = 0; i < ctx->dynamic_nodes_count; i++) {
+      if (warp_strcmp(ctx->dynamic_nodes[i].target_id, id) == 0) {
+        for (int j = 0; j < ctx->dynamic_nodes[i].node_count; j++) {
+          if (warp_strcmp(ctx->dynamic_nodes[i].nodes[j]->tag, "Header") != 0)
+            emit_draw_recursive(ctx, ctx->dynamic_nodes[i].nodes[j]);
+        }
+      }
+    }
+  }
+
+  if (warp_strcmp(get_state(ctx, "devEventCheck"), "true") == 0) {
+    int has_hitbox = (node->event_oneclick[0] != '\0' ||
+                      node->event_longpress[0] != '\0' ||
+                      warp_strcmp(node->tag, "button") == 0 ||
+                      warp_strcmp(node->tag, "tonalButton") == 0 ||
+                      warp_strcmp(node->tag, "switch") == 0);
+    if (has_hitbox && node->w > 0 && node->h > 0)
+      append_squircle_op(ctx, node->x, node->y, node->w, node->h, 0.0f, "#ff0000", 0.4f, "#ff0000", 2.0f);
+  }
+}
+
 static void emit_svg(warp_context_t *ctx, warp_node_t *node) {
   emit_svg_recursive(ctx, node, ctx->svg_output, sizeof(ctx->svg_output));
 
@@ -2006,6 +2154,7 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
   parse_current_screen_classic(ctx);
   ctx->texts_count = 0;
   ctx->svg_output[0] = '\0';
+  ctx->draw_ops_count = 0;
   ctx->engine_dirty = 0;
   ctx->win_w = width;
   ctx->win_h = height;
@@ -2019,15 +2168,6 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
       total_h = h;
   }
 
-  char w_str[16], h_str[16];
-  append_int(w_str, width);
-  append_int(h_str, total_h);
-  warp_strcat(ctx->svg_output, "<svg width=\"");
-  warp_strcat(ctx->svg_output, w_str);
-  warp_strcat(ctx->svg_output, "\" height=\"");
-  warp_strcat(ctx->svg_output, h_str);
-  warp_strcat(ctx->svg_output, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-
   for (int i = 0; i < ctx->root_nodes_count; i++) {
     warp_node_t *node = ctx->root_nodes[i];
     if (warp_strcmp(node->tag, "screen") == 0) {
@@ -2035,9 +2175,10 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
       if (warp_strcmp(id, ctx->current_screen) != 0)
         continue;
     }
-    emit_svg(ctx, node);
+    emit_draw_recursive(ctx, node);
   }
-  warp_strcat(ctx->svg_output, "</svg>");
+  if (warp_strcasecmp(get_state(ctx, "dev pointcheck"), "true") == 0)
+    append_squircle_op(ctx, ctx->mouse_x - 1, ctx->mouse_y - 1, 3, 3, 0.0f, "#00FF00", 1.0f, NULL, 0.0f);
 
   // Register/update current screen in screen list (height and scroll only, no SVG string)
   int screen_idx = -1;
@@ -2061,6 +2202,15 @@ void warp_context_update(warp_context_t* ctx, int width, int height) {
 
 const char* warp_context_get_svg(warp_context_t* ctx) {
   return ctx->svg_output;
+}
+
+const warp_draw_op_t* warp_context_get_draw_ops(warp_context_t* ctx, int* out_count) {
+  if (!ctx) {
+    if (out_count) *out_count = 0;
+    return NULL;
+  }
+  if (out_count) *out_count = ctx->draw_ops_count;
+  return ctx->draw_ops;
 }
 
 extern void layer_draw_ttf(layer_t *layer, int x, int y, const char *str,
@@ -2153,28 +2303,9 @@ const char* warp_context_get_node_prev_svg(warp_context_t* ctx, int index) {
 }
 
 const char* warp_context_get_node_svg(warp_context_t* ctx, int index) {
-  if (index < 0 || index >= ctx->nodes_count) return "";
-  warp_node_t *node = &ctx->nodes[index];
-  
-  char w_str[16], h_str[16];
-  append_int(w_str, node->w);
-  append_int(h_str, node->h);
-  
-  warp_strcpy(ctx->node_svg_buf, "<svg width=\"");
-  warp_strcat(ctx->node_svg_buf, w_str);
-  warp_strcat(ctx->node_svg_buf, "\" height=\"");
-  warp_strcat(ctx->node_svg_buf, h_str);
-  warp_strcat(ctx->node_svg_buf, "\" viewBox=\"");
-  append_int(w_str, node->x); warp_strcat(ctx->node_svg_buf, w_str); warp_strcat(ctx->node_svg_buf, " ");
-  append_int(h_str, node->y); warp_strcat(ctx->node_svg_buf, h_str); warp_strcat(ctx->node_svg_buf, " ");
-  append_int(w_str, node->w); warp_strcat(ctx->node_svg_buf, w_str); warp_strcat(ctx->node_svg_buf, " ");
-  append_int(h_str, node->h); warp_strcat(ctx->node_svg_buf, h_str);
-  warp_strcat(ctx->node_svg_buf, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-  
-  emit_svg_recursive(ctx, node, ctx->node_svg_buf, sizeof(ctx->node_svg_buf));
-  
-  warp_strcat(ctx->node_svg_buf, "</svg>");
-  return ctx->node_svg_buf;
+  (void)ctx;
+  (void)index;
+  return "";
 }
 
 const char* warp_context_get_status(warp_context_t* ctx) {

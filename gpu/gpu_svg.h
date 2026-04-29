@@ -25,6 +25,7 @@ extern "C" {
 int gpu_svg_init(gpu_svg_renderer_t *renderer, int width, int height);
 
 gpu_svg_document_t *gpu_svg_parse(const char *svg_data);
+gpu_svg_document_t *gpu_svg_parse_data(const char *svg_data, size_t svg_len);
 void gpu_svg_delete(gpu_svg_document_t *document);
 float gpu_svg_width(const gpu_svg_document_t *document);
 float gpu_svg_height(const gpu_svg_document_t *document);

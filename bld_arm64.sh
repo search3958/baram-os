@@ -120,7 +120,7 @@ link_kernel() {
     "$OBJCOPY" -I binary -O elf64-littleaarch64 -B aarch64 output/initrd.tar output/initrd.o
 
     $CC -T link_arm64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS \
         -ffreestanding -O2 -nostdlib -static-libgcc -lgcc
 }
 
@@ -174,6 +174,8 @@ do_build_and_run() {
     show_progress 70
     compile_c ui/warp1_engine.c output/warp1_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 72
+    compile_c ui/warp_draw.c output/warp_draw.o "$COMMON_CFLAGS" || return 1
+    show_progress 73
     compile_c gpu/gpu_driver.c output/gpu_driver.o "$COMMON_CFLAGS" || return 1
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
@@ -276,6 +278,8 @@ do_build_only() {
     show_progress 70
     compile_c ui/warp1_engine.c output/warp1_engine.o "$COMMON_CFLAGS" || return 1
     show_progress 72
+    compile_c ui/warp_draw.c output/warp_draw.o "$COMMON_CFLAGS" || return 1
+    show_progress 73
     compile_c gpu/gpu_driver.c output/gpu_driver.o "$COMMON_CFLAGS" || return 1
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1

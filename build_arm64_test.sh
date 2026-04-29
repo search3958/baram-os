@@ -32,6 +32,7 @@ $CC $COMMON_CFLAGS -c storage.c -o output/storage.o
 $CC $COMMON_CFLAGS -c fs.c -o output/fs.o
 $CC $COMMON_CFLAGS -c ui/warp_engine.c -o output/warp_engine.o
 $CC $COMMON_CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o
+$CC $COMMON_CFLAGS -c ui/warp_draw.c -o output/warp_draw.o
 $CC $COMMON_CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o
 $CC $COMMON_CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
@@ -66,7 +67,7 @@ $AS -c output/initrd.s -o output/initrd.o
 
 echo "Linking..."
 $LD -T link_arm64.ld -o output/kernel.bin \
-    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS
+    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS
 
 echo "ARM64 Build Success: output/kernel.bin created."
 ls -l output/kernel.bin

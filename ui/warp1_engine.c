@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+#define WARP1_MAX_DRAW_OPS 2048
+
 // --- 1. Internal Utilities ---
 static int w1_strlen(const char *s) { int n=0; if(!s) return 0; while(s[n]) n++; return n; }
 static char *w1_strcpy(char *d, const char *s) { char *p=d; while((*p++=*s++)) { } return d; }
@@ -69,6 +71,8 @@ struct warp1_context {
     const char *src_ptr; token1_t tokens[MAX_TOKENS]; int token_count; int token_pos;
     struct { int x, y; char text[512]; uint32_t color; float size; } texts[MAX_TEXTS]; int texts_count;
     char svg_output[65536]; int engine_dirty; char engine_status[128];
+    warp_draw_op_t draw_ops[WARP1_MAX_DRAW_OPS];
+    int draw_ops_count;
     int mouse_x, mouse_y; int win_w, win_h; int last_total_h;
 
     int focused_node_idx; // -1: none
@@ -1109,6 +1113,117 @@ static void b_int(w1_builder_t *b, int v) {
     b_str(b, tmp);
 }
 
+static unsigned char hex_nibble1(char c) {
+    if (c >= '0' && c <= '9') return (unsigned char)(c - '0');
+    if (c >= 'a' && c <= 'f') return (unsigned char)(c - 'a' + 10);
+    if (c >= 'A' && c <= 'F') return (unsigned char)(c - 'A' + 10);
+    return 0;
+}
+
+static void parse_hex_rgba1(const char *hex, float opacity,
+                            unsigned char *r, unsigned char *g, unsigned char *b, unsigned char *a) {
+    if (opacity < 0.0f) opacity = 0.0f;
+    if (opacity > 1.0f) opacity = 1.0f;
+    *r = *g = *b = 0;
+    *a = (unsigned char)(opacity * 255.0f + 0.5f);
+    if (!hex || hex[0] != '#') return;
+    if (hex[1] && hex[2] && hex[3] && !hex[4]) {
+        *r = (unsigned char)((hex_nibble1(hex[1]) << 4) | hex_nibble1(hex[1]));
+        *g = (unsigned char)((hex_nibble1(hex[2]) << 4) | hex_nibble1(hex[2]));
+        *b = (unsigned char)((hex_nibble1(hex[3]) << 4) | hex_nibble1(hex[3]));
+        return;
+    }
+    if (hex[1] && hex[2] && hex[3] && hex[4] && hex[5] && hex[6]) {
+        *r = (unsigned char)((hex_nibble1(hex[1]) << 4) | hex_nibble1(hex[2]));
+        *g = (unsigned char)((hex_nibble1(hex[3]) << 4) | hex_nibble1(hex[4]));
+        *b = (unsigned char)((hex_nibble1(hex[5]) << 4) | hex_nibble1(hex[6]));
+    }
+}
+
+static void append_squircle_op1(warp1_context_t *ctx, int x, int y, int w, int h,
+                                float radius, const char *fill, float opacity,
+                                const char *stroke, float stroke_width) {
+    if (!ctx || ctx->draw_ops_count >= WARP1_MAX_DRAW_OPS || w <= 0 || h <= 0) return;
+    warp_draw_op_t *op = &ctx->draw_ops[ctx->draw_ops_count++];
+    *op = (warp_draw_op_t){0};
+    op->type = WARP_DRAW_SQUIRCLE;
+    op->x = (float)x; op->y = (float)y; op->w = (float)w; op->h = (float)h;
+    op->radius = radius;
+    if (fill && fill[0] == '#') {
+        op->has_fill = 1;
+        parse_hex_rgba1(fill, opacity, &op->fr, &op->fg, &op->fb, &op->fa);
+    }
+    if (stroke && stroke[0] == '#' && stroke_width > 0.0f) {
+        op->has_stroke = 1;
+        op->stroke_width = stroke_width;
+        parse_hex_rgba1(stroke, opacity, &op->sr, &op->sg, &op->sb, &op->sa);
+    }
+}
+
+static void append_line_op1(warp1_context_t *ctx, int x1, int y1, int x2, int y2,
+                            const char *stroke, float stroke_width, float opacity) {
+    if (!ctx || ctx->draw_ops_count >= WARP1_MAX_DRAW_OPS || !stroke || stroke[0] != '#') return;
+    warp_draw_op_t *op = &ctx->draw_ops[ctx->draw_ops_count++];
+    *op = (warp_draw_op_t){0};
+    op->type = WARP_DRAW_LINE;
+    op->x = (float)x1; op->y = (float)y1; op->x2 = (float)x2; op->y2 = (float)y2;
+    op->stroke_width = stroke_width;
+    op->has_stroke = 1;
+    parse_hex_rgba1(stroke, opacity, &op->sr, &op->sg, &op->sb, &op->sa);
+}
+
+static void emit_draw_recursive_fast(warp1_context_t *ctx, warp1_node_t *node) {
+    if (!node) return;
+    const char *dark_val = get_state(ctx, "~~main/dark");
+    int is_dark = (w1_strcmp(dark_val, "true") == 0);
+
+    if (w1_strcmp(node->tag, "card") == 0) {
+        append_squircle_op1(ctx, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", 1.0f, NULL, 0.0f);
+    } else if (w1_strcmp(node->tag, "button") == 0) {
+        append_squircle_op1(ctx, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", 1.0f, NULL, 0.0f);
+    } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
+        append_squircle_op1(ctx, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", 0.1f, NULL, 0.0f);
+    } else if (w1_strcmp(node->tag, "switch") == 0) {
+        char out_var[128];
+        get_switch_state_key1(node, out_var, sizeof(out_var));
+        const char *val = get_state(ctx, out_var);
+        int on = (w1_strstr(val, "true") != NULL);
+        int disabled = (w1_strstr(val, "Disabled") != NULL);
+        const char *bg_color = on ? "#0A60FF" : "#dddddd";
+        if (disabled) bg_color = on ? "#80A0FF" : "#eeeeee";
+        int size = 44;
+        int x = node->x + (node->w - size) / 2;
+        int y = node->y + (node->h - size) / 2;
+        float sw_radius = (node->radius < 0.0f) ? 1050.0f : node->radius;
+        append_squircle_op1(ctx, x, y, size, size, sw_radius, bg_color, disabled ? 0.5f : 1.0f, NULL, 0.0f);
+        if (on) {
+            append_line_op1(ctx, x + 12, y + 22, x + 20, y + 30, "#ffffff", 4.0f, 1.0f);
+            append_line_op1(ctx, x + 20, y + 30, x + 34, y + 14, "#ffffff", 4.0f, 1.0f);
+        }
+    } else if (w1_strcmp(node->tag, "slider") == 0) {
+        char key[128];
+        get_slider_state_key1(node, key, sizeof(key));
+        const char *val = get_state(ctx, key);
+        int v = (int)w1_strtol(val);
+        if (v < 0) v = 0;
+        if (v > 100) v = 100;
+        float track_radius = (node->radius < 0.0f) ? 2.0f : node->radius;
+        append_squircle_op1(ctx, node->x, node->y + 14, node->w, 4, track_radius, "#dddddd", 1.0f, NULL, 0.0f);
+        int knob_x = node->x + (node->w * v / 100) - 10;
+        if (knob_x < node->x - 10) knob_x = node->x - 10;
+        if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
+        float knob_radius = (node->radius < 0.0f) ? 10.0f : node->radius;
+        append_squircle_op1(ctx, knob_x, node->y + 6, 20, 20, knob_radius, "#0A60FF", 1.0f, NULL, 0.0f);
+    } else if (w1_strcmp(node->tag, "input") == 0) {
+        int is_focused = is_node_focused1(ctx, node);
+        const char *stroke = is_focused ? "#0A60FF" : (is_dark ? "#555555" : "#dddddd");
+        float stroke_w = is_focused ? 2.0f : 1.0f;
+        append_squircle_op1(ctx, node->x, node->y, node->w, node->h, (node->radius < 0) ? 8.0f : node->radius,
+                            is_dark ? "#333333" : "#ffffff", 1.0f, stroke, stroke_w);
+    }
+    for (int i = 0; i < node->children_count; i++) emit_draw_recursive_fast(ctx, node->children[i]);
+}
+
 static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1_builder_t *b) {
     if (!node) return;
     const char *dark_val = get_state(ctx, "~~main/dark");
@@ -1230,18 +1345,24 @@ void warp1_context_update(warp1_context_t* ctx, int width, int height) {
         }
     }
 
-    // 2. Efficiently build SVG using builder pointer
-    if (ctx->engine_dirty) {
-        w1_builder_t b = { ctx->svg_output, 0, sizeof(ctx->svg_output) };
-        b_str(&b, "<svg width=\""); b_int(&b, width); b_str(&b, "\" height=\""); b_int(&b, ctx->last_total_h);
-        b_str(&b, "\" xmlns=\"http://www.w3.org/2000/svg\">\n");
-        for (int i = 0; i < ctx->root_nodes_count; i++) emit_svg_recursive_fast(ctx, ctx->root_nodes[i], &b);
-        b_str(&b, "</svg>");
+    // 2. Build native draw ops. SVG is kept only as an empty compatibility string.
+    if (ctx->engine_dirty || ctx->draw_ops_count == 0) {
+        ctx->draw_ops_count = 0;
+        ctx->svg_output[0] = '\0';
+        for (int i = 0; i < ctx->root_nodes_count; i++) emit_draw_recursive_fast(ctx, ctx->root_nodes[i]);
         // engine_dirty will be cleared by the kernel after rendering
     }
 }
 
 const char* warp1_context_get_svg(warp1_context_t* ctx) { return ctx->svg_output; }
+const warp_draw_op_t* warp1_context_get_draw_ops(warp1_context_t* ctx, int* out_count) {
+    if (!ctx) {
+        if (out_count) *out_count = 0;
+        return NULL;
+    }
+    if (out_count) *out_count = ctx->draw_ops_count;
+    return ctx->draw_ops;
+}
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int ox, int oy, float scale) {
     extern void layer_draw_ttf(layer_t *l, int x, int y, const char *s, float sz, uint32_t c);
     

@@ -2,6 +2,7 @@
 #define WARP_ENGINE_H
 
 #include "drivers.h"
+#include "warp_draw.h"
 #include <stdint.h>
 
 #define MAX_VARS 128
@@ -19,6 +20,7 @@ warp_context_t* warp_context_create(const char* code);
 void warp_context_destroy(warp_context_t* ctx);
 void warp_context_update(warp_context_t* ctx, int width, int height);
 const char* warp_context_get_svg(warp_context_t* ctx);
+const warp_draw_op_t* warp_context_get_draw_ops(warp_context_t* ctx, int* out_count);
 void warp_context_draw_texts(warp_context_t* ctx, layer_t* layer, int off_x, int off_y, float scale);
 void warp_context_click(warp_context_t* ctx, int x, int y);
 int warp_context_is_dirty(warp_context_t* ctx);

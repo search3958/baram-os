@@ -2,6 +2,7 @@
 #define WARP1_ENGINE_H
 
 #include "drivers.h"
+#include "warp_draw.h"
 #include <stdint.h>
 
 #define MAX_VARS 128
@@ -21,6 +22,7 @@ void set_w1_global(const char *key, const char *val);
 const char *get_w1_global(const char *key);
 void warp1_context_update(warp1_context_t* ctx, int width, int height);
 const char* warp1_context_get_svg(warp1_context_t* ctx);
+const warp_draw_op_t* warp1_context_get_draw_ops(warp1_context_t* ctx, int* out_count);
 void warp1_context_draw_texts(warp1_context_t* ctx, layer_t* layer, int off_x, int off_y, float scale);
 void warp1_context_click(warp1_context_t* ctx, int x, int y);
 void warp1_context_key_input(warp1_context_t* ctx, char c);
