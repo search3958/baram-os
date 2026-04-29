@@ -764,10 +764,6 @@ static void emit_squircle_shape1(char *dest, int size, int x, int y, int w, int 
     emit_squircle_shape_to(dest + w1_strlen(dest), x, y, w, h, radius, fill, extra);
 }
 
-static void emit_rounded_rect1(char *dest, int size, int x, int y, int w, int h, float radius, const char *fill, const char *extra) {
-    emit_rounded_rect_to(dest + w1_strlen(dest), x, y, w, h, radius, fill, extra);
-}
-
 static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *dest, int dest_size) {
     if (!node) return;
     
@@ -778,12 +774,12 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         // Let the window backdrop show through instead of painting a full-screen base.
 
     } else if (w1_strcmp(node->tag, "card") == 0) {
-        emit_rounded_rect1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "");
     } else if (w1_strcmp(node->tag, "button") == 0) {
-        emit_rounded_rect1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", "");
 
     } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
-        emit_rounded_rect1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
         
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         // スイッチの描画
@@ -802,7 +798,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         int y = node->y + (node->h - size) / 2;
         // switch は radius 属性を使う（デフォルトは 50% で円形に）
         float sw_radius = (node->radius < 0.0f) ? 1050.0f : node->radius; // デフォルト 50%
-        emit_rounded_rect1(dest, dest_size, x, y, size, size, sw_radius, bg_color, disabled ? "opacity=\"0.5\"" : "");
+        emit_squircle_shape1(dest, dest_size, x, y, size, size, sw_radius, bg_color, disabled ? "opacity=\"0.5\"" : "");
 
         // チェックマーク（true の場合のみ）
         if (on) {
@@ -827,14 +823,14 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
 
         // トラック（背景の線）- 細い角丸矩形
         float track_radius = (node->radius < 0.0f) ? 2.0f : node->radius;
-        emit_rounded_rect1(dest, dest_size, node->x, node->y + 14, node->w, 4, track_radius, "#dddddd", "");
+        emit_squircle_shape1(dest, dest_size, node->x, node->y + 14, node->w, 4, track_radius, "#dddddd", "");
 
         // ノブ（操作する丸）- 完全な円形
         int knob_x = node->x + (node->w * v / 100) - 10;
         if (knob_x < node->x - 10) knob_x = node->x - 10;
         if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
         float knob_radius = (node->radius < 0.0f) ? 10.0f : node->radius;
-        emit_rounded_rect1(dest, dest_size, knob_x, node->y + 6, 20, 20, knob_radius, "#0A60FF", "");
+        emit_squircle_shape1(dest, dest_size, knob_x, node->y + 6, 20, 20, knob_radius, "#0A60FF", "");
 
     } else if (w1_strcmp(node->tag, "input") == 0) {
         // 入力フォームの描画 - 角丸矩形
@@ -855,7 +851,7 @@ static void emit_svg_recursive1(warp1_context_t *ctx, warp1_node_t *node, char *
         w1_strcat(extra, "\" stroke-width=\""); w1_strcat(extra, stroke_w); w1_strcat(extra, "\"");
 
         float input_radius = (node->radius < 0.0f) ? 8.0f : node->radius;
-        emit_rounded_rect1(dest, dest_size, node->x, node->y, node->w, node->h, input_radius, is_dark ? "#333333" : "#ffffff", extra);
+        emit_squircle_shape1(dest, dest_size, node->x, node->y, node->w, node->h, input_radius, is_dark ? "#333333" : "#ffffff", extra);
     }
     
     // 子要素の描画
@@ -1003,13 +999,13 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
     int is_dark = (w1_strcmp(dark_val, "true") == 0);
 
     if (w1_strcmp(node->tag, "card") == 0) {
-        char *p = emit_rounded_rect_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "");
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#1e1e1e" : "#ffffff", "");
         b->pos = (int)(p - b->buf);
     } else if (w1_strcmp(node->tag, "button") == 0) {
-        char *p = emit_rounded_rect_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", "");
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, "#0A60FF", "");
         b->pos = (int)(p - b->buf);
     } else if (w1_strcmp(node->tag, "tonalButton") == 0) {
-        char *p = emit_rounded_rect_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, node->radius, is_dark ? "#ffffff" : "#000000", "opacity=\"0.1\"");
         b->pos = (int)(p - b->buf);
     } else if (w1_strcmp(node->tag, "switch") == 0) {
         char out_var[128];
@@ -1027,7 +1023,7 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
         int y = node->y + (node->h - size) / 2;
         float sw_radius = (node->radius < 0.0f) ? 1050.0f : node->radius;
 
-        char *p = emit_rounded_rect_to(b->buf + b->pos, x, y, size, size, sw_radius, bg_color, disabled ? "opacity=\"0.5\"" : "");
+        char *p = emit_squircle_shape_to(b->buf + b->pos, x, y, size, size, sw_radius, bg_color, disabled ? "opacity=\"0.5\"" : "");
         b->pos = (int)(p - b->buf);
 
         if (on) {
@@ -1047,14 +1043,14 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
         if (v > 100) v = 100;
 
         float track_radius = (node->radius < 0.0f) ? 2.0f : node->radius;
-        char *p = emit_rounded_rect_to(b->buf + b->pos, node->x, node->y + 14, node->w, 4, track_radius, "#dddddd", "");
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y + 14, node->w, 4, track_radius, "#dddddd", "");
         b->pos = (int)(p - b->buf);
 
         int knob_x = node->x + (node->w * v / 100) - 10;
         if (knob_x < node->x - 10) knob_x = node->x - 10;
         if (knob_x > node->x + node->w - 10) knob_x = node->x + node->w - 10;
         float knob_radius = (node->radius < 0.0f) ? 10.0f : node->radius;
-        p = emit_rounded_rect_to(b->buf + b->pos, knob_x, node->y + 6, 20, 20, knob_radius, "#0A60FF", "");
+        p = emit_squircle_shape_to(b->buf + b->pos, knob_x, node->y + 6, 20, 20, knob_radius, "#0A60FF", "");
         b->pos = (int)(p - b->buf);
     } else if (w1_strcmp(node->tag, "input") == 0) {
         char extra[128];
@@ -1063,7 +1059,7 @@ static void emit_svg_recursive_fast(warp1_context_t *ctx, warp1_node_t *node, w1
         w1_strcpy(extra, "stroke=\"");
         w1_strcat(extra, is_focused ? "#0A60FF" : (is_dark ? "#555555" : "#dddddd"));
         w1_strcat(extra, "\" stroke-width=\""); w1_strcat(extra, is_focused ? "2" : "1"); w1_strcat(extra, "\"");
-        char *p = emit_rounded_rect_to(b->buf + b->pos, node->x, node->y, node->w, node->h, (node->radius < 0) ? 8.0f : node->radius, is_dark ? "#333333" : "#ffffff", extra);
+        char *p = emit_squircle_shape_to(b->buf + b->pos, node->x, node->y, node->w, node->h, (node->radius < 0) ? 8.0f : node->radius, is_dark ? "#333333" : "#ffffff", extra);
         b->pos = (int)(p - b->buf);
     }
     for (int i = 0; i < node->children_count; i++) emit_svg_recursive_fast(ctx, node->children[i], b);

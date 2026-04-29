@@ -2922,9 +2922,9 @@ static void window_redraw(window_t *win) {
     for (int i = 0; i < scaled_w * scaled_h; i++) win->raster_cache[i] = 0x00000000;
 
     strncpy(g_hud_status, "SVGRaster", 63);
-    gpu_svg_rasterize(win->svg_image_cache, target_scale, 0.0f, 0.0f,
-                      (unsigned char*)win->raster_cache, scaled_w, scaled_h,
-                      scaled_w * 4);
+    gpu_svg_rasterize_premul(win->svg_image_cache, target_scale, 0.0f, 0.0f,
+                             (unsigned char*)win->raster_cache, scaled_w, scaled_h,
+                             scaled_w * 4);
 
     int alpha_pixels = 0;
     unsigned char *scan = (unsigned char*)win->raster_cache;
@@ -2936,26 +2936,7 @@ static void window_redraw(window_t *win) {
       strncpy(g_hud_status, "RasterEmpty", 63);
     }
 
-    strncpy(g_hud_status, "RBSwap+PreMul", 63);
-    unsigned char *p = (unsigned char*)win->raster_cache;
-    for (int i = 0; i < scaled_w * scaled_h; i++) {
-      uint8_t a = p[3];
-      if (a == 255) {
-        // 不透明：RGB入れ替えのみ
-        uint8_t r = p[0], b = p[2];
-        p[0] = b; p[2] = r;
-      } else if (a == 0) {
-        // 完全透明：クリア
-        p[0] = 0; p[1] = 0; p[2] = 0;
-      } else {
-        // 乗算済みアルファ：(color * alpha) >> 8
-        uint8_t r = p[0], g = p[1], b = p[2];
-        p[0] = (uint8_t)((uint32_t)b * a >> 8);
-        p[1] = (uint8_t)((uint32_t)g * a >> 8);
-        p[2] = (uint8_t)((uint32_t)r * a >> 8);
-      }
-      p += 4;
-    }
+    strncpy(g_hud_status, "PremulReady", 63);
   }
 
   // Prepare RGBA buffer (Flatten content: SVG + Text)

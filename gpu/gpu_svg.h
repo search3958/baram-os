@@ -34,6 +34,11 @@ int gpu_svg_rasterize(const gpu_svg_document_t *document,
                       unsigned char *out_rgba,
                       int buf_w, int buf_h, int stride);
 
+int gpu_svg_rasterize_premul(const gpu_svg_document_t *document,
+                             float scale, float tx, float ty,
+                             unsigned char *out_argb_premul,
+                             int buf_w, int buf_h, int stride);
+
 int gpu_svg_render(gpu_svg_renderer_t *renderer, const gpu_svg_document_t *document,
                    float scale, float tx, float ty,
                    uint32_t *out_buffer, int buf_w, int buf_h);

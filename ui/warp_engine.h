@@ -56,8 +56,6 @@ char *warp_strcat(char *dest, const char *src);
 char *warp_strncat(char *dest, const char *src, size_t n);
 char *append_fixed3(char *p, float v);
 char *append_int(char *p, int v);
-char* emit_rounded_rect_to(char *p, int x, int y, int w, int h, float radius,
-                           const char *fill, const char *extra);
 char* emit_squircle_shape_to(char *p, int x, int y, int w, int h, float radius,
                              const char *fill, const char *extra);
 int measure_ttf_width(const char *str, float font_size);
