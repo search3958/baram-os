@@ -30,9 +30,15 @@ static const char* find_attr_value(const char* tag, const char* attr)
     if(tag == nullptr || attr == nullptr)
         return nullptr;
 
+    const char* tag_end = std::strchr(tag, '>');
+    if(tag_end == nullptr)
+        tag_end = tag + std::strlen(tag);
+
     size_t attr_len = std::strlen(attr);
     const char* p = tag;
     while((p = std::strstr(p, attr)) != nullptr) {
+        if(p >= tag_end)
+            break;
         if(p != tag) {
             char prev = p[-1];
             if(std::isalnum(static_cast<unsigned char>(prev)) || prev == '_' || prev == '-') {
@@ -41,12 +47,12 @@ static const char* find_attr_value(const char* tag, const char* attr)
             }
         }
         const char* q = skip_spaces(p + attr_len);
-        if(q == nullptr || *q != '=') {
+        if(q == nullptr || q >= tag_end || *q != '=') {
             p += attr_len;
             continue;
         }
         q = skip_spaces(q + 1);
-        if(q == nullptr || (*q != '"' && *q != '\''))
+        if(q == nullptr || q >= tag_end || (*q != '"' && *q != '\''))
             return nullptr;
         return q + 1;
     }
@@ -732,7 +738,7 @@ static void rasterize_squircle_markers_rgba(const gpu_svg_document_t* document,
                     continue;
                 unsigned char inner_cov = inner.empty() ? 0 : squircle_coverage(xx, yy, inner);
                 if(has_fill) {
-                    unsigned char fill_cov = inner.empty() ? outer_cov : inner_cov;
+                    unsigned char fill_cov = outer_cov;
                     if(fill_cov) {
                         unsigned char final_a = static_cast<unsigned char>((static_cast<unsigned>(fa) * fill_cov + 127u) / 255u);
                         blend_pixel(row + xx * 4, fr, fg, fb, final_a);
@@ -802,7 +808,7 @@ static void rasterize_squircle_markers_premul(const gpu_svg_document_t* document
                     continue;
                 unsigned char inner_cov = inner.empty() ? 0 : squircle_coverage(xx, yy, inner);
                 if(has_fill) {
-                    unsigned char fill_cov = inner.empty() ? outer_cov : inner_cov;
+                    unsigned char fill_cov = outer_cov;
                     if(fill_cov) {
                         unsigned char final_a = static_cast<unsigned char>((static_cast<unsigned>(fa) * fill_cov + 127u) / 255u);
                         blend_pixel_argb_premul(&row[xx], fr, fg, fb, final_a);
