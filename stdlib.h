@@ -31,6 +31,7 @@ div_t div(int numer, int denom);
 ldiv_t ldiv(long numer, long denom);
 lldiv_t lldiv(long long numer, long long denom);
 int atoi(const char *nptr);
+int abs(int x);
 long strtol(const char *nptr, char **endptr, int base);
 long long strtoll(const char *nptr, char **endptr, int base);
 void qsort(void *base, size_t nmemb, size_t size,

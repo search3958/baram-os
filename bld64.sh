@@ -22,7 +22,6 @@ show_progress() {
 }
 
 CURRENT_PID=0
-LUNASVG_OBJECTS=""
 NASM="nasm"
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
@@ -131,10 +130,10 @@ link_kernel() {
             # 直接 lld を呼ぶか、-fuse-ld にフルパスまたは適切な指定が必要です。
             # ここでは直接 lld (ELF 用) を使用する設定を試みます。
             clang --target=x86_64-elf -fuse-ld="$LLD_CMD" -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o \
                 -ffreestanding -O2 -nostdlib -static-libgcc -lgcc 2>/dev/null || \
             $LLD_CMD -T link64.ld -o output/kernel.bin \
-                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS
+                output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o
             return $?
         fi
         echo "  ❌ 64-bit linker が見つかりません (ld.lld または x86_64-elf ツールチェーンが必要です)"
@@ -142,7 +141,7 @@ link_kernel() {
     fi
 
     $CC -T link64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o \
         -ffreestanding -O2 -m64 -mcmodel=kernel -mno-red-zone -nostdlib -static-libgcc -lgcc
 }
 
@@ -207,8 +206,7 @@ do_build_and_run() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    bash scripts/build_lunasvg.sh x86_64-elf output || return 1
-    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+    bash scripts/build_svg_service_pkg.sh x86_64-elf output || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -223,16 +221,18 @@ do_build_and_run() {
 
     INITRD_DIR="output/initrd_tmp"
     rm -rf "$INITRD_DIR"
-    mkdir -p "$INITRD_DIR"
+    mkdir -p "$INITRD_DIR/system/services"
 
     cp ui/*.warp ui/*.warpc ui/*.svg ui/*.lua "$INITRD_DIR/" 2>/dev/null
     cp ui/*.bmp ui/*.png ui/*.jpg ui/*.jpeg ui/*.tga ui/*.gif "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
+    [ -f "output/svg_service.pkg" ] && cp output/svg_service.pkg "$INITRD_DIR/system/services/svg_service.pkg"
 
     (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
     rm -rf "$INITRD_DIR"
+    rm -f output/svg_service.pkg
 
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
@@ -386,8 +386,7 @@ do_build_only() {
     compile_c gpu/gpu_driver.c output/gpu_driver.o "$COMMON_CFLAGS" || return 1
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
-    bash scripts/build_lunasvg.sh x86_64-elf output || return 1
-    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+    bash scripts/build_svg_service_pkg.sh x86_64-elf output || return 1
     show_progress 75
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
@@ -396,6 +395,7 @@ do_build_only() {
     show_progress 82
 
     link_kernel || return 1
+    rm -f output/svg_service.pkg
     show_progress 100
     echo ""
     echo "  ✅ Build #$CURRENT_BN Success"

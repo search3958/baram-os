@@ -48,6 +48,7 @@ CXXFLAGS=(
     -DLUNASVG_BUILD_STATIC
     -DLUNASVG_DISABLE_LOAD_SYSTEM_FONTS
     -DPLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD
+    -DSTBI_NO_THREAD_LOCALS
     -I"$ROOT/lunasvg/include"
     -I"$ROOT/lunasvg/source"
     -I"$ROOT/lunasvg/plutovg/include"
@@ -66,6 +67,7 @@ CFLAGS=(
     -Wall
     -Wno-unused-function
     -DPLUTOVG_DISABLE_FONT_FACE_CACHE_LOAD
+    -DSTBI_NO_THREAD_LOCALS
     -I"$ROOT/lunasvg/include"
     -I"$ROOT/lunasvg/source"
     -I"$ROOT/lunasvg/plutovg/include"

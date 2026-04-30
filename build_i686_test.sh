@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 mkdir -p output
-LUNASVG_OBJECTS=""
 BN_FILE=".build_no"
 if [ ! -f "$BN_FILE" ]; then echo "0" > "$BN_FILE"; fi
 CURRENT_BN=$(cat "$BN_FILE")
@@ -41,13 +40,13 @@ $CC $CFLAGS -c gpu/gpu_driver.c -o output/gpu_driver.o
 $CC $CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
 $CC $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o
-bash scripts/build_lunasvg.sh i686-elf output
-LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+bash scripts/build_svg_service_pkg.sh i686-elf output
 
 echo "Linking..."
 $LD -T link.ld -o output/kernel.bin \
-    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
+    output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o \
     -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc
+rm -f output/svg_service.pkg
 
 echo "i686 Build Success: output/kernel.bin created."
 ls -l output/kernel.bin

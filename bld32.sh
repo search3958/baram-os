@@ -23,7 +23,6 @@ show_progress() {
 }
 
 CURRENT_PID=0
-LUNASVG_OBJECTS=""
 NASM="nasm"
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
@@ -117,8 +116,7 @@ do_build_and_run() {
     show_progress 74
     "$I686_CC" $CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o || return 1
     show_progress 75
-    bash scripts/build_lunasvg.sh i686-elf output || return 1
-    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+    bash scripts/build_svg_service_pkg.sh i686-elf output || return 1
     show_progress 78
     LUA_CFLAGS="$CFLAGS -DLUA_USE_C89   -Ilua-master"
     "$I686_CC" $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
@@ -127,7 +125,7 @@ do_build_and_run() {
     show_progress 82
 
     "$I686_CC" -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 85
 
@@ -136,16 +134,18 @@ do_build_and_run() {
 
     INITRD_DIR="output/initrd_tmp"
     rm -rf "$INITRD_DIR"
-    mkdir -p "$INITRD_DIR"
+    mkdir -p "$INITRD_DIR/system/services"
 
     cp ui/*.warp ui/*.warpc ui/*.svg "$INITRD_DIR/" 2>/dev/null
     cp ui/*.bmp ui/*.png ui/*.jpg ui/*.jpeg ui/*.tga ui/*.gif "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
+    [ -f "output/svg_service.pkg" ] && cp output/svg_service.pkg "$INITRD_DIR/system/services/svg_service.pkg"
 
     (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
     rm -rf "$INITRD_DIR"
+    rm -f output/svg_service.pkg
 
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
@@ -284,13 +284,13 @@ do_build_only() {
     show_progress 75
     "$I686_CC" $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
     "$I686_CC" $CFLAGS -c ui/warp_draw.c -o output/warp_draw.o || return 1
-    bash scripts/build_lunasvg.sh i686-elf output || return 1
-    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+    bash scripts/build_svg_service_pkg.sh i686-elf output || return 1
     show_progress 80
 
     "$I686_CC" -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
+    rm -f output/svg_service.pkg
     show_progress 100
     echo ""
     echo "  ✅ Build #$CURRENT_BN Success"

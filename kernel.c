@@ -2,9 +2,11 @@
 #include <stdarg.h> // va_list
 #include <stddef.h>
 #include <stdint.h>
+#include <setjmp.h>
 #include <stdio.h>  // FILE
 #include <stdlib.h> // malloc, free, realloc
 #include <string.h> // memcpy, memset
+#include <ctype.h>
 #ifdef __SSE2__
 #include <emmintrin.h>
 #define ALIGN16 __attribute__((aligned(16)))
@@ -14,7 +16,6 @@
 
 #include "drivers.h"
 #include "font/fonts.h"
-#include "ui/svg_data.h"
 #include "storage.h"
 #include "fs.h"
 
@@ -23,7 +24,6 @@
 // GPU blur support
 #include "gpu/gpu_driver.h"
 #include "gpu/gpu_blur.h"
-#include "gpu/gpu_svg.h"
 
 // Distance to line segment
 static float dist_to_line_segment(float px, float py, float ax, float ay, float bx, float by) {
@@ -69,8 +69,8 @@ static float dist_to_line_segment(float px, float py, float ax, float ay, float 
 #define STBTT_fabs(x) fabsf((float)(x))
 #include "font/stb_truetype.h"
 
-#define SVG_WIDTH NOTE_TEST_SVG_WIDTH
-#define SVG_HEIGHT NOTE_TEST_SVG_HEIGHT
+#define SVG_WIDTH 1280
+#define SVG_HEIGHT 720
 #define BASE_BG_COLOR 0xFF000000u
 #define HOVER_SCALE 1.2f
 #define HOVER_EASE 0.1f
@@ -108,14 +108,9 @@ typedef struct {
 #define LOCK_TRANSITION_TICKS 50u
 
 // --- グローバル変数 (Classic) ---
-static gpu_svg_document_t *g_svg_image = NULL;
-static unsigned char *g_svg_rgba = NULL;
 static unsigned char *g_svg_full_rgba = NULL;
 static int g_svg_full_w = 0;
 static int g_svg_full_h = 0;
-static float g_svg_scale = 1.0f;
-static float g_svg_tx = 0.0f;
-static float g_svg_ty = 0.0f;
 static int g_svg_ready = 0;
 
 static float g_scroll_x = 0.0f;
@@ -162,6 +157,59 @@ static int g_menubar_mod_found = 0;
 static int g_bootlogo_found = 0;
 static int g_wallpaper_found = 0;
 static int g_os_settings_found = 0;
+
+#define MAX_PACKAGES 32
+#define MAX_SERVICES 32
+
+typedef enum {
+  SERVICE_STATE_DISABLED = 0,
+  SERVICE_STATE_STOPPED,
+  SERVICE_STATE_RUNNING,
+  SERVICE_STATE_PACKAGE_ONLY,
+  SERVICE_STATE_FAILED
+} service_state_t;
+
+typedef struct {
+  char name[64];
+  char type[24];
+  char path[96];
+  int optional;
+  int present;
+} baram_package_t;
+
+typedef struct {
+  char name[64];
+  int optional;
+  int autoload;
+  int package_backed;
+  service_state_t state;
+} baram_service_t;
+
+static baram_package_t g_packages[MAX_PACKAGES];
+static int g_package_count = 0;
+static baram_service_t g_services[MAX_SERVICES];
+static int g_service_count = 0;
+
+typedef void *(*svg_service_parse_data_fn)(const char *data, size_t len);
+typedef void (*svg_service_delete_fn)(void *document);
+typedef float (*svg_service_float_fn)(const void *document);
+typedef int (*svg_service_rasterize_fn)(const void *document, float scale,
+                                        float tx, float ty,
+                                        unsigned char *out_rgba, int buf_w,
+                                        int buf_h, int stride);
+
+typedef struct {
+  int loaded;
+  void *module_base;
+  svg_service_parse_data_fn parse_data;
+  svg_service_delete_fn destroy;
+  svg_service_float_fn width;
+  svg_service_float_fn height;
+  svg_service_rasterize_fn rasterize;
+} svg_service_runtime_t;
+
+static svg_service_runtime_t g_svg_service;
+static int svg_service_load_from_package(void);
 
 // Global pointer to Multiboot info
 static struct multiboot_info *mbi_ptr = NULL;
@@ -455,8 +503,6 @@ static int apply_window_scroll_delta(window_t *win, float delta) {
 }
 
 static int g_critical_error_mode = 0;
-static const char* g_error_svg = 
-"<svg width=\"1280\" height=\"720\" viewBox=\"0 0 1280 720\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"1280\" height=\"720\" fill=\"black\"/><path d=\"M700.469 332.006C702.695 332.006 704.5 333.797 704.5 336.006C704.5 338.215 702.695 340.006 700.469 340.006H579.531C577.305 340.006 575.5 338.215 575.5 336.006C575.5 333.797 577.305 332.006 579.531 332.006H700.469ZM670.636 244.006C679.667 244.006 684.186 244.004 687.635 245.748C690.668 247.282 693.136 249.731 694.682 252.741C696.439 256.163 696.438 260.647 696.438 269.608V298.405C696.438 307.365 696.439 311.849 694.682 315.272L694.06 316.373C692.511 318.879 690.289 320.922 687.635 322.264L686.281 322.834C682.982 324.002 678.537 324.006 670.636 324.006H609.364L603.38 323.983C599.014 323.915 596.075 323.668 593.719 322.834L592.365 322.264C589.711 320.922 587.489 318.879 585.94 316.373L585.318 315.272C583.561 311.849 583.562 307.365 583.562 298.405V269.608C583.562 260.647 583.561 256.163 585.318 252.741C586.864 249.731 589.332 247.282 592.365 245.748C594.952 244.441 598.14 244.111 603.38 244.03L609.364 244.006H670.636ZM609.364 252.006C604.716 252.006 601.712 252.016 599.428 252.201C597.238 252.379 596.425 252.68 596.026 252.881C594.511 253.648 593.28 254.87 592.507 256.373C592.304 256.769 592.001 257.576 591.822 259.748C591.635 262.015 591.625 264.995 591.625 269.608V298.405C591.625 303.017 591.635 305.997 591.822 308.264C592.001 310.437 592.304 311.243 592.507 311.639C593.28 313.143 594.511 314.364 596.026 315.131C596.425 315.333 597.238 315.633 599.428 315.811C601.712 315.996 604.716 316.006 609.364 316.006H670.636C675.284 316.006 678.288 315.996 680.572 315.811C682.762 315.633 683.575 315.333 683.974 315.131C685.489 314.364 686.72 313.143 687.493 311.639C687.696 311.243 687.999 310.437 688.178 308.264C688.365 305.997 688.375 303.017 688.375 298.405V269.608C688.375 264.995 688.365 262.015 688.178 259.748C687.999 257.576 687.696 256.769 687.493 256.373C686.72 254.87 685.489 253.648 683.974 252.881C683.575 252.68 682.762 252.379 680.572 252.201C678.288 252.016 675.284 252.006 670.636 252.006H609.364ZM653.275 265.178C654.849 263.616 657.401 263.616 658.975 265.178C660.549 266.74 660.549 269.272 658.975 270.834L645.7 284.006L658.975 297.178C660.549 298.74 660.549 301.272 658.975 302.834C657.401 304.396 654.849 304.396 653.275 302.834L640 289.662L626.725 302.834C625.151 304.396 622.599 304.396 621.025 302.834C619.45 301.272 619.45 298.74 621.025 297.178L634.3 284.006L621.025 270.834C619.45 269.272 619.45 266.74 621.025 265.178C622.599 263.616 625.151 263.616 626.725 265.178L640 278.35L653.275 265.178Z\" fill=\"white\"/><path d=\"M553.748 377.657H572.002\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M557.094 384.046C557.5 386.784 558.311 394.755 558.311 404.734\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M568.351 384.35C568.148 385.466 567.499 391.044 566.526 404.43\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M552.531 405.647H572.61\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M581.434 374.31V408.994\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M588.127 392.26H582.346\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M622.202 374.006V391.348\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M681.833 374.006V392.869\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M673.314 383.742H680.92\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M656.581 394.999V406.864H666.621V394.999\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M657.19 400.171H666.013\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M677.574 394.39C676.357 404.43 670.576 407.168 669.968 407.777\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M676.661 399.258C677.574 402.605 683.902 407.107 684.876 408.081\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M595.125 394.694H621.898V400.779H597.254V406.864H624.027\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M603.338 375.506C608.081 375.506 611.575 378.83 611.575 382.525C611.575 386.219 608.081 389.543 603.338 389.543C598.596 389.543 595.103 386.219 595.103 382.525C595.103 378.83 598.596 375.506 603.338 375.506Z\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M662.361 375.506C666.528 375.506 669.989 379.011 669.989 383.438C669.989 387.865 666.528 391.369 662.361 391.369C658.195 391.369 654.734 387.865 654.734 383.438C654.734 379.011 658.195 375.506 662.361 375.506Z\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M722.602 381.004C722.602 382.525 722.602 385.567 709.824 385.567C697.045 385.567 697.045 382.525 697.045 381.004C697.045 379.482 697.045 376.44 709.824 376.44C722.602 376.44 722.602 379.736 722.602 381.004Z\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M691.873 391.956H727.47\" stroke=\"white\" stroke-width=\"3\"/><rect x=\"697.328\" y=\"398.628\" width=\"25.5987\" height=\"8.56116\" stroke=\"white\" stroke-width=\"3\"/><path d=\"M617 459.294C617 453.41 617 450.468 618.199 448.245C619.126 446.528 620.534 445.12 622.251 444.193C624.474 442.994 627.416 442.994 633.3 442.994H646.7C652.584 442.994 655.526 442.994 657.749 444.193C659.466 445.12 660.874 446.528 661.801 448.245C663 450.468 663 453.41 663 459.294V459.694C663 465.578 663 468.52 661.801 470.742C660.874 472.46 659.466 473.868 657.749 474.795C655.526 475.994 652.584 475.994 646.7 475.994H633.3C627.416 475.994 624.474 475.994 622.251 474.795C620.534 473.868 619.126 472.46 618.199 470.742C617 468.52 617 465.578 617 459.694V459.294Z\" stroke=\"#6F6F6F\" stroke-width=\"3\"/><path d=\"M649.149 462.661L641.547 470.068L639.453 467.92L643.311 464.161H638C633.5 464.161 632.5 461.698 632.5 458.661V449.994H635.5V458.661C635.5 460.041 635.5 461.161 638 461.161H643.312L639.453 457.401L641.547 455.253L649.149 462.661Z\" fill=\"white\"/></svg>";
 
 static void window_update_caches(window_t *win);
 static void add_window(const char *title, int x, int y, int w, int h, int is_warp1);
@@ -519,6 +565,166 @@ static int parse_json_int_or_string(const char *p, int *out_value) {
     return 1;
 }
 
+static int str_ends_with(const char *s, const char *suffix) {
+    if (!s || !suffix) return 0;
+    size_t slen = strlen(s);
+    size_t tlen = strlen(suffix);
+    if (tlen > slen) return 0;
+    return strcmp(s + slen - tlen, suffix) == 0;
+}
+
+static baram_service_t *service_find(const char *name) {
+    if (!name) return NULL;
+    for (int i = 0; i < g_service_count; i++) {
+        if (strcmp(g_services[i].name, name) == 0) return &g_services[i];
+    }
+    return NULL;
+}
+
+static baram_service_t *service_ensure(const char *name) {
+    baram_service_t *svc = service_find(name);
+    if (svc) return svc;
+    if (!name || g_service_count >= MAX_SERVICES) return NULL;
+    svc = &g_services[g_service_count++];
+    memset(svc, 0, sizeof(*svc));
+    strncpy(svc->name, name, sizeof(svc->name) - 1);
+    svc->state = SERVICE_STATE_STOPPED;
+    return svc;
+}
+
+static void service_registry_init_defaults(void) {
+    g_service_count = 0;
+    const char *builtin_services[] = {
+        "display_server",
+        "input_server",
+        "font_service",
+        "image_service",
+        "warp_runtime",
+        "app_manager"
+    };
+    for (size_t i = 0; i < sizeof(builtin_services) / sizeof(builtin_services[0]); i++) {
+        baram_service_t *svc = service_ensure(builtin_services[i]);
+        if (svc) {
+            svc->autoload = 1;
+            svc->optional = 0;
+            svc->package_backed = 0;
+            svc->state = SERVICE_STATE_STOPPED;
+        }
+    }
+}
+
+static void package_register_service(const char *name, const char *path, int optional) {
+    if (!name || !path || g_package_count >= MAX_PACKAGES) return;
+    for (int i = 0; i < g_package_count; i++) {
+        if (strcmp(g_packages[i].name, name) == 0) return;
+    }
+    baram_package_t *pkg = &g_packages[g_package_count++];
+    memset(pkg, 0, sizeof(*pkg));
+    strncpy(pkg->name, name, sizeof(pkg->name) - 1);
+    strncpy(pkg->type, "service", sizeof(pkg->type) - 1);
+    strncpy(pkg->path, path, sizeof(pkg->path) - 1);
+    pkg->optional = optional;
+    pkg->present = 1;
+
+    baram_service_t *svc = service_ensure(name);
+    if (svc) {
+        svc->optional = optional;
+        svc->package_backed = 1;
+        svc->state = SERVICE_STATE_PACKAGE_ONLY;
+    }
+}
+
+static void package_registry_scan_storage(void) {
+    g_package_count = 0;
+    for (uint32_t i = 0; i < g_sb.num_files; i++) {
+        const char *name = g_sb.entries[i].name;
+        if (str_ends_with(name, "svg_service.pkg")) {
+            package_register_service("svg_service", name, 1);
+        }
+    }
+}
+
+static int json_array_contains_string(const char *json, const char *array_key, const char *needle) {
+    if (!json || !array_key || !needle) return 0;
+    char key_buf[64];
+    snprintf(key_buf, sizeof(key_buf), "\"%s\"", array_key);
+    const char *key = strstr(json, key_buf);
+    if (!key) return 0;
+    const char *p = strchr(key, '[');
+    if (!p) return 0;
+    const char *end = strchr(p, ']');
+    if (!end) return 0;
+    size_t needle_len = strlen(needle);
+    while (p < end) {
+        if (*p == '"') {
+            p++;
+            const char *start = p;
+            while (p < end && *p && *p != '"') p++;
+            if ((size_t)(p - start) == needle_len && strncmp(start, needle, needle_len) == 0)
+                return 1;
+        }
+        p++;
+    }
+    return 0;
+}
+
+static void service_registry_apply_settings(const char *json) {
+    const char *package_services[] = {"svg_service"};
+    for (size_t i = 0; i < sizeof(package_services) / sizeof(package_services[0]); i++) {
+        const char *name = package_services[i];
+        if (json_array_contains_string(json, "autoload", name) ||
+            json_array_contains_string(json, "optional", name) ||
+            json_array_contains_string(json, "disabled", name)) {
+            baram_service_t *svc = service_ensure(name);
+            if (svc) {
+                svc->optional = 1;
+                svc->package_backed = 1;
+                if (svc->state == SERVICE_STATE_STOPPED)
+                    svc->state = SERVICE_STATE_PACKAGE_ONLY;
+            }
+        }
+    }
+    for (int i = 0; i < g_service_count; i++) {
+        baram_service_t *svc = &g_services[i];
+        if (json_array_contains_string(json, "disabled", svc->name)) {
+            svc->autoload = 0;
+            svc->state = SERVICE_STATE_DISABLED;
+            continue;
+        }
+        if (json_array_contains_string(json, "optional", svc->name))
+            svc->optional = 1;
+        if (json_array_contains_string(json, "autoload", svc->name))
+            svc->autoload = 1;
+    }
+}
+
+static void service_registry_start_configured(void) {
+    for (int i = 0; i < g_service_count; i++) {
+        baram_service_t *svc = &g_services[i];
+        if (!svc->autoload || svc->state == SERVICE_STATE_DISABLED) continue;
+        if (svc->package_backed) {
+            if (strcmp(svc->name, "svg_service") == 0 &&
+                svg_service_load_from_package()) {
+                svc->state = SERVICE_STATE_RUNNING;
+            } else {
+                svc->state = SERVICE_STATE_FAILED;
+            }
+            continue;
+        }
+        svc->state = SERVICE_STATE_RUNNING;
+    }
+}
+
+static int service_is_running(const char *name) {
+    baram_service_t *svc = service_find(name);
+    return svc && svc->state == SERVICE_STATE_RUNNING;
+}
+
+static int service_package_present(const char *name) {
+    baram_service_t *svc = service_find(name);
+    return svc && svc->package_backed && svc->state == SERVICE_STATE_PACKAGE_ONLY;
+}
+
 
 static void parse_os_settings() {
   g_os_settings_found = (g_os_settings_ptr != NULL && g_os_settings_size > 0);
@@ -531,6 +737,7 @@ static void parse_os_settings() {
 
   const char* buf = g_os_settings_ptr;
   set_w1_global("--warpSystemLog", "SettingsLoaded.");
+  service_registry_apply_settings(buf);
   
   
   // Robust check for "dark" key
@@ -682,6 +889,15 @@ static void parse_os_settings() {
   }
   
   // Status Log for debug
+  service_registry_start_configured();
+  baram_service_t *svg_svc = service_find("svg_service");
+  if (svg_svc && svg_svc->state == SERVICE_STATE_RUNNING)
+    set_w1_global("--warpSystemLog", "svg_service loaded from pkg.");
+  else if (svg_svc && svg_svc->state == SERVICE_STATE_FAILED)
+    set_w1_global("--warpSystemLog", "svg_service failed; boot continuing.");
+  else if (service_package_present("svg_service"))
+    set_w1_global("--warpSystemLog", "svg_service packaged.");
+
   const char* dark_val = get_w1_global("~~main/dark");
   char startup_msg[128] = "OSReady Theme:";
   strlcat(startup_msg, dark_val, 127);
@@ -1019,12 +1235,6 @@ int strcmp(const char *a, const char *b) {
     b++;
   }
   return (unsigned char)*a - (unsigned char)*b;
-}
-
-static int tolower(int c) {
-  if (c >= 'A' && c <= 'Z')
-    return c + ('a' - 'A');
-  return c;
 }
 
 int strcasecmp(const char *a, const char *b) {
@@ -1552,6 +1762,435 @@ int atexit(void (*func)(void)) {
   return 0;
 }
 
+#ifdef __x86_64__
+#define ELF64_MAGIC0 0x7f
+#define ELF64_MAGIC1 'E'
+#define ELF64_MAGIC2 'L'
+#define ELF64_MAGIC3 'F'
+#define ELFCLASS64 2
+#define ELFDATA2LSB 1
+#define ET_REL 1
+#define EM_X86_64 62
+#define SHT_NULL 0
+#define SHT_PROGBITS 1
+#define SHT_SYMTAB 2
+#define SHT_STRTAB 3
+#define SHT_RELA 4
+#define SHT_NOBITS 8
+#define SHT_INIT_ARRAY 14
+#define SHF_ALLOC 0x2
+#define SHN_UNDEF 0
+#define SHN_ABS 0xfff1
+#define R_X86_64_64 1
+#define R_X86_64_PC32 2
+#define R_X86_64_PLT32 4
+#define R_X86_64_32 10
+#define R_X86_64_32S 11
+
+typedef struct {
+  unsigned char e_ident[16];
+  uint16_t e_type;
+  uint16_t e_machine;
+  uint32_t e_version;
+  uint64_t e_entry;
+  uint64_t e_phoff;
+  uint64_t e_shoff;
+  uint32_t e_flags;
+  uint16_t e_ehsize;
+  uint16_t e_phentsize;
+  uint16_t e_phnum;
+  uint16_t e_shentsize;
+  uint16_t e_shnum;
+  uint16_t e_shstrndx;
+} elf64_ehdr_t;
+
+typedef struct {
+  uint32_t sh_name;
+  uint32_t sh_type;
+  uint64_t sh_flags;
+  uint64_t sh_addr;
+  uint64_t sh_offset;
+  uint64_t sh_size;
+  uint32_t sh_link;
+  uint32_t sh_info;
+  uint64_t sh_addralign;
+  uint64_t sh_entsize;
+} elf64_shdr_t;
+
+typedef struct {
+  uint32_t st_name;
+  unsigned char st_info;
+  unsigned char st_other;
+  uint16_t st_shndx;
+  uint64_t st_value;
+  uint64_t st_size;
+} elf64_sym_t;
+
+typedef struct {
+  uint64_t r_offset;
+  uint64_t r_info;
+  int64_t r_addend;
+} elf64_rela_t;
+
+typedef struct {
+  const char *name;
+  void *addr;
+} kernel_export_t;
+
+static uintptr_t align_up_uintptr(uintptr_t value, uintptr_t align) {
+  if (align <= 1)
+    return value;
+  return (value + align - 1) & ~(align - 1);
+}
+
+static void *kernel_export_lookup(const char *name) {
+  static const kernel_export_t exports[] = {
+      {"abort", (void *)abort},
+      {"abs", (void *)abs},
+      {"atan2f", (void *)atan2f},
+      {"atexit", (void *)atexit},
+      {"bsearch", (void *)bsearch},
+      {"calloc", (void *)calloc},
+      {"ceilf", (void *)ceilf},
+      {"cosf", (void *)cosf},
+      {"fabs", (void *)fabs},
+      {"fabsf", (void *)fabsf},
+      {"floorf", (void *)floorf},
+      {"fmodf", (void *)fmodf},
+      {"free", (void *)free},
+      {"hypot", (void *)hypot},
+      {"hypotf", (void *)hypotf},
+      {"isalnum", (void *)isalnum},
+      {"isalpha", (void *)isalpha},
+      {"isspace", (void *)isspace},
+      {"isxdigit", (void *)isxdigit},
+      {"ldexp", (void *)ldexp},
+      {"longjmp", (void *)longjmp},
+      {"lroundf", (void *)lroundf},
+      {"malloc", (void *)malloc},
+      {"memchr", (void *)memchr},
+      {"memcmp", (void *)memcmp},
+      {"memcpy", (void *)memcpy},
+      {"memmove", (void *)memmove},
+      {"memset", (void *)memset},
+      {"pow", (void *)pow},
+      {"powf", (void *)powf},
+      {"qsort", (void *)qsort},
+      {"realloc", (void *)realloc},
+      {"roundf", (void *)roundf},
+      {"setjmp", (void *)setjmp},
+      {"sinf", (void *)sinf},
+      {"sqrt", (void *)sqrt},
+      {"sqrtf", (void *)sqrtf},
+      {"strchr", (void *)strchr},
+      {"strcmp", (void *)strcmp},
+      {"strlen", (void *)strlen},
+      {"strncmp", (void *)strncmp},
+      {"strstr", (void *)strstr},
+      {"strtol", (void *)strtol},
+      {"tanf", (void *)tanf},
+      {"tolower", (void *)tolower},
+  };
+  for (size_t i = 0; i < sizeof(exports) / sizeof(exports[0]); i++) {
+    if (strcmp(exports[i].name, name) == 0)
+      return exports[i].addr;
+  }
+  return NULL;
+}
+
+static int elf64_validate_module(const unsigned char *data, uint32_t size,
+                                 const elf64_ehdr_t **out_eh,
+                                 const elf64_shdr_t **out_sh) {
+  if (!data || size < sizeof(elf64_ehdr_t))
+    return 0;
+  const elf64_ehdr_t *eh = (const elf64_ehdr_t *)data;
+  if (eh->e_ident[0] != ELF64_MAGIC0 || eh->e_ident[1] != ELF64_MAGIC1 ||
+      eh->e_ident[2] != ELF64_MAGIC2 || eh->e_ident[3] != ELF64_MAGIC3 ||
+      eh->e_ident[4] != ELFCLASS64 || eh->e_ident[5] != ELFDATA2LSB ||
+      eh->e_type != ET_REL || eh->e_machine != EM_X86_64 ||
+      eh->e_shentsize != sizeof(elf64_shdr_t) || eh->e_shnum == 0)
+    return 0;
+  uint64_t sh_end = eh->e_shoff + (uint64_t)eh->e_shentsize * eh->e_shnum;
+  if (eh->e_shoff >= size || sh_end > size)
+    return 0;
+  *out_eh = eh;
+  *out_sh = (const elf64_shdr_t *)(data + eh->e_shoff);
+  return 1;
+}
+
+static uint64_t elf64_symbol_value(const elf64_sym_t *sym,
+                                   const char *strtab,
+                                   uint64_t *section_addr,
+                                   uint16_t section_count,
+                                   int *ok) {
+  if (sym->st_shndx == SHN_UNDEF) {
+    const char *name = strtab + sym->st_name;
+    void *addr = kernel_export_lookup(name);
+    if (!addr) {
+      *ok = 0;
+      return 0;
+    }
+    return (uint64_t)(uintptr_t)addr;
+  }
+  if (sym->st_shndx == SHN_ABS)
+    return sym->st_value;
+  if (sym->st_shndx >= section_count || section_addr[sym->st_shndx] == 0) {
+    *ok = 0;
+    return 0;
+  }
+  return section_addr[sym->st_shndx] + sym->st_value;
+}
+
+static int elf64_apply_relocation(unsigned type, uint8_t *where, uint64_t S,
+                                  uint64_t A, uint64_t P) {
+  uint64_t value = S + A;
+  switch (type) {
+  case R_X86_64_64:
+    *(uint64_t *)where = value;
+    return 1;
+  case R_X86_64_PC32:
+  case R_X86_64_PLT32:
+    *(int32_t *)where = (int32_t)(value - P);
+    return 1;
+  case R_X86_64_32:
+    *(uint32_t *)where = (uint32_t)value;
+    return 1;
+  case R_X86_64_32S:
+    *(int32_t *)where = (int32_t)value;
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+static int elf64_load_relocatable(const void *module_data, uint32_t module_size,
+                                  const char **exports, void **out_exports,
+                                  int export_count) {
+  const unsigned char *data = (const unsigned char *)module_data;
+  const elf64_ehdr_t *eh = NULL;
+  const elf64_shdr_t *sh = NULL;
+  if (!elf64_validate_module(data, module_size, &eh, &sh))
+    return 0;
+
+  uint64_t *section_addr = (uint64_t *)calloc(eh->e_shnum, sizeof(uint64_t));
+  if (!section_addr)
+    return 0;
+
+  for (uint16_t i = 0; i < eh->e_shnum; i++) {
+    if (!(sh[i].sh_flags & SHF_ALLOC) || sh[i].sh_size == 0)
+      continue;
+    if (sh[i].sh_type != SHT_NOBITS &&
+        (sh[i].sh_offset + sh[i].sh_size > module_size)) {
+      free(section_addr);
+      return 0;
+    }
+    uint64_t align = sh[i].sh_addralign ? sh[i].sh_addralign : 16;
+    uint8_t *raw = (uint8_t *)malloc((size_t)sh[i].sh_size + (size_t)align);
+    if (!raw) {
+      free(section_addr);
+      return 0;
+    }
+    uint8_t *dst = (uint8_t *)align_up_uintptr((uintptr_t)raw, (uintptr_t)align);
+    section_addr[i] = (uint64_t)(uintptr_t)dst;
+    if (sh[i].sh_type == SHT_NOBITS)
+      memset(dst, 0, (size_t)sh[i].sh_size);
+    else
+      memcpy(dst, data + sh[i].sh_offset, (size_t)sh[i].sh_size);
+  }
+
+  const elf64_sym_t *symtab = NULL;
+  const char *strtab = NULL;
+  uint64_t sym_count = 0;
+  for (uint16_t i = 0; i < eh->e_shnum; i++) {
+    if (sh[i].sh_type == SHT_SYMTAB) {
+      symtab = (const elf64_sym_t *)(data + sh[i].sh_offset);
+      sym_count = sh[i].sh_entsize ? sh[i].sh_size / sh[i].sh_entsize : 0;
+      if (sh[i].sh_link >= eh->e_shnum) {
+        free(section_addr);
+        return 0;
+      }
+      strtab = (const char *)(data + sh[sh[i].sh_link].sh_offset);
+      break;
+    }
+  }
+  if (!symtab || !strtab || sym_count == 0) {
+    free(section_addr);
+    return 0;
+  }
+
+  for (uint16_t i = 0; i < eh->e_shnum; i++) {
+    if (sh[i].sh_type != SHT_RELA)
+      continue;
+    if (sh[i].sh_link >= eh->e_shnum || sh[i].sh_info >= eh->e_shnum ||
+        section_addr[sh[i].sh_info] == 0)
+      continue;
+    const elf64_rela_t *rela = (const elf64_rela_t *)(data + sh[i].sh_offset);
+    uint64_t rel_count = sh[i].sh_entsize ? sh[i].sh_size / sh[i].sh_entsize : 0;
+    for (uint64_t r = 0; r < rel_count; r++) {
+      uint32_t sym_index = (uint32_t)(rela[r].r_info >> 32);
+      unsigned type = (unsigned)(rela[r].r_info & 0xffffffffu);
+      if (sym_index >= sym_count) {
+        free(section_addr);
+        return 0;
+      }
+      int ok = 1;
+      uint64_t S = elf64_symbol_value(&symtab[sym_index], strtab, section_addr,
+                                      eh->e_shnum, &ok);
+      if (!ok) {
+        free(section_addr);
+        return 0;
+      }
+      uint64_t P = section_addr[sh[i].sh_info] + rela[r].r_offset;
+      if (!elf64_apply_relocation(type, (uint8_t *)(uintptr_t)P, S,
+                                  (uint64_t)rela[r].r_addend, P)) {
+        free(section_addr);
+        return 0;
+      }
+    }
+  }
+
+  for (uint16_t i = 0; i < eh->e_shnum; i++) {
+    if (sh[i].sh_type != SHT_INIT_ARRAY || section_addr[i] == 0)
+      continue;
+    uint64_t count = sh[i].sh_size / sizeof(uint64_t);
+    uint64_t *ctors = (uint64_t *)(uintptr_t)section_addr[i];
+    for (uint64_t c = 0; c < count; c++) {
+      if (ctors[c]) {
+        void (*ctor)(void) = (void (*)(void))(uintptr_t)ctors[c];
+        ctor();
+      }
+    }
+  }
+
+  for (int e = 0; e < export_count; e++)
+    out_exports[e] = NULL;
+  for (uint64_t s = 0; s < sym_count; s++) {
+    if (symtab[s].st_name == 0 || symtab[s].st_shndx == SHN_UNDEF)
+      continue;
+    const char *name = strtab + symtab[s].st_name;
+    for (int e = 0; e < export_count; e++) {
+      if (!out_exports[e] && strcmp(name, exports[e]) == 0) {
+        int ok = 1;
+        out_exports[e] = (void *)(uintptr_t)elf64_symbol_value(
+            &symtab[s], strtab, section_addr, eh->e_shnum, &ok);
+      }
+    }
+  }
+
+  int all_found = 1;
+  for (int e = 0; e < export_count; e++) {
+    if (!out_exports[e])
+      all_found = 0;
+  }
+  if (all_found)
+    g_svg_service.module_base = section_addr;
+  else
+    free(section_addr);
+  return all_found;
+}
+#endif
+
+static int svg_service_load_from_package(void) {
+  if (g_svg_service.loaded)
+    return 1;
+#ifndef __x86_64__
+  set_w1_global("--warpSystemLog", "svg_service loader unavailable.");
+  return 0;
+#else
+  const char *pkg_data = NULL;
+  uint32_t pkg_size = 0;
+  void *pkg = fs_read_file("system/services/svg_service.pkg", &pkg_size);
+  if (!pkg) {
+    if (mbi_ptr && (mbi_ptr->flags & 0x8)) {
+      multiboot_module_t *mods =
+          (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+      for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
+        const char *s = (const char *)(uintptr_t)mods[i].string;
+        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+          const char *tar = (const char *)(uintptr_t)mods[i].mod_start;
+          uint32_t tar_size = mods[i].mod_end - mods[i].mod_start;
+          pkg_data = tar_find_file(tar, tar_size,
+                                   "system/services/svg_service.pkg",
+                                   &pkg_size);
+          break;
+        }
+      }
+    }
+    if (!pkg_data) {
+      set_w1_global("--warpSystemLog", "svg_service package missing.");
+      return 0;
+    }
+  } else {
+    pkg_data = (const char *)pkg;
+  }
+
+  uint32_t module_size = 0;
+  const char *module = tar_find_file(pkg_data, pkg_size,
+                                     "./module/svg_service.ko", &module_size);
+  if (!module) {
+    module = tar_find_file(pkg_data, pkg_size, "module/svg_service.ko",
+                           &module_size);
+  }
+  if (!module) {
+    if (pkg) free(pkg);
+    set_w1_global("--warpSystemLog", "svg_service module missing.");
+    return 0;
+  }
+
+  const char *exports[] = {
+      "gpu_svg_parse_data",
+      "gpu_svg_delete",
+      "gpu_svg_width",
+      "gpu_svg_height",
+      "gpu_svg_rasterize",
+  };
+  void *resolved[5] = {0};
+  if (!elf64_load_relocatable(module, module_size, exports, resolved, 5)) {
+    if (pkg) free(pkg);
+    set_w1_global("--warpSystemLog", "svg_service load failed.");
+    return 0;
+  }
+
+  g_svg_service.parse_data = (svg_service_parse_data_fn)resolved[0];
+  g_svg_service.destroy = (svg_service_delete_fn)resolved[1];
+  g_svg_service.width = (svg_service_float_fn)resolved[2];
+  g_svg_service.height = (svg_service_float_fn)resolved[3];
+  g_svg_service.rasterize = (svg_service_rasterize_fn)resolved[4];
+
+  unsigned char test_rgba[16 * 16 * 4];
+  memset(test_rgba, 0, sizeof(test_rgba));
+  char test_svg[128];
+  strlcpy(test_svg, "<", sizeof(test_svg));
+  strlcat(test_svg,
+          "svg width=\"16\" height=\"16\" xmlns=\"http://www.w3.org/2000/svg\">",
+          sizeof(test_svg));
+  strlcat(test_svg, "<rect width=\"16\" height=\"16\" fill=\"#ffffff\"/></",
+          sizeof(test_svg));
+  strlcat(test_svg, "svg>", sizeof(test_svg));
+  void *doc = g_svg_service.parse_data(test_svg, strlen(test_svg));
+  if (!doc) {
+    if (pkg) free(pkg);
+    set_w1_global("--warpSystemLog", "svg_service selftest parse failed.");
+    return 0;
+  }
+  int ok = g_svg_service.rasterize(doc, 1.0f, 0.0f, 0.0f, test_rgba, 16, 16,
+                                   16 * 4);
+  g_svg_service.destroy(doc);
+  if (pkg) free(pkg);
+  if (ok != 0) {
+    set_w1_global("--warpSystemLog", "svg_service selftest raster failed.");
+    return 0;
+  }
+  if (test_rgba[3] == 0) {
+    set_w1_global("--warpSystemLog", "svg_service selftest blank.");
+    return 0;
+  }
+  g_svg_service.loaded = 1;
+  set_w1_global("--warpSystemLog", "svg_service running.");
+  return 1;
+#endif
+}
+
 FILE *fopen(const char *path, const char *mode) {
   (void)path;
   (void)mode;
@@ -1886,23 +2525,9 @@ static void blend_rgba_span_over_opaque_bg_sse2(uint32_t *dst,
 }
 #endif
 
-// GPU SVG texture
-static gpu_resource_t g_svg_gpu_texture;
-static int g_svg_gpu_ready = 0;
-static gpu_svg_renderer_t g_gpu_svg_renderer;
-static int g_gpu_svg_initialized = 0;
-
 static void svg_render_full(layer_t *layer) {
   if (!g_svg_full_rgba)
     return;
-
-  // GPU-accelerated SVG render: upload to GPU texture once, then blit
-  if (g_gpu_available && !g_svg_gpu_ready) {
-      gpu_create_resource(g_svg_full_w, g_svg_full_h, &g_svg_gpu_texture);
-      gpu_upload_texture(&g_svg_gpu_texture, g_svg_full_rgba, 
-                         g_svg_full_w * g_svg_full_h * 4);
-      g_svg_gpu_ready = 1;
-  }
 
   const uint32_t bg = BASE_BG_COLOR;
   uint8_t bg_r = (bg >> 16) & 0xFF;
@@ -1935,35 +2560,19 @@ static void svg_render_full(layer_t *layer) {
     }
 
     if (visible_x1 > visible_x0) {
-      // GPU download with scroll offset (blit from GPU texture)
-      if (g_svg_gpu_ready) {
-          unsigned char *gpu_line = &((unsigned char*)g_svg_gpu_texture.cpu_ptr)[
-              (src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
+      unsigned char *line_src =
+          &g_svg_full_rgba[(src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
 #ifdef __SSE2__
-          blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, gpu_line,
-                                              visible_x1 - visible_x0, bg, bg_r,
-                                              bg_g, bg_b);
+      blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, line_src,
+                                          visible_x1 - visible_x0, bg, bg_r,
+                                          bg_g, bg_b);
 #else
-          for (int x = visible_x0; x < visible_x1; ++x) {
-              const unsigned char *rgba = gpu_line + (x - visible_x0) * 4;
-              line_dst[x] = blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
-          }
-#endif
-      } else {
-          unsigned char *line_src =
-              &g_svg_full_rgba[(src_y * g_svg_full_w + (visible_x0 - scroll_x)) * 4];
-#ifdef __SSE2__
-          blend_rgba_span_over_opaque_bg_sse2(line_dst + visible_x0, line_src,
-                                              visible_x1 - visible_x0, bg, bg_r,
-                                              bg_g, bg_b);
-#else
-          for (int x = visible_x0; x < visible_x1; ++x) {
-              const unsigned char *rgba = line_src + (x - visible_x0) * 4;
-              line_dst[x] =
-                  blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
-          }
-#endif
+      for (int x = visible_x0; x < visible_x1; ++x) {
+          const unsigned char *rgba = line_src + (x - visible_x0) * 4;
+          line_dst[x] =
+              blend_rgba_over_opaque_bg_scalar(rgba, bg, bg_r, bg_g, bg_b);
       }
+#endif
     }
 
     if (visible_x1 < layer->width) {
@@ -2218,74 +2827,58 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
   if (!g_svg_full_rgba)
     return 0;
   memset(g_svg_full_rgba, 0, (size_t)g_svg_full_w * (size_t)g_svg_full_h * 4);
-  g_svg_gpu_ready = 0;
 
   int use_svg = !image_is_wallpaper ||
                 wallpaper_data_is_svg(g_wallpaper_name, image_data, image_size);
 
   if (use_svg) {
-    if (g_svg_image) gpu_svg_delete(g_svg_image);
-    g_svg_image = image_size ? gpu_svg_parse_data(image_data, image_size)
-                             : gpu_svg_parse(image_data);
-    if (!g_svg_image)
-      return 0;
-
-    float scale = 1.0f;
-    float tx = 0.0f, ty = 0.0f;
-
-    if (image_is_wallpaper) {
-      // "Center Cover" logic (with 103% zoom)
-      float svg_w = gpu_svg_width(g_svg_image);
-      float svg_h = gpu_svg_height(g_svg_image);
-      if (svg_w <= 0.0f || svg_h <= 0.0f)
-        return 0;
-      float scale_x = (float)g_svg_full_w / svg_w;
-      float scale_y = (float)g_svg_full_h / svg_h;
-      scale = ((scale_x > scale_y) ? scale_x : scale_y) * 1.03f;
-      tx = (g_svg_full_w - svg_w * scale) / 2.0f;
-      ty = (g_svg_full_h - svg_h * scale) / 2.0f;
-    } else {
-      // Center logic for logo
-      tx = (g_svg_full_w - gpu_svg_width(g_svg_image)) / 2.0f;
-      ty = (g_svg_full_h - gpu_svg_height(g_svg_image)) / 2.0f;
-    }
-
-    // GPU SVG rendering: Bezier→Tessellation→GPU triangles
-    if (g_gpu_available && !g_gpu_svg_initialized) {
-        gpu_svg_init(&g_gpu_svg_renderer, g_svg_full_w, g_svg_full_h);
-        g_gpu_svg_initialized = 1;
-    }
-
-    if (g_gpu_svg_initialized) {
-        gpu_svg_render(&g_gpu_svg_renderer, g_svg_image, scale, tx, ty,
-                       (uint32_t*)g_svg_full_rgba, g_svg_full_w, g_svg_full_h);
-    } else {
-        gpu_svg_rasterize(g_svg_image, scale, tx, ty, g_svg_full_rgba,
-                          g_svg_full_w, g_svg_full_h, g_svg_full_w * 4);
-    }
-
-    // --- 自動グラデーション抽出ロジック (Bootlogo用) ---
-    if (!load_wallpaper && image_data == g_bootlogo_ptr) {
-      const char *conic_pos = strstr(g_bootlogo_ptr, "conic-gradient");
-      if (conic_pos) {
-        uint32_t c1 = parse_rgba_smart(conic_pos, 2);
-        uint32_t c2 = parse_rgba_smart(conic_pos, 3);
-
-        int rx = (int)floorf(tx);
-        int ry = (int)floorf(ty);
-        int rw = (int)ceilf(gpu_svg_width(g_svg_image) * scale);
-        int rh = (int)ceilf(gpu_svg_height(g_svg_image) * scale);
-        if (rw > 0 && rh > 0) {
-          apply_conic_gradient(g_svg_full_rgba, g_svg_full_w, g_svg_full_h, rx,
-                               ry, rw, rh, c1, c2);
+    if (service_is_running("svg_service") && g_svg_service.loaded) {
+      void *doc = g_svg_service.parse_data(image_data, image_size);
+      if (doc) {
+        float doc_w = g_svg_service.width(doc);
+        float doc_h = g_svg_service.height(doc);
+        if (doc_w <= 0.0f) doc_w = (float)g_svg_full_w;
+        if (doc_h <= 0.0f) doc_h = (float)g_svg_full_h;
+        float sx = (float)g_svg_full_w / doc_w;
+        float sy = (float)g_svg_full_h / doc_h;
+        float scale = image_is_wallpaper
+                          ? ((sx > sy) ? sx : sy)
+                          : ((sx < sy) ? sx : sy);
+        if (scale <= 0.0f) scale = 1.0f;
+        float tx = ((float)g_svg_full_w - doc_w * scale) * 0.5f;
+        float ty = ((float)g_svg_full_h - doc_h * scale) * 0.5f;
+        int ok = g_svg_service.rasterize(doc, scale, tx, ty, g_svg_full_rgba,
+                                         g_svg_full_w, g_svg_full_h,
+                                         g_svg_full_w * 4);
+        g_svg_service.destroy(doc);
+        if (ok != 0) {
+          set_w1_global("--warpSystemLog",
+                        image_is_wallpaper ? "SvgWallpaperRasterFailed."
+                                           : "BootLogoSvgRasterFailed.");
+          return 0;
         }
+        set_w1_global("--warpSystemLog",
+                      image_is_wallpaper ? "SvgWallpaperReady."
+                                         : "BootLogoSvgReady.");
+      } else {
+        set_w1_global("--warpSystemLog",
+                      image_is_wallpaper ? "SvgWallpaperParseFailed."
+                                         : "BootLogoSvgParseFailed.");
+        return 0;
       }
+    } else {
+      if (image_is_wallpaper) {
+        if (service_package_present("svg_service"))
+          set_w1_global("--warpSystemLog", "SvgWallpaperNeedsLoader.");
+        else
+          set_w1_global("--warpSystemLog", "SvgWallpaperUnsupported.");
+      } else {
+        set_w1_global("--warpSystemLog", "BootLogoSvgNeedsService.");
+      }
+      layer_fill(layer, BASE_BG_COLOR);
+      return 0;
     }
   } else {
-    if (g_svg_image) {
-      gpu_svg_delete(g_svg_image);
-      g_svg_image = NULL;
-    }
     if (!render_bitmap_wallpaper_to_rgba(image_data, image_size, g_svg_full_rgba,
                                          g_svg_full_w, g_svg_full_h)) {
       set_w1_global("--warpSystemLog", "BitmapWallpaperDecodeFailed.");
@@ -2294,13 +2887,6 @@ static int svg_init(layer_t *layer, int load_wallpaper) {
     set_w1_global("--warpSystemLog", "BitmapWallpaperReady.");
   }
 
-  if (!g_svg_rgba)
-    g_svg_rgba = (unsigned char *)malloc((size_t)layer->width *
-                                         (size_t)layer->height * 4);
-
-  g_svg_scale = 1.0f;
-  g_svg_tx = 0.0f;
-  g_svg_ty = 0.0f;
   svg_render_full(layer);
   memcpy(svg_base_buf, layer->buffer, sizeof(uint32_t) * layer->width * layer->height);
   g_svg_ready = 1;
@@ -2392,6 +2978,9 @@ static void warp_ui_mod_init(struct multiboot_info *mbi) {
   if (g_warp_ptr) g_warp_mod_found = 1;
   
   // モジュールリストもストレージから再構築
+  service_registry_init_defaults();
+  package_registry_scan_storage();
+
   g_warp_module_count = 0;
   for (uint32_t i = 0; i < g_sb.num_files && g_warp_module_count < MAX_WARP_MODULES; i++) {
       fs_entry_t *fe = &g_sb.entries[i];
@@ -4897,180 +5486,74 @@ static void box_blur_alpha(unsigned char *data, int w, int h, int radius) {
 }
 
 static void cursor_init(void) {
-  const char *cursor_svg =
-      "<svg width=\"298\" height=\"352\" viewBox=\"0 0 298 352\" fill=\"none\" "
-      "xmlns=\"http://www.w3.org/2000/svg\">"
-      "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 "
-      "98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 "
-      "190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 "
-      "197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 "
-      "144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 "
-      "59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 "
-      "100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 "
-      "68.2928Z\" stroke=\"white\" stroke-width=\"27\" "
-      "stroke-linecap=\"round\"/>"
-      "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"white\" "
-      "stroke-width=\"53\" stroke-linecap=\"round\"/>"
-      "<path d=\"M96.7002 68.2928V175.048C96.7002 181.437 96.7002 184.632 "
-      "98.0445 186.647C99.2198 188.41 101.046 189.634 103.123 190.052C105.498 "
-      "190.529 108.453 189.316 114.363 186.888L189.092 156.196C194.986 153.776 "
-      "197.933 152.565 199.286 150.56C200.47 148.807 200.911 146.657 200.513 "
-      "144.579C200.058 142.203 197.825 139.931 193.36 135.385L118.631 "
-      "59.3223C111.764 52.3325 108.33 48.8375 105.377 48.5867C102.816 48.3692 "
-      "100.306 49.3959 98.6308 51.3463C96.7002 53.5946 96.7002 58.494 96.7002 "
-      "68.2928Z\" fill=\"black\"/>"
-      "<path d=\"M175.272 225.571L122.891 99.8572\" stroke=\"black\" "
-      "stroke-width=\"25\" stroke-linecap=\"round\"/>"
-      "</svg>";
-
-  gpu_svg_document_t *img = gpu_svg_parse(cursor_svg);
-  if (!img)
-    return;
-
-  // 縦48px程度にスケール。シャドウのために余白を追加
-  int target_h = 48;
-  float svg_h = gpu_svg_height(img);
-  float svg_w = gpu_svg_width(img);
-  if (svg_h <= 0.0f || svg_w <= 0.0f) {
-    gpu_svg_delete(img);
-    return;
-  }
-  float scale = (float)target_h / svg_h;
-  int target_w = (int)(svg_w * scale);
-
-  int padding = 16;
-  int w = target_w + padding * 2;
-  int h = target_h + padding * 2;
-
+  int w = 32;
+  int h = 40;
   uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
-  if (!buf) {
-    gpu_svg_delete(img);
+  if (!buf)
     return;
-  }
+  memset(buf, 0, (size_t)w * (size_t)h * 4);
 
-  unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-  unsigned char *shadow_rgba =
-      (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-
-  if (rgba && shadow_rgba) {
-    // 1. シャドウ用のラスタライズ (オフセット込)
-    memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
-    gpu_svg_rasterize(img, scale, (float)padding + 2.0f, (float)padding + 4.0f,
-                      shadow_rgba, w, h, w * 4);
-    box_blur_alpha(shadow_rgba, w, h, 4); // ブラー適用
-
-    // 2. 本体をラスタライズ
-    memset(rgba, 0, (size_t)w * (size_t)h * 4);
-    gpu_svg_rasterize(img, scale, (float)padding, (float)padding, rgba, w, h,
-                      w * 4);
-
-    // 3. 合成 (影 -> 本体)
-    for (int i = 0; i < w * h; i++) {
-      // 影の色 (黒, 透過度はブラー後のアルファ * 0.5)
-      uint8_t shadow_a = (uint8_t)(shadow_rgba[i * 4 + 3] * 0.5f);
-      uint8_t r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2],
-              a = rgba[i * 4 + 3];
-
-      if (a == 255) {
-        buf[i] = (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) |
-                 (uint32_t)b;
-      } else {
-        // アルファブレンドで合成
-        uint8_t out_a = a + (shadow_a * (255 - a) / 255);
-        if (out_a == 0) {
-          buf[i] = 0;
-        } else {
-          uint8_t out_r = (uint8_t)((r * a + 0 * (out_a - a)) / out_a);
-          uint8_t out_g = (uint8_t)((g * a + 0 * (out_a - a)) / out_a);
-          uint8_t out_b = (uint8_t)((b * a + 0 * (out_a - a)) / out_a);
-          buf[i] = ((uint32_t)out_a << 24) | ((uint32_t)out_r << 16) |
-                   ((uint32_t)out_g << 8) | (uint32_t)out_b;
-        }
-      }
+  for (int y = 0; y < 28; y++) {
+    int xmax = 2 + y / 2;
+    for (int x = 0; x <= xmax && x < w; x++) {
+      uint32_t c = 0xFF000000;
+      if (x == 0 || x == xmax || y == 0)
+        c = 0xFFFFFFFF;
+      buf[y * w + x] = c;
     }
-    set_cursor_bitmap(buf, w, h);
+  }
+  for (int y = 21; y < 39; y++) {
+    int x0 = 10 + (y - 21) / 3;
+    for (int x = x0; x < x0 + 6 && x < w; x++) {
+      uint32_t c = (x == x0 || x == x0 + 5 || y == 21 || y == 38)
+                       ? 0xFFFFFFFF
+                       : 0xFF000000;
+      buf[y * w + x] = c;
+    }
   }
 
-  if (rgba)
-    free(rgba);
-  if (shadow_rgba)
-    free(shadow_rgba);
-  gpu_svg_delete(img);
+  set_cursor_bitmap(buf, w, h);
 }
 
 static void resize_cursor_init(void) {
-  const char *resize_svg =
-      "<svg width=\"319\" height=\"307\" viewBox=\"0 0 319 307\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">"
-      "<path d=\"M96.7002 73V121.123C96.7002 133.239 96.7002 139.297 99.0961 142.102C101.175 144.536 104.294 145.828 107.485 145.577C111.163 145.288 115.446 141.004 124.014 132.436L172.137 84.3137C180.704 75.7462 184.988 71.4624 185.277 67.7846C185.528 64.5934 184.237 61.4749 181.803 59.3959C178.997 57 172.939 57 160.823 57H112.7C107.1 57 104.299 57 102.16 58.0899C100.279 59.0487 98.7489 60.5785 97.7901 62.4601C96.7002 64.5992 96.7002 67.3995 96.7002 73Z\" stroke=\"white\" stroke-width=\"27\" stroke-linecap=\"round\"/>"
-      "<path d=\"M218.991 179.072L113.825 74.3452\" stroke=\"white\" stroke-width=\"56\"/>"
-      "<path d=\"M96.7002 73V121.123C96.7002 133.239 96.7002 139.297 99.0961 142.102C101.175 144.536 104.294 145.828 107.485 145.577C111.163 145.288 115.446 141.004 124.014 132.436L172.137 84.3137C180.704 75.7462 184.988 71.4624 185.277 67.7846C185.528 64.5934 184.237 61.4749 181.803 59.3959C178.997 57 172.939 57 160.823 57H112.7C107.1 57 104.299 57 102.16 58.0899C100.279 59.0487 98.7489 60.5785 97.7901 62.4601C96.7002 64.5992 96.7002 67.3995 96.7002 73Z\" fill=\"black\"/>"
-      "<path d=\"M233.7 178V129.877C233.7 117.761 233.7 111.703 231.304 108.898C229.225 106.464 226.107 105.172 222.916 105.423C219.238 105.712 214.954 109.996 206.386 118.564L158.264 166.686C149.696 175.254 145.413 179.538 145.123 183.215C144.872 186.407 146.164 189.525 148.598 191.604C151.403 194 157.461 194 169.578 194H217.7C223.301 194 226.101 194 228.24 192.91C230.122 191.951 231.652 190.422 232.61 188.54C233.7 186.401 233.7 183.601 233.7 178Z\" stroke=\"white\" stroke-width=\"27\" stroke-linecap=\"round\"/>"
-      "<path d=\"M233.7 178V129.877C233.7 117.761 233.7 111.703 231.304 108.898C229.225 106.464 226.107 105.172 222.916 105.423C219.238 105.712 214.954 109.996 206.386 118.564L158.264 166.686C149.696 175.254 145.413 179.538 145.123 183.215C144.872 186.407 146.164 189.525 148.598 191.604C151.403 194 157.461 194 169.578 194H217.7C223.301 194 226.101 194 228.24 192.91C230.122 191.951 231.652 190.422 232.61 188.54C233.7 186.401 233.7 183.601 233.7 178Z\" fill=\"black\"/>"
-      "<path d=\"M218.991 179.072L113.825 74.3452\" stroke=\"black\" stroke-width=\"29\"/>"
-      "</svg>";
-
-  gpu_svg_document_t *img = gpu_svg_parse(resize_svg);
-  if (!img) return;
-
-  int target_h = 42;
-  float svg_h = gpu_svg_height(img);
-  float svg_w = gpu_svg_width(img);
-  if (svg_h <= 0.0f || svg_w <= 0.0f) {
-    gpu_svg_delete(img);
-    return;
-  }
-  float scale = (float)target_h / svg_h;
-  int target_w = (int)(svg_w * scale);
-  int padding = 12;
-  int w = target_w + padding * 2;
-  int h = target_h + padding * 2;
-
+  int w = 44;
+  int h = 44;
   uint32_t *buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
-  unsigned char *rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
-  unsigned char *shadow_rgba = (unsigned char *)malloc((size_t)w * (size_t)h * 4);
+  if (!buf)
+    return;
+  memset(buf, 0, (size_t)w * (size_t)h * 4);
 
-  if (rgba && shadow_rgba && buf) {
-    memset(shadow_rgba, 0, (size_t)w * (size_t)h * 4);
-    gpu_svg_rasterize(img, scale, (float)padding + 2.0f, (float)padding + 3.0f,
-                      shadow_rgba, w, h, w * 4);
-    box_blur_alpha(shadow_rgba, w, h, 4);
-
-    memset(rgba, 0, (size_t)w * (size_t)h * 4);
-    gpu_svg_rasterize(img, scale, (float)padding, (float)padding, rgba, w, h,
-                      w * 4);
-
-    for (int i = 0; i < w * h; i++) {
-      uint8_t shadow_a = (uint8_t)(shadow_rgba[i * 4 + 3] * 0.4f);
-      uint8_t r = rgba[i * 4 + 0], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2], a = rgba[i * 4 + 3];
-      if (a == 255) {
-        buf[i] = (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
-      } else {
-        uint8_t out_a = a + (shadow_a * (255 - a) / 255);
-        if (out_a == 0) buf[i] = 0;
-        else {
-          uint8_t out_r = (uint8_t)((r * a) / out_a);
-          uint8_t out_g = (uint8_t)((g * a) / out_a);
-          uint8_t out_b = (uint8_t)((b * a) / out_a);
-          buf[i] = ((uint32_t)out_a << 24) | ((uint32_t)out_r << 16) | ((uint32_t)out_g << 8) | (uint32_t)out_b;
-        }
-      }
-    }
-    set_resize_cursor_bitmap(buf, w, h);
-
-    // Create flipped version for BL/TR corners (NE-SW)
-    uint32_t *flipped_buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
-    if (flipped_buf) {
-      for (int fy = 0; fy < h; fy++) {
-        for (int fx = 0; fx < w; fx++) {
-          flipped_buf[fy * w + (w - 1 - fx)] = buf[fy * w + fx];
-        }
-      }
-      set_resize_nesw_cursor_bitmap(flipped_buf, w, h);
+  for (int i = 8; i < 36; i++) {
+    for (int t = -2; t <= 2; t++) {
+      int x = i + t;
+      int y = i;
+      if (x >= 0 && x < w)
+        buf[y * w + x] = (t == -2 || t == 2) ? 0xFFFFFFFF : 0xFF000000;
     }
   }
-  if (rgba) free(rgba);
-  if (shadow_rgba) free(shadow_rgba);
-  gpu_svg_delete(img);
+  for (int a = 0; a < 9; a++) {
+    for (int b = 0; b <= a; b++) {
+      int x1 = 8 + b;
+      int y1 = 8 + a;
+      int x2 = 35 - b;
+      int y2 = 35 - a;
+      uint32_t c = (b == 0 || b == a || a == 8) ? 0xFFFFFFFF : 0xFF000000;
+      if (x1 >= 0 && x1 < w && y1 >= 0 && y1 < h)
+        buf[y1 * w + x1] = c;
+      if (x2 >= 0 && x2 < w && y2 >= 0 && y2 < h)
+        buf[y2 * w + x2] = c;
+    }
+  }
+  set_resize_cursor_bitmap(buf, w, h);
+
+  uint32_t *flipped_buf = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
+  if (flipped_buf) {
+    for (int fy = 0; fy < h; fy++) {
+      for (int fx = 0; fx < w; fx++)
+        flipped_buf[fy * w + (w - 1 - fx)] = buf[fy * w + fx];
+    }
+    set_resize_nesw_cursor_bitmap(flipped_buf, w, h);
+  }
 }
 
 #ifdef __aarch64__
@@ -5116,6 +5599,8 @@ static void warp_ui_mod_init_embedded() {
   g_os_settings_ptr = fs_read_file("os_settings.json", &g_os_settings_size);
   
   if (g_warp_ptr) g_warp_mod_found = 1;
+  service_registry_init_defaults();
+  package_registry_scan_storage();
   parse_os_settings();
 #endif
 }
@@ -5405,23 +5890,36 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
         static int error_rendered = 0;
         if (!error_rendered) {
-            gpu_svg_document_t *img = gpu_svg_parse(g_error_svg);
-            if (img) {
-                float tx = (float)(SCREEN_WIDTH - (int)gpu_svg_width(img)) / 2.0f;
-                float ty = (float)(SCREEN_HEIGHT - (int)gpu_svg_height(img)) / 2.0f;
-                // 直接メインバッファにラスタライズ
-                gpu_svg_rasterize(img, 1.0f, tx, ty, (unsigned char*)main_screen_buf,
-                                  SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * 4);
-                
-                // RGBA -> BGRA (Little Endian ARGB) 変換
-                unsigned char *p = (unsigned char*)main_screen_buf;
-                for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
-                    uint8_t r = p[0], b = p[2];
-                    p[0] = b; p[2] = r;
-                    p += 4;
+            layer_t error_layer = {
+                .buffer = main_screen_buf,
+                .x = 0,
+                .y = 0,
+                .width = SCREEN_WIDTH,
+                .height = SCREEN_HEIGHT,
+                .transparent = 0,
+                .active = 1,
+                .dynamic = 0,
+            };
+            layer_fill(&error_layer, 0xFF000000);
+            int box_w = 440;
+            int box_h = 170;
+            int box_x = (SCREEN_WIDTH - box_w) / 2;
+            int box_y = (SCREEN_HEIGHT - box_h) / 2;
+            for (int y = box_y; y < box_y + box_h; y++) {
+                for (int x = box_x; x < box_x + box_w; x++) {
+                    int border = (x < box_x + 3 || x >= box_x + box_w - 3 ||
+                                  y < box_y + 3 || y >= box_y + box_h - 3);
+                    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)
+                        main_screen_buf[y * SCREEN_WIDTH + x] =
+                            border ? 0xFFEE4444 : 0xFF151515;
                 }
-                gpu_svg_delete(img);
             }
+            layer_draw_glyph_string(&error_layer, box_x + 28, box_y + 34,
+                                    "BARAMOS BOOT ERROR", 0xFFFFFFFF);
+            layer_draw_glyph_string(&error_layer, box_x + 28, box_y + 78,
+                                    "os_settings.json missing", 0xFFCCCCCC);
+            layer_draw_glyph_string(&error_layer, box_x + 28, box_y + 118,
+                                    "Press any key to continue", 0xFF888888);
             screen_mark_static_dirty();
             error_rendered = 1;
         }

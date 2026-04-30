@@ -2,14 +2,39 @@
   "dev": {
     "pointerCheck": false,
     "eventCheck": false,
-    "showHUD": false,
+    "showHUD": true,
     "scrollSpeed": "1"
   },
   "firstboot": [
     "warp topbar.warp"
   ],
+  "boot": {
+    "mode": "desktop",
+    "fallback": "console",
+    "continueOnServiceFailure": true
+  },
+  "services": {
+    "autoload": [
+      "display_server",
+      "input_server",
+      "font_service",
+      "image_service",
+      "svg_service",
+      "warp_runtime",
+      "app_manager"
+    ],
+    "optional": [
+      "svg_service"
+    ],
+    "disabled": []
+  },
+  "apps": {
+    "autostart": [
+      "topbar.warp"
+    ]
+  },
   "main": {
     "dark": false,
-    "wallpaper": "samag1.bmp"
+    "wallpaper": "wallpaper_1.svg"
   }
 }

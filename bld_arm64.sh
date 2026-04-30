@@ -22,7 +22,6 @@ show_progress() {
 }
 
 CURRENT_PID=0
-LUNASVG_OBJECTS=""
 PERF_MODE="default"
 if [ "$1" = "max" ]; then
     PERF_MODE="max"
@@ -103,16 +102,18 @@ link_kernel() {
     # Create initrd as binary and embed it
     INITRD_DIR="output/initrd_tmp"
     rm -rf "$INITRD_DIR"
-    mkdir -p "$INITRD_DIR"
+    mkdir -p "$INITRD_DIR/system/services"
 
     cp ui/*.warp ui/*.warpc ui/*.svg ui/*.lua "$INITRD_DIR/" 2>/dev/null
     cp ui/*.bmp ui/*.png ui/*.jpg ui/*.jpeg ui/*.tga ui/*.gif "$INITRD_DIR/" 2>/dev/null
     [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
+    [ -f "output/svg_service.pkg" ] && cp output/svg_service.pkg "$INITRD_DIR/system/services/svg_service.pkg"
 
     (cd "$INITRD_DIR" && tar -cf ../initrd.tar *)
     rm -rf "$INITRD_DIR"
+    rm -f output/svg_service.pkg
 
     # Convert to binary object
     local OBJCOPY
@@ -120,7 +121,7 @@ link_kernel() {
     "$OBJCOPY" -I binary -O elf64-littleaarch64 -B aarch64 output/initrd.tar output/initrd.o
 
     $CC -T link_arm64.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o $LUNASVG_OBJECTS \
+        output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/initrd.o \
         -ffreestanding -O2 -nostdlib -static-libgcc -lgcc
 }
 
@@ -180,8 +181,7 @@ do_build_and_run() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    bash scripts/build_lunasvg.sh aarch64-elf output || return 1
-    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+    bash scripts/build_svg_service_pkg.sh aarch64-elf output || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -284,8 +284,7 @@ do_build_only() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
-    bash scripts/build_lunasvg.sh aarch64-elf output || return 1
-    LUNASVG_OBJECTS="$(cat output/lunasvg_objects.list)"
+    bash scripts/build_svg_service_pkg.sh aarch64-elf output || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -293,6 +292,7 @@ do_build_only() {
     show_progress 82
 
     link_kernel || return 1
+    rm -f output/svg_service.pkg
     show_progress 100
     echo ""
     echo "  ✅ Build #$CURRENT_BN Success"
