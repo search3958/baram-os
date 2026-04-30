@@ -2,7 +2,7 @@
   "dev": {
     "pointerCheck": false,
     "eventCheck": false,
-    "showHUD": true,
+    "showHUD": false,
     "scrollSpeed": "1"
   },
   "firstboot": [
