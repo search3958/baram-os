@@ -20,14 +20,15 @@ typedef struct {
   uint8_t has_stroke;
 } warp_draw_op_t;
 
-int warp_draw_rasterize_premul(const warp_draw_op_t *ops,
+int warp_draw_rasterize_opaque(const warp_draw_op_t *ops,
                                int op_count,
                                float scale,
                                float tx,
                                float ty,
-                               unsigned char *out_argb_premul,
+                               unsigned char *out_argb,
                                int buf_w,
                                int buf_h,
-                               int stride);
+                               int stride,
+                               uint32_t bg_argb);
 
 #endif

@@ -236,6 +236,7 @@ static void redraw_warp_svg(layer_t *layer);
 static void draw_wallpaper(layer_t *layer);
 static void bg_preview_update(layer_t *preview);
 static void window_redraw(struct window_struct *win);
+static uint32_t get_window_background_color(struct window_struct *win);
 static void request_window_interaction_refresh(struct window_struct *win);
 static uint32_t sample_backdrop_pixel(struct window_struct *target, int px, int py);
 static char *append_uint(char *p, unsigned int v);
@@ -396,8 +397,6 @@ typedef struct window_struct {
   uint8_t *window_mask;    // Alpha mask for the entire window shape (squircle)
   
   // Native WarpUI raster cache
-  uint32_t *raster_cache;
-  int raster_cache_w, raster_cache_h;
   float render_scale;      // Scale at which the buffer was rendered
   void *dynamic_file_ptr;  // Pointer to on-demand loaded file data from storage
   uint32_t interaction_refresh_until_tick;
@@ -2716,11 +2715,8 @@ static void window_clear_caches(window_t *win) {
   if (win->frame_cache) { free(win->frame_cache); win->frame_cache = NULL; }
   if (win->window_mask) { free(win->window_mask); win->window_mask = NULL; }
   if (win->rgba_buffer) { free(win->rgba_buffer); win->rgba_buffer = NULL; }
-  if (win->raster_cache) { free(win->raster_cache); win->raster_cache = NULL; }
   win->buffer_w = 0;
   win->buffer_h = 0;
-  win->raster_cache_w = 0;
-  win->raster_cache_h = 0;
 }
 
 static uint32_t *build_window_text_overlay(window_t *win, int *out_w, int *out_h) {
@@ -3091,54 +3087,23 @@ static void window_redraw(window_t *win) {
   if (scaled_w < 1) scaled_w = 1;
   if (scaled_h < 1) scaled_h = 1;
 
-  int raster_size_changed = (!win->raster_cache || win->raster_cache_w != scaled_w || win->raster_cache_h != scaled_h);
-  if (raster_size_changed) {
-    if (win->raster_cache) free(win->raster_cache);
-    win->raster_cache = (uint32_t *)malloc((size_t)scaled_w * (size_t)scaled_h * 4);
-    win->raster_cache_w = scaled_w;
-    win->raster_cache_h = scaled_h;
+  if (!win->rgba_buffer || win->buffer_w != scaled_w || win->buffer_h != scaled_h) {
+    if (win->rgba_buffer) free(win->rgba_buffer);
+    win->rgba_buffer = (unsigned char *)malloc((size_t)scaled_w * (size_t)scaled_h * 4);
+    win->buffer_w = scaled_w;
+    win->buffer_h = scaled_h;
+    win->is_dirty = 1;
   }
 
-  int raster_empty = 0;
-  if (win->raster_cache && (needs_render || raster_size_changed)) {
-    strncpy(g_hud_status, "ClearCache", 63);
-
+  if (win->rgba_buffer && (needs_render || win->is_dirty || needs_layout_update)) {
     strncpy(g_hud_status, "WarpRaster", 63);
-    warp_draw_rasterize_premul(ops, op_count, target_scale, 0.0f, 0.0f,
-                               (unsigned char*)win->raster_cache, scaled_w, scaled_h,
-                               scaled_w * 4);
+    warp_draw_rasterize_opaque(ops, op_count, target_scale, 0.0f, 0.0f,
+                               win->rgba_buffer, win->buffer_w, win->buffer_h,
+                               win->buffer_w * 4, get_window_background_color(win));
 
-    int alpha_pixels = 0;
-    unsigned char *scan = (unsigned char*)win->raster_cache;
-    for (int i = 0; i < scaled_w * scaled_h; i++) {
-      if (scan[i * 4 + 3] != 0) alpha_pixels++;
-    }
-    if (alpha_pixels == 0) {
-      raster_empty = 1;
-      strncpy(g_hud_status, "RasterEmpty", 63);
-    }
-
-    strncpy(g_hud_status, "PremulReady", 63);
-  }
-
-  // Prepare RGBA buffer (Flatten content: SVG + Text)
-  if (win->raster_cache) {
-    if (!win->rgba_buffer || win->buffer_w != win->raster_cache_w || win->buffer_h != win->raster_cache_h) {
-      if (win->rgba_buffer) free(win->rgba_buffer);
-      win->rgba_buffer = (unsigned char *)malloc((size_t)win->raster_cache_w * (size_t)win->raster_cache_h * 4);
-      win->buffer_w = win->raster_cache_w;
-      win->buffer_h = win->raster_cache_h;
-      win->is_dirty = 1; // Force redraw after allocation
-    }
-
-    if (needs_render || win->is_dirty || needs_layout_update) {
-      memcpy(win->rgba_buffer, win->raster_cache, (size_t)win->buffer_w * (size_t)win->buffer_h * 4);
-      
-      // ここでテキストもバッファに直接描き込む。これで「表示内容そのまま」が完成する。
-      layer_t temp_l = { (uint32_t*)win->rgba_buffer, 0, 0, win->buffer_w, win->buffer_h, 0, 1, 0 };
-      if (win->is_warp1) warp1_context_draw_texts(win->warp1_ctx, &temp_l, 0, 0, target_scale);
-      else warp_context_draw_texts(win->warp_ctx, &temp_l, 0, 0, target_scale);
-    }
+    layer_t temp_l = { (uint32_t*)win->rgba_buffer, 0, 0, win->buffer_w, win->buffer_h, 0, 1, 0 };
+    if (win->is_warp1) warp1_context_draw_texts(win->warp1_ctx, &temp_l, 0, 0, target_scale);
+    else warp_context_draw_texts(win->warp_ctx, &temp_l, 0, 0, target_scale);
   }
 
   // Keep caches for inactive windows to render same as active
@@ -3148,8 +3113,7 @@ static void window_redraw(window_t *win) {
   win->is_calculating = 0;
   if (win->is_warp1) warp1_context_clear_dirty(win->warp1_ctx);
   else warp_context_clear_dirty(win->warp_ctx);
-  if (raster_empty) strncpy(g_hud_status, "RasterEmpty", 63);
-  else strncpy(g_hud_status, "Idle", 63);
+  strncpy(g_hud_status, "Idle", 63);
 }
 
 static void request_window_interaction_refresh(window_t *win) {
@@ -3293,9 +3257,6 @@ static void add_window(const char *title, int x, int y, int w, int h, int is_war
   win->rgba_buffer = NULL;
   win->buffer_w = 0;
   win->buffer_h = 0;
-  win->raster_cache = NULL;
-  win->raster_cache_w = 0;
-  win->raster_cache_h = 0;
   win->shadow_cache = NULL;
   win->frame_cache = NULL;
   win->window_mask = NULL;
@@ -3348,7 +3309,6 @@ static void close_active_window() {
   if (win->warp_ctx) warp_context_destroy(win->warp_ctx);
   if (win->warp1_ctx) warp1_context_destroy(win->warp1_ctx);
   if (win->rgba_buffer) free(win->rgba_buffer);
-  if (win->raster_cache) free(win->raster_cache);
   if (win->shadow_cache) free(win->shadow_cache);
   if (win->frame_cache) free(win->frame_cache);
   if (win->window_mask) free(win->window_mask);
@@ -3860,7 +3820,6 @@ skip_shadow:;
 
           // ウィンドウ全体の背景：背後を完全に無視し、指定色の単色塗り潰しとする
           uint32_t win_bg = get_window_background_color(win);
-          uint32_t surface_bg = win_bg;
 
           // 1. Base Content Rendering (Warp UI)
           int src_x = (int)((float)dx * scale);
@@ -3879,7 +3838,7 @@ skip_shadow:;
                   0.00f, 0.00f, 0.07f, -0.12f, 0.12f, -0.07f, 0.00f, 0.08f, -0.15f, 0.20f, -0.24f, 0.25f, -0.24f, 0.20f, -0.15f, 0.08f, -0.00f, 0.00f, 0.10f, -0.19f, 0.28f, -0.35f, 0.42f, -0.46f, 0.49f
               };
               
-              uint32_t rs = 0, gs = 0, bs = 0, as = 0;
+              uint32_t rs = 0, gs = 0, bs = 0;
               for (int i = 0; i < 25; i++) {
                   int sx = src_x + (int)(ox[i] * r);
                   int sy = src_y + (int)(oy[i] * r);
@@ -3891,27 +3850,23 @@ skip_shadow:;
                   if (sy >= win->buffer_h) sy = win->buffer_h - 1;
                   
                   uint32_t c = ((uint32_t*)win->rgba_buffer)[sy * win->buffer_w + sx];
-                  as += (c >> 24) & 0xFF;
                   rs += (c >> 16) & 0xFF;
                   gs += (c >> 8) & 0xFF;
                   bs += c & 0xFF;
               }
-              content_color = ((as / 25) << 24) | ((rs / 25) << 16) | ((gs / 25) << 8) | (bs / 25);
+              content_color = 0xFF000000u | ((rs / 25) << 16) | ((gs / 25) << 8) | (bs / 25);
           } else {
-              content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x];
+              content_color = ((uint32_t*)win->rgba_buffer)[src_y * win->buffer_w + src_x] | 0xFF000000u;
           }
 
-          // 超高速パス: ウィンドウ中央、非リサイズ時、不透明ピクセルの場合
+          // 超高速パス: ウィンドウ中央、非リサイズ時は content が常に不透明
           uint8_t mask_a = mask_line[(int)((float)dx * scale)];
           if (mask_a == 255 && dy >= title_h && fade_alpha_u8 == 0 && !win->is_resizing && !win->is_calculating) {
-              uint8_t content_a = (content_color >> 24);
-              if (content_a == 255) {
-                  dst_line[px] = content_color | 0xFF000000u;
-                  continue;
-              }
+              dst_line[px] = content_color;
+              continue;
           }
           
-          uint32_t color = blend_rgb_over_opaque_premul(surface_bg, content_color);
+          uint32_t color = content_color;
           if (header_grad_alpha > 0) color = blend_colors(color, grad_base, header_grad_alpha);
 
           // 3. Shadow Layer (SDFの計算コストを削減するため、範囲外ならスキップ)
@@ -4010,7 +3965,7 @@ skip_shadow:;
                        // グラスエフェクト用のブラーサンプリング (3x3 grid)
                        // 加工（歪み計算）前のソースから周辺ピクセルを混ぜることで、曇りガラス表現を実現
                        float gr = 1.0f * scale; // サンプリング間隔
-                       uint32_t rs = 0, gs = 0, bs = 0, as = 0;
+                       uint32_t rs = 0, gs = 0, bs = 0;
                        for (int iy = -1; iy <= 1; iy++) {
                            for (int ix = -1; ix <= 1; ix++) {
                                int sx = (int)(fgx + (float)ix * gr);
@@ -4018,13 +3973,12 @@ skip_shadow:;
                                if (sx < 0) sx = 0; if (sx >= win->buffer_w) sx = win->buffer_w - 1;
                                if (sy < 0) sy = 0; if (sy >= win->buffer_h) sy = win->buffer_h - 1;
                                uint32_t c = ((uint32_t*)win->rgba_buffer)[sy * win->buffer_w + sx];
-                               as += (c >> 24) & 0xFF; rs += (c >> 16) & 0xFF; gs += (c >> 8) & 0xFF; bs += c & 0xFF;
+                               rs += (c >> 16) & 0xFF; gs += (c >> 8) & 0xFF; bs += c & 0xFF;
                            }
                        }
-                       uint32_t blurred_px = ((as / 9) << 24) | ((rs / 9) << 16) | ((gs / 9) << 8) | (bs / 9);
-                       
-                       uint32_t g_color = blend_rgb_over_opaque_premul(win_bg, blurred_px);
-                       glass_base = blend_colors(g_color, win_bg, 180);
+                       uint32_t blurred_px = 0xFF000000u | ((rs / 9) << 16) | ((gs / 9) << 8) | (bs / 9);
+
+                       glass_base = blend_colors(blurred_px, win_bg, 180);
 
                        // グラスボタンの色にもグラデーションを適用して背景と完全に馴染ませる
                        if (header_grad_alpha > 0) {

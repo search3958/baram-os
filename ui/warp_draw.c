@@ -2,7 +2,6 @@
 
 #include <math.h>
 #include <stddef.h>
-#include <string.h>
 
 #define WARP_DRAW_MAX_POINTS 96
 
@@ -14,30 +13,28 @@ typedef struct {
 static const float SQUIRCLE_KX[] = {1.498f, 3.381f, 7.456f, 12.630f, 17.368f, 21.770f, 30.573f};
 static const float SQUIRCLE_KY[] = {0.800f, 3.600f, 7.370f, 12.544f, 16.619f, 18.502f, 20.000f};
 
-static void blend_pixel_argb_premul(uint32_t *px,
+static void blend_pixel_argb_opaque(uint32_t *px,
                                     unsigned char sr, unsigned char sg, unsigned char sb, unsigned char sa) {
   if (sa == 0) return;
+  if (sa == 255) {
+    *px = 0xFF000000u | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | (uint32_t)sb;
+    return;
+  }
 
   uint32_t dst = *px;
-  uint32_t dst_a = (dst >> 24) & 0xFFu;
   uint32_t dst_r = (dst >> 16) & 0xFFu;
   uint32_t dst_g = (dst >> 8) & 0xFFu;
   uint32_t dst_b = dst & 0xFFu;
   uint32_t inv_sa = 255u - sa;
 
-  uint32_t src_r = ((uint32_t)sr * sa + 127u) / 255u;
-  uint32_t src_g = ((uint32_t)sg * sa + 127u) / 255u;
-  uint32_t src_b = ((uint32_t)sb * sa + 127u) / 255u;
-  uint32_t out_a = sa + ((dst_a * inv_sa + 127u) / 255u);
-  uint32_t out_r = src_r + ((dst_r * inv_sa + 127u) / 255u);
-  uint32_t out_g = src_g + ((dst_g * inv_sa + 127u) / 255u);
-  uint32_t out_b = src_b + ((dst_b * inv_sa + 127u) / 255u);
+  uint32_t out_r = ((uint32_t)sr * sa + dst_r * inv_sa + 127u) / 255u;
+  uint32_t out_g = ((uint32_t)sg * sa + dst_g * inv_sa + 127u) / 255u;
+  uint32_t out_b = ((uint32_t)sb * sa + dst_b * inv_sa + 127u) / 255u;
 
-  if (out_a > 255u) out_a = 255u;
   if (out_r > 255u) out_r = 255u;
   if (out_g > 255u) out_g = 255u;
   if (out_b > 255u) out_b = 255u;
-  *px = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+  *px = 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
 }
 
 static void resolve_squircle_geometry(int w, int h, float radius,
@@ -234,7 +231,7 @@ static void rasterize_line(const warp_draw_op_t *op, float scale, float tx, floa
       if (cov <= 0.0f) continue;
       if (cov > 1.0f) cov = 1.0f;
       unsigned char a = (unsigned char)((float)op->sa * cov + 0.5f);
-      blend_pixel_argb_premul(&row[x], op->sr, op->sg, op->sb, a);
+      blend_pixel_argb_opaque(&row[x], op->sr, op->sg, op->sb, a);
     }
   }
 }
@@ -273,30 +270,36 @@ static void rasterize_squircle(const warp_draw_op_t *op, float scale, float tx, 
       unsigned char inner_cov = inner_count ? polygon_coverage(x, y, inner, inner_count) : 0;
       if (op->has_fill) {
         unsigned char a = (unsigned char)(((unsigned)op->fa * outer_cov + 127u) / 255u);
-        blend_pixel_argb_premul(&row[x], op->fr, op->fg, op->fb, a);
+        blend_pixel_argb_opaque(&row[x], op->fr, op->fg, op->fb, a);
       }
       if (op->has_stroke && outer_cov > inner_cov) {
         unsigned char edge = (unsigned char)(outer_cov - inner_cov);
         unsigned char a = (unsigned char)(((unsigned)op->sa * edge + 127u) / 255u);
-        blend_pixel_argb_premul(&row[x], op->sr, op->sg, op->sb, a);
+        blend_pixel_argb_opaque(&row[x], op->sr, op->sg, op->sb, a);
       }
     }
   }
 }
 
-int warp_draw_rasterize_premul(const warp_draw_op_t *ops, int op_count,
+int warp_draw_rasterize_opaque(const warp_draw_op_t *ops, int op_count,
                                float scale, float tx, float ty,
-                               unsigned char *out_argb_premul,
-                               int buf_w, int buf_h, int stride) {
-  if (!ops || op_count < 0 || !out_argb_premul) return -1;
+                               unsigned char *out_argb,
+                               int buf_w, int buf_h, int stride,
+                               uint32_t bg_argb) {
+  if (!ops || op_count < 0 || !out_argb) return -1;
   if (buf_w <= 0 || buf_h <= 0 || stride < buf_w * 4) return -1;
 
-  memset(out_argb_premul, 0, (size_t)stride * (size_t)buf_h);
+  uint32_t bg = bg_argb | 0xFF000000u;
+  for (int y = 0; y < buf_h; ++y) {
+    uint32_t *row = (uint32_t *)(out_argb + (size_t)y * (size_t)stride);
+    for (int x = 0; x < buf_w; ++x) row[x] = bg;
+  }
+
   for (int i = 0; i < op_count; ++i) {
     if (ops[i].type == WARP_DRAW_LINE) {
-      rasterize_line(&ops[i], scale, tx, ty, out_argb_premul, buf_w, buf_h, stride);
+      rasterize_line(&ops[i], scale, tx, ty, out_argb, buf_w, buf_h, stride);
     } else if (ops[i].type == WARP_DRAW_SQUIRCLE) {
-      rasterize_squircle(&ops[i], scale, tx, ty, out_argb_premul, buf_w, buf_h, stride);
+      rasterize_squircle(&ops[i], scale, tx, ty, out_argb, buf_w, buf_h, stride);
     }
   }
   return 0;
