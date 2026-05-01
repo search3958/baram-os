@@ -20,11 +20,13 @@
       "font_service",
       "image_service",
       "svg_service",
+      "warp_draw_service",
       "warp_runtime",
       "app_manager"
     ],
     "optional": [
-      "svg_service"
+      "svg_service",
+      "warp_draw_service"
     ],
     "disabled": []
   },
@@ -34,6 +36,7 @@
     ]
   },
   "main": {
+    "warpRenderer": "native-package",
     "dark": false,
     "wallpaper": "wallpaper_1.svg"
   }

@@ -211,6 +211,30 @@ typedef struct {
 static svg_service_runtime_t g_svg_service;
 static int svg_service_load_from_package(void);
 
+typedef int (*warp_draw_service_rasterize_fn)(const warp_draw_op_t *ops,
+                                              int op_count, float scale,
+                                              float tx, float ty,
+                                              unsigned char *out_argb,
+                                              int buf_w, int buf_h,
+                                              int stride,
+                                              uint32_t bg_argb);
+
+typedef enum {
+  WARP_RENDERER_NATIVE = 0,
+  WARP_RENDERER_NATIVE_PACKAGE,
+  WARP_RENDERER_SVG
+} warp_renderer_mode_t;
+
+typedef struct {
+  int loaded;
+  void *module_base;
+  warp_draw_service_rasterize_fn rasterize;
+} warp_draw_service_runtime_t;
+
+static warp_draw_service_runtime_t g_warp_draw_service;
+static warp_renderer_mode_t g_warp_renderer_mode = WARP_RENDERER_NATIVE_PACKAGE;
+static int warp_draw_service_load_from_package(void);
+
 // Global pointer to Multiboot info
 static struct multiboot_info *mbi_ptr = NULL;
 
@@ -565,6 +589,26 @@ static int parse_json_int_or_string(const char *p, int *out_value) {
     return 1;
 }
 
+static int json_read_string_value_after_key(const char *json, const char *key,
+                                            char *out, size_t out_size) {
+    if (!json || !key || !out || out_size == 0) return 0;
+    char key_buf[64];
+    snprintf(key_buf, sizeof(key_buf), "\"%s\"", key);
+    const char *p = strstr(json, key_buf);
+    if (!p) return 0;
+    p = json_skip_ws(p + strlen(key_buf));
+    if (*p != ':') return 0;
+    p = json_skip_ws(p + 1);
+    if (*p != '"') return 0;
+    p++;
+    size_t len = 0;
+    while (*p && *p != '"' && len + 1 < out_size) {
+        out[len++] = *p++;
+    }
+    out[len] = '\0';
+    return (*p == '"');
+}
+
 static int str_ends_with(const char *s, const char *suffix) {
     if (!s || !suffix) return 0;
     size_t slen = strlen(s);
@@ -640,6 +684,8 @@ static void package_registry_scan_storage(void) {
         const char *name = g_sb.entries[i].name;
         if (str_ends_with(name, "svg_service.pkg")) {
             package_register_service("svg_service", name, 1);
+        } else if (str_ends_with(name, "warp_draw_service.pkg")) {
+            package_register_service("warp_draw_service", name, 1);
         }
     }
 }
@@ -669,7 +715,7 @@ static int json_array_contains_string(const char *json, const char *array_key, c
 }
 
 static void service_registry_apply_settings(const char *json) {
-    const char *package_services[] = {"svg_service"};
+    const char *package_services[] = {"svg_service", "warp_draw_service"};
     for (size_t i = 0; i < sizeof(package_services) / sizeof(package_services[0]); i++) {
         const char *name = package_services[i];
         if (json_array_contains_string(json, "autoload", name) ||
@@ -706,6 +752,9 @@ static void service_registry_start_configured(void) {
             if (strcmp(svc->name, "svg_service") == 0 &&
                 svg_service_load_from_package()) {
                 svc->state = SERVICE_STATE_RUNNING;
+            } else if (strcmp(svc->name, "warp_draw_service") == 0 &&
+                       warp_draw_service_load_from_package()) {
+                svc->state = SERVICE_STATE_RUNNING;
             } else {
                 svc->state = SERVICE_STATE_FAILED;
             }
@@ -738,6 +787,23 @@ static void parse_os_settings() {
   const char* buf = g_os_settings_ptr;
   set_w1_global("--warpSystemLog", "SettingsLoaded.");
   service_registry_apply_settings(buf);
+
+  char renderer_name[32];
+  if (json_read_string_value_after_key(buf, "warpRenderer", renderer_name, sizeof(renderer_name)) ||
+      json_read_string_value_after_key(buf, "renderer", renderer_name, sizeof(renderer_name))) {
+    if (strcmp(renderer_name, "svg") == 0) {
+      g_warp_renderer_mode = WARP_RENDERER_SVG;
+      set_w1_global("~~dev/warpRenderer", "svg");
+    } else if (strcmp(renderer_name, "native") == 0) {
+      g_warp_renderer_mode = WARP_RENDERER_NATIVE;
+      set_w1_global("~~dev/warpRenderer", "native");
+    } else {
+      g_warp_renderer_mode = WARP_RENDERER_NATIVE_PACKAGE;
+      set_w1_global("~~dev/warpRenderer", "native-package");
+    }
+  } else {
+    set_w1_global("~~dev/warpRenderer", "native-package");
+  }
   
   
   // Robust check for "dark" key
@@ -897,6 +963,13 @@ static void parse_os_settings() {
     set_w1_global("--warpSystemLog", "svg_service failed; boot continuing.");
   else if (service_package_present("svg_service"))
     set_w1_global("--warpSystemLog", "svg_service packaged.");
+  baram_service_t *warp_draw_svc = service_find("warp_draw_service");
+  if (warp_draw_svc && warp_draw_svc->state == SERVICE_STATE_RUNNING)
+    set_w1_global("--warpSystemLog", "warp_draw_service loaded from pkg.");
+  else if (warp_draw_svc && warp_draw_svc->state == SERVICE_STATE_FAILED)
+    set_w1_global("--warpSystemLog", "warp_draw_service failed; boot continuing.");
+  else if (service_package_present("warp_draw_service"))
+    set_w1_global("--warpSystemLog", "warp_draw_service packaged.");
 
   const char* dark_val = get_w1_global("~~main/dark");
   char startup_msg[128] = "OSReady Theme:";
@@ -2187,6 +2260,88 @@ static int svg_service_load_from_package(void) {
   }
   g_svg_service.loaded = 1;
   set_w1_global("--warpSystemLog", "svg_service running.");
+  return 1;
+#endif
+}
+
+static int warp_draw_service_load_from_package(void) {
+  if (g_warp_draw_service.loaded)
+    return 1;
+#ifndef __x86_64__
+  set_w1_global("--warpSystemLog", "warp_draw_service loader unavailable.");
+  return 0;
+#else
+  const char *pkg_data = NULL;
+  uint32_t pkg_size = 0;
+  void *pkg = fs_read_file("system/services/warp_draw_service.pkg", &pkg_size);
+  if (!pkg) {
+    if (mbi_ptr && (mbi_ptr->flags & 0x8)) {
+      multiboot_module_t *mods =
+          (multiboot_module_t *)(uintptr_t)mbi_ptr->mods_addr;
+      for (uint32_t i = 0; i < mbi_ptr->mods_count; i++) {
+        const char *s = (const char *)(uintptr_t)mods[i].string;
+        if (s && (strstr(s, "initrd") || strstr(s, "tar"))) {
+          const char *tar = (const char *)(uintptr_t)mods[i].mod_start;
+          uint32_t tar_size = mods[i].mod_end - mods[i].mod_start;
+          pkg_data = tar_find_file(tar, tar_size,
+                                   "system/services/warp_draw_service.pkg",
+                                   &pkg_size);
+          break;
+        }
+      }
+    }
+    if (!pkg_data) {
+      set_w1_global("--warpSystemLog", "warp_draw_service package missing.");
+      return 0;
+    }
+  } else {
+    pkg_data = (const char *)pkg;
+  }
+
+  uint32_t module_size = 0;
+  const char *module = tar_find_file(pkg_data, pkg_size,
+                                     "./module/warp_draw_service.ko",
+                                     &module_size);
+  if (!module) {
+    module = tar_find_file(pkg_data, pkg_size, "module/warp_draw_service.ko",
+                           &module_size);
+  }
+  if (!module) {
+    if (pkg) free(pkg);
+    set_w1_global("--warpSystemLog", "warp_draw_service module missing.");
+    return 0;
+  }
+
+  const char *exports[] = {"warp_draw_rasterize_opaque"};
+  void *resolved[1] = {0};
+  if (!elf64_load_relocatable(module, module_size, exports, resolved, 1)) {
+    if (pkg) free(pkg);
+    set_w1_global("--warpSystemLog", "warp_draw_service load failed.");
+    return 0;
+  }
+
+  g_warp_draw_service.rasterize = (warp_draw_service_rasterize_fn)resolved[0];
+  warp_draw_op_t op;
+  memset(&op, 0, sizeof(op));
+  op.type = WARP_DRAW_SQUIRCLE;
+  op.x = 2.0f;
+  op.y = 2.0f;
+  op.w = 12.0f;
+  op.h = 12.0f;
+  op.radius = 4.0f;
+  op.has_fill = 1;
+  op.fr = op.fg = op.fb = op.fa = 255;
+  unsigned char test_argb[16 * 16 * 4];
+  int ok = g_warp_draw_service.rasterize(&op, 1, 1.0f, 0.0f, 0.0f,
+                                         test_argb, 16, 16, 16 * 4,
+                                         0xFF000000u);
+  if (pkg) free(pkg);
+  if (ok != 0) {
+    set_w1_global("--warpSystemLog", "warp_draw_service selftest failed.");
+    return 0;
+  }
+  g_warp_draw_service.loaded = 1;
+  set_w1_global("--warpSystemLog", "warp_draw_service running.");
   return 1;
 #endif
 }
@@ -3617,6 +3772,162 @@ static void window_update_caches(window_t *win) {
   }
 }
 
+static char *append_cstr(char *p, char *end, const char *s) {
+  if (!p || !end || !s || p >= end) return p;
+  while (*s && p + 1 < end) *p++ = *s++;
+  *p = '\0';
+  return p;
+}
+
+static char *append_u8_hex2(char *p, char *end, uint8_t v) {
+  static const char hex[] = "0123456789ABCDEF";
+  if (p + 2 >= end) return p;
+  *p++ = hex[(v >> 4) & 0xF];
+  *p++ = hex[v & 0xF];
+  *p = '\0';
+  return p;
+}
+
+static char *append_hex_color(char *p, char *end, uint8_t r, uint8_t g, uint8_t b) {
+  p = append_cstr(p, end, "#");
+  p = append_u8_hex2(p, end, r);
+  p = append_u8_hex2(p, end, g);
+  p = append_u8_hex2(p, end, b);
+  return p;
+}
+
+static char *append_float_attr(char *p, char *end, const char *name, float value) {
+  if (!p || p >= end) return p;
+  int written = snprintf(p, (size_t)(end - p), " %s=\"%.3f\"", name, value);
+  if (written < 0) return p;
+  if (written >= end - p) return end - 1;
+  return p + written;
+}
+
+static int build_warp_ops_svg(const warp_draw_op_t *ops, int op_count,
+                              int width, int height, char *svg, size_t svg_size) {
+  if (!ops || op_count < 0 || !svg || svg_size == 0) return 0;
+  char *p = svg;
+  char *end = svg + svg_size;
+  int written = snprintf(p, svg_size,
+                         "<svg width=\"%d\" height=\"%d\" viewBox=\"0 0 %d %d\" "
+                         "xmlns=\"http://www.w3.org/2000/svg\">\n",
+                         width, height, width, height);
+  if (written < 0 || (size_t)written >= svg_size) return 0;
+  p += written;
+
+  for (int i = 0; i < op_count && p + 128 < end; i++) {
+    const warp_draw_op_t *op = &ops[i];
+    if (op->type == WARP_DRAW_SQUIRCLE) {
+      char fill[16];
+      char extra[128];
+      char *fp = fill;
+      fp = append_hex_color(fp, fill + sizeof(fill), op->fr, op->fg, op->fb);
+
+      extra[0] = '\0';
+      char *ep = extra;
+      char *eend = extra + sizeof(extra);
+      if (op->has_fill && op->fa < 255)
+        ep = append_float_attr(ep, eend, "fill-opacity", (float)op->fa / 255.0f);
+      if (op->has_stroke) {
+        ep = append_cstr(ep, eend, " stroke=\"");
+        ep = append_hex_color(ep, eend, op->sr, op->sg, op->sb);
+        ep = append_cstr(ep, eend, "\"");
+        ep = append_float_attr(ep, eend, "stroke-width", op->stroke_width);
+        if (op->sa < 255)
+          ep = append_float_attr(ep, eend, "stroke-opacity", (float)op->sa / 255.0f);
+      }
+      p = emit_squircle_shape_to(p, (int)op->x, (int)op->y, (int)op->w, (int)op->h,
+                                 op->radius, op->has_fill ? fill : "none", extra);
+    } else if (op->type == WARP_DRAW_LINE && op->stroke_width > 0.0f && op->sa > 0) {
+      p = append_cstr(p, end, "<path d=\"M");
+      int n = snprintf(p, (size_t)(end - p), "%.3f %.3f L%.3f %.3f\" stroke=\"",
+                       op->x, op->y, op->x2, op->y2);
+      if (n < 0 || n >= end - p) return 0;
+      p += n;
+      p = append_hex_color(p, end, op->sr, op->sg, op->sb);
+      p = append_cstr(p, end, "\" fill=\"none\"");
+      p = append_float_attr(p, end, "stroke-width", op->stroke_width);
+      if (op->sa < 255)
+        p = append_float_attr(p, end, "stroke-opacity", (float)op->sa / 255.0f);
+      p = append_cstr(p, end, " />\n");
+    }
+  }
+  p = append_cstr(p, end, "</svg>");
+  return p < end;
+}
+
+static int render_warp_ops_with_svg_service(const warp_draw_op_t *ops, int op_count,
+                                            float scale, unsigned char *out_argb,
+                                            int buf_w, int buf_h, int stride,
+                                            uint32_t bg_argb) {
+  if (!service_is_running("svg_service") || !g_svg_service.loaded) return 0;
+  size_t svg_size = 65536;
+  char *svg = (char *)malloc(svg_size);
+  if (!svg) return 0;
+  if (!build_warp_ops_svg(ops, op_count, buf_w, buf_h, svg, svg_size)) {
+    free(svg);
+    return 0;
+  }
+
+  void *doc = g_svg_service.parse_data(svg, strlen(svg));
+  free(svg);
+  if (!doc) return 0;
+
+  unsigned char *rgba = (unsigned char *)malloc((size_t)buf_w * (size_t)buf_h * 4);
+  if (!rgba) {
+    g_svg_service.destroy(doc);
+    return 0;
+  }
+  int ok = g_svg_service.rasterize(doc, scale, 0.0f, 0.0f, rgba,
+                                   buf_w, buf_h, buf_w * 4);
+  g_svg_service.destroy(doc);
+  if (ok != 0) {
+    free(rgba);
+    return 0;
+  }
+
+  uint32_t bg = bg_argb | 0xFF000000u;
+  uint8_t bg_r = (bg >> 16) & 0xFF;
+  uint8_t bg_g = (bg >> 8) & 0xFF;
+  uint8_t bg_b = bg & 0xFF;
+  for (int y = 0; y < buf_h; y++) {
+    uint32_t *dst = (uint32_t *)(out_argb + (size_t)y * (size_t)stride);
+    unsigned char *src = rgba + (size_t)y * (size_t)buf_w * 4;
+    for (int x = 0; x < buf_w; x++)
+      dst[x] = blend_rgba_over_opaque_bg_scalar(src + x * 4, bg, bg_r, bg_g, bg_b);
+  }
+  free(rgba);
+  return 1;
+}
+
+static void render_warp_ops(const warp_draw_op_t *ops, int op_count,
+                            float scale, unsigned char *out_argb, int buf_w,
+                            int buf_h, int stride, uint32_t bg_argb) {
+  if (g_warp_renderer_mode == WARP_RENDERER_SVG) {
+    if (render_warp_ops_with_svg_service(ops, op_count, scale, out_argb,
+                                         buf_w, buf_h, stride, bg_argb)) {
+      strncpy(g_hud_status, "WarpSvg", 63);
+      return;
+    }
+    set_w1_global("--warpSystemLog", "WarpSvgRendererFallbackNative.");
+  }
+
+  if (g_warp_renderer_mode == WARP_RENDERER_NATIVE_PACKAGE &&
+      g_warp_draw_service.loaded && g_warp_draw_service.rasterize) {
+    if (g_warp_draw_service.rasterize(ops, op_count, scale, 0.0f, 0.0f,
+                                      out_argb, buf_w, buf_h, stride,
+                                      bg_argb) == 0) {
+      strncpy(g_hud_status, "WarpPkgRaster", 63);
+      return;
+    }
+    set_w1_global("--warpSystemLog", "WarpDrawPackageFallbackNative.");
+  }
+
+  warp_draw_rasterize_opaque(ops, op_count, scale, 0.0f, 0.0f,
+                             out_argb, buf_w, buf_h, stride, bg_argb);
+}
+
 static void window_redraw(window_t *win) {
   if (!win->warp_ctx && !win->warp1_ctx) return;
 
@@ -3699,9 +4010,9 @@ static void window_redraw(window_t *win) {
 
   if (win->rgba_buffer && (needs_render || win->is_dirty || needs_layout_update)) {
     strncpy(g_hud_status, "WarpRaster", 63);
-    warp_draw_rasterize_opaque(ops, op_count, target_scale, 0.0f, 0.0f,
-                               win->rgba_buffer, win->buffer_w, win->buffer_h,
-                               win->buffer_w * 4, get_window_background_color(win));
+    render_warp_ops(ops, op_count, target_scale,
+                    win->rgba_buffer, win->buffer_w, win->buffer_h,
+                    win->buffer_w * 4, get_window_background_color(win));
 
     layer_t temp_l = { (uint32_t*)win->rgba_buffer, 0, 0, win->buffer_w, win->buffer_h, 0, 1, 0 };
     if (win->is_warp1) warp1_context_draw_texts(win->warp1_ctx, &temp_l, 0, 0, target_scale);

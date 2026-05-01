@@ -207,6 +207,7 @@ do_build_and_run() {
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     show_progress 75
     bash scripts/build_svg_service_pkg.sh x86_64-elf output || return 1
+    bash scripts/build_warp_draw_service_pkg.sh x86_64-elf output || return 1
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
     show_progress 80
@@ -229,10 +230,11 @@ do_build_and_run() {
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
     [ -f "output/svg_service.pkg" ] && cp output/svg_service.pkg "$INITRD_DIR/system/services/svg_service.pkg"
+    [ -f "output/warp_draw_service.pkg" ] && cp output/warp_draw_service.pkg "$INITRD_DIR/system/services/warp_draw_service.pkg"
 
     (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
     rm -rf "$INITRD_DIR"
-    rm -f output/svg_service.pkg
+    rm -f output/svg_service.pkg output/warp_draw_service.pkg
 
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
@@ -387,6 +389,7 @@ do_build_only() {
     show_progress 74
     compile_c gpu/gpu_blur.c output/gpu_blur.o "$COMMON_CFLAGS" || return 1
     bash scripts/build_svg_service_pkg.sh x86_64-elf output || return 1
+    bash scripts/build_warp_draw_service_pkg.sh x86_64-elf output || return 1
     show_progress 75
     show_progress 78
     compile_c lua_impl.c output/lua.o "$LUA_CFLAGS" || return 1
@@ -395,7 +398,7 @@ do_build_only() {
     show_progress 82
 
     link_kernel || return 1
-    rm -f output/svg_service.pkg
+    rm -f output/svg_service.pkg output/warp_draw_service.pkg
     show_progress 100
     echo ""
     echo "  ✅ Build #$CURRENT_BN Success"

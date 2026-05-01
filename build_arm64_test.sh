@@ -37,6 +37,7 @@ $CC $COMMON_CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
 $CC $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o
 bash scripts/build_svg_service_pkg.sh aarch64-elf output
+bash scripts/build_warp_draw_service_pkg.sh aarch64-elf output
 
 echo "Preparing initrd..."
 INITRD_DIR="output/initrd_tmp"
@@ -48,9 +49,10 @@ cp ui/*.bmp ui/*.png ui/*.jpg ui/*.jpeg ui/*.tga ui/*.gif "$INITRD_DIR/" 2>/dev/
 [ -f "bootlogo.svg" ] && cp bootlogo.svg "$INITRD_DIR/"
 [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
 [ -f "output/svg_service.pkg" ] && cp output/svg_service.pkg "$INITRD_DIR/system/services/svg_service.pkg"
+[ -f "output/warp_draw_service.pkg" ] && cp output/warp_draw_service.pkg "$INITRD_DIR/system/services/warp_draw_service.pkg"
 (cd "$INITRD_DIR" && tar -cf ../initrd.tar *)
 rm -rf "$INITRD_DIR"
-rm -f output/svg_service.pkg
+rm -f output/svg_service.pkg output/warp_draw_service.pkg
 
 cat <<EOF > output/initrd.s
 .section .rodata

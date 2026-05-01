@@ -32,11 +32,12 @@ $CC $COMMON_CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o
 $CC $LUA_CFLAGS -c lua_impl.c -o output/lua.o
 $CC $LUA_CFLAGS -c lua_glue.c -o output/lua_glue.o
 bash scripts/build_svg_service_pkg.sh x86_64-elf output
+bash scripts/build_warp_draw_service_pkg.sh x86_64-elf output
 
 echo "Linking..."
 $LD -T link64.ld -o output/kernel.bin \
     output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o
-rm -f output/svg_service.pkg
+rm -f output/svg_service.pkg output/warp_draw_service.pkg
 
 echo "x86_64 Build Success: output/kernel.bin created."
 ls -l output/kernel.bin

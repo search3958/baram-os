@@ -117,6 +117,7 @@ do_build_and_run() {
     "$I686_CC" $CFLAGS -c gpu/gpu_blur.c -o output/gpu_blur.o || return 1
     show_progress 75
     bash scripts/build_svg_service_pkg.sh i686-elf output || return 1
+    bash scripts/build_warp_draw_service_pkg.sh i686-elf output || return 1
     show_progress 78
     LUA_CFLAGS="$CFLAGS -DLUA_USE_C89   -Ilua-master"
     "$I686_CC" $LUA_CFLAGS -c lua_impl.c -o output/lua.o || return 1
@@ -142,10 +143,11 @@ do_build_and_run() {
     [ -f "os_settings.json" ] && cp os_settings.json "$INITRD_DIR/"
     [ -f ".os_settings.json" ] && cp .os_settings.json "$INITRD_DIR/os_settings.json"
     [ -f "output/svg_service.pkg" ] && cp output/svg_service.pkg "$INITRD_DIR/system/services/svg_service.pkg"
+    [ -f "output/warp_draw_service.pkg" ] && cp output/warp_draw_service.pkg "$INITRD_DIR/system/services/warp_draw_service.pkg"
 
     (cd "$INITRD_DIR" && tar -cf ../isodir/boot/initrd.tar *)
     rm -rf "$INITRD_DIR"
-    rm -f output/svg_service.pkg
+    rm -f output/svg_service.pkg output/warp_draw_service.pkg
 
     GRUB_CFG="output/isodir/boot/grub/grub.cfg"
     cat > "$GRUB_CFG" <<EOF
@@ -285,12 +287,13 @@ do_build_only() {
     "$I686_CC" $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
     "$I686_CC" $CFLAGS -c ui/warp_draw.c -o output/warp_draw.o || return 1
     bash scripts/build_svg_service_pkg.sh i686-elf output || return 1
+    bash scripts/build_warp_draw_service_pkg.sh i686-elf output || return 1
     show_progress 80
 
     "$I686_CC" -T link.ld -o output/kernel.bin \
         output/boot.o output/isr.o output/setjmp.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/gpu_driver.o output/gpu_blur.o output/lua.o output/lua_glue.o output/warp_engine.o output/warp1_engine.o output/warp_draw.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
-    rm -f output/svg_service.pkg
+    rm -f output/svg_service.pkg output/warp_draw_service.pkg
     show_progress 100
     echo ""
     echo "  ✅ Build #$CURRENT_BN Success"
