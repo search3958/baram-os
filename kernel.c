@@ -4089,12 +4089,14 @@ static void window_redraw(window_t *win) {
   if (scaled_w < 1) scaled_w = 1;
   if (scaled_h < 1) scaled_h = 1;
 
-  if (!win->rgba_buffer || win->buffer_w != scaled_w || win->buffer_h != scaled_h) {
+  int off_screen = win->x + win->w <= 0 || win->x >= SCREEN_WIDTH ||
+                     win->y + win->h <= 0 || win->y >= SCREEN_HEIGHT;
+  if (!win->rgba_buffer || win->buffer_w != scaled_w || win->buffer_h != scaled_h || off_screen) {
     if (win->rgba_buffer) free(win->rgba_buffer);
-    win->rgba_buffer = (unsigned char *)malloc((size_t)scaled_w * (size_t)scaled_h * 4);
-    win->buffer_w = scaled_w;
-    win->buffer_h = scaled_h;
-    win->is_dirty = 1;
+    win->rgba_buffer = off_screen ? NULL : (unsigned char *)malloc((size_t)scaled_w * (size_t)scaled_h * 4);
+    win->buffer_w = off_screen ? 0 : scaled_w;
+    win->buffer_h = off_screen ? 0 : scaled_h;
+    if (!off_screen) win->is_dirty = 1;
   }
 
   if (win->rgba_buffer && (needs_render || win->is_dirty || needs_layout_update)) {
@@ -6423,6 +6425,7 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
 
   // メインループ (常時60fpsターゲット)
   while (1) {
+    cpu_idle = 1; // Mark as idle at start of loop
     if (g_critical_error_mode) {
         layer_fill(&desktop, 0xFF000000); // 背景を黒に固定
         svg_layer.active = 0;
