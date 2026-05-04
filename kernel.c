@@ -4099,6 +4099,15 @@ static void window_redraw(window_t *win) {
     if (!off_screen) win->is_dirty = 1;
   }
 
+  // Free caches for off-screen windows to save RAM
+  if (off_screen) {
+    if (win->shadow_cache) { free(win->shadow_cache); win->shadow_cache = NULL; win->shadow_cache_w = 0; win->shadow_cache_h = 0; }
+    if (win->frame_cache) { free(win->frame_cache); win->frame_cache = NULL; win->frame_cache_w = 0; win->frame_cache_h = 0; }
+    if (win->window_mask) { free(win->window_mask); win->window_mask = NULL; }
+    if (win->text_overlay_cache) { free(win->text_overlay_cache); win->text_overlay_cache = NULL; win->text_overlay_cache_w = 0; win->text_overlay_cache_h = 0; }
+    if (win->blur_cache) { free(win->blur_cache); win->blur_cache = NULL; win->blur_cache_cols = 0; win->blur_cache_rows = 0; }
+  }
+
   if (win->rgba_buffer && (needs_render || win->is_dirty || needs_layout_update)) {
     strncpy(g_hud_status, "WarpRaster", 63);
     render_warp_ops(ops, op_count, target_scale,
@@ -6676,10 +6685,10 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
         if (timer_ticks - last_stat_tick >= 100) {
           uint32_t total = timer_ticks - last_stat_tick;
           uint32_t idle = idle_ticks - last_idle_tick;
-          if (total > 0) {
-            uint32_t idle_pct = (idle * 100u) / total;
-            cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
-          }
+        if (total > 0) {
+          uint32_t idle_pct = (idle * 100u) / total;
+          cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+        }
           hud_update(&hud_layer, cpu_percent, mem_total_kb);
           last_stat_tick = timer_ticks;
           last_idle_tick = idle_ticks;
