@@ -38,6 +38,7 @@
   "main": {
     "warpRenderer": "rect",
     "dark": false,
+    "liquidGlass": true,
     "wallpaper": "wallpaper_1.svg"
   }
 }

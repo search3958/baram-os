@@ -234,6 +234,7 @@ typedef struct {
 
 static warp_draw_service_runtime_t g_warp_draw_service;
 static warp_renderer_mode_t g_warp_renderer_mode = WARP_RENDERER_NATIVE_PACKAGE;
+static int g_liquid_glass = 1;
 static int warp_draw_service_load_from_package(void);
 
 // Global pointer to Multiboot info
@@ -810,19 +811,38 @@ static void parse_os_settings() {
   }
   
   
-  // Robust check for "dark" key
-  const char *dark_key = strstr(buf, "\"dark\"");
-  if (dark_key) {
-    const char *p = json_skip_ws(dark_key + 6);
-    if (*p == ':') {
-        p = json_skip_ws(p + 1);
-        if (strncmp(p, "true", 4) == 0 || strncmp(p, "\"true\"", 6) == 0) {
-            set_w1_global("~~main/dark", "true");
-        } else {
-            set_w1_global("~~main/dark", "false");
-        }
-    }
-  }
+   // Robust check for "dark" key
+   const char *dark_key = strstr(buf, "\"dark\"");
+   if (dark_key) {
+     const char *p = json_skip_ws(dark_key + 6);
+     if (*p == ':') {
+         p = json_skip_ws(p + 1);
+         if (strncmp(p, "true", 4) == 0 || strncmp(p, "\"true\"", 6) == 0) {
+             set_w1_global("~~main/dark", "true");
+         } else {
+             set_w1_global("~~main/dark", "false");
+         }
+     }
+   }
+
+   // Robust check for "liquidGlass" key
+   const char *liquid_glass_key = strstr(buf, "\"liquidGlass\"");
+   if (liquid_glass_key) {
+     const char *p = json_skip_ws(liquid_glass_key + 13);
+     if (*p == ':') {
+         p = json_skip_ws(p + 1);
+         if (strncmp(p, "true", 4) == 0 || strncmp(p, "\"true\"", 6) == 0) {
+             g_liquid_glass = 1;
+             set_w1_global("~~main/liquidGlass", "true");
+         } else {
+             g_liquid_glass = 0;
+             set_w1_global("~~main/liquidGlass", "false");
+         }
+     }
+   } else {
+     g_liquid_glass = 1; // default true
+     set_w1_global("~~main/liquidGlass", "true");
+   }
 
   // Dev flags
   const char *ptr_key = strstr(buf, "\"pointerCheck\"");
@@ -4929,21 +4949,21 @@ skip_shadow:;
                    }
 
                   uint32_t glass_base = color; // デフォルトは歪みなし
-                  if (cx != -1) {
-                       float max_dist = 21.0f * scale; 
+                  if (cx != -1 && g_liquid_glass) {
+                       float max_dist = 21.0f * scale;
                        float rx_l = (float)(dx - cx), ry_l = (float)(dy - bcy);
                        float f_px = fabsf(rx_l), f_py = fabsf(ry_l);
                        float h_rect = btn_half_width - 21.0f;
                        if (h_rect < 0.0f) h_rect = 0.0f;
                        f_px = (f_px > h_rect) ? f_px - h_rect : 0.0f;
-                       
+
                        // ★ 修正3: powf(sqrt(x), 4) を x*x に置き換えて高速化
                        float d_sq_norm = (f_px*f_px + f_py*f_py) / (max_dist * max_dist);
-                       float d_scale = 1.0f + (d_sq_norm * d_sq_norm) * 0.7f; 
+                       float d_scale = 1.0f + (d_sq_norm * d_sq_norm) * 0.7f;
 
                        float fgx = (float)cx * scale + (rx_l * scale / d_scale);
                        float fgy = (float)scroll_offset_y + (float)bcy * scale + (ry_l * scale / d_scale);
-                       
+
                        // グラスエフェクト用のブラーサンプリング (3x3 grid)
                        // 加工（歪み計算）前のソースから周辺ピクセルを混ぜることで、曇りガラス表現を実現
                        float gr = 1.0f * scale; // サンプリング間隔
