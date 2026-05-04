@@ -222,7 +222,8 @@ typedef int (*warp_draw_service_rasterize_fn)(const warp_draw_op_t *ops,
 typedef enum {
   WARP_RENDERER_NATIVE = 0,
   WARP_RENDERER_NATIVE_PACKAGE,
-  WARP_RENDERER_SVG
+  WARP_RENDERER_SVG,
+  WARP_RENDERER_RECT
 } warp_renderer_mode_t;
 
 typedef struct {
@@ -797,6 +798,9 @@ static void parse_os_settings() {
     } else if (strcmp(renderer_name, "native") == 0) {
       g_warp_renderer_mode = WARP_RENDERER_NATIVE;
       set_w1_global("~~dev/warpRenderer", "native");
+    } else if (strcmp(renderer_name, "rect") == 0) {
+      g_warp_renderer_mode = WARP_RENDERER_RECT;
+      set_w1_global("~~dev/warpRenderer", "rect");
     } else {
       g_warp_renderer_mode = WARP_RENDERER_NATIVE_PACKAGE;
       set_w1_global("~~dev/warpRenderer", "native-package");
@@ -3857,6 +3861,63 @@ static int build_warp_ops_svg(const warp_draw_op_t *ops, int op_count,
   return p < end;
 }
 
+static void blend_pixel_argb_opaque(uint32_t *px,
+                                    unsigned char sr, unsigned char sg, unsigned char sb, unsigned char sa) {
+  if (sa == 0) return;
+  if (sa == 255) {
+    *px = 0xFF000000u | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | (uint32_t)sb;
+    return;
+  }
+
+  uint32_t dst = *px;
+  uint32_t dst_r = (dst >> 16) & 0xFFu;
+  uint32_t dst_g = (dst >> 8) & 0xFFu;
+  uint32_t dst_b = dst & 0xFFu;
+  uint32_t inv_sa = 255u - sa;
+
+  uint32_t out_r = ((uint32_t)sr * sa + dst_r * inv_sa + 127u) / 255u;
+  uint32_t out_g = ((uint32_t)sg * sa + dst_g * inv_sa + 127u) / 255u;
+  uint32_t out_b = ((uint32_t)sb * sa + dst_b * inv_sa + 127u) / 255u;
+
+  if (out_r > 255u) out_r = 255u;
+  if (out_g > 255u) out_g = 255u;
+  if (out_b > 255u) out_b = 255u;
+  *px = 0xFF000000u | (out_r << 16) | (out_g << 8) | out_b;
+}
+
+static int render_warp_ops_with_rect(const warp_draw_op_t *ops, int op_count,
+                                     float scale, unsigned char *out_argb,
+                                     int buf_w, int buf_h, int stride,
+                                     uint32_t bg_argb) {
+  // Fill background
+  uint32_t bg = bg_argb | 0xFF000000u;
+  for (int y = 0; y < buf_h; ++y) {
+    uint32_t *row = (uint32_t *)(out_argb + (size_t)y * (size_t)stride);
+    for (int x = 0; x < buf_w; ++x) row[x] = bg;
+  }
+
+  // Render each op as rect
+  for (int i = 0; i < op_count; ++i) {
+    const warp_draw_op_t *op = &ops[i];
+    if (op->type == WARP_DRAW_SQUIRCLE && op->has_fill) {
+      int x1 = (int)(op->x * scale);
+      int y1 = (int)(op->y * scale);
+      int w = (int)(op->w * scale);
+      int h = (int)(op->h * scale);
+      uint8_t r = op->fr, g = op->fg, b = op->fb, a = op->fa;
+      for (int yy = y1; yy < y1 + h; ++yy) {
+        if (yy < 0 || yy >= buf_h) continue;
+        uint32_t *row = (uint32_t *)(out_argb + (size_t)yy * (size_t)stride);
+        for (int xx = x1; xx < x1 + w; ++xx) {
+          if (xx < 0 || xx >= buf_w) continue;
+          blend_pixel_argb_opaque(&row[xx], r, g, b, a);
+        }
+      }
+    }
+  }
+  return 1;
+}
+
 static int render_warp_ops_with_svg_service(const warp_draw_op_t *ops, int op_count,
                                             float scale, unsigned char *out_argb,
                                             int buf_w, int buf_h, int stride,
@@ -3911,6 +3972,14 @@ static void render_warp_ops(const warp_draw_op_t *ops, int op_count,
       return;
     }
     set_w1_global("--warpSystemLog", "WarpSvgRendererFallbackNative.");
+  }
+
+  if (g_warp_renderer_mode == WARP_RENDERER_RECT) {
+    if (render_warp_ops_with_rect(ops, op_count, scale, out_argb,
+                                  buf_w, buf_h, stride, bg_argb)) {
+      strncpy(g_hud_status, "WarpRect", 63);
+      return;
+    }
   }
 
   if (g_warp_renderer_mode == WARP_RENDERER_NATIVE_PACKAGE &&

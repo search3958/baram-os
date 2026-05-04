@@ -36,7 +36,7 @@
     ]
   },
   "main": {
-    "warpRenderer": "native-package",
+    "warpRenderer": "rect",
     "dark": false,
     "wallpaper": "wallpaper_1.svg"
   }
