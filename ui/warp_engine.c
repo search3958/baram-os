@@ -285,32 +285,41 @@ struct warp_context {
   struct {
     char key[64];
     char val[512];
-  } state[MAX_VARS];
+  } *state;
   int state_count;
+  int state_capacity;
 
   char current_screen[64];
   char parsed_screen_id[64];
-  screen_info_t screens[MAX_SCREENS];
+  screen_info_t *screens;
+  int screens_count;
+  int screens_capacity;
   int screens_count_scanned;
 
-  visibility_t visibility[MAX_VARS];
+  visibility_t *visibility;
   int visibility_count;
+  int visibility_capacity;
 
-  warp_node_t nodes[MAX_NODES];
+  warp_node_t *nodes;
   int nodes_count;
+  int nodes_capacity;
   warp_node_t *root_node;
-  warp_node_t *root_nodes[16];
+  warp_node_t **root_nodes;
   int root_nodes_count;
+  int root_nodes_capacity;
 
-  script_t scripts[MAX_SCRIPTS];
+  script_t *scripts;
   int scripts_count;
+  int scripts_capacity;
 
-  dynamic_nodes_t dynamic_nodes[MAX_DYNAMIC_NODES];
+  dynamic_nodes_t *dynamic_nodes;
   int dynamic_nodes_count;
+  int dynamic_nodes_capacity;
 
   const char *src_ptr;
-  token_t tokens[MAX_TOKENS];
+  token_t *tokens;
   int token_count;
+  int token_capacity;
   int token_pos;
 
   struct {
@@ -318,12 +327,15 @@ struct warp_context {
     char text[512];
     uint32_t color;
     float size;
-  } texts[MAX_TEXTS];
+  } *texts;
   int texts_count;
+  int texts_capacity;
 
-  char svg_output[65536];
-  warp_draw_op_t draw_ops[WARP_MAX_DRAW_OPS];
+  char *svg_output;
+  int svg_capacity;
+  warp_draw_op_t *draw_ops;
   int draw_ops_count;
+  int draw_ops_capacity;
   int engine_dirty;
   char engine_status[128];
   char node_svg_buf[4096];
@@ -344,6 +356,42 @@ static const char *get_state(warp_context_t *ctx, const char *key);
 static void parse_current_screen_classic(warp_context_t *ctx);
 static void skip_block_classic(warp_context_t *ctx);
 
+// Capacity management
+static void ensure_state_capacity(warp_context_t *ctx) {
+  if (ctx->state_count >= ctx->state_capacity) {
+    ctx->state_capacity *= 2;
+    ctx->state = realloc(ctx->state, ctx->state_capacity * sizeof(*ctx->state));
+  }
+}
+
+static void ensure_nodes_capacity(warp_context_t *ctx) {
+  if (ctx->nodes_count >= ctx->nodes_capacity) {
+    ctx->nodes_capacity *= 2;
+    ctx->nodes = realloc(ctx->nodes, ctx->nodes_capacity * sizeof(warp_node_t));
+  }
+}
+
+static void ensure_tokens_capacity(warp_context_t *ctx) {
+  if (ctx->token_count >= ctx->token_capacity) {
+    ctx->token_capacity *= 2;
+    ctx->tokens = realloc(ctx->tokens, ctx->token_capacity * sizeof(token_t));
+  }
+}
+
+static void ensure_texts_capacity(warp_context_t *ctx) {
+  if (ctx->texts_count >= ctx->texts_capacity) {
+    ctx->texts_capacity *= 2;
+    ctx->texts = realloc(ctx->texts, ctx->texts_capacity * sizeof(*ctx->texts));
+  }
+}
+
+static void ensure_draw_ops_capacity(warp_context_t *ctx) {
+  if (ctx->draw_ops_count >= ctx->draw_ops_capacity) {
+    ctx->draw_ops_capacity *= 2;
+    ctx->draw_ops = realloc(ctx->draw_ops, ctx->draw_ops_capacity * sizeof(warp_draw_op_t));
+  }
+}
+
 
 static void set_state(warp_context_t *ctx, const char *key, const char *val) {
   if (warp_strcasecmp(key, "_currentScreen") == 0) {
@@ -356,11 +404,10 @@ static void set_state(warp_context_t *ctx, const char *key, const char *val) {
       return;
     }
   }
-  if (ctx->state_count < MAX_VARS) {
-    warp_strncpy(ctx->state[ctx->state_count].key, key, 63);
-    warp_strncpy(ctx->state[ctx->state_count].val, val, 511);
-    ctx->state_count++;
-  }
+  ensure_state_capacity(ctx);
+  warp_strncpy(ctx->state[ctx->state_count].key, key, 63);
+  warp_strncpy(ctx->state[ctx->state_count].val, val, 511);
+  ctx->state_count++;
 }
 
 static const char *get_state(warp_context_t *ctx, const char *key) {
@@ -398,12 +445,10 @@ static int get_visibility(warp_context_t *ctx, const char *id) {
 }
 
 static warp_node_t *alloc_node(warp_context_t *ctx) {
-  if (ctx->nodes_count < MAX_NODES) {
-    warp_node_t *n = &ctx->nodes[ctx->nodes_count++];
-    warp_memset(n, 0, sizeof(warp_node_t));
-    return n;
-  }
-  return NULL;
+  ensure_nodes_capacity(ctx);
+  warp_node_t *n = &ctx->nodes[ctx->nodes_count++];
+  warp_memset(n, 0, sizeof(warp_node_t));
+  return n;
 }
 
 static void set_attr(warp_node_t *node, const char *key, const char *value) {
@@ -1470,7 +1515,8 @@ static void parse_hex_rgba(const char *hex, float opacity,
 static void append_squircle_op(warp_context_t *ctx, int x, int y, int w, int h,
                                float radius, const char *fill, float opacity,
                                const char *stroke, float stroke_width) {
-  if (!ctx || ctx->draw_ops_count >= WARP_MAX_DRAW_OPS || w <= 0 || h <= 0) return;
+  if (!ctx || w <= 0 || h <= 0) return;
+  ensure_draw_ops_capacity(ctx);
   warp_draw_op_t *op = &ctx->draw_ops[ctx->draw_ops_count++];
   *op = (warp_draw_op_t){0};
   op->type = WARP_DRAW_SQUIRCLE;
@@ -1489,7 +1535,8 @@ static void append_squircle_op(warp_context_t *ctx, int x, int y, int w, int h,
 
 static void append_line_op(warp_context_t *ctx, int x1, int y1, int x2, int y2,
                            const char *stroke, float stroke_width, float opacity) {
-  if (!ctx || ctx->draw_ops_count >= WARP_MAX_DRAW_OPS || !stroke || stroke[0] != '#') return;
+  if (!ctx || !stroke || stroke[0] != '#') return;
+  ensure_draw_ops_capacity(ctx);
   warp_draw_op_t *op = &ctx->draw_ops[ctx->draw_ops_count++];
   *op = (warp_draw_op_t){0};
   op->type = WARP_DRAW_LINE;
@@ -2074,6 +2121,51 @@ warp_context_t* warp_context_create(const char* code) {
   if (!ctx) return NULL;
   warp_memset(ctx, 0, sizeof(warp_context_t));
 
+  // Allocate dynamic arrays with initial capacities
+  ctx->state_capacity = 16;
+  ctx->state = (void*)malloc(ctx->state_capacity * sizeof(*ctx->state));
+  if (!ctx->state) { free(ctx); return NULL; }
+
+  ctx->screens_capacity = 8;
+  ctx->screens = (screen_info_t*)malloc(ctx->screens_capacity * sizeof(screen_info_t));
+  if (!ctx->screens) { free(ctx->state); free(ctx); return NULL; }
+
+  ctx->visibility_capacity = 16;
+  ctx->visibility = (visibility_t*)malloc(ctx->visibility_capacity * sizeof(visibility_t));
+  if (!ctx->visibility) { free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->nodes_capacity = 16;
+  ctx->nodes = (warp_node_t*)malloc(ctx->nodes_capacity * sizeof(warp_node_t));
+  if (!ctx->nodes) { free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->root_nodes_capacity = 16;
+  ctx->root_nodes = (warp_node_t**)malloc(ctx->root_nodes_capacity * sizeof(warp_node_t*));
+  if (!ctx->root_nodes) { free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->scripts_capacity = 8;
+  ctx->scripts = (script_t*)malloc(ctx->scripts_capacity * sizeof(script_t));
+  if (!ctx->scripts) { free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->dynamic_nodes_capacity = 8;
+  ctx->dynamic_nodes = (dynamic_nodes_t*)malloc(ctx->dynamic_nodes_capacity * sizeof(dynamic_nodes_t));
+  if (!ctx->dynamic_nodes) { free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->token_capacity = 256;
+  ctx->tokens = (token_t*)malloc(ctx->token_capacity * sizeof(token_t));
+  if (!ctx->tokens) { free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->texts_capacity = 16;
+  ctx->texts = (void*)malloc(ctx->texts_capacity * sizeof(*ctx->texts));
+  if (!ctx->texts) { free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->svg_capacity = 8192;
+  ctx->svg_output = (char*)malloc(ctx->svg_capacity);
+  if (!ctx->svg_output) { free(ctx->texts); free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
+  ctx->draw_ops_capacity = 256;
+  ctx->draw_ops = (warp_draw_op_t*)malloc(ctx->draw_ops_capacity * sizeof(warp_draw_op_t));
+  if (!ctx->draw_ops) { free(ctx->svg_output); free(ctx->texts); free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
+
   warp_strcpy(ctx->current_screen, "main");
   warp_strcpy(ctx->engine_status, "Idle");
   ctx->screen_count = 0;
@@ -2088,8 +2180,9 @@ warp_context_t* warp_context_create(const char* code) {
   ctx->src_ptr = code;
   while (1) {
     token_t tk = next_token(ctx);
-    if (tk.type == TK_EOF || ctx->token_count >= MAX_TOKENS)
+    if (tk.type == TK_EOF)
       break;
+    ensure_tokens_capacity(ctx);
     ctx->tokens[ctx->token_count++] = tk;
   }
   
@@ -2147,7 +2240,20 @@ warp_context_t* warp_context_create(const char* code) {
 }
 
 void warp_context_destroy(warp_context_t* ctx) {
-  if (ctx) free(ctx);
+  if (ctx) {
+    free(ctx->state);
+    free(ctx->screens);
+    free(ctx->visibility);
+    free(ctx->nodes);
+    free(ctx->root_nodes);
+    free(ctx->scripts);
+    free(ctx->dynamic_nodes);
+    free(ctx->tokens);
+    free(ctx->texts);
+    free(ctx->svg_output);
+    free(ctx->draw_ops);
+    free(ctx);
+  }
 }
 
 void warp_context_update(warp_context_t* ctx, int width, int height) {
