@@ -6682,17 +6682,17 @@ void kmain(uint32_t magic, struct multiboot_info *mbi) {
           redraw_warp_svg(&nextgen_ui_layer);
         }
 
-        if (timer_ticks - last_stat_tick >= 100) {
-          uint32_t total = timer_ticks - last_stat_tick;
-          uint32_t idle = idle_ticks - last_idle_tick;
+      if (timer_ticks - last_stat_tick >= 100) {
+        uint32_t total = timer_ticks - last_stat_tick;
+        uint32_t idle = idle_ticks - last_idle_tick;
         if (total > 0) {
-          uint32_t idle_pct = (idle * 100u) / total;
-          cpu_percent = (idle_pct >= 100u) ? 0u : (100u - idle_pct);
+          uint32_t busy_pct = (idle * 100u) / total;
+          cpu_percent = busy_pct > 100u ? 100u : busy_pct;
         }
-          hud_update(&hud_layer, cpu_percent, mem_total_kb);
-          last_stat_tick = timer_ticks;
-          last_idle_tick = idle_ticks;
-        }
+        hud_update(&hud_layer, cpu_percent, mem_total_kb);
+        last_stat_tick = timer_ticks;
+        last_idle_tick = idle_ticks;
+      }
         goto warpdesktop_frame_done;
       }
 

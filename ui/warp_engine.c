@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define WARP_MAX_DRAW_OPS 512
+#define WARP_MAX_DRAW_OPS 128
 
 static int warp_strlen(const char *s) {
   int n = 0;
@@ -299,7 +299,7 @@ struct warp_context {
   warp_node_t nodes[MAX_NODES];
   int nodes_count;
   warp_node_t *root_node;
-  warp_node_t *root_nodes[16]; // Keep small
+  warp_node_t *root_nodes[8]; // Keep small
   int root_nodes_count;
 
   script_t scripts[MAX_SCRIPTS];
@@ -321,12 +321,12 @@ struct warp_context {
   } texts[MAX_TEXTS];
   int texts_count;
 
-  char svg_output[4096];
+  char svg_output[1024];
   warp_draw_op_t draw_ops[WARP_MAX_DRAW_OPS];
   int draw_ops_count;
   int engine_dirty;
   char engine_status[128];
-  char node_svg_buf[4096];
+  char node_svg_buf[1024];
   int mouse_x, mouse_y;
   int win_w, win_h;
   int active_slider_idx;

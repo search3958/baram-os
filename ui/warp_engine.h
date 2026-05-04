@@ -5,14 +5,14 @@
 #include "warp_draw.h"
 #include <stdint.h>
 
-#define MAX_VARS 32
-#define MAX_NODES 64
-#define MAX_TEXTS 32
-#define MAX_TOKENS 1024
-#define MAX_SCRIPTS 8
-#define MAX_SCRIPT_BLOCKS 8
-#define MAX_DYNAMIC_NODES 16
-#define MAX_SCREENS 4
+#define MAX_VARS 16
+#define MAX_NODES 32
+#define MAX_TEXTS 16
+#define MAX_TOKENS 512
+#define MAX_SCRIPTS 4
+#define MAX_SCRIPT_BLOCKS 4
+#define MAX_DYNAMIC_NODES 8
+#define MAX_SCREENS 2
 
 typedef struct warp_context warp_context_t;
 
