@@ -2126,52 +2126,52 @@ warp_context_t* warp_context_create(const char* code) {
   if (!ctx) return NULL;
   warp_memset(ctx, 0, sizeof(warp_context_t));
 
-  // Allocate dynamic arrays with initial capacities
-  ctx->state_capacity = 16;
+  // Allocate dynamic arrays with minimal initial capacities
+  ctx->state_capacity = 2;
   ctx->state = (void*)malloc(ctx->state_capacity * sizeof(*ctx->state));
   if (!ctx->state) { free(ctx); return NULL; }
 
-  ctx->screens_capacity = 8;
+  ctx->screens_capacity = 2;
   ctx->screens = (screen_info_t*)malloc(ctx->screens_capacity * sizeof(screen_info_t));
   if (!ctx->screens) { free(ctx->state); free(ctx); return NULL; }
 
-  ctx->visibility_capacity = 16;
+  ctx->visibility_capacity = 2;
   ctx->visibility = (visibility_t*)malloc(ctx->visibility_capacity * sizeof(visibility_t));
   if (!ctx->visibility) { free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->nodes_capacity = 16;
+  ctx->nodes_capacity = 2;
   ctx->nodes = (warp_node_t*)malloc(ctx->nodes_capacity * sizeof(warp_node_t));
   if (!ctx->nodes) { free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->root_nodes_capacity = 16;
+  ctx->root_nodes_capacity = 2;
   ctx->root_nodes = (warp_node_t**)malloc(ctx->root_nodes_capacity * sizeof(warp_node_t*));
   if (!ctx->root_nodes) { free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->scripts_capacity = 8;
+  ctx->scripts_capacity = 2;
   ctx->scripts = (script_t*)malloc(ctx->scripts_capacity * sizeof(script_t));
   if (!ctx->scripts) { free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->dynamic_nodes_capacity = 8;
+  ctx->dynamic_nodes_capacity = 2;
   ctx->dynamic_nodes = (dynamic_nodes_t*)malloc(ctx->dynamic_nodes_capacity * sizeof(dynamic_nodes_t));
   if (!ctx->dynamic_nodes) { free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->token_capacity = 256;
+  ctx->token_capacity = 16;
   ctx->tokens = (token_t*)malloc(ctx->token_capacity * sizeof(token_t));
   if (!ctx->tokens) { free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->texts_capacity = 16;
+  ctx->texts_capacity = 2;
   ctx->texts = (void*)malloc(ctx->texts_capacity * sizeof(*ctx->texts));
   if (!ctx->texts) { free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->svg_capacity = 8192;
+  ctx->svg_capacity = 256;
   ctx->svg_output = (char*)malloc(ctx->svg_capacity);
   if (!ctx->svg_output) { free(ctx->texts); free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->draw_ops_capacity = 256;
+  ctx->draw_ops_capacity = 8;
   ctx->draw_ops = (warp_draw_op_t*)malloc(ctx->draw_ops_capacity * sizeof(warp_draw_op_t));
   if (!ctx->draw_ops) { free(ctx->svg_output); free(ctx->texts); free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
-  ctx->node_svg_capacity = 4096;
+  ctx->node_svg_capacity = 256;
   ctx->node_svg_buf = (char*)malloc(ctx->node_svg_capacity);
   if (!ctx->node_svg_buf) { free(ctx->draw_ops); free(ctx->svg_output); free(ctx->texts); free(ctx->tokens); free(ctx->dynamic_nodes); free(ctx->scripts); free(ctx->root_nodes); free(ctx->nodes); free(ctx->visibility); free(ctx->screens); free(ctx->state); free(ctx); return NULL; }
 
@@ -2189,7 +2189,7 @@ warp_context_t* warp_context_create(const char* code) {
   ctx->src_ptr = code;
   while (1) {
     token_t tk = next_token(ctx);
-    if (tk.type == TK_EOF || ctx->token_count >= MAX_TOKENS)
+    if (tk.type == TK_EOF)
       break;
     ensure_tokens_capacity(ctx);
     ctx->tokens[ctx->token_count++] = tk;
