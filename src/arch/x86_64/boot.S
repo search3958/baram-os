@@ -9,7 +9,7 @@
     # Magic number (0xe85250d6)
     .long 0xe85250d6
     
-    # Architecture (0 = protected mode i386)
+    # Architecture (0 = protected mode i386, Multiboot2 requires 0 for both 32/64 bit)
     .long 0
     
     # Header length (will be calculated)
@@ -18,13 +18,13 @@ header_start:
     
     # Checksum (must equal -(magic + arch + header_length))
 checksum:
-    .long 0x100000000 - (0xe85250d6 + 0 + (header_end - header_start))
+    .long -(0xe85250d6 + 0 + (header_end - header_start))
 
     # Framebuffer tag
 framebuffer_tag_start:
     .short 5                   # Type (framebuffer)
-    .short 0                   # Optional flag
-    .long framebuffer_tag_end - framebuffer_tag_start  # Size
+    .short 0                   # Optional flag (0 = any graphics mode is OK)
+    .long framebuffer_tag_end - framebuffer_tag_start  # Size (16 bytes total)
     .long 800                  # Width (preferred)
     .long 600                  # Height (preferred)
     .long 32                   # Depth (bits per pixel)

@@ -12,6 +12,9 @@ void hal_set_cursor(int x, int y);
 void hal_draw_pixel(int x, int y, uint32_t color);
 void hal_fill_rect(int x, int y, int w, int h, uint32_t color);
 void hal_draw_mouse(int x, int y);
+void hal_mouse_move(int x, int y);
+void hal_mouse_show(int x, int y);
+void hal_mouse_hide(void);
 
 // Framebuffer structure
 typedef struct {

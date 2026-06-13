@@ -221,25 +221,38 @@ menuentry "Baram OS Lazward" {
 }
 EOF
     
-    cp "$BUILD_DIR/baram_os_$ARCH.elf" "$BUILD_DIR/isoboot/boot/baram_os.bin"
+    cp "$BUILD_DIR/baram_os_$ARCH.bin" "$BUILD_DIR/isoboot/boot/baram_os.bin"
     
     # Create ISO using grub-mkrescue (preferred method for Multiboot2)
-    GRUB_MKRESCUE="grub-mkrescue"
-    if ! command -v "$GRUB_MKRESCUE" &> /dev/null; then
-        # Try cross-compiler prefixed version for macOS
-        if [[ "$ARCH" == "64" || "$ARCH" == "x86_64" ]] && command -v x86_64-elf-grub-mkrescue &> /dev/null; then
-            GRUB_MKRESCUE="x86_64-elf-grub-mkrescue"
-        fi
+    GRUB_MKRESCUE=""
+    
+    # Try different possible names in order of preference
+    if command -v x86_64-elf-grub-mkrescue &> /dev/null; then
+        GRUB_MKRESCUE="x86_64-elf-grub-mkrescue"
+    elif command -v grub-mkrescue &> /dev/null; then
+        GRUB_MKRESCUE="grub-mkrescue"
+    elif command -v grub2-mkrescue &> /dev/null; then
+        GRUB_MKRESCUE="grub2-mkrescue"
     fi
     
-    if command -v "$GRUB_MKRESCUE" &> /dev/null; then
+    if [ -n "$GRUB_MKRESCUE" ]; then
+        echo "Using: $GRUB_MKRESCUE"
         "$GRUB_MKRESCUE" -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>&1 || {
             echo "Warning: $GRUB_MKRESCUE failed, trying alternative methods..."
         }
+    else
+        echo "Warning: No grub-mkrescue found. Trying alternative methods..."
     fi
     
     # Fallback to genisoimage/xorriso if grub-mkrescue failed or not available
     if [ ! -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] || [ ! -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+        echo "Creating ISO with xorriso/genisoimage as fallback..."
+        # Create GRUB boot image first
+        mkdir -p "$BUILD_DIR/isoboot/boot/grub"
+        
+        # Copy the kernel
+        cp "$BUILD_DIR/baram_os_$ARCH.bin" "$BUILD_DIR/isoboot/boot/baram_os.bin"
+        
         if command -v xorriso &> /dev/null; then
             xorriso -as mkisofs -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
                 -c boot.catalog -b boot/grub/grub.bin \
@@ -250,6 +263,8 @@ EOF
                 -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
                 -boot-load-size 4 -boot-info-table -V "BARAM_OS" \
                 "$BUILD_DIR/isoboot" 2>&1 || true
+        else
+            echo "Error: No ISO creation tool found (xorriso or genisoimage)"
         fi
     fi
     
@@ -276,9 +291,10 @@ if [ "$QEMU_ONLY" != "noqemu" ]; then
         64|x86_64)
             # For x86_64, use ISO with GRUB for Multiboot2 support
             if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
-                qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
+                qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M -vga std
             else
-                echo "Error: ISO file not created or empty. Check if grub-mkrescue or x86_64-elf-grub-mkrescue is installed."
+                echo "Error: ISO file not created or empty."
+                echo "Make sure grub-mkrescue, x86_64-elf-grub-mkrescue, xorriso, or genisoimage is installed."
                 exit 1
             fi
             ;;
