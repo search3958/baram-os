@@ -1,0 +1,24 @@
+```
+# Build artifacts
+build/
+*.o
+*.bin
+*.elf
+
+# Temporary files
+*.tmp
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+```
