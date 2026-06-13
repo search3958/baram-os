@@ -224,22 +224,28 @@ EOF
     
     # Create ISO using grub-mkrescue (preferred method for Multiboot2)
     if command -v grub-mkrescue &> /dev/null; then
-        grub-mkrescue -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>/dev/null || true
-    elif command -v xorriso &> /dev/null; then
-        xorriso -as mkisofs -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
-            -isohybrid-mbr /usr/lib/GRUB/i386-pc/eltorito.img \
-            -c boot.catalog -b boot/grub/grub.bin \
-            -no-emul-boot -boot-load-size 4 -boot-info-table \
-            -V "BARAM_OS" "$BUILD_DIR/isoboot" 2>/dev/null || \
-        genisoimage -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
-            -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
-            -boot-load-size 4 -boot-info-table -V "BARAM_OS" \
-            "$BUILD_DIR/isoboot" 2>/dev/null || true
-    elif command -v genisoimage &> /dev/null; then
-        genisoimage -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
-            -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
-            -boot-load-size 4 -boot-info-table -V "BARAM_OS" \
-            "$BUILD_DIR/isoboot" 2>/dev/null || true
+        grub-mkrescue -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>&1 || {
+            echo "Warning: grub-mkrescue failed, trying alternative methods..."
+        }
+    fi
+    
+    # Fallback to genisoimage/xorriso if grub-mkrescue failed or not available
+    if [ ! -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] || [ ! -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+        if command -v xorriso &> /dev/null; then
+            xorriso -as mkisofs -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
+                -c boot.catalog -b boot/grub/grub.bin \
+                -no-emul-boot -boot-load-size 4 -boot-info-table \
+                -V "BARAM_OS" "$BUILD_DIR/isoboot" 2>&1 || true
+        elif command -v genisoimage &> /dev/null; then
+            genisoimage -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
+                -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
+                -boot-load-size 4 -boot-info-table -V "BARAM_OS" \
+                "$BUILD_DIR/isoboot" 2>&1 || true
+        fi
+    fi
+    
+    if [ ! -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] || [ ! -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+        echo "Warning: Failed to create ISO image. QEMU may not start properly."
     fi
 fi
 
@@ -256,18 +262,18 @@ echo "Launching QEMU..."
 case "$ARCH" in
     64|x86_64)
         # For x86_64, use ISO with GRUB for Multiboot2 support
-        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
-            qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 512M
+        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+            qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
         else
-            echo "Error: ISO file not created. Check if grub-mkrescue is installed."
+            echo "Error: ISO file not created or empty. Check if grub-mkrescue is installed."
             exit 1
         fi
         ;;
     32|i386|i686)
-        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
-            qemu-system-i386 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 512M
+        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+            qemu-system-i386 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
         else
-            echo "Error: ISO file not created. Check if grub-mkrescue is installed."
+            echo "Error: ISO file not created or empty. Check if grub-mkrescue is installed."
             exit 1
         fi
         ;;

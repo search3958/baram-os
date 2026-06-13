@@ -13,14 +13,13 @@
     .long 0
     
     # Header length (will be calculated)
-header_length:
+header_start:
     .long header_end - header_start
     
     # Checksum
 checksum:
-    .long 0x10000000 - (0xe85250d6 + 0 + (header_end - header_start))
+    .long 0x100000000 - (0xe85250d6 + 0 + (header_end - header_start))
 
-header_start:
     # Framebuffer tag
 framebuffer_tag_start:
     .short 5                   # Type (framebuffer)

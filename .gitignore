@@ -1,12 +1,6 @@
 ```
-# Build artifacts
-build/
-*.bin
-*.elf
-*.iso
+# Compiled and build artifacts
 *.o
 *.obj
-
-# Generated files
-linker.ld
+build/
 ```
