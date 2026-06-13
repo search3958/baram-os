@@ -2,11 +2,11 @@
 
 # Multiboot2 header must be in the first 32KB of the kernel image
 # Place it BEFORE any code using .text.startup section
-.section ".multiboot_header", "a"
+.section ".multiboot_header", "aw"
     # Align to 8 bytes as required by Multiboot2 spec
     .align 8
     
-    # Magic number (0xe85250d6)
+    # Magic number (0xe85250d6) - little endian: d6 50 52 e8
     .long 0xe85250d6
     
     # Architecture (0 = protected mode i386, Multiboot2 requires 0 for both 32/64 bit)
@@ -20,20 +20,21 @@ header_start:
 checksum:
     .long -(0xe85250d6 + 0 + (header_end - header_start))
 
-    # Framebuffer tag
+    # Framebuffer tag - request graphics mode (size = 20 bytes)
 framebuffer_tag_start:
     .short 5                   # Type (framebuffer)
     .short 0                   # Optional flag (0 = any graphics mode is OK)
-    .long framebuffer_tag_end - framebuffer_tag_start  # Size (16 bytes total)
+    .long framebuffer_tag_end - framebuffer_tag_start  # Size
     .long 800                  # Width (preferred)
     .long 600                  # Height (preferred)
     .long 32                   # Depth (bits per pixel)
 framebuffer_tag_end:
 
-    # End tag (type=0, flags=0, size=8)
-    .short 0                   # Type
+    # End tag (type=0, flags=0, size=8) - MUST be present!
+    .short 0                   # Type (end tag)
     .short 0                   # Flags
-    .long 8                    # Size
+    .long 8                    # Size (always 8 for end tag)
+
 header_end:
 
 .section .note.GNU-stack,"",@progbits

@@ -237,6 +237,24 @@ EOF
     
     if [ -n "$GRUB_MKRESCUE" ]; then
         echo "Using: $GRUB_MKRESCUE"
+        # Clean isoboot directory first
+        rm -rf "$BUILD_DIR/isoboot"
+        mkdir -p "$BUILD_DIR/isoboot/boot/grub"
+        
+        # Copy kernel to isoboot (use generic name for GRUB config)
+        cp "$BUILD_DIR/baram_os_$ARCH.bin" "$BUILD_DIR/isoboot/boot/baram_os.bin"
+        
+        # Create proper GRUB config for Multiboot2
+        cat > "$BUILD_DIR/isoboot/boot/grub/grub.cfg" << EOF
+set timeout=0
+menuentry "Baram OS Lazward" {
+    insmod all_video
+    multiboot2 /boot/baram_os.bin
+    boot
+}
+EOF
+        
+        # Create ISO with proper boot parameters
         "$GRUB_MKRESCUE" -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>&1 || {
             echo "Warning: $GRUB_MKRESCUE failed, trying alternative methods..."
         }
