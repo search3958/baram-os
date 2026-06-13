@@ -210,25 +210,31 @@ echo "Output: $BUILD_DIR/$OUTPUT_NAME"
 echo "ELF file: $BUILD_DIR/hal_os_$ARCH.elf"
 echo "=========================================="
 echo ""
-echo "To run with QEMU:"
+
+# Auto-launch QEMU
+echo "Launching QEMU..."
 case "$ARCH" in
     64|x86_64)
-        # For x86_64, use the ELF file directly with QEMU
-        echo "  qemu-system-x86_64 -kernel $BUILD_DIR/hal_os_$ARCH.elf"
+        # For x86_64, use ISO with GRUB for Multiboot2 support
         if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
-            echo "  OR (with GRUB ISO): qemu-system-x86_64 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
+            qemu-system-x86_64 -cdrom "$BUILD_DIR/hal_os_${ARCH}.iso" -m 512M
+        else
+            echo "Error: ISO file not created. Check if grub-mkrescue is installed."
+            exit 1
         fi
         ;;
     32|i386|i686)
-        echo "  qemu-system-i386 -kernel $BUILD_DIR/hal_os_$ARCH.elf"
         if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
-            echo "  OR (with GRUB ISO): qemu-system-i386 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
+            qemu-system-i386 -cdrom "$BUILD_DIR/hal_os_${ARCH}.iso" -m 512M
+        else
+            echo "Error: ISO file not created. Check if grub-mkrescue is installed."
+            exit 1
         fi
         ;;
     arm|arm32)
-        echo "  qemu-system-arm -kernel $BUILD_DIR/$OUTPUT_NAME -M virt"
+        qemu-system-arm -kernel "$BUILD_DIR/$OUTPUT_NAME" -M virt -m 512M
         ;;
     arm64|aarch64)
-        echo "  qemu-system-aarch64 -kernel $BUILD_DIR/$OUTPUT_NAME -M virt -cpu cortex-a57"
+        qemu-system-aarch64 -kernel "$BUILD_DIR/$OUTPUT_NAME" -M virt -cpu cortex-a57 -m 512M
         ;;
 esac
