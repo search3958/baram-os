@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$SCRIPT_DIR/src"
 BUILD_DIR="$SCRIPT_DIR/build"
 OUTPUT_NAME="baram_os_$ARCH.bin"
+QEMU_ONLY="${2:-}"  # If "noqemu", skip QEMU launch
 
 echo "=========================================="
 echo "Baram OS Lazward Build System"
@@ -223,9 +224,17 @@ EOF
     cp "$BUILD_DIR/baram_os_$ARCH.elf" "$BUILD_DIR/isoboot/boot/baram_os.bin"
     
     # Create ISO using grub-mkrescue (preferred method for Multiboot2)
-    if command -v grub-mkrescue &> /dev/null; then
-        grub-mkrescue -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>&1 || {
-            echo "Warning: grub-mkrescue failed, trying alternative methods..."
+    GRUB_MKRESCUE="grub-mkrescue"
+    if ! command -v "$GRUB_MKRESCUE" &> /dev/null; then
+        # Try cross-compiler prefixed version for macOS
+        if [[ "$ARCH" == "64" || "$ARCH" == "x86_64" ]] && command -v x86_64-elf-grub-mkrescue &> /dev/null; then
+            GRUB_MKRESCUE="x86_64-elf-grub-mkrescue"
+        fi
+    fi
+    
+    if command -v "$GRUB_MKRESCUE" &> /dev/null; then
+        "$GRUB_MKRESCUE" -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>&1 || {
+            echo "Warning: $GRUB_MKRESCUE failed, trying alternative methods..."
         }
     fi
     
@@ -254,33 +263,40 @@ echo "=========================================="
 echo "Build complete!"
 echo "Output: $BUILD_DIR/$OUTPUT_NAME"
 echo "ELF file: $BUILD_DIR/baram_os_$ARCH.elf"
+if [[ "$ARCH" == "64" || "$ARCH" == "32" ]]; then
+    echo "ISO file: $BUILD_DIR/baram_os_${ARCH}.iso"
+fi
 echo "=========================================="
 echo ""
 
-# Auto-launch QEMU
-echo "Launching QEMU..."
-case "$ARCH" in
-    64|x86_64)
-        # For x86_64, use ISO with GRUB for Multiboot2 support
-        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
-            qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
-        else
-            echo "Error: ISO file not created or empty. Check if grub-mkrescue is installed."
-            exit 1
-        fi
-        ;;
-    32|i386|i686)
-        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
-            qemu-system-i386 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
-        else
-            echo "Error: ISO file not created or empty. Check if grub-mkrescue is installed."
-            exit 1
-        fi
-        ;;
-    arm|arm32)
-        qemu-system-arm -kernel "$BUILD_DIR/$OUTPUT_NAME" -M virt -m 512M
-        ;;
-    arm64|aarch64)
-        qemu-system-aarch64 -kernel "$BUILD_DIR/$OUTPUT_NAME" -M virt -cpu cortex-a57 -m 512M
-        ;;
-esac
+# Auto-launch QEMU (unless second argument is "noqemu")
+if [ "$QEMU_ONLY" != "noqemu" ]; then
+    echo "Launching QEMU..."
+    case "$ARCH" in
+        64|x86_64)
+            # For x86_64, use ISO with GRUB for Multiboot2 support
+            if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+                qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
+            else
+                echo "Error: ISO file not created or empty. Check if grub-mkrescue or x86_64-elf-grub-mkrescue is installed."
+                exit 1
+            fi
+            ;;
+        32|i386|i686)
+            if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+                qemu-system-i386 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M
+            else
+                echo "Error: ISO file not created or empty. Check if grub-mkrescue is installed."
+                exit 1
+            fi
+            ;;
+        arm|arm32)
+            qemu-system-arm -kernel "$BUILD_DIR/$OUTPUT_NAME" -M virt -m 512M
+            ;;
+        arm64|aarch64)
+            qemu-system-aarch64 -kernel "$BUILD_DIR/$OUTPUT_NAME" -M virt -cpu cortex-a57 -m 512M
+            ;;
+    esac
+else
+    echo "Skipping QEMU launch. Run './bld.sh $ARCH' without 'noqemu' to launch QEMU."
+fi

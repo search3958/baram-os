@@ -16,7 +16,7 @@
 header_start:
     .long header_end - header_start
     
-    # Checksum
+    # Checksum (must equal -(magic + arch + header_length))
 checksum:
     .long 0x100000000 - (0xe85250d6 + 0 + (header_end - header_start))
 
