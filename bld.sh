@@ -141,7 +141,67 @@ $LD $LDFLAGS \
 
 # Create binary
 echo "Creating binary image..."
-objcopy -O binary "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
+# Use architecture-specific objcopy if available
+if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
+    OBJCOPY="aarch64-linux-gnu-objcopy"
+elif [[ "$ARCH" == "arm" || "$ARCH" == "arm32" ]]; then
+    OBJCOPY="arm-linux-gnueabihf-objcopy"
+elif [[ "$ARCH" == "64" || "$ARCH" == "x86_64" ]]; then
+    OBJCOPY="x86_64-elf-objcopy"
+    if ! command -v "$OBJCOPY" &> /dev/null; then
+        OBJCOPY="objcopy"
+    fi
+elif [[ "$ARCH" == "32" || "$ARCH" == "i386" || "$ARCH" == "i686" ]]; then
+    OBJCOPY="i686-elf-objcopy"
+    if ! command -v "$OBJCOPY" &> /dev/null; then
+        OBJCOPY="objcopy"
+    fi
+else
+    OBJCOPY="objcopy"
+fi
+
+if command -v "$OBJCOPY" &> /dev/null; then
+    $OBJCOPY -O binary "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
+else
+    objcopy -O binary "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
+fi
+
+# Create ISO image for x86 architectures (needed for Multiboot2)
+if [[ "$ARCH" == "64" || "$ARCH" == "32" ]]; then
+    echo "Creating bootable ISO..."
+    # Create a simple GRUB configuration
+    mkdir -p "$BUILD_DIR/isoboot/boot/grub"
+    
+    cat > "$BUILD_DIR/isoboot/boot/grub/grub.cfg" << 'EOF'
+set timeout=0
+menuentry "HAL OS" {
+    multiboot2 /boot/hal_os.bin
+    boot
+}
+EOF
+    
+    cp "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/isoboot/boot/hal_os.bin"
+    
+    # Create ISO using grub-mkrescue (preferred method for Multiboot2)
+    if command -v grub-mkrescue &> /dev/null; then
+        grub-mkrescue -o "$BUILD_DIR/hal_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>/dev/null || true
+    elif command -v xorriso &> /dev/null; then
+        xorriso -as mkisofs -o "$BUILD_DIR/hal_os_${ARCH}.iso" \
+            -isohybrid-mbr /usr/lib/GRUB/i386-pc/eltorito.img \
+            -c boot.catalog -b boot/grub/grub.bin \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            -V "HAL_OS" "$BUILD_DIR/isoboot" 2>/dev/null || \
+        genisoimage -o "$BUILD_DIR/hal_os_${ARCH}.iso" \
+            -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
+            -boot-load-size 4 -boot-info-table -V "HAL_OS" \
+            "$BUILD_DIR/isoboot" 2>/dev/null || true
+    elif command -v genisoimage &> /dev/null; then
+        genisoimage -o "$BUILD_DIR/hal_os_${ARCH}.iso" \
+            -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
+            -boot-load-size 4 -boot-info-table -V "HAL_OS" \
+            "$BUILD_DIR/isoboot" 2>/dev/null || true
+    fi
+fi
 
 echo ""
 echo "=========================================="
@@ -153,9 +213,15 @@ echo "To run with QEMU:"
 case "$ARCH" in
     64|x86_64)
         echo "  qemu-system-x86_64 -kernel $BUILD_DIR/$OUTPUT_NAME"
+        if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
+            echo "  OR (with GRUB): qemu-system-x86_64 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
+        fi
         ;;
     32|i386|i686)
         echo "  qemu-system-i386 -kernel $BUILD_DIR/$OUTPUT_NAME"
+        if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
+            echo "  OR (with GRUB): qemu-system-i386 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
+        fi
         ;;
     arm|arm32)
         echo "  qemu-system-arm -kernel $BUILD_DIR/$OUTPUT_NAME -M virt"
