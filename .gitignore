@@ -1,1 +1,12 @@
-(empty)
+```
+# Build artifacts
+build/
+*.bin
+*.elf
+*.iso
+*.o
+*.obj
+
+# Generated files
+linker.ld
+```

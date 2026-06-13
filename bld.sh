@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# HAL OS Build Script
+# Baram OS Lazward Build Script
 # Usage: ./bld.sh [arch]
 #   arch: 64, 32, arm, arm64 (default: 64)
 
@@ -10,10 +10,10 @@ ARCH="${1:-64}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$SCRIPT_DIR/src"
 BUILD_DIR="$SCRIPT_DIR/build"
-OUTPUT_NAME="hal_os_$ARCH.bin"
+OUTPUT_NAME="baram_os_$ARCH.bin"
 
 echo "=========================================="
-echo "HAL OS Build System"
+echo "Baram OS Lazward Build System"
 echo "Architecture: $ARCH"
 echo "=========================================="
 
@@ -132,12 +132,52 @@ fi
 
 # Link everything
 echo "Linking..."
+# For x86_64, we need to ensure the multiboot header is at the beginning of the binary
+if [[ "$ARCH" == "64" || "$ARCH" == "x86_64" ]]; then
+    # Create a linker script that places .multiboot_header section first
+    cat > "$BUILD_DIR/linker.ld" << 'EOF'
+ENTRY(_start)
+
+SECTIONS
+{
+    . = 0x100000;
+    
+    .multiboot_header ALIGN(8) :
+    {
+        *(.multiboot_header)
+    }
+    
+    .text ALIGN(4K) :
+    {
+        *(.text)
+    }
+    
+    .rodata ALIGN(4K) :
+    {
+        *(.rodata)
+    }
+    
+    .data ALIGN(4K) :
+    {
+        *(.data)
+    }
+    
+    .bss ALIGN(4K) :
+    {
+        *(.bss)
+        *(COMMON)
+    }
+}
+EOF
+    LDFLAGS="-T $BUILD_DIR/linker.ld -m elf_x86_64"
+fi
+
 $LD $LDFLAGS \
     "$BUILD_DIR/boot.o" \
     "$BUILD_DIR/hal.o" \
     "$BUILD_DIR/arch_hal.o" \
     "$BUILD_DIR/kernel.o" \
-    -o "$BUILD_DIR/hal_os_$ARCH.elf"
+    -o "$BUILD_DIR/baram_os_$ARCH.elf"
 
 # Create binary
 echo "Creating binary image..."
@@ -161,9 +201,9 @@ else
 fi
 
 if command -v "$OBJCOPY" &> /dev/null; then
-    $OBJCOPY -O binary "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
+    $OBJCOPY -O binary "$BUILD_DIR/baram_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
 else
-    objcopy -O binary "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
+    objcopy -O binary "$BUILD_DIR/baram_os_$ARCH.elf" "$BUILD_DIR/$OUTPUT_NAME"
 fi
 
 # Create ISO image for x86 architectures (needed for Multiboot2)
@@ -172,33 +212,33 @@ if [[ "$ARCH" == "64" || "$ARCH" == "32" ]]; then
     # Create a simple GRUB configuration
     mkdir -p "$BUILD_DIR/isoboot/boot/grub"
     
-    cat > "$BUILD_DIR/isoboot/boot/grub/grub.cfg" << 'EOF'
+    cat > "$BUILD_DIR/isoboot/boot/grub/grub.cfg" << EOF
 set timeout=0
-menuentry "HAL OS" {
-    multiboot2 /boot/hal_os.bin
+menuentry "Baram OS Lazward" {
+    multiboot2 /boot/baram_os.bin
     boot
 }
 EOF
     
-    cp "$BUILD_DIR/hal_os_$ARCH.elf" "$BUILD_DIR/isoboot/boot/hal_os.bin"
+    cp "$BUILD_DIR/baram_os_$ARCH.elf" "$BUILD_DIR/isoboot/boot/baram_os.bin"
     
     # Create ISO using grub-mkrescue (preferred method for Multiboot2)
     if command -v grub-mkrescue &> /dev/null; then
-        grub-mkrescue -o "$BUILD_DIR/hal_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>/dev/null || true
+        grub-mkrescue -o "$BUILD_DIR/baram_os_${ARCH}.iso" "$BUILD_DIR/isoboot" 2>/dev/null || true
     elif command -v xorriso &> /dev/null; then
-        xorriso -as mkisofs -o "$BUILD_DIR/hal_os_${ARCH}.iso" \
+        xorriso -as mkisofs -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
             -isohybrid-mbr /usr/lib/GRUB/i386-pc/eltorito.img \
             -c boot.catalog -b boot/grub/grub.bin \
             -no-emul-boot -boot-load-size 4 -boot-info-table \
-            -V "HAL_OS" "$BUILD_DIR/isoboot" 2>/dev/null || \
-        genisoimage -o "$BUILD_DIR/hal_os_${ARCH}.iso" \
+            -V "BARAM_OS" "$BUILD_DIR/isoboot" 2>/dev/null || \
+        genisoimage -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
             -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
-            -boot-load-size 4 -boot-info-table -V "HAL_OS" \
+            -boot-load-size 4 -boot-info-table -V "BARAM_OS" \
             "$BUILD_DIR/isoboot" 2>/dev/null || true
     elif command -v genisoimage &> /dev/null; then
-        genisoimage -o "$BUILD_DIR/hal_os_${ARCH}.iso" \
+        genisoimage -o "$BUILD_DIR/baram_os_${ARCH}.iso" \
             -b boot/grub/grub.bin -c boot.catalog -no-emul-boot \
-            -boot-load-size 4 -boot-info-table -V "HAL_OS" \
+            -boot-load-size 4 -boot-info-table -V "BARAM_OS" \
             "$BUILD_DIR/isoboot" 2>/dev/null || true
     fi
 fi
@@ -207,7 +247,7 @@ echo ""
 echo "=========================================="
 echo "Build complete!"
 echo "Output: $BUILD_DIR/$OUTPUT_NAME"
-echo "ELF file: $BUILD_DIR/hal_os_$ARCH.elf"
+echo "ELF file: $BUILD_DIR/baram_os_$ARCH.elf"
 echo "=========================================="
 echo ""
 
@@ -216,16 +256,16 @@ echo "Launching QEMU..."
 case "$ARCH" in
     64|x86_64)
         # For x86_64, use ISO with GRUB for Multiboot2 support
-        if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
-            qemu-system-x86_64 -cdrom "$BUILD_DIR/hal_os_${ARCH}.iso" -m 512M
+        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+            qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 512M
         else
             echo "Error: ISO file not created. Check if grub-mkrescue is installed."
             exit 1
         fi
         ;;
     32|i386|i686)
-        if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
-            qemu-system-i386 -cdrom "$BUILD_DIR/hal_os_${ARCH}.iso" -m 512M
+        if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
+            qemu-system-i386 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 512M
         else
             echo "Error: ISO file not created. Check if grub-mkrescue is installed."
             exit 1

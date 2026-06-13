@@ -1,28 +1,43 @@
 # x86_64 Bootloader Assembly (Multiboot2 compliant)
-.section .multiboot
-    # Multiboot2 header
-    .align 8
-header_start:
-    .long 0xe85250d6           # Magic number
-    .long 0                    # Architecture (0 = protected mode i386)
-    .long header_end - header_start  # Header length
-    .long 0x10000000 - (0xe85250d6 + 0 + (header_end - header_start)) # Checksum
 
+# Multiboot2 header must be in the first 32KB of the kernel image
+# Place it BEFORE any code using .text.startup section
+.section ".multiboot_header", "a"
+    # Align to 8 bytes as required by Multiboot2 spec
+    .align 8
+    
+    # Magic number (0xe85250d6)
+    .long 0xe85250d6
+    
+    # Architecture (0 = protected mode i386)
+    .long 0
+    
+    # Header length (will be calculated)
+header_length:
+    .long header_end - header_start
+    
+    # Checksum
+checksum:
+    .long 0x10000000 - (0xe85250d6 + 0 + (header_end - header_start))
+
+header_start:
     # Framebuffer tag
+framebuffer_tag_start:
     .short 5                   # Type (framebuffer)
-    .short 0                   # Optional
+    .short 0                   # Optional flag
     .long framebuffer_tag_end - framebuffer_tag_start  # Size
     .long 800                  # Width (preferred)
     .long 600                  # Height (preferred)
     .long 32                   # Depth (bits per pixel)
-framebuffer_tag_start:
 framebuffer_tag_end:
 
-    # End tag
+    # End tag (type=0, flags=0, size=8)
     .short 0                   # Type
-    .short 0                   # Optional
+    .short 0                   # Flags
     .long 8                    # Size
 header_end:
+
+.section .note.GNU-stack,"",@progbits
 
 .section .text
 .global _start
