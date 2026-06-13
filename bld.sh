@@ -207,26 +207,28 @@ echo ""
 echo "=========================================="
 echo "Build complete!"
 echo "Output: $BUILD_DIR/$OUTPUT_NAME"
+echo "ELF file: $BUILD_DIR/hal_os_$ARCH.elf"
 echo "=========================================="
 echo ""
 echo "To run with QEMU:"
 case "$ARCH" in
     64|x86_64)
-        echo "  qemu-system-x86_64 -kernel $BUILD_DIR/$OUTPUT_NAME"
+        # For x86_64, use the ELF file directly with QEMU
+        echo "  qemu-system-x86_64 -kernel $BUILD_DIR/hal_os_$ARCH.elf"
         if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
-            echo "  OR (with GRUB): qemu-system-x86_64 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
+            echo "  OR (with GRUB ISO): qemu-system-x86_64 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
         fi
         ;;
     32|i386|i686)
-        echo "  qemu-system-i386 -kernel $BUILD_DIR/$OUTPUT_NAME"
+        echo "  qemu-system-i386 -kernel $BUILD_DIR/hal_os_$ARCH.elf"
         if [ -f "$BUILD_DIR/hal_os_${ARCH}.iso" ]; then
-            echo "  OR (with GRUB): qemu-system-i386 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
+            echo "  OR (with GRUB ISO): qemu-system-i386 -cdrom $BUILD_DIR/hal_os_${ARCH}.iso"
         fi
         ;;
     arm|arm32)
         echo "  qemu-system-arm -kernel $BUILD_DIR/$OUTPUT_NAME -M virt"
         ;;
     arm64|aarch64)
-        echo "  qemu-system-aarch64 -kernel $BUILD_DIR/$OUTPUT_NAME -M virt"
+        echo "  qemu-system-aarch64 -kernel $BUILD_DIR/$OUTPUT_NAME -M virt -cpu cortex-a57"
         ;;
 esac
