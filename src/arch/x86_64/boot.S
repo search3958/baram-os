@@ -41,6 +41,7 @@ header_end:
 .section .text
 .global _start
 .extern kernel_main
+.extern multiboot_info_ptr
 
 .code64
 _start:
@@ -50,11 +51,11 @@ _start:
     # Clear RBP for backtrace
     xor %rbp, %rbp
     
-    # Create boot_info_t on stack
-    # We'll pass a null pointer for now - in real scenario bootloader provides this
-    push $0
+    # Save multiboot info pointer (passed by GRUB in EAX)
+    # GRUB passes multiboot_info_t* in EAX when jumping to entry point
+    mov %eax, %edi  # First argument to kernel_main (boot_info_t*)
     
-    # Call kernel main
+    # Call kernel main with multiboot info
     call kernel_main
     
     # Hang if kernel returns

@@ -291,7 +291,12 @@ if [ "$QEMU_ONLY" != "noqemu" ]; then
         64|x86_64)
             # For x86_64, use ISO with GRUB for Multiboot2 support
             if [ -f "$BUILD_DIR/baram_os_${ARCH}.iso" ] && [ -s "$BUILD_DIR/baram_os_${ARCH}.iso" ]; then
-                qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 128M -vga std
+                # macOS uses Cocoa backend by default, Linux uses SDL/GTK
+                if [[ "$(uname)" == "Darwin" ]]; then
+                    qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 512M
+                else
+                    qemu-system-x86_64 -cdrom "$BUILD_DIR/baram_os_${ARCH}.iso" -m 512M -vga std
+                fi
             else
                 echo "Error: ISO file not created or empty."
                 echo "Make sure grub-mkrescue, x86_64-elf-grub-mkrescue, xorriso, or genisoimage is installed."
