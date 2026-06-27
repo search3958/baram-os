@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+# build instructions: https://git.libssh.org/projects/libssh.git/tree/INSTALL#n36
+[source]
+tar = "https://www.libssh.org/files/0.12/libssh-0.12.0.tar.xz"
+[build]
+template = "cmake"
+dependencies = [
+    "zlib",
+    "openssl3",
+]

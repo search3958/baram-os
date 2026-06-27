@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+
+# This script wraps llvm-config that intended for cross compiling to Redox.
+# Because we can't run llvm-config compiled to Redox, we wrap it here
+# and filter out architectures that do not match the current $TARGET.
+
+import os
+import sys
+import subprocess
+import re
+
+LLVM_CONFIG = "/bin/llvm-config" 
+
+# name of (--targets-built, --components prefix, --libs prefix)
+ARCH_MAP = {
+    "x86_64":    ("X86", "x86", "X86"),
+    "i586":      ("X86", "x86", "X86"),
+    "aarch64":   ("AArch64", "aarch64", "AArch64"),
+    "riscv64gc": ("RISCV", "riscv", "RISCV"),
+}
+
+ALL_ARCH_COMPS = ["x86", "aarch64", "riscv"]
+ALL_ARCH_LIBS = ["X86", "AArch64", "RISCV"]
+
+def is_unwanted_arch(item, allowed_prefix, all_prefixes, is_lib=False):
+    matched_arch = None
+    for arch in all_prefixes:
+        # libraries e.g., -lLLVMX86CodeGen / libLLVMAArch64Desc.a
+        if is_lib and f"LLVM{arch}" in item:
+            matched_arch = arch
+            break
+        # components e.g., x86codegen, aarch64desc
+        elif not is_lib and item.startswith(arch):
+            matched_arch = arch
+            break
+            
+    if matched_arch and matched_arch != allowed_prefix:
+        return True
+        
+    return False
+
+def main():
+    toolchain_path = os.environ.get("COOKBOOK_HOST_SYSROOT")
+    sysroot_path = os.environ.get("COOKBOOK_SYSROOT")
+    target_triple = os.environ.get("TARGET")
+
+    if not toolchain_path or not sysroot_path or not target_triple:
+        print("Error: COOKBOOK_HOST_SYSROOT or COOKBOOK_SYSROOT or TARGET not set", file=sys.stderr)
+        sys.exit(1)
+
+    target_arch = target_triple.split('-')[0] if target_triple else ""
+    mapped_archs = ARCH_MAP.get(target_arch)
+    target_built_name, comp_prefix, lib_prefix = mapped_archs
+    toolchain_path = toolchain_path.rstrip(os.sep)
+    sysroot_path = sysroot_path.rstrip(os.sep)
+
+    cmd = [toolchain_path + LLVM_CONFIG] + sys.argv[1:]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            text=True
+        )
+    except FileNotFoundError:
+        print(f"Error: Could not find executable '{LLVM_CONFIG}'", file=sys.stderr)
+        sys.exit(1)
+
+    args_set = set(sys.argv[1:])
+
+    if result.returncode != 0:
+        # static libs is not part of the toolchain, but they do
+        # exist for platforms without dynamic library support
+        if "--link-static" in args_set and "--libfiles" in args_set:
+            output = result.stderr.strip()
+            output = output.replace("llvm-config: error: missing: ", "")
+        elif "--link-static" in args_set and "--libs" in args_set:
+            output = result.stderr.strip()
+            libpath = toolchain_path + "/lib"
+            output = output.replace(f"llvm-config: error: missing: {libpath}/lib", "-l")
+            output = output.replace(f".a", "")
+            output = re.sub('-lLLVMX86\w+ ?', '', output, count=0, flags=0) # TODO: why?
+            output = f"-L{libpath} {output}"
+        else:
+            print(result.stderr)
+            sys.exit(result.returncode)
+    else:
+        output = result.stdout.strip()
+
+    if "--bindir" in args_set:
+        output = toolchain_path + "/usr/bin"
+        
+    elif "--targets-built" in args_set:
+        output = target_built_name
+        
+    elif "--components" in args_set:
+        components = output.split()
+        filtered = [c for c in components if not is_unwanted_arch(c, comp_prefix, ALL_ARCH_COMPS, is_lib=False)]
+        output = " ".join(filtered)
+        
+    elif "--libs" in args_set:
+        libs = output.split()
+        filtered = [l for l in libs if not is_unwanted_arch(l, lib_prefix, ALL_ARCH_LIBS, is_lib=True)]
+        output = " ".join(filtered)
+        
+        # if "--ldflags" in args_set:
+        output = output.replace(toolchain_path, sysroot_path)
+    else: 
+        output = output.replace(toolchain_path, sysroot_path)
+
+    print(output + '\n', end='')
+
+if __name__ == "__main__":
+    main()

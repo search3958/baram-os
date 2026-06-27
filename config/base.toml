@@ -1,0 +1,254 @@
+# Base configuration: This configuration is meant to be included by
+# other configurations rather than use directly. It is the greatest
+# common divisor of all other configurations and misses several
+# parts necessary to create a bootable system.
+
+# General settings
+[general]
+# Do not prompt if settings are not defined
+prompt = false
+
+[packages]
+base = {}
+bootloader = {}
+kernel = {}
+libgcc = {}
+libstdcxx = {}
+netdb = {}
+netutils = {}
+relibc = {}
+userutils = {}
+uutils = {}
+
+## Configuration files
+[[files]]
+path = "/etc/login_schemes.toml"
+data = """
+[user_schemes.root]
+schemes = ["*"]
+[user_schemes.user]
+schemes = [
+  # Kernel schemes
+  "debug",
+  "event",
+  "memory",
+  "pipe",
+  "serio",
+  "irq",
+  "time",
+  "sys",
+  # Base schemes
+  "rand",
+  "null",
+  "zero",
+  "log",
+  # Network schemes
+  "ip",
+  "icmp",
+  "tcp",
+  "udp",
+  # IPC schemes
+  "shm",
+  "chan",
+  "uds_stream",
+  "uds_dgram",
+  # File schemes
+  "file",
+  # Display schemes
+  "display.vesa",
+  "display*",
+  # Other schemes
+  "proc",
+  "pty",
+  "sudo",
+  "audio",
+  "orbital",
+]
+"""
+
+[[files]]
+path = "/etc/hostname"
+data = "redox"
+
+## Default net configuration (optimized for QEMU)
+[[files]]
+path = "/etc/net/dns"
+data = """
+9.9.9.9
+"""
+
+[[files]]
+path = "/etc/net/ip"
+data = """
+10.0.2.15
+"""
+
+[[files]]
+path = "/etc/net/ip_router"
+data = """
+10.0.2.2
+"""
+
+[[files]]
+path = "/etc/net/ip_subnet"
+data = """
+255.255.255.0
+"""
+
+# https://www.freedesktop.org/software/systemd/man/latest/os-release.html
+[[files]]
+path = "/usr/lib/os-release"
+data = """
+PRETTY_NAME="Redox OS 0.9.0"
+NAME="Redox OS"
+VERSION_ID="0.9.0"
+VERSION="0.9.0"
+ID="redox-os"
+
+HOME_URL="https://redox-os.org/"
+DOCUMENTATION_URL="https://redox-os.org/docs/"
+SUPPORT_URL="https://redox-os.org/community/"
+"""
+# VARIANT and BUILD_ID are appended by redox_installer when creating images.
+
+[[files]]
+path = "/etc/os-release"
+data = "../usr/lib/os-release"
+symlink = true
+
+[[files]]
+path = "/etc/pkg.d/50_redox"
+data = "https://static.redox-os.org/pkg"
+
+## /usr and symlinks for usrmerge
+[[files]]
+path = "/usr"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/usr/bin"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/bin"
+data = "usr/bin"
+symlink = true
+
+[[files]]
+path = "/usr/include"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/include"
+data = "usr/include"
+symlink = true
+
+[[files]]
+path = "/usr/lib"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/lib"
+data = "usr/lib"
+symlink = true
+
+[[files]]
+path = "/usr/libexec"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/usr/share"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/share"
+data = "usr/share"
+symlink = true
+
+## legacy orbital directories
+[[files]]
+path = "/ui"
+data = "usr/share/ui"
+symlink = true
+
+[[files]]
+path = "/usr/share/ui/fonts"
+data = "/usr/share/fonts"
+symlink = true
+
+[[files]]
+path = "/usr/share/ui/icons"
+data = "/usr/share/icons"
+symlink = true
+
+## /var
+[[files]]
+path = "/var"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/var/cache"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/var/lib"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/var/lock"
+data = ""
+directory = true
+mode = 0o1777
+
+[[files]]
+path = "/var/log"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/var/run"
+data = ""
+directory = true
+mode = 0o755
+
+[[files]]
+path = "/var/tmp"
+data = ""
+directory = true
+mode = 0o1777
+
+# User settings
+[users.root]
+password = "password"
+uid = 0
+gid = 0
+shell = "/usr/bin/ion"
+
+[users.user]
+# Password is unset
+password = ""
+shell = "/usr/bin/ion"
+
+# Group settings
+[groups.sudo]
+gid = 1
+members = ["user"]

@@ -1,0 +1,20 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/valkey-io/valkey"
+shallow_clone = true
+rev = "9.0.3"
+
+[build]
+template = "custom"
+dependencies = [
+    "openssl3"
+]
+
+script = """
+rsync -av --delete "${COOKBOOK_SOURCE}"/* ./
+${COOKBOOK_MAKE} MALLOC=libc BUILD_TLS=yes \
+    WARN="-Wall -W -Wno-missing-field-initializers" \
+    WARNINGS="-Wall -W -Wno-missing-field-initializers" \
+    AR="${TARGET}-gcc-ar" CFLAGS="${CFLAGS} ${CPPFLAGS}"
+${COOKBOOK_MAKE} install PREFIX="${COOKBOOK_STAGE}"/usr
+"""

@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/ultravideo/uvg266#compiling-uvg266
+[source]
+git = "https://github.com/ultravideo/uvg266"
+rev = "v0.8.1"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTS=OFF"
+]

@@ -1,0 +1,12 @@
+#TODO Not compiled or tested
+[source]
+git = "https://github.com/markuskimius/SDL2_Pango"
+rev = "v2.1.5"
+shallow_clone = true
+[build]
+template = "configure"
+dependencies = [
+    "pango",
+    "freetype2",
+    "sdl2",
+]

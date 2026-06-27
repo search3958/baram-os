@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/ospray/rkcommon#building
+[source]
+git = "https://github.com/ospray/rkcommon"
+rev = "v1.15.2"
+shallow_clone = true
+[build]
+template = "cmake"
+dependencies = [
+    "onetbb",
+]

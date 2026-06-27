@@ -1,0 +1,8 @@
+#TODO: promote
+#TODO update to 4.x version
+[source]
+git = "https://github.com/simdjson/simdjson"
+rev = "v3.13.0"
+shallow_clone = true
+[build]
+template = "cmake"

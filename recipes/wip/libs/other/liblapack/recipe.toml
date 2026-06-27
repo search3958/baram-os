@@ -1,0 +1,12 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/Reference-LAPACK/lapack#installation
+[source]
+git = "https://github.com/Reference-LAPACK/lapack"
+rev = "v3.12.1"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-D_is_coverage_build=0",
+    "-DLAPACK_TESTING_USE_PYTHON=OFF",
+]

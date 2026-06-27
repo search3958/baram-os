@@ -1,0 +1,14 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/openvkl/openvkl#building-open-vkl-from-source
+[source]
+git = "https://github.com/RenderKit/openvkl"
+branch = "release-2.0.x"
+shallow_clone = true
+[build]
+template = "cmake"
+dependencies = [
+    "ispc",
+    "librkcommon",
+    "embree",
+    "level-zero",
+]

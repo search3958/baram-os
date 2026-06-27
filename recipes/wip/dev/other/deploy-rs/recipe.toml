@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/serokell/deploy-rs"
+shallow_clone = true
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+cookbook_cargo
+mv "${COOKBOOK_STAGE}/usr/bin/deploy" "${COOKBOOK_STAGE}/usr/bin/deploy-rs"
+"""

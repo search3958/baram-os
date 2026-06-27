@@ -1,0 +1,15 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/coastalwhite/lemurs"
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+cookbook_cargo
+mkdir -pv "${COOKBOOK_STAGE}/etc/lemurs"
+mkdir -pv "${COOKBOOK_STAGE}/etc/rustysd/system"
+mkdir -pv "${COOKBOOK_STAGE}/etc/pam.d"
+cp -rv "${COOKBOOK_SOURCE}"/extra/{config.toml,xsetup.sh} "${COOKBOOK_STAGE}/etc/lemurs"
+cp -rv "${COOKBOOK_SOURCE}"/extra/lemurs.service "${COOKBOOK_STAGE}/etc/rustysd/system"
+cp -rv "${COOKBOOK_SOURCE}"/extra/lemurs.pam "${COOKBOOK_STAGE}/etc/pam.d/lemurs"
+"""

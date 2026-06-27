@@ -1,0 +1,9 @@
+#TODO not compiled or tested
+# build instructions: https://code.videolan.org/rist/librist#compile-using-mesonninja-linux-osx-and-windows-mingw
+[source]
+tar = "https://code.videolan.org/rist/librist/-/archive/v.0.2.11/librist-v.0.2.11.tar.bz2"
+[build]
+template = "meson"
+mesonflags = [
+    "-Dtest=false"
+]

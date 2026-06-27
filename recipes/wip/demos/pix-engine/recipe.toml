@@ -1,0 +1,30 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/lukexor/pix-engine"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "maze",
+    "2d_raycasting",
+    "3d_raycasting",
+    "asteroids",
+    "colors",
+    "fluid_simulation",
+    "gui",
+    "hello_world",
+    "image",
+    "light",
+    "matrix",
+    "shapes",
+    "textures",
+    "tree",
+    "windows",
+]
+dependencies = [
+    "sdl2",
+    "sdl2-image",
+    "sdl2-mixer",
+    "sdl2-ttf",
+    "sdl-gfx",
+]

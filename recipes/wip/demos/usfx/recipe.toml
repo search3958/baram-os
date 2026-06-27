@@ -1,0 +1,15 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/tversteeg/usfx"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "cpal",
+    "music",
+    "sdl2",
+]
+dependencies = [
+    "libalsa",
+    "sdl2",
+]

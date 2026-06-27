@@ -1,0 +1,10 @@
+#TODO jemalloc-sys crate error
+[source]
+git = "https://github.com/cloudflare/pingora"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "server",
+    "client",
+]

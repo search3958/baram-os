@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/vgvassilev/cling#building-from-source
+[source]
+git = "https://github.com/vgvassilev/cling"
+rev = "v1.3"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DLLVM_INCLUDE_TESTS=OFF"
+]

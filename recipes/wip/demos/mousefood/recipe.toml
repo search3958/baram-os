@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/j-g00da/mousefood"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["simulator"]
+dependencies = [
+    "sdl2",
+]

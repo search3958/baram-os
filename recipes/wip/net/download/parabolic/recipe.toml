@@ -1,0 +1,16 @@
+#TODO missing script for .net: https://github.com/NickvisionApps/Parabolic#-building
+#TODO requires .net 10
+[source]
+git = "https://github.com/NickvisionApps/Parabolic"
+rev = "2026.2.4"
+shallow_clone = true
+[build]
+template = "custom"
+dependencies = [
+    "gtk4",
+    "libadwaita",
+]
+dev-dependencies = [
+    "host:blueprint",
+    "host:dotnet10",
+]

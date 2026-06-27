@@ -1,0 +1,13 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/any1/neatvnc"
+rev = "v1.0.0"
+shallow_clone = true
+[build]
+template = "meson"
+dependencies = [
+    "libdrm",
+    "aml",
+    "pixman",
+    "zlib",
+]

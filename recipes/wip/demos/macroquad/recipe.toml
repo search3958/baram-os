@@ -1,0 +1,18 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/not-fl3/macroquad"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "3d",
+    "basic_shapes",
+    "camera",
+    "first_person",
+    "particles_example",
+    "platformer",
+    "shadertoy",
+    "snake",
+    "text",
+    "ui",
+]

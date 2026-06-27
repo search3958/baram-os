@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://chromium.googlesource.com/codecs/libgav1/#compile
+[source]
+git = "https://chromium.googlesource.com/codecs/libgav1"
+rev = "v0.20.0"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DLIBGAV1_ENABLE_TESTS=OFF"
+]

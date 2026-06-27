@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/apitrace/apitrace/blob/master/docs/INSTALL.markdown#linux
+[source]
+git = "https://github.com/apitrace/apitrace"
+rev = "14.0"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTING=OFF"
+]

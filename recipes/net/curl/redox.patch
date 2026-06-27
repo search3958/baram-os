@@ -1,0 +1,55 @@
+diff --git a/curl-config.in b/curl-config.in
+index a1c8185875..326ea2b9d3 100644
+--- a/curl-config.in
++++ b/curl-config.in
+@@ -167,7 +167,7 @@ while test "$#" -gt 0; do
+ 
+   --static-libs)
+     if test '@ENABLE_STATIC@' != 'no'; then
+-      echo "@libdir@/libcurl.@libext@ @LIBCURL_PC_LDFLAGS_PRIVATE@ @LIBCURL_PC_LIBS_PRIVATE@"
++      echo "@libdir@/libcurl.@libext@ @LIBCURL_PC_LIBS_PRIVATE@"
+     else
+       echo 'curl was built with static libraries disabled' >&2
+       exit 1
+diff --git a/include/curl/curl.h b/include/curl/curl.h
+index 6961a6c4c1..66221b85e3 100644
+--- a/include/curl/curl.h
++++ b/include/curl/curl.h
+@@ -88,7 +88,7 @@
+    libc5-based Linux systems. Only include it on systems that are known to
+    require it! */
+ #if defined(_AIX) || defined(__NOVELL_LIBC__) || defined(__NetBSD__) || \
+-    defined(__minix) || defined(__INTEGRITY) || \
++    defined(__minix) || defined(__INTEGRITY) || defined(__redox__) || \
+     defined(ANDROID) || defined(__ANDROID__) || defined(__OpenBSD__) || \
+     defined(__CYGWIN__) || defined(AMIGA) || defined(__NuttX__) || \
+    (defined(__FreeBSD_version) && (__FreeBSD_version < 800000)) || \
+@@ -975,11 +975,11 @@ typedef enum {
+ /* Backwards compatibility with older names */
+ /* These are scheduled to disappear by 2009 */
+ 
+-#define CURLFTPSSL_NONE CURLUSESSL_NONE
+-#define CURLFTPSSL_TRY CURLUSESSL_TRY
+-#define CURLFTPSSL_CONTROL CURLUSESSL_CONTROL
+-#define CURLFTPSSL_ALL CURLUSESSL_ALL
+-#define CURLFTPSSL_LAST CURLUSESSL_LAST
++#define CURLFTPSSL_NONE 0L
++#define CURLFTPSSL_TRY 1L
++#define CURLFTPSSL_CONTROL 2L
++#define CURLFTPSSL_ALL 3L
++#define CURLFTPSSL_LAST 4L
+ #define curl_ftpssl curl_usessl
+ #endif /* !CURL_NO_OLDIES */
+ 
+diff --git a/libcurl.pc.in b/libcurl.pc.in
+index c0ba5244a8..7898dae358 100644
+--- a/libcurl.pc.in
++++ b/libcurl.pc.in
+@@ -36,6 +36,6 @@ Version: @CURLVERSION@
+ Requires: @LIBCURL_PC_REQUIRES@
+ Requires.private: @LIBCURL_PC_REQUIRES_PRIVATE@
+ Libs: -L${libdir} -lcurl @LIBCURL_PC_LIBS@
+-Libs.private: @LIBCURL_PC_LDFLAGS_PRIVATE@ @LIBCURL_PC_LIBS_PRIVATE@
++Libs.private: @LIBCURL_PC_LIBS_PRIVATE@
+ Cflags: -I${includedir} @LIBCURL_PC_CFLAGS@
+ Cflags.private: @LIBCURL_PC_CFLAGS_PRIVATE@

@@ -1,0 +1,16 @@
+#TODO need to patch glutin
+[source]
+git = "https://github.com/alacritty/alacritty"
+shallow_clone = true
+[build]
+template = "cargo"
+dependencies = [
+    "freetype2",
+    "fontconfig",
+    "libxcb",
+]
+cargopath = "alacritty"
+cargoflags = [
+    "--no-default-features",
+    "--features x11",
+]

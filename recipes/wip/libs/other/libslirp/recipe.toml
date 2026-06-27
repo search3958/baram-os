@@ -1,0 +1,6 @@
+#TODO not compiled or tested
+# build instructions: https://gitlab.freedesktop.org/slirp/libslirp#building
+[source]
+tar = "https://gitlab.freedesktop.org/-/project/2767/uploads/ed8eaeada090f91a640c8e8e01d704bc/libslirp-4.9.1.tar.xz"
+[build]
+template = "meson"

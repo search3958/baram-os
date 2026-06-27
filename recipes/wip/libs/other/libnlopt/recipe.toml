@@ -1,0 +1,12 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/stevengj/nlopt#readme
+[source]
+git = "https://github.com/stevengj/nlopt"
+rev = "v2.10.1"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DNLOPT_GUILE=OFF",
+    "-DNLOPT_JAVA=OFF",
+]

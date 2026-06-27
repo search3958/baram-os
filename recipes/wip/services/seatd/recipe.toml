@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/jackpot51/seatd"
+branch = "redox"
+
+[build]
+template = "meson"
+mesonflags = [
+    "-Dman-pages=disabled",
+]

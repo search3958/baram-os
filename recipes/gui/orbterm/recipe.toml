@@ -1,0 +1,17 @@
+[source]
+git = "https://gitlab.redox-os.org/redox-os/orbterm.git"
+
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+mkdir -pv "${COOKBOOK_STAGE}/usr/share/ui"
+cp -rv "${COOKBOOK_SOURCE}/apps" "${COOKBOOK_STAGE}/usr/share/ui/apps"
+
+cookbook_cargo
+"""
+
+[package]
+dependencies = [
+    "orbital"
+]

@@ -1,0 +1,16 @@
+#TODO: libabsl
+# Also see https://github.com/protocolbuffers/protobuf/blob/main/cmake/README.md
+[source]
+git = "https://github.com/protocolbuffers/protobuf"
+rev = "v34.0"
+shallow_clone = true
+
+[build]
+template = "cmake"
+cmakeflags = [
+    "-Dprotobuf_BUILD_TESTS=OFF"
+]
+dependencies = [
+    "libabsl",
+    "zlib",
+]

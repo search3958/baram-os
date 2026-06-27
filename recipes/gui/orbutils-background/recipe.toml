@@ -1,0 +1,14 @@
+[source]
+same_as = "../orbutils"
+
+[build]
+template = "cargo"
+cargopath = "orbutils"
+cargoflags = [
+    "--bin background"
+]
+
+[package]
+dependencies = [
+    "orbital"
+]

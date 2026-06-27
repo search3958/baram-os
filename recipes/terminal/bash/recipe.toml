@@ -1,0 +1,27 @@
+[source]
+tar = "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz"
+blake3 = "5bf3ac6c18f3dc3fe3e049a1e10ea5ae5c5b39dac2356cd796730f49b273fd0f"
+
+[build]
+template = "custom"
+dependencies = [
+    "readline",
+]
+script = """
+DYNAMIC_INIT
+export CPPFLAGS+=" -DHAVE_STRCHRNUL"
+COOKBOOK_CONFIGURE_FLAGS+=(
+    bash_cv_func_sigsetjmp=no
+    ac_cv_func_getrlimit=no
+    ac_cv_func_dlopen=no
+    ac_cv_func_dlclose=no
+    bash_cv_getenv_redef=no
+    bash_cv_getcwd_malloc=yes
+    bash_cv_func_strchrnul_works=yes
+    --with-bash-malloc=no
+    --with-installed-readline=yes
+)
+cookbook_configure
+ln -s "bash" "${COOKBOOK_STAGE}/usr/bin/sh"
+cp -r "${COOKBOOK_RECIPE}/etc" "${COOKBOOK_STAGE}/etc"
+"""

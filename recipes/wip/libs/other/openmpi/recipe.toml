@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+[source]
+tar = "https://www.open-mpi.org/software/ompi/v5.0/downloads/openmpi-5.0.10.tar.bz2"
+[build]
+template = "configure"
+dependencies = [
+    "libevent",
+    "hwloc",
+    "openpmix",
+    "prrte",
+]

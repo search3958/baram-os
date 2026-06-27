@@ -1,0 +1,34 @@
+[source]
+tar = "https://ftp.gnu.org/gnu/ncurses/ncurses-6.6.tar.gz"
+blake3 = "fbec55697a01f99b9cc3f25be55e73ae7091f4c53e5d81a1ea15734c4e5b7238"
+patches = [
+    "redox.patch"
+]
+
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+COOKBOOK_CONFIGURE_FLAGS+=(
+    --disable-db-install
+    --disable-stripping
+    --disable-widec
+    --enable-pc-files
+    --without-ada
+    --without-manpages
+    --without-tests
+    --with-terminfo-dirs=/usr/share/terminfo
+    --with-pkg-config-libdir=/usr/lib/pkgconfig
+    cf_cv_func_mkstemp=yes
+)
+if [ "${COOKBOOK_DYNAMIC}" == "1" ]
+then
+    COOKBOOK_CONFIGURE_FLAGS+=(--with-shared)
+fi
+cookbook_configure
+"""
+
+[package]
+dependencies = [
+    "terminfo",
+]

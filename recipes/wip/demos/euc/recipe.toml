@@ -1,0 +1,13 @@
+#TODO minifb crate error
+[source]
+git = "https://github.com/zesterer/euc"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "spinning_cube",
+    "teapot",
+    "texture_mapping",
+    "triangle",
+    "wireframes",
+]

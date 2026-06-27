@@ -1,0 +1,12 @@
+#TODO x11rb and rustix crates error
+[source]
+git = "https://github.com/kvark/blade"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "bunnymark",
+    "particle",
+    "ray-query",
+    "scene",
+]

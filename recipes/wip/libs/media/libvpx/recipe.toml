@@ -1,0 +1,7 @@
+#TODO redox target error
+[source]
+git = "https://chromium.googlesource.com/webm/libvpx"
+rev = "v1.16.0"
+shallow_clone = true
+[build]
+template = "configure"

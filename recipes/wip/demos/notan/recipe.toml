@@ -1,0 +1,12 @@
+#TODO environment leak on CMake
+[source]
+git = "https://github.com/Nazariglez/notan"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "renderer_cube",
+    "draw_path_flower",
+    "game_pong",
+    "game_of_life",
+]

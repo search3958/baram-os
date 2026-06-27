@@ -1,0 +1,31 @@
+#TODO glutin crate error
+[source]
+git = "https://github.com/asny/three-d"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "animation",
+    "environment",
+    "fireworks",
+    "fog",
+    "forest",
+    "image",
+    "instanced_shapes",
+    "lighting",
+    "lights",
+    "logo",
+    "mandelbrot",
+    "multiwindow",
+    "pbr",
+    "shapes",
+    "shapes2d",
+    "sprites",
+    "statues",
+    "terrain",
+    "texture",
+    "triangle",
+]
+dependencies = [
+    "openssl3",
+]

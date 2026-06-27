@@ -1,0 +1,278 @@
+use cookbook::cook::ident::{get_ident, init_ident};
+use cookbook::cook::{fetch, fs, package as cook_package};
+use cookbook::recipe::CookRecipe;
+use cookbook::web::{CliWebConfig, generate_web};
+use cookbook::{Error, Result, WALK_DEPTH, staged_pkg};
+use pkg::PackageName;
+use pkg::{Repository, SourceIdentifier};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::env;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use toml::Value;
+
+#[derive(Clone)]
+struct CliConfig {
+    repo_dir: PathBuf,
+    appstream: bool,
+    recipe_list: Vec<String>,
+    web: Option<CliWebConfig>,
+}
+
+impl CliConfig {
+    fn parse_args() -> Result<Self> {
+        let mut args = env::args().skip(1);
+        let repo_dir = PathBuf::from(
+            args.next()
+                .expect("Usage: repo_builder <REPO_DIR> <recipe1> <recipe2> ..."),
+        );
+        let web = CliWebConfig::parse_args();
+        Ok(CliConfig {
+            repo_dir,
+            appstream: env::var("COOKBOOK_APPSTREAM").ok().as_deref() == Some("true"),
+            recipe_list: args.collect(),
+            web,
+        })
+    }
+}
+
+fn main() -> Result<()> {
+    init_ident();
+    let conf = CliConfig::parse_args()?;
+    Ok(publish_packages(&conf)?)
+}
+
+// TODO: Make this callable from repo bin
+fn publish_packages(config: &CliConfig) -> Result<()> {
+    let repo_path = &config.repo_dir.join(redoxer::target());
+    if !repo_path.is_dir() {
+        fs::create_dir(repo_path)?;
+    }
+
+    // Don't publish host packages
+    let target_packages = &config
+        .recipe_list
+        .iter()
+        .filter_map(|n| match PackageName::new(n) {
+            Ok(p) if p.is_host() => None,
+            Ok(p) => Some(p),
+            Err(_) => None,
+        })
+        .collect::<Vec<_>>();
+
+    if target_packages.len() == 0 {
+        return Ok(());
+    }
+
+    // TODO: publish cross target builds?
+    if std::env::var("COOKBOOK_CROSS_TARGET").is_ok_and(|x| !x.is_empty()) {
+        return Ok(());
+    }
+
+    // Runtime dependencies include both `[package.dependencies]` and dynamically
+    // linked packages discovered by auto_deps.
+    //
+    // The following adds the package dependencies of the recipes to the repo as
+    // well.
+    let (recipe_list, recipe_map) = staged_pkg::new_recursive_nonstop(target_packages, WALK_DEPTH);
+
+    if recipe_list.len() == 0 {
+        // Fail-Safe
+        return Err(Error::Other(format!("Zero packages are passing the build")));
+    }
+
+    let mut appstream_sources: HashMap<String, PathBuf> = HashMap::new();
+    let mut packages: BTreeMap<String, String> = BTreeMap::new();
+    let mut outdated_packages: BTreeMap<String, SourceIdentifier> = BTreeMap::new();
+
+    // === 1. Push recipes in list ===
+    for recipe_toml in &recipe_list {
+        let recipe = &recipe_toml.name;
+        let Some(recipe_path) = staged_pkg::find(recipe.name()) else {
+            eprintln!("recipe {} not found", recipe);
+            continue;
+        };
+        let Ok(cookbook_recipe) = CookRecipe::from_path(recipe_path, true, false) else {
+            eprintln!("recipe {} unable to read", recipe);
+            continue;
+        };
+
+        let target_dir = cookbook_recipe.target_dir();
+        for package in cookbook_recipe.recipe.get_packages_list() {
+            let (stage_dir, pkgar_src, toml_src) =
+                cook_package::package_stage_paths(package, &target_dir);
+            let recipe_name = cook_package::get_package_name(recipe.name(), package);
+            let pkgar_dst = repo_path.join(format!("{}.pkgar", recipe_name));
+            let toml_dst = repo_path.join(format!("{}.toml", recipe_name));
+
+            if !toml_src.is_file() {
+                eprintln!("recipe {} is missing stage.toml", recipe_name);
+                continue;
+            }
+
+            if fs::modified_is_newer(&toml_src, &toml_dst) {
+                eprintln!("\x1b[01;38;5;155mrepo - publishing {}\x1b[0m", recipe_name);
+                if pkgar_src.is_file() {
+                    std::fs::copy(&pkgar_src, &pkgar_dst)
+                        .map_err(|e| Error::from_io_error(e, "Copying file"))?;
+                }
+                std::fs::copy(&toml_src, &toml_dst)
+                    .map_err(|e| Error::from_io_error(e, "Copying file"))?;
+            }
+
+            // TODO: Extract from pkgar instead to handle config.cook.clean_target == true
+            if stage_dir.join("usr/share/metainfo").exists() {
+                appstream_sources.insert(recipe.name().to_string(), stage_dir.clone());
+            }
+        }
+    }
+
+    // === 2. Optional AppStream generation ===
+    if config.appstream {
+        eprintln!("\x1b[01;38;5;155mrepo - generating appstream data\x1b[0m");
+
+        let root = env::var("ROOT").unwrap_or_else(|_| ".".into());
+        let target = env::var("TARGET").unwrap_or_else(|_| "x86_64-unknown-linux-gnu".into());
+        let appstream_root = Path::new(&root)
+            .join("build")
+            .join(&target)
+            .join("appstream");
+
+        fs::create_dir_clean(&appstream_root)?;
+
+        if !appstream_sources.is_empty() {
+            let mut compose_cmd = Command::new("appstreamcli");
+            compose_cmd
+                .arg("compose")
+                .arg("--origin=pkgar")
+                .arg("--print-report=full")
+                .arg(format!("--result-root={}", appstream_root.display()));
+
+            for (_recipe, source_path) in &appstream_sources {
+                compose_cmd.arg(source_path);
+            }
+
+            let exit_status = compose_cmd
+                .status()
+                .map_err(|e| Error::from_io_error(e, "Reading exit status"))?;
+            if exit_status.success() {
+                let appstream_pkg = repo_path.join("repo-appstream.pkgar");
+                let _ = fs::remove_all(&appstream_pkg);
+                pkgar::create(
+                    format!("{}/build/id_ed25519.toml", root),
+                    &appstream_pkg,
+                    &appstream_root,
+                )?;
+            } else {
+                eprintln!("\x1b[1;91;49mrepo - appstreamcli failed:\x1b[0m {exit_status:?}");
+                for (_recipe, source_path) in &appstream_sources {
+                    eprintln!("- {}", source_path.display());
+                }
+                eprintln!();
+            }
+        }
+    }
+
+    // === 3. List outdated packages ===
+    for (recipe, e) in recipe_map
+        .into_iter()
+        .filter_map(|(k, v)| v.err().and_then(|e| Some((k, e))))
+    {
+        eprintln!(
+            "\x1b[0;91;49mrepo - marking {} as outdated:\x1b[0m {e}",
+            recipe
+        );
+
+        let Some(recipe_path) = staged_pkg::find(recipe.name()) else {
+            eprintln!("recipe {} not found", recipe);
+            continue;
+        };
+        let Ok(cookbook_recipe) = CookRecipe::from_path(recipe_path, true, false) else {
+            eprintln!("recipe {} unable to read", recipe);
+            continue;
+        };
+
+        match fetch::fetch_get_source_info(&cookbook_recipe) {
+            Ok(source_ident) => {
+                outdated_packages.insert(recipe.name().to_string(), source_ident);
+            }
+            Err(e) => {
+                eprintln!(
+                    "\x1b[0;91;49m  source of {} is not identifiable:\x1b[0m {e}",
+                    recipe
+                );
+                let ident = get_ident();
+                outdated_packages.insert(
+                    recipe.name().to_string(),
+                    SourceIdentifier {
+                        source_identifier: "missing_source".to_string(),
+                        commit_identifier: ident.commit.clone(),
+                        time_identifier: ident.time.clone(),
+                    },
+                );
+            }
+        };
+    }
+
+    eprintln!("\x1b[01;38;5;155mrepo - generating repo.toml\x1b[0m");
+
+    // === 4. Read and update repo.toml ===
+    let repo_toml_path = repo_path.join("repo.toml");
+    if repo_toml_path.exists() {
+        let parsed: Repository = fs::read_toml(&repo_toml_path)?;
+        for (k, v) in parsed.packages {
+            packages.insert(k, v);
+        }
+        if parsed.outdated_packages.len() > 0 {
+            let built_packages: BTreeSet<String> = recipe_list
+                .iter()
+                .map(|p| p.name.name().to_string())
+                .collect();
+            for (k, v) in parsed.outdated_packages {
+                if outdated_packages.contains_key(&k) || !built_packages.contains(&k) {
+                    outdated_packages.insert(k, v);
+                }
+            }
+        }
+    }
+
+    for entry in
+        std::fs::read_dir(&repo_path).map_err(|e| Error::from_io_error(e, "Listing repo"))?
+    {
+        let entry = entry.map_err(|e| Error::from_io_error(e, "Reading repo entry"))?;
+        let path = entry.path();
+
+        if path.extension().and_then(|s| s.to_str()) != Some("toml") {
+            continue;
+        }
+
+        if path.file_stem().and_then(|s| s.to_str()) == Some("repo") {
+            continue;
+        }
+
+        let parsed: Value = fs::read_toml(&path)?;
+
+        let empty_ver = Value::String("".to_string());
+        let version_str = parsed
+            .get("blake3")
+            .unwrap_or_else(|| parsed.get("version").unwrap_or_else(|| &empty_ver))
+            .as_str()
+            .unwrap_or("");
+        let package_name = path.file_stem().unwrap().to_string_lossy().to_string();
+        packages.insert(package_name, version_str.to_string());
+    }
+
+    let repository = Repository {
+        build_id: get_ident().commit.clone(),
+        packages,
+        outdated_packages,
+    };
+
+    fs::serialize_and_write(&repo_toml_path, &repository)?;
+
+    if let Some(conf) = &config.web {
+        eprintln!("\x1b[01;38;5;155mrepo - generating web content\x1b[0m");
+        generate_web(&repository.packages.keys().cloned().collect(), conf);
+    }
+    Ok(())
+}

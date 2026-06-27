@@ -1,0 +1,32 @@
+[source]
+git = "https://github.com/flyinghead/flycast.git"
+rev = "v2.6"
+patches = ["redox.patch"]
+shallow_clone = true
+
+[build]
+template = "custom"
+dependencies = [
+    "curl",
+    "libzip",
+    "sdl2",
+]
+dev-dependencies = [
+    "zlib",
+    "zstd",
+]
+script = """
+DYNAMIC_INIT
+export CPPFLAGS+=" -D_GNU_SOURCE=1"
+COOKBOOK_CMAKE_FLAGS+=(
+    -DREDOX=1
+    -DUNIX=1
+    -DUSE_OPENMP=OFF
+    -DUSE_VULKAN=OFF
+    -DUSE_HOST_SDL=ON
+    -DNOWIDE_INSTALL=ON
+    -DWITH_SYSTEM_ZLIB=ON
+    -DWITH_SYSTEM_ZSTD=ON
+)
+cookbook_cmake
+"""

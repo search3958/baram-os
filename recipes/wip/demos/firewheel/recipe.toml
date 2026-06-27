@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/BillyDM/firewheel"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "beep_test",
+    "play_sample",
+]

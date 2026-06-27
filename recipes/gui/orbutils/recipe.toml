@@ -1,0 +1,13 @@
+[source]
+git = "https://gitlab.redox-os.org/redox-os/orbutils.git"
+
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+mkdir -pv "${COOKBOOK_STAGE}/usr/share/ui"
+cp -rv "${COOKBOOK_SOURCE}/apps" "${COOKBOOK_STAGE}/usr/share/ui/apps"
+
+COOKBOOK_CARGO_PATH="orbutils" cookbook_cargo
+COOKBOOK_CARGO_PATH="launcher" cookbook_cargo
+"""

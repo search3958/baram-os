@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/microsoft/mimalloc#macos-linux-bsd-etc
+[source]
+git = "https://github.com/microsoft/mimalloc"
+rev = "v3.2.8"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DMI_BUILD_TESTS=OFF"
+]

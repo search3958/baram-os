@@ -1,0 +1,12 @@
+#TODO not compiled or tested
+# require protobuf
+[source]
+git = "https://github.com/BeechatNetworkSystemsLtd/Reticulum-rs"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "tcp_client",
+    "kaonic_client",
+]
+dev-dependencies = ["protobuf"]

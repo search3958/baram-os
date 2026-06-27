@@ -1,0 +1,13 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/Jondolf/avian"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "chain_2d",
+    "many_shapes",
+    "ray_caster",
+    "chain_3d",
+    "cubes",
+]

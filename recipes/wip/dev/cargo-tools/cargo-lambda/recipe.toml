@@ -1,0 +1,7 @@
+#TODO camino crate error
+[source]
+git = "https://github.com/cargo-lambda/cargo-lambda"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["cargo-lambda"]

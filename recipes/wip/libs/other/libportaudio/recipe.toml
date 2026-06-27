@@ -1,0 +1,7 @@
+#TODO compilation error
+[source]
+git = "https://github.com/PortAudio/portaudio"
+rev = "v19.7.0"
+shallow_clone = true
+[build]
+template = "configure"

@@ -1,0 +1,34 @@
+diff -ruw gstreamer-1.24.12/subprojects/gst-plugins-bad/ext/dtls/gstdtlsconnection.c source/subprojects/gst-plugins-bad/ext/dtls/gstdtlsconnection.c
+--- gstreamer-1.24.12/subprojects/gst-plugins-bad/ext/dtls/gstdtlsconnection.c	2025-01-29 13:12:29.000000000 -0700
++++ source/subprojects/gst-plugins-bad/ext/dtls/gstdtlsconnection.c	2026-02-10 19:13:12.530288659 -0700
+@@ -49,6 +49,10 @@
+ #include <errno.h>
+ #endif
+ 
++#if defined(__redox__)
++#include <sys/time.h> // For struct timeval
++#endif
++
+ GST_DEBUG_CATEGORY_STATIC (gst_dtls_connection_debug);
+ #define GST_CAT_DEFAULT gst_dtls_connection_debug
+ 
+diff -ruw gstreamer-1.24.12/subprojects/gst-plugins-base/gst-libs/gst/tag/meson.build source/subprojects/gst-plugins-base/gst-libs/gst/tag/meson.build
+--- gstreamer-1.24.12/subprojects/gst-plugins-base/gst-libs/gst/tag/meson.build	2025-01-29 13:12:29.000000000 -0700
++++ source/subprojects/gst-plugins-base/gst-libs/gst/tag/meson.build	2026-02-10 19:09:53.259120404 -0700
+@@ -136,10 +136,10 @@
+     install: false)
+ endif
+ 
+-executable('mklicensestables', 'mklicensestables.c',
+-  c_args : gst_plugins_base_args,
+-  include_directories: [configinc],
+-  dependencies : [tag_dep, gst_base_dep],
+-  install : false)
++#executable('mklicensestables', 'mklicensestables.c',
++#  c_args : gst_plugins_base_args,
++#  include_directories: [configinc],
++#  dependencies : [tag_dep, gst_base_dep],
++#  install : false)
+ 
+ gst_tag_dir = meson.current_source_dir()
+Only in source/subprojects/gst-plugins-base/gst-libs/gst/tag: meson.build.orig

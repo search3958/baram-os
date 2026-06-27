@@ -1,0 +1,7 @@
+#TODO ahash crate error
+[source]
+git = "https://github.com/tanakh/meru"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["meru"]

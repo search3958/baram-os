@@ -1,0 +1,13 @@
+#TODO xcap crate error
+[source]
+git = "https://github.com/mediar-ai/uniOCR"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "basic",
+    "batch_processing",
+]
+dependencies = [
+    "openssl3",
+]

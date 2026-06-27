@@ -1,0 +1,39 @@
+# Configuration for Jeremy Soller
+
+include = ["../desktop.toml"]
+
+# General settings
+[general]
+# Filesystem size in MiB
+filesystem_size = 4000
+
+# Package settings
+[packages]
+# apps
+cosmic-text = {}
+pixelcannon = {}
+sodium = {}
+
+# cli
+acid = {}
+cleye = {}
+ripgrep = {}
+
+# demos
+cpal = {}
+orbclient = {}
+rodioplay = {}
+winit = {}
+
+# games
+dosbox = {}
+eduke32 = {}
+freedoom = {}
+prboom = {}
+redox-games = {}
+
+# stuff
+freepats = {}
+generaluser-gs = {}
+jeremy = {}
+ttf-hack = {}

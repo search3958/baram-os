@@ -1,0 +1,18 @@
+#TODO not compiled or tested
+# build instructions: https://i2pd.readthedocs.io/en/latest/devs/building/unix/
+[source]
+git = "https://github.com/PurpleI2P/i2pd"
+rev = "2.59.0"
+shallow_clone = true
+[build]
+template = "custom"
+dependencies = [
+    "boost",
+    "openssl3",
+    "zlib",
+]
+script = """
+COOKBOOK_SOURCE="${COOKBOOK_SOURCE}/build"
+DYNAMIC_INIT
+cookbook_cmake
+"""

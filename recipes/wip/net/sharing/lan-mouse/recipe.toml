@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/feschber/lan-mouse"
+shallow_clone = true
+[build]
+template = "cargo"
+dependencies = [
+    "libadwaita",
+    "gtk4",
+]

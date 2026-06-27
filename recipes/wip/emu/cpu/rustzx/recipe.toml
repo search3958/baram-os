@@ -1,0 +1,10 @@
+#TODO Not compiled or tested
+[source]
+git = "https://github.com/rustzx/rustzx"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["rustzx"]
+dependencies = [
+    "sdl2",
+]

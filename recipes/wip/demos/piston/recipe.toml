@@ -1,0 +1,15 @@
+#TODO glutin crate error
+[source]
+git = "https://github.com/pistondevelopers/piston-examples"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "cube",
+    "hello_world",
+    "image",
+    "multi_window",
+    "shapes",
+    "snake",
+    "sprite",
+]

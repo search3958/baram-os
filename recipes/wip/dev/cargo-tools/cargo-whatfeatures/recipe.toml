@@ -1,0 +1,11 @@
+#TODO camino crate error
+# use openssl if rustls doesn't work
+[source]
+git = "https://github.com/museun/cargo-whatfeatures"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoflags = ["--features rustls"]
+#dependencies = [
+#    "openssl3",
+#]

@@ -1,0 +1,13 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/broccolingual/rustui"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["tetris"]
+cargoexamples = [
+    "hello_world",
+    "colors",
+    "inputs",
+    "file_reader",
+]

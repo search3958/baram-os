@@ -1,0 +1,8 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/xtensor-stack/xsimd#install-from-sources
+[source]
+git = "https://github.com/xtensor-stack/xsimd"
+rev = "14.1.0"
+shallow_clone = true
+[build]
+template = "cmake"

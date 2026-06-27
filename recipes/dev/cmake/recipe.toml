@@ -1,0 +1,30 @@
+[source]
+tar = "https://github.com/Kitware/CMake/releases/download/v4.3.2/cmake-4.3.2.tar.gz"
+blake3 = "cbd0121189df1502f61e8f12f044b4a901b1ea16c74c016b85714e4661b8537f"
+
+[build]
+template = "cmake"
+dependencies = [
+    # "cppdap",
+    "curl",
+    "expat",
+    # "form",
+    # "jsoncpp",
+    "libarchive",
+    # "liblzma",
+    # "librhash",
+    "libuv",
+    "zlib",
+    "zstd",
+]
+cmakeflags = [
+    "-DBUILD_TESTING=Off",
+    "-DCMAKE_USE_SYSTEM_BZIP2=On",
+    "-DCMAKE_USE_SYSTEM_CURL=On",
+    "-DCMAKE_USE_SYSTEM_EXPAT=On",
+    "-DCMAKE_USE_SYSTEM_LIBARCHIVE=On",
+    "-DCMAKE_USE_SYSTEM_LIBUV=On",
+    "-DCMAKE_USE_SYSTEM_NGHTTP2=On",
+    "-DCMAKE_USE_SYSTEM_ZLIB=On",
+    "-DCMAKE_USE_SYSTEM_ZSTD=On",
+]

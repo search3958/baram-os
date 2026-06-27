@@ -1,0 +1,5 @@
+#TODO not compiled or tested
+[source]
+tar = "https://github.com/libcdio/libcdio/releases/download/2.3.0/libcdio-2.3.0.tar.bz2"
+[build]
+template = "configure"

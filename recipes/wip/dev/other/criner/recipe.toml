@@ -1,0 +1,11 @@
+#TODO compiled but not tested (after cargo update)
+#TODO missing script to properly move th binary
+[source]
+git = "https://github.com/the-lean-crate/criner"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["criner"]
+dependencies = [
+    "openssl3",
+]

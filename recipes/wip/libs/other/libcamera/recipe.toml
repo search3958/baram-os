@@ -1,0 +1,21 @@
+#TODO require authentication to fetch source, user and password is: libcamera
+# build instructions: https://libcamera.org/getting-started.html
+[source]
+git = "https://git.libcamera.org/libcamera/libcamera"
+rev = "v0.7.0"
+shallow_clone = true
+[build]
+template = "meson"
+mesonflags = [
+    "-Ddocumentation=false"
+    "-Dpycamera=false",
+    "-Dtracing=false",
+    "-Dudev=false",
+]
+dependencies = [
+    "libyaml",
+    "libevdev",
+    "gstreamer",
+    "libjpeg",
+    "sdl2",
+]

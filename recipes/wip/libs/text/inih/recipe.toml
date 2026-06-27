@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/benhoyt/inih#meson-notes
+[source]
+git = "https://github.com/benhoyt/inih"
+rev = "r62"
+shallow_clone = true
+[build]
+template = "meson"
+mesonflags = [
+    "-Dtests=false"
+]

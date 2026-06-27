@@ -1,0 +1,12 @@
+#TODO not compiled or tested
+# build instructions: https://gitlab.gnome.org/World/warp#meson
+[source]
+git = "https://gitlab.gnome.org/World/warp"
+shallow_clone = true
+[build]
+template = "meson"
+dependencies = [
+    "glib",
+    "gtk4",
+    "libadwaita",
+]

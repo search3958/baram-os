@@ -1,0 +1,8 @@
+#TODO missing script for gnu make
+# build instructions: https://pingcap.github.io/tidb-dev-guide/get-started/build-tidb-from-source.html#build
+[source]
+git = "https://github.com/pingcap/tidb"
+rev = "v8.5.4"
+shallow_clone = true
+[build]
+template = "custom"

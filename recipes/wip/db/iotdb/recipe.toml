@@ -1,0 +1,8 @@
+#TODO missing script for Maven, 
+# build instructions: https://github.com/apache/iotdb#build-iotdb-from-source
+[source]
+git = "https://github.com/apache/iotdb"
+rev = "v2.0.5"
+shallow_clone = true
+[build]
+template = "custom"

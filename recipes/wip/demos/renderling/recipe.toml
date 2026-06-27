@@ -1,0 +1,7 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/schell/renderling"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["example"]

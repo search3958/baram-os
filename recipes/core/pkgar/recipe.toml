@@ -1,0 +1,12 @@
+[source]
+git = "https://gitlab.redox-os.org/redox-os/pkgar.git"
+
+[build]
+template = "cargo"
+cargopackages = [
+    "pkgar",
+    "pkgar-keys",
+]
+cargoflags = [
+    "--features cli"
+]

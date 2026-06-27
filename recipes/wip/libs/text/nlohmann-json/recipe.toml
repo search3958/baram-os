@@ -1,0 +1,8 @@
+#TODO not compiled or tested
+[source]
+tar = "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz"
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DJSON_BuildTests=OFF"
+]

@@ -1,0 +1,21 @@
+#TODO slower jobserver due to lack of named pipes
+[source]
+tar = "http://ftp.gnu.org/gnu/make/make-4.4.tar.gz"
+blake3 = "1a0e5353205e106bd9b3c0f4a5f37ee1156a1e1c8feb771d1b4842c216612cba"
+patches = [
+    "redox.patch"
+]
+script = """
+autotools_recursive_regenerate
+"""
+
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+COOKBOOK_CONFIGURE_FLAGS+=(
+# TODO: https://gitlab.redox-os.org/redox-os/redox/-/issues/1753
+    'ac_cv_func_mkfifo=no'
+)
+cookbook_configure
+"""

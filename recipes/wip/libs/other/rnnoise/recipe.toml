@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://gitlab.xiph.org/xiph/rnnoise"
+rev = "v0.2"
+shallow_clone = true
+script = """
+autotools_recursive_regenerate
+"""
+[build]
+template = "configure"

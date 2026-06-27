@@ -1,0 +1,5 @@
+#TODO not compiled or tested
+[source]
+tar = "https://github.com/libcdio/libcdio-paranoia/releases/download/release-10.2%2B2.0.2/libcdio-paranoia-10.2+2.0.2.tar.bz2"
+[build]
+template = "configure"

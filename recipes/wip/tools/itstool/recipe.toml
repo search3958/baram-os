@@ -1,0 +1,5 @@
+#TODO compiling, not tested
+[source]
+tar = "http://files.itstool.org/itstool/itstool-2.0.7.tar.bz2"
+[build]
+template = "configure"

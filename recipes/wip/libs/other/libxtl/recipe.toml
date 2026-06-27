@@ -1,0 +1,8 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/xtensor-stack/xtl#install-from-sources
+[source]
+git = "https://github.com/xtensor-stack/xtl"
+rev = "0.8.2"
+shallow_clone = true
+[build]
+template = "cmake"

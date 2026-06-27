@@ -1,0 +1,14 @@
+diff -ruwN source/src/lib/str/ares_str.c source-new/src/lib/str/ares_str.c
+--- source/src/lib/str/ares_str.c	2025-12-08 23:21:36.000000000 +0700
++++ source-new/src/lib/str/ares_str.c	2026-05-02 07:21:36.079534879 +0700
+@@ -32,6 +32,10 @@
+ #  include <stdint.h>
+ #endif
+ 
++#ifdef HAVE_STRINGS_H
++#  include <strings.h>
++#endif
++
+ size_t ares_strnlen(const char *str, size_t maxlen) {
+   const char *p = NULL;
+   if (str == NULL) {

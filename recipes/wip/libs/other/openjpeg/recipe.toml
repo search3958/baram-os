@@ -1,0 +1,8 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/uclouvain/openjpeg/blob/master/INSTALL.md
+[source]
+git = "https://github.com/uclouvain/openjpeg"
+rev = "v2.5.4"
+shallow_clone = true
+[build]
+template = "cmake"

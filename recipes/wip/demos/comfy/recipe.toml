@@ -1,0 +1,22 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/darthdeus/comfy"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "animated_shapes",
+    "animated_sprites",
+    "animated_text",
+    "bloom",
+    "circle",
+    "colors",
+    "egui",
+    "fragment-shader",
+    "lighting",
+    "music",
+    "shapes",
+    "single_particle",
+    "sprite",
+    "text",
+]

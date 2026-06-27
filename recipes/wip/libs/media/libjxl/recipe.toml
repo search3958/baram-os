@@ -1,0 +1,21 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/libjxl/libjxl/blob/main/BUILDING.md
+[source]
+git = "https://github.com/libjxl/libjxl"
+branch = "v0.11.x"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTING=OFF",
+    "-DJPEGXL_ENABLE_DOXYGEN=OFF",
+    "-DJPEGXL_ENABLE_MANPAGES=OFF",
+]
+dependencies = [
+    "libbrotli",
+    "libjpeg",
+    "libgif",
+    "libpng",
+    "libwebp",
+    "openexr",
+]

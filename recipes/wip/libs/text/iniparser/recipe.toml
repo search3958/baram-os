@@ -1,0 +1,7 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/ndevilla/iniparser"
+rev = "v4.2.6"
+shallow_clone = true
+[build]
+template = "cmake"

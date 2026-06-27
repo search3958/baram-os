@@ -1,0 +1,15 @@
+# Configuration for testing
+
+include = ["server.toml"]
+
+# General settings
+[general]
+# Filesystem size in MiB
+filesystem_size = 10000
+# Do not prompt if settings are not defined
+prompt = false
+
+# Package settings
+[packages]
+redox-tests = {}
+benchmarks = {}

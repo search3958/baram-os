@@ -1,0 +1,10 @@
+#TODO compilation error
+[source]
+git = "https://github.com/immunant/c2rust"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["c2rust"]
+dependencies = [
+    "openssl3",
+]

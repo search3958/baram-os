@@ -1,0 +1,10 @@
+#TODO termios crate error (after cargo update)
+[source]
+git = "https://github.com/esp-rs/espmonitor"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = [
+    "espmonitor",
+    "cargo-espmonitor",
+]

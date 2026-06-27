@@ -1,0 +1,14 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/astral-sh/ruff"
+rev = "93a16bd05fba249439848beb6fbcbf3e8a436f03"
+shallow_clone = true
+patches = [
+    "redox.patch"
+]
+
+[build]
+template = "cargo"
+cargopackages = [
+    "ruff"
+]

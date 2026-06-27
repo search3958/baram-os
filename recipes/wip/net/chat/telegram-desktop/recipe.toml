@@ -1,0 +1,26 @@
+#TODO not compiled or tested
+#TODO discover minimum dependencies from cmake log
+[source]
+tar = "https://github.com/telegramdesktop/tdesktop/releases/download/v6.5.1/tdesktop-6.5.1-full.tar.gz"
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DDESKTOP_APP_DISABLE_AUTOUPDATE=1",
+    #"-DDESKTOP_APP_ENABLE_LTO=ON",
+]
+# dependencies = [
+#     "qt6-svg",
+#     "qt6-imageformats",
+#     "fontconfig",
+#     "freetype2",
+#     "glib",
+#     "expat",
+#     "libuuid",
+#     "libpng",
+#     "zlib",
+#     "libffi",
+#     "libpcre",
+#     "libbsd",
+#     "libmd",
+#     "libbrotli",
+# ]

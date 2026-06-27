@@ -1,0 +1,18 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/sonosaurus/sonobus/blob/main/linux/BUILDING.md
+[source]
+git = "https://github.com/sonosaurus/sonobus"
+rev = "1.7.2"
+shallow_clone = true
+[build]
+template = "cmake"
+#dependencies = [
+#    "libopus",
+#    "freetype2",
+#    "curl",
+#    "libx11",
+#    "libxinerama",
+#    "libxrandr",
+#    "libxext",
+#    "libxcursor",
+#]

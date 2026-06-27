@@ -1,0 +1,11 @@
+#TODO missing script, read the llvm21 recipe for reference
+# build instructions: https://github.com/mstorsjo/llvm-mingw#building-from-source
+[source]
+git = "https://github.com/mstorsjo/llvm-mingw"
+rev = "20251216"
+shallow_clone = true
+[build]
+template = "custom"
+dependencies = [
+    "zlib",
+]

@@ -1,0 +1,8 @@
+[package]
+dependencies = [
+    "autoconf",
+    "automake",
+    "libtool",
+    "gettext",
+    "gnu-make",
+]

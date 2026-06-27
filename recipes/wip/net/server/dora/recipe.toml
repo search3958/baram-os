@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/bluecatengineering/dora"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = [
+    "dora-bin",
+    "dora-cfg",
+]

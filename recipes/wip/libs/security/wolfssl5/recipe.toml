@@ -1,0 +1,20 @@
+#TODO compiled but not tested
+# build instructions:
+# https://www.wolfssl.com/documentation/manuals/wolfssl/chapter02.html
+# https://www.wolfssl.com/documentation/manuals/wolfssl/chapter02.html#building-in-a-non-standard-environment
+# https://www.wolfssl.com/documentation/manuals/wolfssl/chapter02.html#building-with-configure-with-cross-compile
+# https://www.wolfssl.com/documentation/manuals/wolfssl/chapter02.html#cross-compiling
+# build options: https://www.wolfssl.com/documentation/manuals/wolfssl/chapter02.html#build-options
+# porting guide: https://www.wolfssl.com/documentation/manuals/wolfssl-porting-guide/
+[source]
+git = "https://github.com/wolfSSL/wolfssl"
+rev = "v5.8.4-stable"
+shallow_clone = true
+script = """
+autotools_recursive_regenerate
+"""
+[build]
+template = "configure"
+configureflags = [
+    "--disable-crypttests",
+]

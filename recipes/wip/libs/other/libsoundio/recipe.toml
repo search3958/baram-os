@@ -1,0 +1,14 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/andrewrk/libsoundio#building
+[source]
+git = "https://github.com/andrewrk/libsoundio"
+rev = "2.0.1-7"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTS=OFF"
+]
+dependencies = [
+    "libpulse"
+]

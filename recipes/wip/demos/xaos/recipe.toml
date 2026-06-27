@@ -1,0 +1,13 @@
+#TODO not compiled or tested
+#TODO determine minimum dependencies from cmake log
+# build instructions: https://github.com/xaos-project/XaoS/wiki/Developer's-Guide#build-instructions-for-version-433
+[source]
+git = "https://github.com/xaos-project/XaoS"
+rev = "release-4.3.4"
+shallow_clone = true
+[build]
+template = "cmake"
+#dependencies = [
+#    "qt6-base",
+#    "mesa",
+#]

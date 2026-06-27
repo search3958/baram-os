@@ -1,0 +1,14 @@
+[source]
+git = "https://github.com/vancegroup/freealut"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTS=OFF"
+]
+dependencies = [
+    "openal"
+]
+dev-dependencies = [
+    "libstdcxx"
+]

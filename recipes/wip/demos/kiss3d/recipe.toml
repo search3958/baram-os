@@ -1,0 +1,25 @@
+#TODO winit crate error (even after cargo update)
+[source]
+git = "https://github.com/sebcrozet/kiss3d"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "camera",
+    "cube",
+    "lines",
+    "multi_windows",
+    "planar_lines",
+    "points",
+    "post_processing",
+    "primitives",
+    "primitives2d",
+    "procedural",
+    "rectangle",
+    "screenshot",
+    "stereo",
+    "text",
+    "texturing",
+    "ui",
+    "window",
+]

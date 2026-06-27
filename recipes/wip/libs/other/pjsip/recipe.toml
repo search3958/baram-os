@@ -1,0 +1,16 @@
+#TODO not compiled or tested
+# build instructions: https://docs.pjsip.org/en/latest/get-started/posix/build_instructions.html
+[source]
+git = "https://github.com/pjsip/pjproject"
+rev = "2.16"
+shallow_clone = true
+[build]
+template = "configure"
+configureflags = [
+    "--disable-v4l2"
+]
+dependencies = [
+    "openssl3",
+    "ffmpeg6",
+    "libvpx",
+]

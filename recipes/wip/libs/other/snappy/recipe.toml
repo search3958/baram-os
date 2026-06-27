@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/google/snappy#building
+[source]
+git = "https://github.com/google/snappy"
+rev = "1.2.2"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DSNAPPY_BUILD_TESTS=OFF"
+]

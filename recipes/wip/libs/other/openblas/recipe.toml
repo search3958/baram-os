@@ -1,0 +1,9 @@
+#TODO not compiled or tested
+#TODO require the Fortran frontend from GCC
+[source]
+tar = "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.32/OpenBLAS-0.3.32.tar.gz"
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTING=OFF"
+]

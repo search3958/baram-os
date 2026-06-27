@@ -1,0 +1,14 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/vizia/vizia"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "animation",
+    "dragdrop",
+    "number",
+    "input",
+    "timers",
+]
+#dependencies = ["libwayland"]

@@ -1,0 +1,19 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/ekzhang/rpt"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "basic",
+    "cylinder",
+    "fractal_spheres",
+    "fractal_teapots",
+    "glass",
+    "marbles",
+    "metal",
+    "rustacean",
+    "sphere",
+    "spheres",
+    "teapot",
+]

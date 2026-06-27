@@ -1,0 +1,12 @@
+#TODO fix the script
+[source]
+git = "https://github.com/Wayoung7/firework-rs"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["firework-rs"]
+cargoexamples = [
+    "fountain",
+    "heart",
+    "vortex",
+]

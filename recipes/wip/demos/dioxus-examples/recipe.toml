@@ -1,0 +1,17 @@
+#TODO wry crate error
+[source]
+git = "https://github.com/DioxusLabs/dioxus"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "calculator",
+    "clock",
+    "counters",
+    "file_explorer",
+    "hello_world",
+    "multiwindow",
+    "popup",
+    "window_event",
+    "window_zoom",
+]

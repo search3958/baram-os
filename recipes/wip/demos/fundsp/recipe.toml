@@ -1,0 +1,22 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/SamiPerttu/fundsp"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "beep",
+    "file",
+    "grain",
+    "grain2",
+    "keys",
+    "network",
+    "optimize",
+    "peek",
+    "plot",
+    "sequence",
+    "type",
+]
+dependencies = [
+    "fontconfig",
+]

@@ -1,0 +1,7 @@
+#TODO: test again
+#TODO Maybe need openssl 1.1.1
+[source]
+tar = "https://github.com/ngtcp2/ngtcp2/releases/download/v1.21.0/ngtcp2-1.21.0.tar.xz"
+[build]
+template = "cmake"
+cmakeflags = ["-DENABLE_OPENSSL=OFF"]

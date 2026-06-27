@@ -1,0 +1,93 @@
+[source]
+git = "https://gitlab.redox-os.org/redox-os/llvm-project.git"
+upstream = "https://github.com/rust-lang/llvm-project.git"
+branch = "redox-2025-10-03"
+shallow_clone = true
+
+[build]
+template = "custom"
+dependencies = [
+    "zstd",
+]
+script = """
+DYNAMIC_INIT
+ARCH="$(echo "${TARGET}" | cut -d - -f1)"
+
+generate_cookbook_cmake_file "$COOKBOOK_HOST_TARGET" "" "$COOKBOOK_TOOLCHAIN" native.cmake
+
+case "${ARCH}" in
+    x86 | x86_64) LLVM_TARGETS_TO_BUILD="X86";;
+    aarch64) LLVM_TARGETS_TO_BUILD="AArch64";;
+    riscv64gc) LLVM_TARGETS_TO_BUILD="RISCV";;
+esac
+
+if [ "${COOKBOOK_HOST_SYSROOT}" = "/usr" ]; then
+    LLVM_TARGETS_TO_BUILD="X86;AArch64;RISCV"
+fi
+
+# This just build the LLVM library and tools just enough for Rust, to build the rest of LLVM see
+# https://github.com/llvm/llvm-zorg/blob/main/zorg/buildbot/builders/annotated/standalone-build.sh
+
+
+if [ "${COOKBOOK_DYNAMIC}" = "1" ]; then
+    COOKBOOK_CMAKE_FLAGS+=(
+        -DLLVM_BUILD_LLVM_DYLIB=On
+        -DLLVM_LINK_LLVM_DYLIB=On
+    )
+else
+    COOKBOOK_CMAKE_FLAGS+=(
+        -DLLVM_BUILD_LLVM_DYLIB=OFF
+        -DLLVM_LINK_LLVM_DYLIB=OFF
+        -DLLVM_BUILD_STATIC=True
+        -DLLVM_ENABLE_PIC=False
+    )
+fi
+
+COOKBOOK_CMAKE_FLAGS+=(
+    -DLLVM_INCLUDE_UTILS=On
+    -DLLVM_INSTALL_UTILS=On
+    -DLLVM_TOOL_LLVM_COV_BUILD=On
+    -DLLVM_TOOL_LLVM_PROFDATA_BUILD=On
+    -DLLVM_TARGETS_TO_BUILD="$LLVM_TARGETS_TO_BUILD"
+    -DLLVM_ENABLE_ZLIB=Off
+    -DLLVM_USE_STATIC_ZSTD=On
+    -DLLVM_ENABLE_LIBXML2=Off
+
+# the rest of options that shared to clang
+    -DCROSS_TOOLCHAIN_FLAGS_NATIVE="-DCMAKE_TOOLCHAIN_FILE=$(realpath "${COOKBOOK_RECIPE}/native.cmake")"
+    -DCMAKE_CXX_FLAGS="--std=gnu++11"
+    -DBUILD_SHARED_LIBS=False
+    -DLLVM_BUILD_EXAMPLES=Off
+    -DLLVM_BUILD_TESTS=Off
+    -DLLVM_DEFAULT_TARGET_TRIPLE="${TARGET}"
+    -DLLVM_ENABLE_LTO=Off
+    -DLLVM_ENABLE_RTTI=On
+    -DLLVM_ENABLE_THREADS=On
+    -DLLVM_INCLUDE_EXAMPLES=Off
+    -DLLVM_INCLUDE_TESTS=Off
+    -DLLVM_OPTIMIZED_TABLEGEN=On
+    -DLLVM_TARGET_ARCH=$ARCH
+    -DLLVM_TOOLS_INSTALL_DIR=bin
+    -DLLVM_UTILS_INSTALL_DIR=bin
+    -DUNIX=1
+)
+
+COOKBOOK_SOURCE="$COOKBOOK_SOURCE/llvm"
+cookbook_cmake
+"""
+
+# llvm runtime
+[[optional-packages]]
+name = "runtime"
+files = [
+    "usr/bin/**",
+]
+
+[[optional-packages]]
+name = "dev"
+dependencies = [ ".runtime" ]
+files = [
+    "usr/include/llvm*/**",
+    "usr/lib/libLLVM*.a",
+    "usr/lib/cmake/llvm/**",
+]

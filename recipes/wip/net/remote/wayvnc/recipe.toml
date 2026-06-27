@@ -1,0 +1,20 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/any1/wayvnc"
+rev = "v0.10.0"
+shallow_clone = true
+[build]
+template = "meson"
+mesonflags = [
+    "-Dscreencopy-dmabuf=disabled",
+    "-Dpam=disabled",
+    "-Dman-pages=disabled",
+    "-Dtests=false",
+]
+dependencies = [
+    "aml",
+    "libdrm",
+    "neatvnc",
+    "pixman",
+    "jansson",
+]

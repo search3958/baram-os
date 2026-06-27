@@ -1,0 +1,13 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/console-rs/console"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "colors",
+    "colors256",
+    "cursor_at",
+    "keyboard",
+    "term",
+]

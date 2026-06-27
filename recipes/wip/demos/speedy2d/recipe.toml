@@ -1,0 +1,11 @@
+#TODO glutin crate error
+[source]
+git = "https://github.com/QuantumBadger/Speedy2D"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "animation",
+    "hello_world",
+    "moving_text",
+]

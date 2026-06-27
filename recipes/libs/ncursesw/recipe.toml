@@ -1,0 +1,32 @@
+[source]
+same_as = "../ncurses"
+
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+COOKBOOK_CONFIGURE_FLAGS+=(
+    --disable-db-install
+    --disable-ext-colors
+    --disable-stripping
+    --enable-widec
+    --without-ada
+    --without-manpages
+    --without-tests
+    --enable-pc-files
+    --with-terminfo-dirs=/usr/share/terminfo
+    --with-pkg-config-libdir=/usr/lib/pkgconfig
+    cf_cv_func_mkstemp=yes
+    cf_cv_wint_t=yes
+)
+if [ "${COOKBOOK_DYNAMIC}" == "1" ]
+then
+    COOKBOOK_CONFIGURE_FLAGS+=(--with-shared)
+fi
+cookbook_configure
+"""
+
+[package]
+dependencies = [
+    "terminfo",
+]

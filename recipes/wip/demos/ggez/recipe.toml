@@ -1,0 +1,18 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/ggez/ggez"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "02_hello_world",
+    "04_snake",
+    "cube",
+    "hello_canvas",
+    "input_test",
+    "shader",
+    "shadows",
+    "sounds",
+    "text",
+    "vertex_shader",
+]

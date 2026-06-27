@@ -1,0 +1,16 @@
+[source]
+tar = "https://www.x.org/releases/individual/lib/xcb-util-keysyms-0.4.1.tar.xz"
+blake3 = "c599df56c79a9f9dcf12b083e343f321cad6af654b83e2976b5a26bc890b5774"
+script = """
+autotools_recursive_regenerate
+"""
+
+[build]
+dependencies = [
+    "libxcb",
+]
+template = "custom"
+script = """
+DYNAMIC_INIT
+cookbook_configure
+"""

@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/breakfastquay/rubberband/blob/default/COMPILING.md
+[source]
+git = "https://github.com/breakfastquay/rubberband"
+rev = "v4.0.0"
+shallow_clone = true
+[build]
+template = "meson"
+mesonflags = [
+    "-Dtests=disabled"
+]

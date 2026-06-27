@@ -1,0 +1,7 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/OpenVisualCloud/SVT-HEVC#linux-operating-systems-64-bit
+[source]
+git = "https://github.com/OpenVisualCloud/SVT-HEVC"
+shallow_clone = true
+[build]
+template = "cmake"

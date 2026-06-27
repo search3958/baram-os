@@ -1,0 +1,14 @@
+#TODO fix bad performance
+[source]
+same_as = "../smallvil"
+
+[build]
+template = "cargo"
+dependencies = [
+    "libffi",
+    "libwayland",
+    "libxkbcommon",
+]
+cargopackages = [
+    "anvil"
+]

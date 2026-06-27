@@ -1,0 +1,2264 @@
+use ansi_to_tui::IntoText;
+use cookbook::config::{CookConfig, CookLockOpt, get_config, init_config};
+use cookbook::cook::cook_build::{build, get_stage_dirs, remove_stage_dir};
+use cookbook::cook::fetch::{FetchResult, fetch, fetch_offline};
+use cookbook::cook::fs::{
+    create_dir, create_target_dir, get_git_commit_date, get_git_head_rev, get_git_rev_before_date,
+    read_toml, remove_all, run_command,
+};
+use cookbook::cook::package::{package, package_handle_push};
+use cookbook::cook::pty::{PtyOut, UnixSlavePty, flush_pty, setup_pty, write_to_pty};
+use cookbook::cook::script::KILL_ALL_PID;
+use cookbook::cook::tree::{self, WalkTreeEntry};
+use cookbook::cook::{fetch_repo, ident};
+use cookbook::recipe::{
+    CookRecipe, SourceRecipe, recipes_flatten_package_names, recipes_mark_as_deps,
+};
+use cookbook::{Error, Result, staged_pkg};
+use pkg::{PackageName, PackageState};
+use ratatui::Terminal;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::prelude::TermionBackend;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use redox_installer::PackageConfig;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::io::{Read, Write, stderr, stdin, stdout};
+use std::path::PathBuf;
+use std::process::Command;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, OnceLock, mpsc};
+use std::time::{Duration, Instant};
+use std::{cmp, env, fs};
+use std::{process, thread};
+use termion::event::{Event, Key};
+use termion::input::TermRead;
+use termion::raw::IntoRawMode;
+use termion::screen::IntoAlternateScreen;
+use termion::{color, style};
+
+// A repo manager, to replace repo.sh
+
+const REPO_HELP_STR: &str = r#"
+    Usage: repo <command> [flags] <recipe1> <recipe2> ...
+
+    command list:
+        fetch        download recipe sources
+        cook         build recipe packages
+        unfetch      delete recipe sources
+        clean        delete recipe artifacts
+        clean-target delete recipe artifacts for one target
+        push         extract package into sysroot
+        find         find path of recipe packages
+        cook-tree    show tree of recipe build
+        push-tree    show tree of recipe packages
+        capture-rev  write lock to git recipes
+        change-rule  override rule to recipes
+        change-rule-local  override rule to specific recipes
+
+    common flags:
+        --cookbook=<cookbook_dir>  the "recipes" folder, default to $PWD/recipes
+        --repo=<repo_dir>          the "repo" folder, default to $PWD/repo
+        --with-package-deps        include package deps (always implied in push command)
+        --all                      apply to all recipes in <cookbook_dir>
+        --category=<category>      apply to all recipes in <cookbook_dir>/<category>
+        --filesystem=<filesystem>  override recipes config using installer file
+        --repo-binary              override recipes config to use repo_binary
+        --sysroot=<sysroot_dir>    used in "push", the "root" dir, default to $PWD/sysroot
+        --set-rule=<rule>          used in "change-rule", set wanted config rule
+        --rollback                 used in "capture-rev", allow git to rollback
+        --unset                    used in "capture-rev" and "change-rule", unset locks
+
+    cook env and their defaults:
+        CI=                          set to any value to disable TUI
+        COOKBOOK_LOGS=               whether to capture build logs (default is !CI)
+        COOKBOOK_OFFLINE=false       prevent internet access if possible
+                                        ignored when command "fetch" is used
+        COOKBOOK_NONSTOP=false       keep running even a recipe build failed
+        COOKBOOK_COMPRESSED=false    build packages in compressed format
+        COOKBOOK_VERBOSE=true        print success/error on each recipe
+        COOKBOOK_CLEAN_BUILD=false   remove build directory before building
+        COOKBOOK_CLEAN_TARGET=false  remove target directory after building
+        COOKBOOK_WRITE_FILETREE=false whether to write stage files tree
+        COOKBOOK_MAKE_JOBS=          override build jobs count from nproc
+        COOKBOOK_WEB=false           whether to generate package web files
+"#;
+
+#[derive(Clone)]
+struct CliConfig {
+    cookbook_dir: PathBuf,
+    repo_dir: PathBuf,
+    sysroot_dir: PathBuf,
+    logs_dir: Option<PathBuf>,
+    category: Option<PathBuf>,
+    filesystem: Option<redox_installer::Config>,
+    set_rule: Option<String>,
+    unset: bool,
+    with_rollback: bool,
+    with_package_deps: bool,
+    all: bool,
+    cook: CookConfig,
+}
+
+#[derive(PartialEq)]
+enum CliCommand {
+    Fetch,
+    Cook,
+    CookTree,
+    Unfetch,
+    Clean,
+    CleanTarget,
+    Push,
+    PushTree,
+    Find,
+    CaptureRev,
+    ChangeRule,
+    ChangeRuleLocal,
+}
+
+impl CliCommand {
+    pub fn is_informational(&self) -> bool {
+        *self == CliCommand::PushTree || *self == CliCommand::CookTree || *self == CliCommand::Find
+    }
+    pub fn is_building(&self) -> bool {
+        *self == CliCommand::Fetch
+            || *self == CliCommand::Cook
+            || *self == CliCommand::CookTree
+            || *self == CliCommand::CaptureRev
+            || *self == CliCommand::ChangeRule
+    }
+    pub fn is_pushing(&self) -> bool {
+        *self == CliCommand::Push || *self == CliCommand::PushTree
+    }
+    pub fn is_cleaning(&self) -> bool {
+        *self == CliCommand::Clean
+            || *self == CliCommand::CleanTarget
+            || *self == CliCommand::Unfetch
+    }
+}
+
+impl FromStr for CliCommand {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "fetch" => Ok(CliCommand::Fetch),
+            "cook" => Ok(CliCommand::Cook),
+            "unfetch" => Ok(CliCommand::Unfetch),
+            "clean" => Ok(CliCommand::Clean),
+            "clean-target" => Ok(CliCommand::CleanTarget),
+            "push" => Ok(CliCommand::Push),
+            "push-tree" => Ok(CliCommand::PushTree),
+            "cook-tree" => Ok(CliCommand::CookTree),
+            "find" => Ok(CliCommand::Find),
+            "capture-rev" => Ok(CliCommand::CaptureRev),
+            "change-rule" => Ok(CliCommand::ChangeRule),
+            "change-rule-local" => Ok(CliCommand::ChangeRuleLocal),
+            _ => bail_options_err!("Unknown command {:?}", s),
+        }
+    }
+}
+
+impl ToString for CliCommand {
+    fn to_string(&self) -> String {
+        match self {
+            CliCommand::Fetch => "fetch".to_string(),
+            CliCommand::Cook => "cook".to_string(),
+            CliCommand::Unfetch => "unfetch".to_string(),
+            CliCommand::Clean => "clean".to_string(),
+            CliCommand::CleanTarget => "clean-target".to_string(),
+            CliCommand::Push => "push".to_string(),
+            CliCommand::PushTree => "push-tree".to_string(),
+            CliCommand::CookTree => "cook-tree".to_string(),
+            CliCommand::Find => "find".to_string(),
+            CliCommand::CaptureRev => "capture-rev".to_string(),
+            CliCommand::ChangeRule => "change-rule".to_string(),
+            CliCommand::ChangeRuleLocal => "change-rule-local".to_string(),
+        }
+    }
+}
+
+impl CliConfig {
+    fn new() -> Result<Self> {
+        let current_dir = env::current_dir().map_err(|e| Error::from_io_error(e, "Getting cwd"))?;
+        Ok(CliConfig {
+            //FIXME: This config is unused as redox-pkg harcoded this to $PWD/recipes
+            cookbook_dir: current_dir.join("recipes"),
+            repo_dir: current_dir.join("repo"),
+            // build dir here is hardcoded in repo_builder as well
+            logs_dir: if get_config().cook.logs {
+                Some(current_dir.join("build/logs"))
+            } else {
+                None
+            },
+            category: None,
+            sysroot_dir: current_dir.join("sysroot"),
+            with_package_deps: false,
+            cook: get_config().cook.clone(),
+            all: false,
+            unset: false,
+            filesystem: None,
+            with_rollback: false,
+            set_rule: None,
+        })
+    }
+}
+
+fn main() {
+    init_config();
+    if let Err(e) = main_inner() {
+        match e {
+            Error::Options(e) => eprintln!("{}\n{}", e, REPO_HELP_STR),
+            e => eprintln!("{}", e),
+        }
+        process::exit(1);
+    };
+}
+
+fn main_inner() -> Result<()> {
+    let args: Vec<String> = env::args().skip(1).collect();
+
+    if args.is_empty() || args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        bail_options_err!("");
+    }
+
+    let (config, command, recipes) = parse_args(args)?;
+    if command.is_building() || matches!(command, CliCommand::ChangeRuleLocal) {
+        ident::init_ident();
+    }
+    if command == CliCommand::Cook && config.cook.tui {
+        match run_tui_cook(config.clone(), recipes.clone()) {
+            Ok(TuiApp {
+                dump_logs_on_exit: Some((name, err)),
+                ..
+            }) => {
+                let _ = stderr().write(err.as_bytes());
+                let _ = stderr().write(b"\n\n");
+                print_failed(&command, &name);
+                return Err(Error::from(format!("Execution has failed")));
+            }
+            Ok(app) => {
+                for (recipe, status) in app.recipes {
+                    match status {
+                        RecipeStatus::Cached => print_cached(&command, &recipe.name),
+                        RecipeStatus::Done => print_success(&command, &recipe.name),
+                        RecipeStatus::Failed(err) => {
+                            let _ = stderr().write(err.as_bytes());
+                            let _ = stderr().write(b"\n\n");
+                            print_failed(&command, &recipe.name)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+            Err(e) => return Err(e),
+        }
+        return publish_packages(&recipes, &config.repo_dir);
+    }
+    if command == CliCommand::PushTree {
+        return handle_tree(&recipes, false, &config);
+    }
+    if command == CliCommand::CookTree {
+        return handle_tree(&recipes, true, &config);
+    }
+    if command == CliCommand::Push {
+        return handle_push(&recipes, &config);
+    }
+    if matches!(
+        command,
+        CliCommand::ChangeRule | CliCommand::ChangeRuleLocal | CliCommand::CaptureRev
+    ) {
+        return handle_change_rule(&recipes, &config, &command);
+    }
+
+    let verbose = config.cook.verbose;
+    for recipe in &recipes {
+        match repo_inner(&config, &command, recipe) {
+            Ok(cached) => {
+                if !command.is_informational() {
+                    if cached {
+                        print_cached(&command, &recipe.name);
+                    } else {
+                        print_success(&command, &recipe.name);
+                    }
+                }
+            }
+            Err(e) => {
+                if config.cook.nonstop {
+                    if verbose {
+                        eprintln!("{}", e);
+                    }
+                    if let Err(e) = handle_nonstop_fail(recipe) {
+                        eprintln!("{}", e)
+                    };
+                }
+                print_failed(&command, &recipe.name);
+                if !config.cook.nonstop {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    if command == CliCommand::Cook {
+        return publish_packages(&recipes, &config.repo_dir);
+    }
+
+    if verbose && recipes.len() > 1 {
+        println!(
+            "\nCommand '{}' completed for {} recipes.",
+            command.to_string(),
+            recipes.len()
+        );
+    }
+    Ok(())
+}
+
+fn print_failed(command: &CliCommand, recipe: &PackageName) {
+    eprintln!(
+        "{}{}{} {} - failed {}{}",
+        style::Bold,
+        color::Fg(color::AnsiValue(196)),
+        command.to_string(),
+        recipe.as_str(),
+        color::Fg(color::Reset),
+        style::Reset,
+    );
+}
+
+fn print_success(command: &CliCommand, recipe: &PackageName) {
+    eprintln!(
+        "{}{}{} {} - successful{}{}",
+        style::Bold,
+        color::Fg(color::AnsiValue(46)),
+        command.to_string(),
+        recipe.as_str(),
+        color::Fg(color::Reset),
+        style::Reset,
+    );
+}
+
+fn print_cached(command: &CliCommand, recipe: &PackageName) {
+    eprintln!(
+        "{}{}{} {} - cached{}{}",
+        style::Bold,
+        color::Fg(color::AnsiValue(45)),
+        command.to_string(),
+        recipe.as_str(),
+        color::Fg(color::Reset),
+        style::Reset,
+    );
+}
+
+fn repo_inner(config: &CliConfig, command: &CliCommand, recipe: &CookRecipe) -> Result<bool> {
+    Ok(match *command {
+        CliCommand::Fetch | CliCommand::Cook => {
+            let repo_inner_fn = move |logger: &PtyOut| -> Result<bool> {
+                let is_cook = *command == CliCommand::Cook;
+                let fetch_result = handle_fetch(recipe, config, is_cook, logger)?;
+                let cached = if is_cook {
+                    handle_cook(recipe, config, fetch_result.source_dir, logger)?
+                } else {
+                    fetch_result.cached
+                };
+                Ok(cached)
+            };
+            let Some(log_path) = &config.logs_dir else {
+                return repo_inner_fn(&None);
+            };
+
+            let (status_tx, status_rx) = mpsc::channel::<StatusUpdate>();
+            let (mut stdout_writer, mut stderr_writer) = setup_logger(&status_tx, &recipe.name);
+            let mut app = TuiApp::new(vec![recipe.clone()]);
+            app.dump_logs_anyway = config.cook.verbose;
+            let dump_fail_logs = !app.dump_logs_anyway;
+            let th = thread::spawn(move || {
+                while let Ok(update) = status_rx.recv() {
+                    match &update {
+                        StatusUpdate::CookThreadFinished => break,
+                        StatusUpdate::FailCook(r, _) => {
+                            let (logs, line) = app.get_recipe_log(&r.name);
+                            if let Some(logs) = logs {
+                                println!("{}", join_logs(logs, line));
+                            }
+                        }
+                        _ => app.update_status(update),
+                    }
+                }
+            });
+            let mut logger = Some((&mut stdout_writer, &mut stderr_writer));
+            let result = repo_inner_fn(&logger);
+            if let Err(err_ctx) = &result {
+                write_to_pty(&logger, &format!("\n{err_ctx}"));
+            }
+            // successful cached build is not that useful to log
+            if !matches!(result, Ok(true)) {
+                flush_pty(&mut logger);
+                let log_path =
+                    log_path.join(format!("{}/{}.log", recipe.target, recipe.name.name()));
+                status_tx
+                    .send(StatusUpdate::FlushLog(recipe.name.clone(), log_path))
+                    .unwrap_or_default();
+                if dump_fail_logs && result.is_err() {
+                    status_tx
+                        .send(StatusUpdate::FailCook(recipe.clone(), "".into()))
+                        .unwrap_or_default();
+                }
+            }
+            status_tx
+                .send(StatusUpdate::CookThreadFinished)
+                .unwrap_or_default();
+            let _ = th.join();
+            result?
+        }
+        CliCommand::Unfetch | CliCommand::Clean | CliCommand::CleanTarget => {
+            handle_clean(recipe, config, command)?
+        }
+        CliCommand::Find => {
+            println!("{}", recipe.dir.display());
+            false
+        }
+        _ => unreachable!(),
+    })
+}
+
+fn publish_packages(recipe_names: &Vec<CookRecipe>, repo_path: &PathBuf) -> Result<()> {
+    let repo_bin = env::current_exe()
+        .map_err(|e| Error::from_io_error(e, "Getting exe path"))?
+        .parent()
+        .unwrap()
+        .join("repo_builder");
+    let mut command = Command::new(repo_bin);
+    command
+        .arg(repo_path)
+        .args(recipe_names.iter().filter_map(|n| {
+            if !n.is_deps {
+                Some(n.name.as_str())
+            } else {
+                None
+            }
+        }));
+
+    run_command(command, &None)
+}
+
+fn parse_args(args: Vec<String>) -> Result<(CliConfig, CliCommand, Vec<CookRecipe>)> {
+    let mut config = CliConfig::new()?;
+    let mut command: Option<String> = None;
+    let mut recipe_names: Vec<PackageName> = Vec::new();
+    let mut override_filesystem_repo_binary = false;
+    for arg in args {
+        if arg.starts_with("--") {
+            if let Some((key, value)) = arg.split_once('=') {
+                match key {
+                    "--cookbook" => config.cookbook_dir = PathBuf::from(value),
+                    "--repo" => config.repo_dir = PathBuf::from(value),
+                    "--sysroot" => config.sysroot_dir = PathBuf::from(value),
+                    "--category" => config.category = Some(PathBuf::from(value)),
+                    "--set-rule" => config.set_rule = Some(value.into()),
+                    "--filesystem" => {
+                        config.filesystem = Some({
+                            let r = redox_installer::Config::from_file(&PathBuf::from(value));
+                            r.map_err(|e| Error::Other(format!("{:?}", e)))?
+                        })
+                    }
+                    _ => bail_options_err!("Error: Unknown flag with value: {}", arg),
+                }
+            } else if arg.starts_with("--category-") {
+                // to workaround make command limit we provide this option
+                config.category = Some(PathBuf::from(arg[("--category-").len()..].to_owned()));
+            } else {
+                match arg.as_str() {
+                    "--repo-binary" => override_filesystem_repo_binary = true,
+                    "--with-package-deps" => config.with_package_deps = true,
+                    "--rollback" => config.with_rollback = true,
+                    "--unset" => config.unset = true,
+                    "--all" => config.all = true,
+                    _ => bail_options_err!("Error: Unknown flag: {}", arg),
+                }
+            }
+        } else if arg.starts_with('-') {
+            match arg.as_str() {
+                _ => bail_options_err!("Error: Unknown flag: {}", arg),
+            }
+        } else if command.is_none() {
+            // The first non-flag argument is the command
+            command = Some(arg);
+        } else {
+            // Subsequent non-flag arguments are recipe names
+            recipe_names.push(arg.try_into().map_err(Error::from)?);
+        }
+    }
+
+    if let Some(c) = config.category {
+        // need to prefix by cookbook dir
+        config.category = Some(PathBuf::from("recipes").join(c));
+    }
+    if let Some(c) = config.logs_dir.as_mut() {
+        create_dir(&c.join(redoxer::target()))?;
+        create_dir(&c.join(redoxer::host_target()))?;
+    }
+
+    let Some(command) = command else {
+        bail_options_err!("Error: No command specified");
+    };
+    let command: CliCommand = str::parse(&command)?;
+    if command.is_informational() {
+        // avoid extra data that clobber stdout
+        config.cook.verbose = false;
+    }
+
+    let mut preloaded_recipes: BTreeMap<PackageName, CookRecipe> = BTreeMap::new();
+
+    if recipe_names.is_empty() {
+        if config.all || config.category.is_some() {
+            let all_recipes_path = match command.is_cleaning() || config.all {
+                true => staged_pkg::list(""),
+                false => {
+                    // get the list from repo/TARGET/repo.toml
+                    let repo_toml_path = config.repo_dir.join(redoxer::target()).join("repo.toml");
+                    if !repo_toml_path.is_file() {
+                        bail_options_err!(
+                            "The repository is not found: {}",
+                            repo_toml_path.display()
+                        );
+                    };
+                    let repos: pkg::Repository = read_toml(&repo_toml_path)?;
+                    repos
+                        .packages
+                        .keys()
+                        .filter_map(|n| staged_pkg::find(n).map(|s| s.to_path_buf()))
+                        .collect::<BTreeSet<_>>()
+                }
+            };
+
+            let all_recipes_path = match &config.category {
+                None => all_recipes_path,
+                Some(prefix) => all_recipes_path
+                    .into_iter()
+                    .filter(|p| p.starts_with(prefix))
+                    .collect(),
+            };
+
+            if all_recipes_path.is_empty() {
+                bail_options_err!(
+                    "No recipes found from the combination.\n\
+                    Try pass both --all and --category=name"
+                );
+            }
+
+            for path in all_recipes_path {
+                // TODO: Allow selecting recipes from category as host?
+                let recipe = CookRecipe::from_path(&path, !command.is_cleaning(), false)?;
+                let recipe_name = recipe.name.clone();
+                preloaded_recipes.insert(recipe_name.clone(), recipe);
+                recipe_names.push(recipe_name);
+            }
+        } else {
+            if let Some(conf) = config.filesystem.as_ref() {
+                recipe_names = conf
+                    .packages
+                    .keys()
+                    .filter_map(|k| PackageName::new(k.to_string()).ok())
+                    .collect();
+            } else {
+                bail_options_err!(
+                    "Error: No recipe names or filesystem config provided and --all flag was not used."
+                );
+            }
+        }
+    }
+
+    if command.is_cleaning() {
+        let recipes = if preloaded_recipes.is_empty() {
+            CookRecipe::from_list(recipe_names)?
+        } else {
+            preloaded_recipes.into_values().collect()
+        };
+
+        return Ok((config, command, recipes));
+    }
+
+    let lock = &get_config().recipe_lock;
+
+    let mut recipes = {
+        let repo_binary = override_filesystem_repo_binary;
+
+        // Expand deps for "source" + "local" and "binary"
+        // This is the complete map from filesystem config
+        let mut source_names: Vec<PackageName> = Vec::new();
+        let mut binary_names: Vec<PackageName> = Vec::new();
+        let mut special_rules: HashMap<PackageName, String> = HashMap::new();
+        let default_rule = if repo_binary { "binary" } else { "source" };
+
+        for (recipe_name, recipe_lock) in lock.iter().filter(|(_, v)| v.fsrule.is_some()) {
+            let Ok(recipe_name) = PackageName::new(recipe_name) else {
+                continue;
+            };
+            let rule = recipe_lock.fsrule.as_ref().unwrap();
+            special_rules.insert(recipe_name.clone(), rule.to_string());
+            // lock rules does not recurse as it's done already in the file
+        }
+        if let Some(conf) = config.filesystem.as_ref() {
+            for (recipe_name_str, recipe_config) in conf.packages.iter() {
+                let Ok(recipe_name) = PackageName::new(recipe_name_str) else {
+                    continue;
+                };
+
+                let rule = if let Some(rule) = special_rules.get(&recipe_name) {
+                    rule.as_str()
+                } else if let PackageConfig::Build(rule) = recipe_config {
+                    special_rules.insert(recipe_name.clone(), rule.to_string());
+                    rule
+                } else {
+                    default_rule
+                };
+
+                if rule == "source" || rule == "local" {
+                    source_names.push(recipe_name);
+                } else if rule == "binary" {
+                    binary_names.push(recipe_name);
+                }
+            }
+        }
+        source_names = CookRecipe::get_all_deps_names_recursive(&source_names, true)?;
+        binary_names = CookRecipe::get_all_deps_names_recursive(&binary_names, false)?;
+        let source_names: HashSet<PackageName> = source_names.into_iter().collect();
+        let binary_names: HashSet<PackageName> = binary_names.into_iter().collect();
+
+        // These are list that derived from recipe_names
+        let mut source_recipe_names: Vec<PackageName> = Vec::new();
+        let mut binary_recipe_names: Vec<PackageName> = Vec::new();
+        let mut ignore_recipe_names: Vec<PackageName> = Vec::new();
+        for recipe_name in recipe_names.iter() {
+            if source_names.contains(recipe_name) {
+                source_recipe_names.push(recipe_name.clone());
+            } else if binary_names.contains(recipe_name) {
+                binary_recipe_names.push(recipe_name.clone());
+            } else {
+                if special_rules
+                    .get(recipe_name)
+                    .is_some_and(|s| s == "ignore")
+                {
+                    ignore_recipe_names.push(recipe_name.clone());
+                } else if repo_binary {
+                    binary_recipe_names.push(recipe_name.clone());
+                } else {
+                    source_recipe_names.push(recipe_name.clone());
+                }
+            }
+        }
+
+        if config.with_package_deps || command.is_pushing() {
+            source_recipe_names =
+                CookRecipe::get_package_deps_recursive(&source_recipe_names, true)?;
+            binary_recipe_names =
+                CookRecipe::get_package_deps_recursive(&binary_recipe_names, true)?;
+        }
+
+        let mut recipes = if command.is_building() || command.is_pushing() {
+            // Pushing do not need dev deps, so does binary recipes at building
+            let include_dev = command.is_building();
+            if include_dev && default_rule == "source" {
+                // let's cover a very specific case, binary -> source -> binary -> dev
+                // in this case, we need to move that "source" to "binary", because
+                // that would include dev from its binary child, which is unnecessary
+                let mut i = 0;
+                while i < source_recipe_names.len() {
+                    let name = &source_recipe_names[i];
+                    match special_rules.get(name) {
+                        Some(s) if s.as_str() == "source" => {
+                            if binary_names.contains(name) {
+                                let bin = source_recipe_names.remove(i);
+                                binary_recipe_names.push(bin);
+                                continue;
+                            }
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+            }
+            CookRecipe::get_build_deps_recursive(&source_recipe_names, include_dev)?
+        } else {
+            CookRecipe::from_list(source_recipe_names.clone())?
+        };
+
+        let binary_recipes = if command.is_building() || command.is_pushing() {
+            CookRecipe::get_build_deps_recursive(&binary_recipe_names, false)?
+        } else {
+            CookRecipe::from_list(binary_recipe_names.clone())?
+        };
+
+        let ignore_recipes = CookRecipe::from_list(ignore_recipe_names.clone())?;
+
+        recipes.extend(binary_recipes);
+        recipes.extend(ignore_recipes);
+        recipes = recipes_flatten_package_names(recipes);
+
+        for recipe in recipes.iter_mut() {
+            if let Some(special_rule) = special_rules.get(&recipe.name) {
+                recipe.apply_filesystem_config(&special_rule)?;
+                continue;
+            }
+            let rule = match (
+                source_names.contains(&recipe.name),
+                binary_names.contains(&recipe.name),
+            ) {
+                (true, true) => {
+                    // both lists: flip logic
+                    if repo_binary { "source" } else { "binary" }
+                }
+                (true, false) => "source",
+                (false, true) => "binary",
+                (false, false) => default_rule,
+            };
+            if recipe.name.is_host() && rule == "binary" {
+                // host recipe binaries is currently not supported
+                continue;
+            }
+
+            recipe.apply_filesystem_config(rule)?;
+        }
+
+        recipes
+    };
+
+    if !get_config().recipe_lock.is_empty() {
+        for recipe in recipes.iter_mut() {
+            if let Some(gitrev) = lock
+                .get(recipe.name.as_str())
+                .map(|r| r.gitrev.clone())
+                .flatten()
+            {
+                if let Some(SourceRecipe::Git { rev, branch, .. }) = &mut recipe.recipe.source {
+                    *rev = Some(gitrev.clone());
+                    *branch = None;
+                } else {
+                    println!(
+                        "DEBUG: Recipe {:?} contains into git rev but recipe source is not git",
+                        recipe.name.as_str()
+                    );
+                }
+                recipe.pinned = true;
+            }
+        }
+    }
+
+    if command.is_building() && recipes.iter().any(|r| r.rule == "binary") {
+        let (_, repository) = fetch_repo::get_binary_repo();
+        for recipe in recipes.iter_mut() {
+            if recipe.rule == "binary" && !repository.packages.contains_key(recipe.name.as_str()) {
+                if config.cook.verbose && !(config.cook.tui && command == CliCommand::Cook) {
+                    // TODO: this should be printed at fetch log, not here
+                    println!(
+                        "DEBUG: Recipe {:?} has no binary package",
+                        recipe.name.as_str()
+                    );
+                }
+                recipe.rule = "source".into();
+                recipe.reload_recipe()?;
+            }
+        }
+    }
+
+    if !config.with_package_deps || command.is_informational() {
+        // In CliCommand::Cook, is_deps==true will make it skip checking source
+        recipes_mark_as_deps(&recipe_names, &mut recipes);
+    }
+
+    Ok((config, command, recipes))
+}
+
+fn handle_fetch(
+    recipe: &CookRecipe,
+    config: &CliConfig,
+    allow_offline: bool,
+    logger: &PtyOut,
+) -> Result<FetchResult> {
+    match config.cook.offline && allow_offline {
+        true => fetch_offline(&recipe, logger),
+        false => fetch(&recipe, !recipe.is_deps, logger),
+    }
+}
+
+fn handle_cook(
+    recipe: &CookRecipe,
+    config: &CliConfig,
+    source_dir: PathBuf,
+    logger: &PtyOut,
+) -> Result<bool> {
+    let recipe_dir = &recipe.dir;
+    let target_dir = create_target_dir(recipe_dir, recipe.target)?;
+    let build_result = build(
+        recipe_dir,
+        &source_dir,
+        &target_dir,
+        &recipe,
+        &config.cook,
+        logger,
+    )?;
+
+    package(&recipe, &build_result, &config.cook, logger)?;
+
+    if config.cook.clean_target || config.cook.write_filetree {
+        for stage_dir in &build_result.stage_dirs {
+            if stage_dir.is_dir() {
+                if config.cook.write_filetree {
+                    let mut stage_files_buf = Vec::new();
+                    tree::walk_file_tree(&stage_dir, "", &mut stage_files_buf)
+                        .map_err(|e| Error::from_io_error(e, "Walking files tree"))?;
+                    stage_files_buf.push("".into()); // trailing eol
+                    fs::write(
+                        stage_dir.with_added_extension("files"),
+                        stage_files_buf.join("\n"),
+                    )
+                    .map_err(|e| Error::from_io_error(e, "Writing files tree"))?;
+                }
+                if config.cook.clean_target {
+                    remove_all(&stage_dir)?;
+                }
+            }
+        }
+    }
+    Ok(build_result.cached)
+}
+
+/// delete stage artifacts upon nonstop failure to let repo_builder know
+fn handle_nonstop_fail(recipe: &CookRecipe) -> cookbook::Result<()> {
+    let target_dir = recipe.target_dir();
+    let stage_dirs = get_stage_dirs(&recipe.recipe.optional_packages, &target_dir);
+    for stage_dir in stage_dirs {
+        remove_stage_dir(&stage_dir)?;
+    }
+    Ok(())
+}
+
+fn handle_clean(recipe: &CookRecipe, _config: &CliConfig, command: &CliCommand) -> Result<bool> {
+    let mut dir = recipe.dir.join("target");
+    let mut cached = true;
+    if matches!(*command, CliCommand::CleanTarget) {
+        dir = dir.join(redoxer::target())
+    }
+    if dir.exists() {
+        remove_all(&dir)?;
+        cached = false;
+    }
+    let dir = recipe.dir.join("source");
+    if dir.exists() && matches!(*command, CliCommand::Unfetch) {
+        remove_all(&dir)?;
+        cached = false;
+    }
+    Ok(cached)
+}
+
+static PUSH_SYSROOT_DIR: OnceLock<PathBuf> = OnceLock::new();
+fn handle_push(recipes: &Vec<CookRecipe>, config: &CliConfig) -> Result<()> {
+    let recipe_map: HashMap<&PackageName, &CookRecipe> =
+        recipes.iter().map(|r| (&r.name, r)).collect();
+    let mut total_size: u64 = 0;
+    let mut total_count: u64 = 0;
+    let mut visited: HashSet<PackageName> = HashSet::new();
+    let num_recipes = recipes.len();
+    PUSH_SYSROOT_DIR.set(config.sysroot_dir.clone()).unwrap();
+    let handle_push_inner = move |package_name: &PackageName,
+                                  _prefix: &str,
+                                  _is_last: bool,
+                                  entry: &WalkTreeEntry|
+          -> Result<bool> {
+        if package_name.is_host() {
+            return Ok(true); // TODO: skip altogether from recipes list
+        }
+        let r = match entry {
+            WalkTreeEntry::Built(archive_path, _) => {
+                let install_path = PUSH_SYSROOT_DIR.get().unwrap();
+                let mut state = PackageState::from_sysroot(install_path).map_err(Error::from)?;
+                let r = package_handle_push(&mut state, archive_path, &install_path, false);
+                if matches!(r, Ok(false)) {
+                    state
+                        .to_sysroot(install_path)
+                        .map_err(|e| Error::from_io_error(e, "Extracting package"))?;
+                }
+                r
+            }
+            WalkTreeEntry::NotBuilt => Err(Error::Other(format!(
+                "Package {} has not been built",
+                package_name.name()
+            ))),
+            WalkTreeEntry::Deduped | WalkTreeEntry::Missing => {
+                // does not matter
+                return Ok(false);
+            }
+        };
+        match r {
+            Ok(true) => {
+                print_cached(&CliCommand::Push, package_name);
+                Ok(true)
+            }
+            Ok(false) => {
+                print_success(&CliCommand::Push, package_name);
+                Ok(false)
+            }
+            Err(e) => {
+                print_failed(&CliCommand::Push, package_name);
+                if get_config().cook.nonstop {
+                    Ok(true)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    };
+    for (i, recipe) in recipes.iter().enumerate() {
+        tree::walk_tree_entry(
+            &recipe.name,
+            &recipe_map,
+            "",
+            i == num_recipes - 1,
+            false,
+            &mut visited,
+            &mut total_size,
+            &mut total_count,
+            handle_push_inner,
+        )?;
+    }
+
+    if config.cook.verbose {
+        println!("");
+        println!(
+            "Pushed {} of {} {}",
+            tree::format_size(total_size),
+            total_count,
+            if total_count == 1 {
+                "package"
+            } else {
+                "packages"
+            },
+        );
+    }
+
+    Ok(())
+}
+
+fn handle_tree(recipes: &Vec<CookRecipe>, is_build_tree: bool, _config: &CliConfig) -> Result<()> {
+    let recipe_map: HashMap<&PackageName, &CookRecipe> =
+        recipes.iter().map(|r| (&r.name, r)).collect();
+    let mut total_size: u64 = 0;
+    let mut total_count: u64 = 0;
+    let mut visited: HashSet<PackageName> = HashSet::new();
+    let roots: Vec<&CookRecipe> = recipes.iter().filter(|r| !r.is_deps).collect();
+    let num_roots = roots.len();
+    for (i, root) in roots.iter().enumerate() {
+        tree::display_tree_entry(
+            &root.name,
+            &recipe_map,
+            "",
+            i == num_roots - 1,
+            is_build_tree,
+            &mut visited,
+            &mut total_size,
+            &mut total_count,
+        )?;
+    }
+
+    println!("");
+    if is_build_tree {
+        println!(
+            "Build summary: {} need build, {} may rebuild, with total of {} {}",
+            total_size,
+            roots.len(),
+            visited.len(),
+            if visited.len() == 1 {
+                "recipe"
+            } else {
+                "recipes"
+            },
+        );
+    } else {
+        println!(
+            "Estimated image size: {} of {} {}",
+            tree::format_size(total_size),
+            visited.len(),
+            if visited.len() == 1 {
+                "package"
+            } else {
+                "packages"
+            },
+        );
+    }
+
+    Ok(())
+}
+
+fn handle_change_rule(
+    recipes: &Vec<CookRecipe>,
+    config: &CliConfig,
+    command: &CliCommand,
+) -> Result<()> {
+    let mut lock = get_config().recipe_lock.clone();
+    let cookbook_date = get_git_commit_date(&PathBuf::from("."))?;
+    let is_change_rule = matches!(
+        command,
+        CliCommand::ChangeRule | CliCommand::ChangeRuleLocal
+    );
+    let is_capture_rev = matches!(command, CliCommand::CaptureRev);
+    let is_change_rule_local = matches!(command, CliCommand::ChangeRuleLocal);
+    for recipe in recipes {
+        if is_change_rule && recipe.name.is_host() {
+            // host packages will always be "source" so it's pointless to change their rule
+            continue;
+        }
+        if is_capture_rev && !matches!(recipe.recipe.source, Some(SourceRecipe::Git { .. })) {
+            continue;
+        }
+        let recipe_name = recipe.name.without_prefix();
+        let mut recipe_lock = lock.get(recipe_name).cloned().unwrap_or_default();
+        let cached = if is_change_rule {
+            if config.unset {
+                recipe_lock.fsrule.take().is_none()
+            } else {
+                let new_rule = config
+                    .set_rule
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| recipe.rule.clone());
+
+                let old_rule = recipe_lock.fsrule.replace(new_rule.clone());
+                old_rule == Some(new_rule)
+            }
+        } else if is_capture_rev {
+            if config.unset {
+                recipe_lock.gitrev.take().is_none()
+            } else {
+                let source_dir = recipe.dir.join("source");
+                let rev = if config.with_rollback {
+                    // invoke fetch as the git tracking can be different
+                    match handle_fetch(recipe, config, false, &None) {
+                        Ok(_) => get_git_rev_before_date(&source_dir, &cookbook_date),
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    get_git_head_rev(&source_dir).map(|r| r.0)
+                };
+                match rev {
+                    Ok(rev) => {
+                        let old_rev = recipe_lock.gitrev.replace(rev.clone());
+                        old_rev == Some(rev)
+                    }
+                    Err(e) => {
+                        eprintln!("Skipping {}: {e}", recipe.name.as_str());
+                        continue;
+                    }
+                }
+            }
+        } else {
+            unreachable!()
+        };
+        if recipe_lock.is_empty() {
+            lock.remove(recipe_name);
+        } else {
+            lock.insert(recipe_name.to_string(), recipe_lock);
+        }
+        let mut fetch_cached = true;
+        if is_change_rule_local && !recipe.dir.join("source").exists() {
+            // previously, this is "binary", then user wants to hack around with the source, so we do fetch here
+            let mut recipe = recipe.clone();
+            recipe.rule = "source".into();
+            recipe.reload_recipe()?;
+            if recipe.recipe.source.is_some() {
+                fetch_cached = handle_fetch(&recipe, config, false, &None)?.cached;
+            }
+        }
+        let clean_cached = if !cached && is_change_rule {
+            handle_clean(recipe, config, &CliCommand::Clean)?
+        } else {
+            true
+        };
+
+        if cached && clean_cached && fetch_cached {
+            print_cached(command, &recipe.name);
+        } else {
+            print_success(command, &recipe.name);
+        }
+    }
+    CookLockOpt { recipes: lock }.save();
+    Ok(())
+}
+
+//
+// ------------- TUI SPECIFIC CODE -------------------
+//
+
+#[derive(Debug, Clone, PartialEq)]
+enum RecipeStatus {
+    Pending,
+    Fetching,
+    Fetched,
+    Cooking,
+    Cached,
+    Done,
+    Failed(String),
+}
+
+impl RecipeStatus {
+    pub fn fetch_is_part_of(&self) -> bool {
+        matches!(*self, RecipeStatus::Pending | RecipeStatus::Fetching)
+    }
+    pub fn fetch_style(&self) -> Style {
+        match *self {
+            RecipeStatus::Fetching => Style::default().fg(Color::Yellow),
+            _ => Style::default(),
+        }
+    }
+    pub fn fetch_icon(&self, spin: char) -> char {
+        match *self {
+            RecipeStatus::Pending => ' ',
+            RecipeStatus::Fetching => spin,
+            _ => '?',
+        }
+    }
+    pub fn cook_is_part_of(&self) -> bool {
+        matches!(
+            *self,
+            RecipeStatus::Fetched
+                | RecipeStatus::Cooking
+                | RecipeStatus::Done
+                | RecipeStatus::Cached
+                | RecipeStatus::Failed(_)
+        )
+    }
+    pub fn cook_style(&self) -> Style {
+        match *self {
+            RecipeStatus::Fetched => Style::default(),
+            RecipeStatus::Cooking => Style::default().fg(Color::Yellow),
+            RecipeStatus::Done => Style::default().fg(Color::Green),
+            RecipeStatus::Cached => Style::default().fg(Color::Cyan),
+            RecipeStatus::Failed(_) => Style::default().fg(Color::Red),
+            _ => Style::default(),
+        }
+    }
+    pub fn cook_icon(&self, spin: char) -> char {
+        match *self {
+            RecipeStatus::Fetched => ' ',
+            RecipeStatus::Cooking => spin,
+            RecipeStatus::Done => '+',
+            RecipeStatus::Cached => ' ',
+            RecipeStatus::Failed(_) => 'X',
+            _ => '?',
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum StatusUpdate {
+    StartFetch(PackageName),
+    Fetched(CookRecipe),
+    FailFetch(CookRecipe, String),
+    StartCook(PackageName),
+    Cooked(CookRecipe, bool),
+    FailCook(CookRecipe, String),
+    PushLog(PackageName, Vec<u8>),
+    FlushLog(PackageName, PathBuf),
+    FetchThreadFinished,
+    CookThreadFinished,
+}
+
+#[derive(PartialEq)]
+enum JobType {
+    Fetch,
+    Cook,
+}
+
+impl ToString for JobType {
+    fn to_string(&self) -> String {
+        match self {
+            JobType::Fetch => "Fetch",
+            JobType::Cook => "Cook",
+        }
+        .to_string()
+    }
+}
+
+const PROMPT_WAIT: Duration = Duration::from_millis(101);
+
+struct TuiApp {
+    recipes: Vec<(CookRecipe, RecipeStatus)>,
+    active_fetch: Option<PackageName>,
+    active_cook: Option<PackageName>,
+    logs: HashMap<PackageName, Vec<String>>,
+    log_byte_buffer: HashMap<PackageName, Vec<u8>>,
+    log_scroll: usize,
+    log_view_job: JobType,
+    auto_scroll: bool,
+    cook_scroll: usize,
+    cook_list_state: ListState,
+    fetch_complete: bool,
+    cook_complete: bool,
+    prompt: Option<FailurePrompt>,
+    dump_logs_anyway: bool,
+    dump_logs_on_exit: Option<(PackageName, String)>,
+    is_inspecting: bool,
+    search_query: String,
+    search_results: Option<Vec<usize>>,
+    search_idx: usize,
+}
+
+impl TuiApp {
+    fn new(recipes: Vec<CookRecipe>) -> Self {
+        Self {
+            recipes: recipes
+                .iter()
+                .cloned()
+                .map(|r| (r, RecipeStatus::Pending))
+                .collect(),
+            active_fetch: None,
+            active_cook: None,
+            logs: HashMap::new(),
+            log_byte_buffer: HashMap::new(),
+            log_scroll: 0,
+            auto_scroll: true,
+            log_view_job: JobType::Fetch,
+            cook_scroll: 0,
+            cook_list_state: ListState::default(),
+            fetch_complete: false,
+            cook_complete: false,
+            prompt: None,
+            dump_logs_anyway: false,
+            dump_logs_on_exit: None,
+            is_inspecting: false,
+            search_query: String::new(),
+            search_results: None,
+            search_idx: 0,
+        }
+    }
+
+    pub fn get_active_name(&self) -> Option<PackageName> {
+        if self.log_view_job == JobType::Cook {
+            self.active_cook.clone()
+        } else {
+            self.active_fetch.clone()
+        }
+    }
+
+    pub fn get_active_log(
+        &self,
+    ) -> (
+        Option<PackageName>,
+        Option<&Vec<String>>,
+        Option<Cow<'_, str>>,
+    ) {
+        let active_name = self.get_active_name();
+        let (log_text, log_line) = if let Some(active_name) = active_name.as_ref() {
+            self.get_recipe_log(active_name)
+        } else {
+            (None, None)
+        };
+
+        (active_name, log_text, log_line)
+    }
+
+    pub fn get_recipe_log(
+        &self,
+        recipe_name: &PackageName,
+    ) -> (Option<&Vec<String>>, Option<Cow<'_, str>>) {
+        let log_text = self.logs.get(recipe_name);
+        let log_line = if let Some(b) = self.log_byte_buffer.get(recipe_name) {
+            Some(String::from_utf8_lossy(b))
+        } else {
+            None
+        };
+        (log_text, log_line)
+    }
+
+    pub fn write_log(&self, recipe_name: &PackageName, log_path: &PathBuf) -> Result<()> {
+        let (Some(logs), line) = self.get_recipe_log(recipe_name) else {
+            return Ok(());
+        };
+        let str = strip_ansi_escapes::strip_str(join_logs(logs, line));
+        if !str.trim_end().is_empty() {
+            fs::write(log_path, str).map_err(|e| Error::from_io_error(e, "Writing log"))?;
+        }
+        return Ok(());
+    }
+
+    // Update the state based on a message from a worker thread
+    fn update_status(&mut self, update: StatusUpdate) {
+        let (name, new_status) = match update {
+            StatusUpdate::StartFetch(name) => {
+                self.active_fetch = Some(name.clone());
+                self.logs.insert(name.clone(), Vec::new());
+                self.log_byte_buffer.insert(name.clone(), Vec::new());
+                self.log_scroll = 0;
+                self.auto_scroll = true;
+                (name.clone(), RecipeStatus::Fetching)
+            }
+            StatusUpdate::Fetched(recipe) => (recipe.name.clone(), RecipeStatus::Fetched),
+            StatusUpdate::FailFetch(recipe, err) => {
+                self.prompt = Some(FailurePrompt::new(recipe.clone(), err.clone()));
+                (recipe.name.clone(), RecipeStatus::Failed(err))
+            }
+            StatusUpdate::StartCook(name) => {
+                self.active_cook = Some(name.clone());
+                self.logs.insert(name.clone(), Vec::new());
+                self.log_byte_buffer.insert(name.clone(), Vec::new());
+                (name.clone(), RecipeStatus::Cooking)
+            }
+            StatusUpdate::PushLog(name, chunk) => {
+                let buffer = self.log_byte_buffer.entry(name.clone()).or_default();
+                buffer.extend_from_slice(&chunk);
+                if self.dump_logs_anyway {
+                    let _ = std::io::stdout().write_all(&chunk);
+                }
+                let log_list = self.logs.entry(name.clone()).or_default();
+                // TODO: multibyte-aware line split?
+                while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let line_bytes = buffer.drain(..=newline_pos);
+                    let line_str = String::from_utf8_lossy(&line_bytes.as_slice());
+                    let line_str_pos = line_str.trim_end();
+                    let line_str = line_str_pos.rsplit('\r').next().unwrap_or(&line_str_pos);
+                    log_list.push(line_str.to_owned());
+                }
+                return;
+            }
+            StatusUpdate::FlushLog(name, path) => {
+                // TODO: This blocks the TUI, maybe open separate thread?
+                // FIXME: handle error here?
+                let _ = self.write_log(&name, &path);
+                return;
+            }
+            StatusUpdate::Cooked(recipe, cached) => {
+                if self.active_cook.as_ref() == Some(&recipe.name) {
+                    self.active_cook = None;
+                }
+                self.auto_scroll = true;
+                (
+                    recipe.name.clone(),
+                    if cached {
+                        RecipeStatus::Cached
+                    } else {
+                        RecipeStatus::Done
+                    },
+                )
+            }
+            StatusUpdate::FailCook(recipe, err) => {
+                self.prompt = Some(FailurePrompt::new(recipe.clone(), err.clone()));
+                (recipe.name.clone(), RecipeStatus::Failed(err))
+            }
+            StatusUpdate::FetchThreadFinished => {
+                self.fetch_complete = true;
+                self.log_view_job = JobType::Cook;
+                return;
+            }
+            StatusUpdate::CookThreadFinished => {
+                self.cook_complete = true;
+                return;
+            }
+        };
+
+        if let Some((_, status)) = self.recipes.iter_mut().find(|(r, _)| r.name == name) {
+            *status = new_status;
+        }
+    }
+}
+
+fn run_tui_cook(config: CliConfig, recipes: Vec<CookRecipe>) -> Result<TuiApp> {
+    let (work_tx, work_rx) = mpsc::channel::<(CookRecipe, FetchResult)>();
+    let (status_tx, status_rx) = mpsc::channel::<StatusUpdate>();
+
+    let running = Arc::new(AtomicBool::new(true));
+    let prompting = Arc::new(AtomicU32::new(0));
+    const TICK_RATE: Duration = Duration::from_millis(100);
+
+    // ---- Cooker Thread ----
+    let cooker_config = config.clone();
+    let cooker_status_tx = status_tx.clone();
+    let cooker_prompting = prompting.clone();
+    let cooker_handle = thread::spawn(move || {
+        'done: for (mut recipe, fetch_result) in work_rx {
+            let name = recipe.name.clone();
+            let (mut stdout_writer, mut stderr_writer) = setup_logger(&cooker_status_tx, &name);
+            let mut logger = Some((&mut stdout_writer, &mut stderr_writer));
+            'again: loop {
+                cooker_status_tx
+                    .send(StatusUpdate::StartCook(name.clone()))
+                    .unwrap();
+                let _ = recipe.reload_recipe(); // reread recipe.toml in case we're retrying
+                let handler = handle_cook(
+                    &recipe,
+                    &cooker_config,
+                    fetch_result.source_dir.clone(),
+                    &logger,
+                );
+                if let Some(log_path) = cooker_config.logs_dir.as_ref()
+                    // prefer to retain full build logs
+                    && !matches!(handler, Ok(true))
+                {
+                    if let Err(err_ctx) = &handler {
+                        write_to_pty(&logger, &format!("\n{err_ctx}"));
+                    }
+                    flush_pty(&mut logger);
+                    let log_path = log_path.join(format!("{}/{}.log", recipe.target, name.name()));
+                    cooker_status_tx
+                        .send(StatusUpdate::FlushLog(name.clone(), log_path))
+                        .unwrap_or_default();
+                }
+                match handler {
+                    Ok(cached) => {
+                        cooker_status_tx
+                            .send(StatusUpdate::Cooked(recipe, cached))
+                            .unwrap_or_default();
+                        if cooker_config.cook.nonstop
+                            && cooker_prompting.load(Ordering::SeqCst) == 4
+                        {
+                            break 'done;
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        cooker_status_tx
+                            .send(StatusUpdate::FailCook(recipe.clone(), e.to_string()))
+                            .unwrap_or_default();
+                        if cooker_config.cook.nonstop {
+                            if cooker_prompting.load(Ordering::SeqCst) == 4 {
+                                break 'done;
+                            }
+                            // TODO: where to report error?
+                            let _ = handle_nonstop_fail(&recipe);
+                            break;
+                        }
+                        while cooker_prompting.load(Ordering::SeqCst) != 0 {
+                            thread::sleep(PROMPT_WAIT); // wait other prompt
+                        }
+                        cooker_prompting.swap(1, Ordering::SeqCst);
+                        'wait: loop {
+                            match cooker_prompting.load(Ordering::SeqCst) {
+                                0 => break 'again,
+                                1 => thread::sleep(PROMPT_WAIT),
+                                2 => {
+                                    cooker_prompting.swap(0, Ordering::SeqCst);
+                                    break 'wait;
+                                } // retry
+                                3 => {
+                                    cooker_prompting.swap(0, Ordering::SeqCst);
+                                    let _ = handle_nonstop_fail(&recipe);
+                                    break 'again;
+                                } // skip
+                                4 => {
+                                    cooker_prompting.swap(0, Ordering::SeqCst);
+                                    break 'done;
+                                } // done
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        cooker_status_tx
+            .send(StatusUpdate::CookThreadFinished)
+            .unwrap_or_default();
+    });
+
+    let mstdin = stdin();
+    let mstdout = stdout()
+        .into_raw_mode()
+        .unwrap()
+        .into_alternate_screen()
+        .unwrap();
+
+    // ----- Input Thread -----
+    let (input_tx, input_rx) = mpsc::channel::<Event>();
+    let _input_handle = thread::spawn(move || {
+        for evt in mstdin.events() {
+            if let Ok(evt) = evt {
+                if input_tx.send(evt).is_err() {
+                    return;
+                }
+            }
+        }
+    });
+
+    // ---- Fetcher Thread ----
+    let fetcher_recipes = recipes.clone();
+    let fetcher_status_tx = status_tx.clone();
+    let fetcher_config = config.clone();
+    let fetcher_prompting = prompting.clone();
+    let fetcher_handle = thread::spawn(move || {
+        'done: for mut recipe in fetcher_recipes {
+            let name = recipe.name.clone();
+            let (mut stdout_writer, mut stderr_writer) = setup_logger(&fetcher_status_tx, &name);
+            let mut logger = Some((&mut stdout_writer, &mut stderr_writer));
+            'again: loop {
+                fetcher_status_tx
+                    .send(StatusUpdate::StartFetch(name.clone()))
+                    .unwrap();
+                let _ = recipe.reload_recipe(); // reread recipe.toml in case we're retrying
+                let handler = handle_fetch(&recipe, &fetcher_config, true, &logger);
+                if let Some(log_path) = fetcher_config.logs_dir.as_ref()
+                    // prefer to retain full build logs
+                    && !matches!(handler, Ok(FetchResult { cached: true, .. }))
+                {
+                    if let Err(err_ctx) = &handler {
+                        write_to_pty(&logger, &format!("\n{err_ctx}"));
+                    }
+                    flush_pty(&mut logger);
+                    let log_path = log_path.join(format!("{}/{}.log", recipe.target, name.name()));
+                    fetcher_status_tx
+                        .send(StatusUpdate::FlushLog(name.clone(), log_path))
+                        .unwrap_or_default();
+                }
+                match handler {
+                    Ok(fetch) => {
+                        fetcher_status_tx
+                            .send(StatusUpdate::Fetched(recipe.clone()))
+                            .unwrap();
+                        if work_tx.send((recipe.clone(), fetch)).is_err() {
+                            // Cooker thread died
+                            break 'done;
+                        }
+                        if fetcher_config.cook.nonstop
+                            && fetcher_prompting.load(Ordering::SeqCst) == 4
+                        {
+                            break 'done;
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        fetcher_status_tx
+                            .send(StatusUpdate::FailFetch(recipe.clone(), e.to_string()))
+                            .unwrap_or_default();
+                        if fetcher_config.cook.nonstop {
+                            if fetcher_prompting.load(Ordering::SeqCst) == 4 {
+                                break 'done;
+                            }
+                            let _ = handle_nonstop_fail(&recipe);
+                            break;
+                        }
+                        while fetcher_prompting.load(Ordering::SeqCst) != 0 {
+                            thread::sleep(PROMPT_WAIT); // wait other prompt
+                        }
+                        fetcher_prompting.swap(1, Ordering::SeqCst);
+                        'wait: loop {
+                            match fetcher_prompting.load(Ordering::SeqCst) {
+                                0 => break 'again,
+                                1 => thread::sleep(PROMPT_WAIT),
+                                2 => {
+                                    fetcher_prompting.swap(0, Ordering::SeqCst);
+                                    break 'wait;
+                                } // retry
+                                3 => {
+                                    fetcher_prompting.swap(0, Ordering::SeqCst);
+                                    let _ = handle_nonstop_fail(&recipe);
+                                    break 'again;
+                                } // skip
+                                4 => {
+                                    fetcher_prompting.swap(0, Ordering::SeqCst);
+                                    break 'done;
+                                } // done
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        status_tx
+            .send(StatusUpdate::FetchThreadFinished)
+            .unwrap_or_default();
+    });
+
+    let mut terminal = Terminal::new(TermionBackend::new(stdout()))
+        .map_err(|e| Error::from_io_error(e, "Reading terminal pty"))?;
+    terminal
+        .clear()
+        .map_err(|e| Error::from_io_error(e, "Clearing terminal pty"))?;
+    let mut app = TuiApp::new(recipes);
+
+    let spinner = ['-', '\\', '|', '/'];
+    let mut spinner_i = 0;
+
+    while running.load(Ordering::SeqCst) {
+        let frame_start = Instant::now();
+        let r = terminal.draw(|f| {
+            spinner_i = (spinner_i + 1) % spinner.len();
+            let spin = spinner[spinner_i];
+
+            let mut constraints = Vec::new();
+            if app.is_inspecting {
+                constraints.push(Constraint::Percentage(100));
+            } else {
+                if !app.fetch_complete {
+                    constraints.push(Constraint::Length(22));
+                }
+                constraints.push(Constraint::Length(22));
+                constraints.push(Constraint::Min(20));
+            }
+
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(constraints)
+                .split(f.area());
+            let panel_height = chunks[0].height.saturating_sub(2) as usize;
+
+            if !app.is_inspecting {
+                // Left Pane
+                let fetch_items: Vec<ListItem> = app
+                    .recipes
+                    .iter()
+                    .filter(|(_, s)| s.fetch_is_part_of())
+                    .map(|(r, s)| {
+                        let icon = s.fetch_icon(spin);
+                        ListItem::new(format!("{icon} {}", r.name)).style(s.fetch_style())
+                    })
+                    .collect();
+                let fetch_list = List::new(fetch_items).block(
+                    Block::default()
+                        .title("Fetch Queue [1]")
+                        .borders(Borders::ALL),
+                );
+                f.render_widget(fetch_list, chunks[0]);
+
+                // Right Pane
+                let cook_items: Vec<ListItem> = app
+                    .recipes
+                    .iter()
+                    .filter(|(_, s)| s.cook_is_part_of())
+                    .map(|(r, s)| {
+                        let icon = s.cook_icon(spin);
+                        ListItem::new(format!("{icon} {}", r.name)).style(s.cook_style())
+                    })
+                    .collect();
+                {
+                    let cooking_index = app
+                        .recipes
+                        .iter()
+                        .filter(|(_, s)| s.cook_is_part_of())
+                        .position(|(_r, s)| *s == RecipeStatus::Cooking);
+
+                    if let Some(index) = cooking_index {
+                        app.cook_list_state.select(Some(index));
+                        let index_u16 = index;
+                        let center_offset = panel_height / 2;
+                        let new_offset = index_u16.saturating_sub(center_offset) as usize;
+
+                        *app.cook_list_state.offset_mut() = new_offset;
+                    }
+                }
+                let cook_items: Vec<ListItem> = cook_items[app.cook_scroll..].into();
+                let cook_chunk = chunks[if app.fetch_complete { 0 } else { 1 }];
+                let cook_list = List::new(cook_items).block(
+                    Block::default()
+                        .title("Cook Queue [2]")
+                        .borders(Borders::ALL),
+                );
+                f.render_stateful_widget(cook_list, cook_chunk, &mut app.cook_list_state);
+            }
+
+            let log_area = if app.is_inspecting {
+                chunks[0]
+            } else {
+                chunks[if app.fetch_complete { 1 } else { 2 }]
+            };
+
+            let (active_name, log_text, log_line) = app.get_active_log();
+            let log_title = if let Some(active_name) = active_name {
+                format!(
+                    " {} Log: {} ",
+                    app.log_view_job.to_string(),
+                    if app.is_inspecting {
+                        staged_pkg::find(active_name.as_str())
+                            .map(|s| s.to_str())
+                            .flatten()
+                            .unwrap_or(active_name.as_str())
+                    } else {
+                        active_name.as_str()
+                    }
+                )
+            } else {
+                format!(" {} Log ", app.log_view_job.to_string())
+            };
+
+            let mut enable_auto_scroll = false;
+            let mut intended_scroll_pos = 0usize;
+
+            let mut log_lines: Vec<Line> = if let Some(log_text) = log_text
+                && !log_text.is_empty()
+            {
+                let total_log_lines = log_text.len() as usize;
+
+                let start = if app.auto_scroll {
+                    if total_log_lines > panel_height {
+                        intended_scroll_pos = total_log_lines - panel_height;
+                        total_log_lines - panel_height
+                    } else {
+                        0
+                    }
+                } else {
+                    if total_log_lines > panel_height {
+                        let limit = 2; // arbitrary number
+                        if app.log_scroll >= total_log_lines - limit {
+                            if app.prompt.is_none() || config.cook.nonstop {
+                                enable_auto_scroll = true;
+                            }
+                            intended_scroll_pos = total_log_lines - limit;
+                            total_log_lines - limit
+                        } else {
+                            app.log_scroll
+                        }
+                    } else {
+                        0
+                    }
+                };
+
+                let end = cmp::min(panel_height + start, total_log_lines - 1);
+
+                log_text[start..end]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        if app.is_inspecting {
+                            if let Some(search_results) = app.search_results.as_ref() {
+                                let absolute_i = start + i;
+                                if absolute_i == search_results[app.search_idx] {
+                                    let s = strip_ansi_escapes::strip_str(s);
+                                    return Line::from(s).style(
+                                        Style::default().bg(Color::Yellow).fg(Color::Black),
+                                    );
+                                } else if search_results.binary_search(&absolute_i).is_ok() {
+                                    let s = strip_ansi_escapes::strip_str(s);
+                                    return Line::from(s)
+                                        .style(Style::default().bg(Color::Black).fg(Color::White));
+                                }
+                            }
+                        }
+                        let text_with_colors = s
+                            .into_text()
+                            .unwrap_or_else(|_| Text::raw("--unrenderable line--"));
+                        text_with_colors
+                            .lines
+                            .into_iter()
+                            .next()
+                            .unwrap_or_else(|| Line::raw("--unrenderable line--"))
+                    })
+                    .collect()
+            } else {
+                vec![Line::from("No logs yet")]
+            };
+
+            if let Some(buffer) = log_line
+                && !buffer.is_empty()
+            {
+                let text_with_colors = handle_cr(&buffer)
+                    .into_text()
+                    .unwrap_or_else(|_| Text::raw("--unrenderable line--"));
+
+                if let Some(line) = text_with_colors.lines.into_iter().next() {
+                    log_lines.push(line);
+                }
+            }
+
+            let instruct = if app.is_inspecting {
+                let line_info = if let Some(search_results) = app.search_results.as_ref() {
+                    format!(
+                        "[line {}; {} of {}]",
+                        search_results[app.search_idx],
+                        app.search_idx + 1,
+                        search_results.len()
+                    )
+                } else {
+                    format!("[line {}]", app.log_scroll + 1)
+                };
+
+                format!(
+                    " Search: {:?} {} {} ",
+                    app.search_query,
+                    line_info,
+                    if app.search_results.is_some() {
+                        "[Down/Up] Next/previous search [Shift+Down/Up] Scroll [Esc] Exit search"
+                    } else {
+                        "[Enter] Begin search [Esc] Exit inspect"
+                    }
+                )
+            } else {
+                format!(
+                    " Keys: [c] Stop [PageUp/Down] Scroll{}{} ",
+                    match app.auto_scroll {
+                        true => "",
+                        false => " [End] Follow log trails",
+                    },
+                    match (&app.log_view_job, app.fetch_complete) {
+                        (JobType::Fetch, _) => " [2] View Cook Log",
+                        (JobType::Cook, false) => " [1] View Fetch Log",
+                        (JobType::Cook, true) => "",
+                    }
+                )
+            };
+
+            let log_borders = if app.is_inspecting {
+                Borders::TOP | Borders::BOTTOM
+            } else {
+                Borders::ALL
+            };
+
+            let mut log_paragraph = Paragraph::new(log_lines).block(
+                Block::default()
+                    .title(log_title)
+                    .title_bottom(instruct)
+                    .borders(log_borders),
+            );
+
+            if !app.auto_scroll {
+                log_paragraph = log_paragraph.wrap(Wrap { trim: false });
+            }
+
+            f.render_widget(log_paragraph, log_area);
+            if let Some(prompt) = &mut app.prompt {
+                if config.cook.nonstop && prompt.selected == PromptOption::Retry {
+                    prompt.selected = PromptOption::Skip;
+                }
+                if !app.is_inspecting {
+                    draw_prompt(f, prompt, config.cook.nonstop);
+                }
+            }
+            if enable_auto_scroll {
+                app.auto_scroll = true;
+            }
+            if intended_scroll_pos > 0 {
+                app.log_scroll = intended_scroll_pos;
+            }
+
+            while let Ok(event) = input_rx.try_recv() {
+                if app.is_inspecting {
+                    if handle_inspect_event(&event, &mut app) {
+                        app.is_inspecting = false;
+                    }
+                    continue;
+                }
+                if let Some((app, res)) = handle_prompt_input(&event, &mut app) {
+                    prompting.swap(res as u32, Ordering::SeqCst);
+                    if res == PromptOption::Exit {
+                        // TODO: This can be a different log with what prompted on nonstop mode
+                        let (name, log, line) = app.get_active_log();
+                        if let Some(name) = name
+                            && let Some(log) = log
+                        {
+                            app.dump_logs_on_exit = Some((name.to_owned(), join_logs(log, line)));
+                        }
+                        running.store(false, Ordering::SeqCst);
+                    }
+                    app.prompt = None;
+                } else {
+                    handle_main_event(&mut app, &event);
+                }
+            }
+        });
+
+        r.map_err(|e| Error::from_io_error(e, "Drawing to terminal pty"))?;
+
+        while let Ok(update) = status_rx.try_recv() {
+            app.update_status(update);
+        }
+
+        if app.cook_complete {
+            running.swap(false, Ordering::SeqCst);
+        }
+
+        if let Some(sleep_duration) = TICK_RATE.checked_sub(frame_start.elapsed()) {
+            thread::sleep(sleep_duration);
+        }
+    }
+
+    drop(mstdout);
+    let _ = stdout().flush();
+
+    if config.cook.nonstop && app.dump_logs_on_exit.is_some() {
+        kill_everything();
+    }
+
+    let _ = fetcher_handle.join();
+    let _ = cooker_handle.join();
+
+    Ok(app)
+}
+
+fn join_logs(log: &Vec<String>, line: Option<Cow<'_, str>>) -> String {
+    let mut logs = log.join("\n");
+    if let Some(line) = line {
+        logs.push_str("\n");
+        logs.push_str(handle_cr(&line));
+    }
+    logs
+}
+
+fn handle_cr<'a>(buffer: &'a Cow<'_, str>) -> &'a str {
+    let st = buffer.trim_end();
+    st.rsplit('\r').next().unwrap_or(&st)
+}
+
+fn handle_main_event(app: &mut TuiApp, event: &Event) {
+    match event {
+        Event::Key(key) => match key {
+            Key::Char('1') => {
+                app.log_view_job = JobType::Fetch;
+            }
+            Key::Char('2') => {
+                app.log_view_job = JobType::Cook;
+            }
+            Key::Char('c') => {
+                // as compilers still running, we use this way to stop it
+                kill_everything();
+            }
+            Key::Up => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_sub(1);
+            }
+            Key::Down => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_add(1);
+            }
+            Key::PageUp => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_sub(20);
+            }
+            Key::PageDown => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_add(20);
+            }
+            Key::End => {
+                app.auto_scroll = true;
+            }
+            Key::Home => {
+                app.auto_scroll = false;
+                app.log_scroll = 0;
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
+fn perform_search(app: &mut TuiApp) {
+    app.search_idx = 0;
+    if app.search_query.is_empty() {
+        return;
+    }
+
+    let (_, log_text, _) = app.get_active_log();
+    let mut search_results = Vec::new();
+    let mut first_index = None;
+    if let Some(logs) = log_text {
+        for (i, line) in logs.iter().enumerate() {
+            let stripped = strip_ansi_escapes::strip_str(line);
+            if stripped
+                .to_lowercase()
+                .contains(&app.search_query.to_lowercase())
+            {
+                search_results.push(i);
+                if first_index.is_none() && i >= app.log_scroll {
+                    first_index = Some((i, search_results.len() - 1));
+                }
+            }
+        }
+    }
+    first_index = match first_index {
+        Some(i) => Some(i),
+        None => search_results.first().cloned().map(|s| (s, 0)),
+    };
+    app.search_results = Some(search_results);
+    app.auto_scroll = false;
+    if let Some((first_index, search_i)) = first_index {
+        app.log_scroll = first_index.saturating_sub(10);
+        app.search_idx = search_i;
+    }
+}
+
+fn handle_inspect_event(event: &Event, app: &mut TuiApp) -> bool {
+    if let Event::Key(key) = event {
+        match key {
+            Key::Esc => {
+                if app.search_results.is_some() {
+                    app.search_results.take();
+                } else {
+                    app.search_query.clear();
+                    return true;
+                }
+            }
+            Key::Char('\n') => {
+                if let Some(search_results) = app.search_results.as_mut() {
+                    // same as keydown
+                    app.search_idx = if app.search_idx + 1 < search_results.len() {
+                        app.search_idx + 1
+                    } else {
+                        0
+                    };
+                    app.log_scroll = search_results[app.search_idx].saturating_sub(10);
+                } else {
+                    perform_search(app);
+                }
+            }
+            Key::Backspace if app.search_results.is_some() => {
+                app.search_query.pop();
+                if app.search_query.len() == 0 {
+                    app.search_results.take();
+                } else {
+                    perform_search(app);
+                }
+            }
+            Key::Char(c) if app.search_results.is_some() => {
+                app.search_query.push(*c);
+                perform_search(app);
+            }
+            Key::Backspace => {
+                app.search_query.pop();
+            }
+            Key::Char(c) => {
+                app.search_query.push(*c);
+            }
+            Key::Up => {
+                if let Some(search_results) = app.search_results.as_mut() {
+                    app.search_idx = if app.search_idx > 0 {
+                        app.search_idx - 1
+                    } else {
+                        search_results.len() - 1
+                    };
+                    app.log_scroll = search_results[app.search_idx].saturating_sub(10);
+                } else {
+                    app.auto_scroll = false;
+                    app.log_scroll = app.log_scroll.saturating_sub(1);
+                }
+            }
+            Key::ShiftUp => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_sub(1);
+            }
+            Key::Down => {
+                if let Some(search_results) = app.search_results.as_mut() {
+                    app.search_idx = if app.search_idx + 1 < search_results.len() {
+                        app.search_idx + 1
+                    } else {
+                        0
+                    };
+                    app.log_scroll = search_results[app.search_idx].saturating_sub(10);
+                } else {
+                    app.auto_scroll = false;
+                    app.log_scroll = app.log_scroll.saturating_add(1);
+                }
+            }
+            Key::ShiftDown => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_add(1);
+            }
+            Key::PageUp => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_sub(20);
+            }
+            Key::PageDown => {
+                app.auto_scroll = false;
+                app.log_scroll = app.log_scroll.saturating_add(20);
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn kill_everything() {
+    let pid = std::process::id();
+    Command::new("bash")
+        .arg("-c")
+        .arg(KILL_ALL_PID.replace("$PID", &pid.to_string()))
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .spawn()
+        .expect("unable to spawn kill");
+}
+
+fn handle_prompt_input<'a>(
+    event: &Event,
+    app: &'a mut TuiApp,
+) -> Option<(&'a mut TuiApp, PromptOption)> {
+    if let Some(prompt) = &mut app.prompt {
+        match event {
+            Event::Key(key) => match key {
+                Key::Char('q') | Key::Ctrl('c') | Key::Esc => {
+                    // Treat as "Exit"
+                    return Some((app, PromptOption::Exit));
+                }
+                Key::Left | Key::BackTab => prompt.prev(),
+                Key::Right | Key::Char('\t') => prompt.next(),
+                Key::Char('\n') if prompt.selected == PromptOption::Inspect => {
+                    app.is_inspecting = true;
+                }
+                Key::Char('\n') => {
+                    let prompt = app.prompt.take().unwrap();
+                    return Some((app, prompt.selected));
+                }
+                _ => {}
+            },
+            _ => {} // Ignore mouse events
+        }
+    }
+    None
+}
+
+fn draw_prompt(f: &mut ratatui::Frame, prompt: &FailurePrompt, is_nonstop: bool) {
+    let title = format!(
+        " FAILURE in {} {}",
+        prompt.recipe.name,
+        if is_nonstop { "(skipped) " } else { "" }
+    );
+    let mut error_text = prompt.error.clone();
+    if error_text.len() > 300 {
+        error_text =
+            error_text[0..150].to_string() + ".." + &error_text[(error_text.len() - 150)..];
+    } else if error_text.len() > 150 {
+        error_text = error_text[0..150].to_string() + "..";
+    }
+
+    let get_style = |opt: PromptOption| {
+        if prompt.selected == opt {
+            Style::default().bg(Color::White).fg(Color::Black)
+        } else {
+            Style::default()
+        }
+    };
+
+    let buttons = if is_nonstop {
+        vec![
+            Span::styled(" [Skip] ", get_style(PromptOption::Skip)),
+            Span::raw("   "),
+            Span::styled(" [Exit] ", get_style(PromptOption::Exit)),
+        ]
+    } else {
+        vec![
+            Span::styled(" [Skip] ", get_style(PromptOption::Skip)),
+            Span::raw(" "),
+            Span::styled(" [Inspect] ", get_style(PromptOption::Inspect)),
+            Span::raw(" "),
+            Span::styled(" [Exit] ", get_style(PromptOption::Exit)),
+            Span::raw(" "),
+            Span::styled(" [Retry] ", get_style(PromptOption::Retry)),
+        ]
+    };
+
+    let text = vec![
+        Line::from(error_text).style(Style::default().fg(Color::Yellow)),
+        Line::from(""),
+        Line::from(buttons),
+    ];
+
+    let block = Block::default()
+        .title(Span::styled(
+            title,
+            Style::default().fg(Color::White).bg(Color::Red),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red));
+
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .alignment(ratatui::layout::Alignment::Center)
+        .wrap(Wrap { trim: true });
+
+    let area = f.area();
+    let popup_area = Rect {
+        x: area.width.saturating_sub(100) / 2, // Centered better for wider prompts
+        y: area.height / 3,
+        width: 100.min(area.width),
+        height: 10,
+    };
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(paragraph, popup_area);
+}
+
+fn spawn_log_reader<R>(
+    mut reader: R,
+    package_name: PackageName,
+    status_tx: mpsc::Sender<StatusUpdate>,
+) where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut buffer = [0; 1024];
+        loop {
+            let buf = match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => buffer[..n].to_vec(),
+                Err(e) => format!("[IO Error] {}", e).into_bytes(),
+            };
+            if status_tx
+                .send(StatusUpdate::PushLog(package_name.clone(), buf))
+                .is_err()
+            {
+                // TUI thread hung up
+                break;
+            }
+        }
+    });
+}
+
+fn setup_logger(
+    status_tx: &mpsc::Sender<StatusUpdate>,
+    name: &PackageName,
+) -> (UnixSlavePty, std::io::PipeWriter) {
+    let (pty_reader, log_reader, pipes) = setup_pty();
+
+    spawn_log_reader(pty_reader, name.clone(), status_tx.clone());
+    spawn_log_reader(log_reader, name.clone(), status_tx.clone());
+    pipes
+}
+
+#[derive(PartialEq, Clone, Copy)]
+#[repr(u32)]
+enum PromptOption {
+    Retry = 2,
+    Skip,
+    Exit,
+    Inspect,
+}
+
+struct FailurePrompt {
+    recipe: CookRecipe,
+    error: String,
+    selected: PromptOption,
+}
+
+impl FailurePrompt {
+    fn new(recipe: CookRecipe, error: String) -> Self {
+        Self {
+            recipe,
+            error,
+            selected: PromptOption::Exit,
+        }
+    }
+
+    fn next(&mut self) {
+        self.selected = match self.selected {
+            PromptOption::Retry => PromptOption::Skip,
+            PromptOption::Skip => PromptOption::Inspect,
+            PromptOption::Inspect => PromptOption::Exit,
+            PromptOption::Exit => PromptOption::Retry,
+        }
+    }
+
+    fn prev(&mut self) {
+        self.selected = match self.selected {
+            PromptOption::Retry => PromptOption::Exit,
+            PromptOption::Skip => PromptOption::Retry,
+            PromptOption::Inspect => PromptOption::Skip,
+            PromptOption::Exit => PromptOption::Inspect,
+        }
+    }
+}
+
+macro_rules! bail_options_err {
+    ($($arg:tt)*) => {
+        return Err(cookbook::Error::Options(format!($($arg)*)))
+    };
+}
+
+use bail_options_err;

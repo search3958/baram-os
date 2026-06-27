@@ -1,0 +1,15 @@
+# Configuration for development
+
+include = ["desktop.toml"]
+
+# General settings
+[general]
+# Filesystem size in MiB
+filesystem_size = 20000
+# Do not prompt if settings are not defined
+prompt = false
+
+# Package settings
+[packages]
+dev-redox = {}
+hello-redox = {}

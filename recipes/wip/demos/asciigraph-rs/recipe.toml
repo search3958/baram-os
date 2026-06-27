@@ -1,0 +1,15 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/neneodonkor/asciigraph-rs"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["asciigraph-rs"]
+cargoexamples = [
+    "colored_graph",
+    "legends",
+    "rainbow",
+    "rainbow_legends",
+    "sine",
+    "x_axis",
+]

@@ -1,0 +1,11 @@
+#TODO not tested
+[source]
+git = "https://github.com/ryanoasis/nerd-fonts"
+rev = "v3.4.0"
+shallow_clone = true
+[build]
+template = "custom"
+script = """
+mkdir -pv "${COOKBOOK_STAGE}"/usr/share/fonts/Nerd
+cp -rv "${COOKBOOK_SOURCE}"/patched-fonts/* "${COOKBOOK_STAGE}"/usr/share/fonts/Nerd
+"""

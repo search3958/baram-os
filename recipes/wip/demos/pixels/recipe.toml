@@ -1,0 +1,13 @@
+#TODO webbrowser crate error
+[source]
+git = "https://github.com/parasyte/pixels"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = [
+    "conway",
+    "invaders",
+    "minimal-egui",
+    "minimal-winit",
+    "tiny-skia-winit",
+]

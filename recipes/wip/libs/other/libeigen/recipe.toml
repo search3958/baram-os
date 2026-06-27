@@ -1,0 +1,11 @@
+#TODO not compiled or tested
+# build instructions: https://gitlab.com/libeigen/eigen/-/blob/master/INSTALL?ref_type=heads
+[source]
+git = "https://gitlab.com/libeigen/eigen"
+branch = "5.0"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTING=OFF"
+]

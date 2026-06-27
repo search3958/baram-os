@@ -1,0 +1,11 @@
+#TODO x11rb, rustix and webbrowser crates error
+[source]
+git = "https://github.com/dimforge/rapier"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = [
+    "rapier-examples-2d",
+    "rapier-examples-3d",
+    "rapier-examples-3d-f64",
+]

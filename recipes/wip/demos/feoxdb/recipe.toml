@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/mehrantsi/FeOxDB"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "basic_usage",
+    "deterministic_test",
+]

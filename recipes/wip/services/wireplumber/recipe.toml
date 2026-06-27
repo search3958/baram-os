@@ -1,0 +1,12 @@
+#TODO not compiled or tested
+#TODO discover minimum dependencies from cmake log
+[source]
+git = "https://gitlab.freedesktop.org/pipewire/wireplumber"
+rev = "0.5.13"
+shallow_clone = true
+[build]
+template = "meson"
+mesonflags = [
+    "-Dtests=false",
+    "-Ddbus-tests=false",
+]

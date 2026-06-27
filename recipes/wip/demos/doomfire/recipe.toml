@@ -1,0 +1,9 @@
+#TODO discover how to build the "doomfire-minifb" example
+[source]
+git = "https://github.com/r-marques/doomfire"
+shallow_clone = true
+[build]
+template = "cargo"
+cargoexamples = [
+    "doomfire-minifb",
+]

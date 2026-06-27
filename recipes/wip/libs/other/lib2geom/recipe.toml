@@ -1,0 +1,14 @@
+#TODO not compiled or tested
+# build instructions: https://gitlab.com/inkscape/lib2geom#building
+[source]
+git = "https://gitlab.com/inkscape/lib2geom"
+branch = "1.4.x"
+shallow_clone = true
+[build]
+template = "cmake"
+dependencies = [
+    "boost",
+    "libgsl",
+    "glib",
+    "cairo",
+]

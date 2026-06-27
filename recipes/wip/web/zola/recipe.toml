@@ -1,0 +1,11 @@
+#TODO compiled but not tested yet
+[source]
+git = "https://github.com/getzola/zola"
+shallow_clone = true
+rev = "ffb8327"
+patches = [
+    "redox.patch"
+]
+
+[build]
+template = "cargo"

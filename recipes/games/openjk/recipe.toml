@@ -1,0 +1,30 @@
+[source]
+git = "https://github.com/jackpot51/OpenJK"
+upstream = "https://github.com/JACoders/OpenJK.git"
+
+[build]
+template = "custom"
+dependencies = [
+    "libjpeg",
+    "liborbital",
+    "libpng",
+    "mesa",
+    "sdl2",
+    "zlib",
+]
+script = """
+DYNAMIC_INIT
+export CPPFLAGS="${CPPFLAGS} -I${COOKBOOK_SYSROOT}/include/SDL2"
+COOKBOOK_CMAKE_FLAGS+=(
+    -DJPEG_INCLUDE_DIR="${COOKBOOK_SYSROOT}/include"
+    -DJPEG_LIBRARY="-ljpeg"
+    -DPNG_PNG_INCLUDE_DIR="${COOKBOOK_SYSROOT}/include"
+    -DPNG_LIBRARY="-lpng"
+    -DSDL2_LIBRARIES="-lSDL2 -lorbital $("${TARGET}-pkg-config" --libs osmesa)"
+    -DZLIB_INCLUDE_DIR="${COOKBOOK_SYSROOT}/include"
+    -DZLIB_LIBRARY="-lz"
+)
+cookbook_cmake
+mkdir -pv "${COOKBOOK_STAGE}/usr/games/JediAcademy"
+cp -v openjk_sp.x86_64 "${COOKBOOK_STAGE}/usr/games/JediAcademy"
+"""

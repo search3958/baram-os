@@ -1,0 +1,7 @@
+#TODO camino crate error
+[source]
+git = "https://github.com/rust-secure-code/cargo-auditable"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["cargo-auditable"]

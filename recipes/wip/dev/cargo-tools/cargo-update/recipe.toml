@@ -1,0 +1,12 @@
+#TODO compilation error
+[source]
+git = "https://github.com/nabijaczleweli/cargo-update"
+shallow_clone = true
+[build]
+template = "cargo"
+dependencies = [
+    "curl",
+    "openssl3",
+    "libssh2",
+    "libgit2",
+]

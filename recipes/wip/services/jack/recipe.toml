@@ -1,0 +1,8 @@
+#TODO missing cross-compilation script for waf
+#TODO determine minimum dependencies
+[source]
+git = "https://github.com/jackaudio/jack2"
+rev = "v1.9.22"
+shallow_clone = true
+[build]
+template = "custom"

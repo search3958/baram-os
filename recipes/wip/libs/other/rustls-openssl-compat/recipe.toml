@@ -1,0 +1,6 @@
+#TODO missing script for gnu make
+[source]
+git = "https://github.com/rustls/rustls-openssl-compat"
+shallow_clone = true
+[build]
+template = "custom"

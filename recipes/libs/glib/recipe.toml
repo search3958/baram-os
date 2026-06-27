@@ -1,0 +1,35 @@
+[source]
+tar = "https://download.gnome.org/sources/glib/2.87/glib-2.87.0.tar.xz"
+blake3 = "26b77ae24bc02f85d1c6742fe601167b056085f117cda70da7b805cefa6195e9"
+patches = [
+    "redox.patch",
+]
+
+[build]
+template = "custom"
+dependencies = [
+    "gettext",
+    "libffi",
+    "libiconv",
+    "libinotify-stub",
+    "pcre2",
+    "zlib",
+]
+script = """
+DYNAMIC_INIT
+export CFLAGS="$CFLAGS -I$COOKBOOK_SYSROOT/include/inotify"
+export LDFLAGS="$LDFLAGS -linotify"
+LIBRARY=shared
+if [ "${COOKBOOK_DYNAMIC}" != "1" ]; then
+    LIBRARY=static
+fi
+cookbook_meson \
+    -Ddefault_library=$LIBRARY \
+    -Dxattr=false \
+    -Dtests=false \
+    -Dfile_monitor_backend=inotify
+
+if [ "${COOKBOOK_DYNAMIC}" != "1" ]; then
+    sed -i 's/^Libs:.*$/& -linotify/' "${COOKBOOK_STAGE}/usr/lib/pkgconfig/gio-2.0.pc"
+fi
+"""

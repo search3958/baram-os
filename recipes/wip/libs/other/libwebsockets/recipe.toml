@@ -1,0 +1,13 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/warmcat/libwebsockets"
+branch = "v4.5-stable"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DLWS_WITH_DISTRO_RECOMMENDED=ON"
+]
+dependencies = [
+    "openssl3",
+]

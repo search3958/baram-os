@@ -1,0 +1,10 @@
+#TODO not compiled or tested
+[source]
+tar = "https://dist.torproject.org/tor-0.4.8.9.tar.gz"
+[build]
+template = "configure"
+dependencies = [
+    "libevent",
+    "openssl3",
+    "zlib",
+]

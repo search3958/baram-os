@@ -1,0 +1,22 @@
+#TODO compiled but not tested
+[source]
+git = "https://github.com/orhun/ratzilla"
+shallow_clone = true
+[build]
+template = "custom"
+script = """
+DYNAMIC_INIT
+COOKBOOK_CARGO_FLAGS=() # remove --locked
+COOKBOOK_CARGO_PATH="examples/animations" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/canvas_stress_test" bin_name="canvas-stress-test" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/canvas_waves" bin_name="canvas-waves" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/colors_rgb" bin_name="color-rgb" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/demo" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/demo2" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/minimal" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/pong" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/text_area" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/user_input" bin_name="user-input" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/website" cookbook_cargo_build
+COOKBOOK_CARGO_PATH="examples/world_map" bin_name="world-map" cookbook_cargo_build
+"""

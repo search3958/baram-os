@@ -1,0 +1,14 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/libgit2/libgit2#building-libgit2---using-cmake
+[source]
+git = "https://github.com/libgit2/libgit2"
+rev = "v1.9.2"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DBUILD_TESTS=OFF"
+]
+dependencies = [
+    "openssl3",
+]

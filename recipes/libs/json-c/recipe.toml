@@ -1,0 +1,8 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/json-c/json-c#build-instructions--
+[source]
+git = "https://github.com/json-c/json-c"
+branch = "json-c-0.18"
+shallow_clone = true
+[build]
+template = "cmake"

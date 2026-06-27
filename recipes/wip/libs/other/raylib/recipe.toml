@@ -1,0 +1,16 @@
+#TODO not compiled or tested
+# build instructions: https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux
+[source]
+git = "https://github.com/raysan5/raylib"
+rev = "5.5"
+shallow_clone = true
+[build]
+template = "cmake"
+cmakeflags = [
+    "-DPLATFORM=SDL"
+]
+dependencies = [
+    "sdl2"
+#    "mesa",
+#    "libxkbcommon",
+]

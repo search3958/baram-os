@@ -1,0 +1,16 @@
+#TODO not compiled or tested
+[source]
+git = "https://github.com/upscayl/upscayl-ncnn"
+rev = "d02fa88e078e7109fd689932453362430144014d"
+shallow_clone = true
+[build]
+template = "custom"
+dependencies = [
+    "libvulkan",
+    "openmp",
+]
+script = """
+COOKBOOK_SOURCE="${COOKBOOK_SOURCE}/src"
+DYNAMIC_INIT
+cookbook_cmake
+"""

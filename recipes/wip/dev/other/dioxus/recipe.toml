@@ -1,0 +1,11 @@
+#TODO compilation error
+#TODO need to install the bindgen-cli build tool from cargo: cargo install --force --locked bindgen-cli
+[source]
+git = "https://github.com/DioxusLabs/dioxus"
+shallow_clone = true
+[build]
+template = "cargo"
+cargopackages = ["dioxus-cli"]
+dependencies = [
+    "openssl3",
+]
