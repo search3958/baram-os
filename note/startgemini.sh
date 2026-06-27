@@ -1,1 +1,0 @@
-gemini --approval-mode yolo --allowed-tools "*"
