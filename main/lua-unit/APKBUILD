@@ -1,0 +1,42 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=lua-unit
+_pkgname=LUAUNIT
+pkgver=3.4
+_pkgver=${pkgver/./_}
+pkgrel=1
+pkgdesc="Unit-testing framework for Lua"
+url="https://github.com/bluebird75/luaunit"
+arch="noarch"
+license="BSD-2-Clause"
+depends="lua5.2"
+makedepends="python3"
+options="!check" # test suite suitable for Windows only
+source="https://github.com/bluebird75/luaunit/archive/${_pkgname}_V$_pkgver.tar.gz"
+builddir="$srcdir"/${pkgname/-/}-${_pkgname}_V$_pkgver
+
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+for _v in $_luaversions; do
+	makedepends="$makedepends lua$_v-dev"
+	subpackages="$subpackages lua$_v-${pkgname#lua-}:_subpackage"
+done
+
+check() {
+	python3 doit.py runtests
+}
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_subpackage() {
+	local lver="${subpkgname:3:3}"
+	pkgdesc="$pkgdesc (for Lua $lver)"
+	depends="lua$lver"
+	install_if="$pkgname=$pkgver-r$pkgrel lua$lver"
+	install -m644 -D "$builddir"/luaunit.lua \
+		"$subpkgdir"/usr/share/lua/$lver/luaunit.lua
+}
+
+sha512sums="
+a7440b730d60438d5de6887bee116b4661ce5667c911a1acb3600ccad75db90a4a164e87b9253d9ebfa836738ed3c83bcf122161c4ef4fe982671ce993e2a83d  LUAUNIT_V3_4.tar.gz
+"

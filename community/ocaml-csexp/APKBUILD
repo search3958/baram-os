@@ -1,0 +1,81 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Maintainer: rubicon <rubicon@mailo.com>
+pkgname=ocaml-csexp
+pkgver=1.5.1
+pkgrel=5
+pkgdesc="Parsing and printing of S-expressions in Canonical form"
+url="https://github.com/ocaml-dune/csexp"
+arch="all !riscv64 !loongarch64" # ocaml
+license="MIT"
+depends="ocaml-runtime"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="dune ocaml ocaml-findlib ocamlbuild"
+options="!check"	# requires ppx_expect
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocaml-dune/csexp/archive/$pkgver.tar.gz"
+builddir="$srcdir/csexp-$pkgver"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build @install
+}
+
+check() {
+	dune runtest
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml
+
+	# There's just a readme and changelog.
+	rm -Rf "$pkgdir"/usr/doc
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+b451f380786fda53998f77b1509422d58bb5a51518595e329f625fbf0ca67e597be0c9935de77a10a65216cb4b9ec91579ad51bdeee536795e142e014433d46b  ocaml-csexp-1.5.1.tar.gz
+"

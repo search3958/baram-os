@@ -1,0 +1,29 @@
+# Maintainer: Donoban <donoban@riseup.net>
+pkgname=py3-stem
+pkgver=1.8.2
+pkgrel=2
+pkgdesc="Python controller library that allows applications to interact with Tor"
+url="https://stem.torproject.org/"
+arch="noarch"
+license="LGPL-3.0-or-later"
+depends="python3"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/s/stem/stem-$pkgver.tar.gz"
+builddir="$srcdir/stem-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py check
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+f054bbc9a61e04fb7e3b7d1534803b938b855c29795471953661f8fd9c0a5196fe1f9ccfd01e5b3256ea42893a7d57fda34fa54932012e345f74bb3303ff98c5  stem-1.8.2.tar.gz
+"

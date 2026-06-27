@@ -1,0 +1,128 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=dune
+pkgver=3.22.2
+pkgrel=2
+pkgdesc="Composable build system for OCaml (formerly Jbuilder)"
+url="https://dune.build/"
+arch="all"
+license="MIT"
+checkdepends="bash"
+makedepends="ocaml"
+provides="jbuilder=$pkgver-r$pkgrel"
+subpackages="$pkgname-doc $pkgname-emacs::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocaml/dune/archive/$pkgver.tar.gz"
+options="!check"  # FIXME requires ocaml-menhir
+
+# When enabling dune-configurator for riscv64,
+# create an OCaml 5 variant of ocaml4-abuild-find.
+_configurator="dune-configurator"
+_xdg="ocaml-xdg"
+_build_info="dune-build-info"
+
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+	riscv64|loongarch64)
+		_configurator=""
+		makedepends="${makedepends//ocaml/ocaml5}"
+		;;
+esac
+
+subpackages="$subpackages $_configurator $_xdg:xdg $_build_info:build_info"
+
+prepare() {
+	default_prepare
+
+	# This allows 'dune --version' to output the correct version instead of "n/a"
+	sed -i "/^(name dune)/a (version $pkgver)" dune-project
+	# This enables dune-configurator to use the vendored csexp module, avoiding a circular dep
+	cp -R vendor/csexp otherlibs/configurator/
+	echo '(library (name csexp) (public_name dune-configurator.csexp))' \
+		> otherlibs/configurator/csexp/src/dune
+}
+
+build() {
+	./configure --libdir="$(ocamlc -where)" \
+		--bindir="/usr/bin" --sbindir="/usr/sbin" --etcdir="/etc" \
+		--mandir="/usr/share/man" --docdir="/usr/share/doc" \
+		--datadir="/usr/share"
+
+	ocaml boot/bootstrap.ml --verbose
+	./dune.exe build \
+		-p dune,dune-configurator,xdg,dune-build-info \
+		--profile dune-bootstrap --verbose
+}
+
+check() {
+	./dune.exe runtest --verbose
+}
+
+package() {
+	./dune.exe install \
+		--destdir="$pkgdir" \
+		dune $_configurator xdg dune-build-info
+
+	# Duplicate of usr/share/doc/dune
+	if [ -n "$_configurator" ]; then
+		rm -R "$pkgdir"/usr/share/doc/dune-configurator
+	fi
+}
+
+emacs() {
+	depends="$pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel emacs"
+	pkgdesc="Emacs plugins for $pkgname"
+
+	amove usr/share/emacs
+}
+
+configurator() {
+	pkgdesc="System config helper for the Dune OCaml build system"
+	provides="$subpkgname-dev=$pkgver-r$pkgrel"
+
+	amove usr/lib/ocaml/"$subpkgname"
+}
+
+xdg() {
+	pkgdesc="XDG Base Directory Specification support for OCaml"
+	provides="$subpkgname-dev=$pkgver-r$pkgrel"
+
+	amove usr/lib/ocaml/xdg
+}
+
+build_info() {
+	pkgdesc="Embed build information inside executables"
+	provides="$subpkgname-dev=$pkgver-r$pkgrel"
+
+	amove usr/lib/ocaml/dune-build-info
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	makedepends_has "ocaml5" && return 0
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	makedepends_has "ocaml5" && return 0
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+1cdde88dcb0d738287c08afa2870cdc1a9850952b5fb49c834a20f90335b71a8ec129a01639b5c56926b9bcbd716aebecfe6d33d2440839850ebacc81615308c  dune-3.22.2.tar.gz
+"

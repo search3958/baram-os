@@ -1,0 +1,41 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-dnslib
+pkgver=0.9.26
+pkgrel=1
+pkgdesc="simple library to encode/decode DNS wire-format packets"
+url="https://github.com/paulc/dnslib"
+arch="noarch"
+license="BSD-2-Clause"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/d/dnslib/dnslib-$pkgver.tar.gz"
+builddir="$srcdir/dnslib-$pkgver"
+
+replaces=py-dnslib # Backwards compatibility
+provides=py-dnslib=$pkgver-r$pkgrel # Backwards compatibility
+
+# secfixes:
+#   0.9.19-r0:
+#     - CVE-2022-22846
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 dnslib/test_decode.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b11095ec026fc55da65493c2a07c97395f01480eae7b87a391109a96ca592860f2c236829b174f3a64de54c2d0a5657a1c624d9c6b61d71629807e0c15678bb1  dnslib-0.9.26.tar.gz
+"

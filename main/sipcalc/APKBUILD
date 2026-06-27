@@ -1,0 +1,26 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: ScrumpyJack <scrumpyjack@st.ilet.to>
+pkgname=sipcalc
+pkgver=1.1.6
+pkgrel=4
+pkgdesc="Advanced console based ip subnet calculator"
+url="https://www.routemeister.net/projects/sipcalc/"
+arch="all"
+license="BSD-3-Clause"
+options="!check" # no tests
+subpackages="$pkgname-doc"
+source="https://www.routemeister.net/projects/sipcalc/files/sipcalc-$pkgver.tar.gz"
+
+build() {
+	./configure
+	make
+}
+
+package() {
+	mkdir -p "$pkgdir/usr/bin" "$pkgdir/usr/lib" "$pkgdir/usr/share/man/man1"
+	make prefix="$pkgdir"/usr MANDIR="$pkgdir"/usr/share/man/man1 install
+}
+
+sha512sums="
+9d2047a6fb6ef177d455f44abea19bab7d0131b16eb2444b2b074e94e776854fa74084ab625d2be9b64d136979ede71722c2e24dca12ff54e4a5bb02f947570e  sipcalc-1.1.6.tar.gz
+"

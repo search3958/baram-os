@@ -1,0 +1,67 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=glslang
+pkgver=1.4.341.0
+pkgrel=0
+pkgdesc="Khronos reference front-end for GLSL, ESSL, and sample SPIR-V generator"
+url="https://github.com/KhronosGroup/glslang"
+arch="all"
+license="BSD-3-Clause AND BSD-2-Clause AND MIT AND Apache-2.0 AND GPL-3.0-or-later"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="cmake samurai python3 bison spirv-tools-dev"
+checkdepends="bash gtest-dev"
+subpackages="$pkgname-static $pkgname-libs $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/KhronosGroup/glslang/archive/refs/tags/vulkan-sdk-$pkgver.tar.gz"
+builddir="$srcdir/glslang-vulkan-sdk-$pkgver"
+
+case "$CARCH" in
+arm*) options="$options !check" ;; # array indices in error messages differ
+s390x) options="$options !check" ;; # testsuite seems to fail on big endian
+esac
+
+build() {
+	local cmake_crossopts=
+	if [ "$CBUILD" != "$CHOST" ]; then
+		cmake_crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build-shared -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DBUILD_EXTERNAL=OFF \
+		-DBUILD_SHARED_LIBS=ON \
+		-DALLOW_EXTERNAL_SPIRV_TOOLS=YES \
+		-DGLSLANG_TESTS="$(want_check && echo ON || echo OFF)" \
+		$cmake_crossopts
+	cmake --build build-shared
+
+	cmake -B build-static -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DBUILD_EXTERNAL=OFF \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DALLOW_EXTERNAL_SPIRV_TOOLS=YES \
+		-DGLSLANG_TESTS="$(want_check && echo ON || echo OFF)" \
+		$cmake_crossopts
+	cmake --build build-static
+}
+
+check() {
+	msg "Testing shared version of glslang"
+	ctest --test-dir build-shared
+
+	msg "Testing static version of glslang"
+	ctest --test-dir build-static
+}
+
+package() {
+	# installing static first lets shared overwrite the executables so they
+	# themselves are not statically linking the library
+	DESTDIR="$pkgdir" cmake --install build-static
+	DESTDIR="$pkgdir" cmake --install build-shared
+}
+
+sha512sums="
+f243830836f0ba6f13d6e2ccb48cee3c41f8478e0315b190f3a8e607d3723e7e687102126131a7ecc6eed5899b9de1b69c76f6f795f0f13703931e5041c47906  glslang-1.4.341.0.tar.gz
+"

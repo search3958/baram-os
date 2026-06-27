@@ -1,5 +1,0 @@
-#TODO tabox crate error
-[source]
-git = "https://github.com/edomora97/task-maker-rust"
-[build]
-template = "cargo"

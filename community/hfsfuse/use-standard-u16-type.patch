@@ -1,0 +1,13 @@
+diff --git a/src/hfsfuse.c b/src/hfsfuse.c
+index 964f63f..7434ce0 100644
+--- a/src/hfsfuse.c
++++ b/src/hfsfuse.c
+@@ -236,7 +236,7 @@ static int hfsfuse_statx(const char* path, int flags, int mask, struct statx* s
+ 	stx->stx_ctime.tv_sec = HFSTIMETOEPOCH(rec.file.date_attrib_mod);
+ 	stx->stx_mtime.tv_sec = HFSTIMETOEPOCH(rec.file.date_content_mod);
+ 
+-	__u16 mode_mask = 0;
++	uint16_t mode_mask = 0;
+ 	if(mask & STATX_TYPE)
+ 		mode_mask |= S_IFMT;
+ 	if(mask & STATX_MODE)

@@ -1,0 +1,79 @@
+# Contributor: Dhruvin Gandhi <contact@dhru.vin>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=reuse
+pkgver=6.2.0
+pkgrel=1
+pkgdesc="Tool for compliance with the REUSE recommendations"
+url="https://reuse.software"
+arch="noarch"
+license="Apache-2.0 AND CC-BY-SA-4.0 AND CC0-1.0 AND GPL-3.0-or-later"
+depends="
+	py3-attrs
+	py3-boolean.py
+	py3-click
+	py3-debian
+	py3-jinja2
+	py3-license-expression
+	py3-tomlkit
+	"
+makedepends="
+	bash
+	poetry
+	py3-gpep517
+	py3-installer
+	py3-myst-parser
+	py3-poetry-core
+	py3-pbr
+	py3-sphinx
+	py3-sphinxcontrib-apidoc
+	"
+checkdepends="py3-pytest py3-pytest-xdist py3-pytest-cov py3-freezegun"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-doc
+	$pkgname-fish-completion
+	$pkgname-pyc
+	$pkgname-zsh-completion
+	"
+source="https://files.pythonhosted.org/packages/source/r/reuse/reuse-$pkgver.tar.gz
+	skip-failing-tests.patch
+	0001-Fix-wrong-endianness-for-encodings.patch
+	"
+options="net" # docs require intersphinx
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+	python3 -m venv --system-site-packages --clear --without-pip venv
+	./venv/bin/python3 -m installer .dist/reuse*.whl
+	_REUSE_COMPLETE=bash_source ./venv/bin/reuse >reuse.bash
+	_REUSE_COMPLETE=fish_source ./venv/bin/reuse >reuse.fish
+	_REUSE_COMPLETE=zsh_source ./venv/bin/reuse >reuse.zsh
+	PYTHONPATH="$builddir/src" make -C docs man
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# When running in $builddir, pytest detects modules inside of src/,
+	# which leads to errors due to duplicate module definitions.
+	cd tests
+	"$builddir"/.testenv/bin/python3 -m pytest
+
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/reuse*.whl
+	install -Dm644 reuse.bash "$pkgdir"/usr/share/bash-completion/completions/reuse
+	install -Dm644 reuse.fish "$pkgdir"/usr/share/fish/vendor_completions.d/reuse.fish
+	install -Dm644 reuse.zsh "$pkgdir"/usr/share/zsh/site-functions/_reuse
+	install -Dm644 ./docs/_build/man/*.1 -t "$pkgdir/usr/share/man/man1"
+}
+
+sha512sums="
+b6409ae761749ff25ba096ec8fc07491fbf0ae14ccbdcd1ebfb5c42157f0fd2a8d9aaed166fbf05f14cf4f61e16e6b9a6dfefa904f81ada1b8c5375258a2b143  reuse-6.2.0.tar.gz
+ac8038203ce522b027b2435d1beea05ea2b813eb2e598fc237e5b8fce826e40cf0266f408cbafcdd9c3f6af6fad56e59cae796b42c0e85a578d83e2d11abc2f8  skip-failing-tests.patch
+6caef8ec9862c6320f08e8d1575ac0a31a82f284f79f464d915be32603a12d724867f119d4b4dd434b6dc778e149d5b1bbff37170cb12ac64af1b0e38c0c8c9b  0001-Fix-wrong-endianness-for-encodings.patch
+"

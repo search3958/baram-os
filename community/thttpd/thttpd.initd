@@ -1,0 +1,51 @@
+#!/sbin/openrc-run
+
+name=thttpd
+description="tiny/turbo/throttling HTTP server"
+
+extra_started_commands="reopen stats"
+description_reopen="Reopen log file"
+description_stats="Dump statistics to syslog"
+
+: ${cfgfile:=/etc/$RC_SVCNAME.conf}
+
+command=/usr/sbin/thttpd
+command_args="-D -C $cfgfile $command_args"
+command_background=yes
+pidfile="/run/$RC_SVCNAME.pid"
+
+required_files="$cfgfile"
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	# This works only in Alpine's thttpd.
+	if ! yesno "${log_debug:-yes}"; then
+		export THTTPD_LOG_DEBUG=0
+	fi
+}
+
+reopen() {
+	ebegin "Reopening $name log file"
+
+	if [ "$supervisor" ]; then
+		$supervisor "$RC_SVCNAME" --signal HUP
+	else
+		start-stop-daemon --signal HUP --pidfile "$pidfile"
+	fi
+	eend $?
+}
+
+stats() {
+	ebegin "Dump $name statistics to syslog"
+
+	if [ "$supervisor" ]; then
+		$supervisor "$RC_SVCNAME" --signal USR2
+	else
+		start-stop-daemon --signal USR2 --pidfile "$pidfile"
+	fi
+	eend $?
+}

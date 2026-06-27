@@ -1,0 +1,46 @@
+# Contributor: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+# Maintainer: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+pkgname=py3-pyo
+_pkgname=pyo
+pkgver=1.0.6
+pkgrel=2
+pkgdesc="dedicated Python module for digital signal processing"
+url="http://ajaxsoundstudio.com/software/pyo/"
+arch="all"
+license="LGPL-3.0-or-later"
+options="!check"
+depends="python3 python3-tkinter"
+makedepends="
+	jack-dev
+	libsndfile-dev
+	portaudio-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/belangeo/pyo/archive/$pkgver.tar.gz
+	portaudio-only.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	# FIXME: heavily relies on unspecified parameter lists which are no longer supported in C23
+	# (https://github.com/belangeo/pyo/issues/288)
+	export CFLAGS=-std=gnu17
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--config-json '{"--build-option": ["--minimal", "--use-jack"]}' \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+277ec569501ac72a42cfe6700ada27bd2c6614d009938c8cf1df16a23bc637cbd27884f7a2e2784b482850c6623b77585dded64e7b44253d15d7776d77da8ad3  py3-pyo-1.0.6.tar.gz
+105a93e4eb70caef709d248ae1eb2e8451b04d79fd7ec4fbd5c32c9da04317819114a31a1a215703cf309b21fed0009b8b11c313a1f66a8f623363ee3896b370  portaudio-only.patch
+"

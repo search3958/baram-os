@@ -1,0 +1,36 @@
+# Contributor: Peter Bui <pnutzh4x0r@gmail.com>
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=py3-feedparser
+pkgver=6.0.12
+pkgrel=2
+_pkgname=feedparser
+pkgdesc="Python3 feed parser for RSS and Atom"
+options="!check" # Tests are py2 only
+url="https://github.com/kurtmckee/feedparser"
+arch="noarch"
+license="BSD-2-Clause"
+depends="py3-sgmllib3k"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-feedparser" # Backwards compatibility
+provides="py-feedparser=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+15dadfe1122193c75ebe0e80479b4bf143d0e4fdedcaebc81dd421beb198903e6ce9e867e19a66e019be731d585e213ff66128bbbef72408a3c8163d484af0b6  feedparser-6.0.12.tar.gz
+"

@@ -1,0 +1,41 @@
+# Contributor: Sergei Lukin <sergej.lukin@gmail.com>
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=chicken-bootstrap
+pkgver=5.4.0
+pkgrel=0
+pkgdesc="Chicken version bootstrapped from pre-compiled C sources"
+url="https://call-cc.org/"
+arch="all"
+license="BSD-3-Clause"
+depends="gcc libc-dev"
+source="https://code.call-cc.org/releases/$pkgver/chicken-$pkgver.tar.gz"
+options="!check" # we run those on community/chicken
+builddir="$srcdir/chicken-$pkgver"
+
+# CHICKEN itself is written in CHICKEN. In order to bootstrap the compiler
+# upstream provides release tarballs which include pre-compiled C files.
+# However, occasionally we need to backport patches from upstream that
+# modify the original Scheme (case in point CVE-2022-45145). In this
+# case, we need to be able to compile CHICKEN from scratch without
+# relying on the pre-compiled C files. For this reason, we package
+# chicken-bootstrap (compiled from the pre-compiled C files) and chicken
+# (which is potentially patched and is compiled from the Scheme sources).
+
+build() {
+	make PROGRAM_SUFFIX=-bootstrap PREFIX=/usr
+}
+
+package() {
+	# chicken does not support parallel installs.
+	make -j1 PROGRAM_SUFFIX=-bootstrap PREFIX=/usr DESTDIR="$pkgdir" install
+
+	# Remove files that we don't need in a bootstrap package.
+	rm -r "$pkgdir"/usr/share/$pkgname \
+		"$pkgdir"/usr/share/man \
+		"$pkgdir"/usr/bin/feathers-bootstrap
+}
+
+sha512sums="
+21f5dc4abcfce7be2d8eb6728061728a4a695ac88860e94e114c2bf2839a8a47bbdc368330913edc83d5b81b6b2499c608e47e6659fa7651c82d133abb7e4e3c  chicken-5.4.0.tar.gz
+"

@@ -1,0 +1,47 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-sphinx-autobuild
+pkgver=2025.08.25
+pkgrel=1
+pkgdesc="Watch a Sphinx directory and rebuild the documentation when a change is detected"
+url="https://github.com/executablebooks/sphinx-autobuild"
+arch="noarch"
+license="MIT"
+depends="
+	py3-colorama
+	py3-livereload
+	py3-sphinx
+	py3-starlette
+	py3-tornado
+	py3-watchfiles
+	uvicorn
+	"
+makedepends="
+	py3-gpep517
+	py3-flit-core
+	"
+checkdepends="py3-pytest py3-starlette py3-pytest-httpx uvicorn py3-watchfiles"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sphinx-doc/sphinx-autobuild/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/sphinx-autobuild-$pkgver
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages test-env
+	test-env/bin/python3 -m installer .dist/*.whl
+	test-env/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+223874ae250e04c36885b92c48fa5807b815faf7a3a0fce4021227400ce1cd1442e1b6032b6188c45f9dc5884b0f296ea5ace1909c909141cc646ab4417b1251  py3-sphinx-autobuild-2025.08.25.tar.gz
+"

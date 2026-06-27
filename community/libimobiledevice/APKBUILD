@@ -1,0 +1,39 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+maintainer="Krassy Boykinov <kboykinov@teamcentrixx.com>"
+pkgname=libimobiledevice
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="Library that talks iPhone and iPod Touch protocols on Linux"
+url="https://libimobiledevice.org"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="openssl-dev>3 libusbmuxd-dev libplist-dev libtatsu-dev"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-progs"
+source="https://github.com/libimobiledevice/libimobiledevice/releases/download/$pkgver/libimobiledevice-$pkgver.tar.bz2"
+
+build() {
+	export CFLAGS="$CFLAGS -Wno-error=int-conversion"
+	./configure \
+		--prefix=/usr \
+		--disable-static \
+		--without-cython
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+progs() {
+	pkgdesc="Tools that talks iPhone and iPod Touch devices' protocols on Linux"
+	depends=""
+	amove usr/bin
+}
+
+sha512sums="
+b71ad9ce9c79e13e5b0e39f451770399bf71837581ab4a5e5c695f3c33511b45df79e8ad58d71bde28a97c3f032b64669e078e6d1417f3db006f4afd74c48c89  libimobiledevice-1.4.0.tar.bz2
+"

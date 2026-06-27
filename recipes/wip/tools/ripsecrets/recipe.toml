@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/sirwart/ripsecrets"
-[build]
-template = "cargo"

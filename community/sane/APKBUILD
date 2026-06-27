@@ -1,0 +1,161 @@
+# Contributor: Fabio Riga <rifabio@dpersonam.me>
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=sane
+_pkgname=sane-backends
+pkgver=1.4.0
+# part of the url for the sane-backends tarball at https://gitlab.com/sane-project/backends/-/releases
+_upload_id="843c156420e211859e974f78f64c3ea3"
+pkgrel=4
+pkgdesc="Scanner Access Now Easy - universal scanner interface"
+url="http://www.sane-project.org/"
+arch="all"
+license="GPL-2.0-or-later GPL-2.0-or-later-with-sane-exception Public-Domain"
+makedepends="diffutils file libtool libusb-dev v4l-utils-dev net-snmp-dev
+	avahi-dev curl-dev libpng-dev libjpeg-turbo-dev tiff-dev libgphoto2-dev
+	poppler-dev linux-headers libieee1284-dev libxml2-dev"
+install="$pkgname-saned.pre-install $pkgname.pre-install"
+pkgusers="saned"
+pkggroups="scanner"
+_backends="abaton agfafocus apple artec artec_eplus48u as6e avision bh canon
+	canon630u canon_dr canon_pp cardscan coolscan coolscan2 coolscan3 dc25
+	dc210 dc240 dell1600n_net dmc epjitsu epson epson2 epsonds escl fujitsu
+	genesys gphoto2 gt68xx hp hp3500 hp3900 hp4200 hp5400 hp5590 hpsj5s
+	hpljm1005 hs2p ibm kodak kodakaio kvs1025 kvs20xx kvs40xx leo lexmark
+	ma1509 magicolor matsushita microtek microtek2 mustek mustek_pp mustek_usb
+	mustek_usb2 nec net niash p5 pie pieusb pixma plustek plustek_pp ricoh ricoh2
+	rts8891 s9036 sceptre sharp sm3600 sm3840 snapscan sp15c st400 stv680
+	tamarack teco1 teco2 teco3 test u12 umax umax_pp umax1220u v4l
+	xerox_mfp"
+
+case "$CARCH" in
+	x86)
+		options="$options !check"
+		_backends="$_backends qcam canon_lide70"
+		;;
+	x86_64)
+		_backends="$_backends qcam canon_lide70"
+		;;
+esac
+
+_pkgdesc_dell1600n_net="SANE backend for Dell 1600n that supports colour and monochrome scans over ethernet, usb not supported"
+for _backend in $_backends; do
+	subpackages="$subpackages $pkgname-backend-$_backend:_backend"
+done
+subpackages="$pkgname-doc $pkgname-dev $subpackages $pkgname-utils $pkgname-saned
+	$pkgname-udev::noarch $_pkgname::noarch"
+source="https://gitlab.com/-/project/429008/uploads/$_upload_id/sane-backends-$pkgver.tar.gz
+	saned.initd
+	include.patch
+	pidfile.patch
+	check.patch
+	"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+# secfixes:
+#   1.0.30-r0:
+#     - CVE-2020-12861
+#     - CVE-2020-12862
+#     - CVE-2020-12863
+#     - CVE-2020-12864
+#     - CVE-2020-12865
+#     - CVE-2020-12866
+#     - CVE-2020-12867
+
+prepare() {
+ 	default_prepare
+	update_config_guess
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--with-docdir=/usr/share/doc/$pkgname \
+		--with-usb \
+		--enable-avahi \
+		--disable-rpath \
+		--disable-locking
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	echo -n "" > "$pkgdir"/etc/$pkgname.d/dll.conf
+	install -Dm644 backend/dll.aliases "$pkgdir"/etc/$pkgname.d/dll.aliases
+
+	install -Dm644 tools/udev/lib$pkgname.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/49-$pkgname.rules
+	sed -i 's|NAME="%k", ||g' "$pkgdir"/usr/lib/udev/rules.d/49-$pkgname.rules
+}
+
+doc() {
+	default_doc
+	mkdir -p "$subpkgdir"/usr/share/licenses/$_pkgname
+	mv "$subpkgdir"/usr/share/doc/$_pkgname/LICENSE \
+		"$subpkgdir"/usr/share/licenses/$_pkgname
+}
+
+saned() {
+	local name=${subpkgname#$pkgname-}
+	pkgdesc="$pkgdesc (network scanner server)"
+	mkdir -p "$subpkgdir"/etc/$pkgname.d "$subpkgdir"/usr
+	mv "$pkgdir"/etc/$pkgname.d/$name.conf "$subpkgdir"/etc/$pkgname.d
+	mv "$pkgdir"/usr/sbin "$subpkgdir"/usr/
+	install -Dm755 "$srcdir"/$name.initd "$subpkgdir"/etc/init.d/$name
+}
+
+utils() {
+	pkgdesc="$pkgdesc (utilities)"
+	mkdir -p "$subpkgdir"/usr
+	mv "$pkgdir"/usr/bin "$subpkgdir"/usr
+	rm -fr "$pkgdir"/usr/share
+}
+
+backends() {
+	local _backend;
+	pkgdesc="$pkgdesc (metapackage)"
+	depends="$pkgname-utils $pkgname-saned"
+	for _backend in $_backends; do
+		[ "$_backend" = "test" ] && continue
+		depends="$depends $pkgname-backend-$_backend"
+	done
+	mkdir -p "$subpkgdir"
+}
+
+_backend() {
+	local name=${subpkgname#$pkgname-backend-}
+	depends="$pkgname"
+	pkgdesc=$(eval echo \$_pkgdesc_$name)
+	if [ ! "$pkgdesc" ]; then
+		# cut description from man-page
+		pkgdesc=$(tr '\n' ' ' < "$builddir"/doc/$pkgname-$name.man)
+		pkgdesc=${pkgdesc#*\- }
+		pkgdesc=${pkgdesc%% .SH *};
+	fi
+	mkdir -p "$subpkgdir"/usr/lib/$pkgname \
+		"$subpkgdir"/etc/$pkgname.d/dll.d
+	mv "$pkgdir"/usr/lib/$pkgname/lib$pkgname-$name.* \
+		"$subpkgdir"/usr/lib/$pkgname
+	echo "$name" > "$subpkgdir"/etc/$pkgname.d/dll.d/$name
+	if [ -f "$pkgdir"/etc/$pkgname.d/$name.conf ]; then
+		mv "$pkgdir"/etc/$pkgname.d/$name.conf \
+			"$subpkgdir"/etc/$pkgname.d
+	fi
+	if [ -f "$pkgdir"/usr/bin/$name ]; then
+		mkdir -p "$subpkgdir"/usr/bin
+		mv "$pkgdir"/usr/bin/$name "$subpkgdir"/usr/bin
+	fi
+}
+
+sha512sums="
+a5ec0cb9e12075be3c4d5eb445a290216c5699645bb6885845868a8323848cef3aafec30f0c380638195a0a8085a8cff4e190741e79ae8f2f70b4d71abeee572  sane-backends-1.4.0.tar.gz
+0a06eaa28b345202f2bdf8361e06f843bb7a010b7d8f80132f742672c94249c43f64031cefa161e415e2e2ab3a53b23070fb63854283f9e040f5ff79394ac7d1  saned.initd
+1779ff8beb1ba5f9238c25d819a7f0045f7e257c19b511315feb85650e445ca86450a9e1d7ff8650499d3dae808589a6c2e358d5f3f39a3f40ce4999179b86d6  include.patch
+84a8cd8cb12e596d8f8e28e6d0f3501f6cdcf151368ffc882d6e69b858b4b6fb6819eba54b4118df4c7aa07051e0175f196935076997235ce7dde77fdaa4823a  pidfile.patch
+4de6f60452c0451769f5ce41e41ca4c2867a723e0d2bf22796dc8a266359bdc8a9e9542f4ba2dc42b15bd25b1c83d2c339177796043fdbcbc9d73ad4957f723c  check.patch
+"

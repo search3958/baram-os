@@ -1,0 +1,53 @@
+# Contributor: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+# Maintainer: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+pkgname=pixi
+pkgver=0.24.2
+pkgrel=0
+pkgdesc="A package management and workflow tool"
+url="https://github.com/prefix-dev/pixi"
+# !s390x: nix crate fails to build
+# !armhf, !loongarch64: openssl fails to build
+arch="all !s390x !armhf !loongarch64"
+license="BSD-3-Clause"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	perl
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	"
+# https://github.com/prefix-dev/pixi/issues/821
+options="net !check"
+source="$pkgname-$pkgver.tar.gz::https://github.com/prefix-dev/pixi/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+	mkdir -p completions/
+}
+
+build() {
+	cargo auditable build --frozen --release
+	local _completion="target/release/$pkgname completion"
+	$_completion --shell bash > "completions/$pkgname"
+	$_completion --shell fish > "completions/$pkgname.fish"
+	$_completion --shell zsh  > "completions/_$pkgname"
+}
+
+package() {
+	install -Dm 755 "target/release/$pkgname" -t "$pkgdir/usr/bin"
+	install -Dm 644 README.md -t "$pkgdir/usr/share/doc/$pkgname"
+	install -Dm 644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+	install -Dm 664 "completions/$pkgname" -t "$pkgdir/usr/share/bash-completion/completions/"
+	install -Dm 664 "completions/$pkgname.fish" -t "$pkgdir/usr/share/fish/vendor_completions.d/"
+	install -Dm 664 "completions/_$pkgname" -t "$pkgdir/usr/share/zsh/site-functions/"
+}
+
+sha512sums="
+32cb4b90e3c2f05f4febe99e5ed3fdfcc2294bd658b6855b1d3d5e7318213dc5b5e1bc7c6216f6e620ca4cbe76422435b9db59428a907140aa2f4a0b0eebd74b  pixi-0.24.2.tar.gz
+"

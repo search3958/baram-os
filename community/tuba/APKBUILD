@@ -1,0 +1,43 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=tuba
+pkgver=0.10.3
+pkgrel=2
+pkgdesc="Browse the Fediverse"
+url="https://tuba.geopjr.dev/"
+arch="all"
+license="GPL-3.0-or-later"
+depends="glycin-image-rs"
+makedepends="
+	desktop-file-utils
+	glib-dev
+	gtk4.0-dev
+	gtksourceview5-dev
+	gspell-dev
+	json-glib-dev
+	libadwaita-dev
+	libgee-dev
+	libsecret-dev
+	libsoup3-dev
+	libxml2-dev
+	libspelling-dev
+	meson
+	vala
+	"
+subpackages="$pkgname-lang $pkgname-doc"
+options="!check"
+source="tuba-$pkgver.tar.gz::https://github.com/GeopJr/Tuba/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/Tuba-$pkgver"
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	ln -s dev.geopjr.Tuba "$pkgdir"/usr/bin/tuba
+}
+
+sha512sums="
+3b7174f27e4b91b60868411909338d806a916cd7c4c47686c56eed68dcfda283ec6ab85ce4eebd1c392aecc3205c111d54f83e59fc66274256a19b0a004491f5  tuba-0.10.3.tar.gz
+"

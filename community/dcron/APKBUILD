@@ -1,0 +1,33 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=dcron
+pkgver=4.6
+pkgrel=0
+pkgdesc="dillon's lightweight cron daemon"
+url="https://github.com/ptchinster/dcron"
+arch="all"
+license="GPL-2.0-or-later"
+options="!check" # No test suite
+subpackages="$pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ptchinster/dcron/archive/v$pkgver.tar.gz
+	$pkgname.initd
+	"
+
+build() {
+	make PREFIX=/usr \
+		CRONTAB_GROUP=wheel \
+		CRONTABS=/etc/crontabs \
+		CRONSTAMPS=/var/spool/cron/cronstamps \
+		LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm755 "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+3f0ba26e488df804a9178478fd693ea7ad4b7d5f80230690669485e80f2f148da71d81e44e1c7a7e333078623caba6e1c3a51a8cdfada96437149872b7231863  dcron-4.6.tar.gz
+ee022de36bfe01e684d548f9bc28ece7b2a20caa557ea2425984f0e7ee11fdf979b510e29646e4ffa8a10c03f605695164b28fae02c1713632c56191591039a7  dcron.initd
+"

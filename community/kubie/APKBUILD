@@ -1,0 +1,49 @@
+# Maintainer: Lauri Tirkkonen <lauri@hacktheplanet.fi>
+pkgname=kubie
+pkgver=0.27.0
+pkgrel=0
+pkgdesc="A more powerful alternative to kubectx and kubens"
+url="https://github.com/sbstp/kubie"
+# s390x: blocked by https://github.com/nix-rust/nix/pull/2678
+arch="all !s390x"
+license="Zlib"
+subpackages="$pkgname-bash-completion $pkgname-fish-completion $pkgname-zsh-completion"
+makedepends="
+	cargo
+	cargo-auditable
+	clang-dev
+	cmake
+	cmd:ninja
+	"
+options="net" # cargo
+source="v$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release --no-default-features
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m 0755 target/release/$pkgname "$pkgdir"/usr/bin/$pkgname
+
+	local bashdir="$pkgdir"/usr/share/bash-completion/completions
+	local fishdir="$pkgdir"/usr/share/fish/vendor_completions.d
+	local zshdir="$pkgdir"/usr/share/zsh/site-functions
+
+	mkdir -p "$bashdir" "$fishdir" "$zshdir"
+	"$pkgdir"/usr/bin/$pkgname generate-completion bash >"$bashdir"/$pkgname
+	"$pkgdir"/usr/bin/$pkgname generate-completion fish >"$fishdir"/$pkgname.fish
+	"$pkgdir"/usr/bin/$pkgname generate-completion zsh >"$zshdir"/_$pkgname
+}
+
+sha512sums="
+0c0b36a84a38542a404d32b76f1ebc3e561b90c23be485fe4b2876652fa8c79822203f60177eed0b3c20c17b3fd7fb870a9eb72c7b8265ca7854430735be24ed  v0.27.0.tar.gz
+"

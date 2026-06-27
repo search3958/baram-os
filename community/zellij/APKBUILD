@@ -1,0 +1,64 @@
+# Contributor: guddaff <guddaff@protonmail.com>
+# Maintainer: guddaff <guddaff@protonmail.com>
+pkgname=zellij
+pkgver=0.44.3
+pkgrel=0
+pkgdesc="Terminal multiplexer"
+url="https://zellij.dev/"
+license="MIT"
+# s390x, loongarch64 : corosensei-0.1.3 unsupported target
+arch="all !s390x !loongarch64"
+makedepends="
+	cargo
+	cargo-auditable
+	mandown
+	openssl-dev>3
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/zellij-org/zellij/archive/v$pkgver/zellij-$pkgver.tar.gz"
+options="!check" # troublesome
+
+# use system openssl
+export OPENSSL_NO_VENDOR=1
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+
+	mandown docs/MANPAGE.md > target/$pkgname.1
+
+	mkdir -p target/completions
+	for sh in bash fish zsh; do
+		target/release/$pkgname setup --generate-completion $sh \
+			> target/completions/$pkgname.$sh
+	done
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+
+	install -D -m644 target/$pkgname.1 -t "$pkgdir"/usr/share/man/man1/
+
+	install -D -m644 target/completions/$pkgname.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+
+	install -D -m644 target/completions/$pkgname.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+
+	install -D -m644 target/completions/$pkgname.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+5b5f14f8ed6ae9aea962e163b05504b8f999f004ddbf61f7ed789670e234d829b86d000385aec052d73097cbe0dfb23cff6beb191c7291b525b6e9f52f908863  zellij-0.44.3.tar.gz
+"

@@ -1,0 +1,59 @@
+# Contributor: Steve McMaster <steve@mcmaster.io>
+# Contributor: Karim Kanso <kaz.kanso@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=daq
+pkgver=3.0.19
+pkgrel=0
+pkgdesc="Data Acquisition library - packet I/O library"
+url="https://www.snort.org/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="
+	autoconf
+	automake
+	bison
+	flex
+	libdnet-dev
+	libmnl-dev
+	libnetfilter_queue-dev
+	libnfnetlink-dev
+	libpcap-dev
+	libtool
+	linux-headers
+	"
+checkdepends="cmocka-dev"
+subpackages="$pkgname-static $pkgname-dev"
+source="libdaq-$pkgver.tar.gz::https://github.com/snort3/libdaq/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/libdaq-$pkgver"
+options="!check" # requires a wrap for some glibc __functions
+
+prepare() {
+	default_prepare
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	cd "$pkgdir"
+	rm -v usr/bin/daqtest*
+}
+
+sha512sums="
+cf3f5e2abc1a7d14a44ac43606dca980a36de6df1727655e93a20d04efc666df9855cec7803d88b148129160c0c91225356820ae4ca36ac2260ef4ad6195f85a  libdaq-3.0.19.tar.gz
+"

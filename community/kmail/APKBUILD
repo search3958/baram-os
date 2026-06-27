@@ -1,0 +1,115 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kmail
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> ki18n
+# x86, s390x, riscv64 and armv7 blocked by qt6-qtwebengine
+arch="all !armhf !x86 !s390x !riscv64 !armv7"
+url="https://kontact.kde.org/components/kmail/"
+pkgdesc="Email client, supporting POP3 and IMAP mailboxes"
+license="GPL-2.0-or-later"
+# TODO: Replace gnupg with specific gnupg subpackages that kmail really needs.
+depends="
+	gnupg
+	kdepim-runtime
+	kmail-account-wizard
+	"
+makedepends="
+	akonadi-contacts-dev
+	akonadi-dev
+	akonadi-mime-dev
+	akonadi-search-dev
+	extra-cmake-modules
+	gpgme-dev
+	kbookmarks-dev
+	kcalendarcore-dev
+	kcalutils-dev
+	kcmutils-dev
+	kcodecs-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcontacts-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	kguiaddons-dev
+	ki18n-dev
+	kiconthemes-dev
+	kidentitymanagement-dev
+	kio-dev
+	kitemviews-dev
+	kjobwidgets-dev
+	kldap-dev
+	kmailtransport
+	kmime-dev
+	knotifications-dev
+	knotifyconfig-dev
+	kontactinterface-dev
+	kparts-dev
+	kpimtextedit-dev
+	kservice-dev
+	kstatusnotifieritem-dev
+	ktextwidgets-dev
+	ktnef-dev
+	kuserfeedback-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	libgravatar-dev
+	libkdepim-dev
+	libkleo-dev
+	libksieve-dev
+	mailcommon-dev
+	messagelib-dev
+	pimcommon-dev
+	qt6-qtbase-dev
+	qt6-qtwebengine-dev
+	samurai
+	sonnet-dev
+	"
+checkdepends="
+	dbus
+	xwayland-run
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/kmail.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kmail-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	# akonadi-sqlite-tagselectdialogtest, akonadi-sqlite-kmcommandstest,
+	# akonadi-sqlite-unifiedmailboxmanagertest and akonadi-mysql-unifiedmailboxmanagertestrequire
+	# running dbus server
+	local skipped_tests="akonadi-(sqlite-tagselectdialog"
+	local tests="
+		sqlite-kmcommands
+		sqlite-unifiedmailboxmanager
+		mysql-unifiedmailboxmanager
+		(mysql|sqlite)-kmcomposerwin
+		(mysql|sqlite)-kmcommands
+		(mysql|sqlite)-archivemailwidget
+		mysql-unifiedmailboxmanager
+		"
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	skipped_tests="$skipped_tests)test"
+	dbus-run-session wlheadless-run -- ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+44fdff52faa98111772f362c0b26eee8ffa7b7e52b72a3f484e40d25ade95fed2899dfaf77736432a4fdd31c405cf728b38f998f28f5ca28794ce1b5de2f335d  kmail-26.04.2.tar.xz
+"

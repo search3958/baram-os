@@ -1,0 +1,34 @@
+# Contributor: Sergiy Stupar <owner@sestolab.pp.ua>
+# Maintainer: Sergiy Stupar <owner@sestolab.pp.ua>
+pkgname=katana
+pkgver=1.6.1
+pkgrel=1
+pkgdesc="Next-generation crawling and spidering framework"
+url="https://github.com/projectdiscovery/katana"
+arch="all"
+license="MIT"
+makedepends="go"
+subpackages="$pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/projectdiscovery/katana/archive/v$pkgver.tar.gz
+	10-set-GOFLAGS.patch
+	"
+options="net" # go dependencies
+
+build() {
+	make build
+}
+
+check() {
+	make test
+}
+
+package() {
+	install -Dm755 "$pkgname" -t "$pkgdir/usr/bin/"
+	install -Dm644 LICENSE.md "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+e4b59a0ab7ff156faa8d911a1c51965af37944686a3665328f7846449444c274109b5743357a479d94c643961b5c95713a7c2fb17a46de7b91d132cdd6c57dea  katana-1.6.1.tar.gz
+0bb89040d42ffc833a14d4d6671f787e634a980628a523ba94dd6845864812e57e7bf2232fcbc3a39e596d384b50c4d803114be3c07a1b557e2f260cd0b93386  10-set-GOFLAGS.patch
+"

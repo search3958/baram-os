@@ -1,0 +1,55 @@
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: Paul Morgan <jumanjiman@gmail.com>
+pkgname=editorconfig
+_pkgname=$pkgname-core-c
+pkgver=0.12.11
+_testname=editorconfig-core-test
+_testver=d91029bdf1e3e0307714afe0d2cde7ba6fd208ab
+pkgrel=0
+pkgdesc="core library written in C for use by plugins supporting EditorConfig parsing"
+url="https://github.com/editorconfig/editorconfig-core-c"
+arch="all"
+license="BSD-2-Clause"
+makedepends="cmake pcre2-dev samurai"
+subpackages="lib$pkgname:libs $pkgname-static $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/editorconfig/$_pkgname/archive/v$pkgver.tar.gz
+	$_testname-$_testver.tar.gz::https://github.com/editorconfig/$_testname/archive/$_testver.tar.gz
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# secfixes:
+#   0.12.11-r0:
+#     - CVE-2026-40489
+
+prepare() {
+	# Tests are taken from a github release tarball so place them in the tree
+	rmdir tests
+	mv ../"$_testname"-"$_testver" tests
+	default_prepare
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_DOCUMENTATION=False
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# Remove symlink to editorconfig-$pkgver.
+	rm -f "$pkgdir"/usr/bin/"$pkgname"
+	mv -f "$pkgdir"/usr/bin/"$pkgname"-"$pkgver" "$pkgdir"/usr/bin/"$pkgname"
+}
+
+sha512sums="
+ce2fc2c0c6d87ad13ccf3b84e4bc3f56f4643d01d436b7854627eef20572ae8284c4f0153511a9b2a6cbf84fb4eaf8522a1da9575227c872bb97066241b1acc4  editorconfig-0.12.11.tar.gz
+530ac91b7dc5b433c59251edd5928c6f9c579c343b85f0dbd7dc71de6eb2e34328dbb398f0e68a416f4f22c9c7bfa13a792bcfe4c0469902e3a1fe2ba6c9841f  editorconfig-core-test-d91029bdf1e3e0307714afe0d2cde7ba6fd208ab.tar.gz
+"

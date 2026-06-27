@@ -1,0 +1,31 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=soqt
+pkgver=1.6.4
+pkgrel=1
+pkgdesc="GUI binding library for coin"
+url="https://github.com/coin3d/soqt"
+arch="all"
+license="BSD-3-Clause"
+makedepends="coin-dev cmake mesa-dev samurai qt6-qtbase-dev doxygen"
+options="!check" # test suite consists only of interactive programs
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/coin3d/soqt/releases/download/v$pkgver/soqt-$pkgver-src.tar.gz"
+builddir="$srcdir/$pkgname"
+
+build() {
+	cmake3.5 -B build -G Ninja . \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DSOQT_BUILD_DOCUMENTATION=ON \
+		-DSOQT_BUILD_DOC_MAN=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a5a659300bd94be66a4a1dd3e760639fbca7c18247e52ab499986692212de4ccd8f81dfe1e82c514186e1a5931db7f625d805db46c0c71b66a1d33ac8e1988bf  soqt-1.6.4-src.tar.gz
+"

@@ -1,0 +1,43 @@
+# Contributor: Eivind Uggedal <eu@eju.no>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=uacme
+pkgver=1.8.1
+pkgrel=0
+pkgdesc="Lightweight client for the RFC8555 ACMEv2 protocol"
+url="https://github.com/ndilieto/uacme"
+arch="all"
+license="GPL-3.0-or-later AND ISC AND MIT"
+makedepends="
+	asciidoc
+	curl-dev
+	openssl-dev
+	"
+subpackages="$pkgname-doc"
+options="!check"  # no test suite
+source="uacme-upstream-$pkgver.tar.gz::https://github.com/ndilieto/uacme/archive/upstream/$pkgver.tar.gz"
+builddir="$srcdir/uacme-upstream-$pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-maintainer-mode \
+		--with-openssl
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -d "$pkgdir"/var/www/.well-known/acme-challenge
+}
+
+sha512sums="
+811771a613ff502439c8227a22d099108c131430c768205db4d7edc9b266822058896830033f3a56206395eb6958904988a8aeef4e6bb9c4452783d3e002666b  uacme-upstream-1.8.1.tar.gz
+"

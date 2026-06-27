@@ -1,0 +1,36 @@
+# Contributor: John Gebbie <me@johngebbie.com>
+# Maintainer: John Gebbie <me@johngebbie.com>
+pkgname=sopwith
+pkgver=2.5.0
+pkgrel=0
+pkgdesc="Classic bi-plane shoot-'em up game"
+url="https://fragglet.github.io/sdl-sopwith"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="sdl2-dev"
+subpackages="$pkgname-doc"
+source="https://github.com/fragglet/sdl-sopwith/releases/download/sdl-sopwith-$pkgver/sdl-sopwith-$pkgver.tar.gz
+	select.patch
+	"
+builddir="$srcdir/sdl-sopwith-$pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR=$pkgdir install
+}
+
+sha512sums="
+12e8f7fe499e45a49c7455ce4293b57742daf653b774e87d8081227b264dffd55150f6df01e81c2f30e813f7e67409e08cabc7c0761ccb86409232d3e00d5801  sdl-sopwith-2.5.0.tar.gz
+eb67432e23eacec9f53c35da25af4b5ca8018de1be9b40094dd5f98d0614415481df2fbf2f9c22f4b4fc71fd20b838f806f4d1e71b327fb4af670f5cd2a3adc8  select.patch
+"

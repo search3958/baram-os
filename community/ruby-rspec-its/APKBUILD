@@ -1,0 +1,43 @@
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=ruby-rspec-its
+_gemname=${pkgname#ruby-}
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="RSpec extension gem for attribute matching"
+url="https://rubygems.org/gems/rspec-its"
+arch="noarch"
+license="MIT"
+checkdepends="ruby-rake ruby-rspec ruby-bunder"
+depends="ruby ruby-rspec-core ruby-rspec-expectations"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rspec/rspec-its/archive/refs/tags/v$pkgver.tar.gz
+	gemspec.patch"
+builddir="$srcdir/$_gemname-$pkgver"
+options="!check" # Depends on ruby-cucumber, which is not packaged yet.
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	rake
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+
+	gem install --local \
+		--install-dir "$gemdir" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		$_gemname
+
+	# Clean-up...
+	rm -r "$gemdir"/cache \
+		"$gemdir"/build_info \
+		"$gemdir"/doc
+}
+sha512sums="
+a31b0bdff78269ee96c4f93f56d7e7cf741c6d93f40609854c44e85979f9bd44da5457b48e664b7c2f45841dfb74963662300044ca9fecd8347dd7a6b7c7dda2  ruby-rspec-its-2.0.0.tar.gz
+660a01ba493dabe34ab1cb6a230cb06d98e1cd1c630fe650d25da2063e736a7fd3fa3ef2a905c23e65de6484c7b4e0eb49cdf12ce7e09c2740fb252c4cba670a  gemspec.patch
+"

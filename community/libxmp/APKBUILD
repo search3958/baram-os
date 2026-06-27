@@ -1,0 +1,34 @@
+# Contributor: Dominika Liberda <ja@sdomi.pl>
+# Maintainer: Dominika Liberda <ja@sdomi.pl>
+pkgname=libxmp
+pkgver=4.6.3
+pkgrel=0
+pkgdesc="Libxmp is a library that renders module files to PCM data"
+url="https://github.com/libxmp/libxmp/"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+source="https://github.com/libxmp/libxmp/releases/download/libxmp-$pkgver/libxmp-$pkgver.tar.gz"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto -DNDEBUG" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_STATIC=OFF \
+		-DWITH_UNIT_TESTS="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+fc87fafa392ebd07f6f9823801cdf296d5f5a6216e15a437d0539bc4ebf0f963bb8d868c73499d1ece33a238b71a8da6da303be23d409975a62b166225853bec  libxmp-4.6.3.tar.gz
+"

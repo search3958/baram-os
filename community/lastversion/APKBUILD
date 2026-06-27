@@ -1,0 +1,61 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=lastversion
+pkgver=3.6.12
+pkgrel=0
+pkgdesc="CLI tool to find the latest stable version of a project"
+url="https://lastversion.getpagespeed.com/"
+arch="noarch"
+license="BSD-2-Clause"
+depends="
+	py3-appdirs
+	py3-beautifulsoup4
+	py3-cachecontrol
+	py3-dateutil
+	py3-distro
+	py3-feedparser
+	py3-filelock
+	py3-packaging
+	py3-requests
+	py3-tqdm
+	py3-urllib3
+	py3-yaml
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+options="net" # tests require network access
+subpackages="$pkgname-pyc"
+source="https://github.com/dvershinin/lastversion/archive/v$pkgver/lastversion-$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# Running the ignored tests will exceed Github's
+	# API rate limit for unauthenticated requests
+	PATH="$builddir/.testenv/bin:$PATH" \
+	.testenv/bin/python3 -m pytest \
+		--ignore tests/test_cli.py \
+		--ignore tests/test_github.py \
+		--ignore tests/test_hg.py \
+		--ignore tests/test_lastversion.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a65e2089a4416d2449026e9b5e15cad6a083162754bb5edc56f6130ceeb9dfef0b733e8b3446d321775fc88f0b410b828ef86bb4852d34c6ae64b7de206080fa  lastversion-3.6.12.tar.gz
+"

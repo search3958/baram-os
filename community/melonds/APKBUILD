@@ -1,0 +1,49 @@
+# Maintainer: Antoni Aloy <aaloytorrens@gmail.com>
+pkgname=melonds
+pkgver=1.1
+pkgrel=0
+pkgdesc="Nintendo DS Emulator"
+url="https://melonds.kuribo64.net/"
+# armhf: blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="GPL-3.0-or-later"
+makedepends="
+	cmake
+	enet-dev
+	extra-cmake-modules
+	faad2-dev
+	libarchive-dev
+	libepoxy-dev
+	libslirp-dev
+	qt6-qtbase-dev
+	qt6-qtmultimedia-dev
+	samurai
+	sdl2-dev
+	wayland-dev
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Arisotura/melonDS/archive/$pkgver.tar.gz
+	0000-remove-failing-assertion-x86.patch
+	"
+options="!check" # No test suite
+builddir="$srcdir/melonDS-$pkgver"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DUSE_QT6=ON \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+562de6a338d236ddd3b5fed2d7b24139fed65d9f5ff94e9f00baf5dac85c729f135a8499ba380574c768ad9ef1c728aa2fd8c23a14c350e0428fc3f59957e538  melonds-1.1.tar.gz
+d5cabf1dfc3932bae2b939b4f87efd1caf14499d98f324f9013bd3e7ff33656e676c32d92ed912137a68f5e48163082472d722113d2957080174b187be52940f  0000-remove-failing-assertion-x86.patch
+"

@@ -1,0 +1,99 @@
+# Contributor: Ben Allen <bensallen@me.com>
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=virtualbox-guest-additions
+pkgver=7.0.22
+pkgrel=0
+pkgdesc="VirtualBox Addtions userland components"
+arch="x86 x86_64"
+url="https://virtualbox.org/"
+license="GPL custom"
+install="$pkgname.pre-install"
+makedepends="sed kbuild lvm2-dev yasm nasm zlib-dev openssl-dev>3 curl-dev
+	libxslt libxrandr-dev libxt-dev libxmu-dev linux-pam-dev utmps-dev"
+subpackages="$pkgname-x11 $pkgname-openrc $pkgname-udev"
+source="https://download.virtualbox.org/virtualbox/$pkgver/VirtualBox-$pkgver.tar.bz2
+	futimens.patch
+	gcc15-bool.patch
+	musl-no-glibc.patch
+	musl-fix-stat-nsec.patch
+	musl-off_t.patch
+	glibc-symvers.patch
+	VBoxClient.patch
+	virtualbox-guest-additions-localconfig
+	$pkgname.initd
+	virtualbox-drm-client.initd
+	60-vbox-guest.rules
+	VBoxClient-all
+	vboxclient.desktop
+	utmps.patch
+	"
+
+builddir="$srcdir"/VirtualBox-$pkgver
+
+# secfixes:
+#   6.1.36-r0:
+#     - CVE-2022-21554
+#     - CVE-2022-21571
+
+prepare() {
+	default_prepare
+	rm -rf $builddir/kBuild/bin
+	cp $srcdir/$pkgname-localconfig LocalConfig.kmk
+}
+
+build() {
+	./configure --nofatal \
+		--disable-dbus \
+		--disable-xpcom \
+		--disable-sdl-ttf \
+		--disable-libvpx \
+		--disable-libtpms \
+		--disable-pulse \
+		--disable-alsa \
+		--disable-kmods \
+		--build-headless
+	# shellcheck disable=SC1091
+	. ./env.sh
+	# Build Guest Additions
+	VBOX_ONLY_ADDITIONS=1 kmk KBUILD_VERBOSE=2
+}
+
+package() {
+	install -v -Dm755 "$builddir"/out/linux.*/release/bin/additions/VBoxService "$pkgdir/usr/sbin/VBoxService"
+	install -v -Dm755 "$builddir"/out/linux.*/release/bin/additions/VBoxControl "$pkgdir/usr/bin/VBoxControl"
+	# mount.vboxsf needs to be in /sbin for "mount -t vboxsf..." to work.
+	install -v -Dm755 "$builddir"/out/linux.*/release/bin/additions/mount.vboxsf "$pkgdir/sbin/mount.vboxsf"
+	install -v -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+x11() {
+	install -v -Dm755 "$builddir"/out/linux.*/release/bin/additions/VBoxClient "$subpkgdir/usr/sbin/VBoxClient"
+	install -v -Dm755 "$builddir"/out/linux.*/release/bin/additions/VBoxDRMClient "$subpkgdir/usr/sbin/VBoxDRMClient"
+	install -v -Dm755 "$srcdir"/VBoxClient-all "$subpkgdir"/usr/sbin/VBoxClient-all
+	install -v -Dm755 "$srcdir"/vboxclient.desktop "$subpkgdir"/etc/xdg/autostart/vboxclient.desktop
+	install -v -Dm755 "$srcdir"/virtualbox-drm-client.initd "$subpkgdir/etc/init.d/virtualbox-drm-client"
+}
+
+udev() {
+	pkgdesc="VirtualBox guest rules"
+	install_if="$pkgname-x11=$pkgver-r$pkgrel udev"
+	install -D -m0644 "$srcdir"/60-vbox-guest.rules "$subpkgdir"/usr/lib/udev/rules.d/60-vbox-guest.rules
+}
+
+sha512sums="
+eb231cc487becfbad8c979fb9d6a1ede3a28a1bb11e77b1482181be4bd294fd209c77a7d599562f99f1ac2be587203b9d97230ccce4f85ed96c63e66b0fce392  VirtualBox-7.0.22.tar.bz2
+fe5003d340ef40490eec6746dbc79f1df89cccf55358ce8eef3cef7fcb8fac36c1223850109f1f3b8d3f8ea6f4183367579256ca0604cd98c893b98afa154a32  futimens.patch
+e7ded65a47e1775df6e7147c1230a05273f26a1344f9032b9e950e656a765a37fce4964d7ff59d6393773cca751a992fc02774bc2f55ce3da0f4999e0421c4c3  gcc15-bool.patch
+7a97497605afe486d31b21b6fecd8e0763415983ea0259093ca9c4589046a9b7e87567bc16c3f5ff80407586aec709091f2f2b4493a8a6cee79311c67412a161  musl-no-glibc.patch
+d5ea53cc11fd4a9f1a17f5c68ca3939004e178b11e105c61c8a49df456311633a9fe020d2773d37ee50e90c0a16f2c0c5f0944b2294ccaaafa099b86fe10fee0  musl-fix-stat-nsec.patch
+b08e050c4738af121dfdb22ab2bdfe1dec3f27ac32d299ea9ca1130e15b4cd4a3619a9402012086f997fb56e3f9b5be3cddaf8f515ccf1e3014dc54d98bd2d6a  musl-off_t.patch
+4879003fbd7c4a93fe12019e507fca94290ebd5227af911838f346bdb9cb6ef1e36aa27d32b1e69fb1d95fd05ed1929c4e43ae43b1f11693c20b72ac08f7fa3d  glibc-symvers.patch
+922bb37d9b85daf1db469a6fc906539fbf8b99feee49e15a5df34ed5f5a223ee256786d5aca217a23adfd7e2e078b2f4f7a1843ecc405363659b7dd75b647a3e  VBoxClient.patch
+4b4709cb9c8ce9f29d3e62d64d5a9aef406799ff21e94bb6ec07eeb2b05e9481ac66a32cbcf42bd0738b7d1831e3ef2df84e8f77ad95fe5979f3984f5e61c4e1  virtualbox-guest-additions-localconfig
+1f2cb419f6800cdeae9fcd0ec96a655e300e6dea228bb985dba040fc8748bc089ee47ee4e576a229bb2d15a207de912ce3de0571813ef10fe1e2cca500c75652  virtualbox-guest-additions.initd
+44c900a4e96cde88521afaa3604a7e1fa28666196de2f86de02ef7e96d2a64c00f852f9ffb2d77be3a14e11d857d5baf37dec38dfce33ddef8e5518efd7532ed  virtualbox-drm-client.initd
+0e4fb3bca40ef6b049306c0859e95c02736b411c23028e1917dad01be4c234fd9fcf81e2a184c31e602df3a2a87dd06862e9083a2207731a4253ac8096a47715  60-vbox-guest.rules
+ba085d6b52b9a15a3d521028d5c8508121c0a88b5859cf926955161a7178799eac90afe15bd61dde1a0c4f2aa42206ffffd1a18bf5812b5610d9ca76e139959b  VBoxClient-all
+93bf9be3e698766d4054cbf29b97754814dd4ab2c79d4e5b44d2a0338ade57d031f4747e8bd22dc7551c2d78fc522f26c817c1c1e1ca80f72d59a1f6f37288b1  vboxclient.desktop
+f5ebc40b546f453d695dc84c82604355e73cb6797d546b7b6e08337a85c0b1db4663d2655055752e35954a9a1b3a494a6b6ddb5a54f3f0ff09ad44718a2d5b01  utmps.patch
+"

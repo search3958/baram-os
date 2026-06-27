@@ -1,0 +1,51 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=asciinema
+pkgver=3.2.1
+pkgrel=0
+pkgdesc="Command line recorder for the asciinema.org service"
+url="https://github.com/asciinema/asciinema"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="cargo cargo-auditable"
+checkdepends="python3"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/asciinema/asciinema/archive/v$pkgver.tar.gz"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	ASCIINEMA_GEN_DIR="$builddir/gen" \
+		cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --release --frozen
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+
+	install -Dm644 gen/man/*.1 -t "$pkgdir"/usr/share/man/man1/
+
+	install -Dm644 gen/completion/$pkgname.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 gen/completion/$pkgname.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 gen/completion/_$pkgname \
+		"$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+6972aab36c7363b53079bb3ec0a6ce00184697f949e0309d0d50b00c400b3586609c6b18d3a6df988a4e8104da4e43ed07e84125233bed9454ff6e8bb3a3c040  asciinema-3.2.1.tar.gz
+"

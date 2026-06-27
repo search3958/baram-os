@@ -1,0 +1,44 @@
+# Contributor: Antoni Aloy <aaloytorrens@gmail.com>
+# Maintainer: Pedram Pourang <tsujan2000@gmail.com>
+pkgname=featherpad
+pkgver=1.6.3
+pkgrel=0
+pkgdesc="Lightweight Qt plain-text editor"
+url="https://github.com/tsujan/FeatherPad"
+license="GPL-3.0-or-later"
+arch="all"
+makedepends="
+	cmake
+	hunspell-dev
+	qt6-qtbase-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	samurai
+	"
+subpackages="$pkgname-lang"
+options="!check" # no test suite
+source="https://github.com/tsujan/FeatherPad/releases/download/V$pkgver/FeatherPad-$pkgver.tar.xz"
+builddir="$srcdir/FeatherPad-$pkgver"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+lang() {
+	amove usr/share/$pkgname/translations
+}
+
+sha512sums="
+fcae21aa39f5d86dd28d93ff9680c664a06f9bb596ffe4f633682f881d0d3a074b17909fad64a386f481c7a90689c0eb69b60a7edc2d6f84b1b72282874164dc  FeatherPad-1.6.3.tar.xz
+"

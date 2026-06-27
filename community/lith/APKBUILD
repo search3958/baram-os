@@ -1,0 +1,37 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=lith
+pkgver=1.3.34
+pkgrel=1
+pkgdesc="fast and user-friendly Weechat relay client"
+url="https://github.com/LithApp/Lith"
+# riscv64: Variable QMAKE_CXX.COMPILER_MACROS is not defined.
+# armhf: blocked by qt6-qtdeclarative
+arch="all !riscv64 !armhf"
+license="GPL-2.0-or-later"
+makedepends="
+	qt6-qtbase-dev
+	qt6-qtmultimedia-dev
+	qt6-qtquick3d-dev
+	qt6-qtwebsockets-dev
+"
+depends="qt6-qtmultimedia"
+source="$pkgname-$pkgver.tar.gz::https://github.com/LithApp/Lith/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests
+builddir="$srcdir/Lith-$pkgver"
+
+build() {
+	mkdir build
+	qmake6 \
+		PREFIX=/usr \
+		-o build/Makefile
+	make -C build
+}
+
+package() {
+	make -C build INSTALL_ROOT="$pkgdir" install
+}
+
+sha512sums="
+55a35c43635b38c7bb7d03bcf93620da113c7cabd3e588c0b1d3a1360558dbd01494e2dfbebf083391f35531427b9bf4752d6da3c23cb2885572fb5dbdaee107  lith-1.3.34.tar.gz
+"

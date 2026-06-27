@@ -1,0 +1,27 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-python-mpv-jsonipc
+pkgver=1.2.0
+pkgrel=3
+pkgdesc="Python API to MPV using JSON IPC"
+url="https://github.com/iwalton3/python-mpv-jsonipc"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/p/python-mpv-jsonipc/python-mpv-jsonipc-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/python-mpv-jsonipc-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+4f30ad3bdfb771adf5649a1ad373719a8fbb3f587c98cfe1eac3431d66829cb7c8ea1d5e758711401d36b5ebc4dc5d1487e2b6e29f3133a6aef097f0c6a7c679  python-mpv-jsonipc-1.2.0.tar.gz
+"

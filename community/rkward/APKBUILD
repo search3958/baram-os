@@ -1,0 +1,57 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=rkward
+pkgver=0.8.3
+pkgrel=0
+pkgdesc="Easy extensible and easy-to-use IDE/GUI for R"
+# armhf: blocked by extra-cmake-modules
+# armv7, s390x, riscv64, x86: blocked by qt6-qtwebengine
+arch="all !armhf !armv7 !s390x !riscv64 !x86"
+url="https://rkward.kde.org/"
+license="GPL-2.0-or-later"
+depends="R"
+makedepends="
+	R-dev
+	extra-cmake-modules
+	kconfig-dev
+	kcoreaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	knotifications-dev
+	kparts-dev
+	ktexteditor-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	qt6-qtbase-dev
+	qt6-qtwebengine-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+_repo_url="https://invent.kde.org/education/rkward.git"
+source="https://download.kde.org/stable/rkward/$pkgver/rkward-$pkgver.tar.gz"
+subpackages="$pkgname-doc $pkgname-lang"
+options="!check" # 1/1 test segfaults on 3.21 aarch64|x86|x86_64 builders
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	xvfb-run ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0cd4e05714d17f731785a78a9fea952f3a737a1385e3fb83775f623e9e467e5a2c9d2b79dfeedb4c0c26f3b265ae28e6b45ddc2fcd9a7938c297a640336cbfe7  rkward-0.8.3.tar.gz
+"

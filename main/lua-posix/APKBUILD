@@ -1,0 +1,73 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+
+pkgname=lua-posix
+_name=luaposix
+pkgver=36.3
+pkgrel=1
+pkgdesc="POSIX library for Lua"
+url="https://github.com/luaposix/luaposix"
+arch="all"
+license="MIT"
+makedepends="linux-headers lua-bit32"
+
+for _i in $_luaversions; do
+	makedepends="$makedepends lua$_i-dev lua$_i"
+	subpackages="$subpackages lua$_i-posix:_split_posix"
+done
+source="luaposix-$pkgver-2.tar.gz::https://github.com/luaposix/luaposix/archive/v$pkgver.tar.gz"
+
+builddir="$srcdir"/$_name-$pkgver
+options="!check"
+
+prepare() {
+	default_prepare
+	for _i in $_luaversions; do
+		cp -r "$builddir" "$srcdir"/build-$_i
+	done
+}
+
+build() {
+	for _i in $_luaversions; do
+		msg "build for Lua $_i"
+		cd "$srcdir"/build-$_i
+		lua$_i build-aux/luke
+	done
+}
+
+package() {
+	for _i in $_luaversions; do
+		cd "$srcdir"/build-$_i
+		lua$_i build-aux/luke install PREFIX="$pkgdir"/usr
+	done
+}
+
+_split() {
+	depends=
+	local d= _ver=$1 _f=$2
+	if [ "$_ver" != "5.2" ]; then
+		# use versioned dep to work around
+		# http://bugs.alpinelinux.org/issues/4063
+		depends="lua$_ver-bit32<26"
+	fi
+	for d in usr/lib/lua usr/share/lua; do
+		if [ -d "$pkgdir"/$d/$_ver ]; then
+			mkdir -p "$subpkgdir"/$d/$_ver
+			mv "$pkgdir"/$d/$_ver/$_f* "$subpkgdir"/$d/$_ver/
+			rmdir "$pkgdir"/$d/$_ver 2>/dev/null || true
+		fi
+	done
+}
+
+_split_posix() {
+	local _ver=${subpkgname%%-*}
+	_ver=${_ver#lua}
+	pkgdesc="POSIX library for Lua $_ver"
+	install_if="lua$_ver lua-posix=$pkgver-r$pkgrel"
+	_split $_ver posix
+}
+
+sha512sums="
+a2ad040089e2d334fe3e73ee1fb4cc741287e180962f54c0fbf9f74a0b4fd648eabef85f1d3260d904e1ba7072cdc3388d08c868da81c79f5a446004db92b7ef  luaposix-36.3-2.tar.gz
+"

@@ -1,0 +1,37 @@
+maintainer="team/gnome <achill@achill.org>"
+pkgname=msgraph
+pkgver=0.3.4
+pkgrel=0
+pkgdesc="Library to access MS Graph API for Office 365."
+url="https://gitlab.gnome.org/GNOME/msgraph"
+arch="all"
+license="LGPL-3.0-or-later"
+makedepends="
+	gi-docgen
+	glib-dev
+	gnome-online-accounts-dev
+	gobject-introspection-dev
+	json-glib-dev
+	libsoup3-dev
+	meson
+	uhttpmock-dev
+	"
+subpackages="$pkgname-doc $pkgname-dev"
+source="https://download.gnome.org/sources/msgraph/${pkgver%.*}/msgraph-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+55e3df2836aa7c674d4125f20e0e846a6bda1501726242b084ad18fac11e95612a891e15f460aed9a92d34bacb3d8e92a3c48a1be8dd2269d4f17e566dd054cd  msgraph-0.3.4.tar.xz
+"

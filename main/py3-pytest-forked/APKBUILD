@@ -1,0 +1,48 @@
+# Contributor: Dmitry Romanenko <dmitry@romanenko.in>
+# Maintainer: Dmitry Romanenko <dmitry@romanenko.in>
+pkgname=py3-pytest-forked
+_pyname=pytest-forked
+pkgver=1.6.0
+pkgrel=4
+pkgdesc="extracted --boxed from pytest-xdist to ensure backward compat"
+url="https://github.com/pytest-dev/pytest-forked"
+arch="noarch"
+license="MIT"
+depends="py3-pytest"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/p/$_pyname/$_pyname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+options="!check" # fail with py3.11
+
+replaces="pytest-forked" # Backwards compatibility
+provides="pytest-forked=$pkgver-r$pkgrel" # Backwards compatibility
+
+# Handled by py3-setuptools_scm
+export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+
+prepare() {
+	default_prepare
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v -x --tb=long
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+28fedc56fd696a4e7cf528034056849eff14094d5e7f0e94c7c477a7e91e42c08988769cf6f40d25fe8823399e552253cde2198121dd6a9e475fb6a8ce358cad  pytest-forked-1.6.0.tar.gz
+"

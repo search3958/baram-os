@@ -1,0 +1,44 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=kalker
+pkgver=2.2.2
+pkgrel=0
+pkgdesc="Calculator that supports user-defined variables, functions, differentiation, and integration"
+url="https://kalker.xyz"
+# s390x: nix, loongarch64: libc
+arch="all !s390x !loongarch64"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	gmp-dev
+	m4
+	mpc1-dev
+	mpfr-dev
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/PaddiM8/kalker/archive/refs/tags/v$pkgver.tar.gz
+	system-libs.patch
+	"
+options="net" # fetching cargo crates
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET"
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/kalker "$pkgdir"/usr/bin/kalker
+}
+
+sha512sums="
+7595e38245ea36ebd0b72df4d44db73411e19d363102e7a967d043b0dc2266a5d3db8f6b6e69b6f259ed640220d4fa48cfbc5de7ea52425e6f320aac2abec64b  kalker-2.2.2.tar.gz
+3896edc54f59ada422cc049dba184707253a46c79aad60b010d0db4fa0af6ea59b0e577f34b1105051e7b370ea020a03266382d8bb8148ca3bb2bfdd3cf999bd  system-libs.patch
+"

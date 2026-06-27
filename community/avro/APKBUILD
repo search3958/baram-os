@@ -1,0 +1,81 @@
+# Contributor: nu <llnu@protonmail.ch>
+# Maintainer: nu <llnu@protonmail.ch>
+pkgname=avro
+pkgver=1.12.1
+pkgrel=0
+pkgdesc="Avro, a data serialization system"
+url="https://avro.apache.org/docs/current/api/c/index.html"
+# 32-bit: fails tests
+arch="all !armhf !armv7 !x86"
+depends_dev="
+	boost-dev
+	jansson-dev
+	snappy-dev
+	"
+makedepends="
+	$depends_dev
+	cmake
+	fmt-dev
+	samurai
+	xz-dev
+	zlib-dev
+	"
+license="Apache-2.0"
+subpackages="
+	$pkgname-dev
+	libavro
+	libavrocpp
+	"
+source="https://archive.apache.org/dist/avro/avro-$pkgver/avro-src-$pkgver.tar.gz
+	nostatic.patch
+	pkgconf.patch
+	version-bash.patch
+	no-werror-for-c++.patch
+	"
+builddir="$srcdir"/avro-src-$pkgver/lang
+
+build() {
+	export CFLAGS="$CFLAGS -O2 -DNDEBUG -flto=auto -Wno-incompatible-pointer-types"
+	export CXXFLAGS="$CXXFLAGS -O2 -DNDEBUG -fno-lto -Wno-cpp"
+	cmake -B build-c -G Ninja -S c \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DTHREADSAFE=ON
+	cmake --build build-c
+
+	cmake -B build-c++ -G Ninja -S c++ \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DAVRO_BUILD_STATIC=OFF
+	cmake --build build-c++
+}
+
+check() {
+	ctest --test-dir build-c -j1
+	ctest --test-dir build-c++ -j1
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build-c++
+	DESTDIR="$pkgdir" cmake --install build-c
+}
+
+libavro() {
+	pkgdesc="$pkgdesc (C library)"
+
+	amove usr/lib/libavro.so.*
+}
+
+libavrocpp() {
+	pkgdesc="$pkgdesc (C++ library)"
+
+	amove usr/lib/libavrocpp.so.*
+}
+
+sha512sums="
+0d86bfece0f12f8bc424e27e71e3e6b828c4280fa1a6d7dc7e0d58bff2351f2c1fd3ccb98c1291dfc6c67d9cb5a0bdb7bb9f36ba5bd6b26fa9545f358db42663  avro-src-1.12.1.tar.gz
+725db787aabc5c08b4d5170cf1522cafb87fd8ea38ae7e4e2e55d69816df41f709c99efbb8d076d0276feb2328f0a502be157a310eb993e819ce39c9a91d26f6  nostatic.patch
+d6220ddd6a24951709307288ad487206c7b29006e4d0445b93604f632519f6edc6120739a2cc0fc7ed1699fab4a16b452a3f37c48417d1e409260fe779c0e01c  pkgconf.patch
+a0f3016af729ad3b78fa2712a1fbdf8b80306e9825f9b3bc9637b30f4e2b8f305148ad99e375ddc4e2140466e4ac950ad8d109e2fd4e63a72e330074e0c3f427  version-bash.patch
+570b38c46f392dcc26c75387889913acc2dfc6b4042c0e06e147ad018a9ec7794364383e95a92d53dc451aafebae03acecb383505ec9267427ae8481513874df  no-werror-for-c++.patch
+"

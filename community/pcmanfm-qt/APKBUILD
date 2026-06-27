@@ -1,0 +1,48 @@
+# Contributor: Zachary Lee Andrews <zcrayfish@gmail.com>
+maintainer="Antoni Aloy <aaloytorrens@gmail.com>"
+pkgname=pcmanfm-qt
+pkgver=2.4.0
+pkgrel=0
+pkgdesc="Qt port of pcmanfm"
+url="https://github.com/lxqt/pcmanfm-qt"
+arch="all !armhf"
+license="LGPL-2.0-or-later"
+depends="desktop-file-utils lxqt-menu-data"
+makedepends="
+	cmake
+	layer-shell-qt-dev
+	libexif-dev
+	libfm-qt-dev
+	lxqt-build-tools
+	menu-cache-dev
+	qt6-qttools-dev
+	samurai
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://github.com/lxqt/pcmanfm-qt/releases/download/$pkgver/pcmanfm-qt-$pkgver.tar.xz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+lang() {
+	install_if="lang $pkgname=$pkgver-r$pkgrel"
+	amove usr/share/$pkgname/translations
+}
+
+sha512sums="
+0585a2bbe312b79e09a4227aec230576787cb2f2969a7a9f534f1a03b5d07f39738d13cd149bc5458325d532fedf438a06cd3a212ae47eba89ca3696c83203cc  pcmanfm-qt-2.4.0.tar.xz
+"

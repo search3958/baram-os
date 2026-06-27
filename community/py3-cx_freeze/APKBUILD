@@ -1,0 +1,65 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-cx_freeze
+_pkgname=cx_Freeze
+pkgver=8.6.4
+pkgrel=0
+pkgdesc="Set of utilities for freezing Python scripts into executables"
+url="https://github.com/marcelotduarte/cx_Freeze"
+arch="all"
+license="PSF-2.0"
+depends="patchelf py3-freeze-core py3-packaging"
+makedepends="py3-freeze-core-dev py3-gpep517 py3-setuptools py3-wheel
+	python3-dev"
+checkdepends="py3-pytest py3-pytest-mock py3-filelock py3-pip"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/marcelotduarte/cx_Freeze/archive/refs/tags/$pkgver.tar.gz
+	tests.patch
+	"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+case "$CARCH" in
+# tests use networking
+x86_64) options="net" ;;
+# FIXME fetched packages seem to expect x86_64
+*) options="!check" ;;
+esac
+
+prepare() {
+	default_prepare
+
+	sed -i 's/DESTSHARED/DESTLIB/' "$builddir/cx_Freeze/freezer.py"
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+    python3 -m venv --clear --without-pip --system-site-packages .testenv
+    .testenv/bin/python3 -m installer .dist/*.whl
+
+    PYTHONSAFEPATH=1 .testenv/bin/python3 -m pytest --import-mode=importlib \
+        --ignore tests/hooks/test_numpy.py \
+        --ignore tests/hooks/test_ortools.py \
+        --ignore tests/hooks/test_qt.py \
+        --ignore tests/hooks/test_scikit.py \
+        --ignore tests/hooks/test_pydantic.py \
+        --ignore tests/hooks/test_streamlit.py \
+        --ignore tests/test_command_bdist_appimage.py \
+        --deselect tests/test_executables.py::test_valid_sys_path \
+        --deselect tests/hooks/test_stdlib.py::test_ssl \
+        --deselect tests/hooks/test_stdlib.py::test_zoneinfo
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+200cabcb863edf90497d2fbd639d9ad708a22e99bd26348148f0f257fbc40f9ee703b4c0c83a6f0208f7968232934f122eab978e7f8af378aa0b3b65972349e6  py3-cx_freeze-8.6.4.tar.gz
+a827d6f838ace8dbfc4162977c29e23b09264327e3eb46f2e89db17e51138bd8d93f2a90ff332a95f6f2978d23f5f25484297d5d88d40273674aafdeb584c3e1  tests.patch
+"

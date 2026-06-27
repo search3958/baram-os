@@ -1,0 +1,37 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=yubico-pam
+pkgver=2.27
+pkgrel=3
+pkgdesc="Yubico Pluggable Authentication Module (PAM)"
+url="https://developers.yubico.com/yubico-pam"
+arch="all"
+license="BSD-2-Clause"
+makedepends="linux-pam-dev yubico-c-dev yubico-c-client-dev ykpers-dev"
+options="!check" # need yubikey plugged in on live machine
+subpackages="$pkgname-doc"
+source="https://developers.yubico.com/yubico-pam/Releases/pam_yubico-$pkgver.tar.gz"
+builddir="$srcdir/pam_yubico-$pkgver"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-pam-dir=/usr/lib/security
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="8b6e4edc8bd6d24f0f512abfc6b43359e0ea2a5a60aeb855898f51904ddfd1978bd6845ac9a0af063814301c742b2f7dc42ff0a8ca59e4d7ead8994dfdce0ba6  pam_yubico-2.27.tar.gz"

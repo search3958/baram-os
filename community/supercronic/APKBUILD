@@ -1,0 +1,34 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=supercronic
+pkgver=0.2.39
+pkgrel=6
+pkgdesc="Cron for containers"
+url="https://github.com/aptible/supercronic"
+arch="all"
+license="MIT"
+makedepends="go"
+checkdepends="python3"
+source="supercronic-$pkgver.tar.gz::https://github.com/aptible/supercronic/archive/refs/tags/v$pkgver.tar.gz"
+options="chmod-clean net" # go
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -trimpath
+}
+
+check() {
+	# make unit (without -race option, -buildmode=pie not supported when -race is enabled)
+	go test -v ./...
+}
+
+package() {
+	install -Dm755 $pkgname "$pkgdir"/usr/bin/$pkgname
+}
+
+sha512sums="
+dc07b2c95e5435ebfa81b070b809d9c13c9c6249095a6dfa31e1573a8779e1ea38085fc4e7e186035e7516f4b4fba4d811bb1582ab9d7fd77bf09012e766182a  supercronic-0.2.39.tar.gz
+"

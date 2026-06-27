@@ -1,0 +1,41 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-inflect
+pkgver=7.5.0
+pkgrel=1
+pkgdesc="Correctly generate plurals, singular nouns, ordinals, indefinite articles; convert numbers to words"
+url="https://github.com/jaraco/inflect"
+arch="noarch"
+license="MIT"
+depends="py3-more-itertools py3-typeguard"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/i/inflect/inflect-$pkgver.tar.gz"
+builddir="$srcdir/inflect-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ee9f69dff451017a2aad2226d8c6ae02b4b7b4bc4d4c49f3efee50d85eeef43c49c6c6ef3e7f30fa2c5ef21e065ff5242140d5a98bc71af17c7e70d9e75e54c1  inflect-7.5.0.tar.gz
+"

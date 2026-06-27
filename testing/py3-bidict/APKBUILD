@@ -1,0 +1,48 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-bidict
+pkgver=0.23.1
+pkgrel=2
+pkgdesc="The bidirectional mapping library for Python"
+url="https://bidict.readthedocs.io/"
+arch="noarch"
+license="MPL-2.0"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-hypothesis
+	py3-pytest
+	py3-pytest-benchmark
+	py3-pytest-xdist
+	py3-sortedcollections
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jab/bidict/archive/refs/tags/v$pkgver.tar.gz
+	no-typing-ext.patch
+	"
+builddir="$srcdir/bidict-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+795e29b61c1717dd34807c60ce598fc6a142decebd0545378bdc728f397e2050f52cf11212075ba60e22553031e9727fcbaae26891f531219075f6f58e457d05  py3-bidict-0.23.1.tar.gz
+eaef2f16cdf89e4f206d8595167286da672054c68715686eb412f3d5e1be4b55537c300248034c2679cda5c1d12fba961f23917648e8fe805949cb5cad70e10b  no-typing-ext.patch
+"

@@ -1,0 +1,71 @@
+# Contributor: Pedro Lucas Porcellis <porcellis@eletrotupi.com>
+# Maintainer: Pedro Lucas Porcellis <porcellis@eletrotupi.com>
+pkgname=niri
+pkgver=26.04
+pkgrel=0
+pkgdesc="A scrollable-tiling Wayland compositor"
+url="https://github.com/YaLTeR/niri"
+# s390x: nix
+# 32-bit: https://gitlab.freedesktop.org/pipewire/pipewire-rs/-/issues/111
+arch="all !armv7 !armhf !x86 !s390x"
+license="GPL-3.0-only"
+makedepends="
+	cargo
+	cargo-auditable
+	clang-libclang
+	clang-libs
+	eudev-dev
+	glib-dev
+	libdisplay-info-dev
+	libinput-dev
+	libseat-dev
+	libxkbcommon-dev
+	mesa-dev
+	pango-dev
+	pipewire-dev
+	rust
+	"
+depends="wayland-libs-server"
+subpackages="
+	$pkgname-portalsconf
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/YaLTeR/niri/archive/refs/tags/v$pkgver.tar.gz
+	niri-session.patch
+	"
+options="net" # rust crates
+
+build() {
+	cargo auditable build \
+		--release \
+		--no-default-features \
+		--features dbus,xdp-gnome-screencast
+}
+
+check() {
+	ulimit -n 4096 # Fails otherwise due to lack of file descriptors
+	cargo test \
+		--release \
+		--no-default-features \
+		--features dbus,xdp-gnome-screencast
+}
+
+package() {
+	install -Dm755 target/release/niri -t "$pkgdir"/usr/bin/
+	install -Dm755 resources/niri-session -t "$pkgdir"/usr/bin/
+
+	install -Dm644 resources/niri.desktop -t "$pkgdir"/usr/share/wayland-sessions/
+	install -Dm644 resources/niri-portals.conf -t "$pkgdir"/usr/share/xdg-desktop-portal/
+}
+
+portalsconf() {
+	pkgdesc="xdg-desktop-portal configuration of compatible portals for Niri"
+	install_if="$pkgname=$pkgver-r$pkgrel"
+	depends="xdg-desktop-portal xdg-desktop-portal-gnome"
+	amove usr/share/xdg-desktop-portal/niri-portals.conf
+}
+
+
+sha512sums="
+ae30446fbf529155907726cf2cba7402bcfc5be2032370d66f9f980efb257f29353b47d495f1218b81ac32c643f15bbb74834dc35882849a4479021b4b9fa97f  niri-26.04.tar.gz
+ceffbc9d572da53d86f5802cd030a002d85b9924eeb24af860a288a9c792a150c28acfe28adf2790d35bdc0c5f31b957d838841a203ca5a2b0070654bda488ca  niri-session.patch
+"

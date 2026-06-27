@@ -1,0 +1,33 @@
+# Contributor: Robin Candau <robincandau@protonmail.com>
+# Maintainer: Robin Candau <robincanda@protonmail.com>
+pkgname=nwg-look
+pkgver=1.1.1
+pkgrel=1
+pkgdesc="GTK settings editor adapted to work on wlroots-based compositors"
+url="https://github.com/nwg-piotr/nwg-look"
+arch="all"
+license="MIT"
+depends="xcur2png"
+makedepends="go gtk+3.0-dev at-spi2-core-dev cairo-dev fontconfig-dev freetype-dev gdk-pixbuf-dev glib-dev harfbuzz-dev pango-dev zlib-ng-dev"
+subpackages="$pkgname-doc"
+source="https://github.com/nwg-piotr/nwg-look/archive/v$pkgver/nwg-look-$pkgver.tar.gz"
+options="net !check" # no test suite
+
+build() {
+	go build \
+		-trimpath \
+		-buildmode=pie \
+		-mod=readonly \
+		-modcacherw \
+		-ldflags "-linkmode external -extldflags \"$LDFLAGS\"" \
+		-o bin/nwg-look \
+		.
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+b6c9a61d7a4aae678a5186510028343a1e87e9a6494b08622e8ccfb532de2a74df3da3488f6d1b9598a092271cc524e9a4c93b59adee5c0b29639a2b6963a891  nwg-look-1.1.1.tar.gz
+"

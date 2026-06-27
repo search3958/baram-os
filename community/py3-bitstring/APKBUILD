@@ -1,0 +1,32 @@
+# Maintainer: Michał Adamski <michal@ert.pl>
+pkgname=py3-bitstring
+pkgver=4.0.2
+pkgrel=3
+pkgdesc="Simple construction, analysis and modification of binary data"
+url="https://github.com/scott-griffiths/bitstring"
+license="MIT"
+arch="noarch"
+depends="python3"
+makedepends="py3-gpep517 py3-installer py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://github.com/scott-griffiths/bitstring/archive/bitstring-$pkgver/py3-bitstring-$pkgver.tar.gz"
+builddir="$srcdir/bitstring-bitstring-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m unittest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/bitstring-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+db5da5a4c1a5a53af7d68779b4cbfabf03431688db03309f3d52a83f16201ca150ce30260524df5c3404c9f19f733de7bf6b10a02561cc78cf777930d4ecaeb1  py3-bitstring-4.0.2.tar.gz
+"

@@ -1,0 +1,38 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=gping
+pkgver=1.20.1
+pkgrel=0
+pkgdesc="Ping, but with a graph"
+url="https://github.com/orf/gping"
+license="MIT"
+arch="all"
+makedepends="cargo cargo-auditable"
+source="https://github.com/orf/gping/archive/gping-v$pkgver/gping-$pkgver.tar.gz"
+builddir="$srcdir/gping-gping-v$pkgver"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	# skip tests that require internet access
+	cargo test --frozen -- \
+		--skip test::tests::test_integration_any \
+		--skip test::tests::test_integration_ip6 \
+		--skip test::tests::test_integration_ipv4
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+5feafb24f1701e4bf95cbc5bcf64efd1b91238768db757a82b48b8d7818b3275a7ae2b46008c660834bac5d2f0d04d06f46dc3fad334c494b468901f0fba17ca  gping-1.20.1.tar.gz
+"

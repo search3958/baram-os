@@ -1,0 +1,40 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-hjson
+pkgver=3.1.0
+pkgrel=4
+pkgdesc="Hjson for Python"
+url="https://github.com/hjson/hjson-py"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools"
+checkdepends="py3-pytest"
+options="!check" # https://github.com/hjson/hjson-py/pull/19
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/h/hjson/hjson-$pkgver.tar.gz"
+builddir="$srcdir/hjson-$pkgver"
+
+prepare() {
+	default_prepare
+
+	sed -i "s/^VERSION=.*/&'$pkgver'/" hjson/tool.py
+}
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py test
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+
+	rm -rf "$pkgdir"/usr/lib/python3*/site-packages/hjson/tests
+}
+
+sha512sums="
+6c64730dbde2048e5b0e1cc2448e7e02fe3fea5e00e070d149cc830a141d4fade1b36cd76c51daf9cdd1a3d3db1b80909e8f1568aba75f340528923db0b5d682  hjson-3.1.0.tar.gz
+"

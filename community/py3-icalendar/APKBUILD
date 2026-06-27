@@ -1,0 +1,61 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-icalendar
+_pyname=icalendar
+pkgver=7.1.1
+pkgrel=0
+pkgdesc="icalendar parser library for Python"
+url="https://github.com/collective/icalendar"
+arch="noarch"
+license="BSD-2-Clause"
+depends="py3-dateutil py3-tzdata"
+makedepends="py3-gpep517 py3-hatchling py3-hatch-vcs py3-wheel tzdata"
+checkdepends="py3-pytest py3-hypothesis py3-tz"
+subpackages="$pkgname-pyc"
+source="$_pyname-$pkgver.tar.gz::https://github.com/collective/icalendar/archive/refs/tags/v$pkgver.tar.gz
+	no-localtime-in-zoneinfos.patch
+	readd-pprint.patch"
+builddir="$srcdir/$_pyname-$pkgver"
+
+prepare() {
+	default_prepare
+
+	# py3-icalendar has different zoneinfo providers, one of these
+	# is based on timezone/equivalent_timezone_ids_result.py which
+	# is generated from tzdata. However, sometimes our tzdata is newer
+	# than the generated file thereby, for example, containing new
+	# timezones which causes test failures if we don't regenerate the
+	# file.
+	PYTHONPATH="$builddir/src" python -m \
+		icalendar.timezone.equivalent_timezone_ids
+}
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver"
+	# Hatch VCS supports adding formattable URLs to the version data, but the `commit_hash` field requires a git repo.
+	sed -i '/{commit_hash}/d' pyproject.toml
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --system-site-packages testenv
+	testenv/bin/python3 -m installer dist/*.whl
+	# Test fails on arm7 pipeline for some reason but isn't reproducible locally.
+	testenv/bin/python3 -m pytest "src/$_pyname/tests" \
+		--deselect 'src/icalendar/tests/test_unit_cal.py::test_calendars_with_same_subcomponents_in_different_order_are_equal[issue_526_calendar_with_events-issue_526_calendar_with_shuffeled_events]'
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		dist/*.whl
+
+	rm -r "$pkgdir"/usr/lib/python*/site-packages/icalendar/tests/
+}
+
+sha512sums="
+7e86aaebf829bf1074fa9f18bf7bebf9b5285251091c57f8d4aed12ce7c558501cd001d32579e92646bb60e0f597690fa131e970d2cebfb56344a361a847b49a  icalendar-7.1.1.tar.gz
+3206febc5705012d79fc835f677a119c9048e79433fd277a0f9eb1166c21964c63042418f3085fd2582c7b704a2c316865445dc35f15e9ab09428456a6b43b26  no-localtime-in-zoneinfos.patch
+c31aa80a1b3ac016525f395702b8659bb4d9ed6a12a64e713fb750ff98f22a5345b49af0a593c3e3bd03538f11ff93ec08e830db043e2e9da7da67baed77be29  readd-pprint.patch
+"

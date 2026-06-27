@@ -1,0 +1,39 @@
+# Maintainer:
+pkgname=py3-nose2
+pkgver=0.16.0
+pkgrel=0
+pkgdesc="Successor to nose, based on unittest"
+url="https://docs.nose2.io/en/latest/"
+arch="noarch"
+license="LGPL-2.0-or-later"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/nose-devs/nose2/archive/refs/tags/$pkgver/nose2-$pkgver.tar.gz"
+builddir="$srcdir/nose2-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	rm -r "$pkgdir"/usr/lib/python*/site-packages/nose2/tests
+}
+
+sha512sums="
+0991e3ad18b04c1ecbb909270bfaa37b1bba38e31fd33753cff2d81f485fc8e11e13a0305a84bd76052a90b084b4f2d4b8ca2497015398d7d0232d68a1a26235  nose2-0.16.0.tar.gz
+"

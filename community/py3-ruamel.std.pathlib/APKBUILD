@@ -1,0 +1,45 @@
+# Contributor: Keith Maxwell <keith.maxwell@gmail.com>
+# Maintainer: Keith Maxwell <keith.maxwell@gmail.com>
+pkgname=py3-ruamel.std.pathlib
+_pyname=ruamel.std.pathlib
+pkgver=0.12.0
+pkgrel=4
+pkgdesc="improvements over the standard pathlib module and pathlib2 package"
+url="https://sourceforge.net/projects/ruamel-std-pathlib/"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.xz::https://sourceforge.net/projects/ruamel-dl-tagged-releases/files/ruamel.std.pathlib-$pkgver.tar.xz/download
+	python-3.14-ast.patch
+	"
+builddir="$srcdir/ruamel.std.pathlib-$pkgver"
+options="!check" # todo: json.dumps not found
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+07c969d95fa3ebcf2e5070aa50044760fa1198d189f2d4104bfbaf9b49884deb391e32db2b4ffa23e5ed7d192c4a010c76d7ecc0cbe7f321cdc449f9a89f12be  py3-ruamel.std.pathlib-0.12.0.tar.xz
+8a3b6095f9f4199b772cb534dddc86fd61db7dae68122f3b0e172664e3b1f7a21b1a7237b2a01b8235d8cda80c71885b074f7c35385bd0d88fa2c6ebad8cb691  python-3.14-ast.patch
+"

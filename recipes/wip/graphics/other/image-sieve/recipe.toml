@@ -1,5 +1,0 @@
-#TODO glutin crate error
-[source]
-git = "https://github.com/Futsch1/image-sieve"
-[build]
-template = "cargo"

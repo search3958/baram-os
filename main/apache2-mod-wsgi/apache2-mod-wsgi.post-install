@@ -1,0 +1,12 @@
+#!/bin/sh
+
+cat <<EOF >&2
+*
+* To finish installing apache2-mod-wsgi:
+*     1) See if you need to modify the apache2 config:
+*            /etc/apache2/conf.d/wsgi-module.conf
+*     2) Restart apache2 when done.
+*
+EOF
+
+exit 0

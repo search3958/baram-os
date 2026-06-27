@@ -1,0 +1,56 @@
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer:
+pkgname=rstcheck-core
+pkgver=1.2.2
+pkgrel=2
+pkgdesc="Core library behind rstcheck"
+url="https://rstcheck-core.readthedocs.io/en/latest/"
+arch="noarch"
+license="MIT"
+depends="python3
+	py3-docutils
+	py3-importlib-metadata
+	py3-pydantic
+	py3-typing-extensions
+	"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm py3-wheel"
+checkdepends="bash
+	py3-pytest-mock
+	py3-pytest
+	py3-sphinx
+	py3-toml
+	py3-yaml
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rstcheck/rstcheck-core/archive/v$pkgver.tar.gz"
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver" \
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# "error: 'x' undeclared (first use in this function)" &
+	# "error: 'x' was not declared in this scope"
+	local _disabled_tests="
+		not test_check_c_returns_error_on_bad_code_block_linux and
+		not test_check_cpp_returns_error_on_bad_code_block_linux and
+		not test__gcc_checker_returns_error_on_bad_cpp_code_block_linux and
+		not test__run_in_subprocess_returns_error_on_bad_cpp_code_block_linux and
+		not test__run_in_subprocess_returns_error_on_bad_cpp_code_block_with_filename_linux
+		"
+
+	# shellcheck disable=SC2116
+	.testenv/bin/python3 -m pytest -k "$(echo $_disabled_tests)"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+d7bbe8cdf243b19b157e0723401089e872125b3ce20f5ab216c7f9f2889bec64c4ec8d49ce92927c3d67c59f81783f2f9867a6c1cc1f011a5182683b7f0321dd  rstcheck-core-1.2.2.tar.gz
+"

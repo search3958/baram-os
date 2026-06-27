@@ -1,0 +1,42 @@
+# Contributor: Díaz Urbaneja Diego <sodomon2@gmail.com>
+# Maintainer: Díaz Urbaneja Diego <sodomon2@gmail.com>
+pkgname=cdogs-sdl
+pkgver=2.3.2
+pkgrel=0
+pkgdesc="Classic overhead run-and-gun game"
+url="https://cxong.github.io/cdogs-sdl/"
+arch="all"
+license="GPL-2.0-or-later AND BSD-2-Clause"
+makedepends="
+	cmake
+	gtk+3.0-dev
+	mesa-dev
+	samurai
+	sdl2-dev
+	sdl2_image-dev
+	sdl2_mixer-dev
+	"
+options="!check" #make check not implemented
+source="$pkgname-$pkgver.tar.gz::https://github.com/cxong/cdogs-sdl/archive/$pkgver.tar.gz
+	no-werror.patch
+	"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr/share/cdogs-sdl/ \
+		-DCDOGS_DATA_DIR=/usr/share/cdogs-sdl/ \
+		-DCMAKE_BUILD_TYPE=None \
+		-Wno-dev
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	mv "$pkgdir"/usr/share/cdogs-sdl/bin/ "$pkgdir"/usr/bin/
+	mv "$pkgdir"/usr/share/cdogs-sdl/share/* "$pkgdir"/usr/share/
+}
+
+sha512sums="
+dd316cc1049c6387327c44ff310adf0e74206c05c943a521b62a5835bef71ba4a8f3af76bce20a07f3314c165a9c1746b6ec1520c423ec65fd8062860a4287e2  cdogs-sdl-2.3.2.tar.gz
+d4eedbfe425d659ee3fff0203f2dd49640da394db895964416ea86a98f601ee8136ac129f1c3c48b9bd525bf5e34854a861bfc881fb997ae7c61a01227137a89  no-werror.patch
+"

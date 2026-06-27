@@ -1,0 +1,47 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=sysstat
+pkgver=12.7.8
+pkgrel=0
+pkgdesc="Performance monitoring tools"
+url="https://sysstat.github.io/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+subpackages="$pkgname-doc"
+options="!check" # Tests require special build
+source="$pkgname-$pkgver.tar.gz::https://github.com/sysstat/sysstat/archive/v$pkgver.tar.gz"
+
+# secfixes:
+#   12.7.6-r0:
+#     - CVE-2023-33204
+#   12.6.2-r0:
+#     - CVE-2022-39377
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-compress-manpg \
+		--disable-nls
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# overwrite busybox symlinks
+	mkdir -p "$pkgdir"/bin/
+	local i; for i in iostat mpstat; do
+		mv "$pkgdir"/usr/bin/$i "$pkgdir"/bin/
+	done
+
+}
+
+sha512sums="
+ca4b239bf66a50ef647f456611647051874706973cf16fd90adb0f3d324fdd59d3aea9c887f93fec8975097590cc1d9961cd68dc8752f4fdfb047c6426caa9d2  sysstat-12.7.8.tar.gz
+"

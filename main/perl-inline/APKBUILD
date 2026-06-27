@@ -1,0 +1,39 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=perl-inline
+_pkgreal=Inline
+pkgver=0.87
+pkgrel=0
+pkgdesc="Write Perl subroutines in other programming languages"
+url="https://metacpan.org/pod/distribution/Inline/lib/Inline.pod"
+arch="noarch"
+license="Artistic-1.0-Perl OR GPL-1.0-or-later"
+depends="perl"
+checkdepends="perl-test-warn"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/I/IN/INGY/Inline-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+prepare() {
+	default_prepare
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+}
+
+build() {
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+a5910211577f53f8e7cec2c464d335dffecce98b6b5a79af9a990d79d198907e927586dac13bc5bb52d8e002784cbdbb543f2359be6bd0730f2a1608bc926ad3  Inline-0.87.tar.gz
+"

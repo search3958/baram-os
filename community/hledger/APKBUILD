@@ -1,0 +1,128 @@
+# Contributor: Dhruvin Gandhi <contact@dhru.vin>
+# Maintainer: Leon White <badfunkstripe@gmail.com>
+pkgname=hledger
+pkgver=1.52
+pkgrel=0
+pkgdesc="Command-line interface for the hledger accounting system"
+_uipkgdesc="Curses-style terminal interface for the hledger accounting system"
+_webpkgdesc="Web interface for the hledger accounting system"
+url="https://hledger.org/hledger.html"
+_uiurl="https://hledger.org/hledger-ui.html"
+_weburl="https://hledger.org/hledger-web.html"
+arch="aarch64 x86_64" # limited by ghc
+license="GPL-3.0-only"
+makedepends="
+	ghc
+	cabal
+	libffi-dev
+	ncurses-dev
+	zlib-dev
+	"
+_llvmver=15
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-ui
+	$pkgname-ui-doc:uidoc
+	$pkgname-web
+	$pkgname-web-doc:webdoc
+	$pkgname-web-openrc:webopenrc
+	"
+install="$pkgname-web.pre-install"
+source="https://github.com/simonmichael/hledger/archive/refs/tags/$pkgver/hledger-$pkgver.tar.gz
+	cabal.project.freeze
+	hledger-web.initd"
+options="net"
+
+export CABAL_DIR="$srcdir"/cabal
+export PATH="/usr/lib/llvm$_llvmver/bin:$PATH"
+
+cabal_update() {
+	cd $builddir
+	cabal v2-update
+	(
+		cd "$builddir"
+		cabal v2-freeze --shadow-installed-packages
+		mv cabal.project.freeze "$startdir/"
+	)
+}
+
+prepare() {
+	default_prepare
+	cp "$srcdir"/cabal.project.freeze .
+}
+
+build() {
+	cabal update
+	cabal build --prefix=/usr all
+}
+
+check() {
+	cabal test all
+}
+
+package() {
+	# hledger
+	install -Dm755 "$(cabal list-bin hledger)" "$pkgdir"/usr/bin/hledger
+	install -Dm644 hledger/hledger.1 "$pkgdir"/usr/share/man/man1/hledger.1
+	install -Dm644 hledger/hledger.info "$pkgdir"/usr/share/info/hledger.info
+	install -Dm644 hledger/shell-completion/hledger-completion.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/hledger
+	# hledger-ui
+	install -Dm755 "$(cabal list-bin hledger-ui)" "$pkgdir"/usr/bin/hledger-ui
+	install -Dm644 hledger-ui/hledger-ui.1 "$pkgdir"/usr/share/man/man1/hledger-ui.1
+	install -Dm644 hledger-ui/hledger-ui.info "$pkgdir"/usr/share/info/hledger-ui.info
+	# hledger-web
+	install -Dm755 "$(cabal list-bin hledger-web)" "$pkgdir"/usr/bin/hledger-web
+	install -Dm644 hledger-web/hledger-web.1 "$pkgdir"/usr/share/man/man1/hledger-web.1
+	install -Dm644 hledger-web/hledger-web.info "$pkgdir"/usr/share/info/hledger-web.info
+	install -Dm755 "$srcdir"/hledger-web.initd "$pkgdir"/etc/init.d/hledger-web
+}
+
+doc() {
+	pkgdesc="$pkgdesc (documentation)"
+	install_if="docs $pkgname=$pkgver-r$pkgrel"
+	amove usr/share/man/man1/hledger.1 usr/share/info/hledger.info
+	$(command -v pigz || echo gzip) -n -9 "$subpkgdir"/usr/share/man/man1/hledger.1
+}
+
+ui() {
+	pkgdesc="$_uipkgdesc"
+	url="$_uiurl"
+	amove usr/bin/hledger-ui
+}
+
+uidoc() {
+	pkgdesc="$_uipkgdesc (documentation)"
+	url="$_uiurl"
+	install_if="docs $pkgname-ui=$pkgver-r$pkgrel"
+	amove usr/share/man/man1/hledger-ui.1 usr/share/info/hledger-ui.info
+	$(command -v pigz || echo gzip) -n -9 "$subpkgdir"/usr/share/man/man1/hledger-ui.1
+}
+
+web() {
+	pkgdesc="$_webpkgdesc"
+	url="$_weburl"
+	amove usr/bin/hledger-web
+}
+
+webdoc() {
+	pkgdesc="$_webpkgdesc (documentation)"
+	url="$_weburl"
+	install_if="docs $pkgname-web=$pkgver-r$pkgrel"
+	amove usr/share/man/man1/hledger-web.1 usr/share/info/hledger-web.info
+	$(command -v pigz || echo gzip) -n -9 "$subpkgdir"/usr/share/man/man1/hledger-web.1
+}
+
+webopenrc() {
+	pkgdesc="$_webpkgdesc (OpenRC init scripts)"
+	url="$_weburl"
+	install_if="openrc $pkgname-web=$pkgver-r$pkgrel"
+	amove etc/init.d/hledger-web
+}
+
+sha512sums="
+edd7c9245c4c1e3ecfc1afc191262ae18dcd30a6508b71781d1beef1c3bdde6348f5445573a84c85b210977ddc6845a5ebb96f2f2fc4066febc05a333c3476ff  hledger-1.52.tar.gz
+142454bf2a79d6d2381d0e0cd403a8d299b8720045584e2fe0d501f2da2e9f1a7b9374d15719483386e57e4dc1751fdf175b5d18b10951fcb96580fbb8e8dff6  cabal.project.freeze
+4fd0898b29736c1d7f5b41b1ccca8734f38999e5ba88656e092724a7ce4ed346b4f86d627c99be77934eaa7cd86e33ce20a33a60650f1ad8a527c57387179365  hledger-web.initd
+"

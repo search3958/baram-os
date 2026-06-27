@@ -1,0 +1,46 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=lua-argparse
+_rockname=argparse
+pkgver=0.7.1
+pkgrel=0
+pkgdesc="Feature-rich command line parser for Lua"
+url="https://github.com/mpeterv/argparse"
+arch="noarch"
+license="MIT"
+checkdepends="lua-busted"
+source="https://github.com/luarocks/argparse/archive/$pkgver/lua-argparse-$pkgver.tar.gz"
+builddir="$srcdir/$_rockname-$pkgver"
+
+_luaversions="5.1 5.2 5.3"
+for _v in $_luaversions; do
+	checkdepends="$checkdepends lua$_v"
+	# for backward compatibility (Alpine <3.18)
+	provides="$provides lua$_v-$_rockname=$pkgver-r$pkgrel"
+done
+
+check() {
+	mkdir .bin
+
+	local lver; for lver in $_luaversions; do
+		msg "Testing on lua$lver"
+
+		ln -sf /usr/bin/lua$lver .bin/lua
+		LUA_PATH="$builddir/src/?.lua;;" \
+			PATH="$builddir/.bin:$PATH" \
+			lua /usr/bin/busted
+	done
+}
+
+package() {
+	local rockdir="$pkgdir/usr/lib/luarocks/rocks-common/$_rockname/$pkgver-1"
+
+	install -D -m644 src/argparse.lua -t "$pkgdir"/usr/share/lua/common/
+
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+sha512sums="
+f192d0c591516a74408a19c0bbf34233be180f63794211a951d19fc8d981749bc71eace16a4680c8f2bb302ab48958c6a9ffc84022a1754275fc1f9113ae32b0  lua-argparse-0.7.1.tar.gz
+"

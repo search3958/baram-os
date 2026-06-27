@@ -1,0 +1,17 @@
+#!/sbin/openrc-run
+
+command="/usr/bin/babeld"
+command_args="-I '' $ARGS"
+supervisor="supervise-daemon"
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	if [ -z "$ARGS" ] && [ ! -s "/etc/babeld.conf" ]; then
+		echo "ERROR: No configuration found in /etc/conf.d/babeld or /etc/babeld.conf"
+		return 1
+	fi
+}

@@ -1,0 +1,39 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-pyscss
+pkgver=1.4.0
+pkgrel=3
+pkgdesc="A Scss compiler for Python"
+url="https://github.com/Kronuz/pyScss"
+arch="all"
+license="MIT"
+depends="
+	py3-six
+	python3
+	"
+makedepends="
+	pcre-dev
+	py3-setuptools
+	python3-dev
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/Kronuz/pyScss/archive/v$pkgver/pyScss-v$pkgver.tar.gz"
+options="!check" # Requires tox so we can't run them
+builddir="$srcdir/pyScss-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+428d38e45ffbd5d4848d1309a394b3f24c0240f29566e7de65af071447effad51ca582c55873a9c283cf08941730ee30bab5437fec2096abcb3089a13a91ed3f  pyScss-v1.4.0.tar.gz
+"

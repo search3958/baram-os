@@ -1,0 +1,36 @@
+# Contributor: Dhruvin Gandhi <contact@dhru.vin>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-boolean.py
+_pkgname=boolean.py
+pkgver=5.0
+pkgrel=1
+pkgdesc="Define boolean algebras, create and parse boolean expressions and DSL"
+url="https://github.com/bastikr/boolean.py"
+arch="noarch"
+license="BSD-2-Clause"
+makedepends="py3-setuptools py3-gpep517 py3-installer py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/bastikr/boolean.py/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+edd3fa81c45667665183c22f4fe1c78bd39bd3dfff7fff942b8645e9e15839a13adcacabc5115941b350bb0a15a653d9f472e286429751afe29a8d98f8fe6b7f  py3-boolean.py-5.0.tar.gz
+"

@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+: ${error_logger="logger -t $RC_SVCNAME -p daemon.info >/dev/null 2>&1"}
+
+description="Firmware update daemon"
+command="/usr/libexec/fwupd/fwupd"
+command_args="--no-timestamp --no-domain $command_args"
+command_background="yes"
+pidfile="/run/$RC_SVCNAME.pid"
+
+depend() {
+	need dbus
+	before xdm
+}

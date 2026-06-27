@@ -1,0 +1,35 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: ScrumpyJack <scrumpyjack@st.ilet.to>
+pkgname=py3-rpigpio
+_pkgname=RPi.GPIO
+pkgver=0.7.1
+pkgrel=6
+pkgdesc="This package provides a class to control the GPIO on a Raspberry Pi."
+url="https://pypi.org/project/RPi.GPIO"
+arch="armhf armv7 aarch64"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools python3-dev"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-rpigpio" # Backwards compatibility
+provides="py-rpigpio=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	export CFLAGS="$CFLAGS -fcommon"
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py check
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+6c8a7411be3e2cbf52b3faed63b95d52163a19b64c8778f08a0f22d53403740e044c91383c512d2c5148f6b24c60bfdecd3ffc5601791c4b8d36101d3f0f9d0b  py3-rpigpio-0.7.1.tar.gz
+"

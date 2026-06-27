@@ -1,0 +1,47 @@
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=py3-apicula
+_pkgname=Apycula
+pkgver=0.11.1
+pkgrel=2
+pkgdesc="Project Apicula: bitstream documentation for Gowin FPGAs"
+url="https://github.com/YosysHQ/apicula"
+arch="noarch"
+license="MIT"
+depends="
+	py3-crcmod
+	py3-numpy
+	py3-openpyxl
+	py3-pandas
+	py3-pillow
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+# Note: The GitHub repo contains only the source of the tools used to extract
+#       the bitstream info from the binary only Gowin tools via fuzzing. The
+#       source package form pypi also contains the extracted databases. Since
+#       the fuzzing takes ages and only works on x86_64 glibc systems (the
+#       binary only Gowin tools are built for that), we really want to use
+#       the pypi source.
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # no unit tests provided
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e3a86adf1ba571d155c0f151595ea303f5d19f24d2eacd882a4967ad1f5ae3eff77e000ac1f88748624ee37a6839f6c806e403cd443912abb7b48f31f37c6be5  Apycula-0.11.1.tar.gz
+"

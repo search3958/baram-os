@@ -1,0 +1,50 @@
+# Contributor: Andy Hawkins <andy@gently.org.uk>
+# Maintainer: Andy Hawkins <andy@gently.org.uk>
+pkgname=py3-parametrize-from-file
+pkgver=0.21.0
+pkgrel=2
+pkgdesc="Parametrize From File"
+url="https://parametrize-from-file.readthedocs.io/en/latest/"
+arch="noarch"
+license="MIT"
+depends="
+	python3>=3.8
+	py3-toml
+	py3-yaml
+	py3-nestedtext
+	py3-tidyexc
+	py3-more-itertools>=8.10
+	py3-decopatch
+	"
+makedepends="
+	py3-flit-core
+	py3-gpep517
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-cov
+	py3-coveralls
+	py3-numpy
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/kalekundert/parametrize_from_file/archive/v$pkgver/parametrize_from_file-v$pkgver.tar.gz"
+builddir="$srcdir/parametrize_from_file-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH="$PWD/build/lib" pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/parametrize_from_file*.whl
+}
+
+sha512sums="
+50df46861780d289fabfa483c4338b1028f33a4a31c9d28a4f77abf88e89c1d73ede832b980172efc029307c84c2b46d8d520149d5e489d6a0ec0c219a92b2ea  parametrize_from_file-v0.21.0.tar.gz
+"

@@ -1,0 +1,48 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=dex-idp
+pkgver=2.45.1
+pkgrel=3
+pkgdesc="OpenID Connect (OIDC) identity and OAuth 2.0 provider with pluggable connectors"
+url="https://dexidp.io/"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+checkdepends="curl tzdata"
+install="$pkgname.pre-install"
+subpackages="$pkgname-bash-completion $pkgname-fish-completion $pkgname-openrc $pkgname-zsh-completion"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dexidp/dex/archive/refs/tags/v$pkgver.tar.gz
+	dex-idp.initd
+	"
+builddir="$srcdir/dex-$pkgver"
+options="net !check" # go dependencies, check fails on builders
+
+build() {
+	make
+
+	./bin/dex completion bash > $pkgname.bash
+	./bin/dex completion fish > $pkgname.fish
+	./bin/dex completion zsh > $pkgname.zsh
+}
+
+check() {
+	make test
+}
+
+package() {
+	install -Dvm755 bin/dex "$pkgdir"/usr/bin/dex-idp
+	install -Dvm644 config.yaml.dist "$pkgdir"/etc/dex.yaml
+
+	install -Dvm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+
+	install -Dvm644 $pkgname.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dvm644 $pkgname.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dvm644 $pkgname.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+3cc6d0e7a418c48468adee3f484210002bb4da57cd4438b816294c3d241df53f001714b96f111c071253d81e2daa7e280d2acc8a078be5f856b53a8fb4f0a92f  dex-idp-2.45.1.tar.gz
+680d42305761e04f7cce8a22e4560d8d4bde314aa119a861d461879b8b2e00a844159d99365b424162cb976a8c8fe982f0b4012379b06d4cf05889ba2924b760  dex-idp.initd
+"

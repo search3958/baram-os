@@ -1,0 +1,61 @@
+# Contributor: Matt Smith <mcs@darkregion.net>
+# Maintainer: Matt Smith <mcs@darkregion.net>
+pkgname=py3-urwid
+_pyname=urwid
+pkgver=3.0.5
+pkgrel=1
+pkgdesc="A console user interface library for Python3"
+url="https://urwid.org/"
+arch="all"
+license="LGPL-2.1-only"
+depends="
+	py3-wcwidth
+	"
+makedepends="
+	python3-dev
+	py3-gpep517
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="
+	py3-gobject3
+	py3-pytest-cov
+	py3-pyzmq
+	py3-tornado
+	py3-trio
+	py3-twisted
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/u/$_pyname/$_pyname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+
+replaces="py-urwid" # Backwards compatibility
+provides="py-urwid=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# TypeError: Can't instantiate abstract class Screen without an implementation for abstract methods
+	skip="--ignore=urwid/display/_raw_display_base.py"
+	# Tries to run windows test, wtf?
+	skip="$skip --ignore=urwid/display/_win32.py"
+	skip="$skip --ignore urwid/display/_win32_raw_display.py"
+
+	.testenv/bin/python3 -m pytest -vvvv --doctest-modules -s $skip
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+998916294c7e215fcaa096dc2d7d70d18503e3425473fde85365ed6a52550bb61064d0bfe576b83a15cff688836af81ba13565d87aa0aecd3941f9b4adcf1886  urwid-3.0.5.tar.gz
+"

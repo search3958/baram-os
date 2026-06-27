@@ -1,0 +1,75 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gpgme
+pkgver=2.0.1
+pkgrel=1
+pkgdesc="gnupg made easy"
+url="https://www.gnupg.org/related_software/gpgme/"
+arch="all"
+license="LGPL-2.1-or-later AND GPL-3.0-or-later"
+# NOTE: gpgme needs at least gpg or gpgsm, but most programs use only gpg.
+# Some packages depending on gpgme need more GnuPG components (e.g.
+# gnupg-dirmngr); these must be explicitly defined in the package's depends
+# (not here!).
+depends="gpg gpg-agent gpgsm"
+makedepends="
+	libassuan-dev
+	libgpg-error-dev
+	texinfo
+	"
+checkdepends="gnupg"
+install="$pkgname.post-upgrade"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lisp::noarch
+	"
+source="https://www.gnupg.org/ftp/gcrypt/gpgme/gpgme-$pkgver.tar.bz2
+	lfs64.patch
+	"
+
+case "$CARCH" in
+x86|armhf|armv7)
+	# the tests fail here despite some fixes above;
+	#
+	# FAIL!  : AddExistingSubkeyJobTest::testAddExistingSubkeyWithExpiration() Compared values are not the same
+	#    Actual   (result.code())                     : 1
+	#    Expected (static_cast<int>(GPG_ERR_INV_TIME)): 161
+	#    Loc: [t-addexistingsubkey.cpp(238)]
+	options="$options !check"
+	;;
+esac
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-static \
+		--disable-dependency-tracking
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+check() {
+	make check
+}
+
+lisp() {
+	pkgdesc="Common Lisp bindings for GPGME"
+	depends="$depends $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/share
+}
+
+sha512sums="
+ad19169594b6048b11df9311080e179232ff03def08f377e7d7536a3a91e12f722cbae93e80364b73db013152b327bc3457ec9a9ddea9c660d74f389f6ab8837  gpgme-2.0.1.tar.bz2
+14856041423365463d0e479b85c721f88761e507b480dfde3cda2deb2a323055f016125651a55f7c1b821cec76d2721196407c40c37dbe256959d9b3e1fdecf5  lfs64.patch
+"

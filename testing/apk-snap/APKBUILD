@@ -1,0 +1,32 @@
+# Contributor: Jacob Ludvigsen <jacob.ludvigsen@protonmail.com>
+# Maintainer: Jacob Ludvigsen <jacob.ludvigsen@protonmail.com>
+pkgname=apk-snap
+pkgver=3.1.1
+pkgrel=0
+pkgdesc="Port of snap-pac from Arch Linux. Triggers filesystem snapshots before and after every apk commit"
+url="https://gitlab.com/papiris/apk-snap"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3 snapper"
+makedepends="py3-sphinx"
+checkdepends="py3-pytest"
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname.post-deinstall"
+subpackages="$pkgname-doc"
+source="https://gitlab.com/papiris/apk-snap/-/archive/$pkgver/apk-snap-$pkgver.tar.bz2"
+
+build() {
+	make man
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir/" install
+	install -Dm644 $builddir/extra/snapper-config-apk-snap $pkgdir/etc/apk-snap/default-snapper-config-apk-snap.conf
+}
+
+sha512sums="
+f56a82d911aa14f6917603eff1d716cfd211344077d68525d73f68f7df62d4ba07b841ba1ccc7ef38dff4d8fc08e02b98335dc475d2a695cbfc27716d28e7582  apk-snap-3.1.1.tar.bz2
+"

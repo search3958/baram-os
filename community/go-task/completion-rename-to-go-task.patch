@@ -1,0 +1,35 @@
+diff --git a/completion/bash/task.bash b/completion/bash/task.bash
+index 77617c7..8d2f8b8 100644
+--- a/completion/bash/task.bash
++++ b/completion/bash/task.bash
+@@ -1,7 +1,7 @@
+ # vim: set tabstop=2 shiftwidth=2 expandtab:
+ 
+ _GO_TASK_COMPLETION_LIST_OPTION='--list-all'
+-TASK_CMD="${TASK_EXE:-task}"
++TASK_CMD="${TASK_EXE:-go-task}"
+ 
+ function _task()
+ {
+diff --git a/completion/fish/task.fish b/completion/fish/task.fish
+index c62b2ce..26656f3 100644
+--- a/completion/fish/task.fish
++++ b/completion/fish/task.fish
+@@ -1,4 +1,4 @@
+-set -l GO_TASK_PROGNAME (if set -q GO_TASK_PROGNAME; echo $GO_TASK_PROGNAME; else if set -q TASK_EXE; echo $TASK_EXE; else; echo task; end)
++set -l GO_TASK_PROGNAME (if set -q GO_TASK_PROGNAME; echo $GO_TASK_PROGNAME; else if set -q TASK_EXE; echo $TASK_EXE; else; echo go-task; end)
+ 
+ # Cache variables for experiments (global)
+ set -g __task_experiments_cache ""
+diff --git a/completion/zsh/_task b/completion/zsh/_task
+index 2562a6c..bf101a0 100755
+--- a/completion/zsh/_task
++++ b/completion/zsh/_task
+@@ -1,6 +1,6 @@
+ #compdef task
+ typeset -A opt_args
+-TASK_CMD="${TASK_EXE:-task}"
++TASK_CMD="${TASK_EXE:-go-task}"
+ compdef _task "$TASK_CMD"
+ 
+ _GO_TASK_COMPLETION_LIST_OPTION="${GO_TASK_COMPLETION_LIST_OPTION:---list-all}"

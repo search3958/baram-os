@@ -1,0 +1,55 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=broot
+pkgver=1.54.0
+pkgrel=0
+pkgdesc="New way to see and navigate directory trees"
+url="https://github.com/Canop/broot"
+arch="all"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	libgit2-dev
+	libxcb-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/Canop/broot/archive/v$pkgver/broot-$pkgver.tar.gz"
+options="net" # fetch crates
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL=2
+export LIBGIT2_NO_VENDOR=1 # use system libgit2
+
+prepare() {
+	default_prepare
+
+	cargo fetch --locked --target="$CTARGET"
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/broot -t "$pkgdir"/usr/bin/
+	install -D -m644 man/page "$pkgdir"/usr/share/man/man1/broot.1
+
+	cd "$(find target/release -name broot.bash -exec dirname {} \; -quit)"
+
+	install -D -m644 broot.bash "$pkgdir"/usr/share/bash-completion/completions/broot
+	install -D -m644 _broot -t "$pkgdir"/usr/share/zsh/site-functions/
+	install -D -m644 broot.fish -t "$pkgdir"/usr/share/fish/vendor_completions.d/
+}
+
+sha512sums="
+3503446a30ed63471d703d68db136af22760c5bd4cd17af0fe207e083f3d7fa3672e9003de6ca87f0c2b418396a30cade791b4817c77c370403abc9a55a719b8  broot-1.54.0.tar.gz
+"

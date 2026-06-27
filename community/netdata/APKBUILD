@@ -1,0 +1,175 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer:
+pkgname=netdata
+pkgver=1.47.5
+pkgrel=22
+pkgdesc="Real-time performance monitoring"
+url="https://www.netdata.cloud/"
+license="GPL-3.0-or-later"
+arch="all"
+depends="bash coreutils"
+makedepends="
+	abseil-cpp-dev
+	brotli-dev
+	cmake
+	cups-dev
+	e2fsprogs-dev
+	elfutils-dev
+	go
+	json-c-dev
+	judy-dev
+	libcap-dev
+	libmnl-dev
+	libnetfilter_acct-dev
+	libuuid
+	libuv-dev
+	linux-headers
+	lz4-dev
+	samurai
+	openssl-dev>3
+	protobuf-dev
+	yaml-dev
+	zlib-dev
+	"
+checkdepends="cmocka-dev"
+pkgusers="netdata"
+pkggroups="netdata"
+subpackages="$pkgname-openrc $pkgname-python::noarch $pkgname-go-plugins:go"
+install="$pkgname.pre-install"
+options="!check net" # tests require installation to /
+_aclk_schemas_commit=e07e855389c34a28645fa044e3fc6cb7a6f02a79
+_ml_dlib_commit=021cbbb1c2ddec39d8dd4cb6abfbbafdf1cf4482
+# This _h2o_commit fixes CVE-2023-44487, and does not follow upstream
+_h2o_commit=094a6f90f76eeb280a430200cba47bde39b0b8e8
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/netdata/netdata/archive/v$pkgver.tar.gz
+	aclk-schemas-$_aclk_schemas_commit.tar.gz::https://github.com/netdata/aclk-schemas/archive/$_aclk_schemas_commit.tar.gz
+	dlib-$_ml_dlib_commit.tar.gz::https://github.com/davisking/dlib/archive/$_ml_dlib_commit.tar.gz
+	h2o-$_h2o_commit.tar.gz::https://github.com/h2o/h2o/archive/$_h2o_commit.tar.gz
+
+	openrc-pidfile-not-writable-by-user.patch
+
+	protobuf-23.patch
+	build-enable-cgo.patch
+	disable-non-free-dashboard-v2.patch
+	"
+
+# secfixes:
+#   1.43.2-r1:
+#     - CVE-2023-44487
+#   0:
+#     - CVE-2024-32019
+
+_freeipmi=False
+case $CARCH in
+	ppc64le) ;; # no freeipmi
+	*)
+		makedepends="$makedepends freeipmi-dev"
+		_freeipmi=True
+	;;
+esac
+
+copy_submodule() {
+	local name=$1
+	local commit=$2
+	local dest=$3
+
+	cp -r \
+		$srcdir/$name-$commit \
+		-T "$builddir"/$dest
+
+}
+
+prepare() {
+	copy_submodule aclk-schemas "$_aclk_schemas_commit" src/aclk/aclk-schemas
+	copy_submodule dlib "$_ml_dlib_commit" src/ml/dlib
+	copy_submodule h2o "$_h2o_commit" src/web/server/h2o/libh2o
+
+	default_prepare
+}
+
+build() {
+	local cmake_crossopts
+	if [ "$CBUILD" != "$CHOST" ]; then
+		cmake_crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+
+	# ENABLE_EXPORTER_PROMETHEUS_REMOTE_WRITE: snappy not found due to lack of
+	# pkgconf
+	# ENABLE_PLUGIN_EBPF: include files missing
+	# ENABLE_LOGS_MANAGEMENT_TESTS: tries to assign read-only stdout/stderr
+	cmake -G Ninja -B build \
+		-DCMAKE_INSTALL_PREFIX=/ \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DWEB_DIR=/usr/share/webapps/netdata \
+		-DENABLE_PLUGIN_SYSTEMD_JOURNAL=False \
+		-DENABLE_PLUGIN_XENSTAT=False \
+		-DENABLE_PLUGIN_CUPS=False \
+		-DENABLE_PLUGIN_EBPF=False \
+		-DENABLE_PLUGIN_GO=True \
+		-DENABLE_PLUGIN_FREEIPMI=$_freeipmi \
+		-DENABLE_EXPORTER_PROMETHEUS_REMOTE_WRITE=False \
+		-DENABLE_EXPORTER_MONGODB=False \
+		-DENABLE_LOGS_MANAGEMENT_TESTS=False \
+		$cmake_crossopts
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	chgrp -R $pkggroups "$pkgdir"/usr/share/webapps/netdata
+	install -Dm755 build/system/openrc/init.d/netdata -t $pkgdir/etc/init.d/
+	install -Dm644 build/system/openrc/conf.d/netdata -t $pkgdir/etc/conf.d/
+	install -Dm644 build/system/logrotate/netdata $pkgdir/etc/logrotate.d/netdata
+	install -Dm644 ./system/netdata.conf $pkgdir/etc/netdata/netdata.conf
+
+	# auxilary files for various systems, but not installed at the correct
+	# location
+	rm -r "$pkgdir"/usr/lib/netdata/system
+
+	# Fix permissions
+	chown -R netdata: \
+		"$pkgdir"/var/cache/netdata \
+		"$pkgdir"/var/lib/netdata \
+		"$pkgdir"/var/log/netdata
+	chmod 0750 "$pkgdir"/var/cache/netdata
+	chmod 0750 "$pkgdir"/var/lib/netdata
+
+	# rundir in /run
+	rmdir "$pkgdir"/var/run/netdata
+	rmdir "$pkgdir"/var/run
+	install -dm0755 "$pkgdir"/run/netdata
+}
+
+python() {
+	pkgdesc="$pkgdesc (python3 support)"
+	depends="$pkgname python3"
+
+	amove usr/libexec/netdata/python.d
+	amove usr/libexec/netdata/plugins.d/python.d.plugin
+	amove etc/netdata/python.d
+	amove usr/lib/netdata/conf.d/python.d
+	amove usr/lib/netdata/conf.d/python.d.conf
+}
+
+go() {
+	pkgdesc="$pkgdesc (go plugins)"
+	depends="$pkgname"
+
+	amove usr/libexec/netdata/plugins.d/go.d.plugin
+	amove usr/lib/netdata/conf.d/go.d.conf
+	amove usr/lib/netdata/conf.d/go.d
+	amove usr/lib/netdata/conf.d/health.d/go.d.plugin.conf
+	amove etc/netdata/go.d
+}
+
+sha512sums="
+101e5439cf647e08dc2d8753bbebb91b98ae0faed8bbff8054a2be19ce3cecabc4e6c6b7f75e4381383609b151457de8987ae79eaab2159c3a1303ef9647ccd0  netdata-1.47.5.tar.gz
+21889f098610d49726c53f0a2a6904952ddef5399f7bd397f758978b0409eaf1e74f0ca6e53627c7ac15275cd69eb08f742f16b78d77a4a2a6013f9d987a5922  aclk-schemas-e07e855389c34a28645fa044e3fc6cb7a6f02a79.tar.gz
+814e3ee5811b43349a218c2b6595e53c1daf5db2c9346b2ec0ff6475cc83b1803adad3f3210f51e219d6523fcf839543087b94eb18501ee144128fb169bd9c0b  dlib-021cbbb1c2ddec39d8dd4cb6abfbbafdf1cf4482.tar.gz
+f494a2bf75fe7a6c97bf64ae8d2a4eabe6bcc5c1a4a038cb27c23b478a65a543f9c2dcc8223b0e05ebe2ee811baa06876d13d5abb344c1bc51bdf5e3e8d3a75b  h2o-094a6f90f76eeb280a430200cba47bde39b0b8e8.tar.gz
+bfa455511b582497c358be5a9408f066495edfade229b7971c5de1a85a8b7a5a503b474c9341eb8f367dc1f70be9663186c978ecc85280096f928941c002671d  openrc-pidfile-not-writable-by-user.patch
+c42a973ad1c7bb7b16a0c0d20580ac168071d37c06ad6b3336388ba7c5d59dd8b90795ea9a7f501d01755062d0a9a405a61b49f05a940c942c2154400d2721ee  protobuf-23.patch
+7af2cb937f12fae81f0a348bc17c804646cf5cfee706e7edfb15606c4042aa9588addd3bed7fbc7df010d1246fe9987e979790f6c4abe09623cd202abce9de62  build-enable-cgo.patch
+6ae523c8b93d39e7ab3390aaced8948da0fa7a250b6f9bb9ad6820f6f3d9d6f359f952c10784e0b5518bac7625d35ac3fb4efcba3e7489f47173dbe622846768  disable-non-free-dashboard-v2.patch
+"

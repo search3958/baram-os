@@ -1,0 +1,101 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=jupyter-server
+pkgver=2.19.0
+pkgrel=0
+pkgdesc="Backend for Jupyter web applications"
+url="https://github.com/jupyter-server/jupyter_server"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	jupyter-nbconvert
+	jupyter-nbformat
+	jupyter-server-terminals
+	py3-anyio
+	py3-argon2-cffi
+	py3-jinja2
+	py3-jupyter-events
+	py3-jupyter_client
+	py3-jupyter_core
+	py3-overrides
+	py3-packaging
+	py3-prometheus-client
+	py3-send2trash
+	py3-terminado
+	py3-tornado
+	py3-traitlets
+	py3-websocket-client
+	"
+makedepends="
+	py3-gpep517
+	py3-hatch-jupyter-builder
+	py3-hatchling
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-flaky
+	py3-ipykernel
+	py3-pytest
+	py3-pytest-console-scripts
+	py3-pytest-jupyter
+	py3-pytest-timeout
+	py3-pytest-tornasync
+	py3-requests
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jupyter-server/jupyter_server/releases/download/v$pkgver/jupyter_server-$pkgver.tar.gz"
+builddir="$srcdir/jupyter_server-$pkgver"
+options="!check" # flaky
+
+# secfixes:
+#   2.18.2-r0:
+#     - CVE-2025-61669
+#     - CVE-2026-35397
+#     - CVE-2026-40110
+#     - CVE-2026-40934
+#   2.7.3-r0:
+#     - CVE-2023-39968
+#     - CVE-2023-40170
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# test_server_extension_list requires another pytest dependency to be packaged
+	# test_terminal is throwing errors related to tornado
+	# test_authorizer is throwing key errors for terminal manager
+	# test_stop_extension is failing a single assert
+	# test_copy_big_dir is not raising a HTTPError, needs more investigation
+	# test_delete_non_empty_folder not raising HTTPError on x86 & x86_64 builders
+	# test_api 500 errors under certain builder state repeatedly (why?)
+	# test_restart_kernel fails on x86 with a 1!=0 assert
+	# test_gateway_request_with_expiring_cookies fails on riscv64: TypeError: argument of type 'NoneType' is not iterable
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest \
+		--disable-warnings \
+		-W ignore::DeprecationWarning \
+		--deselect tests/extension/test_entrypoint.py::test_server_extension_list \
+		--deselect tests/test_terminal.py \
+		--deselect tests/auth/test_authorizer.py \
+		--deselect tests/extension/test_app.py::test_stop_extension \
+		--deselect tests/services/contents/test_manager.py::test_copy_big_dir \
+		--deselect tests/services/contents/test_manager.py::test_delete_non_empty_folder \
+		--deselect tests/services/contents/test_api.py \
+		--deselect tests/services/sessions/test_api.py::test_restart_kernel \
+		--deselect tests/test_gateway.py::test_gateway_request_with_expiring_cookies
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+021be211c40541b84f0adbd04c31a8cf5e1a99ed0480d75bd5bb28ef5102e9a08652d0712cbfd5ba4126974d961818f1d9eb8b3a206870e171ed8285a658ae99  jupyter-server-2.19.0.tar.gz
+"

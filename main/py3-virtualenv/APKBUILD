@@ -1,0 +1,56 @@
+# Contributor: Sam Dodrill <shadowh511@gmail.com>
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-virtualenv
+pkgver=21.3.3
+pkgrel=0
+pkgdesc="Virtual Python3 Environment builder"
+url="https://virtualenv.pypa.io/en/latest/"
+arch="noarch"
+license="MIT"
+depends="py3-platformdirs py3-distlib py3-filelock py3-python-discovery"
+makedepends="
+	py3-gpep517
+	py3-hatchling
+	py3-hatch-vcs
+	py3-wheel
+	"
+checkdepends="
+	py3-flaky
+	py3-pytest-env
+	py3-pytest-mock
+	py3-pytest-timeout
+	py3-pytest-xdist
+	py3-time-machine
+	python3-dev
+	bash
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/v/virtualenv/virtualenv-$pkgver.tar.gz"
+builddir="$srcdir/virtualenv-$pkgver"
+options="net" # fetches stuff during tests
+
+replaces="py-virtualenv" # Backwards compatibility
+provides="py-virtualenv=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto -v \
+		-k "not test_can_build_c_extensions"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f3e7c71f2fafa0bff05aba89bc0cb2e2eede0c6ed5373fb253a6ac59f103505108671e5c19866562146723ea9630fc472dade53498c4fb97d6ec5c8e1c125d19  virtualenv-21.3.3.tar.gz
+"

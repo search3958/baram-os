@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-openssh
+pkgver=0.11.2
+pkgrel=2
+pkgdesc="Web-based system administration interface for openssh"
+url="https://gitlab.alpinelinux.org/acf/acf-openssh"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core openssh"
+source="https://gitlab.alpinelinux.org/acf/acf-openssh/-/archive/v$pkgver/acf-openssh-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+0ac9738b4b3184712cd48f9b1d5865542579424591e10486bf7f0a78edab55192e1b375b35bdff5558f48e0cfdf7627dd750d9c181834d4ee7d2faa1f5bda5f7  acf-openssh-v0.11.2.tar.gz
+"

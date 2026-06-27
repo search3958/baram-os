@@ -1,0 +1,30 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-pycups
+pkgver=2.0.4
+pkgrel=1
+pkgdesc="Python bindings for libcups"
+url="https://github.com/OpenPrinting/pycups"
+arch="all"
+license="GPL-2.0-or-later"
+depends="python3"
+makedepends="
+	cups-dev
+	py3-setuptools
+	python3-dev
+	"
+source="https://pypi.python.org/packages/source/p/pycups/pycups-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/pycups-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+d22148856c8cff4f30e6b7ab0d32d184e8b48358158f28735f0efe4c6e80fd0ea2a5ece87db3eada152f05435fb64c05f1c066bc7bda0649fbddcf5221d66161  pycups-2.0.4.tar.gz
+"

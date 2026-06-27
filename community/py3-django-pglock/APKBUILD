@@ -1,0 +1,86 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-pglock
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=django-pglock
+pkgver=1.8.0
+pkgrel=2
+pkgdesc="Postgres advisory locks, table locks, and blocking lock management."
+url="https://pypi.python.org/project/django-pglock"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-django
+	py3-django-pgactivity
+	py3-importlib-metadata
+	"
+checkdepends="
+	procps-ng
+	postgresql
+	py3-dj-database-url
+	py3-django-extensions
+	py3-django-dynamic-fixture
+	py3-psycopg2
+	py3-pytest-cov
+	py3-pytest-django
+	py3-pytest-mock
+	py3-pytest-reraise
+	py3-typing-extensions
+	"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	poetry
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Opus10/django-pglock/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	msg "Setting up test environment"
+	export POSTGRES_DB=pglock_local
+	export POSTGRES_USER=postgres
+	export POSTGRES_PASSWORD="postgres"
+	export DATABASE_URL="postgres://$POSTGRES_USER@localhost:5432/$POSTGRES_DB"
+
+	rm -Rf "$srcdir"/tmp
+	initdb -D "$srcdir"/tmp
+	postgres -D "$srcdir"/tmp --unix-socket-directories="$srcdir" > "$srcdir"/tmp/psql.log 2>&1 &
+
+	trap "pkill postgres" EXIT
+	# wait for psql to be ready
+	while ! pg_isready -h "$srcdir" > /dev/null 2>&1; do
+		sleep 0.5
+	done
+	psql -h "$srcdir" -d postgres -c "CREATE ROLE $POSTGRES_USER PASSWORD '$POSTGRES_PASSWORD' INHERIT LOGIN;"
+	psql -h "$srcdir" -d postgres -c "CREATE DATABASE $POSTGRES_DB OWNER $POSTGRES_USER ENCODING 'UTF-8';"
+	psql -h "$srcdir" -d postgres -c "ALTER USER $POSTGRES_USER WITH SUPERUSER;"
+
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	msg "Running tests"
+	.testenv/bin/python3 -m pytest -v
+
+	pkill postgres
+
+	# wait for postgres death
+	sleep 5
+	rm -rf "$srcdir"/tmp
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+5365091b610b927b7808250520e45fca323811675b02ee60dcfa7c727a3273089497b979a26a3e6e6a3293f618f051e6901b1f215e5439c26c17b344c357f95e  py3-django-pglock-1.8.0.tar.gz
+"

@@ -1,0 +1,40 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=tangctl
+pkgver=0_git20241007
+_gitrev=6e32b5887d691ad56e30806196f428f32d2b17ad
+pkgrel=14
+pkgdesc="Tool implementing server-side ECMR exchange functionality (Tang server)"
+url="https://github.com/anatol/tang.go"
+license="BSD-3-Clause"
+arch="all"
+makedepends="go"
+checkdepends="clevis curl tang"
+options="net" # go
+source="https://github.com/anatol/tang.go/archive/$_gitrev/tang.go-$pkgver.tar.gz
+	tang-location.patch
+	"
+builddir="$srcdir/tang.go-$_gitrev"
+
+export GOFLAGS="$GOFLAGS -trimpath -mod=readonly -modcacherw"
+export GOPATH="$srcdir"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build ./cmd/tangctl
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 tangctl -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+814a68bf98b36ca396599e9984b8c72296cf97e1b45ba713f25d233d5541004dc8679de4799aea869ed19ecf8cb9bdfc05f85f75de94f67ec3e8bd3dfec7d7f2  tang.go-0_git20241007.tar.gz
+22d1dac2321c9e2fe7c1e5559d3976f759941d9aef27e8c0fc7858e311243635560d235c228ad846f58743e7d3c76737ce8bec3c844a4f567a8604b279961dd4  tang-location.patch
+"

@@ -1,0 +1,69 @@
+# Contributor: Rdbo <rdbodev@gmail.com>
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+# Maintainer: Nicolas Lorin <androw95220@gmail.com>
+pkgname=rio
+pkgver=0.4.7
+pkgrel=0
+pkgdesc="A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers."
+url="https://raphamorim.io/rio"
+# s390x: blocked by spirv-cross2 crate
+# x86, armv7, armhf: otm error
+arch="all !s390x !x86 !armv7 !armhf"
+license="MIT"
+# net: required to fetch rust dependencies
+options="net"
+depends="$pkgname-terminfo"
+makedepends="
+	cargo
+	cargo-auditable
+	cmake
+	expat-dev
+	fontconfig-dev
+	freetype-dev
+	glslang-dev
+	libxcb-dev
+	ncurses
+	python3
+	"
+subpackages="$pkgname-doc $pkgname-terminfo"
+source="$pkgname-$pkgver.tar.gz::https://github.com/raphamorim/rio/archive/refs/tags/v$pkgver.tar.gz"
+
+# tests are too slow
+case "$CARCH" in
+	riscv64) options="$options !check";;
+esac
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen --no-default-features --features=x11,wayland
+	tic -e rio -x -o terminfo misc/rio.terminfo
+}
+
+check() {
+	cargo test --release --frozen
+}
+
+package() {
+	install -Dm755 target/release/rio "$pkgdir"/usr/bin/rio
+	install -Dm644 terminfo/r/rio "$pkgdir"/usr/share/terminfo/r/rio
+
+	# Install desktop files
+	install -Dm644 misc/rio.desktop -t "$pkgdir"/usr/share/applications/
+	install -Dm644 misc/logo.svg \
+		"$pkgdir"/usr/share/icons/hicolor/scalable/apps/rio.svg
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+terminfo() {
+	amove usr/share/terminfo
+}
+
+sha512sums="
+3bef09a44bf00e0f5ce361d6d5b1d7fe2d694b12f47b121ee378f9fd4c100015833c4681cf962aa7e56db54c9abba8d776a6bccd8c75cd52cb28bb7dd867ea65  rio-0.4.7.tar.gz
+"

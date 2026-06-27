@@ -1,0 +1,175 @@
+# Contributor: Łukasz Jendrysik
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=claws-mail
+pkgver=4.4.0
+pkgrel=0
+pkgdesc="GTK+ based e-mail client"
+url="https://www.claws-mail.org"
+arch="all"
+license="GPL-3.0-or-later"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-plugins-acpi-notifier:_plugin
+	$pkgname-plugins-address-keeper:_plugin
+	$pkgname-plugins-archive:_plugin
+	$pkgname-plugins-att-remove:_plugin
+	$pkgname-plugins-attachwarner:_plugin
+	$pkgname-plugins-bogofilter:_plugin
+	$pkgname-plugins-clamd:_plugin
+	$pkgname-plugins-fetchinfo:_plugin
+	$pkgname-plugins-mailmbox:_plugin
+	$pkgname-plugins-notification:_plugin
+	$pkgname-plugins-pdf-viewer:_plugin
+	$pkgname-plugins-perl:_plugin
+	$pkgname-plugins-pgp:_plugin
+	$pkgname-plugins-rssyl:_plugin
+	$pkgname-plugins-smime:_plugin
+	$pkgname-plugins-spamassassin:_plugin
+	$pkgname-plugins-spamreport:_plugin
+	$pkgname-plugins-tnef:_plugin
+	$pkgname-plugins-vcalendar:_plugin
+	$pkgname-plugins-dillo:_plugin
+	$pkgname-plugins-libravatar:_plugin
+	$pkgname-plugins-managesieve:_plugin
+	$pkgname-plugins-fancy:_plugin
+	"
+makedepends="
+	bogofilter
+	curl-dev
+	dbus-glib-dev
+	enchant2-dev
+	gnutls-dev
+	gpgme-dev
+	gtk+3.0-dev
+	libarchive-dev
+	libetpan-dev
+	libgcrypt-dev
+	libical-dev
+	libnotify-dev
+	libsm-dev
+	openldap-dev
+	perl-dev
+	pinentry-gtk
+	poppler-dev
+	spamassassin
+	startup-notification-dev
+	webkit2gtk-4.1-dev
+	ytnef-dev
+	"
+source="https://www.claws-mail.org/download.php?file=releases/claws-mail-$pkgver.tar.gz"
+# check: tests don't build/run properly
+options="!check"
+
+# secfixes:
+#   3.17.7-r0:
+#     - CVE-2020-16094
+#   3.17.6-r0:
+#     - CVE-2020-15917
+
+build() {
+	DATADIRNAME=share ./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-static \
+		--enable-enchant \
+		--enable-gnutls \
+		--enable-ldap \
+		--disable-crash-dialog \
+		--enable-pgpmime-plugin \
+		--enable-spamassassin-plugin \
+		--enable-bogofilter-plugin \
+		--enable-compface \
+		--enable-pdf_viewer-plugin \
+		--enable-fancy-plugin \
+		--disable-jpilot \
+		--disable-bsfilter-plugin \
+		--disable-newmail-plugin
+
+	# force disabling of backtrace. the core dump was more useful
+	sed -i -e '/HAVE_BACKTRACE/d' config.h
+
+	make
+	cd tools
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find tools -maxdepth 1 -type f -and \( -perm /u=x,g=x,o=x -or -name '*.conf' \) \
+		-exec install -D {} -t "$pkgdir"/usr/lib/claws-mail/tools/ \;
+}
+
+_plugin() {
+	local _plugin=$(echo ${subpkgname#"$pkgname"-plugins-} | tr '-' '_'})
+	depends="claws-mail=$pkgver-r$pkgrel"
+	case "$_plugin" in
+		acpi_notifier)
+			pkgdesc="ACPI notification plugin for Claws Mail";;
+		address_keeper)
+			pkgdesc="Never forget a typed address in Claws Mail";;
+		archive)
+			pkgdesc="Archiving features for Claws Mail";;
+		att_remover)
+			pkgdesc="Attachments remover plugin for Claws Mail";;
+		attachwarner)
+			pkgdesc="Attachments warner plugin for Claws Mail";;
+		bogofilter)
+			pkgdesc="Bogofilter plugin for Claws Mail"
+			depends="$depends bogofilter"
+			;;
+		clamd)
+			pkgdesc="Use Clam AntiVirus to scan messages in Claws Mail";;
+		fancy)
+			pkgdesc="Display HTML emails in Claws Mail";;
+		fetchinfo)
+			pkgdesc="Modify headers of downloaded messages in Claws Mail";;
+		mailmbox)
+			pkgdesc="Add support for mailboxes in mbox format to Claws Mail";;
+		notification)
+			pkgdesc="Various ways to notify about new messages in Claws Mail";;
+		pdf)
+			pkgdesc="PDF and ghostscript viewer plugin Claws Mail";;
+		perl)
+			pkgdesc="Perl based extended filtering engine for Claws Mail";;
+		pgp)
+			pkgdesc="PGP plugin for signing and encrypting with Claws Mail"
+			# TODO: Replace gnupg with specific gnupg subpackages that Claws Mail
+			# really needs.
+			depends="$depends pinentry-gtk gnupg"
+			;;
+		rssyl)
+			pkgdesc="RSS plugin for Claws Mail";;
+		smime)
+			pkgdesc="S/MIME support for Claws Mail"
+			depends="$depends claws-mail-plugins-pgp gpgsm"
+			;;
+		spamass)
+			pkgdesc="Spamassassin plugin for Claws Mail"
+			depends="$depends spamassassin"
+			;;
+		spamreport)
+			pkgdesc="Report spam mail to various places with Claws Mail";;
+		tnef_parse)
+			pkgdesc="TNEF message parsing for Claws Mail";;
+		managesieve)
+			pkgdesc="Manage Sieve filters on servers that support ManageSeieve";;
+		vcalendar)
+			pkgdesc="Handling of vCalendar messages in Claws Mail";;
+		dillo)
+			pkgdesc="View HTML messages using the dillo web browser"
+			depends="$depends dillo"
+			;;
+		libravatar)
+			pkgdesc="Displays libravatar/gravatar profiles' images";;
+	esac
+
+	amove usr/lib/claws-mail/plugins/$_plugin*
+}
+
+sha512sums="
+dc62f38a8d8373e4dc531f301cc818807bcbacf22a97d41da26b124d59c9cd78c5f0cc7c7f0ad94a148ff27a323bc6ec8dab43e9687b521d5c2fc53113e88258  claws-mail-4.4.0.tar.gz
+"

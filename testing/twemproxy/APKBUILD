@@ -1,0 +1,63 @@
+# Maintainer: Yagnesh Mistry <ysh@live.in>
+
+pkgname=twemproxy
+_akaname=nutcracker
+pkgver=0.5.0
+pkgrel=1
+pkgdesc="A fast, light-weight proxy for memcached and redis"
+url="https://github.com/twitter/twemproxy"
+arch="all"
+license="Apache-2.0"
+makedepends="automake autoconf libtool yaml-dev"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/twitter/twemproxy/archive/$pkgver.tar.gz
+	nutcracker.initd
+	nutcracker.confd
+	use-system-libyaml.patch
+	"
+
+case "$CARCH" in
+	# FIXME https://github.com/twitter/twemproxy/issues/680
+	s390x) options="!check" ;;
+esac
+
+build() {
+	autoreconf -vif
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -m644 -D -t "$pkgdir"/etc/$_akaname/ conf/*.yml
+	install -m755 -D "$srcdir"/$_akaname.initd \
+		"$pkgdir"/etc/init.d/$_akaname
+	install -m644 -D "$srcdir"/$_akaname.confd \
+		"$pkgdir"/etc/conf.d/$_akaname
+
+	install -m0755 -d "$pkgdir"/var/run/$_akaname
+	install -m0755 -d "$pkgdir"/var/log/$_akaname
+
+	# remove test_all binary
+	rm "$pkgdir/usr/bin/test_all"
+
+	install -m644 -D README.md NOTICE ChangeLog \
+		-t "$pkgdir"/usr/share/doc/$_akaname/
+
+	install -m644 -D LICENSE \
+		-t "$pkgdir"/usr/share/licenses/$_akaname/
+}
+
+sha512sums="
+9bd6bfb1b207aa1d4fdec74fcf354bbcc17b3e2586e9337e3a295f28fca9f597c8914c80dacf3b5c3d2e18c196031e601beb805151cff340f83c5b5890afaabf  twemproxy-0.5.0.tar.gz
+56bc051eac972cc1e4cfb334673f8e4c8a5f0855fb4f0b66e05a148855dae34870d949a5d19c111d072a0405b2014a334151ad9414a40fdc67e559ff37d68093  nutcracker.initd
+e69e6d7b48a360b8b7b7ec7d7d46e2c736c4e30e6d6a22ed5b01d64ccb3ec701537545b2b6e5c1cbf2ba9f657f86e7a94686e3dc8a43dcba9688695717d62f12  nutcracker.confd
+a31c45d003571c8f2e9a003545b61c2ece317d1a5170f9ed84df91673e74fb43a4c6a9099a0d7ed46f255da01a93a551433115b290a3fa2fa6f719e6e45d224d  use-system-libyaml.patch
+"

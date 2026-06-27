@@ -1,0 +1,33 @@
+# Contributor: Danct12 <danct12@disroot.org>
+# Maintainer: Maarten van Gompel <proycon@anaproy.nl>
+pkgname=wf-config
+pkgver=0.10.0
+pkgrel=1
+pkgdesc="Library for managing configuration files written for Wayfire"
+url="https://wayfire.org"
+arch="all"
+license="MIT"
+makedepends="
+	meson
+	libevdev-dev
+	libxml2-dev
+	glm-dev
+	linux-headers
+	"
+options="!check" # no testsuite
+subpackages="$pkgname-dev"
+source="https://github.com/WayfireWM/wf-config/releases/download/v$pkgver/wf-config-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/"$pkgname"/LICENSE
+}
+
+sha512sums="
+c75eb9188a361cc6f59d5c2142600337c71b05c5175ac8a2d8040c4fce4036d0ceb85ed87023d2db0704b55364aa88779510a757c225ba839faa0b751e03ed9f  wf-config-0.10.0.tar.xz
+"

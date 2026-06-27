@@ -1,0 +1,20 @@
+# Maintainer: Sam Stuewe <samuel.stuewe@gmail.com>
+pkgname=sx
+pkgver=3.0
+pkgrel=0
+pkgdesc="A simple alternative to xinit and startx"
+url="https://github.com/Earnestly/sx"
+arch="noarch"
+license="MIT"
+options="!check"  # No test suite.
+subpackages="$pkgname-doc"
+depends="xauth xorg-server"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Earnestly/sx/archive/$pkgver.tar.gz"
+
+package() {
+	make PREFIX="/usr" DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+e1202daff52bbd31837e5afcd5cb48dd776d9501f8da551893dd0e49939b0d8042f00382bcdb64c3f8ecce202308f206a64cd84254b67abf9915045a8efb5a97  sx-3.0.tar.gz
+"

@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-genesis-plus-gx
+pkgver=0_git20260403
+pkgrel=0
+_commit="b72b8c967adc50311dc3bb700c0818518bee74ef"
+pkgdesc="an enhanced port of Genesis Plus"
+url="https://github.com/libretro/Genesis-Plus-GX"
+arch="all"
+license="custom"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/Genesis-Plus-GX/archive/$_commit.tar.gz"
+builddir="$srcdir/Genesis-Plus-GX-$_commit"
+options="!check" # No tests
+
+build() {
+	make -f Makefile.libretro
+}
+
+package() {
+	install -Dm644 genesis_plus_gx_libretro.so "$pkgdir"/usr/lib/libretro/genesis_plus_gx_libretro.so
+}
+
+sha512sums="
+9d5baa61fc2fc7759775a6f2d41681f10888f18d08766cf3b0417069e08619c94b2f72de6e1a8359f0afd22236464cee7475c039f665740912f01f4f12375a54  libretro-genesis-plus-gx-b72b8c967adc50311dc3bb700c0818518bee74ef.tar.gz
+"

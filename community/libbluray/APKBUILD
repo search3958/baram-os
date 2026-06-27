@@ -1,0 +1,33 @@
+# Contributor: Timo Teräs <timo.teras@iki.fi>
+# Maintainer: Timo Teräs <timo.teras@iki.fi>
+pkgname=libbluray
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="Library for Blu-Ray disc playback"
+url="https://www.videolan.org/developers/libbluray.html"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	libudfread-dev
+	meson
+	"
+subpackages="$pkgname-dev"
+source="https://download.videolan.org/pub/videolan/libbluray/$pkgver/libbluray-$pkgver.tar.xz"
+# no tests
+options="!check"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Ddefault_library=shared \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+7284169b32624e5ca4fd71b260a4cc2921efafb1f63143a562568be45e373bfcbfeac63895d5659ccdcb11d7dbd0236cc46ccb15c12eff855703010e46991f27  libbluray-1.4.0.tar.xz
+"

@@ -1,0 +1,63 @@
+# Contributor: Thomas Boerger <thomas@webhippie.de>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=mycli
+pkgver=1.66.0
+pkgrel=0
+pkgdesc="MySQL CLI with autocompletion and syntax highlighting"
+url="https://www.mycli.net/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	python3
+	py3-cli_helpers
+	py3-click
+	py3-configobj
+	py3-cryptography
+	py3-keyring
+	py3-prompt_toolkit
+	py3-pycryptodomex
+	py3-pyfzf
+	py3-pygments
+	py3-pymysql
+	py3-pyperclip
+	py3-rapidfuzz
+	py3-sqlglot
+	py3-sqlparse
+	"
+makedepends="python3-dev
+	py3-gpep517
+	py3-paramiko
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest py3-mock"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/m/mycli/mycli-$pkgver.tar.gz"
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver" \
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# click 8.1 output differs
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v test \
+		-k "not (test_is_valid_connection_scheme_valid or test_is_valid_connection_scheme_invalid or test_null_string_config or test_function_name_completion or test_backticked_column_completion_)" \
+		--ignore test/test_llm_special.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	rm -rf "$pkgdir"/usr/lib/python3*/site-packages/test/
+}
+
+sha512sums="
+c951fdde5a4e2b16f9edbd461f967dca63f5b266bfb5f015296563ced55993c908ad0338ce814305040472eb877f615f8174a4e30f85fea08b0f1832b68dd312  mycli-1.66.0.tar.gz
+"

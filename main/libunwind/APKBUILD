@@ -1,0 +1,50 @@
+# Contributor: Ben Pye <ben@curlybracket.co.uk>
+maintainer="Krassy Boykinov <kboykinov@teamcentrixx.com>"
+pkgname=libunwind
+pkgver=1.8.3
+pkgrel=0
+pkgdesc="Portable and efficient C programming interface (API) to determine the call-chain of a program"
+url="https://www.nongnu.org/libunwind/"
+arch="all"
+license="MIT"
+options="!check" # v1.4.0 12 tests failing - https://github.com/libunwind/libunwind/issues/164
+depends_dev="libucontext-dev"
+makedepends_build="autoconf automake libtool"
+makedepends_host="$depends_dev linux-headers xz-dev"
+makedepends="$makedepends_build $makedepends_host"
+subpackages="$pkgname-dbg $pkgname-static $pkgname-dev $pkgname-doc"
+source="https://github.com/libunwind/libunwind/releases/download/v$pkgver/libunwind-$pkgver.tar.gz
+	force-enable-man.patch
+	fix-libunwind-pc-in.patch
+	Remove-the-useless-endina.h-for-loongarch64.patch
+	"
+
+build() {
+	# shellcheck disable=2046
+	LDFLAGS="$LDFLAGS -lucontext" CFLAGS="$CFLAGS -fno-stack-protector" \
+	./configure \
+		--build="$CBUILD" \
+		--host="$CHOST" \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-cxx-exceptions \
+		$(want_check || echo --disable-tests)
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+732c9b74635cf4e65bc90fd5b9a4b90fe5968c7fcce6cc704295038f0d41b848f78a59d725e813072e78df72ff8fc77001096abdfb9ef1c73e3bd82433987679  libunwind-1.8.3.tar.gz
+8f33904e5b0a9bb1f41be96537c78f3752b30d4a3316bcad50da470b5a780dbd9f8d902285729176320f21cb11b497bfc1b788de990d860106052ed08d484c09  force-enable-man.patch
+ab5d44e9d3aaf32e3119fe79389e5dfcdc859c78cfda8400e54ee29fd1cdf04b99e2686caf18ab0b76ac94f861861d69a5cf740d46967af9c630095485523f1c  fix-libunwind-pc-in.patch
+db8ab626920fa7fea5f0ff17e92909f0b293804eca61425dff53dd79a0f92b4db80941850fa144cfc9ecd2e1537b26fa8d62c56824ffea8e2790ed3930c8ff96  Remove-the-useless-endina.h-for-loongarch64.patch
+"

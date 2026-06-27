@@ -1,0 +1,83 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=jenkins
+pkgver=2.555.3
+pkgrel=0
+pkgdesc="Extendable continuous integration server (LTS version)"
+url="https://jenkins.io/"
+# blocked by openjdk21
+arch="all !x86 !armhf !armv7"
+license="MIT"
+depends="java-jre-headless freetype font-dejavu xvfb fontconfig"
+install="$pkgname.pre-install"
+options="!check"
+pkgusers="$pkgname"
+pkggroups="$pkgname"
+subpackages="$pkgname-openrc"
+source="$pkgname-$pkgver.war::https://get.jenkins.io/war-stable/$pkgver/jenkins.war
+	$pkgname.logrotate
+	$pkgname.initd
+	$pkgname.confd"
+builddir="$srcdir/"
+
+# secfixes:
+#   2.361.2-r0:
+#     - CVE-2022-2048
+#     - CVE-2022-22970
+#     - CVE-2022-22971
+#   2.346.2-r0:
+#     - CVE-2022-34174
+#     - CVE-2022-34173
+#     - CVE-2022-34172
+#     - CVE-2022-34171
+#     - CVE-2022-34170
+#   2.332.1-r0:
+#     - CVE-2022-20612
+#   2.319.3-r0:
+#     - CVE-2022-0538
+#   2.319.2-r0:
+#     - CVE-2022-20612
+#   2.287-r0:
+#     - CVE-2021-21639
+#     - CVE-2021-21640
+#   2.275-r0:
+#     - CVE-2021-21602
+#     - CVE-2021-21603
+#     - CVE-2021-21604
+#     - CVE-2021-21605
+#     - CVE-2021-21606
+#     - CVE-2021-21607
+#     - CVE-2021-21608
+#     - CVE-2021-21609
+#     - CVE-2021-21610
+#     - CVE-2021-21611
+#   2.245-r0:
+#     - CVE-2020-2220
+#     - CVE-2020-2221
+#     - CVE-2020-2222
+#     - CVE-2020-2223
+#   2.228-r0:
+#     - CVE-2020-2160
+#     - CVE-2020-2161
+#     - CVE-2020-2162
+#     - CVE-2020-2163
+
+package() {
+	install -Dm755 "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+	install -Dm755 "$srcdir"/$pkgname-$pkgver.war \
+		"$pkgdir"/usr/share/webapps/jenkins/$pkgname.war
+	install -Dm644 "$srcdir"/$pkgname.logrotate \
+		"$pkgdir"/etc/logrotate.d/$pkgname
+	mkdir -p "$pkgdir"/var/log/jenkins
+	chown -R $pkgusers:$pkggroups "$pkgdir"/var/log/jenkins
+}
+
+sha512sums="
+f9d01fcfb032b9a241e55fab1c0896b1d6cbe53b6e00a3bf22d5205d2a017b99720762e3cf8947029407ed7340f45250d7edf2919669d927db14b0f045ee9220  jenkins-2.555.3.war
+ee2e80d93b390b2c5dead3111e07d6226cbd87393740fd630975e4d177acc033392ebbdb99f8ea3c6daeceac184399b38b0fa3ae7d96b5cb28f65d473b916244  jenkins.logrotate
+1e165145234f0a81412b59e9539a6757ae8038c6bf87515b545232052fc2e8595d58bb60bc88bd44fa6199d9d187f6e1077705add1cfe08504f89ba91a5136fe  jenkins.initd
+8dafeee082497ef03a866ebc1ea6fbacc1bc2fccf84cf497134a69fc65aa4bceca20f4a605c8b3d420cbed26464ea76daf385c3de88054e706b139f8c2e15704  jenkins.confd
+"

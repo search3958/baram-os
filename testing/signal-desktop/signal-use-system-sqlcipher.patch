@@ -1,0 +1,29 @@
+diff --git a/node-sqlcipher/binding.gyp.orig b/node-sqlcipher/binding.gyp
+index 9a5caa2f713..8d3da54fea7 100644
+--- a/node-sqlcipher/binding.gyp.orig
++++ b/node-sqlcipher/binding.gyp
+@@ -3,8 +3,15 @@
+   'targets': [
+     {
+       'target_name': 'node_sqlcipher',
++	  'include_dirs': [
++      	'/usr/include/sqlcipher',
++      ],
++      'link_settings': {
++        'libraries': [
++          '-lsqlcipher',
++        ]
++      },
+       'dependencies': [
+-        'deps/sqlcipher/sqlcipher.gyp:sqlcipher',
+         'deps/extension/extension.gyp:extension',
+         "<!(node -p \"require('node-addon-api').targets\"):node_addon_api",
+       ],
+@@ -13,7 +20,6 @@
+         ['OS=="linux"', {
+           'ldflags': [
+             '-Wl,-Bsymbolic',
+-            '-Wl,--exclude-libs,ALL',
+           ],
+         }],
+       ],

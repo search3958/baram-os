@@ -1,0 +1,38 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=scrot
+pkgver=2.0.0
+pkgrel=0
+pkgdesc="Simple command-line screenshot utility for X"
+options="!check" # No testsuite
+url="https://github.com/resurrecting-open-source-projects/scrot"
+arch="all"
+license="MIT"
+subpackages="$pkgname-doc"
+makedepends="
+	bsd-compat-headers
+	imlib2-dev
+	libx11-dev
+	libxcomposite-dev
+	libxfixes-dev
+	libxrandr-dev
+	"
+source="https://github.com/resurrecting-open-source-projects/scrot/releases/download/$pkgver/scrot-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--docdir=/usr/share/doc/scrot
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+64352a074c97a8215578f4b1d3d4f5bc9d93517f0dd5e8925c4899ee47d4aa20ed22d3a0807c2673b4167c4d592527dd65815ee5ff7a60bd7f6c8b2466958395  scrot-2.0.0.tar.gz
+"

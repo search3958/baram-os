@@ -1,0 +1,43 @@
+#!/sbin/openrc-run
+
+description="NTP daemon"
+
+# CFGFILE is here for backward compatibility only (Alpine <3.24).
+: ${cfgfile:="${CFGFILE:-/etc/chrony/chrony.conf}"}
+
+command="/usr/sbin/chronyd"
+# ARGS is here for backward compatibility only (Alpine <3.24).
+command_args="-f $cfgfile -F 1 $command_args $ARGS"
+pidfile="/run/chrony/chronyd.pid"
+
+required_files="$cfgfile"
+
+depend() {
+	need net
+	after firewall
+	provide ntp-client ntp-server
+	use dns
+}
+
+start_pre() {
+	if [ -c /dev/rtc ]; then
+		grep -q '^rtcfile' "$cfgfile" && command_args="$command_args -s"
+	fi
+	grep -q '^dumponexit$' "$cfgfile" && command_args="$command_args -r"
+
+	if yesno "${FAST_STARTUP:-no}"; then
+		# this option makes it stay in foreground and let openrc do the tracking,
+		# so we have to set pidfile to a dir that exists earlier.
+		# the reason this is not the default is because there is no 'readiness',
+		# self-backgrounding chrony waits for time to sync before continuing,
+		# and this form does not.
+		command_args="$command_args -n"
+		command_background=true
+		pidfile=/run/chronyd.pid
+	fi
+
+	if [ -n "$vrf" ]; then
+		command_args="vrf exec $vrf $command $command_args"
+		command=ip
+	fi
+}

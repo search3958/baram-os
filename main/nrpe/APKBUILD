@@ -1,0 +1,65 @@
+# Maintainer: Jeff Bilyk <jbilyk@gmail.com>
+pkgname=nrpe
+pkgver=4.1.3
+pkgrel=0
+pkgusers="nagios"
+pkggroups="nagios"
+pkgdesc="NRPE allows you to remotely execute Nagios plugins on other Linux/Unix machines."
+url="https://www.nagios.org/downloads/nagios-core-addons/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="openssl-dev>3"
+install="nrpe.pre-install"
+subpackages="$pkgname-plugin $pkgname-openrc"
+source="https://github.com/NagiosEnterprises/nrpe/releases/download/nrpe-$pkgver/nrpe-$pkgver.tar.gz
+	sample-config.patch
+	nrpe.initd
+	nrpe.confd"
+options="!check" # needs services to run
+
+# secfixes:
+#   4.0.0-r0:
+#     - CVE-2020-6581
+#     - CVE-2020-6582
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--libexecdir=/usr/lib/nagios/plugins \
+		--localstatedir=/var \
+		--with-logdir=/var/log \
+		--with-need-dh=no \
+		--with-init-type=openrc \
+		--enable-command-args
+	make all
+}
+
+package() {
+	make DESTDIR="$pkgdir" install install-daemon install-config
+
+	rm "$pkgdir"/usr/bin/nrpe-uninstall
+
+	# Remove plugin since its in separate package.
+	rm -rf "$pkgdir"/usr/lib
+	install -Dm755 "$srcdir"/nrpe.initd "$pkgdir"/etc/init.d/nrpe
+	install -Dm644 "$srcdir"/nrpe.confd "$pkgdir"/etc/conf.d/nrpe
+}
+
+plugin() {
+	pkgdesc="Nagios plugin to check result via NRPE daemon"
+
+	cd "$builddir"
+	make DESTDIR="$subpkgdir" install-plugin
+}
+
+sha512sums="
+dc81e2104b7604e6c67a0dc73a3e6449f7e089390a807be7281492b5ab61e13347ed264292e0642798cee4bafc5978d423184e81bbe753343aaa68daea091f7e  nrpe-4.1.3.tar.gz
+5949a019a9e699559c66d506029e8c7a2daa298dfd254cab3d8049eec59ccec03efe5a5f32190fbc1f3fdc884cd204636f0eb445793758886d199efae46ef1ce  sample-config.patch
+b2f23bab97384ef8f1760c79d0cbadb4e81d4bb8134887a38662033a7f0c30480222b9ecb78c3ae276bd8b35470b3db316143f591baa2c535f5fb26c34ad2824  nrpe.initd
+05a0f1f5f75345370cae3262f9988d537e24dfcbb6c14a1ff3486193625481045d0844c035f7be491e74ca9ad45ed0fae7b7005616936cc274cd7e8a851c8628  nrpe.confd
+"

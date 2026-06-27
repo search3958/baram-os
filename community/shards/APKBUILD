@@ -1,0 +1,33 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Milan P. Stanić <mps@arvanta.net>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=shards
+pkgver=0.20.0
+pkgrel=0
+pkgdesc="Dependency manager for the Crystal language"
+url="https://github.com/crystal-lang/shards"
+arch="x86_64 aarch64"
+license="Apache-2.0"
+depends="crystal>=0.35.0 git"
+makedepends="yaml-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/crystal-lang/shards/archive/v$pkgver.tar.gz"
+
+export CRYSTAL_CACHE_DIR="$srcdir/.cache"
+
+build() {
+	make
+}
+
+check() {
+	export EMAIL="Test User <user@example.com>"
+	make test_integration
+}
+
+package() {
+	make install DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+sha512sums="
+d88362c3ace00a299f9a5850f9e2798a81b905aa80e4c71b33c6d189e512ebc1dd6cb11e7a27e2b07f2d51a8e3e2ec8b101e769e90a2732926211e66afb6f818  shards-0.20.0.tar.gz
+"

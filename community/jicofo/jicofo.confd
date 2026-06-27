@@ -1,0 +1,16 @@
+## Configuration for /etc/init.d/jicofo
+
+# Path to the config files (default: /etc/jitsi/jicofo)
+#configdir="/etc/jitsi/jicofo"
+
+# Path to log files for java (default: /var/log/jitsi)
+#logdir="/var/log/jitsi"
+
+# Path to file to redirect stderr into. (default $logdir/jicofo.log)
+#logfile="$logdir/jicofo.log"
+
+# Additional options to pass to jicofo
+#extra_options=""
+
+# Additional java system props that are passed to jicofo
+#extra_java_props=""

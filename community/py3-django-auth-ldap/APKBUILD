@@ -1,0 +1,48 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-auth-ldap
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=django-auth-ldap
+pkgver=5.3.0
+pkgrel=2
+pkgdesc="Django LDAP authentication backend"
+url="https://pypi.python.org/project/django-auth-ldap"
+# s390x: test failure
+arch="noarch !s390x"
+license="BSD-2-Clause"
+depends="py3-django py3-ldap"
+checkdepends="
+	py3-pytest
+	py3-pytest-django
+	py3-isort
+	py3-flake8
+	openldap
+	openldap-back-mdb
+	openldap-clients
+	openldap-overlay-syncprov
+	"
+makedepends="py3-setuptools_scm py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/django-auth-ldap/django-auth-ldap/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	TMP=/tmp .testenv/bin/python3 -Wa -b -m django test --settings tests.settings
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+437b83054f7dbb23e3703f51644124bed18cebe224064294aaae0c549e9ea1fdfd229e52b7d00456fa1e72ce43d3cba1a2fb7cbcc7f396491d63d611a4996791  py3-django-auth-ldap-5.3.0.tar.gz
+"

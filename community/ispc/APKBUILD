@@ -1,0 +1,45 @@
+# Contributor: Leon Marz <main@lmarz.org>
+# Maintainer: Leon Marz <main@lmarz.org>
+pkgname=ispc
+pkgver=1.31.0
+pkgrel=0
+pkgdesc="Intel SPMD Program Compiler"
+url="https://ispc.github.io/"
+arch="x86_64 aarch64" # ispc only supports these arches
+license="BSD-3-Clause"
+_llvmver=22
+makedepends="cmake
+	bison
+	clang$_llvmver-dev
+	flex
+	llvm$_llvmver-dev
+	llvm$_llvmver-test-utils
+	m4
+	python3
+	samurai
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ispc/ispc/archive/v$pkgver.tar.gz"
+options="!check" # ctest does not find a testsuite
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_C_COMPILER="/usr/lib/llvm$_llvmver/bin/clang" \
+		-DCMAKE_CXX_COMPILER="/usr/lib/llvm$_llvmver/bin/clang++" \
+		-DLLVM_CONFIG_EXECUTABLE="/usr/lib/llvm$_llvmver/bin/llvm-config" \
+		-DISPC_INCLUDE_EXAMPLES=OFF \
+		-DISPC_INCLUDE_RT=OFF \
+		-DISPC_SLIM_BINARY=ON
+
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+eff612d2671a6e8c033ec6b7247c49c74704a64e56535117c815a8db9cbfa73051fb2ee4326ed15c8fbe983beeec87c1a46d6041dc56672df37f9ac756bf5b5e  ispc-1.31.0.tar.gz
+"

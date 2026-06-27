@@ -1,0 +1,34 @@
+# Contributor: Hugo Osvaldo Barrera <hugo@whynothugo.nl>
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=keepassxc-browser
+pkgver=1.10.3
+pkgrel=0
+pkgdesc="KeePassXC Browser Extension"
+url="https://github.com/keepassxreboot/keepassxc-browser/"
+arch="noarch"
+license="GPL-3.0-or-later"
+makedepends="npm"
+source="keepassxc-browser-$pkgver.tar.gz::https://github.com/keepassxreboot/keepassxc-browser/archive/refs/tags/$pkgver.tar.gz"
+options="!check net" # no tests, build fetches assets
+
+prepare() {
+	default_prepare
+	npm ci
+}
+
+build() {
+	# fetching translations requires a user account (and unmet dependencies).
+	npm run build -- --skip-translations
+}
+
+package() {
+	# See: https://github.com/keepassxreboot/keepassxc-browser/issues/2634
+
+	_target="$pkgdir/usr/lib/firefox/browser/extensions/keepassxc-browser@keepassxc.org"
+	mkdir -p "$_target"
+	tar -xf keepassxc-browser_${pkgver}_firefox.zip -C "$_target"
+}
+
+sha512sums="
+bb1027cd3e2927b68cf3082226976535d82350a56acafba797b96ea84913e9e5cab6f089c9e97e5d5c7751b21f89724ed2d6f8b960a8bc55030df50cc8da3569  keepassxc-browser-1.10.3.tar.gz
+"

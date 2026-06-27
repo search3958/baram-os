@@ -1,0 +1,54 @@
+# Contributor: Francesco Camuffo <dev@fmac.xyz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=ugrep
+pkgver=7.8.2
+pkgrel=0
+pkgdesc="Ultra fast grep with interactive query UI and fuzzy search"
+url="https://ugrep.com/"
+arch="all"
+license="BSD-3-Clause"
+checkdepends="bash"
+makedepends="
+	brotli-dev
+	bzip2-dev
+	bzip3-dev
+	linux-headers
+	lz4-dev
+	pcre2-dev
+	xz-dev
+	zlib-dev
+	zstd-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Genivia/ugrep/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	CXXFLAGS="${CXXFLAGS//-Os/-O2} -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--with-bzip3
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+8d43818503a32278bbc266369fd02049651df519c0e3b4dc76b6003586f03b1e8ad8746283c1b648fbfcc3d294f4c733ebbc01be3c63b72af244863beed932a5  ugrep-7.8.2.tar.gz
+"

@@ -1,0 +1,27 @@
+# Contributor: prspkt <prspkt@protonmail.com>
+# Maintainer: prspkt <prspkt@protonmail.com>
+pkgname=slurm
+pkgver=0.4.4
+pkgrel=0
+pkgdesc="Yet another network load monitor"
+url="https://github.com/mattthias/slurm"
+arch="all"
+options="!check" # no upstream/available test-suite
+license="GPL-2.0-or-later"
+makedepends="meson linux-headers ncurses-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mattthias/slurm/archive/upstream/$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-upstream-$pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+5a54d004e18a27ead40140f0b5d1bf4db773d2d12a1d8358993944e0a51db8598353e330e114851b90125f09fd8d5ebfb50d2be362e85ad50e7c39ce6aa6bcc1  slurm-0.4.4.tar.gz
+"

@@ -1,0 +1,21 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=font-inter
+pkgver=4.1
+pkgrel=2
+pkgdesc="A typeface carefully crafted & designed for computer screens"
+url="https://rsms.me/inter/"
+arch="noarch"
+license="OFL-1.1"
+source="https://github.com/rsms/inter/releases/download/v$pkgver/Inter-$pkgver.zip"
+options="!check" # No code to test
+builddir="$srcdir"
+
+package() {
+	install -Dm644 ./*.ttf -t "$pkgdir"/usr/share/fonts/inter
+	install -Dm644 ./*.ttc -t "$pkgdir"/usr/share/fonts/inter
+}
+
+sha512sums="
+2ab20c6c1b33a8adc09c8cf10ad00e2b03cc68f9dceec829aaa1e2bd999720528da4c4594abed39818707e35ff63df6330155cb53660e86029410a0ea4079df4  Inter-4.1.zip
+"

@@ -1,0 +1,19 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=papirus-icon-theme
+pkgver=20250201
+pkgrel=0
+pkgdesc="papirus icon theme"
+options="!check"
+url="https://github.com/PapirusDevelopmentTeam/papirus-icon-theme"
+arch="noarch"
+license="GPL-3.0-only"
+source="$pkgname-$pkgver.tar.gz::https://github.com/PapirusDevelopmentTeam/papirus-icon-theme/archive/$pkgver.tar.gz"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+390bd47cb3069f74fc364a4100c60c5ab87eca6c7796e925464988c360e0b8ca19d61447f496cbc37e26aeb3aa013988a533cb0259846106f78ed55bc9c76f74  papirus-icon-theme-20250201.tar.gz
+"

@@ -1,0 +1,54 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks-old
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=knotifications5
+pkgver=5.116.0
+pkgrel=2
+pkgdesc="Abstraction for system notifications"
+# amrhf blocked by qt5-qtdeclarative
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="BSD-3-Clause AND LGPL-2.0-or-later AND LGPL-2.0-only AND (LGPL-2.1-only OR LGPL-3.0-only)"
+depends_dev="
+	kconfig5-dev
+	kcoreaddons5-dev
+	kwindowsystem5-dev
+	libcanberra-dev
+	qt5-qtbase-dev
+	qt5-qtx11extras-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	qt5-qttools-dev
+	qt5-qtdeclarative-dev
+	samurai
+	"
+_repo_url="https://invent.kde.org/frameworks/knotifications.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/knotifications-$pkgver.tar.xz"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+options="!check" # Fails due to requiring running dbus-daemon
+builddir="$srcdir/knotifications-$pkgver"
+
+replaces="knotifications<=5.110.0-r0"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_QCH=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+e49b9930c69581b4498a012483b04588c52e5ba04035dbe01e21dbe6c07e8f69a14f40c0ac07a0299bc1ae182ad47b47ecd5ab5da2fb7a0b5a2f1c90282c289c  knotifications-5.116.0.tar.xz
+"

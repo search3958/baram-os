@@ -1,0 +1,22 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-database
+# Needs to be upgraded in sync with the retroarch aport
+pkgver=1.22.1
+pkgrel=0
+arch="noarch"
+url="https://www.libretro.com"
+pkgdesc="Libretro core info files"
+license="MIT"
+source="$pkgname-$pkgver.tar.gz::https://github.com/libretro/libretro-database/archive/v$pkgver.tar.gz
+	fix-busybox-incompability.patch"
+options="!check" # No code to test
+
+package() {
+	DESTDIR="$pkgdir" make install
+}
+
+sha512sums="
+08a66c1dc8a45d16ba6747e3cd83cfc4a987220c6da59f0ba42b103ddec0daddc26e1261b8eaa9c53e2703efb01ed32cbc0a1c2db5b3aa062347dc5c3e68d7f2  libretro-database-1.22.1.tar.gz
+6a028c7bc03666a888bf98d09676d9270bcf6634a00fa8cbcf506dedc9ed9ee588351cac5b102e0f3c048acd3be3afcdc9bf167de6e982b30b2784235877b479  fix-busybox-incompability.patch
+"

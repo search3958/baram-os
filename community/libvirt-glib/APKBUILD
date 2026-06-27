@@ -1,0 +1,35 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=libvirt-glib
+pkgver=5.0.0
+pkgrel=0
+pkgdesc="libvirt glib integration for events"
+url="https://libvirt.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+depends_dev="libvirt-dev"
+makedepends="$depends_dev
+	gobject-introspection-dev
+	libxml2-dev
+	meson
+	vala
+	"
+subpackages="$pkgname-dev $pkgname-lang"
+source="https://libvirt.org/sources/glib/libvirt-glib-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+bb09474c0d6d4bc00844e7a1ede882f0834d0810804b70b8f8607f2e764f72cc9da14883794e58dd53640433ffaecc13dd3c1c147b82e86fa2fdca6e5903933c  libvirt-glib-5.0.0.tar.xz
+"

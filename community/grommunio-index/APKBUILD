@@ -1,0 +1,44 @@
+# Maintainer: Noel Kuntze <noel.kuntze@contauro.com>
+pkgname=grommunio-index
+pkgver=1.4
+pkgrel=0
+pkgdesc="Generator for grommunio-web search indexes"
+arch="all"
+url="https://grommunio.com"
+license="AGPL-3.0-only"
+subpackages="$pkgname-doc"
+options="!check" # No test suite
+install="$pkgname.pre-install $pkgname.pre-upgrade $pkgname.post-upgrade"
+makedepends="cmake samurai libexmdbpp-dev libhx-dev libxml2-dev sqlite-dev>=3.27 mariadb-connector-c-dev"
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/grommunio/grommunio-index/archive/refs/tags/$pkgver.tar.gz
+	0001-makefile.patch
+
+	$pkgname.cron
+	"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_SKIP_INSTALL_RPATH=ON
+
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# license
+	install -Dm644 LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+	# install cronjob
+	install -Dm755 "$srcdir"/$pkgname.cron "$pkgdir"/etc/periodic/15min/$pkgname
+
+}
+
+sha512sums="
+763e898df490acf61b7797ecb70a17a6c445c902dc1b146c792da8509541cb8f0d1050a126a4ee88d3a3e5f044fcec8acf88b6e17cdbf9acbfd608f97f866421  grommunio-index-1.4.tar.gz
+da97bc2ae8294dc843b52e101a940af4bc5201b417fea9928face2de25a91e92b6800b3837dbaf3841ae7e7e8037c3e014fe08be180911f4aa65eb174f17d858  0001-makefile.patch
+6b594679d6ca937b6b52ece05b3a7dca908d693ab823b866dea5105defcc8ab7462a3aba9101ac6e4eb61b9397d81dd20ecc20598efb5521062e3611bb8b050d  grommunio-index.cron
+"

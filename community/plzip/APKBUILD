@@ -1,0 +1,36 @@
+# Contributor: Klemens Nanni <kl3@posteo.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=plzip
+pkgver=1.13
+pkgrel=0
+pkgdesc="Massively parallel lossless data compressor"
+url="https://www.nongnu.org/lzip/plzip.html"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="lzlib-dev"
+subpackages="$pkgname-doc"
+source="https://download-mirror.savannah.gnu.org/releases/lzip/plzip/plzip-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c4e41c905513d6f4e191181a8f7b1991d7bbdd107f9561641e02f5798f4e01e68863e543caf182aa5434b6e0edfd8aaada8d127430ba13249fdae4dd7fbce25e  plzip-1.13.tar.gz
+"

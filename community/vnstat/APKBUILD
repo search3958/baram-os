@@ -1,0 +1,57 @@
+# Contributor: Bartłomiej Piotrowski <nospam@bpiotrowski.pl>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=vnstat
+pkgver=2.13
+pkgrel=1
+pkgdesc="Console-based network traffic monitor"
+url="https://humdi.net/vnstat"
+arch="all"
+license="GPL-2.0-or-later"
+install="$pkgname.pre-install"
+options="!check" # make check is usesless
+makedepends="sqlite-dev gd-dev"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd"
+source="https://humdi.net/vnstat/vnstat-$pkgver.tar.gz
+	vnstatd.initd
+	vnstatd.confd
+	"
+
+prepare() {
+	default_prepare
+
+	update_config_guess
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -D -m0755 "$srcdir"/vnstatd.initd \
+		"$pkgdir"/etc/init.d/vnstatd
+	install -D -m0644 "$srcdir"/vnstatd.confd \
+		"$pkgdir"/etc/conf.d/vnstatd
+
+	install -D -m0755 examples/vnstat.cgi \
+		"$pkgdir"/usr/share/doc/vnstat/examples/vnstat.cgi
+
+	install -D -m0644 examples/systemd/vnstat.service \
+		-t "$pkgdir"/usr/lib/systemd/system/
+}
+
+check() {
+	make check
+}
+
+sha512sums="
+9b5d7b5085ab2ae39fd6b0d59afe56eb927b6e4ca1ca30ee7710afe2a412c4a1a8d756e095e9c3c81d182e3d6bb2efcd9a2a266e0048cac249477a09c1368969  vnstat-2.13.tar.gz
+f419af7075ba423fd2a28f27c520c9833a0ad994f471df5ab56b8175d02bf7d885718d2781a5538e32d19256e4518b06629a87670380db8a5cc780b76b4f0465  vnstatd.initd
+bde20cffcfe6e2f7f7924ad7e7b4c7c2fdd6b92bacb7ec7c670413354c3b5a0bb07321444c4bd8ff07b55cb861bf6442a7065eee856f74658be1f25a451c8109  vnstatd.confd
+"

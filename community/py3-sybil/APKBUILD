@@ -1,0 +1,51 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-sybil
+pkgver=10.0.1
+pkgrel=0
+pkgdesc="Automated testing for the examples in your documentation"
+url="https://github.com/simplistix/sybil"
+arch="noarch"
+license="MIT"
+makedepends="
+	py3-gpep517
+	py3-sphinx
+	py3-uv
+	py3-hatchling
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-cov
+	py3-myst-parser
+	py3-mypy
+	py3-seedir
+	py3-testfixtures
+	py3-yaml
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/simplistix/sybil/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/sybil-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# tests/test_testing.py::TestRunPytest::test_fixture_not_requested: TypeError: ShouldRaise.__init__() got an unexpected keyword argument 'match'
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v \
+		--deselect tests/test_testing.py::TestRunPytest::test_fixture_not_requested
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+
+sha512sums="
+02ec3f8d4c3cf3f1b4df9f02a7caa139912dd1eca029eb4d62cb0b8cfa7b26348cd0b8c1cad7262473bb1de6fc218f014750f86e49bbb27befd81a1d3f86ab8c  py3-sybil-10.0.1.tar.gz
+"

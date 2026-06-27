@@ -1,0 +1,37 @@
+# Contributor: Robin Candau <robincandau@protonmail.com>
+# Maintainer: Robin Candau <robincandau@protonmail.com>
+pkgname=prometheus-fastly-exporter
+_pkgname=fastly-exporter
+pkgver=10.2.0
+pkgrel=5
+pkgdesc="A Prometheus exporter for the Fastly Real-time Analytics API"
+url="https://github.com/fastly/fastly-exporter"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+source="https://github.com/fastly/fastly-exporter/archive/v$pkgver/fastly-exporter-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="net"
+
+build() {
+	go build ./cmd/...
+}
+
+check() {
+	case "$CARCH" in
+		armhf|armv7|x86)
+			# This test fails on 32-bit architectures
+			rm -f pkg/rt/subscriber_test.go
+		;;
+	esac
+
+	go test ./...
+}
+
+package() {
+	install -Dm 755 "$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+}
+
+sha512sums="
+48cef13fcc3a8bd852526b997a3feee9cf2c7564af71b8a3593dfdcfe1efac37bc852b4f8aed348bb582dfac2dfa5d8f6a0c150df1607593c17a3aaac89d7199  fastly-exporter-10.2.0.tar.gz
+"

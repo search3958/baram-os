@@ -1,0 +1,47 @@
+# Contributor: Leon Marz <main@lmarz.org>
+# Maintainer: Leon Marz <main@lmarz.org>
+pkgname=rizin-cutter
+pkgver=2.4.1
+pkgrel=2
+pkgdesc="Reverse Engineering Platform powered by rizin"
+url="https://cutter.re"
+arch="all !armhf" # syntax-highlighting not available
+license="GPL-3.0-only"
+depends="rizin"
+makedepends="
+	cmake
+	graphviz-dev
+	python3-dev
+	qt6-qt5compat-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	rizin-dev
+	samurai
+	syntax-highlighting-dev
+	"
+subpackages="$pkgname-dev"
+source="https://github.com/rizinorg/cutter/releases/download/v$pkgver/Cutter-v$pkgver-src.tar.gz"
+builddir="$srcdir/Cutter-v$pkgver"
+options="!check" # upstream does not provide a testsuite
+
+build() {
+	CXXFLAGS="$CXXFLAGS -O2 -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCUTTER_USE_BUNDLED_RIZIN=OFF \
+		-DCUTTER_USE_ADDITIONAL_RIZIN_PATHS=OFF \
+		-DCUTTER_ENABLE_GRAPHVIZ=ON \
+		-DCUTTER_ENABLE_PYTHON=ON
+
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+f55118283329880c71c9ea54c31a060d25bfd0d5be81d7906488c29e5fce2a08fe34ad1144fc4bf0c0d6eae552d6c55da151067a00d8677b70bf7c0c328c4feb  Cutter-v2.4.1-src.tar.gz
+"

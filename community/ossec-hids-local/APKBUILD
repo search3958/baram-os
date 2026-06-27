@@ -1,0 +1,76 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=ossec-hids-local
+_target=${pkgname/ossec-hids-/}
+pkgver=3.8.0
+pkgrel=1
+pkgdesc="Open Source Host-based Intrusion Detection System"
+url="https://www.ossec.net/"
+arch="all !armhf !armv7"
+license="GPL-2.0-only WITH openssl-exception"
+depends="inotify-tools procps ossec-hids-openrc ossec-hids-users"
+makedepends="linux-headers bsd-compat-headers openssl-dev>3 \
+libevent-dev inotify-tools-dev findutils file zlib-dev pcre2-dev \
+sqlite-dev lua5.3-dev geoip-dev czmq-dev"
+checkdepends="check-dev subunit-dev"
+subpackages="$pkgname-doc"
+pkgusers="ossec ossecm ossecr"
+pkggroups="ossec"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ossec/ossec-hids/archive/$pkgver.tar.gz
+	$pkgname.logrotate
+	musl_lack_of_a_out_h.patch
+	makefile.patch
+	config"
+
+builddir="$srcdir"/ossec-hids-$pkgver
+
+prepare() {
+		default_prepare
+		export _make_args="V=1 USER_INSTALL_TYPE=$_target USER_NO_STOP=yes \
+			USER_DIR=/var/ossec USER_BINARYINSTALL=x USE_GEOIP=yes \
+			USE_ZEROMQ=yes LUA_ENABLE=yes USE_SQLITE=yes DATABASE=sqlite \
+			USE_INOTIFY=yes PCRE2_SYSTEM=yes USE_SYSTEMD=no"
+}
+
+build() {
+	cd "$builddir"/src
+	make clean
+	make TARGET=$_target PREFIX=/var/ossec $_make_args
+}
+
+check() {
+	cd "$builddir"/src
+	make test PREFIX=/var/ossec $_make_args
+}
+
+package() {
+	install -Dm644 -D "$srcdir"/$pkgname.logrotate "$pkgdir"/etc/logrotate.d/$pkgname
+	install -Dm644 -D etc/ossec-$_target.conf "$pkgdir"/etc/ossec-$_target.conf
+
+	mkdir -p "$pkgdir"/var/ossec/etc
+	cat << EOF > "$pkgdir"/var/ossec/etc/ossec-init.conf
+DIRECTORY="/var/ossec"
+VERSION="$(cat src/VERSION)"
+DATE="$(date)"
+TYPE="$_target"
+EOF
+
+	cd "$builddir"/src
+	make install TARGET="$_target" PREFIX="$pkgdir"/var/ossec $_make_args
+}
+
+doc() {
+	cd "$builddir"
+	pkgdesc="Documentation for $pkgname"
+	mkdir -p "$subpkgdir"/usr/share/doc/$pkgname
+	cp -a doc/* \
+	  "$subpkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+1ffd00f87e753506fbb84e0c3f6c9e09775c4cf5bfd176ba325f5e23b032dcab6f849bc13d3c1685fc0dcb0223dc966cd73694c7874bda141a47f15fefb6e106  ossec-hids-local-3.8.0.tar.gz
+6cdf4852feabfdd043405e2570bb9a3013eb11c1865e9178fb67a019717d44fb0fedba05ab74c4334a1bae0a0c45912213dd7d6c7e1eab31853d40beea7596a0  ossec-hids-local.logrotate
+4e076581cc3977c527f30da6c43552db18bc35ea7b745c1504f4d15ebfbcef42c9604804af28fc90744a85f847a0f0c5bf991476cae71e3d860adb7cfa33a63b  musl_lack_of_a_out_h.patch
+a3f446cd257f2af8bcee6dfe1780e70dd76dfd5cfddd681465a90a1ec74dee2b908ea3c585956a0263fe5aaee7179805b2005599c460c0518c52f4069025b09d  makefile.patch
+5213936052ed3adf8d9bb36d044386e2decf85ad59e7d5a69b4b73c708ea779dc03049c3429e9b658efceb347b950b0192ca4f66bb56a3101c2016f106dcc287  config
+"

@@ -1,0 +1,40 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-hishel
+pkgver=0.1.4
+pkgrel=1
+pkgdesc="Elegant HTTP Cache implementation for HTTPX and HTTP Core"
+url="https://github.com/karpetrosyan/hishel"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-httpx py3-typing-extensions"
+makedepends="py3-gpep517 py3-hatchling"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/karpetrosyan/hishel/archive/$pkgver/py3-hishel-$pkgver.tar.gz
+	no-fancy-readme.patch
+	"
+builddir="$srcdir/hishel-$pkgver"
+options="!check" # tests require redis and unpackaged modules
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+213f9a51e3ed079c7558449cd90691988ad7defddaf7eb0b94a70bebe26f1a9f3d63119666124e7fd414b593a77041deb14b8bee13e4ece87fc36b30d2cf0b1e  py3-hishel-0.1.4.tar.gz
+d8f9eff131512632b17739ea74ca2dc776ac072eb1eff537ec40daa9e99a720ebf5ba61a0aefdfd405fa39d8454d12c024652eb958b3518271a295e4fa395c8e  no-fancy-readme.patch
+"

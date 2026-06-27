@@ -1,0 +1,12 @@
+diff --git a/pytest.ini b/pytest.ini
+index 6272c1f..3511a1d 100644
+--- a/pytest.ini
++++ b/pytest.ini
+@@ -16,7 +16,6 @@ markers =
+     webauthn
+ 
+ filterwarnings =
+-    error
+     ignore::DeprecationWarning:mongoengine:
+     ignore::DeprecationWarning:flask_login:0
+     ignore::DeprecationWarning:pydantic_core:0

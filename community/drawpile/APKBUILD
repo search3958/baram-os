@@ -1,0 +1,132 @@
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=drawpile
+pkgver=2.3.0
+pkgrel=2
+pkgdesc="Collaborative drawing program"
+url="https://drawpile.net/"
+license="GPL-3.0-or-later"
+# armhf: limited by qt6-qtmultimedia
+arch="all !armhf"
+pkgusers=drawpile
+pkggroups=drawpile
+# Dependencies to enable additional features:
+# ffmpeg-dev: libav image scaling and video export
+# qt6-qtwebsockets: websockets support
+makedepends="
+	cargo
+	cmake
+	extra-cmake-modules
+	ffmpeg-dev
+	giflib-dev
+	libmicrohttpd-dev
+	libsodium-dev
+	libvpx-dev
+	libwebp-dev
+	libzip-dev
+	miniupnpc-dev
+	qt6-qtmultimedia-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	qt6-qtwebsockets-dev
+	samurai
+	"
+install="
+	$pkgname.post-install
+	$pkgname-server.pre-install
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-base::noarch
+	$pkgname-client
+	$pkgname-server
+	$pkgname-server-openrc
+	$pkgname-tools
+	"
+source="drawpile-$pkgver.tar.gz::https://github.com/drawpile/Drawpile/archive/$pkgver.tar.gz
+	drawpile.initd
+	cmake-detect-arch.patch
+	disable-qtest-tests.patch
+	fix-cast-32-bit.patch
+	no-werror.patch
+	qt-6.10.1.patch
+	"
+builddir="$srcdir"/Drawpile-"$pkgver"
+options="net" # rust crates
+
+# Temporarily disable lto due to conflict with multiple Rust libs exposing
+# rust_eh_personality symbol.
+export CARGO_PROFILE_RELEASE_LTO="false"
+
+build() {
+	cmake -B build \
+		--preset linux-release-qt6-all-ninja \
+		-DALLOW_QTEST_TESTS=OFF \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_MANDIR=/usr/share/man/man1
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	# drawpile is a meta-package
+	depends="
+		$pkgname-base=$pkgver-r$pkgrel
+		$pkgname-client=$pkgver-r$pkgrel
+		$pkgname-server=$pkgver-r$pkgrel
+		$pkgname-tools=$pkgver-r$pkgrel
+		"
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm755 "$srcdir"/drawpile.initd "$pkgdir"/etc/init.d/drawpile
+	install -Dm644 LICENSE.txt \
+		"$pkgdir"/usr/share/licenses/drawpile-base/LICENSE.txt
+}
+
+base() {
+	pkgdesc="Common files for Drawpile"
+	amove usr/share
+}
+
+client() {
+	pkgdesc="$pkgdesc (Drawpile client)"
+	depends="$pkgname-base=$pkgver-r$pkgrel"
+	amove usr/bin/drawpile
+}
+
+server() {
+	pkgdesc="$pkgdesc (Drawpile server)"
+	depends="
+		$pkgname-base=$pkgver-r$pkgrel
+		qt6-qtbase-sqlite
+		"
+
+	amove usr/bin/drawpile-srv
+
+	install -d -o drawpile -g drawpile "$subpkgdir"/etc/drawpile/templates
+	install -d -o drawpile -g drawpile -m 750 "$subpkgdir"/var/lib/drawpile
+}
+
+tools() {
+	pkgdesc="$pkgdesc (Drawpile tools)"
+	depends="$pkgname-base=$pkgver-r$pkgrel"
+	# dprectool: convert between Drawpile session formats .dprec and .dptxt
+	# drawpile-cmd: render recordings
+	# drawpile-timelapse: turn drawpile recordings into timelapse videos
+	amove usr/bin/dprectool
+	amove usr/bin/drawpile-cmd
+	amove usr/bin/drawpile-timelapse
+}
+
+sha512sums="
+c83a734cd10b16b4a329056cb75f1c297c7df1e8a2cd316fe5eead474aafa67ecb25ef3a5edad2be0772b34f0151c7043ac2618efd182fb275baddf9570dc36f  drawpile-2.3.0.tar.gz
+5a2e6d1e677a74a43838cce26bd6b6f6bceb858f3622912476665ad3f6cef3171aa0c5b56ca9343c5b7ec81c850ce251a177d77490854e7ef39796c4c7d53535  drawpile.initd
+c8211a7523b39a43d8f2994aea0f0517a6d9b8fcb1249fcc9acaadf7035c59efb3ade4eab6065267b827a17c6c4bf4e8324d07807e591e408ca0a270108f7183  cmake-detect-arch.patch
+38511bd3568f4e80c3b7ee9d7dace5a7260abc2c237616cd7df76c517214bd828f45c178d407733d402a268284191219d83c09c9fd4a92763116027473063846  disable-qtest-tests.patch
+032d71a5028a62275e5bf3822ef755071cc36aa06b1253f79d941f6f86d75499068f0bd26f1b02955ffbbe0c0fa204a4c8076d5f7e07a1d55dcea51d74f35059  fix-cast-32-bit.patch
+e4790888775070c721d2447fd2a4a55571cfe6558b0ebb767c7b16b00762840f075f2eff490f856c4610fa73c122f0235558b7eb75897b19ecaa87a13bbdc37b  no-werror.patch
+25416ca666324ad51c572a6e307a344547a7d66f22b40b070c8c25af1730f91ce7ed32965c22ddfd5ce9e0f25a1d8540c3e6e03a408b35e423d2748e0b6cea9a  qt-6.10.1.patch
+"

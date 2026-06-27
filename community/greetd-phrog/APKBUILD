@@ -1,0 +1,76 @@
+# Maintainer: Sam Day <me@samcday.com>
+pkgname=greetd-phrog
+pkgver=0.53.0
+pkgrel=0
+pkgdesc="Mobile device greeter"
+url="https://github.com/samcday/phrog"
+# armhf: blocked by phosh
+arch="all !armhf"
+license="GPL-3.0-only"
+depends="
+	phosh
+	greetd
+	greetd-phrog-schemas
+	libphosh"
+makedepends="
+	cargo
+	cargo-auditable
+	foot
+	libphosh-dev
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-schemas::noarch $pkgname-systemd $pkgname-dbg"
+source="https://github.com/samcday/phrog/archive/$pkgver/phrog-$pkgver.tar.gz
+	timeout.patch
+	"
+builddir="$srcdir/phrog-$pkgver"
+# net: cargo fetch
+options="net"
+
+# Tests are flaky on loongarch64
+if [ "$CARCH" = "loongarch64" ]; then
+	options="$options !check"
+fi
+
+export RUSTFLAGS="$RUSTFLAGS --remap-path-prefix=$builddir=/build/"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+	cargo xtask dist-data greetd-config.toml --greetd-vt 7 --greetd-user greetd
+}
+
+package() {
+	install -Dm644 data/mobi.phosh.phrog.gschema.xml -t "$pkgdir"/usr/share/glib-2.0/schemas/
+	install -Dm644 data/00_mobi.phosh.Phrog.gschema.override -t "$pkgdir"/usr/share/glib-2.0/schemas/
+	install -Dm644 data/phrog.session -t "$pkgdir"/usr/share/gnome-session/sessions/
+	install -Dm644 data/mobi.phosh.Phrog.desktop -t "$pkgdir"/usr/share/applications/
+	install -Dm644 target/dist-data/greetd-config.toml -t "$pkgdir"/etc/phrog/
+	install -d "$pkgdir"/usr/share/phrog/autostart
+	install -d "$pkgdir"/etc/phrog/autostart
+	install -Dm755 target/release/phrog -t "$pkgdir"/usr/bin/
+	install -Dm755 data/phrog-greetd-session -t "$pkgdir"/usr/libexec/
+
+	install -Dm644 data/mobi.phosh.Phrog.service -t "$pkgdir"/usr/lib/systemd/user/
+	install -Dm644 data/mobi.phosh.Phrog.target -t "$pkgdir"/usr/lib/systemd/user/
+	install -Dm644 data/systemd-session.conf -t "$pkgdir"/usr/lib/systemd/user/gnome-session@phrog.target.d/
+}
+
+check() {
+	export XDG_RUNTIME_DIR="$builddir"
+	dbus-run-session xvfb-run -a phoc -E "cargo test --frozen"
+}
+
+schemas() {
+	pkgdesc="Phrog schema files"
+	depends=""
+	amove usr/share/glib-2.0/schemas
+}
+sha512sums="
+4ac04d47e1b0b33e6f8794e5317258002be79500ab38deee49eb0c97fd34eb832516ab6ace004d782fd5e5fa54f8ed81affc712503822c51e46ed33036c1f5cd  phrog-0.53.0.tar.gz
+d1d7ebd19c328486bf4edfd223e105341680f4f9b27c607589a1c8d21758f2aa27b9207384ae88801acfbfd578348fd76a5b5b0697d065cfd7fc9308ed862f11  timeout.patch
+"

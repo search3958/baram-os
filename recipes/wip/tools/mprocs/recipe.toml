@@ -1,8 +1,0 @@
-#TODO termios crates error (after cargo update)
-[source]
-git = "https://github.com/pvolok/mprocs"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages mprocs
-"""

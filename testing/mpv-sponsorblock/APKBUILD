@@ -1,0 +1,40 @@
+# Maintainer: Cowington Post <cowingtonpost@gmail.com>
+pkgname=mpv-sponsorblock
+pkgver=2.2.0
+pkgrel=0
+pkgdesc="MPV plugin that allows you to skip sponsors while watching YouTube videos"
+url="https://github.com/TheCactusVert/mpv-sponsorblock"
+# x86: mpv-client-sys library has a buffer overflow vulnerability
+arch="all !x86"
+license="MIT"
+depends="mpv"
+makedepends="
+	cargo
+	cargo-auditable
+	mpv-dev
+	clang-dev
+	"
+source="https://github.com/TheCactusVert/mpv-sponsorblock/archive/v$pkgver/mpv-sponsorblock-$pkgver.tar.gz"
+options="!check" # no tests
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm0644 target/release/libmpv_sponsorblock.so -t "$pkgdir"/etc/mpv/scripts/
+}
+
+sha512sums="
+149357a39a990ba68c2c457273ac0381407b61f056e62a475edefc2eb6e8158934e6eb03478c42289f886a36f987856c1e9307dd09c01320f17a239e27b07593  mpv-sponsorblock-2.2.0.tar.gz
+"

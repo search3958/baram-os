@@ -1,0 +1,33 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-pyrdfa3
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=pyrdfa3
+pkgver=3.6.5
+pkgrel=1
+pkgdesc="pyRdfa Libray"
+url="https://pypi.python.org/project/pyrdfa3"
+license="W3C-20150513"
+arch="noarch"
+depends="py3-rdflib py3-html5lib py3-isodate"
+checkdepends="py3-pytest"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/prrvchr/pyrdfa3/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+options="!check" # No test suite
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+52b853b1554ff900ae1474d622fe1b1596cf53ed5edc47b04dddd940be1115dc11a81339c20f63681e13b74839b0d68145b35d8b7e5a41f5fae02aed80215526  py3-pyrdfa3-3.6.5.tar.gz
+"

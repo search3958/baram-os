@@ -1,0 +1,57 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-portalocker
+pkgver=3.2.0
+pkgrel=1
+pkgdesc="An extended version of portalocker to lock files in Python using the with statement"
+url="http://portalocker.readthedocs.io/en/latest/"
+arch="noarch"
+license="PSF-2.0"
+depends="
+	py3-babel
+	py3-imagesize
+	py3-requests
+	py3-snowballstemmer
+	python3
+	"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	py3-sphinx
+	"
+checkdepends="
+	py3-coverage-conditional-plugin
+	py3-docutils
+	py3-flaky
+	py3-pytest
+	py3-pytest-cov
+	py3-pytest-timeout
+	py3-redis
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/p/portalocker/portalocker-$pkgver.tar.gz"
+builddir="$srcdir/portalocker-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v \
+		--deselect portalocker_tests/test_multiprocess.py::test_shared_processes
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+56f015d73b0d40736347011e72cb9c05c04613393a83a39f3f90663a6c07b288ba49d72e6e013b5c5c7c6a81f5a9f6ce8438d1890549968c87d642eba285b725  portalocker-3.2.0.tar.gz
+"

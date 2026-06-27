@@ -1,0 +1,41 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-bottle-rest
+_pkgname=bottle-rest
+pkgver=0.6.0
+pkgrel=2
+pkgdesc="A decorator for REST in Bottle"
+url="https://pypi.org/project/bottle-rest/"
+arch="noarch"
+license="MIT"
+depends="python3 py3-bottle"
+makedepends="py3-gpep517 py3-setuptools py3-wheel py3-installer"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Bystroushaak/bottle-rest/archive/refs/tags/$pkgver.tar.gz"
+
+replaces="py-bottle-rest" # Backwards compat
+provides="py-bottle-rest=$pkgver-r$pkgrel" # Backwards compat
+
+builddir="$srcdir"/$_pkgname-$pkgver
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+abc34f287866188e84d3636df5d279061bbe9bc2dbc56bf1a6bafb39b255b5b04ae03fc0a2357e3d9a63ef100dfd3e630a408f84c05f8cbfe685e68a87a2ea93  py3-bottle-rest-0.6.0.tar.gz
+"

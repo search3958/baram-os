@@ -1,0 +1,48 @@
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=gtest
+pkgver=1.17.0
+pkgrel=1
+pkgdesc="Google Test - C++ testing utility based on the xUnit framework (like JUnit)"
+url="https://github.com/google/googletest"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel gmock=$pkgver-r$pkgrel"
+makedepends="$depends_dev cmake python3-dev samurai"
+subpackages="$pkgname-dev gmock $pkgname-src::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/google/googletest/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/googletest-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-Dgtest_build_tests=ON \
+		-DBUILD_GMOCK=ON
+	cmake --build build
+}
+
+check() {
+	# fails of x86
+	ctest --test-dir build -E "(googletest-port-test|googletest-printers-test)"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+	find "$pkgdir" -name '*.pump' -print -delete
+}
+
+gmock() {
+	pkgdesc="Google Mock - A library for writing and using C++ mock classes"
+	amove usr/lib/libgmock*.so*
+}
+
+src() {
+	mkdir -p "$subpkgdir"/usr/src/$pkgname/src
+	mv  "$builddir"/googletest/src/* "$subpkgdir"/usr/src/$pkgname/src
+}
+
+sha512sums="
+0f57e9ef06925e5b7722df1eb92ef5850e8dce79220ea16a8aaff586a71c0b01460ef1713649ee24ffedb2e6ad5a51e9198c5a5ae1b2789e43feb1f494e7d45c  gtest-1.17.0.tar.gz
+"

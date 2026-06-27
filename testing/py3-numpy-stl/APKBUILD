@@ -1,0 +1,38 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=py3-numpy-stl
+pkgver=4.0.0
+pkgrel=0
+pkgdesc="Library for working with STLs"
+url="https://github.com/WoLpH/numpy-stl"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 py3-utils py3-numpy"
+makedepends="py3-gpep517 py3-uv-build"
+checkdepends="py3-pytest py3-pytest-cov py3-pygments"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/wolph/numpy-stl/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/numpy-stl-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# deselected test needs xvfb-run and fails
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/test_ascii.py::test_use_with_qt_with_custom_locale_decimal_delimeter
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+887ceed25ea1b387550ec285c478c9729932e6d35c389ab1d9741c5743915a057093af51f4cb1c25aaf4d975ccbbbb2d61b28a12682570e768948f22695ecf1d  py3-numpy-stl-4.0.0.tar.gz
+"

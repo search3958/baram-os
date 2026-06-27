@@ -1,0 +1,50 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=libgusb
+pkgver=0.4.9
+pkgrel=1
+pkgdesc="GLib wrapper around libusb"
+url="https://github.com/hughsie/libgusb"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	eudev-dev
+	glib-dev
+	gobject-introspection-dev
+	json-glib-dev
+	libusb-dev
+	meson
+	py3-setuptools
+	python3-dev
+	vala
+	"
+checkdepends="hwids-usb"
+subpackages="$pkgname-dev $pkgname-utils"
+source="libgusb-$pkgver.tar.gz::https://github.com/hughsie/libgusb/archive/$pkgver.tar.gz"
+options="!check" # libusb needs hardware to run without umockdev
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Ddocs=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+utils() {
+	pkgdesc="$pkgdesc (utils)"
+
+	amove usr/bin
+}
+
+sha512sums="
+22cce771c488963ea078cf2914b4e731afa9a7babb94570c9412147e6a3af142deac41b9a7a80cdf74960f9001bb30312923d53e0f96eb15bf99e96207b047d4  libgusb-0.4.9.tar.gz
+"

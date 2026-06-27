@@ -1,0 +1,55 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=pari
+pkgver=2.17.3
+pkgrel=1
+pkgdesc="Computer algebra system designed for fast computations in number theory"
+url="https://pari.math.u-bordeaux.fr/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="$pkgname-libs=$pkgver-r$pkgrel"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	gmp-dev
+	readline-dev
+	"
+makedepends="
+	$depends_dev
+	perl
+	"
+checkdepends="diffutils" # BusyBox diff: unrecognized option: c
+subpackages="$pkgname-dev $pkgname-libs $pkgname-doc"
+source="https://pari.math.u-bordeaux.fr/pub/pari/unix/pari-$pkgver.tar.gz"
+
+build() {
+	export CFLAGS="${CFLAGS//-Os/-O2} -flto=auto"
+	export CPPFLAGS="${CPPFLAGS//-Os/-O2} -flto=auto"
+	./Configure \
+		--prefix=/usr \
+		--mt=pthread \
+		--with-readline \
+		--with-gmp \
+		--graphic=svg
+	make all
+}
+
+check() {
+	make dobench
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+doc() {
+	default_doc
+
+	amove \
+		usr/share/pari/doc \
+		usr/share/pari/examples
+}
+
+sha512sums="
+24eab83ada044b2eeee1ab77162f104f3ebb5f34a3b9334aa9912e80cd26cf0e1a3db19af9415c0f07a101a9b59f3f84d025ed70458738a5ae2ecb490414c79f  pari-2.17.3.tar.gz
+"

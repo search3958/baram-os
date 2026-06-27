@@ -1,0 +1,30 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=rofi-calc
+pkgver=2.5.1
+pkgrel=0
+pkgdesc="Rofi plugin that uses qalc to parse natural language input and provide results"
+url="https://github.com/svenstaro/rofi-calc"
+arch="all"
+license="MIT"
+depends="cmd:rofi qalc"
+makedepends="
+	meson
+	rofi-dev
+	"
+source="https://github.com/svenstaro/rofi-calc/archive/v$pkgver/rofi-calc-$pkgver.tar.gz"
+options="!check"  # no tests available
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+da5c5d5db06f2918bba40f405f23c575c09d9c3414a6ebaf643749d48e4ee7731c2fb8065ade9c5217a4e0cfea7eed6b9cad328cd95f04b03211e925b0b72f99  rofi-calc-2.5.1.tar.gz
+"

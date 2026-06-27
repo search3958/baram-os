@@ -1,0 +1,65 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt5-qtgamepad
+pkgver=5.15.18_git20250330
+pkgrel=0
+_module="${pkgname#qt5-}"
+_pkgver=269fc0731f6838a1c02877a83c0ada23659c69fc
+_fullname=$_module-$_pkgver
+pkgdesc="Adds support for getting events from gamepad devices"
+url="https://doc.qt.io/qt-5/qtgamepad-index.html"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+arch="all !armhf" # armhf blocked by qt5-qtdeclarative
+depends_dev="
+	eudev-dev
+	qt5-qtdeclarative-dev
+	sdl2-dev
+	"
+makedepends="$depends_dev
+	qt5-qtbase-dev
+	"
+subpackages="$pkgname-dev"
+source="https://dev.alpinelinux.org/archive/qt/$_fullname.tar.xz"
+builddir="$srcdir/$_fullname"
+
+_disturl="dev.alpinelinux.org:/archive/qt/"
+snapshot() {
+	clean
+	makedepends="git xz rsync tar" deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	git clone --filter=tree:0 https://invent.kde.org/qt/qt/$_module.git .
+	git archive --format tar --prefix=$_fullname/ $_pkgver > "$SRCDEST"/$_fullname.tar
+	xz -vv -T0 -9 -e "$SRCDEST"/$_fullname.tar
+	rsync --progress -La "$SRCDEST"/$_fullname.tar.xz $_disturl
+}
+
+prepare() {
+	default_prepare
+
+	# We need to make the build system think we're running in a git repository
+	# so it correctly symlinks during the build
+	mkdir .git
+}
+
+build() {
+	qmake-qt5
+	make -j1
+}
+
+check() {
+	make check
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+
+	# Drop QMAKE_PRL_BUILD_DIR because reference the build dir
+	find "$pkgdir/usr/lib" -type f -name '*.prl' \
+		-exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
+
+	install -d "$pkgdir"/usr/share/licenses
+	ln -s qt5-base "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+cb35450667147d3efca22132b80403f60dccdc9985e0e7fbd3b8f97cd21ed82f1fd27fc97f234689e6cc5456858f286a6b72def7b5546365a14eed424112ff07  qtgamepad-269fc0731f6838a1c02877a83c0ada23659c69fc.tar.xz
+"

@@ -1,0 +1,527 @@
+# Contributor: Simon Frankenberger <simon-alpine@fraho.eu>
+# Maintainer: Simon Frankenberger <simon-alpine@fraho.eu>
+pkgname=openjdk11
+pkgver=11.0.31_p11
+_pkgver=${pkgver%_p*}-ga
+pkgrel=0
+pkgdesc="Oracle OpenJDK 11"
+provider_priority=11
+url="https://github.com/openjdk/jdk11u"
+# 32-bit: needs patches
+# riscv64: unsupported
+arch="all !armhf !armv7 !riscv64"
+license="GPL-2.0-with-classpath-exception"
+makedepends_build="
+	$pkgname-bootstrap
+	autoconf
+	bash
+	gawk
+	grep
+	make
+	zip
+	zlib-dev
+	"
+makedepends_host="
+	alsa-lib-dev
+	cups-dev
+	elfutils-dev
+	fontconfig-dev
+	freetype-dev
+	giflib-dev
+	lcms2-dev
+	libffi-dev
+	libjpeg-turbo-dev
+	libx11-dev
+	libxext-dev
+	libxrandr-dev
+	libxrender-dev
+	libxt-dev
+	libxtst-dev
+	linux-headers
+	zlib-dev
+	"
+depends="$pkgname-jdk $pkgname-demos $pkgname-doc" # for the virtual openjdk11 package
+subpackages="$pkgname-jmods:_jmods:noarch
+	$pkgname-demos:_demos:noarch
+	$pkgname-doc:_doc:noarch
+	$pkgname-jre:_jre
+	$pkgname-src:_src:noarch
+	$pkgname-jre-headless:_jre_headless
+	$pkgname-jdk:_jdk"
+source="jdk-$_pkgver.tar.gz::https://github.com/openjdk/jdk11u/archive/jdk-$_pkgver.tar.gz
+	lfs64.patch
+	ppc64le.patch
+	JDK-8267908.patch
+	32bit.patch
+"
+builddir="$srcdir/jdk11u-jdk-$_pkgver"
+
+provides="$pkgname-bootstrap=$pkgver-r$pkgrel"
+
+_java_home="/usr/lib/jvm/java-11-openjdk"
+
+ldpath="$_java_home/lib:$_java_home/lib/jli:$_java_home/lib/server"
+sonameprefix="$pkgname:"
+
+# enable running the JTReg tests in check?
+# see comment in that function for explanation
+_run_jtreg=${_run_jtreg:-0}
+if [ $_run_jtreg -ne 0 ]; then
+	makedepends="$makedepends java-jtreg"
+	checkdepends="$checkdepends font-freefont xvfb-run"
+fi
+
+case "$CARCH" in
+	aarch64|s390x|loongarch64)
+		options="!check" # get stuck forever on builders
+		;;
+esac
+
+_jvm_variants=server
+case $CTARGET_ARCH in
+loongarch64)   _jvm_variants=zero      ;;
+*)             _jvm_variants=server    ;;
+esac
+
+
+# secfixes:
+#   11.0.31_p11-r0:
+#     - CVE-2026-22016
+#     - CVE-2026-34282
+#     - CVE-2026-22021
+#     - CVE-2026-22013
+#     - CVE-2026-23865
+#     - CVE-2026-22018
+#     - CVE-2026-22007
+#     - CVE-2026-34268
+#   11.0.30_p7-r0:
+#     - CVE-2026-21945
+#     - CVE-2026-21932
+#     - CVE-2026-21933
+#     - CVE-2026-21925
+#   11.0.29_p7-r0:
+#     - CVE-2025-53066
+#     - CVE-2025-53057
+#   11.0.28_p6-r0:
+#     - CVE-2025-50059
+#     - CVE-2025-30749
+#     - CVE-2025-50106
+#     - CVE-2025-30761
+#     - CVE-2025-30754
+#   11.0.27_p6-r0:
+#     - CVE-2025-21587
+#     - CVE-2025-30698
+#   11.0.26_p4-r0:
+#     - CVE-2025-21502
+#   11.0.25_p9-r0:
+#     - CVE-2024-21235
+#     - CVE-2024-21210
+#     - CVE-2024-21208
+#     - CVE-2024-21217
+#   11.0.24_p8-r0:
+#     - CVE-2024-21147
+#     - CVE-2024-21145
+#     - CVE-2024-21140
+#     - CVE-2024-21144
+#     - CVE-2024-21131
+#     - CVE-2024-21138
+#   11.0.23_p9-r0:
+#     - CVE-2024-21085
+#     - CVE-2024-21011
+#     - CVE-2024-21068
+#     - CVE-2024-21094
+#     - CVE-2024-21012
+#   11.0.22_p7-r0:
+#     - CVE-2024-20918
+#     - CVE-2024-20952
+#     - CVE-2024-20919
+#     - CVE-2024-20921
+#     - CVE-2024-20926
+#     - CVE-2024-20945
+#   11.0.21_p9-r0:
+#     - CVE-2023-22081
+#   11.0.20_p8-r0:
+#     - CVE-2023-22041
+#     - CVE-2023-25193
+#     - CVE-2023-22045
+#     - CVE-2023-22049
+#     - CVE-2023-22036
+#     - CVE-2023-22006
+#   11.0.19_p7-r0:
+#     - CVE-2023-21930
+#     - CVE-2023-21967
+#     - CVE-2023-21954
+#     - CVE-2023-21939
+#     - CVE-2023-21938
+#     - CVE-2023-21968
+#     - CVE-2023-21937
+#   11.0.18_p10-r0:
+#     - CVE-2023-21835
+#     - CVE-2023-21843
+#   11.0.17_p8-r0:
+#     - CVE-2022-21628
+#     - CVE-2022-21626
+#     - CVE-2022-39399
+#     - CVE-2022-21624
+#     - CVE-2022-21619
+#   11.0.16_p8-r0:
+#     - CVE-2022-21540
+#     - CVE-2022-21541
+#     - CVE-2022-21549
+#     - CVE-2022-25647
+#     - CVE-2022-34169
+#   11.0.15_p10-r0:
+#     - CVE-2021-44531
+#     - CVE-2021-44532
+#     - CVE-2021-44533
+#     - CVE-2022-0778
+#     - CVE-2022-21476
+#     - CVE-2022-21426
+#     - CVE-2022-21496
+#     - CVE-2022-21434
+#     - CVE-2022-21443
+#     - CVE-2022-21824
+#   11.0.14_p9-r0:
+#     - CVE-2022-21291
+#     - CVE-2022-21305
+#     - CVE-2022-21277
+#     - CVE-2022-21360
+#     - CVE-2022-21365
+#     - CVE-2022-21366
+#     - CVE-2022-21282
+#     - CVE-2022-21296
+#     - CVE-2022-21299
+#     - CVE-2022-21271
+#     - CVE-2022-21283
+#     - CVE-2022-21293
+#     - CVE-2022-21294
+#     - CVE-2022-21340
+#     - CVE-2022-21341
+#     - CVE-2022-21248
+#   11.0.13_p8-r0:
+#     - CVE-2021-35567
+#     - CVE-2021-35550
+#     - CVE-2021-35586
+#     - CVE-2021-35564
+#     - CVE-2021-35556
+#     - CVE-2021-35559
+#     - CVE-2021-35561
+#     - CVE-2021-35565
+#     - CVE-2021-35578
+#     - CVE-2021-35603
+#   11.0.12_p7-r0:
+#     - CVE-2021-2341
+#     - CVE-2021-2369
+#     - CVE-2021-2388
+#   11.0.9_p11-r0:
+#     - CVE-2020-14779
+#     - CVE-2020-14781
+#     - CVE-2020-14782
+#     - CVE-2020-14792
+#     - CVE-2020-14796
+#     - CVE-2020-14797
+#     - CVE-2020-14798
+#     - CVE-2020-14803
+#   11.0.8_p10-r0:
+#     - CVE-2020-14556
+#     - CVE-2020-14562
+#     - CVE-2020-14573
+#     - CVE-2020-14577
+#     - CVE-2020-14581
+#     - CVE-2020-14583
+#     - CVE-2020-14593
+#     - CVE-2020-14621
+#   11.0.7_p10-r0:
+#     - CVE-2020-2754
+#     - CVE-2020-2755
+#     - CVE-2020-2756
+#     - CVE-2020-2757
+#     - CVE-2020-2767
+#     - CVE-2020-2773
+#     - CVE-2020-2778
+#     - CVE-2020-2781
+#     - CVE-2020-2800
+#     - CVE-2020-2803
+#     - CVE-2020-2805
+#     - CVE-2020-2816
+#     - CVE-2020-2830
+#   11.0.6_p10-r0:
+#     - CVE-2020-2583
+#     - CVE-2020-2590
+#     - CVE-2020-2593
+#     - CVE-2020-2601
+#     - CVE-2020-2604
+#     - CVE-2020-2654
+#     - CVE-2020-2655
+#   11.0.5_p10-r0:
+#     - CVE-2019-2894
+#     - CVE-2019-2933
+#     - CVE-2019-2945
+#     - CVE-2019-2949
+#     - CVE-2019-2958
+#     - CVE-2019-2962
+#     - CVE-2019-2964
+#     - CVE-2019-2973
+#     - CVE-2019-2975
+#     - CVE-2019-2977
+#     - CVE-2019-2978
+#     - CVE-2019-2981
+#     - CVE-2019-2983
+#     - CVE-2019-2987
+#     - CVE-2019-2988
+#     - CVE-2019-2989
+#     - CVE-2019-2992
+#     - CVE-2019-2999
+#   11.0.4_p11-r0:
+#     - CVE-2019-2745
+#     - CVE-2019-2762
+#     - CVE-2019-2766
+#     - CVE-2019-2769
+#     - CVE-2019-2786
+#     - CVE-2019-2816
+#     - CVE-2019-2818
+#     - CVE-2019-2821
+#     - CVE-2019-7317
+
+prepare() {
+	default_prepare
+
+	# update autoconf files to detect alpine
+	update_config_sub
+
+	# remove not compilable module (hotspot jdk.hotspot.agent)
+	# this needs libthread_db which is only provided by glibc
+	#
+	# haven't found any way to disable this module so just remove it.
+	rm -r src/jdk.hotspot.agent
+}
+
+build() {
+	if [ $_run_jtreg -ne 0 ]; then
+		_with_jtreg="--with-jtreg=/usr/share/java/jtreg"
+	else
+		_with_jtreg="--with-jtreg=no"
+	fi
+
+	if [ -n "$USE_CCACHE" ]; then
+		# workaround ccache being disallowed
+		export PATH="/usr/bin:/bin:/sbin:/usr/sbin"
+		local ccache="--enable-ccache"
+	fi
+
+	# we want to build hotspot with better optimisations; it's set to this
+	# (prepended) anyway, and it's huge
+	case "$CARCH" in
+	ppc64le)
+		# ppc64le specifically takes 15x longer to compile a certain file with O3, for
+		# some reason
+		export CFLAGS="$CFLAGS -O2"
+		export CXXFLAGS="$CXXFLAGS -O2"
+		;;
+	*)
+		export CFLAGS="$CFLAGS -O3"
+		export CXXFLAGS="$CXXFLAGS -O3"
+		;;
+	esac
+
+	# workaround gcc-15 build issue
+	# see https://bugs.openjdk.org/browse/JDK-8356144
+	export CFLAGS="$CFLAGS -std=gnu99"
+
+	# CFLAGS, CXXFLAGS and LDFLAGS are ignored as shown by a warning
+	# in the output of ./configure unless used like such:
+	#  --with-extra-cflags="$CFLAGS"
+	#  --with-extra-cxxflags="$CXXFLAGS"
+	#  --with-extra-ldflags="$LDFLAGS"
+	# See also paragraph "Configure Control Variables" from "common/doc/building.md"
+	# shellcheck disable=2097 disable=2098
+	CFLAGS='' CXXFLAGS='' LDFLAGS='' \
+		bash ./configure \
+		--openjdk-target=$CHOST \
+		--prefix="$_java_home" \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--with-extra-cflags="$CFLAGS" \
+		--with-extra-cxxflags="$CXXFLAGS" \
+		--with-extra-ldflags="$LDFLAGS" \
+		--with-zlib=system \
+		--with-libjpeg=system \
+		--with-giflib=system \
+		--with-libpng=system \
+		--with-lcms=system \
+		--with-jobs=${JOBS:-4} \
+		--with-test-jobs=${JOBS:-4} \
+		--with-native-debug-symbols=none \
+		--with-build-jdk="$_java_home" \
+		$ccache \
+		$_with_jtreg \
+		--disable-warnings-as-errors \
+		--disable-precompiled-headers \
+		--enable-dtrace=no \
+		--with-jvm-variants=$_jvm_variants \
+		--with-debug-level=release \
+		--with-version-pre= \
+		--with-version-opt="alpine-r$pkgrel" \
+		--with-version-build=${pkgver#*p} \
+		--with-vendor-name="Alpine" \
+		--with-vendor-url="https://alpinelinux.org/" \
+		--with-vendor-bug-url="https://gitlab.alpinelinux.org/alpine/aports/issues" \
+		--with-vendor-vm-bug-url="https://gitlab.alpinelinux.org/alpine/aports/issues"
+	# in rare cases the build hangs
+	MAKEFLAGS='' timeout 7200 make images
+}
+
+check() {
+	# run the gtest unittest suites
+	MAKEFLAGS='' make test-hotspot-gtest
+
+	# The jtreg tests take very, very long to finish and show some failures (9 - 12 on my machine, varying between runs)
+	# I think these are not critical and can be safely ignored.
+	# As the tests take too long, they are disabled by default.
+	# When updating this aport please let them run at least once on your machine to see if the failure count changes.
+	if [ $_run_jtreg -ne 0 ]; then
+		_logfile=$( mktemp -p "$builddir" )
+		MAKEFLAGS='' xvfb-run make \
+			run-test-tier1 \
+			run-test-tier2 \
+			run-test-tier3 \
+			| tee "$_logfile"
+		msg "---------------------------------------"
+		msg "The build log can be found at $_logfile"
+		# abort the build so you may take a look at the logfile
+		false
+		return 1
+	fi
+}
+
+package() {
+	mkdir -p "$pkgdir/$_java_home"
+	cp -r build/*-normal-$_jvm_variants-release/images/jdk/* "$pkgdir/$_java_home"
+}
+
+_jmods() {
+	pkgdesc="Oracle OpenJDK 11 (jmods)"
+	depends=""
+	_fromroot="$pkgdir/$_java_home"
+	_toroot="$subpkgdir/$_java_home"
+
+	mkdir -p "$_toroot"
+	mv "$_fromroot/jmods" "$_toroot"
+}
+
+_demos() {
+	pkgdesc="Oracle OpenJDK 11 (demos)"
+	depends=""
+	_fromroot="$pkgdir/$_java_home"
+	_toroot="$subpkgdir/$_java_home"
+
+	mkdir -p "$_toroot"
+	mv "$_fromroot/demo" "$_toroot"
+}
+
+_doc() {
+	pkgdesc="Oracle OpenJDK 11 (Documentation)"
+	depends=""
+	_fromroot="$pkgdir/$_java_home"
+	_toroot="$subpkgdir/$_java_home"
+
+	mkdir -p "$_toroot"
+	mv "$_fromroot/man" "$_toroot"
+}
+
+_jre() {
+	pkgdesc="Oracle OpenJDK 11 (JRE)"
+	depends="$pkgname-jre-headless"
+	provides=java-jre
+	_fromroot="$pkgdir/$_java_home"
+	_toroot="$subpkgdir/$_java_home"
+
+	mkdir -p "$_toroot/lib"
+	mv "$_fromroot/lib/libawt_xawt.so" \
+		"$_fromroot/lib/libfontmanager.so" \
+		"$_fromroot/lib/libjavajpeg.so" \
+		"$_fromroot/lib/libjawt.so" \
+		"$_fromroot/lib/libjsound.so" \
+		"$_fromroot/lib/liblcms.so" \
+		"$_fromroot/lib/libsplashscreen.so" \
+		"$_toroot/lib"
+}
+
+_src() {
+	pkgdesc="Oracle OpenJDK 11 (sources)"
+	depends="$pkgname-jre-headless"
+	mkdir -p "$subpkgdir/$_java_home"/lib
+	mv "$pkgdir"/$_java_home/lib/src.zip \
+		"$subpkgdir"/$_java_home/lib/
+}
+
+_jre_headless() {
+	pkgdesc="Oracle OpenJDK 11 (JRE headless)"
+	depends="java-common java-cacerts"
+	provides=java-jre-headless
+	_fromroot="$pkgdir/$_java_home"
+	_toroot="$subpkgdir/$_java_home"
+
+	mkdir -p "$_toroot"
+	mv "$_fromroot/lib" "$_toroot"
+
+	# ct.sym should stay in -jdk
+	mkdir "$_fromroot/lib"
+	mv "$_toroot/lib/ct.sym" "$_fromroot/lib"
+
+	mkdir -p "$_toroot/bin"
+	for i in java \
+		jfr \
+		jjs \
+		jrunscript \
+		keytool \
+		pack200 \
+		rmid \
+		rmiregistry \
+		unpack200; do
+		mv "$_fromroot/bin/$i" "$_toroot/bin/$i"
+	done
+
+	# jaotc only available on x86_64
+	if [ "$CARCH" = "x86_64" ]; then
+		mv "$_fromroot/bin/jaotc" "$_toroot/bin/jaotc"
+	fi
+
+	mv "$_fromroot/legal"              "$_toroot"
+	mv "$_fromroot/conf"               "$_toroot"
+	mv "$_fromroot/release"            "$_toroot"
+	cp "$builddir/ASSEMBLY_EXCEPTION"  "$_toroot"
+	cp "$builddir/LICENSE"             "$_toroot"
+	cp "$builddir/README.md"           "$_toroot"
+
+	# symlink to shared cacerts store
+	rm "$_toroot/lib/security/cacerts"
+	ln -sf /etc/ssl/certs/java/cacerts \
+		"$_toroot/lib/security/cacerts"
+
+	# symlink for java-common to work (expects jre in $_java_home/jre)
+	ln -sf . "$_toroot/jre"
+}
+
+_jdk() {
+	pkgdesc="Oracle OpenJDK 11 (JDK) ($_jvm_variants)"
+	depends="$pkgname-jre $pkgname-jmods"
+	provides=java-jdk
+	_fromroot="$pkgdir/$_java_home"
+	_toroot="$subpkgdir/$_java_home"
+
+	mkdir -p "$_toroot"
+	mv "$_fromroot/bin" "$_toroot"
+	mv "$_fromroot/lib" "$_toroot"
+	mv "$_fromroot/include" "$_toroot"
+}
+
+sha512sums="
+78e2e96395b0fa17f4565924abc3e034bb660763e6a3a278380232c17d0aff64d000bcec0e6ff0a37e24c5affcb0ffbdacb5565d52375f41dedfdc000e5c0dc6  jdk-11.0.31-ga.tar.gz
+438c6c4c760b7aece90a8e09d5edce842286071195cffe8d417208f3dfdef0953eb68fb8282d44cbd7ac8eeaee637cdb040c06ffa5381c36f47ffd48b5e6d938  lfs64.patch
+e8d2213b5995bc0811f9a0036a9794150568ff9de4e202674e218ece7996553b1f222cff43dd21222c378f4f95a1471da25859b5a82ee496ed64df85f34ff199  ppc64le.patch
+b0963e5b6dc4d6cec0670827e0a0691d65e44587a8912ac9110aeb36d7f2d07a8afe9e155ea1568fe1534c09ef3277aeca8a66bbf155354b5cdc6e2b9636b5b4  JDK-8267908.patch
+6ca945d14e5a6549eb75bbd2e879a30d59d42ae25770b663100cd0984d3ddadbc07ba7162ab1096692dc6851c1bec7a3aad8bbdf2b8d7b5103e38e36976be62b  32bit.patch
+"

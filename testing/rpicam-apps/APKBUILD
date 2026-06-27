@@ -1,0 +1,53 @@
+# Contributor: Zach DeCook <zachdecook@librem.one>
+maintainer="Krystian Chachuła <krystian@krystianch.com>"
+pkgname=rpicam-apps
+pkgver=1.12.0
+pkgrel=0
+pkgdesc="Suite of libcamera-based applications to drive the Raspberry Pi cameras"
+url="https://github.com/raspberrypi/rpicam-apps"
+arch="aarch64 armhf armv7" # libcamera by default only includes rpi/vc4 pipeline on these archs
+license="BSD-2-Clause"
+depends="libcamera-raspberrypi"
+makedepends="
+	boost-dev
+	ffmpeg-dev
+	libcamera-dev
+	libdrm-dev
+	libexif-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	meson
+	musl-dev
+	tiff-dev
+"
+subpackages="$pkgname-doc"
+source="
+	$pkgname-$pkgver-1.tar.gz::https://github.com/raspberrypi/rpicam-apps/archive/v$pkgver/rpicam-apps-v$pkgver.tar.gz
+	"
+
+build() {
+	abuild-meson \
+		-Denable_libav=enabled \
+		-Denable_drm=enabled \
+		-Denable_egl=disabled \
+		-Denable_qt=disabled \
+		-Denable_opencv=disabled \
+		-Denable_tflite=disabled \
+		-Dneon_flags=auto \
+		-Denable_hailo=disabled \
+		build .
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+	install -Dm644 license.txt "$pkgdir"/usr/share/licenses/$pkgname/license.txt
+}
+
+sha512sums="
+51ccc1bd445abb6ed98621bb24f6bf6d8f569c1b9f2a93715d3d02c89666a9b6fb12da67d4808ff6797e0e32076339cb1bbf3c12aebe328274b97c1f8ef349cb  rpicam-apps-1.12.0-1.tar.gz
+"

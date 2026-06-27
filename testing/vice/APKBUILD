@@ -1,0 +1,74 @@
+# Contributor: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+# Maintainer: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+pkgname=vice
+pkgver=3.10
+pkgrel=0
+pkgdesc="emulates the C64/DTV, C128, VIC20, almost all PETs, PLUS4 and CBM-II"
+url="https://vice-emu.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	alsa-lib-dev
+	autoconf
+	automake
+	bash
+	bdftopcf
+	bison
+	curl-dev
+	ffmpeg-dev
+	flex
+	giflib-dev
+	glew-dev
+	gtk+3.0-dev
+	jpeg-dev
+	libpng-dev
+	libevdev-dev
+	linux-headers
+	texinfo
+	xa
+	"
+source="https://downloads.sourceforge.net/vice-emu/vice-$pkgver.tar.gz
+	disable-fc-cache.patch
+	"
+
+# Starting with version 3.8, only PDF docs are installed to
+# /usr/share/doc/vice, texlive is required to generate that
+case "$CARCH" in
+ppc64le|s390x|riscv64|loongarch64)
+	;;
+*)
+	makedepends="$makedepends texlive texmf-dist-plaingeneric"
+	subpackages="$subpackages $pkgname-doc"
+	_extra_opts="--enable-pdf-docs"
+	;;
+esac
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure --prefix=/usr \
+		--libdir=/usr/lib \
+		--enable-native-gtk3ui \
+		--enable-x64 \
+		--disable-no-pic \
+		--without-pulse \
+		--enable-external-ffmpeg \
+		$_extra_opts
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+check() {
+	make check
+}
+
+sha512sums="
+5cddbb09080d39fad7690e8c178af40a5834377e201252c112816e2a9af5b4afd1ed090fdd19217dd36c8d18f7c633fda1ee6efc1322334bbe13ba4866435f97  vice-3.10.tar.gz
+ed6fee34eefcb04c42b4575591dfeffca8548eae354dee66dabdbc4abac0311cbbedcdc07cdfcb01da4840d57ab331a31583e17160820462a2c064835a75d75d  disable-fc-cache.patch
+"

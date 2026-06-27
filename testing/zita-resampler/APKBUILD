@@ -1,0 +1,35 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=zita-resampler
+pkgver=1.11.2
+pkgrel=0
+pkgdesc="library for resampling audio signals"
+url="https://kokkinizita.linuxaudio.org/linuxaudio"
+arch="all"
+license="GPL-3.0-only"
+makedepends="libsndfile-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://kokkinizita.linuxaudio.org/linuxaudio/downloads/zita-resampler-$pkgver.tar.xz
+	patch-Makefile.patch"
+options="!check" # No tests
+
+build() {
+	make -C source
+	# Poorly written makefile that may only build apps if the library
+	# is installed system wide. Fake it locally.
+	ln -sv lib$pkgname.so.$pkgver source/lib$pkgname.so
+	make CXXFLAGS="-I../source $CXXFLAGS" LDFLAGS="-L../source $LDFLAGS" -C apps
+}
+
+package() {
+	make PREFIX=/usr LIBDIR=/usr/lib DESTDIR="$pkgdir" -C source install
+	make PREFIX=/usr LIBDIR=/usr/lib DESTDIR="$pkgdir" -C apps install
+
+	# Needed for zita-njbridge and some other MAO software.
+	ln -sf libzita-resampler.so.$pkgver "$pkgdir"/usr/lib/libzita-resampler.so.1
+}
+
+sha512sums="
+1598c9ead4bf858d3a11677c9512932077e1d0b83588682eba402820936fa1cfc5fe1112abbecd945469b4ae2f7a6f59938a5fbb0fdd79de3b0a3a73703b03dd  zita-resampler-1.11.2.tar.xz
+2132c5e35101e62bd88a3759c594f39be4463c2d0acfa4d16e8848af779e4edaa2d48c6ea2dbe24ea7be84d327d3302ddc854f69ef133cb1f6045efbd1ac20c8  patch-Makefile.patch
+"

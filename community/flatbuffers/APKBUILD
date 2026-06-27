@@ -1,0 +1,68 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=flatbuffers
+pkgver=25.12.19
+pkgrel=1
+pkgdesc="Memory Efficient Serialization Library"
+url="https://flatbuffers.dev/"
+# armhf: blocked by bus error in tests
+arch="all !armhf"
+license="Apache-2.0"
+depends_dev="flatc=$pkgver-r$pkgrel"
+makedepends="
+	cmake
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	samurai
+	"
+subpackages="$pkgname-dev flatc py3-$pkgname-pyc py3-$pkgname:py3"
+source="flatbuffers-$pkgver.tar.gz::https://github.com/google/flatbuffers/archive/v$pkgver.tar.gz
+	locale-headers.patch
+	"
+
+# secfixes:
+#   0:
+#     - CVE-2020-35864
+
+build() {
+	cmake -B . -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DFLATBUFFERS_BUILD_SHAREDLIB=ON \
+		-DFLATBUFFERS_BUILD_FLATLIB=OFF
+	cmake --build .
+
+	cd python
+	gpep517 build-wheel \
+		--wheel-dir ../build/dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install .
+
+	python3 -m installer -d "$pkgdir" \
+		build/dist/*.whl
+}
+
+flatc() {
+	pkgdesc="$pkgdesc (compiler)"
+
+	amove usr/bin
+}
+
+py3() {
+	pkgdesc="$pkgdesc (python bindings)"
+	amove usr/lib/python3*
+}
+
+sha512sums="
+808c77536fbfb1c8a1145506873a2b4e5cb508e48bf35f8502a2d1349b64e7581bfe7ff2f587b3edb2642cc885c60c0170a8875fad245240a1288057f4c07a42  flatbuffers-25.12.19.tar.gz
+7908f8b95f881af6caa291383ea600be2e7b297c6c236021ad4a8789909ed3f92ba0cbfa038d8b84523d94fafc07939b00c279323b7e6eac8de9e36fba0a5c0b  locale-headers.patch
+"

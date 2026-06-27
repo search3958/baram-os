@@ -1,0 +1,27 @@
+# Contributor: Andrew Hills <ahills@ednos.net>
+# Contributor: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+# Maintainer: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+pkgname=zathura-ps
+pkgver=2026.02.03
+pkgrel=0
+pkgdesc="zathura-ps - plugin adds PostScript support to zathura"
+url="https://pwmt.org/projects/zathura-ps/"
+arch="all"
+license="Zlib"
+depends="zathura"
+makedepends="zathura-dev poppler-dev libspectre-dev muon ninja"
+options="!check"
+source="https://pwmt.org/projects/zathura-ps/download/zathura-ps-$pkgver.tar.xz"
+
+build() {
+	abuild-muon build .
+	ninja -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" muon -C build install
+}
+
+sha512sums="
+beed875741c0c9d8cb24e23136f4801417b58342e9c1007c4c2699424b03ac0126a25e9aed650a564951bab68c96a40d31ef8d7002012db59e94b4ec87e7bbd3  zathura-ps-2026.02.03.tar.xz
+"

@@ -1,0 +1,144 @@
+# Contributor: Díaz Urbaneja Diego <sodomon2@gmail.com>
+# Maintainer: Díaz Urbaneja Diego <sodomon2@gmail.com>
+pkgname=godot
+pkgver=4.6
+pkgrel=2
+pkgdesc="Multi-platform 2D and 3D game engine"
+url="https://godotengine.org"
+license="MIT"
+# Only armv7 and x86_64 are tested, give other architectures a try
+# build system is completely broken and refuses to detect anything correctly
+arch="x86_64 x86 armv7 aarch64"
+makedepends="
+	alsa-lib-dev
+	brotli-dev
+	dbus-dev
+	enet-dev
+	freetype-dev
+	glslang-dev
+	graphite2-dev
+	harfbuzz-dev
+	icu-dev
+	libdecor-dev
+	libgudev-dev
+	libogg-dev
+	libpng-dev
+	libtheora-dev
+	libvorbis-dev
+	libwebp-dev
+	libx11-dev
+	libxcursor-dev
+	libxi-dev
+	libxinerama-dev
+	libxkbcommon-dev
+	libxrandr-dev
+	mbedtls3-dev
+	mesa-dev
+	miniupnpc-dev
+	opusfile-dev
+	pcre2-dev
+	pulseaudio-dev
+	python3-dev
+	scons
+	wayland-dev
+	wslay-dev
+	zlib-dev
+	zstd-dev
+	"
+depends="ca-certificates-bundle"
+subpackages="$pkgname-doc $pkgname-templates"
+source="https://github.com/godotengine/godot/releases/download/$pkgver-stable/godot-$pkgver-stable.tar.xz
+	glslang.patch
+	"
+options="!check" # No tests
+builddir="$srcdir"/godot-"$pkgver"-stable
+_sconsflags="
+	builtin_brotli=false
+	builtin_certs=false
+	builtin_enet=false
+	builtin_freetype=false
+	builtin_glslang=false
+	builtin_graphite=false
+	builtin_harfbuzz=false
+	builtin_icu4c=false
+	builtin_libogg=false
+	builtin_libpng=false
+	builtin_libtheora=false
+	builtin_libvorbis=false
+	builtin_libwebp=false
+	builtin_mbedtls=false
+	builtin_miniupnpc=false
+	builtin_opus=false
+	builtin_pcre2=false
+	builtin_wslay=false
+	builtin_zlib=false
+	builtin_zstd=false
+	engine_update_check=false
+	execinfo=false
+	production=true
+	system_certs_path=/etc/ssl/cert.pem
+	use_sowrap=false
+	speechd=false
+	use_static_cpp=false
+	"
+
+case "$CARCH" in
+aarch64|x86_64)
+	makedepends="$makedepends embree-dev"
+	_sconsflags="$_sconsflags builtin_embree=false"
+	;;
+esac
+
+case "$CARCH" in
+x86_64)
+	;;
+*)
+	# only builds on x86_64
+	_sconsflags="$_sconsflags module_denoise_enabled=false"
+	;;
+esac
+
+case "$CARCH" in
+armv7)
+	# runs out of ram with lto
+	_sconsflags="$_sconsflags lto=none"
+	;;
+esac
+
+build() {
+	export BUILD_NAME="alpine_linux"
+	for target in editor template_release template_debug; do
+		scons -j${JOBS:-1} \
+			platform=linuxbsd \
+			target=$target \
+			arch=$CARCH \
+			$_sconsflags \
+			cflags="$CFLAGS -O2" \
+			cxxflags="$CXXFLAGS -O2" \
+			linkflags="$LDFLAGS"
+	done
+}
+
+package() {
+	pkgdesc="$pkgdesc (GUI editor)"
+	install -Dm644 misc/dist/linux/org.godotengine.Godot.desktop \
+		-t "$pkgdir"/usr/share/applications/
+	install -Dm644 misc/dist/linux/org.godotengine.Godot.appdata.xml \
+		-t "$pkgdir"/usr/share/metainfo/
+	install -Dm644 icon.png "$pkgdir"/usr/share/icons/hicolor/256x256/apps/godot.png
+	install -Dm644 icon.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/godot.svg
+	install -Dm644 misc/dist/linux/godot.6 -t "$pkgdir"/usr/share/man/man6/
+	install -Dm755 bin/godot.*.editor.* "$pkgdir"/usr/bin/godot
+	install -Dm755 bin/godot.*.template_debug.* "$pkgdir"/usr/bin/godot-template-debug
+	install -Dm755 bin/godot.*.template_release.* "$pkgdir"/usr/bin/godot-template-release
+}
+
+templates() {
+	pkgdesc="$pkgdesc (templates)"
+	amove usr/bin/*template*
+}
+
+sha512sums="
+e93201aa5a78da5baf81a110b3ca17603cc028ff35bfbfd1bff0061fcbbfa264b3941e7a42dc44320e141ab0624fe7e096f35ee362c9e0d4fa695d396a52eedd  godot-4.6-stable.tar.xz
+0878e5f269fa16884d8b84e217c96817245dc6748a3fe60ae576dfd3006123f59ff25fac793898a30a8a6ff70b2accbde474671d998d7b05584951512743f7a0  glslang.patch
+"

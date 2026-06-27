@@ -1,0 +1,27 @@
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=havoc
+pkgver=0.7.0
+pkgrel=0
+pkgdesc="terminal emulator for Wayland"
+arch="all"
+url="https://github.com/ii8/havoc"
+license="PD OR MIT"
+makedepends="wayland-dev wayland-protocols libxkbcommon-dev"
+options="!check" # no test suite
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ii8/havoc/archive/$pkgver.tar.gz"
+
+build() {
+	make havoc
+}
+
+package() {
+	install -Dm0755 "$pkgname" -t "$pkgdir"/usr/bin
+
+	install -Dm0644 "$pkgname".cfg -t "$pkgdir"/usr/share/doc/"$pkgname"
+	install -Dm0644 LICENSE -t "$pkgdir"/usr/share/licenses/"$pkgname"
+}
+
+sha512sums="
+c3eaf2f61e71679985b1979008ed93b9a1e466ddfeb2509d7e23028c14a0578cc7c4ae292204142951ccd26e7f4f150a843791cded64a057a377f594e3e0b3d1  havoc-0.7.0.tar.gz
+"

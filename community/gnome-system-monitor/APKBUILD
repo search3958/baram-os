@@ -1,0 +1,49 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=gnome-system-monitor
+pkgver=50.0
+pkgrel=0
+pkgdesc="GNOME system monitor"
+url="https://www.gnome.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	catch2-3
+	glibmm-dev>2.68
+	gnome-desktop-dev
+	gtkmm4-dev
+	itstool
+	libadwaita-dev
+	libgtop-dev
+	librsvg-dev
+	libxml2-dev
+	libxml2-utils
+	libxslt
+	meson
+	polkit-dev
+	"
+checkdepends="appstream-glib desktop-file-utils"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://download.gnome.org/sources/gnome-system-monitor/${pkgver%%.*}/gnome-system-monitor-$pkgver.tar.xz"
+
+build() {
+	# localtime_r
+	CFLAGS="$CFLAGS -D_BSD_SOURCE" \
+	abuild-meson \
+		-Db_lto=true \
+		-Dsystemd=false \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+efd6b8a51205d8d9355003cb05e91e7e88b24ac8d37945e130a86fc9d4abda32389ac97e68c32945c39eff6c32ce366053c0310cd1a939c8accf0d1223bd8671  gnome-system-monitor-50.0.tar.xz
+"

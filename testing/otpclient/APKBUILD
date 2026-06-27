@@ -1,0 +1,42 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=otpclient
+pkgver=4.4.2
+pkgrel=0
+pkgdesc="Simple GTK+ client for managing TOTP and HOTP"
+url="https://github.com/paolostivanin/OTPClient"
+license="GPL-3.0-or-later"
+arch="all"
+options="!check" # no test suite
+makedepends="
+	cmake
+	gtk+3.0-dev
+	jansson-dev
+	libcotp-dev
+	libgcrypt-dev
+	libpng-dev
+	libqrencode-dev
+	libsecret-dev
+	libzip-dev
+	protobuf-c-dev
+	protobuf-dev
+	samurai
+	zbar-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/paolostivanin/OTPClient/archive/v$pkgver/OTPClient-$pkgver.tar.gz"
+builddir="$srcdir/OTPClient-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+704b0bfe58acf710e84394c20a360662fbf078e36be0088bc17c3f9f9132b7a71bacae9daf59f63ec7619ca0a298e42e85f809f868c65ffbac90e2a6cbedd7ad  OTPClient-4.4.2.tar.gz
+"

@@ -1,0 +1,28 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=cmake-extras
+pkgver=1.9
+pkgrel=0
+pkgdesc="A collection of add-ons for the CMake build tool"
+url="https://gitlab.com/ubports/development/core/cmake-extras"
+arch="noarch"
+license="LGPL-3.0-only"
+depends="cmake"
+makedepends="samurai"
+options="!check" # No testsuite
+source="https://gitlab.com/ubports/development/core/cmake-extras/-/archive/$pkgver/cmake-extras-$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+sha512sums="
+a7a9f6e72a8a3406c3e8828905b04634b0a999e653e5d581902468d0e5921004e2c6e63b54e2497cdf28e22e6397df9520df04ea310c213eb0940aa23bc5495d  cmake-extras-1.9.tar.gz
+"

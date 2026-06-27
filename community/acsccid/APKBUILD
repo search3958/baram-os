@@ -1,0 +1,31 @@
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=acsccid
+pkgver=1.1.13
+pkgrel=1
+pkgdesc="PCSC driver for ACS CCID smart card reader"
+url="https://github.com/acshk/acsccid"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="pcsc-lite"
+makedepends="pcsc-lite-dev libusb-dev perl flex"
+options="!check" # upstream does not provide tests
+subpackages="$pkgname-udev::noarch"
+source="https://downloads.sourceforge.net/acsccid/acsccid-$pkgver.tar.bz2"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--target=$CTARGET \
+		--prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 src/92_pcscd_acsccid.rules -t "$pkgdir"/usr/lib/udev/rules.d
+}
+
+sha512sums="
+e259948df25859a52f836e72f192b0e5f1494ee42db6c6d69a924db241537fba472b227461e65d71ae9eb4235c1e9ec90d91bd6993504ed468a94825af5598a0  acsccid-1.1.13.tar.bz2
+"

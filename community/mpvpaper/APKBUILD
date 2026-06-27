@@ -1,0 +1,33 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=mpvpaper
+pkgver=1.8
+pkgrel=0
+pkgdesc="Video wallpaper setter for wlroots based compositors using mpv"
+url="https://github.com/GhostNaN/mpvpaper"
+arch="all"
+license="GPL-3.0-or-later"
+options="!check" # no test suite
+makedepends="
+	meson
+	ninja
+	mpv-dev
+	wayland-dev
+	wayland-protocols
+	mesa-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/GhostNaN/mpvpaper/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -Dm644 mpvpaper.man "$pkgdir"/usr/share/man/man1/mpvpaper.1
+}
+
+sha512sums="
+8d4b0dd682d57073bd0974273d01458139566c1eb0b2b02670dd8cba625c4a993c1a8a4464015a30c061bd43ad0713c3cafb9c9bfa55749289af5acd9497cb3b  mpvpaper-1.8.tar.gz
+"

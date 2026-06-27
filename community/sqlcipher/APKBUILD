@@ -1,0 +1,75 @@
+# Contributor: wener <wenermail@gmail.com>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=sqlcipher
+pkgver=4.6.1
+pkgrel=1
+pkgdesc="SQLCipher is an SQLite extension that provides 256 bit AES encryption of database files."
+url="https://www.zetetic.net/sqlcipher/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="openssl-dev>3 tcl-dev readline-dev zlib-dev"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-tcl
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sqlcipher/sqlcipher/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	export CFLAGS="$CFLAGS \
+		-DSQLITE_HAS_CODEC \
+		-DSQLCIPHER_TEST \
+		-DSQLITE_ENABLE_COLUMN_METADATA \
+		-DSQLITE_ENABLE_UPDATE_DELETE_LIMIT \
+		-DSQLITE_ENABLE_FTS3_PARENTHESIS \
+		-DSQLITE_SECURE_DELETE \
+		-DSQLITE_ENABLE_UNLOCK_NOTIFY \
+		-DSQLITE_ENABLE_RTREE \
+		-DSQLITE_ENABLE_GEOPOLY \
+		-DSQLITE_USE_URI \
+		-DSQLITE_ENABLE_DBSTAT_VTAB \
+		-DSQLITE_MAX_VARIABLE_NUMBER=250000 \
+		"
+	export LDFLAGS="$LDFLAGS -lcrypto"
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-tempstore=yes \
+		--enable-fts5
+
+	make
+}
+
+check() {
+	make testfixture
+	./testfixture test/sqlcipher.test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm0644 sqlcipher.1 \
+		"$pkgdir"/usr/share/man/man1/sqlcipher.1
+}
+
+tcl() {
+	pkgdesc="SQLCipher library (tcl bindings)"
+
+	amove usr/lib/tcl*
+}
+
+sha512sums="
+023b2fc7248fe38b758ef93dd8436677ff0f5d08b1061e7eab0adb9e38ad92d523e0ab69016ee69bd35c1fd53c10f61e99b01f7a2987a1f1d492e1f7216a0a9c  sqlcipher-4.6.1.tar.gz
+"

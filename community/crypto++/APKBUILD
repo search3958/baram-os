@@ -1,0 +1,38 @@
+# Contributor: August Klein <amatcoder@gmail.com>
+# Maintainer:
+pkgname=crypto++
+_pkgname=cryptopp
+pkgver=8.9.0
+_pkgver=${pkgver//./}
+pkgrel=2
+pkgdesc="Free C++ class library of cryptographic schemes"
+url="https://github.com/weidai11/cryptopp"
+arch="all"
+license="BSL-1.0"
+subpackages="$pkgname-dev"
+source="https://github.com/weidai11/cryptopp/releases/download/CRYPTOPP_${pkgver//./_}/cryptopp$_pkgver.zip"
+builddir="$srcdir"
+
+case "$CARCH" in
+x86) export CXXFLAGS="$CXXFLAGS -DCRYPTOPP_DISABLE_SSE2" ;;
+esac
+
+build() {
+	make dynamic libcryptopp.pc CXXFLAGS="$CXXFLAGS -flto=auto -fPIC" PREFIX="/usr"
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX="/usr" install-lib
+
+	# This lib is huge (48 MiB) and since we built it with LTO,
+	# it's unusable anyway.
+	rm -f "$pkgdir"/usr/lib/libcryptopp.a
+}
+
+sha512sums="
+903970c4c0312272e93bae0cc3477be66b273dd38c9329fda9f7157ec44e247a3bc16b9d2b4ad625f258af0eaf2dc2c4210d4d14829b455f180983859a5c4b41  cryptopp890.zip
+"

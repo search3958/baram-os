@@ -1,0 +1,57 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=java-netty-transport-native
+_jarname=netty-transport-native-epoll
+pkgver=4.2.12
+_pkgver="$pkgver.Final"
+pkgrel=0
+pkgdesc="Native Netty transport for Linux"
+url="https://netty.io"
+# armhf,armv7,loongarch64,ppc64le,riscv64,s390x,x86: fails to build due to missing JAR
+arch="all !armhf !armv7 !loongarch64 !ppc64le !riscv64 !s390x !x86"
+license="Apache-2.0"
+depends="java-jre-headless"
+makedepends="
+	autoconf
+	automake
+	java-jdk
+	libtool
+	linux-headers
+	maven
+	"
+source="https://github.com/netty/netty/archive/netty-$_pkgver/netty-$pkgver.tar.gz
+	0001-epoll-native-drop-werror.patch
+	0002-linuxsocket-tcp-md5sig-uint16_t.patch
+	"
+builddir="$srcdir/netty-netty-$_pkgver/transport-native-epoll"
+# net: fetches dependencies from Maven repos
+# !check: EpollDatagramUnicast tests fail (TODO)
+options="net !check"
+
+export CFLAGS="${CFLAGS/-Os/-O2}"
+export CPPFLAGS="${CPPFLAGS/-Os/-O2}"
+
+# NOTE: Maven 3 dropped support for the M2_HOME variable.
+export MAVEN_ARGS="--batch-mode -Dcheckstyle.skip=true -Duser.home=$srcdir/.home"
+
+build() {
+	mvn package -DskipTests
+}
+
+check() {
+	mvn test
+}
+
+# NOTE: netty-transport-native-epoll contains only the binary, classes
+#   are in a separate package (JAR) transport-classes-epoll. It first attempts
+#   to load the binary from the 'java.library.path' (/usr/lib).
+package() {
+	mkdir -p "$pkgdir"/usr/lib
+	cp -P target/native-build/target/lib/*.so "$pkgdir"/usr/lib/
+}
+
+sha512sums="
+dc3f9f772fbf672c9a8b099ac075497bd58165d625e5bf4257e2e6c649091b3f32d35d2ebd91d8893b8d64b418a3208dbbcd13188eb36802e21247f6d9f39c2e  netty-4.2.12.tar.gz
+730eee4384062799ce00f4342545b1465e84209a21a3faceb8547b44a8887a7e1171d7239f2548e0237cd1b8b4d716513cd8c24dc2eaf83d7af8ae0b96685d56  0001-epoll-native-drop-werror.patch
+4c6a986f037b6a473a42cbdda24116c4208f494f0ec9713f39853dff318a316fe20886b790397e5ad253f85ff0be17940aeea4ea27e1688981b60d81595ff0a5  0002-linuxsocket-tcp-md5sig-uint16_t.patch
+"

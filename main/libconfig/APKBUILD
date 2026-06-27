@@ -1,0 +1,51 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libconfig
+pkgver=1.8.2
+pkgrel=0
+pkgdesc="A simple library for manipulating structured configuration files"
+url="https://www.hyperrealm.com/libconfig/libconfig.html"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="automake autoconf libtool texinfo"
+subpackages="$pkgname-static $pkgname-doc $pkgname-dev $pkgname++:_cxx"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hyperrealm/libconfig/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir/" install
+}
+
+_cxx() {
+	pkgdesc="C++ bindings for libconfig"
+	mkdir -p "$subpkgdir"/usr/lib
+	mv "$pkgdir"/usr/lib/libconfig++.so.* "$subpkgdir"/usr/lib/
+}
+
+static() {
+	depends=""
+	pkgdesc="$pkgdesc (static libraries)"
+	mkdir -p "$subpkgdir"/usr/lib
+	mv "$pkgdir"/usr/lib/*.a "$subpkgdir"/usr/lib
+}
+
+sha512sums="
+c3ed6c8f500b449c4d94976745a3acba1c7176f87497d5cb0deb05e62f2ff009ca0636c7c9848601f6d92dd113d82983cbd1132735f0f2d4e40b32d257f4aaa7  libconfig-1.8.2.tar.gz
+"

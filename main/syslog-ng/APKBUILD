@@ -1,0 +1,183 @@
+# Contributor: Michael Pirogov <vbnet.ru@gmail.com>
+# Contributor: jv <jens@eisfair.org>
+# Contributor: Adrian Guenter <adrian@gntr.me>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=syslog-ng
+pkgver=4.11.0
+pkgrel=0
+pkgdesc="Next generation logging daemon"
+url="https://www.syslog-ng.com/products/open-source-log-management/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	bison
+	curl-dev
+	eventlog-dev
+	file
+	flex
+	glib-dev
+	hiredis-dev
+	ivykis-dev
+	json-c-dev
+	libdbi-dev
+	libmaxminddb-dev
+	libtool
+	openssl-dev
+	pcre2-dev
+	py3-setuptools
+	python3-dev
+	rabbitmq-c-dev
+	"
+install="$pkgname.post-install $pkgname.post-upgrade"
+subpackages="
+	$pkgname-scl::noarch
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-python
+	"
+source="https://github.com/balabit/syslog-ng/releases/download/syslog-ng-$pkgver/syslog-ng-$pkgver.tar.gz
+	pyversion.patch
+	link-stdc++.patch
+	$pkgname.conf
+	$pkgname.logrotate
+	$pkgname.initd
+	"
+options="!check" # unit tests require https://github.com/Snaipe/Criterion with deps
+
+_modules="
+	add-contextual-data
+	amqp:afamqp
+	examples
+	geoip:geoip2-plugin
+	graphite
+	http
+	json:json-plugin
+	map-value-pairs
+	redis
+	sql:afsql
+	stardate
+	stomp:afstomp
+	tags-parser
+	xml
+	"
+for _i in $_modules; do
+	subpackages="$subpackages $pkgname-${_i%%:*}:_module"
+done
+
+# secfixes:
+#   3.38.1-r0:
+#     - CVE-2022-38725
+
+prepare() {
+	default_prepare
+	autoreconf -vif
+}
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc/syslog-ng \
+		--localstatedir=/run \
+		--enable-extra-warnings \
+		--enable-ipv6 \
+		--enable-manpages \
+		\
+		--disable-java \
+		--disable-java-modules \
+		--disable-linux-caps \
+		--disable-mongodb \
+		--disable-python-modules \
+		--disable-riemann \
+		--disable-smtp \
+		--disable-systemd \
+		--enable-amqp \
+		--enable-geoip2 \
+		--enable-http \
+		--enable-json \
+		--enable-native \
+		--enable-python \
+		--enable-rdrand \
+		--enable-redis \
+		--enable-sql \
+		--enable-stomp \
+		--with-ivykis=system \
+		--with-jsonc=system \
+		--with-librabbitmq-client=system \
+		--with-python-packages=system
+	make
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+
+	cd "$pkgdir"
+
+	rm -r run
+
+	# getent module doesn't build properly as musl doesn't support reentrant
+	# getprotoby[number|name] funcs. The provided compat lib only patches
+	# solaris, which does provide reentrant versions under a different sig
+	rm usr/lib/$pkgname/libtfgetent.so
+
+	# Remove static file
+	rm usr/lib/libsyslog-ng-native-connector.a
+
+	install -m 644 "$srcdir"/$pkgname.conf etc/$pkgname/$pkgname.conf
+	install -D -m 755 "$srcdir"/$pkgname.initd etc/init.d/$pkgname
+	install -D -m 644 "$srcdir"/$pkgname.logrotate etc/logrotate.d/$pkgname
+
+	install -d -m 755 etc/$pkgname/conf.d
+	install -d -m 700 "$pkgdir"/var/lib/syslog-ng
+}
+
+scl() {
+	pkgdesc="$pkgdesc (configuration library)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/share/syslog-ng/include/scl
+}
+
+dev() {
+	default_dev
+
+	amove usr/share/syslog-ng/tools
+	amove usr/share/syslog-ng/xsd
+
+	# this has to remain in main package
+	mkdir -p "$pkgdir"/usr/share/syslog-ng/include/
+	mv "$subpkgdir"/usr/share/syslog-ng/include/scl.conf \
+		"$pkgdir"/usr/share/syslog-ng/include/
+}
+
+python() {
+	pkgdesc="$pkgdesc (python module)"
+
+	amove usr/lib/syslog-ng/libmod-python.so
+	amove usr/lib/syslog-ng/python
+	amove etc/syslog-ng/python
+}
+
+_module() {
+	local name="${subpkgname#"$pkgname"-}"
+	pkgdesc="$pkgdesc (${name//-/ } module)"
+
+	local libname=$(printf '%s\n' $_modules | grep "^$name:" | cut -d: -f2)
+	local soname="lib${libname:-$name}.so"
+
+	amove usr/lib/syslog-ng/$soname
+}
+
+sha512sums="
+e241312dc7024cb51340c6fdb934ff064b18cdc3c80c0455abcff971632c0b0074eb237fdc505f36d687d6eda3c573c0d0d742a0d3792801ee715331f12938ad  syslog-ng-4.11.0.tar.gz
+f114fbaccc2726029e895d65380663ffbdca8dfecdac8f359b785e344c968443f468800107bdc1612cd95f2c81b44fa504eb8fcd0bf258a335e0675232171c04  pyversion.patch
+219efb21a87f4549d79850cd3bc5c3ffbae0e9bad46506aeae2cd07cc098d5ae9ac0b9bfe392e703122a58feb4e6096f17d65b342d5db55c408533953038467d  link-stdc++.patch
+06f79f7350d08c968a2b2b8e0511857a35b784bf6e8e4ba047d0ff24ad0e05f0f0915af049b10deb4ae8c9be788f3824f3818e350e07796ceed93e144838c6a5  syslog-ng.conf
+6b6c628f38bf82a47c38d4cdc1e04cf4cf604cca5b191bea6251a2977162a6da509e92690b7d6e7019d4dbb315fb30eb9531023caf7583d9e9abf24c28e1d06c  syslog-ng.logrotate
+873fef8815131f0acc618fa4911cd1eda59e260adc1eaae6eb91034900ce789f05ee48fa8afa4a87763026c18c87aef351e7ea76e0cbb46bcd5297f9ca14d527  syslog-ng.initd
+"

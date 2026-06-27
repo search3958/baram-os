@@ -1,0 +1,76 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Alex Denes <caskd@redxen.eu>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Runxi Yu <me@runxiyu.org>
+maintainer="Runxi Yu <me@runxiyu.org>"
+pkgname=neomutt
+pkgver=20260504
+pkgrel=0
+pkgdesc="Mutt with miscellaneous fixes and feature patches"
+url="https://neomutt.org/"
+arch="all"
+options="chmod-clean"
+license="GPL-2.0-or-later"
+# TODO: Replace gnupg with specific gnupg subpackages that neomutt really needs.
+depends="gnupg"
+makedepends="
+	bsd-compat-headers
+	cyrus-sasl-dev
+	docbook-xsl
+	gdbm-dev
+	gettext-dev
+	gpgme-dev
+	libidn2-dev
+	libxslt
+	ncurses-dev
+	notmuch-dev
+	openssl-dev
+	pcre2-dev
+	perl
+	tcl
+	w3m
+	zlib-dev
+	"
+checkdepends="bash"
+subpackages="$pkgname-doc $pkgname-lang"
+_test_commit=1569b826a56c39fd09f7c6dd5fc1163ff5a356a2
+source="neomutt-$pkgver.tar.gz::https://github.com/neomutt/neomutt/archive/$pkgver.tar.gz
+	neomutt-test-files-$_test_commit.tar.gz::https://github.com/neomutt/neomutt-test-files/archive/$_test_commit.tar.gz
+	disable-failing-test.patch
+	"
+
+# secfixes:
+#   20211015-r0:
+#     - CVE-2021-32055
+
+build() {
+	./configure \
+		--notmuch \
+		--gpgme \
+		--gdbm \
+		--disable-idn \
+		--idn2 \
+		--pcre2 \
+		--ssl \
+		--sasl \
+		--testing \
+		--zlib
+	make
+}
+
+check() {
+	export NEOMUTT_TEST_DIR="$srcdir/neomutt-test-files-$_test_commit"
+	(cd $NEOMUTT_TEST_DIR && ./setup.sh)
+	make test
+	(cd $NEOMUTT_TEST_DIR && ./restore.sh)
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+ba8276f1d7daa88c620fe9b5daa8f1dde0865d5a39c0d16d8e2a4144a457fdddeda75d977ce2b5ec040f6de824db3caf327af93a0674775ecc0febba975a998f  neomutt-20260504.tar.gz
+8c98a34c50e87a0b671b49b256dbd83034104fdfa93cde423adc102aebd9c3741942364addadc7c7c2a8a71cbca1850d6c03ff12c2238efac2d106da65f8c296  neomutt-test-files-1569b826a56c39fd09f7c6dd5fc1163ff5a356a2.tar.gz
+ab297c0e712c60f2df66eb9df84b6a2d41d85c971772c4e5c76219ded87c7f1540e1b2cd03911357e4c9f0666b5b0d2bbb2af02b687486c44ae1713e8048cfb0  disable-failing-test.patch
+"

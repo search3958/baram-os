@@ -1,0 +1,33 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=font-util
+pkgver=1.4.2
+pkgrel=0
+pkgdesc="X.org font utilities"
+url="https://gitlab.freedesktop.org/xorg/font/util"
+arch="all"
+license="custom"
+options="!check"  # No test suite.
+depends="perl"
+depends_dev="font-util"
+makedepends="$depends_dev util-macros"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://www.x.org/releases/individual/font/font-util-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}
+
+sha512sums="
+3def5f08bcb30ec3e0008f648478ebe1f65127d03e821613de550e95247812751b4ff31383739ad120123b2f69c87d819c18d44d1edee2ca51075a3c031e3a6f  font-util-1.4.2.tar.xz
+"

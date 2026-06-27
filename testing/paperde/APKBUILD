@@ -1,0 +1,49 @@
+# Contributor: rahmanshaber <rahmanshaber@yahoo.com>
+# Maintainer: rahmanshaber <rahmanshaber@yahoo.com>
+pkgname=paperde
+pkgver=0.3.0
+pkgrel=2
+pkgdesc="A minimalistic Desktop Environment built on top of Qt/Wayland and Wayfire."
+arch="all"
+url="https://gitlab.com/cubocore"
+license="GPL-3.0-or-later"
+depends="
+	wayfire
+	xdg-desktop-portal
+	"
+makedepends="
+	dfl-applications-dev
+	dfl-ipc-dev
+	dfl-login1-dev
+	dfl-sni-dev
+	libcprime-dev
+	libcsys-dev
+	libdbusmenu-lxqt-dev
+	meson
+	qt6-qtbase-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	qt6-qtwayland-dev
+	samurai
+	upower-dev
+	wayland-protocols
+	wayqt-dev
+	xdg-desktop-portal-dev
+	"
+subpackages="$pkgname-dev"
+source="https://gitlab.com/cubocore/paper/paperde/-/archive/v$pkgver/paperde-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # No test suite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+f439eaa974a48cb5da209030ef59fe043b91b79e3c9b2f8c90767b177742d5c485bdde062e2d1af03ed01288d21bd90e38cf513b6e3ef31816b8d4906724d590  paperde-v0.3.0.tar.gz
+"

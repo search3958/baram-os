@@ -1,0 +1,112 @@
+# Contributor: Zach DeCook <zachdecook@librem.one>
+# Maintainer: Noel Kuntze <noel.kuntze@contauro.com>
+pkgname=manticore
+pkgver=17.5.1
+pkgrel=1
+pkgdesc="Easy to use open source fast database for search"
+url="https://manticoresearch.com/"
+# 32-bit systems fail to build, tests fail on s390x, ppc64le doc fail.
+arch="all !ppc64le !s390x !x86 !armhf !armv7"
+license="GPL-2.0-only"
+replaces="sphinx manticoresearch"
+install="$pkgname.pre-install"
+source="$pkgname-$pkgver.tar.gz::https://github.com/manticoresoftware/manticoresearch/archive/refs/tags/$pkgver.tar.gz
+	0001-use-shared-boost-lib.patch
+	0003-knnmisc.cpp-add-include-for-algorithm.patch
+	$pkgname.initd
+	"
+
+_php=php85
+makedepends="
+	bison
+	boost-dev
+	cmake
+	curl-dev
+	expat-dev
+	flex
+	gtest-dev
+	icu-dev
+	libpq-dev
+	libstemmer-dev
+	mariadb-connector-c-dev
+	nlohmann-json
+	re2-dev
+	samurai
+	unixodbc-dev
+	zstd-dev
+	"
+# mailcap for /etc/mime.types
+checkdepends="
+	mailcap
+	$_php
+	$_php-mysqli
+	"
+pkgusers="manticore"
+pkggroups="manticore"
+subpackages="
+	$pkgname-converter
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-tools
+	"
+
+builddir="$srcdir/manticoresearch-$pkgver/"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_LOCALSTATEDIR=/var \
+		-DCMAKE_INSTALL_FULL_LOCALSTATEDIR=/var \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DLOCALDATADIR=/var/lib/manticore \
+		-DWITH_ICU=1 \
+		-DWITH_ICU_FORCE_STATIC=0 \
+		-DWITH_RE2=1 \
+		-DWITH_RE2_FORCE_STATIC=0 \
+		-DWITH_STEMMER=1 \
+		-DWITH_STEMMER_FORCE_STATIC=0 \
+		-DWITH_GALERA=0
+	cmake3.5 --build build
+}
+
+check() {
+	# Exclude test 'perform indextool' which always fails
+	ctest --test-dir build -E '(Perform_indextool)' -j1
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake3.5 --install build
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	# User/Group created by pre-install hook.
+	chown -R $pkgusers:$pkggroups "$pkgdir"/var/lib/manticore
+	chown -R $pkgusers:$pkggroups "$pkgdir"/var/log/manticore
+	chown -R $pkgusers:$pkggroups "$pkgdir"/var/run/manticore
+
+	mkdir -p "$pkgdir"/usr/share/man/man1
+	cp "$builddir"/doc/*.1 "$pkgdir"/usr/share/man/man1/
+
+}
+
+converter() {
+	pkgdesc="Update Sphinx/Manticore 2.X indexes to new format for Manticore Search"
+	amove usr/bin/index_converter
+}
+
+tools() {
+	pkgdesc="indexer, indextool, and miscellaneous tools for Manticore Search"
+	mkdir -p "$subpkgdir/usr/bin"
+	amove usr/bin/indexer \
+		usr/bin/indextool \
+		usr/bin/spelldump \
+		usr/bin/wordbreaker
+}
+
+sha512sums="
+997ce0ae297453fece2a1aa8c17f396ee91808bcb0c8a349865f26712737ed269ed9b6d73d0251bc5b993ad45d9dd4114b6ee5321ae6c89e7322cdba25cd0622  manticore-17.5.1.tar.gz
+c5579f95e21041f9859d2ad1a8f8c5d60a1cb812ba201d56a26c22a410329be221c62f3e33d2e3ed634a9d3d345a2a8e96dd02c13f7d32e077ff67615dd51551  0001-use-shared-boost-lib.patch
+533192cba7e349ec1dd4f6b5f3695760340ad13518b95f56a3bcf902013387cf0505896e52a10cb4bd241b686acf9580f9a13bddb2898fef68778d8abaa0ca9e  0003-knnmisc.cpp-add-include-for-algorithm.patch
+d7aec4e7cd4eebaae190083e79bd20c3cc486aaba7557eb846bf9383a21eb6f8d9c30923b187c8ec4062ee5299a432ccc3839e6ed1402e3adc13588cb6525ce9  manticore.initd
+"

@@ -1,0 +1,21 @@
+# Contributor: Kaarle Ritvanen <kunkku@alpinelinux.org>
+# Maintainer: Kaarle Ritvanen <kunkku@alpinelinux.org>
+pkgname=tunnel
+pkgver=1.1
+pkgrel=1
+pkgdesc="Script for configuring tunnel interfaces"
+url="https://gitlab.alpinelinux.org/alpine/aports/-/tree/master/main/tunnel"
+arch="noarch"
+depends="/bin/sh"
+license="GPL-2.0-only"
+source="tunnel"
+options="!check"
+builddir="$srcdir"
+
+package() {
+	install -D -m 755 "$srcdir/tunnel" "$pkgdir/etc/network/if-pre-up.d/tunnel"
+	install -d -m 755 "$pkgdir/etc/network/if-post-down.d"
+	ln -s ../if-pre-up.d/tunnel "$pkgdir/etc/network/if-post-down.d"
+}
+
+sha512sums="87d643652244f55cb0058d25256a978a963ab197123e4ac3849958ac73dd6f87b82d742fd7a018001069a87a7014a91bf866b707dd941d055375cbaa1b5d940b  tunnel"

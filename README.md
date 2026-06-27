@@ -1,62 +1,74 @@
-<p align="center">
-<img alt="Redox" width="346" src="https://gitlab.redox-os.org/redox-os/assets/raw/master/logos/redox/logo.png">
-</p>
+# Alpine Linux aports repository
 
-This repository is the **Build System** for Redox OS.
+This repository contains the APKBUILD files for each and every
+Alpine Linux package, along with the required patches and scripts,
+if any.
 
-Redox is under active development by a vibrant community, you can see the key links below:
+It also contains some extra files and directories related to testing
+(and therefore, building) those packages on GitLab (via GitLab CI).
 
-- [The **main website** for Redox OS](https://www.redox-os.org).
-- [The Redox Book](https://doc.redox-os.org/book/) and [Build Instructions](https://doc.redox-os.org/book/podman-build.html).
-- [Redox Chat and Support](https://matrix.to/#/#redox-join:matrix.org).
-- [Patreon](https://www.patreon.com/redox_os), [Donate](https://redox-os.org/donate/) and [Merch](https://redox-os.creator-spring.com/).
-- Scroll down for a list of key Redox components and their repositories.
+If you want to contribute, please read the
+[contributor guide](https://wiki.alpinelinux.org/wiki/Alpine_Linux:Contribute)
+and feel free to either submit a merge request on
+[GitLab](https://gitlab.alpinelinux.org/alpine/aports),
+or to submit a git patch on the Alpine aports mailing list
+([~alpine/aports@lists.alpinelinux.org](mailto:~alpine/aports@lists.alpinelinux.org)). (note: this mailing list is presently not functional)
 
-[Redox](https://www.redox-os.org) is an open-source operating system written in Rust, a language with focus on safety, efficiency and high performance. Redox uses a microkernel architecture, and aims to be reliable, secure, usable, correct, and free. Redox is inspired by previous operating systems, such as seL4, MINIX, Plan 9, Linux and BSD.
+## Repositories
 
-Redox _is not_ just a kernel, it's a **full-featured operating system**, providing components (file system, display server, core utilities, etc.) that together make up a functional and convenient operating system. Redox uses the COSMIC desktop apps, and provides source code compatibility with many Rust, Linux and BSD programs.
+The Alpine Linux aports tree consists of 3 repositories (directories). Each of
+these 3 repositories have its own set of policies, use cases and workflows.
+Below is a definition of the basic policies your package should apply to.
+Additional policies could apply, please refer to our developer guidelines.
 
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+### main
 
-## More Links
+Packages in the main repository should be supported following our official
+release cycle documentation as defined on our
+[website](https://alpinelinux.org/releases/). In case of doubt a package should
+be moved to our community repository instead. The policy for a package in the
+main repository is if this package is reasonable to be expected in a basic
+system and has a developer assigned to it who can maintain it as documented on
+our release page. A package in main is also expected to include proper
+documentation if shipped with the source code and have test suites enabled if
+provided. New packages are rarely introduced directly into the main repository
+and should follow the workflow: `testing => main`.
 
-- [Book](https://doc.redox-os.org/book/)
-- [Contribute](CONTRIBUTING.md)
-- [Hardware Compatibility](https://doc.redox-os.org/book/hardware-support.html)
-- Run Redox in a [Virtual Machine](https://doc.redox-os.org/book/running-vm.html) or on [Real Hardware](https://doc.redox-os.org/book/real-hardware.html)
-- [Trying Out Redox](https://doc.redox-os.org/book/trying-out-redox.html)
-- [Building Redox](https://doc.redox-os.org/book/podman-build.html)
-- [Build System Documentation](https://doc.redox-os.org/book/build-system-reference.html)
-- [Developer FAQ](https://doc.redox-os.org/book/developer-faq.html)
-- [Chat/Discussions/Help](https://doc.redox-os.org/book/chat.html)
+### community
 
-## Ecosystem
+Packages in the community repository should be supported following our official
+release cycle documentation as defined on our
+[website](https://alpinelinux.org/releases/). Packages in community are those
+that do not belong in our main repository and have finished testing in our
+testing repository. A package should have a maintainer and have test suites
+enabled if provided and is preferred to ship documentation if the source code
+provides it. New packages are rarely introduced directly into the community
+repository and should follow the workflow: `testing => community`
 
-Some of the key repositories on the Redox GitLab:
+### testing
 
-| Essential Repositories                                                               | Maintainer
-|-------------------------------------------------------------------------------------------------------------|---------------------------
-| [Kernel](https://gitlab.redox-os.org/redox-os/kernel)                                                       | **@jackpot51**
-| [Base (essential system components and drivers)](https://gitlab.redox-os.org/redox-os/base)                             | **@jackpot51**
-| [RedoxFS (default filesystem)](https://gitlab.redox-os.org/redox-os/redoxfs)                                | **@jackpot51**
-| [relibc (C POSIX library written in Rust)](https://gitlab.redox-os.org/redox-os/relibc)                     | **@jackpot51**
-| [Ion (defauilt shell)](https://gitlab.redox-os.org/redox-os/ion)                                            | **@jackpot51**
-| [Termion (terminal library)](https://gitlab.redox-os.org/redox-os/termion)                                  | **@jackpot51**
-| [pkgutils (current package manager)](https://gitlab.redox-os.org/redox-os/pkgutils)                         | **@jackpot51**
-| [Orbital (display server and window manager)](https://gitlab.redox-os.org/redox-os/orbital)                 | **@jackpot51**
-| This repo - the root of the Build System                                                                    | **@jackpot51** **@hatred_45**
-| [Redoxer (tool for easy Redox development on Linux)](https://gitlab.redox-os.org/redox-os/redoxer)          | **@jackpot51**
-| [The Redox Book](https://gitlab.redox-os.org/redox-os/book)                                                 | **@jackpot51** **@hatred_45**
-| [Website](https://gitlab.redox-os.org/redox-os/website)                                                     | **@jackpot51** **@hatred_45**
+Packages in the testing repositories do **not** follow our official release
+cycle documentation as defined on our
+[website](https://alpinelinux.org/releases/) and are **not** included in our
+official releases and are only shipped in our edge branch. This repository is
+specifically designed to introduce and test packages and as a staging area for
+our other repositories. The packages do not follow any of the previously
+mentioned policies and only need to be able to be build correctly. After the
+package is verified to be working it should be moved to one of the other
+repositories as soon as possible following the policies set for that repository.
+If the package is not moved within a 6 month period we will notify the
+maintainer and remove it after 9 months.
 
-## What it looks like
+## Git Hooks
 
-See [Redox in Action](https://www.redox-os.org/screens/) for photos and videos.
+You can find some useful git hooks in the `.githooks` directory.
+To use them, run the following command after cloning this repository:
 
-<img alt="Redox" height="150" src="https://gitlab.redox-os.org/redox-os/website/-/raw/master/static/img/screenshot/orbital-visual.png">
-<img alt="Redox" height="150" src="https://gitlab.redox-os.org/redox-os/website/-/raw/master/static/img/screenshot/cosmic-programs.png">
-<img alt="Redox" height="150" src="https://gitlab.redox-os.org/redox-os/website/-/raw/master/static/img/screenshot/cosmic-term-screenfetch.png">
+```sh
+git config --local core.hooksPath .githooks
+```
 
-<img alt="Redox" height="150" src="https://gitlab.redox-os.org/redox-os/website/-/raw/master/static/img/screenshot/cosmic-edit-redox.png">
-<img alt="Redox" height="150" src="https://gitlab.redox-os.org/redox-os/website/-/raw/master/static/img/screenshot/image-viewer.png">
-<img alt="Redox" height="150" src="https://gitlab.redox-os.org/redox-os/assets/raw/master/screenshots/Boot.png">
+## Guidelines
+
+- [Coding style](CODINGSTYLE.md) - Guidelines for writing APKBUILDs.
+- [Commit style](COMMITSTYLE.md) - Guidelines for git commit messages.

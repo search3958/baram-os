@@ -1,0 +1,52 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=cava
+pkgver=1.0.0
+pkgrel=0
+pkgdesc="Console-based Audio Visualizer"
+url="https://github.com/karlstav/cava"
+arch="all"
+license="MIT"
+makedepends="
+	alsa-lib-dev
+	autoconf
+	automake
+	fftw-dev
+	iniparser-dev
+	libtool
+	m4
+	ncurses-dev
+	pipewire-dev
+	pulseaudio-dev
+	sdl2-dev
+	xxd
+	"
+source="cava-$pkgver.tar.gz::https://github.com/karlstav/cava/archive/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a1a135001987ba3b7e581091d638f8ad17e5aebae9872916421abb1e97bc090fa63dd1ff942630e6b216016c9a0bc6c0be7d46bbaec86cede29480ecfa86b36f  cava-1.0.0.tar.gz
+"

@@ -1,0 +1,58 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-geotiler
+_pkgorig=geotiler
+pkgver=0.15.1
+pkgrel=3
+pkgdesc="GeoTiler is a library to create map using tiles from a map provider"
+url="https://github.com/wrobell/geotiler"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	python3
+	py3-aiohttp
+	py3-cytoolz
+	py3-pillow
+	py3-setuptools
+	"
+checkdepends="
+	py3-numpy
+	py3-pytest-xdist
+	py3-pytest-cov
+	py3-pytest-tornasync
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/g/geotiler/geotiler-$pkgver.tar.gz
+	replace-pkg-resources.patch
+	python-3.14.patch
+	"
+builddir="$srcdir/$_pkgorig-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto -k 'not test_tile_img'
+}
+
+package() {
+	python3 -m installer --destdir="$pkgdir" .dist/*.whl
+
+	rm -r "$pkgdir"/usr/lib/python3.*/site-packages/geotiler/tests
+}
+
+sha512sums="
+12c64251024e69a9414b492897800698f14b3f5782bb8ea8226f41d033ab007ec0e5f69438e69e2a6542c6291c62192093ba990a53389364f07206f34bcf9ad9  py3-geotiler-0.15.1.tar.gz
+820008a323b5e24d936be476b58e9890874440489352f95c0acb9ff670c564f09cb335dbf3225a5cc0d9bfbbdb911382ecd2936e999b007614624e39289baee7  replace-pkg-resources.patch
+e3d57eb76f7ffaf79f61dd7624cc6c6f60d885a4ae97d97f0667caecd55cade58a89be2724ab13f757a8de5eb07d9658198d48b8d17f4d467643d5642002d7a6  python-3.14.patch
+"

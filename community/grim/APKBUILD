@@ -1,0 +1,34 @@
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=grim
+pkgver=1.5.0
+pkgrel=0
+pkgdesc="Grabs images from Wayland compositors"
+url="https://gitlab.freedesktop.org/emersion/grim"
+license="MIT"
+arch="all"
+makedepends="
+	libjpeg-turbo-dev
+	libpng-dev
+	meson
+	pixman-dev
+	scdoc
+	wayland-dev
+	wayland-protocols
+	"
+subpackages="$pkgname-doc"
+source="https://gitlab.freedesktop.org/emersion/grim/-/archive/v$pkgver/grim-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # no test suite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+5a3d0b3dc7bad5dbb3b18649c5fd27ebd0bb03251d6aa2b3ea2fb3b04192bdef923d1fb82234a1281f48cb4d1f014feda2ab3e2ec009e4bbccc81fc04924b9de  grim-v1.5.0.tar.gz
+"

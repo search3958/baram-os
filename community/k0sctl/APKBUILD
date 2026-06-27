@@ -1,0 +1,40 @@
+maintainer="Kevin Daudt <kdaudt@alpinelinux.org>"
+pkgname=k0sctl
+pkgver=0.31.0
+pkgrel=0
+pkgdesc="Bootstrapping and management tool for k0s clusters"
+url="https://github.com/k0sproject/k0sctl"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/k0sproject/k0sctl/archive/refs/tags/v$pkgver/k0sctl-$pkgver.tar.gz"
+options="net"
+
+build() {
+	make TAG_NAME="v$pkgver" GIT_COMMIT=""
+
+	for shell in bash fish zsh; do
+		./$pkgname completion --shell $shell >$pkgname.$shell
+	done
+}
+
+check() {
+	make test
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+
+	install -Dm644 $pkgname.bash "$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 $pkgname.fish "$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 $pkgname.zsh "$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+1f5d76647c82a5f9979d6297b6c133d98db00eb232c0d89be0a4d94b56fe01ee4cca18ea1577915a9c6af3418975f34eea8b8efbcd748ede556935ba662b80fb  k0sctl-0.31.0.tar.gz
+"

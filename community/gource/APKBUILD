@@ -1,0 +1,51 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=gource
+pkgver=0.56
+pkgrel=1
+pkgdesc="Software version control visualization"
+url="https://gource.io/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	boost-dev
+	ftgl-dev
+	glew-dev
+	glm-dev
+	glu-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	pcre2-dev
+	sdl2-dev
+	sdl2_image-dev
+	tinyxml-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/acaudwell/Gource/releases/download/gource-$pkgver/gource-$pkgver.tar.gz
+	disable-failing-test.patch
+	"
+
+build() {
+	./configure \
+		--host=$CHOST \
+		--build=$CBUILD \
+		--prefix=/usr \
+		--with-tinyxml
+	make
+}
+
+check() {
+	make check || {
+		cat ./test-suite.log
+		return 1
+	}
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+31f8fe4790d18ee985f4a5173b13b2ff16ba39916df6e79e3df7f066ae31d1ed0ab381e17cf18f0374abdccee5cb30810dd2ec80e308e2a2afa011ed5f5d309f  gource-0.56.tar.gz
+65a66b8b4c6facd859cd10f9a7030d2a4803ffb4056cbe48577c976cb6943c5dbd0c2c932808e25323300cc99ed232b5f31c5599ccd4aabcba814dfa42734b88  disable-failing-test.patch
+"

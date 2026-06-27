@@ -1,0 +1,8 @@
+# Autofs conf.d file
+
+#
+# Specify daemon options here.
+#
+
+automount_opts=""
+automount_logpath="/var/log/automount.log"

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=amazfish
+Comment=Start amazfish
+Type=Application
+Exec=/usr/libexec/amazfish-launcher
+TryExec=/usr/bin/harbour-amazfishd
+Terminal=false

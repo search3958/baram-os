@@ -1,0 +1,111 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=npm
+pkgver=11.12.1
+pkgrel=0
+pkgdesc="The package manager for JavaScript"
+url="https://www.npmjs.com/"
+arch="noarch"
+license="Artistic-2.0"
+depends="nodejs"
+replaces="nodejs-doc"  # for backward compatibility
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="https://registry.npmjs.org/npm/-/npm-$pkgver.tgz
+	dont-check-for-last-version.patch
+	npmrc
+	"
+builddir="$srcdir/package"
+
+# secfixes:
+#   10.9.1-r0:
+#     - CVE-2024-21538
+#   8.1.4-r0:
+#     - CVE-2021-43616
+
+prepare() {
+	default_prepare
+
+	# Remove bunch of unnecessary files to reduce size of the package.
+
+	# Wrapper scripts written in Bash and CMD.
+	rm bin/npm bin/npx bin/*.cmd
+	rm README.md
+	# HTML docs
+	rm -rf docs
+
+	cd node_modules
+
+	find . -type f \( \
+		-name '.*' -o \
+		-name '*.cmd' -o \
+		-name '*.bat' -o \
+		-name '*.map' -o \
+		-name '*.md' -o \
+		\( -name '*.ts' -a ! -name '*.d.ts' \) -o \
+		-name 'AUTHORS*' -o \
+		-name 'LICENSE*' -o \
+		-name 'license' -o \
+		-name 'Makefile' -o \
+		-name 'README*' -o \
+		-name 'readme.markdown' \) -delete
+	rm -rf ./*/.git* ./*/doc ./*/docs ./*/examples ./*/scripts ./*/test
+	rm -rf ./node-gyp/gyp/.git*
+
+	# No files should be executable here, except node-gyp.
+	find . -type f -executable ! -name 'node-gyp*' -exec chmod -x {} \;
+
+	cd ../man
+
+	# XXX: Workaround for https://github.com/npm/cli/issues/780.
+	local f name sec title
+	for f in man5/folders.5 man5/install.5 man7/*.7; do
+		sec=${f##*.}
+		name=$(basename $f .$sec)
+		title=$(echo "$name" | tr '[:lower:]' '[:upper:]')
+
+		sed -Ei "s/^\.TH \"$title\"/.TH \"NPM-$title\"/" "$f"
+		mv "$f" "${f%/*}/npm-$name.$sec"
+	done
+}
+
+check() {
+	./bin/npm-cli.js --version
+	./bin/npx-cli.js --version
+}
+
+package() {
+	local destdir="$pkgdir/usr/lib/node_modules/npm"
+
+	mkdir -p "$destdir"
+	cp -r "$builddir"/* "$destdir"/
+	cp "$srcdir"/npmrc "$destdir"/
+
+	cd "$pkgdir"
+
+	mkdir -p usr/bin
+	ln -s ../lib/node_modules/npm/bin/npm-cli.js usr/bin/npm
+	ln -s ../lib/node_modules/npm/bin/npx-cli.js usr/bin/npx
+	ln -s ../lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js usr/bin/node-gyp
+
+	mkdir -p usr/share
+	mv "$destdir"/man usr/share/
+	ln -s ../../../share/man "$destdir"/man
+
+	mkdir -p usr/share/licenses/$pkgname
+	mv "$destdir"/LICENSE usr/share/licenses/$pkgname/
+
+	install -D -m644 "$destdir"/lib/utils/completion.sh \
+		"$pkgdir"/usr/share/bash-completion/completions/npm
+}
+
+doc() {
+	default_doc
+
+	amove usr/lib/node_modules/npm/man
+}
+
+sha512sums="
+cdca14b85d647b3192028d02aadbe82d75f79a446aceea9874be98e6d768f20ebd3555770a48d0e9906106007877bbc690f715e9372f2e2dc644a3c3157fb14c  npm-11.12.1.tgz
+b5c25a015c2a38a6a4cad7081c7c42d063fee19a59bbfb8063fe184d14297ec30eda7907a6d101b190213ab7bfd7e962fb884c2048c9e2a8536e804c210db5f3  dont-check-for-last-version.patch
+e92d222af8d406cc3974f7360fad881fb8ddeb838256dc6baf9343f61df30a6fc02ff59f9c06027a7eb663d7322bcf05087622607523d6edafa2c7d20cf557e4  npmrc
+"

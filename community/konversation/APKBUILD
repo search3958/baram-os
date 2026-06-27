@@ -1,0 +1,64 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=konversation
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by extra-cmake-modules
+arch="all !armhf"
+url="https://konversation.kde.org/"
+pkgdesc="A user-friendly and fully-featured IRC client"
+license="GPL-2.0-or-later"
+makedepends="
+	extra-cmake-modules
+	karchive-dev
+	kbookmarks-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	kglobalaccel-dev
+	ki18n-dev
+	kiconthemes-dev
+	kidletime-dev
+	kio-dev
+	kitemviews-dev
+	knewstuff-dev
+	knotifications-dev
+	knotifyconfig-dev
+	kparts-dev
+	kstatusnotifieritem-dev
+	kwallet-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	phonon-dev
+	qca-dev
+	qt6-qtbase-dev
+	qt6-qtmultimedia-dev
+	samurai
+	solid-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/network/konversation.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/konversation-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+989b3dec059493dcfb746967cfcb4d6397779086815d5beb186698d279b154f86df07ea96c61992e6c8c2dcb49b4c37e8e8d30cf8442a60489bbd07596b847ba  konversation-26.04.2.tar.xz
+"

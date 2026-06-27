@@ -1,0 +1,61 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=ktexttemplate
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Library to allow application developers to separate the structure of documents from the data they contain"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.0-or-later AND LGPL-2.1-or-later"
+makedepends="
+	doxygen
+	extra-cmake-modules
+	qt6-qtbase-dev
+	kde-qdoc-common
+	samurai
+	graphviz
+	qt6-qttools-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+_repo_url="https://invent.kde.org/frameworks/ktexttemplate.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/ktexttemplate-$pkgver.tar.xz"
+
+build() {
+	# Tests fail with -O2 on aarch64
+	# https://lists.debian.org/debian-arm/2024/08/msg00038.html
+	case "$CARCH" in
+		aarch64)
+			export CFLAGS="$CFLAGS -O1"
+			export CXXFLAGS="$CXXFLAGS -O1"
+			;;
+	esac
+
+	export KDE_DOCS=/usr/share/kde/documentation
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_TESTING=ON \
+		-DBUILD_QCH=ON
+	cmake --build build
+
+	cmake --build build --target prepare_docs
+	cmake --build build --target generate_docs
+	cmake --build build --target generate_qch
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	DESTDIR="$pkgdir" cmake --build build --target install_html_docs
+	DESTDIR="$pkgdir" cmake --build build --target install_qch_docs
+}
+sha512sums="
+93e8c14c5764ca32fed8fc3428587a986ff4e602479ca0bbe0a08736bee8db9ad11db8ea92b45f5f4614f4e55112f5bb1f37cb1c76c454f944614a61cb4de26f  ktexttemplate-6.27.0.tar.xz
+"

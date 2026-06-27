@@ -1,0 +1,33 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=py3-hcloud
+pkgver=2.17.1
+pkgrel=0
+pkgdesc="Official Hetzner Cloud Python library"
+url="https://github.com/hetznercloud/hcloud-python"
+license="MIT"
+arch="noarch"
+depends="py3-dateutil py3-requests"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/hetznercloud/hcloud-python/archive/v$pkgver/py3-hcloud-$pkgver.tar.gz"
+builddir="$srcdir/hcloud-python-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/hcloud-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+4881df9ce5eb4e7dbfc855f5cf9b79b08b1106fe19dd93847287ce4c5f8448974106cf8c355f71c4401a5bf330df35fe687c4c2c239251987a54e3480099331a  py3-hcloud-2.17.1.tar.gz
+"

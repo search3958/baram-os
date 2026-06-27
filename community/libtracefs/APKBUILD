@@ -1,0 +1,54 @@
+# Maintainer: Liliana <me@iodomi.eu>
+pkgname=libtracefs
+pkgver=1.8.3
+pkgrel=0
+pkgdesc="Linux kernel trace file system library"
+url="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	asciidoc
+	bison
+	docbook-xsl-nons
+	flex
+	libtraceevent-dev
+	meson
+	source-highlight
+	xmlto
+	"
+checkdepends="cunit-dev"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-utils
+	"
+source="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/snapshot/libtracefs-$pkgver.tar.gz"
+options="!check" # fail to start, but exit 0
+
+build() {
+	abuild-meson \
+		--default-library=shared \
+		-Db_lto=true \
+		. output
+	meson compile -C output
+	meson compile -C output docs
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+utils() {
+	pkgdesc="$pkgdesc (utils)"
+
+	amove usr/bin
+}
+
+sha512sums="
+4b24bf2b0543c16781be798387cfe5227f150c37304971ac5bd11c2715df22ba03e5909b05c97422b69102113279b3b4a606d0babe4b97000120e458755f9b7c  libtracefs-1.8.3.tar.gz
+"

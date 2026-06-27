@@ -1,0 +1,41 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=rp-pppoe
+pkgver=4.0
+pkgrel=1
+pkgdesc="PPP over Ethernet client (for xDSL support)"
+url="https://dianne.skoll.ca/projects/rp-pppoe/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="ppp-dev linux-headers"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tgz::https://salsa.debian.org/dskoll/rp-pppoe/-/archive/$pkgver/rp-pppoe-$pkgver.tar.gz
+	rp-pppoe.initd
+	"
+options="!check"
+
+build() {
+	cd "$builddir"/src
+	# strlcpy
+	CFLAGS="$CFLAGS -D_BSD_SOURCE" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--enable-plugin=/usr/include/pppd
+	make all
+}
+
+package() {
+	cd "$builddir"/src
+	make DESTDIR="$pkgdir" install
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+67d6bdc919826cb84363beb5e58cd27f9aeafa0082f58d697ea30d717ce6bca9aff9158df7afd0eca9ac2b3948929c616a8d25676b3fe6f18df1c10acb6bfd72  rp-pppoe-4.0.tgz
+6d3457af1353f875cc007b69322636a89534f9c0cd4d598ad24fb29de4a38bdfabc8a717ca17896ca859eac2aea4a037e113c61c4d322cdf7247ca78a8609fa6  rp-pppoe.initd
+"

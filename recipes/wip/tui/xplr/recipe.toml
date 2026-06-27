@@ -1,5 +1,0 @@
-#TODO tuikit crate error
-[source]
-git = "https://github.com/sayanarijit/xplr"
-[build]
-template = "cargo"

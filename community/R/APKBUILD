@@ -1,0 +1,155 @@
+# Contributor: Nirosan <pnirosan@gmail.com>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=R
+pkgver=4.6.0
+pkgrel=0
+pkgdesc="Language and environment for statistical computing"
+url="https://www.R-project.org/"
+arch="all"
+license="( GPL-2.0-only OR GPL-3.0-only ) AND LGPL-2.1-or-later"
+depends="$pkgname-mathlib tzdata"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	bzip2-dev
+	curl-dev>=7.28
+	gcc
+	gfortran
+	icu-dev
+	libdeflate-dev
+	libjpeg-turbo
+	libpng-dev
+	make
+	musl-dev
+	openblas-dev>=0.3.0
+	pcre2-dev
+	readline-dev
+	xz-dev
+	zlib-dev
+	"
+makedepends="
+	$depends_dev
+	cairo-dev
+	java-jdk
+	libxmu-dev
+	pango-dev
+	perl
+	tiff-dev
+	tk-dev
+	"
+install="$pkgname.post-install"
+subpackages="$pkgname-static $pkgname-mathlib $pkgname-dev $pkgname-doc"
+source="https://cran.r-project.org/src/base/R-${pkgver%%.*}/R-$pkgver.tar.gz"
+
+_rhome="usr/lib/R"
+ldpath="/$_rhome/lib"
+
+build() {
+	# Performance is more important than size for R. Moreover, -O2 has
+	# only minimal impact on the R package size (less than 1 %).
+	export CFLAGS="${CFLAGS/-Os/-O2}"
+	export CPPFLAGS="${CPPFLAGS/-Os/-O2}"
+	export CXXFLAGS="${CXXFLAGS/-Os/-O2}"
+
+	# CXXFLAGS is propagated to /etc/R/Makeconf that is read when building
+	# additional R modules. -D__MUSL__ is needed for some modules like Rcpp.
+	# htps://github.com/RcppCore/Rcpp/issues/448
+	export CXXFLAGS="$CXXFLAGS -D__MUSL__"
+
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc/R \
+		--localstatedir=/var \
+		--mandir=/usr/share/man \
+		--libdir=/usr/lib \
+		rdocdir=/usr/share/doc/R \
+		rincludedir=/usr/include/R \
+		rsharedir=/usr/share/R \
+		--disable-nls \
+		--enable-R-shlib \
+		--enable-java \
+		--enable-lto \
+		--without-recommended-packages \
+		--with-blas=openblas \
+		--with-cairo \
+		--with-ICU \
+		--with-jpeglib \
+		--with-lapack \
+		--with-libpng \
+		--with-libtiff \
+		--with-tcltk \
+		--with-x
+
+	make
+	make -C src/nmath/standalone
+}
+
+check() {
+	# Some tests fail if R cannot infer a time zone
+	export TZ=UTC
+
+	# Try running R (and also aid debugging).
+	./bin/R --vanilla -s -e 'sessionInfo(); R_compiled_by(); str(.Machine)'
+
+	case "$CARCH" in
+		# A (non-portable) numerical regression test currently (R 4.4.0)
+		# fails on the aarch64, loongarch64, riscv64 and s390x runners.
+		# riscv64 fails tests of complex arithmetic.
+		# Run at least two basic test suites:
+		aarch64 | s390x | loongarch64 | riscv64)
+			make -C tests test-Examples && make -C tests test-Specific || {
+				tail -v -n 42 tests/Examples/*.fail tests/*.fail 2>/dev/null; exit 1
+			}
+		;;
+		*)
+			make check || {
+				tail -v -n 42 tests/Examples/*.fail tests/*.fail 2>/dev/null; exit 1
+			}
+		;;
+	esac
+
+	# NOTE: EST5EDT-related differences reported for datetime.Rout are known
+	# (see <https://mm.icann.org/pipermail/tz/2024-March/058740.html>
+	# or also <https://bugs.r-project.org/show_bug.cgi?id=16843#c12>)
+}
+
+package() {
+	local destdir="$pkgdir/$_rhome"
+
+	make DESTDIR="$pkgdir" install
+
+	# Install libRmath.so.
+	cd src/nmath/standalone
+	make DESTDIR="$pkgdir" install
+	cd -
+
+	# Fixup R wrapper script (taken from Arch).
+	rm "$destdir"/bin/R
+	ln -sf /usr/bin/R "$destdir"/bin/R
+
+	# Remove some useless files (COPYING is duplicated, it will be
+	# in -doc, don't worry).
+	rm "$destdir"/COPYING "$destdir"/SVN-REVISION
+
+	mkdir -p "$pkgdir"/etc/R
+
+	# R apparently ignores --sysconfdir, so we must manually move configs
+	# to /etc/R and make symlinks.
+	cd "$destdir"/etc
+	local f; for f in *; do
+		mv "$f" "$pkgdir"/etc/R/ && ln -sf /etc/R/$f $f
+	done
+	cd -
+}
+
+mathlib() {
+	pkgdesc="Standalone math library from the R project"
+	depends=
+
+	mkdir -p "$subpkgdir"/usr/lib
+	mv "$pkgdir"/usr/lib/libRmath.so* "$subpkgdir"/usr/lib
+}
+
+sha512sums="
+109d0141389583cc27e3e810e3cc029709e695cc411932564d9e88898a750ff8c1fae00abb3ab9714d85e591960aca81cd3da9cdfa07a7d810cd0a7be03ddeb1  R-4.6.0.tar.gz
+"

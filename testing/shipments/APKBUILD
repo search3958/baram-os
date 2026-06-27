@@ -1,0 +1,36 @@
+# Maintainer: Martijn Braam <martijn@brixit.nl>
+pkgname=shipments
+pkgver=0.3.0
+pkgrel=0
+pkgdesc="Postal package tracking application"
+url="https://git.sr.ht/~martijnbraam/shipments"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	gtk+3.0
+	libhandy1
+	py3-gobject3
+	py3-requests
+	python3
+	"
+makedepends="
+	glib-dev
+	libhandy1-dev
+	meson
+	ninja
+	py3-setuptools
+	"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~martijnbraam/shipments/archive/$pkgver.tar.gz"
+options="!check" # There's no testsuite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+sha512sums="
+173bfa023630ca283c028f77c6c9944710a635dc779040f7bf64708d1ee96b4827ecfa96e9b386100d0550046c57d7cd39c01cb0b4a032ab0718a87599289da8  shipments-0.3.0.tar.gz
+"

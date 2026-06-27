@@ -1,0 +1,76 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=nemo-qml-plugin-dbus
+pkgver=2.1.39
+pkgrel=1
+pkgdesc="Nemo QML dbus plugin"
+url="https://github.com/sailfishos/nemo-qml-plugin-dbus"
+# armhf blocked by qt6-qtdeclarative-dev
+arch="all !armhf"
+license="BSD-3-Clause AND LGPL-2.1-only"
+depends_dev="$pkgname
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+depends_dev_qt5="$pkgname-qt5
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	"
+makedepends="
+	$depends_dev
+	$depends_dev_qt5
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-qt5
+	$pkgname-qt5-dev:qt5_dev
+	"
+source="https://github.com/sailfishos/nemo-qml-plugin-dbus/archive/$pkgver/nemo-qml-plugin-dbus-$pkgver.tar.gz"
+options="!check" # No tests
+
+build() {
+	mkdir build-qt6 && cd build-qt6
+	qmake6 ..
+	make
+
+	cd "$builddir"
+	mkdir build-qt5 && cd build-qt5
+	qmake-qt5 ..
+	make
+}
+
+package() {
+	cd build-qt6
+	INSTALL_ROOT="$pkgdir" make install
+
+	# Remove installed tests
+	rm -r "$pkgdir"/opt
+}
+
+qt5() {
+	cd "$builddir"/build-qt5
+	INSTALL_ROOT="$subpkgdir" make install
+
+	# Remove installed tests
+	rm -r "$subpkgdir"/opt
+
+	rm -r "$subpkgdir"/usr/include
+	rm -r "$subpkgdir"/usr/lib/pkgconfig
+	rm "$subpkgdir"/usr/lib/*.so
+}
+
+qt5_dev() {
+	depends="$depends_dev_qt5"
+
+	cd "$builddir"/build-qt5
+	INSTALL_ROOT="$subpkgdir" make install
+
+	# Remove installed tests
+	rm -r "$subpkgdir"/opt
+
+	rm -r "$subpkgdir"/usr/lib/qt5
+	rm -r "$subpkgdir"/usr/lib/*.so.*
+}
+
+sha512sums="
+706f38689a2876250f380d497284b7e2301f0f32b1deefbf6db45e18ae3048748f3020096d5ccc13927f98a1e3abb70fa38da8894d1999e4897fca5e61f2bb0b  nemo-qml-plugin-dbus-2.1.39.tar.gz
+"

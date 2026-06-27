@@ -1,0 +1,98 @@
+Add "syslog" log format.
+
+I didn't contribute this patch to the upstream because I don't wanna
+contribute to any Go projects. However, if you find this patch useful,
+feel free to send it to the upstream under your name.
+
+diff --git a/log/configuration.go b/log/configuration.go
+index a756242b8..cbe4dabcd 100644
+--- a/log/configuration.go
++++ b/log/configuration.go
+@@ -13,6 +13,7 @@ const (
+ 	FormatRunner = "runner"
+ 	FormatText   = "text"
+ 	FormatJSON   = "json"
++	FormatSyslog = "syslog"
+ )
+ 
+ var (
+@@ -26,7 +27,7 @@ var (
+ 		},
+ 		cli.StringFlag{
+ 			Name:   "log-format",
+-			Usage:  "Choose log format (options: runner, text, json)",
++			Usage:  "Choose log format (options: runner, text, json, syslog)",
+ 			EnvVar: "LOG_FORMAT",
+ 		},
+ 		cli.StringFlag{
+@@ -44,6 +45,7 @@ var (
+ 		FormatJSON: &logrus.JSONFormatter{
+ 			TimestampFormat: time.RFC3339Nano,
+ 		},
++		FormatSyslog: new(SyslogFormatter),
+ 	}
+ )
+ 
+diff --git a/log/syslog_formatter.go b/log/syslog_formatter.go
+new file mode 100644
+index 000000000..fe60e0fc7
+--- /dev/null
++++ b/log/syslog_formatter.go
+@@ -0,0 +1,57 @@
++package log
++
++import (
++	"bytes"
++	"fmt"
++	"time"
++
++	"github.com/sirupsen/logrus"
++)
++
++type SyslogFormatter struct {
++}
++
++func (f *SyslogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
++	var b *bytes.Buffer
++	if entry.Buffer != nil {
++		b = entry.Buffer
++	} else {
++		b = &bytes.Buffer{}
++	}
++
++	if entry.Message != "" {
++		b.WriteString(entry.Message)
++	}
++	dataWritten := false
++	for key, val := range entry.Data {
++		if key == "now" {
++			continue
++		}
++		var stringVal string
++
++		switch val := val.(type) {
++		case time.Time:
++			stringVal = val.Format(time.RFC3339)
++		default:
++			var ok bool
++			if stringVal, ok = val.(string); !ok {
++				stringVal = fmt.Sprint(val)
++			}
++		}
++
++		// The format is inspired by RFC 5424 STRUCTURED-DATA.
++		if dataWritten {
++			b.WriteByte(' ')
++		} else {
++			b.WriteString(" [meta ")
++			dataWritten = true
++		}
++		b.WriteString(fmt.Sprintf("%s=%q", key, stringVal))
++	}
++	if dataWritten {
++		b.WriteByte(']')
++	}
++	b.WriteByte('\n')
++
++	return b.Bytes(), nil
++}

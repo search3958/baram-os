@@ -1,0 +1,124 @@
+# Contributor: André Klitzing <aklitzing@gmail.com>
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=ostree
+pkgver=2025.7
+pkgrel=1
+pkgdesc="Operating system and container binary deployment and upgrades"
+url="https://github.com/ostreedev/ostree"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	bison
+	curl-dev
+	e2fsprogs-dev
+	fuse3-dev
+	gobject-introspection-dev
+	gpgme-dev
+	gtk-doc
+	libarchive-dev
+	libsoup3-dev
+	libxslt
+	linux-headers
+	openssl-dev>3
+	xz-dev
+	"
+checkdepends="
+	bash
+	coreutils
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-dbg
+	$pkgname-gir
+	$pkgname-grub:grub:noarch
+	$pkgname-bash-completion:bashcomp:noarch
+	$pkgname-mkinitfs::noarch
+	"
+source="https://github.com/ostreedev/ostree/releases/download/v$pkgver/libostree-$pkgver.tar.xz"
+builddir="$srcdir/lib$pkgname-$pkgver"
+# todo: fails to make stuff in var/tmp in root
+options="!check"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--sbindir=/usr/bin \
+		--libexecdir=/usr/lib \
+		--enable-gtk-doc \
+		--enable-introspection \
+		--disable-static \
+		--disable-glibtest \
+		--with-curl \
+		--with-openssl \
+		--with-soup3
+	make
+	make ostree-trivial-httpd
+}
+
+check() {
+	export TMPDIR="$srcdir"
+	make check || {
+		cat test-suite.log
+		return 1
+	}
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+dev() {
+	default_dev
+
+	install -Dm755 "$builddir"/ostree-trivial-httpd \
+		-t "$subpkgdir"/usr/lib/libostree/
+}
+
+grub() {
+	pkgdesc="GRUB2 integration for OSTree"
+	install_if="$pkgname=$pkgver-r$pkgrel grub"
+
+	amove etc/grub.d/*
+	amove usr/lib/libostree/grub2-*
+}
+
+bashcomp() {
+	depends=""
+	pkgdesc="Bash completions for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel bash-completion"
+
+	amove usr/share/bash-completion
+}
+
+gir() {
+	depends="gobject-introspection"
+	pkgdesc="$pkgname (GObject-Introspection metadata)"
+
+	amove usr/lib/girepository-1.0/OSTree-1.0.typelib
+}
+
+mkinitfs() {
+	depends="$pkgname=$pkgver-r$pkgrel mkinitfs"
+	install_if="$pkgname=$pkgver-r$pkgrel mkinitfs"
+	pkgdesc="$pkgname module for mkinitfs"
+
+	mkdir -p "$subpkgdir"/etc/mkinitfs/features.d
+	echo "/usr/lib/ostree/ostree-prepare-root" \
+		> "$subpkgdir"/etc/mkinitfs/features.d/ostree.files
+}
+
+sha512sums="
+bf10001f64b11c1aa5c7c4d5fee744b2ee1ea950adf1efd69f315d18e428967daba2ea4aa1120b9e2a0b8e56f7664601c396eb57ff833299bf86ed003ece60da  libostree-2025.7.tar.xz
+"

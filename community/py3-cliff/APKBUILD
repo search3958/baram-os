@@ -1,0 +1,53 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-cliff
+pkgver=4.14.0
+pkgrel=0
+pkgdesc="Command Line Interface Formulation Framework"
+url="https://docs.openstack.org/cliff/latest/"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-importlib-metadata
+	py3-stevedore
+	py3-yaml
+	"
+makedepends="
+	py3-gpep517
+	py3-pbr
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-autopage
+	py3-cmd2
+	py3-docutils
+	py3-pytest
+	py3-prettytable
+	py3-stevedore
+	py3-testtools
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/c/cliff/cliff-$pkgver.tar.gz"
+options="!check" # Requires specific (old) version of py3-cmd2
+builddir="$srcdir/cliff-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+dbd1e92a56752cb2f8b6cf2af49ad3d465b113dd937bfdf12c4a6aef4c258712328e51774c189e5dfca0f7b8146fb9b242c7ca2225677915f691061e449bcb7b  cliff-4.14.0.tar.gz
+"

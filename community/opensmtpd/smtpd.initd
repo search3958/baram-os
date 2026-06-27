@@ -1,0 +1,41 @@
+#!/sbin/openrc-run
+
+name="OpenSMTPD"
+extra_commands="checkconfig"
+description_checkconfig="Check configuration file for errors"
+
+command=/usr/sbin/smtpd
+[ "$use_pam" = yes ] && command=/usr/sbin/smtpd-pam
+
+command_args="-F ${command_args:-$SMTPD_OPTS}"  # SMTPD_OPTS is deprecated
+command_background=yes
+
+pidfile=/run/$RC_SVCNAME.pid
+required_files=/etc/smtpd/smtpd.conf
+
+depend() {
+	need net localmount
+	after bootmisc firewall
+	use logger dns
+	provide mta
+}
+
+start_pre() {
+	checkconfig
+}
+
+checkconfig() {
+	if [ "$use_pam" = yes ] && [ ! -x "$command" ]; then
+		eerror "\$use_pam=yes, but opensmtpd-pam is not installed"
+		return 1
+	fi
+
+	ebegin "Checking $name configuration"
+
+	# Don't output anything unless something is *not* ok.
+	local out rc=0
+	out=$($command -n 2>&1) || rc=$?
+	[ "$rc" -eq 0 ] || printf '%s\n' "$out" >&2
+
+	eend $rc
+}

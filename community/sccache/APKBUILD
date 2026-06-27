@@ -1,0 +1,72 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=sccache
+pkgver=0.15.0
+pkgrel=0
+pkgdesc="shared compilation cache for C/C++ and Rust"
+url="https://github.com/mozilla/sccache/"
+arch="all"
+license="Apache-2.0"
+makedepends="cargo openssl-dev>3 cargo-auditable"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mozilla/sccache/archive/v$pkgver.tar.gz
+	test_musl_ldd_parse.patch
+	unlimit-sccache-dist.patch
+	"
+
+case "$CARCH" in
+loongarch64|riscv64|s390x)
+	# limited by nix crate held back by libmount crate
+	_features="dist-client"
+	;;
+*)
+	subpackages="$subpackages $pkgname-dist"
+	_features="dist-client,dist-server"
+	;;
+esac
+
+
+prepare() {
+	default_prepare
+	cargo fetch --locked
+}
+
+build() {
+	cargo auditable build --release --frozen --features $_features
+}
+
+check() {
+	echo "$CARGO_HOME"
+	cargo test --frozen --features $_features \
+		-- --skip test_rlib_dep_reader_call # assertion failed: cargo_home.is_ok()
+}
+
+package() {
+	install -Dm0755 target/release/sccache -t "$pkgdir"/usr/bin
+
+	case "$CARCH" in
+	loongarch64|riscv64|s390x)
+		;;
+	*)
+		install -Dm0755 target/release/sccache-dist \
+			-t "$pkgdir"/usr/bin
+		;;
+	esac
+
+	install -Dm0644 -t "$pkgdir"/usr/share/doc/"$pkgname" \
+		docs/*.md
+	rm "$pkgdir"/usr/share/doc/"$pkgname"/DistributedFreeBSD.md \
+	   "$pkgdir"/usr/share/doc/"$pkgname"/Releasing.md
+}
+
+dist() {
+	pkgdesc="$pkgdesc (dist server)"
+
+	amove usr/bin/sccache-dist
+}
+
+sha512sums="
+0df93c7662aee904e8a1424a700ae9c9ac255583aca88cf73eed232a041dcf5ebe76da2c28b08f2da79b2896c00228755916eed21526aae6354ba1afc78b9e12  sccache-0.15.0.tar.gz
+db4dc0ab89cc77fd616faa9e71b1ea76ac6318a0d2a5404afd6a189b3f4da916aa22289b7f924841f9a548c9e95323aa6b9fd491ff82091087b84af3e2582905  test_musl_ldd_parse.patch
+3c85becd24df7baf3f4e3c0b0b6fd80c7792518faa4dbbd6d450d473b8ca9d929fbdca13bd469aa3f23364f6ed406bdb3c8090f227fe86b61f9fdf657ef79e35  unlimit-sccache-dist.patch
+"

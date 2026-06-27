@@ -1,0 +1,37 @@
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=protoconf
+pkgver=0.1.7
+pkgrel=23
+pkgdesc="Configuration as Code framework based on protobuf and Starlark"
+url="https://docs.protoconf.sh/"
+arch="all"
+license="MIT"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/protoconf/protoconf/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v \
+		-ldflags "-X github.com/protoconf/protoconf/consts.Version=$pkgver" \
+		./cmd/protoconf/
+}
+
+check() {
+	# /importers/golang_importer: failed to load packages: err: chdir src/html/template
+	# /importers/terraform_importer: flaky network call to https://releases.hashicorp.com/terraform-provider-tfe
+	go test $(go list ./... | grep -v \
+		-e '/importers/golang_importer$' \
+		-e '/importers/terraform_importer$' \
+	)
+}
+
+package() {
+	install -Dm755 $pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+0652958a9a93b27959626da4a9b0feadbb97737a1d97f5dd2165609627626108af5c87304e3d5b5169a3008daf7cf644c1fdccce15406281766615bc4d17c35d  protoconf-0.1.7.tar.gz
+"

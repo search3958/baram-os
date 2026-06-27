@@ -1,0 +1,51 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-wand
+_pyname=wand
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="Ctypes-based simple MagickWand API binding for Python"
+url="https://github.com/emcconville/wand"
+license="MIT"
+arch="noarch"
+depends="
+	imagemagick
+	libxml2
+"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+"
+checkdepends="
+	py3-pytest
+	py3-pytest-xdist
+	py3-pytest-cov
+	py3-psutil
+	imagemagick-jpeg
+"
+source="$pkgname-$pkgver.tar.gz::https://github.com/emcconville/wand/archive/$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# test_*_quantum: failure on 32-bit arches
+	.testenv/bin/python3 -m pytest -v -k 'not quantum'
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ae2dea4d7a2caa43f41b92d05ca3477ed6e100ca536cc0f9fd4416d13fe0b76d173895cba2b1e6516350cba78d4b779eaf183f8310325592204fe2c48632611c  py3-wand-0.7.0.tar.gz
+"

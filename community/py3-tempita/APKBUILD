@@ -1,0 +1,40 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+maintainer="Patrycja Rosa <alpine@ptrcnull.me>"
+pkgname=py3-tempita
+pkgver=0.6.0
+pkgrel=1
+pkgdesc="A small templating language"
+url="https://pypi.org/project/Tempita"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/T/Tempita/tempita-$pkgver.tar.gz"
+builddir="$srcdir/tempita-$pkgver"
+options="!check" # no testsuite
+
+replaces=py-tempita # Backwards compatibility
+provides=py-tempita=$pkgver-r$pkgrel # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+2a9b504d333db36c483df9484b00b424aeba2955dba5c05a2e8186a02f1dd339e4019e3b32a6e9766ce00717aa44acecfee902dfd76b9caf061bcba3a314789b  tempita-0.6.0.tar.gz
+"

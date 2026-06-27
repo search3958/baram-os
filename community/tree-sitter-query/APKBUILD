@@ -1,0 +1,32 @@
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=tree-sitter-query
+pkgver=0.8.0
+pkgrel=0
+pkgdesc="A tree-sitter parser for tree-sitter query files (scheme-like)"
+url="https://github.com/tree-sitter-grammars/tree-sitter-query/"
+arch="all"
+license="Apache-2.0"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+subpackages="$pkgname-doc"
+install_if="tree-sitter-grammars"
+source="https://github.com/tree-sitter-grammars/tree-sitter-query/archive/v$pkgver/tree-sitter-query-$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build
+}
+
+check() {
+	HOME="$srcdir" tree-sitter test
+}
+
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install -q queries/query
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/"$pkgname"
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/"$pkgname"
+}
+
+sha512sums="
+d455a8aa231cff85a213945882edb09e6fd3508c5745b30699b1e6a7f862d37eaebe20f54e5cf7e870dc47e801f06fe3ec05fe2b85425517ed244b6f06f72da5  tree-sitter-query-0.8.0.tar.gz
+"

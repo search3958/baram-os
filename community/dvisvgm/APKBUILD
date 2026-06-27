@@ -1,0 +1,42 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Contributor: Struan Robertson <contact@struanrobertson.co.uk>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=dvisvgm
+pkgver=3.6
+pkgrel=0
+pkgdesc="A fast DVI, EPS, and PDF to SVG converter"
+url="https://github.com/mgieseki/dvisvgm"
+# s390x: limited by texlive
+arch="all !s390x"
+license="GPL-3.0-or-later"
+makedepends="
+	brotli-dev
+	freetype-dev
+	ghostscript-dev
+	potrace-dev
+	python3
+	texlive-dev
+	woff2-dev
+	xxhash-dev
+	zlib-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/mgieseki/dvisvgm/releases/download/$pkgver/dvisvgm-$pkgver.tar.gz"
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+63b461b08f85dd162fc8e5ef80549d97557c6120f9fe0a0ddc9ad5077c01a261021b964ff12334fe5c33f969a838b48d51ff6e60cc1ca15aaf1a23543c2802b8  dvisvgm-3.6.tar.gz
+"

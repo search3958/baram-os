@@ -1,0 +1,8 @@
+--- a/misc/bigtest
++++ b/misc/bigtest
+@@ -1,4 +1,4 @@
+-#!bin/picolisp lib.l
++#!/usr/bin/picolisp /usr/lib/picolisp/lib.l
+ # 26may22abu
+ # misc/bigtest <seed>
+ 

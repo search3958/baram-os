@@ -1,0 +1,64 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=okteta
+pkgver=0.26.27
+pkgrel=0
+pkgdesc="KDE hex editor for viewing and editing the raw data of files"
+# armhf blocked by qt5-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/applications/utilities/org.kde.okteta"
+license="(LGPL-2.1-only OR LGPL-3.0-only) AND (GPL-2.0-only OR GPL-3.0-only) AND GFDL-1.2-only"
+makedepends="
+	extra-cmake-modules
+	kbookmarks5-dev
+	kcmutils5-dev
+	kcodecs5-dev
+	kcompletion5-dev
+	kconfigwidgets5-dev
+	kcrash5-dev
+	kdbusaddons5-dev
+	kdoctools5-dev
+	ki18n5-dev
+	kiconthemes5-dev
+	kio5-dev
+	knewstuff5-dev
+	kparts5-dev
+	kservice5-dev
+	kwidgetsaddons5-dev
+	kxmlgui5-dev
+	qca-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt5-qtscript-dev
+	qt5-qttools-dev
+	qt5-qtxmlpatterns-dev
+	samurai
+	shared-mime-info
+	"
+checkdepends="xwayland-run"
+_repo_url="https://invent.kde.org/utilities/okteta.git"
+source="https://download.kde.org/stable/okteta/$pkgver/src/okteta-$pkgver.tar.xz"
+subpackages="$pkgname-doc $pkgname-lang"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_DESKTOPPROGRAM=ON \
+		-DBUILD_TERMINALTOOL=OFF # Remove when switching package to Qt6 and add konsole-dev as dep
+	cmake --build build
+}
+
+check() {
+	xwfb-run -- ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+39ae7ef0ba0020063c03ecadcc5888f0cae518f8241c6be837262d9d2336f63da79c33d536f1e4d9530806337c163db9a89ff296ac71b92fa1222f16c747f8b4  okteta-0.26.27.tar.xz
+"

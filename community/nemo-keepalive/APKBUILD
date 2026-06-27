@@ -1,0 +1,36 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=nemo-keepalive
+pkgver=1.8.13
+pkgrel=0
+pkgdesc="Nemo's Keepalive"
+url="https://github.com/sailfishos/nemo-keepalive"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="LGPL-2.1-or-later"
+depends_dev="
+	libiphb-dev
+	mce-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	qt6-qtbase-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/sailfishos/nemo-keepalive/archive/$pkgver/nemo-keepalive-$pkgver.tar.gz"
+options="!check" # No suitable tests
+
+build() {
+	qmake6
+	make
+}
+
+package() {
+	INSTALL_ROOT="$pkgdir" make install
+
+	# Remove tests
+	rm -rf "$pkgdir"/opt
+}
+
+sha512sums="
+aa26b0766252d73a7297bae0091fd3de66800d212dfa21f86fbe52a380100e99add804d15458064a864b2fbe5d1bcba49ba2fb2b4a87d8f42e3a45fed0f916c8  nemo-keepalive-1.8.13.tar.gz
+"

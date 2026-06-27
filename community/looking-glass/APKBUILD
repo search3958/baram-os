@@ -1,0 +1,94 @@
+# Contributor: Rogério da Silva Yokomizo <me@ro.ger.io>
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=looking-glass
+_pkgver=B7
+pkgver=7b
+pkgrel=1
+pkgdesc="Allows the use of a KVM configured for VGA PCI Pass-through without an attached physical monitor, keyboard or mouse"
+url="https://looking-glass.io/"
+# blocked by server only supporting windows-x86_64
+arch="x86_64"
+license="GPL-2.0-or-later"
+makedepends="
+	cmake
+	fontconfig-dev
+	libsamplerate-dev
+	libx11-dev
+	libxcursor-dev
+	libxfixes-dev
+	libxi-dev
+	libxinerama-dev
+	libxkbcommon-dev
+	libxpresent-dev
+	libxscrnsaver-dev
+	nettle-dev
+	obs-studio-dev
+	pipewire-dev
+	pulseaudio-dev
+	samurai
+	spice-dev
+	wayland-dev
+	wayland-protocols
+	"
+source="$pkgname-$_pkgver.tar.gz::https://looking-glass.io/artifact/$_pkgver/source
+	missing-includes.patch
+	obs-plugins-lib.patch
+	werror.patch
+	"
+subpackages="$pkgname-obs $pkgname-module"
+builddir="$srcdir/$pkgname-$_pkgver"
+options="!check" # There are no tests nor --version.
+
+build() {
+	cmake -S client -B build-client -G Ninja \
+		-DENABLE_BACKTRACE=OFF \
+		-DOPTIMIZE_FOR_NATIVE=OFF \
+		-DCMAKE_INSTALL_PREFIX=/usr
+
+	cmake -S obs -B build-obs -G Ninja \
+		-DENABLE_BACKTRACE=OFF \
+		-DOPTIMIZE_FOR_NATIVE=OFF \
+		-DCMAKE_INSTALL_PREFIX=/usr
+
+	cmake --build build-client
+	cmake --build build-obs
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build-client
+	DESTDIR="$pkgdir" cmake --install build-obs
+}
+
+module() {
+	pkgdesc="Looking Glass kernel module (AKMS)"
+	depends="akms"
+	install_if="looking-glass=$pkgver-r$pkgrel"
+	_modver=$(awk -F "=" '{if($1=="PACKAGE_VERSION"){print $2}}' "$builddir"/module/dkms.conf | tr -d '"')
+
+	install -Dm644 "$builddir"/module/Makefile "$subpkgdir"/usr/src/looking-glass/Makefile
+	install -Dm644 "$builddir"/module/kvmfr* "$subpkgdir"/usr/src/looking-glass/.
+
+	cat ->> "$subpkgdir"/usr/src/looking-glass/AKMBUILD <<EOF
+modname=kvmfr
+modver=$_modver
+built_modules='kvmfr.ko'
+EOF
+
+	chmod -R u=rwX,go=rX-w "$subpkgdir"/usr/src/looking-glass
+	mkdir -p "$subpkgdir"/usr/lib/udev/rules.d
+	echo 'SUBSYSTEM=="kvmfr", OWNER="root", GROUP="kvm", MODE="0660"' > "$subpkgdir"/usr/lib/udev/rules.d/99-kvmfr.rules
+
+}
+
+obs() {
+	pkgdesc="$pkgdesc (obs plugin)"
+	amove usr/lib/obs-plugins
+}
+
+sha512sums="
+a3f0193451c64dbd9ead01538fa53cc78b42d318d54b2eef026fb730811e055bb140b67dcd91c1da5ef09ec74fbb141c791b53264a56a943308b81a6e49e1e93  looking-glass-B7.tar.gz
+6d2449764a8316dd3c1b5cc0aa552671068f89ed2f95297f3c5256af8529b93e5ec7af8f979bd2e744fd09b11063e8a93f3ed26284f0e49294e467ca10f6e772  missing-includes.patch
+33c5463412a16691f47d7833ebf81d7cf20c560a077dca141dcc9f02a5d6dfb676e483835f39a06012b114be9f509dda4614fe253bb1c72a0142e82dc265a5ca  obs-plugins-lib.patch
+b952d1fd284aed15bcfe7990f160dec3a4565fb5833ce339920f62de6bb46fbc09265a0a79fe80d212eecc6a1813614e1e193a8846c37e2afd18431dc3a89ca4  werror.patch
+"

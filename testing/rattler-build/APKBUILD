@@ -1,0 +1,62 @@
+# Contributor: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+# Maintainer: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+pkgname=rattler-build
+pkgver=0.18.0
+pkgrel=0
+pkgdesc="A fast conda-package builder"
+url="https://github.com/prefix-dev/rattler-build"
+# loongarch64: fails to build rattler_conda_types: unsupported linux architecture
+arch="all !loongarch64"
+license="BSD-3-Clause"
+depends="
+	bzip2
+	xz
+	"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	"
+checkdepends="
+	patchelf
+	git
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/prefix-dev/rattler-build/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+	mkdir -p completions/
+}
+
+build() {
+	cargo auditable build --frozen --release
+	local _completion="target/release/$pkgname completion"
+	$_completion --shell bash > "completions/$pkgname"
+	$_completion --shell fish > "completions/$pkgname.fish"
+	$_completion --shell zsh  > "completions/_$pkgname"
+}
+
+check() {
+	cargo test --frozen -- --skip "test_host_git_source"
+}
+
+package() {
+	install -Dm 755 "target/release/$pkgname" -t "$pkgdir/usr/bin"
+	install -Dm 644 README.md -t "$pkgdir/usr/share/doc/$pkgname"
+	install -Dm 644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+	install -Dm 664 "completions/$pkgname" -t "$pkgdir/usr/share/bash-completion/completions/"
+	install -Dm 664 "completions/$pkgname.fish" -t "$pkgdir/usr/share/fish/vendor_completions.d/"
+	install -Dm 664 "completions/_$pkgname" -t "$pkgdir/usr/share/zsh/site-functions/"
+}
+
+sha512sums="
+5b3a3adafde55b426c59e5e18999b91d286414a75a2e0b5fd5f96aeaf2656ee2e903b39c7f5e6802694318534d0336982b6259a6cca3b8f8b722f7dbf6c33470  rattler-build-0.18.0.tar.gz
+"

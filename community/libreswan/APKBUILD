@@ -1,0 +1,77 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libreswan
+pkgver=5.3
+pkgrel=0
+pkgdesc="IPsec implementation for Linux"
+url="https://libreswan.org/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="dnssec-root nss-tools iproute2 !strongswan"
+provides="openswan=$pkgver-r$pkgrel"
+options="!check" # no testsuite
+makedepends="
+	bash
+	bison
+	bsd-compat-headers
+	coreutils
+	curl-dev
+	flex
+	gmp-dev
+	ldns-dev
+	libcap-ng-dev
+	linux-pam-dev
+	nspr-dev
+	nss-dev
+	unbound-dev
+	xmlto
+	"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://download.libreswan.org/libreswan-$pkgver.tar.gz
+	pam-rules.patch
+	Makefile.inc.local
+	"
+
+# secfixes:
+#   4.15-r0:
+#     - CVE-2024-2357
+#     - CVE-2024-3652
+#   4.12-r0:
+#     - CVE-2023-38710
+#     - CVE-2023-38711
+#     - CVE-2023-38712
+#   4.6-r0:
+#     - CVE-2022-23094
+#   3.32-r0:
+#     - CVE-2020-1763
+#   3.29-r0:
+#     - CVE-2019-10155
+#   3.28-r0:
+#     - CVE-2019-12312
+
+build() {
+	cp "$srcdir"/Makefile.inc.local "$builddir"
+	make WERROR_CFLAGS="" \
+		INITDIR_DEFAULT=/etc/init.d \
+		PREFIX=/usr \
+		FINALBINDIR=/usr/libexec/ipsec \
+		LIBEXECDIR=/usr/libexec/ipsec \
+		programs
+}
+
+package() {
+	make MANDIR=share/man \
+		INITDIR_DEFAULT=/etc/init.d \
+		PREFIX=/usr \
+		DESTDIR="$pkgdir" \
+		INSTCONFFLAGS=-m644 \
+		FINALBINDIR=/usr/libexec/ipsec \
+		LIBEXECDIR=/usr/libexec/ipsec \
+		install
+}
+
+sha512sums="
+338fb82a9969da8fa78f64ec9eda0e3dcd216d6b8333a6f966ba839e31d3eb5fdd94613f0fff934be16ff8d84f6f4265c8b35f37c642569e042f65a58038ba0d  libreswan-5.3.tar.gz
+50ca2cdbb2007ce4fb883794110545d68d4dc31d70605a646e9980ef874cdb468eb5d661766fe15a11f6f1b42626c01c8f551c8799e550f0abeb5fd6a4b10119  pam-rules.patch
+94bcde573fc320450864394f3824bfe23e6ac8528a7b0b8a7d97d02a3883b6f47951f8a89a2c46cc394c65c5b3f9788b644f7f911f90ac78540e6479715e0a11  Makefile.inc.local
+"

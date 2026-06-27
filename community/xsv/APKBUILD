@@ -1,0 +1,37 @@
+# Contributor: guddaff <guddaff@protonmail.com>
+# Maintainer: guddaff <guddaff@protonmail.com>
+pkgname=xsv
+pkgver=0.13.0
+pkgrel=2
+pkgdesc="CSV command line toolkit"
+url="https://github.com/BurntSushi/xsv"
+# ppc64le: fails to build
+# others: blocked by rust/cargo
+arch="aarch64 armhf armv7 x86 x86_64"
+license="MIT OR Unlicense"
+makedepends="cargo cargo-auditable"
+source="https://github.com/BurntSushi/xsv/archive/$pkgver/$pkgname-$pkgver.tar.gz"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL=2
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+a0c9b914071514f6dd1fc19759ff88b7d457979385dd169350d27b0ee464fd21e7165bd81e769487d12ac63c46f78e1af684e690a7126ab9a2c336cee4aa6095  xsv-0.13.0.tar.gz
+"

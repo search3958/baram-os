@@ -1,0 +1,69 @@
+# Contributor: Isaac Dunham <ibid.ag@gmail.com>
+maintainer="Tim Hentenaar <tim@hentenaar.com>"
+pkgname=motif
+pkgver=2.5.2
+pkgrel=0
+pkgdesc="The Motif library"
+url="https://github.com/thentenaar/motif"
+arch="all"
+options="!check" # Tests require a running X server
+license="LGPL-2.1-or-later"
+depends="xbitmaps"
+makedepends="
+	automake
+	autoconf
+	byacc
+	flex
+	libpng-dev
+	libtool
+	libx11-dev
+	libxcursor-dev
+	libxext-dev
+	libxft-dev
+	libxmu-dev
+	libxpm-dev
+	libxrandr-dev
+	libxt-dev
+"
+subpackages="mwm $pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/thentenaar/motif/archive/refs/tags/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+# reasons for --disable-/--without- flags:
+# The png and jpeg code is mainly used for loading icons. PNG is more widely
+# used than JPEG for this purpose. The demos needn't be built.
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--disable-demos \
+		--disable-tests \
+		--without-jpeg \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+mwm() {
+	pkgdesc="Motif Window Manager"
+	mkdir -p "$subpkgdir"/usr/bin "$subpkgdir"/etc/X11
+	mv "$pkgdir"/usr/bin/mwm "$subpkgdir"/usr/bin
+	mv "$pkgdir"/usr/bin/xmbind "$subpkgdir"/usr/bin
+	sed -e 's/\(xterm\)/xfce4-terminal||mrxvt||urxvt||st||\1/g' \
+	"$pkgdir"/etc/X11/system.mwmrc > "$subpkgdir"/etc/X11/system.mwmrc
+}
+
+sha512sums="
+76b3c5182b15ae6a6eec3732d5c69ff3d4013a438b855d8214779c655e9db2514f13917eeee2ee7a9270dca006db55b3f5dd8688cc20a21e8bb9f3de98686732  motif-2.5.2.tar.gz
+"

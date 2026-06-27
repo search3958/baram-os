@@ -1,0 +1,32 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=libgcab
+pkgver=1.6
+pkgrel=1
+pkgdesc="GObject library to create cabinet files"
+url="https://gitlab.gnome.org/GNOME/gcab"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="meson gobject-introspection-dev glib-dev vala gtk-doc"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+source="https://download.gnome.org/sources/gcab/$pkgver/gcab-$pkgver.tar.xz"
+builddir="$srcdir"/gcab-$pkgver
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+26b8dcf47ba98e7cc073a551d1c965c13a72d298c8a4e124823bdbb20fe314c8f687232df9ae824a54d81f96fe7d9ac1a40aed24e51f8706595079cec2c61fc9  gcab-1.6.tar.xz
+"

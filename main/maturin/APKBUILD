@@ -1,0 +1,108 @@
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: messense <messense@icloud.com>
+pkgname=maturin
+pkgver=1.11.5
+pkgrel=1
+pkgdesc="Build and publish crates with pyo3, rust-cpython and cffi bindings"
+url="https://github.com/PyO3/maturin"
+arch="all"
+license="Apache-2.0 OR MIT"
+makedepends="
+	bzip2-dev
+	cargo
+	dbus-dev
+	openssl-dev
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools-rust
+	py3-wheel
+	"
+checkdepends="
+	cargo-nextest
+	libffi-dev
+	patchelf
+	py3-cffi
+	py3-virtualenv
+	python3-dev
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	py3-$pkgname-pyc
+	py3-$pkgname:py3:noarch
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/PyO3/maturin/archive/v$pkgver.tar.gz
+	fix-armhf.patch
+	"
+options="net"
+
+_features="--features=full,native-tls,password-storage"
+# these only work in a git checkout
+_test_filter='!test(~git_sdist_generator) & !test(~pyo3_mixed_include_exclude)'
+
+case "$CARCH" in
+loongarch64|riscv64)
+	# loongarch64: fails with compile errors due to outdated libc crate
+	# riscv64: too slow
+	options="$options !check"
+	;;
+armhf|armv7|ppc64*)
+	# skip uv related tests
+	_test_filter="$_test_filter & !test(/^develop_[a-z0-9_]+::case_2$/)"
+	# no idea why this fails
+	_test_filter="$_test_filter & !test(~test_macosx_deployment_target)"
+	_test_filter="$_test_filter & !test(~pypi_compatibility_unsupported_target)"
+	;;
+esac
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	export OPENSSL_NO_VENDOR=1
+
+	export MATURIN_SETUP_ARGS="--no-default-features $_features"
+
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+
+	./target/release/maturin completions bash > $pkgname.bash
+	./target/release/maturin completions fish > $pkgname.fish
+	./target/release/maturin completions zsh > $pkgname.zsh
+}
+
+check() {
+	export OPENSSL_NO_VENDOR=1
+
+	cargo nextest run \
+	  --frozen \
+	  --no-default-features "$_features" \
+	  --no-fail-fast \
+	  -E "$_test_filter"
+}
+
+package() {
+	install -Dm644 $pkgname.bash "$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 $pkgname.fish "$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 $pkgname.zsh "$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+
+	python3 -m installer -d "$pkgdir" \
+		.dist/maturin*.whl
+}
+
+py3() {
+	pkgdesc="$pkgdesc (python module)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/python3*
+}
+
+sha512sums="
+49e7976be5790f524d5a423519c4ee73ccb450f0e84fea5ba691421cd8e303cb4166324d42985b1ae321a71c4295f244632da194a5be7cacbe7951cdbc0dbb92  maturin-1.11.5.tar.gz
+75b30a79b656eac5421b4441944ae8409b1dec139f8f9348374f763072a65d51c12d3b635bf5bc936dc0faa0bf7982ac9db2ea0dc557fd84ae7fe6fb92e8684c  fix-armhf.patch
+"

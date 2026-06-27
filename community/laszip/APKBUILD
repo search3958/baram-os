@@ -1,0 +1,29 @@
+# Contributor: Bradley J Chambers <brad.chambers@gmail.com>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=laszip
+pkgver=3.5.0
+pkgrel=0
+pkgdesc="LASzip point cloud compression library"
+url="https://github.com/laszip/laszip"
+arch="all"
+license="LGPL-2.0-or-later"
+options="!check" # No tests
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+source="laszip-$pkgver.tar.gz::https://github.com/LASzip/laszip/archive/$pkgver/$pkgver.tar.gz"
+builddir="$srcdir/LASzip-$pkgver"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+6cdc38249ace8191dae454817fe5f5a3cd22b24c7065daa0e4a3eaaca4d698540c56affa06e15de88aea2912a82033d1dc93f5d3904190a896edf1204af865f5  laszip-3.5.0.tar.gz
+"

@@ -1,0 +1,38 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=ginac
+pkgver=1.8.10
+pkgrel=0
+pkgdesc="C++ library for symbolic computations"
+url="https://www.ginac.de/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="cmake cln-dev flex bison readline-dev python3 texinfo samurai"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/ginac/ginac/archive/release_${pkgver//./-}.tar.gz"
+builddir="$srcdir/$pkgname"
+
+build() {
+	CXXFLAGS="${CXXFLAGS//-Os/-O2} -flto=auto" \
+	CFLAGS="${CFLAGS//-Os/-O2} -flto=auto" \
+	cmake3.5 -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_PREFIX_PATH=/usr \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build --target all test_suite
+}
+
+check() {
+	ctest --test-dir build \
+		-E "exam_Gt|time_Gt"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+7df4aaa1b40e2753738123b445212a46f80592c9e879f028f6c9a7dd630198703b8228e391886590c5094f12d43527925e6693d954a832e7d4639781fc479332  ginac-1.8.10.tar.gz
+"

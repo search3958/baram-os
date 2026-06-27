@@ -1,0 +1,95 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=spice-gtk
+pkgver=0.42
+pkgrel=0
+pkgdesc="GTK+ widget for SPICE clients"
+url="https://www.spice-space.org/spice-gtk.html"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="libcap-ng"
+makedepends="
+	meson
+	gstreamer-dev
+	gst-plugins-base-dev
+	spice-protocol
+	json-glib-dev
+	gtk+3.0-dev
+	usbredir-dev
+	libusb-dev
+	asciidoc
+	lz4-dev
+	opus-dev
+	glib-dev
+	cyrus-sasl-dev
+	gobject-introspection-dev
+	vala
+	libjpeg-turbo-dev
+	cairo-dev
+	zlib-dev
+	pixman-dev
+	openssl-dev>3
+	libx11-dev
+	libepoxy-dev
+	libva-dev
+	py3-six
+	py3-parsing
+	perl
+	acl-dev
+	polkit-dev
+	"
+options="suid"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-tools
+	spice-glib
+	"
+source="https://gitlab.freedesktop.org/spice/spice-gtk/uploads/e41347144c5d2f9947e215c894969f0e/spice-gtk-$pkgver.tar.xz
+	disable-test-relying-on-usb.patch
+	"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dgtk=enabled \
+		-Dwebdav=disabled \
+		-Dbuiltin-mjpeg=false \
+		-Dusbredir=enabled \
+		-Dpolkit=enabled\
+		-Dpie=true \
+		-Dintrospection=enabled \
+		-Dvapi=enabled \
+		-Dlz4=enabled \
+		-Dsasl=enabled \
+		-Dopus=enabled \
+		-Dsmartcard=disabled \
+		-Dgtk_doc=disabled \
+		-Dcoroutine=gthread \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tooling)"
+	amove usr/bin
+}
+
+glib() {
+	pkgdesc="$pkgdesc (glib library)"
+	amove usr/lib/*-glib-*.so*
+	amove usr/lib/girepository-*/SpiceClientGLib-*.typelib
+}
+
+sha512sums="
+fd567e35f6d4ebfe6ef004f358dca4c41254336f55f7dd26cf67b62b2acb4866907186bd0526b7cb52b0c24020cdc8809251127498a8d357555bb0c5d3b8f137  spice-gtk-0.42.tar.xz
+49af336eb9c4a785b557b3e0e4e9781bccc9fbfd85d2d98bff6bd57c80d9e49f17b27915c720f49da8670f7ab197496f5a7e2a85cc478a9cb0051b0a11a2bf5f  disable-test-relying-on-usb.patch
+"

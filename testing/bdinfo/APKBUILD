@@ -1,0 +1,36 @@
+maintainer="Fabricio Silva <hi@fabricio.dev>"
+pkgname=bdinfo
+pkgver=1.0.5
+pkgrel=0
+pkgdesc="A command-line Blu-ray disc analysis tool with UHD support, fork built on .NET 8."
+url="https://github.com/tetrahydroc/BDInfoCLI"
+arch="x86_64 aarch64 armv7" # limited by dotnet8-sdk
+license="LGPL-2.1-or-later"
+options="net !strip" # net for nuget | strip breaks the package
+makedepends="dotnet8-sdk"
+depends="dotnet8-runtime"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tetrahydroc/BDInfoCLI/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/BDInfoCLI-$pkgver"
+provides="BDInfo"
+
+build() {
+	dotnet publish BDInfo \
+		-p:EnableCompressionInSingleFile=false \
+		-p:Version="$pkgver.$pkgrel" \
+		--no-self-contained \
+		--use-current-runtime \
+		--configuration Release \
+		--output publish
+}
+
+check() {
+	./publish/BDInfo -v
+}
+
+package() {
+	install -Dm755 publish/BDInfo -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+866ce0afd57d893bb3186410d3bb16cd84e1369885fdbd150fe2970cb7b73ab659b855cdb96b941d68d773e1463f824b791495dbe510029c1501ad0437b52882  bdinfo-1.0.5.tar.gz
+"

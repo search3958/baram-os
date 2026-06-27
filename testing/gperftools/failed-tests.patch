@@ -1,0 +1,11 @@
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -216,7 +216,7 @@ libstacktrace_la_SOURCES = src/stacktrac
+ libstacktrace_la_LIBADD = $(UNWIND_LIBS)
+ 
+ ### Unittests
+-TESTS += stacktrace_unittest
++#TESTS += stacktrace_unittest
+ stacktrace_unittest_SOURCES = src/tests/stacktrace_unittest.cc \
+                               $(libstacktrace_la_SOURCES)
+ stacktrace_unittest_CXXFLAGS = $(AM_CXXFLAGS) -DSTACKTRACE_IS_TESTED

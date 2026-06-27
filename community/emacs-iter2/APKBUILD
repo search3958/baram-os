@@ -1,0 +1,39 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=emacs-iter2
+pkgver=2.2
+pkgrel=1
+_pkgreal=iter2
+pkgdesc="Reimplementation of Elisp generators"
+url="https://github.com/doublep/iter2"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="cmd:emacs"
+makedepends="emacs-nox"
+source="https://github.com/doublep/iter2/archive/$pkgver/emacs-iter2-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	emacs -batch -q -no-site-file -L . \
+		-eval '(setq byte-compile-error-on-warn t)' \
+		-f batch-byte-compile \
+		./*.el
+}
+
+check() {
+	emacs -batch -q -no-site-file -L . -L test \
+		-l iter2-test -f ert-run-tests-batch-and-exit
+}
+
+package() {
+	install -Dvm644 ./*.el ./*.elc \
+		-t "$pkgdir"/usr/share/emacs/site-lisp/
+
+	cd "$pkgdir"/usr/share/emacs/site-lisp
+	emacs -batch -q -no-site-file \
+		-eval "(loaddefs-generate \".\" \"$_pkgreal-loaddefs.el\")"
+}
+
+sha512sums="
+60ae743eb0dc6a2dbff941d0a788b0e048a789a06bcf34be35e493de994dedf9386b569ac1b6835cfff761e85f2b50a256bad2f9cd5f9e8d4d62d4985d3e5337  emacs-iter2-2.2.tar.gz
+"

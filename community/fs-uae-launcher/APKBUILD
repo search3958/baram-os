@@ -1,0 +1,49 @@
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=fs-uae-launcher
+pkgver=3.2.35
+pkgrel=0
+pkgdesc="FS-UAE emulator launcher."
+url="https://github.com/FrodeSolheim/fs-uae-launcher"
+# armhf blocked by py3-qt6
+arch="noarch !armhf"
+license="GPL-2.0-only"
+depends="
+	fs-uae
+	py3-lhafile
+	py3-opengl
+	py3-pyqt6-sip
+	py3-qt6
+	py3-requests
+	py3-setuptools
+	python3
+	"
+makedepends="gettext"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/FrodeSolheim/fs-uae-launcher/archive/refs/tags/v$pkgver.tar.gz"
+options="!check"  # no testsuite
+
+package() {
+	python3 setup.py install \
+		--root="$pkgdir" \
+		--install-lib=/usr/share/fs-uae-launcher \
+		--install-scripts=/usr/share/fs-uae-launcher
+
+	make DESTDIR="$pkgdir" prefix=/usr install-data
+
+	mkdir -p "$pkgdir"/usr/bin
+	ln -s ../share/fs-uae-launcher/fs-uae-launcher "$pkgdir"/usr/bin/fs-uae-launcher
+	rm -rf "$pkgdir"/usr/share/doc
+}
+
+pyc() {
+	default_pyc
+
+	# shellcheck disable=SC3003
+	local IFS=$'\n'
+	# shellcheck disable=SC2046
+	amove $(find usr/share/fs-uae-launcher -type d -name __pycache__)
+}
+
+sha512sums="
+4ae8159e8d4e70745ee65524e4c63bbb231d9f389f4fd8dce2565c85f2846bbbb197c70e5bc228a22d3d7272df10b06003f203b51283e3e3f092b8819d77c9e8  fs-uae-launcher-3.2.35.tar.gz
+"

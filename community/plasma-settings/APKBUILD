@@ -1,0 +1,58 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=plasma-settings
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Settings application for Plasma Mobile"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://community.kde.org/Plasma/Mobile"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+depends="
+	kded
+	kirigami
+	kirigami-addons
+	openrc-settingsd
+	"
+makedepends="
+	extra-cmake-modules
+	kauth-dev
+	kcmutils-dev
+	kconfig-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	ki18n-dev
+	kio-dev
+	kirigami-addons-dev
+	kitemmodels-dev
+	kwindowsystem-dev
+	modemmanager-qt-dev
+	networkmanager-qt-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	samurai
+	solid-dev
+	"
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/plasma-mobile/plasma-settings.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/plasma-settings-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+77eccc8e9d1fae28fa80c38fe00e89e1e99aa1f6b34ee58d1f90bd44edd7fca38686d3d875fdf48ec562f6fe94ac1798dcdf06a8a02238fff3f0c67ec609f395  plasma-settings-26.04.2.tar.xz
+"

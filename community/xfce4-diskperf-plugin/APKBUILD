@@ -1,0 +1,46 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=xfce4-diskperf-plugin
+pkgver=2.8.0
+pkgrel=0
+pkgdesc="Displays disk I/O performance"
+url="https://docs.xfce.org/panel-plugins/xfce4-diskperf-plugin/start"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	gtk+3.0-dev
+	libxfce4ui-dev
+	xfce4-dev-tools
+	xfce4-panel-dev
+	"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.xfce.org/panel-plugins/xfce4-diskperf-plugin/-/archive/xfce4-diskperf-plugin-$pkgver/xfce4-diskperf-plugin-xfce4-diskperf-plugin-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgname-$pkgver/"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+1a2f21f406be37b256b274e033fdf2c4044a769d64dd7bb87616735cc32419eff0aa9d0d8fc54876df101af8a944e9bc282cd96eb39e395aed360f258ba5b2ae  xfce4-diskperf-plugin-2.8.0.tar.gz
+"

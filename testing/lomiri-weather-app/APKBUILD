@@ -1,0 +1,63 @@
+maintainer="Aster Boese <asterboese@mailbox.org>"
+pkgname=lomiri-weather-app
+pkgver=6.0.2
+pkgrel=0
+pkgdesc="Provides current weather information for your mobile device"
+url="https://gitlab.com/ubports/development/apps/lomiri-weather-app"
+# armhf: blocked by lomiri-ui-toolkit
+# ppc64le, riscv64, s390x, loongarch64: blocked by qt5-qtwebengine-dev
+arch="all !armhf !ppc64le !riscv64 !s390x !loongarch64"
+license="GPL-3.0-only"
+source="https://gitlab.com/ubports/development/apps/lomiri-weather-app/-/archive/v$pkgver/lomiri-weather-app-v$pkgver.tar.gz
+	desktop-mode.patch
+	"
+depends="
+	lomiri-indicator-network
+	lomiri-ui-extras
+	lomiri-ui-toolkit
+	py3-pyotherside
+	qqc2-suru-style
+	qt5-qtbase-sqlite
+	qt5-qtlocation
+	"
+makedepends="
+	click-dev
+	cmake
+	cmake-extras
+	flatbuffers-dev
+	lomiri-trust-store-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt5-qtlocation-dev
+	qt5-qtquickcontrols2-dev
+	qt5-qtwebengine-dev
+	samurai
+	"
+checkdepends="
+	py3-dbusmock
+	py3-xdg
+	xvfb-run
+	"
+subpackages="$pkgname-lang"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # requires autopilot
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCLICK_MODE=OFF \
+		-DINSTALL_TESTS=OFF
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+c6614f62c650a84e3286066daa8e1ae6aaf0cff28d60129f7b569cf3b0e26428f6696ea81404d5d06f5c566b43a8b317dc7c7e9d4f3b3fec3dbcc7d8f83c19f0  lomiri-weather-app-v6.0.2.tar.gz
+271fc27f90a061d2127598e14d2bf969cd995b4e7ce60c0d33c1a0a17a4ff49d6d78c8283b6c535718f8f4c975fc850427274862f30a1767ab215e07727ecb3e  desktop-mode.patch
+"

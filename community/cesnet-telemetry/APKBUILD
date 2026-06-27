@@ -1,0 +1,56 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=cesnet-telemetry
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="CESNET library for the collection and processing of telemetry data"
+url="https://github.com/CESNET/telemetry"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	fuse3-dev
+	"
+makedepends="
+	$depends_dev
+	cmake
+	samurai
+	"
+checkdepends="gtest-dev"
+subpackages="$pkgname-dev"
+source="https://github.com/CESNET/telemetry/archive/v$pkgver/cesnet-telemetry-$pkgver.tar.gz
+	use-system-gtest.patch
+	"
+builddir="$srcdir/telemetry-$pkgver"
+
+build() {
+	local crossopts=
+	[ "$CBUILD" != "$CHOST" ] \
+		&& crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DBUILD_SHARED_LIBS=ON \
+		-DTELEMETRY_BUILD_EXAMPLES=OFF \
+		-DTELEMETRY_ENABLE_DOC_DOXYGEN=OFF \
+		-DTELEMETRY_ENABLE_TESTS="$(want_check && echo ON || echo OFF)" \
+		-DTELEMETRY_PACKAGE_BUILDER=OFF \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0398b8dc204c5feb604e940eab1d885a6da5e3a2f42135e4aef52d59a8a16020f54ea61eb4c9668267cb63bc3977057fc4dc3b1e4ab07773a4850bd45f3f3534  cesnet-telemetry-1.4.0.tar.gz
+472d8b98e646f97d8be6a5a837abbdc301ceb6306c35ff7681b826e9e21dcb72cabf8eb45fa6ec35e43021e99d712cab98d10c1d3c14efcdb3e7b9870534d261  use-system-gtest.patch
+"

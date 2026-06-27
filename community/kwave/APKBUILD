@@ -1,0 +1,64 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kwave
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="A sound editor by KDE"
+# armhf blocked by qt6-qtmultimedia
+arch="all !armhf"
+url="https://kwave.sourceforge.net/"
+license="GPL-2.0-or-later"
+makedepends="
+	alsa-lib-dev
+	audiofile-dev
+	extra-cmake-modules
+	fftw-dev
+	flac-dev
+	karchive-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kio-dev
+	kservice-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	libsamplerate-dev
+	libvorbis-dev
+	opus-dev
+	pulseaudio-dev
+	qt6-qtbase-dev
+	qt6-qtmultimedia-dev
+	rsvg-convert
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-libs $pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/multimedia/kwave.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kwave-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DWITH_OSS=OFF \
+		-DWITH_MP3=OFF
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+55d9f11952c1a2dffccb54968a60e02c61fe15881d4f1b85cf0a8fcb8f2700f4093c8d929e2a43e909666bc7f2f3e8b156b90086cd41ad018cd755d078dc2296  kwave-26.04.2.tar.xz
+"

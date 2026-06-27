@@ -1,0 +1,37 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-gnupg
+pkgver=0.5.4
+pkgrel=1
+pkgdesc="Python3 wrapper for the Gnu Privacy Guard (GPG or GnuPG)"
+url="https://gnupg.readthedocs.io/en/latest/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 gnupg"
+makedepends="py3-setuptools py3-wheel py3-gpep517 py3-installer"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.io/packages/source/p/python-gnupg/python-gnupg-$pkgver.tar.gz"
+builddir="$srcdir/python-gnupg-$pkgver"
+options="!check" # hang
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+7136c423d388f0b7e77c55272be4b80a273468e02b576753183ae93ebe82182143662ee92c264982c3ad62d8465da49800706af76c400af578341d2b8bc0008f  python-gnupg-0.5.4.tar.gz
+"

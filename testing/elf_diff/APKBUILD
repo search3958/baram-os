@@ -1,0 +1,54 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=elf_diff
+pkgver=0.7.1
+pkgrel=4
+pkgdesc="Tool to compare ELF binaries"
+url="https://github.com/noseglasses/elf_diff"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	py3-anytree
+	py3-beautifulsoup4
+	py3-deepdiff
+	py3-dict2xml
+	py3-gitpython
+	py3-jinja2
+	py3-progressbar2
+	py3-setuptools
+	py3-yaml
+	python3
+	"
+makedepends="py3-gpep517"
+checkdepends="py3-pytest"
+options="!check" # unit tests fail
+
+subpackages="$pkgname-pyc"
+source="
+	https://files.pythonhosted.org/packages/source/e/elf_diff/elf_diff-$pkgver.tar.gz
+
+	elf_diff
+	"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+	install -Dm755 "$srcdir"/elf_diff "$pkgdir"/usr/bin/elf_diff
+}
+
+sha512sums="
+b1eef9954ceabf3a1936423131eacd71cf942a5d2f28419b3afac837b6b56cf81a9ff884f6e36495d0f61840aa9f5e68836960d29b0a7d7e00f4a0e938fcc141  elf_diff-0.7.1.tar.gz
+1ca2c8c7325f78df0d4033fe7cc8ed2e1da2716e4407b10fbcdf38cededcd1113dcc7a74b1816dff84103119c894dd499b061cf9936f2ff18eebef632b494617  elf_diff
+"

@@ -1,0 +1,52 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=drawy
+pkgver=1.0.2
+pkgrel=0
+pkgdesc="Your handy, infinite brainstorming tool!"
+url="https://apps.kde.org/drawy/"
+# armhf blocked by qt6-qtdeclarative -> ki18n
+# armv7 and x86 blocked by build failure
+arch="all !armhf !armv7 !x86"
+license="BSD-2-Clause AND BSD-3-Clause AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.0-or-later AND MIT"
+makedepends="
+	extra-cmake-modules
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kuserfeedback-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	qt6-qtbase-dev
+	qt6-qttools-dev
+	samurai
+	syntax-highlighting-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-lang
+	"
+_repo_url="https://invent.kde.org/graphics/drawy.git"
+source="https://download.kde.org/stable/drawy/$pkgver/drawy-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+2523e6d8fc512c301ea37435a3997e63ce8f12bad7b57f6cfb5a467730370940cd7adc50ccf7069e4721f9eaf4e50ba0ef910ac47d2c7b50c948116606b2a9f0  drawy-1.0.2.tar.xz
+"

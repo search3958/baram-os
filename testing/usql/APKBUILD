@@ -1,0 +1,61 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=usql
+pkgver=0.19.26
+pkgrel=6
+pkgdesc="Universal command-line interface for SQL databases"
+url="https://github.com/xo/usql"
+arch="all"
+license="MIT"
+options="net"
+makedepends="go unixodbc-dev zstd-dev"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/xo/usql/archive/refs/tags/v$pkgver.tar.gz
+	go-ole-riscv64-loong64.patch
+	"
+
+case "$CARCH" in
+	x86_64|aarch64) makedepends="$makedepends duckdb-dev" ;;
+	*) ;;
+esac
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	go mod vendor
+
+	default_prepare
+}
+
+build() {
+	local _goldflags="
+	-X github.com/xo/usql/text.CommandName=$pkgname
+	-X github.com/xo/usql/text.CommandVersion=$pkgver
+	"
+
+	local _gotags="all sqlite_app_armor sqlite_fts5 sqlite_introspect sqlite_json1 sqlite_math_functions sqlite_stat4 sqlite_vtable external_libzstd"
+	case "$CARCH" in
+		x86_64|aarch64)
+			export CGO_LDFLAGS="$LDFLAGS -L/usr/lib"
+			_gotags="$_gotags duckdb_use_lib" ;;
+		*) _gotags="$_gotags no_duckdb" ;;
+	esac
+
+	go build -v -ldflags "$_goldflags" -tags "$_gotags"
+}
+
+check() {
+	# Tests for specific drivers and testcli.go require docker
+	# shellcheck disable=2046
+	go test $(go list ./... | grep -v /drivers)
+}
+
+package() {
+	install -Dm755 $pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+93ff8a0b918754380f3ad7340740f95d8e5705e8cbc7e852f72b9123467300f4d9f0b3f25171fd145baaa96dc54a41522eb4c2c62683754cf6f28b206fd43992  usql-0.19.26.tar.gz
+ef209819fdce382c5b171e21838e3f6b16c7261a63d9a15e96e5b4212b05c44e473a3357c5bf8186e3eb27ac403c03555cebdccdce16425699bba111709f8e88  go-ole-riscv64-loong64.patch
+"

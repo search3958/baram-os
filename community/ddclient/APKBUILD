@@ -1,0 +1,67 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=ddclient
+pkgver=4.0.0
+pkgrel=2
+pkgdesc="Ddclient is a Perl client used to update dynamic DNS entries for accounts on 'Dynamic DNS Network Services' free DNS service."
+url="https://ddclient.net/"
+arch="noarch"
+license="GPL-2.0-only"
+depends="curl net-tools perl perl-digest-sha1"
+makedepends="autoconf automake"
+checkdepends="perl-sub-identify perl-test-mockmodule perl-test-warnings perl-http-daemon perl-http-request-ascgi perl-http-message perl-plack"
+pkgusers="$pkgname"
+pkggroups="$pkgname"
+install="$pkgname.pre-install"
+subpackages="$pkgname-openrc $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ddclient/ddclient/archive/v$pkgver.tar.gz
+	$pkgname.initd
+	no-automake-errors.patch
+	"
+
+prepare() {
+	default_prepare
+	./autogen
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--runstatedir=/run/ddclient
+	make
+}
+
+check() {
+	make VERBOSE=1 check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	chown -R $pkgusers:$pkggroups "$pkgdir"/var/cache/ddclient
+	install -Dm755 $srcdir/ddclient.initd "$pkgdir"/etc/init.d/$pkgname
+	chown $pkgusers:$pkggroups "$pkgdir"/etc/ddclient/ddclient.conf
+	chmod 0400 "$pkgdir"/etc/ddclient/ddclient.conf
+	chown $pkgusers:$pkggroups "$pkgdir"/etc/ddclient
+
+	install -Dm644 -t "$pkgdir"/usr/share/doc/$pkgname/ \
+		sample-etc_cron.d_ddclient \
+		sample-etc_dhclient-exit-hooks \
+		sample-etc_ppp_ip-up.local
+}
+
+doc() {
+	default_doc
+	pkgdesc="$pkgname documentation"
+}
+
+sha512sums="
+095723aa43c4f08d7e3aa46c0bc47e753fdcbcb2cd0ac5f77cd687f98694985ad70e2f6509c05aaa232d0412fcb0aef8bb07a6d9e4302130ab1db047c14e1e86  ddclient-4.0.0.tar.gz
+c5a4c4aef817692f73272a8aaf6edb10d3b16272577ef83c1f5db32b806933c410c7da0a7ce138655282a0671a8590879d6fe7c8f58f64c5cedfc1ed1cac710b  ddclient.initd
+ba6fef899d08111c410f0078eba5604e97315daa0325b747a14b6b306d95c8b630c155badde73dac3ddb231b32e26c552b4c187e0773148c5d63f278ba9aec65  no-automake-errors.patch
+"

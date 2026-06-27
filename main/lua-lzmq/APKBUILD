@@ -1,0 +1,58 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+# TODO: Split C and FFI bindings into subpackages...?
+pkgname=lua-lzmq
+_pkgname=lzmq
+pkgver=0.4.4
+pkgrel=7
+pkgdesc="Lua bindings to ZeroMQ"
+url="https://github.com/zeromq/lzmq"
+arch="all"
+license="MIT"
+makedepends="cmake samurai zeromq-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/zeromq/$_pkgname/archive/v$pkgver.tar.gz
+	gcc14.patch"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check"
+
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+for _v in $_luaversions; do
+	makedepends="$makedepends lua$_v-dev"
+	subpackages="$subpackages lua$_v-$_pkgname:_package"
+done
+
+build() {
+	local lver; for lver in $_luaversions; do
+		msg "Building for Lua $lver..."
+
+		cmake3.5 -B build/$lver -G Ninja \
+			-DCMAKE_BUILD_TYPE=MinSizeRel \
+			-DCMAKE_INSTALL_PREFIX=/usr \
+			-DCMAKE_C_FLAGS="$CFLAGS $(pkg-config --cflags lua$lver)" \
+			-DINSTALL_CMOD=/usr/lib/lua/$lver \
+			-DINSTALL_LMOD=/usr/share/lua/$lver
+		cmake --build build/$lver
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_package() {
+	local lver="${subpkgname:3:3}"
+	pkgdesc="$pkgdesc $lver"
+	install_if="lua$lver $pkgname=$pkgver-r$pkgrel"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$_pkgname/$pkgver-1"
+
+	DESTDIR="$subpkgdir" cmake --install "$builddir"/build/$lver
+	rm -Rf "$subpkgdir"/usr/share/lzmq
+
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+sha512sums="
+fd7e3e61755ec7e33b631a7fd28a3c34163ee696c5b92c6c271001f2ab5c2e41bca07e11580ba5aa1cd09031ed4f7f0e22f546f0ebcaa29b91598648b86d46fb  lua-lzmq-0.4.4.tar.gz
+704407ecb802844b9a035ceeb1b9035de8ec6e9ac93fc7c9f8c32c62b38b373d7c2d19e312fc7023f46c806c2c0edd6a3639516dee226ce73fb0debd5ffa8426  gcc14.patch
+"

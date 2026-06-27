@@ -1,0 +1,37 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Chris Kankiewicz <chris@chriskankiewicz.com>
+pkgname=snapweb
+pkgver=0.9.2
+pkgrel=1
+pkgdesc="Web interface for Snapcast"
+url="https://github.com/badaix/snapweb"
+# downloads @swc/core native node module
+arch="noarch !armhf !armv7 !x86 !s390x !ppc64le !riscv64 !loongarch64"
+license="GPL-3.0-only"
+makedepends="
+	npm
+	rollup
+	vips-dev
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/badaix/snapweb/archive/refs/tags/v$pkgver.tar.gz"
+# net required to download node modules
+# No tests
+options="net !check"
+
+build() {
+	npm ci --ignore-scripts
+	rm -rf node_modules/rollup node_modules/@rollup/rollup-*
+	ln -s /usr/share/node_modules/rollup node_modules/rollup
+	npm run build
+}
+
+package() {
+	local webroot="$pkgdir"/usr/share/snapweb
+	install -d "$webroot"
+
+	cp -r "$builddir"/dist/* "$webroot"
+}
+
+sha512sums="
+01d17250768d23104ef30ade7ca9fbdb86fd28a51e86351c6281c858d35092b5902ea3b35796c8139b35f58ea4786c38b0989d377fb844c04f01040bf5737f16  snapweb-0.9.2.tar.gz
+"

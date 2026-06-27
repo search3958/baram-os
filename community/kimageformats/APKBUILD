@@ -1,0 +1,75 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kimageformats
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Image format plugins for Qt"
+arch="all"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.1-or-later"
+makedepends="
+	extra-cmake-modules
+	karchive-dev
+	libavif-dev
+	libheif-dev
+	libjxl-dev
+	libraw-dev
+	qt6-qtbase-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+_repo_url="https://invent.kde.org/frameworks/kimageformats.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kimageformats-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DKIMAGEFORMATS_HEIF=ON
+	cmake --build build
+}
+
+check() {
+	local skipped_tests="kimageformats-read-psd"
+	local tests="
+		kimageformats-ani
+		kimageformats-pic
+		kimageformats-read-avci
+		kimageformats-read-dds
+		kimageformats-read-hej2
+		kimageformats-read-tim
+		kimageformats-read-xcf
+		kimageformats-write-exr
+		kimageformats-write-heif
+		kimageformats-write-hej2
+		"
+	case "$CARCH" in
+		armv7)
+			tests="$tests
+				kimageformats-read-jxl
+				"
+			;;
+		s390x)
+			tests="$tests
+				kimageformats-read-ff
+				kimageformats-read-iff
+				kimageformats-read-pcx
+				kimageformats-write-avif
+				"
+			;;
+	esac
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	xvfb-run -a ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+4dd73125da24da722c9967f850a2d43cfc80784d713258f2e829b79777ec98f4a4afd100e7c7bcb4a924ddf1614318193ce73bce2fbb57a8d16526aac4900643  kimageformats-6.27.0.tar.xz
+"

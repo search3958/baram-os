@@ -1,0 +1,58 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-build
+pkgver=1.4.2
+pkgrel=0
+pkgdesc="Correct PEP517 package builder"
+url="https://github.com/pypa/build"
+arch="noarch"
+license="MIT"
+depends="python3 py3-packaging py3-pyproject-hooks"
+makedepends="py3-wheel py3-flit-core py3-gpep517 py3-installer"
+checkdepends="
+	py3-filelock
+	py3-pytest-forked
+	py3-pytest-mock
+	py3-pytest-rerunfailures
+	py3-pytest-xdist
+	py3-setuptools
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/pypa/build/archive/refs/tags/$pkgver/py3-build-$pkgver.tar.gz"
+builddir="$srcdir/build-$pkgver"
+
+replaces=py-build # Backwards compatibility
+provides=py-build=$pkgver-r$pkgrel # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/build*.whl
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/test_env.py::test_uv_impl_install_cmd_well_formed \
+		--deselect tests/test_env.py::test_requirement_installation \
+		--deselect tests/test_env.py::test_venv_creation \
+		--deselect tests/test_env.py::test_venv_creation \
+		--deselect tests/test_env.py::test_uv_impl_install_cmd_well_formed \
+		--deselect tests/test_env.py::test_uv_impl_install_cmd_well_formed \
+		--deselect tests/test_env.py::test_external_uv_detection_success \
+		--deselect tests/test_env.py::test_uv_impl_install_cmd_well_formed \
+		--deselect tests/test_env.py::test_venv_creation \
+		--deselect tests/test_main.py::test_build_package \
+		--deselect tests/test_main.py::test_output \
+		--deselect tests/test_main.py::test_build_package_via_sdist
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/build*.whl
+}
+
+sha512sums="
+f404a97391497a21c401976ec95cc9544602c6d8c81443b011ecffe8785a42a9f7b8e4f1d2fdd7eba0f74e4ca74aae1c19f66dfe7dd53eb08c0a0efa8934b67d  py3-build-1.4.2.tar.gz
+"

@@ -1,0 +1,48 @@
+From 38d950e468c1e51937530f884b138076e4897da2 Mon Sep 17 00:00:00 2001
+From: Tycho Andersen <tycho@docker.com>
+Date: Mon, 13 Mar 2017 16:40:08 -0700
+Subject: [PATCH 3/4] all: get rid of strndupa
+
+in one case (src/auditd.c) we don't even need to allocate a buffer, in the
+other two we do it in two steps to avoid using a non-standard function.
+
+Signed-off-by: Tycho Andersen <tycho@docker.com>
+---
+ auparse/auparse.c  |  6 ++++--
+ src/ausearch-lol.c |  6 ++++--
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+--- a/auparse/auparse.c
++++ b/auparse/auparse.c
+@@ -1217,10 +1217,12 @@ static int extract_timestamp(const char *b, au_event_t *e)
+ 	int rc = 1;
+ 
+         e->host = NULL;
++
++	tmp = alloca(340);
+ 	if (*b == 'n')
+-		tmp = strndupa(b, 340);
++		tmp = strncpy(tmp, b, 340);
+ 	else
+-		tmp = strndupa(b, 80);
++		tmp = strncpy(tmp, b, 80);
+ 	ptr = audit_strsplit(tmp);
+ 	if (ptr) {
+ 		// Optionally grab the node - may or may not be included
+--- a/src/ausearch-lol.c
++++ b/src/ausearch-lol.c
+@@ -181,10 +181,12 @@ static int extract_timestamp(const char *b, event *e)
+ 	char *ptr, *tmp, *tnode, *ttype;
+ 
+ 	e->node = NULL;
++
++	tmp = alloca(340);
+ 	if (*b == 'n')
+-		tmp = strndupa(b, 340);
++		tmp = strncpy(tmp, b, 340);
+ 	else
+-		tmp = strndupa(b, 80);
++		tmp = strncpy(tmp, b, 80);
+ 	ptr = audit_strsplit(tmp);
+ 	if (ptr) {
+ 		// Check to see if this is the node info

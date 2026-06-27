@@ -1,0 +1,35 @@
+# Contributor: Timo Teräs <timo.teras@iki.fi>
+# Maintainer: Timo Teräs <timo.teras@iki.fi>
+pkgname=foma
+pkgver=0.10.0_git20240712
+pkgrel=0
+pkgdesc="Finite-state compiler and C library"
+_commit=a2d32b383de9b7c312171a8e31443a7ff5aa741d
+url="https://fomafst.github.io/"
+arch="all"
+license="Apache-2.0"
+options="!check" # no tests
+makedepends="cmake bison flex ninja readline-dev zlib-dev"
+subpackages="libfoma:libs $pkgname-dev"
+source="$pkgname-$_commit.tar.gz::https://github.com/mhulden/foma/archive/$_commit.tar.gz"
+builddir="$srcdir/$pkgname-$_commit/foma"
+
+build() {
+	# does not build with c2x, remove it
+	sed -i -e 's/"-std=c2x" //g' CMakeLists.txt
+
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	find "$pkgdir" -name "*.a" -delete
+}
+
+sha512sums="
+dcd8af139916dea7f6b92d78ca89606437df93880a80c219ac17f1862f547458eafdef4540214db431454d4ac77f733d15e513cfe38e67cf31ecc84539713f3f  foma-a2d32b383de9b7c312171a8e31443a7ff5aa741d.tar.gz
+"

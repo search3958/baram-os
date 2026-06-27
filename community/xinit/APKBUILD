@@ -1,0 +1,48 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xinit
+pkgver=1.4.4
+pkgrel=0
+pkgdesc="X.Org initialisation program"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="MIT"
+options="!check"  # No test suite.
+subpackages="$pkgname-doc"
+depends="xauth mcookie xmodmap xrdb"
+makedepends="libx11-dev util-macros"
+source="https://www.x.org/releases/individual/app/xinit-$pkgver.tar.xz
+	xinitrc
+	xsession.skel
+	Xsession
+	xserverrc
+	"
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-xinitdir=/etc/X11/xinit
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	chmod +x "$pkgdir"/usr/bin/startx
+	install -m755 -d "$pkgdir"/etc/skel
+	install -m755 -D "$srcdir"/xinitrc "$pkgdir"/etc/X11/xinit/xinitrc
+	install -m755 -D "$srcdir"/Xsession "$pkgdir"/etc/X11/xinit/Xsession
+	install -m755 "$srcdir"/xsession.skel "$pkgdir"/etc/skel/.xsession
+	install -m755 "$srcdir"/xserverrc "$pkgdir"/etc/X11/xinit/xserverrc
+	install -m755 -d "$pkgdir"/etc/X11/xinit/xinitrc.d
+}
+
+sha512sums="
+387285c952bbe074d2ed2dbbf745d1634763bb71f7f7edb22b3306b9e96ae4e28e59ecd6c48cc646b12dbdbcc68d42036bd127da75ef3c16fabdae87794ad6d1  xinit-1.4.4.tar.xz
+761db2ff2b501724ba8a7fde9df3d93851797a261871af205773159949bd74b4c1ac7c1afe0b816dce03825a5d7165caa474141cfb2ea82408abfe4719775ce0  xinitrc
+448bc6c7987a4735b6584e307cd5c53092b1a338043293f5f110d11818dd1b80508401a3b6f09525c82a16a88f293b37011d8ca112460b0f95d26897e3e0619e  xsession.skel
+b311032a751bb21d6c49ffe1dfc67beb577b5d5bec4a4c12612c4c0f9b9d6d2a07f7435c7d2fe9ab4c318546ee0cb9d4ff3f7ef908e756a818da529e913e667d  Xsession
+f86d96d76bcb340021e7904925f0029f8662e4dfc32489198b3a8695dca069da496539e2287249c763fe9c4d8d5d591fd18fe49a0bee822cbbd0eb712efbb89b  xserverrc
+"

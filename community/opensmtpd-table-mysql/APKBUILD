@@ -1,0 +1,39 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=opensmtpd-table-mysql
+pkgver=1.2.1
+pkgrel=0
+pkgdesc="OpenSMTPD MySQL tables"
+url="https://github.com/OpenSMTPD/table-mysql"
+arch="all"
+license="ISC"
+makedepends="
+	autoconf
+	automake
+	mariadb-connector-c-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/OpenSMTPD/table-mysql/archive/$pkgver/opensmtpd-table-mysql-$pkgver.tar.gz"
+builddir="$srcdir/table-mysql-$pkgver"
+options="!check"  # upstream does not provide tests
+
+prepare() {
+	default_prepare
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--sysconfdir=/etc/smtpd
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" smtpdir="/usr/lib/opensmtpd" install
+}
+
+sha512sums="
+336824ad6d042d206957ebca9f1451a64adce834378416af8fc2822a30e1ff6d9b8d32f83f9fd7cf260a03a95f48ccb09b548f02d2830af867e0dd8718cd234f  opensmtpd-table-mysql-1.2.1.tar.gz
+"

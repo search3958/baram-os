@@ -1,0 +1,39 @@
+# Maintainer: Kateřina Medvědová <k8ie@mcld.eu>
+pkgname=identities
+pkgver=0.2.3
+pkgrel=0
+pkgdesc="Modern password-store client made for GNOME"
+url="https://github.com/k8ieone/identities"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	python3
+	py3-gnupg
+	py3-otp
+	libadwaita
+	py3-gobject3
+"
+makedepends="
+	meson
+	blueprint-compiler
+"
+checkdepends="appstream-glib desktop-file-utils"
+source="https://github.com/k8ieone/identities/archive/$pkgver/identities-$pkgver.tar.gz"
+
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+d660a34c6431452d386edd07c4e53baa97b87bc05169a19f036ff7c68c6ff6367cc83a092a40c7e305b65203b72fd9d07d6dd9b17c70b8185a3310abcfecaa03  identities-0.2.3.tar.gz
+"

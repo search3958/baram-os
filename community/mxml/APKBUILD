@@ -1,0 +1,42 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=mxml
+pkgver=3.3.1
+pkgrel=0
+pkgdesc="Small XML library that you can use to read and write XML files"
+url="https://www.msweet.org/mxml/"
+arch="all"
+license="Apache-2.0"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/michaelrsweet/mxml/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	update_config_sub
+	update_config_guess
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make testmxml
+}
+
+package() {
+	make BUILDROOT="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.a
+}
+
+sha512sums="
+43e6a92806d9c3f5db39fbf960c15ebfa6d92ef98274b7ce39b57724d6c26ad4362d6d8f3c1023efda92e6a815df068e5038a0cd479562b6be9dbdda8e827a41  mxml-3.3.1.tar.gz
+"

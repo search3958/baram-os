@@ -1,0 +1,51 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=glances
+pkgver=4.5.4
+pkgrel=0
+pkgdesc="CLI curses based monitoring tool"
+url="https://nicolargo.github.io/glances/"
+arch="noarch"
+license="LGPL-3.0-or-later"
+depends="
+	py3-batinfo
+	py3-bottle
+	py3-defusedxml
+	py3-docker-py
+	py3-jinja2
+	py3-packaging
+	py3-psutil
+	py3-snmp
+	py3-ujson
+	python3
+	"
+checkdepends="
+	py3-pytest
+	"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-doc"
+source="glances-$pkgver.tar.gz::https://github.com/nicolargo/glances/archive/v$pkgver.tar.gz"
+options="!check"  # tests fail on builder infra due to env. limitations
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+077a8068395ff972ab019b59ca842ee15b4b6fb3fc43bebb03f51f3798b221eb30fad543a83d0fd94f7cebaecd67fd35b6f2054736a670a9703a1a595ae1e35d  glances-4.5.4.tar.gz
+"

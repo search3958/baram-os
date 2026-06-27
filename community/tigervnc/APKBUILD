@@ -1,0 +1,148 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=tigervnc
+pkgver=1.16.2
+pkgrel=0
+_xorg_version=21.1.22
+pkgdesc="High performance, multi-platform VNC client and server"
+url="https://tigervnc.org/"
+arch="all"
+license="GPL-2.0-or-later"
+_makedepends_xorg="
+	autoconf
+	automake
+	ffmpeg-dev
+	font-util-dev
+	libepoxy-dev
+	libpciaccess-dev
+	libtool
+	libx11-dev
+	libxau-dev
+	libxcb-dev
+	libxcvt-dev
+	libxdmcp-dev
+	libxext-dev
+	libxfont2-dev
+	libxkbfile-dev
+	libxshmfence-dev
+	mesa-dev
+	nettle-dev
+	pixman-dev
+	xcb-util-dev
+	xcb-util-image-dev
+	xcb-util-keysyms-dev
+	xcb-util-renderutil-dev
+	xcb-util-wm-dev
+	xkbcomp-dev
+	xorgproto
+	xtrans
+	"
+makedepends="
+	$_makedepends_xorg
+	cmake
+	fltk-dev
+	gettext-dev
+	gnutls-dev
+	libintl
+	libjpeg-turbo-dev
+	libxrandr-dev
+	libxtst-dev
+	linux-pam-dev
+	pixman-dev
+	samurai
+	"
+subpackages="$pkgname-openrc $pkgname-doc $pkgname-lang $pkgname-client"
+source="
+	https://github.com/TigerVNC/tigervnc/archive/refs/tags/v$pkgver/tigervnc-$pkgver.tar.gz
+	https://x.org/releases/individual/xserver/xorg-server-$_xorg_version.tar.xz
+	vncserver.initd
+	vncserver.confd
+	"
+options="!check" # no clear test runner
+
+prepare() {
+	default_prepare
+
+	# prepare xorg-server tree
+	cp -r "$srcdir"/xorg-server-$_xorg_version/* "$builddir"/unix/xserver/
+	cd "$builddir"/unix/xserver
+	patch -p1 < "$builddir"/unix/xserver21.patch
+}
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	# build folder needs to be top level for configure
+	# soup below to find some outputs........
+	cmake -B . -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DINSTALL_SYSTEMD_UNITS=OFF \
+		$CMAKE_CROSSOPTS
+	cmake --build .
+
+	cd "$builddir"/unix/xserver
+	local _fontroot="/usr/share/fonts"
+	# from community/xorg-server
+	export CFLAGS="${CFLAGS/-fno-plt}"
+	export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+	export LDFLAGS="$LDFLAGS -Wl,-z,lazy"
+	autoreconf -fi
+	./configure --disable-config-hal \
+		--disable-config-udev \
+		--disable-dmx \
+		--disable-dri \
+		--disable-dri2 \
+		--disable-dri3 \
+		--disable-kdrive \
+		--disable-static \
+		--disable-xephyr \
+		--disable-xinerama \
+		--disable-xnest \
+		--disable-xorg \
+		--disable-xvfb \
+		--disable-xwin \
+		--enable-glx \
+		--disable-unit-tests \
+		--with-default-font-path="$_fontroot/misc,$_fontroot/100dpi:unscaled,$_fontroot/75dpi:unscaled,$_fontroot/TTF,$_fontroot/Type1" \
+		--with-pic \
+		--with-serverconfig-path=/usr/lib/xorg \
+		--with-xkb-bin-directory=/usr/bin \
+		--with-xkb-output=/var/lib/xkb \
+		--with-xkb-path=/usr/share/X11/xkb \
+		--without-dtrace
+
+	make TIGERVNC_SRCDIR="$builddir"
+}
+
+package() {
+	# /usr/bin/vncserver is written in perl and requires xinit
+	# /usr/bin/Xvnc needs xkbcomp and xkeyboard-config to work
+	depends="perl xinit xkbcomp xkeyboard-config"
+
+	DESTDIR="$pkgdir" cmake --install .
+	install -Dm755 unix/xserver/hw/vnc/Xvnc \
+		-t "$pkgdir"/usr/bin
+	mv "$pkgdir"/usr/libexec/vncserver "$pkgdir"/usr/bin
+	rmdir "$pkgdir"/usr/libexec
+
+	install -Dm755 "$srcdir"/vncserver.initd "$pkgdir"/etc/init.d/vncserver
+	install -Dm644 "$srcdir"/vncserver.confd "$pkgdir"/etc/conf.d/vncserver
+}
+
+client() {
+	pkgdesc="$pkgdesc (client)"
+	amove \
+		usr/bin/vncviewer \
+		usr/share
+}
+
+sha512sums="
+acc2a380b3dc7237d9cc1500cd55cc9a6a295ef0aba21678f53d23673b44610717d3d462377ab32e9ea0f5ca9f4959335bf8645c442a8205a7ed62696de927cc  tigervnc-1.16.2.tar.gz
+6cb37ff971e10eb4a7dfcb3e8071afd769c7632d50e4ad8bc948b810dc4847e152b8a05ec135f55e0695b35908abd07e7728ef85dd3135456fd532e919f440f4  xorg-server-21.1.22.tar.xz
+a81962b8019e59fd667fb344989c5c38725e803bad43b2fdd977c29bd0b7d32dca1797cf0b6af5ba9071b0a1d7c9628a28b3fafd374ef8241e7e2401406401dc  vncserver.initd
+257dba90313eacb38b7f5fcec06fa0b280dcb23d92b91f675c954db4c5adf889e402c903148115934a83f3107477a10a73388320de7c11e203247f04764ddd72  vncserver.confd
+"

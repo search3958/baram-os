@@ -1,6 +1,0 @@
-[source]
-tar = "https://github.com/c-ares/c-ares/releases/download/v1.34.6/c-ares-1.34.6.tar.gz"
-blake3 = "053dfcbc7754502c2df605d0989f978793cf714014b18dbbef030bef405b1cc1"
-patches = ["redox.patch"]
-[build]
-template = "cmake"

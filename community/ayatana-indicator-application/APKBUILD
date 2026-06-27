@@ -1,0 +1,47 @@
+# Contributor: Luca Weiss <luca@lucaweiss.eu>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=ayatana-indicator-application
+pkgver=22.2.0
+pkgrel=4
+pkgdesc="Ayatana Indicator Application Service"
+url="https://github.com/AyatanaIndicators/ayatana-indicator-application"
+arch="all"
+license="GPL-3.0-only"
+makedepends="
+	cmake
+	dbus-glib-dev
+	glib-dev
+	gtk+3.0-dev
+	libayatana-appindicator-dev
+	libayatana-indicator-dev
+	libdbusmenu-gtk3-dev
+	samurai
+	"
+source="https://github.com/AyatanaIndicators/ayatana-indicator-application/archive/$pkgver/ayatana-indicator-application-$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DENABLE_TESTS="$(want_check && echo ON || echo OFF)" \
+		$crossopts .
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+5333c659f7ab40aee3339227dbc482c798568f08c1510a16a00743e3659d5276d19c79c3aa9f34e3f80a642dbeec3efd4bcc8c96f9aa776a94e0653eb1142a0d  ayatana-indicator-application-22.2.0.tar.gz
+"

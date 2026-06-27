@@ -1,0 +1,13 @@
+diff --git a/libsignal/node/build_node_bridge.py.orig b/libsignal/node/build_node_bridge.py
+index e75c2d0..3bdb328 100755
+--- a/libsignal/node/build_node_bridge.py.orig
++++ b/libsignal/node/build_node_bridge.py
+@@ -97,7 +97,7 @@ def main(args: Optional[List[str]] = None) -> int:
+     if 'npm_config_libsignal_debug_level_logs' not in os.environ:
+         features.append('log/release_max_level_info')
+ 
+-    cmdline = ['cargo', 'build', '--target', cargo_target, '-p', 'libsignal-node', '--features', ','.join(features)]
++    cmdline = ['cargo', 'auditable', 'build', '--target', cargo_target, '-p', 'libsignal-node', '--features', ','.join(features)]
+     if configuration_name == 'Release':
+         cmdline.append('--release')
+     print("Running '%s'" % (' '.join(cmdline)))

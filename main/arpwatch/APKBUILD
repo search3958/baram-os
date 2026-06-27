@@ -1,0 +1,65 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=arpwatch
+pkgver=3.9
+pkgrel=1
+pkgdesc="Ethernet monitoring program"
+url="https://www-nrg.ee.lbl.gov/"
+arch="all"
+license="BSD-3-Clause"
+pkgusers="arpwatch"
+depends="python3"
+makedepends="libpcap-dev"
+install="$pkgname.pre-install $pkgname.post-install"
+options="!check"  # No test suite.
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://ee.lbl.gov/downloads/arpwatch/arpwatch-$pkgver.tar.gz
+	arpwatch.confd
+	arpwatch.initd
+	22_alpine_bihourly_script.patch
+	53_stop-using-_getshort.patch
+	remove-freebsd-arpwatch.patch
+	fix-time-h.patch
+	"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	export PYTHON=python3
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+package() {
+	#make install command wouldn't create directory
+	mkdir -p "$pkgdir"/usr/sbin/
+	mkdir -p "$pkgdir"/usr/share/man/man8
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	make DESTDIR="$pkgdir" install
+	install -d -o arpwatch "$pkgdir"/var/lib/arpwatch
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	for files in arp2ethers arpfetch massagevendor.py bihourly.sh; do
+		install -m755 "$builddir"/$files "$pkgdir"/usr/sbin
+	done
+}
+
+sha512sums="
+b6fdda79caf6c79d78d629b28987d381981d8ac9150dd95c44ba0ed634d905446a8b64d73cdacca89d42a77965e0710d0a60184010440fed19168dae4e3dd4bd  arpwatch-3.9.tar.gz
+854f6361bf02586516db4f50afdee729c047cd788985f72f475e592e0e744c24d7d765f0391d733dbf417048c26b6d43c00eb63c58e6798bdb2366b93cbfe03a  arpwatch.confd
+83fc559aecd82cefd430104df23fc7680ac14d2c27f74d4543585382166e16a65563e00122281e886278993a9ca574daa5b2b2100884369c3a3146a66b68a0f7  arpwatch.initd
+b537220b7a19f7f28d1b60cfea6ef2e4d0c852ac83907fdd2515e467c3d16529b0c5a25ee653536e674c63d47a00709fc89fd6085efc5ba4a12f392df5ae5788  22_alpine_bihourly_script.patch
+6eae9b143deea1655b3adb45640329d1c6d15c0bf6172a229ed142bb59e6c53b73ad19dc38adc42fe547f0bae1310394b19c9f8efe1af3a7dbf889c3742008c1  53_stop-using-_getshort.patch
+68298d7967c281bbda6fe7d64f9af427eb39ac1a0011283b14ea1004396949595acc6947ddcabb385acdc83abe6255bf79ff92e5b8b1c33c67c26830b82ecd64  remove-freebsd-arpwatch.patch
+fdc05ac57e2c7007d6313fe1c38b25d999f347f218aeda6e9e59ec50791825549a5b73b70fb975d78803cbc0078341b6365379df3de02445e4af5e92e32685a8  fix-time-h.patch
+"

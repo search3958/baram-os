@@ -1,0 +1,14 @@
+# Maintainer: Andy Postnikov <apostnikov@gmail.com>
+pkgname=php-brotli
+pkgver=1
+pkgrel=2
+pkgdesc="pull $pkgname for every php version"
+url="https://gitlab.alpinelinux.org"
+arch="all"
+license="metapackage"
+builddir="$srcdir"
+
+package() {
+	mkdir -p "$pkgdir"
+}
+

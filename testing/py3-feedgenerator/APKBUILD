@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-feedgenerator
+_pkgname=feedgenerator
+pkgver=2.1.0
+pkgrel=3
+pkgdesc="A Python feed generator"
+url="https://github.com/getpelican/feedgenerator"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 py3-tz"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-pytest py3-pytest-cov"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-feedgenerator" # Backwards compatibility
+provides="py-feedgenerator=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b8b41f5b256130166c8dba34dd950782f9acb506e3e37a2fe13b5e1f9d33f7d39b7f862e446f4f6f2f480973617feb70303f78a4fb6741f110166e61b92f0075  feedgenerator-2.1.0.tar.gz
+"

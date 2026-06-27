@@ -1,0 +1,47 @@
+diff --git a/profile/flatpak.fish b/profile/flatpak.fish
+index 5940f51c..bbbefed8 100644
+--- a/profile/flatpak.fish
++++ b/profile/flatpak.fish
+@@ -3,6 +3,19 @@ if type -q flatpak
+     # user installation's exports/share is already present in $XDG_DATA_DIRS.
+     set -x --path XDG_DATA_DIRS $XDG_DATA_DIRS
+
++    # set TZDIR to our setup-timezone directory
++    # see https://gitlab.alpinelinux.org/alpine/aports/-/issues/14844
++    if test -d /etc/zoneinfo
++        # this directory only exists if setup-timezone was run to add one timezone and not add tzdata.
++        # unconditionally setting it would break things when it does not exist, so make sure it does.
++        # if it does not exist, then /etc/localtime is going to be pointing to /usr/share/zoneinfo.
++        set -l contents (command ls -A /etc/zoneinfo)
++        # it can also be empty. don't export it then
++        if test -n "$contents"
++            set -x TZDIR /etc/zoneinfo
++        end
++    end
++
+     set -l __flatpak_xdg_data_home $HOME/.local/share
+     set -q XDG_DATA_HOME; and set __flatpak_xdg_data_home $XDG_DATA_HOME
+
+diff --git a/profile/flatpak.sh b/profile/flatpak.sh
+index 4b88baf3..8cc251e0 100644
+--- a/profile/flatpak.sh
++++ b/profile/flatpak.sh
+@@ -26,4 +26,18 @@ if command -v flatpak > /dev/null; then
+     XDG_DATA_DIRS="${new_dirs:+${new_dirs}:}${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+
+     unset new_dirs
++
++    # set TZDIR to our setup-timezone directory
++    # see https://gitlab.alpinelinux.org/alpine/aports/-/issues/14844
++    if [ -d /etc/zoneinfo ]; then
++        # this directory only exists if setup-timezone was run to add one timezone and not add tzdata.
++        # unconditionally setting it would break things when it does not exist, so make sure it does.
++        # if it does not exist, then /etc/localtime is going to be pointing to /usr/share/zoneinfo.
++        contents="$(command ls -A /etc/zoneinfo)"
++        # it can also be empty. don't export it then
++        if [ -n "$contents" ]; then
++            export TZDIR=/etc/zoneinfo
++        fi
++        unset contents
++    fi
+ fi

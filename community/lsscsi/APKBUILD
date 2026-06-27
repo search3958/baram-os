@@ -1,0 +1,33 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=lsscsi
+pkgver=0.32
+pkgrel=1
+pkgdesc="Lists information about SCSI devices"
+url="http://sg.danny.cz/scsi/lsscsi.html"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+subpackages="$pkgname-doc"
+source="http://sg.danny.cz/scsi/lsscsi-$pkgver.tar.xz"
+
+prepare(){
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="fb2214390756d8820661ac1a56da5fa69f80415b2bd94c4b68f7daeb675e5a015a017132874975538934b7d65c2ff0bb8abcee087023b1f62dc6762a09a26452  lsscsi-0.32.tar.xz"

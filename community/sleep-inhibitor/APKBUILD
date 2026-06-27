@@ -1,0 +1,51 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=sleep-inhibitor
+pkgver=1.25
+pkgrel=2
+pkgdesc="Simple program to inhibit sleep/suspend when using elogind"
+url="https://github.com/bulletmark/sleep-inhibitor"
+arch="noarch"
+license="GPL-3.0-or-later"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm py3-wheel python3-dev"
+depends="
+	elogind
+	py3-ruamel.yaml"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/bulletmark/sleep-inhibitor/archive/$pkgver.tar.gz
+	sleep-inhibitor.initd
+	sleep-inhibitor.confd
+	"
+subpackages="$pkgname-openrc $pkgname-systemd $pkgname-pyc"
+options="!check"  # no tests
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver"
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		dist/*.whl
+
+	install -Dm644 "$builddir"/sleep_inhibitor/sleep-inhibitor.conf \
+		-t "$pkgdir"/etc
+
+	# openrc init/conf
+	install -Dm755 "$srcdir"/sleep-inhibitor.initd \
+		"$pkgdir"/etc/init.d/sleep-inhibitor
+	install -Dm644 "$srcdir"/sleep-inhibitor.confd \
+		"$pkgdir"/etc/conf.d/sleep-inhibitor
+
+	# systemd service
+	install -Dm644 sleep_inhibitor/sleep-inhibitor.service \
+		-t "$pkgdir"/usr/lib/systemd/system/
+}
+
+sha512sums="
+c9003f7dacdb5efc2a08ca8fedc77ca47f3d03f5bf35f1193aefe94c697870c90857c663293a25d3ee8ae0c0c38915faf855d2827e87f567449e6843eb43260b  sleep-inhibitor-1.25.tar.gz
+359c218ea694f478d863ec650ca5bac2f92edda149c00c4ab1645836bf36a3079712e2a0c99c6fa6c12eb81c4480e2697d73e553d19c7693c1869aaf5248445f  sleep-inhibitor.initd
+6ffaf358329d5e6c29c375b3cf043a8cd404204fc94f5e0cb9e288cb8852d32d6c631ce635201493d3e6467bae23584c94c57d9ed1ca9f57b30671e00b1bba80  sleep-inhibitor.confd
+"

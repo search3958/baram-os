@@ -1,0 +1,65 @@
+# Contributor: Aster Boese <asterboese@mailbox.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=lomiri-clock-app
+pkgver=4.1.1
+pkgrel=0
+pkgdesc="Clock App for Lomiri Operating Environment"
+url="https://gitlab.com/ubports/development/apps/lomiri-clock-app"
+arch="all !armhf" # blocked by lomiri-ui-toolkit
+license="GPL-3.0-only"
+depends="
+	geonames
+	gsettings-qt
+	lomiri-content-hub
+	lomiri-libusermetrics
+	lomiri-ui-extras
+	lomiri-ui-toolkit
+	qt5-qtlocation
+	qt5-qtmultimedia
+	u1db-qt
+	"
+makedepends="
+	click-dev
+	cmake
+	cmake-extras
+	geonames-dev
+	gnome-desktop-dev
+	lomiri-trust-store-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative
+	qt5-qtdeclarative-dev
+	samurai
+	xvfb-run
+	"
+checkdepends="
+	py3-dbusmock
+	py3-xdg
+	"
+subpackages="$pkgname-lang"
+source="https://gitlab.com/ubports/development/apps/lomiri-clock-app/-/archive/v$pkgver/lomiri-clock-app-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+# Tests segfault on armv7 for some reason, probably QEMU issue
+[ "$CARCH" = "armv7" ] && options="$options !check"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCLICK_MODE=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+390997c47d888f9a5e0e7d1f8ea0db0e240da3037c8dffb682d8e3d9e97808a33546a09cf161705c025ef3c52cac28888e9b7a6b046c0de52b7aa021e7e99416  lomiri-clock-app-v4.1.1.tar.gz
+"

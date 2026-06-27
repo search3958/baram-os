@@ -1,0 +1,34 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-game-libretro-desmume
+pkgver=0.0.1.28
+_realname=Nexus
+pkgrel=0
+pkgdesc="DESMuME GameClient for Kodi"
+options="!check" # no test suite
+url="https://github.com/kodi-game/game.libretro.desmume"
+arch="x86 x86_64 armv7 aarch64" # libretro-desmume and kodi are available only on these architectures
+license="GPL-2.0-or-later"
+depends="kodi-game-libretro libretro-desmume"
+makedepends="cmake kodi-dev samurai"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/kodi-game/game.libretro.desmume/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/game.libretro.desmume-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -f "$pkgdir"/usr/lib/kodi/addons/game.libretro.desmume/game.libretro.desmume.so
+	ln -s /usr/lib/libretro/desmume_libretro.so \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.desmume/game.libretro.desmume.so
+}
+
+sha512sums="
+d9d419aaee1c8cfd8fd572ffd822fa74551e34ededed2595512dcf1945f3027a35523a4cda73a3207132e8942259ce4ad123b3fdcd92ad2977291bb3d10750f6  kodi-game-libretro-desmume-0.0.1.28-Nexus.tar.gz
+"

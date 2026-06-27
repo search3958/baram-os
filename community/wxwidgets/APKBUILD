@@ -1,0 +1,155 @@
+# Contributor: Martin Kjær Jørgensen <me@lagy.org>
+# Contributor: Rasmus Thonsen <oss@cogitri.dev>
+# Contributor: Pavel Kalian <pavel@kalian.cz>
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=wxwidgets
+pkgver=3.2.9
+pkgrel=0
+pkgdesc="wxWidgets GUI library"
+url="https://www.wxwidgets.org/"
+arch="all"
+license="custom:wxWidgets"
+depends_dev="
+	expat-dev
+	libjpeg-turbo-dev
+	libsecret-dev
+	libsm-dev
+	curl-dev
+	glu-dev
+	gspell-dev
+	gst-plugins-base-dev
+	gstreamer-dev
+	libnotify-dev
+	pcre2-dev
+	gtk+3.0-dev
+	mesa-dev
+	sdl2-dev
+	webkit2gtk-4.1-dev
+	tiff-dev
+	qt5-qtbase-dev
+	xz-dev
+	zlib-dev
+	"
+makedepends="
+	$depends_dev
+	cmake
+	samurai
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-doc
+	$pkgname-dev
+	$pkgname-webview:_webview
+	$pkgname-gtk3:_gtk3
+	$pkgname-qt5:_qt5
+	"
+source="https://github.com/wxWidgets/wxWidgets/releases/download/v$pkgver/wxWidgets-$pkgver.tar.bz2
+	invalid-header-syntax.patch
+	largefile.patch
+	musl-locale-l.patch
+	no-langinfo-h.patch
+	"
+builddir="$srcdir/wxWidgets-$pkgver"
+# tests test meaningless locale stuff that fails on musl
+options="!check !spdx"
+
+build() {
+	export CFLAGS="$CFLAGS -g1 -O2 -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -g1 -O2 -flto=auto"
+
+	cmake -B build-gtk3 -G Ninja -Wno-dev \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DwxBUILD_PRECOMP=OFF \
+		-DwxBUILD_TESTS="$(want_check && echo CONSOLE_ONLY || echo OFF)" \
+		-DwxBUILD_TOOLKIT=gtk3 \
+		-DwxUSE_EXPAT=sys \
+		-DwxUSE_GLCANVAS_EGL=ON \
+		-DwxUSE_GTKPRINT=ON \
+		-DwxUSE_LIBJPEG=sys \
+		-DwxUSE_LIBLZMA=sys \
+		-DwxUSE_LIBPNG=sys \
+		-DwxUSE_LIBTIFF=sys \
+		-DwxUSE_OPENGL=ON \
+		-DwxUSE_PRIVATE_FONTS=ON \
+		-DwxUSE_REGEX=sys \
+		-DwxUSE_ZLIB=sys
+
+	cmake --build build-gtk3
+
+	cmake -B build-qt5 -G Ninja -Wno-dev \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DwxBUILD_PRECOMP=OFF \
+		-DwxBUILD_TOOLKIT=qt \
+		-DwxUSE_EXPAT=sys \
+		-DwxUSE_GLCANVAS_EGL=ON \
+		-DwxUSE_LIBJPEG=sys \
+		-DwxUSE_LIBLZMA=sys \
+		-DwxUSE_LIBPNG=sys \
+		-DwxUSE_LIBTIFF=sys \
+		-DwxUSE_OPENGL=ON \
+		-DwxUSE_PRIVATE_FONTS=ON \
+		-DwxUSE_REGEX=sys \
+		-DwxUSE_ZLIB=sys
+
+	cmake --build build-qt5
+}
+
+check() {
+	ctest --test-dir build-gtk3
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build-qt5
+
+	# Rename qt5 cmake files to allow dual use
+	mv "$pkgdir"/usr/lib/cmake/wxWidgets-3.2 "$pkgdir"/usr/lib/cmake/wxWidgetsQt
+	local f
+	for f in "$pkgdir"/usr/lib/cmake/wxWidgetsQt/*; do
+		local target="$(dirname $f)/$(basename $f | sed -e 's/wxWidgets/wxWidgetsQt/')"
+		mv "$f" "$target"
+	done
+	mv "$pkgdir"/usr/bin/wx-config "$pkgdir"/usr/bin/wx-config-qt
+
+	DESTDIR="$pkgdir" cmake --install build-gtk3
+
+	install -Dm644 wxwin.m4 -t "$pkgdir"/usr/share/aclocal
+	install -Dm644 docs/licence.txt -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+dev() {
+	replaces="wxgtk-base-dev"
+	amove usr/bin
+	default_dev
+	amove usr/lib/wx/config
+}
+
+_webview() {
+	pkgdesc="$pkgdesc (WebView component)"
+	depends="$pkgname=$pkgver-r$pkgrel $pkgname-gtk3=$pkgver-r$pkgrel"
+
+	amove usr/lib/wx/3.2/web-extensions
+	amove usr/lib/libwx_gtk3u_webview*
+}
+
+_gtk3() {
+	pkgdesc="$pkgdesc (GTK3 components)"
+
+	amove usr/lib/libwx_gtk3u*
+}
+
+_qt5() {
+	pkgdesc="$pkgdesc (Qt5 components)"
+
+	amove usr/lib/libwx_qtu*
+}
+
+sha512sums="
+6fe5caa3deaa02df0ef1891e417625b7719cffc9968a2d43e5fbca349ec9fdb8d4fc85fb422f835df751af3a816f946fb9d0d008163924be1669e54ce2346df7  wxWidgets-3.2.9.tar.bz2
+37355180cb4ed670a0ed8abd095cd32eff6cb576d4cbb6e42e3bb7adcb3e03a2170d2bb0f523de63efa6666061bc3a8356885133d8f26c76933b3cfd4e5e451d  invalid-header-syntax.patch
+33797f211a142a3d1caeaa9e971cd047b33da28ba73cf772772d2d00bef590f629c5a90a8283d310026bb391669c3733265385ad3e5faa98633e25406c761eef  largefile.patch
+f455d6496d1bb95b48c307733a73173ab7be2443bd158c4e7faa1be1716ce83639c8e0d2f04d3c5a5e3b5150c88dec0be736140cb9c4f2c0f6f2991784241af5  musl-locale-l.patch
+93201bbe2f33b7d782bb45d6ddd3024d03c4a9d499b8043c8174cb7a984dc7606b6269774e0ce3c6bb42f10774f69fd36db2c178adf1404b8c2f5953ef171878  no-langinfo-h.patch
+"

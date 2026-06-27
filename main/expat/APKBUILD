@@ -1,0 +1,107 @@
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=expat
+pkgver=2.8.2
+_tagver=R_${pkgver//./_}
+pkgrel=0
+pkgdesc="XML Parser library written in C"
+url="https://libexpat.github.io/"
+arch="all"
+license="MIT"
+checkdepends="bash"
+source="https://github.com/libexpat/libexpat/releases/download/$_tagver/expat-$pkgver.tar.xz"
+# pull in xmlwf for dev
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+# Order matters, ensure -dev does not gobble up static libraries.
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc lib$pkgname:libs"
+
+# secfixes:
+#   2.8.2-r0:
+#     - CVE-2026-50219
+#     - CVE-2026-56131
+#     - CVE-2026-56132
+#     - CVE-2026-56403
+#     - CVE-2026-56404
+#     - CVE-2026-56405
+#     - CVE-2026-56406
+#     - CVE-2026-56407
+#     - CVE-2026-56408
+#     - CVE-2026-56409
+#     - CVE-2026-56410
+#     - CVE-2026-56411
+#     - CVE-2026-56412
+#   2.8.1-r0:
+#     - CVE-2026-45186
+#   2.8.0-r0:
+#     - CVE-2026-41080
+#   2.7.5-r0:
+#     - CVE-2026-32776
+#     - CVE-2026-32777
+#     - CVE-2026-32778
+#   2.7.4-r0:
+#     - CVE-2026-24515
+#     - CVE-2026-25210
+#   2.7.2-r0:
+#     - CVE-2025-59375
+#   2.7.0-r0:
+#     - CVE-2024-8176
+#   2.6.4-r0:
+#     - CVE-2024-50602
+#   2.6.3-r0:
+#     - CVE-2024-45490
+#     - CVE-2024-45491
+#     - CVE-2024-45492
+#   2.6.2-r0:
+#     - CVE-2024-28757
+#   2.6.0-r0:
+#     - CVE-2023-52425
+#     - CVE-2023-52426
+#   2.5.0-r0:
+#     - CVE-2022-43680
+#   2.4.9-r0:
+#     - CVE-2022-40674
+#   2.4.5-r0:
+#     - CVE-2022-25235
+#     - CVE-2022-25236
+#     - CVE-2022-25313
+#     - CVE-2022-25314
+#     - CVE-2022-25315
+#   2.4.4-r0:
+#     - CVE-2022-23852
+#     - CVE-2022-23990
+#   2.4.3-r0:
+#     - CVE-2021-45960
+#     - CVE-2021-46143
+#     - CVE-2022-22822
+#     - CVE-2022-22823
+#     - CVE-2022-22824
+#     - CVE-2022-22825
+#     - CVE-2022-22826
+#     - CVE-2022-22827
+#   2.2.7-r1:
+#     - CVE-2019-15903
+#   2.2.7-r0:
+#     - CVE-2018-20843
+#   2.2.0-r1:
+#     - CVE-2017-9233
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--enable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir/" install
+}
+
+sha512sums="
+68ee856b3eeefeb6bb800004951bbbe89a9a144354ae12bc9d670888fd89e8513243e0053c61674430c78e2beeeb85a3c86ac7644576a5bb9867fbce3643ff8d  expat-2.8.2.tar.xz
+"

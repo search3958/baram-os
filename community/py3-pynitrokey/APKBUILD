@@ -1,0 +1,57 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-pynitrokey
+pkgver=0.12.2
+pkgrel=0
+pkgdesc="Python Library for Nitrokey devices"
+url="https://github.com/Nitrokey/pynitrokey"
+arch="all"
+license="Apache-2.0 AND MIT"
+depends="
+	nitrokey-udev-rules
+	py3-click
+	py3-click-aliases
+	py3-cryptography
+	py3-fido2
+	py3-intelhex
+	py3-libusb1
+	py3-nethsm
+	py3-nitrokey
+	py3-nkdfu
+	py3-pyserial
+	py3-requests
+	py3-semver
+	py3-tlv8
+	py3-tqdm
+	py3-typing-extensions
+	"
+makedepends="
+	poetry
+	py3-gpep517
+	py3-installer
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/p/pynitrokey/pynitrokey-$pkgver.tar.gz"
+options="!check" # Are integration tests only
+builddir="$srcdir/pynitrokey-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+c4133df7f4b5a9788624537ff62f5438e53b890131566000e7bcb0791720c8050a044098619a4f9015be0d836c0df5fa83e52d5947b620ff1a8c873baa96fc01  pynitrokey-0.12.2.tar.gz
+"

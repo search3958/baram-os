@@ -1,0 +1,43 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=iperf
+pkgver=2.2.1
+pkgrel=0
+pkgdesc="A tool to measure IP bandwidth using UDP or TCP"
+url="https://sourceforge.net/projects/iperf2/"
+arch="all"
+license="NCSA"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://sourceforge.net/projects/iperf2/files/iperf-$pkgver.tar.gz
+	iperf.initd
+	iperf.confd
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+check() {
+	# iperf -v returns 1
+	./src/iperf -v || test $? = 1
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -D -m0755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -D -m0644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+07a08afe647e87939e05c9cd55601ca1227c91f44ef32fdf305a0e15e524d1de29d38e9a3f66253d7308585224e54db395d7dec654d31eea746f45c6947ebc2a  iperf-2.2.1.tar.gz
+7dcd51fa77f7e8bd9a14339f61f93f591d74a86c767dbdc1d6035b6f7f4ce6fec34e8880caf68eab301640250b579b495274f2454c48b9601455ec46abab8949  iperf.initd
+fb5e155fff568a72488cc1511d30358835a48bcce309f8f46d040160932b4a4ccb85040c27c60dee477900a25bd34c50eac21d1d0bea984b40faa401be2ba7e8  iperf.confd
+"

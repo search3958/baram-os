@@ -1,0 +1,112 @@
+# Configuration for /etc/init.d/rngd
+
+# Space-delimited list of entropy sources to enable.
+# No need to include any source that is enabled by default.
+#
+# Choose from list:
+#     nist: NIST radio beacon. Not recommended.
+#     tpm:  Is deprecated, will be removed in future version.
+#
+INCLUDE_ENTROPY_SOURCES=""
+
+# Space-delimited list of entropy sources to disable.
+# Useful for disabling certain entropy sources even when supported on system.
+#
+EXCLUDE_ENTROPY_SOURCES=""
+
+
+# Number of entropy bits to support, 1 <= n <= 8.
+#
+#ENTROPY_COUNT=8
+
+# Time in seconds to periodically add fresh entropy to kernel entropy pool.
+#
+#FORCE_RESEED=300
+
+# Device used for random number input.
+#
+#HWRNG_DEVICE="/dev/hwrng"
+
+# Kernel device used for random number output.
+#
+#RANDOM_DEVICE="/dev/random"
+
+# Number of bytes written to random-device at a time.
+#
+#STEP=64
+
+# Do not stop feeding entropy to random device until at least this
+# many bits of entropy are available in pool. Value can be
+# 0 <= n <= `sysctl kernel.random.poolsize` but is usually 75% of pool size.
+#
+#WATERMARK=192
+
+
+# Entropy source specific options:
+#
+#
+# darn options:
+#         use_aes:(BOOLEAN)
+#
+#DARN_OPTIONS="use_aes:1"
+#
+#
+# jitter options:
+#         buffer_size:(INTEGER)
+#         force_soft_timer:(BOOLEAN)
+#         refill_thresh:(INTEGER)
+#         retry_count:(INTEGER)
+#         retry_delay:(INTEGER)
+#         thread_count:(INTEGER)
+#         use_aes:(BOOLEAN)
+#
+#JITTER_OPTIONS="buffer_size:16535 force_soft_timer:0 refill_thresh:16535"
+#JITTER_OPTIONS="${JITTER_OPTIONS} retry_count:1 retry_delay:-1"
+#JITTER_OPTIONS="${JITTER_OPTIONS} thread_count:4 timeout:5 use_aes:1"
+#
+# With the default jitter options Arm CPU-based devices typically experience
+# continuous high CPU utilisation for several minutes after rngd starts.
+# See https://gitlab.alpinelinux.org/alpine/aports/-/issues/13035 and
+# https://github.com/nhorman/rng-tools/issues/150
+# In order to address this the following configuration changes have been made:
+#
+#   - reduce the number of threads used to 1 in total, rather than 1 per core.
+#   - reduce the buffer size from 16535 to 4133 which reduces the time taken
+#     to fill the buffer (and so reduces the duration of CPU load).
+#   - increase the timeout from 5 to 20 seconds.
+#
+JITTER_OPTIONS="buffer_size:4133 refill_thresh:4133 thread_count:1 timeout:20"
+#
+#
+# nist options:
+#         use_aes:(BOOLEAN)
+#
+#NIST_OPTIONS="use_aes:1"
+#
+#
+# rdrand options:
+#         use_aes:(BOOLEAN)
+#
+#RDRAND_OPTIONS="use_aes:0"
+#
+#
+# rndr options:
+#         use_aes:(BOOLEAN)
+#
+#RNDR_OPTIONS="use_aes:0"
+#
+#
+# rtlsdr options:
+#         device_id:(INTEGER)
+#         freq_min:(INTEGER)
+#         freq_max:(INTEGER)
+#         sample_min:(INTEGER)
+#         sample_max:(INTEGER)
+#
+#RTLSDR_OPTIONS="device_id:0 freq_min:90000000 freq_max:110000000"
+#RTLSDR_OPTIONS="${RTLSDR_OPTIONS} sample_min:1000000 sample_max:2800000"
+
+
+# Any extra arguments for rngd
+#
+EXTRA_ARGS="-q"

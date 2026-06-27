@@ -1,0 +1,350 @@
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=openjdk11-loongarch
+pkgver=11.0.29_p7
+pkgrel=0
+_bootver=11.0.27_p6-r0
+_pkgver=${pkgver/_p/+}-ls-ga
+_majorver=${pkgver%%.*}
+pkgdesc="Loongarch port of OpenJDK $_majorver"
+url="https://github.com/loongson/jdk${_majorver}u"
+arch="loongarch64"
+license="GPL-2.0-only WITH Classpath-exception-2.0"
+options="sover-namecheck !archcheck" # arch dependent files moved into subpkgs
+makedepends_build="
+	autoconf
+	bash
+	gawk
+	grep
+	make
+	zip
+	zlib-dev
+	"
+makedepends_host="
+	alsa-lib-dev
+	cups-dev
+	elfutils-dev
+	fontconfig-dev
+	freetype-dev
+	giflib-dev
+	lcms2-dev
+	libffi-dev
+	libjpeg-turbo-dev
+	libx11-dev
+	libxext-dev
+	libxrandr-dev
+	libxrender-dev
+	libxt-dev
+	libxtst-dev
+	linux-headers
+	zlib-dev
+	"
+[ "$CBUILD" = "$CTARGET" ] && makedepends="
+	$makedepends_build
+	$makedepends_host
+	java-cacerts
+	java-common
+	"
+subpackages="
+	$pkgname-demos::noarch
+	$pkgname-doc
+	$pkgname-jmods::noarch
+	$pkgname-jre
+	$pkgname-jre-headless:jre_headless
+	$pkgname-jdk
+	"
+source="$pkgname-$_pkgver.tar.gz::https://github.com/loongson/jdk${_majorver}u/archive/refs/tags/jdk-$_pkgver.tar.gz
+	https://dev.alpinelinux.org/archive/openjdk-loongarch/jdk-$_bootver-miniboot.tgz
+	JDK-8267908.patch
+	lfs64.patch
+	loongarch-fpu_control.patch
+	Example.java
+	"
+builddir="$srcdir/jdk${_majorver}u-jdk-${_pkgver/+/-}"
+
+case "$CARCH" in
+loongarch64)
+	_jvm_variants=server
+	provides="
+		$pkgname-bootstrap=$pkgver-r$pkgrel
+		openjdk$_majorver-bootstrap=$pkgver-r$pkgrel
+		openjdk$_majorver=$pkgver-r$pkgrel
+		"
+	replaces="openjdk$_majorver"
+	provider_priority=$((_majorver + 1))
+	;;
+esac
+
+_java_home="usr/lib/jvm/java-$_majorver-openjdk"
+
+ldpath="/$_java_home/lib:/$_java_home/lib/jli:/$_java_home/lib/$_jvm_variants"
+sonameprefix="$pkgname:"
+
+# enable running the JTReg tests in check?
+# see comment in that function for explanation
+_run_jtreg=${_run_jtreg:-0}
+if [ $_run_jtreg -ne 0 ]; then
+	makedepends="$makedepends java-jtreg"
+	checkdepends="$checkdepends font-freefont xvfb-run"
+fi
+
+prepare() {
+	default_prepare
+
+	# update autoconf files to detect alpine
+	update_config_sub
+
+	case "$CARCH" in
+	loongarch64)
+		;;
+	*)
+		error "Please use community/openjdk11"
+		return 1
+		;;
+	esac
+}
+
+build() {
+	if [ $_run_jtreg -ne 0 ]; then
+		_with_jtreg="--with-jtreg=/usr/share/java/jtreg"
+	else
+		_with_jtreg="--with-jtreg=no"
+	fi
+
+	if [ -n "$USE_CCACHE" ]; then
+		# workaround ccache being disallowed
+		export PATH="/usr/bin:/bin:/sbin:/usr/sbin"
+		local ccache="--enable-ccache"
+	fi
+
+	if [ -z "$JOBS" ]; then
+		export JOBS=$(printf '%s\n' "$MAKEFLAGS" | sed -n -e 's/.*-j\([0-9]\+\).*/\1/p')
+	fi
+
+	# we want to build hotspot with better optimisations; it's set to this
+	# (prepended) anyway, and it's huge
+	export CFLAGS="$CFLAGS -O3 -std=gnu17"
+	export CXXFLAGS="$CXXFLAGS -O3"
+
+	# CFLAGS, CXXFLAGS and LDFLAGS are ignored as shown by a warning
+	# in the output of ./configure unless used like such:
+	#  --with-extra-cflags="$CFLAGS"
+	#  --with-extra-cxxflags="$CXXFLAGS"
+	#  --with-extra-ldflags="$LDFLAGS"
+	# See also paragraph "Configure Control Variables" from "common/doc/building.md"
+	# shellcheck disable=2097 disable=2098
+	CFLAGS='' CXXFLAGS='' LDFLAGS='' \
+		bash ./configure \
+		--openjdk-target=$CHOST \
+		--prefix="/$_java_home" \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--with-extra-cflags="$CFLAGS" \
+		--with-extra-cxxflags="$CXXFLAGS" \
+		--with-extra-ldflags="$LDFLAGS" \
+		--with-zlib=system \
+		--with-libjpeg=system \
+		--with-giflib=system \
+		--with-libpng=system \
+		--with-lcms=system \
+		--with-jobs=${JOBS:-4} \
+		--with-test-jobs=${JOBS:-4} \
+		--with-native-debug-symbols=none \
+		--with-boot-jdk="$srcdir/bootjdk" \
+		--with-build-jdk="$srcdir/bootjdk" \
+		$ccache \
+		$_with_jtreg \
+		--disable-warnings-as-errors \
+		--disable-precompiled-headers \
+		--enable-dtrace=no \
+		--with-jvm-variants=$_jvm_variants \
+		--with-debug-level=release \
+		--with-version-pre= \
+		--with-version-build="${pkgver##*p}" \
+		--with-version-opt="${_pkgver#*-}-alpine-r$pkgrel" \
+		--with-vendor-name="Alpine" \
+		--with-vendor-url="https://alpinelinux.org/" \
+		--with-vendor-bug-url="https://gitlab.alpinelinux.org/alpine/aports/issues" \
+		--with-vendor-vm-bug-url="https://gitlab.alpinelinux.org/alpine/aports/issues"
+
+	MAKEFLAGS='' make images
+}
+
+check() {
+	cd build/linux-*-$_jvm_variants-release/images/jdk
+
+	./bin/java -version
+
+	./bin/javac "$srcdir"/Example.java -d "$builddir"
+	./bin/java -classpath "$builddir" Example
+
+	return 0 # tests get stuck forever on the builders (also noted in openjdk11)
+
+	# run the gtest unittest suites
+	# override make variable, disable -Werror
+	MAKEFLAGS='' make test-hotspot-gtest
+
+	# The jtreg tests take very, very long to finish and show some failures (9 - 12 on my machine, varying between runs)
+	# I think these are not critical and can be safely ignored.
+	# As the tests take too long, they are disabled by default.
+	if [ $_run_jtreg -ne 0 ]; then
+		_logfile=$( mktemp -p "$builddir" )
+		MAKEFLAGS='' xvfb-run make \
+			run-test-tier1 \
+			run-test-tier2 \
+			run-test-tier3 \
+			| tee "$_logfile"
+		msg "---------------------------------------"
+		msg "The build log can be found at $_logfile"
+		# abort the build so you may take a look at the logfile
+		false
+		return 1
+	fi
+}
+
+package() {
+	depends="$pkgname-jdk=$pkgver-r$pkgrel"
+
+	install -Dvm644 ASSEMBLY_EXCEPTION LICENSE README.md \
+		-t "$pkgdir"/$_java_home/
+
+	cd build/linux-*-$_jvm_variants-release/images/
+	cp -a jdk/* "$pkgdir"/$_java_home/
+	rm -v "$pkgdir"/$_java_home/lib/src.zip
+
+	# symlink to shared java cacerts store
+	rm -v "$pkgdir"/$_java_home/lib/security/cacerts
+	ln -sv /etc/ssl/certs/java/cacerts \
+		"$pkgdir"/$_java_home/lib/security/cacerts
+
+	# symlink for java-common to work (expects jre in $_java_home/jre)
+	ln -sv . "$pkgdir"/$_java_home/jre
+}
+
+jmods() {
+	pkgdesc="$pkgdesc (jmods)"
+	depends=
+
+	provides="openjdk$_majorver-jmods=$pkgver-r$pkgrel"
+	replaces="openjdk$_majorver-jmods"
+
+	amove $_java_home/jmods
+}
+
+jre() {
+	pkgdesc="$pkgdesc (JRE)"
+	depends="$pkgname-jre-headless=$pkgver-r$pkgrel"
+
+	provides="java-jre openjdk$_majorver-jre=$pkgver-r$pkgrel"
+	replaces="openjdk$_majorver-jre"
+
+	amove \
+		$_java_home/lib/libawt_xawt.so \
+		$_java_home/lib/libfontmanager.so \
+		$_java_home/lib/libjavajpeg.so \
+		$_java_home/lib/libjawt.so \
+		$_java_home/lib/libjsound.so \
+		$_java_home/lib/liblcms.so \
+		$_java_home/lib/libsplashscreen.so
+}
+
+jre_headless() {
+	pkgdesc="$pkgdesc (JRE headless)"
+	depends="java-common java-cacerts"
+
+	provides="java-jre-headless openjdk$_majorver-jre-headless=$pkgver-r$pkgrel"
+	replaces="openjdk$_majorver-jre-headless"
+
+	amove \
+		$_java_home/bin/java \
+		$_java_home/bin/jfr \
+		$_java_home/bin/jjs \
+		$_java_home/bin/jrunscript \
+		$_java_home/bin/keytool \
+		$_java_home/bin/pack200 \
+		$_java_home/bin/rmid \
+		$_java_home/bin/rmiregistry \
+		$_java_home/bin/unpack200 \
+		$_java_home/conf \
+		$_java_home/jre \
+		$_java_home/release
+
+	# Rest of the lib subdir (which were not taken by -jre subpkg).
+	amove $_java_home/lib
+
+	# ct.sym should stay in -jdk
+	mkdir -p "$pkgdir"/$_java_home/lib
+	mv "$subpkgdir"/$_java_home/lib/ct.sym "$pkgdir"/$_java_home/lib
+}
+
+doc() {
+	default_doc
+
+	amove $_java_home/man
+}
+
+demos() {
+	pkgdesc="$pkgdesc (demos)"
+	depends="$pkgname-jdk=$pkgver-r$pkgrel"
+
+	provides="openjdk$_majorver-demos=$pkgver-r$pkgrel"
+	replaces="openjdk$_majorver-demos"
+
+	amove $_java_home/demo
+}
+
+jdk() {
+	pkgdesc="$pkgdesc (JDK) ($_jvm_variants variant)"
+	depends="$pkgname-jre=$pkgver-r$pkgrel $pkgname-jmods=$pkgver-r$pkgrel"
+
+	provides="java-jdk openjdk$_majorver-jdk=$pkgver-r$pkgrel"
+	replaces="openjdk$_majorver-jdk"
+
+	amove \
+		$_java_home/bin \
+		$_java_home/lib \
+		$_java_home/include
+}
+
+create_miniboot() {
+	(
+		cat <<-'EOF'
+			bin/jar
+			bin/java
+			bin/javac
+			bin/javadoc
+			bin/jlink
+			bin/jmod
+			conf/security/java.security
+			lib/ct.sym
+			lib/jli/libjli.so
+			lib/jspawnhelper
+			lib/jvm.cfg
+			lib/libawt.so
+			lib/libawt_headless.so
+			lib/libjava.so
+			lib/libjimage.so
+			lib/libnet.so
+			lib/libnio.so
+			lib/libverify.so
+			lib/libzip.so
+			lib/modules
+			lib/server/libjvm.so
+			lib/tzdb.dat
+		EOF
+	) | tar -C "$builddir"/build/linux-*-$_jvm_variants-release/images/jdk \
+		-zcf "jdk-$pkgver-r$pkgrel-miniboot.tgz" \
+		--transform 's|^|bootjdk/|' \
+		--numeric-owner --owner=0 --group=0 -T -
+}
+
+sha512sums="
+c9bc95a6afb6c9075092c079f693abc722e24f3d25b99635dd1b0785b608fa8588c09894ce2c77153180a630aa330c496f02a4311acb23617f9fbe9a6b4284db  openjdk11-loongarch-11.0.29+7-ls-ga.tar.gz
+0deb6cc0776e545b0d96a88e577ca727e059ae572220aa7fbfe4742f3b131ab9df93330eb85dc03f9e4b21c5134f9ca6e9fb53f6fb02e80fd7eef6b20af6c4fe  jdk-11.0.27_p6-r0-miniboot.tgz
+e1a834ae2f5dbe1ad73881d8841f8f6bfa0a248e7b4a36cd40761e770d34577af334cad828161ff38d2d12ff22f585395accd500bf60b2a09763c9c2f6e0ecfa  JDK-8267908.patch
+8c2f6582657c9197c6e0349884ef2ca5f475a4fa664d5d12a22d9b849772b973051a5e28a0fbd76bc37886468c23e5efba8d52c2716156feea9392a08217a0f1  lfs64.patch
+674229c4192ea0d7adc263934f7a4be662b064b7622526d32a187319dcff0fdcd0ba63a7640167604dc32646894071828c6c24dd9914fb0e0007bd2de4af197d  loongarch-fpu_control.patch
+601ac59e59d32cbaf91f7541bd8173b38c68cbec96a7fb74227017afc8e5dc6ce4b8be03e92dd34cf52370e5d52beb780808af57b17c79c53ae8ec64cd34a92d  Example.java
+"

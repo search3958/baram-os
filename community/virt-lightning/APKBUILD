@@ -1,0 +1,41 @@
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=virt-lightning
+pkgver=2.4.0
+pkgrel=1
+pkgdesc="A tool to start libvirt VMs in a couple of seconds"
+url="https://github.com/virt-lightning/virt-lightning"
+arch="noarch"
+license="Apache-2.0"
+depends="python3 py3-libvirt py3-yaml"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/virt-lightning/virt-lightning/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/virt_lightning*.whl
+}
+
+sha512sums="
+306ce9e2a6f99fb087485bc97dab093e77d35bc26385696d55c6d50e9cb71271f1a8eacae155efe56027f6fb38a92d8b9bbdbd808788b4b5676cf3790310bcce  virt-lightning-2.4.0.tar.gz
+"

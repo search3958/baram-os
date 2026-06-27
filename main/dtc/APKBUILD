@@ -1,0 +1,59 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=dtc
+pkgver=1.7.2
+pkgrel=1
+pkgdesc="Device Tree Compiler"
+url="https://git.kernel.org/pub/scm/utils/dtc/dtc.git/"
+arch="all"
+license="GPL-2.0-or-later"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="
+	bison
+	flex
+	py3-setuptools
+	python3-dev
+	swig
+	"
+checkdepends="coreutils"
+subpackages="$pkgname-dev libfdt py3-libfdt-pyc py3-libfdt:py3_libfdt"
+source="https://kernel.org/pub/software/utils/dtc/dtc-$pkgver.tar.xz
+	install-pylibfdt-to-destdir.patch
+	swig-4.3.patch
+	"
+
+prepare() {
+	default_prepare
+	sed -i s:-Werror::g "$builddir"/Makefile
+	sed -i "s|@VERSION@|$pkgver|" setup.py
+}
+
+build() {
+	make -j1
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" PREFIX=/usr install
+	rm -f "$pkgdir"/usr/lib/*.a
+}
+
+libfdt() {
+	pkgdesc="Device tree library"
+	license="GPL-2.0-or-later OR BSD-2-Clause"
+	amove usr/lib/libfdt*
+}
+
+py3_libfdt() {
+	pkgdesc="Device tree library for Python 3"
+	depends="python3"
+	amove usr/lib/python3*
+}
+
+sha512sums="
+30f3611175a5c29556282f3f2894701a5837eb869608d89d78c280af448bbc3a5b6c83f51c28f991847c0eb7c42aa57599bbc31433f1b3b2c8d162cb2169b91f  dtc-1.7.2.tar.xz
+1c43dfae8d15861c4f0170f0df9ba63d197ab3be50e39fe5748e547074c52dc7b042ca5e9c64d3d4bb0a8e8cde8df7e71660cde93e9512923405c38debcaa01c  install-pylibfdt-to-destdir.patch
+a615a9fb89691548e7c40e27dc6a06c371f76ee3945650c4bb21d36898aaf211a9cc90e2ba2a7710ae177f187f21d21eee6e77ad531eda49be1f89bef4371b75  swig-4.3.patch
+"

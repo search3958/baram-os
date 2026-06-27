@@ -1,0 +1,105 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=kitty
+pkgver=0.47.4
+pkgrel=0
+pkgdesc="Modern, hackable, featureful, OpenGL based terminal emulator"
+url="https://sw.kovidgoyal.net/kitty/"
+arch="all"
+license="GPL-3.0-only"
+depends="less ncurses py3-pygments kitty-terminfo kitty-kitten"
+checkdepends="font-dejavu py3-pytest font-nerd-fonts-symbols"
+makedepends="
+	dbus-dev
+	fontconfig-dev
+	freetype-dev
+	go
+	harfbuzz-dev
+	lcms2-dev
+	libcanberra-dev
+	libpng-dev
+	librsync-dev
+	libxcursor-dev
+	libxi-dev
+	libxinerama-dev
+	libxkbcommon-dev
+	libxrandr-dev
+	mesa-dev
+	openssl-dev
+	py3-setuptools
+	python3-dev
+	wayland-dev
+	wayland-protocols
+	xxhash-dev
+	zlib-dev
+	"
+install="$pkgname.post-install $pkgname.post-upgrade"
+subpackages="$pkgname-wayland $pkgname-x11 $pkgname-kitten $pkgname-pyc $pkgname-terminfo"
+source="$pkgname-$pkgver.tar.gz::https://github.com/kovidgoyal/kitty/archive/v$pkgver.tar.gz
+	disable-docs.patch
+	"
+options="net" # go build
+
+build() {
+	# See https://github.com/void-linux/void-packages/issues/7975.
+	export LDFLAGS="$LDFLAGS -Wl,-z,stack-size=2097152"
+	export CFLAGS="$CFLAGS -DKITTY_NO_SIMD -flto=auto -Wno-error=overflow"
+	python3 setup.py linux-package \
+		--ignore-compiler-warnings \
+		--update-check-interval=0
+}
+
+check() {
+	pytest -v --ignore kitty_tests/file_transmission.py kitty_tests/crypto.py
+}
+
+package() {
+	mkdir -p "$pkgdir"
+	cp -r linux-package "$pkgdir"/usr/
+
+	# remove useless "optimised" python
+	find "$pkgdir" \( -name "*.opt-1.pyc" -o -name "*.opt-2.pyc" \) -delete
+}
+
+wayland() {
+	pkgdesc="Kitty GLFW backend for Wayland"
+	depends="$pkgname=$pkgver-r$pkgrel wayland-libs-egl"
+	install_if="$pkgname=$pkgver-r$pkgrel wayland-libs-server"
+
+	amove usr/lib/kitty/kitty/glfw-wayland.so
+}
+
+x11() {
+	pkgdesc="Kitty GLFW backend for X11"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="$pkgname=$pkgver-r$pkgrel xorg-server"
+
+	amove usr/lib/kitty/kitty/glfw-x11.so
+}
+
+kitten() {
+	pkgdesc="Kitty Kitten client"
+	depends=""
+
+	amove usr/bin/kitten
+}
+
+pyc() {
+	default_pyc
+	local IFS='
+'
+	# shellcheck disable=2046
+	amove $(find usr/lib/kitty -type d -name __pycache__)
+}
+
+terminfo() {
+	depends=""
+
+	amove usr/share/terminfo/x
+}
+
+sha512sums="
+4e4a476e7cc817b6be1a305e69933155c5f5c3d3913df3eb5711716be070f6b36103acd36501e08f3980136efb8f0e9552a2672e32fa97f15a768597af566c02  kitty-0.47.4.tar.gz
+a9c456c25b75a2223dcb0009076fe84231e078220592c920f81ca6d04a90e26705019ba004c2f5414f5dc545dafaf2eeefb8e0bcf45d12c4e1bd43c262b5fbbc  disable-docs.patch
+"

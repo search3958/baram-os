@@ -1,0 +1,82 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-ocf
+_pkgname=ocf
+pkgver=0.8.0
+pkgrel=6
+pkgdesc="OCaml library to read and write configuration files in JSON syntax"
+url="https://zoggy.frama.io/ocf/"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-3.0-only"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	ocaml-ppxlib-dev
+	ocaml-yojson-dev
+	"
+makedepends="$depends_dev dune ocaml"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://framagit.org/zoggy/ocf/-/archive/$pkgver/ocf-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--docdir=/.omit
+	rm -Rf "$pkgdir"/.omit
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+b9b1ce82ff370222b74429b28748c99b5b78c657e8c8b273d404ba9c17df2cd48274aad4d16b4748ecdbd1402cb8fad4136122cdf617b8ca1d6256a09efe2161  ocaml-ocf-0.8.0.tar.gz
+"

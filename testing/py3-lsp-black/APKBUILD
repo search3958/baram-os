@@ -1,0 +1,41 @@
+# Contributor: Hugo Osvaldo Barrera <hugo@whynothugo.nl>
+maintainer=""
+pkgname=py3-lsp-black
+_pypi_name=python-lsp-black
+pkgver=2.0.0
+pkgrel=2
+pkgdesc="Plugin for black support in py3-lsp-server"
+url="https://github.com/python-lsp/python-lsp-black"
+arch="noarch"
+license="MIT"
+depends="py3-lsp-server black"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pypi_name:0:1}/$_pypi_name/$_pypi_name-$pkgver.tar.gz
+	replace-pkg-resources.patch
+	"
+builddir="$srcdir"/$_pypi_name-$pkgver
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# See: https://github.com/python-lsp/python-lsp-black/issues/55
+	.testenv/bin/python3 -m pytest -k "not (test_pylsp_format or syntax_error or test_load_config_defaults or test_load_config_with_skip_options)"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+595ccb0e5b99a827c3961d63f0c9ee511e5c156372d19760b048f0e1f3af45e889724397109722174a75ef46f71a1b200a8849b6939c517ec2003aaab87f032f  python-lsp-black-2.0.0.tar.gz
+0d29d0f4b09e8321ee90e67974e6db7ebf1b45df1735c25bd5b4cd7ef2d75a72c20a0117f119b05140257c1a694a781329776cadb5d24d87a858b61a04194218  replace-pkg-resources.patch
+"

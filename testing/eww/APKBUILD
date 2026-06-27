@@ -1,0 +1,45 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=eww
+pkgver=0.6.0
+pkgrel=0
+pkgdesc="ElKowars wacky widgets"
+url="https://elkowar.github.io/eww/"
+# FIXME broken nix crate version
+arch="all !s390x"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	gtk+3.0-dev
+	gtk-layer-shell-dev
+	libdbusmenu-glib-dev
+	libdbusmenu-gtk3-dev
+	"
+source="https://github.com/elkowar/eww/archive/refs/tags/v$pkgver/eww-$pkgver.tar.gz
+	update-cargo-lock.patch
+	"
+options="net"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release --no-default-features --features=wayland
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/eww -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+4a11f29ea665875a27af9b16ebbba7dfe7efb859e3fc3fdeac577e473de78bfb6e96b0ddc92c27052dcfb686ad1013c375e2273b17a758552ab62a866750a208  eww-0.6.0.tar.gz
+8530a13ff3b7142869ae7e19bed18244bc9d91edb7ca2c345fbef88cf96cdb1212165aa341af9276be6ad2d3889137a419933d891359faef5df0a22c44defe8b  update-cargo-lock.patch
+"

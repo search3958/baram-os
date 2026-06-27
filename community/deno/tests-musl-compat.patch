@@ -1,0 +1,22 @@
+--- a/tests/unit_node/http_test.ts.orig
++++ b/tests/unit_node/http_test.ts
+@@ -835,7 +835,7 @@
+   await deferred1.promise;
+   const expectedMsg = Deno.build.os === "windows"
+     ? "Only one usage of each socket address"
+-    : "Address already in use";
++    : "Address in use";
+   assert(
+     err.message.startsWith(expectedMsg),
+     `Wrong error: ${err.message}`,
+--- a/tests/util/lib/pty.rs
++++ b/tests/util/lib/pty.rs
+@@ -409,7 +409,7 @@
+           return Err(std::io::Error::last_os_error());
+         }
+         // Set the controlling terminal
+-        if libc::ioctl(fds, libc::TIOCSCTTY as libc::c_ulong, 0) == -1 {
++        if libc::ioctl(fds, libc::TIOCSCTTY, 0) == -1 {
+           return Err(std::io::Error::last_os_error());
+         }
+         set_winsize(fds, PTY_ROWS_COLS.0, PTY_ROWS_COLS.1)?;

@@ -1,0 +1,257 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=firefox-developer-edition
+pkgver=152.0_beta9
+_pkgver=${pkgver/_beta/b}
+_releasedate=2026-06-08
+pkgrel=0
+pkgdesc="Firefox web browser"
+url="https://www.firefox.com/"
+arch="x86_64 aarch64" # only common desktop architectures
+license="GPL-3.0-only AND LGPL-2.1-only AND LGPL-3.0-only AND MPL-2.0"
+depends="
+	ffmpeg-libavcodec
+	"
+_llvmver=22
+makedepends="
+	alsa-lib-dev
+	automake
+	bsd-compat-headers
+	cargo
+	cbindgen
+	clang$_llvmver
+	clang$_llvmver-libclang
+	dbus-dev
+	gettext
+	gettext-envsubst
+	gtk+3.0-dev
+	hunspell-dev
+	icu-dev
+	libevent-dev
+	libffi-dev
+	libjpeg-turbo-dev
+	libnotify-dev
+	libogg-dev
+	libtheora-dev
+	libtool
+	libvorbis-dev
+	libvpx-dev
+	libwebp-dev
+	libxcomposite-dev
+	libxt-dev
+	lld$_llvmver
+	llvm
+	llvm$_llvmver-dev
+	m4
+	mesa-dev
+	nasm
+	nodejs
+	nspr-dev
+	nss-dev
+	patchelf
+	pipewire-dev
+	pulseaudio-dev
+	py3-mozshellutil
+	python3
+	scudo-malloc
+	sed
+	wasi-compiler-rt~$_llvmver
+	wasi-sdk
+	wireless-tools-dev
+	zip
+	"
+source="https://ftp.mozilla.org/pub/firefox/releases/$_pkgver/source/firefox-$_pkgver.source.tar.xz
+	bmo-1988166-no-single_threaded-h.patch
+	fix-fortify-system-wrappers.patch
+	fix-rust-target.patch
+	glean-stub.patch
+	lfs64.patch
+	musl-no-linux-prctl.patch
+	rust-lto-thin.patch
+	sandbox-sched_setscheduler.patch
+	widevine.patch
+
+	stab.h
+
+	install-dir.patch
+	metadata.patch
+
+	mozconfig
+	firefox-developer-edition.desktop
+	distribution.ini
+	mozilla-location.keys
+	vendor-prefs.js
+	"
+# tests are hard to run
+options="!check"
+builddir="$srcdir/firefox-${pkgver/_*/}"
+
+_mozappdir=/usr/lib/firefox-developer-edition
+_branding=browser/branding/aurora
+
+# help our shared-object scanner to find the libs
+ldpath="$_mozappdir"
+sonameprefix="$pkgname:"
+
+# we need this because cargo verifies checksums of all files in vendor
+# crates when it builds and gives us no way to override or update the
+# file sanely... so just clear out the file list
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' third_party/rust/$1/.cargo-checksum.json
+}
+
+prepare() {
+	default_prepare
+	cp "$srcdir"/stab.h toolkit/crashreporter/google-breakpad/src/
+
+	export CFLAGS="${CFLAGS/-fstack-clash-protection/} -g0 -O2"
+	export CXXFLAGS="${CXXFLAGS/-fstack-clash-protection/} -g0 -O2 -Wno-deprecated-builtins -Wno-deprecated-declarations"
+
+	_clear_vendor_checksums audio_thread_priority
+
+	base64 -d "$srcdir"/mozilla-location.keys > "$builddir"/mozilla-api-key
+}
+
+build() {
+	export MOZ_BUILD_DATE="$(date ${SOURCE_DATE_EPOCH:+ -d@${SOURCE_DATE_EPOCH}} "+%Y%m%d%H%M%S")"
+
+	# for lto
+	ulimit -n 4096
+
+	# can't be set here and fail
+	unset RUSTFLAGS
+
+	local thinlto_jobs=${JOBS:-1}
+
+	case "$CARCH" in
+	# on this platform, lld seems to not utilise >1 threads for thinlto for some reason.
+	# at the same time, having more than 8 also crashes lld for firefox buildsystems (why?).
+	aarch64)
+		if [ $thinlto_jobs -gt 8 ]; then
+			thinlto_jobs=8
+		fi
+		;;
+	esac
+
+	case "$CARCH" in
+	# mimalloc clashes with scudo in a weird way here
+	x86) ;;
+	# default allocator returns oom ( and, in turn, std::bad_alloc in clang )
+	# at even ~70% of host memory usage
+	*)
+		export LD_PRELOAD=/usr/lib/libmimalloc-insecure.so.2
+		;;
+	esac
+
+	export LDFLAGS="$LDFLAGS -Wl,--thinlto-jobs=$thinlto_jobs"
+
+	export SHELL=/bin/sh
+	export BUILD_OFFICIAL=1
+	export MOZILLA_OFFICIAL=1
+	export USE_SHORT_LIBNAME=1
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
+	export MOZ_APP_REMOTINGNAME=firefoxdeveloperedition
+	export MOZBUILD_STATE_PATH="$srcdir"/mozbuild
+	# allow unsigned addons for dev-edition
+	export MOZ_REQUIRE_SIGNING=
+	# disable desktop notifications
+	export MOZ_NOSPAM=1
+	# Find our triplet JSON
+	export RUST_TARGET="$CTARGET"
+
+	# has to be the same version or older than lld
+	export CC="clang-$_llvmver"
+	export CXX="clang++-$_llvmver"
+
+	# set rpath so linker finds the libs
+	export LDFLAGS="$LDFLAGS -Wl,-rpath,$_mozappdir"
+
+	# let firefox do this itself.
+	unset CARGO_PROFILE_RELEASE_OPT_LEVEL
+	unset CARGO_PROFILE_RELEASE_LTO
+
+	export CBUILD CHOST builddir
+	envsubst < "$srcdir"/mozconfig > base-mozconfig
+	export MOZCONFIG=base-mozconfig
+	./mach build
+}
+
+package() {
+	DESTDIR="$pkgdir" ./mach install
+
+	case "$CARCH" in
+	x86|arm*) ;;
+	*) patchelf --add-needed libscudo.so "$pkgdir"/$_mozappdir/firefox ;;
+	esac
+
+	local _png
+	for _png in "$_branding"/default*.png; do
+		local i=${_png%.png}
+		i=${i##*/default}
+		install -d "$pkgdir"/usr/share/icons/hicolor/"$i"x"$i"/apps/
+		ln -s "$_mozappdir"/browser/chrome/icons/default/default"$i".png \
+			"$pkgdir"/usr/share/icons/hicolor/"$i"x"$i"/apps/$pkgname.png
+	done
+
+	# most are installed by default, this adds a few missing ones
+	install -Dm644 "$_branding"/default*.png \
+		-t "$pkgdir"/$_mozappdir/browser/chrome/icons/default/
+	install -Dm644 "$_branding"/content/about-logo.png \
+		"$pkgdir"/usr/share/icons/hicolor/192x192/apps/$pkgname.png
+	install -Dm644 "$_branding"/content/about-logo@2x.png \
+		"$pkgdir"/usr/share/icons/hicolor/384x384/apps/$pkgname.png
+	install -Dm644 "$_branding"/content/about-logo.svg \
+		"$pkgdir"/usr/share/icons/hicolor/scalable/apps/$pkgname.svg
+
+	install -Dm644 "$srcdir"/$pkgname.desktop \
+		-t "$pkgdir"/usr/share/applications/
+
+	install -Dm644 "$srcdir"/distribution.ini \
+		-t "$pkgdir"/$_mozappdir/distribution/
+
+	# install our vendor prefs
+	install -Dm644 "$srcdir"/vendor-prefs.js \
+		"$pkgdir"/$_mozappdir/browser/defaults/preferences/vendor.js
+
+	# Generate appdata file
+	mkdir -p "$pkgdir"/usr/share/metainfo/
+	export VERSION="$pkgver"
+	export DATE="$_releasedate"
+	envsubst \
+		< "$builddir"/browser/installer/linux/app/flatpak/files/share/appdata/org.mozilla.firefox.appdata.xml.in \
+		> "$pkgdir"/usr/share/metainfo/org.mozilla.$pkgname.appdata.xml
+
+	# Replace duplicate binary with wrapper
+	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
+	install -Dm755 /dev/stdin "$pkgdir"/usr/bin/$pkgname <<- EOF
+	#!/bin/sh
+	exec $_mozappdir/firefox "\$@"
+	EOF
+	rm "$pkgdir"/$_mozappdir/firefox-bin
+	ln -sfv /usr/bin/$pkgname "$pkgdir"/$_mozappdir/firefox-bin
+
+	# Add paxrelabel configuration to grant JIT access on systems with
+	# a PaX implementation.
+	mkdir -p "$pkgdir"/usr/share/paxrelabel.d
+	echo "PEmRs $_mozappdir/firefox" > "$pkgdir"/usr/share/paxrelabel.d/"$pkgname"
+}
+
+sha512sums="
+38afeb2863d896456b00812ceb0ce7e9cd4b7e782dd4bd2c308fab2618a8430c2bda69129a44bb740d7f2b391593cc3de935916064e44f858bfdefa3ea1dca47  firefox-152.0b9.source.tar.xz
+8775931ad403f8a6545ecbedf139b7e7e152a2d6638f70d8feb457ea33e6e86147cd3c882e8059732ae946045b4918b412d0d6ba4dfdaeb2878a2277c6671676  bmo-1988166-no-single_threaded-h.patch
+3c28e243c1c74a9bd1ea13729926b1cae3ee35843b14be92ff3287a8cd745e95954e1bc842f2add165923d159bb8d2a7bcd92ba8fb2f4017ba1aef892d77aecf  fix-fortify-system-wrappers.patch
+cd68b89e29e5f6379fbd5679db27b9a5ef70ea65e51c0d0a8137e1f1fd210e35a8cfb047798e9549bc7275606d7ec5c8d8af1335d29da4699db7acd8bc7ff556  fix-rust-target.patch
+6140515b66277230e072f8990b4028fb121b2fa675b35104abeb66b5c0847c68081cb4347a7871f8489956f323d0c293559dfe05e143f4c59b83944c3a31efdd  glean-stub.patch
+e75daab5573ec6e28d3940a9bb98304d572dfb26ce7c1709e99fdd75dfa58abce170c96de683f8dc2224ea2e118aa7d78affbd54f99c4e328a4641685d64bd7d  lfs64.patch
+188ed701631a4034450d2ec2bf60acc4f0e6d7654cc9d8d5ea19bde2df16d22c288e21c90aa41e4ace6c806d1653be31db9232c980673d6a41e9717bceaa2e3d  musl-no-linux-prctl.patch
+5518b7fa131f1a75a24ebd62288d826f9c977113df86b6f36651047d8dd941952b34c8c5fcbac8eff6656ccfa34f86c0c03304db5ff9331f9627897391ccbf0f  rust-lto-thin.patch
+f8c3555ef6207933cbffbf4fc101a9b4c0d2990c0063162f0f0bde70ef0b46f86bfac42e7110695183424a87948de593f3927b2d8509ede3e4fc7bd8a1fad1ce  sandbox-sched_setscheduler.patch
+eadf3f2d12d469010a1f6b83bd33ba276cdbf570db8c74c61b7c3d3eda80c7e843c1ea17400412be243b5309383543456f0d6de94b18323c542ba66d5cff89db  widevine.patch
+0b3f1e4b9fdc868e4738b5c81fd6c6128ce8885b260affcb9a65ff9d164d7232626ce1291aaea70132b3e3124f5e13fef4d39326b8e7173e362a823722a85127  stab.h
+ff471e5160e313a9657bcbb767a6a581bab9da053cced02bde38d1ef03349472ad3602dba026c10d676d55c1712af772dd2b7bdbfa72b5db498c9ce8a2133423  install-dir.patch
+15a11963da7b8342b450aeabba5a1dcba3bff3c3220a085378e507744fd918cb4291b868b54a49056aff60034938c9b99b644c3156c82477e856b24a3810453d  metadata.patch
+a84a7c9cabb01b1e6b96bf1a1195a11fb15a4e126ae285d4aa23a795adf2d142de5203c0f1f7b38909cfa7904b1972fc09b4fadd200fc61ad52abb8607437e2e  mozconfig
+2ff0cb8e2eb94cee306b488adf6d7f4debbaff6155be3ed3eeee814cdb356e2e60fe38cc29d6c8d10079937fd2c930cfddf283977cf645395d31eaf76c7f0ac2  firefox-developer-edition.desktop
+4fd66382983d406ce0cd3586239fb1110224aeb2f9eee6fc931d980a31d18739d001d1f152208a7f1ccaae80867c40bd3d2ac674484617532a8f38049dc745bd  distribution.ini
+382510375b1a2fa79be0ab79e3391a021ae2c022429ffbaa7e7a69166f99bb56d01e59a1b10688592a29238f21c9d6977672bd77f9fae439b66bdfe0c55ddb15  mozilla-location.keys
+4b40e7ca48a327a0f40740e33dc07562b2628207fcd043cdcd46d9baeea1373c21c10373bdfb78914e3e247fac4ecdfd17a697c1b1e88bdb67b324112770865d  vendor-prefs.js
+"

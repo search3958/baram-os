@@ -1,0 +1,60 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=borgmatic
+pkgver=2.1.4
+pkgrel=0
+pkgdesc="Simple, configuration-driven backup software for servers and workstations"
+url="https://torsion.org/borgmatic/"
+license="GPL-3.0-or-later"
+arch="noarch"
+depends="
+	borgbackup
+	py3-colorama
+	py3-jsonschema
+	py3-packaging
+	py3-requests
+	py3-ruamel.yaml
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	apprise
+	py3-flexmock
+	py3-pytest
+	py3-pytest-cov
+	py3-pytest-timeout
+	"
+subpackages="$pkgname-bash-completion $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://projects.torsion.org/borgmatic-collective/borgmatic/archive/$pkgver.tar.gz"
+builddir="$srcdir/borgmatic"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+
+	python3 -m venv --clear --without-pip --system-site-packages .venv
+	.venv/bin/python3 -m installer \
+		.dist/borgmatic-$pkgver-py3-none-any.whl
+	.venv/bin/borgmatic --bash-completion >$pkgname.bash
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	PATH="$PATH:$builddir/.testenv/bin" .testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/borgmatic-$pkgver-py3-none-any.whl
+
+	install -Dm644 $pkgname.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+}
+
+sha512sums="
+2e63833717d4d21ee8d2c13c349df124a40c2c2de227622eebc6b981d55626d731abb4c7ed5e3ca1114081f11b8a8cf32ace1225256fd20dc28759077fa9d6ea  borgmatic-2.1.4.tar.gz
+"

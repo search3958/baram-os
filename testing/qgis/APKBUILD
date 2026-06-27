@@ -1,0 +1,273 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+maintainer="Holger Jaekel <holger.jaekel@gmx.de>"
+pkgname=qgis
+pkgver=3.44.10
+pkgrel=1
+pkgdesc="Geographic Information System (GIS) that supports vector, raster & database formats"
+url="https://qgis.org/"
+# x86: qt6-qtwebengine-dev missing
+# armhf: py3-qscintilla qt6-qt3d-dev missing
+# armv7: py3-qscintilla qt6-qt3d-dev qt6-qtwebengine-dev missing
+# ppc64le and riscv64: qt6-qtwebengine-dev missing
+# s390x: grass-gis-dev netcdf-dev qt6-qtwebengine-dev missing
+arch="all !armhf !armv7 !ppc64le !riscv64 !s390x !x86"
+license="GPL-2.0-or-later"
+depends="font-opensans font-cantarell qt6-qtbase-sqlite postgresql-client"
+makedepends="
+	bison
+	cmake
+	draco-dev
+	exiv2-dev
+	expat-dev
+	fcgi-dev
+	flex
+	gdal-dev
+	geos-dev
+	gsl-dev
+	grass-gis-dev
+	hdf5-dev
+	hdf5-static
+	libspatialindex-dev
+	libspatialite-dev
+	libzip-dev
+	netcdf-dev
+	opencl-dev
+	pdal-dev
+	postgresql-dev
+	proj-dev
+	protobuf-dev
+	py3-ply
+	py3-pyqt-builder
+	py3-qscintilla
+	py3-qt6
+	py3-sip
+	python3-dev
+	qca-qt6-dev
+	qscintilla-dev
+	qt6-qt3d-dev
+	qt6-qt5compat-dev
+	qt6-qtbase-dev
+	qt6-qtlocation-dev
+	qt6-qtmultimedia-dev
+	qt6-qtserialport-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	qt6-qtwebengine-dev
+	qtkeychain-dev
+	qwt-dev
+	samurai
+	sqlite-dev
+	unixodbc-dev
+	yarn
+	"
+checkdepends="py3-nose2 py3-yaml py3-gdal py3-psycopg2 py3-oauthlib py3-owslib gdal-tools gdal-driver-all py3-mock py3-termcolor qpdf poppler-utils xvfb-run firefox bash"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-server
+	$pkgname-grass
+	py3-$pkgname:py3
+	"
+options="!check" # test failures on builders
+source="https://qgis.org/downloads/qgis-$pkgver.tar.bz2
+	10-libspatialindex_2_1.patch
+	20-qgstyle-infinite-loop.patch
+	30-yarn.patch
+	40-qt6.10.patch
+	50-qstring.patch
+	60-gdal-3.13.0.patch
+	"
+langdir="/usr/share/qgis/i18n"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DQGIS_CGIBIN_SUBDIR=libexec/qgis \
+		-DBINDINGS_GLOBAL_INSTALL=TRUE \
+		-DENABLE_TESTS="$(want_check && echo TRUE || echo FALSE)" \
+		-DBUILD_WITH_QT6=TRUE \
+		-DWITH_3D=TRUE \
+		-DWITH_ANALYSIS=TRUE \
+		-DWITH_AUTH=TRUE \
+		-DWITH_BINDINGS=TRUE \
+		-DWITH_COPC=TRUE \
+		-DWITH_DESKTOP=TRUE \
+		-DWITH_EPT=TRUE \
+		-DWITH_GUI=TRUE \
+		-DWITH_GRASS8=TRUE \
+		-DGRASS_PREFIX8="$(pkg-config --variable=prefix grass)" \
+		-DWITH_HANA=TRUE \
+		-DWITH_ORACLE=FALSE \
+		-DWITH_PDAL=TRUE \
+		-DWITH_POSTGRESQL=TRUE \
+		-DWITH_QGIS_PROCESS=TRUE \
+		-DWITH_QSPATIALITE=TRUE \
+		-DWITH_SERVER=TRUE \
+		-DWITH_SERVER_LANDINGPAGE_WEBAPP=TRUE \
+		-DWITH_CUSTOM_WIDGETS=TRUE \
+		-DQGIS_MANUAL_SUBDIR=share/man \
+		-DWITH_QTWEBKIT=FALSE \
+		-DWITH_QWTPOLAR=TRUE \
+		-DQWTPOLAR_LIBRARY=/usr/lib/libqwt.so \
+		-DQWTPOLAR_INCLUDE_DIR=/usr/include/qwt \
+		-DCMAKE_CXX_FLAGS="$CXXFLAGS -DQWT_POLAR_VERSION=0x060200" \
+		-DWITH_INTERNAL_QWTPOLAR=FALSE \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	local test_excludes="(
+		logGitStatus$|
+		checkGitStatus$|
+		ProcessingQgisAlgorithmsTestPt1$|
+		ProcessingQgisAlgorithmsTestPt3$|
+		ProcessingQgisAlgorithmsTestPt4$|
+		ProcessingGdalAlgorithmsRasterTest$|
+		ProcessingGrass7AlgorithmsImageryTest$|
+		ProcessingGrass7AlgorithmsRasterTestPt1$|
+		ProcessingGrass7AlgorithmsRasterTestPt2$|
+		ProcessingOtbAlgorithmsTest$|
+		test_core_authmanager$|
+		test_core_compositionconverter$|
+		test_core_dxfexport$|
+		test_core_expression$|
+		test_core_gdalprovider$|
+		test_core_labelingengine$|
+		test_core_layoutpicture$|
+		test_core_maprendererjob$|
+		test_core_overlayexpression$|
+		test_core_projectstorage$|
+		test_core_tiledownloadmanager$|
+		test_core_openclutils$|
+		test_core_coordinatereferencesystem$|
+		test_gui_filedownloader$|
+		test_gui_layoutgui$|
+		test_gui_queryresultwidget$|
+		test_3d_mesh3drendering$|
+		test_analysis_processingalgspt2$|
+		test_analysis_gcptransformer$|
+		test_analysis_processing$|
+		test_geometry_checker_geometrychecks$|
+		test_provider_wcsprovider$|
+		test_provider_eptprovider$|
+		qgis_grassprovidertest8$|
+		test_app_gpsintegration$|
+		PyQgsAnnotation$|
+		PyQgsBlendModes$|
+		PyQgsBlockingProcess$|
+		PyQgsDatumTransform$|
+		PyQgsExpression$|
+		PyQgsExternalStorageWebDav$|
+		PyQgsExternalStorageAwsS3$|
+		PyQgsFillSymbolLayers$|
+		PyQgsProjectBadLayers$|
+		PyQgsGeometryTest$|
+		PyQgsHashLineSymbolLayer$|
+		PyQgsInterpolatedLineSymbolLayer$|
+		PyQgsLayoutHtml$|
+		PyQgsLineSymbolLayers$|
+		PyQgsMapClippingRegion$|
+		PyQgsMapLayerComboBox$|
+		PyQgsMapLayerProxyModel$|
+		PyQgsMapUnitScale$|
+		PyQgsMergedFeatureRenderer$|
+		PyQgsNetworkAccessManager$|
+		PyQgsNoApplication$|
+		PyQgsPalLabelingPlacement$|
+		PyQgsPathResolver$|
+		PyQgsProcessExecutablePt1$|
+		PyQgsProcessExecutablePt2$|
+		PyQgsProjectionSelectionWidgets$|
+		PyQgsStyleStorageGpkg$|
+		TestQgsRandomMarkerSymbolLayer$|
+		PyQgsRasterFileWriter$|
+		PyQgsSvgCache$|
+		PyQgsOGRProvider$|
+		PyQgsStyleModel$|
+		PyQgsVectorFileWriter$|
+		PyQgsVectorLayerEditBuffer$|
+		PyQgsVectorLayerNamedStyle$|
+		PyQgsVectorLayerProfileGenerator$|
+		PyQgsDBManagerGpkg$|
+		PyQgsSelectiveMasking$|
+		PyQgsPalLabelingServer$|
+		PyQgsServerApi$|
+		PyQgsServerWMSGetMap$|
+		PyQgsServerWMSGetLegendGraphic$|
+		PyQgsServerWMSGetPrint$|
+		PyQgsServerWMSGetPrintExtra$|
+		PyQgsServerWMSGetPrintOutputs$|
+		PyQgsServerWMSDimension$|
+		PyQgsAuthManagerPKIOWSTest$|
+		PyQgsAuthManagerOAuth2OWSTest$|
+		PyQgsServerConfigCache$|
+		test_core_settingsentry$|
+		test_app_qgisappclipboard$|
+		qgis_sipify$|
+		qgis_sip_include$|
+		qgis_sip_uptodate$
+	)"
+	local test_excludes_regexp
+	local testcase; for testcase in $test_excludes
+	do
+		test_excludes_regexp=$test_excludes_regexp$testcase
+	done
+	xvfb-run -a -s "-screen 0 1280x1024x24 -dpi 96" ctest -j 1 --test-dir build --timeout 15000 -E $test_excludes_regexp
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+dev() {
+	default_dev
+	amove usr/share/qgis/FindQGIS.cmake
+	amove usr/lib/qt6/plugins/designer/libqgis_customwidgets.so*
+}
+
+server() {
+	pkgdesc="FCGI-based OGC web map server"
+	amove usr/bin/qgis_mapserver
+	amove usr/lib/qgis/server
+	amove usr/lib/libqgis_server.so*
+	amove usr/libexec/qgis
+	amove usr/lib/python3*/site-packages/qgis/server
+	amove usr/lib/python3*/site-packages/qgis/_server.so
+	amove usr/share/qgis/resources/server
+}
+
+grass() {
+	pkgdesc="GRASS Support Libraries for QGIS"
+	amove usr/lib/libqgisgrass*.so.*
+	amove usr/lib/qgis/plugins/libplugin_grass8.so
+	amove usr/lib/qgis/plugins/libprovider_grass8.so
+	amove usr/lib/qgis/plugins/libprovider_grassraster8.so
+	amove usr/lib/qgis/grass/
+	amove usr/share/qgis/grass/
+}
+
+py3() {
+	pkgdesc="Python integration and plug-ins for QGIS"
+	depends="py3-owslib py3-pyaml py3-gdal py3-httplib2 py3-jinja2
+		py3-matplotlib py3-psycopg2 py3-pygments py3-qscintilla"
+	amove usr/lib/libqgispython.so*
+	amove usr/share/qgis/python/
+	amove usr/lib/python3*/site-packages/qgis/
+	amove usr/lib/python3*/site-packages/PyQt6/uic/widget-plugins/
+}
+
+sha512sums="
+0cf3bd7c56c82afe3d7f3844669b7fd257c7af84631669f8cec70e5347cc6e1930a33b33072a0e5985c6201b13209a704d6ac2641b976627952b08f7e6aebf5d  qgis-3.44.10.tar.bz2
+94c116af7c944320ff4a4ce7e9c50494eba0d0f1d77a41d7ac214e3d1f060487695c8d2b7dee87cd51d06715c333dcbeecf3290c1f54664571085d4fa52b71a6  10-libspatialindex_2_1.patch
+82e6c1bef90a12872c31264299f2102a27ad13eba197632aa65e54645e800d79395c8c25cbfb90ff34ac1f32a33f3c718c1202493aef8a57a89d2dad57925d6a  20-qgstyle-infinite-loop.patch
+23d1fdcca8b3115499472c92230a471ab54b1b27139b38a90edb93dccf3eda121f4e6f6160d52ac3a210d275848c6730ce52498f6000ad808f1235c0576f96e1  30-yarn.patch
+ddfeefc83aaa3e778db948af29823f8376096554006f796269bef2a29cc3739549a7fa2019f732779334b438b6c9f86386e3c952c8633f65ab9d488f01f693d7  40-qt6.10.patch
+b1a318568f054f1e6526e5a3fcc5dcd2ca38fab12072cadde26387d8696cf5a2735fbdf9b50e9e95260435309c7b9c1520ed23a8bd89dc351f9c3739da625809  50-qstring.patch
+4112db7fa0e348b3667999312a95736d882e3500e6611cb0d7ae074d02b99878249a3309a2dffc4590904acb0707d7d0aa727c641c6878b58cc0fab5afdd8a90  60-gdal-3.13.0.patch
+"

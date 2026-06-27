@@ -1,0 +1,33 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=catatonit
+pkgver=0.2.1
+pkgrel=0
+pkgdesc="Container init that is so simple it's effectively brain-dead"
+url="https://github.com/openSUSE/catatonit"
+license="GPL-2.0-or-later"
+arch="all"
+makedepends="autoconf automake libtool"
+source="https://github.com/openSUSE/catatonit/archive/v$pkgver/catatonit-$pkgver.tar.gz"
+options="!check" # no test suite
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -d "$pkgdir"/usr/libexec/podman
+	ln -s /usr/bin/$pkgname "$pkgdir"/usr/libexec/podman/$pkgname
+}
+
+sha512sums="
+39fb66900e9c9541470a70bec66dc77cf04ef237aa69bbc4fbb4025ef3de5c335f8b28cb41d60cd4525683a61d270dc8582b200606c474817035a0ffd9afb849  catatonit-0.2.1.tar.gz
+"

@@ -1,0 +1,33 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=kibi
+pkgver=0.3.2
+pkgrel=0
+pkgdesc="Text editor in ≤1024 lines of code, written in Rust"
+url="https://github.com/ilai-deutel/kibi"
+arch="all"
+license="( Apache-2.0 OR MIT ) AND BSD-2-Clause"
+makedepends="cargo cargo-auditable"
+source="https://github.com/ilai-deutel/kibi/archive/v$pkgver/kibi-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/kibi -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+86c81c5ba5400558ea0432ef66005073fd5eafcdb080865743dcc87e232721603db805ec02c717788a1706425938549a9a1c2090104ba2c615ac34e80cb0833c  kibi-0.3.2.tar.gz
+"

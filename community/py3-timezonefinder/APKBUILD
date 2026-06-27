@@ -1,0 +1,52 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-timezonefinder
+pkgver=6.2.0
+pkgrel=2
+pkgdesc="Fast python package for finding the timezone of any point on earth (coordinates) offline"
+url="https://github.com/jannikmi/timezonefinder"
+arch="all"
+license="MIT"
+depends="
+	py3-h3
+	py3-numpy
+	"
+makedepends="
+	py3-cffi
+	py3-gpep517
+	py3-poetry-core
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-cov
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jannikmi/timezonefinder/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/timezonefinder-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# Tests require "timezonefinder" to be present in the path"
+	export PATH="$PATH:$PWD/.testenv/bin"
+	.testenv/bin/python3 -m pytest -k "not test_inside_polygon"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+38d36e6c117ed55d7cea1cccc954e4b721a17f9914108cf4d1d204c8d0a101913837cef7a1fe1f1c1a918119babcff231a1f5040e01c6dd89f958bdcfc549fb4  py3-timezonefinder-6.2.0.tar.gz
+"

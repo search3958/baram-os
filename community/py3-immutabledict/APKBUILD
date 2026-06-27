@@ -1,0 +1,36 @@
+# Contributor: 6543 <6543@obermui.de>
+# Maintainer: 6543 <6543@obermui.de>
+pkgname=py3-immutabledict
+pkgver=4.3.1
+pkgrel=0
+pkgdesc="Fork of frozendict, an immutable wrapper around dictionaries for Python3"
+url="https://github.com/corenting/immutabledict"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-poetry-core py3-gpep517 py3-installer"
+checkdepends="python3 py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/corenting/immutabledict/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir"/immutabledict-$pkgver
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c9d1b647a3e56f9675b0029605b319196b04ac18bd02bfbc544e0e9a23444a7fe14ca986c378ba919bda6dc9d78ac6447c39ab60e7a185b3415832861ca4d1dd  py3-immutabledict-4.3.1.tar.gz
+"

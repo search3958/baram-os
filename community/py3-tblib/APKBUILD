@@ -1,0 +1,46 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-tblib
+pkgver=3.2.2
+pkgrel=2
+pkgdesc="Serialization library for Exceptions and Tracebacks"
+url="https://github.com/ionelmc/python-tblib"
+arch="noarch"
+license="BSD-2-Clause"
+depends="python3"
+makedepends="
+	py3-docutils
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-benchmark
+	py3-twisted
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/t/tblib/tblib-$pkgver.tar.gz"
+builddir="$srcdir/tblib-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	PYTHONNODEBUGRANGES=yes \
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+4b2876f4204fcf95a0b51fd353ea174fd6c59c5ddf55d021cfa991068189457805429278dd8e625d072097b5be37f240f4a2953663d87967a8e1941af582b535  tblib-3.2.2.tar.gz
+"

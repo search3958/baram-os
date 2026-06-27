@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/thomaschaplin/rust-counter-strings"
-[build]
-template = "cargo"

@@ -1,0 +1,38 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=dtach
+pkgver=0.9
+pkgrel=7
+pkgdesc="A program that emulates the detach feature of screen"
+url="https://dtach.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+subpackages="$pkgname-doc"
+source="https://downloads.sourceforge.net/project/dtach/dtach/$pkgver/dtach-$pkgver.tar.gz
+	gcc15.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	./dtach --help > /dev/null
+}
+
+package() {
+	install -Dm755 dtach "$pkgdir"/usr/bin/dtach
+	install -Dm644 dtach.1 "$pkgdir"/usr/share/man/man1/dtach.1
+	install -Dm644 README "$pkgdir"/usr/share/doc/dtach/README
+}
+
+sha512sums="
+28c13dc8c96c16b9c6153a3a11fdeb4a4bc72e84e1f2575043b047cd8e600a47232f29544ffd87d82e2575623ec2e999a26e23e9eac25ec81c7722bdf98cfb18  dtach-0.9.tar.gz
+b93cc4d27abfd37d41f17550ce0742375053b9f892ca2f85ffd2d489aaf120cd3d13030ab17f1fd36798b78098db26fa852070886fbfe8540d297501dafc4e27  gcc15.patch
+"

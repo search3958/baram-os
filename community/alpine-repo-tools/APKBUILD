@@ -1,0 +1,45 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=alpine-repo-tools
+pkgver=0.3.1
+pkgrel=15
+pkgdesc="utilities to interact with Alpine Linux repositories"
+url="https://gitlab.alpinelinux.org/alpine/infra/repo-tools"
+arch="all"
+license="MIT"
+makedepends="go redo scdoc gettext"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	"
+options="net !check" # no test suite
+source="https://gitlab.alpinelinux.org/alpine/infra/repo-tools/-/archive/v$pkgver/repo-tools-v$pkgver.tar.gz
+	fish.patch
+	"
+builddir="$srcdir/repo-tools-v$pkgver"
+
+provides="repo-tools=$pkgver-r$pkgrel"
+replaces="repo-tools"
+
+export GOFLAGS="$GOFLAGS -modcacherw"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	echo "$builddir"
+	./configure --prefix /usr --strip
+
+	redo
+}
+
+package() {
+	DESTDIR="$pkgdir" redo install
+}
+
+sha512sums="
+6e6b3266e076fa61e0dac1828f5fd3ce829cb5723d59348ba71c45737d34e60dc7d8b2f9c339a27855182989e191d5643666728d227f03a6a87f640871a0a623  repo-tools-v0.3.1.tar.gz
+642798931f85159a88cab72a4445b353e7388d62f2bec2552d7b4174a81d49967ef93c1e036c932daa20d6d6add8fe9aefbcbf2fbb2b6c3e9e7aff50885b56db  fish.patch
+"

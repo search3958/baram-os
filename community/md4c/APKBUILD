@@ -1,0 +1,39 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: qaqland <qaq@qaq.land>
+pkgname=md4c
+pkgver=0.5.3
+pkgrel=0
+pkgdesc="Fast Markdown parser written in C"
+url="https://github.com/mity/md4c"
+arch="all"
+license="MIT"
+makedepends="cmake samurai"
+checkdepends="python3"
+subpackages="$pkgname-libs $pkgname-dev $pkgname-doc"
+source="https://github.com/mity/md4c/archive/release-$pkgver/md4c-$pkgver.tar.gz
+	fix-python-warning.patch
+	"
+builddir="$srcdir/md4c-release-$pkgver"
+
+build() {
+	cmake -B builddir -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build builddir
+}
+
+check() {
+	cd builddir
+	python3 ../scripts/run-tests.py
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install builddir
+}
+
+sha512sums="
+213d6b9fbad24b2bfb4fa0a8124cb4c20861da2cb57790882aa0e5ff8c18903450f1d9ffdbcc0547debd103137777059f27a526cd818294f698b5ffdbfe7fbcb  md4c-0.5.3.tar.gz
+01e0f580bbe4110c8cfa1cac4e2bdf88d136abdff1af27232befd5b496489b6ea1ed8fad46b0dbe0009b682621d2efe72d0a336cea63a11ccb44810681162f03  fix-python-warning.patch
+"

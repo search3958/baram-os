@@ -1,0 +1,32 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=perl-html-quoted
+pkgver=0.05
+pkgrel=1
+pkgdesc="HTML::Quoted perl module"
+url="https://metacpan.org/release/HTML-Quoted/"
+arch="noarch"
+license="Artistic-1.0-Perl OR GPL-1.0-or-later"
+depends="perl perl-html-parser"
+makedepends="perl-module-install"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/B/BP/BPS/HTML-Quoted-$pkgver.tar.gz"
+
+builddir="$srcdir/HTML-Quoted-$pkgver"
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+5a9d9b2c9a5d7730ea304e3088ddbf51a9e2367b975e51831a8ed6468e39383575b0d1fa86269f762361cfc7dd9b9caa784d59989260bbb8b610917b5237af25  HTML-Quoted-0.05.tar.gz
+"

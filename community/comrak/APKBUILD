@@ -1,0 +1,44 @@
+# Maintainer: qaqland <qaq@qaq.land>
+pkgname=comrak
+pkgver=0.52.0
+pkgrel=0
+pkgdesc="CommonMark + GFM compatible Markdown parser and renderer"
+url="https://github.com/kivikakk/comrak"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	cargo
+	cargo-auditable
+	oniguruma-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/kivikakk/comrak/archive/v$pkgver/comrak-$pkgver.tar.gz"
+options="net" # cargo fetch
+
+export RUSTONIG_SYSTEM_LIBONIG=1 # oniguruma-dev
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --bin comrak --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/comrak -t "$pkgdir"/usr/bin
+
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+	install -Dm644 COPYING -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+f80d1bc3497a2abb1d1cdc9c89c00c8258d5d49e4cd59ed228d62731ae96ce72efc95b4d25ac8629d1df6e0929164dbb825d27025f720b9ac6615d753adffc44  comrak-0.52.0.tar.gz
+"

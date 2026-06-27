@@ -1,0 +1,27 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=libglibutil
+pkgver=1.0.82
+pkgrel=0
+pkgdesc="Library of glib utilities"
+url="https://github.com/sailfishos/libglibutil"
+arch="all"
+license="BSD-3-Clause"
+makedepends="glib-dev"
+subpackages="$pkgname-dev"
+source="https://github.com/sailfishos/libglibutil/archive/$pkgver/libglibutil-$pkgver.tar.gz"
+
+build() {
+	make KEEP_SYMBOLS=1 release pkgconfig
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install-dev
+}
+
+sha512sums="
+3a98a770a0de8d252f7dc1cfd3d98752a044371b621b90555ca42004edb746d1bb74e4d370d053471e1a264750cef8e493783efd7783f657df5ba50cd5bc9125  libglibutil-1.0.82.tar.gz
+"

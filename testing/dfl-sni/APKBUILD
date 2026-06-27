@@ -1,0 +1,26 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=dfl-sni
+pkgver=0.3.0
+pkgrel=0
+pkgdesc="Implementation of the XDG Status Notification Specifications"
+url="https://gitlab.com/desktop-frameworks/status-notifier/"
+arch="all"
+license="GPL-3.0-only"
+makedepends="qt6-qtbase-dev libdbusmenu-lxqt-dev meson"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.com/desktop-frameworks/status-notifier/-/archive/v$pkgver/status-notifier-v$pkgver.tar.gz"
+builddir="$srcdir/status-notifier-v$pkgver"
+options="!check" # no test suite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+be98e23f45d00c77695afd1351e6e6f621a562e905a96573ad56a9f58cd64378540c372255b9914f7964a6b77d5b5447bfbe1751e793e5b5619d9737f028c59b  dfl-sni-0.3.0.tar.gz
+"

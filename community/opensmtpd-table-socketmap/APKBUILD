@@ -1,0 +1,38 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=opensmtpd-table-socketmap
+pkgver=1.1.1
+pkgrel=0
+pkgdesc="OpenSMTPD socketmap tables"
+url="https://github.com/OpenSMTPD/table-socketmap"
+arch="all"
+license="ISC"
+makedepends="
+	autoconf
+	automake
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/OpenSMTPD/table-socketmap/archive/$pkgver/opensmtpd-table-socketmap-$pkgver.tar.gz"
+builddir="$srcdir/table-socketmap-$pkgver"
+options="!check"  # upstream does not provide tests
+
+prepare() {
+	default_prepare
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--sysconfdir=/etc/smtpd
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" smtpdir="/usr/lib/opensmtpd" install
+}
+
+sha512sums="
+acca3becfdd27a8dddccb9f1460ee5589e88415279ccc4ad9e577f185ea287fbb99e627f1e6de6e81e22c3b9c6892e7df2cc333a152c0502ac7ad80c0370e6ba  opensmtpd-table-socketmap-1.1.1.tar.gz
+"

@@ -1,0 +1,58 @@
+# Contributor: Danct12 <danct12@disroot.org>
+maintainer="Jakko <jahau@rocketmail.com>"
+pkgname=onboard
+_pkgver=1.4.4-2
+pkgver=${_pkgver/-/.}
+pkgrel=0
+pkgdesc="On-screen keyboard useful on tablet PCs or for mobility impaired users"
+url="https://github.com/onboard-osk/onboard"
+license="GPL-3.0-only"
+arch="all"
+depends="
+	gsettings-desktop-schemas
+	hunspell
+	iso-codes
+	librsvg
+	ncurses
+	py3-cairo
+	py3-dbus
+	py3-gobject3
+	python3
+	"
+makedepends="
+	bash
+	bash-dev
+	dconf-dev
+	eudev-dev
+	gtk+3.0-dev
+	hunspell-dev
+	intltool
+	libcanberra-dev
+	libxkbfile-dev
+	py3-distutils-extra
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+source="$pkgname-$_pkgver.tar.gz::https://github.com/onboard-osk/onboard/archive/refs/tags/v$_pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$_pkgver"
+options="!check" # cannot open display
+subpackages="$pkgname-doc $pkgname-lang $pkgname-pyc"
+
+build() {
+	# replaces musl patch in files "lm.cpp" and "lm_dynamic.cpp"
+	export CXXFLAGS="$CXXFLAGS -D__FreeBSD__"
+
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+2f4288ad25316c3d04c58cd5f0a6573e0ff9b6112f5e28faac86545bfa0732a9e46d74ab548bcd76f2461e92b6aec3baf919ddefbe104670df4ffac6be9ee13d  onboard-1.4.4-2.tar.gz
+"

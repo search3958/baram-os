@@ -1,0 +1,27 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-beetle-bsnes
+pkgver=0_git20241021
+pkgrel=0
+_commit="f7bfa217cf7150779902c3a998f7624d92a5f17d"
+pkgdesc="standalone port of Mednafen bSNES to libretro"
+url="https://github.com/libretro/beetle-bsnes-libretro"
+arch="all"
+license="GPL-2.0-only"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/beetle-bsnes-libretro/archive/$_commit.tar.gz
+	patch-musl.patch"
+builddir="$srcdir/beetle-bsnes-libretro-$_commit"
+options="!check" # No tests
+
+build() {
+	make
+}
+
+package() {
+	install -Dm644 mednafen_snes_libretro.so "$pkgdir"/usr/lib/libretro/mednafen_snes_libretro.so
+}
+
+sha512sums="
+7409c935ce1041e496e80ec3f69fa0f07574cbe146186c6f4cd05b49baa8643ab650757a22fe799981ba052e469a402e0074891b155a8f363e26c071172bcbdd  libretro-beetle-bsnes-f7bfa217cf7150779902c3a998f7624d92a5f17d.tar.gz
+1324ce8101bea75316a5cfac6b21e442c2762c798b9d1ab5de22bf39adf38b154b4ffe7a79d34d9c919ec384465fd61c140765da60295c1712f93532336fdcb5  patch-musl.patch
+"

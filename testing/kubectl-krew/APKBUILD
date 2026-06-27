@@ -1,0 +1,39 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=kubectl-krew
+pkgver=0.5.0
+pkgrel=2
+pkgdesc="Find and install kubectl plugins"
+url="https://krew.sigs.k8s.io/"
+arch="all"
+license="Apache-2.0"
+depends="kubectl"
+makedepends="go"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/kubernetes-sigs/krew/archive/refs/tags/v$pkgver.tar.gz
+	test-use-testing-tmpdir.patch
+	"
+builddir="$srcdir/krew-$pkgver"
+options="net" # download Go modules
+
+build() {
+	GOLDFLAGS="
+	-X sigs.k8s.io/krew/internal/version.gitCommit=AlpineLinux
+	-X sigs.k8s.io/krew/internal/version.gitTag=v$pkgver
+	"
+	go build -tags netgo -ldflags "$GOLDFLAGS" -o bin/$pkgname ./cmd/krew/main.go
+}
+
+check() {
+	# uses github api and gets 403
+	# shellcheck disable=2046
+	KREW_BINARY="$builddir/bin/$pkgname" go test $(go list ./... | grep -Ev '(cmd/internal)')
+}
+
+package() {
+	install -Dm755 bin/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+70b6178aca94de874618fe64fe7af7cabcf359e3d32421a389b26fe8c5c7e5257959efbbb1894b680fce92540f25837be8a84ff5f3562287a3e1f5f05eac362c  kubectl-krew-0.5.0.tar.gz
+797a0f1361d893289217569e09dd5564fe545eaf2f0b3dc40367c63cb124b8120c5600d190732ced7885a020ae56a9417b49bccb8bca2c87faf72bf3e1359a81  test-use-testing-tmpdir.patch
+"

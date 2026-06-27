@@ -1,0 +1,38 @@
+# Contributor: Erik Wisuri <ewisuri@gmail.com>
+# Maintainer: Erik Wisuri <ewisuri@gmail.com>
+pkgname=kstart
+pkgver=4.3
+pkgrel=1
+pkgdesc="Port of kinit for automated refreshing of service kerberos tickets"
+url="https://www.eyrie.org/~eagle/software/kstart/"
+arch="all"
+license="custom"
+makedepends="krb5-dev perl"
+subpackages="$pkgname-doc"
+source="https://archives.eyrie.org/software/kerberos/kstart-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+sha512sums="
+a5d5e6f7428af82012d2935a05398336cfd7caf66243cce158930e7a9b79f444cf88f5f23ecbc2efe2432493440ef913f60f85820d5d9943687637935eee97fd  kstart-4.3.tar.gz
+"

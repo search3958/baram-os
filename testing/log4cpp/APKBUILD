@@ -1,0 +1,38 @@
+# Contributor: Hidde van der Heide <hvanderheide@nexuz.net>
+# Maintainer: Roberto Oliveira <robertoguimaraes8@gmail.com>
+pkgname=log4cpp
+pkgver=1.1.5
+pkgrel=0
+pkgdesc="Log library for C++"
+url="https://log4cpp.sourceforge.net/"
+arch="all"
+makedepends="autoconf"
+license="LGPL-2.1-or-later"
+subpackages="$pkgname-dev"
+source="https://downloads.sourceforge.net/log4cpp/log4cpp-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname"
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-dot \
+		--disable-static \
+		--disable-doxygen \
+		--without-idsa
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c12d9128499bc8b2ab39d3c7979b81ac5c2f033ddfb942bdcd70e5d06f8a78da0258f2295e716417d0dd7680fde983720ffb55851755297ff03cbf5ca7acdff8  log4cpp-1.1.5.tar.gz
+"

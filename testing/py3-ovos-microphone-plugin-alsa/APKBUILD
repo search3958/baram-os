@@ -1,0 +1,36 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-ovos-microphone-plugin-alsa
+pkgver=0.1.2
+pkgrel=0
+pkgdesc="OpenVoiceOS Microphone plugin"
+url="https://github.com/OpenVoiceOS/ovos-microphone-plugin-alsa"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-ovos-plugin-manager
+	py3-pyalsaaudio
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-microphone-plugin-alsa/archive/refs/tags/V$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/ovos-microphone-plugin-alsa-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+1c9eb908b9ff30db9a42229b4096a4cd6abaf389771ecfd9b3d50d37a1d09a3557054ad5adad13258516f684516ca367a8f5277676b3600c1ec6a06ee7d9497d  py3-ovos-microphone-plugin-alsa-0.1.2.tar.gz
+"

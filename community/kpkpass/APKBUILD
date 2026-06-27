@@ -1,0 +1,44 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kpkpass
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kontact.kde.org/"
+pkgdesc="Apple Wallet Pass reader"
+license="GPL-2.0-or-later"
+depends_dev="
+	karchive-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	samurai
+	shared-mime-info
+	"
+subpackages="$pkgname-dev"
+_repo_url="https://invent.kde.org/pim/kpkpass.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kpkpass-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+41629d51f95784b832989d9323ea243d3fcfe2c4bca02e580cb06cf94a1420097164c3f5678b834800d9665e079acb5267c8367e7acc3938764dbe43a1309ab6  kpkpass-26.04.2.tar.xz
+"

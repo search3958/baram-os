@@ -1,5 +1,0 @@
-#TODO update ring version (after cargo update)
-[source]
-git = "https://github.com/AbdulRhmanAlfaifi/Fennec"
-[build]
-template = "cargo"

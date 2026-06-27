@@ -1,0 +1,41 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=py3-keyutils
+pkgver=0.6
+pkgrel=7
+pkgdesc="python bindings for keyutils"
+url="https://pypi.org/project/keyutils"
+arch="all"
+license="Apache-2.0"
+depends="python3 keyutils"
+makedepends="cython gettext keyutils-dev py3-setuptools python3-dev py3-pytest-runner"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/k/keyutils/keyutils-$pkgver.tar.gz"
+builddir="$srcdir/keyutils-$pkgver"
+
+# https://github.com/sassoftware/python-keyutils/issues/30
+options="!check"
+
+prepare() {
+	default_prepare
+
+	# fix python3 build by deleting stale .c file
+	rm keyutils/_keyutils.c
+}
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py test
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+1e4fcd7988e0a02376f76a2e69f1908a7cc7ff5679cf93480f1c0f3e1c32e6f3bb74bb52d4c5182f10c2d502c4cf190438b1fb906907ebb45c4469ca678f4037  py3-keyutils-0.6.tar.gz
+"

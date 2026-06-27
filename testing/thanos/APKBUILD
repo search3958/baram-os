@@ -1,0 +1,83 @@
+# Contributor: wener <wenermail@gmail.com>
+# Maintainer: wener <wenermail@gmail.com>
+pkgname=thanos
+pkgver=0.41.0
+pkgrel=0
+pkgdesc="Highly available Prometheus setup with long term storage capabilities. CNCF Sandbox project."
+url="https://github.com/thanos-io/thanos"
+license="Apache-2.0"
+# prometheus
+# 32-bit: doesn't build
+# loongarch64 ppc64le s390x: limited by prometheus
+arch="all !x86 !armhf !armv7 !loongarch64 !ppc64le !riscv64 !s390x"
+install="thanos.pre-install"
+makedepends="go prometheus tzdata"
+subpackages="$pkgname-openrc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/thanos-io/thanos/archive/v$pkgver.tar.gz
+	thanos.initd
+	thanos.confd
+	"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	GOLDFLAGS="
+		-X github.com/prometheus/common/version.Version=$pkgver
+		-X github.com/prometheus/common/version.Revision=AlpineLinux
+		-X github.com/prometheus/common/version.Branch=master
+		-X github.com/prometheus/common/version.BuildUser=build@xyz
+		-X github.com/prometheus/common/version.BuildDate=$(date -u "+%Y%m%d-%H:%M:%S" ${SOURCE_DATE_EPOCH:+-d @$SOURCE_DATE_EPOCH})
+	"
+
+	go build \
+		-ldflags "$GOLDFLAGS" \
+		./cmd/thanos
+}
+
+check() {
+	# some tests need external storage credentials or running server
+	# pkg/cacheutil go 1.15 compact
+	# pkg/pool alloc too much memory
+	# internal/cortex/querier/queryrange, pkg/api/query, pkg/exemplars,
+	# pkg/extgrpc, pkg/receive, pkg/receive/writecapnp fail with Go 1.25.
+	# shellcheck disable=2046
+	go test $(go list ./... | grep -v \
+		-e 'test/e2e' \
+		-e 'internal/cortex/querier/queryrange' \
+		-e 'pkg/shipper' \
+		-e 'pkg/store' \
+		-e 'objstore/objtesting' \
+		-e 'pkg/promclient' \
+		-e 'pkg/rules' \
+		-e 'pkg/compact' \
+		-e 'pkg/block' \
+		-e 'pkg/query' \
+		-e 'pkg/api/query' \
+		-e 'pkg/cacheutil' \
+		-e 'pkg/exemplars' \
+		-e 'pkg/extgrpc' \
+		-e 'pkg/pool' \
+		-e 'pkg/receive$' \
+		-e 'pkg/receive/writecapnp' \
+		-e 'pkg/targets' \
+		-e 'pkg/metadata' \
+		)
+}
+
+package() {
+	install -Dm755 thanos "$pkgdir"/usr/bin/thanos
+
+	install -m755 -D "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+70bb33390a3eb8af233bd1f130d9664e710330a8a1e6024a3e7d5b2dcd882ac76746d23c74488e8aa6127a5187818846d61d3a7db6be4873d84c5eec3367b8ba  thanos-0.41.0.tar.gz
+8407adbc29d90d36550ad16555d0b881d1d1745fba7bf5f4bd4a66bdf4abe196321106881dbba569c7e123d6abfbe78714b6e108b1e3c69b051270c3a46ba5c8  thanos.initd
+c1bc9d71828b176eed964d5f673ea5e5d368f25ca21a3b12dcb8f8987f8bf12f35c06849d7fc4e6ffae52d98a5e636bdb63333930fe640c48e4d02a0b8db620a  thanos.confd
+"

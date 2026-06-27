@@ -1,0 +1,49 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-argon2-cffi
+pkgver=25.1.0
+pkgrel=1
+pkgdesc="The secure Argon2 password hashing algorithm"
+url="https://argon2-cffi.readthedocs.io/en/stable/"
+arch="all"
+license="MIT"
+depends="
+	python3
+	py3-argon2-cffi-bindings
+	py3-cffi
+	"
+makedepends="
+	argon2-dev
+	libffi-dev
+	py3-gpep517
+	py3-hatch-fancy-pypi-readme
+	py3-hatch-vcs
+	py3-hatchling
+	python3-dev
+	"
+checkdepends="py3-pytest py3-hypothesis"
+subpackages="$pkgname-pyc"
+source="https://pypi.io/packages/source/a/argon2-cffi/argon2_cffi-$pkgver.tar.gz"
+builddir="$srcdir/argon2_cffi-$pkgver"
+
+build() {
+	export ARGON2_CFFI_USE_SYSTEM=1
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+746f4469cd9be79f4639f814bee99ddca71200a7bfb31c8f34ca88cc760ee73665fc0d4e46d50ca003911fcfab0dd153fd555ec6cb9127066c1e1e0fd63755b5  argon2_cffi-25.1.0.tar.gz
+"

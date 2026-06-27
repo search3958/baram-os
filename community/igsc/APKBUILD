@@ -1,0 +1,45 @@
+# Contributor: FintasticMan <finlay.neon.kid@gmail.com>
+# Maintainer: FintasticMan <finlay.neon.kid@gmail.com>
+pkgname=igsc
+pkgver=0.9.6
+pkgrel=0
+pkgdesc="Intel graphics system controller firmware update library"
+url="https://github.com/intel/igsc"
+arch="x86_64"
+license="Apache-2.0"
+makedepends="
+	cmake
+	cmocka-dev
+	eudev-dev
+	linux-headers
+	metee-dev
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/intel/igsc/archive/refs/tags/V$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DENABLE_TESTS="$(want_check && echo ON || echo OFF)" \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build/tests
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+74264b2a112c9d5da12c58cc5037797c1ce540f9881ff047be411468b7a34b0db517b8f233e4a9ea6667f17d0c9df4faf1380cb55fa2a1fff5b9d0fdd848eedf  igsc-0.9.6.tar.gz
+"

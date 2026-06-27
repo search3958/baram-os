@@ -1,0 +1,160 @@
+# Contributor: Sergey Lukin <sergej.lukin@gmail.com>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=icu
+pkgver=78.1
+pkgrel=0
+pkgdesc="International Components for Unicode library"
+url="https://icu.unicode.org/"
+arch="all"
+license="ICU"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="python3 py3-yaml"
+checkdepends="diffutils"
+install="$pkgname-data-en.post-install"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-data-en:_data_en:noarch
+	$pkgname-data-full:_data_full:noarch
+	"
+source="https://github.com/unicode-org/icu/releases/download/release-$pkgver/icu4c-$pkgver-sources.tgz
+	https://github.com/unicode-org/icu/releases/download/release-$pkgver/icu4c-$pkgver-data.zip
+	https://github.com/unicode-org/icu/releases/download/release-$pkgver/icu4c-$pkgver-data-bin-b.zip
+	https://github.com/unicode-org/icu/releases/download/release-$pkgver/icu4c-$pkgver-data-bin-l.zip
+	standardize-vtzone-output.patch
+	pc.patch
+	data-filter-en.yml
+	fix-32-bit-test.patch
+	"
+builddir="$srcdir/icu/source"
+
+# secfixes:
+#   76.1-r1:
+#     - CVE-2025-5222
+#   66.1-r0:
+#     - CVE-2020-21913
+#   65.1-r1:
+#     - CVE-2020-10531
+#   57.1-r1:
+#     - CVE-2016-6293
+#   58.1-r1:
+#     - CVE-2016-7415
+#   58.2-r2:
+#     - CVE-2017-7867
+#     - CVE-2017-7868
+
+case "$CARCH" in
+	s390x|ppc64) _icudtfile=icudt${pkgver%%.*}b.dat;;
+	*) _icudtfile=icudt${pkgver%%.*}l.dat;;
+esac
+
+prepare() {
+	default_prepare
+	update_config_sub
+
+	rm -rf data
+	mv "$srcdir"/data .
+}
+
+build() {
+	_yaml2json "$srcdir"/data-filter-en.yml > data-filter-en.json
+	export ICU_DATA_FILTER_FILE="./data-filter-en.json"
+
+	case "$CARCH" in
+	armv7)
+		# bus error with -Os for some reason
+		export CFLAGS="$CFLAGS -O2"
+		export CXXFLAGS="$CXXFLAGS -O2"
+		;;
+	esac
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--with-data-packaging=archive \
+		--disable-samples \
+		--enable-static \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	# Tests need full data.
+	export ICU_DATA="$srcdir"/$_icudtfile
+
+	CINTLTST_OPTS='-w' make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm644 "$srcdir"/icu/license.html -t "$pkgdir"/usr/share/licenses/icu/
+}
+
+dev() {
+	default_dev
+
+	amove usr/lib/icu
+	amove usr/lib/libicutest.so.*
+	amove usr/share/icu/*/LICENSE
+	amove usr/share/icu/*/config
+	amove usr/share/icu/*/install-sh
+	amove usr/share/icu/*/mkinstalldirs
+}
+
+libs() {
+	pkgdesc="$pkgdesc (libraries)"
+	depends="$pkgname-data=$pkgver-r$pkgrel"
+	replaces="icu"
+
+	# Data stub required by the Common and I18n libraries.
+	amove usr/lib/libicudata.so.[0-9]*
+	# A library that contains many locale based internationalization (i18n) functions.
+	amove usr/lib/libicui18n.so.[0-9]*
+	# An optional library that provides a stdio like API with Unicode support.
+	amove usr/lib/libicuio.so.[0-9]*
+	# Base library required by all other ICU libraries.
+	amove usr/lib/libicuuc.so.[0-9]*
+
+	# An internal library that contains internal APIs that are only used by ICU’s tools.
+	# Keep in the base package.
+	#amove usr/lib/libicutu.so.[0-9]*
+}
+
+_data_en() {
+	pkgdesc="Stripped down ICU data with only en_US/GB locale and no legacy charset converters"
+	provides="$pkgname-data=$pkgver-r$pkgrel"
+	provider_priority=100  # highest (other provider is icu-data-full)
+	replaces="$pkgname-data<71.1-r1"
+
+	amove usr/share/icu/$pkgver/$_icudtfile
+}
+
+_data_full() {
+	pkgdesc="Full ICU data"
+	provides="$pkgname-data=$pkgver-r$pkgrel"
+	provider_priority=10  # lowest (other provider is icu-data-en)
+	replaces="$pkgname-data<71.1-r1"
+
+	install -D -m644 "$srcdir"/$_icudtfile -t "$subpkgdir"/usr/share/icu/$pkgver/
+}
+
+_yaml2json() {
+	python3 -c 'import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout)' <"$1"
+}
+
+sha512sums="
+c366398fdb50afc6355a8c45ed1d68a18eaa5f07a5d1c4555becbcfb9d4073e65ebe1e9caf24b93779b11b36cd813c98dd59e4b19f008851f25c7262811c112d  icu4c-78.1-sources.tgz
+74c314148e9f65d304341457c574f26ac5cc80b518df5d7bb04fe94f890a2fadd8ffbd5cd0e6e305e32e384c07f558befb7eae061232c1b4d0e0bec48ea62b2e  icu4c-78.1-data.zip
+7f38983815df4248c34ed5fae2a310d959c5408d2213f9d5f043f5f724fe34e9c9064f320b33dbc3b4c353173d90c297626aef1d6b6b1735e6887194db4c0582  icu4c-78.1-data-bin-b.zip
+bac376c4f3f3d9a2cdf05ec8ae6b95697bf00f86bd41b652258f088503a239bc458a4e3fd5e0eed0dfc449de83266c610c5057e300c924ba54f8b23befa514fb  icu4c-78.1-data-bin-l.zip
+c76fd529f92a7b27a45a307c8bb91c109910d012478414b08983af3320e29fbe76e03d8434c4efbde68ecaa56a86130d6514428c5a1085985634bc3650e8e96e  standardize-vtzone-output.patch
+c42817874c7ec659295d0b4f4058458deea1b78cd0e690bcab4f5affe5edb258e510fcf1cce0586c86ea2ec342feb4d57c9357fc148259ee979257ea26c7aa84  pc.patch
+609541c1ac10c12b2b52f7800a2057d5c97e49dc9a1774a1b53e13d88599128baa7637f1a63b4de52dfe58b1038c7f3462ef29ad223dbe2ecb2862e3249a1cf4  data-filter-en.yml
+c01ca145954a1eab3f2d371550c580f9f7ce96b6858de1360cb5cc157fd4b1af22ed1b32d9515a22055686cf5968aee113981e33412ed3dc8a52b2eedda8e216  fix-32-bit-test.patch
+"

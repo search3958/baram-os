@@ -1,8 +1,0 @@
-#TODO xdg-home crate error (after cargo update)
-[source]
-git = "https://github.com/odilia-app/odilia"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages odilia
-"""

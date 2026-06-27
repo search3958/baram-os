@@ -1,0 +1,48 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-jaraco.functools
+pkgver=4.5.0
+pkgrel=0
+pkgdesc="Functools like those found in stdlib"
+url="https://github.com/jaraco/jaraco.functools"
+arch="noarch"
+license="MIT"
+depends="
+	py3-jaraco.classes
+	py3-more-itertools
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/j/jaraco_functools/jaraco_functools-$pkgver.tar.gz"
+builddir="$srcdir/jaraco_functools-$pkgver"
+
+# backwards compatibility for old name
+replaces="py3-jaraco-functools"
+provides="py3-jaraco-functools=$pkgver-r$pkgrel"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b674baff8f5f882b82deb86f09da8db8a2a78cf7658f0348edaf690da38804f064191a9311d95b6aefe74a3bb31408e0a1acd577a6e4f2553a7ebb340521615f  jaraco_functools-4.5.0.tar.gz
+"

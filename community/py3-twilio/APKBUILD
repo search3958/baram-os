@@ -1,0 +1,63 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-twilio
+pkgver=9.10.9
+pkgrel=0
+arch="noarch"
+pkgdesc="Twilio API client and TwiML generator"
+url="https://pypi.python.org/project/twilio"
+license="MIT"
+depends="
+	py3-requests
+	py3-jwt
+	py3-aiohttp
+	py3-aiohttp-retry
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+# missing py3-pyngrok, py3-autoflake, py3-recommonmark
+checkdepends="
+	black
+	py3-sphinx
+	py3-mock
+	py3-pytest
+	py3-pytest-cov
+	py3-aiounittest
+	py3-flake8
+	py3-cryptography
+	py3-django
+	py3-multidict
+	"
+subpackages="$pkgname-pyc"
+_pyname=twilio-python
+source="$pkgname-$pkgver.tar.gz::https://github.com/twilio/twilio-python/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+options="net" # tests against actual api.twilio.com (?)
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# tests/cluster require Twilio API access
+	# test_request_retries_until_{max, success}:fails due to issue with latest release of py3-aiohttp-retry, see
+	# 	https://github.com/twilio/twilio-python/pull/819
+	.testenv/bin/python3 -m pytest -v --ignore=tests/cluster \
+		-k 'not test_request_retries_until_max and not test_request_retries_until_success'
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+4a3e516b9c61b637a44052fa1979a6a24e2f30abd6c5fa1b767571f41db015514d9f231d6d640fce4650bb99b28c60b465ffa4916efb798b9c0b886b46b94461  py3-twilio-9.10.9.tar.gz
+"

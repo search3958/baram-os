@@ -1,0 +1,50 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=py3-digitalocean
+pkgver=1.17.0
+pkgrel=4
+pkgdesc="Python module to manage Digital Ocean droplets"
+url="https://github.com/koalalorenzo/python-digitalocean"
+arch="noarch"
+license="LGPL-3.0-only"
+depends="
+	py3-jsonpickle
+	py3-requests
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest
+	py3-responses
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/koalalorenzo/python-digitalocean/archive/refs/tags/v$pkgver/python-digitalocean-$pkgver.tar.gz
+	python-3.14.patch
+	"
+builddir="$srcdir/python-digitalocean-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+3b5f5adb5fac9693450954e568433cecb43152d4cb2b5709126dc7c69c6b84f19428dcd3688718588a986d3ea9170a956387f3050cd10a69ba89d5dcdf8e100c  python-digitalocean-1.17.0.tar.gz
+025f2479eec6ee04b1609e4824336963a855af6a77e495860fa3b99122cdc8b71fcc2dac663a1b1066890093c449e35d7087e644f507b0c9588b03dd73b94ca7  python-3.14.patch
+"

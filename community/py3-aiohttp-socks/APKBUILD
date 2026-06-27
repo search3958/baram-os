@@ -1,0 +1,33 @@
+# Maintainer: Michał Adamski <michal@ert.pl>
+pkgname=py3-aiohttp-socks
+pkgver=0.8.4
+pkgrel=2
+pkgdesc="Proxy connector for aiohttp"
+url="https://github.com/romis2012/aiohttp-socks"
+arch="noarch"
+license="Apache-2.0"
+depends="python3 py3-aiohttp py3-attrs py3-python-socks"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/a/aiohttp_socks/aiohttp_socks-$pkgver.tar.gz"
+builddir="$srcdir/aiohttp_socks-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# no tests in pypi tarball + they need testing/3proxy to run
+	PYTHONPATH=build/lib python3 -c "import aiohttp_socks"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6b71661c666c5c76a352c7f1855df9da126174aecf59a295e175eafa8bfb4d077893bffa9b435559a77d74aa698586b8b87bc1b06da1ae057ce2e98f2ef259e7  aiohttp_socks-0.8.4.tar.gz
+"

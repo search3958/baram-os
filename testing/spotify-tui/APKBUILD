@@ -1,0 +1,36 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=spotify-tui
+pkgver=0.25.0
+pkgrel=2
+pkgdesc="Spotify for the terminal written in Rust"
+url="https://github.com/Rigellute/spotify-tui"
+arch="x86_64 armv7 armhf aarch64 x86 ppc64le" # limited by rust/cargo
+license="MIT"
+makedepends="cargo openssl-dev libxcb-dev python3 cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Rigellute/spotify-tui/archive/v$pkgver/spotifyd-$pkgver.tar.gz
+	deps.patch
+	"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m 755 target/release/spt -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+92a2ab53059b7d58e502a732f16a8eb725e19ea2e13c4f63dd64e3f0d62a3999f6b6b338c396db734f6ee9d63459da15e69b392f945c8f967d794447ac5ff8a4  spotify-tui-0.25.0.tar.gz
+6e0e8b5c6e1c9417f85ad2b04d80ce86743080755668e1685e1361ef7cc621dd6c84ee4da973853123389d18eb97d9fbbc2d9e9ed0ffca75246eadf44040f0fc  deps.patch
+"

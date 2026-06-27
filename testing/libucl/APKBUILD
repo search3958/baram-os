@@ -1,0 +1,42 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=libucl
+pkgver=0.9.0
+pkgrel=0
+pkgdesc="Universal configuration library parser"
+url="https://github.com/vstakhov/libucl"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	autoconf
+	automake
+	libtool
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/vstakhov/libucl/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # fail for no reason
+
+prepare() {
+	default_prepare
+	autoreconf -fvi
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--build=$CBUILD \
+		--host=$CHOST
+
+	make
+}
+
+check() {
+	make -j1 check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a7bcb03dc3b5e3b8e5c141fb3edee0c749e20d63ad69fba4d3c6ca56ef56b1130287b0f497de37bf9789c2263a46121c662fedc7a870354c2849d2e14d90cab5  libucl-0.9.0.tar.gz
+"

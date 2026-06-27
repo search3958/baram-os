@@ -1,0 +1,54 @@
+# Contributor: Ariadne Conill <ariadne@dereferenced.org>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=libubox
+pkgver=2026.02.13
+pkgrel=0
+_owrtgit=1aa36ee7
+pkgdesc="OpenWrt utility and data structures library"
+url="https://git.openwrt.org/project/ustream-ssl.git"
+arch="all"
+license="ISC"
+depends_dev="libubox json-c-dev"
+makedepends="cmake samurai zstd $depends_dev"
+subpackages="libblobmsg jshn $pkgname-static $pkgname-dev"
+source="https://sources.openwrt.org/libubox-$pkgver~$_owrtgit.tar.zst"
+builddir="$srcdir/libubox-$pkgver~$_owrtgit"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	CFLAGS="$CFLAGS -fPIC -DPIC" cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_LUA=OFF \
+		-DBUILD_EXAMPLES=OFF \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+jshn() {
+	amove usr/bin/jshn
+	amove usr/share/libubox/jshn.sh
+}
+
+libblobmsg() {
+	amove usr/lib/libblobmsg_json.so
+	amove usr/lib/libjson_script.so
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+1062a924a33f00b8b1198c5c4b4a2b2ab19cfa58e9c8c4f92b330d029e3535f59e92004ac9c00f930672ebcc7d4ff3f02545d0d895437b70f71274696725be2b  libubox-2026.02.13~1aa36ee7.tar.zst
+"

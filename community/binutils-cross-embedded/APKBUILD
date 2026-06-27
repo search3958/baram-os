@@ -1,0 +1,175 @@
+# Contributor: Stefan Wagner <stw@bit-strickerei.de>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Based on binutils-avr
+_pkgbase=binutils
+pkgname="$_pkgbase-cross-embedded"
+pkgver=2.45.1
+pkgrel=0
+pkgdesc="tools necessary to build programs for embedded targets"
+url="https://www.gnu.org/software/binutils/"
+makedepends="gettext libtool autoconf automake bison texinfo zlib-dev zstd-dev"
+arch="all"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause"
+source="https://ftp.gnu.org/gnu/$_pkgbase/$_pkgbase-$pkgver.tar.xz"
+builddir="$srcdir/$_pkgbase-$pkgver"
+
+# classify targets as exotic or mainstream. Only build support for
+# exotic targets on typical developer / CI hardware (x86_86, aarach64).
+_targets_mainstream="
+	arm-none-eabi
+	avr
+	riscv-none-elf
+	"
+
+_targets_exotic="
+	msp430-elf
+	or1k-elf
+	aarch64-none-elf
+	xtensa-none-elf
+	xtensa-esp32-elf
+	xtensa-esp32s2-elf
+	xtensa-esp32s3-elf
+	xtensa-esp8266-elf
+	i386-elf
+	x86_64-elf
+	"
+
+case "$CARCH" in
+x86_64|aarch64|loongarch64)
+	# support all targets on typical workstation / notebook / CI servers
+	_targets="$_targets_mainstream $_targets_exotic"
+	makedepends="$makedepends xtensa-dynconfig"
+	;;
+*)
+	# support only mainstream targets on exotic hosts
+	_targets="$_targets_mainstream"
+	;;
+esac
+
+for target in $_targets; do
+	case "$target" in
+	xtensa-esp*-elf)
+		subpackages="$_pkgbase-$target:_install_esp $subpackages"
+		;;
+	*)
+		subpackages="$_pkgbase-$target:_install_subpkg $subpackages"
+		;;
+	esac
+done
+
+# secfixes:
+#   2.37-r0:
+#     - CVE-2020-35448
+
+build() {
+	for target in $_targets; do
+		case "$target" in
+		xtensa-esp*-elf)
+			# no need to build for ESP targets, we will just provide
+			# wrappers to xtensa-none-elf with xtensa-dynconfig
+			;;
+		*)
+			local workingdir
+			workingdir="$srcdir/build-$target"
+			mkdir -p "$workingdir"
+			cd "$workingdir"
+			"$builddir"/configure \
+				--target=$target \
+				--with-sysroot=/usr/$target \
+				--prefix=/usr/ \
+				--libdir=/usr/$target/lib \
+				--infodir=/deleteme/info \
+				--htmldir=/deleteme/html \
+				--pdfdir=/deleteme/pdf \
+				--mandir=/deleteme/man \
+				--with-gnu-as \
+				--with-gnu-ld \
+				--enable-deterministic-archieves \
+				--enable-interwork \
+				--enable-lto \
+				--enable-multilib \
+				--enable-plugins \
+				--enable-ld=default \
+				--disable-nls
+			make tooldir=/usr
+		esac
+	done
+}
+
+check() {
+	for target in $_targets; do
+		case "$target" in
+		xtensa-esp*-elf)
+			# only wrappers, nothing to check
+			;;
+		*)
+			local workingdir
+			workingdir="$srcdir/build-$target"
+			cd "$workingdir"
+			make check
+			;;
+		esac
+	done
+}
+
+package() {
+	for target in $_targets; do
+		depends="$depends $_pkgbase-$target"
+	done
+	mkdir -p "$pkgdir"
+}
+
+_install_subpkg() {
+	local target
+	target="${subpkgname#"$_pkgbase-"}"
+	pkgdesc="Tools necessary to build programs for $target"
+	workingdir="$srcdir/build-$target"
+	cd "$workingdir"
+	make install DESTDIR="$subpkgdir"
+	rm -rf "$subpkgdir"/deleteme
+	for bin in ar as nm objcopy objdump ranlib strip readelf; do
+		rm -f "$subpkgdir"/usr/bin/"$bin"
+	done
+}
+
+_install_esp() {
+	local target
+	target="${subpkgname#"$_pkgbase-"}"
+	local mcu
+	mcu="${target#xtensa-}"
+	mcu="${mcu%-elf}"
+	pkgdesc="Tools necessary to build programs for $target"
+	depends="binutils-xtensa-none-elf=$pkgver-r$pkgrel xtensa-dynconfig-$mcu"
+	arch="noarch"
+	local cmds
+	cmds="
+		addr2line
+		ar
+		as
+		c++filt
+		elfedit
+		gprof
+		ld
+		ld.bfd
+		nm
+		objcopy
+		objdump
+		ranlib
+		readelf
+		size
+		strings
+		strip
+		"
+	mkdir -p "$subpkgdir/usr/bin"
+	for cmd in $cmds; do
+		cat > "$subpkgdir/usr/bin/$target-$cmd" << EOF
+#!/bin/sh
+exec env XTENSA_GNU_CONFIG=/usr/lib/xtensa-dynconfig/xtensa_$mcu.so xtensa-none-elf-$cmd "\$@"
+EOF
+		chmod +x "$subpkgdir/usr/bin/$target-$cmd"
+	done
+}
+
+sha512sums="
+ea030419eba387579ab717be7e3223fc99e93b586860b06003c12489f93441640d4082736f76aa5e98233db4f46e232f536a45e471486de1f5b64e1b827c167e  binutils-2.45.1.tar.xz
+"

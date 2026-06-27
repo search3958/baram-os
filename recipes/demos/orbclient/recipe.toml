@@ -1,8 +1,0 @@
-[source]
-git = "https://gitlab.redox-os.org/redox-os/orbclient.git"
-
-[build]
-template = "cargo"
-cargoexamples = [
-    "simple"
-]

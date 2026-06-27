@@ -1,0 +1,55 @@
+maintainer=""
+pkgname=kissfft
+pkgver=131.2.0_git20260422
+_gitrev=6e9e673e420c4bf47d4a60c57c578f93e4ec192f
+pkgrel=1
+pkgdesc="Fast Fourier Transform (FFT) library that tries to Keep it Simple, Stupid"
+url="https://github.com/mborgerding/kissfft"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="
+	cmake
+	fftw-dev
+	libpng-dev
+	samurai
+	"
+checkdepends="
+	py3-numpy
+	python3
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-libs
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mborgerding/kissfft/archive/$_gitrev/kissfft-$_gitrev.tar.gz
+	mpil.patch
+	"
+builddir="$srcdir/$pkgname-$_gitrev"
+
+# secfixes:
+#   131.2.0_git20260422-r0:
+#     - CVE-2026-41445
+
+build() {
+	CFLAGS="$CFLAGS -O2 -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -O2 -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DKISSFFT_TEST="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+320285382095a69fe6cd1c46e941f1039e159f5fa13f5a6398d7beda76c0d5a2a4902d4ee56bc553bcf289654ecf1f9a3ae3068a068b63432778b4734244dd65  kissfft-131.2.0_git20260422.tar.gz
+fa1311363ba71bf3d091836d64fffd556e3221c2c7131de8fb640cfd86607e35db88c9b93b9f7c175344ab6c3629e1b571936dd986750199c27ba229d43032b0  mpil.patch
+"

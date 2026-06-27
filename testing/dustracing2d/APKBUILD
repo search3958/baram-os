@@ -1,0 +1,38 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=dustracing2d
+_pkgname=DustRacing2D
+pkgver=2.2.0
+pkgrel=0
+pkgdesc="Traditional top-down car racing game including a level editor"
+url="http://juzzlin.github.io/DustRacing2D/"
+arch="all"
+license="GPL-3.0-or-later"
+depends="qt6-qtbase-sqlite"
+makedepends="cmake qt6-qttools-dev openal-soft-dev libvorbis-dev glu-dev samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/juzzlin/DustRacing2D/archive/refs/tags/$pkgver.tar.gz
+	cstdint.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_TESTING="$(want_check && echo ON || echo OFF)" \
+		-DReleaseBuild=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ef636df93c70ea18c343d9b639bd5e8a3770f13aa01ba95837d188841b307e923238b0490e7642a752f72986e2f5c0353b04706ccb89bd406730e7602fb45390  dustracing2d-2.2.0.tar.gz
+4a05838cda819f9dadcf74f1151825ea6d325b5c9b39465847080e9cfa7018c1f08be5096306bca2fa92842b2282c868929aadd1361dd897479bd10afdf6d1a0  cstdint.patch
+"

@@ -1,0 +1,34 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-game-libretro-atari800
+pkgver=3.1.0.28
+_realname=Nexus
+pkgrel=0
+pkgdesc="Atari800 for libretro/libco WIP"
+options="!check" # no test suite
+url="https://github.com/kodi-game/game.libretro.atari800"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="GPL-2.0-only"
+depends="kodi-game-libretro libretro-atari800"
+makedepends="cmake kodi-dev samurai"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/kodi-game/game.libretro.atari800/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/game.libretro.atari800-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -v "$pkgdir"/usr/lib/kodi/addons/game.libretro.atari800/game.libretro.atari800.so
+	ln -sfv /usr/lib/libretro/atari800_libretro.so \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.atari800/game.libretro.atari800.so
+}
+
+sha512sums="
+4ff46faa3a075cfb2e877c0d44c501434b234cd9cc010706e0a3dde3e0a1dab197dd9a1bead9e7b6219873a03415139feb7050deab25352fdaf2e45bbd7c7d94  kodi-game-libretro-atari800-3.1.0.28-Nexus.tar.gz
+"

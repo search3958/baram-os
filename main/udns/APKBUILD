@@ -1,0 +1,37 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=udns
+pkgver=0.6
+pkgrel=0
+pkgdesc="DNS Resolver Library"
+options="!check" # No testsuite
+url="http://www.corpit.ru/mjt/udns.html"
+arch="all"
+license="LGPL-2.1-or-later"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://www.corpit.ru/mjt/udns/udns-$pkgver.tar.gz"
+
+build() {
+	./configure
+	make
+	make sharedlib
+}
+
+package() {
+	install -Dm755 dnsget rblcheck ex-rdns \
+		-t "$pkgdir"/usr/bin
+
+	install -Dm644 udns.h \
+		-t "$pkgdir"/usr/include
+	install -Dm755 libudns.so.0 \
+		-t "$pkgdir"/usr/lib
+	ln -s libudns.so.0 "$pkgdir"/usr/lib/libudns.so
+
+	install -Dm644 dnsget.1 rblcheck.1 \
+		-t "$pkgdir"/usr/share/man/man1
+	install -Dm644 udns.3 \
+		-t "$pkgdir"/usr/share/man/man3
+}
+
+sha512sums="
+9846c476e23f148565d2ea986352c34a364ec5b949db3821a8ed6bdf5d33b830f0afbbcf4d441420a36c57620236a01ef04f6f8b2619f6ec64595bab5524afe1  udns-0.6.tar.gz
+"

@@ -1,0 +1,48 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=qtkeychain
+pkgver=0.15.0
+pkgrel=0
+pkgdesc="Qt API to store passwords and other secret data"
+url="https://github.com/frankosterfeld/qtkeychain"
+arch="all"
+license="BSD-2-Clause"
+depends="dbus:org.freedesktop.Secrets"
+makedepends="
+	cmake
+	libsecret-dev
+	qt6-qttools-dev
+	samurai
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-lang
+	"
+# replace prior names
+replaces="qtkeychain"
+source="$pkgname-$pkgver.tar.gz::https://github.com/frankosterfeld/qtkeychain/archive/$pkgver.tar.gz"
+options="!check"
+
+build() {
+	export CXXFLAGS="$CXXFLAGS -DNDEBUG -flto=auto"
+
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_WITH_QT6=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+lang() {
+	amove usr/share/qt6keychain/translations
+}
+
+sha512sums="
+b1068ae513d5eab8f300186497ddcce4075e11a2a569deddbc949177efaa27970ed7bdce0b1aff61a021144540e942f60c9259b975601a92c60b8a742754624a  qtkeychain-0.15.0.tar.gz
+"

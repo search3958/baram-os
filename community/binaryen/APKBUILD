@@ -1,0 +1,102 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=binaryen
+pkgver=129
+pkgrel=0
+pkgdesc="Compiler infrastructure and toolchain library for WebAssembly, in C++"
+url="https://github.com/WebAssembly/binaryen"
+# s390x: tests fail (endian issues)
+arch="all !s390x"
+license="Apache-2.0"
+makedepends="
+	clang
+	cmake
+	lld
+	python3
+	samurai
+	"
+checkdepends="
+	filecheck
+	gtest-dev
+	llvm-test-utils
+	nodejs
+	util-linux
+	"
+subpackages="$pkgname-dev"
+# test/spec/testsuite submodule
+_testsuite_gitrev=4b24564c844e3d34bf46dfcb3c774ee5163e31cc
+source="https://github.com/WebAssembly/binaryen/archive/version_$pkgver/binaryen-$pkgver.tar.gz
+	https://github.com/WebAssembly/testsuite/archive/$_testsuite_gitrev/binaryen-testsuite-$_testsuite_gitrev.tar.gz
+	use-system-gtest.patch
+	"
+builddir="$srcdir/$pkgname-version_$pkgver"
+
+# secfixes:
+#   129-r0:
+#     - CVE-2025-14956
+#     - CVE-2025-14957
+
+
+prepare() {
+	rmdir test/spec/testsuite
+	mv "$srcdir"/testsuite-$_testsuite_gitrev test/spec/testsuite
+
+	# Requires v8 command.
+	rm -r test/lit/d8
+
+	default_prepare
+}
+
+build() {
+	case "$CARCH" in
+	arm*|aarch64|riscv64|loongarch64)
+		export CFLAGS="${CFLAGS/-fstack-clash-protection}"
+		export CXXFLAGS="${CFLAGS/-fstack-clash-protection}"
+		;;
+	esac
+
+	CC=clang \
+	CXX=clang++ \
+	LDFLAGS="$LDFLAGS -Wl,-z,stack-size=0x100000" \
+	cmake -G Ninja -B build \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DBUILD_SHARED_LIBS=ON \
+		-DBUILD_TESTS=$(want_check && echo ON || echo OFF)
+	cmake --build build
+}
+
+check() {
+	# Tests are extremely chatty.
+	msg 'running tests with stdout/stderr redirected into ./check.log...'
+	python3 check.py --binaryen-bin build/bin > check.log 2>&1 || {
+		echo 'tests failed, printing last 1000 lines of check.log:' >&2
+		tail -n 1000 check.log
+
+		case "$CARCH" in
+			# XXX: Ignore test failures on 32-bit arches (broken tests),
+			#  ppc64le and riscv64.
+			arm* | ppc64le | riscv64 | x86) return 0;;
+			*) return 1;;
+		esac
+	}
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+dev() {
+	default_dev
+
+	# XXX: doesn't exist on riscv64
+	amove usr/bin/binaryen-unittests || true
+}
+
+sha512sums="
+7a668e4a50f82d01cf10c5f654ff446e2bdc691cfe8bc16e3889033c7c3450c50fb2d16bd33b11fe7938fbbc8a77f855281179f14a2e297ff3b3cb81afe995cd  binaryen-129.tar.gz
+c6647d2afcd28f0f42e2a50e26362f60f7234abd6421aea832c267e5c62ac6e8dc77c5d3c26803ebc2eb878a18c3856ab2bcee277884d5d410a566d2c0b855e2  binaryen-testsuite-4b24564c844e3d34bf46dfcb3c774ee5163e31cc.tar.gz
+2c488e56a9477b623c72b47004cb463b8da292c5b62a5faf642eda45fb4d4a38a28873961164d5c23e6b437f6fa507579bb1ad2e38b216dc59a72f3af8086314  use-system-gtest.patch
+"

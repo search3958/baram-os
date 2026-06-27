@@ -1,0 +1,44 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xf86-video-r128
+pkgver=6.13.0
+pkgrel=0
+pkgdesc="ATI Rage128 video driver"
+url="https://xorg.freedesktop.org"
+arch="all"
+license="MIT"
+subpackages="$pkgname-doc"
+makedepends="
+	expat-dev
+	libdrm-dev
+	libxi-dev
+	mesa-dev
+	util-macros
+	xorg-server-dev
+	xorgproto
+	"
+source="https://www.x.org/releases/individual/driver/$pkgname-$pkgver.tar.xz"
+
+build() {
+	export CFLAGS="${CFLAGS/-fno-plt}"
+	export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+	export LDFLAGS="$LDFLAGS -Wl,-z,lazy"
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-dri
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+}
+
+sha512sums="
+6eae2a4f3a563d00c357025ffd3206c2b20cd35327af21add052a28447da9c0f642569bfb423cacb8989995bc92fc73cddd96d673e64438d1d7569eb926fb2ae  xf86-video-r128-6.13.0.tar.xz
+"

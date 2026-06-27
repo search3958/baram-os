@@ -1,0 +1,23 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=wine_gecko
+pkgver=2.47.4
+pkgrel=0
+pkgdesc="Wine's built-in replacement for Microsoft's Internet Explorer"
+url="https://wiki.winehq.org/Gecko"
+arch="x86 x86_64"
+license="MPL"
+options="!archcheck !check" # no tests provided
+source="https://dl.winehq.org/wine/wine-gecko/$pkgver/wine-gecko-$pkgver-x86.msi
+	https://dl.winehq.org/wine/wine-gecko/$pkgver/wine-gecko-$pkgver-x86_64.msi"
+builddir="$srcdir"
+
+package() {
+	install -Dm644 "$srcdir"/wine-gecko-$pkgver-$CARCH.msi \
+		"$pkgdir"/usr/share/wine/gecko/$pkgname-$pkgver-$CARCH.msi
+}
+
+sha512sums="
+7adb6c9b59444245d3a0ceb372e5054297723f517ea62d37e7bf02db76f2c0e9a4a64777ea7300ad051ea2281668df2d8680f3889e53f295b40aa1919fe453e5  wine-gecko-2.47.4-x86.msi
+075f95ff7a33ad0af6ad53fe8f0f6e2ab233ceb950957d2fbf7d4955543dfe143d14fade283061df14562e6345a7cbaf754fc92d591ea03a5573accb290ae530  wine-gecko-2.47.4-x86_64.msi
+"

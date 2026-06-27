@@ -1,0 +1,52 @@
+# Maintainer: Jordan Christiansen <xordspar0@gmail.com>
+pkgname=lua-language-server
+pkgver=3.16.1
+pkgrel=1
+pkgdesc="Language Server for Lua"
+url="https://github.com/LuaLS/lua-language-server"
+# s390x: fails tests
+arch="all !s390x"
+license="MIT"
+makedepends="bash binutils-dev libunwind-dev linux-headers samurai"
+subpackages="$pkgname-doc"
+source="https://github.com/LuaLS/lua-language-server/archive/refs/tags/$pkgver/lua-language-server-$pkgver.tar.gz
+	lua-language-server-submodules-$pkgver.zip.noauto::https://github.com/LuaLS/lua-language-server/releases/download/$pkgver/lua-language-server-$pkgver-submodules.zip
+	wrapper
+
+	32-bit-arm.patch
+	"
+
+prepare() {
+	unzip -o "$srcdir"/lua-language-server-submodules-$pkgver.zip.noauto \
+		-d "$builddir"
+	default_prepare
+}
+
+build() {
+	ninja -C 3rd/luamake -f compile/ninja/linux.ninja
+	./3rd/luamake/luamake all
+}
+
+check() {
+	./3rd/luamake/luamake unit-test
+}
+
+package() {
+	install -Dm755 "$srcdir"/wrapper "$pkgdir"/usr/bin/lua-language-server
+	install -Dm755 bin/lua-language-server \
+		-t "$pkgdir"/usr/lib/lua-language-server/bin
+	install -Dm644 bin/main.lua \
+		-t "$pkgdir"/usr/lib/lua-language-server/bin
+	install -Dm644 debugger.lua main.lua \
+		-t "$pkgdir"/usr/lib/lua-language-server
+	cp -a locale meta script "$pkgdir"/usr/lib/lua-language-server
+
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+9c32149cb473e5e996d6f7ede1066602b8ae25609c4a8d5fef7d19915a634ba4d93a4b51f888c69d9767e19bae404adc16de1e88d34cf1bba9e99e1901db37a4  lua-language-server-3.16.1.tar.gz
+0fd267ceb35284a7d300af2c1c464ffd6cb2e1fe3945ea936fe5e2316af52838ada4eb9b018a6bb396e95f9eac27e00309d7ed51a7f4bc34529077c3438234cf  lua-language-server-submodules-3.16.1.zip.noauto
+d8d34d2ae8073c256b5f98f4cc7db058fbb92d63a5709894fca898ab47fcfcfca2d1419a1060c29464fbad937e3d09f0cde404b4d98609eec934ea4392044849  wrapper
+dc6ef7feaef17d034c320af94ecf5e7f018ccc7c40282de9a691546e3e94d789b4cca78614c7a8de40def9339df7122ab35a80b132c29a1d1ed44de07d79684f  32-bit-arm.patch
+"

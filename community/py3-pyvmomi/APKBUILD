@@ -1,0 +1,35 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-pyvmomi
+pkgver=9.0.0.0
+pkgrel=1
+pkgdesc="VMware vSphere Python SDK"
+url="https://github.com/vmware/pyvmomi"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest py3-vcrpy"
+subpackages="$pkgname-pyc"
+source="https://github.com/vmware/pyvmomi/archive/v$pkgver/py3-pyvmomi-$pkgver.tar.gz"
+builddir="$srcdir/pyvmomi-$pkgver"
+options="!check" # tests are massively outdated
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+47fbab3124abfc4449313cb61195c96d1d4dfb6ecc004d7bd9ecd9e62eea0186e86f88f88692b818fe25ecba3cd208b89732ecaba8b52aecd2381d23acd49deb  py3-pyvmomi-9.0.0.0.tar.gz
+"

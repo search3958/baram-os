@@ -1,0 +1,47 @@
+# Contributor: Mika Havela <mika.havela@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=fontconfig
+pkgver=2.18.1
+pkgrel=0
+pkgdesc="Library for configuring and customizing font access"
+url="https://www.freedesktop.org/wiki/Software/fontconfig"
+arch="all"
+license="MIT"
+makedepends="freetype-dev expat-dev python3-dev gperf util-linux-dev docbook2x"
+checkdepends="bash json-c-dev uuidgen curl"
+triggers="$pkgname.trigger=/usr/share/fonts/*"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+source="https://gitlab.freedesktop.org/api/v4/projects/890/packages/generic/fontconfig/$pkgver/fontconfig-$pkgver.tar.xz
+	"
+
+# For generation of man pages
+export DOC2MAN=docbook2x-man
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--enable-static \
+		--enable-docs \
+		--disable-nls
+	make
+
+	# test tries to download google fonts from internet
+	# https://gitlab.freedesktop.org/fontconfig/fontconfig/-/blob/2.15.0/test/run-test.sh#L435
+	chmod -x test/test-crbug1004254
+}
+
+check() {
+	make -j1 check || (cat test/test-suite.log; false)
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+5d637a030625fa5b55399a2711b4dd48949429caae4b80503655bc7bd12b9a58cc278b520660845c9e93dcac4631ad5c36bf97793ac1af1b8f3131e7bd22077c  fontconfig-2.18.1.tar.xz
+"

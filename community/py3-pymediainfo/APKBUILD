@@ -1,0 +1,37 @@
+# Contributor: Philipp Glaum <p@pglaum.de>
+# Maintainer: Philipp Glaum <p@pglaum.de>
+pkgname=py3-pymediainfo
+_pkgname=pymediainfo
+pkgver=6.1.0
+pkgrel=2
+pkgdesc="Python wrapper for the MediaInfo library"
+url="https://pypi.org/project/pymediainfo/"
+arch="noarch"
+license="MIT"
+depends="libmediainfo"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm py3-wheel"
+checkdepends="py3-pytest-xdist py3-pytest-runner"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+2c32134f42794a7228591d96e2cbe64b30693b671ded4e386b08eb6d571459e4a06d551d3c169dd340f560cf5ec7f86f6cd73fc135e4404614c22ed452273783  pymediainfo-6.1.0.tar.gz
+"

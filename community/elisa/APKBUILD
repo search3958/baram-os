@@ -1,0 +1,73 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=elisa
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by extra-cmake-modules
+arch="all !armhf"
+url="https://kde.org/applications/multimedia/org.kde.elisa"
+pkgdesc="A simple music player aiming to provide a nice experience for its users"
+license="LGPL-3.0-or-later"
+depends="
+	kirigami
+	kirigami-addons
+	qqc2-desktop-style
+	qt6-qtbase-sqlite
+	vlc
+	"
+makedepends="
+	baloo-dev
+	extra-cmake-modules
+	kcmutils-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	kdoctools-dev
+	kfilemetadata-dev
+	ki18n-dev
+	kio-dev
+	kirigami-dev
+	kirigami-addons-dev
+	kpackage-dev
+	kxmlgui-dev
+	qqc2-desktop-style-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qtmultimedia-dev
+	qt6-qtsvg-dev
+	samurai
+	vlc-dev
+	"
+checkdepends="
+	cmd:dbus-run-session
+	xvfb-run
+	"
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/multimedia/elisa.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/elisa-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_TESTING=ON
+	cmake --build build
+}
+
+check() {
+	dbus-run-session -- xvfb-run -a ctest --test-dir build -E "databaseInterfaceTest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ef9aa099bb0c105173c50848f1c1141e9de4a63a4fc51ea7c2407720f404208850adda139f92e22e7eeba6ffd20928bd55c59450f8116ef356a6624db0c67ab5  elisa-26.04.2.tar.xz
+"

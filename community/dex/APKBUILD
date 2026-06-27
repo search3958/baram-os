@@ -1,0 +1,26 @@
+# Contributor: Anjandev Momi <anjan@momi.ca>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=dex
+pkgver=0.10.1
+pkgrel=0
+pkgdesc="program to generate and execute DesktopEntry files of the Application type"
+url="https://github.com/jceb/dex"
+arch="all"
+license="GPL-3.0-or-later"
+depends="python3"
+makedepends="py3-sphinx"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jceb/dex/archive/refs/tags/v$pkgver.tar.gz"
+options="!check" # no testsuite
+
+build() {
+	make
+}
+
+package() {
+	make install PREFIX=/usr MANPREFIX=/usr/share/man DESTDIR="$pkgdir"
+}
+
+sha512sums="
+4832e60416f07b90d4f4d03d6493322ccd44a73270edf289d80136587859d137cf39db12fc5cf38d3bdfa46aae3a4d1353c7776e702240b560a287190bdc2b57  dex-0.10.1.tar.gz
+"

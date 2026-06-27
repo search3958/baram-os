@@ -1,0 +1,40 @@
+# Contributor: Adam Jensen <adam@acj.sh>
+# Maintainer: Adam Jensen <adam@acj.sh>
+pkgname=blazesym
+pkgver=0.1.7
+pkgrel=0
+_reltag=capi-v$pkgver
+pkgdesc="A library for address symbolization and related tasks"
+url="https://github.com/libbpf/blazesym"
+arch="all"
+options="!check" # tests need privileged access
+license="BSD-3-Clause"
+makedepends="cargo cargo-auditable elfutils-dev libelf linux-headers openssl-dev zlib-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/libbpf/blazesym/archive/$_reltag.tar.gz
+	musl-stat-mtim.patch
+	"
+subpackages="$pkgname-static $pkgname-dev"
+builddir="$srcdir/blazesym-$_reltag"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen \
+		--package blazesym-c \
+		--package blazecli
+}
+
+package() {
+	install -Dm755 "$builddir"/capi/include/blazesym.h -t "$pkgdir"/usr/include/
+	install -Dm755 "$builddir"/target/release/libblazesym_c.so -t "$pkgdir"/usr/lib/
+	install -Dm755 "$builddir"/target/release/libblazesym_c.a -t "$pkgdir"/usr/lib/
+	install -Dm755 "$builddir"/target/release/blazecli -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+db940f32fb4bef5881a74b0b8d0be5b6575eda82e78abbd0e20bf4e7ded1a585e2d782d5053560e15c8391bcccb657808360ee5774c18eaa59ed5a1bfed95d4b  blazesym-0.1.7.tar.gz
+5eb428fd2766f9db5467b97ccbd7c505a4de621179a15a12d617e2d522c6616fd682a1bc268f253ba9823f6e3be4cdd6c725dbdd8dbd530d9bbbc49d1de20ba5  musl-stat-mtim.patch
+"

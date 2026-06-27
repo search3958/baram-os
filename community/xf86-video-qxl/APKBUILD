@@ -1,0 +1,50 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xf86-video-qxl
+pkgver=0.1.6
+pkgrel=3
+pkgdesc="Xorg X11 qxl video driver"
+options="!check" # No testsuite
+url="https://www.x.org"
+arch="x86 x86_64"
+license="MIT"
+makedepends="xorg-server-dev spice-dev xorg-server xorgproto libpciaccess-dev"
+source="https://www.x.org/releases/individual/driver/xf86-video-qxl-$pkgver.tar.xz"
+
+subpackages="$pkgname-doc xspice"
+
+build() {
+	export CFLAGS="${CFLAGS/-fno-plt}"
+	export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+	export LDFLAGS="$LDFLAGS -Wl,-z,lazy"
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-xspice=yes
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+xspice() {
+	pkgdesc="X server that can be accessed by a Spice client"
+	depends="python3"
+	mkdir -p "$subpkgdir"/usr/lib/xorg/modules/drivers \
+		"$subpkgdir"/etc/X11
+	mv "$pkgdir"/usr/lib/xorg/modules/drivers/spiceqxl_drv.so \
+		"$subpkgdir"/usr/lib/xorg/modules/drivers/
+	mv "$pkgdir"/usr/bin/ "$subpkgdir"/usr/
+	install -m 644 "$builddir"/examples/spiceqxl.xorg.conf.example \
+		"$subpkgdir"/etc/X11/spiceqxl.xorg.conf
+}
+
+sha512sums="
+f6a42355915d2e8f8a842dc24fe6d012d123aa6d23eedea1a4771fb08f88e0298d76741755b88304d76c66b3aae15f9fca74d062be395e499a82ee8f4507c7e0  xf86-video-qxl-0.1.6.tar.xz
+"

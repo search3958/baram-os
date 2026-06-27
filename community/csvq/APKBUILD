@@ -1,0 +1,32 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=csvq
+pkgver=1.18.1
+pkgrel=27
+pkgdesc="SQL-like query language for csv format"
+url="https://github.com/mithrandie/csvq"
+arch="all"
+license="MIT"
+options="!check net" # no test suite, go
+makedepends="go"
+source="https://github.com/mithrandie/csvq/archive/v$pkgver/csvq-v$pkgver.tar.gz
+	no-ldflags.patch
+	"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make VERSION=$pkgver build
+}
+
+package() {
+	install -Dm755 build/bin/csvq -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+5e57dfd94cda1a10ba42176a3a5bf0c4f21bec46742f847a6c8fe726b19ce767d65987cf69b992c4d1f1eb65498d1dddf677468938876587a825e886d93def56  csvq-v1.18.1.tar.gz
+acd77fddfad54c4f226eb50c0e5db32ad413195f97575cb3e9de81559904d1ff3920ca244924e68c3783cef847fb68f7032a082ebef23b51572880f702ac168e  no-ldflags.patch
+"

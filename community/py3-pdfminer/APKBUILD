@@ -1,0 +1,58 @@
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=py3-pdfminer
+_pyname=pdfminer.six
+pkgver=20260107
+pkgrel=1
+pkgdesc="Python PDF Parser"
+url="https://github.com/pdfminer/pdfminer.six"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	py3-charset-normalizer
+	py3-cryptography
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest
+	"
+# Only auto-generated github tarballs contain the testsuite
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pdfminer/pdfminer.six/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+prepare() {
+	default_prepare
+
+	sed -i "s|__VERSION__|$pkgver|" pdfminer/__init__.py
+}
+
+# secfixes
+#   20260107-r0:
+#     - CVE-2025-64512
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH=build/lib:. \
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+dda588f0510e39e7bd0f064dc210be803c65146d8af761f11309e8ae9becd9da0ab9561dd88112d8f5622478c69096818f063a56eee9c6437dec9aff423b81cd  py3-pdfminer-20260107.tar.gz
+"

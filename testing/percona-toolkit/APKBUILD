@@ -1,0 +1,30 @@
+# Contributor: Matthieu Monnier <matthieu.monnier@enalean.com>
+# Maintainer: Matthieu Monnier <matthieu.monnier@enalean.com>
+pkgname=percona-toolkit
+pkgver=3.5.4
+pkgrel=1
+pkgdesc="Toolkit for MySQL/MariaDB"
+url="https://www.percona.com/software/database-tools/percona-toolkit/"
+arch="noarch"
+license="GPL-2.0-only OR Artistic-1.0-Perl"
+depends="perl perl-time-hires perl-dbd-mysql bash"
+subpackages="$pkgname-doc"
+source="https://www.percona.com/downloads/percona-toolkit/$pkgver/source/tarball/percona-toolkit-$pkgver.tar.gz"
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+be94c047ce7507435573afaf0015970117039610fa84c818ded601f98ddd223e71b2304c2cad33d3151381238bab84bf563087aa4f4ccc5929395fda79b25d95  percona-toolkit-3.5.4.tar.gz
+"

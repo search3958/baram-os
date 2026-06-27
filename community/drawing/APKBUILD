@@ -1,0 +1,44 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=drawing
+pkgver=1.0.2
+pkgrel=0
+pkgdesc="Simple image editor for Linux"
+url="https://github.com/maoschanz/drawing"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	py3-cairo
+	py3-gobject3
+	"
+makedepends="
+	appstream-glib
+	desktop-file-utils
+	itstool
+	meson
+	py3-cairo-dev
+	py3-gobject3-dev
+	"
+source="
+	https://github.com/maoschanz/drawing/archive/$pkgver/drawing-$pkgver.tar.gz
+	fix-bindtextdomain.patch
+	"
+subpackages="$pkgname-lang"
+
+build() {
+	abuild-meson . build
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+sha512sums="
+61e3e2764832de6ed997bd6f72a63154fae332da76b12ede848b9c1e9d850ba46cf9ebdf16dd1b4d52827b5ec4e877aca03877d0557a2a2635279598992832d6  drawing-1.0.2.tar.gz
+a82cf5bb7c6936a1db20c3ab92bde0359f03437cddd8afa0477dc6808692963f55e386ead0bd3d6b67a70ce8dbbe3e863bb0f818b4bbfcdf8960da1920c6006f  fix-bindtextdomain.patch
+"

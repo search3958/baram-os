@@ -1,0 +1,39 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libxpresent
+pkgver=1.0.2
+pkgrel=0
+pkgdesc="A Xlib-compatible API for the Present extension"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="MIT"
+makedepends="
+	libx11-dev
+	libxext-dev
+	libxfixes-dev
+	libxrandr-dev
+	util-macros
+	xorgproto
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://www.x.org/releases/individual/lib/libXpresent-$pkgver.tar.xz"
+options="!check" # No test suite
+builddir="$srcdir/libXpresent-$pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+7e12c386e5d1404db359f8004a141223b4c08a138a5589d087537ca667e9dd5cdc190f170a5fa991c1f8dd022896bb07bff540e262a0d30d542a3faea06d8c93  libXpresent-1.0.2.tar.xz
+"

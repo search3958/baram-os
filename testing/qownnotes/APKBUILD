@@ -1,0 +1,54 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=qownnotes
+pkgver=26.3.17
+pkgrel=1
+pkgdesc="Plain-text file markdown note taking with Nextcloud/ownCloud integration"
+url="https://www.qownnotes.org/"
+arch="all !armhf" # armhf blocked by qt6-qtdeclarative
+license="GPL-2.0-only"
+depends="qt6-qtbase-sqlite"
+# TODO system md4c https://github.com/pbek/QOwnNotes/pull/3080
+makedepends="
+	botan3-dev
+	cmake
+	md4c-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	qt6-qtwebsockets-dev
+	samurai
+	"
+subpackages="$pkgname-lang"
+source="https://github.com/pbek/QOwnNotes/releases/download/v$pkgver/qownnotes-$pkgver.tar.xz"
+options="!check" # no tests
+
+prepare() {
+	default_prepare
+	echo "#define RELEASE \"Alpine Linux\"" > release.h
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DQON_QT6_BUILD=ON \
+		-DBUILD_WITH_SYSTEM_BOTAN=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+lang() {
+	pkgdesc="Translations for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel lang"
+
+	amove usr/share/QOwnNotes/translations
+}
+
+sha512sums="
+b435baa6fe8900ac1c716bfdda2151e089b12d45dfd9a0ba3901b2123183d6a51a9ad225c1ff0638e192a8d92bd7c0d7eaca49ebf544050b25d71a7d72e89b2e  qownnotes-26.3.17.tar.xz
+"

@@ -1,0 +1,52 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kactivitymanagerd
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="System service to manage user's activities and track the usage patterns"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+license="GPL-2.0-only OR GPL-3.0-only"
+depends="qt6-qtbase-sqlite"
+makedepends="
+	boost-dev
+	extra-cmake-modules
+	kconfig-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kglobalaccel-dev
+	ki18n-dev
+	kio-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	qt6-qtbase-dev
+	samurai
+	"
+subpackages="
+	$pkgname-systemd
+	$pkgname-lang
+	"
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+_repo_url="https://invent.kde.org/plasma/kactivitymanagerd.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/kactivitymanagerd-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+sha512sums="
+353e51fb684788aa0556070d8a834489fc235c8a52ae50a725c284d81bcff167a90fb74d07c6350bbf59918139f21c91d33e0f38ef5bf72c0a973638a8ee2dcc  kactivitymanagerd-6.7.1.tar.xz
+"

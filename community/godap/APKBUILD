@@ -1,0 +1,47 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=godap
+pkgver=2.11.0
+pkgrel=3
+pkgdesc="A complete TUI for LDAP"
+url="https://github.com/Macmod/godap"
+license="MIT"
+arch="all"
+makedepends="go"
+subpackages="$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+options="net" # fetch go modules
+source="$pkgname-$pkgver.tar.gz::https://github.com/Macmod/godap/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	go build \
+		-ldflags="-linkmode=external -extldflags \"$LDFLAGS\"" \
+		-v .
+
+	local shell; for shell in bash fish powershell zsh; do
+		./godap completion "$shell" > "$pkgname"_"$shell"
+	done
+}
+
+check() {
+	# no upstream tests
+	./godap version
+}
+
+package() {
+	install -Dm0755 "$pkgname" -t "$pkgdir"/usr/bin
+
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/"$pkgname"/LICENSE
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/"$pkgname"/README.md
+
+	install -Dm644 "$pkgname"_bash "$pkgdir"/usr/share/bash-completion/completions/"$pkgname"
+	install -Dm644 "$pkgname"_fish "$pkgdir"/usr/share/fish/vendor_completions.d/"$pkgname".fish
+	install -Dm644 "$pkgname"_zsh "$pkgdir"/usr/share/zsh/site-functions/_"$pkgname"
+}
+
+sha512sums="
+1978386da24739d0f1354048346710614ba8935a35e49e459ad034de35040a04ed5aeecd96913908fb68efda272762ce02f7e3254d7516e9274a83d9bb22f2cb  godap-2.11.0.tar.gz
+"

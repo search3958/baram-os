@@ -1,9 +1,0 @@
-#TODO async-io crate error
-[source]
-git = "https://github.com/bevyengine/bevy"
-shallow_clone = true
-[build]
-template = "cargo"
-cargoexamples = [
-    "hello_world"
-]

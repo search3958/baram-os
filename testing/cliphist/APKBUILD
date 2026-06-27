@@ -1,0 +1,37 @@
+# Maintainer:
+pkgname=cliphist
+pkgver=0.7.0
+pkgrel=6
+pkgdesc="wayland clipboard manager"
+url="https://github.com/sentriz/cliphist"
+arch="all"
+license="GPL-3.0" # does not specify if  -only
+options="!check net" # no testsuite
+depends="wl-clipboard"
+makedepends="go"
+subpackages="$pkgname-fzf::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sentriz/cliphist/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build
+}
+
+package() {
+	install -D -m755 cliphist -t "$pkgdir"/usr/bin/
+	install -D -m755 contrib/cliphist-fzf -t "$pkgdir"/usr/bin/
+}
+
+fzf() {
+	pkgdesc="$pkgdesc with fzf picker"
+	depends="$pkgname=$pkgver-r$pkgrel fzf"
+
+	amove usr/bin/cliphist-fzf
+}
+
+sha512sums="
+d66e4f43f050f9b5a10447e37480859ca4acb7666d723abd3b419c281c60e2fbe4722bf8743381aeb7d205543b83cbbb99268c61fe70c0a6c3e37a3b34d1abfc  cliphist-0.7.0.tar.gz
+"

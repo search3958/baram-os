@@ -1,0 +1,16 @@
+Patch-Source: https://github.com/void-linux/void-packages/blob/e7116617abefe5b09afceec30682bfe985f6a394/srcpkgs/handbrake/patches/fix-missing-x265-link-flag.patch
+
+diff --git a/test/module.defs b/test/module.defs
+index 8fc95e6..7f453af 100644
+--- a/test/module.defs
++++ b/test/module.defs
+@@ -69,6 +69,9 @@ else ifeq ($(HOST.system),linux)
+ ifeq (1, $(FEATURE.numa))
+     TEST.GCC.l += numa
+ endif
++ifeq (1, $(FEATURE.x265))
++    TEST.GCC.l += x265
++endif
+ else ifeq ($(HOST.system),kfreebsd)
+     TEST.GCC.l += pthread dl m
+ else ifneq (,$(filter $(HOST.system),freebsd netbsd openbsd))

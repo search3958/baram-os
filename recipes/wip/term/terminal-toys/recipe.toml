@@ -1,5 +1,0 @@
-#TODO not compiled or tested
-[source]
-git = "https://github.com/Seebass22/terminal-toys"
-[build]
-template = "cargo"

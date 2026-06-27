@@ -1,0 +1,28 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer:
+pkgname=pulseaudio-ctl
+pkgver=1.70
+pkgrel=1
+pkgdesc="Control pulseaudio volume from the shell or mapped to keyboard shortcuts"
+options="!check" # No testsuite
+url="https://github.com/graysky2/pulseaudio-ctl"
+arch="noarch"
+license="MIT"
+depends="bash pulseaudio-utils"
+subpackages="
+	$pkgname-doc
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/graysky2/pulseaudio-ctl/archive/v$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+59ec5f3da3021fd79ba33d9934c6dde9eebdfcc5e7651355b69c54e13cf6525d741a68780c6dc5c871ad108a261334657f7f25306e59fc6142912e2ff2278cb7  pulseaudio-ctl-1.70.tar.gz
+"

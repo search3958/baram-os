@@ -1,0 +1,30 @@
+# Contributor: Johannes Matheis <jomat+alpinebuild@jmt.gr>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=libuecc
+pkgver=7
+pkgrel=4
+pkgdesc="Very small Elliptic Curve Cryptography library"
+url="https://github.com/neocturne/libuecc"
+arch="all"
+license="BSD-2-Clause"
+makedepends="cmake samurai"
+options="!check" # No testsuite
+subpackages="$pkgname-dev"
+source="https://github.com/neocturne/libuecc/archive/refs/tags/v$pkgver/libuecc-$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		.
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -f "$pkgdir"/usr/lib/*.a
+}
+
+sha512sums="
+ccb65e9eeea5147ec42b4ae7d004af3c58bbc26706f20c07b917fd56cd4c5adcd4173bf743efe8f1c6df0fbe76fca2ff86ece5e72b17365d30957fd37b602381  libuecc-7.tar.gz
+"

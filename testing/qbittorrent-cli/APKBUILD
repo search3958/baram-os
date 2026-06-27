@@ -1,0 +1,31 @@
+# Maintainer: Cowington Post <cowingtonpost@gmail.com>
+pkgname=qbittorrent-cli
+pkgver=2.2.0
+pkgrel=10
+pkgdesc="Cli to manage qBittorrent"
+url="https://github.com/ludviglundgren/qbittorrent-cli"
+arch="all"
+license="MIT"
+makedepends="go"
+source="https://github.com/ludviglundgren/qbittorrent-cli/archive/v$pkgver/qbittorrent-cli-$pkgver.tar.gz"
+options="net" # download Go modules
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -o bin/qbt ./cmd/qbt/
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 bin/qbt -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+3620383b3ef0ade46a2dc55e4e69e903419f833f2a65878409310e681bbef11fdb0b5565500129347c807ccb77f63322ddbe0367a995f2c63f113a32caa561ba  qbittorrent-cli-2.2.0.tar.gz
+"

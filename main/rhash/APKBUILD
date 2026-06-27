@@ -1,0 +1,34 @@
+# Maintainer: Przemyslaw Pawelczyk <przemoc@zoho.com>
+pkgname=rhash
+pkgver=1.4.6
+pkgrel=0
+pkgdesc="Utility for calculation and verification of hash sums and magnet links"
+url="http://rhash.anz.ru"
+arch="all"
+license="0BSD"
+makedepends="openssl-dev>3"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-libs"
+source="https://downloads.sourceforge.net/rhash/rhash-$pkgver-src.tar.gz"
+builddir="$srcdir/RHash-$pkgver"
+
+build() {
+	# not autotools
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--enable-openssl \
+		--disable-openssl-runtime
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install install-lib-headers install-lib-shared install-lib-so-link
+}
+
+sha512sums="
+c125b71ec36cce2ec31057239cac8b987555f5e3b152dacb6386b905f8cc4d449c1de5b53e5a5206a2d87975681225c9b54e5826c10ffd91b3440f8595d22b15  rhash-1.4.6-src.tar.gz
+"

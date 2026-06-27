@@ -1,0 +1,47 @@
+# Contributor: David Sugar <tychosoft@gmail.com>
+maintainer="David Sugar <tychosoft@gmail.com>"
+pkgname=coventry
+pkgver=0.9.3
+pkgrel=0
+pkgdesc="Residential IP telephony gateway"
+url="https://gitlab.com/tychosoft/coventry"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="cmake samurai fmt-dev>=8.1.0 openssl-dev moderncli-dev>=1.2.5 libosip2-dev>=5.3.0 libexosip2-dev>=5.3.0"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://gitlab.com/tychosoft/coventry/-/archive/v$pkgver/coventry-v$pkgver.tar.gz coventry.initd"
+builddir="$srcdir"/$pkgname-v$pkgver
+
+build() {
+	cmake -B build \
+		-DCMAKE_INSTALL_SYSCONFDIR:PATH=/etc \
+		-DCMAKE_INSTALL_LOCALSTATEDIR:PATH=/var \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=/usr/lib \
+		-DSERVER_PREFIX_PATH=/var/lib/coventry \
+		-DSERVER_LOGGER_PATH=/var/log/coventry \
+		-DSERVER_CONFIG_FILE=/etc/coventry.conf \
+		-DCMAKE_BUILD_TYPE=Release .
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	install -d -m 750 -g adm "$pkgdir"/var/log/$pkgname
+	install -d -m 700 "$pkgdir"/var/lib/$pkgname
+	install -D -m 700 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 LICENSE.md "$pkgdir"/usr/share/licenses/$pkgname/LICENSE.md
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+	install -Dm644 FEATURES.md "$pkgdir"/usr/share/doc/$pkgname/FEATURES.md
+	install -Dm644 AGENTS.md "$pkgdir"/usr/share/doc/$pkgname/AGENTS.md
+	install -Dm644 UTILITIES.md "$pkgdir"/usr/share/doc/$pkgname/UTILITIES.md
+}
+
+sha512sums="
+7d3a52abdfd35cbb32e4a5404cf77c10f419336c6201650b8dfa8f8173eadd49806f569ffe70ac91c71fd31df11f97adc115c2e025210b0ae944209b40033294  coventry-v0.9.3.tar.gz
+ad271d3dbe030f23582586a148be08194851ad9624e2b71085031548d80fb81371ede28dd286f7e5d2aa1db670fc19fd57f9c412abfacaf2439875adcf7db9b1  coventry.initd
+"

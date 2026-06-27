@@ -1,0 +1,60 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=unicorn
+pkgver=2.1.4
+pkgrel=1
+pkgdesc="Unicorn CPU emulator engine"
+url="https://www.unicorn-engine.org/"
+# s390x, riscv64: fails check
+# https://github.com/unicorn-engine/unicorn/issues/2124
+arch="all !riscv64 !s390x"
+license="GPL-2.0-or-later"
+makedepends="cmake linux-headers python3 py3-setuptools py3-gpep517 py3-wheel samurai"
+subpackages="$pkgname-dev py3-$pkgname-pyc:pyc py3-unicorn:py3"
+source="https://github.com/unicorn-engine/unicorn/archive/refs/tags/$pkgver/unicorn-$pkgver.tar.gz"
+
+# secfixes:
+#   2.0.1-r0:
+#     - CVE-2022-29693
+#     - CVE-2022-29694
+#     - CVE-2022-29695
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+
+	cd bindings/python
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	cd bindings/python
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+
+	# dupe of parent package
+	rm -r "$pkgdir"/usr/lib/python3*/site-packages/unicorn/lib/
+}
+
+py3() {
+	pkgdesc="$pkgdesc (Python bindings)"
+	depends="python3 $pkgname=$pkgver-r$pkgrel py3-setuptools"
+
+	amove usr/lib/python3*
+}
+
+sha512sums="
+c9ae4230a20b77e0187cde33dbf4827b3504b6c24debd61fc79ec9c13fa2051335c834c101433cebbbc8e3baadae56212b79c5922bf37ea1f777d66d8e67b495  unicorn-2.1.4.tar.gz
+"

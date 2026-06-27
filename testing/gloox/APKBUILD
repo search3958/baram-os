@@ -1,0 +1,41 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=gloox
+pkgver=1.0.28
+pkgrel=0
+pkgdesc="C++ Jabber/XMPP client library"
+url="https://camaya.net/gloox/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="gnutls-dev"
+subpackages="$pkgname-dev"
+source="https://camaya.net/download/gloox-$pkgver.tar.bz2"
+
+prepare() {
+	default_prepare
+	# config.sub is too old to recognize loongarch64-alpine-linux-musl
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-gnutls=yes
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+8be06963a54957d53bb285482d2ad01569fb281fcb53b03a29dc4444e1915f2f7d81e3fec1288f127bc09ca37d1c0beb4cb8e4f7079becb32dc223e3ceb50e00  gloox-1.0.28.tar.bz2
+"

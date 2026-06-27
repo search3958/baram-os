@@ -1,0 +1,116 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-aiohttp
+_pkgname=aiohttp
+pkgver=3.14.1
+pkgrel=0
+pkgdesc="HTTP client/server for asyncio"
+url="https://pypi.org/project/aiohttp"
+arch="all"
+license="Apache-2.0"
+depends="
+	py3-aiohappyeyeballs
+	py3-aiosignal
+	py3-async-timeout
+	py3-attrs
+	py3-brotli
+	py3-charset-normalizer
+	py3-idna-ssl
+	py3-multidict
+	py3-typing-extensions
+	py3-yarl
+	python3
+	"
+makedepends="
+	python3-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-async_generator
+	py3-freezegun
+	py3-gunicorn
+	py3-pytest
+	py3-pytest-cov
+	py3-pytest-mock
+	py3-re-assert
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # py3-gunicorn depends on this package and creates a loop
+
+case "$CARCH" in
+s390x)
+	# fails due to speed and the event loop closes
+	options="$options !check"
+	;;
+esac
+
+# secfixes:
+#   3.14.1-r0:
+#     - CVE-2026-47265
+#     - CVE-2026-50269
+#   3.13.5-r0:
+#     - CVE-2026-22815
+#     - CVE-2026-34513
+#     - CVE-2026-34514
+#     - CVE-2026-34515
+#     - CVE-2026-34516
+#     - CVE-2026-34517
+#     - CVE-2026-34518
+#     - CVE-2026-34519
+#     - CVE-2026-34520
+#     - CVE-2026-34525
+#   3.13.3-r0:
+#     - CVE-2025-69223
+#     - CVE-2025-69224
+#     - CVE-2025-69225
+#     - CVE-2025-69226
+#     - CVE-2025-69227
+#     - CVE-2025-69228
+#     - CVE-2025-69229
+#     - CVE-2025-69230
+#   3.9.3-r0:
+#     - CVE-2024-23334
+#     - CVE-2024-23829
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# requires https://github.com/abhinavsingh/proxy.py
+	local ignore="--ignore tests/test_proxy_functional.py"
+
+	# requires python_on_whales and a docker service running
+	ignore="$ignore --ignore tests/autobahn/test_autobahn.py"
+
+	local k='not test_no_warnings and not test_request_tracing_url_params'
+
+	# requires network/DNS
+	k="$k and not test_client_session_timeout"
+
+	# https://github.com/aio-libs/aiohttp/issues/8234
+	k="$k and not test_aiohttp_plugin"
+
+	# known to be flaky on slower machines
+	# https://gitlab.alpinelinux.org/alpine/aports/-/merge_requests/62488#note_386063
+	k="$k and not test_import_time"
+
+	PYTHONPATH="$(echo build/lib.*)" \
+	pytest -W ignore::DeprecationWarning -v --no-cov -k "$k" \
+		$ignore
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8cba5eff6e62f29fc2f600b30c840febc2a6b947134d6e194a2dcd873972ada2d48cbdaa01216b53cc3127b973b0f30ef1ac69713081b5e1ed2efbfd654fdebc  py3-aiohttp-3.14.1.tar.gz
+"

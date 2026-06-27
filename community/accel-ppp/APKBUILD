@@ -1,0 +1,58 @@
+# Contributor: Thomas Liske <thomas@fiasko-nw.net>
+# Maintainer: Thomas Liske <thomas@fiasko-nw.net>
+pkgname=accel-ppp
+pkgver=1.14.0
+pkgrel=0
+pkgdesc="PPtP/L2TP/PPPoE/SSTP server for Linux"
+url="https://accel-ppp.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cmake
+	libucontext-dev
+	linux-headers
+	lua5.4-dev
+	openssl-dev>3
+	pcre2-dev
+	samurai
+	"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://github.com/accel-ppp/accel-ppp/archive/$pkgver/accel-ppp-$pkgver.tar.gz
+	accel-pppd.initd
+	"
+
+build() {
+	export CFLAGS="${CFLAGS/-fno-plt}"
+	export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+	export LDFLAGS="$LDFLAGS -Wl,-z,lazy"
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake3.5 -B build -G Ninja \
+		-DLIB_SUFFIX= \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+		-DCMAKE_INSTALL_LOCALSTATEDIR=/var \
+		-DSHAPER=TRUE \
+		-DRADIUS=TRUE \
+		-DLUA=TRUE \
+		-DLUA=5.4 \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+check() {
+	build/accel-cmd/accel-cmd -V
+	build/accel-pppd/accel-pppd -V
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	mv "$pkgdir"/etc/accel-ppp.conf.dist "$pkgdir"/etc/accel-ppp.conf
+	install -Dm755 "$srcdir"/accel-pppd.initd "$pkgdir"/etc/init.d/accel-pppd
+}
+
+sha512sums="
+58c75ec94eb197540ea2d2c4b03befbbaf040af6df7c002588f092b6cebfe40299e503875d669f2f1cff5ba14f3357fe3205fa56f4aee3337eb3dc85ae7e8e98  accel-ppp-1.14.0.tar.gz
+45e8194d1aca86e80e9139f4fd81d16e609fcfe643f406fc5b7b335127b2a8d0bfbf496513dce5095e5472acd6638d17823bb262bf60a78c210adf412487e543  accel-pppd.initd
+"

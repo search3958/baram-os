@@ -1,0 +1,399 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=util-linux
+pkgver=2.42.1
+pkgrel=0
+pkgdesc="Random collection of Linux utilities"
+url="https://git.kernel.org/cgit/utils/util-linux/util-linux.git"
+arch="all"
+license="GPL-3.0-or-later AND GPL-2.0-or-later AND GPL-2.0-only AND
+	GPL-1.0-only AND LGPL-2.1-or-later AND BSD-1-Clause AND
+	BSD-3-Clause AND BSD-4-Clause-UC AND MIT AND Public-Domain"
+checkdepends="findutils xz procps coreutils !uutils-coreutils"
+makedepends_build="bash"
+makedepends_host="
+	libcap-ng-dev
+	linux-headers
+	ncurses-dev
+	sqlite-dev
+	zlib-dev
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-openrc
+
+	libblkid:_mv_lib
+	libfdisk:_mv_lib
+	libmount:_mv_lib
+	libsmartcols:_mv_lib
+	libuuid:_mv_lib
+
+	agetty:_mv_bin
+	blkid:_mv_bin
+	cfdisk:_mv_bin
+	dmesg:_mv_bin
+	findmnt:_mv_bin
+	flock:_mv_bin
+	fstrim:_mv_bin
+	hexdump:_mv_bin
+	logger:_mv_bin
+	losetup:_mv_bin
+	lsblk:_mv_bin
+	lscpu:_mv_bin
+	mcookie:_mv_bin
+	mount:_mv_bin
+	partx:_mv_bin
+	setarch:_mv_bin
+	setpriv:_mv_bin
+	sfdisk:_mv_bin
+	umount:_mv_bin
+	uuidgen:_mv_bin
+	wipefs:_mv_bin
+	"
+if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
+	makedepends_build="$makedepends_build asciidoctor"
+	makedepends_host="$makedepends_host
+		linux-pam-dev
+		python3-dev
+		libeconf-dev
+		utmps-dev
+		utmps-static
+		"
+	subpackages="$subpackages
+		$pkgname-login
+		$pkgname-login-doc:_login_doc:noarch
+		liblastlog2:_mv_lib
+		runuser:_mv_bin
+		py3-libmount:_py3
+		"
+	_bootstrap_config="--enable-runuser --with-python=3 --with-econf"
+else
+	options="!check"
+	_bootstrap_config="--disable-runuser --without-python --without-econf --disable-asciidoc --disable-login"
+fi
+subpackages="$subpackages $pkgname-doc $pkgname-misc"
+install="$pkgname-misc.post-upgrade"
+makedepends="$makedepends_build $makedepends_host"
+builddir="$srcdir/util-linux-$pkgver"
+options="$options suid"
+
+case $pkgver in
+	*.*.*) _v=${pkgver%.*};;
+	*.*) _v=$pkgver;;
+esac
+source="https://www.kernel.org/pub/linux/utils/util-linux/v$_v/util-linux-$pkgver.tar.xz
+	utmps.patch
+	ttydefaults.h
+	rfkill.confd
+	rfkill.initd
+	su-l.pamd
+	fix-login.c.patch
+	fix-nsenter.c.patch
+	PATCH-test_enosys-Handle-musl-libc-error-strings.patch
+	0001-tests-mkswap-file-existing-subtest-add-explicit-page.patch
+	"
+
+# secfixes:
+#   2.41.4-r0:
+#     - CVE-2026-27456
+#   2.40-r0:
+#     - CVE-2024-28085
+#   2.37.4-r0:
+#     - CVE-2022-0563
+#   2.37.3-r0:
+#     - CVE-2021-3995
+#     - CVE-2021-3996
+#   2.37.2-r0:
+#     - CVE-2021-37600
+
+# login utils included in subpackage util-linux-login.
+_login_cmds='newgrp last lastb lastlog2 login lslogins nologin su sulogin'
+
+prepare() {
+	default_prepare
+
+	cp "$srcdir"/ttydefaults.h include/
+
+	# these fail on the package builders
+	rm -fv tests/ts/lsfd/mkfds-netlink-protocol
+	rm -fv tests/ts/lsfd/option-inet
+	rm -fv tests/ts/lsfd/option-inet-udplite
+	# these are flakey on the package builders
+	rm -fv tests/ts/lsfd/mkfds-rw-character-device
+	rm -fv tests/ts/lsfd/mkfds-multiplexing
+	# enosys fails in one of three tests
+	rm -fv tests/ts/misc/enosys
+
+	case "$CARCH" in
+	ppc64le)
+		# these fail on the CI builder
+		rm -fv tests/ts/lsfd/mkfds-unix-stream-requiring-sockdiag
+		rm -fv tests/ts/lsfd/mkfds-socketpair
+		;;
+	x86_64)
+		# these tests have blocked the builder for days
+		;;
+	esac
+}
+
+build() {
+	if [ -z "$BOOTSTRAP" ]; then
+		# Linking utmps statically is strongly preferred by the utmps author
+		# and also much more space efficient - adds 4 kiB to each binary, that's
+		# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
+		# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
+		# also throw in lto when not bootstrapping
+		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto $(pkg-config --cflags --static libutmps)"
+		export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps) $(pkg-config --libs libeconf)"
+	fi
+
+	# --disable-chfn-chsh - chfn and chsh are provided by shadow package
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--with-sysroot=$CBUILDROOT \
+		--prefix=/usr \
+		--libdir=/usr/lib \
+		--disable-silent-rules \
+		--enable-newgrp \
+		--disable-uuidd \
+		--disable-nls \
+		--disable-kill \
+		--disable-chfn-chsh \
+		--with-vendordir=/usr/lib \
+		--enable-fs-paths-extra=/usr/sbin \
+		$_bootstrap_config
+	make
+}
+
+check() {
+	timeout 30m make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# Move some files to /bin to replace busybox symlinks
+	for i in "$pkgdir"/usr/bin/*; do
+		case "${i##*/}" in
+			ionice|getopt|rev)
+				mv "$i" "$pkgdir"/bin/
+				;;
+			linux32|linux64)
+				if [ -L "$i" ]; then
+					rm "$i"
+					ln -s /usr/bin/setarch "$pkgdir/bin/${i##*/}"
+				fi
+				;;
+			*) ;;
+		esac
+	done
+
+	# use pkg-config
+	install -D -m755 "$srcdir"/rfkill.initd "$pkgdir"/etc/init.d/rfkill
+	install -D -m644 "$srcdir"/rfkill.confd "$pkgdir"/etc/conf.d/rfkill
+
+	install -D -m644 "$srcdir"/su-l.pamd "$pkgdir"/etc/pam.d/su-l
+}
+
+_mv_bin() {
+	local binname=$subpkgname
+	pkgdesc="$binname tool from util-linux"
+	depends=
+	install_if="$pkgname=$pkgver-r$pkgrel"
+
+	case "$binname" in
+		agetty)
+			license="Public-Domain"
+			pkgdesc="agetty program from util-linux"
+			;;
+		blkid)
+			license="LGPL-1.0-only"
+			pkgdesc="Block device identification tool from util-linux"
+			;;
+		cfdisk)
+			license="GPL-2.0-or-later"
+			pkgdesc="Curses based partition table manipulator from util-linux"
+			;;
+		findmnt)
+			license="GPL-2.0-or-later"
+			pkgdesc="Find mount from util-linux"
+			;;
+		flock)
+			license="MIT"
+			pkgdesc="File locker from util-linux"
+			;;
+		fstrim)
+			license="GPL-2.0-or-later"
+			pkgdesc="File system trim from util-linux"
+			;;
+		hexdump)
+			license="BSD-4-Clause-UC"
+			pkgdesc="Hexdump from util-linux"
+			;;
+		logger)
+			license="BSD-4-Clause-UC"
+			pkgdesc="Logger from util-linux"
+			;;
+		losetup)
+			license="GPL-2.0-or-later"
+			pkgdesc="Loop disk setup from util-linux"
+			;;
+		lsblk)
+			license="GPL-2.0-or-later"
+			pkgdesc="Block device list tool from util-linux"
+			;;
+		lscpu)
+			license="GPL-2.0-or-later"
+			pkgdesc="CPU architecture information helper"
+			;;
+		runuser)
+			license="GPL-2.0-or-later"
+			pkgdesc="Run a program with substitute user and group ID"
+			;;
+		mcookie)
+			license="Public-Domain"
+			pkgdesc="Generate random numbers for xauth from util-linux"
+			;;
+		partx)
+			license="GPL-2.0-or-later"
+			pkgdesc="Tell the kernel about disk partition changes from util-linux"
+			;;
+		setpriv)
+			license="GPL-2.0-or-later"
+			pkgdesc="Run a program with different Linux privilege settings"
+			# busybox has setpriv under /bin
+			mv "$pkgdir"/usr/bin/setpriv "$pkgdir"/bin
+			;;
+		sfdisk)
+			license="GPL-1.0-or-later"
+			pkgdesc="Partition table manipulator from util-linux"
+			;;
+		uuidgen)
+			license="GPL-1.0-only"
+			pkgdesc="UUID generator from util-linux"
+			;;
+		wipefs)
+			license="GPL-2.0-or-later"
+			pkgdesc="Utility to wipe filesystems from device from util-linux"
+			;;
+	esac
+	local dir; for dir in usr/bin usr/sbin bin sbin; do
+		if [ -e "$pkgdir"/$dir/$binname ]; then
+			amove $dir/$binname
+			return 0
+		fi
+	done
+	return 1
+}
+
+_mv_lib() {
+	local libname=$subpkgname
+	pkgdesc="$libname library from util-linux"
+	depends=
+
+	case "$libname" in
+		libblkid)
+			license="LGPL-2.1-or-later"
+			pkgdesc="Block device identification library from util-linux"
+			;;
+		libfdisk)
+			license="LGPL-2.1-or-later"
+			pkgdesc="Partitioning library for fdisk-like programs"
+			;;
+		liblastlog2)
+			license="BSD-2-Clause"
+			pkgdesc="Y2038 safe version of lastlog"
+			amove usr/lib/security/pam_lastlog2.so
+			;;
+		libmount)
+			license="LGPL-2.1-or-later"
+			pkgdesc="Block device identification library from util-linux"
+			;;
+		libsmartcols)
+			license="LGPL-2.1-or-later"
+			pkgdesc="Formatting library for ls-like programs"
+			;;
+		libuuid)
+			license="BSD-3-Clause"
+			pkgdesc="DCE compatible Universally Unique Identifier library"
+			;;
+	esac
+	amove usr/lib/$libname.so.*
+}
+
+login() {
+	license="GPL-2.0-or-later AND BSD-1-Clause"
+	pkgdesc="Login utils from util-linux package: ${_login_cmds// /, }"
+	depends="runuser=$pkgver-r$pkgrel"
+	# Commands in conflict with shadow-login: newgrp login nologin su
+	provides="login-utils"
+	provider_priority=100  # highest (other provider is shadow-login)
+	replaces="$pkgname-misc"  # for backward compatibility (Alpine <3.16)
+
+	cd "$pkgdir"
+
+	local cmd dir
+	for cmd in $_login_cmds; do
+		for dir in bin sbin usr/bin usr/sbin; do
+			if [ -e $dir/$cmd ] || [ -L $dir/$cmd ]; then
+				amove $dir/$cmd
+				continue 2
+			fi
+		done
+		error "file $cmd not found"
+		return 1
+	done
+
+	amove etc/pam.d/su-l
+}
+
+_login_doc() {
+	pkgdesc="Login utils from util-linux package (documentation)"
+	depends="!shadow-login-doc"
+	replaces="$pkgname-doc shadow-doc"  # for backward compatibility (Alpine <3.16)
+	install_if="docs $pkgname-login=$pkgver-r$pkgrel"
+
+	local cmd; for cmd in $_login_cmds; do
+		amove usr/share/man/man*/$cmd.*
+	done
+
+	find "$subpkgdir"/usr/share/man -type f ! -name "*.gz" \
+		-exec gzip -9 {} \;
+}
+
+misc() {
+	pkgdesc="Misc binaries for $pkgname"
+	depends=
+	install_if="$pkgname=$pkgver-r$pkgrel"
+
+	local dir; for dir in usr/bin usr/sbin bin sbin; do
+		if [ -e "$pkgdir"/$dir ]; then
+			amove $dir
+		fi
+	done
+}
+
+_py3() {
+	license="LGPL-2.1-or-later"
+	pkgdesc="python3 bindings to libmount"
+	depends=
+
+	amove usr/lib/python*
+}
+
+sha512sums="
+18dd2cfc353e389e4eeb37375473e7b3d0ab7fcd059a881d7cd0815ddcaa7b5795db92fcf56e531089267c8e69936c4fd3abd97786aa111b115996203aadbca2  util-linux-2.42.1.tar.xz
+c1c9cd816d20582438cda75a9c0ea4e687eee124e657172729aff410f52558be19cc5d649dae07c03f7618411e5aa6c23bcebc3fdf25529517a61b6b343966ef  utmps.patch
+876bb9041eca1b2cca1e9aac898f282db576f7860aba690a95c0ac629d7c5b2cdeccba504dda87ff55c2a10b67165985ce16ca41a0694a267507e1e0cafd46d9  ttydefaults.h
+401d2ccbdbfb0ebd573ac616c1077e2c2b79ff03e9221007759d8ac25eb522c401f705abbf7daac183d5e8017982b8ec5dd0a5ebad39507c5bb0a9f31f04ee97  rfkill.confd
+b0e11226c611fd52d54f599a40d23c4f748d5bd6971732dba2d25581aedaf5d2c62bcb49515d175569ff9aa1cf49a3dff25d1a5d4dcd89428c7020fc7ea3a581  rfkill.initd
+0c8e764308ac1d084ebb4246eb97203de983bc0170066c958a56b412d9fd2f98da7f78f059e59512542c56a2639d6b2da35eff6469a48ebce6b2c406e94a96a7  su-l.pamd
+bc05278acbe585bfc00c9ee8b898d7765273c2dec68be1d86cd93a9e939b9c41941d56420552f7197d4b785761d97f83c22128fa8de5bb14e6170d79e7f0ff10  fix-login.c.patch
+c0b66fb44512f10e15ede9f20dec9156234c957543f9761137e1ee307cf8238da475fb445affa5f12084ae2bcf47d4e58360b41d6b298043a03f6e8fe272d897  fix-nsenter.c.patch
+9a08cbd209fd7699d7494a1b786ba3a7f2f08dd02ef4d3655a0acec7b8e5252dc3b78074c8183f237620428a7f0c3eae0c4cbe763b5d7740ea05cabf3b8470d4  PATCH-test_enosys-Handle-musl-libc-error-strings.patch
+57fb0938fa925046303b35d89eb826211bdc346904726825ca1034c15d683504c8e7e8a4d609b5f8f1bfd6f9d3d42aded4127234ad02f56947a83a9fb921807c  0001-tests-mkswap-file-existing-subtest-add-explicit-page.patch
+"

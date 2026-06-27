@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-samba
+pkgver=0.10.1
+pkgrel=0
+pkgdesc="Web-based system administration interface for samba"
+url="https://gitlab.alpinelinux.org/acf/acf-samba"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core samba"
+source="https://gitlab.alpinelinux.org/acf/acf-samba/-/archive/v$pkgver/acf-samba-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+d2a4a9da90bd9eaec47bc2595582b7231d444bca0b1b875a3fa62fc9c1172b2ac884d02171a0f4e7ab8a2d53327a79221e276f428b6c8a4bdf5e52bf8f6c5552  acf-samba-v0.10.1.tar.gz
+"

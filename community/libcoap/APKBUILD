@@ -1,0 +1,43 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=libcoap
+pkgver=4.3.5b
+pkgrel=0
+pkgdesc="A CoAP (RFC 7252) implementation"
+url="https://libcoap.net/"
+arch="all"
+license="BSD-2-Clause"
+makedepends="automake autoconf libtool asciidoc openssl-dev>3 cunit-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/obgm/libcoap/archive/v$pkgver.tar.gz"
+
+build() {
+	./autogen.sh
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-openssl \
+		--disable-doxygen \
+		--enable-tests
+	make
+}
+
+check() {
+	./tests/testdriver
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	install -m644 CONTRIBUTE AUTHORS ChangeLog NEWS README.md TODO \
+		"$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+b8fc435412cd1909bc9ba5683cfa138a3ea08a76fecab78739ceedc7bb903d15d50d4362f702f7380fd047e5b6df3c76dfb75dd30bb20670a62205e6bc85021d  libcoap-4.3.5b.tar.gz
+"

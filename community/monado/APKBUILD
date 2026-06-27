@@ -1,0 +1,58 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=monado
+pkgver=25.1.0
+pkgrel=0
+pkgdesc="The open source OpenXR runtime"
+url="https://monado.freedesktop.org"
+# s390x blocked by opencv -> vtk -> netcdf
+arch="all !s390x"
+license="BSL-1.0"
+depends="xr-hardware"
+makedepends="
+	cmake
+	cmd:glslangValidator
+	cmd:wayland-scanner
+	doxygen
+	eigen-dev
+	eudev-dev
+	graphviz
+	libbsd-dev
+	libjpeg-turbo-dev
+	libsurvive-dev
+	libxrandr-dev
+	mesa-dev
+	opencv-dev
+	openhmd-dev
+	samurai
+	sdl2-dev
+	v4l-utils-dev
+	vulkan-loader-dev
+	wayland-dev
+	wayland-protocols
+	zlib-dev
+	"
+source="https://gitlab.freedesktop.org/monado/monado/-/archive/v$pkgver/monado-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	mkdir -p "$pkgdir"/etc/xdg/openxr/1
+	ln -s /usr/share/openxr/1/openxr_monado.json "$pkgdir"/etc/xdg/openxr/1/active_runtime.json
+}
+
+sha512sums="
+0d04073ffb5021749682d71e97b2f24d644fcdc270e1384bc5688024ae897f49198e9241a75016815d89f427ea96032cd5d2b37f76e59c9bebcc32e28a298583  monado-v25.1.0.tar.gz
+"

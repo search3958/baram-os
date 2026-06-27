@@ -1,0 +1,47 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=pimsync
+pkgver=0.5.10
+pkgrel=0
+pkgdesc="Synchronise calendars and contacts using CalDAV, CardDAV and others"
+url="https://pimsync.whynothugo.nl/"
+arch="all"
+license="EUPL-1.2"
+makedepends="cargo sqlite-dev"
+checkdepends="xandikos"
+subpackages="
+	$pkgname-doc
+	$pkgname-zsh-completion
+	$pkgname-openrc
+	"
+source="pimsync-$pkgver.tar.gz::https://git.sr.ht/~whynothugo/pimsync/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	export PIMSYNC_VERSION=v$pkgver-r$pkgrel
+	mkdir target
+	make build
+}
+
+check() {
+	# riscv64: too slow to run tests with timeouts.
+	[ "$CARCH" = "riscv64" ] && return
+
+	cargo test --frozen
+	# Ensure that the system sqlite is being dynamically linked.
+	ldd target/release/pimsync | grep libsqlite3.so
+}
+
+package() {
+	DESTDIR="$pkgdir" PREFIX="/usr" make install --trace
+}
+
+sha512sums="
+992aa2440423d7013b0f90a18c8c6870c13a72715de984e0f9abfef06e17b28c7058efab6adee710238978638fb4985b43b009e6614866813dfbf5c1f05c944a  pimsync-0.5.10.tar.gz
+"

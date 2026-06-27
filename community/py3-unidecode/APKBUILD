@@ -1,0 +1,36 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-unidecode
+_pkgname=Unidecode
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="Python3 ASCII transliterations of Unicode text"
+url="https://pypi.org/project/Unidecode"
+arch="noarch"
+license="GPL-2.0-or-later"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c2030855bf650a648d1707b629f29ad7b911b1143f603176b2236695fc884f1d25b7d635a92cd206e71b9b56bc9ab965952a187749b6dbf664b41a33b592db82  Unidecode-1.4.0.tar.gz
+"

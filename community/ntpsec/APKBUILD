@@ -1,0 +1,99 @@
+# Contributor: tcely <ntpsec+aports@tcely.33mail.com>
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=ntpsec
+pkgver=1.2.4
+_pkgver=${pkgver//./_}
+pkgrel=1
+pkgdesc="NTP reference implementation, refactored for security"
+url="https://www.ntpsec.org/"
+arch="all"
+license="BSD-2-Clause"
+depends="bash python3 py3-gpsd"
+makedepends="
+	asciidoctor
+	avahi-dev
+	bison
+	libbsd-dev
+	libcap-dev
+	openssl-dev>3
+	pps-tools-dev
+	python3-dev
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc-html:_html:noarch
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-pyc
+	"
+source="
+	https://github.com/ntpsec/ntpsec/archive/refs/tags/NTPsec_$_pkgver.tar.gz
+	ntp.conf
+	ntpsec.confd
+	ntpsec.initd
+	skip-libaes-siv-test
+	"
+builddir="$srcdir"/ntpsec-NTPsec_$_pkgver
+
+# secfixes:
+#   1.2.2a-r0:
+#     - CVE-2023-4012
+#   1.2.1-r0:
+#     - CVE-2021-22212
+#   1.1.3-r0:
+#     - CVE-2019-6442
+#     - CVE-2019-6443
+#     - CVE-2019-6444
+#     - CVE-2019-6445
+
+prepare() {
+	default_prepare
+
+	grep -r -l '#! /usr/bin/env python' . \
+		| xargs sed -i '1s@^.*$@#!/usr/bin/python3@'
+
+	# libaes_siv/tests.c test_malloc_failure: broken on s390x
+	# https://gitlab.com/NTPsec/ntpsec/-/issues/846
+	case "$CARCH" in
+		s390x) patch -p1 -i "$srcdir"/skip-libaes-siv-test ;;
+	esac
+}
+
+build() {
+	./waf configure \
+		--prefix=/usr \
+		--python=python3 \
+		--enable-leap-smear \
+		--enable-mssntp \
+		--refclock=all \
+		--pyshebang=/usr/bin/python3
+	./waf build --verbose
+}
+
+check() {
+	./waf check --verbose
+}
+
+package() {
+	./waf install --destdir="$pkgdir"
+
+	install -Dm644 "$srcdir"/ntp.conf "$pkgdir"/etc/ntp.conf
+	install -Dm755 "$srcdir"/ntpsec.initd "$pkgdir"/etc/init.d/ntpsec
+	install -Dm644 "$srcdir"/ntpsec.confd "$pkgdir"/etc/conf.d/ntpsec
+	install -dm755 "$pkgdir"/etc/ntp.d
+	install -dm700 -g ntp -o ntp "$pkgdir"/var/lib/ntp
+	install -dm750 -g ntp -o ntp "$pkgdir"/var/log/ntpstats
+}
+
+_html() {
+	pkgdesc="$pkgdesc (HTML documentation)"
+	amove usr/share/doc/ntpsec
+}
+
+sha512sums="
+0acee2da3f0472fc79c61989d1ba77ccccd55a0697116b61c9ae90c64788270ba298cbada93db3eb051878050258317c642e1146abe6d7480c3e4e4887a439ec  NTPsec_1_2_4.tar.gz
+e8a72067151dac8cad29db40851343ee51c08dc9f35f71e137910bcf4b8269bafd72dfcb45b93e04d887dc426322fdc3bc250888f988879e006925855c644bd0  ntp.conf
+615af8b9c713007ef0af5e6efc315a0ab1d3abbd8dc2b675d7eb631d6b98fcf3913fc89b1754361552de2bd0c0f782bca14588a4f35edda7fb44b27b59528f10  ntpsec.confd
+22106060d269645bdb9de8a7e475171e5bd37eab0e918648ec282155c38b1b1f7ceb79820737f4b092d97bec9493e8a81e7d875d5ea5d89c07067b4ee86f68ea  ntpsec.initd
+8fe77e8338669b96b170a9e0a7463b33a8b6ee2424c22127def1b02c1148c2bdc6f48062fe59ef2d9eff8bc26535cb69606d4a8cbff7d461685b38fc42dd4f22  skip-libaes-siv-test
+"

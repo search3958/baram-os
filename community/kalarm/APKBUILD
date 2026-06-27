@@ -1,0 +1,79 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kalarm
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Personal alarm scheduler"
+url="https://kontact.kde.org/"
+# armhf blocked by qt6-qtdeclarative -> ki18n
+# x86, s390x, riscv64 and armv7 blocked by qt6-qtwebengine -> akonadi
+arch="all !armhf !x86 !s390x !riscv64 !armv7"
+license="GPL-2.0-or-later AND GFDL-1.2-only"
+depends="kdepim-runtime"
+makedepends="
+	akonadi-contacts-dev
+	akonadi-dev
+	akonadi-mime-dev
+	extra-cmake-modules
+	kauth-dev
+	kcalendarcore-dev
+	kcalutils-dev
+	kcmutils-dev
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	kglobalaccel-dev
+	kguiaddons-dev
+	kholidays-dev
+	ki18n-dev
+	kiconthemes-dev
+	kidentitymanagement-dev
+	kidletime-dev
+	kimap-dev
+	kio-dev
+	kjobwidgets-dev
+	kmailtransport-dev
+	kmime-dev
+	knotifications-dev
+	knotifyconfig-dev
+	kpimtextedit-dev
+	kservice-dev
+	kstatusnotifieritem-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	libkdepim-dev
+	libxslt-dev
+	mailcommon-dev
+	mpv-dev
+	phonon-dev
+	pimcommon-dev
+	qt6-qtbase-dev
+	samurai
+	vlc-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/kalarm.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kalarm-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+55ce672ec1fa34de72c770c4a18a8675be7539d65e56a9c4d07210c443d965e76210f8e5be5f5e1ffe46bd98905e1c443e495fa9cabe6dc62e1429b17e858c59  kalarm-26.04.2.tar.xz
+"

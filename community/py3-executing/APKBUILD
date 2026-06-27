@@ -1,0 +1,38 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=py3-executing
+pkgver=2.2.1
+pkgrel=1
+pkgdesc="Get information about what a Python frame is currently doing"
+url="https://github.com/alexmojaki/executing"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+checkdepends="ipython py3-asttokens py3-littleutils py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/alexmojaki/executing/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/executing-$pkgver"
+options="!check" # circular dependency: ipython -> py3-stack_data -> itself
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	local whl=.dist/executing-$pkgver-py2.py3-none-any.whl
+	python3 -m installer --destdir="$pkgdir" "$whl"
+}
+
+sha512sums="
+59d2ad7cf36279dd36df36355ad3252d32df21a4732fece8f1975be142604ee4646bee2a1fb52ff8ae4f3b155b34334dc92d5a05240cb5be169913e065d2fb23  py3-executing-2.2.1.tar.gz
+"

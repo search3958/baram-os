@@ -1,0 +1,45 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+pkgname=bear
+pkgver=4.1.4
+pkgrel=1
+pkgdesc="Tool that generates a compilation database for clang tooling"
+url="https://github.com/rizsotto/Bear"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	cargo
+	cargo-auditable
+	lld
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/rizsotto/Bear/archive/$pkgver/bear-$pkgver.tar.gz
+	"
+builddir="$srcdir/Bear-$pkgver"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen --release
+}
+
+package() {
+	DESTDIR="$pkgdir" PREFIX=/usr SRCDIR="$builddir/target/release" \
+		"$builddir/scripts/install.sh"
+	rm "$pkgdir/usr/share/doc/bear/COPYING"
+
+	install -Dm644 "$builddir/COPYING" -t "$pkgdir/usr/share/licenses/$pkgname/"
+}
+
+sha512sums="
+dc508e586e717909a65c3b586b6f3cb7adfb6468031ca89e9e766a0724755d688392ce37417ea5aea98b61569bde7451765444f704e643ef28476cbeadd5ff6f  bear-4.1.4.tar.gz
+"

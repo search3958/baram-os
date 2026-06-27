@@ -1,0 +1,58 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=hatch
+pkgver=1.16.3
+pkgrel=1
+pkgdesc="Modern, extensible Python project management"
+url="https://hatch.pypa.io/latest/"
+arch="noarch"
+license="MIT"
+depends="
+	py3-click
+	py3-hatchling
+	py3-httpx
+	py3-hyperlink
+	py3-keyring
+	py3-packaging
+	py3-pexpect
+	py3-platformdirs
+	py3-rich
+	py3-shellingham
+	py3-tomli-w
+	py3-tomlkit
+	py3-userpath
+	py3-uv
+	py3-virtualenv
+	py3-zstandard
+	"
+makedepends="py3-gpep517 py3-hatch-vcs"
+checkdepends="py3-pytest py3-trustme"
+source="https://github.com/pypa/hatch/archive/hatch-v$pkgver/hatch-$pkgver.tar.gz"
+subpackages="$pkgname-pyc"
+builddir="$srcdir/hatch-hatch-v$pkgver"
+# Tests are broken:
+# https://github.com/pypa/hatch/issues/1850
+# https://github.com/pypa/hatch/issues/1877
+# ...and others
+options="!check"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+2cad40d757f1bc241b2dd34910a7f8080827ae8790a57b67a577682a491e7ce66932b011236c98f7b2e60114b4c9d98983544bbe66f499056215b30b24b9d95e  hatch-1.16.3.tar.gz
+"

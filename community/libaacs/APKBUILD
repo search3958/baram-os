@@ -1,0 +1,40 @@
+
+# Contributor: apangona <apo@apangona.de>
+# Maintainer: apangona <apo@apangona.de>
+pkgname=libaacs
+pkgver=0.11.1
+pkgrel=1
+pkgdesc="libaacs is a research project to implement the Advanced Access Content System specification"
+url="https://www.videolan.org/developers/libaacs.html"
+arch="all"
+license="LGPL-2.1-only"
+makedepends="bison flex libgcrypt-dev"
+subpackages="$pkgname-dev"
+source="https://download.videolan.org/pub/videolan/libaacs/$pkgver/libaacs-$pkgver.tar.bz2"
+options="!check" # no tests provided
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+42dcba5fd593c9a8ec7af11251006b083ad2c49ec198734d1d66f67c2ded4557d77617600edbf0c5250e9b0407ef9a2f906d59d154bda8ecfc8adfd234fb2c42  libaacs-0.11.1.tar.bz2
+"

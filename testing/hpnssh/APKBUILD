@@ -1,0 +1,50 @@
+# Contributor: Lukas Franek <lukas.franek@ui.com>
+# Maintainer: Lukas Franek <lukas.franek@ui.com>
+pkgname=hpnssh
+pkgver=18.8.0
+pkgrel=0
+pkgdesc="HPNSSH: High performance SSH/SCP"
+url="https://psc.edu/hpn-ssh-home"
+# s390x: libssh is failing to build
+# ppc64le: libopenbsd-compat failing to build
+arch="all !s390x !ppc64le"
+license="custom"
+makedepends="
+	autoconf
+	automake
+	libtool
+	linux-headers
+	cmake
+	openssl-dev>3
+	zlib-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/rapier1/hpn-ssh/archive/refs/tags/hpn-$pkgver.tar.gz"
+builddir="$srcdir/hpn-ssh-hpn-$pkgver"
+# hpnssh-keysign need suid
+options="suid"
+
+build() {
+	autoreconf -fi
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-mantype=man
+	make
+}
+
+check() {
+	make -j1 file-tests interop-tests unit
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3816170c518f0674aedcd550f2bad805322c6e3408ac4dfd533f25c8c2fd77d0bfc2cc76e4ea2578a5d9e56e7b2f528b083439848e50966964213863076ed510  hpn-18.8.0.tar.gz
+"

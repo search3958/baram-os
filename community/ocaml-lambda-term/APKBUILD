@@ -1,0 +1,83 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+pkgname=ocaml-lambda-term
+_pkgname=lambda-term
+pkgver=3.4.0
+pkgrel=0
+pkgdesc="Terminal manipulation library for OCaml"
+url="https://github.com/ocaml-community/lambda-term"
+arch="all !riscv64 !loongarch64" # ocaml
+license="BSD-3-Clause"
+# ocaml-lwt_react-dev is provided by ocaml-lwt-dev
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	ocaml-logs-dev
+	ocaml-lwt-dev
+	ocaml-mew_vi-dev
+	ocaml-uucp-dev
+	ocaml-zed-dev
+	"
+makedepends="$depends_dev dune ocaml"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocaml-community/lambda-term/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --verbose
+}
+
+package() {
+	dune install --destdir="$pkgdir"
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+e3014f90346a1c02846047edf6d9c494de860c1b2de31c6561548221b0723e9cf3790ff9950d7958e68faaa9e44aa210eaf74e92cc119b45dcbc93ade9c14647  ocaml-lambda-term-3.4.0.tar.gz
+"

@@ -1,0 +1,37 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=postgresql-pg_roaringbitmap
+_projname=pg_roaringbitmap
+pkgver=1.1.0
+pkgrel=0
+pkgdesc="RoaringBitmap extension for PostgreSQL"
+url="https://github.com/ChenHuajun/pg_roaringbitmap"
+arch="all"
+license="Apache-2.0"
+makedepends="postgresql-dev"
+subpackages="$pkgname-bitcode"
+source="https://github.com/ChenHuajun/pg_roaringbitmap/archive/v$pkgver/postgresql-roaringbitmap-$pkgver.tar.gz"
+builddir="$srcdir/$_projname-$pkgver"
+options="!check"  # tests require running PostgreSQL
+
+build() {
+	make
+}
+
+package() {
+	depends="postgresql$(pg_config --major-version)"
+
+	make DESTDIR="$pkgdir" install
+}
+
+bitcode() {
+	pkgdesc="$pkgdesc (bitcode for JIT)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="postgresql$(pg_config --major-version)-jit $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/postgresql*/bitcode
+}
+
+sha512sums="
+7ab3eff4185c16bb91a163e5dbfb07f809fa618e079eac9acc1443f1aca7b111bcff9d2529b3c2edbd9db3ca2821de201e26f240f9c849db235f9051b941c665  postgresql-roaringbitmap-1.1.0.tar.gz
+"

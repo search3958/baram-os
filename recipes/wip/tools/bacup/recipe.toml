@@ -1,6 +1,0 @@
-#TODO tokio-tar crate error
-#TODO create a service
-[source]
-git = "https://github.com/galeone/bacup"
-[build]
-template = "cargo"

@@ -1,0 +1,37 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=libopensles-standalone
+pkgver=0_git20250913
+pkgrel=0
+_commit="bdb857a4baadbc8c036db85a5da26c5269a751c5"
+pkgdesc="A lightly patched version of Google's libOpenSLES implementation"
+url="https://gitlab.com/android_translation_layer/libopensles-standalone"
+arch="x86_64 aarch64 armv7 x86"
+license="Apache-2.0"
+makedepends="
+	libsndfile-dev
+	meson
+	openjdk8-jdk
+	sdl2-dev
+	"
+subpackages="$pkgname-dev $pkgname-dbg"
+source="https://gitlab.com/android_translation_layer/libopensles-standalone/-/archive/$_commit/libopensles-standalone-$_commit.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/libopensles-standalone-$_commit"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+fed4a95ffb4f099d21e2d8d9463b4fb1ee5a6324c278a857e4344a693fdb6c2c62657637ae216ca4d6c86562db6583c39a0384fe85cd8957c502eef40a3ce029  libopensles-standalone-bdb857a4baadbc8c036db85a5da26c5269a751c5.tar.gz
+"

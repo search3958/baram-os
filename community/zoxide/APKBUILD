@@ -1,0 +1,49 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=zoxide
+pkgver=0.9.9
+pkgrel=0
+pkgdesc="Faster way to navigate your filesystem"
+url="https://github.com/ajeetdsouza/zoxide"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+checkdepends="dash bash fish shfmt zsh"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/ajeetdsouza/zoxide/archive/v$pkgver/zoxide-$pkgver.tar.gz"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/zoxide -t "$pkgdir"/usr/bin/
+
+	install -Dm644 man/man1/*.1 -t "$pkgdir"/usr/share/man/man1/
+
+	cd contrib/completions
+	install -Dm644 zoxide.bash "$pkgdir"/usr/share/bash-completion/completions/zoxide
+	install -Dm644 zoxide.fish -t "$pkgdir"/usr/share/fish/vendor_completions.d/
+	install -Dm644 _zoxide -t "$pkgdir"/usr/share/zsh/site-functions/
+}
+
+sha512sums="
+1eaecdc43e06d988cdb113e158b1ac42121fe0c8863d01cb9b84ca219105d159517e1e7fb4ab9777fb7076ffae569d6f3ee346add8e60e366becb720afad8694  zoxide-0.9.9.tar.gz
+"

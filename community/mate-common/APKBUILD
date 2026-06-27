@@ -1,0 +1,32 @@
+# Contributor: Alan Lacerda <alacerda@alpinelinux.org>
+# Maintainer: Alan Lacerda <alacerda@alpinelinux.org>
+pkgname=mate-common
+pkgver=1.28.0
+pkgrel=0
+pkgdesc="Common scripts and macros"
+url="https://mate-desktop.org/"
+arch="noarch"
+license="GPL-3.0-or-later"
+subpackages="$pkgname-doc"
+source="https://pub.mate-desktop.org/releases/${pkgver%.*}/mate-common-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--sysconfdir=/etc \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+29306c5ab4b8ae6a2c14673e558c2a06c75ac3fd9f6d222ef0a01bbe8c94273c78157781d3b3a79f5d9550713148481f52e824fac37f40a9d901e91d341217d8  mate-common-1.28.0.tar.xz
+"

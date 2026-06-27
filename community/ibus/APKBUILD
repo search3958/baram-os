@@ -1,0 +1,107 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=ibus
+pkgver=1.5.34
+pkgrel=0
+pkgdesc="Next Generation Input Bus for Linux"
+url="https://github.com/ibus/ibus/wiki"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="
+	dconf hicolor-icon-theme iso-codes dbus py3-gobject3
+	"
+makedepends="
+	bash dconf-dev gtk+3.0-dev gtk4.0-dev
+	libnotify-dev iso-codes-dev gobject-introspection-dev vala
+	wayland-dev wayland-protocols
+	dbus-x11 unicode-character-database cldr-emoji-annotation
+	libdbusmenu-glib-dev libdbusmenu-gtk3-dev
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-pyc
+	$pkgname-emoji
+	$pkgname-gtk3
+	$pkgname-gtk4
+	$pkgname-bash-completion
+	"
+# if $pkgver tarball not found, switch to $pkgver-rc$n
+# https://github.com/ibus/ibus/issues/2584
+source="https://github.com/ibus/ibus/releases/download/$pkgver/ibus-$pkgver.tar.gz"
+install="$pkgname.post-install"
+
+prepare() {
+	default_prepare
+
+	# disable-gtk-doc doesn't prevent install of what exists
+	rm -r docs/reference/ibus/html/
+}
+
+build() {
+	local sitedir=$(python3 -c "import site; print(site.getsitepackages()[0])")
+
+	./configure \
+		--prefix=/usr \
+		--libexecdir=/usr/lib/ibus \
+		--sysconfdir=/etc \
+		--with-python-overrides-dir="$sitedir"/gi/overrides \
+		--with-ucd-dir=/usr/share/unicode/ \
+		--disable-gtk-doc \
+		--disable-gtk2 \
+		--disable-memconf \
+		--disable-python2 \
+		--disable-systemd-services \
+		--enable-emoji-dict \
+		--enable-dconf \
+		--enable-gtk4 \
+		--enable-introspection \
+		--enable-surrounding-text \
+		--enable-ui \
+		--enable-wayland
+	make
+}
+
+check() {
+	./bus/ibus-daemon --version
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# Install pygobject overrides
+	local sitedir=$(python3 -c "import site; print(site.getsitepackages()[0])")
+	install -Dm644 "$builddir"/bindings/pygobject/gi/overrides/IBus.py \
+		-t "$pkgdir"/"$sitedir"/gi/overrides/
+}
+
+emoji() {
+	pkgdesc="$pkgdesc (emojis)"
+	depends="$pkgname unicode-character-database cldr-emoji-annotation"
+
+	mkdir -p "$subpkgdir"/usr/share/ibus
+	mv "$pkgdir"/usr/share/ibus/dicts "$subpkgdir"/usr/share/ibus
+}
+
+gtk3() {
+	install_if="$pkgname=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/lib/gtk-3.0/3.0.0
+}
+
+gtk4() {
+	install_if="$pkgname=$pkgver-r$pkgrel gtk4.0"
+
+	amove usr/lib/gtk-4.0/4.0.0
+}
+
+pyc() {
+	default_pyc
+	amove usr/share/ibus/setup/__pycache__
+}
+
+sha512sums="
+42e2a5cef9fd9844bb0c559bc7339ad5c71f312801e39be129c0a62eac7e57770c182ca5793a64a5592b7a4ba9cbf4a496942edbc5d670a44209067bc4dc3862  ibus-1.5.34.tar.gz
+"

@@ -1,0 +1,38 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-game-libretro-beetle-vb
+pkgver=1.31.0.34
+_realname=Nexus
+pkgrel=0
+pkgdesc="Beetle-VB for Kodi"
+options="!check" # no test suite
+url="https://github.com/kodi-game/game.libretro.beetle-vb"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="GPL-2.0-only"
+makedepends="cmake kodi-dev samurai"
+depends="kodi-game-libretro libretro-beetle-vb"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/kodi-game/game.libretro.beetle-vb/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/game.libretro.beetle-vb-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -r "$pkgdir"/usr/share/kodi/addons/game.libretro.beetle-vb/resources/icon.png \
+		"$pkgdir"/usr/share/kodi/addons/game.libretro.beetle-vb/resources/screenshot* \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.beetle-vb/game.libretro.beetle-vb.so
+	ln -s /usr/lib/libretro/mednafen_vb_libretro.so \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.beetle-vb/game.libretro.beetle-vb.so
+	sed -i '/<assets>/,/<\/assets>/d' "$pkgdir"/usr/share/kodi/addons/game.libretro.beetle-vb/addon.xml
+
+}
+
+sha512sums="
+42ab8efca903f90e7abf1ad97b89e89b5d69793c944c795311237551144be71c319b0493404798067c7163e9863aa685c34b4eada31fa4c21de5c05d9d8577c7  kodi-game-libretro-beetle-vb-1.31.0.34-Nexus.tar.gz
+"

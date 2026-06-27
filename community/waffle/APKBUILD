@@ -1,0 +1,53 @@
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=waffle
+pkgver=1.8.2
+pkgrel=0
+pkgdesc="C library for selecting an OpenGL API and window system at runtime"
+options="!check" # tests are platform dependant (x11/wayland)
+url="https://gitlab.freedesktop.org/mesa/waffle"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	bash-completion-dev
+	cmake
+	docbook-xsl
+	eudev-dev
+	libxslt
+	mesa-dev
+	mesa-egl
+	mesa-gbm
+	meson
+	wayland-dev
+	wayland-protocols
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	"
+source="https://waffle.freedesktop.org/files/release/waffle-$pkgver/waffle-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dbuild-examples=false \
+		-Dbuild-manpages=true \
+		-Dbuild-htmldocs=false \
+		-Dbuild-tests=false \
+		-Dgbm=enabled \
+		-Dsurfaceless_egl=enabled \
+		-Dwayland=enabled \
+		-Dx11_egl=enabled \
+		-Dglx=enabled \
+		build
+	meson compile -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+sha512sums="
+b51044980bb6c4d385632d8199bd123bc692aaf254437054e2c37f37e0cd3049e27c7de0d89eb6e975dd6b2d3c0704b158dfe306a89687736cca7fb577be81bc  waffle-1.8.2.tar.xz
+"

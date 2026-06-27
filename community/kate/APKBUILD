@@ -1,0 +1,133 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kate
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> ki18n
+arch="all !armhf"
+url="https://kde.org/applications/utilities/org.kde.kate"
+pkgdesc="A multi-document, multi-view text editor"
+license="LGPL-2.0-only AND LGPL-2.0-or-later"
+depends="kate-common"
+makedepends="
+	extra-cmake-modules
+	kconfig-dev
+	kcrash-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kio-dev
+	kitemmodels-dev
+	kjobwidgets-dev
+	knewstuff-dev
+	kparts-dev
+	ktexteditor-dev
+	kuserfeedback-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	plasma-activities-dev
+	libplasma-dev
+	qt6-qtbase-dev
+	samurai
+	threadweaver-dev
+	"
+checkdepends="
+	coreutils
+	xwayland-run
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-lang
+	kate-common:kate_common
+	kwrite-doc:kwrite_doc
+	kwrite-lang:kwrite_lang
+	kwrite:kwrite
+	"
+_repo_url="https://invent.kde.org/utilities/kate.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kate-$pkgver.tar.xz"
+
+build() {
+	 cmake -B build/kate -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_kwrite=FALSE
+	cmake --build build/kate
+	cmake -B build/kwrite -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_kate=FALSE \
+		-DBUILD_addons=FALSE
+	cmake --build build/kwrite
+}
+
+check() {
+	# kateapp-session_manager_test and kateapp-filetree_model_test are broken
+	# kateapp-sessions_action_test requires OpenGL
+	wlheadless-run -- ctest --test-dir build/kate -E "kateapp-(session(_manager|s_action)|filetree_model|bytearraysplitter|diffwidget|location_history|kate_view_mgmt|kate_doc_manager|file_history)_test(|s)" -j1
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build/kate
+
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	mv "$pkgdir"/usr/share/doc/HTML "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+kate_common() {
+	amove usr/lib
+}
+
+kwrite() {
+	depends="kate-common"
+
+	DESTDIR="$subpkgdir" cmake --install "$builddir"/build/kwrite
+
+	# Already provided by Kate
+	rm "$subpkgdir"/usr/bin/exec_inspect.sh
+
+	# Man package only exists for Kate
+	rm -r \
+		"$subpkgdir"/usr/share/man \
+		"$subpkgdir"/usr/share/doc \
+		"$subpkgdir"/usr/share/locale \
+		"$subpkgdir"/usr/lib
+}
+
+kwrite_doc() {
+	pkgdesc="KWrite documentation"
+	install_if="docs kwrite=$pkgver-r$pkgrel"
+
+	DESTDIR="$subpkgdir" cmake --install "$builddir"/build/kwrite
+
+	rm -r \
+		"$subpkgdir"/usr/share/man \
+		"$subpkgdir"/usr/share/icons \
+		"$subpkgdir"/usr/share/locale \
+		"$subpkgdir"/usr/share/metainfo \
+		"$subpkgdir"/usr/share/applications \
+		"${subpkgdir:?}"/usr/bin \
+		"$subpkgdir"/usr/lib
+}
+
+kwrite_lang() {
+	pkgdesc="Languages for package KWrite"
+	install_if="kwrite=$pkgver-r$pkgrel lang"
+
+	DESTDIR="$subpkgdir" cmake --install "$builddir"/build/kwrite
+
+	rm -r \
+		"$subpkgdir"/usr/share/man \
+		"$subpkgdir"/usr/share/doc \
+		"$subpkgdir"/usr/share/icons \
+		"$subpkgdir"/usr/share/metainfo \
+		"$subpkgdir"/usr/share/applications \
+		"${subpkgdir:?}"/usr/bin \
+		"$subpkgdir"/usr/lib
+}
+
+sha512sums="
+d79258a0cc338a9dfab452bec56f993eb8cf472b733fbfd6d5c8c47d5174069e6bd94799bb1c615b5cc70e37ae9846445f8db41b3957209e179ecf20351d810b  kate-26.04.2.tar.xz
+"

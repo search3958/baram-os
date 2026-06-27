@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-2048
+pkgver=0_git20241227
+pkgrel=0
+_commit="86e02d3c2dd76858db7370f5df1ccfc33b3abee1"
+arch="all"
+url="https://github.com/libretro/libretro-2048"
+pkgdesc="port of 2048 puzzle game to the libretro API"
+license="Unlicense"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/libretro-2048/archive/$_commit.tar.gz"
+builddir="$srcdir/libretro-2048-$_commit"
+options="!check" # No tests
+
+build() {
+	make -f Makefile.libretro
+}
+
+package() {
+	install -Dm644 2048_libretro.so "$pkgdir"/usr/lib/libretro/2048_libretro.so
+}
+
+sha512sums="
+1c7c51cc287a5c501f8bf7957d8e7186318e7f7f00c8af809d66b61d805684ca54999d2cc810806a0b01ddc32e1c66f48f0db01637dac9553b654258d36d1afa  libretro-2048-86e02d3c2dd76858db7370f5df1ccfc33b3abee1.tar.gz
+"

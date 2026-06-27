@@ -1,0 +1,46 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Hugo Osvaldo Barrera <hugo@whynothugo.nl>
+pkgname=py3-slidge-style-parser
+pkgver=0.2.0
+pkgrel=0
+_pkgreal=slidge-style-parser
+pkgdesc="Style parser for Slidge"
+url="https://pypi.org/project/slidge-style-parser/"
+arch="all"
+license="AGPL-3.0-or-later"
+makedepends="
+	cargo
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools-rust
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+source="https://files.pythonhosted.org/packages/source/s/slidge-style-parser/slidge_style_parser-$pkgver.tar.gz"
+builddir="$srcdir/slidge_style_parser-$pkgver"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --locked
+}
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+b70b6ab7c655af01beecef9084947ec61aa136101b530b0783070bbbfbecbdadce2e02fca034f804ccbcc38e0569b7bffb5c9f0dcd4c8703041c3149b5e3e1cb  slidge_style_parser-0.2.0.tar.gz
+"

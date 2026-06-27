@@ -1,0 +1,27 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=haredo
+pkgver=1.0.6
+pkgrel=1
+pkgdesc="Simple, Unix-idiomatic build automator"
+url="https://sr.ht/~autumnull/haredo"
+arch="x86_64 aarch64 riscv64" # Hare
+license="WTFPL"
+makedepends="hare scdoc"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~autumnull/haredo/archive/$pkgver.tar.gz"
+
+build() {
+	./bootstrap.sh
+}
+
+check() {
+	PATH="$builddir/bin:$PATH" haredo test
+}
+
+package() {
+	PREFIX="$pkgdir"/usr ./bootstrap.sh install
+}
+
+sha512sums="
+1ea80e0b3b351f1e7cf623308395fac5925ea652e224f4416bee8421409f7266d88ddc31304105f987480f451819ff5787e9117846dd276e5e103a1456b8242f  haredo-1.0.6.tar.gz
+"

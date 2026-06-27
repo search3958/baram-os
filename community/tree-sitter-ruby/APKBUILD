@@ -1,0 +1,29 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=tree-sitter-ruby
+pkgver=0.23.1
+pkgrel=1
+pkgdesc="Ruby grammar for tree-sitter"
+url="https://github.com/tree-sitter/tree-sitter-ruby"
+arch="all"
+license="MIT"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+install_if="tree-sitter-grammars"
+source="https://github.com/tree-sitter/tree-sitter-ruby/archive/v$pkgver/tree-sitter-ruby-$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build
+}
+
+check() {
+	tree-sitter test
+}
+
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install
+}
+
+sha512sums="
+c8e538e138a5f0802f43b1114e39a90b4a3087b05e3e77e2d5d5ea8ccaf9d0226771a7d81b200f15a954960309e812b790e275b3216c3512ed1342eefc55a0f0  tree-sitter-ruby-0.23.1.tar.gz
+"

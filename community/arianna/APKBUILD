@@ -1,0 +1,59 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=arianna
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="EPub Reader for mobile devices"
+url="https://invent.kde.org/graphics/arianna/"
+# armhf blocked by qt6-qtdeclarative
+# x86, armv7, s390x and riscv64 blocked by qt6-qtwebengine
+arch="all !armhf !x86 !armv7 !s390x !riscv64"
+license="(BSD-2-Clause OR BSD-3-Clause) AND (GPL-2.0-only OR GPL-3.0-only) AND (LGPL-2.0-or-later OR LGPL-2.1-or-later OR LGPL-3.0-or-later)"
+depends="
+	kirigami-addons
+	kirigami
+	"
+makedepends="
+	baloo-dev
+	extra-cmake-modules
+	karchive-dev
+	kconfig-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kfilemetadata-dev
+	ki18n-dev
+	kirigami-addons-dev
+	kirigami-dev
+	kwindowsystem-dev
+	qqc2-desktop-style-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qthttpserver-dev
+	qt6-qtsvg-dev
+	qt6-qtwebengine-dev
+	qt6-qtwebsockets-dev
+	samurai
+	"
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/graphics/arianna.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/arianna-$pkgver.tar.xz"
+# No tests
+options="!check"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+32c0979dfb5c2e0c06ff2eceb061ada7c07d5ba6578a5984b9cf755b2fee6ad57422267de382c6b8d4beff979566fa186cc25a79711b134d0b2c74b0847bf58e  arianna-26.04.2.tar.xz
+"

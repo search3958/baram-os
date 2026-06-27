@@ -1,5 +1,0 @@
-#TODO Compiled but not tested
-[source]
-tar = "http://downloads.xiph.org/releases/speex/speexdsp-1.2.1.tar.gz"
-[build]
-template = "configure"

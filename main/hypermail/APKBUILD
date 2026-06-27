@@ -1,0 +1,61 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=hypermail
+pkgver=2.4.0
+pkgrel=4
+pkgdesc="Mail Archiver"
+url="http://www.hypermail-project.org"
+arch="all"
+license="GPL-2.0-or-later"
+depends="lua"
+makedepends="autoconf automake libtool pcre-dev bison gdbm-dev"
+source="https://github.com/hypermail-project/hypermail/releases/download/v$pkgver/hypermail-$pkgver.tar.gz
+	modernc.patch
+	gcc15.patch
+	mdir2mbox.lua
+	"
+options="!check"
+
+prepare() {
+	default_prepare
+
+	rm -fv src/trio/*.a
+	rm -fv src/trio/*.o
+	update_config_sub
+	update_config_guess
+	libtoolize --force
+	aclocal
+	autoconf -f
+}
+
+build() {
+	# build system does not set the -L correctly to the dir
+	LDFLAGS="$LDFLAGS -L$PWD/src/trio/"
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--with-httpddir=/var/www \
+		--with-cgidir=/var/www/cgi-bin
+	make -C src/trio
+	make
+}
+package() {
+	#does not understand DESTDIR so going to install ourselves
+	#make DESTDIR="$pkgdir" install
+
+	install -m755 -D archive/rdmsg "$pkgdir"/usr/bin/rdmsg
+	install -m755 -D archive/msg2archive "$pkgdir"/usr/bin/msgarchive
+	install -m755 -D src/hypermail "$pkgdir"/usr/bin/hypermail
+	install -m755 -D "$srcdir"/mdir2mbox.lua "$pkgdir"/usr/bin/mdir2mbox.lua
+}
+
+sha512sums="
+cb21341d60f14fe03ec5817d2464567e9e547d21ce38857a3958a769710da3e49ab4592dac4f87f1f4eb873120659a8fc6a85d27d11b575f855abbf3347bed82  hypermail-2.4.0.tar.gz
+91c41a7ab3fccfec80739dbca9d23e7c917836d6275f209d73ca9f851312ace348d6b134ef4d89f35f3db46575095d1becb6c9a174cdf5a11fcad7ee100955df  modernc.patch
+65c206b2b600178c58b45ff4b9afdd0c7fd3a8c196a2b95c68260485378a76cb7b5c5d7fba7c73bda5194a7faddf6ca861bc416ffa55b2571fffc53d73b8b119  gcc15.patch
+203c292c46d40c35023629795ef0baa254c036ccfdb5628b3abf2d0c965bff9274f39571dfcb27aa508d9b801356d793fd5f78466ebb69b2306f56b28ac85b9c  mdir2mbox.lua
+"

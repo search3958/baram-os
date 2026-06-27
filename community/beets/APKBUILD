@@ -1,0 +1,85 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=beets
+pkgver=2.12.0
+pkgrel=0
+pkgdesc="Music library manager and MusicBrainz tagger"
+url="https://beets.io"
+arch="noarch"
+license="MIT"
+subpackages="$pkgname-doc $pkgname-zsh-completion $pkgname-pyc"
+depends="
+	py3-confuse
+	py3-jellyfish
+	py3-mediafile
+	py3-munkres
+	py3-requests-ratelimiter
+	py3-mutagen
+	py3-lap
+	py3-packaging
+	py3-platformdirs
+	py3-requests
+	py3-unidecode
+	py3-typing-extensions
+	py3-yaml
+	python3
+	"
+# Some dependencies listed in $checkdepends are only required by certain
+# plugins. Hence, they are considered optional dependencies and not listed
+# in $depends. Users can install them manually if they want to use plugins
+# which require them.
+checkdepends="
+	py3-discogs-client
+	py3-flask
+	py3-mpd2
+	py3-pylast
+	py3-pytest
+	py3-pytest-cov
+	py3-requests-oauthlib
+	py3-responses
+	py3-xdg
+	ffmpeg
+"
+makedepends="py3-setuptools poetry py3-gpep517"
+options="net" # tests require musicbrainz.org access
+# TODO: Completions are not included in the tarball in 2.2.0.
+source="https://github.com/sampsyo/beets/releases/download/v$pkgver/beets-$pkgver.tar.gz
+	https://raw.githubusercontent.com/beetbox/beets/refs/tags/v$pkgver/extra/_beet"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# test_aura.py: missing pytest-flask. Plugin tests will also no longer be run
+	# by default in future releases. https://github.com/beetbox/beets/issues/5526
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# XXX: Skip importer tests due to https://github.com/beetbox/beets/issues/5770
+	.testenv/bin/python3 -m pytest \
+		--ignore test/plugins/test_aura.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	# Remove man pages from Python site-packages directory.
+	rm -rf "$pkgdir"/usr/lib/python*/site-packages/man
+
+	local man
+	for man in man/*.?; do
+		install -Dm644 "$man" \
+			"$pkgdir"/usr/share/man/man${man##*.}/${man##*/}
+	done
+
+	install -Dm644 "$srcdir"/_beet -t "$pkgdir"/usr/share/zsh/site-functions/
+}
+
+sha512sums="
+ab069c6494925442b63b62c3530a122cdf1ba54281e086791f32699e91a59c3b81cfbe4687cbb28a70c6d47ae7889cf940461198247c4f52ba07287960319480  beets-2.12.0.tar.gz
+60170453497ed86cf2be6f371329df3f19096c842c221ebd354aed27ba45c9fdba319a53dac538ca1be83d2bf8a97b577173692ebe93d9239da6482b5c018ed9  _beet
+"

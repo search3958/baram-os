@@ -1,0 +1,54 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=gatling
+pkgver=0.16
+pkgrel=6
+pkgdesc="High performance web server"
+url="https://www.fefe.de/gatling/"
+arch="all"
+license="GPL-2.0-only"
+options="!check" # No tests
+makedepends="openssl-dev>3 libowfat-dev zlib-dev libcap-dev"
+install="gatling.pre-install"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="http://www.fefe.de/gatling/gatling-$pkgver.tar.xz
+	build-fixes.patch
+
+	gatling.confd
+	gatling.initd
+	"
+
+build() {
+	CFLAGS="$CFLAGS -std=c99"
+
+	make havealloca.h
+	make prefix=/usr \
+		CFLAGS="$CFLAGS -I/usr/include/libowfat" \
+		LDFLAGS="$LDFLAGS" \
+		gatling tlsgatling
+}
+
+package() {
+	install -Dm644 gatling.1 \
+		"$pkgdir"/usr/share/man/man1/gatling.1
+
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname/
+	install -m644 README.ftp README.http README.tls \
+		"$pkgdir"/usr/share/doc/$pkgname/
+
+	mkdir -p "$pkgdir"/usr/bin/
+	install -m755 gatling tlsgatling \
+		"$pkgdir"/usr/bin/
+
+	install -Dm755 "$srcdir"/gatling.initd \
+		"$pkgdir"/etc/init.d/gatling
+	install -Dm644 "$srcdir"/gatling.confd \
+		"$pkgdir"/etc/conf.d/gatling
+}
+
+sha512sums="
+9446ea0ae862509b1a892e5bdef14d3a2320c3c3e846362b4679c0834aa906ab5b16ef54e4a7c8e7ee839d30317436dd411e891e3105035a9ee31b0facc0b8c1  gatling-0.16.tar.xz
+ef9cec8d8659e347305e345573e1328daefa50cdf5f583315b4d667f0d8665c7ccf5b06b600a6908b1981bb7d45a26b183a130459404955ec081193888133176  build-fixes.patch
+b51e5145fa5f67dd933f8b7c06d633545152b253c51891ef4519b83707b0001034506a7a8807a37d104dcab47320a5233093d9d89211b36753ac316e447b54a9  gatling.confd
+456ee7f2c62b682376f301b1727e32e68a53fe5b50bd9d9b1e00225e6d0e6bc62fa328b503ca2ebf899ff4c6ca68d9998785ee83749d4590c3c0196a5aadb133  gatling.initd
+"

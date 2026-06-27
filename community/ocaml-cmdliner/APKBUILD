@@ -1,0 +1,73 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-cmdliner
+_pkgname=cmdliner
+pkgver=1.1.1
+pkgrel=6
+pkgdesc="Declarative definition of command line interfaces for OCaml"
+url="https://erratique.ch/software/cmdliner"
+arch="all !riscv64 !loongarch64" # ocaml
+license="ISC"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="ocaml"
+options="!check"  # no tests provided
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.bz2::https://erratique.ch/software/cmdliner/releases/cmdliner-$pkgver.tbz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	make -j1 all
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	make DESTDIR="$pkgdir" install-doc
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+5478ad833da254b5587b3746e3a8493e66e867a081ac0f653a901cc8a7d944f66e4387592215ce25d939be76f281c4785702f54d4a74b1700bc8838a62255c9e  ocaml-cmdliner-1.1.1.tar.bz2
+"

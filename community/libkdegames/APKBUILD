@@ -1,0 +1,76 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=libkdegames
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/applications/games"
+pkgdesc="Common code and data for many KDE games"
+license="LGPL-2.0-only AND GFDL-1.2-only"
+depends_dev="
+	karchive-dev
+	kbookmarks-dev
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	kdnssd-dev
+	kglobalaccel-dev
+	kguiaddons-dev
+	ki18n-dev
+	kiconthemes-dev
+	kitemviews-dev
+	kjobwidgets-dev
+	knewstuff-dev
+	kservice-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	libsndfile-dev
+	openal-soft-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtsvg-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-dev $pkgname-lang carddecks::noarch"
+_repo_url="https://invent.kde.org/games/libkdegames.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/libkdegames-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	xvfb-run -a ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+carddecks() {
+	pkgdesc="Contains all carddecks for KDE cardgames"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/share/carddecks
+}
+
+sha512sums="
+040473859dede1ae964fa3f02ad4b0749c4de1494a3250e76aaf6f4971d6f6ca1e2cb07a771f4837803274fabd860ec67eb49bcbb8406416d45fb2a6794b22cd  libkdegames-26.04.2.tar.xz
+"

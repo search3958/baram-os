@@ -1,0 +1,45 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=mpg123
+pkgver=1.33.6
+pkgrel=0
+pkgdesc="Console-based MPEG Audio Player for Layers 1, 2 and 3"
+options="libtool"
+url="https://www.mpg123.org/"
+arch="all"
+license="LGPL-2.1-only"
+subpackages="$pkgname-libs $pkgname-dev $pkgname-doc"
+makedepends="libtool alsa-lib-dev linux-headers"
+source="https://www.mpg123.org/download/mpg123-$pkgver.tar.bz2"
+
+# secfixes:
+#   1.32.8-r0:
+#     - CVE-2024-10573
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-dependency-tracking \
+		--with-pic \
+		--with-optimization=0 \
+		--with-cpu=i386_fpu \
+		--with-audio="alsa oss"
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	# Installation is not parallel friendly and will fail
+	# sometimes
+	make -j1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+83d8fca128b1fd39e336e6052837b16951360d6f1a47919e00d4b7285717ee7cd4dd56c24bd873316ba6969081fe619cda93ebb20771aed052c6e9d07657f2ab  mpg123-1.33.6.tar.bz2
+"

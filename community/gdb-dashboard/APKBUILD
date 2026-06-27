@@ -1,0 +1,24 @@
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=gdb-dashboard
+pkgver=0.17.4
+pkgrel=1
+pkgdesc="Modular visual interface for GDB in Python"
+url="https://github.com/cyrus-and/gdb-dashboard"
+arch="noarch"
+license="MIT"
+depends="gdb py3-pygments"
+install="gdb-dashboard.post-install"
+subpackages="$pkgname-doc"
+source="https://github.com/cyrus-and/gdb-dashboard/archive/v$pkgver/gdb-dashboard-$pkgver.tar.gz"
+options="!check" # no check
+
+package() {
+	install -Dm644 .gdbinit -t "$pkgdir"/usr/share/"$pkgname"
+
+	install -Dm644 README.md -t "$pkgdir"/usr/share/licenses/"$pkgname"
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/doc/"$pkgname"
+}
+
+sha512sums="
+9cce63be926d21aace0833b52b36266f115599fbbf426dcd7d8090a6861c1c9db26fe7d953bedcbec0b96b75c9b2b9af59666c0e80f5cdf55bd6d44523459dbd  gdb-dashboard-0.17.4.tar.gz
+"

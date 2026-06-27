@@ -1,0 +1,62 @@
+# Contributor: Hakan Erduman <hakan@erduman.de>
+# Maintainer: Hakan Erduman <hakan@erduman.de>
+pkgname=hamster-time-tracker
+pkgver=3.0.3
+pkgrel=3
+pkgdesc="time tracking for individuals"
+url="https://github.com/projecthamster/hamster"
+arch="noarch"
+license="GPL-3.0-or-later"
+makedepends="
+	intltool
+	itstool
+	"
+checkdepends="
+	dbus-x11
+	xvfb-run
+	"
+depends_doc="
+	yelp
+	"
+depends="
+	gsettings-desktop-schemas
+	gtk+3.0
+	py3-cairo
+	py3-dbus
+	py3-gobject3
+	py3-xdg
+	python3
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/projecthamster/hamster/archive/refs/tags/v$pkgver.tar.gz
+	no-version-check.patch
+	"
+builddir="$srcdir/hamster-$pkgver"
+subpackages="
+	$pkgname-pyc
+	$pkgname-lang
+	$pkgname-doc
+	$pkgname-bash-completion
+	"
+
+build() {
+	python3 ./waf configure --skip-gsettings --skip-icon-cache-update
+	python3 ./waf build
+}
+
+package() {
+	python3 ./waf install --destdir="$pkgdir"
+	install -Dm644 -t "$pkgdir"/usr/share/glib-2.0/schemas ./data/org.gnome.hamster.gschema.xml
+}
+
+check() {
+	export XDG_RUNTIME_DIR="$builddir"
+	export GSETTINGS_SCHEMA_DIR="$builddir/schemas"
+	install -Dm644 -t "$builddir/schemas" ./data/org.gnome.hamster.gschema.xml
+	glib-compile-schemas "$builddir/schemas"
+	dbus-run-session xvfb-run python3 -m unittest
+}
+
+sha512sums="
+50f15ed22d87bce2dc8fd36f14826916d156eebe4ce0f9166541246d53a97e63b6875bfbcd83de1cda362035f23084a0ef2291f5c04364cd9acb0d7484ae05ff  hamster-time-tracker-3.0.3.tar.gz
+9a1e1b6fee41f38b6635d44521b1ad2723d834dd3f222ab3701b84c78906963f3d862190b5317a9fb6985715c17afbba0f1992661d29a501924c0744d71892e7  no-version-check.patch
+"

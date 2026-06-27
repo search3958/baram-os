@@ -1,0 +1,14 @@
+cargo test --exclude upgrade doesn't work here. :/
+
+--- a/tests/integration/mod.rs
++++ b/tests/integration/mod.rs
+@@ -58,7 +58,7 @@
+ mod task;
+ #[path = "test_tests.rs"]
+ mod test;
+-#[path = "upgrade_tests.rs"]
+-mod upgrade;
++//#[path = "upgrade_tests.rs"]  // XXX-Patched: "upgrade" feature is disabled
++//mod upgrade;
+ #[path = "watcher_tests.rs"]
+ mod watcher;

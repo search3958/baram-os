@@ -1,0 +1,50 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: team/kde <bribbers@disroot.org>
+
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+pkgname=massif-visualizer
+pkgver=0.8.0
+pkgrel=0
+pkgdesc="Visualizer for Valgrind Massif data files"
+# armhf blocked by extra-cmake-modules
+arch="all !armhf"
+url="https://kde.org/applications/development/org.kde.massif-visualizer"
+license="GPL-2.0-or-later"
+makedepends="
+	extra-cmake-modules
+	karchive-dev
+	kconfig-dev
+	kcoreaddons-dev
+	kdiagram-dev
+	ki18n-dev
+	kio-dev
+	kparts-dev
+	qt6-qtbase-dev
+	qt6-qtsvg-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+_repo_url="https://invent.kde.org/sdk/massif-visualizer"
+source="https://download.kde.org/stable/massif-visualizer/$pkgver/src/massif-visualizer-$pkgver.tar.xz"
+subpackages="$pkgname-lang"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	xvfb-run ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+e5bbcb7e5e0ac073ec292fffe397242b94c98895f3abb28ccf2f9c9727c52e3c6ae333a447b3131daa3164e9409d1dcb6c9852ab48a24985d07b1e32943045ae  massif-visualizer-0.8.0.tar.xz
+"

@@ -1,0 +1,34 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-annotated-types
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="Reusable constraint types to use with typing.Annotated"
+url="https://github.com/annotated-types/annotated-types"
+arch="noarch"
+license="MIT"
+makedepends="py3-gpep517 py3-hatchling py3-wheel py3-installer"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/annotated-types/annotated-types/archive/refs/tags/v$pkgver/py3-annotated-types-$pkgver.tar.gz"
+builddir="$srcdir/annotated-types-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+1cd43119f9127bcf68929a53158a91cef94d16b7bae3647b830899089b05bb66070ca4ac052e2a0b2fadbe567bca01d7773006568382034b3fbe20678d5fdc9c  py3-annotated-types-0.7.0.tar.gz
+"

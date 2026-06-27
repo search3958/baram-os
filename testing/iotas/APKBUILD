@@ -1,0 +1,53 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=iotas
+pkgver=2026.6
+pkgrel=0
+pkgdesc="Distraction-free note taking via a mobile-first design"
+url="https://gitlab.gnome.org/World/iotas"
+arch="noarch !armhf !armv7 !loongarch64 !ppc64le !riscv64 !s390x !x86" # py3-pandoc
+license="GPL-3.0-or-later"
+depends="
+	gtksourceview5
+	libadwaita
+	libsecret
+	py3-gobject3
+	py3-gtkspellcheck
+	py3-linkify-it-py
+	py3-markdown-it-py
+	py3-mdit-py-plugins
+	py3-packaging
+	py3-pypandoc
+	py3-requests
+	python3
+	webkit2gtk-6.0
+	"
+makedepends="
+	desktop-file-utils
+	glib-dev
+	gobject-introspection-dev
+	gtk4.0-dev
+	gtksourceview5-dev
+	libadwaita-dev
+	meson
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://gitlab.gnome.org/World/iotas/-/archive/$pkgver/iotas-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+98bb7f1999ff1276ada13ea2967382600f33d48eed5e8ee0b1eafbc8a06a049df54a80bb26f5e836d41dc8ba6c1fe9674500ec9569364889e99928d768dacdb0  iotas-2026.6.tar.gz
+"

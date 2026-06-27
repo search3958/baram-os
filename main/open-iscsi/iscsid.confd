@@ -1,0 +1,3 @@
+# /etc/conf.d/iscsid
+# options to pass to iscsid
+# OPTS=""

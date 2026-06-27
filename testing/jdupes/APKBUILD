@@ -1,0 +1,30 @@
+# Contributor: tcely <tcely@users.noreply.github.com>
+# Maintainer: Roberto Oliveira <robertoguimaraes8@gmail.com>
+pkgname=jdupes
+pkgver=1.31.1
+pkgrel=0
+pkgdesc="identifying and taking actions upon duplicate files"
+options="!check" # No testsuite
+url="https://codeberg.org/jbruchon/jdupes"
+arch="all"
+license="MIT"
+subpackages="$pkgname-doc"
+makedepends="linux-headers libjodycode-dev xxhash-dev"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/jbruchon/jdupes/archive/v$pkgver.tar.gz
+	system-xxhash.patch
+	"
+builddir="$srcdir/$pkgname"
+
+build() {
+	make ENABLE_DEDUPE=1
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+	install -Dm644 LICENSE.txt "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+1b0163d261c523007e1000a188e4d738f1aa9d1d92ef90097b64eb870bbf60555617a34b8d5ca34117ed6c0a0965c600c06a228229392bfbe7e488cd78520e0a  jdupes-1.31.1.tar.gz
+6c8430b76fba6cf4458d1a8e3f0c431250a59029a18cfc38f4befe23a94da25153cb1e54eb4b6de3c66a8015ca1c083c46d2cf215f594317c48eed580078ba6b  system-xxhash.patch
+"

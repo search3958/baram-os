@@ -1,0 +1,31 @@
+# Maintainer:
+pkgname=clifm
+pkgver=1.28
+pkgrel=1
+pkgdesc="CLI file manager"
+url="https://github.com/leo-arch/clifm"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	acl-dev
+	bsd-compat-headers
+	file-dev
+	gettext-tiny-dev
+	libcap-dev
+	readline-dev
+	"
+options="!check" # no test suite
+subpackages="$pkgname-doc $pkgname-bash-completion $pkgname-zsh-completion $pkgname-fish-completion"
+source="https://github.com/leo-arch/clifm/releases/download/v$pkgver/clifm-$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make PREFIX=/usr MANDIR=/usr/share/man DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+ab54e090a2a17aca304cf39ea3e2a52b86ec074f370e2e09648a4319ae11ea31cf930d9642459ce539588b167d01c75f03464fd23dbdbab5c35fac43a2bcaab0  clifm-1.28.tar.gz
+"

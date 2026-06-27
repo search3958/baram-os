@@ -1,0 +1,35 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=sad
+pkgver=0.4.23
+pkgrel=0
+pkgdesc="CLI search and replace - a batch file edit tool"
+url="https://github.com/ms-jpq/sad"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable python3"
+source="https://github.com/ms-jpq/sad/archive/v$pkgver/sad-$pkgver.tar.gz
+	cargo-update.patch"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/sad -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+ab2db3c71e8fbbd1a7f505704b5192390a781ac607597f9e1528698b0c8a4b147e80983b142d1b9414ebadafabebefba18e6d819c65f7be5ffe75c4800216170  sad-0.4.23.tar.gz
+21ed72ac3cc7a4e47286f5f5eec0530aa3bef342b1d4eeca1580d5693afb201d20239c27289e83a379c7f25d074565a55b7a8a165240222ccf6c50dc84baac5a  cargo-update.patch
+"

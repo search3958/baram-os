@@ -1,0 +1,83 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-bitstring
+_pkgname=bitstring
+pkgver=4.1.0
+pkgrel=6
+pkgdesc="Erlang-style bitstrings for OCaml"
+url="https://github.com/xguerin/bitstring"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-2.0-or-later"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	ocaml-ppxlib-dev
+	ocaml-stdlib-shims
+	"
+makedepends="$depends_dev dune ocaml"
+options="!check"    # needs oUnit
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/xguerin/bitstring/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--docdir=/.omit
+	rm -Rf "$pkgdir"/.omit
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+808c2f1e12286a0a346d52b0a72008e248a3ca0fd9f99b8db9f38929d25492bcb6e65ecb7e7339c23269dd948c51e5f0fc917b13adc0c497ea4d4e5c0ed7d250  ocaml-bitstring-4.1.0.tar.gz
+"

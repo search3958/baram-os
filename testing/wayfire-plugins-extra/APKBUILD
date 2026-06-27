@@ -1,0 +1,32 @@
+# Maintainer: Maarten van Gompel <proycon@anaproy.nl>
+pkgname=wayfire-plugins-extra
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="Additional plugins for Wayfire"
+url="https://wayfire.org"
+arch="all"
+license="MIT"
+makedepends="
+	boost-dev
+	glibmm-dev
+	libevdev-dev
+	meson
+	nlohmann-json
+	wayfire-dev
+	wayland-protocols
+	"
+options="!check" # no testsuite
+source="https://github.com/WayfireWM/wayfire-plugins-extra/releases/download/v$pkgver/wayfire-plugins-extra-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+96a8e82790dad59d67989073332f248806c71bf3fe1d491a098880aae9389bf06243e5a7e7ea5271a1a262bea6b94a04260f105baf3de3f03695d4533f4c56b2  wayfire-plugins-extra-0.10.0.tar.xz
+"

@@ -1,0 +1,20 @@
+# Contributor: Kaarle Ritvanen <kunkku@alpinelinux.org>
+# Maintainer: Kaarle Ritvanen <kunkku@alpinelinux.org>
+pkgname=static-routing
+pkgver=1.0
+pkgrel=3
+pkgdesc="Script for configuring static routing"
+url="https://gitlab.alpinelinux.org/alpine/aports/-/tree/master/main/static-routing"
+arch="noarch"
+license="GPL-2.0-only"
+source="static-routing"
+options="!check"
+builddir="$srcdir"
+
+package() {
+	install -D -m 755 "$srcdir/static-routing" "$pkgdir/etc/network/if-up.d/static-routing"
+	install -d -m 755 "$pkgdir/etc/network/if-down.d"
+	ln -s ../if-up.d/static-routing "$pkgdir/etc/network/if-down.d"
+}
+
+sha512sums="9a714dcef641f021c9619a2239575c96109f92aaee08a3665b7817689d8050ca6507847f529d1f70f35a16ff2d03dcf40be963cb2245495a9d93fb21622bc86c  static-routing"

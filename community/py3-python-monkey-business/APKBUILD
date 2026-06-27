@@ -1,0 +1,31 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-python-monkey-business
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=python-monkey-business
+pkgver=1.1.0
+pkgrel=2
+pkgdesc="Utility functions for monkey-patching python code"
+url="https://pypi.org/project/python-monkey-business/"
+arch="noarch"
+license="BSD-2-Clause"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://pypi.io/packages/source/p/python-monkey-business/python-monkey-business-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+options="!check" # No test suite"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a772f515627407017f8f9cae29fa372c3feac5e3e1db1849698e7ead0a8f7c85970c8ca701ca5591b8af55b36673c907d4c0bfcde65b109d6e5fb8aa6dd434f2  py3-python-monkey-business-1.1.0.tar.gz
+"

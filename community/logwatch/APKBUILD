@@ -1,0 +1,59 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=logwatch
+pkgver=7.13
+pkgrel=0
+pkgdesc="Customizable, pluggable log-monitoring system"
+url="https://sourceforge.net/projects/logwatch/"
+arch="noarch"
+license="MIT"
+options="!check"
+# perl-doc: diagnostic data used by sendmail script
+# perl-date-manip: enables use of full --range of dates
+# perl-html-parser: HTML::Entities used in logwatch.pl
+# perl-net-cidr: needed when iptables_list_by_cidr_mask env var is set
+depends="
+	perl
+	perl-doc
+	perl-date-manip
+	perl-html-parser
+	perl-net-cidr
+	"
+subpackages="$pkgname-doc"
+source="https://downloads.sourceforge.net/project/logwatch/logwatch-$pkgver/logwatch-$pkgver.tar.gz"
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin \
+		"$pkgdir"/var/cache/$pkgname \
+		"$pkgdir"/etc/periodic/daily \
+		"$pkgdir"/etc/$pkgname/scripts \
+		"$pkgdir"/etc/$pkgname/conf/logfiles \
+		"$pkgdir"/etc/$pkgname/conf/services \
+		"$pkgdir"/usr/share/$pkgname/dist.conf/logfiles \
+		"$pkgdir"/usr/share/$pkgname/dist.conf/services
+
+	touch "$pkgdir"/etc/$pkgname/conf/ignore.conf \
+		"$pkgdir"/etc/$pkgname/conf/override.conf \
+		"$pkgdir"/etc/$pkgname/conf/logwatch.conf
+
+	cp -a lib "$pkgdir"/usr/share/$pkgname/lib
+	cp -a scripts "$pkgdir"/usr/share/$pkgname/scripts
+	cp -a conf "$pkgdir"/usr/share/$pkgname/default.conf
+
+	find "$pkgdir"/usr/share/$pkgname/scripts -type f -exec chmod 0755 {} \;
+	find "$pkgdir"/usr/share/$pkgname/default.conf -type f -exec chmod 0644 {} \;
+
+	ln -s /usr/share/$pkgname/scripts/$pkgname.pl "$pkgdir"/usr/bin/$pkgname
+	ln -s /usr/share/$pkgname/scripts/$pkgname.pl "$pkgdir"/etc/periodic/daily/$pkgname
+
+	find . -name '*.[[:digit:]]' \
+		-exec sh -c 'install -Dm644 $0 "$1"/usr/share/man/man${0##*.}/$0' {} "$pkgdir" \;
+
+	install -Dm644 README "$pkgdir"/usr/share/doc/$pkgname/README
+	install -Dm644 HOWTO-Customize-LogWatch "$pkgdir"/usr/share/doc/$pkgname/HOWTO-Customize-LogWatch
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+45cd38ee89d09d02f2cf37fc08e6f2965c4dc88e7ec4540518b63ab7c51bd89fd60a7dff4146ab09230178c1413224978a07a356a29a6007d0a34610357e8722  logwatch-7.13.tar.gz
+"

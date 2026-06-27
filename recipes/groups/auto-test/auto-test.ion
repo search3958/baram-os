@@ -1,5 +1,0 @@
-#!/usr/bin/env ion
-export RUST_BACKTRACE=full
-acid-runner
-relibc-tests-runner
-os-test-runner

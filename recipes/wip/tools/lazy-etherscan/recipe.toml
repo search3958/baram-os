@@ -1,5 +1,0 @@
-#TODO camino crate error
-[source]
-git = "https://github.com/woxjro/lazy-etherscan"
-[build]
-template = "cargo"

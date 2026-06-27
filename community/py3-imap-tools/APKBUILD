@@ -1,0 +1,53 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-imap-tools
+_pyname="imap-tools"
+pkgver=1.12.1
+pkgrel=0
+arch="noarch"
+pkgdesc="Work with email and mailbox by IMAP"
+url="https://pypi.python.org/project/imap-tools"
+license="Apache-2.0"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ikvk/imap_tools/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir"/imap_tools-$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+# ConnectionTest:test_connection, IdleTest::test_idle, MessageTest::test_attributes,
+# 	MessageTest::test_live FoldersTest::test_folders, MailboxTest:testa_action:
+# 	Requires manual setup of imap server
+# 	See https://github.com/ikvk/imap_tools/issues/215
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v \
+		--deselect tests/test_connection.py::ConnectionTest::test_connection \
+		--deselect tests/test_idle.py::IdleTest::test_idle \
+		--deselect tests/test_message.py::MessageTest::test_attributes \
+		--deselect tests/test_message.py::MessageTest::test_live \
+		--deselect tests/test_folders.py::FoldersTest::test_folders \
+		--deselect tests/test_mailbox.py::MailboxTest::test_action
+}
+
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+68c7dd9c41f491e6c66e526f154d0343e8f0fa37aa8238755831011d86896ebd2fad0e3aa108964296563fd8ca56b33a6f4d91870de67d20c5934ffa90a2c795  py3-imap-tools-1.12.1.tar.gz
+"

@@ -1,0 +1,71 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer:
+pkgname=py3-pygame
+pkgver=2.6.1
+pkgrel=1
+pkgdesc="Python library for making applications and games based on SDL"
+url="https://pygame.org"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="python3 py3-numpy"
+depends_dev="
+	freetype-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	portmidi-dev<=200
+	python3-dev
+	sdl2-dev
+	sdl2_gfx-dev
+	sdl2_image-dev
+	sdl2_mixer-dev
+	sdl2_ttf-dev
+"
+makedepends="cython py3-setuptools py3-sphinx $depends_dev"
+checkdepends="libvorbis libwebp mpg123 tiff font-dejavu udev"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-examples:examples:noarch $pkgname-pyc"
+source="https://github.com/pygame/pygame/archive/refs/tags/$pkgver/pygame-$pkgver.tar.gz"
+builddir="$srcdir/pygame-$pkgver"
+
+options="!check" # test suite is flaky
+
+# included into same .so, the config scripts only check if /etc/redhat-release
+# exists for this lmao
+export PORTMIDI_INC_PORTTIME=1
+
+build() {
+	python3 setup.py cython build
+	python3 setup.py docs
+}
+
+check() {
+	# Do a temporary install with all of the test files intact
+	python3 setup.py install --skip-build --root="$srcdir"/pygame-build
+
+	libpath="$(echo $srcdir/pygame-build/usr/lib/python3.*/site-packages)"
+
+	export SDL_VIDEODRIVER=dummy
+	export SDL_AUDIODRIVER=disk
+	PYTHONPATH="$libpath" python3 "$builddir"/test \
+		-v \
+		--exclude=opengl,timing \
+		--time_out=300
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+	rm -r "$pkgdir"/usr/lib/python3.*/site-packages/pygame/tests
+}
+
+doc() {
+	default_doc
+	amove usr/lib/python3.*/site-packages/pygame/docs
+}
+
+examples() {
+	pkgdesc="$pkgdesc (examples)"
+	amove usr/lib/python3.*/site-packages/pygame/examples
+}
+
+sha512sums="
+e072b303b89ede611a47622e0233570a74861001e0d92e7f34712d08185ee6112f7a21b529acba743f9fa5ea8cb6b51d611abbb69634660bdc4cf807597240d7  pygame-2.6.1.tar.gz
+"

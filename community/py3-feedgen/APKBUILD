@@ -1,0 +1,42 @@
+# Maintainer: Thomas Faughnan <thomas@faughnan.net>
+pkgname=py3-feedgen
+pkgver=1.0.0
+pkgrel=2
+pkgdesc="Python module to generate ATOM feeds, RSS feeds and Podcasts"
+url="https://github.com/lkiesow/python-feedgen"
+arch="noarch"
+license="BSD-2-Clause AND LGPL-3.0-or-later"
+depends="
+	py3-dateutil
+	py3-lxml
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/lkiesow/python-feedgen/archive/v$pkgver/python-feedgen-$pkgver.tar.gz"
+builddir="$srcdir/python-feedgen-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover tests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f21704f7f4714e51c9b7b1d98f71db041426e01039f4d85439ee0623b77575293f3efd6fdb7b6609f67e0a868863b15169f91cef3a3c16542182ecf9409eb524  python-feedgen-1.0.0.tar.gz
+"

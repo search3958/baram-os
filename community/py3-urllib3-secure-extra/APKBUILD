@@ -1,0 +1,46 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-urllib3-secure-extra
+_pyname=urllib3-secure-extra
+pkgver=0.1.0
+pkgrel=3
+arch="noarch"
+pkgdesc="Marker library to detect whether urllib3 was installed with the deprecated [secure] extra"
+url="https://pypi.python.org/project/urllib3-secure-extra"
+license="Apache-2.0"
+depends="
+	py3-urllib3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	py3-flit-core
+	"
+checkdepends="
+	py3-pytest
+"
+source="$pkgname-$pkgver-gh.tar.gz::https://github.com/urllib3/urllib3-secure-extra/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e656c30d17ea3b0af14a49770eced285c33fdbd5cae91bfb2090d0ef4b58bb8048caae916e344d13380a5155495659da0f572847db556042088692d2ca7f362f  py3-urllib3-secure-extra-0.1.0-gh.tar.gz
+"

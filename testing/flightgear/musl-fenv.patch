@@ -1,0 +1,19 @@
+Simply disabling the code which enables floating point exceptions
+is probably wrong, but I don't have a replacement for the
+non-posix functions fegetexcept(3) and feenableexcept(3).
+
+--- a/src/Main/bootstrap.cxx
++++ b/src/Main/bootstrap.cxx
+@@ -93,8 +93,12 @@
+ initFPE (bool fpeAbort)
+ {
++#if defined(__GLIBC__)
+     if (fpeAbort) {
+         int except = fegetexcept();
+         feenableexcept(except | FE_DIVBYZERO | FE_INVALID);
+     } else {
+         signal(SIGFPE, handleFPE);
+     }
++#else
++    signal(SIGFPE, handleFPE);
++#endif

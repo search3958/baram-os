@@ -1,0 +1,45 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=faac
+pkgver=1.31.1
+pkgrel=0
+pkgdesc="FAAC is an AAC audio encoder."
+options="!check" # No testsuite
+url="https://faac.sourceforge.net/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="autoconf automake libtool"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+source="faac-$pkgver.tar.gz::https://github.com/knik0/faac/archive/faac-$pkgver.tar.gz"
+builddir="$srcdir"/faac-faac-$pkgver
+
+# secfixes:
+#   1.30-r0:
+#     - CVE-2018-19886
+
+prepare() {
+	default_prepare
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+static() {
+	depends=""
+	pkgdesc="$pkgdesc (static library)"
+	mkdir -p "$subpkgdir"/usr/lib
+	mv "$pkgdir"/usr/lib/*.a "$subpkgdir"/usr/lib
+}
+
+sha512sums="
+5b38c14d96edeec628551f6722a3e8503aa5d013c9582945c52e8d0e4208cb103edf9327b2215ea7fc2dbd82111a1d123dc213c56695fea7b9bcb4b1f40c8674  faac-1.31.1.tar.gz
+"

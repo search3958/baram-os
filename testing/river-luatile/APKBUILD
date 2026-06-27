@@ -1,0 +1,32 @@
+# Contributor: Thijs Iris Wester <wester.t@protonmail.com>
+# Maintainer: Thijs Iris Wester <wester.t@protonmail.com>
+pkgname=river-luatile
+pkgver=0.1.4
+pkgrel=0
+pkgdesc="Write your own river layouts in lua"
+url="https://github.com/MaxVerevkin/river-luatile"
+# risvc do not have luajit
+arch="all !riscv64"
+license="GPL-3.0-only"
+depends="luajit"
+makedepends="cargo cargo-auditable luajit-dev"
+source="https://github.com/MaxVerevkin/river-luatile/archive/refs/tags/v$pkgver.zip"
+options="net !check" # No upstream checks
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+package() {
+	install -Dm 755 target/release/river-luatile "$pkgdir"/usr/bin/river-luatile
+}
+
+sha512sums="
+151fc48ee16357e2647eb03c68f2ad42782dcace49b02375ff1795d13d49be839a964ece38b3bf8bf2b7b89f297331f0346eb1efb7ebc9ec786fd2165ec9cbbc  v0.1.4.zip
+"

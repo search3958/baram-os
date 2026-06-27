@@ -1,0 +1,287 @@
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=convert2json
+pkgver=2.5.0
+pkgrel=1
+pkgdesc="Utilities to convert BSON, CBOR, CSV, INI, MessagePack, Plist, RSV, TOML, XML & YAML to JSON, including jq/jaq wrappers."
+url="https://github.com/simonrupf/convert2json"
+# s390x: blocked by jaq
+arch="noarch !s390x"
+license="MIT"
+depends="$pkgname-json $pkgname-jaq"
+makedepends="
+	cargo
+	cargo-auditable
+	clang-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-json
+	$pkgname-jaq
+	$pkgname-bson
+	$pkgname-bson-json:bson_json:all
+	$pkgname-bson-jaq:bson_jaq:all
+	$pkgname-cbor
+	$pkgname-cbor-json:cbor_json:all
+	$pkgname-cbor-jaq:cbor_jaq:all
+	$pkgname-csv
+	$pkgname-csv-json:csv_json:all
+	$pkgname-csv-jaq:csv_jaq:all
+	$pkgname-ini
+	$pkgname-ini-json:ini_json:all
+	$pkgname-ini-jaq:ini_jaq:all
+	$pkgname-messagepack
+	$pkgname-messagepack-json:messagepack_json:all
+	$pkgname-messagepack-jaq:messagepack_jaq:all
+	$pkgname-plist
+	$pkgname-plist-json:plist_json:all
+	$pkgname-plist-jaq:plist_jaq:all
+	$pkgname-toml
+	$pkgname-toml-json:toml_json:all
+	$pkgname-toml-jaq:toml_jaq:all
+	$pkgname-rsv
+	$pkgname-rsv-json:rsv_json:all
+	$pkgname-rsv-jaq:rsv_jaq:all
+	$pkgname-xml
+	$pkgname-xml-json:xml_json:all
+	$pkgname-xml-jaq:xml_jaq:all
+	$pkgname-yaml
+	$pkgname-yaml-json:yaml_json:all
+	$pkgname-yaml-jaq:yaml_jaq:all
+	"
+source="https://github.com/simonrupf/convert2json/archive/$pkgver/convert2json-$pkgver.tar.gz"
+options="net"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm644 LICENSE.md "$pkgdir"/usr/share/licenses/$pkgname/LICENSE.md
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+}
+
+json() {
+	pkgdesc="Utilities to convert BSON, CBOR, CSV, INI, MessagePack, Plist, RSV, TOML, XML & YAML to JSON."
+	depends="
+		$pkgname-bson-json
+		$pkgname-cbor-json
+		$pkgname-csv-json
+		$pkgname-ini-json
+		$pkgname-messagepack-json
+		$pkgname-plist-json
+		$pkgname-toml-json
+		$pkgname-rsv-json
+		$pkgname-xml-json
+		$pkgname-yaml-json
+		"
+	_submk
+}
+
+jaq() {
+	pkgdesc="Utilities to convert BSON, CBOR, CSV, INI, MessagePack, Plist, RSV, TOML, XML & YAML to JSON and query it using jq/jaq."
+	depends="
+		$pkgname-bson-jaq
+		$pkgname-cbor-jaq
+		$pkgname-csv-jaq
+		$pkgname-ini-jaq
+		$pkgname-messagepack-jaq
+		$pkgname-plist-jaq
+		$pkgname-toml-jaq
+		$pkgname-rsv-jaq
+		$pkgname-xml-jaq
+		$pkgname-yaml-jaq
+		"
+	_submk
+}
+
+bson() {
+	pkgdesc="Utilities to convert BSON to JSON, including jq/jaq wrappers."
+	depends="$pkgname-bson-json $pkgname-bson-jaq"
+	_submk
+}
+
+bson_json() {
+	pkgdesc="Utility to convert BSON to JSON."
+	_submv bson2json
+}
+
+bson_jaq() {
+	pkgdesc="Utility to convert BSON to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv bsonq
+}
+
+cbor() {
+	pkgdesc="Utilities to convert CBOR to JSON, including jq/jaq wrappers."
+	depends="$pkgname-cbor-json $pkgname-cbor-jaq"
+	_submk
+}
+
+cbor_json() {
+	pkgdesc="Utility to convert CBOR to JSON."
+	_submv cbor2json
+}
+
+cbor_jaq() {
+	pkgdesc="Utility to convert CBOR to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv cborq
+}
+
+csv() {
+	pkgdesc="Utilities to convert CSV to JSON, including jq/jaq wrappers."
+	depends="$pkgname-csv-json $pkgname-csv-jaq"
+	_submk
+}
+
+csv_json() {
+	pkgdesc="Utility to convert CSV to JSON."
+	_submv csv2json
+}
+
+csv_jaq() {
+	pkgdesc="Utility to convert CSV to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv cq
+}
+
+ini() {
+	pkgdesc="Utilities to convert INI to JSON, including jq/jaq wrappers."
+	depends="$pkgname-ini-json $pkgname-ini-jaq"
+	_submk
+}
+
+ini_json() {
+	pkgdesc="Utility to convert INI to JSON."
+	_submv ini2json
+}
+
+ini_jaq() {
+	pkgdesc="Utility to convert INI to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv iq
+}
+
+messagepack() {
+	pkgdesc="Utilities to convert MessagePack to JSON, including jq/jaq wrappers."
+	depends="$pkgname-messagepack-json $pkgname-messagepack-jaq"
+	_submk
+}
+
+messagepack_json() {
+	pkgdesc="Utility to convert MessagePack to JSON."
+	_submv msg2json
+}
+
+messagepack_jaq() {
+	pkgdesc="Utility to convert MessagePack to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv msgq
+}
+
+plist() {
+	pkgdesc="Utilities to convert Plist to JSON, including jq/jaq wrappers."
+	depends="$pkgname-plist-json $pkgname-plist-jaq"
+	_submk
+}
+
+plist_json() {
+	pkgdesc="Utility to convert Plist to JSON."
+	_submv plist2json
+}
+
+plist_jaq() {
+	pkgdesc="Utility to convert Plist to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv plistq
+}
+
+toml() {
+	pkgdesc="Utilities to convert TOML to JSON, including jq/jaq wrappers."
+	depends="$pkgname-toml-json $pkgname-toml-jaq"
+	_submk
+}
+
+toml_json() {
+	pkgdesc="Utility to convert TOML to JSON."
+	_submv toml2json
+}
+
+toml_jaq() {
+	pkgdesc="Utility to convert TOML to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv tq
+}
+
+rsv() {
+	pkgdesc="Utilities to convert RSV to JSON, including jq/jaq wrappers."
+	depends="$pkgname-rsv-json $pkgname-rsv-jaq"
+	_submk
+}
+
+rsv_json() {
+	pkgdesc="Utility to convert RSV to JSON."
+	_submv rsv2json
+}
+
+rsv_jaq() {
+	pkgdesc="Utility to convert RSV to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv rq
+}
+
+xml() {
+	pkgdesc="Utilities to convert XML to JSON, including jq/jaq wrappers."
+	depends="$pkgname-xml-json $pkgname-xml-jaq"
+	_submk
+}
+
+xml_json() {
+	pkgdesc="Utility to convert XML to JSON."
+	_submv xml2json
+}
+
+xml_jaq() {
+	pkgdesc="Utility to convert XML to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv xq
+}
+
+yaml() {
+	pkgdesc="Utilities to convert YAML to JSON, including jq/jaq wrappers."
+	depends="$pkgname-yaml-json $pkgname-yaml-jaq"
+	_submk
+}
+
+yaml_json() {
+	pkgdesc="Utility to convert YAML to JSON."
+	_submv yaml2json
+}
+
+yaml_jaq() {
+	pkgdesc="Utility to convert YAML to JSON and query it using jq/jaq."
+	depends="jaq"
+	_submv yq
+}
+
+_submk() {
+	mkdir -p "$subpkgdir"
+}
+
+_submv() {
+	mkdir -p "$subpkgdir"/usr/bin
+	mv "$srcdir/$pkgname-$pkgver/target/release/$1" "$subpkgdir"/usr/bin
+}
+
+sha512sums="
+77f7304e82073865d5035594cfdea9350f1d47c7bb53af59e2e629d6e9bc87530f12ce4a0d769fdbc7d53fd235c645ea2748df61050b8619536d579290a9b66c  convert2json-2.5.0.tar.gz
+"

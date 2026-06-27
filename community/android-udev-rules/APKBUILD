@@ -1,0 +1,28 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=android-udev-rules
+pkgver=20250525
+pkgrel=0
+pkgdesc="Android udev rules list"
+url="https://github.com/M0Rf30/android-udev-rules"
+arch="noarch"
+license="GPL-3.0-only"
+depends="udev"
+install="$pkgname.pre-install"
+source="https://github.com/M0Rf30/android-udev-rules/archive/$pkgver/android-udev-rules-$pkgver.tar.gz"
+options="!check" # no testsuite provided
+
+prepare() {
+	default_prepare
+
+	# use plugdev as the group permitted to use adb devices
+	sed -i 's/adbusers/plugdev/' 51-android.rules
+}
+
+package() {
+	install -Dm644 51-android.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+}
+
+sha512sums="
+c4370ba89ee240d540b6a18e6fd37bace27315b9637577eb08c48cfec8c77dcb8ebfebdf2b7853b9f3c7db35fe50458af52d070946bb0ab0db67539470bbf0ad  android-udev-rules-20250525.tar.gz
+"

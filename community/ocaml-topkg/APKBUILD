@@ -1,0 +1,82 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-topkg
+_pkgname=topkg
+pkgver=1.0.5
+pkgrel=5
+pkgdesc="Transitory OCaml software packager"
+url="https://erratique.ch/software/topkg"
+arch="all !riscv64 !loongarch64" # ocaml
+license="ISC"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="
+	ocaml
+	ocaml-compiler-libs
+	ocaml-findlib
+	ocamlbuild
+	opam
+	cmd:opam-installer
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.bz2::https://erratique.ch/software/topkg/releases/topkg-$pkgver.tbz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # FIXME: run tests if possible!
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	ocaml pkg/pkg.ml build --dev-pkg true
+}
+
+package() {
+	opam-installer -i \
+		--prefix="$pkgdir/usr" \
+		--libdir="$pkgdir/usr/lib/ocaml" \
+		--docdir="$builddir/.omit" \
+		$_pkgname.install
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+9450e9139209aacd8ddb4ba18e4225770837e526a52a56d94fd5c9c4c9941e83e0e7102e2292b440104f4c338fabab47cdd6bb51d69b41cc92cc7a551e6fefab  ocaml-topkg-1.0.5.tar.bz2
+"

@@ -1,0 +1,35 @@
+# Contributor: Magnus Sandin <magnus.sandin@valitron.se>
+# Maintainer: Magnus Sandin <magnus.sandin@valitron.se>
+pkgname=py3-pulsectl
+_pkgreal=pulsectl
+pkgver=24.12.0
+pkgrel=1
+pkgdesc="Python high-level interface and ctypes-based bindings for PulseAudio (libpulse)"
+options="!check" # No tests available
+url="https://pypi.org/project/pulsectl/"
+arch="noarch"
+license="MIT"
+depends="python3 libpulse"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/p/$_pkgreal/$_pkgreal-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel \
+		--destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c0e0d71b9f396cbbe29f96d1a8c5e72fbdbdc7e8c06fccfc261b93691c2000fde7761faa8dad34bd04a04cdc9dc75fe509d3f864056fff92329ca7c4c1435f6e  pulsectl-24.12.0.tar.gz
+"

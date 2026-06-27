@@ -1,0 +1,108 @@
+maintainer="team/alpine-desktop <achill@achill.org>"
+pkgname=gstreamer
+pkgver=1.28.3
+pkgrel=0
+# NOTE: Upgrade together with the whole GStreamer suite &
+# only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="GStreamer streaming media framework"
+url="https://gstreamer.freedesktop.org"
+arch="all"
+license="LGPL-2.0-or-later"
+replaces="gstreamer1"
+depends_dev="libxml2-dev"
+makedepends="$depends_dev
+	bash-completion-dev
+	bison
+	flex
+	glib-dev
+	gobject-introspection-dev
+	libcap-dev
+	libcap-utils
+	meson
+	perl
+	rust
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-tools
+	$pkgname-lang
+	$pkgname-ptp-helper:ptp_helper
+	"
+source="https://gstreamer.freedesktop.org/src/gstreamer/gstreamer-$pkgver.tar.xz"
+# setcap: gst-ptp-helper
+options="setcap"
+
+# secfixes:
+#   1.18.4-r0:
+#     - CVE-2021-3497
+#     - CVE-2021-3498
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	CPPFLAGS="$CPPFLAGS -O2" \
+	abuild-meson \
+		-Db_lto=true \
+		-Dintrospection=enabled \
+		-Dbash-completion=enabled \
+		-Dptp-helper=enabled \
+		-Dptp-helper-permissions=capabilities \
+		-Dbenchmarks=enabled \
+		-Dcheck=enabled \
+		-Dcoretracers=enabled \
+		-Dnls=enabled \
+		-Dtests=enabled \
+		-Dtools=enabled \
+		-Dpackage-name="GStreamer (Alpine Linux)" \
+		-Dpackage-origin="https://alpinelinux.org" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+dev() {
+	default_dev
+
+	# Support for debugging.
+	amove usr/share/gdb
+	amove usr/share/gstreamer-*/gdb
+
+	# Unit test libraries.
+	amove usr/bin/gst-tester-*
+	amove usr/lib/libgstcheck-*.so.*
+	amove usr/lib/girepository-1.0/GstCheck-*.typelib
+}
+
+doc() {
+	default_doc
+	replaces="${pkgname}1-doc"
+}
+
+tools() {
+	pkgdesc="Tools for GStreamer streaming media framework"
+	# gst-feedback needs this
+	depends="pkgconfig"
+
+	amove usr/bin
+}
+
+ptp_helper() {
+	pkgdesc="$pkgdesc (ptp helper)"
+	install_if="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/libexec/gstreamer-*/gst-ptp-helper
+}
+
+sha512sums="
+16c30b3307f08a1006410dc24761a8faf871470170237bde2904be8efa5600d53097dd07b36607f80cd84e6ea82dd5f192c321c9dd9d6d7a011893a2a455a4ea  gstreamer-1.28.3.tar.xz
+"

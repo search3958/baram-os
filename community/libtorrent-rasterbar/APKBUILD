@@ -1,0 +1,77 @@
+# Contributor: August Klein <amatcoder@gmail.com>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=libtorrent-rasterbar
+pkgver=2.0.11
+pkgrel=1
+pkgdesc="Feature complete C++ bittorrent implementation"
+url="https://www.rasterbar.com/products/libtorrent"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="boost-dev openssl-dev>3"
+makedepends="$depends_dev cmake linux-headers python3-dev py3-setuptools samurai"
+subpackages="py3-$pkgname:_py3 $pkgname-static $pkgname-dev"
+source="https://github.com/arvidn/libtorrent/releases/download/v$pkgver/libtorrent-rasterbar-$pkgver.tar.gz"
+
+case "$CARCH" in
+arm*|x86)
+	# fail to build on 32-bit
+	options="$options !check"
+	;;
+*)
+	;;
+esac
+
+build() {
+	CXXFLAGS="$CXXFLAGS -O2 -DNDEBUG -flto=auto" \
+	cmake -B build-shared -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_CXX_STANDARD=17 \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-Dbuild_tests="$(want_check && echo ON || echo OFF)" \
+		-Dpython-bindings=ON \
+		-Dpython-egg-info=ON
+	cmake --build build-shared
+
+	# do not build py3 bindings for static version
+	cmake -B build-static -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_CXX_STANDARD=17 \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=OFF \
+		-Dbuild_tests="$(want_check && echo ON || echo OFF)"
+	cmake --build build-static
+}
+
+check() {
+	# upnp: relies on upnp networking setup
+	# flags: fails randomly, on 32-bit and aarch64
+	# remove_torrent: random failures when running multiple tests at once
+	# privacy: flaky on port allocation
+	local tests_to_skip="test_upnp|test_flags|test_remove_torrent|test_privacy"
+
+	# broken
+	tests_to_skip="$tests_to_skip|test_create_torrent"
+
+	# fails on btrfs?
+	tests_to_skip="$tests_to_skip|test_copy_file"
+
+	# flaky
+	tests_to_skip="$tests_to_skip|test_web_seed|test_url_seed|test_transfer|test_ssl"
+
+	ctest -j4 --test-dir build-shared --exclude-regex "$tests_to_skip"
+}
+
+package() {
+	DESTDIR=$pkgdir cmake --install build-static
+	DESTDIR=$pkgdir cmake --install build-shared
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (python bindings)"
+
+	amove usr/lib/python3*
+}
+
+sha512sums="
+756fb24c44b5dcf22d0bbc06a812abc28be7388a409e577c71fb02b1ca3005040947244c0ae83bd3388264dd518119736b869397fedd7bdbcd60699b04a19969  libtorrent-rasterbar-2.0.11.tar.gz
+"

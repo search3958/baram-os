@@ -1,0 +1,55 @@
+# Contributor: Konstantin Kulikov <k.kulikov2@gmail.com>
+# Maintainer: Konstantin Kulikov <k.kulikov2@gmail.com>
+pkgname=mtg
+pkgver=2.2.8
+pkgrel=1
+pkgdesc="MTPROTO proxy for Telegram"
+url="https://github.com/9seconds/mtg"
+license="MIT"
+arch="all !x86 !armhf !armv7" # 32bit archs seem broken
+makedepends="go"
+options="net"
+subpackages="$pkgname-openrc $pkgname-doc"
+install="mtg.pre-install"
+source="$pkgname-$pkgver.tar.gz::https://github.com/9seconds/mtg/archive/refs/tags/v$pkgver.tar.gz
+	mtg.initd
+	mtg.confd
+	mtg.conf
+	increase-test-timeout.patch
+	"
+
+export GOFLAGS="$GOFLAGS -modcacherw"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v .
+}
+
+check() {
+	go test ./... \
+		-skip "TestNetwork/TestRealHTTPRequest" \
+		-skip "TestSendServerHello/TestRecordStructure"
+}
+
+package() {
+	install -Dm755 $builddir/mtg $pkgdir/usr/sbin/mtg
+	install -Dm755 $srcdir/$pkgname.initd $pkgdir/etc/init.d/$pkgname
+	install -Dm644 $srcdir/$pkgname.confd $pkgdir/etc/conf.d/$pkgname
+	install -Dm644 $srcdir/$pkgname.conf  $pkgdir/etc/$pkgname.conf
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+
+	install -Dm644 BEST_PRACTICES.md README.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+
+sha512sums="
+e8dca4a1fc94a0ace5f67a1735888379129291cbee8e30402934cb92cbbaad63ae628ad4494041c32ee779e5346b122756f40b21a7f27886ff9d0de0f161f334  mtg-2.2.8.tar.gz
+6ce0b34b2224ea86d56f1c6911302c42a6b4aa9d13046fd0016d9adc267121fd1365829e26559875b836d0b94f9e784954949094489b7e16975d82332d241273  mtg.initd
+41c3edc721fae9569596776e38fe6cebfe213cbb62b9a187fbb893eab9421d64ec5a683a54af5f1444a3e28af89402ab4d55abf9f653a64a040c0a4b684f5ece  mtg.confd
+340651372d8fa861bf40ead66af7fc52ee917aa62eb21bbf562bd5775ffd13ed688fe516a278aa96a8fe55ea48225ca1d9048a7bca7eaf6a5fedd563b27f21b4  mtg.conf
+8543ef2d92e48d03847fb8c380aea8a7266f8c6a6963dfbafc0929684fc60ac8b38e5d187f3173b2146a70036892181e16ee10f4fc607e2c7ad1fae00c6000aa  increase-test-timeout.patch
+"

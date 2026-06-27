@@ -1,0 +1,74 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=ktorrent
+pkgver=26.04.2
+pkgrel=0
+# armhf, x86, armv7, s390x and riscv64 blocked by qt6-qtwebengine
+arch="all !armhf !x86 !armv7 !s390x !riscv64"
+url="https://kde.org/applications/internet/org.kde.ktorrent"
+pkgdesc="A powerful BitTorrent client for KDE"
+license="GPL-2.0-or-later"
+makedepends="
+	boost-dev
+	extra-cmake-modules
+	karchive-dev
+	kcmutils-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdnssd-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kio-dev
+	kitemviews-dev
+	knotifications-dev
+	knotifyconfig-dev
+	kparts-dev
+	kplotting-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	libktorrent-dev
+	phonon-dev
+	plasma-workspace-dev
+	qt6-qtbase-dev
+	qt6-qtwebengine-dev
+	qt6-qtdeclarative-dev
+	samurai
+	solid-dev
+	syndication-dev
+	taglib-dev
+	"
+checkdepends="xwayland-run"
+_repo_url="https://invent.kde.org/network/ktorrent.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/ktorrent-$pkgver.tar.xz"
+subpackages="$pkgname-lang"
+
+build() {
+	# The infowidget plugin is disabled due to an incompatibility with musl
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DENABLE_INFOWIDGET_PLUGIN=FALSE
+	cmake --build build
+}
+
+check() {
+	# ipblocklisttest requires itself installed
+	wlheadless-run -- ctest --test-dir build -E "ipblocklisttest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+8af0f0c94147bc80c8d1a86c0b06b12a3db60b7244b6447d2e7950097e8f195d095db1dda815e0c31ca6d5694bbe640f27e98260f5bda8341416e6393a9429ee  ktorrent-26.04.2.tar.xz
+"

@@ -1,0 +1,44 @@
+# Maintainer:
+pkgname=pythran
+pkgver=0.18.1
+pkgrel=1
+pkgdesc="Ahead of Time compiler for numeric kernels"
+url="https://github.com/serge-sans-paille/pythran"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-beniget
+	py3-gast
+	py3-numpy
+	py3-ply
+	python3
+	"
+makedepends="py3-gpep517 py3-setuptools python3-dev py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/serge-sans-paille/pythran/archive/refs/tags/$pkgver.tar.gz
+	arm-hwcap.patch
+	"
+options="!check" # tests loop forever
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+15650627b9396b49401067c3a7c161d1569f89f29a08243aa85659023e42ce028633915c51c8c5188a5599c201eb30aa2721d64ba766b2a252203469bc6e2ab1  pythran-0.18.1.tar.gz
+653bd578a2ad096a3dd4cd8881d79de519000a934d1df9fb51162652ae03c14ca9aa8300651be9f2d9a86115cb3af005007f16d02209a2580feb5f4db0077984  arm-hwcap.patch
+"

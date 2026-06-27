@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=tig
+pkgver=2.6.1
+pkgrel=0
+pkgdesc="Text-mode interface for the git revision control system"
+url="https://jonas.github.io/tig/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="git"
+makedepends="ncurses-dev pcre2-dev"
+checkdepends="util-linux-misc" # for cmd:script used in check()
+subpackages="$pkgname-doc"
+source="https://github.com/jonas/tig/releases/download/tig-$pkgver/tig-$pkgver.tar.gz"
+
+build() {
+	CFLAGS="${CFLAGS//-Os/-O2} -flto=auto" \
+	CXXFLAGS="${CXXFLAGS//-Os/-O2} -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make all
+}
+
+check() {
+	SHELL=/bin/sh script --return --quiet -c "make -j1 test" /dev/null
+}
+
+package() {
+	make DESTDIR="$pkgdir" install install-doc-man
+}
+
+sha512sums="
+685fe0a5b6db87c3bab7914e47b43ad1c677f84ca1e86a0f9c9e6a86b5b338a9195901d2e07d9031f7cd6da241a238b000447e5e864d816a228847db63534c3e  tig-2.6.1.tar.gz
+"

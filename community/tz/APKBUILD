@@ -1,0 +1,34 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=tz
+pkgver=0.8.0
+pkgrel=13
+pkgdesc="interactive TUI program that displays time across a few time zones of your choosing"
+url="https://github.com/oz/tz"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="go"
+depends="tzdata"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/oz/tz/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOFLAGS="$GOFLAGS -modcacherw"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v .
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 "tz" "$pkgdir/usr/bin/tz"
+}
+
+sha512sums="
+b043c6e5df161db3d0cb6908de33c7367fda521a219fcee6b5181392304127597f3e8463e4b67fa5b045c7f36f50558babec4af3128e019ce8e76d46bd36915c  tz-0.8.0.tar.gz
+"

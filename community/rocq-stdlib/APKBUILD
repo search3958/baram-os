@@ -1,0 +1,43 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=rocq-stdlib
+pkgver=9.1.0
+pkgrel=1
+pkgdesc="Formal proof management system (split-off standard library)"
+url="https://rocq-prover.org/"
+arch="all !armhf !armv7 !x86 !s390x !riscv64 !loongarch64" # follow rocq
+license="LGPL-2.1-only"
+depends="rocq>$pkgver"
+makedepends="
+	bash
+	dune
+	linux-headers
+	ocaml
+	ocaml-compiler-libs
+	ocaml-findlib-dev
+	ocaml-zarith
+	"
+options="!check" # many tests in 'make test-suite' fail
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rocq-prover/stdlib/releases/download/V$pkgver/stdlib-$pkgver.tar.gz"
+builddir="$srcdir/stdlib-$pkgver"
+
+install_if="rocq~$pkgver"
+replaces="coq"
+
+build() {
+	dune build -p rocq-stdlib
+}
+
+package() {
+	dune install rocq-stdlib \
+		--prefix=/usr \
+		--destdir="$pkgdir" \
+		--mandir=/usr/share/man \
+		--docdir=/usr/share/doc \
+		--libdir="$(ocamlc -where)"
+}
+
+sha512sums="
+5a6c01496917b8f23017d9e94af567be68850155a4545bddb067da83eed97237e34d617345942a708b6a4231e00f9bfc8311cd978bf397bb1ef2ea7c25b1a0a3  rocq-stdlib-9.1.0.tar.gz
+"

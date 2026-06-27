@@ -1,0 +1,37 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=6tunnel
+pkgver=0.14
+pkgrel=0
+pkgdesc="TCP proxy for non-IPv6 applications"
+url="http://toxygen.net/6tunnel"
+arch="all"
+license="GPL-2.0-only"
+makedepends="automake autoconf"
+checkdepends="python3"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/wojtekka/6tunnel/archive/$pkgver.tar.gz"
+
+build() {
+	autoreconf --install
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	mkdir -p "$pkgdir"/usr/share/6tunnel
+	install -m644 contrib/* "$pkgdir"/usr/share/6tunnel
+}
+
+sha512sums="
+d0a7f655f6d170dfdb089f8585c246dfd36fd911411ce8215bafb9742cf2871cd6a0a6312178f09d7c4f103ffccc6f7f0b35bf00ef62e38d0177245ce700fc78  6tunnel-0.14.tar.gz
+"

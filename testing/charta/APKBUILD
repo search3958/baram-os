@@ -1,0 +1,29 @@
+# Contributor: Guy Godfroy <guy.godfroy@gugod.fr>
+# Maintainer: Guy Godfroy <guy.godfroy@gugod.fr>
+pkgname=charta
+pkgver=0.12.2
+pkgrel=3
+pkgdesc="Tool for displaying small colored charts in the terminal"
+url="https://spn109.fr/charta/"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/spn109/charta/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname/"
+options="net" #go deps
+
+build() {
+	go build -v
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -m755 -D charta "$pkgdir"/usr/bin/charta
+}
+
+sha512sums="
+066aa28183f3331e357310a487756e5aa0b56217b9814447959971f4fb4f494ffab8e1185d5afaa0dc2158c79203858205c27fc31610a27cc30e0773f567f1d4  charta-0.12.2.tar.gz
+"

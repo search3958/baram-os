@@ -1,0 +1,44 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=websockify
+pkgver=0.13.0
+pkgrel=2
+pkgdesc="WebSockets support for any application/server"
+url="https://github.com/novnc/websockify"
+arch="noarch"
+license="LGPL-3.0-or-later"
+depends="
+	py3-jwcrypto
+	py3-numpy
+	py3-redis
+	py3-requests
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/novnc/websockify/archive/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover tests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+52a6615d7a45ea12015c90e3e50fcf7338a2a67412c44bd6da4d039ebc2edc8ce1bd7a1cee977f7e2b76aaa6dccdb601851a0b9a2f49af53081c2e5b296b3062  websockify-0.13.0.tar.gz
+"

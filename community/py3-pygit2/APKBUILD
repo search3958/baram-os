@@ -1,0 +1,54 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Pierre-Gildas MILLON <pgmillon@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+maintainer="Will Sinatra <wpsinatra@gmail.com>"
+pkgname=py3-pygit2
+_pkgname=pygit2
+pkgver=1.19.3
+pkgrel=0
+pkgdesc="Python bindings for libgit2"
+url="https://github.com/libgit2/pygit2"
+arch="all"
+license="GPL-2.0-only WITH GCC-exception-2.0"
+depends="py3-cffi py3-cached-property"
+makedepends="
+	libgit2-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-hypothesis
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/libgit2/pygit2/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-pygit" # Backward compat
+provides="py-pygit=$pkgver-r$pkgrel" # Backward compat
+
+# 2/6 tests fail https://github.com/libgit2/pygit2/issues/812
+[ "$CARCH" = "s390x" ] && options="!check"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+30d0a0cf5995781ee01ce849c7d52c3230e0fa51ede757c5b04addeb1c9d14a6acd53177a3c733d7a44c3d1b204cd44c09510ac1427ec1edfa3f1687d0c56109  py3-pygit2-1.19.3.tar.gz
+"

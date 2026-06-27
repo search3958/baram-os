@@ -1,0 +1,53 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=mautrix-meta
+pkgver=0.2606.0
+pkgrel=0
+pkgdesc="Matrix-Facebook Messenger and Instagram DM puppeting bridge"
+url="https://go.mau.fi/mautrix-meta/"
+arch="all"
+license="AGPL-3.0-or-later"
+makedepends="go olm-dev sqlite-dev"
+install="$pkgname.pre-install $pkgname.post-upgrade"
+subpackages="$pkgname-openrc $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mautrix/meta/archive/v$pkgver.tar.gz
+	mautrix-meta.initd
+	mautrix-meta.confd
+"
+builddir="$srcdir/meta-$pkgver"
+options="net !check" # only test requires test data we don't have
+
+export GOFLAGS="$GOFLAGS -tags=libsqlite3"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	export CGO_CFLAGS="$CFLAGS"
+	export CGO_LDFLAGS="$LDFLAGS"
+	go build \
+		-ldflags "-X main.Tag=$pkgver -X 'main.BuildTime=$(date -d @"$SOURCE_DATE_EPOCH" '+%b %_d %Y, %H:%M:%S')'" \
+		./cmd/mautrix-meta
+
+	./mautrix-meta -e
+}
+
+package() {
+	install -Dm755 mautrix-meta \
+		-t "$pkgdir"/usr/bin/
+	install -Dm644 config.yaml \
+		-t "$pkgdir"/etc/mautrix-meta/
+
+	install -Dm755 "$srcdir"/mautrix-meta.initd \
+		"$pkgdir"/etc/init.d/mautrix-meta
+	install -Dm644 "$srcdir"/mautrix-meta.confd \
+		"$pkgdir"/etc/conf.d/mautrix-meta
+
+	install -Dm 644 LICENSE "$pkgdir"/usr/share/licenses/"$pkgname"/LICENSE
+}
+
+sha512sums="
+ddf901746cea032ca48d9a5855c40266d9ca172a65f3de7024478d1526915b0d5b067dfb70e886c03ee114aaed55da971755071f1a594808e54ecbc56da0870b  mautrix-meta-0.2606.0.tar.gz
+c607f0071c03d7c72df3950ac2a8b50aafec9cbe9972d1da7adcb79ce65942fc44faa9574e38843a83eae5fb9b1c84b31510ea5566a3c4d7f813d0bb41ab9cd6  mautrix-meta.initd
+473d1ba73d1e311f8ebb364d495bab5289a167414ab4aa824c9ed7a37ea93cd3dd4ef0262963c9e300eb748b0dff6a030add39cbf636acb6db208b6c01aaec3d  mautrix-meta.confd
+"

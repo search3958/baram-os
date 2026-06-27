@@ -1,0 +1,30 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-dinothawr
+pkgver=0_git20220401
+pkgrel=0
+_commit="33fb82a8df4e440f96d19bba38668beaa1b414fc"
+pkgdesc="block pushing puzzle game on slippery surfaces"
+url="https://github.com/libretro/Dinothawr"
+arch="all"
+license="custom"
+makedepends="libogg-dev libvorbis-dev pugixml-dev zlib-dev"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/Dinothawr/archive/$_commit.tar.gz
+	patch-unbundle.patch
+	"
+builddir="$srcdir/Dinothawr-$_commit"
+options="!check" # No tests
+
+build() {
+	rm -rf deps
+	make
+}
+
+package() {
+	install -Dm644 dinothawr_libretro.so "$pkgdir"/usr/lib/libretro/dinothawr_libretro.so
+}
+
+sha512sums="
+b43b6046d7502e4d031bc2a5f9ceed48ec89768ee984509674fde62dec2fab32754764bda5cd989097e9e51c801cdee00c7033e74d361f291f5c2f1d20f878f8  libretro-dinothawr-33fb82a8df4e440f96d19bba38668beaa1b414fc.tar.gz
+4d13454c1f67891d6bf1493ce84d5a3826a646a80709d7ec9fc7606e6bd9f7f21082e9c28d3073d4e8f4bf01e13a7e1476d9fe0d832ccb05474995363f360747  patch-unbundle.patch
+"

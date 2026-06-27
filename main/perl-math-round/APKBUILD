@@ -1,0 +1,31 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=perl-math-round
+pkgver=0.08
+pkgrel=1
+pkgdesc="Math::Round perl module"
+url="https://metacpan.org/release/Math-Round/"
+arch="noarch"
+license="Artistic-1.0-Perl OR GPL-1.0-or-later"
+depends="perl"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/N/NE/NEILB/Math-Round-$pkgver.tar.gz"
+
+builddir="$srcdir"/Math-Round-$pkgver
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+00ef34f541acef09b80588492a3502ac13d1c6c806709b5403a59dc757540b8a9094f2b304f4242a2a8f67d90c06ed7c52626b56e9309fd01b07229ff538f15a  Math-Round-0.08.tar.gz
+"

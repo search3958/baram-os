@@ -1,0 +1,23 @@
+diff --git a/support/bindgen.sh b/support/bindgen.sh
+index 034997c..4becf82 100644
+--- a/support/bindgen.sh
++++ b/support/bindgen.sh
+@@ -1,10 +1,11 @@
+ set -eux
+ 
+ bindgen ./csrc/sodium-bindings.h \
+-  --whitelist-function "crypto_.*" \
+-  --whitelist-type "crypto_.*" \
+-  --whitelist-var "crypto_.*" \
+-  --whitelist-function "sodium_.*" \
+-  --whitelist-var "sodium_.*" \
+-  --whitelist-function "randombytes_.*" \
++  --allowlist-function "crypto_.*" \
++  --allowlist-type "crypto_.*" \
++  --allowlist-var "crypto_.*" \
++  --allowlist-function "sodium_.*" \
++  --allowlist-var "sodium_.*" \
++  --allowlist-function "randombytes_.*" \
++  --with-derive-default \
+   > ./src/sodium_bindings_gen.rs
+\ No newline at end of file

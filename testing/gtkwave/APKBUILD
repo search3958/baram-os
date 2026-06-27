@@ -1,0 +1,46 @@
+# Maintainer: Cowington Post <cowingtonpost@gmail.com>
+pkgname=gtkwave
+pkgver=3.3.120
+pkgrel=0
+pkgdesc="A wave viewer which reads LXT, LXT2, VZT, GHW and VCD/EVCD files"
+url="https://gtkwave.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="desktop-file-utils"
+makedepends="
+	gtk+3.0-dev
+	bzip2-dev
+	xz-dev
+	dconf-dev
+	gperf
+	"
+subpackages="$pkgname-doc"
+source="https://gtkwave.sourceforge.net/gtkwave-gtk3-$pkgver.tar.gz"
+builddir="$srcdir/gtkwave-gtk3-$pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-mime-update \
+		--with-gsettings \
+		--disable-tcl \
+		--enable-gtk3
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+053afbedd0d8d9d541de61caa9dc8f4337ac778114649c4bf0a92bcf4c339f91ac5aa3f24917be7887595c426256bc08431ee008a53af99dd0a1c4b5c92d6a58  gtkwave-gtk3-3.3.120.tar.gz
+"

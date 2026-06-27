@@ -1,0 +1,93 @@
+# Contributor: Dmitry Zakharchenko <dmitz@disroot.org>
+maintainer="Leon White <badfunkstripe@gmail.com>"
+pkgname=subliminal
+pkgver=2.6.0
+pkgrel=1
+pkgdesc="Python library and CLI tool for searching and downloading subtitles"
+url="https://github.com/Diaoul/subliminal"
+arch="noarch"
+license="MIT"
+depends="
+		py3-babelfish
+		py3-beautifulsoup4
+		py3-chardet
+		py3-click
+		py3-click-option-group
+		py3-colorama
+		py3-defusedxml
+		py3-dogpile.cache
+		py3-enzyme
+		py3-guessit
+		py3-knowit
+		py3-platformdirs
+		py3-pysubs2
+		py3-rarfile
+		py3-requests
+		py3-setuptools
+		py3-srt
+		py3-stevedore
+		py3-tomli
+		py3-tomlkit
+		"
+makedepends="
+	py3-gpep517
+	py3-hatch-vcs
+	py3-hatchling
+	py3-setuptools
+	"
+checkdepends="
+	libarchive-tools
+	py3-pytest
+	py3-pytest-runner
+	py3-sympy
+	py3-vcrpy
+	python3-dev
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Diaoul/subliminal/archive/$pkgver.tar.gz
+	https://downloads.sourceforge.net/project/matroska/test_files/matroska_test_w1_1.zip"
+
+prepare() {
+	default_prepare
+	mkdir -p "$builddir"/tests/data/mkv
+	mv "$srcdir"/test*.mkv "$builddir"/tests/data/mkv
+}
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# test_scan_archive_with_no_video: unrar not available
+	# test_scan_password_protected_archive: script downloads sample rar file
+	# from rarfile upstream repo, fails when requests are rate-limited
+	# tests/test_archives.py::test_is_supported_archive: requires network
+	# tests/test_archives.py::test_scan_archive_with_one_video: requires network
+	# tests/test_archives.py::test_scan_archive_with_multiple_videos: requires network
+	# tests/test_archives.py::test_scan_archive_error: requires network
+	# tests/test_archives.py::test_scan_videos_error: requires network
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/test_archives.py::test_scan_archive_with_no_video \
+		--deselect tests/test_archives.py::test_scan_password_protected_archive \
+		--deselect tests/test_archives.py::test_is_supported_archive \
+		--deselect tests/test_archives.py::test_scan_archive_with_one_video \
+		--deselect tests/test_archives.py::test_scan_archive_with_multiple_videos \
+		--deselect tests/test_archives.py::test_scan_archive_error \
+		--deselect tests/test_archives.py::test_scan_videos_error
+
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a6fb3264aeb7c0efbc37fbc1de87a6ebe6788dd4609b8dc5acbf5b7b8548afa5b44cf0cb1df4ab24fbf5de148a38309e8877595d1b2d2b44518305c198e29ffc  subliminal-2.6.0.tar.gz
+f170a8e83dab15228f992b3692330163da2402b8e436c7fa195ac1ecc06cf1eaf1a48d8c99a85c031122c158c2d4006023aae75d5b7805385ba25a6d601cb78f  matroska_test_w1_1.zip
+"

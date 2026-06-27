@@ -1,0 +1,80 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-parsexp
+_pkgname=parsexp
+pkgver=0.16.0
+pkgrel=3
+pkgdesc="S-expression parsing library"
+url="https://github.com/janestreet/parsexp"
+arch="all !riscv64 !loongarch64" # ocaml
+license="MIT"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="dune ocaml ocaml-sexplib0-dev"
+subpackages="$pkgname-dev"
+source="https://ocaml.janestreet.com/ocaml-core/v${pkgver%.*}/files/parsexp-v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-v$pkgver"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build --root . @install --no-buffer --verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv --no-buffer --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml
+
+	rm -Rf "$pkgdir"/usr/doc
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+3308c7cda8a410d1d31b0abbebb549317fd4749fa6da65742576ac5563a8a92a4f2a3c97379546eaf1a1d0e5c71493d5a98a6b033431c48fccd09375d4d939fb  parsexp-v0.16.0.tar.gz
+"

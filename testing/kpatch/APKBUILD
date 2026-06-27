@@ -1,0 +1,40 @@
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Nicolas Lorin <androw95220@gmail.com>
+pkgname=kpatch
+pkgver=0.9.11
+pkgrel=1
+pkgdesc="live kernel patching"
+url="https://github.com/dynup/kpatch"
+arch="x86_64 aarch64"
+license="GPL-2.0-only"
+depends="
+	bash
+	binutils
+	elfutils-dev
+	gawk
+	gcc
+	"
+makedepends="argp-standalone"
+options="!check"
+subpackages="$pkgname-doc $pkgname-systemd"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dynup/kpatch/archive/v$pkgver.tar.gz
+	02-argp.patch
+	03-ppc64.patch
+	"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX="/usr" install
+
+	# Remove incompatible init system file
+	rm -r "$pkgdir"/etc/init
+}
+
+sha512sums="
+b43b096a392ab3b42a9fa0ce9f896a6a6405cec52c0bc371d1d8741f6efdfec0ec9efc1fd3786cd332f34968436f6c2e44ab944283d9e0f1f666cb468211e925  kpatch-0.9.11.tar.gz
+a84657737e8dba4f89ddc349749b63fed1714edd60f23104bdd6ae77586a1e444cdf79fff6e2aeb2b4b7f95ae7807ba2e559b8c5f19767fd081d4a7114b91265  02-argp.patch
+99256fd74ffa98d00bc614115b1acb3d7f4d829b641cc4e46a342cd4bfdb97fb1197888ca438c0562881f2382a6e7d2dd6995cf8d24915d261385dcea95df27f  03-ppc64.patch
+"

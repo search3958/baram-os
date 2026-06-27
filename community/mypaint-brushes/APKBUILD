@@ -1,0 +1,33 @@
+# Contributor: Sascha Paunovic <azarus@posteo.net>
+# Maintainer: Sascha Paunovic <azarus@posteo.net>
+pkgname=mypaint-brushes
+pkgver=1.3.1
+pkgrel=0
+pkgdesc="default MyPaint brushes"
+url="https://github.com/Jehan/mypaint-brushes"
+arch="noarch"
+license="CC0-1.0"
+makedepends="autoconf automake"
+source="https://github.com/mypaint/mypaint-brushes/releases/download/v$pkgver/mypaint-brushes-$pkgver.tar.xz"
+
+prepare() {
+	default_prepare
+	autoreconf -i
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="22ff99c40a2fff71efd5c25a462cefb9948f0d258aee12e3eb924bac53733a2573e100454e2f3e4631d59eac013c2aaa7f32ff566843d23df971bf2aaa1181bd  mypaint-brushes-1.3.1.tar.xz"

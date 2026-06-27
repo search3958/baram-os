@@ -1,0 +1,88 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Taner Tas <taner76@gmail.com>
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=deadbeef
+pkgver=1.10.2
+pkgrel=0
+pkgdesc="fairly capable playlist-oriented audio player"
+url="https://deadbeef.sourceforge.net/"
+arch="all !s390x" #s390x build fails
+license="Zlib GPL-2.0-or-later LGPL-2.1-or-later"
+depends="desktop-file-utils hicolor-icon-theme"
+depends_dev="
+	alsa-lib-dev
+	curl-dev
+	faad2-dev
+	ffmpeg-dev
+	flac-dev
+	gtk+3.0-dev
+	jansson-dev
+	libcddb-dev
+	libcdio-dev
+	libdispatch-dev
+	libjpeg-turbo-dev
+	libmad-dev
+	libnotify-dev
+	libpng-dev
+	libsamplerate-dev
+	libsndfile-dev
+	libvorbis-dev
+	libzip-dev
+	minizip-ng-dev
+	mpg123-dev
+	opusfile-dev
+	pipewire-dev
+	pipewire-jack-dev
+	pulseaudio-dev
+	wavpack-dev
+	zlib-dev
+	"
+makedepends="
+	$depends_dev
+	bsd-compat-headers
+	clang
+	gettext
+	intltool
+	yasm
+	"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-lang"
+source="https://downloads.sourceforge.net/sourceforge/deadbeef/deadbeef-$pkgver.tar.bz2
+	strdupa.patch
+	"
+options="!check" # No test suite
+
+prepare() {
+	default_prepare
+	update_config_sub
+	update_config_guess
+}
+
+build() {
+	case "$CARCH" in
+		x86)
+			build_options="--disable-soundtouch --disable-ffap"
+		;;
+	esac
+
+	LDFLAGS=-lintl \
+	CC=clang \
+	CFLAGS="$CFLAGS -Wno-error" \
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-libretro \
+		--disable-gtk2 \
+		$build_options
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+682cfee8839d55160c742f0bec2e870c8ad6ca0e119701766909017113d25d7c9d45f6e209861a35adcbc3c281209a9fc543d06da9d21808c26052141838afe8  deadbeef-1.10.2.tar.bz2
+1f20f63880b6b43a7980e4f5d3423a4b6d5e33a72c9f5b673e6be3647ede793c87fc48e33e3cbe2af70e0ee115aa41f6a56daee6035dedf6c2d2038e6d207da6  strdupa.patch
+"

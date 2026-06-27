@@ -1,0 +1,46 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-jsonrpc-server
+pkgver=0.4.0
+pkgrel=8
+pkgdesc="A asynchronous JSON RPC server"
+url="https://github.com/palantir/python-jsonrpc-server"
+arch="noarch"
+license="MIT"
+depends="python3 py3-ujson"
+checkdepends="py3-pytest py3-pytest-cov py3-mock"
+makedepends="py3-gpep517 py3-setuptools python3-dev py3-wheel py3-python-versioneer"
+subpackages="$pkgname-pyc"
+source="https://github.com/palantir/python-jsonrpc-server/archive/$pkgver/python-jsonrpc-server-$pkgver.tar.gz
+	fix-test-timezone.patch
+	"
+builddir="$srcdir/python-jsonrpc-server-$pkgver"
+
+prepare() {
+	default_prepare
+
+	# unvendor old versioneer
+	rm -f versioneer.py
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+3b7f4ced4b7469fb10c2510061b5684fecfcd10341a55e695d18048e40d24ac903bfa850afa2970b1ca0a8c0e486c4a716d69f371cb9e2470ff321a236c66944  python-jsonrpc-server-0.4.0.tar.gz
+92d4febe460ae5b797e4617a54682144783eca59d8a5f9d3b1dc7e027418d0461d71f8affe8371e5a27ecba715220ad0735b425fc73cc854560048c0bea8c425  fix-test-timezone.patch
+"

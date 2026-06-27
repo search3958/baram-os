@@ -1,0 +1,26 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Michael Mason <ms13sp@gmail.com>
+pkgname=cutter
+pkgver=1.04
+pkgrel=5
+pkgdesc="A program that allows firewall administrators to abort TCP/IP connections"
+url="http://www.digitage.co.uk/digitage/software/linux-security/cutter"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+options="!check"
+source="http://dev.alpinelinux.org/archive/cutter/cutter-$pkgver.tgz
+	musl-fix.patch"
+
+build() {
+	make
+}
+
+package() {
+	install -m755 -D $pkgname "$pkgdir"/usr/sbin/$pkgname
+}
+
+sha512sums="
+79c17ec8c17e696a79aa8b11fda347f2e6929eb35f9a37da450acf6aff7ab9471e13eaef24708f90f3f0c2791fade2eb944443b98df3d3ae4eef0c408abc7b3a  cutter-1.04.tgz
+fca7cabce0b142c31bcbbede138f20c7389e58d8ad9d82480526b5ab90165ce6493d54c3a3e9270f02bccc08ae248a7b4d62b34bb26c117e6f4b18106c37106d  musl-fix.patch
+"

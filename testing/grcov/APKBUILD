@@ -1,0 +1,36 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=grcov
+pkgver=0.8.20
+pkgrel=0
+pkgdesc="Rust tool to collect and aggregate code coverage data"
+url="https://github.com/mozilla/grcov"
+arch="x86_64 armv7 armhf aarch64 x86 ppc64le" # Limited by cargo
+license="MPL-2.0"
+depends="gcc" # gcov
+makedepends="cargo cargo-auditable"
+options="net !check" # Failing due to utf-8 (locale?)
+source="$pkgname-$pkgver.tar.gz::https://github.com/mozilla/grcov/archive/v$pkgver.tar.gz"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/grcov -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+2fb1e29a9c0130981d24c551335386a051a8259c4e1472bf1c131e146dcbc600ad78446292600e644715051bbaa7e965759309e16a4bc3c13432130cd9ae82bf  grcov-0.8.20.tar.gz
+"

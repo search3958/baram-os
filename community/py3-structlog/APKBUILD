@@ -1,0 +1,52 @@
+# Contributor: psykose <alice@ayaya.dev>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-structlog
+pkgver=25.5.0
+pkgrel=1
+pkgdesc="Simple, powerful, and fast logging for Python"
+url="https://github.com/hynek/structlog"
+arch="noarch"
+license="Apache-2.0 OR MIT"
+makedepends="
+	py3-gpep517
+	py3-hatch-fancy-pypi-readme
+	py3-hatch-vcs
+	py3-hatchling
+	py3-wheel
+	"
+checkdepends="
+	py3-coverage
+	py3-freezegun
+	py3-pretend
+	py3-pytest
+	py3-pytest-asyncio
+	py3-pytest-xdist
+	py3-rich
+	py3-simplejson
+	py3-time-machine
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hynek/structlog/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/structlog-$pkgver"
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver \
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages testenv
+	testenv/bin/python3 -m installer .dist/*.whl
+	testenv/bin/python3 -m pytest -n4
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+3a69107c5c1ed5d2f67e7360f465df950d77b1b2660ae469ff73463d319ddda9142acb2de09bfd9291c4632a5866efc7eb58f14af93879b7a613038d605266eb  py3-structlog-25.5.0.tar.gz
+"

@@ -1,0 +1,60 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=matrix2051
+pkgver=0_git20250912
+_gitrev=50b5d820f60d797214a3b6d8c0609501d6917db0
+pkgrel=1
+pkgdesc="Matrix gateway for IRC"
+url="https://github.com/progval/matrix2051"
+arch="noarch"
+license="AGPL-3.0-only"
+depends="erlang"
+makedepends="elixir rebar3"
+subpackages="$pkgname-openrc"
+source="$pkgname-$_gitrev.tar.gz::https://github.com/progval/matrix2051/archive/$_gitrev.tar.gz
+	matrix2051.initd
+	no-erts.patch
+	"
+builddir="$srcdir/$pkgname-$_gitrev"
+
+export HEX_HOME="${HEX_HOME:-"$srcdir/hex"}"
+export MIX_HOME="${MIX_HOME:-"$srcdir/mix"}"
+export MIX_ARCHIVES="${MIX_ARCHIVES:-"$srcdir/mix/archives"}"
+
+export MIX_ENV=prod
+export REBAR_DEPS_PREFER_LIBS="TRUE"
+export ERL_LIBS="/usr/lib/erlang/lib"
+
+prepare() {
+	default_prepare
+
+	msg "Using precompiled hex"
+	mix local.hex --force
+	msg "Using system rebar3"
+	mix local.rebar --force rebar3 /usr/bin/rebar3
+
+	mix deps.get --only prod
+}
+
+build() {
+	mix release --path build
+}
+
+check() {
+	./build/bin/matrix2051 version
+}
+
+package() {
+	install -dvm755 "$pkgdir"/usr/lib
+	cp -a build "$pkgdir"/usr/lib/matrix2051
+	find "$pkgdir"/usr/lib/matrix2051 -name '*.bat' -delete
+
+	install -Dvm755 "$srcdir"/matrix2051.initd \
+		"$pkgdir"/etc/init.d/matrix2051
+}
+
+sha512sums="
+8795a21a4794ef907e9324be5e2da440bf53ff34a167f721964c7c1217d4ef00810079d600bb28987e6451b7b2ddc6784a465bc0eb286455b461b0fae27a235c  matrix2051-50b5d820f60d797214a3b6d8c0609501d6917db0.tar.gz
+8cb570ee1d6c9b36c34f38bdc7a999a921ac81d8ba08bcd4bdf8d66ca9b8c94d895111599c65ab8ff8f7fb1be6c0158318c9a4f2b8f1cbee608fe50ef66f700d  matrix2051.initd
+974396c6ce87fb264cb901aac37bee25e2a83264633ff607024ebf9e08cfc2f669ab3ab4ae010d12561d0bcfcd167be99ba418f336685ec2afc2312e12ebbf51  no-erts.patch
+"

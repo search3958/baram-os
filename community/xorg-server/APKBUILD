@@ -1,0 +1,253 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+maintainer="Natanael Copa <ncopa@alpinelinux.org>"
+pkgname=xorg-server
+pkgver=21.1.23
+pkgrel=0
+pkgdesc="X.Org X servers"
+url="https://www.x.org/wiki"
+arch="all"
+license="MIT"
+options="!check suid" # needs display
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	xvfb
+	$pkgname-xephyr
+	$pkgname-xnest
+	$pkgname-common::noarch
+	"
+depends="
+	font-cursor-misc
+	font-misc-misc
+	mesa-egl
+	xkbcomp
+	xkeyboard-config
+	xorg-server-common
+	"
+depends_dev="
+	libepoxy-dev
+	libpciaccess-dev
+	libxfont2-dev
+	mesa-dev
+	"
+makedepends="
+	$depends_dev
+	eudev-dev
+	libdrm-dev
+	libx11-dev
+	libxau-dev
+	libxcb-dev
+	libxcvt-dev
+	libxdmcp-dev
+	libxext-dev
+	libxkbfile-dev
+	libxshmfence-dev
+	meson
+	nettle-dev
+	pixman-dev
+	wayland-dev
+	wayland-protocols
+	xcb-util-dev
+	xcb-util-image-dev
+	xcb-util-keysyms-dev
+	xcb-util-renderutil-dev
+	xcb-util-wm-dev
+	xkbcomp-dev
+	xorgproto
+	xtrans
+	"
+source="https://www.x.org/releases/individual/xserver/xorg-server-$pkgver.tar.xz"
+
+# the modesetting driver is now shipped with xorg server
+provides="xf86-video-modesetting=$pkgver-r$pkgrel"
+replaces="xf86-video-modesetting"
+
+# secfixes:
+#   21.1.22-r0:
+#     - CVE-2026-33999
+#     - CVE-2026-34000
+#     - CVE-2026-34001
+#     - CVE-2026-34002
+#     - CVE-2026-34003
+#   21.1.19-r0:
+#     - CVE-2025-62229
+#     - CVE-2025-62230
+#     - CVE-2025-62231
+#   21.1.17-r0:
+#     - CVE-2025-49175
+#     - CVE-2025-49176
+#     - CVE-2025-49177
+#     - CVE-2025-49178
+#     - CVE-2025-49179
+#     - CVE-2025-49180
+#   21.1.16-r0:
+#     - CVE-2025-26594
+#     - CVE-2025-26595
+#     - CVE-2025-26595
+#     - CVE-2025-26597
+#     - CVE-2025-26598
+#     - CVE-2025-26599
+#     - CVE-2025-26600
+#     - CVE-2025-26601
+#   21.1.14-r0:
+#     - CVE-2024-9632
+#   21.1.12-r0:
+#     - CVE-2024-31080
+#     - CVE-2024-31081
+#     - CVE-2024-31082
+#     - CVE-2024-31083
+#   21.1.11-r0:
+#     - CVE-2023-6816
+#     - CVE-2024-0229
+#     - CVE-2024-21885
+#     - CVE-2024-21886
+#     - CVE-2024-0408
+#     - CVE-2024-0409
+#   21.1.10-r0:
+#     - CVE-2023-6377
+#     - CVE-2023-6478
+#   21.1.9-r0:
+#     - CVE-2023-5367
+#     - CVE-2023-5380
+#     - CVE-2023-5574
+#   21.1.7-r0:
+#     - CVE-2023-0494
+#   21.1.5-r0:
+#     - CVE-2022-4283
+#     - CVE-2022-46340
+#     - CVE-2022-46341
+#     - CVE-2022-46342
+#     - CVE-2022-46343
+#     - CVE-2022-46344
+#   21.1.4-r0:
+#     - CVE-2022-2319
+#     - CVE-2022-2320
+#   21.1.2-r0:
+#     - CVE-2021-4008
+#     - CVE-2021-4009
+#     - CVE-2021-4010
+#     - CVE-2021-4011
+#   1.20.10-r5:
+#     - CVE-2021-3472
+#   1.20.10-r0:
+#     - CVE-2020-14360
+#     - CVE-2020-25712
+#   1.20.9-r0:
+#     - CVE-2020-14362
+#     - CVE-2020-14361
+#     - CVE-2020-14346
+#     - CVE-2020-14345
+#   1.20.8-r4:
+#     - CVE-2020-14347
+#   1.20.3-r0:
+#     - CVE-2018-14665
+#   1.19.5-r0:
+#     - CVE-2017-12176
+#     - CVE-2017-12177
+#     - CVE-2017-12178
+#     - CVE-2017-12179
+#     - CVE-2017-12180
+#     - CVE-2017-12181
+#     - CVE-2017-12182
+#     - CVE-2017-12183
+#     - CVE-2017-12184
+#     - CVE-2017-12185
+#     - CVE-2017-12186
+#     - CVE-2017-12187
+#     - CVE-2017-13721
+#     - CVE-2017-13723
+
+prepare() {
+	default_prepare
+	sed -i -e 's/termio.h/termios.h/' hw/xfree86/os-support/xf86_OSlib.h
+}
+
+build() {
+	# xorg modules does not work with the -z now and it seems like we
+	# cannot pass over the linker flag to .so files. so we tweak the
+	# gcc specs.
+	export CFLAGS="${CFLAGS/-fno-plt}"
+	export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+	export LDFLAGS="$LDFLAGS -Wl,-z,lazy"
+	_fontroot="/usr/share/fonts"
+
+	# 32-bit fails otherwise
+	export CFLAGS="$CFLAGS -Wno-error=array-bounds"
+
+	abuild-meson \
+		-Db_lto=true \
+		-Dxorg=true \
+		-Dxephyr=true \
+		-Dglamor=true \
+		-Dxnest=true \
+		-Dxvfb=true \
+		-Dxwin=false \
+		-Ddefault_font_path=$_fontroot/misc,$_fontroot/100dpi:unscaled,$_fontroot/75dpi:unscaled,$_fontroot/TTF,$_fontroot/Type1 \
+		-Dglx=true \
+		-Dxdmcp=true \
+		-Dxdm-auth-1=true \
+		-Dxcsecurity=true \
+		-Dsecure-rpc=false \
+		-Dipv6=true \
+		-Dxkb_dir=/usr/share/X11/xkb \
+		-Dxkb_output_dir=/var/lib/xkb \
+		-Dlisten_tcp=false \
+		-Dlisten_unix=true \
+		-Dlisten_local=true \
+		-Dsuid_wrapper=true \
+		-Dpciaccess=true \
+		-Dudev=true \
+		-Dhal=false \
+		-Dsystemd_logind=false \
+		-Ddpms=true \
+		-Ddri1=false \
+		-Ddri2=true \
+		-Ddri3=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	chmod u+s "$pkgdir"/usr/libexec/Xorg.wrap
+
+	# Don't conflict with xf86-input-evdev
+	rm -f "$pkgdir"/usr/share/X11/xorg.conf.d/10-evdev.conf
+
+	install -Dm0644 xkb/README.compiled -t "$pkgdir"/var/lib/xkb
+}
+
+xvfb() {
+	pkgdesc="Virtual Framebuffer 'fake' X server"
+
+	amove usr/bin/Xvfb
+}
+
+xephyr() {
+	pkgdesc="kdrive based X Server which targets a window on a host X Server as its framebuffer"
+
+	amove usr/bin/Xephyr
+}
+
+xnest() {
+	pkgdesc="A nested Xorg server"
+
+	amove usr/bin/Xnest
+}
+
+common() {
+	depends=""
+	pkgdesc="Xorg server common files"
+
+	amove usr/lib/xorg/protocol.txt
+}
+
+sha512sums="
+7eae854af1b5db1f5d1e59cb9d26b86d98fa176d4f80f70935c707f17982d0446a0a8ad8d29c922edbd208435f995b027604fbb72e62a7bf3ba79f2f570aa0bb  xorg-server-21.1.23.tar.xz
+"

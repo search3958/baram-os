@@ -1,0 +1,21 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=font-montserrat
+pkgver=9.000
+pkgrel=0
+pkgdesc="The Montserrat Font Project"
+url="https://github.com/JulietaUla/Montserrat"
+arch="noarch"
+license="OFL-1.1"
+source="https://github.com/JulietaUla/Montserrat/archive/refs/tags/v$pkgver/font-montserrat-$pkgver.tar.gz"
+builddir="$srcdir/Montserrat-$pkgver"
+options="!check" # is a font
+
+package() {
+	install -Dm755 -t "$pkgdir"/usr/share/fonts/montserrat/ \
+		fonts/otf/*.otf
+}
+
+sha512sums="
+3d5ca0751cf77760d3d560f30f7f5b8041ef8b0300f8e035495369aa8ce09954d107a1f75b8defe2d8a875030ef69275ab0bebb02d5361e0c856f987aef78648  font-montserrat-9.000.tar.gz
+"

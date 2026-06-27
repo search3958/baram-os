@@ -1,0 +1,36 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=filecheck
+pkgver=0.0.24
+pkgrel=2
+pkgdesc="Attempt to reimplement LLVM's FileCheck using Python"
+url="https://github.com/mull-project/FileCheck.py"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="py3-hatchling py3-gpep517 py3-installer"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/mull-project/FileCheck.py/archive/v$pkgver/filecheck-$pkgver.tar.gz"
+builddir="$srcdir/FileCheck.py-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ed3b42afc3ba55ab7bb19df45732fb092048a93f02fb0f98e24085a7968e5292ba597343aaf26b008a5541f4b59ec0dd662bb2c12e2695a60bfad60cd23bb60c  filecheck-0.0.24.tar.gz
+"

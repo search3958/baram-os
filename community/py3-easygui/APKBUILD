@@ -1,0 +1,31 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=py3-easygui
+pkgver=0.98.3
+pkgrel=4
+pkgdesc="easy GUI programming in Python"
+url="https://github.com/robertlugg/easygui"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3"
+makedepends="py3-setuptools"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/e/easygui/easygui-$pkgver.tar.gz"
+builddir="$srcdir/easygui-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+5bd87bdc8383ffd1276dbf9202e3321d8ef9bdff3fefdf7b9b1ed83c8105c2ca1781b7a8a0d8d13fc4b612180efe175187ea42ad1e2ca0d737c355012bd12ad6  easygui-0.98.3.tar.gz
+"

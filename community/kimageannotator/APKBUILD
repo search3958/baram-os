@@ -1,0 +1,57 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=kimageannotator
+pkgver=0.7.2
+pkgrel=0
+pkgdesc="Tool for annotating images"
+url="https://github.com/ksnip/kImageAnnotator"
+arch="all"
+license="LGPL-3.0-or-later"
+depends_dev="
+	kcolorpicker-dev
+	qt6-qtbase-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	"
+makedepends="$depends_dev
+	cmake
+	gtest-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev"
+source="https://github.com/ksnip/kImageAnnotator/archive/v$pkgver/kimageannotator-$pkgver.tar.gz"
+builddir="$srcdir/kImageAnnotator-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DBUILD_WITH_QT6=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=TRUE \
+		-DBUILD_TESTS="$(want_check && echo ON || echo OFF)" \
+		-DBUILD_EXAMPLE=OFF
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build/tests -E "AnnotationTabContextMenuTest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	mkdir -p "$pkgdir"/usr/lib/cmake/kImageAnnotator
+	ln -s /usr/lib/cmake/kImageAnnotator-Qt5/kImageAnnotator-Qt5Config.cmake \
+		"$pkgdir"/usr/lib/cmake/kImageAnnotator/kImageAnnotatorConfig.cmake
+	ln -s /usr/lib/cmake/kImageAnnotator-Qt5/kImageAnnotator-Qt5Config-version.cmake \
+		"$pkgdir"/usr/lib/cmake/kImageAnnotator/kImageAnnotatorConfig-version.cmake
+	ln -s /usr/lib/cmake/kImageAnnotator-Qt5/kImageAnnotator-targets-minsizerel.cmake \
+		"$pkgdir"/usr/lib/cmake/kImageAnnotator/kImageAnnotator-targets-minsizerel.cmake
+	ln -s /usr/lib/cmake/kImageAnnotator-Qt5/kImageAnnotator-targets.cmake \
+		"$pkgdir"/usr/lib/cmake/kImageAnnotator/kImageAnnotator-targets.cmake
+}
+
+sha512sums="
+baccdac1972d9bebdf2bf7fbaaacad9a3cd8a7149f3505e620e093069f985208cd097077bc0e4fb3fdd2c0a5885aaf1d385a2b568efebf7146a5aac157e0c5ea  kimageannotator-0.7.2.tar.gz
+"

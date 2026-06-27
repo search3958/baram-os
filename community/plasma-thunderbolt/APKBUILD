@@ -1,0 +1,57 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=plasma-thunderbolt
+pkgver=6.7.1
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+pkgdesc="Plasma integration for controlling Thunderbolt devices"
+license="GPL-2.0-only OR GPL-3.0-only"
+depends="bolt"
+makedepends="
+	extra-cmake-modules
+	kcmutils-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	ki18n-dev
+	knotifications-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	samurai
+	"
+checkdepends="
+	dbus
+	xwayland-run
+	"
+
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/plasma/plasma-thunderbolt.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/plasma-thunderbolt-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	dbus-run-session wlheadless-run -- ctest --test-dir build -E "(libkbolt-device|kbolt-kded-kded)test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+205d838fa7c03623c5617603021fcd60d5628f73ef0995c4d901ad368c0fb1cf05d497924ba8a2fe7359c4e07b39769b7549badd773a47e5ff4f5367e93cb0a4  plasma-thunderbolt-6.7.1.tar.xz
+"

@@ -1,0 +1,30 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-inputstream-rtmp
+pkgver=21.1.2
+_realname=Omega
+pkgrel=0
+pkgdesc="RTMP input stream add-on for Kodi"
+options="!check" # no test suite
+url="https://github.com/xbmc/inputstream.rtmp"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="GPL-2.0-only"
+makedepends="cmake rtmpdump-dev kodi-dev samurai"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/xbmc/inputstream.rtmp/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/inputstream.rtmp-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+4f5930a65132302665c07a6a0ffa693e0a20c5b3244627bd3773514907bda0a403f1ff0016af5bd61ac2ea5bf4288b169d104e09f57440c0f64e0094bd3deba6  kodi-inputstream-rtmp-21.1.2-Omega.tar.gz
+"

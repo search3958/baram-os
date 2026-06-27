@@ -1,5 +1,0 @@
-#TODO compile and test
-[source]
-tar = "https://github.com/bstansell/conserver/releases/download/v8.3.0/conserver-8.3.0.tar.gz"
-[build]
-template = "configure"

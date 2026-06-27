@@ -1,0 +1,48 @@
+# Maintainer: Ben Westover <me@benthetechguy.net>
+pkgname=mtkclient
+pkgver=2.1.3
+pkgrel=0
+pkgdesc="Unofficial MTK reverse engineering and flash tool"
+url="https://github.com/bkerler/mtkclient"
+# riscv64 blocked by pyside6
+# armhf blocked by qt6-qtdeclarative -> pyside6
+arch="noarch !riscv64 !armhf"
+license="GPL-3.0-only"
+depends="
+	android-udev-rules
+	libusb
+	py3-colorama
+	py3-mock
+	py3-pycryptodome
+	py3-pycryptodomex
+	py3-pyserial
+	py3-pyside6
+	py3-shiboken6
+	py3-usb
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	py3-hatchling
+	python3-dev
+	"
+options="!check" # No tests available
+subpackages="$pkgname-pyc $pkgname-udev"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/bkerler/mtkclient/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" dist/*.whl
+	install -Dm644 Setup/Linux/51-edl.rules "$pkgdir"/usr/lib/udev/rules.d/52-edl.rules
+}
+
+sha512sums="
+0392d024283a08adbbfeda43f9f6a5543d861b6327b8e1890aba4ccc118f3c602fb62016501707df5d43f3a2ad20275eeca5095466b2c6bb2fdb585f1b8fc133  mtkclient-2.1.3.tar.gz
+"

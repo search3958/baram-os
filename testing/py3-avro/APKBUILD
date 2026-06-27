@@ -1,0 +1,43 @@
+# Contributor: Gennady Feldman <gena01@gmail.com>
+# Maintainer: Gennady Feldman <gena01@gmail.com>
+pkgname=py3-avro
+_pkgname=avro
+pkgver=1.12.1
+pkgrel=0
+pkgdesc="Serialization and RPC framework"
+url="https://avro.apache.org/"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-isort
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/apache/avro/archive/release-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-release-$pkgver/lang/py"
+options="net" # tests connect to apache.org
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+4e7fd7ebb41f6149a499d0d38babd99d07f936143b47a60f7c568a589fb0e6369301c7230bde518b554eaeaa9ded1ed1fae2661cbd5ebc49fb5f22d97c066f05  py3-avro-1.12.1.tar.gz
+"

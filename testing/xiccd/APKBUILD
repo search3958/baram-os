@@ -1,0 +1,47 @@
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=xiccd
+pkgver=0.4.1
+pkgrel=0
+pkgdesc="X Color Profile Daemon"
+url="https://github.com/agalakhov/xiccd"
+arch="all"
+options="!check" # no tests
+license="GPL-3.0-or-later"
+depends="
+	colord
+	polkit
+	"
+makedepends="
+	autoconf
+	automake
+	colord-dev
+	glib-dev
+	libx11-dev
+	libxrandr-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/agalakhov/xiccd/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	aclocal
+	autoconf
+	automake --add-missing --foreign --force --copy
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+package() {
+	# makefiles do not respect sysconfdir...
+	make sysconfigdir=/etc DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3b669779c8dc1e5e81289f55daed41f0a8a665baea31379aa769bcdda3b46bd426301388113bf8e5d00b70e09c8ea05e678f36c552a644397a8c5f0565bea226  xiccd-0.4.1.tar.gz
+"

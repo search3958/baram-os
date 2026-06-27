@@ -1,0 +1,43 @@
+# Contributor: Elly <elly@elly.town>
+# Maintainer: Elly <elly@elly.town>
+pkgname=spiped
+pkgver=1.6.4
+pkgrel=0
+pkgdesc="Encrypted network pipe utility"
+url="https://www.tarsnap.com/spiped.html"
+# armhf and armv7 fail to build
+arch="all !armhf !armv7"
+license="BSD-2-Clause"
+makedepends="openssl-dev"
+source="https://www.tarsnap.com/spiped/spiped-$pkgver.tgz"
+# Tests require a max 107 char directory
+# This can not be guaranteed on every system building this package
+# $tmpdir would work but is not compatible with rootbld
+options="!check"
+
+build() {
+	make
+}
+
+check() {
+	# choose a shorter path to workaround the
+	# 107 char limit for unix domain sockets.
+	# shellcheck disable=SC2154
+	local testdir="$tmpdir/tests"
+
+	# clear testdir to allow re-running of check().
+	rm -rf "$testdir"
+	mkdir -p "$testdir"
+
+	# symlinking prevents rebuild of spiped.
+	ln -s "$builddir"/* "$testdir"/
+	make -C "$testdir" test
+}
+
+package() {
+	make BINDIR="$pkgdir/usr/bin" install
+}
+
+sha512sums="
+cfc606d34be9d9f130deef0d79b96ed6e0b69e537bca98e27b090c7b973c2a00d03963e53520e20870110681966acc627d07238f6d2a4855d10c4d545095de10  spiped-1.6.4.tgz
+"

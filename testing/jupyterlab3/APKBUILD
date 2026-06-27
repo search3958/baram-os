@@ -1,0 +1,67 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=jupyterlab3
+_pyname=jupyterlab
+pkgver=3.6.8
+pkgrel=2
+pkgdesc="An extensible environment for interactive and reproducible computing, based on the Jupyter Notebook and Architecture."
+url="https://jupyterlab.readthedocs.io/en/latest/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	jupyter-notebook-shim
+	python3
+	py3-async-lru
+	py3-httpx
+	py3-ipykernel
+	"
+makedepends="
+	jupyter-notebook-shim
+	jupyter-server
+	py3-async-lru
+	py3-babel
+	py3-gpep517
+	py3-hatchling
+	py3-hatch-jupyter-builder
+	py3-httpx
+	py3-installer
+	py3-ipykernel
+	py3-jupyterlab_server
+	py3-jupyter-packaging
+	py3-json5
+	py3-poetry-core
+	py3-pytest-jupyter
+	py3-requests
+	py3-setuptools
+	py3-wheel
+	nodejs
+	npm
+	yarn
+	"
+checkdepends="py3-pytest py3-setuptools py3-pexpect"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jupyterlab/jupyterlab/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+# net: npm dependencies
+options="!check net"
+replaces="py3-$pkgname" # Backwards compatibility (Alpine <3.23)
+provides="py3-$pkgname=$pkgver-r$pkgrel" # Backwards compatibility (Alpine <3.23)
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 1>&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -k 'not test_python_render_simple_indent_guides and not test_python_render_line_range_indent_guides'
+}
+
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+414d4f4669c4939d5fe373f323fca25afc9090eb1489b43665bd8f6f3d55203adcad3a62e5e10af738a4dd0aaed2119e2a078d5879a45b38647143a707f8ff9c  jupyterlab3-3.6.8.tar.gz
+"

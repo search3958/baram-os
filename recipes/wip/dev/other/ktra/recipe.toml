@@ -1,8 +1,0 @@
-#TODO compiled but not tested
-[source]
-git = "https://github.com/moriturus/ktra"
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

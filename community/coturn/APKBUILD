@@ -1,0 +1,56 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: wener <wenermail@gmail.com>
+pkgname=coturn
+pkgver=4.14.0
+pkgrel=0
+pkgdesc="Free open source implementation of TURN and STUN Server"
+url="https://github.com/coturn/coturn"
+arch="all"
+license="BSD-3-Clause"
+makedepends="openssl-dev>3 libevent-dev linux-headers sqlite-dev libpq-dev hiredis-dev mariadb-dev"
+pkgusers="$pkgname"
+pkggroups="$pkgname"
+install="$pkgname.pre-install"
+subpackages="$pkgname-openrc $pkgname-static $pkgname-dev $pkgname-doc"
+source="coturn-$pkgver.tar.gz::https://github.com/coturn/coturn/archive/$pkgver.tar.gz
+	turnserver.initd
+	"
+
+# secfixes:
+#   4.10.0-r0:
+#     - CVE-2026-40613
+#   4.9.0-r0:
+#     - CVE-2026-27624
+#   4.5.2-r0:
+#     - CVE-2020-26262
+#   4.5.1.3-r0:
+#     - CVE-2020-4067
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share \
+		--localstatedir=/var \
+		--disable-rpath \
+		--sysconfdir=/etc/$pkgname \
+		--turndbdir=/var/lib/$pkgname
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm755 "$srcdir"/turnserver.initd \
+		"$pkgdir"/etc/init.d/turnserver
+}
+
+sha512sums="
+74c6cef6832d73092c52ca0dcab6bfda1dd9f968bad84f9b0977d62e322d26b56524b8723671a76a07b56b7467ee62e53ce8a7ff7699a23909a4a6f0d3621b21  coturn-4.14.0.tar.gz
+e686dc752618b2da2f6127ab11c49767bfcf228edf458cefe2853093baa845adb2b3159e850db1721e7474c4938fb237dd12bdfd7fd4db2ee73fbd0cb19af17d  turnserver.initd
+"

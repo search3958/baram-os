@@ -1,0 +1,40 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=py3-zipstream-ng
+pkgver=1.7.1
+pkgrel=2
+pkgdesc="A modern and easy to use streamable zip file generator"
+url="https://github.com/pR0Ps/zipstream-ng"
+arch="noarch"
+license="LGPL-3.0-only"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/pR0Ps/zipstream-ng/archive/refs/tags/v$pkgver/zipstream-ng-$pkgver.tar.gz"
+builddir="$srcdir/zipstream-ng-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c775e0240880209984c3d3faba62c4ec43874f007397669358e308ca833abe5d8d2cf20b0157ffbdd06df476ed767c027a1dbc08c6677002f94e71eb9d934d96  zipstream-ng-1.7.1.tar.gz
+"

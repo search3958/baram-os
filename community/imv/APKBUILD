@@ -1,0 +1,87 @@
+# Maintainer: Steven Guikal <void@fluix.one>
+pkgname=imv
+pkgver=5.0.1
+pkgrel=0
+pkgdesc="Image viewer for X11/Wayland"
+url="https://sr.ht/~exec64/imv"
+arch="all"
+license="MIT"
+makedepends="
+	asciidoc
+	fontconfig-dev
+	freeimage-dev
+	glu-dev
+	inih-dev
+	libheif-dev
+	libjpeg-turbo-dev
+	libjxl-dev
+	libpng-dev
+	librsvg-dev
+	libxkbcommon-dev
+	mesa-dev
+	meson
+	pango-dev
+	sdl2_ttf-dev
+	wayland-dev
+	wayland-protocols
+	"
+checkdepends="
+	cmocka
+	cmocka-dev
+	"
+subpackages="$pkgname-dbg $pkgname-doc $pkgname-wayland $pkgname-x11"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~exec64/imv/archive/v$pkgver.tar.gz
+	move-wayland-and-x11-to-libexec.patch
+	version.patch
+	backend-librsvg-include-stdio.patch
+	drop-usage-of-xxd-n.patch
+	"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	local _test=enabled
+	if ! want_check; then
+		_test=disabled
+	fi
+	abuild-meson \
+		-Dwindows=all \
+		-Dtest=$_test \
+		-Dman=enabled \
+		-Dlibtiff=disabled \
+		-Dlibnsgif=disabled \
+		-Dlibrsvg=enabled \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+wayland() {
+	pkgdesc="Image viewer for Wayland"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="$pkgname=$pkgver-r$pkgrel wayland-libs-server"
+
+	amove usr/libexec/imv-wayland
+}
+
+x11() {
+	pkgdesc="Image viewer for X11"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="$pkgname=$pkgver-r$pkgrel xorg-server"
+
+	amove usr/libexec/imv-x11
+}
+
+sha512sums="
+9a53119b4bdb2c4b848ac5d7138f98948973bfa52ef3da111ca3c9eff5e11daf90529cd8c4898643bc7bde712b9c0e62fee9770a55f4e220abd4587ce651bba7  imv-5.0.1.tar.gz
+80b50cbd629a96c345d6e3cf1d6ad198610949f65f4355d4332e8e11eed43da6c3492c9aadb6c73524cf3c73d41db4acfb2ce0a1390cefe233f947022a94acde  move-wayland-and-x11-to-libexec.patch
+f00e9874976ee95dffd292bb088c6ba581bc66262941aefc1b8c3a91f1b27b67c7e42a53ee139d1965a19c6b3ed643ae73db74f406a55e5cf2b9b8a99c9a6c8c  version.patch
+4bb47039e7e3520b534cc491ba52f2f7a61559fbe89d2f24bcf19fff76d21c7795cc884764f71413329973442cdb2107bbb5a9889bfdcc620fad93d791513cc8  backend-librsvg-include-stdio.patch
+36a474cb2c25e6fa09ba45820de3b3525498268ef646a5d3541b89467654c9f59adcb22014f4aad4c400ddc94fff4e0359c11ab251806b2425e56fbb3969dbbb  drop-usage-of-xxd-n.patch
+"

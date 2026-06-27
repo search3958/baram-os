@@ -1,0 +1,51 @@
+# Contributor: Daniel Santana <daniel@santana.tech>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=maim
+pkgver=5.8.1
+pkgrel=2
+pkgdesc="Utility that takes screenshots of your desktop"
+url="https://github.com/naelstrof/maim"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	cmake
+	glm-dev
+	icu-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	libwebp-dev
+	libxcomposite-dev
+	libxrandr-dev
+	libxrender-dev
+	mesa-dev
+	samurai
+	slop-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/naelstrof/maim/archive/v$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+34f649b3f1143833bc5a564c18f5aa99e1550792767f33165fc8212efef43ecfba7857791729945d25749c6cf17d707e35a0069f0a590a3c67a4648d952830aa  maim-5.8.1.tar.gz
+"

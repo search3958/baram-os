@@ -1,0 +1,26 @@
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Maarten van Gompel <proycon@anaproy.nl>
+pkgname=svkbd
+pkgver=0.4.2
+pkgrel=0
+pkgdesc="Simple virtual keyboard for X, ships with an international mobile-optimised layout"
+url="https://tools.suckless.org/x/svkbd/"
+arch="all"
+license="MIT"
+subpackages="$pkgname-doc"
+options="!check" # has no tests
+makedepends="fontconfig-dev freetype-dev libx11-dev libxtst-dev libxft-dev libxinerama-dev"
+source="https://dl.suckless.org/tools/svkbd-$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+3acefa1b90a64c456de36574159c9e7fcdf3c6a66a38b74e362bd7644526b43ee3a18dc1f3440a42f14c104e966be6c7c4f93d2a21847102322b2dd750376b71  svkbd-0.4.2.tar.gz
+"

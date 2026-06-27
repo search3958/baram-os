@@ -1,4 +1,0 @@
-[source]
-git = "https://github.com/lsd-rs/lsd"
-[build]
-template = "cargo"

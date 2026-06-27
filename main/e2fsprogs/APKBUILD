@@ -1,0 +1,119 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=e2fsprogs
+pkgver=1.47.4
+pkgrel=0
+pkgdesc="Standard Ext2/3/4 filesystem utilities"
+url="https://e2fsprogs.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT"
+depends_dev="util-linux-dev gawk"
+makedepends="$depends_dev linux-headers fuse3-dev"
+checkdepends="diffutils perl coreutils"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	libcom_err
+	fuse2fs
+	fuse2fs-doc:fuse2fs_doc:noarch
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-extra
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tytso/e2fsprogs/archive/v$pkgver.tar.gz
+	"
+
+# secfixes:
+#   1.45.5-r0:
+#     - CVE-2019-5188
+#   1.45.4-r0:
+#     - CVE-2019-5094
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-udev-rules-dir=no \
+		--enable-elf-shlibs \
+		--enable-symlink-install \
+		--disable-fsck \
+		--disable-uuidd \
+		--disable-libuuid \
+		--disable-libblkid \
+		--disable-nls \
+		--enable-lto
+	make
+}
+
+check() {
+	# Disable failing test
+	rm -rf tests/m_offset*
+
+	# Failing on CI
+	rm -rf tests/f_bigalloc_orphan_list*
+
+	# Fails on armhf on CI
+	rm -rf tests/f_extent_htree*
+
+	# Fails on builders with less than 4TB free space
+	rm -rf tests/m_hugefile
+
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install install-libs
+	mkdir -p "$pkgdir"/sbin/
+	local i; for i in e2fsck mke2fs mkfs.* fsck.*; do
+		mv "$pkgdir"/usr/sbin/$i "$pkgdir"/sbin/
+	done
+	# overwrite busybox symlinks
+	mkdir -p "$pkgdir"/bin/
+	for i in chattr lsattr; do
+		mv "$pkgdir"/usr/bin/$i "$pkgdir"/bin/
+	done
+}
+
+dev() {
+	default_dev
+
+	amove \
+		usr/bin/compile_et \
+		usr/bin/mk_cmds \
+		usr/share/et \
+		usr/share/ss
+}
+
+libcom_err() {
+	pkgdesc="Common error description library"
+
+	amove usr/lib/libcom_err*
+}
+
+fuse2fs() {
+	pkgdesc="Ext2/3/4 filesystem driver for FUSE"
+	amove usr/bin/fuse2fs
+}
+
+fuse2fs_doc() {
+	pkgdesc="Ext2/3/4 filesystem driver for FUSE (documentation)"
+	install_if="fuse2fs=$pkgver-r$pkgrel docs"
+
+	amove usr/share/man/man1/fuse2fs.1
+	gzip -9 "$subpkgdir"/usr/share/man/man1/fuse2fs.1
+}
+
+extra() {
+	depends="$pkgname=$pkgver-r$pkgrel"
+	pkgdesc="Ext2/3/4 filesystem extra utilities"
+
+	amove bin usr/sbin usr/lib
+}
+
+sha512sums="
+923c1ba52cf48557e190ee936be47ff3e43e4798950499e3c663f0f077470caefbb69ee845ebe1f969b3e7c1bb0c22e507188f1daca24649c54c5843c835b2f9  e2fsprogs-1.47.4.tar.gz
+"

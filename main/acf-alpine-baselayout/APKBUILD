@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-alpine-baselayout
+pkgver=0.13.4
+pkgrel=0
+pkgdesc="Web-based system administration interface for alpine-baselayout"
+url="https://gitlab.alpinelinux.org/acf/acf-alpine-baselayout"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core lua-json4 lua-posix"
+source="https://gitlab.alpinelinux.org/acf/acf-alpine-baselayout/-/archive/v$pkgver/acf-alpine-baselayout-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+f1f888c6da169c6603892ec10beee15ba943c470ee78c76e24a27be6e50df963cc8f77624b181966a892309fb2a0d8ffa9176497e6d2e6d3eecb0231cd73652b  acf-alpine-baselayout-v0.13.4.tar.gz
+"

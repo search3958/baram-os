@@ -1,0 +1,165 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=nix
+pkgver=2.31.5
+pkgrel=0
+pkgdesc="The purely functional package manager"
+url="https://nixos.org/nix/"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="ca-certificates"
+depends_dev="boost-dev"
+makedepends="
+	$depends_dev
+	bash
+	bison
+	blake3-dev
+	brotli-dev
+	busybox-static
+	bzip2-dev
+	cmake
+	coreutils
+	curl
+	curl-dev
+	doxygen
+	editline-dev
+	flex
+	gc-dev
+	gtest-dev
+	hexdump
+	jq
+	libarchive-dev
+	libgit2-dev
+	libseccomp-dev
+	libsodium-dev
+	libtool
+	lowdown
+	lowdown-dev
+	man-db
+	mdbook
+	meson
+	nlohmann-json
+	openssl-dev
+	perl-dbd-sqlite
+	perl-dev
+	rapidcheck-dev
+	sqlite-dev
+	toml11
+	xz
+	rsync
+	"
+pkggroups="nix nixbld"
+install="$pkgname.pre-install"
+subpackages="
+	perl-$pkgname:perl
+	$pkgname-dev
+	$pkgname-openrc
+	$pkgname-manual::noarch
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/NixOS/nix/archive/$pkgver/nix-$pkgver.tar.gz
+	README.alpine
+	nix-remote.sh
+	nix-daemon.initd
+	meson-build-root.patch
+	"
+
+# secfixes:
+#   2.20.5-r0:
+#     - CVE-2024-27297
+
+case "$CARCH" in
+	x86*) makedepends="$makedepends libcpuid-dev";;
+esac
+
+build() {
+	# Don't include functional tests in the build.
+	# It executes various nix-* binaries, assuming they are in the same bindir.
+	sed -i -e '/nix-functional-tests/d' meson.build
+
+	# NOTE: /nix/var is recommended by upstream and we need /nix anyway.
+	abuild-meson \
+		--buildtype=release \
+		--localstatedir=/nix/var \
+		-Ddoc-gen=true \
+		-Dnix:profile-dir=/etc/profile.d \
+		-Dlibexpr:gc=enabled \
+		-Dlibstore:seccomp-sandboxing=enabled \
+		-Dlibstore:embedded-sandbox-shell=true \
+		-Dlibstore:sandbox-shell=/bin/busybox.static \
+		. build
+	meson compile -C build
+}
+
+check() {
+	meson test --timeout-multiplier 0 -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+
+	cd "$pkgdir"
+
+	# We don't use systemd and only nix-daemon.sh is needed in
+	# /etc/profile.d for multi-user installations.
+	#
+	# See https://github.com/NixOS/nix/issues/5848
+	rm -R usr/lib/systemd \
+		usr/lib/tmpfiles.d \
+		etc/profile.d/nix.sh \
+		etc/profile.d/*.fish
+
+	mkdir -p usr/sbin
+	rm -f usr/bin/nix-daemon
+	ln -s ../bin/nix usr/sbin/nix-daemon
+
+	# Use our standard path for the Perl bindings
+	install -d -m 0755 usr/lib/perl5/vendor_perl
+	find usr/lib/perl5/site_perl \
+		-maxdepth 3 \( -type d -name Nix -o -name auto \) \
+		-exec cp -r {} usr/lib/perl5/vendor_perl +
+	rm -r usr/lib/perl5/site_perl
+
+	install -m 644 -D "$srcdir"/nix-remote.sh etc/profile.d/nix-remote.sh
+	install -m 755 -D "$srcdir"/nix-daemon.initd etc/init.d/nix-daemon
+	install -m 644 -D "$srcdir"/README.alpine \
+		"$pkgdir"/usr/share/doc/$pkgname/README.alpine
+
+	# Set up build users.
+	# Note: max-jobs should equal number of created nixbld<n> users.
+	install -d -m 0755 etc/nix
+	cat > etc/nix/nix.conf <<-EOF
+		allowed-users = @nix
+		build-users-group = nixbld
+		max-jobs = 4
+	EOF
+}
+
+manual() {
+	pkgdesc="$pkgdesc (HTML manual)"
+
+	amove usr/share/doc/nix/manual \
+		usr/share/doc/nix/internal-api \
+		usr/share/doc/nix/external-api
+}
+
+perl() {
+	pkgdesc="$pkgdesc (Perl bindings)"
+	depends="$pkgname=$pkgver-r$pkgrel perl"
+	# perl-nix*: /usr/lib/perl5/core_perl/CORE/libperl.so: path not found
+	options="$options !tracedeps"
+
+	amove usr/lib/perl5
+}
+
+sha512sums="
+e1d9eb7ef3a7037c6e6171f2d15b636cc26f3696577a8e77975fbaf4325ca23bb411cd4a4ade9ba2f05cf58b181677ec5fa9896054db49406fabaada39e632e3  nix-2.31.5.tar.gz
+f6a8d67003a6f0cd54dc4dc26051e9f3d18d9c1c1d66c99324e3db017891a6fdd88d7be53de05ab21fa8f7635164a093069416a89cf322ea6f6888df066ea60b  README.alpine
+ad02313f026fe3286c7c2271f26bf074ba2966c12777d7109275555f1a616bf0f99c8f5e45a57161f383091867f1dfd4d84cfae7a6d8a075312608456975dc81  nix-remote.sh
+9e4568db987fbae5097f7bb086e8ad51742c2d229703104fb7e6f240ffb0ca72e57dc305fb238bcee4ec8002d780007af60f241b1f32b6aa413dd579d9c59e75  nix-daemon.initd
+9b54cb09174f163d78b2602b3e00e9aad0c8ac24a14b38268e0456e18aab0209f063342e47b729a30376874182a869d0babe499bbcb150b9cd492263e85f9c19  meson-build-root.patch
+"

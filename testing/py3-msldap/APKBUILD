@@ -1,0 +1,55 @@
+# Contributor: Jonas <spameier+alpine@proton.me>
+# Maintainer: Jonas <spameier+alpine@proton.me>
+pkgname=py3-msldap
+_pyname=msldap
+pkgver=0.5.15
+pkgrel=3
+pkgdesc="Python library to play with MS LDAP"
+url="https://github.com/skelsec/msldap"
+arch="noarch"
+license="MIT"
+depends="
+	py3-asn1crypto
+	py3-asyauth
+	py3-asysocks
+	py3-minikerberos
+	py3-prompt_toolkit
+	py3-tqdm
+	py3-unicrypto
+	py3-wcwidth
+	py3-winacl
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-wheel
+	py3-setuptools
+	"
+subpackages="
+	$pkgname-pyc
+	$pkgname-examples
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/skelsec/msldap/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+options="!check" # no tests provided
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+examples() {
+	pkgdesc="$pkgdesc (example scripts)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	amove usr/lib/python*/site-packages/msldap/examples
+	amove usr/bin
+}
+
+sha512sums="
+e2ba363e99dec7fc64d858337836b4203d4113395fb050682b4c6a4a081b3d8e043b5517a1ccc88a36989e650c4e72858ff46a1aadadc1c68a2038836bdd137e  py3-msldap-0.5.15.tar.gz
+"

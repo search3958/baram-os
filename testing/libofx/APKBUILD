@@ -1,0 +1,47 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: 7heo <7heo@mail.com>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=libofx
+pkgver=0.10.9
+pkgrel=1
+pkgdesc="OFX banking protocol abstraction library"
+url="https://github.com/libofx/libofx"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cmake
+	curl-dev
+	gengetopt
+	libxml++-2.6-dev
+	opensp-dev
+	samurai
+	"
+subpackages="$pkgname-dev $pkgname-tools"
+source="https://github.com/libofx/libofx/releases/download/$pkgver/libofx-$pkgver.tar.gz"
+options="!check" # fails if /tmp/catalog exists
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+
+	amove usr/bin
+	amove usr/share
+}
+
+sha512sums="
+89425912fa8c800ede9d7177ccd5cb3ea2a2301b42aa6580ddb105406fe68c770e2c461eefdea5bc7e883967c90e3519a219bf0b56d12c7de1030d0964d50cac  libofx-0.10.9.tar.gz
+"

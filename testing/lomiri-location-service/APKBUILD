@@ -1,0 +1,64 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=lomiri-location-service
+pkgver=3.4.1
+pkgrel=0
+pkgdesc="Location service aggregating position/velocity/heading updates and exporting them over dbus"
+arch="all"
+url="https://gitlab.com/ubports/development/core/lomiri-location-service"
+license="GPL-3.0-only AND LGPL-3.0-only"
+depends_dev="
+	boost-dev
+	dbus-cpp-dev
+	dbus-dev
+	gflags-dev
+	glog-dev
+	gpsd-dev
+	json-c-dev
+	libapparmor-dev
+	lomiri-trust-store-dev
+	net-cpp-dev
+	process-cpp-dev
+	properties-cpp-dev
+	qt5-qtbase-dev
+	qt5-qtlocation-dev
+	"
+makedepends="$depends_dev
+	cmake-extras
+	gettext
+	gmock
+	gtest-dev
+	samurai
+	"
+# TODO remove
+makedepends="$makedepends boost-dev~1.84.0"
+checkdepends="coreutils"
+source="https://gitlab.com/ubports/development/core/lomiri-location-service/-/archive/$pkgver/lomiri-location-service-$pkgver.tar.gz
+	0003-cmake-install-libraries.patch
+	"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang $pkgname-systemd"
+# tests try to write to /var/lib/lomiri-location-service/config.ini
+options="!check"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DENFORCE_SYSTEMD_SERVICE=ON \
+		-DLOCATION_SERVICE_ENABLE_GPS_PROVIDER=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+5471ed8e101fb138f4ad702102209c7d3ef61d8d1176e2ae7aed3d87fdd8c335d3fa854c029993e00b0f75ee1e2021980d210c0c450d6c2c0585257aa3c64100  lomiri-location-service-3.4.1.tar.gz
+f63e946872d3aee39c60e904abae80ff3dd5a6ebaeeac52dcd8661b5fe2b4923851ef75671f87613893d771e47853fab94752cc0262e94453e7dda7633b767bb  0003-cmake-install-libraries.patch
+"

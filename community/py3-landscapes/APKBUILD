@@ -1,0 +1,37 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-landscapes
+_pkgorig=landscapes
+pkgver=0.0.13
+pkgrel=1
+pkgdesc="A dependency free library of standardized optimization test functions written in pure Python"
+url="https://github.com/nathanrooy/landscapes"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest-xdist"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/l/landscapes/landscapes-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgorig-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+31dea90ce3d737be87654c04e2399732fd05f835d1a075d2208d8af2770d3baa504793ef80f4dba69c84e2af17b9d1ae598315b89b81df6fd3b674291934b4b5  landscapes-0.0.13.tar.gz
+"

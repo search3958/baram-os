@@ -1,0 +1,37 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=lightsoff
+pkgver=50.0
+pkgrel=0
+arch="all"
+url="https://gitlab.gnome.org/GNOME/lightsoff"
+pkgdesc="Turn off all the lights"
+license="GPL-2.0-or-later"
+makedepends="
+	gtk4.0-dev
+	itstool
+	libadwaita-dev
+	meson
+	samurai
+	vala
+	"
+checkdepends="desktop-file-utils"
+source="https://download.gnome.org/sources/lightsoff/${pkgver%%.*}/lightsoff-$pkgver.tar.xz"
+subpackages="$pkgname-doc $pkgname-lang"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+2bfb3f351e0d5504d6bc6a4b22226597afc28ac5ba7693a753f3c972f721e3e32d5a1c58ac44b797cf472b3222b10a2867d3bcf1168920e8515cf5d6eb16ce95  lightsoff-50.0.tar.xz
+"

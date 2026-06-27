@@ -1,0 +1,49 @@
+# Contributor: NeYurii <yuriizkhr@gmail.com>
+# Maintainer: NeYurii <yuriizkhr@gmail.com>
+pkgname=hyprsunset
+pkgver=0.3.3
+pkgrel=2
+pkgdesc="Application to enable a blue-light filter on Hyprland"
+url="https://wiki.hypr.land/Hypr-Ecosystem/hyprsunset"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	cmake
+	samurai
+	hyprwayland-scanner
+	wayland-dev
+	wayland-protocols
+	hyprland-protocols
+	hyprutils-dev
+	hyprlang-dev
+	sdbus-cpp-dev
+"
+options="!check" # currently there are no tests
+subpackages="$pkgname-doc $pkgname-openrc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/hyprwm/hyprsunset/archive/refs/tags/v$pkgver.tar.gz
+	hyprsunset.initd
+"
+
+build() {
+	cmake -S . -B ./build -G Ninja \
+		-DCMAKE_BUILD_TYPE:STRING=Release \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_PREFIX:PATH=/usr
+
+	cmake --build ./build --config Release
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -r "$pkgdir"/usr/lib/systemd
+
+	install -Dm755 "$srcdir"/hyprsunset.initd "$pkgdir"/etc/user/init.d/hyprsunset
+
+	install -Dm0644 -t "$pkgdir"/usr/share/licenses/"$pkgname" LICENSE
+}
+
+sha512sums="
+d0d6c2db130d5aa721ae3cf3126f9ea91fdd3150662dd6e1d6811667f7203c73933e61bc0552ff165af4a4a2cfc0aae936cf889ff63789fafc5d1452f6dd2239  hyprsunset-0.3.3.tar.gz
+13256f37d39ea4d0efade0da4c6f382687bdbf3f0ef1707dad7e7539304f05f2b184ef5540e9b38e347f871b4bad868dbcc072b6e83e8e30e7d2d558c7e48a8a  hyprsunset.initd
+"

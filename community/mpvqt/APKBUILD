@@ -1,0 +1,40 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=mpvqt
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="A libmpv wrapper for QtQuick2 and QML"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://invent.kde.org/libraries/mpvqt"
+license="(BSD-2-Clause OR BSD-3-Clause) AND CC-BY-SA-4.0 AND CC0-1.0 AND (LGPL-2.1-only OR LGPL-3.0-only)"
+depends_dev="
+	mpv-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	samurai
+	"
+subpackages="$pkgname-dev"
+_repo_url="https://invent.kde.org/libraries/mpvqt.git"
+source="https://download.kde.org/stable/mpvqt/mpvqt-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+293f2c1c9929aa572dbc82c774c20360e15e9ce627bc2225686bb1fce94101d7b3446ab497d1cad9cd5734b3ec576af0b069d91e5c002faa25ab348aca4897fa  mpvqt-1.2.0.tar.xz
+"

@@ -1,0 +1,53 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kio-gdrive
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> ki18n
+# loongarch64 blocked by kaccounts-providers -> kaccounts-integration
+# x86, armv7, s390x and riscv64 blocked by qt6-qtwebengine -> libkgapi
+arch="all !armhf !x86 !armv7 !loongarch64 !s390x !riscv64"
+url="https://community.kde.org/KIO_GDrive"
+pkgdesc="KIO Slave to access Google Drive"
+license="GPL-2.0-or-later"
+depends="
+	kaccounts-providers
+	signon-plugin-oauth2
+	signon-ui
+	"
+makedepends="
+	extra-cmake-modules
+	intltool
+	kaccounts-integration-dev
+	kdoctools-dev
+	ki18n-dev
+	kio-dev
+	libkgapi-dev
+	purpose-dev
+	qt6-qtbase-dev
+	samurai
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/network/kio-gdrive.git"
+source="https://download.kde.org/stable/release-service//$pkgver/src/kio-gdrive-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ce6f38213fef8a636529d1c2a4e20b33b15beecfdb4892fc969a91f93c2f142a553ff4820acb7e679c340f885b1f1d8e6b388a6b10f760e19b6e77ee3c5534df  kio-gdrive-26.04.2.tar.xz
+"

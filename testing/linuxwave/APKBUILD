@@ -1,0 +1,36 @@
+# Contributor: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+# Maintainer: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+pkgname=linuxwave
+pkgver=0.4.0
+pkgrel=0
+pkgdesc="Generate music from the entropy of Linux"
+url="https://github.com/orhun/linuxwave"
+license="MIT"
+arch="x86_64 aarch64" # Limited by zig aport
+makedepends="zig"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/orhun/linuxwave/releases/download/v$pkgver/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname"
+
+# We may want other than "baseline" for other targets, when enabled by zig
+case "$CARCH" in
+aarch64 | x86_64) cputarget=baseline ;;
+esac
+
+build() {
+	zig build -Doptimize=ReleaseSafe -Dpie=true -Drelro=true ${cputarget:+-Dcpu="$cputarget"}
+}
+
+check() {
+	zig build test
+}
+
+package() {
+	install -Dm755 "zig-out/bin/$pkgname" -t "$pkgdir/usr/bin"
+	install -Dm644 "man/$pkgname.1" -t "$pkgdir/usr/share/man/man1"
+	install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+sha512sums="
+bef92edb6c4c235c0b502e9426775de119a9aab4abc967ae1cd9bc511cf1b953d797ffbabce12b37c44889dba2370bf887d09d3feae3c039de02f3d5262faaa5  linuxwave-0.4.0.tar.gz
+"

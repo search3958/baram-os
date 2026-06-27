@@ -1,0 +1,29 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=proxychains-ng
+pkgver=4.17
+pkgrel=1
+pkgdesc="This tool provides proxy server support to any app."
+url="https://github.com/rofl0r/proxychains-ng"
+arch="all"
+license="GPL-2.0-only"
+options="!check"
+source="https://github.com/rofl0r/proxychains-ng/releases/download/v$pkgver/proxychains-ng-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc/proxychains
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install install-config
+	ln -s proxychains4 "$pkgdir"/usr/bin/proxychains
+}
+
+sha512sums="
+aa35ae27305065a7f296cbf99b3308b2ac759287761a5d234ddaa558292467fae88c33a3ced1d71329cf6a7e8f56aa4e2ffd4274d57d87857f13ca8393d5d983  proxychains-ng-4.17.tar.xz
+"

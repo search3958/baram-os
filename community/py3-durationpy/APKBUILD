@@ -1,0 +1,32 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+maintainer="Duncan Bellamy <dunk@denkimushi.com>"
+pkgname=py3-durationpy
+pkgver=0.10
+pkgrel=1
+pkgdesc="Module for converting between datetime.timedelta and Go's Duration strings"
+url="https://github.com/icholy/durationpy"
+arch="noarch"
+license="MIT"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/icholy/durationpy/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/durationpy-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 test.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+41515657934025f38c3934a7b926ff8fdeb971692971f7a541dc438f436bc5a9af492ae310b674e64bbfd6006ec7628437d9dad1edc270cdfc71420d33b7bc5e  py3-durationpy-0.10.tar.gz
+"

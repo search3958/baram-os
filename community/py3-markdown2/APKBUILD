@@ -1,0 +1,45 @@
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=py3-markdown2
+pkgver=2.5.5
+pkgrel=1
+pkgdesc="fast and complete implementation of Markdown in Python"
+url="https://github.com/trentm/python-markdown2"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-latex2mathml
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/m/markdown2/markdown2-$pkgver.tar.gz"
+builddir="$srcdir/markdown2-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# running custom test script that is incompatible with pytest
+	.testenv/bin/python3 test/test.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+acfa636ea17c41ac93bfe3e7a24e2e64e176a834ddd57ad29c0efd9c0a5c5cffac6c4eaf973892a016e32480fef343618f1000c860d591ee27de1b90e13afcf8  markdown2-2.5.5.tar.gz
+"

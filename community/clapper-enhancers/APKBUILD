@@ -1,0 +1,30 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=clapper-enhancers
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="Plugins enhancing Clapper library capabilities"
+url="https://github.com/Rafostar/clapper-enhancers"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	clapper-dev
+	libpeas2-dev
+	json-glib-dev
+	meson
+"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Rafostar/clapper-enhancers/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+dad8adb725dae0f69e0ac46855343a196308737ba2069c4a696a6d62d8f29469b168c1b19e0cdef1e7f9405eeafde53a3718ff0287caf92b5a70ca32c777ec5c  clapper-enhancers-0.10.0.tar.gz
+"

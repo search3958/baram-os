@@ -1,0 +1,45 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=vera++
+pkgver=1.3.0
+pkgrel=12
+pkgdesc="tool for verification, analysis and transformation of C++ source code"
+url="https://bitbucket.org/verateam/vera"
+arch="all"
+license="BSL-1.0"
+makedepends="cmake ninja tcl-dev tk-dev python3-dev boost-dev lua-dev"
+# documentation relies on pandoc, which is x86_64 only and currently broken
+#subpackages="$pkgname-doc"
+source="
+	https://github.com/verateam/vera/archive/refs/tags/v$pkgver/vera-$pkgver.tar.gz
+
+	fix-not-declared-in-this-scope.patch
+	drop-failing-ruledump-test.patch
+	"
+builddir="$srcdir/vera-$pkgver"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DVERA_LUA=OFF \
+		-DVERA_USE_SYSTEM_BOOST=ON \
+		-DVERA_USE_SYSTEM_PYTHON=ON \
+		-DPYTHON_EXECUTABLE=/usr/bin/python3 \
+
+	cmake --build build
+}
+
+check() {
+	cmake --build build --target test
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+sha512sums="
+764cfe2c6344d2ffd0ceb6523d8f1b5f587347ab3083a61e2103e6e5a149df914d6f9b73d50f9c4cd905330da627e55a5c82243c1f387e0e2503232fef4aff42  vera-1.3.0.tar.gz
+1772d67467a50df04c9d1b56c13c9e86836582dfe7ca0f914dd5d2b8ee6622a4e1e7243bacf7c82a6367a53d81a3c3dc84b1575b2928c5a7ac5134693debb854  fix-not-declared-in-this-scope.patch
+4456fec1aad874e758d146f29bc1df36896d0b8157c2705c230c2c513f6ef0ce50dcf4e0035e3cd813449722bc906082acc395bfbdffc4ca4ac3109ea90ea516  drop-failing-ruledump-test.patch
+"

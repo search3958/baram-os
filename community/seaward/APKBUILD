@@ -1,0 +1,30 @@
+# Contributor: Sam Nystrom <sam@samnystrom.dev>
+# Maintainer: Sam Nystrom <sam@samnystrom.dev>
+pkgname=seaward
+pkgver=1.1.0
+pkgrel=0
+pkgdesc="Crawler which searches for links or a specified word in a website"
+url="https://github.com/M3nny/seaward"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable openssl-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/M3nny/seaward/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+package() {
+	install -Dm755 target/release/seaward -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+5b50450df173e694b63808bdc1dd7387ee4fcf253c6465539331c3c1032640446b33b29ebe7c3cfdf36247c81200ef3979133205a1c137bc4fa84d4bb48a68a7  seaward-1.1.0.tar.gz
+"

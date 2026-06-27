@@ -1,0 +1,36 @@
+Update default layout for Alpine.
+
+--- a/layout
++++ b/layout
+@@ -6,7 +6,7 @@
+ }
+ {
+     "label" : "hibernate",
+-    "action" : "systemctl hibernate",
++    "action" : "doas zzz -Z",
+     "text" : "Hibernate",
+     "keybind" : "h"
+ }
+@@ -18,19 +18,19 @@
+ }
+ {
+     "label" : "shutdown",
+-    "action" : "systemctl poweroff",
++    "action" : "doas poweroff",
+     "text" : "Shutdown",
+     "keybind" : "s"
+ }
+ {
+     "label" : "suspend",
+-    "action" : "systemctl suspend",
++    "action" : "doas zzz",
+     "text" : "Suspend",
+     "keybind" : "u"
+ }
+ {
+     "label" : "reboot",
+-    "action" : "systemctl reboot",
++    "action" : "doas reboot",
+     "text" : "Reboot",
+     "keybind" : "r"
+ }

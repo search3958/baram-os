@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/samwho/spacer"
-[build]
-template = "cargo"

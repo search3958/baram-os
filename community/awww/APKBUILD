@@ -1,0 +1,63 @@
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=awww
+pkgver=0.12.1
+pkgrel=0
+pkgdesc="Efficient animated wallpaper daemon for Wayland compositors"
+url="https://codeberg.org/LGFae/awww"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	cargo
+	cargo-auditable
+	libxkbcommon-dev
+	lz4-dev
+	wayland-dev
+	wayland-protocols
+	scdoc
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/LGFae/awww/archive/v$pkgver.tar.gz
+	no-rustix-runtime.patch
+	"
+options="!check" # Requires the binary to be available in PATH
+provides="swww=$pkgver-r$pkgrel" # Backwards compatibility
+builddir="$srcdir"/$pkgname
+
+prepare() {
+	default_prepare
+
+	# Busybox's basename applet doesn't implement --suffix argument
+	sed -i 's/--suffix/-s/' doc/gen.sh
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+	sh ./doc/gen.sh
+}
+
+package() {
+	for binary in awww awww-daemon; do
+		install -Dm755 target/release/$binary -t "$pkgdir"/usr/bin/
+	done
+
+	install -Dm644 doc/generated/*.1 -t "$pkgdir"/usr/share/man/man1/
+
+	install -Dm644 completions/awww.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/awww
+	install -Dm644 completions/awww.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/awww.fish
+	install -Dm644 completions/_awww \
+		"$pkgdir"/usr/share/zsh/site-functions/_awww
+}
+
+sha512sums="
+9752e3b358c9be141b640344368d882e315b57df975f32ba73da501d5aaee479be35c2b0483074ea35ec0d0f9a5645e3c8adad15feef3dd5c2f861832623e2f1  awww-0.12.1.tar.gz
+bf1d34ee5491ebb7e070ec29bf9154938145887ef45f82e169499128ad473bf7f4b0dea38f2440145dc9179f0c75b0dfd0e7d74916056d2bf5e733576cd6dcb4  no-rustix-runtime.patch
+"

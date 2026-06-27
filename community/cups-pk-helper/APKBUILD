@@ -1,0 +1,37 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=cups-pk-helper
+pkgver=0.2.7
+pkgrel=3
+pkgdesc="PolicyKit helper to configure cups with fine-grained privileges"
+url="https://www.freedesktop.org/wiki/Software/cups-pk-helper/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cups-dev
+	glib-dev
+	meson
+	polkit-dev
+	"
+subpackages="$pkgname-lang"
+source="https://www.freedesktop.org/software/cups-pk-helper/releases/cups-pk-helper-$pkgver.tar.xz"
+options="!check" # wants to connect to real cups
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+8f1d5dce73a52552d00eb3f54b39e03ca7ae711a0591572a25bd8926e228457628f1ee7e6ae89bda1b0ef473f860ad85bff9036ca1bc244d2cbda530bab96d40  cups-pk-helper-0.2.7.tar.xz
+"

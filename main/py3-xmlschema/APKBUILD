@@ -1,0 +1,38 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=py3-xmlschema
+pkgver=4.3.1
+pkgrel=2
+pkgdesc="XML schema validator and conversion library"
+url="https://github.com/sissaschool/xmlschema"
+arch="noarch"
+license="MIT"
+depends="py3-elementpath"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest py3-jinja2"
+options="net" # tests access xml.xsd from w3.org
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sissaschool/xmlschema/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/xmlschema-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+494d5ce1e292383f2470617a7efbcde1d30c3daad82780431b453e68cbfeade368e776bb0471834ce36205468c72e25c15ce1392f2a7d31b4b2c141b52bc8475  py3-xmlschema-4.3.1.tar.gz
+"

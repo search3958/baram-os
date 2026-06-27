@@ -1,0 +1,82 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=suitesparse
+_pkgname=SuiteSparse
+pkgver=7.8.2
+pkgrel=0
+pkgdesc="A collection of sparse matrix libraries"
+url="http://faculty.cse.tamu.edu/davis/suitesparse.html"
+arch="all"
+license="BSD-3-Clause AND LGPL-2.1-or-later AND GPL-2.0-or-later"
+depends_dev="
+	gmp-dev
+	mpfr-dev
+	openblas-dev
+	"
+makedepends="
+	$depends_dev
+	cmake
+	m4
+	"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-graphblas
+	"
+source="https://github.com/DrTimothyAldenDavis/SuiteSparse/archive/v$pkgver/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# FIXME: make tests pass on ppc64le
+case "$CARCH" in
+	ppc64le) options="$options !check";;
+esac
+
+_flags="BLAS=-lopenblas LAPACK=-lopenblas"
+
+# Do not include the Partition module (it's optional and Julia doesn't need it).
+# Do not try to override optimization level. SuiteSparse is a huge library
+# heavily optimized for performance, so compiling with -Os doesn't make sense.
+# Actually, the build scripts currently override -Os with -O3 anyway,
+# but better to not rely on it.
+export CFLAGS="${CFLAGS/-Os/} -DNPARTITION"
+export CPPFLAGS=${CPPFLAGS/-Os/}
+export CXXFLAGS=${CXXFLAGS/-Os/}
+
+# loongarch64: fix link overflow
+case $CARCH in
+loongarch64)
+	export CFLAGS="$CFLAGS -mcmodel=medium"
+	export CPPFLAGS="$CPPFLAGS -mcmodel=medium"
+	;;
+esac
+
+build() {
+	make library $_flags CMAKE_OPTIONS="\
+		-G 'Unix Makefiles' \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_INCLUDEDIR=/usr/include/suitesparse \
+		-DCMAKE_INSTALL_LIBDIR=/usr/lib \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		"
+}
+
+check() {
+	make tests
+}
+
+package() {
+	make install $_flags DESTDIR="$pkgdir"
+}
+
+graphblas() {
+	pkgdesc="Graph algorithms in the language of linear algebra"
+	license="Apache-2.0 AND GPL-3.0-or-later"
+
+	amove usr/lib/libgraphblas.so.*
+	amove usr/lib/liblagraph.so.*
+	amove usr/lib/liblagraphx.so.*
+}
+
+sha512sums="
+beb9ea85b47e46785a91913d0b52ef86a59f797f3a3a6df4fced31c4f990277ef627b6baae52256dea10e60e4eff5e82e8b5a3d6e20a63de47953674cf34f921  SuiteSparse-7.8.2.tar.gz
+"

@@ -1,0 +1,78 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=libusbsio
+pkgver=2.1.13
+pkgrel=2
+pkgdesc="Library for USB-HID communication over SPI, I2C or GPIO"
+url="https://www.nxp.com/design/software/development-software/library-for-windows-macos-and-ubuntu-linux:LIBUSBSIO"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	eudev-dev
+	hidapi-dev
+	libusb-dev
+	linux-headers
+	py3-build
+	py3-gpep517
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc py3-$pkgname:_py3:noarch"
+# 404 error on versioned URL, temporarily use cached tarball until resolved
+# source="https://www.nxp.com/downloads/en/libraries/libusbsio-$pkgver-src.zip"
+source="https://dev.alpinelinux.org/archive/libusbsio/libusbsio-2.1.13.zip"
+options="!check" # GetNumPorts not > 0
+builddir="$srcdir/libusbsio-$pkgver-src"
+
+prepare() {
+	default_prepare
+
+	# Remove prebuilt shared libs
+	rm -r bin/*
+
+	cd python/dist
+	tar xvzf libusbsio-$pkgver.tar.gz
+	# Remove prebuild shared libs from sdist tarball
+	rm -r libusbsio-$pkgver/libusbsio/bin/*
+}
+
+build() {
+	make
+
+	cd python/dist/libusbsio-$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	cd python/dist/libusbsio-$pkgver
+	python3 -m venv --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	cp "$builddir"/bin/linux_*/libusbsio.so .
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	local lib="$(echo bin/linux_*/libusbsio.so)"
+	install -Dm755 "$lib" -t "$pkgdir"/usr/lib/
+
+	cd python/dist/libusbsio-$pkgver
+	python3 -m installer --destdir="$pkgdir" .dist/*.whl
+
+	local sitedir="$(python3 -c 'import site;print(site.getsitepackages()[0])')"
+	install -dm755 "$pkgdir"/$sitedir/libusbsio/"${lib%/*}"
+	ln -fsv /usr/lib/libusbsio.so "$pkgdir"/$sitedir/libusbsio/$lib
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (Python bindings)"
+
+	amove usr/lib/python3*
+}
+
+sha512sums="
+7cc6feda295d40f47e720fff0ee8058b116ac82e353313906fba6646084bad81ca79a15617126669386bfc77579b9e20d65b0303a5432d1feb40f768377e6f01  libusbsio-2.1.13.zip
+"

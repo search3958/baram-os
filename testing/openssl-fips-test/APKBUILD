@@ -1,0 +1,24 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+maintainer="Holger Jaekel <holger.jaekel@gmx.de>"
+pkgname=openssl-fips-test
+pkgver=0.9
+pkgrel=0
+pkgdesc="Test that OpenSSL is configured to be FIPS-compliant"
+url="https://github.com/chainguard-sandbox/openssl-fips-test"
+arch="all"
+license="Apache-2.0"
+depends="openssl-dev"
+options="!check"  # no tests
+source="openssl-fips-test-$pkgver.tar.gz::https://github.com/chainguard-sandbox/openssl-fips-test/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+0592224e3a12558cb4af47b567b11fc9025e8668c0a513cabd44262dba3190c22887ef96ca204f5f5b1e89afd10e59f3557f44d22c2ffee2898838c96468393f  openssl-fips-test-0.9.tar.gz
+"

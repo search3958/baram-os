@@ -1,0 +1,35 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=lego
+pkgver=4.35.2
+pkgrel=1
+pkgdesc="Let's Encrypt client and ACME library written in Go"
+url="https://github.com/go-acme/lego"
+license="MIT"
+arch="all"
+options="net setcap chmod-clean" # tests need network access: https://github.com/go-acme/lego/issues/560
+depends="ca-certificates"
+makedepends="go libcap-utils"
+checkdepends="bash tzdata"
+subpackages="$pkgname-doc"
+source="https://github.com/go-acme/lego/archive/v$pkgver/lego-$pkgver.tar.gz"
+
+build() {
+	go build -v -trimpath -ldflags "-X main.version=$pkgver" -o ./bin/lego ./cmd/lego
+}
+
+check() {
+	# skipping failing tests on x86, armhf
+	go test -skip "TestPEMEncode" ./...
+}
+
+package() {
+	install -Dm755 ./bin/lego "$pkgdir"/usr/bin/lego
+	setcap cap_net_bind_service=+ep "$pkgdir"/usr/bin/lego
+
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+17b6cc848af92ec3cb9e9bfa736c746e448c3297d041bb42db0ef95cfdba0e3eb384b192ef4f0bb4ef0ce463977df406e0ede7b26a4e90d67e0585a5e46418cd  lego-4.35.2.tar.gz
+"

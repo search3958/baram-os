@@ -1,0 +1,45 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-num2words
+pkgver=0.5.14
+pkgrel=1
+pkgdesc="Modules to convert numbers to words"
+url="https://github.com/savoirfairelinux/num2words"
+arch="noarch"
+license="LGPL-2.1-or-later"
+depends="
+	py3-delegator
+	py3-docopt
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/n/num2words/num2words-$pkgver.tar.gz"
+builddir="$srcdir/num2words-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# tests/test_cli.py is broken
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/test_cli.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+05b7f256df7f23d2b6cbf398b1c908954dab213ae3ed6f2121b7ef9ce9f33539eebcf48f4da4a341e86b1905d7531a84fc7125d22bc710eda13a9d33f6f2ecc2  num2words-0.5.14.tar.gz
+"

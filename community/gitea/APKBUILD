@@ -1,0 +1,123 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: 6543 <6543@obermui.de>
+# Contributor: techknowlogick <techknowlogick@gitea.com>
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+# Maintainer: techknowlogick <techknowlogick@gitea.com>
+pkgname=gitea
+pkgver=1.25.4
+pkgrel=3
+pkgdesc="Self-hosted Git service written in Go"
+url="https://about.gitea.com/"
+arch="all"
+license="MIT"
+depends="git git-lfs gnupg"
+makedepends="go"
+checkdepends="bash openssh openssh-keygen sqlite tzdata pnpm icu-data-full"
+install="$pkgname.pre-install"
+pkgusers="gitea"
+pkggroups="www-data"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://dl.gitea.com/gitea/$pkgver/gitea-src-$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.ini
+	"
+builddir="$srcdir/gitea-src-$pkgver"
+options="net"
+
+# secfixes:
+#   1.21.3-r0:
+#     - CVE-2023-48795
+#   1.17.3-r0:
+#     - CVE-2022-42968
+#     - CVE-2022-32149
+#   1.16.7-r0:
+#     - CVE-2022-30781
+#   1.16.3-r0:
+#     - CVE-2022-27313
+#   1.14.6-r0:
+#     - CVE-2020-26160
+#   1.13.7-r0:
+#     - CVE-2021-29272
+#   1.13.6-r0:
+#     - CVE-2021-29134
+#   1.13.4-r0:
+#     - CVE-2021-28378
+#   1.13.2-r0:
+#     - CVE-2021-3382
+#   1.11.2-r0:
+#     - CVE-2021-45327
+#   1.5.2-r0:
+#     - CVE-2021-45326
+#   1.5.1-r0:
+#     - CVE-2021-45331
+#     - CVE-2021-45329
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+# Skip tests for archs that fail unrelated in CI
+#   32bits breaks tests
+#   s390x SIGILL
+#   riscv64 exceeded execution time
+#   ppc64le|loongarch64 rollup not available (patch to use @rollup/wasm-node didnt work)
+case "$CARCH" in
+	x86|armhf|armv7|s390x|riscv64|ppc64le|loongarch64) options="$options !check" ;;
+esac
+
+build() {
+	# XXX: LARGEFILE64
+	export CGO_CFLAGS="$CFLAGS -O2 -D_LARGEFILE64_SOURCE"
+	export TAGS="tidb sqlite sqlite_unlock_notify"
+	export GITEA_VERSION="$pkgver"
+	export EXTRA_GOFLAGS="$GOFLAGS"
+	export CGO_LDFLAGS="$LDFLAGS"
+	unset LDFLAGS
+	## make FHS compliant
+	LDFLAGS="$LDFLAGS -X code.gitea.io/gitea/modules/setting.CustomConf=/etc/gitea/app.ini"
+	LDFLAGS="$LDFLAGS -X code.gitea.io/gitea/modules/setting.AppWorkPath=/var/lib/gitea/"
+	LDFLAGS="$LDFLAGS -X code.gitea.io/gitea/modules/setting.StaticRootPath=/usr/share/webapps/gitea/"
+	export LDFLAGS
+
+	make -j1 backend
+}
+
+check() {
+	local home="$srcdir"/home
+	mkdir -p "$home"
+	install -d -m700 "$home"/.ssh
+	touch "$home"/.gitconfig
+
+	# unset CI env to skip redis, elasticsearch, meilisearch, minio tests
+	unset CI
+	env HOME="$home" GITEA_ROOT="$home" GITEA_WORK_DIR="$builddir" \
+		make test-sqlite && \
+		make test
+}
+
+package() {
+	for dir in $pkgname $pkgname/git $pkgname/data $pkgname/db $pkgname/custom; do
+		install -d -m 750 -o $pkgusers -g $pkggroups \
+			"$pkgdir"/var/lib/$dir
+	done
+
+	install -d -m 755 -o $pkgusers -g $pkggroups "$pkgdir"/var/log/$pkgname
+
+	install -D -m 755 $pkgname "$pkgdir"/usr/bin/$pkgname
+
+	install -D -m 644 -o $pkgusers -g $pkggroups "$srcdir"/gitea.ini \
+		"$pkgdir"/etc/$pkgname/app.ini
+	chown $pkgusers:$pkggroups "$pkgdir"/etc/$pkgname
+
+	install -d -m 755 "$pkgdir"/usr/share/webapps/$pkgname
+	cp -r options public templates "$pkgdir"/usr/share/webapps/$pkgname/
+	install -D -m 644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+	install -D -m 755 "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+e4c0845ac624c75ab4a5996816ee016773d57ba3d724f8bc19e312b608d3d8177c9a8c9f33317632fc409d6d774b14b7ebef797849a456567c5b279c9098024c  gitea-1.25.4.tar.gz
+71c767f9e851d99e6d87032faa833617ded28a292507c492bce63d0b87208819aa9ccbf8301d885da14901a4bdb93b21859883eaea78f980e8c8deb63ae8e57a  gitea.initd
+431184faffa8996873d92d7b0d16bc4b1a0178d264cd2928d1f49b13ad3e6470d9ede7a18c12112deeeb38f0647ccc0b012e98bcbd96e7b8496a3dc18f5b1fb7  gitea.ini
+"

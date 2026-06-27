@@ -1,0 +1,43 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=geocode-glib
+pkgver=3.26.4
+pkgrel=5
+pkgdesc="Geocoding helper library"
+url="https://gitlab.gnome.org/GNOME/geocode-glib"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	docbook-xsl-nons
+	glib-dev
+	gobject-introspection-dev
+	gtk-doc
+	json-glib-dev
+	libsoup3-dev
+	meson
+	"
+options="!check" # no tests
+subpackages="$pkgname-tests $pkgname-dev $pkgname-doc"
+source="https://download.gnome.org/sources/geocode-glib/${pkgver%.*}/geocode-glib-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dsoup2=false \
+		. build-soup3
+	meson compile -C build-soup3
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build-soup3
+}
+
+tests() {
+	pkgdesc="$pkgdesc (installed tests)"
+
+	amove usr/share/installed-tests
+}
+
+sha512sums="
+998c2f02a8d3d34a8b6a4b031da2e7c28df27014bcf58f3374fbc0c829fff6257c2622fd9bf331e05b85fbc761c64554fb77ce2d986e0f8b59b17aa486f9f609  geocode-glib-3.26.4.tar.xz
+"

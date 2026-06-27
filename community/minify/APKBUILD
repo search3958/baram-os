@@ -1,0 +1,34 @@
+# Maintainer: Wesley van Tilburg <justwesley@protonmail.com>
+pkgname=minify
+pkgver=2.24.11
+pkgrel=2
+pkgdesc="Minifier CLI for HTML, CSS, JS, JSON, SVG and XML"
+url="https://github.com/tdewolff/minify"
+arch="all"
+options="net"
+license="MIT"
+makedepends="go bash"
+subpackages="$pkgname-bash-completion"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tdewolff/minify/archive/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	mkdir build
+	go build -o build ./cmd/minify
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 ./build/minify -t "$pkgdir"/usr/bin
+	install -Dm644 ./cmd/minify/bash_completion "$pkgdir"/usr/share/bash-completion/completions/minify
+}
+
+sha512sums="
+9fc5bf7daf9f5ccd88c01af0312bf366a2dbd21136b43592a5cf32d0d91ff63a4a8a4152dd5ae3589183ac5091aea5db893806f8c00bdd6a19e6820b49979544  minify-2.24.11.tar.gz
+"

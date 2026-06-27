@@ -1,0 +1,35 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-thefuzz
+pkgver=0.22.1
+pkgrel=2
+pkgdesc="Fuzzy String Matching in Python"
+url="https://github.com/seatgeek/thefuzz"
+arch="noarch"
+license="MIT"
+depends="py3-levenshtein"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest py3-hypothesis py3-pycodestyle"
+subpackages="$pkgname-pyc"
+source="https://github.com/seatgeek/thefuzz/archive/refs/tags/$pkgver/py3-thefuzz-$pkgver.tar.gz"
+builddir="$srcdir/thefuzz-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6a49feaba32a9966699b9b82a5e47a11b4915624e9e09c1b67fe3d1dcb5e7f5538e7f43a0573b6ef8f0cedf9d7360957c952d6a530fcb3b4d65934111a39a3db  py3-thefuzz-0.22.1.tar.gz
+"

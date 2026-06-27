@@ -1,0 +1,60 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ruby-addressable
+_gemname=addressable
+pkgver=2.9.0
+pkgrel=0
+pkgdesc="An alternative implementation to the URI implementation"
+url="https://github.com/sporkmonger/addressable"
+arch="noarch"
+license="Apache-2.0"
+depends="ruby ruby-public_suffix"
+checkdepends="ruby-rspec"
+source="https://github.com/sporkmonger/addressable/archive/$_gemname-$pkgver.tar.gz"
+builddir="$srcdir/$_gemname-$_gemname-$pkgver"
+options="!check"  # FIXME: tests require gem rspec-its which we don't have yet
+
+# secfixes:
+#   2.9.0-r0:
+#     - CVE-2026-35611
+#   2.8.0-r0:
+#     - CVE-2021-32740
+
+prepare() {
+	default_prepare
+
+	# Bundler is not necessary.
+	sed -i '/require .bundler\/setup/d' spec/spec_helper.rb
+}
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	rspec .
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+	local geminstdir="$gemdir/gems/$_gemname-$pkgver"
+
+	gem install \
+		--local \
+		--install-dir "$gemdir" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		$_gemname
+
+	# Remove unnecessary files and rubbish...
+	cd "$gemdir"
+	rm -r cache build_info doc extensions
+
+	cd "$geminstdir"
+	rm -rf spec tasks test LICENSE* Gemfile Rakefile ./*.md
+}
+
+sha512sums="
+cbad1ff37b028f8b93bf1c128192c42bfeb3fddf324e1500d072178135f07cad7f45e99b93e011b4f92f6e5a5fea498a5e0ab2736e42360728f7867019ed5543  addressable-2.9.0.tar.gz
+"

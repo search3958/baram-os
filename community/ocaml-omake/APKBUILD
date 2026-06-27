@@ -1,0 +1,54 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-omake
+_pkgname=omake
+pkgver=0.10.6
+pkgrel=1
+pkgdesc="Build system designed for scalability and portability"
+url="http://projects.camlcity.org/projects/omake.html"
+arch="all !riscv64 !loongarch64" # ocaml
+license="GPL-2.0-only"
+makedepends="ocaml ocaml-findlib"
+options="!check"
+subpackages="$pkgname-doc"
+source="http://download.camlcity.org/download/omake-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+build() {
+	./configure -prefix /usr
+	make
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+
+	mkdir -vp "$pkgdir"/usr/share/
+	mv -v "$pkgdir"/usr/man "$pkgdir"/usr/share/
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+e27e6a580b1b4c04c6ae9021d529ab5d9196932e6fd1f441038d1e31e22e2fd817572eca475818a8a9cfb9f9f2487fef57b88ec41c9f0b81a5b42a6954e90a2d  omake-0.10.6.tar.gz
+"

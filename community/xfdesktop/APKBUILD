@@ -1,0 +1,51 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xfdesktop
+pkgver=4.20.2
+pkgrel=0
+pkgdesc="Desktop manager for Xfce"
+url="https://gitlab.xfce.org/xfce/xfdesktop"
+arch="all"
+license="GPL-2.0-or-later"
+subpackages="$pkgname-doc $pkgname-lang"
+depends="hicolor-icon-theme"
+makedepends="
+	exo-dev
+	garcon-dev
+	gtk-layer-shell-dev
+	intltool
+	libnotify-dev
+	libwnck3-dev
+	libxfce4ui-dev
+	libxfce4windowing-dev
+	meson
+	ninja
+	thunar-dev
+	yaml-dev
+	"
+source="https://archive.xfce.org/src/xfce/xfdesktop/${pkgver%.*}/xfdesktop-$pkgver.tar.bz2
+	test-gradient-benchmarking.patch"
+
+build() {
+	abuild-meson \
+		-Ddesktop-menu=enabled \
+		-Dthunarx=enabled \
+		-Dnotifications=enabled \
+		-Dx11=enabled \
+		-Dwayland=enabled \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+396b22246b18cf15a3eea19e6dfe469fa2cb0397164c6bc2bc61b6db8289bfc6e6613cfb0193198efc091c7098370ec7d99f79b183a2c087311349c147eaf982  xfdesktop-4.20.2.tar.bz2
+e694a7b938c59579ddb379f4ffe98da583fd9a7b63e6d7a31f89fd9dbe2164384529dc0157ab5c2f3de0cdafb498dbe310c423dbaacb791b2bb5e3f868317b42  test-gradient-benchmarking.patch
+"

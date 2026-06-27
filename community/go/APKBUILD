@@ -1,0 +1,384 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Eivind Uggedal <eu@eju.no>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=go
+# go binaries are statically linked, security updates require rebuilds
+pkgver=1.26.3
+pkgrel=0
+pkgdesc="Go programming language compiler"
+url="https://go.dev/"
+arch="all"
+license="BSD-3-Clause"
+depends="binutils gcc musl-dev"
+makedepends="bash"
+checkdepends="git git-daemon"
+subpackages="$pkgname-doc"
+source="https://go.dev/dl/go$pkgver.src.tar.gz
+	0001-cmd-link-prefer-musl-s-over-glibc-s-ld.so-during-dyn.patch
+	0002-go.env-Don-t-switch-Go-toolchain-version-as-directed.patch
+	0003-os-root-test-avoid-cross-device-tempdir-mismatch.patch
+	tests-fchmodat-not-supported.patch
+	"
+
+# secfixes:
+#   0:
+#     - CVE-2022-41716
+#     - CVE-2022-41720
+#     - CVE-2022-41722
+#     - CVE-2024-24787
+#   1.26.3-r0:
+#     - CVE-2026-42501
+#     - CVE-2026-39825
+#     - CVE-2026-39836
+#     - CVE-2026-42499
+#     - CVE-2026-39820
+#     - CVE-2026-39819
+#     - CVE-2026-39817
+#     - CVE-2026-33814
+#     - CVE-2026-39826
+#     - CVE-2026-33811
+#     - CVE-2026-39823
+#   1.26.2-r0:
+#     - CVE-2026-27140
+#     - CVE-2026-27143
+#     - CVE-2026-27144
+#     - CVE-2026-32280
+#     - CVE-2026-32281
+#     - CVE-2026-32282
+#     - CVE-2026-32283
+#     - CVE-2026-32288
+#     - CVE-2026-32289
+#     - CVE-2026-33810
+#   1.25.8-r0:
+#     - CVE-2026-25679
+#     - CVE-2026-27137
+#     - CVE-2026-27138
+#     - CVE-2026-27139
+#     - CVE-2026-27142
+#   1.25.7-r0:
+#     - CVE-2025-61732
+#     - CVE-2025-68121
+#   1.25.6-r0:
+#     - CVE-2025-61726
+#     - CVE-2025-61728
+#     - CVE-2025-61730
+#     - CVE-2025-61731
+#     - CVE-2025-68119
+#     - CVE-2025-68121
+#   1.25.5-r0:
+#     - CVE-2025-61729
+#     - CVE-2025-61727
+#   1.25.2-r0:
+#     - CVE-2025-47912
+#     - CVE-2025-58183
+#     - CVE-2025-58185
+#     - CVE-2025-58186
+#     - CVE-2025-58187
+#     - CVE-2025-58188
+#     - CVE-2025-58189
+#     - CVE-2025-61723
+#     - CVE-2025-61724
+#     - CVE-2025-61725
+#   1.25.1-r0:
+#     - CVE-2025-47910
+#   1.24.6-r0:
+#     - CVE-2025-47906
+#     - CVE-2025-47907
+#   1.24.5-r0:
+#     - CVE-2025-4674
+#   1.24.4-r0:
+#     - CVE-2025-4673
+#     - CVE-2025-0913
+#     - CVE-2025-22874
+#   1.24.3-r0:
+#     - CVE-2025-22873
+#   1.24.2-r0:
+#     - CVE-2025-22871
+#   1.24.1-r0:
+#     - CVE-2025-22870
+#   1.23.6-r0:
+#     - CVE-2025-22866
+#   1.23.5-r0:
+#     - CVE-2024-45336
+#     - CVE-2024-45341
+#   1.23.1-r0:
+#     - CVE-2024-34155
+#     - CVE-2024-34156
+#     - CVE-2024-34158
+#   1.22.5-r0:
+#     - CVE-2024-24791
+#   1.22.4-r0:
+#     - CVE-2024-24789
+#     - CVE-2024-24790
+#   1.22.3-r0:
+#     - CVE-2024-24788
+#   1.22.2-r0:
+#     - CVE-2023-45288
+#   1.22.1-r0:
+#     - CVE-2024-24783
+#     - CVE-2023-45290
+#     - CVE-2023-45289
+#     - CVE-2024-24785
+#     - CVE-2024-24784
+#   1.21.5-r0:
+#     - CVE-2023-39324
+#     - CVE-2023-39326
+#   1.21.3-r0:
+#     - CVE-2023-39325
+#     - CVE-2023-44487
+#   1.21.2-r0:
+#     - CVE-2023-39323
+#   1.21.1-r0:
+#     - CVE-2023-39318
+#     - CVE-2023-39319
+#     - CVE-2023-39320
+#     - CVE-2023-39321
+#     - CVE-2023-39322
+#   1.20.7-r0:
+#     - CVE-2023-29409
+#   1.20.6-r0:
+#     - CVE-2023-29406
+#   1.20.5-r0:
+#     - CVE-2023-29402
+#     - CVE-2023-29403
+#     - CVE-2023-29404
+#     - CVE-2023-29405
+#   1.20.4-r0:
+#     - CVE-2023-24539
+#     - CVE-2023-24540
+#     - CVE-2023-29400
+#   1.20.3-r0:
+#     - CVE-2023-24537
+#     - CVE-2023-24538
+#     - CVE-2023-24534
+#     - CVE-2023-24536
+#   1.20.2-r0:
+#     - CVE-2023-24532
+#   1.20.1-r0:
+#     - CVE-2022-41725
+#     - CVE-2022-41724
+#     - CVE-2022-41723
+#   1.19.4-r0:
+#     - CVE-2022-41717
+#   1.19.2-r0:
+#     - CVE-2022-2879
+#     - CVE-2022-2880
+#     - CVE-2022-41715
+#   1.19.1-r0:
+#     - CVE-2022-27664
+#     - CVE-2022-32190
+#   1.18.5-r0:
+#     - CVE-2022-32189
+#   1.18.4-r0:
+#     - CVE-2022-1705
+#     - CVE-2022-1962
+#     - CVE-2022-28131
+#     - CVE-2022-30630
+#     - CVE-2022-30631
+#     - CVE-2022-30632
+#     - CVE-2022-30633
+#     - CVE-2022-30635
+#     - CVE-2022-32148
+#   1.18.1-r0:
+#     - CVE-2022-28327
+#     - CVE-2022-27536
+#     - CVE-2022-24675
+#   1.17.8-r0:
+#     - CVE-2022-24921
+#   1.17.7-r0:
+#     - CVE-2022-23772
+#     - CVE-2022-23773
+#     - CVE-2022-23806
+#   1.17.6-r0:
+#     - CVE-2021-44716
+#     - CVE-2021-44717
+#   1.17.3-r0:
+#     - CVE-2021-41772
+#     - CVE-2021-41771
+#   1.17.2-r0:
+#     - CVE-2021-38297
+#   1.17.1-r0:
+#     - CVE-2021-39293
+#   1.17-r0:
+#     - CVE-2020-29509
+#     - CVE-2020-29511
+#     - CVE-2021-29923
+#   1.16.7-r0:
+#     - CVE-2021-36221
+#   1.16.6-r0:
+#     - CVE-2021-34558
+#   1.16.5-r0:
+#     - CVE-2021-33195
+#     - CVE-2021-33196
+#     - CVE-2021-33197
+#     - CVE-2021-33198
+#   1.16.4-r0:
+#     - CVE-2021-31525
+#   1.16.2-r0:
+#     - CVE-2021-27918
+#     - CVE-2021-27919
+#   1.15.7-r0:
+#     - CVE-2021-3114
+#     - CVE-2021-3115
+#   1.15.5-r0:
+#     - CVE-2020-28362
+#     - CVE-2020-28366
+#     - CVE-2020-28367
+#   1.15.2-r0:
+#     - CVE-2020-24553
+#   1.15-r0:
+#     - CVE-2020-16845
+#   1.14.5-r0:
+#     - CVE-2020-15586
+#   1.13.7-r0:
+#     - CVE-2020-7919
+#   1.13.2-r0:
+#     - CVE-2019-17596
+#   1.13.1-r0:
+#     - CVE-2019-16276
+#   1.12.8-r0:
+#     - CVE-2019-9512
+#     - CVE-2019-9514
+#     - CVE-2019-14809
+#   1.11.5-r0:
+#     - CVE-2019-6486
+#   1.9.4-r0:
+#     - CVE-2018-6574
+
+if [ "$CBUILD" = "$CHOST" ]; then
+	makedepends="go-bootstrap $makedepends"
+	provides="go-bootstrap=$pkgver-r$pkgrel"
+else
+	pkgname="go-bootstrap"
+	makedepends="go $makedepends"
+	# Go expect host linker instead of the cross-compiler
+	export CC_FOR_TARGET="$CC"
+	export CC="${HOSTLD:-gcc}"
+	export CXX="${HOSTLD:-g++}"
+	export LD="${HOSTLD:-ld}"
+fi
+
+case "$CARCH" in
+aarch64) export GOARCH="arm64" ;;
+armel)   export GOARCH="arm" GOARM=5 ;;
+armhf)   export GOARCH="arm" GOARM=6 ;;
+armv7)   export GOARCH="arm" GOARM=7 ;;
+s390x)   export GOARCH="s390x" ;;
+x86)     export GOARCH="386" ;;
+x86_64)  export GOARCH="amd64" ;;
+ppc64)   export GOARCH="ppc64" ;;
+ppc64le) export GOARCH="ppc64le" ;;
+riscv64) export GOARCH="riscv64" ;;
+loongarch64) export GOARCH="loong64" ;;
+*)       export GOARCH="unsupported";;
+esac
+
+# weird issue about $tmpdir/go-tool-dist-* having incorrect permissions, not being
+# able to get removed by cleanup
+options="$options !check"
+
+# compile go itself as a PIE on supported arches.
+case "$CARCH" in
+x86_64|s390x|aarch64) export GO_LDFLAGS=-buildmode=pie ;;
+esac
+
+prepare() {
+	default_prepare
+
+	# The GitLab CI builds aports in a container. On ppc64le, ASLR
+	# needs to be disabled in order to have the following test case
+	# pass. However, the container doesn't have permissions to
+	# disable ASLR, hence we just disable this test for now.
+	#
+	# See https://github.com/golang/go/issues/49066#issuecomment-1252948861
+	if [ "$CARCH" = "ppc64le" ]; then
+		rm test/fixedbugs/bug513.go
+	fi
+
+	# Requires `setarch` which requires priviledged access to
+	# containers, just skip it.
+	rm src/cmd/cgo/internal/testsanitizers/tsan_test.go
+}
+
+builddir="$srcdir"/go
+build() {
+	cd "$builddir/src"
+
+	export GOOS="linux"
+	export GOPATH="$srcdir"
+	export GOROOT="$builddir"
+	export GOBIN="$GOROOT"/bin
+	export GOROOT_FINAL=/usr/lib/go
+
+	local p; for p in /usr/lib/go-bootstrap /usr/lib/go-linux-$GOARCH-bootstrap /usr/lib/go; do
+		if [ -d "$p" ]; then
+			export GOROOT_BOOTSTRAP="$p"
+			break
+		fi
+	done
+
+	./make.bash -v
+
+	# copied from bootstrap.bash to fixup cross-built bootstrap go
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local gohostos="$(../bin/go env GOHOSTOS)"
+		local gohostarch="$(../bin/go env GOHOSTARCH)"
+		mv ../bin/*_*/* ../bin
+		rmdir ../bin/*_*
+		rm -rf "../pkg/${gohostos}_$gohostarch"* "../pkg/tool/${gohostos}_$gohostarch"*
+		rm -rf ../pkg/bootstrap ../pkg/obj
+	fi
+}
+
+check() {
+	cd "$builddir/src"
+	if [ "$CARCH" = "armhf" ]; then
+		export GO_TEST_TIMEOUT_SCALE=2
+	fi
+
+	# Test suite does not pass with ccache, thus remove it form $PATH.
+	export PATH="$(echo "$PATH" | sed 's|/usr/lib/ccache/bin:||g')"
+
+	PATH="$builddir/bin:$PATH" ./run.bash -no-rebuild
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin "$pkgdir"/usr/lib/go/bin "$pkgdir"/usr/share/doc/go
+
+	for binary in go gofmt; do
+		install -Dm755 bin/"$binary" "$pkgdir"/usr/lib/go/bin/"$binary"
+		ln -s /usr/lib/go/bin/"$binary" "$pkgdir"/usr/bin/
+	done
+
+	cp -a misc pkg src lib "$pkgdir"/usr/lib/go
+	cp -r doc "$pkgdir"/usr/share/doc/go
+	rm -rf "$pkgdir"/usr/lib/go/pkg/obj
+	rm -rf "$pkgdir"/usr/lib/go/pkg/bootstrap
+	rm -f  "$pkgdir"/usr/lib/go/pkg/tool/*/api
+
+	# Install go.env, see https://go.dev/doc/toolchain#GOTOOLCHAIN.
+	install -Dm644 "$builddir"/go.env "$pkgdir"/usr/lib/go/go.env
+	install -Dm644 VERSION "$pkgdir/usr/lib/go/VERSION"
+
+	# Remove tests from /usr/lib/go/src to reduce package size,
+	# these should not be needed at run-time by any program.
+	find "$pkgdir"/usr/lib/go/src \( -type f -a -name "*_test.go" \) \
+		-exec rm -rf \{\} \+
+	find "$pkgdir"/usr/lib/go/src \( -type d -a -name "testdata" \) \
+		-exec rm -rf \{\} \+
+
+	# Remove rc (plan 9) and bat scripts (windows) to reduce package
+	# size further. The bash scripts are actually needed at run-time.
+	#
+	# See: https://gitlab.alpinelinux.org/alpine/aports/issues/11091
+	find "$pkgdir"/usr/lib/go/src -type f -a \( -name "*.rc" -o -name "*.bat" \) \
+		-exec rm -rf \{\} \+
+}
+
+sha512sums="
+9c673a9ec7783a345b6294984486a5c76ba52de3eb72c95cbd68626312d100c50adb7a3ed15c93d1dc9ce9969b0f6fb4b86c87771118091cc7b0297afaf74fec  go1.26.3.src.tar.gz
+34dbe032c5f08dd8a7aad36fc4d54e746a876fdadc25466888a2f04f5a9d53103190ebd68d3cf978d3a041976185e30ffb25611fb577d031c159810d2d4c7c41  0001-cmd-link-prefer-musl-s-over-glibc-s-ld.so-during-dyn.patch
+8061e4ef9d7dd31804bd8d98c95afa5dd82567940b3436f45f874e0419e324b49713d8a814df04617e575ec3c6155199c4661352ea8aef63ead81ca3020f3dc4  0002-go.env-Don-t-switch-Go-toolchain-version-as-directed.patch
+c04ef9f76985a68eb3e338c0b22caccd3d25223c85042c19af7f47dfe69002189e7b70feb5272982878d810243bd5554cf242400ee5fe25ffff65003166b3c06  0003-os-root-test-avoid-cross-device-tempdir-mismatch.patch
+33ecefca77fa0af52a3b2b66a76977af27a88c8dddb89f03e0a5ae6794b9aac53a62d7be33020b49022e9a89d4cdfa383038ee10e160eb94548b2430bf3cfb5e  tests-fchmodat-not-supported.patch
+"

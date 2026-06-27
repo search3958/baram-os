@@ -1,0 +1,17 @@
+#!/sbin/openrc-run
+
+description="Piler daemon"
+
+command="/usr/bin/$SVCNAME"
+command_args_background="-d"
+pidfile="/run/piler/piler.pid"
+
+depend() {
+        need net
+        after firewall mariadb
+}
+
+start_pre() {
+        checkpath -d -m 750 -o piler:piler /run/piler
+}
+

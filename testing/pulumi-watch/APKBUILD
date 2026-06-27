@@ -1,0 +1,35 @@
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=pulumi-watch
+pkgver=0.1.5
+pkgrel=2
+pkgdesc="Helper utility for pulumi watch command"
+url="https://github.com/pulumi/watchutil-rs"
+# blocked by pulumi
+arch="x86_64 aarch64"
+license="Apache-2.0"
+makedepends="cargo cargo-auditable"
+depends="pulumi"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pulumi/watchutil-rs/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/watchutil-rs-$pkgver"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/pulumi-watch -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+61ddd07f533811badc269332e97f3e9f6337bb3c22e4c5d237bec03596791ca900b408edc7cd57b4474ac7256a283865936d99ad70d4690667e4f481aa62865b  pulumi-watch-0.1.5.tar.gz
+"

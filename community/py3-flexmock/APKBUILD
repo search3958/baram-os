@@ -1,0 +1,34 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=py3-flexmock
+pkgver=0.13.0
+pkgrel=0
+pkgdesc="Testing library for creating mocks, stubs and fakes"
+url="https://github.com/flexmock/flexmock"
+license="BSD-2-Clause"
+arch="noarch"
+makedepends="py3-poetry-core py3-gpep517"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/flexmock/flexmock/archive/v$pkgver/py3-flexmock-$pkgver.tar.gz"
+builddir="$srcdir/flexmock-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+81bb892b96def657c028b019979d599bd6963d37d7c8a920d31758942f3d1337ac5f5fe9752637ebc2f45ffa06221a5ba989c64fc478e114b395ba8221405985  py3-flexmock-0.13.0.tar.gz
+"

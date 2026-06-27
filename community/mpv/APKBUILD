@@ -1,0 +1,147 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Jakub Skrzypnik <j.skrzypnik@openmailbox.org>
+# Maintainer: Alex McGrath <amk@amk.ie>
+pkgname=mpv
+pkgver=0.41.0
+pkgrel=2
+pkgdesc="Video player based on MPlayer/mplayer2"
+url="https://mpv.io/"
+license="GPL-2.0-or-later"
+arch="all"
+makedepends="
+	alsa-lib-dev
+	ffmpeg-dev
+	jack-dev
+	libao-dev
+	libarchive-dev
+	libass-dev
+	libbluray-dev
+	libcaca-dev
+	libcdio-paranoia-dev
+	libdisplay-info-dev
+	libdvdnav-dev
+	libplacebo-dev
+	libsixel-dev
+	libva-dev
+	libxext-dev
+	libxinerama-dev
+	libxkbcommon-dev
+	libxpresent-dev
+	libxrandr-dev
+	libxscrnsaver-dev
+	libxv-dev
+	mesa-dev
+	meson
+	pipewire-dev
+	pulseaudio-dev
+	py3-docutils
+	rubberband-dev
+	shaderc-dev
+	sndio-dev
+	uchardet-dev
+	vulkan-headers
+	vulkan-loader-dev
+	wayland-dev
+	wayland-protocols
+	zimg-dev
+	zlib-dev
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-dev
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	umpv::noarch
+	"
+source="https://github.com/mpv-player/mpv/archive/v$pkgver/mpv-v$pkgver.tar.gz
+	meson-libcaca-version.patch
+	"
+
+case "$CARCH" in
+ppc64le|riscv64|loongarch64)
+	makedepends="$makedepends lua5.2-dev"
+	;;
+*)
+	makedepends="$makedepends luajit-dev"
+	;;
+esac
+
+case "$CARCH" in
+# the tests expect a little endian host
+s390x) options="$options !check" ;;
+esac
+
+# secfixes:
+#   0.27.0-r3:
+#     - CVE-2018-6360
+
+prepare() {
+	default_prepare
+
+	echo "$pkgver" > VERSION
+}
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	abuild-meson \
+		-Dalsa=enabled \
+		-Db_lto=true \
+		-Dbuild-date=false \
+		-Dcaca=enabled \
+		-Dcdda=enabled \
+		-Ddrm=enabled \
+		-Ddvdnav=enabled \
+		-Degl-drm=enabled \
+		-Degl=enabled \
+		-Degl-wayland=enabled \
+		-Degl-x11=enabled \
+		-Dgbm=enabled \
+		-Dgl=enabled \
+		-Djack=enabled \
+		-Dlibmpv=true \
+		-Dpulse=enabled \
+		-Dsixel=enabled \
+		-Dsndio=enabled \
+		-Dtests="$(want_check && echo true || echo false)" \
+		-Duchardet=enabled \
+		-Dvdpau=disabled \
+		-Dvulkan=enabled \
+		-Dx11=enabled \
+		. output
+
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm644 "$builddir"/DOCS/*.rst "$builddir"/DOCS/*.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+
+	# Move example configuration files to subdirectory
+	mkdir -p "$pkgdir"/usr/share/doc/mpv/examples
+	mv "$pkgdir"/usr/share/doc/mpv/*.conf \
+		"$pkgdir"/usr/share/doc/mpv/examples/
+}
+
+umpv() {
+	pkgdesc="$pkgdesc - script to add new videos to existing playlist instead of starting a new instance"
+	depends="$pkgname=$pkgver-r$pkgrel python3"
+	install_if="$pkgname=$pkgver-r$pkgrel python3"
+
+	install -Dm755 "$builddir"/TOOLS/umpv -t "$subpkgdir"/usr/bin
+}
+
+sha512sums="
+d8806ef04455aeb65d45c5956b4589d7a9728f869b74b9bcd8c9ab08475c28538334399ddc7fc2aee6a31fd178fe4b87ec755cd99ffa6e29ab4b6b61757b9320  mpv-v0.41.0.tar.gz
+4ff107b15c7d124a22547f73b10fa7cbaf247be27717474d875fa5db9652ae3b19b6801a069b066eb9566e66a4882257e09b9424f9fe95a477bd2deffa72c890  meson-libcaca-version.patch
+"

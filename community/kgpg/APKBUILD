@@ -1,0 +1,64 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kgpg
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by extra-cmake-modules
+# s390x and riscv64 blocked by qt6-qtwebengine -> akonadi-contacts
+arch="all !armhf !s390x !riscv64"
+url="https://kde.org/applications/utilities/org.kde.kgpg"
+pkgdesc="A simple interface for GnuPG, a powerful encryption utility"
+license="GPL-2.0-or-later"
+makedepends="
+	akonadi-contacts-dev
+	extra-cmake-modules
+	gpgme-dev
+	karchive-dev
+	kcodecs-dev
+	kcontacts-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kio-dev
+	kjobwidgets-dev
+	knotifications-dev
+	kservice-dev
+	kstatusnotifieritem-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	qt6-qtbase-dev
+	samurai
+	"
+_repo_url="https://invent.kde.org/utilities/kgpg.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kgpg-$pkgver.tar.xz"
+subpackages="$pkgname-doc $pkgname-lang"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	# kgpg-import fails too often
+	# kgpg-encrypt and kgpg-export are broken
+	# del-key fails randomly
+	# genkey fails on arm on builders
+	ctest --test-dir build -E "kgpg-(genkey|import|encrypt|export|del-key|change-trust)" -j1
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+9d687a9cbb61030fce3238b62c83c6c14fcc4b7126ba88ac9be40ef492e0867ab40d76992e57488dc681fcb5adf7430caedc928c31b05af4df7fbd2090c652d2  kgpg-26.04.2.tar.xz
+"

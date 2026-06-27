@@ -1,0 +1,62 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=aws-lc
+pkgver=5.0.0
+pkgrel=0
+pkgdesc="General-purpose cryptographic library based on BoringSSL and OpenSSL"
+url="https://github.com/aws/aws-lc"
+# ppc64le, s390x: tests fail
+arch="all !ppc64le !s390x"
+license="(Apache-2.0 OR ISC) AND BSD-3-Clause AND MIT AND OpenSSL"
+provider_priority=10  # lowest (other provider is openssl)
+pcprefix="$pkgname:"  # avoid mix up with openssl pkg-config
+sonameprefix="$pkgname:"  # avoid mix up with openssl
+makedepends="
+	cmake
+	go
+	linux-headers
+	perl-dev
+	samurai
+	"
+depends_dev="!openssl-dev"
+subpackages="
+	$pkgname-dev
+	$pkgname-tools
+	"
+source="https://github.com/aws/aws-lc/archive/v$pkgver/aws-lc-$pkgver.tar.gz
+	move-cmake-dirs.patch
+	"
+options="net" # for go test runner to download modules
+
+# don't error on stringop-overflow, crypto/cipher_extra/aead_test.cc
+# TODO: remove when no longer needed, https://github.com/aws/aws-lc/issues/3083
+export CXXFLAGS="$CXXFLAGS -Wno-error=stringop-overflow"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DBUILD_TESTING="$(want_check && echo ON || echo OFF)" \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+check() {
+	timeout 30m cmake --build build --target run_tests
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+
+	amove usr/bin
+}
+
+sha512sums="
+c3df7ff5f7288e146ffd116447c4a57a16d1a55e607cdefe4e9d709a4d1f7efc00860bce61e0681638ea8980905557302f67d88155230603822d56a2c5e9b732  aws-lc-5.0.0.tar.gz
+1ccc2f7b6f0df9413de1d194bcb59346f281a87cc478396a1c163a1662b08ec6b64e8d8bffaaeb20c34bbac9fca96278998bbfce88c3836e60d143779c59739b  move-cmake-dirs.patch
+"

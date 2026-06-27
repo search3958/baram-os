@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+
+description="IfState"
+
+depend() {
+	need localmount machine-id
+	after bootmisc hwdrivers modules
+	provide net
+	keyword -shutdown -stop -jail -prefix -vserver -docker
+}
+
+start() {
+	ebegin "Starting IfState"
+	ifstatecli apply
+}
+
+restart() {
+	ebegin "Restarting IfState"
+	ifstatecli apply
+}
+
+reload() {
+	ebegin "Reloading IfState"
+	ifstatecli apply
+}
+
+status() {
+	ifstatecli check
+}
+
+checkconfig() {
+	ifstatecli validate
+}

@@ -1,0 +1,61 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt5-qtgraphicaleffects
+pkgver=5.15.18_git20250330
+pkgrel=0
+_module="${pkgname#qt5-}"
+_pkgver=dfb2e7b2c98a9b7185c300d0b92b4048f5d89ba5
+_fullname=$_module-$_pkgver
+pkgdesc="Qt5 - QtGraphicalEffects component"
+url="https://www.qt.io/developers/"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+arch="all"
+makedepends="
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	"
+subpackages="$pkgname-doc"
+source="https://dev.alpinelinux.org/archive/qt/$_fullname.tar.xz"
+builddir="$srcdir/$_fullname"
+
+_disturl="dev.alpinelinux.org:/archive/qt/"
+snapshot() {
+	clean
+	makedepends="git xz rsync tar" deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	git clone --filter=tree:0 https://invent.kde.org/qt/qt/$_module.git .
+	git archive --format tar --prefix=$_fullname/ $_pkgver > "$SRCDEST"/$_fullname.tar
+	xz -vv -T0 -9 -e "$SRCDEST"/$_fullname.tar
+	rsync --progress -La "$SRCDEST"/$_fullname.tar.xz $_disturl
+}
+
+prepare() {
+	default_prepare
+
+	# We need to make the build system think we're running in a git repository
+	# so it correctly symlinks during the build
+	mkdir .git
+}
+
+build() {
+	qmake-qt5
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make install INSTALL_ROOT="$pkgdir"
+
+	# Drop QMAKE_PRL_BUILD_DIR because reference the build dir
+	find "$pkgdir/usr/lib" -type f -name '*.prl' \
+		-exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
+
+	install -d "$pkgdir"/usr/share/licenses
+	ln -s qt5-base "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+c280be54d11918a440885ed5a7394b203e6085a10af3a2bef027b2bc3a03f0bd50c091df3173e0562a2472ad4ed4a96bd68b7b1ba3592ed91d06106074ba6f79  qtgraphicaleffects-dfb2e7b2c98a9b7185c300d0b92b4048f5d89ba5.tar.xz
+"

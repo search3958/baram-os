@@ -1,0 +1,74 @@
+# Contributor: Alexander Edland <alpine@ocv.me>
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=zimg
+pkgver=3.0.6
+pkgrel=0
+pkgdesc="Scaling, colorspace conversion and dithering library"
+url="https://github.com/sekrit-twc/zimg"
+arch="all"
+license="WTFPL"
+makedepends="autoconf automake libtool cmake linux-headers samurai"
+subpackages="$pkgname-doc $pkgname-dev"
+source="zimg-$pkgver.tar.gz::https://github.com/sekrit-twc/zimg/archive/release-$pkgver.tar.gz
+	zimg-gtest-1.16.0.tar.gz::https://github.com/google/googletest/archive/refs/tags/v1.16.0.tar.gz
+	"
+builddir="$srcdir/zimg-release-$pkgver"
+options="!check" # we run tests in the build stage
+
+prepare() {
+	default_prepare
+	mkdir -p "$pkgdir"
+	# googletest is required in-tree
+	ln -s "$srcdir"/googletest-*/* test/extra/googletest
+	autoreconf -vfi
+}
+
+build() {
+	case "$CARCH" in
+	s390x)
+		# https://github.com/sekrit-twc/zimg/pull/156
+		;;
+	*)
+		# build and run test binaries here
+		./configure \
+			--build=$CBUILD \
+			--host=$CHOST \
+			--prefix=/usr \
+			--sysconfdir=/etc \
+			--mandir=/usr/share/man \
+			--localstatedir=/var \
+			--disable-static \
+			--enable-unit-test
+		make
+		ninja -C test/extra/googletest/build
+		make test/unit_test.log
+		test/unit_test
+		make clean
+		;;
+	esac
+
+	export CFLAGS="$CFLAGS -O2 -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -O2 -flto=auto"
+
+	# build release binaries here without enabling tests,
+	# as they make zimg slower
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+98d7d65085530e0e1d3e25218608867f1e8d978fc759777efe2e6034baa31db10f1dda46ef8e00ec6f3c23b91aea839da076bfa4fcb75d98111a08513f45506d  zimg-3.0.6.tar.gz
+bec8dad2a5abbea8e9e5f0ceedd8c9dbdb8939e9f74785476b0948f21f5db5901018157e78387e106c6717326558d6642fc0e39379c62af57bf1205a9df8a18b  zimg-gtest-1.16.0.tar.gz
+"

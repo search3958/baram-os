@@ -1,0 +1,50 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=libnova
+pkgver=0.15.0
+pkgrel=0
+pkgdesc="general purpose, double precision, celestial mechanics, astrometry and astrodynamics library"
+url="https://sourceforge.net/projects/libnova/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="
+	autoconf
+	automake
+	libtool
+"
+subpackages="$pkgname-dev"
+source="
+	https://downloads.sourceforge.net/sourceforge/libnova/libnova-$pkgver.tar.gz
+"
+
+prepare() {
+	default_prepare
+
+	# update config sub to support loongarch64
+	update_config_sub
+}
+
+build() {
+	autoreconf -i
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+77ab0ccbfe462c03a21e88656cb4d6389994ea1da0ee8da997f19a83d24ad8fd9e505e70e1580b75332e826e5b7859b5f2af4417f65eb811440493ba586f2574  libnova-0.15.0.tar.gz
+"

@@ -1,0 +1,35 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=reflection-cpp
+pkgver=0.4.0
+pkgrel=0
+pkgdesc="C++ static reflection support library"
+url="https://contour-terminal.org"
+arch="noarch"
+license="Apache-2.0"
+makedepends="catch2-3 cmake samurai"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/contour-terminal/reflection-cpp/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DBUILD_SHARED_LIBS=ON \
+		-DREFLECTION_TESTING=ON \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build -C Release
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm 644 LICENSE.txt "$pkgdir"/usr/share/licenses/"$pkgname"/LICENSE
+}
+
+sha512sums="
+07032449bf84d402184af0e99d44617dd63a054f08b96d4254a980eeeb3bfb29f9d2ceef54ad1ed4d273cd4ff99d4c3f4a31b1a2e43b47efe12f0e6085804316  reflection-cpp-0.4.0.tar.gz
+"

@@ -1,0 +1,80 @@
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=openterface-qt
+pkgver=0.5.22
+pkgrel=0
+pkgdesc="Openterface Mini-KVM Host Application"
+# armhf: missing qt6-qtmultimedia
+# riscv64: missing libgtk-3
+arch="all !armhf !riscv64"
+url="https://openterface.com/"
+license="AGPL-3.0-only"
+depends="
+	gst-plugins-good-qt
+	hicolor-icon-theme
+	qt6-qtmultimedia-ffmpeg
+	v4l-utils
+	"
+case $CARCH in
+	# required for hardware acceleration on x86_64
+	x86_64) depends="$depends intel-media-driver onevpl-intel-gpu";;
+esac
+makedepends="
+	cmake
+	ffmpeg-dev
+	libgudev-dev
+	libjpeg-turbo-dev
+	libusb-dev
+	libx11-dev
+	libxrandr-dev
+	libxv-dev
+	libxi-dev
+	libvdpau-dev
+	patchelf
+	qt6-qtbase-dev
+	qt6-qtmultimedia-dev
+	qt6-qtserialport-dev
+	samurai
+	v4l-utils-dev
+"
+install="$pkgname.post-install"
+builddir="$srcdir"/Openterface_QT-$pkgver
+options="!check" # No testsuite
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/TechxArtisanStudio/Openterface_QT/archive/$pkgver.tar.gz
+	openterfaceQT.desktop
+	51-openterface-permissions.rules
+	use-system-libs.patch
+	"
+
+prepare() {
+	default_prepare
+	mkdir build && cd build
+	# OPENTERFACE_BUILD_STATIC: do not build vendored dependencies
+	cmake \
+		-DOPENTERFACE_BUILD_STATIC=OFF \
+		-DUSE_SHARED_FFMPEG=on \
+		..
+}
+
+build() {
+	ninja -C build
+}
+
+package() {
+	install -Dm755 "$builddir"/build/openterfaceQT "$pkgdir"/usr/bin/openterfaceQT
+	install -Dm644 "$srcdir"/51-openterface-permissions.rules "$pkgdir"/etc/udev/rules.d/51-openterface-permissions.rules
+	install -Dm644 "$srcdir"/openterfaceQT.desktop "$pkgdir"/usr/share/applications/openterfaceQT.desktop
+	install -Dm644 "$builddir"/images/icon_32.png "$pkgdir"/usr/share/icons/hicolor/32x32/apps/openterfaceQT.png
+	install -Dm644 "$builddir"/images/icon_64.png "$pkgdir"/usr/share/icons/hicolor/64x64/apps/openterfaceQT.png
+	install -Dm644 "$builddir"/images/icon_128.png "$pkgdir"/usr/share/icons/hicolor/128x128/apps/openterfaceQT.png
+
+	# vanilla build does not set rpath, since it usually wants to use vendored libs
+	patchelf --set-rpath '/usr/lib' "$pkgdir"/usr/bin/openterfaceQT
+}
+
+sha512sums="
+7138e96e11e31dbf2d4870852992a3f1b69c3724c7050cf55a1d939a74d914ad0f72a8d9d0e92a304fb83ff6b37c227df9c817b6000d5b81644c8447f9018de2  openterface-qt-0.5.22.tar.gz
+e39cfa04cbcb59e8ba54110a28eff41854f73fa7c4baeeed5433907c79781946f12bd3a731763caa1d591e664eab0650bdbd2a844954baa12bb96a76a17c6e4f  openterfaceQT.desktop
+94b1a78cca6473d23ed77ad247160e9d3859c99bf13bced2318a2415979b3d74ffaeddb9a97328d4389ed275143094afa4be7b22d74e64fde2ea43fbc6388bcb  51-openterface-permissions.rules
+bcfa05064ef697c4a710d4a7b7d8ef62dade496b42f9a3e940e955c56546cf83274c466eeb484dc5872c2cf2f3b40acbc61ac408c6d7f514c059de1518be4225  use-system-libs.patch
+"

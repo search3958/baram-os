@@ -1,0 +1,13 @@
+# qbittorrent configuration options
+
+# extra arguments to pass to qbittorrent
+command_args=""
+# user:group
+command_user="qbittorrent:qbittorrent"
+# qbittorrent roots itself in this directory,
+# creating its config files/logs under it
+directory="/var/lib/qbittorrent"
+umask=0022
+
+# comment to use traditional service management
+supervisor=supervise-daemon

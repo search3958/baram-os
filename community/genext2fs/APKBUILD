@@ -1,0 +1,46 @@
+# Contributor: George Hopkins <george-hopkins@null.net>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=genext2fs
+pkgver=1.6.2
+pkgrel=0
+pkgdesc="Generate ext2 filesystems as a normal user"
+url="https://genext2fs.sourceforge.net/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="autoconf automake libarchive-dev"
+checkdepends="bash e2fsprogs-extra python3"
+subpackages="$pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/bestouff/genext2fs/archive/v$pkgver.tar.gz
+	fix-tests.patch
+	"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-libarchive
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+7338dd8e52fa6e8fd83ce0747335d57559ee07eb25f87e6e832282569901c142610326d6926ac9381d7b1f0f8f1193c933c37d4c03b7609c72295e7893967227  genext2fs-1.6.2.tar.gz
+122a9356b938ca225f2b4758db8d8926a4e8025ec5b5c411a9580d43768bc3936290e07e67421b1979179afe3b48c189ad4ad34ec32854605987cfec861dae3f  fix-tests.patch
+"

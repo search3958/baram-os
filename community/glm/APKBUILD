@@ -1,0 +1,44 @@
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=glm
+pkgver=1.0.3
+pkgrel=0
+pkgdesc="C++ mathematics library for graphics programming"
+url="https://glm.g-truc.net/"
+arch="noarch"
+license="MIT"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/g-truc/glm/archive/refs/tags/$pkgver/glm-$pkgver.tar.gz
+	fix-endian-test.patch
+	glm.pc
+	"
+patch_args="--binary -p1"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_DATAROOTDIR=lib/cmake \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DGLM_BUILD_LIBRARY=OFF \
+		-DGLM_BUILD_TESTS=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	mkdir -p "$pkgdir"/usr/share/doc
+	cp -r doc "$pkgdir"/usr/share/doc/glm
+	mkdir -p "$pkgdir"/usr/lib/pkgconfig
+	cp "$srcdir"/glm.pc "$pkgdir"/usr/lib/pkgconfig/
+}
+
+sha512sums="
+0a490f0c79cd4a8ba54f37358f8917cef961dab9e61417c84ae0959c61bc860e5b83f4fb7f27169fb3d08eef1d84131bddde23d60876922310205c901b1273aa  glm-1.0.3.tar.gz
+fafdb267b7d6c0a943f8b97daba576d326ee4cda71e6c0e85b6910f095bd041e643299f973e722be6232f5d9c48085f5a4ce00d93e39c12f23e61bdba68082dc  fix-endian-test.patch
+52f0d56af8dade7806fe138ba6c99b282ae2ed8d5b46ae0d812f188a28bdb9ae55130793c487b37162c73a9a0836eeab710044fffd3ce6308b8169f906797d7c  glm.pc
+"

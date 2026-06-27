@@ -1,0 +1,447 @@
+Patch-Source: https://github.com/Duncaen/OpenDoas/pull/71 (rebased + one extra commit)
+--
+From a6aa77d9f4b9ad4556e478d6779dbebd4143a98a Mon Sep 17 00:00:00 2001
+From: Ariadne Conill <ariadne@dereferenced.org>
+Date: Wed, 4 Aug 2021 04:47:04 -0600
+Subject: [PATCH] add --with-confdir feature
+
+This adds support for an /etc/doas.d configuration directory as discussed in #61. It is disabled by default.
+
+diff --git a/GNUmakefile b/GNUmakefile
+index 9470202..22be971 100644
+--- a/GNUmakefile
++++ b/GNUmakefile
+@@ -27,6 +27,7 @@ install: ${PROG} ${PAM_DOAS} ${MAN}
+ 	[ -n "${PAM_DOAS}" ] && chmod 0644 ${DESTDIR}${PAMDIR}/doas || true
+ 	cp -f doas.1 ${DESTDIR}${MANDIR}/man1
+ 	cp -f doas.conf.5 ${DESTDIR}${MANDIR}/man5
++	cp -f doas.d.5 ${DESTDIR}${MANDIR}/man5
+ 
+ uninstall:
+ 	rm -f ${DESTDIR}${BINDIR}/${PROG}
+diff --git a/README.md b/README.md
+index 20ef9f2..92acded 100644
+--- a/README.md
++++ b/README.md
+@@ -43,3 +43,12 @@ similar to sudo.
+ 
+ See the comment block in `timestamp.c` for an in-depth description on how
+ timestamps are created and checked to be as safe as possible.
++
++### `--with-doas-confdir`
++
++An optional feature can be enabled which will result in `doas` reading configuration
++snippets from `/etc/doas.d`.  These configuration snippets have the same requirements
++as `/etc/doas.conf` (owned by root, not world-writable).
++
++If this feature is enabled, only the `/etc/doas.d` directory is read, and the historical
++`/etc/doas.conf` file is ignored.
+\ No newline at end of file
+diff --git a/configure b/configure
+index 1c5d989..22a078e 100755
+--- a/configure
++++ b/configure
+@@ -28,6 +28,7 @@ usage: configure [options]
+   --without-shadow       disable shadow support
+ 
+   --with-timestamp       enable timestamp support
++  --with-doas-confdir    enable configuration directory support
+ 
+   --uid-max=NUM          set UID_MAX (default 65535)
+   --gid-max=NUM          set GID_MAX (default 65535)
+@@ -39,6 +40,7 @@ EOF
+ 
+ # defaults
+ WITHOUT_TIMESTAMP=yes
++WITHOUT_CONFDIR=yes
+ UID_MAX=65535
+ GID_MAX=65535
+ 
+@@ -58,6 +60,8 @@ for x; do
+ 	--target) TARGET=$var ;;
+ 	--enable-debug) DEBUG=yes ;;
+ 	--enable-static) BUILD_STATIC=yes ;;
++	--with-doas-confdir) WITHOUT_CONFDIR= ;;
++	--without-doas-confdir) WITHOUT_CONFDIR=yes ;;
+ 	--with-pam) WITHOUT_PAM=; WITHOUT_SHADOW=yes ;;
+ 	--with-shadow) WITHOUT_SHADOW=; WITHOUT_PAM=yes ;;
+ 	--without-pam) WITHOUT_PAM=yes ;;
+@@ -565,4 +569,8 @@ fi
+ 
+ printf '#define DOAS_CONF "%s/doas.conf"\n' "${SYSCONFDIR}" >>$CONFIG_H
+ 
++if [ -z "$WITHOUT_CONFDIR" ]; then
++	printf '#define DOAS_CONFDIR "%s/doas.d"\n' "${SYSCONFDIR}" >>$CONFIG_H
++fi
++
+ printf '\n#endif /* CONFIG_H */\n' >>$CONFIG_H
+diff --git a/doas.c b/doas.c
+index ac3a42a..d77186b 100644
+--- a/doas.c
++++ b/doas.c
+@@ -35,6 +35,7 @@
+ #include <syslog.h>
+ #include <errno.h>
+ #include <fcntl.h>
++#include <dirent.h>
+ 
+ #include "openbsd.h"
+ #include "doas.h"
+@@ -155,6 +156,7 @@ permit(uid_t uid, gid_t *groups, int ngroups, const struct rule **lastr,
+ static void
+ parseconfig(const char *filename, int checkperms)
+ {
++	extern const char *yyfn;
+ 	extern FILE *yyfp;
+ 	extern int yyparse(void);
+ 	struct stat sb;
+@@ -164,6 +166,8 @@ parseconfig(const char *filename, int checkperms)
+ 		err(1, checkperms ? "doas is not enabled, %s" :
+ 		    "could not open config file %s", filename);
+ 
++	yyfn = filename;
++
+ 	if (checkperms) {
+ 		if (fstat(fileno(yyfp), &sb) != 0)
+ 			err(1, "fstat(\"%s\")", filename);
+@@ -174,11 +178,82 @@ parseconfig(const char *filename, int checkperms)
+ 	}
+ 
+ 	yyparse();
++	yyfn = NULL;
++
+ 	fclose(yyfp);
+ 	if (parse_errors)
+ 		exit(1);
+ }
+ 
++#ifdef DOAS_CONFDIR
++static int
++isconfdir(const char *dirpath)
++{
++	struct stat sb;
++
++	if (lstat(dirpath, &sb) != 0) {
++		if (errno != ENOENT)
++			err(1, "lstat(\"%s\")", dirpath);
++
++		errno = ENOTDIR;
++		return 0;
++	}
++
++	if ((sb.st_mode & (S_IFMT)) == S_IFDIR)
++		return 1;
++
++	errno = ENOTDIR;
++	return 0;
++}
++
++static void
++parseconfdir(const char *dirpath, int checkperms)
++{
++	struct dirent **dirent_table;
++	int i, m, dirent_count;
++	char pathbuf[PATH_MAX];
++
++	if (!isconfdir(dirpath))
++		err(1, checkperms ? "doas is not enabled, %s" :
++		    "could not open config directory %s", dirpath);
++
++	dirent_count = scandir(dirpath, &dirent_table, NULL, alphasort);
++	if (dirent_count < 0)
++		err(1, checkperms ? "doas is not enabled, %s" :
++		    "could not open config directory %s", dirpath);
++
++	for (i = 0, m = 0; i < dirent_count; i++)
++	{
++		struct stat sb;
++		size_t pathlen;
++
++		pathlen = snprintf(pathbuf, sizeof pathbuf, "%s/%s", dirpath, dirent_table[i]->d_name);
++		free(dirent_table[i]);
++
++		/* make sure path ends in .conf */
++		if (pathlen < 6)
++			continue;
++
++		if (strcmp(pathbuf + (pathlen - 5), ".conf"))
++			continue;
++
++		if (stat(pathbuf, &sb) != 0)
++			err(1, "stat(\"%s\")", pathbuf);
++
++		if ((sb.st_mode & (S_IFMT)) != S_IFREG)
++			continue;
++
++		parseconfig(pathbuf, checkperms);
++		m++;
++	}
++
++	free(dirent_table);
++
++	if (!m)
++		errx(1, "doas is not enabled, %s: no matching configuration files found\n", dirpath);
++}
++#endif
++
+ static void __dead
+ checkconfig(const char *confpath, int argc, char **argv,
+     uid_t uid, gid_t *groups, int ngroups, uid_t target)
+@@ -188,6 +263,11 @@ checkconfig(const char *confpath, int argc, char **argv,
+ 	if (setresuid(uid, uid, uid) != 0)
+ 		err(1, "setresuid");
+ 
++#ifdef DOAS_CONFDIR
++	if (isconfdir(confpath))
++		parseconfdir(confpath, 0);
++	else
++#endif
+ 	parseconfig(confpath, 0);
+ 	if (!argc)
+ 		exit(0);
+@@ -330,6 +410,11 @@ main(int argc, char **argv)
+ 	if (geteuid())
+ 		errx(1, "not installed setuid");
+ 
++#ifdef DOAS_CONFDIR
++	if (isconfdir(DOAS_CONFDIR))
++		parseconfdir(DOAS_CONFDIR, 1);
++	else
++#endif
+ 	parseconfig(DOAS_CONF, 1);
+ 
+ 	/* cmdline is used only for logging, no need to abort on truncate */
+diff --git a/doas.conf.5 b/doas.conf.5
+index e98bfbe..e90d512 100644
+--- a/doas.conf.5
++++ b/doas.conf.5
+@@ -143,6 +143,7 @@ permit nopass keepenv setenv { PATH } root as root
+ .Ed
+ .Sh SEE ALSO
+ .Xr doas 1 ,
++.Xr doas.d 5 ,
+ .Xr syslogd 8
+ .Sh HISTORY
+ The
+diff --git a/doas.d.5 b/doas.d.5
+new file mode 100644
+index 0000000..c5eaa72
+--- /dev/null
++++ b/doas.d.5
+@@ -0,0 +1,50 @@
++.\"Copyright (c) 2021 Ariadne Conill <ariadne@dereferenced.org>
++.\"
++.\"Permission to use, copy, modify, and distribute this software for any
++.\"purpose with or without fee is hereby granted, provided that the above
++.\"copyright notice and this permission notice appear in all copies.
++.\"
++.\"THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
++.\"WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
++.\"MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
++.\"ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++.\"WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
++.\"ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
++.\"OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
++.Dd $Mdocdate: October 9 2020 $
++.Dt DOAS.D 5
++.Os
++.Sh NAME
++.Nm doas.d
++.Nd doas configuration directory
++.Sh DESCRIPTION
++The
++.Xr doas 1
++utility executes commands as other users according to the rules
++configured in either the configuration file or, optionally, the
++configuration directory.  The preference to use the configuration
++file or configuration directory is determined at compile time,
++.Xr doas 1
++will only consult one or the other.
++.Pp
++Configuration snippets stored in the configuration directory
++follow the same rules as the classic
++.Xr doas 1
++configuration file, documented in
++.Xr doas.conf 5 .
++They must end with the .conf extension, or they will be ignored.
++.Pp
++These snippets are read in alphabetical order and thus can be
++ordered in the same way as other configuration directories.
++.Sh FILES
++.Bl -tag -width /etc/doas.d -compact
++.It Pa /etc/doas.d
++.Xr doas 1
++configuration directory.
++.Sh SEE ALSO
++.Xr doas 1 ,
++.Xr doas.conf 5
++.Sh HISTORY
++The
++.Nm
++configuration directory first appeared in OpenDoas.
+diff --git a/parse.y b/parse.y
+index 388c2a5..c6d7ebf 100644
+--- a/parse.y
++++ b/parse.y
+@@ -49,6 +49,7 @@ typedef struct {
+ } yystype;
+ #define YYSTYPE yystype
+ 
++const char *yyfn;
+ FILE *yyfp;
+ 
+ struct rule **rules;
+@@ -203,7 +204,7 @@ yyerror(const char *fmt, ...)
+ 	va_start(va, fmt);
+ 	vfprintf(stderr, fmt, va);
+ 	va_end(va);
+-	fprintf(stderr, " at line %d\n", yylval.lineno + 1);
++	fprintf(stderr, " at %s, line %d\n", yyfn, yylval.lineno + 1);
+ 	parse_errors++;
+ }
+ 
+--
+From c871cf723cc4cc1045ffc7de380f5271b4c29acf Mon Sep 17 00:00:00 2001
+From: Jakub Jirutka <jakub@jirutka.cz>
+Date: Sat, 13 May 2023 22:38:23 +0200
+Subject: [PATCH 9/9] read both /etc/doas.conf and /etc/doas.d/*.conf if
+ confdir is enabled
+
+The current behaviour of the configuration directory was required by the
+upstream, but it doesn't conform to established conventions used by
+virtually all programs on Linux that support modular configuration, and
+what the users naturally expect. Also, when someone used to vanilla
+OpenDoas or doas on BSD comes to Alpine, the way they're used to
+configuring it (via /etc/doas.conf) will no work without notice! It
+has already caused some problems and confusion.
+
+The current behaviour is: if /etc/doas.d exists, there must be at least one
+*.conf file and /etc/doas.conf is *ignored*.
+
+Since it doesn't look like the upstream will ever merge this, better to
+fix this patch to work as it should from the beginning...
+
+This new behaviour: /etc/doas.conf must always exist (as in unpatched
+OpenDoas) and will be read first; if /etc/doas.d exists and there are any
+*.conf files, they will be loaded as well.
+---
+ README.md |  7 +++----
+ doas.c    | 22 +++++-----------------
+ doas.d.5  | 14 +++++---------
+ 3 files changed, 13 insertions(+), 30 deletions(-)
+
+diff --git a/README.md b/README.md
+index 92acded..d5b2e72 100644
+--- a/README.md
++++ b/README.md
+@@ -48,7 +48,6 @@ timestamps are created and checked to be as safe as possible.
+ 
+ An optional feature can be enabled which will result in `doas` reading configuration
+ snippets from `/etc/doas.d`.  These configuration snippets have the same requirements
+-as `/etc/doas.conf` (owned by root, not world-writable).
+-
+-If this feature is enabled, only the `/etc/doas.d` directory is read, and the historical
+-`/etc/doas.conf` file is ignored.
+\ No newline at end of file
++as `/etc/doas.conf` (owned by root, not world-writable).  The main configuration file
++`/etc/doas.conf` is still required to exist and it is read before `/etc/doas.d`.  It is
++not an error if `/etc/doas.d` does not exist or no matching files are found there.
+diff --git a/doas.c b/doas.c
+index d77186b..affbe39 100644
+--- a/doas.c
++++ b/doas.c
+@@ -210,19 +210,14 @@ static void
+ parseconfdir(const char *dirpath, int checkperms)
+ {
+ 	struct dirent **dirent_table;
+-	int i, m, dirent_count;
++	int i, dirent_count;
+ 	char pathbuf[PATH_MAX];
+ 
+-	if (!isconfdir(dirpath))
+-		err(1, checkperms ? "doas is not enabled, %s" :
+-		    "could not open config directory %s", dirpath);
+-
+ 	dirent_count = scandir(dirpath, &dirent_table, NULL, alphasort);
+ 	if (dirent_count < 0)
+-		err(1, checkperms ? "doas is not enabled, %s" :
+-		    "could not open config directory %s", dirpath);
++		return;
+ 
+-	for (i = 0, m = 0; i < dirent_count; i++)
++	for (i = 0; i < dirent_count; i++)
+ 	{
+ 		struct stat sb;
+ 		size_t pathlen;
+@@ -244,13 +239,9 @@ parseconfdir(const char *dirpath, int checkperms)
+ 			continue;
+ 
+ 		parseconfig(pathbuf, checkperms);
+-		m++;
+ 	}
+ 
+ 	free(dirent_table);
+-
+-	if (!m)
+-		errx(1, "doas is not enabled, %s: no matching configuration files found\n", dirpath);
+ }
+ #endif
+ 
+@@ -263,12 +254,11 @@ checkconfig(const char *confpath, int argc, char **argv,
+ 	if (setresuid(uid, uid, uid) != 0)
+ 		err(1, "setresuid");
+ 
++	parseconfig(confpath, 0);
+ #ifdef DOAS_CONFDIR
+ 	if (isconfdir(confpath))
+ 		parseconfdir(confpath, 0);
+-	else
+ #endif
+-	parseconfig(confpath, 0);
+ 	if (!argc)
+ 		exit(0);
+ 
+@@ -410,13 +400,11 @@ main(int argc, char **argv)
+ 	if (geteuid())
+ 		errx(1, "not installed setuid");
+ 
++	parseconfig(DOAS_CONF, 1);
+ #ifdef DOAS_CONFDIR
+ 	if (isconfdir(DOAS_CONFDIR))
+ 		parseconfdir(DOAS_CONFDIR, 1);
+-	else
+ #endif
+-	parseconfig(DOAS_CONF, 1);
+-
+ 	/* cmdline is used only for logging, no need to abort on truncate */
+ 	(void)strlcpy(cmdline, argv[0], sizeof(cmdline));
+ 	for (i = 1; i < argc; i++) {
+diff --git a/doas.d.5 b/doas.d.5
+index c5eaa72..5911a12 100644
+--- a/doas.d.5
++++ b/doas.d.5
+@@ -21,14 +21,9 @@
+ The
+ .Xr doas 1
+ utility executes commands as other users according to the rules
+-configured in either the configuration file or, optionally, the
+-configuration directory.  The preference to use the configuration
+-file or configuration directory is determined at compile time,
+-.Xr doas 1
+-will only consult one or the other.
+-.Pp
+-Configuration snippets stored in the configuration directory
+-follow the same rules as the classic
++configured in the configuration file and, optionally, the
++configuration directory.  Configuration snippets stored in the
++configuration directory follow the same rules as the classic
+ .Xr doas 1
+ configuration file, documented in
+ .Xr doas.conf 5 .
+@@ -47,4 +42,5 @@ configuration directory.
+ .Sh HISTORY
+ The
+ .Nm
+-configuration directory first appeared in OpenDoas.
++configuration directory first appeared as a patch for doas on
++Alpine Linux and it is not supported in upstream OpenDoas.

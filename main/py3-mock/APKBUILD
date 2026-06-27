@@ -1,0 +1,37 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-mock
+_pkgname=mock
+pkgver=5.2.0
+pkgrel=1
+pkgdesc="Python3 Mocking and Patching Library for Testing"
+url="https://github.com/testing-cabal/mock"
+arch="noarch"
+license="BSD-2-Clause"
+makedepends="py3-gpep517 py3-setuptools py3-wheel py3-pbr"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/m/mock/mock-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+checkdepends="py3-pytest"
+
+replaces="py-mock" # Backwards compatibility
+provides="py-mock=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# The skipped test checks internal Python unittest behavior and fails
+	.testenv/bin/python3 -m pytest -k "not test_bool_not_called"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+edf856486e5f8889d676be1eb2c60cd791f4f25057b6b94b54555904133371b3753709b2ab37d032dbbfed7e7106d05c1c24a2c274f378802025495f4352ac12  mock-5.2.0.tar.gz
+"

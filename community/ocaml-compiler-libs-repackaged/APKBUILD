@@ -1,0 +1,78 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-compiler-libs-repackaged
+_pkgname=ocaml-compiler-libs
+pkgver=0.12.4
+pkgrel=5
+pkgdesc="OCaml compiler libraries repackaged to not expose everything at toplevel"
+url="https://github.com/janestreet/ocaml-compiler-libs"
+arch="all !riscv64 !loongarch64" # ocaml
+license="MIT"
+depends_dev="$pkgname=$pkgver-r$pkgrel ocaml-compiler-libs"
+makedepends="$depends_dev dune ocaml"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.bz2::https://github.com/janestreet/ocaml-compiler-libs/releases/download/v$pkgver/ocaml-compiler-libs-v$pkgver.tbz"
+builddir="$srcdir/$_pkgname-v$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--docdir=/.omit
+	rm -Rf "$pkgdir"/.omit
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+978dba8dfa61f98fa24fda7a9c26c2e837081f37d1685fe636dc19cfc3278a940cf01a10293504b185c406706bc1008bc54313d50f023bcdea6d5ac6c0788b35  ocaml-compiler-libs-repackaged-0.12.4.tar.bz2
+"

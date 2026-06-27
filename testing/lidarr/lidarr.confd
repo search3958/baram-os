@@ -1,0 +1,10 @@
+# Lidarr configuration options
+
+command_user="lidarr:lidarr" # user:group
+directory="/var/lib/lidarr"
+umask=0002
+supervisor="supervise-daemon"
+
+#logdir="/var/log/lidarr"
+#error_log="$logdir/error.log"
+#output_log="$logdir/output.log"

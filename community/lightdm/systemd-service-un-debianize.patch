@@ -1,0 +1,16 @@
+--- a/lightdm.service
++++ b/lightdm.service
+@@ -5,9 +5,9 @@
+ After=systemd-user-sessions.service getty@tty7.service plymouth-quit.service
+ 
+ [Service]
+-# temporary safety check until all DMs are converted to correct
+-# display-manager.service symlink handling
+-ExecStartPre=/bin/sh -c '[ "$(basename $(cat /etc/X11/default-display-manager 2>/dev/null))" = "lightdm" ]'
+-ExecStart=/usr/sbin/lightdm
++ExecStart=/usr/bin/lightdm
+ Restart=always
+ BusName=org.freedesktop.DisplayManager
++
++[Install]
++Alias=display-manager.service

@@ -1,0 +1,64 @@
+# Contributor: Bartłomiej Piotrowski <bpiotrowski@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libfm
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="Library for file management"
+url="https://github.com/lxde/libfm"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	dbus-glib-dev
+	gtk+3.0-dev
+	gtk-doc
+	intltool
+	libexif-dev
+	libtool
+	menu-cache-dev
+	vala
+	"
+options="libtool"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/lxde/libfm/archive/$pkgver.tar.gz
+	"
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--disable-static \
+		--with-gtk=3 \
+		--with-gnu-ld
+
+	sed -i -e 's/ -shared / -Wl,-O1,--as-needed\0/g' libtool
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	rm -rf "$pkgdir"/usr/include/libfm
+	mv "$pkgdir"/usr/include/libfm-1.0/ "$pkgdir"/usr/include/libfm
+
+	# files provided by libfm-extra for bootstrap
+	rm  "$pkgdir"/usr/lib/libfm-extra.* \
+		"$pkgdir"/usr/lib/pkgconfig/libfm-extra.* \
+		"$pkgdir"/usr/include/libfm/fm-xml-file.h \
+		"$pkgdir"/usr/include/libfm/fm-extra.h \
+		"$pkgdir"/usr/include/libfm/fm-version.h
+}
+
+sha512sums="
+8dce5ce2c69dc68e082bb561036347488b5d7e7d966ebb70d7faa3103a5fd3e42df13b6629440979e64d4fadf3697cd22421e781b6a7983216361b9c3f2d1658  libfm-1.4.0.tar.gz
+"

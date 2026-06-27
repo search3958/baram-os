@@ -1,0 +1,64 @@
+# Contributor: Tim Magee <timothy@eastlincoln.net>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=cozy
+pkgver=1.3.0
+pkgrel=2
+pkgdesc="Modern audiobook player for Linux"
+url="https://cozy.sh"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	gst-libav
+	gst-plugins-bad
+	gst-plugins-good
+	gst-plugins-ugly
+	libadwaita
+	libdazzle
+	py3-cairo
+	py3-distro
+	py3-gobject3
+	py3-gst
+	py3-mutagen
+	py3-packaging
+	py3-peewee
+	py3-requests
+	py3-tz
+	"
+makedepends="
+	desktop-file-utils
+	gobject-introspection-dev
+	libadwaita-dev
+	meson
+	py3-gobject3-dev
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-mock
+	py3-installer
+	"
+subpackages="$pkgname-pyc $pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/geigi/cozy/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	abuild-meson . output
+
+	ninja -C output com.github.geigi.cozy-update-po
+	ninja -C output extra-update-po
+	meson compile -C output
+}
+
+check() {
+	meson test -C output
+
+	pytest
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	ln -sfv com.github.geigi.cozy "$pkgdir"/usr/bin/cozy
+	python3 -m compileall -fq "$pkgdir"/usr/lib/python*
+}
+
+sha512sums="
+2e7ca481bb3ed3813814640e2685ef666063d9614cf2cfb6db9ca2f0db61f0883c8415506c3cb84b88b20e7dbf768b4cc587b5c69ea15c9db0b3411c4ea83f2d  cozy-1.3.0.tar.gz
+"

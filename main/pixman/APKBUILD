@@ -1,0 +1,53 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=pixman
+pkgver=0.46.4
+pkgrel=0
+pkgdesc="Low-level pixel manipulation library"
+url="https://gitlab.freedesktop.org/pixman"
+arch="all"
+license="MIT"
+makedepends="meson libpng-dev linux-headers"
+subpackages="$pkgname-static $pkgname-dev $pkgname-dbg"
+source="https://xorg.freedesktop.org/releases/individual/lib/pixman-$pkgver.tar.xz"
+
+case "$CARCH" in
+	# segfault in multiple tests
+	riscv64) options="!check" ;;
+esac
+
+
+build() {
+	case "$CARCH" in
+	armhf|riscv64)
+		# target-specific builtin not available
+		local lto=false
+		;;
+	*)
+		local lto=true
+		;;
+	esac
+	# We need to increase the stacksize here: https://gitlab.gnome.org/GNOME/librsvg/-/issues/595
+	LDFLAGS="$LDFLAGS -Wl,-z,stack-size=2097152" \
+	# auto-features=auto: a lot of features are architecture dependent
+	abuild-meson \
+		--auto-features=auto \
+		-Db_lto=$lto \
+		-Ddefault_library=both \
+		-Dlibpng=enabled \
+		-Ddemos=disabled \
+		-Dtests="$(want_check && echo enabled || echo disabled)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output -t 10
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+83b133e7969ba34f883f4e08dcc5d388c4397f43ce836c191c05945fe77c16ff501d531600780c12678a0d08105828a6bdeff2156b63f9c1a84087bc7f40ae9f  pixman-0.46.4.tar.xz
+"

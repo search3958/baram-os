@@ -1,0 +1,60 @@
+# Contributor: Hoang Nguyen <folliekazetani@protonmail.com>
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=hilbish
+pkgver=2.3.4
+_lunacolors_commit=34a57c964590f89aa065188a588c7b38aff99c28
+_succulent_commit=fc31cc91d9be1c1fa6209477118e8d35a4aab996
+pkgrel=15
+pkgdesc="Extensible shell configured in Lua"
+url="https://rosettea.github.io/Hilbish/"
+arch="all"
+license="MIT"
+depends="lua-inspect"
+makedepends="go"
+subpackages="$pkgname-doc:_doc"
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname.pre-deinstall"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/Rosettea/Hilbish/archive/v$pkgver.tar.gz
+	lunacolors-$_lunacolors_commit.lua::https://github.com/Rosettea/Lunacolors/raw/$_lunacolors_commit/init.lua
+	succulent-$_succulent_commit.lua::https://github.com/Rosettea/Succulent/raw/$_succulent_commit/init.lua
+	"
+builddir="$srcdir/Hilbish-$pkgver"
+options="net" # download Go modules
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v -o hilbish \
+		-ldflags "-X main.ver=v$pkgver -X main.dataDir=/usr/share/hilbish \
+		-checklinkname=0"
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 hilbish -t "$pkgdir"/usr/bin/
+	install -Dm644 .hilbishrc.lua -t "$pkgdir"/usr/share/hilbish/
+	cp -r libs emmyLuaDocs nature docs "$pkgdir"/usr/share/hilbish/
+
+	install -Dm644 "$srcdir"/"lunacolors-$_lunacolors_commit".lua \
+		"$pkgdir"/usr/share/hilbish/libs/lunacolors/init.lua
+	install -Dm644 "$srcdir"/"succulent-$_succulent_commit".lua \
+		"$pkgdir"/usr/share/hilbish/libs/succulent/init.lua
+}
+
+_doc() {
+	pkgdesc="$pkgdesc (documentation)"
+	install_if="$pkgname=$pkgver-r$pkgrel docs"
+
+	amove usr/share/hilbish/docs
+}
+
+sha512sums="
+bba65500e9678c3dd8b25c6c9e894a1d07a63c92b7136e83270a07543621891728ab9670f89e20bf95b4489dc67f3e3e8863d4817ec5d7ffbd157dc73411ccbf  hilbish-2.3.4.tar.gz
+19c21fa66460254774ac795410b4771157d26be98790d94afa9dff4402904bbfa24556a88b9ae391f012536ba02c032857715352ad7b72d7b3175ee670edcad8  lunacolors-34a57c964590f89aa065188a588c7b38aff99c28.lua
+ce34e68fd4ab18267268d476b656946c6aad6530526c73ba8482180215a351255dc6b97ba3fc92bcedad0d27ac7b390e19602129e387326fac0eaf6a61718bc8  succulent-fc31cc91d9be1c1fa6209477118e8d35a4aab996.lua
+"

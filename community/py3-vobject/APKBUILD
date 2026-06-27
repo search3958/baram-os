@@ -1,0 +1,41 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-vobject
+pkgver=0.9.9
+pkgrel=1
+pkgdesc="Module for parsing and generating vCard and vCalendar files"
+url="https://py-vobject.github.io/"
+arch="noarch"
+license="Apache-2.0"
+depends="python3 py3-dateutil py3-tz"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/py-vobject/vobject/archive/refs/tags/v$pkgver.tar.gz
+	remove-six.patch
+	"
+builddir="$srcdir"/vobject-$pkgver
+
+replaces="py-vobject" # Backwards compatibility
+provides="py-vobject=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 tests.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+	.dist/*.whl
+}
+
+sha512sums="
+06491a1f05d8f8499ba54dc754adef35b880ebbd0eed26ac02731cd7debe893b4bea2e734c0b4c78738276d4de141ebc381d2577a09a1904b8eebfb26b610735  py3-vobject-0.9.9.tar.gz
+eebfad805611129448b5b80bd73450944d04ae0c8b05f282e39f393aa84cd943291d7f17363dfe0f321957fb9ecf0f6e8745b7b90aa1a617a01d5d462039a4d5  remove-six.patch
+"

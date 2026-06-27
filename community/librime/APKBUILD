@@ -1,0 +1,139 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=librime
+pkgver=1.17.0
+pkgrel=0
+pkgdesc="Rime input method engine"
+url="https://github.com/rime/librime"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="$pkgname-tools=$pkgver-r$pkgrel"
+makedepends="
+	boost-dev
+	capnproto-dev
+	chrpath
+	cmake
+	glog-dev
+	leveldb-dev
+	libmarisa-dev
+	lua5.4-dev
+	opencc-dev
+	samurai
+	yaml-cpp-dev
+	"
+checkdepends="gtest-dev"
+subpackages="
+	$pkgname-dev
+	$pkgname-tools
+	$pkgname-nolog
+	$pkgname-plugins::noarch
+	"
+for _name in charcode lua octagram predict proto; do
+	subpackages="$subpackages $pkgname-plugin-$_name:_plugin"
+	_all_plugins="$_all_plugins $pkgname-plugin-$_name=$pkgver-r$pkgrel"
+done
+_charcode=55e7f563e999802d41a13ba02657c1be4b2011b4
+_lua=ec52e48ea18f11af37717a01c337f853215cf70b
+_octagram=dfcc15115788c828d9dd7b4bff68067d3ce2ffb8
+_predict=920bd41ebf6f9bf6855d14fbe80212e54e749791
+_proto=657a923cd4c333e681dc943e6894e6f6d42d25b4
+source="https://github.com/rime/librime/archive/refs/tags/$pkgver/librime-$pkgver.tar.gz
+	https://github.com/rime/librime-charcode/archive/$_charcode/librime-charcode-$_charcode.tar.gz
+	https://github.com/hchunhui/librime-lua/archive/$_lua/librime-lua-$_lua.tar.gz
+	https://github.com/lotem/librime-octagram/archive/$_octagram/librime-octagram-$_octagram.tar.gz
+	https://github.com/rime/librime-predict/archive/$_predict/librime-predict-$_predict.tar.gz
+	https://github.com/lotem/librime-proto/archive/$_proto/librime-proto-$_proto.tar.gz
+	"
+
+prepare() {
+	default_prepare
+
+	ln -sv ../../librime-charcode-$_charcode plugins/librime-charcode
+	ln -sv ../../librime-lua-$_lua plugins/librime-lua
+	ln -sv ../../librime-octagram-$_octagram plugins/librime-octagram
+	ln -sv ../../librime-predict-$_predict plugins/librime-predict
+	ln -sv ../../librime-proto-$_proto plugins/librime-proto
+}
+
+build() {
+	export CXXFLAGS="$CXXFLAGS -U_FORTIFY_SOURCE -flto=auto"
+
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_DATA=ON \
+		-DBUILD_TEST="$(want_check && echo ON || echo OFF)" \
+		-DBUILD_TOOLS=ON \
+		-DBUILD_MERGED_PLUGINS=OFF \
+		-DENABLE_EXTERNAL_PLUGINS=ON \
+		-DLUA_VERSION="lua5.4"
+	cmake --build build
+
+	cmake -B build-nolog -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_DATA=OFF \
+		-DBUILD_TEST=OFF \
+		-DBUILD_TOOLS=OFF \
+		-DBUILD_MERGED_PLUGINS=OFF \
+		-DENABLE_EXTERNAL_PLUGINS=OFF \
+		-DENABLE_LOGGING=OFF \
+		-DLUA_VERSION="lua5.4"
+	cmake --build build-nolog --target rime
+}
+
+check() {
+	ctest --test-dir build -R rime_test
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	cd "$pkgdir"
+	mv -v usr/share/cmake usr/lib/cmake
+	# create missing default paths for other ime packages to find rime data
+	# (e.g. ibus-rime uses -DRIME_DATA_DIR="/usr/share/rime-data")
+	mkdir -vp usr/share/rime-data
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+
+	amove usr/bin
+}
+
+nolog() {
+	pkgdesc="$pkgdesc (with logging disabled)"
+
+	install -Dvm755 "$builddir"/build-nolog/lib/librime.so.$pkgver \
+		"$subpkgdir"/usr/lib/librime-nolog.so.$pkgver
+
+	chrpath -d "$subpkgdir"/usr/lib/librime-nolog.so.$pkgver
+}
+
+plugins() {
+	pkgdesc="$pkgdesc (meta package for installing all plugins)"
+	depends="$_all_plugins"
+
+	mkdir -vp "$subpkgdir"
+}
+
+_plugin() {
+	local name=${subpkgname#"$pkgname-plugin-"}
+	pkgdesc="$pkgdesc ($name plugin)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/rime-plugins/librime-$name.so
+}
+
+sha512sums="
+0d4a689c5efdf2589d63118d72833329259d5b1ce48eea6590c5317d88b22281b933663df1cf858cad36dd48745be11d117d8ff5fac4813c2e49aca6282eaa44  librime-1.17.0.tar.gz
+96f2cc7a9d5ebf65da1b1a592a5e6295f0758c6e4311eba21ba41dc62e14ee2d38911f7c893d9a61b06f7d935c9b04697f485d4c6edf7976c3a7fe143ce4a3e6  librime-charcode-55e7f563e999802d41a13ba02657c1be4b2011b4.tar.gz
+48ac6236b9b41debd5d97d731172c3c6499b89b5a4fc9257b47475e6082818785bae32f5d2a430dbcd3b536f201e5a7982f1fa01afc5dd15136404749b7e38ef  librime-lua-ec52e48ea18f11af37717a01c337f853215cf70b.tar.gz
+a8301e8141c85550790ac652a64d216154ee102a0d23c3965945cae408acf4b7c0d49876e999bbacdcfbfecd7988d395177830c798f919da9cdcaeeaed9db718  librime-octagram-dfcc15115788c828d9dd7b4bff68067d3ce2ffb8.tar.gz
+8d4517ff1cfaf8b73b5a56e36e683db0db582c19e72623f3a1c94c165a25477a9f42ef13b575974e9c00ab376417aeef7333f57d7783a9ac91ad8bd5028700eb  librime-predict-920bd41ebf6f9bf6855d14fbe80212e54e749791.tar.gz
+557945b149104275f88f716567fabdee81c97d966238c6dda1f5fa9362babe13b4fe25722a6489d06b3b1a139b920dde8d5af5af8b64110556d0a4ebec5149ed  librime-proto-657a923cd4c333e681dc943e6894e6f6d42d25b4.tar.gz
+"

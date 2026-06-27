@@ -1,0 +1,98 @@
+# Contributor: Cameron <cbanta@gmail.com>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=pgpool
+pkgver=4.6.7
+_pkgver="${pkgver//./_}"
+pkgrel=0
+pkgdesc="A connection pooling/replication server for PostgreSQL"
+url="https://www.pgpool.net/"
+arch="all"
+license="custom"
+makedepends="
+	autoconf
+	automake
+	bison
+	flex
+	libpq-dev
+	libtool
+	linux-headers
+	openssl-dev
+	postgresql-dev
+	"
+pkgusers="postgres"
+pkggroups="postgres"
+install="$pkgname.pre-install $pkgname.post-upgrade"
+subpackages="$pkgname-openrc $pkgname-doc $pkgname-static $pkgname-dev"
+source="https://github.com/pgpool/pgpool2/archive/V$_pkgver/pgpool2-$_pkgver.tar.gz
+	fix-snprintf.patch
+	$pkgname.initd
+	$pkgname.confd
+	$pkgname.logrotated
+	"
+builddir="$srcdir/pgpool2-$_pkgver"
+
+# secfixes:
+#   4.5.4-r0:
+#     - CVE-2024-45624
+
+prepare() {
+	default_prepare
+
+	autoreconf -fiv
+
+	# Fix listen address.
+	# pgpool resolves localhost to ::1 (IPv6) and fails to bind on ::1:9999.
+	sed -Ei "s/^(listen_addresses\s*=\s*)'localhost'/\1'127.0.0.1'/" \
+		src/sample/pgpool.conf*
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc/$pkgname \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--with-openssl \
+		--disable-rpath
+	make -j1
+	make PG_CONFIG=/usr/bin/pg_config -C "$builddir"/src/sql
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	make DESTDIR="${pkgdir}/" PG_CONFIG=/usr/bin/pg_config -C "$builddir"/src/sql install
+
+	touch "$pkgdir"/etc/$pkgname/pool_passwd
+
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.logrotated "$pkgdir"/etc/logrotate.d/$pkgname
+
+	install -d -o "$pkgusers" -g "$pkggroups" -m755 "$pkgdir"/var/log/$pkgname
+
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+
+	local docdir="$pkgdir"/usr/share/doc/$pkgname
+
+	mkdir -p "$docdir"
+	mv "$pkgdir"/etc/$pkgname/* "$docdir"/
+
+	local f; for f in pcp.conf pgpool.conf pool_hba.conf; do
+		cp "$docdir"/$f.sample "$pkgdir"/etc/$pkgname/$f
+	done
+}
+
+sha512sums="
+8e347993eda2163d8dba4c9b58cc685b41c8715718baecb58433db772bb18da3760fbaf2228e79ce075d4ab30b19877c36191c1be51a217b5cbbe2b5e1b6546b  pgpool2-4_6_7.tar.gz
+a54db8501283430ced160b11372839f9ab8e26bf80021771233b314afc464d6ff2298d324008e60f07c1b49c4c467e185f35c1c95ed62c9b1a185397f3465289  fix-snprintf.patch
+9e54835f2a907f4b7a521d7d52cf04f69e1edfe591d9618cb2a1514953e5ba9e0d5ef543f0d6ee281fef21e64b7a6ff4a26a7f54fadbfc2d3bc7009d10dbccbf  pgpool.initd
+7e605cea31ae32127ec1aca9e47a6652e87243214bde202d49a405652784e68b4dbff7d364345259d327bc37041c60c146e6f674a4aa72c6214bdba3740e700e  pgpool.confd
+c9aa2ea9484ed29cb57cdff4004fa9dd4780d73c69db3378effb2e0ecd3ae178771c6a847a28e1a9cc6492ada4321584afb92c9b592119fb11898b42191f22b1  pgpool.logrotated
+"

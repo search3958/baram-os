@@ -1,0 +1,36 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=qtpass
+_pkgname=QtPass
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="Multi-platform GUI for pass"
+url="https://qtpass.org/"
+arch="all"
+license="GPL-3.0-or-later"
+depends="gnupg pwgen"
+makedepends="qt5-qttools-dev qt5-qtsvg-dev"
+source="https://github.com/IJHack/QtPass/releases/download/v$pkgver/QtPass-$pkgver.tar.gz"
+subpackages="$pkgname-doc"
+
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	qmake-qt5
+	make
+}
+
+check() {
+	QT_QPA_PLATFORM=offscreen make check
+}
+
+package() {
+	install -D -m0755 main/qtpass "$pkgdir/usr/bin/$pkgname"
+	install -D -m0644 artwork/icon.png "$pkgdir/usr/share/pixmaps/$pkgname.png"
+	install -D -m0644 $pkgname.desktop "$pkgdir/usr/share/applications/$pkgname.desktop"
+	install -D -m0644 $pkgname.1 "$pkgdir/usr/share/man/man1/$pkgname.1"
+}
+
+sha512sums="
+47c1284c10e0d8a3bf63c049fc29d785d1a53bef6f183bbe22efebf466371dd454a6e43c944739f487d609f3cde188701ba538e9cb8e2c7e5530f8fa6f992625  QtPass-1.4.0.tar.gz
+"

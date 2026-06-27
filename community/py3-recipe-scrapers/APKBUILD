@@ -1,0 +1,38 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-recipe-scrapers
+pkgver=15.11.0
+pkgrel=1
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=recipe-scrapers
+pkgdesc="Python package, scraping recipes from all over the internet"
+url="https://pypi.python.org/project/recipe-scrapers"
+arch="noarch"
+license="MIT"
+depends="py3-beautifulsoup4 py3-extruct py3-isodate"
+checkdepends="py3-pytest"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hhursev/recipe-scrapers/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6d50fe7c07e2cccd8958674dfaadaba0366a0ea53ecb6176636d1e94e99aaa0b8a6baf97de924bb5c7d487934e73780fdef4db7eda3f987c0a8e7f09dc28d7a0  py3-recipe-scrapers-15.11.0.tar.gz
+"

@@ -1,0 +1,39 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=mapplauncherd-qt
+pkgver=1.2.0
+pkgrel=2
+pkgdesc="Application launch boosters for Qt6"
+url="https://github.com/sailfishos/mapplauncherd-qt"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="LGPL-2.1-only"
+depends_dev="
+	libxml2-dev
+	mapplauncherd-dev
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev"
+subpackages="
+	$pkgname-dev
+	$pkgname-systemd
+	"
+source="https://github.com/sailfishos/mapplauncherd-qt/archive/$pkgver/mapplauncherd-qt-$pkgver.tar.gz
+	0001-mapplauncherd-qt-Qt6.patch
+	"
+options="!check" # No tests
+
+build() {
+	qmake6 \
+		PREFIX=/usr
+	make
+}
+
+package() {
+	INSTALL_ROOT="$pkgdir" make install
+}
+sha512sums="
+443478f3342af9346031f81a5fa3f3bc909795c3074e28f322a3ce9513768e2ece9522e81aef1751b9b7478338ce57388ee3cae5bbefd94979690ebb519fa044  mapplauncherd-qt-1.2.0.tar.gz
+67a305b93532ecf4825902ca78f281fb3dd4b1796ee6a86507544e39edf3b50668b81c95f3a2e777caf0dccd2a6c4cda2de3b0452329990c41754c40895439b4  0001-mapplauncherd-qt-Qt6.patch
+"

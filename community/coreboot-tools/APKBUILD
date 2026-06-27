@@ -1,0 +1,125 @@
+# Contributor: Nulo <alpine@nulo.in>
+# Maintainer: Adam Thiede <me@adamthiede.com>
+pkgname=coreboot-tools
+pkgver=26.03
+pkgrel=1
+pkgdesc="Tools from the coreboot project"
+url="https://review.coreboot.org/coreboot"
+arch="all"
+license="GPL-2.0-only"
+
+makedepends="
+	coreutils
+	inkscape
+	meson
+	pciutils-dev
+	qt5-qtbase-dev
+	qt5-qttools-dev
+	qt5-qtsvg-dev
+	yaml-cpp-dev
+	zlib-dev
+	"
+subpackages="$pkgname-ifdtool $pkgname-cbmem"
+case "$CARCH" in
+	# memcpy is out of bounds on x86
+	aarch64|x86_64) subpackages="$subpackages $pkgname-cbfstool" ;;
+esac
+case "$CARCH" in
+	x86*) subpackages="$subpackages $pkgname-ectool $pkgname-intelmetool $pkgname-nvramtool $pkgname-nvramtool-doc $pkgname-configurator" ;;
+esac
+
+source="
+https://coreboot.org/releases/coreboot-$pkgver.tar.xz
+musl.patch
+"
+builddir="$srcdir/coreboot-$pkgver"
+options="!check" # no test suite
+
+build() {
+	make -C "$builddir"/util/ifdtool
+	make -C "$builddir"/util/cbmem
+
+	case $CARCH in
+		aarch64|x86_64)
+			make -C "$builddir"/util/cbfstool cbfstool
+		;;
+	esac
+	case $CARCH in
+		x86*)
+			make -C "$builddir"/util/ectool
+			make -C "$builddir"/util/intelmetool CFLAGS+="-I $builddir/src/commonlib/bsd/include"
+			make -C "$builddir"/util/nvramtool CFLAGS+="-I. -DCMOS_HAL=1"
+			abuild-meson -Db_lto=true "$builddir"/util/coreboot-configurator "$builddir"/util/coreboot-configurator/output
+			meson compile -C "$builddir"/util/coreboot-configurator/output
+		;;
+	esac
+}
+
+package() {
+	make -C "$builddir"/util/ifdtool PREFIX="$pkgdir/usr" install
+	make -C "$builddir"/util/cbmem PREFIX="$pkgdir/usr" install
+
+	case $CARCH in
+		aarch64|x86_64)
+			make -C "$builddir"/util/cbfstool cbfstool PREFIX="$pkgdir/usr" install
+		;;
+	esac
+	case $CARCH in
+		x86*)
+			make -C "$builddir"/util/ectool PREFIX="$pkgdir/usr" install
+			make -C "$builddir"/util/intelmetool PREFIX="$pkgdir/usr" install
+			make -C "$builddir"/util/nvramtool PREFIX="$pkgdir/usr" install
+			DESTDIR="$pkgdir" meson install --no-rebuild -C $builddir/util/coreboot-configurator/output
+		;;
+	esac
+}
+
+intelmetool() {
+	pkgdesc="Dump interesting things about Management Engine"
+
+	amove usr/sbin/intelmetool
+}
+
+nvramtool() {
+	pkgdesc="Manipulates NVRAM from userspace"
+
+	amove usr/sbin/nvramtool
+}
+
+ectool() {
+	pkgdesc="Dumps the RAM of a laptop’s Embedded/Environmental Controller (EC)"
+
+	amove usr/sbin/ectool
+}
+
+ifdtool() {
+	pkgdesc="Extract and dump Intel Firmware Descriptor information"
+
+	amove usr/bin/ifdtool
+}
+
+cbmem() {
+	pkgdesc="CBMEM parser to read e.g. timestamps and console log"
+
+	amove usr/sbin/cbmem
+}
+
+configurator() {
+	pkgdesc="Graphical NVRAMtool frontend"
+
+	amove usr/share/icons
+	amove usr/share/polkit-1/
+	amove usr/share/applications
+	amove usr/bin/coreboot-configurator
+}
+
+cbfstool() {
+	pkgdesc="Management utility for CBFS formatted ROM images"
+
+	amove usr/bin/cbfstool
+}
+
+sha512sums="
+99a45865db36aa87b930489475ebf051dd19353c959b997854cf84e8d6abdd00fc1e405bcfc975721fd20cad83afab0bd8ee285844a7f1c002f5e30a9d6ad200  coreboot-26.03.tar.xz
+c2d2683168626c562f4c0e9fed4bb71701b14d12d0ea3726c43cda707dd882709492a9c59465d09de294e06f75888f888c50e982bdf32c78fc8a708432ed0aec  musl.patch
+"

@@ -1,0 +1,38 @@
+# Maintainer:
+pkgname=py3-pymsgbox
+pkgver=1.0.9
+# no actual tags
+_gitrev=ad76bd85a9cd2506a5417b82408c82ed60585421
+pkgrel=7
+pkgdesc="Simple, cross-platform, pure Python module to display message boxes, and just message boxes"
+url="https://github.com/asweigart/PyMsgBox"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="xvfb-run"
+subpackages="$pkgname-pyc"
+source="$pkgname-$_gitrev.tar.gz::https://github.com/asweigart/PyMsgBox/archive/$_gitrev.tar.gz"
+builddir="$srcdir/PyMsgBox-$_gitrev"
+options="!check" # circular with pyautogui
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	xvfb-run -a .testenv/bin/python3 tests/test_pymsgbox.py
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c2cc71d098f9498d434648aad70bbe1c718868d778decd3666092e8c4f9f1384f4d22bc1e222639a37be8fd7b802de38fec2832714fd50b3f24a7107232637fd  py3-pymsgbox-ad76bd85a9cd2506a5417b82408c82ed60585421.tar.gz
+"

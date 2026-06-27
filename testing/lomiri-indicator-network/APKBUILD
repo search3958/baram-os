@@ -1,0 +1,59 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=lomiri-indicator-network
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="The 'Network' indicator for Ubuntu Touch"
+# armhf: blocked by qt5-qtdeclarative
+# riscv64: blocked by libqofono
+arch="all !armhf !riscv64"
+url="https://gitlab.com/ubports/development/core/lomiri-indicator-network"
+license="GPL-3.0-only"
+depends_dev="
+	glib-dev
+	gmenuharness-dev
+	gtest-dev
+	libqofono-dev
+	libsecret-dev
+	lomiri-api-dev
+	lomiri-url-dispatcher-dev
+	networkmanager-dev
+	ofono-dev
+	qt5-qtdeclarative-dev
+	"
+makedepends="
+	$depends_dev
+	cmake-extras
+	gmock
+	intltool
+	libqtdbusmock
+	libqtdbustest
+	qt5-qttools
+	samurai
+	"
+checkdepends="py3-dbusmock"
+source="https://gitlab.com/ubports/development/core/lomiri-indicator-network/-/archive/$pkgver/lomiri-indicator-network-$pkgver.tar.gz"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+options="!check" # some tests hang
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DUSE_SYSTEMD=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a378da489308fa7c30a57fb05d6d9044db3a5ddefb670827b9ff867984f07480e43975c09117a74f931033e981803d606e1dc8f6571593bcb1a6dbaa28b3f3c7  lomiri-indicator-network-1.2.0.tar.gz
+"

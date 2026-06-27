@@ -1,0 +1,31 @@
+# Contributor: rahmanshaber <rahmanshaber@yahoo.com>
+# Maintainer: rahmanshaber <rahmanshaber@yahoo.com>
+pkgname=corerenamer
+pkgver=5.0.0
+pkgrel=0
+pkgdesc="A batch file renamer from C-Suite"
+arch="all"
+url="https://gitlab.com/cubocore"
+license="GPL-3.0-or-later"
+depends="qt6-qtsvg"
+makedepends="qt6-qtbase-dev libcprime-dev cmake ninja"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.com/cubocore/coreapps/corerenamer/-/archive/v$pkgver/corerenamer-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # No test suite
+
+build() {
+	cmake -B build \
+		-GNinja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ffc4e43f28f5ed5aa652b9427ca9a819b56cd64f09a7552affa94e621abf3a0979963e649c3406b77e89a0a688124247967de1886f716565c0bf23da8d1d80ef  corerenamer-5.0.0.tar.gz
+"

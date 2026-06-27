@@ -1,0 +1,73 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=qpdf
+pkgver=12.3.2
+pkgrel=0
+pkgdesc="Command-line tools and library for transforming PDF files"
+url="https://github.com/qpdf/qpdf"
+arch="all"
+license="Apache-2.0"
+makedepends="
+	cmake
+	gnutls-dev
+	libjpeg-turbo-dev
+	openssl-dev
+	samurai
+	zlib-dev
+	"
+checkdepends="coreutils perl"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-fix-qdf:fix_qdf
+	"
+source="https://github.com/qpdf/qpdf/releases/download/v$pkgver/qpdf-$pkgver.tar.gz"
+
+# secfixes:
+#   11.9.1-r0:
+#     - CVE-2024-24246
+#   7.0.0-r0:
+#     - CVE-2017-9208
+#     - CVE-2017-9209
+#     - CVE-2017-9210
+#     - CVE-2017-11624
+#     - CVE-2017-11625
+#     - CVE-2017-11626
+#     - CVE-2017-11627
+#     - CVE-2017-12595
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	CFLAGS="$CFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DBUILD_STATIC_LIBS=OFF \
+		-DBUILD_DOC_PDF=OFF \
+		-DBUILD_DOC_HTML=OFF \
+		-DINSTALL_EXAMPLES=OFF
+
+	cmake --build build
+}
+
+check() {
+	export LANG=C # Some tests fail without it
+	ctest -j2 --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+fix_qdf() {
+	pkgdesc="Repair PDF files in QDF form after editing"
+
+	amove usr/bin/fix-qdf
+}
+
+sha512sums="
+2bd574232c32d19f236476afcbd667d246ba2b7d1f92afb34a7712a578285c5c1bfb8bd260c06c569f9b3728716890baeb40cbd309e3bb38c63e431dacbeae8a  qpdf-12.3.2.tar.gz
+"

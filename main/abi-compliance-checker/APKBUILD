@@ -1,0 +1,20 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=abi-compliance-checker
+pkgver=2.3
+pkgrel=6
+pkgdesc="A tool for checking backward compatibility of a C/C++ library"
+url="https://github.com/lvc/abi-compliance-checker"
+arch="noarch"
+license="LGPL-2.1-or-later"
+depends="perl build-base"
+makedepends="perl-dev"
+options="!check"
+source="$pkgname-$pkgver.tar.gz::https://github.com/lvc/abi-compliance-checker/archive/$pkgver.tar.gz"
+
+package() {
+	mkdir -p "$pkgdir"/usr
+	perl Makefile.pl -install --destdir="$pkgdir"
+}
+
+sha512sums="dda5b65c36028da302ed2a8070de72f85fa0ecbc573bdc73d9a06fc6162f8850773b586c7bef8fd48b5ccb2918fbfdf8e70dd16de94cc5fa70617d35579edf2b  abi-compliance-checker-2.3.tar.gz"

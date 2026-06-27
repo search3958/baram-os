@@ -1,0 +1,27 @@
+# Contributor: mio <miyopan@e.email>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=apostrophe-revealjs
+pkgver=5.2.1
+pkgrel=0
+pkgdesc="reveal.js (HTML presentation framework) installation for Apostrophe"
+url="https://revealjs.com"
+arch="aarch64 x86_64" # Install only where apostrophe is available
+license="MIT"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hakimel/reveal.js/archive/$pkgver.tar.gz"
+builddir="$srcdir"/reveal.js-$pkgver
+options="!check" # Basic setup version, no tests are run
+
+prepare() {
+	default_prepare
+	# Clean up unused files
+	rm -r .codespellrc .git* .npm* gulpfile.js package*.json
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/apostrophe/libs
+	cp -r "$builddir" "$pkgdir"/usr/share/apostrophe/libs/reveal.js
+}
+
+sha512sums="
+2ee4133fafa37abd8452ef4c0f97c8640d8b24387c95fcc219969414908b29e5223f325085d4b30001a4be3af81382fc6802a79d39595eb6c0218763770fd9e5  apostrophe-revealjs-5.2.1.tar.gz
+"

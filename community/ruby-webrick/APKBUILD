@@ -1,0 +1,62 @@
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ruby-webrick
+_gemname=webrick
+pkgver=1.9.1
+pkgrel=0
+pkgdesc="HTTP server toolkit for Ruby"
+url="https://github.com/ruby/webrick"
+arch="noarch"
+license="BSD-2-Clause"
+depends="ruby"
+makedepends="ruby-rdoc"
+checkdepends="
+	ruby-rake
+	ruby-test-unit
+	ruby-test-unit-ruby-core
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/ruby/webrick/archive/v$pkgver/ruby-webrick-$pkgver.tar.gz
+	gemspec.patch
+	"
+builddir="$srcdir/$_gemname-$pkgver"
+
+prepare() {
+	default_prepare
+	sed -i '/require .bundler/d' Rakefile
+}
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	rake test TESTOPTS="--verbose"
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+
+	gem install \
+		--local \
+		--install-dir "$gemdir" \
+		--ignore-dependencies \
+		--document ri \
+		--verbose \
+		$_gemname
+
+	# Remove unnessecary files
+	cd "$gemdir"
+	rm -rf build_info cache extensions plugins
+}
+
+doc() {
+	pkgdesc="$pkgdesc (ri docs)"
+
+	amove "$(ruby -e 'puts Gem.default_dir')"/doc
+}
+
+sha512sums="
+c680e30275dabc309b03f6353410b69e7c543701ad322cb32cf938fc42bf234ca17d26ddd0da09c8484ec78661897ce5bcf99d94dcf1856b31d4803793ef7ab3  ruby-webrick-1.9.1.tar.gz
+5c657602228ba5aef4c272b75bc5d7c42855876811a49a7736bfa72b00d65a2bb550ea76ffcc2bc1e2ef9575796f5981eadd97cc92b1f3bf06c0105b8d166222  gemspec.patch
+"

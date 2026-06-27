@@ -1,0 +1,41 @@
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=betula
+pkgver=1.6.0
+pkgrel=3
+pkgdesc="free single-user bookmarking software"
+url="https://betula.mycorrhiza.wiki/"
+arch="all"
+license="AGPL-3.0-only"
+options="net" # go modules
+makedepends="go sqlite-dev"
+checkdepends="curl mercurial"
+subpackages="$pkgname-openrc"
+install="$pkgname.pre-install"
+builddir="$srcdir/$pkgname-v$pkgver"
+source="$pkgname-v$pkgver.tar.gz::https://git.sr.ht/~bouncepaw/betula/archive/v$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+	"
+
+build() {
+	make betula
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 betula "$pkgdir"/usr/bin/betula
+
+	install -Dm755 "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+
+}
+sha512sums="
+39b632299054d92dba47974592d5299bdef1bb9be01c5f03acc0c59f0070a9809b863137a4d4060de21344da8b4855188d16bf0151de4002ecaf4f4a2e2ef0f2  betula-v1.6.0.tar.gz
+93b8c65542050a04c225dbbf375dc5b1c44ac21f49c03976745d76e6d8f3b2cc4b66151324cf7e60d7fe5737c7f6b054798d7f5aa01de1eea86ba7e3002929fa  betula.initd
+9d45d9b2b67248ec1cf7736453af1c54da3ddb82b1f37df2046e45603db90ee4654f23b7c5d40e702a3ae56f9a800ddc051369dbf5082e86580ab625208f595e  betula.confd
+"

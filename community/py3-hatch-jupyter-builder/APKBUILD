@@ -1,0 +1,33 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-hatch-jupyter-builder
+pkgver=0.9.1
+pkgrel=4
+pkgdesc="A hatch plugin to help build Jupyter packages"
+url="https://github.com/jupyterlab/hatch-jupyter-builder"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-hatchling"
+makedepends="py3-gpep517 py3-setuptools"
+checkdepends="py3-pytest py3-tomli py3-pytest-mock"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jupyterlab/hatch-jupyter-builder/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/hatch-jupyter-builder-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer --destdir="$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+6f1c3fcc10862086885f74bcbec4de2bcdf04e7cef3d7ad19eb323fe5b5fefc068a9eb0cfadaaa438784cf8de2153a23a30f43432b5498075570ee10cbd6ca0d  py3-hatch-jupyter-builder-0.9.1.tar.gz
+"

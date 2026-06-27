@@ -1,0 +1,20 @@
+{
+    "description": "Integration with cs-firewall-bouncer in ipset mode",
+
+    "ipset": {
+        "crowdsec-blacklists": { "type": "hash:ip", "family": "inet", "timeout": true, "size": 65536 },
+        "crowdsec6-blacklists": { "type": "hash:ip", "family": "inet6", "timeout": true, "size": 65536 }
+    },
+
+    "filter": [
+        {
+            "in": "adp-wan",
+            "ipset": [
+                { "name": "crowdsec-blacklists", "args": ["in"] },
+                { "name": "crowdsec6-blacklists", "args": ["in"] }
+            ],
+            "action": "drop",
+            "log": false
+        }
+    ]
+}

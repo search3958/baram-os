@@ -1,0 +1,45 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=ytnef
+pkgver=2.1.2
+pkgrel=0
+pkgdesc="TNEF Stream Reader - for winmail.dat files"
+url="https://github.com/Yeraze/ytnef"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="autoconf automake libtool file"
+subpackages="$pkgname-dev $pkgname-libs"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Yeraze/ytnef/archive/v$pkgver.tar.gz
+	ytnef-pkgconfig.patch
+	"
+
+# secfixes:
+#   1.9.3-r1:
+#     - CVE-2021-3403
+#     - CVE-2021-3404
+
+prepare() {
+	default_prepare
+	autoreconf -vif
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make install DESTDIR="$pkgdir" includedir=/usr/include/libytnef
+}
+
+sha512sums="
+2b605d8e23309c613c208fa24d113d5720997393a8083565a546857bcc540ed87ad7f7b4b7e1b40aab272ab9646170ea9f3becca6ab81bba9653ffecfe37281c  ytnef-2.1.2.tar.gz
+bf829bd56fff81f30ad32da4714677224b537cf38fb084afe73fd2d5723f73741e0423149832d9f61c0e368781040fd29e66f22c1c6c099d6d300f0649d6ba47  ytnef-pkgconfig.patch
+"

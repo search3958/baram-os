@@ -1,0 +1,27 @@
+# Contributor: Andrew Hills <ahills@ednos.net>
+# Contributor: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+# Maintainer: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+pkgname=zathura-pdf-poppler
+pkgver=2026.05.10
+pkgrel=0
+pkgdesc="Poppler plugin adds PDF support to zathura"
+options="!check" # No testsuite
+url="https://pwmt.org/projects/zathura-pdf-poppler/"
+arch="all"
+license="Zlib"
+depends="zathura"
+makedepends="zathura-dev poppler-dev muon"
+source="https://pwmt.org/projects/zathura-pdf-poppler/download/zathura-pdf-poppler-$pkgver.tar.xz"
+
+build() {
+	abuild-muon -Db_lto=true build .
+	ninja -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" muon -C build install
+}
+
+sha512sums="
+20e1cb0cc4efaf42926aa96ac5a6078c3752e448a17cc48843fad533a85659d6c22ea9134ee0c49b394a3a7264f65b43ab6b49e7974bd0c8128300be288100ba  zathura-pdf-poppler-2026.05.10.tar.xz
+"

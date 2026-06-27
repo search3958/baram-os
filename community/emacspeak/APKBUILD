@@ -1,0 +1,131 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=emacspeak
+pkgver=59.0
+pkgrel=2
+pkgdesc="Emacs audio desktop for eyes-free computing"
+url="https://emacspeak.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="cmd:emacs $pkgname-sounds $pkgname-server-espeak"
+depends_doc="texinfo-doc emacs-doc"
+makedepends="emacs-nox espeak-ng-dev tcl-dev"
+options="!check"
+subpackages="
+	$pkgname-sounds:ems_sounds:noarch
+	$pkgname-doc
+	$pkgname-misc:ems_misc:noarch
+	$pkgname-server-espeak:ems_espeak
+	"
+source="https://github.com/tvraman/emacspeak/releases/download/${pkgver%%.*}/emacspeak-$pkgver.tar.bz2
+	rebuild-pickup-c.patch
+	fix-tclespeak-path.patch
+	remote-espeak-server.patch
+	directories.patch
+	emacspeak
+	"
+
+_emsdir=usr/share/emacs/site-lisp/$pkgname
+
+build() {
+	make config
+	make
+	make -C etc/pickup-c
+	make espeak
+}
+
+package() {
+	local emspkgdir="$pkgdir"/"$_emsdir"
+	local docdir="$pkgdir"/usr/share/doc/$pkgname
+	local infodir="$pkgdir"/usr/share/info/$pkgname
+
+	mkdir -vp "$(dirname $emspkgdir)"
+	cp -a "$builddir" "$emspkgdir"
+	cd "$emspkgdir"
+
+	# clean unneeded files
+	find . -type f \( \
+		-name Makefile -o \
+		-name .nosearch -o \
+		-name '*.o' -o \
+		-name '*.orig' -o \
+		-name '.*spell*' \) \
+		-delete
+	rm -v .*ignore aster-math README run*
+
+	# fix ownerships and permissions
+	chown -Rf root:root .
+	find . -type d -exec chmod -c 0755 {} \;
+
+	# move documentation
+	mkdir -vp "$docdir"
+	mv -v README.md etc/COPYRIGHT etc/NEWS* \
+		etc/applications.* etc/tips.* \
+		blog-archive attic-readme \
+		lisp/elpa-readme \
+		"$docdir"
+	mkdir -vp "$(dirname $infodir)"
+	rm -v info/tips.html
+	mv -v info "$infodir"
+
+	install -Dvm755 \
+		"$srcdir"/emacspeak \
+		-t "$pkgdir"/usr/bin
+
+	install -Dvm755 \
+		servers/native-espeak/tclespeak.so \
+		-t "$pkgdir"/usr/lib/$pkgname
+}
+
+ems_espeak() {
+	pkgdesc="$pkgdesc (espeak-ng speech server)"
+	depends="tclx"
+	install_if="emacspeak=$pkgver-r$pkgrel espeak-ng"
+	local servdir="$_emsdir"/servers
+
+	# move supported speech servers
+	amove	usr/lib/$pkgname/tclespeak.so \
+		"$servdir"/tts-lib.tcl \
+		"$servdir"/espeak \
+		"$servdir"/cloud \
+		"$servdir"/cloud-notify \
+		"$servdir"/log-espeak \
+		"$servdir"/null \
+		"$servdir"/speech-server \
+		"$servdir"/ssh-espeak
+	# remove all others
+	rm -vrf "${pkgdir:?}/$servdir"
+
+	# rebuild '.servers' file
+	cd "$subpkgdir/$servdir"
+	# shellcheck disable=SC2012,SC2010
+	ls -1 | grep -Ev '^(speech-server|tts-lib.tcl)$' > .servers
+}
+
+ems_sounds() {
+	pkgdesc="$pkgdesc (auditory icons / sound cues)"
+	depends=
+
+	amove	"$_emsdir"/sounds
+}
+
+ems_misc() {
+	pkgdesc="$pkgdesc (miscellaneous files & helper scripts)"
+	depends="$pkgname"
+
+	amove	"$_emsdir"/bash-utils \
+		"$_emsdir"/js \
+		"$_emsdir"/xsl \
+		"$_emsdir"/stumpwm \
+		"$_emsdir"/media
+}
+
+sha512sums="
+42dda7d09df43611081b9ddaadd23db09bd619439d6d9a9b034f8cf87a93f51d29dc6f878e2dd4434ac6f84dade1e6516b042378521f701c58eeaa5d9719592e  emacspeak-59.0.tar.bz2
+c619611ee7ef4c59e6f797a010f126d870a7dff1dc6d4109c16519637b6d6ee733879e9fb6080103abe3bb33a8156846ee09a00749d26bfaa5400dd9dc4cc527  rebuild-pickup-c.patch
+9a9d6e30f04c98494533432d73a2830a747a4e2053eaf16857e65e76091d8328d9a3485b135eceb5edf40c739f5e1fa1c513518b49834e5aa58e4c1bb7385077  fix-tclespeak-path.patch
+e1557a40e15c364c03d760ea9711c7015b3f127f5e3c17fc7ca6eca4a08c3ef4e0f14cad1f3cc67b05af581f1477de7a773fc9741fab1218346082eefe0594ce  remote-espeak-server.patch
+e9fe798589a685bdebae168b2d50d738562e152d50795b6d7533152e553a410ca64854ca8298d25fba29dc803793456a5d15457aa2299c246ed5e8529ed924c0  directories.patch
+c03163ea659c5e14703544b7112e053f2b478f3a70fd7f489ec05891ecca80b21d5b51eaa64d9cc12c9a7de6ba0a4a62756cab01133697707aa66abb447f411f  emacspeak
+"

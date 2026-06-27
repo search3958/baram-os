@@ -1,0 +1,29 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=mkdocs-bootstrap386
+pkgver=0.0.2
+pkgrel=6
+pkgdesc="a vintage 1980s DOS inspired Twitter Bootstrap theme for mkdocs"
+url="https://github.com/chrissimpkins/bootstrap386"
+arch="noarch"
+license="BSD-2-Clause"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/m/mkdocs-bootstrap386/mkdocs-bootstrap386-$pkgver.tar.gz"
+options="!check" # No tests.
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e183546242ba25f0a3d205628184eb02ca4f64666922a0f1e2ee978120f262437c9f587a733880afb90e01f586541cbf05c136eb71e4e78a7920a76090d682ff  mkdocs-bootstrap386-0.0.2.tar.gz
+"

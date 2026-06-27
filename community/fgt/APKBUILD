@@ -1,0 +1,36 @@
+# Contributor: Bradley J Chambers <brad.chambers@gmail.com>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=fgt
+pkgver=0.4.11
+pkgrel=0
+pkgdesc="C++ library for fast Gauss transforms."
+url="https://github.com/gadomski/fgt"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="cmake eigen-dev samurai"
+subpackages="$pkgname-dev"
+source="https://github.com/gadomski/fgt/archive/v$pkgver/fgt-v$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DWITH_TESTS=ON \
+		-DBUILD_SHARED_LIBS=ON
+	cmake --build build
+}
+
+check() {
+	case "$CARCH" in
+		s390x) ctest --test-dir build -E "cluster";;
+		*) ctest --test-dir build ;;
+	esac
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a0e6833485cc97d1db2d0110f2266d1aba245bbe62efb20aecb7c4033cbbd65b060ed599903ee46704c2cc951201d4becf38fb6cc0c1e0fb33c7dac8bc3ecc0c  fgt-v0.4.11.tar.gz
+"

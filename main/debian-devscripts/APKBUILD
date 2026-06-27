@@ -1,0 +1,69 @@
+# Maintainer: qaqland <qaq@qaq.land>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=debian-devscripts
+pkgver=2.26.5
+pkgrel=1
+pkgdesc="Debian developer scripts"
+url="https://tracker.debian.org/pkg/devscripts"
+arch="noarch"
+license="GPL-2.0-or-later"
+checkdepends="perl"
+# checkbashisms is the common accepted name, but prefix for rest
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	checkbashisms
+	$pkgname-hardening-check:harden
+	"
+source="$pkgname-$pkgver.tar.gz::https://salsa.debian.org/debian/devscripts/-/archive/v$pkgver/devscripts-v$pkgver.tar.gz"
+builddir="$srcdir/devscripts-v$pkgver/scripts"
+
+prepare() {
+	default_prepare
+
+	sed -i "s/###VERSION###/$pkgver/" checkbashisms.pl
+
+	mv checkbashisms.pl checkbashisms
+	mv hardening-check.pl hardening-check
+}
+
+check() {
+	printf '#!/bin/sh\necho "hello world"\n' > ./testfile
+	perl ./checkbashisms --version
+	perl ./checkbashisms ./testfile
+}
+
+package() {
+	depends="
+		checkbashisms=$pkgver-r$pkgrel
+		$pkgname-hardening-check=$pkgver-r$pkgrel
+		"
+
+	# only these useful for now
+	install -Dm755 -t "$pkgdir"/usr/bin/ \
+		checkbashisms \
+		hardening-check
+
+	install -Dm644 checkbashisms.1 \
+		-t "$pkgdir"/usr/share/man/man1/
+	install -Dm644 checkbashisms.bash_completion \
+		"$pkgdir"/usr/share/bash-completion/completions/checkbashisms
+}
+
+checkbashisms() {
+	pkgdesc="$pkgdesc (checkbashisms)"
+	depends="perl"
+
+	amove usr/bin/checkbashisms
+}
+
+harden() {
+	pkgdesc="$pkgdesc (hardening-check)"
+	depends="perl"
+
+	amove usr/bin/hardening-check
+}
+
+sha512sums="
+99f1e7581bdcd8a3ce42fcb6779b61d07b04d9c7d4dd4bc18418a76785fd801a306314573f9c664c415c96bdfdec69f04c95eff5e144803d2ee15a49b28c658c  debian-devscripts-2.26.5.tar.gz
+"

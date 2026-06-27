@@ -1,0 +1,45 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=json-glib
+pkgver=1.10.8
+pkgrel=0
+pkgdesc="JSON library built on GLib"
+arch="all"
+url="https://gitlab.gnome.org/GNOME/json-glib"
+license="LGPL-2.1-or-later"
+makedepends="gobject-introspection-dev glib-dev meson"
+subpackages="$pkgname-dev  $pkgname-lang $pkgname-tests $pkgname-dbg"
+source="https://download.gnome.org/sources/json-glib/${pkgver%.*}/json-glib-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Ddocumentation=disabled \
+		.  build
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+dev() {
+	default_dev
+	mkdir -p "$subpkgdir"/usr/
+	mv "$pkgdir"/usr/bin "$subpkgdir"/usr/
+}
+
+tests() {
+	pkgdesc="Tests for the json-glib package"
+	mkdir -p "$subpkgdir"/usr/
+	mv "$pkgdir"/usr/share \
+		"$pkgdir"/usr/libexec \
+		"$subpkgdir"/usr/
+}
+
+sha512sums="
+f4ba8660b586a4e738803e4dbfdfcd34fa7ceba9189e7bf3f2b50e21f4d4886f99535ceb3453c89b1d1ae8d96bf4168a135b73b7e1a2dbc46b19e9b710ad56a1  json-glib-1.10.8.tar.xz
+"

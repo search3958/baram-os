@@ -1,0 +1,35 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=rdfind
+pkgver=1.8.0
+pkgrel=0
+pkgdesc="Redundant data find - a program that finds duplicate files"
+url="https://rdfind.pauldreik.se"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="nettle-dev xxhash-dev automake autoconf libtool"
+subpackages="$pkgname-doc"
+checkdepends="coreutils" # for base64 and stat
+source="https://rdfind.pauldreik.se/rdfind-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./bootstrap.sh
+}
+
+build() {
+	./configure --prefix=/usr
+	make -s
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+f2d3a16fa39758ef423081728667eb868a52c71616b147b05f542e4568e690d0133dafb5d82fee6f624415ee57a274b80fb831dca561b482e0e1b20267ef1035  rdfind-1.8.0.tar.gz
+"

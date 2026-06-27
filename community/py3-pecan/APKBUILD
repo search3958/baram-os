@@ -1,0 +1,39 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=py3-pecan
+pkgver=1.8.0
+pkgrel=1
+pkgdesc="WSGI object-dispatching web framework, designed to be lean and fast, with few dependencies"
+url="https://github.com/pecan/pecan"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-mako py3-setuptools py3-webob"
+makedepends="py3-gpep517 py3-wheel"
+checkdepends="py3-pytest py3-sqlalchemy py3-webtest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/p/pecan/pecan-$pkgver.tar.gz
+	"
+builddir="$srcdir/pecan-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	rm pecan/tests/__init__.py
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	rm -r "$pkgdir"/usr/lib/python*/site-packages/pecan/tests
+}
+
+sha512sums="
+2677bf5f577447a86c24f3cb3184771900acde53fe86bd2ce5dafce3c944472849c99daeae94a4fc7791c4e07688a37fac64dccfbc9eaa991aab9b20a0966a02  py3-pecan-1.8.0.tar.gz
+"

@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-chrony
+pkgver=0.8.1
+pkgrel=0
+pkgdesc="Web-based system administration interface for chrony"
+url="https://gitlab.alpinelinux.org/acf/acf-chrony"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core lua-posix chrony"
+source="https://gitlab.alpinelinux.org/acf/acf-chrony/-/archive/v$pkgver/acf-chrony-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+da76afb4225cc55d9beaf88230d844fccb86956832c1e036b084407d4fd4e6db4209fc60296d2c5c475dc61cad78bbbd0f28ffdb6324957c82d78a4b4a9a83bc  acf-chrony-v0.8.1.tar.gz
+"

@@ -1,0 +1,40 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=py3-unidiff
+pkgver=0.7.5
+pkgrel=4
+pkgdesc="Unified diff python parsing/metadata extraction library"
+url="https://github.com/matiasb/python-unidiff"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/matiasb/python-unidiff/archive/refs/tags/v$pkgver.tar.gz
+	fix-test-script.patch"
+builddir="$srcdir/python-unidiff-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	sh run_tests.sh
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	install -m644 README.rst HISTORY AUTHORS \
+		"$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+50955aae18e9f16f515c539ef19a0238010003fc2ecf20d61c0f291a65719f90fb3aac1210f30a9b1ff47cda58d1e0bd92b2c23e5c0e380120a22dd57e9230fc  py3-unidiff-0.7.5.tar.gz
+3c42b36da7a549d59647a2a489cb85f45d5d51c839b206893e39f2bc5fc14917719e1aa5cd1042758c55bc7a218c63f1df3bb76c28c57724cc6a890ecafa64bc  fix-test-script.patch
+"

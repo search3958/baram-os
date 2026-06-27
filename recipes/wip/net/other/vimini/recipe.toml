@@ -1,8 +1,0 @@
-#TODO not compiled or tested
-[source]
-git = "https://git.sr.ht/~lufte/vimini"
-[build]
-template = "cargo"
-dependencies = [
-    "sqlite3",
-]

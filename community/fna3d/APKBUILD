@@ -1,0 +1,51 @@
+maintainer="Alexey Yerin <yyp@disroot.org>"
+pkgname=fna3d
+pkgver=25.08
+pkgrel=0
+_mojoshader_commit=93d9d45e6d645150195ea1a74a1654e4a1542c52
+pkgdesc="3D Graphics Library for FNA"
+url="http://fna-xna.github.io"
+arch="all"
+license="Zlib"
+makedepends="cmake samurai sdl3-dev vulkan-headers"
+subpackages="$pkgname-dev"
+source="FNA3D-$pkgver.tar.gz::https://github.com/FNA-XNA/FNA3D/archive/$pkgver.tar.gz
+	mojoshader-$_mojoshader_commit.tar.gz::https://github.com/icculus/mojoshader/archive/$_mojoshader_commit.tar.gz
+	install.patch
+	"
+builddir="$srcdir/FNA3D-$pkgver"
+options="!check" # No tests
+
+prepare() {
+	default_prepare
+
+	rm -r "$builddir"/MojoShader
+	cp -r "$srcdir"/mojoshader-$_mojoshader_commit "$builddir"/MojoShader
+}
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+492e05432b38ef1accdbeef0ec60036a80ce6c3efe4bbbee2da6779914e2be627737bd2cf7b5d39a742431b3fa10e3d20e0edc9ed9138eafa34ca9eeedc85990  FNA3D-25.08.tar.gz
+7e16e3d57ac95e2048346149115583be74b97d155728a03d2a40c6a4146418a50008ebe9835cb85f4172521d0394568fcdb2284edf9ff8a89e827c9f4bbba6e0  mojoshader-93d9d45e6d645150195ea1a74a1654e4a1542c52.tar.gz
+fd6669a8b3fd400ccf4c79a35a148927734ed1ee43e1a0540af93e52c261a381776ce91795f9fee4fba8e344dcd98cb8e18c2fe654ca6c88601f12473f8ad8c4  install.patch
+"

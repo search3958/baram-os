@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+# user-servicable parts go in /etc/conf.d/althttpd
+description="The althttpd web server"
+command=/usr/bin/althttpd
+command_args="${ALTHTTPD_OPTS}"
+command_background=true
+pidfile=/run/althttpd.pid
+
+depend() {
+	need net
+}

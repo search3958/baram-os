@@ -1,0 +1,53 @@
+# Contributor: Leon Marz <main@lmarz.org>
+# Maintainer: Leon Marz <main@lmarz.org>
+pkgname=opencl
+pkgver=2026.05.29
+pkgrel=0
+pkgdesc="OpenCL ICD Loader"
+url="https://khronos.org/opencl"
+arch="all"
+license="Apache-2.0"
+makedepends="cmake samurai linux-headers"
+depends_dev="$pkgname-headers"
+subpackages="$pkgname-headers:headers:noarch $pkgname-layer-info $pkgname-dev"
+provides="opencl-icd-loader=$pkgver-r$pkgrel"
+source="https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v$pkgver/OpenCL-SDK-v$pkgver-Source.zip"
+options="!check" # tests are not functioning correctly
+builddir="$srcdir/OpenCL-SDK-v$pkgver-Source"
+
+prepare() {
+	default_prepare
+
+	# Remove everything except for build/_deps which is needed for offline build
+	rm -r build/[!_.]*
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_DATADIR=lib \
+		-DCMAKE_BUILD_TYPE=None \
+		-DOPENCL_SDK_BUILD_SAMPLES=OFF \
+		-DFETCHCONTENT_FULLY_DISCONNECTED=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+headers() {
+	pkgdesc="OpenCL development headers"
+	amove usr/include
+}
+
+info() {
+	pkgdesc="OpenCL Layer Info tool"
+
+	amove usr/bin/cllayerinfo
+}
+
+sha512sums="
+c285be226dd3ec54c386fcc8580fd5951a1836ab2e775b8c196490bece089eaa5adc13bd05561f7c5b6f338dbc83abd23d4d8bdb877cada430538d8cf57826a2  OpenCL-SDK-v2026.05.29-Source.zip
+"

@@ -1,0 +1,159 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=zigbee2mqtt
+pkgver=2.11.0
+pkgrel=0
+pkgdesc="Zigbee to MQTT bridge"
+url="https://www.zigbee2mqtt.io/"
+# ppc64le: fails to build @serialport/bindings
+# s390x: tests fail due to @rollup/wasm-node
+arch="all !ppc64le !s390x"
+# zigbee2mqtt is GPL-3.0, other licenses are for its dependencies.
+license="GPL-3.0-only AND MIT AND ISC AND BSD-3-Clause AND BlueOak-1.0.0 AND Python-2.0"
+depends="nodejs"
+makedepends="
+	linux-headers
+	nodejs-dev
+	npm
+	pnpm
+	python3
+	"
+pkgusers="zigbee2mqtt"
+pkggroups="$pkgusers"
+install="
+	$pkgname.pre-install
+	$pkgname.pre-upgrade
+	$pkgname.post-upgrade
+	"
+subpackages="
+	$pkgname-dbg::noarch
+	$pkgname-openrc
+	"
+source="https://github.com/Koenkk/zigbee2mqtt/archive/$pkgver/zigbee2mqtt-$pkgver.tar.gz
+	dont-build-on-start.patch
+	ungit.patch
+	rollup-wasm-node.patch
+	syslog-defaults.patch
+
+	$pkgname.initd
+	$pkgname.confd
+	"
+options="net"
+
+case "$CARCH" in
+	# Some tests timeout.
+	riscv64) options="!check";;
+esac
+
+# Don't let pnpm pollute $HOME.
+export XDG_CACHE_HOME="${tmpdir:-$srcdir}/.cache"
+export XDG_STATE_HOME="${tmpdir:-$srcdir}/.state"
+export PNPM_HOME="${tmpdir:-$srcdir}/.pnpm"
+# Prevent node-gyp from downloading nodejs headers.
+export npm_config_nodedir=/usr
+
+prepare() {
+	default_prepare
+
+	pnpm install --frozen-lockfile
+}
+
+build() {
+	# Rebuild serialport native bindings.
+	rm -r node_modules/.pnpm/@serialport+bindings-cpp@*/node_modules/@serialport/bindings-cpp/prebuilds
+	npm rebuild @serialport/bindings-cpp --build-from-source --nodedir=/usr --verbose
+
+	pnpm run build
+}
+
+check() {
+	pnpm run test
+}
+
+package() {
+	local destdir="$pkgdir/usr/lib/$pkgname"
+
+	mkdir -p "$destdir"
+	cp -r dist node_modules cli.js index.js package.json pnpm-lock.yaml "$destdir"/
+
+	cd "$pkgdir"
+
+	mkdir -p usr/bin
+	ln -s /usr/lib/$pkgname/cli.js usr/bin/$pkgname
+
+	install -d -m750 -o "$pkgusers" -g "$pkggroups" var/lib/$pkgname
+	ln -s /var/lib/$pkgname "$destdir"/data
+
+	install -D -m755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -D -m644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+
+	cd "$destdir"
+
+	# Remove dev dependencies.
+	pnpm prune --prod
+
+	cd node_modules
+
+	# If <name>.min.js exists, replace <name>.js with symlink to <name>.min.js.
+	find . -type f -name '*.min.js' | while read -r path; do
+		ln -sf "${path##*/}" "${path%.min.js}.js"
+	done
+
+	# Remove unnecessary files and garbage.
+	find . -empty -type d -delete
+	find . \( -name '.git*' \
+			-o -name '.vscode' \
+			-o -name 'doc' \
+			-o -name 'fixture' \
+			-o -name 'fixtures' \
+			-o -name 'test' \
+			-o -name 'tests' \
+			-o -name '.nyc_output' \) \
+		-type d -exec rm -rf '{}' +
+	find . ../dist \( -name '.*' \
+			-o -name '*.flow' \
+			-o -name '*.gz' \
+			-o -name '*.md' \
+			-o -name '*.test.js' \
+			-o -name '*.ts' \
+			-o -name '*.ts.map' \
+			-o -name 'CMakeLists.txt' \) \
+		-type f -delete
+	rm -rf moment/dist moment/min moment/src
+	rm -rf jszip/dist
+	rm -rf mqtt/dist
+	rm -rf .pnpm/node_modules/dist
+
+	cd unix-dgram
+	rm -r src
+	rm -r build/Release/obj.target build/Release/.deps
+	rm build/Makefile build/binding* build/config.gypi build/*.mk
+	strip build/Release/*.node
+	cd - >/dev/null
+
+	cd .pnpm/@serialport+bindings-cpp@*/node_modules/@serialport/bindings-cpp
+	rm -r src
+	rm -r build/Release/obj.target build/Release/.deps
+	rm build/Makefile build/binding* build/config.gypi
+	strip build/Release/*.node
+	cd - >/dev/null
+}
+
+dbg() {
+	pkgdesc="$pkgdesc (.map files for debugging)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	cd "$pkgdir"
+	# shellcheck disable=SC2046
+	amove $(find usr/lib/$pkgname -type f -name '*.map')
+}
+
+sha512sums="
+1cce8054192581d97275162270c741c0f007c46f8b38a06fbbb4c6dd904fb24206e77ff4e82febd676c09ab4fa8a507bbc2da146441c80438a21ac29e17203b2  zigbee2mqtt-2.11.0.tar.gz
+c160771e4c44a7f8e1b75a7dc8330d0f4d393b191ae8bf38de8b454734cbde91e178a4e87a5b85389f436b3aaf3f3d3497a159f9fbce7fcb14a216da910955a4  dont-build-on-start.patch
+4f03d16405288d2321ce1735a308d2e18069bee392c20e51f70dad08a324950c1e66189c0169d02796250c166b9ab5d737726ea2dff4d110fd23c3c7437daabe  ungit.patch
+92e7fdb9381a051d1affbbe9d3a825b7acf0f062ac3b25995f06e9c4f8ae1a733f1d1242397311fc5058d9110233f7741520028be5bac98ce47152045e29cd4d  rollup-wasm-node.patch
+73ad879fa563d7c6fafb811ee72f51cb314aa2d77c0639483126f5922447a246c9332eb1657171c5ddd59566a6f5046903c928f053dd0b9d08e0bcde429b241e  syslog-defaults.patch
+6cfbd65780035951f0e4c1eae222c1964952a35ede38b6b227bc0c74baa019e03eb0c6ab5eb572286ec2b0b79b27123c4f1b83015cdb0683b99630cf0b265cce  zigbee2mqtt.initd
+4ec52a0db61bb762ef0e576baa4a66566e7aeb5246f3b7b81bb17a342c8352c2a9b2ed371d69c35903e7c7c8be29cec30752255826443d363e7d92e6f5ea4ee5  zigbee2mqtt.confd
+"

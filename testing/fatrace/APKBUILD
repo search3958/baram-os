@@ -1,0 +1,24 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=fatrace
+pkgver=0.18.0
+pkgrel=0
+pkgdesc="Report system wide file access events"
+url="https://github.com/martinpitt/fatrace"
+license="GPL-3.0-or-later"
+arch="all"
+depends="python3 powertop"
+subpackages="$pkgname-doc"
+source="https://github.com/martinpitt/fatrace/archive/$pkgver/fatrace-$pkgver.tar.gz"
+options="!check" # tests require root privileges
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+3431b1d66be16b68c53b7d94e58807bbe9e220900c901a7328d89f115f323b8c1408e9260b4cab8f8568ac9616a5d5df10f66af08062f987c3728f4a994816c3  fatrace-0.18.0.tar.gz
+"

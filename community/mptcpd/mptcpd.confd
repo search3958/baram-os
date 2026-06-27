@@ -1,0 +1,10 @@
+# Configuration for /etc/init.d/mptcpd
+
+# User (and group) to run mptcpd as.
+#command_user="<USER>"
+
+# Additional arguments for mptcpd daemon.
+#command_args=
+
+# Comment out to disable process supervisor.
+supervisor=supervise-daemon

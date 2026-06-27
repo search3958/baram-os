@@ -1,0 +1,30 @@
+# Contributor: Síle Ekaterin Liszka <sheila@vulpine.house>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=coeurl
+pkgver=0.3.2
+pkgrel=0
+pkgdesc="Asynchronous wrapper around libcurl"
+url="https://nheko.im/nheko-reborn/coeurl"
+arch="all"
+license="MIT"
+makedepends="curl-dev libevent-dev meson spdlog-dev"
+subpackages="$pkgname-dev"
+source="https://nheko.im/nheko-reborn/coeurl/-/archive/v$pkgver/coeurl-v$pkgver.tar.bz2"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+93370dcf179acb9449746ef606c475e2a2f61308cb662c5d607144df74677c51b42ed3093c5b8f47dd030e91dee8f0b640a927ce8320e29a34d6bfbe04cf4a63  coeurl-v0.3.2.tar.bz2
+"

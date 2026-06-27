@@ -1,0 +1,75 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-lwt_log
+_pkgname=lwt_log
+pkgver=1.1.1
+pkgrel=8
+pkgdesc="Lwt-friendly logger"
+url="https://github.com/ocsigen/lwt_log"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-2.0-or-later"
+depends_dev="$pkgname=$pkgver-r$pkgrel ocaml-lwt-dev"
+makedepends="$depends_dev dune ocaml"
+options="!check"  # no tests provided
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocsigen/lwt_log/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--docdir=/.omit
+	rm -Rf "$pkgdir"/.omit
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+df3d171a7c72f37e96b756d252ab586767df9c13e01500faf13d4b2cee936b0602fd7c725c03db488d3737d8d92300af103d395a926dc654a2c44a5d6068f24a  ocaml-lwt_log-1.1.1.tar.gz
+"

@@ -1,0 +1,64 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=rtkit
+pkgver=0.14
+pkgrel=0
+pkgdesc="D-Bus system service that enables real time scheduling on request"
+url="https://gitlab.freedesktop.org/pipewire/rtkit"
+arch="all"
+license="GPL-3.0-only AND MIT" # README says BSD is used for client, but code uses MIT instead
+depends="dbus"
+# NOTE: polkit(-dev) is actually not required
+# See https://github.com/void-linux/void-packages/commit/4d33558cf0e817335b87fa9fb99cf26f773b5033
+makedepends="
+	dbus-dev
+	libcap-dev
+	meson
+	xxd
+	zlib-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-systemd
+	"
+install="$pkgname.pre-install"
+source="
+	https://gitlab.freedesktop.org/pipewire/rtkit/-/archive/v$pkgver/rtkit-v$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+
+	sched_getscheduler_sched_setscheduler.patch
+	50-rtkit.rules
+	"
+options="!check"  # no tests are defined
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson \
+		-Dlibsystemd=disabled \
+		-Dinstalled_tests=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	cd "$pkgdir"
+	install -Dm755 "$srcdir"/$pkgname.initd etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd etc/conf.d/$pkgname
+	install -Dm644 "$srcdir"/50-rtkit.rules "$pkgdir"/usr/share/polkit-1/rules.d/50-rtkit.rules
+}
+
+sha512sums="
+3c3584a3fb124ffc57c36aa35bbfae500325bcc4d96eb983534d49c7621af7955fc56b12bde1982767cb07dc2cef81312d2f3e3abf3b8e3d98044afe6e05103d  rtkit-v0.14.tar.gz
+8075c62b20e42e61967549c4603fb0a6478ffd503c2dd356a6ebc62d3b3fa83df62a0f6a074c70162fa3f61f1af28b682de11f0b6685c43a431823356d3c58d9  rtkit.initd
+c32d70b0b3f85ee51dcd30364f003852a4bed9151eecbb2bf6f70d4512ab1dce958c5161143056ca2f45979fb305e72d8dc97d86732a8fa11c12a3e1c7418eed  rtkit.confd
+9a9bb315e8d207c673cb795f91e025f313bd3a1881323c968777db6c0029de85aaecd06cf833d3ffd7468477f6586de756c077220043631a60155f28c9d66ba3  sched_getscheduler_sched_setscheduler.patch
+1d05906092b186f7483acf5e76cb83fb577e743a314a56d12260ed136007794acb9bc69969024837d3b096ea190feb1b87f8a0671528cd1b67c2d655b1b4a864  50-rtkit.rules
+"

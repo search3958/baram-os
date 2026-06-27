@@ -1,0 +1,43 @@
+# Contributor: Angelo Verlain <hey@vixalien.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=appcenter
+pkgver=8.4.0
+pkgrel=0
+pkgdesc="Pay-what-you-can app store for elementary OS"
+url="https://github.com/elementary/appcenter"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	appstream-dev
+	appstream-glib-dev
+	flatpak-dev
+	granite7-dev
+	gtk4.0-dev
+	json-glib-dev
+	libadwaita-dev
+	libportal-dev
+	libsoup3-dev
+	meson
+	polkit-dev
+	sassc
+	vala
+	"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/elementary/appcenter/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+28199b29c8836aa339f1b1e232708550cbda63e4c2c71a1b9fe9b479ddca0a35014eb0fb4c456b4e1257622403d556aecb26c9bcb6358e6680ea64f047639451  appcenter-8.4.0.tar.gz
+"

@@ -1,0 +1,58 @@
+#!/bin/sh
+
+if grep -q '^disable_trigger=1' /etc/update-raspberrypi-bootloader.conf 2>/dev/null; then
+	exit 0
+fi
+
+# see https://www.raspberrypi.com/documentation/computers/config_txt.html#kernel
+# use the last found kernel for for example vmlinuz-rpi16k gets preference over
+# vmlinuz-rpi
+for i in /boot/vmlinuz* /boot/vmlinuz-lts /boot/vmlinuz-rpi /boot/vmlinuz-rpi*; do
+	if [ -e "$i" ]; then
+		kernel="${i#/boot/}"
+		initramfs="initramfs${kernel#vmlinuz}"
+	fi
+done
+
+if [ -z "$kernel" ]; then
+	echo "$0: WARNING: no kernel found" >&2
+	exit
+fi
+
+case "$(uname -m)" in
+	aarch64) arm_64bit=1;;
+	*) arm_64bit=0;;
+esac
+
+# busybox sed has no q command support so use grep to test pattern first
+if grep -q '^kernel=' /boot/config.txt 2>/dev/null && \
+	grep -q '^initramfs' /boot/config.txt && \
+	grep -q '^arm_64bit=' /boot/config.txt; then
+		cp -fa /boot/config.txt /boot/config.txt.new
+		sed -i -e "s/^kernel=.*/kernel=$kernel/" \
+			-e "s/^initramfs.*/initramfs $initramfs/" \
+			-e "s/^arm_64bit=.*/arm_64bit=$arm_64bit/" /boot/config.txt.new
+else
+	cat > /boot/config.txt.new <<-EOF
+	# do not modify this file as it will be overwritten on upgrade.
+	# create and/or modify usercfg.txt instead.
+	# https://www.raspberrypi.com/documentation/computers/config_txt.html
+	#
+
+	kernel=$kernel
+	initramfs $initramfs
+	arm_64bit=$arm_64bit
+	include usercfg.txt
+	EOF
+fi
+
+if diff -bBN /boot/config.txt.new /boot/config.txt >/dev/null; then
+	rm -f /boot/config.txt.new
+else
+	mv -f /boot/config.txt /boot/config.txt.old 2>/dev/null
+	mv -f /boot/config.txt.new /boot/config.txt
+	echo "$0: INFO: replaced config.txt and saved config.txt.old, with following changes:"
+	diff -bBN /boot/config.txt.old /boot/config.txt 2>/dev/null
+fi
+
+echo "Configured kernel $kernel / $initramfs"

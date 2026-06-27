@@ -1,0 +1,36 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=himitsu-ssh
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="SSH integration for Himitsu"
+url="https://himitsustore.org"
+arch="x86_64 aarch64 riscv64" # Hare
+license="GPL-3.0-only"
+depends="himitsu"
+makedepends="hare scdoc hare-ssh himitsu-dev"
+subpackages="$pkgname-doc $pkgname-openrc"
+# no tests available
+options="!check"
+source="
+	$pkgname-$pkgver.tar.gz::https://git.sr.ht/~sircmpwn/himitsu-ssh/archive/$pkgver.tar.gz
+	hissh-agent.initd
+"
+
+build() {
+	make -j1 PREFIX=/usr
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+
+	install -Dm755 "$srcdir"/hissh-agent.initd "$pkgdir"/etc/user/init.d/hissh-agent
+}
+
+sha512sums="
+f9f371a8daddac21a74ea2fc296fe62486f49381b47faca97d1689f85f1d2409277c0bd2c177b7832f9fbcbbcc21fdaff78e685eeb77f8b66b3413304a6ef030  himitsu-ssh-0.10.0.tar.gz
+b9b7f59571aa16fc45447e2a20527a101ed36db4920696ee870be8ea1eade38dd9bd23726ee0a6763d8e4fbf7ee4eeb33a7fc4b4b4329ecdf64ce166cf1e98fc  hissh-agent.initd
+"

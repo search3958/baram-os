@@ -1,0 +1,31 @@
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=tree-sitter-vimdoc
+pkgver=4.1.0
+pkgrel=0
+pkgdesc="tree-sitter grammar that implements the vimdoc spec"
+url="https://github.com/neovim/tree-sitter-vimdoc/"
+arch="all"
+license="Apache-2.0"
+makedepends="tree-sitter-cli tree-sitter-dev"
+install_if="tree-sitter-grammars"
+subpackages="$pkgname-doc"
+source="https://github.com/neovim/tree-sitter-vimdoc/archive/refs/tags/v$pkgver/tree-sitter-vimdoc-$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build -q queries/vimdoc
+}
+
+check() {
+	 HOMe="$srcdir" tree-sitter test
+}
+
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install -q queries/vimdoc
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/"$pkgname"
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/"$pkgname"
+}
+
+sha512sums="
+4b20a978ddb3e4220819211135b24bf0688c3edb68200bf10557382c870ee6bc85995854e88f164f6c74ed6bf5f44bb40a0d5afdb191babe4a5ee45e0af90cf7  tree-sitter-vimdoc-4.1.0.tar.gz
+"

@@ -1,0 +1,37 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=dora
+pkgver=0_git20220621
+_gitrev=867a41a58a4b78ecc728997ad93e8b72d130841c
+pkgrel=4
+pkgdesc="Command line dhcp client/test tool"
+url="https://github.com/glitchub/dora"
+arch="all"
+license="MIT"
+makedepends="linux-headers"
+subpackages="$pkgname-dhcpcd"
+source="https://github.com/glitchub/dora/archive/$_gitrev/dora-$_gitrev.tar.gz
+	recvfrom-buffer-fortify.patch
+	"
+builddir="$srcdir/$pkgname-$_gitrev"
+options="!check" # no tests
+
+build() {
+	make
+}
+
+package() {
+	install -Dm755 dora -t "$pkgdir"/usr/bin
+	install -Dm755 dhcpcd.sh "$pkgdir"/usr/bin/dora-dhcpcd.sh
+}
+
+dhcpcd() {
+	pkgdesc="$pkgdesc (dhcp client script)"
+	depends="bash"
+
+	amove usr/bin/dora-dhcpcd.sh
+}
+
+sha512sums="
+b5ad074c8814c1709e80612deaee662920f387e3e7c5fea05fca69691e760ad8e706c46416d36636038f8e60d90713f7104ae1f26b53a14e8a303ca7f675c5a2  dora-867a41a58a4b78ecc728997ad93e8b72d130841c.tar.gz
+56c2d20e1e578f7e6a76ceaee78326b48f70dc3778b6f7a8e2a61d3a79fbb35cd5d14aef4f88bc41081a778c1f089f7ec82975a8a3259f7dacc4295146a89a7b  recvfrom-buffer-fortify.patch
+"

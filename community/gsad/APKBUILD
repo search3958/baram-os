@@ -1,0 +1,79 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=gsad
+pkgver=26.1.0
+pkgrel=0
+pkgdesc="Greenbone Security Assistant HTTP Server - The server talking to the Greenbone Vulnerability Management (GVM) deamon"
+url="https://www.openvas.org/"
+arch="all !riscv64 !loongarch64 !s390x !x86 !ppc64le !armhf !armv7" # limited by gsa
+license="AGPL-3.0-or-later"
+pkgusers="gvm"
+pkggroups="gvm"
+depends="gsa"
+makedepends="
+	cgreen-dev
+	cmake
+	doxygen
+	glib-dev
+	graphviz
+	gvm-libs-dev
+	libgcrypt-dev
+	libmicrohttpd-dev
+	libxml2-dev
+	libxslt-dev
+	py3-polib
+	samurai
+	xmltoman
+	"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/greenbone/gsad/archive/refs/tags/v$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.logrotate
+	add_unit_test_no_asan_on_aarch64.patch
+	fix-tests.patch"
+
+build() {
+	local build_testing="OFF"
+	if want_check && [ "$CARCH" != 'aarch64' ]; then
+		build_testing="ON"
+	fi
+
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DSYSCONFDIR=/etc \
+		-DGSAD_PID_PATH=/run/gsad/gsad.pid \
+		-DGVMD_RUN_DIR=/run/gvmd \
+		-DGSAD_RUN_DIR=/run/gsad \
+		-DLOCALSTATEDIR=/var \
+		-DLOGROTATE_DIR=/etc/logrotate.d \
+		-DBUILD_TESTING="$build_testing"
+
+	cmake --build build --target all
+
+	if want_check && [ "$build_testing" = 'ON' ]; then
+		cmake --build build --target gsad-validator-test
+	fi
+}
+
+check() {
+	if [ "$CARCH" != 'aarch64' ]; then
+		ctest --test-dir build
+	fi
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	install -Dm644 "$srcdir"/$pkgname.logrotate "$pkgdir"/etc/logrotate.d/$pkgname
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	rm -rf "$pkgdir"/lib/systemd
+	rm -rf "$pkgdir"/usr/lib/systemd
+}
+
+sha512sums="
+3fd255723ec6a5738a950939317c062d6c20068530b68754dce02c24cab62e16562490e5c8d279cf868dec7b77b04e3088a7ffd0cee04c1a352545c4f8a2c561  gsad-26.1.0.tar.gz
+70db1ef2b79dba7e13dd8d24acd0432828387e313fce4e922873cb95a958e7071c4731d32abd63453c4a7b397ea7433a1c52c478a893f99e3c14304dccfd6042  gsad.initd
+ae2e030a4e0a6cb3022706d64d65990ee8fafb36dbff2e76478e68748a2c1deca1679408ea029140f08e0d32cf8060475f9c763a263252cff80a86047101dab0  gsad.logrotate
+221ebf2f6fe29a7799adb9a9859a191223d315adc07e40e77cac45fcc0676e9537c0ca6ec0d75c607a4006222367f0625f0a48d9dcf635043b8ae52978b72727  add_unit_test_no_asan_on_aarch64.patch
+66b9de164d4ec13ec11f6aec36cfd33b60773f29ffc8e5b47e2f0ad5099b71896e5e34c01007095c56f7d723311a293c4afdbe46fb4f52415c0ba25a30235778  fix-tests.patch
+"

@@ -1,0 +1,34 @@
+# Contributor: Gennady Feldman <gena01@gmail.com>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=envconsul
+pkgver=0.13.4
+pkgrel=6
+pkgdesc="Read and set environmental variables for processes from Consul."
+url="https://www.consul.io/"
+license="MPL-2.0"
+arch="all"
+makedepends="go"
+options="net chmod-clean"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hashicorp/envconsul/archive/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	mkdir -p pkg/linux-$CARCH
+	go build -v -o pkg/linux-$CARCH/$pkgname
+}
+
+check() {
+	go test -timeout=30s -parallel=20 -failfast
+}
+
+package() {
+	# Main binary
+	install -m755 -D pkg/linux-$CARCH/$pkgname "$pkgdir"/usr/bin/$pkgname
+}
+
+sha512sums="
+c571d21a41beee55802eb02e8bedd9b476749aa501273c126067ef2e04f271c23ff06931c41e17dd87abedb6915e3b77b9fba0cce5e8872b978086b859d024b0  envconsul-0.13.4.tar.gz
+"

@@ -1,0 +1,51 @@
+# Contributor: Mike Crute <mike@crute.us>
+# Maintainer: Mike Crute <mike@crute.us>
+pkgname=prometheus-bind-exporter
+_pkgname=bind_exporter
+pkgver=0.8.0
+pkgrel=11
+pkgdesc="Prometheus Bind Exporter"
+url="https://github.com/prometheus-community/bind_exporter"
+license="Apache-2.0"
+arch="all"
+install="$pkgname.pre-install"
+makedepends="go promu"
+provides="bind_exporter=$pkgver-r$pkgrel"
+replaces="bind_exporter"
+source="
+	$_pkgname-$pkgver.tar.gz::https://github.com/prometheus-community/bind_exporter/archive/v$pkgver.tar.gz
+	bind-exporter.confd
+	bind-exporter.initd
+"
+builddir="$srcdir/$_pkgname-$pkgver"
+subpackages="$pkgname-openrc"
+options="net" # go
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make PROMU=/usr/bin/promu build
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -dm755 "$pkgdir"/etc/prometheus
+
+	install -Dm755 bind_exporter \
+		"$pkgdir"/usr/bin/bind_exporter
+	install -Dm755 "$srcdir"/bind-exporter.initd \
+		"$pkgdir"/etc/init.d/bind-exporter
+	install -Dm644 "$srcdir"/bind-exporter.confd \
+		"$pkgdir"/etc/conf.d/bind-exporter
+}
+
+sha512sums="
+2b54ceed99ad386d699961a821bd0f1061f487536029cfa5dd1192c9cb6fc485bbf4a82548c8dcd70c602e7e38e905cbe24968649923eede77be7dc7aaf05cc6  bind_exporter-0.8.0.tar.gz
+b9c08a14f318c6127d44f9f1055cbd228acbe2fae043dbd719a6654128680e2dd7811611e48114154753e70d66f49d6e5fee590c37792d23b9189ee62b6fbb7f  bind-exporter.confd
+a29b23cbc391c5703f78085ae23ef24a341e0f6e02818d36dca481fbcb217f55ea1e43ed6307a18386e1d3247d899319f6cc7bdb766272a4dd89cbf52d30c0cf  bind-exporter.initd
+"

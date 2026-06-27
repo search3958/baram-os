@@ -1,0 +1,40 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Runxi Yu <me@runxiyu.org>
+maintainer="Runxi Yu <me@runxiyu.org>"
+pkgname=make
+pkgver=4.4.1
+pkgrel=4
+pkgdesc="GNU make utility to maintain groups of programs"
+url="https://www.gnu.org/software/make"
+arch="all"
+license="GPL-3.0-or-later"
+subpackages="$pkgname-doc"
+source="https://ftp.gnu.org/gnu/make/make-$pkgver.tar.gz
+	getopt-gcc15.patch
+	"
+
+build() {
+	export CFLAGS="$CFLAGS -flto=auto"
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-nls
+	make
+}
+
+check() {
+	[ "$CBUILD" != "$CHOST" ] || (ulimit -n 64 && PERL5LIB=. make check)
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	ln -sfv make "$pkgdir"/usr/bin/gmake
+}
+
+sha512sums="
+145260cbd6a8226cef3dfef0c8baba31847beaebc7e6b65d39d02715fd4f4cab9b139b6c3772e550088d4f9ae80c6d3ed20b9a7664c693644dfb96b4cb60e67c  make-4.4.1.tar.gz
+1aefcd02569c3a642020a13cf1585628d5424a1443c28356dcab1921fbaa92c3aad7ed01edd7be8958cd1d85730e3b1c526e8db4f4570c18427e53560e2b433c  getopt-gcc15.patch
+"

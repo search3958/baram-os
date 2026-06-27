@@ -1,0 +1,90 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=git-branchless
+pkgver=0.10.0
+pkgrel=2
+pkgdesc="Suite of tools to help you visualize, navigate, manipulate, and repair your commit graph"
+url="https://github.com/arxanas/git-branchless"
+# riscv64: test fails
+# s390x, loongarch64: nix crate fails to build
+arch="all !riscv64 !s390x !loongarch64"
+license="MIT OR Apache-2.0"
+makedepends="
+	cargo
+	cargo-auditable
+	libgit2-dev
+	libssh2-dev
+	openssl-dev>3
+	sqlite-dev
+	"
+checkdepends="
+	bash
+	git
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/arxanas/git-branchless/archive/v$pkgver/git-branchless-$pkgver.tar.gz
+	001-unbundle-sqlite.patch
+	002-bump-libgit2.patch
+	003-fix-esl01-indexedlog.patch
+	"
+options="net !check"
+
+export LIBSSH2_SYS_USE_PKG_CONFIG=1  # use system libssh2
+export LIBGIT2_NO_VENDOR=1 # use system libgit2
+
+prepare() {
+	cargo fetch --target="$CTARGET" --locked
+
+	# We need to vendor the esl01-indexedlog crate so we can patch it.
+	cargo vendor
+
+	default_prepare
+}
+
+build() {
+	cargo auditable build --release
+}
+
+check() {
+	# NOTE: The first two skipped tests hang on CI, see
+	#  https://github.com/arxanas/git-branchless/pull/159 for more info.
+	#  The last two are probably broken.
+	#  https://github.com/arxanas/git-branchless/pull/1416
+	#  Several tests are broken with git 2.46 and 2.48
+	#  everything from test_amend_undo to test_test_verify
+	TEST_GIT_EXEC_PATH=$(git --exec-path) \
+	TEST_GIT=$(which git) \
+	RUST_BACKTRACE=1 \
+	cargo test --workspace --frozen -- \
+		--skip=test_amend_undo \
+		--skip=test_symbolic_transaction_ref \
+		--skip=test_move_branch_on_merge_conflict_resolution \
+		--skip=test_move_branches_after_move \
+		--skip=test_move_delete_checked_out_branch \
+		--skip=test_move_no_reapply_squashed_commits \
+		--skip=test_move_orphaned_root \
+		--skip=test_restore_snapshot_basic \
+		--skip=test_restore_snapshot_delete_file_only_in_index \
+		--skip=test_restore_snapshot_deleted_files \
+		--skip=test_sync_basic \
+		--skip=test_sync_no_delete_main_branch \
+		--skip=test_undo_doesnt_make_working_dir_dirty \
+		--skip=test_undo_move_refs \
+		--skip=test_undo_noninteractive \
+		--skip=test_abandoned_commit_message \
+		--skip=test_hook_appended_to_existing_contents \
+		--skip=test_repair_broken_branch \
+		--skip=test_hook_working_dir
+}
+
+package() {
+	install -D -m755 target/release/git-branchless -t "$pkgdir"/usr/bin/
+	./target/release/git-branchless install-man-pages "$pkgdir"/usr/share/man/
+}
+
+sha512sums="
+568048b687bb566d46b457643b939c9e7096634979f22082ca4622199437ad497b860ce95f5c459c458a90eeef484858b35d0c9863e745d4500deb0e511ea1cf  git-branchless-0.10.0.tar.gz
+f9e38c5449ee0f149ed0acdb3aef56811671abb6afc8c0bdbeb58f0c782f9d87d4f5e4bf4629685a150f0882840eb9f3cfb6be1849ab3f92e98e2d161651d012  001-unbundle-sqlite.patch
+d9f2515bfab24932e0912f141a88f14e972ee727261abebba568a7855ad6c79d54d20999c2bd3aeea11813b7fdca551bc7b6e0f066b8dfd65cccc878534916a4  002-bump-libgit2.patch
+148af9dc13bcb8c9ec3f67b2c0fb4c16ab6f86ef4d669d5c4d7a5214b6c8f64dfea5704501edae885298469d5bef1e35229c0f4d5ed618f99d629ee93e0549bf  003-fix-esl01-indexedlog.patch
+"

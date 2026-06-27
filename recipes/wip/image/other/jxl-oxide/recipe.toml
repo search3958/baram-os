@@ -1,8 +1,0 @@
-#TODO missing header on compilation
-[source]
-git = "https://github.com/tirr-c/jxl-oxide"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages jxl-oxide-cli
-"""

@@ -1,0 +1,42 @@
+maintainer="team/gnome <achill@achill.org>"
+pkgname=showtime
+pkgver=50.0
+pkgrel=2
+pkgdesc="Watch without distraction"
+url="https://gitlab.gnome.org/GNOME/showtime"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	gst-plugins-rs-gtk4
+	py3-cryptography
+	py3-gettext
+	py3-gobject3
+	python3
+	"
+makedepends="
+	blueprint-compiler-dev
+	desktop-file-utils
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://download.gnome.org/sources/showtime/${pkgver%.*}/showtime-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+d532bc97d33aff9fb691349d28214fa58d5e2f20a991653e175da6035e3c662b10ee2076916cd55c3a4c51dafaaea9a85202ed27a70e46e8f66551801cabf652  showtime-50.0.tar.xz
+"

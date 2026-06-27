@@ -1,0 +1,41 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=libcbor
+pkgver=0.13.0
+pkgrel=0
+pkgdesc="CBOR protocol implementation for C"
+url="https://github.com/PJK/libcbor"
+arch="all"
+license="MIT"
+makedepends="cmake samurai"
+checkdepends="cmocka-dev"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/PJK/libcbor/archive/refs/tags/v$pkgver.tar.gz"
+#rebuild: libfido2 fwupd
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DWITH_TESTS="$(want_check && echo ON || echo OFF)" \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+4b41f3c55de0169a60cbd353694c741c3db32d6a173feb1cb14022a7daf8511fc32befbaff7133903ea005df3db02e8ebd67881dff2cfdb89a5e51203b03fe4f  libcbor-0.13.0.tar.gz
+"

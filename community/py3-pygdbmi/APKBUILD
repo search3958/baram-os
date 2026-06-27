@@ -1,0 +1,31 @@
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+_pkgname=pygdbmi
+pkgname=py3-$_pkgname
+pkgver=0.11.0.0
+pkgrel=2
+pkgdesc="Get Structured Output from GDB's Machine Interface"
+options="!check" # No testsuite
+url="https://github.com/cs01/pygdbmi"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+check() {
+	python3 setup.py check
+}
+
+sha512sums="
+f93a5f0805d3f63a57d0692ecd82354de279f0e7727075aa823150281a5e9a2a38b0bd30ec7116a8e45433dd8c77cafd7afdc43b314e596e1f43a48d14196b23  pygdbmi-0.11.0.0.tar.gz
+"

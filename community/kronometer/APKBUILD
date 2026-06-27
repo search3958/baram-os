@@ -1,0 +1,46 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=kronometer
+pkgver=2.3.0
+pkgrel=1
+# armhf blocked by extra-cmake-modules
+arch="all !armhf"
+url="https://apps.kde.org/kronometer"
+pkgdesc="A simple chronometer application"
+license="GPL-2.0-or-later AND CC0-1.0"
+makedepends="
+	extra-cmake-modules
+	kconfig5-dev
+	kcoreaddons5-dev
+	kcrash5-dev
+	kdoctools5-dev
+	ki18n5-dev
+	kwidgetsaddons5-dev
+	kxmlgui5-dev
+	qt5-qtbase-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+source="https://download.kde.org/stable/kronometer/$pkgver/src/kronometer-$pkgver.tar.xz"
+subpackages="$pkgname-doc $pkgname-lang"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	cd build
+	xvfb-run ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+23321db24a0850be744765dc5eb17b3848d82b20e0bcc0520b5ee9bce6537650405aafeb435248459fd924fcfcd8acc113d8ca440edadd1d7c8f86dc282dd2e2  kronometer-2.3.0.tar.xz
+"

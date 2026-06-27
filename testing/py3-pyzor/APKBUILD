@@ -1,0 +1,35 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-pyzor
+_pkgname=pyzor
+pkgver=1.1.2
+pkgrel=1
+pkgdesc="Python implementation of a spam-blocking networked system that use spam signatures to identify them."
+url="https://pypi.org/project/pyzor/"
+arch="noarch"
+license="GPL-2.0-only"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+checkdepends="py3-pytest py3-redis"
+subpackages="$pkgname-pyc"
+source="$_pkgname-$pkgver.tar.gz::https://github.com/SpamExperts/pyzor/archive/refs/tags/release-${pkgver//./-}.tar.gz"
+builddir="$srcdir"/$_pkgname-release-${pkgver//./-}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest --ignore=tests/functional  -k "not pyzord and not pyzor"
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+17cefeeb9a4befde16b3a68e219599d4a85319968b16f8c7352696cdfca9db8e0c18acc83bc0b7a6873be020e91f7dee09389ea9cbde8cdad000c87d5941b702  pyzor-1.1.2.tar.gz
+"

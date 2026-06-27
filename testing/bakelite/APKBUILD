@@ -1,0 +1,23 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=bakelite
+pkgver=0.4.2
+pkgrel=0
+pkgdesc="still experimental incremental backup with strong cryptographic confidentiality baked into the data model"
+url="https://github.com/richfelker/bakelite"
+arch="all !riscv64" # textrels
+license="GPL-2.0-only"
+options="!check" # no test suite
+source="$pkgname-$pkgver.tar.gz::https://github.com/richfelker/bakelite/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	install -Dm0755 bakelite "$pkgdir"/usr/bin/bakelite
+}
+
+sha512sums="
+b8a4e707f233e30680cd9b10d7f6ff3c9892592662763e59439eabdac7fdca859a1970e1abb213fdc7b1d638d9a90be7f0194ce98d35ad9798388356b2ac7ad4  bakelite-0.4.2.tar.gz
+"

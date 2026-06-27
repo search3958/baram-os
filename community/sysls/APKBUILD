@@ -1,0 +1,28 @@
+# Contributor: Luca Weiss <luca@lucaweiss.eu>
+# Contributor: Martijn Braam <martijn@brixit.nl>
+maintainer="Luca Weiss <luca@lucaweiss.eu>"
+pkgname=sysls
+pkgver=2
+pkgrel=4
+pkgdesc="Nicer ls for sysfs directories"
+url="https://git.sr.ht/~martijnbraam/sysls"
+arch="all"
+license="GPL-3.0-only"
+makedepends="py3-setuptools py3-gpep517"
+source="sysls-$pkgver.tar.gz::https://git.sr.ht/~martijnbraam/sysls/archive/$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f99fc36fd42fb044d5d69a17f5fe0d93d8edd1dd0093ee9c5445afa05630b7258a8d50aecbf5cbe2588e00a78152195061d12fc527db25b02284c2507c911aba  sysls-2.tar.gz
+"

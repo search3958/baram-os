@@ -1,0 +1,40 @@
+Link against system provided protobuf-c and xxhash libraries.
+
+--- a/Makefile
++++ b/Makefile
+@@ -30,10 +30,11 @@
+ 	SOFLAG = -soname
+ endif
+ 
+-SRC_FILES := $(wildcard src/*.c src/postgres/*.c) vendor/protobuf-c/protobuf-c.c vendor/xxhash/xxhash.c protobuf/pg_query.pb-c.c
++SRC_FILES := $(wildcard src/*.c src/postgres/*.c) protobuf/pg_query.pb-c.c
+ OBJ_FILES := $(SRC_FILES:.c=.o)
++LIBS = -lxxhash -lprotobuf-c
+ 
+-override CFLAGS += -g -I. -I./vendor -I./src/include -I./src/postgres/include -Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable -fno-strict-aliasing -fwrapv -fPIC
++override CFLAGS += -g -I. -I./src/include -I./src/postgres/include -Wall -Wno-unused-function -Wno-unused-value -Wno-unused-variable -fno-strict-aliasing -fwrapv -fPIC
+ 
+ ifeq ($(OS),Windows_NT)
+ override CFLAGS += -I./src/postgres/include/port/win32
+@@ -41,8 +42,8 @@
+ 
+ override PG_CONFIGURE_FLAGS += -q --without-readline --without-zlib --without-icu
+ 
+-override TEST_CFLAGS += -g -I. -I./vendor -Wall
+-override TEST_LDFLAGS += -pthread
++override TEST_CFLAGS += -g -I. -Wall
++override TEST_LDFLAGS += -pthread $(LIBS)
+ 
+ CFLAGS_OPT_LEVEL = -O3
+ ifeq ($(DEBUG),1)
+--- a/src/pg_query_fingerprint.c
++++ b/src/pg_query_fingerprint.c
+@@ -7,7 +7,7 @@
+ #include "pg_query_fingerprint.h"
+ 
+ #include "postgres.h"
+-#include "xxhash/xxhash.h"
++#include <xxhash.h>
+ #include "lib/ilist.h"
+ 
+ #include "parser/parser.h"

@@ -1,0 +1,44 @@
+# Contributor: Andy Hawkins <andy@gently.org.uk>
+# Maintainer: Andy Hawkins <andy@gently.org.uk>
+pkgname=py3-quantiphy-eval
+pkgver=0.5
+pkgrel=4
+pkgdesc="Computations with Physical Quantities"
+url="https://github.com/kenkundert/quantiphy_eval"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	python3
+	py3-quantiphy
+	py3-inform
+	py3-sly
+	"
+makedepends="
+	py3-flit-core
+	py3-gpep517
+	"
+checkdepends="
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/KenKundert/quantiphy_eval/archive/v$pkgver/quantiphy_eval-v$pkgver.tar.gz"
+builddir="$srcdir/quantiphy_eval-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH="$PWD/src" pytest -v --deselect README.rst
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/quantiphy_eval-$pkgver*-py3-none-any.whl
+}
+
+sha512sums="
+06021ba73f30021bc511572233cdd06025c774c6eb4bec77c5c760edb2c52d4396550d17c198230a38e227a2523dd5c01032b6804947c0a049e31ccdc7863aa5  quantiphy_eval-v0.5.tar.gz
+"

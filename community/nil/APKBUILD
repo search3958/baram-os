@@ -1,0 +1,46 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=nil
+pkgver=2025.06.13
+_pkgver=${pkgver//./-}
+pkgrel=0
+pkgdesc="An incremental analysis assistant for writing in Nix"
+url="https://github.com/oxalica/nil"
+arch="all"
+license="MIT OR Apache-2.0"
+makedepends="
+	cargo
+	cargo-auditable
+	nix
+"
+source="
+	$pkgname-$_pkgver.tar.gz::https://github.com/oxalica/nil/archive/refs/tags/$_pkgver.tar.gz
+"
+builddir="$srcdir/$pkgname-$_pkgver"
+options="net"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm 755 target/release/nil "$pkgdir"/usr/bin/nil
+
+	for l in APACHE MIT
+	do
+		install -Dm 644 LICENSE-"$l" "$pkgdir"/usr/share/licenses/"$pkgname"/LICENSE-"$l"
+	done
+}
+
+sha512sums="
+2481df116630d6b0ab067bdcfdda7e306e3ddfb7bf98eb1b251a613cd25d48354aed08582a042e9aa02aac017bf138138d1271450faa8c4a24dc0f2e0c4d4d09  nil-2025-06-13.tar.gz
+"

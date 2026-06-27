@@ -1,0 +1,39 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=ciwiki
+pkgver=3.0.5
+pkgrel=1
+pkgdesc="Personal lightweight wiki written in C"
+url="https://ciwiki.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+subpackages="$pkgname-doc"
+source="https://downloads.sourceforge.net/project/ciwiki/ciwiki-$pkgver.tar.gz
+	musl.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--libexecdir=/usr/lib/ciwiki
+	make
+}
+
+check() {
+	./src/ciwiki --version
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a1e076b01d01b6bc104d0d35b6351415c93b54ab0414dacc41502704a6bcc24af5b57c5fb615ec68e37795323ae0ee26a8df82109caa2759a83e5699ba597ff6  ciwiki-3.0.5.tar.gz
+e5f3fc048f8ab7eaa9fdd6b12792140dc2a7f0e56336ef513765b8c177b2756e9f27346660bb715908bd99c1abf56906821ab67d1058357964843d59591b50ff  musl.patch
+"

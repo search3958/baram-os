@@ -1,0 +1,78 @@
+# Contributor: nibon7 <nibon7@163.com>
+# Maintainer: Lindsay Zhou <i@lin.moe>
+maintainer="Lindsay Zhou <i@lin.moe>"
+pkgname=v2ray
+pkgver=5.47.0
+pkgrel=2
+pkgdesc="A platform for building proxies to bypass network restrictions"
+url="https://v2fly.org"
+arch="all"
+license="MIT"
+makedepends="go"
+subpackages="$pkgname-openrc"
+_geosite_ver=20260309055128
+_geoip_ver=202603050223
+source="$pkgname-core-$pkgver.tar.gz::https://github.com/v2fly/v2ray-core/archive/v$pkgver.tar.gz
+	geosite-$_geosite_ver.dat::https://github.com/v2fly/domain-list-community/releases/download/$_geosite_ver/dlc.dat
+	geoip-$_geoip_ver.dat::https://github.com/v2fly/geoip/releases/download/$_geoip_ver/geoip.dat
+	geoip-only-cn-private-$_geoip_ver.dat::https://github.com/v2fly/geoip/releases/download/$_geoip_ver/geoip-only-cn-private.dat
+	v2ray.initd
+	v2ray.confd
+	"
+options="net" # go modules
+
+builddir="$srcdir/$pkgname-core-$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	local ldflags="
+		-X github.com/v2fly/v2ray-core/v5.codename=$pkgname
+		-X github.com/v2fly/v2ray-core/v5.version=$pkgver
+		-X github.com/v2fly/v2ray-core/v5.build=$SOURCE_DATE_EPOCH
+		-buildid=
+		"
+	go build -trimpath -ldflags "$ldflags" -o v2ray ./main
+}
+
+check() {
+	mkdir -p testing/temp
+	cp "$srcdir"/geosite-$_geosite_ver.dat testing/temp/geosite.dat
+	cp "$srcdir"/geoip-$_geoip_ver.dat testing/temp/geoip.dat
+
+	# network-dependent tests are unreliable
+	local pkgs=$(go list ./... | grep -v \
+		-e 'v5/testing/scenarios$' \
+		-e 'v5/app/dns' \
+	)
+	go test $pkgs
+}
+
+package() {
+	install -Dm755 -d "$pkgdir"/etc/$pkgname
+	install -m644 release/config/*.json -t "$pkgdir"/etc/$pkgname
+
+	install -Dm755 -d "$pkgdir"/usr/share/$pkgname
+	install -m644 "$srcdir"/geosite-$_geosite_ver.dat \
+		"$pkgdir"/usr/share/$pkgname/geosite.dat
+	install -m644 "$srcdir"/geoip-$_geoip_ver.dat \
+		"$pkgdir"/usr/share/$pkgname/geoip.dat
+	install -m644 "$srcdir"/geoip-only-cn-private-$_geoip_ver.dat \
+		"$pkgdir"/usr/share/$pkgname/geoip-only-cn-private.dat
+
+	install -Dm755 v2ray "$pkgdir"/usr/bin/v2ray
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+e0d4c73beb066d5ec714e79846a70af07d2eca3541a01d582b69c757271d03ef9603eff1d67e0717ed8af1e1abab09ca03ccc0986b5e8fe3700d461468ae723d  v2ray-core-5.47.0.tar.gz
+7a88657092e5cb0fe1c59aae186e9242c6ea7ab308c0c781667bda0e1586bc8a5093225182d9b9f7b2997334ade54f950c2ddb2c7ccdf1a4d913beec85ad265b  geosite-20260309055128.dat
+9a37ded508acccb14beb864a0b0ff0edcd506d5e66bb378a341d54c2c06b547b371e2fc6a21e171c82b78e19c82644ede3710cd80ad2fe802c7b9dd80a45a1ef  geoip-202603050223.dat
+050f8c3af07fbc653db3f6a37f93d4a98dd37e55aca0dd69f7d27d9efe40de7938b739bcbf202969249b73a16d92d48402d5b02105c96b3cdc8cbab76e36b935  geoip-only-cn-private-202603050223.dat
+714e9f93efb74a2b30a74df95fa2bdaa854188d5fce3ed4514f2d19e790baf31dc78c18726700013113501dd31981a2e0582150b64d7235121242c01e2e5b8d9  v2ray.initd
+4b00bfe001780b9ac7eff1b9776a98ae5e7050362ebfb0ed2550f8f1244e9474d186dcde5bccba01dbdd908e9a932f75238becae6585efe674ebc5ffb8cbf0a6  v2ray.confd
+"

@@ -1,0 +1,44 @@
+# Contributor: Julian Weigt <juw@posteo.de>
+# Contributor: Maxim Karasev <mxkrsv@disroot.org>
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=gomuks
+pkgver=0.3.1
+pkgrel=16
+pkgdesc="Terminal-based Matrix client written in Go"
+url="https://github.com/tulir/gomuks"
+arch="all"
+license="AGPL-3.0-or-later"
+depends="ncurses"
+makedepends="go olm-dev sqlite-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tulir/gomuks/archive/v$pkgver.tar.gz"
+options="!check net" # no test suite, go
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+export CGO_ENABLED=1
+export _GOTAGS="libsqlite3"
+
+build() {
+	local _goldflags="
+		-X main.Tag=v$pkgver
+		-X 'main.BuildTime=$(date '+%b %_d %Y, %H:%M:%S')'
+		"
+
+	go build -v \
+		-ldflags "$_goldflags" \
+		-tags "$_GOTAGS" \
+		-o gomuks
+}
+
+package() {
+	install -Dvm755 gomuks -t "$pkgdir"/usr/bin/
+	install -Dvm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+sha512sums="
+36b3062142e9b094c8fdcf58f7a5babad570fcd482299ce071759019f3c5ad42bb9e40f5d698fe8c74c5e7e405a818b566150b650e2dda642f9f6470c9c90989  gomuks-0.3.1.tar.gz
+"

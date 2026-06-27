@@ -1,0 +1,36 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=py3-clikit
+pkgver=0.6.2
+pkgrel=9
+pkgdesc="Python3 library to create beautiful and testable command-line interfaces"
+url="https://github.com/sdispater/clikit"
+arch="noarch"
+license="MIT"
+depends="python3 py3-crashtest py3-pastel py3-pylev"
+makedepends="py3-gpep517 py3-installer py3-poetry-core py3-wheel"
+checkdepends="py3-pytest py3-pytest-mock"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sdispater/clikit/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/clikit-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6f6e436b2161349ce03c705df594e564dbc594b03370dfd62e3b1c8f2accbbc12a1cda881ca392a096435ee243e4f772589ce6f6dfbd3af63d1656d49c3fcb04  py3-clikit-0.6.2.tar.gz
+"

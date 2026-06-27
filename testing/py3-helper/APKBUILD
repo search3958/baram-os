@@ -1,0 +1,34 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-helper
+_pkgname=helper
+pkgver=2.5.0
+pkgrel=6
+pkgdesc="A Python library for quickly writing configurable applications and daemons"
+url="https://helper.readthedocs.org/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 py3-yaml"
+makedepends="python3-dev py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+options="!check" # no tests provided
+
+replaces="py-helper" # for backwards compatibility
+provides="py-helper=$pkgver-r$pkgrel" # for backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+5166f25d40e860af598bc54c81033546850a22245ea0d7a24c2b12f76da922008ac6f096fafdc714099dc2fe70ef345529235b3b8d225a6b7f74fa6f168b32a3  helper-2.5.0.tar.gz
+"

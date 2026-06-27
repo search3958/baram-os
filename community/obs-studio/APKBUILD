@@ -1,0 +1,130 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=obs-studio
+pkgver=32.1.2
+pkgrel=4
+pkgdesc="Free and open source software for live streaming and screen recording"
+url="https://obsproject.com/"
+arch="all !riscv64 !armhf" # luajit, openmp
+license="GPL-2.0-or-later"
+options="!check"
+depends_dev="
+	simde-dev
+	"
+makedepends="
+	$depends_dev
+	alsa-lib-dev
+	appstream-glib
+	cmake
+	curl-dev
+	eudev-dev
+	extra-cmake-modules
+	fdk-aac-dev
+	ffmpeg-dev
+	ffnvcodec-headers
+	fontconfig-dev
+	freetype-dev
+	jack-dev
+	jansson-dev
+	librist-dev
+	libdatachannel-dev
+	libsrt-dev
+	libva-glx-dev
+	libva-dev
+	libxcb-dev
+	libx11-dev
+	libxcomposite-dev
+	libxinerama-dev
+	libxkbcommon-dev
+	linux-headers
+	luajit-dev
+	mbedtls3-static
+	mbedtls3-dev
+	mesa-dev
+	nlohmann-json
+	openmp-dev
+	openssl-dev
+	pciutils-dev
+	pipewire-dev
+	pulseaudio-dev
+	python3-dev
+	py3-glad
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	qt6-qtsvg-dev
+	rnnoise-dev
+	samurai
+	sed
+	sndio-dev
+	speexdsp-dev
+	swig
+	uthash-dev
+	vlc-dev
+	v4l-utils-dev
+	wayland-dev
+	x264-dev
+	"
+subpackages="$pkgname-dev"
+source="https://github.com/obsproject/obs-studio/archive/$pkgver/obs-studio-$pkgver.tar.gz"
+
+# Regression for VPL only available for x86_64
+# https://github.com/obsproject/obs-studio/issues/9578
+case $CARCH in
+	x86_64)
+		makedepends="$makedepends libvpl-dev"
+		_vpl=ON
+	;;
+	loongarch64)
+		export CFLAGS="$CFLAGS -DSIMDE_NO_NATIVE -DSIMDE_NO_X86_SSE -DSIMDE_NO_X86_SSE2"
+		export CXXFLAGS="$CXXFLAGS -DSIMDE_NO_NATIVE -DSIMDE_NO_X86_SSE -DSIMDE_NO_X86_SSE2"
+	;;
+	*)
+		_vpl=OFF
+	;;
+esac
+
+prepare() {
+	default_prepare
+	# no toggle for these, but the dirs are empty by default
+	# make them valid cmake subdirs that do nothing
+	touch plugins/obs-browser/CMakeLists.txt
+	touch plugins/obs-websocket/CMakeLists.txt
+}
+
+build() {
+	export CFLAGS="$CFLAGS  -Wno-incompatible-pointer-types"
+	export SIMDe_INCLUDE_DIR="/usr/include/simde"
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_SKIP_INSTALL_RPATH=ON \
+		-DOBS_VERSION_OVERRIDE=$pkgver \
+		-DCALM_DEPRECATION=ON \
+		-DOPENGL_opengl_LIBRARY=/usr/lib/libGL.so \
+		-DENABLE_AJA=OFF \
+		-DENABLE_DECKLINK=0 \
+		-DENABLE_LIBFDK=ON \
+		-DENABLE_JACK=ON \
+		-DENABLE_NVENC=OFF \
+		-DENABLE_FRONTEND=ON \
+		-DENABLE_WAYLAND=ON \
+		-DENABLE_FFMPEG_NVENC=OFF \
+		-DENABLE_WEBRTC=ON \
+		-DOpenGL_GL_PREFERENCE=GLVND \
+		-DCALM_DEPRECATION=ON \
+		-DENABLE_VST=ON \
+		-DENABLE_QSV11=$_vpl \
+		-DENABLE_VLC=ON \
+		-DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
+		-Wno-dev
+	cmake --build build -j$(nproc)
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+5da9f659b433cc282d3fb10a52af01e9aa0e7eaaf5c61eb2f201d6f88c61fa14a46db5ba4b6c04347d75d3912e3d09d593b355f9d83e524d2df8c043acba6edc  obs-studio-32.1.2.tar.gz
+"

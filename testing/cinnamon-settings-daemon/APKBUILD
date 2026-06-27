@@ -1,0 +1,41 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=cinnamon-settings-daemon
+pkgver=6.6.4
+pkgrel=0
+pkgdesc="Settings daemon for the Cinnamon desktop (fork of gnome-settings-daemon)"
+url="https://github.com/linuxmint/cinnamon-settings-daemon"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cinnamon-desktop-dev
+	colord-dev
+	coreutils
+	cups-dev
+	elogind-dev
+	libcanberra-dev
+	libnotify-dev
+	librsvg-dev
+	libwacom-dev
+	meson
+	nss-dev
+	upower-dev
+	"
+source="https://github.com/linuxmint/cinnamon-settings-daemon/archive/$pkgver/cinnamon-settings-daemon-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+a477fd024da9380f254752b66c493198bf38f404bad108d0a4e61f7590b900739063fefe1aa0904b20d33149c8e03871cfb8eb6da673403fa77d12d312b7d628  cinnamon-settings-daemon-6.6.4.tar.gz
+"

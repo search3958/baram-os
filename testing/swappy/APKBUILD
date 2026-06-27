@@ -1,0 +1,29 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=swappy
+pkgver=1.8.0
+pkgrel=0
+pkgdesc="Snapshot editing tool for Wayland"
+url="https://github.com/jtheoof/swappy"
+license="MIT"
+arch="all"
+depends="font-awesome-free"
+makedepends="meson cairo-dev pango-dev gtk+3.0-dev libnotify-dev scdoc"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://github.com/jtheoof/swappy/archive/v$pkgver/swappy-$pkgver.tar.gz
+	no-git-version.patch
+	"
+options="!check" # no test suite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+e139ab3de544fe7008c00822ac66bb86f8ff8fabadef8aed8b445a1c8389bc0297d1be045bcd368b66533a9bef23ad4735302eaf5428334cc6723991fb3e32fd  swappy-1.8.0.tar.gz
+c2396b1e679bbfe8fc9a32f6bd76f4326d09ed57b5c7e9810d4bc4023ca5c4e0d8087319c3c8daa040f1051f4ebf5a54430b3f8f46ab3d1d4a856dfbf7f72c9e  no-git-version.patch
+"

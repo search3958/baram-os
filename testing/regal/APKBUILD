@@ -1,0 +1,58 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=regal
+pkgver=0.39.0
+pkgrel=2
+pkgdesc="Linter for Rego files"
+url="https://www.openpolicyagent.org/ecosystem/entry/regal"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/open-policy-agent/regal/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # download Go modules
+
+build() {
+	# The flag for opa is to prevent version check at runtime
+	local _goldflags="
+	-X github.com/open-policy-agent/regal/pkg/version.Version=v$pkgver
+	-X github.com/open-policy-agent/regal/pkg/version.Commit=AlpineLinux
+	-X github.com/open-policy-agent/regal/pkg/version.Timestamp=$(date -u "+%Y-%m-%dT%H:%M:%S%z" ${SOURCE_DATE_EPOCH:+-d @$SOURCE_DATE_EPOCH})
+	-X github.com/open-policy-agent/regal/pkg/version.Hostname=alpinelinux.org
+	-X github.com/open-policy-agent/opa/internal/versioncheck.ExternalServiceURL=http://0.0.0.0
+	"
+
+	go build -v -ldflags "$_goldflags" .
+
+	for shell in bash fish zsh; do
+		./regal completion $shell > regal.$shell
+	done
+}
+
+check() {
+	case "$CARCH" in
+	# lsp tests passed in ci, failed on the riscv64 builder
+	# https://github.com/open-policy-agent/regal/issues/1846
+	riscv64) go test -timeout 45m -skip 'TestLanguageServer*|TestNewFileTemplating' ./... ;;
+	# lsp tests easily times out listening to diagnostic events in slow builds (.e.g riscv64)
+	*) go test -timeout 45m ./... ;;
+	esac
+}
+
+package() {
+	install -Dm755 regal -t "$pkgdir"/usr/bin/
+
+	install -Dm644 regal.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/regal
+	install -Dm644 regal.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/regal.fish
+	install -Dm644 regal.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_regal
+}
+
+sha512sums="
+becf563fe2c6742b06d902d8e68e559836a3f999a16dd3c28e3ee8d95c2f46e4c8bd6fe79f9b9aa91d8e1613ce0897c8b6e0fb045e88177e1a7ad525b1c9e729  regal-0.39.0.tar.gz
+"

@@ -1,0 +1,42 @@
+# Contributor: Lindsay Zhou <i@lin.moe>
+# Maintainer: Lindsay Zhou <i@lin.moe>
+pkgname=fcitx5-lua
+pkgver=5.0.16
+pkgrel=0
+pkgdesc="Lua support for fcitx5"
+url="https://github.com/fcitx/fcitx5-lua"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	cmake
+	extra-cmake-modules
+	gettext-dev
+	fcitx5-dev
+	lua5.3-dev
+	samurai
+	"
+subpackages="$pkgname-lang $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fcitx/fcitx5-lua/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DUSE_DLOPEN=OFF \
+		-DLUA_LIBRARIES=/usr/lib/liblua-5.3.so.0 \
+		-DLUA_LIBRARY=/usr/lib/liblua-5.3.so.0 \
+		-DENABLE_TEST="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ed3c0cecb354a79e0afd63f65a38e5a99aa25afb2575fcd15af39fad91ac92e691ecb001ecf264eff4f424a589609a615040e173a7f41fb074924cd70b5cca35  fcitx5-lua-5.0.16.tar.gz
+"

@@ -1,0 +1,39 @@
+# Maintainer:
+pkgname=py3-exifread
+_pkgname=ExifRead
+pkgver=3.5.1
+pkgrel=1
+pkgdesc="Read Exif metadata from tiff and jpeg files"
+url="https://github.com/ianare/exif-py"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ianare/exif-py/archive/$pkgver.tar.gz"
+builddir="$srcdir/exif-py-$pkgver"
+
+replaces="py-exifread" # Backwards compatibility
+provides="py-exifread=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+4c7ed9c51c8c49e3a9fad816a1c4ec08c3a3afd56c19da26458686ec9dd4416298486222ccb4c73e7f5904ceb4f7f46c5f3ae0260f0e25bd48f583efcc78cc93  py3-exifread-3.5.1.tar.gz
+"

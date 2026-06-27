@@ -1,0 +1,35 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: TBK <alpine@jjtc.eu>
+pkgname=multirun
+pkgver=1.1.3
+pkgrel=0
+pkgdesc="A minimalist init process designed for Docker."
+url="https://nicolas-van.github.io/multirun/"
+arch="all"
+license="MIT"
+makedepends="cmake samurai"
+checkdepends="bats"
+source="$pkgname-$pkgver.tar.gz::https://github.com/nicolas-van/multirun/archive/$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+check() {
+	bats tests.bats
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build --prefix /usr
+}
+
+sha512sums="
+61f2ed5c7a50cf20bd1642fed427d9c212f9eb9b0d14505c5f131541fd076556e59ac7a1eb8ee51907b8cb180aece33713ee75e02d15c6bb2d3c6eba62e502e8  multirun-1.1.3.tar.gz
+"

@@ -1,0 +1,43 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-libnacl
+pkgver=2.1.0
+pkgrel=2
+pkgdesc="Python bindings for libsodium/tweetnacl"
+url="https://libnacl.readthedocs.org/"
+arch="noarch"
+license="Apache-2.0"
+depends="libsodium"
+makedepends="
+	libsodium-dev
+	py3-gpep517
+	py3-poetry-core
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/saltstack/libnacl/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir"/libnacl-$pkgver
+
+replaces="py-libnacl" # Backwards compatibility
+provides="py-libnacl=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+717aec5fcc9ffbb7fef5f265861f86a087cc1ad1a122d752b1d8447bf495b98106056f19ff2ad1001ca81b84085ae6167ec96db2c2f3823f0f9a72a2a54788df  py3-libnacl-2.1.0.tar.gz
+"

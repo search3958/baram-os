@@ -1,0 +1,32 @@
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=openhmd
+pkgver=0.3.0
+pkgrel=4
+pkgdesc="Free and Open Source API and drivers for immersive (VR) technology"
+url="http://www.openhmd.net/"
+arch="all"
+license="BSL-1.0"
+makedepends="meson hidapi-dev"
+subpackages="$pkgname-dev"
+source="https://github.com/OpenHMD/OpenHMD/archive/$pkgver/OpenHMD-$pkgver.tar.gz
+	enable-tests.patch
+	"
+builddir="$srcdir/OpenHMD-$pkgver"
+
+build() {
+	abuild-meson \
+		-Dexamples='' \
+		. build
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+sha512sums="20e6490287295f3de08150f1b036a821b97443a303ee404c71981f57f4ef291b50b6b83acd2dbb5e86a827c40b3fd06d790dabe4de3b0075432111d67875e7d2  OpenHMD-0.3.0.tar.gz
+ee0e6dc7ed9db6b75a94a4b7aa95b88588b1f75e5754eccaa8ac52a9652320ba27932e13795c1dd104ef089e7768066c50b856e46ce30dbad9427a9cf70ba470  enable-tests.patch"

@@ -1,0 +1,35 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=rathole
+pkgver=0.5.0
+pkgrel=0
+pkgdesc="High-performance reverse proxy for NAT traversal"
+url="https://github.com/rapiz1/rathole"
+license="Apache-2.0"
+# loongarch64: blocked by libc crate
+arch="all !s390x !riscv64 !loongarch64" # blocked by rust/cargo
+makedepends="cargo openssl-dev cargo-auditable"
+source="https://github.com/rapiz1/rathole/archive/v$pkgver/rathole-$pkgver.tar.gz"
+options="!check" # loop forever on failure
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+0b4da8e3a95624d2e03a0682eecc098ea5d615bd47080f4a13d8248ee4358faecb81298feb2499084d55415cce01b4bc3fcb8a8d5c41677f2c3ceaa131fd4915  rathole-0.5.0.tar.gz
+"

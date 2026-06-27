@@ -1,0 +1,46 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=whois
+pkgver=5.6.6
+pkgrel=0
+pkgdesc="Intelligent WHOIS client by Marco d'Itri"
+url="https://github.com/rfc1036/whois"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="perl libidn2-dev gettext-dev"
+options="!check"
+subpackages="$pkgname-doc mkpasswd:_mkpasswd"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rfc1036/whois/archive/v$pkgver.tar.gz
+	undefined-libintl.patch
+	enable-sha256-sha512-mkpasswd.patch
+	"
+
+build() {
+	export CFLAGS="$CFLAGS -DHAVE_GETOPT_LONG -DHAVE_GETADDRINFO -DHAVE_SHA_CRYPT"
+	make CONFIG_FILE="/etc/whois.conf" HAVE_ICONV=1
+}
+
+package() {
+	make BASEDIR="$pkgdir" install-whois
+	install -D -m644 whois.conf "$pkgdir/etc/whois.conf"
+
+	# Installed files are moved to a subpackage in _mkpasswd()
+	make BASEDIR="$pkgdir" install-mkpasswd
+
+	# Fix conflict with expect-doc
+	rm -f "$pkgdir"/usr/share/man/man1/mkpasswd.1
+}
+
+_mkpasswd() {
+	depends="!expect"
+	pkgdesc="mkpasswd with configurable number of rounds"
+
+	mkdir -p "$subpkgdir"/usr/bin
+	mv "$pkgdir"/usr/bin/mkpasswd "$subpkgdir"/usr/bin
+}
+
+sha512sums="
+eaf347cf4ed7154f5b431e895f86ce0340fc3893928d8509bf9389461e7721ed51efd89407f457ee92f6283ab9e11fc1db41c463681d57f102199479ce427601  whois-5.6.6.tar.gz
+7b066a41db4bb1b3753f9f390de05df6bbde27a0436c53ea2de47d87dbaf1182ce3dfc41459b49b3dc079b37ab1a21ea19118a283bd6b062a48ab3f6e2bfbbed  undefined-libintl.patch
+71aaa2cb719fb76514263758b4e731bb6d9213b3174b1e5f1b17a531ececfb9d14acd5e8a2dfc2d776bb15b5cec2b67d9a1bae1c0009a91e8a2149d5b4f5012b  enable-sha256-sha512-mkpasswd.patch
+"

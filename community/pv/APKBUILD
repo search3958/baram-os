@@ -1,0 +1,39 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=pv
+pkgver=1.11.0
+pkgrel=0
+pkgdesc="Monitor the progress of data through a pipeline"
+url="https://www.ivarch.com/programs/pv.shtml"
+arch="all"
+license="Artistic-2.0"
+subpackages="$pkgname-doc"
+source="https://www.ivarch.com/programs/sources/pv-$pkgver.tar.gz"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-nls
+	make
+}
+
+check() {
+	# IPC tests fail when running in parallel
+	make -j1 check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+d931ba3115426f962bd7bc74b6cdbd7e798e03cd9fb5994ac73a93cc9f8a2f43e8f28474c2baf1b8132199282a616858edb4ddd2009dadbf86e6e624a7028671  pv-1.11.0.tar.gz
+"

@@ -1,5 +1,0 @@
-[source]
-git = "https://github.com/kivimango/twin-commander.git"
-
-[build]
-template = "cargo"

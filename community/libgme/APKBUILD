@@ -1,0 +1,39 @@
+# Contributor: Díaz Urbaneja Diego <sodomon2@gmail.com>
+# Maintainer: Díaz Urbaneja Diego <sodomon2@gmail.com>
+pkgname=libgme
+pkgver=0.6.3
+pkgrel=1
+pkgdesc="Video game music file emulation/playback library"
+url="https://bitbucket.org/mpyne/game-music-emu/wiki/Home"
+arch="all"
+license="LGPL-2.1-only"
+makedepends="cmake samurai zlib-dev"
+subpackages="$pkgname-dev"
+options="!check" # ctest not implemented
+source="$pkgname-$pkgver.tar.xz::https://bitbucket.org/mpyne/game-music-emu/downloads/game-music-emu-$pkgver.tar.xz
+	ppc-musl.patch
+	"
+builddir="$srcdir/game-music-emu-$pkgver"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DENABLE_UBSAN=OFF \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+4b20c69ced696bb879c34bcb7ce0f5f276642458d4cebca8ede673eed7d50664e527626e2077f85a3411a26660f1b3f01e43cccd72945e1edb2994421efeb552  libgme-0.6.3.tar.xz
+5134ab6028467f67fd83750dc5a8bcc5511ca66fdabb2adde121e8b7eaed80785d05db2ffd7be7d0d929a7e06f44c92037006899852e39f92a0f473215e7b8f0  ppc-musl.patch
+"

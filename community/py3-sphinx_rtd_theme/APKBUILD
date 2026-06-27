@@ -1,0 +1,46 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-sphinx_rtd_theme
+pkgver=2.0.0
+pkgrel=2
+pkgdesc="Sphinx theme for readthedocs.org"
+url="https://github.com/readthedocs/sphinx_rtd_theme"
+arch="noarch"
+license="MIT"
+depends="
+	py3-docutils
+	py3-sphinx
+	py3-sphinxcontrib-jquery
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+options="!check" # readthedocs_ext is missing
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/readthedocs/sphinx_rtd_theme/archive/$pkgver.tar.gz"
+builddir="$srcdir/sphinx_rtd_theme-$pkgver"
+
+replaces="py-sphinx_rtd_theme" # Backwards compatibility
+provides="py-sphinx_rtd_theme=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+68dcf85250fe16248d47fe28b5a601ae1305051291b6b15f40366cea6e66ab5e0e49a4a0ea996d0ba0c339aeb14f947cf5d99e3160b3ba2a70882b209678b100  py3-sphinx_rtd_theme-2.0.0.tar.gz
+"

@@ -1,9 +1,0 @@
-#TODO missing script for building: https://openfoam.org/download/11-source/
-[source]
-tar = "http://dl.openfoam.org/source/11"
-[build]
-template = "custom"
-dependencies = [
-    "paraview",
-    "scotch",
-]

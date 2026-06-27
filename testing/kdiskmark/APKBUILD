@@ -1,0 +1,44 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=kdiskmark
+pkgver=3.2.0
+pkgrel=0
+pkgdesc="Simple open-source disk benchmark tool for Linux distros"
+url="https://github.com/JonMagon/KDiskMark"
+arch="all"
+license="GPL-3.0-or-later"
+depends="fio"
+makedepends="
+	cmake
+	extra-cmake-modules
+	polkit-qt-dev
+	qt6-qtbase-dev
+	qt6-qttools-dev
+	samurai
+	"
+langdir="/usr/share/kdiskmark/kdiskmark/translations"
+subpackages="$pkgname-lang"
+source="https://github.com/JonMagon/KDiskMark/releases/download/$pkgver/KDiskMark-$pkgver-source.tar.gz"
+builddir="$srcdir/kdiskmark-$pkgver"
+options="!check" # no tests found
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		$crossopts
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+2a8e5c755accca9b5fa24155e722e6da6c975f247dd8ee29db97ac975ea4a86a736248edda6d40853f11da9c4cc86c58a50797f508a26cc717e27c7f902322d9  KDiskMark-3.2.0-source.tar.gz
+"

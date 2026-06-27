@@ -1,0 +1,51 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=dummyhttp
+pkgver=1.1.2
+pkgrel=0
+pkgdesc="Super simple HTTP server that replies a fixed body with a fixed response code"
+url="https://github.com/svenstaro/dummyhttp"
+license="MIT"
+arch="all"
+makedepends="cargo cargo-auditable"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/svenstaro/dummyhttp/archive/v$pkgver/dummyhttp-$pkgver.tar.gz"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+
+	./target/release/dummyhttp --print-manpage > $pkgname.1
+
+	./target/release/dummyhttp --print-completions bash > $pkgname.bash
+	./target/release/dummyhttp --print-completions fish > $pkgname.fish
+	./target/release/dummyhttp --print-completions zsh > $pkgname.zsh
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/dummyhttp -t "$pkgdir"/usr/bin/
+
+	install -Dm644 $pkgname.1 -t "$pkgdir"/usr/share/man/man1/
+
+	install -Dm644 $pkgname.bash "$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 $pkgname.fish "$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 $pkgname.zsh "$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+4a5e28905568eb60590f3e5b0d3c74bf61d8ca0d37ab8752d222d94551967f7801ba31a3ab10359325f1cadab39224dc0ea956616bcb6b89fc33c98c17e35acd  dummyhttp-1.1.2.tar.gz
+"

@@ -1,0 +1,45 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: ovf <ovf@mm.st>
+pkgname=fheroes2
+pkgver=1.1.16
+pkgrel=0
+pkgdesc="Recreation of Heroes of Might and Magic II game engine"
+url="https://github.com/ihhub/fheroes2"
+arch="all"
+license="GPL-2.0-only"
+options="!check" # no test suite
+makedepends="
+	gettext
+	gnu-libiconv
+	sed
+	sdl2-dev
+	sdl2_image-dev
+	sdl2_mixer-dev
+	zlib-dev
+	"
+subpackages="$pkgname-lang"
+source="https://github.com/ihhub/fheroes2/archive/$pkgver/fheroes2-$pkgver.tar.gz"
+install="$pkgname.post-install"
+langdir="/usr/share/$pkgname/files/lang"
+
+build() {
+	# Use GNU iconv instead of musl-based one, because this project uses
+	# TRANSLIT iconv extension which is not present in musl implementation.
+	make ICONV=gnu-iconv FHEROES2_WITH_IMAGE=1 FHEROES2_DATA=/usr/share/fheroes2
+}
+
+package() {
+	install -Dm755 src/dist/fheroes2/fheroes2 -t "$pkgdir"/usr/bin/
+	install -Dm644 script/packaging/common/fheroes2.desktop -t "$pkgdir"/usr/share/applications/
+	install -Dm644 files/data/*.h2d -t "$pkgdir"/usr/share/"$pkgname"/files/data/
+	install -Dm644 files/lang/*.mo -t "$pkgdir"/usr/share/"$pkgname"/files/lang/
+	install -Dm755 script/demo/download_demo_version.sh -t "$pkgdir"/usr/share/"$pkgname"/
+	install -Dm755 script/homm2/extract_homm2_resources.sh -t "$pkgdir"/usr/share/"$pkgname"/
+	install -Dm644 src/resources/fheroes2.png -t "$pkgdir"/usr/share/pixmaps/
+	install -dm755 "$pkgdir"/usr/share/fheroes2/data
+	install -dm755 "$pkgdir"/usr/share/fheroes2/maps
+}
+
+sha512sums="
+0d2a4645430a13796e2891c8b8ed5f911bbc1c1c346c4d05e210ef96f6f8319ba058b3e121b6754bf220a6bb7eab5914bbbc790eb98f2793bf0887c46b3e95f9  fheroes2-1.1.16.tar.gz
+"

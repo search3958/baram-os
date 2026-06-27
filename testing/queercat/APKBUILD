@@ -1,0 +1,23 @@
+# Contributor: Coco Liliace <coco@liliace.dev>
+# Maintainer: Coco Liliace <coco@liliace.dev>
+pkgname=queercat
+pkgver=1.0.0
+pkgrel=0
+pkgdesc="A version of lolcat with options for some lgbtq+ flags"
+url="https://github.com/Elsa002/queercat"
+arch="all"
+license="Unlicense"
+options="!check" # no tests
+source="$pkgname-$pkgver.tar.gz::https://github.com/Elsa002/queercat/archive/v$pkgver.tar.gz"
+
+build() {
+	${CC:-cc} main.c $CFLAGS $CPPFLAGS $LDFLAGS -o queercat
+}
+
+package() {
+	install -Dt "$pkgdir"/usr/bin queercat
+}
+
+sha512sums="
+ae44b11b386c582278a86027124329de23b573ffcb7dadfa69deb87f3b94b39ec86fa07061d31ddf3ef6c4a9ca21e7f7dc5147ae52f15aacffbd81642411bb75  queercat-1.0.0.tar.gz
+"

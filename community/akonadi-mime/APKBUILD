@@ -1,0 +1,58 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=akonadi-mime
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Libraries and daemons to implement basic email handling"
+# armhf blocked by qt6-qtdeclarative
+# s390x and riscv64 blocked by akonadi
+arch="all !armhf !s390x !riscv64"
+url="https://community.kde.org/KDE_PIM"
+license="LGPL-2.0-or-later"
+depends_dev="
+	akonadi-dev
+	kcodecs-dev
+	kconfigwidgets-dev
+	kdbusaddons-dev
+	ki18n-dev
+	kio-dev
+	kitemmodels-dev
+	kmime-dev
+	kxmlgui-dev
+	libxslt-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	shared-mime-info
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	graphviz
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/akonadi-mime.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/akonadi-mime-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_QCH=ON
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "mailserializerplugintest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+sha512sums="
+6752c3a9511e1e6842d8d8b3f15da8b4c2df88a3d8326ec393ec7294d3297cd88f5b4305740e452ce35b30747f64c39ea1aeb3daeaa80edccc705836d208dd22  akonadi-mime-26.04.2.tar.xz
+"

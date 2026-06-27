@@ -1,0 +1,20 @@
+--- a/tests/basic_test.py
++++ b/tests/basic_test.py
+@@ -161,14 +161,14 @@
+ 
+     def get_app(self):
+         self.named_tm = NamedTermManager(
+-            shell_command=["bash"],
++            shell_command=["sh"],
+             max_terminals=MAX_TERMS,
+         )
+ 
+-        self.single_tm = SingleTermManager(shell_command=["bash"])
++        self.single_tm = SingleTermManager(shell_command=["sh"])
+ 
+         self.unique_tm = UniqueTermManager(
+-            shell_command=["bash"],
++            shell_command=["sh"],
+             max_terminals=MAX_TERMS,
+         )
+ 

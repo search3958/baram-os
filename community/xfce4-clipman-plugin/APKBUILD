@@ -1,0 +1,35 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xfce4-clipman-plugin
+pkgver=1.7.0
+pkgrel=0
+pkgdesc="Clipboard manager plugin for the Xfce panel"
+url="https://docs.xfce.org/panel-plugins/xfce4-clipman-plugin/start"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	exo-dev
+	libxfce4ui-dev
+	libxtst-dev
+	meson
+	xfce4-panel-dev
+	"
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-clipman-plugin/${pkgver%.*}/xfce4-clipman-plugin-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+f0e58a011bee286f9c37142d3ea6f10c3739c48f6b909ad83b710636adcbda025acee7fa99cd587f5d5f749db9d7e666b18c1a2124f0bbef10a9f59780bbf9e5  xfce4-clipman-plugin-1.7.0.tar.xz
+"

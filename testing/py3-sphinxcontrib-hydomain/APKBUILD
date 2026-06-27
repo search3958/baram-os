@@ -1,0 +1,33 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=py3-sphinxcontrib-hydomain
+pkgver=0.1.0_git20230930
+_commit="5919f40522b5a8a3787daa7a9bca3df737436d5b"
+pkgrel=2
+pkgdesc="Sphinx hydomain extension"
+url="https://github.com/hylang/sphinxcontrib-hydomain"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-sphinx"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+subpackages="$pkgname-pyc"
+options="!check" # no test suite
+source="$pkgname-$pkgver.tar.gz::https://github.com/hylang/sphinxcontrib-hydomain/archive/$_commit.tar.gz"
+builddir="$srcdir/sphinxcontrib-hydomain-$_commit"
+
+replaces="py-sphinxcontrib-hydomain" # for backwards compatibility
+provides="py-sphinxcontrib-hydomain=$pkgver-r$pkgrel" # for backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+5e429b1ac8b2deb67a3ae716976a4f8e4ee85d1bfa6ef7236f26b6992ce4f97a5a53fac650d4026c4cd2f812ad556604824482edf4ac166aab15a8dfb29aa2e8  py3-sphinxcontrib-hydomain-0.1.0_git20230930.tar.gz
+"

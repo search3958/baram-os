@@ -1,0 +1,70 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-distributed
+pkgver=2026.3.0
+pkgrel=1
+pkgdesc="A library for distributed computation"
+url="https://distributed.dask.org/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-click
+	py3-cloudpickle
+	py3-dask
+	py3-jinja2
+	py3-locket
+	py3-msgpack
+	py3-psutil
+	py3-sortedcontainers
+	py3-tblib
+	py3-toolz
+	py3-tornado
+	py3-urllib3
+	py3-yaml
+	py3-zict
+	"
+makedepends="
+	linux-headers
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	python3-dev
+	yaml-dev
+	"
+checkdepends="
+	py3-arrow
+	py3-h5py
+	py3-jsonschema
+	py3-lz4
+	py3-paramiko
+	py3-pytest
+	py3-pytest-asyncio
+	py3-requests
+	py3-scipy
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/d/distributed/distributed-$pkgver.tar.gz"
+builddir="$srcdir/distributed-$pkgver"
+options="!check" # py3-dask circular dependency
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+38221bd9151db8974af9282957a25cddd365b84edcc47bf0f39e501ba724e109bbe2f1de378fe1314fd6d5e5bff948b7222d5edf805f7ca5262805a7bbc9a71f  distributed-2026.3.0.tar.gz
+"

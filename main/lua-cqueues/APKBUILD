@@ -1,0 +1,50 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+_luaversions="5.1 5.2 5.3 5.4"
+pkgname=lua-cqueues
+_pkgname=cqueues
+pkgver=20200726
+pkgrel=6
+pkgdesc="Lua event loop using coroutines"
+url="https://25thandclement.com/~william/projects/cqueues.html"
+arch="all"
+license="MIT"
+makedepends="openssl-dev>3 m4 bsd-compat-headers"
+for _i in $_luaversions; do
+	makedepends="$makedepends lua$_i-dev"
+	subpackages="$subpackages lua$_i-$_pkgname:_package"
+done
+source="cqueues-$pkgver.tar.gz::https://github.com/wahern/cqueues/archive/rel-$pkgver.tar.gz
+	"
+builddir="$srcdir/cqueues-rel-$pkgver"
+options="!check"
+
+build() {
+	# Override the HAVE_* tests that depend on GLIBC. grep for "#define HAVE_" on new releases.
+	export CFLAGS="$CFLAGS -DHAVE_EVENTFD=1 -DHAVE_EPOLL_CREATE1=1 -DHAVE_PIPE2=1"
+
+	local lver; for lver in $_luaversions; do
+		msg "Building for Lua $lver"
+		make all$lver
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_package() {
+	local lver=${subpkgname:3:3}
+	pkgdesc="$pkgdesc - for Lua $lver"
+	depends="lua$lver"
+	install_if="lua$lver $pkgname=$pkgver-r$pkgrel"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$_pkgname/$pkgver-0"
+
+	cd "$builddir"
+	make DESTDIR="$subpkgdir" prefix=/usr install$lver
+
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+sha512sums="f2198a2a887bca445fe480949e05ecc94c3112827dbd65d2de0258316beee12f6052fa2670560daab708421e669dde0ac581b365af6bb94a3fc6f322c8bc7547  cqueues-20200726.tar.gz"

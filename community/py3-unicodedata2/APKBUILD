@@ -1,0 +1,33 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+pkgname=py3-unicodedata2
+pkgver=17.0.1
+pkgrel=1
+# remove with python 3.11
+pkgdesc="python unicodedata backport/updates"
+url="https://github.com/fonttools/unicodedata2"
+arch="all"
+license="Apache-2.0"
+depends="python3"
+makedepends="py3-setuptools python3-dev py3-gpep517"
+checkdepends="py3-tox"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fonttools/unicodedata2/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/unicodedata2-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	tox
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+38e2a169d281da2f9a584b33ca5628e27a0dedd7c936d9ae90825fb9a95bf160307860bb782262ac710595461c030e3218836e336de7fa9e1e0a895529d9026a  py3-unicodedata2-17.0.1.tar.gz
+"

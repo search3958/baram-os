@@ -1,0 +1,87 @@
+# Contributor: August Klein <amatcoder@gmail.com>
+# Contributor: Antoine Fontaine <antoine.fontaine@epfl.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=deluge
+pkgver=2.2.0
+pkgrel=3
+pkgdesc="lightweight, Free Software, cross-platform BitTorrent client"
+url="https://deluge-torrent.org/"
+arch="noarch"
+license="GPL-3.0-or-later"
+_depends_ui="
+	gtk+3.0
+	librsvg
+	py3-cairo
+	py3-gobject3
+	xdg-utils
+	"
+depends="
+	py3-chardet
+	py3-distro
+	py3-idna
+	py3-libtorrent-rasterbar
+	py3-mako
+	py3-openssl
+	py3-pillow
+	py3-rencode
+	py3-service_identity
+	py3-setproctitle
+	py3-setuptools
+	py3-twisted
+	py3-wheel
+	py3-xdg
+	py3-zope-interface
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-rjsmin
+	$_depends_ui
+	"
+checkdepends="
+	py3-mock
+	py3-pytest
+	"
+options="!check" # failing ui off-by-one size tests, segfault in another
+subpackages="$pkgname-doc $pkgname-gtk $pkgname-pyc"
+source="http://download.deluge-torrent.org/source/${pkgver%.*}/deluge-$pkgver.tar.xz
+	deluge.desktop
+	no-pkg_resources.patch
+	"
+
+replaces="$pkgname-lang" # Overwrite removed subpackage
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/deluge-$pkgver-py3-none-any.whl
+
+	install -Dm644 "$srcdir"/deluge.desktop \
+		-t "$pkgdir"/usr/share/applications/
+
+	rm -r "$pkgdir"/usr/share/pixmaps
+}
+
+gtk() {
+	pkgdesc="$pkgdesc (gtk ui)"
+	depends="$pkgname=$pkgver-r$pkgrel $_depends_ui"
+
+	amove usr/share
+	amove usr/bin/deluge-gtk
+	amove usr/lib/python3*/site-packages/deluge/ui/gtk3
+}
+
+sha512sums="
+92322dc230150204af7f969ccff7011269336c87dd7450b648b760265da135022614a632e25879cae3a2e0817bc21e7a5bf52cca0c4fc16aff775b9e876af52c  deluge-2.2.0.tar.xz
+003696606e6114baca618e734d283acaebeec2c49ece82b0bcf385e026149a38943c82b270a6b0ab7b30e80640365a750cc275ea9a6b7e67078d10cfd3ef87a5  deluge.desktop
+116cce661209aca44eef43d3b7bd30d3bdeb9d2baf6791968262d675d81a82917d4efcd7c16a36e501d779c40b9ae90879f694bad2660fea661b755f34019847  no-pkg_resources.patch
+"

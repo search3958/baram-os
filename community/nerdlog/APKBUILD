@@ -1,0 +1,48 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=nerdlog
+pkgver=1.10.0
+pkgrel=10
+_commit=55c7c78
+_date=2025-05-19
+pkgdesc="A fast, remote-first, multi-host log TUI, timeline histogram & no central server"
+url="https://github.com/dimonomid/nerdlog"
+license="BSD-2-Clause"
+arch="all"
+makedepends="go libx11-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dimonomid/nerdlog/archive/refs/tags/v$pkgver.tar.gz
+	update-modules.patch
+	"
+# FIXME:
+# core/lstream_client.go:654:59: github.com/juju/errors.Annotatef call has arguments but no formatting directives
+options="!check net" # go
+
+export GOFLAGS="$GOFLAGS -trimpath -mod=readonly -modcacherw"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -o bin/nerdlog -ldflags "\
+			-X 'github.com/dimonomid/nerdlog/version.version=$pkgver' \
+			-X 'github.com/dimonomid/nerdlog/version.commit=$_commit' \
+			-X 'github.com/dimonomid/nerdlog/version.date=$_date' \
+			-X 'github.com/dimonomid/nerdlog/version.builtBy=AlpineLinux' "\
+		./cmd/nerdlog
+}
+
+check() {
+	go test ./... -count 1 -v -p 1
+}
+
+package() {
+	install -Dm0755 bin/"$pkgname" -t "$pkgdir"/usr/bin
+
+	install -Dm0644 docs/*.md -t "$pkgdir"/usr/share/doc/"$pkgname"/
+}
+
+sha512sums="
+bc47ab04712e179d1f5ddc444f3d475ad4b59092fc9991f24c0284bce331f15a76e9802d344feb1e3f522db3efbf71734c1d00a25586f6de8c3a961fb409b81d  nerdlog-1.10.0.tar.gz
+8caf925e6da742759f63947bcad84a837284850e6da4660ca7733d81a3f7ffc46061cc147431e1bca6d7123db92361af9976d8a18c2dd495d92e57c036692cf7  update-modules.patch
+"

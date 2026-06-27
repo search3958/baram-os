@@ -1,0 +1,49 @@
+# Contributor: Peter Bui <pnutzh4x0r@gmail.com>
+# Contributor: Bartłomiej Piotrowski <nospam@bpiotrowski.pl>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=libtorrent
+pkgver=0.16.12
+pkgrel=0
+pkgdesc="BitTorrent library written in C++"
+url="https://rakshasa.github.io/rtorrent"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	curl-dev
+	libsigc++3-dev
+	libtool
+	linux-headers
+	openssl-dev>3
+	zlib-dev
+	"
+checkdepends="cppunit-dev"
+subpackages="$pkgname-dev"
+source="https://github.com/rakshasa/libtorrent/archive/v$pkgver/libtorrent-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -iv
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-debug
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+8645300c79cfbc31f40d819d0f1bcef91f6241ff6c789c95cd0fa9437c9ed645fb0fb0b83431a0592a5d8c75eed0b3e9ddf01645db19f67d70ce8a8aa530afe4  libtorrent-0.16.12.tar.gz
+"

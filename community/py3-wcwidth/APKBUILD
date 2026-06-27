@@ -1,0 +1,41 @@
+# Contributor: Thomas Boerger <thomas@webhippie.de>
+# Maintainer: Thomas Boerger <thomas@webhippie.de>
+pkgname=py3-wcwidth
+_pkgname=wcwidth
+pkgver=0.6.0
+pkgrel=1
+pkgdesc="Measures number of Terminal column cells of wide-character codes"
+url="https://pypi.org/project/wcwidth"
+arch="noarch"
+license="MIT"
+makedepends="py3-gpep517 py3-hatchling py3-wheel"
+checkdepends="py3-pytest-cov"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-wcwidth" # Backwards compatibility
+provides="py-wcwidth=$pkgver-r$pkgrel" # Backwards compatibility
+# circular dependency on pytest
+options="$options !check"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+d378d05643ab33d21ad9f284a7120961758d5d205d62da7d0a7a7113b8b2eb090465d25238d9e0e2e2bf6d597aa7e41292adfd2896cbefe2f1851672e0ed0f9b  wcwidth-0.6.0.tar.gz
+"

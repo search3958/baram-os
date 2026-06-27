@@ -1,0 +1,31 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=aports-glmr
+pkgver=0.2
+pkgrel=38
+pkgdesc="CLI tool to search open merge requests for aports"
+url="https://gitlab.alpinelinux.org/ncopa/aports-glmr"
+license="MIT"
+arch="all"
+makedepends="go"
+source="https://gitlab.alpinelinux.org/ncopa/aports-glmr/-/archive/$pkgver/aports-glmr-$pkgver.tar.gz"
+options="!check" # no checks
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	DESTDIR="$pkgdir" make install prefix=/usr
+}
+
+sha512sums="
+5e7b92b5428d144de5d67ea1ac5acfe651cb3ad0a98b499132d31444a0aefff53b7a3846001a2af66f69b212c7688dfc8211a991858d33c745ced4a50dab2e6f  aports-glmr-0.2.tar.gz
+"

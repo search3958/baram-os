@@ -1,0 +1,34 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=sciplot
+pkgver=0.3.1
+pkgrel=0
+pkgdesc="A modern C++ scientific plotting library powered by GNUplot"
+url="https://sciplot.github.io/"
+arch="noarch" # Headers only
+license="MIT"
+makedepends="
+	cmake
+	samurai
+	"
+source="https://github.com/sciplot/sciplot/archive/v$pkgver/sciplot-v$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	cmake --build build --target tests
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+358943222165e3802ec3145dfe6763098510697845af4ee6796999de960e86f92a657b53a77ea46beceb17823b5d814af20b800a11e7db64448d7ee20fcefab1  sciplot-v0.3.1.tar.gz
+"

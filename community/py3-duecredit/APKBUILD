@@ -1,0 +1,40 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-duecredit
+_pkgorig=duecredit
+pkgver=0.11.2
+pkgrel=1
+pkgdesc="Automated collection and reporting of citations for used software/methods/datasets"
+url="https://github.com/duecredit/duecredit"
+arch="noarch"
+license="BSD-2-Clause-Views"
+depends="python3 py3-citeproc-py py3-importlib-metadata py3-requests"
+makedepends="py3-gpep517 py3-setuptools python3-dev py3-wheel"
+checkdepends="py3-pytest-xdist py3-pytest-cov"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/d/duecredit/duecredit-$pkgver.tar.gz"
+options="net" # Required for test_import_doi
+builddir="$srcdir/$_pkgorig-$pkgver"
+options="!check" # temporary fix | disable tests for now
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	sed -i '/--cov/ d' tox.ini	
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ebf802d0893528607cf81665103cbf409baae901e04e50ce3a1baf9183fc595ca61786f05be45d2f6967469b89253f2a280354954c0a527537c0f5126ab240f5  py3-duecredit-0.11.2.tar.gz
+"

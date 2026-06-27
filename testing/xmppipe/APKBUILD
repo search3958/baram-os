@@ -1,0 +1,29 @@
+# Contributor: Anjandev Momi <anjan@momi.ca>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=xmppipe
+pkgver=0.16.0
+pkgrel=1
+pkgdesc="stdio over XMPP"
+url="https://github.com/msantos/xmppipe"
+arch="all"
+license="ISC"
+makedepends="libstrophe-dev audit-dev"
+checkdepends="bats"
+source="$pkgname-$pkgver.tar.gz::https://github.com/msantos/xmppipe/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # checks require inputting xmpp username and password in plaintext
+
+build() {
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	install -Dm755 xmppipe -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+beb8e83d6d33989510812ae32d551c59ece1064a80817170ea3c0ab07986d30f1e7ee1f3dc2b976b2636b54b3892fd12bcf8b71a8e3cf443605989c29525d18e  xmppipe-0.16.0.tar.gz
+"

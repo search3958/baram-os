@@ -1,0 +1,39 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-flake8-debugger
+_pkgname=flake8-debugger
+pkgver=4.1.2
+pkgrel=5
+pkgdesc="Extension for flake8 which lint for ipdb/pdb statements"
+options="!check" # No tests on PyPi, GitHub uses pyproject.toml
+url="https://github.com/jbkahn/flake8-debugger"
+arch="noarch"
+license="MIT"
+depends="py3-flake8"
+makedepends="py3-poetry-core py3-pytest-runner py3-gpep517 py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/f/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-flake8-debugger"                  # Backwards compatibility
+provides="py-flake8-debugger=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+
+	# https://github.com/JBKahn/flake8-debugger/issues/30
+	rm -rf "$pkgdir"/usr/lib/python3*/site-packages/pyproject.toml \
+		"$pkgdir"/usr/lib/python3*/site-packages/test_linter.py \
+		"$pkgdir"/usr/lib/python3*/site-packages/__pycache__/test_linter*
+}
+
+sha512sums="
+2f65ebe2c97d144e2104142f5739998e7b09937c27c1710e4a5e26c1837895b834293543f574ac4872229533213d26436cc8598afabf283ede8b4fdc6fdbb1ed  flake8-debugger-4.1.2.tar.gz
+"

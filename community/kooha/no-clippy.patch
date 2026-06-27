@@ -1,0 +1,24 @@
+Don't run linter.
+
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -68,19 +68,3 @@
+   ],
+   timeout: 300, # give cargo more time
+ )
+-
+-test(
+-  'cargo-clippy',
+-  cargo,
+-  args: [
+-    'clippy',
+-    cargo_options,
+-    '--',
+-    '-D',
+-    'warnings'
+-  ],
+-  env: [
+-    cargo_env
+-  ],
+-  timeout: 300, # give cargo more time
+-)

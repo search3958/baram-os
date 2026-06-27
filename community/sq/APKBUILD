@@ -1,0 +1,81 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=sq
+pkgver=0.48.11
+pkgrel=4
+pkgdesc="CLI tool that provides jq-style access to structured data sources"
+url="https://sq.io/"
+# arm*, loongarch64, s390x, x86: tests fail
+arch="all !armhf !armv7 !loongarch64 !s390x !x86"
+license="MIT"
+makedepends="go icu-dev"
+checkdepends="tzdata"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/neilotoole/sq/archive/v$pkgver/sq-$pkgver.tar.gz
+	go-1.26-remove-ftbts-test.patch
+	"
+options="net" # for downloading Go modules
+
+export GOFLAGS="$GOFLAGS -tags=sqlite_vtable,sqlite_stat4,sqlite_fts5,sqlite_icu,sqlite_introspect,sqlite_json,sqlite_math_functions"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	export CGO_CFLAGS="$CFLAGS"
+	export CGO_LDFLAGS="$LDFLAGS"
+	local _goldflags="
+		-X github.com/neilotoole/sq/cli/buildinfo.Version=v$pkgver
+		-X github.com/neilotoole/sq/cli/buildinfo.Commit=RELEASE
+		-X 'github.com/neilotoole/sq/cli/buildinfo.Timestamp=$(date -d @"$SOURCE_DATE_EPOCH" -u '+%Y-%m-%dT%H:%M:%SZ')'
+		"
+
+	go build -ldflags "$_goldflags"
+
+	local shell; for shell in bash fish zsh; do
+		./sq completion $shell > sq.$shell
+	done
+
+	./sq man > sq.1
+}
+
+check() {
+	# clean up leftover test files that may cause tests to fail
+	rm -rf /tmp/sq/test /tmp/sq_test*
+
+	# shellcheck disable=2046
+	case "$CARCH" in
+		# TestCompleteFilterActiveGroup: failed on the builder
+		# TestJSONData_Cities: test timed out after 2h0m0s
+		x86_64) go test -v -timeout 60m \
+			-skip 'Test(CompleteFilterActiveGroup|JSONData_Cities)' \
+			$(go list ./... | grep -v /libsq/driver) ;;
+		*) go test -v -timeout 60m $(go list ./... | grep -v /libsq/driver) ;;
+	esac
+}
+
+package() {
+	install -Dvm755 sq -t "$pkgdir"/usr/bin/
+
+	install -Dvm644 sq.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/sq
+	install -Dvm644 sq.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/sq.fish
+	install -Dvm644 sq.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_sq
+
+	install -Dvm644 sq.1 \
+		"$pkgdir"/usr/share/man/man1/sq.1
+	install -Dvm644 LICENSE \
+		"$pkgdir"/usr/share/licenses/sq/LICENSE
+}
+
+sha512sums="
+3cbe8e89571da5ae367bfe1ba71812ec59c48b3d48bb804326a28411e1075cc52bd31bb1cfa39b28694552cb46bb5694653ff3ce3066d293e176b2c1f4755119  sq-0.48.11.tar.gz
+2469968e1b4fec0639aa02049748c4bc848fc36505b91f281fddb5ca2666173641bfc40730e35e8cb3b063a0fc4a01836a45797e7dad155f93977aae6cfbbeaa  go-1.26-remove-ftbts-test.patch
+"

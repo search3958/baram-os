@@ -1,0 +1,51 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=animatch
+pkgver=1.0.3
+pkgrel=6
+_commit_libsuperderpy="d26adecc8eac53b5c9fa999fbd86c880418c01ed"
+arch="all"
+url="https://gitlab.com/HolyPangolin/animatch"
+pkgdesc="Animatch is a match-three game with cute animals"
+license="GPL-3.0-or-later"
+makedepends="
+	allegro-dev
+	cmake
+	mesa-dev
+	samurai
+	"
+source="https://gitlab.com/HolyPangolin/animatch/-/archive/v$pkgver/animatch-v$pkgver.tar.gz
+	libsuperderpy-$_commit_libsuperderpy.tar.gz::https://gitlab.com/dosowisko.net/libsuperderpy/-/archive/$_commit_libsuperderpy.tar.gz
+	"
+subpackages="$pkgname-static $pkgname-doc"
+options="!check" # No tests
+builddir="$srcdir/$pkgname-v$pkgver"
+
+prepare() {
+	default_prepare
+
+	# libsuperderpy doesn't have a stable ABI yet so build it statically to prevent conflicts with other packages using it
+	rmdir "$builddir"/libsuperderpy
+	mv "$srcdir/libsuperderpy-$_commit_libsuperderpy" "$builddir"/libsuperderpy
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DLIBSUPERDERPY_IMGUI=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+b44fddde0ba827f4233e81a12623872d8d258dc3d09a30749dd3033bd7114dc95ef9ab243f0d4f2125405853fbbdcf3abb58da010b4ce70ea2326c52abd7bc28  animatch-v1.0.3.tar.gz
+2cd142629a617d0a837640dc9aaaea99b14400b8dfabdd8837a56a3cdaaa88df2e0b57ee0b9073177c163c0d3770f6ae3613804c324066e0c40efeec255a0c24  libsuperderpy-d26adecc8eac53b5c9fa999fbd86c880418c01ed.tar.gz
+"

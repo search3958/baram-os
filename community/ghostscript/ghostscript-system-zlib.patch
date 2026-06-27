@@ -1,0 +1,12 @@
+--- a/base/lib.mak
++++ b/base/lib.mak
+@@ -610,7 +610,9 @@ surfx_h=$(SURFX_H)
+ sstring_h=$(GLSRC)sstring.h
+ strimpl_h=$(GLSRC)strimpl.h
+ szlibx_h=$(GLSRC)szlibx.h
++ifneq ($(SHARE_ZLIB),1)
+ zlib_h=$(ZSRCDIR)$(D)zlib.h
++endif
+ # We have two of the following, for shared zlib (_1)
+ # and 'local' zlib (_0)
+ szlibxx_h_1=$(GLSRC)szlibxx.h $(szlibx_h)

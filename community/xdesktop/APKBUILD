@@ -1,0 +1,21 @@
+# Contributor: Camille Scholtz <onodera@openmailbox.org>
+# Maintainer: Camille Scholtz <onodera@openmailbox.org>
+pkgname=xdesktop
+pkgver=0.3
+pkgrel=1
+pkgdesc="output and change X virtual desktop"
+url="https://github.com/onodera-punpun/xdesktop"
+arch="all"
+license="Unlicense"
+makedepends="xcb-util-wm-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/onodera-punpun/xdesktop/archive/$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="125d880c0d2af5c847b74caf5fc51f32d597dc00f25dc334fa5a2664438b248da5989d3f4df2bbd7c5998511cdcf2144625ebc0653ad481dd88378551a7ae529  xdesktop-0.3.tar.gz"

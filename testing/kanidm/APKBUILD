@@ -1,0 +1,145 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=kanidm
+pkgver=1.9.2
+pkgrel=0
+pkgdesc="A simple, secure and fast identity management platform"
+url="https://kanidm.com/"
+# only x86_64_v2 and aarch64 are supported
+# riscv64: too slow to build
+arch="all !x86 !armhf !armv7 !riscv64"
+license="MPL-2.0"
+depends="
+	$pkgname-clients
+	$pkgname-server
+	$pkgname-unixd-clients
+	"
+makedepends="
+	bash
+	bc
+	brotli
+	cargo-auditable
+	clang-dev
+	cmake
+	samurai
+	eudev-dev
+	linux-pam-dev
+	openssl-dev
+	rsync
+	"
+install="
+	$pkgname-server.pre-install
+	$pkgname-unixd-clients.pre-install
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-clients
+	$pkgname-openrc
+	$pkgname-server
+	$pkgname-unixd-clients:unixd_clients
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/kanidm/kanidm/archive/refs/tags/v$pkgver.tar.gz
+	release_alpine.toml
+	kanidmd.initd
+	kanidm-unixd.initd
+	kanidm-unixd-tasks.initd
+	initgroups-hooks.patch
+	use-var-lib-kanidm.patch
+	server-https-port.patch
+	"
+options="!check net" # takes too long, downloading rust crates
+
+_profile="release_alpine"
+_cargoopts="--frozen --release
+	--package daemon
+	--package kanidm-ipa-sync
+	--package kanidm_tools
+	--package kanidm_unix_int
+	--package nss_kanidm
+	--package pam_kanidm
+	"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+	install -Dm644 "$srcdir"/release_alpine.toml -t libs/profiles/
+}
+
+build() {
+	KANIDM_BUILD_PROFILE="$_profile" \
+	cargo auditable build $_cargoopts
+}
+
+check() {
+	KANIDM_BUILD_PROFILE="$_profile" \
+	cargo test $_cargoopts -- --test-threads=1
+}
+
+package() {
+	# openrc
+	install -Dm755 "$srcdir"/kanidmd.initd "$pkgdir"/etc/init.d/kanidmd
+	install -Dm755 "$srcdir"/kanidm-unixd.initd "$pkgdir"/etc/init.d/kanidm-unixd
+	install -Dm755 "$srcdir"/kanidm-unixd-tasks.initd "$pkgdir"/etc/init.d/kanidm-unixd-tasks
+
+	# zsh completion
+	install -Dm644 target/release/build/completions/_kanidm -t "$pkgdir"/usr/share/zsh/site-functions/
+	install -Dm644 target/release/build/completions/_kanidmd -t "$pkgdir"/usr/share/zsh/site-functions/
+	install -Dm644 target/release/build/completions/_kanidm_ssh_authorizedkeys_direct -t "$pkgdir"/usr/share/zsh/site-functions/
+	install -Dm644 target/release/build/completions/_kanidm_ssh_authorizedkeys -t "$pkgdir"/usr/share/zsh/site-functions/
+	install -Dm644 target/release/build/completions/_kanidm_unix -t "$pkgdir"/usr/share/zsh/site-functions/
+
+	# bash completion
+	install -Dm644 target/release/build/completions/kanidm.bash -t "$pkgdir"/usr/share/bash-completion/completions/
+	install -Dm644 target/release/build/completions/kanidmd.bash -t "$pkgdir"/usr/share/bash-completion/completions/
+	install -Dm644 target/release/build/completions/kanidm_ssh_authorizedkeys_direct.bash -t "$pkgdir"/usr/share/bash-completion/completions/
+	install -Dm644 target/release/build/completions/kanidm_ssh_authorizedkeys.bash -t "$pkgdir"/usr/share/bash-completion/completions/
+	install -Dm644 target/release/build/completions/kanidm_unix.bash -t "$pkgdir"/usr/share/bash-completion/completions/
+}
+
+clients() {
+	pkgdesc="Kanidm client to interact with kanidm identity management server"
+	depends=""
+
+	install -Dm755 "$builddir"/target/release/kanidm -t "$subpkgdir"/usr/bin/
+	install -Dm644 "$builddir"/examples/config -t "$subpkgdir"/etc/kanidm/
+}
+
+server() {
+	pkgdesc="Kanidm server for idendity management, supports RADIUS, ssh key management"
+	depends=""
+
+	install -Dm755 "$builddir"/target/release/kanidmd -t "$subpkgdir"/usr/bin/
+	install -Dm755 "$builddir"/target/release/kanidm-ipa-sync -t "$subpkgdir"/usr/bin/
+	install -Dm644 "$builddir"/examples/server.toml -t "$subpkgdir"/etc/kanidm/
+
+	install -dv "$subpkgdir"/usr/share/kanidm/ui/hpkg
+	cp -r "$builddir"/server/core/static/* "$subpkgdir"/usr/share/kanidm/ui/hpkg
+}
+
+unixd_clients() {
+	pkgdesc="Kanidm localhost resolver to resolve posix identities to a kanidm instance"
+	depends=""
+
+	install -Dm755 "$builddir"/target/release/kanidm_ssh_authorizedkeys -t "$subpkgdir"/usr/bin/
+	install -Dm755 "$builddir"/target/release/kanidm_ssh_authorizedkeys_direct -t "$subpkgdir"/usr/bin/
+	install -Dm755 "$builddir"/target/release/kanidm-unix -t "$subpkgdir"/usr/bin/
+	install -Dm755 "$builddir"/target/release/kanidm_unixd -t "$subpkgdir"/usr/bin/
+	install -Dm755 "$builddir"/target/release/kanidm_unixd_tasks -t "$subpkgdir"/usr/bin/
+
+	install -Dm755 "$builddir"/target/release/libnss_kanidm.so "$subpkgdir"/usr/lib/libnss_kanidm.so.2
+	install -Dm755 "$builddir"/target/release/libpam_kanidm.so "$subpkgdir"/usr/lib/security/pam_kanidm.so
+
+	install -Dm644 "$builddir"/examples/unixd -t "$subpkgdir"/etc/kanidm/
+}
+
+sha512sums="
+f3bc602f7bb56782e4758580e8efc59ba90e13cbd74b46b91aa43a47253e346af8b264ff403316cfa704a1fe016cb7e7326db22c3b779d7427601024e41aac8e  kanidm-1.9.2.tar.gz
+fffe8acee0b77cba97a12c4f1328f0afcadc181d4652f501066aaca0f58ae8cd9301b595442672c43442605e72709eb06d0a9d1b6739f8c97fa4e507b0d82946  release_alpine.toml
+9d5902b736513db0574014a606c01eeb6a3ba6e37f1eff007c3522e75e56b6783fd89591073dc296adcd5f558df4fb1f8437d290552614b20d8bb9745c08410d  kanidmd.initd
+c9b2b200363034cfc930279be15d60b1cfcf68f4e9d9e491e1adf093b4ea0ad503644994569a6ca4b418cb50bf08239991665a8a52d7587af525db2041699467  kanidm-unixd.initd
+08ab2aa7c1e8b14740172df89f3d265e1a7a06da083f65e8a296f7ac4cfdce7629b624d294a9de9bf4abf42769ca88efd10cb0edbbeb2320971b92d1bee393c0  kanidm-unixd-tasks.initd
+88fe1f95eda532a00208e54ce15c350d6e2972af10532a12c0c02d182d00776e09a8e5498641db7e9fbe3b7e385933669be4d53bf71f3bcad623ac2cc8e40d74  initgroups-hooks.patch
+6203b6f1eb98959d7cdeb6b5d9ae3ae6404e96700822e77251b8b9ef90b181d2e5b267bfdbce54ca97b562ad9cd821c6ca0c47e49f46576f49fb717a52229950  use-var-lib-kanidm.patch
+731413d90b450179488a9c2887129dcc1613077ebd65494c4104aecb7a4ee78ef8517e425a3c4e4b6f9d7dc75e22ff36bae89bd1600490ce15a76d41183f30e2  server-https-port.patch
+"

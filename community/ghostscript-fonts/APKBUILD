@@ -1,0 +1,25 @@
+# Contributor: Cameron Banta <cbanta@gmail.com>
+# Maintainer: Cameron Banta <cbanta@gmail.com>
+pkgname=ghostscript-fonts
+_pkgname=ghostscript-fonts-std
+pkgver=8.11
+pkgrel=5
+pkgdesc="Fonts and font metrics distributed with Ghostscript"
+url="https://gs-fonts.sourceforge.net/"
+arch="noarch"
+license="GPL-2.0-or-later"
+source="https://downloads.sourceforge.net/gs-fonts/$_pkgname-$pkgver.tar.gz"
+options="!check" # no tests
+builddir="$srcdir/fonts"
+
+package() {
+	install -Dm644 ./*.afm ./*.pfb ./*.pfm \
+		-t "$pkgdir"/usr/share/fonts/Type1/
+
+	mkdir -p "$pkgdir"/usr/share/ghostscript
+	ln -sfv /usr/share/fonts/Type1 "$pkgdir"/usr/share/ghostscript/fonts
+}
+
+sha512sums="
+d4fe6b097a3bdd9694dc704a2d986e22d649fbb7ca8302f872dff573525596a3f38246bd6dd166a5970a4fbca8cce6ebfb9a7030806b4662630afdf243438e1f  ghostscript-fonts-std-8.11.tar.gz
+"

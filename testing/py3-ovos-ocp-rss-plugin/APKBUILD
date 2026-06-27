@@ -1,0 +1,36 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-ovos-ocp-rss-plugin
+pkgver=0.1.1
+pkgrel=0
+pkgdesc="ovos-core rss plugin"
+url="https://github.com/OpenVoiceOS/ovos-ocp-rss-plugin"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-feedparser
+	py3-ovos-ocp-audio-plugin
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-ocp-rss-plugin/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/ovos-ocp-rss-plugin-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ec56195748a45463f4c1d2e1ca456df3ddb5f66ad7fcc40b896e65001fbdb0673eca4005d0477220ed11ebcf4d9326145b5b44358040ce5a8275ec249694ddc2  py3-ovos-ocp-rss-plugin-0.1.1.tar.gz
+"

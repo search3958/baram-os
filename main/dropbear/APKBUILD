@@ -1,0 +1,123 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=dropbear
+pkgver=2026.91
+pkgrel=0
+pkgdesc="small SSH 2 client/server designed for small memory environments"
+url="https://matt.ucc.asn.au/dropbear/dropbear.html"
+arch="all"
+license="MIT"
+options="!check"
+makedepends="zlib-dev linux-headers utmps-dev utmps-static autoconf automake"
+subpackages="$pkgname-doc
+	$pkgname-openrc
+	$pkgname-nftrules
+	$pkgname-convert:_convert
+	$pkgname-dbclient:_dbclient
+	$pkgname-ssh:_ssh:noarch
+	$pkgname-scp:_scp"
+source="https://matt.ucc.asn.au/dropbear/releases/dropbear-$pkgver.tar.bz2
+	dropbear.initd
+	dropbear.confd
+	dropbear.nft
+	dropbear-options_sftp-server_path.patch
+	dropbear-options_ssh_config.patch
+	dropbear-fix-utmp.patch
+	new-config.h-location.patch
+	"
+
+# secfixes:
+#   2026.91-r0:
+#     - CVE-2019-6111
+#     - CVE-2026-35385
+#   2025.89-r0:
+#     - CVE-2019-6111
+#     - CVE-2025-14282
+#   2025.88-r0:
+#     - CVE-2025-47203
+#   2022.83-r4:
+#     - CVE-2023-48795
+#   2020.79-r0:
+#     - CVE-2018-20685
+#   2018.76-r2:
+#     - CVE-2018-15599
+
+_progs="dropbear dropbearkey dbclient dropbearconvert scp"
+
+prepare() {
+	default_prepare
+	autoreconf -fvi
+}
+
+build() {
+	CFLAGS="$CFLAGS $(pkg-config --cflags --static libutmps)" \
+	LIBS="$LDLIBS $(pkg-config --libs --static libutmps)" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-utmp \
+		--disable-wtmp \
+		--disable-pututline \
+		--disable-lastlog
+	make PROGRAMS="$_progs"
+}
+
+package() {
+	make PROGRAMS="$_progs" DESTDIR="$pkgdir" install
+
+	install -dm755 "$pkgdir"/etc/dropbear
+	install -D -m755 "$srcdir"/dropbear.initd \
+		"$pkgdir"/etc/init.d/dropbear
+	install -D -m644 "$srcdir"/dropbear.confd \
+		"$pkgdir"/etc/conf.d/dropbear
+	install -D -m644 "$srcdir"/dropbear.nft \
+		"$pkgdir"/usr/share/nftables.avail/50_dropbear.nft
+	install -Dm644 LICENSE \
+	    "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+_convert() {
+	pkgdesc="$pkgname dropbearconvert command"
+	depends=""
+
+	amove usr/bin/dropbearconvert
+}
+
+_dbclient() {
+	pkgdesc="$pkgname dbclient command"
+	depends=""
+
+	amove usr/bin/dbclient
+}
+
+_scp() {
+	pkgdesc="$pkgname scp support"
+	depends="$pkgname-dbclient !openssh-client"
+
+	amove usr/bin/scp
+}
+
+_ssh() {
+	pkgdesc="$pkgname ssh command (compatibility symlink for dbclient)"
+	depends="$pkgname-dbclient !openssh-client"
+
+	mkdir -p "$subpkgdir"/usr/bin
+	ln -s dbclient "$subpkgdir"/usr/bin/ssh
+}
+
+sha512sums="
+f335bffb18f6e4a261732b80d6887d1b2891a96a0eb5be0cc6bd96a8803eeea337967a2a9196bec78ac3f0d2cdb31e4b64598efb7f7ad97c652d51c458ccc5df  dropbear-2026.91.tar.bz2
+55af2b9ece9845f30e07f707474c81d78921b17abfe614669fcefa600868d4ecef007a1e2276b74db8675ba5562c78397da6ae8de8717a2ca9c425384dc519d5  dropbear.initd
+83f2c1eaf7687917a4b2bae7d599d4378c4bd64f9126ba42fc5d235f2b3c9a474d1b3168d70ed64bb4101cc251d30bc9ae20604da9b5d819fcd635ee4d0ebb0f  dropbear.confd
+fb0b444be13d5ca62a2f6de3e7ba3980b14b2fa1c50e4dd5b7f2bf49fd75b2fcda8e2304210ba8078aff82e4dc227035973cbff6985e5c4ebe57fa5aa55a434d  dropbear.nft
+0f2507826f0f28d054d58c11d51359e493047a192e4511fb6476da637c7cd297f9db909c1450f95a5217d3da1b2ba12db198f60a380e5d8eecadd25816341cf8  dropbear-options_sftp-server_path.patch
+75d17e9a340c4ecb903b3ff29ffc2795ba2ce69f57def3c56d2e3427dd176902f7e31a53799007fcc551c8c477fcd02781e9347912ca39308c9b6769ed71e468  dropbear-options_ssh_config.patch
+8c07e302735d90218864d1085c65838b3d0cdcbe7f34e3b6eb6bf98f92259e4a2b62ba63e6951dabe52cb1a6f85158f39f8b2a9eebebb0aa794f979cc8101d51  dropbear-fix-utmp.patch
+18ddf7671b36448a668f3418fa407c8bbf01b100838e97de562b50de48d99a77c28fd3756d544cf8f4d820f68c675ba9c6dd63ef89b96c713e0cb8c5e694c22c  new-config.h-location.patch
+"

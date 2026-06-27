@@ -1,0 +1,60 @@
+# Contributor: ProgCat <progcat@protonmail.com>
+# Maintainer: Lindsay Zhou <i@lin.moe>
+maintainer="Lindsay Zhou <i@lin.moe>"
+pkgname=fcitx5-qt
+pkgver=5.1.13
+pkgrel=1
+pkgdesc="Qt library and IM module for Fcitx5"
+url="https://github.com/fcitx/fcitx5-qt"
+arch="all"
+license="LGPL-2.1-or-later AND BSD-3-Clause"
+makedepends="
+	cmake
+	extra-cmake-modules
+	fcitx5-dev
+	libxkbcommon-dev
+	libxcb-dev
+	libxkbcommon-dev
+	libxcb-dev
+	libx11-dev
+	libxcb-dev
+	libxkbcommon-dev
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	qt6-qtwayland-dev
+	samurai
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-lang
+	"
+replaces="$pkgname-qt6"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fcitx/fcitx5-qt/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests for qt6 flavour
+
+build() {
+	# -Os segfault at
+	# qt{5,6}/widgetsaddons/fcitxqtkeysequencewidget.cpp keyReleaseEvent QList<Key>({key})
+	CXXFLAGS="$CXXFLAGS -flto=auto -O2 -DNDEBUG" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DENABLE_QT4=Off \
+		-DENABLE_QT5=Off \
+		-DENABLE_QT6=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+bcdc412ea88dd2d40685f9cca12308d0b1cf381df198b829f18e157b2507cca3ab2be07ca0c7480b63bcf832d921671a0507fd984ed7b365abc99c22af37aa01  fcitx5-qt-5.1.13.tar.gz
+"

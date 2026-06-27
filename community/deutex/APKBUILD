@@ -1,0 +1,44 @@
+# Contributor: Antoine Fontaine <antoine.fontaine@epfl.ch>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=deutex
+pkgver=5.2.3
+pkgrel=0
+pkgdesc="WAD composer for Doom, Heretic, Hexen, and Strife"
+url="https://github.com/Doom-Utils/deutex"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	asciidoc
+	autoconf
+	automake
+	docbook-xsl-nons
+	libpng-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/Doom-Utils/deutex/archive/refs/tags/v$pkgver/deutex-v$pkgver.tar.gz"
+options="!check" # no tests
+
+prepare() {
+	default_prepare
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+982272ea021ad6b0d149580575e8fd30bf4a7b55ae59f96392f81205dae824f59fba4a81b010882e6bc1a8e411fd7b297f9ec394e74fd1e719e1020515dc50a8  deutex-v5.2.3.tar.gz
+"

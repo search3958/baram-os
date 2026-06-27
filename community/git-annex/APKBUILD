@@ -1,0 +1,107 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=git-annex
+pkgver=10.20260421
+pkgrel=0
+pkgdesc="Manage files with git, without checking their contents into git"
+url="http://git-annex.branchable.com"
+arch="x86_64 aarch64" # limited by ghc
+license="AGPL-3.0-or-later"
+options="net"
+depends="
+	curl
+	git
+	rsync
+	"
+makedepends="
+	alex
+	cabal
+	dbus-dev
+	file-dev
+	ghc
+	gmp-dev
+	gnutls-dev
+	happy
+	libffi-dev
+	libgsasl-dev
+	libxml2-dev
+	ncurses-dev
+	zlib-dev
+	"
+checkdepends="gpg"
+source="
+	$pkgname-$pkgver.tar.gz::https://ayakael.net/mirrors/git-annex/archive/$pkgver.tar.gz
+	https://ayakael.net/api/packages/mirrors/generic/git-annex/$pkgver/git-annex-$pkgver-edge.cabal
+	fix-makefile.patch
+	ghc-9.8.patch
+	git-annex.desktop
+	git-annex-autostart.desktop
+	rollback-mans-utility-process-dependency.patch
+	"
+subpackages="$pkgname-doc $pkgname-bash-completion $pkgname-fish-completion $pkgname-zsh-completion"
+builddir="$srcdir"/$pkgname
+
+_feature_flags="+assistant +webapp +pairing +production +torrentparser +magicmime +benchmark -debuglocks +dbus +networkbsd +gitlfs +httpclientrestricted"
+
+# Cabal seems to be built without sandbox, moving the cabal-dir into src
+export CABAL_DIR="$srcdir/.cabal"
+
+cabal_update() {
+	cd "$builddir"
+	cabal update
+	(
+		cabal v2-freeze \
+			--strong-flags \
+			--shadow-installed-packages \
+			--flags="$_feature_flags"
+
+		mv cabal.project.freeze "$startdir/git-annex-$pkgver.config"
+	)
+}
+
+prepare() {
+	cp -L "$srcdir"/git-annex-*.cabal "$builddir"/cabal.project.freeze
+	default_prepare
+}
+
+build() {
+	cabal v2-update
+	cabal v2-build git-annex:exes \
+		--jobs=${JOBS:-1} \
+		--prefix=/usr \
+		--docdir=/usr/share/doc/$pkgname \
+		--sysconfdir=/etc \
+		--flags="$_feature_flags"
+
+	# Avoid invoking ghc(1) in install() function.
+ 	make mans
+
+	# Prepare executable for the tests and make install.
+	local executable="$(cabal list-bin git-annex:exes)"
+	cp "$executable" .
+	ln -s git-annex git-annex-shell
+	ln -s git-annex git-remote-annex
+}
+
+check() {
+	"$builddir"/git-annex test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm644 "$srcdir"/git-annex.desktop "$pkgdir"/usr/share/applications/git-annex.desktop
+	install -Dm644 "$srcdir"/git-annex-autostart.desktop "$pkgdir"/etc/xdg/autostart/git-annex.desktop
+	install -Dm644 "$builddir"/doc/logo.svg "$pkgdir"/usr/share/icons/hicolor/scalable/apps/git-annex.svg
+	install -Dm644 "$builddir"/doc/logo_16x16.png  "$pkgdir"/usr/share/icons/hicolor/16x16/apps/git-annex.png
+}
+
+sha512sums="
+fa1df4227da530ff1f8602a7d954ecf8a3da2c2950050ebb0b105129992c4113311710e318e7913e1e326f0a4502aa91be80b9c5f9a100541d0e3f278ee467b1  git-annex-10.20260421.tar.gz
+8f450a9c4b89643206851c8a8ce30a6eb5e806051909b210f8dc8d1aa3bce23b2ee9dc0c9004a20f598a6ba2ac8e5c64f40a9b2d320fa75e3cf6e34711662a16  git-annex-10.20260421-edge.cabal
+5204d418b2e4c58338e21dc3d7193b48afcbb61255dac2e6e92584ad363af5ef5d93aed513037dc775aa80a313a052ddd837a7ec01398cc451a3febb4219f36e  fix-makefile.patch
+05b2f7248ebe3244e7a89a889bc6b6acf91114aa72b8b8e63c742483f7bd94e2ba8b16e917a091954893ba57a6ab0b0a9ccc23c219f2fd626d78d06b9fa106f1  ghc-9.8.patch
+1c16197c00a6fd8dcdc3e1ddc8ac3b874301d435b3cde68cb28b3122443da2c511ca05d4ac23fe20ae16a3544e4b3dae154aece49164b28989aeafe473903919  git-annex.desktop
+fc1326dcadffdc70d8a2d19b9f4892e0ee58ca46cac30a8553750504402d695602c466aae38bf6c04b9f63a212fc6eb58096176c7cdb33920fa3c8e610aa112c  git-annex-autostart.desktop
+ea46c0c946681f348f319483780c6841f315e152e40aa16c0c27832f905240142553eccedfc156e54eab8672ed92f6c47a3444dfc59d2a8c3a9da790d8d111c1  rollback-mans-utility-process-dependency.patch
+"

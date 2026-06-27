@@ -1,0 +1,33 @@
+Author: Holger Jaekel <holger.jaekel@gmx.de>
+Summary: Fixes compilation with musl libc, define PATH_MAX
+----
+
+--- a/src/mapflatgeobuf.c
++++ b/src/mapflatgeobuf.c
+@@ -29,9 +29,9 @@
+ 
+ #define NEED_IGNORE_RET_VAL
+ 
++#include "mapserver.h"
+ #include <limits.h>
+ #include <assert.h>
+-#include "mapserver.h"
+ #include "mapows.h"
+ 
+ #include "flatgeobuf/flatgeobuf_c.h"
+
+
+--- a/src/mapshape.c
++++ b/src/mapshape.c
+@@ -36,10 +36,10 @@
+ 
+ #define NEED_IGNORE_RET_VAL
+ 
++#include "mapserver.h"
+ #include <limits.h>
+ #include <assert.h>
+ #include <stdbool.h>
+-#include "mapserver.h"
+ #include "mapows.h"
+ 
+ #include <cpl_conv.h>

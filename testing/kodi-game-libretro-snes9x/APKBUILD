@@ -1,0 +1,36 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-game-libretro-snes9x
+pkgver=1.62.3.45
+_realname=Nexus
+pkgrel=0
+pkgdesc="Snes9X GameClient for XBMC"
+options="!check" # no test suite
+url="https://github.com/kodi-game/game.libretro.snes9x"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="custom"
+makedepends="cmake kodi-dev samurai"
+depends="kodi-game-libretro libretro-snes9x"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/kodi-game/game.libretro.snes9x/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/game.libretro.snes9x-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -r "$pkgdir"/usr/share/kodi/addons/game.libretro.snes9x/resources/icon.png \
+		"$pkgdir"/usr/share/kodi/addons/game.libretro.snes9x/resources/screenshot* \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.snes9x/game.libretro.snes9x.so
+	ln -s /usr/lib/libretro/snes9x_libretro.so \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.snes9x/game.libretro.snes9x.so
+}
+
+sha512sums="
+dd6903283059195975134662c9a1d8b2b1fb82ea1ea494c4a5087ac20c19d7b6ad3534351f1c2e1461041e9168a56f8b198dfb0b726e56e6b047a4c3f6d9abc7  kodi-game-libretro-snes9x-1.62.3.45-Nexus.tar.gz
+"

@@ -1,0 +1,58 @@
+# Contributor: Kay Thomas <kaythomas@pm.me>
+# Maintainer: Kay Thomas <kaythomas@pm.me>
+pkgname=taskcafe
+pkgver=0.3.6
+pkgrel=23
+pkgdesc="Project management tool with Kanban boards"
+url="https://github.com/JordanKnott/taskcafe"
+# riscv64: fails to compile js
+arch="all !riscv64"
+license="MIT"
+makedepends="go mage nodejs yarn"
+install="$pkgname.pre-install"
+subpackages="$pkgname-openrc"
+pkgusers="taskcafe"
+pkggroups="taskcafe"
+source="$pkgname-$pkgver.tar.gz::https://github.com/JordanKnott/taskcafe/archive/$pkgver.tar.gz
+	taskcafe.initd
+	taskcafe.confd
+	0001-update-sys-for-loongarch64.patch
+	"
+# No testsuite
+# Downloading Go and NodeJS dependencies
+options="!check chmod-clean net"
+
+export GOPATH="$srcdir"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	export NODE_OPTIONS=--openssl-legacy-provider
+	# Download npm dependencies
+	mage install
+
+	# Set CI=false so warnings aren't treated as errors
+	# https://github.com/facebook/create-react-app/issues/3657
+	CI=false mage build
+}
+
+package() {
+	install -Dm755 dist/taskcafe "$pkgdir"/usr/bin/taskcafe
+
+	# Add default config
+	install -Dm644 conf/taskcafe.example.toml \
+		"$pkgdir"/etc/taskcafe/config.toml
+
+	install -Dm755 "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+b513c2654d7bf321c6db4ac397d7f3f9fea9d9b2912e13f0597f5dc67fa9825f0014c715f726980eaf2943240d911686d51be5a8fbc7bc2951c2d2d126fb4100  taskcafe-0.3.6.tar.gz
+43239950292a481da33dd714a2eb4d1643dbbbd261c98540d8f4251a9742a2077943fb79a565e7b44562cc8dd2d7a4a518ee85e3862f3bcd8b4675e9a8c12c5b  taskcafe.initd
+2cb92a08dc4541482e83fb2ee5ff4018e7f7813bf72f1dfca3c96b3cd90a704a07949e8c203c2a8d9809e7f9ade5bf1f3843230dcc37bd8891902dee7d9ecc1d  taskcafe.confd
+8ec537737276d8269ac32e9625e027ebda8f052031da9e7d28595d75c7a85ff00de7eba18b7e586a613c4836d0e7ba9222471dfca082160226bfc942a2e08148  0001-update-sys-for-loongarch64.patch
+"

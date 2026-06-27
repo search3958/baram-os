@@ -1,0 +1,31 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=gnome-user-docs
+pkgver=50.2
+pkgrel=0
+pkgdesc="GNOME User Documentation"
+url="https://gitlab.gnome.org/GNOME/gnome-user-docs"
+arch="noarch"
+license="CC-BY-3.0"
+makedepends="itstool libxml2-utils gettext-dev"
+options="!check" # no tests
+source="https://download.gnome.org/sources/gnome-user-docs/${pkgver%.*}/gnome-user-docs-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+64609a0d45593544beb1102f1b25752e90676eb1ec9c2d9f30cd03198cec2285647b094890a4fc5afcf2d5b630f23fea7c236551ba0678485dd7017c41aa4947  gnome-user-docs-50.2.tar.xz
+"

@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-clamav
+pkgver=0.8.0
+pkgrel=4
+pkgdesc="Web-based system administration interface for clamav"
+url="https://gitlab.alpinelinux.org/acf/acf-clamav"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core clamav"
+source="https://gitlab.alpinelinux.org/acf/acf-clamav/-/archive/v$pkgver/acf-clamav-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+597f522a0cf7794a468d6d4381f8fa1d3dd20ea2e83b9b85aaf9738bbbcdc66f5cbedd45fb9f79e0829bcd4378a0921b6891e3335fc3602c5a64b0e045ce802b  acf-clamav-v0.8.0.tar.gz
+"

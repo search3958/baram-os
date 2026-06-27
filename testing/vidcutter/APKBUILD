@@ -1,0 +1,35 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=vidcutter
+pkgver=6.0.5.3
+pkgrel=0
+pkgdesc="A modern, simple to use, constantly evolving and hella fast MEDIA CUTTER"
+url="https://vidcutter.ozmartians.com"
+arch="all !armhf" # Blocked by py3-qt5 -> qt5-qtdeclarative
+license="GPL-3.0-or-later"
+depends="python3 ffmpeg mediainfo py3-qt5 py3-opengl"
+subpackages="$pkgname-doc $pkgname-pyc"
+makedepends="cython mpv-dev python3-dev py3-setuptools py3-gpep517"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ozmartian/vidcutter/archive/$pkgver.tar.gz"
+options="!check" # no tests
+
+prepare() {
+	default_prepare
+
+	rm vidcutter/libs/pympv/mpv.c
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8510890e6db9695017984cad69b5cdcd499401ecd94526781749dabde6b162fa679020487f3b1eafa6324f0a18411f9f583d68b62bbd53324b1feea33317ca73  vidcutter-6.0.5.3.tar.gz
+"

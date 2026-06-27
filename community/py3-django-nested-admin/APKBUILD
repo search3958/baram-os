@@ -1,0 +1,50 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-nested-admin
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=django-nested-admin
+pkgver=4.1.6
+pkgrel=2
+_gittag=v$pkgver
+pkgdesc="Django admin classes that allow for nested inlines"
+url="https://pypi.org/project/django-nested-admin"
+arch="noarch"
+license="BSD-2-Clause"
+depends="py3-python-monkey-business"
+checkdepends="
+	py3-pytest
+	py3-pytest-cov
+	py3-pytest-xdist
+	py3-pytest-django
+	py3-pillow
+	py3-dj-database-url
+	py3-django-selenosis
+	py3-selenium
+	"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$_gittag.tar.gz::https://github.com/theatlantic/django-nested-admin/archive/$_gittag.tar.gz"
+options="!check" # missing py3-selenium and py3-django-selenosis
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	cd "$builddir"/nested_admin
+	DJANGO_SETTINGS_MODULE=tests.settings "$builddir"/.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+7077ca3aecd1f660f9f3ffa538b3377a7033de7347a947b90f306f1288f4d8d0330416306e3bae914bc859d9501116cb0b42525773064d3fda219aec7a0ef34a  py3-django-nested-admin-v4.1.6.tar.gz
+"

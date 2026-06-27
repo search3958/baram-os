@@ -1,0 +1,85 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=ghidra
+pkgver=12.0.4
+pkgrel=0
+pkgdesc="A Cross Platform and Open Source Electronics Design Automation Suite"
+url="https://ghidra-sre.org/"
+# only x86_64 and aarch64 support provided by upstream
+# aarch64: jdk segfaults
+arch="x86_64"
+license="Apache-2.0"
+makedepends="
+	gradle
+	protoc
+	python3
+	py3-pip
+	unzip
+	"
+# Note: Ghidra refuses to launch with only JRE installed, so
+#       please do not move JDK to makedepends
+depends="
+	bash
+	openjdk21-jdk
+	wmname
+	"
+subpackages="
+	$pkgname-tutorials
+	$pkgname-doc
+	"
+source="
+	https://github.com/NationalSecurityAgency/ghidra/archive/refs/tags/Ghidra_${pkgver}_build.tar.gz
+	gcc15.patch
+	ghidra.sh
+	ghidra.desktop
+	"
+# the tutorials subpackage contains exmaples linked against glibc
+# which are ment to be decompiled by ghidra
+options="net !check $pkgname-tutorials::!strip $pkgname-tutorials::!tracedeps"
+builddir="$srcdir/ghidra-Ghidra_${pkgver}_build"
+patch_args="-p1 --no-backup-if-mismatch"
+
+build() {
+	export GRADLE_USER_HOME="$srcdir"/.gradle
+	gradle --parallel -I gradle/support/fetchDependencies.gradle
+	gradle --parallel buildGhidra
+}
+
+package() {
+	install -d "$pkgdir"/usr/share "$pkgdir"/usr/bin
+	unzip \
+		-u build/dist/ghidra_${pkgver}_DEV_*_linux_*.zip \
+		-d "$pkgdir"/usr/share
+	mv "$pkgdir"/usr/share/ghidra_${pkgver}_DEV "$pkgdir"/usr/share/ghidra
+
+	# remove precompiled 7zip native libs for x86_64 Mac, Windows, and glibc
+	# Linux. Ghidra is falling back to using a java implementation on musl
+	# anyway.
+	rm -rf "$pkgdir"/usr/share/ghidra/Ghidra/Features/FileFormats/data/sevenzipnativelibs
+
+	install -Dm755 "$srcdir"/ghidra.sh "$pkgdir"/usr/bin/ghidra
+	ln -s /usr/share/ghidra/support/analyzeHeadless "$pkgdir"/usr/bin/ghidra-headless
+	install -Dm644 \
+		Ghidra/Framework/Gui/src/main/resources/images/GhidraIcon64.png \
+		"$pkgdir"/usr/share/icons/hicolor/64x64/apps/$pkgname.png
+	install -Dm 644 $srcdir/ghidra.desktop -t $pkgdir/usr/share/applications
+}
+
+tutorials() {
+	pkgdesc="Ghidra tutorial files"
+
+	amove usr/share/ghidra/docs/GhidraClass
+}
+
+doc() {
+	default_doc
+
+	amove usr/share/ghidra/docs
+}
+
+sha512sums="
+cb675b3064eb594ae2678d159e0623e40bac0d7ed1e403ac735b5484f32967ebe82ac734a543187fd91c8c41fcdf047f8baf2e4fedc00fb0b9616611a0c1b3e0  Ghidra_12.0.4_build.tar.gz
+508348ed3f561301e99eac2e91b2a9f63f1adbe8251c9368a47baa2b53e0cdb8d170537e4df89df9a1d3b5998d8e9d31ce3c3904c2f8a26a2978a535efa0daa3  gcc15.patch
+b075d5ac821bf4ed052acada45b882876a5493ab03cfa4d0537c4c5f27b666aa2b37de9ff561313b025f9d16b06b9ad17d59287ecf205c02798dbca2bc04925f  ghidra.sh
+a85b8b3276e2ff4ed8bda6470c15d02711ebaa48463c775cd2a36549fad738e9fe073dab80f8c57646490ffc959cdc27e9d25b1dc2a5810b0ddb249b5dc99a9b  ghidra.desktop
+"

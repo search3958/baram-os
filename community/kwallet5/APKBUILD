@@ -1,0 +1,76 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks-old
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kwallet5
+pkgver=5.116.0
+pkgrel=2
+pkgdesc="Secure and unified container for user passwords"
+# armhf blocked by qt5-qtdeclarative -> ki18n
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.1-or-later"
+depends_dev="
+	gpgme-dev
+	kconfig5-dev
+	kconfigwidgets5-dev
+	kcoreaddons5-dev
+	kdbusaddons5-dev
+	ki18n5-dev
+	kiconthemes5-dev
+	knotifications5-dev
+	kservice5-dev
+	kwindowsystem5-dev
+	libgcrypt-dev
+	qca-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	graphviz
+	kdoctools5-dev
+	qt5-qttools-dev
+	samurai
+	"
+_repo_url="https://invent.kde.org/frameworks/kwallet.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kwallet-$pkgver.tar.xz"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang $pkgname-bin"
+provides="dbus:org.freedesktop.Secrets"
+# 2nd highst priority after gnome-keyring, mainly for KDE
+provider_priority=10
+builddir="$srcdir/kwallet-$pkgver"
+
+replaces="kwallet<=5.110.0-r0"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_QCH=ON
+	cmake --build build
+}
+
+check() {
+	local excluded_checks=
+	case "$CARCH" in
+		s390x) excluded_checks="(blowfishtest)";;
+	esac
+	ctest --test-dir build -E "$excluded_checks"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# The kwallet5 DBus service is already provided by community/kwallet.
+	# We want services to actually use the newer service rather than this one
+	# and to prevent it from conflicting as well we just remove it here.
+	rm -r "$pkgdir"/usr/share/dbus-1
+}
+
+bin() {
+	amove usr/bin/kwallet-query
+}
+
+sha512sums="
+fc96b2e87e565dadb960159c5412cc0862454331824510405f434dfda2146ecf4e2ca133345c0c46608143da10265f154a0225f4d8d82ae6f11a184b222d663d  kwallet-5.116.0.tar.xz
+"

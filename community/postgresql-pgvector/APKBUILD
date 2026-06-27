@@ -1,0 +1,38 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=postgresql-pgvector
+_projname=pgvector
+pkgver=0.8.1
+pkgrel=0
+pkgdesc="Open-source vector similarity search for PostgreSQL"
+url="https://github.com/pgvector/pgvector"
+arch="all"
+license="PostgreSQL"
+makedepends="postgresql-dev"
+subpackages="$pkgname-dev $pkgname-bitcode"
+source="https://github.com/pgvector/pgvector/archive/v$pkgver/$_projname-$pkgver.tar.gz"
+builddir="$srcdir/$_projname-$pkgver"
+options="!check"  # tests require running PostgreSQL
+
+build() {
+	# OPTFLAGS: avoid building with -march=native.
+	make OPTFLAGS=""
+}
+
+package() {
+	depends="postgresql$(pg_config --major-version)"
+
+	make DESTDIR="$pkgdir" install
+}
+
+bitcode() {
+	pkgdesc="$pkgdesc (bitcode for JIT)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="postgresql$(pg_config --major-version)-jit $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/postgresql*/bitcode
+}
+
+sha512sums="
+182ca40c3fcc9efb5de46b4b562ba962b82a413c444e1a3b7ef09f81da1ad96bb257cbf2037069a334880d51f91da120ae436ac17751eeb4b30f0683bd2a9e73  pgvector-0.8.1.tar.gz
+"

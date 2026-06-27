@@ -1,0 +1,41 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-boto3
+pkgver=1.43.6
+pkgrel=0
+pkgdesc="AWS SDK for Python (Boto3)"
+url="https://aws.amazon.com/sdk-for-python/"
+license="Apache-2.0"
+arch="noarch"
+depends="
+	py3-botocore
+	py3-jmespath
+	py3-s3transfer
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/b/boto3/boto3-$pkgver.tar.gz"
+builddir="$srcdir"/boto3-$pkgver
+options="!check" # take way too long
+
+replaces="py-boto3" # Backwards compatibility
+provides="py-boto3=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+24d2f85330e8c9608e67ed1a979524c79dc67e85f2f0004167de9db93d1dde26632882de9c0dd82ca0a44bc39157e59a1a27711507b62cf2473260d2d68c3d03  boto3-1.43.6.tar.gz
+"

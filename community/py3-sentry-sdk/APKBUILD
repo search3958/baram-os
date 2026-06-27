@@ -1,0 +1,60 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-sentry-sdk
+pkgver=2.60.0
+pkgrel=0
+pkgdesc="The new Python SDK for Sentry.io"
+url="https://sentry.io/for/python/"
+arch="noarch"
+license="BSD-2-Clause"
+depends="
+	py3-certifi
+	py3-urllib3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-executing
+	py3-jsonschema
+	py3-pytest-asyncio
+	py3-pytest-forked
+	py3-pytest-localserver
+	py3-pytest-xdist
+	py3-responses
+	py3-werkzeug
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/getsentry/sentry-python/archive/$pkgver.tar.gz"
+builddir="$srcdir"/sentry-python-$pkgver
+options="!check" # a bunch of deprecation-warning failures and improper shutdown.. seems to need net
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# gcp: pip install
+	# test_socket/test_requests: needs net
+	# wsgi: weird list errors
+	.testenv/bin/python3 -m pytest -n auto -p no:warnings \
+		--deselect tests/integrations/gcp/test_gcp.py \
+		--deselect tests/integrations/socket/test_socket.py \
+		--deselect tests/integrations/requests/test_requests.py \
+		--deselect tests/integrations/wsgi/test_wsgi.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a89ddfb7083e09b7710739a49efdf05c0d496d5cfeeb7f66f6b316a5b21992dbb4dc9f69a9ba6bf35f5f6147e914d63dd9ef1153af7e0f3a7123a6d050765d31  py3-sentry-sdk-2.60.0.tar.gz
+"

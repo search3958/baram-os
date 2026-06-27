@@ -1,0 +1,36 @@
+# Maintainer: François Chavant <alpine@mail.chavant.info>
+pkgname=nbtscan
+pkgver=1.7.2
+pkgrel=0
+pkgdesc="NETBIOS nameserver scanner"
+url="http://www.unixwiz.net/tools/nbtscan.html"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="autoconf automake"
+source="nbtscan-$pkgver.tar.gz::https://github.com/resurrecting-open-source-projects/nbtscan/archive/$pkgver.tar.gz"
+subpackages="$pkgname-doc $pkgname-dbg"
+options="!check"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+b20eafe6737aa378e230dd2842e045bf2a48497e21b87ce6c534366cbb162862168a5c8143c0a69d495525caca75e91e437b87d9778e4cfe573b20461e2ccbbf  nbtscan-1.7.2.tar.gz
+"

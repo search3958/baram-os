@@ -1,0 +1,37 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: TBK <alpine@jjtc.eu>
+pkgname=fusee-nano
+pkgver=0.5.3
+pkgrel=2
+pkgdesc="Minimalist re-implementation of the Fusée Gelée exploit, designed to run on embedded Linux devices."
+url="https://github.com/DavidBuchanan314/fusee-nano"
+arch="all"
+license="MIT"
+options="!check" # No test suite
+makedepends="linux-headers xxd"
+subpackages="$pkgname-udev::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/DavidBuchanan314/fusee-nano/archive/$pkgver.tar.gz
+	broken-makefile.patch
+	"
+
+build() {
+	make CC="${CC:-cc}"
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/$pkgname/
+	cp -r files/* "$pkgdir"/usr/share/$pkgname/
+	install -Dm 755 fusee-nano "$pkgdir"/usr/bin/fusee-nano
+
+	# Remove openwrt file
+	rm "$pkgdir"/usr/share/$pkgname/20-tegra_rcm
+
+	mkdir -p "$pkgdir"/usr/lib/udev/rules.d/
+	mv "$pkgdir"/usr/share/fusee-nano/*.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/
+}
+
+sha512sums="
+c110aa1597aaefbfb9c9ccd50c53d70450ce37854f794e625b4ed3438928e1b690091ff9cde9fd142b5e4d77c95a5e54a2926aa9d136f0bb2d54ebdacc106c81  fusee-nano-0.5.3.tar.gz
+c7f8c09625d357105015b620f012802513c6617e140d168f5e74a4c7c287578b78ca13f633cd6019a5f6494f85cece8c87260d8240035988ffc24afc53b7dcb4  broken-makefile.patch
+"

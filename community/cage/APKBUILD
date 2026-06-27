@@ -1,0 +1,38 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=cage
+pkgver=0.3.0
+pkgrel=0
+pkgdesc="Wayland Kiosk"
+url="https://www.hjdskes.nl/projects/cage/"
+license="MIT"
+arch="all"
+options="!check" # no test suite
+makedepends="dbus meson wlroots0.20-dev wayland-protocols scdoc"
+subpackages="$pkgname-doc $pkgname-run::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cage-kiosk/cage/archive/refs/tags/v$pkgver.tar.gz
+	cage-run
+	"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		build
+	meson compile -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+	install -Dm755 "$srcdir"/cage-run -t "$pkgdir"/usr/bin/
+}
+
+run() {
+	pkgdesc="$pkgdesc (wrapper for headless CI)"
+	depends="$pkgname=$pkgver-r$pkgrel dbus"
+	amove usr/bin/cage-run
+}
+
+sha512sums="
+936105ebc6c6e8609a7f995c512f55ef8858dbfc7be2574e6287b747417d9de9f1a3b6b85695380c7524353a4a8fb040950075b18f016b6c00f76b9c35f99423  cage-0.3.0.tar.gz
+9f9ee6d7670a9b8f7b6ed2e97d6ee3605ef0b7c9ef4ab006f408d0fa4a63f799ac187933200b1e46811f346469a32eaaf250f5fac219c5d47ef4c31f344ad7bc  cage-run
+"

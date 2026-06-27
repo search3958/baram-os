@@ -1,0 +1,41 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=kanshi
+pkgver=1.9.0
+pkgrel=0
+pkgdesc="Dynamic display configuration for Wayland"
+url="https://gitlab.freedesktop.org/emersion/kanshi"
+license="MIT"
+arch="all"
+options="!check" # no test suite
+makedepends="meson libscfg-dev vali-dev wayland-dev scdoc"
+subpackages="$pkgname-openrc $pkgname-doc $pkgname-systemd"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.freedesktop.org/emersion/kanshi/-/archive/v$pkgver/kanshi-v$pkgver.tar.gz
+	README.alpine
+	kanshi.initd
+	kanshi.confd
+	systemd-service.patch
+	"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -Dm644 "$srcdir"/README.alpine -t "$pkgdir"/usr/share/doc/$pkgname
+
+	install -Dm755 "$srcdir"/kanshi.initd "$pkgdir"/etc/user/init.d/kanshi
+	install -Dm644 "$srcdir"/kanshi.confd "$pkgdir"/etc/user/conf.d/kanshi
+}
+
+sha512sums="
+1eeb1ec70c233345d61bfa8da5765b5e97be176ffa8be4d04154d67d4df8eec8176898ec4529a49144e4eaa977c94876e040acd93e1266095bc32e59bd19a0e8  kanshi-1.9.0.tar.gz
+692fb1ebc7cafd3157e6cf87afb6087dba6a09d4f5c3f40d75a652980e5771efe037432565026530909b819fa6d2aadb5ed8a58c4d05f0df5627441a15da021d  README.alpine
+d18cdc2d2e0ce0040a4166006a22e338d7699eb9eb43cb11ebd8e3be23a9b50ce9d20c5b17399c87e6ee7f94da5f3b1a9bb780ee7198cc10b28ecaa01d006b91  kanshi.initd
+249cdd4b3060681d6b883841220f403762141d87a01ad1abc7eb3139bb81dcef9721efcac32820f875ba3451308f285ac06e4544f11d1c3f36c628d2ab4912d7  kanshi.confd
+3144e42b5e8da53e78b5e24567790801d59e197bb6d27446bdfbfe416d589467a614b8a6bb466167aeced4751d03123d291531cf739f78e6c471d23460123b50  systemd-service.patch
+"

@@ -1,0 +1,139 @@
+# Maintainer: Zach DeCook <zachdecook@librem.one>
+pkgname=verovio
+pkgver=4.1.0
+pkgrel=2
+_commit=a99660b
+# number of options this release has (for check())
+_numoptions=198
+pkgdesc="Music notation engraving for MEI with MusicXML and Humdrum support"
+url="https://www.verovio.org/index.xhtml"
+arch="all"
+license="LGPL-3.0-only"
+depends_dev="$pkgname-libs"
+makedepends="
+	cmake
+	py3-setuptools
+	python3-dev
+	samurai
+	swig
+	"
+subpackages="
+	$pkgname-data::noarch
+	$pkgname-libs
+	$pkgname-dev
+	py3-$pkgname-pyc
+	py3-$pkgname:py3
+	"
+checkdepends="jq"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/rism-digital/verovio/archive/refs/tags/version-$pkgver.tar.gz
+	0001-data-change-directory-to-usr-share-verovio.patch
+	commit-version.patch
+	python-data-path.patch
+	test.py
+	"
+builddir="$srcdir/$pkgname-version-$pkgver"
+
+prepare() {
+	default_prepare
+
+	sed -i "s|@@COMMIT@@|$_commit|" tools/get_git_commit.sh
+}
+
+build() {
+	cmake -B build-tools -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-S cmake
+
+	cmake -B build-c-bindings -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DBUILD_AS_LIBRARY=ON \
+		-S cmake
+
+	cmake --build build-tools
+	cmake --build build-c-bindings
+	python3 setup.py build_ext
+}
+
+check() {
+	# This is a basic 'check' which just verifies everything was built and won't crash.
+	(
+		cd build-tools
+		echo "testing command line tool"
+		./verovio -r ../data ../doc/importer.mei
+	)
+
+	# Ensure we can compile a program with the C library and it reports the options correctly.
+	(
+		cp bindings/c/main.c build-c-bindings/main.c
+		# include is only one level up now
+		sed -i 's|/../|/|' build-c-bindings/main.c
+		cd build-c-bindings
+		gcc main.c -o main -L./ $CFLAGS -lverovio
+		LD_LIBRARY_PATH=./ ./main | head -n 2
+		# (It prints the json options of the program)
+		NUMoptions=$(LD_LIBRARY_PATH=./ ./main | tail -n +3 | jq '[.groups[].options|length]|add')
+		echo "(C) testing that $NUMoptions = $_numoptions"
+		test "$NUMoptions" = "$_numoptions"
+	)
+
+	# Test installing the python library and that using it will report the options correctly.
+	(
+		mkdir check
+		# Install it in a temp location so we can test it will install correctly.
+		python3 setup.py install --root=check
+		cd check/usr/lib/python3.*/site-packages
+		# Make sure there are the same number of options as the C version.
+		NUMoptions=$(env PYTHONPATH=. python3 "$srcdir"/test.py | jq '[.groups[].options|length]|add')
+		echo "(python) testing that $NUMoptions = $_numoptions"
+		test "$NUMoptions" = "$_numoptions"
+	)
+}
+
+package() {
+	depends="$pkgname-data"
+	DESTDIR="$pkgdir" cmake --install build-tools
+	DESTDIR="$pkgdir" cmake --install build-c-bindings
+	python3 setup.py install --root="$pkgdir"
+
+	install -Dm644 tools/c_wrapper.h -t "$pkgdir"/usr/include/verovio
+	install -Dm644 fonts/Leipzig/Leipzig.ttf -t "$pkgdir"/usr/share/fonts/verovio/
+}
+
+data() {
+	pkgdesc="$pkgdesc (data)"
+	depends="font-times"
+
+	amove usr/share/verovio
+	amove usr/share/fonts
+}
+
+libs() {
+	default_libs
+	depends="$pkgname-data"
+
+	# no versions for now
+	mkdir -p "$subpkgdir"/usr/lib
+	mv "$pkgdir"/usr/bin/libverovio.so "$subpkgdir"/usr/lib/
+}
+
+py3() {
+	pkgdesc="$pkgdesc (python module)"
+	depends="$pkgname-data"
+	amove usr/lib/python3.*
+	# data is already in -data
+	rm -rf "$subpkgdir"/usr/lib/python3.*/site-packages/verovio/data
+	# this should not be installed
+	rm -f "$subpkgdir"/usr/lib/python3.*/site-packages/verovio/setup.py
+	rm -f "$subpkgdir"/usr/lib/python3.*/site-packages/verovio/__pycache__/setup.cpython-*.pyc
+}
+
+sha512sums="
+0c56080520ad931c7a21cee87a433aca361a2d1dc9abfae5e0cf653ea0a05384c93e522249c3542d5dbd700fefe9a2be9698d6dafc5ed4dae5554d5265123863  verovio-4.1.0.tar.gz
+d4fe2457072cceed146e9d0385fdf69b428c7e6a9c9b81dff596007314b0f28a2d5d1a9642a6a91597b4b06e65e7bee1c3d9a9b5af5aa374862c474c33668535  0001-data-change-directory-to-usr-share-verovio.patch
+fd29edda6feea8568629b7d1a37234833b101a0c31f4e24e8bd72e6b643a93c04a6c0b3f5224357ecf27b076e3b3c63d711cd65096c2ff049f8f97e4d8f05ba8  commit-version.patch
+268e3bb369e86404d2645ffdbdd461fbce6e9818efc43f0e35e71982c90f8e0f65a0a5321ba9f4985ce1ec2aefcb4879165c1abda8a24d73f53584162da63a34  python-data-path.patch
+e30bdce638e7a8095a5849bd11fd864a9f94269cf5a9b03f7a2d36ef5ce9b7fd11a7e37d59b16c42d66619294295b52a2473a6346a3c3c303fd5f9c197b079da  test.py
+"

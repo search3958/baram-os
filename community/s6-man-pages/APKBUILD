@@ -1,0 +1,23 @@
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=s6-man-pages
+pkgver=2.14.0.1.4
+pkgrel=0
+pkgdesc="Unofficial mdoc versions of the s6 documentation"
+url="https://git.sr.ht/~humm/s6-man-pages"
+arch="noarch"
+license="ISC"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~humm/s6-man-pages/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # no tests
+install_if="${pkgname%-*-*}>=${pkgver%.*} docs"
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	find "$pkgdir" -type f ! -name "*.gz" \
+		-exec gzip -9 {} \;
+}
+
+sha512sums="
+94699797e6ea00dfd119e4c225c0e69b47614970528dbc176c1049c06f0fb21fbc8615ebcab88af830298229ba134089edcbf2aa08e78d72a4fa26d2c4506dde  s6-man-pages-2.14.0.1.4.tar.gz
+"

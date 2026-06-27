@@ -1,0 +1,43 @@
+# Maintainer: nadvagauser <nadvagauser+alpine@proton.me>
+pkgname=solanum
+pkgver=6.0.0
+pkgrel=0
+pkgdesc="A pomodoro timer for the GNOME desktop"
+url="https://gitlab.gnome.org/World/Solanum"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	blueprint-compiler
+	cargo
+	glib-dev
+	gst-plugins-bad-dev
+	gstreamer-dev
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	"
+checkdepends="
+	appstream-glib
+	desktop-file-utils
+	"
+subpackages="$pkgname-lang"
+source="https://gitlab.gnome.org/World/Solanum/-/archive/$pkgver/Solanum-$pkgver.tar.gz"
+builddir="$srcdir/Solanum-$pkgver"
+
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+321e1969fb3ed195692cf8c9d0357373cf18c6f23fdd827cfb6a059f49d793cdcbd99434f8a9c6d9447b411aec7e534cd83ef5cabf666a52498a78a3228135fc  Solanum-6.0.0.tar.gz
+"

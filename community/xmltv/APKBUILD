@@ -1,0 +1,66 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=xmltv
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="Set of utilities to download tv listings and format them in xml"
+url="https://xmltv.org/wiki"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="
+	perl-compress-raw-zlib
+	perl-date-manip
+	perl-datetime
+	perl-datetime-format-iso8601
+	perl-datetime-format-sqlite
+	perl-datetime-format-strptime
+	perl-datetime-timezone
+	perl-dbd-sqlite
+	perl-dbi
+	perl-digest-sha1
+	perl-file-homedir
+	perl-file-slurp
+	perl-file-which
+	perl-http-cache-transparent
+	perl-http-message
+	perl-html-tree
+	perl-io-gzip
+	perl-io-stringy
+	perl-libwww
+	perl-lingua-en-numbers-ordinate
+	perl-lingua-preferred
+	perl-list-moreutils
+	perl-lwp-protocol-https
+	perl-lwp-useragent-determined
+	perl-term-progressbar
+	perl-term-readkey
+	perl-test-requiresinternet
+	perl-timedate
+	perl-unicode-string
+	perl-xml-libxml
+	perl-xml-parser
+	perl-xml-treepp
+	perl-xml-twig
+	perl-xml-writer
+	"
+makedepends="perl-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/XMLTV/xmltv/archive/v$pkgver.tar.gz"
+
+build() {
+	yes | PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+2035813d54ad5fabcfe214320b0896403807669a633b378bfde9aeacaa6c2dedb3892086f6e36a08c33964dbd847b6617abc0b97654b9105ee9c21883550a405  xmltv-1.4.0.tar.gz
+"

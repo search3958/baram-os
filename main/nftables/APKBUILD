@@ -1,0 +1,113 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=nftables
+pkgver=1.1.6
+pkgrel=1
+pkgdesc="Netfilter tables userspace tools"
+url="https://netfilter.org/projects/nftables"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	asciidoc
+	autoconf
+	automake
+	bash
+	bison
+	docbook2x
+	flex
+	gmp-dev
+	jansson-dev
+	libmnl-dev
+	libnftnl-dev
+	libtool
+	m4
+	ncurses-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	readline-dev
+	"
+install="$pkgname.post-upgrade"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-rulesets
+	$pkgname-systemd
+	py3-$pkgname-pyc
+	py3-$pkgname:_py3:noarch
+	"
+source="https://netfilter.org/projects/nftables/files/nftables-$pkgver.tar.xz
+	nftables.confd
+	nftables.initd
+	nftables.nft
+	systemd-service-etc-nftables-nft.patch
+	"
+options="!check"
+
+prepare() {
+	default_prepare
+
+	sed -i '1i#include "config.h"' "$builddir"/src/proto.c
+	autoreconf -fi;
+	rm -Rf autom4te*.cache config.h.in~
+}
+
+build() {
+	CONFIG_SHELL=/bin/bash CONFIG_MAN=y DB2MAN=docbook2x-man ./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/usr/share \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-static=yes \
+		--with-json \
+		--with-cli=readline \
+		--with-unitdir
+	make
+
+	cd py
+	gpep517 build-wheel \
+		--wheel-dir "$builddir"/.dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	install -Dm644 "$srcdir"/nftables.nft "$pkgdir"/etc/nftables.nft
+	install -dm755 "$pkgdir"/etc/nftables.d
+	install -dm750 "$pkgdir"/var/lib/nftables
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (Python interface)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/python3*
+}
+
+rulesets() {
+	pkgdesc="Meta package for pulling in all $pkgname rulesets"
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+8d0a833d0ae2b6ac82e0da8bb74ffb69679e49a938b86a75d4ee3d81343400a95fe064cf95d60d22df30370779e524b31497a9c89a516d9bff645f3f83bb6bb1  nftables-1.1.6.tar.xz
+5a298ea01df60b434791fea94306d5b14f7ce684329e4122cc78bb52d1c272fcc48b06eaae154fd082c05f7030792fe42e73814caf3c7be3c446bb265fe25642  nftables.confd
+e27105fb6a520d40392cbc61fa84ec79e4ce17f81991f69e381efce0e8a121e6a76fce2b69f6164b5b650653d4f3cdc7f33927676b4f7e27f6c674f9ccaa6bc5  nftables.initd
+b524c124a11f870ae789d5ad05de8a49d365d6c2cb3cd94c21669c5ae0e453481c671a1700ee6518372b10c491b50c5d81ea59fa941092a9161d1b13be7a13b6  nftables.nft
+3783823b8f6a97f848669dc965976428d87599121761c5c34dd1fc53c02d6edaf1fa86eda9578387360e417b49115a67f0572c7098e7e9dc170e1b8dad1cb006  systemd-service-etc-nftables-nft.patch
+"

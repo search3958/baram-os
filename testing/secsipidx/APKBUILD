@@ -1,0 +1,36 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=secsipidx
+pkgver=1.3.2
+pkgrel=22
+pkgdesc="Secure SIP/Telephony Identity Extensions"
+url="https://github.com/asipto/secsipidx"
+arch="all"
+license="GPL-2.0-only"
+makedepends="go"
+subpackages="$pkgname-dev $pkgname-libs"
+source="$pkgname-$pkgver.tar.gz::https://github.com/asipto/secsipidx/archive/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make
+}
+
+check() {
+	./secsipidx -version | grep -q "v$pkgver"
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" PREFIX="/usr" install
+}
+
+libs() {
+	pkgdesc="secsipid library files"
+	amove usr/lib/*.so*
+}
+
+sha512sums="
+dfdc18f47048308c677623d25d72f2fd7c159033b10ee4121d36049742888f79eed4a39245dc03bc79f592c22309ff4248066d13b35c90912ac42f56f1d9c1e2  secsipidx-1.3.2.tar.gz
+"

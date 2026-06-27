@@ -1,0 +1,62 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libnvme
+pkgver=1.16.1
+pkgrel=1
+pkgdesc="C Library for NVM Express on Linux"
+url="https://github.com/linux-nvme/libnvme/"
+arch="all"
+license="LGPL-2.1-or-later"
+depends_dev="
+	json-c-dev
+	linux-headers
+	openssl-dev
+	"
+makedepends="
+	$depends_dev
+	bash
+	dbus-dev
+	meson
+	python3-dev
+	swig
+	util-linux-dev
+	xz
+	"
+checkdepends="diffutils"
+subpackages="${pkgname}mi:mi $pkgname-dev py3-nvme-pyc py3-nvme:_py3"
+source="https://github.com/linux-nvme/libnvme/archive/v$pkgver/libnvme-v$pkgver.tar.gz
+	doc-test.patch
+	"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dexamples=false \
+		-Ddocs=false \
+		-Dpython=enabled \
+		-Dopenssl=enabled \
+		-Djson-c=enabled \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output || [ "$CARCH" = "s390x" ]
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (python bindings)"
+	amove usr/lib/python3*
+}
+
+mi() {
+	amove usr/lib/libnvme-mi.so.*
+}
+
+sha512sums="
+92113cd62af53366fb63f2f385c2059dede171fef4d9a240fa941382e338d2941e90aeb40ae2d202311d7b531e41181839f45f8ab4da1b3a79ce4b597fcd4993  libnvme-v1.16.1.tar.gz
+6ca036287d964db018a2ddfb5480b0b46e6f2edd9f0a7c39dbf5977ce58d8da4d619705e16a3f269bfa7c619d6da5aeff20d9b558c697f6d68e5d89a73ef586e  doc-test.patch
+"

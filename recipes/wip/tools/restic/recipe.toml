@@ -1,6 +1,0 @@
-#TODO implement go template
-# build instructions: https://restic.readthedocs.io/en/stable/020_installation.html#from-source
-[source]
-tar = "https://github.com/restic/restic/releases/download/v0.16.2/restic-0.16.2.tar.gz"
-[build]
-template = "go"

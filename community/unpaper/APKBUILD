@@ -1,0 +1,32 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=unpaper
+pkgver=7.0.0
+pkgrel=3
+pkgdesc="Post-processing tool for scanned sheets of paper"
+url="https://github.com/unpaper/unpaper"
+arch="all"
+license="GPL-2.0-only"
+makedepends="ffmpeg-dev meson py3-sphinx"
+checkdepends="py3-pillow py3-pytest"
+subpackages="$pkgname-doc"
+source="https://github.com/unpaper/unpaper/releases/download/unpaper-$pkgver/unpaper-$pkgver.tar.xz"
+options="!check" # they hang for some reason
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+check() {
+	"$builddir"/output/unpaper --help
+	meson test --print-errorlogs -C output
+}
+
+sha512sums="
+58da969e773bf16ffee98b96f903ac5347f66d9a93c63bdb9131f5d45f4d7973c09f364ac2f27f8cb61f75de0421c6b01aa248fa9619fbdbde30fcebc76aa484  unpaper-7.0.0.tar.xz
+"

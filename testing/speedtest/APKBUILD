@@ -1,0 +1,34 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+_php=php82
+pkgname=speedtest
+pkgver=5.2.5
+pkgrel=1
+pkgdesc="Self-hosted HTML5 Speedtest"
+url="https://librespeed.org"
+arch="noarch"
+license="LGPL-3.0-only"
+depends="$_php"
+subpackages="$pkgname-doc $pkgname-examples"
+source="$pkgname-$pkgver.tar.gz::https://github.com/librespeed/speedtest/archive/$pkgver.tar.gz"
+options="!check" # no test suite
+builddir="$srcdir"/$pkgname-$pkgver
+
+_destdir="/usr/share/webapps/$pkgname"
+_docdir="/usr/share/doc/$pkgname"
+
+package() {
+	mkdir -p "$pkgdir"/$_destdir "$pkgdir"/$_docdir
+	mv *.md "$pkgdir"/$_docdir
+	mv backend results *.js  "$pkgdir"/$_destdir
+	cp example-singleServer-pretty.html "$pkgdir"/$_destdir/index.html
+}
+
+examples() {
+	mkdir -p "$subpkgdir"/$_destdir
+	mv "$builddir"/example* "$subpkgdir"/$_destdir
+}
+
+sha512sums="
+cf9ff33bea2a94c1d5b614d2f94eb9dad71fb1bd247f9a762ba9b8909adb1bf5a1286cd1ed98bbae43c3fc0f53474de2ef0cac670c358793df70c3ac17939f2d  speedtest-5.2.5.tar.gz
+"

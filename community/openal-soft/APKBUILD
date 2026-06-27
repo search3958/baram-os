@@ -1,0 +1,48 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=openal-soft
+pkgver=1.25.2
+pkgrel=0
+pkgdesc="software implementation of OpenAL API"
+url="https://openal-soft.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	alsa-lib-dev
+	cmake
+	jack-dev
+	libsndfile-dev
+	linux-headers
+	portaudio-dev
+	pulseaudio-dev
+	qt6-qtbase-dev
+	samurai
+	zlib-dev
+	"
+subpackages="$pkgname-libs $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/kcat/openal-soft/archive/$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	case "$CARCH" in
+	armhf)
+		local cpuext_neon=-DALSOFT_CPUEXT_NEON=OFF
+	;;
+	esac
+	cmake -B build \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DALSOFT_UPDATE_BUILD_VERSION=OFF \
+		-DALSOFT_ENABLE_MODULES=OFF \
+		$cpuext_neon
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d3790aedce0bdb0b348b35f917dec0626de2486f5967c9160cf2d50d5c2a00ff264ff73133ac6a0aa9207e8e5042e5d4fcc663c1e733df8e733647e843c39b25  openal-soft-1.25.2.tar.gz
+"

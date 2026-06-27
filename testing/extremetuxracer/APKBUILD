@@ -1,0 +1,30 @@
+# Contributor: Danct12 <danct12@disroot.org>
+# Maintainer: Danct12 <danct12@disroot.org>
+pkgname=extremetuxracer
+pkgver=0.8.3
+pkgrel=0
+pkgdesc="Downhill racing game starring Tux"
+url="https://sourceforge.net/projects/extremetuxracer/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="sfml-dev glu-dev freetype-dev"
+source="https://downloads.sourceforge.net/extremetuxracer/etr-$pkgver.tar.xz"
+subpackages="$pkgname-doc"
+builddir="$srcdir/etr-$pkgver"
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+75b6f2b4d7260216fb8b5bee1412ed929712e6de04a3b32ecf65ad747c6bff30e5eb5bedde24dca0afaec816c847860d9c589c66cdff08aa4bdcec224e727f1f  etr-0.8.3.tar.xz
+"

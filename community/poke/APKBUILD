@@ -1,0 +1,65 @@
+# Contributor: Milan P. Stanić <mps@arvanta.net>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=poke
+pkgver=4.3
+pkgrel=1
+pkgdesc="Extensible editor for binary data"
+url="https://www.jemarch.net/poke.html"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	dejagnu-dev
+	gc-dev
+	gettext-dev
+	help2man
+	readline-dev
+	"
+checkdepends="dejagnu"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-emacs::noarch
+	$pkgname-libs
+	$pkgname-vim::noarch
+	"
+source="https://ftp.gnu.org/gnu/poke/poke-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make -k check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+emacs() {
+	pkgdesc="Emacs mode for $pkgname"
+	depends=
+	install_if="$pkgname=$pkgver-r$pkgrel cmd:emacs"
+
+	amove usr/share/emacs/site-lisp
+}
+
+vim() {
+	pkgdesc="Vim syntax for $pkgname"
+	depends=
+	install_if="$pkgname=$pkgver-r$pkgrel vim"
+
+	amove usr/share/vim/vimfiles
+}
+
+sha512sums="
+62c966a428868fc57d9484fc8c0218eaa051db7ce94b0da2760923f209055d10eea1a7f3ca404eae96fb9908d04e6c4ae284533cff89cb115fb775a8918fbb21  poke-4.3.tar.gz
+"

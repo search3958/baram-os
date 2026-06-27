@@ -1,0 +1,32 @@
+# Contributor: Martijn Braam <martijn@brixit.nl>
+# Maintainer: Martijn Braam <martijn@brixit.nl>
+pkgname=postprocessd
+pkgver=0.3.0
+pkgrel=7
+pkgdesc="Queueing megapixels post-processor"
+url="https://git.sr.ht/~martijnbraam/postprocessd"
+arch="all !s390x" # No opencv
+license="GPL-3.0-only"
+subpackages="$pkgname-doc $pkgname-megapixels"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~martijnbraam/postprocessd/archive/$pkgver.tar.gz"
+makedepends="meson libexif-dev libjpeg-turbo-dev tiff-dev opencv-dev libraw-dev scdoc"
+options="!check" # no testsuite
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+megapixels() {
+	install_if="$pkgname=$pkgver-r$pkgrel megapixels"
+
+	amove usr/share/megapixels
+}
+
+sha512sums="
+217a1d186199414359641c091b656bef3d2e056244bc41a9b5e0f3ff59ff53fde26f6d4cc7081f2f3f19b9f78f91bc6425aaa7f8a65f22cf910d7f4861167d30  postprocessd-0.3.0.tar.gz
+"

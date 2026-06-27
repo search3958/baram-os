@@ -1,0 +1,37 @@
+# Contributor: Eivind Uggedal <eu@eju.no>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=dmenu
+pkgver=5.4
+pkgrel=0
+pkgdesc="Dynamic menu for X"
+url="https://tools.suckless.org/dmenu/"
+arch="all"
+license="MIT"
+makedepends="libx11-dev libxinerama-dev libxft-dev"
+options="!check"
+subpackages="$pkgname-doc"
+source="https://dl.suckless.org/tools/dmenu-$pkgver.tar.gz"
+
+provides="dmenu-virtual"
+provider_priority=100
+
+prepare() {
+	default_prepare
+	sed -i -e '/CFLAGS/{s/-Os//;s/=/+=/}' \
+		-e '/LDFLAGS/{s/=/+=/}' \
+		config.mk
+}
+
+build() {
+	make X11INC=/usr/include/X11 \
+		X11LIB=/usr/lib/X11 \
+		FREETYPEINC=/usr/include/freetype2
+}
+
+package() {
+	make DESTDIR=$pkgdir PREFIX=/usr install
+}
+
+sha512sums="
+946c407d8092bdd17b370e6360053d8611c0bbf60772d48aeda7d7365b3437f748a4a3907bdaee0db778a7d731538098dd2fdfce46d7e0e9dbaa52b48ae1fe05  dmenu-5.4.tar.gz
+"

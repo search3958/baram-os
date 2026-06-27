@@ -1,0 +1,34 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer:
+pkgname=libcuckoo
+pkgver=0.3.1
+pkgrel=1
+pkgdesc="High-performance concurrent hash table library"
+url="https://github.com/efficient/libcuckoo"
+arch="all"
+license="Apache-2.0"
+makedepends="cmake samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/efficient/libcuckoo/archive/v$pkgver/libcuckoo-v$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B builddir -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DBUILD_TESTS=1
+	cmake --build builddir
+}
+
+check() {
+	# insert_expansion and read_insert_expansion tests can randomly fail
+	# https://github.com/efficient/libcuckoo/issues/144
+	ctest --test-dir builddir \
+		-E insert_expansion
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install builddir
+}
+
+sha512sums="
+162bc8f811cca89ff676eb9f374895af9911d7f536452bfa46a2297bc55d4eee16cdf52e2494bf67a79ffe83f9177596e39fa4f0ab3d166abb984e88c8d342df  libcuckoo-0.3.1.tar.gz
+"

@@ -1,0 +1,11 @@
+diff --git a/makeflags b/makeflags
+index e008011..a17e9e2 100644
+--- a/makeflags
++++ b/makeflags
+@@ -1,5 +1,5 @@
+ # Default:
+-CCFLAGS = -Wall -Wextra -Werror -O3
++CCFLAGS = -Wall -Wextra
+ 
+ # Optimized:
+ # CCFLAGS = -Wall -Wextra -Werror -O3 -march=native

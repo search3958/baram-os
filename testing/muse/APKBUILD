@@ -1,0 +1,51 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=muse
+pkgver=4.2.1
+pkgrel=3
+pkgdesc="Linux Music Editor"
+url="https://github.com/muse-sequencer/muse/"
+# x86: doesn't build
+arch="all !x86"
+license="GPL-2.0-or-later"
+makedepends="
+	alsa-lib-dev
+	cmake
+	extra-cmake-modules
+	fluidsynth-dev
+	jack-dev
+	ladspa-dev
+	libsamplerate-dev
+	libsndfile-dev
+	lilv-dev
+	lv2-dev
+	python3-dev
+	qt5-qtbase-dev
+	qt5-qtsvg-dev
+	qt5-qttools-dev
+	rubberband-dev
+	samurai
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/muse-sequencer/muse/archive/refs/tags/$pkgver/muse-$pkgver.tar.gz"
+builddir="$srcdir/muse-$pkgver/src"
+options="!check" # no tests
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+cf033cf77cb328a2aa704bf04d69dd515108e9c789e2ec9321a577b5b3b3bb73ce738142903b69b2c9c3ec5c27e921adc52511932f48809149f5a5cf5fd7deb2  muse-4.2.1.tar.gz
+"

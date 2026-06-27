@@ -1,0 +1,49 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=snowball
+pkgver=3.1.1
+pkgrel=0
+pkgdesc="Snowball rule-based stemming algorithms"
+url="https://snowballstem.org/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="perl"
+subpackages="$pkgname-doc libstemmer:_libstemmer libstemmer-dev:_libstemmerdev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/snowballstem/snowball/archive/refs/tags/v$pkgver.tar.gz
+	libstemmer-library.patch
+	stemtest-fix.patch"
+
+build() {
+	make
+}
+
+check() {
+	#check_utf8 check_iso_8859_1 check_iso_8859_2 check_koi8r
+	#all have missing sub-targets
+	make check_stemtest
+}
+
+package() {
+	install -d "$pkgdir"/usr/bin "$pkgdir"/usr/lib "$pkgdir"/usr/include
+	install snowball stemwords "$pkgdir"/usr/bin
+	install libstemmer.a "$pkgdir"/usr/lib
+	install include/libstemmer.h "$pkgdir"/usr/include
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+_libstemmer() {
+	install -d "$subpkgdir"/usr/lib
+	install "$builddir"/libstemmer.so.* "$subpkgdir"/usr/lib
+}
+
+_libstemmerdev() {
+	pkgdesc="Header files and development libraries for libstemmer"
+	default_dev
+	mv "$builddir"/libstemmer.so $subpkgdir/usr/lib
+}
+sha512sums="
+47a33f6319a728238b93b344a29c49b9aeb76bc8202b891da8134660be97d256e35980a25e557637c74fa6a8aff00b7e2d8e406d52b03233b71644989e4be9ac  snowball-3.1.1.tar.gz
+992405ee46f207a76cff97e26b3a58df74964a245b3ddc66f885c1b623dc8ee35ce7dee04934bd40e9211397a050919f1548a39fe3818df3d95ca48dda5161e3  libstemmer-library.patch
+7f50e68c14dfd6e18a2e7c98b006c901302ba766a59a4203839b83af059ac071a0eb444717bbea6803669d4a6b1b130fd73302ef427214240fe2cf534803c316  stemtest-fix.patch
+"

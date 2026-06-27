@@ -1,0 +1,36 @@
+# Maintainer: Laurent Bercot <ska-devel@skarnet.org>
+pkgname=s6-linux-init
+pkgver=1.2.0.1
+pkgrel=0
+pkgdesc="Set of tools to create and run an s6-based init system"
+url="https://skarnet.org/software/s6-linux-init/"
+arch="all"
+license="ISC"
+options="!check"
+depends="execline s6"
+makedepends="skalibs-dev execline-dev s6-dev linux-headers"
+subpackages="$pkgname-static $pkgname-libs $pkgname-dev $pkgname-doc"
+source="https://skarnet.org/software/s6-linux-init/s6-linux-init-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir="/usr/libexec/$pkgname" \
+		--skeldir=/etc/s6-linux-init/skel \
+		--enable-shared \
+		--disable-allstatic \
+		--with-pkgconfig \
+		--enable-pkgconfig
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	mkdir -p "$pkgdir"/usr/share/doc
+	cp -a "$builddir"/doc "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+e2312a557c16603179a2f6e4ba8602161a81615fdcb2ebbdcc2c1b568278b3b969b9e31f005bd179527ce8eef0c22968e818ab317c929cf8a6cf639797e73cb9  s6-linux-init-1.2.0.1.tar.gz
+"

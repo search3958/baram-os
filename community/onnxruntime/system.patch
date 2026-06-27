@@ -1,0 +1,68 @@
+diff --git a/cmake/external/onnxruntime_external_deps.cmake b/cmake/external/onnxruntime_external_deps.cmake
+index ebf20ab21b..0c152de63d 100644
+--- a/cmake/external/onnxruntime_external_deps.cmake
++++ b/cmake/external/onnxruntime_external_deps.cmake
+@@ -31,18 +31,17 @@ message(STATUS "Loading Dependencies ...")
+ include(FetchContent)
+ 
+ # ABSL should be included before protobuf because protobuf may use absl
+-include(external/abseil-cpp.cmake)
+ 
+ set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+ 
+-onnxruntime_fetchcontent_declare(
+-    re2
+-    URL ${DEP_URL_re2}
+-    URL_HASH SHA1=${DEP_SHA1_re2}
+-    EXCLUDE_FROM_ALL
+-    FIND_PACKAGE_ARGS NAMES re2
+-)
+-onnxruntime_fetchcontent_makeavailable(re2)
++find_package(absl REQUIRED)
++set(ABSEIL_LIBS absl::inlined_vector absl::flat_hash_set
++    absl::flat_hash_map absl::node_hash_set absl::node_hash_map absl::base absl::throw_delegate absl::raw_hash_set
++    absl::hash absl::city absl::hash absl::raw_logging_internal)
++find_package(Protobuf REQUIRED)
++find_package(re2 REQUIRED)
++find_package(nlohmann_json REQUIRED)
++
+ 
+ if (onnxruntime_BUILD_UNIT_TESTS)
+   # WebAssembly threading support in Node.js is still an experimental feature and
+@@ -70,7 +69,7 @@ if (onnxruntime_BUILD_UNIT_TESTS)
+     EXCLUDE_FROM_ALL
+     FIND_PACKAGE_ARGS 1.14.0...<2.0.0 NAMES GTest
+   )
+-  FetchContent_MakeAvailable(googletest)
++  find_package(GTest REQUIRED)
+ endif()
+ 
+ if (onnxruntime_BUILD_BENCHMARKS)
+@@ -227,7 +226,6 @@ if (onnxruntime_DISABLE_RTTI)
+   set(protobuf_DISABLE_RTTI ON CACHE BOOL "Remove runtime type information in the binaries" FORCE)
+ endif()
+ 
+-include(protobuf_function)
+ #protobuf end
+ 
+ onnxruntime_fetchcontent_makeavailable(Protobuf)
+@@ -321,7 +319,6 @@ onnxruntime_fetchcontent_declare(
+     EXCLUDE_FROM_ALL
+     FIND_PACKAGE_ARGS 3.10 NAMES nlohmann_json
+ )
+-onnxruntime_fetchcontent_makeavailable(nlohmann_json)
+ 
+ #TODO: include clog first
+ if (onnxruntime_ENABLE_CPUINFO)
+diff --git a/cmake/onnxruntime_unittests.cmake b/cmake/onnxruntime_unittests.cmake
+index 0916aeb3dd..01a5475990 100644
+--- a/cmake/onnxruntime_unittests.cmake
++++ b/cmake/onnxruntime_unittests.cmake
+@@ -1021,6 +1021,7 @@ if (MSVC)
+ endif()
+ target_include_directories(onnx_test_data_proto PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+ set_target_properties(onnx_test_data_proto PROPERTIES FOLDER "ONNXRuntimeTest")
++include(protobuf_function)
+ if(NOT DEFINED onnx_SOURCE_DIR)
+   find_path(onnx_SOURCE_DIR NAMES "onnx/onnx-ml.proto3" "onnx/onnx-ml.proto" REQUIRED)
+ endif()

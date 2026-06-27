@@ -1,0 +1,28 @@
+# Contributor: Paul Bredbury <brebs@sent.com>
+# Maintainer: Jordan Christiansen <xordspar0@gmail.com>
+pkgname=quakespasm
+pkgver=0.96.3
+pkgrel=1
+pkgdesc="Quake 1 engine"
+url="https://quakespasm.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="mesa-dev sdl2-dev libmad-dev libvorbis-dev"
+source="https://sourceforge.net/projects/quakespasm/files/Source/quakespasm-$pkgver.tar.gz"
+options="!check" # No test suite
+
+build() {
+	cd Quake
+	make DO_USERDIRS=1 USE_SDL2=1
+}
+
+package() {
+	install -Dm 755 "Quake/$pkgname" "$pkgdir/usr/bin/$pkgname"
+	install -Dm 644 "Quake/$pkgname.pak" "$pkgdir/usr/share/games/quake/$pkgname.pak"
+	install -Dm 644 "Linux/net.sourceforge.quakespasm.Quakespasm.desktop" "$pkgdir/usr/share/applications/net.sourceforge.quakespasm.Quakespasm.desktop"
+	install -Dm 644 "Misc/QuakeSpasm_512.png" "$pkgdir/usr/share/icons/hicolor/512x512/net.sourceforge.quakespasm.Quakespasm.png"
+}
+
+sha512sums="
+e8500d566a6cc6532c81823aa7775a48d9edcecc053528477d3c360ba17b8895b5fbda20b2679f571c9996da58d411eed1f975ef9435beb63a3261c14082f18e  quakespasm-0.96.3.tar.gz
+"

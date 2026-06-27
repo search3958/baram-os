@@ -1,0 +1,27 @@
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=piknik
+pkgver=0.10.2
+pkgrel=13
+pkgdesc="Copy/paste anything over the network"
+url="https://github.com/jedisct1/piknik"
+arch="all"
+license="BSD-2-Clause"
+makedepends="go"
+options="net" # go dependencies
+source="$pkgname-$pkgver.tar.gz::https://github.com/jedisct1/piknik/archive/$pkgver.tar.gz"
+
+build() {
+	 go build ./...
+}
+
+check() {
+	./test.sh
+}
+
+package() {
+	install -Dm0755 piknik "$pkgdir"/usr/bin/piknik
+}
+
+sha512sums="
+9b9d66113149d7377f258fe2606ab725df28f040676885e3d2c8bd5f3e50abedfcf06b219b0ee00f180f11cc76f9e284a79a1901bc0facbeedd170533b2662a4  piknik-0.10.2.tar.gz
+"

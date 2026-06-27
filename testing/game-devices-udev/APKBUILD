@@ -1,0 +1,23 @@
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=game-devices-udev
+pkgver=1.0
+pkgrel=0
+pkgdesc="udev rules for a bunch of game controllers"
+url="https://codeberg.org/fabiscafe/game-devices-udev"
+arch="noarch"
+license="MIT"
+source="$pkgname-$pkgver.tgz::https://codeberg.org/fabiscafe/game-devices-udev/archive/$pkgver.tar.gz"
+builddir="$srcdir/game-devices-udev"
+options="!check" # just text files
+
+package() {
+	install -Dm644 ./src/*.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+	install -Dm644 /dev/stdin "$pkgdir"/usr/lib/modules-load.d/game-devices-udev.conf <<-EOF
+	# needed for a lot of controller inputs
+	uinput
+	EOF
+}
+
+sha512sums="
+8002fa3bbb031f589f7617e1cac661499ab46df1a15a9ec311a929712a0709dd548b32465871e89ed5809d33ba6f777c18d8b5b57dc65159e4b6a83250fdae70  game-devices-udev-1.0.tgz
+"

@@ -1,0 +1,45 @@
+# Contributor: Olivier Mauras <olivier@mauras.ch>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=lmdb
+pkgver=0.9.35
+pkgrel=0
+pkgdesc="Lightning Memory-Mapped Database"
+url="https://symas.com/lmdb/"
+arch="all"
+license="OLDAP-2.8"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-tools"
+source="https://git.openldap.org/openldap/openldap/-/archive/LMDB_$pkgver/openldap-LMDB_$pkgver.tar.gz
+	lmdb-make.patch
+	lmdb.pc
+	"
+builddir="$srcdir/openldap-LMDB_$pkgver/libraries/liblmdb"
+
+prepare() {
+	default_prepare
+	sed -i "s|@@VERSION@@|$pkgver|" -i "$srcdir"/*.pc
+}
+
+build() {
+	make CC="${CC:-cc}" LDFLAGS="$LDFLAGS" CFLAGS="$CFLAGS -O2 -fPIC"
+}
+
+check() {
+	LD_LIBRARY_PATH="$PWD" make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" prefix=/usr install
+
+	install -Dm0644 "$srcdir"/*.pc -t "$pkgdir"/usr/lib/pkgconfig
+}
+
+tools() {
+	mkdir -p "$subpkgdir"/usr
+	mv "$pkgdir"/usr/bin "$subpkgdir"/usr
+}
+
+sha512sums="
+4cbe75879c1f4cd7edb73bf3702cf30e883781032173ccfd0b60b4ba8e34b1c5df96305ec0b47351a9c98bd2a26159f59f5aa771fd04e009594cf383dcfed30c  openldap-LMDB_0.9.35.tar.gz
+2d964e250894cecd00a6b4f2f3dd3797ee1434c4299fcea0a4255f5f09cdfa2fe21bfb74d9e0816d79fd44bfa309697f1eb2709268a5376593bde901463852cf  lmdb-make.patch
+0cc194beedd8c1adc7cc1390eb131c800142c14120e47fc744d84f8225efecfa8d4854f4ed26021166b4b7cb021ffc4f068e0009958b1ce6247941fce9658233  lmdb.pc
+"

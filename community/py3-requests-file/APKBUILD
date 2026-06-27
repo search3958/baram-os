@@ -1,0 +1,38 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-requests-file
+_pyname=requests-file
+pkgver=2.1.0
+pkgrel=1
+pkgdesc="Transport adapter for fetching file:// URLs with the requests python library"
+url="https://github.com/dashea/requests-file"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-requests"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm py3-wheel"
+checkdepends="py3-mock py3-pytest"
+subpackages="$pkgname-pyc"
+source="$_pyname-$pkgver.tar.gz::https://github.com/dashea/requests-file/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+64047226585655f02f7877a9d7a97b36d4ed5b2f7b1df435895ebb665205a4d25ab42a7a9a532e880455d5befe0068665b2fd0e94e8acb8297724f36821711d1  requests-file-2.1.0.tar.gz
+"

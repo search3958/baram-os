@@ -1,0 +1,53 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libmbim
+pkgver=1.34.0
+pkgrel=1
+pkgdesc="MBIM modem protocol helper library"
+url="https://www.freedesktop.org/wiki/Software/libmbim/"
+arch="all"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+makedepends="
+	bash-completion-dev
+	eudev-dev
+	glib-dev
+	gobject-introspection-dev
+	help2man
+	meson
+	py3-gobject3
+	python3
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-tools
+	$pkgname-bash-completion
+	$pkgname-udev
+	"
+source="https://gitlab.freedesktop.org/mobile-broadband/libmbim/-/archive/$pkgver/libmbim-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dmbim_groupname=dialout \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+tools() {
+	pkgdesc="Tools for libmbim"
+
+	amove usr/bin usr/libexec
+}
+
+sha512sums="
+f4fec7ea454843176a7e048151bb4942ecdd60c22682afa4179225d8cf5ffe645bb8bd1f7b71e891b83472788d1ab3586eecde9bf6e359aa65fac876ae1674af  libmbim-1.34.0.tar.gz
+"

@@ -1,0 +1,46 @@
+#!/sbin/openrc-run
+
+name="monit"
+description="Monit service supervisor"
+
+extra_commands="checkconfig configtest"
+extra_started_commands="reload"
+
+# $monit_config is for backward compatibility (Alpine <3.19)
+: ${cfgfile:="${monit_config:-/etc/monitrc}"}
+
+command="/usr/bin/monit"
+command_args="-c $cfgfile"
+command_args_foreground="-I"
+
+required_files="$cfgfile"
+
+depend() {
+	use net
+}
+
+start_pre() {
+	checkconfig
+}
+
+checkconfig() {
+	ebegin "Checking $name configuration"
+
+	if ! /usr/bin/monit -t -c "$cfgfile" >/dev/null 2>&1; then
+		eerror "$RC_SVCNAME has detected an error in your setup:"
+		/usr/bin/monit -t "$cfgfile"
+		return 1
+	fi
+	eend 0
+}
+
+# Deprecated, only for backward compatibility (Alpine <3.19)
+configtest() {
+	checkconfig "$@"
+}
+
+reload() {
+	ebegin "Reloading $name"
+	$command -c "$cfgfile" reload >/dev/null 2>&1
+	eend $?
+}

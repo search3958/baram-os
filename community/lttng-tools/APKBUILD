@@ -1,0 +1,52 @@
+# Contributor: Michael Jeanson <mjeanson@efficios.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=lttng-tools
+pkgver=2.14.0
+pkgrel=1
+pkgdesc="LTTng 2.0 control and utility programs"
+url="https://lttng.org"
+arch="all"
+license="GPL-2.0-only AND LGPL-2.1-only"
+depends="babeltrace"
+depends_dev="
+	babeltrace-dev
+	kmod-dev
+	libxml2-dev
+	lttng-ust-dev
+	popt-dev
+	userspace-rcu-dev
+	util-linux-dev
+	"
+makedepends="$depends_dev autoconf automake bash coreutils grep libtool"
+checkdepends="util-linux"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+source="https://lttng.org/files/lttng-tools/lttng-tools-$pkgver.tar.bz2
+	eventfd.patch
+	test.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	# only run unit tests. all tests takes too much time
+	make -j1 -C tests/unit check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+4027f8c4685976c6b04de1825e1b57dba720e10a055a62ff0b7384387167dce242915cc877022273fe76a9e0c4e907a1779c71354167ca26cf6a0ba332bf7598  lttng-tools-2.14.0.tar.bz2
+54576f28cd9d2f6d107b5ea3aa8fd5b58f4858879edb736a4a6da19f802c9dd64bced84804cbe70534f1de905473033070f48f84e189c9dc8cf449725326b357  eventfd.patch
+3588ac1841d550f47d02a1c5d8dfa9d4a7b8c393bbb87fa25931335eebdd902fb7cac11e8430a3f5a2573fb757173d8c035ee03fb14c76b6eaf779c55e0bfa7b  test.patch
+"

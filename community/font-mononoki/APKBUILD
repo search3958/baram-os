@@ -1,0 +1,25 @@
+# Contributor: Ivan Tham <pickfire@riseup.net>
+# Maintainer: mio <miyopan@e.email>
+pkgname=font-mononoki
+pkgver=1.6
+pkgrel=2
+pkgdesc="Font for programming and code review"
+url="https://madmalik.github.io/mononoki/"
+arch="noarch"
+license="OFL-1.1"
+depends="fontconfig mkfontscale"
+source="mononoki-$pkgver.zip::https://github.com/madmalik/mononoki/releases/download/$pkgver/mononoki.zip"
+builddir="$srcdir"
+options="!check" # is a font
+
+# backwards compat
+provides="ttf-mononoki=$pkgver-r$pkgrel"
+replaces="ttf-mononoki"
+
+package() {
+	install -Dm644 ./*.ttf -t "$pkgdir"/usr/share/fonts/${pkgname#font-}
+}
+
+sha512sums="
+cff02ac92fd3c0b4f243546d522a6c6901f20730e66bc7a8c838fee48f17729569638ca9678f6a4009d32ac17c6777d1a2e6b1cc0ce977c72ac642ab82542c5f  mononoki-1.6.zip
+"

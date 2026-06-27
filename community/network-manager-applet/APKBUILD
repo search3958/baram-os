@@ -1,0 +1,47 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=network-manager-applet
+pkgver=1.36.0
+pkgrel=0
+pkgdesc="GTK network manager applet"
+url="https://gitlab.gnome.org/GNOME/network-manager-applet"
+arch="all"
+license="GPL-2.0-or-later"
+depends="dbus:org.freedesktop.Secrets"
+makedepends="
+	gcr-dev
+	gtk+3.0-dev
+	jansson-dev
+	libayatana-appindicator-dev
+	libdbusmenu-gtk3-dev
+	libgudev-dev
+	libnma-dev
+	libnotify-dev
+	libsecret-dev
+	meson
+	modemmanager-dev
+	networkmanager-dev
+	polkit-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://download.gnome.org/sources/network-manager-applet/${pkgver%.*}/network-manager-applet-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dselinux=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+081cb1f219b0ea44ff15b9ebb3696d976463530317244ce25b18cdc292d453fccd2619cc42ea07798604ed1e5f7c5295bcb7ba148f1ed3312bf8f80d8647e30a  network-manager-applet-1.36.0.tar.xz
+"

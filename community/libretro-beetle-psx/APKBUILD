@@ -1,0 +1,44 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-beetle-psx
+pkgver=0_git20250131
+pkgrel=0
+_commit="51ffd50564d54abfb62eccf358166bd9ccc708ac"
+# loongarch64: blocked by lightning(dependency of beetle-psx-libretro)
+arch="all !loongarch64"
+url="https://github.com/libretro/beetle-psx-libretro"
+pkgdesc="Standalone port/fork of Mednafen PSX to the Libretro API"
+license="GPL-2.0-or-later"
+makedepends="mesa-dev"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/beetle-psx-libretro/archive/$_commit.tar.gz"
+subpackages="$pkgname-hw"
+builddir="$srcdir/beetle-psx-libretro-$_commit"
+options="!check" # No tests
+
+prepare() {
+	default_prepare
+
+	mkdir -p "$srcdir"/libretro-beetle-psx && mkdir -p "$srcdir"/libretro-beetle-psx-hw
+	cp -r "$builddir"/* "$srcdir"/libretro-beetle-psx && cp -r "$builddir"/* "$srcdir"/libretro-beetle-psx-hw
+	mv "$srcdir"/libretro-beetle-psx "$builddir"
+	mv "$srcdir"/libretro-beetle-psx-hw "$builddir"
+}
+
+build() {
+	make -C libretro-beetle-psx
+	HAVE_HW=1 make -C libretro-beetle-psx-hw
+}
+
+package() {
+	install -Dm644 "$builddir"/libretro-beetle-psx/mednafen_psx_libretro.so \
+		"$pkgdir"/usr/lib/libretro/mednafen_psx_libretro.so
+}
+
+hw() {
+	install -Dm644 "$builddir"/libretro-beetle-psx-hw/mednafen_psx_hw_libretro.so \
+		"$subpkgdir"/usr/lib/libretro/mednafen_psx_hw_libretro.so
+}
+
+sha512sums="
+48d82b1965fdbb75fa86dcdcf066d8e8466dc4ded0b98a24bfe99eba6286be30254c57ced9e4b461fb4dab3d98692edad7eac17e8391ecb266d4930fb7851a9b  libretro-beetle-psx-51ffd50564d54abfb62eccf358166bd9ccc708ac.tar.gz
+"

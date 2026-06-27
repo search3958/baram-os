@@ -1,0 +1,47 @@
+# Contributor: Coco Liliace <coco@liliace.dev>
+# Maintainer:
+pkgname=heisenbridge
+pkgver=1.15.4
+pkgrel=0
+pkgdesc="Bouncer-style Matrix IRC bridge"
+url="https://github.com/hifi/heisenbridge"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	py3-irc
+	py3-ruamel.yaml.clib
+	py3-mautrix
+	py3-python-socks
+	py3-aiohttp
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hifi/heisenbridge/archive/refs/tags/v$pkgver.tar.gz"
+
+_distname=".dist"
+
+prepare() {
+	default_prepare
+
+	echo "$pkgver" > heisenbridge/version.txt
+}
+
+build() {
+	gpep517 build-wheel --output-fd 3 --wheel-dir "$_distname" 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$_distname"/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" "$_distname"/*.whl
+}
+
+sha512sums="
+6269f56ff193d4e503e5c1acaf529d36d1c40cc1b4362203fd1c4e0f6ba9356b439068f897b6ebc3ae80dac731c43a2b364bee4bd5148e4ac96a2ea2fcc51578  heisenbridge-1.15.4.tar.gz
+"

@@ -1,0 +1,35 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=ssh-audit
+pkgver=3.3.0
+pkgrel=1
+pkgdesc="SSH server and client configuration auditing"
+url="https://github.com/jtesta/ssh-audit"
+license="MIT"
+arch="noarch"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://github.com/jtesta/ssh-audit/archive/v$pkgver/ssh-audit-$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	install -Dm644 -t "$pkgdir"/usr/share/man/man1 ssh-audit.1
+}
+
+sha512sums="
+5be8c2e65ca76f34b425392ee54dc62be7a7bfe00fd567123000278a3c4fcd5fe7f4cab8f1edab5ffb08cb9827303ec1e6605b4d0b0a8b35c210f69a57fc595d  ssh-audit-3.3.0.tar.gz
+"

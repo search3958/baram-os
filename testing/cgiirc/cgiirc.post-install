@@ -1,0 +1,26 @@
+#!/bin/sh
+
+cat >&2 <<EOF
+*
+* CGI:IRC has been installed to:
+*     /usr/share/webapps/cgiirc
+* An config file has been installed to:
+*     /etc/cgiirc/cgiirc.config
+* If you use lighttpd:
+*     1) Enable mod_cgi from lighttpd.conf and modify it adding in cgi.assign section:
+* cgi.assign = (
+*				".pl"	=>	"/usr/bin/perl",
+*				".cgi"	=>	"/usr/bin/perl",
+*
+* )
+*     2) Create a symlink to /usr/share/webapps/cgiirc:
+*            ln -s /usr/share/webapps/cgiirc /var/www/localhost/htdocs/cgi-bin
+*     This is needed because lighttpd mod_cgi matches cgi-bin dir in order to allow exec cgi.
+*
+*     3) Restart lighttpd when done.
+*
+*     4) Go with your browser in http://your.ip.address/cgi-bin/irc.cgi
+*
+EOF
+
+exit 0

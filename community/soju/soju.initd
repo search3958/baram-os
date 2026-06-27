@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+supervisor=supervise-daemon
+
+name="soju"
+description="User-friendly IRC bouncer"
+
+: ${command_args:="-config /etc/soju/config"}
+: ${error_log:=/var/log/soju.log}
+
+command=/usr/bin/soju
+command_user=soju:soju
+directory="/var/lib/$RC_SVCNAME"
+capabilities="^cap_net_bind_service"
+
+extra_started_commands="reload"
+description_reload="Reload configuration and certificate"
+
+depend() {
+	need net localmount
+	after firewall
+}
+
+start_pre() {
+	checkpath -d -o $command_user "$directory"
+	checkpath -f -o $command_user "$error_log"
+	checkpath -d -o $command_user /run/soju
+}
+
+reload() {
+	ebegin "Reloading configuration and certificate"
+	$supervisor $RC_SVCNAME --signal HUP
+	eend $?
+}

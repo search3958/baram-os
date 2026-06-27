@@ -1,0 +1,41 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+# Maintainer: Holger Jaekel <holger.jaekel@gmx.de>
+_pkgname=cligj
+pkgname=py3-$_pkgname
+pkgver=0.7.2
+pkgrel=6
+pkgdesc="Common arguments and options for GeoJSON processing commands, using Click"
+url="https://pypi.org/project/cligj/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	python3
+	py3-click
+	"
+makedepends="
+	py3-setuptools
+	"
+checkdepends="
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="
+	py3-cligj-$pkgver.tar.gz::https://github.com/mapbox/cligj/archive/$pkgver.tar.gz
+	"
+builddir="$srcdir/cligj-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	PYTHONPATH=. pytest
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+292c1a6de4ed5d4926ccd71802d369db383d310a3a8590729233448cebe5e9ad9dd6bff0d0c861890102bc9f23e90fe1b9db62275a9263765e3d77436a0b38b4  py3-cligj-0.7.2.tar.gz
+"

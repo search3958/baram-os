@@ -1,0 +1,47 @@
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -3247,7 +3247,6 @@
+  "serde",
+  "thiserror 2.0.12",
+  "tokio",
+- "webpki-roots",
+ ]
+ 
+ [[package]]
+@@ -6320,7 +6319,6 @@
+ checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
+ dependencies = [
+  "bindgen 0.72.1",
+- "cc",
+  "pkg-config",
+  "vcpkg",
+ ]
+@@ -7829,9 +7827,7 @@
+ 
+ [[package]]
+ name = "psm"
+-version = "0.1.21"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "5787f7cda34e3033a72192c018bc5883100330f362ef279a8cbccfce8bb4e874"
++version = "0.1.20"
+ dependencies = [
+  "cc",
+ ]
+@@ -9259,8 +9255,6 @@
+ [[package]]
+ name = "stacker"
+ version = "0.1.15"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "c886bd4480155fd3ef527d45e9ac8dd7118a898a46530b7b94c3e21866259fce"
+ dependencies = [
+  "cc",
+  "cfg-if",
+@@ -10897,8 +10891,6 @@
+ [[package]]
+ name = "v8"
+ version = "146.1.0"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "70bb6bcbb6a406fd720dad66d85337bd401d8276c7276f6a86164af6e1c57118"
+ dependencies = [
+  "bindgen 0.72.1",
+  "bitflags 2.9.3",

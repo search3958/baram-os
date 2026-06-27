@@ -1,0 +1,83 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=pcre2
+pkgver=10.47
+pkgrel=1
+pkgdesc="Perl-compatible regular expression library"
+url="https://pcre.org/"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="
+	libedit-dev
+	zlib-dev
+	"
+makedepends="$depends_dev"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-tools
+	libpcre2-16:_libpcre
+	libpcre2-32:_libpcre
+	"
+source="https://github.com/PhilipHazel/pcre2/releases/download/pcre2-$pkgver/pcre2-$pkgver.tar.bz2"
+
+# secfixes:
+#   10.46-r0:
+#     - CVE-2025-58050
+#   10.41-r0:
+#     - CVE-2022-41409
+#   10.40-r0:
+#     - CVE-2022-1586
+#     - CVE-2022-1587
+
+case "$CARCH" in
+	sh*) _enable_jit="";;
+	*) _enable_jit="--enable-jit";;
+esac
+
+build() {
+	# Note: Forced -O3 is recommended (needed?) for Julia.
+	./configure \
+		CFLAGS="$CFLAGS -O3" \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--docdir=/usr/share/doc/$pkgname-$pkgver \
+		--htmldir=/usr/share/doc/$pkgname-$pkgver/html \
+		--enable-pcre2-16 \
+		--enable-pcre2-32 \
+		--enable-pcre2grep-libz \
+		--enable-pcre2test-libedit \
+		--disable-symvers \
+		$_enable_jit
+	make
+}
+
+check() {
+	./RunTest
+	if [ -n "$_enable_jit" ]; then
+		./pcre2_jit_test
+	fi
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+_libpcre() {
+	local bits="${subpkgname##*-}"
+	pkgdesc="PCRE2 with $bits bit character support"
+
+	amove usr/lib/libpcre2-$bits.so*
+}
+
+tools() {
+	pkgdesc="Auxiliary utilities for PCRE2"
+
+	amove usr/bin
+}
+
+sha512sums="
+889a6fdc80f8a7285e4a75d189c183b4588df81bdf048302cf0830e11bbf9b9eeb387ba43dfd3aff8ffb3aa693291e8c535845c06e8ce92d1028cefa6b474804  pcre2-10.47.tar.bz2
+"

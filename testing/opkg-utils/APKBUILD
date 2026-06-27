@@ -1,0 +1,39 @@
+# Maintainer: Ryan Barnett <ryanbarnett3@gmail.com>
+pkgname=opkg-utils
+pkgver=0.7.0
+pkgrel=0
+pkgdesc="Helper scripts for use with the opkg package manager"
+url="https://git.yoctoproject.org/cgit/cgit.cgi/opkg-utils/"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="bash
+	binutils
+	bzip2
+	coreutils
+	diffutils
+	findutils
+	grep
+	gzip
+	lz4
+	python3
+	sed
+	tar
+	xz
+	"
+makedepends="perl"
+subpackages="$pkgname-doc"
+source="https://git.yoctoproject.org/cgit/cgit.cgi/opkg-utils/snapshot/opkg-utils-$pkgver.tar.gz"
+options="!check" # no test suite
+
+package() {
+	# There are no build commands as all files are either shell scripts
+	# or python scripts
+	make PREFIX=/usr DESTDIR="$pkgdir" install-utils
+	# Makefile installs docs under (PREFIX)/man. Change the prefix
+	# to preferred location for man pages under /usr/share
+	make PREFIX=/usr/share DESTDIR="$pkgdir" install-docs
+}
+
+sha512sums="
+441ee5ed416c3565617ae5fc413846ebc53e33876f9cce5e721afef2b8d9cd68723231ea12c8a2effaba2ccb33a36dc6e180994a57e6871f34d671c03ab36b7b  opkg-utils-0.7.0.tar.gz
+"

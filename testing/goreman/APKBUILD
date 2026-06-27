@@ -1,0 +1,29 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=goreman
+pkgver=0.3.17
+pkgrel=0
+pkgdesc="Tool to manage Procfile-based applications"
+url="https://github.com/mattn/goreman"
+arch="all"
+license="MIT"
+makedepends="go"
+source="https://github.com/mattn/goreman/archive/v$pkgver/goreman-$pkgver.tar.gz"
+options="!check" # No test suite
+
+export GOFLAGS="$GOFLAGS -modcacherw -trimpath"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -o bin/goreman .
+}
+
+package() {
+	install -Dm755 bin/goreman "$pkgdir"/usr/bin/goreman
+}
+
+sha512sums="
+85880f4bc788ce892c07bc93bd99b64a742d174175cdaaae9d295978443dbe8e10c01e84cc37a82398326cd8d4ec9df4bb82dddbd3c9c4fba64779c830d3451b  goreman-0.3.17.tar.gz
+"

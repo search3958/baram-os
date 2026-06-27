@@ -1,0 +1,53 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=java-jffi
+_pkgname=${pkgname#java-}
+pkgver=1.3.15
+_libver=1.2
+pkgrel=0
+pkgdesc="Java Foreign Function Interface"
+url="https://github.com/jnr/jffi"
+# riscv64: blocked by openjdk8
+arch="all !riscv64"
+license="Apache-2.0"
+depends="$pkgname-native=$pkgver-r$pkgrel java-jre-headless"
+makedepends="apache-ant file linux-headers openjdk8 texinfo"
+subpackages="$pkgname-native"
+source="https://github.com/jnr/$_pkgname/archive/refs/tags/$_pkgname-$pkgver.tar.gz
+	gcc14.patch"
+builddir="$srcdir/$_pkgname-$_pkgname-$pkgver"
+
+# Tests fail on non-x86_64 platforms, they are probably broken.
+# if [ "$CARCH" != x86_64 ]; then
+# 	options="!check"
+# fi
+# pass locally and in ci but not on builders
+options="!check"
+
+build() {
+	export JAVA_HOME="/usr/lib/jvm/java-8-openjdk"
+	ant jar
+}
+
+check() {
+	ant test -v
+}
+
+package() {
+	install -m644 -D "$builddir"/dist/jffi.jar \
+		"$pkgdir"/usr/share/java/$_pkgname-$pkgver.jar
+	ln -sf $_pkgname-$pkgver.jar "$pkgdir"/usr/share/java/$_pkgname.jar
+}
+
+native() {
+	depends=""
+
+	# Note: jffi expects file named libjffi-x.y.so, not libjffi.so.x.y.
+	install -m755 -D "$builddir"/build/jni/libjffi-$_libver.so \
+		"$subpkgdir"/usr/lib/libjffi-$_libver.so
+}
+
+sha512sums="
+19591cf7fe5fa888292afc99a283b4958c5247a64ec2fdb5ea4031c69bc4297592fa2289ef784c83f0764da4eb383db26b76731e10d6b0ba8de7f98146ed09d5  jffi-1.3.15.tar.gz
+71622e22f1301100e4c9ab55842a34d5f1e416ad455f7a428946b0595edd2ec91f4b25cecdce5c79db29da2db56b6d8ebdf66a937a4fbddc5e0b12e7a221ddef  gcc14.patch
+"

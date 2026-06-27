@@ -1,0 +1,39 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Liliana <me@iodomi.eu>
+maintainer="Liliana <me@iodomi.eu>"
+pkgname=apx
+pkgver=3.1.1
+pkgrel=0
+pkgdesc="A package manager that can install packages from multiple sources without altering the root filesystem"
+url="https://github.com/Vanilla-OS/apx"
+license="GPL-3.0-only"
+arch="all"
+depends="distrobox"
+makedepends="go"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Vanilla-OS/apx/archive/refs/tags/v$pkgver.tar.gz
+	config.json
+	"
+# net required to download go modules
+# no tests
+options="net !check"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -trimpath -v -o apx ./cmd
+}
+
+package() {
+	install -Dm755 apx "$pkgdir"/usr/bin/apx
+	install -Dm644 "$srcdir"/config.json "$pkgdir"/usr/share/apx/config.json
+
+	install -Dm755 man/man1/apx.1 "$pkgdir"/usr/share/man/man1/apx.1
+}
+
+sha512sums="
+7a2f0e23f0bb5c173f23a5645847e34a8999907ddafd82f4e0d3f7e10060a4044e6ad35dc9e1a32e906bef980b62a16937b3abe5e28cb08e0b9c536918fff587  apx-3.1.1.tar.gz
+0d0e999b5b2e714bcd63e69357740a805cf3670c2e9d03c36700de17aec0445e56cb1da27b1b192fe11287beb98833d616fcc51937872b845bdb693ea9901929  config.json
+"

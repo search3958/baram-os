@@ -1,0 +1,243 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Contributor: Cameron Banta <cbanta@gmail.com>
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=freeswitch
+pkgver=1.10.12
+pkgrel=5
+pkgdesc="A communications platform written in C from the ground up"
+url="https://www.freeswitch.org/"
+arch="all"
+license="MPL-1.1"
+options="!check" # fixme: failing tests
+makedepends="
+	apr-dev
+	autoconf
+	automake
+	bash
+	bsd-compat-headers
+	coreutils
+	curl-dev
+	diffutils
+	flite-dev
+	gdbm-dev
+	lame-dev
+	ldns-dev
+	libedit-dev
+	libjpeg-turbo-dev
+	libks-dev
+	libpq-dev
+	libshout-dev
+	libsndfile-dev
+	libsrtp-dev
+	libtool
+	linux-headers
+	lua5.3-dev
+	mpg123-dev
+	mariadb-dev
+	ncurses-dev
+	nasm
+	net-snmp-dev
+	openssl-dev>3
+	opus-dev
+	pcre-dev
+	perl-dev
+	portaudio-dev
+	py3-setuptools
+	python3-dev
+	sngtc_client-dev
+	sofia-sip-dev
+	spandsp3-dev
+	speex-dev
+	speexdsp-dev
+	sqlite-dev
+	tiff-dev
+	unixodbc-dev
+	util-linux-dev
+	xmlrpc-c-dev
+	zlib-dev
+	"
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+_freeswitch_user=freeswitch
+_freeswitch_group=freeswitch
+pkgusers="$_freeswitch_user"
+pkggroups="$_freeswitch_group"
+subpackages="$pkgname-dbg
+	$pkgname-dev $pkgname-flite $pkgname-timezones::noarch
+	$pkgname-sample-config:conf:noarch $pkgname-sangoma
+	$pkgname-snmp $pkgname-pgsql $pkgname-mariadb $pkgname-python3
+	$pkgname-perl $pkgname-perlesl $pkgname-openrc"
+
+source="https://files.freeswitch.org/freeswitch-releases/freeswitch-$pkgver.-release.tar.xz
+	getlib.patch
+	libvpx-fix-arm-float-abi.patch
+	disable-Werror.patch
+	python-3.10.patch
+	gcc14.patch
+	gcc15.patch
+	modules.conf
+	freeswitch.confd
+	freeswitch.initd
+	"
+
+builddir="$srcdir/$pkgname-$pkgver.-release"
+
+# secfixes:
+#   1.10.11-r0:
+#     - CVE-2023-51443
+#   1.10.7-r0:
+#     - CVE-2021-37624
+#     - CVE-2021-41105
+#     - CVE-2021-41145
+#     - CVE-2021-41157
+#     - CVE-2021-41158
+
+prepare() {
+	default_prepare
+	NOCONFIGURE=1 autoreconf -vif
+	update_config_sub
+}
+
+build() {
+	cp -f "$srcdir/modules.conf" modules.conf
+	# Wno-format-truncation: https://github.com/signalwire/freeswitch/issues/652
+	CFLAGS="$CFLAGS -Wno-unused-but-set-variable -Wno-format-truncation" ./configure \
+		ac_cv_func_sched_setscheduler=no \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-fhs \
+		--localstatedir=/var \
+		--sysconfdir=/etc \
+		--with-scriptdir=/etc/freeswitch/scripts \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--with-devrandom=/dev/urandom \
+		--with-python3 \
+		--disable-debug \
+		--enable-core-pgsql-support \
+		--enable-system-lua \
+		--enable-system-xmlrpc-c
+
+	make libs/libvpx/libvpx.a
+	# first build libfreeswitch (in parallel)
+	make src/include/switch_version.h src/include/switch_swigable_cpp.h
+	make libfreeswitch.la
+	# finally we build the rest
+	make all
+
+	# build perlesl module
+	cd "$builddir"/libs/esl
+	make perlmod
+
+	# deal with pkg-config version being bogus
+	cd "$builddir"
+	sed -i s:-release::g build/freeswitch.pc
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install samples-conf samples-htdocs
+
+	install -m755 -D "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+	chown -R $_freeswitch_user:$_freeswitch_group "$pkgdir"/var/*/freeswitch
+
+	# install perlesl module
+	cd "$builddir"/libs/esl
+	make -j1 DESTDIR="$pkgdir" perlmod-install
+}
+
+_mv_mod() {
+	local moddir=usr/lib/freeswitch/mod i=
+	mkdir -p "$subpkgdir"/$moddir
+	for i in "$@"; do
+		mv "$pkgdir"/$moddir/$i.so "$subpkgdir"/$moddir/
+	done
+}
+
+flite() {
+	pkgdesc="Freeswitch Text To Speech Module"
+	_mv_mod mod_flite
+##
+## The mod_say_xx modules can be used with out flite (for numbers, etc using
+## sound files). So they shouldn't be in the flite package -cB
+##
+#	_mv_mod mod_say_de mod_say_en mod_say_es mod_say_fr \
+#		mod_say_it mod_say_nl mod_say_zh mod_say_hu mod_say_ru \
+#		mod_say_th mod_say_he
+}
+
+sangoma() {
+	pkgdesc="Freeswitch Sangoma Media Transcode Codec Module"
+	_mv_mod mod_sangoma_codec
+}
+
+timezones() {
+	pkgdesc="Freeswitch timezone configuration"
+	replaces="freeswitch-sample-config"
+	mkdir -p "$subpkgdir"/etc/freeswitch/autoload_configs
+	mv "$pkgdir"/etc/freeswitch/autoload_configs/timezones.conf.xml \
+		"$subpkgdir"/etc/freeswitch/autoload_configs
+}
+
+snmp() {
+	pkgdesc="Freeswitch SNMP module"
+	_mv_mod mod_snmp
+}
+
+pgsql() {
+	pkgdesc="Freeswitch PostgreSQL Module"
+	_mv_mod mod_cdr_pg_csv
+}
+
+mariadb() {
+	pkgdesc="Freeswitch MariaDB Module"
+	_mv_mod mod_mariadb
+}
+
+perl() {
+	pkgdesc="Freeswitch Perl module"
+	_mv_mod mod_perl
+}
+
+perlesl() {
+	pkgdesc="Freeswitch Perl ESL module"
+	mkdir -p "$subpkgdir"/usr/lib/perl5
+	mv "$pkgdir"/usr/lib/perl5/* "$subpkgdir"/usr/lib/perl5
+}
+
+python3() {
+	pkgdesc="Freeswitch Python3 module"
+	_mv_mod mod_python3
+}
+
+conf() {
+	pkgdesc="Freeswitch sample configuration"
+	depends="freeswitch-timezones"
+	mkdir -p "$subpkgdir"/etc/freeswitch
+	# move all configs except freeswitch.xml
+	for i in "$pkgdir"/etc/freeswitch/*; do
+		[ "$i" = "$pkgdir"/etc/freeswitch/freeswitch.xml ] && continue
+		mv "$i" "$subpkgdir"/etc/freeswitch/
+	done
+	mkdir -p "$pkgdir"/etc/freeswitch/scripts
+}
+
+sha512sums="
+5f9812b5ffa9964bc17fc4b35e2ffd55b1f11a0f24b4e4b8a1b0abb7e6eb0738dbeb7090ee183ffb8daf2e7871fb31e47f27bb054cd9e0270588fc34b8766066  freeswitch-1.10.12.-release.tar.xz
+4ceb48f64d2bc26a02cc0846276506241bfd30c156422b0a1d608fd172c099feb5c121a763652e9a45046dcdd0ba0eb71eab240e0c6ce2ad63ff781719e135a4  getlib.patch
+98a53f289c3647cafd05b6f847da0504a838a6e06545c133c10fb058c2d941e6bccf2820f44649fc25f94a4a5b7c1280eaee91098e8110f96ed3342c1cb4346c  libvpx-fix-arm-float-abi.patch
+16e9208fca7f0a1985dd01ec38ddabb6a79da83ad6ab004bb66de528ac45f02fadaddc50a9f228e1aa38fae213fa5af0ca858b7af629b67a7d654339f813a68c  disable-Werror.patch
+4739be0c1c6783ace2bd10f7573b1ca86be013d21a7f973b5fd348c98fb9ed1a548baacee6bb65b7501251106c8dbd7266997f8699d2d7070a2bd7efe145b866  python-3.10.patch
+c71076ebf0cb40f8dc9e3edf9795035a38a619d3e4f0ee143b6c1a86d6cdb3daa3832181af68c4bf48465206acc905432eb2d0211a42e0a25b8c84b886c40c0e  gcc14.patch
+ca102730ee6eb10b45a411b926c9aa8126544220e0ee0a1f644ce831e4d4b15fe8ab2ae00e4840605911865552ab5844cd4200127be45d57527c67e953a27edf  gcc15.patch
+b2e4e5982e600098e00d5dce801f6159dc3d0765e9de5acc05492b4c811f399b4302c4c6a91d9788d8464d46d9c7a64b70a345130b97aa5a73da41acc57f67de  modules.conf
+6acd45b36fc36abd68083431d88f9baff67dbe2491871617afea3b557508b3e8aac669fdb793c3232c66117529108abec5f4d1f3455d755ead84ebce1e7cb4d7  freeswitch.confd
+f74f3a9dd781e49f3590ed63c48515bc9a5871bba51773f38b1c697da7792f7a107b24f2cad85fbe17457d8240d7489ad173658a658c56addc738211b092003b  freeswitch.initd
+"

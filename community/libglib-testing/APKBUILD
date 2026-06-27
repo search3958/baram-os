@@ -1,0 +1,34 @@
+# Contributor: Angelo Verlain <hey@vixalien.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libglib-testing
+pkgver=0.2.0
+pkgrel=0
+pkgdesc="Test harnesses and mock classes for GLib"
+url="https://gitlab.gnome.org/pwithnall/libglib-testing"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	dbus
+	dbus-dev
+	glib-dev
+	gtk-doc
+	meson
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://gitlab.gnome.org/pwithnall/libglib-testing/-/archive/$pkgver/libglib-testing-$pkgver.tar.gz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+sha512sums="
+d5cf69958b61be5b1604d26ad6e1ea29020aba1d93842e32d81c5ee306725711eb4b5780e40b5872022f7904873c04e186593beedf2977b58ef7a5b934faee50  libglib-testing-0.2.0.tar.gz
+"

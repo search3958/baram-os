@@ -1,0 +1,37 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-cairo
+pkgver=1.28.0
+pkgrel=1
+pkgdesc="Python3 bindings for the cairo graphics library"
+url="http://cairographics.org/pycairo/"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="python3-dev cairo-dev meson"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc $pkgname-dev"
+source="https://github.com/pygobject/pycairo/releases/download/v$pkgver/pycairo-$pkgver.tar.gz"
+builddir="$srcdir"/pycairo-$pkgver
+
+replaces="py-cairo" # Backwards compatibility
+provides="py-cairo=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	python3 -m compileall "$pkgdir"/usr/lib
+}
+
+sha512sums="
+d3fcb6641ad6dcf9b804dbc2a372f653619512e139fb7a196bb1219b00f60e79e5d60fbbddc2e6a0afb959f9fcb37f1f3c460ad6331274581cb241434865b5a5  pycairo-1.28.0.tar.gz
+"

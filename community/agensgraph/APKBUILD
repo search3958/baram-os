@@ -1,0 +1,270 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=agensgraph
+# NOTE: When bumping minor, update version in $data_dir in confd and initd.
+pkgver=2.16.0
+pkgrel=2
+pkgdesc="A transactional graph database based on PostgreSQL"
+url="https://bitnine.net/agensgraph/"
+# armhf, armv7, s390x, x86: tests fail, not supported by upstream
+arch="all !armhf !armv7 !s390x !x86"
+license="PostgreSQL AND Apache-2.0"
+depends="tzdata"
+depends_dev="
+	icu-dev
+	lz4-dev
+	openssl-dev
+	zstd-dev
+	"
+makedepends="$depends_dev
+	bison
+	docbook-xsl-nons
+	flex
+	linux-headers
+	perl-dev
+	python3-dev
+	readline-dev
+	tcl-dev
+	util-linux-dev
+	zlib-dev
+	"
+checkdepends="
+	icu-data-full
+	diffutils
+	perl-ipc-run
+	"
+pkgusers="postgres"
+pkggroups="postgres"
+install="
+	$pkgname.pre-install
+	$pkgname.pre-upgrade
+	$pkgname.post-install
+	"
+sonameprefix="$pkgname:"
+subpackages="
+	$pkgname-contrib
+	$pkgname-plperl
+	$pkgname-plperl-contrib:plperl_contrib
+	$pkgname-plpython3
+	$pkgname-plpython3-contrib:plpython3_contrib
+	$pkgname-pltcl
+	$pkgname-dev
+	$pkgname-openrc
+	"
+source="https://github.com/bitnine-oss/agensgraph/archive/v$pkgver/agensgraph-$pkgver.tar.gz
+	initdb.patch
+	per-version-dirs.patch
+	disable-html-docs.patch
+	remove-libecpg_compat.patch
+	pg_config-add-major-version.patch
+	dont-use-locale-a-on-musl.patch
+	icu-collations-hack.patch
+	libpgport-pkglibdir.patch
+
+	agensgraph-unix_socket_directories.patch
+	agensgraph-dirs.patch
+	agensgraph-default-port.patch
+
+	$pkgname.initd
+	$pkgname.confd
+	"
+
+_bindir=usr/libexec/$pkgname
+_datadir=usr/share/$pkgname
+_includedir=usr/include/$pkgname
+_libdir=usr/lib/$pkgname
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	export PYTHON=/usr/bin/python3
+	export CFLAGS="${CFLAGS/-Os/-O2}"
+	export CPPFLAGS="${CPPFLAGS/-Os/-O2}"
+
+	# without-libxml - XML tests fail (static memory buffer doesn't support encoding)
+	# without-llvm - fails to build with LLVM 14
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--bindir=/$_bindir \
+		--datarootdir=/usr/share \
+		--datadir=/$_datadir \
+		--docdir=/.DELETE \
+		--includedir=/$_includedir \
+		--libdir=/$_libdir \
+		--mandir=/.DELETE \
+		--sysconfdir=/etc/$pkgname \
+		--enable-rpath \
+		--with-system-tzdata=/usr/share/zoneinfo \
+		--without-libxml \
+		--with-openssl \
+		--with-uuid=e2fs \
+		--without-llvm \
+		--with-icu \
+		--with-perl \
+		--with-python \
+		--with-tcl \
+		--with-lz4 \
+		--with-zstd \
+		--without-ldap \
+		--with-pgport=5434
+	make world
+}
+
+check() {
+	_run_tests src/test
+	_run_tests src/pl
+	_run_tests contrib
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	cd "$pkgdir"
+
+	rm -rf ./.DELETE
+
+	# Duplicate of usr/bin/ecpg.
+	rm -f ./$_bindir/ecpg
+
+	rm ./$_bindir/psql
+	ln -s agens ./$_bindir/psql
+
+	mkdir -p ./usr/bin
+	ln -s /$_bindir/ag_ctl ./usr/bin/
+	ln -s /$_bindir/agens ./usr/bin/
+	ln -s /$_bindir/postgres ./usr/bin/agens-server
+
+	install -d -m750 -o postgres -g postgres \
+		./etc/$pkgname \
+		./var/lib/$pkgname \
+		./var/log/$pkgname
+
+	install -D -m755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -D -m644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+}
+
+contrib() {
+	pkgdesc="Extension modules distributed with AgensGraph"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	cd "$builddir"
+
+	# Avoid installing plperl and plpython extensions, these will be
+	# installed into separate subpackages.
+	sed -Ei -e 's/(.*_plperl)/#\1/' \
+		-e 's/(.*_plpython)/#\1/' \
+		contrib/Makefile
+
+	make -C contrib DESTDIR="$subpkgdir" install
+
+	_contrib_common
+}
+
+pltcl() {
+	pkgdesc="PL/Tcl procedural language for AgensGraph"
+	depends="$pkgname=$pkgver-r$pkgrel pgtcl"
+
+	amove $_libdir/pltcl.so
+	amove $_datadir/extension/pltcl*
+}
+
+plperl() {
+	pkgdesc="PL/Perl procedural language for AgensGraph"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove $_libdir/plperl.so
+	amove $_datadir/extension/plperl*
+}
+
+plperl_contrib() {
+	_plcontrib plperl "PL/Perl"
+
+	cd "$builddir"
+	make -C contrib/hstore_plperl DESTDIR="$subpkgdir" install
+
+	_contrib_common
+}
+
+plpython3() {
+	pkgdesc="PL/Python3 procedural language for AgensGraph"
+	depends="$pkgname=$pkgver-r$pkgrel python3"
+
+	amove $_libdir/plpython3.so
+	amove $_datadir/extension/plpython*
+}
+
+plpython3_contrib() {
+	_plcontrib plpython3 "PL/Python 3"
+
+	cd "$builddir"
+	make -C contrib/hstore_plpython DESTDIR="$subpkgdir" install
+	make -C contrib/ltree_plpython DESTDIR="$subpkgdir" install
+
+	cd "$subpkgdir"/$_datadir/extension/
+
+	_contrib_common
+}
+
+dev() {
+	default_dev
+
+	amove $_libdir/pgxs/*
+}
+
+_plcontrib() {
+	local subname="$1"
+	pkgdesc="$2 extension modules distributed with AgensGraph"
+	depends="$pkgname-$subname=$pkgver-r$pkgrel"
+	install_if="$pkgname-$subname=$pkgver-r$pkgrel $pkgname-contrib=$pkgver-r$pkgrel"
+}
+
+_contrib_common() {
+	# Move headers and bitcode from subpackage back to pkgdir, so it
+	# can be catched by subsequent split functions.
+	local dir; for dir in $_includedir $_libdir/bitcode; do
+		[ -d "$subpkgdir"/$dir ] || continue
+
+		mkdir -p "$pkgdir"/$dir
+		cp -rf "$subpkgdir"/$dir/* "$pkgdir"/$dir/
+		rm -rf "$subpkgdir"/$dir/*
+		rmdir -p "$subpkgdir"/$dir || true
+	done
+	rm -rf "$subpkgdir"/.DELETE
+}
+
+_run_tests() {
+	local path="$1"; shift
+
+	msg "Running test suite at $path..."
+	# Note: some tests fail when running in parallel.
+	make -k -j 1 -C "$path" "$@" check MAX_CONNECTIONS=5 || {
+		printf "\n%s\n\n" "Trying to find all regression.diffs files in build directory..." >&2
+		find "$path" -name regression.diffs | while read -r file; do
+			echo "=== test failure: $file ===" >&2
+			cat "$file" >&2
+		done
+		return 1
+	}
+}
+
+sha512sums="
+12a0dff34fe8d5233ab2b1ee5a4ccc980516933a17237457bc1844f467185b8c46259ec7f3d9e6ba1b4af0ff209d99a1b29dd12f971c36a3cdfdd98c421a5488  agensgraph-2.16.0.tar.gz
+73080f61ae274a214966d2d010de49c8c90eb3180e4f56d86a9e23063eaddbe7f8d2c40ed414591c16bc9cfe88577866af2a965c2b6effb54965d19ef96a3fa9  initdb.patch
+6d992f53bf8b3e914933f89bc3f01591de2b707cf809aeee4210f9d59e2dc11e3fce697f50a7660f54925a2f0a6154eaeab0f59a969f76572dac5ff6f08faa71  per-version-dirs.patch
+2e33e1ae38d60e0daf3ed18e6eaa9ddf6762b4b1bb7e51f1d2690e3df9d602aa1a700e603ba3ee69314a75a963131c7dc67c1b1f8b7eb5564e9c4253e81a4db4  disable-html-docs.patch
+d8eb4274a54b94bed4a2ded7ae775c5a95ca0f051b831b859ccf78bf6d2ea6fe89a9a0611771f6ad85573995a7e3af1fdf5859e20cae3267a52239f12e1b61c3  remove-libecpg_compat.patch
+04751b23c7085b40829c6d2d63bb428e04b11d79aa58804045f2ed52d096e75304b1c7d0f8f37e3398156f18f69e6f6f2879ece46209c091b4348bc39d181511  pg_config-add-major-version.patch
+b0688d66fdd7d612c24d9aa69bdd80d30787d2d6409b4524c79b41797144fc743213460e6de9c536bfb72da089f92cf89731f15137b1407fd04ca97fd393bfd2  dont-use-locale-a-on-musl.patch
+e1949917fa3ea7cfc25b843d22139694628f73b0eb763a92a23f19d0a87230d805a2454657652c200e916d6fc6ef1b16d2d7cb27b0195d4b69f8583f64d11b65  icu-collations-hack.patch
+cde5fbf5a39e5de18a40ec1d9ac919dcf166e0ca178a6b9dbdfded8d16b4969b91917a2550bbf33eccd1ecb3bd9e0753a47012e60f4efe720bbef2a2c5368529  libpgport-pkglibdir.patch
+c453466d45a3de66bd96954008f640cfddc8d79723be834a191ae54c882600a57c71b9c6df48aa1d8aacfae0c31128e46061d0dd81e03ae977f8fb903e074dfe  agensgraph-unix_socket_directories.patch
+de9ef8745d766d634676b7bf6cfa657e88c594decde918ddb8195b2834dc316cb2c6ae0251dbaa50d399934831445c42e2f26ae0c1aef42b9dd992ed93203afa  agensgraph-dirs.patch
+12557c47f63af317f707b5e58342e5a4f3e40f76b297a4f76fe395a6b0c3145cb3707b3cabd1aef864d3b6a2da65cd811e13f5f710e1f7768141e4d2ab771961  agensgraph-default-port.patch
+df78080871f9ed9c1a34d7a00ec2b09117e6c9229f5ff105bd6090ad8a9f14d05229e9899a3e84339e2f36398bcfcea68204d6f82c448e1c5c00dd9c51a3f9af  agensgraph.initd
+0b1c07e01e5e129df73778c40e096bfbb9f65a54f122f91c8cf059e96ae5f89f03479423c5694a7e2464da91e1e8a7be657040cc77007299136019045aae796a  agensgraph.confd
+"

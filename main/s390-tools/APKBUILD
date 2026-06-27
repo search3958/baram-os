@@ -1,0 +1,72 @@
+# Maintainer: Sertonix <sertonix@posteo.net>
+pkgname=s390-tools
+pkgver=2.42.1
+pkgrel=0
+pkgdesc="Tools for use with the s390 Linux kernel and device drivers"
+url="https://github.com/ibm-s390-tools/s390-tools"
+arch="all"
+license="MIT"
+options="!check" # No test suite
+depends="bash"
+makedepends="linux-headers zlib-dev fuse3-dev ncurses-dev openssl-dev>3 libxml2-dev
+	cryptsetup-dev json-c-dev net-snmp-dev curl-dev liblockfile-dev"
+subpackages="$pkgname-doc"
+case $CARCH in
+	s390x)
+		triggers="$pkgname.trigger=/boot"
+		subpackages="$subpackages
+			$pkgname-dbg
+			$pkgname-udev
+			$pkgname-bash-completion
+			$pkgname-zsh-completion
+			"
+		;;
+	*) options="$options !archcheck" ;;
+esac
+source="$pkgname-$pkgver.tar.gz::https://github.com/ibm-s390-tools/s390-tools/archive/v$pkgver.tar.gz
+	0001-busybox.patch
+	0002-musl.patch
+	0003-disable-nls.patch
+	0004-iucvterm-gettext.patch
+	0005-no-pie.patch
+
+	argz.c
+	argz.h
+	"
+
+_make() {
+	make \
+		HAVE_CARGO=0 \
+		HAVE_GLIB=0 \
+		HAVE_GLIB2=0 \
+		HAVE_PFM=0 \
+		HAVE_LIBUDEV=0 \
+		HAVE_SYSTEMD=0 \
+		HAVE_LIBNL3=0 \
+		DISTRELEASE="Alpine" \
+		USRLIB64DIR=/usr/lib \
+		"$@"
+}
+
+build() {
+	cp "$srcdir"/argz.h "$builddir"/include/argz.h
+	cp "$srcdir"/argz.c "$builddir"/libutil/argz.c
+	_make V=1
+}
+
+package() {
+	_make DESTDIR="$pkgdir" install
+	mkdir -p "$pkgdir"/sbin
+	ln -s ../share/s390-tools/netboot/mk-s390image "$pkgdir"/usr/bin/mk-s390image
+}
+
+sha512sums="
+719b000ffc507837f579db8c395cd929151c77e36c598e872cef7cd76b6612f7cd5f8eba87de1df69a446a05ba3a6daa385a4bca2dfdb5b2b52e70cb5a7a197b  s390-tools-2.42.1.tar.gz
+9c9bfd430e2ba90556a736801c8c5f87716f8c4b00151e87080e3f2991079f0bd7ef3542a1e72d686352a2fcb7e32bad72c80d08b42db6ccc88796964e21a748  0001-busybox.patch
+3574234289053857307d031d1c8fdc9beb779798bf58692e8224003b28ded2a27119ddde91cb035fe03fd5f4bd6b9d54eebecd7ea5f8b476b919ca4f3b9d76dc  0002-musl.patch
+8c6b9ea5b10d508fc8ea4dcafe61bc69d7b7cb2ae0f26283ac4da3a741f6feb48515119392c96b08742a094ec0d614ccdfb773777f4f4cdf5565f60da8566807  0003-disable-nls.patch
+499426022a63b15db4c2bd95f47dcb1489d9808cd861e35cb1ed43b8420ff9b9f57ac710a1af6db99708bb750aab968a2832051798a4067d7cf775b5765bc312  0004-iucvterm-gettext.patch
+cfe4cf3d21553d8189c5927ea10275977428057d9f5ad706628fa226457bb528d44c30c30ffb85bd885cc6b5027062f905b4b599b20ca3cc1af3665d3b3abe1f  0005-no-pie.patch
+2e573314d4c4ed90b61da28de22ae8e2f68ced5489f7e5e0b30f51b776efaf40c1f781d3b485418572d8f33a169fa6946b7358cbd4a7de5a3724b20ed622262b  argz.c
+50bd5c0f555963dadbfaa72df5bf0801a48743d6d0feddb6ebfa4ffa410196216c1860d3a577361e035169fea4217aef3f04d69394c59db65b60c5ea29eba8cb  argz.h
+"

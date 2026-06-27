@@ -1,0 +1,40 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xfce4-battery-plugin
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="battery monitor plugin for the Xfce panel"
+url="https://docs.xfce.org/panel-plugins/xfce4-battery-plugin/start"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	intltool
+	libxfce4ui-dev
+	linux-headers
+	meson
+	perl-xml-parser
+	xfce4-panel-dev
+	"
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-battery-plugin/${pkgver%.*}/xfce4-battery-plugin-$pkgver.tar.xz
+	00-fix-percentage-detection.patch
+	"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+
+sha512sums="
+7a5a90117a885f758a8b6fe19116e1815ef7ac5c3108ffabc4a8a5466ce7e01ed9fccadfa36262abf6dd7977d6ef34e6e1b9cab50e817258203e77f318cab774  xfce4-battery-plugin-1.2.0.tar.xz
+d373c4ec7b0efbbf032bc553e04fa9b7784e3a41df83f285ca061696424f2c739a4b1a1a1c2f9f6a7b22ff8986ee4171eb009687297658ada027aa1c85536f6c  00-fix-percentage-detection.patch
+"

@@ -1,0 +1,43 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=cdrdao
+pkgver=1.2.6
+pkgrel=0
+pkgdesc="record audio/data CD-Rs in disk-at-once mode"
+url="https://cdrdao.sourceforge.net/index.html"
+arch="all"
+license="GPL-2.0-only"
+makedepends="lame libmad libvorbis libao linux-headers"
+subpackages="$pkgname-doc"
+source="https://github.com/cdrdao/cdrdao/releases/download/rel_${pkgver//./_}/cdrdao-1.2.6.tar.bz2"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-lame \
+		--with-ogg-support \
+		--with-mp3-support
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+6f2f1ae4ed74c7b725777de0fb0895eb78639527647ec3dcb3d148e2b7f7ef3354e9cdb71eab8de97a8f815435ce8945bae85ac5a70e6a63493c792f3cf71988  cdrdao-1.2.6.tar.bz2
+"

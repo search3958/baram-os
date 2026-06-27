@@ -1,0 +1,65 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kpipewire
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="Components relating to pipewire use in Plasma"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+license="BSD-3-Clause AND CC0-1.0 AND LGPL-2.1-only AND LGPL-3.0-only AND LicenseRef-KDE-Accepted-LGPL"
+depends="pipewire"
+depends_dev="
+	ffmpeg-dev
+	kcoreaddons-dev
+	ki18n-dev
+	kwayland-dev
+	libdrm-dev
+	libepoxy-dev
+	libva-dev
+	pipewire-dev
+	plasma-wayland-protocols
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qtwayland-dev
+	wayland-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	pipewire-tools
+	samurai
+	"
+checkdepends="xwayland-run"
+
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/plasma/kpipewire.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/kpipewire-$pkgver.tar.xz"
+# Tests require running pipewire
+options="!check"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+63adb1f4fd41dc3d521305b67d8eae4dd5e6addeec11513d8ea18f2413bce345e9591e0065664c246e50f5c410570290ff4d655390403b09ca8e1cdccc83d35a  kpipewire-6.7.1.tar.xz
+"

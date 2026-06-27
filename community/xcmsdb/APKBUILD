@@ -1,0 +1,28 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xcmsdb
+pkgver=1.0.7
+pkgrel=0
+pkgdesc="Device Color Characterization utility for X Color Management System"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="custom"
+subpackages="$pkgname-doc"
+makedepends="libx11-dev"
+source="https://www.x.org/releases/individual/app/xcmsdb-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+43331db46196b7aeb3eaee2147c0dec95cde02b9104b17ee58ac0cbe970af18b94f49572b5a6e4de52fc77952aa53309a334cbbd5895add8602af8c0d6cba01d  xcmsdb-1.0.7.tar.gz
+"

@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+name="btrfs-scan"
+
+depend() {
+  before localmount
+}
+
+start() {
+  /sbin/modprobe btrfs
+  /sbin/btrfs device scan
+}

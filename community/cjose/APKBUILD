@@ -1,0 +1,57 @@
+# Contributor: Johan Bergström <bugs@bergstroem.nu>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=cjose
+pkgver=0.6.2.4
+pkgrel=1
+pkgdesc="A C library implementing the Javascript Object Signing and Encryption"
+url="https://github.com/OpenIDC/cjose"
+arch="all"
+license="MIT"
+makedepends="
+	check-dev
+	coreutils
+	doxygen
+	jansson-dev
+	openssl-dev>3
+	perl
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenIDC/cjose/archive/v$pkgver.tar.gz"
+
+# secfixes:
+#   0.6.2.2-r0:
+#     - CVE-2023-37464
+
+build() {
+	CFLAGS="$CFLAGS -Wno-error" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--enable-static=no \
+		--with-openssl=/usr \
+		--with-jansson=/usr \
+		--disable-doxygen-ps \
+		--disable-doxygen-pdf
+	make
+	# need to invoke doc generation, otherwise it doesn't get installed properly
+	make doxygen
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dvm644 LICENSE \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+dd9eafac2bdf2e1e7b6c7033a4e1b769504b23f99f32c1279a27319af2ea92d140af2f19dc8c964ad5d835f280b746e07333e0fa0ca8a0c9a1b5e2947a4c246f  cjose-0.6.2.4.tar.gz
+"

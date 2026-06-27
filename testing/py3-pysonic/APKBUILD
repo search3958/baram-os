@@ -1,0 +1,30 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-pysonic
+_pyname=py-sonic
+pkgver=1.1.2
+pkgrel=0
+pkgdesc="Python library to wrap the Subsonic REST API"
+url="https://github.com/crustymonkey/py-sonic"
+arch="noarch"
+license="GPL-3.0-only"
+options="!check" # no tests
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="$_pyname-$pkgver.tar.gz::https://github.com/crustymonkey/py-sonic/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		dist/*.whl
+}
+
+sha512sums="
+44095aac6c4f63275e6e0ac0f0159f14060827da37abb53bdc0fd9a4415a7e5eea0556f6c8edec1ba52d259baddb7a438393a0d58379541f72fddf37376baaa5  py-sonic-1.1.2.tar.gz
+"

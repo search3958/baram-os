@@ -1,0 +1,80 @@
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=sdl3
+pkgver=3.4.10
+pkgrel=0
+pkgdesc="development library designed to provide low level access to audio, keyboard, mouse, joystick and graphics"
+url="https://www.libsdl.org"
+arch="all"
+license="Zlib"
+depends_dev="$pkgname mesa-dev"
+makedepends="
+	alsa-lib-dev
+	cmake
+	eudev-dev
+	jack-dev
+	libdecor-dev
+	libsamplerate-dev
+	libusb-dev
+	libx11-dev
+	libxcursor-dev
+	libxext-dev
+	libxi-dev
+	libxkbcommon-dev
+	libxrandr-dev
+	libxrender-dev
+	libxscrnsaver-dev
+	libxtst-dev
+	pipewire-dev
+	pulseaudio-dev
+	samurai
+	wayland-dev
+	wayland-protocols
+	$depends_dev
+	"
+subpackages="$pkgname-dbg $pkgname-doc $pkgname-dev"
+source="https://github.com/libsdl-org/SDL/releases/download/release-$pkgver/SDL3-$pkgver.tar.gz
+	increase-testrwlock-timeout.patch
+	"
+builddir="$srcdir/SDL3-$pkgver"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	CFLAGS="$CFLAGS -flto=auto -ffat-lto-objects" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_JOB_POOLS=thr=3 \
+		-DCMAKE_JOB_POOL_LINK=thr \
+		-DBUILD_SHARED_LIBS=True \
+		-DSDL_TESTS="$(want_check && echo ON || echo OFF)" \
+		-DSDL_ALSA=ON \
+		-DSDL_JACK=ON \
+		-DSDL_CLOCK_GETTIME=ON \
+		-DSDL_RPATH=OFF \
+		-DSDL_X11=ON \
+		-DSDL_WAYLAND=ON \
+		-DSDL_STATIC=ON \
+		-DSDL_SHARED=ON \
+		$CMAKE_CROSSOPTS
+	ninja -C build
+}
+
+check() {
+	case "$CARCH" in
+		# Test is broken https://github.com/libsdl-org/SDL/issues/9219
+		ppc64le) ctest --test-dir build -E testautomation;;
+		*) ctest --test-dir build;;
+	esac
+}
+
+package() {
+	DESTDIR="$pkgdir" ninja -C build install
+}
+
+sha512sums="
+a66366071aa5dcc5949c3f48b2041dff8850cd05917c1ba5f6ae251e9eef3277d31884fe020251388051887c8c1587cd80457a02bdb96c11eb41065ac9f69958  SDL3-3.4.10.tar.gz
+de293fa31b824dd178e3c2300f8debd46d2d0b779c0330004687cf43f65341935e988da98c3fb0fd12f7cac8fd082c1854f153e5eaf31991b77369e8723f7fe8  increase-testrwlock-timeout.patch
+"

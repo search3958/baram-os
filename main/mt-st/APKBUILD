@@ -1,0 +1,28 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=mt-st
+pkgver=1.7
+pkgrel=0
+pkgdesc="Linux SCSI tape driver aware magnetic tape control"
+url="https://github.com/iustin/mt-st"
+arch="all"
+license="GPL-2.0-only"
+makedepends="linux-headers"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="$pkgname-$pkgver.tar.gz::https://github.com/iustin/mt-st/archive/v$pkgver.tar.gz"
+options="!check"
+
+build() {
+	make
+}
+
+package() {
+	make \
+		SBINDIR=$pkgdir/sbin \
+		BINDIR=$pkgdir/bin \
+		MANDIR=$pkgdir/usr/share/man \
+		COMPLETIONINSTALLDIR=$pkgdir/usr/share/bash-completion/completions install
+}
+
+sha512sums="
+90d98a144b389c7d693fc9360aca5a84d37d60a38fe190c1b23d1c70542fae99b48f328671c72f95a3c357cfaf3ee3bbade5866f00bef319792212044ed23d14  mt-st-1.7.tar.gz
+"

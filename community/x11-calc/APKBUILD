@@ -1,0 +1,33 @@
+# Contributor: macmpi <spam@ipik.org>
+# Maintainer: macmpi <spam@ipik.org>
+pkgname=x11-calc
+pkgver=0.26.0251
+pkgrel=0
+pkgdesc="HP Calculator Simulator"
+url="https://github.com/mike632t/x11-calc"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="libx11-dev gtk+3.0-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mike632t/x11-calc/archive/refs/tags/v$pkgver.tar.gz"
+# does not have any tests
+options="!check"
+subpackages="$pkgname-prg:prg:noarch"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" prefix=/usr DESKTOP=freedesktop install
+}
+
+prg() {
+	pkgdesc="Sample calculators saves & programs for $pkgname"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/share/x11-calc/prg
+}
+
+sha512sums="
+b28c6a1689041b674bad01e0798f174cfb63145bdd7e01f0207b8ab2caee912c24994e1760c8bff57225db343660198a4dd50479c42b9895ecb9a44b9c961d55  x11-calc-0.26.0251.tar.gz
+"

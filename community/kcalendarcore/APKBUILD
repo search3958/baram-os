@@ -1,0 +1,109 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kcalendarcore
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="The KDE calendar access library"
+# armhf blocked by qt6-qtdeclarative -> qt6-qttools
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.0-or-later"
+depends_dev="
+	libical-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	graphviz
+	kde-qdoc-common
+	py3-build
+	py3-setuptools
+	py3-shiboken6
+	pyside6-dev
+	python3-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="
+	perl
+	xcb-util-cursor
+	xwayland-run
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	py3-$pkgname:_py3
+	"
+_repo_url="https://invent.kde.org/frameworks/kcalendarcore.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kcalendarcore-$pkgver.tar.xz"
+
+replaces="kcalcore"
+
+build() {
+	export KDE_DOCS=/usr/share/kde/documentation
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_TESTING=ON
+	cmake --build build
+
+	cmake --build build --target prepare_docs
+	cmake --build build --target generate_docs
+	cmake --build build --target generate_qch
+}
+
+check() {
+	local skipped_tests="testtimesininterval"
+	local tests="Compat-MSExchange.ics"
+	case "$CARCH" in
+		armv7|s390x|x86)
+			tests="$tests
+				Compat-AppleICal_1.5.ics
+				Compat-Mozilla_1.0.ics
+				XCalIn-2024-matrix-conference-schedule.xcal
+				XCalIn-2024-sotm-schedule.xcal
+				"
+			;;
+	esac
+	case "$CARCH" in
+		armv7)
+			tests="$tests
+				XCalIn-legacy-3-1.xcal
+				XCalIn-legacy-3-2.xcal
+				XCalIn-legacy-3-5.xcal
+				XCalIn-legacy-3-6.xcal
+				XCalIn-rfc6321-b-1-2.xcal
+				"
+			;;
+		s390x)
+			tests="$tests
+				Compat-Todos.ics
+				"
+			;;
+	esac
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+
+	wlheadless-run -- ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	DESTDIR="$pkgdir" cmake --build build --target install_html_docs
+	DESTDIR="$pkgdir" cmake --build build --target install_qch_docs
+}
+
+_py3() {
+	amove usr/lib/python*
+}
+
+sha512sums="
+44574a47bac5d0ffc44b70b38e1896e45c783141be529660acc53814d9eaad5824b211330ea37c24e7583f3553786bbb76099558e07e8c4d78ef763a27c33c1f  kcalendarcore-6.27.0.tar.xz
+"

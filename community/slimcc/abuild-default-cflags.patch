@@ -1,0 +1,13 @@
+/usr/share/abuild/default.conf adds -fstack-clash-protection to CFLAGS,
+but it is not recognized by Slimcc, so add it to the ignore list.
+
+--- a/main.c
++++ b/main.c
+@@ -720,6 +720,7 @@ static void parse_args(int argc, char **argv, bool *run_ld, bool *no_fork) {
+         !strcmp(argv[i], "-fno-stack-protector") ||
+         !strcmp(argv[i], "-fno-strict-aliasing") ||
+         !strcmp(argv[i], "-fno-strict-overflow") ||
++        !strcmp(argv[i], "-fstack-clash-protection") ||
+         !strcmp(argv[i], "-fwrapv") ||
+         !strcmp(argv[i], "-m64") ||
+         !strcmp(argv[i], "-malign-double") ||

@@ -1,0 +1,112 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=cmake
+pkgver=4.2.3
+pkgrel=0
+_pkgver=${pkgver/_rc/-rc}
+pkgdesc="Cross-platform, open-source make system"
+url="https://cmake.org/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	bzip2-dev
+	expat-dev
+	libarchive-dev
+	libuv-dev
+	linux-headers
+	ncurses-dev
+	py3-sphinx
+	rhash-dev
+	samurai
+	xz-dev
+	zlib-dev
+	"
+checkdepends="file"
+subpackages="
+	ccmake
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-emacs::noarch
+	$pkgname-vim::noarch
+	"
+case $pkgver in
+*.*.*.*) _v=v${pkgver%.*.*};;
+*.*.*) _v=v${pkgver%.*};;
+esac
+source="https://cmake.org/files/$_v/cmake-$_pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$_pkgver"
+options="!check"
+
+build() {
+	# jsoncpp/cppdap/curl/nghttp2 needs cmake to build so to avoid recursive build
+	# dependency, we use the bundled version.
+	# Do NOT remove --no-system-*
+
+	./bootstrap \
+		--prefix=/usr \
+		--mandir=/share/man \
+		--datadir=/share/$pkgname \
+		--docdir=/share/doc/$pkgname \
+		--sphinx-man \
+		--no-system-cppdap \
+		--no-system-curl \
+		--no-system-jsoncpp \
+		--no-system-nghttp2 \
+		--system-bzip2 \
+		--system-expat \
+		--system-libarchive \
+		--system-liblzma \
+		--system-librhash \
+		--system-libuv \
+		--system-zlib \
+		--generator=Ninja \
+		--parallel="${JOBS:-2}" \
+		-- \
+		-B build
+	ninja -C build
+}
+
+check() {
+	./build/bin/ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" ninja -C build install
+
+	# Wrappers to ease the CMake 4 migration, aports that fail to build can
+	# switch to these while waiting for upstream to update CMakeLists.txt.
+	local exe; for exe in cmake ctest; do
+		cat > "$pkgdir"/usr/bin/${exe}3.5 <<-EOF
+			#!/bin/sh
+			export CMAKE_POLICY_VERSION_MINIMUM=3.5
+			exec $exe "\$@"
+		EOF
+		chmod 0755 "$pkgdir"/usr/bin/${exe}3.5
+	done
+}
+
+ccmake() {
+	pkgdesc="$pkgdesc (ccmake configurator)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/bin/ccmake
+}
+
+emacs() {
+	pkgdesc="$pkgdesc (emacs mode)"
+	install_if="$pkgname=$pkgver-r$pkgrel emacs"
+
+	amove usr/share/emacs
+}
+
+vim() {
+	pkgdesc="$pkgdesc (vim files)"
+	install_if="$pkgname=$pkgver-r$pkgrel vim"
+
+	amove usr/share/vim
+}
+
+sha512sums="
+56cac755277bc3fcf190d6c947c99a718ee555b0524132427989a5d2d51d030c76c07f198ddeea0d9c7e57b24488d352e9b29bb106c1ad15397b92fb4487a88f  cmake-4.2.3.tar.gz
+"

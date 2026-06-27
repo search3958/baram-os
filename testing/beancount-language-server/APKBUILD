@@ -1,0 +1,33 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=beancount-language-server
+pkgver=1.4.1
+pkgrel=0
+pkgdesc="Language server for Beancount files"
+url="https://github.com/polarmutex/beancount-language-server"
+license="MIT"
+arch="all"
+makedepends="cargo cargo-auditable"
+source="https://github.com/polarmutex/beancount-language-server/archive/v$pkgver/beancount-language-server-$pkgver.tar.gz"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+e8b13cd62c91a346c2996b256ab8e3b30c68290217673241055ed4df872560f30ac201f55274487e724046ca79e57f4f5ebf7c4498f3465cfe88887c27f204e7  beancount-language-server-1.4.1.tar.gz
+"

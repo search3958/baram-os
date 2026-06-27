@@ -1,0 +1,27 @@
+# Contributor: Mark Hills <mark@xwax.org>
+# Maintainer: Mark Hills <mark@xwax.org>
+pkgname=xosview
+pkgver=1.25
+pkgrel=0
+pkgdesc="The classic system monitoring tool"
+url="https://www.pogo.org.uk/~mark/xosview/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="libx11-dev libxpm-dev linux-headers"
+options="!check"  # no tests provided
+subpackages="$pkgname-doc"
+source="https://www.pogo.org.uk/~mark/xosview/releases/xosview-$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" \
+		PREFIX=/usr \
+		install
+}
+
+sha512sums="
+723f8710d5beb72999b2d42685bf0eb440a30ef972d6f5742e74a4519dfcf9ae7a612231d4bd194ce40ec37a79b7b559ccf6ae08c5e5e8bb824f0a496636b28c  xosview-1.25.tar.gz
+"

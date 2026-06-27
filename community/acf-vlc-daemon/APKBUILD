@@ -1,0 +1,21 @@
+# Contributor: Mika Havela <mika.havela@gmail.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-vlc-daemon
+pkgver=0.5.0
+pkgrel=4
+pkgdesc="Web-based system administration interface for vlc"
+url="https://gitlab.alpinelinux.org/acf/acf-vlc-daemon"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core vlc-daemon"
+source="https://gitlab.alpinelinux.org/acf/acf-vlc-daemon/-/archive/v$pkgver/acf-vlc-daemon-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+01f7425405a7187a37799b49eb02fe0fcc1aa76d010826f23ec5ec9e0164815a75665c9a533f0ab07bf07df7ef532cb091490f7db97af7831f8d0b4532e3f50c  acf-vlc-daemon-v0.5.0.tar.gz
+"

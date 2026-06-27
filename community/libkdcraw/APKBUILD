@@ -1,0 +1,43 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=libkdcraw
+pkgver=26.04.2
+pkgrel=0
+arch="all"
+url="https://kde.org"
+pkgdesc="RAW image file format support for KDE"
+license="GPL-2.0-or-later AND LGPL-2.0-or-later"
+depends_dev="
+	libraw-dev
+	qt6-qtbase-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	samurai
+	"
+subpackages="$pkgname-dev"
+_repo_url="https://invent.kde.org/graphics/libkdcraw.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/libkdcraw-$pkgver.tar.xz"
+options="!check" # No usable tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DBUILD_WITH_QT6=ON \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+2dbbc20b3e722c2fd4a1b96f26d010f78a651106b491f58c99f09bfbcfe2eea56ee2ff53633bcd13e69987de6745a36dfa0db821a6a587ed542301e81c230742  libkdcraw-26.04.2.tar.xz
+"

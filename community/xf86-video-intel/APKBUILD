@@ -1,0 +1,68 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xf86-video-intel
+pkgver=2.99.917_git20221028
+_gitrev=b74b67f0f321875492968f7097b9d6e82a66d7df
+pkgrel=7
+pkgdesc="X.Org driver for Intel cards"
+url="https://xorg.freedesktop.org"
+arch="x86 x86_64"
+license="MIT"
+depends="mesa-dri-gallium"
+makedepends="
+	autoconf
+	automake
+	eudev-dev
+	libdrm-dev
+	libtool
+	libxi-dev
+	libxcursor-dev
+	libxrandr-dev
+	libxrender-dev
+	libxscrnsaver-dev
+	libxinerama-dev
+	libxtst-dev
+	libxv-dev
+	libxvmc-dev
+	mesa-dev
+	meson
+	util-macros
+	xcb-util-dev
+	xorg-server-dev
+	xorgproto
+	"
+subpackages="$pkgname-doc"
+source="https://gitlab.freedesktop.org/xorg/driver/xf86-video-intel/-/archive/$_gitrev/xf86-video-intel-$_gitrev.tar.gz"
+builddir="$srcdir/xf86-video-intel-$_gitrev"
+options="!check"
+
+prepare() {
+	default_prepare
+	autoreconf -fvi
+}
+
+build() {
+	export CFLAGS="${CFLAGS/-fno-plt}"
+	export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+	export LDFLAGS="$LDFLAGS -Wl,-z,lazy"
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-tools \
+		--enable-xvmc \
+		--disable-selective-werror \
+		--with-default-dri=3
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+
+	# http://bugs.alpinelinux.org/issues/3312
+	chmod o-x "$pkgdir"/usr/libexec/xf86-video-intel-backlight-helper
+}
+
+sha512sums="
+cf6d702063b74b4c2f8b95dae887a673954a1fdb0e7fbd99c3a2bb1253a7d1c3f8565e4c3f85d1895a6899e57469ee6ef1af5f6e5d1d5cef6cefa652db981a8d  xf86-video-intel-b74b67f0f321875492968f7097b9d6e82a66d7df.tar.gz
+"

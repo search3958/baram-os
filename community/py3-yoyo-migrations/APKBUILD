@@ -1,0 +1,37 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-yoyo-migrations
+pkgver=8.2.0
+pkgrel=1
+pkgdesc="Database migrations with SQL"
+url="https://ollycope.com/software/yoyo/latest/"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-sqlparse py3-tabulate py3-importlib-metadata"
+makedepends="py3-gpep517 py3-setuptools"
+checkdepends="py3-pytest"
+options="!check" # no tests in pypi tarballs
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/y/yoyo-migrations/yoyo-migrations-$pkgver.tar.gz"
+builddir="$srcdir/yoyo-migrations-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b8741c4d6a6c9854468d247bedc0f814f9bc8ea3b6c3c47291b8412ba8357f2ed212963c0c78787811d50c4565cd1d7862e2ac6c763cc4d4e56310e2ff86c7a3  yoyo-migrations-8.2.0.tar.gz
+"

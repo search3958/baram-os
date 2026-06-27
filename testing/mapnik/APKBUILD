@@ -1,0 +1,71 @@
+# Contributor: Markus Juenemann <markus@juenemann.net>
+maintainer="Markus Juenemann <markus@juenemann.net>"
+pkgname=mapnik
+pkgver=4.1.4
+pkgrel=3
+pkgdesc="An open source toolkit for developing mapping applications"
+url="https://mapnik.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	boost-dev<1.89.0
+	cairo-dev
+	freetype-dev
+	gdal-dev
+	harfbuzz-dev
+	icu-dev
+	libpng-dev
+	libpq-dev
+	libwebp-dev
+	libxml2-dev
+	proj-dev
+	py3-setuptools
+	python3
+	sqlite-dev
+	scons
+	tiff-dev
+	zlib-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/mapnik/mapnik/releases/download/v$pkgver/mapnik-v$pkgver.tar.bz2"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # fail to build
+
+build() {
+	scons configure  FAST=True \
+		PREFIX="/usr" \
+		INPUT_PLUGINS=all \
+		XMLPARSER=libxml2 \
+		DESTDIR="$pkgdir" \
+		CPP_TESTS="$(want_check && echo True || echo False)" \
+		CUSTOM_CXXFLAGS="$CXXFLAGS" \
+		CUSTOM_LDFLAGS="$LDFLAGS" \
+		CUSTOM_DEFINES="-DACCEPT_USE_OF_DEPRECATED_PROJ_API_H=1"
+
+	scons --jobs=$JOBS
+}
+
+package() {
+	scons install \
+		--config=cache \
+		--jobs=$JOBS \
+		--implicit-cache \
+		--max-drift=1
+}
+
+dev() {
+	pkgdesc="Mapnik development files"
+	mkdir -p "$subpkgdir"/usr/include/
+	mv "$pkgdir"/usr/include/mapnik "$subpkgdir"/usr/include/
+}
+
+doc() {
+	pkgdesc="Mapnik documentation"
+	mkdir -p "$subpkgdir"/usr/share/docs/$pkgname/docs/
+	install -Dm644 $builddir/*.md "$subpkgdir"/usr/share/docs/$pkgname/
+	install -Dm644 $builddir/docs/* "$subpkgdir"/usr/share/docs/$pkgname/docs/
+}
+
+sha512sums="
+bba63d892a751c01767e1524e91060dbfdd76261fdf17c7c92606bb488b565680b8ca28d3ead9d5c40869be4b7517787c960564634afb811ff5a6b8695176ade  mapnik-v4.1.4.tar.bz2
+"

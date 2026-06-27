@@ -1,0 +1,66 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=plasma-mobile-meta
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="Plasma Mobile meta package"
+url="https://plasma-mobile.org"
+# armhf blocked by plasma-mobile
+arch="noarch !armhf"
+license="GPL-3.0-or-later"
+depends="
+	bluedevil
+	breeze
+	callaudiod
+	elogind
+	hfd-service
+	iio-sensor-proxy
+	iio-sensor-proxy-openrc
+	kscreen
+	kunifiedpush
+	kwallet-pam
+	modemmanager
+	networkmanager-dnsmasq
+	pipewire
+	plasma-mobile
+	polkit-elogind
+	polkit-kde-agent-1
+	powerdevil
+	pulseaudio
+	tinydm
+	xdg-desktop-portal-kde
+	"
+install="$pkgname.post-install"
+source="
+	kdewallet.kwl
+	kscreenlockerrc
+	maliit-plasmamobile.json
+	qtlogging.ini
+	"
+options="!check" # No tests for a meta package
+builddir="$srcdir"
+
+package() {
+	install -Dm644 \
+		"$srcdir"/kscreenlockerrc \
+		-t "$pkgdir"/etc/xdg
+
+	install -Dm644 \
+		"$srcdir"/qtlogging.ini \
+		-t "$pkgdir"/etc/xdg/QtProject/
+
+	install -Dm644 "$srcdir"/maliit-plasmamobile.json \
+		"$pkgdir"/usr/share/maliit/keyboard2/devices/plasmamobile.json
+
+	# A pre-configured kwallet with an empty password set
+	install -Dm600 "$srcdir"/kdewallet.kwl \
+		"$pkgdir"/etc/skel/.local/share/kwalletd/kdewallet.kwl
+}
+
+sha512sums="
+923309f71ee0840ae49d610ab5c11260432f462709eee7148ee5a4703872b9926a3267b16b524162c1560e0798c63fe392a161a57be5c6000bbb1e3f0c947e25  kdewallet.kwl
+20cdb856fb46b024d8368d469e9e0a9c45724fb6f27514edca9b733ea84b63644b6d0328780879285b4e649f7a02ea8761f6b607e127fb7b055b753bfd3ee3d2  kscreenlockerrc
+70ee87860842057b557a433a9ae7d54653f076a612b3d9de2d413d598806d23ec19390262eaa398cddf39437f1213d14922402a8d978878e5e98f3767ce0b9eb  maliit-plasmamobile.json
+341f0b866c315f37868ef3e7137cce8b53a0e8e6164e5af71b3e8e2fa68321afbf0652d76124ef84bade1393f701748852ac939aef9daff7e272a0df827780eb  qtlogging.ini
+"

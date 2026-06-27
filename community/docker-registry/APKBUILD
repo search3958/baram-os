@@ -1,0 +1,82 @@
+# Contributor: Christian Kampka <christian@kampka.net>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=docker-registry
+pkgver=2.8.3
+pkgrel=23
+pkgdesc="An implementation of the Docker Registry HTTP API V2 for use with docker 1.6+"
+url="https://distribution.github.io/distribution"
+arch="all"
+license="Apache-2.0"
+makedepends="git go"
+install="$pkgname.pre-install"
+pkgusers="docker-registry"
+pkggroups="docker-registry"
+subpackages="$pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/distribution/distribution/archive/v$pkgver.tar.gz
+	log-hook-syslog.patch
+	config-example.patch
+	bugsnag-panicwrap.patch
+	$pkgname.initd
+	$pkgname.confd
+	$pkgname.logrotate
+
+	test-non-constant-fmt-str.patch
+	skip-test-graceful-shutdown.patch
+	go-1.26-vet-fix-formatstring-arg.patch
+	"
+builddir="$srcdir/src/github.com/docker/distribution"
+options="net"
+
+export GOPATH="$srcdir"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	mkdir -p "${builddir%/*}"
+	mv "$srcdir"/distribution-$pkgver "$builddir"
+
+	default_prepare
+}
+
+build() {
+	export GO111MODULE=off
+
+	make binaries \
+		DISTRIBUTION_DIR="$builddir" \
+		VERSION="$pkgver" \
+		REVISION=""
+}
+
+check() {
+	make test
+}
+
+package() {
+	install -D -m755 bin/registry "$pkgdir"/usr/bin/$pkgname
+	install -D -m755 bin/digest "$pkgdir"/usr/bin/$pkgname-digest
+	install -D -m755 bin/registry-api-descriptor-template "$pkgdir"/usr/bin/$pkgname-api-descriptor-template
+
+	install -D -m640 -o $pkgusers -g $pkggroups \
+		cmd/registry/config-example.yml "$pkgdir"/etc/$pkgname/config.yml
+
+	install -D -m755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -D -m644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	install -D -m644 "$srcdir"/$pkgname.logrotate "$pkgdir"/etc/logrotate.d/$pkgname
+
+	install -d -m750 -o $pkgusers -g $pkggroups "$pkgdir"/var/lib/$pkgname
+}
+
+sha512sums="
+7c2be028f5beb7fd89509250564924e22d2726540a9df4f32c80518f23742680e5f59bec8480a99ff3cade4f10391f94c50e9f31a4f3fac4af9b0b06adc474f6  docker-registry-2.8.3.tar.gz
+834257d45bc83eef5fe65955b215c450db0c9849fc9d5ddbaef731589f05e82cc8c0dd8a315623e45c4b4b8d463c8c12b53d99ade9029fd42b6d6afdf7f5ca48  log-hook-syslog.patch
+9c3a8afd855bb161166fdc38e931a2ad4aaf9a8e97c67d15ea8a098f6f6f800b4c8ef037dbbd0ac954289dbae7b208116751a3c97aa682fa50887ccc7a68a9d7  config-example.patch
+49ed24e520d3f29df1b3367e74b1b5e8e898c8e64a2c3e09c3397131da0adeac87bc1fe4577a20840e2f379b794495b8b170ea5aedfa1e4430ed353d6260af2e  bugsnag-panicwrap.patch
+7962b2660ee8147b66fc38b7e4c1d7b37ba0b7d64fbddefb970c182bd55e2a841cec885a9459dfa1db7f1a8fcaa0bd9c7eea0b22c9e37854a3081415381c14d4  docker-registry.initd
+34d9158cf4b0e04ba9198235629ebe23eb5a7a3dcc70d26cf7f4fd045a7cd8e055476e7e30255f711160aa23af505ca38a8a76302aae7ec24701b3887b874276  docker-registry.confd
+979643f6b9a3e12f692dc37f964fddff66f4e08cd74a1094a4be1230e67f83e703207e5420135cebb29aa13ff20a984395168046fd902392ad45d8e3eadcaa0e  docker-registry.logrotate
+d7fc8817c7556aed40acdff48d2d977777dd8384c58c635f6a190e192ccd4a519344272f2ccf58216ee29ddfa20b129b269a055393c5d17c0122ce008b1c08a5  test-non-constant-fmt-str.patch
+8d7d77f40882a6323fbb5e8b34801287b668ae3c258bc0edab7d66fdb0924e928d1f34f2a32b199c6ec416afbd4992da450e36da2cb5d3ffa8449d54aef4dc43  skip-test-graceful-shutdown.patch
+09fcf6c95878376389cb5664a1405bee2a8f2868a29bdc537403f27e18e656ffff0f4bbc1ba8c4c88cdd931987ac252258dce3e70f4b2d48e65613b7cbe9a7d3  go-1.26-vet-fix-formatstring-arg.patch
+"

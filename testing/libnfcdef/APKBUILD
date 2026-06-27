@@ -1,0 +1,30 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libnfcdef
+pkgver=1.1.0
+pkgrel=0
+pkgdesc="Library for parsing and building NFC Data Exchange Format (NDEF) messages"
+url="https://github.com/sailfishos/libnfcdef"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	glib-dev
+	libglibutil-dev
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sailfishos/libnfcdef/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install install-dev
+}
+
+sha512sums="
+f32bf91a5bfe5f8d88d03f4822890c5e2c2f7a51bd3b4df0692de2266b9c3ba91d332b487d944d32071967e8cbeea21730e56a8fc2688ff1943f53e1bab8215c  libnfcdef-1.1.0.tar.gz
+"

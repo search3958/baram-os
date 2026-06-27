@@ -1,0 +1,35 @@
+# Maintainer:
+pkgname=py3-manuel
+pkgver=1.13.0
+pkgrel=3
+pkgdesc="mix and match traditional doctests with custom test syntax"
+url="https://github.com/benji-york/manuel"
+arch="noarch"
+license="Apache-2.0"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-zope-testing"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/benji-york/manuel/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/manuel-$pkgver"
+options="!check" # fail matching exact string against newer dep versions
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+0fe78fde7fc28e2cb567e11f2da87bf65d3a716e18d4ae8511f579b1979ff8c4dc5bee3fc6f02c72bfdb88a773f365b66be9be8b04af5cc06ccfd9ab1df85bb9  py3-manuel-1.13.0.tar.gz
+"

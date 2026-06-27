@@ -1,8 +1,0 @@
-#TODO missing script for "make", see https://github.com/ioquake/ioq3#compilation-and-installation
-[source]
-git = "https://github.com/ioquake/ioq3"
-[build]
-template = "custom"
-dependencies = [
-    "sdl2",
-]

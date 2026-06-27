@@ -1,0 +1,43 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=wgcf
+pkgver=2.2.29
+pkgrel=6
+pkgdesc="Unofficial CLI for Cloudflare Warp"
+url="https://github.com/ViRb3/wgcf"
+arch="all"
+license="MIT"
+makedepends="go"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ViRb3/wgcf/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # download Go modules
+
+build() {
+	go build -v
+
+	for shell in bash fish zsh; do
+		./wgcf completion $shell > wgcf.$shell
+	done
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 wgcf -t "$pkgdir"/usr/bin/
+
+	install -Dm644 wgcf.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/wgcf
+	install -Dm644 wgcf.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/wgcf.fish
+	install -Dm644 wgcf.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_wgcf
+}
+
+sha512sums="
+0690de82247c4cc88fa67bdf2502786ecd7e732da16cdf5a3e1d27d6296218d2424934470ab3309458e8398bd9fe6138e9d0a26304f144b6b4727cf5c2802221  wgcf-2.2.29.tar.gz
+"

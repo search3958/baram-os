@@ -1,8 +1,0 @@
-#TODO compiled but not tested
-[source]
-tar = "https://github.com/libimobiledevice/libplist/releases/download/2.6.0/libplist-2.6.0.tar.bz2"
-[build]
-template = "configure"
-configureflags = [
-    "--without-cython"
-]

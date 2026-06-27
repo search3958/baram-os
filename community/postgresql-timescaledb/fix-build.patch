@@ -1,0 +1,11 @@
+--- a/tsl/test/CMakeLists.txt
++++ b/tsl/test/CMakeLists.txt
+@@ -143,7 +143,7 @@ if(_local_install_checks)
+ 
+ if(_install_checks)
+   add_custom_target(installcheck-t DEPENDS ${_install_checks})
+-  add_dependencies(installcheck installcheck-t)
++#  add_dependencies(installcheck installcheck-t)
+ endif()
+ 
+ if(CMAKE_BUILD_TYPE MATCHES Debug OR COMPRESSION_FUZZING)

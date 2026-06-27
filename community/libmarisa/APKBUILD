@@ -1,0 +1,66 @@
+# Contributor: Eric Tian <thxdaemon+gitlab.alpine@gmail.com>
+# Maintainer: Eric Tian <thxdaemon+gitlab.alpine@gmail.com>
+pkgname=libmarisa
+pkgver=0.2.6
+pkgrel=8
+pkgdesc="MARISA: Matching Algorithm with Recursively Implemented StorAge"
+url="https://github.com/s-yata/marisa-trie"
+arch="all"
+license="BSD-2-Clause OR LGPL-2.1-or-later"
+makedepends="autoconf automake libtool python3-dev swig py3-setuptools"
+subpackages="$pkgname-dev py3-marisa-pyc py3-marisa:py"
+source="$pkgname-$pkgver.tar.gz::https://github.com/s-yata/marisa-trie/archive/v$pkgver.tar.gz
+	format-sec.patch
+	0001-Fix-detection-of-MARISA_WORD_SIZE.patch
+	"
+builddir="$srcdir/marisa-trie-$pkgver"
+
+prepare() {
+	default_prepare
+	autoreconf -i
+
+	sed -i "s/^setup.*/\0 version='$pkgver',/" bindings/python/setup.py
+}
+
+build() {
+	case "$CARCH" in
+	x86_64|x86)
+	local configure_options="$configure_options --enable-sse2" ;;
+	esac
+
+	./configure \
+		--prefix=/usr \
+		--host=$CHOST \
+		--build=$CBUILD \
+		$configure_options
+	make
+
+	make -j1 -C bindings swig-python
+
+	cd bindings/python
+	python3 setup.py build_ext \
+		--include-dirs="$builddir"/include \
+		--library-dirs="$builddir"/lib/marisa/.libs
+	python3 setup.py build
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	cd bindings/python
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+py() {
+	pkgdesc="$pkgdesc (python module)"
+	amove usr/lib/python3*
+}
+
+sha512sums="
+c094e4b22e1457efdd20f2b978ee421b53e36ed94e4fdbd8944136c0ba23da4f6ba9fe3a2c64729c1426aee4dbe8098bfa5eebb943ae7fdaa4eec760485c564d  libmarisa-0.2.6.tar.gz
+778486421fcda6fbbfb4c61b48ed64f1166ab937361098b405a798b88ce27ad2169c7a5be9d2e66de042bf5a65b5a332183a32a42fd31fbeecb679671c4ab929  format-sec.patch
+0a65d6a9ee906be9cc8cefc160e7908280388490c66468e048e3d60f261b8787718a36f95d0d543731236c5c64b3985119cc4ba6e9deab28f0cf1492a3549d70  0001-Fix-detection-of-MARISA_WORD_SIZE.patch
+"

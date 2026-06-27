@@ -1,0 +1,77 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer: Liliana <me@iodomi.eu>
+pkgname=clementine
+pkgver=1.4.1_git20260523
+pkgrel=0
+_tag=1.4.1-78-gb55eca391
+pkgdesc="A modern music player and library organizer"
+url="https://www.clementine-player.org/"
+arch="all"
+license="GPL-3.0-or-later"
+depends="gst-plugins-good"
+makedepends="alsa-lib-dev
+	boost-dev
+	chromaprint-dev
+	cmake
+	fftw-dev
+	glib-dev
+	glu-dev
+	gst-plugins-base-dev
+	gstreamer-dev
+	gtest-dev
+	libcdio-dev
+	libgpod-dev
+	liblastfm-qt-dev
+	libmtp-dev
+	libmygpo-qt-dev
+	libx11-dev
+	projectm-dev
+	protobuf-dev
+	pulseaudio-dev
+	qt5-qtbase-dev
+	qt5-qttools-dev
+	qt5-qtx11extras-dev
+	samurai
+	sparsehash
+	taglib-dev
+"
+checkdepends="gtest-dev"
+source="
+	https://github.com/clementine-player/Clementine/releases/download/$_tag/clementine-$_tag.tar.xz
+	"
+builddir="$srcdir/clementine-$_tag"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_CXX_FLAGS="$CXXFLAGS -std=c++17 -Wno-error=format" \
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+		-DBUNDLE_PROJECTM_PRESETS=OFF \
+		-DUSE_SYSTEM_PROJECTM=ON \
+		-DUSE_SYSTEM_TAGLIB=ON \
+		-DBUILD_WERROR=OFF \
+		-DFORCE_GIT_REVISION="$_tag" \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+	cmake --build build --target build_tests
+}
+
+check() {
+	cd "$builddir"/build/tests
+	for test in *_test; do
+		./$test
+	done
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+50aed5a320f5d8ba8c6ce1573536a1af5fb03c344cc80d6ec0c07991693244e7ff4890950470fb04cda2958bee428ac65ebecad3d03e8685f3341689b2a4a5e3  clementine-1.4.1-78-gb55eca391.tar.xz
+"

@@ -1,0 +1,53 @@
+# Contributor: Antoni Aloy <aaloytorrens@gmail.com>
+# Maintainer: Antoni Aloy <aaloytorrens@gmail.com>
+pkgname=tartube
+pkgver=2.5.0
+pkgrel=2
+pkgdesc="GUI front-end for youtube-dl, partly based on youtube-dl-gui and written in Python 3 / Gtk 3"
+url="https://github.com/axcore/tartube"
+arch="noarch"
+license="LGPL-2.1-or-later"
+depends="
+	aria2
+	atomicparsley
+	ffmpeg
+	mpv
+	py3-feedparser
+	py3-gobject3
+	py3-imageio
+	py3-imageio-ffmpeg
+	py3-matplotlib
+	py3-moviepy
+	py3-playsound
+	py3-requests
+	python3
+	xdg-utils
+	yt-dlp
+"
+
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/axcore/tartube/archive/v$pkgver.tar.gz"
+options="!check" # no tests provided
+
+build() {
+	export TARTUBE_NO_UPDATES=1
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+
+	_sitepkgs_dir="$(python3 -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")"
+#	mv "$pkgdir/tartube/icons" "$pkgdir$_sitepkgs_dir/tartube/"
+#	rm -rvf "$pkgdir"/tartube
+	install -Dm644 pack/tartube.png "$pkgdir"/usr/share/icons/hicolor/48x48/apps/tartube.png
+	install -Dm644 pack/tartube.desktop "$pkgdir"/usr/share/applications/tartube.desktop
+}
+
+sha512sums="
+249c99d2b51e0dec76efd85d204cc3bc21a9963defd8a2fc50de02758f33848bb71b1dcdba143a8f9b7f459d0196c522a156b40719f2a756da7f1675fa43b172  tartube-2.5.0.tar.gz
+"

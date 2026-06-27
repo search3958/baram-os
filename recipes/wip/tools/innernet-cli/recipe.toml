@@ -1,8 +1,0 @@
-#TODO shared crate error
-[source]
-git = "https://github.com/tonarino/innernet"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages client
-"""

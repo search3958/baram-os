@@ -1,0 +1,47 @@
+# Contributor: Adam Plumb <adamplumb@gmail.com>
+# Maintainer: Adam Plumb <adamplumb@gmail.com>
+pkgname=pithos
+pkgver=1.6.1
+pkgrel=0
+pkgdesc="GTK+ player for pandora web radio"
+url="https://pithos.github.io/"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	gst-libav
+	gst-plugins-base
+	gst-plugins-good
+	gtk+3.0
+	libsecret
+	python3
+	py3-cairo
+	py3-gobject3
+	"
+makedepends="meson glib-dev help2man py3-sphinx"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://github.com/pithos/pithos/releases/download/$pkgver/pithos-$pkgver.tar.xz
+	no-optimise.patch
+	"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install -C output
+}
+
+pyc() {
+	pkgdesc="Precompiled Python bytecode for ${subpkgname%-pyc}"
+	install_if="${subpkgname%-pyc}=$pkgver-r$pkgrel pyc"
+
+	cd "$pkgdir" || return 0
+	local IFS=$'\n'
+	amove $(find usr/share* -type d -name __pycache__)
+}
+
+sha512sums="
+e1a13d2c789e40bf135ed551d06dfe44bf948bfe84a8bbb3f4afcab70bbcdc4f1d3f82d25f5e8d930888dd6fa04795fa2d9d47515d4199647be854c9c4a84591  pithos-1.6.1.tar.xz
+d80de0beb0e856d5020f7d4a275abb00404bbd5875f1639a324a8f21f58208594a0962b73e7b0bda765ef74649db5e10e8a2a02e57f18d7d55212be51655c436  no-optimise.patch
+"

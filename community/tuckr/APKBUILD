@@ -1,0 +1,36 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+pkgname=tuckr
+pkgver=0.13.1
+pkgrel=1
+pkgdesc="Dotfile manager inspired by Stow and Git"
+url="https://raphgl.github.io/Tuckr/"
+arch="all"
+license="GPL-3.0-only"
+makedepends="cargo cargo-auditable"
+source="https://github.com/RaphGL/Tuckr/archive/refs/tags/$pkgver/Tuckr-$pkgver.tar.gz"
+builddir="$srcdir/Tuckr-$pkgver"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	local targetdir="target/${CARGO_BUILD_TARGET:+$CARGO_BUILD_TARGET/}"
+
+	install -Dvm755 $targetdir/release/tuckr -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+62a6acd15ed6934c37b64f3e92dc01da032f16fc77c112bf2e63b80e7c1b1bc404c9bad71c39b04d09c3fb18b0e6c96fe24771ffeb557c0141a07f6afc800fa4  Tuckr-0.13.1.tar.gz
+"

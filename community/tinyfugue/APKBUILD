@@ -1,0 +1,48 @@
+# Contributor: Síle Ekaterin Liszka <sheila@vulpine.house>
+# Maintainer: Síle Ekaterin Liszka <sheila@vulpine.house>
+pkgname=tinyfugue
+pkgver=5.2.2
+pkgrel=1
+pkgdesc="Powerful curses-based MUD client"
+url="https://github.com/ingwarsw/tinyfugue"
+arch="all"
+options="!check" # no testsuite
+license="GPL-2.0-or-later"
+makedepends="
+	icu-dev
+	ncurses-dev
+	openssl-dev
+	pcre2-dev
+	python3-dev
+	zlib-dev
+	"
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/ingwarsw/tinyfugue/archive/refs/tags/$pkgver.tar.gz
+	gnu-source.patch
+	python-3.14.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-atcp \
+		--enable-gmcp \
+		--enable-option102 \
+		--enable-python
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+9cca3f79ec360e496f9a73429d10dee40c9a1d0744082dd4fa048b071af338a74eb173ec41ef9248b35bb7bd870fc8ee72572cfeec08cbd548f08e8f0f365d2c  tinyfugue-5.2.2.tar.gz
+450d958259aea5379ccc1f02a54ac37e7dc3c76752314ccb57902a509ea7b54e36adf9c7e6fa046e20d58035f439ba35884e12f84b11330e97bd6768a56668ea  gnu-source.patch
+0da8aec809278094e5f43fde60b8fdf803ce8ea4db1febc1cac99aea3d9e1a31bc1209c9bfea9636c6f4c5dbd8117bfe048669af8d5e7cf7822073b6b6bf794e  python-3.14.patch
+"

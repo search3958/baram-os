@@ -1,0 +1,31 @@
+# Maintainer:
+pkgname=font-croscore
+pkgver=1.31.0
+pkgrel=2
+pkgdesc="Chrome OS core fonts"
+url="https://github.com/notofonts/noto-fonts"
+arch="noarch"
+license="OFL-1.1"
+makedepends="py3-fonttools"
+source="https://dev.alpinelinux.org/archive/font-croscore/croscorefonts-$pkgver.tar.bz2"
+builddir="$srcdir/croscorefonts-$pkgver"
+options="!check" # is font
+
+# was in font-noto with the same vars
+provides="font-times"
+provider_priority=5
+
+build() {
+	# Fix weight of Arimo-BoldItalic.ttf https://github.com/googlefonts/noto-fonts/issues/2350
+	ttx Arimo-BoldItalic.ttf
+	sed -e 's|usWeightClass value=\"400\"|usWeightClass value=\"700\"|' -i Arimo-BoldItalic.ttx
+	ttx --no-recalc-timestamp -f Arimo-BoldItalic.ttx
+}
+
+package() {
+	install -Dm644 ./*.ttf -t "$pkgdir"/usr/share/fonts/croscore
+}
+
+sha512sums="
+dcd5ebb854f78353a1d91bb74a5ac7b5e237040994c7e2a69cf68511f06b10006fc3a490840d48c12ee7f862d2dfa3106c9e1787a726a4b158eaea5cd5ba8842  croscorefonts-1.31.0.tar.bz2
+"

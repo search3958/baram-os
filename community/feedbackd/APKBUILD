@@ -1,0 +1,48 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/phosh <newbyte@postmarketos.org>"
+pkgname=feedbackd
+pkgver=0.8.9
+pkgrel=2
+pkgdesc="Daemon to provide haptic, LED, and audio feedback triggered by application events"
+url="https://gitlab.freedesktop.org/feedbackd/feedbackd"
+arch="all"
+license="GPL-3.0-or-later"
+depends="dbus feedbackd-device-themes"
+makedepends="
+	gi-docgen
+	glib-dev
+	gmobile-dev
+	gobject-introspection-dev
+	gsound-dev
+	gtk-doc
+	json-glib-dev
+	libgudev-dev
+	meson
+	vala
+	umockdev-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-systemd $pkgname-udev"
+source="https://sources.phosh.mobi/releases/feedbackd/feedbackd-$pkgver.tar.xz"
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+options="!check" # fails because of the environment
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dgtk_doc=true \
+		-Dudev=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	dbus-run-session meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+3d66b301a5102b26752d3dd2f45bb868d3c3153941bb9e75643d2441bc732598c90279efba3b3cc0e64cc8f4759b3bc19024c14bfeb1d9198e884830032f764a  feedbackd-0.8.9.tar.xz
+"

@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+supervisor=supervise-daemon
+name=apollo
+command="/usr/sbin/apollo"
+pidfile="/run/apollo.pid"
+extra_started_commands="reload"
+
+depend() {
+  use logger dns
+  need net
+  after coventry
+}
+
+reload() {
+  ebegin "Reloading ${RC_SVCNAME}"
+  start-stop-daemon --signal HUP --pidfile "${pidfile}"
+  eend $?
+}
+

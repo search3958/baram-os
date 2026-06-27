@@ -1,0 +1,30 @@
+# Contributor: Edwin Eefting <edwin@datux.nl>
+# Maintainer: Julie Koubova <julie@koubova.net>
+pkgname=py3-zfs-autobackup
+pkgver=3.3
+pkgrel=1
+pkgdesc="ZFS autobackup is used to periodically backup ZFS filesystems to other locations."
+url="https://github.com/psy0rz/zfs_autobackup"
+arch="noarch"
+license="GPL-3.0-only"
+depends="py3-colorama"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/psy0rz/zfs_autobackup/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/zfs_autobackup-$pkgver"
+subpackages="$pkgname-pyc"
+options="!check" # tests need ZFS installed and root access to create RAM-disk zpools
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		"$builddir"/.dist/*.whl
+}
+
+sha512sums="
+4fd872f8784c9bca40f1e186952741593a9d0d2e039f62481cfb1edfa47a0f567bb6da8f6ebedc59ac4022fb66c2c519a4108d4e4b1933d6e4bbb5ebb556b1cd  py3-zfs-autobackup-3.3.tar.gz
+"

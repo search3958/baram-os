@@ -1,0 +1,36 @@
+# Maintainer: Adam Thiede <me@adamthiede.com>
+pkgname=j4-dmenu-desktop
+pkgver=3.2
+pkgrel=4
+pkgdesc="A fast desktop menu"
+url="https://github.com/enkore/j4-dmenu-desktop"
+arch="all"
+license="GPL-3.0-only"
+makedepends="meson fmt-dev spdlog-dev"
+checkdepends="catch2-3 py3-pytest"
+source="$pkgname-$pkgver.tar.gz::https://github.com/enkore/j4-dmenu-desktop/archive/r$pkgver.tar.gz"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+"
+builddir="$srcdir"/$pkgname-r$pkgver
+
+build() {
+	abuild-meson . output \
+		-Denable-tests="$(want_check && echo true || echo false)"
+	meson compile -C output
+}
+
+check() {
+	meson test -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+d6bffa372a461feb1b09293bf51eb8dc081cf1d7aef21f059c51b296dc52804c3cefd9ab6d64d9025bbdee325cb7d24f78719a8f9504f55b868f10ca9715ae5a  j4-dmenu-desktop-3.2.tar.gz
+"

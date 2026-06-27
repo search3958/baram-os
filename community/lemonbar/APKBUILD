@@ -1,0 +1,33 @@
+# Contributor: Camille Scholtz <onodera@openmailbox.org>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=lemonbar
+pkgver=1.5
+pkgrel=2
+pkgdesc="Featherlight, lemon-scented, bar based on xcb"
+url="https://github.com/Lemonboy/bar"
+arch="all"
+license="MIT"
+makedepends="
+	libxcb-dev
+	perl
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/LemonBoy/bar/archive/v$pkgver.tar.gz"
+builddir="$srcdir/bar-$pkgver"
+options="!check" # no tests provided
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dvm644 LICENSE \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+0ab519f21e40eec50d1c8b090d45c6ad7e4ec98e04831a32599d19e74684f975f0f8c9aaa10c83ecd97e33bedcef545199fbc7094291dcbc63233089eabf9860  lemonbar-1.5.tar.gz
+"

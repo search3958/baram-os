@@ -1,0 +1,38 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-tcx2ics
+pkgver=0.2.0
+pkgrel=0
+pkgdesc="Generate ICS calendar events from TCX workout files"
+url="https://github.com/firefly-cpp/tcx2ics"
+arch="noarch"
+license="MIT"
+depends="python3 py3-tcxreader"
+makedepends="py3-gpep517 py3-poetry-core"
+checkdepends="py3-pytest-xdist"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://github.com/firefly-cpp/tcx2ics/archive/$pkgver/tcx2ics-$pkgver.tar.gz"
+builddir="$srcdir/tcx2ics-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/tcx2ics-$pkgver-py3-none-any.whl
+
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+21b0b2f353beb8783a5df373d5dfa4a443a06767952ca2aacbbe332ad837b801d20b556bc29054b578e953113ed448ef9c4dff204f8e3044572d570177764de2  tcx2ics-0.2.0.tar.gz
+"

@@ -1,0 +1,34 @@
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Nicolas Lorin <androw95220@gmail.com>
+pkgname=bgpq4
+pkgver=1.16
+pkgrel=0
+pkgdesc="bgp filtering automation tool"
+url="https://github.com/bgp/bgpq4"
+arch="all"
+options="!check" #no test suite
+license="BSD-2-Clause"
+makedepends="autoconf automake libtool"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/bgp/bgpq4/archive/refs/tags/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--host=$CHOST \
+		--build=$CBUILD \
+		--prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+57cb2e1cafada488c85ba8f8103f9bee66ab339ee9c9d5571d240080f44d794b40e75a6bfddcdb096a61d54d7f814b0f5f7ac34aa92ba6ec0b989285dc9c9422  bgpq4-1.16.tar.gz
+"

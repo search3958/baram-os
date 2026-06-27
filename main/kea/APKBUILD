@@ -1,0 +1,409 @@
+# Contributor: Steve Holweg <skytep@gmail.com>
+# Contributor: Baptiste Jonglez <baptiste--aur@jonglez.org>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=kea
+# NOTE: Upgrade only to even-numbered versions (e.g. 1.8.x, 1.10.x)!
+#   Odd-numbered versions are development versions.
+# NOTE: When bumping, always rebuild all kea hooks (kea-* aports)!
+pkgver=3.0.3
+pkgrel=0
+pkgdesc="DHCPv4 and DHCPv6 server from ISC"
+url="https://kea.isc.org/"
+arch="all"
+license="MPL-2.0"
+depends="kea-dhcp4 kea-dhcp6"
+depends_dev="
+	boost-dev
+	log4cplus-dev
+	"
+checkdepends="
+	gtest-dev
+	procps
+	"
+makedepends="
+	$depends_dev
+	bison
+	flex
+	libcap-utils
+	mariadb-dev
+	meson
+	openssl-dev
+	postgresql-dev
+	py3-sphinx
+	python3-dev
+	"
+pkgusers="kea"
+pkggroups="kea"
+install="$pkgname-common.pre-install $pkgname-common.post-upgrade"
+subpackages="
+	$pkgname-doc
+	$pkgname-dev
+	$pkgname-admin::noarch
+	$pkgname-ctrl-agent:ctrlagent
+	$pkgname-dhcp-ddns:dhcpddns
+	$pkgname-dhcp4
+	$pkgname-dhcp6
+	$pkgname-shell-pyc
+	$pkgname-shell::noarch
+	$pkgname-hook-bootp:_hook_bootp
+	$pkgname-hook-class-cmds:_hook_class_cmds
+	$pkgname-hook-ddns-tuning:_hook_ddns_tuning
+	$pkgname-hook-flex-id:_hook_flex_id
+	$pkgname-hook-flex-option:_hook_flex_option
+	$pkgname-hook-ha:_hook_ha
+	$pkgname-hook-host-cache:_hook_host_cache
+	$pkgname-hook-host-cmds:_hook_host_cmds
+	$pkgname-hook-lease-cmds:_hook_lease_cmds
+	$pkgname-hook-lease-query:_hook_lease_query
+	$pkgname-hook-legal-log:_hook_legal_log
+	$pkgname-hook-limits:_hook_limits
+	$pkgname-hook-mysql:_hook_mysql
+	$pkgname-hook-perfmon:_hook_perfmon
+	$pkgname-hook-ping-check:_hook_ping_check
+	$pkgname-hook-pgsql:_hook_pgsql
+	$pkgname-hook-radius:_hook_radius
+	$pkgname-hook-run-script:_hook_run_script
+	$pkgname-hook-stat-cmds:_hook_stat_cmds
+	$pkgname-hook-subnet-cmds:_hook_subnet_cmds
+	$pkgname-hooks
+	$pkgname-perfdhcp
+	$pkgname-common
+	"
+source="https://ftp.isc.org/isc/kea/$pkgver/kea-$pkgver.tar.xz
+	disable-db-tests.patch
+	configs-fix-paths.patch
+	move-api-files-to-doc.patch
+	dont-install-meson-info.patch
+	dont-install-html-docs.patch
+	fix-install-umask.patch
+	tests-treat-zombie-as-stopped.patch
+	kea.initd.in
+	kea.confd.in
+	"
+validpgpkeys="BE0E9748B718253A28BB89FFF1B11BF05CF02E57" # Internet Systems Consortium, Inc. (Signing key, 2017-2018) <codesign@isc.org>
+
+case "$CARCH" in
+	# FIXME: Some tests fail.
+	loongarch64 | ppc64le | riscv64 | s390x) options="!check";;
+esac
+
+# secfixes:
+#   3.0.3-r0:
+#     - CVE-2026-3608
+#   2.6.3-r0:
+#     - CVE-2025-32801
+#     - CVE-2025-32802
+#     - CVE-2025-32803
+#   1.7.2-r0:
+#     - CVE-2019-6472
+#     - CVE-2019-6473
+#     - CVE-2019-6474
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Drunstatedir=/run \
+		-Dcrypto=openssl \
+		-Dkrb5=disabled \
+		-Dmysql=enabled \
+		-Dnetconf=disabled \
+		-Dpostgresql=enabled \
+		-Dfuzz=disabled \
+		-Dtests="$(want_check && echo enabled || echo disabled )" \
+		output .
+
+	meson compile -C output
+
+	# Man pages are not built automatically, dunno why.
+	sphinx-build -M man doc/sphinx output/doc/sphinx/_build -v -E -a -W -c doc/sphinx
+}
+
+check() {
+	# Fails on all(?) and I have no idea why...
+	local filter="-AddrRegTest.fqdn:AddrRegTest.renew*"
+	# Fails on 32-bit arches:
+	filter="$filter:BigintTest.*int128"
+	# Fails on armv7 and armhf:
+	filter="$filter:LibraryManagerTest.libraryLoggerSetup"
+
+	GTEST_FILTER="$filter" meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	cd "$pkgdir"
+
+	install -d -m 0750 -o kea -g kea ./var/log/kea ./var/lib/kea
+
+	# keactrl is unnecessary since we provide OpenRC init scripts.
+	rm -f ./usr/sbin/keactrl ./usr/share/man/man8/keactrl.8* ./etc/kea/keactrl.conf
+
+	rm -r ./run
+}
+
+dev() {
+	default_dev
+
+	amove usr/bin/kea-msg-compiler
+}
+
+admin() {
+	pkgdesc="Databases administration tools for Kea DHCP server"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	amove usr/sbin/kea-admin
+	amove usr/share/kea
+}
+
+ctrlagent() {
+	pkgdesc="Kea Control Agent - REST service for controlling Kea DHCP server"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	amove usr/sbin/kea-ctrl-agent
+	amove etc/kea/kea-ctrl-agent.conf
+
+	_install_initd kea-ctrl-agent
+}
+
+dhcpddns() {
+	pkgdesc="Kea DHCP Dynamic DNS Server"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	amove usr/sbin/kea-dhcp-ddns
+	amove etc/kea/kea-dhcp-ddns.conf
+	amove usr/lib/libkea-asiodns.so.*
+	amove usr/lib/libkea-d2srv.so.*
+
+	_install_initd kea-dhcp-ddns
+}
+
+dhcp4() {
+	pkgdesc="Kea IPv4 DHCP Server"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	amove usr/sbin/kea-dhcp4
+	amove etc/kea/kea-dhcp4.conf
+
+	_install_initd kea-dhcp4
+}
+
+dhcp6() {
+	pkgdesc="Kea IPv6 DHCP Server"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	amove usr/sbin/kea-dhcp6
+	amove etc/kea/kea-dhcp6.conf
+
+	_install_initd kea-dhcp6
+}
+
+shell() {
+	pkgdesc="Text client for Kea DHCP Control Agent"
+	depends="python3"
+
+	amove usr/sbin/kea-shell
+	amove usr/lib/python3*
+}
+
+_hook_bootp() {
+	pkgdesc="Kea hook for handling BOOTP client support"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_bootp.so
+}
+
+_hook_class_cmds() {
+	pkgdesc="Kea hook providing runtime commands for managing client classes"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_class_cmds.so
+}
+
+_hook_ddns_tuning() {
+	pkgdesc="Kea hook for adjusting and fine-tuning DHCP-DDNS update behavior"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_ddns_tuning.so
+}
+
+_hook_flex_id() {
+	pkgdesc="Kea hook for generating client identifiers using flexible expressions"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_flex_id.so
+}
+
+_hook_flex_option() {
+	pkgdesc="Kea hook for dynamically assigning or modifying options via expressions"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_flex_option.so
+}
+
+_hook_ha() {
+	pkgdesc="Kea hook implementing High Availability failover and load-balancing modes"
+	depends="$pkgname-hook-lease-cmds=$pkgver-r$pkgrel"
+
+	amove usr/lib/kea/hooks/libdhcp_ha.so
+}
+
+_hook_host_cache() {
+	pkgdesc="Kea hook adding host caching to reduce repeated database lookups"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_host_cache.so
+}
+
+_hook_host_cmds() {
+	pkgdesc="Kea hook adding commands for creating and modifying host reservations"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_host_cmds.so
+}
+
+_hook_lease_cmds() {
+	pkgdesc="Kea hook providing commands for viewing, updating, and deleting leases"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_lease_cmds.so
+}
+
+_hook_lease_query() {
+	pkgdesc="Kea hook supporting DHCPv4 Leasequery and Bulk Leasequery protocols"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_lease_query.so
+	amove usr/lib/libkea-tcp.so.*
+}
+
+_hook_legal_log() {
+	pkgdesc="Kea hook producing legally compliant forensic logs of lease activity"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_legal_log.so
+}
+
+_hook_limits() {
+	pkgdesc="Kea hook enforcing rate limits and other server resource constraints"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_limits.so
+}
+
+_hook_mysql() {
+	pkgdesc="Kea hook for storing leases and hosts in MySQL database"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_mysql.so
+	amove usr/lib/libkea-mysql.so.*
+}
+
+_hook_perfmon() {
+	pkgdesc="Kea hook collecting performance metrics for monitoring and analysis"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_perfmon.so
+}
+
+_hook_ping_check() {
+	pkgdesc="Kea hook performing ICMP ping-checks before lease allocation"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_ping_check.so
+}
+
+_hook_pgsql() {
+	pkgdesc="Kea hook for storing leases and hosts in PostgreSQL database"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_pgsql.so
+	amove usr/lib/libkea-pgsql.so.*
+}
+
+_hook_radius() {
+	pkgdesc="Kea hook integrating DHCP operations with a RADIUS server"
+	depends=""
+
+	amove etc/kea/radius
+	amove usr/lib/kea/hooks/libdhcp_radius.so
+}
+
+_hook_run_script() {
+	pkgdesc="Kea hook running external scripts in response to hook events"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_run_script.so
+}
+
+_hook_stat_cmds() {
+	pkgdesc="Kea hook providing commands for retrieving server statistics"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_stat_cmds.so
+}
+
+_hook_subnet_cmds() {
+	pkgdesc="Kea hook providing commands for managing and modifying subnets"
+	depends=""
+
+	amove usr/lib/kea/hooks/libdhcp_subnet_cmds.so
+}
+
+hooks() {
+	pkgdesc="Metapackage that installs all Kea hooks"
+	depends="$(echo "$subpackages" | cut -d: -f1)"
+
+	mkdir -p "$subpkgdir"
+}
+
+perfdhcp() {
+	pkgdesc="DHCP benchmarking tool from Kea"
+	depends=""
+
+	amove usr/sbin/perfdhcp
+}
+
+common() {
+	pkgdesc="Common files and libraries for Kea DHCP Server"
+	replaces="kea-utils"  # for backward compatibility
+	provides="kea-utils=$pkgver-r$pkgrel kea-http=$pkgver-r$pkgrel"  # for backward compatibility
+	depends=""
+
+	mkdir -p "$subpkgdir"
+	mv "$pkgdir"/* "$subpkgdir"/
+}
+
+_install_initd() {
+	local name="$1"
+
+	local caps='^cap_net_bind_service'
+	case "$name" in
+		kea-dhcp4) caps="$caps,^cap_net_raw";;
+		kea-ctrl-agent) caps='';;
+	esac
+
+	install -Dm755 "$srcdir"/kea.initd.in "$subpkgdir"/etc/init.d/$name
+	install -Dm644 "$srcdir"/kea.confd.in "$subpkgdir"/etc/conf.d/$name
+	# /^capabilities... is to remove this variable when it's rendered empty (see #15048).
+	sed -i \
+		-e "s|@@NAME@@|$name|g" \
+		-e "s|@@CAPABILITIES@@|$caps|" \
+		-e '/^capabilities=""/d' \
+		"$subpkgdir"/etc/init.d/$name \
+		"$subpkgdir"/etc/conf.d/$name
+}
+
+sha512sums="
+38dff3a089b76d043c0bd1cc1bbf480b71b627d101954eb2d8200bce507dcd43e8a1cbdb5b55b7f425424a156ec56e36af52b6c591ecf6c80c29b58875b5b585  kea-3.0.3.tar.xz
+f7741d26fb0eb4e6c8ace08dad866633cb9668d046bc457a9c478368e1f37cf86a17751a099066469fd114221f95a9d62ecc7052d2583680eb1a607e0e4a14fa  disable-db-tests.patch
+3ff20a0e04b276d2671dbbc949a040f6d51c8cac28a49fac0a86d8b4104466db4ff018e2c1500e61d34aec6179f93904d56bbbd39ecab85dcbaa4131bd8bc14b  configs-fix-paths.patch
+43c04c073ef2143c11d6ef4fc2acad61e5426d40a93d760f217567a88549d49066a192d6014c819d8d008c18ca83d8beab28549e70e8544bb0269b193b90d5ed  move-api-files-to-doc.patch
+c362d091c126ef8b48da0fee51ab15683cea2afb79e67333cd15f15fff1f7c664ac52d9bd33b1da7584b9006c30a6c4584453a1c9ff4ef4e159a5613dfd7c293  dont-install-meson-info.patch
+b8ad715fe85c2e1b79f298048d0f1a68740b560ee0acd816fd6c89f237943e4a76c0e07eca67922a232de1f4e197d84b81c7ce2e03b66d0e3ed88a3eecf0d72e  dont-install-html-docs.patch
+3325b282f2884aae748c00b711d316f58798c7db92523378ced45448b76235263bc7144e834d3d976d5fd4997d0073a6379332256f921cd53586a0d8248dfac7  fix-install-umask.patch
+f0e7c52b09cf7b84b82bd90e19e9a351d98edf73548a7adfd274f5fc318a8cb8075bb20f1fdf5dd038dff616efec4ae24224f725a1e6db794fa8eb63f0d6c2c3  tests-treat-zombie-as-stopped.patch
+e2f77a403b1c84918c92acf8c22d4bd3ea3662d109c334aebb4f55f1821901fbf287f0c1ac03f5de56227e888edc63667f54a0ee51fa4b654479f4e14841d11a  kea.initd.in
+eb45671073174e319cd4fedb61c5f8664370f701856569c675a5aaa280bde974bdabbc30e733379b2e61b32dc2e1e94808b79f141de7c209109e874b2b4b5e8f  kea.confd.in
+"

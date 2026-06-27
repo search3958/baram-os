@@ -1,0 +1,37 @@
+#!/sbin/openrc-run
+
+extra_started_commands="reload"
+description="Daemon based database updating for vnStat"
+
+: ${cfgfile:="/etc/vnstat.conf"}
+: ${command_user:="vnstat:vnstat"}
+# VNSTATD_NICELEVEL is here for backward compatibility only
+: ${nicelevel:=${VNSTATD_NICELEVEL:-0}}
+
+command=/usr/sbin/vnstatd
+# $VNSTATD_EXTRAOPTS is here for backward compatibility only
+command_args="--nodaemon --config $cfgfile ${command_args:-$VNSTATD_EXTRAOPTS}"
+command_background="yes"
+pidfile="/run/$RC_SVCNAME.pid"
+start_stop_daemon_args="--nicelevel $nicelevel"
+supervise_daemon_args="$start_stop_daemon_args"
+
+required_files="$cfgfile"
+
+depend() {
+	use net
+}
+
+start_pre() {
+	checkpath -q -d -m 755 -o $command_user /var/lib/vnstat
+}
+
+reload() {
+	ebegin "Reloading $RC_SVCNAME configuration"
+	if [ "$supervisor" ]; then
+		$supervisor "$RC_SVCNAME" --signal HUP
+	else
+		start-stop-daemon --pidfile "$pidfile" --signal HUP
+	fi
+	eend $?
+}

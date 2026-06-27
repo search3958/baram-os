@@ -1,0 +1,152 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=subversion
+pkgver=1.14.5
+pkgrel=1
+pkgdesc="Replacement for CVS, another versioning system (svn)"
+url="https://subversion.apache.org/"
+arch="all"
+license="Apache-2.0 AND BSD-2-Clause"
+makedepends="
+	apache2-dev
+	apr-util-dev
+	autoconf
+	automake
+	boost-dev
+	e2fsprogs-dev
+	libtool
+	lz4-dev
+	neon-dev
+	perl-dev
+	serf-dev
+	swig
+	"
+install="$pkgname.pre-install"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	mod_dav_svn
+	$pkgname-bash-completion:bashcomp:noarch
+	perl-$pkgname:pl
+	$pkgname-libs
+	$pkgname-openrc
+	$pkgname-tools
+	"
+source="https://archive.apache.org/dist/subversion/subversion-$pkgver.tar.bz2
+	subversion-1.7.0-deplibs.patch
+	subversion-perl-deplibs.patch
+	subversion-1.12.0-linking.patch
+	svnserve.confd
+	svnserve.initd
+	"
+
+# secfixes:
+#   1.14.5-r0:
+#     - CVE-2024-46901
+#   1.14.4-r0:
+#     - CVE-2024-45720
+#   1.14.2-r0:
+#     - CVE-2021-28544
+#     - CVE-2022-24070
+#   1.14.1-r0:
+#     - CVE-2020-17525
+#   1.12.2-r0:
+#     - CVE-2019-0203
+#     - CVE-2018-11782
+#   1.11.1-r0:
+#     - CVE-2018-11803
+#   1.9.7-r0:
+#     - CVE-2017-9800
+
+prepare() {
+	default_prepare
+	mv build-outputs.mk build-outputs.mk.old
+	rm subversion/bindings/swig/proxy/*.swg
+	PYTHON=python3 LIBTOOL_CONFIG=/usr/share/libtool/build-aux ./autogen.sh --release
+}
+
+build() {
+	unset CPPFLAGS
+	export PYTHON=python3
+	CFLAGS="$CFLAGS -fpermissive" ./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-nls \
+		--with-apxs \
+		--with-apache-libexecdir \
+		--with-swig \
+		--disable-javahl \
+		--disable-static \
+		--enable-disallowing-of-undefined-references \
+		--without-jdk \
+		--with-serf \
+		--with-utf8proc=internal
+	make all swig-pl-lib tools
+	(cd subversion/bindings/swig/perl/native ; perl Makefile.PL)
+	# need override LD_RUN_PATH with something valid, otherwise we get
+	# empty rpath which is not a good idea.
+	make -j1 -C subversion/bindings/swig/perl/native \
+		LD_RUN_PATH="/usr/lib" EXTRALIBS="-lapr-1"
+}
+
+check() {
+	make test
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" \
+		toolsdir=/usr/bin \
+		install install-swig-pl-lib install-tools
+	make pure_vendor_install -C subversion/bindings/swig/perl/native \
+		PERL_INSTALL_ROOT="$pkgdir"
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+
+	install -Dm755 "$srcdir"/svnserve.initd "$pkgdir"/etc/init.d/svnserve
+	install -Dm644 "$srcdir"/svnserve.confd "$pkgdir"/etc/conf.d/svnserve
+
+	mkdir -p "$pkgdir"/usr/lib
+	mv "$pkgdir"/usr/share/pkgconfig "$pkgdir"/usr/lib
+
+	install -Dm644 tools/client-side/bash_completion \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	cd "$pkgdir"/usr/share/bash-completion/completions
+	local i; for i in svn svnadmin svndumpfilter svnlook svnsync svnversion; do
+		ln -sf $pkgname $i
+	done
+}
+
+mod_dav_svn() {
+	pkgdesc="Apache httpd module for $pkgname server"
+
+	amove usr/lib/apache2
+}
+
+pl() {
+	pkgdesc="Perl bindings to $pkgname"
+
+	amove usr/lib/*perl*
+}
+
+tools() {
+	pkgdesc="extra tools for subversion"
+
+	# this is the list from install-tools into toolsdir
+	amove usr/bin/diff* \
+		usr/bin/fsfs-* \
+		usr/bin/svn-* \
+		usr/bin/svnauthz* \
+		usr/bin/svnconflict \
+		usr/bin/svnmover \
+		usr/bin/svnraisetreeconflict \
+		usr/bin/x509-parser
+}
+
+sha512sums="
+e4800564d0cc68be98f19aa58d89181de83f237f0ccff10824d9237f8c65eb0071f7176ac54e9e8f8ecbf685849bd3e94be48f678f4c23ed6a5fd7fb6edd0321  subversion-1.14.5.tar.bz2
+fb219c45b80602d919176cc191394df09f90d0f5c7d24e6a36b166bd92777ecae67eeac1e49c0ffbb0e724396b3d2094dbb0bef17d01dc87d418b1cd554bd7c4  subversion-1.7.0-deplibs.patch
+fd6e5f45cff4d3cf0d885a34c822b32141b13b199d99ad8e1b04d641c9c1ee27e73f5c556a4ad54a900b6d39cc14afad17b6738d8af44c76758f1a27b4d49f9a  subversion-perl-deplibs.patch
+7d46f2ee0bbba53b6dc9312b35000b1433a46edb09f61030da1ff66951bc204fc90598e5b07ce2554d46508d5a9e8193152131ae21050901c7b40cb034fb5cc3  subversion-1.12.0-linking.patch
+7fe993443d4d3ef5e1e75f60e85036ee0b2bb2636c2c830210e64f525f95ae4c10ca1dc4504fc36915ec9391815becbe7cbf5f589c28609386d8d079ed02c630  svnserve.confd
+f6392193cc65aaceee9b6e5e66f80af4b095ba4007e8536e8b1c4e8b2c75610d7f5596b83e5edd504672f021c074887fc6464cf4fc1dfe9446741105f11cd855  svnserve.initd
+"

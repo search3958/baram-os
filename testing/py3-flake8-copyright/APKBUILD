@@ -1,0 +1,34 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-flake8-copyright
+_pkgname=flake8-copyright
+pkgver=0.2.4
+pkgrel=4
+pkgdesc="Extension for flake8 which checks for copyrights"
+options="!check" # No testsuite
+url="https://github.com/savoirfairelinux/flake8-copyright"
+arch="noarch"
+license="MIT"
+depends="py3-flake8 py3-setuptools"
+makedepends="py3-gpep517 py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-flake8-copyright"                  # Backwards compatibility
+provides="py-flake8-copyright=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a6ab47e1bb715618f075c51f398e18180404871b3b0faf1c2d30701d5203db6bc23771bf22ffb5bafcd8ee856b9b64237b316bd503ae7dceed6ca284ccd5a74d  flake8-copyright-0.2.4.tar.gz
+"

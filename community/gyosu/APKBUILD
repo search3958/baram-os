@@ -1,0 +1,23 @@
+maintainer="Hannes Braun <hannes@hannesbraun.net>"
+pkgname=gyosu
+pkgver=0.2.2
+pkgrel=0
+pkgdesc="simple C documentation generator"
+url="https://codeberg.org/emersion/gyosu"
+arch="all"
+license="AGPL-3.0-only"
+makedepends="go"
+source="https://codeberg.org/emersion/gyosu/releases/download/v$pkgver/gyosu-$pkgver.tar.gz"
+options="net !check" # no test suite
+
+build() {
+	go build .
+}
+
+package() {
+	install -Dm755 gyosu -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+3868142cb9748a99bb045310996310f9630d724b4a0940645b7f6055f0b385aaacd5b713376a3ea47a8bb5cf4693a0066a2b71d2dbd6268b3d3804c4421a7873  gyosu-0.2.2.tar.gz
+"

@@ -1,0 +1,42 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Contributor: Robert Boisvert <rdboisvert@gmail.com>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=sipp
+pkgver=3.7.7
+pkgrel=0
+pkgdesc="Test tool / traffic generator for the SIP protocol"
+url="https://github.com/SIPp/sipp"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cmake
+	libpcap-dev
+	linux-headers
+	lksctp-tools-dev
+	ncurses-dev
+	openssl-dev>3
+	samurai
+	"
+source="https://github.com/SIPp/sipp/releases/download/v$pkgver/sipp-$pkgver.tar.gz
+	"
+options="!check" # tests have no direct target
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DUSE_PCAP=1 \
+		-DUSE_SSL=1 \
+		-DUSE_SCTP=1
+
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	install -m444 -D pcap/* -t "$pkgdir"/usr/share/"$pkgname"/
+}
+
+sha512sums="
+4bec4a6d2d3d5c235bcc94034268b48765739571095ef05cf072273065f7cfabb75bd71c1b070223cca62482c8f5b97796e49f7bc0a5eee91d81f90fda8ed7cc  sipp-3.7.7.tar.gz
+"

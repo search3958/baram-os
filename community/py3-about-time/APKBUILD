@@ -1,0 +1,39 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-about-time
+_commit=bcabddd4c864d58b272a1d69b321ca9184ba45ac
+pkgver=4.2.2
+pkgrel=1
+pkgdesc="Easily measure timing and throughput of code blocks, with beautiful human friendly representations"
+url="https://github.com/rsalmei/about-time"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest-xdist"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rsalmei/about-time/archive/$_commit/about-time-$_commit.tar.gz
+fix-license.patch"
+builddir="$srcdir/about-time-$_commit"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+7651fbe2a98f6458aab6e4dd82ec4676c8d3daedfa5145d24799c3453b9fe62beb896c19900291439849fbb2b896cbd327d359cf07a0140df4e6b5904561abb4  py3-about-time-4.2.2.tar.gz
+fff60502c91559110441b7163f42f40696317b68a58851f372f963b4d72f87e1293db5ee2b97a21efb952e6f168887979a3b96363e2c7c6d22fd1885095aba9e  fix-license.patch
+"

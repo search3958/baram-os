@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+
+command="/usr/sbin/pound"
+command_args="-F -e $command_args"
+command_background=true
+pidfile="/run/$RC_SVCNAME.pid"
+
+extra_commands="checkconfig"
+
+: ${error_logger="logger -t pound -p daemon.err >/dev/null 2>&1"}
+
+required_files="/etc/pound/pound.cfg"
+
+depend() {
+	need net
+	after firewall
+}
+
+checkconfig() {
+	$command -c -e
+}
+

@@ -1,0 +1,62 @@
+# Contributor: Andy Postnikov <apostnikov@gmail.com>
+# Maintainer: Andy Postnikov <apostnikov@gmail.com>
+
+pkgname=php82-pecl-xhprof
+_extname=xhprof
+pkgver=2.3.10
+pkgrel=0
+pkgdesc="A Hierarchical Profiler for PHP 8.2 - PECL"
+url="https://pecl.php.net/package/xhprof"
+arch="all"
+license="Apache-2.0"
+_phpv=82
+_php=php$_phpv
+depends="$_php-common"
+makedepends="$_php-dev"
+_assetsdepends="$_php-ctype graphviz ghostscript-fonts"
+subpackages="$pkgname-assets::noarch"
+source="php-pecl-$_extname-$pkgver.tgz::https://pecl.php.net/get/$_extname-$pkgver.tgz"
+builddir="$srcdir/$_extname-$pkgver/extension"
+provides="$_php-xhprof=$pkgver-r$pkgrel" # for backward compatibility
+replaces="$_php-xhprof" # for backward compatibility
+
+install_if="php-$_extname php$_phpv"
+
+build() {
+	phpize$_phpv
+	./configure --with-php-config=php-config$_phpv
+	make
+}
+
+check() {
+	[ $CARCH = s390x ] && rm -fr tests/xhprof_005.phpt # sleeping longer in CI
+	make NO_INTERACTION=1 REPORT_EXIT_STATUS=1 TESTS=--show-diff test
+	$_php -d extension=modules/$_extname.so --ri $_extname
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+	local _confdir="$pkgdir"/etc/$_php/conf.d
+	install -d $_confdir
+	cat > $_confdir/$_extname.ini <<-EOF
+		extension=$_extname
+		xhprof.output_dir=/tmp
+	EOF
+}
+
+assets() {
+	pkgdesc="A Hierarchical Profiler for PHP (UI assets)"
+	depends="$_assetsdepends"
+	provides="$_php-xhprof-assets=$pkgver-r$pkgrel" # for backward compatibility
+	replaces="$_php-xhprof-assets" # for backward compatibility
+
+	local _assetsdir="$subpkgdir"/usr/share/$_php/xhprof
+	install -d $_assetsdir
+	cp -R "$builddir"/../xhprof_lib $_assetsdir
+	cp -R "$builddir"/../xhprof_html $_assetsdir
+	cp -R "$builddir"/../examples $_assetsdir
+}
+
+sha512sums="
+fcd96013222cfde9a5a26e818effc35fdc686e1aeec5040964af7672700938b1e6090b84090234ef05b7ae4deb9fa2869eb53ae5d7c6666fcb1c6e0b484a7a9c  php-pecl-xhprof-2.3.10.tgz
+"

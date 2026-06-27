@@ -1,0 +1,37 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-citeproc-py
+_pkgorig=citeproc-py
+pkgver=0.9.0
+pkgrel=1
+pkgdesc="Yet another Python CSL Processor"
+url="https://github.com/brechtm/citeproc-py"
+arch="noarch"
+license="BSD-2-Clause"
+depends="python3 py3-lxml rnc2rng"
+makedepends="py3-gpep517 py3-setuptools python3-dev py3-wheel"
+checkdepends="py3-pytest-xdist"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/c/citeproc-py/citeproc_py-$pkgver.tar.gz"
+builddir="$srcdir"/${_pkgorig/-/_}-$pkgver
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8a3791f50bd2f120cd21e75c0c09c53cd988f78bf9b765bbfcdf7732468f282a0f87f88596f9326311f56fc209ee4b816e5a7bd7e9e406a39a080e069820ca9b  py3-citeproc-py-0.9.0.tar.gz
+"

@@ -1,7 +1,0 @@
-[package]
-dependencies = [
-    "plasma-workspace",
-    "kwin-x11",
-    "breeze",
-    "breeze-icons",
-]

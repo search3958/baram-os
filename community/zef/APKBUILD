@@ -1,0 +1,34 @@
+# Contributor: Curt Tilmes <Curt.Tilmes@nasa.gov>
+# Maintainer: Curt Tilmes <Curt.Tilmes@nasa.gov>
+pkgname=zef
+pkgver=1.0.0
+pkgrel=3
+pkgdesc="Raku / Perl6 Module Management"
+url="https://github.com/ugexe/zef"
+arch="all"
+options="!archcheck" # Precompiled arch dependent files included (quiet noarch warning)
+license="Artistic-2.0"
+depends="rakudo git wget curl tar unzip perl-utils"
+makedepends="rakudo-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ugexe/zef/archive/v$pkgver.tar.gz"
+
+check() {
+	prove -e 'raku -Ilib' --ext .rakutest
+}
+
+package() {
+	RAKUDO_RERESOLVE_DEPENDENCIES=0 /usr/share/rakudo/tools/install-dist.raku \
+		--to="$pkgdir"/usr/share/rakudo/vendor --for=vendor
+	rm "$pkgdir"/usr/share/rakudo/vendor/bin/zef-j \
+		"$pkgdir"/usr/share/rakudo/vendor/bin/zef-m
+	mkdir -p "$pkgdir"/usr/bin
+	ln -s /usr/share/rakudo/vendor/bin/zef "$pkgdir"/usr/bin/zef
+
+	install -Dvm644 LICENSE META6.json README.md \
+		-t "$pkgdir"/usr/share/doc/"$pkgname"
+}
+
+sha512sums="
+3c96f944d2e40f23213deb12d5cc60bb4a588cb36a870a83984ea463aea5623ce9d95334459ce739c9f89c52a6107479531d4507d6ec9128de2a1d4a67371774  zef-1.0.0.tar.gz
+"

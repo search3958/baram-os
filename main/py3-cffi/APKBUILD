@@ -1,0 +1,51 @@
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=py3-cffi
+_pkgname=cffi
+pkgver=2.0.0
+pkgrel=0
+pkgdesc="Foreign function interface for calling C code from Python3"
+url="https://cffi.readthedocs.io/"
+arch="all"
+license="MIT"
+depends="py3-cparser"
+makedepends="
+	libffi-dev
+	python3-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz
+	fix-test-parsing.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-cffi" # Backwards compatibility
+provides="py-cffi=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	PYTHONPATH="$(echo "$builddir"/build/lib.linux-*)" \
+	.testenv/bin/python3 -m pytest -v \
+		--disable-pytest-warnings testing/
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a8bf705e626f6b5858cc20e9044a23fd653d155e2a2d4cb59f1eed00ef13ebd92d5a2f07738c66b361cb24d863786d4379dcd9c176250b546fbd45758e51d4f4  cffi-2.0.0.tar.gz
+d65f78f890b445b04bd1a38f05ff065bd9fcf594d00d616aa7508d1a2516074b5016157aee6d3a11a8e97cdfc8bd5c3d05e75faba17101fa160c16fdcf4b29e8  fix-test-parsing.patch
+"

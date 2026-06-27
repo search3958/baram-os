@@ -1,0 +1,30 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-peripheral-joystick
+pkgver=20.1.9
+_realname=Nexus
+pkgrel=0
+pkgdesc="Kodi joystick support (drivers and button maps)"
+options="!check" # no test suite
+url="https://github.com/xbmc/peripheral.joystick"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="GPL-2.0-only"
+makedepends="cmake kodi-dev samurai tinyxml-dev"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/xbmc/peripheral.joystick/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/peripheral.joystick-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+1e906317ae471495b8b39333b30cc11fd8902fd1bf2fadbfbee72d785667227c44f76d009e80c1de2a87b91396a7c75f3ff53fc745395dd6584582c321d64481  kodi-peripheral-joystick-20.1.9-Nexus.tar.gz
+"

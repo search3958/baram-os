@@ -1,0 +1,31 @@
+Hard-disable memory tagging on ARM64 - it does exist there but musl is
+missing some required interface headers for it, and it's not clear how
+to make the partalloc support code for it work.
+
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/partition_alloc.gni b/src/3rdparty/chromium/base/allocator/partition_allocator/partition_alloc.gni
+index f2f3e88378..e5e21f0d3e 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/partition_alloc.gni
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/partition_alloc.gni
+@@ -87,8 +87,7 @@ if (current_cpu == "x64" || current_cpu == "arm64" || current_cpu == "arm64e" ||
+ # TODO(crbug.com/329199197): Clean this up when experiments are complete.
+ use_large_empty_slot_span_ring = true
+ 
+-has_memory_tagging = current_cpu == "arm64" && is_clang && !is_asan &&
+-                     !is_hwasan && (is_linux || is_android)
++has_memory_tagging = false
+ 
+ declare_args() {
+   # Debug configuration.
+diff --git a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/aarch64_support.h b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/aarch64_support.h
+index ffd93dbf2f..2eac212c9d 100644
+--- a/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/aarch64_support.h
++++ b/src/3rdparty/chromium/base/allocator/partition_allocator/src/partition_alloc/aarch64_support.h
+@@ -15,7 +15,7 @@
+ #include "partition_alloc/build_config.h"
+ #include "partition_alloc/buildflags.h"
+ 
+-#if PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_LINUX)
++#if PA_BUILDFLAG(IS_ANDROID) || (PA_BUILDFLAG(IS_LINUX) && defined(__GLIBC__))
+ #define HAS_HW_CAPS
+ #endif
+ 

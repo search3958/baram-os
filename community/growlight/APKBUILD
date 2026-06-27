@@ -1,0 +1,44 @@
+# Contributor: Nick Black <dankamongmen@gmail.com>
+# Maintainer: Nick Black <dankamongmen@gmail.com>
+pkgname=growlight
+pkgver=1.2.38
+pkgrel=3
+pkgdesc="Block device manager"
+url="https://nick-black.com/dankwiki/index.php/Growlight"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="cmake notcurses-dev libatasmart-dev util-linux-dev libcap-dev
+	lvm2-dev cryptsetup-dev nettle-dev pciutils-dev libpciaccess-dev readline-dev
+	zlib-dev doctest-dev samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dankamongmen/growlight/archive/v$pkgver.tar.gz
+	gcc14.patch
+	"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DUSE_PANDOC=off \
+		-DUSE_LIBZFS=off \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+sha512sums="
+93e47dee8fc95fd59f196e7f4330d1b97acc5699f830aa604fbee9f08777a23dfa26a98dc3711c3c1bb7e4ccb636e06b6c04b45d9083db016bd8f2bee10e5fd4  growlight-1.2.38.tar.gz
+0a17f7cd4030f48d9cfa2e62c9486df72d67f755de45b955fbed243dd2d01be9aa6dec464944b159f19d18a973e859ac9a01f78ca89036f11ad02cb22987fc7e  gcc14.patch
+"

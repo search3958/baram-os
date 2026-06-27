@@ -1,8 +1,0 @@
-#TODO compilation error
-[source]
-tar = "https://code.soundsoftware.ac.uk/attachments/download/2588/vamp-plugin-sdk-2.9.0.tar.gz"
-[build]
-template = "configure"
-dependencies = [
-    "libsndfile",
-]

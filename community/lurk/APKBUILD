@@ -1,0 +1,44 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=lurk
+pkgver=0.3.14
+pkgrel=0
+pkgdesc="A pretty simple alternative to strace"
+url="https://github.com/JakWai01/lurk"
+arch="aarch64 x86_64" # limited by lurk
+license="MIT OR Apache-2.0"
+depends="libgcc"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/JakWai01/lurk/archive/refs/tags/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	# cargo test --frozen
+	# for now, run this instead
+	#./target/release/lurk -C /bin/ls
+	# the above doesn't seem to work in CI
+	./target/release/lurk --version
+}
+
+package() {
+	install -Dm0755 target/release/lurk -t "$pkgdir"/usr/bin
+
+	install -Dm0644 -t "$pkgdir"/usr/share/doc/"$pkgname" \
+		README.md
+	install -Dm0644 -t "$pkgdir"/usr/share/licenses/"$pkgname" \
+		LICENSE*
+}
+
+sha512sums="
+40d90da03d095fd0fdfcbd7929c188731700050b984d2fdf00dab1453b8f52d1565b371c08509e74a922f7ea7d171b587c1ed4943ced0d80fa2e80e8b6265daf  lurk-0.3.14.tar.gz
+"

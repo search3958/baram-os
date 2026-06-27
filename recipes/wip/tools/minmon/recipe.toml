@@ -1,5 +1,0 @@
-#TODO port to redox
-[source]
-git = "https://github.com/flo-at/minmon"
-[build]
-template = "cargo"

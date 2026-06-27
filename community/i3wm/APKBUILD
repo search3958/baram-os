@@ -1,0 +1,63 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=i3wm
+pkgver=4.24
+pkgrel=0
+pkgdesc="Improved dynamic tiling window manager"
+url="https://i3wm.org"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel" # -dev only has headers
+makedepends="
+	meson
+	bash
+	bison
+	cairo-dev
+	flex
+	libev-dev
+	libxcb-dev
+	libxkbcommon-dev
+	pango-dev
+	pcre2-dev
+	perl
+	startup-notification-dev
+	xcb-util-cursor-dev
+	xcb-util-keysyms-dev
+	xcb-util-wm-dev
+	xcb-util-xrm-dev
+	yajl-dev
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-save_tree:savetree:noarch
+	"
+source="
+	https://i3wm.org/downloads/i3-$pkgver.tar.xz
+	"
+builddir="$srcdir/i3-$pkgver"
+options="!check" # missing perl bindings for libxcb
+
+# 4.22 merged gaps into mainline, so provide it here for a bit
+provides="i3wm-gaps=$pkgver-r$pkgrel"
+replaces="i3wm-gaps"
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+savetree() {
+	pkgdesc="Session export tool for $pkgname"
+	depends="$pkgname=$pkgver-r$pkgrel perl-anyevent-i3"
+
+	amove usr/bin/i3-save-tree
+}
+
+sha512sums="
+0fddf0f73025ed784b82d274f147f730abb42a00e70684567943acbe941a3329919c76e9f08888c9ee71cc3aaf55e5be3104682481711a5c6aa112d53e511a23  i3-4.24.tar.xz
+"

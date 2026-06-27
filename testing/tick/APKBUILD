@@ -1,0 +1,28 @@
+# Contributor: Coco Liliace <coco@liliace.dev>
+# Maintainer: Coco Liliace <coco@liliace.dev>
+pkgname=tick
+pkgver=1.2.3
+pkgrel=0
+pkgdesc="A preset-oriented metronome TUI"
+url="https://sr.ht/~liliace/tick/"
+arch="all"
+license="MPL-2.0"
+makedepends="alsa-lib-dev scdoc"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~liliace/tick/archive/$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX="/usr" install
+}
+
+sha512sums="
+3a56c82543b7f54c10b159d23b3c32cfc6053064bea45943e9a31c6f678a89999c9917b1cfef3da5c5751983352ece9467be0cf13c42db5fa7ab21cccb2c9e8c  tick-1.2.3.tar.gz
+"

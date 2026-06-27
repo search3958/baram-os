@@ -1,0 +1,53 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer:
+pkgname=bitritter
+pkgver=0.1.1
+pkgrel=0
+pkgdesc="GTK-based bitwarden client"
+url="https://codeberg.org/Chfkch/bitritter"
+# loongarch64: blocked by libc crate
+arch="all !s390x !loongarch64" # 'nix' crate fails to compile
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	glib-dev
+	graphene-dev
+	gtk4.0-dev
+	libadwaita-dev
+	openssl-dev
+"
+source="
+	$pkgname-$pkgver.tar.gz::https://codeberg.org/Chfkch/bitritter/archive/v$pkgver.tar.gz
+	bitritter.desktop
+	"
+builddir="$srcdir/$pkgname"
+
+export PKG_CONFIG_PATH=/usr/lib/pkgconfig
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	glib_sys_NO_PKG_CONFIG=1 \
+		cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/bitritter \
+		-t "$pkgdir"/usr/bin/
+	install -Dm644 "$srcdir"/bitritter.desktop \
+		-t "$pkgdir"/usr/share/applications/
+}
+
+sha512sums="
+1cdf980bd0c34ade138d02f5b52782cf5225a633c6ff729df6060d33628b274ecdeefe79974e4e4d7193188d752f46fadb17faf9e502af4dc49e939215768cae  bitritter-0.1.1.tar.gz
+03b31377d37edbaa3cb2447e02caea0ecaad4a0b78b9adb61d0c218af1be5472090b6cc3a8139ddd40a82bc75e826900033ea4225277cdd0f0f77c34543500be  bitritter.desktop
+"

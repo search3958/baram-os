@@ -1,0 +1,41 @@
+maintainer=""
+pkgname=qmltermwidget
+pkgver=0.2.0_git20221028
+_commit="ffc6b2b2a20ca785f93300eca93c25c4b74ece17"
+pkgrel=0
+arch="all"
+url="https://github.com/gber/qmltermwidget"
+license="GPL-2.0-or-later"
+pkgdesc="QML port of qtermwidget"
+makedepends="
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	"
+checkdepends="
+	qt5-qtquickcontrols
+	xwayland-run
+	"
+source="https://github.com/gber/qmltermwidget/archive/$_commit/qmltermwidget-$_commit.tar.gz
+	0001-Rename-KProcess-to-KTermProcess-to-not-BIC-KF5CoreAd.patch
+	"
+options="!check" # Requires itself to be installed
+builddir="$srcdir/$pkgname-$_commit"
+
+build() {
+	qmake-qt5
+	make
+}
+
+check() {
+	wlheadless-run -- /usr/lib/qt5/bin/qmlscene -l . test-app/test-app.qml
+}
+
+package() {
+	# parallel install is broken
+	INSTALL_ROOT="$pkgdir" make -j1 install
+}
+
+sha512sums="
+9e8a0ab4cf8f18982dfe482af1278f89445c55ed09bbf2d062cba3229d5c05433be4d734b13aee322900b19b68f23961cc1c34c60461c5931490511fe31f9ebd  qmltermwidget-ffc6b2b2a20ca785f93300eca93c25c4b74ece17.tar.gz
+2605debae6b4cadcf7deab2bcc953b80b03724f97d23f0cc0e7faa707342581b1887563f69a45083e930d7f00424cbfc04ba26210971a48677d2393dafbe6134  0001-Rename-KProcess-to-KTermProcess-to-not-BIC-KF5CoreAd.patch
+"

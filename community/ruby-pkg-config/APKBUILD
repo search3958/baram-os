@@ -1,0 +1,54 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ruby-pkg-config
+_gemname=pkg-config
+pkgver=1.6.5
+pkgrel=0
+pkgdesc="pkg-config implemented by pure Ruby"
+url="https://github.com/ruby-gnome/pkg-config"
+arch="noarch"
+license="LGPL-2.0-or-later"
+depends="ruby"
+checkdepends="
+	cairo-dev
+	ruby-dev
+	ruby-test-unit
+	"
+source="https://github.com/ruby-gnome/pkg-config/archive/$pkgver/ruby-pkg-config-$pkgver.tar.gz"
+builddir="$srcdir/$_gemname-$pkgver"
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	# test_cflags*: pkg-config returns -I flags in a different order.
+	ruby test/run.rb \
+		--ignore-name test_cflags \
+		--ignore-name test_cflags_only_I \
+		--verbose
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+	local geminstdir="$gemdir/gems/$_gemname-$pkgver"
+
+	gem install \
+		--local \
+		--install-dir "$gemdir" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		$_gemname
+
+	# Remove unnecessary files and rubbish...
+	cd "$gemdir"
+	rm -r cache build_info doc
+
+	cd "$geminstdir"
+	rm -rf Gemfile LGPL* NEWS.* README.* Rakefile test/
+}
+
+sha512sums="
+b4ebe8f3d13980c9b7adf41cfe704c960119c11c6ad6cb2685cef4ab4ba0a29f2080a3127d7532aa1413196ec341343494869c2c0b56953f65729fc89fb957a6  ruby-pkg-config-1.6.5.tar.gz
+"

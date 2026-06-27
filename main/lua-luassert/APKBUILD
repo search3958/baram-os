@@ -1,0 +1,44 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=lua-luassert
+_pkgname=luassert
+pkgver=1.9.0
+pkgrel=1
+pkgdesc="Assertion library for Lua"
+url="https://github.com/Olivine-Labs/luassert"
+arch="noarch"
+license="MIT"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Olivine-Labs/$_pkgname/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+# This module needs lua-busted to run tests, but lua-busted depends on
+# lua-luassert and we wanna avoid circular dependencies.
+options="!check"
+
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+for _v in $_luaversions; do
+	subpackages="$subpackages lua$_v-${pkgname#lua-}:_subpackage"
+done
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_subpackage() {
+	local lver="${subpkgname:3:3}"
+	pkgdesc="$pkgdesc (for Lua $lver)"
+	depends="lua$lver lua$lver-say"
+	install_if="$pkgname=$pkgver-r$pkgrel lua$lver"
+	local destdir="$subpkgdir/usr/share/lua/$lver/$_pkgname"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$_pkgname/$pkgver-1"
+
+	cd "$builddir"
+	mkdir -p "$destdir"
+	cp -r src/* "$destdir"/
+
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+sha512sums="
+267d31f0061376a4766c7e978bda9e4a2396c8bf959d4aaa347ad40bd286a3873441e38983e1e86ea07a1be7cf7c92d91248c4ba70d6dd4ec82f02c7f7638e9f  lua-luassert-1.9.0.tar.gz
+"

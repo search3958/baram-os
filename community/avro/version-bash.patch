@@ -1,0 +1,10 @@
+diff --git a/c/version.sh b/c/version.sh
+index 0481bcc23..54231d5d6 100755
+--- a/c/version.sh
++++ b/c/version.sh
+@@ -1,4 +1,4 @@
+-#!/bin/bash
++#!/bin/sh
+ #
+ # Licensed to the Apache Software Foundation (ASF) under one
+ # or more contributor license agreements.  See the NOTICE file

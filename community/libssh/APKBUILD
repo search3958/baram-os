@@ -1,0 +1,76 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libssh
+pkgver=0.12.0
+pkgrel=0
+pkgdesc="Library for accessing ssh client services through C libraries"
+options="!check" # Tests require CLIENT_TESTING enabled which needs socket_wrapper
+url="https://www.libssh.org/"
+arch="all"
+license="LGPL-2.1-or-later BSD-2-Clause"
+depends_dev="openssl-dev>3 zlib-dev"
+makedepends="$depends_dev cmake samurai"
+checkdepends="cmocka-dev"
+subpackages="$pkgname-dev"
+source="https://www.libssh.org/files/${pkgver%.*}/libssh-$pkgver.tar.xz"
+
+# secfixes:
+#   0:
+#     - CVE-2025-14821
+#   0.12.0-r0:
+#     - CVE-2026-0964
+#     - CVE-2026-0965
+#     - CVE-2026-0966
+#     - CVE-2026-0967
+#     - CVE-2026-0968
+#   0.11.3-r0:
+#     - CVE-2025-8114
+#   0.11.2-r0:
+#     - CVE-2025-4877
+#     - CVE-2025-4878
+#     - CVE-2025-5318
+#     - CVE-2025-5351
+#     - CVE-2025-5372
+#     - CVE-2025-5449
+#     - CVE-2025-5987
+#   0.10.6-r0:
+#     - CVE-2023-6004
+#     - CVE-2023-6918
+#     - CVE-2023-48795
+#   0.9.6-r0:
+#     - CVE-2021-3634
+#   0.9.5-r0:
+#     - CVE-2020-16135
+#   0.9.4-r0:
+#     - CVE-2020-1730
+#   0.9.3-r0:
+#     - CVE-2019-14889
+#   0.7.6-r0:
+#     - CVE-2018-10933
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DWITH_GSSAPI=OFF \
+		-DUNIT_TESTING=OFF
+	cmake --build build
+}
+
+check() {
+	case "$CARCH" in
+		s390x) _disabled_tests="-E torture_threads_buffer"
+	esac
+	cd build
+	ctest $_disabled_tests
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+dd28483f391e36c9da0f0b8c469bc9e19f75dc1016d04e35930b1a28e0711fa02a1eae9ddeb95b9e48cb1fd3f2bc456789457bc092cf53d00d55b20257f082a2  libssh-0.12.0.tar.xz
+"

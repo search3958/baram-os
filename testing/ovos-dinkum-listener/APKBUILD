@@ -1,0 +1,51 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=ovos-dinkum-listener
+pkgver=0.4.1
+pkgrel=0
+pkgdesc="ovos-listener based on the voice loop from mycroft-dinkum"
+url="https://github.com/OpenVoiceOS/ovos-dinkum-listener"
+# 32-bit arches blocked by py3-webrtcvad -> py3-ovos-vad-plugin-webrtcvad
+# s390x, ppc64le and riscv64 blocked by py3-webrtcvad -> py3-ovos-vad-plugin-webrtcvad
+arch="noarch !x86 !armhf !armv7 !s390x !ppc64le !riscv64"
+license="Apache-2.0"
+depends="
+	py3-ovos-backend-client
+	py3-ovos-bus-client
+	py3-ovos-config
+	py3-ovos-microphone-plugin-alsa
+	py3-ovos-plugin-manager
+	py3-ovos-utils
+	py3-ovos-vad-plugin-webrtcvad
+	py3-speechrecognition
+	py3-xdoctest
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-dinkum-listener/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest \
+		--deselect test/unittests/test_service.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+214a043f900a3237f967aeb05c47bb25311c5595cc5671542b1c6564f825316e626e27c4d5eec819617477f442d135014f207cd2eacd7c4385c553371814ae20  ovos-dinkum-listener-0.4.1.tar.gz
+"

@@ -1,0 +1,47 @@
+# Contributor: Kay Thomas <kaythomas@pm.me>
+# Maintainer: Kay Thomas <kaythomas@pm.me>
+pkgname=i3lock-color
+pkgver=2.13.5
+_pkgver=2.13.c.5
+pkgrel=0
+pkgdesc="Modern version of i3lock with color functionality and other features"
+url="https://github.com/Raymo111/i3lock-color"
+arch="all"
+license="MIT"
+depends="xkeyboard-config !i3lock"
+makedepends="automake autoconf libev-dev libxkbcommon-dev xcb-util-image-dev
+	xcb-util-xrm-dev cairo-dev libjpeg-turbo-dev linux-pam-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Raymo111/i3lock-color/archive/$_pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$_pkgver"
+options="!check" # No testsuite
+
+prepare() {
+	default_prepare
+
+	# Fix ticket FS#31544, sed line taken from gentoo
+	sed -i -e 's:login:base-auth:g' "$builddir"/pam/i3lock
+	autoreconf -fiv
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-debug=no \
+		--disable-builddir \
+		--disable-sanitizers
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+db52b8800a63a9fc85ffb644b140488588427d717b075a3f0d318486cb0177858ed7a2f148bb904e56539bbf679b0fd40eaf0df895b1f578498dfb70219eb9b8  i3lock-color-2.13.5.tar.gz
+"

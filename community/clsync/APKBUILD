@@ -1,0 +1,59 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=clsync
+pkgver=0.4.5
+pkgrel=4
+pkgdesc="File live sync daemon based on inotify"
+url="https://github.com/clsync/clsync"
+arch="all"
+license="GPL-3.0-or-later"
+depends_dev="glib-dev musl-fts-dev libcap-dev linux-headers musl-dev"
+makedepends="$depends_dev autoconf automake file libtool"
+subpackages="$pkgname-openrc $pkgname-doc $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/clsync/clsync/archive/v$pkgver.tar.gz
+	gcc-15.patch
+	$pkgname.initd
+	$pkgname.confd
+	"
+options="!check"  # upstream does not provide tests
+
+prepare() {
+	default_prepare
+	autoreconf -i
+}
+
+build() {
+	case "$CARCH" in
+	x86_64)
+		seccomp="enable-seccomp" ;;
+	*)
+		seccomp="disable-seccomp" ;;
+	esac
+	./configure \
+		CFLAGS="$CFLAGS -lfts" \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-capabilities \
+		--$seccomp \
+		--disable-debug
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -D -m 0755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -D -m 0644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	install -d -m 0755 "$pkgdir"/etc/$pkgname
+}
+
+sha512sums="
+6568f3c49ac4fe11e54593ba23eed392d0b7d9b5bf052983c4a5a2befbb807dbd3f9d13412264f8909998702f869d1cd6db77d89bd9491414b1f3213437c5212  clsync-0.4.5.tar.gz
+977c890ae5a961ef292e06131319ff41ec0e36a527214396f6c033b5befef0c80249a13829c62141805460141e5106306e6fc94709918ed850a1e083ef398981  gcc-15.patch
+230324ec639454e614db886eb52f5c2270aae2c54ef46b62e45dba95440f55d02618fa79dccc73d20ed27012ef083cb45bdb3de8b3c4cc4ef91ba31c0e2f7c69  clsync.initd
+227329c0c13c2db137d6d61905c7133fc7ca0666ceff8c14d043e2811adbe6ef5aae4c876093a4d91ec496646ccacc607c853d2c1c1a53ef6d2a4b4db9209307  clsync.confd
+"

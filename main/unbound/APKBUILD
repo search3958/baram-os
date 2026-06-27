@@ -1,0 +1,171 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=unbound
+pkgver=1.25.1
+pkgrel=0
+pkgdesc="Unbound is a validating, recursive, and caching DNS resolver"
+url="https://nlnetlabs.nl/projects/unbound/about/"
+arch="all"
+license="BSD-3-Clause"
+depends="dnssec-root"
+depends_dev="expat-dev"
+_depends_migrate="
+	/bin/sh
+	apk-tools
+	openrc
+	"
+makedepends="$depends_dev
+	hiredis-dev
+	libevent-dev
+	linux-headers
+	nghttp2-dev
+	openssl-dev>3
+	protobuf-c-dev
+	python3-dev
+	swig
+	"
+checkdepends="
+	bind-tools
+	ldns-tools
+	"
+install="$pkgname.pre-install"
+pkgusers="unbound"
+pkggroups="unbound"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-openrc
+	py3-unbound:py
+	$pkgname-migrate::noarch
+	"
+source="https://unbound.net/downloads/unbound-$pkgver.tar.gz
+	conf.patch
+	migrate-dnscache-to-unbound
+	$pkgname.initd
+	$pkgname.confd
+	"
+
+# secfixes:
+#   1.25.1-r0:
+#     - CVE-2026-33278
+#     - CVE-2026-40622
+#     - CVE-2026-41292
+#     - CVE-2026-42534
+#     - CVE-2026-42923
+#     - CVE-2026-42944
+#     - CVE-2026-42959
+#     - CVE-2026-42960
+#     - CVE-2026-44390
+#     - CVE-2026-44608
+#   1.24.1-r0:
+#     - CVE-2025-11411
+#   1.23.1-r0:
+#     - CVE-2025-5994
+#   1.21.1-r0:
+#     - CVE-2024-8508
+#   1.20.0-r0:
+#     - CVE-2024-33655
+#   1.19.2-r0:
+#     - CVE-2024-1931
+#   1.19.1-r0:
+#     - CVE-2023-50387
+#     - CVE-2023-50868
+#   1.16.3-r0:
+#     - CVE-2022-3204
+#   1.16.2-r0:
+#     - CVE-2022-30698
+#     - CVE-2022-30699
+#   1.10.1-r0:
+#     - CVE-2020-12662
+#     - CVE-2020-12663
+#   1.9.5-r0:
+#     - CVE-2019-18934
+#   1.9.4-r0:
+#     - CVE-2019-16866
+#   0:
+#     - CVE-2026-32792
+
+build() {
+	export CFLAGS="$CFLAGS -flto=auto"
+
+	PYTHON_VERSION=3 ./configure \
+		--build="$CBUILD" \
+		--host="$CHOST" \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-pie \
+		--enable-relro-now \
+		--with-username=unbound \
+		--with-run-dir="" \
+		--with-pidfile="" \
+		--with-rootkey-file=/usr/share/dnssec-root/trusted-key.key \
+		--with-libevent \
+		--with-pthreads \
+		--disable-static \
+		--disable-rpath \
+		--disable-dsa \
+		--disable-gost \
+		--enable-dnstap \
+		--enable-subnet \
+		--enable-cachedb \
+		--with-ssl \
+		--without-pythonmodule \
+		--with-pyunbound \
+		--with-libhiredis \
+		--with-libnghttp2
+
+	# do not link to libpython
+	sed -i -e '/^LIBS=/s/-lpython.*[[:space:]]/ /' Makefile
+
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	make DESTDIR="$pkgdir" unbound-event-install
+
+	install -Dm755 contrib/update-anchor.sh \
+		"$pkgdir"/usr/share/$pkgname/update-anchor.sh
+
+	install -D -m644 doc/CREDITS doc/Changelog doc/FEATURES \
+		doc/README doc/TODO -t "$pkgdir"/usr/share/doc/$pkgname/
+
+	cd "$pkgdir"
+
+	install -Dm755 "$srcdir"/unbound.initd ./etc/init.d/unbound
+	install -Dm644 "$srcdir"/unbound.confd ./etc/conf.d/unbound
+	install -d -m755 "$pkgdir"/etc/unbound/unbound.conf.d
+}
+
+py() {
+	pkgdesc="Python bindings to libunbound"
+	depends=""
+	provides="py-unbound=$pkgver-r$pkgrel" # backward compatibility (Alpine <3.23)
+
+	amove usr/lib/python*
+}
+
+migrate() {
+	pkgdesc="Simple tool to migrate from dnscache to unbound"
+	depends="$_depends_migrate"
+
+	install -m755 -D "$srcdir"/migrate-dnscache-to-unbound \
+		"$subpkgdir"/usr/bin/migrate-dnscache-to-unbound
+}
+
+sha512sums="
+a536ff1d9b637e4ffa46ab498919ddf089b4498e65c748748c4920a6da52e1f5bacfbba9ac1dc47798d168e2ea64a7ae7ea2a581464d1fcabae241a6e38c8d13  unbound-1.25.1.tar.gz
+7deac80ebbac65c636d4dfc9781e5ee230f2c6c2b516ee3ac234bac3fc4f6ad93c7d5053ab3f9ecb5c4720e5b3c0cc9ce890c6965ff5898c978da4efaffc00fe  conf.patch
+7ab3f57ade3fe8add60bfce208efccc968728fac5c94c759c34aaa09aa71e0da06dd7c24ae0fecf9e2ccc869594226d68b24fe2b0a0b161b833e22c0de1b03b6  migrate-dnscache-to-unbound
+7ca4c42c00a86f737fd8f5024efce218c9d0dee8fb8708df60f7b292c25b4d3a35ed46a8a0a32847451bca988b5de2dbdddb7fed352170c03263281fc579582b  unbound.initd
+0ceae15d69deb24baa16990226de31fe743d84779a2595f31b4910b46ef925fc132cec1683d0a06141f707d9cbe517d731015702c60d9df4958ccfb9abd5a23f  unbound.confd
+"

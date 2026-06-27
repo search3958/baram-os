@@ -1,0 +1,36 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=libthai
+pkgver=0.1.30
+pkgrel=1
+pkgdesc="Thai language library"
+url="https://github.com/tlwg/libthai"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="libdatrie libdatrie-dev"
+subpackages="$pkgname-dev"
+source="https://github.com/tlwg/libthai/releases/download/v$pkgver/libthai-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c84d575b6855d54b1ea1d9878a94153ba7807cc736f7bf01327d17a6444c6fd4b18deae2ab5a2612847892c9d94ed4ceb54fbf25244aa6eb88a3605260ad328e  libthai-0.1.30.tar.xz
+"

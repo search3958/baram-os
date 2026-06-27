@@ -1,0 +1,40 @@
+# Maintainer:
+pkgname=py3-combo-lock
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="Python combination of a process lock and a thread lock"
+url="https://github.com/forslund/combo-lock"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-filelock
+	py3-memory-tempfile
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/forslund/combo-lock/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/combo-lock-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH="$PWD" \
+	python3 -m unittest tests/test_*.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+ffc656b75f2f80ae4d6a501aef364661eebc61aa61db999eb99398a32bf7b83aceaf0b7bde86cbaebe0222eae2523e942986998d6a589514448e73dadb18b6b9  py3-combo-lock-0.3.0.tar.gz
+"

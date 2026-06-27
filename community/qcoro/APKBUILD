@@ -1,0 +1,47 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qcoro
+pkgver=0.13.0
+pkgrel=0
+pkgdesc="C++ Coroutines for Qt"
+url="https://qcoro.dvratil.cz"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="MIT"
+depends_dev="
+	qt6-qtbase-dev
+	qt6-qtwebsockets-dev
+	"
+makedepends="$depends_dev
+	cmake
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+checkdepends="
+	dbus-x11
+	xwayland-run
+	"
+subpackages="$pkgname-dev"
+source="https://github.com/danvratil/qcoro/archive/v$pkgver/qcoro-v$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=TRUE \
+		-DUSE_QT_VERSION=6 \
+		-DQCORO_BUILD_EXAMPLES=OFF
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "test-qcorolocalsocket"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+bdb7a4080a0baa0c86765b181b9126cb3276c344d402b96683c984af559bd9af834a1e8bc9a63239eb76d0d102430ddfa8262cc72f6962f9d202b5e9a46ffce0  qcoro-v0.13.0.tar.gz
+"

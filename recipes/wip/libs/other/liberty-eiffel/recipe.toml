@@ -1,5 +1,0 @@
-#TODO missing script for "install.sh", adapt to Redox
-[source]
-tar = "http://download.savannah.gnu.org/releases/liberty-eiffel/bell.tar.gz"
-[build]
-template = "custom"

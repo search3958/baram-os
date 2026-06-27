@@ -1,0 +1,49 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=flite
+pkgver=2.2
+pkgrel=6
+pkgdesc="Small, fast speech synthesis engine (text-to-speech)"
+url="http://cmuflite.org/"
+arch="all"
+license="BSD-4-Clause"
+makedepends="alsa-lib-dev"
+subpackages="$pkgname-static $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/festvox/flite/archive/v$pkgver.tar.gz
+	flite.pc
+	"
+options="!check"
+
+prepare() {
+	default_prepare
+	sed -e "s|@PKGVER@|$pkgver|" -i "$srcdir"/flite.pc
+	update_config_sub
+}
+
+build() {
+	CFLAGS="$CFLAGS -fPIC" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-shared \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--with-audio=alsa
+	make -j1
+}
+
+package() {
+	make install INSTALLBINDIR="$pkgdir"/usr/bin \
+		INSTALLLIBDIR="$pkgdir"/usr/lib \
+		INSTALLINCDIR="$pkgdir"/usr/include/flite
+	# remove relative rpaths
+	scanelf -R -r --fix "$pkgdir"
+
+	install -Dm0644 "$srcdir"/flite.pc -t "$pkgdir"/usr/lib/pkgconfig
+}
+
+sha512sums="
+1ca2f4145651490ef8405fdb830a3b42e885020a7603d965f6a5581b01bed41047d396b38c2ceab138fc0b28d28078db17acd2b5a84c6444cb99d65c581afa72  flite-2.2.tar.gz
+9c8ea1b4241b0488d180b3391b594c76bdd43123051b0579983b17e0760d5b4bdf4887ac5d268111f6648d1373f042be067ab8762b7afb21c83e07fb6d73807b  flite.pc
+"

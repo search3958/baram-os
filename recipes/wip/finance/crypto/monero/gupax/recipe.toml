@@ -1,5 +1,0 @@
-#TODO openssl-sys crate error
-[source]
-git = "https://github.com/hinto-janai/gupax"
-[build]
-template = "cargo"

@@ -1,0 +1,50 @@
+# Contributor: Alan Lacerda <alacerda@alpinelinux.org>
+# Maintainer: Alan Lacerda <alacerda@alpinelinux.org>
+pkgname=eom
+pkgver=1.28.1
+pkgrel=0
+pkgdesc="A simple graphics viewer for the MATE"
+url="https://github.com/mate-desktop/eom"
+arch="all"
+license="GPL-2.0-or-later"
+depends="mate-icon-theme libxml2-utils"
+makedepends="
+	dbus-dev
+	dconf-dev
+	desktop-file-utils
+	glib-dev
+	gobject-introspection-dev
+	gtk+3.0-dev
+	gtk-update-icon-cache
+	imagemagick-dev
+	intltool
+	itstool
+	lcms2-dev
+	libexif-dev
+	libpeas-dev
+	librsvg-dev
+	libxslt-dev
+	mate-desktop-dev
+	meson
+	"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+source="https://github.com/mate-desktop/eom/releases/download/v$pkgver/eom-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Dgdk-pixbuf-thumbnailer=false \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+13e9e416e916e445d43530cab1224dd178d7d1ff8b93a92e16a452e46fd73183451b56c024d99ae9a7407266133856e36bf3e01c08a3da7175f5136f6808c473  eom-1.28.1.tar.xz
+"

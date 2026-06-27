@@ -1,0 +1,56 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=nng
+pkgver=1.11
+pkgrel=0
+pkgdesc="Lightweight Broker-Less Messaging Library"
+url="https://nng.nanomsg.org/"
+arch="all"
+license="MIT"
+makedepends="
+	asciidoctor
+	cmake
+	samurai
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/nanomsg/nng/archive/refs/tags/v$pkgver.tar.gz
+
+	0001-cmake-generate-pkg-config-file-nng.pc-using-CMake.patch
+	"
+# Tests are broken
+options="!check"
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=ON \
+		-DNNG_ENABLE_DOC=ON \
+		-DNNG_TESTS=ON \
+		#
+	cmake --build build
+}
+
+check() {
+	# Running in parallel will cause failures with "Address in use"
+	CTEST_PARALLEL_LEVEL=1 \
+		ctest \
+			--test-dir build \
+			--output-on-failure \
+			#
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	# we only care for man pages
+	rm -rf "$pkgdir/usr/share/doc"
+}
+
+sha512sums="
+cceedb16ecc3849f49b76a2ebfee4ba46a6d22b429aa9a5a94354c92aa643c5dcffd325f854ecba8ebe341c514f8288576a7be392f3a03a69152873fdd277fe3  nng-1.11.tar.gz
+a22b4e8943d9fc99a39e2bd350d42cf8953a01f5bffea9f17644a56564634cb4b0f8d915a09d9d52856d550ba4691b1d08f8b2e77900001eb26ca7d1baf94d2d  0001-cmake-generate-pkg-config-file-nng.pc-using-CMake.patch
+"

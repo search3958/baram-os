@@ -1,0 +1,11 @@
+--- a/test/mitmproxy/test_optmanager.py
++++ b/test/mitmproxy/test_optmanager.py
+@@ -186,6 +186,8 @@ def test_subscribe():
+     assert t.called
+ 
+ 
++import platform
++@pytest.mark.skipif(platform.machine() == "i686", reason="Test is flaky")
+ def test_rollback():
+     o = TO()
+ 

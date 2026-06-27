@@ -1,0 +1,59 @@
+#!/sbin/openrc-run
+
+extra_commands="checkconfig"
+extra_started_commands="reload"
+description="A scalable TLS proxy"
+description_checkconfig="Verify configuration file"
+description_reload="Reload configuration"
+
+: ${name:=$RC_SVCNAME}
+# $HITCH_CONFIGFILE is here for backward compatibility only
+: ${cfgfile:=${HITCH_CONFIGFILE:-"/etc/hitch/${RC_SVCNAME#hitch.}.conf"}}
+
+command="/usr/sbin/hitch"
+command_args="--config=$cfgfile"
+command_background=yes
+pidfile="/run/$RC_SVCNAME.pid"
+
+required_files="$cfgfile"
+
+
+depend() {
+	need net
+	before logger
+}
+
+checkconfig() {
+	ebegin "Checking $name configuration"
+
+	hitch -t --config=$cfgfile >/dev/null 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]; then
+		eerror "$RC_SVCNAME has detected an error:"
+		hitch -t --config=$cfgfile
+	fi
+
+	eend $ret
+}
+
+start_pre() {
+	checkconfig || return 1
+}
+
+stop_pre() {
+	if [ "$RC_CMD" = "restart" ]; then
+		checkconfig || return 1
+	fi
+}
+
+reload() {
+	checkconfig || return 1
+
+	ebegin "Reloading $name"
+	if [ "$supervisor" ]; then
+		$supervisor "$RC_SVCNAME" --signal HUP
+	else
+		start-stop-daemon --pidfile "$pidfile" --signal HUP
+	fi
+	eend $?
+}

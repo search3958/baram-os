@@ -1,0 +1,10 @@
+--- ./pyproject.toml.orig
++++ ./pyproject.toml
+@@ -108,7 +108,6 @@
+   "/mypy.ini",
+   "/noxfile.py",
+   "bin/*",
+-  "examples/*",
+   "src/*",
+   "tests/*",
+ ]

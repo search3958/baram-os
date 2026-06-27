@@ -1,0 +1,29 @@
+diff --git a/Signal-Desktop/ts/components/DialogExpiredBuild.dom.tsx.orig b/Signal-Desktop/ts/components/DialogExpiredBuild.dom.tsx
+index ef929c7..202251a 100644
+--- a/Signal-Desktop/ts/components/DialogExpiredBuild.dom.tsx.orig
++++ b/Signal-Desktop/ts/components/DialogExpiredBuild.dom.tsx
+@@ -23,9 +23,9 @@ export function DialogExpiredBuild({
+       containerWidthBreakpoint={containerWidthBreakpoint}
+       type="error"
+       onClick={() => {
+-        openLinkInWebBrowser('https://signal.org/download/');
++        openLinkInWebBrowser('https://pkgs.alpinelinux.org/packages?name=signal-desktop');
+       }}
+-      clickLabel={i18n('icu:upgrade')}
++      clickLabel={<code>apk upgrade signal-desktop</code>}
+       hasAction
+     >
+       {i18n('icu:expiredWarning')}{' '}
+diff --git a/Signal-Desktop/ts/types/support.std.ts.orig b/Signal-Desktop/ts/types/support.std.ts
+index 4fd97f0..cb4be22 100644
+--- a/Signal-Desktop/ts/types/support.std.ts.orig
++++ b/Signal-Desktop/ts/types/support.std.ts
+@@ -1,7 +1,7 @@
+ // Copyright 2023 Signal Messenger, LLC
+ // SPDX-License-Identifier: AGPL-3.0-only
+ 
+-export const PRODUCTION_DOWNLOAD_URL = 'https://signal.org/download/';
++export const PRODUCTION_DOWNLOAD_URL = 'https://pkgs.alpinelinux.org/packages?name=signal-desktop';
+ export const BETA_DOWNLOAD_URL = 'https://support.signal.org/beta';
+ export const UNSUPPORTED_OS_URL =
+   'https://support.signal.org/hc/articles/5109141421850';

@@ -1,0 +1,39 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gnome-sound-recorder
+pkgver=42.0
+pkgrel=2
+pkgdesc="simple and modern sound recorder"
+url="https://gitlab.gnome.org/World/vocalis"
+arch="noarch !armhf" # limited by gjs
+license="GPL-2.0-or-later"
+makedepends="
+	gjs-dev
+	glib-dev
+	gobject-introspection-dev
+	gst-plugins-bad-dev
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	"
+depends="gjs gtk4.0 glib gst-plugins-good libadwaita"
+checkdepends="appstream-glib desktop-file-utils"
+subpackages="$pkgname-lang"
+source="https://download.gnome.org/sources/gnome-sound-recorder/${pkgver%.*}/gnome-sound-recorder-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+53fe2fe0646c5055cedc1c62cf87176dca52bf3d9452d83bcc849d9946179afbef826f08ff65a97ede7a0d14ade4da0755b2ef3780460d5a80f8f9e6c85fcfbd  gnome-sound-recorder-42.0.tar.xz
+"

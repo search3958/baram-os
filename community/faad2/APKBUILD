@@ -1,0 +1,70 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=faad2
+pkgver=2.11.2
+pkgrel=0
+pkgdesc="ISO AAC audio decoder"
+url="https://github.com/knik0/faad2"
+arch="all"
+options="!check"  # No test suite.
+license="GPL-2.0-or-later"
+makedepends="cmake samurai"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc $pkgname-libs"
+source="$pkgname-$pkgver.tar.gz::https://github.com/knik0/faad2/archive/$pkgver.tar.gz"
+
+# secfixes:
+#   2.11.0-r0:
+#     - CVE-2023-38857
+#   2.10.1-r0:
+#     - CVE-2021-32273
+#     - CVE-2021-32274
+#     - CVE-2021-32276
+#     - CVE-2021-32277
+#     - CVE-2021-32278
+#   2.10.0-r0:
+#     - CVE-2021-32272
+#   2.9.0-r0:
+#     - CVE-2019-6956
+#     - CVE-2018-20196
+#     - CVE-2018-20199
+#     - CVE-2018-20360
+#     - CVE-2018-20362
+#     - CVE-2018-19504
+#     - CVE-2018-20195
+#     - CVE-2018-20198
+#     - CVE-2018-20358
+#     - CVE-2018-20194
+#     - CVE-2018-19503
+#     - CVE-2018-20197
+#     - CVE-2018-20357
+#     - CVE-2018-20359
+#     - CVE-2018-20361
+#     - CVE-2019-15296
+#     - CVE-2018-19502
+
+build() {
+	cmake -B build-shared -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build-shared
+
+	cmake -B build-static -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build-static
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build-static
+	DESTDIR="$pkgdir" cmake --install build-shared
+
+	install -Dm644 frontend/faad.man "$pkgdir"/usr/share/man/man1/faad.1
+	install -Dm644 docs/libfaad.3 -t "$pkgdir"/usr/share/man/man3/
+}
+
+sha512sums="
+fd140c0f4e7946e95a49a8652e26f33b138fc3375da34d5e3a55cdde8a74be429eb6fe0180bd434841022cee3c2ec65fe40dda7440fe0dd2761622174f992490  faad2-2.11.2.tar.gz
+"

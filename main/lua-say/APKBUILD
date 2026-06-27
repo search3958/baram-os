@@ -1,0 +1,42 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=lua-say
+_rockname=say
+pkgver=1.4.1
+pkgrel=1
+pkgdesc="Lua string hashing library, useful for internationalization"
+url="https://github.com/Olivine-Labs/say"
+arch="noarch"
+license="MIT"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Olivine-Labs/say/archive/v$pkgver.tar.gz"
+builddir="$srcdir/${pkgname#lua-}-$pkgver"
+# This module needs lua-busted to run tests, but lua-busted depends on
+# lua-say and we wanna avoid circular dependencies.
+options="!check"
+
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+for _v in $_luaversions; do
+	subpackages="$subpackages lua$_v-${pkgname#lua-}:_subpackage"
+done
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_subpackage() {
+	local lver="${subpkgname:3:3}"
+	pkgdesc="$pkgdesc (for Lua $lver)"
+	depends="lua$lver"
+	install_if="$pkgname=$pkgver-r$pkgrel lua$lver"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$_rockname/$pkgver"
+
+	install -m 644 -D "$builddir"/src/say/init.lua \
+		"$subpkgdir"/usr/share/lua/$lver/say.lua
+
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+sha512sums="
+a6c3477859615d7ae0677ac7aa0cefe8bf6f43424812062b4a06145017952b176801431c5be920cb67f52c07cc3d374e8a6714233e2252a2bb6b7ed4c3e32f90  lua-say-1.4.1.tar.gz
+"

@@ -1,0 +1,101 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=openvas-scanner
+pkgver=23.45.5
+pkgrel=0
+pkgdesc="Open Vulnerability Assessment Scanner"
+url="https://openvas.org/"
+arch="all"
+license="GPL-2.0-only"
+depends="redis nmap coreutils openssl util-linux rsync"
+install="$pkgname.post-install"
+pkgusers="gvm"
+pkggroups="gvm"
+checkdepends="cppcheck"
+makedepends="
+	bison
+	cmake
+	curl-dev
+	doxygen
+	file-dev
+	glib-dev
+	gpgme-dev
+	graphviz
+	gvm-libs-dev
+	json-glib-dev
+	krb5-dev
+	libbsd-dev
+	libgcrypt-dev
+	libksba-dev
+	libpcap-dev
+	libssh-dev
+	linux-headers
+	net-snmp-dev
+	paho-mqtt-c-dev
+	samurai
+	xmltoman
+	"
+case $CARCH in
+x86_64) makedepends="$makedepends openvas-smb-dev";;
+esac
+
+subpackages="$pkgname-doc $pkgname-config::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/greenbone/openvas-scanner/archive/v$pkgver.tar.gz
+	tcp_mss_include.patch
+	fix-redis-dbpath.patch
+	fix-redis-sock-path.patch
+	makefile-cflags-musl.patch
+	execinfo-musl-fix.patch
+	openvas-sysctl.conf
+	greenbone-nvt-sync.cron
+	greenbone-data-sync.cron
+	openvas.conf"
+options="!check" # dependency tree not available outside x86
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DSBINDIR=/usr/bin \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DSYSCONFDIR=/etc \
+		-DLOCALSTATEDIR=/var \
+		-DOPENVAS_RUN_DIR=/run/ospd
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	chown $pkgusers "$pkgdir"/etc/openvas
+	chown -R $pkgusers "$pkgdir"/var/log/gvm
+	chown -R $pkgusers "$pkgdir"/var/lib/openvas
+	chown -R $pkgusers "$pkgdir"/var/lib/openvas/plugins
+	install -Dm644 "$builddir"/config/redis-openvas.conf "$pkgdir"/etc/redis-openvas.conf
+	install -Dm644 "$srcdir"/openvas.conf "$pkgdir"/etc/openvas/openvas.conf
+}
+
+config() {
+	pkgdesc="Configuration files and scripts for openvas"
+	install -Dm644 "$srcdir"/openvas-sysctl.conf "$subpkgdir"/etc/sysctl.d/02-openvas.conf
+	install -Dm600 -g "$pkggroups" "$srcdir"/greenbone-nvt-sync.cron \
+		"$subpkgdir"/etc/crontabs/gvm
+	install -Dm744 "$srcdir"/greenbone-data-sync.cron \
+		"$subpkgdir"/etc/periodic/daily/greenbone-data-sync
+}
+
+sha512sums="
+9e7ddbf67f3580291bcb49522531c1029fada2c9d5ed0991cf804bf76748011972cdedcdba7239341332cd5a651cf2085181a6e85ab8caa1df9797241fcbba97  openvas-scanner-23.45.5.tar.gz
+7eeb50374d7812aef6651517f79ce8f4dd3769a64feaf3e6a1e29089d22ae10033ddedd38b7f7671b83421d354104effeeefd44df2811e07075fe3450f02954c  tcp_mss_include.patch
+1cb7c12bf23af7c5938834feb109e4d2858f57be68fb31c69df8bece44abe5f7b64fa4a5cfc1dac1c990c87e38db306ce3b8bef0dc9e247b40dae8afbd8c0c16  fix-redis-dbpath.patch
+25e277d4e230f7594f51a4ea0b962e7d804ea834b372fe4856483a77e885dc45d492ff50c5e65e5e9c642ae99098883b0e350404f2630da60c4d425dbc66251d  fix-redis-sock-path.patch
+d1d81c957b385fd096b30e68bf31d06a77309b35c7cbe2d55f54569753f1b3c3b3f772e25665c2f87521495c5d881ee6a2b52a59489ca2231badb48fb0d6baaa  makefile-cflags-musl.patch
+840aba43303a62298dbe00538d05d9c8525a59f5e752e86e1b722300dad88f8d60ba11b3f8e16877d5e14f622c36e647341fb4ed007e7b174dc849c351ba1fb1  execinfo-musl-fix.patch
+1b85a5511e73a79bc2c9e11e773fee4d641a2f55760eb8e3f4a41cc0d73007e2f6300832c35dd2408838eb42efef54ba6e238a0ed551e34d21becc2aef499991  openvas-sysctl.conf
+e721ba637aa8ec4ee8dc0a703e3ea681bd2bc89057afe39995c9b09711991e2f45b9a0d26a985dd59da65067f3e8b1bd8ebc6ae076331eb168362ace3061cf00  greenbone-nvt-sync.cron
+83230f6d1dc35d7816fc7a62f70bc0bdbe2d553c8ae00fb45bfc2426cb4694893d90cfb8f1c26d972c4d20b1696be1c11108220d3fe032beafafcc9cc115a067  greenbone-data-sync.cron
+8c23cdb3e2ebb07610af82e3bb00aa5acd4b4f81c715efee8e3e0ea2daf108034b2df1ba1696c35713b722d40bd626e0207cd4ceac53eb6d2972598c81521300  openvas.conf
+"

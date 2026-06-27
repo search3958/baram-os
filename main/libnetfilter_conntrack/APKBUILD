@@ -1,0 +1,35 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libnetfilter_conntrack
+pkgver=1.1.1
+pkgrel=0
+pkgdesc="programming interface (API) to the in-kernel connection tracking state table"
+url="https://www.netfilter.org/projects/libnetfilter_conntrack/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers libnfnetlink-dev libmnl-dev"
+subpackages="$pkgname-static $pkgname-dev"
+source="https://www.netfilter.org/projects/libnetfilter_conntrack/files/libnetfilter_conntrack-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--enable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+47b7e1c187c9d1ec52777ba08d636a8178f811816b7d5eae28ef7680e2d4516428445572e655a2b60e8f3af1c6788268cfa16532e4a2ba761f8ba55bb3969870  libnetfilter_conntrack-1.1.1.tar.xz
+"

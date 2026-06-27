@@ -1,0 +1,50 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=francis
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Track your time"
+url="https://invent.kde.org/utilities/francis"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="GPL-3.0-or-later AND LGPL-2.0-or-later AND BSD-2-Clause AND BSD-3-Clause"
+makedepends="
+	extra-cmake-modules
+	kconfig-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	ki18n-dev
+	kirigami-addons-dev
+	kirigami-dev
+	knotifications-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qtsvg-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/utilities/francis.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/francis-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	xvfb-run -a ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+f71f6a682824a39b98c2cd0164a9410a495efa896d25b0895a3a3c75f353b3530874b5854bdda3e2c0c911a168732d9134ebdc14ae8c4bd621d182aadc005408  francis-26.04.2.tar.xz
+"

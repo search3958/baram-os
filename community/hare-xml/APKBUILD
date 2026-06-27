@@ -1,0 +1,28 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=hare-xml
+pkgver=0.25.2.0
+pkgrel=0
+pkgdesc="XML support for Hare"
+url="https://sr.ht/~sircmpwn/hare-xml"
+arch="x86_64 aarch64 riscv64" # hare
+license="MPL-2.0"
+makedepends="hare"
+source="
+	$pkgname-$pkgver.tar.gz::https://git.sr.ht/~sircmpwn/hare-xml/archive/$pkgver.tar.gz
+"
+
+build() {
+	make -j1 PREFIX=/usr
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+9f7a2e6cfbd2e0fd55301bf8a7380f0950844a30a6551ffa626143ee93dc6fbaeef4a9585c17318dfb562f044425e6cdd4a38da35e10551cabf901feeb1a07c1  hare-xml-0.25.2.0.tar.gz
+"

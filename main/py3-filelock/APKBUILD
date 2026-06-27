@@ -1,0 +1,58 @@
+# Contributor: Dmitry Romanenko <dmitry@romanenko.in>
+# Maintainer: Dmitry Romanenko <dmitry@romanenko.in>
+pkgname=py3-filelock
+_pkgname=filelock
+pkgver=3.29.0
+pkgrel=0
+pkgdesc="A platform independent file lock for Python3"
+url="https://github.com/tox-dev/py-filelock"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-hatch-vcs
+	py3-hatchling
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-mock
+	py3-pytest-timeout
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/f/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+options="!check"  # check require many aports move from community to main
+
+replaces="py-filelock" # Backwards compatibility
+provides="py-filelock=$pkgver-r$pkgrel" # Backwards compatibility
+
+prepare() {
+	default_prepare
+
+	# circular dependency with py3-virtualenv
+	rm tests/test_virtualenv.py
+}
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver \
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# ignore async tests as they introduce a circular dep
+	.testenv/bin/python3 -m pytest --ignore tests/test_async_filelock.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+81957a44e2c64d05db5e95bfbba264733b710859aa41d62106d1f6348a2d9af491c6661801797d1a29e28f6a16df34c424b31669efe73b9e7c45123cebb2cdf5  filelock-3.29.0.tar.gz
+"

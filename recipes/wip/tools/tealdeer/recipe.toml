@@ -1,5 +1,0 @@
-#TODO program source code error (after cargo update)
-[source]
-git = "https://github.com/dbrgn/tealdeer"
-[build]
-template = "cargo"

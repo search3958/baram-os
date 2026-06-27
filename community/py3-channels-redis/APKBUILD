@@ -1,0 +1,68 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-channels-redis
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal="channels_redis"
+pkgver=4.3.0
+pkgrel=1
+arch="noarch"
+pkgdesc="Redis-backed ASGI channel layer implementation"
+url="https://pypi.python.org/project/channels_redis"
+license="BSD-3-Clause"
+depends="
+	py3-channels
+	py3-asgiref
+	py3-redis
+	py3-msgpack
+	py3-cryptography
+	"
+checkdepends="
+	redis
+	py3-async-timeout
+	py3-pytest
+	py3-pytest-timeout
+	py3-pytest-asyncio
+	"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/django/channels_redis/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgreal-$pkgver
+subpackages="$pkgname-pyc"
+replaces=py3-channels_redis # Backwards compatibility
+provides=py3-channels_redis=$pkgver-r$pkgrel # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	cat > sentinel-test.conf << EOF
+sentinel monitor sentinel 127.0.0.1 6379 1
+sentinel auth-pass sentinel channels_redis
+requirepass "channels_redis"
+EOF
+	redis-server &
+	redis-sentinel sentinel-test.conf &
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v || local FAIL=true
+	pkill redis-server
+	pkill redis-sentinel
+	if [ "$FAIL" = "true" ]; then
+		return 1
+	fi
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+cb518328da792a0ee1699ce7528e5d685d409c1efaebfac3f6ea9093c98d49b04adfd4ac36269bda79de2171778a1cf981f76913bb821a151bb1485e2ffee9c8  py3-channels-redis-4.3.0.tar.gz
+"

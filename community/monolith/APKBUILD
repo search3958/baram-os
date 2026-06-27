@@ -1,0 +1,42 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=monolith
+pkgver=2.10.1
+pkgrel=0
+pkgdesc="CLI tool for saving complete web pages as a single HTML file"
+url="https://github.com/Y2Z/monolith"
+arch="all"
+license="CC0-1.0"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	"
+source="https://github.com/Y2Z/monolith/archive/v$pkgver/monolith-$pkgver.tar.gz"
+
+# use system openssl
+export OPENSSL_NO_VENDOR=1
+
+_cargo_opts="--frozen --no-default-features --features cli"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build $_cargo_opts --release
+}
+
+check() {
+	cargo test $_cargo_opts
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+7c0a984e5f5a0cbc7c087aa509ab9b6ea5bff41ecfdfde005574766e1ade387380cd7146c2d561f5f689c34fc406f5b55e1c5ad09c9fc1cfb4e7d14d1baa7fe7  monolith-2.10.1.tar.gz
+"

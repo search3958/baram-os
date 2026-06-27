@@ -1,0 +1,43 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=kcbench
+pkgver=0.9.15
+pkgrel=0
+pkgdesc="Linux kernel compile benchmark"
+url="https://gitlab.com/knurd42/kcbench"
+arch="noarch"
+license="MIT"
+depends="
+	bash
+	binutils
+	bison
+	coreutils
+	elfutils-dev
+	flex
+	gawk
+	gcc
+	grep
+	linux-headers
+	lscpu
+	make
+	openssl
+	openssl-dev
+	perl
+	pkgconf
+	time
+	xz
+	musl-dev
+	"
+subpackages="$pkgname-doc"
+source="https://gitlab.com/knurd42/kcbench/-/archive/v$pkgver/kcbench-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # no tests
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr/ install
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+11a247ea461e3d6681bc5104eeba9f5619314fbbaa19e02f60a429c0bb6ac7b43861b5409a2d67eeeaf66c810f2e745509cb10b1386e22e72bdee6f1afa1bf4a  kcbench-v0.9.15.tar.gz
+"

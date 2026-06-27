@@ -1,0 +1,37 @@
+# Maintainer:
+pkgname=py3-webassets
+_pkgname=webassets
+pkgver=3.0.0
+pkgrel=1
+pkgdesc="Asset management for web development"
+options="!check" # 4 tests fail, 2 related to 'nose', 1 to 'pytest'
+url="https://pypi.org/project/webassets"
+arch="noarch"
+license="BSD-2-Clause"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+checkdepends="py3-nose2 py3-pytest py3-mock py3-babel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-webassets" # Backwards compatibility
+provides="py-webassets=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	nose2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+b872b87bd0c6e6eb57f338bfb3185f9da1905c94380aa77eefd5e2f72d184d2deb9e3fe4e96aa75cc6929f4658db2855275ada04540a9ccc332ade667d347d75  webassets-3.0.0.tar.gz
+"

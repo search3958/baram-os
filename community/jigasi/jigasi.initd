@@ -1,0 +1,34 @@
+#!/sbin/openrc-run
+
+: ${port_min:="20000"}
+: ${port_max:="20050"}
+: ${configdir:="/etc/jitsi/jigasi"}
+: ${logdir:="/var/log/jitsi"}
+: ${logfile:="$logdir/jigasi.log"}
+
+supervisor="supervise-daemon"
+
+command="/usr/lib/jigasi/jigasi.sh"
+command_args="--host=$host --domain=$domain --logdir=$logdir --configdir=/ --configdirname=$configdir --min-port=$port_min --max-port=$port_max $extra_options"
+command_user="jigasi:jitsi"
+command_background=true
+
+pidfile="/run/$RC_SVCNAME.pid"
+
+output_log="$logfile"
+error_log="$logfile"
+
+depend() {
+	need net
+	after firewall
+	want jabber-server
+	use logger
+}
+
+start_pre() {
+	checkpath -f -m 0640 -o "$command_user" "$logfile" || return 1
+
+	export JAVA_SYS_PROPS="-Djava.util.logging.config.file=$configdir/logging.properties \
+				$extra_java_props
+				"
+}

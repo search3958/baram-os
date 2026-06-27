@@ -1,0 +1,39 @@
+# Contributor: Emily Ingalls <emily@ingalls.rocks>
+# Maintainer: linear cannon <dev@linear.network>
+pkgname=windowmaker
+pkgver=0.96.0
+pkgrel=0
+pkgdesc="Window manager for X emulating the NeXTSTEP user interface"
+url="https://windowmaker.org/"
+arch="all"
+license="GPL-2.0-or-later"
+depends_dev="libxmu-dev libxft-dev libxinerama-dev libxrandr-dev
+	libjpeg-turbo-dev tiff-dev libwebp-dev"
+makedepends="$depends_dev libx11-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/window-maker/wmaker/releases/download/wmaker-$pkgver/WindowMaker-$pkgver.tar.gz"
+builddir="$srcdir/WindowMaker-$pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--disable-static \
+		--enable-modelock
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rmdir "$pkgdir"/usr/share/locale/
+}
+
+sha512sums="
+cca1796722803922aa28ea20534f10566b594b7a69eba8c1da6bd1305654583f39ef67f10fd6a550730714e728d876f807aee50968e9392190bb9dc7ffe8409a  WindowMaker-0.96.0.tar.gz
+"

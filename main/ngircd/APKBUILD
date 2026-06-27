@@ -1,0 +1,45 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: qaqland <qaq@qaq.land>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=ngircd
+pkgver=27
+pkgrel=2
+pkgdesc="Next Generation IRC Daemon"
+url="https://ngircd.barton.de/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="openssl-dev>3 zlib-dev linux-pam-dev"
+subpackages="$pkgname-doc $pkgname-openrc"
+install="$pkgname.pre-install"
+source="https://ngircd.barton.de/pub/ngircd/ngircd-$pkgver.tar.xz
+	$pkgname.initd
+	"
+options="!check"
+
+# secfixes:
+#   25-r1:
+#     - CVE-2020-14148
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc/ngircd \
+		--mandir=/usr/share/man \
+		--without-ident \
+		--with-openssl \
+		--with-pam \
+		--enable-ipv6
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm755 ../$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+d653e0f430bc27485780c9492038622a850be9b910993d625cec4045f0d9973e448a39949c576450598e2cd923b377304ba987a6330f3fcdc42978e8a30334b8  ngircd-27.tar.xz
+50339507917c956a38451394a8a5996337ff29948944ff6aa40ed39f6dd3d6bfdfb864d60a24199c0a86a01e18a71f213efa6cfb2857a320f31b9fcfb92c6ac1  ngircd.initd
+"

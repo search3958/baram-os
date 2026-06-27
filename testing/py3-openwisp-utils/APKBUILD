@@ -1,0 +1,48 @@
+# Contributor: Alex Denes <caskd@redxen.eu>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+_pkgname=openwisp-utils
+pkgname="py3-$_pkgname"
+pkgver=1.2.2
+pkgrel=0
+pkgdesc="Python and Django utilities shared between different openwisp modules"
+url="https://github.com/openwisp/openwisp-utils"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-django-compress-staticfiles
+	py3-django-filter
+	py3-django-model-utils
+	py3-django-rest-framework
+	py3-drf-yasg
+	py3-swapper
+	python3
+"
+checkdepends="
+	py3-openwisp-controller
+"
+makedepends="py3-setuptools_scm py3-gpep517"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/openwisp/openwisp-utils/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # circular dependency caused by testing suite (controller <=> utils)
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 runtests.py
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+bb5ef8578a1de7db016c189d1b84bb0ca5bba075dde6acb2d69428b37e5d366965da386854bc1af66e6cfd7c5b9b3fa16f3552691fb5fef1cc5a7cfc496443a8  py3-openwisp-utils-1.2.2.tar.gz
+"

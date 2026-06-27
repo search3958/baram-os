@@ -1,0 +1,41 @@
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=runit
+pkgver=2.3.1
+pkgrel=0
+pkgdesc="UNIX init scheme with service supervision"
+url="http://smarden.org/runit/"
+arch="all"
+license="BSD"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="http://smarden.org/runit/runit-$pkgver.tar.gz
+	run-service-dir.patch
+	README.alpine
+	$pkgname.initd
+	"
+builddir="$srcdir/admin/runit-$pkgver/src"
+options="!check"
+
+build() {
+	echo "$CC $CFLAGS $CPPFLAGS" > conf-cc
+	make
+}
+
+package() {
+	install -d "$pkgdir"/usr/sbin "$pkgdir"/usr/bin
+	for i in chpst runit runit-init runsv runsvchdir runsvdir sv svlogd utmpset; do
+		install -m755 "$i" "$pkgdir"/usr/sbin/$i
+	done
+	ln -sfv /usr/sbin/runsvdir "$pkgdir"/usr/bin/runsvdir
+	install -Dm644 -t "$pkgdir"/usr/share/man/man8 ../man/*.8
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/runitd
+	install -Dm644 "$srcdir"/README.alpine -t "$pkgdir"/usr/share/doc/$pkgname
+	mkdir -p "$pkgdir"/etc/service
+	mkdir -p "$pkgdir"/etc/sv
+}
+
+sha512sums="
+448fb5de516fe3fded478a7e24cc54e5bf68e465681ec911ec8988c39da17ee7bbb62cd2faeb40bdd95d439d2b6fba170a40c7f8567b0db1664f4a1a763138db  runit-2.3.1.tar.gz
+7107da162f7c13e1483f17bf04a844c23a8d1b81ef982c3d956a4c0e23b2a20e415850f0b95999b1eb1e04638284884948937377756ca080037bd6455e3301e8  run-service-dir.patch
+88d1efcf366add7803ed026ec8e693b271c842d4e3d5a52587b7ead96266ee27b4ceb1b2696551243f0d9efa93199a07231d2b37186ce1535e9a6b9d90192909  README.alpine
+35361669730187247d0dc12cdae85e5c79ba5043e9dcf46fcf7366fdd12b916b3488fc51e0b25c844466a0107e7fa133530c19976ca0880696e414e9b0d05a1b  runit.initd
+"

@@ -1,0 +1,11 @@
+--- a/unf_ext.gemspec
++++ b/unf_ext.gemspec
+@@ -12,7 +12,7 @@
+   gem.homepage      = "https://github.com/knu/ruby-unf_ext"
+   gem.licenses      = ["MIT"]
+ 
+-  gem.files         = `git ls-files`.split($/)
++  gem.files         = Dir["ext/**/*", "lib/**/*.rb"]
+   gem.executables   = gem.files.grep(%r{^bin/}).map{ |f| File.basename(f) }
+   gem.test_files    = gem.files.grep(%r{^(test|spec|features)/}).grep(%r{/test_[^/]+\.rb$})
+   gem.require_paths = ["lib"]

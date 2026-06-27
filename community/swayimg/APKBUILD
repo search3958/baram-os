@@ -1,0 +1,95 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=swayimg
+pkgver=5.2
+pkgrel=0
+pkgdesc="Image viewer for Sway"
+url="https://github.com/artemsen/swayimg"
+# riscv64: blocked by luajit
+# s390x: optional libjxl, but nobody is using this on s390x
+arch="all !riscv64 !s390x"
+license="MIT"
+makedepends="
+	bash-completion-dev
+	cairo-dev
+	exiv2-dev
+	giflib-dev
+	json-c-dev
+	libexif-dev
+	libheif-dev
+	libjpeg-turbo-dev
+	libjxl-dev
+	librsvg-dev
+	libwebp-dev
+	libxkbcommon-dev
+	luajit-dev
+	meson
+	wayland-dev
+	wayland-protocols
+	"
+subpackages="
+	$pkgname-full
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/artemsen/swayimg/archive/v$pkgver/swayimg-$pkgver.tar.gz"
+options="!check"  # no tests provided
+
+build() {
+	msg 'Building basic variant'
+	_build output \
+		-Dheif=disabled \
+		-Djxl=disabled \
+		-Dsvg=disabled \
+		-Dwebp=disabled
+
+	msg 'Building full variant'
+	_build output-full \
+		-Dbash=disabled \
+		-Dman=false
+}
+
+_build() {
+	local outdir=$1; shift
+
+	abuild-meson \
+		-Db_lto=true \
+		-Dgif=enabled \
+		-Dheif=enabled \
+		-Djpeg=enabled \
+		-Djxl=enabled \
+		-Dpng=enabled \
+		-Dsvg=enabled \
+		-Dwebp=enabled \
+		-Dexif=enabled \
+		-Dbash=enabled \
+		-Dzsh=enabled \
+		-Dversion=$pkgver \
+		"$@" \
+		. "$outdir"
+	meson compile -C "$outdir"
+}
+
+package() {
+	pkgdesc="$pkgdesc - with support for basic formats"
+	provider_priority="100"  # highest (other provider is swayimg-full)
+
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -D -m644 extra/example.lua "$pkgdir"/etc/xdg/$pkgname/init.lua
+}
+
+full() {
+	pkgdesc="$pkgdesc - with support for all formats"
+	provides="$pkgname=$pkgver-r$pkgrel"
+	provider_priority="10"  # lowest (other provider is swayimg)
+
+	cd "$builddir"
+
+	DESTDIR="$subpkgdir" meson install --no-rebuild -C output-full
+	install -D -m644 extra/example.lua "$subpkgdir"/etc/xdg/$pkgname/init.lua
+}
+
+sha512sums="
+6f13d3f160ac2e02d61cb6efb1d47562f97639f759ce474232c9a0f2b61ad30a39d1693a370aeecf5b51c11bb3dad80857198d27a52fe5907afdcd909d9048cb  swayimg-5.2.tar.gz
+"

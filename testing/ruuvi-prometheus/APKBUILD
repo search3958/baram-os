@@ -1,0 +1,35 @@
+# Contributor: Joonas Kuorilehto <oss@derbian.fi>
+# Maintainer: Joonas Kuorilehto <oss@derbian.fi>
+pkgname=ruuvi-prometheus
+pkgver=0.1.9
+pkgrel=12
+pkgdesc="Ruuvi sensor Prometheus exporter"
+url="https://github.com/joneskoo/ruuvi-prometheus"
+license="BSD-2-Clause"
+arch="all !riscv64" # prometheus cpuinfo doesnt support riscv64
+options="!check" # no test suite
+depends="bluez"
+makedepends="go"
+subpackages="$pkgname-openrc"
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/joneskoo/ruuvi-prometheus/archive/v$pkgver.tar.gz
+	ruuvi-prometheus.initd
+	"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -ldflags="-X main.version=$pkgver"
+}
+
+package() {
+	install -Dm755 ./ruuvi-prometheus "$pkgdir"/usr/bin/ruuvi-prometheus
+	install -Dm755 "$srcdir"/ruuvi-prometheus.initd "$pkgdir"/etc/init.d/ruuvi-prometheus
+}
+
+sha512sums="
+23bec4385bb062e89fff21a7c18e11e7159d033383377441ea4c9ab85240b27b2d1e4feb672122854709f85437131831d3c640cc5ef3e0b7dbfdd43ba8a04732  ruuvi-prometheus-0.1.9.tar.gz
+6eb05b76ea6289799f37a0e0d42e663d6bd013b46468126cb2ac3c90bfd3421db7044895d49e059e32e9d3f5e870343b494ab455f2164727b111b647af107d61  ruuvi-prometheus.initd
+"

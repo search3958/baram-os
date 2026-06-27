@@ -1,0 +1,41 @@
+# Maintainer: Cowington Post <cowingtonpost@gmail.com>
+pkgname=py3-minio
+pkgver=7.2.18
+pkgrel=2
+pkgdesc="MinIO client SDK for Python"
+url="https://docs.min.io/docs/python-client-quickstart-guide.html"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-argon2-cffi
+	py3-certifi
+	py3-pycryptodome
+	py3-typing-extensions
+	py3-urllib3
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/minio/minio-py/archive/$pkgver/py3-minio-$pkgver.tar.gz"
+builddir="$srcdir/minio-py-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+9f109cd9d871d0aad7bafc32bab08a5687d87c3feefe9fa2aae6237b0f5f7c9c0697f2143a95a85b76ab1b14e10e9a6e23d5b70309a4c895a94bbf6cea54756c  py3-minio-7.2.18.tar.gz
+"

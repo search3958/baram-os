@@ -1,7 +1,0 @@
-#TODO not compiled or tested
-[source]
-git = "https://github.com/KhronosGroup/Vulkan-Headers"
-rev = "v1.4.346"
-shallow_clone = true
-[build]
-template = "cmake"

@@ -1,0 +1,24 @@
+# Contributor: Antoine Fontaine <antoine.fontaine@epfl.ch>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=repo
+pkgver=2.64
+pkgrel=0
+pkgdesc="repository management tool built on top of git"
+url="https://gerrit.googlesource.com/git-repo"
+arch="noarch"
+license="Apache-2.0"
+options="!check" # no tests upstream
+depends="python3 git"
+makedepends="py3-setuptools"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/GerritCodeReview/git-repo/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/git-repo-$pkgver"
+
+package() {
+	install -Dm755 repo -t "$pkgdir"/usr/bin
+	install -Dm644 man/* -t "$pkgdir"/usr/share/man/man1
+}
+
+sha512sums="
+756d38fe33e60315a2c4529ffe44f6975291ea24b2b4e38bc3cb7de120a92665bdf20aef7ef78f4ac9a19ef289a79d21d91d9b5ce4d29c6af7e052829fd3366e  repo-2.64.tar.gz
+"

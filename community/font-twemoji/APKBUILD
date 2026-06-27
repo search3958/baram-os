@@ -1,0 +1,24 @@
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=font-twemoji
+pkgver=16.0.1
+_builddate=2025-07-10_12-17
+pkgrel=0
+pkgdesc="Twemoji font in TrueType format"
+url="https://github.com/twitter/twemoji"
+options="!check" # no tests
+arch="noarch"
+license="CC-BY-4.0"
+source="https://artefacts.whynothugo.nl/twemoji.ttf/$_builddate/Twemoji-$pkgver.ttf"
+builddir="$srcdir"
+# Builds from https://git.sr.ht/~whynothugo/twemoji.ttf/
+
+package() {
+	depends="fontconfig"
+
+	install -Dm644 "$srcdir"/Twemoji-$pkgver.ttf \
+		"$pkgdir"/usr/share/fonts/twemoji/Twemoji.ttf
+}
+
+sha512sums="
+454d6b0947f3a6e8d8f59037e90f3965f2f34dfd8ee22512b0425d6fbfeb97b88b2013a21c4d632aa77e48b133729f253a2f9a7ad2b9c6fd60168b4e49a99305  Twemoji-16.0.1.ttf
+"

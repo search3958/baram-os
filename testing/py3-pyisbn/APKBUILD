@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-pyisbn
+_pkgname=pyisbn
+pkgver=1.3.1
+pkgrel=4
+pkgdesc="A module for working with 10- and 13-digit ISBNs"
+url="https://github.com/JNRowe/pyisbn"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-pytest py3-pytest-cov py3-hypothesis"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-isbn" # Backwards compatibility
+provides="py-isbn=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+3abb14ebcd6d1feaf892fcfdd6da19a3010b1d80c898e5a3ff871e759e7833b09a988ff1b7a9f46cbfdd2eb44172c7ddd0a499b9e40eea4fed89df3d467bf0c1  pyisbn-1.3.1.tar.gz
+"

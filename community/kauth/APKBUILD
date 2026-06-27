@@ -1,0 +1,60 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kauth
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Abstraction to system policy and authentication features"
+# armhf blocked by qt6-qtdeclarative -> kwindowsystem
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.1-or-later"
+depends_dev="
+	kcoreaddons-dev
+	kwindowsystem-dev
+	polkit-qt-dev
+	qt6-qtbase-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	graphviz
+	kde-qdoc-common
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/frameworks/kauth.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kauth-$pkgver.tar.xz"
+
+build() {
+	export KDE_DOCS=/usr/share/kde/documentation
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_QCH=ON
+	cmake --build build
+
+	cmake --build build --target prepare_docs
+	cmake --build build --target generate_docs
+	cmake --build build --target generate_qch
+}
+
+check() {
+	# KAuthHelperTest hangs
+	# KAuthFdTest is broken
+	wlheadless-run -- ctest --test-dir build -E '(KAuthHelper|KAuthFd)Test'
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	DESTDIR="$pkgdir" cmake --build build --target install_html_docs
+	DESTDIR="$pkgdir" cmake --build build --target install_qch_docs
+}
+
+sha512sums="
+990416f0bc3709d4957530799266d57d0bea3dab4f30250deecc1fb92fc825fe8261a24eba4d8258b05f5a0ca244f7e63f5a0532c5bc873c37ee59aee407d986  kauth-6.27.0.tar.xz
+"

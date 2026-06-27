@@ -1,0 +1,44 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-path
+pkgver=16.10.0
+pkgrel=2
+pkgdesc="Module wrapper for os.path"
+url="https://github.com/jaraco/path"
+arch="noarch"
+license="MIT"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="
+	py3-more-itertools
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/jaraco/path/archive/v$pkgver/path-v$pkgver.tar.gz"
+builddir="$srcdir/path-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/path*.whl
+}
+
+sha512sums="
+9dc43085e92df7893c964ccf56c61e86b48c22fa8d8998da34a78af6b2b60e7774e1b0aa1b30752d01900109af91731e44a55773226dc95945ede8890f2c8095  path-v16.10.0.tar.gz
+"

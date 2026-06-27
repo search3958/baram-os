@@ -1,0 +1,23 @@
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=s6-rc-man-pages
+pkgver=0.6.0.0.1
+pkgrel=0
+pkgdesc="Unofficial mdoc versions of the s6-rc documentation"
+url="https://git.sr.ht/~humm/s6-rc-man-pages"
+arch="noarch"
+license="ISC"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~humm/s6-rc-man-pages/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # no tests
+install_if="${pkgname%-*-*}>=${pkgver%.*} docs"
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	find "$pkgdir" -type f ! -name "*.gz" \
+		-exec gzip -9 {} \;
+}
+
+sha512sums="
+bfdbf2ab4f0f5606e1f83d4793c39e6714e95f536dd8503ff64b8dd8154b63a0f02872a79c0280aa682a27a574b13d15974e1f369b22e5f82f390a1d58f86bb6  s6-rc-man-pages-0.6.0.0.1.tar.gz
+"

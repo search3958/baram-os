@@ -1,0 +1,38 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Henrik Grimler <henrik@grimler.se>
+pkgname=heimdall
+pkgver=2.2.2
+pkgrel=0
+pkgdesc="Free implementation of Samsung Galaxy devices flashing protocol"
+url="https://git.sr.ht/~grimler/Heimdall"
+arch="all"
+license="MIT"
+makedepends="libusb-dev cmake samurai"
+source="$pkgname-v$pkgver.tar.gz::https://git.sr.ht/~grimler/Heimdall/archive/v$pkgver.tar.gz
+	heimdall_flash_kernel.sh
+	heimdall_flash_isorec_kernel.sh
+	heimdall_wait_for_device.sh
+	"
+options="!check" # No tests
+builddir="$srcdir/Heimdall-v$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DDISABLE_FRONTEND=ON
+	cmake --build build
+}
+
+package() {
+	cd build
+	for i in bin/heimdall "$srcdir"/heimdall_flash_kernel.sh "$srcdir"/heimdall_flash_isorec_kernel.sh "$srcdir"/heimdall_wait_for_device.sh; do
+		install -Dm755 "$i" "$pkgdir"/usr/bin/"${i##*/}"
+	done
+}
+
+sha512sums="
+75c3614b1c7dcbcd5537a308ddd3e2adb97024c7d9572ad2a9187ff50f516209995cf9ab65efa9dd282b925687af70a61298cf0e07b5dca333b589e37b2a14e3  heimdall-v2.2.2.tar.gz
+271098ddcead6b4d1edd76ac208099506d67a7640b40c68ea4d8a6a85b6fa464b6024371004b02f1a3c4bdfc38415cf63f2fde97099e52db72903227d653b9b8  heimdall_flash_kernel.sh
+ec050b4f594f750eb3e3a5f80304bd5e692f2b2cabf4cd18e44543f930dc1290a5bb6d58d6c0d3589fcea8c69b74df8c240bc8fabbeb92369bdc2dc36a20ffb7  heimdall_flash_isorec_kernel.sh
+e454a1c9d49177db0ae8adf55261f749ceca393d3800179db8b3591fff0b90e54448b3239e28e78dc67029406c29cba648b94764665d178b7fb53369ac58d937  heimdall_wait_for_device.sh
+"

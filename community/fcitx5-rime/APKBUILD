@@ -1,0 +1,38 @@
+# Contributor: Lindsay Zhou <i@lin.moe>
+# Maintainer: Lindsay Zhou <i@lin.moe>
+pkgname=fcitx5-rime
+pkgver=5.1.13
+pkgrel=0
+pkgdesc="librime input method support for fcitx5"
+url="https://github.com/fcitx/fcitx5-rime"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	cmake
+	extra-cmake-modules
+	gettext-dev
+	fcitx5-dev
+	fcitx5-qt-dev
+	librime-dev
+	samurai
+	"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fcitx/fcitx5-rime/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+aa1f7c580c2df794ce48935614093aaea21d09b6ee783561a13ab47509fdf1f0f433dd94bef51d6af799ab1a4ab3486d05d36f7700f7316e1136f13cf47c86a0  fcitx5-rime-5.1.13.tar.gz
+"

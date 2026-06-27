@@ -1,0 +1,22 @@
+From ddc86b128624aa5749caa27a021f27bbe08c4539 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Micha=C5=82=20Adamski?= <michal@ert.pl>
+Date: Wed, 14 Oct 2020 11:06:33 +0200
+Subject: [PATCH] `apk add` instead of `apt-get install`
+
+
+diff --git a/electrum/gui/qt/__init__.py b/electrum/gui/qt/__init__.py
+index 4a37fb100..fb5356d6c 100644
+--- a/electrum/gui/qt/__init__.py
++++ b/electrum/gui/qt/__init__.py
+@@ -36,7 +36,7 @@ except Exception as e:
+     from electrum import GuiImportError
+     raise GuiImportError(
+         "Error: Could not import PyQt6. On Linux systems, "
+-        "you may try 'sudo apt-get install python3-pyqt6'") from e
++        "you may try 'doas apk add py3-qt6'") from e
+ 
+ from PyQt6.QtGui import QGuiApplication, QCursor
+ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QMessageBox, QDialog, QToolTip
+-- 
+2.52.0
+

@@ -1,0 +1,37 @@
+# Contributor: Erwan Rouchet <lucidiot@brainshit.fr>
+# Maintainer: Erwan Rouchet <lucidiot@brainshit.fr>
+pkgname=py3-pylspci
+_pkgname=pylspci
+pkgver=0.4.3
+pkgrel=5
+pkgdesc="Python wrapper for lspci"
+url="https://lucidiot.tildepages.org/pylspci"
+arch="noarch"
+license="GPL-3.0-only"
+depends="py3-cached-property>=1.5.1 pciutils"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # no tests ran
+
+build() {
+	gpep517 build-wheel \
+	--wheel-dir .dist \
+	--output-fd 3 3>&1 >&2
+
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+7be872d3a874129d34e0da355b6a87b221ef1b5766eac7274dbe748fe1b6281ee2fed6954abddad716e944f86fb55594211d18683797e32dd12a3963faac91cd  pylspci-0.4.3.tar.gz
+"

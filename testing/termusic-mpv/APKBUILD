@@ -1,0 +1,37 @@
+# Contributor: Coco Liliace <coco@liliace.dev>
+# Maintainer: Coco Liliace <coco@liliace.dev>
+#
+# optional dependencies:
+# - yt-dlp and ffmpeg: for downloading from youtube
+pkgname=termusic-mpv
+pkgver=0.12.0
+pkgrel=0
+pkgdesc="Music Player TUI written in Rust"
+url="https://github.com/tramhao/termusic"
+arch="all"
+license="MIT AND GPL-3.0-or-later"
+depends="protoc mpv-dev"
+makedepends="cargo cargo-auditable dbus-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tramhao/termusic/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/termusic-$pkgver"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --locked --target="$CTARGET"
+}
+
+check() {
+	cargo test --features cover,mpv --release --all
+}
+
+build() {
+	cargo auditable build --no-default-features --features cover,mpv --release --frozen --all
+}
+
+package() {
+	install -Dm755 -t "$pkgdir"/usr/bin ./target/release/termusic ./target/release/termusic-server
+}
+sha512sums="
+bb76a5db39bb1eeedf0ed834f41bdc97d2e49baadd6dc938f275edac95d73674a316747c498b11e970336f2b47eba5439a6c23f03557dec334b081fa25e117e9  termusic-mpv-0.12.0.tar.gz
+"

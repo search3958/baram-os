@@ -1,0 +1,11 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -29,7 +29,7 @@
+ get_target_property(QT_QTPATHS_EXECUTABLE Qt6::qtpaths IMPORTED_LOCATION)
+ 
+ if(Qt6LinguistTools_FOUND)
+-    get_target_property(QT_LRELEASE_EXECUTABLE Qt6::lrelease IMPORTED_LOCATION)
++    set(QT_LRELEASE_EXECUTABLE /usr/lib/qt6/bin/lrelease)
+     if(NOT QT_QTPATHS_EXECUTABLE AND QT_LRELEASE_EXECUTABLE)
+         get_filename_component(QT_LRELEASE_PATH ${QT_LRELEASE_EXECUTABLE} DIRECTORY)
+         set(QT_QTPATHS_EXECUTABLE ${QT_LRELEASE_PATH}/qtpaths)

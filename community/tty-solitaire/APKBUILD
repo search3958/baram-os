@@ -1,0 +1,28 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=tty-solitaire
+pkgver=1.4.1
+pkgrel=0
+pkgdesc="ncurses-based klondike solitaire game"
+url="https://github.com/mpereira/tty-solitaire"
+license="MIT"
+arch="all"
+makedepends="ncurses-dev"
+source="tty-solitaire-$pkgver.tar.gz::https://github.com/mpereira/tty-solitaire/archive/v$pkgver.tar.gz"
+options="!check"
+
+build() {
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a8fb62c436e977b93632bd771384b5ddb226fa297b3eaec154b8679135c3bba802aadf7f13a8aff47a268f5dcc00c2d15ba62702342d30baf1903bdf9824573a  tty-solitaire-1.4.1.tar.gz
+"

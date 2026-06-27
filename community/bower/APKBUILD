@@ -1,0 +1,46 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=bower
+pkgver=1.1.1
+pkgrel=1
+pkgdesc="curses frontend for the Notmuch email system"
+url="https://github.com/wangp/bower"
+arch="all !loongarch64" # blocked by mercury
+license="GPL-3.0-or-later"
+makedepends="
+	coreutils
+	go-md2man
+	gpgme-dev
+	mercury
+	ncurses-dev
+	notmuch-dev
+	"
+depends="notmuch"
+subpackages="$pkgname-doc"
+source="https://github.com/wangp/bower/archive/$pkgver/bower-$pkgver.tar.gz
+	no-static-link.patch
+	"
+
+build() {
+	make PARALLEL=-j${JOBS:-1}
+
+	# The 'man' make target uses pandoc, which isn't available on some archs
+	# (e.g. aarch64). So we use another tool outside of the upstream build
+	# system that gets the job done.
+	go-md2man -in README.md -out bower.1
+}
+
+check() {
+	make -j1 -C tests
+}
+
+package() {
+	install -Dm 755 bower "$pkgdir/usr/bin/bower"
+	install -Dm 644 bower.1 \
+		"$pkgdir/usr/share/man/man1/bower.1"
+	}
+
+sha512sums="
+89d47b7c7fed952f0a31c3ce9eb897b8c7859c56ccba3b73607f76a852e9134802316e2de0ad350d96e6c3c814612d90985e0b740a71810aa97605e174c6a5a7  bower-1.1.1.tar.gz
+35d6ee3ad2e7e52ce5f64f3709b4ed96b14eb04b7288b1301ef509d7fb3032fffbed40456ba898f2cbf2e90655fc70d66e31538a284f1d94af8e20e097cdc1f1  no-static-link.patch
+"

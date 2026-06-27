@@ -1,0 +1,35 @@
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=libserialport
+pkgver=0.1.2
+pkgrel=0
+pkgdesc="A minimal C library handling OS-specific details when using serial ports"
+url="https://sigrok.org/wiki/Libserialport"
+arch="all"
+license="LGPL-3.0-only"
+makedepends="linux-headers automake autoconf libtool"
+source="https://github.com/sigrokproject/libserialport/archive/libserialport-$pkgver/libserialport-$pkgver.tar.gz"
+builddir="$srcdir/libserialport-libserialport-$pkgver"
+subpackages="$pkgname-dev"
+
+prepare() {
+	default_prepare
+
+	./autogen.sh
+}
+
+build() {
+	./configure --prefix=/usr/
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+584b25ddd2b79cb8177c2a7996dce5c2de90bdc04e7b131e5d0c8ebf98e38eda7f7ab8f3c3e415e8d57128cb3887b1a81e6487a465989554473392ab82d3b0a7  libserialport-0.1.2.tar.gz
+"

@@ -1,0 +1,103 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Contributor: Danct12 <danct12@disroot.org>
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/phosh <newbie13xd@gmail.com>"
+pkgname=phoc
+pkgver=0.55.1
+pkgrel=0
+pkgdesc="wlroots based Phone compositor for the Phosh shell"
+arch="all"
+url="https://gitlab.gnome.org/World/Phosh/phoc"
+license="GPL-3.0-only"
+depends="
+	$pkgname-schemas
+	dbus
+	gsettings-desktop-schemas
+	mutter-schemas
+	"
+_wlrootsmakedepends="
+	eudev-dev
+	glslang
+	hwdata-dev
+	libcap-dev
+	libdisplay-info-dev
+	libseat-dev
+	libxcb-dev
+	xcb-util-image-dev
+	xcb-util-renderutil-dev
+	xcb-util-wm-dev
+	xkeyboard-config-dev
+	xwayland-dev
+	"
+makedepends="
+	glib-dev
+	gmobile-dev
+	gnome-desktop-dev
+	json-glib-dev
+	libdrm-dev
+	libinput-dev
+	libxkbcommon-dev
+	mesa-dev
+	meson
+	pixman-dev
+	py3-docutils
+	wayland-dev
+	wayland-protocols
+	$_wlrootsmakedepends
+	"
+checkdepends="xvfb-run"
+subpackages="
+	$pkgname-dbg
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-schemas::noarch
+	"
+options="!check" # Needs fullblown EGL
+source="https://sources.phosh.mobi/releases/phoc/phoc-${pkgver/_/.}.tar.xz"
+replaces="wlroots-phosh"
+builddir="$srcdir/$pkgname-${pkgver/_/.}"
+
+prepare() {
+	default_prepare
+
+	patch -Np1 < subprojects/packagefiles/wlroots/0001-Revert-layer-shell-error-on-0-dimension-without-anch.patch \
+		-d subprojects/wlroots-0.20.x
+}
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dembed-wlroots=enabled \
+		-Dman=true \
+		-Dtests="$(want_check && echo true || echo false)" \
+		--default-library=static \
+		. output
+	meson compile -C output
+}
+
+check() {
+	xvfb-run -a meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir/" meson install --no-rebuild -C output
+	install -Dm755 tools/scale-to-fit \
+		-t "$pkgdir"/usr/bin
+
+	# remove unneeded wlroots dev. files
+	rm -r "$pkgdir"/usr/include
+	rm -r "$pkgdir"/usr/lib/libwlroots-*.a
+	rm -r "$pkgdir"/usr/lib/pkgconfig
+}
+
+schemas() {
+	pkgdesc="$pkgdesc (schemas)"
+	depends=
+
+	amove usr/share/glib-2.0/schemas
+}
+
+sha512sums="
+23d94948eedec78099059e082a9b7fed029e5ecaec093eec6585770f592249d7db3be2a97d0a1fa72c4ed104d3d47f1c1890658b5beabeafd0ffc33656efd046  phoc-0.55.1.tar.xz
+"

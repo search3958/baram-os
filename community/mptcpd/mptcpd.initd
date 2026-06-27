@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+
+name="MPTCP Daemon"
+description="MPTCP Daemon Service"
+
+: ${error_logger="logger -t mptcpd -p daemon.info >/dev/null 2>&1"}
+
+command="/usr/bin/mptcpd"
+command_args="$command_args"
+command_background="yes"
+pidfile="/run/$RC_SVCNAME.pid"
+
+depend() {
+	need net
+	after firewall
+}

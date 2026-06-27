@@ -1,0 +1,44 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=mtdev
+pkgver=1.1.7
+pkgrel=0
+pkgdesc="Multitouch Protocol Translation Library Development Package"
+url="http://bitmath.org/code/mtdev/"
+arch="all"
+license="MIT"
+depends_dev="linux-headers"
+makedepends="$depends_dev"
+subpackages="$pkgname-dev"
+source="http://bitmath.org/code/mtdev/mtdev-$pkgver.tar.gz"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+dev() {
+	default_dev
+
+	amove usr/bin
+}
+
+sha512sums="
+b2dab6616c6d18efab8294a8b71d38b82a9af97cb73d966b01db4c01776aa6f38b68225e15c3441267b21bc6299cf339ececca9a2a49f062f5eebd9d2bfebf6c  mtdev-1.1.7.tar.gz
+"

@@ -1,0 +1,230 @@
+# Contributor: Oliver Smith <ollieparanoid@postmarketos.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=linux-firmware
+pkgver=20260519
+pkgrel=0
+pkgdesc="firmware files for linux"
+url="https://git.kernel.org/?p=linux/kernel/git/firmware/linux-firmware.git;a=summary"
+arch="noarch"
+license="custom"
+makedepends="findutils libarchive-tools coreutils parallel python3 rdfind zstd"
+provides="linux-firmware-any"
+provider_priority=2
+options="!strip !check !archcheck !spdx !usrmerge"
+
+_rpi_bt=cdf61dc691a49ff01a124752bd04194907f0f9cd
+_rpi_brcm=9794282eb9f4a2de1f23b41a738926740e975d83
+
+source="https://gitlab.com/kernel-firmware/linux-firmware/-/archive/$pkgver/linux-firmware-$pkgver.tar.gz
+	bluez-firmware-$_rpi_bt.tar.gz::https://github.com/RPi-Distro/bluez-firmware/archive/$_rpi_bt.tar.gz
+	brcm-firmware-$_rpi_brcm.tar.gz::https://github.com/RPi-Distro/firmware-nonfree/archive/$_rpi_brcm.tar.gz
+	"
+install="$pkgname-other.post-upgrade"
+
+# Put /lib/firmware/* folders in subpackages
+_folders="3com acenic adaptec advansys aeonsemi airoha amd amd-ucode amdgpu
+	amdnpu amdtee amlogic amphion ar3k arm ath10k ath11k ath12k ath6k ath9k_htc
+	atmel atusb av7110 bnx2 bnx2x brcm cadence cavium cirrus cis cnm cpia2 cxgb3
+	cxgb4 cypress dabusb dell dpaa2 dsp56k e100 edgeport emi26 emi62 ene-ub6250 ess
+	go7007 hp i915 imx inside-secure intel isci ixp4xx kaweth keyspan keyspan_pda
+	korg lenovo libertas liquidio lontium matrox mediatek mellanox meson microchip
+	moxa mrvl mwl8k mwlwifi myricom netronome nvidia nxp ositech powervr qca qcom
+	qed qlogic r128 radeon realtek rockchip rsi rtl_bt rtl_nic rtlwifi rtw88 rtw89
+	sb16 sdca slicoss sun sxg synaptics tehuti ti ti-connectivity ti-keystone tigon
+	ttusb-budget ueagle-atm vicam vxge wfx xe yam yamaha"
+
+
+subpackages="$pkgname-other $pkgname-none"
+depends="linux-firmware-other=$pkgver-r$pkgrel"
+for i in $_folders; do
+	subpackages="$pkgname-$i:_folder $subpackages"
+	depends="$pkgname-$i=$pkgver-r$pkgrel $depends"
+done
+subpackages="amd-ucode $subpackages"
+
+# Add S5P MFC subpackage separately (it doesn't have its own folder)
+subpackages="$pkgname-s5p-mfc:s5p_mfc $subpackages"
+depends="$pkgname-s5p-mfc=$pkgver-r$pkgrel $depends"
+
+package() {
+	## install upstream linux-firmare files
+	export ZSTD_NBTHREADS=4 ZSTD_CLEVEL=19
+	make DESTDIR="$pkgdir" FIRMWAREDIR="/lib/firmware" install-zst
+	# De-duplicate needs to be explicit since 20241017
+	make DESTDIR="$pkgdir" FIRMWAREDIR="/lib/firmware" dedup
+
+	## replace Pi bluez and wifi firmware files by original from Pi Foundation's
+	rm -f "$pkgdir"/lib/firmware/brcm/*aspberry*
+	for dir in brcm synaptics; do
+		for f in "$srcdir"/bluez-firmware-"$_rpi_bt"/debian/firmware/"${dir/brcm/broadcom}"/*.hcd; do
+			# add & rename Pi foundation base file if it collides with upstream
+			if [ -e "$pkgdir/lib/firmware/$dir/$(basename "$f")".zst ]; then
+				mv "$f" "${f/.hcd/.rpiltd.hcd}"
+				f="${f/.hcd/.rpiltd.hcd}"
+			fi
+			zstd --compress --quiet "$f"
+			cmp -s "$f".zst "$pkgdir/lib/firmware/$dir/$(basename "${f/.rpiltd/}")".zst || \
+			install -Dm 644 "$f".zst -t "$pkgdir/lib/firmware/$dir"
+		done
+	done
+	# add symlinks from bluez-firmware.links
+	while read -r link_args; do
+		dst="$(echo "$link_args" | awk '{print $2}')"
+		dst="$pkgdir${dst/\/usr//}"
+		src="$(echo "$link_args" | awk '{print $1}')"
+		if [ -e "${pkgdir}${src/.hcd/.rpiltd.hcd.zst}" ]; then
+			src="${src/.hcd/.rpiltd.hcd}"
+		fi
+		src="${src/\/usr\/lib\/firmware\/brcm\//}"
+		src="${src/\/usr\/lib\/firmware\/synaptics\//..\/synaptics\/}"
+		ln -sv "$src".zst "$dst".zst
+	done < "$srcdir/bluez-firmware-$_rpi_bt/debian/bluez-firmware.links"
+
+	## add original Pi Foundation brcm wifi firmware files
+	rm "$srcdir/firmware-nonfree-$_rpi_brcm"/debian/config/brcm80211/cypress/README.txt
+	for dir in cypress brcm; do
+		for f in "$srcdir/firmware-nonfree-$_rpi_brcm/debian/config/brcm80211/$dir"/*; do
+			# add & rename Pi foundation base file if it collides with upstream
+			if [ -e "$pkgdir/lib/firmware/$dir/$(basename "$f")".zst ]; then
+				mv "$f" "${f%.*}.rpiltd.${f##*.}"
+				f="${f%.*}.rpiltd.${f##*.}"
+			fi
+			if ! [ -L "$f" ]; then
+				zstd --compress --quiet "$f"
+				cmp -s "$f".zst "$pkgdir/lib/firmware/$dir/$(basename "${f/.rpiltd/}")".zst || \
+				install -Dm 644 "$f".zst -t "$pkgdir/lib/firmware/$dir"
+			else
+				mv "$f" "$pkgdir/lib/firmware/$dir/$(basename "$f")".lnk #kept aside for 2nd pass relinking
+			fi
+		done
+	done
+	# we can use either Pi -standard or -minimal 43455 file so use standard by default
+	ln -sv cyfmac43455-sdio-standard.bin.zst "$pkgdir"/lib/firmware/cypress/cyfmac43455-sdio.rpiltd.bin.zst
+	# now remap downstream Pi brcm symlinks
+	for f in "$pkgdir/lib/firmware/brcm"/*.lnk; do
+		src="$(readlink "$f")"
+		if [ -e "${pkgdir}/lib/firmware/brcm/${src%.*}.rpiltd.${src##*.}.zst" ] || \
+			[ -L "${pkgdir}/lib/firmware/brcm/${src%.*}.rpiltd.${src##*.}.zst" ]; then
+			src="${src%.*}.rpiltd.${src##*.}"
+		fi
+		rm -f "$f"
+		f="$(basename "${f%.*}")"
+		ln -sv "${src}.zst" "$pkgdir/lib/firmware/brcm/$f".zst
+	done
+
+
+	# Prevent recursive dependency between mrvl and libertas
+	ln -nfv "$pkgdir"/lib/firmware/mrvl/sd8688.bin.zst "$pkgdir"/lib/firmware/libertas/sd8688.bin.zst
+	ln -nfvs ../libertas/sd8688.bin.zst "$pkgdir"/lib/firmware/mrvl/sd8688.bin.zst
+	ln -nfvs sd8682_helper.bin.zst "$pkgdir"/lib/firmware/libertas/sd8688_helper.bin.zst
+
+	## symlinks for Visionfive1 riscv64 boards, till it fixed upstream
+	ln -sfv ../cypress/cyfmac43430-sdio.bin.zst "$pkgdir"/lib/firmware/brcm/brcmfmac43430-sdio.starfive,visionfive-v1.bin.zst
+
+	dangling=$(cd "$pkgdir" && find . -type l ! -exec test -e {} \; -print)
+	if [ -n "$dangling" ]; then
+		error "dangling symlinks:"
+		echo "$dangling" >&2
+		return 1
+	fi
+}
+
+_folder() {
+	local folder=${subpkgname##linux-firmware-}
+	case "$folder" in
+	intel)
+		# make iwlwifi easier to find with apk search
+		pkgdesc="firmware files for linux ($folder folder including iwlwifi)" ;;
+	*)
+		pkgdesc="firmware files for linux ($folder folder)" ;;
+	esac
+	depends=""
+	provides="linux-firmware-any"
+	provider_priority=1
+
+	local linkedbins= bin=
+	cd "$pkgdir"
+	# Move things that symlink into the target folder
+	# this fixes the -other deps, because
+	# - there are top-level files that are in -other (non-folder)
+	# - but, they are actually symlinks into .e.g -mediatek
+	# so, -other now depends on -mediatek due to symlink resolution
+	# this moves the symlinks along with the thing they symlink to.
+	linkedbins="$(find lib/firmware -maxdepth 1 -type l -exec sh -c "readlink \$1 | grep -qi $folder && echo \$1" - {} \;)"
+
+	if [ -n "$linkedbins" ]; then
+		for bin in $linkedbins; do
+			amove "$bin"
+		done
+	fi
+
+	# Move /lib/firmware/$folder (case insensitive)
+	amove "$(find lib/firmware -iname "$folder" -type d)"
+}
+
+other() {
+	# Requires subfolders to be split in subpackages
+	local leftover=""
+	local i
+	for i in "$pkgdir"/lib/firmware/*; do
+		[ -d "$i" ] && leftover="$leftover $(basename $i)"
+	done
+	if [ "$leftover" != "" ]; then
+		local fixed
+		error "Not all subfolders have been moved to subpackages!"
+		error "Fix this by adjusting _folders as follows:"
+		fixed="$(echo $_folders$leftover | tr " " "\n" | tr '[:upper:]' '[:lower:]' | sort)"
+		echo "_folders=\"$(printf "%s" "$fixed" | tr "\n" " ")\"" | fold -s
+		return 1
+	fi
+
+	# Move /lib/firmware (which doesn't have subfolders now)
+	pkgdesc="firmware files for linux (uncategorized)"
+	depends=""
+	provides="linux-firmware-any"
+	provider_priority=1
+
+	amove lib
+}
+
+none() {
+	# dummy package with no firmware
+	pkgdesc="Empty linux firwmare package for those who does not need any firmware"
+	provides="linux-firmware-any"
+	provider_priority=1
+	depends=
+	mkdir -p "$subpkgdir"
+}
+
+ucode() {
+	pkgdesc="Microcode update files for AMD CPUs"
+	provider_priority=
+	provides=
+	depends=
+
+	# build ported from Arch Linux's PKGBUILD
+	mkdir -p "$subpkgdir"/boot
+	mkdir -p "$builddir"/kernel/x86/microcode
+	cat "$pkgdir"/lib/firmware/amd-ucode/microcode_amd*.bin > "$builddir"/kernel/x86/microcode/AuthenticAMD.bin
+	[ -n "$SOURCE_DATE_EPOCH" ] && touch -d @$SOURCE_DATE_EPOCH "$builddir"/kernel/x86/microcode/AuthenticAMD.bin
+	cd "$builddir" && echo kernel/x86/microcode/AuthenticAMD.bin |
+	  bsdtar --uid 0 --gid 0 -cnf - -T - |
+	  bsdtar --null -cf - --format=newc @- > "$subpkgdir"/boot/amd-ucode.img
+}
+
+s5p_mfc() {
+	# This needs its own function as the files are not in a directory,
+	# but rather loose in the main directory.
+	pkgdesc="firmware files for linux (S5P MFC firmware)"
+	provides="linux-firmware-any"
+	provider_priority=1
+	depends=
+
+	amove lib/firmware/s5p-mfc*.fw.zst
+}
+
+sha512sums="
+56d9f1d2cf03fa1807ff572601662c45b54118f75f766fe355d230aae9ed7929021453db1b234fc9982b17936405cb575581b907c41832bdc65d765f08223d04  linux-firmware-20260519.tar.gz
+2b88e890294698aad3e33676011be302693b0f49aa3befbedf10daa259aec7b4095b9bcd91fa8f3b461554e8b96f1371513ab795f02c3f97acd205a71b684078  bluez-firmware-cdf61dc691a49ff01a124752bd04194907f0f9cd.tar.gz
+f021d09ad501914f9ca9a981ebe5a1f4f07ba75e8c6d402fe0b393a04865f36e605f093027f71b84af318433e66210cb18c9fce42f84d8c074d688d03cc24bd2  brcm-firmware-9794282eb9f4a2de1f23b41a738926740e975d83.tar.gz
+"

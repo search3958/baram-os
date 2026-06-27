@@ -1,0 +1,21 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=zsh-completions
+pkgver=0.35.0
+pkgrel=0
+pkgdesc="Additional completion definitions for Zsh (packaged as a plugin)"
+url="https://github.com/zsh-users/zsh-completions"
+arch="noarch"
+license="BSD-3-Clause AND Apache-2.0 AND MIT"
+depends="zsh"
+source="https://github.com/zsh-users/zsh-completions/archive/$pkgver/zsh-completions-$pkgver.tar.gz"
+options="!check" # no tests
+
+package() {
+	install -D $pkgname.plugin.zsh -t "$pkgdir"/usr/share/zsh/plugins/$pkgname/
+	install -D src/* -t "$pkgdir"/usr/share/zsh/plugins/$pkgname/src/
+}
+
+sha512sums="
+d6ab46db72b311731abca41e82fded954a43a1e13b81deb7b0acf7d85402ef575c69ead66af97dc2c148a1e681f39e48cfcab53993207f2b786bfe20228587e6  zsh-completions-0.35.0.tar.gz
+"

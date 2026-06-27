@@ -1,0 +1,106 @@
+# Contributor: Alex Denes <caskd@redxen.eu>
+# Maintainer: Alex Denes <caskd@redxen.eu>
+pkgname=gperftools
+pkgver=2.17
+pkgrel=0
+pkgdesc="Fast, multi-threaded malloc and nifty performance analysis tools"
+url="https://github.com/gperftools/gperftools"
+# everything else fails even more tests or isn't supported
+arch="x86_64 aarch64"
+license="BSD-3-Clause"
+makedepends="
+	autoconf
+	automake
+	libtool
+	libunwind-dev
+	linux-headers
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	tcmalloc
+	tcmalloc-minimal:tcmalloc_minimal
+	tcmalloc-debug:tcmalloc_debug
+	tcmalloc-minimal-debug:tcmalloc_minimal_debug
+	tcmalloc-profiler:tcmalloc_profiler
+	"
+checkdepends="
+	curl
+	"
+builddir="$srcdir/gperftools-gperftools-$pkgver"
+source="https://github.com/gperftools/gperftools/archive/refs/tags/gperftools-$pkgver.tar.gz
+	failed-tests.patch
+	"
+
+prepare() {
+	default_prepare
+
+	autoreconf -fvi
+}
+
+build() {
+	case "$CARCH" in
+	x86_64)
+		local frame_pointers="--enable-frame-pointers"
+		;;
+	esac
+
+	./configure \
+		--prefix=/usr \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--enable-libunwind \
+		$frame_pointers
+
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+pprof() {
+	pkgdesc="$pkgdesc (pprof tools)"
+	depends="perl"
+
+	amove usr/bin/pprof*
+}
+
+tcmalloc() {
+	pkgdesc="$pkgdesc (tcmalloc, full variant)"
+
+	amove usr/lib/libtcmalloc.so.*
+}
+
+tcmalloc_debug() {
+	pkgdesc="$pkgdesc (tcmalloc, debug variant)"
+
+	amove usr/lib/libtcmalloc_debug.so.*
+}
+
+tcmalloc_minimal() {
+	pkgdesc="$pkgdesc (tcmalloc, minimal variant)"
+
+	amove usr/lib/libtcmalloc_minimal.so.*
+}
+
+tcmalloc_minimal_debug() {
+	pkgdesc="$pkgdesc (tcmalloc, minimal+debug variant)"
+
+	amove usr/lib/libtcmalloc_minimal_debug.so.*
+}
+
+tcmalloc_profiler() {
+	pkgdesc="$pkgdesc (tcmalloc, profiling variant)"
+
+	amove usr/lib/libtcmalloc_and_profiler.so.*
+}
+
+sha512sums="
+0373053d1a67684a8a8c47818f3e4a5ad8f88993107868a1d90305a401c54e6ca94bde4dc5187bfce8cfc99e98e04ac72f3e2894806160a4dca006b6c86ba215  gperftools-2.17.tar.gz
+8a914689392bb6e608d116c18fa51ff0dd00e489ba2c4f12f1ee4bb2358c5a38f6a5b4ac779bbb9d32e243e40a6657d582393af2dfe75a62d6f61b282e093a5a  failed-tests.patch
+"

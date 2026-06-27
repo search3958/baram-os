@@ -1,0 +1,173 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=tcl9
+pkgver=9.0.3
+pkgrel=2
+_major=${pkgver%.*}
+_tkpkgname=${pkgname//tcl/tk}
+pkgdesc="The Tcl scripting language, version 9"
+url="https://www.tcl-lang.org/"
+arch="all"
+license="TCL"
+depends="tzdata"
+depends_doc="!tcl-doc"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	zip
+	"
+_depends_dev_tk="
+	$pkgname-dev=$pkgver-r$pkgrel
+	fontconfig-dev
+	libx11-dev
+	libxft-dev
+	"
+makedepends="
+	$depends_dev
+	$_depends_dev_tk
+	bsd-compat-headers
+	sqlite-dev
+	zlib-dev
+	"
+subpackages="
+	$_tkpkgname-demos:_tk_demos:noarch
+	$_tkpkgname-dev:_tk_dev
+	$_tkpkgname:_tk
+	$pkgname-dev
+	$pkgname-doc
+	$_tkpkgname-doc:_tk_doc
+	"
+source="https://downloads.sourceforge.net/sourceforge/tcl/tcl$pkgver-src.tar.gz
+	https://downloads.sourceforge.net/sourceforge/tcl/tk$pkgver-src.tar.gz
+	"
+builddir="$srcdir/tcl$pkgver/unix"
+options="net" # tests require networking
+
+prepare() {
+	cd "$srcdir"
+	ln -Tsvf tcl$pkgver tcl
+	ln -Tsvf tk$pkgver tk
+
+	builddir="$srcdir" default_prepare
+}
+
+build() {
+	case "$CARCH" in
+	arm*|x86)	_64bit="--disable-64bit" ;;
+	*)		_64bit="--enable-64bit"  ;;
+	esac
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-system-sqlite \
+		--disable-rpath \
+		--enable-zipfs \
+		$_64bit
+	make
+
+	cd "$srcdir"/tk$pkgver/unix
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-rpath \
+		--enable-zipfs \
+		$_64bit
+	make
+}
+
+check() {
+	# thread-4.5 and thread-5.2 are suppressed because they test UB
+	# lseq-1.27 is suppressed as it gets stuck in a loop on non-x86
+	make test TESTFLAGS="-verbose pbtels -skip 'thread-4.5 thread-5.2 lseq-1.27'"
+}
+
+package() {
+	local targets="install install-private-headers install-libraries"
+
+	make INSTALL_ROOT="$pkgdir" $targets
+	make INSTALL_ROOT="$pkgdir" $targets \
+		INSTALL_DOC_TARGETS="" \
+		-C "$srcdir"/tk$pkgver/unix
+
+	ln -sf tclsh$_major "$pkgdir"/usr/bin/tclsh9
+	ln -sf wish$_major "$pkgdir"/usr/bin/wish9
+
+	install -Dvm644 ../license.terms \
+		"$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+
+	# remove buildroot traces
+	find "$pkgdir" -name '*Config.sh' -print0 |
+		xargs -0 sed -i -e "s#${srcdir}#/usr/src#"
+
+	# prevent conflict with main/sqlite-tools
+	rm -v "$pkgdir"/usr/bin/sqlite3_analyzer
+}
+
+_tk_demos() {
+	pkgdesc="GUI toolkit for the Tcl scripting language, version 9 (demos)"
+	depends="$_tkpkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/tk$_major/demos
+}
+
+_tk_dev() {
+	pkgdesc="GUI toolkit for the Tcl scripting language, version 9 (development files)"
+	# libtcl9tk9.0.so is the only library made and it remains in the mainpackage
+	# so depending on the main package automatically is never done
+	# https://gitlab.alpinelinux.org/alpine/aports/issues/11232#note_68789
+	depends="$_depends_dev_tk $_tkpkgname=$pkgver-r$pkgrel !tk-dev"
+
+	amove \
+		usr/include/tk* \
+		usr/include/ttk* \
+		usr/lib/libtk*.a \
+		usr/lib/tkConfig.sh \
+		usr/lib/pkgconfig/tk.pc \
+		usr/lib/tk$_major/tkAppInit.c
+}
+
+_tk() {
+	pkgdesc="GUI toolkit for the Tcl scripting language, version 9"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove \
+		usr/bin/wish* \
+		usr/lib/lib*tk*.so* \
+		usr/lib/tk$_major/
+}
+
+dev() {
+	default_dev
+	depends="$depends !tcl-dev"
+
+	local file; find . -name '*Config.sh' | while read -r file; do
+		amove "$file"
+	done
+}
+
+_tk_doc() {
+	pkgdesc="GUI toolkit for the Tcl scripting language"
+
+	make INSTALL_ROOT="$subpkgdir" install-doc \
+		-C "$srcdir"/tk$pkgver/unix
+	install -Dvm644 "$srcdir"/tk$pkgver/license.terms \
+		"$subpkgdir"/usr/share/licenses/$_tkpkgname/LICENSE
+
+	default_doc
+	depends="$depends !tk-doc"
+	install_if="docs $_tkpkgname=$pkgver-r$pkgrel !tk-doc"
+}
+
+sha512sums="
+a899333fd96f139d92ad74ee42cc402428677ab2cab8ed3eb1e6e7cb35c7ca7d39aac89b7755b2fb1786512c857c79486d71f49a7821470f669fb9e544dba532  tcl9.0.3-src.tar.gz
+8055e6c200b80c57d11b08d38683ab2f5b28fe335bfe9218207616670035aa46d0334255f82d1155a5aea0fbc38839e036406f8d6af2aa42730df12c6448e16d  tk9.0.3-src.tar.gz
+"

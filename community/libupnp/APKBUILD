@@ -1,0 +1,46 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Contributor: Mike Crute <mike@crute.us>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=libupnp
+pkgver=1.18.5
+pkgrel=0
+pkgdesc="Portable Open Source UPnP Development Kit"
+url="https://pupnp.github.io/pupnp/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev $pkgname-nftrules"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pupnp/pupnp/archive/refs/tags/release-$pkgver.tar.gz
+$pkgname.nft
+disable-failing-test.patch"
+
+builddir="$srcdir"/pupnp-release-$pkgver
+
+# secfixes:
+#   1.12.1-r1:
+#     - CVE-2020-13848
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-Dblocking_tcp_connections=OFF \
+		-Dreuseaddr=ON \
+		-Dsamples=OFF
+	cmake --build build
+}
+
+check() {
+	cmake --build build --target test
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+	install -Dm644 "$srcdir"/$pkgname.nft "$pkgdir"/usr/share/nftables.avail/50_$pkgname.nft
+}
+
+sha512sums="
+a4ffb5977d9e103f8ce3ed8f9dec6a336424258c9541ae38790accaa35cd7bf92165cded285ce30f57c7aa5e03f05f0a639d846436b460800ee5e5fcb4d2d7c8  libupnp-1.18.5.tar.gz
+5779bbcc55e411ec4da58e4e7eaaa6918cdcea5b8818cd72ab93be2d1108f020861457dbd8079a60b0912f84d05eb7b42274cc9a0577f66e8322f3596b89b411  libupnp.nft
+7f6cc5b52993fb18e90046342bfaebf796376cf958314de158b3d75caa205a75d941566a7d4f50c90a0f4f7eda90a13a67fb7f3b253df55975844cd639a6c1f9  disable-failing-test.patch
+"

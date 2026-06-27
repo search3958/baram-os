@@ -1,7 +1,0 @@
-#TODO not compiled or tested
-# build instructions: https://manual.gromacs.org/current/install-guide/index.html
-# repository: https://gitlab.com/gromacs/gromacs/
-[source]
-tar = "https://ftp.gromacs.org/gromacs/gromacs-2026.1.tar.gz"
-[build]
-template = "cmake"

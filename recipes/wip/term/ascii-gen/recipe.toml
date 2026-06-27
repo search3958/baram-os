@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/thed24/ascii-gen"
-[build]
-template = "cargo"

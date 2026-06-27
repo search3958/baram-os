@@ -1,0 +1,50 @@
+# Contributor: Keith Maxwell <keith.maxwell@gmail.com>
+# Maintainer: Keith Maxwell <keith.maxwell@gmail.com>
+pkgname=py3-googleapis-common-protos
+pkgver=1.73.0
+pkgrel=0
+pkgdesc="Common protobufs used in Google APIs for Python"
+url="https://pypi.org/project/googleapis-common-protos/"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	python3
+	py3-protobuf
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-grpcio
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/g/googleapis_common_protos/googleapis_common_protos-$pkgver.tar.gz"
+builddir="$srcdir/googleapis_common_protos-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# tests/unit/test_google_api_error_reason.py::test_error_reason
+	# ModuleNotFoundError: No module named 'google.api'
+	# Requires py3-google-api-core (circular dependency)
+	.testenv/bin/python3 -m pytest \
+		--deselect "tests/unit/test_google_api_error_reason.py"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e1da403b6d5e7ba2dab0f6c6b8a1421bf25d7ad8ca0197662d7f336df9028341744f64cb61d83d414274fc2a66d15f9a45be28eb4cdccbed2e6dfb1145793679  googleapis_common_protos-1.73.0.tar.gz
+"

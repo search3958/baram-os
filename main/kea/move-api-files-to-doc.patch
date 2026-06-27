@@ -1,0 +1,14 @@
+From: Jakub Jirutka <jakub@jirutka.cz>
+Date: Sat, 15 Nov 2025 16:05:40 +0100
+Subject: [PATCH] Move api files to /usr/share/doc/kea
+
+diff --git a/src/share/api/meson.build b/src/share/api/meson.build
+index 2ef9f4b..6b1850c 100644
+--- a/src/share/api/meson.build
++++ b/src/share/api/meson.build
+@@ -5,4 +5,4 @@ list = run_command(
+     check: true,
+ )
+ api_files = list.stdout().strip().split('\n')
+-install_data(api_files, install_dir: DATADIR / 'kea/api')
++install_data(api_files, install_dir: DATADIR / 'doc/kea/api')

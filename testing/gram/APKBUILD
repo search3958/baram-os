@@ -1,0 +1,114 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+maintainer="lauren n. liberda <lauren@selfisekai.rocks>"
+pkgname=gram
+pkgver=2.1.1
+pkgrel=0
+pkgdesc="Code editor"
+url="https://gram.liten.app/"
+# TODO: enable more
+arch="aarch64 x86_64"
+license="GPL-3.0-only OR AGPL-3.0-only"
+makedepends="
+	cargo
+	cargo-auditable
+	cmake
+	gettext-envsubst
+	libssh2-dev
+	libx11-dev
+	libxkbcommon-dev
+	linux-headers
+	mold
+	openssl-dev
+	protoc
+	samurai
+	sqlite-dev
+	zlib-dev
+	zstd-dev
+	"
+checkdepends="cargo-nextest"
+subpackages="
+	$pkgname-ext
+	$pkgname-remote-server:remote_server
+	"
+source="
+	gram-$pkgver.tar.gz::https://codeberg.org/GramEditor/gram/archive/$pkgver.tar.gz
+	0001-Distro-toolchain-hacks.patch
+	"
+builddir="$srcdir/gram"
+
+export RUSTFLAGS="$RUSTFLAGS -Clink-arg=-fuse-ld=mold"
+export CARGO_PROFILE_RELEASE_LTO="thin"
+
+export LIBSSH2_SYS_USE_PKG_CONFIG=1
+export OPENSSL_NO_VENDOR=1
+export PKG_CONFIG_ALL_DYNAMIC=1
+export ZSTD_SYS_USE_PKG_CONFIG=1
+
+export GRAM_NO_BUNDLED_UNINSTALL="Use apk to uninstall"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release -p gram
+	cargo auditable build --frozen --release -p cli
+	cargo auditable build --frozen --release -p remote_server
+}
+
+check() {
+	mkdir -p .config
+	echo -e '[profile.default]\nslow-timeout = "5m"' > .config/nextest.toml
+
+	cargo nextest run --frozen --workspace -- --skip tests::test_basic_terminal
+}
+
+package() {
+	install -Dm755 target/release/gram "$pkgdir"/usr/libexec/gram-editor
+	install -Dm755 target/release/cli "$pkgdir"/usr/bin/gram
+	install -Dm755 target/release/remote_server "$pkgdir"/usr/bin/gram-remote-server
+
+	mkdir -p "$pkgdir"/usr/share/applications/
+	APP_NAME=Gram \
+	APP_CLI=/usr/bin/gram \
+	APP_ICON=gram \
+	DO_STARTUP_NOTIFY=false \
+		envsubst \
+		< crates/gram/resources/gram.desktop.in \
+		> "$pkgdir"/usr/share/applications/gram.desktop
+
+	install -Dm644 crates/gram/resources/app-icon.png "$pkgdir"/usr/share/icons/hicolor/512x512/apps/gram.png
+	install -Dm644 crates/gram/resources/app-icon@2x.png "$pkgdir"/usr/share/icons/hicolor/1024x1024/apps/gram.png
+}
+
+ext() {
+	pkgdesc="$pkgdesc (extension build dependencies)"
+	# git: cloning sources of extensions and tree-sitter grammars (defined in extensions)
+	# cargo, rust-wasm: building Rust source code of extensions to wasip2
+	# clang, wasi-compiler-rt, wasi-libc, wasm-component-ld:
+	#   building tree-sitter grammars defined by extensions to wasip2
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		cargo
+		clang
+		git
+		rust-wasm
+		wasi-compiler-rt
+		wasi-libc
+		wasm-component-ld
+		"
+
+	mkdir -p "$subpkgdir"
+}
+
+remote_server() {
+	pkgdesc="$pkgdesc (remote server)"
+	amove usr/bin/gram-remote-server
+}
+
+sha512sums="
+679f60ef62dacb7c15dd90895a7122301bba74ccde52bc9ba1a592a4124fca80394b58c5b05447251815e03eb8b517ad1a313bf1a1c770df15aec42b0b3ccb58  gram-2.1.1.tar.gz
+0a0248a25ad1032f8688b2682a8c6ed0efd74eee73712c5fdcf3db9354417bb29635cb59f2f83604f72af2b89c4d7ca867645dcef68dfb0582ef7c62338c9e6d  0001-Distro-toolchain-hacks.patch
+"

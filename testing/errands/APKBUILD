@@ -1,0 +1,42 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=errands
+pkgver=46.2.10
+pkgrel=0
+pkgdesc="Todo application with NextCloud and CalDAV Sync"
+url="https://github.com/mrvladus/Errands"
+arch="all"
+license="MIT"
+depends="py3-caldav"
+makedepends="
+	cmake
+	desktop-file-utils
+	gnome-online-accounts-dev
+	gtksourceview5-dev
+	libadwaita-dev
+	libportal-dev
+	libsecret-dev
+	meson
+	py3-gobject3-dev
+	"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mrvladus/Errands/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/Errands-$pkgver/"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+eebab8497ca45d9d7a016ec3d3af492907795da09142022d4fa2fc6ea5ac9e4a3eef8352b43a9b6281da2303021d25899890d284288f5ef4a7367db1773033b5  errands-46.2.10.tar.gz
+"

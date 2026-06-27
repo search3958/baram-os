@@ -1,0 +1,109 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=idris2
+pkgver=0.8.0
+# XXX: For chez-scheme rebuilds, re-bootstrap from -stage0 and
+# afterwards self-host by depending on idris2-bootstrap again.
+pkgrel=2
+pkgdesc="Purely functional programming language with first class types"
+url="https://www.idris-lang.org"
+arch="all"
+license="BSD-3-Clause"
+depends="chez-scheme gmp-dev"
+makedepends="idris2-bootstrap>=$pkgver bash py3-sphinx py3-sphinx_rtd_theme"
+subpackages="$pkgname-doc $pkgname-api"
+source="https://github.com/idris-lang/Idris2/archive/v$pkgver/idris2-$pkgver.tar.gz
+	fix-expected-cat-err.patch"
+builddir="$srcdir/Idris2-$pkgver"
+
+# Perform the idris2 self-hosting step by re-compiling Idris2
+# using the previous version of Idris2 or idris2-stage0. This
+# allows us to (a) compile the Idris2 API and (b) backport
+# patches from upstream.
+#
+# See also https://lists.alpinelinux.org/~alpine/devel/%3C33KG0XO61I4IL.2Z7RTAZ5J3SY6%408pit.net%3E
+provides="idris2-bootstrap=$pkgver-r$pkgrel"
+provider_priority=100 # highest
+
+# Only run tests on x86_64, upstream doesn't seem to support
+# and test the test suite on any other architecture.
+#
+# See: https://github.com/idris-lang/Idris2/issues/1617
+case "$CARCH" in
+x86_64) ;;
+*) options="!check" ;;
+esac
+
+# TODO: Install idris libs to /usr/lib/idris-$pkgver instead of /usr/idris-$pkgver
+# TODO: Self-hosting step (maybe split into idris2 and idris2-bootstrap?)
+# TODO: https://github.com/idris-lang/Idris2/pull/1123
+
+build() {
+	make -j1 PREFIX=/usr SCHEME=chez
+	make -C docs html
+}
+
+check() {
+	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS LDLIBS
+	# XXX: The repl005 test case is known to fail in CI environments.
+	# See: https://github.com/idris-lang/Idris2/pull/2728
+	#
+	# chez/channels009: Timing dependent test case.
+	make except="idris2/repl005 chez/channels009" test
+}
+
+package() {
+	export IDRIS2_BOOT=./build/exec/idris2
+	make -j1 DESTDIR="$pkgdir" PREFIX="/usr" \
+		install install-api install-libdocs
+
+	# Provide symlinks for shared and static libraries.
+	# See: https://gitlab.alpinelinux.org/alpine/aports/-/issues/15662
+	mkdir -p "$pkgdir"/usr/lib
+	for file in "$pkgdir/usr/idris2-$pkgver/lib/"*; do
+		ln -s /usr/idris2-$pkgver/lib/${file##*/} \
+			"$pkgdir"/usr/lib/${file##*/}
+	done
+
+	# Move package documentation to more sensible location.
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname/
+	mv "$pkgdir"/usr/idris2-$pkgver/docs/ \
+		"$pkgdir"/usr/share/doc/$pkgname/pkgs
+
+	# Install additional documentation files
+	install -m644 CHANGELOG.md CONTRIBUTING.md \
+		CONTRIBUTORS README.md "$pkgdir"/usr/share/doc/$pkgname/
+	cp -r docs/build/html "$pkgdir"/usr/share/doc/$pkgname/
+
+	# We don't want to ship directories in $PATH. The /usr/bin/idris2
+	# file installed by default is just a shell script which sets up
+	# LD_LIBRARY_PATH and executes idris2_app/idris2.so. We don't
+	# need to modify LD_LIBRARY_PATH hence we can skip using the
+	# script.
+	#
+	# See also: The Nix package for idris2 in nix/package.nix.
+	mv "$pkgdir"/usr/bin/idris2_app/idris2.so "$pkgdir"/usr/bin/idris2
+	rm -r "$pkgdir"/usr/bin/idris2_app
+
+	# Make sure idris2 --install works by default.
+	# See https://github.com/idris-lang/Idris2/issues/737
+	mkdir -p "$pkgdir"/etc/profile.d/
+	cat > "$pkgdir"/etc/profile.d/idris2.sh <<-EOF
+		export IDRIS2_PREFIX="$HOME/.idris2"
+		export IDRIS2_PACKAGE_PATH="/usr/idris2-$pkgver"
+		export IDRIS2_LIBS="/usr/idris2-$pkgver/lib"
+		export IDRIS2_DATA="/usr/idris2-$pkgver/support"
+	EOF
+}
+
+api() {
+	depends=""
+	pkgdesc="Idris API for developing support tools (e.g. external code generator)"
+
+	amove usr/idris2-$pkgver/idris2-$pkgver
+}
+
+sha512sums="
+006dd9f4f36ae0d54d63670379de9978355d4493c9fb4134c96caf75b0feacf81a78daff889aa1d91dbbcc62141f391caee1911658e638dc295e7f8015215557  idris2-0.8.0.tar.gz
+6438bf25c0e9dede104a3b73dfe3a1bd4f1615d6c37589058b9192f5813ab6e41833319a1a2f9aaa6e2559d198697f3d4a27fc6908fe7ae193af03085af268b5  fix-expected-cat-err.patch
+"

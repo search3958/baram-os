@@ -1,0 +1,85 @@
+# Contributor: Taner Tas <taner76@gmail.com>
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=emulationstation
+pkgver=2.11.2
+_gbz35="05895874b2920ab6ffeeb574d053f3d9e976c000"
+pkgrel=1
+pkgdesc="EmulationStation is a cross-platform graphical front-end for emulators with controller navigation."
+url="https://github.com/RetroPie/EmulationStation"
+arch="all"
+license="MIT"
+makedepends="
+	alsa-lib-dev
+	boost-dev
+	cmake
+	curl-dev
+	freeimage-dev
+	freetype-dev
+	mesa-dev
+	pugixml-dev
+	rapidjson-dev
+	samurai
+	sdl2-dev
+	vlc-dev
+	"
+depends="font-dejavu font-droid-nonlatin"
+subpackages="$pkgname-theme-gbz35:theme:noarch"
+options="!check" # No test suite
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/RetroPie/EmulationStation/archive/v$pkgver.tar.gz
+	$pkgname-theme-gbz35-$_gbz35.tar.gz::https://github.com/rxbrad/es-theme-gbz35/archive/$_gbz35.tar.gz
+	default-paths.patch
+	pugixml.patch
+	emulationstation.desktop
+	emulationstation.png
+	10-stat64.patch
+	20-fontpaths.patch
+	30-resource.patch
+	"
+builddir="$srcdir"/EmulationStation-$pkgver
+
+build() {
+	CFLAGS="$CFLAGS -O2 -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -O2 -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	depends="$pkgname-theme-gbz35=$pkgver-r$pkgrel"
+
+	DESTDIR="$pkgdir" cmake --install build
+	install -Dm644 "$srcdir"/emulationstation.png -t "$pkgdir"/usr/share/icons/hicolor/256x256/apps/
+	install -Dm644 "$srcdir"/emulationstation.desktop -t "$pkgdir"/usr/share/applications/
+	mkdir -p "$pkgdir"/usr/share/emulationstation/
+	cp -r "$builddir"/resources "$pkgdir"/usr/share/emulationstation/
+
+	mkdir -p "$pkgdir"/usr/share/emulationstation/themes
+	cp -r "$srcdir"/es-theme-gbz35-$_gbz35 \
+		"$pkgdir"/usr/share/emulationstation/themes/gbz35
+
+	mkdir -p "$pkgdir"/usr/share/emulationstation/gamelists
+}
+
+theme() {
+	pkgdesc="gbz35 theme for emulationstation"
+	license="CC-BY-NC-SA-3.0"
+	url="https://github.com/rxbrad/es-theme-gbz35"
+
+	amove usr/share/emulationstation/themes/gbz35
+}
+
+sha512sums="
+49abfdfb90ddd1abac0cca2008c9efaf657dbf973e3caa07d547163ed29b7a74c8cfc6e82e1bbad6da4c8c122c748783e003d70cc3a626edec9191ee055d4e19  emulationstation-2.11.2.tar.gz
+23e764e41a8ca359657508f5103c841e25d6403ddaafa9ca2f55379e42a17541d85cacac9d18fa9316d17450cd6bd6b8ae345f07165971b2a02e03b8e33bf35c  emulationstation-theme-gbz35-05895874b2920ab6ffeeb574d053f3d9e976c000.tar.gz
+f97954e411078507b312b9859ff300bf2018945dedc2be593103a0aca1b0bd233a173ab6f74c983735bf0bbc0600b49ba6987b60c03ed697c1328f906c154799  default-paths.patch
+21755e8cb8a035cbd62318be3e45db0abc3dfce76ad82348a36e496b893e6583b1209a48dd9a001bbdd55c86479ef49bcccce67858a50273170cb9f5de62f67a  pugixml.patch
+814a196d234266809f2c3f64c7179e3138e017eb67d1c54dcc2e8c504c1439cb73f17352575cd582ce044b08405f3a369d049127c9f4c5a1336072435dfa54f0  emulationstation.desktop
+70eb80598cd51edb1d95dd0a1784792e2e526b23efd46f1af3246e8ca321422cdd3309d11c23506cce68fca1f4bafec97d8a0436a53047bcb78b63eb3be23b7e  emulationstation.png
+b1119b9dca7511f61075a20b6411963da7b9fdef38911244cc0ba8355e30461ec69a096e6655ee814d1a86e674199d914cd5acbdfdd8f3a1760f82762b965152  10-stat64.patch
+8fbc657226f35df7f59bc1a7571e93d20c5f1004a7c9a32d6c76c32dc29c1497e24032b35b09942fcee03f25b4517ed1a71e6d681782f19a40ab6dbd324ed6c5  20-fontpaths.patch
+69224b7c78d164dc9d5cfd4d63ca41eca20a9c634b3f43e2f6d5a576801bf0d4dd2d83f65ef90f6e5dfba65279c6aa1ec17f46d12f0d40a194b1845d621fd9af  30-resource.patch
+"

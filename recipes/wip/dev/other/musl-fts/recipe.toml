@@ -1,8 +1,0 @@
-[source]
-git = "https://github.com/void-linux/musl-fts"
-script = """
-./bootstrap.sh
-"""
-
-[build]
-template = "configure"

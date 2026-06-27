@@ -1,0 +1,24 @@
+--- zoneminder-1.36.7/src/zm_comms.h
++++ zoneminder-1.36.7.musl/src/zm_comms.h
+@@ -25,6 +25,7 @@
+ #include <cerrno>
+ #include <netdb.h>
+ #include <set>
++#include <string.h>
+ #include <sys/uio.h>
+ #include <sys/un.h>
+ #include <unistd.h>
+--- zoneminder-1.36.7/src/zm_stream.cpp
++++ zoneminder-1.36.7.musl/src/zm_stream.cpp
+@@ -22,9 +22,11 @@
+ #include "zm_box.h"
+ #include "zm_monitor.h"
+ #include <cmath>
++#include <fcntl.h>
+ #include <sys/file.h>
+ #include <sys/socket.h>
+ #include <sys/stat.h>
++#include <sys/types.h>
+ #include <unistd.h>
+ 
+ StreamBase::~StreamBase() {

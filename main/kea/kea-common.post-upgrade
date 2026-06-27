@@ -1,0 +1,24 @@
+#!/bin/sh
+
+ver_old="$2"
+
+if [ "$(apk version -t "$ver_old" '2.0.0-r0')" = '<' ]; then
+	cat >&2 <<-EOF
+	*
+	* Kea BOOTP hook has been moved to a subpackage. If you use it, run
+	*   apk add kea-hook-bootp
+	*
+	EOF
+fi
+
+if [ "$(apk version -t "$ver_old" '3.0.0-r0')" = '<' ]; then
+	cat >&2 <<-EOF
+	*
+	* PostgreSQL and MySQL support has been moved to hooks. If you use database
+	* storage for Lease or Host Backend, you must install kea-hook-pgsql or
+	* kea-hook-mysql, respectively.
+	*
+	EOF
+fi
+
+exit 0

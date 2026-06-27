@@ -1,0 +1,37 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kde-dev-scripts
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by extra-cmake-modules
+arch="all !armhf"
+url="https://kde.org/applications/development/"
+pkgdesc="Scripts and setting files useful during development of KDE software"
+license="GPL-2.0-or-later AND GFDL-1.2-only"
+makedepends="
+	extra-cmake-modules
+	kdoctools-dev
+	samurai
+	"
+subpackages="$pkgname-doc"
+_repo_url="https://invent.kde.org/sdk/kde-dev-scripts.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kde-dev-scripts-$pkgver.tar.xz"
+# No code to test
+options="!check"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+e4bed36d1e16a7362a6af2043a0666bc32e7c72ebb5d5b17e9c64bb1933244db71e2159c85ec140f59f3373d80f72aa40298dba92d117e4ac864f6d247eeec49  kde-dev-scripts-26.04.2.tar.xz
+"

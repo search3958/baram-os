@@ -1,0 +1,21 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=font-arimo
+pkgver=0_git20230222
+pkgrel=0
+_gitrev=302dc85954f887248b4ad442b0966e4ead1c1cf9
+pkgdesc="Innovative, refreshing sans serif design that is metrically compatible with Arial"
+url="https://fonts.google.com/specimen/Arimo"
+arch="noarch"
+license="OFL-1.1"
+source="$pkgname-$pkgver.tar.gz::https://github.com/googlefonts/Arimo/archive/$_gitrev.tar.gz"
+builddir="$srcdir/Arimo-$_gitrev"
+options="!check" # is font
+
+package() {
+	install -Dm644 -t "$pkgdir"/usr/share/fonts/arimo \
+		fonts/ttf/*.ttf
+}
+
+sha512sums="
+f492d5dfced60012184c06b9ba96c358863f357c7647dd57311c5b5d8d20cd060ed7f668e1e10b79445a29656603d817ea610e157433d7d868a796aa6580235e  font-arimo-0_git20230222.tar.gz
+"

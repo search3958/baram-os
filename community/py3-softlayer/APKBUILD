@@ -1,0 +1,47 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=py3-softlayer
+pkgver=6.2.8
+pkgrel=0
+pkgdesc="library for SoftLayer's API"
+url="https://github.com/softlayer/softlayer-python"
+arch="noarch"
+license="MIT"
+depends="py3-click py3-prompt_toolkit py3-pygments py3-requests py3-rich py3-urllib3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest py3-pytest-mock py3-testtools py3-softlayer-zeep python3-tkinter"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/softlayer/softlayer-python/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/softlayer-python-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# disable tests that fails with newer py3-click
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/CLI/modules/hardware/hardware_list_tests.py::HardwareListCLITests::test_list_hw_search_noargs \
+		--deselect tests/CLI/modules/hardware/hardware_list_tests.py::HardwareListCLITests::test_list_hw_search_noargs_domain \
+		--deselect tests/CLI/modules/vs/vs_create_tests.py::VirtCreateTests::test_create_like \
+		--deselect tests/CLI/modules/vs/vs_create_tests.py::VirtCreateTests::test_create_like_flavor \
+		--deselect tests/CLI/modules/vs/vs_create_tests.py::VirtCreateTests::test_create_like_image \
+		--deselect tests/CLI/modules/vs/vs_create_tests.py::VirtCreateTests::test_create_like_tags \
+		--deselect tests/CLI/modules/vs/vs_create_tests.py::VirtCreateTests::test_create_like_transient \
+		--deselect tests/CLI/modules/vs/vs_tests.py::VirtTests::test_list_vs_search_noargs \
+		--deselect tests/CLI/modules/vs/vs_tests.py::VirtTests::test_list_vs_search_noargs_domain
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	rm -rf "$pkgdir"/usr/lib/python3*/site-packages/tests
+}
+
+sha512sums="
+60e0d1c95563fcdd871871b1edfb9905967fc555935b36f56d02d6d93ee2ca26f90717cf436be718ccba1f9ab95871ef42b841f4aeaa6588b816cb6f67f5dccf  py3-softlayer-6.2.8.tar.gz
+"

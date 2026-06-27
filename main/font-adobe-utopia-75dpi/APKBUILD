@@ -1,0 +1,37 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=font-adobe-utopia-75dpi
+pkgver=1.0.5
+pkgrel=2
+pkgdesc="X.org adobe 75dpi font"
+url="https://xorg.freedesktop.org/"
+arch="noarch"
+license="Adobe-Utopia"
+options="!check"
+depends="encodings font-alias mkfontscale fontconfig"
+makedepends="font-util-dev bdftopcf"
+source="https://www.x.org/releases/individual/font/font-adobe-utopia-75dpi-$pkgver.tar.xz"
+subpackages="$pkgname-doc"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--with-mapfiles=/usr/share/fonts/util \
+		--with-fontdir=/usr/share/fonts/75dpi
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" \
+		MKFONTDIR=: \
+		MKFONTSCALE=: \
+		FCCACHE=: \
+		install
+
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}
+
+sha512sums="
+9608698288fca47bf61cff911b8f081593807eed9f138ea22f05a7b6c26c481ec5144d79665cf509ba889df35ef5406e0de71710362bcf6de6b602c12158e22a  font-adobe-utopia-75dpi-1.0.5.tar.xz
+"

@@ -1,0 +1,47 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-python-crontab
+_pyname="python-crontab"
+pkgver=3.3.0
+pkgrel=2
+arch="noarch"
+pkgdesc="Crontab module for reading and writing crontab files"
+url="https://pypi.python.org/project/python-crontab"
+license="BSD-3-Clause"
+depends="
+	py3-dateutil
+	"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-django
+	py3-pytest-timeout
+	py3-pytest-cov
+	"
+source="https://gitlab.com/doctormo/python-crontab/-/archive/v$pkgver/python-crontab-v$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-v$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer --destdir="$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+cca7bded9b379ab568ea4e345b3a15a9688bfe8d0c10a4cf332e5b8459177f137cceee8fb316277cea684823a8bbbeba70253926ab1d5b7ef183989e766cd5a3  python-crontab-v3.3.0.tar.gz
+"

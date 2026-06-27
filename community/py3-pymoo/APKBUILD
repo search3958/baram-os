@@ -1,0 +1,65 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-pymoo
+_pkgorig=pymoo
+pkgver=0.6.1.6
+pkgrel=1
+pkgdesc="Multi-objective Optimization in Python"
+url="https://pymoo.org/"
+arch="all"
+license="Apache-2.0"
+depends="
+	python3
+	py3-alive-progress
+	py3-autograd
+	py3-cma
+	py3-dill
+	py3-matplotlib
+	py3-numpy
+	py3-scipy
+	"
+makedepends="cython python3-dev  py3-setuptools py3-wheel py3-gpep517"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/anyoptimization/pymoo/archive/$pkgver/$_pkgorig-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgorig-$pkgver"
+options="!check" # some additional tests fail in current major version | skip for now
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# some test dependencies are obsolete, while some deps are missing
+	# ignore several files for now
+	python3 -m pytest --ignore=tests/algorithms/test_nsga2.py \
+		 --ignore=tests/algorithms/test_rvea.py \
+		 --ignore=tests/test_docs.py \
+		 --ignore=tests/test_examples.py \
+		 --ignore=tests/test_indicators.py \
+		 --ignore=tests/test_util.py \
+		 --ignore=tests/algorithms/test_agemoea2.py \
+		 --ignore=tests/algorithms/test_ctaea.py \
+		 --ignore=tests/algorithms/test_no_error.py \
+		 --ignore=tests/misc/test_kktpm.py \
+		 --ignore=tests/problems/test_autodiff.py \
+		 --ignore=tests/problems/test_correctness.py \
+		 --ignore=tests/problems/test_g.py \
+		 --ignore=tests/problems/test_problems_dascmop.py \
+		 --ignore=tests/problems/test_problems_dcdtlz.py \
+		 --ignore=tests/problems/test_problems_df.py \
+		 --ignore=tests/problems/test_problems_mw.py \
+		 --ignore=tests/problems/test_problems_wfg.py \
+		 --ignore=tests/misc/test_non_dominated_sorting.py \
+		 --ignore=tests/algorithms/test_single_objective.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+16b38540df2ee514c62956ba915f2fd977768792da9e89f21625e2ee49052c2b64651892088508486f684fae264f8bb1c608972f3189e55bf336d12d81da5136  pymoo-0.6.1.6.tar.gz
+"

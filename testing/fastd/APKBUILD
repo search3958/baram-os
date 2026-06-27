@@ -1,0 +1,49 @@
+# Contributor: Johannes Matheis <jomat+alpinebuild@jmt.gr>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=fastd
+pkgver=23
+pkgrel=0
+pkgdesc="Fast and Secure Tunneling Daemon"
+url="https://github.com/NeoRaider/fastd/"
+arch="all"
+license="BSD-2-Clause AND BSD-3-Clause"
+makedepends="meson libcap-dev json-c-dev libsodium-dev openssl-dev libuecc-dev
+	bison libmnl-dev cmocka-dev"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://github.com/NeoRaider/fastd/releases/download/v$pkgver/fastd-$pkgver.tar.xz
+	fastd.conf
+	fastd.initd"
+
+# secfixes:
+#   21-r0:
+#     - CVE-2020-27638
+
+build() {
+	abuild-meson \
+		-Dsystemd=disabled \
+		-Dbuild_tests="$(options_has !check && echo false || echo true)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm0644 doc/fastd.1 -t "$pkgdir"/usr/share/man/man1
+
+	install -dm700 "$pkgdir"/etc/fastd/peers/
+	install -Dm600 "$srcdir"/fastd.conf \
+		"$pkgdir"/etc/fastd/fastd.conf
+	install -Dm755 "$srcdir"/fastd.initd \
+		"$pkgdir"/etc/init.d/fastd
+}
+
+sha512sums="
+41aae32e1fcc2e2ba6c45d9a901eaefcacdde0d03a8b5844023e6ffbef69345004b622f975eea95fc1d6864ad20f67739054e33a75fc27f4bf70d2f4147854d5  fastd-23.tar.xz
+3e6c3a77f93a1e670e8f018833c499e8ec57b8240a6f472da03254ad9a7e6fed2c3459fa47b06c97e42afcfe6f0adfaaec39bce6b6a286a1ce7ef3585853b118  fastd.conf
+e64b0c548cf063624ac0b632bac672c5f204586aa03aa9b06afc46f48645f1458e2400e98ee993c74aa5da3a9e86c4151e2e29c634ee59941cd81a216cea308a  fastd.initd
+"

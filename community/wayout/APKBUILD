@@ -1,0 +1,26 @@
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Maarten van Gompel <proycon@anaproy.nl>
+pkgname=wayout
+pkgver=0.1.5
+pkgrel=0
+pkgdesc="Outputs text to a wayland desktop (e.g. OSD or desktop widget)"
+url="https://git.sr.ht/~proycon/wayout"
+arch="all"
+license="GPL-3.0-or-later"
+options="!check" # has no tests
+makedepends="meson ninja wayland-protocols wayland-dev pango-dev cairo-dev scdoc"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~proycon/wayout/archive/$pkgver.tar.gz"
+
+build() {
+	abuild-meson . build
+	ninja -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" ninja -C build install
+}
+
+sha512sums="
+40f54cb5d125608fd1c5df7436093a68db1abde369846b91db5ed0e2d256aa85bf19c043a74ba293cb4572299b31f57b38bff2a0f19e94be95cf4a08a22cebbf  wayout-0.1.5.tar.gz
+"

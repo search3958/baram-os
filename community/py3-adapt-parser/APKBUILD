@@ -1,0 +1,42 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-adapt-parser
+pkgver=1.0.0
+pkgrel=7
+pkgdesc="A text-to-intent parsing framework"
+url="https://github.com/MycroftAI/adapt"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-pyee
+	py3-six
+	python3
+	"
+makedepends="py3-gpep517 py3-setuptools"
+checkdepends="
+	bash
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+#source="https://pypi.python.org/packages/source/a/adapt-parser/adapt-parser-$pkgver.tar.gz
+source="$pkgname-$pkgver.tar.gz::https://github.com/MycroftAI/adapt/archive/refs/tags/release/v$pkgver.tar.gz"
+builddir="$srcdir/adapt-release-v$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	./run_tests.sh test
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+4defe0fb33e0b817e0cd7ffa326bfd69e32c9187a4f752dd49d45003000cd897e19f6daaab2f8585274bb9849243b9c9c5e73de00b255004bd4478f1df335631  py3-adapt-parser-1.0.0.tar.gz
+"

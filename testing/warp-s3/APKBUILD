@@ -1,0 +1,34 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=warp-s3
+pkgver=1.4.0
+pkgrel=4
+pkgdesc="Benchmarking tool for S3"
+url="https://github.com/minio/warp"
+license="AGPL-3.0"
+arch="all"
+makedepends="go"
+options="net"
+source="$pkgname-$pkgver-1.tar.gz::https://github.com/minio/warp/archive/v$pkgver/warp-s3-$pkgver.tar.gz"
+builddir="$srcdir/warp-$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build \
+		-ldflags "-X github.com/minio/warp/pkg.Version=$pkgver" \
+		-o warp-s3
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 $pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+3acfec76e9e766a83bc096885da366c19dfda5de8603a35ca4211f300fcb5ce5e2a662a6cbd06bc691d48929631ed2ea81ab460f2d8a25a9bdd713913a3e9826  warp-s3-1.4.0-1.tar.gz
+"

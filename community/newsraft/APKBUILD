@@ -1,0 +1,35 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=newsraft
+pkgver=0.36
+pkgrel=0
+pkgdesc="Feed reader with text-based user interface"
+url="https://codeberg.org/newsraft/newsraft"
+arch="all"
+license="ISC"
+makedepends_host="
+	curl-dev
+	expat-dev
+	gumbo-parser-dev
+	sqlite-dev
+	"
+subpackages="$pkgname-doc"
+source="https://codeberg.org/newsraft/newsraft/archive/newsraft-$pkgver.tar.gz"
+builddir="$srcdir/newsraft"
+
+build() {
+	make -e all
+}
+
+check() {
+	./newsraft -v
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install install-desktop
+}
+
+sha512sums="
+00f10ba2bc9896eeeda62dbc31991fe5aef00fe41592a41550f15443c81c7a0a73d9abc1c2331111cea84d7afb99a40a556fdfed664854253c0bb08405997c0d  newsraft-0.36.tar.gz
+"

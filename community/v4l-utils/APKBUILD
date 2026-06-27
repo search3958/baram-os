@@ -1,0 +1,120 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=v4l-utils
+pkgver=1.32.0
+pkgrel=1
+pkgdesc="Userspace tools and conversion library for Video 4 Linux"
+url="https://linuxtv.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	alsa-lib-dev
+	argp-standalone
+	bash
+	eudev-dev
+	gettext-dev
+	json-c-dev
+	libintl
+	libjpeg-turbo-dev
+	linux-headers
+	meson
+	perl
+	qt6-qt5compat-dev
+	qt6-qtbase-dev
+	qt6-qttools-dev
+	xmlrpc-c-dev
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-dvbv5
+	libdvbv5
+	ir_keytable
+	$pkgname-libs
+	qv4l2
+	"
+source="https://linuxtv.org/downloads/v4l-utils/v4l-utils-$pkgver.tar.xz
+	disable-nls.patch
+	ioctl-types.patch
+	omit-unavailable-functions.patch"
+
+case "$CARCH" in
+arm*|aarch64)
+	# no desktop opengl on arm, only es2
+	;;
+*)
+	subpackages="$subpackages qvidcap"
+	;;
+esac
+
+build() {
+	meson setup \
+		--buildtype=plain \
+		--prefix="/usr" \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		-Ddefault_library="both" \
+	"build"
+
+	meson compile -C "build"
+}
+
+check() {
+	meson test -C "build"
+}
+
+package() {
+	DESTDIR="$pkgdir" ninja -C build/ install
+	install -Dm644 "$builddir"/utils/qv4l2/qv4l2.desktop \
+		"$pkgdir"/usr/share/applications/qv4l2.desktop
+	install -Dm644 "$builddir"/utils/qv4l2/qv4l2.svg \
+		"$pkgdir"/usr/share/icons/hicolor/scalable/apps/qv4l2.svg
+}
+
+qv4l2() {
+	pkgdesc="QT v4l2 test control and streaming test application"
+
+	amove usr/bin/qv4l2 \
+		usr/share
+}
+
+qvidcap() {
+	pkgdesc="v4l2 video capture viewer"
+
+	amove usr/bin/qvidcap
+}
+
+dvbv5() {
+	pkgdesc="Backwards compatible DVBv5 command line utilities"
+
+	amove usr/bin/dvb*
+}
+
+libdvbv5() {
+	pkgdesc="libdvbv5 library"
+
+	amove usr/lib/libdvbv5.*
+}
+
+libs() {
+	pkgdesc="Collection of video4linux support libraries"
+
+	amove usr/lib
+}
+
+ir_keytable() {
+	pkgdesc="Alter keymaps of Remote Controller devices"
+
+	amove usr/lib/udev \
+		usr/bin/ir-keytable \
+		etc/rc_maps.cfg
+}
+
+sha512sums="
+5bf24c28ec66a7ac1a0c9ee976521d825d4c2f8abbbeb59c7ac55e89db10dde6ebb643d238d217d636d79fda363244558fee1effe8c5e8c573c1a3e957fe391f  v4l-utils-1.32.0.tar.xz
+749599bc1f1c07c65ec2dcfc2261622c5b61106166bcdd93a5face11aacc138166e2c504a30c9bc4f93e245c19d5c39c8fb4f78f5182db3b0b56f0c95c2261fd  disable-nls.patch
+739230a8269e39dae27435990dc3a28c285682a644c3461a749c7278041fe4145c61524fad32fd43fdd3b69dcb6a339ef72ad1b58212dfa798c4f209cb6cf217  ioctl-types.patch
+887a2a0f761c2a18ea4e22f4fb5ea43943fe4884ace08af3c18a84631362a22ed7dcbd7ef1b762f721b48e690eb14d19eabd2174ebd3ae6217dffaf6b760b682  omit-unavailable-functions.patch
+"

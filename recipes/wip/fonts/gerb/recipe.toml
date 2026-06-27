@@ -1,8 +1,0 @@
-#TODO make GTK3 work
-[source]
-git = "https://github.com/epilys/gerb"
-[build]
-template = "cargo"
-dependencies = [
-    "gtk3",
-]

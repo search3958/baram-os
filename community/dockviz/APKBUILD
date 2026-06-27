@@ -1,0 +1,29 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: TBK <alpine@jjtc.eu>
+pkgname=dockviz
+pkgver=0.6.4
+pkgrel=32
+pkgdesc="Visualizing Docker Data"
+url="https://github.com/justone/dockviz"
+arch="all"
+license="Apache-2.0"
+options="net !check" # No test suite
+depends="docker"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/justone/dockviz/archive/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v
+}
+
+package() {
+	install -Dm755 "$pkgname" "$pkgdir"/usr/bin/"$pkgname"
+}
+
+sha512sums="
+5750769419482fe56090d183a06b0703ec3310a4b5693fc6adeb0a945f7aec9c4b0affb02f6fc1d7fca04a42ba8e7c063f62a0e2b2053095ea78ae469480d5d0  dockviz-0.6.4.tar.gz
+"

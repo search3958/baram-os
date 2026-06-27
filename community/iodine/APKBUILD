@@ -1,0 +1,26 @@
+# Contributor: Guy Taylor <thebigguy.co.uk@gmail.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=iodine
+pkgver=0.8.0
+pkgrel=2
+pkgdesc="IP over DNS tunnel"
+url="https://code.kryo.se/iodine/"
+arch="all"
+license="ISC"
+makedepends="linux-headers zlib-dev"
+subpackages="$pkgname-doc"
+source="https://code.kryo.se/iodine/iodine-$pkgver.tar.gz"
+options="!check" # FIXME: run tests if possible!
+
+build() {
+	CFLAGS="$CFLAGS -D__GLIBC__=1" make
+}
+
+package() {
+	make DESTDIR="$pkgdir" prefix="/usr" install
+}
+
+sha512sums="
+26d0d4fd1a8ed1854fc3f2478e91e9702732a11dda30aae21e3098630e110d8316e08df581bf0083d91ca7ea3433856827d5b1031e02f9fd25217778361ec6e5  iodine-0.8.0.tar.gz
+"

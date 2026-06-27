@@ -1,0 +1,47 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kuserfeedback
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Framework for collecting user feedback for applications via telemetry and surveys"
+url="https://kde.org/products/frameworks/"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="MIT"
+depends_dev="
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/libraries/kuserfeedback.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kuserfeedback-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	# openglinfosourcetest requires OpenGL
+	wlheadless-run -- ctest --test-dir build -E "openglinfosourcetest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+21d00f3b0e9eca645c4e9c95a2f104b8b3287fb041d7b4d05df4001502649877d563e7c665ec43aedc36bfe326bfe36f28dce7926766e6d5bc46adb74613de3e  kuserfeedback-6.27.0.tar.xz
+"

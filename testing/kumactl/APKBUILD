@@ -1,0 +1,123 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=kumactl
+pkgver=2.10.1
+# Keep this in sync with the version of envoyproxy package
+_envoyver=1.32.5
+pkgrel=11
+pkgdesc="CLI for the multi-zone service mesh Kuma"
+url="https://kuma.io/"
+# The only build targets for eBPF module
+# https://github.com/kumahq/kuma/tree/master/pkg/transparentproxy/ebpf/programs
+arch="x86_64 aarch64"
+license="Apache-2.0"
+makedepends="go"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	kuma-cp:_controlplane
+	kuma-cp-openrc:_controlplane_openrc
+	kuma-dp:_dataplane
+	kuma-dp-openrc:_dataplane_openrc
+	"
+install="kuma-cp.pre-install kuma-dp.pre-install"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/kumahq/kuma/archive/refs/tags/$pkgver.tar.gz
+	kuma-cp.initd
+	kuma-cp.confd
+	kuma-dp.initd
+	kuma-dp.confd
+	"
+builddir="$srcdir/kuma-$pkgver"
+options="net" # download Go modules
+
+# secfixes:
+#   2.1.0-r0:
+#     - CVE-2020-8911
+#     - CVE-2020-8912
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	local _goldflags="
+	-X github.com/kumahq/kuma/pkg/version.Envoy=$_envoyver
+	-X github.com/kumahq/kuma/pkg/version.version=$pkgver
+	-X github.com/kumahq/kuma/pkg/version.gitTag=v$pkgver
+	-X github.com/kumahq/kuma/pkg/version.gitCommit=AlpineLinux
+	-X github.com/kumahq/kuma/pkg/version.buildDate=$(date -u "+%Y-%m-%dT%H:%M:%SZ" ${SOURCE_DATE_EPOCH:+-d @$SOURCE_DATE_EPOCH})
+	"
+	for prog in kumactl kuma-cp kuma-dp; do
+		go build -v -o $prog -ldflags "$_goldflags" ./app/$prog
+	done
+
+	# Only generate shell completions for the client program
+	for shell in bash fish zsh; do
+		./kumactl completion $shell > kumactl.$shell
+	done
+}
+
+check() {
+	# Only run tests against related modules
+	for prog in kumactl kuma-cp; do
+		# shellcheck disable=2046
+		go test \
+			-ldflags "-X github.com/kumahq/kuma/pkg/version.Envoy=$_envoyver" \
+			$(go list ./app/$prog/... ./pkg/config/app/$prog/...)
+	done
+
+	# These tests seem to fail occasionally
+	# shellcheck disable=2046
+	go test \
+			-ldflags "-X github.com/kumahq/kuma/pkg/version.Envoy=$_envoyver" \
+			-skip 'TestCmd|TestVirtualProbes' \
+			$(go list ./app/kuma-dp/... ./pkg/config/app/kuma-dp/...)
+}
+
+package() {
+	install -Dm755 kumactl kuma-cp kuma-dp -t "$pkgdir"/usr/bin/
+
+	install -Dm644 $pkgname.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 $pkgname.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 $pkgname.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+_controlplane() {
+	pkgdesc="Control plane program for the multi-zone service mesh Kuma"
+	amove usr/bin/kuma-cp
+}
+
+_controlplane_openrc() {
+	pkgdesc="Control plane program for the multi-zone service mesh Kuma (OpenRC init scripts)"
+	install_if="openrc kuma-cp=$pkgver-r$pkgrel"
+
+	install -Dm755 "$srcdir"/kuma-cp.initd "$subpkgdir"/etc/init.d/kuma-cp
+	install -Dm644 "$srcdir"/kuma-cp.confd "$subpkgdir"/etc/conf.d/kuma-cp
+}
+
+_dataplane() {
+	pkgdesc="Data plane program for the multi-zone service mesh Kuma"
+	# TODO: package Envoy as it is the direct dependency of kuma-dp
+	# depends="envoyproxy"
+	amove usr/bin/kuma-dp
+}
+
+_dataplane_openrc() {
+	pkgdesc="Data plane program for the multi-zone service mesh Kuma (OpenRC init scripts)"
+	install_if="openrc kuma-dp=$pkgver-r$pkgrel"
+
+	install -Dm755 "$srcdir"/kuma-dp.initd "$subpkgdir"/etc/init.d/kuma-dp
+	install -Dm644 "$srcdir"/kuma-dp.confd "$subpkgdir"/etc/conf.d/kuma-dp
+}
+
+sha512sums="
+46f92d0298cdc19e01a1f843898d3176a60924df2aef515268a4e67a43ebdb749424bde54dd5ab25060876833e19f2654f25654b517e6381b23fe610cf4b7589  kumactl-2.10.1.tar.gz
+001e46b18ab4c1d0b131667d07567d0ec13fcadcc850265f97c4e82a0342285a5607191e0225e9fe8f683ce62551af833286b867e1df784f19935eca779ada79  kuma-cp.initd
+a3285adff02e44f2ae8e38e94fea91d0039d1edd4b42fbe598d60e1d46495fbf7b38cab3a60eb331590f791ad83701094f7f7e331bcc54921746430ed0abd749  kuma-cp.confd
+d9c3fc8c4f8bfe488db871551d632009733c65318a73c8ebca13d216a69de1f11f3a68d782b8c34b7d3258f65acc39bd8d7bb5b2d012d2b7b9f0e727797edf66  kuma-dp.initd
+10caa08a588af0b5889e964094cf7f1f4c5e201dd7cf8e162bda3c050aa64542aed6444b7246208b1c19c138e807c202ad5b7ee42bf187ca219511ab33894a8a  kuma-dp.confd
+"

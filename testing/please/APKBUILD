@@ -1,0 +1,55 @@
+# Contributor: Ed Neville <ed@s5h.net>
+# Maintainer: Ed Neville <ed@s5h.net>
+pkgname=please
+pkgver=0.5.6
+pkgrel=0
+pkgdesc="sudo alternative with regex support"
+url="https://gitlab.com/edneville/please"
+# s390x: fail to build due to nix crate
+# loongarch64: libc 0.2.153 not supported
+arch="all !s390x !loongarch64"
+license="GPL-3.0-or-later"
+makedepends="cargo linux-pam-dev chrpath cargo-auditable"
+source="https://gitlab.com/edneville/please/-/archive/v$pkgver/please-v$pkgver.tar.gz
+	please.pam
+	"
+# check panic on ci
+options="suid !check" # Required to call setuid with target uids
+builddir="$srcdir/$pkgname-v$pkgver"
+subpackages="$pkgname-doc"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm4755 target/release/please "$pkgdir/usr/bin/please"
+	install -Dm4755 target/release/pleaseedit "$pkgdir/usr/bin/pleaseedit"
+	chrpath -d "$pkgdir"/usr/bin/please*
+
+	cp "$builddir/man/please.1" "$builddir/man/pleaseedit.1"
+	install -Dm644 "$builddir/man/please.1" "$pkgdir/usr/share/man/man1/please.1"
+	install -Dm644 "$builddir/man/pleaseedit.1" "$pkgdir/usr/share/man/man1/pleaseedit.1"
+	install -Dm644 "$builddir/man/please.ini.5" "$pkgdir/usr/share/man/man5/please.ini.5"
+	install -Dm644 "$builddir/examples/please.ini" "$pkgdir/usr/share/doc/$pkgname/please.ini"
+	install -Dm644 "$builddir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+	mkdir -p "$pkgdir/etc/pam.d"
+	for pamf in please pleaseedit; do
+		install -Dm0644 "$srcdir/please.pam" "$pkgdir/etc/pam.d/$pamf"
+	done
+}
+
+sha512sums="
+1a10e3d27386d369e39b7763ad573c5bd1bb05dfbad290fef90f9b6734869d4cec6e935a197621a2ea0c0f21d62ef7a8712e11bf15e539df2c8671a4e7797dfe  please-v0.5.6.tar.gz
+23a3da8a8d896cbbaa6100c045b8ec07e0808f5244187b6b448d0d9b48d933645fd305fd085ea3e241cc4a4b634d988b40c534e9408196710ce416771f4b5fa7  please.pam
+"

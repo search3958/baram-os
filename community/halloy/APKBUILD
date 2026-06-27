@@ -1,0 +1,61 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=halloy
+pkgver=2026.7.1
+pkgrel=0
+pkgdesc="Rust graphical IRC client supporting IRCv3.2 capabilities"
+url="https://github.com/squidowl/halloy"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	alsa-lib-dev
+	cargo
+	cargo-auditable
+	libxcb-dev
+	openssl-dev
+	"
+options="net" # cargo
+source="https://github.com/squidowl/halloy/archive/$pkgver/halloy-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	# Avoid OOM on 32-bit ARM; speed up slow riscv64 release link.
+	case "$CARCH" in
+	armhf|armv7)
+		export CARGO_PROFILE_RELEASE_LTO=thin
+		export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
+		;;
+	esac
+
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	local appid="org.squidowl.halloy"
+
+	install -Dm755 target/release/halloy -t "$pkgdir"/usr/bin/
+
+	install -Dm644 assets/linux/$appid.desktop \
+		-t "$pkgdir"/usr/share/applications/
+	install -Dm644 assets/linux/$appid.appdata.xml \
+		-t "$pkgdir"/usr/share/metainfo/
+
+	local size; for size in 16 24 32 48 64 96 128 256 512; do
+		install -Dm644 \
+		assets/linux/icons/hicolor/"$size"x"$size"/apps/$appid.png \
+		-t "$pkgdir"/usr/share/icons/hicolor/"$size"x"$size"/apps/
+	done
+}
+
+sha512sums="
+20815b57ccd5240f302a726f2497902e4d8491777cd32d7ffdeb3e7469f37da0d5532013b8eab9c8b2d2dd3a633ff008039f71fc7d0ecd1bddf862ddcbdaecf5  halloy-2026.7.1.tar.gz
+"

@@ -1,0 +1,22 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=su-exec
+pkgver=0.3
+pkgrel=0
+pkgdesc="switch user and group id, setgroups and exec"
+url="https://github.com/ncopa/su-exec"
+arch="all"
+license="MIT"
+options="!check"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ncopa/su-exec/archive/v$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	install -D su-exec "$pkgdir"/sbin/su-exec
+}
+
+sha512sums="
+2fe42ca1696de3b54c684e7a782aed4d6f5f97a430f6e4dae65b828c9f31c58fba7190d3f0755ef011fa4609d4bf97087d427d2a20768db5a54a6d15ee111104  su-exec-0.3.tar.gz
+"

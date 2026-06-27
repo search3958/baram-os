@@ -1,0 +1,66 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=maddy
+pkgver=0.9.5
+pkgrel=0
+pkgdesc="Composable all-in-one mail server"
+url="https://maddy.email/"
+license="GPL-3.0-or-later"
+arch="all"
+makedepends="go scdoc linux-pam-dev sqlite-dev"
+subpackages="$pkgname-openrc $pkgname-doc $pkgname-vim::noarch"
+pkgusers="$pkgname"
+pkggroups="$pkgname"
+install="$pkgname.pre-install"
+source="https://github.com/foxcpp/maddy/archive/v$pkgver/maddy-$pkgver.tar.gz
+	$pkgname.initd
+	use-syslog.patch
+	"
+options="net" # go
+
+# secfixes:
+#   0.9.3-r0:
+#     - CVE-2026-40193
+#   0.6.3-r0:
+#     - CVE-2023-27582
+
+build() {
+	ldflags="-extldflags \"$LDFLAGS\"
+		-X github.com/foxcpp/maddy.Version=$pkgver
+		"
+
+	go build -ldflags="$ldflags" -trimpath -tags=libsqlite3 \
+		-o bin/maddy ./cmd/maddy
+
+	scdoc <docs/man/maddy.1.scd >maddy.1
+}
+
+check() {
+	# disable failing remote_test
+	# pam-helper fails to build due to strict-prototypes; "int run()" w/o prototype invalid
+	go test $(go list ./... | grep -Ev '(internal/target/remote|maddy-pam-helper)')
+}
+
+package() {
+	install -Dm755 bin/maddy -t "$pkgdir"/usr/bin/
+
+	install -Dm644 maddy.conf "$pkgdir"/etc/maddy/maddy.conf
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+
+	install -Dm644 maddy.1 -t "$pkgdir"/usr/share/man/man1/
+}
+
+vim() {
+	pkgdesc="$pkgdesc (vim syntax)"
+	depends=""
+	install_if="vim $pkgname=$pkgver-r$pkgrel"
+
+	mkdir -p "$subpkgdir"/usr/share/vim
+	cp -r "$builddir"/dist/vim "$subpkgdir"/usr/share/vim/vimfiles
+}
+
+sha512sums="
+ce750a0e2070f5a4c9178a70a9ee67d38761b2e00604e45c6b361babf1a7f03d8e6931c1e029524ab7ef3ebba7caaa82acc9259fae8f65102ab4c242300e1ee3  maddy-0.9.5.tar.gz
+c521763df519f86063ecfcb65c6689df880ea6478a83584ee1a7ebbfa5d95d1adf52ea9355f918a5a1c41f78d8b3a690e049fb43faac718ca5b6c519e10b0f23  maddy.initd
+76dbb8d7f4b389f2fc1e4e9ecbf93bd7e9a002a8520d93067e39b7a8d35e74e92af7151c116d38aa9d7548747cdd107b38392204f7d3a8944914aee236f7934e  use-syslog.patch
+"

@@ -1,0 +1,63 @@
+# Contributor: Sam Whited <sam@samwhited.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=py3-slixmpp
+_pkgname=slixmpp
+pkgver=1.16.0
+pkgrel=0
+pkgdesc="Fork of the SleekXMPP XMPP library for async IO and Python 3.7+"
+url="https://slixmpp.readthedocs.io/en/latest/"
+arch="all"
+license="MIT"
+depends="
+	py3-aiodns
+	py3-aiohttp
+	py3-asn1
+	py3-asn1-modules
+	py3-cryptography
+	py3-defusedxml
+	py3-emoji
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools-rust
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="
+	cmd:gpg
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-pyc
+	"
+source="https://files.pythonhosted.org/packages/source/s/slixmpp/slixmpp-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# secfixes:
+#   1.8.3-r0:
+#     - CVE-2022-45197
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 run_tests.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+	install -Dm644 README.rst -t "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+sha512sums="
+5a8500a6bbb99d1e01310332676753d77eb71f23cd0d7b36417f348fc36d1a9d807bfb1876f1407c6ba8c1799bd45c8970231058d0918d25288811d05c3cb93e  slixmpp-1.16.0.tar.gz
+"

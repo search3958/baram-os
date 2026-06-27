@@ -1,0 +1,96 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Daniel Sabogal <dsabogalcc@gmail.com>
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=libinput
+pkgver=1.31.3
+pkgrel=0
+pkgdesc="Library for handling input devices"
+url="https://www.freedesktop.org/wiki/Software/libinput"
+arch="all"
+license="MIT"
+_depends_tools="
+	py3-libevdev
+	py3-udev
+	py3-yaml
+	python3
+	"
+depends_dev="
+	eudev-dev
+	"
+makedepends="
+	$_depends_tools
+	$depends_dev
+	libevdev-dev
+	meson
+	mtdev-dev
+	"
+checkdepends="
+	bash
+	check-dev
+	py3-pytest
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-udev::all
+	$pkgname-tools
+	$pkgname-zsh-completion
+	"
+install="$pkgname.post-upgrade"
+source="https://gitlab.freedesktop.org/libinput/libinput/-/archive/$pkgver/libinput-$pkgver.tar.gz
+	"
+
+# secfixes:
+#   1.31.1-r0:
+#     - CVE-2026-35094
+#   1.20.1-r0:
+#     - CVE-2022-1215
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Ddocumentation=false \
+		-Dlibwacom=false \
+		-Ddebug-gui=false \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+libs() {
+	default_libs
+
+	amove usr/share/libinput
+}
+
+tools() {
+	pkgdesc="CLI helper tools for debugging libinput"
+	depends="$pkgname=$pkgver-r$pkgrel $_depends_tools"
+
+	# Q: Maybe move all tools (even libinput-list-devices, libinput-quirks)
+	#    into -tools? (jirutka)
+	amove usr/libexec/libinput/libinput-analyze*
+	amove usr/libexec/libinput/libinput-debug*
+	amove usr/libexec/libinput/libinput-measure*
+	amove usr/libexec/libinput/libinput-record
+	amove usr/libexec/libinput/libinput-replay
+}
+
+udev() {
+	default_udev
+	install_if="$pkgname-libs=$pkgver-r$pkgrel udev"
+}
+
+sha512sums="
+adac84a982bb0d7c6527b6ca2542cc814016768c8ae97864d7469565e5d74a3605bf5f8cc9aa0484191a069b0917b6c02fc929820455ef5dbce5c5a8e2f1500f  libinput-1.31.3.tar.gz
+"

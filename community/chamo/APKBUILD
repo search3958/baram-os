@@ -1,0 +1,96 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=chamo
+pkgver=4.0
+pkgrel=3
+pkgdesc="Emacs-inspired text editor written in and configurable with OCaml"
+url="https://framagit.org/zoggy/chamo"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-3.0-only"
+depends="
+	font-dejavu
+	font-liberation
+	"
+depends_dev="
+	ocaml-fmt-dev
+	ocaml-integers-dev
+	ocaml-logs-dev
+	ocaml-lwt-dev
+	ocaml-ocf-dev
+	ocaml-pcre-dev
+	ocaml-ppx_blob-dev
+	ocaml-re-dev
+	ocaml-sedlex-dev
+	ocaml-stk-dev
+	ocaml-uutf-dev
+	ocaml-xmlm-dev
+	ocaml-xtmpl-dev
+	"
+makedepends="
+	$depends_dev
+	dune
+	ocaml
+	"
+options="!check" # no tests provided
+subpackages="
+	$pkgname-byte
+	$pkgname-dev
+	"
+source="https://framagit.org/zoggy/chamo/-/archive/$pkgver/chamo-$pkgver.tar.bz2"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+package() {
+	dune install --destdir="$pkgdir" --docdir=/.omit
+
+	rm -v "$pkgdir"/usr/bin/chamo_byte
+}
+
+byte() {
+	pkgdesc="$pkgdesc (bytecode executable)"
+	depends="$depends ocaml-runtime"
+
+	amove usr/bin/chamo.byte
+	ln -sv chamo.byte "$subpkgdir"/usr/bin/chamo_byte
+}
+
+dev() {
+	pkgdesc="$pkgdesc (development files)"
+	depends="$depends_dev"
+
+	amove $_ocamldir
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+f83be446a5b0f1178a2e854691973da41d8a1ada12098e9f0d65bde5301a6242a79a58dfb9b2f244a8548b01453eba4788d06b8ab62b8a04b29b9f6cedc31b54  chamo-4.0.tar.bz2
+"

@@ -1,0 +1,39 @@
+# Contributor: Olliver Schinagl <oliver@schinagl.nl>
+# Maintainer: Olliver Schinagl <oliver@schinagl.nl>
+pkgname=open-plc-utils
+pkgver=0_git20250712
+pkgrel=1
+pkgdesc="Qualcomm Atheros Open Powerline Toolkit"
+url="https://github.com/qca/open-plc-utils"
+arch="all"
+license="BSD-3-Clause-Clear"
+options="suid"
+subpackages="$pkgname-doc"
+_githash="46c3506453c15b873fd6ed3e76c9872cea5e143a"
+source="https://github.com/qca/open-plc-utils/archive/$_githash.tar.gz"
+builddir="$srcdir/$pkgname-$_githash"
+
+prepare() {
+	default_prepare
+
+	sed -i \
+		-e 's|/usr/local/|/usr/|g' \
+		-e 's|/man/man1|/share/man/man1|g' \
+		"make.def"
+}
+
+build() {
+	make ROOTFS="$pkgdir"
+}
+
+check() {
+	make ROOTFS="$pkgdir" check
+}
+
+package() {
+	make ROOTFS="$pkgdir" install manuals
+}
+
+sha512sums="
+2fc41e3bf86af5d0163b4f0b903aad5fa878cf91438a62bd21249d7db7b0c35aff28727924e656778455746aaddc20738694d27db98021d8ec41c035f1bab6d9  46c3506453c15b873fd6ed3e76c9872cea5e143a.tar.gz
+"

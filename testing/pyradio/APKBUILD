@@ -1,0 +1,52 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=pyradio
+pkgver=0.9.3.11
+pkgrel=1
+pkgdesc="Curses based internet radio player"
+url="https://www.coderholic.com/pyradio"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	py3-dateutil
+	py3-dnspython
+	py3-netifaces
+	py3-psutil
+	py3-requests
+	py3-rich
+	"
+makedepends="py3-gpep517 py3-installer py3-setuptools py3-wheel"
+options="!check" # no testsuite
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/coderholic/pyradio/archive/refs/tags/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	sed -i 's/^distro = None$/distro = AlpineLinux/' pyradio/config
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -Dm644 devel/pyradio.png \
+		-t "$pkgdir"/usr/share/icons/hicolor/512x512/apps/
+	install -Dm644 devel/pyradio.desktop \
+		-t "$pkgdir"/usr/share/applications/
+
+	install -Dm644 docs/pyradio*.1 \
+		-t "$pkgdir"/usr/share/man/man1/
+	install -Dm644 docs/*.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+sha512sums="
+eed5b3bc41846f20da72467d315aa00f9ce261288eec02db1249b00e988ecebb05f7869c21a2cf52872933abae0440c6bd3752a52c2789fbdb5e4e57a27b8900  pyradio-0.9.3.11.tar.gz
+"

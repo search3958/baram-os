@@ -1,0 +1,47 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kodaskanna
+pkgver=0.2.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> plasma-activities
+arch="all !armhf"
+url="https://apps.kde.org/kodaskanna"
+pkgdesc="A multi-format 1D/2D code scanner"
+license="BSD-3-Clause AND LGPL-2.1-or-later AND LGPL-3.0-or-later"
+depends_dev="
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	ki18n-dev
+	kio-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	purpose-dev
+	qt6-qtbase-dev
+	zxing-cpp-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	samurai
+	"
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/graphics/kodaskanna.git"
+source="https://download.kde.org/unstable/kodaskanna/$pkgver/src/kodaskanna-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+eaad3fb86462abdbe0465ce3c00c0eac01102f17e7baac29741556b41c4697772b449c87d96c9891b09ec9f4b90c8fe48f4ef770911df80ca26934ec17bd5315  kodaskanna-0.2.2.tar.xz
+"

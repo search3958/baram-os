@@ -1,0 +1,88 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+maintainer="team/kde <clayton@craftyguy.net>"
+pkgname=kstars
+pkgver=3.8.1
+pkgrel=0
+pkgdesc="Astronomy software"
+url="https://kde.org/applications/education/kstars"
+# armhf blocked by qt6-qtdeclarative
+# s390x blocked by opencv
+# x86 blocked by stellarsolver
+arch="all !armhf !s390x !x86"
+license="GPL-2.0-or-later"
+makedepends="
+	cfitsio-dev
+	cmake
+	curl-dev
+	eigen-dev
+	extra-cmake-modules
+	gsl-dev
+	kconfig
+	kcoreaddons
+	kcrash
+	kdoctools-dev
+	ki18n
+	kio
+	knewstuff-dev
+	knotifications
+	knotifyconfig-dev
+	kplotting-dev
+	kwidgetsaddons
+	kxmlgui
+	libindi-dev
+	libnova-dev
+	libraw-dev
+	libxisf-dev
+	opencv-dev
+	qt6-qtbase-dev
+	qt6-qtdatavis3d-dev
+	qt6-qtdeclarative-dev
+	qt6-qtsvg-dev
+	qt6-qtwebsockets-dev
+	qtkeychain-dev
+	samurai
+	stellarsolver-dev
+	wcslib-dev
+"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/education/kstars"
+source="https://download.kde.org/stable/kstars/$pkgver/kstars-$pkgver.tar.xz
+	tests-disable-ngc4535-autofocus3.patch
+	"
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_WITH_QT6=ON
+	cmake --build build
+}
+
+check() {
+	# TestPolarAlign: segfaults, test removed in 3.8.2-stable branch
+	local skip_tests="|TestPolarAlign"
+	case "$CARCH" in
+	loongarch64)
+		# TODO: test times out due to network issues, try again when builders reach EU
+		skip_tests="$skip_tests|TestKSUserDB|test_catalogsdb"
+		;;
+	esac
+
+	# Note: excluded tests fail because they cannot find TZrules.dat and other
+	# things in the 'data' dir. Seems like test framework would allow
+	# specifying or overriding the search dir since data is in $srcdir, but I
+	# couldn't figure it out yet, so disabling tests...
+	xwfb-run -- ctest --test-dir build \
+		-E "StarCorrespondenceTest|SchedulerunitTest|Test(ArtificialHorizon|CatalogDownload|Ekos(Simulator|Focus|Capture|FilterWheel|MeridianFlipState|Scheduler|SchedulerOps|Mount)|KSPaths|PlaceholderPath)$skip_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+c8d564c6ddcb36cd478759045545bc9ac8d31c23277f2d99f779028d086a2def28eb684f35db642624ccb6db5c183fa701f3d085fb773f0c0be98cf29a8d7cdc  kstars-3.8.1.tar.xz
+dba2c42a7eb827d94eff00ae039c963670ee0adee7f3edc8b3cb3201455fa9bbd9f677acd3bd8029a19c7a3817c1d7452d238ad8a77e6911184aa4e678480e74  tests-disable-ngc4535-autofocus3.patch
+"

@@ -1,0 +1,58 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=vhs
+pkgver=0.11.0
+pkgrel=2
+pkgdesc="Tool for automatic recording of terminal sessions"
+url="https://github.com/charmbracelet/vhs"
+arch="x86_64 armv7 aarch64" # chromium
+license="MIT"
+depends="ffmpeg ttyd"
+makedepends="go"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/charmbracelet/vhs/archive/v$pkgver/vhs-$pkgver.tar.gz
+	disable-rod-gpu.patch
+	"
+
+build() {
+	mkdir builddir
+
+	go build -v \
+		-trimpath \
+		-ldflags "-X main.Version=$pkgver -extldflags \"$LDFLAGS\"" \
+		-o builddir .
+
+	./builddir/vhs man > builddir/vhs.1
+	./builddir/vhs completion bash > completion.bash
+	./builddir/vhs completion fish > completion.fish
+	./builddir/vhs completion zsh > completion.zsh
+}
+
+check() {
+	go test -v ./...
+}
+
+package() {
+	depends="$depends chromium"
+
+	install -Dm755 builddir/vhs -t "$pkgdir"/usr/bin/
+	install -Dm644 builddir/vhs.1 -t "$pkgdir"/usr/share/man/man1/
+
+	install -Dm644 completion.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/vhs
+	install -Dm644 completion.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/vhs.fish
+	install -Dm644 completion.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_vhs
+}
+
+sha512sums="
+287499e48eec16a5465ff9d20e0b76a04cccd2d5107d8ca4aab95d7d6a19a8ce95231dfd0f4a7a62a7b7da651577e43b505c29b75e83ca7b29921e2d266a736d  vhs-0.11.0.tar.gz
+8cd7a15f74a8b5e11acec803744ef061fc13404d74c783797fffb78b95ab3ba31514668683e52a971fbe317a8ac106c61017b9330d63967fef0af471b6545f8f  disable-rod-gpu.patch
+"

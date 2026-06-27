@@ -1,0 +1,53 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=gtimelog
+pkgver=0.12_git20251114
+_commit=ae0b50c96a654c26fac391c73706d7a25e7d1a44
+pkgrel=1
+pkgdesc="Time tracking application"
+url="https://gtimelog.org/"
+arch="noarch"
+license="GPL-2.0-only"
+depends="
+	gtk+3.0
+	librsvg
+	libsecret
+	libsoup3
+	py3-gobject3
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-freezegun
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$_commit.tar.gz::https://github.com/gtimelog/gtimelog/archive/$_commit.tar.gz
+	fix-timedelta-test.patch
+	"
+builddir="$srcdir/$pkgname-$_commit"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c31ca4dcf042526201b817ac7e93ee3b21a78091e06b67ec522a06546bc197297518ec2be7e6684e401867befb706704b0e16fc821acce2f803a7107e267687d  gtimelog-ae0b50c96a654c26fac391c73706d7a25e7d1a44.tar.gz
+e33747da3aae999132b9f6394f9ff82bb85b663f7a8421b291a3a9f93c01c7570c46328444ebe2b1fc0f8c0c7e0c3fce867a1824bb943aa76fe797fd4193ab9d  fix-timedelta-test.patch
+"

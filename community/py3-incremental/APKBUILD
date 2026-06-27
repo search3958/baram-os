@@ -1,0 +1,32 @@
+# Contributor: prspkt <prspkt@protonmail.com>
+# Maintainer: prspkt <prspkt@protonmail.com>
+pkgname=py3-incremental
+_pkgname=incremental
+pkgver=24.7.2
+pkgrel=1
+pkgdesc="Library that versions your Python3 projects"
+url="https://github.com/twisted/incremental"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+replaces="py-incremental" # Backwards compatibility
+provides="py-incremental=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/incremental*.whl
+}
+
+sha512sums="
+d738d32392ff3a3fa15b880598a74c8fe61383ab2ca167612ffdad464edda9d08fbfabfdf5c4939731c4d0489a76ba72a483fe3813351610b3618fbcc9539d82  incremental-24.7.2.tar.gz
+"

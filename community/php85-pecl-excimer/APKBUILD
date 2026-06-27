@@ -1,0 +1,38 @@
+# Maintainer: Andy Postnikov <apostnikov@gmail.com>
+pkgname=php85-pecl-excimer
+_extname=excimer
+pkgver=1.2.6
+pkgrel=0
+pkgdesc="Interrupting timer and low-overhead sampling profiler PHP 8.5 - PECL"
+url="https://pecl.php.net/package/excimer"
+arch="all"
+license="Apache-2.0"
+_phpv=85
+_php=php$_phpv
+depends="$_php-common"
+makedepends="$_php-dev"
+source="php-pecl-$_extname-$pkgver.tar.gz::https://pecl.php.net/get/$_extname-$pkgver.tgz"
+builddir="$srcdir"/$_extname-$pkgver
+
+build() {
+	phpize$_phpv
+	./configure --prefix=/usr --with-php-config=/usr/bin/php-config$_phpv
+	make
+}
+
+check() {
+	rm -f tests/maxDepth.phpt
+	make NO_INTERACTION=1 REPORT_EXIT_STATUS=1 test TESTS=--show-diff
+	$_php -d extension=modules/$_extname.so --ri $_extname
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+	local _confdir="$pkgdir"/etc/$_php/conf.d
+	install -d $_confdir
+	echo "extension=$_extname" > $_confdir/$_extname.ini
+}
+
+sha512sums="
+558e9dec2f7d90639ebe792bbd80c6c9c403fa3d5d1af621b782cdfeee9fbe0045b5be8c9a3a677df7d84b9b91299f04a2ea24c89a56987195120643124a2764  php-pecl-excimer-1.2.6.tar.gz
+"

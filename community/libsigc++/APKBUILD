@@ -1,0 +1,32 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libsigc++
+pkgver=2.12.1
+pkgrel=0
+pkgdesc="type-safe Signal Framework for C++"
+url="https://github.com/libsigcplusplus/libsigcplusplus"
+arch="all"
+license="LGPL-3.0-or-later"
+makedepends="meson docbook-xsl-nons perl doxygen graphviz libxslt"
+subpackages="$pkgname-dev $pkgname-devhelp $pkgname-doc"
+source="https://download.gnome.org/sources/libsigc++/${pkgver%.*}/libsigc++-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dbuild-documentation=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+5e5c920807952c732a9acb139f707fdf556786133c18bc8842130803f864ba1f260e1d4a51be0a9892c2228bcfdf129a9a2ce91e3d20077870431a53a87a9f2a  libsigc++-2.12.1.tar.xz
+"

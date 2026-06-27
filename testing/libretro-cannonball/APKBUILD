@@ -1,0 +1,27 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-cannonball
+pkgver=0_git20220309
+pkgrel=6
+_commit="8fb0d9561ee110f31f45610661649f0c1ff068ee"
+pkgdesc="an enhanced OutRun Engine"
+url="https://github.com/libretro/cannonball"
+arch="all"
+license="custom"
+makedepends="boost-dev"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/cannonball/archive/$_commit.tar.gz"
+builddir="$srcdir/cannonball-$_commit"
+options="!check" # No tests
+
+build() {
+	rm -rf deps/boost
+	make
+}
+
+package() {
+	install -Dm644 cannonball_libretro.so "$pkgdir"/usr/lib/libretro/cannonball_libretro.so
+}
+
+sha512sums="
+40a93053339498b8bf0ae2dd9f4ed6d7a21ae2d012d3d10922c40c678f150f26ea05e3ad75d62fb6994652a6e7bfce46a0d2f5c2d59bdb1214c11b1aa0ade173  libretro-cannonball-8fb0d9561ee110f31f45610661649f0c1ff068ee.tar.gz
+"

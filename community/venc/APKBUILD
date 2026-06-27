@@ -1,0 +1,32 @@
+# Contributor: Guy Godfroy <guy.godfroy@gugod.fr>
+# Contributor: Denis Salem <denissalem@tuxfamily.org>
+# Maintainer: Guy Godfroy <guy.godfroy@gugod.fr>
+pkgname=venc
+_pkgname=VenC
+pkgver=3.2.7
+pkgrel=1
+pkgdesc="Static blog generator"
+url="https://venc.software/"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="py3-yaml py3-unidecode"
+makedepends="py3-gpep517 py3-flit-core"
+source="$_pkgname-v$pkgver.tar.gz::https://framagit.org/denissalem/VenC/-/archive/v$pkgver/$_pkgname-v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-v$pkgver"
+options="!check" # no test scripts available for now
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+12c8d53f7af846433167f39f0fcbba0f252b50d354258dea77b02cd833c8e7c715687952a90de6a7d4719c5eb950ed645389470631297b1d1e567c75f09fdfa2  VenC-v3.2.7.tar.gz
+"

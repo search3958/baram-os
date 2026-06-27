@@ -1,0 +1,47 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libidn
+pkgver=1.43
+pkgrel=0
+pkgdesc="Encode/Decode library for internationalized domain names"
+url="https://www.gnu.org/software/libidn"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="help2man texinfo"
+checkdepends="diffutils"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://ftp.gnu.org/gnu/libidn/libidn-$pkgver.tar.gz"
+
+# secfixes:
+#   1.33-r0:
+#     - CVE-2015-8948
+#     - CVE-2016-6261
+#     - CVE-2016-6262
+#     - CVE-2016-6263
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-nls
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# only keep man pages
+	rm -rf "$pkgdir"/usr/share/info
+}
+
+sha512sums="
+a098d9c1df9d47181e7707a115dcfa12ba4b1aba68b1d070eff4f0578fd2e09b9c453457f83fc1a704726eac3a6f90e5a00772ab116affd07efe1e1ab9d5b0f1  libidn-1.43.tar.gz
+"

@@ -1,0 +1,42 @@
+# Contributor: Noel Kuntze <noel.kuntze@thermi.consulting>
+# Maintainer: Noel Kuntze <noel.kuntze@thermi.consulting>
+pkgname=py3-daemon
+pkgver=3.1.2
+pkgrel=1
+pkgdesc="Library to implement a well-behaved Unix daemon process"
+url="https://pagure.io/python-daemon"
+options="!check" # Has lots of dependencies
+arch="noarch"
+license="Apache-2.0 AND GPL-3.0-or-later"
+depends="py3-setuptools py3-lockfile"
+makedepends="
+	py3-changelog-chug
+	py3-docutils
+	py3-gpep517
+	py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/p/python_daemon/python_daemon-$pkgver.tar.gz"
+builddir="$srcdir/python_daemon-$pkgver"
+
+prepare() {
+	default_prepare
+
+	# Remove unnecessary dependency for building, twine is
+	# required for uploading the package to pypi which we don't
+	# do
+	sed -e '/twine/d' -i setup.py
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+3901b9f14f11b8765eb31874fdb9410cbda1425ce70d2702827fe4745b5b8fb93f23e9f71faa6b0ca001745aeea03c186c4e29d973cb12a5912340dae6aa2ee0  python_daemon-3.1.2.tar.gz
+"

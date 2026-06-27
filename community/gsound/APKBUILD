@@ -1,0 +1,32 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <newbyte@postmarketos.org>"
+pkgname=gsound
+pkgver=1.0.3
+pkgrel=3
+pkgdesc="Small library for playing system sounds"
+url="https://gitlab.gnome.org/GNOME/gsound"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="meson glib-dev vala libcanberra-dev gobject-introspection-dev"
+subpackages="$pkgname-dev"
+source="https://download.gnome.org/sources/gsound/${pkgver%.*}/gsound-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Dgtk_doc=false \
+		-Dintrospection=true \
+		-Denable_vala=true \
+	. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+sha512sums="
+5d7c4f17154b840abb94b432c33ba950929ddc5aba8c2795b54834d6c6b0280d3d8846acebb1e4e02688045bfb44cfac7dbb96fef44af5a73a12a70f3ece84eb  gsound-1.0.3.tar.xz
+"

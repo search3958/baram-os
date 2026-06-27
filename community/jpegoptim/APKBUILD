@@ -1,0 +1,35 @@
+# Contributor: Aji Kisworo Mukti <aji.kisworo.mukti@gmail.com>
+# Maintainer:
+pkgname=jpegoptim
+pkgver=1.5.6
+pkgrel=1
+pkgdesc="JPEG optimization utility"
+url="https://github.com/tjko/jpegoptim"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="libjpeg-turbo-dev"
+checkdepends="python3"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tjko/jpegoptim/archive/v$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--target=$CTARGET \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+9501bdcdd3f56c97b649b7b8987fea3a3bd33d09368730f265a4833c0839b538fa658ad85dcf64a6ea13f8a2c919486f448e38a46fec7122b7bcf01d027c8b3a  jpegoptim-1.5.6.tar.gz
+"

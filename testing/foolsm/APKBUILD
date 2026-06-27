@@ -1,0 +1,34 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=foolsm
+pkgver=1.0.21
+pkgrel=0
+pkgdesc="Link Status Monitor"
+url="https://lsm.foobar.fi/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="linux-headers"
+options="!check" # No test suite availbe
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://lsm.foobar.fi/download/foolsm-$pkgver.tar.gz
+	foolsm.initd
+	foolsm.confd
+	fix-non-standard-macro.patch
+	"
+
+build() {
+	make PREFIX=/usr
+}
+
+package() {
+	make install DESTDIR="$pkgdir" PREFIX=/usr
+	install -Dm0755 "$srcdir/foolsm.initd" "$pkgdir/etc/init.d/foolsm"
+	install -Dm0644 "$srcdir/foolsm.confd" "$pkgdir/etc/conf.d/foolsm"
+}
+
+sha512sums="
+3be949037b8996f124ee9864d47cb34dd3a9f420c282e8735dfc9dac17089705688d3322e4bde939f75b0617da1aede232db59ef9c0ce36fc485e9349d2d972f  foolsm-1.0.21.tar.gz
+b433010b8d2228e90a2617da707a199ae841f273aab4e9d4912e50106d689fe96a0ad662246f09033a2039aa79ba682fef4356cbe15a907abccc2ee74ded3881  foolsm.initd
+80b71b4468bf3a5ba928661dbf63d4dea058a665c1d49b88bc3a37b38dc316171a71aed406c3510b37a812e148f5a724ba65598e77044996baeeb139a88ded1c  foolsm.confd
+4a0c851b2ae534c365adcc5798b56fc91b1efe7d4bcad90df411e93d7a4a0c620d3e9efa26504de877059c481de207c58c468ea577025db2933fa111f5620077  fix-non-standard-macro.patch
+"

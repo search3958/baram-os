@@ -1,9 +1,0 @@
-#TODO compile and test
-[source]
-tar = "https://mirror.download.kiwix.org/release/kiwix-tools/kiwix-tools-3.8.2.tar.xz"
-[build]
-template = "meson"
-dependencies = [
-    "libkiwix",
-    "libzim",
-]

@@ -1,0 +1,37 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gphoto2
+pkgver=2.5.32
+pkgrel=0
+pkgdesc="Commandline utilities for accessing cameras"
+url="http://www.gphoto.org/"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="libgphoto2-dev popt-dev gettext-dev libjpeg-turbo-dev libtool"
+checkdepends="bash"
+subpackages="$pkgname-lang $pkgname-doc"
+source="https://sourceforge.net/projects/gphoto/files/gphoto/$pkgver/gphoto2-$pkgver.tar.bz2"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+668353f9f0d8b8159e601b63be55ce54939827670537b561a2ad18719279cde867b48506ad84961f546565e38b04367878e632e4e184a99f3337fc635eb697da  gphoto2-2.5.32.tar.bz2
+"

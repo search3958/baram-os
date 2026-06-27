@@ -1,0 +1,45 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Contributor: Krassy Boykinov <kboykinov@teamcentrixx.com>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=xdg-desktop-portal-gtk
+pkgver=1.15.3
+pkgrel=1
+pkgdesc="Gtk implementation of xdg-desktop-portal"
+url="https://github.com/flatpak/xdg-desktop-portal-gtk"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="
+	gsettings-desktop-schemas
+	xdg-desktop-portal
+	"
+makedepends="
+	dbus-dev
+	gnome-desktop-dev
+	gtk+3.0-dev
+	meson
+	xdg-desktop-portal-dev
+	"
+subpackages="$pkgname-lang $pkgname-systemd"
+source="https://github.com/flatpak/xdg-desktop-portal-gtk/releases/download/$pkgver/xdg-desktop-portal-gtk-$pkgver.tar.xz"
+options="!check"  # no tests provided
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dappchooser=enabled \
+		-Ddatarootdir=/usr/lib/pkgconfig \
+		-Ddbus-service-dir=/usr/share/dbus-1/services/ \
+		-Dlockdown=enabled \
+		-Dsettings=enabled \
+		-Dwallpaper=enabled \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+38a94ace605f95af74a2edd4cf9f52124b1f0e46612a3484d1fb51289ee27015077fa9f4cc75cfa48792101500ce8e0d62761d71ef4d4791837599352e2a81a0  xdg-desktop-portal-gtk-1.15.3.tar.xz
+"

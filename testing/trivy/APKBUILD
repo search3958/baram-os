@@ -1,0 +1,29 @@
+# Contributor: TBK <alpine@jjtc.eu>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=trivy
+pkgver=0.71.2
+pkgrel=0
+pkgdesc="Simple and comprehensive vulnerability scanner for containers"
+url="https://github.com/aquasecurity/trivy"
+arch="all"
+license="Apache-2.0"
+makedepends="btrfs-progs-dev go linux-headers lvm2-dev"
+source="https://github.com/aquasecurity/trivy/archive/v$pkgver/trivy-$pkgver.tar.gz"
+options="net !check" # needs tinygo to turn go into wasm for tests
+
+build() {
+	# see https://github.com/aquasecurity/trivy/discussions/9557
+	GOEXPERIMENT=jsonv2 go build -o trivy -ldflags "-X github.com/aquasecurity/trivy/pkg/version/app.ver=$pkgver" cmd/trivy/main.go
+}
+
+check() {
+	GOEXPERIMENT=jsonv2 go test ./...
+}
+
+package() {
+	install -Dm755 trivy -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+6c624e4d1999d8ec9bdad4252e797d3867da380256cd7650eb86bbf7516afb7d77ebbfbe9670fe2163a88cf9664b2d7d4914fe0717dd501b3db9884db1a78a4a  trivy-0.71.2.tar.gz
+"

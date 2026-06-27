@@ -1,0 +1,55 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kio-fuse
+pkgver=5.1.1
+pkgrel=1
+# armhf blocked by qt6-qtdeclarative -> kio
+arch="all !armhf"
+url="https://kde.org/"
+pkgdesc="FUSE interface for KIO"
+license="GPL-3.0-only"
+makedepends="
+	extra-cmake-modules
+	fuse3-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kio-dev
+	qt6-qtbase-dev
+	samurai
+	"
+checkdepends="dbus"
+subpackages="$pkgname-systemd"
+_repo_url="https://invent.kde.org/system/kio-fuse.git"
+source="https://download.kde.org/stable/kio-fuse/kio-fuse-$pkgver.tar.xz
+	modules-load.conf
+	kio-fuse.desktop
+	"
+install="$pkgname.post-install"
+options="!check" # Requires fuse kernel module
+
+build() {
+	cmake -B build \
+		-DBUILD_WITH_QT6=ON \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	dbus-run-session ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm644 "$srcdir"/modules-load.conf "$pkgdir"/usr/lib/modules-load.d/kio-fuse.conf
+	install -Dm644 "$srcdir"/kio-fuse.desktop -t "$pkgdir"/etc/xdg/autostart/
+}
+
+sha512sums="
+1a529f43ac96ad3e7cfa684bb056ed70089a73bf858969cb09f297967a1d3f49d25586d75c30ae5a636cf946d09d97a5c286156e79d12f5c6105a1b965e3c1e8  kio-fuse-5.1.1.tar.xz
+57d23d2778556eafc3035e6be575bf95b4032f123b35f2b1657eff5e7496de253173edc657f90531ee58e25673f4f27a5cd1cc76b14a038edb244f104a231771  modules-load.conf
+94a5acc6d6b622f923e6fa077cac63f365ad1a0828690336421368f7300179b39318b10c5e6490de7c442e2713dc25b2b3fb17fee4ac4064595a474ea50c2137  kio-fuse.desktop
+"

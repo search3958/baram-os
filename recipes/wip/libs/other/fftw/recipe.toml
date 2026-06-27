@@ -1,5 +1,0 @@
-#TODO compilation error
-[source]
-tar = "https://fftw.org/fftw-3.3.10.tar.gz"
-[build]
-template = "configure"

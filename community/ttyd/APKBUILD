@@ -1,0 +1,50 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ttyd
+pkgver=1.7.7
+pkgrel=0
+pkgdesc="Share your terminal over the web"
+url="https://tsl0922.github.io/ttyd"
+arch="all"
+license="MIT"
+depends="libwebsockets-evlib_uv"
+makedepends="
+	bsd-compat-headers
+	cmake
+	json-c-dev
+	libuv-dev
+	libwebsockets-dev
+	openssl-dev>3
+	samurai
+	zlib-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/tsl0922/ttyd/archive/$pkgver/ttyd-$pkgver.tar.gz
+	fix-version.patch
+	"
+
+build() {
+	local crossopts=
+	if [ "$CBUILD" != "$CHOST" ]; then
+		crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_VERBOSE_MAKEFILE=TRUE \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	./build/ttyd --version
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0cc643223c603dfbd32bc8233e6d2b8d59efd0b1208ef684277ff690fd92ca9ce242b8ea229a5621c43301ce99f95ee56fbe1f3b8df47329be89c3d0658d7663  ttyd-1.7.7.tar.gz
+c7e63670d865bd31bd16cc1570dfb57a8717553cf30d46da47ae3e051f9e897f6f94550c77df48ee4eef6c4ccd4283516110e14c9a78f562631ccdc43ae699ee  fix-version.patch
+"

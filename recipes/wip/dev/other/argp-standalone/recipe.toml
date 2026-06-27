@@ -1,5 +1,0 @@
-[source]
-git = "https://github.com/argp-standalone/argp-standalone"
-shallow_clone = true
-[build]
-template = "meson"

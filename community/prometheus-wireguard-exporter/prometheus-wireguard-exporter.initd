@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+
+description="Prometheus Wireguard Exporter"
+command=/usr/bin/prometheus_wireguard_exporter
+command_background=true
+pidfile="/run/${RC_SVCNAME}.pid"
+error_log="/var/log/prometheus_wireguard_exporter.log"
+
+depend() {
+	need net
+}
+
+start_pre() {
+	checkpath -f $error_log
+}

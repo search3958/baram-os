@@ -1,0 +1,40 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: prspkt <prspkt@protonmail.com>
+pkgname=websocket++
+pkgver=0.8.2
+pkgrel=1
+pkgdesc="C++/Boost Asio based websocket client/server library"
+url="https://github.com/zaphoyd/websocketpp"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cmake samurai"
+checkdepends="boost-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/zaphoyd/websocketpp/archive/$pkgver.tar.gz
+	boost.patch
+	"
+builddir="$srcdir"/websocketpp-$pkgver
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_TESTS="$(want_check && echo TRUE || echo FALSE)" \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build -E test_transport_asio_timers
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+b2afc63edb69ce81a3a6c06b3d857b3e8820f0e22300ac32bb20ab30ff07bd58bd5ada3e526ed8ab52de934e0e3a26cad2118b0e68ecf3e5e9e8d7101348fd06  websocket++-0.8.2.tar.gz
+e9cacec097bdeb9146814df05d0af79fc6ff84503b0fe43529a1dc9a668a270ae149d16a54491112824aa1a64a435cbbcf5c02f5329754d1b4e167ef7298c215  boost.patch
+"

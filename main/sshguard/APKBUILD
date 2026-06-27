@@ -1,0 +1,43 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=sshguard
+pkgver=2.5.1
+pkgrel=0
+pkgdesc="Protects hosts from brute-force attacks against SSH and other services"
+url="https://www.sshguard.net/"
+arch="all"
+license="ISC"
+depends="iptables"
+makedepends="flex bison autoconf automake libtool"
+subpackages="$pkgname-openrc $pkgname-doc"
+source="https://downloads.sourceforge.net/project/sshguard/sshguard/$pkgver/sshguard-$pkgver.tar.gz
+	sshguard.initd
+	sshguard.confd
+	"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm755 "$srcdir"/sshguard.initd "$pkgdir"/etc/init.d/sshguard
+	install -Dm644 "$srcdir"/sshguard.confd "$pkgdir"/etc/conf.d/sshguard
+}
+
+sha512sums="
+346d8a7287bd664b2efd5aae19b398d9fb1fbe6b940c791c1932b3ba5b00e7fcc777dcc61fb549eb916ad79c9e3e7b18d015c028c068c1f622818c6e2a06542e  sshguard-2.5.1.tar.gz
+3dfd291b74fd7082ade5e3339e5641e546fb98cf88be29cc9744e5cd316b128580a17c4d1d36f6b03eec73491645c670759ca6f82fe2555eff34adb090df69cb  sshguard.initd
+be29acae12bc51019febc283bb1c4fff0cd0a475a330a0ca1b4196bbc88a9a70922b82b7d56250e04d6491a4670ebb36d39c65c28fa0f20093355bd7ad3e4d2f  sshguard.confd
+"

@@ -1,0 +1,99 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=tin
+pkgver=2.6.5
+pkgrel=2
+pkgdesc="Threaded NNTP and spool-based Usenet newsreader"
+url="http://www.tin.org/"
+arch="all"
+license="BSD-3-Clause"
+depends="
+	aspell
+	gnupg
+	"
+makedepends="
+	cmd:yacc
+	gettext-dev
+	icu-dev
+	libgsasl-dev
+	libidn-dev
+	ncurses-dev
+	openssl-dev
+	pcre2-dev
+	perl
+	zlib-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang $pkgname-perl::noarch"
+# download from a mirror as ftp connections to ftp.tin.org are throttled
+source="https://ftp.icm.edu.pl/pub/unix/news/tin/v${pkgver%.*}/tin-$pkgver.tar.xz
+	default-url-handler.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--enable-shell-escape \
+		--enable-nntp \
+		--enable-nls \
+		--enable-ipv6 \
+		--enable-append-pid \
+		--enable-posting \
+		--enable-piping \
+		--enable-locale \
+		--enable-xhdr-xref \
+		--enable-included-msgs \
+		--enable-mh-mail-handling \
+		--enable-cancel-locks \
+		--enable-heapsort \
+		--with-pkg-config \
+		--with-spooldir=/var/spool/news \
+		--with-ispell="$(command -v aspell)" \
+		--with-gpg="$(command -v gpg)" \
+		--with-nntps=openssl \
+		--with-pcre2-config \
+		--with-screen=ncursesw \
+		--with-sum="$(command -v sum)" \
+		--with-inews-dir=/usr/bin \
+		--with-libdir=/var/lib/news \
+		--with-mime-default-charset=UTF-8 \
+		--disable-mime-strict-charset \
+		--disable-prototypes \
+		--disable-echo
+	make build
+	make
+}
+
+check() {
+	HOME="$srcdir" ./src/tin -V
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	make DESTDIR="$pkgdir" install_sysdefs
+
+	cd "$pkgdir"
+
+	# conflict with mutt package
+	rm -v usr/share/man/man5/mbox.5
+	rm -v usr/share/man/man5/mmdf.5
+
+	mv -v usr/bin/url_handler.pl usr/bin/tin_url_handler.pl
+	mv -v usr/share/man/man1/url_handler.pl.1 \
+		usr/share/man/man1/tin_url_handler.pl.1
+}
+
+perl() {
+	pkgdesc="$pkgdesc (perl helper scripts)"
+	depends="perl-io-socket-ssl"
+	install_if="$pkgname=$pkgver-r$pkgrel perl"
+
+	amove usr/bin/*.pl
+}
+
+sha512sums="
+6b37ce5b91ee48e840772048b59b6e3a7d479dd79c3800b1422f7664ce228d393d48fe54dfb200ba9716adb98069ce254f2ecbe6a83869c48d95c76be6fe9cb4  tin-2.6.5.tar.xz
+05acb2c67c74a6cb0cca2da66b3dc2659b533088f41cad7527e84be298af7f4d6b920fee0dbb2cabeb06bacfef1fd603ef2b2dea4a296afbada59a289439ed56  default-url-handler.patch
+"

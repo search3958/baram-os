@@ -1,0 +1,40 @@
+# Maintainer: John Anthony <john@jo.hnanthony.com>
+pkgname=wire-go
+pkgver=0.6.0
+pkgrel=20
+pkgdesc="Compile-time Dependency Injection for Go"
+url="https://github.com/google/wire"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/google/wire/archive/refs/tags/v$pkgver.tar.gz
+	go-mod-update-golang-x-tools.patch
+	"
+options="chmod-clean net !check" # generation differs from golden file
+builddir="$srcdir/wire-$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	default_prepare
+	go mod download
+}
+
+build() {
+	go build ./cmd/wire
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 wire -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+0c8d39009fa3bbfc5b920f487057ca9920b0e4645e0108d2eaea0452e83947390c7c03bb382659fc00d66c322a8daac082fa56072e6eced88b5acbe0db0a986b  wire-go-0.6.0.tar.gz
+356478b9455470667ab8332b8d456e09939bf1ace5238338ba468ba4e66d4ee771d443e9f2610524a684c4cc3691e4b0395c649e429835fcb9b6961729bb4c79  go-mod-update-golang-x-tools.patch
+"

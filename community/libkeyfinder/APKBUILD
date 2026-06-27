@@ -1,0 +1,38 @@
+# Contributor: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+# Maintainer: Jean-Louis Fuchs <safe.pen2857@rhizoome.ch>
+pkgname=libkeyfinder
+pkgver=2.2.8
+pkgrel=1
+pkgdesc="Musical key detection for digital audio"
+url="https://mixxxdj.github.io/libkeyfinder/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	catch2-3
+	cmake
+	fftw-dev
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="https://github.com/mixxxdj/libkeyfinder/archive/$pkgver/libkeyfinder-$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+31d86715172b62dd72b122a8d480db4598731b87ca58522ad797116acfcbc53b8ecf8fe7eb2b129857b5044b27d32dda9e03927e0a27f8edcdc5d6ce607a76eb  libkeyfinder-2.2.8.tar.gz
+"

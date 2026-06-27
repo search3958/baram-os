@@ -1,0 +1,46 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-jupyterlab_server
+_pyname=jupyterlab_server
+pkgver=2.28.0
+pkgrel=2
+pkgdesc="A set of server components for JupyterLab and JupyterLab like applications "
+url="https://jupyterlab-server.readthedocs.io/en/stable/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-babel
+	py3-json5
+	py3-requests
+	py3-rpds-py
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-hatch-jupyter-builder
+	py3-hatchling
+	py3-installer
+	py3-poetry-core
+	py3-setuptools
+	py3-wheel
+	nodejs
+	npm
+	"
+subpackages="$pkgname-pyc"
+checkdepends="py3-pytest py3-setuptools py3-pexpect py3-pytest-jupyter py3-openapi-core"
+source="py3-jupyterlab_server-$pkgver.tar.gz::https://github.com/jupyterlab/jupyterlab_server/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+options="!check" # missing py3-strict-rfc3339
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 1>&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+57a021c370883c09d801590fff4e95acd4570a51ae6ff619f89da8e80ac93591c50f51d24f55124994ca9eacf7c8209f0e730493e0bf068fda99b8aa9727232e  py3-jupyterlab_server-2.28.0.tar.gz
+"

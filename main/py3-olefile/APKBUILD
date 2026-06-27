@@ -1,0 +1,37 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-olefile
+pkgver=0.47
+pkgrel=1
+pkgdesc="Python module to read/write MS OLE2 files"
+url="https://www.decalage.info/olefile"
+arch="noarch"
+license="BSD-2-Clause"
+makedepends="python3-dev py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://github.com/decalage2/olefile/releases/download/v$pkgver/olefile-$pkgver.zip"
+builddir="$srcdir"/${pkgname/py3-/}-$pkgver
+
+provides="py-olefile=$pkgver-r$pkgrel" # backwards compatibility
+replaces="py-olefile" # backwards compatiblity
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b797c0e419132fbd469b121b6d6a9f69a83d156b3b14be0ea227776ecbd6a912be5c38e74ec5fbced79eacbb4a19c7c6365b6fde2167e02bd92031c5f8b3f928  olefile-0.47.zip
+"

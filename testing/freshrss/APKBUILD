@@ -1,0 +1,164 @@
+# Maintainer: Cowington Post <cowingtonpost@gmail.com>
+pkgname=freshrss
+pkgver=1.29.1
+pkgrel=0
+pkgdesc="Free and self hosted rss feed agregator"
+url="https://freshrss.org/"
+arch="noarch"
+license="AGPL-3.0-or-later"
+pkgusers="freshrss"
+pkggroups="www-data"
+_php=php85
+depends="
+	$_php
+	$_php-ctype
+	$_php-curl
+	$_php-dom
+	$_php-fileinfo
+	$_php-fpm
+	$_php-gmp
+	$_php-intl
+	$_php-mbstring
+	$_php-pdo
+	$_php-session
+	$_php-simplexml
+	$_php-xml
+	$_php-xmlreader
+	$_php-zip
+	"
+checkdepends="
+	$_php-pdo_sqlite
+	$_php-openssl
+	$_php-phar
+	$_php-tokenizer
+	$_php-xmlwriter
+	composer
+	"
+install="$pkgname.pre-install $pkgname-openrc.post-install"
+subpackages="
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-lang
+	$pkgname-themes
+	$pkgname-mysql
+	$pkgname-pgsql
+	$pkgname-sqlite"
+source="https://github.com/FreshRSS/FreshRSS/archive/refs/tags/$pkgver/freshrss-$pkgver.tar.gz
+	defaults.patch
+	freshrss.confd
+	fpm-pool.conf
+	freshrss.crontab
+	"
+builddir="$srcdir/FreshRSS-$pkgver"
+options="net !fhs" # openrc() installs into /var/tmp
+
+prepare() {
+	default_prepare
+
+	# Create directory for tests
+	mkdir -p "$srcdir"/data/users/_
+}
+
+check() {
+	sed -i "s|^#!/usr/bin/env php$|#!/usr/bin/env $_php|" tests/cli/cli-parser-test.php
+	$_php /usr/bin/composer.phar install --prefer-dist --no-progress
+	DATA_PATH="$srcdir"/data \
+	$_php vendor/bin/phpunit ./tests --bootstrap ./tests/bootstrap.php
+	rm -fr vendor
+}
+
+package() {
+	rm -f ./*.md
+	rm -rf .devcontainer
+	rm -f .dockerignore
+	rm -f .editorconfig
+	rm -f .eslint*
+	rm -f .jshint*
+	rm -f .style*
+	rm -f .markdownlint*
+	rm -f .hadolint*
+	rm -f .typos.toml
+	rm -f Makefile
+
+	install -d "$pkgdir"/usr/share/doc
+	mv ./docs "$pkgdir"/usr/share/doc/$pkgname
+
+	install -d "$pkgdir"/usr/share/webapps/freshrss
+	cp -r . "$pkgdir"/usr/share/webapps/freshrss/
+
+	find "$pkgdir/usr/share/webapps/freshrss" -name '.git*' -exec rm -rf {} \; || true
+
+	rm -rf "$pkgdir"/usr/share/webapps/freshrss/Docker
+	rm -rf "$pkgdir"/usr/share/webapps/freshrss/tests
+	install -dm755 "$pkgdir"/var/lib/freshrss
+
+	mv "$pkgdir"/usr/share/webapps/freshrss/data "$pkgdir"/var/lib/freshrss/data
+	chgrp -R "www-data" "$pkgdir"/var/lib/freshrss/
+	chown -R "$pkgname" "$pkgdir"/var/lib/freshrss/
+
+	install -dm775 -o "$pkgname" -g www-data "$pkgdir"/var/log/"$pkgname"
+
+	install -m600 -D "$srcdir"/freshrss.crontab "$pkgdir"/etc/crontabs/freshrss
+}
+
+openrc() {
+	install -m644 -D "$srcdir"/fpm-pool.conf "$subpkgdir/etc/$_php/php-fpm.d/$pkgname".conf
+	install -m644 -D "$srcdir/$pkgname".confd "$subpkgdir"/etc/conf.d/"$pkgname"
+
+	install -d -o freshrss -g www-data "$pkgdir"/var/tmp/freshrss
+
+	mkdir -p "$subpkgdir"/etc/init.d/
+	ln -s "php-fpm${_php#php}" "$subpkgdir"/etc/init.d/"$pkgname"
+}
+
+lang() {
+	pkgdesc="translations for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel lang"
+	local lang
+	for lang in "$pkgdir"/usr/share/webapps/freshrss/app/i18n/*; do
+		# keep in base for default language
+		if [ "$(basename "$lang")" != "en" ]; then
+			amove usr/share/webapps/freshrss/app/i18n/"$(basename "$lang")"
+		fi
+	done
+}
+
+themes() {
+	pkgdesc="themes for $pkgname"
+	local theme
+	for theme in "$pkgdir"/usr/share/webapps/freshrss/p/themes/*; do
+		if [ -d "$theme" ]; then
+			case "$(basename "$theme")" in
+			# keep base-theme and default files, split the rest
+			base-theme | fonts | icons | Origine) ;;
+			*) amove usr/share/webapps/freshrss/p/themes/"$(basename "$theme")" ;;
+			esac
+		fi
+	done
+}
+
+mysql() {
+	pkgdesc="FreshRSS MySQL support"
+	depends="$pkgname $_php-pdo_mysql"
+	mkdir -p "$subpkgdir"
+}
+
+pgsql() {
+	pkgdesc="FreshRSS PostgreSQL support"
+	depends="$pkgname $_php-pgsql $_php-pdo_pgsql"
+	mkdir -p "$subpkgdir"
+}
+
+sqlite() {
+	pkgdesc="FreshRSS SQLite support"
+	depends="$pkgname $_php-sqlite3 $_php-pdo_sqlite"
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+0a42d17c6c357e1cc7338af73fec190556e9b69cff60714f0a3e8b1402018ed90de21f3e212de417176456b83e801077ad4d56d0866c376469005ae02a467cb4  freshrss-1.29.1.tar.gz
+dbd1468439192cd536ae1fc063edcda0a8047504c053f2566486697d454bbc328bb5ba841b597c09c1c4954fa0d71d1c79044fb8a179915b5bcc136fa2b50889  defaults.patch
+304767cc14db425fdb6f0214aca8baaa92ea05e8fc767e79ec96c4d9032509c2b52cb687106dc25b291bc7150305dde0bd0a84d77b0fc8ad872d2331c458bacf  freshrss.confd
+b6fe57b31bd48afb067d0c851ff42078e01ee42e3e2f01bbb64f8114429ddce740ce3fbd76eb487acf1b80909eb7e5e2721d5f3b2bdd6264d75d169d032dd2fe  fpm-pool.conf
+03e84ba5207dfa3d289326d87a2cba02d05a8de0da6dc7c390a43ab4061c259fe6c62b99a05f0192b5883405f2490022a280fa6a02984f3b640b6d8c9c1dab9a  freshrss.crontab
+"

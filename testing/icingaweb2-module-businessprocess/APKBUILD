@@ -1,0 +1,51 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=icingaweb2-module-businessprocess
+_module=${pkgname/*-/}
+pkgver=2.6.0
+pkgrel=0
+pkgdesc="Manage Business Processes in Icinga Web 2"
+url="https://icinga.com/"
+arch="noarch"
+license="GPL-2.0"
+_php=php8
+depends="icingaweb2-module-director"
+pkggroups="icingaweb2"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Icinga/icingaweb2-module-businessprocess/archive/v$pkgver.tar.gz"
+options="!check"
+
+package() {
+	mkdir -p "$pkgdir/etc/icingaweb2/modules/$_module"
+	mkdir -p "$pkgdir/usr/share/doc/$pkgname"
+	mkdir -p "$pkgdir/usr/share/webapps/icingaweb2/modules/$_module"
+	cp -a application library public \
+		module.info run.php configuration.php \
+		"$pkgdir/usr/share/webapps/icingaweb2/modules/$_module"
+	cp -a doc "$pkgdir/usr/share/doc/$pkgname"
+	chgrp -R $pkggroups "$pkgdir/etc/icingaweb2/modules/$_module"
+	cat >"$pkgdir"/usr/share/doc/$pkgname/README.alpine <<EOF
+You need to fix /etc/icingaweb2/modules/$_module with the owner of the user of your webserver
+
+For nginx, as example:
+	# chown -R nginx /etc/icingaweb2/modules/$_module
+or
+	# chown -R nobody /etc/icingaweb2/modules/$_module
+
+For Apache:
+	# chown -R apache /etc/icingaweb2/modules/$_module
+
+For lighttpd:
+	# chown -R lighttpd /etc/icingaweb2/modules/$_module
+
+Remember to enable the module with:
+
+    # icingacli $_module module enable $_module
+
+EOF
+
+}
+
+sha512sums="
+b7271e81e64887399c3f09d3369bac1f962c9302ce6bd4c0b68edabf53314ac8c358e334e6ef28941fe5d55e3789a9d33ca64dd3606093da29b8b6dc81222f94  icingaweb2-module-businessprocess-2.6.0.tar.gz
+"

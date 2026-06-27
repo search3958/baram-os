@@ -1,0 +1,49 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=py3-pypubsub
+pkgver=4.0.7
+pkgrel=2
+pkgdesc="A Python publish-subcribe library"
+url="https://github.com/schollii/pypubsub"
+arch="noarch"
+license="BSD-2-Clause"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="py3-pypubsub-$pkgver.tar.gz::https://github.com/schollii/pypubsub/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/pypubsub-$pkgver"
+
+prepare() {
+	default_prepare
+
+	# Unused exmple legacy code which provoke Python 2 to Python 3
+	# migration issues that break when byte-compiling with Python 3.12
+	rm -rf src/contrib
+}
+
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# otherwise unable to read local data files from tests/suite/
+	cd tests/suite/
+	../../.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -Dm644 README.rst -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+d14c80599d5cbc2dfbb9a4d25265530d238a94ab6e9a68cd72e8c36ca314b9c398275b798974dd778b9b3801d0ad698d664e2590a0a6517e0afe83abb1dbd76f  py3-pypubsub-4.0.7.tar.gz
+"

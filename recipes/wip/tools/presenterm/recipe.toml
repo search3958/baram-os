@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/mfontanini/presenterm"
-[build]
-template = "cargo"

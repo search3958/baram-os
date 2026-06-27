@@ -1,0 +1,54 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=janet
+pkgver=1.41.2
+pkgrel=0
+pkgdesc="Dynamic Lisp dialect and bytecode VM"
+url="https://janet-lang.org/"
+license="MIT"
+arch="all"
+makedepends="meson"
+subpackages="$pkgname-static $pkgname-doc $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/janet-lang/janet/archive/v$pkgver.tar.gz"
+
+# Bump tic-80 when upgrading/rebuilding.
+
+# secfixes:
+#   1.22.0-r0:
+#     - CVE-2022-30763
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Depoll=true \
+		-Dos_name="alpine" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	# Disable certain tests on certain carches
+	case "$CARCH" in
+		s390x)
+			#suite-buffer uint16/32 & float32/64 tests fail
+			_tests=$(meson test --list -C output | sed '/suite-buffer.janet/d')
+		;;
+		# Run all tests unless otherwise directed.
+		*)
+			_tests=$(meson test --list -C output)
+		;;
+	esac
+
+	meson test --print-errorlogs -C output $_tests
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -dm755 "$pkgdir"/usr/share/doc/janet
+	cp -a examples "$pkgdir"/usr/share/doc/janet
+}
+
+sha512sums="
+4eb029206fd28eaca91e3c1123f02027e674af06951e8839c9b2b199a1c2d3106653fcf0cefcf8c226ee6ace116edab5ab0ab13da377cf57171596cfb6f909f5  janet-1.41.2.tar.gz
+"

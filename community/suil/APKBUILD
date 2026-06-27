@@ -1,0 +1,31 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=suil
+pkgver=0.10.24
+pkgrel=1
+pkgdesc="C library for loading and wrapping LV2 plugin UIs"
+url="https://drobilla.net/software/suil"
+arch="all"
+license="ISC"
+makedepends="
+	gtk+3.0-dev
+	lv2-dev
+	meson
+	qt6-qtbase-dev
+	"
+subpackages="$pkgname-dev"
+source="https://download.drobilla.net/suil-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	abuild-meson -Db_lto=true -Dqt6=enabled . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+313b4ee49d43e2dc5a0955f47859fe15e88bc9687808eda93d581b16f84698c2cb4e8208f7339b2bbfb31bfc46588914f8a67405d2bb53014e3919d08653134d  suil-0.10.24.tar.xz
+"

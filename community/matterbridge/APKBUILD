@@ -1,0 +1,42 @@
+# Contributor: Konstantin Kulikov <k.kulikov2@gmail.com>
+# Maintainer: Konstantin Kulikov <k.kulikov2@gmail.com>
+pkgname=matterbridge
+pkgver=1.26.0
+pkgrel=28
+_commit=6dafebc7 # git rev-parse --short HEAD
+pkgdesc="Bridges between a growing number of chat protocols"
+url="https://github.com/42wim/matterbridge"
+license="Apache-2.0"
+arch="all"
+makedepends="go"
+subpackages="$pkgname-openrc"
+install="$pkgname.pre-install"
+source="$pkgname-$pkgver.tar.gz::https://github.com/42wim/matterbridge/archive/v$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+	"
+
+export GOFLAGS="$GOFLAGS -modcacherw"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -ldflags="-X main.githash=$_commit" .
+}
+
+check() {
+	go test -short ./...
+}
+
+package() {
+	install -Dm755 $builddir/$pkgname $pkgdir/usr/bin/$pkgname
+	install -Dm755 $srcdir/$pkgname.initd $pkgdir/etc/init.d/$pkgname
+	install -Dm644 $srcdir/$pkgname.confd $pkgdir/etc/conf.d/$pkgname
+}
+
+sha512sums="
+693dff9bc4168ba1911d5b7a54ba203cc90e3609abc22e08b2ef11a6f0a6dada94be09bbb6d9fab5c4dbbc84011f891005958aa2b9b81fc292f26ec157ec0066  matterbridge-1.26.0.tar.gz
+4dfe463b4c0d2b7cf08c5976e5417af6ec84e11a1e1437356b1624517cb961032903a0a9e11167d0d6223fa9590c9ba157c1e257a718505ed3592627e65a66d0  matterbridge.initd
+43b5f450787c40e35e3a419b8f8c06a0ecf3f396ed8a8c58f672164468f788c13b50081ba1397fd857e1768790255616cb3a15f3a3c02603af7268cc8a84ea69  matterbridge.confd
+"

@@ -1,0 +1,33 @@
+# Contributor: Steeve Chailloux <steeve@chaahk.com>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=autocutsel
+pkgver=0.10.1
+pkgrel=3
+pkgdesc="automated xcutsel"
+url="https://nongnu.org/autocutsel/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="libx11-dev libxaw-dev"
+source="https://github.com/sigmike/autocutsel/releases/download/$pkgver/autocutsel-$pkgver.tar.gz"
+# no tests
+options="!check"
+
+prepare() {
+ 	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="a4f68342b389ef94fde8052f5d9e4b4585bab8fa8364985a2b0a3ec3e6f81ed58ba45be9349aa6e16c70ca623a7c315796cf0440ef6f4ffa9606ed7b7981a4a2  autocutsel-0.10.1.tar.gz"

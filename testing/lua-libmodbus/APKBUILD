@@ -1,0 +1,53 @@
+# Contributor: Tobias Spieth <tobias.spieth@evbox.com>
+# Maintainer: Tobias Spieth <tobias.spieth@evbox.com>
+pkgname=lua-libmodbus
+_rockname="${pkgname#lua-}"
+pkgver=0.6.1
+pkgrel=0
+pkgdesc="Lua bindings to libmodbus"
+url="https://github.com/etactica/lua-libmodbus"
+license="MIT"
+arch="all"
+makedepends="libmodbus-dev"
+subpackages="$pkgname-doc"
+options="!check" # Test dependencies not available
+source="$_rockname-$pkgver.tar.gz::https://github.com/etactica/lua-libmodbus/archive/v$pkgver.tar.gz"
+
+_luaversions="5.1 5.2"
+for _v in $_luaversions; do
+	makedepends="$makedepends lua$_v-dev luarocks$_v"
+	subpackages="$subpackages lua$_v-$_rockname:_subpackage"
+done
+
+build() {
+	local lver; for lver in $_luaversions; do
+		msg "Building for Lua $lver..."
+
+		"luarocks-$lver" \
+			CC="$CC" \
+			CFLAGS="$CFLAGS -fPIC" \
+			LUA_INCDIR="$(pkg-config --variable=includedir "lua$lver")" \
+			LUA_LIBDIR="$(pkg-config --variable=libdir "lua$lver")" \
+			LUA_VERSION="$lver" \
+			make --tree="./build-$lver" \
+			"luarocks/$pkgname-$pkgver-"*".rockspec"
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir/usr/share/doc/$pkgname/"
+	cp -r "docs/" "$pkgdir/usr/share/doc/$pkgname/"
+}
+
+_subpackage() {
+	local lver="${subpkgname:3:3}"
+	pkgdesc="$pkgdesc (for Lua $lver)"
+	depends="lua$lver"
+	install_if="$pkgname=$pkgver-r$pkgrel lua$lver"
+
+	local path="lib/lua/$lver"
+	mkdir -p "$subpkgdir/usr/${path%/*}"
+	mv "$builddir/build-$lver/$path" "$subpkgdir/usr/$path/"
+}
+
+sha512sums="99bca4898b2a6b6b94f6bab794efdfddb44f2baed552344ddda912a3154be15d2f01e021df7fe8231252359e2fbd5ad8a3db129d0c658b49ded6f74ad531231f  libmodbus-0.6.1.tar.gz"

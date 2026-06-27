@@ -1,0 +1,31 @@
+#!/sbin/openrc-run
+# Alpine Linux init.d for TinySSH
+# Copyright 2017 Stuart Cardall (https://github.com/itoffshore)
+# Distributed under the terms of the GNU General Public License, v2 or later #
+# Modified by Laurent Bercot <ska-devel@skarnet.org> 2021-12-07
+# Modified by Miguel Da Silva <midas@contauro.com> 2024-04-04
+
+OPTIONS=${OPTIONS:-\-v -l}
+PORT=${PORT:-22}
+IP=${IP:-0.0.0.0}
+CONFDIR=${CONFDIR:-/etc/tinyssh}
+keydir=${CONFDIR}/sshkeys
+
+depend() {
+	use net
+	after logger firewall
+}
+
+daemon=tinysshd
+supervisor=supervise-daemon
+description="Small SSH server using libsodium (no dependency on OpenSSL)"
+
+command="tcpserver"
+command_args="-HRDl0 ${IP} ${PORT} $daemon ${OPTIONS} $keydir"
+
+start_pre() {
+	if ! [ -d "$keydir" ]; then
+		checkpath --directory ${CONFDIR}
+		tinysshd-makekey $keydir 2>/dev/null
+	fi
+}

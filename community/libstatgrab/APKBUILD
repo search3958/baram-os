@@ -1,0 +1,38 @@
+# Maintainer: Antoni Aloy <aaloytorrens@gmail.com>
+pkgname=libstatgrab
+pkgver=0.92.1
+pkgrel=1
+pkgdesc="Cross platform library for accessing system statistics"
+url="https://libstatgrab.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+depends_dev="ncurses-dev"
+checkdepends="perl"
+makedepends="autoconf automake libtool utmps-dev linux-headers $depends_dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/libstatgrab/libstatgrab/releases/download/LIBSTATGRAB_0_92_1/libstatgrab-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+e1f14df8abbb044d02b0ecebc23fbe9effaa0bac6738686e661de015564df5a4d872edef6d07fd150db25764b449d47ef54beecbe12c51987a679b07edc53c97  libstatgrab-0.92.1.tar.gz
+"

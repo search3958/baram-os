@@ -1,0 +1,47 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=rocm-cmake
+pkgver=7.2.1
+pkgrel=0
+pkgdesc="CMake modules for common build tasks needed for the ROCm software stack"
+url="https://github.com/ROCm/rocm-cmake"
+arch="noarch"
+license="MIT"
+depends="cmake rocm-core"
+makedepends="ninja"
+checkdepends="git rocm-llvm"
+source="rocm-cmake-$pkgver.tar.gz::https://github.com/ROCm/rocm-cmake/archive/refs/tags/rocm-$pkgver.tar.gz"
+subpackages="$pkgname-doc"
+builddir="$srcdir/rocm-cmake-rocm-$pkgver"
+options="!check" # check: circular dependency
+
+prepare() {
+	default_prepare
+
+	# Remove tests that require git or unavailable Python modules
+	rm test/pass/version-norepo.cmake
+	rm test/pass/version-parent.cmake
+	rm test/pass/doc-sphinxdoxygen.cmake
+	rm test/pass/analyze-gh.cmake
+	rm test/pass/analyze.cmake
+	rm test/fail/rename-compatibility.cmake
+}
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+check() {
+	cmake --build build --target check
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	install -Dm644 "$builddir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+sha512sums="
+f56eb5b211df6d089389cbd861ee0e5119342f657e51f7faf4669e1efcc4edbcd14b864437c63c0ed04ad677218f7816ab14b063683303018462d457f0b5b2c6  rocm-cmake-7.2.1.tar.gz
+"

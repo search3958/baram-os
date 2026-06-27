@@ -1,0 +1,38 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ircii
+pkgver=20260115
+pkgrel=1
+pkgdesc="Universal IRC for Unix systems"
+url="http://www.eterna23.net/ircii/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="ncurses-dev openssl-dev"
+subpackages="$pkgname-doc"
+source="https://ircii.warped.com/ircii-$pkgver.tar.bz2"
+
+# secfixes:
+#   20210314-r0:
+#     - CVE-2021-29376
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--with-default-server=irc.oftc.net
+	make
+}
+
+check() {
+	./irc -v
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+93a2a2e9f2ec27ad67199465f78bec34b50d0ffd503ea5dfa1d6198524499883f15fece10448b49f9dae4ac7a21971f0277b34b865f779fd37cda5aa6cd91d41  ircii-20260115.tar.bz2
+"

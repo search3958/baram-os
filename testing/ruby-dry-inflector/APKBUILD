@@ -1,0 +1,54 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=ruby-dry-inflector
+_gemname=${pkgname#ruby-}
+pkgver=1.3.1
+pkgrel=0
+pkgdesc="string inflections for dry-rb"
+url="https://rubygems.org/gems/dry-inflector"
+arch="noarch"
+license="MIT"
+depends="ruby"
+checkdepends="ruby-rake ruby-bundler ruby-rspec ruby-simplecov ruby-simplecov-cobertura ruby-warning"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dry-rb/dry-inflector/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_gemname-$pkgver"
+options="!check" # depends on rubocop
+subpackages="$pkgname-doc"
+
+prepare() {
+	default_prepare
+
+	sed -i '/spec.signing_key/d' $_gemname.gemspec
+}
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	rake spec
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+
+	gem install --local \
+		--install-dir "$gemdir" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		$_gemname
+
+	install -m644 -D "$builddir"/LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+
+	rm -r "$gemdir"/cache \
+		"$gemdir"/build_info \
+		"$gemdir"/doc
+
+	cd "$gemdir/gems/$_gemname-$pkgver"
+	rm CHANGELOG.md LICENSE README.md
+}
+
+sha512sums="
+0efdf00224189c0401b1fd5bc09506ed62adcd7ebb2316489f9706df3135d97c4b2ed22c5625270d2898d82c408fa4beb032b9cb6783cca500f1b487ba1a059f  ruby-dry-inflector-1.3.1.tar.gz
+"

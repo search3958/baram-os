@@ -1,0 +1,131 @@
+# Contributor: Vlad Glagolev <scm@vaygr.net>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=vile
+pkgver=9.8z_p2
+_pkgver=9.8zb
+pkgrel=0
+pkgdesc="Vi Like Emacs"
+url="https://invisible-island.net/vile/"
+arch="all"
+license="GPL-2.0-only"
+options="!check" # no tests
+makedepends="
+	flex
+	fontconfig-dev
+	freetype-dev
+	libx11-dev
+	libxft-dev
+	libxpm-dev
+	libxt-dev
+	ncurses-dev
+	gnu-libiconv-dev
+	perl-dev
+	"
+subpackages="$pkgname-common $pkgname-doc xvile"
+source="https://invisible-island.net/archives/vile/current/vile-$_pkgver.tgz"
+builddir="$srcdir/$pkgname-$_pkgver"
+
+prepare() {
+	default_prepare
+	mkdir "$builddir"/build_term
+	mkdir "$builddir"/build_x11
+}
+
+build() {
+	cd "$builddir"/build_term
+	"$builddir"/configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-libdir-path=/usr/libexec/vile \
+		--with-startup-path=/usr/share/vile \
+		--with-builtin-filters \
+		--with-screen=ncursesw \
+		--with-perl \
+		--without-x \
+		--with-ncurses \
+		--enable-plugins \
+		--disable-stripping \
+		--with-locale \
+		--with-iconv
+	make
+
+	cd "$builddir"/build_x11
+	../configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-libdir-path=/usr/libexec/xvile \
+		--with-startup-path=/usr/share/xvile \
+		--with-builtin-filters \
+		--with-screen=X11 \
+		--with-perl \
+		--with-x \
+		--with-xpm \
+		--enable-freetype \
+		--enable-colored-menus \
+		--enable-plugins \
+		--disable-stripping \
+		--with-locale \
+		--with-iconv
+	make
+}
+
+package() {
+	pkgdesc="Vi Like Emacs, for Terminal (vile)"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	install -dm755 "$pkgdir"/usr/share/"$pkgname"/doc
+	make -C "$builddir"/build_term DESTDIR="$pkgdir" \
+		install install-doc install-help
+	make -C "$builddir"/build_x11 DESTDIR="$pkgdir" install
+	# remove duplicates
+	rm -rf "$pkgdir"/usr/bin/xvile-libdir-path
+	rm -rf "$pkgdir"/usr/bin/xvile-to-html
+	rm -rf "$pkgdir"/usr/libexec/xvile
+	rm "$pkgdir"/usr/share/man/man1/xvile.1
+	ln -s vile.1 "$pkgdir"/usr/share/man/man1/xvile.1
+	install -Dm644 -t "$pkgdir"/usr/share/licenses/"$pkgname" COPYING
+	install -Dm644 -t "$pkgdir"/usr/share/doc/"$pkgname" \
+		AUTHORS CHANGES* README
+}
+
+common() {
+	pkgdesc="Vi Like Emacs, common files for vile and xvile"
+	depends="perl"
+
+	amove \
+		usr/bin/vileget \
+		usr/bin/vile-libdir-path \
+		usr/bin/vile-to-html \
+		usr/libexec/vile \
+		usr/share/vile
+	ln -s vile-libdir-path "$subpkgdir"/usr/bin/xvile-libdir-path
+	ln -s vile-to-html-path "$subpkgdir"/usr/bin/xvile-to-html
+	ln -s vile "$subpkgdir"/usr/libexec/xvile
+}
+
+xvile() {
+	pkgdesc="Vi Like Emacs, for GUI (xvile)"
+	depends="$pkgname-common=$pkgver-r$pkgrel"
+
+	amove \
+		usr/bin/lxvile \
+		usr/bin/lxvile-fonts \
+		usr/bin/uxvile \
+		usr/bin/xshell.sh \
+		usr/bin/xvile \
+		usr/bin/xvile-pager \
+		usr/lib/X11
+}
+
+sha512sums="
+cce86f8aab814026dd1275e6491b025670fcabff52160e5fec2b070427c8d42e843bd17f9235d8991d6ea77ffd4c14e11cc59b0cef006f2d7aa8393d48bb72b3  vile-9.8zb.tgz
+"

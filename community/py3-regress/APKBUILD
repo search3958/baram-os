@@ -1,0 +1,45 @@
+# Contributor: 6543 <6543@obermui.de>
+# Maintainer: 6543 <6543@obermui.de>
+pkgname=py3-regress
+pkgver=2025.10.1
+pkgrel=1
+pkgdesc="Python bindings to the Rust regress crate which provides ECMA regular expressions"
+url="https://github.com/crate-py/regress"
+# s390x https://github.com/crate-py/regress/issues/20
+arch="all !s390x"
+license="MIT"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools-rust
+	py3-wheel
+	python3-dev
+	py3-maturin
+	"
+checkdepends="
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/crate-py/regress/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/regress-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/regress*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+2afe046638a845ee35509fcf4153466f6eec1dd65a8bec8d167742cf88712c17a738a4dc99a5d9eaf0cf1e5e1cac15757b113a19a03a73b908c757ea71678100  py3-regress-2025.10.1.tar.gz
+"

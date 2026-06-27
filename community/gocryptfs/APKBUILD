@@ -1,0 +1,32 @@
+# Contributor: André Klitzing <aklitzing@gmail.com>
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=gocryptfs
+pkgver=2.6.1
+pkgrel=6
+pkgdesc="Encrypted overlay filesystem written in Go"
+url="https://github.com/rfjakob/gocryptfs"
+arch="all"
+license="MIT"
+makedepends="go bash openssl-dev>3"
+depends="fuse3"
+options="!check" # test requires fuse kernel module
+subpackages="$pkgname-doc"
+source="https://github.com/rfjakob/gocryptfs/releases/download/v$pkgver/gocryptfs_v${pkgver}_src-deps.tar.gz"
+builddir="$srcdir/${pkgname}_v${pkgver}_src-deps"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	./build.bash
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir"/usr/share/licenses
+}
+
+sha512sums="
+ec8a8011a355656c1f242269fcc1559c537e880342e4f71a956a63ac72e47f2d9fea45f6ef308d420282725eb5bd4780f0cd645d137bb6beecb97a9c93b448fb  gocryptfs_v2.6.1_src-deps.tar.gz
+"

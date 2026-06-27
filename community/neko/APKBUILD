@@ -1,0 +1,52 @@
+# Contributor: Anjandev Momi <anjan@momi.ca>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=neko
+pkgver=2.4.1
+pkgrel=1
+pkgdesc="The Neko Virtual Machine"
+url="https://nekovm.org/"
+arch="all"
+license="MIT"
+makedepends="
+	apache2-dev
+	cmake
+	gc-dev
+	git
+	gtk+3.0-dev
+	linux-headers
+	mariadb-dev
+	mbedtls3-dev
+	ninja
+	pcre2-dev
+	sqlite-dev
+	"
+subpackages="$pkgname-doc $pkgname-dev"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/HaxeFoundation/neko/archive/refs/tags/v${pkgver//./-}.tar.gz
+	"
+builddir="$srcdir/$pkgname-${pkgver//./-}"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DNEKO_JIT_DISABLE=ON \
+		-DRELOCATABLE=OFF \
+		-DRUN_LDCONFIG=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ccf7d89626d8acb97c7ff7f6941a86eea071c18a51fc6fc53dca0876413fda2b3d2d3eebc741d67d9cf6c7085730a3b8e1e7ca5a02641d0eab1dc0191530817c  neko-2.4.1.tar.gz
+"

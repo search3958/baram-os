@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-vba-next
+pkgver=0_git20241021
+pkgrel=0
+_commit="d0ec7f3e209a91b903bb9d2c2397fef2bb3cca32"
+pkgdesc="optimized port of VBA-M to Libretro"
+url="https://github.com/libretro/vba-next"
+arch="all"
+license="GPL-2.0-only"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/vba-next/archive/$_commit.tar.gz"
+builddir="$srcdir/vba-next-$_commit"
+options="!check" # No tests
+
+build() {
+	make -f Makefile.libretro
+}
+
+package() {
+	install -Dm644 vba_next_libretro.so "$pkgdir"/usr/lib/libretro/vba_next_libretro.so
+}
+
+sha512sums="
+2af4dadb265375ee87e93e2189a2fe917f5fccc514841879ecb1dc4376c64b1ed853a4febecee14d432ef92ed041fa31fd8e863fbd56f73950051b01178a1ea0  libretro-vba-next-d0ec7f3e209a91b903bb9d2c2397fef2bb3cca32.tar.gz
+"

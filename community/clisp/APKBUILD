@@ -1,0 +1,49 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=clisp
+pkgver=2.49.95_git250727
+pkgrel=1
+_git=f66220939ea7d36fd085384afa4a0ec44597d499
+pkgdesc="ANSI Common Lisp interpreter, compiler and debugger"
+url="https://clisp.sourceforge.io/"
+# Loongarch64: missing ffcall, will look into this.
+arch="all !loongarch64"
+license="GPL-2.0-only"
+makedepends="
+	ffcall
+	libsigsegv-dev
+	ncurses-dev
+	readline-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.com/gnu-clisp/clisp/-/archive/$_git/clisp-$_git.tar.gz"
+builddir="$srcdir/$pkgname-$_git"
+options="!check" # tests consistently fail in chroot and containers
+
+build() {
+	ulimit -s 16384
+
+	./configure \
+		--prefix=/usr \
+		--with-ffcall \
+		--with-dynamic-ffi \
+		--without-dynamic-modules \
+		--disable-mmap \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		"$builddir"
+	make -j1
+}
+
+check() {
+	make -j1 -C tests
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+1b86356507084bdafb88d1bba31051ff94153a77cb8d316f3db2afed9c14f0696ab059f947ed30710ce0b1df26583f4f69e6bd28ce6fac6ef06c4d383c1bfeda  clisp-2.49.95_git250727.tar.gz
+"

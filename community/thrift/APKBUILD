@@ -1,0 +1,115 @@
+# Maintainer: Patrick Gansterer <paroga@paroga.com>
+pkgname=thrift
+pkgver=0.23.0
+pkgrel=0
+pkgdesc="Language-independent software stack for RPC implementation"
+url="https://thrift.apache.org/"
+arch="all"
+license="Apache-2.0"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	libevent-dev
+	"
+makedepends="
+	bison
+	boost-dev
+	cmake
+	flex
+	glib-dev
+	libevent-dev
+	qt5-qtbase-dev
+	openssl-dev
+	samurai
+	zlib-dev
+	"
+subpackages="
+	$pkgname-dev
+	lib$pkgname:lib
+	lib${pkgname}nb:libnb
+	lib${pkgname}z:libz
+	lib$pkgname-glib:libglib
+	lib$pkgname-qt:libqt
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/apache/thrift/archive/v$pkgver.tar.gz"
+
+# secfixes:
+#   0.23.0-r0:
+#     - CVE-2025-48431
+#     - CVE-2026-41602
+#     - CVE-2026-41603
+#     - CVE-2026-41604
+#     - CVE-2026-41605
+#     - CVE-2026-41606
+#     - CVE-2026-41607
+#     - CVE-2026-41636
+#   0.14.0-r0:
+#     - CVE-2020-13949
+
+build() {
+	cmake -B _build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=ON \
+		-DBUILD_TESTING="$(want_check && echo ON || echo OFF)" \
+		-DWITH_AS3=OFF \
+		-DWITH_JAVA=OFF \
+		-DWITH_JAVASCRIPT=OFF \
+		-DWITH_NODEJS=OFF \
+		-DWITH_PYTHON=OFF
+	cmake --build _build
+}
+
+check() {
+	local skipped_tests="(StressTestConcurrent|StressTestNonBlocking"
+	local tests="
+		testapplicationexception
+		testtransportsocket
+		testbinaryprotocol
+		testcompactprotocol
+		testbufferedtransport
+		testframedtransport
+		testfdtransport
+		testsimpleserver
+		testdebugproto
+		testthriftbinaryreadcheck
+		testthriftbufferedreadcheck
+		testthriftcompactreadcheck
+		testthriftframedreadcheck
+		testthriftfdreadcheck
+		testzlibtransport
+		testthrifttestzlibclient
+		"
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	skipped_tests="$skipped_tests)"
+	ctest --test-dir _build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install _build
+}
+
+lib() {
+	amove usr/lib/libthrift.so.*
+}
+
+libglib() {
+	amove usr/lib/libthrift_c_glib*.so.*
+}
+
+libnb() {
+	amove usr/lib/libthriftnb.so.*
+}
+
+libqt() {
+	amove usr/lib/libthriftqt5.so.*
+}
+
+libz() {
+	amove usr/lib/libthriftz.so.*
+}
+
+sha512sums="
+4008c38b28dade88728cb98792a36f16f496e274a7c3e47c0c3cf61a5ee30916a1caf05115b8863c049d7435d7b5be21bd23591c1acd6c13a278059cdf4257af  thrift-0.23.0.tar.gz
+"

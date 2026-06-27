@@ -1,0 +1,47 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Contributor: Stefan Wagner <stw@bit-strickerei.de>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=xdotool
+pkgver=4.20260303.1
+pkgrel=0
+pkgdesc="Simulate X11 keyboard/mouse input events"
+url="https://github.com/jordansissel/xdotool"
+arch="all"
+license="BSD-3-Clause"
+depends_dev="
+	libxinerama-dev
+	libxkbcommon-dev
+	libxtst-dev
+	"
+makedepends="
+	$depends_dev
+	libx11-dev
+	perl
+	"
+checkdepends="
+	bash
+	openbox
+	ruby
+	xvfb
+	"
+options="!check" # tests hang on the CI
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jordansissel/xdotool/archive/v$pkgver.tar.gz"
+
+build() {
+	make WITHOUT_RPATH_FIX=1
+}
+
+check() {
+	make -j1 test
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr INSTALLMAN=/usr/share/man install
+}
+
+sha512sums="
+2ec84a0856797d24c3fe7aa75cb643e37d1b2a2ff7dc332a11f9e88321592c4f0e2aa7a7e981ca98ca624fc120d1abb0021d97537555c43be77afc1b9a72803c  xdotool-4.20260303.1.tar.gz
+"

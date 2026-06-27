@@ -1,0 +1,53 @@
+maintainer="Krassy Boykinov <kboykinov@teamcentrixx.com>"
+pkgname=hwloc
+pkgver=2.12.2
+pkgrel=0
+pkgdesc="Portable abstraction of hierarchical hardware architectures"
+url="https://www.open-mpi.org/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cairo-dev eudev-dev libxml2-dev~2.13 ncurses-dev numactl-dev"
+options="!check" # fails on multiple arches with different tests
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-tools
+	"
+source="https://www.open-mpi.org/software/hwloc/v${pkgver%.*}/downloads/hwloc-$pkgver.tar.bz2"
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sbindir=/usr/bin \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm "$pkgdir"/usr/share/hwloc/hwloc-dump-hwdata.service
+}
+
+doc() {
+	default_doc
+
+	amove usr/share/hwloc/hwloc-ps.www
+	amove usr/share/hwloc/hwloc*.dtd
+}
+
+tools() {
+	pkgdesc="Portable hardware locality tools"
+
+	amove usr/bin
+	amove usr/share/applications/lstopo.desktop
+}
+
+sha512sums="
+949d6c9d7b858ee58e477b15e6c06f57812872142fa1c7f3ef20aae2e4ef954135f839e8604404bfd0637fde99729c7d00211c8aee860dfde9ac60bba0e78aef  hwloc-2.12.2.tar.bz2
+"

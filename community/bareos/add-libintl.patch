@@ -1,0 +1,13 @@
+diff --git a/core/CMakeLists.txt b/core/CMakeLists.txt
+index f49feab..d627746 100644
+--- a/core/CMakeLists.txt
++++ b/core/CMakeLists.txt
+@@ -233,6 +233,8 @@ include(BareosFindPrograms)
+ 
+ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+   set(HAVE_LINUX_OS 1)
++  link_directories(/usr/lib)
++  link_libraries(intl)
+ endif()
+ 
+ if(${CMAKE_SYSTEM_NAME} MATCHES "SunOS")

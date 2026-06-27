@@ -1,0 +1,55 @@
+# Maintainer: Ariadne Conill <ariadne@dereferenced.org>
+pkgname=pkgconf
+pkgver=2.9.93
+pkgrel=0
+pkgdesc="development framework configuration tools"
+url="https://gitea.treehouse.systems/ariadne/pkgconf"
+arch="all"
+license="ISC"
+replaces="pkgconfig"
+provides="pkgconfig=1"
+checkdepends="kyua atf"
+subpackages="$pkgname-doc $pkgname-dev"
+source="https://distfiles.ariadne.space/pkgconf/pkgconf-$pkgver.tar.xz
+	"
+
+# secfixes:
+#   1.9.4-r0:
+#     - CVE-2023-24056
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--with-pkg-config-dir=/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	ln -s pkgconf "$pkgdir"/usr/bin/pkg-config
+}
+
+dev() {
+	default_dev
+
+	# Move pkg-config back to main package (default_dev implicitly moves
+	# files /usr/bin/*-config to -dev).
+	mv "$subpkgdir"/usr/bin/pkg-config "$pkgdir"/usr/bin/
+
+	mkdir -p "$pkgdir"/usr/share/aclocal/
+	mv "$subpkgdir"/usr/share/aclocal/pkg.m4 "$pkgdir"/usr/share/aclocal/
+}
+
+sha512sums="
+c15fd5462762162a48bd39ab267c6215b0cbe2b8e023a445393087b81e0cbdad7d15b6bfd88d1820756233451c6df653aa483fb6fcd3f4e33e8b443954f26b13  pkgconf-2.9.93.tar.xz
+"

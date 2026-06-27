@@ -1,0 +1,47 @@
+# Contributor: Jose Maria Garcia <josemaria.alkala@gmail.com>
+# Maintainer: Jose Maria Garcia <josemaria.alkala@gmail.com>
+pkgname=zile
+pkgver=2.6.2
+pkgrel=1
+pkgdesc="GNU Zile is a text editor development kit."
+url="https://www.gnu.org/software/zile"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	glib-dev
+	gobject-introspection-dev
+	help2man
+	libgee-dev
+	ncurses-dev
+	perl
+"
+subpackages="$pkgname-doc"
+source="https://ftp.gnu.org/gnu/zile/zile-$pkgver.tar.gz"
+options="!check"
+
+prepare() {
+	default_prepare
+	update_config_sub
+	update_config_guess
+}
+
+build() {
+	# Temporarily disable incompatible pointer type warnings
+	# from vala-generated code causing rebuild failure with gcc 14
+	export CFLAGS="$CFLAGS -Wno-incompatible-pointer-types"
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/charset.alias
+}
+
+sha512sums="
+16d5cece403fc215d53b35c31fe6f743d53d7a01cdc7d101cabe6760173539c9c31e092b29c374f28a723708027f6de626fcfee302962848091f85078fa81761  zile-2.6.2.tar.gz
+"

@@ -1,5 +1,0 @@
-#TODO signal-hook and libc crate errors
-[source]
-git = "https://github.com/neelkarma/terdle"
-[build]
-template = "cargo"

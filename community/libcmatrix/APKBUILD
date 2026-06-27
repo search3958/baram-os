@@ -1,0 +1,39 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libcmatrix
+pkgver=0.0.4
+pkgrel=0
+pkgdesc="Matrix protocol library written in C using GObject"
+url="https://source.puri.sm/Librem5/libcmatrix"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	glib-dev
+	json-glib-dev
+	libgcrypt-dev
+	libsecret-dev
+	libsoup3-dev
+	meson
+	olm-dev
+	sqlite-dev
+	"
+subpackages="$pkgname-dev"
+source="https://source.puri.sm/Librem5/libcmatrix/-/archive/v$pkgver/libcmatrix-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+10371dfaec9096e6c18d7dfd09ee7cd122ad550a1cc0f70d6a9ee02c77cafbd6daf95cee9c80dba0c7d729883c62c115ef478b6f40b9228b1ec7349300c33b06  libcmatrix-v0.0.4.tar.gz
+"

@@ -1,0 +1,39 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=ncdu2
+pkgver=2.9.2
+pkgrel=0
+pkgdesc="Disk usage analyzer with an ncurses interface"
+url="https://dev.yorhel.nl/ncdu"
+license="MIT"
+arch="x86_64 aarch64" # Limited by zig aport
+makedepends="chrpath zig ncurses-dev zstd-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://dev.yorhel.nl/download/ncdu-$pkgver.tar.gz"
+builddir="$srcdir/ncdu-$pkgver"
+replaces=ncdu
+
+# We may want other than "baseline" for other targets, when enabled by zig
+case "$CARCH" in
+	aarch64|x86_64) _cputarget=baseline ;;
+esac
+
+build() {
+	zig build -Doptimize=ReleaseSafe -Dpie=true ${_cputarget:+-Dcpu="$_cputarget"}
+}
+
+check() {
+	zig build test
+}
+
+package() {
+	install -Dm755 zig-out/bin/ncdu "$pkgdir"/usr/bin/ncdu
+	chrpath -d "$pkgdir"/usr/bin/ncdu
+
+	make install-doc PREFIX="$pkgdir/usr"
+
+	install -Dm644 LICENSES/MIT.txt "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+57fc6f5d2d5d7bf18b9201c4be07c88dbf5998929678a13f276e775db44740173bf03d5ab3c062492016af741074e0304e7df8a3eb05e8d68ff17aa4ff0724a8  ncdu2-2.9.2.tar.gz
+"

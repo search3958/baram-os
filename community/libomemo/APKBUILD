@@ -1,0 +1,40 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=libomemo
+pkgver=0.8.1
+pkgrel=0
+pkgdesc="Implements XMPP OMEMO (XEP-0384) in C"
+arch="all"
+url="https://github.com/gkdr/libomemo"
+license="MIT"
+makedepends="
+	cmake
+	glib-dev
+	libgcrypt-dev
+	mxml-dev
+	samurai
+	sqlite-dev
+	"
+checkdepends="cmocka-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/gkdr/libomemo/archive/v$pkgver.tar.gz"
+subpackages="$pkgname-dev"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DOMEMO_WITH_TESTS="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+452c7ff9eb809de37df24bd0857c30c1e1ed1d4638c8338bb101f6d5a31be700f174f4fe65fb8ccd5358a674f8397a0eb54d8e03abfdce57cea60bcd4959f40a  libomemo-0.8.1.tar.gz
+"

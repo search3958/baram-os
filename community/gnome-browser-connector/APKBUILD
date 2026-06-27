@@ -1,0 +1,36 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer: knuxify <knuxify@gmail.com>
+pkgname=gnome-browser-connector
+pkgver=42.1
+pkgrel=5
+pkgdesc="OS-native connector for the GNOME browser extension"
+url="https://gitlab.gnome.org/GNOME/gnome-browser-connector"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3 py3-gobject3"
+makedepends="meson"
+subpackages="$pkgname-pyc"
+source="https://gitlab.gnome.org/nE0sIghT/gnome-browser-connector/-/archive/v$pkgver/gnome-browser-connector-v$pkgver.tar.gz"
+builddir="$srcdir/gnome-browser-connector-v$pkgver"
+options="!check" # no test suite
+
+replaces="chrome-gnome-shell"
+provides="chrome-gnome-shell=$pkgver-r$pkgrel"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+9d6be9e40f21d5089970ef5474fd7e3e75bd76e877faa440e521380c145af8e1141ec3405e65e81a3735c946279f89dda2e2646c166c7473b2ab1bf2bc681ca0  gnome-browser-connector-v42.1.tar.gz
+"

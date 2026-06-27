@@ -1,0 +1,74 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=rustic
+# NOTE: do not move out of the testing repository until upstream says it's no longer beta-quality software
+pkgver=0.11.1
+pkgrel=0
+pkgdesc="Fast, encrypted, deduplicated backups"
+url="https://github.com/rustic-rs/rustic"
+license="MIT OR Apache-2.0"
+arch="all"
+checkdepends="tzdata"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	zstd-dev
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+# NOTE: Keep in sync with rustic_core in Cargo.toml.
+_core_ver=0.10.1
+source="https://github.com/rustic-rs/rustic/archive/v$pkgver/rustic-$pkgver.tar.gz
+	https://github.com/rustic-rs/rustic_core/archive/rustic_core-v$_core_ver/rustic_core-rustic_core-v$_core_ver.tar.gz
+	build-with-system-tls.patch
+	"
+options="net" # fetch dependencies
+
+prepare() {
+	mkdir -p vendor
+	mv "$srcdir"/rustic_core-rustic_core-v$_core_ver vendor/rustic_core
+
+	default_prepare
+
+	# Rust target triple.
+	local target=$(rustc -vV | sed -n 's/host: //p')
+
+	# Build against system-provided zstd.
+	mkdir -p .cargo
+	cat >> .cargo/config.toml <<-EOF
+		[target.$target]
+		zstd = { rustc-link-lib = ["zstd"] }
+	EOF
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+
+	target/release/rustic completions bash > $pkgname.bash
+	target/release/rustic completions fish > $pkgname.fish
+	target/release/rustic completions zsh > $pkgname.zsh
+}
+
+check() {
+	TZ=UTC cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+
+	install -Dm644 $pkgname.bash "$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 $pkgname.fish "$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 $pkgname.zsh "$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+e131457db049eaa1ff5d059b69413f89cbf9e145d3d6e4a855b175cf01213e2abca2e0509e28a06115ba444f303f32a8bdee6f0533184c08a5e60d823ad9ed93  rustic-0.11.1.tar.gz
+107b98bd875605fbf9dcbd98af4a0404afec76df714870536a9fa44bf4e05d25a683042ebeec6282c6cfdcad449a0429ea4439889e296ec7a37a3ceddd9b846a  rustic_core-rustic_core-v0.10.1.tar.gz
+666411a8ad7b6194a3f0d06f16a694de0170a972ba33f5e0ac33d730d41b23133808913d20f39fb57d9e9498e44826c17d52b57086d5779afbcffff80e782b0f  build-with-system-tls.patch
+"

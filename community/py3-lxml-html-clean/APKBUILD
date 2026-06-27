@@ -1,0 +1,37 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-lxml-html-clean
+pkgver=0.4.4
+pkgrel=1
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=lxml_html_clean
+pkgdesc="HTML cleaner from lxml project"
+url="https://pypi.python.org/project/lxml-html-clean"
+arch="noarch"
+license="BSD-3-Clause"
+# missing py3-memory-profiler
+checkdepends="py3-pytest py3-lxml"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fedora-python/lxml_html_clean/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest -v tests.test_clean
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+sha512sums="
+e0c94d8b00e6da29eaa20c2cf2db0d5b926bab4f80df3b983294da582ec4412956abea9e90fc5908386807945ec63ffe1fbd201409b7a0cb1cf39f3268fbd766  py3-lxml-html-clean-0.4.4.tar.gz
+"

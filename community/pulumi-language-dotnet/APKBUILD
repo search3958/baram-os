@@ -1,0 +1,35 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=pulumi-language-dotnet
+pkgver=3.106.2
+pkgrel=0
+pkgdesc="Infrastructure as Code SDK (.NET language provider)"
+url="https://pulumi.com/"
+# blocked by pulumi
+arch="x86_64 aarch64"
+license="Apache-2.0"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pulumi/pulumi-dotnet/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/pulumi-dotnet-$pkgver/pulumi-language-dotnet"
+options="net" # download Go modules
+
+build() {
+	mkdir -p bin
+
+	go build -v \
+		-o bin/pulumi-language-dotnet \
+		-ldflags "-X github.com/pulumi/pulumi-dotnet/pulumi-language-dotnet/v${pkgver%%.*}/version.Version=v$pkgver"
+}
+
+check() {
+	# TestBuildDll test requires dotnet binary
+	# TestLanguage and codegen tests depend on the main pulumi repository
+	go test -skip 'TestGenerate*|TestBuildDll|TestLanguage' ./...
+}
+
+package() {
+	install -Dm755 bin/pulumi-language-dotnet -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+4243a5f5d7ef901dffe8bad6af3e022b39d87ba6bdb6e1e364b8fac660c3fb537fc11dba20a160c30ebe9ff8c4883dfeb869aeb3fd829e6d44a282fc2383939b  pulumi-language-dotnet-3.106.2.tar.gz
+"

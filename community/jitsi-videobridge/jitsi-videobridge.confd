@@ -1,0 +1,16 @@
+## Configuration for /etc/init.d/jitsi-videobridge
+
+# Path to the config files (default: /etc/jitsi/videobridge)
+#configdir="/etc/jitsi/videobridge"
+
+# Path to log files for java (default: /var/log/jitsi)
+#logdir="/var/log/jitsi"
+
+# Path to file to redirect stderr into. (default $logdir/jvb.log)
+#logfile="$logdir/jvb.log"
+
+# Additional options to pass to jitsi-videobridge
+#extra_options=""
+
+# Additional java system props that are passed to jitsi-videobridge
+#extra_java_props=""

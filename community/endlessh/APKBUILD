@@ -1,0 +1,25 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=endlessh
+pkgver=1.1
+pkgrel=2
+pkgdesc="SSH tarpit that very slowly sends an endless, random SSH banner"
+url="https://github.com/skeeto/endlessh"
+arch="all"
+license="Unlicense"
+options="!check" # no test suite
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/skeeto/endlessh/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+7df2463425ad1417a2e328eacfb840aed14727168b83b5adf80cf6c5c98a6fc05f96bba9257b543ef60202a74383e4978e92c4a1b959e35d4ab94e0e5bda14fd  endlessh-1.1.tar.gz
+"

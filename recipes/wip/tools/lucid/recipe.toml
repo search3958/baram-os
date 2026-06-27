@@ -1,5 +1,0 @@
-#TODO nix crate error
-[source]
-git = "https://github.com/sharkdp/lucid"
-[build]
-template = "cargo"

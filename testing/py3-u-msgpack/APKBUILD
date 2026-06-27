@@ -1,0 +1,39 @@
+# Contributor: Stefan Wagner <stw@bit-strickerei.de>
+# Maintainer: Stefan Wagner <stw@bit-strickerei.de>
+pkgname=py3-u-msgpack
+_pyname=u-msgpack-python
+pkgver=2.8.0
+pkgrel=3
+pkgdesc="portable, lightweight MessagePack serializer and deserializer written in pure Python."
+url="https://github.com/vsergeev/u-msgpack-python"
+arch="noarch"
+license="MIT"
+checkdepends="py3-pytest"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/vsergeev/$_pyname/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+replaces="py-u-msgpack" # Backwards compatibility
+provides="py-u-msgpack=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+1b1e3e4b649676571ad32a757a0b4033d049d847fee70ceb0a9fc390d6162f2777cce9560845faa949343d7a4fafbf175ce306d71c66744c13a5c3c20e8260ee  py3-u-msgpack-2.8.0.tar.gz
+"

@@ -1,0 +1,45 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-click-option-group
+pkgver=0.5.7
+pkgrel=1
+pkgdesc="Option groups missing in Click"
+url="https://github.com/click-contrib/click-option-group"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-click
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-hatchling
+	py3-hatch-vcs
+	py3-installer
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/click-contrib/click-option-group/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/click-option-group-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+756e612b32fdaf59f3246c92f0b2700c4709b961b63babb816067249bca029ba1a5120518c950e83474cbb2911e111fa348749d01349763c2f093a41bb02ad3c  py3-click-option-group-0.5.7.tar.gz
+"

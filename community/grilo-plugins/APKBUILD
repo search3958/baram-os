@@ -1,0 +1,57 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=grilo-plugins
+pkgver=0.3.16
+pkgrel=5
+pkgdesc="GNOME media discovery framework plugins"
+url="https://gitlab.gnome.org/GNOME/grilo-plugins"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="localsearch"
+makedepends="
+	avahi-dev
+	glib-dev
+	gnome-online-accounts-dev
+	gom-dev
+	gperf
+	grilo-dev
+	gstreamer-dev
+	itstool
+	json-glib-dev
+	libmediaart-dev
+	libsoup3-dev
+	libxml2-dev
+	lua5.4-dev
+	meson
+	sqlite-dev
+	totem-pl-parser-dev
+	tinysparql-dev
+	"
+options="!check" # Tracker tests get stuck on some arches
+checkdepends="
+	gst-plugins-base
+	gst-plugins-good
+	"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang $pkgname-dbg"
+source="https://download.gnome.org/sources/grilo-plugins/${pkgver%.*}/grilo-plugins-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Denable-chromaprint=no \
+		-Denable-lua-factory=yes \
+		. output
+	meson compile -C output
+}
+
+check() {
+	export LANG="en_GB.UTF-8"
+	meson test -t 100 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+ce1f2786af24ebac98a1dac455f91fa7f63eefcf9029872a8ca1d631bf4fcf76f0578e68e00da20fbfe4c0aeac285ccf9a3e1a8301ffa623a45dbb0b75cb2a32  grilo-plugins-0.3.16.tar.xz
+"

@@ -1,6 +1,0 @@
-#TODO missing data
-[source]
-git = "https://github.com/jackpot51/bottom"
-
-[build]
-template = "cargo"

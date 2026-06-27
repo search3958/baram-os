@@ -1,0 +1,47 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: TBK <alpine@jjtc.eu>
+pkgname=inadyn
+pkgver=2.13.0
+pkgrel=0
+pkgdesc="Dynamic DNS client with TLS support"
+url="https://troglobit.com/projects/inadyn"
+arch="all"
+license="GPL-2.0-or-later"
+options="!check" # not test suite
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+depends="ca-certificates"
+makedepends="autoconf automake confuse-dev libtool openssl-dev>3"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://github.com/troglobit/inadyn/releases/download/v$pkgver/inadyn-$pkgver.tar.gz
+	inadyn.initd
+	"
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc/inadyn \
+		--localstatedir=/var \
+		--runstatedir=/run/inadyn \
+		--enable-openssl
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm644 examples/inadyn.conf \
+		"$pkgdir/etc/$pkgname/$pkgname.conf"
+
+	install -Dm755 "$srcdir/$pkgname.initd" \
+		"$pkgdir/etc/init.d/$pkgname"
+}
+
+sha512sums="
+dab4eccad5eb65f774c2559493c200af5727416d1a7e1636ab52238e361156eba9b9020f5148ebf48c5e98b4a79271bb8cf600460729da63da9b185921f25909  inadyn-2.13.0.tar.gz
+64623ff9d08237d2ab919dbab83c196874d1feebd63a281b126dfb97ee69c6327505c1b3780d87ef619569cdf1879f97095df95e5872fcc3b456293bdef338fb  inadyn.initd
+"

@@ -1,0 +1,37 @@
+# Maintainer: Laurent Bercot <ska-devel@skarnet.org>
+pkgname=execline
+pkgver=2.9.9.1
+pkgrel=0
+pkgdesc="A small scripting language, to be used in place of a shell in non-interactive scripts."
+url="https://skarnet.org/software/execline/"
+arch="all"
+license="ISC"
+options="!check"  # No test suite.
+makedepends="skalibs-dev"
+subpackages="$pkgname-static $pkgname-libs $pkgname-dev $pkgname-doc"
+source="https://skarnet.org/software/execline/execline-$pkgver.tar.gz"
+install="execline.post-install execline.post-upgrade execline.pre-deinstall"
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir="/usr/libexec/$pkgname" \
+		--enable-shared \
+		--disable-allstatic \
+		--enable-pkgconfig \
+		--with-pkgconfig \
+		--enable-multicall
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -D -m 0644 COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+	mkdir -p "$pkgdir/usr/share/doc"
+	cp -a doc "$pkgdir/usr/share/doc/$pkgname"
+}
+
+sha512sums="
+e4560ea9ff9e840f1a5b043daecc6357db68f84c42b2ef57e4db6c2d50ec5860f9a61f60a717ab207f20cfe5b14ee8f8512e09dc2b96013975cc5678cf6e9c09  execline-2.9.9.1.tar.gz
+"

@@ -1,0 +1,41 @@
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=rime-ls
+pkgver=0.4.3
+pkgrel=3
+pkgdesc="Language server for Rime input method engine"
+url="https://github.com/wlh320/rime-ls"
+arch="all"
+license="BSD-3-Clause"
+_llvmver=22 # keep in sync with main/rust
+makedepends="
+	cargo
+	cargo-auditable
+	clang$_llvmver-libclang
+	librime-dev
+	"
+checkdepends="rime-plum-data"
+source="https://github.com/wlh320/rime-ls/archive/v$pkgver/rime-ls-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dvm755 target/release/rime_ls \
+		-t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+6c379f9f418839281f15d47fc5a91ebc6358faa67b61b9ae840f3fb81ee502a613b27e74bf4bb30048ded78e01a06e3d5e72a94ca92abe80e256268b0a6cb7b5  rime-ls-0.4.3.tar.gz
+"

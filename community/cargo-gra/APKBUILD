@@ -1,0 +1,35 @@
+# Contributor: Newbyte <newbie13xd@gmail.com>
+# Maintainer: Newbyte <newbie13xd@gmail.com>
+pkgname=cargo-gra
+pkgver=0.6.2
+pkgrel=0
+pkgdesc="gtk-rust-app CLI for building Flatpak apps with ease"
+url="https://gitlab.com/floers/cargo-gra"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="cargo cargo-auditable"
+source="https://gitlab.com/floers/cargo-gra/-/archive/v$pkgver/cargo-gra-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # Tests fail
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/cargo-gra -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+fe0c0b236cc29589de09ba669dfa0ca2cc229f060b4a90096e518277880c273babb3e42aa4dbdcb5c199a2a1f288e893e352dfed7f59909e858dfcca62b9bce4  cargo-gra-v0.6.2.tar.gz
+"

@@ -1,0 +1,98 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=nfdump
+pkgver=1.7.6
+pkgrel=1
+pkgdesc="Tools to collect and process netflow data"
+url="https://github.com/phaag/nfdump"
+# fails diff tests, probably broken on big endian
+# arm*: tests ends with bus error: https://github.com/phaag/nfdump/issues/619
+arch="all !s390x !armhf !armv7"
+license="BSD-3-Clause"
+makedepends="autoconf automake bison bzip2-dev flex libtool rrdtool-dev"
+checkdepends="tzdata"
+subpackages="
+	$pkgname-doc
+	$pkgname-dbg
+	$pkgname-openrc
+	$pkgname-static
+	nfprofile
+	sfcapd
+	sfcapd-openrc
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/phaag/nfdump/archive/v$pkgver.tar.gz
+	nfcapd.confd
+	nfcapd.initd
+	sfcapd.confd
+	sfcapd.initd
+	"
+
+# secfixes:
+#   1.6.18-r0:
+#     - CVE-2019-14459
+#     - CVE-2019-1010057
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	# setresgid
+	CFLAGS="$CFLAGS -D_GNU_SOURCE" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-nfprofile \
+		--enable-sflow \
+		--enable-shared
+
+	# musl has a fpurge weak alias but only __fpurge in header,
+	# so this gets misdetected
+	sed -i '/HAVE_FPURGE/d' config.h
+	make
+}
+
+check() {
+	make -j1 check || {
+		cat src/test/test-suite.log
+		return 1
+	}
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -D -m755 "$srcdir"/nfcapd.initd \
+		"$pkgdir"/etc/init.d/nfcapd
+
+	install -D -m644 "$srcdir"/nfcapd.confd \
+		"$pkgdir"/etc/conf.d/nfcapd
+}
+
+nfprofile() {
+	pkgdesc="Create views of the data with NFdump filters"
+	depends="nfdump=$pkgver-r$pkgrel"
+
+	amove usr/bin/nfprofile
+}
+
+sfcapd() {
+	pkgdesc="sFlow collector"
+
+	amove usr/bin/sfcapd
+
+	# Install to pkgdir so it is later caught by sfcapd-openrc
+	install -D -m644 "$srcdir"/sfcapd.confd \
+		"$pkgdir"/etc/conf.d/sfcapd
+	install -D -m755 "$srcdir"/sfcapd.initd \
+		"$pkgdir"/etc/init.d/sfcapd
+}
+
+sha512sums="
+28a925d66f1c189560f69a28c8eb0798e6cfa903e17b0b89bb3b686f096d882b4c2ac6d9c22e6643560fa552bcec89b326bc7cb1ab2eda92f514e7dea36e75b9  nfdump-1.7.6.tar.gz
+fcb467f819f2b73ac0e13de6de4d6c94cafd3866a7a56685d5d4a048fa975135299655e896ff8370c8c5061d03ab38644623f8be455c08dfe5f630f152820148  nfcapd.confd
+97e432e884dd1cc8f27c2d7398bb0320164d46dea06c64ad72fa385d190998b3d62356634962f42652daf6e31f237baa2f3f3efad47c3fc38cc6bea799db61cc  nfcapd.initd
+abe594a95a9320bec1d6ee6af6b75cd4d176526d4b10d07aa7ed79fc292b51c341339ba8e1e468df9ec2aae138b1dd66e3a291921938217835ac33819da9d153  sfcapd.confd
+742caf5a6c5cc8957763f93b63c03cea887f97b3a7ea7482c9e00b617062a5f4351f26c0b614e4674ec52104b97f172b7a6e762841e93e6b88601c604998fd35  sfcapd.initd
+"

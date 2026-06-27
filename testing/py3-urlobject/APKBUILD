@@ -1,0 +1,40 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-urlobject
+_pkgname=URLObject
+pkgver=2.4.3
+pkgrel=10
+pkgdesc="A Python utility class for manipulating URLs"
+url="https://github.com/dperezrada/html2data"
+arch="noarch"
+license="Unlicense"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-nose"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-urlobject" # Backwards compatibility
+provides="py-urlobject=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m nose -w test
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a557731f4da8a2aaf8f7e3f7219b48cf66cf6a5706a0ba6978e9eeb310d8246baec6a6c9d798e31ac1b3874fd0d93bb88ea359a87390f7b935ba5472994e1bbe  URLObject-2.4.3.tar.gz
+"

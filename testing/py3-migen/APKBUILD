@@ -1,0 +1,51 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=py3-migen
+_pkgname=migen
+pkgver=0.9.2
+pkgrel=2
+pkgdesc="Python-based tool that aims at automating further the VLSI design process"
+url="https://m-labs.hk/gateware/migen/"
+license="BSD-2-Clause"
+arch="noarch"
+depends="python3"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	py3-installer
+	"
+checkdepends="
+	py3-pytest
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/m-labs/migen/archive/refs/tags/$pkgver.tar.gz
+
+	0001-fix-get_var_name.patch
+	0002-fix-incorrect-use-of-is.patch
+	"
+builddir="$srcdir"/$_pkgname-$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages testenv
+	testenv/bin/python3 -m installer dist/*.whl
+	testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		dist/*.whl
+}
+
+sha512sums="
+9ff39f9f9b7e99b7d933e39091eb7e98c413ec3e60b98722d813df30fe95484470a1a027ac08bdf065bf688f4bb53af2c4618d3bbc0f1086adab33e149dca98f  py3-migen-0.9.2.tar.gz
+6287fc34278e84b942a5aaefafa86d1078f393a60f34393c39a4f8226c4ee7913b4f156a517d7deb26a92f90331fed84ac529bbb4dd36ca2d052492e72cf6402  0001-fix-get_var_name.patch
+9ad29c4d5f95c31073d34b08dcd7de243330a5eb90f001f73fc4c7a2af17ebbb9855c431ae243ce4df0908f92155e38b60282779670c79e8b04dd44e110d75b9  0002-fix-incorrect-use-of-is.patch
+"

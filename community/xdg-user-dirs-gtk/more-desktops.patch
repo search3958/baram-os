@@ -1,0 +1,12 @@
+--- a/user-dirs-update-gtk.desktop.in
++++ b/user-dirs-update-gtk.desktop.in
+@@ -4,7 +4,7 @@ Exec=xdg-user-dirs-gtk-update
+ _Name=User folders update
+ _Comment=Update common folders names to match current locale
+ Terminal=false
+-OnlyShowIn=GNOME;LXDE;Unity;
++OnlyShowIn=GNOME;LXDE;Unity;MATE;XFCE;
+ NoDisplay=true
+ Type=Application
+ StartupNotify=false
+

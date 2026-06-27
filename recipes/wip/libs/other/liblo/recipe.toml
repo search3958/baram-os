@@ -1,5 +1,0 @@
-#TODO compilation error
-[source]
-tar = "http://downloads.sourceforge.net/liblo/liblo-0.31.tar.gz"
-[build]
-template = "configure"

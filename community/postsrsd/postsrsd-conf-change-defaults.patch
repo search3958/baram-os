@@ -1,0 +1,13 @@
+diff --git a/data/postsrsd.conf.in b/data/postsrsd.conf.in
+index fd3ecba..f93d478 100644
+--- a/data/postsrsd.conf.in
++++ b/data/postsrsd.conf.in
+@@ -44,7 +44,7 @@ domains = {}
+ #     socketmap = unix:/var/spool/postfix/srs
+ #     socketmap = inet:localhost:10003
+ #
+-socketmap = unix:/var/spool/postfix/srs
++socketmap = inet:localhost:10003
+ 
+ # Socketmap connection keep-alive timeout.
+ # After PostSRSd has served a socketmap request, it will keep the connection

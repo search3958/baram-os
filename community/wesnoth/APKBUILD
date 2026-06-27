@@ -1,0 +1,50 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=wesnoth
+pkgver=1.18.7
+_major=${pkgver%.*}
+pkgrel=0
+pkgdesc="turn-based strategy game in fantasy world"
+url="https://www.wesnoth.org"
+arch="all !riscv64" # textrel on rv64
+license="GPL-2.0-only"
+makedepends="
+	boost-dev
+	cairo-dev
+	curl-dev
+	cmake
+	dbus-dev
+	fontconfig-dev
+	libvorbis-dev
+	openssl-dev>3
+	pango-dev
+	readline-dev
+	samurai
+	sdl2-dev
+	sdl2_image-dev
+	sdl2_mixer-dev
+	"
+subpackages="$pkgname-doc"
+source="https://sourceforge.net/projects/wesnoth/files/wesnoth-$_major/wesnoth-$pkgver/wesnoth-$pkgver.tar.bz2"
+options="!check !fhs" # No tests, creates dirs under /var/run
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=Release \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+b1dfee47f44b0995718bf69df0a3d887cdeb761591ae7581604ad79f6143164f0b66d685a804889d0f8d59a3016b18ab13494c7c5ec5484ec08b0d7d57282af0  wesnoth-1.18.7.tar.bz2
+"

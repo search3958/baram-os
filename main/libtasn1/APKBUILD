@@ -1,0 +1,59 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libtasn1
+pkgver=4.21.0
+pkgrel=0
+pkgdesc="The ASN.1 library used in GNUTLS"
+url="https://www.gnu.org/software/gnutls/"
+arch="all"
+license="LGPL-2.1-or-later"
+depends_dev="$pkgname-progs=$pkgver-r$pkgrel"
+makedepends="texinfo"
+checkdepends="diffutils"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-progs"
+source="https://ftp.gnu.org/gnu/libtasn1/libtasn1-$pkgver.tar.gz"
+
+# secfixes:
+#   4.21.0-r0:
+#     - CVE-2025-13151
+#   4.20.0-r0:
+#     - CVE-2024-12133
+#   4.19-r0:
+#     - CVE-2021-46848
+#   4.14-r0:
+#     - CVE-2018-1000654
+#   4.13-r0:
+#     - CVE-2018-6003
+#   4.12-r1:
+#     - CVE-2017-10790
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+progs() {
+	license="GPL-3.0-only"
+	pkgdesc="$pkgdesc (utilities)"
+
+	amove usr/bin
+}
+
+sha512sums="
+6a581c4c072b168bf29a0dec7e59a9329a798e392b7d1033791d0e3166a5d1164e2a7065373a84018d500a01563657900c318b1fd437c227c3174b754f9998d3  libtasn1-4.21.0.tar.gz
+"

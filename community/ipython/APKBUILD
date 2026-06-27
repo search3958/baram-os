@@ -1,0 +1,58 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=ipython
+pkgver=9.14.1
+pkgrel=1
+pkgdesc="A rich toolkit to help you make the most of using Python interactively"
+url="https://ipython.org/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-backcall
+	py3-decorator
+	py3-jedi
+	py3-matplotlib-inline
+	py3-pexpect
+	py3-pickleshare
+	py3-prompt_toolkit<3.1.0
+	py3-psutil
+	py3-pygments
+	py3-stack_data
+	py3-traitlets
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="
+	bash
+	py3-matplotlib
+	py3-pytest<8.0.0
+	py3-testpath
+	"
+options="!check" # requires pytest<8.0.0
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ipython/ipython/archive/$pkgver.tar.gz"
+
+# secfixes:
+#   7.31.1-r0:
+#     - CVE-2022-21699
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer  .dist/*.whl
+	.testenv/bin/python3 -m pytest \
+		--deselect=IPython/terminal/tests/test_help.py::test_trust_help \
+		--deselect=IPython/core/tests/test_display.py::test_set_matplotlib_formats_kwargs
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+1154e162739795f0dcf29d9598cb3fdfd17c1e1d914b6a1340c34a4f8243536450cce9cde53bac3ff7bd294cc945527b0fe501efaf19dda265da0d6616a3461d  ipython-9.14.1.tar.gz
+"

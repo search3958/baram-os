@@ -1,0 +1,34 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-pbr
+_pkgname=pbr
+pkgver=7.0.3
+pkgrel=1
+pkgdesc="Python3 Build Reasonableness"
+url="https://pypi.org/project/pbr"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-setuptools"
+makedepends="py3-gpep517 py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # requires testscenarios from pypi
+
+replaces="py-pbr" # Backwards compatibility
+provides="py-pbr=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+dff6c9ae44cdb8db111d87530a1096dd3f9045df20cb3105f736b909f9dce957e2e8f54d6a8a1c09139689d39b1b3b4dbd53947414e4d467b11314b7f397fb99  pbr-7.0.3.tar.gz
+"

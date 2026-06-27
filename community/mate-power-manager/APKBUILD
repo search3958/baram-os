@@ -1,0 +1,39 @@
+# Contributor: Alan Lacerda <alacerda@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=mate-power-manager
+pkgver=1.28.1
+pkgrel=0
+pkgdesc="A Power Manager for MATE"
+url="https://github.com/mate-desktop/mate-power-manager"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="intltool gettext-dev itstool glib-dev libcanberra-dev
+	dbus-glib-dev mate-desktop-dev dconf-dev libnotify-dev
+	upower-dev mate-panel-dev harfbuzz-dev polkit-dev libsecret-dev"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://pub.mate-desktop.org/releases/${pkgver%.*}/mate-power-manager-$pkgver.tar.xz
+	0001-get_nprocs-patch.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--sysconfdir=/etc \
+		--prefix=/usr \
+		--enable-static=no
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+8217fbc4a837a3632a5059d2a344788608ceda1b243b651af33482ee96ab587347bf158a9cf49e78d2a4ff4b9c9e0ee194b9f30db400649c8f56208de5a205f5  mate-power-manager-1.28.1.tar.xz
+76d93fb1313e3fabbd333d9ccb3a97907cea5292150aecf813ca32f4e434eab69f337ff7578ce3d0e940bb8fad28d1b13264bd6130cdaea7de618104c5826779  0001-get_nprocs-patch.patch
+"

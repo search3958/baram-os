@@ -1,0 +1,42 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=xfce4-mailwatch-plugin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="a multi-protocol, multi-mailbox mail watcher"
+url="https://docs.xfce.org/panel-plugins/xfce4-mailwatch-plugin/start"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	exo-dev
+	glib-dev
+	gnutls-dev
+	gtk+3.0-dev
+	intltool
+	libgcrypt-dev
+	libx11-dev
+	libxfce4ui-dev
+	meson
+	xfce4-panel-dev
+	"
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-mailwatch-plugin/${pkgver%.*}/xfce4-mailwatch-plugin-$pkgver.tar.xz"
+options="!check"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+a356e6c62d563291dc5686e0f207630615c1695be41cb572e2db3b7b842feb171858438eebf321e584ee6001598a3f94b1eb9340891aba634909d8b7ac86c7a3  xfce4-mailwatch-plugin-1.4.0.tar.xz
+"

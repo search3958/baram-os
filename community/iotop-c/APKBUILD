@@ -1,0 +1,27 @@
+# Contributor: Milan P. Stanić <mps@arvanta.net>
+# Maintainer: Milan P. Stanić <mps@arvanta.net>
+pkgname=iotop-c
+pkgver=1.31
+pkgrel=0
+pkgdesc="simple top-like I/O monitor (implemented in C)"
+url="https://github.com/Tomas-M/iotop"
+arch="all"
+license="GPL-2.0-or-later"
+options="!check" # no tests
+depends="!iotop"
+makedepends="linux-headers ncurses-dev coreutils"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Tomas-M/iotop/archive/v$pkgver.tar.gz"
+builddir="$srcdir/iotop-$pkgver"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR=$pkgdir install
+}
+
+sha512sums="
+0172e25458ef1ce5b3b88258426eb1b9069262e58ef4ab6c3fe16b4f6c5fd1699c8b87ad5bb96b49dab0ff5e4cb39459aaec6e0d7b410da94e6a26c4d3524504  iotop-c-1.31.tar.gz
+"

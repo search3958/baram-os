@@ -1,0 +1,34 @@
+# Contributor: Daniel Santana <daniel@santana.tech>
+# Contributor: Celeste <cielesti@protonmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libusrsctp
+pkgver=0.9.5.0
+pkgrel=2
+pkgdesc="Portable SCTP userland stack"
+url="https://github.com/sctplab/usrsctp"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sctplab/usrsctp/archive/$pkgver.tar.gz"
+builddir="$srcdir/usrsctp-$pkgver"
+options="!check"  # No test suite.
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-Dsctp_werror=OFF \
+		-Dsctp_build_shared_lib=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+7b28706449f9365ba9750fd39925e7171516a1e3145d123ec69a12486637ae2393ad4c587b056403298dc13c149f0b01a262cbe4852abca42e425d7680c77ee3  libusrsctp-0.9.5.0.tar.gz
+"

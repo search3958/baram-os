@@ -1,0 +1,31 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=py3-tomli
+pkgver=2.4.1
+pkgrel=0
+pkgdesc="A lil' TOML parser"
+url="https://github.com/hukkin/tomli"
+license="MIT"
+arch="noarch"
+makedepends="py3-gpep517 py3-flit-core"
+subpackages="$pkgname-pyc"
+source="https://github.com/hukkin/tomli/archive/$pkgver/py3-tomli-$pkgver.tar.gz"
+builddir="$srcdir/tomli-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH=src python3 -m unittest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/tomli-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+b7f79c349d5a7309452f940ac630504c52a36761bdcd2b3f451d06172641f59b48721ce15faceb70cd04f995150c9854c6725d6596bebbf06087c7ea95a3d3a4  py3-tomli-2.4.1.tar.gz
+"

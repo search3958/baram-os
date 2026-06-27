@@ -1,0 +1,34 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=perl-php-serialization
+_pkgreal=PHP-Serialization
+pkgver=0.34
+pkgrel=6
+pkgdesc="Simple flexible means of converting the output of PHP's serialize() into the equivalent Perl memory structure, and vice versa."
+url="https://metacpan.org/dist/PHP-Serialization"
+arch="noarch"
+license="GPL-1.0-or-later OR Artistic-1.0-Perl"
+depends="perl"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/B/BO/BOBTFISH/PHP-Serialization-$pkgver.tar.gz"
+
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# creates file collision among perl modules
+	find "$pkgdir" -name perllocal.pod -delete
+}
+
+sha512sums="
+72218973f21ab71419751cf818e6bd998235aa74bf8ae60ec4a6080ba169d0d7fcefde4f433ce3f6f30ed3084a651deb8aa3a5dd818fc6ebf3fb6188def4efe7  PHP-Serialization-0.34.tar.gz
+"

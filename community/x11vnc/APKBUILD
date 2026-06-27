@@ -1,0 +1,54 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Tuan M. Hoang <tmhoang@flatglobe.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=x11vnc
+pkgver=0.9.17
+pkgrel=1
+pkgdesc="VNC server for real X displays"
+url="https://github.com/LibVNC/x11vnc"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	avahi-dev
+	libjpeg-turbo-dev
+	libvncserver-dev
+	openssl-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/LibVNC/x11vnc/archive/$pkgver.tar.gz"
+
+# secfixes:
+#   0.9.16-r2:
+#     - CVE-2020-29074
+
+prepare() {
+	default_prepare
+	autoreconf -v --install
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+687c41e03cca43dbca6ffdeb40960dddfba54ba00cf890f89f63fd66b9559a4c09602f84c1d4b7ffd7ac58818b90893013925d94a45a6feb83ab8cf7a02c1fe8  x11vnc-0.9.17.tar.gz
+"

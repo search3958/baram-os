@@ -1,0 +1,26 @@
+diff --git a/interfaces/coin.i b/interfaces/coin.i
+index aec55c6..ec0edb8 100644
+--- a/interfaces/coin.i
++++ b/interfaces/coin.i
+@@ -81,7 +81,7 @@ static int init_file_emulator(void)
+ #if PY_MAJOR_VERSION >= 3
+ if (init_file_emulator() < 0) {
+   #if (SWIG_VERSION < 0x040400)
+-    return NULL;
++    return -1;
+   #else
+     return 0;
+   #endif
+diff --git a/interfaces/soqt.i b/interfaces/soqt.i
+index 466250c..e5d9360 100644
+--- a/interfaces/soqt.i
++++ b/interfaces/soqt.i
+@@ -52,7 +52,7 @@ static int init_file_emulator(void)
+ %init %{
+ #if PY_MAJOR_VERSION >= 3
+ if (init_file_emulator() < 0) {
+-    return NULL;
++    return -1;
+ }
+ #endif
+ %}

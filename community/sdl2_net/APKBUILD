@@ -1,0 +1,31 @@
+# Contributor: Alex Raschi <raschi.alex@gmail.com>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=sdl2_net
+pkgver=2.2.0
+pkgrel=0
+pkgdesc="A small sample cross-platform networking library"
+url="https://github.com/libsdl-org/SDL_net"
+arch="all"
+license="Zlib"
+makedepends="cmake samurai sdl2-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+options="!check" # no test suite
+source="https://github.com/libsdl-org/SDL_net/releases/download/release-$pkgver/SDL2_net-$pkgver.tar.gz"
+builddir="$srcdir/SDL2_net-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr
+
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+fa22f1a2c777aac6932551b5adc925288c424dc1af46a974fdb2e3579205b40b204db01d2a8c4048aa333a200efc241f784b9bc9276277e8ab4d23edb023ab69  SDL2_net-2.2.0.tar.gz
+"

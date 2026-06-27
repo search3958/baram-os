@@ -1,0 +1,24 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 4c45177..277ef73 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -439,7 +439,6 @@ version = "0.36.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "95b4103cffefa72eb8428cb6b47d6627161e51c2739fc5e3b734584157bc642a"
+ dependencies = [
+- "cc",
+  "pkg-config",
+  "vcpkg",
+ ]
+diff --git a/Cargo.toml b/Cargo.toml
+index 476d559..f92281e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -49,7 +49,6 @@ features = ["std", "derive", "help"]
+ 
+ [dependencies.rusqlite]
+ version = "0.38"
+-features = ["bundled"]
+ 
+ [dependencies.time]
+ version = "0.3"

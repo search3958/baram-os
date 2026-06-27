@@ -1,0 +1,88 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kcoreaddons
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Addons to QtCore"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.0-or-later AND (LGPL-2.1-only OR LGPL-3.0-only)"
+depends_dev="
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	breeze-icons
+	doxygen
+	extra-cmake-modules
+	graphviz
+	kde-qdoc-common
+	py3-build
+	py3-setuptools
+	py3-shiboken6
+	pyside6-dev
+	python3-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qttools-dev
+	samurai
+	shared-mime-info
+	"
+checkdepends="xwayland-run"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	py3-$pkgname:_py3
+	kde-default-icon-theme:icons:noarch
+	"
+_repo_url="https://invent.kde.org/frameworks/kcoreaddons.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kcoreaddons-$pkgver.tar.xz"
+
+build() {
+	export KDE_DOCS=/usr/share/kde/documentation
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+
+	cmake --build build --target prepare_docs
+	cmake --build build --target generate_docs
+	cmake --build build --target generate_qch
+}
+
+check() {
+	# klistopenfilesjobtest_unix requires >8000 open files
+	local disabled_tests="klistopenfilesjobtest_unix|kdirwatch_(qfswatch|stat|inotify)_unittest|knetworkmountstestpaths|kformattest|kjobtest|kpluginmetadatatest"
+	case "$CARCH" in
+		s390x) disabled_tests="$disabled_tests|kdirwatch_inotify_unittest" ;;
+		x86_64) disabled_tests="$disabled_tests|kfileutilstest" ;; # Only fails on builders
+	esac
+
+	wlheadless-run -- ctest --test-dir build -E "($disabled_tests)"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	DESTDIR="$pkgdir" cmake --build build --target install_html_docs
+	DESTDIR="$pkgdir" cmake --build build --target install_qch_docs
+}
+
+_py3() {
+	amove usr/lib/python*
+}
+
+icons() {
+	pkgdesc="Virtual to automatically pull in breeze icons by default for KDE apps"
+	install_if="$pkgname=$pkgver-r$pkgrel"
+	depends="breeze-icons"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+a803fe5001e76d58528148d2c9e6e398ddd7ba21ab298babe62c893edad71e3a65db5ac8850fcaff49402915385379dd8546de7aa9bda4366163b6a912595dcf  kcoreaddons-6.27.0.tar.xz
+"

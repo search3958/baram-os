@@ -1,0 +1,47 @@
+# Maintainer:
+pkgname=py3-lsprotocol
+pkgver=2025.0.0
+pkgrel=0
+pkgdesc="Python implementation of the Language Server Protocol"
+url="https://github.com/microsoft/lsprotocol"
+arch="noarch"
+license="MIT"
+depends="
+	py3-attrs
+	py3-cattrs
+	"
+makedepends="
+	py3-flit-core
+	py3-gpep517
+	"
+checkdepends="
+	py3-jsonschema
+	py3-pyhamcrest
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/microsoft/lsprotocol/archive/refs/tags/$pkgver.tar.gz
+	443.patch
+	"
+builddir="$srcdir/lsprotocol-$pkgver"
+
+build() {
+	cd packages/python
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest tests/python
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		packages/python/.dist/*.whl
+}
+
+sha512sums="
+d8b003516aac34e9a78d42235879b38a218133bfd71a06ef5aa829ecbda756ebad1675e8581da7f1d5730a7ff4593e8ea14fa58cf837278f4b6ee9e10b7ad4ce  py3-lsprotocol-2025.0.0.tar.gz
+ac1770ea319d1c833068822b19540a663d8d16a89cc23166fe4fcc913d75b193b67663edff845ca3e9dd051ad24c5f599eb2e6a8c9470a148e754c1de95dd136  443.patch
+"

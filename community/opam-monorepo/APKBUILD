@@ -1,0 +1,57 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=opam-monorepo
+pkgver=0.4.3
+pkgrel=1
+pkgdesc="Opam plugin that assembles a self-contained Dune workspace based on a precise lock file"
+url="https://github.com/tarides/opam-monorepo"
+arch="all"
+license="ISC"
+depends="opam"
+makedepends="dune ocaml-compiler-libs"
+checkdepends="git rsync"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.bz2::https://github.com/tarides/opam-monorepo/releases/download/$pkgver/opam-monorepo-$pkgver.tbz"
+
+case "$CARCH" in
+	riscv64|loongarch64)
+		makedepends="${makedepends//ocaml/ocaml5}"
+		;;
+esac
+
+export OPAMROOT="${OPAMROOT:-"$srcdir/opam-root"}"
+export OPAMLOGS="${OPAMLOGS:-"$srcdir/opam-logs"}"
+
+_opam_opts="-v -y --cli=2.2 --no-self-upgrade"
+
+prepare() {
+	default_prepare
+
+	if want_check && [ ! -f "$OPAMROOT"/config ]; then
+		opam init $_opam_opts \
+			--compiler=ocaml-system \
+			--disable-sandboxing \
+			--no-setup
+	fi
+}
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	export GIT_AUTHOR_NAME="test"
+	export GIT_COMMITTER_NAME="test"
+	export GIT_AUTHOR_EMAIL="test@example.com"
+	export GIT_COMMITTER_EMAIL="test@example.com"
+
+	dune runtest --build-dir=.testenv
+}
+
+package() {
+	dune install --destdir="$pkgdir"
+}
+
+sha512sums="
+8c4ccd607bdf02c9e847ea2e95d7c023a470b42b21d1322e9b1212c2d8176fbeb975765d1cb984fa0131bb7572d01719f5e3a02da7c8fec8a8562c25f9429bed  opam-monorepo-0.4.3.tar.bz2
+"

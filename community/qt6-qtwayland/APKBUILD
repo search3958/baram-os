@@ -1,0 +1,86 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=qt6
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt6-qtwayland
+pkgver=6.11.1
+pkgrel=2
+pkgdesc="Provides APIs for Wayland"
+url="https://qt.io/"
+arch="all"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+depends_dev="
+	$pkgname-private-dev
+	vulkan-headers
+	"
+makedepends="$depends_dev
+	cmake
+	perl
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	samurai
+	"
+case "$CARCH" in
+	armhf) ;;
+	*)
+		makedepends="$makedepends
+			qt6-qtdeclarative-dev
+			qt6-qtdeclarative-private-dev
+			"
+		;;
+esac
+
+subpackages="
+	$pkgname-private-dev:private_dev
+	$pkgname-dev
+	"
+options="!check" # No tests
+builddir="$srcdir/qtwayland-everywhere-src-${pkgver/_/-}"
+
+# Make sure this package is installed when a Qt application is installed and a
+# Wayland session is available on the system
+install_if="wayland-libs-server qt6-qtbase-x11"
+
+case $pkgver in
+	*_alpha*|*_beta*|*_rc*) _rel=development_releases;;
+	*) _rel=official_releases;;
+esac
+source="https://download.qt.io/$_rel/qt/${pkgver%.*}/${pkgver/_/-}/submodules/qtwayland-everywhere-src-${pkgver/_/-}.tar.xz"
+
+build() {
+	export CFLAGS="$CFLAGS -g1 -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -g1 -flto=auto"
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+dev() {
+	default_dev
+
+	amove usr/lib/qt6/sbom
+}
+
+private_dev() {
+	depends="qt6-qtbase-private-dev"
+	case "$CARCH" in
+		armhf) ;;
+		*) depends="$depends qt6-qtdeclarative-private-dev" ;;
+	esac
+
+
+	local file; find "$pkgdir"/usr/include -type d -name private | while read -r file; do
+		amove "${file#"$pkgdir"}"
+	done
+
+	amove usr/lib/cmake/*Private
+	amove usr/lib/qt6/modules/*Private.json
+}
+
+sha512sums="
+97c9aa8a75d68d3ba5f28e86dd2af7fc3fd2a32a190ffc4c5b5145a98e7657627dbb2b63893f241d009baa72de7beaebfcf91282e731b7985c240d204c5aab9b  qtwayland-everywhere-src-6.11.1.tar.xz
+"

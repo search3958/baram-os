@@ -1,0 +1,28 @@
+# Contributor: Andrej Kolčin <self@kaathewise.net>
+# Maintainer: Andrej Kolčin <self@kaathewise.net>
+pkgname=jotdown
+pkgver=0.7.0
+pkgrel=0
+pkgdesc="A parser for the Djot markup language"
+url="https://hllmn.net/projects/jotdown/"
+arch="all"
+license="MIT"
+makedepends="rust cargo cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hellux/jotdown/archive/$pkgver.tar.gz"
+
+build() {
+	cargo auditable build --release --locked
+}
+
+check() {
+	cargo test --release --locked
+}
+
+package() {
+	install -Dm755 target/release/jotdown "$pkgdir"/usr/bin/jotdown
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+7979dd1f62302bf80c4f7ef684975caa19e18d8ff6bd827c96f230c92862a308d79f7c5efcf408f25a2acfdf1872f69f57f7825e663006a76d7e6de0a203d697  jotdown-0.7.0.tar.gz
+"

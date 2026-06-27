@@ -1,0 +1,58 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=ktimetracker
+pkgver=6.0.0
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> ki18n
+arch="all !armhf"
+url="https://apps.kde.org/ktimetracker/"
+pkgdesc="Todo management and time tracker"
+license="GPL-2.0-or-later AND GFDL-1.2-only"
+makedepends="
+	extra-cmake-modules
+	kcalendarcore-dev
+	kcmutils-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	kidletime-dev
+	kio-dev
+	kjobwidgets-dev
+	knotifications-dev
+	kstatusnotifieritem-dev
+	ktextwidgets-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	qt6-qtbase-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+#source="https://download.kde.org/stable/ktimetracker/$pkgver/src/ktimetracker-$pkgver.tar.xz
+source="https://invent.kde.org/pim/ktimetracker/-/archive/$pkgver/ktimetracker-$pkgver.tar.gz"
+subpackages="$pkgname-doc $pkgname-lang"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	# Failed on all arches in CI
+	local excluded_tests="exportcsv"
+	case "$CARCH" in
+		armv7|x86) excluded_tests="$excluded_tests|task" ;;
+	esac
+	wlheadless-run -- ctest --test-dir build -E "(($excluded_tests)test)"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d831fb6e464a16db24458c0e8e66e23e480ec04638274e66aeff4847ea647d4bf8edc4f725be0424a123d7e9414e1aa79fe991876424afebc7067ee4ebcab5af  ktimetracker-6.0.0.tar.gz
+"

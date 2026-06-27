@@ -1,6 +1,0 @@
-#TODO implement go template
-# build instructions: https://rclone.org/install/#source
-[source]
-tar = "https://github.com/rclone/rclone/releases/download/v1.64.2/rclone-v1.64.2.tar.gz"
-[build]
-template = "go"

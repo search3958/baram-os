@@ -1,0 +1,59 @@
+# Contributor: Chloe Kudryavtsev <code@toast.bunkerlabs.net>
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=procs
+pkgver=0.14.11
+pkgrel=0
+pkgdesc="Modern replacement for ps written in Rust"
+url="https://github.com/dalance/procs"
+arch="all"
+license="MIT"
+makedepends="asciidoc cargo cargo-auditable"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dalance/procs/archive/refs/tags/v$pkgver.tar.gz"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	# Default features enables "docker" feature that doubles the size of
+	# the resulting binary with unnecessary bloat!
+	cargo auditable build --release --frozen --no-default-features
+
+	# generate shell completions
+	target/release/procs --gen-completion bash
+	target/release/procs --gen-completion fish
+	target/release/procs --gen-completion zsh
+
+	# create manpage
+	a2x --format=manpage man/procs.1.adoc
+}
+
+check() {
+	cargo test --frozen --no-default-features
+}
+
+package() {
+	install -Dm755 target/release/procs "$pkgdir"/usr/bin/procs
+
+	# install completions
+	install -Dm644 procs.bash "$pkgdir"/usr/share/bash-completion/completions/procs
+	install -Dm644 procs.fish "$pkgdir"/usr/share/fish/vendor_completions.d/procs.fish
+	install -Dm644 _procs "$pkgdir"/usr/share/zsh/site-functions/_procs
+
+	install -Dm644 man/"$pkgname".1 "$pkgdir"/usr/share/man/man1/"$pkgname".1
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+27fed6f53f08a0388428660be7d4187dffbd9e95ed32db817a8f2f66f9c18527e15887f853ed6a66a7ffd9afab6267bcaf7c362f2f0ed7b6382cfeef18fdb793  procs-0.14.11.tar.gz
+"

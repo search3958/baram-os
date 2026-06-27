@@ -1,0 +1,59 @@
+# Maintainer: Daniel Sabogal <dsabogalcc@gmail.com>
+pkgname=sfml
+pkgver=2.6.1
+pkgrel=0
+pkgdesc="Simple and Fast Multimedia Library"
+url="https://www.sfml-dev.org/"
+arch="all"
+license="Zlib"
+makedepends="
+	cmake
+	doxygen
+	eudev-dev
+	flac-dev
+	freetype-dev
+	libogg-dev
+	libvorbis-dev
+	libx11-dev
+	libxcursor-dev
+	libxrandr-dev
+	mesa-dev
+	openal-soft-dev
+	samurai
+	"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+options="!check"
+source="https://github.com/SFML/SFML/archive/$pkgver/sfml-$pkgver.tar.gz"
+builddir="$srcdir/SFML-$pkgver"
+
+build() {
+	CFLAGS="$CFLAGS -DNDEBUG -O2 -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -DNDEBUG -O2 -flto=auto" \
+	cmake -B build-shared -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DSFML_PKGCONFIG_INSTALL_PREFIX=/usr/lib/pkgconfig \
+		-DBUILD_SHARED_LIBS=ON \
+		-DSFML_BUILD_DOC=ON \
+		-DSFML_INSTALL_PKGCONFIG_FILES=ON \
+		-DWARNINGS_AS_ERRORS=OFF
+	cmake --build build-shared
+
+	cmake -B build-static -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DSFML_BUILD_DOC=OFF \
+		-DSFML_INSTALL_PKGCONFIG_FILES=OFF \
+		-DWARNINGS_AS_ERRORS=OFF
+	cmake --build build-static
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build-static --target install
+	DESTDIR="$pkgdir" cmake --build build-shared --target install
+}
+
+sha512sums="
+b376d3b00277ed60d107fe1268c210749b3aafcee618a8f924b181a9b476e92b9cb9baddecf70a8913b5910c471d53ea0260a876ad7b2db2b98b944d9f508714  sfml-2.6.1.tar.gz
+"

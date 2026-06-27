@@ -1,0 +1,69 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Naomi Rennie-Waldock <naomi.renniewaldock@gmail.com>
+pkgname=twine
+pkgver=6.1.0
+pkgrel=1
+pkgdesc="Collection of utilities for publishing packages on PyPI"
+url="https://twine.readthedocs.io/en/latest/"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-id
+	py3-keyring
+	py3-packaging
+	py3-pkginfo
+	py3-readme_renderer
+	py3-requests-toolbelt
+	py3-requests>=2.20.0
+	py3-rfc3986
+	py3-rich
+	py3-urllib3
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="
+	py3-build
+	py3-flaky
+	py3-jaraco.envs
+	py3-munch
+	py3-portend
+	py3-pretend
+	py3-pytest
+	py3-pytest-cov
+	py3-pytest-socket
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/t/twine/twine-$pkgver.tar.gz"
+
+# Backwards compatibility
+provides="py3-$pkgname=$pkgver-r$pkgrel"
+replaces="py3-$pkgname"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver"
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# deselect'ed tests require a network connection
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/test_integration.py \
+		--deselect tests/test_upload.py::test_check_status_code_for_wrong_repo_url \
+		-k "not test_metadata_dictionary_keys and not test_fips_metadata_excludes_md5_and_blake2 and not test_pkginfo_returns_no_metadata and not test_pkginfo_returns_no_metadata and not test_fails_rst_no_content"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/twine-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+8aaf2c57d969ced91757458a1a893634e5d3f6e3b6862b7f01400e2acef8dfcfb5d8e4d72227a3906c83f168225f47f17e238986c230f7a1968c62a841236926  twine-6.1.0.tar.gz
+"

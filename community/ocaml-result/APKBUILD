@@ -1,0 +1,78 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-result
+_pkgname=result
+pkgver=1.5
+pkgrel=5
+pkgdesc="Compatibility Result module"
+url="https://github.com/janestreet/result"
+arch="all !riscv64 !loongarch64" # ocaml
+license="BSD-3-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="dune ocaml ocaml-findlib"
+options="!check"  # no tests provided
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.bz2::https://github.com/janestreet/result/releases/download/$pkgver/result-$pkgver.tbz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build --root . @install --no-buffer --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml
+
+	# Contains just a readme and changelog.
+	rm -Rf "$pkgdir"/usr/doc
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+4dfabc121fd69b3e0fe742f4da483830104d8fedf5ad3d83b4fb3efa2d544cb05eadc8719960b24bdf5760bff3434c5225f280339d70af9fb2842f3efe1bb87b  ocaml-result-1.5.tar.bz2
+"

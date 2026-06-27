@@ -1,0 +1,32 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=nemo-qml-plugin-configuration
+pkgver=0.2.10
+pkgrel=0
+pkgdesc="Nemo QML configuration plugin"
+url="https://github.com/sailfishos/nemo-qml-plugin-configuration"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="BSD-3-Clause"
+makedepends="
+	mlite-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+source="https://github.com/sailfishos/nemo-qml-plugin-configuration/archive/$pkgver/nemo-qml-plugin-configuration-$pkgver.tar.gz"
+options="!check"
+
+build() {
+	qmake6
+	make
+}
+
+package() {
+	INSTALL_ROOT="$pkgdir" make install
+
+	# Remove installed tests
+	rm -r "$pkgdir"/opt
+}
+
+sha512sums="
+3e9c329794241d7f4b61ce05e2976bbd4f54ad56ba7d2503bf2684ae21ef69dc74bd923ec252795b7b1a1050b607a08a49b6c38be9ad8638c57650f68d51180e  nemo-qml-plugin-configuration-0.2.10.tar.gz
+"

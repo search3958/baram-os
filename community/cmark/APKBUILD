@@ -1,0 +1,46 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=cmark
+pkgver=0.31.2
+pkgrel=0
+pkgdesc="C reference implementation of CommonMark, a rationalized Markdown spec"
+url="https://github.com/commonmark/cmark"
+arch="all"
+license="BSD-2-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="
+	cmake
+	re2c
+	samurai
+	"
+checkdepends="python3"
+subpackages="
+	$pkgname-doc
+	$pkgname-dev
+	lib$pkgname:libs
+	"
+source="https://github.com/commonmark/cmark/archive/$pkgver/cmark-$pkgver.tar.gz"
+
+# secfixes:
+#   0.30.3-r0:
+#     - CVE-2023-22486
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=TRUE
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build -E "api_test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+8dcf4f25b53e84a16afa506214f17c3d2d7b0cc78d9d289b469ad8d1e481c4b355263eca3fb1e2b595c30734bc2d617fd38e00d17a14dcfa9de8c71580916265  cmark-0.31.2.tar.gz
+"

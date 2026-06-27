@@ -1,0 +1,35 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=gnome-power-manager
+pkgver=50.0
+pkgrel=0
+pkgdesc="GNOME power manager"
+url="https://gitlab.gnome.org/GNOME/gnome-power-manager"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	gobject-introspection-dev
+	gtk4.0-dev
+	meson
+	upower-dev
+	"
+subpackages="$pkgname-lang"
+source="https://download.gnome.org/sources/$pkgname/${pkgver%.*}/$pkgname-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+c9563322e25a103fb5cf6d5ce1261ab564fcee3374775f08c77815a174c0c2faccf2222eee9e6dd965370a10f9e38a3088290b8d053696267fe66af7abe378ac  gnome-power-manager-50.0.tar.xz
+"

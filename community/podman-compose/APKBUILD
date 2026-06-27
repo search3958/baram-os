@@ -1,0 +1,32 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=podman-compose
+pkgver=1.6.0
+pkgrel=0
+pkgdesc="Script to run docker-compose.yml using podman"
+url="https://github.com/containers/podman-compose"
+arch="noarch"
+license="GPL-2.0-or-later"
+options="!check" # Requires running docker env
+depends="podman py3-dotenv py3-yaml"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-bash-completion $pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/containers/podman-compose/archive/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	install -Dm644 completion/bash/"$pkgname" \
+		"$pkgdir"/usr/share/bash-completion/completions/"$pkgname"
+
+	install -Dm644 docs/* -t "$pkgdir"/usr/share/doc/"$pkgname"
+	mv examples "$pkgdir"/usr/share/doc/"$pkgname"/
+}
+
+sha512sums="
+61b3ad7e7fbff109049ec25daf6231acb9627f5fe5b3dee95592cc16d1d35255a8ae2d33721c37bfc95e68378407fbabbccd4924af6fd2dff709de534b90f2f0  podman-compose-1.6.0.tar.gz
+"

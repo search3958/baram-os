@@ -1,0 +1,41 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=yofi
+pkgver=0.2.2
+pkgrel=0
+pkgdesc="A minimalistic menu for wayland"
+url="https://github.com/l4l/yofi"
+# s390x: no desktop on this arch
+arch="all !s390x"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	fontconfig-dev
+	freetype-dev
+	libxkbcommon-dev
+	wayland-dev
+	"
+source="https://github.com/l4l/yofi/archive/$pkgver/yofi-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo add libc@0.2.155 time@0.3.35
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/yofi -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+2854c9884aee083f213d6edf66ab8287d10d6eae21b1da2e93f6d0e9bcc655cd5078473b5fa9b5bfce28ab38a86fb870236a707281f6b87d529a71ee97bda0c8  yofi-0.2.2.tar.gz
+"

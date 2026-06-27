@@ -1,0 +1,84 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=mruby
+pkgver=3.3.0
+pkgrel=0
+pkgdesc="Lightweight Ruby"
+url="https://mruby.org"
+arch="all !armhf !armv7 !x86"
+license="MIT"
+makedepends="bison readline-dev ruby ruby-rake"
+subpackages="$pkgname-dev $pkgname-tools"
+source="https://github.com/mruby/mruby/archive/$pkgver/mruby-$pkgver.tar.gz
+	build_config.rb
+	"
+
+# secfixes:
+#   3.1.0-r0:
+#     - CVE-2021-4110
+#     - CVE-2021-4188
+#     - CVE-2022-0080
+#     - CVE-2022-0240
+#     - CVE-2022-0326
+#     - CVE-2022-0481
+#     - CVE-2022-0631
+#     - CVE-2022-0632
+#     - CVE-2022-0890
+#     - CVE-2022-1071
+#     - CVE-2022-1106
+#     - CVE-2022-1201
+#     - CVE-2022-1427
+#   2.1.2-r0:
+#     - CVE-2020-15866
+
+export MRUBY_CONFIG="$srcdir/build_config.rb"
+
+build() {
+	./minirake --verbose
+
+	# Replace build paths with install destinations.
+	sed -i \
+		-e "s|$builddir/include|/usr/include|" \
+		-e "s|$builddir/build/[^/]\+/lib|/usr/lib|" \
+		-e "s| -I\"$builddir/build/[^/]\+/include\"||" \
+		build/*/bin/mruby-config \
+		build/*/lib/libmruby.flags.mak
+}
+
+check() {
+	./minirake test
+}
+
+package() {
+	install -d "$pkgdir"/usr/bin
+	cp build/host-debug/bin/* "$pkgdir"/usr/bin/
+	cp build/host/bin/* "$pkgdir"/usr/bin/
+	rm -f "$pkgdir"/usr/bin/mrbtest
+
+	install -d "$pkgdir"/usr/lib
+	cp build/host/lib/* "$pkgdir"/usr/lib/
+
+	install -d "$pkgdir"/usr/include
+	cp -r include/* "$pkgdir"/usr/include/
+	cp -r build/host/include/mruby/presym/* "$pkgdir"/usr/include/mruby/presym/
+}
+
+dev() {
+	default_dev
+
+	amove usr/lib/libmruby.flags.mak
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+
+	install -d "$subpkgdir"/usr/bin
+
+	mv "$pkgdir"/usr/bin/* "$subpkgdir"/usr/bin/ \
+		&& mv "$subpkgdir"/usr/bin/mruby "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+2defb1d1ad1130180db901e8f5444c1f4c3e7b5ef045d9d5fc6fafa8f1aac01167bb5705b67eb75ac1d32929241a0cc92cda457ac1e4d39a0f028ccf48bf0361  mruby-3.3.0.tar.gz
+66586bd03db9911a5f730efad2e603a8677c09213d7d8a0d7adbc7ed1d43802aa7f2af88ca003191da54687b614aa2ce57b07e48b4f4a66ec124119eedc0fa1e  build_config.rb
+"

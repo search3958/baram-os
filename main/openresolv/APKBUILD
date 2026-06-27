@@ -1,0 +1,32 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=openresolv
+pkgver=3.17.4
+pkgrel=0
+pkgdesc="A framework for managing DNS information"
+url="https://roy.marples.name/projects/openresolv"
+arch="noarch"
+license="BSD-2-Clause"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/NetworkConfiguration/openresolv/archive/refs/tags/v$pkgver.tar.gz
+	detect_init-remove-irrelevant.patch
+	"
+options="!check"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--rundir=/run \
+		--sysconfdir=/etc
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+adb355da0f005a1b71eb874b560e5da7a369ef79463e0a48e62dfaa46a72b980dc0e0e339306d1172c98199dff16bb22d3b8d1a0e071d261f5a129b89afab4b2  openresolv-3.17.4.tar.gz
+60663daa0b98eed825186a950b6022b3ef11b897f8c27e63682242bef7db6a1ac5ae75f01c860d5d3f71452d2c3e6a8c76555bda3546ad265471025392e5b1d6  detect_init-remove-irrelevant.patch
+"

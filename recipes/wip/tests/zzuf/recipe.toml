@@ -1,5 +1,0 @@
-#TODO compile and test
-[source]
-tar = "https://github.com/samhocevar/zzuf/releases/download/v0.15/zzuf-0.15.tar.bz2"
-[build]
-template = "configure"

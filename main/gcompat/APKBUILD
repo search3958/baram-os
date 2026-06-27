@@ -1,0 +1,91 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=gcompat
+pkgver=1.1.0
+pkgrel=4
+pkgdesc="GNU C Library compatibility layer for musl"
+url="https://git.adelielinux.org/adelie/gcompat"
+arch="all"
+license="NCSA"
+makedepends="libucontext-dev musl-obstack-dev"
+source="https://git.adelielinux.org/adelie/gcompat/-/archive/$pkgver/gcompat-$pkgver.tar.gz"
+options="!check lib64" # No test suite
+
+provides="libc6-compat=$pkgver-r$pkgrel"
+replaces="libc6-compat"
+
+# https://sourceware.org/glibc/wiki/ABIList
+case "$CARCH" in
+armhf)
+	_ld="ld-linux-armhf.so.3"
+	ARCH="arm"
+	;;
+armv7)
+	_ld="ld-linux-armhf.so.3"
+	ARCH="arm"
+	;;
+aarch64)
+	_ld="ld-linux-aarch64.so.1"
+	ARCH="aarch64"
+	;;
+x86)
+	_ld="ld-linux.so.2"
+	ARCH="i386"
+	;;
+x86_64)
+	_ld="ld-linux-x86-64.so.2"
+	ARCH="x86_64"
+	;;
+s390x)
+	_ld="ld64.so.1"
+	ARCH="s390x"
+	;;
+ppc64le)
+	_ld="ld64.so.2"
+	ARCH="powerpc64"
+	;;
+riscv64)
+	# hardfloat
+	_ld="ld-linux-riscv64-lp64d.so.1"
+	ARCH="riscv64"
+	;;
+loongarch64)
+	# hardfloat
+	_ld="ld-linux-loongarch-lp64d.so.1"
+	ARCH="loongarch64"
+	;;
+esac
+
+build() {
+	make \
+		WITH_LIBUCONTEXT=1 \
+		WITH_OBSTACK=musl-obstack \
+		LINKER_PATH="/lib/ld-musl-$ARCH.so.1" \
+		LOADER_NAME="$_ld"
+}
+
+package() {
+	make \
+		LINKER_PATH="/lib/ld-musl-$ARCH.so.1" \
+		LOADER_NAME="$_ld" \
+		WITH_LIBUCONTEXT=1 \
+		WITH_OBSTACK=musl-obstack \
+		DESTDIR="$pkgdir" \
+		install
+
+	# Required symlink on 64-bit platforms
+	case "$CARCH" in
+	x86_64|ppc64le|aarch64|s390x|riscv64|loongarch64)
+		mkdir -p "$pkgdir"/lib64
+		ln -sfv ../lib/$_ld "$pkgdir"/lib64/$_ld
+		;;
+	esac
+
+	for i in libc.so.6 libcrypt.so.1 libm.so.6 libpthread.so.0 libresolv.so.2 librt.so.1 libutil.so.1; do
+		ln -sfv libgcompat.so.0 "$pkgdir"/lib/$i
+	done
+}
+
+sha512sums="
+8f27aa8d268586ecb647bc147a9d56704d087b0f3ac357c6c239958663ec9e9e428e6cfdb9a063ead5c2098444cc4a7c4567c18477309feb05ed3de01b24f9e8  gcompat-1.1.0.tar.gz
+"

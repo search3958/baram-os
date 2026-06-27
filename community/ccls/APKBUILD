@@ -1,0 +1,53 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=ccls
+pkgver=0.20250815.1
+pkgrel=1
+pkgdesc="C/C++/Objective-C language server"
+url="https://github.com/MaskRay/ccls"
+arch="all"
+license="Apache-2.0"
+_llvmver=22
+makedepends="
+	clang$_llvmver-dev
+	clang$_llvmver-extra-tools
+	clang$_llvmver-static
+	cmake
+	libxml2-dev
+	llvm$_llvmver-dev
+	llvm$_llvmver-gtest
+	llvm$_llvmver-static
+	rapidjson-dev
+	samurai
+	zlib-dev
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/MaskRay/ccls/archive/$pkgver.tar.gz
+
+	llvm22.patch
+	"
+options="!check"  # no tests
+
+build() {
+	# export $PATH to help cmake find clang
+	export PATH="/usr/lib/llvm$_llvmver/bin:$PATH"
+	CC=clang-$_llvmver \
+	CXX=clang++-$_llvmver \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_C_COMPILER=clang-$_llvmver \
+		-DCMAKE_CXX_COMPILER=clang++-$_llvmver \
+		-DCCLS_VERSION="$pkgver" \
+		-DCLANG_LINK_CLANG_DYLIB=on \
+		-DLLVM_LINK_LLVM_DYLIB=on
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+2f0bdd62260c65881af55128f7e5008fba8910844173477daf9122f5408f21ac5d297eb0497ea87f1591124b96b9416388bd67894581cbe6bf9469f70d81ffb8  ccls-0.20250815.1.tar.gz
+8efbdbfa92cfb766dfc9179d95b12c51c29fd4b6154a40483d79eaa78740e86e158039a384f38b548c780bd5cf72ae6a8e678f20089654fd2efbf241a830d1c1  llvm22.patch
+"

@@ -1,0 +1,33 @@
+# Maintainer: Steffen Nurpmeso <steffen@sdaoden.eu>
+pkgname=s-postgray
+pkgver=0.8.3
+pkgrel=0
+pkgdesc="postfix RFC 6647 graylisting policy server"
+url="https://www.sdaoden.eu/code.html#s-toolbox"
+arch="all"
+license="ISC"
+makedepends="linux-headers"
+subpackages="$pkgname-doc"
+source="https://ftp.sdaoden.eu/s-postgray-$pkgver.tar.gz"
+
+build() {
+	local sandbox=0
+	case "$CARCH" in
+	x86_64)
+		sandbox=1
+		;;
+	esac
+	make VAL_OS_SANDBOX=$sandbox
+}
+
+check() {
+	./s-postgray-test.sh
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+ba483dd8f046cad5a2c71638dc1602fd375f3e68a6dc370f3025e3fb521f792e7db765098c9f76a28abebea03f92567dd5745be0c6495fa25a74c9cbb6d50be0  s-postgray-0.8.3.tar.gz
+"

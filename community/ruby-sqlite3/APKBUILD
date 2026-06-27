@@ -1,0 +1,54 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=ruby-sqlite3
+_gemname=${pkgname#ruby-}
+pkgver=2.9.4
+pkgrel=0
+pkgdesc="Ruby bindings for SQLite3"
+url="https://rubygems.org/gems/sqlite3"
+arch="all"
+license="BSD-3-Clause"
+makedepends="ruby-dev sqlite-dev"
+depends="ruby ruby-mini_portile2"
+checkdepends="ruby-rake ruby-bundler"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sparklemotion/sqlite3-ruby/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/sqlite3-ruby-$pkgver"
+options="!check" # requires rubocop
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	rake
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+	local geminstdir="$gemdir/gems/sqlite3-$pkgver"
+
+	gem install \
+		--local \
+		--install-dir "$gemdir" \
+		--bindir "$pkgdir/usr/bin" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		"$builddir"/$_gemname-$pkgver.gem -- \
+					--use-system-libraries
+
+	rm -r "$gemdir"/cache \
+		"$gemdir"/doc \
+		"$gemdir"/build_info \
+		"$geminstdir"/ext \
+		"$geminstdir"/ports \
+		"$geminstdir"/*.md \
+		"$geminstdir"/*.yml \
+		"$geminstdir"/.gemtest
+
+	find "$gemdir"/extensions/ -name mkmf.log -delete
+}
+
+sha512sums="
+35697204c440ebc36fa12eb860fc9082234cd83e11361ee223a46941f286595dbde396b8eb5ed22079662f292d0120a718eb4bb64378e399683de9017448ad17  ruby-sqlite3-2.9.4.tar.gz
+"

@@ -1,5 +1,0 @@
-#TODO outdated proc-macro2 crate
-[source]
-git = "https://github.com/GaspardCulis/slint-tetris"
-[build]
-template = "cargo"

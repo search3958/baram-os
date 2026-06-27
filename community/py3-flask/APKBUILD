@@ -1,0 +1,56 @@
+# Contributor: Steven Guikal <void@fluix.one>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-flask
+_pkgname=flask
+pkgver=3.1.3
+pkgrel=2
+pkgdesc="web development microframework"
+url="https://flask.palletsprojects.com/"
+arch="noarch"
+license="MIT"
+depends="
+	py3-asgiref
+	py3-blinker
+	py3-click
+	py3-dotenv
+	py3-itsdangerous
+	py3-jinja2
+	py3-werkzeug
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-flit-core
+	"
+checkdepends="
+	py3-pytest-xdist
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-flask" # Backwards compatibility
+provides="py-flask=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# skip failing test, removed by upstream after version 3.1.3:
+	# https://github.com/pallets/flask/commit/a31e6b73469cb2bf7eb8f70b5ff21f710fd2e23c
+	.testenv/bin/python3 -m pytest -n auto -k "not test_bad_environ_raises_bad_request"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+17c290fdccf3c7e45eeaf5d12a967889f6b0c6aac06a518624a18eb4de67904e825a2724d0c4d7701bb7e75a2f4629089a658e30909c6c7fe20992cc431b273e  flask-3.1.3.tar.gz
+"

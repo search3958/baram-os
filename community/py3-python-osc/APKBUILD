@@ -1,0 +1,42 @@
+# Contributor: Magnus Sandin <magnus.sandin@valitron.se>
+# Maintainer: Magnus Sandin <magnus.sandin@valitron.se>
+pkgname=py3-python-osc
+pkgver=1.10.2
+pkgrel=0
+pkgdesc="Open Sound Control server and client implementations in pure python"
+url="https://github.com/attwad/python-osc"
+arch="noarch"
+license="Unlicense"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-uv-build
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgver-$pkgver.tar.gz::https://github.com/attwad/python-osc/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/python-osc-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	rm -r "$pkgdir"/usr/lib/python*/site-packages/pythonosc/test
+}
+
+sha512sums="
+e3232cacb6987f5c024f9a8d03a4be94783b5b4b49875047e5e4acc466f6ccdedb92d2a73343935f93fa924dbdf17652e8b01a858f664bb3d4ef739f4cf241f3  1.10.2-1.10.2.tar.gz
+"

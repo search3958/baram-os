@@ -1,0 +1,39 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=pinentry-bemenu
+pkgver=0.14.0
+pkgrel=1
+pkgdesc="Pinentry based on bemenu"
+url="https://github.com/t-8ch/pinentry-bemenu"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	bemenu-dev
+	libassuan-dev
+	libgpg-error-dev
+	meson
+	popt-dev
+	samurai
+	"
+source="https://github.com/t-8ch/pinentry-bemenu/archive/v$pkgver/pinentry-bemenu-$pkgver.tar.gz
+	meson-ungit.patch
+	"
+
+build() {
+	echo "$pkgver" > VERSION
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+0495a8c0f8886ead908ab9f633986ea88a3775e0e76a5a2937125338e5e77a1c1c297ec6c7bb2bbc8198b60a8931c076bc750f3d04dbb5e344d8ddc66245052f  pinentry-bemenu-0.14.0.tar.gz
+45e542b6feef5d8b61b84a93572f04bb3ec8d972eb820b9fef5f04a67e0e44adb252eeb6cbcd53b3942006f3bb2179d894050b1640f6cf4607cd912c26c934dc  meson-ungit.patch
+"

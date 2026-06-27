@@ -1,0 +1,33 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=basu
+pkgver=0.2.1
+pkgrel=2
+pkgdesc="The sd-bus library, extracted from systemd"
+url="https://sr.ht/~emersion/basu/"
+license="LGPL-2.1-or-later"
+arch="all"
+makedepends="audit-dev gperf libcap-dev meson"
+subpackages="$pkgname-static $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~emersion/basu/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson \
+		-Dsystem-bus-address="unix:path=/run/dbus/system_bus_socket" \
+		-Ddefault_library=both \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+b1f6a35e4d93d099c5c92a8ea68f8a93429a614f1a63de7346e256437525bee5b87c1a5ad2e0dad2ff0bdc88b525cf1931f048e032bd1f1ff007b4d5eee90c59  basu-0.2.1.tar.gz
+"

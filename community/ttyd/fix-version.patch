@@ -1,0 +1,11 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -12,7 +12,7 @@
+ if("${SEM_VER}" VERSION_GREATER "${TTYD_VERSION}")
+     set(TTYD_VERSION "${SEM_VER}")
+ endif()
+-if(NOT "${GIT_COMMIT}" STREQUAL "")
++if(NOT "${GIT_COMMIT}" STREQUAL "unknown")
+     set(TTYD_VERSION "${TTYD_VERSION}-${GIT_COMMIT}")
+ endif()
+ 

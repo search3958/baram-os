@@ -1,0 +1,43 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gptfdisk
+pkgver=1.0.10
+pkgrel=1
+pkgdesc="Text-mode partitioning tool that works on Globally Unique Identifier (GUID) Partition Table (GPT) disks"
+arch="all"
+url="https://www.rodsbooks.com/gdisk"
+license="GPL-2.0-or-later"
+makedepends="ncurses-dev e2fsprogs-dev popt-dev linux-headers"
+subpackages="$pkgname-doc sgdisk"
+source="https://downloads.sourceforge.net/project/gptfdisk/gptfdisk/$pkgver/gptfdisk-$pkgver.tar.gz
+	fix-wrong-include.patch
+	fix-musl.patch
+	"
+# secfixes:
+#   1.0.6-r0:
+#     - CVE-2021-0308
+#     - CVE-2020-0256
+
+build() {
+	make CXX="${CXX:-g++}" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+package() {
+	install -Dm0644 -t "$pkgdir"/usr/share/man/man8 ./*.8
+	install -Dm0755 -t "$pkgdir"/usr/bin gdisk cgdisk sgdisk fixparts
+}
+
+check() {
+	sh "$builddir"/gdisk_test.sh
+}
+
+sgdisk() {
+	pkgdesc="Command-line GUID partition table (GPT) manipulator"
+
+	amove usr/bin/sgdisk
+}
+
+sha512sums="
+76764e176cd92470648a1d7a8d2570ebc41005204e73b0f2dd5a7aff2fc1981d3bec61a3bd68b855cc3474bcb7cf49c1cb2ea25843d4e7945bef7648d548383d  gptfdisk-1.0.10.tar.gz
+9b64c0e565137b4d4275bd6e8b050f98a73ff5593093b54d43736e6aabd24abf6e35d88ea27be17c5fee70aada4ad05a70fe5af3523212aad114f05aaf82356f  fix-wrong-include.patch
+c85306ad9902d4c4f685c8fa5f6f4e1976d3036a4fc747cbc68403fa811a177a0d6ce29575c4d2dc03ccf9bcc44167dd5830eb8f548d9d55d2b6579ed1b4ffab  fix-musl.patch
+"

@@ -1,0 +1,32 @@
+# Maintainer: Pedro Lucas Porcellis <porcellis@eletrotupi.com>
+pkgname=chathistorysync
+pkgver=0.2.1
+pkgrel=15
+pkgdesc="A tool for syncing IRC logs via the CHATHISTORY extension"
+url="https://sr.ht/~emersion/chathistorysync"
+arch="all"
+license="AGPL-3.0-only"
+makedepends="go scdoc"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~emersion/chathistorysync/archive/v$pkgver.tar.gz"
+subpackages="$pkgname-doc"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	make install PREFIX=/usr DESTDIR="$pkgdir"
+}
+
+sha512sums="
+741f907f5532f4cb168fcdd9b87bd5bbdf9535c0e0b84f8c816b36b1c7dd74657884461bf33e931da54c4b834dc7f2caa8ce30f29b36f64a7d085835ebb74afe  chathistorysync-0.2.1.tar.gz
+"

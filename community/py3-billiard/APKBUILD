@@ -1,0 +1,42 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-billiard
+pkgver=4.2.4
+pkgrel=1
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=billiard
+pkgdesc="Python multiprocessing fork with improvements and bugfixes"
+url="https://pypi.org/project/billiard/"
+arch="noarch"
+license="BSD-3-Clause"
+makedepends="py3-setuptools py3-wheel py3-gpep517"
+checkdepends="py3-psutil py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/b/billiard/billiard-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+replaces="py-billiard" # Backwards compatibility
+provides="py-billiard=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# t/unit/test_pool.py::test_pool::test_on_ready_counter_is_synchronized: timeout in riscv64
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v \
+		--deselect t/unit/test_pool.py::test_pool::test_on_ready_counter_is_synchronized
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f05041661da59603da5bdcb3b696d75742d4cb7998f5bbf22474e001641f5be6cf693c3b329cda3e8983cc3fe56e5cc96a1d7880eefa5b2d68cd0d4ffe231626  billiard-4.2.4.tar.gz
+"

@@ -1,0 +1,49 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=glossaico
+pkgver=1.2
+pkgrel=3
+pkgdesc="Language learning application based on LibreLingo"
+url="https://codeberg.org/dimkard/glossaico"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	py3-importlib-metadata
+	py3-librelingo-audios
+	py3-librelingo-utils
+	py3-librelingo-yaml-loader
+	py3-requests
+	py3-slugify
+	py3-yaml
+	"
+makedepends="
+	py3-babel
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc $pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/dimkard/glossaico/archive/v$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/$pkgname"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+bf2ad519b8c95d91a1afffaafe8ad5b1991358a57e9bb8b974d54082c685c3148b688015fe5b04618ba9b55d4c8ec3ff20acc7380b2fb7da1c7a593f093e756c  glossaico-1.2.tar.gz
+"

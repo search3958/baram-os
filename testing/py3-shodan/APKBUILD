@@ -1,0 +1,48 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-shodan
+pkgver=1.31.0
+pkgrel=2
+pkgdesc="The official Python library for Shodan"
+url="https://developer.shodan.io/"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	py3-click
+	py3-click-plugins
+	py3-colorama
+	py3-requests
+	py3-setuptools
+	py3-xlsxwriter
+	py3-tldextract
+	"
+makedepends="
+	py3-gpep517
+	py3-sphinx
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://pypi.python.org/packages/source/s/shodan/shodan-$pkgver.tar.gz"
+builddir="$srcdir/shodan-$pkgver"
+options="!check" # tests require a working api key
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+
+	make -C docs man
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	install -Dm644 docs/_build/man/shodan-python.1 \
+		-t "$pkgdir"/usr/share/man/man1
+}
+
+sha512sums="
+fe66fdd4ae1088d165a2acd67f85a54a9fcbed8130ee5e2a5764d318fa0c50fb472fd5a76ce72f84fcfdb4c74c29ae2e14881f86468fb177ddc3191cb95d3b67  shodan-1.31.0.tar.gz
+"

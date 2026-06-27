@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+
+name="greetd"
+description="Greeter daemon"
+
+: ${cfgfile:="/etc/greetd/config.toml"}
+
+command=/usr/sbin/greetd
+command_args="--config $cfgfile ${command_args:-}"
+command_background=yes
+pidfile="/run/$RC_SVCNAME.pid"
+
+required_files="$cfgfile"
+
+start_pre() {
+	# note that this user is the user from the config.toml
+	local homedir="$(getent passwd greetd | cut -d: -f6)"
+	checkpath -d -m750 -o greetd:greetd "$homedir"
+}
+
+depend() {
+	need localmount
+	provide display-manager
+}

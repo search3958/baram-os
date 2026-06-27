@@ -1,0 +1,42 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: ScrumpyJack <scrumpyjack@st.ilet.to>
+pkgname=pam-krb5
+pkgver=4.11
+pkgrel=1
+pkgdesc="PAM module providing Kerberos v5 support"
+url="https://www.eyrie.org/~eagle/software/pam-krb5/"
+arch="all"
+license="BSD-3-Clause OR GPL-1.0-or-later"
+makedepends="krb5-dev linux-pam-dev"
+checkdepends="perl" # To run all tests a running KDC is required
+subpackages="$pkgname-doc"
+source="https://archives.eyrie.org/software/kerberos/pam-krb5-$pkgver.tar.gz
+	"
+options="!check"
+
+prepare() {
+	default_prepare
+	# config.sub is too old to recognize loongarch64-alpine-linux-musl
+	update_config_sub
+	update_config_guess
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--enable-reduced-depends
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+sha512sums="
+a48ff063227b77c7487b8afa50a7365e919c276ef829de1ed9f77c32f2cfdffb234fc156bb60e05d9b3b4f51bc1daff90e28f0256746923ea169cb1bd2821c2e  pam-krb5-4.11.tar.gz
+"

@@ -1,0 +1,48 @@
+# Maintainer: crapStone <crapstone01@gmail.com>
+pkgname=mdbook
+pkgver=0.5.3
+pkgrel=0
+pkgdesc="mdBook is a utility to create modern online books from Markdown files"
+url="https://rust-lang.github.io/mdBook/"
+arch="all"
+license="MPL-2.0"
+makedepends="rust cargo cargo-auditable"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/rust-lang/mdBook/archive/v$pkgver.tar.gz
+	"
+options="net" # cargo
+builddir="$srcdir/mdBook-$pkgver"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+
+	./target/release/mdbook completions bash > $pkgname.bash
+	./target/release/mdbook completions fish > $pkgname.fish
+	./target/release/mdbook completions zsh > $pkgname.zsh
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/mdbook "$pkgdir"/usr/bin/mdbook
+
+	install -Dm644 $pkgname.bash "$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 $pkgname.fish "$pkgdir"/usr/share/fish/vendor_completions.d/$pkgname.fish
+	install -Dm644 $pkgname.zsh "$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+}
+
+sha512sums="
+453603c7c9e094e671656f83eecbee362a8ccc0ec8299e73ea382b53deecef2e723079c0c7455ba0e503db480c3e56ec5e56d4a35eca3835030b081ceb2b6198  mdbook-0.5.3.tar.gz
+"

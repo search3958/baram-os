@@ -1,0 +1,36 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=perl-b-keywords
+pkgver=1.29
+pkgrel=0
+pkgdesc="Lists of reserved barewords and symbol names"
+url="https://metacpan.org/pod/B::Keywords"
+arch="noarch"
+license="GPL-2.0-only OR Artistic-1.0-Perl"
+depends="perl"
+checkdepends="perl-dev perl-test-pod"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/R/RU/RURBAN/B-Keywords-$pkgver.tar.gz"
+builddir="$srcdir/B-Keywords-$pkgver"
+
+build() {
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	PERL_MM_USE_DEFAULT=1 perl -I. Makefile.PL \
+		INSTALLDIRS=vendor \
+		NO_PACKLIST=1 \
+		NO_PERLLOCAL=1
+	make
+}
+
+check() {
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+72473bdde53302cd6618e130fbcf6c4449412a101aca0d9a74240f027d646f3a77cf7f9e920fe463491b8494b222b2abf387f712e4a4f5cb0ce53cfe484da609  B-Keywords-1.29.tar.gz
+"

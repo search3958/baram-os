@@ -1,0 +1,47 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=os-installer
+pkgver=0.5.1
+pkgrel=0
+pkgdesc="generic OS-installer that can be customized by distributions"
+url="https://gitlab.gnome.org/p3732/os-installer"
+arch="all"
+license="GPL-3.0-or-later"
+depends="
+	epiphany
+	gnome-control-center
+	gnome-disk-utility
+	py3-yaml
+	udisks2
+	vte3
+	vte3-gtk4
+"
+makedepends="
+	blueprint-compiler-dev
+	glib-dev
+	gnome-desktop-dev
+	gtk4.0-dev
+	libadwaita-dev
+	libgweather4-dev
+	meson
+	vte3-dev
+"
+source="https://gitlab.gnome.org/p3732/os-installer/-/archive/$pkgver/os-installer-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+391652f4b18241b86fa6f2d9a80b492c03994bc53832edbcfc5d6645ca0940632a2d076539bef3ee64348e667cb36921cd5737a851212a7c6eb0deace01196ae  os-installer-0.5.1.tar.gz
+"

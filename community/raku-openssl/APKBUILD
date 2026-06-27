@@ -1,0 +1,45 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=raku-openssl
+pkgver=0.2.7
+pkgrel=0
+pkgdesc="OpenSSL bindings"
+url="https://github.com/raku-community-modules/OpenSSL"
+# armhf, armv7, x86: fails 01-basic.t
+arch="all !armhf !armv7 !x86"
+license="MIT"
+depends="libssl3 rakudo"
+makedepends="moarvm-dev rakudo-dev"
+checkdepends="perl-utils"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/raku-community-modules/OpenSSL/archive/refs/tags/$pkgver.tar.gz
+	openssl-nativelib.patch
+	"
+builddir="$srcdir/OpenSSL-$pkgver"
+options="!archcheck" # Precompiled arch dependent files included (quiet noarch warning)
+
+build() {
+	RAKUDO_RERESOLVE_DEPENDENCIES=0 \
+	/usr/share/rakudo/tools/install-dist.raku \
+		--to=output --for=vendor
+}
+
+check() {
+	prove -e 'raku -Ilib' --ext .rakutest
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/rakudo
+	cp -RT output "$pkgdir"/usr/share/rakudo/vendor
+
+	install -Dvm644 META6.json README.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dvm644 LICENSE \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+93603c1002732db6b710c3ed00191789a0053d9179431ac242dd55752ad6b0af931fc4763e783ca2f1a569b3bf6027793788ce4631a8451337c984d598caaa2f  raku-openssl-0.2.7.tar.gz
+d571a2700194a8a0e8bfe8f255ff34c4cf0eb40cb78b5ba8f2e1fd1dd6ab4b1b744ce9638f8f7f0c7545c6a56b5d567913df17715fe9913b68af9eaaad9569e2  openssl-nativelib.patch
+"

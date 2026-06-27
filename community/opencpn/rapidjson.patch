@@ -1,0 +1,64 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1988,7 +1988,7 @@ add_subdirectory(libs/nmea0183)
+ add_subdirectory(libs/observable)
+ add_subdirectory(libs/picosha2)
+ add_subdirectory(libs/pugixml)
+-add_subdirectory(libs/rapidjson)
++find_package(RapidJSON)
+ add_subdirectory(libs/s52plib)
+ add_subdirectory(libs/sqlite)
+ 
+--- a/model/CMakeLists.txt
++++ b/model/CMakeLists.txt
+@@ -484,7 +484,6 @@ target_link_libraries(
+     ocpn::N2KParser
+     ocpn::nmea0183
+     ocpn::pugixml
+-    ocpn::rapidjson
+     ocpn::sqlite
+     ocpn::s52plib
+     ocpn::sound
+@@ -497,6 +496,9 @@ if (TARGET ocpn::wxsvg)
+   target_link_libraries(_OCPN_MODEL INTERFACE ocpn::wxsvg)
+ endif ()
+ 
++find_package(RapidJSON REQUIRED)
++target_include_directories(_OCPN_MODEL INTERFACE ${RapidJSON_INCLUDE_DIRS})
++
+ if (OCPN_USE_NEWSERIAL)
+   target_link_libraries(_OCPN_MODEL INTERFACE ocpn::serial)
+ endif ()
+--- a/model/src/ais_decoder.cpp
++++ b/model/src/ais_decoder.cpp
+@@ -2028,7 +2028,7 @@ bool AisDecoder::HandleN2K_129793(const
+ void AisDecoder::HandleSignalK(const SignalKMsgPtr &sK_msg) {
+   rapidjson::Document root;
+ 
+-  root.Parse(sK_msg->raw_message);
++  root.Parse(sK_msg->raw_message.c_str(), sK_msg->raw_message.size());
+ 
+   if (root.HasParseError()) return;
+ 
+--- a/model/src/comm_decoder.cpp
++++ b/model/src/comm_decoder.cpp
+@@ -430,7 +430,7 @@ bool CommDecoder::DecodePGN129540(std::v
+ bool CommDecoder::DecodeSignalK(std::string s, NavData& temp_data) {
+   rapidjson::Document root;
+ 
+-  root.Parse(s);
++  root.Parse(s.c_str(), s.size());
+   if (root.HasParseError()) return false;
+ 
+   if (root.HasMember("updates") && root["updates"].IsArray()) {
+--- a/model/src/comm_drv_signalk_net.cpp
++++ b/model/src/comm_drv_signalk_net.cpp
+@@ -400,7 +400,7 @@ void CommDriverSignalKNet::handle_SK_sen
+ 
+   std::shared_ptr<const std::string> msg = event.GetPayload();
+ 
+-  root.Parse(*msg);
++  root.Parse(msg->c_str(), msg->size());
+   if (root.HasParseError()) {
+     wxLogMessage(wxString::Format(
+         "SignalKDataStream ERROR: the JSON document is not well-formed:%d",

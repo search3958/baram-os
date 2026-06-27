@@ -1,0 +1,84 @@
+# Contributor: Steve McMaster <steve@mcmaster.io>
+# Contributor: Karim Kanso <kaz.kanso@gmail.com>
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=snort
+# pair with snort-extra
+pkgver=3.9.2.0
+pkgrel=0
+pkgdesc="Open source network intrusion prevention and detection system"
+url="https://www.snort.org/"
+# luajit
+arch="all !riscv64"
+license="GPL-2.0-only"
+depends="bash"
+makedepends="
+	bison
+	cmake
+	daq-dev
+	daq-static
+	flex-dev
+	hwloc-dev
+	libdnet-dev
+	libmnl-dev
+	libnet-dev
+	libnetfilter_queue-dev
+	libnfnetlink-dev
+	libpcap-dev
+	libtirpc-dev
+	luajit-dev
+	openssl-dev
+	pcre2-dev
+	samurai
+	xz-dev
+	zlib-dev
+	"
+install="$pkgname.pre-install"
+pkgusers="snort"
+pkggroups="snort"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-openrc"
+source="snort3-$pkgver.tar.gz::https://github.com/snort3/snort3/archive/refs/tags/$pkgver.tar.gz
+	no-libunwind.patch
+	logrotate
+	snort.initd
+	snort.confd
+	"
+builddir="$srcdir/snort3-$pkgver"
+options="!check" # needs cpputest from community
+
+# secfixes:
+#   2.9.18-r0:
+#     - CVE-2021-40114
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake3.5 -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+		-DENABLE_UNIT_TESTS="$(want_check && echo ON || echo OFF)" \
+		-DENABLE_BENCHMARK_TESTS=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm 755 "$srcdir"/snort.initd "$pkgdir"/etc/init.d/snort
+	install -Dm 644 "$srcdir"/snort.confd "$pkgdir"/etc/conf.d/snort
+	install -Dm644 "$srcdir"/logrotate "$pkgdir"/etc/logrotate.d/snort
+	install -d -o snort -g snort -m 770 "$pkgdir"/var/log/snort "$pkgdir"/var/lib/snort
+}
+
+sha512sums="
+1059afe6d9f000223145f16c35baedee67617cb2cf5bfb0a4754e3380fa7a047ae3e3882838570b2292feb7a3d2f308d13f84a1837faae58e1ac267ed95914cc  snort3-3.9.2.0.tar.gz
+5cfe27042549e1794b0709836423ab95810ec3060e9286650e9588dfc1224f12c110160dd0043595e756e22ead62c70ce40e0fc623c14c823b6c8b784df3207d  no-libunwind.patch
+2d845baa9cd02237a6e60dc280ede896bf1facf7906d7d08e8dfa99d596a9fbe3de4227e6bedbd95375598b6940b9d874ccdd12d3f2c1ede282bac3a8e26b47e  logrotate
+769840c6e8a7e353a2b2866b7b161195ce780fb3d5dda747325a95fcaf964c9aad29c5aba8c8ea48aa26ef810d81e82c1321104dd3e7374319e8176635e9b7d8  snort.initd
+8a1139cdd07a03a96c7f5f75164bf95cae4dbc24f637d8b4008b0cf41e4a7f97148621fe4a1c867e956e16dbe226eaf2284a50b73547d1afaacbd32ca9befae5  snort.confd
+"

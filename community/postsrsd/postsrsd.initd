@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+description="Postfix SRS Daemon"
+pidfile="/run/postsrsd.pid"
+command="/usr/sbin/postsrsd"
+command_args="-D -C /etc/postsrsd/postsrsd.conf"
+
+stopsig="SIGTERM"
+
+start_pre() {
+        if [ ! -s /etc/postsrsd/postsrsd.secret ]
+        then
+                ebegin "Generating secret"
+                checkpath -Fm 0600 -o postsrsd /etc/postsrsd/postsrsd.secret
+                dd if=/dev/urandom bs=18 count=1 status=none \
+                    | base64 >/etc/postsrsd/postsrsd.secret
+
+                eend $?
+        fi
+}

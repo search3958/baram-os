@@ -1,5 +1,0 @@
-# NetBSD syscalls
-d_nanosleep='define'
-
-# libraries to test
-libswanted='m dl'

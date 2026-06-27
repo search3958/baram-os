@@ -1,0 +1,35 @@
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=vdpauinfo
+pkgver=1.5
+pkgrel=0
+pkgdesc="Command line utility for querying the capabilities of a VDPAU device"
+options="!check" # no test suite
+url="https://gitlab.freedesktop.org/vdpau/vdpauinfo"
+arch="all"
+license="MIT"
+makedepends="autoconf automake libx11-dev libvdpau-dev"
+source="https://gitlab.freedesktop.org/vdpau/vdpauinfo/-/archive/$pkgver/vdpauinfo-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -fiv
+}
+
+build() {
+	 ./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+f3d359242443de919803ae0b8d89809c71e94d59d8ee9994f8f315036b829ad24030b75d953346989c1d0ddf436107041491e299c3212b013ad1d2b3c0571e59  vdpauinfo-1.5.tar.gz
+"

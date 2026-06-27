@@ -1,0 +1,30 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=dhcpcd-ui
+pkgver=0.7.9
+pkgrel=1
+pkgdesc="GTK+ monitor and configuration GUI for dhcpcd"
+url="https://roy.marples.name/projects/dhcpcd-ui"
+arch="all"
+license="BSD-2-Clause"
+depends="hicolor-icon-theme"
+makedepends="glib-dev gtk+3.0-dev dbus-dev libnotify-dev bsd-compat-headers py3-cairosvg"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/NetworkConfiguration/dhcpcd-ui/archive/refs/tags/v$pkgver.tar.gz"
+options="!check" # No tests
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" AUTOSTARTDIR=/etc/xdg/autostart install
+}
+
+sha512sums="
+7d958c3d0f3b10f0447fef768aba5ba1730254c72020f493884628fa6452f15747f291378cc35920671bbaa8741f9c7846f8168869f280c42d4edde953da4857  dhcpcd-ui-0.7.9.tar.gz
+"

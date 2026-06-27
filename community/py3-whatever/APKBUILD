@@ -1,0 +1,32 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=py3-whatever
+_pkgname=whatever
+pkgver=0.7
+pkgrel=3
+pkgdesc="Easy anonymous functions by partial application of operators"
+url="https://github.com/Suor/whatever"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3"
+checkdepends="py3-pytest"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="https://github.com/Suor/whatever/archive/$pkgver/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 -m pytest .
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+7641957f6eabad0d8485dac9b9cfaf0c6a8426ec9817c4e0748e669561fb5fbe21932f9bb864362ee34f5a5bff8ce6f6803c428130c1af3aabef3d583d7a582e  whatever-0.7.tar.gz
+"

@@ -1,5 +1,0 @@
-#TODO missing script for installation, probably data files
-[source]
-tar = "https://dl.unvanquished.net/benchmark/demos/unvanquished-benchmark_0.54.0.dm_86.xz"
-[build]
-template = "custom"

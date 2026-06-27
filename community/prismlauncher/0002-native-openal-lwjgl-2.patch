@@ -1,0 +1,63 @@
+LWJGL 2 does't have an option to use a native openal version. Replace
+the extracted files with a symlink instead.
+
+--- a/launcher/minecraft/launch/ExtractNatives.cpp
++++ b/launcher/minecraft/launch/ExtractNatives.cpp
+@@ -13,6 +13,7 @@
+  * limitations under the License.
+  */
+ 
++#include "Application.h"
+ #include "ExtractNatives.h"
+ #include <launch/LaunchTask.h>
+ #include <minecraft/MinecraftInstance.h>
+@@ -38,7 +39,7 @@ static QString replaceSuffix(QString target, const QString& suffix, const QStrin
+     return target + replacement;
+ }
+ 
+-static bool unzipNatives(QString source, QString targetFolder, bool applyJnilibHack)
++static bool unzipNatives(QString source, QString targetFolder, bool applyJnilibHack, QString nativeOpenALPath)
+ {
+     MMCZip::ArchiveReader zip(source);
+     QDir directory(targetFolder);
+@@ -46,13 +47,17 @@ static bool unzipNatives(QString source, QString targetFolder, bool applyJnilibH
+     auto extPtr = MMCZip::ArchiveWriter::createDiskWriter();
+     auto ext = extPtr.get();
+ 
+-    return zip.parse([applyJnilibHack, directory, ext](MMCZip::ArchiveReader::File* f) {
++    return zip.parse([applyJnilibHack, nativeOpenALPath, directory, ext](MMCZip::ArchiveReader::File* f) {
+         QString name = f->filename();
+         auto lowercase = name.toLower();
+         if (applyJnilibHack) {
+             name = replaceSuffix(name, ".jnilib", ".dylib");
+         }
+         QString absFilePath = directory.absoluteFilePath(name);
++        if (!nativeOpenALPath.isEmpty() && name.startsWith("libopenal")) {
++            QFile::link(nativeOpenALPath, absFilePath);
++            return true;
++        }
+         return f->writeFile(ext, absFilePath, directory);
+     });
+ }
+@@ -65,13 +70,20 @@ void ExtractNatives::executeTask()
+         emitSucceeded();
+         return;
+     }
++    auto settings = instance->settings();
+ 
+     auto outputPath = instance->getNativePath();
+     FS::ensureFolderPathExists(outputPath);
+     auto javaVersion = instance->getJavaVersion();
+     bool jniHackEnabled = javaVersion.major() >= 8;
++    QString nativeOpenALPath = "";
++    if (settings->get("UseNativeOpenAL").toBool()) {
++        nativeOpenALPath = settings->get("CustomOpenALPath").toString();
++        if (nativeOpenALPath.isEmpty())
++            nativeOpenALPath = APPLICATION->m_detectedOpenALPath;
++    }
+     for (const auto& source : toExtract) {
+-        if (!unzipNatives(source, outputPath, jniHackEnabled)) {
++        if (!unzipNatives(source, outputPath, jniHackEnabled, nativeOpenALPath)) {
+             const char* reason = QT_TR_NOOP("Couldn't extract native jar '%1' to destination '%2'");
+             emit logLine(QString(reason).arg(source, outputPath), MessageLevel::Fatal);
+             emitFailed(tr(reason).arg(source, outputPath));

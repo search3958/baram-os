@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-wbdata
+_pkgname=wbdata
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="A library to access World Bank data"
+options="!check" # Tests are broken
+url="https://github.com/oliversherouse/wbdata"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="python3 py3-decorator"
+makedepends="py3-gpep517 py3-hatchling"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-wbdata" # Backwards compatibility
+provides="py-wbdata=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+965d19d04e53121220dc24e85346f9f65c0ba9a9efc16a5ff32eb781e89fe453d03b03315d1b5662a4d31a2142704b07c234f7a397abf982334c128214f246bb  wbdata-1.1.0.tar.gz
+"

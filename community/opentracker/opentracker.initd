@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+conf="${opentracker_conf:-/etc/opentracker/$RC_SVCNAME.conf}"
+
+command="/usr/bin/$RC_SVCNAME"
+command_args="-d /var/empty -f $conf $opentracker_opts"
+command_user="${opentracker_user:-opentracker}"
+command_background="true"
+pidfile="/run/$RC_SVCNAME.pid"
+
+depend() {
+	need net
+	after firewall
+}

@@ -1,0 +1,26 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-mu
+pkgver=0_git20220317
+pkgrel=0
+_commit="1361da04014d77b8bec13e050a71bf7bf8ce5543"
+pkgdesc="libretro core for mu"
+url="https://github.com/libretro/Mu"
+arch="all"
+license="Custom"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/Mu/archive/$_commit.tar.gz"
+builddir="$srcdir/Mu-$_commit"
+options="!check" # No tests
+
+build() {
+	make -C libretroBuildSystem
+}
+
+package() {
+	install -Dm644 libretroBuildSystem/mu_libretro.so \
+		"$pkgdir"/usr/lib/libretro/mu_libretro.so
+}
+
+sha512sums="
+0b9260603e1deaeb488fc7626466486a36d3544892469fbd4d11f357c52e005758e01fee99122fd61d1d61dece64b79b42b909511bf613ea6ed4d165e330b302  libretro-mu-1361da04014d77b8bec13e050a71bf7bf8ce5543.tar.gz
+"

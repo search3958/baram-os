@@ -1,0 +1,35 @@
+# Contributor:  Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=perl-device-serialport
+_pkgreal=Device-SerialPort
+pkgver=1.04
+pkgrel=23
+pkgdesc="Linux/POSIX emulation of Win32::SerialPort functions."
+url="https://metacpan.org/dist/Device-SerialPort"
+arch="all"
+license="Artistic-1.0-Perl OR GPL-1.0-or-later"
+depends="perl"
+makedepends="perl-dev"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/C/CO/COOK/Device-SerialPort-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# creates file collision among perl modules
+	find "$pkgdir" -name perllocal.pod -delete
+
+}
+
+sha512sums="
+4b25a7d29091322d516e0aa20693caabe95a8521b3fdc425d1c03e3312fb59a6883268db7eaf79b32586569502fb656c875dd2b6b1d7a4341d9bd6916e04ee44  Device-SerialPort-1.04.tar.gz
+"

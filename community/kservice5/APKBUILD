@@ -1,0 +1,57 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks-old
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kservice5
+pkgver=5.116.0
+pkgrel=0
+pkgdesc="Advanced plugin and service introspection"
+arch="all !armhf" # armhf blocked by extra-cmake-modules
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.1-only AND LGPL-2.1-or-later"
+depends_dev="
+	kconfig5-dev
+	kcoreaddons5-dev
+	kcrash5-dev
+	kdbusaddons5-dev
+	ki18n5-dev
+	"
+makedepends="$depends_dev
+	bison
+	doxygen
+	extra-cmake-modules
+	flex-dev
+	kdoctools5-dev
+	qt5-qttools-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+_repo_url="https://invent.kde.org/frameworks/kservice.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kservice-$pkgver.tar.xz"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+builddir="$srcdir/kservice-$pkgver"
+
+replaces="kservice<=5.110.0-r0"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_TESTING=ON \
+		-DBUILD_QCH=ON
+	cmake --build build
+}
+
+check() {
+	xvfb-run -a ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+daadc5d0bfa2dbfc6ae0c6535f407851d1adc67529d2262d92c2e8dff8a45aa701790d8aa2e6d97d9c433409ffee4767214523f992937e244b02fb27d62ffea8  kservice-5.116.0.tar.xz
+"

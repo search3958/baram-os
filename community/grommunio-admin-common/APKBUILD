@@ -1,0 +1,41 @@
+# Maintainer: Noel Kuntze <noel.kuntze@contauro.com>
+pkgname=grommunio-admin-common
+pkgver=1.0_git20240313
+pkgrel=1
+pkgdesc="Common files for grommunio management"
+arch="noarch"
+url="https://grommunio.com/"
+license="AGPL-3.0-only"
+options="!check" # No test suite
+depends="bash"
+
+_commithash=36c09d448d8e3120a7eb32324b3a1d47e6cc3128
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/grommunio/admin-configs/archive/$_commithash.tar.gz
+
+	web-config.conf
+	nginx-ssl.conf
+	"
+
+builddir="$srcdir/admin-configs-$_commithash"
+
+package() {
+	mkdir -p "$pkgdir"
+	cp -rp . "$pkgdir"
+
+	# fix nginx directory
+	mv "$pkgdir/etc/nginx/conf.d" "$pkgdir/etc/nginx/http.d"
+
+	# nginx config files
+	install -m644 -D "$srcdir"/web-config.conf "$pkgdir"/etc/grommunio-admin-common/nginx.d/web-config.conf
+	install -m644 -D "$srcdir"/nginx-ssl.conf "$pkgdir"/etc/grommunio-admin-common/nginx-ssl.conf
+
+	# remove unnecessary files
+	rm -r "$pkgdir"/etc/grommunio-admin-common/nginx.d/.empty
+}
+
+sha512sums="
+78bc241cf800cd30cfbe3e739d7a51a93548d68982b9146c40b00a6071e3bfc32723884f4074e4d30c4fbfe692e181a696955f7119d0bd099d33fa47b3117a05  grommunio-admin-common-1.0_git20240313.tar.gz
+152d1a061f256310e53bf10923b4a413bb4716560bee908b9d96c34df24720369d91a3ca2b58197e2d495b669aa4213b82040239067d4eb73a79c0828e651f37  web-config.conf
+e2d1a010813078651ca2e728589a1c0c84b6e098c87f59b2ec07d54a9f80b8c9a2168cd853dd73fe07ee6e05cc66f762c2d9ba2511c135314bb1727f6cbfba91  nginx-ssl.conf
+"

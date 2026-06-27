@@ -1,0 +1,31 @@
+#!/sbin/openrc-run
+
+name="earlyoom"
+description="Early OOM Daemon for Linux"
+
+: ${command_user:=nobody:nobody}
+: ${error_logger="logger -t $name -p daemon.info >/dev/null 2>&1"}
+
+command="/usr/bin/earlyoom"
+command_args="
+	-r 0
+	${mem_min_percent:+-m $mem_min_percent}
+	${swap_min_percent:+-s $swap_min_percent}
+	${mem_min_size:+-M $mem_min_size}
+	${swap_min_size:+-S $swap_min_size}
+	${prefer_cmds:+"--prefer '$prefer_cmds'"}
+	${avoid_cmds:+"--avoid '$avoid_cmds'"}
+	${command_args:-}
+	"
+command_background=yes
+pidfile="/run/$RC_SVCNAME.pid"
+
+# Allow killing processes and calling mlockall().
+# (This is supported since OpenRC 0.45)
+capabilities="^cap_kill,^cap_ipc_lock"
+
+start_pre() {
+	yesno "${debug:-no}" && command_args="$command_args -d"
+	yesno "${set_priority:-no}" && command_args="$command_args -p"
+	return 0
+}

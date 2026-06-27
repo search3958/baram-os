@@ -1,0 +1,22 @@
+--- ./po/Makefile.orig
++++ ./po/Makefile
+@@ -130,7 +130,7 @@
+ 	@for n in $(MOFILES); do \
+ 	    l=`basename $$n .mo`; \
+ 	    $(INSTALL_DIR) $(DESTDIR)$(INSTALL_NLS_DIR)/$$l/LC_MESSAGES; \
+-	    $(INSTALL_DATA) --verbose $$n $(DESTDIR)$(INSTALL_NLS_DIR)/$$l/LC_MESSAGES/$(NLSPACKAGE).mo; \
++	    $(INSTALL_DATA) $$n $(DESTDIR)$(INSTALL_NLS_DIR)/$$l/LC_MESSAGES/$(NLSPACKAGE).mo; \
+ 	done
+ 
+ %.mo: %.po
+--- a/sestatus/Makefile
++++ b/sestatus/Makefile
+@@ -22,7 +22,7 @@
+ 	# Some tools hard code /usr/sbin/sestatus ; add a compatibility symlink
+ 	# install will overwrite a symlink, so create the symlink before calling
+ 	# install to allow distributions with BINDIR == SBINDIR
+-	ln -sf --relative $(DESTDIR)$(BINDIR)/sestatus $(DESTDIR)$(SBINDIR)
++	ln -sf $(DESTDIR)$(BINDIR)/sestatus $(DESTDIR)$(SBINDIR)
+ 	install -m 755 sestatus $(DESTDIR)$(BINDIR)
+ 	install -m 644 sestatus.8 $(DESTDIR)$(MANDIR)/man8
+ 	install -m 644 sestatus.conf.5 $(DESTDIR)$(MANDIR)/man5

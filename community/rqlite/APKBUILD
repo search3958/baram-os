@@ -1,0 +1,61 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=rqlite
+pkgver=9.4.1
+pkgrel=3
+pkgdesc="Lightweight, distributed relational database built on SQLite"
+url="https://github.com/rqlite/rqlite"
+arch="all"
+license="MIT"
+makedepends="go sqlite-dev"
+checkdepends="python3 py3-requests"
+options="chmod-clean net !check" # a bunch of them fail due to runtime requirements
+subpackages="
+	$pkgname-doc
+	$pkgname-bench
+	$pkgname-client
+	"
+source="https://github.com/rqlite/rqlite/archive/refs/tags/v$pkgver/rqlite-$pkgver.tar.gz"
+
+export GOFLAGS="$GOFLAGS -tags=libsqlite3"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build ./cmd/rqbench &
+	go build ./cmd/rqlite &
+	go build ./cmd/rqlited &
+	wait
+}
+
+check() {
+	RQLITED_PATH="$builddir"/rqlited python3 system_test/full_system_test.py
+}
+
+package() {
+	install -Dm755 rqbench rqlite rqlited \
+		-t "$pkgdir"/usr/bin/
+
+	install -Dm644 DOC/*.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dm644 LICENSE \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+bench() {
+	pkgdesc="$pkgdesc (benchmark utility)"
+
+	amove usr/bin/rqbench
+}
+
+client() {
+	pkgdesc="$pkgdesc (client)"
+
+	amove usr/bin/rqlite
+}
+
+sha512sums="
+e13dd2cd3ae346f0632dbc2d071604af474cbc4735cb687c78eccfe2a1bef3913a4a0411ef743cbb0b5415647d3ab2d50c32f082de11dc26e9f40fb928a1a1b0  rqlite-9.4.1.tar.gz
+"

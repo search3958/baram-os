@@ -1,0 +1,52 @@
+maintainer="Krassy Boykinov <kboykinov@teamcentrixx.com>"
+pkgname=libdovi
+pkgver=3.3.2
+pkgrel=0
+pkgdesc="Library to read & write Dolby Vision metadata"
+url="https://github.com/quietvoid/dovi_tool"
+arch="all"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	cargo-c
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/quietvoid/dovi_tool/archive/refs/tags/libdovi-$pkgver.tar.gz"
+builddir="$srcdir/dovi_tool-libdovi-$pkgver"
+options="net" # cargo
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --manifest-path dolby_vision/Cargo.toml
+}
+
+build() {
+	cargo auditable cbuild \
+		--release \
+		--locked \
+		--prefix /usr \
+		--library-type cdylib \
+		--manifest-path dolby_vision/Cargo.toml
+}
+
+check() {
+	cargo test --frozen --manifest-path dolby_vision/Cargo.toml
+}
+
+package() {
+	cargo auditable cinstall \
+		--release \
+		--frozen \
+		--prefix /usr \
+		--destdir "$pkgdir" \
+		--library-type cdylib \
+		--manifest-path dolby_vision/Cargo.toml
+
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+5883c9cb1106b41d3c5280685f0a30ee6e0edd6d9410c31d8669d9ad0da0fecc63840e1b5f20b5ab32637ccd946b06064da66185f2b7856fc6be23cd9830dc1a  libdovi-3.3.2.tar.gz
+"

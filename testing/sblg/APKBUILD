@@ -1,0 +1,34 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=sblg
+pkgver=0.6.1
+pkgrel=0
+pkgdesc="static blog utility"
+url="https://kristaps.bsd.lv/sblg/"
+arch="all"
+license="ISC"
+makedepends="bmake expat-dev"
+subpackages="$pkgname-doc"
+source="https://kristaps.bsd.lv/sblg/snapshots/sblg-$pkgver.tar.gz"
+
+build() {
+	./configure MANDIR=/usr/share/man PREFIX=/usr LDFLAGS="$LDFLAGS"
+	bmake
+}
+
+check() {
+	bmake regress
+}
+
+package() {
+	bmake DESTDIR="$pkgdir" install
+}
+
+doc() {
+	default_doc
+	amove usr/share/sblg/examples
+}
+
+sha512sums="
+07de1388853614ec338353a7eee7dd11e33714f05e77ca503052a8c0530048076c1b0b6aa9fea65e32e6f061071a0522d6aa5aeeb8466bab82c24e9e8dcbb5b1  sblg-0.6.1.tar.gz
+"

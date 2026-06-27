@@ -1,0 +1,53 @@
+# Contributor: Aster Boese <asterboese@mailbox.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=persistent-cache-cpp
+pkgver=1.0.10
+pkgrel=0
+pkgdesc="Cache of key-value pairs with persistent storage for C++ 11"
+url="https://gitlab.com/ubports/development/core/lib-cpp/persistent-cache-cpp"
+arch="all"
+license="LGPL-3.0-only"
+depends="
+	dconf
+	"
+depends_dev="
+	boost-dev
+	leveldb-dev
+	"
+makedepends="
+	$depends_dev
+	cmake
+	cmake-extras
+	gtest-dev
+	samurai
+	"
+checkdepends="
+	xvfb-run
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://gitlab.com/ubports/development/core/lib-cpp/persistent-cache-cpp/-/archive/$pkgver/persistent-cache-cpp-$pkgver.tar.gz
+	remove-docs-html-from-makefile.patch
+	"
+options="!check" # 91% tests passed, 1 tests failed out of 11
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+db2a8ee6f856656e1dac0e6b660140b1d9a32c8183a9105ed09daf445a2ccaceeb89d6ce7e7ea5d86e5e3fb21886e0d3ffa4dc5c790e4b3407cae1a6f509b5a5  persistent-cache-cpp-1.0.10.tar.gz
+668963ebba223ef21b3d87d054b29f4e11c849b808347e6aa74a2434c3f1f4d8d35159d6ae60a47db3e026b82dec913be5771e389834c393f2cfc2f5d0d2b137  remove-docs-html-from-makefile.patch
+"

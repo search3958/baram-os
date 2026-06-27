@@ -1,0 +1,72 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Michael Mason <ms13sp@gmail.com>
+pkgname=findutils
+pkgver=4.10.0
+pkgrel=1
+pkgdesc="GNU utilities for finding files"
+url="https://www.gnu.org/software/findutils/"
+arch="all"
+license="GPL-3.0-or-later"
+checkdepends="
+	coreutils
+	dejagnu
+	diffutils
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-locate:_locate
+	$pkgname-locate-doc:_locate_doc
+	"
+source="https://ftp.gnu.org/pub/gnu/findutils/findutils-$pkgver.tar.xz
+	test-parse-datetime.patch
+	test-sigusr.patch
+	"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir"/usr/lib
+	mv "$pkgdir"/usr/share/man/man1/locate.1 "$builddir"
+}
+
+_locate() {
+	pkgdesc="locate and updatedb from findutils"
+	# requires flags only findutils find supports, like -fstype
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/libexec/frcode \
+		usr/bin/locate \
+		usr/bin/updatedb
+}
+
+_locate_doc() {
+	pkgdesc="locate and updatedb from findutils"
+	install -Dm644 "$builddir"/locate.1 \
+		-t "$pkgdir"/usr/share/man/man1
+	default_doc
+	install_if="docs $pkgname-locate=$pkgver-r$pkgrel"
+}
+
+sha512sums="
+b8b683d21cd26c6da4f41c56e83cadbda4780f8610a2bbd4b4e34bb1f339c3209721974b03e076d5eef0331fd876d947b398197aad37c29bbcc2e0405c641b34  findutils-4.10.0.tar.xz
+79571dc889afa5e6f01c9e1d4134df5e4112a410f24eb3e315645f6886a901780745abe49597d07c6409a3e3ecd3380b1721d86a684b7705c35767111c93bbf5  test-parse-datetime.patch
+9f4a7cd2e226a84e66f0b4c49e5c4d2a02cfc6f56a4bfedc379f97f67ecec05672dfc4c4a09fed57e8003d4c94c77c24bdaf5ce4d7e2b1d332de7440f7f84a4d  test-sigusr.patch
+"

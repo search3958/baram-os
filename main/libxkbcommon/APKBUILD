@@ -1,0 +1,95 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=libxkbcommon
+pkgver=1.13.1
+pkgrel=0
+pkgdesc="keyboard handling library"
+url="https://xkbcommon.org/"
+arch="all"
+license="MIT AND MIT-open-group AND HPND AND HPND-sell-variant AND LicenseRef-digital-equipment-corporation"
+depends="xkeyboard-config"
+depends_dev="libxkbcommon-x11=$pkgver-r$pkgrel"
+makedepends="
+	bison
+	libxcb-dev
+	libxml2-dev~2.13
+	meson
+	wayland-dev
+	wayland-protocols
+	xkeyboard-config-dev
+	doxygen
+	graphviz
+	"
+checkdepends="xvfb-run"
+subpackages="
+	$pkgname-static
+	$pkgname-doc
+	$pkgname-dev
+	$pkgname-x11
+	xkbcli
+	xkbcli-doc:xkbcli_doc
+	xkbcli-bash-completion
+	"
+source="https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-$pkgver.tar.gz"
+builddir="$srcdir/libxkbcommon-xkbcommon-$pkgver"
+options="!check" # checkdependency xvfb-run in community
+
+build() {
+	abuild-meson \
+		-Denable-wayland=true \
+		-Denable-docs=true \
+		-Denable-x11=true \
+		-Ddefault_library=both \
+		build
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+doc() {
+	pkgdesc="Keyboard handling library (documentation)"
+	install_if="docs $pkgname=$pkgver-r$pkgrel"
+	# XXX: depends on default_doc implementation details
+	# Library docs are HTML in /usr/share/doc and don't require any special
+	# processing, while xkbcli docs are man pages. So we move doc directory to
+	# the subpackage...
+	amove usr/share/doc/libxkbcommon
+}
+
+x11() {
+	pkgdesc="$pkgdesc (x11 support)"
+
+	amove usr/lib/*x11*.so.*
+}
+
+xkbcli() {
+	pkgdesc="xkb command-line tool with interactive debugger"
+
+	amove usr/bin/xkbcli
+	amove usr/libexec/xkbcommon/xkbcli*
+}
+
+xkbcli_doc() {
+	# ... and run default_doc here to let abuild process man pages
+	default_doc
+	pkgdesc="xkb command-line tool with interactive debugger (documentation)"
+	install_if="docs xkbcli=$pkgver-r$pkgrel"
+}
+
+bashcomp() {
+	default_bashcomp
+
+	pkgdesc="Bash completions for xkbcli"
+	install_if="xkbcli=$pkgver-r$pkgrel bash-completion"
+}
+
+
+sha512sums="
+450c33fe26af6b847cf7516685d0df63c2ba0126887e27595c40fe80e4d0487009aa6cdf38ff1270d595c7900cbf3c11e7aa4f9cff80fa361742b5ebb10d83bd  xkbcommon-1.13.1.tar.gz
+"

@@ -1,0 +1,37 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=font-bitstream-100dpi
+pkgver=1.0.4
+pkgrel=2
+pkgdesc="X.Org Bitstream bitmap fonts"
+url="https://xorg.freedesktop.org/"
+arch="noarch"
+license="MIT"
+options="!check"
+depends="encodings font-alias mkfontscale fontconfig"
+makedepends="font-util-dev bdftopcf"
+source="https://www.x.org/releases/individual/font/font-bitstream-100dpi-$pkgver.tar.xz"
+subpackages="$pkgname-doc"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--with-mapfiles=/usr/share/fonts/util \
+		--with-fontdir=/usr/share/fonts/100dpi
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" \
+		MKFONTDIR=: \
+		MKFONTSCALE=: \
+		FCCACHE=: \
+		install
+
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}
+
+sha512sums="
+1389681eee8b9e2bbfe0293b0aa1add7c6fa86149ff3cb779195ddcc548b1a519336c2d43b6988c899dc09d44ca30de9ffb5daca24fc3906694ab0fd391eb437  font-bitstream-100dpi-1.0.4.tar.xz
+"

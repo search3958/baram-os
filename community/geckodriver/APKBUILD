@@ -1,0 +1,28 @@
+# Contributor: Zoey <zoey@z0ey.de>
+# Contributor: Nulo <git@nulo.in>
+# Maintainer: Zoey <zoey@z0ey.de>
+pkgname=geckodriver
+pkgver=0.37.0
+pkgrel=0
+pkgdesc="Proxy for using W3C WebDriver compatible clients to interact with Gecko-based browsers."
+url="https://github.com/mozilla/geckodriver"
+arch="all"
+license="MPL-2.0"
+makedepends="cargo cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mozilla/geckodriver/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	cargo auditable build --release --bin geckodriver
+}
+
+check() {
+	cargo test --release
+}
+
+package() {
+	install -Dm0755 target/release/$pkgname -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+1b7ff0c10994f9470a57246b6c0a5bbcd7b3a32e68f5c43694dbb1cdbe83bebd238daffc4bd9803435a8aca2dce535dd2abc3328c6e9bfa46d45339f2b8471cf  geckodriver-0.37.0.tar.gz
+"

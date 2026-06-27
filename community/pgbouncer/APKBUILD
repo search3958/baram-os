@@ -1,0 +1,61 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=pgbouncer
+pkgver=1.25.2
+pkgrel=0
+pkgdesc="Lightweight connection pooler for PostgreSQL"
+url="https://www.pgbouncer.org/"
+arch="all"
+license="ISC"
+pkgusers="pgbouncer"
+pkggroups="postgres"
+install="$pkgname.pre-install"
+makedepends="c-ares-dev libevent-dev openssl-dev>3 udns-dev"
+subpackages="$pkgname-doc $pkgname-openrc"
+source="https://www.pgbouncer.org/downloads/files/$pkgver/pgbouncer-$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+	$pkgname.logrotate
+	pgbouncer-dirs.patch
+	no-html-file.patch
+	fix-int64-musl.patch
+	"
+
+# secfixes:
+#   1.25.1-r0:
+#     - CVE-2025-12819
+#   1.16.1-r0:
+#     - CVE-2021-3935
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--disable-debug
+	make
+}
+
+check() {
+	make -C test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	cd "$pkgdir"
+	install -m 755 -D "$srcdir"/$pkgname.initd ./etc/init.d/$pkgname
+	install -m 644 -D "$srcdir"/$pkgname.confd ./etc/conf.d/$pkgname
+	install -m 644 -D "$srcdir"/$pkgname.logrotate ./etc/logrotate.d/$pkgname
+	install -m 644 -D "$builddir"/etc/$pkgname.ini ./etc/$pkgname/$pkgname.ini
+
+	install -d -m 755 -o $pkgusers -g $pkggroups ./var/log/$pkgname
+}
+
+sha512sums="
+4e3e415a674be28cb06e26efa37afdcf90cf469dc6d5d6bd0d62a519deb6ff2d1ad63c0bbc9fb6d7853514c09bc8d43aff9fccdf69bfd7d9c2f6e5214336fa3d  pgbouncer-1.25.2.tar.gz
+19d2637509ca34b105851cd0f3291ead6a1b991e687a6a5b561c9015abca477ecdf91eb7f999e1cb7c66490e47dd2fbb4f16cd34bff6fb29d7f76a4b739a0d8d  pgbouncer.initd
+808621351b0f5973427fa22f63128432b00ac20fd25af437e8148dad9e55185775aba612b6ecdd58e4a6f2450b8c7838fcace288845b9b3cd0236bbe168aa574  pgbouncer.confd
+83b869466b59c1b1d6e316a9368f725181128c1f5a7af230e3fa9c58ccda1bc097db182806c1c51a5121692791ec83d9eb0f5718fb3031f521bb537001153e2d  pgbouncer.logrotate
+f45170465fda5190257e3f4c10e22fe7df57657efc90bdd6a3f0727375a25143e07480ecd998995cec0ddb2ed2d472f996b21e4fe712681418215823b88d0fc3  pgbouncer-dirs.patch
+8a188670cf1af04866c23aecf06537ddc74341e272e296ac5842a7ccefd7fc0506c70a1a0338517383a2d6746e5f21e82c02dfe3310bf973f97d0bfbbe052de4  no-html-file.patch
+57ebb4be51e9364ed86d98bcde80769a1d7b116caca668b9ce01b8352e0bd14cda4e8168fb10ed55d3363f519d441d6b2619c5c47a62aa169127f4453e11bd9c  fix-int64-musl.patch
+"

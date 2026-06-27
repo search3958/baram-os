@@ -1,0 +1,32 @@
+# Maintainer: Andy Postnikov <apostnikov@gmail.com>
+pkgname=py3-typing-inspection
+pkgver=0.4.2
+pkgrel=1
+pkgdesc="Provides tools to inspect type annotations at runtime"
+url="https://github.com/pydantic/typing-inspection"
+arch="noarch"
+license="MIT"
+depends="py3-typing-extensions"
+makedepends="py3-gpep517 py3-hatchling"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/t/typing_inspection/typing_inspection-$pkgver.tar.gz"
+builddir="$srcdir/typing_inspection-$pkgver"
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+1011e708fe0c93da57948f3bc8a00d6d45774d7960c6719fd3357c36fb2050147fc0dae51838b389e76fe1b360e44744d783e9a441c10e2702f88b5a7293892e  py3-typing-inspection-0.4.2.tar.gz
+"

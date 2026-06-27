@@ -1,0 +1,61 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=py3-poetry-core
+_pkgname=poetry-core
+pkgver=2.3.2
+pkgrel=0
+pkgdesc="PEP 517 build backend implementation for Poetry"
+url="https://github.com/python-poetry/poetry-core"
+license="MIT"
+arch="noarch"
+depends="
+	py3-fastjsonschema
+	py3-lark-parser
+	py3-packaging
+	"
+makedepends="py3-gpep517"
+checkdepends="
+	git
+	py3-build
+	py3-pip
+	py3-pytest
+	py3-pytest-mock
+	py3-setuptools
+	py3-tomli-w
+	py3-trove-classifiers
+	py3-virtualenv
+	python3-dev
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/python-poetry/poetry-core/archive/$pkgver/py3-poetry-core-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+prepare() {
+	default_prepare
+	# Remove vendored dependencies early so we don't test against them
+	# and so we don't have to locate them later.
+	rm -r src/poetry/core/_vendor
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# Many tests fail if we are not in a git repository. An empty one works.
+	git init 2>/dev/null
+	export CFLAGS="$CFLAGS -Wno-error=int-conversion"
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/poetry_core-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+d5840cc2bbbc83c953537efec046b9edf24a2ee99cafdc4a2eb5da0ce072477c1d951d2a21e3ab329022928717c0ce802941f8bfe32117cc218c072f83d5ab0f  py3-poetry-core-2.3.2.tar.gz
+"

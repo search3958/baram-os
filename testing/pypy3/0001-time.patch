@@ -1,0 +1,10 @@
+--- a/pypy/module/cpyext/include/Python.h.orig
++++ b/pypy/module/cpyext/include/Python.h
+@@ -14,6 +14,7 @@
+ # include <math.h>
+ # include <errno.h>
+ # include <unistd.h>
++# include <sys/time.h>
+ #else
+ # ifdef _MSC_VER
+ #  include <crtdefs.h>

@@ -1,0 +1,61 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=brasero
+pkgver=3.12.3
+pkgrel=8
+pkgdesc="Brasero is a GNOME application to burn CD/DVD"
+url="https://gitlab.gnome.org/GNOME/brasero"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	glib-dev
+	gobject-introspection-dev
+	gst-plugins-base-dev
+	gstreamer-dev
+	gtk+3.0-dev
+	intltool
+	itstool
+	libburn-dev
+	libcanberra-dev
+	libice-dev
+	libisofs-dev
+	libnotify-dev
+	libsm-dev
+	libxml2-dev
+	nautilus-dev
+	totem-pl-parser-dev
+	tinysparql-dev
+	"
+subpackages="$pkgname-dev $pkgname-lang $pkgname-doc"
+source="https://download.gnome.org/sources/brasero/${pkgver%.*}/brasero-$pkgver.tar.xz
+	gcc14.patch
+	"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+0e3c97b2a754f7178207db390e33b832fcaed3856ae5dee447e5c26d712728302dbebbf839a4fb7565f63b3ebb1e4936e20739482a8114e6fe2700805659270a  brasero-3.12.3.tar.xz
+0edfc85988d4ce89017a63487a19c7dc52540f9f93b87f68621dc593a2994bf7b757c0536c2bca0dfaf68418576742a7c44300855fc855cfdef87b5916ed1f9b  gcc14.patch
+"

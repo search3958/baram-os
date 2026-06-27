@@ -1,0 +1,68 @@
+# Contributor: Sergei Lukin <sergej.lukin@gmail.com>
+# Contributor: Carlo Landmeter
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=wavpack
+pkgver=5.9.0
+pkgrel=0
+pkgdesc="Audio compression format with lossless, lossy, and hybrid compression modes"
+url="https://www.wavpack.com/"
+arch="all"
+license="BSD-3-Clause"
+subpackages="$pkgname-dev $pkgname-libs $pkgname-doc"
+source="https://www.wavpack.com/wavpack-$pkgver.tar.xz"
+
+# secfixes:
+#   5.5.0-r0:
+#     - CVE-2021-44269
+#   5.4.0-r0:
+#     - CVE-2020-35738
+#   5.1.0-r8:
+#     - CVE-2019-1010319
+#     - CVE-2019-1010317
+#     - CVE-2019-1010315
+#     - CVE-2019-11498
+#   5.1.0-r7:
+#     - CVE-2018-19840
+#     - CVE-2018-19841
+#   5.1.0-r6:
+#     - CVE-2018-10536
+#     - CVE-2018-10537
+#     - CVE-2018-10538
+#     - CVE-2018-10539
+#     - CVE-2018-10340
+#   5.1.0-r3:
+#     - CVE-2018-6767
+#     - CVE-2018-7253
+#     - CVE-2018-7254
+#   5.1.0-r0:
+#     - CVE-2016-10169
+#     - CVE-2016-10170
+#     - CVE-2016-10171
+#     - CVE-2016-10172
+
+build() {
+	CFLAGS="$CFLAGS -O2 -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-rpath \
+		--disable-static
+	make
+	make cli/wvtest
+}
+
+check() {
+	cli/wvtest --default --short --no-extras
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+04c07d98c806926fb91df0267f5c994444503d875222d54990af60e987580bf4c3cc283c3c35381d04aee6e0c175277d87157d87c840bb90fc830dd3f82b9e3e  wavpack-5.9.0.tar.xz
+"

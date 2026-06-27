@@ -1,0 +1,31 @@
+# Contributor: Isaac Dunham <ibid.ag@gmail.com>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=brlaser
+pkgver=6.2.8
+pkgrel=0
+pkgdesc="Driver for Brother printers like the DCP 7030 and DCP 7065"
+url="https://github.com/pdewacht/brlaser"
+arch="all"
+license="GPL-2.0-or-later"
+depends="cups-filters"
+makedepends="cmake cups-dev samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Owl-Maintain/brlaser/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B build \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+6cbfb2376dbbc06f55a605a160b946ca810191d9a88c1380adb5fcbac10e37c36ec77604ab0ee0fb2595d86306f87d322b0cea314166a8a2d3999bd43b9365ce  brlaser-6.2.8.tar.gz
+"

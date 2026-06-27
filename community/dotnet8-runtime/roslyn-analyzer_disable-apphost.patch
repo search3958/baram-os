@@ -1,0 +1,12 @@
+diff --git a/src/roslyn-analyzers/src/PerformanceTests/Tests/PerformanceTests.csproj.orig b/src/roslyn-analyzers/src/PerformanceTests/Tests/PerformanceTests.csproj
+index eefae30..191235e 100644
+--- a/src/roslyn-analyzers/src/PerformanceTests/Tests/PerformanceTests.csproj.orig
++++ b/src/roslyn-analyzers/src/PerformanceTests/Tests/PerformanceTests.csproj
+@@ -17,6 +17,7 @@
+     <IsPackable>false</IsPackable>
+     <ExcludeFromSourceBuild>true</ExcludeFromSourceBuild>
+     <MicrosoftCodeAnalysisVersion>$(MicrosoftCodeAnalysisVersionForTests)</MicrosoftCodeAnalysisVersion>
++    <UseAppHost>false</UseAppHost>
+   </PropertyGroup>
+   <ItemGroup>
+     <PackageReference Include="BenchmarkDotNet" Version="$(BenchmarkDotNetVersion)" />

@@ -1,5 +1,0 @@
-#TODO Compiled but not tested
-[source]
-git = "https://github.com/KhalilOuali/sprinkles"
-[build]
-template = "cargo"

@@ -1,0 +1,33 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=w_scan2
+pkgver=1.0.17
+pkgrel=0
+pkgdesc="Universal ATSC and DVB blind scanner"
+url="https://github.com/stefantalpalaru/w_scan2"
+arch="all"
+license="GPL-2.0-or-later"
+options="!check" # No test suite
+replaces="w_scan"
+makedepends="autoconf automake libtool linux-headers"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/stefantalpalaru/w_scan2/archive/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -vif
+}
+
+build() {
+	./configure \
+		--prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a6373947136b35b764e00242fd2102f842d697dd41e33f64ffc4e663934f7700ab89bc72c545dffb11e62a89b637364771bad92eae8ba44671ddc19e999e3979  w_scan2-1.0.17.tar.gz
+"

@@ -1,0 +1,228 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=libheif
+pkgver=1.23.0
+pkgrel=0
+pkgdesc="ISO/IEC 23008-12:2017 HEIF file format decoder and encoder"
+url="https://www.libde265.org/"
+arch="all"
+license="LGPL-3.0-or-later"
+# AVIF and HEIC decoders.
+depends="
+	$pkgname-dav1d
+	$pkgname-libde265
+	"
+# libwebp-dev is needed for libsharpyuv
+makedepends="
+	aom-dev
+	cmake
+	dav1d-dev
+	ffmpeg-dev
+	libde265-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	libwebp-dev
+	openh264-dev
+	openjpeg-dev
+	rav1e-dev
+	samurai
+	x264-dev
+	x265-dev
+	"
+install="
+	$pkgname.post-install
+	$pkgname.post-upgrade
+	"
+subpackages="
+	$pkgname-dev
+	heif-thumbnailer
+	$pkgname-tools
+	$pkgname-doc
+	$pkgname-plugins-all:_plugins_all
+	"
+source="https://github.com/strukturag/libheif/releases/download/v$pkgver/libheif-$pkgver.tar.gz"
+
+# <subpackage>:[<plugin-name>...]
+_plugins="
+	aom:aomdec:aomenc
+	dav1d
+	ffmpeg:ffmpegdec
+	jpeg:jpegdec:jpegenc
+	libde265
+	openh264:openh264dec
+	openjpeg:j2kdec:j2kenc
+	rav1e
+	x264
+	x265
+	"
+
+case "$CARCH" in
+# Blocked by svt-av1-dev.
+x86 | armhf | armv7)
+	_svtenc="OFF";;
+*)
+	makedepends="$makedepends svt-av1-dev"
+	_plugins="$_plugins svtenc"
+	_svtenc="ON" ;;
+esac
+
+for _i in $_plugins; do
+	subpackages="$subpackages $pkgname-${_i%%:*}:_plugin"
+done
+
+# secfixes:
+#   1.23.0-r0:
+#     - CVE-2026-50142
+#   1.22.2-r0:
+#     - CVE-2026-32738
+#     - CVE-2026-32739
+#     - CVE-2026-32740
+#   1.21.2-r0:
+#     - CVE-2025-68431
+#   1.17.6-r0:
+#     - CVE-2023-49462
+#     - CVE-2023-49463
+#   1.5.0-r0:
+#     - CVE-2019-11471
+
+build() {
+	# This is en/decoder, so performance matters more than size.
+	export CFLAGS="${CFLAGS/-Os/}"
+	export CXXFLAGS="${CXXFLAGS/-Os/} -flto=auto"
+
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_SKIP_INSTALL_RPATH=ON \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DBUILD_TESTING=ON \
+		\
+		-DENABLE_PLUGIN_LOADING=ON \
+		-DWITH_AOM_DECODER=ON \
+		-DWITH_AOM_DECODER_PLUGIN=ON \
+		-DWITH_AOM_ENCODER=ON \
+		-DWITH_AOM_ENCODER_PLUGIN=ON \
+		-DWITH_DAV1D=ON \
+		-DWITH_DAV1D_PLUGIN=ON \
+		-DWITH_LIBDE265=ON \
+		-DWITH_LIBDE265_PLUGIN=ON \
+		-DWITH_RAV1E=ON \
+		-DWITH_RAV1E_PLUGIN=ON \
+		-DWITH_SvtEnc="$_svtenc" \
+		-DWITH_SvtEnc_PLUGIN="$_svtenc" \
+		-DWITH_X265=ON \
+		-DWITH_X265_PLUGIN=ON \
+		-DWITH_X264=ON \
+		-DWITH_X264_PLUGIN=ON \
+		-DWITH_JPEG_DECODER=ON \
+		-DWITH_JPEG_DECODER_PLUGIN=ON \
+		-DWITH_JPEG_ENCODER=ON \
+		-DWITH_JPEG_ENCODER_PLUGIN=ON \
+		-DWITH_UNCOMPRESSED_CODEC=OFF \
+		-DWITH_KVAZAAR=OFF \
+		-DWITH_KVAZAAR_PLUGIN=OFF \
+		-DWITH_OpenJPEG_DECODER=ON \
+		-DWITH_OpenJPEG_DECODER_PLUGIN=ON \
+		-DWITH_OpenJPEG_ENCODER=ON \
+		-DWITH_OpenJPEG_ENCODER_PLUGIN=ON \
+		-DWITH_OPENJPH_ENCODER=OFF \
+		-DWITH_OPENJPH_ENCODER_PLUGIN=OFF \
+		-DWITH_FFMPEG_DECODER=ON \
+		-DWITH_FFMPEG_DECODER_PLUGIN=ON \
+		-DWITH_OpenH264_DECODER=ON \
+		-DWITH_OpenH264_DECODER_PLUGIN=ON \
+		-DWITH_UVG266=OFF \
+		-DWITH_UVG266_PLUGIN=OFF \
+		-DWITH_VVDEC=OFF \
+		-DWITH_VVDEC_PLUGIN=OFF \
+		-DWITH_VVENC=OFF \
+		-DWITH_VVENC_PLUGIN=OFF \
+		\
+		-DWITH_HEADER_COMPRESSION=OFF \
+		-DWITH_LIBSHARPYUV=ON \
+		-DWITH_EXAMPLES=ON \
+		-DWITH_EXAMPLE_HEIF_THUMB=ON \
+		-DWITH_EXAMPLE_HEIF_VIEW=ON \
+		-DWITH_GDK_PIXBUF=OFF
+
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+thumbnailer() {
+	pkgdesc="$pkgdesc (thumbnailer)"
+	depends=""
+
+	amove usr/bin/heif-thumbnailer
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+	depends="heif-thumbnailer=$pkgver-r$pkgrel"
+
+	amove usr/bin
+}
+
+_plugin() {
+	local name="${subpkgname#$pkgname-}"
+	local plugnames="$(printf '%s\n' $_plugins | grep "^$name:" | cut -d: -f2- | tr : ' ')"
+
+	depends="$pkgname=$pkgver-r$pkgrel"
+	[ "$plugnames" ] && provides="$(printf "$pkgname-%s=$pkgver-r$pkgrel\n" $plugnames)"
+
+	case "$name" in
+	aom)
+		pkgdesc="libheif AVIF/AV1 encoder and decoder plugins using libaom"
+		install_if="$pkgname=$pkgver-r$pkgrel aom-libs" ;;
+	dav1d)
+		pkgdesc="libheif AVIF/AV1 decoder plugin using dav1d" ;;
+	ffmpeg)
+		pkgdesc="libheif HEVC (H.265) and AVC (H.264) decoder plugin using FFmpeg"
+		install_if="$pkgname=$pkgver-r$pkgrel ffmpeg-libavcodec" ;;
+	jpeg)
+		pkgdesc="libheif JPEG decoder and encoder plugins for JPEG-in-HEIF images"
+		install_if="$pkgname=$pkgver-r$pkgrel libjpeg-turbo" ;;
+	libde265)
+		pkgdesc="libheif HEIC/HEVC (H.265) decoder plugin using libde265" ;;
+	openh264)
+		pkgdesc="libheif AVC (H.264) decoder plugin using OpenH264"
+		install_if="$pkgname=$pkgver-r$pkgrel openh264" ;;
+	openjpeg)
+		pkgdesc="libheif JPEG 2000 encoder and decoder plugins using OpenJPEG"
+		install_if="$pkgname=$pkgver-r$pkgrel openjpeg" ;;
+	rav1e)
+		pkgdesc="libheif AVIF/AV1 encoder plugin using rav1e"
+		install_if="$pkgname=$pkgver-r$pkgrel rav1e-libs" ;;
+	svtenc)
+		pkgdesc="libheif AVIF/AV1 encoder plugin using SVT-AV1"
+		install_if="$pkgname=$pkgver-r$pkgrel libSvtAv1Enc" ;;
+	x264)
+		pkgdesc="libheif AVC (H.264) encoder plugin using x264"
+		install_if="$pkgname=$pkgver-r$pkgrel x264-libs" ;;
+	x265)
+		pkgdesc="libheif HEIC/HEVC (H.265) encoder plugin using x265"
+		install_if="$pkgname=$pkgver-r$pkgrel x265-libs" ;;
+	esac
+
+	local plugname; for plugname in ${plugnames:-$name}; do
+		amove usr/lib/$pkgname/libheif-$plugname.so
+	done
+}
+
+_plugins_all() {
+	pkgdesc="Meta-package with all libheif plugins"
+	depends="$(printf "$pkgname-%s\n" $_plugins | cut -d: -f1)"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+63e2e8e666c995b5426b11cd38529cf69f5598291b50c616fff26880558218d1325e5b6db0ea66a0d4ee25cc18485dd1414ad48f66d8ba1522ec1c697cf27392  libheif-1.23.0.tar.gz
+"

@@ -1,0 +1,21 @@
+Fix recvfrom buffer for -Wstringop-overflow / _FORTIFY_SOURCE.
+
+GCC Fortify treats &p->dhcp as a pointer to struct dhcphdr (240 bytes) even
+though recvfrom is told to read up to dhcp + options. Receive into a buffer
+sized for the full DHCP payload and memcpy into the packet.
+
+--- a/dora.c
++++ b/dora.c
+@@ -448,9 +448,11 @@ int transact(struct interface *iface, bool dosend, struct packet *send, struct p
+             if (iface->udp)
+             {
+                 // read UDP packet
++                uint8_t udpreply[sizeof(struct dhcphdr) + MAXOPTS];
+                 struct sockaddr_in sa;
+-                int size = recvfrom(iface->sock, &p->dhcp, sizeof(p->dhcp) + sizeof(p->options), 0, (struct sockaddr *)&sa, (socklen_t []){sizeof(sa)});
++                int size = recvfrom(iface->sock, udpreply, sizeof(udpreply), 0, (struct sockaddr *)&sa, (socklen_t []){sizeof(sa)});
+                 expect(size > 0);
++                memcpy(&p->dhcp, udpreply, size);
+                 p->nserver = sa.sin_addr.s_addr;
+                 p->optsize = size - sizeof(p->dhcp);
+ 

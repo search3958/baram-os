@@ -1,0 +1,79 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=apptainer
+pkgver=1.5.1
+pkgrel=0
+pkgdesc="Application containers for Linux"
+url="https://apptainer.org/"
+arch="all"
+license="BSD-3-Clause AND BSD-3-Clause-LBNL"
+# Lots of tests fail due to:
+# - no root privilege
+# - no apptainer configuration at /etc/apptainer/apptainer.conf
+options="net suid !check"
+depends="fakeroot squashfs-tools"
+makedepends="
+	bash
+	cni-plugins
+	cryptsetup
+	go
+	libseccomp-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-suid:_suid
+	$pkgname-bash-completion
+	"
+source="apptainer-$pkgver.tar.gz::https://github.com/apptainer/apptainer/archive/refs/tags/v$pkgver.tar.gz"
+
+# secfixes:
+#   1.5.1-r0:
+#     - CVE-2026-48785 / GHSA-cr2j-534f-mf3g
+#   1.4.5-r0:
+#     - CVE-2025-65105
+#   1.1.8-r0:
+#     - CVE-2023-30549
+#   1.1.6-r0:
+#     - CVE-2022-23538
+#   1.1.2-r0:
+#     - CVE-2022-39237
+
+export GOPATH="$srcdir"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	default_prepare
+	echo "$pkgver" > "$builddir"/VERSION
+}
+
+build() {
+	# override git dir so it picks up our version above
+	GIT_DIR=. ./mconfig \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--without-network \
+		--with-suid
+
+	make -e -C builddir
+}
+
+package() {
+	make -C builddir DESTDIR="$pkgdir" GOFLAGS="$GOFLAGS" install
+
+	install -Dm644 -t "$pkgdir"/usr/share/doc/$pkgname README.md
+}
+
+_suid() {
+	pkgdesc="$pkgdesc (SUID helper binary)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/libexec/apptainer/bin/starter-suid
+}
+
+sha512sums="
+eac483985d7e1686073825a55dbf32af17926182a700fb2718e8862f93788865baada7755de10e9bfa9470ba78e95dcf90ae32d3f5dc23f0038e67a1fb63a961  apptainer-1.5.1.tar.gz
+"

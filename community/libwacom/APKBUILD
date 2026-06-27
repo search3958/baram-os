@@ -1,0 +1,51 @@
+# Contributor: Ivan Tham <pickfire@riseup.net>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=libwacom
+pkgver=2.17.0
+pkgrel=1
+pkgdesc="Library to help implement Wacom tablet settings"
+url="https://github.com/linuxwacom/libwacom/wiki"
+arch="all"
+license="MIT"
+depends="eudev"
+makedepends="
+	glib-dev
+	libevdev-dev
+	libgudev-dev
+	meson
+	py3-libevdev
+	py3-pytest
+	py3-udev
+	"
+checkdepends="bash findutils diffutils libxml2-dev"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-udev::noarch
+	"
+install="$pkgname.post-install $pkgname.post-upgrade"
+source="https://github.com/linuxwacom/libwacom/archive/libwacom-$pkgver/libwacom-$pkgver.tar.gz
+	0001-udevadm.patch
+	"
+builddir="$srcdir/libwacom-libwacom-$pkgver"
+options="!check" # fails
+
+build() {
+	abuild-meson \
+		-Dtests="$(want_check && echo enabled || echo disabled)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+6eaef4aded9cb4c5ab39ad6f8f4f06439913ea64f69eabb24347c0c04784d3cbf0d6e51b460966e0bfc994b10b08880e30234bd799fe03d4359e35c131d3d4ee  libwacom-2.17.0.tar.gz
+1f7478f5c66def7f5678607d24fdaa50830716e7230aa4305d2d348363ad5f8dd757b9568e7de16889a306ef53492399f7d772cd2f0d6106addbddf7e4a24cbc  0001-udevadm.patch
+"

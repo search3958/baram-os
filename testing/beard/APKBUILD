@@ -1,0 +1,25 @@
+# Contributor: Andrew Hills <ahills@ednos.net>
+# Maintainer: Andrew Hills <ahills@ednos.net>
+pkgname=beard
+pkgver=0.4
+pkgrel=0
+pkgdesc="Simple hibernation daemon"
+url="https://github.com/ahills/beard"
+arch="noarch"
+license="Public-Domain"
+depends="pm-utils"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ahills/beard/archive/v$pkgver.tar.gz"
+
+builddir="$srcdir/$pkgname-$pkgver"
+
+package() {
+	cd "$builddir"
+	mkdir -p "$pkgdir"/etc/init.d \
+		 "$pkgdir"/etc/conf.d
+	make PREFIX=/usr DESTDIR="$pkgdir" openrc install
+}
+
+sha512sums="
+fbc09780d64543ff3a95315f3766f633ba23bc1c09943dd378be113f5b0b6dfb6bf35e069809e56fb6cea57c12e6998f6984a4ff0cff31462689975527f13aa7  beard-0.4.tar.gz
+"

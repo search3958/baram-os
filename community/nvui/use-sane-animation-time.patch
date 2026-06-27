@@ -1,0 +1,14 @@
+0.3s is really too much for the cursor movement, it makes me vomit.
+I'm sure that this insane default cannot suite anyone.
+
+--- a/src/cursor.cpp
++++ b/src/cursor.cpp
+@@ -163,7 +163,7 @@
+   });
+   effect_animation.set_duration(1);
+   effect_animation.set_interval(16);
+-  move_animation.set_duration(0.3);
++  move_animation.set_duration(0.05);
+   move_animation.set_interval(10);
+ }
+ 

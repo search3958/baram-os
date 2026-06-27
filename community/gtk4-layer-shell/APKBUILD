@@ -1,0 +1,53 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=gtk4-layer-shell
+pkgver=1.3.0
+pkgrel=0
+pkgdesc="Library to create desktop components for Wayland using the Layer Shell protocol and GTK4"
+url="https://github.com/wmww/gtk4-layer-shell"
+arch="all"
+license="MIT"
+makedepends="
+	meson
+	gtk4.0-dev
+	gobject-introspection-dev
+	vala
+	"
+checkdepends="
+	font-dejavu
+	luajit
+	python3
+	xvfb-run
+	"
+subpackages="$pkgname-dev $pkgname-demo $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v$pkgver.tar.gz"
+options="!check" # tests fail
+
+build() {
+	abuild-meson \
+		-Dtests="$(want_check && echo true || echo false)" \
+		-Dexamples=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	XDG_RUNTIME_DIR="$(mktemp -d -p "$builddir")" \
+		xvfb-run -a \
+		meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+demo() {
+	pkgdesc="Demo of GTK4 Layer Shell"
+
+	amove usr/bin/gtk4-layer-demo
+}
+
+sha512sums="
+dab8350caa6713406e4dd8a3f701f1ed1fb287913d96d697f7c3875efd27b24a504e01010c2e1cf90d45241ef3e1efa5dc678c69182946f0abf7010648700eff  gtk4-layer-shell-1.3.0.tar.gz
+"

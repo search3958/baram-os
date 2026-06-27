@@ -1,0 +1,11 @@
+# Configuration for /etc/init.d/sshguard
+
+# You need to create /etc/sshguard.conf configuration file
+# or SSHGuard won't start. See sshguard-setup(7) for reference.
+
+# See sshguard(8) for available options.
+#command_args=""
+
+# Run with process supervisor. If you want to run the daemon with
+# start-stop-daemon instead, comment it out.
+supervisor="supervise-daemon"

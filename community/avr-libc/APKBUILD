@@ -1,0 +1,36 @@
+# Contributor: Stefan Wagner <stw@bit-strickerei.de>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=avr-libc
+pkgver=2.3.1
+pkgrel=1
+pkgdesc="The C runtime library for the AVR family of microcontrollers"
+url="https://github.com/avrdudes/avr-libc"
+depends="gcc-avr"
+makedepends="autoconf automake python3"
+arch="all"
+license="BSD-3-Clause"
+subpackages="$pkgname-doc"
+builddir="$srcdir/$pkgname-$pkgname-${pkgver//./_}-release"
+source="
+	avr-libc-$pkgver.tar.gz::https://github.com/avrdudes/avr-libc/archive/refs/tags/avr-libc-${pkgver//./_}-release.tar.gz
+	"
+# no tests
+options="!check"
+
+build() {
+	./bootstrap
+	CC=avr-gcc ./configure \
+		--build="$(/bin/sh config.guess)" \
+		--host=avr \
+		--prefix=/usr \
+		--quiet
+	make --silent
+ }
+
+package() {
+	make --silent install DESTDIR="$pkgdir"
+}
+
+sha512sums="
+efd186515e8eb6e2b58ef19df03e8a7dbb58685796c75371ca1ffc524995c65c8902e5789d557a3d934fd334843fde417b6dc63646b84bec38dfccb6d879de01  avr-libc-2.3.1.tar.gz
+"

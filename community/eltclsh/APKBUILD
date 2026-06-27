@@ -1,0 +1,48 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=eltclsh
+pkgver=1.20
+pkgrel=1
+pkgdesc="Interactive Tcl shell using libedit"
+url="https://homepages.laas.fr/mallet/soft/shell/eltclsh/"
+arch="all"
+license="BSD-2-Clause"
+depends_dev="$pkgname"
+makedepends="libedit-dev tcl-dev tk-dev"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-tk"
+source="https://www.openrobots.org/distfiles/eltclsh/eltclsh-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+tk() {
+	pkgdesc="$pkgdesc (graphical variant)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/bin/elwish
+}
+
+sha512sums="
+ff9781861c717e8f45af523ba15375b8da513af211d8b2fa3e9399be5d89b396354c72ee58f1e5655dff30b5217b095074490f23174844dddd872b256a310dcf  eltclsh-1.20.tar.gz
+"

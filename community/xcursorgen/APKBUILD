@@ -1,0 +1,33 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=xcursorgen
+pkgver=1.0.9
+pkgrel=0
+pkgdesc="Create and X cursor file from PNG images"
+url="https://xorg.freedesktop.org/archive/individual/app/"
+arch="all"
+license="Custom"
+makedepends="xorg-server-dev libxcursor-dev libpng-dev"
+subpackages="$pkgname-doc"
+source="https://xorg.freedesktop.org/archive/individual/app/xcursorgen-$pkgver.tar.xz"
+
+build() {
+	./configure --prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -m755 -d "$pkgdir/usr/share/licenses/$pkgname"
+	install -m644 COPYING "$pkgdir/usr/share/licenses/$pkgname/"
+}
+
+check() {
+	make check
+}
+
+sha512sums="
+d40b96d6f60ee3815ef8ed6217028b39b127f200415661e39cf23af89662aafc6783f9e311f8021fe1a5ccfbc47610909796e569991e6680b8c2133401af476e  xcursorgen-1.0.9.tar.xz
+"

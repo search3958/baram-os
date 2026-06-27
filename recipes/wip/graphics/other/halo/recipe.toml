@@ -1,5 +1,0 @@
-#TODO ahash crate error
-[source]
-git = "https://github.com/bungoboingo/halo"
-[build]
-template = "cargo"

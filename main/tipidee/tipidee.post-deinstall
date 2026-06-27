@@ -1,0 +1,3 @@
+#!/usr/bin/execlineb -P
+
+rm -f etc/tipidee.conf.cdb

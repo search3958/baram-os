@@ -1,0 +1,7 @@
+#!/sbin/openrc-run
+
+name=$RC_SVCNAME
+command=/usr/bin/syncthing
+supervisor=supervise-daemon
+: "${command_args:=--no-browser --no-restart --log-format-timestamp=''}"
+output_logger="logger -t '${RC_SVCNAME}' -p daemon.info"

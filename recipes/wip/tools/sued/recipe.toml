@@ -1,7 +1,0 @@
-#TODO not compiled or tested
-# customization: https://codeberg.org/AeriaVelocity/sued#configuration
-[source]
-git = "https://codeberg.org/AeriaVelocity/sued"
-[build]
-template = "cargo"
-cargoflags = ["--features=repl,startup,history"]

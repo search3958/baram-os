@@ -1,0 +1,28 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=tty-copy
+pkgver=0.2.2
+pkgrel=0
+pkgdesc="Copy content to system clipboard via TTY and terminal using ANSI OSC52 sequence"
+url="https://github.com/jirutka/tty-copy"
+arch="all"
+license="MIT"
+makedepends="asciidoctor"
+subpackages="$pkgname-doc"
+source="https://github.com/jirutka/tty-copy/archive/v$pkgver/tty-copy-$pkgver.tar.gz"
+
+build() {
+	make
+}
+
+check() {
+	./build/tty-copy -V
+}
+
+package() {
+	make install DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+sha512sums="
+8bc1a482fbb380a559cbef2d0b2b3754299449cc16209877624d4b9c6f8f93197b9d9111035fcb7ffdbc45d263c49dfaa4efb42e11e9de08129aa323dedb12a1  tty-copy-0.2.2.tar.gz
+"

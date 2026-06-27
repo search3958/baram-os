@@ -1,0 +1,32 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-pytest-trio
+pkgver=0.8.0
+pkgrel=4
+pkgdesc="pytest plugin for trio"
+url="https://github.com/python-trio/pytest-trio"
+arch="noarch"
+license="MIT OR Apache-2.0"
+depends="python3 py3-pytest py3-trio py3-outcome py3-async_generator"
+makedepends="py3-setuptools"
+checkdepends="py3-hypothesis"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/p/pytest-trio/pytest-trio-$pkgver.tar.gz"
+options="!check" # Fails with py3-pytest 6.0.x https://github.com/python-trio/pytest-trio/pull/98#issuecomment-678699693
+builddir="$srcdir/pytest-trio-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	PYTHONPATH="." pytest --pyargs pytest_trio
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+79141021633b7b2d8a840d7eaf6a3447bccd59d1bd4909e7feba88a9ae8244376f281b64fde4333b5a575957e3f73028e389a9abf0d19a35417f15c47eeccd05  pytest-trio-0.8.0.tar.gz
+"

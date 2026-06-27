@@ -1,0 +1,49 @@
+# Maintainer: Fiona Klute <fiona.klute@gmx.de>
+pkgname=trace-cmd
+pkgver=3.3.1
+pkgrel=1
+pkgdesc="Tool to interact with Ftrace Linux kernel tracer"
+url="https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/"
+arch="all"
+license="GPL-2.0-only AND LGPL-2.1-only"
+makedepends="
+	asciidoc
+	audit-dev
+	docbook-xsl-nons
+	gcc
+	libtraceevent-dev
+	libtracefs-dev
+	meson
+	pkgconf
+	source-highlight
+	xmlto
+	zstd-dev
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-doc
+	$pkgname-bash-completion
+	"
+source="
+	https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/snapshot/trace-cmd-v$pkgver.tar.gz
+	"
+# trace-cmd tests would need to run as root, because they try to run
+# actual traces and fail if they can't
+options="
+	!check
+	"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson -Db_colorout=auto . output
+	meson compile -C output
+	meson compile -C output docs
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+a643efc2868d08871a7359dd0a17389685fb229f26328ee96f27a3dd94b5f3eb62009b945c14725eda1f09fa15367ffe2e2c3611d89860dcc031bbd6403cdee0  trace-cmd-v3.3.1.tar.gz
+"

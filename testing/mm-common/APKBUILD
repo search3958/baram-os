@@ -1,0 +1,30 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Maintainer: Alex Yam <alex@alexyam.com>
+pkgname=mm-common
+pkgver=1.0.7
+pkgrel=0
+arch="noarch"
+pkgdesc="Build infrastructure and utilities for GNOME C++ binding libraries"
+options="!check" # No test suite
+url="https://gitlab.gnome.org/GNOME/mm-common"
+license="GPL-2.0-or-later"
+depends="
+	gtkmm3-dev
+	glibmm-dev
+	"
+makedepends="meson"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver-2.tar.xz::https://download.gnome.org/sources/mm-common/${pkgver%.*}/mm-common-$pkgver.tar.xz"
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+59b5ad026d5970816eca71858bd08604ecdc43cadcf0455f0be5f233d46210c0499600b80accaad222085852d60cd4cca4c209fde6eea027a85b0244f3e3dece  mm-common-1.0.7-2.tar.xz
+"

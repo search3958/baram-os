@@ -1,0 +1,38 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-itemloaders
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="Library to populate items using XPath and CSS with a convenient API"
+url="https://github.com/scrapy/itemloaders"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-itemadapter
+	py3-jmespath
+	py3-parsel
+	py3-w3lib
+	python3
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel py3-hatchling"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/scrapy/itemloaders/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/itemloaders-$pkgver"
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+ebb89bbbf575d843bdb8384868c3953f4b56fb2639731142362e2f6f6753aba6d02748cf090b4efc03f557f4b8ba527bcd20c7e6b1e5e98dab244df9b44c725c  py3-itemloaders-1.4.0.tar.gz
+"

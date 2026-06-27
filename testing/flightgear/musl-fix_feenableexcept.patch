@@ -1,0 +1,11 @@
+--- a/src/FDM/JSBSim/JSBSim.cpp
++++ b/src/FDM/JSBSim/JSBSim.cpp
+@@ -280,7 +280,7 @@
+   _clearfp();
+   _controlfp(_controlfp(0, 0) & ~(_EM_INVALID | _EM_ZERODIVIDE | _EM_OVERFLOW),
+            _MCW_EM);
+-#elif defined(__GNUC__) && !defined(sgi) && !defined(__APPLE__)
++#elif defined(__GNUC__) && !defined(sgi) && !defined(__APPLE__) && defined(__GLIBC__)
+   feenableexcept(FE_DIVBYZERO | FE_INVALID);
+ #endif
+ 

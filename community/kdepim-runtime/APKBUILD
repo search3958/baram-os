@@ -1,0 +1,100 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kdepim-runtime
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Extends the functionality of kdepim"
+url="https://kontact.kde.org/"
+# armhf blocked by qt6-qtdeclarative
+# x86, armv7, s390x and riscv64 blocked by qt6-qtwebengine -> akonadi
+arch="all !armhf !x86 !armv7 !s390x !riscv64"
+license="LGPL-2.0-or-later"
+makedepends="
+	akonadi-calendar-dev
+	akonadi-contacts-dev
+	akonadi-dev
+	akonadi-mime-dev
+	extra-cmake-modules
+	kcalendarcore-dev
+	kcalutils-dev
+	kcodecs-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcontacts-dev
+	kdav-dev
+	kdoctools-dev
+	kholidays-dev
+	kidentitymanagement-dev
+	kimap-dev
+	kio-dev
+	kitemmodels-dev
+	kmailtransport-dev
+	kmbox-dev
+	kmime-dev
+	knotifications-dev
+	knotifyconfig-dev
+	ktextwidgets-dev
+	kwindowsystem-dev
+	libkgapi-dev
+	libxslt-dev
+	pimcommon-dev
+	qca-qt6-dev
+	qt6-qtbase-dev
+	qt6-qtnetworkauth-dev
+	qt6-qtspeech-dev
+	samurai
+	shared-mime-info
+	"
+checkdepends="
+	dbus
+	xwayland-run
+	"
+subpackages="$pkgname-dbg $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/kdepim-runtime.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kdepim-runtime-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	local skipped_tests="(testresourcetask"
+	local tests="
+		akonadi-mysql-icalcategoriestotagsmigrationtest
+		akonadi-mysql-pop3test
+		akonadi-mysql-synctest
+		akonadi-sqlite-icalcategoriestotagsmigrationtest
+		akonadi-sqlite-pop3test
+		akonadi-sqlite-synctest
+		schedulertest
+		testaddcollectiontask
+		testadditemtask
+		testchangecollectiontask
+		testchangeitemtask
+		testexpungecollectiontask
+		testmoveitemstask
+		testretrievecollectionmetadatatask
+		testretrievecollectionstask
+		testretrieveitemstask
+		testretrieveitemtask
+		testsessionpool
+		"
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	skipped_tests="$skipped_tests)"
+	dbus-run-session wlheadless-run -- ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+fac31a4239613a45bf995a4eaff86753ffe9a349bd54cde03ca3e39c26f6814bfd33044b182c5bcfe5c9d0944d9253c5abcdb3bebc980dc3c81722659970e46c  kdepim-runtime-26.04.2.tar.xz
+"

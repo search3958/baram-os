@@ -1,0 +1,62 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-truststore
+pkgver=0.10.4
+pkgrel=2
+pkgdesc="Verify certificates using OS trust stores"
+url="https://github.com/sethmlarson/truststore"
+arch="noarch"
+license="MIT"
+makedepends="py3-gpep517 py3-installer py3-flit-core"
+checkdepends="
+	py3-aiohttp
+	py3-flaky
+	py3-httpx
+	py3-openssl
+	py3-pytest
+	py3-pytest-asyncio
+	py3-pytest-httpserver
+	py3-requests
+	py3-trustme
+	py3-urllib3
+"
+subpackages="$pkgname-pyc"
+source="https://github.com/sethmlarson/truststore/archive/v$pkgver/py3-truststore-$pkgver.tar.gz"
+builddir="$srcdir/truststore-$pkgver"
+options="net" # checks on example.com for some reason
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	case "$CARCH" in
+	loongarch64)
+		.testenv/bin/python3 -m pytest \
+		--deselect tests/test_api.py::test_requests_sslcontext_api_success[example.com] \
+		--deselect tests/test_api.py::test_success \
+		--deselect tests/test_api.py::test_success_after_loading_additional_anchors \
+		--deselect tests/test_api.py::test_sslcontext_api_success[example.com] \
+		--deselect tests/test_api.py::test_sslcontext_api_success_async \
+		--deselect tests/test_api.py::test_trustme_cert_still_uses_system_certs \
+		--deselect tests/test_inject.py::test_success_with_inject
+		;;
+	*)
+		.testenv/bin/python3 -m pytest -v -k 'not example.com' \
+			--deselect tests/test_api.py::test_trustme_cert_still_uses_system_certs \
+			--deselect tests/test_inject.py::test_success_with_inject
+		;;
+	esac
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b3cd9ca84ad2f82b8911ded4053686b0fc128d8bfee4bc217dc5e7df6294caf888fccfc1e8b87cf76f24638806ddc1e0b5cea4c37bc72c075c5078f4e85bef13  py3-truststore-0.10.4.tar.gz
+"

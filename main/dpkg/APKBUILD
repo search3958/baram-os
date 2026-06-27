@@ -1,0 +1,118 @@
+# Maintainer: qaqland <qaq@qaq.land>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=dpkg
+pkgver=1.23.7
+pkgrel=0
+pkgdesc="Debian Package Manager"
+url="https://wiki.debian.org/Teams/Dpkg"
+arch="all"
+license="GPL-2.0-or-later AND BSD-2-Clause"
+depends="tar xz"
+makedepends="
+	autoconf
+	automake
+	bzip2-dev
+	gettext-dev
+	libmd-dev
+	libtool
+	linux-headers
+	perl
+	po4a
+	zlib-dev
+	"
+checkdepends="gzip"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-zsh-completion
+	"
+source="https://salsa.debian.org/dpkg-team/dpkg/-/archive/$pkgver/dpkg-$pkgver.tar.bz2
+	musl-realpath.patch
+	"
+
+# secfixes:
+#   0:
+#     - CVE-2026-2219
+#   1.21.8-r0:
+#     - CVE-2022-1664
+
+prepare() {
+	default_prepare
+
+	echo "$pkgver" > .dist-version
+	autoreconf -fvi
+
+	# On the builders /home/buildozer has S_ISGID set this is
+	# inherited in $srcdir and causes some dpkg test to end up with
+	# a permission mismatch. To fix this remove the S_ISGID from
+	# $srcdir.
+	chmod -R g-s "$srcdir"
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--with-libz \
+		--with-libbz2 \
+		--disable-dselect \
+		--disable-start-stop-daemon \
+		--disable-nls \
+		--disable-static \
+		--with-zshcompletionsdir=/usr/share/zsh/site-functions
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	touch "$pkgdir/var/lib/$pkgname"/status
+	touch "$pkgdir/var/lib/$pkgname"/available
+
+	# no bash completions are installed
+	rmdir -vp "$pkgdir"/usr/share/bash-completion/completions || :
+}
+
+dev() {
+	default_dev
+	pkgdesc="Debian package development tools"
+	depends="perl"
+
+	mkdir -p "$subpkgdir"/usr/bin "$subpkgdir"/usr/share/dpkg \
+		"$subpkgdir"/usr/lib/dpkg
+
+	amove \
+		usr/bin/dpkg-architecture \
+		usr/bin/dpkg-buildpackage \
+		usr/bin/dpkg-checkbuilddeps \
+		usr/bin/dpkg-distaddfile \
+		usr/bin/dpkg-genchanges \
+		usr/bin/dpkg-gencontrol \
+		usr/bin/dpkg-gensymbols \
+		usr/bin/dpkg-mergechangelogs \
+		usr/bin/dpkg-name \
+		usr/bin/dpkg-parsechangelog \
+		usr/bin/dpkg-scanpackages \
+		usr/bin/dpkg-scansources \
+		usr/bin/dpkg-shlibdeps \
+		usr/bin/dpkg-source \
+		usr/bin/dpkg-vendor \
+		usr/bin/dpkg-buildflags \
+		usr/bin/dpkg-genbuildinfo \
+		usr/bin/dpkg-buildapi \
+		usr/share/perl5/ \
+		usr/share/dpkg/*.mk
+}
+
+sha512sums="
+4d783f726d0a27c8075bc65194772741faa4f444a4e7e645f205150de17c0f54017681d48f456cb06ea0dfae8d22db8f3a947edf37ce5b822ba3d9c4dfdcc1c0  dpkg-1.23.7.tar.bz2
+dabb7e18ab353c2f62022df3c4b6c5a43ae62dee0d3e745a01dbbfd7de57c5fe965028a2c3f0e3bd10da52c5a31fbbc39b43252e779d97e78b0cb1242ad073ef  musl-realpath.patch
+"

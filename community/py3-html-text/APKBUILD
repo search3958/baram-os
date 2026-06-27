@@ -1,0 +1,37 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-html-text
+pkgver=0.7.1
+pkgrel=2
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=html_text
+pkgdesc="Extract text from HTML"
+url="https://pypi.python.org/project/html-text"
+arch="noarch"
+license="MIT"
+depends="py3-lxml py3-lxml-html-clean"
+checkdepends="py3-pytest py3-parsel"
+makedepends="py3-setuptools py3-gpep517 py3-wheel py3-hatchling"
+source="$pkgname-$pkgver.tar.gz::https://pypi.io/packages/source/h/html_text/html_text-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+sha512sums="
+b8675bc57d051439e383eb1bcf088ed27b3c6e45c18128903dfd8af719efbc1ba793d73eeadc4022ebeb7d8a03ccedc626ec47297ad7b603d5a9028f5bb39a3c  py3-html-text-0.7.1.tar.gz
+"

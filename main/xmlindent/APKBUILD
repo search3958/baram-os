@@ -1,0 +1,25 @@
+# Contributor: Timo Teräs <timo.teras@iki.fi>
+# Maintainer: Timo Teräs <timo.teras@iki.fi>
+pkgname=xmlindent
+pkgver=0.2.17
+pkgrel=3
+pkgdesc="An XML indenting utility"
+url="https://xmlindent.sourceforge.net/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="flex-dev"
+subpackages="$pkgname-doc"
+source="https://sourceforge.net/projects/xmlindent/files/xmlindent/$pkgver/xmlindent-$pkgver.tar.gz"
+options="!check"
+
+build() {
+	make
+}
+
+package() {
+	make PREFIX="$pkgdir"/usr install
+}
+
+sha512sums="
+ab4b46dbd68f29e7adba6283485eb9d1c614ece640c18e1eabbe7f0e1e6f27f14d00d694e4e1981aaf66e0ddcf208c6cb2c80dda1cbeb0ceb1a40987a419f716  xmlindent-0.2.17.tar.gz
+"

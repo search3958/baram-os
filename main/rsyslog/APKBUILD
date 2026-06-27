@@ -1,0 +1,246 @@
+# Contributor: Francisco Guerreiro <francisg@fnop.net>
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Cameron Banta <cbanta@gmail.com>
+# Contributor: Ashley Sommer <ashleysommer@gmail.com>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=rsyslog
+pkgver=8.2604.0
+pkgrel=0
+pkgdesc="Enhanced multi-threaded syslogd with database support and more"
+url="https://www.rsyslog.com/"
+arch="all"
+license="Apache-2.0 AND GPL-3.0-or-later AND LGPL-3.0-or-later"
+options="!check"
+makedepends="
+	autoconf
+	automake
+	bsd-compat-headers
+	byacc
+	curl-dev
+	czmq-dev
+	flex
+	gnutls-dev
+	hiredis-dev
+	krb5-dev
+	libcap-ng-dev
+	libdbi-dev
+	libestr-dev
+	libfastjson-dev
+	libgcrypt-dev
+	liblogging-dev
+	liblognorm-dev
+	libmaxminddb-dev
+	libnet-dev
+	libpcap-dev
+	libpq-dev
+	librelp-dev
+	libtool
+	linux-headers
+	mariadb-connector-c-dev
+	net-snmp-dev
+	openssl-dev
+	protobuf-c-dev
+	py3-docutils
+	rabbitmq-c-dev
+	util-linux-dev
+	yaml-dev
+	zlib-dev
+	"
+# For backward compatibility (Alpine <3.24).
+provides="
+	$pkgname-uxsock=$pkgver-r$pkgrel
+	$pkgname-omuxsock=$pkgver-r$pkgrel
+	"
+install="$pkgname.post-upgrade"
+subpackages="$pkgname-doc $pkgname-dbg $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rsyslog/rsyslog/archive/v$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.logrotate
+	$pkgname.conf
+	"
+
+# <subpackage>[:<module>...]
+_plugins="
+	cisco:pmcisconames:pmciscoios
+	clickhouse:omclickhouse
+	crypto:lmcry_gcry
+	dtls:imdtls:omdtls
+	elasticsearch:omelasticsearch
+	gnutls:lmnsd_gtls
+	gssapi:lmgssutil:imgssapi:omgssapi
+	hiredis:omhiredis
+	http:omhttp:fmhttp
+	imdocker
+	impcap
+	libdbi:omlibdbi
+	mmaitag
+	mmanon
+	mmaudit
+	mmcount
+	mmdblookup
+	mmfields
+	mmjsonparse
+	mmkubernetes
+	mmnormalize
+	mmpstrucdata
+	mmrm1stspace
+	mmsequence
+	mmsnmptrapd
+	mmtaghostname
+	mmutf8fix
+	mysql:ommysql
+	omotel
+	openssl:lmnsd_ossl
+	pgsql:ompgsql
+	prog:improg:omprog
+	pmaixforwardedfrom
+	pmlastmsg
+	pmnormalize
+	pmsnare
+	rabbitmq:omrabbitmq
+	relp:imrelp:omrelp
+	snmp:omsnmp
+	testing:omtesting
+	udpspoof:omudpspoof
+	zmq:imczmq:omczmq
+	zstd:lmzstdw
+	"
+for _i in $_plugins; do
+	subpackages="$subpackages $pkgname-${_i%%:*}:_plugin"
+done
+
+# secfixes:
+#   8.2204.1-r0:
+#     - CVE-2022-24903
+#   8.1908.0-r1:
+#     - CVE-2019-17040
+#     - CVE-2019-17041
+#     - CVE-2019-17042
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		\
+		--disable-rfc3195 \
+		--enable-largefile \
+		--enable-libcap-ng \
+		--enable-gssapi-krb5 \
+		--enable-kmsg \
+		--enable-usertools \
+		--enable-mysql \
+		--enable-pgsql \
+		--enable-libdbi \
+		--enable-snmp \
+		--enable-elasticsearch \
+		--enable-clickhouse \
+		--enable-omhttp \
+		--enable-openssl \
+		--enable-gnutls \
+		--enable-libzstd \
+		--enable-mail \
+		--disable-imdiag \
+		--enable-mmnormalize \
+		--enable-mmjsonparse \
+		--enable-mmjsontransform \
+		--enable-mmaudit \
+		--enable-mmanon \
+		--enable-mmrm1stspace \
+		--enable-mmutf8fix \
+		--enable-mmcount \
+		--enable-mmsequence \
+		--enable-mmdblookup \
+		--enable-mmfields \
+		--enable-mmpstrucdata \
+		--enable-mmaitag \
+		--enable-relp \
+		--enable-imfile \
+		--enable-imdocker \
+		--enable-improg \
+		--enable-imptcp \
+		--enable-impstats \
+		--disable-impstats-push \
+		--enable-impcap \
+		--enable-omprog \
+		--enable-omudpspoof \
+		--enable-omstdout \
+		--enable-pmcisconames \
+		--enable-pmciscoios \
+		--enable-pmlastmsg \
+		--enable-pmnormalize \
+		--enable-pmaixforwardedfrom \
+		--enable-pmsnare \
+		--enable-omruleset \
+		--enable-omuxsock \
+		--enable-mmsnmptrapd \
+		--enable-omotel \
+		--enable-imdtls \
+		--enable-omdtls \
+		--enable-imczmq \
+		--enable-omczmq \
+		--enable-omrabbitmq \
+		--enable-omhiredis \
+		--enable-mmkubernetes \
+		--enable-mmtaghostname
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.logrotate "$pkgdir"/etc/logrotate.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.conf "$pkgdir"/etc/$pkgname.conf
+
+	install -m755 -d "$pkgdir"/etc/rsyslog.d
+	install -m700 -d "$pkgdir"/var/lib/rsyslog
+}
+
+_plugin() {
+	local name="${subpkgname#"$pkgname"-}"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	provides=""
+
+	local libnames=$(printf '%s\n' $_plugins | grep "^$name:" | cut -d: -f2- | tr : ' ')
+
+	pkgdesc="rsyslog ${libnames// / and } module"
+
+	case "$name" in
+	crypto)
+		amove usr/bin/rscryutil ;;
+	openssl)
+		provides="rsyslog-tls=$pkgver-r$pkgrel"
+		install_if="$pkgname=$pkgver-r$pkgrel libssl3" ;;
+	zstd)
+		install_if="$pkgname=$pkgver-r$pkgrel zstd-libs" ;;
+	esac
+
+	local libname
+	for libname in ${libnames:-$name}; do
+		mkdir -p "$subpkgdir"/usr/lib/rsyslog/
+		mv "$pkgdir"/usr/lib/rsyslog/$libname.so "$subpkgdir"/usr/lib/rsyslog/
+	done
+
+	# Allow people to find plugins by their full name (including prefix;
+	# mm, om, im, ...).
+	for libname in $libnames; do
+		provides="$provides $pkgname-$libname=$pkgver-r$pkgrel"
+	done
+}
+
+sha512sums="
+1f8948e323f895b85831d01facae56852567a3804947036852b67c7adff968a7d6c5d26725df4d51226a415651f56b8e936c71e36ab528ecf754d1c222773cc1  rsyslog-8.2604.0.tar.gz
+9365f2c7e4d62d9b402f40da346778e658b43ad1ad234373316ce0782d23fb5ed642d99d5920132ba854d9a28b7944d5d9d5da12b7ce1e6fe7df5b2f934a9e7e  rsyslog.initd
+1c3040cbcfd3009d6088dea4c8b9532c4e0783543e20ab5764221ef6ead21ca65be7c9c328b5a436ae503a2118a7448951875cc56607a14abc4753b0debbc6c5  rsyslog.logrotate
+f86b006daaa8f6102692e00233409a487b2044d0f0e7509e6680ac163d90d885f7b833e24bc50e9dbef10fa4b4b610216aa1b16bb10ea4e7c3a66fc55b154a90  rsyslog.conf
+"

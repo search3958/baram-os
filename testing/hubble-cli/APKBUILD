@@ -1,0 +1,59 @@
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=hubble-cli
+pkgver=0.13.6
+pkgrel=15
+pkgdesc="CLI for the distributed networking and security observability platform"
+url="https://github.com/cilium/hubble"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cilium/hubble/archive/refs/tags/v$pkgver.tar.gz
+	byteorder-add-s390x-support.patch
+	byteorder-add-loongarch64-support.patch
+	"
+builddir="$srcdir/hubble-$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	go mod vendor -v
+	default_prepare
+}
+
+build() {
+	go build -mod=vendor -v \
+		-ldflags "-X github.com/cilium/hubble/pkg.Version=$pkgver" \
+		-o hubble
+
+	for shell in bash fish zsh; do
+		./hubble completion $shell > hubble.$shell
+	done
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 hubble -t "$pkgdir"/usr/bin/
+
+	install -Dm644 hubble.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/hubble
+	install -Dm644 hubble.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/hubble.fish
+	install -Dm644 hubble.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_hubble
+}
+
+sha512sums="
+07f2fb291eaae21082a3fe26079fc86bb30a1f22a889996faf9121b28a10fc6f213ba8b6def3cfcba818654f08a806424480a4c7030a2474e0fcc14d46370429  hubble-cli-0.13.6.tar.gz
+872ccb44ac714420f87c476743d7be1b644c3a5c7e2a975d47720dc970c632ce82bb678421b053ebbc219d4a3b1f2c9f37aa74f3733a055b0f8c1dbe15fed23f  byteorder-add-s390x-support.patch
+00c2c1e6d4e1d555c5363357483092c5161ca461d9a58f5206d1e1c84c7858e02ba77d505a798c014faf66e974ccbf68abb502e60aa3076f778bb15337670609  byteorder-add-loongarch64-support.patch
+"

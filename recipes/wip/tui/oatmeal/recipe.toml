@@ -1,5 +1,0 @@
-#TODO openssl-sys crate error
-[source]
-git = "https://github.com/dustinblackman/oatmeal"
-[build]
-template = "cargo"

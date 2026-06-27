@@ -1,0 +1,61 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=sdl2_image
+pkgver=2.8.12
+pkgrel=0
+pkgdesc="A simple library to load images of various formats as SDL surfaces"
+url="https://github.com/libsdl-org/SDL_image"
+arch="all"
+license="Zlib"
+makedepends="
+	cmake
+	libjpeg-turbo-dev
+	libpng-dev
+	libwebp-dev
+	samurai
+	sdl2-dev
+	tiff-dev
+	zlib-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/libsdl-org/SDL_image/archive/refs/tags/release-$pkgver.tar.gz"
+builddir="$srcdir/SDL_image-release-$pkgver"
+
+case "$CARCH" in
+ppc64le)
+	#Assert 'Surface differed from reference by at most 0 in 420 pixels': Failed
+	options="$options !check"
+	;;
+esac
+
+# secfixes:
+#   2.0.5-r1:
+#     - CVE-2019-13616
+#   2.0.3-r0:
+#     - CVE-2017-12122 TALOS-2017-0488
+#     - CVE-2017-14440 TALOS-2017-0489
+#     - CVE-2017-14441 TALOS-2017-0490
+#     - CVE-2017-14442 TALOS-2017-0491
+#     - CVE-2017-14448 TALOS-2017-0497
+#     - CVE-2017-14449 TALOS-2017-0498
+#     - CVE-2017-14450 TALOS-2017-0499
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DSDL2IMAGE_TESTS="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+738ae5c39a02753a11ce41b3739de42bb99b399d34698c3fde16a76745d4d3b05cd0b3d78d4b37b2859f5449b4ebbf04ad75d77910e47fff772f1070910eb84e  sdl2_image-2.8.12.tar.gz
+"

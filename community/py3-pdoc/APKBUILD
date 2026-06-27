@@ -1,0 +1,48 @@
+# Contributor: Hannes Braun <hannes<@hannesbraun.net>
+# Maintainer: Hannes Braun <hannes@hannesbraun.net>
+pkgname=py3-pdoc
+pkgver=16.0.0
+pkgrel=1
+pkgdesc="API documentation generator for Python projects"
+url="https://pdoc.dev/"
+arch="noarch"
+license="MIT-0"
+depends="py3-jinja2 py3-markdown2 py3-markupsafe py3-pygments"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-hypothesis py3-pydantic py3-pytest py3-pytest-timeout"
+subpackages="$pkgname-pyc"
+source="https://github.com/mitmproxy/pdoc/archive/v$pkgver/py3-pdoc-$pkgver.tar.gz"
+builddir="$srcdir/pdoc-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# Some tests require the pyo3_sample_library which is not available on
+	# Alpine.
+	# The snapshots tests regularly fail due to differences in dependency versions.
+	# The test_smoke also tries to build the documentation for all available
+	# modules. This is likely not an issue on the builders.
+	# But if packages with optional dependencies are installed, the tests
+	# might fail. Some known ones are skipped for this reason.
+	.testenv/bin/python3 -m pytest -k "\
+		not test_snapshots \
+		and not test_walk_specs \
+		and not test_parse_spec \
+		and not test_smoke[six] \
+		and not test_smoke[websockets]"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6fb5a5e98f30555bfa6091e845baba445ef95da7e39dfadb41fbb0a5e1c659bf0272321af6bd796065517bb05218cec44d0bd1718784f57dcc2c33e2d93bdcf0  py3-pdoc-16.0.0.tar.gz
+"

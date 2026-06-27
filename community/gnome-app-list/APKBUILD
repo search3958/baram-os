@@ -1,0 +1,36 @@
+maintainer="team/gnome <achill@achill.org>"
+pkgname=gnome-app-list
+pkgver=3.0
+pkgrel=1
+pkgdesc="App recommendation data for the GNOME project"
+url="https://gitlab.gnome.org/GNOME/gnome-app-list"
+arch="noarch"
+license="LGPL-2.1-or-later"
+makedepends="
+	meson
+	py3-lxml
+	python3
+"
+checkdepends="
+	bash
+	libxml2-utils
+"
+source="https://download.gnome.org/sources/gnome-app-list/$pkgver/gnome-app-list-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+check() {
+	meson test -C output
+}
+
+sha512sums="
+091c7ed01fd85f98ee2ea627b91f3d72b5c7c3c861cd66d18857394441e55ce7a92d68107a7cbe62a18ed72a1e082ad85c37739a33936a449af7cc97d26d3f2d  gnome-app-list-3.0.tar.xz
+"

@@ -1,0 +1,4 @@
+# Configuration for /etc/init.d/rtkit
+
+# Additional options to pass to rtkit.
+#command_args=""

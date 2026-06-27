@@ -1,0 +1,44 @@
+# Contributor: Peter Shkenev <santurysim@gmail.com>
+# Maintainer: Peter Shkenev <santurysim@gmail.com>
+pkgname=dfu-programmer
+pkgver=1.1.0
+pkgrel=0
+pkgdesc="Command-line programmer for Atmel USB microcontrollers"
+url="https://dfu-programmer.github.io/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	bash
+	libusb-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	"
+source="
+	https://github.com/dfu-programmer/dfu-programmer/releases/download/v$pkgver/dfu-programmer-$pkgver.tar.gz
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 dfu_completion "$pkgdir"/usr/share/bash-completion/completions/dfu-programmer
+}
+
+sha512sums="
+76946be7c20522e6da512016b09b19a144ec6af70f1b01d697b12efb99cd3177233fe6778c4a4efe0d287b095c8e99a616ba013bf08843601c940bbea4283639  dfu-programmer-1.1.0.tar.gz
+"

@@ -1,0 +1,40 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=libshout
+pkgver=2.4.6
+pkgrel=4
+pkgdesc="Library for accessing a shoutcast/icecast server"
+url="https://icecast.org/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="speex-dev libtheora-dev libvorbis-dev openssl-dev>3"
+subpackages="$pkgname-static $pkgname-doc $pkgname-dev"
+source="https://downloads.xiph.org/releases/libshout/libshout-$pkgver.tar.gz"
+
+prepare() {
+ 	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--with-openssl
+	make LDFLAGS+=-lspeex
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+e8478cdbf9a27674c16a7b620d1576f2e31a47262b8e29b314d0f46d4e5be24b9a29790b7b226f48939bc34cacf5734fae0aa5686c7ed5879cdbd827ff8e0339  libshout-2.4.6.tar.gz
+"

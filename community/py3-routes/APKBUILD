@@ -1,0 +1,37 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=py3-routes
+pkgver=2.5.1_git20250518
+_commit=7e82bd895a120cbf73f271c32ac289d51124303f
+pkgrel=1
+pkgdesc="Routing Recognition and Generation Tools"
+url="https://routes.readthedocs.io/en/latest/"
+arch="noarch"
+license="MIT"
+makedepends="py3-gpep517 py3-setuptools"
+checkdepends="py3-pytest py3-webob py3-webtest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/bbangert/routes/archive/$_commit.tar.gz
+	six.patch
+	"
+builddir="$srcdir/routes-$_commit"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+65d0f74b44d1bd7e04c6e7a8c45b610d4d5a31ef603fcc44727bd710f9fc86b98a98d69b86e03866b2e85219cfe4dcc1ad7a192654c7abe898c9c455f7b4b3d0  py3-routes-2.5.1_git20250518.tar.gz
+37f40b8801a66e8531458682e4b4e8b6cfa441fb65eff3d7803882cbbff520e81a503fc9e96ee2f343f3c66cec5a7ab509ccfcd8e738cc78d8ac5142db4f395e  six.patch
+"

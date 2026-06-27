@@ -1,0 +1,44 @@
+# Contributor: Tiago Ilieve <tiago.myhro@gmail.com>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=gron
+pkgver=0.7.1
+pkgrel=6
+pkgdesc="Make JSON greppable"
+url="https://github.com/tomnomnom/gron"
+arch="all"
+license="MIT"
+makedepends="go"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tomnomnom/gron/archive/v$pkgver.tar.gz"
+options="net" # go
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	default_prepare
+
+	# required for ppc64le
+	go get -d golang.org/x/sys/unix@v0.0.0-20210603125802-9665404d3644
+}
+
+build() {
+	go build -v -ldflags "-X main.gronVersion=$pkgver" -o gron
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dvm755 gron -t "$pkgdir"/usr/bin/
+
+	install -Dvm644 README.mkd ADVANCED.mkd -t "$pkgdir"/usr/share/doc/$pkgname/
+	install -Dvm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+8bce1915577b12cdd4105874368a8c71240a8437c402fc515598b204f8d84ade3ecc6d3bccac820683bf6fea8cf6dad2e3be7f3a3b2281af35d07524975f51ee  gron-0.7.1.tar.gz
+"

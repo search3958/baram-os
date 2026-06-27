@@ -1,0 +1,49 @@
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=tinycbor
+pkgver=7.0
+pkgrel=0
+pkgdesc="Concise Binary Object Representation (CBOR) Library"
+url="https://github.com/intel/tinycbor"
+makedepends="
+	cjson-dev
+	cmake
+	qt6-qtbase-dev
+	samurai
+	"
+# loongarch64, ppc64le: segfault in check(), https://github.com/intel/tinycbor/issues/324
+arch="all !loongarch64 !ppc64le"
+license="MIT"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	lib$pkgname:libs
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/intel/tinycbor/archive/refs/tags/v$pkgver.tar.gz
+	"
+
+build() {
+cmake -B build -G Ninja -Wno-dev \
+	-DCMAKE_BUILD_TYPE=MinSizeRel \
+	-DCMAKE_INSTALL_PREFIX=/usr \
+	-DBUILD_SHARED_LIBS=ON \
+	-DBUILD_TOOLS=ON \
+	-DBUILD_TESTING=ON \
+	#
+
+cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm0644 -t "$pkgdir"/usr/share/licenses/"$pkgname"/ LICENSE
+}
+
+sha512sums="
+193f995ecf1098accd04add3271aae834fd08aba94b7360ed0c22f8cc52d212cfe9c708c3cd89accaa27448078e95ae847ae91da661ca2cc4a1029e73b250b57  tinycbor-7.0.tar.gz
+"

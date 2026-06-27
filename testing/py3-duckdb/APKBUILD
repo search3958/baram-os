@@ -1,0 +1,81 @@
+maintainer="Leon White <badfunkstripe@gmail.com>"
+pkgname=py3-duckdb
+_pkgname=duckdb-python
+_duckdb_pkgname=duckdb
+pkgver=1.5.3
+pkgrel=0
+_pkghash=14eca11bd9
+pkgdesc="High-performance analytical database system (Python3 module)"
+url="https://duckdb.org"
+arch="x86_64 aarch64" # same as duckdb
+license="MIT"
+depends="python3"
+makedepends="
+	py3-build
+	py3-gpep517
+	py3-installer
+	py3-pybind11-dev
+	py3-scikit-build-core
+	py3-setuptools_scm
+	python3-dev
+	samurai
+"
+checkdepends="
+	py3-mypy
+	py3-otp
+	py3-pandas
+	py3-pyarrow
+	py3-pytest
+	py3-pytest-reraise
+	py3-requests
+	py3-typing-extensions
+"
+subpackages="$pkgname-pyc"
+source="
+	$_pkgname-$pkgver.tar.gz::https://github.com/duckdb/duckdb-python/archive/refs/tags/v$pkgver.tar.gz
+	$_duckdb_pkgname-$pkgver.tar.gz::https://github.com/duckdb/duckdb/archive/refs/tags/v$pkgver.tar.gz
+	ninja-version.patch
+	test_query_progress-increase-timeout.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+export OVERRIDE_GIT_DESCRIBE="v$pkgver"
+
+prepare() {
+	default_prepare
+
+	# Make this look like a PyPI sdist build
+	touch PKG-INFO
+	echo "v$pkgver-0-g$_pkghash" > duckdb_packaging/duckdb_version.txt
+
+	mv $srcdir/$_duckdb_pkgname-$pkgver/* $srcdir/$_pkgname-$pkgver/external/duckdb
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# tests/fast/adbc/*: No module named 'adbc_driver_manager' (missing aport)
+	_skip_tests="
+		--ignore=tests/fast/adbc/test_adbc.py \
+		--ignore=tests/fast/adbc/test_statement_bind.py \
+		--ignore=tests/fast/adbc/test_connection_get_info.py"
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest tests $_skip_tests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+c4baad0f647bb8dea7c8169bea4b28513da7fbec096db8dfbdd74e1dae19314e9b3fdc7f7c3d679d1e9b6f47a75d4f3edd61f852ee15605299441e59fdda4a29  duckdb-python-1.5.3.tar.gz
+e51a12618e5c1238950731b29d9e8d11a233c3572cba098970ab106525922f4efb22e8253ddc8260be1e971ee992e9144b6acf4136e7d0b12438a692c902188c  duckdb-1.5.3.tar.gz
+d6c80130603ea0b6c1d41d58ab72d39336755e45a4d5a5ea64c9d725dcbd4e4563e469aaedc8b4c140c65ed18a3b54c9ae33e1db2499dd7a5112ddcd194fc49f  ninja-version.patch
+87b40206e078714e769945bac3c814b3292577fa372eaa4ef42c5e22e74b59ab5055cf1abcfa519293328176b51de722827791ef69f59ad9b3193272d4fe00d3  test_query_progress-increase-timeout.patch
+"

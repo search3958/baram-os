@@ -1,0 +1,40 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libisofs
+pkgver=1.5.8
+pkgrel=0
+pkgdesc="Library to pack up hard disk files and directories into a ISO 9660 disk image"
+url="https://dev.lovelyhq.com/libburnia/libisofs"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="acl-dev zlib-dev"
+subpackages="$pkgname-dev"
+source="https://files.libburnia-project.org/releases/libisofs-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-libacl \
+		--enable-xattr \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c36a81c47516f6374e65863e8e4374ece3a14cf0cfc15ab381338c5df122835d66494b139223217278434baca07dae0a4bc8c1e8c00dae131ded1c5672808cc7  libisofs-1.5.8.tar.gz
+"

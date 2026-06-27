@@ -1,0 +1,53 @@
+# Maintainer: Andy Postnikov <apostnikov@gmail.com>
+pkgname=php85-pecl-grpc
+_extname=grpc
+pkgver=1.81.0
+pkgrel=0
+pkgdesc="PHP 8.5 extension provide a concrete implementation of the gRPC protocol, layered over HTTP/2."
+url="https://pecl.php.net/package/grpc"
+arch="all !s390x !ppc64le" # build failures
+license="Apache-2.0"
+_phpv=85
+_php=php$_phpv
+depends="$_php-common"
+_clang_ver=22
+makedepends="$_php-dev clang$_clang_ver openssl-dev linux-headers"
+source="
+	php-pecl-$_extname-$pkgver.tgz::https://pecl.php.net/get/$_extname-$pkgver.tgz
+	boringssl.patch
+	"
+builddir="$srcdir"/$_extname-$pkgver
+
+prepare() {
+	default_prepare
+	# debug info is stripped from the package anyway, so don't waste
+	# time and memory generating it for ~1.5k bundled translation units
+	sed -i 's/ -g -O2/ -O2/g' config.m4
+}
+
+build() {
+	export CC=clang-$_clang_ver
+	export CXX=clang++-$_clang_ver
+	# link against gcc libatomic on x86
+	[ "$CARCH" = "x86" ] && export LDFLAGS="$LDFLAGS -latomic"
+	phpize$_phpv
+	./configure --prefix=/usr --with-php-config=php-config$_phpv
+	make
+}
+
+check() {
+	# Test suite is not a part of pecl release.
+	$_php -d extension=modules/$_extname.so --ri $_extname
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+	local _confdir="$pkgdir"/etc/$_php/conf.d
+	install -d $_confdir
+	echo "extension=$_extname" > $_confdir/50_$_extname.ini
+}
+
+sha512sums="
+b73905d0841fc3d67e63ef68dd6b85cf9d18941139e323c8ae4919d32ccef609dfc3e1d59b9e18d76fe6137f13f71548abe7e3543f8d641d1f1168d936c68b2a  php-pecl-grpc-1.81.0.tgz
+653a407ae9078cf53bf6df8876e30e86112f1c141c6978a2caf9db8e44c1057150154e2b53e0475ca7ff1dea4f334308e68f914244c899b322ce12463b227967  boringssl.patch
+"

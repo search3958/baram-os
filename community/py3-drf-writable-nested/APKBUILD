@@ -1,0 +1,39 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-drf-writable-nested
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=drf-writable-nested
+pkgver=0.7.2
+pkgrel=2
+pkgdesc="Writable nested helpers for django-rest-framework's serializers"
+url="https://pypi.python.org/project/drf-writable-nested"
+arch="noarch"
+license="MIT"
+depends="py3-django-rest-framework"
+checkdepends="py3-pytest py3-pytest-cov py3-pytest-django"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/beda-software/drf-writable-nested/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	DJANGO_SETTINGS_MODULE=tests.settings .testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+
+sha512sums="
+a3b2637820b02591ef7df3819bec0631718b61b37641a645ebbcfa2dfc69955e64cba631255c881742c4db1593e15e6b4577c4973ad102eab2196aeb9b00ada6  py3-drf-writable-nested-0.7.2.tar.gz
+"

@@ -1,0 +1,28 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=wofi
+pkgver=1.5.3
+pkgrel=0
+pkgdesc="A launcher/menu program for wlroots based wayland compositors."
+url="https://hg.sr.ht/~scoopta/wofi"
+arch="all"
+license="GPL-3.0-only"
+makedepends="wayland-dev gtk+3.0-dev meson"
+options="!check" # no tests
+subpackages="$pkgname-doc $pkgname-dev"
+source="$pkgname-v$pkgver.tar.gz::https://hg.sr.ht/~scoopta/wofi/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	abuild-meson -Db_lto=true . build
+	meson compile -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+sha512sums="
+59067d8ea080cde13ba4c278e5843e10300c9fd5e1a1445107f6045d01c23b2ceaf59cd3e0393c3d966553b04110c3ebb776b88df39885dd06620d3e49c8ffff  wofi-v1.5.3.tar.gz
+"

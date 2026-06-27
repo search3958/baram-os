@@ -1,0 +1,126 @@
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=guacamole-server
+pkgver=1.6.0
+pkgrel=3
+pkgdesc="Server-side native components that form Guacamole proxy"
+url="https://guacamole.apache.org/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	cairo-dev
+	cunit-dev
+	ffmpeg-dev
+	freerdp2-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	libssh2-dev
+	libvncserver-dev
+	libvorbis-dev
+	libwebp-dev
+	libwebsockets-dev
+	openssl-dev
+	ossp-uuid-dev
+	pango-dev
+	perl
+	pulseaudio-dev
+	"
+install="$pkgname.pre-install"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-encoder
+	$pkgname-kubernetes:_client
+	$pkgname-rdp:_client
+	$pkgname-ssh:_client
+	$pkgname-vnc:_client
+	$pkgname-libs
+	"
+source="https://apache.org/dyn/closer.cgi?action=download&filename=guacamole/$pkgver/source/guacamole-server-$pkgver.tar.gz
+	guacd.initd
+	guacd.confd
+	guacd.conf
+	endian.patch
+	"
+
+# secfixes:
+#   1.6.0-r0:
+#     - CVE-2024-35164
+
+build() {
+	CFLAGS="$CFLAGS -Wno-error" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-static \
+		--with-libavcodec \
+		--with-libavutil \
+		--with-libswscale \
+		--with-ssl \
+		--without-winsock \
+		--with-vorbis \
+		--with-pulse \
+		--with-pango \
+		--with-terminal \
+		--with-vnc \
+		--with-rdp \
+		--with-ssh \
+		--without-telnet \
+		--with-webp \
+		--with-websockets
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -D -m644 "$srcdir"/guacd.conf "$pkgdir"/etc/guacamole/guacd.conf
+
+	install -D -m755 "$srcdir"/guacd.initd "$pkgdir"/etc/init.d/guacd
+	install -D -m644 "$srcdir"/guacd.confd "$pkgdir"/etc/conf.d/guacd
+}
+
+encoder() {
+	pkgdesc="Guacamole video encoder"
+
+	amove usr/bin/guacenc
+}
+
+_client() {
+	local name="${subpkgname##*-}"
+	local desc="$(echo "$name" | tr 'a-z' 'A-Z')"
+
+	amove usr/lib/libguac-client-$name.so.*
+
+	case "$name" in
+		kubernetes) desc="Kubernetes pods terminal";;
+		rdp) amove usr/lib/freerdp2;;
+	esac
+
+	pkgdesc="$desc support for Guacamole daemon"
+	# Provide an alternative name used in Debian and Fedora.
+	provides="libguac-client-$name=$pkgver-r$pkgrel"
+}
+
+libs() {
+	pkgdesc="Common libraries used by all C components of Guacamole"
+
+	amove usr/lib/libguac.so.*
+	amove usr/lib/libguac-terminal.so.*
+}
+
+sha512sums="
+7a95ae98556c9fc95170b6e1582198d363677d2e757d7ed45de0064c530f45653f44cd2d22994dc623855b3bd8ef196f2f0ab891b756a123b5b0f5c277e8caee  guacamole-server-1.6.0.tar.gz
+59770b61b16d9607e3acd16ede13ddfed6f55beb7a9a3a7b008a602ab6ec1ada00ef67972dd4f939414c00ba12518c000ad40f913fd59be72a3ee3b5a36f29ce  guacd.initd
+79af962eab45ce3f76ac77b99cbaf06ec8b0c28a670ded0d83460cb55ce95a61d37e1b804d44910f5596d5bddfae547cf8ef9bc84a09ccb03404736fe37d3361  guacd.confd
+9bf311dee0bafc218929f0f0eb16db3e84a1039fdf45ea5b498f7bc5a40f1154df80d840b29a0834bdf08709989030972bb8fbb2b86e3b2f75b40b98369f5692  guacd.conf
+1221beac22d778dca201703d1acaa66b168a785f0d38440aa554cdad40b074bc275900526f6228b1f4d42051ae3e0eccbbf60f4f7110ce67efbf71955373aeec  endian.patch
+"

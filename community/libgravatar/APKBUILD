@@ -1,0 +1,51 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=libgravatar
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="KDE PIM library providing Gravatar support"
+# armhf blocked by extra-cmake-modules
+# s390x and riscv64 blocked by qt6-qtwebengine -> pimcommon
+arch="all !armhf !s390x !riscv64"
+url="https://kontact.kde.org/"
+license="LGPL-2.0-or-later"
+depends_dev="
+	kconfig-dev
+	ki18n-dev
+	kio-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	pimcommon-dev
+	qt6-qtbase-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/libgravatar.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/libgravatar-$pkgver.tar.xz"
+options="net" # net required for tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	xvfb-run -a ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+sha512sums="
+cb6315021c302ce22e910e13dbe78f037d8355831e9e4fa558662b8d28e35f717aa6adc1dd1e19822c02a9c4661fe587123599d3f9cd42bb490ce4a3209c1cc8  libgravatar-26.04.2.tar.xz
+"

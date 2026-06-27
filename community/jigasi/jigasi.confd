@@ -1,0 +1,26 @@
+## Configuration for /etc/init.d/jigasi
+
+# Host name
+host=jitsi.example.com
+
+# Domain name. Use the XMPP domain (JVB_HOSTNAME) here
+domain=jitsi.example.com
+
+# UDP min and max ports for RTP traffic (default: 20000-20050)
+#port_min=20000
+#port_max=20050
+
+# Path to the config files (default: /etc/jitsi/jigasi)
+#configdir="/etc/jitsi/jigasi"
+
+# Path to log files for java (default: /var/log/jitsi)
+#logdir="/var/log/jitsi"
+
+# Path to file to redirect stderr into. (default $logdir/jigasi.log)
+#logfile="$logdir/jigasi.log"
+
+# Additional options to pass to jigasi
+extra_options="--nocomponent=true"
+
+# Additional java system props that are passed to jigasi
+#extra_java_props=""

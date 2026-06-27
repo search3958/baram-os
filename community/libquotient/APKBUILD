@@ -1,0 +1,49 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=libquotient
+pkgver=0.9.6.1
+pkgrel=2
+pkgdesc="Qt library for cross-platform clients for Matrix"
+url="https://github.com/quotient-im/libQuotient"
+arch="all"
+license="LGPL-2.1-or-later"
+depends_dev="
+	olm-dev
+	qt6-qtbase-dev
+	qtkeychain-dev
+	"
+makedepends="$depends_dev
+	cmake
+	qt6-qtbase-private-dev
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/quotient-im/libQuotient/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/libQuotient-$pkgver"
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DBUILD_TESTING=True \
+		-DQuotient_INSTALL_TESTS=False
+	cmake --build build
+}
+
+check() {
+	# testolmaccount requires a running Matrix homeserver
+	ctest --test-dir build -E "testolmaccount"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# android only
+	rm -r "$pkgdir"/usr/share/ndk-modules
+}
+
+sha512sums="
+d8db4eb22c33bf2e2a4a092318c01be61ec16fc0d0f9d0d7218d1ab5e17600515ecb02a19a38334f255b4928477a88cd07bbd1ae18844091ea68bf645f3bda49  libquotient-0.9.6.1.tar.gz
+"

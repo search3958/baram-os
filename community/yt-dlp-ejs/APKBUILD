@@ -1,0 +1,89 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=yt-dlp-ejs
+pkgver=0.8.0
+pkgrel=1
+pkgdesc="External JavaScript for yt-dlp"
+url="https://github.com/yt-dlp/ejs"
+# s390x: rollup "Unknown node type: 1207959552"
+arch="noarch !s390x"
+license="Unlicense"
+makedepends="
+	nodejs
+	pnpm
+	py3-gpep517
+	py3-hatchling
+	py3-hatch-vcs
+	"
+# !check: one test total that checks if the file exists, breaks
+#   due to checking in the src directory rather than the built wheel
+# net: npm dependencies (build-time)
+options="!check net"
+subpackages="
+	$pkgname-pyc
+	$pkgname-rt-nodejs:_nodejs
+	$pkgname-rt-quickjs:_quickjs
+	"
+case "$CARCH" in
+	x86_64|aarch64) subpackages="$subpackages $pkgname-rt-deno:_deno" ;;
+	*) ;;
+esac
+install="yt-dlp-ejs-rt-quickjs.post-install"
+source="
+	https://github.com/yt-dlp/ejs/archive/$pkgver/ejs-$pkgver.tar.gz
+	ignore-scripts.patch
+	rollup-wasm.patch
+	lock.patch
+	"
+builddir="$srcdir/ejs-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	depends="yt-dlp-ejs-rt=$pkgver-r$pkgrel"
+
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+_nodejs() {
+	provides="yt-dlp-ejs-rt=$pkgver-r$pkgrel"
+	provider_priority=10
+	depends="nodejs"
+
+	mkdir -p "$subpkgdir"
+}
+
+_quickjs() {
+	provides="yt-dlp-ejs-rt=$pkgver-r$pkgrel"
+	provider_priority=20
+	depends="quickjs"
+
+	mkdir -p "$subpkgdir"
+}
+
+_deno() {
+	provides="yt-dlp-ejs-rt=$pkgver-r$pkgrel"
+	provider_priority=100
+	depends="deno"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+3ea22c361bb7c04a2712a3d7344f1f2b018939052d7e492323952dbd069d9f892e37d244e496085f9638a1e5c3893d69c3321fb909120e5dbe265d6b6b018e79  ejs-0.8.0.tar.gz
+eab63a7cfef9bac5825419458ab43ac582a2047e4d9f1c838d2e03d101a89d9cb8a146fad857277f172c53008b36fb4c4f61d31a10f6007a36aba52c8bbf012b  ignore-scripts.patch
+65da167e728fb7f866c7b25cef3322ae8a219e8eb72ced381f202ffb8a807ea8c46ae1b077eb1fd25ca4741238ea51faccc2cc10a37bbbfd36e55c9061324b3e  rollup-wasm.patch
+f6a74bb83d9ea27185cc2a35bf6cab161a4816fb9f6bb0169b141531763805b092ba232b0365e23f3c8739980314d1a3a347e38dfc73aceaf59d64e2985db2d0  lock.patch
+"

@@ -1,0 +1,40 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-padacioso
+pkgver=0.2.1
+pkgrel=1
+pkgdesc="Dead simple regex based intent parser"
+url="https://github.com/OpenJarbas/padacioso"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-simplematch"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenJarbas/padacioso/archive/refs/tags/V$pkgver.tar.gz"
+builddir="$srcdir/padacioso-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+cf03768b0a03e6177027dfd66383175ed9c75bef9722fd937bc9ba33970d31081f30619e979997f8911c965e5166655adc8b98a5125c0241736c9aef896f8787  py3-padacioso-0.2.1.tar.gz
+"

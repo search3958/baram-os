@@ -1,0 +1,51 @@
+# Maintainer: Laurent Bercot <ska-devel@skarnet.org>
+pkgname=s6-overlay
+pkgver=3.2.3.0
+pkgrel=0
+pkgdesc="s6 overlay for containers"
+url="https://github.com/just-containers/s6-overlay"
+arch="noarch"
+license="ISC"
+depends="
+	execline
+	s6
+	s6-rc
+	s6-linux-init
+	s6-portable-utils
+	s6-linux-utils
+	s6-dns
+	s6-networking
+	s6-overlay-helpers"
+subpackages="$pkgname-doc $pkgname-syslogd"
+options="!check"
+source="$pkgname-$pkgver.tar.gz::https://github.com/just-containers/s6-overlay/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	make rootfs-overlay-noarch symlinks-overlay-noarch syslogd-overlay-noarch \
+		"VERSION=$pkgver" \
+		SHEBANGDIR=/usr/bin
+}
+
+package() {
+	mkdir -p "$pkgdir/usr/share/doc/$pkgname"
+	cp -a "$builddir/output/rootfs-overlay-noarch"/* \
+		"$builddir/output/symlinks-overlay-noarch"/* \
+		"$pkgdir/"
+	cp "$builddir/AUTHORS.md" \
+		"$builddir/CHANGELOG.md" \
+		"$builddir/CONTRIBUTING" \
+		"$builddir/COPYING" \
+		"$builddir/DCO" \
+		"$builddir/MOVING-TO-V3.md" \
+		"$builddir/README.md" \
+		"$pkgdir/usr/share/doc/$pkgname/"
+}
+
+syslogd() {
+	mkdir -p "$subpkgdir"
+	cp -a "$builddir/output/syslogd-overlay-noarch"/* "$subpkgdir/"
+}
+
+sha512sums="
+e8c9705f6cf47fa1f9e415e933526f125eb0fdacec5b934b76b165b78ff0357612adf29cc0ee4c7889bda015984853e7e5c05dfdc236c6601ad2fcdd35417c59  s6-overlay-3.2.3.0.tar.gz
+"

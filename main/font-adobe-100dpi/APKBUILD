@@ -1,0 +1,37 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=font-adobe-100dpi
+pkgver=1.0.4
+pkgrel=2
+pkgdesc="X.org adobe 100dpi font"
+url="https://xorg.freedesktop.org/"
+arch="noarch"
+license="MIT"
+options="!check"
+depends="encodings font-alias mkfontscale fontconfig"
+makedepends="font-util-dev bdftopcf"
+source="https://www.x.org/releases/individual/font/font-adobe-100dpi-$pkgver.tar.xz"
+subpackages="$pkgname-doc"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--with-mapfiles=/usr/share/fonts/util \
+		--with-fontdir=/usr/share/fonts/100dpi
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" \
+		MKFONTDIR=: \
+		MKFONTSCALE=: \
+		FCCACHE=: \
+		install
+
+	install -Dm644 COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}
+
+sha512sums="
+fedb86672c3b9cb624ee5d74d1d710f21d92c2d48a1fcf0a45b54b3f992f6f5599fc271d38a7e25ef123b64d405fa60a3d46883fe7a9d71ebad83c9b418f8383  font-adobe-100dpi-1.0.4.tar.xz
+"

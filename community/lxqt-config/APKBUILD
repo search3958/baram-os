@@ -1,0 +1,56 @@
+# Contributor: Zachary Lee Andrews <zcrayfish@gmail.com>
+maintainer="Antoni Aloy <aaloytorrens@gmail.com>"
+pkgname=lxqt-config
+pkgver=2.4.0
+pkgrel=0
+pkgdesc="Tools to configure LXQt and the underlying operating system"
+url="https://github.com/lxqt/lxqt-config"
+arch="all !armhf" # armhf blocked by libkscreen, liblxqt and kwindowsystem
+license="LGPL-2.0-or-later"
+depends="lxqt-menu-data"
+makedepends="
+	cmake
+	eudev-dev
+	kwindowsystem-dev
+	libkscreen-dev
+	liblxqt-dev
+	libqtxdg-dev
+	libxcursor-dev
+	libxi-dev
+	lxqt-build-tools
+	perl
+	qt6-qtbase-dev
+	qt6-qttools-dev
+	samurai
+	xf86-input-libinput-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+options="!check" # No testsuite
+source="https://github.com/lxqt/lxqt-config/releases/download/$pkgver/lxqt-config-$pkgver.tar.xz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_CXX_STANDARD=20 \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+lang() {
+	install_if="lang $pkgname=$pkgver-r$pkgrel"
+	amove usr/share/lxqt/translations/$pkgname
+}
+
+sha512sums="
+ba4c653c74fa87bc5fb957e454388399ee1a7d1f21b22f9fe0b62112f1d81254fec9d66070304737001412b56e7388a0a4b3615ddba6bcdecc74e9e59560d25c  lxqt-config-2.4.0.tar.xz
+"

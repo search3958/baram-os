@@ -1,0 +1,40 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xmlto
+pkgver=0.0.29
+pkgrel=0
+pkgdesc="Convert xml to many other formats"
+url="https://pagure.io/xmlto/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="libxslt perl-yaml-syck perl-test-pod bash docbook-xsl"
+makedepends="autoconf automake"
+subpackages="$pkgname-doc"
+source="https://www.pagure.io/xmlto/archive/$pkgver/xmlto-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	autoreconf -fvi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make -j1
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+95b574262b00c5d6460d156a1be6b0684ed2683f4ee0140016f7c88d8cdd7a46b4e090a9e55cee44b7ce88efb68da9af27ff02a182481d05486ed44bea0cc2ce  xmlto-0.0.29.tar.gz
+"

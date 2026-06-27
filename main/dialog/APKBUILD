@@ -1,0 +1,39 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: qaqland <qaq@qaq.land>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=dialog
+pkgver=1.3.20260107
+pkgrel=1
+_pkgver=${pkgver%.*}-${pkgver##*.}
+pkgdesc="Script interpreter providing curses widgets"
+url="https://invisible-island.net/dialog/dialog.html"
+arch="all"
+license="LGPL-2.1-only"
+makedepends="ncurses-dev"
+subpackages="$pkgname-doc $pkgname-static"
+source="https://invisible-mirror.net/archives/dialog/dialog-$_pkgver.tgz"
+builddir="$srcdir/$pkgname-$_pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--with-ncursesw
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+ef3dd7530c42489a08c2dcb0eb6597de32d22be9a22aad000b4841dc6e4fe4fc8681c0d6b3e8cc55caa8c9027f4f182f60fe3f2caa8cce39fbe50dcbff93875b  dialog-1.3-20260107.tgz
+"

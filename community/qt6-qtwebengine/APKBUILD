@@ -1,0 +1,871 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=qt6
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt6-qtwebengine
+pkgver=6.11.1
+pkgrel=3
+# latest commit of 140-based branch of qtwebengine-chromium
+_chromium_commit="37b6aeaa3ef9bf7e1901aa02a317a2707557709d"
+pkgdesc="Provides support for web applications using the Chromium browser project"
+url="https://qt.io/"
+# riscv64, s390x unknown current CPU
+# armhf blocked by qt6-qtdeclarative
+# x86 and armv7 (32-bit architectures) not supported upstream
+arch="all !riscv64 !s390x !armhf !x86 !armv7"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+depends_dev="
+	alsa-lib-dev
+	ffmpeg-dev
+	icu-dev
+	krb5-dev
+	lcms2-dev
+	libepoxy-dev
+	libevent-dev
+	libvpx-dev>=1.10.0-r1
+	libxkbfile-dev
+	libxml2-dev
+	libxslt-dev
+	minizip-dev
+	nss-dev
+	opus-dev
+	pciutils-dev
+	pipewire-dev
+	pulseaudio-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtpositioning-dev
+	qt6-qttools-dev
+	qt6-qtwebchannel-dev
+	snappy-dev
+	"
+makedepends="$depends_dev
+	bison
+	bsd-compat-headers
+	cmake
+	flex
+	gperf
+	gzip
+	nodejs
+	perl
+	py3-html5lib
+	python3
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+subpackages="$pkgname-dev $pkgname-dbg"
+source="$pkgname-$pkgver.tar.gz::https://github.com/qt/qtwebengine/archive/refs/tags/v$pkgver.tar.gz
+	qtwebengine-chromium-$_chromium_commit.tar.gz::https://github.com/qt/qtwebengine-chromium/archive/$_chromium_commit.tar.gz
+	0001-Enable-building-on-musl.patch
+	0002-temp-failure-retry.patch
+	0003-qt-musl-mallinfo.patch
+	0004-qt-musl-resolve.patch
+	0005-qtwebengine-missing-include.patch
+	0006-no-execinfo.patch
+	0007-musl-sandbox.patch
+	0008-missing-includes.patch
+	0009-Workaround-for-arm-build-failure.patch
+	0010-qt6-qtwebengine-partalloc-no-tagging-arm64.patch
+	chromium-use-alpine-target.patch
+	clang16-aescrypto.patch
+	gcc13.patch
+	no-sandbox-settls.patch
+	systypes.patch
+	fstatat-32bit.patch
+	devtools-frontend-compress_files.patch
+	cr140-musl-prctl.patch
+	no-simd-fallback-fix.patch
+
+	0001-06-ppc64.diff
+	032-dawn-platform-ppc64.diff
+	999-ppc64le-support.diff
+	9999-no-asm-testsupport.diff
+	hwy-ppc-builtins.diff
+	ppc-hwy.diff
+	ppc-vpx.diff
+
+	qt6-6.11.0.loongarch64-crashpad.diff
+	qt6-6.11.0.loongarch64-ffmpeg.diff
+	qt6-6.11.0.loongarch64-fstat.diff
+	qt6-6.11.0.loongarch64-gcc.diff
+	qt6-6.11.0.loongarch64-sandbox.diff
+	qt6-6.11.0.loongarch64.diff
+	qt6-6.11.0.rollup.diff
+	"
+options="!check" # No usable tests
+builddir="$srcdir/qtwebengine-${pkgver/_/-}"
+
+# secfixes:
+#   6.11.1-r3:
+#     - CVE-2026-8001
+#     - CVE-2026-9116
+#     - CVE-2026-11206
+#     - CVE-2026-11645
+#   6.11.1-r2:
+#     - CVE-2026-8017
+#     - CVE-2026-8532
+#     - CVE-2026-8567
+#     - CVE-2026-9112
+#     - CVE-2026-9115
+#     - CVE-2026-9118
+#     - CVE-2026-9119
+#     - CVE-2026-9121
+#     - CVE-2026-9122
+#     - CVE-2026-9124
+#     - CVE-2026-9126
+#     - CVE-2026-9872
+#     - CVE-2026-9873
+#     - CVE-2026-9875
+#     - CVE-2026-9876
+#     - CVE-2026-9877
+#     - CVE-2026-9878
+#     - CVE-2026-9879
+#     - CVE-2026-9880
+#     - CVE-2026-9881
+#     - CVE-2026-9882
+#     - CVE-2026-9883
+#     - CVE-2026-9885
+#     - CVE-2026-9887
+#     - CVE-2026-9889
+#     - CVE-2026-9890
+#     - CVE-2026-9891
+#     - CVE-2026-9892
+#     - CVE-2026-9893
+#     - CVE-2026-9894
+#     - CVE-2026-9895
+#     - CVE-2026-9896
+#     - CVE-2026-9897
+#     - CVE-2026-9899
+#     - CVE-2026-9900
+#     - CVE-2026-9901
+#     - CVE-2026-9902
+#     - CVE-2026-9903
+#     - CVE-2026-9904
+#     - CVE-2026-9906
+#     - CVE-2026-9908
+#     - CVE-2026-9910
+#     - CVE-2026-9911
+#     - CVE-2026-9914
+#     - CVE-2026-9915
+#     - CVE-2026-9919
+#     - CVE-2026-9920
+#     - CVE-2026-9921
+#     - CVE-2026-9922
+#     - CVE-2026-9972
+#     - CVE-2026-9974
+#     - CVE-2026-9975
+#     - CVE-2026-9976
+#     - CVE-2026-9979
+#     - CVE-2026-9981
+#     - CVE-2026-9982
+#     - CVE-2026-9983
+#     - CVE-2026-9988
+#     - CVE-2026-9992
+#     - CVE-2026-9993
+#     - CVE-2026-9994
+#     - CVE-2026-9995
+#     - CVE-2026-9996
+#     - CVE-2026-9997
+#     - CVE-2026-9998
+#     - CVE-2026-9999
+#     - CVE-2026-10002
+#     - CVE-2026-10003
+#     - CVE-2026-10004
+#     - CVE-2026-10006
+#     - CVE-2026-10007
+#     - CVE-2026-10008
+#     - CVE-2026-10009
+#     - CVE-2026-10011
+#     - CVE-2026-10013
+#     - CVE-2026-10016
+#     - CVE-2026-25210
+#   6.11.1-r1:
+#     - CVE-2026-7945
+#     - CVE-2026-7946
+#     - CVE-2026-7947
+#     - CVE-2026-7949
+#     - CVE-2026-7950
+#     - CVE-2026-7951
+#     - CVE-2026-7954
+#     - CVE-2026-7955
+#     - CVE-2026-7956
+#     - CVE-2026-7957
+#     - CVE-2026-7959
+#     - CVE-2026-7963
+#     - CVE-2026-7964
+#     - CVE-2026-7965
+#     - CVE-2026-7967
+#     - CVE-2026-7968
+#     - CVE-2026-7969
+#     - CVE-2026-7971
+#     - CVE-2026-7972
+#     - CVE-2026-7973
+#     - CVE-2026-7974
+#     - CVE-2026-7975
+#     - CVE-2026-7976
+#     - CVE-2026-7977
+#     - CVE-2026-7996
+#     - CVE-2026-7998
+#     - CVE-2026-7999
+#     - CVE-2026-8002
+#     - CVE-2026-8003
+#     - CVE-2026-8004
+#     - CVE-2026-8007
+#     - CVE-2026-8009
+#     - CVE-2026-8010
+#     - CVE-2026-8011
+#     - CVE-2026-8012
+#     - CVE-2026-8014
+#     - CVE-2026-8015
+#     - CVE-2026-8016
+#     - CVE-2026-8020
+#     - CVE-2026-8022
+#     - CVE-2026-8510
+#     - CVE-2026-8511
+#     - CVE-2026-8512
+#     - CVE-2026-8513
+#     - CVE-2026-8514
+#     - CVE-2026-8515
+#     - CVE-2026-8518
+#     - CVE-2026-8553
+#     - CVE-2026-8556
+#     - CVE-2026-8557
+#     - CVE-2026-8559
+#   6.11.1-r0:
+#     - CVE-2026-7980
+#     - CVE-2026-7982
+#     - CVE-2026-7983
+#     - CVE-2026-7985
+#     - CVE-2026-7986
+#     - CVE-2026-7989
+#   6.11.0-r9:
+#     - CVE-2026-4775
+#     - CVE-2026-6192
+#     - CVE-2026-6732
+#     - CVE-2026-7916
+#     - CVE-2026-7918
+#     - CVE-2026-7921
+#     - CVE-2026-7924
+#     - CVE-2026-7937
+#     - CVE-2026-7940
+#     - CVE-2026-7942
+#     - CVE-2026-7944
+#     - CVE-2026-7987
+#     - CVE-2026-7988
+#     - CVE-2026-7991
+#   6.11.0-r8:
+#     - CVE-2026-7899
+#     - CVE-2026-7900
+#     - CVE-2026-7901
+#     - CVE-2026-7902
+#     - CVE-2026-7903
+#     - CVE-2026-7904
+#     - CVE-2026-7906
+#     - CVE-2026-7907
+#     - CVE-2026-7908
+#     - CVE-2026-7910
+#     - CVE-2026-7912
+#     - CVE-2026-7914
+#     - CVE-2026-7917
+#     - CVE-2026-7919
+#     - CVE-2026-7920
+#     - CVE-2026-7922
+#     - CVE-2026-7923
+#     - CVE-2026-7926
+#     - CVE-2026-7927
+#     - CVE-2026-7929
+#     - CVE-2026-7933
+#     - CVE-2026-7935
+#     - CVE-2026-7938
+#     - CVE-2026-7993
+#   6.11.0-r7:
+#     - CVE-2026-5901
+#     - CVE-2026-6919
+#     - CVE-2026-6920
+#     - CVE-2026-7333
+#     - CVE-2026-7335
+#     - CVE-2026-7336
+#     - CVE-2026-7339
+#     - CVE-2026-7340
+#     - CVE-2026-7341
+#     - CVE-2026-7342
+#     - CVE-2026-7343
+#     - CVE-2026-7344
+#     - CVE-2026-7345
+#     - CVE-2026-7346
+#     - CVE-2026-7348
+#     - CVE-2026-7349
+#     - CVE-2026-7350
+#     - CVE-2026-7351
+#     - CVE-2026-7353
+#     - CVE-2026-7354
+#     - CVE-2026-7355
+#     - CVE-2026-7356
+#     - CVE-2026-7357
+#     - CVE-2026-7359
+#     - CVE-2026-7360
+#     - CVE-2026-7363
+#   6.11.0-r6:
+#     - CVE-2026-5911
+#     - CVE-2026-6299
+#   6.11.0-r5:
+#     - CVE-2026-5883
+#     - CVE-2026-5894
+#     - CVE-2026-5913
+#     - CVE-2026-6363
+#   6.11.0-r4:
+#     - CVE-2026-5873
+#     - CVE-2026-5886
+#     - CVE-2026-5891
+#     - CVE-2026-6296
+#     - CVE-2026-6297
+#     - CVE-2026-6298
+#     - CVE-2026-6300
+#     - CVE-2026-6301
+#     - CVE-2026-6302
+#     - CVE-2026-6303
+#     - CVE-2026-6304
+#     - CVE-2026-6305
+#     - CVE-2026-6306
+#     - CVE-2026-6307
+#     - CVE-2026-6308
+#     - CVE-2026-6309
+#     - CVE-2026-6311
+#     - CVE-2026-6312
+#     - CVE-2026-6313
+#     - CVE-2026-6314
+#     - CVE-2026-6316
+#     - CVE-2026-6359
+#     - CVE-2026-6360
+#     - CVE-2026-6361
+#     - CVE-2026-6362
+#     - CVE-2026-6364
+#   6.11.0-r3:
+#     - CVE-2026-5860
+#     - CVE-2026-5861
+#     - CVE-2026-5862
+#     - CVE-2026-5863
+#     - CVE-2026-5865
+#     - CVE-2026-5866
+#     - CVE-2026-5868
+#     - CVE-2026-5870
+#     - CVE-2026-5871
+#     - CVE-2026-5872
+#     - CVE-2026-5875
+#     - CVE-2026-5876
+#     - CVE-2026-5877
+#     - CVE-2026-5878
+#     - CVE-2026-5879
+#     - CVE-2026-5880
+#     - CVE-2026-5882
+#     - CVE-2026-5884
+#     - CVE-2026-5885
+#     - CVE-2026-5888
+#     - CVE-2026-5889
+#     - CVE-2026-5890
+#     - CVE-2026-5893
+#     - CVE-2026-5896
+#     - CVE-2026-5899
+#     - CVE-2026-5900
+#     - CVE-2026-5903
+#     - CVE-2026-5904
+#     - CVE-2026-5907
+#     - CVE-2026-5908
+#     - CVE-2026-5912
+#     - CVE-2026-5914
+#     - CVE-2026-5915
+#     - CVE-2026-5918
+#     - CVE-2026-5919
+#   6.11.0-r1:
+#     - CVE-2026-4454
+#     - CVE-2026-4674
+#     - CVE-2026-4675
+#     - CVE-2026-4677
+#     - CVE-2026-4679
+#     - CVE-2026-5272
+#     - CVE-2026-5273
+#     - CVE-2026-5274
+#     - CVE-2026-5275
+#     - CVE-2026-5276
+#     - CVE-2026-5277
+#     - CVE-2026-5279
+#     - CVE-2026-5280
+#     - CVE-2026-5281
+#     - CVE-2026-5282
+#     - CVE-2026-5283
+#     - CVE-2026-5284
+#     - CVE-2026-5285
+#     - CVE-2026-5287
+#     - CVE-2026-5289
+#     - CVE-2026-5290
+#     - CVE-2026-5291
+#     - CVE-2026-5292
+#   6.10.2-r13:
+#     - CVE-2026-5272
+#     - CVE-2026-5274
+#     - CVE-2026-5275
+#     - CVE-2026-5276
+#     - CVE-2026-5277
+#     - CVE-2026-5279
+#     - CVE-2026-5280
+#     - CVE-2026-5281
+#     - CVE-2026-5282
+#     - CVE-2026-5283
+#     - CVE-2026-5284
+#     - CVE-2026-5285
+#     - CVE-2026-5287
+#     - CVE-2026-5289
+#     - CVE-2026-5290
+#     - CVE-2026-5291
+#     - CVE-2026-5292
+#   6.10.2-r12:
+#     - CVE-2026-4443
+#     - CVE-2026-4455
+#     - CVE-2026-4459
+#     - CVE-2026-4674
+#     - CVE-2026-4675
+#     - CVE-2026-4677
+#     - CVE-2026-4679
+#   6.10.2-r11:
+#     - CVE-2026-4442
+#     - CVE-2026-4444
+#     - CVE-2026-4445
+#     - CVE-2026-4446
+#     - CVE-2026-4448
+#     - CVE-2026-4449
+#     - CVE-2026-4450
+#     - CVE-2026-4451
+#     - CVE-2026-4452
+#     - CVE-2026-4453
+#     - CVE-2026-4454
+#     - CVE-2026-4455
+#     - CVE-2026-4457
+#     - CVE-2026-4458
+#     - CVE-2026-4460
+#     - CVE-2026-4462
+#     - CVE-2026-4463
+#     - CVE-2026-4464
+#   6.10.2-r9:
+#     - CVE-2026-4441
+#   6.10.2-r8:
+#     - CVE-2026-3909
+#     - CVE-2026-3910
+#     - CVE-2026-3921
+#     - CVE-2026-3922
+#     - CVE-2026-3923
+#     - CVE-2026-3929
+#     - CVE-2026-3931
+#     - CVE-2026-3934
+#     - CVE-2026-3938
+#     - CVE-2026-3940
+#     - CVE-2026-3941
+#     - CVE-2026-3942
+#   6.10.2-r6:
+#     - CVE-2026-3536
+#     - CVE-2026-3538
+#     - CVE-2026-3539
+#     - CVE-2026-3540
+#     - CVE-2026-3541
+#     - CVE-2026-3542
+#     - CVE-2026-3543
+#     - CVE-2026-3544
+#     - CVE-2026-3545
+#   6.10.2-r5:
+#     - CVE-2026-3061
+#     - CVE-2026-3062
+#   6.10.2-r4:
+#     - CVE-2026-2648
+#     - CVE-2026-2649
+#   6.10.2-r3:
+#     - CVE-2026-2315
+#     - CVE-2026-2316
+#     - CVE-2026-2317
+#     - CVE-2026-2319
+#     - CVE-2026-2320
+#   6.10.2-r2:
+#     - CVE-2025-12432
+#     - CVE-2026-2441
+#   6.10.2-r1:
+#     - CVE-2026-0628
+#     - CVE-2026-1504
+#   6.10.1-r7:
+#     - CVE-2026-1220
+#   6.10.1-r6:
+#     - CVE-2026-0899
+#     - CVE-2026-0905
+#     - CVE-2026-0908
+#   6.10.1-r2:
+#     - CVE-2025-13224
+#     - CVE-2025-13634
+#     - CVE-2025-13638
+#     - CVE-2025-13639
+#     - CVE-2025-13720
+#     - CVE-2025-13721
+#     - CVE-2025-14174
+#     - CVE-2025-141765
+#   6.10.1-r1:
+#     - CVE-2025-13042
+#   6.10.0-r1:
+#     - CVE-2025-6965
+#     - CVE-2025-11206
+#     - CVE-2025-11207
+#     - CVE-2025-11216
+#     - CVE-2025-11219
+#     - CVE-2025-11458
+#     - CVE-2025-11460
+#     - CVE-2025-11756
+#     - CVE-2025-12036
+#     - CVE-2025-12429
+#     - CVE-2025-12433
+#     - CVE-2025-12438
+#     - CVE-2025-12441
+#     - CVE-2025-12443
+#     - CVE-2025-12726
+#     - CVE-2025-24928
+#   6.9.3-r2:
+#     - CVE-2025-8582
+#     - CVE-2025-24028
+#   6.9.2-r2:
+#     - CVE-2025-10890
+#     - CVE-2025-10891
+#     - CVE-2025-10892
+#   6.9.2-r1:
+#     - CVE-2025-9866
+#     - CVE-2025-10200
+#     - CVE-2025-10201
+#     - CVE-2025-10500
+#     - CVE-2025-10501
+#     - CVE-2025-10502
+#     - CVE-2025-54874
+#   6.9.1-r3:
+#     - CVE-2025-6191
+#     - CVE-2025-6192
+#     - CVE-2025-6554
+#     - CVE-2025-6556
+#     - CVE-2025-6557
+#     - CVE-2025-6558
+#     - CVE-2025-7656
+#     - CVE-2025-7657
+#     - CVE-2025-8010
+#     - CVE-2025-8576
+#     - CVE-2025-8578
+#     - CVE-2025-8580
+#     - CVE-2025-8582
+#     - CVE-2025-8879
+#     - CVE-2025-8880
+#     - CVE-2025-8881
+#     - CVE-2025-8901
+#   6.8.3-r1:
+#     - CVE-2019-16707
+#     - CVE-2024-50602
+#     - CVE-2025-5063
+#     - CVE-2025-5064
+#     - CVE-2025-5065
+#     - CVE-2025-5281
+#     - CVE-2025-5283
+#   6.8.2-r4:
+#     - CVE-2025-3277
+#     - CVE-2025-4051
+#     - CVE-2025-4052
+#     - CVE-2025-4609
+#     - CVE-2025-4664
+#   6.8.2-r3:
+#     - CVE-2024-11477
+#     - CVE-2024-12693
+#     - CVE-2024-12694
+#     - CVE-2024-55549
+#     - CVE-2025-0436
+#     - CVE-2025-0437
+#     - CVE-2025-0438
+#     - CVE-2025-0441
+#     - CVE-2025-0443
+#     - CVE-2025-0447
+#     - CVE-2025-0611
+#     - CVE-2025-0762
+#     - CVE-2025-0996
+#     - CVE-2025-0998
+#     - CVE-2025-0999
+#     - CVE-2025-1006
+#     - CVE-2025-1426
+#     - CVE-2025-1915
+#     - CVE-2025-1918
+#     - CVE-2025-1919
+#     - CVE-2025-1921
+#     - CVE-2025-2136
+#     - CVE-2025-24201
+#     - CVE-2025-24855
+#     - CVE-2025-2783
+#     - CVE-2025-3071
+#     - CVE-2025-3619
+#   6.7.2-r6:
+#     - CVE-2024-9120
+#     - CVE-2024-9122
+#     - CVE-2024-9123
+#     - CVE-2024-9369
+#     - CVE-2024-9602
+#     - CVE-2024-9603
+#     - CVE-2024-9965
+#     - CVE-2024-9966
+#     - CVE-2024-10229
+#     - CVE-2024-10230
+#     - CVE-2024-10231
+#     - CVE-2024-10487
+#     - CVE-2024-10827
+#     - CVE-2024-45490
+#     - CVE-2024-45491
+#     - CVE-2024-45492
+#   6.7.2-r5:
+#     - CVE-2024-5157
+#     - CVE-2024-5158
+#     - CVE-2024-5159
+#     - CVE-2024-5160
+#     - CVE-2024-8905
+#   6.7.2-r4:
+#     - CVE-2024-7969
+#     - CVE-2024-7972
+#     - CVE-2024-8193
+#     - CVE-2024-8198
+#     - CVE-2024-8362
+#     - CVE-2024-8636
+#   6.7.2-r3:
+#     - CVE-2024-7965
+#     - CVE-2024-7966
+#     - CVE-2024-7967
+#     - CVE-2024-7971
+#     - CVE-2024-7973
+#     - CVE-2024-7974
+#     - CVE-2024-7975
+#   6.7.2-r2:
+#     - CVE-2024-5836
+#     - CVE-2024-6101
+#     - CVE-2024-6103
+#     - CVE-2024-6774
+#     - CVE-2024-6777
+#     - CVE-2024-6779
+#     - CVE-2024-6989
+#     - CVE-2024-6991
+#     - CVE-2024-6992
+#     - CVE-2024-6996
+#     - CVE-2024-6999
+#     - CVE-2024-7000
+#     - CVE-2024-7532
+#     - CVE-2024-7535
+#     - CVE-2024-7536
+#     - CVE-2024-7550
+#   6.6.3-r5:
+#     - CVE-2024-5274
+#   6.6.3-r4:
+#     - CVE-2024-3840
+#     - CVE-2024-4558
+#     - CVE-2024-4671
+#   6.6.3-r3:
+#     - CVE-2024-3837
+#     - CVE-2024-3839
+#     - CVE-2024-3914
+#     - CVE-2024-4058
+#     - CVE-2024-4331
+#   6.6.3-r2:
+#     - CVE-2024-2625
+#     - CVE-2024-2626
+#     - CVE-2024-2887
+#     - CVE-2024-3157
+#     - CVE-2024-3159
+#     - CVE-2024-3516
+#   6.6.3-r1:
+#     - CVE-2023-7104
+#     - CVE-2024-25062
+#   6.6.2-r1:
+#     - CVE-2024-1670
+#     - CVE-2024-1671
+#     - CVE-2024-1672
+#     - CVE-2024-1676
+#   6.6.1-r8:
+#     - CVE-2024-1059
+#     - CVE-2024-1060
+#     - CVE-2024-1077
+#     - CVE-2024-1283
+#     - CVE-2024-1284
+#   6.6.1-r7:
+#     - CVE-2024-0807
+#     - CVE-2024-0808
+#     - CVE-2024-0810
+#   6.6.1-r5:
+#     - CVE-2024-0518
+#     - CVE-2024-0519
+#   6.6.1-r4:
+#     - CVE-2023-7024
+#     - CVE-2024-0222
+#     - CVE-2024-0223
+#     - CVE-2024-0224
+#     - CVE-2024-0225
+#     - CVE-2024-0333
+#   6.6.1-r3:
+#     - CVE-2023-6702
+#     - CVE-2023-6703
+#     - CVE-2023-6705
+#     - CVE-2023-6706
+#   6.6.1-r2:
+#     - CVE-2023-6510
+#   6.6.1-r1:
+#     - CVE-2023-6345
+#     - CVE-2023-6346
+#     - CVE-2023-6347
+#   6.6.0-r6:
+#     - CVE-2023-5997
+#     - CVE-2023-6112
+#   6.6.0-r5:
+#     - CVE-2023-5996
+#   6.6.0-r2:
+#     - CVE-2023-5482
+#     - CVE-2023-5849
+#   6.6.0-r1:
+#     - CVE-2023-5218
+#     - CVE-2023-5474
+#     - CVE-2023-5475
+#     - CVE-2023-5476
+#     - CVE-2023-5484
+#     - CVE-2023-5486
+#     - CVE-2023-5487
+#     - CVE-2023-45853
+#   0:
+#     - CVE-2025-6021
+#     - CVE-2026-9909
+
+
+case "$CARCH" in
+loongarch64)
+	export CFLAGS="$CFLAGS -mcmodel=medium"
+	export CXXFLAGS="$CXXFLAGS -mcmodel=medium"
+	export RUSTFLAGS="$RUSTFLAGS -C code-model=extreme"
+	export LDFLAGS="$LDFLAGS -Wl,--no-relax"
+	;;
+esac
+
+prepare() {
+	rmdir "$builddir/src/3rdparty"
+	mv "$srcdir/qtwebengine-chromium-$_chromium_commit" "$builddir/src/3rdparty"
+	mkdir -p "$builddir"/.git "$builddir/src/3rdparty/chromium/.git"
+
+	default_prepare
+
+	case "$CARCH" in
+	loongarch64)
+		msg "qt6-6.11.0.loongarch64-crashpad.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.loongarch64-crashpad.diff
+		msg "qt6-6.11.0.loongarch64-ffmpeg.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.loongarch64-ffmpeg.diff
+		msg "qt6-6.11.0.loongarch64-sandbox.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.loongarch64-sandbox.diff
+		msg "qt6-6.11.0.loongarch64.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.loongarch64.diff
+		msg "qt6-6.11.0.loongarch64-gcc.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.loongarch64-gcc.diff
+		msg "qt6-6.11.0.rollup.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.rollup.diff
+		msg "qt6-6.11.0.loongarch64-fstat.diff"
+		patch -p1 -i "$srcdir"/qt6-6.11.0.loongarch64-fstat.diff
+		;;
+	ppc64le)
+		msg "0001-06-ppc64.diff"
+		patch -p1 -i "$srcdir"/0001-06-ppc64.diff
+		msg "032-dawn-platform-ppc64.diff"
+		patch -p1 -i "$srcdir"/032-dawn-platform-ppc64.diff
+		msg "999-ppc64le-support.diff"
+		patch -p1 -i "$srcdir"/999-ppc64le-support.diff
+		msg "9999-no-asm-testsupport.diff"
+		patch -p1 -i "$srcdir"/9999-no-asm-testsupport.diff
+		msg "hwy-ppc-builtins.diff"
+		patch -p1 -i "$srcdir"/hwy-ppc-builtins.diff
+		msg "ppc-hwy.diff"
+		patch -p1 -i "$srcdir"/ppc-hwy.diff
+		msg "ppc-vpx.diff"
+		patch -p1 -i "$srcdir"/ppc-vpx.diff
+		;;
+	esac
+}
+
+build() {
+	export CFLAGS="$CFLAGS -D_LARGEFILE64_SOURCE -Wno-builtin-macro-redefined -Wno-deprecated-declarations"
+	export CXXFLAGS="$CXXFLAGS -D_LARGEFILE64_SOURCE -Wno-builtin-macro-redefined -Wno-deprecated-declarations"
+
+	export NODEJS_EXECUTABLE="/usr/bin/node"
+
+	case "$CARCH" in
+		aarch64) _neon_enabled="-DQT_FEATURE_webengine_arm64_udot_support=OFF"
+		;;
+	esac
+
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DINSTALL_BINDIR=lib/qt6/bin \
+		-DINSTALL_DOCDIR=share/doc/qt6 \
+		-DINSTALL_ARCHDATADIR=lib/qt6 \
+		-DINSTALL_DATADIR=share/qt6 \
+		-DINSTALL_INCLUDEDIR=include/qt6 \
+		-DINSTALL_MKSPECSDIR=lib/qt6/mkspecs \
+		-DINSTALL_EXAMPLESDIR=share/doc/qt6/examples \
+		-DQT_FEATURE_webengine_system_alsa=ON \
+		-DQT_FEATURE_webengine_system_ffmpeg=ON \
+		-DQT_FEATURE_webengine_system_icu=ON \
+		-DQT_FEATURE_webengine_system_libpci=ON \
+		-DQT_FEATURE_webengine_system_libpng=ON \
+		-DQT_FEATURE_webengine_system_libwebp=ON \
+		-DQT_FEATURE_webengine_system_libxml=ON \
+		-DQT_FEATURE_webengine_system_minizip=ON \
+		-DQT_FEATURE_webengine_system_opus=ON \
+		-DQT_FEATURE_webengine_system_pulseaudio=ON \
+		-DQT_FEATURE_webengine_system_zlib=ON \
+		-DQT_FEATURE_webengine_proprietary_codecs=ON \
+		-DQT_FEATURE_webengine_kerberos=ON \
+		-DQT_FEATURE_webengine_webrtc_pipewire=ON \
+		$_neon_enabled
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+dev() {
+	default_dev
+
+	amove usr/lib/qt6/sbom
+}
+
+sha512sums="
+3c6590818c9098284b0b616bad78bda706ecb61ea42ceeed615c8e9755e3af6af95bd2e05a5bc271a42e30ce01d91abadf16f8f9a0886b115ab4ae3e65c025be  qt6-qtwebengine-6.11.1.tar.gz
+080544e7e0171cea601ce0f361f0bc92c0922850fd969e73081303e403c67bf9abb05f74dab9ac07efe268a9ba03786c127a856a0ab6307a84807ad1d38dbc39  qtwebengine-chromium-37b6aeaa3ef9bf7e1901aa02a317a2707557709d.tar.gz
+fb81c66253f497a7d2c1468653683a490591fc6351eeda19120d3420a0ef852059fad1002aebc5f9b052f4a5868989ec16e4d9cf88f4c347dbb9316e86395e80  0001-Enable-building-on-musl.patch
+7b6ed37975c55e5ebc20b9a6207044b6f86102d69caa6fdd457078a7ae242026d3de5537651d3d86497ba18ddd1e97523aa082da4dff703a8a4f618bccd4af57  0002-temp-failure-retry.patch
+a894539990d28b6e1c94b3555fda1b17f0e6d7a61c15fdac6793f0ac8fd86f421c1d73c408f93cd8c70cd9bf7b3d3f85e89d190e1af69c67d233e248a7aa15a7  0003-qt-musl-mallinfo.patch
+7751e3a2924f2892384d7a7daf3a9a6770cd873570181854de8fcfb8b1a8430808ad8bf2b6218fa89321ce5446f4e076fea66ca1d2790daf862d016a78b38e51  0004-qt-musl-resolve.patch
+4fb5989b4984216f365f541cd15352e20d4504eb41c3ca4d10c1750a8ae9256d50fe5c43229f39517e8da34e885bea3708db281704e2cf8ecfbce83f81817c74  0005-qtwebengine-missing-include.patch
+45754d7be2a7806a0bef157bd5b0f5b2bed3fa7b43e721bf331cc58f0d595c93c595734aeded2fc717d6ae7bd64849ecaaead0abb455b50147f5955c978a066d  0006-no-execinfo.patch
+852c1620ae18b398ff47286f07dfc1ae9683bd4b94733029e01fe609116daadf503ff16eed86fa072dc306c0162bf6fe567452777cd8f61bcc033dc1fc2f59e9  0007-musl-sandbox.patch
+2394280f55723d5c02bcdae332009e31c85fcef4ee625b61958818ca96f493d831d5aceb93188c9b07f0af68bdaa59c9d1e75bc2e3b2d410ce4e21a2870f379a  0008-missing-includes.patch
+746901903fa0d9fec992fcd4a8e0db0afb039c42ee2254da25e0da131c611ba1a629ae33b8ae33ce5377e6e4e94b060a62fdaa4354d5976aa20cd88db3be7052  0009-Workaround-for-arm-build-failure.patch
+65fb52faedb0413e2168c574947a665d4c00de448e359aa021ea87390f35d042150eacf73f4bdc2fa2c02f83b38999937adc91e73292ecdee275a26db405108e  0010-qt6-qtwebengine-partalloc-no-tagging-arm64.patch
+ae98a1bbac12fb71eb4ec437f7084e6686f0cc6ae154eb55381fa7f940cd4910cef2431359b63da3a9e55594396ccdb4ed91384bb865021a31470f293e0bab05  chromium-use-alpine-target.patch
+4af26d96c73fcf0395a2a2a0535dbc8f4679b958f047b10e73bd8bc6fa4e44d0b6f2528460d7475f419211449ca7538ba29031b060e575a91cd0c636887cff68  clang16-aescrypto.patch
+c91cbfda8e79b29bd6c54ca16e28db1d2e07df260e1acd0733001482b0edf91654341818d2074b07a3fc0e89f6df5728ffbb24c1a734038a0460ca18fb9f6f19  gcc13.patch
+17141b0de8d629fc4a620318965ab7d6099da90de2a7172f7536a0a2dcded1bdc8b004c36c9000e7f03209e3eeee6e2570037174a0ffd8472ebc2e9af8409ff0  no-sandbox-settls.patch
+3f9268b47bcb03b485e39e49188f85e5943237713bdb1cf00e97b456064345314c02387c135f979a26cf48fc636a5d492ba7ce817741d4651ce404358a35751a  systypes.patch
+822f7f95db7c9964d40857acc58943fa4f2c55016e09ae7971c8d71fb12e14805c272215ca66ce72dace035146939cdd7948fd8b299440e41140ea2127864139  fstatat-32bit.patch
+0b8298858c693b1a3ba607320d0ae00000953c473388f13f3ad1880befbd265eb8412de567819b45f97a9e62bdc79f0c6715a22382f0a42ab1510bbff40a3c9b  devtools-frontend-compress_files.patch
+0200d8addbe0d45c1a8d66b3455f8f934e3210e62d3b17dfc3c9d9a7b63dbd2c78fa2d0ed642a6801b0c0da4dd794e30f1716a92135076936803b8e0258c9d76  cr140-musl-prctl.patch
+00808b16483b26b6fe805fe7bef397c9ad5614fd07f45acef95e6420d040578fbc936788798ac1974b437388aa460f6c8e7c261980a881607fb76da343413e30  no-simd-fallback-fix.patch
+63ee1932bd64ad1373ade8f278a597bd0a2df21bc8c1405b55ec83853230a8cd8618efcfc679fb4e7fc71ba281335161bc0e684cebfa6b92edd9684e4406726d  0001-06-ppc64.diff
+97faee8159af430a71d7b6ff4326543b7b2d8a40a10503e17cfaa4409fd0b90e2922d443806c7a57b8ff2863bcddde15d7de6d3575a9aae9aa51fc82180294c9  032-dawn-platform-ppc64.diff
+90d4d0978671bf3eb6da58d85ac389a789c14196b8ad3e5abaee1eeaeefbe4320544d6ffb6725efb6cc1144907e9417b4e22058a850b05d6fd4007546b8385e0  999-ppc64le-support.diff
+97432e11ac6814fb519c741b78d24bbe2eea1d026a7e51b1f84c290d38bb04695106f77d947f77b249fba290af1b27986048a946335ea5b31ba02eac6a16f560  9999-no-asm-testsupport.diff
+35319a78e05d801767c867db02f1c43def6c5667fe3c1abd5dad4d54fcc01276d66e049a09c88470d097a7394bbebb69016019145ac80a70624af200bdf9614b  hwy-ppc-builtins.diff
+daf91d38f93138d1d7914e0680f9aaca8ef7d94919e177ff4715ce555e83b9c299d3acd2132937dedfe10f7f100ab0bdd7d51de1f857e210d0c38a926fc1feed  ppc-hwy.diff
+73c3a25989500b0e35dc9ab799e37cb2e6b47502fc0099687817b783072752eaf48c0c4cb9626383f76565cc71a4d940fe63ce13b168957ff9554d038ce06e11  ppc-vpx.diff
+b7d44b8784507f9392c657e2df7e85c0137033f7697b254ac3c18e13c55792e6e4a9d4a73a0eeb9a5ef1ef54d6fa1c511b3b8271f5dd174342b63bf38432ca17  qt6-6.11.0.loongarch64-crashpad.diff
+8141609f642d99b4c8a524528bae0c696a9aec15d1bf0a54309c6fc8dcece8a585d58c8192adfd0529fdedc8049f1362f76ee7d80734240209a02ff6c5e571f8  qt6-6.11.0.loongarch64-ffmpeg.diff
+a4ee816c869bef8886516903628df7381874a42b1d1510f9c0f10f7227b5735c45f3d3c4b676e04973e8ff09ad2e2e2d6c5506a36f470960cf575fa240bb03e5  qt6-6.11.0.loongarch64-fstat.diff
+cb34a48e53e92a218f03a4be6f95b853b167e57343268572d79a102b8f8e2762ce7a09712a1c2bfa0cb1d57d0fee4b6342bd0a207e48b96ac789c5d10a55b5ba  qt6-6.11.0.loongarch64-gcc.diff
+6b87ffe16e2d8d918ec02a398f044c53b2861e832e9b2bee452249f17218e104fb5de91aff2d8692d56bcf2e6960fb9b1ab02f99da72aedab6273e7af609968c  qt6-6.11.0.loongarch64-sandbox.diff
+cd985e1b2086da71271d36557aef516f01a19f2b117e9bd08258f3f872e7b011599a864e7b0bfcc137ca91ffc834529ef9c2eaff80ccd25e53d0a9244def0f5a  qt6-6.11.0.loongarch64.diff
+7147f4dc9d214127a3bd2ba2522e373b78b0ed1b98c24f2e636ec2ad1f395f55177122e647611eb5225ec3fd96fef7b32876c21bb61c92cb86ce65dd7180920a  qt6-6.11.0.rollup.diff
+"

@@ -1,0 +1,67 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=lighthouse
+pkgver=8.1.3
+pkgrel=0
+pkgdesc="Ethereum 2.0 Client"
+url="https://lighthouse.sigmaprime.io/"
+arch="x86_64 aarch64"  # limited by upstream
+license="Apache-2.0"
+makedepends="
+	cargo
+	cargo-auditable
+	clang21-dev
+	cmake
+	openssl-dev
+	protobuf-dev
+	samurai
+	zlib-dev
+	"
+options="net !check" # disable check as it takes too long
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sigp/lighthouse/archive/v$pkgver/lighthouse-$pkgver.tar.gz"
+
+# secfixes:
+#   8.1.2-r0:
+#     - GHSA-vxx9-2994-q338
+#     - GHSA-gc42-3jg7-rxr2
+#     - GHSA-6xvm-j4wr-6v98
+#   8.1.1-r0:
+#     - GHSA-4w32-2493-32g7
+#   2.2.0-r0:
+#     - CVE-2022-0778
+
+export OPENSSL_NO_VENDOR=true
+export RUSTFLAGS="$RUSTFLAGS -L /usr/lib/"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build \
+		--release --frozen \
+		--package lighthouse \
+		--features "portable"
+}
+
+check() {
+	cargo test \
+		--release --frozen \
+		--workspace \
+			--exclude ef_tests \
+			--exclude eth1 \
+			--exclude genesis
+}
+
+package() {
+	install -D -m755 "target/release/lighthouse" "$pkgdir/usr/bin/lighthouse"
+
+	install -Dm 644 -t "$pkgdir/usr/share/doc/lighthouse" README.md
+}
+
+sha512sums="
+b7387ed82963edfd3e584a091b495a38000d790d36ad844228ae545efb9d28e11f2309710757d2a5de29780b7b9355594103a3629a478cb5d7b453a6f19f9ca1  lighthouse-8.1.3.tar.gz
+"

@@ -1,0 +1,55 @@
+# Contributor: Jonas <spameier+alpine@proton.me>
+# Maintainer: Jonas <spameier+alpine@proton.me>
+pkgname=quickemu
+pkgver=4.9.9
+pkgrel=0
+pkgdesc="Quickly create and run optimised Windows, macOS and Linux virtual machines"
+# no edk2 on other architectures
+arch="aarch64 x86_64 loongarch64 riscv64"
+url="https://github.com/quickemu-project/quickemu"
+license="MIT"
+# deps from https://github.com/quickemu-project/quickemu/wiki/01-Installation#any-linux-installing-from-source
+depends="
+	bash
+	coreutils
+	curl
+	edk2
+	gawk
+	grep
+	jq
+	mesa-utils
+	pciutils
+	procps-ng
+	python3
+	qemu
+	qemu-bridge-helper
+	qemu-modules
+	sed
+	socat
+	spice-gtk-tools
+	swtpm
+	unzip
+	usbutils
+	util-linux
+	uuidgen
+	xdg-user-dirs
+	xorriso
+	xrandr
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/quickemu-project/quickemu/archive/refs/tags/$pkgver.tar.gz"
+options="!check"
+
+package() {
+	# main package
+	install -Dm755 quickemu quickget quickreport -t "$pkgdir"/usr/bin/
+
+	# docs
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/"$pkgname"/
+	install -Dm644 docs/quickemu.1 docs/quickget.1 -t "$pkgdir"/usr/share/man/man1/
+	install -Dm644 docs/quickemu_conf.5 -t "$pkgdir"/usr/share/man/man5/
+}
+
+sha512sums="
+f43b51720c8e8cd721cf9e3375e6bf63f1cfcade6b95ff4c7964ad9ab34dc4f3eb92f31ce199d58eff6f9979e9d1f529c6429cf4073db0d0b49996f17e8e0c5e  quickemu-4.9.9.tar.gz
+"

@@ -1,0 +1,38 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=lutok
+pkgver=0.6.1
+pkgrel=0
+pkgdesc="lightweight C++ API for Lua"
+url="https://github.com/freebsd/lutok"
+arch="all"
+license="BSD-3-Clause"
+_luaver=5.4
+depends_dev="lua$_luaver-dev"
+makedepends="$depends_dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/freebsd/lutok/releases/download/lutok-$pkgver/lutok-$pkgver.tar.gz"
+
+build() {
+	LUA_CFLAGS=$(pkg-config --cflags lua$_luaver) \
+		LUA_LIBS=$(pkg-config --libs lua$_luaver) \
+		./configure \
+			--build=$CBUILD \
+			--host=$CHOST \
+			--prefix=/usr \
+			--sysconfdir=/etc \
+			--mandir=/usr/share/man \
+			--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+ffb1463050fde421b7fded7c619b206faad5ec3ca6a4fbe3a79121d76e6445d8a1e2337f59c85103fa9616860728a804bd099e64618b201f0cfa38df41637618  lutok-0.6.1.tar.gz
+"

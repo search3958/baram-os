@@ -1,0 +1,61 @@
+# Contributor: Mika Havela <mika.havela@gmail.com>
+# Maintainer: Mika Havela <mika.havela@gmail.com>
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+pkgname=lua-socket
+_pkgname=luasocket
+pkgver=3.1.0
+pkgrel=2
+pkgdesc="Networking library for Lua"
+url="https://lunarmodules.github.io/luasocket/"
+arch="all"
+license="MIT"
+for _i in $_luaversions; do
+	makedepends="$makedepends lua$_i-dev"
+	subpackages="$subpackages lua$_i-socket:_split"
+done
+source="$pkgname-$pkgver.tar.gz::https://github.com/lunarmodules/luasocket/archive/refs/tags/v$pkgver.tar.gz
+	lua-cflags.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check"
+
+prepare() {
+	default_prepare
+	for _i in $_luaversions; do
+		cp -r "$builddir" "$srcdir"/build-$_i
+	done
+}
+
+build() {
+	for _i in $_luaversions; do
+		make -C "$srcdir"/build-$_i/src  LUAV=$_i \
+			all-unix
+	done
+}
+
+package() {
+	for _i in $_luaversions; do
+		cd "$srcdir"/build-$_i
+		make prefix=/usr DESTDIR="$pkgdir" LUAV=$_i \
+			install-unix
+	done
+}
+
+_split() {
+	local d= _ver=${subpkgname%%-*}
+	_ver=${_ver#lua}
+	pkgdesc="Networking library for Lua $_ver"
+	install_if="lua$_ver $pkgname=$pkgver-r$pkgrel"
+	for d in usr/lib/lua usr/share/lua; do
+		if [ -d "$pkgdir"/$d/$_ver ]; then
+			mkdir -p "$subpkgdir"/$d
+			mv "$pkgdir"/$d/$_ver "$subpkgdir"/$d/
+		fi
+	done
+}
+
+
+sha512sums="
+1e9e98484740ec6538fe3d2b0dab74d31f052956ecf9ee3b60e229f2d0b13fcc6d4aaf74cd2a3e2ee330333dabb316fe6a43c60baaea26f0cc01069b6aa4519b  lua-socket-3.1.0.tar.gz
+66d9b84a756800bab813042bd2ca4d473aa963686ec769be9171babbe5707ba94f62e7a5d4c0d14b71036c37953ee6ca157b97452f2b0e4196ffb81fdd7d8d21  lua-cflags.patch
+"

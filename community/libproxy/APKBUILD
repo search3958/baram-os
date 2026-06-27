@@ -1,0 +1,79 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libproxy
+pkgver=0.5.12
+pkgrel=0
+pkgdesc="Library handling all the details of proxy configuration"
+url="https://github.com/libproxy/libproxy"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	curl-dev
+	duktape-dev
+	glib-dev
+	gobject-introspection-dev
+	gsettings-desktop-schemas-dev
+	meson
+	python3
+	vala
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-bin
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/libproxy/libproxy/archive/refs/tags/$pkgver.tar.gz"
+
+# secfixes:
+#   0.4.15-r9:
+#     - CVE-2020-26154
+#   0.4.15-r8:
+#     - CVE-2020-25219
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dtests="$(want_check && echo true || echo false)" \
+		-Ddocs=false \
+		-Drelease=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+bin() {
+	pkgdesc="Binary to test libproxy"
+
+	amove usr/bin/proxy
+}
+
+gnome3() {
+	pkgdesc="$pkgdesc (GNOME 3 integration)"
+	install_if="$pkgname=$pkgver-r$pkgrel gnome-desktop"
+
+	amove usr/lib/libproxy/$pkgver/modules/config_gnome3.so
+	amove usr/lib/pxgsettings
+}
+
+kde() {
+	pkgdesc="$pkgdesc (KDE integration)"
+	install_if="$pkgname=$pkgver-r$pkgrel plasma-desktop"
+
+	amove usr/lib/libproxy/$pkgver/modules/config_kde.so
+}
+
+pacrunner() {
+	pkgdesc="$pkgdesc (pacrunner integration)"
+
+	amove usr/lib/libproxy/$pkgver/modules/config_pacrunner.so
+}
+
+sha512sums="
+19ffd1755e9ebfc645555e248020f9025ae81e93e73cbbb2583bff4495f7794b02ab1ef8ce944fa28e7604f5abf3e7e327c4966d21789648bd38f3d1c2cccecd  libproxy-0.5.12.tar.gz
+"

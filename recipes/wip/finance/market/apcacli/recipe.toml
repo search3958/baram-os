@@ -1,8 +1,0 @@
-#TODO compiled but not tested
-[source]
-git = "https://github.com/d-e-s-o/apcacli"
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

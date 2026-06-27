@@ -1,0 +1,49 @@
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Guy Godfroy <guy.godfroy@gugod.fr>
+pkgname=prometheus-wireguard-exporter
+pkgver=3.6.6
+pkgrel=3
+pkgdesc="A Prometheus exporter for WireGuard, written in Rust"
+url="https://github.com/MindFlavor/prometheus_wireguard_exporter"
+# ppc64le: https://github.com/briansmith/ring/issues/389
+# s390x, riscv64: cargo
+# loongarch64: ring crate fails to build
+arch="all !s390x !ppc64le !riscv64 !loongarch64"
+license="MIT"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-openrc"
+source="https://github.com/MindFlavor/prometheus_wireguard_exporter/archive/$pkgver/prometheus_wireguard_exporter-$pkgver.tar.gz
+	prometheus-wireguard-exporter.initd
+	prometheus-wireguard-exporter.confd
+	"
+options="net"
+builddir="$srcdir"/prometheus_wireguard_exporter-"$pkgver"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/prometheus_wireguard_exporter \
+		-t "$pkgdir"/usr/bin
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+2fd84a119c1b09f9025100ce8c92a99c2cc3e1dc0a7a565b26d3f819740db041e36265a28e2aa7f100af3ed5b2182867591df24a04b6b16c7b158f38afc3ef8f  prometheus_wireguard_exporter-3.6.6.tar.gz
+649b119f8a91835e1d9af225359d9d1aec2b4ef501a59c93dd23fefffec194fe2417815003edbe5a3de1323392d4ae045b9af26d4664d72d729fc5c7c6c63279  prometheus-wireguard-exporter.initd
+aaf53d1a2e3f8b672b05f73542b51fc52c0491eaba92b43da4fe43250ba880ca2a439b4faa0a9fbac58fbf8db8936780ec2dd48203c79ea80e87ce06655ac962  prometheus-wireguard-exporter.confd
+"

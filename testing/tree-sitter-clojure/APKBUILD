@@ -1,0 +1,29 @@
+# Contributor: Alex McGrath <amk@amk.ie>
+# Maintainer: Alex McGrath <amk@amk.ie>
+pkgname=tree-sitter-clojure
+pkgver=0.0.13
+pkgrel=0
+pkgdesc="Clojure for tree-sitter"
+url="https://github.com/sogaiu/tree-sitter-clojure"
+arch="all"
+license="CC0-1.0"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+install_if="tree-sitter-grammars"
+source="https://github.com/sogaiu/tree-sitter-clojure/archive/v$pkgver/tree-sitter-clojure-v$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build
+}
+
+check() {
+	tree-sitter test
+}
+
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install
+}
+
+sha512sums="
+8151da6f4929d0d2e08ff522dd23fb1a359522249a5bc36610ce3db18fd123d8f60052ae22375b827af4a37b6d09c9254a32bb102010e18551f7a099d2954567  tree-sitter-clojure-v0.0.13.tar.gz
+"

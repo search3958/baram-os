@@ -1,5 +1,0 @@
-[source]
-git = "https://github.com/ajeetdsouza/zoxide"
-shallow_clone = true
-[build]
-template = "cargo"

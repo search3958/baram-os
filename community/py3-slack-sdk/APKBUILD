@@ -1,0 +1,50 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-slack-sdk
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=slack-sdk
+pkgver=3.41.0
+pkgrel=0
+arch="noarch"
+pkgdesc="The Slack API Platform SDK for Python"
+url="https://pypi.python.org/project/slack_sdk"
+license="MIT"
+depends="
+	py3-aiohttp
+	py3-aiodns
+	"
+makedepends="
+	py3-setuptools
+	py3-wheel
+	py3-gpep517
+	"
+checkdepends="
+	py3-flask
+	py3-flask-sockets
+	py3-moto
+	"
+options="!check" # Missing checkdepend
+source="$pkgname-$pkgver.tar.gz::https://pypi.io/packages/source/s/slack_sdk/slack_sdk-$pkgver.tar.gz"
+builddir="$srcdir"/slack_sdk-$pkgver
+subpackages="$pkgname-pyc"
+replaces=py3-slack_sdk # Backwards compatibility
+provides=py3-slack_sdk=$pkgver-r$pkgrel # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH="$builddir" pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f5afd7f6213c31b5ccdf20054a991151d52d01cd9a6bb56cc771cccde2b5d6e6cddb6f3edf773aaebffe81dd53e9303f282383d39c7fe23ab17d94520e907a68  py3-slack-sdk-3.41.0.tar.gz
+"

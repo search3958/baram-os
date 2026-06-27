@@ -1,0 +1,90 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Maintainer: qaqland <qaq@qaq.land>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=sudo
+pkgver=1.9.17_p2
+pkgrel=1
+_realver=${pkgver/_/}
+pkgdesc="Give certain users the ability to run some commands as root"
+url="https://www.sudo.ws/sudo/"
+arch="all"
+license="custom ISC"
+makedepends_host="zlib-dev"
+subpackages="$pkgname-doc-extra::noarch $pkgname-doc $pkgname-dev"
+source="https://www.sudo.ws/dist/sudo-$_realver.tar.gz"
+options="suid"
+builddir="$srcdir/sudo-$_realver"
+
+provides="sudo-virt"
+provider_priority=100
+replaces="sudo-ldap"
+
+# secfixes:
+#   1.9.17_p1-r0:
+#     - CVE-2025-32462
+#     - CVE-2025-32463
+#   1.9.12_p2-r0:
+#     - CVE-2023-22809
+#   1.9.5_p2-r0:
+#     - CVE-2021-3156
+#   1.9.5-r0:
+#     - CVE-2021-23239
+#     - CVE-2021-23240
+#   1.8.31-r0:
+#     - CVE-2019-18634
+#   1.8.28-r0:
+#     - CVE-2019-14287
+#   1.8.20_p2-r0:
+#     - CVE-2017-1000368
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--libexecdir=/usr/lib \
+		--mandir=/usr/share/man \
+		--with-rundir=/run/sudo \
+		--with-vardir=/var/lib/sudo \
+		--with-tzdir=/usr/share/zoneinfo \
+		--with-logdir=/var/log \
+		--with-iologdir=/var/log/sudo-io \
+		--with-logpath=/var/log/sudo.log \
+		--with-relaydir=/var/log/sudo_logsrvd \
+		--disable-nls \
+		--enable-pie \
+		--with-env-editor \
+		--with-mdoc \
+		--without-pam \
+		--without-skey \
+		--with-sendmail=/usr/sbin/sendmail \
+		--with-passprompt="[sudo] password for %p: "
+
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	# the sudo's mkinstalldir script miscreates the leading
+	# path components with bad permissions. fix this.
+	install -dm0755 "$pkgdir"/var "$pkgdir"/var/db
+	make -j1 DESTDIR="$pkgdir" install
+
+	# Exactly the same as /etc/sudoers
+	rm -v "$pkgdir"/etc/sudoers.dist
+}
+
+extra() {
+	pkgdesc="$pkgdesc (examples and news)"
+
+	amove usr/share/doc
+}
+
+sha512sums="
+c8abd6ca56e54a081c9ef1e9f6579d1db5b93ff857e60d1f58d1f425d7dc23c31c58d40b7819780688f66dfdf87a1f3bbe0a78387b007e2beb1b0e546203ea93  sudo-1.9.17p2.tar.gz
+"

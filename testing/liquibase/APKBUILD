@@ -1,0 +1,38 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Curt Tilmes <Curt.Tilmes@nasa.gov>
+# Maintainer: Curt Tilmes <Curt.Tilmes@nasa.gov>
+pkgname=liquibase
+pkgver=4.9.1
+pkgrel=0
+pkgdesc="Source Control for your Database"
+url="https://www.liquibase.org/"
+arch="noarch !riscv64" # blocked by openjdk8
+license="Apache-2.0"
+depends="java-jre bash"
+subpackages="$pkgname-doc"
+source="https://github.com/liquibase/liquibase/releases/download/v$pkgver/liquibase-$pkgver.tar.gz"
+builddir="$srcdir"
+options="!check" # No tests
+
+# secfixes:
+#   4.9.1-r0:
+#     - CVE-2022-0839
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/"$pkgname"
+	for file in lib liquibase liquibase.jar; do
+		cp -r $file "$pkgdir"/usr/share/"$pkgname"
+	done
+	mkdir -p "$pkgdir"/usr/bin
+	ln -s /usr/share/liquibase/liquibase "$pkgdir"/usr/bin/liquibase
+
+	mkdir -p "$pkgdir"/usr/share/doc/"$pkgname"
+	for file in ABOUT.txt GETTING_STARTED.txt LICENSE.txt README.txt \
+		changelog.txt; do
+		cp -r $file "$pkgdir"/usr/share/doc/"$pkgname"
+	done
+}
+
+sha512sums="
+8daa0477e4e3dc18f2f8008b419827dd622b8d7981ebb401ac472f6d6c5ed6b2e49d4ec7d1d30e197d944752838437ffeec3d77abd4d8da219db25c8dde832d9  liquibase-4.9.1.tar.gz
+"

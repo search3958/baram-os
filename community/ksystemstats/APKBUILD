@@ -1,0 +1,70 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=ksystemstats
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="A plugin based system monitoring daemon"
+# armhf blocked by qt6-qtdeclarative -> kio
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+license="LicenseRef-KDE-Accepted-GPL AND LicenseRef-KDE-Accepted-LGPL AND CC0-1.0"
+makedepends="
+	eudev-dev
+	extra-cmake-modules
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kio-dev
+	libksysguard-dev
+	libnl3-dev
+	lm-sensors-dev
+	networkmanager-qt-dev
+	qt6-qtbase-dev
+	samurai
+	solid-dev
+	"
+checkdepends="xwayland-run"
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+subpackages="
+	$pkgname-systemd
+	$pkgname-lang
+	"
+_repo_url="https://invent.kde.org/plasma/ksystemstats.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/ksystemstats-$pkgver.tar.xz"
+case "$CARCH" in
+	# s390x and ppc6l4 have no enabled tests at this moment
+	s390x|ppc64le) options="$options !check" ;;
+esac
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	local skipped_tests="ksystemstatstest"
+	local tests=""
+	case "$CARCH" in
+		# Test thinks these architectures are AMD64, unsupported upstream
+		ppc64le|s390x) tests="$tests TestLinuxCpu" ;;
+		*) ;;
+	esac
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	wlheadless-run -- ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a235221dc15b4d7e5d926e7c61ed28a1744aebcbf458c2174be98ba13d0557db14d09e56a49aba7cdc2a072ba59a1e1605d00c23ea1f1c97064e9cdf7ab58186  ksystemstats-6.7.1.tar.xz
+"

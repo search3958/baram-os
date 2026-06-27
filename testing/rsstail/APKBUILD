@@ -1,0 +1,28 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=rsstail
+pkgver=2.2
+pkgrel=0
+pkgdesc="tail for rss feeds"
+url="https://www.vanheusden.com/rsstail/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="libmrss-dev curl-dev"
+checkdepends="cppcheck"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tgz::https://github.com/folkertvanheusden/$pkgname/archive/refs/tags/v$pkgver.tar.gz
+	makefile-suppor-install-destdir-path.patch"
+
+check() {
+	make check
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin
+	make DESTDIR=$pkgdir install
+}
+
+sha512sums="
+cc80c2cf03d5bb52f4e531e47c10ea29a49f6b4418fb37f29c21889826e4c1d3594063f2b8ddadf9d2c7af103e29a29c0166fc2f138a144235f9064e9601b03d  rsstail-2.2.tgz
+aa935fe0d41ebde9d1da8acc7987c3b8c71a3c67600ef95afb2c36349709bfbcf9ad1eafb2c59532935cd82f7e9556721062d6571216fa5420b7a9912f32a582  makefile-suppor-install-destdir-path.patch
+"

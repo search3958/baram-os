@@ -1,0 +1,41 @@
+# Contributor: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+# Maintainer: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+pkgname=wiki-tui
+pkgver=0.9.2
+pkgrel=0
+pkgdesc="Simple and easy to use Wikipedia Text User Interface"
+url="https://github.com/Builditluc/wiki-tui"
+arch="all"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Builditluc/wiki-tui/archive/v$pkgver.tar.gz"
+options="net" # cargp fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm 755 target/release/wiki-tui -t "$pkgdir"/usr/bin
+	install -Dm 644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+	install -Dm 644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+1cf07dc6ca815eec1ce58bd6d0fd28ede6f147303f2e5a11c6d6258ae1883ee099bfd2beec4a0e0e5a0cceac7d63f2d492ebdb26d0356790a4abfb0a78861ddb  wiki-tui-0.9.2.tar.gz
+"

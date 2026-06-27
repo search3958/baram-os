@@ -1,0 +1,30 @@
+# Contributor: Dmitry Zakharchenko <dmitz@disroot.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=py3-cjkwrap
+pkgver=2.2
+pkgrel=8
+pkgdesc="Library for wrapping and filling UTF-8 CJK text"
+url="https://gitlab.com/fgallaire/cjkwrap"
+arch="noarch"
+license="LGPL-3.0-or-later"
+makedepends="py3-gpep517 py3-setuptools"
+options="!check" # no test suite
+subpackages="$pkgname-pyc"
+source="https://gitlab.com/fgallaire/cjkwrap/-/archive/v$pkgver/cjkwrap-v$pkgver.tar.gz"
+builddir="$srcdir/cjkwrap-v$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+9f744c672d5b045aa3bd80c9f13817706d459ffdbd4478a25c528a7fd85354934d938023eeaf14cfcca12f49654612f344c0f659305c0c493a664c9a684579e1  cjkwrap-v2.2.tar.gz
+"

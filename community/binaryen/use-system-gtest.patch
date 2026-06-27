@@ -1,0 +1,36 @@
+Patch-Source: https://src.fedoraproject.org/rpms/binaryen/blob/f44/f/binaryen-use-system-gtest.patch
+--
+diff --git a/test/gtest/CMakeLists.txt b/test/gtest/CMakeLists.txt
+index 058766f58..9e8c68b8d 100644
+--- a/test/gtest/CMakeLists.txt
++++ b/test/gtest/CMakeLists.txt
+@@ -1,8 +1,5 @@
+ if(BUILD_FUZZTEST)
+   include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/third_party/fuzztest)
+-else()
+-  include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/third_party/googletest/googletest/include)
+-  include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/third_party/googletest/googlemock/include)
+ endif()
+ 
+ set(unittest_SOURCES
+diff --git a/third_party/CMakeLists.txt b/third_party/CMakeLists.txt
+index 2888d8ec7..7f2c05b19 100644
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -1,15 +1,7 @@
+ if(BUILD_FUZZTEST)
+   add_subdirectory(fuzztest)
+ elseif(BUILD_TESTS)
+-  # fuzztest includes gtest, but if we're not building fuzztest, build gtest ourselves.
+-  add_library(gtest STATIC googletest/googletest/src/gtest-all.cc)
+-  add_library(gtest_main STATIC googletest/googletest/src/gtest_main.cc)
+-  target_compile_options(gtest PRIVATE "-fno-rtti")
+-  target_compile_options(gtest_main PRIVATE "-fno-rtti")
+-  include_directories(
+-    googletest/googletest
+-    googletest/googletest/include
+-  )
++  find_package(GTest)
+ endif()
+ 
+ if(BUILD_LLVM_DWARF)

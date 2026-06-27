@@ -1,0 +1,45 @@
+# Contributor: Jonas <spameier+alpine@proton.me>
+# Maintainer: Jonas <spameier+alpine@proton.me>
+pkgname=swtpm
+pkgver=0.10.1
+pkgrel=2
+pkgdesc="Libtpms-based TPM emulator with socket, character device, and Linux CUSE interface"
+url="https://github.com/stefanberger/swtpm"
+arch="all"
+license="BSD-3-Clause"
+makedepends="autoconf automake bash expect gawk gnutls gnutls-dev gnutls-utils
+	json-glib-dev libseccomp-dev libtasn1-dev libtool libtpms-dev openssl-dev>3
+	python3 socat
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/stefanberger/swtpm/archive/v$pkgver.tar.gz"
+options="!check" # needs /dev/tpm0 among others
+
+prepare() {
+	default_prepare
+	NOCONFIGURE=1 ./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--libdir=/usr/lib \
+		--with-openssl \
+		--with-tss-user=root \
+		--with-tss-group=root
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+5711008866351b9408a5c6ade83157c55388617d499b7564daa83d640e9f81fa269bf54a40f6c4caa1c7186feefdfee76a05af1cc246c481708cb85d02a8c7e2  swtpm-0.10.1.tar.gz
+"

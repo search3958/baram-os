@@ -1,0 +1,59 @@
+# Contributor: Dhruvin Gandhi <contact@dhru.vin>
+# Maintainer: Leon White <badfunkstripe@gmail.com>
+pkgname=hledger-iadd
+pkgver=1.3.22
+pkgrel=1
+pkgdesc="A terminal UI as drop-in replacement for hledger add"
+url="https://github.com/hpdeifel/hledger-iadd#readme"
+arch="aarch64 x86_64" # limited by ghc
+license="BSD-3-Clause"
+makedepends="
+	cabal
+	ghc
+	libffi-dev
+	ncurses-dev
+	zlib-dev
+	"
+_llvmver=15
+options="net"
+source="https://hackage.haskell.org/package/hledger-iadd-$pkgver/hledger-iadd-$pkgver.tar.gz
+	cabal.project.freeze
+	hledger-1.52.patch
+	"
+
+export CABAL_DIR="$srcdir"/cabal
+export PATH="/usr/lib/llvm$_llvmver/bin:$PATH"
+
+cabal_update() {
+	cd "$builddir"
+	cabal v2-update
+	cabal v2-freeze --shadow-installed-packages
+	mv cabal.project.freeze "$startdir"
+}
+
+prepare() {
+	default_prepare
+	cp "$srcdir"/cabal.project.freeze .
+}
+
+build() {
+	cabal update
+	# Temporarily disable --enable-relocatable due to error
+	# Library directory of a dependency: [...] is not relative to the installation
+	# prefix: "/usr"
+	cabal build --prefix=/usr
+}
+
+check() {
+	cabal test
+}
+
+package() {
+	install -Dm755 "$(cabal list-bin hledger-iadd)" "$pkgdir"/usr/bin/hledger-iadd
+}
+
+sha512sums="
+ee271382edb98a687166240f473158e62ce7a1607288f8429b71f9bec0946b9e034993494e48cf5227ea5774cfb8c5ea52de6ca3be00c60e6a4222de61cdcdc4  hledger-iadd-1.3.22.tar.gz
+e41084999e254459d7db2bf9cc2ac7b35702adb24a200058fe3b18808d8494d21c140a76c01b515d3a7669bc953db6be1b8d75ca1a23ab687b6b4469c5af5a4d  cabal.project.freeze
+05236f8480f9605ff85fc169720d4e5243d633e77463f0e1020cf87636692a90b17dd7f9988ce5685fdb0dc9a2c641ff4c407ad3ca4695f5820562b28663bffe  hledger-1.52.patch
+"

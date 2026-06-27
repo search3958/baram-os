@@ -1,0 +1,121 @@
+maintainer="Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>"
+pkgname=mint-themes
+pkgver=2.4.0
+pkgrel=0
+pkgdesc="Mint themes for GNOME/GTK desktops"
+options="!check" # It is a theme
+url="https://github.com/linuxmint/mint-themes"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="mint-x-theme mint-y-theme"
+makedepends="py3-libsass"
+source="$pkgname-$pkgver.tar.gz::https://github.com/linuxmint/mint-themes/archive/$pkgver.tar.gz"
+subpackages="
+	$pkgname-doc
+	mint-x-theme:mint_x_theme
+	mint-x-theme-gtk3:mint_x_theme_gtk3
+	mint-x-theme-gtk4:mint_x_theme_gtk4
+	mint-x-theme-metacity:mint_x_theme_metacity
+	mint-x-theme-xfwm4:mint_x_theme_xfwm4
+	mint-y-theme:mint_y_theme
+	mint-y-theme-gtk3:mint_y_theme_gtk3
+	mint-y-theme-gtk4:mint_y_theme_gtk4
+	mint-y-theme-metacity:mint_y_theme_metacity
+	mint-y-theme-xfwm4:mint_y_theme_xfwm4
+	"
+
+build() {
+	make
+}
+
+package() {
+	rm -rf "$builddir/usr/share/themes/Linux Mint" \
+	       "$builddir"/usr/share/themes/*/cinnamon
+	mkdir -p "$pkgdir"
+	mv "$builddir"/usr "$pkgdir"/
+
+	install -Dm644 "$builddir"/debian/changelog \
+		       "$pkgdir"/usr/share/doc/"$pkgname"/changelog
+	install -Dm644 "$builddir"/debian/copyright \
+		       "$pkgdir"/usr/share/doc/"$pkgname"/copyright
+}
+
+mint_x_theme() {
+	pkgdesc="Mint-X themes"
+	depends=""
+	amove usr/share/themes/Mint-X*/index.theme
+}
+
+mint_x_theme_gtk3() {
+	pkgdesc="GTK+3.0 assets for Mint themes"
+	depends=""
+	install_if="mint-x-theme=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/share/themes/Mint-X*/gtk-3.0
+}
+
+mint_x_theme_gtk4() {
+	pkgdesc="GTK+4.0 assets for Mint themes"
+	depends=""
+	install_if="mint-x-theme=$pkgver-r$pkgrel gtk4.0"
+
+	amove usr/share/themes/Mint-X*/gtk-4.0
+}
+
+mint_x_theme_xfwm4() {
+	pkgdesc="xfwm assets for Mint themes"
+	depends=""
+	install_if="mint-x-theme=$pkgver-r$pkgrel xfwm4"
+
+	amove usr/share/themes/Mint-X*/xfwm4
+}
+
+mint_x_theme_metacity() {
+	pkgdesc="metacity assets for Mint themes"
+	depends=""
+	install_if="mint-x-theme=$pkgver-r$pkgrel metacity"
+
+	amove usr/share/themes/Mint-X*/metacity-1
+}
+
+mint_y_theme() {
+	pkgdesc="Mint-Y themes"
+	depends=""
+	amove usr/share/themes/Mint-Y*/index.theme
+}
+
+mint_y_theme_gtk3() {
+	pkgdesc="GTK+3.0 assets for Mint-Y themes"
+	depends=""
+	install_if="mint-y-theme=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/share/themes/Mint-Y*/gtk-3.0
+}
+
+mint_y_theme_gtk4() {
+	pkgdesc="GTK+4.0 assets for Mint-Y themes"
+	depends=""
+	install_if="mint-y-theme=$pkgver-r$pkgrel gtk4.0"
+
+	amove usr/share/themes/Mint-Y*/gtk-4.0
+}
+
+mint_y_theme_xfwm4() {
+	pkgdesc="xfwm assets for Mint-Y themes"
+	depends=""
+	install_if="mint-y-theme=$pkgver-r$pkgrel xfwm4"
+
+	amove usr/share/themes/Mint-Y*/xfwm4
+}
+
+mint_y_theme_metacity() {
+	pkgdesc="metacity assets for Mint-Y themes"
+	depends=""
+	install_if="mint-y-theme=$pkgver-r$pkgrel metacity"
+
+	amove usr/share/themes/Mint-Y*/metacity-1
+}
+
+sha512sums="
+7a78c6acfbb88526b4d19a864ca018256af86e7923c6fde164e19d5146bbce564716f49ee7b32eb200c52efe75d123fc7a30a3684074b187037e00388a095c7f  mint-themes-2.4.0.tar.gz
+"

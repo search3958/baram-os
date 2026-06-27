@@ -1,0 +1,23 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=sloci-image
+pkgver=0.1.2
+pkgrel=1
+pkgdesc="Simple script for creating single-layer OCI images"
+url="https://github.com/jirutka/sloci-image"
+arch="noarch"
+license="MIT"
+depends="/bin/sh tar"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jirutka/$pkgname/archive/v$pkgver.tar.gz"
+
+check() {
+	./sloci-image --version
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+d664c1a897c09e61aaead025286ecdc75de79172f9f036b44223d7d3ace16cc8a91e0ed3877b87d07a4943da877c538878e4873498273e794f7a789f7a0d769a  sloci-image-0.1.2.tar.gz
+"

@@ -1,0 +1,35 @@
+# Contributor: VÖRÖSKŐI András <voroskoi@gmail.com>
+maintainer="Jakko <jahau@rocketmail.com>"
+pkgname=xfce4-pulseaudio-plugin
+pkgver=0.5.1
+pkgrel=0
+pkgdesc="Xfce panel plugin for pulseaudio mixer control"
+url="https://docs.xfce.org/panel-plugins/xfce4-pulseaudio-plugin"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	exo-dev
+	keybinder3-dev
+	libnotify-dev
+	libxfce4ui-dev
+	meson
+	pulseaudio-dev
+	xfce4-panel-dev
+"
+options="!check" # Check is empty
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-pulseaudio-plugin/${pkgver%.*}/xfce4-pulseaudio-plugin-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+2041afa32ed971a8f725d5bb7c4364bb55a33127afc11681a3fb009a6b614d760c7c9466d1fed6530564695f4579a9cc881d21d994b5fba67a5f4dc5239a4cdd  xfce4-pulseaudio-plugin-0.5.1.tar.xz
+"

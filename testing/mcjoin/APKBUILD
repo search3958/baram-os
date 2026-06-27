@@ -1,0 +1,30 @@
+# Contributor: Nico de Haer <nico.dehaer@gmail.com>
+# Maintainer: Nico de Haer <nico.dehaer@gmail.com>
+pkgname=mcjoin
+pkgver=2.11
+pkgrel=0
+pkgdesc="Tiny multicast testing tool"
+url="https://github.com/troglobit/mcjoin"
+license="ISC"
+arch="all"
+subpackages="$pkgname-doc"
+source="https://github.com/troglobit/mcjoin/releases/download/v$pkgver/mcjoin-$pkgver.tar.gz"
+options="!check" # no test suite
+
+prepare() {
+ 	default_prepare
+	update_config_guess
+}
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+4a1af8dae08e7ee5cc168b2a9b5f921f5f11be1d9dc0d9b0a3d5f1f7f531c22414be6edf448dd52f543ad27c66cab3663105bd7efc621f13e575d47d5434adff  mcjoin-2.11.tar.gz
+"

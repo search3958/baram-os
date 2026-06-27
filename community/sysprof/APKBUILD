@@ -1,0 +1,47 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=sysprof
+pkgver=50.0
+pkgrel=0
+pkgdesc="System-wide profiler for Linux"
+url="http://www.sysprof.com/"
+arch="all"
+license="GPL-2.0-or-later"
+depends_dev="$pkgname=$pkgver-r$pkgrel $pkgname-static=$pkgver-r$pkgrel" # sysprof's lib setup is a bit weird...
+makedepends="
+	desktop-file-utils
+	elfutils-dev
+	elogind-dev
+	glib-dev
+	gtk4.0-dev
+	itstool
+	json-glib-dev
+	libadwaita-dev
+	libdex-dev
+	libpanel-dev
+	libunwind-dev
+	meson
+	polkit-dev
+	"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc $pkgname-lang $pkgname-systemd"
+source="https://download.gnome.org/sources/sysprof/${pkgver%.*}/sysprof-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Dgtk=true \
+		-Dsystemdunitdir=lib/systemd/system \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+da07515df722b59550b45c70a2f4c323defa6e561701091e33924499c9ee512ba4584cb3700936ec9a152b64dc0048811671cf37b1093b217c285c22c35d30e5  sysprof-50.0.tar.xz
+"

@@ -1,0 +1,50 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Runxi Yu <me@runxiyu.org>
+maintainer="Runxi Yu <me@runxiyu.org>"
+pkgname=groff
+pkgver=1.24.1
+pkgrel=0
+pkgdesc="GNU troff text-formatting system"
+url="https://www.gnu.org/software/groff/groff.html"
+arch="all"
+license="GPL-3.0-or-later"
+depends="perl"
+makedepends="bison zlib-dev texinfo"
+checkdepends="diffutils"
+subpackages="$pkgname-doc"
+source="
+	https://ftp.gnu.org/gnu/groff/groff-$pkgver.tar.gz
+	fix-neqn-wrapper.patch
+"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--without-x \
+		--disable-rpath
+	make
+}
+
+check() {
+	export GROFF_BIN_PATH="$builddir"
+	export GROFF_TMAC_PATH="$builddir/tmac"
+	export GROFF_FONT_PATH="$builddir/font"
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -rf "$pkgdir"/usr/lib/charset.alias
+	rmdir -p "$pkgdir"/usr/lib 2>/dev/null || true
+
+	# Prevent conflict with mandoc-doc
+	rm -f "$pkgdir"/usr/share/man/man1/soelim.1 \
+		"$pkgdir"/usr/share/man/man7/roff.7
+}
+
+sha512sums="
+86545c67042ad034a464a371d0587f8f0b449070c82fb1cfbcd0368c2e249624778d43e95d6cacd79cbe5b441142db96fdc3ab6222638337702f05a71c0990be  groff-1.24.1.tar.gz
+0afdd15b08d4aa7fc375b4f48dd291b3a63282a0ac154c22a3e9d0cd536096515d23734b068d1764d8693b3c5cabe9c735dca356d92e81c649527fe3d98013b5  fix-neqn-wrapper.patch
+"

@@ -1,0 +1,39 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-ninja
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=django-ninja
+pkgver=1.6.2
+pkgrel=0
+pkgdesc="Fast, Async-ready, Openapi, type hints based framework for building APIs"
+url="https://pypi.python.org/project/django-ninja"
+arch="noarch"
+license="MIT"
+depends="py3-django py3-pydantic"
+checkdepends="celery py3-pytest py3-pytest-cov py3-pytest-django py3-pytest-asyncio py3-psycopg2"
+makedepends="py3-setuptools py3-gpep517 py3-wheel py3-flit-core"
+source="$pkgname-$pkgver.tar.gz::https://github.com/vitalik/django-ninja/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	msg "Running tests"
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+dd8a7d04d9798b038a27e3815df6b8c5c2cec9cf47af80a6c6bfaee861ed18d061c1e6a85f575e6848b8eaf430ae2b11e17adab96c2b2a6fc73bd09a5db19e8a  py3-django-ninja-1.6.2.tar.gz
+"

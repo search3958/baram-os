@@ -1,0 +1,73 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt5-qtwayland
+pkgver=5.15.18_git20251101
+pkgrel=0
+_module="${pkgname#qt5-}"
+_pkgver=df49b9f3badce793a0a9ea850cf1a02cc5bafef6
+_fullname=$_module-$_pkgver
+arch="all !armhf" # armhf blocked by qt5-qtdeclarative
+url="https://www.qt.io/developers/"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+pkgdesc="Provides APIs for Wayland"
+depends_dev="
+	libxcomposite-dev
+	libxkbcommon-dev
+	qt5-qtquickcontrols2-dev
+	wayland-dev
+	"
+makedepends="$depends_dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	vulkan-headers
+	"
+subpackages="$pkgname-dev"
+
+source="https://dev.alpinelinux.org/archive/qt/$_fullname.tar.xz
+	0001-Update-wayland.xml-to-version-1.23.0.patch
+	"
+builddir="$srcdir/$_fullname"
+
+_disturl="dev.alpinelinux.org:/archive/qt/"
+snapshot() {
+	clean
+	makedepends="git xz rsync tar" deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	git clone --filter=tree:0 https://invent.kde.org/qt/qt/$_module.git .
+	git archive --format tar --prefix=$_fullname/ $_pkgver > "$SRCDEST"/$_fullname.tar
+	xz -vv -T0 -9 -e "$SRCDEST"/$_fullname.tar
+	rsync --progress -La "$SRCDEST"/$_fullname.tar.xz $_disturl
+}
+
+# Make sure this package is installed when a Qt application is installed and a
+# Wayland session is available on the system
+install_if="wayland-libs-server qt5-qtbase-x11"
+
+prepare() {
+	default_prepare
+
+	# We need to make the build system think we're running in a git repository
+	# so it correctly symlinks during the build
+	mkdir .git
+}
+
+build() {
+	qmake-qt5
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+
+	# Drop QMAKE_PRL_BUILD_DIR because reference the build dir
+	find "$pkgdir/usr/lib" -type f -name '*.prl' \
+		-exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
+}
+
+sha512sums="
+e200a93a5182217e66bd9eeb12639712afddeda5cde1617caea413737bbf0fe81eca5e613cfa569a661bd51f50f492318f1a812753a7c8c0d350a8bc1047a5a8  qtwayland-df49b9f3badce793a0a9ea850cf1a02cc5bafef6.tar.xz
+5d174c3e35decc1f1d05bf088c9947038d82ecb621b97783634e287a31dcd774086aa68ef67443f9cd96b6bbbe4518451aef36c65b197f3efb4c24e024d5dec8  0001-Update-wayland.xml-to-version-1.23.0.patch
+"

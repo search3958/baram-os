@@ -1,0 +1,29 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=libcotp
+pkgver=4.0.1
+pkgrel=0
+pkgdesc="Library for generating TOTP and HOTP"
+url="https://github.com/paolostivanin/libcotp"
+license="Apache-2.0"
+arch="all"
+makedepends="cmake openssl-dev samurai"
+subpackages="$pkgname-dev"
+source="https://github.com/paolostivanin/libcotp/archive/v$pkgver/libcotp-$pkgver.tar.gz"
+options="!check" # needs criterion
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DHMAC_WRAPPER=openssl
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0589ed8309c34b6869dddf961474a2da9eacdd1c0501b65ee6e9256420d933ad6361c07a11463294860eccd66b44fe71c9d0590fa5348b968c18c843f7c25f47  libcotp-4.0.1.tar.gz
+"

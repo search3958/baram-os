@@ -1,0 +1,41 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=lucene++
+pkgver=3.0.9
+pkgrel=2
+pkgdesc="C++ port of the popular Java Lucene library"
+url="https://github.com/luceneplusplus/LucenePlusPlus"
+arch="all"
+license="LGPL-3.0-or-later OR Apache-2.0"
+depends_dev="boost-dev zlib-dev"
+makedepends="$depends_dev cmake linux-headers samurai"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/luceneplusplus/LucenePlusPlus/archive/rel_$pkgver.tar.gz
+	gcc11.patch
+	"
+builddir="$srcdir/LucenePlusPlus-rel_$pkgver"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_CXX_FLAGS="$CXXFLAGS -DBOOST_VARIANT_USE_RELAXED_GET_BY_DEFAULT" \
+		-DINSTALL_GTEST=OFF \
+		-DENABLE_TEST="$(want_check && echo ON || echo OFF)" \
+		-DCOTIRE_ADDITIONAL_PREFIX_HEADER_IGNORE_PATH=/usr/include/fortify
+	cmake3.5 --build build
+}
+
+check() {
+	./build/src/test/lucene++-tester --gtest_filter=-DateToolsTest.testParseDateLocale:IndexOutputTest.testCopyBytes
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake3.5 --install build
+}
+
+sha512sums="
+220fe1b46518018d176ae16434f03b1453fc345d8d552a294d1af927ea4ab69a83ee4b03c82938e648edaa3e7064526ca047fc86e1c71743b0958b520d59e225  lucene++-3.0.9.tar.gz
+c2c13c98495fce3f6c7a92e6d08ceb503e585c83f048ca1023763fe283fca0f4be56e793b0f57b56602f68f9a45d6798b1a7f09cfee7fd16430b3592bb8b7811  gcc11.patch
+"

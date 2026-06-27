@@ -1,0 +1,36 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Christian Kampka <christian@kampka.net>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=po4a
+pkgver=0.74
+pkgrel=1
+pkgdesc="Tools for helping translation of documentation"
+url="https://po4a.org/"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="diffutils gettext perl perl-pod-parser perl-syntax-keyword-try"
+makedepends="docbook-xsl perl-module-build"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://github.com/mquinson/po4a/releases/download/v$pkgver/po4a-$pkgver.tar.gz"
+options="!check" # test_requires missing: SGMLS and Unicode::GCString
+
+build() {
+	perl Build.PL \
+		--installdirs=vendor \
+		--create_packlist=0
+	./Build
+}
+
+check() {
+	./Build test
+}
+
+package() {
+	./Build install --destdir="$pkgdir"
+}
+
+sha512sums="
+2156b95a62788694b4c47dc651f7a0571b2e15159d6d8bcee0c6b0538aecd5b81012ae76e15ef333a7662f6b1e59b717f8bbe8137126042ae2cfe614db5b6d66  po4a-0.74.tar.gz
+"

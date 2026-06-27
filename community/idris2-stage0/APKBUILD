@@ -1,0 +1,48 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=idris2-stage0
+pkgver=0.8.0
+pkgrel=2
+pkgdesc="Idris 2 version used to bootstrap the Idris 2 compiler"
+url="https://www.idris-lang.org"
+arch="all"
+license="BSD-3-Clause"
+depends="chez-scheme gmp-dev"
+makedepends="bash"
+source="https://github.com/idris-lang/Idris2/archive/v$pkgver/idris2-$pkgver.tar.gz
+	fix-expected-cat-err.patch"
+builddir="$srcdir/Idris2-$pkgver"
+
+# Provide idris2-bootstrap for testing/idris2.
+# See the comment in testing/idris2 for more information.
+provides="idris2-bootstrap=$pkgver-r$pkgrel"
+provider_priority=1 # lowest
+
+# Only run tests on x86_64, upstream doesn't seem to support
+# and test the test suite on any other architecture.
+#
+# See: https://github.com/idris-lang/Idris2/issues/1617
+case "$CARCH" in
+x86_64) ;;
+*) options="!check" ;;
+esac
+
+build() {
+	# Bootstrap Idris 2 compiler from scheme sources.
+	make -j1 bootstrap PREFIX=/usr SCHEME=chez
+}
+
+check() {
+	unset CFLAGS CXXFLAGS CPPFLAGS LDFLAGS LDLIBS
+	# chez/channels009 is a timing-dependent test case.
+	make -j1 bootstrap-test except="chez/channels009"
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX="/usr" install
+}
+
+sha512sums="
+006dd9f4f36ae0d54d63670379de9978355d4493c9fb4134c96caf75b0feacf81a78daff889aa1d91dbbcc62141f391caee1911658e638dc295e7f8015215557  idris2-0.8.0.tar.gz
+6438bf25c0e9dede104a3b73dfe3a1bd4f1615d6c37589058b9192f5813ab6e41833319a1a2f9aaa6e2559d198697f3d4a27fc6908fe7ae193af03085af268b5  fix-expected-cat-err.patch
+"

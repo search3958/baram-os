@@ -1,0 +1,45 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=display-switch
+pkgver=1.4.1
+pkgrel=0
+pkgdesc="utility for switching displays over DDC/CI on USB disconnect/connect events"
+url="https://github.com/haimgel/display-switch"
+# nix 0.10 (uinput): MAP_32BIT on aarch64 musl; ioctl-sys 0.5.2 (i2c-linux): no ppc64le/s390x/riscv64/loongarch64
+arch="all !aarch64 !ppc64le !s390x !riscv64 !loongarch64"
+license="MIT"
+makedepends="cargo eudev-dev libusb-dev cargo-auditable"
+install="$pkgname.pre-install"
+options="net"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/haimgel/display-switch/archive/$pkgver.tar.gz
+	50-i2c.rules
+	skip-wake-displays-test-without-uinput.patch
+	"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/display_switch -t "$pkgdir"/usr/bin/
+
+	install -Dm644 "$srcdir"/50-i2c.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/50-i2c.rules
+}
+
+sha512sums="
+11c62d0dbcbd278c05b4ebf40a6534ba64d391d6f730efd002e4f87efac5ff49b27156c14b2c0c7b9e50b8e158675155a9a2218c69e7b6e72369039e446d2a0a  display-switch-1.4.1.tar.gz
+b2c9d0bf35b75f4b52f9db9e243912d356e224afac55348c9702349b74d603d3c659b22f808e59f2e8e45d605c8c244d7c07484186a31e7a3fe3ca72a1715e1e  50-i2c.rules
+3b3b96dbe64e986c4d27afebb658b4e59c77c4147fb5a0ec2affafa1644856adb3fc83564fe7c2e0d95a8c908cca84e4a8200f31ed954d30a73b54138a01b665  skip-wake-displays-test-without-uinput.patch
+"

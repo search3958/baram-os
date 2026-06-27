@@ -1,0 +1,40 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=hw-probe
+pkgver=1.6.6
+pkgrel=2
+pkgdesc="A tool to probe for hardware and upload result to the Linux Hardware Database"
+url="https://github.com/linuxhw/hw-probe"
+arch="noarch"
+license="LGPL-2.1-or-later OR BSD-4-Clause"
+makedepends="perl-dev"
+depends="
+	acpica
+	curl
+	dmidecode
+	hdparm
+	hwdata
+	hwinfo
+	i2c-tools
+	memtester
+	perl
+	perl-digest-sha1
+	perl-libwww
+	smartmontools
+	sysstat
+	xz
+	"
+options="!check" # no test available
+source="$pkgname-$pkgver.tar.gz::https://github.com/linuxhw/hw-probe/archive/$pkgver.tar.gz"
+
+build() {
+	make PREFIX=/usr
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+ca645549d0b8f8a8c1c8f69498dd8591b55a2a007850b508fe1d6a48cd7c6e3ee25102ed348cb9578989014b7f069c4b9453ed7e516ce57dcbded1166c6ad017  hw-probe-1.6.6.tar.gz
+"

@@ -1,0 +1,33 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: Haelwenn (lanodan) Monnier <contact+alpine@hacktivis.me>
+pkgname=lexbor
+pkgver=2.6.0
+pkgrel=0
+pkgdesc="Open source HTML Renderer library"
+url="http://lexbor.com"
+arch="all"
+license="Apache-2.0"
+makedepends="cmake samurai"
+subpackages="$pkgname-static $pkgname-dev"
+source="https://github.com/lexbor/lexbor/archive/v$pkgver/lexbor-$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DLEXBOR_BUILD_TESTS=ON \
+		-DLEXBOR_BUILD_SEPARATELY=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+5fb5c0f31b873ba669b784f914cf4e688d80e5fdbe06797add19334dcf54a9ffd76923f38600913df6bdd9a40475a27368a09a847515c7929353c25ace5048d4  lexbor-2.6.0.tar.gz
+"

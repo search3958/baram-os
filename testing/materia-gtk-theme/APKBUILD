@@ -1,0 +1,217 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer:
+pkgname=materia-gtk-theme
+pkgver=20210322
+pkgrel=6
+pkgdesc="Material Design theme for GNOME/GTK desktops"
+options="!check" # It is a theme
+url="https://github.com/nana-4/materia-theme"
+arch="noarch"
+license="GPL-2.0-only"
+makedepends="meson sassc"
+subpackages="
+	materia:_materia:noarch
+	materia-gtk4:_gtk4:noarch
+	materia-gtk3:_gtk3:noarch
+	materia-gnome-shell:_gnome_shell:noarch
+	materia-chromium:_chromium:noarch
+
+	materia-compact:_materia_compact:noarch
+	materia-compact-gtk4:_gtk4_compact:noarch
+	materia-compact-gtk3:_gtk3_compact:noarch
+	materia-compact-gnome-shell:_gnome_shell_compact:noarch
+	materia-compact-chromium:_chromium_compact:noarch
+
+	materia-dark:_dark:noarch
+	materia-dark-gtk4:_dark_gtk4:noarch
+	materia-dark-gtk3:_dark_gtk3:noarch
+	materia-dark-gnome-shell:_dark_gnome_shell:noarch
+	materia-dark-chromium:_dark_chromium:noarch
+
+	materia-dark-compact:_dark_compact:noarch
+	materia-dark-compact-gtk4:_dark_compact_gtk4:noarch
+	materia-dark-compact-gtk3:_dark_compact_gtk3:noarch
+	materia-dark-compact-gnome-shell:_dark_compact_gnome_shell:noarch
+	materia-dark-compact-chromium:_dark_compact_chromium:noarch
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/nana-4/materia-theme/archive/v$pkgver.tar.gz
+	"
+builddir="$srcdir/materia-theme-$pkgver"
+
+build() {
+	abuild-meson \
+		-Dgnome_shell_version=3.38 \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	rm -rf "$pkgdir"/usr/share/themes/*/xfwm4
+	rm -rf "$pkgdir"/usr/share/themes/*/cinnamon
+	rm -rf "$pkgdir"/usr/share/themes/*/plank
+	rm -rf "$pkgdir"/usr/share/themes/*/unity
+	rm -rf "$pkgdir"/usr/share/themes/*/metacity-1
+	rm -rf "$pkgdir"/usr/share/themes/*/COPYING
+
+	# Remove those and make a package for them if you want
+	# and make a merge request in the Alpine Linux gitlab
+	rm -rf "$pkgdir"/usr/share/themes/Materia-light-compact
+	rm -rf "$pkgdir"/usr/share/themes/Materia-light
+}
+
+_dark_compact() {
+	pkgdesc="Dark compact version of Materia"
+	depends=""
+	amove usr/share/themes/Materia-dark-compact/index.theme
+}
+
+_dark_compact_gtk4() {
+	pkgdesc="GTK+4.0 assets for dark compact version of Materia"
+	depends=""
+	install_if="materia-dark-compact=$pkgver-r$pkgrel gtk+4.0"
+
+	amove usr/share/themes/Materia-dark-compact/gtk-4.0
+}
+
+_dark_compact_gtk3() {
+	pkgdesc="GTK+3.0 assets for dark compact version of Materia"
+	depends=""
+	install_if="materia-dark-compact=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/share/themes/Materia-dark-compact/gtk-3.0
+}
+
+_dark_compact_gnome_shell() {
+	pkgdesc="GNOME Shell assets for dark compact version of Materia"
+	depends=""
+	install_if="materia-dark-compact=$pkgver-r$pkgrel gnome-shell"
+
+	amove usr/share/themes/Materia-dark-compact/gnome-shell
+}
+
+_dark_compact_chromium() {
+	pkgdesc="Chromium theme based on dark compact version of Materia"
+	depends=""
+	install_if="materia-dark-compact=$pkgver-r$pkgrel chromium"
+
+	amove usr/share/themes/Materia-dark-compact/chrome
+}
+
+_dark() {
+	pkgdesc="Dark version of Materia"
+	depends=""
+	amove usr/share/themes/Materia-dark/index.theme
+}
+
+_dark_gtk4() {
+	pkgdesc="GTK+4.0 assets for dark version of Materia"
+	depends=""
+	install_if="materia-dark=$pkgver-r$pkgrel gtk+4.0"
+
+	amove usr/share/themes/Materia-dark/gtk-4.0
+}
+
+_dark_gtk3() {
+	pkgdesc="GTK+3.0 assets for dark version of Materia"
+	depends=""
+	install_if="materia-dark=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/share/themes/Materia-dark/gtk-3.0
+}
+
+_dark_gnome_shell() {
+	pkgdesc="GNOME Shell assets for dark version of Materia"
+	depends=""
+	install_if="materia-dark=$pkgver-r$pkgrel gnome-shell"
+
+	amove usr/share/themes/Materia-dark/gnome-shell
+}
+
+_dark_chromium() {
+	pkgdesc="Chromium theme based on dark version of Materia"
+	depends=""
+	install_if="materia-dark=$pkgver-r$pkgrel chromium"
+
+	amove usr/share/themes/Materia-dark/chrome
+}
+
+_materia() {
+	pkgdesc="Materia theme"
+	depends=""
+	amove usr/share/themes/Materia/index.theme
+}
+
+_gtk4() {
+	pkgdesc="GTK+4.0 assets for Materia"
+	depends=""
+	install_if="materia=$pkgver-r$pkgrel gtk+4.0"
+
+	amove usr/share/themes/Materia/gtk-4.0
+}
+
+_gtk3() {
+	pkgdesc="GTK+3.0 assets for Materia"
+	depends=""
+	install_if="materia=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/share/themes/Materia/gtk-3.0
+}
+
+_gnome_shell() {
+	pkgdesc="GNOME Shell assets for Materia"
+	depends=""
+	install_if="materia=$pkgver-r$pkgrel gnome-shell"
+
+	amove usr/share/themes/Materia/gnome-shell
+}
+
+_chromium() {
+	pkgdesc="Chromium theme based on Materia"
+	depends=""
+	install_if="materia=$pkgver-r$pkgrel chromium"
+
+	amove usr/share/themes/Materia/chrome
+}
+
+_materia_compact() {
+	pkgdesc="Compact Materia theme"
+	depends=""
+	amove usr/share/themes/Materia-compact/index.theme
+}
+
+_gtk4_compact() {
+	pkgdesc="GTK+4.0 assets for compact Materia"
+	depends=""
+	install_if="materia-compact=$pkgver-r$pkgrel gtk+4.0"
+
+	amove usr/share/themes/Materia-compact/gtk-4.0
+}
+
+_gtk3_compact() {
+	pkgdesc="GTK+3.0 assets for compact Materia"
+	depends=""
+	install_if="materia-compact=$pkgver-r$pkgrel gtk+3.0"
+
+	amove usr/share/themes/Materia-compact/gtk-3.0
+}
+
+_gnome_shell_compact() {
+	pkgdesc="GNOME Shell assets for compact Materia"
+	depends=""
+	install_if="materia-compact=$pkgver-r$pkgrel gnome-shell"
+
+	amove usr/share/themes/Materia-compact/gnome-shell
+}
+
+_chromium_compact() {
+	pkgdesc="Chromium theme based on compact Materia"
+	depends=""
+	install_if="materia-compact=$pkgver-r$pkgrel chromium"
+
+	amove usr/share/themes/Materia-compact/chrome
+}
+sha512sums="
+c384a1afd5cf72f7ccfc0d1af8fd7efbe66027aa6e293899d57e46d8e572822ec6070785e957b07464cf0b3b73a302b9344920af361a9e8ab582565b7cedba71  materia-gtk-theme-20210322.tar.gz
+"

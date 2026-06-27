@@ -1,5 +1,0 @@
-#TODO linking error (after cargo update)
-[source]
-git = "https://github.com/pwnwriter/kanha"
-[build]
-template = "cargo"

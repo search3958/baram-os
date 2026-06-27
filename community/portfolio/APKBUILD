@@ -1,0 +1,41 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=portfolio
+pkgver=1.0.3
+pkgrel=0
+pkgdesc="Minimalist file manager for those who want to use Linux mobile devices"
+url="https://github.com/tchx84/Portfolio"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	gtk4.0
+	libadwaita
+	py3-gettext
+	py3-gobject3
+	"
+makedepends="
+	gettext-dev
+	glib-dev
+	libadwaita-dev
+	meson
+	py3-setuptools
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/tchx84/Portfolio/archive/v$pkgver.tar.gz
+	"
+options="!check"  # no tests
+subpackages="$pkgname-lang"
+builddir="$srcdir/Portfolio-$pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install -C output
+}
+
+sha512sums="
+fef44e50a05b7f4b069e4819abacba0f0a64cd22a184a197ab08ee61975c6d864a85f27e8c30614628f77046f325ff0238de131fe060fd1284944f8942a5b294  portfolio-1.0.3.tar.gz
+"

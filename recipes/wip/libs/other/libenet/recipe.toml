@@ -1,5 +1,0 @@
-#TODO compilation error
-[source]
-tar = "http://enet.bespin.org/download/enet-1.3.17.tar.gz"
-[build]
-template = "configure"

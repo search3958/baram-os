@@ -1,0 +1,52 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=libusbgx
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="C library encapsulating the Linux kernel USB gadget configfs userspace API functionality"
+url="https://github.com/linux-usb-gadgets/libusbgx"
+arch="all"
+license="LGPL-2.1-or-later"
+depends_dev="
+	bsd-compat-headers
+	"
+makedepends="
+	$depends_dev
+	autoconf
+	automake
+	libconfig-dev
+	libtool
+	linux-headers
+	"
+subpackages="$pkgname-static $pkgname-dev $pkgname-tools"
+source="https://github.com/linux-usb-gadgets/libusbgx/archive/refs/tags/libusbgx-v$pkgver.tar.gz"
+builddir="$srcdir/libusbgx-libusbgx-v$pkgver"
+options="!check" # tests don't build
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+	amove usr/bin
+}
+
+sha512sums="
+6695f75706cd22c302a90716f410364eb19e3c9aa1dc1b44fc49ba1a8e88a722ba2308ae93511eb5904f7482209062092d0f927a92f6828589bc312e35b346c2  libusbgx-v0.3.0.tar.gz
+"

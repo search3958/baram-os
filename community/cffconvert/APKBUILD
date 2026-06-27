@@ -1,0 +1,40 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=cffconvert
+pkgver=2.0.0
+pkgrel=8
+pkgdesc="Command line program to validate and convert CITATION.cff files"
+url="https://github.com/citation-file-format/cff-converter-python"
+arch="noarch"
+license="Apache-2.0"
+depends="python3 py3-click py3-jsonschema py3-pykwalify py3-requests py3-ruamel.yaml"
+checkdepends="py3-pytest"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver-2.tar.gz::https://github.com/citation-file-format/cff-converter-python/archive/$pkgver.tar.gz"
+builddir="$srcdir/cffconvert-$pkgver"
+options="!check" # a minor portion of tests are failing
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+		install -Dm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+		install -Dm644 CITATION.cff -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+e2fa31ae8b9426c61f794316e2cfe51ec55b3583e57f80d447950aa2b2d500056801b17c53da53d3520560f07f160dad7bf2111d58bbf236537abebc097984e6  cffconvert-2.0.0-2.tar.gz
+"

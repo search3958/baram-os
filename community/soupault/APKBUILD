@@ -1,0 +1,105 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=soupault
+pkgver=5.1.0
+pkgrel=1
+pkgdesc="Static website generator based on HTML element tree rewriting"
+url="https://soupault.app/"
+arch="all"
+license="MIT"
+makedepends="
+	dune
+	ocaml5-compiler-libs
+	opam-monorepo
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/PataphysicalSociety/soupault/archive/refs/tags/$pkgver/soupault-$pkgver.tar.gz
+	soupault.opam.locked
+	"
+
+export OPAMROOT="${OPAMROOT:-"$srcdir/opam-root"}"
+export OPAMLOGS="${OPAMLOGS:-"$srcdir/opam-logs"}"
+
+_opam_opts="-v -y --cli=2.2 --no-self-upgrade"
+_lockfile_name="$pkgname.opam.locked"
+_monorepo_opts="-v --lockfile=$_lockfile_name"
+
+_minimal_update=true
+recreate() {
+	_minimal_update=false
+}
+
+opam_init() {
+	opam init $_opam_opts \
+		--compiler=ocaml-system \
+		--disable-sandboxing \
+		--no-setup
+}
+
+opam_lock() {
+	[ -f "$OPAMROOT"/config ] || {
+		opam_init
+
+		opam repository $_opam_opts \
+			add dune-universe \
+			git+https://github.com/dune-universe/opam-overlays.git
+	}
+
+	cd "$startdir"
+	[ -d "$builddir" ] || abuild unpack
+	msg "Freezing $pkgname dependencies"
+
+	# Resolve deps and update $pkgname.opam.locked, unless
+	# recreate() is called, in which case create it afresh.
+	(
+		cd "$builddir" || {
+			error 'Is $builddir set correctly?'
+			return 1
+		}
+		opam update $_opam_opts
+
+		if ! want_check; then
+			_monorepo_opts="$_monorepo_opts --build-only"
+		fi
+		if $_minimal_update; then
+			cp -v "$srcdir"/$_lockfile_name .
+
+			_monorepo_opts="$_monorepo_opts --minimal-update"
+		fi
+		opam-monorepo lock $_monorepo_opts
+
+		mv -v $_lockfile_name "$startdir"/
+	)
+
+	if ! abuild checksum; then
+		die "Failed to update checksum, run 'abuild checksum' manually"
+	fi
+}
+
+prepare() {
+	default_prepare
+
+	[ -f "$OPAMROOT"/config ] || opam_init
+	ln -svf "$srcdir"/$_lockfile_name "$builddir"/
+	opam-monorepo pull $_monorepo_opts --yes
+}
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv
+}
+
+package() {
+	dune install --destdir="$pkgdir" --sections=bin,doc
+
+	mkdir -vp "$pkgdir"/usr/share/doc/$pkgname
+	cp -vr examples sample-site "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+sha512sums="
+6dd181909a3a30270bf8ea8d270b6a453a3c7914be24d1fc807a43bced6af8e1863be7cd58a840e7803f446c7831c0243a1e7534ae3719959e9f423eff7d5077  soupault-5.1.0.tar.gz
+825c5f9105c5f7b651808d1f678c66b0c7e6e8f0eb9548f24bff5c7a8f0eeb975a89a28fb05fb83aa33d29f681f5a29dc1e160a02959c358e2e329c1a55afae6  soupault.opam.locked
+"

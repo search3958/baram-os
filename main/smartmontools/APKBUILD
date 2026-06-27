@@ -1,0 +1,43 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=smartmontools
+pkgver=7.5
+pkgrel=0
+pkgdesc="Control and monitor S.M.A.R.T. enabled hard drives"
+url="https://www.smartmontools.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+subpackages="$pkgname-dbg $pkgname-doc $pkgname-openrc"
+source="https://downloads.sourceforge.net/sourceforge/smartmontools/smartmontools-$pkgver.tar.gz
+	smartd.initd
+	smartd.confd
+	"
+prepare() {
+ 	default_prepare
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir"/ install
+
+	install -Dm755 "$srcdir"/smartd.initd "$pkgdir"/etc/init.d/smartd
+	install -Dm644 "$srcdir"/smartd.confd "$pkgdir"/etc/conf.d/smartd
+}
+
+sha512sums="
+2e4a6d712f33f3efff34184686b893f0205728d4a267fb88a833de7159170a6072b94744c1ae8c6694c99940d9ecaec164e3bd713e49476930dc2144c04b3f8c  smartmontools-7.5.tar.gz
+4a2cbdab37cf0d761924854be4a2f2deebed22ca8d8754dee9a5ec44229c608f5fffb19545d2b9c687ab010460acde51d4f5fccd74d6c80dab2b1a7401d59b9f  smartd.initd
+9088b97fbaac45e677e5ac14bc8a9edb4bd7a924717bb201db92f4a85447bb0e0254e716c8c8e60d4830b96e3221488fc80b30442b2e4a1b57741535aa2c3e7b  smartd.confd
+"

@@ -1,0 +1,66 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=py3-rdflib
+_pyname=rdflib
+pkgver=7.6.0
+pkgrel=1
+pkgdesc="A Python library for working with RDF, a simple yet powerful language for representing information"
+url="https://rdflib.readthedocs.org/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-html5lib
+	py3-isodate
+	py3-parsing
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-poetry-core
+	"
+checkdepends="
+	py3-html5lib
+	py3-pytest
+	py3-pytest-cov
+	py3-sparqlwrapper
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/RDFLib/rdflib/archive/refs/tags/$pkgver/rdflib-$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+case "$CARCH" in
+# TODO: network issues, try re-enabling when builders reach EU
+loongarch64)
+	options="$options !check"
+	;;
+esac
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	case "$CARCH" in
+	armhf|armv7|x86)
+		_skip_hash_test="--deselect=test/test_extras/test_infixowl/test_restriction.py::test_restriction_str_and_hash"
+		;;
+	esac
+	python3 -m venv --clear --without-pip --system-site-packages test-env
+	test-env/bin/python3 -m installer .dist/*.whl
+	# exclude failing test
+	# https://github.com/RDFLib/rdflib/issues/2748
+	test-env/bin/python3 -m pytest \
+		--ignore="test/test_so_69984830.py" \
+		--ignore="test/test_misc/test_plugins.py" \
+		--deselect="test/test_misc/test_parse_file_guess_format.py" \
+		$_skip_hash_test
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+464fe52d968bd8618cef5ab99c28cb465b9b07287a28049d7e2916c1dac4971187be5794b4007509f875fb28cb0c198fd2e1d9338893ecdd00ed5d0d6865ee98  rdflib-7.6.0.tar.gz
+"

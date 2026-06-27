@@ -1,0 +1,4 @@
+# Rule for /usr/lib/nagios/plugins/check_openrc.
+# Installed by package nagios-plugins-openrc.
+
+permit nopass nolog nagios as root cmd /bin/rc-status

@@ -1,0 +1,40 @@
+# Contributor: Newbyte <newbie13xd@gmail.com>
+maintainer="team/gnome <newbie13xd@gmail.com>"
+pkgname=blueprint-compiler
+pkgver=0.20.4
+pkgrel=1
+pkgdesc="Markup language for GTK user interfaces"
+url="https://gnome.pages.gitlab.gnome.org/blueprint-compiler/"
+arch="noarch"
+license="LGPL-3.0-or-later"
+depends="
+	gobject-introspection-dev
+	gtk4.0
+	libadwaita
+	python3
+	py3-gobject3
+	"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="meson"
+checkdepends="cage-run xwayland"
+subpackages="$pkgname-dev $pkgname-pyc"
+source="https://download.gnome.org/sources/blueprint-compiler/${pkgver%.*}/blueprint-compiler-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	# riscv64 is slow
+	cage-run meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	python3 -m compileall -fq "$pkgdir"/usr/lib/python*
+}
+
+sha512sums="
+4fd2f9f4ae91cb3842d0e6af73085ff3f28c1b6827362e58b6ce7cbe258ada0bced83221f0d395d4876356c9b57588e66cfb3785ea6e7cac776460d053c5126b  blueprint-compiler-0.20.4.tar.xz
+"

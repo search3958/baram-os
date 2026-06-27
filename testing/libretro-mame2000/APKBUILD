@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-mame2000
+pkgver=0_git20240701
+pkgrel=0
+_commit="2ec60f6e1078cf9ba173e80432cc28fd4eea200f"
+pkgdesc="Multiple Arcade Machine Emulator for libretro (2000)"
+url="https://github.com/libretro/mame2000-libretro"
+arch="all"
+license="custom"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/mame2000-libretro/archive/$_commit.tar.gz"
+builddir="$srcdir/mame2000-libretro-$_commit"
+options="!check" # No tests
+
+build() {
+	make
+}
+
+package() {
+	install -Dm644 mame2000_libretro.so "$pkgdir"/usr/lib/libretro/mame2000_libretro.so
+}
+
+sha512sums="
+6500cbc3ce15d22e488b1e5b8415208d7698104488add6a296fc71cf622cb8f4df8e47fc821ca8f3339e6b6d9fda5e8cd798303d359a354c336c6cc1c5182646  libretro-mame2000-2ec60f6e1078cf9ba173e80432cc28fd4eea200f.tar.gz
+"

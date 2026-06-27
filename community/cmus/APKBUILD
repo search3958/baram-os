@@ -1,0 +1,60 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Bartłomiej Piotrowski <nospam@bpiotrowski.pl>
+# Maintainer: Bartłomiej Piotrowski <nospam@bpiotrowski.pl>
+pkgname=cmus
+pkgver=2.12.0
+pkgrel=3
+pkgdesc="feature-rich ncurses-based music player"
+url="https://cmus.github.io/"
+arch="all"
+license="GPL-2.0-or-later"
+options="!check" # No test suite
+makedepends="
+	alsa-lib-dev
+	elogind-dev
+	faad2-dev
+	ffmpeg-dev
+	flac-dev
+	libmad-dev
+	libogg-dev
+	libvorbis-dev
+	linux-headers
+	ncurses-dev
+	opusfile-dev
+	pulseaudio-dev
+	wavpack-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-zsh-completion
+	$pkgname-bash-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cmus/cmus/archive/v$pkgver.tar.gz
+	cmus.desktop
+	cmus-fix-ffmpeg-8.patch
+	"
+
+build() {
+	export CFLAGS="$CFLAGS -flto=auto"
+	./configure prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm644 AUTHORS README.md -t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dm644 contrib/$pkgname.bash-completion \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+	install -Dm644 contrib/_$pkgname \
+		"$pkgdir"/usr/share/zsh/site-functions/_$pkgname
+	install -Dm644 "$srcdir"/cmus.desktop \
+		"$pkgdir"/usr/share/applications/$pkgname.desktop
+}
+
+sha512sums="
+95dc35e76bb220476986470977d4affc3b7d81a4d057057d62d3f8015abb3c24ec371ece8d3d77fd0e59062c9f3b1bd73dd438ace1eadf3ce39aa86b209a7de5  cmus-2.12.0.tar.gz
+1adaaab23d9e74ac086ad74ecb8cac335c966b8321abf164d424148920f072020ea23406b0577f109f8bcf41dd27ce2b66f00a050a7341745df98559bb384725  cmus.desktop
+172983723f2687f66ce5ae1af01082fe69cfa072e2e48d8cd6695396eed0cf6ac416935ed7e28a52f6664aa7106c7221c72329ba6169b25fa77787b0a5bd628e  cmus-fix-ffmpeg-8.patch
+"

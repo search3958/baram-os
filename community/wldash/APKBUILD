@@ -1,0 +1,52 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=wldash
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="Wayland dashboard/launcher/thing"
+url="https://github.com/kennylevinsen/wldash"
+# aarch64, arm*, ppc64le: fails to build due to fontconfig crate
+# others: limited by rust/cargo
+arch="x86 x86_64"
+license="GPL-3.0"
+makedepends="
+	alsa-lib-dev
+	cargo
+	cargo-auditable
+	dbus-dev
+	fontconfig-dev
+	pulseaudio-dev
+	wayland-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/kennylevinsen/wldash/archive/v$pkgver/$pkgname-$pkgver.tar.gz
+	update-cargo-lock.patch
+	minimize-size.patch
+	"
+options="!check"  # there are currently no tests
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/wldash -t "$pkgdir"/usr/bin/
+	install -D -m644 config.yaml -t "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+sha512sums="
+4da5260e3fb00e9fcdb04ac44a2043b833215822a4e91b928fdcd67b6cf19eadd0092d1c92b4bd453bd3c8f47e5bf00d5e80bb6497ff05988b032a99cc0cb77d  wldash-0.3.0.tar.gz
+2243c0a7d5b389f6fef7c0e9107f26d4b0f6b428cc29506e8524badf146cf5049c0ff53706b8c7cdf806071e49f8dbcb58da30a934c18981417939402e0d066c  update-cargo-lock.patch
+6d02ca7e1d52c7523f9317a9277b8cd634bf4d19bfb4280547cc44705f341cc86bcb0bb2d0e31b820ca43f3be7acdc32ccf443a17afaca1f22325b5d69f544d8  minimize-size.patch
+"

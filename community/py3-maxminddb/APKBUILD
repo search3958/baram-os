@@ -1,0 +1,49 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=py3-maxminddb
+pkgver=3.0.0
+pkgrel=1
+pkgdesc="Python MaxMind DB reader extension"
+url="https://maxminddb.readthedocs.io/en/latest/"
+arch="all"
+license="Apache-2.0"
+depends="python3"
+makedepends="libmaxminddb-dev python3-dev py3-setuptools py3-gpep517 py3-wheel"
+checkdepends="py3-pytest"
+_test_data_commit=a75bfb17a0e77f576c9eef0cfbf6220909e959e7
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/maxmind/MaxMind-DB-Reader-python/archive/v$pkgver.tar.gz
+	MaxMind-DB-test-data-$_test_data_commit.tar.gz::https://github.com/maxmind/MaxMind-DB/archive/$_test_data_commit.tar.gz
+	"
+
+builddir="$srcdir/MaxMind-DB-Reader-python-$pkgver"
+
+prepare() {
+	cd "$srcdir"
+
+	# Submodule required for tests
+	cp -r "MaxMind-DB-$_test_data_commit/"* "$builddir/tests/data"
+
+	default_prepare
+}
+
+build() {
+	MAXMINDDB_USE_SYSTEM_LIBMAXMINDDB=1 gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer --no-compile .dist/*.whl
+	.testenv/bin/python3 -m pytest tests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+6e54b903726b612241b30d4fe36e1d1f554dffbb6695ff95eb1c9c39526d3cf80280bec6dfbdc237cd195abe8c5af4a8ad7f1c2cdd531132f1fb7b279284f24a  py3-maxminddb-3.0.0.tar.gz
+053e9f984c2b103fb2c4afb6e366f503135ab189ef3a014e3ec540e62268fb8f2901670409711830723606615bff0824beacfe9c892325b8928c42cb5874fcd7  MaxMind-DB-test-data-a75bfb17a0e77f576c9eef0cfbf6220909e959e7.tar.gz
+"

@@ -1,0 +1,45 @@
+# Contributor: Aster Boese <asterboese@mailbox.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=u1db-qt
+pkgver=0.1.8
+pkgrel=0
+pkgdesc="Simple Qt5 binding and QtQuick2 plugin for U1DB"
+url="https://gitlab.com/ubports/development/core/u1db-qt"
+arch="all"
+license="GPL-3.0-only"
+makedepends="
+	cmake
+	samurai
+	qt5-qtdeclarative-dev
+	"
+checkdepends="
+	dbus-test-runner
+	"
+source="https://gitlab.com/ubports/development/core/u1db-qt/-/archive/$pkgver/u1db-qt-$pkgver.tar.gz
+	0001-point-qmlplugindump-to-qmlplugindump-qt5.patch
+	0002-point-qmltestrunner-to-qmltestrunner-qt5.patch
+	"
+options="!check" # requires a display
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+928d97394cf3ab5641798469a0b38b8f8eacd83657f3c8a6ad062fa8fbbaae0ef4728902a6378f729f01043d60c1ca320d87f3cb279c93509d478a49592602e5  u1db-qt-0.1.8.tar.gz
+0fe8af4005a14c67c3ccecf9db81bb9a00363a1951aba93ce71ecaabfa37907099e59498fc6faef6ef5399144186e84b4484ecdd8f30505ea2f4cc917092570a  0001-point-qmlplugindump-to-qmlplugindump-qt5.patch
+b211cdbb01171165f8ee63568bedc29c4a5b8d0478ec3d4cb99231bc783045926fe3c000a2fddf21993fdd388f9f6fc88a26614e597f4a14f6921a964b244f46  0002-point-qmltestrunner-to-qmltestrunner-qt5.patch
+"

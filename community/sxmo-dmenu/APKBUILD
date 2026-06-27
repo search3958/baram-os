@@ -1,0 +1,36 @@
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=sxmo-dmenu
+pkgver=5.0.14
+pkgrel=1
+pkgdesc="Dmenu fork for Sxmo UI; supports highlight, centering, volume-key navigation and more"
+url="https://git.sr.ht/~mil/sxmo-dmenu"
+arch="all"
+license="MIT"
+makedepends="libx11-dev libxinerama-dev libxft-dev"
+options="!check" # has no tests
+subpackages="$pkgname-doc"
+provides="dmenu-virtual"
+provider_priority=10
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~mil/sxmo-dmenu/archive/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	sed -i -e '/CFLAGS/{s/-Os//;s/=/+=/}' \
+		-e '/LDFLAGS/{s/=/+=/}' \
+		"$builddir"/config.mk
+}
+
+build() {
+	make X11INC=/usr/include/X11 \
+		X11LIB=/usr/lib/X11 \
+		FREETYPEINC=/usr/include/freetype2
+}
+
+package() {
+	make DESTDIR=$pkgdir PREFIX=/usr install
+}
+
+sha512sums="
+fbdcb275583431ff8cdc50e5b53db589a926f87d69bb7a71092e9c3d143954c677c1291e739e9c251cd613bb57399ff171a8636d88d5528574611e134305e57b  sxmo-dmenu-5.0.14.tar.gz
+"

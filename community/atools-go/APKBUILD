@@ -1,0 +1,36 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=atools-go
+pkgver=0.6.1
+pkgrel=4
+pkgdesc="APKBUILD linter that parses APKBUILD files to provide fast and accurate checks"
+url="https://gitlab.alpinelinux.org/alpine/infra/atools-go"
+arch="all"
+license="MIT"
+makedepends="go apenwarr-redo"
+subpackages="$pkgname-doc"
+options="net"
+source="https://gitlab.alpinelinux.org/alpine/infra/atools-go/-/archive/v$pkgver/atools-go-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+provides="apkbuild-lint"
+provider_priority=100
+replaces="atools" # conflict on apkbuild-lint
+
+build() {
+	./configure --prefix /usr
+	redo
+}
+
+check() {
+	redo test
+}
+
+package() {
+	install -Dm0755 apkbuild-lint "$pkgdir/usr/bin/apkbuild-lint"
+	install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/atools-go/LICENSE"
+}
+
+sha512sums="
+be4addb408fec9e43fe2fdfdb0db6f3c682bfea1394628352e74e148c947378a0dcbfd61ee278887e8f792958d1f8a57f9f7462d1e901167359534f8679d4455  atools-go-v0.6.1.tar.gz
+"

@@ -1,0 +1,50 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=kmscon
+pkgver=10.0.0
+pkgrel=1
+pkgdesc="Simple terminal emulator based on linux kernel mode setting"
+url="https://github.com/kmscon/kmscon"
+arch="all"
+license="MIT AND LGPL-2.1-or-later AND ( OFL-1.1 AND GPL-2.0-or-later WITH Font-exception-2.0 ) AND MIT AND BSD-2-Clause AND custom"
+makedepends="
+	eudev-dev
+	libdrm-dev
+	libseat-dev
+	libtsm-dev
+	libxkbcommon-dev
+	mesa-dev
+	meson
+	pango-dev
+	"
+checkdepends="mesa-dri-gallium xvfb-run"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd"
+source="$pkgname-$pkgver.tar.gz::https://github.com/kmscon/kmscon/archive/refs/tags/v$pkgver.tar.gz
+	kmsconvt.initd
+	"
+# requires opening raw tty
+options="!spdx !check"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+
+	meson compile -C output
+}
+
+check() {
+	xvfb-run -a meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm755 "$srcdir"/kmsconvt.initd "$pkgdir"/etc/init.d/kmsconvt
+}
+
+sha512sums="
+da3b7f2d8aaa624561369939928dbc479da4abd9600f623d3eb49a4674674b84f200c72618fa57996bb739b5b0600eabd9ff27b46c3808e0c52bc80416e096b5  kmscon-10.0.0.tar.gz
+fc643541082383523bfa96101801942016094b863745cb4f25ff0b134e05e000a353db0c12399587233d771bcc69fe5530eaa0f51729ea593a8dd996cd1ab0ac  kmsconvt.initd
+"

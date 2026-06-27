@@ -1,0 +1,40 @@
+# Maintainer: IP2Location <support@ip2location.com>
+pkgname=ip2location
+pkgver=8.6.1
+pkgrel=0
+pkgdesc="Lookup country, region and city information by IP addresses"
+url="https://www.ip2location.com/development-libraries/ip2location/c"
+arch="all"
+license="MIT"
+subpackages="$pkgname-dev $pkgname-doc"
+checkdepends="perl"
+makedepends="automake autoconf libtool"
+source="$pkgname-$pkgver.tar.gz::https://github.com/chrislim2888/IP2Location-C-Library/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/IP2Location-C-Library-$pkgver
+
+prepare() {
+	default_prepare
+	autoreconf -vif
+}
+
+build() {
+	./configure \
+		--host=$CHOST \
+		--build=$CBUILD \
+		--prefix=/usr
+	make
+}
+
+check() {
+	cd data
+	./ip-country.pl
+	make check
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+}
+
+sha512sums="
+1c3c8198c7eadbcc8b3f274f46cd9fb56115c5ec3713bd6cf96743f9de4bd3029f2f90ed07c86c47626bbd6de2adb6d0ddf9a656f3fc5ddfc07ea9f1d43b2d06  ip2location-8.6.1.tar.gz
+"

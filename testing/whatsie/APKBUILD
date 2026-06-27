@@ -1,0 +1,47 @@
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+maintainer=""
+pkgname=whatsie
+pkgver=5.1.0
+_commit_libnotify_qt="3f54515cce45fa1eef54d23bc586462011f1bba6"
+pkgrel=1
+pkgdesc="Feature rich WhatsApp Client for Desktop Linux"
+url="https://github.com/keshavbhatt/whatsie"
+# armhf, s390x, riscv64, x86 and armv7 blocked by qt6-qtwebengine
+arch="all !armhf !s390x !riscv64 !x86 !armv7"
+license="MIT"
+makedepends="
+	cmake
+	libnotify-dev
+	qt6-qtbase-dev
+	qt6-qtlocation-dev
+	qt6-qtwebengine-dev
+	samurai
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/keshavbhatt/whatsie/archive/refs/tags/v$pkgver.tar.gz
+	libnotify-qt-$_commit_libnotify_qt.tar.gz::https://github.com/ahm-forks/libnotify-qt/archive/$_commit_libnotify_qt.tar.gz
+	"
+options="!check" # no test
+
+prepare() {
+	rmdir src/libnotify-qt
+	mv "$srcdir"/libnotify-qt-$_commit_libnotify_qt src/libnotify-qt
+
+	default_prepare
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+812f484d8ae1c63daa9ec1b542a9b4b540fe83fb02acfe7b75fea896834e7ca23b4d80869a12d98aa07bf0acc0732367cad215e7fcec4d9060f4a3aa68eb395d  whatsie-5.1.0.tar.gz
+6bcc352a60e980c18c070b742ec378950e568a23a1f4955d4c36a2b25b89acf4b589ba3c32dec725e7d1ba21d9a0f00caf41a83aa124831bd274351f2ea0be35  libnotify-qt-3f54515cce45fa1eef54d23bc586462011f1bba6.tar.gz
+"

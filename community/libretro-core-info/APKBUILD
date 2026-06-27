@@ -1,0 +1,20 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-core-info
+# Needs to be upgraded in sync with the retroarch aport
+pkgver=1.22.2
+pkgrel=0
+arch="noarch"
+url="https://www.libretro.com"
+pkgdesc="Libretro core info files"
+license="MIT"
+source="$pkgname-$pkgver.tar.gz::https://github.com/libretro/libretro-core-info/archive/v$pkgver.tar.gz"
+options="!check" # No code to test
+
+package() {
+	DESTDIR="$pkgdir" make install
+}
+
+sha512sums="
+028d6fd0a880bb030bcc2f6a8f821e466499dee604acb3061668f4144a7bd59d4d3531830db213f7b1da060da2c3c1c8a10ad7b635221195a1188b40284be364  libretro-core-info-1.22.2.tar.gz
+"

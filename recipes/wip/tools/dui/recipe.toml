@@ -1,5 +1,0 @@
-#TODO Compiled but not tested
-[source]
-git = "https://gitlab.com/GregOwen/dui"
-[build]
-template = "cargo"

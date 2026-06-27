@@ -1,0 +1,139 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=apk-tools
+pkgver=3.0.6
+pkgrel=0
+pkgdesc="Alpine Package Keeper - package manager for alpine"
+arch="all"
+url="https://gitlab.alpinelinux.org/alpine/apk-tools"
+license="GPL-2.0-only"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-static $pkgname-doc $pkgname-bash-completion $pkgname-zsh-completion libapk"
+# Musl 1.2 introduced new ABI for time64 => upgrading apk-tools
+# while staying on musl <1.2 causes missing symbols
+# starting with musl 1.2.3_git (pre 1.2.3), we added DT_RELR
+# it is possible for old systems to upgrade, and apk-tools would upgrade first,
+# which would upgrade to a binary that cannot run until musl is upgraded.
+# forcing this constraint makes apk upgrade musl as part of the 'critical' transaction,
+# and update musl first.
+# openssl 3.5(?) introduced new symbols:
+# https://gitlab.alpinelinux.org/alpine/aports/-/issues/17199
+depends="
+	musl>=1.2.3_git20230424
+	libcrypto3>=3.5
+	libapk=$pkgver-r$pkgrel
+	"
+_lua="5.5"
+makedepends_build="meson openssl-dev>=3.5 lua$_lua lua$_lua-lzlib scdoc"
+makedepends_host="
+	linux-headers
+	openssl-dev
+	openssl-libs-static
+	zlib-dev
+	zlib-static
+	"
+checkdepends="cmocka-dev"
+if [ -z "$BOOTSTRAP" ]; then
+	subpackages="$subpackages lua$_lua-apk:luaapk py3-apk:pyapk"
+	makedepends_host="$makedepends_host lua$_lua-dev python3-dev"
+
+	# ca-certificates-bundle needed for https certificate validation
+	depends="$depends ca-certificates-bundle"
+fi
+source="https://gitlab.alpinelinux.org/alpine/apk-tools/-/archive/v$pkgver/apk-tools-v$pkgver.tar.gz
+	repo-hash-sha1.patch
+	_apk
+	"
+builddir="$srcdir/apk-tools-v$pkgver"
+
+provides="apk-tools3=$pkgver-r$pkgrel"
+replaces="apk-tools3"
+
+# secfixes:
+#   2.12.6-r0:
+#     - CVE-2021-36159
+#   2.12.5-r0:
+#     - CVE-2021-30139
+
+build() {
+	export VERSION=$pkgver-r$pkgrel
+
+	abuild-meson \
+		--auto-features=disabled \
+		--bindir=/sbin \
+		-Darch="$CARCH" \
+		-Ddocs=enabled \
+		-Dhelp=enabled \
+		-Dlua_version=$_lua \
+		-Dzstd=disabled \
+		-Dlua="$([ -z "$BOOTSTRAP" ] && echo enabled || echo disabled)" \
+		-Dpython="$([ -z "$BOOTSTRAP" ] && echo enabled || echo disabled)" \
+		-Dtests="$(want_check && echo enabled || echo disabled)" \
+		output
+	ninja -C output
+
+	abuild-meson \
+		--auto-features=disabled \
+		-Darch="$CARCH" \
+		-Dc_link_args="$LDFLAGS -static" \
+		-Ddefault_library=static \
+		-Dprefer_static=true \
+		output-static
+	ninja -C output-static src/apk
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -d "$pkgdir"/lib/apk/db \
+		"$pkgdir"/lib/apk/exec \
+		"$pkgdir"/etc/apk/keys \
+		"$pkgdir"/etc/apk/protected_paths.d \
+		"$pkgdir"/var/cache/apk
+
+	install -Dm644 "$srcdir"/_apk "$pkgdir"/usr/share/zsh/site-functions/_apk
+}
+
+libapk() {
+	provides="libapk2=$pkgver-r$pkgrel"
+	depends=""
+	amove usr/lib/libapk.so.*
+}
+
+static() {
+	pkgdesc="Alpine Package Keeper - static binary"
+	depends=""
+	install -Dm755 "$builddir"/output-static/src/apk \
+		"$subpkgdir"/sbin/apk.static
+
+	# lets sign the static binary so it can be vefified from distros
+	# that does not have apk-tools
+	local pubkey="${PACKAGER_PUBKEY:-$PACKAGER_PRIVKEY.pub}"
+	local keyname="${pubkey##*/}"
+	${CROSS_COMPILE}strip "$subpkgdir"/sbin/apk.static
+	openssl dgst -sha1 -sign "$PACKAGER_PRIVKEY" \
+		-out "$subpkgdir"/sbin/apk.static.SIGN.RSA."$keyname" \
+		"$subpkgdir"/sbin/apk.static
+	openssl dgst -sha256 -sign "$PACKAGER_PRIVKEY" \
+		-out "$subpkgdir"/sbin/apk.static.SIGN.RSA.sha256."$keyname" \
+		"$subpkgdir"/sbin/apk.static
+}
+
+luaapk() {
+	pkgdesc="Lua module for apk-tools"
+	depends=""
+	amove usr/lib/lua
+}
+
+pyapk() {
+	pkgdesc="Python module for apk-tools"
+	depends=""
+	amove usr/lib/python*
+}
+
+sha512sums="
+86c6ba9aad517d7a39d204373b37a28c143afe1438fa5090df90845f205c7f01e8aaee00ed0b6f7b27206ff745e0f1db160e3b919d17b37639fb19ae78bd13e6  apk-tools-v3.0.6.tar.gz
+6f6442d73d994964d78f06433a611902cbb066a457f3532544278b1422aa0aa276ccec1f2438ea7e93a8a048d3fdbf72ccd9a79d210f44870fda467bc43cb9fd  repo-hash-sha1.patch
+993518cafcc5a932c9a418f7aac48012fc48f03c55964ad99d04b034bfa185d550c38dab46f1046adfaa1d65b422b4095b5a54d9a2504dee9278f25e76f9e3ed  _apk
+"

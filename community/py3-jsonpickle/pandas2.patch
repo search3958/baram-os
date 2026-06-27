@@ -1,0 +1,23 @@
+Patch-Source: https://github.com/jsonpickle/jsonpickle/commit/a24240bfdec6a9d5172c2f25e19654d23ffc61e1
+--
+From a24240bfdec6a9d5172c2f25e19654d23ffc61e1 Mon Sep 17 00:00:00 2001
+From: Theelx <43764914+Theelx@users.noreply.github.com>
+Date: Fri, 26 May 2023 14:05:05 -0400
+Subject: [PATCH] Implement compatibility with pandas 2
+
+---
+ jsonpickle/ext/pandas.py | 7 ++++++-
+ requirements-dev.txt     | 2 +-
+ setup.cfg                | 2 +-
+ tests/pandas_test.py     | 2 +-
+ 4 files changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/jsonpickle/ext/pandas.py b/jsonpickle/ext/pandas.py
+index c49b86b..4598506 100644
+--- a/jsonpickle/ext/pandas.py
++++ b/jsonpickle/ext/pandas.py
+@@ -66,2 +66,4 @@ def make_read_csv_params(meta, context):
+     parse_datetime_v2 = {}
++    # this is only for pandas v2+ due to a backwards-incompatible change
++    parse_datetime_v2 = {}
+     dtype = {}

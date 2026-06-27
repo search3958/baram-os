@@ -1,0 +1,57 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kommit
+pkgver=1.8.1
+pkgrel=0
+pkgdesc="Git GUI client for KDE"
+url="https://apps.kde.org/kommit/"
+# armhf blocked by qt6-qtdeclarative -> ki18n
+arch="all !armhf"
+license="GPL-3.0-or-later"
+makedepends="
+	extra-cmake-modules
+	dolphin-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	kio-dev
+	ktexteditor-dev
+	ktextwidgets-dev
+	kxmlgui-dev
+	libgit2-dev
+	qt6-qtbase-dev
+	qt6-qtcharts-dev
+	samurai
+	syntax-highlighting-dev
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-lang $pkgname-doc"
+_repo_url="https://invent.kde.org/sdk/kommit.git"
+#source="https://download.kde.org/stable/kommit/kommit-v$pkgver.tar.xz"
+source="https://invent.kde.org/sdk/kommit/-/archive/v$pkgver/kommit-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DBUILD_WITH_QT6=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "(tag|clone|config|remote|submodule|cache|switch|stash)test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+5e3d039d29d243c098016e5f240c625d4efd14b558b35894a77807db212690cb699f8fa167f96dbcce95a527dfe63bdf3dd9b720a52fdab49ce94327ec1bad24  kommit-v1.8.1.tar.gz
+"

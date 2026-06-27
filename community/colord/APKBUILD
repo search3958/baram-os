@@ -1,0 +1,105 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=colord
+pkgver=1.4.8
+pkgrel=4
+pkgdesc="System daemon for managing color devices"
+url="https://www.freedesktop.org/software/colord"
+arch="all"
+license="GPL-2.0-or-later"
+pkgusers="colord"
+pkggroups="colord"
+depends="libcolord=$pkgver-r$pkgrel"
+depends_dev="
+	dbus-dev
+	dconf-dev
+	eudev-dev
+	gobject-introspection-dev
+	libgudev-dev
+	polkit-dev
+	sqlite-dev
+	vala
+	"
+makedepends="$depends_dev
+	bash-completion-dev
+	cmake
+	elogind-dev
+	lcms2-dev
+	libgusb-dev
+	meson
+	sane-dev
+	"
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+subpackages="
+	$pkgname-dev
+	$pkgname-lang
+	$pkgname-colorhug
+	$pkgname-sane
+	$pkgname-bash-completion
+	$pkgname-udev
+	$pkgname-systemd
+	libcolord
+	"
+source="https://www.freedesktop.org/software/colord/releases/colord-$pkgver.tar.xz
+	disable-udev-hwdb-tests.patch
+	0001-Allow-building-with-elogind.patch
+	"
+
+build() {
+	abuild-meson \
+		-Dsystemd=true \
+		-Dargyllcms_sensor=false \
+		-Dman=false \
+		-Ddocs=false \
+		-Ddaemon_user=colord \
+		-Dsane=true \
+		-Dvapi=true \
+		output .
+
+	meson compile -C output
+}
+
+check() {
+	# cd-private-test is broken atm
+	# meson test
+
+	output/src/cd-self-test
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	chown -R colord:colord "$pkgdir"/var/lib/colord
+}
+
+colorhug() {
+	pkgdesc="$pkgdesc (ColorHug support)"
+
+	amove usr/lib/libcolorhug.so.*
+	amove usr/lib/girepository-1.0/Colorhug-*.typelib
+	amove usr/lib/colord-sensors/libcolord_sensor_colorhug.so
+}
+
+sane() {
+	pkgdesc="$pkgdesc (SANE support)"
+	install_if="$pkgname=$pkgver-r$pkgrel sane"
+
+	amove usr/libexec/colord-sane
+	amove usr/lib/colord-plugins/libcolord_sensor_sane.so
+}
+
+libcolord() {
+	pkgdesc="$pkgdesc (client library)"
+	depends=""
+
+	amove usr/lib/libcolord.so.*
+	amove usr/lib/libcolordprivate.so.*
+	amove usr/lib/girepository-1.0/Colord-*.typelib
+}
+
+sha512sums="
+5e9a3b9ee93ca86a0467630905190cf9659f659ae6e7917c75df307793b8a78e80f598ee873e5b1070ead1c683780bb22b82410746aff41f50f801aa10e71018  colord-1.4.8.tar.xz
+4e306254902658ffe0904b4ee3fdc10c473af909662c08fc66b9070fd698e07e1f804e53ccd94160ac57d268269132683808ff8f2bae64fd2a9070d6f024b800  disable-udev-hwdb-tests.patch
+7bf3fce8fab5ed2c0732ecd4e85944c7682de6d171ff7a4706bbe7629d21a64139b7e01236b00cd142a3b575c3af019120d4622c10b67151545d46fde4948519  0001-Allow-building-with-elogind.patch
+"

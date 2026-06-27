@@ -1,0 +1,25 @@
+From c6bcce8bfa68c581ffbbd13346d056f8fd0cc627 Mon Sep 17 00:00:00 2001
+From: Clayton Craft <clayton@craftyguy.net>
+Date: Tue, 2 Apr 2024 10:02:31 -0700
+Subject: [PATCH] [PATCH] link libintl
+
+---
+ CMakeLists.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d9f8744..ef687d0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -38,6 +38,8 @@ endforeach()
+ include("${CMAKE_SOURCE_DIR}/cmake/UseSystemInfo.cmake")
+ include("${CMAKE_SOURCE_DIR}/cmake/WlFunctions.cmake")
+ 
++link_directories(/usr/lib)
++link_libraries(intl)
+ # This policy is not known to versions prior 3.27 and would result in errors,
+ # if set on such systems. This can be removed when cmake_minimum_required is set
+ # to 3.27 or newer  by using:
+-- 
+2.44.0
+

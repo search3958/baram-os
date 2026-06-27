@@ -1,5 +1,0 @@
-#TODO process_path crate error
-[source]
-git = "https://github.com/ifd3f/caligula"
-[build]
-template = "cargo"

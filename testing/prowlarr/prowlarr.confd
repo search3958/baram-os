@@ -1,0 +1,9 @@
+# Prowlarr configuration options
+
+command_user="prowlarr:prowlarr" # user:group
+directory="/var/lib/prowlarr"
+supervisor="supervise-daemon"
+
+#logdir="/var/log/prowlarr"
+#error_log="$logdir/error.log"
+#output_log="$logdir/output.log"

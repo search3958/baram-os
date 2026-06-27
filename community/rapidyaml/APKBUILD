@@ -1,0 +1,88 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=rapidyaml
+pkgver=0.5.0
+pkgrel=5
+_c4core=28d2b807b9b58ec7754e00d6a13057fb708b78cd # tag: 0.2.2
+_cmake=195043e830735c8d0c168793a85974e33888527b
+_fast_float=052975dd5f8166d0f9e4a215fa75a349d5985b91
+_debugbreak=5dcbe41d2bd4712c8014aa7e843723ad7b40fd74
+pkgdesc="Library to parse and emit YAML, and do it fast"
+url="https://github.com/biojppm/rapidyaml/"
+arch="all"
+license="MIT"
+options="!check" # needs another 3 vendored deps it git clones..
+makedepends="
+	cmake
+	py3-cmake-build-extension
+	py3-gpep517
+	py3-setuptools-git
+	py3-setuptools_scm
+	py3-wheel
+	python3-dev
+	samurai
+	swig
+	"
+subpackages="$pkgname-dev py3-$pkgname-pyc py3-$pkgname:_py3"
+source="$pkgname-$pkgver.tar.gz::https://github.com/biojppm/rapidyaml/archive/refs/tags/v$pkgver.tar.gz
+	c4core-$_c4core.tar.gz::https://github.com/biojppm/c4core/archive/$_c4core.tar.gz
+	cmake-$_cmake.tar.gz::https://github.com/biojppm/cmake/archive/$_cmake.tar.gz
+	fast_float-$_fast_float.tar.gz::https://github.com/fastfloat/fast_float/archive/$_fast_float.tar.gz
+	debugbreal-$_debugbreak.tar.gz::https://github.com/biojppm/debugbreak/archive/$_debugbreak.tar.gz
+	"
+
+prepare() {
+	default_prepare
+
+	rmdir "$builddir"/ext/c4core
+	ln -sfv "$srcdir"/c4core-$_c4core "$builddir"/ext/c4core
+
+	rmdir "$builddir"/ext/c4core/cmake
+	ln -sfv "$srcdir"/cmake-$_cmake "$builddir"/ext/c4core/cmake
+
+	rmdir "$builddir"/ext/c4core/src/c4/ext/debugbreak
+	rmdir "$builddir"/ext/c4core/src/c4/ext/fast_float
+	ln -sfv "$srcdir"/debugbreak-$_debugbreak \
+		"$builddir"/ext/c4core/src/c4/ext/debugbreak
+	ln -sfv "$srcdir"/fast_float-$_fast_float \
+		"$builddir"/ext/c4core/src/c4/ext/fast_float
+}
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=ON \
+		-DRYML_BUILD_API=ON
+	cmake --build build
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	cd "$pkgdir"/usr
+	rm _ryml.so
+	rm ryml.py
+
+	rm lib/libc4core*
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (python bindings)"
+	depends="python3 py3-deprecation"
+
+	amove usr/lib/python3*
+}
+
+sha512sums="
+861f1d2c39c5c8d455e8d40e3ecadd828b948c5dea2bcb88ba92686ca77b9a7d69ab2d94407732eab574e4e3c7b319d0f1b31250b18fb513310847192623a2f7  rapidyaml-0.5.0.tar.gz
+7a1b35e0a5425f2e3927505f0ab2204c4dd84ea5ab37835d1acfd84c17a46f5807d03865985c29aa7fc291ac733bf79be7e4a0605aa3a77c54066d254f1aa7f6  c4core-28d2b807b9b58ec7754e00d6a13057fb708b78cd.tar.gz
+2947eb214a6c6a34513d1dd5e649152a01bb2d8d7a452c70a700bb4e0de17151706da8e63b3b2bcc05a3883964a2fa998d96f5245822a7c815c3d41625bed209  cmake-195043e830735c8d0c168793a85974e33888527b.tar.gz
+28c1f88b6afbade3cfae892292957e7e239bf8e887639fc66b7d627fb39e17a3390854fee76af6c19e2bd81fb35f29b0dec8495dc3092b884d3aae9a63867c16  fast_float-052975dd5f8166d0f9e4a215fa75a349d5985b91.tar.gz
+8c63cbab94c049d6f04a48b9de73f22c50ed1e68eba2b77a0fdcb63952d88b1f7248c59e3f4d519c1211a93f378c0200f62fae5a2596a1decd5df18204d4f488  debugbreal-5dcbe41d2bd4712c8014aa7e843723ad7b40fd74.tar.gz
+"

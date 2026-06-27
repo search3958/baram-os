@@ -1,0 +1,52 @@
+# Contributor: Sergiy Stupar <owner@sestolab.pp.ua>
+# Maintainer: Sergiy Stupar <owner@sestolab.pp.ua>
+pkgname=json2tsv
+pkgver=1.2
+pkgrel=0
+pkgdesc="JSON to TSV converter"
+url="https://codemadness.org/json2tsv.html"
+arch="all"
+license="ISC"
+subpackages="$pkgname-doc $pkgname-jaq::noarch $pkgname-jaq-doc:jaq_doc"
+source="https://codemadness.org/releases/json2tsv/json2tsv-$pkgver.tar.gz"
+options="!check" # No tests
+
+build() {
+	make
+}
+
+package() {
+	make MANPREFIX=/usr/share/man PREFIX=/usr DESTDIR="$pkgdir" install
+
+	# conflicts with jaq package
+	mv "$pkgdir"/usr/bin/jaq "$pkgdir"/usr/bin/json2tsv-jaq
+	mv "$pkgdir"/usr/share/man/man1/jaq.1 "$pkgdir"/usr/share/man/man1/json2tsv-jaq.1
+	gzip -9n "$pkgdir"/usr/share/man/man1/*.1
+}
+
+jaq() {
+	pkgdesc="$pkgdesc (shellscript wrapper)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/bin/json2tsv-jaq
+}
+
+doc() {
+	pkgdesc="$pkgdesc (documentation)"
+	install_if="docs $pkgname-jaq=$pkgver-r$pkgrel"
+
+	amove \
+		usr/share/man/man1/json2tsv.1* \
+		usr/share/doc
+}
+
+jaq_doc() {
+	pkgdesc="$pkgdesc (shellscript wrapper documentation)"
+	install_if="docs $pkgname-jaq=$pkgver-r$pkgrel"
+
+	amove usr/share/man/man1/json2tsv-jaq.1*
+}
+
+sha512sums="
+ed7d1311046ba461368688310828be42c6fbaef034e641bce0e514bf8456c68623c1a61b5e6721176ba5b86ad0bd13a35808065d65f8a07b9304c57dddf5c2b0  json2tsv-1.2.tar.gz
+"

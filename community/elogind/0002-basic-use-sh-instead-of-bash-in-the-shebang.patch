@@ -1,0 +1,34 @@
+From d601da58e67ec5809d9bb2d56e0b5cee68afe545 Mon Sep 17 00:00:00 2001
+From: fossdd <fossdd@pwned.life>
+Date: Tue, 22 Jul 2025 14:53:03 +0200
+Subject: [PATCH 02/10] basic: use sh instead of bash in the shebang
+
+Signed-off-by: Achill Gilgenast <achill@achill.org>
+---
+ src/basic/generate-cap-list.sh   | 2 +-
+ src/basic/generate-errno-list.sh | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/basic/generate-cap-list.sh b/src/basic/generate-cap-list.sh
+index 53abdd9a7223..c812e03f1ca8 100755
+--- a/src/basic/generate-cap-list.sh
++++ b/src/basic/generate-cap-list.sh
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env bash
++#!/usr/bin/env sh
+ # SPDX-License-Identifier: LGPL-2.1-or-later
+ set -eu
+ set -o pipefail
+diff --git a/src/basic/generate-errno-list.sh b/src/basic/generate-errno-list.sh
+index f756b2e02083..76a639122fa3 100755
+--- a/src/basic/generate-errno-list.sh
++++ b/src/basic/generate-errno-list.sh
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env bash
++#!/usr/bin/env sh
+ # SPDX-License-Identifier: LGPL-2.1-or-later
+ set -eu
+ set -o pipefail
+-- 
+2.54.0
+

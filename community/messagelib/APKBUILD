@@ -1,0 +1,166 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=messagelib
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="KDE PIM messaging library"
+# armhf blocked by qt6-qtdeclarative
+# x86, armv7, s390x, riscv64 blocked by qt6-qtwebengine
+arch="all !armhf !x86 !armv7 !s390x !riscv64"
+url="https://kontact.kde.org/"
+license="LGPL-2.0-only OR LGPL-3.0-only AND GPL-2.0-or-later"
+depends_dev="
+	akonadi-contacts-dev
+	akonadi-dev
+	akonadi-mime-dev
+	akonadi-search-dev
+	gpgme-dev
+	gpgmepp-dev
+	grantlee-dev
+	grantleetheme-dev
+	karchive-dev
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcontacts-dev
+	kdbusaddons-dev
+	ki18n-dev
+	kiconthemes-dev
+	kidentitymanagement-dev
+	kio-dev
+	kitemviews-dev
+	kjobwidgets-dev
+	kldap-dev
+	kmailtransport-dev
+	kmbox-dev
+	kmime-dev
+	knewstuff-dev
+	kpimtextedit-dev
+	kservice-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	libgravatar-dev
+	libkdepim-dev
+	libkleo-dev
+	pimcommon-dev
+	qca-qt6-dev
+	qgpgme-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtwebengine-dev
+	sonnet-dev
+	syntax-highlighting-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	graphviz
+	samurai
+	"
+checkdepends="
+	dbus
+	procps-ng
+	xwayland-run
+	"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/messagelib.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/messagelib-$pkgver.tar.xz"
+
+case "$CARCH" in
+	loongarch64|x86) options="$options !check";;
+esac
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_QCH=ON
+	cmake --build build
+}
+
+check() {
+	local skipped_tests="(mimetreeparser-bodypartformatterbasefactorytest"
+	local tests="
+		akonadi-mysql-urlhandlermanagertest
+		akonadi-mysql-viewergrantleethemesupporttest
+		akonadi-mysql-viewertest
+		akonadi-sqlite-viewer-grantleethemesupporttest
+		akonadi-sqlite-viewertest
+		messagecomposer-composerviewbasetest
+		messagecomposer-cryptocomposertest
+		messagecomposer-messagefactoryngtest
+		messagecomposer-recipientseditortest
+		messagecomposer-replystrategytest
+		messagecore-autocryptrecipienttest
+		messageviewer-dkim-dkimchecksignaturejobtest
+		messageviewer-dkim-dkimmanagerulesdialogtest
+		messageviewer-dkimchecksignaturejobtest
+		messageviewer-messageparttheme-objecttreeparsertest
+		messageviewer-messageparttheme-rendertest
+		messageviewer-messageparttheme-showonlymimeparttest
+		messageviewer-messageparttheme-unencryptedmessagetest
+		messageviewer-messagepartthemes-default-showonlymimeparttest
+		messageviewer-messagepartthemes-objecttreeparsertest
+		messageviewer-messagepartthemes-rendertest-headeronly
+		messageviewer-messagepartthemes-rendertest-hidden
+		messageviewer-messagepartthemes-rendertest-iconic
+		messageviewer-messagepartthemes-rendertest-inlined
+		messageviewer-messagepartthemes-rendertest-smart
+		messageviewer-messagepartthemes-unencryptedmessagetest
+		messageviewer-scamdetection-scamdetectionwebenginetest
+		messageviewer-scamwebenginedetection-scamdetectionwebenginetest
+		messageviewer-webengine-webengineaccesskeyanchorfromhtmltest
+		mimetreeparser-basicobjecttreeparsertest
+		templateparser-templateextracthtmlelementfrommailtest
+		templateparser-templateextracttextfrommailtest
+		templateparser-templateparserjobtest
+		webengineview-createdatabasefilejobtest
+		webengineview-urlhashingtest
+		webengineviewer-findbar-findbarbasetest
+		webengineviewer-webengineaccesskey-webengineaccesskeyanchorfromhtmltest
+		"
+	case "$CARCH" in
+		x86) tests="$tests webengineviewer-webengineexportpdfpagejobtest" ;;
+		loongarch64) tests="$tests akonadi-mysql-viewergrantleethemesupporttest" ;;
+		aarch64)
+			tests="$tests
+				messagecomposer-recipientseditortest
+				webengineviewer-webengineexportpdfpagejobtest"
+			;;
+		armv7)
+			tests="$tests
+				akonadi-mysql-urlhandlermanagertest
+				akonadi-sqlite-urlhandlermanagertest
+				webengineviewer-webengineexportpdfpagejobtest
+				"
+			;;
+		ppc64le)
+			tests="$tests
+				akonadi-mysql-urlhandlermanagertest
+				akonadi-mysql-viewergrantleethemesupporttest
+				akonadi-sqlite-urlhandlermanagertest
+				akonadi-sqlite-viewergrantleethemesupporttest
+				webengineviewer-webengineexportpdfpagejobtest
+				"
+			;;
+	esac
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	skipped_tests="$skipped_tests)"
+
+	dbus-run-session wlheadless-run -- ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+2adcd5cdc7e36998aeb005059cf63d2eb27f101c00a25333b368d02e70bb9b0233803922e447211e3e532dc9e17bdae6794c3ef2cdc2bd1bc762ace1ab84c3a9  messagelib-26.04.2.tar.xz
+"

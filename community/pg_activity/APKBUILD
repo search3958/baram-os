@@ -1,0 +1,53 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=pg_activity
+pkgver=3.6.1
+pkgrel=2
+pkgdesc="Top like application for PostgreSQL server activity monitoring"
+url="https://github.com/dalibo/pg_activity"
+arch="noarch"
+license="PostgreSQL"
+depends="
+	py3-attrs
+	py3-blessed
+	py3-humanize
+	py3-psutil
+	py3-psycopg2
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-psycopg
+	py3-pytest
+	"
+provides="py3-pg_activity=$pkgver-r$pkgrel"
+subpackages="$pkgname-pyc"
+source="https://github.com/dalibo/pg_activity/archive/v$pkgver/pg_activity-$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -p no:warnings \
+		--ignore=tests/test_ui.txt \
+		--ignore=tests/test_data.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+3032cbebf7c976dd0b18cdab271b7056ece4ab6a841c0fd725fb48f5e6576a90664e8857807b15355d17857fbf5c056c4b7a5bed1f219333a27b309948797c2c  pg_activity-3.6.1.tar.gz
+"

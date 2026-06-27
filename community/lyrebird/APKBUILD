@@ -1,0 +1,36 @@
+# Contributor: Katie Holly <holly@fuslvz.ws>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=lyrebird
+pkgver=0.8.1
+pkgrel=5
+pkgdesc="pluggable transport proxy for Tor, implementing obfs4"
+url="https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird"
+arch="all"
+license="BSD-3-Clause"
+makedepends="go"
+source="$pkgname-$pkgver.tar.bz2::https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird/-/archive/lyrebird-$pkgver/lyrebird-lyrebird-$pkgver.tar.bz2"
+options="net" # go
+builddir="$srcdir/lyrebird-lyrebird-$pkgver"
+
+# it used to be named this upstream
+provides="obfs4proxy=$pkgver-r$pkgrel"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -o lyrebird ./cmd/lyrebird
+}
+
+check() {
+	go test -short ./...
+}
+
+package() {
+	install -Dm755 lyrebird -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+9f6adfa9c132396b58dd132738438a1fe73b02fb70ae3291c71a2f114add9ac5ac9b5237a6301d5bfc6d2537012cefbf89835d364c47b0eb6c301aef6f54deb2  lyrebird-0.8.1.tar.bz2
+"

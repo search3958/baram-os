@@ -1,5 +1,0 @@
-#TODO compiled but not tested
-[source]
-git = "https://codeberg.org/outfrost/trimmeroni"
-[build]
-template = "cargo"

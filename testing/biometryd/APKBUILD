@@ -1,0 +1,80 @@
+# Contributor: Aster Boese <asterboese@mailbox.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=biometryd
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Mediates and multiplexes access to biometric devices"
+url="https://gitlab.com/ubports/development/core/biometryd"
+arch="all !armhf" # blocked by qt6-qtdeclarative-dev
+license="GPL-3.0-only"
+makedepends="
+	cmake
+	cmake-extras
+	dbus-cpp-dev
+	elfutils-dev
+	gtest-dev
+	libapparmor-dev
+	nlohmann-json
+	process-cpp-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	samurai
+	"
+checkdepends="
+	coreutils
+	dbus
+	"
+subpackages="$pkgname-dev $pkgname-qt5:_qt5 $pkgname-qt6:_qt6"
+source="https://gitlab.com/ubports/development/core/biometryd/-/archive/$pkgver/biometryd-$pkgver.tar.gz
+	0001-Add-missing-headers-for-gcc-13.patch
+	0004-disable_flaky_test.patch
+	0005-add-missing-types-header.patch
+	0006-direct-path-to-qmlplugindump.patch
+	"
+
+build() {
+	cmake -B build-qt5 -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DUSE_SYSTEMD=OFF
+	cmake --build build-qt5
+
+	cmake -B build-qt6 -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DUSE_SYSTEMD=OFF \
+		-DENABLE_QT6=ON
+	cmake --build build-qt6
+}
+
+check() {
+	ctest --test-dir build-qt5
+	ctest --test-dir build-qt6
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build-qt5
+	DESTDIR="$pkgdir" cmake --install build-qt6
+}
+
+_qt5() {
+	amove usr/lib/qt5
+}
+
+_qt6() {
+	amove usr/lib/qt6
+}
+
+sha512sums="
+590e077cc86e29801d66024b2836c32ecf2d57d8f31328d76c03b5df55e816e898df458ae721e4c3f2e6ae325eb659ccf3393bffaf20ff072a142a9573311872  biometryd-0.4.0.tar.gz
+89cb2cd23bafbf7bf6be13378ba98f3c15748b72d0938523546a853948bcf9af9c9405231810bf96be750f0cfdf0e524e2a8468f6bf707faefef3560b16be81c  0001-Add-missing-headers-for-gcc-13.patch
+4e0d8622df89742602ac43d5519c8d818da9e350b208b2468dce6b4a3764c6002f6ae67657c2b535f531c4f77374bee93f9e7be4b1cf3c3c1ef5f45d8abb8749  0004-disable_flaky_test.patch
+70b571955c5211597dadc69736e4e845ccd5d3a74b2ed3490d3075f1220e0309c787e1a4d5fb000fc4afe392b2b6e8d769d928e92ee200f62c1837819805599a  0005-add-missing-types-header.patch
+277a37567485e5f5595ebfb82362c63c9ddbee8683407b64c99e6d729bf85e080edf94f069f74a34a196abb858572d5378b642f923315841907116bd6b53d361  0006-direct-path-to-qmlplugindump.patch
+"

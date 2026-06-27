@@ -1,0 +1,42 @@
+# Contributor: Matt Dainty <matt+alpine@bodgit-n-scarper.com>
+# Maintainer: TBK <alpine@jjtc.eu>
+pkgname=py3-cheetah
+pkgver=3.3.3
+pkgrel=2
+pkgdesc="Cheetah is a template engine and code generation tool"
+url="https://cheetahtemplate.org/"
+arch="all"
+license="MIT"
+depends="python3"
+makedepends="
+	python3-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/C/CT3/CT3-$pkgver.tar.gz"
+builddir="$srcdir"/CT3-$pkgver
+
+replaces="py-cheetah" # Backwards compatibility
+provides="py-cheetah=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 setup.py check
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+c8835fda08e54e14e1eb12c3a2e37502cf6a8e4d1e4a66bf5a40bd2daff89b2cb02f064518d6c20fe0df8a727a9ebdc10efa30318fc2b856802c055e91365835  CT3-3.3.3.tar.gz
+"

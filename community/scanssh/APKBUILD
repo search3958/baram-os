@@ -1,0 +1,39 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=scanssh
+pkgver=2.1.4
+pkgrel=0
+pkgdesc="Fast SSH server and open proxy scanner"
+url="https://github.com/ofalk/scanssh"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	libpcap-dev
+	libevent-dev
+	libdnet-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ofalk/scanssh/archive/$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+329bf023efdcc740bab487871da973854e25cab6c83d4863ad15c212dca3fff1f12ceb419efce30946d4a9be0688fec3caf829a9eb563ff76c4011db360e27ce  scanssh-2.1.4.tar.gz
+"

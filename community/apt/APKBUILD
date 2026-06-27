@@ -1,0 +1,82 @@
+# Maintainer: qaqland <qaq@qaq.land>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=apt
+pkgver=3.2.0
+pkgrel=0
+pkgdesc="APT package management tool"
+url="https://salsa.debian.org/apt-team/apt"
+arch="all"
+license="GPL-2.0-or-later"
+depends="
+	debian-archive-keyring
+	dpkg
+	"
+makedepends="
+	bzip2-dev
+	db-dev
+	cmake
+	dpkg-dev
+	eudev-dev
+	gettext-dev
+	linux-headers
+	lz4-dev
+	openssl-dev
+	samurai
+	triehash
+	xxhash-dev
+	xz-dev
+	zlib-dev
+	zstd-dev
+	"
+checkdepends="gtest-dev"
+install="$pkgname.pre-install"
+pkgusers="_apt"
+pkggroups="_apt"
+subpackages="
+	$pkgname-dev
+	$pkgname-libs
+	$pkgname-lang
+	$pkgname-bash-completion
+	"
+source="https://salsa.debian.org/apt-team/apt/-/archive/$pkgver/apt-$pkgver.tar.bz2"
+options="!check" # todo
+
+build() {
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_LIBEXECDIR=lib \
+		-DCURRENT_VENDOR=debian \
+		-DUSE_NLS=ON \
+		-DUSE_SYSTEM_APTPKG=OFF \
+		-DWITH_DOC=OFF \
+		-DWITH_TESTS="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+dev() {
+	default_dev
+
+	mv -v "$subpkgdir"/usr/bin/apt-config "$pkgdir"/usr/bin/
+	rmdir -v "$subpkgdir"/usr/bin
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	cd "$pkgdir"
+	chown -Rc _apt:_apt \
+		etc/apt \
+		var/cache/apt \
+		var/lib/apt \
+		var/log/apt
+}
+
+sha512sums="
+3c23723f1b50d874e73029159064c3c6af986431fdc394d1f6e0f9c183f99d3f595cc3fb80f77a74a8bfb45f34609a9125b811fac18c5627786f967ea1b247f3  apt-3.2.0.tar.bz2
+"

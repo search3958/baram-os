@@ -1,0 +1,41 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=emacs-popup
+pkgver=0.5.9
+pkgrel=2
+_pkgreal=popup
+pkgdesc="Visual popup user interface library"
+url="https://github.com/auto-complete/popup-el"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="cmd:emacs"
+makedepends="emacs-nox"
+source="https://github.com/auto-complete/popup-el/archive/v$pkgver/emacs-popup-$pkgver.tar.gz
+	lexical-binding.patch
+	"
+builddir="$srcdir/popup-el-$pkgver"
+
+build() {
+	emacs -batch -q -no-site-file -L . \
+		-f batch-byte-compile \
+		./*.el
+}
+
+check() {
+	emacs -batch -q -no-site-file -L . \
+		-l tests/run-test.el
+}
+
+package() {
+	install -Dvm644 ./*.el ./*.elc \
+		-t "$pkgdir"/usr/share/emacs/site-lisp/
+
+	cd "$pkgdir"/usr/share/emacs/site-lisp
+	emacs -batch -q -no-site-file \
+		-eval "(loaddefs-generate \".\" \"$_pkgreal-loaddefs.el\")"
+}
+
+sha512sums="
+1a8c5ecb56e695f7a37915063d4e105cee92f8ae5a21e2e39ffe556dfdcf03c056b69f5e36c6ff3643713a914bb531adabcfbc525c531821e1520f7b3e93dc0b  emacs-popup-0.5.9.tar.gz
+cfbb856e3584e399e804f3dbf92734ef67c472bc7ea041aedf28088ed716de0173d8525f09a68ee5afb4ee94c05187a4ffabbeb370f3d27f125b1b6ba09291c5  lexical-binding.patch
+"

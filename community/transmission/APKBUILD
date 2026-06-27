@@ -1,0 +1,187 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+maintainer="Alex McGrath <amk@amk.ie>"
+pkgname=transmission
+pkgver=4.1.2
+pkgrel=0
+pkgdesc="Lightweight GTK BitTorrent client"
+url="https://transmissionbt.com/"
+install="transmission-daemon.pre-install transmission-daemon.post-upgrade"
+arch="all"
+license="GPL-3.0-only"
+pkgusers="transmission"
+pkggroups="transmission"
+makedepends="
+	clang
+	cmake
+	curl-dev
+	gtkmm4-dev
+	libdeflate-dev
+	libevent-dev
+	libpsl-dev
+	llvm
+	miniupnpc-dev
+	openssl-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="gtest-dev"
+source="https://github.com/transmission/transmission/releases/download/$pkgver/transmission-$pkgver.tar.xz
+	system-gtest.patch
+	transmission-daemon.initd
+	transmission-daemon.confd
+	transmission-daemon.logrotate
+	"
+subpackages="
+	$pkgname-lang-gtk:gtklang
+	$pkgname-gtk
+	$pkgname-lang-qt:qtlang
+	$pkgname-qt
+	$pkgname-base::noarch
+	$pkgname-cli
+	$pkgname-remote
+	$pkgname-extra
+	$pkgname-daemon
+	$pkgname-daemon-openrc
+	$pkgname-doc
+	"
+
+case "$CARCH" in
+riscv64|s390x)
+	# lld broken on these
+	;;
+*)
+	makedepends="$makedepends lld"
+	export LDFLAGS="$LDFLAGS -fuse-ld=lld"
+	;;
+esac
+
+# secfixes:
+#   3.00-r0:
+#     - CVE-2018-10756
+
+build() {
+	# Export cmake minimum version for third-party dht
+	export CMAKE_POLICY_VERSION_MINIMUM=3.5
+	CC=clang \
+	CXX=clang++ \
+	CXXFLAGS="$CXXFLAGS -flto -O2 -DNDEBUG" \
+	CFLAGS="$CFLAGS -flto -O2 -DNDEBUG" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DENABLE_DEPRECATED=ON \
+		-DENABLE_CLI=ON \
+		-DENABLE_GTK=ON \
+		-DENABLE_NLS=ON \
+		-DENABLE_QT=ON \
+		-DENABLE_TESTS="$(want_check && echo ON || echo OFF)" \
+		-DINSTALL_LIB=OFF \
+		-DRUN_CLANG_TIDY=OFF \
+		-DUSE_GTK_VERSION=4 \
+		-DUSE_QT_VERSION=6 \
+		-DUSE_SYSTEM_DEFLATE=ON \
+		-DUSE_SYSTEM_EVENT2=ON \
+		-DUSE_SYSTEM_MINIUPNPC=ON \
+		-DUSE_SYSTEM_PSL=ON \
+		-DWITH_CRYPTO="openssl" \
+		-DWITH_SYSTEMD=OFF
+	cmake --build build
+}
+
+check() {
+	# unstable
+	ctest --test-dir build -j4 -E LT.DhtTest.usesBootstrapFile
+}
+
+package() {
+	# the base package used to be -gtk, so depend on it now.
+	depends="$pkgname-gtk=$pkgver-r$pkgrel"
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -D -m755 "$srcdir"/transmission-daemon.initd \
+		"$pkgdir"/etc/init.d/transmission-daemon
+	install -D -m644 "$srcdir"/transmission-daemon.confd \
+		"$pkgdir"/etc/conf.d/transmission-daemon
+}
+
+daemon() {
+	pkgdesc="$pkgdesc (daemon and webinterface)"
+
+	install -d -o transmission -g transmission \
+		"$subpkgdir"/var/lib/transmission \
+		"$subpkgdir"/var/log/transmission
+	amove usr/bin/transmission-daemon \
+		usr/share/transmission
+	install -D -m644 "$srcdir"/transmission-daemon.logrotate \
+		"$subpkgdir"/etc/logrotate.d/transmission-daemon
+}
+
+cli() {
+	pkgdesc="$pkgdesc (cli)"
+
+	amove usr/bin/transmission-cli
+}
+
+remote() {
+	pkgdesc="$pkgdesc (remote client)"
+
+	amove usr/bin/transmission-remote
+}
+
+extra() {
+	pkgdesc="$pkgdesc (create/edit/show tools)"
+
+	amove \
+		usr/bin/transmission-create \
+		usr/bin/transmission-edit \
+		usr/bin/transmission-show
+}
+
+base() {
+	pkgdesc="Base icons/data for $pkgname"
+
+	amove usr/share/icons
+	amove usr/share/metainfo
+}
+
+gtk() {
+	pkgdesc="$pkgdesc (GTK4 client)"
+	depends="$pkgname-base=$pkgver-r$pkgrel"
+
+	amove usr/bin/transmission-gtk
+	amove usr/share/applications/transmission-gtk.desktop
+}
+
+gtklang() {
+	pkgdesc="Translations for Transmission GTK"
+	install_if="$pkgname-gtk=$pkgver-r$pkgrel lang"
+
+	amove usr/share/locale
+}
+
+qt() {
+	pkgdesc="$pkgdesc (Qt6 client)"
+	depends="$pkgname-base=$pkgver-r$pkgrel qt6-qtsvg"
+
+	amove usr/bin/transmission-qt
+	amove usr/share/applications/transmission-qt.desktop
+}
+
+qtlang() {
+	pkgdesc="Translations for Transmission Qt"
+	install_if="$pkgname-qt=$pkgver-r$pkgrel lang"
+
+	amove usr/share/transmission/translations
+}
+
+sha512sums="
+091b7c836058b3044226e4981f6d0f95ba11909dedb55d08751f27c8d001e414ab0b5a56862b0087d9af93fa8c9be4932065e3a3ef5e1aaf61f4205319e86223  transmission-4.1.2.tar.xz
+cfa3c8ab70b62a174772dade26609339d7345ec2d1753720edefd04b08589b7a285893976004ade73bb70eec64f5f1dec23afdb84b76d2d1a02f0a633cfc9582  system-gtest.patch
+5d05961b817189320a2f8468fa38061ac5cc67e01619acfc9cc1e9741ea7eb8c02ea6de12d9c100c3fbdd92d311189f619e1970a58be4de646742ea74c6bd8b8  transmission-daemon.initd
+dbc093fe00335bb207c28a4e810becc15e74b6f75e7579d561b160755d6b54bb23a45db39ee3480195a94a5e9bffdad692559d1b9662bba28119d18b713747a1  transmission-daemon.confd
+a0e770a46b916cde7ea13076a0e4646c43f3b4db4bc85c18d2fee7cdb5cab458a74897ffb4bf66327f35ce145e89f5320460034a1392cc0df66aa1a3c0d82f7b  transmission-daemon.logrotate
+"

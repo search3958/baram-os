@@ -1,0 +1,42 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+maintainer="Clayton Craft <clayton@craftyguy.net>"
+pkgname=wcslib
+pkgver=8.4
+pkgrel=2
+pkgdesc="implementation of the FITS WCS standard"
+url="https://www.atnf.csiro.au/people/mcalabre/WCS/wcslib/"
+arch="all"
+license="LGPL-3.0-or-later"
+makedepends="
+	cfitsio-dev
+"
+subpackages="$pkgname-dev $pkgname-doc"
+source="ftp://ftp.atnf.csiro.au/pub/software/wcslib/wcslib-$pkgver.tar.bz2"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+1989f8f5788fd6d9fa102b771ad7db188b0899f716e11360516c96742f81f50755881279f90fce388451e8857f24003c85751f06aea83377e04bb5230523469f  wcslib-8.4.tar.bz2
+"

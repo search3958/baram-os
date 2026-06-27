@@ -1,0 +1,159 @@
+# Contributor: Michael Pirogov <vbnet.ru@gmail.com>
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jeff Bilyk <jbilyk@gmail.com>
+pkgname=nagios-plugins
+pkgver=2.5
+pkgrel=0
+pkgdesc="Plugins for Nagios to check services on hosts"
+url="https://nagios-plugins.org/"
+arch="all"
+license="GPL-3.0-only"
+_depends_by_ssh="openssh-client"
+_depends_dig="bind-tools"
+_depends_disk_smb="samba-client"
+_depends_dns="bind-tools"
+_depends_fping="fping"
+_depends_log="grep"
+_depends_rcp="rpcbind"
+_depends_sensors="grep lm-sensors"
+_depends_snmp="net-snmp-tools"
+makedepends="openssh-client bind-tools samba-client fping grep rpcbind
+	lm-sensors net-snmp-tools
+	file freeradius-client-dev<1.1.8 libdbi-dev libpq linux-headers mariadb-dev
+	mariadb-connector-c-dev perl
+	net-snmp-dev openldap-dev openssl-dev>3 libpq-dev"
+install="$pkgname.post-upgrade"
+pkgusers="nagios"
+pkggroups="nagios"
+options="suid !check"
+source="https://github.com/nagios-plugins/nagios-plugins/releases/download/release-$pkgver/nagios-plugins-$pkgver.tar.gz
+	fix-compilation-warnings-about-sys-poll.patch
+	check_openrc
+	nagios-openrc.doasd
+	"
+
+_plugins_dir="/usr/lib/nagios/plugins"
+
+# Note: Split function takes $name*, so ntp must be before nt etc.
+_plugins="breeze by_ssh cluster dbi dhcp dig disk_smb disk dns dummy file_age
+	fping hpjd http icmp ide_smart ifoperstatus ifstatus ircd ldap load log
+	mailq mrtgtraf mrtg mysql nagios ntp nt nwstat overcr pgsql ping
+	procs radius real rpc sensors smtp snmp ssh swap time ups uptime users
+	wave ssl_validity"
+for _sub in $_plugins; do
+	subpackages="$subpackages $pkgname-$_sub:_plugin"
+done
+subpackages="$subpackages
+	$pkgname-openrc:_openrc:noarch
+	$pkgname-tcp
+	$pkgname-all:_all"  # all must be the last
+_plugins="$_plugins openrc tcp"
+
+prepare() {
+ 	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--bindir=/usr/sbin \
+		--libexecdir="/$_plugins_dir" \
+		--localstatedir=/var/nagios \
+		--with-ipv6 \
+		--with-mailq-command=/usr/bin/mailq \
+		--with-sudo-command=/usr/bin/sudo \
+		--with-ps-command="/bin/busybox ps -o stat,pid,ppid,vsz,rss,comm,args" \
+		--with-ps-format="%s %d %d %s %s %s %n" \
+		--with-ps-varlist="procstat,&procpid,&procppid,&procvsz,&procrss,procprog,&pos" \
+		--with-ps-cols=7 \
+		--with-ping-command="/bin/ping -c %d %s" \
+		--disable-nls
+	make all
+}
+
+package() {
+
+	make DESTDIR="$pkgdir" install
+
+	# Remove plugins that are useless or doesn't work on Alpine.
+	local name; for name in apt flexlm oracle; do
+		rm "$pkgdir/$_plugins_dir"/check_$name
+	done
+
+	rm -rf "$pkgdir"/usr/lib/charset.alias
+	rmdir -p "$pkgdir"/usr/lib "$pkgdir"/usr/include 2>/dev/null || true
+}
+
+tcp() {
+	local plugins=" clamd ftp imap jabber nntp nntps pop simap spop ssmtp udp"
+	local destdir="$subpkgdir/$_plugins_dir"
+	pkgdesc="Nagios plugins check_tcp${plugins// /, check_}"
+	provides="${plugins// /$pkgname-}"
+
+	mkdir -p "$destdir"
+	local name; for name in tcp $plugins; do
+		mv "$pkgdir/$_plugins_dir"/check_$name "$destdir"/
+	done
+}
+
+_openrc() {
+	pkgdesc="Nagios plugin check_openrc"
+	depends="$pkgname openrc doas"
+
+	install -m 755 -D "$srcdir"/check_openrc \
+		"$subpkgdir"/$_plugins_dir/check_openrc
+
+	install -m 600 -D "$srcdir"/nagios-openrc.doasd \
+		"$subpkgdir"/etc/doas.d/nagios-openrc.conf
+}
+
+_plugin() {
+	local name="${subpkgname#"$pkgname"-}"
+	local destdir="$subpkgdir/$_plugins_dir"
+	pkgdesc="Nagios plugin check_$name"
+	depends="$pkgname $(eval "echo \$_depends_$name")"
+
+	mkdir -p "$destdir"
+	mv "$pkgdir/$_plugins_dir"/check_$name* "$destdir"/
+
+	if file -bi "$destdir"/* | grep -qw text/x-perl; then
+		depends="$depends perl"
+	fi
+#	if ! file -bi "$destdir"/* | grep -qw application/x-sharedlib; then
+#		arch="noarch"
+#	fi
+}
+
+_all() {
+	pkgdesc="Metapackage that installs *all* Nagios plugins from the nagios-plugins package"
+
+	depends=''
+	local plugin; for plugin in $_plugins; do
+		depends="$depends $pkgname-$plugin"
+	done
+
+	mkdir -p "$subpkgdir"
+
+	# We exploit the fact that the -all subpackage is created last
+	# and check if all the plugins have been moved to subpackages.
+	local path= retval=0
+	for path in "$pkgdir/$_plugins_dir"/check_*; do
+		[ -r "$path" ] || continue
+		error "Please create a subpackage for ${path##*/} or remove it"
+		retval=1
+	done
+	return $retval
+}
+
+sha512sums="
+c91ede043a393d67299589c8e67496dc23381d804876ab81b6bba2db2ba19a0f786893be0c9b3e009e408c9dfd194ba4fa2d7c1fbc8ca08640e6bcc79942a9dc  nagios-plugins-2.5.tar.gz
+7a62e4808eb8b07ca43bc17a625f4199708da6c52b79eca7a756817cb734648fc3054cd89862638ae925022017db32479d2cfcfddeba79ab4557d7b9ec97c323  fix-compilation-warnings-about-sys-poll.patch
+27050160a71e897343da6d6fd25c322a227702caec98065f82e06cba8929c2f6c538a4563a420fb0a07419622107caba1ad44c2cad195a0c0c76a6a925ec1c4b  check_openrc
+4a4c267c8403d3a1c8630adda9ddbdf7ce421b65e6dbfc0eb3f2bf03f94df563371e78193e8b3127ba9f3edcf8f1a7f96d9312167e6f924028d16d144e8af5d2  nagios-openrc.doasd
+"

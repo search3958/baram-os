@@ -1,0 +1,31 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=perl-text-template
+pkgver=1.61
+pkgrel=1
+pkgdesc="Text::Template perl module"
+url="https://metacpan.org/release/Text-Template"
+arch="noarch"
+license="GPL-1.0-or-later OR Artistic-1.0-Perl"
+depends="perl"
+checkdepends="perl-test-warnings"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/M/MS/MSCHOUT/Text-Template-$pkgver.tar.gz"
+builddir="$srcdir/Text-Template-$pkgver"
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+b527f587fc3fee48fed495b7dcbb1da0db1e423873ab99f9360f4b1a2727d85aa9b06ef8ab59a90d575d9731821e1a0263db8d0d357b01965633c58257c556b4  Text-Template-1.61.tar.gz
+"

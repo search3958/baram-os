@@ -1,0 +1,66 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=qt6
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt6-qt3d
+pkgver=6.11.1
+pkgrel=0
+pkgdesc="C++ and QML APIs for easy inclusion of 3D graphics"
+url="https://qt.io/"
+arch="all"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+depends_dev="qt6-qtshadertools-dev"
+makedepends="$depends_dev
+	assimp-dev
+	cmake
+	perl
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	samurai
+	"
+case "$CARCH" in
+	armhf) ;;
+	*)
+		depends_dev="$depends_dev
+			qt6-qtdeclarative-dev
+			"
+		makedepends="$makedepends
+			qt6-qtdeclarative-dev
+			qt6-qtdeclarative-private-dev
+			"
+		;;
+esac
+
+subpackages="$pkgname-dev"
+options="!check" # No tests
+builddir="$srcdir/qt3d-everywhere-src-${pkgver/_/-}"
+
+case $pkgver in
+	*_alpha*|*_beta*|*_rc*) _rel=development_releases;;
+	*) _rel=official_releases;;
+esac
+
+source="https://download.qt.io/$_rel/qt/${pkgver%.*}/${pkgver/_/-}/submodules/qt3d-everywhere-src-${pkgver/_/-}.tar.xz"
+
+build() {
+	export CFLAGS="$CFLAGS -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -flto=auto"
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DINPUT_qt3d_assimp=system
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+dev() {
+	default_dev
+
+	amove usr/lib/qt6/sbom
+}
+
+sha512sums="
+64679efc2e3ea5847cf66f67e8b33d8ddbcc42be4908804e69389edc3118b680af1945977ee884d91d850a110c66db4ae3498ca732285ec75b052da09c58647f  qt3d-everywhere-src-6.11.1.tar.xz
+"

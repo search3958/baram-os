@@ -1,0 +1,42 @@
+# Contributor: Kaarle Ritvanen <kunkku@alpinelinux.org>
+# Maintainer: Kaarle Ritvanen <kunkku@alpinelinux.org>
+pkgname=aconf
+pkgver=0.8.1
+pkgrel=4
+pkgdesc="Alpine Configurator"
+url="https://gitlab.alpinelinux.org/kunkku/aconf/"
+arch="noarch"
+license="BSD-2-Clause"
+_luaver="5.3"
+_lua="lua$_luaver"
+depends="$_lua-augeas $_lua-b64 $_lua-cjson $_lua-file-magic $_lua-openrc
+	$_lua-ossl $_lua-posix $_lua-stringy uwsgi uwsgi-lua"
+makedepends="ldoc"
+source="https://dev.alpinelinux.org/archive/aconf/aconf-$pkgver.tar.xz
+	$pkgname.initd"
+options="!check"
+
+_modules="dnsmasq dns-zone network openssh strongswan"
+
+subpackages="$pkgname-doc $pkgname-openrc"
+for _m in $_modules; do
+	subpackages="$subpackages $pkgname-mod-$_m:_module"
+done
+
+package() {
+	make LUA_VERSION=$_luaver ROOT_DIR=$pkgdir install
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+_module() {
+	local m=${subpkgname#"$pkgname"-mod-}
+	depends="$pkgname=$pkgver-r$pkgrel"
+	amove "usr/share/lua/$_luaver/$pkgname/modules/$m.lua"
+
+	local lens=usr/share/$pkgname/augeas/aconf_${m//-/_}.aug
+	[ -f "$pkgdir/$lens" ] || return 0
+	amove "$lens"
+}
+
+sha512sums="68ae0f5b8c2f5d9c7085f5ebdd8ca6bffd0f83835a77cafdf4b782dcd27d81eec9f5d221e7be48cfaf184aa077ad5e9b0d7389e9eea0cbbf332f4d99330e5bc0  aconf-0.8.1.tar.xz
+2706ff356ee8ab72d5b0ac0b6f1bcb3996e7e66457ddc4dbf9745cc6d93a3d9051d141cf0dd28e6b73a422b2d67a0952ed1633471ef7c4bb7393e1ae17e3aa9d  aconf.initd"

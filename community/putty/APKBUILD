@@ -1,0 +1,56 @@
+# Contributor: Jeff Bilyk <jbilyk@alpinelinux.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+pkgname=putty
+pkgver=0.84
+pkgrel=1
+pkgdesc="SSH and telnet client"
+url="https://putty.software/"
+arch="all"
+license="MIT"
+depends="ncurses-terminfo-base"
+makedepends="
+	cmake
+	gtk+3.0-dev
+	linux-headers
+	perl
+	samurai
+	"
+subpackages="$pkgname-doc"
+source="https://the.earth.li/~sgtatham/putty/$pkgver/putty-$pkgver.tar.gz"
+options="!check" # no test suite
+
+# secfixes:
+#   0.81-r0:
+#     - CVE-2024-31497
+#   0.80-r0:
+#     - CVE-2023-48795
+#   0.76-r0:
+#     - CVE-2021-36367
+#   0.74-r0:
+#     - CVE-2020-14002
+#   0.73-r0:
+#     - CVE-2019-17068
+#     - CVE-2019-17069
+#   0.71-r0:
+#     - CVE-2019-9894
+#     - CVE-2019-9895
+#     - CVE-2019-9897
+#     - CVE-2019-9898
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dvm644 LICENCE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+647c84490c01f8c0f9cf02f565081d80ea2ea4fb90207cfb2fbe13ba5e8c3cea7c4807504363d3d3a851df5edb6087c3b39084820bf20e818dd551db54af0765  putty-0.84.tar.gz
+"

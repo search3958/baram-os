@@ -1,0 +1,138 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <newbyte@postmarketos.org>"
+pkgname=gtk+3.0
+pkgver=3.24.52
+pkgrel=0
+# NOTE: Upgrade only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="The GTK+ Toolkit (v3)"
+url="https://www.gtk.org/"
+install="$pkgname.post-deinstall"
+triggers="$pkgname.trigger=/usr/lib/gtk-3.0/immodules:/usr/lib/gtk-3.0/*/immodules gtk-update-icon-cache.trigger=/usr/share/icons/*"
+arch="all"
+license="LGPL-2.1-or-later"
+options="!check" # checkdepends in community
+depends="
+	gobject-introspection
+	shared-mime-info
+	"
+depends_dev="
+	gdk-pixbuf-dev
+	glib-dev
+	libepoxy-dev
+	libxext-dev
+	libxi-dev
+	libxinerama-dev
+	libxkbcommon-dev
+	wayland-libs-client
+	wayland-libs-cursor
+	wayland-protocols
+	"
+_icon_cache_depends="hicolor-icon-theme"
+makedepends="
+	$depends_dev
+	$_icon_cache_depends
+	at-spi2-core-dev
+	cairo-dev
+	cups-dev
+	expat-dev
+	fontconfig-dev
+	gettext-dev
+	gobject-introspection-dev
+	hicolor-icon-theme
+	iso-codes-dev
+	libice-dev
+	libx11-dev
+	libxcomposite-dev
+	libxcursor-dev
+	libxdamage-dev
+	libxfixes-dev
+	libxrandr-dev
+	meson
+	pango-dev
+	tiff-dev
+	wayland-dev
+	zlib-dev
+	"
+checkdepends="
+	ibus
+	xvfb-run
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-demo
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	gtk-update-icon-cache:icon_cache
+	"
+source="https://download.gnome.org/sources/gtk/${pkgver%.*}/gtk-$pkgver.tar.xz
+	5628.patch
+	events-Compress-touch-update-events.patch
+	"
+builddir="$srcdir/gtk-$pkgver"
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	abuild-meson \
+		-Db_lto=true \
+		-Dman=true \
+		-Dgtk_doc=false \
+		-Dbroadway_backend=true \
+		-Dxinerama=yes \
+		-Dprint_backends=file,lpr,cups \
+		-Dtests="$(want_check && echo true || echo false)" \
+		output
+	meson compile -C output
+}
+
+check() {
+	xvfb-run -a meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	ln -s gtk-update-icon-cache.1 "$pkgdir"/usr/share/man/man1/gtk4-update-icon-cache.1
+}
+
+dev() {
+	default_dev
+
+	amove usr/bin/gtk-builder-tool \
+		usr/bin/gtk-encode-symbolic-svg \
+		usr/bin/gtk-query-settings
+}
+
+demo() {
+	pkgdesc="$pkgdesc (demonstration application)"
+	amove usr/bin/gtk3-demo \
+		usr/bin/gtk3-demo-application \
+		usr/bin/gtk3-icon-browser \
+		usr/bin/gtk3-widget-factory \
+		usr/share/gtk-3.0/gtkbuilder.rng \
+		usr/share/glib-2.0/schemas/org.gtk.Demo.gschema.xml \
+		usr/share/applications/gtk3-demo.desktop \
+		usr/share/applications/gtk3-icon-browser.desktop \
+		usr/share/applications/gtk3-widget-factory.desktop \
+		usr/share/icons
+}
+
+lang() {
+	default_lang
+
+	amove usr/share/gtk-3.0/emoji
+}
+
+icon_cache() {
+	depends="$_icon_cache_depends"
+
+	# provide gtk4 symlink too
+	amove usr/bin/gtk-update-icon-cache
+	ln -s gtk-update-icon-cache "$subpkgdir"/usr/bin/gtk4-update-icon-cache
+}
+
+sha512sums="
+20c119cf1a8c390c9d572729f36215fe034731d9e741a0a30c96671f4606ef8b7cdbe5d5ebe986f6f6c9ac03b3ba5cddd8d63da0ebfc5341d179ec9dea5e82eb  gtk-3.24.52.tar.xz
+b592559177c60e627940b8894aace41b058fe738d47ebb8bccdb4c9c35dd1750e1db7e153a6e5db61d2d4e95ddefd712fd734a1bbc4230a79c889f8adac96e1f  5628.patch
+74e38bbdf8d8f84bd07c10b1d879d2ef5cc80ffcfc6bcbc3d916c4c4e9a10686e20c77bed4abb56d1eed463c644873ddd2500ef3028beb7db3b10cba3a658909  events-Compress-touch-update-events.patch
+"

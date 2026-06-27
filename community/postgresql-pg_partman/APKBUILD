@@ -1,0 +1,58 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=postgresql-pg_partman
+_projname=pg_partman
+pkgver=5.2.4
+pkgrel=0
+pkgdesc="Partition management extension for PostgreSQL"
+url="https://github.com/pgpartman/pg_partman"
+arch="all"
+license="PostgreSQL"
+_depends_scripts="
+	py3-psycopg2
+	python3
+	"
+makedepends="
+	$_depends_scripts
+	postgresql-dev
+	"
+subpackages="
+	$pkgname-scripts:_scripts:noarch
+	$pkgname-bitcode
+	$pkgname-doc
+	"
+source="https://github.com/pgpartman/pg_partman/archive/v$pkgver/$_projname-$pkgver.tar.gz
+	fix-python-shebang.patch
+	"
+builddir="$srcdir/$_projname-$pkgver"
+options="!check"  # tests require running PostgreSQL
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+_scripts() {
+	pkgdesc="$pkgdesc - Python scripts"
+	depends="$pkgname=$pkgver-r$pkgrel $_depends_scripts"
+	# Declare it as a "soft dependency", so the user can opt-out from installing.
+	install_if="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/libexec/postgresql*/*.py
+}
+
+bitcode() {
+	pkgdesc="$pkgdesc (bitcode for JIT)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="postgresql$(pg_config --major-version)-jit $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/postgresql*/bitcode
+}
+
+sha512sums="
+8328a00ce1a55a5c9173d4adbf251e784fed62413fb76bba89dd893749a720a5ecb25ee668eb0b826b8e1f2b89d9dd7da219fd797bfd9ab1a43d05f5b3ac494f  pg_partman-5.2.4.tar.gz
+e3cdd19267b6fc73173c05b0bcc33038f9c7dc8d53ec348ec2a641de03695c247522a503867cd93a750964c05b4fa17d6dc5f4f21e9673925d0656a90a4afb79  fix-python-shebang.patch
+"

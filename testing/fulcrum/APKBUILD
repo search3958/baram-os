@@ -1,0 +1,36 @@
+# Contributor: Jurvis Tan <jurvis@squareup.com>
+# Maintainer: Jurvis Tan <jurvis@squareup.com>
+pkgname=fulcrum
+_pkgname=Fulcrum
+pkgver=1.9.8
+pkgrel=1
+pkgdesc="Fast & nimble SPV Server for BCH and BTC"
+url="https://github.com/cculianu/Fulcrum"
+arch="all !riscv64" # limited by rocksdb
+license="GPL-3.0-or-later"
+makedepends="rocksdb7-dev zlib-dev bzip2-dev zeromq-dev qt5-qtbase-dev"
+subpackages="$pkgname-admin:admin:noarch $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cculianu/$_pkgname/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check"
+
+build() {
+	qmake-qt5 PREFIX=/usr $_pkgname.pro
+	make
+}
+
+package() {
+	make install INSTALL_ROOT="$pkgdir"
+	mv "$pkgdir"/usr/bin/$_pkgname "$pkgdir"/usr/bin/$pkgname
+}
+
+admin() {
+	pkgdesc="Fulcrum Admin CLI"
+	depends="python3"
+	mkdir -p "$subpkgdir"/usr/bin
+	mv "$pkgdir"/usr/bin/${_pkgname}Admin "$subpkgdir"/usr/bin/$pkgname-admin
+}
+
+sha512sums="
+460b0a1fa0f10b5f379b556508d2773e1da64719f72acad2b663c7dce96ccdd35bd4db1f0a24d544a6afa0d870f7cca1fc3926c225e9cae3cbe6ebf4110be66a  fulcrum-1.9.8.tar.gz
+"

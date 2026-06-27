@@ -1,0 +1,37 @@
+# Contributor: psykose <alice@ayaya.dev>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-hatch-requirements-txt
+pkgver=0.4.1
+pkgrel=2
+pkgdesc="Hatchling plugin to read project dependencies from requirements.txt"
+url="https://github.com/repo-helper/hatch-requirements-txt"
+arch="noarch"
+license="MIT"
+depends="python3 py3-hatchling"
+makedepends="py3-gpep517 py3-hatchling py3-wheel py3-setuptools"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/repo-helper/hatch-requirements-txt/archive/refs/tags/v$pkgver/hatch_requirements_txt-$pkgver.tar.gz"
+builddir="$srcdir/hatch-requirements-txt-$pkgver"
+options="!check" # missing py3-coincidence
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/hatch*.whl
+}
+
+sha512sums="
+8c143b767869b2ea4b593d913b59c5c1fd3e79e34178ff74769502d08255d9572d06c32aa8bb1f13b6be08c6a19c0d1a73c93f8d698fd48cd029570d877455bd  py3-hatch-requirements-txt-0.4.1.tar.gz
+"

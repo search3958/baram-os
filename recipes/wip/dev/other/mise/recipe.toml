@@ -1,8 +1,0 @@
-#TODO shared_child and libc crates error
-[source]
-git = "https://github.com/jdx/mise"
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

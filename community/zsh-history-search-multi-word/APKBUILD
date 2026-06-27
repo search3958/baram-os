@@ -1,0 +1,28 @@
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=zsh-history-search-multi-word
+pkgver=0_git20260525
+_gitrev=55d8e061d52f4aa26aac8915d920d3b4f5649429
+pkgrel=0
+pkgdesc="Binds Ctrl-R to a widget that searches for multiple keywords in an AND fashion"
+url="https://github.com/zdharma-continuum/history-search-multi-word"
+arch="noarch"
+license="MIT AND GPL-3.0-or-later"
+depends="zsh"
+subpackages="$pkgname-doc"
+source="history-search-multi-word-$_gitrev.tar.gz::https://github.com/zdharma-continuum/history-search-multi-word/archive/$_gitrev.tar.gz"
+builddir="$srcdir/history-search-multi-word-$_gitrev"
+options="!check" # no tests
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/zsh/plugins
+	install -Dm 644 LICENSE "$pkgdir"/usr/share/licenses/"$pkgname"/LICENSE
+	install -Dm 644 README.md -t "$pkgdir"/usr/share/doc/"$pkgname"/
+	install -Dm 644 CHANGELOG.md -t "$pkgdir"/usr/share/doc/"$pkgname"/
+
+	mkdir -p "$pkgdir"/usr/share/zsh/plugins/history-search-multi-word
+	mv ./h* "$pkgdir"/usr/share/zsh/plugins/history-search-multi-word
+}
+
+sha512sums="
+043d7f3af1be626121487ac6d8cb2c407354efe76e4c8b55ffa21b7f6271eb1548983ae1a27703f65c2c6b98b90f1fce604c60583a961843b40279ba5f7b72a7  history-search-multi-word-55d8e061d52f4aa26aac8915d920d3b4f5649429.tar.gz
+"

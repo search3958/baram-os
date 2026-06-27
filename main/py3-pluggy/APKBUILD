@@ -1,0 +1,45 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Contributor: Maxim Karasev <begs@disroot.org>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=py3-pluggy
+_pkgname=pluggy
+pkgver=1.6.0
+pkgrel=1
+pkgdesc="Plugin management and hook calling for Python"
+# Needs py3-pytest for checkdepends, which require py3-pluggy
+# in depends, so disable here to break a circular dependency
+options="!check"
+url="https://pluggy.readthedocs.io/en/latest/"
+arch="noarch"
+license="MIT"
+makedepends="
+	py3-gpep517
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver" \
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8b88eb778ab955910bcde2b3a6c4925d0a239f932aa9b1d8a351aa21b8a922bd842f735e397ef15ed9bd8e51085a88723660e1e691888a9879e7144add32bff2  pluggy-1.6.0.tar.gz
+"

@@ -1,5 +1,0 @@
-#TODO pnet_sys crate error
-[source]
-git = "https://github.com/Chleba/netscanner"
-[build]
-template = "cargo"

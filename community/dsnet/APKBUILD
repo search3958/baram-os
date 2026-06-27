@@ -1,0 +1,44 @@
+# Contributor: Marvin Preuss <marvin@xsteadfastx.org>
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=dsnet
+pkgver=0.8.1
+_rev=60242f2e6b03923f4474c6d8c5961ed6c4317f89 # used for version command
+pkgrel=10
+pkgdesc="Fast command to manage a centralised wireguard VPN"
+url="https://github.com/naggie/dsnet"
+arch="all"
+license="MIT"
+makedepends="go"
+options="!check chmod-clean net" # no tests available
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/naggie/dsnet/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build \
+		-ldflags "
+		-X \"github.com/naggie/dsnet.GIT_COMMIT=$_rev\" \
+		-X \"github.com/naggie/dsnet.VERSION=$pkgver\" \
+		-X \"github.com/naggie/dsnet.BUILD_DATE=$(date -d @"$SOURCE_DATE_EPOCH")\" \
+		" \
+		-o dsnet \
+		./cmd/root.go
+}
+
+package() {
+	install -Dvm755 dsnet -t "$pkgdir"/usr/bin/
+
+	install -Dvm644 CONFIG.md README.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dvm644 LICENSE.md \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+c5c87a308f2f2f35d732c9a46088d4315868d69aa06ccba113ac9cd5fb4c8ae8233bb4182253a491b8ea6afbd8ff05895d75b3bf2f34ef739b40f03535d8bc58  dsnet-0.8.1.tar.gz
+"

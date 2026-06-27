@@ -1,0 +1,34 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=acpi_call-src
+_modname=acpi_call
+pkgver=1.2.2
+pkgrel=0
+pkgdesc="A kernel module for calling ACPI methods via /proc/acpi/call (sources, AKMS)"
+url="https://github.com/nix-community/acpi_call"
+arch="noarch"
+license="GPL-3.0-or-later"
+source="https://github.com/nix-community/acpi_call/archive/v$pkgver/acpi_call-src-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/$_modname-$pkgver"
+
+prepare() {
+	default_prepare
+
+	cat >AKMBUILD <<-EOF
+	modname=$_modname
+	modver=$pkgver-r$pkgrel
+	built_modules='$_modname.ko'
+	EOF
+
+	echo acpi_call > "$_modname.conf"
+}
+
+package() {
+	install -D -m644 -t "$pkgdir"/usr/src/$_modname-$pkgver *.c Makefile AKMBUILD
+	install -D -m644 -t "$pkgdir"/usr/lib/modules-load.d/ "$_modname.conf"
+}
+
+sha512sums="
+675e1b40fba1834661bedca205a83d432dd91730a98af5de6e7e786765fd9a7e53d5fba598f4cf7389e221f67dd5b706332eef026c19f0abc93c478b11f540c8  acpi_call-src-1.2.2.tar.gz
+"

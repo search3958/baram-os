@@ -1,5 +1,0 @@
-#TODO not compiled or tested
-[source]
-tar = "https://download.savannah.gnu.org/releases/lzip/lzlib/lzlib-1.16.tar.gz"
-[build]
-template = "configure"

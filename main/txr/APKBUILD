@@ -1,0 +1,52 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=txr
+pkgver=302
+pkgrel=2
+pkgdesc="Programming language for convenient data munging"
+url="https://www.nongnu.org/txr/"
+# s390x: ftbfs (struct jmp in unwind.h not ported)
+arch="all !s390x"
+license="BSD-2-Clause"
+makedepends="libffi-dev zlib-dev"
+subpackages="$pkgname-doc $pkgname-vim::noarch"
+source="https://www.kylheku.com/cgit/txr/snapshot/txr-$pkgver.tar.gz"
+
+build() {
+	./configure --prefix=/usr
+	# Disable stack protection to resolve the issue:
+	# https://gitlab.alpinelinux.org/alpine/aports/-/issues/18136
+	case "$CARCH" in
+		loongarch64)
+			export CFLAGS="$CFLAGS -O2 -fno-stack-protector"
+			;;
+	esac
+	make
+}
+
+check() {
+	make tests
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dvm644 LICENSE METALICENSE \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+
+	install -Dvm644 ./*.vim \
+		-t "$pkgdir"/usr/share/vim/vimfiles/syntax/
+}
+
+vim() {
+	pkgdesc="Vim syntax for $pkgname"
+	depends=
+	install_if="$pkgname=$pkgver-r$pkgrel vim"
+
+	amove usr/share/vim/vimfiles/syntax
+}
+
+sha512sums="
+472dce2bfe2cc9e5a2a7e8ad43e909877130bb1d0ec8f41eded3603b8868680870c997ddabab59bfc7ebcb378cf0d6c6ca833e969fffaf689fdba20d35d1cc1d  txr-302.tar.gz
+"

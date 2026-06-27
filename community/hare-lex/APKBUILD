@@ -1,0 +1,22 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=hare-lex
+pkgver=0.26.0.1
+pkgrel=0
+pkgdesc="General purpose lexical tokenization machinery for Hare"
+url="https://sr.ht/~stacyharper/hare-lex"
+arch="noarch !armhf !ppc64le !s390x !armv7 !x86 !loongarch64" # hare
+license="MPL-2.0"
+makedepends="hare haredo"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~stacyharper/hare-lex/archive/$pkgver.tar.gz"
+
+check() {
+	haredo check
+}
+
+package() {
+	DESTDIR="$pkgdir" PREFIX=/usr haredo install
+}
+
+sha512sums="
+ac2be3ed9d6149ecbc142ceccf3b177f864c79ccfb65ace9f8228a3adc947809db0e7baea8d726555afcedf86298e5d121aefea1ad104610c8ddf4fc2ceb6938  hare-lex-0.26.0.1.tar.gz
+"

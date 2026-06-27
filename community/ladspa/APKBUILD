@@ -1,0 +1,33 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=ladspa
+pkgver=1.17
+pkgrel=0
+pkgdesc="Linux Audio Developer's Simple Plug-in API, examples and tools"
+url="https://www.ladspa.org"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="libsndfile-dev"
+subpackages="$pkgname-dev"
+source="ladspa-$pkgver-2.tgz::https://ladspa.org/download/ladspa_sdk_$pkgver.tgz
+	fix-memleak-in-plugin-scanning.patch"
+builddir="$srcdir/ladspa_sdk_$pkgver/src"
+
+build() {
+	make targets
+}
+
+check() {
+	make test
+}
+
+package() {
+	make INSTALL_PLUGINS_DIR="$pkgdir/usr/lib/ladspa/" \
+		INSTALL_INCLUDE_DIR="$pkgdir/usr/include/" \
+		INSTALL_BINARY_DIR="$pkgdir/usr/bin/" install
+}
+
+sha512sums="
+c096e70d245c50ffad379f2c9aab2735c205dfe7c27b5710cad6e43b39f8accc7b8bd2cd7ebbea2c399ad76018b3d4c701ed271de552d098b12ab218a58f0497  ladspa-1.17-2.tgz
+1a96b24a47c2c82f7c2f66e2ee711f0ecbed9b03260562b72ced1bd4c8f0e518d15fc7c15951b95b1999e3dae1723b855fd3431a9795279f8a88ad68900e48e7  fix-memleak-in-plugin-scanning.patch
+"

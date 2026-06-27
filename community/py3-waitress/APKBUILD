@@ -1,0 +1,66 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Contributor: Frank Oltmanns <alpine@oltmanns.dev>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-waitress
+pkgver=3.0.2
+pkgrel=2
+pkgdesc="A Python3 WSGI server"
+url="https://github.com/Pylons/waitress"
+arch="noarch"
+license="ZPL-2.1"
+depends="python3"
+checkdepends="
+	py3-pytest
+	py3-coverage
+	py3-pytest-cov
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+provides="py-waitress=$pkgver-r$pkgrel"  # for backward compatibility
+replaces="py-waitress"  # for backward compatibility
+subpackages="$pkgname-openrc $pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/w/waitress/waitress-$pkgver.tar.gz
+	waitress.initd
+	waitress.confd"
+builddir="$srcdir/waitress-$pkgver"
+
+# secfixes:
+#   2.1.2-r0:
+#     - CVE-2022-31015
+#   1.4.1-r0:
+#     - CVE-2019-16789
+#   1.4.0-r0:
+#     - CVE-2019-16785
+#     - CVE-2019-16786
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH=src \
+	python3 -m pytest tests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/waitress-$pkgver-py3-none-any.whl
+
+	mv "$pkgdir"/usr/bin/waitress-serve "$pkgdir"/usr/bin/waitress-serve-3
+
+	ln -s waitress-serve-3 "$pkgdir"/usr/bin/waitress-serve
+
+	install -D -m 755 "$srcdir"/waitress.initd "$pkgdir"/etc/init.d/waitress
+	install -D -m 644 "$srcdir"/waitress.confd "$pkgdir"/etc/conf.d/waitress
+}
+
+sha512sums="
+f225447b936e4742cf6f0e45b72cc2e33c06ff609c9896fc226de23b9c7ba64140914e3525f57c901617c0a49df3052fe5acbd8ec46f9557832c383ab9d4a483  waitress-3.0.2.tar.gz
+376206127f007f45abf7ff2740bc9da3fdbc048d9d099f9b1cad419db4c41889069e58a329ee790879f4cee9f4821f7d9a11945eeeb2bae52d05f56d997e23d6  waitress.initd
+3f3fce6347784461c39f4281c371eabeff165dcfc273f1f92a6f50db35a36dd79faef70abf638dbe3f1894f050828cb3be755172cb7b8283bcbf9b0d5b2723da  waitress.confd
+"

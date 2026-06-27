@@ -1,0 +1,40 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=ttl
+pkgver=0.19.1
+pkgrel=0
+pkgdesc="Fast, modern traceroute with lot of options. A better mtr."
+url="https://github.com/lance0/ttl"
+arch="all"
+license="Apache-2.0 AND MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	cargo-c
+	cmake
+	rust-bindgen
+	clang-dev
+	samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/lance0/ttl/archive/refs/tags/v$pkgver.tar.gz"
+options="net"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --release --frozen
+}
+
+package() {
+	install -Dm755 "$builddir"/target/release/"$pkgname" "$pkgdir"/usr/bin/"$pkgname"
+}
+
+sha512sums="
+0c6ec8304f4a278dfd23be26a5a91742e86a0b58478895cbea50c86c770d77d2948580f23cda20601b0cfe16a15c4ec103946122e3304ee40c81cc7a2bda7e1f  ttl-0.19.1.tar.gz
+"

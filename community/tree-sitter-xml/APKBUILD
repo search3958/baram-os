@@ -1,0 +1,38 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+# Maintainer: Matthias Ahouansou <matthias@ahouansou.cz>
+pkgname=tree-sitter-xml
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="XML & DTD grammars for tree-sitter"
+url="https://github.com/ObserverOfTime/tree-sitter-xml"
+arch="all"
+license="MIT"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+subpackages="$pkgname-doc"
+provides="tree-sitter-dtd=$pkgver-r$pkgrel"
+install_if="tree-sitter-grammars"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ObserverOfTime/tree-sitter-xml/archive/refs/tags/v$pkgver.tar.gz"
+
+_langs='xml dtd'
+
+build() {
+	local lang; for lang in $_langs; do
+		abuild-tree-sitter build -s "$lang/src"
+	done
+}
+
+check() {
+	tree-sitter test
+}
+
+package() {
+	local lang; for lang in $_langs; do
+		DESTDIR="$pkgdir" abuild-tree-sitter install -s "$lang/src" -q "$lang/queries"
+	done
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+3db25fb21bf85e2dea9016f9fa28a54e073fdb5c5f71db75a881008b10f56d07c35a5db51037e2407fcf3193f570de3e2568aa2b1991c3d0bc16effa0b11ffc0  tree-sitter-xml-0.7.0.tar.gz
+"

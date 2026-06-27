@@ -1,0 +1,49 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=teapot-tools
+pkgver=0.4.2
+pkgrel=3
+pkgdesc="Replacement for depot_tools (gclient) and luci-go (cipd)"
+url="https://codeberg.org/selfisekai/teapot_tools"
+# armhf: ci hangs
+# riscv64: ci broken
+# x86: segfaults
+# loongarch64: blocked by libc crate
+arch="all !armhf !riscv64 !x86 !loongarch64"
+license="Apache-2.0"
+depends="git"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	protoc
+	python3-dev
+	"
+source="teapot_tools-$pkgver.tar.gz::https://codeberg.org/selfisekai/teapot_tools/archive/v$pkgver.tar.gz"
+options="net"	# cargo crates
+builddir="$srcdir/teapot_tools"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release --bin download_from_google_storage
+	cargo auditable build --frozen --release --bin gclient
+}
+
+check() {
+	cargo test --release
+}
+
+package() {
+	install -Dm755 target/release/download_from_google_storage "$pkgdir"/usr/bin/download_from_google_storage
+	install -Dm755 target/release/gclient "$pkgdir"/usr/bin/gclient
+}
+
+sha512sums="
+93e85fb8ac4913b904a31c8907ad382cdf18fcabfa8f8f3ce8eeee28edde4d5d6420ef7b05215eb592638cb1be080ce4f3ea07608b510f644f1a5fc6a73d704c  teapot_tools-0.4.2.tar.gz
+"

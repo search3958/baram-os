@@ -1,0 +1,34 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=dolt
+pkgver=2.0.6
+pkgrel=0
+pkgdesc="Dolt – It's Git for Data"
+url="https://www.dolthub.com"
+arch="all !x86 !armhf !armv7" # fails on 32-bit
+license="Apache-2.0"
+options="!check chmod-clean net"
+makedepends="go icu-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dolthub/dolt/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver/go"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	mkdir -p build
+	go build \
+		-mod=readonly \
+		-ldflags "-extldflags \"$LDFLAGS\"" \
+		-o build \
+		./cmd/...
+}
+
+package() {
+	install -Dm755 build/dolt "$pkgdir"/usr/bin/dolt
+}
+
+sha512sums="
+045255450483e814ac7c2d0035b8a25f3ab27ad14431ee388e012683c5a8153c09ada9cb5b7711569468d826ddc514c5bb4392f249f5f3f8f284d94bea612923  dolt-2.0.6.tar.gz
+"

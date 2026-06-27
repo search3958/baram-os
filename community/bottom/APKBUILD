@@ -1,0 +1,46 @@
+# Contributor: guddaff <guddaff@protonmail.com>
+# Maintainer: guddaff <guddaff@protonmail.com>
+pkgname=bottom
+pkgver=0.14.1
+pkgrel=0
+pkgdesc="Graphical process/system monitor with a customizable interface"
+url="https://github.com/ClementTsang/bottom"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+subpackages="
+	$pkgname-fish-completion
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-doc
+	"
+source="https://github.com/ClementTsang/bottom/archive/$pkgver/bottom-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	BTM_GENERATE=true cargo auditable build --frozen --release
+}
+
+check() {
+	# Integration tests spawn btm in PTYs; parallel runs segfault on builders.
+	CARGO_HUSKY_DONT_INSTALL_HOOKS=true cargo test --frozen -- --test-threads=1
+}
+
+package() {
+	install -Dm755 target/release/btm -t "$pkgdir"/usr/bin/
+
+	install -Dm644 sample_configs/default_config.toml -t "$pkgdir"/usr/share/doc/$pkgname/
+
+	cd target/tmp/bottom/completion
+	install -Dm644 _btm "$pkgdir"/usr/share/zsh/site-functions/_btm
+	install -Dm644 btm.bash "$pkgdir"/usr/share/bash-completion/completions/btm
+	install -Dm644 btm.fish "$pkgdir"/usr/share/fish/vendor_completions.d//btm.fish
+}
+
+sha512sums="
+aafcc0f7de07abddf6bd6383b092100c8da2009010cf7ae8345ad1b003fb6f93f2eedfe543cdeb83a6ca30158e9743536431d5f02ada55d2a1d0fcc52bb0a8c6  bottom-0.14.1.tar.gz
+"

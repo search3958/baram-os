@@ -1,0 +1,30 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-flask-restful
+_pkgname=Flask-RESTful
+pkgver=0.3.10
+pkgrel=2
+pkgdesc="Flask RESTful API extension"
+url="https://pypi.org/project/Flask-RESTful"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 py3-flask"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-flask-restful" # Backwards compatibility
+provides="py-flask-restful=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+7c09d04d6b11331eabf81de146a289558e563b25bc71d3e21d090862a14b09e10a1005e76ab8777c2319afd714c6a7c7b8d5dc04ac107b8ba1a3c0644b341bea  Flask-RESTful-0.3.10.tar.gz
+"

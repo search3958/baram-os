@@ -1,0 +1,57 @@
+# Contributor: Lucas Ramage <ramage.lucas@protonmail.com>
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=ecl
+pkgver=24.5.10
+pkgrel=2
+pkgdesc="Embeddable Common Lisp"
+url="https://ecl.common-lisp.dev/"
+arch="all"
+license="LGPL-2.1-or-later"
+depends_dev="
+	gc-dev
+	gmp-dev
+	libatomic_ops-dev
+	libffi-dev
+	"
+makedepends="
+	$depends_dev
+	texinfo
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://common-lisp.net/project/ecl/static/files/release/ecl-$pkgver.tgz"
+options="!check"
+
+prepare() {
+	default_prepare
+
+	update_config_sub
+}
+
+build() {
+	CFLAGS="$CFLAGS -std=gnu17" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--infodir=/usr/share/info \
+		--mandir=/usr/share/man \
+		--localstatedir=/var/state/ecl \
+		--enable-boehm=system \
+		--enable-gmp=system \
+		--enable-libatomic=system
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+46e6da0f319573e412e54573b3c029179ba9debf48f73828ad5dd0a99c4a0b4ef21f99b411fdab3dc5429242c917553eb3e9794eeac7ec44667cd26fc0dd927e  ecl-24.5.10.tgz
+"

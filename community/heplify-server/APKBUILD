@@ -1,0 +1,70 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=heplify-server
+pkgver=1.60.0
+pkgrel=9
+pkgdesc="HEP Capture Server & Switch in Go"
+url="http://sipcapture.io"
+arch="all !armhf !armv7 !x86" # FTBFS: unaligned 64-bit atomic operation
+license="AGPL-3.0-or-later"
+makedepends="go"
+install="$pkgname.pre-install"
+subpackages="$pkgname-openrc"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sipcapture/heplify-server/archive/refs/tags/v$pkgver.tar.gz
+	$pkgname.initd
+	"
+
+case $CARCH in
+	ppc64le)
+		makedepends="$makedepends lua5.1-dev"
+		options="$options !check" # panic: test timed out
+		export GOFLAGS="$GOFLAGS -tags=llua"
+		;;
+	riscv64|loongarch64)
+		makedepends="$makedepends lua5.1-dev"
+		export GOFLAGS="$GOFLAGS -tags=llua"
+		;;
+	*)
+		makedepends="$makedepends luajit-dev"
+		;;
+esac
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+export GOFLAGS="$GOFLAGS -modcacherw"
+
+prepare() {
+	default_prepare
+	go mod download
+
+	case $CARCH in
+		armhf|armv7|x86|s390x|riscv64|ppc64le|loongarch64)
+			# -race is not supported on these arches
+			sed -i '/go test/s/-race//' Makefile
+	esac
+}
+
+build() {
+	make all
+}
+
+check() {
+	# is not supported when testing with -race
+	export GOFLAGS="${GOFLAGS/-buildmode=pie}"
+
+	make test
+}
+
+package() {
+	install -D -m755 heplify-server "$pkgdir"/usr/bin/heplify-server
+	install -D -m644 example/homer7_config/heplify-server.toml \
+		"$pkgdir"/etc/heplify-server/heplify-server.toml
+	install -D -m755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+5fee80477b81a7ca111cd7721a03dd05d2ae4f5bcbbdeb11536544c3a769dbf235136e93112341bec769c0be33353b0ad8da02e7ba07477f686881a79636629c  heplify-server-1.60.0.tar.gz
+f090147fa00fa3c12bce3dd7dffbe97fe0eb5ab61cfccac996921ea36c957ffc55ce53f45e4d1f1b8e0bcc7b4ac7eb3bf362ab6d65b46f2619336d3c18197a11  heplify-server.initd
+"

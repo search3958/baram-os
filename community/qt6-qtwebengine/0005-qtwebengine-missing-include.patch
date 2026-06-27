@@ -1,0 +1,12 @@
+diff --git a/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h b/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h
+index 99a4b4449..36cc08645 100644
+--- a/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h
++++ b/src/3rdparty/chromium/third_party/lss/linux_syscall_support.h
+@@ -114,6 +114,7 @@ extern "C" {
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <sys/syscall.h>
++#include <time.h>
+ #include <unistd.h>
+ #include <linux/unistd.h>
+ #include <endian.h>

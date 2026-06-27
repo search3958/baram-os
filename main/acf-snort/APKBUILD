@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-snort
+pkgver=0.8.1
+pkgrel=0
+pkgdesc="Web-based system administration interface for snort"
+url="https://gitlab.alpinelinux.org/acf/acf-snort"
+arch="noarch !riscv64" # blocked by snort -> luajit
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core snort"
+source="https://gitlab.alpinelinux.org/acf/acf-snort/-/archive/v$pkgver/acf-snort-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c174d03bcb1ac9e84bb396b4959b37c2915a79d9fcb646cfd2ed1df6e02bc8410672ce4c4968eebfadf984673949de0291b3b255b18ae769cd3e58cb3f76b6a5  acf-snort-v0.8.1.tar.gz
+"

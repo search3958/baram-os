@@ -1,0 +1,30 @@
+# Contributor: André Klitzing <aklitzing@gmail.com>
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=reptyr
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="Reparent a running program to a new terminal"
+url="https://github.com/nelhage/reptyr"
+arch="x86 x86_64 armhf armv7 riscv64"
+license="MIT"
+makedepends="linux-headers bash-completion-dev"
+checkdepends="python3 py3-pexpect"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="https://github.com/nelhage/reptyr/archive/reptyr-$pkgver.tar.gz"
+builddir="$srcdir/"reptyr-reptyr-$pkgver
+
+build() {
+	make
+}
+
+check() {
+	NO_TEST_STEAL=1 make PYTHON_CMD=python3 test
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+5bbf22a93ceb69489c1370d1a80fdf0916cb057346f8d83a8568228622a0e58ed8cfb374bc69e090219b4d69903d2ff400f0bf4ee2f910eb9301492fe69af78c  reptyr-0.10.0.tar.gz
+"

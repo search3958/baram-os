@@ -1,0 +1,37 @@
+# Contributor: David Sugar <tychosoft@gmail.com>
+maintainer="David Sugar <tychosoft@gmail.com>"
+pkgname=moderncli
+pkgver=1.4.1
+pkgrel=0
+pkgdesc="Modern C++17 header-only library of includes"
+url="https://gitlab.com/tychosoft/moderncli"
+arch="noarch"
+license="MIT"
+makedepends="cmake fmt-dev openssl-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://gitlab.com/tychosoft/moderncli/-/archive/v$pkgver/moderncli-v$pkgver.tar.gz"
+builddir="$srcdir"/$pkgname-v$pkgver
+
+build() {
+	cmake \
+		-G "Unix Makefiles" \
+		-DCMAKE_INSTALL_SYSCONFDIR:PATH=/etc \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=Release .
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	DESTDIR="$pkgdir" make install
+	install -Dm644 LICENSE.md "$pkgdir"/usr/share/licenses/$pkgname/LICENSE.md
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+	install -Dm644 FEATURES.md "$pkgdir"/usr/share/doc/$pkgname/FEATURES.md
+}
+
+sha512sums="
+e30c010f7b81a8fe63533d8bbf344081a17fb694476e8aec922e7b34ae8799c2b1fb78346fd365f767466a1a9cdb94c6a579d73370cdd7484926bbd6a94f9f89  moderncli-v1.4.1.tar.gz
+"

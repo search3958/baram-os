@@ -1,0 +1,37 @@
+# Contributor: Angelo Verlain <hey@vixalien.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=capnet-assist
+pkgver=8.0.2
+pkgrel=0
+pkgdesc="Captive Portal Assistant for elementary OS"
+url="https://github.com/elementary/capnet-assist"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	granite7-dev
+	gcr4-dev
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	vala
+	webkit2gtk-6.0-dev
+	"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/elementary/capnet-assist/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+0eeb9506180e19773294c73cb49b9212c4d1f016c2527972b3ef0944f203cb0c963bafaf1e6660f450122f6c26b8b708c54acefbe3e14537c790f755a2e52ca0  capnet-assist-8.0.2.tar.gz
+"

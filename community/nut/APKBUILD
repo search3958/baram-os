@@ -1,0 +1,99 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Contributor: Kozak Ivan <kozak-iv@yandex.ru>
+# Maintainer: Kozak Ivan <kozak-iv@yandex.ru>
+pkgname=nut
+pkgver=2.8.3
+pkgrel=5
+pkgdesc="Network UPS tools"
+url="https://networkupstools.org/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="hidapi udev udev-init-scripts-openrc"
+depends_dev="openssl-dev>3 libmodbus-dev libusb-dev net-snmp-dev neon-dev nss-dev"
+makedepends="$depends_dev libtool autoconf automake"
+pkgusers=$pkgname
+pkggroups=$pkgname
+install="$pkgname.pre-install"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-bash-completion $pkgname-openrc $pkgname-udev"
+source="https://networkupstools.org/source/${pkgver%.*}/nut-$pkgver.tar.gz
+	powerfail.initd
+	upsd.initd
+	upsmon.initd
+	"
+
+prepare() {
+	default_prepare
+
+	# fix version
+	git init .
+	git config user.name "abc"
+	git config user.email "a@a"
+	git add configure.ac
+	git commit -m "$pkgver"
+	git tag "$pkgver"
+
+	autoreconf -fi
+}
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--libexecdir=/usr/lib/nut \
+		--without-wrap \
+		--with-user=$pkgname \
+		--with-group=$pkgname \
+		--disable-static \
+		--with-serial \
+		--with-usb \
+		--without-avahi \
+		--with-snmp \
+		--with-modbus \
+		--with-neon \
+		--without-powerman \
+		--without-ipmi \
+		--without-freeipmi \
+		--with-libltdl \
+		--without-cgi \
+		--with-drvpath=/usr/lib/nut \
+		--datadir=/usr/share/nut \
+		--sysconfdir=/etc/nut \
+		--with-statepath=/var/run/nut \
+		--with-altpidpath=/var/run/nut \
+		--with-udev-dir=/usr/lib/udev \
+		--with-nss \
+		--with-openssl
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm755 "$srcdir"/powerfail.initd "$pkgdir"/etc/init.d/nut-powerfail.initd
+	install -Dm755 "$srcdir"/upsd.initd "$pkgdir"/etc/init.d/nut-upsd
+	install -Dm755 "$srcdir"/upsmon.initd "$pkgdir"/etc/init.d/nut-upsmon
+	install -Dm644 "$builddir"/scripts/logrotate/nutlogd "$pkgdir"/etc/logrotate.d/$pkgname
+	install -d -o $pkgname -g $pkgname "$pkgdir"/var/lib/$pkgname
+
+	install -D -m644 "$builddir"/scripts/misc/nut.bash_completion \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname.bash
+
+	local file;
+	for file in "$pkgdir"/etc/nut/*.sample; do
+		chmod 640 $file
+		chown root:$pkgname $file
+		mv $file ${file%.sample}
+	done
+}
+
+sha512sums="
+0aeafad02ab323b02041a370c586dede91483cab57e0a9d1256a685716ca9f0d0f114df904ef472d48fa53ac1896690b7878828eb3b00934959c7aeaa63af99f  nut-2.8.3.tar.gz
+c32f693e9882602f847b714d2837172b18c0b2fb78cbbf95c0af43a59b3213e3241327890ae038573a9de114ab33bb43d69796c4683b5120ca49cd3174dd5f2d  powerfail.initd
+5fce1247815e36a0e787f28dfec215077a42b046f6ce35a5ad3cf94479dfc26303d3cf4d5f760d5851ed5273ee398572c36cd354af0645cbebc1f1560414e222  upsd.initd
+32470ae473fc363131787cd57f13d40763898947d56d032790ba7f3a5eaa8038b602f7e395ca44f6c5adce8ee5ec496e30ca0eaadb3c78a38015677aea751e12  upsmon.initd
+"

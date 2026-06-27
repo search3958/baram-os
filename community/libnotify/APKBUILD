@@ -1,0 +1,43 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libnotify
+pkgver=0.8.8
+pkgrel=0
+pkgdesc="Desktop notification library"
+url="https://gitlab.gnome.org/GNOME/libnotify"
+arch="all"
+options="!check" # No tests defined when building with meson.
+license="LGPL-2.1-or-later"
+makedepends="
+	dbus-dev
+	docbook-xsl
+	gdk-pixbuf-dev
+	gobject-introspection-dev
+	gtk+3.0-dev
+	meson
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://download.gnome.org/sources/libnotify/${pkgver%.*}/libnotify-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dtests="$(want_check && echo true || echo false)"\
+		-Dintrospection=enabled \
+		-Dgtk_doc=false \
+		-Dman=true \
+		output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+0fedd230d3c8b9bd3c783794e690752cf6388fc178854267effe3ba26aaa9248415cdf0ab994f596ace8bef59e0c1e41196f42a225221d7f0e1efc54683c310a  libnotify-0.8.8.tar.xz
+"

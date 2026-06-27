@@ -1,0 +1,52 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=totem-pl-parser
+pkgver=3.26.7
+pkgrel=0
+pkgdesc="GNOME playlist parser library"
+url="https://www.gnome.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+makedepends="
+	gmime-dev
+	gobject-introspection-dev
+	itstool
+	json-glib-dev
+	libarchive-dev
+	libgcrypt-dev
+	libxml2-dev
+	libxml2-utils
+	libxslt
+	meson
+	"
+options="!check" # doesn't detect gvfs' http support
+subpackages="$pkgname-dev $pkgname-lang"
+source="https://download.gnome.org/sources/totem-pl-parser/${pkgver%.*}/totem-pl-parser-$pkgver.tar.xz"
+
+prepare() {
+	default_prepare
+	# Patch out -Werror= cflags
+	sed "/'-Werror=/d" -i meson.build
+}
+
+build() {
+	export CFLAGS="$CFLAGS -Wno-error"
+	abuild-meson \
+		-Denable-libarchive=yes \
+		-Denable-libgcrypt=yes \
+		-Dintrospection=true \
+		build
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+sha512sums="
+e1c348d672414559f0816560ad40047abebc39ef403cb4bb058efc33b5a5920ff13a17ad4d1c004af1c430d0d816c3e104f8fe02eda8f844d888a1c066889385  totem-pl-parser-3.26.7.tar.xz
+"

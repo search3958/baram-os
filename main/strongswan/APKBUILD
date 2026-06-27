@@ -1,0 +1,196 @@
+# Contributor: Jesse Young <jlyo@jlyo.org>
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=strongswan
+pkgver=6.0.7
+pkgrel=1
+pkgdesc="IPsec-based VPN solution focused on security and ease of use, supporting IKEv1/IKEv2 and MOBIKE"
+url="https://www.strongswan.org/"
+arch="all"
+pkgusers="ipsec"
+pkggroups="ipsec"
+license="GPL-2.0-or-later WITH OpenSSL-Exception"
+depends="iproute2"
+makedepends="
+	curl-dev
+	gettext-dev
+	gmp-dev
+	libcap-dev
+	linux-headers
+	openssl-dev>3
+	py3-build
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3
+	sqlite-dev
+	"
+install="$pkgname.pre-install"
+subpackages="$pkgname-doc $pkgname-dbg $pkgname-logfile $pkgname-openrc py3-vici-pyc py3-vici::noarch"
+source="https://download.strongswan.org/strongswan-$pkgver.tar.bz2
+	0001-charon-add-optional-source-and-remote-overrides-for-.patch
+	0002-vici-send-certificates-for-ike-sa-events.patch
+	0003-vici-add-support-for-individual-sa-state-changes.patch
+
+	disable_test_time_printf_hook.patch
+	build-offline.patch
+
+	strongswan.initd
+	charon.initd
+	charon.logrotate
+	charon-logfile.conf
+	"
+
+# 32bit archs seem to get stuck in rsa test suite at "generate" or "load"
+case "$CARCH" in
+	arm*|x86) options="!check";;
+esac
+
+# secfixes:
+#   6.0.7-r0:
+#     - CVE-2026-47895
+#   6.0.6-r0:
+#     - CVE-2026-35328
+#     - CVE-2026-35329
+#     - CVE-2026-35330
+#     - CVE-2026-35331
+#     - CVE-2026-35332
+#     - CVE-2026-35333
+#     - CVE-2026-35334
+#   5.9.14-r3:
+#     - CVE-2025-62291
+#   5.9.12-r0:
+#     - CVE-2023-41913
+#   5.9.10-r0:
+#     - CVE-2023-26463
+#   5.9.8-r0:
+#     - CVE-2022-40617
+#   5.9.1-r4:
+#     - CVE-2021-45079
+#   5.9.1-r3:
+#     - CVE-2021-41990
+#     - CVE-2021-41991
+#   5.7.1-r0:
+#     - CVE-2018-17540
+#   5.7.0-r0:
+#     - CVE-2018-16151
+#     - CVE-2018-16152
+#   5.6.3-r0:
+#     - CVE-2018-5388
+#     - CVE-2018-10811
+#   5.5.3-r0:
+#     - CVE-2017-9022
+#     - CVE-2017-9023
+
+build() {
+	# notes about configuration:
+	# - try to keep options in ./configure --help order
+	# - apk depends on openssl, so we use that
+	# - openssl provides ciphers, randomness, etc
+	#   -> disable all redundant in-tree copies
+	local _aesni=
+	case "$CARCH" in
+	x86_64) _aesni="--enable-aesni";;
+	esac
+
+	./configure --prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir=/usr/lib \
+		--with-ipsecdir=/usr/lib/strongswan \
+		--with-capabilities=libcap \
+		--with-user=ipsec \
+		--with-group=ipsec \
+		--enable-curl \
+		--disable-ldap \
+		--disable-aes \
+		--disable-des \
+		--disable-rc2 \
+		--disable-md5 \
+		--disable-sha1 \
+		--disable-sha2 \
+		--enable-gmp \
+		--disable-hmac \
+		--disable-mysql \
+		--enable-sqlite \
+		--enable-eap-sim \
+		--enable-eap-sim-file \
+		--enable-eap-aka \
+		--enable-eap-aka-3gpp2 \
+		--enable-eap-simaka-pseudonym \
+		--enable-eap-simaka-reauth \
+		--enable-eap-identity \
+		--enable-eap-md5 \
+		--enable-eap-tls \
+		--disable-eap-gtc \
+		--enable-eap-mschapv2 \
+		--enable-eap-radius \
+		--enable-xauth-eap \
+		--enable-farp \
+		--enable-vici \
+		--enable-attr-sql \
+		--enable-dhcp \
+		--enable-openssl \
+		--enable-unity \
+		--enable-ha \
+		--enable-cmd \
+		--enable-python-eggs \
+		--enable-swanctl \
+		--enable-shared \
+		--disable-static \
+		--enable-bypass-lan \
+		--enable-stroke \
+		$_aesni
+	make
+
+	cd src/libcharon/plugins/vici/python
+	make
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -m755 -D "$srcdir/$pkgname.initd" "$pkgdir/etc/init.d/$pkgname"
+	install -m755 -D "$srcdir/charon.initd" "$pkgdir/etc/init.d/charon"
+
+	# for CRL caching
+	chown ipsec:ipsec "$pkgdir"/etc/swanctl/x509crl
+
+	cd src/libcharon/plugins/vici/python/
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+logfile() {
+	pkgdesc="Dedicated log file configuration for charon"
+	depends=$pkgname
+
+	install -m 644 -D "$srcdir/charon.logrotate" "$subpkgdir/etc/logrotate.d/charon"
+	install -m 644 -D "$srcdir/charon-logfile.conf" \
+		"$subpkgdir/etc/strongswan.d/charon-logfile.conf"
+	install -m 2750 -o ipsec -g wheel -d "$subpkgdir/var/log/ipsec"
+}
+
+vici() {
+	pkgdesc="Native Python interface for strongSwan's VICI protocol"
+
+	amove usr/lib/python*
+}
+
+sha512sums="
+1d10b0eaf39072db1d7f5237661e71c81107bb0bdea6a4bcbdff0c54eb7f72d6487f78c91a6f527c69ff20f9ee611d7e8cedcec4c5cc65d53ecc4301e1353240  strongswan-6.0.7.tar.bz2
+31a6a3baf815f9650b6061c56bc45ebeaa0f3cbca6bfd894f832da2e428db2d93b731e9e29964b53de164069f45b1b9017270af3f9c3d9e3469bc38f636348da  0001-charon-add-optional-source-and-remote-overrides-for-.patch
+7b56de0b25308b627a6109d6eade5d611149b8fe906066d3d70f92c4869ce2888dbfa60b8f155ff78785447f9d883995f6f04555540257cbd8b30bc6ee9c5314  0002-vici-send-certificates-for-ike-sa-events.patch
+c156c79f9647e97ee2c0300a95fb7498a01d63fa417f7e9fae4d8f70050bb738b0372fdbed4531db612e41638b93afd25a26cfc58069645d1dcdca605ca1cc62  0003-vici-add-support-for-individual-sa-state-changes.patch
+23e175fdd7445e06e5d7275903380a6a5e4c76d833b2680c8c9fcd704d5908990ded0bb408bba718cd67a41cb32c7ad308a6c93aeb7eae82f8bc5803f8e1bbc4  disable_test_time_printf_hook.patch
+43e5b1fc4ee623f1ba9cedd7f4703b6a81a121c39cafb7762e74eea03edd7d5e0e2bc7abd77134ef9477d73a86741b535f59063e4360149dbe7dca2a7fedffa5  build-offline.patch
+8b61e3ffbb39b837733e602ec329e626dc519bf7308d3d4192b497d18f38176789d23ef5afec51f8463ee1ddaf4d74546b965c03184132e217cbc27017e886c9  strongswan.initd
+4ac8dc83f08998fe672d5446dc6071f95a6a437b9df7c19d5f1a41707fb44451ec37aa237d0b86b0a9edf36a9ce7c29ba8959a38b04536c994dd4300daf737e5  charon.initd
+3eb0cd762a186d611a6322c1470581298c953b3e729fc85a13801611940eb896e8f6935e10eaa36884bd5c36600ba778d4af4c0ed1e9063436bd748268fd733b  charon.logrotate
+5896a9c5ecbef1a6c36b7bd31c83e18603f49105aedd4af80c42b0036c75950eac6e92abccfca09c9cb5bb3f3c4010f0daba068208e7dff05e7b1849d5a6e363  charon-logfile.conf
+"

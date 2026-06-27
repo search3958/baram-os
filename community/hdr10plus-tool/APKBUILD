@@ -1,0 +1,39 @@
+# Contributor: Petr Hodina <phodina@protonmail.com>
+maintainer="Fabricio Silva <hi@fabricio.dev>"
+pkgname=hdr10plus-tool
+pkgver=1.7.2
+pkgrel=0
+pkgdesc="CLI utility to work with HDR10+ in HEVC files"
+url="https://github.com/quietvoid/h1.dr10plus_tool"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable fontconfig-dev"
+checkdepends="font-opensans"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/quietvoid/hdr10plus_tool/archive/refs/tags/$pkgver.tar.gz"
+builddir=$srcdir/hdr10plus_tool-$pkgver
+options="net" # cargo fetch
+provides="hdr10plus_tool"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen --release
+}
+
+package() {
+	install -Dm755 target/release/hdr10plus_tool -t "$pkgdir"/usr/bin/
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+7a8b2e65624590fa6fb43be298f5d84006ea31b2d2d535220b148344c3884962b32003228fc59b5e81258f09a650b3890f0586a516f8bade289675b796e07345  hdr10plus-tool-1.7.2.tar.gz
+"

@@ -1,0 +1,46 @@
+# Contributor: Alex Denes <caskd@redxen.eu>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=autorandr
+pkgver=1.15
+pkgrel=2
+pkgdesc="Auto-detect the connected display hardware and load the appropriate X11 setup using xrandr"
+url="https://github.com/phillipberndt/autorandr"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	py3-packaging
+	python3
+	xdpyinfo
+	xrandr
+	"
+makedepends="
+	bash-completion-dev
+	libxcb-dev
+	py3-setuptools_scm
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/phillipberndt/autorandr/archive/$pkgver.tar.gz"
+subpackages="
+	$pkgname-udev
+	$pkgname-doc
+	$pkgname-launcher::all
+	$pkgname-bash-completion
+	"
+options="!check" # no tests
+
+package() {
+	make DESTDIR="$pkgdir" \
+		UDEV_RULES_DIR="/usr/lib/udev/rules.d" install_udev \
+		install_manpage \
+		install_bash_completion \
+		install_launcher \
+		install_autorandr
+}
+
+launcher() {
+	amove usr/bin/autorandr-launcher
+	amove etc/xdg/autostart/autorandr-launcher.desktop
+}
+
+sha512sums="
+2837348b755f5c4b30ad2b68e191e1969a467401cf32dda495dd19867e391f8b8b4a9c0b4958ef33f75c71aace46686995e27bab805e1e40cc4a1af44e9f0405  autorandr-1.15.tar.gz
+"

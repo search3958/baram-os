@@ -1,0 +1,60 @@
+# Contributor: Pedro Filipe <xpecex@outlook.com>
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=breezy
+pkgver=3.3.15
+pkgrel=3
+pkgdesc="Decentralized revision control system"
+url="https://www.breezy-vcs.org/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="
+	py3-configobj
+	py3-dulwich
+	py3-patiencediff
+	py3-yaml
+	py3-fastbencode
+	"
+makedepends="
+	cython
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools-gettext
+	py3-setuptools-rust
+	py3-wheel
+	python3-dev
+	"
+checkdepends="py3-subunit py3-testtools"
+options="!check" # Requires unittest2
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://launchpad.net/brz/${pkgver%.*}/$pkgver/+download/breezy-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	# Requires launchpadlib
+	rm -r breezy/plugins/launchpad/
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	ln -s brz "$pkgdir"/usr/bin/bzr # backwards compatibility
+
+	find "$pkgdir"/usr/lib/python3*/site-packages -type d -name tests \
+		-exec rm -r {} +
+}
+
+sha512sums="
+b903e0dd7b03983473c88388d4368decba9ae1880ccda225a931b3c1c8b5a129a3af1eaaccff13829857e38fcb476627f6b012efc043698568f684eef4bcd068  breezy-3.3.15.tar.gz
+"

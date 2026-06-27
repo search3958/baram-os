@@ -1,0 +1,38 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=tclap
+pkgver=1.2.5
+pkgrel=1
+pkgdesc="Templatized C++ Command Line Parser"
+url="https://tclap.sourceforge.net/"
+arch="noarch"
+license="MIT"
+subpackages="$pkgname-dev"
+source="https://sourceforge.net/projects/tclap/files/tclap-$pkgver.tar.gz
+	skip-docs.patch"
+
+prepare() {
+	default_prepare
+	sed -i '1 s_#!/bin/bash_#!/bin/sh_' tests/test*.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make -j1 check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3b5b3d76e8ff21133001f5f9589fa6ec143729909bf0b9cc9934377bce178360c161fb5c1f4c4d9e9c74b09cff3d65f1d5100e61d4a732283524a78b6f236b10  tclap-1.2.5.tar.gz
+d88b298d5de2c1e8b628babc75b0a075b1c359c76b67d068e233e248c3b08dc7374865c1e725e4945fa900647d7bbf80cdaf7cbef2f198813ffa69844d04ee0b  skip-docs.patch
+"

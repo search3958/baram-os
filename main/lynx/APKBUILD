@@ -1,0 +1,54 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Sheila Aman <sheila@vulpine.house>
+# Maintainer: Sheila Aman <sheila@vulpine.house>
+pkgname=lynx
+pkgver=2.9.3
+_relver=${pkgver/_p/rel.}
+pkgrel=0
+pkgdesc="Cross-platform text-based browser"
+url="https://lynx.invisible-island.net/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="openssl-dev>3 gettext zlib-dev glib-dev perl ncurses-dev"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://invisible-mirror.net/archives/lynx/tarballs/lynx$_relver.tar.bz2"
+builddir="$srcdir"/$pkgname$_relver
+
+# secfixes:
+#   2.8.9_p1-r3:
+#     - CVE-2021-38165
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-ipv6 \
+		--with-ssl \
+		--enable-default-colors \
+		--with-screen=ncursesw \
+		--with-zlib \
+		--disable-full-paths \
+		--enable-externs \
+		--enable-nls
+	make helpdir=/usr/share/doc/lynx/help \
+		docdir=/usr/share/doc/lynx
+}
+
+check() {
+	./lynx -version
+}
+
+package() {
+	make DESTDIR="$pkgdir" install install-help install-doc \
+		helpdir=/usr/share/doc/lynx/help \
+		docdir=/usr/share/doc/lynx
+}
+
+sha512sums="
+96fe5d8b427c0ceeaaa1778d88dae21f4fde79781243428f0c47e2ffb6f32c4ca918d608a60c55975fb101d5aae710d3aa3a8d6af3316599307bf810c0c87144  lynx2.9.3.tar.bz2
+"

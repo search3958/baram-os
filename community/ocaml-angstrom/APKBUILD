@@ -1,0 +1,83 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-angstrom
+_pkgname=angstrom
+pkgver=0.16.0
+pkgrel=3
+pkgdesc="Parser combinators built for speed and memory-efficiency"
+url="https://github.com/inhabitedtype/angstrom"
+arch="all !riscv64 !loongarch64" # ocaml
+license="BSD-3-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel ocaml-bigstringaf-dev ocaml-lwt-dev"
+makedepends="$depends_dev dune ocaml"
+checkdepends="ocaml-alcotest-dev ocaml-ppx_let-dev"
+options="!check"
+subpackages="$pkgname-dev"
+source="$_pkgname-$pkgver.tar.gz::https://github.com/inhabitedtype/angstrom/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build \
+		-p angstrom,angstrom-unix \
+		--verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--docdir=/.omit \
+		angstrom angstrom-unix
+	rm -Rf "$pkgdir"/.omit
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+3fda504f0d4cb53d0b7d249964257f3ab8f9a0b4e0dee13665e8b65d2a281bc1e0529f4f2e29cf376c7331bd44833cae929641a559ac003989c7341b08e33f6c  angstrom-0.16.0.tar.gz
+"

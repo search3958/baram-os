@@ -1,0 +1,52 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=lomiri-libusermetrics
+pkgver=1.4.1
+pkgrel=1
+pkgdesc='Library for exporting anonymous metrics about users'
+arch="all !armhf" # blocked by qt5-qtxmlpatterns-dev
+url="https://gitlab.com/ubports/development/core/libusermetrics"
+license="GPL-3.0-only AND LGPL-3.0-only AND LGPL-2.1-only"
+depends_dev="
+	click-dev
+	gsettings-qt-dev
+	libapparmor-dev
+	qt5-qtxmlpatterns-dev
+	"
+makedepends="
+	$depends_dev
+	cmake-extras
+	doxygen
+	gmock
+	gtest-dev
+	intltool
+	libapparmor
+	libqtdbustest
+	qt5-qtbase-dev
+	samurai
+	"
+checkdepends="dbus"
+source="https://gitlab.com/ubports/development/core/libusermetrics/-/archive/$pkgver/libusermetrics-$pkgver.tar.gz"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+builddir="$srcdir/libusermetrics-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+f7f2d2198e45eca7e379ff5f97c97637c34ceee39c173f30d1903d922ee6a676f1a67aa429a4044fd84629b7c406b2cda430f377b6fb75128cba64823327ed78  libusermetrics-1.4.1.tar.gz
+"

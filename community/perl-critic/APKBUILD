@@ -1,0 +1,52 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=perl-critic
+pkgver=1.156
+pkgrel=0
+pkgdesc="Critique Perl source code for best-practices"
+url="https://metacpan.org/dist/Perl-Critic"
+arch="noarch"
+license="GPL-1.0-or-later OR Artistic-1.0-Perl"
+depends="perl
+	perl-b-keywords
+	perl-config-tiny
+	perl-exception-class
+	perl-file-which
+	perl-list-someutils
+	perl-module-build
+	perl-module-pluggable
+	perl-path-tiny
+	perl-pod-parser
+	perl-pod-spell
+	perl-ppi
+	perl-ppix-quotelike
+	perl-ppix-regexp
+	perl-ppix-utils
+	perl-readonly
+	perl-string-format
+	perl-tidy
+	"
+checkdepends="perl-test-memory-cycle"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/P/PE/PETDANCE/Perl-Critic-$pkgver.tar.gz"
+builddir="$srcdir/Perl-Critic-$pkgver"
+
+build() {
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	perl Build.PL \
+		--installdirs=vendor \
+		--create_packlist=0
+	./Build
+}
+
+check() {
+	./Build test
+}
+
+package() {
+	./Build install --destdir="$pkgdir"
+}
+
+sha512sums="
+c5aa84e6dca89f2af3e1afff920bd36a71ac69e1c5b5f3260e1a50b6cb6e6b88cecae28200e54d9ff98540a97ad6a7755c6e1b468d1a1d642d73b6e05e468c34  Perl-Critic-1.156.tar.gz
+"

@@ -1,0 +1,61 @@
+maintainer="Aster Boese <asterboese@mailbox.org>"
+pkgname=lomiri-indicator-location
+pkgver=26.6.19
+pkgrel=0
+pkgdesc="Indicator controlling access to physical location data"
+url="https://gitlab.com/ubports/development/core/lomiri-indicator-location"
+arch="all !armhf" # blocked by qt5-qtdeclarative
+license="GPL-3.0-only"
+source="https://gitlab.com/ubports/development/core/lomiri-indicator-location/-/archive/$pkgver/lomiri-indicator-location-$pkgver.tar.bz2"
+makedepends="
+	cmake-extras
+	glib-dev
+	gmenuharness-dev
+	gmock
+	gtest-dev
+	intltool
+	libqtdbusmock
+	libqtdbustest
+	lomiri-api-dev
+	lomiri-app-launch-dev
+	lomiri-url-dispatcher-dev
+	samurai
+	"
+checkdepends="py3-dbusmock"
+subpackages="$pkgname-lang $pkgname-systemd"
+
+case "$CARCH" in
+s390x)
+	# FIXME: This is most likely an error caused by a dependency, but which
+	# dependency, I am unsure. Better to disable tests than disable the whole
+	# arch since this is the only failure.
+	#
+	# lomiri-indicator-location-26.6.19/tests/phone-test.cc:107: Failure
+	# Value of: action_menuitem_exists("indicator.location-detection-enabled")
+	#   Actual: false
+	# Expected: true
+	# [  FAILED  ] PhoneTest.MenuitemsExist (1422 ms)
+	#
+	options="$options !check"
+	;;
+esac
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+915fd5942c94dedbd824e282e91415213225d2a3f34266a4b3946355da21eab9d2b45d712803f2c1a0aa1f78d178b6f680f1fe160dd91913a204905fb17f3e0c  lomiri-indicator-location-26.6.19.tar.bz2
+"

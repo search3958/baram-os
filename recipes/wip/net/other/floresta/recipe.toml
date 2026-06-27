@@ -1,8 +1,0 @@
-#TODO compilation error
-[source]
-git = "https://github.com/Davidson-Souza/Floresta"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages florestad
-"""

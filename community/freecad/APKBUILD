@@ -1,0 +1,90 @@
+# Contributor: Bryce Vandegrift <bryce@brycevandegrift.xyz>
+# Maintainer: Bryce Vandegrift <bryce@brycevandegrift.xyz>
+pkgname=freecad
+pkgver=1.1.1
+_addonm_ver="291366f293c8b1c073e7b1f300e04e38dc40c7fe"
+_ondsel_ver="09d6175a2ba69e7016fcecc4f384946a2f84f92d"
+_gsl_ver="4.2.1"
+pkgrel=0
+pkgdesc="Open-source parametric 3D modeler"
+url="https://www.freecad.org/"
+# s390x: blocked by opencascade-dev, vtk-dev, and freeimage-dev
+# armhf, riscv64: blocked by py3-pivy, py3-pyside6, pyside6-dev, and py3-shiboken6
+arch="all !armhf !s390x !riscv64"
+license="LGPL-2.0-or-later"
+depends="py3-pivy py3-matplotlib py3-pyside6"
+makedepends="
+	boost-dev
+	cmake
+	coin-dev
+	doxygen
+	eigen-dev
+	freeimage-dev
+	glew-dev
+	gtest-dev
+	jsoncpp-dev
+	libmedc-dev
+	libspnav-dev
+	ninja
+	opencascade-dev
+	py3-matplotlib
+	py3-pivy
+	py3-pybind11-dev
+	py3-shiboken6
+	pyside6-dev
+	python3-dev
+	qt6-qtbase-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	swig
+	vtk-dev
+	xerces-c-dev
+	yaml-cpp-dev
+	"
+subpackages="$pkgname-doc $pkgname-dev"
+options="!check"
+source="$pkgname-$pkgver.tar.gz::https://github.com/FreeCAD/FreeCAD/archive/$pkgver.tar.gz
+	$pkgname-addonmanager-$_addonm_ver.tar.gz::https://github.com/FreeCAD/AddonManager/archive/$_addonm_ver.tar.gz
+	OndselSolver-$_ondsel_ver.tar.gz::https://github.com/Ondsel-Development/OndselSolver/archive/$_ondsel_ver.tar.gz
+	GSL-$_gsl_ver.tar.gz::https://github.com/microsoft/GSL/archive/refs/tags/v$_gsl_ver.tar.gz
+	no-execinfo.patch
+	UnlimitedUnsigned.h-cstdint.patch
+	macro-conflict.patch
+	"
+builddir="$srcdir/FreeCAD-$pkgver"
+
+prepare() {
+	default_prepare
+
+	mv $srcdir/AddonManager-$_addonm_ver/* $builddir/src/Mod/AddonManager/
+	mv $srcdir/OndselSolver-$_ondsel_ver/* $builddir/src/3rdParty/OndselSolver/
+	mv $srcdir/GSL-$_gsl_ver/* $builddir/src/3rdParty/GSL/
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DFREECAD_QT_VERSION=6 \
+		-DFREECAD_USE_EXTERNAL_PIVY=ON \
+		-DBUILD_FLAT_MESH=ON \
+		-DENABLE_DEVELOPER_TESTS=OFF \
+		-DBUILD_TEST=OFF \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_DATAROOTDIR=/usr/share \
+		-DCMAKE_INSTALL_DATADIR=/usr/share/$pkgname
+	ninja -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" ninja -C build install
+}
+
+sha512sums="
+47e9a251f228112f7037a1e36f9a372ab5f9925fc3117983cf32d91006572eed430316d42539dc8c37c36f7179f8ffe2a66e392f1391e58adf6ccdec82d0c344  freecad-1.1.1.tar.gz
+3813cafe9cf9b12ae5dcda4fa6e04facd03f06e07123216351d6af4ac0535f0b2cdcd71591c6ead5781dd402562e0c95d47b65aaee45a3e2b4e58acf06414a68  freecad-addonmanager-291366f293c8b1c073e7b1f300e04e38dc40c7fe.tar.gz
+7ad78da60320a686f0734da5196ce4cba49a2ff9ecf0bcd6016a56d65c8a8f7570f2898f84c2602a454bc9ccd8ac12fd137d2a952ffb7cbd15e38350fbbd3d79  OndselSolver-09d6175a2ba69e7016fcecc4f384946a2f84f92d.tar.gz
+c613937d225a72cd6fb66d68019ffe70bb16e99a8b9c13664dbaebf3c5bfde4888b2299174b3d668cb234f74821e20d9de3fa19febdee8fb733cb30a50089cd4  GSL-4.2.1.tar.gz
+a804227c124179e181858e373a250b029d30e931048343170d44b1e6bc99c082673f8727f0facd06353b69c8d11bc498fa7d711a7c29f91cca28849fc2b04866  no-execinfo.patch
+87ac38376f8f9a4ec9bef44f657a27e6ad59e2d266c43165de7918cdda8f3d3b2960ff803309f90c74039bd1fd7dcc40524f6d830f659df53f58c94ed0ec25fd  UnlimitedUnsigned.h-cstdint.patch
+2bb62efd116a3a45dcb192510e62bd3a1df59f13bb6e8dcd80fc10a0dbdcd6b9a355aec0c92c80136de25d02c95e557de28864300587b90fd3d2786ba4930494  macro-conflict.patch
+"

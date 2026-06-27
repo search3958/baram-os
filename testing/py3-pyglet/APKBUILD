@@ -1,0 +1,41 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-pyglet
+pkgver=2.1.5
+pkgrel=3
+pkgdesc="Cross-platform windowing and multimedia library for Python"
+url="https://github.com/pyglet/pyglet/"
+# riscv64: llvm: relocation type not implemented yet
+# s390x: shaders don't compile
+arch="noarch !s390x !riscv64"
+license="BSD-3-Clause"
+depends="so:libGL.so.1"
+makedepends="py3-gpep517 py3-flit-core"
+checkdepends="py3-pytest xvfb-run mesa-dri-gallium font-dejavu"
+subpackages="$pkgname-pyc"
+source="https://github.com/pyglet/pyglet/archive/v$pkgver/pyglet-$pkgver.tar.gz"
+builddir="$srcdir/pyglet-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# interactive: not meant to be run headless
+	# test_face_from_fontconfig: cannot find italic fonts
+	xvfb-run -a \
+		.testenv/bin/python3 -m pytest tests \
+		--ignore=tests/interactive \
+		--deselect=tests/integration/font/test_freetype_face.py::test_face_from_fontconfig
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+1cec5f23bac6217b1df6e56c3725ada18ea0c1727347dfb68433dc24c8b30d369e049142033225f0165db4e0e7cc6440428c78ebe6d127375a83edbb4d9162a3  pyglet-2.1.5.tar.gz
+"

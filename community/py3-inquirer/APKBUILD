@@ -1,0 +1,36 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-inquirer
+pkgver=3.4.1
+pkgrel=1
+pkgdesc="collection of common interactive command line user interfaces"
+url="https://github.com/magmax/python-inquirer"
+arch="noarch"
+license="MIT"
+depends="python3 py3-blessed py3-readchar py3-python-editor"
+makedepends="py3-poetry-core py3-gpep517 py3-installer py3-wheel"
+checkdepends="py3-flake8 py3-pexpect py3-pytest py3-pytest-cov py3-pytest-xdist
+	py3-wheel ncurses-terminfo"
+# GH tarballs required for tests!
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/magmax/python-inquirer/archive/v$pkgver.tar.gz"
+builddir="$srcdir/python-inquirer-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	TERM=xterm-256color PYTHONPATH=src pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/inquirer-$pkgver-*.whl
+}
+
+sha512sums="
+4383a5c58081e5c07b5ee945b12126d3f16be2fe429ab83fbec83a89e40de4c95e20d800551bc042e4a1e12142597b8e01c15765fabae34d959aa593728cd795  py3-inquirer-3.4.1.tar.gz
+"

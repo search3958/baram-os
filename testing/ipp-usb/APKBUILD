@@ -1,0 +1,47 @@
+# Contributor: Angelo Verlain <hey@vixalien.com>
+# Contributor: Sertonix <sertonix@posteo.net>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+pkgname=ipp-usb
+pkgver=0.9.33
+pkgrel=0
+pkgdesc="HTTP reverse proxy, backed by IPP-over-USB connection to device"
+url="https://github.com/OpenPrinting/ipp-usb"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	avahi-dev
+	go
+	libusb-dev
+	"
+subpackages="$pkgname-doc $pkgname-openrc"
+options="net"
+source="
+	https://github.com/OpenPrinting/ipp-usb/archive/refs/tags/$pkgver/ipp-usb-$pkgver.tar.gz
+	ipp-usb.initd
+	"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -tags nethttpomithttp2
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -D -m755 -t "$pkgdir"/usr/sbin/ ipp-usb
+	install -D -m644 -t "$pkgdir"/usr/lib/udev/rules.d/ systemd-udev/*.rules
+	install -D -m644 -t "$pkgdir"/etc/ipp-usb/ ipp-usb.conf
+	install -D -m644 -t "$pkgdir"/usr/share/man/man8/ ./*.8
+	install -D -m644 -t "$pkgdir"/usr/share/ipp-usb/quirks/ ipp-usb-quirks/*
+	install -D -m755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+4cb975fb06d456dc2e37ffa1ca568accaf58b9aff42da56abf5f76ab434f35e40b42fd371431a0f4c2b633ad45216914a57d97e459fadd8a3867cdae8c9c125d  ipp-usb-0.9.33.tar.gz
+46b66cd698ad1dcc54ffc2dba64fd4b395085d5caeb1abfa00b68a2884edae1afd4826065bbde8a032644c39f9710f12cd81e11730d0aef56b87f6767d1c0bbc  ipp-usb.initd
+"

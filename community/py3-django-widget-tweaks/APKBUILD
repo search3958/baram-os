@@ -1,0 +1,35 @@
+# Contributor: Kaarle Ritvanen <kunkku@alpinelinux.org>
+# Maintainer: Kaarle Ritvanen <kunkku@alpinelinux.org>
+pkgname=py3-django-widget-tweaks
+pkgver=1.5.1
+pkgrel=2
+pkgdesc="Tweak the form field rendering in templates, not in python-level form definitions"
+url="https://github.com/jazzband/django-widget-tweaks"
+arch="noarch"
+license="MIT"
+depends="py3-django"
+makedepends="py3-gpep517 py3-setuptools py3-setuptools_scm py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/d/django_widget_tweaks/django_widget_tweaks-$pkgver.tar.gz"
+builddir="$srcdir/django_widget_tweaks-$pkgver"
+replaces="py-django-widget-tweaks" # Backwards compatibility
+provides="py-django-widget-tweaks=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	PYTHONPATH=. .testenv/bin/python3 /usr/bin/django-admin test \
+		--settings tests.settings
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+d72193265e01f621c747d08721433986becf219abbbedad0e2083857a433f041f91d64a63516c90f69afd7957628c9ac223e646af7098db5752da3c8897ed1a6  django_widget_tweaks-1.5.1.tar.gz
+"

@@ -1,0 +1,44 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=ndpi
+_pkgreal=nDPI
+pkgver=4.10
+pkgrel=0
+pkgdesc="Open Source Deep Packet Inspection Software Toolkit"
+url="https://github.com/ntop/nDPI"
+# armhf test fail without apparent cause
+# s390x test hangs (big-endian)
+arch="all !armhf !armv7 !s390x"
+license="GPL-3.0-only"
+makedepends="autoconf automake libpcap-dev libtool json-c-dev"
+subpackages="$pkgname-dev"
+options="!check" # currently broken
+source="$pkgname-$pkgver.tar.gz::https://github.com/ntop/nDPI/archive/$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgreal-$pkgver
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure --prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+check() {
+	# fails on those two
+	rm tests/pcap/nintendo.pcap
+	rm tests/pcap/skype-conference-call.pcap
+	make check
+}
+
+sha512sums="
+311836477bafc9c7a4ef6cf18438870ec186db4407390883bcd8376bd709cd5c5700e8a3f028dbc3e49012e828ee5199ee86e76ad4d7b1595903818e96bf9cb8  ndpi-4.10.tar.gz
+"

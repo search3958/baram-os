@@ -1,0 +1,6 @@
+# Path to config file
+MTG_CONFIG="/etc/mtg.conf"
+
+# Uncomment both lines if you want mtg to send logs to syslog.
+#error_logger="logger -t $RC_SVCNAME"
+#rc_need=logger

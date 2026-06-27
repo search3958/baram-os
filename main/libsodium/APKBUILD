@@ -1,0 +1,37 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Daniel Néri <dne+alpine@mayonnaise.net>
+maintainer="Daniel Néri <dne+alpine@mayonnaise.net>"
+pkgname=libsodium
+pkgver=1.0.22
+pkgrel=0
+pkgdesc="P(ortable|ackageable) NaCl-based crypto library"
+url="https://github.com/jedisct1/libsodium"
+arch="all"
+license="ISC"
+subpackages="$pkgname-static $pkgname-dev"
+source="https://download.libsodium.org/libsodium/releases/libsodium-$pkgver.tar.bz2"
+
+# secfixes:
+#   1.0.20-r1:
+#     - CVE-2025-69277
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+9c94d30751f6349a1e77af59125bed4fdbe79830fa48cea0e4edc2a71c6224954f9a674476456c05def9ca06bc51f5afaf96441d5b2674e333d51883ae45d574  libsodium-1.0.22.tar.bz2
+"

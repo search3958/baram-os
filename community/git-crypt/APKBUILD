@@ -1,0 +1,33 @@
+# Contributor: Laurent Arnoud <laurent@spkdev.net>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Laurent Arnoud <laurent@spkdev.net>
+pkgname=git-crypt
+pkgver=0.7.0
+pkgrel=0
+pkgdesc="Transparent file encryption in git"
+url="https://www.agwa.name/projects/git-crypt"
+arch="all"
+license="GPL-3.0-or-later"
+depends="git"
+options="!check" # No test suite
+makedepends="docbook-xml docbook-xsl openssl-dev>3"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/AGWA/git-crypt/archive/$pkgver.tar.gz
+	0001-add-merge-driver.patch
+	0002-keep-empty-files-unencrypted.patch
+	"
+
+build() {
+	make CXXFLAGS="$CXXFLAGS -DOPENSSL_API_COMPAT=0x30000000L"
+}
+
+package() {
+	make PREFIX="/usr" DESTDIR="$pkgdir" ENABLE_MAN=yes CXXFLAGS="$CXXFLAGS -DOPENSSL_API_COMPAT=0x30000000L" install
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+}
+
+sha512sums="
+967a5d0f0aa0e804e60142e1e9c8403ab30ff215f4614ff327b0ea4d866abaaad35bdde4262467e6251fc0554b181e60a7015a576c06259a833742a4fc7da6a9  git-crypt-0.7.0.tar.gz
+33dfe1e9c1bdca95e3bd1b267f44f9088237909d42db8480bbcd37afe3a788f413d83009557ef22e9d7dd9ea193664fdabf69b3ed3a23033f23b26488bd80919  0001-add-merge-driver.patch
+136b5ad3a197f462878210462ce4d4bac6978d9ef67f5a4f49acedd58c48491c245f8649885bcc2bed43d642f7e5652d32acf12861b28582b6658482168f7088  0002-keep-empty-files-unencrypted.patch
+"

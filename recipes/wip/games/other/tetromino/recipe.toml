@@ -1,5 +1,0 @@
-#TODO glutin crate error
-[source]
-git = "https://github.com/d-e-s-o/tetromino"
-[build]
-template = "cargo"

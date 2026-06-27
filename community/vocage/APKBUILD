@@ -1,0 +1,32 @@
+# Maintainer: Krystian Chachuła <krystian@krystianch.com>
+pkgname=vocage
+pkgver=1.1.0
+pkgrel=4
+pkgdesc="Minimalistic terminal-based vocabulary-learning tool"
+url="https://github.com/proycon/vocage"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="cargo cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://github.com/proycon/vocage/archive/refs/tags/v$pkgver.tar.gz
+	bump-libc-crate.patch
+	"
+options="!check" # No test suite / unit tests
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+package() {
+	install -Dm755 target/release/vocage -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+c6cf955de66469c00e88b4dff1aa0a9686c3a1fe604e8c1f6fccd738de013c5490ed178f41a863b2a90419bb936a0a6e038a761dedf55b3e283d15a957373c31  vocage-1.1.0.tar.gz
+dc4cd3f5ea844a750bac70c84f0c3a94b8a4f8613d51d6d32c0317d30b7bfc6cd5dfdf4271f2eb4532236149fe0cfa2b8442fcc34edb1fc36d8f7630011e3b7b  bump-libc-crate.patch
+"

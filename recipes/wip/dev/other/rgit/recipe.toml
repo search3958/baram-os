@@ -1,8 +1,0 @@
-#TODO compilation error
-[source]
-git = "https://github.com/w4/rgit"
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

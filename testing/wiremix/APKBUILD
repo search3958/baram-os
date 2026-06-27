@@ -1,0 +1,39 @@
+# Contributor: NeYurii <neyuriizkh@proton.me>
+# Maintainer: NeYurii <neyuriizkh@proton.me>
+pkgname=wiremix
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="Simple TUI audio mixer for PipeWire"
+url="https://github.com/tsowell/wiremix"
+# x86, armv7, armhf: https://gitlab.freedesktop.org/pipewire/pipewire-rs/-/issues/111
+# s390x: https://github.com/nix-rust/nix/issues/2641
+arch="all !x86 !armv7 !armhf !s390x"
+license="MIT OR Apache-2.0"
+makedepends="cargo cargo-auditable clang-dev pipewire-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tsowell/wiremix/archive/refs/tags/v$pkgver.tar.gz"
+subpackages="$pkgname-doc"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 -t "$pkgdir"/usr/bin target/release/wiremix
+	install -Dm644 -t "$pkgdir"/usr/share/wiremix wiremix.toml
+	install -Dm644 -t "$pkgdir"/usr/share/doc/"$pkgname" README.md
+	install -Dm644 -t "$pkgdir"/usr/share/licenses/"$pkgname" LICENSE-MIT LICENSE-APACHE
+}
+
+sha512sums="
+ef071c244d20c090cc86804ad8763615e5b77448bf5680a991e5051efdbf3e80d26ac2a679b9c307ed2b9a9df18df484143a172de2d662429885f8359adeffd8  wiremix-0.10.0.tar.gz
+"

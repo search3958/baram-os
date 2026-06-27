@@ -1,0 +1,66 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-pyocd
+pkgver=0.43.1
+pkgrel=0
+pkgdesc="Cortex-M debugger for Python"
+url="https://pypi.org/project/pyocd/"
+# blocked by py3-pylink-square
+arch="noarch !s390x"
+license="Apache-2.0"
+depends="
+	py3-capstone
+	py3-cmsis-pack-manager
+	py3-colorama
+	py3-elftools
+	py3-importlib-metadata
+	py3-importlib-resources
+	py3-intelhex
+	py3-intervaltree
+	py3-lark-parser
+	py3-natsort
+	py3-prettytable3
+	py3-pylink-square
+	py3-six
+	py3-typing-extensions
+	py3-usb
+	py3-yaml
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc $pkgname-udev"
+source="$pkgname-$pkgver-1.tar.gz::https://github.com/pyocd/pyOCD/archive/refs/tags/v$pkgver.tar.gz
+	0001-Add-uacess-to-udev.patch
+	"
+builddir="$srcdir/pyOCD-$pkgver"
+
+export SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -Dm644 udev/*.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+}
+
+sha512sums="
+e879dde5c0189340c67603798dd94f7bfd145bf149c25c680d5b61ce78f3a33bd771dd87b23fe3a430e085967bb3e8bb03007ad8b922b509de61ad5804f44f5f  py3-pyocd-0.43.1-1.tar.gz
+132efcb19ee9d4cd4608f9e41a097ab292e7314b5589708a4398f81d727ad17b541047143d3f77628c5e1d70c404b4164625f81aa65a0bcdf6a76611ef09d74e  0001-Add-uacess-to-udev.patch
+"

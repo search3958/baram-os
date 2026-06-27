@@ -1,0 +1,60 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=felix
+pkgver=2.16.1
+pkgrel=0
+pkgdesc="Simple TUI file manager with vim-like key mapping"
+url="https://kyoheiu.dev/felix/"
+# s390x: nix crate doesn't build yet
+# riscv64: tests fail
+arch="all !s390x !riscv64"
+license="MIT"
+makedepends="
+	bzip2-dev
+	cargo
+	cargo-auditable
+	libgit2-dev
+	oniguruma-dev
+	zlib-ng-dev
+	zstd-dev
+	"
+checkdepends="zoxide"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/kyoheiu/felix/archive/refs/tags/v$pkgver.tar.gz
+	use-system-libs.patch
+	"
+
+export RUSTONIG_DYNAMIC_LIBONIG=1
+
+prepare() {
+	default_prepare
+
+	# Rust target triple.
+	local target=$(rustc -vV | sed -n 's/host: //p')
+
+	# Build against system-provided libs
+	mkdir -p .cargo
+	cat >> .cargo/config.toml <<-EOF
+		[target.$target]
+		git2 = { rustc-link-lib = ["git2"] }
+		z-ng = { rustc-link-lib = ["z-ng"], rustc-cfg = ["zng"] }
+	EOF
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/fx -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+ba93e0b61fd6e783ef433c21189c29128389a930b799aa357d405da2950a21419882cf861abfaff188d42c5e5d2b729e1fdbed86d3c247c44347cdb046836f38  felix-2.16.1.tar.gz
+ef52326ce5cf403fd13681853fe43762f8a40d5c907544d70db0922b57323dca29ab50e976d7985dc537d6f6a03dadacd8bcf4c2a23fa1c892fb0b49bc18e484  use-system-libs.patch
+"

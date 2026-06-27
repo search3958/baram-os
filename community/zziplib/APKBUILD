@@ -1,0 +1,64 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Mika Havela <mika.havela@gmail.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=zziplib
+pkgver=0.13.80
+pkgrel=1
+pkgdesc="Lightweight library to easily extract data from zip files"
+url="https://github.com/gdraheim/zziplib"
+arch="all"
+license="LGPL-2.0-or-later OR MPL-1.1"
+makedepends="
+	bash
+	cmake
+	python3
+	samurai
+	zlib-dev
+	"
+checkdepends="zip"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-utils
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/gdraheim/zziplib/archive/refs/tags/v$pkgver.tar.gz"
+
+# secfixes:
+#   0.13.69-r2:
+#     - CVE-2018-16548
+#     - CVE-2018-17828
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DBUILD_TESTS="$(want_check && echo ON || echo OFF)" \
+		-DMSVC_STATIC_RUNTIME=OFF \
+		-DZZIPSDL=OFF \
+		-DZZIPTEST="$(want_check && echo ON || echo OFF)" \
+		-DZZIP_TESTCVE=OFF \
+		-DZZIPWRAP=OFF
+	cmake --build build
+}
+
+check() {
+	cmake --build build --target check
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+utils() {
+	pkgdesc="Utilities for the zziplib library"
+
+	amove usr/bin
+}
+
+sha512sums="
+1560b9b6851247ef07e64c689551e191eb26e2756f7ba32bdd1a7ed345a76b444050474b2fdd5f6308ca2ff1e9a55a55c8961eefaf8db0c6674c6a2f1c368a68  zziplib-0.13.80.tar.gz
+"

@@ -1,0 +1,30 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=soapy-bladerf
+pkgver=0.4.2
+pkgrel=0
+pkgdesc="Soapy SDR plugin for the Blade RF"
+url="https://github.com/pothosware/SoapyBladeRF"
+arch="all"
+license="LGPL-2.1-only"
+makedepends="cmake samurai soapy-sdr-dev bladerf-dev"
+source="https://github.com/pothosware/SoapyBladeRF/archive/refs/tags/soapy-bladerf-$pkgver/soapy-bladerf-$pkgver.tar.gz"
+builddir="$srcdir/SoapyBladeRF-soapy-bladerf-$pkgver"
+options="!check" # needs hardware to test
+
+build() {
+	cmake -G Ninja -B build \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+565321092e461c07fb353c5299e07689ad17e291c6a541f69acd03e27486e95b751a91fcc7042c5dcb2fabdd84815f381b0defd0e7b37b86a4af17bb61be6c43  soapy-bladerf-0.4.2.tar.gz
+"

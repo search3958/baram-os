@@ -1,0 +1,20 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=vim-sleuth
+pkgver=2.0
+pkgrel=1
+pkgdesc="vim: Heuristically set buffer options"
+url="https://github.com/tpope/vim-sleuth"
+arch="noarch"
+license="Vim"
+depends="vim"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tpope/vim-sleuth/archive/v$pkgver.tar.gz"
+options="!check" # TODO run tests
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/vim/vimfiles
+	cp -r plugin doc "$pkgdir"/usr/share/vim/vimfiles/
+}
+
+sha512sums="
+ab74327220f7e5afa31844f5721ac599554116a2e646c41240813703f6591aa5f6b053b709f80160747254fea5222b63e8a8e60e5b27fd4aefd84420d6c3f2ff  vim-sleuth-2.0.tar.gz
+"

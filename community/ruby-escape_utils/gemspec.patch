@@ -1,0 +1,7 @@
+--- a/escape_utils.gemspec
++++ b/escape_utils.gemspec
+@@ -9 +9 @@
+-  s.files = `git ls-files`.split("\n")
++  s.files = Dir["lib/**/*", "ext/**/*"]
+@@ -17 +16,0 @@
+-  s.test_files = `git ls-files test`.split("\n")

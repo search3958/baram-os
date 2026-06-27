@@ -1,0 +1,29 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sergiy Stupar <owner@sestolab.pp.ua>
+pkgname=screenkey
+pkgver=1.5
+pkgrel=8
+pkgdesc="Screencast tool to display your keys"
+url="https://www.thregr.org/~wavexx/software/screenkey/"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3 py3-cairo py3-gobject3 py3-dbus gtk+3.0"
+makedepends="py3-gpep517 py3-setuptools py3-wheel py3-babel"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://www.thregr.org/~wavexx/software/screenkey/releases/screenkey-$pkgver.tar.gz"
+options="!check" # No tests
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+37a2e99ae3ab579fe91bed081bfd39c85896ed173a7a94f38e46fc22d1a2d9f24da147984e69d22eb2dbeb0226456bf41b5e24cface3ca72cd76d478323d4091  screenkey-1.5.tar.gz
+"

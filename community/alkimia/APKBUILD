@@ -1,0 +1,77 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=alkimia
+pkgver=8.2.1
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative
+# armhf, armv7, x86, riscv64, s390x blocked by qt6-qtwebengine
+arch="all !armhf !armv7 !x86 !s390x !riscv64"
+url="https://community.kde.org/Alkimia/libalkimia"
+pkgdesc="A library with common classes and functionality used by finance applications for the KDE SC"
+license="GPL-3.0-or-later"
+depends_dev="
+	kcompletion-dev
+	kconfig-dev
+	kcoreaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kio-dev
+	kitemmodels-dev
+	knewstuff-dev
+	kpackage-dev
+	ktextwidgets-dev
+	libplasma-dev
+	mpir-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtwebengine-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	gmp-dev
+	graphviz
+	samurai
+	"
+checkdepends="xwayland-run"
+_repo_url="https://invent.kde.org/office/alkimia.git"
+source="https://download.kde.org/stable/alkimia/$pkgver/alkimia-$pkgver.tar.xz"
+subpackages="$pkgname-dev $pkgname-lang"
+
+build() {
+	cmake -B build -G Ninja \
+		-DBUILD_WITH_QT6=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_WITH_WEBKIT=OFF \
+		-DBUILD_WITH_WEBENGINE=ON
+	cmake --build build
+}
+
+check() {
+	local skipped_tests="(test-qwebengine-offscreen"
+	local tests="
+		alkdownloadengine-qt-test
+		alkdownloadengine-webengine-test
+		alknewstuffenginetest
+		alkonlinequotes-webengine-test
+		alkwebpage-webengine-test
+		test-qwebengine-cli
+		"
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	skipped_tests="$skipped_tests)"
+	xwfb-run -- ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+129dc783adcbebb6ecdb82abc04a8fc58a01d6d88fabd9eed0fcd980d42f2182d741347ab511f13c7183cdc2fb380a75aebbfa04768381a95f74243483bdb1c9  alkimia-8.2.1.tar.xz
+"

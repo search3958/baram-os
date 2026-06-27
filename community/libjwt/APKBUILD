@@ -1,0 +1,61 @@
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=libjwt
+pkgver=3.3.3
+pkgrel=0
+pkgdesc="The C JSON Web Token Library +JWK +JWKS"
+url="https://github.com/benmcollins/libjwt"
+arch="all"
+license="MPL-2.0"
+makedepends="
+	cmake
+	jansson-dev
+	openssl-dev
+	samurai
+	"
+checkdepends="
+	bash
+	check-dev
+	"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-tools
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/benmcollins/libjwt/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	local crossopts=
+	[ "$CBUILD" != "$CHOST" ] \
+		&& crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DWITH_GNUTLS=OFF \
+		-DWITH_MBEDTLS=OFF \
+		-DWITH_LIBCURL=OFF \
+		-DWITH_TESTS="$(want_check && echo ON || echo OFF)" \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+tools() {
+	pkgdesc="Tools for JWT and JWK(S) from libjwt"
+
+	amove usr/bin
+}
+
+sha512sums="
+d26b5f00b3ec612cb8c0511efad678cca6331c76b22431b65ccc0b2b784b52e3326e139b9298a3f0f2849fbc04997f0c947f480edb369ad7f0e342800d21ce1c  libjwt-3.3.3.tar.gz
+"

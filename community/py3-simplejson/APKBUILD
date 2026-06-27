@@ -1,0 +1,43 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-simplejson
+pkgver=3.20.1
+pkgrel=1
+pkgdesc="Simple, fast, extensible JSON encoder/decoder for Python"
+url="https://github.com/simplejson/simplejson"
+arch="all"
+license="MIT"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/simplejson/simplejson/archive/refs/tags/v$pkgver/simplejson-v$pkgver.tar.gz"
+builddir="$srcdir"/simplejson-$pkgver
+
+provides="py-simplejson=$pkgver-r$pkgrel" # backwards compatibility
+replaces="py-simplejson" # backwards compatiblity
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	rm -rf "$pkgdir"/usr/lib/python*/site-packages/simplejson/tests/
+}
+
+sha512sums="
+b6a70ca6cedce3c56e0e967d67140c654a06584cb92ea7bb276ffc7aa304c800b2b452b094bd980192e64836afeefd9f5c55f20fbdd4a3d3098b43935ab28f23  simplejson-v3.20.1.tar.gz
+"

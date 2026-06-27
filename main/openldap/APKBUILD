@@ -1,0 +1,388 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+#
+# secfixes:
+#   2.6.2-r0:
+#     - CVE-2022-29155
+#   2.4.57-r1:
+#     - CVE-2021-27212
+#   2.4.57-r0:
+#     - CVE-2020-36221
+#     - CVE-2020-36222
+#     - CVE-2020-36223
+#     - CVE-2020-36224
+#     - CVE-2020-36225
+#     - CVE-2020-36226
+#     - CVE-2020-36227
+#     - CVE-2020-36228
+#     - CVE-2020-36229
+#     - CVE-2020-36230
+#   2.4.56-r0:
+#     - CVE-2020-25709
+#     - CVE-2020-25710
+#   2.4.50-r0:
+#     - CVE-2020-12243
+#   2.4.48-r0:
+#     - CVE-2019-13565
+#     - CVE-2019-13057
+#   2.4.46-r0:
+#     - CVE-2017-14159
+#     - CVE-2017-17740
+#   2.4.44-r5:
+#     - CVE-2017-9287
+#
+pkgname=openldap
+pkgver=2.6.13
+pkgrel=0
+pkgdesc="LDAP Server"
+url="https://www.openldap.org/"
+arch="all"
+license="OLDAP-2.8"
+pkgusers="ldap"
+pkggroups="ldap"
+depends_dev="
+	cyrus-sasl-dev
+	libevent-dev
+	libsodium-dev
+	util-linux-dev
+	"
+makedepends="
+	$depends_dev
+	argon2-dev
+	autoconf
+	automake
+	db-dev
+	groff
+	libtool
+	mosquitto-dev
+	openssl-dev
+	unixodbc-dev
+	"
+provides="$pkgname-back-monitor=$pkgver-r$pkgrel"  # for backward compatibility (Alpine <3.15)
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	libldap
+	$pkgname-lloadd
+	$pkgname-lloadd-openrc:lloadd_openrc
+	$pkgname-clients
+	$pkgname-passwd-argon2:passwd_argon2
+	$pkgname-passwd-pbkdf2:passwd_pbkdf2
+	$pkgname-passwd-sha2:passwd_sha2
+	$pkgname-backend-all:_backend_all:noarch
+	$pkgname-overlay-all:_overlay_all:noarch
+	$pkgname-openrc
+	"
+install="
+	$pkgname.pre-install
+	$pkgname.post-install
+	$pkgname.pre-upgrade
+	$pkgname.post-upgrade
+	$pkgname-lloadd.pre-install
+	"
+source="https://www.openldap.org/software/download/OpenLDAP/openldap-release/openldap-$pkgver.tgz
+	0001-Fix-build-issue-in-clients-tools-common.c.patch
+	0002-Add-UNIX_LINK_LIBS-to-slapi-Makefile.patch
+	0003-Add-mqtt-overlay.patch
+	0004-Fix-manpages.patch
+	0005-Correct-command-line-syntax-in-lloadd-tests.patch
+	0007-Use-correct-extension-for-slapd-modules.patch
+	0008-Remove-pidfile-and-argsfile.patch
+	0009-Include-more-schemas-in-default-config.patch
+	0010-ITS8852-sorted-attr-cmp.patch
+	0011-ITS10250-MR817-attr-diff-and-test-scripts.patch
+	0012-syncrepl-no-opattrs-on-modrdn.patch
+
+	lloadd.conf
+	slapd.initd
+	slapd.confd
+	lloadd.initd
+	lloadd.confd
+	"
+
+# SLAPD backends
+_backends="
+	asyncmeta
+	dnssrv
+	ldap
+	lload
+	mdb
+	meta
+	null
+	passwd
+	relay
+	sock
+	sql
+	"
+for _name in $_backends; do
+	subpackages="$subpackages $pkgname-back-$_name:_backend"
+	_backend_pkgs="$_backend_pkgs $pkgname-back-$_name"
+done
+
+# SLAPD overlays
+_overlays="
+	accesslog
+	auditlog
+	autoca
+	collect
+	constraint
+	dds
+	deref
+	dyngroup
+	dynlist
+	homedir
+	lastbind
+	memberof
+	mqtt
+	otp
+	ppolicy
+	proxycache
+	refint
+	remoteauth
+	retcode
+	rwm
+	seqmod
+	sssvlv
+	syncprov
+	translucent
+	unique
+	valsort
+	"
+for _name in $_overlays; do
+	subpackages="$subpackages $pkgname-overlay-$_name:_overlay"
+	_overlay_pkgs="$_overlay_pkgs $pkgname-overlay-$_name"
+done
+
+# Extra modules from contrib/slapd-modules to build and install.
+_extra_modules="
+	mqtt
+	passwd/pbkdf2
+	passwd/sha2
+	lastbind
+	"
+
+prepare() {
+	default_prepare
+
+	sed -i '/^STRIP/s,-s,,g' build/top.mk
+	AUTOMAKE=/bin/true autoreconf -fi
+}
+
+build() {
+	_configure \
+		--enable-slapd \
+		--enable-modules \
+		--enable-dnssrv=mod \
+		--enable-ldap=mod \
+		--enable-mdb=mod \
+		--enable-meta=mod \
+		--enable-asyncmeta=mod \
+		--enable-null=mod \
+		--enable-passwd=mod \
+		--enable-relay=mod \
+		--enable-sock=mod \
+		--enable-sql=mod \
+		--enable-overlays=mod \
+		--enable-balancer=mod \
+		--enable-argon2
+	make
+
+	local dir; for dir in $_extra_modules; do
+		msg "Building module $dir"
+		make -C contrib/slapd-modules/$dir prefix=/usr libexecdir=/usr/lib
+	done
+
+	cp -ar "$builddir" "$builddir-lloadd"
+	cd "$builddir-lloadd"
+
+	msg "Building standalone lloadd"
+	make -C servers clean
+	_configure \
+		--enable-balancer=yes
+	make
+}
+
+_configure() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--libexecdir=/usr/lib \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var/lib/openldap \
+		--enable-dynamic \
+		--enable-crypt \
+		--enable-spasswd \
+		--with-tls=openssl \
+		--with-systemd=no \
+		--with-cyrus-sasl \
+		"$@"
+}
+
+check() {
+	case "$CARCH" in
+		# FIXME tests fail
+		s390x) rm tests/scripts/test001-slapadd ;;
+		armhf) rm tests/scripts/test046-dds ;;
+	esac
+
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	local dir; for dir in $_extra_modules; do
+		make -C contrib/slapd-modules/$dir \
+			DESTDIR="$pkgdir" prefix=/usr libexecdir=/usr/lib install
+	done
+
+	make -C "$builddir-lloadd"/servers/lloadd DESTDIR="$pkgdir" install
+
+	cd "$pkgdir"
+
+	rmdir var/lib/openldap/run
+
+	# Fix tools symlinks to slapd.
+	find usr/sbin/ -type l -exec ln -sf slapd {} \;
+
+	# Move executables from lib to sbin.
+	mv usr/lib/slapd usr/lib/lloadd usr/sbin/
+
+	# Move *.default configs to docs.
+	mkdir -p usr/share/doc/$pkgname
+	mv etc/openldap/*.default usr/share/doc/$pkgname/
+
+	chgrp ldap etc/openldap/slapd.*
+	chmod g+r etc/openldap/slapd.*
+
+	install -D -m 640 -g ldap "$srcdir"/lloadd.conf -t etc/openldap/
+
+	install -d -m 700 -o ldap -g ldap \
+		run/openldap \
+		var/lib/openldap \
+		var/lib/openldap/openldap-data \
+		var/lib/openldap/openldap-lloadd
+
+	install -D -m 755 "$srcdir"/slapd.initd etc/init.d/slapd
+	install -D -m 644 "$srcdir"/slapd.confd etc/conf.d/slapd
+
+	install -D -m 755 "$srcdir"/lloadd.initd etc/init.d/lloadd
+	install -D -m 644 "$srcdir"/lloadd.confd etc/conf.d/lloadd
+}
+
+libldap() {
+	pkgdesc="OpenLDAP libraries"
+	depends=""
+
+	amove usr/lib/*.so*
+	amove etc/openldap/ldap.conf
+}
+
+lloadd() {
+	pkgdesc="Standalone LDAP Load Balancer Daemon"
+
+	amove etc/openldap/lloadd.conf
+	amove usr/sbin/lloadd
+	amove var/lib/openldap/openldap-lloadd
+}
+
+lloadd_openrc() {
+	pkgdesc="Standalone LDAP Load Balancer Daemon (OpenRC init scripts)"
+	depends="$depends_openrc"
+	install_if="openrc $pkgname-lloadd=$pkgver-r$pkgrel"
+
+	amove etc/init.d/lloadd
+	amove etc/conf.d/lloadd
+}
+
+clients() {
+	pkgdesc="LDAP client utilities"
+
+	amove usr/bin
+}
+
+passwd_argon2() {
+	pkgdesc="Argon2 OpenLDAP support"
+	depends="$pkgname"
+
+	amove usr/lib/openldap/argon2.*
+}
+
+passwd_pbkdf2() {
+	pkgdesc="PBKDF2 OpenLDAP support"
+	depends="$pkgname"
+
+	amove usr/lib/openldap/pw-pbkdf2.*
+}
+
+passwd_sha2() {
+	pkgdesc="SHA2 OpenLDAP support"
+	depends="$pkgname"
+
+	amove usr/lib/openldap/pw-sha2.*
+}
+
+_backend_all() {
+	pkgdesc="Virtual package that installs all OpenLDAP backends"
+	depends="$_backend_pkgs"
+
+	mkdir -p "$subpkgdir"
+}
+
+_overlay_all() {
+	pkgdesc="Virtual package that installs all OpenLDAP overlays"
+	depends="$_overlay_pkgs"
+
+	mkdir -p "$subpkgdir"
+}
+
+_backend() {
+	backend_name="${subpkgname#openldap-back-}"
+	pkgdesc="OpenLDAP $backend_name backend"
+
+	case "$backend_name" in
+		lload) pkgdesc="OpenLDAP load balancer backend (module)";;
+		*) backend_name="back_$backend_name";;
+	esac
+
+	amove usr/lib/openldap/$backend_name*
+}
+
+_overlay() {
+	overlay_name="${subpkgname#openldap-overlay-}"
+	pkgdesc="OpenLDAP $overlay_name overlay"
+
+	case "$overlay_name" in
+		proxycache)
+			overlay_name=pcache
+		;;
+		mqtt)
+			# For backward compatibility (Alpine <3.15).
+			provides="$pkgname-mqtt=$pkgver-r$pkgrel"
+			replaces="$pkgname-mqtt"
+		;;
+	esac
+	amove usr/lib/openldap/$overlay_name*
+}
+
+sha512sums="
+a64b222bee2e8693e534f64eeb7afcd1f0c7a4b9ae2288ce2c53be9b532902fac3a1e3318c82545cf30c7f982a68b5167ee8baba1f4be5c1a72abdb7c75ac80b  openldap-2.6.13.tgz
+8fa57c43c2d51cd2d1d297b4dd4edd9a15b549b6d5beb8038f66f65cb1d7c93b8fda326c33b4f9356ea99e63703c553662deefc87222f23a1e5517fbf2fabdeb  0001-Fix-build-issue-in-clients-tools-common.c.patch
+a47f909a2ddc1efa12c369243ba59c5b312bebf67f5106d92b575ce9cb694540a9053a1cf6e9811c1ba1da8a9ea36062c357ff7e94d4bf8b4c2457fc4fdaaaec  0002-Add-UNIX_LINK_LIBS-to-slapi-Makefile.patch
+81a9b769bc5b6b599c17381a9f6515f2c479d82f4d728627c83a746403fc3401529dc47146390a4b66a3a4e074cd09c850d3fabe1a097d92066ce16c4443a0fb  0003-Add-mqtt-overlay.patch
+0552438d010a3cf225aa90b8c7744a8dbf853885f34a42f6dfc92e08a8b5b86c0082b1548498c6bc55522ca4ac8e3699cfba63be2279d9dcbbffa2690901f632  0004-Fix-manpages.patch
+f88de2f92a31f1b906e850daa1b518fc90822e668c9ca99c33934304d260237a1406cb845c2f4985bcc1c1c49355784287cb8e27f724ab6833a8e90912decf73  0005-Correct-command-line-syntax-in-lloadd-tests.patch
+30af37e70a53a55c56bb0e74eee770a00abe83d4b0a787845363ccff564b49b8ba20c907bb976442b4dc2278db7b0a039a11c85dd40a547af6de9a7f1591328f  0007-Use-correct-extension-for-slapd-modules.patch
+eaadec2a58a7f117c67b10673e26fe8c38e40ae4c1ae5fda9004c9bbebca81b6cd51cc482f28d94dacd8154ed800fd1e90f48807970f54652bfc021f8039806e  0008-Remove-pidfile-and-argsfile.patch
+1c2a18280ea06f8095f013c110f8b1b0779c3dc89aa19158cdedbe3a7e1019e7ea5a503cba4d3e3ae824423ded22b2ef334665d2281969ac3b0efb96de34e37e  0009-Include-more-schemas-in-default-config.patch
+4cdb9e3c61abb7d6ccaf7f5a3a253210c3178268402955c1c6dc4f0774818e644aa2c741f0497241e23a3aa74d1ba931fcee2bce00447f4c2020f45c41859369  0010-ITS8852-sorted-attr-cmp.patch
+08fc73ea8608474c8c34e7edd8c79046a7c2ea0a6280728ca92b47f147378a7bfbc283498f9b5bddf0c5401ea30c36700a3d1ea30955259e55b28fc3938f445b  0011-ITS10250-MR817-attr-diff-and-test-scripts.patch
+70cc2b9c8dde6909634f849574b927b63413538ad44bf3e9dedd30b471981f73a9ea3212ede230b937570b6a2fb8e42c195b31e46b621e9616b365d784c8c931  0012-syncrepl-no-opattrs-on-modrdn.patch
+c47a415a2a9cd98bb448820b981f40df82b4825e0ebcc8a5fb3c604d15e8f57ea1578afca6b3aa90351fd13e7ddba7dc7452bdb669df4a402f02990ca154e34e  lloadd.conf
+d8bd06f56a816851015488cccb352657df09f1aed9990fc2870208ffb1c5c499ac1d7592c42e8fa6e4a26a6bb2535f57e91d3a2aecfb38cf15d86de20e0e69a7  slapd.initd
+5898139481b3317b257ce1bfab401dd4e111a8f7ebb02262a8dcb165c6416fba1e5bb070cdf618918f018d2ad942d9514ce6a9b2ab1c57ac30ec75fb53b04af1  slapd.confd
+60667ed6fe2a4fa590f3b3ab6b33e338d6f78334ed234941a8912cf6fe646d1a70b2480586faa18c33c9e130cb53347c9681900ebaa66c900ed76d93a7876d40  lloadd.initd
+de18b02336ebfff79b681ae4781ed0fa29903162ab9fb64328750f0ae8f6c2533dac69d5430efb56f10734642a3f4cd81c50bdb2920b6f70ad89c87acabecbe2  lloadd.confd
+"

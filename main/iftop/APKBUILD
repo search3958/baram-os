@@ -1,0 +1,42 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=iftop
+pkgver=1.0_pre4
+_pkgver=${pkgver/_/}
+pkgrel=0
+pkgdesc="A tool to display bandwidth usage on an interface"
+url="https://www.ex-parrot.com/~pdw/iftop/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="libpcap-dev>=1 ncurses-dev"
+options="!check" # no tests
+subpackages="$pkgname-doc"
+source="https://www.ex-parrot.com/~pdw/iftop/download/iftop-$_pkgver.tar.gz
+	0001-fix-build-with-gcc15.patch
+	0002-iftop-mac-address.patch
+	"
+builddir="$srcdir/$pkgname-$_pkgver"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	# https://wiki.gentoo.org/wiki/Gcc_10_porting_notes/fno_common
+	make CFLAGS="$CFLAGS -fcommon"
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+abd74e8025bb82fef9ebab4997b1d018201a523d47c0128128ca37797490046538d74758dc4471735c22b890e5bd238ad6b2a30776d465138ede367cdd263d22  iftop-1.0pre4.tar.gz
+92c64f0adaee495bb36c7182a36f5afa0ec2483ab46a53fff02d6acb5e5d802f55fd25985b0055e0598db493b4363e78fd172671530ee5617e0356bcac00bd68  0001-fix-build-with-gcc15.patch
+227e26c378312569da3a12df397a9249168dddf69dc12df14944b1efd7022b5988db82ff9e73e0c5b743ab5f1e3662446ce0e1c712d3c339a0bcc3d45c3ff67a  0002-iftop-mac-address.patch
+"

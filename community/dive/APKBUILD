@@ -1,0 +1,34 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=dive
+pkgver=0.13.1
+pkgrel=6
+pkgdesc="Tool for exploring each layer in a docker image"
+url="https://github.com/wagoodman/dive"
+arch="all"
+license="MIT"
+depends="docker"
+makedepends="go"
+source="https://github.com/wagoodman/dive/archive/v$pkgver/dive-$pkgver.tar.gz"
+options="chmod-clean !check" # No test suite
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build \
+		-trimpath \
+		-ldflags "
+			-X main.version=$pkgver
+			" \
+		-o bin/dive .
+}
+
+package() {
+	install -Dm755 bin/dive "$pkgdir/usr/bin/dive"
+}
+
+sha512sums="
+570a7e185d4594e7dabd783b9b68c1985a0c5c0bdafba51e3c5a6e3a93a305bc23559c5d44324e9f82d0226fcf2a624a3d50307a19e82464a88e42eae0abbed0  dive-0.13.1.tar.gz
+"

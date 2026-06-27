@@ -1,0 +1,83 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-notty
+_pkgname=notty
+pkgver=0.2.3
+pkgrel=3
+pkgdesc="Declarative terminal library for OCaml"
+url="https://github.com/pqwy/notty"
+arch="all !riscv64 !loongarch64" # ocaml
+license="ISC"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	ocaml-compiler-libs
+	ocaml-lwt-dev
+	ocaml-uutf-dev
+	"
+makedepends="$depends_dev dune ocaml ocaml-cppo"
+subpackages="$pkgname-dev"
+source="$_pkgname-$pkgver.tar.bz2::https://github.com/pqwy/notty/releases/download/v$pkgver/notty-$pkgver.tbz"
+builddir="$srcdir/$_pkgname-$pkgver"
+_ocamldir=usr/lib/ocaml
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--docdir=/.omit
+	rm -Rf "$pkgdir"/.omit
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find $_ocamldir \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+6e21d44fe39f3d80884b87635bebae55cb2b931ef74f9184ba4d74cc3e51cb0b3e976c3b6dc61d377288504e8bfabe21acdc1069eacb30df1fbf6686b80f7c6b  notty-0.2.3.tar.bz2
+"

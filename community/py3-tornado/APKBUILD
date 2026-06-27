@@ -1,0 +1,49 @@
+# Maintainer: Michael M <mic@hael.xyz>
+pkgname=py3-tornado
+_pkgname=tornado
+pkgver=6.5.5
+pkgrel=1
+pkgdesc="Python3 web framework and asynchronous networking library"
+options="!check" # 3 Tests fail by failure to resolve 'localhost'
+url="https://www.tornadoweb.org/"
+arch="all"
+license="Apache-2.0"
+depends="python3"
+makedepends="python3-dev py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-curl py3-mock py3-twisted"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-tornado" # Backwards compatibility
+provides="py-tornado=$pkgver-r$pkgrel" # Backwards compatibility
+
+# secfixes:
+#   6.5.4-r0:
+#     - CVE-2025-67724
+#     - CVE-2025-67725
+#     - CVE-2025-67726
+
+export TORNADO_EXTENSION=1
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	export PYTHONPATH="$(echo $PWD/build/lib.*)"
+	cd build
+	python3 -m tornado.test.runtests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	rm -rf "$pkgdir"/usr/lib/python3*/site-packages/$_pkgname/test
+}
+
+sha512sums="
+fbf1e4f74920e8d9a17663e75ff39c34dbefefd0e3df692716d01abae0e1747578e0a59c174591f8f03980702f18a0c935105840953cd3f7ef2c200e9f3cf491  tornado-6.5.5.tar.gz
+"

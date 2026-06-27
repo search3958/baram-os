@@ -1,0 +1,33 @@
+# Contributor: Sergiy Stupar <owner@sestolab.pp.ua>
+# Maintainer: Sergiy Stupar <owner@sestolab.pp.ua>
+pkgname=dcnnt
+pkgver=0.10.0
+pkgrel=2
+pkgdesc="UI-less tool to connect Android phone with desktop"
+url="https://github.com/cyanomiko/dcnnt-py"
+arch="noarch"
+license="MIT"
+depends="py3-pycryptodome"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cyanomiko/dcnnt-py/archive/$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-py-$pkgver"
+options="!check" # No tests
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -Dm644 doc/*.md -t "$pkgdir"/usr/share/doc/$pkgname
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+a675b027e7a60db2d80abb574db45233d968b29d0f4b3ad3c274fa8609cb1c544b31e3989be02601ab5b9292212374064c47f39d270949df115d73685c226611  dcnnt-0.10.0.tar.gz
+"

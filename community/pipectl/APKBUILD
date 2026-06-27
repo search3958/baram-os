@@ -1,0 +1,29 @@
+# Contributor: Willow Barraco <contact@willowbarraco.fr>
+maintainer="qaqland <qaq@qaq.land>"
+pkgname=pipectl
+pkgver=0.5.1
+pkgrel=2
+pkgdesc="A simple named pipe management utility"
+url="https://github.com/Ferdi265/pipectl"
+license="GPL-3.0-or-later"
+arch="all"
+makedepends="cmake samurai scdoc"
+subpackages="$pkgname-doc"
+source="https://github.com/Ferdi265/pipectl/archive/v$pkgver/pipectl-$pkgver.tar.gz"
+options="!check" # no test suite
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DINSTALL_DOCUMENTATION=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+6eb0d60177264661642bdd27612e55ad9ed4d5ff163135ab85d004ded6fdc6d19990884bc5ee9bdfdd21e3cfffbb7b677ae14b73ce3abbe988df37d72366497b  pipectl-0.5.1.tar.gz
+"

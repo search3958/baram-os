@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-paho-mqtt
+pkgver=1.6.1
+pkgrel=4
+pkgdesc="Python3 MQTT version 3.1/3.1.1 client class"
+url="https://www.eclipse.org/paho/"
+arch="noarch"
+license="EPL-1.0"
+depends="python3"
+makedepends="py3-setuptools"
+checkdepends="py3-pytest py3-six"
+subpackages="$pkgname-pyc"
+source="paho-mqtt-$pkgver.tar.gz::https://github.com/eclipse/paho.mqtt.python/archive/v$pkgver.tar.gz"
+builddir="$srcdir"/paho.mqtt.python-$pkgver
+
+replaces=py-paho-mqtt # Backwards compatibility
+provides=py-paho-mqtt=$pkgver-r$pkgrel # Backwards compatibility
+
+prepare() {
+	default_prepare
+	# remove illegal pytest option
+	sed -i '/addopts/d' setup.cfg
+}
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	PYTHONPATH="$builddir"/src py.test-3
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+8a13c1f6f97138728d5cab6f7bcd6474942fdf9dfc18d1fad723d50de81f4e062953b5bef2ebbde27b08e480eed305ecbfeae467d70eb10f07ec0adca11750ec  paho-mqtt-1.6.1.tar.gz
+"

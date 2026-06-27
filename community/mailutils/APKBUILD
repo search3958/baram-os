@@ -1,0 +1,92 @@
+# Contributor: Shiz <hi@shiz.me>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=mailutils
+pkgver=3.21
+pkgrel=1
+pkgdesc="GNU swiss army knife of electronic mail handling"
+url="https://mailutils.org/"
+arch="all"
+license="GPL-3.0-or-later"
+replaces="mailx"
+depends_dev="$pkgname-libs=$pkgver-r$pkgrel"
+makedepends="
+	gnutls-dev
+	libtool
+	libunistring-dev
+	readline-dev
+	"
+checkdepends="
+	autoconf
+	netcat-openbsd
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-mh
+	$pkgname-servers
+	"
+source="https://ftp.gnu.org/gnu/mailutils/mailutils-$pkgver.tar.xz
+	disable-koi8-r-test.patch
+	gcc15.patch
+	"
+# they pretty much all pass, but the test suite takes an hour
+options="!check"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	# Exclude imap4d tests as they require chdir("/root") which won't work.
+	sed -i 's/$(IMAP4D_DIR)/# $(IMAP4D_DIR)/g' Makefile
+	make check
+}
+
+package() {
+	# re-enable imap4d subdirectory for install
+	sed -i 's/# $(IMAP4D_DIR)/$(IMAP4D_DIR)/g' Makefile
+	make DESTDIR="$pkgdir" install
+
+	cd "$pkgdir"
+	# No need for these to be suid/sgid root.
+	chmod -c u-s usr/sbin/mda
+	chmod -c g-s usr/bin/dotlock
+}
+
+libs() {
+	default_libs
+
+	amove usr/lib/mailutils
+}
+
+mh() {
+	pkgdesc="$pkgdesc (MH compatibility)"
+
+	amove \
+		usr/bin/mu-mh \
+		usr/share/mailutils/mh
+}
+
+servers() {
+	pkgdesc="$pkgdesc (servers)"
+
+	amove \
+		usr/sbin/pop3d \
+		usr/sbin/imap4d \
+		usr/sbin/comsatd
+}
+
+sha512sums="
+b006a0713d188d003c935b583ffa26284e79c05b808dbe4122aa0049cf0a6af9324ca8518f863aab507a9ac3b041b2cd1b88d9c10f9e6d6a000b8d83b2e22759  mailutils-3.21.tar.xz
+89ea693bc22a6e193dc59ad28b12ebef08f939a3f9454c4c859408e474e5735172291cc2daed94f05aa2c4ce5c5f5a5fcc7a377b91c71c99822c5cdac3180e40  disable-koi8-r-test.patch
+fed45bb6c107b3875bca99988eed375774dd778f1eee64426bf0a5153b413b57e5295136e8ad47380909b018591a50b4e3f41ed8f4e2230a3b89768da92d2710  gcc15.patch
+"

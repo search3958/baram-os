@@ -1,0 +1,10 @@
+--- a/crates/arti/Cargo.toml
++++ b/crates/arti/Cargo.toml
+@@ -36,7 +36,6 @@ full = [
+     "async-std",
+     "tokio",
+     "native-tls",
+-    "journald",
+     "syslog",
+     "arti-client/full",
+     "dns-proxy",

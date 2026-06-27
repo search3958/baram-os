@@ -1,0 +1,36 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=desktop-file-utils
+pkgver=0.28
+pkgrel=0
+pkgdesc="Command line utilities for working with desktop entries"
+url="https://www.freedesktop.org/wiki/Software/desktop-file-utils"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="glib-dev gettext-dev meson"
+subpackages="$pkgname-doc $pkgname-emacs::noarch"
+triggers="$pkgname.trigger=/usr/share/applications"
+source="https://www.freedesktop.org/software/desktop-file-utils/releases/desktop-file-utils-$pkgver.tar.xz"
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+emacs() {
+	pkgdesc="Emacs mode for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel emacs"
+
+	amove usr/share/emacs
+}
+
+sha512sums="
+1024172fcd37ace0660fd58195c0562b47f1ef8ed37f662b88048c295a388d1458d01f86799b34ec9e8b27a7ea441f98665f0d641c29cb5ecc3abd7da41230f0  desktop-file-utils-0.28.tar.xz
+"

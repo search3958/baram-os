@@ -1,0 +1,60 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: André Klitzing <aklitzing@gmail.com>
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=pdfgrep
+pkgver=2.2.0
+pkgrel=1
+pkgdesc="Commandline utility to search text in PDF files"
+url="https://pdfgrep.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="autoconf automake pcre-dev poppler-dev libgcrypt-dev"
+checkdepends="dejagnu texlive"
+subpackages="$pkgname-doc
+	$pkgname-zsh-completion:zshcomp:noarch
+	$pkgname-bash-completion:bashcomp:noarch"
+source="https://pdfgrep.org/download/$pkgname-$pkgver.tar.gz"
+options="!check" # multiple failures
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make -k check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+bashcomp() {
+	depends=""
+	pkgdesc="Bash completions for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel bash-completion"
+
+	mkdir -p "$subpkgdir"/usr/share/bash-completion/completions/
+	mv "$pkgdir"/usr/share/bash-completion/completions/* \
+		"$subpkgdir"/usr/share/bash-completion/completions/
+}
+
+zshcomp() {
+	depends=""
+	pkgdesc="Zsh completions for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel zsh"
+
+	mkdir -p "$subpkgdir"/usr/share/zsh/site-functions/
+	mv "$pkgdir"/usr/share/zsh/site-functions/* \
+		"$subpkgdir"/usr/share/zsh/site-functions
+}
+
+sha512sums="
+de39ccb266f30b32ec71083759553979a31f7220b4923a4c3c74e1001c2f2c0dbef17c00f8139ffe88eec2031c48a13f18a057c7523ad363689b0f5b004c420f  pdfgrep-2.2.0.tar.gz
+"

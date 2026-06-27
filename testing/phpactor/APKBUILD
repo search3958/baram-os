@@ -1,0 +1,43 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=phpactor
+pkgver=2025.10.17.0
+pkgrel=0
+pkgdesc="PHP Language Server with more features"
+url="https://github.com/phpactor/phpactor"
+arch="noarch"
+license="MIT"
+_phpv=83
+_php=php$_phpv
+_composer="$_php -d memory_limit=512M /usr/bin/composer.phar"
+makedepends="
+	$_php
+	$_php-phar
+	$_php-openssl
+	$_php-iconv
+	composer
+"
+depends="
+	$_php
+	$_php-mbstring
+	$_php-tokenizer
+	$_php-phar
+	$_php-iconv
+"
+options="!check net" # no tests
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/phpactor/phpactor/archive/refs/tags/$pkgver.tar.gz
+	"
+
+build() {
+	$_composer install --no-interaction --no-dev --optimize-autoloader
+}
+
+package() {
+	mkdir -p "$pkgdir/usr/share/webapps/$pkgname" "$pkgdir"/usr/bin
+	cp -r ./ "$pkgdir/usr/share/webapps/$pkgname"
+	ln -s /usr/share/webapps/phpactor/bin/phpactor "$pkgdir"/usr/bin/phpactor
+}
+
+sha512sums="
+3264e587510c0ad04de3bd306ca054ce2de149ee3b06618c7b0384d86d17dd95945a4807a6c62658b2258769db6e53c0c3e9fdde6f3f2ca547e87e0ac173843e  phpactor-2025.10.17.0.tar.gz
+"

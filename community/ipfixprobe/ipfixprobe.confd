@@ -1,0 +1,21 @@
+# Configuration for /etc/init.d/ipfixprobe
+
+# Name of the YAML configuration file (without the ".conf" extension).
+# The full path will be "/etc/ipfixprobe/<cfgname>.conf".
+# If the service name is "ipfixprobe", it defaults to "link0". If it's
+# "ipfixprobe.<instance>", then it defaults to <instance>.
+#cfgname="link0"
+
+# User and group to run ipfixprobe as.
+#command_user="ipfixprobe:ipfixprobe"
+
+# Capabilities needed for running ipfixprobe as an unprivileged user.
+#capabilities="^cap_net_raw,^cap_ipc_lock"
+
+# A process which will be used to log the stderr from the ipfixprobe process.
+# Default is logger(1) which redirects the output to syslog.
+# If you want to disable this, set error_logger="".
+#error_logger="logger -t ipfixprobe -p daemon.info >/dev/null 2>&1"
+
+# Run with process supervisor.
+supervisor=supervise-daemon

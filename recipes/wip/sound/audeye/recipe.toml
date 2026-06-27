@@ -1,8 +1,0 @@
-#TODO compilation error
-[source]
-git = "https://github.com/maxmarsc/audeye"
-[build]
-template = "cargo"
-dependencies = [
-    "libsndfile",
-]

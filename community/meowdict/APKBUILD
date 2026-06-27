@@ -1,0 +1,70 @@
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=meowdict
+pkgver=0.10.5
+pkgrel=3
+pkgdesc="CLI web client for moedict.tw"
+url="https://github.com/eatradish/meowdict"
+arch="all"
+license="MIT"
+depends="opencc"
+makedepends="
+	cargo
+	cargo-auditable
+	opencc-dev
+	openssl-dev
+	"
+source="https://github.com/eatradish/meowdict/archive/v$pkgver/meowdict-$pkgver.tar.gz
+	getrandom-0.2.15.patch
+	nix-0.28.0.patch
+	remove-rustix-0.36.10.patch
+	fix-api-test.patch
+	increase-max-version.diff
+	"
+
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' vendor/$1/.cargo-checksum.json
+}
+
+prepare() {
+	default_prepare
+
+	cargo vendor --locked
+
+	_clear_vendor_checksums opencc-rust
+	patch vendor/opencc-rust/build.rs \
+		"$srcdir"/increase-max-version.diff
+
+	mkdir -p .cargo
+	cat >> .cargo/config.toml <<-EOF
+		[source.crates-io]
+		replace-with = "vendored-sources"
+		
+		[source.vendored-sources]
+		directory = "vendor"
+	EOF
+	
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dvm755 target/release/meowdict -t "$pkgdir"/usr/bin/
+
+	install -Dvm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+2af8e39e6fa6c3dc54a38993f59bef4b893255b9dc05c47af6bd3fd2f61654f8768b748c33f9f623a255e73e0d06f9301d15390cfeee09466015daaaab457698  meowdict-0.10.5.tar.gz
+54a7cb097241320abd5568de61215f68fbbe063dc433fbda4988370ffcf20e942a89d35bfec83f897d331359493a19d99d49dc28cc7762538cd8d85170716261  getrandom-0.2.15.patch
+a4ecda37f88cc2ea6bcf799ec76246ad9b7fa680c4c92431494bd371859386a3b26b95e10ddda85702796f050212e4e2124380948813b8539fea19c701ab4fc8  nix-0.28.0.patch
+2e6360dadba7f25a14504325135cfca5ff6f7d601980bc8eefeb306c8969381dd34ebe33b1c705f71c4e8057ae75364824c8dd75c2cf0f1a5b62f1bc2ca5dc1e  remove-rustix-0.36.10.patch
+3caf9d5284fe6788f386de06b896c6cd2981761ec6e94070488c4f02074b2e7bde82c2dd1630beea9677bd265c3d7c8b0008451aff8fae609136bd57225a3ff0  fix-api-test.patch
+b12e8cf2b3843e62a3a12d34acec6ad3ce55a7b4a3bc752df83b221fb20896439a4cedde70fb02fd477a300a50eb17966b6f90c4a00466517c35580471a2c832  increase-max-version.diff
+"

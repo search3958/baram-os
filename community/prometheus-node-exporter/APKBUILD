@@ -1,0 +1,52 @@
+# Contributor: Tiago Ilieve <tiago.myhro@gmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=prometheus-node-exporter
+_pkgname=node_exporter
+pkgver=1.11.1
+pkgrel=0
+pkgdesc="Prometheus exporter for machine metrics"
+url="https://github.com/prometheus/node_exporter"
+license="Apache-2.0"
+arch="all"
+makedepends="go>=1.14 bash sed"
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+subpackages="$pkgname-openrc"
+source="$_pkgname-$pkgver.tar.gz::https://github.com/prometheus/node_exporter/archive/v$pkgver.tar.gz
+	node-exporter.initd
+	node-exporter.confd
+	disable-go-race-detector.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="net" # go
+
+# secfixes:
+#   1.5.0-r0:
+#     - CVE-2022-46146
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build \
+		-ldflags "-X github.com/prometheus/common/version.Version=$pkgver" \
+		-v -o node_exporter
+}
+
+check() {
+	make test
+}
+
+package() {
+	install -Dm755 node_exporter "$pkgdir"/usr/bin/node_exporter
+
+	install -Dm755 "$srcdir"/node-exporter.initd "$pkgdir"/etc/init.d/node-exporter
+	install -Dm644 "$srcdir"/node-exporter.confd "$pkgdir"/etc/conf.d/node-exporter
+}
+
+sha512sums="
+52422f030c71a26fdfd1e56b739a801c6bee7818e359685bf3aee834833a07509bb9830444a91a0aab2a6ca6965434b553655e0b5b3d1d73a51a2a674e6a2a0c  node_exporter-1.11.1.tar.gz
+67b16a002daf45893e7d814e6d921f92dfc26d31ea802a4c511dc3affd8143d3827b7d895bb3efc13337894a893f4feac01d2a0f0e381ef53d00dffe9ff0577a  node-exporter.initd
+592d3f17a3cf487d97a14c803dded07d2dfb112b159ab1a3575310fc0176fc3255ddad6657f16a8d6d3c161bfb03c203a6271ec6e6395b75716a14b0de8baced  node-exporter.confd
+36952039e5db39aa06a2ca16fa5d318f22eb967e3e9b1363508b2f3d3d0b14e5df111c77ce951bea2f65dd2be0a0a1582be245acfe4641623381a940204e53d9  disable-go-race-detector.patch
+"

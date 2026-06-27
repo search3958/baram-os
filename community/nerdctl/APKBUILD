@@ -1,0 +1,59 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=nerdctl
+pkgver=2.2.1
+pkgrel=4
+pkgdesc="Docker-compatible CLI for containerd"
+url="https://github.com/containerd/nerdctl/"
+arch="all"
+license="Apache-2.0"
+depends="ca-certificates containerd cni-plugins iptables"
+makedepends="go"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/containerd/nerdctl/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # download Go modules
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v \
+		-ldflags="
+		-X github.com/containerd/nerdctl/v2/pkg/version.Version=v$pkgver \
+		-X github.com/containerd/nerdctl/v2/pkg/version.Revision=AlpineLinux \
+		" \
+		./cmd/nerdctl
+
+	for shell in bash fish zsh; do
+		./nerdctl completion $shell > nerdctl.$shell
+	done
+}
+
+check() {
+	# /cmd/nerdctl module requires 'nerdctl' binary to be inside PATH
+	# TestProcessFlagV test tries to mount paths on build host (.e.g /mnt/foo, /test/volume)
+	# TestGet test fails to read /run/systemd/resolve/resolv.conf file (we're not using systemd here)
+	# shellcheck disable=2046
+	go test -skip 'TestGet|TestProcessFlagV' $(go list ./... | grep -v "/cmd/nerdctl")
+}
+
+package() {
+	install -Dm755 nerdctl -t "$pkgdir"/usr/bin/
+	install -Dm644 docs/*.md -t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dm644 nerdctl.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/nerdctl
+	install -Dm644 nerdctl.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/nerdctl.fish
+	install -Dm644 nerdctl.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_nerdctl
+}
+
+sha512sums="
+2b25061c0673633e28e42cb082e1cd5d86a31127c83ff23621c742a05b7b3314fca51acf20cc4a45f00400624d17d52b480e6803e886f59ac92cf38470ba983a  nerdctl-2.2.1.tar.gz
+"

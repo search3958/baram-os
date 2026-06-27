@@ -1,0 +1,31 @@
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=xmessage
+pkgver=1.0.7
+pkgrel=0
+pkgdesc="Display a message or query in a window"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="MIT"
+makedepends="libxaw-dev libx11-dev util-macros"
+subpackages="$pkgname-doc"
+source="https://xorg.freedesktop.org/archive/individual/app/$pkgname-$pkgver.tar.xz"
+options="!check"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+0c44f7973f7ed8d7993aaeb457a8921301cb0de905e45d92bd99d49463223b54c704a28bef376fe6038b4aec7156be873a34294741c8537bb7a5a57e1f152cce  xmessage-1.0.7.tar.xz
+"

@@ -1,0 +1,59 @@
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=py3-pikepdf
+_pyname=pikepdf
+pkgver=10.1.0
+pkgrel=1
+pkgdesc="Python library for reading and writing PDF"
+url="https://github.com/pikepdf/pikepdf"
+arch="all"
+license="MPL-2.0"
+depends="
+	py3-deprecated
+	py3-lxml
+	py3-packaging
+	py3-pillow
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-pybind11-dev
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	qpdf-dev
+	"
+checkdepends="
+	py3-hypothesis
+	py3-psutil
+	py3-pytest
+	py3-pytest-xdist
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pikepdf/pikepdf/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+# secfixes:
+#   2.9.1-r2:
+#     - CVE-2021-29421
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/pikepdf-*.whl
+}
+
+sha512sums="
+0b66ba486afca8254fa4bb3b11aade20c51317bc8b8a84babf1b0830317db08853815b82b2a333c183521f4e088c5627ef7b14e86922aaa4d61e966e55f28bd4  py3-pikepdf-10.1.0.tar.gz
+"

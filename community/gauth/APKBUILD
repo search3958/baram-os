@@ -1,0 +1,36 @@
+# Contributor: mio <miyopan@e.email>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=gauth
+pkgver=1.5.0
+pkgrel=14
+pkgdesc="Replacement for Google Authenticator"
+url="https://github.com/pcarrier/gauth"
+license="ISC"
+arch="all"
+makedepends="go"
+source="https://github.com/pcarrier/gauth/archive/v$pkgver/gauth-v$pkgver.tar.gz"
+
+export GOFLAGS="$GOFLAGS -modcacherw"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v -x -o "$builddir"/bin/
+}
+
+check() {
+	cd "$builddir"/gauth
+	go test -v -x
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin
+	install -p -m755 "$builddir"/bin/* "$pkgdir"/usr/bin
+
+	install -Dvm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+5e66161966bf82b3d72d0331277cce4a4dd8fbff18991c47fb9930fad9c4b1fd706e94fa5417558d92c66152dcf690ff84bef43503964ab68d5d22d75a097e41  gauth-v1.5.0.tar.gz
+"

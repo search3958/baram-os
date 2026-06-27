@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-gross
+pkgver=0.6.0
+pkgrel=4
+pkgdesc="Web-based system administration interface for gross"
+url="https://gitlab.alpinelinux.org/acf/acf-gross"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+depends="acf-core gross"
+source="https://gitlab.alpinelinux.org/acf/acf-gross/-/archive/v$pkgver/acf-gross-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+56b5f98011d2a1d7e95cf19dc12058971013bf846b315befbedd96ab532458af19e8960a808ff14153413a49a3947877394a065ba4ee62121399e59a3fc3ce49  acf-gross-v0.6.0.tar.gz
+"

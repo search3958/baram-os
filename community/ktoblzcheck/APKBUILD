@@ -1,0 +1,52 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=ktoblzcheck
+pkgver=1.59
+pkgrel=1
+_dataver=20250515
+pkgdesc="A library to check account numbers and bank codes of german banks"
+url="https://ktoblzcheck.sourceforge.net/"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="cmake samurai python3 python3-dev py3-openpyxl sqlite-dev curl-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+options="net"
+source="https://downloads.sourceforge.net/sourceforge/ktoblzcheck/ktoblzcheck-$pkgver.tar.gz
+	https://sourceforge.net/projects/ktoblzcheck/files/ktoblzcheck-data-$_dataver.tar.gz
+	cmake_policy.patch"
+
+build() {
+	cmake -B build \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+
+	if want_check; then
+		# Build a test environment using data from srcdir
+		cmake -B build-test \
+			-DCMAKE_BUILD_TYPE=None \
+			-DCMAKE_INSTALL_PREFIX=/usr \
+			-DCMAKE_INSTALL_LIBDIR=lib \
+			-DBANKDATA_PATH="$srcdir"/ktoblzcheck-data-$_dataver/data
+		cmake --build build-test
+	fi
+}
+
+check() {
+	ctest --test-dir build-test
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# Install data files
+	install -Dm644 "$srcdir"/ktoblzcheck-data-$_dataver/data/* \
+		-t "$pkgdir"/usr/share/ktoblzcheck/
+}
+
+sha512sums="
+b3d93fa410867f620af344bd7e8d33031aa73ef1597540f2ae60fe1ab796ef167b0d09ed906fb95ae811825f2b08aa7c742e6cecd3c587476e77755365e8dd2b  ktoblzcheck-1.59.tar.gz
+dcbad9d064f5a45f0aa62e17a84c0249960adb63329dc883d95b8ae22ff10d522ee8deb7e1cdf6c514550946649c1e499e3d0621e804a6ffd55e86ee2cd623b0  ktoblzcheck-data-20250515.tar.gz
+9ed3a09ef93083fb9d151ad903690410fa4b94d82c80a1bee4a59f4204fff2486c6ffadec3b14e5f4100aaf371848792574634c09ae3f657f8125a3d03836921  cmake_policy.patch
+"

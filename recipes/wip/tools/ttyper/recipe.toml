@@ -1,5 +1,0 @@
-#TODO replace the prompt with nothing on execution
-[source]
-git = "https://github.com/max-niederman/ttyper"
-[build]
-template = "cargo"

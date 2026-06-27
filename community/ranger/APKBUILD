@@ -1,0 +1,36 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: John Anthony <john@jo.hnanthony.com>
+pkgname=ranger
+pkgver=1.9.4
+pkgrel=1
+pkgdesc="VIM-inspired filemanager for the console"
+url="https://ranger.github.io/"
+arch="noarch"
+license="GPL-3.0-only"
+depends="python3"
+makedepends="py3-setuptools"
+checkdepends="py3-pytest"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ranger/ranger/archive/v$pkgver.tar.gz
+	bulkrename.patch
+	"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	pytest-3 tests
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+
+	install -Dm644 doc/ranger.1 "$pkgdir"/usr/share/man/man1/ranger.1
+	install -Dm644 doc/rifle.1 "$pkgdir"/usr/share/man/man1/rifle.1
+}
+
+sha512sums="
+18cd1d66838a5f85176e6b7502521a7e449aaa0b12e97d62142d39f980c529c5b97a50f6fb8a65adb64612fa80450b1e13047327f7bcc005a494af4ab321e4d4  ranger-1.9.4.tar.gz
+798b460771b4518b59f65ec9a5903b648c2e286fb02242c6a51d5d4281c9e23e85e6ed310313dcbec2daad4527d0841bb268abe4549cd29437dff0df96ac2766  bulkrename.patch
+"

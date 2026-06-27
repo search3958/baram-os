@@ -1,0 +1,34 @@
+# Contributor: Angelo Verlain <hey@vixalien.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=elementary-theme
+pkgver=8.2.2
+pkgrel=0
+pkgdesc="The GTK Stylesheet for elementary OS"
+url="https://github.com/elementary/stylesheet"
+arch="noarch"
+license="GPL-3.0-or-later"
+makedepends="
+	gettext
+	meson
+	sassc
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/elementary/stylesheet/archive/refs/tags/$pkgver.tar.gz"
+
+builddir="$srcdir/stylesheet-$pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+220f870ac411be73948957947390291dfaec46651093b7adae3c078d83c38ed98950edf19d0af25aa540077d941a18c43706330fb71a189b06c88d2f32b4450a  elementary-theme-8.2.2.tar.gz
+"

@@ -1,0 +1,66 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=libpostal
+pkgver=1.1.4
+pkgrel=0
+pkgdesc="A C library for parsing/normalizing street addresses around the world. Powered by statistical NLP and open geo data"
+url="https://github.com/openvenues/libpostal"
+arch="all"
+license="MIT"
+makedepends="
+	autoconf
+	automake
+	libtool
+	"
+checkdepends="libpostal-data"
+subpackages="$pkgname-dev"
+source="https://github.com/openvenues/libpostal/archive/refs/tags/v$pkgver/libpostal-v$pkgver.tar.gz"
+
+# s390x has a test failure but we're unable to see the log
+case "$CARCH" in
+s390x) options="!check" ;;
+esac
+
+prepare() {
+	default_prepare
+
+	./bootstrap.sh
+}
+
+build() {
+	case "$CARCH" in
+	x86*) local sse2="" ;;
+	*) local sse2="--disable-sse2" ;;
+	esac
+
+	case "$CARCH" in
+	arm*) local scanner_flags="--with-cflags-scanner-extra=-marm" ;;
+	esac
+
+	export CFLAGS="$CFLAGS -Wno-incompatible-pointer-types"
+
+	./bootstrap.sh
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		$sse2 \
+		$scanner_flags \
+		--datadir=/usr/share \
+		--disable-data-download
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+de2561d47e84e68e18bcfe1eef596a115e77e4c4201b24ae9b3bbd5cbc26fb1758a4cdc5e14614788f90146933cbc1117dd1ac7a7dbf07bd247d33252862bd88  libpostal-v1.1.4.tar.gz
+"

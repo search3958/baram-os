@@ -1,0 +1,37 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=wpan-tools
+pkgver=0.10
+pkgrel=0
+pkgdesc="Configure and test 802.15.4 devices"
+url="https://linux-wpan.org/"
+arch="all"
+license="ISC"
+depends="libnl3-dev linux-headers"
+options="!check" # upstream doesn't have a test suite currently
+source="https://github.com/linux-wpan/wpan-tools/releases/download/wpan-tools-$pkgver/wpan-tools-$pkgver.tar.xz
+	"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+2a25e85aa3a0fc5ee1cc5e20a5e5d45eba282a2c2e85be21ed7cf229d7fa032bb45c7dafe5dba8838f179b52e2a3a1cb943db19aff4c391f9005d403d202dfc3  wpan-tools-0.10.tar.xz
+"

@@ -1,0 +1,56 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=gtkmm4
+pkgver=4.22.0
+pkgrel=0
+# NOTE: Upgrade only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="C++ wrappers for GTK 4"
+url="https://www.gtkmm.org/"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	atkmm2.36-dev
+	cairomm-dev
+	doxygen
+	gdk-pixbuf-dev
+	glibmm-dev
+	graphviz
+	gtk4.0-dev
+	m4
+	meson
+	pangomm-dev
+	perl
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-devhelp $pkgname-dev $pkgname-doc"
+source="https://download.gnome.org/sources/gtkmm/${pkgver%.*}/gtkmm-$pkgver.tar.xz
+	setlocale-sigsegv.patch
+	"
+builddir="$srcdir/gtkmm-$pkgver"
+
+build() {
+	abuild-meson \
+		-Dbuild-demos=false \
+		-Dbuild-tests=true \
+		-Dbuild-documentation=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	xvfb-run -a meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+dev() {
+	default_dev
+	amove usr/lib/*/proc/m4/
+}
+
+sha512sums="
+b0c4b77249dcf2d917919d43b04e41b819507ab34366aa4bbffd53bbe5edbb195081d69ae4996a116573a5d4e6d2affbbbc62d4ff986dcbf95045c5d64284d7f  gtkmm-4.22.0.tar.xz
+9ae42182f1b7a8bd21b3e1aaaa830222402a685d4b98c12f2480e724afaa98828e5cade8e8fd79a976c5a110f0ebe19f9703f92dc097a4e9b467b6ec773119bd  setlocale-sigsegv.patch
+"

@@ -1,0 +1,36 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+# Maintainer: Holger Jaekel <holger.jaekel@gmx.de>
+_pkgname=affine
+pkgname=py3-$_pkgname
+pkgver=2.4.0
+pkgrel=3
+pkgdesc="Affine transformation matrices"
+url="https://pypi.org/project/affine/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3"
+makedepends="py3-flit-core py3-gpep517 py3-installer"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="py3-affine-$pkgver.tar.gz::https://github.com/sgillies/affine/archive/$pkgver.tar.gz"
+builddir="$srcdir/affine-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/affine*.whl
+	rm -rf "$pkgdir"/usr/lib/python3*/site-packages/*/tests
+}
+
+sha512sums="
+0fbd7ac01b7401a8e9f3959bf9f0961999a9276995ae1dc25d4789d3d3eaad4cfdcb02c43bdd30abd31d8059288a459ce067ca35d2754cb119668256062377b0  py3-affine-2.4.0.tar.gz
+"

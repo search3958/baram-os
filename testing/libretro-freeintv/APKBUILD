@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-freeintv
+pkgver=0_git20220319
+pkgrel=0
+_commit="295dd3c9e4b2d4f652f6a6a904afbe90a8187068"
+pkgdesc="libretro core for freeintv"
+url="https://github.com/libretro/FreeIntv"
+arch="all"
+license="GPL-3.0-only"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/FreeIntv/archive/$_commit.tar.gz"
+builddir="$srcdir/FreeIntv-$_commit"
+options="!check" # No tests
+
+build() {
+	make
+}
+
+package() {
+	install -Dm644 freeintv_libretro.so "$pkgdir"/usr/lib/libretro/freeintv_libretro.so
+}
+
+sha512sums="
+feee4cedcefaa95c4725b84c500c6596d083774f532259048fa5c61f71529297b85d1570a760e9bedda9eb3f0a5925ca03db99579f2695b33c98ee87f5b0cb3a  libretro-freeintv-295dd3c9e4b2d4f652f6a6a904afbe90a8187068.tar.gz
+"

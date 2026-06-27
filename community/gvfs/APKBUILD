@@ -1,0 +1,209 @@
+maintainer="team/gnome <achill@achill.org>"
+pkgname=gvfs
+pkgver=1.60.0
+pkgrel=0
+pkgdesc="Backends for the gio framework in GLib"
+url="https://gitlab.gnome.org/GNOME/gvfs"
+arch="all"
+license="LGPL-2.0-or-later"
+depends="gsettings-desktop-schemas dbus:org.freedesktop.Secrets"
+makedepends="
+	avahi-dev
+	docbook-xsl
+	expat-dev
+	fuse3-dev
+	gcr4-dev
+	gnome-online-accounts-dev
+	gsettings-desktop-schemas-dev
+	libarchive-dev
+	libbluray-dev
+	libcap-dev
+	libcdio-paranoia-dev
+	libgcrypt-dev
+	libgphoto2-dev
+	libgudev-dev
+	libimobiledevice-dev
+	libmtp-dev
+	libnfs-dev
+	libsecret-dev
+	libsoup3-dev
+	libusb-dev
+	libxml2-dev
+	libxslt-dev
+	meson
+	msgraph-dev
+	openssh-client
+	samba-dev
+	udisks2-dev
+	"
+triggers="$pkgname.trigger=/usr/libexec/gvfs"
+subpackages="
+	$pkgname-afc
+	$pkgname-afp
+	$pkgname-archive
+	$pkgname-avahi
+	$pkgname-cdda
+	$pkgname-dav
+	$pkgname-dbg
+	$pkgname-full::noarch
+	$pkgname-fuse
+	$pkgname-goa
+	$pkgname-gphoto2
+	$pkgname-lang
+	$pkgname-mtp
+	$pkgname-nfs
+	$pkgname-smb
+	$pkgname-systemd
+	$pkgname-openrc
+	"
+source="https://download.gnome.org/sources/gvfs/${pkgver%.*}/gvfs-$pkgver.tar.xz
+	gvfs.initd
+	"
+
+# secfixes:
+#   1.40.2-r0:
+#     - CVE-2019-12795
+#     - CVE-2019-12449
+#     - CVE-2019-12447
+#     - CVE-2019-12448
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		--libexecdir=/usr/libexec/gvfs \
+		-Dsystemduserunitdir=/usr/lib/systemd/user \
+		-Dtmpfilesdir=no \
+		-Dlogind=false \
+		-Dgoogle=false \
+		. output
+
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -Dm755 "$srcdir"/gvfs.initd "$pkgdir"/etc/user/init.d/gvfs
+}
+
+full() {
+	pkgdesc="Meta-package for all gvfs backends"
+	mkdir -p "$subpkgdir"
+}
+
+fuse() {
+	pkgdesc="FUSE support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove usr/libexec/gvfs/gvfsd-fuse
+}
+
+smb() {
+	pkgdesc="Windows fileshare support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfsd-smb* \
+		usr/share/gvfs/mounts/smb* \
+		usr/share/glib-*/schemas/org.gnome.system.smb.gschema.xml \
+		usr/share/GConf/gsettings/gvfs-smb.convert
+}
+
+mtp() {
+	pkgdesc="MTP support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove usr/libexec/gvfs/gvfsd-mtp
+}
+
+archive() {
+	pkgdesc="Archiving support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfsd-archive* \
+		usr/share/gvfs/mounts/archive*
+}
+
+obexftp() {
+	pkgdesc="ObexFTP support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfsd-obex* \
+		usr/share/gvfs/mounts/obex*
+}
+
+gphoto2() {
+	pkgdesc="gphoto2 support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfs*gphoto* \
+		usr/share/gvfs/*/gphoto* \
+		usr/share/dbus*/services/*GPhoto*
+}
+
+afp() {
+	pkgdesc="AFP support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfs*afp* \
+		usr/share/gvfs/*/afp*
+}
+
+avahi() {
+	pkgdesc="DNS-SD support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfs*dns* \
+		usr/share/gvfs/mounts/dns-sd.mount \
+		usr/share/glib-*/schemas/org.gnome.system.dns_sd.gschema.xml \
+		usr/share/GConf/gsettings/gvfs-dns-sd.convert
+}
+
+cdda() {
+	pkgdesc="CDDA support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/share/gvfs/mounts/cdda.mount \
+		usr/libexec/gvfs/gvfsd-cdda
+}
+
+dav() {
+	pkgdesc="WebDAV support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/share/gvfs/mounts/dav.mount \
+		usr/share/gvfs/mounts/dav+sd.mount \
+		usr/libexec/gvfs/gvfsd-dav
+}
+
+nfs() {
+	pkgdesc="NFS support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/share/gvfs/mounts/nfs.mount \
+		usr/libexec/gvfs/gvfsd-nfs
+}
+
+goa() {
+	pkgdesc="GNOME Online Accounts support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfs-goa-volume-monitor \
+		usr/share/dbus-1/services/org.gtk.vfs.GoaVolumeMonitor.service \
+		usr/share/gvfs/remote-volume-monitors/goa.monitor
+}
+
+afc() {
+	pkgdesc="Apple mobile devices support for gvfs"
+	install_if="$pkgname-full=$pkgver-r$pkgrel"
+	amove \
+		usr/libexec/gvfs/gvfsd-afc \
+		usr/libexec/gvfs/gvfs-afc-volume-monitor \
+		usr/share/dbus-1/services/org.gtk.vfs.AfcVolumeMonitor.service \
+		usr/share/gvfs/remote-volume-monitors/afc.monitor
+}
+
+sha512sums="
+4897f8bcaa4e8d1eb73f797080e30bc6a442729d93f1ab958add719fe8cd7a30777a1ff26ef807f86fa62edd15529426fa974f01c0081bd3b72af8ae03c01385  gvfs-1.60.0.tar.xz
+de3646dca650038e15eb92d9f482d473bcea97f806724a7492a52aabb0a6a45000e7b06a6e976c6a6afa7555507bc2873b4407025567b6d90b59a21fe932b679  gvfs.initd
+"

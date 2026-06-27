@@ -1,0 +1,32 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=perl-ipc-run3
+pkgver=0.049
+pkgrel=1
+pkgdesc="IPC::Run3 perl module"
+url="https://metacpan.org/pod/IPC::Run3"
+arch="noarch"
+license="Artistic-1.0-Perl OR GPL-1.0-or-later"
+depends="perl"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/R/RJ/RJBS/IPC-Run3-$pkgver.tar.gz"
+builddir="$srcdir"/IPC-Run3-$pkgver
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl -I. Makefile.PL \
+		INSTALLDIRS=vendor \
+		NO_PACKLIST=1 \
+		NO_PERLLOCAL=1
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+19dbf902666ccb56bfdb02c0c4e9ef585d773e1b8b53d4627367a3c0344d08a6358a733786b8de97e615b6916b716c4e66e73ae263986a2cacf50ab155539c55  IPC-Run3-0.049.tar.gz
+"

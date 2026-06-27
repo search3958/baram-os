@@ -1,0 +1,59 @@
+# Contributor: Ivan Tham <pickfire@riseup.net>
+# Contributor: Nero <nero@w1r3.net>
+# Contributor: Celeste <cielesti@protonmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=tlp
+pkgver=1.10.1
+pkgrel=0
+pkgdesc="Linux Advanced Power Management"
+url="https://linrunner.de/en/tlp/tlp.html"
+arch="noarch"
+license="GPL-2.0-or-later"
+options="!check"  # no test suite
+depends="perl usbutils grep" # /usr/share/tlp/tlp-readconfs uses perl (see #11181)
+subpackages="
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-systemd
+	$pkgname-udev
+	$pkgname-pd
+	$pkgname-rdw
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/linrunner/TLP/archive/$pkgver.tar.gz
+	tlp.initd
+	"
+builddir="$srcdir/TLP-$pkgver"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install-tlp
+
+	install -Dm644 man*/*.1 -t "$pkgdir"/usr/share/man/man1/
+	install -Dm644 man*/*.8 -t "$pkgdir"/usr/share/man/man8/
+	install -Dm755 "$srcdir"/tlp.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+pd() {
+	pkgdesc="$pkgdesc (D-Bus interface)"
+	depends="$pkgname=$pkgver-r$pkgrel polkit py3-gobject3"
+
+	make -C "$builddir" DESTDIR="$subpkgdir" install-pd
+}
+
+rdw() {
+	pkgdesc="$pkgdesc (Radio Device Wizard)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	make -C "$builddir" DESTDIR="$subpkgdir" install-rdw
+}
+
+sha512sums="
+ee3ae1d32fe436c25f8a9a4fe14d049989708faf72318c01f651c7245f6bfd62b86c3f149ca236871bb7a1182728cc859188ddc0a798601db1543e99f709850e  tlp-1.10.1.tar.gz
+e6de216b2540413812711b3304cdc29c8729d527080cfd747ba382db50166dd21c6c27ff467f9f2a967e92007c7a311b00e88262952c34a22f417578c66cf4e7  tlp.initd
+"

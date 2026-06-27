@@ -1,0 +1,137 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+pkgname=utop
+pkgver=2.17.0
+pkgrel=0
+pkgdesc="Universal toplevel for OCaml"
+url="https://github.com/ocaml-community/utop"
+arch="all !riscv64 !loongarch64" # ocaml
+license="BSD-3-Clause"
+depends="
+	ocaml-$pkgname=$pkgver-r$pkgrel
+	$pkgname-common=$pkgver-r$pkgrel
+	"
+makedepends="
+	dune
+	ocaml
+	ocaml-compiler-libs
+	ocaml-cppo
+	ocaml-findlib-dev
+	ocaml-lambda-term-dev
+	ocaml-logs-dev
+	ocaml-lwt-dev
+	ocaml-lwt_react
+	ocaml-react-dev
+	ocaml-xdg-dev
+	ocaml-zed-dev
+	"
+checkdepends="ocaml-alcotest-dev"
+subpackages="
+	$pkgname-full:_full
+	$pkgname-common:_common:noarch
+	$pkgname-doc
+	$pkgname-emacs::noarch
+	ocaml-$pkgname-dev:_libdev
+	ocaml-$pkgname:_lib
+	"
+source="$pkgname-$pkgver.tar.bz2::https://github.com/ocaml-community/utop/releases/download/$pkgver/utop-$pkgver.tbz"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build --root . @install --no-buffer --verbose
+}
+
+check() {
+	dune runtest --no-buffer --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml
+
+	# There's just a readme and changelog.
+	rm -Rf "$pkgdir"/usr/doc
+
+	mkdir -vp "$pkgdir"/usr/share
+	mv -vf "$pkgdir"/usr/man "$pkgdir"/usr/share/
+}
+
+_full() {
+	pkgdesc="$pkgdesc (non-expunged)"
+
+	amove usr/bin/utop-full
+}
+
+_common() {
+	pkgdesc="Common files for utop and utop-full"
+	depends=""
+
+	amove usr/share/$pkgname
+}
+
+emacs() {
+	pkgdesc="utop plugin for Emacs"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="$pkgname=$pkgver-r$pkgrel emacs"
+
+	amove usr/share/emacs
+}
+
+_libdev() {
+	pkgdesc="$pkgdesc (development files)"
+	depends="ocaml-$pkgname=$pkgver-r$pkgrel"
+	local sitelib="usr/lib/ocaml/$pkgname"
+
+	cd "$pkgdir"
+
+	local path; find $sitelib \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+
+}
+
+_lib() {
+	pkgdesc="$pkgdesc (library)"
+	depends=""
+
+	amove usr/lib/ocaml
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+ff01dc763ac7ebfb921fd10da4eabc3a6ddde90031971630cd27f9bb95e599b9932f9db155e27b066805a0b7038eb3c1df6d409c0471e5ecd23656b43e0cd746  utop-2.17.0.tar.bz2
+"

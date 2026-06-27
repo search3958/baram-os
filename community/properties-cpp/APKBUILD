@@ -1,0 +1,40 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=properties-cpp
+pkgver=0.0.4
+pkgrel=0
+pkgdesc="A very simple convenience library for handling properties and signals in C++11"
+url="https://gitlab.com/ubports/development/core/lib-cpp/properties-cpp"
+arch="noarch"
+license="LGPL-3.0-only"
+makedepends="
+	cmake
+	cmake-extras
+	gtest-dev
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="
+	https://gitlab.com/ubports/development/core/lib-cpp/properties-cpp/-/archive/$pkgver/properties-cpp-$pkgver.tar.gz
+	"
+options="!check" # No tests
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+		$crossopts
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+da45bb6c0d2546f0ba0011712604a03b5de860728f72856842ac3ff248e26132e94c0f454d8c5dd9d69cfd00adc067eb7a67e3b2c295f2716fa3d7eedca1c3bf  properties-cpp-0.0.4.tar.gz
+"

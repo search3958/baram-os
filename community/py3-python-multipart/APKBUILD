@@ -1,0 +1,45 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+maintainer="Oleg Titov <oleg.titov@gmail.com>"
+pkgname=py3-python-multipart
+pkgver=0.0.32
+pkgrel=0
+pkgdesc="A streaming multipart parser for Python"
+url="https://github.com/andrew-d/python-multipart"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-hatchling
+	"
+subpackages="$pkgname-doc $pkgname-pyc"
+checkdepends="
+	py3-pytest-runner
+	py3-pytest-xdist
+	py3-yaml
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/andrew-d/python-multipart/archive/$pkgver.tar.gz"
+builddir="$srcdir/python-multipart-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python -m installer -d "$pkgdir" \
+		.dist/python_multipart-*.whl
+
+	install -vDm644 README.md -t "$pkgdir/usr/share/doc/$pkgname/"
+}
+
+sha512sums="
+58bdfabec8a6840fccdfc759cf57f88dabf9e2cec06499ba23c8690a1a73a308e8789b17a9559a9e0a0eda2c09c5b5755e4336b65ff9d173d68dbab649476ba1  py3-python-multipart-0.0.32.tar.gz
+"

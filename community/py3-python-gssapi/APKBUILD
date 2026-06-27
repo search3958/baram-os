@@ -1,0 +1,37 @@
+# Contributor: Dmitry Romanenko <dmitry@romanenko.in>
+# Maintainer: Dmitry Romanenko <dmitry@romanenko.in>
+pkgname=py3-python-gssapi
+pkgver=1.8.3
+pkgrel=2
+pkgdesc="A Python interface to RFC 2743/2744 (plus common extensions)"
+url="https://github.com/pythongssapi/python-gssapi"
+arch="all"
+license="ISC"
+depends="krb5 python3 py3-decorator"
+checkdepends="py3-k5test py3-parameterized py3-pytest"
+makedepends="cython python3-dev krb5-dev py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pythongssapi/python-gssapi/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir"/python-gssapi-$pkgver
+options="!check" # fail to find self for some reason
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+63e6981977cb3f90c734a0f2089fc0628a86709f120814629b85576abe326f2602cfe4c351d7b3fc08cf3999e2b2f0091f829b1f1f9f1a784496bf39a781ddde  py3-python-gssapi-1.8.3.tar.gz
+"

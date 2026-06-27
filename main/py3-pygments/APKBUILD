@@ -1,0 +1,65 @@
+# Contributor: Peter Bui <pnutzh4x0r@gmail.com>
+# Maintainer: Julien Voisin <julien.voisin@dustri.org>
+pkgname=py3-pygments
+pkgver=2.20.0
+pkgrel=0
+pkgdesc="Syntax highlighting package written in Python"
+url="https://pygments.org/"
+arch="noarch"
+license="BSD-2-Clause"
+depends="python3"
+makedepends="py3-gpep517 py3-hatchling py3-installer py3-wheel"
+checkdepends="py3-pytest py3-lxml py3-wcag-contrast-ratio"
+subpackages="$pkgname-pyc $pkgname-doc"
+source="https://files.pythonhosted.org/packages/source/P/Pygments/pygments-$pkgver.tar.gz"
+builddir="$srcdir/pygments-$pkgver"
+options="!check" # causes issues when bootstrapping (py3-pytest depends on this)
+
+replaces="py-pygments" # Backwards compatibility
+provides="py-pygments=$pkgver-r$pkgrel" # Backwards compatibility
+
+# secfixes:
+#   2.7.4-r0:
+#     - CVE-2021-20270
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/pygments*.whl
+
+	mkdir -p "$pkgdir"/usr/bin
+	ln -s pygmentize "$pkgdir"/usr/bin/pygmentize-3
+}
+
+doc() {
+	local destdir="$subpkgdir/usr/share/doc/$pkgname"
+
+	cd "$builddir"
+
+	install -m 644 -D doc/pygmentize.1 \
+		"$subpkgdir"/usr/share/man/man1/pygmentize.1
+
+	mkdir -p "$destdir"
+	cp AUTHORS CHANGES LICENSE "$destdir"/
+
+	# Note: The documentation in the doc directory needs to be generated
+	# by py-sphinx
+	cp -R ./doc/docs/* "$destdir"/
+
+	default_doc
+}
+
+sha512sums="
+7d073ead03b1722f862a72a962346f2d76bafb472f58fd5038061ca09675483f3b427bec700fe4ef49da9cace9e65b0d5414cda5ee20ebc056759e0c422f4547  pygments-2.20.0.tar.gz
+"

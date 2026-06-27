@@ -1,0 +1,38 @@
+# Contributor: Blake Oliver <oliver22213@me.com>
+# Maintainer: Blake Oliver <oliver22213@me.com>
+pkgname=libdotconf
+pkgver=1.4.1
+pkgrel=0
+pkgdesc="dot.conf configuration file parser"
+url="https://github.com/williamh/dotconf"
+arch="all"
+license="LGPL-2.1-only"
+makedepends="autoconf automake libtool"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/williamh/dotconf/archive/v$pkgver/libdotconf-$pkgver.tar.gz"
+builddir="$srcdir/dotconf-$pkgver"
+options="!check" # No test suite
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a6cada8621295b268d4b4fd85bc0c207e78324c9e84754ead2fdf6c1598ec8bdf626f9c24e66063d921c95d73e83b50ab50416a9b4c9a7a631392552ec46f55a  libdotconf-1.4.1.tar.gz
+"

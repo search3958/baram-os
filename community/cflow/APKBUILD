@@ -1,0 +1,35 @@
+# Contributor: Olliver Schinagl <oliver@schinagl.nl>
+# Maintainer: qaqland <qaq@qaq.land>
+pkgname=cflow
+pkgver=1.8
+pkgrel=0
+pkgdesc="A C program flow analyzer"
+url="https://www.gnu.org/software/cflow/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="gettext-dev"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://ftpmirror.gnu.org/cflow/cflow-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3f44e91d91b1f58dcc4936d3d64a2ae893077fd75cc3e4a77171d4c65714f10889c54173c2eb02895b218f6fee3fa7e0dba4c24281dfde7e5b7574fb6af596c3  cflow-1.8.tar.gz
+"

@@ -1,0 +1,37 @@
+# Contributor: Rosie K Languet <rkl@rosiesworkshop.net>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=py3-pyqt6-sip
+pkgver=13.11.1
+pkgrel=1
+pkgdesc="The sip module support for PyQt6"
+url="https://riverbankcomputing.com/software/sip"
+arch="all"
+license="custom:sip"
+depends="python3"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+source="https://files.pythonhosted.org/packages/source/P/PyQt6-sip/pyqt6_sip-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/pyqt6_sip-$pkgver"
+
+build() {
+	export CFLAGS="$CFLAGS -O2 -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -O2 -flto=auto"
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+9697ae8a1b2dd8edb41642da2db30a5bb90886dc71033345aa1f12ca52f2a2784b8f181be65fd953adfdc9482c59c32a8c14f3334b0c242cdf10cf3bdf08d336  pyqt6_sip-13.11.1.tar.gz
+"

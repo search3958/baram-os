@@ -1,0 +1,38 @@
+# Contributor: Shiva Velmurugan <shiv@shiv.me>
+# Maintainer: Shiva Velmurugan <shiv@shiv.me>
+pkgname=cpputest
+pkgver=4.0
+pkgrel=2
+pkgdesc="A unit testing and mocking framework for C/C++"
+url="https://cpputest.github.io/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cmake samurai"
+source="https://github.com/cpputest/cpputest/releases/download/v$pkgver/cpputest-$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DC++11=ON \
+		-DLONGLONG=ON
+	cmake --build build
+}
+
+check() {
+	ninja -C build test
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	mkdir -p "$pkgdir"/usr/lib/cmake
+	mv "$pkgdir"/usr/lib/CppUTest/cmake \
+		"$pkgdir"/usr/lib/cmake/CppUTest
+	rmdir "$pkgdir"/usr/lib/CppUTest
+}
+
+sha512sums="
+69f39fffdcd965c871e598118db38ddb74a3e75fd7a7965f8d236029fa891f6fcb6b671147c166ad08482bbd0737537fafe90aa8439a0ab62389f19150cc39d7  cpputest-4.0.tar.gz
+"

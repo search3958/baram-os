@@ -1,0 +1,4 @@
+# k3s options
+export PATH="/usr/libexec/cni/:$PATH"
+K3S_EXEC="server"
+K3S_OPTS=""

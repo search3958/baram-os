@@ -1,9 +1,0 @@
-#TODO missing script for gnu make
-# build instructions: https://git.suckless.org/surf/file/README.html
-[source]
-tar = "https://dl.suckless.org/surf/surf-2.1.tar.gz"
-[build]
-template = "custom"
-dependencies = [
-    "webkitgtk3",
-]

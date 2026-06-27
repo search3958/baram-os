@@ -1,0 +1,41 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=iozone
+pkgver=3.510
+_pkgver=${pkgver//./_}
+pkgrel=0
+pkgdesc="IOzone filesystem benchmark"
+url="https://www.iozone.org"
+arch="all"
+license="custom"
+options="!check" # No test suite from upstream
+subpackages="$pkgname-doc"
+source="
+	https://www.iozone.org/src/current/iozone$_pkgver.tar
+	https://www.iozone.org/docs/Iozone_License.txt
+	gcc-15.patch
+	"
+builddir="$srcdir/${pkgname}$_pkgver/"
+
+build() {
+	cd "$builddir"/src/current/
+	rm -f ./*.o
+	make linux CFLAGS="$CFLAGS -DHAVE_ANSIC_C -DHAVE_PREADV -DHAVE_PWRITEV"
+}
+
+package() {
+	install -m755 -D src/current/iozone \
+		"$pkgdir"/usr/bin/iozone
+
+	install -Dm644 "$srcdir"/Iozone_License.txt \
+		"$pkgdir"/usr/share/licenses/$pkgname/Iozone_License.txt
+
+	install -Dm644 "$builddir"/docs/iozone.1 \
+		"$pkgdir"/usr/share/man/man1/iozone.1
+}
+
+sha512sums="
+7dca6608350b8ee50f98da08d48d75276d1a3cc730673a031ee9065160eb8b79f5662d3ae33bd610a398ea6b945a7f73abd945e7971de25c609cef190d2b5605  iozone3_510.tar
+9589952c15cde6701f239b6031996e504fd62f70ef1e63938544ca8ecf7e38b53ff731919e48285a9354080120b74fcdd9d548ada9a719368726e67b536e6fda  Iozone_License.txt
+aea747f4b236ec009fdef8db6e453214e9766eb0dbde4962783bcf8eba4617b194cc651a91f5412a4c9585b3442fdeba0dcc5c1be005163a385918662751750b  gcc-15.patch
+"

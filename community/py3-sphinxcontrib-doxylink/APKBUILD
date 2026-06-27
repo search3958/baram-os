@@ -1,0 +1,42 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-sphinxcontrib-doxylink
+_pkgname=sphinxcontrib-doxylink
+pkgver=1.13.0
+pkgrel=2
+pkgdesc="Sphinx Doxygen linking extension"
+url="https://github.com/sphinx-contrib/doxylink"
+arch="noarch"
+license="BSD-2-Clause"
+depends="
+	py3-dateutil
+	py3-parsing
+	py3-sphinx
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-poetry-core
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/s/sphinxcontrib-doxylink/sphinxcontrib_doxylink-$pkgver.tar.gz"
+builddir="$srcdir"/sphinxcontrib_doxylink-$pkgver
+options="!check" # no tarball tests
+
+replaces="py-sphinxcontrib-doxylink" # for backwards compatibility
+provides="py-sphinxcontrib-doxylink=$pkgver-r$pkgrel" # for backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8751458734b9cb7ae7b45da3c2c64c043873d14dcdda614c5184462a895a9a2de94a3a9572769aef71fef6fb3e8bdc37478b5bf492b62be293c2eaf7b2813e1b  sphinxcontrib_doxylink-1.13.0.tar.gz
+"

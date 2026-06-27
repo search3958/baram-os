@@ -1,3 +1,0 @@
-ac_add_options --disable-tests
-ac_add_options --target="{TARGET}"
-ac_add_options --enable-bootstrap

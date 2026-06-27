@@ -1,0 +1,36 @@
+# Contributor: Aaron Fischer <mail@aaron-fischer.net>
+# Maintainer: Aaron Fischer <mail@aaron-fischer.net>
+pkgname=freeglut
+pkgver=3.8.0
+pkgrel=0
+pkgdesc="free reimplementation of OpenGL Utility Toolkit (GLUT) library"
+url="https://freeglut.sourceforge.net/"
+arch="all"
+options="!check" # No test suite.
+license="MIT"
+depends_dev="mesa-dev libx11-dev libice-dev libxxf86vm-dev libxi-dev glu-dev"
+makedepends="$depends_dev cmake samurai"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://downloads.sourceforge.net/freeglut/freeglut-$pkgver.tar.gz"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+		-DFREEGLUT_BUILD_STATIC_LIBS=0
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# Symlink glut.pc to freeglut.pc for backwards compatibility
+	ln -s glut.pc "$pkgdir"/usr/lib/pkgconfig/freeglut.pc
+}
+
+sha512sums="
+2726ff978f11e17680fa01aa21c263f5154e9f0185021ec58e89ae006a5d093e062e68c66c709307a709e44823ee7b1f265ae450dd03cae616a2acefdeba7748  freeglut-3.8.0.tar.gz
+"

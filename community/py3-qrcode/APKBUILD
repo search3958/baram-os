@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Contributor: Celeste <cielesti@protonmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-qrcode
+pkgver=8.2
+pkgrel=2
+pkgdesc="QR code image generator"
+url="https://github.com/lincolnloop/python-qrcode"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-pillow py3-pypng py3-setuptools"
+makedepends="py3-gpep517 py3-poetry-core"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/q/qrcode/qrcode-$pkgver.tar.gz"
+builddir="$srcdir/qrcode-$pkgver"
+
+replaces="py-qrcode" # Backwards compatibility
+provides="py-qrcode=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	find "$pkgdir" -name "test_*.py" -delete
+}
+
+sha512sums="
+79a783d49872c13fb4ca71cfb9d4892f9d9c1c04035f2afe312ad1bf7c94d00994457749ed1924eb0ca67e3060e89404ffd908563f464137e5e0c78164d8af72  qrcode-8.2.tar.gz
+"

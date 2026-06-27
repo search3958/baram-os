@@ -1,0 +1,104 @@
+# Contributor: Magnus Sandin <magnus.sandin@valitron.se>
+# Maintainer: Magnus Sandin <magnus.sandin@valitron.se>
+pkgname=fftw
+pkgver=3.3.11
+_pkgver=${pkgver//p/-pl}
+pkgrel=0
+pkgdesc="Discrete Fourier transform (DFT) library"
+url="http://www.fftw.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="texinfo"
+# order of the libs split functions are important because of lib naming
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-single-libs:single
+	$pkgname-long-double-libs:long_double
+	$pkgname-double-libs:double
+	"
+source="http://www.fftw.org/fftw-$_pkgver.tar.gz
+	cycle.h.patch
+	"
+
+_precision="single double long-double"
+
+# disable tests for arm due to bug with gcc >= 9
+# see https://github.com/FFTW/fftw3/issues/213
+case "$CARCH" in
+	armhf|armv7) options="$options !check";;
+esac
+
+prepare() {
+	default_prepare
+	update_config_sub || true
+
+	local i; for i in $_precision; do
+		cp -r "$builddir" $srcdir/$i
+	done
+}
+
+build() {
+	export CFLAGS="$CFLAGS -O2"
+	export CXXFLAGS="$CXXFLAGS -O2"
+	local cf
+	local i; for i in $_precision; do
+		case "$i" in
+		single) cf="--enable-single" ;;
+		double) cf="" ;;
+		long-double) cf="--enable-long-double" ;;
+		esac
+
+		case "$i--$CARCH" in
+		single--x86_64|double--x86_64) cf="$cf --enable-sse2 --enable-avx" ;;
+		single--x86|double--x86) cf="$cf --enable-sse2" ;;
+		single--arm*|single--aarch64) cf="$cf --enable-neon" ;;
+		esac
+
+		msg "Building for $i precision ($cf)"
+		cd "$srcdir"/$i
+		./configure \
+			--build=$CBUILD \
+			--host=$CHOST \
+			--prefix=/usr \
+			--sysconfdir=/etc \
+			--mandir=/usr/share/man \
+			--infodir=/usr/share/info \
+			--enable-shared \
+			--enable-threads \
+			$cf
+		make
+	done
+}
+
+check() {
+	local i; for i in $_precision; do
+		cd "$srcdir"/$i
+		make check
+	done
+}
+
+package() {
+	local i; for i in $_precision; do
+		cd "$srcdir"/$i
+		make DESTDIR="$pkgdir" install
+	done
+}
+
+single() {
+	amove usr/lib/libfftw3f*.so*
+}
+
+double() {
+	amove usr/lib/libfftw3*.so*
+}
+
+long_double() {
+	amove usr/lib/libfftw3l*.so*
+}
+
+sha512sums="
+ca1bf80490dc6955a0ab49b1af05d6658c2ecc0968b3bde5b4af22271e47d30cd38f6f8347e8e6124091b6a17717447942bee95f94ca29574ba71c4d167af351  fftw-3.3.11.tar.gz
+7da269fc43dabd02ae6fad2ebad92b07e06825b6b7c6f8987fc6444f02e0d55080db4ba6e401760e071f5c33015faf8c710f643636cab7a79bdf1af5d434dbb4  cycle.h.patch
+"

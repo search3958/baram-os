@@ -1,0 +1,274 @@
+# Contributor: Sergei Lukin <sergej.lukin@gmail.com>
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Jakub Skrzypnik <j.skrzypnik@openmailbox.org>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=ffmpeg6
+pkgver=6.1.4
+pkgrel=3
+pkgdesc="Complete and free Internet live audio and video broadcasting solution for Linux/Unix"
+url="https://ffmpeg.org/"
+arch="all"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+makedepends="
+	alsa-lib-dev
+	aom-dev
+	bzip2-dev
+	coreutils
+	dav1d-dev
+	fontconfig-dev
+	freetype-dev
+	fribidi-dev
+	harfbuzz-dev
+	imlib2-dev
+	ladspa-dev
+	lame-dev
+	libass-dev
+	libbluray-dev
+	libdrm-dev
+	libjxl-dev
+	libopenmpt-dev
+	libplacebo-dev
+	librist-dev
+	libsrt-dev
+	libssh-dev
+	libtheora-dev
+	libva-dev
+	libvdpau-dev
+	libvorbis-dev
+	libvpx-dev
+	libwebp-dev
+	libxfixes-dev
+	libxml2-dev
+	lilv-dev
+	nasm
+	openssl-dev
+	opus-dev
+	perl-dev
+	pulseaudio-dev
+	rav1e-dev
+	sdl2-dev
+	soxr-dev
+	v4l-utils-dev
+	vidstab-dev
+	vulkan-loader-dev
+	x264-dev
+	x265-dev
+	xvidcore-dev
+	zeromq-dev
+	zimg-dev
+	zlib-dev
+	"
+checkdepends="rsync"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libavcodec
+	$pkgname-libavdevice
+	$pkgname-libavfilter
+	$pkgname-libavformat
+	$pkgname-libavutil
+	$pkgname-libpostproc
+	$pkgname-libswresample
+	$pkgname-libswscale
+	$pkgname-libs
+	"
+source="https://ffmpeg.org/releases/ffmpeg-$pkgver.tar.xz
+	0001-ffbuild-libversion.sh-add-shebang.patch
+	add-av_stream_get_first_dts-for-chromium.patch
+	vaapi-type.patch
+	vulkan-gcc14.patch
+	s390x-pcm-bluray.patch
+	riscv-compliant-rvv.patch
+	FFmpeg-devel-v2-1-2-lavc-vaapi_decode-Make-it-possible-to-send-multiple-slice-params-buffers.patch
+	FFmpeg-devel-v2-2-2-lavc-vaapi_av1-Avoid-sending-the-same-slice-buffer-multiple-times.patch
+	svt-av1-3.1.2.patch
+	0001-posix-ioctl.patch
+	0002-posix-ioctl.patch
+	svt-av1-4.patch
+	"
+options="!check" # tests/data/hls-lists.append.m3u8 fails
+builddir="$srcdir/ffmpeg-$pkgver"
+
+case "$CARCH" in
+x86|armhf|armv7)
+	;;
+*)
+	makedepends="$makedepends svt-av1-dev"
+	_svt_av1="--enable-libsvtav1"
+	;;
+esac
+
+case "$CARCH" in
+x86_64)
+	makedepends="$makedepends libvpl-dev"
+	_libvpl="--enable-libvpl"
+	;;
+esac
+
+build() {
+	case "$CARCH" in
+	x86) local asm="--disable-asm" ;;
+	esac
+
+	./configure \
+		--prefix=/usr \
+		--disable-librtmp \
+		--disable-lzma \
+		--disable-static \
+		--disable-stripping \
+		--enable-avfilter \
+		--enable-gpl \
+		--enable-ladspa \
+		--enable-libaom \
+		--enable-libass \
+		--enable-libbluray \
+		--enable-libdav1d \
+		--enable-libdrm \
+		--enable-libfontconfig \
+		--enable-libfreetype \
+		--enable-libfribidi \
+		--enable-libharfbuzz \
+		--enable-libjxl \
+		--enable-libmp3lame \
+		--enable-libopenmpt \
+		--enable-libopus \
+		--enable-libplacebo \
+		--enable-libpulse \
+		--enable-librav1e \
+		--enable-librist \
+		--enable-libsoxr \
+		--enable-libsrt \
+		--enable-libssh \
+		--enable-libtheora \
+		--enable-libv4l2 \
+		--enable-libvidstab \
+		--enable-libvorbis \
+		--enable-libvpx \
+		--enable-libwebp \
+		--enable-libx264 \
+		--enable-libx265 \
+		--enable-libxcb \
+		--enable-libxml2 \
+		--enable-libxvid \
+		--enable-libzimg \
+		--enable-libzmq \
+		--enable-lto=auto \
+		--enable-lv2 \
+		--enable-openssl \
+		--enable-pic \
+		--enable-postproc \
+		--enable-pthreads \
+		--enable-shared \
+		--enable-vaapi \
+		--enable-vdpau \
+		--enable-version3 \
+		--enable-vulkan \
+		--optflags="-O3" \
+		$asm \
+		$_svt_av1 \
+		$_libvpl
+	make
+	${CC:-gcc} -o tools/qt-faststart $CFLAGS $LDFLAGS tools/qt-faststart.c
+}
+
+# https://ffmpeg.org/fate.html
+check() {
+	./configure \
+		--samples=fate-suite/
+	make fate-rsync
+	make fate-list
+	make fate
+}
+
+package() {
+	make DESTDIR="$pkgdir" install install-man
+	install -D -m755 tools/qt-faststart "$pkgdir/usr/bin/qt-faststart"
+	rm "$pkgdir"/usr/bin/ffplay
+}
+
+doc() {
+	default_doc
+
+	amove usr/share/ffmpeg/examples
+}
+
+libavcodec() {
+	pkgdesc="$pkgdesc (libavcodec library)"
+
+	amove usr/lib/libavcodec.so.*
+}
+
+libavdevice() {
+	pkgdesc="$pkgdesc (libavdevice library)"
+
+	amove usr/lib/libavdevice.so.*
+}
+
+libavfilter() {
+	pkgdesc="$pkgdesc (libavfilter library)"
+
+	amove usr/lib/libavfilter.so.*
+}
+
+libavformat() {
+	pkgdesc="$pkgdesc (libavformat library)"
+
+	amove usr/lib/libavformat.so.*
+}
+
+libavutil() {
+	pkgdesc="$pkgdesc (libavutil library)"
+
+	amove usr/lib/libavutil.so.*
+}
+
+libpostproc() {
+	pkgdesc="$pkgdesc (libpostproc library)"
+
+	amove usr/lib/libpostproc.so.*
+}
+
+libswresample() {
+	pkgdesc="$pkgdesc (libswresample library)"
+
+	amove usr/lib/libswresample.so.*
+}
+
+libswscale() {
+	pkgdesc="$pkgdesc (libswscale library)"
+
+	amove usr/lib/libswscale.so.*
+}
+
+libs() {
+	pkgdesc="compat hack for all ffmpeg libs"
+
+	mkdir -p "$subpkgdir"
+	depends="
+		$pkgname-libavcodec=$pkgver-r$pkgrel
+		$pkgname-libavdevice=$pkgver-r$pkgrel
+		$pkgname-libavfilter=$pkgver-r$pkgrel
+		$pkgname-libavformat=$pkgver-r$pkgrel
+		$pkgname-libavutil=$pkgver-r$pkgrel
+		$pkgname-libpostproc=$pkgver-r$pkgrel
+		$pkgname-libswresample=$pkgver-r$pkgrel
+		$pkgname-libswscale=$pkgver-r$pkgrel
+		"
+}
+
+sha512sums="
+0d7d29fb170947805eb531f6c66641d0977d18831923d5a9c0442c160b02f94b890ccd04ecf350bb3dce59fe7bb64a426cab02bd65c05416c0d153f50104065f  ffmpeg-6.1.4.tar.xz
+38443b570cf32b2ba8ffa9ecc5480425c7da9f93f9773fbb3f9ec5f603b369b6225f4329a1b1f34d0ef30b2c9730f25ff9cff31315ed0a89a600df8e53bd54bf  0001-ffbuild-libversion.sh-add-shebang.patch
+2804a3317a9c5fbc793af1dc7b9c13113bf8fd232f14a580ad98f25d848edf93015fd08c0aad0316e3a5439aef88ef15be3520dcbfe844791a5f03490a4c7f0b  add-av_stream_get_first_dts-for-chromium.patch
+de033646a125716a6f37400c3a917ce2c36193b0b79403392b6c8ea22cc23472d0dd394f689ba900b9eef41f33fa34c30a26459145151415b62b2bdc718e1cff  vaapi-type.patch
+24022de34db1834375dd28a3bfa19dc35a54d8b3d982f61649575730e3fad704b4e710f997f8a096b6318cd6249685ecfa64134e42d0c2a12ecdc9c2d6fce1b4  vulkan-gcc14.patch
+5b64725fd11323b78b90f077458e513c53e50be0a34715b2425e647901901f502e440596441a385a2f375a6735c871eac53867c928861ab27e042e7a6b40c0cd  s390x-pcm-bluray.patch
+f3d824511a880bf6971f35271c8f8e7001053a93be212a732b49738e990d3d4ac99a302f28002f588e2cb5a2c01d22db159c1990853f3a201bca56a32ba6924e  riscv-compliant-rvv.patch
+d536f253f97b3c406c31f1eb7016194180f581968c4c0cb0135d199df20850784e38428e2c87da923179723278624da351343d1e1015363d2554cc15d5fa6401  FFmpeg-devel-v2-1-2-lavc-vaapi_decode-Make-it-possible-to-send-multiple-slice-params-buffers.patch
+3750d6c00bf0114161fbf373c7dac8c5ad56022820d0b32f3e077b61f8b334b6732a42141df853ac4d7dcc5b18113cb1538c3b99ccbaab30facd9c835fb4bf4e  FFmpeg-devel-v2-2-2-lavc-vaapi_av1-Avoid-sending-the-same-slice-buffer-multiple-times.patch
+f902f1bcc0249441d7b6d4be35416b30423070117f3962e0d75d6b67e962ee0c99f25b26ae7ede7ae0d478f0817260efe3e59533b13e6084ba45161ef846ca6e  svt-av1-3.1.2.patch
+790b3ea796855f0572531eec8bb436f8ae2b894e29ea7fa2bf7fcddbbc1a58da5c403b366bc116729b92da54ca6d74c82df3bb71c5069e41ae8540a38f7151ae  0001-posix-ioctl.patch
+bf8baafd7f8471e2c982c46191486645a6529de74dd543700c88561492c82af3c1d0f61d7c520697a55f3ff6d3e35e8c7e3150223d14834b61db1bbf8c115b72  0002-posix-ioctl.patch
+b5f1710eb1fed340192e84a43d72625e89aeb3f209a3458ee3638a454e14f4b5834a96db6c138e8667e1b12bf22c22997e4726d96f31d888dfde3fc130fbea39  svt-av1-4.patch
+"

@@ -1,0 +1,26 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=abi-dumper
+pkgver=1.4
+pkgrel=3
+pkgdesc="Dump ABI of an ELF object containing DWARF debug info"
+url="https://github.com/lvc/abi-dumper"
+arch="noarch"
+license="LGPL-2.1-or-later"
+depends="
+	build-base
+	elfutils
+	perl
+	vtable-dumper
+	"
+makedepends="perl-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/lvc/abi-dumper/archive/$pkgver.tar.gz"
+options="!check" # no tests
+
+package() {
+	mkdir -p "$pkgdir"/usr
+	perl Makefile.pl -install --destdir="$pkgdir"
+}
+
+sha512sums="
+e5a7d59c9a2b3f18ce7b64c2a1d96efcd73084cf651dfc1833755621c21b7edd7e2fa7c194ad7c5b6658021432241bd47b30fe36640e5f1e0bee6e6dcf913ea0  abi-dumper-1.4.tar.gz
+"

@@ -1,0 +1,35 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=expected-lite
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="Expected objects in C++11 and later in a single-file header-only library"
+url="https://github.com/martinmoene/expected-lite"
+arch="noarch"
+license="BSL-1.0"
+makedepends="cmake samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/martinmoene/expected-lite/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a5c2c3b8a2ad22938a2efaaa53fc110c0323e9c9cd384af1aaf74dc9f2e9d73451d9de1bfe6eb64546fb70853c006344bcedb09ccebbef6ea52fb10d857b1a45  expected-lite-0.10.0.tar.gz
+"

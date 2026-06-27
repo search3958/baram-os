@@ -1,0 +1,51 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=py3-stack_data
+pkgver=0.6.3
+pkgrel=3
+pkgdesc="library that extracts data from stack frames and tracebacks"
+url="https://github.com/alexmojaki/stack_data"
+arch="noarch"
+license="MIT"
+depends="python3 py3-executing py3-asttokens py3-pure_eval"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+checkdepends="
+	cython
+	py3-littleutils
+	py3-pygments
+	py3-pytest
+	py3-typeguard
+	py3-typing-extensions
+	python3-dev
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/alexmojaki/stack_data/archive/refs/tags/v$pkgver.tar.gz
+	pygments-2.19.patch
+	0001-Normalize-pygmented-test-output.patch
+	"
+builddir="$srcdir/stack_data-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	SETUPTOOLS_SCM_PRETEND_VERSION_FOR_STACK_DATA=${pkgver} \
+		.testenv/bin/python3 -m pytest
+}
+
+package() {
+	local whl=.dist/stack_data-$pkgver-py3-none-any.whl
+	python3 -m installer --dest="$pkgdir" "$whl"
+}
+
+sha512sums="
+ac2f5021b57f29667490c17e83d1dfd1ac5199eda6319fb52882d6cd93adfe532a45ca2f86c864ebcb23586a1cc6297cc33e8a2b073db7fdc3382bec55d03065  py3-stack_data-0.6.3.tar.gz
+2b1f3ae9bbb9dc9404c46509b091a294caa705ed24e79481ac65b7587fd31b51d48044b8080f8d15a1771eb1d41cdcea558845e18f46017bf243714b818705a1  pygments-2.19.patch
+126b893e09c471b1ba5a6814141ce55bbb09a21dd2bf465c9453845e8d720413adb5ac2317957a0644240c395b0f3f06a2f92b31910dca8352db046e23e0b832  0001-Normalize-pygmented-test-output.patch
+"

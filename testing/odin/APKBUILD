@@ -1,0 +1,91 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=odin
+_pkgname=Odin
+pkgver=0.2026.05
+_realver=${pkgver/0./dev-}
+_realver=${_realver/./-}
+pkgrel=0
+_llvmver=22
+pkgdesc="Fast, concise, readable, pragmatic and open sourced programming language"
+url="https://odin-lang.org/"
+arch="x86_64 aarch64"
+license="BSD-2-Clause"
+depends="
+	clang$_llvmver
+	llvm$_llvmver-libs
+	"
+makedepends="
+	clang$_llvmver-dev
+	compiler-rt
+	llvm$_llvmver
+	llvm$_llvmver-dev
+	python3
+	"
+subpackages="$pkgname-vendor $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/odin-lang/Odin/archive/refs/tags/$_realver.tar.gz"
+builddir="$srcdir/$_pkgname-$_realver"
+options="net !check" # tests, tests fail
+
+prepare() {
+	default_prepare
+
+	find "$builddir"/vendor \
+		\( \
+			-name windows -o \
+			-name macos -o \
+			-name macos-arm64 -o \
+			-name darwin -o \
+			-name "*.lib" -o \
+			-name "*.dll" -o \
+			-name "*.a" -o \
+			-name "*.dylib" -o \
+			-name "*.so.*" -o \
+			-name "*.so" \
+		\) \
+		-exec rm -rf {} +
+}
+
+build() {
+	export LLVM_CONFIG=/usr/lib/llvm$_llvmver/bin/llvm-config
+	export CXX=/usr/lib/llvm$_llvmver/bin/clang++
+	make release_native
+
+	make -C vendor/miniaudio/src
+	make -C vendor/stb/src unix
+	make -C vendor/cgltf/src unix
+}
+
+check() {
+	./odin check examples/all -strict-style
+	./odin test tests/benchmark -file -all-packages -define:ODIN_TEST_FANCY=false
+	./odin test tests/core/normal.odin -file -all-packages -define:ODIN_TEST_FANCY=false
+	./odin test tests/core/speed.odin -file -all-packages -o:speed -define:ODIN_TEST_FANCY=false
+	./odin test tests/vendor -all-packages -define:ODIN_TEST_FANCY=false
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin "$pkgdir"/usr/lib/odin
+
+	install -Dm755 odin "$pkgdir"/usr/lib/odin/odin
+	cp -r base "$pkgdir"/usr/lib/odin/base
+	cp -r core "$pkgdir"/usr/lib/odin/core
+	cp -r shared "$pkgdir"/usr/lib/odin/shared
+	mkdir "$pkgdir"/usr/lib/odin/vendor # has to exist for odin
+
+	ln -s ../lib/odin/odin "$pkgdir"/usr/bin/odin
+
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/odin/README.md
+	install -Dm644 PROPOSAL-PROCESS.md "$pkgdir"/usr/share/doc/odin/PROPOSAL-PROCESS.md
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/odin/LICENSE
+}
+
+vendor() {
+	pkgdesc="Vendor collection for Odin programming language"
+
+	mkdir -p "$subpkgdir"/usr/lib/odin/vendor
+	cp -r "$builddir"/vendor/* "$subpkgdir"/usr/lib/odin/vendor
+}
+
+sha512sums="
+afbc9757726539f6df5880f01ea0a4dd879b15f9f0d54f89472ed5d365a546dcc3448ec417c48ecff58ee85b3be6c9476f79876e867a5a1f45e9671e6dec2941  odin-0.2026.05.tar.gz
+"

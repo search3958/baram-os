@@ -1,5 +1,0 @@
-#TODO async-io and rustix crates error
-[source]
-git = "https://github.com/LuchoBazz/quicktest"
-[build]
-template = "cargo"

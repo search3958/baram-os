@@ -1,0 +1,33 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=c-dvar
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="D-Bus Variant Type-System"
+url="https://github.com/c-util/c-dvar"
+arch="all"
+license="Apache-2.0 OR LGPL-2.1-or-later"
+makedepends="
+	c-stdaux-dev~1
+	c-utf8-dev~1
+	meson
+	"
+subpackages="$pkgname-dev"
+source="https://github.com/c-util/c-dvar/archive/v$pkgver/c-dvar-$pkgver.tar.gz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+aba472f366ff5ed649a739c16edb095cf2ef23b961babe78c37bb69e22d3b968dba869e704583529e387f908e259f04e148ae860da56d422914cfbef47a4391d  c-dvar-1.2.0.tar.gz
+"

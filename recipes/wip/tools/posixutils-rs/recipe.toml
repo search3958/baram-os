@@ -1,5 +1,0 @@
-#TODO require a customized Cargo script
-[source]
-git = "https://github.com/rustcoreutils/posixutils-rs"
-[build]
-template = "custom"

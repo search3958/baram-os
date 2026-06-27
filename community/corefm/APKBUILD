@@ -1,0 +1,38 @@
+# Contributor: rahmanshaber <rahmanshaber@yahoo.com>
+# Maintainer: rahmanshaber <rahmanshaber@yahoo.com>
+pkgname=corefm
+pkgver=5.0.0
+pkgrel=0
+pkgdesc="A lightweight file-manager from C-Suite"
+# armhf blocked by qt6-qtmultimedia
+arch="all !armhf"
+url="https://gitlab.com/cubocore"
+license="GPL-3.0-or-later"
+depends="qt6-qtsvg"
+makedepends="
+	cmake
+	libcprime-dev
+	libcsys-dev
+	qt6-qtbase-dev
+	qt6-qtmultimedia-dev
+	samurai
+	"
+source="https://gitlab.com/cubocore/coreapps/corefm/-/archive/v$pkgver/corefm-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # No tests
+
+build() {
+	cmake -B build -GNinja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+83c5b6a62f8ab8d8fcdda1c361c7513d3ff043bba8c6ec9b3ac97b9523155be653f5c90c563e943d22bfd2005b3dd3db1e1bc85df4b57664cf47cc551a9da61f  corefm-v5.0.0.tar.gz
+"

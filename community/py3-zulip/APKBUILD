@@ -1,0 +1,42 @@
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=py3-zulip
+_pkgname=python-zulip-api
+pkgver=0.9.1
+pkgrel=1
+pkgdesc="Zulip API bindings"
+url="https://github.com/zulip/python-zulip-api/"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-distro
+	py3-matrix-nio
+	py3-openssl
+	py3-requests
+	py3-typing-extensions
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest py3-pytest-runner"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/zulip/python-zulip-api/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver/zulip"
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	install -Dm0644 README.md -t "$pkgdir"/usr/share/doc/"$pkgname"
+	install -Dm0644 ../LICENSE -t "$pkgdir"/usr/share/doc/"$pkgname"
+}
+
+sha512sums="
+e0ec0daaeef964fc27ad94b84a1c398f750cf746a952af5b74c698fd855e3fa016ae2ea246366dd1060f9bd8fcb6c53be9fded8db6d9c42c7e57dfd42cdda427  py3-zulip-0.9.1.tar.gz
+"

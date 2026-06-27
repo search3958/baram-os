@@ -1,0 +1,50 @@
+# Contributor: kpcyrd <git@rxv.cc>
+# Maintainer: kpcyrd <git@rxv.cc>
+pkgname=cargo-edit
+pkgver=0.13.10
+pkgrel=0
+pkgdesc="Managing cargo dependencies from the command line"
+url="https://github.com/killercup/cargo-edit"
+arch="all"
+license="MIT OR Apache-2.0"
+makedepends="
+	cargo
+	cargo-auditable
+	libgit2-dev
+	libssh2-dev
+	openssl-dev>3
+	"
+subpackages="$pkgname-doc"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/killercup/cargo-edit/archive/v$pkgver.tar.gz"
+
+export LIBSSH2_SYS_USE_PKG_CONFIG=1  # use system libssh2
+export LIBGIT2_NO_VENDOR=1 # use system libgit2
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release
+}
+
+check() {
+	# Increase stack size to avoid stack overflow while compiling 'p384'.
+	export RUST_MIN_STACK="4194304"
+
+	cargo test
+}
+
+package() {
+	install -Dm644 -t "$pkgdir/usr/share/doc/cargo-edit" README.md
+	cd target/release
+	install -Dm755 cargo-rm cargo-add cargo-set-version cargo-upgrade \
+		-t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+e744bb0b3123e560e4a3ca8993fb8b3d74442f13ca9bc283a0d40bf06fe73e328c402bcc50acb661ce08784d794a3e525d9fc285d8971969ba3f48c80325ac9b  cargo-edit-0.13.10.tar.gz
+"

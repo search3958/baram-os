@@ -1,0 +1,65 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=wt
+pkgver=4.13.3
+pkgrel=0
+pkgdesc="C++ library and application server for developing and deploying web applications"
+url="https://www.webtoolkit.eu/"
+arch="all"
+license="GPL-2.0-only WITH openssl-exception"
+depends_dev="
+	boost-dev
+	fcgi-dev
+	glu-dev
+	graphicsmagick-dev
+	harfbuzz-dev
+	libharu-dev
+	libpq-dev
+	mesa-dev
+	openssl-dev>3
+	pango-dev
+	sqlite-dev
+	zlib-dev
+	"
+makedepends="$depends_dev cmake samurai"
+checkdepends="font-freefont tzdata"
+subpackages="$pkgname-dev $pkgname-doc::noarch"
+source="$pkgname-$pkgver.tar.gz::https://github.com/emweb/wt/archive/$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCONNECTOR_HTTP=ON \
+		-DWT_WRASTERIMAGE_IMPLEMENTATION=GraphicsMagick \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DWEBUSER=root \
+		-DWEBGROUP=root \
+		-DRUNDIR=/run/wt \
+		-DUSE_SYSTEM_SQLITE3=ON \
+		-DINSTALL_EXAMPLES=ON \
+		-DBUILD_EXAMPLES=OFF \
+		-DBUILD_TESTS="$(want_check && echo ON || echo OFF)"
+	cmake --build build
+}
+
+check() {
+	cd test
+	../build/test/test.http
+	../build/test/test.sqlite3
+	# FIXME Utf8_test[35] fail
+	../build/test/test.wt -t '!Utf8_test3,Utf8_test5'
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -rf "$pkgdir"/run
+}
+
+doc() {
+	install_if="$pkgname=$pkgver-r$pkgrel docs"
+	amove usr/lib/Wt/examples
+}
+
+sha512sums="
+0ae5c2448404fca2583da5567dfa73db9fe7580fc17b6ae27e74b2cdeacfe37082b417847cf77a0b26c8efecca3ef3adc7f37e09f7eb2a67c84d2aab2a600566  wt-4.13.3.tar.gz
+"

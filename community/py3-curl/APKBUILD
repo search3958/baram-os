@@ -1,0 +1,48 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-curl
+_pkgname=pycurl
+pkgver=7.45.7
+pkgrel=1
+pkgdesc="Python3 interface to libcurl"
+url="http://pycurl.io/"
+arch="all"
+license="LGPL-2.0-or-later OR MIT"
+makedepends="
+	curl-dev
+	openssl-dev>3
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-pytest
+	py3-flask
+	py3-flaky
+	"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-curl" # Backwards compatibility
+provides="py-curl=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	export PYCURL_SSL_LIBRARY=openssl
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+	want_check && make -C tests/fake-curl/libcurl
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+dc8dc4ec1cc4fa8b34aa2ca6e1cd8c3dde4f73500f364bfb67a7c38bf04b18eaabcbd9b55cd7da9b4fe5080ab3845a4e4a2bed3a87d4c0d693ec24142319af27  pycurl-7.45.7.tar.gz
+"

@@ -1,0 +1,49 @@
+diff --git a/src/go/conf/zabbix_agent2.conf b/src/go/conf/zabbix_agent2.conf
+index 6fdd050..fe48861 100644
+--- a/src/go/conf/zabbix_agent2.conf
++++ b/src/go/conf/zabbix_agent2.conf
+@@ -27,6 +27,8 @@
+ # Default:
+ # LogFile=/tmp/zabbix_agent2.log
+ 
++LogFile=/var/log/zabbix/zabbix_agent2.log
++
+ ### Option: LogFileSize
+ #	Maximum size of log file in MB.
+ #	0 - disable automatic log rotation.
+@@ -135,7 +137,7 @@ ServerActive=127.0.0.1
+ # Default:
+ # Hostname=
+ 
+-Hostname=Zabbix server
++# Hostname=Zabbix server
+ 
+ ### Option: HostnameItem
+ #	Item used for generating Hostname if it is undefined. Ignored if Hostname is defined.
+@@ -145,6 +147,8 @@ Hostname=Zabbix server
+ # Default:
+ # HostnameItem=system.hostname
+ 
++HostnameItem=system.run[hostname -f]
++
+ ### Option: HostMetadata
+ #	Optional parameter that defines host metadata.
+ #	Host metadata is used at host auto-registration process.
+@@ -301,6 +305,8 @@ Hostname=Zabbix server
+ # Default:/tmp/agent.plugin.sock
+ # PluginSocket=
+ 
++PluginSocket=/run/zabbix/agent.plugin.sock
++
+ ####### USER-DEFINED MONITORED PARAMETERS #######
+ 
+ ### Option: UnsafeUserParameters
+@@ -342,7 +348,7 @@ Hostname=Zabbix server
+ # Default:
+ # ControlSocket=
+ 
+-ControlSocket=/tmp/agent.sock
++ControlSocket=/run/zabbix/zabbix_agent2.sock
+ 
+ ####### TLS-RELATED PARAMETERS #######
+ 

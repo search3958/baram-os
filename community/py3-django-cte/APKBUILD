@@ -1,0 +1,62 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-cte
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=django-cte
+pkgver=3.0.0
+pkgrel=2
+pkgdesc="Common Table Expressions (CTE) for Django"
+url="https://pypi.python.org/project/django-cte"
+arch="noarch"
+license="BSD-Clause-3"
+depends="py3-django"
+checkdepends="py3-pytest py3-pytest-unmagic postgresql py3-psycopg2"
+makedepends="py3-setuptools py3-gpep517 py3-wheel py3-flit-core"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dimagi/django-cte/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+# Missing py3-pytest-unmagic which doesn't support pytest => 8.5.0
+# see https://github.com/dimagi/pytest-unmagic/issues/3
+options="!check"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	msg "Setting up test environments"
+	export POSTGRES_DB=postgres
+	export POSTGRES_USER=postgres
+	export POSTGRES_PASSWORD="postgres"
+
+	rm -Rf "$srcdir"/tmp
+	initdb -D "$srcdir"/tmp
+	postgres -D "$srcdir"/tmp --unix-socket-directories="$srcdir" > "$srcdir"/tmp/psql.log 2>&1 &
+
+	trap "pkill postgres" EXIT
+	# wait for psql to be ready
+	while ! pg_isready -h "$srcdir" > /dev/null 2>&1; do
+		sleep 0.5
+	done
+	psql -h "$srcdir" -d postgres -c "CREATE ROLE $POSTGRES_USER PASSWORD '$POSTGRES_PASSWORD' INHERIT LOGIN;"
+	psql -h "$srcdir" -d postgres -c "ALTER USER $POSTGRES_USER WITH SUPERUSER;"
+
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	msg "Running tests"
+	.testenv/bin/python3 -m nose -v
+
+	pkill postgres
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+2dd498bbc24b84166826b8f7f32e7a321766446d1c40dfef57106b9d7370bf01b2e0ab253f13dc64c5358b65b2e9cf6611fc86fc38824f914157a3370330a678  py3-django-cte-3.0.0.tar.gz
+"

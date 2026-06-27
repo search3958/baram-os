@@ -1,0 +1,54 @@
+# Contributor: Leon Marz <main@lmarz.org>
+# Maintainer: Leon Marz <main@lmarz.org>
+pkgname=ptex
+pkgver=2.5.2
+pkgrel=0
+pkgdesc="texture mapping system by Walt Disney Animation Studios"
+url="https://ptex.us/"
+# s390x: no big-endian support
+arch="all !s390x"
+license="BSD-3-Clause"
+makedepends="cmake
+	doxygen
+	libdeflate-dev
+	libdeflate-static
+	samurai
+	"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc $pkgname-tools:tools"
+source="$pkgname-$pkgver.tar.gz::https://github.com/wdas/ptex/archive/v$pkgver.tar.gz
+	0001-fix-soversion.patch
+	0002-fix-build.patch
+	"
+
+build() {
+	# rtest segfaults if -0s is set
+	CXXFLAGS="${CFLAGS/-Os/}" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DPTEX_VER=$pkgver
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+	depends=""
+	amove usr/bin
+}
+
+sha512sums="
+25ff3713c214b89f7dfd319ce0d56a7d8ee157ef124c1b364c4421413d36c1fb17fe77702f6be077e6a793443093d445df8d89024c124e03f851615430c6455e  ptex-2.5.2.tar.gz
+75bbb689a280d7eb2e2aba695db3ce32ff7fa43bfdd6d7a4687843df5ba9a3c43ab35525e5475a4d0688cba3b13aba7bb0faab5d1c8f9931e6c15cbd669afd70  0001-fix-soversion.patch
+28e5e353edf35564c479280c67c4e5cf87a20ac72af8c4663a568826ef67c796235a75d9f045eedd2af7de1ee2417b8435720471df692c62b43fa76481c74ed0  0002-fix-build.patch
+"

@@ -1,0 +1,40 @@
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+maintainer="Fabricio Silva <hi@fabricio.dev>"
+pkgname=mkbrr
+pkgver=1.23.0
+pkgrel=1
+pkgdesc="mkbrr is a tool to create, modify and inspect torrent files."
+url="https://github.com/autobrr/mkbrr"
+arch="all !x86 !armhf !armv7" # 32bits are broken
+license="GPL-2.0-or-later"
+options="net" # net for go
+makedepends="go"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/autobrr/mkbrr/archive/v$pkgver.tar.gz
+	no-self-update.patch
+	"
+
+prepare() {
+	default_prepare
+	go mod download
+}
+
+build() {
+	go build -ldflags "-s -w
+		-X main.version=$pkgver
+		-X main.buildTime=$(date -u "+%Y-%m-%dT%H:%M:%SZ" ${SOURCE_DATE_EPOCH:+-d @$SOURCE_DATE_EPOCH})
+		"
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 mkbrr -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+83325aa6977dce7259e2f5e0ac6ef180803c601d2241039f9500ec50614f3e26d129faff999baab8a9cea6acefe2095af40efe70b3dd39d43522315587cac693  mkbrr-1.23.0.tar.gz
+dd73cbdf6bef71f706bdf585e0f2abe2bfe6625c6bdbd2b29bfadd1e9891cd52c121081c05e1c905ce5ced01ea2828a62ad02abf13069058469d4528543269c8  no-self-update.patch
+"

@@ -1,0 +1,37 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ivykis
+pkgver=0.43.2
+pkgrel=0
+pkgdesc="Library for asynchronous I/O readiness notification"
+url="https://github.com/buytenh/ivykis"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="automake autoconf libtool"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+source="https://github.com/buytenh/ivykis/archive/v$pkgver/ivykis-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+}
+
+sha512sums="
+58aefe38e32f301c38568613439a5177470bdc5b6240ec3de93c35752b34ff4d839d036ee48764e8e1cdc53d8a1138cc69947b8857349601316081c0aee66caa  ivykis-0.43.2.tar.gz
+"

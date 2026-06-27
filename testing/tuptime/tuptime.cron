@@ -1,0 +1,4 @@
+#!/bin/sh
+if [ -x /usr/bin/tuptime ]; then
+	su _tuptime -s /bin/sh -c '/usr/bin/tuptime -q' > /dev/null
+fi

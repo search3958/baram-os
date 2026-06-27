@@ -1,0 +1,31 @@
+# Contributor: Guy Godfroy <guy.godfroy@gugod.fr>
+# Maintainer: Guy Godfroy <guy.godfroy@gugod.fr>
+pkgname=smile
+pkgver=2.12.3
+pkgrel=0
+pkgdesc="Emoji picker with custom tags support and localization"
+url="https://mijorus.it/projects/smile"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3"
+makedepends="meson python3 pango-dev glib-dev gtk4.0-dev desktop-file-utils"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mijorus/smile/archive/refs/tags/$pkgver.tar.gz"
+subpackages="$pkgname-lang"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+6753795a402a0c840e68d490f47ec839e1409b8dee2c02b7fa31c8a6777f2d8ee5bfe9c2a9f91f291de332b7fc4e88a612d321e4c3044d8c29849ed6ddf0d2f7  smile-2.12.3.tar.gz
+"

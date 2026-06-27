@@ -1,0 +1,56 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xfce4-session
+pkgver=4.20.2
+pkgrel=0
+pkgdesc="Session manager for Xfce"
+url="https://xfce.org/"
+arch="all"
+license="GPL-2.0-or-later"
+subpackages="$pkgname-doc $pkgname-lang"
+depends="hicolor-icon-theme iceauth dbus-x11 procps"
+makedepends="
+	gtk-layer-shell-dev
+	intltool
+	libice-dev
+	libwnck3-dev
+	libxfce4ui-dev
+	libxfce4windowing-dev
+	polkit-elogind-dev
+	xfce4-panel-dev
+	xfconf-dev
+	"
+source="https://archive.xfce.org/src/xfce/xfce4-session/${pkgver%.*}/xfce4-session-$pkgver.tar.bz2
+	busybox-shutdown.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir=/usr/lib/xfce4 \
+		--localstatedir=/var \
+		--disable-static \
+		--enable-legacy-sm
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	cat > "$pkgdir"/usr/bin/xfce4-wayland <<-EOF
+		#!/bin/sh
+		exec dbus-launch startxfce4 --wayland
+	EOF
+	chmod +x "$pkgdir"/usr/bin/xfce4-wayland
+}
+
+sha512sums="
+561b10b6efe011dfd2dd43d05fda4282f1950e30a0fdcd28c8a28f420990390e5dc94bf7b6ad344346eabc0c3752c393489d681edab61a6f58e9c81854a45201  xfce4-session-4.20.2.tar.bz2
+3c31515dc8ea061ec32b3233dc49fdc0d117756bb7995ecc49f69a23bd2f9ec9c3b5c565dd5d8d02c11798fb73729b9045858a376a7abd71a150358538ea17eb  busybox-shutdown.patch
+"

@@ -1,0 +1,59 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt5-qtsvg
+pkgver=5.15.18_git20251101
+pkgrel=0
+_module="${pkgname#qt5-}"
+_pkgver=b74f7291f343dcbcb487b020868f042d8fe83098
+_fullname=$_module-$_pkgver
+pkgdesc="Qt5 - Support for rendering and displaying SVG"
+url="https://www.qt.io/developers/"
+arch="all"
+license="( LGPL-2.0-or-later OR GPL-3.0-only OR GPL-2.0-or-later ) AND Qt-GPL-exception-1.0"
+makedepends="
+	qt5-qtbase-dev
+	zlib-dev
+	"
+subpackages="$pkgname-dev"
+source="https://dev.alpinelinux.org/archive/qt/$_fullname.tar.xz"
+builddir="$srcdir/$_fullname"
+
+_disturl="dev.alpinelinux.org:/archive/qt/"
+snapshot() {
+	clean
+	makedepends="git xz rsync tar" deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	git clone --filter=tree:0 https://invent.kde.org/qt/qt/$_module.git .
+	git archive --format tar --prefix=$_fullname/ $_pkgver > "$SRCDEST"/$_fullname.tar
+	xz -vv -T0 -9 -e "$SRCDEST"/$_fullname.tar
+	rsync --progress -La "$SRCDEST"/$_fullname.tar.xz $_disturl
+}
+
+
+prepare() {
+	default_prepare
+
+	# We need to make the build system think we're running in a git repository
+	# so it correctly symlinks during the build
+	mkdir .git
+}
+
+build() {
+	qmake-qt5
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+
+	# Drop QMAKE_PRL_BUILD_DIR because reference the build dir
+	find "$pkgdir/usr/lib" -type f -name '*.prl' \
+		-exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
+}
+
+sha512sums="
+65ac459d80f00b2bb7cdb6e73e57e178c6e4fdd257cd2194100251bb385d0f7ab7c599b9a7641695c8e829a3309af03bbb9f39b114813880b5894db384fc3fb8  qtsvg-b74f7291f343dcbcb487b020868f042d8fe83098.tar.xz
+"

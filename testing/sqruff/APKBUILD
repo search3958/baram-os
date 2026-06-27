@@ -1,0 +1,37 @@
+# Maintainer: qaqland <qaq@qaq.land>
+pkgname=sqruff
+pkgver=0.38.0
+pkgrel=0
+pkgdesc="Fast SQL formatter/linter"
+url="https://playground.quary.dev/"
+arch="all !s390x" # nix
+license="Apache-2.0"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-doc"
+source="https://github.com/quarylabs/sqruff/archive/v$pkgver/sqruff-$pkgver.tar.gz"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build -p sqruff --frozen --release
+}
+
+check() {
+	cargo test -p sqruff -p sqruff-lib-core --frozen
+}
+
+package() {
+	install -Dm755 target/release/sqruff -t "$pkgdir"/usr/bin
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+017449b5f7a51ab578c41665ec4c4622dc4fdc02650d2ee10c6b7b5de164243c9aed8fa62dc7ab78613ee00d9dfe0698894061014315a839e03a061a6cf49c65  sqruff-0.38.0.tar.gz
+"

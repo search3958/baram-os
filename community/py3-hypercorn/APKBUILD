@@ -1,0 +1,39 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer: knuxify <knuxify@gmail.com>
+maintainer="knuxify <knuxify@gmail.com>"
+pkgname=py3-hypercorn
+pkgver=0.18.0
+pkgrel=2
+pkgdesc="ASGI Server based on Hyper libraries and inspired by Gunicorn"
+url="https://github.com/pgjones/hypercorn"
+arch="noarch"
+license="MIT"
+depends="py3-aioquic py3-h11 py3-h2 py3-priority py3-wsproto"
+makedepends="py3-gpep517 py3-pdm-backend"
+checkdepends="py3-httpx py3-hypothesis py3-pytest py3-pytest-asyncio py3-pytest-trio py3-trio"
+subpackages="$pkgname-pyc"
+source="https://github.com/pgjones/hypercorn/archive/$pkgver/py3-hypercorn-$pkgver.tar.gz
+	no-pytest-cov.patch"
+builddir="$srcdir/hypercorn-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ed21ddfe01c53bd823b406663eba09b7366af99ba478939ca6d948e3dc284b63681a7f57c96dd65f4a3156cb0d4bd1a7464dabc3f6d86ed6ccf5911640393731  py3-hypercorn-0.18.0.tar.gz
+f1655ef58a7e3a1c01973ae927f588eb1bbe6a3b1ce85ad55ce8e87b512f46407ca5100c30a1a01310f469058bf05869c719d186dbd25da96720e95ff1b265a6  no-pytest-cov.patch
+"

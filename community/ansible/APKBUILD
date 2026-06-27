@@ -1,0 +1,42 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Takuya Noguchi <takninnovationresearch@gmail.com>
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Sean McAvoy <seanmcavoy@gmail.com>
+pkgname=ansible
+pkgver=14.0.0
+pkgrel=0
+pkgdesc="core components for Ansible"
+url="https://ansible.com/"
+options="!check" # TODO: enable tests
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="python3 ansible-core>=2.20.5"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/a/ansible/ansible-$pkgver.tar.gz"
+
+# secfixes:
+#   2.10.7-r0:
+#     - CVE-2021-20191
+#   2.10.1-r0:
+#     - CVE-2020-25646
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ad3412c976b22487718c838a655abec1cf9ceb8081364f6f57d140eeb140b190bf2e413a392c0cb17b903916e84d36b46594c8e77de094c77430b693d1e4c06d  ansible-14.0.0.tar.gz
+"

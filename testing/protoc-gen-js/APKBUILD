@@ -1,0 +1,34 @@
+maintainer="Leon White <badfunkstripe@gmail.com>"
+pkgname=protoc-gen-js
+pkgver=4.0.2
+pkgrel=0
+pkgdesc="protoc-gen-js javascript protobuf generator"
+url="https://github.com/protocolbuffers/protobuf-javascript"
+# bazel
+arch="x86_64 aarch64"
+license="BSD-3-Clause AND Apache-2.0"
+depends="protoc"
+makedepends="
+	bazel8
+	linux-headers
+	nodejs
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/protocolbuffers/protobuf-javascript/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/protobuf-javascript-$pkgver"
+# bazel stuff, no tests
+options="net !check"
+
+build() {
+	# prevent broken ccache use
+	JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
+	PATH=/bin:/usr/bin \
+		bazel build plugin_files
+}
+
+package() {
+	install -Dm755 bazel-bin/generator/protoc-gen-js -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+c0569ddc2718a9719588016b1ae32d35edfdc472058fb91562679cff489d11947159f94f7637dbc9f1ce8ce6a2c44f439f3aa056fa771ae073608b4d60c5b9cb  protoc-gen-js-4.0.2.tar.gz
+"

@@ -1,0 +1,41 @@
+# Contributor: Paul Kilar <pkilar@gmail.com>
+maintainer="Sertonix <sertonix@posteo.net>"
+pkgname=lshw
+pkgver=02.20
+_pkgver="B.$pkgver"
+pkgrel=1
+pkgdesc="Hardware Lister"
+url="https://ezix.org/project/wiki/HardwareLiSter"
+arch="all"
+license="GPL-2.0-only"
+makedepends="
+	gettext
+	linux-headers
+	zlib-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-dbg
+	"
+source="https://ezix.org/software/files/lshw-$_pkgver.tar.gz"
+builddir="$srcdir"/$pkgname-$_pkgver
+
+build() {
+	make VERSION=$_pkgver NO_VERSION_CHECK=1 RPM_OPT_FLAGS=-DNONLS \
+		ZLIB=1 GZIP="busybox gzip -n9" "$@"
+}
+
+check() {
+	local ver
+	ver=$(./src/lshw -version) &&
+	[ "$ver" = "$_pkgver" ]
+}
+
+package() {
+	build DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+afc5d57f4b7c49d8e1934a3df623657882cc1325268c8c024dc0fa25495edd3ce7fdadb9c83ac6e5d3e723bc08d6175162d4d879ced09f76ad145ff42b38d3f0  lshw-B.02.20.tar.gz
+"

@@ -1,0 +1,54 @@
+# Contributor: Dermot Bradley <dermot_bradley@yahoo.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=stubbyboot
+pkgver=1.0.4
+pkgrel=3
+pkgdesc="Simple UEFI stub"
+url="https://github.com/puzzleos/stubby"
+arch="x86 x86_64 aarch64 loongarch64 riscv64"
+license="LGPL-2.1-or-later"
+depends="$pkgname-efistub=$pkgver-r$pkgrel"
+makedepends="
+	bash
+	gnu-efi-dev
+	"
+subpackages="$pkgname-efistub"
+source="$pkgname-$pkgver.tar.gz::https://github.com/puzzleos/stubby/archive/refs/tags/v$pkgver.tar.gz
+	no-werror.patch
+	"
+builddir="$srcdir/stubby-$pkgver"
+
+case "$CARCH" in
+	aarch64) _arch="aa64" ;;
+	x86) _arch="ia32" ;;
+	x86_64) _arch="x64" ;;
+esac
+
+build() {
+	make build
+}
+
+package() {
+	install -Dm755 stubby-smash.1.sh -t "$pkgdir"/usr/bin/
+	install -Dm755 stubby-smash.2.sh -t "$pkgdir"/usr/bin/
+	install -Dm755 stubby.efi \
+		"$pkgdir"/usr/lib/$pkgname/linux$_arch.efi.stub
+}
+
+check() {
+	make test
+}
+
+efistub() {
+	pkgdesc="Linux UEFI stub from the stubby bootloader project"
+	depends=""
+	provides="efistub"
+	provider_priority=10  # lowest (other is systemd-efistub)
+
+	amove usr/lib/$pkgname
+}
+
+sha512sums="
+cd0c36809b57fc9f2eeea2fc82d6b084ec46bfa7934c7a2fdaf0e0ef8b9903b31076fad0ec44a4248073895fa5591c5b54ff060620f15b1b4e390409d9516967  stubbyboot-1.0.4.tar.gz
+85e5a8d2af96550f49ce07e4660fdbc036a9eab63e2dbc53e7c3896a3dbf0044f07990db9f3c7e8ecc28178bd1ea2a5ac448368789563b7275ab636f6665a1e2  no-werror.patch
+"

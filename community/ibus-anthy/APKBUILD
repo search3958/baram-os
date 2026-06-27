@@ -1,0 +1,73 @@
+# Contributor: mio <miyopan@e.email>
+# Maintainer: mio <miyopan@e.email>
+pkgname=ibus-anthy
+pkgver=1.5.18
+pkgrel=1
+pkgdesc="Japanese input method Anthy IMEngine for IBus Framework"
+url="https://github.com/ibus/ibus-anthy"
+arch="all"
+license="GPL-2.0-only"
+depends="
+	ibus
+	py3-gobject3
+	"
+makedepends="
+	anthy-dev
+	autoconf
+	automake
+	gobject-introspection-dev
+	ibus-dev
+	intltool
+	m4
+	"
+checkdepends="
+	bash
+	libfaketime
+	sed
+	"
+# Patch disables checking for optional checkdepends package not in repos
+source="$pkgname-$pkgver.tar.gz::https://github.com/ibus/ibus-anthy/archive/$pkgver.tar.gz
+	disable-pycotap.patch
+	"
+subpackages="$pkgname-lang $pkgname-pyc"
+
+prepare() {
+	default_prepare
+
+	NOCONFIGURE=1 ./autogen.sh
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--host=$CHOST \
+		--build=$CBUILD \
+		--libexec=/usr/lib/ibus
+	make
+}
+
+check() {
+	# tests use current date output and need yearly updates
+	# they also run rm -r HOME/.config/anthy ...
+	HOME="$builddir" \
+	faketime '2021-01-01' \
+		make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# Remove duplicates
+	find "$pkgdir" \( -name "*.opt-1.pyc" -o -name "*.opt-2.pyc" \) -delete
+}
+
+pyc() {
+	default_pyc
+
+	amove usr/share/ibus-anthy/*/__pycache__
+}
+
+sha512sums="
+019ab5b82d455938ea4917911fba2cb2f37004862a4903c04fc501240f6cd7431a0cabc5612d88cd10eab17fce7de7c3ff5f71bb5d08afea09fa4201eef369cc  ibus-anthy-1.5.18.tar.gz
+a918038736e6ce4cc8a357c042cb7b4271970ae9e58d855f481c4cc06b436215732e194c700518baaacfa947b34e3ad7172795087d8287319cb0a6a974d25d32  disable-pycotap.patch
+"

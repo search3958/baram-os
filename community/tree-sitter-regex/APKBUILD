@@ -1,0 +1,28 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=tree-sitter-regex
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Tree-sitter grammar for regular expressions"
+url="https://github.com/tree-sitter/tree-sitter-regex"
+arch="all"
+license="MIT"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+install_if="tree-sitter-grammars"
+source="https://github.com/tree-sitter/tree-sitter-regex/archive/v$pkgver/tree-sitter-regex-$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build
+}
+
+check() {
+	tree-sitter test
+}
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install
+}
+
+sha512sums="
+8a38d9a202f2146b01934c51380d0d55bef9e4639086d9f089ac029f27d60221ad17cd568439c8d9c0be4850bf92790016c6d49a56ad9622df60ad5016d4bc05  tree-sitter-regex-1.0.0.tar.gz
+"

@@ -1,0 +1,53 @@
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ruby-bundler
+_gemname=bundler
+pkgver=2.6.9
+pkgrel=0
+pkgdesc="Manage an application's gem dependencies"
+url="https://bundler.io/"
+arch="noarch"
+license="MIT"
+depends="ruby"
+makedepends="
+	ruby-rake
+	ruby-rdoc
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/rubygems/rubygems/archive/bundler-v$pkgver.tar.gz
+	manpages.patch
+	"
+builddir="$srcdir/rubygems-bundler-v$pkgver/bundler"
+options="!check"  # tests require deps not available in main repo
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+
+	gem install \
+		--local \
+		--install-dir "$gemdir" \
+		--bindir "$pkgdir/usr/bin" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		$_gemname
+
+	local n; for n in 1 5; do
+		mkdir -p "$pkgdir"/usr/share/man/man$n
+		mv "$gemdir"/gems/$_gemname-$pkgver/lib/bundler/man/*.$n "$pkgdir"/usr/share/man/man$n/
+	done
+
+	rm -rf "$gemdir"/cache \
+		"$gemdir"/build_info \
+		"$gemdir"/doc \
+		"$gemdir"/gems/$_gemname-$pkgver/man \
+		"$gemdir"/gems/$_gemname-$pkgver/*.md
+}
+
+sha512sums="
+a2121369dc6dea94e8b5aed55536cf38a8b6fabb6348ba2809e0dc2ec6e1a672f41772df7f2270d32a2d93334f85a13b8c38c7a383fa668558434a481a652140  bundler-v2.6.9.tar.gz
+76c008a71af25db5dda7055c98330fcb864fe7ffb4a5de34a0ad2bea403b28e0d945faf05685abf525b98c67c305068808fc596882676bbb1eb418d83377db41  manpages.patch
+"

@@ -1,0 +1,29 @@
+From c5dade2c8505ee6c75a26f64e01c543b0f4d12c3 Mon Sep 17 00:00:00 2001
+From: Luca Weiss <luca@lucaweiss.eu>
+Date: Mon, 9 Sep 2024 23:08:08 +0200
+Subject: [PATCH] Use qdoc-qt5
+
+---
+ doc/qml/CMakeLists.txt | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/doc/qml/CMakeLists.txt b/doc/qml/CMakeLists.txt
+index 4e14324..6f2f537 100644
+--- a/doc/qml/CMakeLists.txt
++++ b/doc/qml/CMakeLists.txt
+@@ -1,10 +1,9 @@
+ # add a target to generate API documentation with qdoc
+ SET(QDOC_WORKS FALSE)
+-SET(ENV{QT_SELECT} qt5)
+-FIND_PROGRAM(QDOC_EXECUTABLE qdoc)
++FIND_PROGRAM(QDOC_EXECUTABLE qdoc-qt5)
+ if(QDOC_EXECUTABLE)
+ EXECUTE_PROCESS(COMMAND ${QDOC_EXECUTABLE} --version OUTPUT_VARIABLE QDOC_OUTPUT ERROR_QUIET)
+-string(REGEX REPLACE "qdoc ([0-9]+(\\.[0-9]+)+).*" "\\1" QDOC_VERSION ${QDOC_OUTPUT})
++string(REGEX REPLACE "qdoc-qt5 ([0-9]+(\\.[0-9]+)+).*" "\\1" QDOC_VERSION ${QDOC_OUTPUT})
+ if(QDOC_VERSION MATCHES "^5\\.")
+ set(QDOC_WORKS TRUE)
+ endif()
+-- 
+2.49.0
+

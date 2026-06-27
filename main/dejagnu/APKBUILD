@@ -1,0 +1,38 @@
+# Contributor: A. Wilcox <awilfox@adelielinux.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=dejagnu
+pkgver=1.6.3
+pkgrel=1
+pkgdesc="A framework for testing other programs"
+url="https://www.gnu.org/software/dejagnu/"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="expect"
+makedepends="tcl>=8.5"
+checkdepends="gawk"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://ftp.gnu.org/pub/gnu/dejagnu/dejagnu-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+1a737132bd912cb527e7f2fcbe70ffff8ccc8604a0ffdecff87ba2a16aeeefd800f5792aeffdbe79be6daa35cedb1c60e41002ca4aabb5370a460028191b76c4  dejagnu-1.6.3.tar.gz
+"

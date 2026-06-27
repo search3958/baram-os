@@ -1,0 +1,26 @@
+# Contributor: Hugo Osvaldo Barrera <hugo@whynothugo.nl>
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=wlr-protocols
+pkgver=0_git20250702
+_commit=a5028afbe4a1cf0daf020c4104c1565a09d6e58a
+pkgrel=0
+pkgdesc="Wayland protocol extensions for wlroots and other compositors"
+url="https://gitlab.freedesktop.org/wlroots/wlr-protocols"
+arch="noarch"
+license="MIT"
+source="https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/archive/$_commit/wlr-protocols-$_commit.tar.gz"
+makedepends="wayland-dev"
+builddir="$srcdir/wlr-protocols-$_commit"
+
+check() {
+	make check
+}
+
+package() {
+	DESTDIR="$pkgdir" make install
+}
+
+
+sha512sums="
+b5684516fa7c8acdf37d5b24edf231629fd81502d6586c3e3433470c61cc4e949d275b0c348353cd124f270d07ae448a5cdef01496ff95e947d04a29a684dd8f  wlr-protocols-a5028afbe4a1cf0daf020c4104c1565a09d6e58a.tar.gz
+"

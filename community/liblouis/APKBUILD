@@ -1,0 +1,95 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=liblouis
+pkgver=3.38.0
+pkgrel=0
+pkgdesc="Braille translator and back-translator"
+url="https://liblouis.io/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	help2man
+	m4
+	python3
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="bash"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-bin:_bin
+	$pkgname-doc
+	py3-$pkgname-pyc
+	py3-$pkgname:_py3:noarch
+	"
+source="https://github.com/liblouis/liblouis/releases/download/v$pkgver/liblouis-$pkgver.tar.gz"
+
+# secfixes:
+#   3.22.0-r0:
+#     - CVE-2022-26981
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--enable-ucs4
+	make
+
+	cd python
+	gpep517 build-wheel \
+		--wheel-dir "$builddir"/.dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	make check
+
+	# Tests fail on s390x, very likely due to endianness
+	if [ "$CARCH" != "s390x" ]; then
+		python3 -m venv --clear --without-pip --system-site-packages .testenv
+		.testenv/bin/python3 -m installer .dist/*.whl
+
+		cd python
+		LD_LIBRARY_PATH="$builddir/liblouis/.libs" \
+		LOUIS_TABLEPATH="$builddir/tables" \
+			../.testenv/bin/python3 -m unittest tests/test_louis.py
+	fi
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+_bin() {
+	pkgdesc="$pkgdesc (tools)"
+	depends="bash make perl py3-$pkgname"
+
+	# s390 doesn't have patgen, but there's other scripts that don't require it
+	case "$CARCH" in
+	s390x) ;;
+	*) depends="$depends cmd:patgen" ;;
+	esac
+
+	amove usr/bin
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (python ctypes bindings)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/python*
+}
+
+sha512sums="
+eea856824c46a72acb797c80b1706aeca22d3503b9cbe6295d2f15177c94755707dee2f7ee6b783786df8f19716fc03bf7c79ccaa55b876cdd2516274f4cc199  liblouis-3.38.0.tar.gz
+"

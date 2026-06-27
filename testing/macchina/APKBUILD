@@ -1,0 +1,39 @@
+# Contributor: Jakub Panek <me@panekj.dev>
+# Maintainer: Dominika Liberda <ja@sdomi.pl>
+pkgname=macchina
+pkgver=6.4.0
+pkgrel=0
+pkgdesc="System information fetcher, with an (unhealthy) emphasis on performance"
+url="https://github.com/Macchina-CLI/macchina"
+arch="all"
+license="MIT"
+makedepends="cargo sqlite-dev cargo-auditable"
+options="net"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Macchina-CLI/macchina/archive/refs/tags/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/macchina -t "$pkgdir/usr/bin"
+
+	install -Dm644 doc/*.1 -t "$pkgdir/usr/share/man/man1"
+	install -Dm644 doc/*.7 -t "$pkgdir/usr/share/man/man7"
+
+	install -Dm644 contrib/themes/* -t "$pkgdir"/usr/share/macchina/themes
+}
+
+sha512sums="
+07babab97a6909e899e0cb6d6e4cbe331cf9b500604707086dad4a451491e0b117ad5a595e882925fe588e9119165fc4c1bc174045308ee0c084f58ebd0fb159  macchina-6.4.0.tar.gz
+"

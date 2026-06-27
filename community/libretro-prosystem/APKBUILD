@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-prosystem
+pkgver=0_git20241021
+pkgrel=0
+_commit="acae250da8d98b8b9707cd499e2a0bf6d8500652"
+pkgdesc="port of ProSystem to the libretro API"
+url="https://github.com/libretro/prosystem-libretro"
+arch="all"
+license="GPL-2.0-only"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/prosystem-libretro/archive/$_commit.tar.gz"
+builddir="$srcdir/prosystem-libretro-$_commit"
+options="!check" # No tests
+
+build() {
+	make
+}
+
+package() {
+	install -Dm644 prosystem_libretro.so "$pkgdir"/usr/lib/libretro/prosystem_libretro.so
+}
+
+sha512sums="
+32fc6408f346a2988a12ca85d507b4e607d208b1a66340bca1bd317790120e59e989cfb93bf3d7e5138f6c74d32511f26084c932b1560b084b2f62466437b8e1  libretro-prosystem-acae250da8d98b8b9707cd499e2a0bf6d8500652.tar.gz
+"

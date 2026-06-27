@@ -1,5 +1,0 @@
-#TODO outdated crates
-[source]
-git = "https://github.com/tversteeg/castle-game"
-[build]
-template = "cargo"

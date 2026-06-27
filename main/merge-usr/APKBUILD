@@ -1,0 +1,31 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Pablo Correa Gomez <pabloyoyoista@postmarketos.org>
+pkgname=merge-usr
+pkgver=1.0.3_git20260616
+_commit="8c0a77291b6a734332810596e4852d50124de5b7"
+pkgrel=0
+pkgdesc="Script to produce a merged-usr system"
+url="https://gitlab.alpinelinux.org/postmarketos/merge-usr"
+arch="all"
+license="GPL-2.0-or-later"
+checkdepends="bubblewrap"
+source="https://gitlab.alpinelinux.org/postmarketos/merge-usr/-/archive/$_commit/merge-usr-$_commit.tar.gz"
+# Tests need unprivileged user namespaces
+options="!check"
+builddir="$srcdir/$pkgname-$_commit"
+
+build() {
+	make all
+}
+
+check() {
+	make test
+}
+
+package() {
+	DESTDIR="$pkgdir" make install
+}
+
+sha512sums="
+5e3ab745985a568975fcb506305f65be4cc2965f2d006a07cd446baf038cd21be31453a1795647204785473d6b852923209df10751dcd96e7a0163c3e7250eb4  merge-usr-8c0a77291b6a734332810596e4852d50124de5b7.tar.gz
+"

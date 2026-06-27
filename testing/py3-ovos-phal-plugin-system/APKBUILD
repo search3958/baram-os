@@ -1,0 +1,32 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-ovos-phal-plugin-system
+pkgver=1.3.3
+pkgrel=1
+pkgdesc="handle bus events to interact with the OS"
+url="https://github.com/OpenVoiceOS/ovos-PHAL-plugin-system"
+arch="noarch"
+license="Apache-2.0"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-PHAL-plugin-system/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/ovos-PHAL-plugin-system-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+2f86eed7624f3dd9296c71608e86e105a9d54f26b46954518e3944680083c99c5628d9b8aa03c7e6dfcd3da073f1ca5727fec40b6476eceda44e2256d5145287  py3-ovos-phal-plugin-system-1.3.3.tar.gz
+"

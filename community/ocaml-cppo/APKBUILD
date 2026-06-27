@@ -1,0 +1,73 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: rubicon <rubicon@mailo.com>
+pkgname=ocaml-cppo
+pkgver=1.6.9
+pkgrel=7
+pkgdesc="C-style preprocessor for OCaml"
+url="https://github.com/ocaml-community/cppo"
+arch="all !riscv64 !loongarch64" # ocaml
+license="BSD-3-Clause"
+makedepends="dune ocaml ocaml-ocamlbuild"
+subpackages="$pkgname-doc $pkgname-ocamlbuild"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocaml-community/cppo/archive/v$pkgver.tar.gz"
+builddir="$srcdir/cppo-$pkgver"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+prepare() {
+	default_prepare
+
+	# This allows 'cppo -version' to output the correct version
+	sed -i "/^(name cppo)/a (version $pkgver)" dune-project
+}
+
+build() {
+	dune build --release --verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv --verbose
+}
+
+package() {
+	dune install --destdir="$pkgdir" \
+		--sections=bin,doc cppo
+
+	dune install --destdir="$pkgdir" \
+		--sections=lib,libexec cppo_ocamlbuild
+}
+
+ocamlbuild() {
+	pkgdesc="$pkgdesc (Ocamlbuild plugin)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/ocaml/cppo_ocamlbuild
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+26ff5a7b7f38c460661974b23ca190f0feae3a99f1974e0fd12ccf08745bd7d91b7bc168c70a5385b837bfff9530e0e4e41cf269f23dd8cf16ca658008244b44  ocaml-cppo-1.6.9.tar.gz
+"

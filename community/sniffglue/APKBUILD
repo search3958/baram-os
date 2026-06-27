@@ -1,0 +1,44 @@
+# Contributor: kpcyrd <git@rxv.cc>
+# Maintainer: kpcyrd <git@rxv.cc>
+pkgname=sniffglue
+pkgver=0.16.2
+pkgrel=0
+pkgdesc="Secure multithreaded packet sniffer"
+url="https://github.com/kpcyrd/sniffglue"
+arch="all !s390x" # limited by nix crate
+license="GPL-3.0-or-later"
+makedepends="
+	cargo
+	cargo-auditable
+	libpcap-dev
+	libseccomp-dev
+	scdoc
+	"
+install="$pkgname.pre-install"
+subpackages="$pkgname-doc"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/kpcyrd/sniffglue/archive/v$pkgver.tar.gz
+	sniffglue.conf
+	"
+
+
+build() {
+	cargo auditable build --release --locked
+	make docs
+}
+
+check() {
+	cargo test --release --locked
+}
+
+package() {
+	install -Dm755 "$builddir/target/release/sniffglue" "$pkgdir/usr/bin/sniffglue"
+	install -Dm644 "$builddir/docs/sniffglue.1" \
+		"$pkgdir/usr/share/man/man1/sniffglue.1"
+	install -Dm644 "$srcdir/$pkgname.conf" "$pkgdir/etc/$pkgname.conf"
+}
+
+sha512sums="
+cf5a01af109a1e1b1a8fc90a259109dff08c4e88064e98e65db335b6795b2a88668adcac07522bcb058bf20bb5fec4121103738fa9c7fbbfa57bfd5c6723ab75  sniffglue-0.16.2.tar.gz
+66e6b87e832ba8424334d24e3457a214e60e67c731471098329d0ca54c574518f7856ba780bb6bffde53bdefe2c8f789a242138ae67e2fef3e562fa083b362b1  sniffglue.conf
+"

@@ -1,0 +1,77 @@
+# Contributor: Jakob Meier <comcloudway@ccw.icu>
+# Maintainer: Jakob Meier <comcloudway@ccw.icu>
+pkgname=libeantic
+pkgver=2.1.0
+pkgrel=2
+pkgdesc="Embedded algebraic number fields"
+url="https://github.com/flatsurf/e-antic"
+arch="all"
+license="LGPL-3.0-or-later"
+makedepends="
+	autoconf
+	automake
+	boost-dev
+	flint-dev
+	gmp-dev
+	libtool
+	mpfr-dev
+	py3-setuptools
+	"
+subpackages="$pkgname-dev"
+# todo
+# subpackages="$pkgname-dev py3-pyeantic:py3"
+source="e-antic-$pkgver.tar.gz::https://github.com/flatsurf/e-antic/releases/download/$pkgver/e-antic-$pkgver.tar.gz
+	t-init-test.patch
+	"
+builddir="$srcdir/e-antic-$pkgver"
+
+prepare() {
+	default_prepare
+
+	autoreconf -vif
+}
+
+build() {
+	# better math opts
+	export CFLAGS="$CFLAGS -O3 -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -O3 -flto=auto"
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--without-benchmark \
+		--without-byexample \
+		--without-pytest \
+		--without-doc \
+		--disable-dependency-tracking \
+		--disable-static
+
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# requires py3-cppyy
+	rm -r "$pkgdir"/usr/lib/python3*
+}
+
+py3() {
+	pkgdesc="$pkgdesc (python module)"
+	depends="python3 py3-cppyy"
+
+	amove usr/lib/python*
+}
+
+sha512sums="
+7366a62cc0da2df18d44322a8051ae0c6e866201efe0fc464516144b30941e21e56b9931dc6ee411be49f6f6a91885bcba28e5df834faeccbbb2cfa80e7fb0da  e-antic-2.1.0.tar.gz
+ecb0c89612c1ab2c7d2c8a2feaacf94958994f34e6ce664dd6c9e054d0b244a0f6e9e510149d98b7603b7003e0532f81d43d1fb17dcb8106e540d0c0b060ef63  t-init-test.patch
+"

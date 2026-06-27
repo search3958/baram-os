@@ -1,0 +1,129 @@
+# Contributor: Pavlo Dembytskyi <me@devs.boo>
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=coreutils
+pkgver=9.11
+pkgrel=0
+pkgdesc="The basic file, shell and text manipulation utilities"
+url="https://www.gnu.org/software/coreutils/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	acl-dev
+	attr-dev
+	bash
+	linux-headers
+	openssl-dev
+	perl
+	utmps-dev
+	"
+subpackages="$pkgname-doc $pkgname-env $pkgname-fmt $pkgname-sha512sum:_sha512sum"
+install="$pkgname.post-deinstall"
+source="https://ftp.gnu.org/gnu/coreutils/coreutils-$pkgver.tar.xz
+	renameat2-fakeroot.patch
+	coreutils-9.10-dash-tests.patch
+	"
+
+# secfixes:
+#   9.4-r2:
+#     - CVE-2024-0684
+#   8.30-r0:
+#     - CVE-2017-18018
+
+build() {
+	# statvfs API is broken on 32 bit and musl implementation is equally
+	# broken on 64 bit. Avoid using it.
+	# https://lists.gnu.org/archive/html/bug-coreutils/2024-08/msg00021.html
+	fu_cv_sys_stat_statvfs=n \
+	CFLAGS="$CFLAGS -I/usr/include/utmps -flto=auto" \
+	LIBS="-lutmps -lskarnet" \
+	CONFIG_SHELL=/bin/bash \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--bindir=/bin \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-nls \
+		--enable-no-install-program=hostname,su,kill,uptime \
+		--enable-single-binary=symlinks \
+		--enable-single-binary-exceptions=env,fmt,sha512sum \
+		--with-openssl
+	make
+}
+
+check() {
+	case "$CARCH" in
+	armhf)
+		make check XFAIL_TESTS="test-memset_explicit" ;;
+	ppc64le|loongarch64)
+		# Skipping due to Hangup
+		;;
+	x86|x86_64)
+		# deep-2: exceeds PATH_MAX on Alpine CI (ENAMETOOLONG in test setup)
+		echo "#!/bin/sh\necho skipped" > tests/rm/deep-2.sh
+		make check ;;
+	*)
+		make check ;;
+	esac
+}
+
+package() {
+	# we put this separately
+	depends="
+		coreutils-env=$pkgver-r$pkgrel
+		coreutils-fmt=$pkgver-r$pkgrel
+		coreutils-sha512sum=$pkgver-r$pkgrel
+		"
+	make DESTDIR="$pkgdir" install
+
+	rm -rf "$pkgdir"/usr/lib/charset.alias
+	rmdir -p "$pkgdir"/usr/lib 2>/dev/null || true
+
+	install -d "$pkgdir"/usr/bin "$pkgdir"/usr/sbin
+
+	for i in "$pkgdir"/bin/*; do
+		case "${i##*/}" in
+			# Keep some binaries in /bin to replace busybox symlinks
+			base64|cat|chgrp|chmod|chown|cp|date|dd|df|echo|false|ln|ls|mkdir|\
+			mknod|mktemp|mv|nice|printenv|pwd|rm|rmdir|sleep|stat|stty|sync|\
+			touch|true|uname|coreutils|link) ;;
+			*)
+				if [ -L "$i" ]; then
+					rm "$i"
+					ln -s ../../bin/coreutils "$pkgdir/usr/bin/${i##*/}"
+				else
+					mv "$i" "$pkgdir"/usr/bin/
+				fi
+				;;
+		esac
+	done
+
+	# chroot lives in /usr/sbin with busybox
+	rm "$pkgdir"/usr/bin/chroot
+	ln -s ../../bin/coreutils "$pkgdir"/usr/sbin/chroot
+
+	# resolve conflict between shadow and coreutils for cmd:groups
+	rm "$pkgdir"/usr/bin/groups
+}
+
+env() {
+	amove usr/bin/env
+}
+
+fmt() {
+	amove usr/bin/fmt
+}
+
+_sha512sum() {
+	amove usr/bin/sha512sum
+}
+
+sha512sums="
+73f4192747ab793fd29cccafeda35c499a11800830227ea4d26b00afb2c496dd69cb493005691d0f62a168beea6b55c1e28e82b6cf795e7370f9d53d13555410  coreutils-9.11.tar.xz
+9e7f32fee800aa5c3e42fcff64eecf66ed562348569aa365986202d10a23b7af5f9f7ae269238801bbbc29ccbb195d6698f3676328d4b597ed55219b20a024ce  renameat2-fakeroot.patch
+7c0d6b65d42a1aa3a94e9a9ad24618f814a38c5c03eca5add29114badc29299aa9e744f4c814d5f6e75db5df57396c47a0cf7016ac461549e47a0eace44e8eee  coreutils-9.10-dash-tests.patch
+"

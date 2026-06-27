@@ -1,0 +1,28 @@
+# Maintainer: Antoni Aloy <aaloytorrens@gmail.com>
+pkgname=planner
+pkgver=0.14.92
+pkgrel=1
+pkgdesc="Project management application"
+url="https://gitlab.gnome.org/World/planner"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="meson cmake glib-dev gtk+3.0-dev libxslt-dev"
+subpackages="$pkgname-lang $pkgname-doc"
+source="https://download.gnome.org/sources/planner/${pkgver%.*}/planner-$pkgver.tar.xz"
+
+build() {
+	abuild-meson -Db_lto=true . build
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+}
+
+sha512sums="
+35f0ea6bb04937c164c42082db717962eba6e0353a4750d3213cb7a0e93b8649c99c52060c95c4c6037b6c7019f90161b3c531d5e75eabe453d0fad50c887f27  planner-0.14.92.tar.xz
+"

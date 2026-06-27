@@ -1,0 +1,37 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-unicodecsv
+_pkgname=python-unicodecsv
+pkgver=0.14.2
+pkgrel=0
+pkgdesc="The unicodecsv is a csv module which supports unicode strings"
+url="https://github.com/jdunck/python-unicodecsv"
+arch="noarch"
+license="custom" # BSD-2-Clause with extra notice
+depends="python3"
+makedepends="py3-setuptools"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jdunck/python-unicodecsv/archive/refs/tags/$pkgver.tar.gz
+	fix-running-tests.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # fails with 3.11
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	cd build/lib
+	python3 -m unittest unicodecsv/test.py
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+	install -Dm644 LICENSE $pkgdir/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+9729aafcaf9fb1c90e43d7ea7b0f621dc2f162b56c2d3d5059dc46b28af180d03e105ba0a262ea6244d72776b9e3b4101fcfa55012d170fbc1ab0846d31792ff  py3-unicodecsv-0.14.2.tar.gz
+915d244d4206a29ece15e95e9805930f33accb80ae1df9404d57e04ebba22e47ff4f79dcf756bdc44c8ed85be778f70f3272b86a43736b9d4b21302151c6c80e  fix-running-tests.patch
+"

@@ -1,0 +1,81 @@
+# Contributor: Andy Li <andy@onthewings.net>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-sha
+_pkgname=sha
+pkgver=1.15.4
+pkgrel=3
+pkgdesc="Binding to the SHA cryptographic functions"
+url="https://github.com/djs55/ocaml-sha"
+arch="all !riscv64 !loongarch64" # ocaml
+license="ISC"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="dune ocaml ocaml-findlib ocaml-ounit-dev ocaml-stdlib-shims ocaml-seq-dev"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.bz2::https://github.com/djs55/ocaml-sha/releases/download/v$pkgver/sha-$pkgver.tbz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build @install --no-buffer --verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml
+
+	# There are just CHANGES, README, and LICENSE.
+	rm -Rf "$pkgdir"/usr/doc
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+dbb31b523ba0bace023bc1b0558a8f572a0ec20fb3f19f783935be755cd161e09aba352eda2bcf7c4e5ab838c7f874cfbfaed9debf0813df25d9dbe7b9314fdf  ocaml-sha-1.15.4.tar.bz2
+"

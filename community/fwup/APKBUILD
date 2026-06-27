@@ -1,0 +1,45 @@
+# Contributor: Frank Hunleth <fhunleth@troodon-software.com>
+# Maintainer: Frank Hunleth <fhunleth@troodon-software.com>
+pkgname=fwup
+pkgver=1.15.0
+pkgrel=0
+pkgdesc="Configurable embedded Linux firmware update creator and runner"
+url="https://github.com/fwup-home/fwup"
+arch="all"
+license="Apache-2.0"
+makedepends="linux-headers confuse-dev libarchive-dev help2man dosfstools mtools zip unzip xdelta3"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fwup-home/fwup/releases/download/v$pkgver/fwup-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	# these fail for some reason
+	sed -i \
+		-e '/093_sparse*/d' \
+		-e '/094_sparse*/d' \
+		tests/Makefile
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+b8e8ced1c2a487c9a1c929bbce3cf1fa6d1a3996d9ebea1127331ae7bbdaf06d5e5264ceef1c2e452a916780dda6f0c521ec4619a4c1bc76944451a0f2f36a6a  fwup-1.15.0.tar.gz
+"

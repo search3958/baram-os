@@ -1,0 +1,46 @@
+# Contributor: Alex Denes <caskd@redxen.eu>
+# Maintainer:
+pkgname=py3-swapper
+_pkgname=swapper
+pkgver=1.4.0
+pkgrel=2
+pkgdesc="Django Swappable Models"
+url="https://github.com/openwisp/django-swappable-models"
+arch="noarch"
+license="MIT"
+depends="
+	py3-django
+	"
+checkdepends="
+	py3-flake8
+	py3-pytest
+	py3-tox
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools_scm
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+d6d4b96b4c9d1be269f42c79bd1f2adb8c11ff588b436b3b3aae7a4969112f53fb7ef0c2a8c3d9051bdd3a7e4b71489ced3e24578a76e94cfac0cca356cf76d7  swapper-1.4.0.tar.gz
+"

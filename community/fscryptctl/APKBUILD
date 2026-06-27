@@ -1,0 +1,26 @@
+# Contributor: Luca Weiss <luca@lucaweiss.eu>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=fscryptctl
+pkgver=1.3.0
+pkgrel=0
+pkgdesc="Small C tool for Linux filesystem encryption"
+url="https://github.com/google/fscryptctl"
+arch="all"
+license="Apache-2.0"
+makedepends="linux-headers"
+source="https://github.com/google/fscryptctl/archive/v$pkgver/fscryptctl-$pkgver.tar.gz"
+options="!check" # tests require root
+
+# Skip building docs because pandoc is only available for x86_64 and aarch64
+
+build() {
+	make fscryptctl
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install-bin
+}
+
+sha512sums="
+ee44fc2bf7335f0b925d1a5e8cd99270e678823c0b2ba3c9b510642c735d330b47e8cde4717e35c63390b5b7e3b019b006ed405126b5241209c0f36e19a7ffd6  fscryptctl-1.3.0.tar.gz
+"

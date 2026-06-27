@@ -1,0 +1,41 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=swayr
+pkgver=0.28.1
+pkgrel=0
+pkgdesc="A window switcher (and more) for Sway"
+url="https://sr.ht/~tsdh/swayr/"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="cargo cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~tsdh/swayr/archive/swayr-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-swayr-$pkgver"
+options="net"
+
+# secfixes:
+#   0.16.1-r0:
+#     - CVE-2022-24713
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build -p swayr --release --frozen
+}
+
+check() {
+	cargo test -p swayr --frozen
+}
+
+package() {
+	install -D -m755 target/release/swayr -t "$pkgdir"/usr/bin/
+	install -D -m755 target/release/swayrd -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+03b822f4e5716ceaa5bbb5f39635d740126ac4ade8c32444b9f29269a613df5231dde39b984fb3172a69e852f3b60752569ba764ab941528d73c30571a682188  swayr-0.28.1.tar.gz
+"

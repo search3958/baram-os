@@ -1,0 +1,35 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=cargo-bloat
+pkgver=0.12.1
+pkgrel=0
+pkgdesc="Find out what takes most of the space in your Rust executable"
+url="https://github.com/RazrFalcon/cargo-bloat"
+arch="all"
+license="MIT"
+depends="cargo cargo-auditable"
+source="https://github.com/RazrFalcon/cargo-bloat/archive/v$pkgver/cargo-bloat-$pkgver.tar.gz"
+
+_cargo_opts="--frozen --features regex-filter"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build $_cargo_opts --release
+}
+
+check() {
+	cargo test $_cargo_opts
+}
+
+package() {
+	install -Dm755 target/release/cargo-bloat -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+cd9d196e9016d51798a9268e10fbec69472b91fe76df64fc8cdf47027914d2f15bf99902d105a80b9f86d117513c41d4b04a48275e61f34460e7d0677e816e59  cargo-bloat-0.12.1.tar.gz
+"

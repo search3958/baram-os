@@ -1,0 +1,35 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Maintainer: rubicon <rubicon@mailo.com>
+pkgname=maitreya
+pkgver=8.2
+pkgrel=0
+pkgdesc="Software for Vedic and western astrology"
+url="https://saravali.github.io/"
+arch="all"
+# Saravali.ttf is licensed under OFL-1.1-RFN
+# geonames1000.sql is licensed under CC-BY-4.0
+license="GPL-2.0-or-later AND OFL-1.1-RFN AND CC-BY-4.0"
+makedepends="wxwidgets-dev"
+options="!check"
+subpackages="$pkgname-lang"
+source="https://github.com/martin-pe/maitreya8/releases/download/v$pkgver/maitreya8-$pkgver.tar.bz2"
+builddir="$srcdir/maitreya8-$pkgver"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+d200a54f6f3b98180b1fb84f2d8b8ca7436533230c26a4bd25af94fc47fe616da85fa86355ea0803669ea8d781530cfbe23fe40b47052cf300e5400ce9f16392  maitreya8-8.2.tar.bz2
+"

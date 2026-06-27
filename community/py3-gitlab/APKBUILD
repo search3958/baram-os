@@ -1,0 +1,63 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=py3-gitlab
+_pyname=${pkgname/py3/python}
+pkgver=8.0.0
+pkgrel=1
+pkgdesc="Python wrapper for Gitlab's API"
+url="https://github.com/python-gitlab/python-gitlab"
+arch="noarch"
+license="LGPL-3.0-or-later"
+depends="
+	python3
+	py3-gql
+	py3-httpx
+	py3-requests
+	py3-requests-toolbelt
+	"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-installer
+	py3-wheel
+	py3-sphinx
+	py3-sphinxcontrib-autoprogram
+	py3-myst-parser
+	"
+checkdepends="
+	py3-argcomplete
+	py3-build
+	py3-pytest
+	py3-responses
+	py3-respx
+	py3-trio
+	py3-yaml
+	"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/python-gitlab/python-gitlab/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+	sphinx-build -W -b man docs/ man/
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# Ignore functional e2e tests
+	.testenv/bin/python3 -m pytest --ignore=tests/functional/
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	install -Dm644 man/$_pyname.1 \
+		"$pkgdir"/usr/share/man/man1/$_pyname.1
+}
+
+sha512sums="
+b5d0c49a4c42b12936e67876d052830745407772d151261e136b9bfa13ee3e40f82cd9585373e06fb0af3586dac2723e5a4b41cabfccf72f3e529df29cbe456c  py3-gitlab-8.0.0.tar.gz
+"

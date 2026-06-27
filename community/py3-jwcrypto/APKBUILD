@@ -1,0 +1,41 @@
+# Contributor: prspkt <prspkt@protonmail.com>
+# Maintainer: prspkt <prspkt@protonmail.com>
+pkgname=py3-jwcrypto
+_pkgname=jwcrypto
+pkgver=1.5.6
+pkgrel=1
+pkgdesc="Python module implementing JOSE Web standards"
+url="https://github.com/latchset/jwcrypto"
+arch="noarch"
+license="LGPL-3.0-only"
+depends="python3 py3-typing-extensions py3-cryptography"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# secfixes:
+#   1.5.1-r0:
+#     - CVE-2023-6681
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+321de20492ee509de261d1fb2b20e3a94239db76fec45deca50b3e0ce7163bf0051bb4433a6eb24bffd2bd657d41c50b403fa7477a6b95b8d043e3fda5cdaac2  jwcrypto-1.5.6.tar.gz
+"

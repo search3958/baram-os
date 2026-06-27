@@ -1,0 +1,66 @@
+# Contributor: Henrik Riomar <henrik.riomar@gmail.com>
+# Maintainer: Sertonix <sertonix@posteo.net>
+pkgname=tpm2-pkcs11
+pkgver=1.9.2
+pkgrel=0
+pkgdesc="A PKCS#11 interface for TPM2 hardware"
+url="https://github.com/tpm2-software/tpm2-pkcs11"
+arch="all"
+license="BSD-2-Clause"
+depends="
+	py3-asn1-modules
+	py3-cryptography
+	py3-tpm2-pytss
+	py3-yaml
+	python3
+	tpm2-tools
+	"
+makedepends="
+	autoconf
+	autoconf-archive
+	automake
+	libtool
+	linux-headers
+	openssl-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	sqlite-dev
+	tpm2-abrmd-dev
+	tpm2-tss-dev
+	yaml-dev
+	"
+options="!check"  # Requires IBM TPM simulator
+subpackages="$pkgname-dev $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tpm2-software/tpm2-pkcs11/archive/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	sed -i '/git describe/d' bootstrap
+	echo "$pkgver" > VERSION
+	./bootstrap
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-ptool-checks
+	make
+	cd tools
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	python3 -m installer -d "$pkgdir" \
+		tools/.dist/*.whl
+}
+
+sha512sums="
+799ca0addc5283565dfdd07a3e10e2f3b9fbc32744a486dc999af1ec04ffb97fc565310d63b0fb01276683fa01cf692aad4e9d79939931afc3ee55e754eaffae  tpm2-pkcs11-1.9.2.tar.gz
+"

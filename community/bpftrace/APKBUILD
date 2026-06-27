@@ -1,0 +1,91 @@
+# Contributor: Konstantin Kulikov <k.kulikov2@gmail.com>
+# Maintainer: Adam Jensen <adam@acj.sh>
+pkgname=bpftrace
+pkgver=0.26.1
+pkgrel=0
+pkgdesc="High-level tracing language for Linux eBPF"
+url="https://github.com/bpftrace/bpftrace"
+arch="all !x86" # x86 unsupported
+license="Apache-2.0"
+_llvmver=20
+makedepends="
+	asciidoctor
+	bcc-dev
+	binutils-dev
+	bison
+	blazesym
+	cereal
+	clang$_llvmver-dev
+	clang$_llvmver-extra-tools
+	clang$_llvmver-static
+	cmake
+	elfutils-dev
+	flex-dev
+	libbpf-dev
+	linux-headers
+	llvm$_llvmver-dev
+	llvm$_llvmver-gtest
+	llvm$_llvmver-static
+	samurai
+	libxml2-dev
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/bpftrace/bpftrace/archive/v$pkgver.tar.gz
+	00-fix-max-type-mismatch-32bit.patch
+	"
+# Tests require root, network to download gmock and a few tests fail.
+options="!check"
+subpackages="$pkgname-doc:doc $pkgname-tools:tools:noarch $pkgname-tools-doc:tools_doc"
+
+check_bcc_clang() {
+	# check bcc builds with the same llvm version as we do
+	local bcc_clang
+	bcc_clang=$(readelf -d /usr/lib/libbcc.so.0 \
+			| sed -ne 's/.*libclang-cpp.so\.\([0-9]*\)\..*/\1/p')
+	if [ "$_llvmver" != "$bcc_clang" ]; then
+		echo "BCC depends on LLVM $bcc_clang, update \$_llvmver (was $_llvmver)" >&2
+		exit 1
+	fi
+}
+
+build() {
+	check_bcc_clang
+
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DBUILD_TESTING=OFF \
+		-DCMAKE_PREFIX_PATH=/usr/lib/llvm$_llvmver/lib/cmake \
+		-DLLVM_REQUESTED_VERSION="$(/usr/lib/llvm$_llvmver/bin/llvm-config --version)" \
+		-DUSE_SYSTEM_LIBBPF=On
+	cmake --build build
+}
+
+# Main package contains only bpftrace binary.
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+# Doc package should contain only man page for bpftrace.
+doc() {
+	mkdir -p "$subpkgdir/usr/share/man/man8"
+	mv "$pkgdir/usr/share/man/man8/bpftrace.8.gz" "$subpkgdir/usr/share/man/man8/"
+}
+
+# Tools are not installed in PATH, because they would conflict with other tools provided by bcc or perf-tools.
+tools() {
+	depends="$pkgname"
+	pkgdesc="$pkgdesc (tools)"
+	amove usr/share/bpftrace/tools
+}
+
+# Tools docs contains man pages and examples for tools.
+tools_doc() {
+	pkgdesc="$pkgdesc (tool docs and examples)"
+
+	amove usr/share/man
+}
+
+sha512sums="
+2b2f052b742317b991b2e267881167ec58f0b7fa24574950f090d237665930a7ddfaa26e9a9f03eb3db01ab111a99ecb8f4b41f1c944b6f1df0218f109bfe72d  bpftrace-0.26.1.tar.gz
+386a544ba7f853759c35317f852335ab250ea9101c9ce087b1c84821b1d233bb73640c6768a5dd7b543a702e12362bc8e3c6256a5beab07698ad7ed454a8aac5  00-fix-max-type-mismatch-32bit.patch
+"

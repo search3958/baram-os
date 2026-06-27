@@ -1,0 +1,26 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=hare-message
+pkgver=0_git20240425
+_commit=57f86978034e1e50d82206cfa4799f07e7762ec9
+pkgrel=1
+pkgdesc="Internet message format implementation for Hare"
+url="https://git.sr.ht/~sircmpwn/hare-message"
+# incompatible with hare 0.25.2
+#arch="noarch !armhf !armv7 !ppc64le !s390x !x86 !loongarch64" # blocked by hare
+license="MIT AND MPL-2.0"
+checkdepends="hare"
+source="$pkgname-$_commit.tar.gz::https://git.sr.ht/~sircmpwn/hare-message/archive/$_commit.tar.gz"
+builddir="$srcdir/$pkgname-$_commit"
+
+check() {
+	hare test
+}
+
+package() {
+	install -vdm755 "$pkgdir/usr/src/hare/third-party"
+	cp -Rdv "message" "$pkgdir/usr/src/hare/third-party"
+}
+
+sha512sums="
+3b6c9283fb753ffc3350eaab2db7abbade9fa20162a996ec20f69d7bc88a38b85d54426c5a5a5f0a9d65dacf3ebb57023e76a9b9283d4b655846e93c0e41f4c2  hare-message-57f86978034e1e50d82206cfa4799f07e7762ec9.tar.gz
+"

@@ -1,0 +1,31 @@
+# Maintainer:
+pkgname=tio
+pkgver=3.9
+pkgrel=1
+pkgdesc="Simple TTY Terminal I/O Application"
+url="https://github.com/tio/tio"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	bash-completion-dev
+	glib-dev
+	linux-headers
+	lua5.4-dev
+	meson
+	"
+options="!check" # no test suite
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="https://github.com/tio/tio/releases/download/v$pkgver/tio-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+36873ecf32a42023838853012cf640a4e3007faeeda5dc9e0fb4511cccab98776a0b74ee179de2d324c438bd042aa8bf87783bc593d81eaabe8627157968605d  tio-3.9.tar.xz
+"

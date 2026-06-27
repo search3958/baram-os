@@ -1,0 +1,973 @@
+# Contributor: Isaac Dunham <ibid.ag@gmail.com>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=texlive
+pkgver=2026.0
+_commit=562901fe3302de1432fb98adcfd4d10a5e140760
+pkgrel=0
+pkgdesc="Comprehensive TeX document production system"
+url="https://tug.org/texlive/"
+# s390x: check fails, "I can't find the format file `xelatex.fmt'!"
+arch="all !s390x"
+license="GPL-2.0-or-later AND GPL-3.0-or-later"
+depends="
+	ghostscript
+	perl
+	texmf-dist>=2025.0
+	texmf-dist-latex>=2025.0
+	"
+_xetex_deps="
+	icu-data-full
+	texlive-dvi
+	texmf-dist-fontsrecommended
+	texmf-dist-xetex
+	"
+makedepends="
+	autoconf
+	automake
+	cairo-dev
+	fontconfig-dev
+	freetype-dev
+	gd-dev
+	gmp-dev
+	graphite2-dev
+	harfbuzz-dev
+	icu-dev
+	libpaper-dev
+	libpng-dev
+	libxaw-dev
+	libxmu-dev
+	mpfr-dev
+	pixman-dev
+	potrace-dev
+	zlib-dev
+	zziplib-dev
+	"
+checkdepends="
+	$_xetex_deps
+	texmf-dist-full
+	texmf-dist-full-examples
+	"
+triggers="$pkgname.trigger=/usr/share/texmf-dist $pkgname-context.trigger=/usr/share/texmf-dist"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-binextra:_binextra:noarch
+	$pkgname-langextra:_langextra:noarch
+	$pkgname-context:_context
+	$pkgname-doc
+	$pkgname-dvi:_dvi
+	$pkgname-full:_subpkg_full:noarch
+	$pkgname-most:_subpkg_most:noarch
+	$pkgname-luatex:_luatex
+	$pkgname-xetex:_xetex
+	$pkgname-bibtexextra:_bibtexextra:noarch
+	$pkgname-plaingeneric:_plaingeneric:noarch
+	$pkgname-music:_music:noarch
+	$pkgname-pictures:_pictures:noarch
+	$pkgname-latexextra:_latexextra:noarch
+	$pkgname-fontutils:_fontutils:noarch
+	$pkgname-pstricks:_pstricks:noarch
+	$pkgname-latexrecommended:_latexrecommended:noarch
+	$pkgname-mathscience:_mathscience:noarch
+	$pkgname-humanities:_humanities:noarch
+	$pkgname-games:_games:noarch
+	libsynctex:_libsynctex
+	xdvik:_xdvi
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/TeX-Live/texlive-source/archive/$_commit.tar.gz
+
+	texmfmp-fix-format-specifier.patch
+	fix-fortify-string.patch
+	kpathsea-getopt-fix.patch
+	"
+builddir="$srcdir"/texlive-source-$_commit
+
+# secfixes:
+#   20230506.66984-r0:
+#     - CVE-2023-32700
+
+prepare() {
+	default_prepare
+
+	# bibtex-x needs kpathsea flags
+	sed -i '/AC_SEARCH_LIBS/a KPSE_KPATHSEA_FLAGS' texk/bibtex-x/configure.ac
+	(cd texk/bibtex-x && autoreconf)
+
+	# t4ht expects to be run as /usr/share/texmf/bin/t4ht
+	# (see https://bugs.archlinux.org/task/27251)
+	sed -i s/SELFAUTOPARENT/TEXMFROOT/ texk/tex4htk/t4ht.c
+}
+
+build() {
+	# builders keep failing when -jN == nproc
+	export MAKEFLAGS="$MAKEFLAGS -j$((JOBS<16 ? JOBS : 16))"
+
+	# makes -dbg much smaller
+	export CFLAGS="$CFLAGS -g1"
+	export CXXFLAGS="$CXXFLAGS -g1"
+
+	mkdir -p build
+	cd build
+
+	# Fix compilation with gcc 15
+	export CFLAGS="$CFLAGS -std=gnu17"
+
+	local luajitopt=""
+	case "$CARCH" in
+	# texlive's bundled luajit doesn't support these architectures
+	s390x|riscv64|loongarch64)
+		luajitopt="--without-luajit --disable-luajittex \
+			--disable-luajithbtex --disable-mfluajit" ;;
+	esac
+
+	../configure -C \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--datarootdir=/usr/share \
+		--datadir=/usr/share \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--enable-aleph \
+		--enable-biber \
+		--enable-dvipng \
+		--enable-dvipsk \
+		--enable-epsfwin \
+		--enable-ipc \
+		--enable-luatex \
+		--enable-mftalkwin \
+		--enable-ps2eps \
+		--enable-psutils \
+		--enable-regiswin \
+		--enable-shared \
+		--enable-tektronixwin \
+		--enable-tex4htk \
+		--enable-unitermwin \
+		--enable-xetex \
+		--disable-bibtexu \
+		--disable-dialog \
+		--disable-dump-share \
+		--disable-dvi2tty \
+		--disable-dvisvgm \
+		--disable-largefile \
+		--disable-lcdf-typetools \
+		--disable-multiplatform \
+		--disable-native-texlive-build \
+		--disable-pdfopen \
+		--disable-ps2pkm \
+		--disable-static \
+		--disable-t1utils \
+		--disable-ttf2pk2 \
+		--disable-xindy \
+		--disable-xindy-docs \
+		--disable-xindy-rules \
+		--disable-xpdfopen \
+		--disable-xz \
+		--with-banner-add="/Alpine Linux" \
+		--with-clisp-runtime=default \
+		--with-freetype2-include=/usr/include/freetype2 \
+		--with-freetype2-libdir=/usr/lib \
+		--with-ps=gs \
+		--with-system-cairo \
+		--with-system-freetype2 \
+		--with-system-gd \
+		--with-system-gmp \
+		--with-system-graphite \
+		--with-system-graphite2 \
+		--with-system-harfbuzz \
+		--with-system-icu \
+		--with-system-libpaper \
+		--with-system-libpng \
+		--with-system-mpfr \
+		--with-system-ncurses \
+		--with-system-pixman \
+		--with-system-pnglib \
+		--with-system-potrace \
+		--with-system-t1lib \
+		--with-system-zlib \
+		--with-system-zziplib \
+		--with-x-dvi-toolkit=xaw \
+		--without-texinfo \
+		$luajitopt
+
+	make
+}
+
+_install() {
+	local destdir="$1"
+	(
+		cd build
+
+		make DESTDIR="$destdir" install
+
+		# A lot of cmds are provided as symlinks and are intended to be
+		# created post installation by the texlinks script. With a little
+		# hack we can run this in-place
+		export PATH="$destdir/usr/bin:$PATH"
+		export LD_LIBRARY_PATH="$destdir/usr/lib:$LD_LIBRARY_PATH"
+		texlinks -f /usr/share/texmf-dist/web2c/fmtutil.cnf "$destdir"/usr/bin
+
+		# Remove created links for targets we don't provide
+		local broken_links
+		broken_links="
+			aom-fullref
+			bookshelf-listallfonts
+			bookshelf-mkfontsel
+			datatool2bib
+			explcheck
+			l3sys-query
+			latexminted
+			markdown2tex
+			sqltex
+			typog-grep
+			"
+		for cmd in $broken_links; do
+			rm "$destdir/usr/bin/$cmd"
+		done
+
+		# Provide ConTeXt executables by hand
+		cat > "$destdir/usr/bin/mtxrun" << EOF
+#!/bin/sh
+env TEXMF=/usr/share/texmf-dist /usr/share/texmf-dist/scripts/context/lua/mtxrun.lua "\$@"
+EOF
+		chmod +x "$destdir/usr/bin/mtxrun"
+		cat > "$destdir/usr/bin/context" << EOF
+#!/bin/sh
+env TEXMF=/usr/share/texmf-dist /usr/share/texmf-dist/scripts/context/lua/mtxrun.lua -script context "\$@"
+EOF
+		chmod +x "$destdir/usr/bin/context"
+
+		# As Alpine has packaged all TeXlive packages, there is no need for a
+		# separate package manager. apk should be used to get and update texmf-dist
+		rm "$destdir"/usr/bin/tlmgr
+
+		# texmf-dist is not platform dependent, those are packaged in the
+		# texmf-dist package
+		rm -rf "$destdir"/usr/share/texmf-dist
+	)
+}
+
+_prepare_check_env() {
+	local checkenv
+	checkenv="$1"
+
+	_install "$checkenv"
+	mkdir -p "$checkenv"/usr/share/texmf-dist
+	# provide tlpkg
+	ln -s /usr/share/tlpkg "$checkenv"/usr/share/tlpkg
+	# Populate texmf-dist with symlinks to the installed data. This allows
+	# creating the ls-R database inside the checkenv
+	find /usr/share/texmf-dist -maxdepth 1 -mindepth 1 \
+		-exec ln -s {} "$checkenv"{} \;
+
+	# In case the host system does have an ls-R, remove it out of the checkenv
+	rm -f "$checkenv"/usr/share/texmf-dist/ls-R
+
+	(
+		export PATH="$checkenv/usr/bin:$PATH"
+		export LD_LIBRARY_PATH="$checkenv/usr/lib:$LD_LIBRARY_PATH"
+		export TEXMFROOT="$checkenv/usr/share"
+		mktexlsr
+		yes | updmap-sys --syncwithtrees
+		updmap-sys
+		fmtutil-sys --all || true
+	)
+}
+
+check() {
+	local checkenv
+	checkenv="$srcdir"/check-env
+
+	# speed up re-running "abuild check" by only preparing the check env
+	# on the first run
+	if [ ! -d "$checkenv" ]; then
+		_prepare_check_env "$checkenv"
+	fi
+
+	(
+		export PATH="$checkenv/usr/bin:$PATH"
+		export LD_LIBRARY_PATH="$checkenv/usr/lib:$LD_LIBRARY_PATH"
+		export TEXMFROOT="$checkenv/usr/share"
+
+		mkdir -p "$srcdir/check-results"
+		cd "$srcdir/check-results"
+
+		msg "Running ltxcheck.tex"
+		yes | pdflatex -halt-on-error /usr/share/texmf-dist/tex/latex/base/ltxcheck.tex
+
+		for cmd in pdflatex lualatex xelatex htlatex; do
+			msg "Compiling sample docs with $cmd"
+			local cmdflags
+			case "$cmd" in
+			htlatex)
+				# htlatex does not support command line flags
+				cmdflags=""
+				;;
+			*)
+				# we cannot have the test get stuck waiting on user interaction
+				cmdflags="-halt-on-error -interaction=nonstopmode"
+				;;
+			esac
+			for doc in sample2e small2e; do
+				# intentionally splitting words in cmdflags
+				# shellcheck disable=SC2086
+				"$cmd" $cmdflags \
+					/usr/share/texmf-dist/tex/latex/base/$doc.tex
+			done
+		done
+
+		msg "Compiling sample docs with plain old latex"
+		for doc in sample2e small2e; do
+			latex \
+				-halt-on-error \
+				-interaction=nonstopmode \
+				/usr/share/texmf-dist/tex/latex/base/$doc.tex
+			# common workflow is to convert the result to PS or PDF, so let's
+			# try both
+			dvips $doc.dvi
+			dvipdfm $doc.dvi
+		done
+
+		msg "Compiling IEEE examples"
+		# shellcheck disable=SC3045 # Not caring about dash compatibility here
+		find /usr/share/texmf-dist/doc/latex/ieeetran/ \
+			-name '*.tex' -type f -print0 \
+			| while IFS= read -r -d '' doc; do
+				echo "--> $doc"
+				case "$doc" in
+				*/testflow.tex)
+					# This file would ask for the paper and whether to use
+					# duplex, if not manually defined.
+					echo '\def\papertype{a4paper}\def\makeduplexpage{yes}' > testflow.tex
+					cat "$doc" >> testflow.tex
+					pdflatex \
+						-halt-on-error \
+						-interaction=nonstopmode \
+						testflow.tex
+					;;
+				*)
+					pdflatex \
+						-halt-on-error \
+						-interaction=nonstopmode \
+						"$doc"
+					;;
+				esac
+		done
+
+		msg "Compiling TikZ examples"
+		for doc in \
+				/usr/share/texmf-dist/doc/latex/aobs-tikz/example.tex \
+				/usr/share/texmf-dist/doc/latex/causets/causets_example1.tex \
+				/usr/share/texmf-dist/doc/latex/causets/causets_example2.tex \
+				/usr/share/texmf-dist/doc/latex/dot2texi/examples/d2ttikzexamples.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-bayesnet/example.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-kalender/tikz-kalender-example1.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-kalender/tikz-kalender-example2.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-palattice/example1_linear.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-palattice/example2_circular.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-palattice/example3_coordinates.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-palattice/example4_labels.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-palattice/example5_legend.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-trackschematic/tikz-trackschematic-examples/minimal_working_example.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-trackschematic/tikz-trackschematic-examples/station_berg.tex \
+				/usr/share/texmf-dist/doc/latex/tikz-trackschematic/tikz-trackschematic-examples/station_chamstadt.tex \
+				/usr/share/texmf-dist/doc/latex/tikzposter/tikzposter-example.tex \
+				/usr/share/texmf-dist/doc/latex/webquiz/examples/tikz-ex.tex \
+				; do
+			echo "--> $doc"
+			(
+				cd "$(dirname "$doc")" || exit
+				exec lualatex \
+					-halt-on-error \
+					-interaction=nonstopmode \
+					-output-directory "$srcdir/check-results" \
+					"$(basename "$doc")"
+			)
+		done
+
+		msg "Compiling LNI example"
+		for cmd in pdflatex lualatex; do
+			$cmd \
+				-halt-on-error \
+				-interaction=nonstopmode \
+				/usr/share/texmf-dist/doc/latex/lni/lni-paper-example-de.tex
+		done
+	)
+}
+
+package() {
+	_install "$pkgdir"
+}
+
+_libsynctex() {
+	pkgdesc="Library for synchronization between TeX files and resulting file"
+	depends="" # don't depend on perl/texmf-dist
+	amove usr/lib/libsynctex.so.*
+}
+
+_xetex() {
+	# Split off XeTeX because it depends on graphite/harfbuzz/icu
+	pkgdesc="TeX typesetting engine supporting modern typography and bidirectional text"
+	depends="$pkgname $_xetex_deps"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	mv "$pkgdir"/usr/bin/*xetex* "$subpkgdir"/usr/bin/
+	mv "$pkgdir"/usr/bin/*xelatex* "$subpkgdir"/usr/bin/
+}
+
+_bibtexextra() {
+	pkgdesc="Extra BibTeX tools"
+	depends="$pkgname texmf-dist-bibtexextra"
+
+	local cmds
+	cmds="
+		bbl2bib
+		bib2gls
+		bibcop
+		bibdoiadd
+		bibexport
+		bibmradd
+		biburl2doi
+		bibzbladd
+		convertgls2bib
+		listbib
+		ltx2crossrefxml
+		ltx2unitxt
+		multibibliography
+		urlbst
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_plaingeneric() {
+	pkgdesc="TeX Live Plain (La)TeX tools"
+	depends="$pkgname texmf-dist-plaingeneric"
+
+	local cmds
+	cmds="
+		ht
+		htlatex
+		htmex
+		httex
+		httexi
+		mk4ht
+		xhlatex
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_music() {
+	pkgdesc="TeX Live Music tools"
+	depends="$pkgname texmf-dist-music"
+
+	local cmds
+	cmds="
+		lily-glyph-commands
+		lily-image-commands
+		lily-rebuild-pdfs
+		m-tx
+		musixflx
+		musixtex
+		pmxchords
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_pictures() {
+	pkgdesc="TeX Live graphics, pictures, and diagrams tools"
+	depends="$pkgname texmf-dist-pictures"
+
+	local cmds
+	cmds="
+		cachepic
+		fig4latex
+		getmapdl
+		mathspic
+		memoize-clean.pl
+		memoize-clean.py
+		memoize-extract.pl
+		memoize-extract.py
+		mkpic
+		pn2pdf
+		tikztosvg
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_latexextra() {
+	pkgdesc="TeX Live additional LaTeX tools"
+	depends="$pkgname texmf-dist-latexextra"
+
+	local cmds
+	cmds="
+		authorindex
+		exceltex
+		hyperxmp-add-bytecount
+		l3build
+		makedtx
+		makeglossaries
+		makeglossaries-lite
+		pagelayoutapi
+		pdfannotextractor
+		perltex
+		pygmentex
+		splitindex
+		svn-multi
+		textestvis
+		vpe
+		webquiz
+		wordcount
+		yplan
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_fontutils() {
+	pkgdesc="TeX Live graphics and font utilities"
+	depends="$pkgname texmf-dist-fontutils"
+
+	local cmds
+	cmds="
+		afm2afm
+		albatross
+		autoinst
+		fontinst
+		mf2pt1
+		mkt1font
+		ot2kpx
+		vpl2ovp
+		vpl2vpl
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_pstricks() {
+	pkgdesc="TeX Live PSTricks tools"
+	depends="$pkgname texmf-dist-pstricks"
+
+	local cmds
+	cmds="
+		pedigree
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_latexrecommended() {
+	pkgdesc="TeX Live recommended LaTeX tools"
+	depends="$pkgname texmf-dist-latexrecommended"
+
+	local cmds
+	cmds="
+		lwarpmk
+		pdfatfi
+		thumbpdf
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_mathscience() {
+	pkgdesc="TeX Live mathematics, natural sciences, computer science tools"
+	depends="$pkgname texmf-dist-mathscience"
+
+	local cmds
+	cmds="
+		eolang
+		ulqda
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+
+_humanities() {
+	pkgdesc="TeX Live humanities tools"
+	depends="$pkgname texmf-dist-humanities"
+
+	local cmds
+	cmds="
+		diadia
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_games() {
+	pkgdesc="TeX Live games typesetting tools"
+	depends="$pkgname texmf-dist-games"
+
+	local cmds
+	cmds="
+		rubikrotation
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_dvi() {
+	pkgdesc="Tools for dvi based workflow (e.g. dvips)"
+	depends="$pkgname"
+
+	local cmds
+	cmds="
+		afm2tfm
+		bbox
+		chkdvifont
+		dosepsbin
+		dvi2fax
+		dviasm
+		dvibook
+		dviconcat
+		dvicopy
+		dvidvi
+		dvigif
+		dvihp
+		dviinfox
+		dvilj
+		dvilj2p
+		dvilj4
+		dvilj4l
+		dvilj6
+		dvilualatex
+		dvilualatex-dev
+		dviluatex
+		dvipdfm
+		dvipdfmx
+		dvipdft
+		dvipng
+		dvipos
+		dvips
+		dvired
+		dviselect
+		dvispc
+		dvitodvi
+		dvitomp
+		dvitype
+		ebb
+		epsffit
+		epspdf
+		epspdftk
+		epstopdf
+		extractbb
+		extractres
+		gftodvi
+		includeres
+		odvicopy
+		odvitype
+		pdvitomp
+		pdvitype
+		ps2eps
+		ps2frag
+		ps2pk
+		ps4pdf
+		psbook
+		psjoin
+		pslatex
+		psnup
+		psresize
+		psselect
+		pst2pdf
+		pstops
+		purifyeps
+		repstopdf
+		updvitomp
+		updvitype
+		xdvipdfmx
+		"
+
+	install -d -m 0755 "$subpkgdir"/usr/bin
+	for cmd in $cmds; do
+		amove "usr/bin/$cmd"
+	done
+}
+
+_luatex() {
+	pkgdesc="LuaTeX is an extended version of pdfTeX, scriptable in Lua"
+	# bash: lua2dox_filter is a bash script
+	# citeproc-lua: texmf-dist-bibtexextra
+	# luafindfont: texmf-dist-fontutils
+	# luaotfload-tool: texmf-dist-luatex
+	depends="
+		bash
+		biblatex
+		texmf-dist-fontsrecommended
+		texmf-dist-fontutils
+		texmf-dist-luatex
+		$pkgname
+		"
+
+	mkdir -p "$subpkgdir" && cd "$subpkgdir"
+
+	install -d -m 0755 usr/bin usr/lib
+
+	amove usr/bin/optex
+	amove usr/bin/*lua*
+	amove usr/lib/lib*lua*.so.*
+
+	local cmds
+	cmds="
+		checkcites
+		texfindpkg
+		"
+	for cmd in $cmds; do
+		amove usr/bin/$cmd
+	done
+}
+
+_xdvi() {
+	# currently, xdvi needs a number of files and scripts from texlive;
+	# we split it off so that it doesn't drag in X and Motif.
+	depends="texlive"
+	pkgdesc="Xdvi from texlive, using the texlive libraries"
+	provides="xdvi"
+
+	amove usr/bin/xdvi usr/bin/xdvi-*
+	amove usr/share/applications/xdvi.desktop
+}
+
+_context() {
+	pkgdesc="ConTeXt is a general-purpose document processor derived from TeX"
+	depends="$pkgname $pkgname-luatex texmf-dist-context"
+
+	amove usr/bin/mtxrun
+	amove usr/bin/context
+
+	# installing ConTeXt stubs. This is a bit delicate, as this is expected
+	# to be done post-installation with a working ConTeXt setup.
+	(
+		export PATH="$pkgdir/usr/bin:$PATH"
+		export LD_LIBRARY_PATH="$pkgdir/usr/lib:$LD_LIBRARY_PATH"
+
+		/usr/share/texmf-dist/scripts/context/lua/mtxrun.lua \
+			--stubpath="$subpkgdir"/usr/bin \
+			--unix \
+			--makestubs
+	)
+}
+
+_binextra() {
+	pkgdesc="Symbolic links exposing texmf-dist-binextra tools to \$PATH"
+	depends="$pkgname texmf-dist-binextra"
+
+	local cmds
+	cmds="
+		a2ping
+		a5toa4
+		adhocfilelist
+		allcm
+		allec
+		allneeded
+		arara
+		arlatex
+		bundledoc
+		checklistings
+		chklref
+		chkweb
+		cllualatex
+		cluttex
+		clxelatex
+		ctan-o-mat
+		ctanbib
+		ctanify
+		ctanupload
+		de-macro
+		depythontex
+		deweb
+		digestif
+		dtxgen
+		e2pall
+		edtx2dtx
+		findhyph
+		fragmaster
+		git-latexdiff
+		installfont-tl
+		ketcindy
+		kpsepath
+		kpsetool
+		kpsewhere
+		kpsexpand
+		latex-git-log
+		latex-papersize
+		latex2man
+		latex2nemeth
+		latexdef
+		latexdiff
+		latexdiff-vc
+		latexfileversion
+		latexindent
+		latexpand
+		latexrevise
+		listings-ext.sh
+		llmk
+		ltxfileinfo
+		ltximg
+		make4ht
+		match_parens
+		mkjobtexmf
+		optexcount
+		pamphletangler
+		pdfbook2
+		pdfcrop
+		pdfjam
+		pdflatexpicscale
+		pdftex-quiet
+		pdfxup
+		pfarrei
+		pkfix
+		pkfix-helper
+		ppmcheckpdf
+		pythontex
+		rpdfcrop
+		runtexshebang
+		spix
+		srcredact
+		sty2dtx
+		tex4ebook
+		texaccents
+		texblend
+		texconfig
+		texconfig-dialog
+		texconfig-sys
+		texcount
+		texdef
+		texdiff
+		texdirflatten
+		texdoc
+		texdoctk
+		texfot
+		texlinks
+		texliveonfly
+		texloganalyser
+		texlogfilter
+		texlogsieve
+		texosquery
+		texosquery-jre5
+		texosquery-jre8
+		texplate
+		tlcockpit
+		typeoutfileinfo
+		xindex
+		"
+
+	for cmd in $cmds; do
+		amove usr/bin/$cmd
+	done
+}
+
+_langextra() {
+	pkgdesc="Symbolic links exposing texmf-dist-lang tools to \$PATH"
+	depends="$pkgname texmf-dist-lang"
+
+	local cmds
+	cmds="
+		cjk-gs-integrate
+		convbkmk
+		ebong
+		jamo-normalize
+		jfmutil
+		kanji-config-updmap
+		kanji-config-updmap-sys
+		kanji-config-updmap-user
+		kanji-fontmap-creator
+		komkindex
+		mkgrkindex
+		ptex2pdf
+		rubibtex
+		rumakeindex
+		ttf2kotexfont
+		"
+
+	for cmd in $cmds; do
+		amove usr/bin/$cmd
+	done
+}
+
+_subpkg_full() {
+	pkgdesc="A complete TeX distribution"
+	depends="
+		$pkgname
+		$pkgname-bibtexextra
+		$pkgname-binextra
+		$pkgname-context
+		$pkgname-dvi
+		$pkgname-fontutils
+		$pkgname-games
+		$pkgname-humanities
+		$pkgname-latexextra
+		$pkgname-latexrecommended
+		$pkgname-luatex
+		$pkgname-mathscience
+		$pkgname-music
+		$pkgname-pictures
+		$pkgname-plaingeneric
+		$pkgname-pstricks
+		$pkgname-xetex
+		xdvik
+		texmf-dist-full
+		"
+
+	mkdir -p "$subpkgdir"
+}
+
+_subpkg_most() {
+	pkgdesc="A mostly complete TeX distribution"
+	depends="
+		$pkgname
+		$pkgname-context
+		$pkgname-luatex
+		$pkgname-xetex
+		texmf-dist-most
+		cmd:biber
+		"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+4826ca0ff7ba7cfb9c320260a47a2f6b498918d302f090504c2b2069e38e6149177d01412c98dc89474999d951a9a5bb8aa690d7d8d01e447184a2321f564cc8  texlive-2026.0.tar.gz
+76c5385735cb19c926a2c15d1b972225bf9647df9749d60eb6ed0e9197d3d23ab76f944119f417f5e4598e8a2eacf8ca9f7c86baa1beada68fde0f44ee65da02  texmfmp-fix-format-specifier.patch
+7b3c6f1c452315efc32e6579e0a7e62496e4f62e204217ec2abaf3fa0296ab3b26fc91f2e3d43fd7358e9a3183610c3a8d38a28a978ff9ab626365dd893a1b4b  fix-fortify-string.patch
+b56c920c5681a4269bbe232b2ddc4a0d088e8f9639be620df6db17b789f520c889aee84931f55f29a217337e82402aa512ede6b27ac57e7e445b516c2e065b20  kpathsea-getopt-fix.patch
+"

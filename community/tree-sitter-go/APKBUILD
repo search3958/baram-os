@@ -1,0 +1,28 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=tree-sitter-go
+pkgver=0.25.0
+pkgrel=0
+pkgdesc="Go grammar for tree-sitter"
+url="https://github.com/tree-sitter/tree-sitter-go"
+license="MIT"
+arch="all"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+install_if="tree-sitter-grammars"
+source="https://github.com/tree-sitter/tree-sitter-go/archive/v$pkgver/tree-sitter-go-$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build
+}
+
+check() {
+	HOME="$srcdir" tree-sitter test
+}
+
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install
+}
+
+sha512sums="
+27690315ffa8a5834a96bb0f8654afe148eb495c20fb1ff8db790422203a0573f866254b38793588cbcc570c9c2fb7d628396ffed88529c7f70fd45f159e6b48  tree-sitter-go-0.25.0.tar.gz
+"

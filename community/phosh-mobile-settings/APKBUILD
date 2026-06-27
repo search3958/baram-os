@@ -1,0 +1,64 @@
+# Contributor: Newbyte <newbie13xd@gmail.com>
+maintainer="team/phosh <newbie13xd@gmail.com>"
+pkgname=phosh-mobile-settings
+pkgver=0.55.0
+pkgrel=0
+pkgdesc="Settings app for mobile specific things"
+url="https://gitlab.gnome.org/World/Phosh/phosh-mobile-settings"
+arch="all !armhf"
+license="GPL-3.0-or-later"
+depends="
+	phoc-schemas
+	phosh-schemas
+	"
+makedepends="
+	accountsservice-dev
+	cellbroadcastd-dev
+	desktop-file-utils
+	feedbackd-dev
+	glib-dev>=2.62
+	gmobile-dev
+	gnome-desktop-dev
+	gsound-dev
+	gtk4.0-dev
+	json-glib-dev
+	libadwaita-dev
+	libportal-dev
+	lm-sensors-dev
+	meson
+	phosh-dev
+	pulseaudio-dev
+	yaml-dev
+	"
+checkdepends="xvfb-run gsettings-desktop-schemas phosh"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-lang
+	$pkgname-libs
+	"
+source="https://sources.phosh.mobi/releases/phosh-mobile-settings/phosh-mobile-settings-${pkgver/_/.}.tar.xz
+	wheel-group.patch
+	"
+builddir="$srcdir/$pkgname-${pkgver/_/.}"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dtweaks-data-dir=/usr/share/postmarketos-tweaks \
+		. output
+	meson compile -C output
+}
+
+check() {
+	xvfb-run meson test --print-errorlogs --suite unit -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild --skip-subprojects -C output
+}
+
+sha512sums="
+9a5b7246aa4b41d4240bde6859359c37cab094ce30795d928b92fbfb7afec4d0fc02ad3c1af78ad002afc47b82c5398cfc2a6af69400cfb413036589e8f3a50b  phosh-mobile-settings-0.55.0.tar.xz
+d50e162e425418e3d966fb3f02c988fd8677f89e5b5173bb06fb6a62cc8688eb77851e1ce81bfe44c8817ce73eb9313d47418c033cbaa2df04dee51adfac391a  wheel-group.patch
+"

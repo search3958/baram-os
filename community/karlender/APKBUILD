@@ -1,0 +1,44 @@
+# Contributor: Newbyte <newbie13xd@gmail.com>
+# Maintainer: Newbyte <newbie13xd@gmail.com>
+pkgname=karlender
+pkgver=0.10.11
+pkgrel=1
+pkgdesc="Mobile friendly GTK based calendar app written in Rust"
+url="https://gitlab.com/floers/karlender"
+# riscv64: dependency ring v0.16.20 fails to build
+# s390x: doubt anyone will use this on a mainframe
+arch="all !riscv64 !s390x"
+license="GPL-3.0-or-later"
+makedepends="
+	cargo
+	cargo-auditable
+	cargo-gra
+	libadwaita-dev
+	"
+source="https://gitlab.com/floers/karlender/-/archive/v$pkgver/karlender-v$pkgver.tar.gz
+	"
+options="!check"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo gra gen
+	cargo auditable build --release --frozen
+}
+
+package() {
+	install -Dm755 target/release/karlender -t "$pkgdir"/usr/bin
+	make -C target/gra-gen install ROOT="$pkgdir/usr"
+	# compiled by trigger, shouldnt be in package
+	rm "$pkgdir/usr/share/glib-2.0/schemas/gschemas.compiled"
+}
+
+sha512sums="
+4b3c9c318dea26c0c4dcfb0c2777859f143c7de6c398c9142c09a88cfc6f9603c79d069610b0b139217fb9a66b646c95744c33d11eab29c9c6ebe6e027335bee  karlender-v0.10.11.tar.gz
+"

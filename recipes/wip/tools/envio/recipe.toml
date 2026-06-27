@@ -1,5 +1,0 @@
-#TODO require rustc 1.75 or newer
-[source]
-git = "https://github.com/envio-cli/envio"
-[build]
-template = "cargo"

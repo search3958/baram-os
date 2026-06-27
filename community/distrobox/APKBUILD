@@ -1,0 +1,31 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=distrobox
+pkgver=1.8.2.5
+pkgrel=0
+pkgdesc="Use any Linux distribution inside your terminal"
+url="https://distrobox.it/"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	findmnt
+	podman
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-doc
+	$pkgname-zsh-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/89luca89/distrobox/archive/refs/tags/$pkgver.tar.gz"
+install="$pkgname.post-upgrade"
+options="!check" # No tests
+
+package() {
+	./install --prefix "$pkgdir"/usr
+
+	install -dm0755 "$pkgdir"/usr/share/doc/distrobox
+	install -m 0644 docs/*.md "$pkgdir"/usr/share/doc/distrobox
+}
+
+sha512sums="
+f4dcd9a2edd2db8de6af50e3b6df4e43e793d9baff28529879dcbe3a05cbebf8ad02bef1c8a6b8951c9855e82e6991bd17a8cf2025e1ca285b7dbe80396b1da6  distrobox-1.8.2.5.tar.gz
+"

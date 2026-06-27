@@ -1,7 +1,0 @@
-#TODO not compiled or tested
-[source]
-git = "https://github.com/gabime/spdlog"
-rev = "v1.17.0"
-shallow_clone = true
-[build]
-template = "cmake"

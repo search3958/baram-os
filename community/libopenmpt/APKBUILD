@@ -1,0 +1,57 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer: knuxify <knuxify@gmail.com>
+pkgname=libopenmpt
+pkgver=0.8.7
+pkgrel=0
+pkgdesc="Cross-platform library to render tracker music to a PCM audio stream"
+url="https://lib.openmpt.org/libopenmpt/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="flac-dev libogg-dev pulseaudio-dev libsndfile-dev libvorbis-dev mpg123-dev portaudio-dev zlib-dev"
+subpackages="$pkgname-dev openmpt123:_openmpt123 openmpt123-doc:_openmpt123_doc"
+source="https://lib.openmpt.org/files/libopenmpt/src/libopenmpt-$pkgver+release.autotools.tar.gz"
+builddir="$srcdir/libopenmpt-$pkgver+release.autotools"
+
+prepare() {
+	default_prepare
+	# Drop +release.autotools suffix from version number; otherwise pkgconf
+	# files don't pass abuild's requirements
+	sed -i 's/+release.autotools//' "$builddir"/configure
+}
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# just a readme and license and example .c
+	rm -r "$pkgdir"/usr/share/doc
+}
+
+_openmpt123() {
+	pkgdesc="Command-line module file player"
+	amove usr/bin/openmpt123
+}
+
+_openmpt123_doc() {
+	default_doc
+	install_if="openmpt123=$pkgver-r$pkgrel docs"
+}
+
+sha512sums="
+f0284238a0c1a7892ef948d1a719a13ce817bd0bd0c28a01e92263ca1511442ec836958186fa36c546cc9ca60453f714f9453e0774d910b79233c8698446073d  libopenmpt-0.8.7+release.autotools.tar.gz
+"

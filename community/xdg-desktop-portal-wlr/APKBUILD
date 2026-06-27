@@ -1,0 +1,58 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=xdg-desktop-portal-wlr
+pkgver=0.8.3
+pkgrel=0
+pkgdesc="wlroots implementation of xdg-desktop-portal"
+url="https://github.com/emersion/xdg-desktop-portal-wlr"
+arch="all"
+license="MIT"
+depends="
+	pipewire
+	xdg-desktop-portal
+	"
+makedepends="
+	basu-dev
+	inih-dev
+	mesa-dev
+	meson
+	pipewire-dev
+	scdoc
+	wayland-dev
+	wayland-protocols-dev
+	xdg-desktop-portal-dev
+	"
+options="!check"  # no tests provided
+subpackages="$pkgname-doc $pkgname-dbg $pkgname-openrc $pkgname-systemd"
+source="https://github.com/emersion/xdg-desktop-portal-wlr/releases/download/v$pkgver/xdg-desktop-portal-wlr-$pkgver.tar.gz
+	config
+	xdg-desktop-portal-wlr.initd
+	default-systemd-user_unit_dir.patch
+	"
+
+# useful since people pulling in xdg-desktop-portal will want this backend
+install_if="xdg-desktop-portal wlroots"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dsystemd=enabled \
+		-Dsd-bus-provider=basu \
+		. build
+	meson compile -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+
+	install -Dm644 "$srcdir"/config "$pkgdir"/etc/xdg/xdg-desktop-portal-wlr/config
+
+	install -Dm755 "$srcdir"/xdg-desktop-portal-wlr.initd "$pkgdir"/etc/user/init.d/xdg-desktop-portal-wlr
+}
+
+sha512sums="
+d6e92f122d89cee13ac3839e63f36c62f1d457244fb22443b5a3d2755de17195cbea8f7863caa0b24336528c2d997d64c388f84b9edc7ed203c14cfa0a5190f2  xdg-desktop-portal-wlr-0.8.3.tar.gz
+cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e  config
+79cbde3fdef29173674ca121ee0488d19f58071655c7ef1266a79b9d9e1f4741238e4395efac7383f472d893591b598a6e008fb378159babfc2f8e041f8dfa82  xdg-desktop-portal-wlr.initd
+0e87e436a748dd0f28fd5f52bd434ac683414b508dfa48fc8b844284cb39358a170ca838d6b35c5a8a8deb7211f930e7a5c3065eec3be7d955133e5b529c52ea  default-systemd-user_unit_dir.patch
+"

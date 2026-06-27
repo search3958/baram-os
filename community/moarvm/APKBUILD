@@ -1,0 +1,54 @@
+# Contributor: Curt Tilmes <Curt.Tilmes@nasa.gov>
+# Maintainer: Curt Tilmes <Curt.Tilmes@nasa.gov>
+pkgname=moarvm
+pkgver=2025.11
+pkgrel=0
+pkgdesc="VM with adaptive optimization and JIT compilation, built for Rakudo"
+url="https://moarvm.org/"
+arch="all"
+license="Artistic-2.0"
+depends_dev="
+	$pkgname=$pkgver-r$pkgrel
+	libffi-dev
+	libuv-dev
+	mimalloc2-dev
+	perl
+	zstd-dev
+	"
+makedepends="$depends_dev"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/MoarVM/MoarVM/releases/download/$pkgver/MoarVM-$pkgver.tar.gz"
+builddir="$srcdir/MoarVM-$pkgver"
+options="!check" # No tests
+
+build() {
+	unset CPPFLAGS CFLAGS
+	perl Configure.pl \
+		--prefix=/usr \
+		--has-libffi \
+		--has-libuv \
+		--has-mimalloc \
+		--debug \
+		--cc="$CC"
+	make
+}
+
+package() {
+	make PKGCONFIGDIR=/usr/lib/pkgconfig \
+		DESTDIR="$pkgdir" install
+
+	install -Dvm644 Artistic2.txt CREDITS LICENSE \
+		MANIFEST README.md VERSION \
+		-t "$pkgdir"/usr/share/doc/"$pkgname"
+	cp -vr docs "$pkgdir"/usr/share/doc/"$pkgname"/
+}
+
+dev() {
+	default_dev
+
+	amove usr/share/nqp/lib
+}
+
+sha512sums="
+d0b632eda920b18fd9607302d6436fe104e8df8a48a1f0c0ffe7c7623883a11e88cb9c99cd17bec55de2a8300cde6aec8cf1d57b44866c11c9a7e40f981790e7  moarvm-2025.11.tar.gz
+"

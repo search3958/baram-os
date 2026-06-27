@@ -1,0 +1,64 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ffsend
+pkgver=0.2.76
+pkgrel=4
+pkgdesc="A fully featured Firefox Send client"
+url="https://gitlab.com/timvisee/ffsend"
+# riscv64: blocked by cargo
+arch="all !riscv64"
+license="GPL-3.0-only"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+	"
+subpackages="
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	$pkgname-bash-completion
+	"
+source="https://gitlab.com/timvisee/ffsend/-/archive/v$pkgver/ffsend-v$pkgver.tar.gz
+	wl-clipboard.patch
+	update-getrandom.patch
+	"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+# The default features with crypto-ring replaced with crypto-openssl.
+_cargo_opts="--frozen --no-default-features --features=archive,clipboard,crypto-openssl,history,infer-command,qrcode,send3,urlshortener"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build $_cargo_opts --release
+}
+
+check() {
+	cargo test $_cargo_opts
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+
+	install -Dm644 contrib/completions/ffsend.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/ffsend
+	install -Dm644 contrib/completions/_ffsend \
+		-t "$pkgdir"/usr/share/zsh/site-functions/
+	install -Dm644 contrib/completions/ffsend.fish \
+		-t "$pkgdir"/usr/share/fish/vendor_completions.d/
+
+	# See infer-commands in the readme.
+	ln -s ffsend "$pkgdir"/usr/bin/ffget
+	ln -s ffsend "$pkgdir"/usr/bin/ffput
+}
+
+sha512sums="
+3b4ee66725e9770497620f62d1012aa31c7e11b8b95d931d56bee3077556e743ae2b71f727403cf7f45a6809959815f3b3d94b041fdb5530713b76e00541139c  ffsend-v0.2.76.tar.gz
+c16c58671da3c96ee64880366eafc070245d9c50806d192b195f77a4442216eaa24d035467e1e02f4e7622e7be431de8190ad5920672054d0889b7703159f9fc  wl-clipboard.patch
+2b2dcfa19662463214c3f135cded6a38413261eb328a5a360e60da0b74862036340611218bb1985b1451f0368707494198afc4160895f9e7ec8ee5b35307124b  update-getrandom.patch
+"

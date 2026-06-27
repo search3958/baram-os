@@ -1,0 +1,42 @@
+# Contributor: dai9ah <dai9ah@protonmail.com>
+# Maintainer: dai9ah <dai9ah@protonmail.com>
+pkgname=nicotine-plus
+pkgver=3.3.10
+pkgrel=1
+pkgdesc="Graphical client for the SoulSeek peer-to-peer system"
+url="https://nicotine-plus.github.io/nicotine-plus"
+arch="noarch !s390x" # failing tests
+license="GPL-3.0-or-later"
+depends="gtk4.0 py3-gobject3 python3 python3-gdbm"
+makedepends="py3-gpep517 py3-setuptools py3-wheel gettext"
+checkdepends="py3-pytest"
+subpackages="$pkgname-doc $pkgname-lang $pkgname-pyc"
+source="nicotine-plus-$pkgver.tar.gz::https://github.com/Nicotine-Plus/nicotine-plus/archive/$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m pytest \
+		--deselect pynicotine/tests/integration/test_startup.py::StartupTest::test_gui_startup \
+		--deselect pynicotine/tests/unit/test_version.py::VersionTest::test_update_check
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+lang() {
+	pkgdesc="Languages for package $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel lang"
+
+	amove usr/lib/python*/site-packages/pynicotine/locale
+}
+
+sha512sums="
+f4f6c36278f323cb4864a86ca1f8e9e47170cc7cd185c3318d099d6e5f049a7a3b0c7cbb9b24800075fe39e1f69146c8c8b224438ec694f16b14d4a7ad53cc97  nicotine-plus-3.3.10.tar.gz
+"

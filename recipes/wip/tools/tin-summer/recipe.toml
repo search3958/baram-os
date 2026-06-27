@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/vmchale/tin-summer"
-[build]
-template = "cargo"

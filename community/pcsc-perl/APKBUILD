@@ -1,0 +1,28 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=pcsc-perl
+pkgver=1.4.16
+pkgrel=2
+pkgdesc="Perl library allows to communicate with a smart card using PC/SC"
+url="https://pcsc-perl.apdu.fr/"
+arch="all"
+license="GPL-2.0"
+depends="perl"
+makedepends="pcsc-lite-dev perl-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/LudovicRousseau/pcsc-perl/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests available
+
+build() {
+	PERL_MM_USE_DEFAULT=1 perl Makefile.PL INSTALLDIRS=vendor
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	find "$pkgdir" \( -name perllocal.pod -o -name .packlist \) -delete
+}
+
+sha512sums="
+c91a742a220e391ac5d656850751241da1cc26b35680e949ebdc22d83ee7568207567d6af5daffc378052420bbc707cbc9e970250560667630e24fe3d5d34a8a  pcsc-perl-1.4.16.tar.gz
+"

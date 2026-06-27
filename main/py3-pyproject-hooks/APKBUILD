@@ -1,0 +1,36 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-pyproject-hooks
+pkgver=1.2.0
+pkgrel=1
+pkgdesc="Low-level library for calling build-backends in 'pyproject.toml'-based project"
+url="https://pyproject-hooks.readthedocs.io/"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-installer py3-flit-core"
+checkdepends="py3-pytest py3-setuptools py3-testpath"
+subpackages="$pkgname-pyc"
+source="https://github.com/pypa/pyproject-hooks/archive/refs/tags/v$pkgver/py3-pyproject-hooks-$pkgver.tar.gz"
+builddir="$srcdir/pyproject-hooks-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages test-env
+	test-env/bin/python3 -m installer .dist/pyproject_hooks*.whl
+	test-env/bin/python3 -m pytest -k "not test_setup"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/pyproject_hooks*.whl
+}
+
+sha512sums="
+c198624ca278001922e07039333aa623a87bd9ef9f38ec98346d6d49f19dec422f788f6737623b461d76586bc8fa752518906bc7501e822429803881700ce701  py3-pyproject-hooks-1.2.0.tar.gz
+"

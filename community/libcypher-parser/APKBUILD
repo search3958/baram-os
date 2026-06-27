@@ -1,0 +1,65 @@
+# Contributor: Chris Leishman <chris@leishman.org>
+# Maintainer: Chris Leishman <chris@leishman.org>
+pkgname=libcypher-parser
+pkgver=0.6.2
+pkgrel=1
+pkgdesc="Parsing library for the Cypher query language"
+url="https://github.com/cleishm/libcypher-parser"
+arch="all"
+license="Apache-2.0"
+makedepends="
+	autoconf
+	automake
+	check-dev
+	doxygen
+	libtool
+	"
+# NOTE: The only docs provided is the cypher-lint man page.
+subpackages="
+	$pkgname-dev
+	cypher-lint
+	cypher-lint-doc
+	"
+source="https://github.com/cleishm/libcypher-parser/releases/download/v$pkgver/libcypher-parser-$pkgver.tar.gz"
+
+case "$CARCH" in
+	#  96%: Checks: 190, Failures: 7, Errors: 0
+	loongarch64) options="$options !check" ;;
+esac
+
+prepare() {
+	default_prepare
+	# config.sub is too old to recognize loongarch64-alpine-linux-musl
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-doxygen-html \
+		--disable-doxygen-pdf
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+lint() {
+	pkgdesc="Lint tool for the Cypher query language"
+
+	amove usr/bin/cypher-lint
+}
+
+sha512sums="
+71d1fd966c2d7e5637be1b59a17483cf8a782aa75582f4dcc64e0ea7b3f50c80cbf92cf07df2c601aeaa1186910a0e3b529c58da1318a34357f8c860f8e97361  libcypher-parser-0.6.2.tar.gz
+"

@@ -1,0 +1,37 @@
+# Contributor: Zachary Lee Andrews <zcrayfish@gmail.com>
+maintainer="Antoni Aloy <aaloytorrens@gmail.com>"
+pkgname=lxqt-globalkeys
+pkgver=2.4.0
+pkgrel=0
+pkgdesc="Daemon used to register global keyboard shortcuts"
+url="https://github.com/lxqt/lxqt-globalkeys"
+arch="all !armhf" # armhf blocked by liblxqt and kwindowsystem
+license="LGPL-2.0-or-later"
+makedepends="
+	cmake samurai lxqt-build-tools liblxqt-dev perl
+	qt6-qttools-dev kwindowsystem-dev
+	"
+subpackages="$pkgname-dev"
+options="!check" # No testsuite
+source="https://github.com/lxqt/lxqt-globalkeys/releases/download/$pkgver/lxqt-globalkeys-$pkgver.tar.xz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+sha512sums="
+8d2ff6c8a9b66136429dc44711b5b74bb7ca07d6a86e99df6045cbc1846bdd6ca8bc65de1d2e9d01acd3c48d75c579ec661c43ba61db0c72134c8b9a09fc79f3  lxqt-globalkeys-2.4.0.tar.xz
+"

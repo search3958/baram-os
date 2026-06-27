@@ -1,0 +1,30 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-flask-json-schema
+pkgver=0.0.5
+pkgrel=5
+pkgdesc="Flask extension to validate JSON requests"
+url="https://pypi.org/project/flask-json-schema/"
+arch="noarch"
+license="MIT"
+depends="py3-flask py3-jsonschema"
+makedepends="py3-setuptools py3-wheel py3-gpep517"
+subpackages="$pkgname-pyc"
+source="https://pypi.org/packages/source/f/flask-json-schema/Flask-json-schema-$pkgver.tar.gz"
+builddir="$srcdir/Flask-json-schema-$pkgver"
+options="!check" # no tests provided
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+43564624775972d90ff38a8f1f81385975bf201e1915f4e9e01ba1efbd2f09a61669748d74d508861ecb346e37bdbc065b330da9a493cfe397eb58ed9215590c  Flask-json-schema-0.0.5.tar.gz
+"

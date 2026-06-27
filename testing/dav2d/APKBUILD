@@ -1,0 +1,44 @@
+maintainer="Oleg Titov <oleg.titov@gmail.com>"
+pkgname=dav2d
+pkgver=0.0.1
+pkgrel=0
+pkgdesc="AV2 Decoder"
+url="https://code.videolan.org/videolan/dav2d"
+# build fails on loongarch64, ppc64le, and riscv64
+arch="all !loongarch64 !ppc64le !riscv64"
+license="BSD-2-Clause"
+makedepends="
+	meson
+	nasm
+	"
+subpackages="$pkgname-dev lib$pkgname:libs $pkgname-doc"
+source="https://code.videolan.org/videolan/dav2d/-/archive/$pkgver/dav2d-$pkgver.tar.gz"
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	abuild-meson \
+		-Db_lto=true \
+		-Denable_tests=true \
+		-Denable_tools=true \
+		-Dfuzzing_engine=none \
+		-Dtestdata_tests=false \
+		-Denable_asm=true \
+		build
+
+	meson compile -C build
+}
+
+check() {
+	meson test --print-errorlogs -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+
+	install -Dm644 README.md -t "$pkgdir/usr/share/doc/dav2d"
+}
+
+sha512sums="
+5fc042ab30c54176be6d5d4a1f0d963b3a8946615beb5b398ec57c9d81d86091fb628d36762ed4e2aca79c976e3830cc513b0dfe238b6f95b5a87a63d248a704  dav2d-0.0.1.tar.gz
+"

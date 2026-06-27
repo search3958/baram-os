@@ -1,0 +1,46 @@
+#!/sbin/openrc-run
+supervisor=supervise-daemon
+
+name="Podman API service"
+description="Listening service that answers API calls for Podman"
+
+command=/usr/bin/podman
+command_args="system service ${podman_opts:=--time 0} $podman_uri"
+command_user="${podman_user:=root}"
+
+extra_commands="start_containers"
+description_start_containers="Start containers with restart policy set to always or unless-stopped"
+
+depend() {
+	need sysfs cgroups
+}
+
+start_containers() {
+	ebegin "Starting containers with restart policy set to always or unless-stopped"
+	su "$podman_user" -s /bin/sh -c "$command start --all --filter restart-policy=always --filter restart-policy=unless-stopped"
+	eend $?
+}
+
+start_pre() {
+	if [ "$podman_user" = "root" ]; then
+		einfo "Configured as rootful service"
+		checkpath -d -m 0755 /run/podman
+	else
+		einfo "Configured as rootless service"
+		case "${podman_uri}" in
+			unix://*)
+				# Create the socket parent directory and make it writable for
+				# $podman_user, but avoid changing the permissions of an
+				# existing directory.
+				socket_dir="$(dirname -- "${podman_uri#unix://}")"
+				[ -e "${socket_dir}" ] || checkpath -d -m 0755 -o "${command_user}:" "${socket_dir}"
+				;;
+		esac
+		modprobe tun
+		modprobe fuse
+	fi
+}
+
+start_post() {
+	start_containers
+}

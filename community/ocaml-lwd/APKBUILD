@@ -1,0 +1,101 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-lwd
+_pkgname=lwd
+pkgver=0.3
+pkgrel=3
+pkgdesc="Lightweight reactive documents"
+url="https://github.com/let-def/lwd"
+arch="all !riscv64 !loongarch64" # ocaml
+license="MIT"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="
+	dune
+	ocaml
+	ocaml-bigarray-compat-dev
+	ocaml-compiler-libs
+	ocaml-cppo
+	ocaml-findlib
+	ocaml-lwt-dev
+	ocaml-mmap-dev
+	ocaml-notty-dev
+	ocaml-ocplib-endian-dev
+	ocaml-uutf-dev
+	ocaml-result-dev
+	ocaml-seq-dev
+	"
+options="!check"
+checkdepends="ocaml-qcheck-dev ocaml-qtest-dev"
+subpackages="$pkgname-dev"
+provides="ocaml-nottui=$pkgver-r$pkgrel"
+source="$_pkgname-$pkgver.tar.bz2::https://github.com/let-def/lwd/releases/download/v$pkgver/lwd-$pkgver.tbz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build \
+		-p lwd,nottui,nottui-lwt,nottui-pretty \
+		@install --no-buffer --verbose
+}
+
+check() {
+	dune runtest --build-dir=.testenv --no-buffer --verbose
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml \
+		lwd nottui nottui-lwt nottui-pretty
+
+	rm -Rf "$pkgdir"/usr/doc
+}
+
+dev() {
+	default_dev
+	provides="ocaml-nottui-dev=$pkgver-r$pkgrel"
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+95b1fd4b7fcce72f4e220cc9a6cb3c14ea352faeac239345cca61a8906c328078e5ff3143e04c2602710e1ac4c3513d4f19c6ab62ffc716f195a3f9e0ba0560c  lwd-0.3.tar.bz2
+"

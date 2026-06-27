@@ -1,0 +1,72 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=pimcommon
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Common lib for KDEPim"
+# armhf, s390x and riscv64 blocked by qt6-qtwebengine -> akonadi
+arch="all !armhf !s390x !riscv64"
+url="https://community.kde.org/KDE_PIM"
+license="GPL-2.0-or-later"
+depends_dev="
+	akonadi-contacts-dev
+	akonadi-dev
+	karchive-dev
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcontacts-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	ki18n-dev
+	kiconthemes-dev
+	kimap-dev
+	kio-dev
+	kitemmodels-dev
+	kjobwidgets-dev
+	kmime-dev
+	knewstuff-dev
+	kpimtextedit-dev
+	kservice-dev
+	ktextaddons-dev
+	ktexttemplate-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	libkdepim-dev
+	purpose-dev
+	qt6-qtbase-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/pimcommon.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/pimcommon-$pkgver.tar.xz"
+options="net" # net required for tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_DESIGNERPLUGIN=ON
+	cmake --build build
+}
+
+check() {
+	xvfb-run -a ctest --test-dir build -E "pimcommon-needupdateversion-needupdateversionwidgettest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+sha512sums="
+a3cd39400708c8ce34d431cc12765e69e60426d99b6319161a47e913afcfdb2ceabbc170162e4a6d8d467f0bf3c600c52bf1a41dbcc2fbf58d6d7c9fdbb1409c  pimcommon-26.04.2.tar.xz
+"

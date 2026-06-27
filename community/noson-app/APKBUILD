@@ -1,0 +1,47 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=noson-app
+pkgver=5.6.7
+pkgrel=0
+pkgdesc="The essential to control music from your SONOS devices on Linux platforms"
+url="https://janbar.github.io/noson-app/"
+# armhf: Missing Qt stuff
+# riscv64: truncated relocation
+arch="all !armhf !riscv64"
+license="GPL-3.0-only"
+subpackages="$pkgname-dbg"
+depends="qt5-qtsvg"
+makedepends="
+	cmake
+	flac-dev
+	noson-dev
+	pulseaudio-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt5-qtquickcontrols2-dev
+	qt5-qtsvg-dev
+	samurai
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/janbar/noson-app/archive/$pkgver.tar.gz
+	"
+options="!check" # No unit tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=1 \
+		-DBUILD_DEPENDENCIES=0 \
+		-DBUILD_LIBNOSON=0
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+b5434060b340bb16718912793f8ee4e7acab79b48a347c00b709b9ca8a8bdb518cb267d7711780be7a5f29ee6f6c4e98499d3a2da47b98b8f542b8fa45f3f2fe  noson-app-5.6.7.tar.gz
+"

@@ -1,0 +1,28 @@
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=libthreadar
+pkgver=1.6.0
+pkgrel=0
+pkgdesc="a C++ library that provides several classes to manipulate threads"
+url="https://libthreadar.sourceforge.net/"
+arch="all"
+license="LGPL-3.0-or-later"
+subpackages="$pkgname-dev"
+source="https://downloads.sourceforge.net/libthreadar/libthreadar-$pkgver.tar.gz"
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm "$pkgdir"/usr/lib/libthreadar.a
+}
+
+sha512sums="
+b1f6ea0af6acf3e8e88719ebe26c20aff020e708b96f7adc81de9f8c5eb66de8e48f860e7aeab20d211d8f7f4ab5f92775402dd27094b2e7632f4e3e46b3b0aa  libthreadar-1.6.0.tar.gz
+"

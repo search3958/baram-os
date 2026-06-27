@@ -1,0 +1,64 @@
+# Contributor: <xmingske@gmail.com>
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Jeff Bilyk <jbilyk@alpinelinux.org>
+pkgname=irrlicht
+pkgver=1.8.5
+pkgrel=3
+pkgdesc="High performance realtime 3D engine written in C++"
+url="https://irrlicht.sourceforge.net/"
+arch="all"
+license="Zlib"
+makedepends="mesa-dev libjpeg-turbo-dev bzip2 libpng-dev zlib-dev bzip2-dev"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-static"
+options="!check" # no test suite
+source="https://downloads.sourceforge.net/irrlicht/irrlicht-$pkgver.zip
+	irrlicht-1.8.3-mesa-10.x.patch
+	irrlicht-1.8-optflags.patch
+	"
+
+#irrlicht-1.8.3-config.patch
+builddir="$srcdir"/$pkgname-$pkgver/
+prepare() {
+	default_prepare
+	# use system libs
+	rm -r \
+		source/Irrlicht/jpeglib \
+		source/Irrlicht/libpng \
+		source/Irrlicht/zlib \
+		source/Irrlicht/bzip2
+}
+
+build() {
+	cd "$builddir"/source/Irrlicht/
+	export CXXFLAGS="$CXXFLAGS -std=gnu++98"
+	make sharedlib staticlib
+	#from arch pkgbuild: example build helper
+	ln -s libIrrlicht.so.$pkgver "$srcdir"/$pkgname-$pkgver/lib/Linux/libIrrlicht.so
+}
+
+package() {
+	install -D -m644 readme.txt "$pkgdir"/usr/share/licenses/$pkgname/readme.txt
+
+	#from arch pkgbuild: install docs
+	install -d "$pkgdir"/usr/share/doc/$pkgname
+	cp -r doc/* "$pkgdir"/usr/share/doc/$pkgname
+
+	install -D -m755 "$builddir"/lib/Linux/libIrrlicht.so.$pkgver "$pkgdir"/usr/lib/libIrrlicht.so.$pkgver
+	cd "$pkgdir"/usr/lib
+	ln -s libIrrlicht.so.$pkgver libIrrlicht.so
+	ln -s libIrrlicht.so.$pkgver libIrrlicht.so.1.8
+
+	install -D -m644 -t "$pkgdir"/usr/include/$pkgname/ "$builddir"/include/*
+}
+
+static() {
+	pkgdesc="Irrlicht static library"
+	mkdir -p "$subpkgdir"/usr/lib
+	mv "$builddir"/lib/Linux/libIrrlicht.a "$subpkgdir"/usr/lib
+}
+
+sha512sums="
+d11c7a056bfb8c9737ed583c5bc5794223bc59fb4620411b63bc4d1eedc41db2ed1cab5cb7a37fee42a7f38c0e0645f5fc53fd329fff0f2aa78e0df6804c47c9  irrlicht-1.8.5.zip
+44c16419c07597ba6d06d66057fbe2ab86e7b02b5dcdf458678b4ea87f6f721840da951ae4df59c983e1da83abdbe45f82e44a6a311bd42eb94d93dfd5aa437c  irrlicht-1.8.3-mesa-10.x.patch
+6d7447dcc92265ac4d9b3a9337d8d8ace6babf3c4ee6cb565629a58b11004ca569293da9d2aca09dba4c9d3dd1ac2888fd1a9eed30da0abe1515b4ebda614982  irrlicht-1.8-optflags.patch
+"

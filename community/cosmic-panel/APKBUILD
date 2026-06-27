@@ -1,0 +1,48 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=cosmic-panel
+pkgver=1.0.16
+_upstreamver="${pkgver/_beta/-beta.}"
+_upstreamver="${_upstreamver/_p/.}"
+pkgrel=0
+pkgdesc="Panel component for the COSMIC Desktop Environment"
+url="https://github.com/pop-os/cosmic-panel"
+# s390x: nix
+# riscv64: too slow to build
+arch="all !s390x !riscv64"
+license="GPL-3.0-or-later"
+makedepends="
+	appstream-glib
+	cargo-auditable
+	desktop-file-utils
+	findutils
+	intltool
+	just
+	libxkbcommon-dev
+	wayland-dev
+	wayland-protocols
+"
+options="net !check"  # fetch dependencies, no tests
+source="$pkgname-$pkgver.tar.gz::https://github.com/pop-os/cosmic-panel/archive/refs/tags/epoch-$_upstreamver.tar.gz"
+builddir="$srcdir/$pkgname-epoch-$_upstreamver"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CHOST"
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	just rootdir="$pkgdir" install
+}
+
+sha512sums="
+4657c5e312a5d903ebb098466f96451389aa8c77b040c1fc8661eb281cbb80b4343e47a03d7032ec740261e43fab656aded7450e77cfcca9b105dc15bcb0094a  cosmic-panel-1.0.16.tar.gz
+"

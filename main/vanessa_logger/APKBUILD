@@ -1,0 +1,36 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=vanessa_logger
+pkgver=0.0.10
+pkgrel=4
+pkgdesc="Logging library"
+url="https://projects.horms.net/projects/vanessa/"
+arch="all"
+license="LGPL-2.0-or-later"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://projects.horms.net/projects/vanessa/download/vanessa_logger/$pkgver/vanessa_logger-$pkgver.tar.bz2
+	fix-standard.patch
+	"
+options="!check"
+
+prepare() {
+	update_config_sub
+	default_prepare
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="38accb1563485b8f1ab0fbfc424336df71d6ac9c0baee669000a0ff8f0b5c3475d0bd3e5629c831ab30e7920877026dd2d55309247dd4940339a852da61a35fa  vanessa_logger-0.0.10.tar.bz2
+0b8c52668f7789073984e3573a3c3b675b9027eea31f8185345f6baca0a5dfb22397858b342eb5069a20d07b8e7a4c9c4f4bd257bbad7cd692c39b8f606c4ac5  fix-standard.patch"

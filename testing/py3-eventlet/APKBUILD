@@ -1,0 +1,54 @@
+# Contributor: Elizabeth Jennifer Myers <elizabeth@sporksirc.net>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-eventlet
+pkgver=0.41.0
+pkgrel=0
+pkgdesc="Python library for seamless coroutine-based concurrency"
+url="https://eventlet.net/"
+# riscv: tests fails
+arch="noarch !riscv64"
+license="MIT"
+depends="
+	py3-dnspython
+	py3-greenlet
+	py3-httplib2
+	py3-openssl
+	py3-psycopg2
+	py3-six
+	python3
+	"
+makedepends="py3-hatchling py3-gpep517 py3-wheel py3-hatch-vcs"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/e/eventlet/eventlet-$pkgver.tar.gz"
+
+builddir="$srcdir"/eventlet-$pkgver
+
+# secfixes:
+#   0.32.0-r0:
+#     - CVE-2021-21419
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# deselected tests want to modify /etc/resolv.conf, for some reason
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/greendns_test.py \
+		--deselect tests/socket_test.py::test_dns_methods_are_green
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+dbef926c8a95dbbc5627d784ba44b00c61f2b696787808f351b2e9f808e2c9ee44006980d10223293a04db38633324f8a1d18c784734c98488e0f10aafd01eb6  eventlet-0.41.0.tar.gz
+"

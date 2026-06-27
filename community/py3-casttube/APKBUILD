@@ -1,0 +1,43 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-casttube
+pkgver=0.2.1
+pkgrel=9
+pkgdesc="YouTube Chromecast API"
+url="https://github.com/ur1katz/casttube"
+arch="noarch"
+license="MIT"
+depends="py3-requests"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/c/casttube/casttube-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/casttube-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	# remove incorrectly placed LICENSE file
+	rm "$pkgdir"/usr/LICENSE
+}
+
+sha512sums="
+0b077b1f622c1029e9cff949a1d1cd4f380d9110324ca6211eb4d6bc97fbf3aa4d7be47cb692c2a7628ab62b309fd9957ee6392060f27e06d030691ad8cde00f  casttube-0.2.1.tar.gz
+"

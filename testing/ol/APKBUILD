@@ -1,0 +1,38 @@
+# Contributor: Yuriy Chumak <yuriy.chumak@mail.com>
+# Maintainer: Yuriy Chumak <yuriy.chumak@mail.com>
+pkgname=ol
+pkgver=2.6
+pkgrel=0
+pkgdesc="Purely functional dialect of Lisp"
+url="https://yuriy-chumak.github.io/ol/"
+arch="all"
+license="LGPL-3.0-or-later OR MIT"
+makedepends="xxd"
+subpackages="$pkgname-doc $pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/yuriy-chumak/ol/archive/refs/tags/$pkgver.tar.gz
+	libol-opengl-$pkgver.tar.gz::https://github.com/yuriy-chumak/libol-opengl/archive/refs/tags/$pkgver.tar.gz
+	"
+
+prepare() {
+	default_prepare
+
+	rmdir -v libraries/OpenGL
+	mv -v "$srcdir/libol-opengl-$pkgver" libraries/OpenGL
+}
+
+build() {
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+22e61379d97e52e8f780213780d7f29a93e4846d158629e554f404a1c39e86daef9ce2a1b27d608c40c40850eaff4c2715bdfcb66af6b81cd906f0bcd43bf450  ol-2.6.tar.gz
+3a9a4a0bae426714a1d5c1896debb63951005a804db730d5c83479342dfbfc28d9cc26faeb502d9860c29e97e1096c1c8577252486e7afa09c4f58784546dd5a  libol-opengl-2.6.tar.gz
+"

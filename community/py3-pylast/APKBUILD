@@ -1,0 +1,38 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-pylast
+pkgver=5.5.0
+pkgrel=1
+pkgdesc="Python interface to the last.fm API"
+url="https://github.com/pylast/pylast"
+arch="noarch"
+license="Apache-2.0"
+replaces="py-pylast"
+depends="py3-httpx"
+makedepends="py3-gpep517 py3-hatchling py3-hatch-vcs"
+checkdepends="py3-flaky py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/p/pylast/pylast-$pkgver.tar.gz"
+builddir="$srcdir/pylast-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/pylast*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/pylast*.whl
+}
+
+sha512sums="
+c4776bf1f430ab8f819dceadbf3efd79ce61bce4780588cd82f12ff99c2cdb96f08871b14693e81183bafe03afd5dda242eebd083e60cc5d035b5ca0f42cc289  pylast-5.5.0.tar.gz
+"

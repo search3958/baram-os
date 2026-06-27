@@ -1,0 +1,32 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=libopenrazer
+pkgver=0.4.0
+pkgrel=0
+pkgdesc="Qt wrapper around the D-Bus API from OpenRazer"
+url="https://github.com/z3ntu/libopenrazer"
+arch="all"
+license="GPL-3.0-or-later"
+subpackages="$pkgname-dev"
+makedepends="
+	meson
+	qt6-qtbase-dev
+	qt6-qttools-dev
+	"
+source="https://github.com/z3ntu/libopenrazer/releases/download/v$pkgver/libopenrazer-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+336b6659ad3931513e38230a69bd36bf7f0f693e7888a1c9955f06710398fd6cb7eeb6124ad6b69d50c353c39038f2e0ee40b747508514451ba516a592e2c545  libopenrazer-0.4.0.tar.xz
+"

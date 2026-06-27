@@ -1,0 +1,41 @@
+# Maintainer: Ariadne Conill <ariadne@dereferenced.org>
+pkgname=ustream-ssl
+pkgver=20251003
+pkgrel=0
+pkgdesc="ustream SSL library"
+url="https://git.openwrt.org/project/ustream-ssl.git"
+arch="all"
+license="ISC"
+depends_dev="libubox-dev openssl-dev"
+makedepends="cmake samurai zstd $depends_dev"
+subpackages="$pkgname-dev"
+_owrtgit=5a81c108
+_owrtver="${pkgver:0:4}.${pkgver:4:2}.${pkgver:6:2}~$_owrtgit"
+source="https://sources.openwrt.org/ustream-ssl-$_owrtver.tar.zst"
+builddir="$srcdir/ustream-ssl-$_owrtver"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a3e3be9f5327c155a580d9b627989cfff037cb05fb1fe62ca257027b4017451c286eba98affec8aa42f571b4851559df0d3f5ad13f4773b9f5e5cb1a42e9f40c  ustream-ssl-2025.10.03~5a81c108.tar.zst
+"

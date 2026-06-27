@@ -1,0 +1,40 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-pyzbar
+pkgver=0.1.9
+pkgrel=5
+pkgdesc="Read one-dimensional barcodes and QR codes from Python 3"
+url="https://github.com/NaturalHistoryMuseum/pyzbar/"
+arch="all"
+license="MIT"
+depends="python3 zbar"
+makedepends="python3-dev py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-coveralls py3-numpy py3-pillow"
+subpackages="$pkgname-pyc"
+source="py3-pyzbar-$pkgver.tar.gz::https://github.com/NaturalHistoryMuseum/pyzbar/archive/v$pkgver.tar.gz"
+builddir="$srcdir/pyzbar-$pkgver"
+
+case "$CARCH" in
+	s390x) options="!check" ;;
+esac
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f9fe774400ed6428bc78a428bd1b7847d5c6d557ea8637125348708f0641b36eceabe69362302c3d8658cf2186ee836c3bfc207fa800a6d03581375c251227e8  py3-pyzbar-0.1.9.tar.gz
+"

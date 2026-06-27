@@ -1,0 +1,59 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-sphinx
+pkgver=9.1.0
+pkgrel=1
+pkgdesc="Python Documentation Generator"
+url="https://www.sphinx-doc.org/"
+arch="noarch"
+license="BSD-2-Clause"
+depends="
+	py3-babel
+	py3-docutils
+	py3-imagesize
+	py3-jinja2
+	py3-packaging
+	py3-pygments
+	py3-requests
+	py3-snowballstemmer
+	py3-alabaster
+	py3-roman-numerals
+	py3-sphinxcontrib-applehelp
+	py3-sphinxcontrib-devhelp
+	py3-sphinxcontrib-htmlhelp
+	py3-sphinxcontrib-jsmath
+	py3-sphinxcontrib-serializinghtml
+	py3-sphinxcontrib-qthelp
+	"
+makedepends="py3-gpep517 py3-flit-core py3-installer"
+checkdepends="py3-pytest py3-typing-extensions py3-defusedxml"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sphinx-doc/sphinx/archive/v$pkgver.tar.gz"
+builddir="$srcdir/sphinx-$pkgver"
+
+# py3-defusedxml is in community/
+options="!check"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v \
+		--deselect tests/test_extensions/test_ext_autodoc_importer.py::test_import_native_module_stubs \
+		--deselect tests/test_util/test_util_i18n.py::test_format_date
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/sphinx-*.whl
+}
+
+sha512sums="
+3b17a3d4123d19ed47c7ab7786edcbe7eb0566f298d9de22efb3f4f0476b6c0ddf858b57812f2dac718458d98ddc742a443b7c94771693a1ed3bf868850639b1  py3-sphinx-9.1.0.tar.gz
+"

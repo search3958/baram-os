@@ -1,0 +1,139 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=krb5
+pkgver=1.22.2
+pkgrel=1
+pkgdesc="The Kerberos network authentication system"
+url="https://web.mit.edu/kerberos/www/"
+arch="all"
+license="MIT"
+depends="krb5-conf"
+depends_dev="e2fsprogs-dev libverto-dev"
+makedepends="$depends_dev openldap-dev openssl-dev>3
+	keyutils-dev bison flex perl autoconf"
+options="suid !check" # https://gitlab.alpinelinux.org/alpine/aports/-/issues/13155
+subpackages="$pkgname-dev $pkgname-doc $pkgname-server
+	$pkgname-server-openrc:server_openrc $pkgname-server-ldap:ldap
+	$pkgname-pkinit $pkgname-libs"
+
+_maj_min=$pkgver
+case $pkgver in
+	*.*.*) _maj_min=${pkgver%.*} ;;
+esac
+
+source="https://web.mit.edu/kerberos/dist/krb5/$_maj_min/krb5-$pkgver.tar.gz
+
+	krb5kadmind.initd
+	krb5kdc.initd
+	krb5kpropd.initd
+
+	autoconf-2.73.patch
+	"
+builddir="$srcdir/$pkgname-$pkgver/src"
+
+# secfixes:
+#   1.20.3-r0:
+#     - CVE-2024-37370
+#     - CVE-2024-37371
+#   1.20.1-r0:
+#     - CVE-2022-42898
+#   1.19.3-r0:
+#     - CVE-2021-37750
+#   1.18.4-r0:
+#     - CVE-2021-36222
+#   1.18.3-r0:
+#     - CVE-2020-28196
+#   1.15.4-r0:
+#     - CVE-2018-20217
+#   1.15.3-r0:
+#     - CVE-2017-15088
+#     - CVE-2018-5709
+#     - CVE-2018-5710
+
+prepare() {
+	default_prepare
+	autoreconf -vfi
+}
+
+build() {
+	./configure \
+		CPPFLAGS="$CPPFLAGS -fPIC -I/usr/include/et" \
+		WARN_CFLAGS= \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--localstatedir=/var/lib \
+		--enable-shared \
+		--disable-nls \
+		--disable-static \
+		--disable-rpath \
+		--with-system-et \
+		--with-system-ss \
+		--with-system-verto \
+		--without-tcl \
+		--with-ldap
+	make
+}
+
+check() {
+	make check-unix
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	mv "$pkgdir"/usr/share/examples "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+server() {
+	pkgdesc="The KDC and related programs for Kerberos 5"
+	depends="libverto-libev"
+	mkdir -p "$subpkgdir"/usr/share \
+		"$subpkgdir"/usr/bin
+	install -d "$subpkgdir"/var/lib/krb5kdc
+	mv "$pkgdir"/usr/sbin "$subpkgdir"/usr/
+
+	# used for testing server
+	amove usr/bin/sclient
+}
+
+server_openrc() {
+	pkgdesc="The KDC and related programs for Kerberos 5 (OpenRC init scripts)"
+	install_if="$pkgname-server=$pkgver-r$pkgrel openrc"
+
+	for i in $source; do
+		case $i in
+		*.initd) install -Dm755 "$srcdir"/$i \
+			"$subpkgdir"/etc/init.d/${i%.initd};;
+		esac
+	done
+}
+
+ldap() {
+	pkgdesc="The LDAP storage plugin for the Kerberos 5 KDC"
+	install -Dm644 \
+		-t "$subpkgdir"/usr/share/kerberos \
+		"$builddir"/plugins/kdb/ldap/libkdb_ldap/kerberos.ldif \
+		"$builddir"/plugins/kdb/ldap/libkdb_ldap/kerberos.openldap.ldif
+	amove usr/lib/krb5/plugins/kdb/kldap.so
+	amove usr/lib/libkdb_ldap*
+}
+
+pkinit() {
+	pkgdesc="The PKINIT module for Kerberos 5"
+	mkdir -p "$subpkgdir"/usr/lib/krb5/plugins/preauth
+	amove usr/lib/krb5/plugins/preauth/pkinit.so
+}
+
+libs() {
+	pkgdesc="The shared libraries used by Kerberos 5"
+	depends="krb5-conf"
+	amove usr/lib
+}
+
+sha512sums="
+3237cacfb2019285107991a3211e0d74944c605942ab38a8b4b372703b8f02f5779fa2de80c4e201bd59703d557f37ac346bdc5ea14b986b0a0db23eb422fc6f  krb5-1.22.2.tar.gz
+43b9885b7eb8d0d60920def688de482f2b1701288f9acb1bb21dc76b2395428ff304961959eb04ba5eafd0412bae35668d6d2c8223424b9337bc051eadf51682  krb5kadmind.initd
+ede15f15bbbc9d0227235067abe15245bb9713aea260d397379c63275ce74aea0db6c91c15d599e40c6e89612d76f3a0f8fdd21cbafa3f30d426d4310d3e2cec  krb5kdc.initd
+45be0d421efd41e9dd056125a750c90856586e990317456b68170d733b03cba9ecd18ab87603b20e49575e7839fb4a6d628255533f2631f9e8ddb7f3cc493a90  krb5kpropd.initd
+9ace8b2fba6d33d2ff5a3d8ddc6548c7683046642832b32777688b5caddf003631108dd97641d6bcd0af2845d3825f293a90a15287a5e86a92e29227c4561839  autoconf-2.73.patch
+"

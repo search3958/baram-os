@@ -1,0 +1,45 @@
+maintainer=""
+pkgname=mate-desktop-environment
+pkgver=1.28.0
+pkgrel=1
+pkgdesc="Metapackage for MATE desktop environment"
+url="https://mate-desktop.org/"
+arch="all"
+license="GPL-2.0-or-later LGPL-2.0-or-later"
+depends="caja
+	caja-extensions>=$pkgver
+	marco>=$pkgver
+	mozo>=$pkgver
+	pluma>=$pkgver
+
+	mate-applets>=$pkgver
+	mate-backgrounds>=$pkgver
+	mate-control-center>=$pkgver
+	mate-desktop>=$pkgver
+	mate-icon-theme>=$pkgver
+	mate-media>=$pkgver
+	mate-menus>=$pkgver
+	mate-notification-daemon>=$pkgver
+	mate-panel>=$pkgver
+	mate-polkit>=$pkgver
+	mate-power-manager>=$pkgver
+	mate-screensaver>=$pkgver
+	mate-sensors-applet>=$pkgver
+	mate-session-manager>=$pkgver
+	mate-settings-daemon>=$pkgver
+	mate-system-monitor>=$pkgver
+	mate-terminal>=$pkgver
+	mate-themes>=$pkgver
+	mate-user-guide>=$pkgver
+	mate-utils>=$pkgver
+	mate-calc>=$pkgver
+
+	hicolor-icon-theme
+	"
+builddir="$srcdir/"
+options="!check" # Metapackage
+
+package() {
+	mkdir -p "$pkgdir"
+}
+

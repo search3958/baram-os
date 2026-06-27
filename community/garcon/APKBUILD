@@ -1,0 +1,47 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=garcon
+pkgver=4.20.0
+pkgrel=0
+pkgdesc="a freedesktop.org compliant menu implementation based on GLib and GIO"
+url="https://xfce.org/"
+arch="all"
+license="GPL-2.0-or-later"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+makedepends="
+	glib-dev
+	gobject-introspection-dev
+	gtk+3.0-dev
+	gtk-doc
+	intltool
+	libxfce4ui-dev
+	libxfce4util-dev
+	xfce4-dev-tools
+	"
+source="https://archive.xfce.org/src/xfce/garcon/${pkgver%.*}/garcon-$pkgver.tar.bz2"
+replaces="xfdesktop"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir=/usr/lib \
+		--localstatedir=/var \
+		--disable-static \
+		--enable-introspection \
+		--enable-gtk-doc
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+5ed8b031cceb5943af56d006b05dc9f8ac28695a35d17a8f27f8bde1a0a75067fc4d307c87250a436d1b317f92d501f01ce4078b5c961e4e9daccd175f2f261a  garcon-4.20.0.tar.bz2
+"

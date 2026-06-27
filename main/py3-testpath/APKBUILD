@@ -1,0 +1,34 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=py3-testpath
+pkgver=0.6.0
+pkgrel=4
+pkgdesc="test utilities for working with files and commands"
+url="https://testpath.readthedocs.io/en/latest/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3"
+makedepends="py3-gpep517 py3-flit-core"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/t/testpath/testpath-$pkgver.tar.gz"
+builddir="$srcdir/testpath-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/testpath-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+64ec7ee32ed766e518eabcbb552a0675b2495cac6b94adb2972dd0db97d747146d3a181e8fac59d847dbaaa4f573c349e51a4e3bf3991eb33207bb2176736649  testpath-0.6.0.tar.gz
+"

@@ -1,0 +1,74 @@
+# Contributor: Jon Ong <jonongjs@rottenmage.com>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Contributor: Anil Madhavapeddy <anil@recoil.org>
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=ocamlbuild
+pkgver=0.14.1
+pkgrel=6
+pkgdesc="Generic build tool with built-in rules for building OCaml library and programs"
+url="https://github.com/ocaml/ocamlbuild"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-2.0-or-later WITH OCaml-LGPL-linking-exception"
+checkdepends="ocaml-compiler-libs ocaml-findlib"
+depends="ocaml-$pkgname=$pkgver-r$pkgrel cmd:tput"
+makedepends="ocaml"
+subpackages="$pkgname-doc ocaml-$pkgname:_lib"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocaml/ocamlbuild/archive/$pkgver.tar.gz"
+
+build() {
+	make configure \
+		OCAML_NATIVE=true \
+		OCAMLBUILD_BINDIR="/usr/bin" \
+		OCAMLBUILD_LIBDIR="/usr/lib/ocaml"
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# Remove annotation files.
+	rm -f "$pkgdir"/usr/lib/ocaml/$pkgname/*.cmt*
+
+	# Keep only native binary.
+	cd "$pkgdir"/usr/bin
+	rm ocamlbuild.byte
+	mv ocamlbuild.native ocamlbuild
+}
+
+_lib() {
+	pkgdesc="$pkgdesc (library & development files)"
+	provides="$subpkgname-dev=$pkgver-r$pkgrel"
+	replaces="$pkgname"  # for backward compatibility
+	depends=
+
+	amove usr/lib/ocaml
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+1f5b43215b1d3dc427b9c64e005add9d423ed4bca9686d52c55912df8955647cb2d7d86622d44b41b14c4f0d657b770c27967c541c868eeb7c78e3bd35b827ad  ocamlbuild-0.14.1.tar.gz
+"

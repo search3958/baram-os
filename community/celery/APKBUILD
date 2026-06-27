@@ -1,0 +1,105 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=celery
+pkgver=5.6.3
+pkgrel=1
+pkgdesc="An asynchronous task queue/job queue based on distributed message passing"
+url="http://www.celeryproject.org/"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-billiard
+	py3-click
+	py3-click-didyoumean
+	py3-click-plugins
+	py3-click-repl
+	py3-dateutil
+	py3-kombu
+	py3-tzlocal
+	py3-vine
+	python3
+	"
+makedepends="python3-dev py3-setuptools py3-gpep517 py3-wheel"
+checkdepends="
+	pre-commit
+	py3-pytest
+	py3-greenlet
+	py3-dnspython
+	py3-mongo
+	py3-pytest-celery
+	py3-pytest-timeout
+	py3-pytest-click
+	py3-pydantic
+	py3-boto3
+	py3-moto
+	py3-pyaml
+	py3-msgpack
+"
+install="$pkgname.pre-install"
+source="https://files.pythonhosted.org/packages/source/c/celery/celery-$pkgver.tar.gz
+	celery.confd
+	celery.initd
+	10290-rabbitmq-4-3-0-compat-for-transient-queues.patch
+	10184-rollback-prioritize-request-ignore-result-over-task-definition.patch
+	"
+pkgusers="celery"
+pkggroups="celery"
+subpackages="$pkgname-openrc $pkgname-pyc"
+provides="py3-celery=$pkgver-r$pkgrel"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	# t/unit/backends/test_azureblockblob.py: requires py3-azure
+	# t/unit/backends/test_gcs.py: requires py3-google-cloud-storage
+	# t/unit/worker/test_worker.py::test_WorkController::test_with_file_descriptor_safety: no file descriptors available
+	# t/unit/worker/test_worker.py::test_WorkController::test_with_autoscaler_file_descriptor_safety: no file descriptors available
+	# t/unit/concurrency/test_prefork.py::test_AsynPool::test_schedule_writes_hub_remove_fd_only_from_writers_when_write_job_is_done: no file descriptors available
+	# t/unit/app/test_app.py::test_App::test_uses_utc_timezone: runners dont always use UTC
+	case $CARCH in
+		ppc64le|riscv64)
+			.testenv/bin/python3 -m pytest -v \
+				--ignore=t/unit/backends/test_gcs.py \
+				--ignore=t/unit/backends/test_azureblockblob.py \
+				--deselect t/unit/worker/test_worker.py::test_WorkController::test_with_autoscaler_file_descriptor_safety \
+				--deselect t/unit/worker/test_worker.py::test_WorkController::test_with_file_descriptor_safety \
+				--deselect t/unit/concurrency/test_prefork.py::test_AsynPool::test_register_with_event_loop__no_on_tick_dupes \
+				--deselect t/unit/concurrency/test_prefork.py::test_AsynPool::test_schedule_writes_hub_remove_fd_only_from_writers_when_write_job_is_done \
+				--deselect t/unit/app/test_app.py::test_App::test_uses_utc_timezone
+			;;
+		*)
+			.testenv/bin/python3 -m pytest -v \
+				--ignore=t/unit/backends/test_gcs.py \
+				--ignore=t/unit/backends/test_azureblockblob.py \
+				--deselect t/unit/concurrency/test_prefork.py::test_AsynPool::test_register_with_event_loop__no_on_tick_dupes \
+				--deselect t/unit/concurrency/test_prefork.py::test_AsynPool::test_schedule_writes_hub_remove_fd_only_from_writers_when_write_job_is_done \
+				--deselect t/unit/app/test_app.py::test_App::test_uses_utc_timezone
+		;;
+esac
+
+}
+
+package() {
+	# install scripts
+	install -m755 -D "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+778cadc45a19e0afba4c0a148e86415afcef3ddf71683cda12c89ec8061e09aabe182c163cc238b8c4e4101b884589f9c54d3608cdad3eda80d525ecd8f925e9  celery-5.6.3.tar.gz
+c283956f8fe386ef39cb3e165a20d1cc7ff6398fbf5a922bec6b61fe4a71188519baed9feafc4e0e5b6864851545edaba54b89ba3613b2cf2ddd6426a6bf8fc2  celery.confd
+a27cc3521cdf79ec60b15318c15679fe8f593c029c3ead53b162453ab9e86c05c57f7e4af843d69f17817a707db885f2c44d3b7f56337676dfc2ec0210bf38b7  celery.initd
+11f66e75cdb94400733fd9e0c6f4f546fc4b4f20fae38d995cdbfc6f560e872a16dae3d7c76a7f440f5716952744693235bcb872b157b5596706eb04bdf70dc6  10290-rabbitmq-4-3-0-compat-for-transient-queues.patch
+eb5bd5818c5630fcd76be3ff0986eead42120acb71dde5056eb36db415b6ed1e44582d7f8bc03d6a9844238e5131bb3858ce02cb3aecf6b186e845c33f2a639b  10184-rollback-prioritize-request-ignore-result-over-task-definition.patch
+"

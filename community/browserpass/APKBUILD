@@ -1,0 +1,75 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=browserpass
+pkgver=3.1.0
+pkgrel=28
+pkgdesc="Browser extension for pass"
+url="https://github.com/browserpass/browserpass-native"
+arch="all"
+license="MIT"
+depends="pass"
+makedepends="go git"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/browserpass/browserpass-native/archive/$pkgver.tar.gz
+	enable-cgo.patch"
+builddir="$srcdir/browserpass-native-$pkgver"
+subpackages="
+	$pkgname-mozilla:_mozilla:noarch
+	$pkgname-firefox:_firefox:noarch
+	$pkgname-firefox-esr:_firefox:noarch
+	$pkgname-librewolf:_firefox:noarch
+	$pkgname-chromium:_chromium:noarch
+	"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make browserpass configure GOFLAGS="$GOFLAGS -trimpath"
+}
+
+check() {
+	make test GOFLAGS="$GOFLAGS"
+}
+
+package() {
+	local targetname="com.github.browserpass.native.json"
+
+	install -dm0755 "$pkgdir"/usr/bin \
+		"$pkgdir"/usr/lib/mozilla/native-messaging-hosts \
+		"$pkgdir"/etc/chromium/native-messaging-hosts \
+		"$pkgdir"/etc/chromium/policies/managed
+
+	install -m0755 browserpass "$pkgdir"/usr/bin/browserpass
+
+	install -m644 browser-files/firefox-host.json \
+		"$pkgdir"/usr/lib/mozilla/native-messaging-hosts/"$targetname"
+
+	install -m644 browser-files/chromium-host.json "$pkgdir"/etc/chromium/native-messaging-hosts/"$targetname"
+	install -m644 browser-files/chromium-policy.json "$pkgdir"/etc/chromium/policies/managed/"$targetname"
+}
+ 
+_mozilla() {
+	pkgdesc="Browserpass for mozilla browsers"
+	amove usr/lib/mozilla
+}
+
+_firefox() {
+	local browser="${subpkgname#$pkgname-}"
+
+	pkgdesc="Browserpass for $browser"
+	depends="$pkgname-mozilla=$pkgver-r$pkgrel"
+	install_if="$browser $pkgname=$pkgver-r$pkgrel"
+
+	mkdir -p "$subpkgdir"
+}
+
+_chromium() {
+	pkgdesc="Browserpass for chromium"
+	install_if="chromium $pkgname=$pkgver-r$pkgrel"
+	amove etc/chromium
+}
+
+sha512sums="
+ca5b1c7b805e66e1ccea7c0a69b26ccceb307ae4707b7b284e79169d810e79c118ac174d893b589ca82051cddd08ae0e047dc339960c2faf261075cdaef25a3f  browserpass-3.1.0.tar.gz
+d9700dac5217b1f0e8eca0d3d45b1955d0c3a2987a93e2f61e845330fcbe8eee54153640859964cbe2e48be02520f3e09077224287d7ec774edb6272dafc56cc  enable-cgo.patch
+"

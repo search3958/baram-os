@@ -1,0 +1,35 @@
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=pwru
+pkgver=1.0.11
+pkgrel=0
+pkgdesc="eBPF-based Linux kernel networking debugger"
+url="https://github.com/cilium/pwru"
+arch="x86_64 aarch64" # the only platforms supported upstream
+license="GPL-2.0-or-later"
+makedepends="go clang llvm libpcap-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cilium/pwru/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # go packages
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	export CGO_CFLAGS="$CFLAGS"
+	export CGO_LDFLAGS="$LDFLAGS -L/usr/lib -lpcap"
+
+	TARGET_GOARCH=$(go env GOARCH) go generate
+	go build -v -ldflags "-X github.com/cilium/pwru/internal/pwru.Version=v$pkgver"
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 $pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+fd770fbb6513745270265d82b1a29566434acc16528f21c87a4b481875e72fb423d613fd198f48251da7a8cb1808971d317216cddda814204ae04796401801d6  pwru-1.0.11.tar.gz
+"

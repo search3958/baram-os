@@ -1,0 +1,66 @@
+# Contributor: Andy Postnikov <apostnikov@gmail.com>
+# Contributor: Sandro Jäckel <sandro.jaeckel@posteo.de>
+# Contributor: Sergei Lukin <sergej.lukin@gmail.com>
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Jingyun Hua <huajingyun@loongson.cn>
+maintainer="Jingyun Hua <huajingyun@loongson.cn>"
+pkgname=wget2
+pkgver=2.2.1
+pkgrel=1
+pkgdesc="Network utility to retrieve files from the Web"
+url="https://www.gnu.org/software/wget/wget.html"
+arch="all"
+license="GPL-3.0-or-later WITH OpenSSL-Exception"
+makedepends="
+	brotli-dev
+	bzip2-dev
+	doxygen
+	graphviz
+	libidn2-dev
+	lzlib-dev
+	texinfo
+	nghttp2-dev
+	openssl-dev
+	pcre2-dev
+	zlib-dev
+	zstd-dev
+	xz-dev
+	"
+checkdepends="libmicrohttpd-dev"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc $pkgname-libs"
+source="https://ftp.gnu.org/gnu/wget/wget2-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--with-libidn \
+		--with-ssl=openssl \
+		--without-libpsl \
+		--without-libhsts \
+		--without-gpgme \
+		--enable-fuzzing \
+		--disable-manylibs \
+		--disable-nls \
+		--disable-rpath
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -v "$pkgdir/usr/bin/wget2_noinstall"
+	install -Dm644 docs/man/man1/wget2.1 -t "$pkgdir"/usr/share/man/man1/
+}
+
+sha512sums="
+ce458c31eda12b12120dd39d43751d7ac3c9b46ea994ae383cc5a68be2ee776840126e5251a9479b8e3b350f093c6b3dc1dc8fca48a159e4117a73b328a91021  wget2-2.2.1.tar.gz
+"

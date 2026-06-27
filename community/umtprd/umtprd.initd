@@ -1,0 +1,7 @@
+#!/sbin/openrc-run
+
+name=umtprd
+description="Transfer files through the USB port via MTP"
+command="/usr/bin/umtprd"
+supervisor=supervise-daemon
+error_logger="logger -t '${RC_SVCNAME}' -p daemon.error"

@@ -1,0 +1,27 @@
+# Contributor: Henrik Riomar <henrik.riomar@gmail.com>
+# Maintainer: Henrik Riomar <henrik.riomar@gmail.com>
+pkgname=scdoc
+pkgver=1.11.4
+pkgrel=0
+pkgdesc="Simple man page generator written for POSIX systems written in C99"
+url="https://git.sr.ht/~sircmpwn/scdoc"
+license="MIT"
+arch="all"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~sircmpwn/scdoc/archive/$pkgver.tar.gz"
+
+build() {
+	make PREFIX="/usr"
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX="/usr" install
+}
+
+sha512sums="
+f8950bbef5213a89746185d5ed29fbee2502235632db883afaaac515dc87c60559bc1a39e2a3ea3bb019675e6039bd2d3b5c5d117a0ad022b61c958fb9407877  scdoc-1.11.4.tar.gz
+"

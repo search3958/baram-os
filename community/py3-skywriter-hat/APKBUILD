@@ -1,0 +1,31 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: ScrumpyJack <scrumpyjack@st.ilet.to>
+pkgname=py3-skywriter-hat
+_pkgname=skywriter-hat
+pkgver=0.0.8
+pkgrel=4
+pkgdesc="Python libraries for the Pimoroni Skywriter board"
+options="!check" # No testsuite
+url="https://github.com/pimoroni/skywriter-hat"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pimoroni/$_pkgname/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver/library"
+
+replaces="py-skywriter-hat" # Backwards compatibility
+provides="py-skywriter-hat=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+a4cfa012225e2754e0aefa34c4b1862eb0b7a183e1772d5693f3671786284136976ec536deec982cad231052b53a601b4eb2d32479eaa44a485853d951c12001  py3-skywriter-hat-0.0.8.tar.gz
+"

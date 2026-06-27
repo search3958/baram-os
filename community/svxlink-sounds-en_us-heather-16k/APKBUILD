@@ -1,0 +1,22 @@
+# Contributor: Milan P. Stanić <mps@arvanta.net>
+# Maintainer: Milan P. Stanić <mps@arvanta.net>
+pkgname=svxlink-sounds-en_us-heather-16k
+pkgver=25.05
+pkgrel=0
+pkgdesc="Sound Package en_US-heather-16k from svxlink in high quality"
+url="http://www.svxlink.org/"
+arch="noarch"
+license="GPL-2.0-or-later"
+options="!check"
+source="https://github.com/sm0svx/svxlink-sounds-en_US-heather/releases/download/$pkgver/svxlink-sounds-en_US-heather-16k-$pkgver.tar.bz2"
+builddir="$srcdir"/en_US-heather-16k
+
+package() {
+	mkdir -p "$pkgdir/usr/share/svxlink/sounds/en_US"
+	cp -a * "$pkgdir/usr/share/svxlink/sounds/en_US"
+	touch "$pkgdir/usr/share/svxlink/sounds/en_US/$pkgname-$pkgver"
+}
+
+sha512sums="
+5ab53c9e5ea75c0096f7489ca33323d3d8668165a9340b9b63ca5f87002896e223ceb88a2caaecae3f7dcd156927843bdd40e90709d2682daf11a8e656d08330  svxlink-sounds-en_US-heather-16k-25.05.tar.bz2
+"

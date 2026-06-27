@@ -1,9 +1,0 @@
-#TODO async-io and rustix crates error
-[source]
-git = "https://github.com/vsbuffalo/scidataflow"
-shallow_clone = true
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

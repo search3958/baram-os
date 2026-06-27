@@ -1,0 +1,13 @@
+Prepare placeholder for setting the module version.
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
+ 
+ [project]
+ name = "awesomeversion"
+-version = "0"
++version = "@VERSION@"
+ description = "One version package to rule them all, One version package to find them, One version package to bring them all, and in the darkness bind them."
+ authors = [
+     {name = "Ludeeus", email = "joasoe@proton.me"},

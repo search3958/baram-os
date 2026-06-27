@@ -1,0 +1,36 @@
+# Contributor: psykose <alice@ayaya.dev>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.nt>
+pkgname=py3-tzdata
+pkgver=2025.3
+pkgrel=1
+pkgdesc="Python package wrapping the IANA time zone database"
+url="https://github.com/python/tzdata"
+arch="noarch"
+license="Apache-2.0"
+depends="python3 py3-attrs"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/python/tzdata/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/tzdata-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f7c9f04d9b11ad8e0fe1e38b5992ec18701c864aaecdf0cba02ed9df946ea6f1e1544f5819657a013dfc8863b5b43d147f87912f05771380fa3ca1b761bf0b90  py3-tzdata-2025.3.tar.gz
+"

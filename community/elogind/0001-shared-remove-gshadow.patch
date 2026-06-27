@@ -1,0 +1,27 @@
+From ee010a007cd58149ec5a4f8d22944fda8d7ff8bd Mon Sep 17 00:00:00 2001
+From: fossdd <fossdd@pwned.life>
+Date: Tue, 22 Jul 2025 14:52:16 +0200
+Subject: [PATCH 01/10] shared: remove gshadow
+
+just like the other part it's already patched in, not actually used
+
+Signed-off-by: Achill Gilgenast <achill@achill.org>
+---
+ src/shared/user-record-nss.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/shared/user-record-nss.h b/src/shared/user-record-nss.h
+index 7a41be7cda9d..3a970a6aa580 100644
+--- a/src/shared/user-record-nss.h
++++ b/src/shared/user-record-nss.h
+@@ -2,7 +2,6 @@
+ #pragma once
+ 
+ #include <grp.h>
+-#include <gshadow.h>
+ #include <pwd.h>
+ #include <shadow.h>
+ 
+-- 
+2.54.0
+

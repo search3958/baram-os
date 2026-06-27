@@ -1,0 +1,40 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=libxml++
+pkgver=5.4.0
+pkgrel=0
+pkgdesc="C++ wrapper for the libxml XML parser library"
+url="https://libxmlplusplus.sourceforge.net/"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	libxml2-dev
+	meson
+	mm-common
+	python3
+	"
+subpackages="$pkgname-dev"
+source="https://download.gnome.org/sources/libxml++/${pkgver%.[0-9]*}/libxml++-$pkgver.tar.xz"
+options="!check" # fail against new libxml
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dbuild-tests=true \
+		-Dbuild-examples=false \
+		-Dbuild-documentation=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+bba28edf40c60ac186ff1b704d9f4f41f73c1be3126cfb345005283b32bb5c9a596b8def64be8ad8e295e1e169bed91d120d5105cbbb6cecc4675d10b897dfe6  libxml++-5.4.0.tar.xz
+"

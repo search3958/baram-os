@@ -1,0 +1,45 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=jacktrip
+pkgver=3.0.0
+pkgrel=0
+pkgdesc="Multi-machine audio network performance over the Internet"
+url="https://jacktrip.github.io/jacktrip/"
+# armv7, armhf, riscv64, s390x, x86: qt6-qtwebengine
+# loongsoon: oscpp/endian.hpp needs to be set up for your CPU type
+arch="all !armhf !riscv64 !s390x !x86 !armv7 !loongarch64"
+license="MIT AND GPL-3.0-or-later AND LGPL-3.0-only"
+makedepends="
+	cmake
+	help2man
+	libsamplerate-dev
+	meson
+	py3-jinja2
+	py3-yaml
+	qt6-qt5compat-dev
+	qt6-qtshadertools-dev
+	qt6-qtsvg-dev
+	qt6-qtwebengine-dev
+	qt6-qtwebsockets-dev
+	rtaudio-dev
+"
+subpackages="$pkgname-doc"
+source="https://github.com/jacktrip/jacktrip/archive/v$pkgver/rtaudio-v$pkgver.tar.gz"
+
+build() {
+	abuild-meson -D noupdater=true . output
+	meson compile -C output
+}
+
+check() {
+	meson test -C output --print-errorlogs
+}
+
+package() {
+	meson install -C output --destdir "$pkgdir"
+	install -Dm644 LICENSE.md -t "$pkgdir/usr/share/licenses/$pkgname/"
+	install -Dm644 LICENSES/MIT.txt -t "$pkgdir/usr/share/licenses/$pkgname/"
+}
+
+sha512sums="
+248614f1f5ef75b3179c52a094a343c9c476fc79f498be0ecc0ae520eb37f2219abe6e47343c7c8f4218055c5bb438813a6a88af449067afad467cddc1150f27  rtaudio-v3.0.0.tar.gz
+"

@@ -1,0 +1,44 @@
+# Contributor: James Bowes <jbowes@repl.ca>
+# Contributor: Jan Segre <jan@segre.in>
+# Contributor: Lars Kuhtz <lakuhtz@gmail.com>
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Matthias Ahouansou <matthias@ahouansou.cz>
+pkgname=rocksdb
+pkgver=11.0.4
+pkgrel=1
+pkgdesc="persistent key-value store for fast storage environments"
+url="https://rocksdb.org"
+arch="all"
+license="Apache-2.0 OR GPL-2.0-only"
+depends="!rocksdb7"
+depends_dev="bzip2-dev gflags-dev liburing-dev lz4-dev snappy-dev zlib-dev zstd-dev"
+makedepends="$depends_dev bash linux-headers make perl"
+subpackages="$pkgname-dev $pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/facebook/rocksdb/archive/v$pkgver.tar.gz
+	10-support-busybox-install.patch
+	20-ppc64le-determine-platform.patch
+	30-toku_time.patch
+"
+options="!check" # tests are excluded from release builds
+
+build() {
+	PORTABLE=1 DEBUG_LEVEL=0 make shared_lib
+}
+
+package() {
+	make install-shared DESTDIR="$pkgdir" PREFIX=/usr
+	install -Dm644 rocksdb.pc "$pkgdir"/usr/lib/pkgconfig/rocksdb.pc
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+	install -Dm644 LICENSE.Apache "$pkgdir"/usr/share/licenses/$pkgname/LICENSE.Apache
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+	install -Dm644 HISTORY.md "$pkgdir"/usr/share/doc/$pkgname/HISTORY.md
+}
+
+sha512sums="
+a4aeac5a440cbdc5ef433f7ea1ebb445c04893663b8f287179752dfcd26b8c9ef6a05a96781aa9f748800a93e38643b7a7a72a6d691ae57124e9291efb2f0935  rocksdb-11.0.4.tar.gz
+fa98c289b465808c1bdda390d891d6430bb65096c39d2c327f7a82cdae1eeba8f3a47c6434eb4988b0c0c25d0e4900e92da28afe67c71b0b112b38b9a9f58887  10-support-busybox-install.patch
+835e7bb5e8e76aa264d7dbe55d44a01af4bcec7e61fc0aa8be173d28e302e9b368da064bd4b4a0020fa97bd46a51f3d8fc015db8a4af37890e0ba7924eb01ed0  20-ppc64le-determine-platform.patch
+bdc68bce07eb488d86de6e607eadf1abfc543a3a2b2c57f3d25f8e278b8d6b3e943de6a51d60762b629d38c26080bdfad3d0e205429c0e777d0ca3aadee37259  30-toku_time.patch
+"

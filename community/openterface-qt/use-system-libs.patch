@@ -1,0 +1,31 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e0e8ea1..c861725 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -244,7 +244,7 @@ endif()
+ # Add XCB cursor library for static linking (Linux only) - Legacy support
+ if(UNIX AND NOT APPLE AND XCB_CURSOR_FOUND)
+     # This is redundant now but keeping for compatibility
+-    message(STATUS "XCB cursor already linked via static approach above")
++    target_link_libraries(openterfaceQT PRIVATE X11)
+ endif()
+ 
+ # Add TurboJPEG if available
+index 220e9f5..576535f 100644
+diff --git a/cmake/GStreamer.cmake.orig b/cmake/GStreamer.cmake
+index 4ee6438..220e9f5 100644
+--- a/cmake/GStreamer.cmake.orig
++++ b/cmake/GStreamer.cmake
+@@ -316,10 +316,11 @@ else()
+             # Check for Qt6 plugin availability in system
+             message(STATUS "Checking for Qt6 GStreamer plugin in system...")
+             find_file(GSTREAMER_QT6_PLUGIN 
+-                NAMES libgstqt6.so
++                NAMES libgstqml6.so
+                 PATHS 
+                     /usr/lib/x86_64-linux-gnu/gstreamer-1.0
+                     /usr/lib/aarch64-linux-gnu/gstreamer-1.0
++                    /usr/lib/gstreamer-1.0
+                     /usr/local/lib/gstreamer-1.0
+                 NO_DEFAULT_PATH
+             )

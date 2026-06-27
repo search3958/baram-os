@@ -1,0 +1,30 @@
+maintainer="Aster Boese <asterboese@mailbox.org>"
+pkgname=lomiri-sounds
+pkgver=25.01
+pkgrel=0
+pkgdesc="Ringtones and notification tones recommended for the Lomiri stack"
+url="https://gitlab.com/ubports/development/apps/lomiri-sounds"
+arch="noarch"
+license="CC0-1.0 AND CC-BY-3.0 AND CC-BY-SA-3.0 AND CC-BY-4.0"
+source="https://gitlab.com/ubports/development/core/lomiri-sounds/-/archive/$pkgver/lomiri-sounds-$pkgver.tar.gz"
+makedepends="
+	cmake
+	samurai
+	"
+options="!check" # no tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d910c9f43131c4ef5de9f3dbe2bf98af9e1735ed1be8b686311eb4649edbae8134d110938655cbae23b87ba13dc87d5ef6fc10334d9033d01737d823e843e022  lomiri-sounds-25.01.tar.gz
+"

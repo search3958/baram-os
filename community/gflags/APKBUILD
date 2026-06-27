@@ -1,0 +1,35 @@
+# Contributor: wener <wenermail@gmail.com>
+# Maintainer: wener <wenermail@gmail.com>
+pkgname=gflags
+pkgver=2.3.0
+pkgrel=0
+pkgdesc="The gflags package contains a C++ library that implements commandline flags processing."
+url="https://gflags.github.io/gflags/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+source="gflags-$pkgver.tar.gz::https://github.com/gflags/gflags/archive/v$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_STATIC_LIBS=ON \
+		-DBUILD_SHARED_LIBS=ON \
+		-DBUILD_TESTING=ON \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DREGISTER_INSTALL_PREFIX=OFF
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d1e3971c2db6e0cba16fc6438213866c3e031bed73b3332ae3ca3a6e6f14fd17c8881ad8fa9716a4c468171c8d7cbd26d4049fc4af8ed4888c3a0ad913ea24da  gflags-2.3.0.tar.gz
+"

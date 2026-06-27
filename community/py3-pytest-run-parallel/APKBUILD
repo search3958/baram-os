@@ -1,0 +1,37 @@
+# Contributor: Hannes Braun <hannes@hannesbraun.net>
+# Maintainer: Hannes Braun <hannes@hannesbraun.net>
+pkgname=py3-pytest-run-parallel
+pkgver=0.9.1
+pkgrel=0
+pkgdesc="pytest plugin to run tests concurrently"
+url="https://github.com/Quansight-Labs/pytest-run-parallel"
+arch="noarch"
+license="MIT"
+depends="py3-pytest"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-coverage py3-pytest-order py3-pytest-xdist py3-hypothesis"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://github.com/Quansight-Labs/pytest-run-parallel/archive/v$pkgver/py3-pytest-run-parallel-$pkgver.tar.gz"
+builddir="$srcdir/pytest-run-parallel-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+26fe515e0c0994a6a839777065cc59b6eb91bd997055dcfe2355dfb3c85b5cc63dc5c45f397621a889480e3a9e01516e03befacf01e81d425e579521123602ad  py3-pytest-run-parallel-0.9.1.tar.gz
+"

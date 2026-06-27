@@ -1,6 +1,0 @@
-[package]
-dependencies = [
-    "orbital",
-    "orbdata",
-    "orbutils",
-]

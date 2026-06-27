@@ -1,5 +1,0 @@
-#TODO pnet_sys crate error
-[source]
-git = "https://github.com/kongbytes/arp-scan-rs"
-[build]
-template = "cargo"

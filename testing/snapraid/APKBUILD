@@ -1,0 +1,34 @@
+# Contributor: Nathan Caldwell <saintdev@gmail.com>
+# Maintainer: Nathan Caldwell <saintdev@gmail.com>
+pkgname=snapraid
+pkgver=14.6
+pkgrel=0
+pkgdesc="A backup program for disk arrays"
+url="https://www.snapraid.it"
+arch="all"
+license="GPL-3.0-only"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/amadvance/snapraid/releases/download/v$pkgver/snapraid-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c573a41ae9398b0f6c52a495d5dc9b090da3936e1da67b63cf3ec6b3e2c1fbf4f204c6472cda8eed9d8c5512228ff56d2ab43a4ee6da27e7ca3b6aeffd4d175d  snapraid-14.6.tar.gz
+"

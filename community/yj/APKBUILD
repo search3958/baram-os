@@ -1,0 +1,30 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=yj
+pkgver=1.2.4
+pkgrel=0
+pkgdesc="Command line tool that converts YAML to JSON"
+url="https://github.com/bruceadams/yj"
+arch="all"
+license="Apache-2.0"
+makedepends="cargo cargo-auditable"
+source="https://github.com/bruceadams/yj/archive/v$pkgver/yj-$pkgver.tar.gz"
+options="!check"  # no tests provided
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+ca3f2e9ded570df6b1fe05ab2ea6a82532f9ec3045ee0180c9abe308079fe9441ca357f986494a5d4ff567c46c2a9919625a49c78aef58aff7935ea367d019fc  yj-1.2.4.tar.gz
+"

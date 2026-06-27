@@ -1,5 +1,0 @@
-#TODO fs_at crate error
-[source]
-git = "https://github.com/sigoden/projclean"
-[build]
-template = "cargo"

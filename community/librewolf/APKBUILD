@@ -1,0 +1,774 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Contributor: Sertonix <sertonix@posteo.net>
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=librewolf
+pkgver=152.0.2_p1
+pkgrel=0
+# https://codeberg.org/librewolf/settings/, matching submodule version.
+_settings_commit=38e92f591d526878dab70a4764fa8db3bbb01bed
+# https://github.com/mozilla-l10n/firefox-l10n/, latest main.
+_l10n_commit=2444b4f5c4a2d5887ae3fcf88fd903c309942b60
+pkgdesc="Community-maintained fork of Firefox, focused on privacy, security and freedom."
+url="https://librewolf.net/"
+# s390x blocked by rlbox https://bugzilla.mozilla.org/show_bug.cgi?id=1966554
+# armhf: https://bugzilla.mozilla.org/show_bug.cgi?id=1680495
+# riscv64 use of undeclared identifier '__riscv_vsetvlmax_e64m8'
+# x86: rustc SIGSEGV/OOM compiling firefox-on-glean
+arch="all !s390x !armhf !riscv64 !x86"
+license="GPL-3.0-only AND LGPL-2.1-only AND LGPL-3.0-only AND MPL-2.0"
+depends="
+	ffmpeg-libavcodec
+	so:libEGL.so.1
+	so:libGL.so.1
+	pciutils-libs
+	"
+_llvmver=22
+makedepends="
+	alsa-lib-dev
+	automake
+	bsd-compat-headers
+	cargo
+	cbindgen
+	clang$_llvmver
+	clang$_llvmver-libclang
+	compiler-rt
+	dbus
+	dbus-dev
+	gettext
+	gettext-envsubst
+	gtk+3.0-dev
+	hunspell-dev
+	libevent-dev
+	libffi-dev
+	libjpeg-turbo-dev
+	libnotify-dev
+	libogg-dev
+	libtheora-dev
+	libtool
+	libvorbis-dev
+	libvpx-dev
+	libwebp-dev
+	libxcomposite-dev
+	libxt-dev
+	lld
+	llvm$_llvmver-dev
+	m4
+	mesa-dev
+	mesa-dri-gallium
+	mimalloc2-insecure
+	nasm
+	nodejs
+	nspr-dev
+	nss-dev
+	patchelf
+	pciutils
+	pipewire-dev
+	pulseaudio-dev
+	py3-zstandard
+	python3
+	scudo-malloc
+	sed
+	wasi-compiler-rt
+	wasi-sdk
+	wireless-tools-dev
+	xvfb-run
+	zip
+	"
+case "$CARCH" in
+riscv64|x86|arm*|aarch64) ;;
+*) subpackages="$subpackages $pkgname-dbg" ;;
+esac
+
+source="$pkgname-source-$pkgver.tar.gz::https://codeberg.org/librewolf/source/archive/${pkgver/_p/-}.tar.gz
+	$pkgname-settings-$_settings_commit.tar.gz::https://codeberg.org/librewolf/settings/archive/$_settings_commit.tar.gz
+	firefox-${pkgver%_p*}.tar.xz::https://ftp.mozilla.org/pub/firefox/releases/${pkgver%_p*}/source/firefox-${pkgver%_p*}.source.tar.xz
+	firefox-l10n-$_l10n_commit.tar.gz::https://github.com/mozilla-l10n/firefox-l10n/archive/$_l10n_commit.tar.gz
+	abseil-cpp.patch
+	bmo-1988166-no-single_threaded-h.patch
+	bmo-2039878-vulkan-32bit.patch
+	bmo-2048097-inttypes-x86.patch
+	bmo-2048100-xsimd-ppc64le.patch
+	fix-fortify-system-wrappers.patch
+	lfs64.patch
+	no-ccache-stats.patch
+	rust-lto-thin.patch
+	riscv64-no-lto.patch
+	sandbox-sched_setscheduler.patch
+	sqlite-ppc.patch
+	ppc-abi.patch
+	time64.patch
+	widevine.patch
+	musl-prctl.patch
+	wasm-wasip1.patch
+
+	loong0003-Define-HWCAP_LOONGARCH_LSX_and_LASX.patch
+	loong0004-Fix-ycbcr-chromium_types-warning.patch
+
+	l10n.patch.early
+
+	mozconfig
+	librewolf.desktop
+	distribution.ini
+	vendor-prefs.js
+	"
+# tests are hard to run
+options="!check"
+
+builddir="$srcdir"/source/librewolf-${pkgver/_p/-}
+_mozappdir=/usr/lib/$pkgname
+
+# help our shared-object scanner to find the libs
+ldpath="$_mozappdir"
+sonameprefix="$pkgname:"
+
+# secfixes:
+#   119.0-r0:
+#     - CVE-2023-5721
+#     - CVE-2023-5722
+#     - CVE-2023-5723
+#     - CVE-2023-5724
+#     - CVE-2023-5725
+#     - CVE-2023-5726
+#     - CVE-2023-5727
+#     - CVE-2023-5728
+#     - CVE-2023-5729
+#     - CVE-2023-5730
+#     - CVE-2023-5731
+#   103.0-r0:
+#     - CVE-2022-2505
+#     - CVE-2022-36314
+#     - CVE-2022-36315
+#     - CVE-2022-36316
+#     - CVE-2022-36317
+#     - CVE-2022-36318
+#     - CVE-2022-36319
+#     - CVE-2022-36320
+#   102.0-r0:
+#     - CVE-2022-2200
+#     - CVE-2022-34468
+#     - CVE-2022-34469
+#     - CVE-2022-34470
+#     - CVE-2022-34471
+#     - CVE-2022-34472
+#     - CVE-2022-34473
+#     - CVE-2022-34474
+#     - CVE-2022-34475
+#     - CVE-2022-34476
+#     - CVE-2022-34477
+#     - CVE-2022-34478
+#     - CVE-2022-34479
+#     - CVE-2022-34480
+#     - CVE-2022-34481
+#     - CVE-2022-34482
+#     - CVE-2022-34483
+#     - CVE-2022-34484
+#     - CVE-2022-34485
+#   101.0-r0:
+#     - CVE-2022-1919
+#     - CVE-2022-31736
+#     - CVE-2022-31737
+#     - CVE-2022-31738
+#     - CVE-2022-31739
+#     - CVE-2022-31740
+#     - CVE-2022-31741
+#     - CVE-2022-31742
+#     - CVE-2022-31743
+#     - CVE-2022-31744
+#     - CVE-2022-31745
+#     - CVE-2022-31747
+#     - CVE-2022-31748
+#   100.0.2-r0:
+#     - CVE-2022-1529
+#     - CVE-2022-1802
+#   100.0-r0:
+#     - CVE-2022-29909
+#     - CVE-2022-29910
+#     - CVE-2022-29911
+#     - CVE-2022-29912
+#     - CVE-2022-29914
+#     - CVE-2022-29915
+#     - CVE-2022-29916
+#     - CVE-2022-29917
+#     - CVE-2022-29918
+#   99.0-r0:
+#     - CVE-2022-1097
+#     - CVE-2022-24713
+#     - CVE-2022-28281
+#     - CVE-2022-28282
+#     - CVE-2022-28283
+#     - CVE-2022-28284
+#     - CVE-2022-28285
+#     - CVE-2022-28286
+#     - CVE-2022-28287
+#     - CVE-2022-28288
+#     - CVE-2022-28289
+#   98.0-r0:
+#     - CVE-2022-0843
+#     - CVE-2022-26381
+#     - CVE-2022-26382
+#     - CVE-2022-26383
+#     - CVE-2022-26384
+#     - CVE-2022-26385
+#     - CVE-2022-26387
+#   97.0.2-r0:
+#     - CVE-2022-26485
+#     - CVE-2022-26486
+#   97.0-r0:
+#     - CVE-2021-4140
+#     - CVE-2022-0511
+#     - CVE-2022-22736
+#     - CVE-2022-22737
+#     - CVE-2022-22738
+#     - CVE-2022-22739
+#     - CVE-2022-22740
+#     - CVE-2022-22741
+#     - CVE-2022-22742
+#     - CVE-2022-22743
+#     - CVE-2022-22744
+#     - CVE-2022-22745
+#     - CVE-2022-22746
+#     - CVE-2022-22747
+#     - CVE-2022-22748
+#     - CVE-2022-22749
+#     - CVE-2022-22750
+#     - CVE-2022-22751
+#     - CVE-2022-22752
+#     - CVE-2022-22753
+#     - CVE-2022-22754
+#     - CVE-2022-22755
+#     - CVE-2022-22756
+#     - CVE-2022-22757
+#     - CVE-2022-22758
+#     - CVE-2022-22759
+#     - CVE-2022-22760
+#     - CVE-2022-22761
+#     - CVE-2022-22762
+#     - CVE-2022-22764
+#   95.0-r0:
+#     - CVE-2021-43536
+#     - CVE-2021-43537
+#     - CVE-2021-43538
+#     - CVE-2021-43539
+#     - CVE-2021-43540
+#     - CVE-2021-43541
+#     - CVE-2021-43542
+#     - CVE-2021-43543
+#     - CVE-2021-43544
+#     - CVE-2021-43545
+#     - CVE-2021-43546
+#   94.0-r0:
+#     - CVE-2021-38503
+#     - CVE-2021-38504
+#     - CVE-2021-38505
+#     - CVE-2021-38506
+#     - CVE-2021-38507
+#     - CVE-2021-38508
+#     - CVE-2021-38509
+#     - CVE-2021-38510
+#   93.0-r0:
+#     - CVE-2021-32810
+#     - CVE-2021-38496
+#     - CVE-2021-38497
+#     - CVE-2021-38498
+#     - CVE-2021-38499
+#     - CVE-2021-38500
+#     - CVE-2021-38501
+#   92.0.1-r0:
+#     - CVE-2021-29980
+#     - CVE-2021-29981
+#     - CVE-2021-29982
+#     - CVE-2021-29983
+#     - CVE-2021-29984
+#     - CVE-2021-29985
+#     - CVE-2021-29986
+#     - CVE-2021-29987
+#     - CVE-2021-29988
+#     - CVE-2021-29989
+#     - CVE-2021-29990
+#     - CVE-2021-29991
+#     - CVE-2021-29993
+#     - CVE-2021-38491
+#     - CVE-2021-38492
+#     - CVE-2021-38493
+#     - CVE-2021-38494
+#   90.0-r0:
+#     - CVE-2021-29970
+#     - CVE-2021-29972
+#     - CVE-2021-29974
+#     - CVE-2021-29975
+#     - CVE-2021-29976
+#     - CVE-2021-29977
+#     - CVE-2021-30547
+#   89.0-r0:
+#     - CVE-2021-29959
+#     - CVE-2021-29960
+#     - CVE-2021-29961
+#     - CVE-2021-29962
+#     - CVE-2021-29963
+#     - CVE-2021-29965
+#     - CVE-2021-29966
+#     - CVE-2021-29967
+#   88.0.1-r0:
+#     - CVE-2021-29952
+#   88.0-r0:
+#     - CVE-2021-23994
+#     - CVE-2021-23995
+#     - CVE-2021-23996
+#     - CVE-2021-23997
+#     - CVE-2021-23998
+#     - CVE-2021-23999
+#     - CVE-2021-24000
+#     - CVE-2021-24001
+#     - CVE-2021-24002
+#     - CVE-2021-29944
+#     - CVE-2021-29945
+#     - CVE-2021-29946
+#     - CVE-2021-29947
+#   87.0-r0:
+#     - CVE-2021-23968
+#     - CVE-2021-23969
+#     - CVE-2021-23970
+#     - CVE-2021-23971
+#     - CVE-2021-23972
+#     - CVE-2021-23973
+#     - CVE-2021-23974
+#     - CVE-2021-23975
+#     - CVE-2021-23976
+#     - CVE-2021-23977
+#     - CVE-2021-23978
+#     - CVE-2021-23979
+#     - CVE-2021-23981
+#     - CVE-2021-23982
+#     - CVE-2021-23983
+#     - CVE-2021-23984
+#     - CVE-2021-23985
+#     - CVE-2021-23986
+#     - CVE-2021-23987
+#     - CVE-2021-23988
+#   85.0-r0:
+#     - CVE-2021-23954
+#     - CVE-2021-23955
+#     - CVE-2021-23956
+#     - CVE-2021-23957
+#     - CVE-2021-23958
+#     - CVE-2021-23959
+#     - CVE-2021-23960
+#     - CVE-2021-23961
+#     - CVE-2021-23962
+#     - CVE-2021-23963
+#     - CVE-2021-23964
+#     - CVE-2021-23965
+#   84.0.2-r0:
+#     - CVE-2020-16044
+#   84.0.1-r0:
+#     - CVE-2020-16042
+#     - CVE-2020-26971
+#     - CVE-2020-26972
+#     - CVE-2020-26973
+#     - CVE-2020-26974
+#     - CVE-2020-26975
+#     - CVE-2020-26976
+#     - CVE-2020-26977
+#     - CVE-2020-26978
+#     - CVE-2020-26979
+#     - CVE-2020-35111
+#     - CVE-2020-35112
+#     - CVE-2020-35113
+#     - CVE-2020-35114
+#   83.0-r0:
+#     - CVE-2020-15999
+#     - CVE-2020-16012
+#     - CVE-2020-26952
+#     - CVE-2020-26953
+#     - CVE-2020-26954
+#     - CVE-2020-26955
+#     - CVE-2020-26956
+#     - CVE-2020-26957
+#     - CVE-2020-26958
+#     - CVE-2020-26959
+#     - CVE-2020-26960
+#     - CVE-2020-26961
+#     - CVE-2020-26962
+#     - CVE-2020-26963
+#     - CVE-2020-26964
+#     - CVE-2020-26965
+#     - CVE-2020-26966
+#     - CVE-2020-26967
+#     - CVE-2020-26968
+#     - CVE-2020-26969
+#   82.0.3-r0:
+#     - CVE-2020-26950
+#   82.0-r0:
+#     - CVE-2020-15254
+#     - CVE-2020-15680
+#     - CVE-2020-15681
+#     - CVE-2020-15682
+#     - CVE-2020-15683
+#     - CVE-2020-15684
+#     - CVE-2020-15969
+#   81.0-r0:
+#     - CVE-2020-15673
+#     - CVE-2020-15674
+#     - CVE-2020-15675
+#     - CVE-2020-15676
+#     - CVE-2020-15677
+#     - CVE-2020-15678
+#   80.0-r0:
+#     - CVE-2020-6829
+#     - CVE-2020-12400
+#     - CVE-2020-12401
+#     - CVE-2020-15663
+#     - CVE-2020-15664
+#     - CVE-2020-15665
+#     - CVE-2020-15666
+#     - CVE-2020-15667
+#     - CVE-2020-15668
+#     - CVE-2020-15670
+#   79.0-r0:
+#     - CVE-2020-6463
+#     - CVE-2020-6514
+#     - CVE-2020-15652
+#     - CVE-2020-15653
+#     - CVE-2020-15654
+#     - CVE-2020-15655
+#     - CVE-2020-15656
+#     - CVE-2020-15657
+#     - CVE-2020-15658
+#     - CVE-2020-15659
+#   78.0-r0:
+#     - CVE-2020-12415
+#     - CVE-2020-12416
+#     - CVE-2020-12417
+#     - CVE-2020-12418
+#     - CVE-2020-12419
+#     - CVE-2020-12420
+#     - CVE-2020-12402
+#     - CVE-2020-12421
+#     - CVE-2020-12422
+#     - CVE-2020-12423
+#     - CVE-2020-12424
+#     - CVE-2020-12425
+#     - CVE-2020-12426
+#   77.0-r0:
+#     - CVE-2020-12399
+#     - CVE-2020-12405
+#     - CVE-2020-12406
+#     - CVE-2020-12407
+#     - CVE-2020-12408
+#     - CVE-2020-12409
+#     - CVE-2020-12411
+#   76.0-r0:
+#     - CVE-2020-6831
+#     - CVE-2020-12387
+#     - CVE-2020-12388
+#     - CVE-2020-12389
+#     - CVE-2020-12390
+#     - CVE-2020-12391
+#     - CVE-2020-12392
+#     - CVE-2020-12393
+#     - CVE-2020-12394
+#     - CVE-2020-12395
+#     - CVE-2020-12396
+#   75.0-r0:
+#     - CVE-2020-6821
+#     - CVE-2020-6822
+#     - CVE-2020-6823
+#     - CVE-2020-6824
+#     - CVE-2020-6825
+#     - CVE-2020-6826
+#   74.0.1-r0:
+#     - CVE-2020-6819
+#     - CVE-2020-6820
+#   74.0-r0:
+#     - CVE-2020-6805
+#     - CVE-2020-6806
+#     - CVE-2020-6807
+#     - CVE-2020-6808
+#     - CVE-2020-6809
+#     - CVE-2020-6810
+#     - CVE-2020-6811
+#     - CVE-2019-20503
+#     - CVE-2020-6812
+#     - CVE-2020-6813
+#     - CVE-2020-6814
+#     - CVE-2020-6815
+#   71.0.1-r0:
+#     - CVE-2019-17016
+#     - CVE-2019-17017
+#     - CVE-2019-17020
+#     - CVE-2019-17022
+#     - CVE-2019-17023
+#     - CVE-2019-17024
+#     - CVE-2019-17025
+#     - CVE-2019-17026
+#   70.0-r0:
+#     - CVE-2018-6156
+#     - CVE-2019-15903
+#     - CVE-2019-11757
+#     - CVE-2019-11759
+#     - CVE-2019-11760
+#     - CVE-2019-11761
+#     - CVE-2019-11762
+#     - CVE-2019-11763
+#     - CVE-2019-11764
+#     - CVE-2019-11765
+#     - CVE-2019-17000
+#     - CVE-2019-17001
+#     - CVE-2019-17002
+#   68.0.2-r0:
+#     - CVE-2019-11733
+
+# Run this to bump commits above.
+_bump() {
+	msg "Updating commit hashes in $APKBUILD..."
+
+	# Get pinned settings submodule commit from librewolf source tag
+	local _tag=${pkgver/_p/-}
+	local _settings_commit=$(curl -sL "https://codeberg.org/api/v1/repos/librewolf/source/contents/settings?ref=$_tag" | jq -r '.sha')
+	local _l10n_commit=$(git ls-remote https://github.com/mozilla-l10n/firefox-l10n.git main | awk '{print $1}')
+
+	msg "  settings=$_settings_commit"
+	msg "  l10n=$_l10n_commit"
+
+	sed -i \
+		-e "s|^_settings_commit=.*|_settings_commit=$_settings_commit|" \
+		-e "s|^_l10n_commit=.*|_l10n_commit=$_l10n_commit|" \
+		"$APKBUILD"
+}
+
+# we need this because cargo verifies checksums of all files in vendor
+# crates when it builds and gives us no way to override or update the
+# file sanely... so just clear out the file list
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' third_party/rust/$1/.cargo-checksum.json
+}
+
+prepare() {
+	cd "$srcdir"/source
+	rmdir settings
+	mv ../settings settings
+	mv ../firefox-${pkgver%_p*} librewolf-${pkgver/_p/-}
+	mkdir -p librewolf-${pkgver/_p/-}/lw
+	mv ../firefox-l10n-$_l10n_commit librewolf-${pkgver/_p/-}/lw/l10n
+
+	patch -p1 < "$srcdir"/l10n.patch.early
+
+	python3 scripts/librewolf-patches.py ${pkgver%_p*} ${pkgver#*_p}
+
+	default_prepare
+
+	export CFLAGS="${CFLAGS/-fstack-clash-protection/} -g0 -O2"
+	export CXXFLAGS="${CXXFLAGS/-fstack-clash-protection/} -g0 -O2 -Wno-deprecated-builtins -Wno-deprecated-declarations"
+
+	_clear_vendor_checksums audio_thread_priority
+	_clear_vendor_checksums libc
+	_clear_vendor_checksums cc
+	_clear_vendor_checksums zeitstempel
+	_clear_vendor_checksums wgpu-hal
+	_clear_vendor_checksums alsa
+}
+
+build() {
+	export MOZ_BUILD_DATE="$(date ${SOURCE_DATE_EPOCH:+ -d@${SOURCE_DATE_EPOCH}} "+%Y%m%d%H%M%S")"
+
+	# for lto
+	ulimit -n 4096
+
+	# can't be set here and fail
+	unset RUSTFLAGS
+
+	local thinlto_jobs=${JOBS:-1}
+	local link_threads=${JOBS:-1}
+
+	case "$CARCH" in
+	# on this platform, lld seems to not utilise >1 threads for thinlto for some reason.
+	# at the same time, having more than 8 also crashes lld for librewolf buildsystems (why?).
+	aarch64)
+		if [ $thinlto_jobs -gt 8 ]; then
+			thinlto_jobs=8
+		fi
+		;;
+	esac
+
+	case "$CARCH" in
+	arm*|x86)
+		link_threads=1
+		;;
+	esac
+
+	export LDFLAGS="$LDFLAGS -Wl,--thinlto-jobs=$thinlto_jobs -Wl,--threads=$link_threads"
+
+	case "$CARCH" in
+	# ld.lld: error: undefined symbol: __atomic_store
+	# ld.lld: error: undefined symbol: __atomic_load
+	x86)
+		LDFLAGS="$LDFLAGS -latomic"
+		;;
+	esac
+
+	export SHELL=/bin/sh
+	export BUILD_OFFICIAL=1
+	export MOZILLA_OFFICIAL=1
+	export USE_SHORT_LIBNAME=1
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
+	export MOZBUILD_STATE_PATH="$srcdir"/mozbuild
+	# disable desktop notifications
+	export MOZ_NOSPAM=1
+	# Find our triplet JSON
+	export RUST_TARGET="$CHOST"
+
+	# has to be same version or older than lld
+	export CC="clang-$_llvmver"
+	export CXX="clang++-$_llvmver"
+
+	# set rpath so linker finds the libs
+	export LDFLAGS="$LDFLAGS -Wl,-rpath,$_mozappdir"
+
+	# let librewolf do this itself.
+	unset CARGO_PROFILE_RELEASE_OPT_LEVEL
+	unset CARGO_PROFILE_RELEASE_LTO
+
+	export CBUILD CHOST builddir pkgname
+	envsubst < "$srcdir"/mozconfig > base-mozconfig
+
+	case "$CARCH" in
+	# mimalloc clashes with scudo in a weird way here
+	# we can try to minimize memory usage instead by reducing parallels
+	x86|arm*)
+		export MOZ_PARALLEL_BUILD=4
+		;;
+	# default allocator returns oom ( and, in turn, std::bad_alloc in clang )
+	# at even ~70% of host memory usage
+	*)
+		export LD_PRELOAD=/usr/lib/libmimalloc-insecure.so.2
+		;;
+	esac
+
+	case "$CARCH" in
+	'') # aarch64|x86_64|ppc64le
+		msg "building instrumented $pkgname"
+		cat > profile-mozconfig base-mozconfig - <<-EOF
+		ac_add_options --enable-profile-generate=cross
+		EOF
+		export MOZCONFIG=profile-mozconfig
+		./mach build
+		./mach package
+
+		msg "profiling $pkgname"
+
+		LLVM_PROFDATA=llvm-profdata \
+		JARLOG_FILE="$PWD"/jarlog \
+		GDK_BACKEND=x11 \
+		LD_LIBRARY_PATH="$PWD"/obj/dist/$pkgname \
+		XDG_RUNTIME_DIR="$(mktemp -d "$builddir/pgo-runtime-XXXXXX")" \
+		MOZ_ENABLE_WAYLAND=0 \
+		xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten local" \
+		dbus-run-session -- \
+		./mach python build/pgo/profileserver.py
+
+		test -s merged.profdata
+		test -s jarlog
+
+		./mach clobber
+
+		msg "building optimised $pkgname"
+		cat > optimised-mozconfig base-mozconfig - <<-EOF
+		ac_add_options --enable-lto=cross
+		ac_add_options --enable-profile-use=cross
+		ac_add_options --with-pgo-profile-path="$PWD"/merged.profdata
+		ac_add_options --with-pgo-jarlog="$PWD"/jarlog
+		EOF
+		export MOZCONFIG=optimised-mozconfig
+		./mach build
+		;;
+	armv7|x86|riscv64|loongarch64|aarch64|x86_64|ppc64le)
+		# others: no pgo here as it uses too much memory/broken on riscv
+		msg "building regular $pkgname"
+		cat > regular-mozconfig base-mozconfig - <<-EOF
+		ac_add_options --disable-profiling
+		EOF
+		export MOZCONFIG=regular-mozconfig
+		./mach build
+		;;
+	*)
+		msg "implement build for $CARCH"
+		exit 1
+	esac
+}
+
+package() {
+	DESTDIR="$pkgdir" ./mach install
+
+	local _png
+	for _png in ./browser/branding/librewolf/default*.png; do
+		local i=${_png%.png}
+		i=${i##*/default}
+		install -d "$pkgdir"/usr/share/icons/hicolor/"$i"x"$i"/apps/
+		ln -s "$_mozappdir"/browser/chrome/icons/default/default"$i".png \
+			"$pkgdir"/usr/share/icons/hicolor/"$i"x"$i"/apps/$pkgname.png
+	done
+
+	case "$CARCH" in
+	x86|arm*) ;;
+	*) patchelf --add-needed libscudo.so "$pkgdir"/usr/lib/$pkgname/$pkgname ;;
+	esac
+
+	install -Dm644 browser/branding/librewolf/content/about-logo.png \
+		"$pkgdir"/usr/share/icons/hicolor/192x192/apps/$pkgname.png
+	install -Dm644 browser/branding/librewolf/content/about-logo@2x.png \
+		"$pkgdir"/usr/share/icons/hicolor/384x384/apps/$pkgname.png
+	install -Dm644 "$srcdir"/source/patches/pref-pane/category-librewolf.svg \
+		"$pkgdir"/usr/share/icons/hicolor/scalable/apps/$pkgname.svg
+
+	install -Dm644 "$srcdir"/librewolf.desktop \
+		"$pkgdir"/usr/share/applications/$pkgname.desktop
+
+	install -Dm644 "$srcdir"/distribution.ini \
+		"$pkgdir"/$_mozappdir/distribution/distribution.ini
+
+	# install our vendor prefs
+	install -Dm644 "$srcdir"/vendor-prefs.js \
+		"$pkgdir"/$_mozappdir/browser/defaults/preferences/vendor.js
+
+	# Replace duplicate binary with wrapper
+	# https://bugzilla.mozilla.org/show_bug.cgi?id=658850
+	install -Dm755 /dev/stdin "$pkgdir"/usr/bin/$pkgname <<- EOF
+	#!/bin/sh
+	exec $_mozappdir/$pkgname "\$@"
+	EOF
+	rm "$pkgdir"/$_mozappdir/$pkgname-bin
+	ln -sfv /usr/bin/$pkgname "$pkgdir"/$_mozappdir/$pkgname-bin
+}
+
+sha512sums="
+ea27141a205e5da8e52f6a07a7e0960455c9942a4d78bd0576958b25f8667d5fea28a2cd96bbac059e42b416529460cc191527fd212ef5441f785e5f10dcd01b  librewolf-source-152.0.2_p1.tar.gz
+05c054aa7ebef7a549237f916fc6b2bb8680db32a46fd2e364db193fb8ed168fb5bc3df63cf40b81ce3418e08e840ff63c20a493b9037a5cbb8f916768277dd9  librewolf-settings-38e92f591d526878dab70a4764fa8db3bbb01bed.tar.gz
+e4e54cffffcfd5751eac5817a7b74b0ef0aa43fc00ef29397cc9df9aa52572b2272b96e60373a70d712be4dc849170d8d5c1b449f3ea978b4ab28dee19056b03  firefox-152.0.2.tar.xz
+74c15103644535d89b1879ca7f3ed6938aabb558814e6e0dae1bea11a2de6cd6816d1c0fdfd98952c7ac7a3c6dada38caa5242c0e519c05a5eb4eef0347cb594  firefox-l10n-2444b4f5c4a2d5887ae3fcf88fd903c309942b60.tar.gz
+616169325dc7715d3ff558c1846394d992f1a0a9427af5339e84abf3d9e7d85a5f9f6bae218ee3416ef39769a56150ac35881435ac09b976876fd556fddeac38  abseil-cpp.patch
+8775931ad403f8a6545ecbedf139b7e7e152a2d6638f70d8feb457ea33e6e86147cd3c882e8059732ae946045b4918b412d0d6ba4dfdaeb2878a2277c6671676  bmo-1988166-no-single_threaded-h.patch
+9677a117e8f196ab969d1d8a5bb0f0eea9ebdfd983c0fce21e7507fd1178de7007bdd2ab59535ffd0703b5cfe4144d089a7bcf36a1518f318b394fa733836cf5  bmo-2039878-vulkan-32bit.patch
+5f02e950b60ff699d73a47da277fb561e887e25e2896920737f55dfd5aeeaad93acb539524414de99376f9ab511934dec4bff2acd7b55d997da8fdff4960760a  bmo-2048097-inttypes-x86.patch
+538b48f94b65b116f6f8d34b8ad9b58cd0bfaee1f83a6c3d7d523102816a619e19eff8b5dd09a6ef5921d85b6ab4c3746cf05eb035aef5b69a594e478a4d6331  bmo-2048100-xsimd-ppc64le.patch
+19eea840aa9c1c21e7bd1f832ec078989fe6f08fca40baa271be7e74f1cffeb5ab8d3218a93e664b8d90a41506dede524e2a5174cd47580866109bc6711ea969  fix-fortify-system-wrappers.patch
+e75daab5573ec6e28d3940a9bb98304d572dfb26ce7c1709e99fdd75dfa58abce170c96de683f8dc2224ea2e118aa7d78affbd54f99c4e328a4641685d64bd7d  lfs64.patch
+c0437a6753f3f350968fa12d250efdfe1bea77baf0e4c06b072b5cc9e78c774dbf4506bc536337030d349fb3ba4460097b75b0c7c5b8fb2d39d8b0a392948936  no-ccache-stats.patch
+1c6918dd6655d3a1251bfd4af2e1c561cbb00d540a883b4c1ebf7f5de530d754d9ac07b4b5f56cdab6c511d25c8910ec94043f5733e97501a67abffe1bafaeb1  rust-lto-thin.patch
+b12dbff6513ac8c231d91c257a9accecc034d9ea9c31d99ca0454334ccf80fe7b50d6a356182dc46a9f25064366ea9a177f463cb2544b1cf5368ee6bd71bc095  riscv64-no-lto.patch
+f8c3555ef6207933cbffbf4fc101a9b4c0d2990c0063162f0f0bde70ef0b46f86bfac42e7110695183424a87948de593f3927b2d8509ede3e4fc7bd8a1fad1ce  sandbox-sched_setscheduler.patch
+67bc0be3da973e6859256bf9be4df7100837430e6076fc0bd623f504c35e02e6c191e9c5a3a1d202e5ad4d89f874f254a09e164e39c7bfd97bbc8d4c8d0632a5  sqlite-ppc.patch
+2a09e1d6cdc8a6e4a357c1e10dd0dde5c381c64b4a952b3ce54eb4436cb16933f321be85ff616647334ce7379480f415db029adeac1a0782f4ef9816c83b8ca4  ppc-abi.patch
+066d85c494a2ac8d231e57a628093db4c56ea60673305d8662de429b070b4146157f8a33e7d7af3d048f765d528bb746711f86bc8980d2ad419b9c90e674d0a9  time64.patch
+eadf3f2d12d469010a1f6b83bd33ba276cdbf570db8c74c61b7c3d3eda80c7e843c1ea17400412be243b5309383543456f0d6de94b18323c542ba66d5cff89db  widevine.patch
+a5427a5cbf670dc4d63256cfc471c39a401254991081cba50a39ef0035c655381f379f064daf3ebc83392d1d1080a51f6f66242f68a0331935195c1539ec7285  musl-prctl.patch
+49989fa0e87e438b76905f730299449995c67bdd78f4f41d1225b5bdf48efe293e7363d40f918efc91a5f5d7b03c69fb9b4e58a99d8f4ef36b89d66a933e52bf  wasm-wasip1.patch
+bcc6987568082e5471962fed98110c13f9a81de7bba11cd961c2ac6c1240e677dc141d6834bf5755d2d85fc8251e522920dd3d9afae20ed9d9896b632ee9336f  loong0003-Define-HWCAP_LOONGARCH_LSX_and_LASX.patch
+f95b3a8338b34c98ae028278fcec3a1ae48d8de9fa9eed54544151ae994b57b8d0ff0e6363632257d3cbe9452bcd93ade5c139cf728d0a149a038a179a0b4016  loong0004-Fix-ycbcr-chromium_types-warning.patch
+9d7648181d3998dd751d3d4e549177908caddcfd51b7f7bcf801171fac247ec7a1d59cc752214e82c1ee8950bd004d3bb72d0fd6f26477a9e0de88b8f9e5f497  l10n.patch.early
+0b174366eeba6068df95b68460d743b39ca5df93fff1b53523af9cc8e05ed6eecead9791cddb59a47392c0b2aa270737fde836bbee1e34f6d3cb0920b725bb81  mozconfig
+73e9c51977d1a675c38fafeaa7478499d002d0dbfc8741ed7d9810ac39fb190870bd3295b86f7c9f7e8191f0fda7b7d6454d0a4cc1d7c61f3810a4d3a165180f  librewolf.desktop
+b6ceaf541ecb16a91398e1f629c7479e37c42c467e78980895ade8fe16feeb307ead50c839bac72f18bf74b7be46382c431a1361b3194cf3dffc6d58d67f82e5  distribution.ini
+bd20f3a9606890d239b9a7fb66f75c7aa860622005613186e3dda8804fd9d8a89a00ace19b34c198e6bb5620b1c5ae36edc82a2edf437251df2dcbca67180ce7  vendor-prefs.js
+"

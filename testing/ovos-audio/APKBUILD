@@ -1,0 +1,52 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=ovos-audio
+pkgver=1.0.1
+pkgrel=0
+pkgdesc="ovos-core metapackage for audio daemon"
+url="https://github.com/OpenVoiceOS/ovos-audio"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-importlib-metadata
+	py3-ovos-bus-client
+	py3-ovos-config
+	py3-ovos-ocp-audio-plugin
+	py3-ovos-ocp-files-plugin
+	py3-ovos-ocp-m3u-plugin
+	py3-ovos-ocp-news-plugin
+	py3-ovos-ocp-rss-plugin
+	py3-ovos-plugin-manager
+	py3-ovos-tts-server-plugin
+	py3-ovos-utils
+	sox
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-audio/archive/refs/tags/$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -k "not test_audio_service_queue_methods" \
+		--deselect test/unittests/test_end2end.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+57b4bc289642ff621e56b4c242e294cb486174f8f1a3bcce92681bc9cfe63a93a9e86b5d8292041576d3daec43db776e66cf2bb059924accbf2769d97da8252a  ovos-audio-1.0.1.tar.gz
+"

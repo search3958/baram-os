@@ -1,0 +1,45 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=handlr
+_projname=handlr-regex
+pkgver=0.10.0
+pkgrel=0
+pkgdesc="A better xdg-utils - manage mimeapps.list and default applications with ease"
+url="https://github.com/Anomalocaridid/handlr-regex"
+# loongarch64: build failure in libc crate
+arch="all !loongarch64"
+license="MIT"
+depends="shared-mime-info"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-fish-completion $pkgname-zsh-completion"
+source="https://github.com/Anomalocaridid/handlr-regex/archive/v$pkgver/$_projname-$pkgver.tar.gz
+	strip-regex-features.patch
+	"
+builddir="$srcdir/$_projname-$pkgver"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/handlr -t "$pkgdir"/usr/bin/
+	install -D -m644 assets/completions/_handlr -t "$pkgdir"/usr/share/zsh/site-functions/
+	install -D -m644 assets/completions/handlr.fish -t "$pkgdir"/usr/share/fish/vendor_completions.d/
+}
+
+sha512sums="
+1e53eb3b68620fedffb7d8691d23e36f953fbcc20f5b983e81a8b10de1d8c7eb18c78c805727e6e187eb098d9ddae73d5e585fde5c7612dd45e43ec41a161685  handlr-regex-0.10.0.tar.gz
+5b380531e69dbec762a47d686090ad619b9c23dab1e7adbcc655f3a624482b841b784db8ca3fefd4fd57fd533a1f57a1802430d33c92252027e93de189152157  strip-regex-features.patch
+"

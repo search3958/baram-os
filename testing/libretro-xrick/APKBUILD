@@ -1,0 +1,25 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-xrick
+pkgver=0_git20220331
+pkgrel=0
+_commit="10d7318c374de3e0eb056e6c7e823c644a7ce078"
+pkgdesc="Rick Dangerous implementation for libretro"
+url="https://github.com/libretro/xrick-libretro"
+arch="all"
+license="GPL-3.0-only"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/xrick-libretro/archive/$_commit.tar.gz"
+builddir="$srcdir/xrick-libretro-$_commit"
+options="!check" # No tests
+
+build() {
+	make -f Makefile.libretro
+}
+
+package() {
+	install -Dm644 xrick_libretro.so "$pkgdir"/usr/lib/libretro/xrick_libretro.so
+}
+
+sha512sums="
+f717f88cc57b31d0d7968aeedaa56e1866539046e397dedade38a664af22948b9a698abba2117c56eb7c0f5e6d7299223e03ed93b76c0b2b124e962bc3238d40  libretro-xrick-10d7318c374de3e0eb056e6c7e823c644a7ce078.tar.gz
+"

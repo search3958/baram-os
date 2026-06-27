@@ -1,0 +1,38 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-querysetsequence
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=django-querysetsequence
+pkgver=0.18
+pkgrel=2
+pkgdesc="Chain together multiple (disparate) QuerySets to treat them as a single QuerySet."
+url="https://pypi.python.org/project/django-querysetsequence"
+arch="noarch"
+license="ISC"
+depends="py3-django"
+checkdepends="py3-pytest py3-pytest-django py3-flake8 py3-isort"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/clokep/django-querysetsequence/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	DJANGO_SETTINGS_MODULE=tests.settings .testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8761a9ffc65018f95d5505aee40ec072288199e8c7ccf38dec6a4125a1a3a445703addae34ecb0392647282725b928835578255c87be88b7d625669b42ecfb5d  py3-django-querysetsequence-0.18.tar.gz
+"

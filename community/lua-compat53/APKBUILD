@@ -1,0 +1,113 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+_luaversions="5.1 5.2 5.3"
+pkgname=lua-compat53
+_rockname=compat53
+_pkgname=lua-compat-5.3
+pkgver=0.14.4
+pkgrel=0
+pkgdesc="Compatibility module providing Lua-5.3-style APIs for Lua"
+url="https://github.com/lunarmodules/lua-compat-5.3"
+arch="all"
+license="MIT"
+subpackages="$pkgname-dev"
+for _v in $_luaversions; do
+	makedepends="$makedepends lua$_v-dev"
+	subpackages="$subpackages lua$_v-${pkgname#lua-}:_package"
+done
+source="$pkgname-$pkgver.tar.gz::https://github.com/lunarmodules/$_pkgname/archive/v$pkgver.tar.gz
+	test.patch
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# C modules to build: source_file:output_name
+_c_modules="lutf8lib.c:utf8.so ltablib.c:table.so lstrlib.c:string.so"
+
+CC=${CC:-cc}
+
+# NOTE: We cannot build it using luarocks because of circular dependency.
+_build() {
+	local lver="$1"
+	local lua_incdir="$(pkg-config --variable=includedir lua$lver)"
+
+	msg "Building for Lua $lver..."
+
+	mkdir -p "build-$lver/compat53"
+
+	# Build C modules
+	local mod; for mod in $_c_modules; do
+		local src="${mod%:*}"
+		local soname="${mod#*:}"
+
+		msg2 "Compiling $soname"
+		$CC $CFLAGS -fno-plt -fPIC -I"$lua_incdir" -c "$src" -o "${src%.c}.o"
+		$CC $LDFLAGS -shared -o "build-$lver/compat53/$soname" "${src%.c}.o"
+	done
+
+	msg2 "Compiling testmod-${lver/./}.so"
+	$CC $CFLAGS -fPIC -shared -I"$lua_incdir" -Ic-api \
+		-o "tests/testmod-${lver/./}.so" \
+		tests/testmod.c
+}
+
+build() {
+	local lver; for lver in $_luaversions; do
+		_build "$lver"
+	done
+}
+
+check() {
+	cd tests
+
+	local lver; for lver in $_luaversions; do
+		msg "Testing Lua $lver..."
+
+		LUA_CPATH="$builddir/build-$lver/?.so;;" \
+		lua$lver test.lua
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_package() {
+	local lver="${subpkgname:3:3}"
+	pkgdesc="$pkgdesc $lver"
+	depends="lua$lver"
+	install_if="$pkgname=$pkgver-r$pkgrel lua$lver"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$_rockname/$pkgver-1"
+
+	cd "$builddir"
+
+	# Install C modules
+	install -D -m755 build-$lver/compat53/*.so -t "$subpkgdir"/usr/lib/lua/$lver/compat53/
+
+	# Install Lua modules
+	install -D -m644 compat53/*.lua -t "$subpkgdir"/usr/share/lua/$lver/compat53/
+
+	# Create rock manifest for luarocks compatibility
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+dev() {
+	default_dev
+
+	local incdir51="$subpkgdir/usr/include/lua5.1"
+	local incdir52="$subpkgdir/usr/include/lua5.2"
+
+	cd "$builddir"
+
+	install -D -m644 lprefix.h -t "$incdir51"
+	install -D -m644 c-api/* -t "$incdir51"/c-api/
+
+	mkdir -p "$incdir52"/c-api
+	cp -l "$incdir51"/*.h "$incdir52"/
+	cp -l "$incdir51"/c-api/* "$incdir52"/c-api/
+}
+
+sha512sums="
+0e6bd10513cab6053df7a911ba117c2dd5b5409e75bfe0890ee2ec0122893aa70fc1dc88b10a65553dd1069a038e3c7295dccc2de5c10338eccc718029d3f7b5  lua-compat53-0.14.4.tar.gz
+d25a565672d0e55ac1fbe80eba48368c7bffcc78e0c55ef93b231a2bff3296d70624ecceab81e0271da2a10a88bebd7b03072abb3a99e6b4fbe82fae73eabe32  test.patch
+"

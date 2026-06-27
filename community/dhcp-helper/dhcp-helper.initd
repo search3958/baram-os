@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+supervisor=supervise-daemon
+description="DHCP relay agent"
+
+nice="0"
+pidfile="/run/dhcp-helper.sd.pid"
+supervise_daemon_args=""
+
+command="/usr/sbin/dhcp-helper"
+command_args="-n ${ARGS}"
+
+depend() {
+	use net
+	after logger firewall
+}

@@ -1,0 +1,41 @@
+# Contributor: Assaf Inbal <shmuelzon@gmail.com>
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=onevpl-intel-gpu
+pkgver=25.4.6
+pkgrel=1
+pkgdesc="Intel oneVPL GPU Runtime"
+options="!check" # tests can't run in check(), only on install
+url="https://github.com/oneapi-src/oneVPL-intel-gpu"
+arch="x86_64"
+license="MIT"
+depends="libva"
+makedepends="
+	cmake
+	libva-dev
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/oneapi-src/oneVPL-intel-gpu/archive/refs/tags/intel-onevpl-$pkgver.tar.gz"
+builddir="$srcdir/vpl-gpu-rt-intel-onevpl-$pkgver"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+aede4f1c431712ce43f73bbcb78969c2c487e439e60934b60bc57798f98bde57535eb469545a522d353cdcfddb499462f87086f5d7a7ef8e2cd39b5df9683d47  onevpl-intel-gpu-25.4.6.tar.gz
+"

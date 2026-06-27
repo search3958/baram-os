@@ -1,0 +1,45 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=lxsession
+pkgver=0.5.6
+pkgrel=0
+pkgdesc="Lightweight X11 session manager"
+url="https://github.com/lxde/lxsession"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	gtk+3.0-dev
+	intltool
+	polkit-dev
+	vala
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://github.com/lxde/lxsession/archive/refs/tags/$pkgver/lxsession-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	mkdir m4
+	autoreconf -vif
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-gtk3
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+f54e2bf802374667d7557b0129373a3972e1395a21a856e9f74535cba913ceb4b109c1856426cd4ca7f5759d158d63b7068e16d9fc6b4a2102ad89eb5abccb23  lxsession-0.5.6.tar.gz
+"

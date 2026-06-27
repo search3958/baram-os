@@ -1,8 +1,0 @@
-#TODO make libcaca work
-[source]
-git = "https://github.com/yazgoo/blockish-caca"
-[build]
-template = "cargo"
-dependencies = [
-    "libcaca",
-]

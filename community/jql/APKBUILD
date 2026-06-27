@@ -1,0 +1,37 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=jql
+pkgver=8.0.5
+pkgrel=0
+pkgdesc="A JSON Query Language CLI tool"
+url="https://github.com/yamafaktory/jql"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+source="https://github.com/yamafaktory/jql/archive/jql-v$pkgver.tar.gz"
+options="net" # fetch dependencies
+builddir="$srcdir/jql-jql-v$pkgver"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	# core::tests::get_property_as_index seems to be broken
+	cargo test --frozen -- \
+		--skip core::tests::get_property_as_index
+}
+
+package() {
+	install -D -m755 target/release/jql -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+de472137603f807c1cb8642064afe2cd5b0f52c8d33be109fed0ca92ca2faae222750d31ada681ab76e13a5adaa362efad74fdc2d9977d80986850f66cb02fbf  jql-v8.0.5.tar.gz
+"

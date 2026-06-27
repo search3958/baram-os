@@ -1,0 +1,47 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=ck
+pkgver=0.7.2
+pkgrel=1
+pkgdesc="Concurrency primitives, safe memory reclamation mechanisms and non-blocking (including lock-free) data structures"
+url="https://concurrencykit.org/"
+arch="all"
+license="BSD-2-Clause AND Apache-2.0"
+makedepends="linux-headers"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+options="!check" # Tests take >2h on most architectures
+source="$pkgname-$pkgver.tar.gz::https://github.com/concurrencykit/ck/archive/refs/tags/$pkgver.tar.gz"
+
+# GitLab CI and builders run armhf/armv7 as 32-bit arches on aarch64.
+# Thus, we cannot rely on the uname -m output on these platforms.
+case "$CTARGET_ARCH" in
+armhf) export PLATFORM=armv6l ;;
+armv7) export PLATFORM=armv7l ;;
+esac
+
+# With -Os the compiler emits lots of -Winline warnings.
+# Silence those for now to keep the build log readable.
+export CFLAGS="$CFLAGS -Wno-inline"
+
+build() {
+	./configure \
+		--build=\$CBUILD \
+		--host=\$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+c3a93a8bbdab2c81ccbfe8f38a17677b912bc157c231c960330cb130e93c35e3aab6b2fd1695d0ea28dbe3e12297851f1b96ef1ee21ca4e4c0065c91b83f51c3  ck-0.7.2.tar.gz
+"

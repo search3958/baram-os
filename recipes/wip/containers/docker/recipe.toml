@@ -1,8 +1,0 @@
-# non-linux ports like macos use virtualization, examine the macos version
-#TODO implement go template
-[source]
-git = "https://github.com/docker/cli"
-branch = "27.x"
-shallow_clone = true
-[build]
-template = "go"

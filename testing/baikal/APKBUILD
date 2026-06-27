@@ -1,0 +1,98 @@
+maintainer="leso-kn <info@lesosoftware.com>"
+pkgname=baikal
+pkgver=0.11.1
+pkgrel=1
+pkgdesc="Baïkal is a Calendar+Contacts server"
+url="https://sabre.io/baikal"
+arch="noarch"
+license="GPL-3.0-only"
+_phpv=85
+_php=php$_phpv
+_composer="$_php -d memory_limit=512M /usr/bin/composer.phar"
+_phpstan="$_php -d memory_limit=512M vendor/phpstan/phpstan/phpstan.phar"
+makedepends="
+	$_php
+	$_php-phar
+	composer
+	rsync
+	"
+depends="
+	$_php-curl
+	$_php-dom
+	$_php-iconv
+	$_php-openssl
+	$_php-pdo
+	$_php-session
+	$_php-simplexml
+	$_php-tokenizer
+	$_php-xmlreader
+	$_php-xmlwriter
+	"
+subpackages="
+	$pkgname-mysql
+	$pkgname-pgsql
+	$pkgname-sqlite
+	"
+install="$pkgname-sqlite.post-install"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sabre-io/baikal/archive/refs/tags/$pkgver.tar.gz
+	fix-security-advisories.patch"
+builddir="$srcdir"/Baikal-$pkgver
+_grp_www="www-data"
+
+case $CARCH in
+	# checks hang up on ppc64le as of 0.11.1
+	ppc64le) options="$options !check";;
+esac
+
+build() {
+	mkdir -p build/baikal/Specific/db build/baikal/config
+	rsync -av \
+		Core html LICENSE README.md composer.json \
+		--exclude="*.swp" \
+		build/baikal
+	$_composer install --no-interaction --no-dev -d build/baikal
+}
+
+check() {
+	$_composer remove --dev friendsofphp/php-cs-fixer
+	$_phpstan analyse Core html
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/webapps
+
+	cp -r build/baikal "$pkgdir"/usr/share/webapps
+
+	ln -s html "$pkgdir"/usr/share/webapps/baikal/htm
+
+	chgrp $_grp_www "$pkgdir"/usr/share/webapps/baikal/config \
+		"$pkgdir"/usr/share/webapps/baikal/Specific/db
+	chmod 775 "$pkgdir"/usr/share/webapps/baikal/config \
+		"$pkgdir"/usr/share/webapps/baikal/Specific/db
+}
+
+mysql() {
+	depends="$pkgname $_php-pdo_mysql"
+	pkgdesc="$pkgdesc (MySQL backend)"
+
+	mkdir -p "$subpkgdir"
+}
+
+pgsql() {
+	depends="$pkgname $_php-pdo_pgsql"
+	pkgdesc="$pkgdesc (PostgreSQL backend)"
+
+	mkdir -p "$subpkgdir"
+}
+
+sqlite() {
+	depends="$pkgname $_php-pdo_sqlite"
+	pkgdesc="$pkgdesc (SQLite backend)"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+dd4a90794668083a037fdf3c9bb9e6cba7d10f5396add799555277348abfbe02f356f22490563fefb3921bb699c07d8e85b651134065a6f8904c6e83777cea78  baikal-0.11.1.tar.gz
+eb6a87289ed420f7e97dba7f89099bdff1caaede8b146cb693adc543e1402a504df325a51b261cddebc4e3b8447cbf920e65ae15093796a16b8f1dc158617f57  fix-security-advisories.patch
+"

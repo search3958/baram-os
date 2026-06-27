@@ -1,0 +1,34 @@
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Maarten van Gompel <proycon@anaproy.nl>
+pkgname=mbtserver
+pkgver=0.17
+pkgrel=2
+pkgdesc="Memory-based Tagger and Tagger Generator (server part)"
+arch="all"
+url="https://github.com/LanguageMachines/mbtserver"
+license="GPL-3.0-only"
+makedepends="libtool libxml2-dev ticcutils-dev timbl-dev timblserver-dev mbt-dev icu-dev"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/LanguageMachines/mbtserver/releases/download/v$pkgver/mbtserver-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	LD_LIBRARY_PATH="$PWD/src/.libs/" make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+b2a03a0f6dfdf2fb291330c6433c009b119ee5ee35f6021318da6532634ecef8d6687131d5f5c1c7500ff8ef59d86bf2236e52b09eda1fb950fd07756f00bdc8  mbtserver-0.17.tar.gz
+"

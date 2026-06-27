@@ -1,0 +1,35 @@
+--- a/Makefile
++++ b/Makefile
+@@ -175,6 +175,9 @@
+ ifdef CONFIG_LTO
+ PROGS+=libquickjs.lto.a
+ endif
++ifndef CONFIG_STATIC
++PROGS+=libquickjs.so.$(VERSION)
++endif
+ 
+ # examples
+ ifeq ($(CROSS_PREFIX),)
+@@ -256,6 +259,11 @@
+ 	$(AR) rcs $@ $^
+ endif # CONFIG_LTO
+ 
++ifndef CONFIG_STATIC
++libquickjs.so.$(VERSION): $(patsubst %.o, %.pic.o, $(QJS_LIB_OBJS))
++	$(CC) -shared -Wl,-soname,$@ $(LDFLAGS) -o $@ $^
++endif # CONFIG_STATIC
++
+ repl.c: $(QJSC) repl.js
+ 	$(QJSC) -c -o $@ -m repl.js
+ 
+@@ -328,6 +336,10 @@
+ 	install -m644 libquickjs.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
+ ifdef CONFIG_LTO
+ 	install -m644 libquickjs.lto.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
++endif
++ifndef CONFIG_STATIC
++	install -Dm755 libquickjs.so.$(VERSION) -t "$(DESTDIR)$(PREFIX)/lib"
++	ln -s libquickjs.so.$(VERSION) "$(DESTDIR)$(PREFIX)/lib/libquickjs.so"
+ endif
+ 	mkdir -p "$(DESTDIR)$(PREFIX)/include/quickjs"
+ 	install -m644 quickjs.h quickjs-libc.h "$(DESTDIR)$(PREFIX)/include/quickjs"

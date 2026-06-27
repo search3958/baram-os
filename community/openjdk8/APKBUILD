@@ -1,0 +1,516 @@
+# Contributor: Timo Teras <timo.teras@iki.fi>
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Timo Teras <timo.teras@iki.fi>
+pkgname=openjdk8
+_icedteaver=3.38.0
+# pkgver is <JDK version>.<JDK update>.<JDK build>
+# Check https://icedtea.classpath.org/wiki/Main_Page when updating!
+pkgver=8.482.08
+pkgrel=0
+pkgdesc="OpenJDK 8 provided by IcedTea"
+url="https://icedtea.classpath.org/"
+# riscv64 blocked by openjdk7
+arch="all !riscv64"
+license="custom"
+options="sover-namecheck"
+makedepends="
+	alsa-lib-dev
+	attr-dev
+	autoconf
+	automake
+	bash
+	ca-certificates
+	coreutils
+	cups-dev
+	file
+	findutils
+	fontconfig-dev
+	freetype-dev
+	gawk
+	giflib-dev
+	gtk+3.0-dev
+	java-cacerts
+	java-common
+	jpeg-dev
+	krb5-dev
+	lcms2-dev
+	libpng-dev
+	libxcomposite-dev
+	libxinerama-dev
+	libxrender-dev
+	libxslt
+	libxt-dev
+	libxtst-dev
+	linux-headers
+	lksctp-tools-dev
+	nss-dev
+	pcsc-lite-dev
+	sed
+	util-linux
+	xz
+	zip
+	zlib-dev
+	"
+
+# https://gitlab.alpinelinux.org/alpine/aports/-/issues/17327
+case "$CARCH" in
+loongarch64)
+	makedepends="$makedepends $pkgname-loongarch"
+	;;
+*)
+	makedepends="$makedepends $pkgname-bootstrap"
+	;;
+esac
+
+provides="$pkgname-bootstrap=$pkgver-r$pkgrel"
+
+case $CARCH in
+	x86)	_jarch=i386;;
+	x86_64)	_jarch=amd64;;
+	arm*)	_jarch=aarch32;;
+	*)	_jarch="$CARCH";;
+esac
+
+case $CARCH in
+x86|x86_64|aarch64)
+	_configure_jfr="--enable-jfr";;
+*)	_configure_jfr="--disable-jfr";;
+esac
+
+_java_home="usr/lib/jvm/java-1.8-openjdk"
+_jrelib="/$_java_home/jre/lib/$_jarch"
+
+# libjawt.so and lib.so cause duplicate provides
+somask="lib.so libjawt.so"
+ldpath="$_jrelib:$_jrelib/native_threads:$_jrelib/headless:$_jrelib/server:$_jrelib/jli"
+sonameprefix="$pkgname:"
+
+subpackages="$pkgname-dbg $pkgname-jre-lib:jrelib:noarch $pkgname-jre $pkgname-jre-base:jrebase
+	$pkgname-doc $pkgname-demos $pkgname-jdk"
+
+_dropsver=$_icedteaver
+_dropsurl="https://icedtea.classpath.org/download/drops/icedtea8/$_dropsver"
+
+source="https://icedtea.classpath.org/download/source/icedtea-$_icedteaver.tar.xz
+	openjdk-$_dropsver.tar.xz::$_dropsurl/openjdk-git.tar.xz
+
+	icedtea-hotspot-musl.patch
+	icedtea-hotspot-musl-ppc.patch
+	icedtea-hotspot-noagent-musl.patch
+	icedtea-hotspot-insantiate-arrayallocator.patch
+	icedtea-hotspot-lfs64.patch
+	icedtea-jdk-execinfo.patch
+	icedtea-jdk-fix-ipv6-init.patch
+	icedtea-jdk-fix-libjvm-load.patch
+	icedtea-jdk-implicit.patch
+	icedtea-jdk-musl.patch
+	icedtea-jdk-includes.patch
+	icedtea-int-conversion.patch
+	icedtea-autoconf-config.patch
+	icedtea-jdk-disable-vfork.patch
+	icedtea-JDK-6515172.patch
+	icedtea-issue13032.patch
+	"
+builddir="$srcdir/icedtea-$_icedteaver"
+
+# secfixes:
+#   8.482.08-r0:
+#     - CVE-2026-21925
+#     - CVE-2026-21932
+#     - CVE-2026-21933
+#     - CVE-2026-21945
+#   8.472.08-r0:
+#     - CVE-2025-30749
+#     - CVE-2025-30754
+#     - CVE-2025-30761
+#     - CVE-2025-50106
+#     - CVE-2025-53057
+#     - CVE-2025-53066
+#   8.452.09-r0:
+#     - CVE-2025-21587
+#     - CVE-2025-30691
+#     - CVE-2025-30698
+#   8.432.06-r0:
+#     - CVE-2024-21208
+#     - CVE-2024-21210
+#     - CVE-2024-21217
+#     - CVE-2024-21235
+#   8.422.05-r0:
+#     - CVE-2024-21011
+#     - CVE-2024-21068
+#     - CVE-2024-21085
+#     - CVE-2024-21094
+#     - CVE-2024-21131
+#     - CVE-2024-21138
+#     - CVE-2024-21140
+#     - CVE-2024-21144
+#     - CVE-2024-21145
+#     - CVE-2024-21147
+#   8.402.06-r0:
+#     - CVE-2024-20918
+#     - CVE-2024-20919
+#     - CVE-2024-20921
+#     - CVE-2024-20926
+#     - CVE-2024-20945
+#     - CVE-2024-20952
+#   8.392.08-r0:
+#     - CVE-2023-22067
+#     - CVE-2023-22081
+#   8.382.05-r0:
+#     - CVE-2023-22045
+#     - CVE-2023-22049
+#   8.372.07-r0:
+#     - CVE-2023-21930
+#     - CVE-2023-21937
+#     - CVE-2023-21938
+#     - CVE-2023-21939
+#     - CVE-2023-21954
+#     - CVE-2023-21967
+#     - CVE-2023-21968
+#   8.362.09-r0:
+#     - CVE-2022-21619
+#     - CVE-2022-21624
+#     - CVE-2022-21626
+#     - CVE-2022-21628
+#     - CVE-2023-21830
+#     - CVE-2023-21843
+#   8.345.01-r0:
+#     - CVE-2022-21426
+#     - CVE-2022-21434
+#     - CVE-2022-21443
+#     - CVE-2022-21476
+#     - CVE-2022-21496
+#     - CVE-2022-21540
+#     - CVE-2022-21541
+#     - CVE-2022-34169
+#   8.322.06-r0:
+#     - CVE-2022-21248
+#     - CVE-2022-21283
+#     - CVE-2022-21293
+#     - CVE-2022-21294
+#     - CVE-2022-21282
+#     - CVE-2022-21296
+#     - CVE-2022-21299
+#     - CVE-2022-21305
+#     - CVE-2022-21340
+#     - CVE-2022-21341
+#     - CVE-2022-21349
+#     - CVE-2022-21360
+#     - CVE-2022-21365
+#   8.312.07-r0:
+#     - CVE-2021-35550
+#     - CVE-2021-35556
+#     - CVE-2021-35559
+#     - CVE-2021-35561
+#     - CVE-2021-35564
+#     - CVE-2021-35565
+#     - CVE-2021-35567
+#     - CVE-2021-35578
+#     - CVE-2021-35586
+#     - CVE-2021-35588
+#     - CVE-2021-35603
+#   8.302.08-r0:
+#     - CVE-2021-2341
+#     - CVE-2021-2369
+#     - CVE-2021-2388
+#   8.272.10-r0:
+#     - CVE-2020-14556
+#     - CVE-2020-14577
+#     - CVE-2020-14578
+#     - CVE-2020-14579
+#     - CVE-2020-14581
+#     - CVE-2020-14583
+#     - CVE-2020-14593
+#     - CVE-2020-14621
+#     - CVE-2020-14779
+#     - CVE-2020-14781
+#     - CVE-2020-14782
+#     - CVE-2020-14792
+#     - CVE-2020-14796
+#     - CVE-2020-14797
+#     - CVE-2020-14798
+#     - CVE-2020-14803
+#   8.252.09-r0:
+#     - CVE-2020-2754
+#     - CVE-2020-2755
+#     - CVE-2020-2756
+#     - CVE-2020-2757
+#     - CVE-2020-2773
+#     - CVE-2020-2781
+#     - CVE-2020-2800
+#     - CVE-2020-2803
+#     - CVE-2020-2805
+#     - CVE-2020-2830
+#   8.242.08-r0:
+#     - CVE-2020-2583
+#     - CVE-2020-2590
+#     - CVE-2020-2593
+#     - CVE-2020-2601
+#     - CVE-2020-2604
+#     - CVE-2020-2659
+#     - CVE-2020-2654
+#   8.232.09-r0:
+#     - CVE-2019-2933
+#     - CVE-2019-2945
+#     - CVE-2019-2949
+#     - CVE-2019-2958
+#     - CVE-2019-2964
+#     - CVE-2019-2962
+#     - CVE-2019-2973
+#     - CVE-2019-2975
+#     - CVE-2019-2978
+#     - CVE-2019-2981
+#     - CVE-2019-2983
+#     - CVE-2019-2987
+#     - CVE-2019-2988
+#     - CVE-2019-2989
+#     - CVE-2019-2992
+#     - CVE-2019-2999
+#     - CVE-2019-2894
+#   8.222.10-r0:
+#     - CVE-2019-2745
+#     - CVE-2019-2762
+#     - CVE-2019-2766
+#     - CVE-2019-2769
+#     - CVE-2019-2786
+#     - CVE-2019-2816
+#     - CVE-2019-2842
+#     - CVE-2019-7317
+#   8.212.04-r0:
+#     - CVE-2019-2602
+#     - CVE-2019-2684
+#     - CVE-2019-2698
+#   8.201.08-r0:
+#     - CVE-2019-2422
+#     - CVE-2019-2426
+#     - CVE-2018-11212
+#   8.191.12-r0:
+#     - CVE-2018-3136
+#     - CVE-2018-3139
+#     - CVE-2018-3149
+#     - CVE-2018-3169
+#     - CVE-2018-3180
+#     - CVE-2018-3183
+#     - CVE-2018-3214
+#     - CVE-2018-13785
+#     - CVE-2018-16435
+#   8.181.13-r0:
+#     - CVE-2018-2938
+#     - CVE-2018-2940
+#     - CVE-2018-2952
+#     - CVE-2018-2973
+#     - CVE-2018-3639
+
+prepare() {
+	local ver_u=$(sed -En 's/^\s*JDK_UPDATE_VERSION\s*=\s*(\S+).*/\1/p' acinclude.m4)
+	local ver_b=$(sed -En 's/^\s*BUILD_VERSION\s*=\s*b(\S+).*/\1/p' acinclude.m4)
+	[ "${pkgver#*.}" = "$ver_u.$ver_b" ] \
+		|| die "Version mismatch, source is 8.$ver_u.$ver_b, but abuild defines $pkgver!"
+
+	# Busybox sha256 does not support longopts.
+	sed -e "s/--check/-c/g" -i Makefile.am
+
+	local patch; for patch in $source; do
+		case $patch in
+		icedtea-*.patch)
+			cp ../$patch patches
+			;;
+		*.patch)
+			msg "Applying patch $patch"
+			patch -p1 -i "$srcdir"/$patch
+			;;
+		esac
+	done
+
+	./autogen.sh
+}
+
+build() {
+	export JAVA_HOME="/$_java_home"
+	export PATH="$JAVA_HOME/bin:$PATH"
+
+	if [ -z "$JOBS" ]; then
+		export JOBS=$(printf '%s\n' "$MAKEFLAGS" | sed -n -e 's/.*-j\([0-9]\+\).*/\1/p')
+	fi
+
+	DISTRIBUTION_PATCHES=""
+	local patch; for patch in $source; do
+		case $patch in
+		icedtea-*.patch)
+			DISTRIBUTION_PATCHES="$DISTRIBUTION_PATCHES patches/$patch"
+			;;
+		esac
+	done
+	export DISTRIBUTION_PATCHES
+	echo "icedtea patches: $DISTRIBUTION_PATCHES"
+
+	# cannot pass -j through here
+	unset MAKEFLAGS
+
+	# we want to build hotspot with better optimisations; it's set to this
+	# (prepended) anyway, and it's huge
+	export CFLAGS="$CFLAGS -O3 -std=gnu89"
+	export CXXFLAGS="$CXXFLAGS -O3"
+
+	case "$CARCH" in
+	x86)
+		export CFLAGS="${CFLAGS/-fno-plt}"
+		export CXXFLAGS="${CXXFLAGS/-fno-plt}"
+		;;
+	esac
+
+	bash ./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix="/$_java_home" \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-dependency-tracking \
+		--disable-downloading \
+		--disable-precompiled-headers \
+		--disable-docs \
+		--with-parallel-jobs=${JOBS:-2} \
+		--with-hotspot-build=default \
+		--with-openjdk-src-zip="$srcdir/openjdk-$_dropsver.tar.xz" \
+		--with-jdk-home="/$_java_home" \
+		--with-pkgversion="Alpine $pkgver-r$pkgrel" \
+		--with-curves="nist+" \
+		--enable-nss \
+		$_configure_jfr
+	# in rare cases the build hangs
+	timeout 5h make JOBS="${JOBS:-2}"
+}
+
+# TODO: Run tests or at least try to compile and run hello world.
+check() {
+	cd "$builddir"/openjdk.build/images/j2sdk-image
+
+	./bin/java -version
+}
+
+package() {
+	depends="$pkgname-jdk=$pkgver-r$pkgrel"
+
+	mkdir -p "$pkgdir"/$_java_home
+
+	cp -a openjdk.build/images/j2sdk-image/* "$pkgdir"/$_java_home/
+	rm "$pkgdir"/$_java_home/src.zip
+
+	# This archive contains absolute paths from the build environment,
+	# so it does not work on the target system. User can generate it
+	# running 'java -Xshare:dump'.
+	rm -f "$pkgdir"/$_jrelib/server/classes.jsa
+
+	# symlink to shared java cacerts store
+	rm -f "$pkgdir"/$_java_home/jre/lib/security/cacerts
+	ln -sf /etc/ssl/certs/java/cacerts \
+		"$pkgdir"/$_java_home/jre/lib/security/cacerts
+}
+
+jrelib() {
+	pkgdesc="OpenJDK 8 Java Runtime (class libraries)"
+	depends=""
+
+	amove \
+		$_java_home/jre/lib/images \
+		$_java_home/jre/lib/*.jar \
+		$_java_home/jre/lib/security \
+		$_java_home/jre/lib/ext/*.jar \
+		$_java_home/jre/lib/cmm \
+		$_java_home/jre/ASSEMBLY_EXCEPTION \
+		$_java_home/jre/THIRD_PARTY_README \
+		$_java_home/jre/LICENSE
+}
+
+jre() {
+	pkgdesc="OpenJDK 8 Java Runtime"
+	depends="font-dejavu"
+	provides=java-jre
+
+	amove \
+		$_java_home/jre/bin/policytool \
+		$_java_home/bin/appletviewer \
+		$_java_home/bin/policytool \
+		$_java_home/jre/lib/$_jarch/libawt_xawt.so \
+		$_java_home/jre/lib/$_jarch/libfontmanager.so \
+		$_java_home/jre/lib/$_jarch/libjawt.so \
+		$_java_home/jre/lib/$_jarch/libjsoundalsa.so \
+		$_java_home/jre/lib/$_jarch/libsplashscreen.so
+}
+
+jrebase() {
+	pkgdesc="OpenJDK 8 Java Runtime (no GUI support)"
+	depends="$pkgname-jre-lib=$pkgver-r$pkgrel java-common java-cacerts nss"
+	provides=java-jre-headless
+
+	amove \
+		$_java_home/bin/java \
+		$_java_home/bin/orbd \
+		$_java_home/bin/rmid \
+		$_java_home/bin/servertool \
+		$_java_home/bin/unpack200 \
+		$_java_home/bin/keytool \
+		$_java_home/bin/pack200 \
+		$_java_home/bin/rmiregistry \
+		$_java_home/bin/tnameserv \
+		$_java_home/lib/$_jarch/jli
+
+	# Rest of the jre subdir (which were not taken by -jre subpkg).
+	amove $_java_home/jre
+
+	ln -s java-1.8-openjdk "$subpkgdir"/usr/lib/jvm/java-8-openjdk
+}
+
+doc() {
+	default_doc
+
+	amove $_java_home/man
+}
+
+demos() {
+	pkgdesc="OpenJDK 8 Java Demos and Samples"
+	depends="$pkgname-jdk=$pkgver-r$pkgrel"
+
+	amove \
+		$_java_home/demo \
+		$_java_home/sample
+}
+
+jdk() {
+	pkgdesc="$pkgdesc (JDK)"
+	depends="
+		$pkgname-jre=$pkgver-r$pkgrel
+		nss
+		java-cacerts
+		"
+	provides=java-jdk
+	provider_priority=8
+
+	amove \
+		$_java_home/bin \
+		$_java_home/lib \
+		$_java_home/include
+}
+
+sha512sums="
+132846dc28d8d15d58df4730b79aa8b4932ef5be74a2fb08c85fba5de6ebae6818b1f102b7101fd8ded8870e07366f53cac668ad6a41fa7e8387fb61327c60a7  icedtea-3.38.0.tar.xz
+3bf4c216ae37ce21a26775afd03baf15760bb21303e4f74fda3fc8402ac45c7f70d879c67cab4b243035c2bd6d81b793a23fd139b0248ffeb8a43f6b45ac7d9d  openjdk-3.38.0.tar.xz
+28709285390a997adbd56ebda42ef718fbc08daf572b8568f484436d255514f9d25f033e3333dff8aa352fc9846057ac5bb42fa955d3e5e44eddc96dc273c07c  icedtea-hotspot-musl.patch
+e6fff8ab886f42006ad5c210f46e82a3a4c0b654edecc4764a0d20f0e5dc81138c2c5181b034095b93f94b5aa96b7e5068f42bafa283809f6fe9d2c8655d64d7  icedtea-hotspot-musl-ppc.patch
+19459dbb922f5a71cd15b53199481498626a783c24f91d2544d55b7dddd2cdb34a64bbf0226b99548612dd1743af01b3f9ff32c30abbbc90ce727ca2dbbbd1f9  icedtea-hotspot-noagent-musl.patch
+4bf002ec25844f4e55b588d0516e658c548700d3bcae79be74bf75d9cf30cf9cd448767db36935924dd3b07f34d0cf087321cb35abb4943690353d11485ab0de  icedtea-hotspot-insantiate-arrayallocator.patch
+f0e6e69a3032b6167b21a6ace20534c2e50333b3a2c8d8d7d6b610c0ccf0f12d325d55b88b1b739e120adfc3071bdae113c5a7861f1a9107172eaff9da3093eb  icedtea-hotspot-lfs64.patch
+f6365cfafafa008bd6c1bf0ccec01a63f8a39bd1a8bc87baa492a27234d47793ba02d455e5667a873ef50148df3baaf6a8421e2da0b15faac675867da714dd5f  icedtea-jdk-execinfo.patch
+48533f87fc2cf29d26b259be0df51087d2fe5b252e72d00c6ea2f4add7b0fb113141718c116279c5905e03f64a1118082e719393786811367cf4d472b5d36774  icedtea-jdk-fix-ipv6-init.patch
+b135991c76b0db8fa7c363e0903624668e11eda7b54a943035c214aa4d7fc8c3e8110ed200edcec82792f3c9393150a9bd628625ddf7f3e55720ff163fbbb471  icedtea-jdk-fix-libjvm-load.patch
+21a16599d7e0aaf2997db59ada5af63e25484949ca965a34536ee44b950a132a6b5ca0b4922a6919d840a84ba0bb8413d87d2b97ea2c65c00e8766cc470c267d  icedtea-jdk-implicit.patch
+3b01de971f64f082d3e289cf337e635ef001381e8ca427a77baa9c52c7ba423889f57665779ca5b3c8bcefb8feacbea31dfaac580c969a4f061439069ee34aae  icedtea-jdk-musl.patch
+a6309ce0c78d1ec3867eaec4c9ca785c1052d5449ecbe656bb952e4dfbb32b6396e4759b11f23e6bb8ddd739cc47496833c88cc525d94d941a984cc25491efe4  icedtea-jdk-includes.patch
+4fcad23d533d6a1fd5526223cb76330aebbbbab3766c43a5b6d5d8cc9c729381d153cced81aae2666798c82e90e10e193db33207b357e01fb5ebd0b686263394  icedtea-int-conversion.patch
+cd464dcbb01d54c7eb30013631b16612817b1fd63df384c0cff116980ad950a71c54fcc0916ef183c9392b22b8a8804e633c4c66e3f1c0f27e35b2bb188a4aa7  icedtea-autoconf-config.patch
+c70fee8f1a10c155494ab9c6e55e979d8a3e23f12358ffe9de2029ae15feff361957f1aa43af43c90ecf00523f92e3333b40311a8d0c132ebd456486cb85ed8a  icedtea-jdk-disable-vfork.patch
+ac01a54e918e2f335c60968f77ed9b8303ce79c17a5058622d7572e01e7890c7b72215ddc8bb8df200b3fcdea10899061eae3b14472a4d6cd495976cf0c05954  icedtea-JDK-6515172.patch
+e1bca07aa1a25258ee9c8e9870f8d475db788bab1a354c5458196012aaf20fba8b3968b646d18792ab7135e9b75cbebafc53fda176166bc6ddfd13e4a43b1c8d  icedtea-issue13032.patch
+"

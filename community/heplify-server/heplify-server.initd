@@ -1,0 +1,26 @@
+#!/sbin/openrc-run
+
+description="HEP Capture Server & Switch"
+command=/usr/bin/heplify-server
+command_args="-config ${CONFIG_FILE:-/etc/heplify-server/heplify-server.toml} -logstd false -logsys true"
+command_background=yes
+command_user="${USER:-homer}"
+command_group="${GROUP:-homer}"
+pidfile="/run/heplify-server/${RC_SVCNAME}.pid"
+extra_started_commands=reload
+start_stop_daemon_args="--stderr /var/log/heplify-server/heplify-server.log"
+
+depend() {
+	need net
+	after firewall postgresql
+}
+
+start_pre() {
+	checkpath --directory --owner $command_user:$command_group ${pidfile%/*} /var/log/heplify-server
+}
+
+reload() {
+	ebegin "Reloading PromTargetIP and PromTargetName in ${RC_SVCNAME} configuration"
+	start-stop-daemon --signal HUP --pidfile "${pidfile}"
+	eend $?
+}

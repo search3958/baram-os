@@ -1,5 +1,0 @@
-#TODO compile and test
-[source]
-tar = "https://github.com/dosfstools/dosfstools/releases/download/v4.2/dosfstools-4.2.tar.gz"
-[build]
-template = "configure"

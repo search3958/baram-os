@@ -1,0 +1,82 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: TBK <alpine@jjtc.eu>
+pkgname=rizin
+pkgver=0.8.2
+pkgrel=1
+pkgdesc="UNIX-like reverse engineering framework and command-line toolset"
+url="https://rizin.re/"
+# 32bit - 15/78 big	FAIL 0.26s (exit status 1)
+# Could be integer overflow
+# s390x:
+# 49/75 pdb FAIL 0.97s (exit status 1)
+# 55/75 serialize_analysis FAIL 0.03s (exit status 1)
+options="!check" # tests are unstable
+arch="all"
+license="GPL-3.0-or-later AND LGPL-3.0-or-later"
+makedepends="
+	cmake
+	meson
+	py3-yaml
+	capstone-dev
+	file-dev
+	libuv-dev
+	linux-headers
+	libzip-dev
+	lz4-dev
+	openssl-dev>3
+	tree-sitter-dev
+	xxhash-dev
+	zlib-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-libs"
+source="$pkgname-$pkgver.tar.xz::https://github.com/rizinorg/rizin/releases/download/v$pkgver/rizin-src-v$pkgver.tar.xz"
+builddir="$srcdir/rizin-v$pkgver"
+
+# secfixes:
+#   0.8.2-r0:
+#     - CVE-2026-22780
+#   0.6.1-r0:
+#     - CVE-2023-40022
+#   0.4.1-r0:
+#     - CVE-2022-36043
+#     - CVE-2022-36040
+#     - CVE-2022-36041
+#     - CVE-2022-36039
+#     - CVE-2022-36044
+#     - CVE-2022-36042
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	CPPFLAGS="$CPPFLAGS -O2" \
+	abuild-meson \
+		-Db_lto=true \
+		-Dpackager="alpinelinux" \
+		-Dpackager_version="$pkgver-r$pkgrel" \
+		-Duse_sys_capstone=enabled \
+		-Duse_capstone_version="v4" \
+		-Duse_sys_magic=enabled \
+		-Duse_sys_libzip=enabled \
+		-Duse_sys_zlib=enabled \
+		-Duse_sys_lz4=enabled \
+		-Duse_sys_xxhash=enabled \
+		-Duse_sys_openssl=enabled \
+		-Duse_sys_tree_sitter=enabled \
+		. output
+	meson compile -C output
+}
+
+check() {
+	# Include the build rizin otherwise
+	# unit/test_rzpipe.c will fail
+	export PATH="$PATH:$builddir/output/binrz/rizin/"
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+cb51091c0e054add9a965596d693eb86f6d0f04147386a24a694f51f39702d4b8762272b094d7b103a9e413a158226b0366d982e46949807fb9c529b66ce8981  rizin-0.8.2.tar.xz
+"

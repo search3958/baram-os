@@ -1,0 +1,45 @@
+# Contributor: Curt Tilmes <Curt.Tilmes@nasa.gov>
+# Maintainer: Curt Tilmes <Curt.Tilmes@nasa.gov>
+pkgname=nqp
+pkgver=2025.11
+pkgrel=0
+pkgdesc="Not Quite Perl"
+url="https://github.com/Raku/nqp"
+arch="all"
+options="!archcheck" # Arch dependencies are embedded
+license="Artistic-2.0"
+depends="moarvm~$pkgver"
+makedepends="
+	moarvm-dev~$pkgver
+	perl-utils
+	"
+checkdepends="perl-test-harness"
+subpackages="$pkgname-doc"
+source="https://github.com/Raku/nqp/releases/download/$pkgver/nqp-$pkgver.tar.gz"
+
+build() {
+	perl Configure.pl \
+		--prefix=/usr \
+		--backends=moar
+	make
+}
+
+check() {
+	export TEST_JOBS=$JOBS
+	export HARNESS_VERBOSE=1
+
+	msg "Running $TEST_JOBS parallel test jobs"
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dvm644 CREDITS LICENSE README.pod VERSION \
+		-t "$pkgdir"/usr/share/doc/"$pkgname"
+	cp -vr docs examples "$pkgdir"/usr/share/doc/"$pkgname"/
+}
+
+sha512sums="
+673ed9842ea03ea64def337acf6265a0aa21e31a6799fc2cadad8a8c4832b37c23bf661384ef08eb5179769a3fa903bbb61816fda7713e00820a57e3db979c6b  nqp-2025.11.tar.gz
+"

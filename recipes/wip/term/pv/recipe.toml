@@ -1,5 +1,0 @@
-#TODO compile and test
-[source]
-tar = "https://www.ivarch.com/s/pv-1.10.5.tar.gz"
-[build]
-template = "configure"

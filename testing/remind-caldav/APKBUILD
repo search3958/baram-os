@@ -1,0 +1,29 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=remind-caldav
+pkgver=0.8.0
+pkgrel=5
+pkgdesc="caldav client to sync with remind"
+url="https://github.com/jspricke/remind-caldav"
+arch="noarch"
+license="GPL-3.0-only"
+depends="python3 py3-remind py3-caldav py3-dateutil py3-vobject"
+makedepends="py3-setuptools py3-gpep517"
+options="!check" # no tests
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jspricke/remind-caldav/archive/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+af1b57d32f58e2de20f0568879c0bdbd2fe9817a4692e0930feaa38a7c258360280fa871c271352c877b934ebf57b3c25a7bb06261024b9d561108daa47acdb5  remind-caldav-0.8.0.tar.gz
+"

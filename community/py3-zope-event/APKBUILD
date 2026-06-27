@@ -1,0 +1,34 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=py3-zope-event
+pkgver=5.1.1
+pkgrel=1
+pkgdesc="Event publishing / dispatch, used by Zope Component Architecture"
+url="https://github.com/zopefoundation/zope.event"
+arch="noarch"
+license="ZPL-2.1"
+depends="py3-setuptools"
+# checkdepends="py3-zope-testrunner" # Is in upper repo
+options="!check"
+subpackages="$pkgname-pyc"
+source="zope.event-$pkgver.tar.gz::https://github.com/zopefoundation/zope.event/archive/$pkgver.tar.gz"
+builddir="$srcdir"/zope.event-$pkgver
+
+replaces="py-zope-event" # Backwards compatibility
+provides="py-zope-event=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py test
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+1eef1aa743ab30b3b7e4582a1aafdfe275644485dd6b39c3638a05d478a90cb07e35e5319e48a9316809aeeda39f07eff61c246d56692ba853f790bdd83de618  zope.event-5.1.1.tar.gz
+"

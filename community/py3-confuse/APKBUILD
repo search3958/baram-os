@@ -1,0 +1,36 @@
+# Contributor: Marvin Preuss <marvin@xsteadfastx.org>
+# Maintainer: Marvin Preuss <marvin@xsteadfastx.org>
+pkgname=py3-confuse
+pkgver=2.2.0
+pkgrel=1
+pkgdesc="Painless YAML config files for Python"
+url="https://github.com/beetbox/confuse"
+arch="noarch"
+license="MIT"
+depends="python3 py3-typing-extensions py3-yaml"
+makedepends="py3-gpep517 py3-installer py3-poetry-core"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="confuse-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/c/confuse/confuse-$pkgver.tar.gz"
+builddir="$srcdir/confuse-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/confuse*.whl
+}
+
+sha512sums="
+1602d37ad38f6afb05919faec5db1fd80a7df56d90f7630060d81e023f32472c1876d4c883799f0326d0700ab93a03884b2642a803990d8b25f2fcd6a392b63b  confuse-2.2.0.tar.gz
+"

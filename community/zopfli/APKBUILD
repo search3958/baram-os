@@ -1,0 +1,36 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=zopfli
+pkgver=1.0.3_git20260213
+_commit=400a50779d7272b044f0ae339c5576c0e842d79e
+pkgrel=0
+pkgdesc="Compression algorithm library"
+url="https://github.com/fonttools/zopfli"
+arch="all"
+license="Apache-2.0"
+makedepends="cmake samurai"
+options="!check" # no test suite?
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/fonttools/zopfli/archive/$_commit.tar.gz"
+builddir="$srcdir/zopfli-$_commit"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname/
+	install -m644 README* \
+		"$pkgdir"/usr/share/doc/$pkgname/
+}
+
+sha512sums="
+b450f59f9c0365ffc7f39fdfe9053cb5b2e6a23ad316fd1f0a40fda2ea8e9ac70d5baa817ec969de9c07d9f2bb2e6b055653f9f96afdc9c1c8d285fec034686d  400a50779d7272b044f0ae339c5576c0e842d79e.tar.gz
+"

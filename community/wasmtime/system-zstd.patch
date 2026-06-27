@@ -1,0 +1,16 @@
+diff --git a/crates/cache/Cargo.toml b/crates/cache/Cargo.toml
+index bf78a1a6a6..66704ce5a1 100644
+--- a/crates/cache/Cargo.toml
++++ b/crates/cache/Cargo.toml
+@@ -21,7 +21,7 @@ serde = { workspace = true }
+ serde_derive = { workspace = true }
+ sha2 = { workspace = true }
+ toml = { workspace = true }
+-zstd = { version = "0.13.0", default-features = false }
++zstd = { version = "0.13.0", default-features = false, features = ["pkg-config"] }
+ wasmtime-environ = { workspace = true }
+ 
+ [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
+-- 
+2.54.0
+

@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+: ${cfgfile:="/etc/fluent-bit/fluent-bit.conf"}
+
+name=fluent-bit
+command="/usr/bin/fluent-bit"
+command_args="-c $cfgfile $fluentbit_opts"
+command_background="yes"
+pidfile="/run/fluent-bit.pid"
+
+depend() {
+	need net
+	after firewall
+}

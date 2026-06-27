@@ -1,8 +1,0 @@
-#TODO shared_child crate error (after cargo update)
-[source]
-git = "https://github.com/streamlib/streamlib"
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

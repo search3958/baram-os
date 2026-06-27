@@ -1,0 +1,55 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks-old
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=ktextwidgets5
+pkgver=5.116.0
+pkgrel=1
+pkgdesc="Advanced text editing widgets"
+# armhf blocked by qt5-qtdeclarative -> ki18n5
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.1-or-later"
+depends_dev="
+	kcompletion5-dev
+	kconfig5-dev
+	kconfigwidgets5-dev
+	ki18n5-dev
+	kiconthemes5-dev
+	kservice5-dev
+	kwidgetsaddons5-dev
+	sonnet5-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	qt5-qttools-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/frameworks/ktextwidgets.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/ktextwidgets-$pkgver.tar.xz"
+builddir="$srcdir/ktextwidgets-$pkgver"
+
+replaces="ktextwidgets<=5.110.0-r0"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_QCH=ON
+	cmake --build build
+}
+
+check() {
+	xwfb-run -- ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0534a06529e681da51aac627869de8587e3002a5ad3b460725924454ef66a69cb4b72a8b455aa4bf06b50cf0623f54ba6ba267485e2317659dc5ada295092b4c  ktextwidgets-5.116.0.tar.xz
+"

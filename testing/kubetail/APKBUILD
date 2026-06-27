@@ -1,0 +1,34 @@
+# Contributor: Andres Morey <andres@kubetail.com>
+# Maintainer: Andres Morey <andres@kubetail.com>
+pkgname=kubetail
+pkgver=0.18.0
+pkgrel=0
+pkgdesc="Real-time logging dashboard for Kubernetes"
+url="https://github.com/kubetail-org/kubetail"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+source="https://github.com/kubetail-org/kubetail/releases/download/cli%2Fv$pkgver/kubetail-$pkgver-vendored.tar.gz"
+
+build() {
+	cd modules/cli
+
+	local ldflags="
+	-s
+	-w
+	-X github.com/kubetail-org/kubetail/modules/cli/cmd.version=$pkgver
+	"
+	GOWORK=off go build -mod=vendor -ldflags "$ldflags" -o ../../bin/kubetail
+}
+
+check() {
+	./bin/kubetail serve --test
+}
+
+package() {
+	install -Dm755 bin/$pkgname "$pkgdir"/usr/bin/$pkgname
+}
+
+sha512sums="
+e66669c394658a9ace838a2054d569202cb0dc5ac452202dc4b754e79cb716a057e429ff95b3c54ff0aa2eeff228d5347275001f0b6a7daf9e91d951e21fd81b  kubetail-0.18.0-vendored.tar.gz
+"

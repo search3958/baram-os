@@ -1,0 +1,47 @@
+# Contributor: Stefan Wagner <stw@bit-strickerei.de>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=avrdude
+pkgver=8.1
+pkgrel=0
+pkgdesc="Download/upload/manipulate the ROM and EEPROM contents of AVR microcontrollers"
+url="https://github.com/avrdudes/avrdude"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	byacc
+	cmake
+	elfutils-dev
+	flex
+	hidapi-dev
+	libftdi1-dev
+	libgpiod-dev
+	libusb-dev
+	linux-headers
+	samurai
+	"
+subpackages="$pkgname-dev $pkgname-libs $pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/avrdudes/avrdude/archive/refs/tags/v$pkgver.tar.gz
+	"
+options="!check" # no tests
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	cmake -B build -G Ninja -Wno-dev \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_SYSCONFDIR=/etc \
+		-DHAVE_LINUXGPIO=ON \
+		-DHAVE_LINUXSPI=ON \
+		-DBUILD_SHARED_LIBS=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+8dd2a5e4ff92ae405efb01a6787ca2e55e584f5a22f1162be296406797751d26611e276806971f923fb8eca84c425ff0d5ec2a220a22999a9f9eda314ce93e53  avrdude-8.1.tar.gz
+"

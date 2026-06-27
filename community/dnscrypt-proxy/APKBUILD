@@ -1,0 +1,66 @@
+# Contributor: Ian Bashford <ianbashford@gmail.com>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=dnscrypt-proxy
+pkgver=2.1.16
+pkgrel=0
+pkgdesc="Secure communication to DNS resolvers"
+url="https://dnscrypt.info"
+arch="all"
+license="ISC"
+depends="ca-certificates"
+makedepends="go"
+install="$pkgname.pre-install"
+pkgusers=dnscrypt
+pkggroups=dnscrypt
+subpackages="$pkgname-setup::noarch $pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/DNSCrypt/dnscrypt-proxy/archive/$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+	$pkgname.setup
+	dnscrypt-proxy.toml
+	"
+options="net" # go modules and test
+
+build() {
+	go build -v -o output/ ./dnscrypt-proxy
+}
+
+check() {
+	./output/dnscrypt-proxy -check \
+		-config dnscrypt-proxy/example-dnscrypt-proxy.toml
+}
+
+package() {
+	install -dvm0755 -o $pkgusers -g $pkggroups \
+		"$pkgdir"/etc/$pkgname \
+		"$pkgdir"/usr/share/$pkgname \
+		"$pkgdir"/var/cache/$pkgname \
+		"$pkgdir"/var/log/$pkgname
+
+	install -Dvm0755 output/dnscrypt-proxy -t "$pkgdir"/usr/bin/
+	install -Dvm0644 "$srcdir"/dnscrypt-proxy.toml -t "$pkgdir"/etc/$pkgname/
+
+	install -Dvm0755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dvm0644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+
+	install -Dvm0644 $pkgname/example-* -t "$pkgdir"/usr/share/doc/$pkgname/
+	install -Dvm0644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+
+	install -Dvm0755 "$srcdir"/$pkgname.setup "$pkgdir"/usr/sbin/setup-dnscrypt
+}
+
+setup() {
+	pkgdesc="Script for setting up dnscrypt proxy"
+	depends="sed wget $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/sbin/setup-dnscrypt
+}
+
+sha512sums="
+cc43005cd88afd6d51da4aec994ef262eb944dbdf786cd113cc5f8e75ce4ba30bf4ed498f75d26b5dcc430f197439bdd6738e82ff2444e988f7b9ec367ed30b1  dnscrypt-proxy-2.1.16.tar.gz
+a1bbcc63d3160e2101096cb06d714422ee85f7cf86a856b53437abb04f23995ac75b2a9d980c6c8e790bd5db350f1e2d6d39093705b0657020323179e5ff2076  dnscrypt-proxy.initd
+c001ae39da1b2db71764cab568f9ed18e4de0cea3d1a4e7bd6dd01a5668b81a888ea9eef99de6beac08857ad7f8eb1a32d730e946ac3563e4dcfa27147e35052  dnscrypt-proxy.confd
+1c2bd450b1d195bd11d3441017f269904b3eb8ee8ace419f11882679664840b47d32e20c56d190b06dc5d9bb4dea0bfadbc878dcb1272af391b225bae56ad1e7  dnscrypt-proxy.setup
+8dd01df9589711f0422910054097edbbe4decdb3593470306b23da7f682cd4df12eb40ef708778ab505ac2ff590f778bc01f1c3e94c7527fddf7026a79bc02d0  dnscrypt-proxy.toml
+"

@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+supervisor="supervise-daemon"
+command="/usr/bin/3proxy"
+CONFFILE=/etc/$SVCNAME/$SVCNAME.cfg
+command_args="$CONFFILE"
+command_user="$(id -u 3proxy):$(id -g 3proxy)"
+required_files="$CONFFILE"
+
+depend() {
+	need net
+}
+

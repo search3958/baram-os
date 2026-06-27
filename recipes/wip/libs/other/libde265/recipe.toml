@@ -1,9 +1,0 @@
-#TODO compilation error
-[source]
-tar = "https://github.com/strukturag/libde265/releases/download/v1.0.14/libde265-1.0.14.tar.gz"
-[build]
-template = "configure"
-configureflags = [
-    "--disable-dec265",
-    "--disable-sherlock265",
-]

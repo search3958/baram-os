@@ -1,0 +1,11 @@
+otherwise it installs an unused /usr/bin/luajit ....
+-0
+--- a/cmake/luajit.cmake
++++ b/cmake/luajit.cmake
+@@ -6,5 +6,5 @@
+   ${LUAJIT_DIR}/src
+   ${CMAKE_CURRENT_BINARY_DIR}/lib/luajit-cmake
+ )
+-add_subdirectory("lib/luajit-cmake")
++add_subdirectory("lib/luajit-cmake" EXCLUDE_FROM_ALL)
+ set(LUAJIT_LIBRARIES "libluajit")

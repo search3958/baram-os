@@ -1,0 +1,97 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=koko
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Image gallery application for Plasma Mobile"
+url="https://invent.kde.org/graphics/koko"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-3.0-only AND LicenseRef-KDE-Accepted-GPL"
+depends="
+	kdeclarative
+	kimageformats
+	kirigami
+	kirigami-addons
+	kquickimageeditor
+	purpose
+	qt6-qtbase-sqlite
+	"
+makedepends="
+	exiv2-dev
+	extra-cmake-modules
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	kfilemetadata-dev
+	ki18n-dev
+	kio-dev
+	kirigami-addons-dev
+	kirigami-dev
+	knotifications-dev
+	kquickimageeditor-dev
+	purpose-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qtlocation-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-lang"
+_repo_url="https://invent.kde.org/graphics/koko.git"
+_data_date=2023-09-02
+source="https://download.kde.org/stable/release-service/$pkgver/src/koko-$pkgver.tar.xz
+	https://dev.alpinelinux.org/archive/koko/cities1000-$_data_date.zip
+	https://dev.alpinelinux.org/archive/koko/admin1CodesASCII-$_data_date.txt
+	https://dev.alpinelinux.org/archive/koko/admin2Codes-$_data_date.txt
+	"
+
+_disturl="dev.alpinelinux.org:/archive/koko/"
+snapshot() {
+	clean
+	makedepends="git xz rsync tar" deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	wget http://download.geonames.org/export/dump/cities1000.zip -O "$SRCDEST"/cities1000-"$(date -Idate)".zip
+	wget http://download.geonames.org/export/dump/admin1CodesASCII.txt -O "$SRCDEST"/admin1CodesASCII-"$(date -Idate)".txt
+	wget http://download.geonames.org/export/dump/admin2Codes.txt -O "$SRCDEST"/admin2Codes-"$(date -Idate)".txt
+
+	rsync --progress -La "$SRCDEST"/cities1000-"$(date -Idate)".zip $_disturl
+	rsync --progress -La "$SRCDEST"/admin1CodesASCII-"$(date -Idate)".txt $_disturl
+	rsync --progress -La "$SRCDEST"/admin2Codes-"$(date -Idate)".txt $_disturl
+}
+
+prepare() {
+	default_prepare
+
+	mv "$srcdir"/cities1000-$_data_date.zip src/cities1000.zip
+	mv "$srcdir"/admin1CodesASCII-$_data_date.txt src/admin1CodesASCII.txt
+	mv "$srcdir"/admin2Codes-$_data_date.txt src/admin2Codes.txt
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "reversegeocodertest"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+2f80e2b6d8519ed56fc7285ba792a7b20cf69343c9cfbe7bd1fcc97477dc3fb5b3f0297f38e6267679d0ce4fce370989a5ca98bce7e9cc03ddaf56f8df4d783f  koko-26.04.2.tar.xz
+780b1a27bacd1c5ec4b5c4d37b2cedbdd0dfef1d4761b9d10385d6bf5fdaddb90f08afc9e69f8c7d995684682a9ab6575dbec19460125ed456e12045381cbffd  cities1000-2023-09-02.zip
+6729409e1a229df729d568eabec42ca0ac4abbb6efcb62612bbeaa8682b77c562a7460d86d20329fe5c53858c5d62cc1915cec485760ffe55c4e66274bb99941  admin1CodesASCII-2023-09-02.txt
+8de976fe0642b7f3d3133f3928cb050e2f7fd25d65c8bd82ddf06d275f8054b31bfb20f019ce410383bbd466181aaf9469a55e1e36c97c7f550eccb7ec865a3c  admin2Codes-2023-09-02.txt
+"

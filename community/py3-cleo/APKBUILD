@@ -1,0 +1,36 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=py3-cleo
+pkgver=2.2.1
+pkgrel=1
+pkgdesc="Python3 library to create beautiful and testable command-line interfaces"
+url="https://github.com/python-poetry/cleo"
+arch="noarch"
+license="MIT"
+depends="python3 py3-crashtest py3-rapidfuzz"
+makedepends="py3-gpep517 py3-poetry-core"
+checkdepends="py3-pytest py3-pytest-mock"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/python-poetry/cleo/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/cleo-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+905411ca3f4769b12857df807e19f42f88f2aade3dd9b7f38dc3e61efce926479a6afcfc4cfff622ec98122d35871eef47e9146a61a159d4cf083e9eceb3b4ed  py3-cleo-2.2.1.tar.gz
+"

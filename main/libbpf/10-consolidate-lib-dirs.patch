@@ -1,0 +1,18 @@
+Alpine doesn't recognize lib64 directories by default, so we consolidate into lib.
+
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -77,12 +77,7 @@
+ 
+ DESTDIR ?=
+ 
+-HOSTARCH = $(firstword $(subst -, ,$(shell $(CC) -dumpmachine)))
+-ifeq ($(filter-out %64 %64be %64eb %64le %64el s390x, $(HOSTARCH)),)
+-	LIBSUBDIR := lib64
+-else
+-	LIBSUBDIR := lib
+-endif
++LIBSUBDIR := lib
+ 
+ # By default let the pc file itself use ${prefix} in includedir/libdir so that
+ # the prefix can be overridden at runtime (eg: --define-prefix)

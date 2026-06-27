@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+
+description="A JSON API for BIRD IPv6"
+name=birdwatcher6
+command=/usr/bin/birdwatcher
+command_args="-6 ${BIRDWATCHER_ARGS}"
+: ${command_user:="birdwatcher:bird"}
+command_background=yes
+pidfile=/run/birdwatcher/birdwatcher6.pid
+
+depend() {
+	need bird
+	use logger
+	after firewall
+}
+
+start_pre() {
+	checkpath --directory --mode 0775 --owner $command_user $(dirname $pidfile)
+}

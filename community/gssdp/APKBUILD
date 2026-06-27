@@ -1,0 +1,38 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=gssdp
+pkgver=1.6.5
+pkgrel=0
+pkgdesc="GObject-based API for handling resource discovery and announcement over SSDP"
+url="https://gitlab.gnome.org/GNOME/gssdp"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	glib-dev
+	gobject-introspection-dev
+	gtk4.0-dev
+	libsoup3-dev
+	meson
+	vala
+	"
+subpackages="$pkgname-dev"
+source="https://download.gnome.org/sources/gssdp/${pkgver%.*}/gssdp-$pkgver.tar.xz"
+
+build() {
+	# manpages requires pandoc which only exists on x86_64,aarch64
+	abuild-meson \
+		-Dmanpages=false \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+11c0e9e142ad1aaabe76b8a618c5f4f4de20c8f0828ede2e5e0e3be4ba88dcf72583c7f33ebffc5fc49acc4d56e2e82d4925f79756d922fe535d323fd058c77d  gssdp-1.6.5.tar.xz
+"

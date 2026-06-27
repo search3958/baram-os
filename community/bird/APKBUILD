@@ -1,0 +1,54 @@
+# Contributor: Francesco Zanini <francesco@zanini.me>
+# Contributor: Katie Holly <holly@fuslvz.ws>
+# Contributor: Mike Crute <mike@crute.us>
+# Maintainer: Mike Crute <mike@crute.us>
+pkgname=bird
+pkgver=3.2.2
+pkgrel=0
+pkgdesc="BIRD Internet Routing Daemon"
+url="https://bird.network.cz/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="!bird2"
+makedepends="bison flex ncurses-dev readline-dev linux-headers libssh-dev"
+install="$pkgname.pre-install $pkgname.pre-upgrade"
+subpackages="$pkgname-dbg $pkgname-openrc"
+source="
+	$pkgname-$pkgver.tar.gz::https://bird.nic.cz/download/bird-$pkgver.tar.gz
+	bird.initd
+	bird.confd
+	disable-test.patch
+	"
+
+prepare() {
+	default_prepare
+	update_config_guess
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--runstatedir=/run \
+		--enable-libssh
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm755 "$srcdir"/bird.initd "$pkgdir"/etc/init.d/bird
+	install -Dm644 "$srcdir"/bird.confd "$pkgdir"/etc/conf.d/bird
+}
+
+sha512sums="
+4d4e0bc484fbfb236b824d398e90ba2a9e52749cb57f33a1819b36b742b8385d64cc88cd20fecf62f93633b39c0ac24e051e41e760b2ce886726317637a181cc  bird-3.2.2.tar.gz
+1e7cf8497469b26bbfe5a1f2b3ea2327362a90dfd2684ad150d2594f1c2e9d3ddf88b281087ff925a69e186d9d0f60aea98abc6408641b6bcea49ba5aa559842  bird.initd
+0724e9414c276b4162e8d829f67500e41d0fd4732b9ac7f65f9d282214c8c110f22091be90d750990eafc03e2a5b66939537753d751502decc1d592602003116  bird.confd
+1d003fc6183cbef80be38df4576713e26783e1c0d3691091c79ff489873eea14f227a30c2501ecd3d5587dece00959c5849c3505de6b552e0aaa3da508f37503  disable-test.patch
+"

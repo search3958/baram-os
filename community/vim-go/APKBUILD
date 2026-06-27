@@ -1,0 +1,35 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=vim-go
+pkgver=1.28
+pkgrel=14
+pkgdesc="Go development plugin for Vim"
+url="https://github.com/fatih/vim-go"
+license="BSD-3-Clause"
+arch="noarch"
+depends="vim go gopls git"
+source="$pkgname-$pkgver.tar.gz::https://github.com/fatih/vim-go/archive/v$pkgver.tar.gz"
+options="!check"  # there are no tests
+
+package() {
+	local destdir="$pkgdir/usr/share/vim/vimfiles"
+	mkdir -p "$destdir"
+	cp -ar \
+		autoload \
+		compiler \
+		doc \
+		ftdetect \
+		ftplugin \
+		gosnippets \
+		indent \
+		plugin \
+		rplugin \
+		syntax \
+		templates \
+		"$destdir"
+	install -D LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	find "$destdir" -name '.git*' -delete
+}
+
+sha512sums="
+ebd4fbeabb3ebea0c63c1b70dd8bbf7de6ba20b33e40159bcc88d8d52a10975ab4b0ad849a4d8dd1edc2d073ca7c7ae17843cd70d415f159f07d2a212005825b  vim-go-1.28.tar.gz
+"

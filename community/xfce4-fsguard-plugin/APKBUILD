@@ -1,0 +1,47 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=xfce4-fsguard-plugin
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="Checks the free space of a given mountpoint"
+url="https://docs.xfce.org/panel-plugins/xfce4-fsguard-plugin/start"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	gtk+3.0-dev
+	libxfce4ui-dev
+	xfce4-dev-tools
+	xfce4-panel-dev
+	"
+subpackages="xfce4-fsguard-plugin-lang"
+source="xfce4-fsguard-plugin-$pkgver.tar.gz::https://gitlab.xfce.org/panel-plugins/xfce4-fsguard-plugin/-/archive/xfce4-fsguard-plugin-$pkgver/xfce4-fsguard-plugin-xfce4-fsguard-plugin-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgname-$pkgver/"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+
+sha512sums="
+a36b9125488e8956bf69cc36698d260fdfa718f2cd3130489a979623de26a6be536cbe1fa432ade1f16db508bb6f9f5816eb75762b06ac27499cbff51f22e6ee  xfce4-fsguard-plugin-1.2.0.tar.gz
+"

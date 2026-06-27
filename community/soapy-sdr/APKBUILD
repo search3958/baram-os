@@ -1,0 +1,40 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=soapy-sdr
+pkgver=0.8.1
+pkgrel=4
+pkgdesc="Soapy SDR - vendor and platform neutral SDR support library"
+url="https://github.com/pothosware/SoapySDR"
+arch="all"
+license="BSL-1.0"
+makedepends="cmake samurai python3-dev py3-setuptools swig"
+subpackages="$pkgname-dev py3-$pkgname:_py3 $pkgname-libs $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pothosware/SoapySDR/archive/soapy-sdr-$pkgver.tar.gz"
+builddir="$srcdir/SoapySDR-soapy-sdr-$pkgver"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	cmake --build build --target test
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+	mv "$pkgdir"/usr/share/cmake "$pkgdir"/usr/lib
+}
+
+_py3() {
+	pkgdesc="$pkgdesc (python modules)"
+
+	amove usr/lib/python3.*
+}
+
+sha512sums="
+50c8f1652bf9ca09215f9c4115175427ca7b5338add7591e31ca0e627093c94b73e7cf7f84fa71ff419cc010d3c1263931506c728bbaa00413a7915d56a87787  soapy-sdr-0.8.1.tar.gz
+"

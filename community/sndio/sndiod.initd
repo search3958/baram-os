@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+user="sndiod"
+group="audio"
+command="/usr/sbin/$RC_SVCNAME"
+command_args="$DAEMON_OPTS"
+procname="$RC_SVCNAME" # no pidfile
+
+depend() {
+	need net
+	after firewall
+}

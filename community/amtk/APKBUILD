@@ -1,0 +1,33 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer:
+pkgname=amtk
+pkgver=5.6.1
+pkgrel=4
+pkgdesc="Actions, Menus and Toolbars Kit for GTK+ applications"
+url="https://gitlab.gnome.org/World/gedit/libgedit-amtk"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="docbook-xsl-nons gtk-doc gtk+3.0-dev glib-dev
+	gobject-introspection-dev meson"
+subpackages="$pkgname-dev $pkgname-lang $pkgname-doc"
+source="https://download.gnome.org/sources/amtk/${pkgver%.*}/amtk-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dgtk_doc=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+668519d2977e951d6b5d78add44a3f829ec169ff115be1aa4ab986e902b06653568135a3793653725a4aad95ec82cb171f0e8d16a2f83485659a14ed3e932c34  amtk-5.6.1.tar.xz
+"

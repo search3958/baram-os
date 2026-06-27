@@ -1,0 +1,85 @@
+From 81a3140cd3819b6dc4edb36646e01b21a3e256b5 Mon Sep 17 00:00:00 2001
+From: Natanael Copa <ncopa@alpinelinux.org>
+Date: Tue, 10 Dec 2024 15:15:28 +0200
+Subject: [PATCH 07/11] alpine: fix arch and enable mips64 and s390x
+
+Fix detecion of the alpine architecture name.
+
+This allows us to create both armv7 and armhf (armv6) containers on an
+aarch64 host. eg.
+
+  lxc-create -t alpine a1 -- -a armv7
+
+It also allows us to create mips64 and s390x containers, and potentially
+new architectures in the future.
+---
+ templates/lxc-alpine.in | 29 +++++++++++++++++------------
+ 1 file changed, 17 insertions(+), 12 deletions(-)
+
+diff --git a/templates/lxc-alpine.in b/templates/lxc-alpine.in
+index b465ca6..4504825 100644
+--- a/templates/lxc-alpine.in
++++ b/templates/lxc-alpine.in
+@@ -133,13 +133,18 @@ latest_release_branch() {
+ 
+ parse_arch() {
+ 	case "$1" in
+-		x86 | i[3-6]86) echo 'x86';;
+-		x86_64 | amd64) echo 'x86_64';;
+-		aarch64 | arm64) echo 'aarch64';;
+-		armv7) echo 'armv7';;
+-		arm*) echo 'armhf';;
+-		ppc64le) echo 'ppc64le';;
+-		*) return 1;;
++		i[3-6]86) echo 'x86';;
++		amd64) echo 'x86_64';;
++		arm64) echo 'aarch64';;
++		armv6) echo 'armhf';;
++		*) echo "$1";;
++	esac
++}
++
++lxc_arch() {
++	case "$1" in
++		armv[67]) echo "armhf";;
++		*) echo "$1";;
+ 	esac
+ }
+ 
+@@ -275,7 +280,8 @@ install() {
+ 		echo "$MIRROR_URL/$branch/$repo" >> etc/apk/repositories
+ 	done
+ 
+-	install_packages "$arch" "alpine-base $extra_packages"
++	install_packages "$arch" "alpine-base $extra_packages" \
++		|| die 1 "Failed to install $arch packages"
+ 	make_dev_nodes
+ 	setup_inittab
+ 	setup_hosts
+@@ -397,7 +403,7 @@ setup_services() {
+ configure_container() {
+ 	local config="$1"
+ 	local hostname="$2"
+-	local arch="$3"
++	local arch="$(lxc_arch "$3")"
+ 
+ 	cat <<-EOF >> "$config"
+ 
+@@ -512,12 +518,11 @@ if [ -z "$rootfs" ]; then
+ 	rootfs="$path/rootfs"
+ fi
+ 
+-arch=$(parse_arch "$arch") \
+-	|| die 1 "Unsupported architecture: $arch"
++arch=$(parse_arch "$arch")
+ 
+ if [ -z "$release" ]; then
+ 	release=$(latest_release_branch "$arch") \
+-		|| die 2 'Failed to resolve Alpine last release branch'
++		|| die 2 "Failed to resolve Alpine $arch last release branch"
+ fi
+ 
+ # Here we go!
+-- 
+2.47.1
+

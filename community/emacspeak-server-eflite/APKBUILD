@@ -1,0 +1,56 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=emacspeak-server-eflite
+pkgver=0_git20250415
+pkgrel=1
+_gitrev=9cd004236fdc3cfcd0a7a8c8acb322e84595514c
+pkgdesc="CMU Flite (festival-lite) speech server for Emacspeak"
+url="https://github.com/mgorse/eflite"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="autoconf automake alsa-lib-dev flite-dev"
+install_if="emacspeak flite"
+options="!check"
+subpackages="$pkgname-doc"
+source="$pkgname-$_gitrev.tar.gz::https://github.com/mgorse/eflite/archive/$_gitrev.tar.gz
+	buf-overflow.patch
+	include-string.patch
+	"
+builddir="$srcdir/eflite-$_gitrev"
+
+prepare() {
+	default_prepare
+
+	autoupdate
+	autoreconf -fvi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix="$pkgdir"/usr \
+		--with-audio=alsa
+	make
+}
+
+package() {
+	local servdir="$pkgdir"/usr/share/emacs/site-lisp/emacspeak/servers
+
+	make DESTDIR="$pkgdir" install
+	mkdir -vp "$servdir"
+	ln -sv	/usr/bin/eflite "$servdir"/
+
+	install -Dvm644 AUTHORS COPYING CREDITS ChangeLog \
+		INSTALL NEWS README eflite_test.txt \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dvm644 eflite.1 -t "$pkgdir"/usr/share/man/man1/
+}
+
+sha512sums="
+d705e627e884542642eabc0f360df053ec57b28e4c276dcbee26f5e17ac24ad44ae6f50935d30e12aaa234f3ce0831ff1abf2c076592e5a2eeea593a6947a2de  emacspeak-server-eflite-9cd004236fdc3cfcd0a7a8c8acb322e84595514c.tar.gz
+c598dfe662d5c817032aa32543527b0075c196decd60d2700f9463fbfc586b31c2ddbce1f14aa10827dccadee98f33ad58cc247e31f0ec15720af47f167623e5  buf-overflow.patch
+9bee53b733029898eeac716651ba2fedb3129a5fa60062979b422680dfe5c4a121d383a03d223d00642ac3137073ceb0633e77bd81a4452dbcf4aecb61fdc583  include-string.patch
+"

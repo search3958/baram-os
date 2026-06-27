@@ -1,0 +1,52 @@
+# Contributor: Alex McGrath <amk@amk.ie>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-deepdiff
+_pkgname=deepdiff
+pkgver=9.0.0
+pkgrel=0
+pkgdesc="Deep Difference and Search of any Python object/data"
+url="https://github.com/seperman/deepdiff"
+arch="noarch"
+license="MIT"
+depends="py3-orderly-set py3-orjson py3-click"
+makedepends="py3-flit-core py3-gpep517 py3-installer"
+# toml/yaml are optional dependencies
+checkdepends="
+	py3-dateutil
+	py3-jsonpickle
+	py3-numpy
+	py3-pandas
+	py3-pydantic
+	py3-pytest
+	py3-pytest-benchmark
+	py3-toml
+	py3-tomli-w
+	py3-uuid6
+	py3-yaml
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/seperman/deepdiff/archive/refs/tags/$pkgver/deepdiff-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# polars not packaged
+	.testenv/bin/python3 -m pytest \
+		--deselect tests/test_hash.py::TestDeepHashPrep::test_polars
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a34174b584ddf1c92c2dfdd3fc352e320a17c6067b3b9b456573d007e0c2d3954c5acd5faf9a88e8ce23d7d7cc6d6325dd665e0c4d06a93ccc0b6a20547bbdab  deepdiff-9.0.0.tar.gz
+"

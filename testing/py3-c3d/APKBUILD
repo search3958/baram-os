@@ -1,0 +1,30 @@
+# Contributor: Sam Nystrom <sam@samnystrom.dev>
+# Maintainer: Sam Nystrom <sam@samnystrom.dev>
+pkgname=py3-c3d
+pkgver=0.6.0
+pkgrel=2
+pkgdesc="Read and write C3D mocap files"
+url="https://github.com/EmbodiedCognition/py-c3d"
+arch="noarch"
+license="MIT"
+depends="py3-numpy"
+makedepends="py3-gpep517 py3-setuptools py3-wheel py3-poetry-core"
+options="!check" # downloads many, large C3D files for tests
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/EmbodiedCognition/py-c3d/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/py-c3d-$pkgver"
+
+build() {
+	# poetry build
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" dist/*.whl
+}
+
+sha512sums="
+0b4da6ef6fad4cb575726c1f5e4ec96972290136a8d34a5de35c9d8d1a1c0a33814bf168dc84f5026f81923941aab2e90881057232ce5e73d48d12733fad3cdf  py3-c3d-0.6.0.tar.gz
+"

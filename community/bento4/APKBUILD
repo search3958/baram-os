@@ -1,0 +1,44 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=bento4
+_pkgver=1.6.0-641
+pkgver=${_pkgver/-/.}
+pkgrel=0
+pkgdesc="Full-featured MP4 format, MPEG DASH, HLS, CMAF SDK and tools"
+url="https://bento4.com"
+arch="all !s390x" # fails to build
+license="GPL-2.0-only"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+source="https://github.com/axiomatic-systems/Bento4/archive/v$_pkgver/bento4-$_pkgver.tar.gz
+	riscv64.patch
+	"
+builddir="$srcdir/Bento4-$_pkgver"
+options="!check" # no meaningful tests available
+
+build() {
+	cmake -G Ninja -B build \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	# no CMake install target
+	cd "$builddir"/build
+	install -Dm644 ./*.a -t "$pkgdir"/usr/lib/
+	install -Dm755 -t "$pkgdir"/usr/bin/ \
+		mp4* \
+		aac2mp4 \
+		avcinfo \
+		fixaacsampledescription \
+		hevcinfo
+}
+
+sha512sums="
+ad92c561a16a830ac63b0fbff98bd14f732dd2e38416de937191b14c750e632c793e5256b92361d3ff8867f9fd1cf727756ba78cd0122af1b79d62532d2ca427  bento4-1.6.0-641.tar.gz
+195fa0484fdac5a8cb950774dcca3f7585c2de4d5b3d6f6af9d6252a54c4dcd9393cc2dd3a1de1fc2bfd97a8a52c7be3b2aeb7384315af0d8d70eee2a3343e07  riscv64.patch
+"

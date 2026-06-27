@@ -1,0 +1,13 @@
+diff --git a/languages.toml b/languages.toml
+index a9f4a58..85389c5 100644
+--- a/languages.toml
++++ b/languages.toml
+@@ -808,7 +808,7 @@ indent = { tab-width = 2, unit = " " }
+ 
+ [[grammar]]
+ name = "gotmpl"
+-source = { git = "https://github.com/dannylongeuay/tree-sitter-go-template", rev = "395a33e08e69f4155156f0b90138a6c86764c979" }
++source = { git = "https://github.com/ngalaiko/tree-sitter-go-template", rev = "ca26229bafcd3f37698a2496c2a5efa2f07e86bc" }
+ 
+ [[language]]
+ name = "gowork"

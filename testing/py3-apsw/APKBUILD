@@ -1,0 +1,46 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-apsw
+_pkgname=apsw
+pkgver=3.53.1.0
+pkgrel=0
+pkgdesc="Another Python SQLite Wrapper"
+url="https://github.com/rogerbinns/apsw"
+arch="all"
+license="Zlib"
+depends="python3"
+makedepends="
+	python3-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	sqlite-dev
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.zip::https://github.com/rogerbinns/apsw/releases/download/$pkgver/apsw-$pkgver.zip
+	detect-sqlite-config.patch
+	"
+
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 setup.py build_test_extension test
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+05f48170c3a30c55fd68251431afd5a945a1c7182537e452ae79bb303316ef8e541db07eb340ea7b6eade795d63308251ac1f85960e50bee26ab0f5f15c9a8da  py3-apsw-3.53.1.0.zip
+8f3957bd6fecb5660a7cab367043e4ccdacd87d8963bbe41cc3d525265de28f08aa207099658d785be29c5c90b818c1418f766995cd780d02b8e36252a389758  detect-sqlite-config.patch
+"

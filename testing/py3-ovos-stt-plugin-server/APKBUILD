@@ -1,0 +1,35 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-ovos-stt-plugin-server
+pkgver=0.0.4_alpha4
+pkgrel=1
+pkgdesc="OpenVoiceOS companion plugin for OpenVoiceOS STT Server"
+url="https://github.com/OpenVoiceOS/ovos-stt-plugin-server"
+# loongarch64: blocked by py3-ovos-plugin-manager
+arch="noarch !loongarch64"
+license="Apache-2.0"
+depends="py3-ovos-plugin-manager"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-stt-plugin-server/archive/refs/tags/V${pkgver//_alpha/a}.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/ovos-stt-plugin-server-${pkgver//_alpha/a}"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+92794b6dc46f651dea89f67379609f6e1f793e13c6aa08ac50318b3c6d40f8a17a4d1c0eb584c71811aef5bacb9d7449c25043faf9d03cd27b1afdfd280eb8b2  py3-ovos-stt-plugin-server-0.0.4_alpha4.tar.gz
+"

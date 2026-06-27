@@ -1,0 +1,38 @@
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=xvidtune
+pkgver=1.0.4
+pkgrel=0
+pkgdesc="Client interface to the X server video mode extension"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="MIT"
+makedepends="
+	libx11-dev
+	libxaw-dev
+	libxmu-dev
+	libxt-dev
+	libxxf86vm-dev
+	"
+subpackages="$pkgname-doc"
+source="https://www.x.org/archive/individual/app/xvidtune-$pkgver.tar.xz"
+
+build() {
+	 ./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+747d5358f4f7d3d7db508c3f034711ce4b9dd278160d35312e9c4d1604623e84a2438d039b536546fd2df7db8c5ea1907e8a6101985fad2932b6dee5a62c7b80  xvidtune-1.0.4.tar.xz
+"

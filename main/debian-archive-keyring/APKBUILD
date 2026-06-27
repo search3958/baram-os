@@ -1,0 +1,32 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=debian-archive-keyring
+pkgver=2025.1
+pkgrel=1
+pkgdesc="GnuPG archive keys of the Debian archive"
+url="https://packages.debian.org/sid/debian-archive-keyring"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="gnupg"
+options="!check" # upstream doesn't have a test suite.
+subpackages="$pkgname-doc"
+source="https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_${pkgver}_all.deb"
+builddir="$srcdir"
+
+unpack() {
+	cd "$srcdir"
+	for i in $source; do
+		case $i in
+			*.deb) ar x ${i##*/} ;;
+		esac
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+	unxz -c "$srcdir"/data.tar.xz | tar -x -C "$pkgdir"/
+}
+
+sha512sums="
+d99dafbe92c40468012d0a95fa4e4dedbdb96e6e96bcc8b8f0fb082eadcbad42f625303ba128257dc7f660d6ba536f5bb27f7d72ded33121bf4679ae60070397  debian-archive-keyring_2025.1_all.deb
+"

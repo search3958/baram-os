@@ -1,0 +1,33 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libgee
+pkgver=0.20.8
+pkgrel=1
+pkgdesc="GObject collection library"
+url="https://gitlab.gnome.org/GNOME/libgee"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="glib-dev gobject-introspection-dev"
+subpackages="$pkgname-dev"
+source="https://download.gnome.org/sources/libgee/${pkgver%.*}/libgee-$pkgver.tar.xz"
+
+build() {
+	CFLAGS="$CFLAGS -fpermissive" ./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+9af883bb4b2c25c429271201e634d1851378631b913bab282fe432b2b76a44674111e65caa99269fd403454c87b5474f2567c554bddd0b3ea58ca6e138c311e1  libgee-0.20.8.tar.xz
+"

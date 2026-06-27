@@ -1,0 +1,34 @@
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=xpar
+pkgver=1.1
+pkgrel=0
+pkgdesc="an error/erasure code system guarding data integrity"
+url="https://github.com/iczelia/xpar"
+# openmp is not available for armhf
+arch="all !armhf"
+license="LGPL-3.0-or-later"
+makedepends="nasm openmp-dev"
+subpackages="$pkgname-doc"
+source="https://github.com/iczelia/xpar/releases/download/$pkgver/xpar-$pkgver.tar.gz"
+
+build() {
+	case "$CARCH" in
+		aarch64|x86_64) _opts="--enable-$CARCH --enable-native" ;;
+		*) _opts="" ;;
+	esac
+
+	./configure --prefix=/usr --enable-lto $_opts
+	make all
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3022125e1f632e07a2bba9cfa6731e7723ed25482924c1acbf22f1be72a57e57ebff12e2606fcb08534d118b46c6fac50a32b3d1a6fab4ae883ad9e3b59c427e  xpar-1.1.tar.gz
+"

@@ -1,0 +1,44 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-sphinxcontrib-httpdomain
+_pkgname=sphinxcontrib-httpdomain
+pkgver=1.8.1
+pkgrel=4
+pkgdesc="Sphinx httpdomain extension"
+url="https://pypi.org/project/sphinxcontrib-httpdomain"
+arch="noarch"
+license="BSD-2-Clause"
+depends="py3-sphinx py3-six"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-sphinxcontrib-httpdomain" # for backwards compatibility
+provides="py-sphinxcontrib-httpdomain=$pkgver-r$pkgrel" # for backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+lang() {
+	pkgdesc="translations for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel lang"
+
+	amove usr/lib/python3*/site-packages/sphinxcontrib/locale/
+}
+
+sha512sums="
+197c44fd9bdc146f49c6a0aa365a5bd49b76f712ae89082be3761aa21c99683279090fc274308ca199fb7efae5a2d713be4531b90747f504860f36a01ee4c52b  sphinxcontrib-httpdomain-1.8.1.tar.gz
+"

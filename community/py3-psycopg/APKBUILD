@@ -1,0 +1,83 @@
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=py3-psycopg
+pkgver=3.3.4
+pkgrel=0
+pkgdesc="PostgreSQL adapter for python"
+url="https://www.psycopg.org/"
+arch="all"
+license="LGPL-2.0-or-later"
+# typing_extensions required for < 3.13
+depends="py3-typing-extensions"
+makedepends="
+	cython
+	libpq-dev
+	py3-gpep517
+	py3-setuptools
+	py3-tomli
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-pytest
+	py3-anyio
+"
+subpackages="
+	$pkgname-c-pyc:_c_pyc
+	$pkgname-pyc
+	$pkgname-c:_c
+	"
+source="https://github.com/psycopg/psycopg/archive/$pkgver/psycopg-$pkgver.tar.gz"
+builddir="$srcdir/psycopg-$pkgver"
+
+build() {
+	for i in psycopg psycopg_c psycopg_pool; do
+		cd "$builddir"/$i
+		gpep517 build-wheel \
+			--wheel-dir .dist \
+			--output-fd 3 3>&1 >&2
+	done
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	for i in psycopg psycopg_c psycopg_pool; do
+	 	.testenv/bin/python3 -m installer $i/.dist/*.whl
+	done
+	# tests/*/test_typing.py::test_connection_type: Module "psycopg" has no attribute "rows"  [attr-defined]
+	# tests/*::test_verson: error: Module "psycopg_pool" has no attribute "__version__"
+	.testenv/bin/python3 -m pytest -v \
+		--deselect tests/crdb/test_typing.py::test_connection_type \
+		--deselect tests/test_typing.py \
+		--deselect tests/pool/test_module.py::test_version \
+		--deselect tests/test_module.py::test_version_static \
+		--deselect tests/test_module.py::test_version_c_static
+}
+
+package() {
+	for i in psycopg psycopg_c psycopg_pool; do
+	 	python3 -m installer -d "$pkgdir" $i/.dist/*.whl
+	done
+}
+
+_c() {
+	pkgdesc="$pkgdesc - C optimisation distribution"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/python*/site-packages/psycopg_c*
+}
+
+_c_pyc() {
+	pkgdesc="Precompiled Python bytecode for ${subpkgname%-pyc}"
+	install_if="${subpkgname%-pyc}=$pkgver-r$pkgrel pyc"
+
+	cd "$pkgdir"
+	# shellcheck disable=SC3003
+	local IFS=$'\n'
+	# shellcheck disable=SC2046
+	amove $(find usr/lib/python*/site-packages/psycopg_c -type d -name __pycache__)
+}
+
+sha512sums="
+4cfeeb118088d704c6ebd17f42916b77825e89827411116a5e9ad813e756b71969c800179aa7337a1fcb379efde937c8d33c828b87305d5bb63ef06e66185b83  psycopg-3.3.4.tar.gz
+"

@@ -1,0 +1,36 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=cgif
+pkgver=0.5.3
+pkgrel=0
+pkgdesc="Fast and lightweight GIF encoder written in C"
+url="https://github.com/dloebl/cgif"
+arch="all"
+license="MIT"
+makedepends="muon"
+checkdepends="python3"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/dloebl/cgif/archive/v$pkgver/cgif-v$pkgver.tar.gz"
+
+build() {
+	abuild-muon \
+		-Db_lto=true \
+		-Dtests="$(want_check && echo true || echo false)" \
+		output .
+	ninja -C output
+}
+
+check() {
+	muon -C output test -R -v
+}
+
+package() {
+	DESTDIR="$pkgdir" muon -C output install
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/cgif/
+}
+
+sha512sums="
+42cae74e8abe49d62aa358ffd65cc8f335ee8873e26b61df5814aef0640b8bb9fe215371ac15e568c54484076f14c8534d95d7e6960b55c1ab9440fe711f0607  cgif-v0.5.3.tar.gz
+"

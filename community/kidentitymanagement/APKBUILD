@@ -1,0 +1,55 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kidentitymanagement
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="KDE PIM libraries"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kontact.kde.org"
+license="LGPL-2.0-or-later"
+depends_dev="
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kcoreaddons-dev
+	kiconthemes-dev
+	kio-dev
+	kpimtextedit-dev
+	ktextwidgets-dev
+	kxmlgui-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	kirigami-addons-dev
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/pim/kidentitymanagement.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/kidentitymanagement-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	# kpimidentity-signaturetest is broken
+	xvfb-run -a ctest --test-dir build -E "kpimidentity(-signature|core-identitymodel)test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+6f57cc6e736faba1e78a84fbfe0b28657da9b570146531306fb04ad359faa9caffaf56d3fc239456ee5e284f6d9518db75039cee8f79cfe75cec902eaa649b66  kidentitymanagement-26.04.2.tar.xz
+"

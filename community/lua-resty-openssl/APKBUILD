@@ -1,0 +1,39 @@
+# Contributor: Timo Teräs <timo.teras@iki.fi>
+# Maintainer: Timo Teräs <timo.teras@iki.fi>
+pkgname=lua-resty-openssl
+pkgver=1.6.1
+pkgrel=0
+pkgdesc="FFI-based OpenSSL binding for OpenResty"
+url="https://github.com/fffonion/lua-resty-openssl"
+# riscv64, loongarch64: no luajit/openresty
+# armhf, armv7, s390x, x86: ffi broken -> test suite fails
+arch="aarch64 x86_64 loongarch64 ppc64le"
+license="BSD-2-Clause"
+depends="
+	libcrypto3
+	libssl3
+	luajit
+	"
+checkdepends="
+	bash
+	ca-certificates
+	openresty
+	perl-utils
+	perl-test-nginx
+	"
+source="https://github.com/fffonion/lua-resty-openssl/archive/refs/tags/$pkgver/lua-resty-openssl-$pkgver.tar.gz"
+# tests flaky with new Perl
+options="!check"
+
+package() {
+	mkdir -p "$pkgdir/usr/share/lua/common"
+	cp -r ./lib/resty "$pkgdir/usr/share/lua/common"
+}
+
+check() {
+	prove -r t
+}
+
+sha512sums="
+e02f11f35cb9102ce967c40b2c2f65e16a68bc7cd196645ebb705d611a0b984462134f97d4720310bbf7e971464e4215afa44600c5a24559030786f5b83fe97d  lua-resty-openssl-1.6.1.tar.gz
+"

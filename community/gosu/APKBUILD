@@ -1,0 +1,28 @@
+# Contributor: David Huffman <storedbox@outlook.com>
+# Maintainer: Integral <integral@member.fsf.org>
+pkgname=gosu
+pkgver=1.19
+pkgrel=4
+pkgdesc="Simple Go-based setuid+setgid+setgroups+exec"
+url="https://github.com/tianon/gosu"
+arch="all"
+license="Apache-2.0"
+makedepends="coreutils go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tianon/gosu/archive/refs/tags/$pkgver.tar.gz"
+options="!check net" # require docker to run tests, go
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v
+}
+
+package() {
+	install -Dm755 gosu -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+00ef15d982eb58d62cf67c6517d9560bb92cff5d1347f16b03e03bb3a6da08f2b85e8c3e6c23ae644f174f8da8e9154dcfe4ee379f894882e92b3602d7d079ed  gosu-1.19.tar.gz
+"

@@ -1,0 +1,23 @@
+# Maintainer: Pedro Filipe <xpecex@outlook.com>
+pkgname=makeself
+pkgver=2.5.0
+pkgrel=0
+pkgdesc="Generate a self-extractable compressed tar archive from a directory"
+options="!check" # Github tarball is incomplete
+url="https://makeself.io/"
+arch="noarch"
+license="GPL-2.0-or-later"
+source="$pkgname-release-$pkgver.tar.gz::https://github.com/megastep/makeself/archive/release-$pkgver.tar.gz
+	makeself-header_path.patch
+	"
+builddir="$srcdir/$pkgname-release-$pkgver"
+
+package() {
+	install -Dm755 makeself.sh "$pkgdir"/usr/bin/makeself
+	install -Dm755 makeself-header.sh "$pkgdir"/usr/bin/makeself-header
+}
+
+sha512sums="
+cd0ce98579f00a02f9559848b39e0a6efea9df1866073d419f0b6560034cc186ed8315f8b4589e03f626b040727d9ae646bc2abaebe4f4da556b87617bdd770f  makeself-release-2.5.0.tar.gz
+0d334c17f3801961cb0ed9175734bdac3bf0fdf40531707bedcd75a9e7d2fb6f5dd7e377cf31cc851000d002ea7059e65280efbcb10e923d4e02714c890ba37b  makeself-header_path.patch
+"

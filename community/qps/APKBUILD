@@ -1,0 +1,42 @@
+# Contributor: Zachary Lee Andrews <zcrayfish@gmail.com>
+maintainer="Antoni Aloy <aaloytorrens@gmail.com>"
+pkgname=qps
+pkgver=2.13.0
+pkgrel=0
+pkgdesc="LXQt process manager"
+url="https://github.com/lxqt/qps"
+arch="all !armhf" # limited by lxqt-config
+license="LGPL-2.0-or-later"
+makedepends="
+	cmake samurai lxqt-build-tools qt6-qtbase-dev qt6-qttools-dev
+	libqtxdg-dev liblxqt-dev kwindowsystem-dev perl
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+options="!check" # No testsuite
+source="https://github.com/lxqt/qps/releases/download/$pkgver/qps-$pkgver.tar.xz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --build build --target install
+}
+
+lang() {
+	install_if="lang $pkgname=$pkgver-r$pkgrel"
+	amove usr/share/$pkgname/translations
+}
+
+sha512sums="
+caaf40a878633848a5c780e4f3e0e289794f544e74b6067e7cb0db4cb5e57c63f92ee9283246e53abbf5b90537809965dd4f8ab8508dac5023514a48bcd5a13e  qps-2.13.0.tar.xz
+"

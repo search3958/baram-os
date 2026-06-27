@@ -1,0 +1,45 @@
+# Maintainer: Nicolas Lorin <androw95220@gmail.com>
+pkgname=recode
+pkgver=3.7.15
+pkgrel=1
+pkgdesc="Charset converter tool and library"
+url="https://github.com/rrthomas/recode"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="libtool automake autoconf texinfo flex bison gettext-dev
+	python3"
+checkdepends="cython python3-dev py3-setuptools"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/rrthomas/recode/releases/download/v$pkgver/recode-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	rm -f acinclude.m4 m4/libtool.m4
+	autoreconf -vif
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-nls \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a380a2d43f11ff7e67390890cc7aa93b80359bbc3ca62cca68421d20d66dbfea4d241b12899802cb98c7eeda17189a40ee97f09d476873776bed6f32136d57a6  recode-3.7.15.tar.gz
+"

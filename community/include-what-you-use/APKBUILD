@@ -1,0 +1,67 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=include-what-you-use
+pkgver=0.26
+# Each release is made for particular LLVM version.
+# See https://include-what-you-use.org/downloads/.
+_llvmver=22
+pkgrel=0
+pkgdesc="A tool for use with clang to analyze #includes in C and C++ source files"
+url="https://include-what-you-use.org"
+arch="all"
+license="NCSA"
+depends="python3"
+# -static packages are needed; include-what-you-use depends on LLVM/clang
+# internals and some are exposed only in static libs.
+makedepends="
+	clang$_llvmver-dev
+	clang$_llvmver-extra-tools
+	clang$_llvmver-static
+	cmake
+	llvm$_llvmver-dev
+	llvm$_llvmver-gtest
+	llvm$_llvmver-static
+	samurai
+	"
+subpackages="$pkgname-dbg $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/include-what-you-use/include-what-you-use/archive/refs/tags/$pkgver.tar.gz"
+
+# Tests are broken because -fstack-clash-protection in CFLAGS leaking through...
+options="!check"
+
+prepare() {
+	default_prepare
+
+	sed -i 's|^#!/usr/bin/env python\b|#!/usr/bin/python3|' -- *.py
+}
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DCMAKE_PREFIX_PATH=/usr/lib/llvm$_llvmver \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	cd "$pkgdir"
+	mv usr/bin/fix_includes.py usr/bin/iwyu-fix-includes
+	mv usr/bin/iwyu_tool.py usr/bin/iwyu-tool
+}
+
+sha512sums="
+dc7cd155d69bf5604de9560bd38b755b4f3194dc7ed358f36d0cb71015489b50f4743a85e8590bf016351442841c7f0dc7707d3db45f5949f3ad83d3395256d7  include-what-you-use-0.26.tar.gz
+"

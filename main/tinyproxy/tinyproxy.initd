@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+# Copyright 1999-2018 Gentoo Authors
+# Distributed under the terms of the GNU General Public License v2
+
+: ${CONFFILE:="/etc/${SVCNAME}/${SVCNAME}.conf"}
+
+command=/usr/bin/tinyproxy
+command_args="-d -c ${CONFFILE}"
+command_user="tinyproxy:tinyproxy"
+command_background="true"
+
+pidfile=/run/${SVCNAME}.pid
+output_log=/var/log/tinyproxy/${SVCNAME}.log
+
+depend() {
+	config "$CONFFILE"
+	use dns
+	need net
+	after firewall
+}
+
+extra_started_commands="reload"
+reload() {
+    ebegin "Reloading ${SVCNAME}"
+
+    start-stop-daemon --signal SIGUSR1 \
+      --exec "${command}" --pidfile "${pidfile}"
+}

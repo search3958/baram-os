@@ -1,0 +1,35 @@
+# Contributor: Keith Maxwell <keith.maxwell@gmail.com>
+# Maintainer: Keith Maxwell <keith.maxwell@gmail.com>
+pkgname=py3-ansicolor
+_pyname=ansicolor
+pkgver=0.3.3
+pkgrel=2
+pkgdesc="A library to produce ansi color output, highlighting and diffing"
+url="https://github.com/numerodix/ansicolor"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-pytest"
+# no tests in artifact on PyPI
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/numerodix/ansicolor/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	TERM=linux python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+7f017ece65edb61f570d20116d540686ad81f69cbf4d060ad18df3e0274d1a866e9259d2d8331e1450b1bab3c1fdcbceffece42de81228da9915c294e826d8f1  py3-ansicolor-0.3.3.tar.gz
+"

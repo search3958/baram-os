@@ -1,0 +1,50 @@
+maintainer="Aster Boese <asterboese@mailbox.org>"
+pkgname=lomiri-calculator-app
+pkgver=4.1.0
+pkgrel=0
+pkgdesc="A powerful and easy to use calculator"
+url="https://gitlab.com/ubports/development/apps/lomiri-calculator-app"
+arch="all !armhf" # blocked by lomiri-ui-toolkit
+license="GPL-3.0-only"
+source="https://gitlab.com/ubports/development/apps/lomiri-calculator-app/-/archive/v$pkgver/lomiri-calculator-app-v$pkgver.tar.gz"
+depends="
+	lomiri-ui-extras
+	lomiri-ui-toolkit
+	qqc2-suru-style
+	"
+makedepends="
+	click-dev
+	cmake
+	cmake-extras
+	lomiri-trust-store-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	samurai
+	"
+checkdepends="
+	py3-dbusmock
+	py3-xdg
+	xvfb-run
+	"
+subpackages="$pkgname-lang"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # requires autopilot
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCLICK_MODE=OFF \
+		-DINSTALL_TESTS=OFF
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d01d886b269e598b0c1b51c79040032333d08f0067f9c166425f7efbd231d46db162b71975abf9ecebdf24e2b8507ae4be2caac05843263c13c4c1ddef741c3b  lomiri-calculator-app-v4.1.0.tar.gz
+"

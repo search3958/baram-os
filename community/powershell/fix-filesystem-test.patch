@@ -1,0 +1,40 @@
+From 04b0c8b1274918015c91f609cd63fdda6099ab95 Mon Sep 17 00:00:00 2001
+Patch-Source: https://github.com/PowerShell/PowerShell/issues/17889
+From: Antoine Martin <dev@ayakael.net>
+Date: Tue, 26 Jul 2022 20:34:30 -0400
+Subject: [PATCH 1/1] Neutralize PSTests.Parallel.FileSystemProviderTests.TestMode
+
+PSTests.Parallel.FileSystemProviderTests.TestMode prints error:
+[xUnit.net 00:00:06.26]     PSTests.Parallel.FileSystemProviderTests.TestMode [FAIL]
+  Failed PSTests.Parallel.FileSystemProviderTests.TestMode [5 ms]
+  Error Message:
+   Assert.Equal() Failure
+          ↓ (pos 0)
+Expected: -----
+Actual:   l----
+          ↑ (pos 0)
+  Stack Trace:
+     at PSTests.Parallel.FileSystemProviderTests.TestMode() in /home/user/projects/powershell/testing/powershell/src/PowerShell-7.2.5/test/xUnit/csharp/test_FileSystemProvider.cs:line 123
+
+This patch fixes this failed test by pointing the to-be-tested file to
+/bin/busybox rather than /bin/echo, as the latter is a symbolic link
+
+---
+ test/xUnit/csharp/test_FileSystemProvider.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/xUnit/csharp/test_FileSystemProvider.cs b/test/xUnit/csharp/test_FileSystemProvider.cs
+index 85ab0b2ee..160862146 100644
+--- a/test/xUnit/csharp/test_FileSystemProvider.cs
++++ b/test/xUnit/csharp/test_FileSystemProvider.cs
+@@ -109,7 +109,7 @@ namespace PSTests.Parallel
+             {
+                 directoryObject = new DirectoryInfo(@"/");
+                 fileObject = new FileInfo(@"/etc/hosts");
+-                executableObject = new FileInfo(@"/bin/echo");
++                executableObject = new FileInfo(@"/bin/busybox");
+             }
+             else
+             {
+-- 
+2.36.2

@@ -1,0 +1,36 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=git-graph
+pkgver=0.7.0
+pkgrel=0
+pkgdesc="Command line tool to show clear git graphs arranged for your branching model"
+arch="all"
+url="https://github.com/git-bahn/git-graph/"
+license="MIT"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/git-bahn/git-graph/archive/refs/tags/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm0755 -t "$pkgdir"/usr/bin/ target/release/"$pkgname"
+
+	install -Dm0644 -t "$pkgdir"/usr/share/doc/"$pkgname"/ docs/manual.md
+	install -Dm0644 -t "$pkgdir"/usr/share/licenses/"$pkgname"/ LICENSE
+}
+
+sha512sums="
+98be56cd738410892da2bb0f1d851690df5d0c246ba1c5243789931d77c6eaf0dc34a6f276db99280dea81920d4a16a5bfd57129927fb1a89f0fa31058c88c8b  git-graph-0.7.0.tar.gz
+"

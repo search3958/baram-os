@@ -1,0 +1,28 @@
+diff --git a/tests/check/meson.build b/tests/check/meson.build
+index 0626837..480e8d7 100644
+--- a/tests/check/meson.build
++++ b/tests/check/meson.build
+@@ -40,7 +40,6 @@ good_tests = [
+   [ 'elements/deinterlace', get_option('deinterlace').disabled()],
+   [ 'elements/dtmf', get_option('dtmf').disabled()],
+   [ 'elements/flvdemux', get_option('flv').disabled()],
+-  [ 'elements/flvmux', get_option('flv').disabled()],
+   [ 'elements/hlsdemux_m3u8' , not hls_dep.found() or not adaptivedemux2_dep.found(), [hls_dep, adaptivedemux2_dep] ],
+   [ 'elements/mulawdec', get_option('law').disabled()],
+   [ 'elements/mulawenc', get_option('law').disabled()],
+@@ -81,7 +80,6 @@ good_tests = [
+   [ 'elements/equalizer', get_option('equalizer').disabled()],
+   [ 'pipelines/simple-launch-lines' ],
+   [ 'pipelines/tagschecking' ],
+-  [ 'generic/states' ],
+ ]
+ 
+ if not get_option('rtp').disabled() and not get_option('rtpmanager').disabled()
+@@ -118,7 +116,6 @@ if not get_option('rtp').disabled() and not get_option('rtpmanager').disabled()
+     [ 'elements/rtpred' ],
+     [ 'elements/rtpulpfec' ],
+     [ 'elements/rtpssrcdemux' ],
+-    [ 'elements/rtp-payloading' ],
+     [ 'elements/rtpst2022-1-fecdec' ],
+     [ 'elements/rtpst2022-1-fecenc' ],
+   ]

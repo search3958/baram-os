@@ -1,0 +1,37 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-sphinxcontrib-actdiag
+_pkgname=sphinxcontrib-actdiag
+pkgver=3.0.0
+pkgrel=5
+pkgdesc="Sphinx actdiag extension"
+url="https://github.com/blockdiag/sphinxcontrib-actdiag"
+arch="noarch"
+license="BSD-2-Clause"
+depends="py3-actdiag py3-blockdiag py3-sphinx python3"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/blockdiag/sphinxcontrib-actdiag/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+options="!check" # sphinx-testing
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+caef6c9e8e968e9053150a28aede2a07be1396ba2426745cd35cbb4a2093d93c1056336c49d1f7a901e22845e547b7e46b6caecc9f7cfea7ce7f7bd46c2ff49e  py3-sphinxcontrib-actdiag-3.0.0.tar.gz
+"

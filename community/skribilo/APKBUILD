@@ -1,0 +1,40 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=skribilo
+pkgver=0.10.0
+pkgrel=1
+pkgdesc="A free document production tool for structured documents"
+url="https://www.nongnu.org/skribilo"
+arch="all"
+license="GPL-3.0-or-later"
+depends="guile guile-reader imagemagick"
+makedepends="guile-dev"
+# Don't split -dev: https://gitlab.alpinelinux.org/alpine/aports/-/issues/12783
+subpackages="$pkgname-doc"
+source="http://download-mirror.savannah.gnu.org/releases/skribilo/skribilo-$pkgver.tar.gz
+	symlinks.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+97c4a08c83fb47759e9c8b83e53438561a77c41bfc655083938546f65be7e8a647d38bc3bf231996822ed1200915fd0691102c1e0d4c02fef499a9b99b2b844e  skribilo-0.10.0.tar.gz
+bcdc3a858eaca58421e7b2c9ff3b9bb8758f70ee4d2b1c978e33686a01a4f73cddae9bef931c3bd233055402c731ed4ce93571074f442e9cd4d8e99c43ca2949  symlinks.patch
+"

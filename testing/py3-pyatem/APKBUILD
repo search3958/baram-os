@@ -1,0 +1,73 @@
+# Contributor: Martijn Braam <martijn@brixit.nl>
+# Maintainer: Martijn Braam <martijn@brixit.nl>
+pkgname=py3-pyatem
+pkgver=0.5.0
+pkgrel=6
+pkgdesc="Python library for controlling Blackmagic Design ATEM hardware"
+url="https://git.sr.ht/~martijnbraam/pyatem"
+arch="all"
+license="LGPL-3.0-only"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~martijnbraam/pyatem/archive/$pkgver.tar.gz
+	openswitcher-proxy.confd
+	openswitcher-proxy.initd
+	"
+depends="python3 py3-usb py3-zeroconf"
+makedepends="py3-setuptools python3-dev glib-dev libhandy1-dev meson"
+checkdepends="py3-pytest"
+builddir="$srcdir/pyatem-$pkgver"
+install="openswitcher-proxy.pre-install"
+subpackages="openswitcher openswitcher-proxy:proxy openswitcher-proxy-openrc $pkgname-pyc"
+
+build() {
+	# Build the python library
+	python3 setup.py build
+
+	# Build the native code in-place for the tests
+	python3 setup.py build_ext --inplace
+
+	# Build the GTK app
+	abuild-meson -Dwith_proxy=False . output_gtk
+	meson compile -C output_gtk
+
+	# Build the proxy daemon
+	abuild-meson -Dwith_gtk_app=False . output_proxy
+	meson compile -C output_proxy
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+
+	install -D -m644 "$builddir"/100-blackmagicdesign.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/100-blackmagicdesign.rules
+}
+
+openswitcher() {
+	pkgdesc="GTK+3 Control application for Blackmagic Design ATEM hardware"
+	depends="python3 py3-gobject3 gtk+3.0 libhandy1-dev py3-pyatem py3-cairo"
+
+	DESTDIR="$subpkgdir" meson install --no-rebuild -C "$builddir"/output_gtk
+	install -D -m755 "$srcdir"/openswitcher-proxy.initd \
+		"$pkgdir"/etc/init.d/openswitcher-proxy
+	install -D -m644 "$srcdir"/openswitcher-proxy.confd \
+		"$pkgdir"/etc/conf.d/openswitcher-proxy
+}
+
+proxy() {
+	pkgdesc="Reverse proxy for the Blackmagic Design ATEM protocol"
+	depends="python3 py3-pyatem py3-toml py3-paho-mqtt"
+
+	DESTDIR="$subpkgdir" meson install --no-rebuild -C "$builddir"/output_proxy
+
+	install -D -m644 "$builddir"/proxy-full.toml \
+		"$pkgdir"/etc/openswitcher/proxy.toml.example
+}
+
+sha512sums="
+54db7562c9f85fc0f272949e34ec5b16b3a061af96651cbb491bb735aeaacc794d3e07f744a59be9e3c77f45bd8bbf6de6c7b6428b9ed953f9408040a50e953e  py3-pyatem-0.5.0.tar.gz
+f7d60a2b4effb5795fedfde6c2d9f7523847530d933af73b275642c2b6afd254fe0f189f9a5c304544f1b2be3f79db88404a8d6d0a5a26ce1f5b5d3375eea858  openswitcher-proxy.confd
+a0e337e9b337825b6f23bf43fd9fe700bebf32e9747f2ddd92383a6a4a7f9da14151744af03f3c80c997d96dc9ce767f198cf18460ccf93828e6d1cd519fe50f  openswitcher-proxy.initd
+"

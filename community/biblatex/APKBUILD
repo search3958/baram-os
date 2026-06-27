@@ -1,0 +1,25 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=biblatex
+pkgver=3.21
+pkgrel=0
+pkgdesc="Sophisticated Bibliographies in LaTeX"
+url="https://www.ctan.org/pkg/biblatex"
+# s390x blocked by texlive-luatex
+arch="noarch !s390x"
+license="LPPL-1.3c"
+depends="texlive-luatex"
+makedepends="bash perl"
+source="$pkgname-$pkgver.tar.gz::https://github.com/plk/biblatex/archive/v$pkgver.tar.gz"
+replaces="texmf-dist-bibtexextra texmf-dist-bibtexextra-doc"
+# no tests
+options="!check"
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/texmf-dist
+	obuild/build.sh install $pkgver "$pkgdir"/usr/share/texmf-dist/
+}
+
+sha512sums="
+91af9bf2a56c3123fd92cd84eaa856c31b698b352f5e9c8f5522ca287323ca282b38ca7884807ba49efb48816b2b96b3b920f2730e3b76faac9432703d72f80c  biblatex-3.21.tar.gz
+"

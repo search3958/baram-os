@@ -1,0 +1,53 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=uvicorn
+pkgver=0.44.0
+pkgrel=0
+pkgdesc="Lightning-fast ASGI server"
+url="https://www.uvicorn.dev/"
+license="BSD-3-Clause"
+arch="noarch"
+depends="py3-click py3-h11"
+makedepends="py3-gpep517 py3-hatchling"
+checkdepends="
+	py3-a2wsgi
+	py3-dotenv
+	py3-httptools
+	py3-httpx
+	py3-pytest
+	py3-pytest-codspeed
+	py3-pytest-mock
+	py3-pytest-xdist
+	py3-trustme
+	py3-typing-extensions
+	py3-watchfiles
+	py3-websockets
+	py3-wsproto
+	py3-yaml
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/Kludex/uvicorn/archive/$pkgver/uvicorn-$pkgver.tar.gz
+	deprecations.patch
+	"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest \
+		-k "not test_send_binary_data_to_server_bigger_than_default_on_websockets"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/uvicorn-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+fee88f1cd12fc73e39fb859ecad9412696902bad0628f0c5a0bb7b0581813180e8f39daa3396ee5d597cc9083141dc35ca06ef2fc6c383c3fcaf0525ef0ae9e0  uvicorn-0.44.0.tar.gz
+23b8eb6957cac206edfea4884a130a69e3c5598dd58986f19e1b65f111b0502a207cb78e45e6d62b54c83df1a5fa2d63fb80a4df303b56c5f1fa414d9d45bc25  deprecations.patch
+"

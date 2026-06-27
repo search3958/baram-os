@@ -1,0 +1,33 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-voxpopuli
+pkgver=0.3.6
+pkgrel=6
+pkgdesc="A wrapper around Espeak and Mbrola, to do simple Text-To-Speech (TTS), with the possibility to tweak the phonemic form"
+url="https://github.com/hadware/voxpopuli"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools"
+checkdepends="
+	mbrola-voices
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/hadware/voxpopuli/archive/v$pkgver/voxpopuli-v$pkgver.tar.gz"
+options="!check" # Requires mbrola which doesn't currently compile
+builddir="$srcdir/voxpopuli-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	PYTHONPATH="$PWD/build/lib" pytest tests/tests.py
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="9ef82ab33304da31db82efdf1a0816da5631f4c3344f4373a27bcd03d95c0711b74e9f61cdfdb01aef17759a1054e3406426d8db9893a9e1224756239ca66eec  voxpopuli-v0.3.6.tar.gz"

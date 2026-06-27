@@ -1,0 +1,70 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Milan P. Stanić <mps@arvanta.net>
+# Maintainer: lauren n. liberda <lauren@selfisekai.rocks>
+pkgname=zig
+pkgver=0.16.0
+pkgrel=1
+pkgdesc="General-purpose programming language designed for robustness, optimality, and maintainability"
+url="https://ziglang.org/"
+# armhf, armv7: incompatible pointer types in compilert_rt.c
+# x86: https://codeberg.org/ziglang/zig/issues/30848
+arch="all !armhf !armv7 !x86"
+license="MIT"
+install="$pkgname.pre-upgrade"
+_llvmver=21
+makedepends="
+	clang$_llvmver-dev
+	cmake
+	libxml2-dev
+	lld$_llvmver-dev
+	llvm$_llvmver-dev
+	samurai
+	zlib-dev
+	"
+provides="zig-dev=$pkgver-r$pkgrel"
+subpackages="$pkgname-doc"
+source="https://ziglang.org/download/$pkgver/zig-$pkgver.tar.xz
+	"
+
+build() {
+	local crossopts=
+	if [ "$CBUILD" != "$CHOST" ]; then
+		crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_PREFIX_PATH=/usr \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DZIG_VERSION="$pkgver" \
+		-DZIG_SHARED_LLVM=ON \
+		-DZIG_TARGET_MCPU=baseline \
+		-DCLANG_INCLUDE_DIRS=/usr/lib/llvm$_llvmver/include \
+		$crossopts
+
+	cmake --build build
+
+	./build/stage3/bin/zig build docs \
+		-Dversion-string="$pkgver"
+}
+
+check() {
+	./build/stage3/bin/zig build test \
+		-Dcpu=baseline \
+		-Dskip-debug \
+		-Dskip-release-safe \
+		-Dskip-release-small \
+		-Dskip-non-native
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	mkdir -p "$pkgdir/usr/share/doc/"
+	cp -r zig-out/doc "$pkgdir/usr/share/doc/$pkgname"
+}
+
+sha512sums="
+1404a939c6f233d5f328a4833543d7a2b2d9f0f5081babe6e3ad43daed25bbb0844b28c01c900f64b5bb63ac62b5586457c05380b10494dfefb56f49b58d4a0a  zig-0.16.0.tar.xz
+"

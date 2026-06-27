@@ -1,0 +1,56 @@
+# Contributor: Anjandev Momi <anjan@momi.ca>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=safeeyes
+pkgver=3.3.1
+pkgrel=1
+pkgdesc="Protect your eyes from eye strain using this simple and beautiful, yet extensible break reminder"
+url="https://slgobinath.github.io/safeeyes/"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	gtk4.0
+	libnotify
+	pipewire
+	py3-babel
+	py3-dbus
+	py3-psutil
+	python3
+	"
+makedepends="py3-setuptools gettext"
+subpackages="$pkgname-pyc $pkgname-wayland $pkgname-x11"
+source="$pkgname-$pkgver.tar.gz::https://github.com/slgobinath/SafeEyes/archive/refs/tags/v$pkgver.tar.gz"
+options="!check" # no upstream checks
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+
+	install -Dm644 safeeyes/platform/io.github.slgobinath.SafeEyes.desktop \
+		-t "$pkgdir"/usr/share/applications
+	cp -r safeeyes/platform/icons "$pkgdir"/usr/share/
+}
+
+wayland() {
+	install_if="$pkgname=$pkgver-r$pkgrel wayland-libs-server"
+	depends="py3-wayland"
+
+	mkdir -p "$subpkgdir"
+}
+
+x11() {
+	install_if="$pkgname=$pkgver-r$pkgrel xorg-server"
+	depends="py3-xlib xprintidle"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+5fa525ffae78305b657c4672cd8224a917ca4183c8df1a7b51260020a4185c01d6bd24377e2332939abab63eefe9d2ec30056a5b448506253d91cdfb36576d92  safeeyes-3.3.1.tar.gz
+"

@@ -1,0 +1,31 @@
+# Contributor: rahmanshaber <rahmanshaber@yahoo.com>
+# Maintainer: rahmanshaber <rahmanshaber@yahoo.com>
+pkgname=coreinfo
+pkgver=5.0.0
+pkgrel=0
+pkgdesc="A file information tool from C-Suite"
+arch="all"
+url="https://gitlab.com/cubocore"
+license="GPL-3.0-or-later"
+depends="qt6-qtsvg"
+makedepends="qt6-qtbase-dev libcprime-dev libmediainfo-dev libzen-dev cmake ninja"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.com/cubocore/coreapps/coreinfo/-/archive/v$pkgver/coreinfo-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # No tests
+
+build() {
+	cmake -B build \
+		-GNinja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0541ba5571140e0529ff266110c4f0b9352e0aa1e747b13891e85532c1c9826bd5c31d62a9ad49cad40eac7d9abb3a4cafaf34efdf9753f2f33f862c8eb80a3f  coreinfo-5.0.0.tar.gz
+"

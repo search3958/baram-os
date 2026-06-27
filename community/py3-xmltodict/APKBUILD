@@ -1,0 +1,37 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-xmltodict
+_realname=xmltodict
+pkgver=0.13.0
+pkgrel=6
+pkgdesc="an xmltodict implementation"
+url="https://pypi.org/project/xmltodict/"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+checkdepends="py3-nose2 py3-coverage"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/martinblech/$_realname/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_realname-$pkgver"
+
+replaces="py-xmltodict" # Backward compat
+provides="py-xmltodict=$pkgver-r$pkgrel" # Backward compat
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	nose2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+a7c12efa3c8d9b30a36a4b0ed2a8215f9833728d7988e74ef36458790a786c4c7517e536e8a82939623069716cdff258da5aab378a74f884a0fa245e7951f0bf  py3-xmltodict-0.13.0.tar.gz
+"

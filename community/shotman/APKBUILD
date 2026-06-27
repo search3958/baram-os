@@ -1,0 +1,42 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=shotman
+pkgver=0.5.0
+pkgrel=0
+pkgdesc="Uncompromising screenshot GUI for Wayland"
+url="https://git.sr.ht/~whynothugo/shotman"
+arch="all"
+license="ISC"
+depends="slurp"
+makedepends="cargo libxkbcommon-dev scdoc cargo-auditable"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="shotman-$pkgver.tar.gz::https://git.sr.ht/~whynothugo/shotman/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	export SHOTMAN_VERSION=$pkgver
+	make build
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	DESTDIR="$pkgdir" PREFIX="/usr" make install --trace
+}
+
+sha512sums="
+aa0c69232a41b28398000202fb213e83f8fbc1c8b946e3b08f0dbfafd98388ed84023ea0c1fb557734084a73077aa245f2db4b83ba81ee3991549f4b67efb769  shotman-0.5.0.tar.gz
+"

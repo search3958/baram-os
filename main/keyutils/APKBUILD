@@ -1,0 +1,42 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=keyutils
+pkgver=1.6.3
+pkgrel=4
+pkgdesc="Linux Key Management Utilities"
+url="https://people.redhat.com/~dhowells/keyutils/"
+arch="all"
+options="!check"  # Test suite requires RPM.
+license="GPL-2.0-or-later AND LGPL-2.0-or-later"
+makedepends="file linux-headers"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-libs"
+source="https://git.kernel.org/pub/scm/linux/kernel/git/dhowells/keyutils.git/snapshot/keyutils-$pkgver.tar.gz
+	symlink.patch
+	"
+
+build() {
+	make -j1 \
+		NO_ARLIB=1 \
+		LIBDIR=/usr/lib \
+		USRLIBDIR=/usr/lib \
+		VERSION=$pkgver \
+		RELEASE=-r$pkgrel \
+		CFLAGS="$CFLAGS"
+}
+
+package() {
+	make DESTDIR="$pkgdir" \
+		NO_ARLIB=1 \
+		LIBDIR=/usr/lib \
+		USRLIBDIR=/usr/lib \
+		install
+}
+
+libs() {
+	pkgdesc="Key utilities library"
+	amove usr/lib
+}
+
+sha512sums="
+f65965b8566037078b8eeffa66c6fdbe121c8c2bea7fa5bce04cf7ba5ccc50d5b48e51f4a67ca91e4d5d9a12469e7e3eb3036c920ab25e3feba6e93b4c149cf9  keyutils-1.6.3.tar.gz
+8f8b87fdda0bb0e0cd416cc3449b1475f0ef62fc1249cfd49c263ef8e4c6d688ac90c429f76d0224b7d002eb0ef4d860464add217d11191aea08fb87db66c95d  symlink.patch
+"

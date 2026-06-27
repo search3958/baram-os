@@ -1,0 +1,42 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=qsstv
+pkgver=9.5.8
+pkgrel=2
+pkgdesc="Program for receiving and transmitting SSTV and HAMDRM"
+url="https://www.qsl.net/on4qz/qsstv/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	qt5-qtbase-dev
+	openjpeg-dev
+	alsa-lib-dev
+	pulseaudio-dev
+	fftw-dev
+	hamlib-dev
+	v4l-utils-dev
+"
+source="https://www.qsl.net/o/on4qz/qsstv/downloads/qsstv_$pkgver.tar.gz"
+options="!check" # no test suite
+builddir="$srcdir/qsstv"
+
+build() {
+	qmake-qt5 PREFIX="/usr"
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	INSTALL_ROOT="$pkgdir" make install
+	install -Dm644 "$builddir"/qsstv.desktop \
+		"$pkgdir"/usr/share/applications/qsstv.desktop
+	install -Dm644 "$builddir"/icons/qsstv.png \
+		"$pkgdir"/usr/share/icons/hicolor/48x48/apps/qsstv.png
+}
+
+sha512sums="
+88e1bb62e3838d94c670397fceced7913ac4675e7fea93d78c2b2799ef172c27baad9ac7f7d119eb1130296d21b641164cdd0f53a93967305f632fa9bb3b4e6a  qsstv_9.5.8.tar.gz
+"

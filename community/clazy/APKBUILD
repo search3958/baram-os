@@ -1,0 +1,40 @@
+# Contributor: André Klitzing <aklitzing@gmail.com>
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=clazy
+pkgver=1.17.1
+pkgrel=1
+pkgdesc="Qt oriented code checker based on clang framework"
+url="https://invent.kde.org/sdk/clazy"
+arch="all"
+license="LGPL-2.0-only"
+_llvmver=22
+depends="clang$_llvmver"
+makedepends="
+	clang$_llvmver-dev
+	cmake
+	llvm$_llvmver-dev
+	perl
+	samurai
+	"
+options="!check" # cannot run tests without installation
+subpackages="$pkgname-doc"
+source="https://download.kde.org/stable/clazy/$pkgver/src/clazy-v$pkgver.tar.xz"
+builddir="$srcdir/clazy-v$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DLLVM_ROOT=/usr/lib/llvm$_llvmver \
+		-DLLVM_CONFIG_EXECUTABLE=/usr/lib/llvm$_llvmver/bin/llvm-config \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+347aea8d0b2f82441e5058c47018936fa5ff43ac4c5babdf7f5dfa889dc6f5301f562201ab12ea4cc9cf938a6850a10396a72b19b2af069e9d2426d6e20061b7  clazy-v1.17.1.tar.xz
+"

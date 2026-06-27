@@ -1,0 +1,40 @@
+# Contributor: Daniel Gerber <dg@atufi.org>
+# Maintainer: Sean McAvoy <seanmcavoy@gmail.com>
+pkgname=bindfs
+pkgver=1.17.7
+pkgrel=1
+pkgdesc="FUSE filesystem for mirroring a directory to another directory"
+url="https://bindfs.org"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers fuse3-dev" # or fuse-dev
+checkdepends="ruby ruby-etc"
+subpackages="$pkgname-doc"
+options="!check"
+source="https://bindfs.org/downloads/bindfs-$pkgver.tar.gz
+	musl-getmntent-issue.patch"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	# NOTE: this requires the fuse kernel module to be loaded
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+035593e65b5ffaff77395a6c8c79a6ea01e7702e8f138dfee25342c7e6cd280673cb98c3364f50c036038935a3ace2fa8ebe0713f3bc6b7226fafaf0c9107738  bindfs-1.17.7.tar.gz
+1c6491241393974923ed512ac2621c864f6f5e9f7e6faca83154cb785332049b49e18dda31ce297a4531bb0abf42d5039c996d0223eac105b0b7af377fd8c2ec  musl-getmntent-issue.patch
+"

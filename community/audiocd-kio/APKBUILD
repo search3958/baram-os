@@ -1,0 +1,45 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=audiocd-kio
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> ki18n
+arch="all !armhf"
+url="https://www.kde.org/applications/multimedia/"
+pkgdesc="Kioslave for accessing audio CDs"
+license="GPL-2.0-or-later AND GFDL-1.2-only"
+makedepends="
+	cdparanoia-dev
+	extra-cmake-modules
+	flac-dev
+	kcmutils-dev
+	kconfig-dev
+	kdoctools-dev
+	ki18n-dev
+	kio-dev
+	libkcddb-dev
+	libvorbis-dev
+	qt6-qtbase-dev
+	samurai
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/multimedia/audiocd-kio.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/audiocd-kio-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+7ab0c15004e4523ccd59a20a866c213dbc971027343ed49ec23b7a1516a76846e9d73accc3e77227148b6a25aed0e5e95816806f5c4d4ec6e2927850002d271c  audiocd-kio-26.04.2.tar.xz
+"

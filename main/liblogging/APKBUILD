@@ -1,0 +1,39 @@
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=liblogging
+pkgver=1.0.8
+pkgrel=0
+pkgdesc="An easy to use logging library"
+url="http://www.liblogging.org/"
+arch="all"
+license="BSD-2-Clause"
+makedepends="autoconf automake libtool py3-docutils"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rsyslog/liblogging/archive/refs/tags/v$pkgver.tar.gz"
+options="!check"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-journal \
+		--enable-stdlog
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+fe7cc894702f90d0158ec29a102606d403d9fe1ffd214757c684174c24c623ac2d97ee6d5bb22292411a041a683d21bb25258c8963bf004c21a0ef220efad8fb  liblogging-1.0.8.tar.gz
+"

@@ -1,0 +1,65 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Contributor: Nulo <alpine@nulo.in>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=qmk-cli
+pkgver=1.2.0
+pkgrel=1
+# latest change to util/udev/50-qmk.rules
+_qmk_firmware=58323017ffe62e91200a0e1c814fc960a7605f08
+pkgdesc="QMK helper CLI"
+url="https://github.com/qmk/qmk_cli"
+# archs on which cross embedded compilers are available
+arch="x86_64 aarch64 ppc64le x86"
+license="MIT"
+depends="
+	avr-libc
+	avrdude
+	dfu-programmer
+	dfu-util
+	git
+	gcc-arm-none-eabi
+	gcc-avr
+	newlib-arm-none-eabi
+	py3-dotty-dict
+	py3-hidapi
+	py3-hjson
+	py3-jsonschema
+	py3-milc
+	py3-pillow
+	py3-platformdirs
+	py3-pygments
+	py3-pyserial
+	py3-usb
+	"
+makedepends="py3-setuptools py3-gpep517 py3-installer py3-wheel"
+options="!check" # no tests
+subpackages="$pkgname-pyc $pkgname-udev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/qmk/qmk_cli/archive/refs/tags/$pkgver.tar.gz
+	qmk-firmware-$_qmk_firmware.tar.gz::https://github.com/qmk/qmk_firmware/archive/$_qmk_firmware.tar.gz
+	add-plugdev.patch
+	"
+builddir="$srcdir/qmk_cli-$pkgver"
+
+prepare() {
+	mv "$srcdir"/qmk_firmware-$_qmk_firmware/util/udev/50-qmk.rules "$builddir"/
+	default_prepare
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	install -Dm644 50-qmk.rules \
+		-t "$pkgdir"/usr/lib/udev/rules.d/
+}
+
+sha512sums="
+ef6bd522325a773df85a10cb8c153c4507288221a902cfc423ec37f13a0b3e38d957a1a9d907d9c0037aa05481b583338943a9a3466eb84b8ccbce871db55bac  qmk-cli-1.2.0.tar.gz
+2868d627ae407334cc707cf6430c4f373c4fd11b3bdbc5bfda7a4dd1045e55fecdecda4538cdff9825b87df173f273ae3a422d7565b0be3001225a67967bdde5  qmk-firmware-58323017ffe62e91200a0e1c814fc960a7605f08.tar.gz
+96389af3a9db98b3904dfa9811f95a20bb9c763667af731eb23262ffca37bf153db59ce83afaee054e7bfbaae2011297aa347a1cd1cb9e3bc3f95348a0b1c5de  add-plugdev.patch
+"

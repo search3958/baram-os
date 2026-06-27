@@ -1,0 +1,37 @@
+# Contributor: Coco Liliace <coco@liliace.dev>
+# Maintainer: Coco Liliace <coco@liliace.dev>
+_pyname=jaraco.logging
+pkgname=py3-$_pyname
+pkgver=3.4.0
+pkgrel=1
+pkgdesc="Quickly solicit log level info from command-line parameters"
+url="https://github.com/jaraco/jaraco.logging"
+arch="noarch"
+license="MIT"
+depends="py3-tempora"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jaraco/jaraco.logging/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+_distname=".dist"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel --wheel-dir "$_distname" --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$_distname"/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" "$_distname"/*.whl
+}
+
+sha512sums="
+891634c1917dd3765f6d30d3dfc7e8e457e2039b2a95be7aa82c14b50727dc105e0172ca5fa8f5a7c0f0eb4df6f41b4f86fe66d30ac77bc806c2b3114da1baf6  py3-jaraco.logging-3.4.0.tar.gz
+"

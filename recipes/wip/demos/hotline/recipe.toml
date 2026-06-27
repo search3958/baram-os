@@ -1,7 +1,0 @@
-#TODO hot-lib-reloader crate error
-[source]
-git = "https://github.com/polymonster/hotline"
-shallow_clone = true
-[build]
-template = "cargo"
-cargoexamples = ["triangle"]

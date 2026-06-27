@@ -1,0 +1,28 @@
+From 222966d255b44621c4d7583849867c7644c784c1 Mon Sep 17 00:00:00 2001
+From: fossdd <fossdd@pwned.life>
+Date: Wed, 1 Jan 2025 03:21:31 +0100
+Subject: [PATCH 04/10] add missing musl_missing.h
+
+	../src/shared/wall.c:53:20: error: '_PATH_UTMPX' undeclared (first use in this function); did you mean 'PATH_MAX'?
+
+Signed-off-by: fossdd <fossdd@pwned.life>
+Signed-off-by: Achill Gilgenast <achill@achill.org>
+---
+ src/shared/wall.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/shared/wall.c b/src/shared/wall.c
+index d5900ef019d8..369b457ecaef 100644
+--- a/src/shared/wall.c
++++ b/src/shared/wall.c
+@@ -16,6 +16,7 @@
+ #include "user-util.h"
+ #include "utmp-wtmp.h"
+ #include "wall.h"
++#include "musl_missing.h"
+ 
+ #if ENABLE_UTMP || ENABLE_LOGIND
+ 
+-- 
+2.54.0
+

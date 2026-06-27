@@ -1,0 +1,34 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer:
+pkgname=gyp
+pkgver=0.21.1
+pkgrel=1
+pkgdesc="Generate Your Projects Meta-Build system"
+options="!check" # Tests currently fail
+url="https://gyp.gsrc.io"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 ninja"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://github.com/nodejs/gyp-next/archive/refs/tags/v$pkgver/gyp-next-$pkgver.tar.gz
+	fips.patch
+	"
+builddir="$srcdir/gyp-next-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a8236c93d512192dce2bee9b6ecb12b9b183ebc9f1a21551586ddd769f2a9101b0aacbaabf90f837171b104e24bc59456debc1ff879e3ddd95867bccad6a8d3e  gyp-next-0.21.1.tar.gz
+9ff0fe217163665ce2bb5474fdd2e7cbf43ee8df4489aadff806e1d938a1fba83e5cccc468f5e67221bb14e3100016aad030ab3081e7aa07fda43da14a8fadd7  fips.patch
+"

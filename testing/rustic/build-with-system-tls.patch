@@ -1,0 +1,218 @@
+Link with system-provided openssl instead of bundling rustls.
+
+--- a/vendor/rustic_core/crates/backend/Cargo.toml
++++ b/vendor/rustic_core/crates/backend/Cargo.toml
+@@ -74,7 +74,7 @@ walkdir = "2.5.0"
+ 
+ # rest backend
+ backon = { version = "1.6.0", optional = true }
+-reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls-native-roots", "stream", "blocking"], optional = true }
++reqwest = { version = "0.12.28", default-features = false, features = ["json", "native-tls", "stream", "blocking"], optional = true }
+ 
+ # rclone backend
+ rand = { version = "0.10.0", optional = true }
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -17,6 +17,10 @@ description = """
+ rustic - fast, encrypted, deduplicated backups powered by Rust
+ """
+ 
++[patch.crates-io]
++rustic_backend = { path = "vendor/rustic_core/crates/backend" }
++rustic_core = { path = "vendor/rustic_core/crates/core" }
++
+ [features]
+ default = ["jq", "prometheus", "opentelemetry", "tui", "webdav"]
+ release = ["default", "self-update"]
+diff --git a/Cargo.lock b/Cargo.lock
+index c9ee2a8..23e5a40 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1536,6 +1536,21 @@ version = "0.2.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+ 
++[[package]]
++name = "foreign-types"
++version = "0.3.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f6f339eb8adc052cd2ca78910fda869aefa38d22d5cb648e6485e4d3fc06f3b1"
++dependencies = [
++ "foreign-types-shared",
++]
++
++[[package]]
++name = "foreign-types-shared"
++version = "0.1.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
++
+ [[package]]
+ name = "form_urlencoded"
+ version = "1.2.2"
+@@ -2124,6 +2139,22 @@ dependencies = [
+  "webpki-roots 1.0.6",
+ ]
+ 
++[[package]]
++name = "hyper-tls"
++version = "0.6.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
++dependencies = [
++ "bytes",
++ "http-body-util",
++ "hyper 1.8.1",
++ "hyper-util",
++ "native-tls",
++ "tokio",
++ "tokio-native-tls",
++ "tower-service",
++]
++
+ [[package]]
+ name = "hyper-util"
+ version = "0.1.20"
+@@ -2865,6 +2896,23 @@ dependencies = [
+  "version_check",
+ ]
+ 
++[[package]]
++name = "native-tls"
++version = "0.2.18"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "465500e14ea162429d264d44189adc38b199b62b1c21eea9f69e4b73cb03bbf2"
++dependencies = [
++ "libc",
++ "log",
++ "openssl",
++ "openssl-probe",
++ "openssl-sys",
++ "schannel",
++ "security-framework",
++ "security-framework-sys",
++ "tempfile",
++]
++
+ [[package]]
+ name = "nix"
+ version = "0.29.0"
+@@ -3221,12 +3269,50 @@ dependencies = [
+  "vec-strings",
+ ]
+ 
++[[package]]
++name = "openssl"
++version = "0.10.75"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "08838db121398ad17ab8531ce9de97b244589089e290a384c900cb9ff7434328"
++dependencies = [
++ "bitflags 2.11.0",
++ "cfg-if 1.0.4",
++ "foreign-types",
++ "libc",
++ "once_cell",
++ "openssl-macros",
++ "openssl-sys",
++]
++
++[[package]]
++name = "openssl-macros"
++version = "0.1.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
++dependencies = [
++ "proc-macro2",
++ "quote",
++ "syn",
++]
++
+ [[package]]
+ name = "openssl-probe"
+ version = "0.2.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
+ 
++[[package]]
++name = "openssl-sys"
++version = "0.9.111"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "82cab2d520aa75e3c58898289429321eb788c3106963d0dc886ec7a5f4adc321"
++dependencies = [
++ "cc",
++ "libc",
++ "pkg-config",
++ "vcpkg",
++]
++
+ [[package]]
+ name = "opentelemetry"
+ version = "0.31.0"
+@@ -4213,9 +4299,11 @@ dependencies = [
+  "http-body-util",
+  "hyper 1.8.1",
+  "hyper-rustls 0.27.7",
++ "hyper-tls",
+  "hyper-util",
+  "js-sys",
+  "log",
++ "native-tls",
+  "percent-encoding",
+  "pin-project-lite",
+  "quinn",
+@@ -4227,6 +4315,7 @@ dependencies = [
+  "serde_urlencoded",
+  "sync_wrapper 1.0.2",
+  "tokio",
++ "tokio-native-tls",
+  "tokio-rustls 0.26.4",
+  "tokio-util",
+  "tower",
+@@ -4466,8 +4555,6 @@ dependencies = [
+ [[package]]
+ name = "rustic_backend"
+ version = "0.6.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "02bd2f9c5b02e692175d8a7d7131ee39f6f89a60c43de3d0acdbe24093e722d3"
+ dependencies = [
+  "aho-corasick",
+  "backon",
+@@ -4504,8 +4591,6 @@ checksum = "fbcebf2228827bc4b61cb54dfd84cf43aacf06ca2dfe4c014b136a0e32b876e2"
+ [[package]]
+ name = "rustic_core"
+ version = "0.10.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "a41f013fff085b1cd68ce9389eed23190008914501e4212ed42043e5fc262d03"
+ dependencies = [
+  "aes256ctr_poly1305aes",
+  "backon",
+@@ -5569,6 +5654,16 @@ dependencies = [
+  "syn",
+ ]
+ 
++[[package]]
++name = "tokio-native-tls"
++version = "0.3.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
++dependencies = [
++ "native-tls",
++ "tokio",
++]
++
+ [[package]]
+ name = "tokio-rustls"
+ version = "0.24.1"
+@@ -6032,6 +6127,12 @@ version = "0.1.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+ 
++[[package]]
++name = "vcpkg"
++version = "0.2.15"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
++
+ [[package]]
+ name = "vec-strings"
+ version = "0.4.8"

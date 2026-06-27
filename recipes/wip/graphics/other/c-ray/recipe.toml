@@ -1,5 +1,0 @@
-#TODO missing script for "make", see https://github.com/vkoskiv/c-ray#installation
-[source]
-git = "https://github.com/vkoskiv/c-ray"
-[build]
-template = "custom"

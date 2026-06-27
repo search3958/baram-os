@@ -1,0 +1,118 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=plasma-mobile
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="Modules providing phone functionality for Plasma"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://www.plasma-mobile.org/"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+depends="
+	bluez-qt
+	breeze-icons
+	dbus-x11
+	kpipewire
+	kquickcharts
+	plasma-activities
+	plasma-keyboard
+	plasma-nano
+	plasma-nm
+	plasma-pa
+	plasma-settings
+	plasma-workspace
+	qqc2-breeze-style
+	"
+makedepends="
+	extra-cmake-modules
+	kauth-dev
+	kbookmarks-dev
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	ki18n-dev
+	kio-dev
+	kirigami-addons-dev
+	kitemviews-dev
+	kjobwidgets-dev
+	knotifications-dev
+	kpackage-dev
+	kpeople-dev
+	kservice-dev
+	kwayland-dev
+	kwidgetsaddons-dev
+	kwin-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	libphonenumber-dev
+	libplasma-dev
+	modemmanager-qt-dev
+	networkmanager-qt-dev
+	plasma-activities-dev
+	plasma-workspace-dev
+	qcoro-dev
+	qt6-qtdeclarative-dev
+	samurai
+	solid-dev
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-lang
+	$pkgname-systemd
+	$pkgname-waydroid
+	"
+provides="plasma-phone-components=$pkgver-r$pkgrel" # For backwards compatibility
+replaces="plasma-phone-components" # For backwards compatibility
+
+
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+_repo_url="https://invent.kde.org/plasma/plasma-mobile.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/plasma-mobile-$pkgver.tar.xz
+	99-flashlight.rules
+	"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DINSTALL_SYSTEMD_SERVICE=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm644 "$srcdir"/99-flashlight.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+}
+
+waydroid() {
+	pkgdesc="$pkgdesc - Waydroid integration"
+	install_if="$pkgname=$pkgver-r$pkgrel waydroid"
+
+	amove usr/lib/libexec/kf6/kauth/waydroidhelper
+	amove usr/lib/qt6/plugins/plasma/kcms/systemsettings/kcm_waydroidintegration.so
+	amove usr/lib/qt6/qml/org/kde/plasma/private/mobileshell/waydroidintegrationplugin
+	amove usr/share/applications/kcm_waydroidintegration.desktop
+	amove usr/share/dbus-1/system-services/*waydroidhelper.service
+	amove usr/share/dbus-1/system.d/*waydroidhelper.conf
+	amove usr/share/plasma/quicksettings/*waydroid
+	amove usr/share/polkit-1/actions/*waydroidhelper.policy
+}
+
+sha512sums="
+b797063a6baa6191cc3c0705ef94df3c2eb0638a65bcaa70c34d4c9fe7fa21f67767b384ac12886a6c797ae45b54fc92fb0b396a34883dc5e9881a6a32f42bb5  plasma-mobile-6.7.1.tar.xz
+4badc25cbb7dc84d6af54cff5f3c09dcc37da86b7e930bdcab6d75f8dd90ef0dd9c8a3837ab696b1f4de9cad82d5e64ddd44904640a92e910a8f45524542be95  99-flashlight.rules
+"

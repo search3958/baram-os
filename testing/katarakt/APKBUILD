@@ -1,0 +1,32 @@
+# Contributor: Dominika Liberda <ja@sdomi.pl>
+# Maintainer: Dominika Liberda <ja@sdomi.pl>
+pkgname=katarakt
+pkgver=0.3
+pkgrel=0
+pkgdesc="Simple PDF viewer"
+url="https://gitlab.cs.fau.de/Qui_Sum/katarakt"
+arch="all"
+license="BSD-2-Clause"
+makedepends="
+	poppler-qt6-dev
+	qt6-qtbase-dev
+	"
+source="https://gitlab.cs.fau.de/Qui_Sum/katarakt/-/archive/v$pkgver/katarakt-v$pkgver.tar.gz"
+options="!check" # no test suite
+builddir="$srcdir/$pkgname-v$pkgver/"
+
+build() {
+	qmake6 \
+		PREFIX=/usr \
+		QT_INSTALL_PREFIX=/usr \
+		CONFIG+=no_qt_rpath
+	make
+}
+
+package() {
+	install -Dm755 katarakt "$pkgdir"/usr/bin/katarakt
+}
+
+sha512sums="
+ad5d19231f451fc1cd50b6d9837f5c9f0844b32ca615ecd448f8df18f46877002c0cb7b4da8ac79bab53bf8c9de821044bc74d568052c1940d74852eedfe4684  katarakt-v0.3.tar.gz
+"

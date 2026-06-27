@@ -1,0 +1,40 @@
+# Contributor: Michael Pirogov <vbnet.ru@gmail.com>
+# Maintainer: Michael Pirogov <vbnet.ru@gmail.com>
+pkgname=restart-services
+pkgver=0.17.0
+pkgrel=0
+pkgdesc="Tool to manage OpenRC services that need to be restarted"
+url="https://dev.gentoo.org/~mschiff/restart-services/"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="bash py3-lib_users openrc ncurses"
+options="!check" # single bash script w/o tests
+subpackages="$pkgname-doc"
+source="https://dev.gentoo.org/~mschiff/src/restart-services/restart-services-$pkgver.tgz
+	alpine.patch"
+
+package() {
+	install -D -m 0755 $pkgname "$pkgdir"/usr/sbin/$pkgname
+	install -D -p -m 644 $pkgname.1 \
+		"$pkgdir"/usr/share/man/man1/$pkgname.1
+	install -D -m644 CHANGES \
+		"$pkgdir"/usr/share/doc/$pkgname/CHANGES
+	install -D -m644 README \
+		"$pkgdir"/usr/share/doc/$pkgname/README
+	sed -i "s/^#include/include/" $pkgname.conf
+	install -D -m600 $pkgname.conf "$pkgdir"/etc/$pkgname.conf
+	mkdir -p "$pkgdir"/etc/$pkgname.d
+	cat>"$pkgdir"/etc/$pkgname.d/00-local.conf<<-EOF
+	# You may put your local changes here or in any other *.conf file
+	# in this directory so you can leave /etc/restart-services.conf as is.
+	# Example:
+	# *extend* SV_ALWAYS to match 'myservice'
+	# SV_ALWAYS+=( myservice )
+	EOF
+
+}
+
+sha512sums="
+c11ca431fbbc6899ab268e8979049144448479d953ed7373cc7483cca2c03cd4041a1ca1e47c0e810f91a18a43aa32cc305a4ea791e8b992246f972e0fbb19ab  restart-services-0.17.0.tgz
+1b0753e240dba55fcbd21bc72914b939ce1a860deaa3f140c2fe6e36b490b19841c7c78d7556cbdbb2dc8fe53f924a08e654f9db8ea17499174ffb5b7be88ebe  alpine.patch
+"

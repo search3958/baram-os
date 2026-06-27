@@ -1,0 +1,30 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-audioencoder-flac
+pkgver=20.2.0
+_realname=Nexus
+pkgrel=1
+pkgdesc="Flac encoder addon for Kodi"
+options="!check" # no test suite
+url="https://github.com/xbmc/audioencoder.flac"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="GPL-2.0-only"
+makedepends="cmake flac-dev kodi-dev samurai"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/xbmc/audioencoder.flac/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/audioencoder.flac-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+83e3a6cd0311af05c7f3ae456bbe3d5627e47bc5d8f163bdfe57f3e70f798db6e9728698c73b3dc9da6cca2204e6a07004edff012f9bbf2e2b062e3fb97d5338  kodi-audioencoder-flac-20.2.0-Nexus.tar.gz
+"

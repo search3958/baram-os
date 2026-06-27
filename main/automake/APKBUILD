@@ -1,0 +1,40 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Runxi Yu <me@runxiyu.org>
+maintainer="Runxi Yu <me@runxiyu.org>"
+pkgname=automake
+pkgver=1.18.1
+pkgrel=1
+pkgdesc="GNU tool for automatically creating Makefiles"
+url="https://www.gnu.org/software/automake"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="perl"
+makedepends="autoconf"
+subpackages="$pkgname-doc"
+source="https://ftp.gnu.org/gnu/automake/automake-$pkgver.tar.xz"
+
+# many tests have bashisms
+options="!check"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+8baa16831416a953a743f4e3c0f55cea5ebefe0f5a7a0e390581981d4461d02dc9038415124e974b2ec390c40daaa241802cd7d42c6fafb793f87cf355db2a61  automake-1.18.1.tar.xz
+"

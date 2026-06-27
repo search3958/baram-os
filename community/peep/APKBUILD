@@ -1,0 +1,42 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=peep
+pkgver=0.1.6_git20220920
+_gitrev=ac0bd79fb9d8d05e4ed059bb37b93a7cce4b9bc5
+pkgrel=1
+pkgdesc="Text viewer that works like less(1) on small pane within terminal window"
+url="https://github.com/ryochack/peep"
+# s390x: nix crate fails to build
+# loongarch64: nix crate fails to build
+arch="all !s390x !loongarch64"
+license="MIT"
+makedepends="cargo cargo-auditable"
+source="https://github.com/ryochack/peep/archive/$_gitrev/peep-$_gitrev.tar.gz
+	regex-features.patch
+	"
+builddir="$srcdir/$pkgname-$_gitrev"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+6c57f9b0022391e4970540286211c71c2d04e2192d9f40f52e98f3cf57e5cd48c754b1ebc88820ea884554a605aa79ea2a3577da2ae577b35e2061de356ce813  peep-ac0bd79fb9d8d05e4ed059bb37b93a7cce4b9bc5.tar.gz
+d99a9de7e2c7bb458e9ada5d7d6fa401860a211021c03f1819484e9f689b116502d7577c09f5c092fe172700ce885de734075b1f93cb523ec22bf2f31beaec42  regex-features.patch
+"

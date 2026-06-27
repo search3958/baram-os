@@ -1,0 +1,45 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-fire
+pkgver=0.7.1
+pkgrel=1
+pkgdesc="A library for automatically generating command line interfaces"
+url="https://github.com/google/python-fire"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-termcolor"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest-asyncio
+	py3-hypothesis
+	py3-mock
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/f/fire/fire-$pkgver.tar.gz"
+builddir="$srcdir/fire-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+0cce927e14552fb9bdbfab73e32f7ef4665ff4bc9b134ee1b80f9c5b8752ab7db9f0353ebea92934288a273f7ab8be4188dc8b6e8922cb05e4b9d6997586e293  fire-0.7.1.tar.gz
+"

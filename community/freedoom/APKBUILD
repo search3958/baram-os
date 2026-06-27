@@ -1,0 +1,43 @@
+# Contributor: Antoine Fontaine <antoine.fontaine@epfl.ch>
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=freedoom
+pkgver=0.13.0
+pkgrel=2
+pkgdesc="an entirely free software game running on a Doom engine."
+url="https://freedoom.github.io"
+# s390x: build fails (endian issues)
+arch="noarch !s390x"
+license="BSD-3-Clause-Clear"
+depends="bash"
+makedepends="
+	asciidoc
+	asciidoctor
+	deutex
+	docbook-xsl-nons
+	python3
+	py3-pillow
+	"
+options="!check" # no tests
+subpackages="$pkgname-doc"
+source="https://github.com/freedoom/freedoom/archive/refs/tags/v$pkgver/freedoom-v$pkgver.tar.gz
+	https://github.com/freedoom/freedoom/releases/download/v$pkgver/freedoom-$pkgver.zip
+	"
+
+build() {
+	make
+}
+
+package() {
+	# missing asciidoctor-pdf for generating manual from .adoc
+	# include manual from release download
+	mv "$builddir"/freedoom-manual-*.pdf "$builddir"/manual/
+
+	make DESTDIR="$pkgdir" prefix=/usr install
+}
+
+sha512sums="
+70dd124eee028bbf9aad29b17603c2c4c23e5280219d84a9ffa95417b601cfda33ddf44b6aa991e60194120cfd37110c1c888a5f80d4028e9625377c21f8d7a4  freedoom-v0.13.0.tar.gz
+ff71b279900751cb606286ab36d0990febdeb78fee2a9c6adf31491e977e8e045a0d5f30ff6b729d4962c98a30f3138d74f03d25c3569dd3b3e29167601014b9  freedoom-0.13.0.zip
+"

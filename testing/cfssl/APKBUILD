@@ -1,0 +1,35 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=cfssl
+pkgver=1.6.5
+pkgrel=15
+pkgdesc="Cloudflare PKI and TLS toolkit"
+url="https://cfssl.org/"
+license="BSD-2-Clause"
+arch="all !riscv64" # FTBFS
+options="!check" # TODO: fix and enable tests
+makedepends="go sqlite-dev"
+source="https://github.com/cloudflare/cfssl/archive/v$pkgver/cfssl-$pkgver.tar.gz"
+
+export GOFLAGS="$GOFLAGS -trimpath -modcacherw -mod=vendor -tags=libsqlite3"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build \
+		-ldflags="-X github.com/cloudflare/cfssl/cli/version.version=$pkgver" \
+		-v -o bin/ ./cmd/...
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 bin/* -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+b59863d534474ba73efe2dc38b55ba4eb1e0911346b6b9fff7778a3bdc77bf58290ab7173e3ce2cd69f38594dc471ce78632c2aa1cf9188eb6163ca272391185  cfssl-1.6.5.tar.gz
+"

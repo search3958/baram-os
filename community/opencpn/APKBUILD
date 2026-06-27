@@ -1,0 +1,66 @@
+# Contributor: Pedro Filipe <xpecex@outlook.com>
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Contributor: omni <omni+alpine@hack.org>
+# Maintainer: ScrumpyJack <scrumpyjack@st.ilet.to>
+pkgname=opencpn
+pkgver=5.14.0
+pkgrel=0
+pkgdesc="OpenCPN is a cross platform electronic navigation system"
+url="https://opencpn.org/"
+arch="all"
+license="GPL-2.0-or-later AND MIT"
+depends="gpsd"
+makedepends="
+	cmake
+	curl-dev
+	elfutils-dev
+	eudev-dev
+	glew-dev
+	glu-dev
+	jasper-dev
+	libarchive-dev
+	libexif-dev
+	libusb-dev
+	linux-headers
+	lsb-release
+	lz4-dev
+	portaudio-dev
+	rapidjson-dev
+	samurai
+	shapelib-dev
+	sqlite-dev
+	tinyxml-dev
+	wxwidgets-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/OpenCPN/OpenCPN/archive/refs/tags/Release_$pkgver.tar.gz
+	mdns.patch
+	rapidjson.patch
+	"
+builddir="$srcdir/OpenCPN-Release_$pkgver"
+options="!check" # todo
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=/usr/lib \
+		-DOCPN_BUNDLE_GSHHS=CRUDE \
+		-DOCPN_BUNDLE_TCDATA=ON \
+		-DOCPN_USE_BUNDLED_LIBS=OFF \
+		-DOCPN_BUILD_TEST="$(want_check && echo ON || echo OFF)" \
+		-DOCPN_BUNDLE_DOCS=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+aa675861e7e145b9ab6402f9ad09fbf6a15a63fed168e8a5437fffcc4cbb4baaa2b00a4d28ae23ef49ec69f2be20de0b5dc61c6eab20c7298b5c5dfcfbd151b1  opencpn-5.14.0.tar.gz
+149666bcb1f995e9a8d28749db173134af7f933538e8688888a1f8e291553eed78b543fd5a0223ab385aea05fff046074e51556808d232c872763c7a2d94ea22  mdns.patch
+1fdcdf16135b2006c180174c5677efab7c183ae8d770c77888ab1f639e8ed3776b2bd71aa2af12048eb1c1e4eccbc316ec670bd7191b3926cd1c22eebe8f0a2f  rapidjson.patch
+"

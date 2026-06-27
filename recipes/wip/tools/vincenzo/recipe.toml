@@ -1,8 +1,0 @@
-#TODO compiled but not tested
-[source]
-git = "https://github.com/gabrieldemian/vincenzo"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages vcz
-"""

@@ -1,0 +1,269 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=vlc
+pkgver=3.0.23
+pkgrel=5
+pkgdesc="Multi-platform MPEG, VCD/DVD, and DivX player"
+triggers="vlc-libs.trigger=/usr/lib/vlc/plugins"
+pkgusers="vlc"
+pkggroups="vlc"
+url="https://www.videolan.org/vlc/"
+arch="all"
+license="GPL-2.0-or-later"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-qt
+	$pkgname-daemon::noarch
+	$pkgname-libs
+	$pkgname-nftrules
+	"
+install="vlc-daemon.pre-install vlc-libs.pre-deinstall"
+makedepends="
+	a52dec-dev
+	abseil-cpp-dev
+	alsa-lib-dev
+	autoconf
+	automake
+	avahi-dev
+	bison
+	dav1d-dev
+	dbus-dev
+	eudev-dev
+	faad2-dev
+	ffmpeg7-dev
+	flac-dev
+	flex
+	fluidsynth-dev
+	freetype-dev
+	gnutls-dev
+	gtk+3.0-dev
+	gst-plugins-base-dev
+	libarchive-dev
+	libass-dev
+	libavc1394-dev
+	libbluray-dev
+	libcddb-dev
+	libdc1394-dev
+	libdvbpsi-dev
+	libdvdnav-dev
+	libdvdread-dev
+	libgcrypt-dev
+	libice-dev
+	libmad-dev
+	libmatroska-dev
+	libmicrodns-dev
+	libmpeg2-dev
+	libnotify-dev
+	libogg-dev
+	libplacebo5-dev
+	libraw1394-dev
+	librsvg-dev
+	libsamplerate-dev
+	libsecret-dev
+	libshout-dev
+	libsm-dev
+	libsrt-dev
+	libtheora-dev
+	libtool
+	libupnp-dev
+	libva-dev
+	libvdpau-dev
+	libvorbis-dev
+	libvpx-dev
+	libx11-dev
+	libxext-dev
+	libxinerama-dev
+	libxml2-dev
+	libxpm-dev
+	libxv-dev
+	live-media-dev
+	lua5.2-dev
+	mesa-dev
+	ncurses-dev
+	opus-dev
+	protobuf-dev
+	pulseaudio-dev
+	qt5-qtbase-dev
+	qt5-qtsvg-dev
+	qt5-qtx11extras-dev
+	samba-dev
+	sdl2-dev
+	speex-dev
+	speexdsp-dev
+	sysfsutils-dev
+	taglib-dev
+	v4l-utils-dev
+	wayland-dev
+	wayland-protocols
+	x264-dev
+	x265-dev
+	xcb-util-keysyms-dev
+	xcb-util-renderutil-dev
+	xdg-utils
+	"
+source="https://download.videolan.org/vlc/$pkgver/vlc-$pkgver.tar.xz
+	omxil-rpi-codecs.patch
+	check-headless.patch
+	disable-sub-autodetect-fuzzy-1-test.patch
+	fribidi_allow_deprecated.patch
+	gstreamer-header.patch
+	musl-ioctl.patch
+	vlc.initd
+	vlc.confd
+	big-endian.patch
+	upnp-fix-typedef.patch
+	vlc_chromecast.nft
+	"
+
+# secfixes:
+#   3.0.18-r0:
+#     - CVE-2022-41325
+#   3.0.12-r0:
+#     - CVE-2020-26664
+#   3.0.11-r0:
+#     - CVE-2020-13428
+#   3.0.9.2-r0:
+#     - CVE-2019-19721
+#     - CVE-2020-6071
+#     - CVE-2020-6072
+#     - CVE-2020-6073
+#     - CVE-2020-6077
+#     - CVE-2020-6078
+#     - CVE-2020-6079
+#   3.0.7.1-r2:
+#     - CVE-2019-13602
+
+prepare() {
+	default_prepare
+	NOCONFIGURE=1 ./bootstrap
+}
+
+build() {
+	case "$CARCH" in
+	aarch64|arm*)
+		local arch_opts="--enable-omxil --enable-omxil-vout --enable-rpi-omxil"
+		;;
+	esac
+
+	CFLAGS="$CFLAGS -fcommon -O2 -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto -O2" \
+	LUA=lua5.2 \
+	LUAC=luac5.2 \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-nls \
+		--disable-rpath \
+		--disable-static \
+		--enable-a52 \
+		--enable-avcodec \
+		--enable-avformat \
+		--enable-bluray \
+		--enable-dav1d \
+		--enable-dbus \
+		--enable-dc1394 \
+		--enable-dvbpsi \
+		--enable-dvdnav \
+		--enable-dvdread \
+		--enable-faad \
+		--enable-flac \
+		--enable-fluidsynth \
+		--enable-gnutls \
+		--enable-libcddb \
+		--enable-libplacebo \
+		--enable-libva \
+		--enable-live555 \
+		--enable-merge-ffmpeg \
+		--enable-ncurses \
+		--enable-realrtsp \
+		--enable-shout \
+		--enable-skins2 \
+		--enable-sout \
+		--enable-speex \
+		--enable-srt \
+		--enable-taglib \
+		--enable-theora \
+		--enable-upnp \
+		--enable-v4l2 \
+		--enable-vdpau \
+		--enable-vlm \
+		--enable-vorbis \
+		--enable-wma-fixed \
+		--enable-x264 \
+		--enable-xvideo \
+		$arch_opts
+
+	make
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+	# delete cache as it's autocreated by trigger
+	rm -rf "$pkgdir"/usr/lib/vlc/plugins/plugins.dat
+	# delete unneeded mozilla and kde support files
+	rm -rf "$pkgdir"/usr/lib/mozilla
+	rm -rf "$pkgdir"/usr/share/kde4
+
+	install -D -m755 "$srcdir"/vlc.initd "$pkgdir"/etc/init.d/vlc
+	install -D -m664 "$srcdir"/vlc.confd "$pkgdir"/etc/conf.d/vlc
+	install -d -o vlc -g vlc "$pkgdir"/var/log/vlc
+
+	install -Dm644 "$srcdir"/vlc_chromecast.nft \
+		"$pkgdir"/usr/share/nftables.avail/60_vlc_chromecast.nft
+}
+
+check() {
+	make check || { cat ./*/test-suite.log; false; }
+}
+
+qt() {
+	pkgdesc="Qt frontend for VLC"
+	depends="vlc=$pkgver-r$pkgrel"
+	cd "$pkgdir"
+	# scan for elf files that directly or indirectly depends on
+	# libQt* libraries
+	find . -type f \
+	| while read -r file; do
+		if ldd "$file" 2>/dev/null | grep -q "libQt"; then
+			amove "$file"
+		fi
+	done
+	amove usr/share/icons \
+		usr/share/applications \
+		usr/share/metainfo \
+		usr/bin/qvlc
+}
+
+daemon() {
+	pkgdesc="Support for running VLC as a daemon"
+	depends="vlc=$pkgver-r$pkgrel"
+
+	amove etc/init.d
+	amove etc/conf.d
+	amove var/log/vlc
+}
+
+libs() {
+	depends=""
+	default_libs
+
+	amove usr/lib/vlc/vlc-cache-gen
+}
+
+sha512sums="
+557e4ac76a17158877a4a86f27c9a5bc189b7ac559687552117dc8b44961d1172cf93bf8e1eb70fecb05999bdfc3f69ab79b55126c71486fe3a8cdfbf92e6df6  vlc-3.0.23.tar.xz
+e13e398b7bfd977f6e099bcb6cf8dc5cd5bad6dea3eff715881826246dc4329468846084aff2576de2b7fd28d3f06e7c327a6e4511a28d22e5cd198a81146c89  omxil-rpi-codecs.patch
+22d80df599b8b65a5439cefbb7140af8e9530f326d54945da3769af65f37518b99ec2cc8647aafd2763324a0698280915afe043cc87e5720c4694881ed35bffa  check-headless.patch
+e214b407235cb3afb8bec93f20c9b42957b57e6fd3960679d3d4235e77762e03e64d03c01f00ef63d589e7c85aaad02ce6abbeeccd66b1867bc92451a5b5e9b0  disable-sub-autodetect-fuzzy-1-test.patch
+8230a83306905cdda07fecdb6cb2b791196034775cc5c8986ab63e97cd3476317544011cbce92948059ac9f7b57ef450cd71820f0f134bc3ab3bed38463a67c3  fribidi_allow_deprecated.patch
+c186bbe6247e192c6f66bb8800e1ea3d501ec5cb00d91e8540f0595ad7bd6632fa4ecde13be21016e0370aa45498c106f885cb4dc1a0471542865f932c4fcab8  gstreamer-header.patch
+a819e270ab4bc54e865057ae3656b710b2ff51e4f4c60c67c7fb296118ba0c83c1be62f1864d0cb9349db1718c44366fc28c6836eb0bc84f3154e18df9609134  musl-ioctl.patch
+55e245190b443dde9c7215ea5210612fcca164900a9a4b025ccf0d1e3fc5206d00b52355b256974421e37c609875627f1db19f0f5a084511aec0daf677ecc9d6  vlc.initd
+d89190dca1b8b2c3faca5863dc6c7e6eb24e05178e6f75ed752fd3c6a73cb8a42d2625b6e56453296b7096ea868be642ecd42745dac20e7f13fc67dd3c3c7c49  vlc.confd
+89b29868524679474fbd4bb1618169814b8e31910eea78da1c3778ad6da3ab0fdc524903eb8507a443278b345de70684987900ff94380300fa876c975641dceb  big-endian.patch
+216ff722905a48e8536b6182fef12c3afc7431f68edcb0d65b2c2142da4be63a7b955d700d459ba460d51167a2a4639dfda51dd3727f09c8b7a1b129953d79ba  upnp-fix-typedef.patch
+0a54fef90f735a0ea81d995653a185172a672d5d64cd5802ed94014dfe7a859ab2cbec9db12ecbcdb0d2a48270bf0365301c77e00b408d3a3c8f9a0a5ffd3051  vlc_chromecast.nft
+"

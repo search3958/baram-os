@@ -1,0 +1,43 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=zenith
+pkgver=0.14.1
+pkgrel=4
+pkgdesc="Sort of like htop but with zoom-able charts, CPU, GPU, network, disk usage"
+url="https://github.com/bvaisvil/zenith"
+# s390x and loongarch64: fails to build nix crate
+arch="all !s390x !loongarch64"
+license="MIT"
+_llvmver=22
+makedepends="
+	cargo
+	cargo-auditable
+	clang$_llvmver-dev
+	linux-headers
+	llvm$_llvmver-dev
+	"
+source="https://github.com/bvaisvil/zenith/archive/$pkgver/zenith-$pkgver.tar.gz"
+# !check: no tests provided
+# net: fetch dependencies
+options="!check net"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+	install -D -m644 assets/$pkgname.desktop -t "$pkgdir"/usr/share/applications/
+	install -D -m644 assets/$pkgname.png -t "$pkgdir"/usr/share/icons/96x96/apps/
+}
+
+sha512sums="
+2936fc0a401995529c602a5b6dc81d9ceed5050f26c96fff117e5de5c0691cd8bf6badb5a2b29f2f2d5657527fc76ecded6ebb86e671be93c48043239647361c  zenith-0.14.1.tar.gz
+"

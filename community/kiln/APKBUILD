@@ -1,0 +1,33 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=kiln
+pkgver=0.4.1
+pkgrel=15
+pkgdesc="Simple static site generator for Gemini sites"
+url="https://git.sr.ht/~adnano/kiln"
+arch="all"
+license="GPL-3.0-only"
+makedepends="go scdoc"
+subpackages="$pkgname-doc"
+options="!check net" # go
+source="
+	$pkgname-$pkgver.tar.gz::https://git.sr.ht/~adnano/kiln/archive/$pkgver.tar.gz
+	"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make VERSION=$pkgver GOFLAGS="$GOFLAGS"
+}
+
+package() {
+	install -Dm755 "$builddir"/$pkgname "$pkgdir"/usr/bin/$pkgname
+	install -Dm644 "$builddir"/docs/*.1 -t "$pkgdir"/usr/share/man/man1
+
+	cp -a "$builddir"/templates "$pkgdir"/usr/share/$pkgname
+}
+
+sha512sums="
+71979ab52a8dc5c4e3e4c8d2e6806cc32c7309cb355a2ec422e063d28209ee5163ea2d75a5ae28b2409b5a76600f8a78bf0b019a3de1ec697893612ecc273ca1  kiln-0.4.1.tar.gz
+"

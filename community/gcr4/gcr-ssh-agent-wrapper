@@ -1,0 +1,13 @@
+#!/bin/sh
+
+UID="$(id -u)"
+if [ ! "$UID" ]; then exit 1; fi
+
+# Create base directory for the ssh-agent socket.
+GCR_BASE_DIR="${XDG_RUNTIME_DIR-"/run/user/$UID"}/gcr"
+if [ -e "$GCR_BASE_DIR" ]; then
+	rm -rf "$GCR_BASE_DIR"
+fi
+mkdir -p "$GCR_BASE_DIR"
+
+exec /usr/libexec/gcr-ssh-agent --base-dir "$GCR_BASE_DIR" "$@"

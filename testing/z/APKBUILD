@@ -1,0 +1,23 @@
+# Contributor: Anirudh Oppiliappan <x@icyphox.sh>
+# Maintainer: Anirudh Oppiliappan <x@icyphox.sh>
+pkgname=z
+pkgver=1.12
+pkgrel=0
+pkgdesc="Tracks your most used directories, based on 'frecency'"
+url="https://github.com/rupa/z"
+arch="noarch"
+license="WTFPL"
+install="$pkgname.post-install"
+options="!check" # No testsuite
+source="z-$pkgver.tar.gz::https://github.com/rupa/z/archive/v$pkgver.tar.gz"
+subpackages="$pkgname-doc"
+
+package() {
+	install -Dm 644 z.sh "$pkgdir"/usr/share/$pkgname/z.sh
+	sed -i z.1 -e 's:/path/to/z.sh:/usr/share/"$pkgname"/z.sh:g'
+	install -Dm 644 z.1 "$pkgdir"/usr/share/man/man1/z.1
+}
+
+sha512sums="
+62c88893cd9f8c2d64a264a806aa97f86bb1876797b83f28db8291c8f06efcc6a7ad2be0550963c664b1c3cf6e689eb1aa9e68b1e75eabf2ec7fae55a9cda450  z-1.12.tar.gz
+"

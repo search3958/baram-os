@@ -1,0 +1,24 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=nftables-vim
+_projname="vim-nftables"
+pkgver=0_git20200629
+_gitrev="26f8a506c6f3e41f1e4a8d6aa94c9a79a666bbff"
+pkgrel=1
+pkgdesc="vim nftables syntax"
+url="https://github.com/nfnty/vim-nftables"
+arch="noarch"
+license="MIT"
+install_if="vim nftables"
+source="https://github.com/nfnty/vim-nftables/archive/$_gitrev/$_projname-$_gitrev.tar.gz"
+builddir="$srcdir/$_projname-$_gitrev"
+options="!check"  # no tests provided
+
+package() {
+	local destdir="$pkgdir/usr/share/vim/vimfiles"
+
+	mkdir -p "$destdir"
+	cp -r ftdetect ftplugin indent syntax "$destdir"/
+}
+
+sha512sums="71ddc55158b7461dc71730f76c84ba4cf76490afe0c5323502341e97d7173a1607e9cc70e6a552cfb7491e485352c837d0aa2e6f9c46e81ef525bedc88e389ef  vim-nftables-26f8a506c6f3e41f1e4a8d6aa94c9a79a666bbff.tar.gz"

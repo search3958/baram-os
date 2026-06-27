@@ -1,0 +1,49 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-django-guardian
+_pyname=django-guardian
+pkgver=3.3.1
+pkgrel=0
+arch="noarch"
+pkgdesc="Implementation of per object permissions on top of Django’s authorization backend"
+url="https://pypi.python.org/project/django-guardian"
+license="MIT"
+# py3-typing-extensions: dependency for <3.13
+depends="
+	py3-django
+	py3-django-environ
+	py3-typing-extensions
+	"
+makedepends="
+	py3-setuptools
+	py3-wheel
+	py3-gpep517
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-django
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/django-guardian/django-guardian/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+d50bb219af262ea4a8b9421407b0ea8fe1c4267e93c6e20eb272dde60950e11518aef6890fecc58c2ffffd92ec37baabcc42e673882fdb3388d389464c13166d  py3-django-guardian-3.3.1.tar.gz
+"

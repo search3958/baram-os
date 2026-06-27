@@ -1,0 +1,45 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+# Maintainer: Holger Jaekel <holger.jaekel@gmx.de>
+pkgname=superlu
+pkgver=7.0.1
+pkgrel=0
+pkgdesc="Sparse LU factorization library"
+url="https://portal.nersc.gov/project/sparse/superlu/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	cmake
+	gfortran
+	openblas-dev
+	samurai
+	"
+subpackages="
+	$pkgname-dev
+	"
+source="
+	superlu-$pkgver.tar.gz::https://github.com/xiaoyeli/superlu/archive/refs/tags/v$pkgver.tar.gz
+	"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX:PATH=/usr \
+		-DCMAKE_INSTALL_LIBDIR="lib" \
+		-DCMAKE_INSTALL_INCLUDEDIR="include/superlu" \
+		-Denable_internal_blaslib:BOOL=OFF \
+		-DBUILD_SHARED_LIBS=ON
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+8e9a7e5bcd10d7ff878f1ac9af43e5c25f9102b1895e191749e0ccf6400da1b71054ecd2fcf58e99c608f8fa26c5b8a0fa37f79dfa7fe8795c9f2505c99d8c87  superlu-7.0.1.tar.gz
+"

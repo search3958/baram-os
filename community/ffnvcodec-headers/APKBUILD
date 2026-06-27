@@ -1,0 +1,23 @@
+# Maintainer:
+pkgname=ffnvcodec-headers
+pkgver=13.0.19.0
+pkgrel=0
+pkgdesc="FFmpeg version of headers required to interface with Nvidias codec APIs"
+url="https://git.videolan.org/?p=ffmpeg/nv-codec-headers.git"
+arch="noarch"
+license="MIT"
+source="https://github.com/FFmpeg/nv-codec-headers/releases/download/n$pkgver/nv-codec-headers-$pkgver.tar.gz"
+builddir="$srcdir/nv-codec-headers-$pkgver"
+options="!check" # no tests
+
+build() {
+	make PREFIX=/usr
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+6e278c35737be5eea05582c4b47f8e36c58a8922983e5565b58357105d7fac2d7ba500e475a8bec598c0e6bca93eb4a0ed2867ddd198aa9f2a8c656eaa962dac  nv-codec-headers-13.0.19.0.tar.gz
+"

@@ -1,0 +1,108 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=abiword
+pkgver=3.0.8
+pkgrel=0
+pkgdesc="A fully-featured word processor"
+url="https://gitlab.gnome.org/World/AbiWord"
+arch="all"
+options="!check"  # Test suite requires valgrind, etc
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	autoconf-archive
+	automake
+	bzip2-dev
+	enchant2-dev
+	fribidi-dev
+	goffice-dev
+	gtk+3.0-dev
+	libgsf-dev
+	libjpeg-turbo-dev
+	librsvg-dev
+	libtool
+	libxslt-dev
+	pcre-dev
+	perl
+	popt-dev
+	readline-dev
+	wv-dev
+	"
+
+# openxml plugin
+makedepends="$makedepends boost-dev"
+
+# collab plugin
+makedepends="$makedepends gnutls-dev libsoup3-dev dbus-glib-dev"
+
+subpackages="$pkgname-dev $pkgname-doc $pkgname-plugins"
+
+_plugins="applix bmp clarisworks collab docbook command eml epub \
+	garble gdict gimp google hancom hrtext iscii kword \
+	latex loadbindings mht mif mswrite openwriter openxml opml paint \
+	passepartout pdb pdf presentation s5 sdw t602 urldict wikipedia wml \
+	xslfo"
+
+for _i in $_plugins; do
+	subpackages="$subpackages $pkgname-plugin-$_i:_plugin"
+done
+
+source="https://gitlab.gnome.org/World/AbiWord/-/archive/release-$pkgver/AbiWord-release-$pkgver.tar.gz
+	enchant.patch
+	musl-1.2.3.patch
+	"
+builddir="$srcdir/AbiWord-release-$pkgver"
+
+prepare() {
+	default_prepare
+
+	sed -i 's/enchant >=/enchant-2 >=/' configure.ac
+
+	./autogen-common.sh
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-shared \
+		--disable-static \
+		--enable-plugins="$_plugins"
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	mkdir -p "$pkgdir"/usr/share/metainfo
+	mv "$pkgdir"/usr/share/appdata/*.xml "$pkgdir"/usr/share/metainfo
+	rmdir "$pkgdir"/usr/share/appdata
+}
+
+_plugin() {
+	local plugin="${subpkgname#$pkgname-plugin-}"
+	pkgdesc="Abiword $plugin plugin"
+	local dir="usr/lib/abiword-${pkgver%.*}/plugins"
+	mkdir -p "$subpkgdir"/$dir
+	mv "$pkgdir"/$dir/$plugin.so "$subpkgdir"/$dir/
+}
+
+plugins() {
+	pkgdesc="Abiword plugins, all of them"
+	depends=
+	for _i in $_plugins; do
+		depends="$depends $pkgname-plugin-$_i"
+	done
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+11520c5a9413eea2c792eabb4416fa5598dfad7dd271d07d067cbc1819207153121656292849db9e4dd96fcd8fcbb3e1f5664dd9051598870d9681f3d98b0bdb  AbiWord-release-3.0.8.tar.gz
+16f28eafdd1c1444dec5b3f8cbdd00f12c6178ba8db5bb94196064653cdada4cb8e4b2ac78ee9a7093c7968c0ddeb9f50a4e6209a5d5836a24b1b2f1941fb576  enchant.patch
+a4ee1de8df01a6570eb4d069a1b1abd38c39181020f862ce632ab5b863650a58fcaeadc4c988e7fcae3aade5841399d3d5d482d280d44a48286c24e3701e7969  musl-1.2.3.patch
+"

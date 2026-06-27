@@ -1,0 +1,35 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-freechaf
+pkgver=0_git20240629
+pkgrel=0
+_commit="cdb8ad6fcecb276761b193650f5ce9ae8b878067"
+_commit_common="01c6122931a10a7012973054e7067859d2116420"
+pkgdesc="Fairchild ChannelF / Video Entertainment System emulator for libretro"
+url="https://github.com/libretro/FreeChaf"
+arch="all"
+license="GPL-3.0-or-later"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/FreeChaF/archive/$_commit.tar.gz
+	$pkgname-libretro-common.tar.gz::https://github.com/libretro/libretro-common/archive/$_commit_common.tar.gz
+	"
+builddir="$srcdir/FreeChaF-$_commit"
+options="!check" # No tests
+
+prepare() {
+	default_prepare
+	rm -rf src/deps/libretro-common
+	mv "$srcdir/libretro-common-$_commit_common" src/deps/libretro-common
+}
+
+build() {
+	make
+}
+
+package() {
+	install -Dm644 freechaf_libretro.so "$pkgdir"/usr/lib/libretro/freechaf_libretro.so
+}
+
+sha512sums="
+a8ea602b95ffff0e2e50987118c0ba666a28b4ae71a6bf2fd0f3991a83bd9270ddd4aef2c47f73f4174a0ce1b992464499f19c59e8c5fb03e29520591ab6d63c  libretro-freechaf-cdb8ad6fcecb276761b193650f5ce9ae8b878067.tar.gz
+13dc9f32fc6ea9e1748ff71cb49a2463af3eb320022d031aaaaa101280ec5644d8be9f276c29459990b158ae200c6bd40a57ef513e10527e90ddbbb58dd4ff09  libretro-freechaf-libretro-common.tar.gz
+"

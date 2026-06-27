@@ -1,0 +1,44 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=breeze-plymouth
+pkgver=6.7.1
+pkgrel=0
+arch="all"
+url="https://kde.org/"
+pkgdesc="Breeze theme for Plymouth"
+license="GPL-2.0-or-later"
+makedepends="
+	extra-cmake-modules
+	plymouth-dev
+	samurai
+	"
+
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+
+_repo_url="https://invent.kde.org/plasma/breeze-plymouth.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/breeze-plymouth-$pkgver.tar.xz"
+# No tests
+options="!check"
+
+install_if="breeze=$pkgver plymouth"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DDISTRO_NAME="$(grep PRETTY_NAME /etc/os-release | awk -F  = '{ print $2 }')" \
+		-DDISTRO_VERSION="$(grep VERSION_ID /etc/os-release | awk -F  = '{ print $2 }')"
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+380b782bd7021221c1d958599ed8e65b6c0cb3a9671066210141da477e1a6f623e99a48188594468adcf7c3fcfa7655cf9e9952f1faf6850d3c0951648a652aa  breeze-plymouth-6.7.1.tar.xz
+"

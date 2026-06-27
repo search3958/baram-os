@@ -1,0 +1,33 @@
+# Maintainer: Nathan <ndowens@artixlinux.org>
+pkgname=birdtray
+pkgver=1.11.4
+pkgrel=0
+pkgdesc="Run Thunderbird with a system tray icon"
+url="https://github.com/gyunaev/birdtray"
+arch="all"
+license="GPL-3.0-only"
+makedepends="cmake samurai qt5-qttools-dev qt5-qtbase-dev qt5-qtsvg-dev
+	qt5-qtx11extras-dev"
+options="!check" # test fails with tests_NOTBUILT executable missing
+source="$pkgname-$pkgver.tar.gz::https://github.com/gyunaev/birdtray/archive/v$pkgver.tar.gz
+	"
+
+build() {
+	cp -r src/translations translations
+
+	if [ "$CBUILD" != "$CHOST" ]; then
+		export CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake3.5 --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake3.5 --build build --target install
+}
+
+sha512sums="
+a3eeeb93fea3f32bbf6a43944d76d0c3990a26db0abbad52102aa72f15f9a32a746620ca347444dab0d90393785aeada7ffb9ec901f91b4701fb128c4e7e628c  birdtray-1.11.4.tar.gz
+"

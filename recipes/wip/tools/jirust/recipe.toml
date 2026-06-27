@@ -1,5 +1,0 @@
-#TODO openssl-sys crate error
-[source]
-git = "https://github.com/moali87/jirust"
-[build]
-template = "cargo"

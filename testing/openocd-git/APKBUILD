@@ -1,0 +1,94 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+_pkgname=openocd
+_commit=88b9bd396d5a1f83c49fa1b28745fd7feaca2b2e
+pkgname=$_pkgname-git
+pkgver=0_git20251018
+pkgrel=1
+pkgdesc="Free and Open On-Chip Debugging, In-System Programming and Boundary-Scan Testing"
+url="http://openocd.org/"
+arch="all"
+license="GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only"
+makedepends="
+	autoconf
+	automake
+	hidapi-dev
+	jimtcl-dev
+	libftdi1-dev
+	libjaylink-dev
+	libtool
+	libusb-dev
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-udev:udev_rules:noarch
+	$pkgname-cmd-openocd:symlink:noarch
+	"
+# Note: Using a github mirror here as sourceforge git snapshots have changing checksums
+source="
+	$_pkgname-$_commit.tar.gz::https://github.com/openocd-org/openocd/archive/$_commit.tar.gz
+	"
+builddir="$srcdir/$_pkgname-$_commit"
+
+prepare() {
+	default_prepare
+	./bootstrap nosubmodule
+}
+
+build() {
+	# --datadir:
+	# avoid conflicts with release version of openocd to allow parallel
+	# installations
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--datadir=/usr/share/$pkgname \
+		--localstatedir=/var \
+		--disable-werror \
+		--enable-cmsis-dap \
+		--enable-sysfsgpio \
+		--enable-bcm2835gpio \
+		--disable-internal-jimtcl \
+		--disable-internal-libjaylink
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 contrib/60-openocd.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/60-$pkgname.rules
+
+	# allow parallel install with release openocd
+	mv "$pkgdir"/usr/bin/openocd "$pkgdir"/usr/bin/$pkgname
+	mv "$pkgdir"/usr/share/man/man1/openocd.1 \
+		"$pkgdir"/usr/share/man/man1/openocd-git.1
+	sed -e 's/openocd/openocd-git/g' -i \
+		"$pkgdir"/usr/share/man/man1/openocd-git.1
+}
+
+udev_rules() {
+	pkgdesc="udev rules for $pkgname"
+	depends="!openocd-udev-rules !openocd-udev"
+	provides="$pkgname-udev-rules=$pkgver-r$pkgrel"
+	amove usr/lib/udev/rules.d/60-$pkgname.rules
+}
+
+symlink() {
+	pkgdesc="provide the 'openocd' cmd as symlink to 'openocd-git'"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	mkdir -p "$subpkgdir"/usr/bin/
+	ln -s openocd-git "$subpkgdir"/usr/bin/openocd
+}
+
+sha512sums="
+ac8cb520bcdf5d1a7602c8c782081059da0b013902399df1af1de51777322860aa865d21c60e4bb5ad170cbe3c8e46282524a0c435f35ca1fa0b3b73acef7d6d  openocd-88b9bd396d5a1f83c49fa1b28745fd7feaca2b2e.tar.gz
+"

@@ -1,0 +1,50 @@
+# Contributor: Isaac Dunham <ibid.ag@gmail.com>
+maintainer="Leon White <badfunkstripe@gmail.com>"
+pkgname=meep
+pkgver=1.32.0
+pkgrel=0
+pkgdesc="FDTD finite-difference time-domain solver"
+url="https://meep.readthedocs.io/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	fftw-dev
+	gfortran
+	gmp-dev
+	gsl-dev
+	guile-dev
+	harminv-dev>=1.4.1-r3
+	hdf5-dev
+	libctl-dev
+	openblas-dev>=0.3.0
+	"
+# Omit -doc because it requires latex2html to build
+subpackages="$pkgname-dev"
+source="https://github.com/NanoComp/meep/releases/download/v$pkgver/meep-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-portable-binary \
+		--with-blas=openblas \
+		--with-lapack=openblas
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+26d1107a1237eafd2dd2fce243a1bf0232fe50f0d0894fd084e02f5f29fea06ec84b460378f570c7e9126ff0617d3abb077ce2753eebf33bf308d89d95edf377  meep-1.32.0.tar.gz
+"

@@ -1,0 +1,53 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-jsonschema-path
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=jsonschema-path
+pkgver=0.4.6
+pkgrel=0
+pkgdesc="Object-oriented JSONSchema"
+url="https://github.com/p1c2u/jsonschema-path"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-jsonschema
+	py3-pathable
+	py3-yaml
+	py3-requests
+	py3-referencing
+"
+checkdepends="
+	py3-pytest
+	py3-pytest-cov
+	py3-responses
+"
+makedepends="
+	poetry
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/p1c2u/jsonschema-path/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f9e2f6da82c35a8a927e50c66198bf05f6f253d16fd081f4bacf9051f2a20316e692bcbc83688bc8a89a197fd3e2601c2dd8ad02953048c199175fb7ac7621ca  py3-jsonschema-path-0.4.6.tar.gz
+"

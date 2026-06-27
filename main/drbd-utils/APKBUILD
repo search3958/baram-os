@@ -1,0 +1,72 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=drbd-utils
+pkgver=9.34.0
+pkgrel=0
+pkgdesc="Network-based RAID 1"
+url="https://www.drbd.org"
+arch="all"
+license="GPL-2.0-or-later"
+depends="bash"
+makedepends="
+	asciidoctor
+	bison
+	docbook-xsl
+	flex
+	keyutils-dev
+	libxslt
+	linux-headers
+	po4a
+	"
+options="!check"  # no tests provided
+provides="drbd=$pkgver-r$pkgrel"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-pacemaker::noarch
+	"
+source="https://pkg.linbit.com/downloads/drbd/utils/drbd-utils-$pkgver.tar.gz
+	drbdsetup-permissions.patch
+	drbd.initd
+	"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	./configure \
+		--host=$CHOST \
+		--build=$CBUILD \
+		--disable-dependency-tracking \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--with-pacemaker \
+		--with-drbdmon \
+		--with-bashcompletion \
+		--without-udev \
+		--without-heartbeat \
+		--without-rgmanager \
+		--without-xen \
+		--without-83support
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rmdir "$pkgdir"/var/lock
+
+	install -m755 -D "$srcdir/drbd.initd" "$pkgdir/etc/init.d/drbd"
+}
+
+pacemaker() {
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/ocf
+}
+
+sha512sums="
+d2665b912cb1bf550161e14d8816ad10e44c16e5510f9b96a88bf0fc0f402bf2056cf069ab47a90f82a1d8344c995b1c92f3aa0d024be87a9035969d4b3ad6dc  drbd-utils-9.34.0.tar.gz
+39a64a59577a28f8dc5f968bcfd35ab04b010ec1b9390dcaedefa609b8999ec4aabf2cfaf2db7dfd8348d8d09aca5720839de51b3bfb093960b3c61f92ebe4f0  drbdsetup-permissions.patch
+0e2ff2244ec3f18944ff42609e9ec12de33d1b472fb9bb71f0f68ab67edfa2d2019059f405d58b33a43fcec6bf883f2be9ea3e7362d76f348b952a497a12757e  drbd.initd
+"

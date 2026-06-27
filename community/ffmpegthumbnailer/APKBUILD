@@ -1,0 +1,35 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=ffmpegthumbnailer
+pkgver=2.2.4
+pkgrel=0
+pkgdesc="Lightweight video thumbnailer that can be used by file managers"
+url="https://github.com/dirkvdb/ffmpegthumbnailer"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="ffmpeg-dev libpng-dev libjpeg-turbo-dev cmake samurai"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dirkvdb/ffmpegthumbnailer/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX:PATH=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DENABLE_GIO=ON \
+		-DENABLE_THUMBNAILER=ON
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+a898b7b69b4de713c0db7cef5c8fe65363db8943e01eda7109931eb892e2f10be2ba22649329d96b63fffcaa3c8dae71c59c356a987d52106ae19ec4e1472bde  ffmpegthumbnailer-2.2.4.tar.gz
+"

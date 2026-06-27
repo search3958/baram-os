@@ -1,0 +1,82 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=wasm-pack
+pkgver=0.15.0
+pkgrel=0
+pkgdesc="rust to wasm build tool"
+url="https://github.com/wasm-bindgen/wasm-pack"
+arch="all"
+license="Apache-2.0"
+depends="
+	cargo
+	rustc-dev
+	rust-wasm
+	"
+makedepends="
+	bzip2-dev
+	cargo-auditable
+	cmake
+	curl-dev
+	openssl-dev>3
+	samurai
+	wasi-sdk
+	zstd-dev
+	"
+checkdepends="
+	binaryen
+	cargo-generate
+	nodejs
+	wasm-bindgen
+	"
+source="
+	https://github.com/wasm-bindgen/wasm-pack/archive/refs/tags/v$pkgver/wasm-pack-v$pkgver.tar.gz
+	any-version.patch
+	musl.patch
+	upgrade-binary-install.patch
+	wasm-bindgen-ver.patch
+	tests-use-system-cargo-generate.patch
+	"
+options="net"
+
+case "$CARCH" in
+# blocked by binaryen
+s390x) options="$options !check" ;;
+esac
+
+export OPENSSL_NO_VENDOR=1
+
+prepare() {
+	default_prepare
+
+	# Build against system-provided libzstd.
+	mkdir -p .cargo
+	cat >> .cargo/config.toml <<-EOF
+		[target.$CHOST]
+		zstd = { rustc-link-lib = ["zstd"] }
+	EOF
+
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	RUSTFLAGS= \
+	USER="${USER:-user}" \
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/wasm-pack \
+		-t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+bb12ab27fdfe77ac683865d64154ba7968f1442dcbb81f7e6ac4770a33c16da97cf77d070976c79bd2e17fa0e0caf111f220059402ce57fdd1b4967e53849945  wasm-pack-v0.15.0.tar.gz
+761118ab77cfda4d5ae6bbb3b35dfdec7e60287d56cee106ac83f34fd013a60ecb7d8261d30b14ea35a510a87ddcc3887d71b55237b4182e4666a287c9c51766  any-version.patch
+eadea4a209fc3916ef755ce2b663585e47f10f857ab32e999d1e995a24a830a21289fc4b59e689484fa7595f2fd3931e5cb3b02e2698d2d9e610494031ed83f9  musl.patch
+29948984709058cf2e28d780168f052b847f71b914a31418d0a3d7fd3b12f8acba4b3578210f18121a9fff2221f17a3d586f12e4a36f40e6b0398f0c0eb1afd4  upgrade-binary-install.patch
+665eb6b2db4e506628280e73c91f62c1c8438081d81bdd71c19c5e7d69aa37d11f99db1120cb2d189fdef0947943a31c964681ee0a0a4116bcfbfbfa39e9d9d0  wasm-bindgen-ver.patch
+c9772e97daee8169cc087e4c2170a958dffc3a6f02bc82071c2dab632f7c558d886d63ca88304ed29ebc27849d99e5036f4589df6afe9018431833663272a4c2  tests-use-system-cargo-generate.patch
+"

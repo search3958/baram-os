@@ -1,0 +1,374 @@
+# Contributor: Timo Teräs <timo.teras@iki.fi>
+# Maintainer: Lindsay Zhou <i@lin.moe>
+maintainer="Lindsay Zhou <i@lin.moe>"
+pkgname=emacs
+pkgver=30.2
+pkgrel=3
+_pkgdesc="Extensible, customizable, self-documenting real-time display editor"
+pkgdesc="$_pkgdesc (common files)"
+url="https://www.gnu.org/software/emacs/emacs.html"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	!libexecinfo-dev
+	alsa-lib-dev
+	autoconf
+	automake
+	fontconfig-dev
+	gawk
+	giflib-dev
+	glib-dev
+	gmp-dev
+	gnutls-dev
+	gtk+3.0-dev
+	harfbuzz-dev
+	libgccjit-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	librsvg-dev
+	libwebp-dev
+	libxaw-dev
+	libxml2-dev
+	libxpm-dev
+	linux-headers
+	ncurses-dev
+	pango-dev
+	sqlite-dev
+	texinfo
+	tiff-dev
+	tree-sitter-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-nox
+	$pkgname-gtk3
+	$pkgname-gtk3-nativecomp:gtk3_nativecomp
+	$pkgname-pgtk
+	$pkgname-pgtk-nativecomp:pgtk_nativecomp
+	$pkgname-x11
+	$pkgname-x11-nativecomp:x11_nativecomp
+	"
+source="https://ftp.gnu.org/gnu/emacs/emacs-$pkgver.tar.xz
+	no-git-repo.patch
+	fix-compilation-with-tree-sitter-0.26.patch
+	fix-query-predicate-names-for-tree-sitter-0.26.patch
+	"
+options="!check" # how do you test a text editor without editing text?
+
+# secfixes:
+#   28.2-r6:
+#     - CVE-2023-27986
+#   28.2-r5:
+#     - CVE-2023-27985
+#   28.2-r3:
+#     - CVE-2022-45939
+
+prepare() {
+	default_prepare
+	./autogen.sh
+	rm etc/emacs.service # systemd unit
+
+	mkdir -p nox
+	mv ./* nox || true
+
+	cp -a nox x11
+	cp -a nox x11-nativecomp
+	cp -a nox gtk3
+	cp -a nox gtk3-nativecomp
+	cp -a nox pgtk
+	cp -a nox pgtk-nativecomp
+}
+
+_build_variant() {
+	cd "$builddir/$1"
+	shift
+	CFLAGS="${CFLAGS//-Os/-O2} -flto=auto" \
+	CXXFLAGS="${CXXFLAGS//-Os/-O2} -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir=/usr/lib \
+		--localstatedir=/var \
+		--with-gameuser=:games \
+		--with-harfbuzz \
+		"${@}"
+
+	make
+}
+
+_build_x11() {
+	_build_variant x11 \
+		--with-x-toolkit=athena \
+		--without-toolkit-scroll-bars \
+		--without-dbus \
+		--with-xft \
+		--with-jpeg=yes \
+		--with-tiff=yes \
+		--with-native-compilation=no
+}
+
+_build_x11_nativecomp() {
+	_build_variant x11-nativecomp \
+		--with-x-toolkit=athena \
+		--without-toolkit-scroll-bars \
+		--without-dbus \
+		--with-xft \
+		--with-jpeg=yes \
+		--with-tiff=yes \
+		--with-native-compilation=aot \
+		--without-compress-install
+}
+
+_build_gtk3() {
+	_build_variant gtk3 \
+		--with-x-toolkit=gtk3 \
+		--with-xft \
+		--with-jpeg=yes \
+		--with-tiff=no \
+		--with-native-compilation=no
+}
+
+_build_gtk3_nativecomp() {
+	_build_variant gtk3-nativecomp \
+		--with-x-toolkit=gtk3 \
+		--with-xft \
+		--with-jpeg=yes \
+		--with-tiff=no \
+		--with-native-compilation=aot
+}
+
+_build_pgtk() {
+	_build_variant pgtk \
+		--with-x-toolkit=gtk3 \
+		--with-pgtk \
+		--with-xft \
+		--with-jpeg=yes \
+		--with-tiff=no \
+		--with-native-compilation=no
+}
+
+_build_pgtk_nativecomp() {
+	_build_variant pgtk-nativecomp \
+		--with-x-toolkit=gtk3 \
+		--with-pgtk \
+		--with-xft \
+		--with-jpeg=yes \
+		--with-tiff=no \
+		--with-native-compilation=aot
+}
+
+_build_nox() {
+	_build_variant nox \
+		--without-sound \
+		--without-x \
+		--without-file-notification \
+		--with-native-compilation=no
+}
+
+build() {
+	_build_nox
+	_build_x11
+	_build_x11_nativecomp
+	_build_gtk3
+	_build_gtk3_nativecomp
+	_build_pgtk
+	_build_pgtk_nativecomp
+}
+
+package() {
+	make DESTDIR="$pkgdir" install -C gtk3
+
+	cd "$pkgdir"
+	# resolve conflict with ctags package
+	mv usr/bin/ctags \
+		usr/bin/ctags.emacs
+	mv usr/share/man/man1/ctags.1.gz \
+		usr/share/man/man1/ctags.emacs.1.gz
+
+	# remove things that are per-subpackage and not common
+	rm -r \
+		usr/bin/emacs \
+		usr/bin/emacsclient \
+		usr/bin/emacs-$pkgver \
+		usr/lib/emacs/$pkgver/*/emacs*.pdmp \
+		usr/lib/systemd \
+		usr/share/emacs/$pkgver/lisp \
+		usr/share/emacs/$pkgver/site-lisp
+
+	# fix perms on /var/games
+	chmod 775 var/games
+	chmod 775 var/games/emacs
+	chmod 664 var/games/emacs/*
+	chown -R root:games var/games
+
+	# fix user/root permissions on usr/share files
+	find usr/share/emacs/ -exec chown root:root {} \;
+	find usr/lib -perm -g+s,g+x ! -type d -exec chmod g-s {} \;
+}
+
+doc() {
+	default_doc
+	pkgdesc="$_pkgdesc (documentation)"
+}
+
+_subpackage() {
+	cd "$builddir/$1"
+	make DESTDIR="$subpkgdir" install
+
+	cd "$subpkgdir"
+
+	# remove things that are in -common
+	rm -rf \
+		usr/bin/ctags \
+		usr/bin/ebrowse \
+		usr/bin/etags \
+		usr/include \
+		usr/lib/emacs/$pkgver/*/hexl \
+		usr/lib/emacs/$pkgver/*/movemail \
+		usr/lib/emacs/$pkgver/*/rcs2log \
+		usr/lib/emacs/$pkgver/*/update-game-score \
+		usr/lib/systemd \
+		usr/share/applications \
+		usr/share/emacs/$pkgver/etc \
+		usr/share/icons \
+		usr/share/info \
+		usr/share/man \
+		usr/share/metainfo \
+		var/games
+
+	# fix user/root permissions on usr/share files
+	find usr/share/emacs/ -exec chown root:root {} \;
+	find usr/lib -perm -g+s,g+x ! -type d -exec chmod g-s {} \;
+}
+
+nox() {
+	pkgdesc="$_pkgdesc - non-graphical"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3
+		!emacs-gtk3-nativecomp
+		!emacs-pgtk
+		!emacs-pgtk-nativecomp
+		!emacs-x11
+		!emacs-x11-nativecomp
+		"
+
+	_subpackage nox
+}
+
+x11() {
+	pkgdesc="$_pkgdesc - with X11"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3
+		!emacs-gtk3-nativecomp
+		!emacs-pgtk
+		!emacs-pgtk-nativecomp
+		!emacs-nox
+		!emacs-x11-nativecomp
+		desktop-file-utils
+		hicolor-icon-theme
+		"
+
+	_subpackage x11
+}
+
+x11_nativecomp() {
+	pkgdesc="$_pkgdesc - with X11 and native compilation"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3
+		!emacs-gtk3-nativecomp
+		!emacs-pgtk
+		!emacs-pgtk-nativecomp
+		!emacs-nox
+		!emacs-x11
+		gcc
+		musl-dev
+		desktop-file-utils
+		hicolor-icon-theme
+		"
+
+	_subpackage x11-nativecomp
+}
+
+gtk3() {
+	pkgdesc="$_pkgdesc - with GTK3"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3-nativecomp
+		!emacs-pgtk
+		!emacs-pgtk-nativecomp
+		!emacs-nox
+		!emacs-x11
+		!emacs-x11-nativecomp
+		desktop-file-utils
+		hicolor-icon-theme
+		"
+
+	_subpackage gtk3
+}
+
+gtk3_nativecomp() {
+	pkgdesc="$_pkgdesc - with GTK3 and native compilation"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3
+		!emacs-pgtk
+		!emacs-pgtk-nativecomp
+		!emacs-nox
+		!emacs-x11
+		!emacs-x11-nativecomp
+		gcc
+		musl-dev
+		desktop-file-utils
+		hicolor-icon-theme
+		"
+
+	_subpackage gtk3-nativecomp
+}
+
+pgtk() {
+	pkgdesc="$_pkgdesc - with pure GTK"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3
+		!emacs-gtk3-nativecomp
+		!emacs-pgtk-nativecomp
+		!emacs-nox
+		!emacs-x11
+		!emacs-x11-nativecomp
+		desktop-file-utils
+		hicolor-icon-theme
+		"
+
+	_subpackage pgtk
+}
+
+pgtk_nativecomp() {
+	pkgdesc="$_pkgdesc - with pure GTK and native compilation"
+	depends="
+		$pkgname=$pkgver-r$pkgrel
+		!emacs-gtk3
+		!emacs-gtk3-nativecomp
+		!emacs-pgtk
+		!emacs-nox
+		!emacs-x11
+		!emacs-x11-nativecomp
+		gcc
+		musl-dev
+		desktop-file-utils
+		hicolor-icon-theme
+		"
+
+	_subpackage pgtk-nativecomp
+}
+
+sha512sums="
+313432d11e95c74f8cd35c5b1da442e6223f5d40f9173c55883c0339ecbfb97a0bedf79177ef8902afd3e33c078a233777bed01f5caffa1e7524f17d58bfc9a2  emacs-30.2.tar.xz
+a11288460bb07436b684e48dba0142e35ab93f76cabd236b34bce99809c4c578b2f0526b592e1624f45e01a4cca71e55293e150a36ec5b746fc837691bc291a1  no-git-repo.patch
+b6d616266f20b9887e26f7debfec4a67123169915468483399e297d11d66877782b823483d1f455a28733c2955b512c4823b75824a02d283fa4628f74ca61add  fix-compilation-with-tree-sitter-0.26.patch
+b6cf2a8f88ef6a0854d112b4f40cc7ccd0837e92dae148777870f4e9d3e1d3f92bb80203f7f0a98eed31c8d7d2b8e460246d1d11e0b8973b0bb9d145fb106e61  fix-query-predicate-names-for-tree-sitter-0.26.patch
+"

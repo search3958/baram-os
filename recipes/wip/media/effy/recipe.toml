@@ -1,9 +1,0 @@
-#TODO not compiled or tested
-[source]
-git = "https://github.com/aNNiMON/effy"
-[build]
-template = "cargo"
-[package]
-dependencies = [
-    "ffmpeg6",
-]

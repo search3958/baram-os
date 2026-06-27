@@ -1,0 +1,39 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=asteroid
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=asteroid-diamonds
+pkgver=2.1_git20260512
+pkgrel=0
+_commit="4d017b96fb8b3bfc313452258235ce682690cab9"
+pkgdesc="A 2048-like game for AsteroidOS"
+url="https://github.com/AsteroidOS/asteroid-diamonds"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="GPL-3.0-or-later"
+depends="mapplauncherd"
+makedepends="
+	extra-cmake-modules
+	qml-asteroid-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	samurai
+	"
+source="$pkgname-$_commit.tar.gz::https://github.com/AsteroidOS/asteroid-diamonds/archive/$_commit.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/$pkgname-$_commit"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+1da1aebb8d6c2da3f5d2a3eae55fa0b012f2e1f6bdcf29d0c1c05ea456f74c2b8dd26749d1f0df30fb8356de870eaa0bd5e9eca75af1cf7d84c12fe5c595473d  asteroid-diamonds-4d017b96fb8b3bfc313452258235ce682690cab9.tar.gz
+"

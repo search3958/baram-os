@@ -1,0 +1,10 @@
+--- a/lsyncd.h
++++ b/lsyncd.h
+@@ -19,6 +19,7 @@
+ 
+ #define LUA_COMPAT_ALL
+ #define LUA_COMPAT_5_1
++#define LUA_COMPAT_5_3
+ 
+ // includes needed for headerfile
+ #include "config.h"

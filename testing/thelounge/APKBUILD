@@ -1,0 +1,83 @@
+# Contributor: Kay Thomas <kaythomas@pm.me>
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+maintainer="Fabricio Silva <hi@fabricio.dev>"
+pkgname=thelounge
+pkgver=4.5.0
+pkgrel=0
+pkgdesc="Modern, responsive, cross-platform, self-hosted web IRC client"
+url="https://thelounge.chat"
+arch="all !riscv64" # riscv64: Segmentation fault (core dumped)
+license="MIT"
+depends="nodejs"
+makedepends="yarn"
+subpackages="$pkgname-openrc $pkgname-doc"
+install="$pkgname.pre-install $pkgname.post-install"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/thelounge/thelounge/archive/v$pkgver.tar.gz
+	thelounge.initd
+	thelounge.confd
+	"
+options="net" # net for npm
+
+case $CARCH in
+	# s390x: tests failed on the builder
+	# ReferenceError: module is not defined in ES module scope
+	#  at test/fixtures/.thelounge/config.js:14:1
+	s390x) options="$options !check";;
+	# loongarch64: tests failed "timeout"
+	loongarch64) options="$options !check";;
+esac
+
+prepare() {
+	default_prepare
+
+	export BROWSERSLIST_IGNORE_OLD_DATA=true
+	yarn install --frozen-lockfile
+}
+
+build() {
+	NODE_ENV=production yarn build
+
+	# these are the same file
+	ln -sf ../package.json ./dist/package.json
+	# set home location
+	echo "/var/lib/thelounge" >.thelounge_home
+}
+
+check() {
+	# skips tests that checks if version is using "source" and "git sha"
+	yarn test:mocha --grep "\#getVersion" --invert
+}
+
+package() {
+	# cleanup unused files (cant be done before check)
+	yarn install --production --ignore-scripts --prefer-offline
+	find ./ -type f \( \
+		-iname "*.ts" -o -iname "*.map" -o -iname "*.md" -o -iname "*.sh" -o \
+		-iname "babel.config*" -o -iname "webpack.config*" -o -iname "tsconfig*" \
+		\) -delete
+	find ./node_modules -type f \( \
+		-iname "Makefile*" -o -iname "README*" -o -iname "LICENSE*" -o -iname "CHANGELOG*" \
+		\) -delete
+	find ./node_modules -type d \( \
+		-iname "test" -o -iname "node-gyp" -o -iname ".github" \
+		\) -prune -exec rm -rf {} \;
+
+	install -dm755 "$pkgdir"/usr/share/webapps/thelounge
+	install -Dm755 index.js -t "$pkgdir"/usr/share/webapps/thelounge/
+	install -Dm644 package.json .thelounge_home -t "$pkgdir"/usr/share/webapps/thelounge/
+	install -Dm644 client/index.html.tpl -t "$pkgdir"/usr/share/webapps/thelounge/client/
+	cp -a node_modules public dist "$pkgdir"/usr/share/webapps/thelounge/
+	mkdir -p "$pkgdir"/usr/bin
+	ln -sf ../share/webapps/thelounge/index.js "$pkgdir"/usr/bin/thelounge
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/thelounge/
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dm755 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+3bbc4107c7e7dbc520478d54977e335fef8754ee307cb0147695f276b56f911943462540ce48637e60950ad6fb078a6fdcf1dd516e7578798a82356ed1731de9  thelounge-4.5.0.tar.gz
+126913f79c3eda7c0e6f2f792ce8a799e2100259b62de57c97329f079072e3d8d81c5591b08b99630803c9e320c85c8e34ac7ffe2ddba7f2982a5ba958960789  thelounge.initd
+2c44963a1e4303a6045b80df0931bb636150cb7b1f14d536c3624bb6dacfabfa08d7ea4e261e40245b80eedbb53a47fbf73672a02c865295300c5121fb83a558  thelounge.confd
+"

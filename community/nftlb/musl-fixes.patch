@@ -1,0 +1,21 @@
+diff --git a/zcutils/src/zcu_backtrace.c b/zcutils/src/zcu_backtrace.c
+index d755ac9..2914f46 100644
+--- a/zcutils/src/zcu_backtrace.c
++++ b/zcutils/src/zcu_backtrace.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "zcu_backtrace.h"
++#ifdef HAVE_EXECINFO_H
+ #include <execinfo.h>
+ #include "zcu_common.h"
+ #include "zcu_log.h"
+@@ -44,3 +45,7 @@ void zcu_bt_print_symbols()
+ 
+     free(str);
+ }
++
++#else
++void zcu_bt_print_symbols() {}
++#endif
+\ No newline at end of file

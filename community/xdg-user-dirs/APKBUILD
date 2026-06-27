@@ -1,0 +1,32 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=xdg-user-dirs
+pkgver=0.20
+pkgrel=0
+arch="all"
+url="https://www.freedesktop.org/wiki/Software/xdg-user-dirs"
+pkgdesc="Manage user directories like ~/Desktop and ~/Music"
+license="MIT AND GPL-2.0-only"
+makedepends="
+	docbook-xsl
+	gettext
+	meson
+	musl-libintl
+	"
+subpackages="$pkgname-lang $pkgname-doc $pkgname-systemd"
+source="https://user-dirs.freedesktop.org/releases/xdg-user-dirs-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+4793fa246bc846cf5c28c0715c112cfd077dd2036ae3e27163949b711dcb6f65582a29c1e8993472538f92825cbff1c8537015ddaac8798aa6f2d6de64dcb47d  xdg-user-dirs-0.20.tar.xz
+"

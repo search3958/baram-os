@@ -1,0 +1,33 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=git-extras
+pkgver=7.4.0
+pkgrel=0
+pkgdesc="Little git extras"
+url="https://github.com/tj/git-extras"
+arch="noarch"
+license="MIT"
+depends="bash cmd:column git"
+subpackages="$pkgname-bash-completion $pkgname-doc"
+source="https://github.com/tj/git-extras/archive/$pkgver/git-extras-$pkgver.tar.gz"
+
+package() {
+	# Avoid annoying interactive prompts if an alias is in your gitconfig.
+	GIT_CONFIG=/dev/null \
+		make install DESTDIR="$pkgdir" PREFIX=/usr SYSCONFDIR=/etc install
+
+	rm -Rf "$pkgdir"/etc/bash-completion
+
+	install -D -m644 etc/bash_completion.sh \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+
+	# ZSH and Fish completions don't work when autoloaded.
+	install -D -m644 etc/git-extras-completion.zsh \
+		"$pkgdir"/usr/share/$pkgname/completions.zsh
+	install -D -m644 etc/git-extras.fish \
+		"$pkgdir"/usr/share/$pkgname/completions.fish
+}
+
+sha512sums="
+e7e7d60393089648ea2ed633edc181095ac44a7b6801fd61f3b98fcc6be9dde9a26fec097cb76cd2303a51450b189363fdafa8dc8bf84be978c1defee5a8f704  git-extras-7.4.0.tar.gz
+"

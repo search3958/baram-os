@@ -1,0 +1,42 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=dodo
+pkgver=0_git20250926
+_commit=a710d0a3fe78d5bf4b3d07ea087712d3581e5a85
+pkgrel=1
+pkgdesc="Graphical, hackable email client based on notmuch"
+url="https://github.com/akissinger/dodo"
+arch="noarch !riscv64 !s390x !ppc64le !armhf !armv7 !x86" # blocked by py3-pyqt6-webengine
+license="GPL-3.0-or-later"
+depends="
+	hicolor-icon-theme
+	notmuch
+	py3-bleach
+	py3-pyqt6-webengine
+	py3-qt6
+	w3m
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$_commit.tar.gz::https://github.com/akissinger/dodo/archive/$_commit.tar.gz"
+options="!check" # no tests
+builddir="$srcdir/$pkgname-$_commit"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+65bbd961da967a27c53c1d810827e6087883969ebe6a2e2dcf5eb002e464d0315c865211137106c99175ca216af02c286b16c3f2c924fbe234cca03a499d93a0  dodo-a710d0a3fe78d5bf4b3d07ea087712d3581e5a85.tar.gz
+"

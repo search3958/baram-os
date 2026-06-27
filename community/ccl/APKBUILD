@@ -1,0 +1,96 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Maintainer: rubicon <rubicon@mailo.com>
+pkgname=ccl
+pkgver=1.13
+pkgrel=0
+pkgdesc="Clozure Lisp compiler"
+url="https://github.com/Clozure/ccl"
+arch="x86_64"
+license="Apache-2.0"
+makedepends="linux-headers m4"
+subpackages="$pkgname-dev $pkgname-doc"
+_testsgitrev=561ab1be82fefd53a61089eaad4357023e1fa961
+source="$pkgname-$pkgver.tar.gz::https://github.com/Clozure/ccl/releases/download/v$pkgver/ccl-$pkgver-linuxx86.tar.gz
+	https://github.com/Clozure/ccl-tests/archive/$_testsgitrev/ccl-$pkgver-tests.tar.gz
+	ccl.sh
+	musl-fixes.patch
+	makefile64.patch
+	remove-usage-of-lseek64.patch
+	gcc14.patch
+	"
+builddir="$srcdir/$pkgname"
+_testsdir="$srcdir/$pkgname-tests-$_testsgitrev"
+
+build() {
+	msg "Rebuilding lisp kernel"
+	make -j1 -C lisp-kernel/linuxx8664 \
+		VC_REVISION="$pkgver-r$pkgrel" \
+		clean all
+
+	msg "Rebuilding heap image"
+	./lx86cl64 --no-init --quiet --batch \
+		-e '(ccl:rebuild-ccl :clean t)' \
+		-e '(ccl:quit)'
+}
+
+check() {
+	cd "$_testsdir"
+	make clean
+
+	# Skip ANSI tests, as there are 21679 of them and
+	# we just want to know if CCL compiled successfully.
+	# Besides that, 4 tests fail: CL-TEST::ACOS.6, ACOS.8,
+	# CL-TEST::COMPILE-FILE.2, and COMPILE-FILE.2A.
+	"$builddir"/lx86cl64 --no-init --batch \
+		--load "load.lisp" \
+		-e '(run-tests :ansi nil :exit t :verbose t)'
+}
+
+package() {
+	mkdir -vp "$pkgdir"/usr/bin \
+		"$pkgdir"/usr/lib/ccl \
+		"$pkgdir"/usr/share/ccl \
+		"$pkgdir"/usr/share/doc
+
+	install -Dv "$srcdir"/ccl.sh "$pkgdir"/usr/bin/ccl
+	cp -av	compiler level-* lib* lisp-kernel objc-bridge \
+		tools xdump x86-headers64 lx86cl64* \
+		"$pkgdir"/usr/lib/ccl/
+	cp -av	examples scripts "$pkgdir"/usr/share/ccl/
+	cp -av	doc "$pkgdir"/usr/share/doc/ccl
+	cp -av	README.md LICENSE "$pkgdir"/usr/share/doc/ccl/
+
+	find "$pkgdir"/usr/share/doc/ccl -name .gitignore -delete
+}
+
+dev() {
+	default_dev
+
+	# Don't move examples to the -dev subpackage
+	local file; find "$subpkgdir"/usr/share -type f \
+		| while read -r file
+	do
+		file=${file#"$subpkgdir"/}
+		mv -v "$subpkgdir"/"$file" "$pkgdir"/"$file"
+		rmdir	-vp "$subpkgdir"/"${file%/*}" \
+			--ignore-fail-on-non-empty
+	done
+
+	local file; find "$pkgdir"/usr/lib/ccl -type f \
+		\( -name '*.o' -o -name '*.*fsl' \) \
+		| while read -r file
+	do
+		file=${file#"$pkgdir"/}
+		amove "$file"
+	done
+}
+
+sha512sums="
+5180bedd5581cef27be52c2738d9d62bca546ccca1f6d75122d8018be0187d6e026401870879c4e283787ba980482d575ed331c4a0c28638ce62b6b10730ac1e  ccl-1.13.tar.gz
+311ab6ee146e21845209f3ab5a26000f78bb58514a97410485848fb3e18a0cb1ef74abbdd148cc2b382faa7c02bd8e3a37905ea557268e27c41085d292431c4d  ccl-1.13-tests.tar.gz
+4e441a81d4ae6365fc61b3287492d743c7757529d921508990f5251fbe22d876cf478321b1c2ac22eaefedd1954070f9b72e3d530b15d53c4cebc633ab9a411f  ccl.sh
+6ec343066aa4d1699925630795808e1b8eb4fad0fcca499db2bc5da31cb5aff8893fa63ee9f0d0807fe46b5321119485efbff0f4bef515a9149f134ff31a6617  musl-fixes.patch
+56b65fb2b988123a2306be4f3ce3c77aca8f08f28fa184d13d4ea69bd7f881841dd3401c670012dc633663af16fe0542d6d41ca4ac3f8127859ade2908ec0214  makefile64.patch
+c43b0f5da2d171ad585c2797575f0d6ccb154d941582d501fc088f5c3139e725577d2d17e416855d66512b6a6ab70bb1bb61d5acc474e6200fd5f29f42f9f375  remove-usage-of-lseek64.patch
+30ef6e80dc2e28bfe4374e05ed8f8dfbccd21d63eb4b1f199f4efbb3cbcbe86a41671755d9b1b433dd6ba4ebb0824c05b669f748644938ad2e7c7f81112b8b88  gcc14.patch
+"

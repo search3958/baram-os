@@ -1,0 +1,35 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-texttable
+pkgver=1.7.0
+pkgrel=2
+pkgdesc="module for creating simple ASCII tables"
+url="https://github.com/foutaise/texttable/"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.io/packages/source/t/texttable/texttable-$pkgver.tar.gz"
+builddir="$srcdir/texttable-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest tests.py -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+427ab262301bc38066c4a54e8ef10163579b5d6210aeb003a729dbaef8badd347a2d01f9ea1d9d136611fc104a3a8cf59a7a9acac6f76f64f9575dc6e5ab4313  texttable-1.7.0.tar.gz
+"

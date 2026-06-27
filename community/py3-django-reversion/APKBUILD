@@ -1,0 +1,40 @@
+# Contributor: Alex Denes <caskd@redxen.eu>
+# Maintainer:
+_pkgname=django-reversion
+pkgname="py3-$_pkgname"
+pkgver=5.1.0
+pkgrel=3
+pkgdesc="Extension to the Django web framework that provides version control for model instances"
+url="https://github.com/etianen/django-reversion"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-django
+"
+makedepends="py3-gpep517 py3-setuptools_scm"
+checkdepends="
+	py3-psycopg2
+"
+options="!check" # test suite expects module to be installed during tests
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/d/django_reversion/django_reversion-$pkgver.tar.gz"
+builddir="$srcdir/django_reversion-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 tests/manage.py test tests
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/django_reversion-$pkgver-py3-none-any.whl
+}
+
+sha512sums="
+53be63ac6afe3b23e33e79c996d0d902a88e1462e15e70015b68cca305625ffda942056348b76450de0ef43bc69e08f64e10e95b8b509edf0da346e530d77c7c  django_reversion-5.1.0.tar.gz
+"

@@ -1,0 +1,68 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=gitui
+pkgver=0.28.1
+pkgrel=0
+pkgdesc="Blazing fast terminal client for git"
+url="https://github.com/extrawurst/gitui"
+arch="all"
+license="MIT"
+makedepends="
+	cargo
+	cargo-auditable
+	cmake
+	libgit2-dev
+	oniguruma-dev
+	openssl-dev
+	zlib-ng-dev
+	"
+source="https://github.com/extrawurst/gitui/archive/v$pkgver/gitui-$pkgver.tar.gz
+	update-gix-index.patch
+	"
+options="net"  # cargo fetch
+
+export LIBGIT2_NO_VENDOR=1  # use system libgit2
+export LIBSSH2_SYS_USE_PKG_CONFIG=1  # use system libssh2
+export RUSTONIG_DYNAMIC_LIBONIG=1  # use system libonig
+
+# the p521 crate fails to compile with thread 'opt cgu.0' has overflowed its stack
+# Unless the RUST_MIN_STACK is expanded
+# https://github.com/RustCrypto/elliptic-curves/issues/1097
+export RUST_MIN_STACK=$((16 * 1024 * 1024))
+
+_cargo_opts="--frozen --no-default-features --features regex-onig"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+
+	# Rust target triple
+	local target=$(rustc -vV | sed -n 's/host: //p')
+
+	# Build against system-provided libz-ng
+	cat >> .cargo/config.toml <<-EOF
+		[target.$target]
+		z-ng = { rustc-link-lib = ["z-ng"], rustc-cfg = ["zng"] }
+	EOF
+
+	# Update after patching Cargo.toml
+	cargo fetch --target="$CTARGET"
+}
+
+build() {
+	cargo auditable build $_cargo_opts --release
+}
+
+check() {
+	cargo test $_cargo_opts
+}
+
+package() {
+	install -D -m755 target/release/gitui "$pkgdir"/usr/bin/gitui
+}
+
+sha512sums="
+f74db620f072f3b4d8c8e097b5a170fbbdae7e6a60759980a3feea4abe2a8a5cde7700d31043260ebebca278fefe6323a390dd8a691aea7ec1cb8f943e6ea450  gitui-0.28.1.tar.gz
+2aacd29923821ea4be6d0f45c3a4f0c4884c337166959f692a5f9358e1d92f52ed0a3827346b438503b9d8d408a80af9e9ef832b9c1a3ca37ed51333c3425a74  update-gix-index.patch
+"

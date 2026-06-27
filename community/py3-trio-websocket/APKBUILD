@@ -1,0 +1,49 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=py3-trio-websocket
+pkgver=0.12.2
+pkgrel=1
+pkgdesc="WebSocket client and server implementation for py3-trio"
+url="https://github.com/python-trio/trio-websocket"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	py3-outcome
+	py3-trio
+	py3-wsproto
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-trio
+	py3-trustme
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/python-trio/trio-websocket/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/${pkgname#py3-}-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+220ecac499de12c77f4004c739154380ad8dd05570e43512549d9205515f7d9dd7aa085248b1373fae0c690bd1ce7df757332abb5fe6edfbe2ee74c33834ef49  py3-trio-websocket-0.12.2.tar.gz
+"

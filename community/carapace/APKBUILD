@@ -1,0 +1,32 @@
+# Contributor: Andrej Kolčin <self@kaathewise.net>
+# Maintainer: Andrej Kolčin <self@kaathewise.net>
+pkgname=carapace
+pkgver=1.7.1
+pkgrel=0
+pkgdesc="Multi-shell multi-command argument completer"
+url="https://carapace.sh/"
+arch="all"
+license="MIT"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rsteube/carapace-bin/archive/v$pkgver.tar.gz"
+builddir="$srcdir/carapace-bin-$pkgver"
+options="net"
+
+build() {
+	mkdir -p "$srcdir"/bin
+	go generate ./...
+	go build -tags release -ldflags "-X main.version=$pkgver" -o "$srcdir"/bin/carapace ./cmd/carapace
+}
+
+check() {
+	PATH="$srcdir/bin:$PATH" go test ./cmd/...
+}
+
+package() {
+	install -Dm755 "$srcdir"/bin/carapace -t "$pkgdir"/usr/bin
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+01733ab4a85cb84955ded79c0de51e364a82929ee070207920b08949f92f39cf445d82cb34d9e4cad83a1e7654c5bbdf163f07d26595bf2d09c36f7af9fa87d0  carapace-1.7.1.tar.gz
+"

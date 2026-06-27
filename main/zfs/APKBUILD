@@ -1,0 +1,125 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=zfs
+pkgver=2.4.3
+pkgrel=0
+pkgdesc="Advanced filesystem and volume manager"
+url="https://openzfs.org"
+arch="all"
+license="CDDL-1.0"
+provides="spl=$pkgver-r$pkgrel" # Mitigate upgrade conflicts
+depends_dev="
+	attr-dev
+	e2fsprogs-dev
+	glib-dev
+	libtirpc-dev
+	openssl-dev>3
+	"
+makedepends="
+	$depends_dev
+	autoconf
+	automake
+	libtool
+	linux-headers
+	py3-cffi
+	py3-distlib
+	py3-setuptools
+	python3-dev
+	util-linux-dev
+	"
+options="!check" # need to be run on live system w/ ZFS loaded.
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-dracut::noarch
+	$pkgname-libs
+	$pkgname-openrc
+	$pkgname-scripts
+	$pkgname-systemd::all
+	$pkgname-udev::all
+	$pkgname-utils-py:utils_py:noarch
+	py3-pyzfs-pyc
+	py3-pyzfs:pyzfs:noarch
+	"
+source="https://github.com/openzfs/zfs/releases/download/zfs-$pkgver/zfs-$pkgver.tar.gz"
+
+# secfixes:
+#   2.2.1-r1:
+#     - CVE-2023-49298
+
+prepare() {
+	default_prepare
+
+	# for statx.patch
+	autoreconf -vfi
+}
+
+build() {
+	export CFLAGS="$CFLAGS -fno-tree-vectorize"
+	export CXXFLAGS="$CXXFLAGS -fno-tree-vectorize"
+	export LIBS="$LIBS -lintl"
+	./configure --prefix=/usr \
+		--with-tirpc \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--with-config=user \
+		--with-udevdir=/usr/lib/udev \
+		--enable-systemd \
+		--disable-static \
+		--with-python=3 \
+		--enable-pyzfs
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# no initramfs-tools
+	rm -rf "$pkgdir"/usr/share/initramfs-tools
+
+	# we use doas(1)
+	rm -rf "$pkgdir"/etc/sudoers.d
+
+	# zfs-mount-generator is a systemd.generator(7)
+	rm "$pkgdir"/usr/share/man/man8/zfs-mount-generator*
+
+	# Fix permissions of zfs OpenRC service configuration (#13840)
+	chmod 644 "$pkgdir"/etc/conf.d/zfs
+}
+
+dracut() {
+	pkgdesc="$pkgdesc (dracut)"
+	install_if="$pkgname=$pkgver-r$pkgrel dracut-modules"
+
+	amove usr/lib/dracut
+}
+
+scripts() {
+	pkgdesc="$pkgdesc (scripts)"
+
+	amove usr/share/zfs
+}
+
+utils_py() {
+	pkgdesc="$pkgdesc (python utils)"
+	depends="python3"
+
+	amove usr/bin/dbufstat
+	amove usr/bin/zarcstat
+	amove usr/bin/zarcsummary
+	amove usr/bin/zilstat
+}
+
+pyzfs() {
+	pkgdesc="$pkgdesc (Python lib to interact with ZFS)"
+	depends="python3 $pkgname"
+
+	amove usr/lib/python3*
+}
+
+sha512sums="
+343fbb19c0ca5f91254d216b6113fb8a7b028bdafc976ba9cb1ff6b7d3442a6a0fbf2cc4bde4f2fcc7cb7293cc17a1914664a943e5c798d261d00b22a0e56989  zfs-2.4.3.tar.gz
+"

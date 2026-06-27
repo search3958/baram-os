@@ -1,0 +1,31 @@
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=mnc
+pkgver=0.5
+pkgrel=15
+arch="all"
+url="https://git.sr.ht/~anjan/mnc"
+pkgdesc="get the time in seconds to next cron job"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~anjan/mnc/archive/$pkgver.tar.gz"
+license="Unlicense"
+makedepends="go binutils"
+options="!check net" # no testsuite in upstream, go
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+export GOFLAGS="$GOFLAGS -modcacherw"
+
+build() {
+	go build mnc.go
+	strip mnc
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin
+	install mnc "$pkgdir"/usr/bin
+}
+
+sha512sums="
+30ea342103362005e047fd6c9686c7e64c817983a7ad10401dfc6cabc9da2417912884cdb686d4e590d4e0233c47c51ee9dee716af97b8ace4602580400d3464  mnc-0.5.tar.gz
+"

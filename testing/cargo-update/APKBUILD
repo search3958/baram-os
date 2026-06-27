@@ -1,0 +1,43 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=cargo-update
+pkgver=18.0.0
+pkgrel=0
+pkgdesc="cargo subcommand for checking and applying updates to installed executables"
+url="https://github.com/nabijaczleweli/cargo-update"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable ronn curl-dev libgit2-dev libssh-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/nabijaczleweli/cargo-update/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # cargo fetch
+
+export LIBSSH2_SYS_USE_PKG_CONFIG=1
+export LIBGIT2_NO_VENDOR=1 # use system libgit2
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET"
+}
+
+build() {
+	cargo auditable build --frozen --release
+	ronn --roff --organization="CARGO-UPDATE $pkgver" man/*.md
+}
+
+check() {
+	TMPDIR="$srcdir" cargo test --frozen
+}
+
+package() {
+	install -Dm755 -t "$pkgdir"/usr/bin/ \
+		target/release/cargo-install-update \
+		target/release/cargo-install-update-config
+
+	install -Dm644 man/cargo-install-update*.1 \
+		-t "$pkgdir"/usr/share/man/man1/
+}
+
+sha512sums="
+ea70ed03201d810c36bf76e1b5a68930de346b2d4547530830b6da2f7389675b371d0596d28242034292a64b49b0b8e57a590277e3467ee5f6f9529a874b7cf6  cargo-update-18.0.0.tar.gz
+"

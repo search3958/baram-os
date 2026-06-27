@@ -1,0 +1,51 @@
+# Contributor: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+# Maintainer: Orhun Parmaksız <orhunparmaksiz@gmail.com>
+pkgname=daktilo
+pkgver=0.6.0
+pkgrel=0
+pkgdesc="Turn your keyboard into a typewriter"
+url="https://github.com/orhun/daktilo"
+# loongarch64: blocked by libc crate
+arch="all !loongarch64"
+license="MIT OR Apache-2.0"
+depends="alsa-lib libxi-dev libxtst-dev"
+makedepends="cargo cargo-auditable alsa-lib-dev"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/orhun/daktilo/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+	mkdir -p man
+	OUT_DIR=man/ target/release/daktilo-mangen
+	mkdir -p completions
+	OUT_DIR=completions/ target/release/daktilo-completions
+}
+
+check() {
+	OUT_DIR=target cargo test --frozen
+}
+
+package() {
+	install -Dm 755 "target/release/$pkgname" -t "$pkgdir/usr/bin"
+	install -Dm 644 README.md -t "$pkgdir/usr/share/doc/$pkgname"
+	install -Dm 644 "man/$pkgname.1" -t "$pkgdir/usr/share/man/man1"
+	install -Dm 644 "completions/$pkgname.bash" "$pkgdir/usr/share/bash-completion/completions/$pkgname"
+	install -Dm 644 "completions/$pkgname.fish" -t "$pkgdir/usr/share/fish/vendor_completions.d"
+	install -Dm 644 "completions/_$pkgname" -t "$pkgdir/usr/share/zsh/site-functions"
+}
+
+sha512sums="
+58f2de4cd9c39e0c1e210e09ac2fd48d3411c756e2256b88f4b3515831759a00260fa23683e9f52f5032c52e3c903b4498fe1eac313c7e94c431270e638292ea  daktilo-0.6.0.tar.gz
+"

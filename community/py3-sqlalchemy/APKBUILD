@@ -1,0 +1,66 @@
+# Contributor: Steven Guikal <void@fluix.one>
+# Maintainer: Steven Guikal <void@fluix.one>
+pkgname=py3-sqlalchemy
+pkgver=2.0.49
+pkgrel=0
+pkgdesc="object relational mapper for Python"
+url="https://pypi.org/project/SQLAlchemy"
+arch="all"
+license="MIT"
+depends="
+	py3-greenlet
+	"
+makedepends="
+	cython
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-mock
+	py3-mypy
+	py3-pytest
+	py3-pytest-xdist
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/S/SQLAlchemy/sqlalchemy-$pkgver.tar.gz"
+builddir="$srcdir/sqlalchemy-$pkgver"
+
+replaces="py-sqlalchemy" # Backwards compatibility
+provides="py-sqlalchemy=$pkgver-r$pkgrel" # Backwards compatibility
+
+# crashloops until it eventually passes, fixme
+case "$CARCH" in
+x86) options="$options !check" ;;
+esac
+
+prepare() {
+	default_prepare
+	# we have a new enough python for every typing extension
+	grep -l -r 'typing_extensions' . \
+		| grep '.py' \
+		| xargs -n 1 -P ${JOBS:-1} sed -i 's|typing_extensions|typing|g'
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# mypy tests expect mypy 1.20.x
+	.testenv/bin/python3 -m pytest -n auto -m "not mypy"
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+7c28643c0f220f0c096eab3aff094949144b42fe0c72813f5a9ed27d1531504b2ecef30d9ce0e7294110519588ba687a30f414a6ba961e99bf37d4fb867da47e  sqlalchemy-2.0.49.tar.gz
+"

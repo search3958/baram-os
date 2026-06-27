@@ -1,5 +1,0 @@
-#TODO compilation error
-[source]
-tar = "https://nmap.org/dist/nmap-7.98.tar.bz2"
-[build]
-template = "configure"

@@ -1,0 +1,34 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xrandr
+pkgver=1.5.4
+pkgrel=0
+pkgdesc="Command line interface to RandR extension"
+url="https://www.x.org/wiki/"
+arch="all"
+license="MIT"
+subpackages="$pkgname-doc"
+makedepends="libxrandr-dev util-macros"
+source="https://www.x.org/releases/individual/app/$pkgname-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm "$pkgdir"/usr/bin/xkeystone
+}
+
+sha512sums="
+2758615a3d212cc53540cd76199d7a03580702a7b776c430984db33c5368a19620cf54b7ac8e193a4c4036bc40373a933c01473d2f2ce982ce2c6b48379da5e5  xrandr-1.5.4.tar.xz
+"

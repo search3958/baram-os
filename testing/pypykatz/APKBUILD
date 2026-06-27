@@ -1,0 +1,43 @@
+# Contributor: Jonas <spameier+alpine@proton.me>
+# Maintainer: Jonas <spameier+alpine@proton.me>
+pkgname=pypykatz
+pkgver=0.6.13
+pkgrel=1
+pkgdesc="Python implementation of Mimikatz"
+url="https://github.com/skelsec/pypykatz"
+arch="noarch"
+license="MIT"
+depends="
+	py3-aesedb
+	py3-aiosmb
+	py3-aiowinreg
+	py3-minidump
+	py3-minikerberos
+	py3-msldap
+	py3-tqdm
+	py3-unicrypto
+	py3-winacl
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-wheel
+	py3-setuptools
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/skelsec/pypykatz/archive/refs/tags/$pkgver.tar.gz"
+options="!check" # no tests provided
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+6128698eef043b4f2795fd52289f8c3c582519d347fd9c9de90336b3bdd6e18f0e06271fc43a71207fc3e89de4e74ec2eab9437f7b17b27e48ebe0f873854643  pypykatz-0.6.13.tar.gz
+"

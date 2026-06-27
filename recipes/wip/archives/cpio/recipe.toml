@@ -1,5 +1,0 @@
-#TODO compile and test
-[source]
-tar = "https://ftp.gnu.org/gnu/cpio/cpio-2.15.tar.bz2"
-[build]
-template = "configure"

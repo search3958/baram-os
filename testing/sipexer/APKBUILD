@@ -1,0 +1,32 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=sipexer
+pkgver=2.0.0
+pkgrel=0
+pkgdesc="Modern and flexible SIP (RFC3261) command line tool."
+url="https://github.com/miconda/sipexer"
+arch="all"
+license="GPL-3.0-only"
+makedepends="go"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/miconda/sipexer/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -v -o bin/ ./...
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -m755 -D bin/sipexer "$pkgdir"/usr/bin/sipexer
+}
+
+sha512sums="
+cdbff16fb7747fb9783bafe49417b8a0c955605b9281615b7a672fd292c8c0f330257d7b231ab7bbc125e4741ed3adb3470e7eec2d0eb7d661d9b802fc56044a  sipexer-2.0.0.tar.gz
+"

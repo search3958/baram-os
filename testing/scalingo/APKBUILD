@@ -1,0 +1,33 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=scalingo
+pkgver=1.30.0
+pkgrel=20
+pkgdesc="Command-line client for Scalingo PaaS"
+url="https://doc.scalingo.com/cli"
+arch="all"
+license="BSD-4-Clause"
+makedepends="go"
+source="https://github.com/Scalingo/cli/archive/$pkgver/cli-$pkgver.tar.gz"
+options="chmod-clean"
+builddir="$srcdir/cli-$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -trimpath -o bin/scalingo ./scalingo
+}
+
+check() {
+	go test -v ./...
+}
+
+package() {
+	install -Dm755 bin/scalingo "$pkgdir"/usr/bin/scalingo
+}
+
+sha512sums="
+eb155897d3951c78df3a61f4248939be57deded616e3cfba6bd6c06da321cad3a8742bfd43c510451ed30680899d922d6e4f5c54de515a583f222ccbd66f950f  cli-1.30.0.tar.gz
+"

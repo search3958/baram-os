@@ -1,8 +1,0 @@
-#TODO program source code error
-[source]
-git = "https://github.com/orf/gping"
-[build]
-template = "custom"
-script = """
-cookbook_cargo_packages gping
-"""

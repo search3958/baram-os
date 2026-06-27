@@ -1,0 +1,47 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=pwvucontrol
+pkgver=0.5.2
+pkgrel=0
+pkgdesc="Pipewire Volume Control"
+url="https://github.com/saivert/pwvucontrol"
+# 32-bit: pipewire crate fails
+# s390x: nix
+arch="all !armhf !armv7 !x86 !s390x"
+license="GPL-3.0-or-later"
+makedepends="
+	blueprint-compiler
+	cargo
+	cargo-auditable
+	clang-dev
+	desktop-file-utils
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	pipewire-dev
+	wireplumber-dev
+	"
+subpackages="$pkgname-dbg $pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/saivert/pwvucontrol/archive/refs/tags/$pkgver.tar.gz"
+options="net" # fetch cargo dependencies
+
+prepare() {
+	default_prepare
+	cargo fetch --locked
+}
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --no-rebuild -C output
+}
+
+package() {
+	meson install --no-rebuild --destdir "$pkgdir" -C output
+}
+
+sha512sums="
+3c7204ea2a93690c46c1a821156e4b88055305f9973f8189672f20447e3be594962ca4c7dbd1be021ce960796e61aa8b9244a1daac5f15fc2c295587274afcee  pwvucontrol-0.5.2.tar.gz
+"

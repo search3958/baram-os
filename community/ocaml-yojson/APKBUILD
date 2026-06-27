@@ -1,0 +1,87 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: omni <omni+alpine@hack.org>
+pkgname=ocaml-yojson
+_pkgname=yojson
+pkgver=2.1.2
+pkgrel=2
+pkgdesc="JSON parsing and pretty-printing library for OCaml"
+url="https://github.com/ocaml-community/yojson"
+arch="all !riscv64 !loongarch64" # ocaml
+license="BSD-3-Clause"
+depends_dev="$pkgname=$pkgver-r$pkgrel ocaml-seq-dev"
+makedepends="$depends_dev dune ocaml ocaml-cppo ocaml-findlib"
+subpackages="$pkgname-dev"
+source="$_pkgname-$pkgver.tar.gz::https://github.com/ocaml-community/yojson/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check" # tests need alcotest library
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build @install -p yojson
+}
+
+check() {
+	dune runtest
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml \
+		yojson
+
+	cd "$pkgdir"
+
+	# There's just a readme and changelog.
+	rm -Rf usr/doc
+
+	# Don't package ydump tool for now.
+	rm -Rf usr/bin
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+52c3a479492c0adcd4783f5343d00b7ce76d303e08a458e59d9faf006ebaf782a03f77c1ba1d5b75f4e3da586073911d5fdd2b80dc7ce198c9a16d9b0a776e4f  yojson-2.1.2.tar.gz
+"

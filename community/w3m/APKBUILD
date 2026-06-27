@@ -1,0 +1,105 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=w3m
+pkgver=0.5.6
+pkgrel=0
+pkgdesc="text-based web & gopher browser, as well as pager"
+url="https://sr.ht/~rkta/w3m/"
+arch="all"
+license="MIT"
+makedepends="
+	gc-dev
+	imlib2-dev
+	linux-headers
+	ncurses-dev
+	openssl-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-perl:_perl:noarch
+	$pkgname-image
+	"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~rkta/w3m/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+# secfixes:
+#   0.5.3_git20241203-r0:
+#     - CVE-2023-38252
+#     - CVE-2023-38253
+#     - CVE-2022-38223
+#     - CVE-2018-6196
+#     - CVE-2018-6197
+#     - CVE-2018-6198
+
+build() {
+	PERL=/usr/bin/perl \
+	./configure \
+		--prefix=/usr \
+		--libexecdir=/usr/lib \
+		--enable-image=fb \
+		--with-ssl \
+		--disable-nntp \
+		--disable-dict \
+		--disable-help-cgi \
+		--with-imagelib=imlib2 \
+		--with-termlib=ncurses \
+		--with-editor="/usr/bin/vi" \
+		--with-browser="/usr/bin/xdg-open" \
+		--disable-w3mmailer
+	make
+}
+
+check() {
+	./w3m -version
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	# when ./configure has --disable-help-cgi passed, the (H)elp key
+	# is hardcoded to open "w3mhelp-w3m_en.html", instead of the
+	# w3mhelp.cgi script. 'make install' has install-scripts as a
+	# target, but not install-helpfile, probably ./configure doesn't
+	# get tested with --disable-help-cgi very often. anyway, we have
+	# to make install-helpfile or else the (H)elp key won't work.
+	# additionally, the _en & _ja help files have hyperlinks to each
+	# other, so install both, unless we want to patch the help file
+	make DESTDIR="$pkgdir" \
+		HELP_ALLFILES="w3mhelp-w3m_en.html w3mhelp-w3m_ja.html" \
+		install-helpfile
+
+	# the following 3 Perl scripts have dependencies not found in Alpine
+	# xface2xpm needs uncompface, w3mdict.cgi needs dictionary client
+	# multipart.cgi needs NKF (Network Kanji code conversion Filter)
+	rm "$pkgdir"/usr/lib/w3m/xface2xpm
+	rm "$pkgdir"/usr/lib/w3m/cgi-bin/w3mdict.cgi
+	rm "$pkgdir"/usr/lib/w3m/cgi-bin/multipart.cgi
+	# w3mmail.cgi needs cmd:sendmail (which Alpine has pkgs for), but
+	# removing it because --disable-w3mmailer causes w3m to use an
+	# external program (default: /usr/bin/mail) to handle mailto: links
+	rm "$pkgdir"/usr/lib/w3m/cgi-bin/w3mmail.cgi
+
+	install -Dvm644 doc/* -t "$pkgdir"/usr/share/doc/$pkgname/
+	install -Dvm644 COPYING -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+_perl() {
+	pkgdesc="$pkgdesc (perl helper scripts)"
+	depends="perl cmd:man"			# w3mman needs cmd:man
+
+	amove \
+		usr/bin/w3mman \
+		usr/lib/w3m/cgi-bin/*.cgi \
+		usr/share/w3m/*.pl
+}
+
+image() {
+	pkgdesc="$pkgdesc (inline image support)"
+	install_if="$pkgname=$pkgver-r$pkgrel imlib2"
+
+	amove usr/lib/w3m/w3mimgdisplay
+}
+
+sha512sums="
+377e38dbaa8f4ad4baf8dbfd5ca70b40051a1630a6e2028210c5f9995f1519e6c7755a6c32f8ff2337f10037ad121ca64ca2887fe9cce00b2e7305d896ec09a3  w3m-0.5.6.tar.gz
+"

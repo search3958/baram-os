@@ -1,0 +1,74 @@
+# Contributor: Michał Polański <michal@polanski.me>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=prettier
+pkgver=3.8.4
+pkgrel=0
+pkgdesc="Opinionated code formatter"
+url="https://prettier.io/"
+license="MIT"
+# armhf, armv7, x86: fails at "yarn install" with YN0001: │ Error: Couldn't allocate enough memory
+# riscv64: crashes at "yarn install" fetch step
+arch="noarch !armhf !armv7 !x86 !riscv64"
+depends="nodejs"
+makedepends="yarn cmd:timeout"
+checkdepends="npm"
+subpackages="$pkgname-doc"
+source="https://github.com/prettier/prettier/archive/$pkgver/prettier-$pkgver.tar.gz
+	disable-oxc-and-hermes-plugin-tests.patch
+	"
+options="net" # npm
+
+case $CARCH in
+ppc64le | s390x)
+	# test run fails with:
+	# ● Validation Error:
+	#  Module <rootDir>/tests/config/format-test-setup.js in the setupFiles option was not found.
+	#  <rootDir> is: /builds/alpine/aports/community/prettier/src/prettier-3.6.2
+	options="!check"
+	;;
+esac
+
+build() {
+	yarn install --frozen-lockfile
+	# since 3.6.0, prettier source includes two plugins:
+	# @prettier/plugin-hermes and @prettier/plugin-oxc. upstream packages
+	# them separately - we could too, but they are not loadable at runtime
+	# anyway because of https://github.com/prettier/prettier/issues/15141 .
+	# also, plugin-oxc requires a native rust dependency (oxc-parser),
+	# which prevents it from building on ppc64le and loongarch64.
+	# so, just disable the plugin builds (and their tests - see patch)
+	yarn build --package=prettier
+}
+
+check() {
+	# tests occasionally hang forever; seems to be some process management
+	# problem in jest. --runInBand and clearing caches beforehand seems to
+	# help.
+	yarn test:production --clearCache
+	# snapshot tests expect outputs to be identical to the test run that
+	# generated them. since we patch the tests to disable oxc/hermes, that
+	# doesn't work for us, so we need to use `--updateSnapshot` to avoid
+	# failures in CI
+	timeout -f -k 5s 6m yarn test:production --updateSnapshot --runInBand
+}
+
+package() {
+	local destdir=/usr/lib/node_modules/prettier
+
+	install -d \
+		"$pkgdir"/usr/bin \
+		"$pkgdir"/$destdir \
+		"$pkgdir"/usr/share/licenses/prettier
+
+	cp -r dist/prettier/* "$pkgdir"/$destdir
+	ln -s $destdir/bin/prettier.cjs "$pkgdir"/usr/bin/prettier
+
+	cd "$pkgdir"/$destdir
+	rm README.md # more links to various badges than actual content
+	mv LICENSE "$pkgdir"/usr/share/licenses/prettier/LICENSE
+}
+
+sha512sums="
+0e32eaaf1d4f9c700655e5a2d7af9f8aee0581a2cc49a265e7d74bda91a7ce4934ca8bdf453bf60bdc63b110387f9d67ed377ea9a92db1b5b4a37b23eac57c07  prettier-3.8.4.tar.gz
+c7be8d92b7f7a8e4519c8515c77b0cb80936b708b13a3448d5310602e957533e22d9a6e93e1d1c313f526eefc9974f08906d0de470060d71d533365985a4e7b2  disable-oxc-and-hermes-plugin-tests.patch
+"

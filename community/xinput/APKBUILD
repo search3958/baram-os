@@ -1,0 +1,39 @@
+# Contributor: Johannes Matheis <jomat+alpinebuild@jmt.gr>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=xinput
+pkgver=1.6.4
+pkgrel=2
+pkgdesc="Utility to configure and test XInput devices"
+url="https://xorg.freedesktop.org/"
+arch="all"
+options="!check"  # No test suite.
+license="MIT"
+makedepends="
+	libx11-dev
+	libxext-dev
+	libxi-dev
+	libxinerama-dev
+	libxrandr-dev
+	util-macros
+	"
+subpackages="$pkgname-doc"
+source="https://www.x.org/archive/individual/app/xinput-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+6734860852715e5cb9d26259a173e42413fc037546ed7fa4173ffa802c2619ee0322bed228a28cd1911be759d860070867d9b89b115f37323cca1c9ef75354b9  xinput-1.6.4.tar.xz
+"

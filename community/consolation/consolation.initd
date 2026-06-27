@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+
+command=/usr/sbin/consolation
+command_args="--no-daemon"
+command_background=true
+pidfile=/run/consolation.pid
+description="Linux Console Pointer Interface"
+
+depend() {
+	after bootmisc
+}

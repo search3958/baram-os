@@ -1,0 +1,10 @@
+# Configuration for /etc/init.d/step-ca
+
+# Uncomment to run with process supervisor.
+# supervisor="supervise-daemon"
+
+# Extra options to pass to step-ca
+# command_args=""
+
+# args for: /etc/init.d/step-ca setup
+# setup_args="--ssh"

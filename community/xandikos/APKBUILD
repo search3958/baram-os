@@ -1,0 +1,58 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=xandikos
+pkgver=0.4.3
+pkgrel=0
+pkgdesc="a lightweight yet complete CardDAV/CalDAV server that backs onto a Git repository"
+url="https://xandikos.org"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	py3-aiohttp
+	py3-defusedxml
+	py3-dulwich
+	py3-icalendar
+	py3-jinja2
+	py3-multidict
+	py3-tzdata
+	py3-vobject
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-aiosmtpd py3-pytest"
+install="$pkgname.pre-install"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-pyc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/jelmer/xandikos/archive/v$pkgver.tar.gz
+	xandikos.initd
+	xandikos.confd
+	"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --system-site-packages testenv
+	testenv/bin/python3 -m installer dist/*.whl
+	testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" dist/*.whl
+
+	install -m644 -D man/$pkgname.8 \
+		-t "$pkgdir"/usr/share/man/man8/
+
+	install -m755 -D "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+b0a9af8e9be22b7e3afb0663d52ce7eca3f0fbf691d84d4e411bf592821fc5696758febf5a77de88b0a75b43fa0027974642dc60050c1e3790494cdc184a1efd  xandikos-0.4.3.tar.gz
+8d49ef3ce004a666d4e9b1e97114d5bf381aa75538518ce7b15202bacf73ef90cd3ad751d6aae73b2b5768b37f58045ed3f34db0d004a8c5f479c1a79cbbcd60  xandikos.initd
+8e1ef71e22809c9c7424dd518949e936d09d1da7f2911862d7943b71976554d74f72f186ea76bf8510b8fd95a75028fe369e5907c20695211425cf50c911388a  xandikos.confd
+"

@@ -1,0 +1,52 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=gum
+pkgver=0.16.2
+pkgrel=10
+pkgdesc="Highly configurable utilities for writing interactive shell scripts"
+url="https://github.com/charmbracelet/gum"
+arch="all"
+license="MIT"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+makedepends="go"
+source="https://github.com/charmbracelet/gum/archive/v$pkgver/gum-$pkgver.tar.gz"
+options="net" # downloading dependencies
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+
+build() {
+	mkdir builddir
+
+	go build -v \
+		-trimpath \
+		-ldflags "-X main.Version=$pkgver -extldflags \"$LDFLAGS\"" \
+		-o builddir .
+
+	./builddir/gum man > builddir/gum.1
+	./builddir/gum completion bash > completion.bash
+	./builddir/gum completion fish > completion.fish
+	./builddir/gum completion zsh > completion.zsh
+}
+
+check() {
+	./builddir/gum --version
+}
+
+package() {
+	install -Dm755 builddir/gum "$pkgdir"/usr/bin/gum
+	install -Dm644 builddir/gum.1 "$pkgdir"/usr/share/man/man1/gum.1
+	install -Dm644 completion.bash "$pkgdir"/usr/share/bash-completion/completions/gum
+	install -Dm644 completion.fish "$pkgdir"/usr/share/fish/vendor_completions.d/gum.fish
+	install -Dm644 completion.zsh "$pkgdir"/usr/share/zsh/site-functions/_gum
+}
+
+sha512sums="
+6067d1a332acd98372e4669c633b64f3c4f1b8e76232c737353eed9dc7210c535f182990050b365f6caae008857ceb29ddd5b22fc26c31670cadf7aabae5f82b  gum-0.16.2.tar.gz
+"

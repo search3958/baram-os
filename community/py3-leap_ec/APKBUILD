@@ -1,0 +1,49 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-leap_ec
+pkgver=0.8.2
+pkgrel=1
+pkgdesc="A general purpose Library for Evolutionary Algorithms in Python"
+url="https://github.com/leap-ec/LEAP"
+arch="noarch"
+license="AFL-3.0"
+depends="
+	python3
+	py3-dask
+	py3-distributed
+	py3-docopt
+	py3-matplotlib
+	py3-networkx
+	py3-numpy
+	py3-pandas
+	py3-rich
+	py3-scipy
+	py3-toolz
+	"
+makedepends="py3-gpep517 py3-hatchling py3-wheel"
+checkdepends="py3-pytest py3-pytest-cov"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/leap-ec/LEAP/archive/v$pkgver/$pkgver.tar.gz"
+builddir="$srcdir/LEAP-$pkgver"
+options="!check" # missing dependencies | skip for now
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a3c875bca98996b07a3a3473cda6748da3cd64a7f9e034a06c21eb2baefd4236c59a2d7f7e851f0c05b236984f7e2a70ef78458caff3aea5e58d2f526474b62b  py3-leap_ec-0.8.2.tar.gz
+"

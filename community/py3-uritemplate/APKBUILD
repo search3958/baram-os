@@ -1,0 +1,31 @@
+# Contributor: Peter Bui <pnutzh4x0r@gmail.com>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-uritemplate
+_pkgname=uritemplate
+pkgver=4.1.1
+pkgrel=4
+pkgdesc="Python3 module to use URO templates"
+url="https://uritemplate.readthedocs.org"
+arch="noarch"
+license="BSD-3-Clause OR Apache-2.0"
+options="!check"
+depends="python3"
+makedepends="py3-setuptools"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-uritemplate" # Backwards compatibility
+provides="py-uritemplate=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+7682c7dcd9c8d4428b047e3adbc283b78f755face4d8dd1b0cd11df9583bd0435543640ba79229d436aeecad2b5b29684befdccc84ba71f72769ee130cb6576a  uritemplate-4.1.1.tar.gz
+"

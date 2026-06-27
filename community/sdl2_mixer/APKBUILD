@@ -1,0 +1,45 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=sdl2_mixer
+pkgver=2.8.2
+pkgrel=0
+pkgdesc="A simple multi-channel audio mixer"
+url="https://github.com/libsdl-org/SDL_mixer"
+arch="all"
+license="Zlib"
+makedepends="
+	cmake
+	flac-dev
+	fluidsynth
+	fluidsynth-dev
+	libmikmod-dev
+	libmodplug-dev
+	libvorbis-dev
+	libxmp-dev
+	linux-headers
+	mpg123-dev
+	opusfile-dev
+	samurai
+	sdl2-dev
+	wavpack-dev
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+options="!check" # no test suite
+source="$pkgname-$pkgver.tar.gz::https://github.com/libsdl-org/SDL_mixer/archive/refs/tags/release-$pkgver.tar.gz"
+
+builddir="$srcdir/SDL_mixer-release-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+4c2ba587a89721e060472b65e8a846ed3012121b4de7a2952704dab5df5f9e5d828a4105a7eb9b2fd65158ea9264e8b53eb689b87cb7f098452c2ab959a25a06  sdl2_mixer-2.8.2.tar.gz
+"

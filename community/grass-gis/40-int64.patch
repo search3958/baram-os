@@ -1,0 +1,14 @@
+Author: Holger Jaekel <holger.jaekel@gmx.de>
+Summary: fix import for int64_t
+----
+
+--- a/include/grass/gis.h
++++ b/include/grass/gis.h
+@@ -629,6 +629,7 @@
+ /* 64 bit signed integer */
+ #if HAVE_INT64_T
+ #include <sys/types.h>
++#include <stdint.h>
+ typedef int64_t grass_int64;
+ #elif defined(__MINGW32__)
+ typedef __int64 grass_int64;

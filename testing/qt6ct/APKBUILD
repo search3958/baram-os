@@ -1,0 +1,38 @@
+# Contributor: Alex Yam <alex@alexyam.com>
+# Maintainer: Hoang Nguyen <folliekazetani@protonmail.com>
+pkgname=qt6ct
+pkgver=0.11
+pkgrel=5
+pkgdesc="Qt6 configuration tool"
+url="https://www.opencode.net/trialuser/qt6ct"
+arch="all"
+license="BSD-2-Clause"
+options="!check" # no test suite
+makedepends="
+	cmake
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	qt6-qttools-dev
+	samurai
+	"
+source="
+	https://www.opencode.net/trialuser/qt6ct/-/archive/$pkgver/qt6ct-$pkgver.tar.gz
+	find-lrelease.patch
+	"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=MinSizeRel
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+58d00f658360e7a7dd8d09a6a873bd9b21f112e596a72ce3ca9caeaba2a4336fbba18c93a8bdb1560f2875f40de1991d9500c5c52a8d8621c060f3bcc8d5545f  qt6ct-0.11.tar.gz
+92e419c9d7dfbc35de00b1f9cd453e62294a19b5d930ef745e7f03f28d1f858bac8fef5118b1fd6d3d1de758c7caab63e0a5e1a91c5bd537722edb579c01dec2  find-lrelease.patch
+"

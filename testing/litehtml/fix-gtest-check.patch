@@ -1,0 +1,20 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -147,7 +147,7 @@
+ set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${PROJECT_LIB_VERSION} SOVERSION ${PROJECT_SO_VERSION})
+ 
+ set_target_properties(${PROJECT_NAME} PROPERTIES
+-    CXX_STANDARD 11
++    CXX_STANDARD 14
+     C_STANDARD 99
+     PUBLIC_HEADER "${HEADER_LITEHTML}"
+ )
+@@ -205,7 +205,7 @@
+     )
+ 
+     set_target_properties(${TEST_NAME} PROPERTIES
+-        CXX_STANDARD 11
++        CXX_STANDARD 14
+         C_STANDARD 99
+         PUBLIC_HEADER "${HEADER_LITEHTML}"
+     )

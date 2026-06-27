@@ -1,0 +1,34 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-game-libretro-mupen64plus-nx
+pkgver=2.5.0.40
+_realname=Nexus
+pkgrel=0
+pkgdesc="N64 emulation library for the libretro API, based on Mupen64Plus"
+options="!check" # no test suite
+url="https://github.com/kodi-game/game.libretro.mupen64plus-nx"
+arch="x86_64" # libretro-mupen64plus available only on these architectures
+license="GPL-2.0-or-later"
+makedepends="cmake kodi-dev samurai"
+depends="kodi-game-libretro libretro-mupen64plus"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/kodi-game/game.libretro.mupen64plus-nx/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/game.libretro.mupen64plus-nx-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	rm -r "$pkgdir"/usr/lib/kodi/addons/game.libretro.mupen64plus-nx/game.libretro.mupen64plus-nx.so
+	ln -s /usr/lib/libretro/mupen64plus_next_libretro.so \
+		"$pkgdir"/usr/lib/kodi/addons/game.libretro.mupen64plus-nx/game.libretro.mupen64plus-nx.so
+}
+
+sha512sums="
+15ce92449a473e0cf0114797f1e3cad653138aa388d0b47198173494a4a1f8ca3ca7361e19f276b42c4dd9ef3d17c9f5685896aade1fad38f912b134eb334334  kodi-game-libretro-mupen64plus-nx-2.5.0.40-Nexus.tar.gz
+"

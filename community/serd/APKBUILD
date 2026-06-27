@@ -1,0 +1,26 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=serd
+pkgver=0.32.10
+pkgrel=0
+pkgdesc="lightweight C library for RDF syntax"
+url="https://drobilla.net/software/serd"
+arch="all"
+license="ISC"
+makedepends="meson"
+subpackages="$pkgname-dev $pkgname-libs $pkgname-doc"
+source="https://download.drobilla.net/serd-$pkgver.tar.xz"
+options="!check" # No tests
+
+build() {
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+1ceb7caaa97195e829bec0436930c090698a6be8ba1b7ee0ef3f013c817dd7ae472bb9bcc271e55e8b6e12d110b2d1d3d8fe20c36672d6e63c53f151173cd897  serd-0.32.10.tar.xz
+"

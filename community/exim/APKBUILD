@@ -1,0 +1,218 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Contributor: Ash Berlin-Taylor <ash.berlin@gmail.com>
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Jesse Young <jlyo@jlyo.org>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=exim
+pkgver=4.99.4
+pkgrel=0
+_pkgver=${pkgver/_rc/-RC}
+pkgdesc="Message Transfer Agent"
+url="https://www.exim.org/"
+arch="all"
+license="GPL-2.0-or-later"
+options="!check suid"
+pkgusers="$pkgname"
+pkggroups="$pkgname mail"
+depends="ca-certificates"
+makedepends="
+	bash
+	gawk
+	libidn-dev
+	libpq-dev
+	libspf2-dev
+	linux-headers
+	mariadb-connector-c-dev
+	openssl-dev
+	pcre2-dev
+	perl
+	perl-file-fcntllock
+	sqlite-dev
+	tdb-dev
+	"
+install="exim.pre-install"
+subpackages="
+	$pkgname-cdb
+	$pkgname-dbmdb
+	$pkgname-dnsdb
+	$pkgname-doc
+	$pkgname-mysql
+	$pkgname-openrc
+	$pkgname-postgresql
+	$pkgname-scripts::noarch
+	$pkgname-sqlite
+	$pkgname-utils
+	"
+case "$pkgver" in
+*_rc*)
+	source="https://ftp.exim.org/pub/exim/exim4/test/exim-$_pkgver.tar.xz"
+	;;
+*)
+	source="https://ftp.exim.org/pub/exim/exim4/exim-$_pkgver.tar.xz"
+	;;
+esac
+source="$source
+	bounce-charset.patch
+	exim.Makefile
+	exim.confd
+	exim.initd
+	exim.logrotate
+	exim.gencert
+	"
+builddir="$srcdir/$pkgname-$_pkgver"
+
+# secfixes:
+#   4.98.4-r0:
+#     - CVE-2026-48840
+#   4.98.2-r0:
+#     - CVE-2026-40684
+#     - CVE-2026-40685
+#     - CVE-2026-40686
+#     - CVE-2026-40687
+#   4.98.2-r0:
+#     - CVE-2025-30232
+#   4.98-r0:
+#     - CVE-2024-39929
+#   4.97.1-r0:
+#     - CVE-2023-51766
+#   4.96.2-r0:
+#     - CVE-2023-42117
+#     - CVE-2023-42119
+#   4.96.1-r0:
+#     - CVE-2023-42114
+#     - CVE-2023-42115
+#     - CVE-2023-42116
+#   4.94.2-r0:
+#     - CVE-2021-27216
+#     - CVE-2020-28007
+#     - CVE-2020-28008
+#     - CVE-2020-28009
+#     - CVE-2020-28010
+#     - CVE-2020-28011
+#     - CVE-2020-28012
+#     - CVE-2020-28013
+#     - CVE-2020-28014
+#     - CVE-2020-28015
+#     - CVE-2020-28016
+#     - CVE-2020-28017
+#     - CVE-2020-28018
+#     - CVE-2020-28019
+#     - CVE-2020-28020
+#     - CVE-2020-28021
+#     - CVE-2020-28022
+#     - CVE-2020-28023
+#     - CVE-2020-28024
+#     - CVE-2020-28025
+#     - CVE-2020-28026
+#   4.93-r1:
+#     - CVE-2020-12783
+#   4.92.2-r1:
+#     - CVE-2019-16928
+#   4.92.2-r0:
+#     - CVE-2019-15846
+#   4.92.1-r0:
+#     - CVE-2019-13917
+#   4.92-r0:
+#     - CVE-2019-10149
+#   4.89-r5:
+#     - CVE-2017-1000369
+#   4.89-r7:
+#     - CVE-2017-16943
+#   4.89.1-r0:
+#     - CVE-2017-16944
+#   4.90.1-r0:
+#     - CVE-2018-6789
+
+prepare() {
+	default_prepare
+
+	cp "$srcdir"/$pkgname.Makefile Local/Makefile
+	sed -i \
+		-e 's/-lnsl//g' \
+		-e 's/^HAVE_ICONV.*$//' \
+		OS/Makefile-Linux
+}
+
+build() {
+	export CFLAGS="$CFLAGS -DNO_EXECINFO"
+	make makefile
+	make
+}
+
+package() {
+	install -m750 -D -g mail -d "$pkgdir"/etc/mail
+	make DESTDIR="$pkgdir" INSTALL_ARG="-no_symlink -no_chown exim" install
+	install -D -m644 doc/exim.8 "$pkgdir"/usr/share/man/man8/exim.8
+
+	cd "$pkgdir"/usr/sbin
+	mv exim-${pkgver%.*}* exim
+	chmod u+s exim
+	local i; for i in mailq rmail rsmtp runq sendmail newaliases; do
+		ln -s exim $i
+	done
+
+	install -Dm644 "$srcdir"/$pkgname.logrotate "$pkgdir"/etc/logrotate.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+
+	# Fix clamav local socket path, Add variant to spamd address
+	sed -i \
+		-e 's~# av_scanner = clamd:/tmp/clamd~# av_scanner = clamd:/run/clamav/clamd.sock~' \
+		-e '/# spamd_address = 127.0.0.1 783/a# spamd_address = 127.0.0.1 11333 variant=rspamd' \
+		"$pkgdir"/etc/$pkgname/$pkgname.conf
+
+	# Create subdirs for logs and extensions
+	install -dm750 -o $pkgname -g mail "$pkgdir"/var/log/$pkgname
+	mkdir -p "$pkgdir"/usr/lib/$pkgname
+}
+
+scripts() {
+	pkgdesc="EXIM scripts"
+	depends="$pkgname=$pkgver-r$pkgrel perl perl-file-fcntllock"
+
+	cd "$builddir"
+	make	DESTDIR="$subpkgdir" \
+		INSTALL_ARG="exicyclog exim_checkaccess eximstats exiqgrep exigrep exinext exiqsumm exipick exiwhat exim_msgdate exim_id_update" \
+		install
+	rm -fr "${subpkgdir:?}"/etc
+}
+
+utils() {
+	pkgdesc="EXIM utils"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	cd "$builddir"
+	make	DESTDIR="$subpkgdir" \
+		INSTALL_ARG="exim_dbmbuild exim_dumpdb exim_tidydb exim_fixdb exim_lock" \
+		install
+	install -m755 "$srcdir"/exim.gencert "$subpkgdir"/usr/sbin/exim_gencert
+	rm -fr "${subpkgdir:?}"/etc
+}
+
+_mv_ext() {
+	pkgdesc="EXIM extension: $1"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	install -Dm755 "$builddir"/build-Linux-*/lookups/$1.so \
+		-t "$subpkgdir"/usr/lib/$pkgname/
+	ln -sv $1.so "$subpkgdir"/usr/lib/$pkgname/${1}_lookup.so
+}
+
+sqlite() { _mv_ext sqlite; }
+mysql() { _mv_ext mysql; }
+postgresql() { _mv_ext pgsql; }
+cdb() { _mv_ext cdb; }
+dbmdb() { _mv_ext dbmdb; }
+dnsdb() { _mv_ext dnsdb; }
+
+sha512sums="
+30fa01a301f8f4fe0c069f3da9e5247f0e22b19f64119cb8cccaf10aada8280ce02061a4671d110ad29b08af9e23ba3c3e8c7483874c7b1c992d90b51681ca9a  exim-4.99.4.tar.xz
+92abbc1851f201773d21cd7e4ab7ad8346718e8d46e3064b4f8649e54f9ce7182ea7dabd792a95dcecec79501bc394689749c7b41266097ce24f190842092d4b  bounce-charset.patch
+bc45b43829fbface3b6a3d2ba47cae29898000e048204d6788e515e82bb7ade555fb7ffb5273edfc445f6fbf313f92721a4948bdcc525e7652689f860ee3b760  exim.Makefile
+bb6f5ead067af19ace661cc92bcd428da97570aedd1f9dc5b61a34e7e3fb3e028be6c96d51df73353bdfcaf69a3ee053fb03d245f868d63ebf518aa96ec82d66  exim.confd
+3769e74a54566362bcdf57c45fbf7d130d7a7529fbc40befce431eef0387df117c71a5b57779c507e30d5b125913b5f26c9d16b17995521a1d94997be6dc3e02  exim.initd
+28e748693a6a72d9943fa9c342ff041fe650fa6977f468dee127e845e6c2a91872ce33fb6f5698838906bde3ed92de7a91cdb0349cedc40b806261867e8c06cb  exim.logrotate
+abdaf749ed3947a75b997caa300bf9f27ef82760f1854aa4521a9ac0f322f1655b65a375bc7a709259daea88bf93cfab5289997fa8e376fac9a3477f09bab642  exim.gencert
+"

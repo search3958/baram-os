@@ -1,0 +1,32 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+maintainer="Christian Schaefer <cs@sc.or.at>"
+pkgname=py3-progress
+pkgver=1.6
+pkgrel=6
+pkgdesc="Easy to use progress bars for Python3"
+url="https://github.com/verigak/progress"
+arch="noarch"
+license="ISC"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/verigak/progress/archive/$pkgver.tar.gz"
+builddir="$srcdir/progress-$pkgver"
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 test_progress.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+e6afd7ecda8cfbda578b53a8f9ced9a017bfa42d3ffe0fbefbcbb3715024983543c919e5d8276b5cd79bebe9e7d9c2b7234e6d8cd20b3142058c28ee4418ff3a  py3-progress-1.6.tar.gz
+"

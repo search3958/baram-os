@@ -1,0 +1,60 @@
+# Contributor: Jonas <spameier+alpine@proton.me>
+# Maintainer: Jonas <spameier+alpine@proton.me>
+pkgname=py3-aesedb
+_pyname=aesedb
+pkgver=0.1.8
+pkgrel=1
+pkgdesc="NTDS parser toolkit"
+url="https://github.com/skelsec/aesedb"
+arch="noarch"
+license="Apache-1.1"
+depends="
+	py3-aiowinreg
+	py3-colorama
+	py3-tqdm
+	py3-unicrypto
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-wheel
+	py3-setuptools
+	"
+checkdepends="
+	py3-pytest
+	py3-pytest-asyncio
+	"
+subpackages="
+	$pkgname-pyc
+	$pkgname-examples
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/skelsec/aesedb/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	rm -rf "$pkgdir"/usr/lib/python3.*/site-packages/tests/ # remove tests
+}
+
+examples() {
+	pkgdesc="$pkgdesc (example scripts)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	amove usr/lib/python*/site-packages/aesedb/examples
+	amove usr/bin
+}
+
+sha512sums="
+e344c0e017da6b253ec4633f8b63868cd6db9e917e062f8d77f15c969ad348172121649214c4ffbe8eadc0187dbbd6648eaf1745e75c8c677ba5f88bcafe1f36  py3-aesedb-0.1.8.tar.gz
+"

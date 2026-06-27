@@ -1,0 +1,30 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=py3-httptools
+pkgver=0.6.4
+pkgrel=3
+pkgdesc="Fast HTTP parser"
+url="https://github.com/MagicStack/httptools"
+license="MIT"
+arch="all"
+makedepends="py3-setuptools python3-dev cython http-parser-dev llhttp-dev"
+checkdepends="py3-pytest py3-aiohttp py3-openssl py3-psutil"
+subpackages="$pkgname-pyc"
+source="https://github.com/MagicStack/httptools/archive/v$pkgver/py3-httptools-$pkgver.tar.gz"
+builddir="$srcdir/httptools-$pkgver"
+
+build() {
+	python3 setup.py build build_ext --inplace \
+		--use-system-http-parser --use-system-llhttp
+}
+
+check() {
+	PYTHONPATH="$(echo "$PWD"/build/lib.linux-*)" pytest
+}
+
+package() {
+	python3 setup.py install --root="$pkgdir" --skip-build
+}
+
+sha512sums="
+3a2518204b22ce00c1fa3f2387138f768511ff03a2a2ddf0b9c44a4d5de65c93bfd8d3ac9f4e9417805c7c9708a8cb39ec4889e08933fdc029607bcae5b54331  py3-httptools-0.6.4.tar.gz
+"

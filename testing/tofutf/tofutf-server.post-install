@@ -1,0 +1,10 @@
+#!/bin/sh
+
+secretfile=/var/lib/tofutf/secret
+
+if ! [ -f $secretfile ]; then
+	touch $secretfile &&
+	chown tofutf:tofutf $secretfile &&
+	chmod 600 $secretfile &&
+	xxd -u -l 16 -p /dev/urandom > $secretfile
+fi

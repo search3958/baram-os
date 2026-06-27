@@ -1,0 +1,49 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+maintainer="Clayton Craft <clayton@craftyguy.net>"
+pkgname=indi-3rdparty
+# keep in sync with libindi!
+pkgver=2.1.5.1
+pkgrel=2
+pkgdesc="INDI 3rd Party drivers "
+url="https://github.com/indilib/indi-3rdparty"
+arch="all"
+license="LGPL-2.1-only"
+makedepends="
+	cfitsio-dev
+	cmake
+	gsl-dev
+	libgphoto2-dev
+	libindi-dev~$pkgver
+	libraw-dev
+	libusb-dev
+	samurai
+	"
+subpackages="$pkgname-gphoto:_gphoto"
+source="https://github.com/indilib/indi-3rdparty/archive/v$pkgver/indi-3rdparty-$pkgver.tar.gz"
+options="!check"
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_build_3rdparty() {
+	pkgdesc="$1 3rd party INDI driver"
+	cd "$srcdir/indi-3rdparty-$pkgver/indi-$1"
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DUDEVRULES_INSTALL_DIR=/usr/lib/udev/rules.d \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+
+	DESTDIR="$subpkgdir" cmake --install build
+	cd -
+}
+
+_gphoto() {
+	_build_3rdparty gphoto
+}
+
+sha512sums="
+beae15e4a000918a60ef8991af4c4ead5284d01c7a1cee5b0694aa9e0ced69d8fdf6f840c68025f62fc7da2f3d588b5d610168ca8fe0adc95d131aaeb1ed4753  indi-3rdparty-2.1.5.1.tar.gz
+"

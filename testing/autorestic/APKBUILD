@@ -1,0 +1,31 @@
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Maintainer: Nicolas Lorin <androw95220@gmail.com>
+pkgname=autorestic
+pkgver=1.8.3
+pkgrel=15
+pkgdesc="Config driven, easy backup cli for restic."
+url="https://github.com/cupcakearmy/autorestic"
+arch="all"
+license="Apache-2.0"
+# !check: no tests available
+# net: required to fetch go dependencies
+options="!check net"
+depends="restic"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cupcakearmy/autorestic/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build
+}
+
+package() {
+	install -Dm755 autorestic "$pkgdir"/usr/bin/autorestic
+}
+
+sha512sums="
+c2686952ecd522dbd4d42001f66be611e92f75096b7c29312e5ec7965231ac6305891c1a6cd2d5a5e5ca2e549dc3e83262395f7e1d75fd8a7d3ca0b91f1c862d  autorestic-1.8.3.tar.gz
+"

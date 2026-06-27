@@ -1,0 +1,46 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=android-file-transfer
+pkgver=4.5
+pkgrel=0
+pkgdesc="Android MTP client with minimalistic UI"
+url="https://whoozle.github.io/android-file-transfer-linux/"
+license="LGPL-2.1-only"
+arch="all"
+makedepends="
+	cmake
+	file-dev
+	fuse3-dev
+	linux-headers
+	openssl-dev
+	qt6-qtbase-dev
+	qt6-qttools-dev
+	readline-dev
+	samurai
+	taglib-dev
+	zlib-dev
+	"
+subpackages="$pkgname-cli $pkgname-libs $pkgname-dev"
+source="https://github.com/whoozle/android-file-transfer-linux/archive/v$pkgver/android-file-transfer-$pkgver.tar.gz"
+builddir="$srcdir/android-file-transfer-linux-$pkgver"
+options="!check" # no test suite
+
+cli() {
+	amove usr/bin/aft-mtp-*
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIB=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+7aff608f83055a92fb35ccec768e531c60984d3fc8293c04443bb52a2eeef208c50f6baeccabd951ebc630711b07f043f6ed118bf4e308836c5c796281d68ffd  android-file-transfer-4.5.tar.gz
+"

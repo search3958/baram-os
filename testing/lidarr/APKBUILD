@@ -1,0 +1,112 @@
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+maintainer="Fabricio Silva <hi@fabricio.dev>"
+pkgname=lidarr
+pkgver=3.1.0.4875
+pkgrel=0
+pkgdesc="Music download automation for usenet and torrents."
+url="https://github.com/Lidarr/Lidarr"
+arch="x86_64 aarch64 armv7" # limited by dotnet
+license="GPL-3.0-only"
+options="net !check" # net for nuget and yarn / tests broken
+depends="aspnetcore8-runtime sqlite-libs chromaprint"
+makedepends="dotnet8-sdk yarn"
+subpackages="$pkgname-openrc"
+install="$pkgname.pre-install"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/Lidarr/Lidarr/archive/refs/tags/v$pkgver.tar.gz
+	0001-disable-restart.patch
+	lidarr.initd
+	lidarr.confd
+	package_info
+	"
+builddir="$srcdir/Lidarr-$pkgver"
+pkgusers="lidarr"
+pkggroups="lidarr"
+
+# secfixes:
+#   2.3.3.4204-r0:
+#     - CVE-2024-32655
+
+# custom variables
+_framework="net8.0"
+_output="_output"
+_artifacts="$_output/$_framework/publish"
+
+prepare() {
+	default_prepare
+
+	export BROWSERSLIST_IGNORE_OLD_DATA=true
+	yarn install --frozen-lockfile --network-timeout 120000
+
+	# remove upstream dotnet version
+	rm global.json
+}
+
+build() {
+	# increase max opened files
+	ulimit -n 4096
+
+	dotnet publish src \
+		-p:AssemblyConfiguration="master" \
+		-p:AssemblyVersion="$pkgver" \
+		--framework "$_framework" \
+		--no-self-contained \
+		--use-current-runtime \
+		--configuration Release
+	yarn build --env production --no-stats
+
+	# use fpcalc from chromaprint package
+	rm -f "$_artifacts"/fpcalc
+
+	# cleanup
+	find "$_artifacts" \( \
+		-name "ServiceUninstall.*" -o \
+		-name "ServiceInstall.*" -o \
+		-name "Lidarr.Windows.*" \) -delete
+
+	mv "$_output"/UI "$_artifacts"
+}
+
+check() {
+	local _filters="Category!=ManualTest&Category!=AutomationTest&Category!=WINDOWS"
+
+	# skipping:
+	# 	IntegrationTest: broken
+	# 	DiskTransferServiceFixture: CI fails due disk permission
+	_filters="$_filters&Category!=IntegrationTest&FullyQualifiedName!~DiskTransferServiceFixture"
+	# 	SpotifyMappingFixture: broken
+	_filters="$_filters&FullyQualifiedName!~SpotifyMappingFixture"
+	# 	UpdateTests: update is disabled
+	_filters="$_filters&FullyQualifiedName!~UpdateTests"
+
+	# link build to tests
+	ln -sf ../../$_artifacts _tests/$_framework/bin
+	mkdir -p ~/.config/Lidarr
+
+	dotnet test src \
+		--configuration Release \
+		--filter "$_filters" \
+		--no-build
+}
+
+package() {
+	local destdir="$pkgdir"/usr/lib/lidarr
+
+	# use package_info to disable update feature
+	install -Dm644 "$srcdir"/package_info "$destdir"/package_info
+	echo "PackageVersion=$pkgver-r$pkgrel" >>"$destdir"/package_info
+
+	cp -af "$_artifacts" "$destdir"/bin
+	chown -R "$pkgusers:$pkggroups" "$destdir"
+
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+55b0b16aa73e75379df17d89eb4c4346f0ce8dc0f2814b601eec7f394d1672e10a515712a1956a46f258881c4aa703909b566bc16d651146d2e706074eb2c2c4  lidarr-3.1.0.4875.tar.gz
+753520379a6c5f2899b4ddfd820d5573598a32cb105f74c6fd978a3f2c98895cf709ef2d9afe2bae8c4856da86cb6a1364f5713ea7ef6a36bb21b5a5840c1471  0001-disable-restart.patch
+194dce13e5220d71ffe262d40dbd1b124166f158500a420a8032279baa8f046c1772857cb7f4ab9428384481b962ff4939de0e2cdc6197f91cd35d1c0871a8e4  lidarr.initd
+babbb145648ad296b53271db5c642edddb9d0a5173479c4e383c48aab1d6b616c176e1ef73ae78078f41b4e6ca0e5768a96b36d844a3669f59179226ba8e97ad  lidarr.confd
+67c4dd1cf8259296d994c350dfd3962d23333071889ce0b4ef6b2f4cbb4349490c5dbe4dcc202c99bab7a5c4b7611be56d7c8835b2b13924526c45311db1c3fb  package_info
+"

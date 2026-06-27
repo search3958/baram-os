@@ -1,0 +1,29 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=jpeg
+pkgver=9f
+pkgrel=0
+pkgdesc="Wrapper for libjpeg-turbo"
+url="https://www.ijg.org/"
+arch="noarch"
+options="!check"  # Simple wrapper/container package; no tests needed.
+license="Public Domain"
+depends="libjpeg-turbo-utils"
+subpackages="$pkgname-dev libjpeg"
+builddir="$srcdir"
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+libjpeg() {
+	pkgdesc="Wrapper for libjpeg-turbo"
+	depends="libjpeg-turbo"
+	mkdir -p "$subpkgdir"
+}
+
+dev() {
+	pkgdesc="Wrapper for libjpeg-turbo-dev"
+	depends="libjpeg-turbo-dev"
+	mkdir -p "$subpkgdir"
+}

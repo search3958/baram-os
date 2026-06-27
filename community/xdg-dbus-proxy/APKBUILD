@@ -1,0 +1,34 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=xdg-dbus-proxy
+pkgver=0.1.7
+pkgrel=0
+pkgdesc="Filtering proxy for D-Bus connections"
+url="https://github.com/flatpak/xdg-dbus-proxy/"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="dbus"
+makedepends="
+	docbook-xsl
+	glib-dev
+	libxslt
+	meson
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/flatpak/xdg-dbus-proxy/releases/download/$pkgver/xdg-dbus-proxy-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install -C output
+}
+
+sha512sums="
+be5e6b375e8dfaf1295b182cbce2a2dc12ebccb7fa52336c599241cc7114782241ebb3fa4613d0cbc9b1750719c5cb69ca699558f3732b33d8f0815180cd9b0f  xdg-dbus-proxy-0.1.7.tar.xz
+"

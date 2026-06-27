@@ -1,0 +1,37 @@
+# Contributor: Maxim Karasev <mxkrsv@disroot.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=oxipng
+pkgver=9.1.5
+pkgrel=0
+pkgdesc="Multithreaded PNG optimizer written in Rust"
+url="https://github.com/shssoichiro/oxipng"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+source="https://github.com/shssoichiro/oxipng/archive/v$pkgver/oxipng-$pkgver.tar.gz"
+options="net" # required for cargo fetch
+
+prepare() {
+	default_prepare
+
+	# forces qemu-aarch64 on aarch64 (why??)
+	rm .cargo/config.toml
+
+	cargo fetch --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/oxipng -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+344fbbb09e33e8beade7069387a192a0ba20112f042c7629e260a8529324b2689fcb979be927184ea4b4789668c96ea95e9cd0892a3ef666fa341f9da3fc5b3d  oxipng-9.1.5.tar.gz
+"

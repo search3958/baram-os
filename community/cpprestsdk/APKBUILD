@@ -1,0 +1,45 @@
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=cpprestsdk
+pkgver=2.10.19
+pkgrel=1
+pkgdesc="C++ Microsoft REST SDK"
+url="https://github.com/microsoft/cpprestsdk"
+# s390x: broken on big endian
+arch="all !s390x"
+license="MIT"
+makedepends="
+	boost-dev
+	cmake
+	openssl-dev
+	samurai
+	websocket++
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/microsoft/cpprestsdk/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DWERROR=OFF \
+		-DBUILD_TESTS="$(want_check && echo ON || echo OFF)"
+
+	cmake --build build
+}
+
+check() {
+	# httpclient_test needs networking (?)
+	# streams_test hangs on some arches in ci, and 3.24 loongarch64 builder
+	# websocketsclient_test requires fast enough machine or timesout
+	ctest --test-dir build -E "(httpclient_test|streams_test|websocketsclient_test)"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+	install -Dm644 license.txt "$pkgdir"/usr/share/licenses/$pkgname/license.txt
+	install -Dm644 ThirdPartyNotices.txt "$pkgdir"/usr/share/licenses/$pkgname/ThirdPartyNotices.txt
+}
+
+sha512sums="
+2d8fa213f492236e2fd912349bf81951c1e618dd8eab4f665f909d75b5aeeda18b8f70dce3a4db50d67bdb3e372888132481701163de6c27716dfd750bff9781  cpprestsdk-2.10.19.tar.gz
+"

@@ -1,5 +1,0 @@
-#TODO rustyline crate error (after cargo update)
-[source]
-git = "https://github.com/kdheepak/taskwarrior-tui"
-[build]
-template = "cargo"

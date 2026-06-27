@@ -1,0 +1,50 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=clevis
+pkgver=21
+pkgrel=0
+pkgdesc="Pluggable framework for automated decryption"
+url="https://github.com/latchset/clevis"
+license="GPL-3.0-or-later WITH OpenSSL-Exception"
+arch="all"
+depends="bash cryptsetup jose libpwquality"
+makedepends="
+	asciidoc
+	bash-completion-dev
+	cmd:pcscd
+	cmd:pkcs11-tool
+	curl
+	meson
+	tpm2-tools
+	cryptsetup-dev
+	jansson-dev
+	jose-dev
+	audit-dev
+	udisks2-dev
+	luksmeta-dev
+	"
+checkdepends="jq keyutils tang"
+subpackages="
+	$pkgname-dbg
+	$pkgname-doc
+	$pkgname-bash-completion
+	"
+source="https://github.com/latchset/clevis/archive/v$pkgver/clevis-$pkgver.tar.gz"
+options="!check" # tests fail on buildozer, but pass on GitLab CI
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+f069969a45195679cc5e521ed0b4ec2199d774aab59ec1d60533a3e9af70468aa2c75dfc695e9d48a255828971a3cf199388c92ffa999faadfc16d7c80eb9fde  clevis-21.tar.gz
+"

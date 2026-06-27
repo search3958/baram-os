@@ -1,0 +1,31 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libudfread
+pkgver=1.2.0
+pkgrel=1
+pkgdesc="UDF reader library"
+url="https://code.videolan.org/videolan/libudfread"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="meson"
+subpackages="$pkgname-dev"
+source="https://code.videolan.org/videolan/libudfread/-/archive/$pkgver/libudfread-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Ddefault_library=shared \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+63cdd8ce9b7525d17f8f685b87d1232334ebfe9ffcd48b3bb189231f4d3c88c11a19d3435be9252058d374b1cbd86eb38a045c969699730cb9729a541582f645  libudfread-1.2.0.tar.gz
+"

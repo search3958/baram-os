@@ -1,0 +1,48 @@
+# Contributor: Coco Liliace <coco@liliace.dev>
+# Maintainer: Robert Mongold <rtmongold@gmail.com>
+_pyname=irc
+pkgname=py3-$_pyname
+pkgver=20.5.0
+pkgrel=0
+pkgdesc="Full-featured Python IRC library"
+url="https://github.com/jaraco/irc"
+arch="noarch"
+license="MIT"
+depends="
+	py3-jaraco.collections
+	py3-jaraco.text
+	py3-jaraco.logging
+	py3-jaraco.functools
+	py3-jaraco.stream
+	py3-more-itertools
+	py3-tempora
+	"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/i/irc/irc-$pkgver.tar.gz
+	python-3.14-asyncio.patch
+	"
+builddir="$srcdir/$_pyname-$pkgver"
+
+_distname=".dist"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel --output-fd 3 --wheel-dir "$_distname" 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$_distname"/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" "$_distname"/*.whl
+}
+
+sha512sums="
+599cc837d8f624699004eb01181af6437e5a3d15e647f6d3ac8b014bfed467196ac3850f4d3ed33095f7a64177b0b22959f46e3b80aaa9c93570d141ace9a9d0  py3-irc-20.5.0.tar.gz
+5d65da2f8c0bf8816188ae5218238ddc53c6cebf58cad49894ce691785d1fcd56954739a46900bd9219345e69973b058bbb185a47e0e7f237a4e4c1659e247ab  python-3.14-asyncio.patch
+"

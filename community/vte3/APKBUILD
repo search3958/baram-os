@@ -1,0 +1,88 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <achill@achill.org>"
+pkgname=vte3
+pkgver=0.84.0
+pkgrel=2
+pkgdesc="Virtual Terminal Emulator library"
+url="https://gitlab.gnome.org/GNOME/vte"
+arch="all"
+license="LGPL-2.0-or-later"
+subpackages="
+	$pkgname-app
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-gtk4
+	$pkgname-lang
+	$pkgname-profile::noarch
+	"
+depends="adwaita-fonts $pkgname-profile"
+makedepends="
+	bash
+	fast_float
+	fmt-dev
+	gnutls-dev
+	gobject-introspection-dev
+	gperf
+	gtk+3.0-dev
+	gtk-doc
+	gtk4.0-dev
+	icu-dev
+	libxml2-utils
+	linux-headers
+	lz4-dev
+	meson
+	ncurses-dev
+	pango-dev
+	pcre2-dev
+	simdutf-dev
+	vala
+	"
+source="https://gitlab.gnome.org/GNOME/vte/-/archive/$pkgver/vte-$pkgver.tar.gz
+	fix-W_EXITCODE.patch
+	"
+
+builddir="$srcdir/vte-$pkgver"
+
+build() {
+	abuild-meson \
+		-Dgtk4=true \
+		-Ddocs=false \
+		-D_systemd=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+gtk4() {
+	pkgdesc="$pkgdesc (gtk4 component)"
+	depends="adwaita-fonts $pkgname-profile"
+
+	amove usr/lib/libvte-*-gtk4.so.*
+	amove usr/lib/girepository-1.0/Vte-3.*.typelib
+}
+
+profile() {
+	pkgdesc="$pkgdesc (profile files)"
+
+	amove etc/profile.d
+}
+
+app() {
+	pkgdesc="$pkgdesc (apps)"
+
+	amove usr/bin
+	amove usr/share/xdg-terminals
+	amove usr/share/applications
+}
+
+sha512sums="
+1bf75e54ecdb4b9aa601cda1a13779c3df6aebdff320d8d2236f29b4138661d26316b2e8066a80139cef369bbb5f36f7f74aa0842b17d6d9a7d1e0fda317c765  vte-0.84.0.tar.gz
+b6c1856bf075c2e3e91a0d4aff700c59e738bd6abe4122a11d680f104a2dab9d99f7d836a3ef3020b25ceff0a37231a6561eb917f0e4b9f90837eb634d8f7f20  fix-W_EXITCODE.patch
+"

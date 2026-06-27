@@ -1,0 +1,59 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=android-build-tools
+pkgver=16.0
+pkgrel=0
+_commit="c1266c5c3bc85ef9aa3aca61d0e67d547fe99252"
+pkgdesc="Android build tools"
+url="https://developer.android.com/tools/releases/build-tools"
+# s390x, ppc64le: Unsupported by vendored BoringSSL
+arch="all !s390x !ppc64le !loongarch64"
+license="Apache-2.0"
+depends="python3"
+makedepends="
+	bison
+	bsd-compat-headers
+	cmake
+	fmt-dev
+	gtest-dev
+	expat-dev
+	flex
+	libpng-dev
+	protobuf-dev
+	samurai
+	"
+source="https://dev.alpinelinux.org/archive/android-build-tools/android-build-tools-$_commit.tar.gz"
+options="!check" # upstream doesn't have a test suite
+builddir="$srcdir/$pkgname"
+
+_disturl="dev.alpinelinux.org:/archive/$pkgname/"
+
+snapshot() {
+	clean
+	deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	git clone https://github.com/termux/android-build-tools.git \
+		--depth 1 \
+		--recurse-submodules \
+		--shallow-submodules
+	cd android-build-tools && git checkout $_commit && cd -
+	tar czvf $SRCDEST/$pkgname-$_commit.tar.gz android-build-tools
+	rsync --progress -La $SRCDEST/$pkgname-$_commit.tar.gz $_disturl
+}
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DANDROID_BUILD_TOOLS_MUSL_LIBC=ON \
+		-DANDROID_BUILD_TOOLS_DEV_MODE=ON
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+1d6e54fc47a3cba628a78588f5866882553c0f952616c40ae049cd0a9669762bc3ba4213656ab5951b9e6a55ab839fcd731069ffebac9aa672f64cf9687e61cc  android-build-tools-c1266c5c3bc85ef9aa3aca61d0e67d547fe99252.tar.gz
+"

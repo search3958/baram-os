@@ -1,0 +1,154 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="Krassy Boykinov <kboykinov@teamcentrixx.com>"
+pkgname=mozjs
+pkgver=140.11.0
+pkgrel=0
+pkgdesc="Standalone Mozilla JavaScript engine (ESR)"
+url="https://spidermonkey.dev/"
+# armhf: unsupported assembly
+arch="all !armhf"
+license="MPL-2.0"
+depends_dev="
+	$pkgname
+	icu-dev
+	libffi-dev
+	nspr-dev
+	"
+_llvmver=22
+makedepends="
+	$depends_dev
+	cargo
+	cbindgen
+	clang$_llvmver
+	linux-headers
+	llvm$_llvmver-dev
+	m4
+	perl
+	python3
+	rust
+	sed
+	zlib-dev
+	"
+checkdepends="icu-data-full"
+subpackages="$pkgname-dev"
+
+source="https://ftp.mozilla.org/pub/firefox/releases/${pkgver}esr/source/firefox-${pkgver}esr.source.tar.xz
+	fix-rust-target.patch
+	XP_UNIX.patch
+	rust1.90-ppc.patch
+	python-3.14-fixes.patch
+	"
+builddir="$srcdir"/firefox-$pkgver
+
+# broken on riscv64
+case "$CARCH" in
+riscv64|s390x)
+	_linker="bfd"
+	;;
+*)
+	makedepends="$makedepends lld"
+	_linker="lld"
+	;;
+esac
+
+# we need this because cargo verifies checksums of all files in vendor
+# crates when it builds and gives us no way to override or update the
+# file sanely... so just clear out the file list
+_clear_vendor_checksums() {
+	sed -i 's/\("files":{\)[^}]*/\1/' third_party/rust/$1/.cargo-checksum.json
+}
+
+prepare() {
+	default_prepare
+	_clear_vendor_checksums libc
+	_clear_vendor_checksums cc
+	mkdir "$srcdir/mozbuild"
+
+	cat > .mozconfig <<- END
+	ac_add_options --enable-application=js
+	mk_add_options MOZ_OBJDIR='${PWD}'/obj
+	ac_add_options --prefix=/usr
+	ac_add_options --enable-release
+	ac_add_options --enable-hardening
+	ac_add_options --enable-optimize="$CFLAGS -O2"
+	ac_add_options --enable-linker=$_linker
+	ac_add_options --disable-bootstrap
+	ac_add_options --disable-debug
+	ac_add_options --disable-debug-symbols
+	ac_add_options --disable-jemalloc
+	ac_add_options --disable-strip
+
+	# System libraries
+	ac_add_options --with-system-icu
+	ac_add_options --with-system-nspr
+	ac_add_options --with-system-zlib
+
+	# Features
+	ac_add_options --enable-shared-js
+	ac_add_options --enable-tests
+	ac_add_options --with-intl-api
+	mk_add_options RUSTFLAGS="$RUSTFLAGS"
+	END
+}
+
+# secfixes:
+#   128.3.1-r0:
+#     - CVE-2024-9680
+#   115.15.0-r0:
+#     - CVE-2024-8384
+#   115.14.0-r0:
+#     - CVE-2024-7527
+#   115.9.1-r0:
+#     - CVE-2024-29944
+#   115.8.0-r0:
+#     - CVE-2024-1553
+#   115.6.0-r0:
+#     - CVE-2023-6864
+#   115.4.0-r0:
+#     - CVE-2023-5728
+
+build() {
+	# fixed next major cycle
+	unset RUSTFLAGS
+	export LDFLAGS="$LDFLAGS -Wl,-z,stack-size=1048576"
+
+	unset CARGO_PROFILE_RELEASE_OPT_LEVEL
+	unset CARGO_PROFILE_RELEASE_LTO
+	export CC=clang
+	export CXX=clang++
+	export CFLAGS="$CFLAGS -O2"
+	export CXXFLAGS="$CXXFLAGS -O2"
+	export MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE=system
+	export MOZBUILD_STATE_PATH="$srcdir/mozbuild"
+	export MOZ_NOSPAM=1
+	export PYTHON=/usr/bin/python3
+	export RUST_TARGET="$CTARGET"
+	export SHELL=/bin/ash
+	export RUSTFLAGS="$RUSTFLAGS -C debuginfo=1"
+	export PATH="/usr/lib/llvm$_llvmver/bin:$PATH"
+
+	if [ "$CARCH" = "loongarch64" ]; then
+		# R_LARCH_ALIGN is not supported
+		export CFLAGS="$CFLAGS -mno-relax"
+	fi
+
+	./mach build
+}
+
+check() {
+	obj/dist/bin/jsapi-tests basic
+}
+
+package() {
+	cd obj
+	make DESTDIR="$pkgdir" install
+	rm -f "$pkgdir"/usr/lib/*.ajs
+}
+
+sha512sums="
+d06adb3ef4de1324e3d61872d70de31ab08ac013f33903549bed28c6ebcc5b4dee94bb36388282c1935d77d1a564079f3adbf08d6bb80284a899cbb3d861300c  firefox-140.11.0esr.source.tar.xz
+cd68b89e29e5f6379fbd5679db27b9a5ef70ea65e51c0d0a8137e1f1fd210e35a8cfb047798e9549bc7275606d7ec5c8d8af1335d29da4699db7acd8bc7ff556  fix-rust-target.patch
+ac8b0058b1472f16b04d75b380472db1f853549525bb6bf1cdb118d385cc13ac7bf794353ea095520f118aa0a5184adfddeef930b4683d0aa21bf3a53c40150e  XP_UNIX.patch
+2e2cc51767349576122cc3ca068616e805a7e4b91739f03af3188778b080cfa5b06b1228bc59722d2c2ba70abb8538ea491cd88f9d49b426d8d086184309a1d6  rust1.90-ppc.patch
+f05bc6c898da50093f7e4b9924108e81065f1e23d1920c93caccf24ee10e43c5fa9339e6e61e5247cba237444f81e4c1227f33d4214d4c4bec674f5117001201  python-3.14-fixes.patch
+"

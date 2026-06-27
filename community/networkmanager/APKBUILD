@@ -1,0 +1,272 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+maintainer="team/alpine-desktop <achill@achill.org>"
+pkgname=networkmanager
+pkgver=1.52.2
+pkgrel=0
+# WARN: Upgrade to 1.54+ is postponed because of <https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/issues/1798>
+# NOTE: Upgrade only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="Network Management daemon"
+url="https://networkmanager.dev"
+arch="all"
+license="GPL-2.0-or-later"
+depends="
+	libnm=$pkgver-r$pkgrel
+	dbus
+	"
+depends_dev="$pkgname=$pkgver-r$pkgrel libnm=$pkgver-r$pkgrel"
+makedepends="
+	bash
+	curl-dev
+	dbus-dev
+	elogind-dev
+	eudev-dev
+	gettext-dev
+	gnutls-dev
+	gobject-introspection-dev
+	gtk-doc
+	jansson-dev
+	libgudev-dev
+	libndp-dev
+	libnl3-dev
+	libnvme-dev
+	libpsl-dev
+	libxslt
+	linux-headers
+	meson
+	mobile-broadband-provider-info
+	modemmanager-dev
+	newt-dev
+	nss-dev
+	openresolv
+	perl
+	polkit-dev
+	ppp-dev
+	py3-gobject3
+	python3
+	readline-dev
+	util-linux-dev
+	vala
+	wireless-regdb
+	"
+checkdepends="
+	bash
+	dbus
+	iproute2-minimal
+	iproute2-tc
+	py3-dbus
+	"
+install="
+	$pkgname.pre-install
+	$pkgname.pre-upgrade
+	$pkgname.post-install
+	$pkgname.post-upgrade
+	$pkgname-wifi.post-install
+	"
+subpackages="
+	$pkgname-dbg
+	libnm
+	$pkgname-dev
+	$pkgname-gtkdoc
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-openrc
+	$pkgname-adsl
+	$pkgname-bluetooth
+	$pkgname-ovs
+	$pkgname-ppp
+	$pkgname-wwan
+	$pkgname-wifi
+	$pkgname-cli
+	$pkgname-tui
+	$pkgname-initrd-generator:initrd_generator
+	$pkgname-bash-completion
+	$pkgname-dnsmasq
+	$pkgname-systemd
+	"
+_repo_url="https://gitlab.freedesktop.org/NetworkManager/NetworkManager.git"
+source="https://gitlab.freedesktop.org/NetworkManager/NetworkManager/-/archive/$pkgver/NetworkManager-$pkgver.tar.gz
+	wwan-no-libsystemd.patch
+	00-interfaces.conf
+	20-dhcp-internal.conf
+	$pkgname.initd
+	$pkgname.rules
+	$pkgname-dispatcher.initd"
+builddir="$srcdir/NetworkManager-$pkgver"
+
+# on the builders:
+# mount("/sys") failed with Operation not permitted (1)
+options="!check"
+
+_plugindir="usr/lib/NetworkManager/$pkgver"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dconfig_dhcp_default=internal \
+		-Dconfig_plugins_default=ifupdown \
+		-Dcrypto=nss \
+		-Ddbus_conf_dir=/usr/share/dbus-1/system.d \
+		-Ddhcpcd=true \
+		-Ddnsmasq=/usr/sbin/dnsmasq \
+		-Ddocs=true \
+		-Difupdown=true \
+		-Diptables=/sbin/iptables \
+		-Diwd=true \
+		-Dlibaudit=no \
+		-Dmodify_system=true \
+		-Dnft=/usr/sbin/nft \
+		-Dofono=true \
+		-Dpolkit=true \
+		-Dpppd=/usr/sbin/pppd \
+		-Dpppd_plugin_dir=/usr/lib/pppd/2.5.1 \
+		-Dqt=false \
+		-Dselinux=false \
+		-Dsystemd_journal=false \
+		-Dsystemdsystemunitdir=/usr/lib/systemd/system \
+		-Dtests=no \
+		-Dudev_dir=/usr/lib/udev \
+		-Dvapi=true \
+		-Dsession_tracking=elogind \
+		-Dtests="$(want_check && echo yes || echo no)" \
+		-Dsuspend_resume=elogind \
+		. output
+	meson compile -C output
+}
+
+check() {
+	XDG_RUNTIME_DIR="$(mktemp -d -p "$builddir")" \
+	dbus-run-session -- \
+	meson test -t 4 --print-errorlogs -C output
+}
+
+package() {
+	replaces="$pkgname-elogind $pkgname-common"
+
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -m755 -D "$srcdir"/networkmanager.initd "$pkgdir"/etc/init.d/networkmanager
+	install -m755 -D "$srcdir"/networkmanager-dispatcher.initd "$pkgdir"/etc/init.d/networkmanager-dispatcher
+
+	install -m644 -D "$srcdir/00-interfaces.conf" "$pkgdir"/usr/lib/NetworkManager/conf.d/00-interfaces.conf
+	install -m644 -D "$srcdir/20-dhcp-internal.conf" "$pkgdir"/usr/lib/NetworkManager/conf.d/20-dhcp-internal.conf
+
+	# allow plugdev users to modify connections
+	install -m644 -D "$srcdir/$pkgname.rules" \
+		"$pkgdir/usr/share/polkit-1/rules.d/01-org.freedesktop.NetworkManager.settings.modify.system.rules"
+
+	mv "$pkgdir/usr/share/doc/NetworkManager" "$pkgdir/usr/share/doc/$pkgname"
+
+	# post-install message
+	cat > "$pkgdir"/usr/share/doc/$pkgname/README.alpine <<-EOF
+		To modify system network connections without the root password: add your user account to the 'plugdev' group, or use Polkit.
+
+		To use iwd instead of the default wpa_supplicant install iwd, start its service and add the following to your /etc/NetworkManager/conf.d/00-iwd.conf:
+
+		[device]
+		wifi.backend=iwd
+	EOF
+}
+
+dev() {
+	default_dev
+
+	amove usr/share/dbus-1/interfaces/*.xml
+}
+
+libnm() {
+	pkgdesc="GObject-based client library for NetworkManager"
+	depends=""
+	replaces="$pkgname<1.34.0-r3 $pkgname-elogind<1.34.0-r3"
+
+	amove usr/lib/libnm.so*
+}
+
+adsl() {
+	_default_plugin
+	pkgdesc="ADSL device plugin for NetworkManager"
+	install_if="$pkgname=$pkgver-r$pkgrel ppp-pppoe"
+}
+
+bluetooth() {
+	_default_plugin
+	pkgdesc="BlueTooth device plugin for NetworkManager"
+	install_if="$pkgname=$pkgver-r$pkgrel bluez"
+}
+
+ovs() {
+	_default_plugin
+	pkgdesc="Open vSwitch device plugin for NetworkManager"
+	install_if="$pkgname=$pkgver-r$pkgrel openvswitch"
+}
+
+ppp() {
+	pkgdesc="PPP plugin for NetworkManager"
+	install_if="$pkgname=$pkgver-r$pkgrel ppp"
+
+	amove $_plugindir/libnm-ppp-plugin.so
+	amove usr/lib/pppd/*/nm-pppd-plugin.so
+}
+
+wifi() {
+	_default_plugin
+	depends="nm-wifi-backend"
+	pkgdesc="WiFi device plugin for NetworkManager"
+	install_if="$pkgname=$pkgver-r$pkgrel wireless-regdb"
+}
+
+wwan() {
+	_default_plugin
+	pkgdesc="Mobile broadband device plugin for NetworkManager"
+	install_if="$pkgname=$pkgver-r$pkgrel mobile-broadband-provider-info"
+}
+
+cli() {
+	pkgdesc="$pkgdesc (command line interface)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/bin/nmcli
+}
+
+tui() {
+	pkgdesc="$pkgdesc (textbased user interface)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/bin/nmtui*
+}
+
+initrd_generator() {
+	pkgdesc="Early boot NetworkManager configuration generator"
+	depends=""  # Q: should it depend on $pkgname?
+	replaces="$pkgname<1.34.0-r3"
+
+	amove usr/libexec/nm-initrd-generator
+}
+
+gtkdoc() {
+	pkgdesc="$pkgdesc (gtk docs)"
+
+	amove usr/share/gtk-doc
+}
+
+dnsmasq() {
+	pkgdesc="Support for NetworkManager dnsmasq features"
+	install_if="$pkgname=$pkgver-r$pkgrel dnsmasq"
+	depends="dnsmasq-dnssec-dbus"
+
+	mkdir -p "$subpkgdir"
+}
+
+_default_plugin() {
+	amove $_plugindir/libnm*-${subpkgname#"$pkgname"-}.so
+}
+
+sha512sums="
+5683a4a4aaf2410dde2c93c38bbea45cdf1f82a4fe49c3582e9a4b2d62718b38fa4934ca92ad95611d52bdf2034f105ca11841fea375f392954e402a4381eb77  NetworkManager-1.52.2.tar.gz
+7056d53372bc15f7a87dbc864dc8c3e0be5e283aeb94e957b2056d9f8298b6426965cbda04b3eaafde633411bcf1dbc862e6837d6fac42c3ed4bd5cc3cef908a  wwan-no-libsystemd.patch
+fababe9528ca230f48a55f3fdfc140c8e8ebff25811f551daeb8323f62f31f3272b81f4c7c06576dae16e2f9c51455339373f22e88fa7632649d0443e4b9e137  00-interfaces.conf
+0f79016bf717dea43830962f524deae8d1cedc274376e40bd912ebe63208c5b1c3b7a5aa14379da19020c587dbd5588df2f0066ca1540070a226983a43e4159b  20-dhcp-internal.conf
+5ac6d11b588c479de9c7e1fef79ed0a2c04dc159a2173636a6a77a2867c839cc1609860756109e9e794f23a02238a6d94834d8fb6fcb81a6be3ef1dbf4a34e6f  networkmanager.initd
+9820ed2ead0af689644842de57657bb10330a1eaff0e85b21ae9913f55e399e47d8b41b0a12956f30de80272b4424c6e55f33acbc88e156879003a260bf576f6  networkmanager.rules
+0b82a5d3d60797fc7106e9e896c3349b64d50cefa43fb54e0cafbf21d418448cf56daaf78f4fac1525e35b4e496e9acec90f0120be5a33995cdf464cb2098013  networkmanager-dispatcher.initd
+"

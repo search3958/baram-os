@@ -1,0 +1,55 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=sbctl
+pkgver=0.18
+pkgrel=6
+pkgdesc="Secure Boot key manager"
+url="https://github.com/Foxboron/sbctl/"
+arch="all"
+license="MIT"
+depends="binutils lsblk"
+makedepends="asciidoc go openssl-dev pcsc-lite-dev"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/Foxboron/sbctl/archive/refs/tags/$pkgver/sbctl-$pkgver.tar.gz"
+options="net" # go dependencies
+
+case "$CARCH" in
+loongarch64|ppc64le|s390x)
+	options="$options !check" # not supported by github.com/google/go-tpm-tools/simulator
+	;;
+esac
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make
+	./sbctl completion bash > sbctl.bash
+	./sbctl completion fish > sbctl.fish
+	./sbctl completion zsh > sbctl.zsh
+}
+
+check() {
+	make test
+}
+
+package() {
+	install -D -m755 sbctl -t "$pkgdir"/usr/bin
+	install -D -m644 sbctl.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/sbctl
+	install -D -m644 sbctl.fish \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/sbctl.fish
+	install -D -m644 sbctl.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_sbctl
+	install -D -m644 docs/sbctl.8 \
+		-t "$pkgdir"/usr/share/man/man8
+}
+
+sha512sums="
+2d225e967661fd0108dd225900d968986e6236466b91888449321b4827acb7e1d5089d70008c28d443d90484b926cb9d595c847165da7c3d555166a587301fd9  sbctl-0.18.tar.gz
+"

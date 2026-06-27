@@ -1,0 +1,37 @@
+# Maintainer: Simon Rupf <simon@rupf.net>
+pkgname=py3-flask-caching
+_pkgname=flask_caching
+pkgver=2.4.0
+pkgrel=1
+pkgdesc="Flask caching support"
+url="https://flask-caching.readthedocs.io/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 py3-cachelib py3-flask"
+makedepends="py3-gpep517 py3-flit-core"
+checkdepends="py3-asgiref py3-redis py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+options="!check" # depends on nonfree redis features
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+87b87591b55cfd805c6a4656d29667061bf86aaef575d6b412fc471b90ebb8caa47eda20902200e081df15f13fddb70316df12c58ed8db35abf9795bd7f8ec14  flask_caching-2.4.0.tar.gz
+"

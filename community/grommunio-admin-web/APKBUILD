@@ -1,0 +1,57 @@
+# Maintainer: Noel Kuntze <noel.kuntze@contauro.com>
+pkgname=grommunio-admin-web
+pkgver=4.1.0
+pkgrel=0
+pkgdesc="Frontend for grommunio management"
+# arm*: passes in ci, fails on the builders with "Zone Allocation failed -
+# process out of memory" or "JavaScript heap out of memory" errors
+# s390x: blocked by grommunio-gromox through grommunio-admin-api
+arch="noarch !armhf !armv7 !s390x"
+url="https://grommunio.com/"
+license="AGPL-3.0-only"
+options="!check net" # No test suite
+subpackages="$pkgname-doc"
+depends="grommunio-admin-api grommunio-admin-common"
+makedepends="yarn"
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/grommunio/admin-web/archive/refs/tags/$pkgver.tar.gz
+	config.json
+	eslint-deps.patch
+	enforce-yarn-lockfile.patch
+	"
+
+builddir="$srcdir/admin-web-$pkgver"
+
+build() {
+	echo $pkgver-$pkgrel > .version
+	export YARN_CACHE_FOLDER="$srcdir/yarn-cache" # do not litter in ~
+	case "$CARCH" in
+		# Fix yarn v1 spurious network timeouts on riscv64
+		# https://github.com/yarnpkg/yarn/issues/8242
+		riscv64) yarn config set network-timeout 300000;;
+	esac
+	make
+}
+
+package() {
+	# webapp
+	install -dm0755 "$pkgdir"/usr/share/webapps/$pkgname
+	cp -rp -- build/. "$pkgdir"/usr/share/webapps/$pkgname/
+
+	# license
+	install -Dm644 LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+	# nginx conf
+	sed -i "s@/usr/share/grommunio-admin-web@/usr/share/webapps/grommunio-admin-web@" conf/web.conf
+	install -Dpm644 conf/web.conf "$pkgdir/usr/share/grommunio-admin-common/nginx.d/web.conf"
+
+	# config.json
+	install -Dm644 "$srcdir/config.json" "$pkgdir/etc/grommunio-admin-common/config.json"
+}
+
+sha512sums="
+a20f79d0f205745c8774348668ebe1679a08283b57d2fb7f0bf21fd18b400069653fa5b051415c4769b64d13590fe844ed8c2f0ec7359ff5ed8c203e6e3ce00b  grommunio-admin-web-4.1.0.tar.gz
+41e6df23c37b786a214e3c41e1e53ee18a3bd2e6d6344245dc0879374685b0e986f5bc3daeb9068907856810457e3deca6840837d1938af55238335b2b6e99e3  config.json
+93595d31f291158d8afd58c957d73724f6caeb2049bd26bd2126202585aa8b8dec1bf8887dd79ac025c808eba7c97a210f7d114818058b16ad287305a42aab40  eslint-deps.patch
+585c742f680721a7760215abacaadb071e1d2207a2770210cbbb76fe0fe7e9810c16a3948400d7106707c23410742e6ef6378820a66526d607f8f8b00c153766  enforce-yarn-lockfile.patch
+"

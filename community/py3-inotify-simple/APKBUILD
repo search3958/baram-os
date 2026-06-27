@@ -1,0 +1,37 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-inotify-simple
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal="inotify_simple"
+pkgver=2.0.1
+pkgrel=1
+arch="noarch"
+pkgdesc="A simple wrapper around inotify."
+url="https://pypi.python.org/project/inotify_simple"
+license="BSD-2-Clause"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	"
+options="!check" # No testsuite
+source="$pkgname-$pkgver.tar.gz::https://pypi.io/packages/source/i/inotify_simple/inotify_simple-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgreal-$pkgver
+subpackages="$pkgname-pyc"
+replaces=py3-inotify_simple # Backwards compatibility
+provides=py3-inotify_simple=$pkgver-r$pkgrel # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e88d67b7e55d9febcfdadcc3532c9761985eeb983af6656bcd1202eaffd945e53f0c6eaf6b45f8ec159ddaedd59ff3d393d5a85d3c4b6b5704aa779de9ddb7a1  py3-inotify-simple-2.0.1.tar.gz
+"

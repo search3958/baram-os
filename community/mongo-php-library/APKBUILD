@@ -1,0 +1,28 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+
+_php=php85
+pkgname=mongo-php-library
+pkgver=2.3.0
+pkgrel=0
+pkgdesc="High-level abstraction around the lower-level drivers for PHP"
+url="https://github.com/mongodb/mongo-php-library"
+arch="noarch"
+license="Apache-2.0"
+depends="$_php-openssl $_php-pecl-mongodb"
+makedepends="composer $_php-dom $_php-simplexml $_php-tokenizer $_php-xml $_php-xmlwriter"
+subpackages="$pkgname-doc"
+options="!check" # require mongodb server
+source="$pkgname-$pkgver.tar.gz::https://github.com/mongodb/mongo-php-library/archive/$pkgver.tar.gz"
+replaces="mongo-php7-library" # for backward compatibility
+provides="mongo-php7-library=$pkgver-r$pkgrel" # for backward compatibility
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/doc/mongo-$_php-library/docs
+	mkdir -p "$pkgdir"/usr/lib/$_php/vendor/mongodb/mongodb
+	mv src/* "$pkgdir"/usr/lib/$_php/vendor/mongodb/mongodb
+	mv LICENSE "$pkgdir"/usr/share/doc/mongo-$_php-library
+}
+
+sha512sums="
+00bb7412e5728ab255e857ac4f0d943dee5e992624d8ceb4fdc8e4b3c46ee78bdb8acab6c233242ea2603acac2d4b8979134c5d3a323951ce5a3419b683d450f  mongo-php-library-2.3.0.tar.gz
+"

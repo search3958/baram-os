@@ -1,0 +1,55 @@
+# Contributor: Róbert Nagy <vrnagy@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libcec
+pkgver=7.1.1
+pkgrel=1
+pkgdesc="libcec for the Pulse-Eight USB-CEC adapter"
+url="https://github.com/Pulse-Eight/libcec"
+arch="all"
+license="GPL-2.0-or-later"
+depends_dev="
+	eudev-dev
+	libxrandr-dev
+	python3-dev
+	swig
+	"
+makedepends="$depends_dev
+	cmake
+	linux-headers
+	p8-platform-dev
+	samurai
+	"
+subpackages="$pkgname-dev py3-$pkgname:py3 $pkgname-tools"
+source="https://github.com/Pulse-Eight/libcec/archive/libcec-$pkgver.tar.gz
+	0001-Add-an-udev-rule-making-the-CEC-adapter-part-of-the-input-group.patch
+	"
+
+builddir="$srcdir/libcec-libcec-$pkgver"
+
+build() {
+	cmake -G Ninja -B build \
+		-DHAVE_LINUX_API=1 \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+py3() {
+	amove usr/lib/python*
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+
+	amove usr/bin
+}
+
+sha512sums="
+f4c12b68f275bde32a1f91e48e392c0d7fc0cf9f86fb4635a79869dc2398cbd63a1f8fdedc21d61f15afbe53ac8ece20cddeec4bac91de97de32fdcca61848e6  libcec-7.1.1.tar.gz
+7b361ac6d7dd825bd7667085682cbc503796caf3a54966ebe0981189cf39cd34f2fde283dab73e5e883aa21c7f4b3ad0d34c2d260ce03219b083e555f6c521af  0001-Add-an-udev-rule-making-the-CEC-adapter-part-of-the-input-group.patch
+"

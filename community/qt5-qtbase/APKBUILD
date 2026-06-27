@@ -1,0 +1,267 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qt5-qtbase
+pkgver=5.15.18_git20251101
+pkgrel=0
+_module="${pkgname#qt5-}"
+_pkgver=bebdfd54917e25d1c100e6bd9f5dd53c2e645fd8
+_fullname=$_module-$_pkgver
+pkgdesc="Qt5 - QtBase components"
+url="https://qt.io/developers/"
+arch="all"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+_sub="$pkgname-sqlite $pkgname-odbc $pkgname-postgresql
+	$pkgname-mysql $pkgname-tds $pkgname-x11"
+# icu-data-full: see https://gitlab.alpinelinux.org/alpine/aports/-/issues/13814
+depends="icu-data-full"
+depends_dev="$_sub
+	dbus-dev
+	fontconfig-dev
+	freetype-dev
+	glib-dev
+	libice-dev
+	libpng-dev
+	libsm-dev
+	libx11-dev
+	libxext-dev
+	mesa-dev
+	openssl-dev>3
+	perl
+	sqlite-dev
+	zlib-dev
+	"
+makedepends="$depends_dev
+	at-spi2-core-dev
+	bison
+	cups-dev
+	eudev-dev
+	flex
+	freetds-dev
+	gawk
+	gperf
+	gtk+3.0-dev
+	hicolor-icon-theme
+	icu-dev
+	libinput-dev
+	libjpeg-turbo-dev
+	libpq-dev
+	libxi-dev
+	libxkbcommon-dev
+	libxrandr-dev
+	libxrender-dev
+	libxslt-dev
+	libxv-dev
+	mariadb-connector-c-dev
+	mariadb-dev
+	mtdev-dev
+	pcre2-dev
+	unixodbc-dev
+	vulkan-headers
+	xcb-util-dev
+	xcb-util-image-dev
+	xcb-util-keysyms-dev
+	xcb-util-renderutil-dev
+	xcb-util-wm-dev
+	xdg-utils
+	"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc $_sub"
+source="https://dev.alpinelinux.org/archive/qt/$_fullname.tar.xz
+	egl-x11.patch
+	lfs64.patch
+	loongarch64.patch
+	qt-musl-iconv-no-bom.patch
+	qt5-base-cflags.patch
+	qt5-base-nostrip.patch
+	"
+builddir="$srcdir/$_fullname"
+
+_qt5_prefix=/usr/lib/qt5
+_qt5_datadir=/usr/share/qt5
+
+case "$CTARGET_ARCH" in
+	arm*|aarch64) _opengl="-opengl es2";;
+	*) _opengl="-opengl";;
+esac
+
+case "$CTARGET_ARCH" in
+# XXX: these are meant to be runtime detected but still try to use sse4.1 on cpus without them
+x86) _no_sse3=-no-sse3 ;;
+*) _no_sse3= ;;
+esac
+
+# secfixes:
+#   5.15.9_git20230505-r0:
+#     - CVE-2023-32762
+#     - CVE-2023-32763
+#   5.15.0-r2:
+#     - CVE-2020-17507
+
+_disturl="dev.alpinelinux.org:/archive/qt/"
+snapshot() {
+	clean
+	makedepends="git xz rsync tar" deps
+	mkdir -p "$srcdir" && cd "$srcdir"
+	git clone --filter=tree:0 https://invent.kde.org/qt/qt/$_module.git .
+	git archive --format tar --prefix=$_fullname/ $_pkgver > "$SRCDEST"/$_fullname.tar
+	xz -vv -T0 -9 -e "$SRCDEST"/$_fullname.tar
+	rsync --progress -La "$SRCDEST"/$_fullname.tar.xz $_disturl
+}
+
+prepare() {
+	default_prepare
+
+	sed -i -e "s|-O3|$CXXFLAGS|" \
+		-e "/^QMAKE_RPATH/s| -Wl,-rpath,||g" \
+		-e "/^QMAKE_LFLAGS\s/s|+=|+= $LDFLAGS|g" \
+		mkspecs/common/*.conf
+
+	# Make configure think we are running in a git directory
+	# This makes it symlink the include files to the right directory
+	mkdir .git
+}
+
+build() {
+	./configure -confirm-license -opensource \
+		-archdatadir "$_qt5_prefix" \
+		-bindir  "$_qt5_prefix"/bin \
+		-datadir "$_qt5_datadir" \
+		-dbus-linked \
+		-docdir /usr/share/doc/qt5 \
+		-examplesdir /usr/share/doc/qt5/examples \
+		-glib \
+		-headerdir /usr/include/qt5 \
+		-icu \
+		-importdir "$_qt5_prefix"/imports \
+		-libexecdir "$_qt5_prefix"/libexec \
+		-no-rpath \
+		-no-separate-debug-info \
+		-no-pch \
+		-nomake examples \
+		$_opengl \
+		-openssl-linked \
+		-optimized-qmake \
+		-plugin-sql-mysql \
+		-plugin-sql-odbc \
+		-plugin-sql-psql \
+		-plugin-sql-sqlite \
+		-plugin-sql-tds \
+		-plugindir "$_qt5_prefix"/plugins \
+		-prefix /usr \
+		-sysconfdir /etc/xdg \
+		-system-libjpeg \
+		-system-libpng \
+		-system-pcre \
+		-system-sqlite \
+		-system-zlib \
+		-translationdir "$_qt5_datadir"/translations \
+		-no-reduce-relocations \
+		$_no_sse3
+	# significantly reduce debug symbol size
+	CFLAGS="$CFLAGS -g1" CXXFLAGS="$CXXFLAGS -g1" \
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+	mkdir -p "$pkgdir"/usr/bin/
+	for i in "$pkgdir"/"$_qt5_prefix"/bin/*; do
+		_name=${i##*/}
+		case $_name in
+		*.*)	_dest="$pkgdir"/usr/bin/${_name%.*}-qt5.${_name##*.};;
+		*)	_dest="$pkgdir"/usr/bin/${_name%.*}-qt5;;
+		esac
+		ln -s ../lib/qt5/bin/"$_name" "$_dest"
+		ln -s ../lib/qt5/bin/"$_name" "$pkgdir"/usr/bin/$_name
+	done
+
+	# Drop QMAKE_PRL_BUILD_DIR because reference the build dir
+	find "$pkgdir/usr/lib" -type f -name '*.prl' \
+		-exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
+}
+
+dev() {
+	provides="qtchooser=$pkgver-r$pkgrel"
+	replaces="qtchooser"
+	amove \
+		usr/lib/qt5/mkspecs \
+		usr/lib/cmake \
+		usr/lib/qt5/bin \
+		usr/bin
+	cd "$pkgdir"
+	find usr/ -name '*.prl' | while read -r i; do
+		amove "$i"
+	done
+
+	default_dev
+}
+
+sqlite() {
+	pkgdesc="SQLite driver for Qt5's SQL classes"
+	depends=""
+
+	amove usr/lib/qt5/plugins/sqldrivers/libqsqlite*
+}
+
+odbc() {
+	pkgdesc="ODBC driver for Qt5's SQL classes"
+	depends=""
+
+	amove usr/lib/qt5/plugins/sqldrivers/libqsqlodbc*
+}
+
+postgresql() {
+	pkgdesc="PostgreSQL driver for Qt5's SQL classes"
+	depends=""
+
+	amove usr/lib/qt5/plugins/sqldrivers/libqsqlpsql*
+}
+
+mysql() {
+	pkgdesc="MySQL driver for Qt5's SQL classes"
+	depends=""
+
+	amove usr/lib/qt5/plugins/sqldrivers/libqsqlmysql*
+}
+
+tds() {
+	pkgdesc="TDS driver for Qt5's SQL classes"
+	depends=""
+
+	amove usr/lib/qt5/plugins/sqldrivers/libqsqltds*
+}
+
+x11() {
+	pkgdesc="Qt5 GUI-related libraries"
+	depends="hicolor-icon-theme xdg-utils"
+
+	amove \
+		usr/lib/libQt5EglFSDeviceIntegration.so.* \
+		usr/lib/libQt5EglFsKmsSupport.so.* \
+		usr/lib/libQt5Gui.so.* \
+		usr/lib/libQt5OpenGL.so.* \
+		usr/lib/libQt5PrintSupport.so.* \
+		usr/lib/libQt5Widgets.so.* \
+		usr/lib/libQt5XcbQpa.so.* \
+		usr/lib/qt5/plugins/egldeviceintegrations \
+		usr/lib/qt5/plugins/generic \
+		usr/lib/qt5/plugins/image* \
+		usr/lib/qt5/plugins/platform* \
+		usr/lib/qt5/plugins/printsupport* \
+		usr/lib/qt5/plugins/xcbglintegrations
+
+	scanelf -Rn "$pkgdir"/usr/ | grep -E '(libX|libQt5Gui|libGL)' && return 1
+	return 0
+}
+
+sha512sums="
+f2fb2f2fade3bed8b3e94405e5b151cf4ebfde8c974829bc8732c94bf4fa2b9e4712e97b11624a8c6c586c609c1e4741e4936d9f855beb9ef4a587dcda1d9cca  qtbase-bebdfd54917e25d1c100e6bd9f5dd53c2e645fd8.tar.xz
+d5bd9ace2cc15a96c3266603be067620f1a31d8e2636f2bdd6ee9d03d03329af0b86b823f5d3564572543e7b99bddbeed3f7c2a5aec1f4bb082dc118dafb14d6  egl-x11.patch
+390e2998483696e4af6f754be6611eb01f93b5185e81f8ad21c45cd267bab58a347902230b456b4c9fae339d6b8ecb6f7cf695e90fb086d92b9c5f7561993898  lfs64.patch
+7f0a3f255e25b47b1a45632207f6c0b506119b9cf84edcf1bc02c1a31c4487d1b52359861a731522613f32147890c171446a9c05f166dcf97c046a45964e03d1  loongarch64.patch
+7d68421a14f0259535c977d8a521c98918193c107b76ac664571b12f5b0d7588a0d0e1297af412a26753a393b21f3f44c3274fa8ab5bc87f03705a3a03acb444  qt-musl-iconv-no-bom.patch
+fa3dddfe42b7f0ade45bd0530badfc3a3800adbd3798bd814597527713c9fe360a242f7cf39312f4cc3c88e9bd7aba233bd6674c0fc78e694a1fd868474c4240  qt5-base-cflags.patch
+af061bb56d5079d11407e6eb352fa4af7fefa6aed7f8cc40b5b2d591ef7ff04e9da6c6d534ca1904355ea7552951a1610fdcefb04ef9d696cb2b23ad6a0606e8  qt5-base-nostrip.patch
+"

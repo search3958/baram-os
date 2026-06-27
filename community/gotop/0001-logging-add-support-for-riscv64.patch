@@ -1,0 +1,42 @@
+From 13c6acd6fe1f837e18f2835323cddcfa7d35bcde Mon Sep 17 00:00:00 2001
+From: Marvin Preuss <marvin@xsteadfastx.org>
+Date: Thu, 12 Aug 2021 13:13:17 +0200
+Subject: [PATCH] logging: add support for riscv64
+
+---
+ logging/logging_other.go   |  2 +-
+ logging/logging_riscv64.go | 12 ++++++++++++
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+ create mode 100644 logging/logging_riscv64.go
+
+diff --git a/logging/logging_other.go b/logging/logging_other.go
+index d7d75d5..21c88da 100644
+--- a/logging/logging_other.go
++++ b/logging/logging_other.go
+@@ -1,4 +1,4 @@
+-// +build linux,!arm64 openbsd,!arm64 freebsd darwin
++// +build linux,!arm64,!riscv64 openbsd,!arm64,!riscv64 freebsd,!riscv64 darwin,!riscv64
+ 
+ package logging
+ 
+diff --git a/logging/logging_riscv64.go b/logging/logging_riscv64.go
+new file mode 100644
+index 0000000..5b269b1
+--- /dev/null
++++ b/logging/logging_riscv64.go
+@@ -0,0 +1,12 @@
++// +build !freebsd,riscv64
++
++package logging
++
++import (
++	"os"
++	"syscall"
++)
++
++func stderrToLogfile(logfile *os.File) {
++	syscall.Dup3(int(logfile.Fd()), 2, 0)
++}
+-- 
+2.32.0
+

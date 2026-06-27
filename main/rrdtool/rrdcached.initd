@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+
+description="RRDtool data caching daemon"
+pidfile=${pidfile:-/run/rrdcached/rrdcached.pid}
+socket=${socket:-unix:/run/rrdcached/rrdcached.sock}
+basedir=${basedir:-/var/lib/rrdcached}
+command="/usr/sbin/rrdcached"
+command_args="-l $socket -j ${basedir}/journal/ -F -b ${basedir}/db/ -B -p $pidfile"
+start_stop_daemon_args="--quiet"
+
+depend() {
+    need localmount net
+    use logger
+}
+
+start_pre() {
+	checkpath --directory ${pidfile%/*}
+}

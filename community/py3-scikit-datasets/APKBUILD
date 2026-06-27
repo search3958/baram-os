@@ -1,0 +1,38 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-scikit-datasets
+_pkgorig=scikit-datasets
+pkgver=0.2.5
+pkgrel=1
+pkgdesc="Scikit-learn-compatible datasets"
+url="https://github.com/daviddiazvico/scikit-datasets"
+arch="noarch"
+license="MIT"
+options="!check" # network tests | skip for now
+depends="
+	python3
+	py3-numpy
+	py3-scipy
+	py3-scikit-learn
+	"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://github.com/daviddiazvico/scikit-datasets/archive/v$pkgver/$_pkgorig-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgorig-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	rm -r "$pkgdir"/usr/lib/python3.*/site-packages/skdatasets/tests
+}
+
+sha512sums="
+4ae288f9a75edc90796cf5911ffafde7b2c244bf1a9855f1a3c88446307b4700f73089a8d4027deb5e75ec31bfad606952c3eb9969032d614b6bded803505d34  scikit-datasets-0.2.5.tar.gz
+"

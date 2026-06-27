@@ -1,8 +1,0 @@
-#TODO make gtk4 work
-[source]
-git = "https://github.com/martin-olivier/airgorah"
-[build]
-template = "cargo"
-dependencies = [
-    "gtk4",
-]

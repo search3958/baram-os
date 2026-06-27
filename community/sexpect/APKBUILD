@@ -1,0 +1,53 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=sexpect
+pkgver=2.3.15
+pkgrel=0
+pkgdesc="expect designed for shell scripts"
+url="https://github.com/clarkwang/sexpect"
+arch="all"
+license="GPL-3.0-only"
+makedepends="
+	cmake
+	samurai
+	"
+checkdepends="
+	bash
+	procps
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/clarkwang/sexpect/archive/v$pkgver/sexpect-$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DCMAKE_C_FLAGS="$CFLAGS -D_GNU_SOURCE" \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	local skip='interact-re-helper|spawn-nonblock'
+	case "$CARCH" in
+		s390x) skip="$skip|spawn-discard"  # FIXME
+		;;
+		loongarch64) skip="$skip|get-expbuf"  # FIXME
+		;;
+	esac
+
+	cd build
+	ctest --exclude-regex "$skip"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+c1b3c0ae3bc1d00df9a820f55795d2381e649a58a67a09cac3b0628802447dcfe37510334a1b1f7f297d7e1a572e4ca93952db08a4deb652a430ef2556a126db  sexpect-2.3.15.tar.gz
+"

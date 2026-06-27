@@ -1,0 +1,92 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+_drivers="mysql postgres sqlite3 odbc"
+
+pkgname=lua-sql
+_pkgname=luasql
+pkgver=2.6.0
+pkgrel=6
+pkgdesc="Lua SQL drivers"
+url="http://lunarmodules.github.io/luasql/"
+arch="all"
+license="MIT"
+makedepends="mariadb-connector-c-dev libpq-dev sqlite-dev unixodbc-dev"
+for _v in $_luaversions; do
+	makedepends="$makedepends lua$_v-dev"
+	for _d in $_drivers; do
+		subpackages="$subpackages lua$_v-sql-$_d:_subpackage"
+	done
+done
+for _d in $_drivers; do
+	subpackages="$subpackages lua-sql-$_d:_meta_subpackage"
+done
+
+source="$_pkgname-$pkgver.tar.gz::https://github.com/lunarmodules/$_pkgname/archive/$pkgver.tar.gz
+	gcc14.patch"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check"
+
+prepare() {
+	default_prepare
+
+	local lver; for lver in $_luaversions; do
+		cp -r "$builddir" "$builddir-$lver"
+	done
+}
+
+build() {
+	local cflags lver
+
+	for lver in $_luaversions; do
+		cflags="$CFLAGS $(pkg-config lua$lver --cflags) -fPIC"
+
+		msg "Building for Lua $lver..."
+		cd "$builddir-$lver"
+
+		make CFLAGS="$cflags" DRIVER_LIBS="-lmysqlclient" \
+			mysql
+
+		make CFLAGS="$cflags" DRIVER_LIBS="$(pkg-config --libs libpq)" \
+			postgres
+
+		make CFLAGS="$cflags" DRIVER_LIBS="$(pkg-config --libs sqlite3)" \
+			sqlite3
+
+		make CFLAGS="$cflags -DUNIXODBC" DRIVER_LIBS="-lodbc" \
+			odbc
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_meta_subpackage() {
+	local driver="${subpkgname##*-}"
+	pkgdesc="$pkgdesc for $driver"
+
+	mkdir -p "$subpkgdir"
+}
+
+_subpackage() {
+	local lver="${subpkgname:3:3}"
+	local driver="${subpkgname##*-}"
+	pkgdesc="Lua $lver SQL driver for $driver"
+	depends="lua$lver"
+	install_if="lua-sql-$driver=$pkgver-r$pkgrel lua$lver"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$_pkgname/$pkgver-1"
+
+	cd "$builddir-$lver"
+	local install_cmod="$(pkg-config --variable INSTALL_CMOD lua$lver)"
+	install -D src/$driver.so \
+		"$subpkgdir"/$install_cmod/luasql/$driver.so
+
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+}
+
+sha512sums="
+051438d4f5a9059c2ecf52143a06279469c220117b8b99363ea4fda434f08780794f0c4d54185ea891845238b3f5a307ba06ee7a1e7f4583a3b393c63eed66e9  luasql-2.6.0.tar.gz
+59b3fc557db504fb2479fc68134bc0fd478ff3ad46f047c0f3429d66fa9b87e045af1331bade96accd895a61f88f5158b5db4b6783147009a9c6445ed4d85e0f  gcc14.patch
+"

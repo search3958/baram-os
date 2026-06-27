@@ -1,0 +1,36 @@
+# Contributor: Alex McGrath <amk@amk.ie>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-marshmallow
+_pkgname=marshmallow
+pkgver=4.3.0
+pkgrel=1
+pkgdesc="A lightweight library for converting complex objects to and from simple Python datatypes"
+url="https://github.com/marshmallow-code/marshmallow"
+arch="noarch"
+license="MIT"
+makedepends="py3-flit-core py3-gpep517 py3-wheel"
+checkdepends="py3-pytest py3-tz py3-simplejson tzdata"
+subpackages="$pkgname-pyc"
+source="py3-marshmallow-$pkgver.tar.gz::https://github.com/marshmallow-code/marshmallow/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6e11787a22cc18c3e2d9bf8c6a379f5810ee0f0390145dad4818c2d5f423fc0e378f05d67117904d830ac2e253254ab35fdfbff47f1f4178ab3ee14892eb1bb8  py3-marshmallow-4.3.0.tar.gz
+"

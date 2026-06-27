@@ -1,0 +1,61 @@
+From 19823b76c27c3bfbff1d111cf09af948e8db4367 Mon Sep 17 00:00:00 2001
+From: PeterPetrik <zilolv@gmail.com>
+Date: Fri, 2 Jul 2021 14:40:59 +0200
+Subject: [PATCH] fix infinite loop in qgsstyle
+
+---
+ src/core/symbology/qgsstyle.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/core/symbology/qgsstyle.cpp b/src/core/symbology/qgsstyle.cpp
+index 6ca37dde3a15..c87305b3c8fa 100644
+--- a/src/core/symbology/qgsstyle.cpp
++++ b/src/core/symbology/qgsstyle.cpp
+@@ -2759,6 +2759,7 @@
+       if ( entityAddedVersion != 0 && sinceVersion != -1 && entityAddedVersion <= sinceVersion )
+       {
+         // skip the symbol, should already be present
++        e = e.nextSiblingElement();
+         continue;
+       }
+ 
+@@ -2813,6 +2814,7 @@
+     if ( entityAddedVersion != 0 && sinceVersion != -1 && entityAddedVersion <= sinceVersion )
+     {
+       // skip the ramp, should already be present
++      e = e.nextSiblingElement();
+       continue;
+     }
+ 
+@@ -2861,6 +2863,7 @@
+         if ( entityAddedVersion != 0 && sinceVersion != -1 && entityAddedVersion <= sinceVersion )
+         {
+           // skip the format, should already be present
++          e = e.nextSiblingElement();
+           continue;
+         }
+ 
+@@ -2905,6 +2908,7 @@
+         if ( entityAddedVersion != 0 && sinceVersion != -1 && entityAddedVersion <= sinceVersion )
+         {
+           // skip the settings, should already be present
++          e = e.nextSiblingElement();
+           continue;
+         }
+ 
+@@ -2950,6 +2954,7 @@
+       if ( entityAddedVersion != 0 && sinceVersion != -1 && entityAddedVersion <= sinceVersion )
+       {
+         // skip the shape, should already be present
++        e = e.nextSiblingElement();
+         continue;
+       }
+ 
+@@ -2994,6 +2999,7 @@
+       if ( entityAddedVersion != 0 && sinceVersion != -1 && entityAddedVersion <= sinceVersion )
+       {
+         // skip the symbol, should already be present
++        e = e.nextSiblingElement();
+         continue;
+       }
+ 

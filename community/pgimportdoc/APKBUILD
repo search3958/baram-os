@@ -1,0 +1,27 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=pgimportdoc
+pkgver=0.1.4
+pkgrel=2
+pkgdesc="CLI tool for import XML, TEXT and BYTEA documents to PostgreSQL"
+url="https://github.com/okbob/pgimportdoc"
+arch="all"
+license="BSD-2-Clause"
+makedepends="readline-dev libxml2-dev postgresql-dev zlib-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/okbob/pgimportdoc/archive/$pkgver.tar.gz"
+
+build() {
+	make USE_PGXS=1 all
+}
+
+check() {
+	./pgimportdoc -V
+}
+
+package() {
+	make USE_PGXS=1 DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+99f4af48304476a4d666e85024095c4c25bb131793fe16ca5f57bd5f99baeacd3802a549d4619c7b1e500550e50ef38a22e7b7e4176d59d64f5f80aeb4b6254d  pgimportdoc-0.1.4.tar.gz
+"

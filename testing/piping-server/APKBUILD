@@ -1,0 +1,41 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=piping-server
+pkgver=0.18.0
+pkgrel=0
+pkgdesc="Infinitely transfer data between devices over HTTP"
+url="https://github.com/nwtgck/piping-server-rust"
+license="MIT"
+arch="all !s390x !riscv64" # limited by cargo
+arch="$arch !ppc64le" # FTBFS
+arch="$arch !loongarch64" # blocked by libc crate
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-openrc"
+source="https://github.com/nwtgck/piping-server-rust/archive/v$pkgver/piping-server-rust-$pkgver.tar.gz
+	piping-server.initd
+	"
+builddir="$srcdir/piping-server-rust-$pkgver"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --release --locked
+}
+
+package() {
+	install -Dm755 target/release/piping-server "$pkgdir"/usr/bin/piping-server
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+bd91aaab533b152d3137cbc8f6cd09da69fae01750f79afeee17df6ce25bf426aaf07ce4f1d69e8a74d645fbb97affd78417fa2d8c4bc456fcdd5d092e4aaed2  piping-server-rust-0.18.0.tar.gz
+88fe822b7d98f9d1d63a24e30c11a39504641b664bd26eb5ff3a834ad343bbc46140762dfcc63131d1dc6938c9e4d82131ebc7249283ac3f288cc8aebd6dbe4c  piping-server.initd
+"

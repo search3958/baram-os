@@ -1,0 +1,112 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=gnuradio
+pkgver=3.10.12.0
+pkgrel=12
+pkgdesc="General purpose DSP and SDR toolkit"
+url="https://www.gnuradio.org"
+# loongarch64: tests fail
+arch="all !loongarch64"
+license="GPL-3.0-or-later"
+depends="
+	py3-cairo
+	py3-click
+	py3-click-plugins
+	py3-gobject3
+	py3-mako
+	py3-numpy
+	py3-qtgraph
+	py3-qt5
+	py3-scipy
+	py3-yaml
+	cppzmq
+	"
+depends_dev="
+	blas-dev
+	boost-dev
+	fftw-dev
+	gmp-dev
+	gsl-dev
+	gsm-dev
+	gtk+3.0-dev
+	libsndfile-dev
+	mpir-dev
+	portaudio-dev
+	py3-numpy-dev
+	py3-pybind11-dev
+	py3-sphinx
+	python3-dev
+	qt5-qtbase-dev
+	qwt-dev
+	soapy-sdr-dev
+	spdlog-dev
+	thrift-dev
+	uhd-dev
+	zeromq-dev
+	py3-pyzmq
+	"
+makedepends="
+	$depends_dev
+	cmake
+	doxygen
+	graphviz
+	libvolk-dev
+	samurai
+	"
+checkdepends="xvfb-run"
+subpackages="$pkgname-doc $pkgname-dev"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/gnuradio/gnuradio/archive/v$pkgver.tar.gz
+	"
+
+build() {
+	# inlining failed in call to 'always_inline' 'vsnprintf':
+	# function body can be overwritten at link time
+	export CXXFLAGS="$CXXFLAGS -flto=auto -U_FORTIFY_SOURCE"
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DENABLE_GRC=ON \
+		-DENABLE_GR_QTGUI=ON \
+		-DENABLE_PYTHON=ON \
+		-Wno-dev
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+check() {
+	# remove failing tests
+	case "$CARCH" in
+	x86_64)
+		sed -i build/gr-blocks/python/blocks/CTestTestfile.cmake \
+			-e '/add_test(qa_rotator_cc /d'
+		# zeromq tests "work intermittently" according to https://lists.gnu.org/archive/html/discuss-gnuradio/2018-01/msg00069.html
+		sed -i build/gr-zeromq/python/zeromq/CTestTestfile.cmake \
+			-e '/add_test(qa_zeromq_pub "/d'
+		;;
+	x86)
+		# zeromq tests "work intermittently" according to https://lists.gnu.org/archive/html/discuss-gnuradio/2018-01/msg00069.html
+		sed -i build/gr-zeromq/python/zeromq/CTestTestfile.cmake \
+			-e '/add_test(qa_zeromq_pub "/d'
+		;;
+	s390x)
+		# segfaulting since libvolk 3.3.0
+		sed -i build/gr-network/python/network/CTestTestfile.cmake \
+			-e '/add_test(qa_tcp_sink"/d'
+	esac
+	# module 'PyQt5.Qt' has no attribute 'QValidator'
+	sed -i build/gr-qtgui/python/qtgui/CTestTestfile.cmake \
+		-e '/add_test(qa_qtgui /d'
+	# filter_qa_fir_filter_with_buffer.cc: failing GLIBCXX assertion
+	# needs pygccxml
+	timeout 600 \
+		xvfb-run -a ctest -E '(test_modtool|qa_throttle|qa_uncaught_exception|filter_qa_fir_filter_with_buffer.cc)' --test-dir build
+}
+
+sha512sums="
+6d94d5f755a12d79ea38b84ac869dbce86b66813ac40f7204afb24d6f70f867a258e9efde0cc24fcb1ab814129da6b941970b0c736870f99139ee65a7a8effa7  gnuradio-3.10.12.0.tar.gz
+"

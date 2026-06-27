@@ -1,0 +1,34 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=py3-psycopg-pool
+pkgver=3.3.0
+pkgrel=1
+pkgdesc="Connection pool for psycopg"
+url="https://www.psycopg.org/"
+arch="noarch"
+license="LGPL-2.0-or-later"
+depends="py3-typing-extensions"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/psycopg/psycopg/archive/pool-$pkgver/psycopg-pool-$pkgver.tar.gz"
+builddir="$srcdir/psycopg-pool-$pkgver/psycopg_pool"
+options="!check"  # no tests provided
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+1a94ac4d3656f75dc9a87507a95de3e36878ee26b407ec46189cead692be10ce3c526f8b9c223a1eb81d51147e689ded8f8ef8fa53011520766c7ac638a08c8c  psycopg-pool-3.3.0.tar.gz
+"

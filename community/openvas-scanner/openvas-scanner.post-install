@@ -1,0 +1,4 @@
+#!/bin/sh
+echo 'cfgfile="/etc/redis-openvas.conf"' >> /etc/conf.d/redis-openvas
+ln -s /etc/init.d/redis /etc/init.d/redis-openvas
+exit 0

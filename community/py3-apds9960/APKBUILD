@@ -1,0 +1,31 @@
+# Contributor: Thomas Liske <thomas@fiasko-nw.net>
+# Maintainer: Thomas Liske <thomas@fiasko-nw.net>
+pkgname=py3-apds9960
+_pkgname=apds9960
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="python APDS-9960 library"
+url="https://github.com/liske/python-apds9960/"
+license="GPL-3.0-or-later"
+arch="all"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+options="!check" # no testsuite
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8e6f3b6080e1ffcc97e4c0b9035bbc2a8d64b1f665653f851169f5c4034924138b67d0482b7fd98cee4f8bc8850661787435765e3a366acee084dd910cc32f08  apds9960-0.3.0.tar.gz
+"

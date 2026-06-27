@@ -1,0 +1,66 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=rage
+pkgver=0.11.1
+pkgrel=1
+pkgdesc="Simple, modern and secure encryption tool"
+url="https://github.com/str4d/rage"
+license="MIT OR Apache-2.0"
+arch="all !s390x" # fails to build nix crate
+makedepends="cargo cargo-auditable bzip2-dev fuse3-dev zstd-dev"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/str4d/rage/archive/v$pkgver/rage-$pkgver.tar.gz
+	tests.patch
+	"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	# Rust target triple
+	local target="$(rustc -vV | sed -n 's/host: //p')"
+
+	# Build against system-provided libraries
+	mkdir -p .cargo
+	cat >>.cargo/config.toml <<-EOF
+		[target.$target]
+		bzip2 = { rustc-link-lib = ["bz2"] }
+		zstd = { rustc-link-lib = ["zstd"] }
+	EOF
+
+	cargo fetch --locked
+}
+
+build() {
+	cargo auditable build --frozen --release --features mount
+}
+
+check() {
+	cargo test --frozen --features mount
+}
+
+package() {
+	cd target/release
+
+	for cmd in rage rage-keygen rage-mount; do
+		install -Dm755 $cmd -t "$pkgdir"/usr/bin
+
+		install -Dm644 manpages/man1/$cmd.1.gz -t "$pkgdir"/usr/share/man/man1
+
+		install -Dm644 completions/$cmd.bash \
+			"$pkgdir"/usr/share/bash-completion/completions/$cmd
+		install -Dm644 completions/$cmd.fish \
+			"$pkgdir"/usr/share/fish/vendor_completions.d/$cmd.fish
+		install -Dm644 completions/_$cmd \
+			"$pkgdir"/usr/share/zsh/site-functions/_$cmd
+	done
+}
+
+sha512sums="
+77c1fd3c611989b2f40ad91cd569471c29098f02e4bcd0a359859e433cf57597b480e05f86f5b34747db4e1c4abad243ac6c4be2b522f076036a38443a40a7d7  rage-0.11.1.tar.gz
+497eada69257ab5b2917e7189cf9ed3ff4de46a7d6e769aa40e33faec6a8b6528e72a1df50046dc48805227871e45cfcc4ae99b6824adb2b4c7b475230c9f009  tests.patch
+"

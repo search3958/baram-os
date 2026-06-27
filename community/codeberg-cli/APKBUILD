@@ -1,0 +1,47 @@
+# Contributor: Matthias Ahouansou <matthias@ahouansou.cz>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=codeberg-cli
+pkgver=0.5.5
+pkgrel=1
+pkgdesc="CLI Tool for Codeberg similar to gh and glab"
+url="https://codeberg.org/RobWalt/codeberg-cli"
+arch="all"
+license="AGPL-3.0-or-later"
+makedepends="
+	cargo
+	cargo-auditable
+	openssl-dev
+"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/RobWalt/codeberg-cli/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname"
+options="net !check" # no tests
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+package() {
+	install -Dm755 target/release/berg -t "$pkgdir"/usr/bin
+
+	mkdir -p "$pkgdir"/usr/share/bash-completion/completions
+	mkdir -p "$pkgdir"/usr/share/fish/vendor_completions.d
+	mkdir -p "$pkgdir"/usr/share/zsh/site-functions
+
+	target/release/berg completion bash > "$pkgdir"/usr/share/bash-completion/completions/berg
+	target/release/berg completion fish > "$pkgdir"/usr/share/fish/vendor_completions.d/berg.fish
+	target/release/berg completion zsh > "$pkgdir"/usr/share/zsh/site-functions/_berg
+}
+
+sha512sums="
+b50d7d9a0cc3969b2a7001184c2b0daa83df81456cc9a0d1b0df9cd195744c5b225b675a70646c98cd735f31e9ea8b33d5940ec4174e91fbd8abb3cfca9c6ad8  codeberg-cli-0.5.5.tar.gz
+"

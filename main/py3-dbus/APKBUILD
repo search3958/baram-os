@@ -1,0 +1,40 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-dbus
+_pkgname=dbus-python
+pkgver=1.4.0
+pkgrel=1
+pkgdesc="Python3 bindings for DBUS"
+url="https://www.freedesktop.org/wiki/Software/DBusBindings"
+arch="all"
+license="MIT"
+depends="python3"
+depends_dev="py3-dbus"
+makedepends="dbus-glib-dev python3-dev meson"
+checkdepends="bash dbus py3-gobject3 py3-tappy"
+subpackages="$pkgname-dev $pkgname-pyc"
+source="https://dbus.freedesktop.org/releases/dbus-python/$_pkgname-$pkgver.tar.xz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	abuild-meson \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	local pyminor="$(python3 -c 'import sys; print("%i" % sys.version_info.minor)')"
+
+	mv dbus_python.egg-info/ "$pkgdir"/usr/lib/python3.$pyminor/site-packages/dbus_python-$pkgver-py3.$pyminor.egg-info/
+}
+
+sha512sums="
+defd5fba8348635ce52654b7e93e6cacf52966f6facfb7bb04fc77f2f82129e0b7673d4f3d483ef3321985172987d8c3265b27b9200c68c39c729567ffa21456  dbus-python-1.4.0.tar.xz
+"

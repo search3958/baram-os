@@ -1,0 +1,64 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=upterm
+pkgver=0.22.0
+pkgrel=4
+pkgdesc="Secure terminal sharing"
+url="https://upterm.dev/"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+checkdepends="bash"
+install="$pkgname-server.pre-install"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-server
+	$pkgname-server-openrc
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/owenthereal/upterm/archive/refs/tags/v$pkgver.tar.gz
+	uptermd.initd
+	uptermd.confd
+	"
+options="net !check" # fail on network flakiness
+
+build() {
+	local _goldflags="
+	-X github.com/owenthereal/upterm/internal/version.Version=$pkgver
+	-X github.com/owenthereal/upterm/internal/version.GitCommit=AlpineLinux
+	-X github.com/owenthereal/upterm/internal/version.Date=$(date -u '+%Y-%m-%dT%H:%M:%S%z' ${SOURCE_DATE_EPOCH:+-d @$SOURCE_DATE_EPOCH})
+	"
+
+	mkdir out
+	go build -v -o out/ \
+		-ldflags "$_goldflags" \
+		./cmd/upterm ./cmd/uptermd
+
+	# Re-generate completion files and man pages
+	go run cmd/gendoc/main.go
+}
+
+package() {
+	install -Dm755 out/upterm out/uptermd \
+		-t "$pkgdir"/usr/bin/
+
+	install -Dm644 etc/man/man1/*.1 -t "$pkgdir"/usr/share/man/man1/
+	install -Dm644 etc/completion/upterm.bash_completion.sh \
+		"$pkgdir"/usr/share/bash-completion/completions/upterm
+	install -Dm644 etc/completion/upterm.zsh_completion \
+		"$pkgdir"/usr/share/zsh/site-functions/_upterm
+	install -Dm755 "$srcdir"/uptermd.initd "$pkgdir"/etc/init.d/uptermd
+	install -Dm644 "$srcdir"/uptermd.confd "$pkgdir"/etc/conf.d/uptermd
+}
+
+server() {
+	pkgdesc="$pkgdesc (server)"
+	amove usr/bin/uptermd
+}
+
+sha512sums="
+3de2baee42301427daf19d4b0227dba1f4ef7e3cfbc5cdda1a0a39abb72833f8946a5e524914312e80fce5a3cac48960eda74968ab1fc2099cd04d08502662ca  upterm-0.22.0.tar.gz
+981ef973c13ba36204f3b8f942a1c32cbdb9bf37d9de78e20e62d1cd2c45b0dcd4fcf58a157e18951082d54ab6cf22febdd94a340e5185e29ee1e6a1ceecd4b3  uptermd.initd
+3a8119bcbab8c93ef607297d6e4b5cdbfc758cfec3e9eb43b46a271a8f25fe9f615b5284773ced389351ab1730797327fb4ea53431c1a6f465628514d53d6691  uptermd.confd
+"

@@ -1,0 +1,101 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-pip
+pkgver=26.1.2
+pkgrel=0
+pkgdesc="Tool for installing and managing Python packages"
+url="https://pip.pypa.io"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	"
+makedepends="
+	py3-flit-core
+	py3-gpep517
+	py3-sphinx
+	py3-wheel
+	"
+checkdepends="
+	py3-freezegun
+	py3-pytest
+	py3-scripttest
+	py3-tomli-w
+	py3-virtualenv
+	py3-werkzeug
+	git
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-pyc
+	$pkgname-zsh-completion
+	$pkgname-bash-completion
+	"
+source="https://github.com/pypa/pip/archive/$pkgver/pip-$pkgver.tar.gz"
+builddir="$srcdir/pip-$pkgver"
+
+provides="py-pip=$pkgver-r$pkgrel" # Backwards compatibility
+replaces="py-pip" # Backwards compatibility
+
+prepare() {
+	default_prepare
+
+	# Remove certifi usage
+	sed -i 's|from pip._vendor.certifi import where|where = lambda: "/etc/ssl/certs/ca-certificates.crt"|' src/pip/_internal/commands/debug.py
+
+	# Do not use furo as HTML theme in docs
+	# furo is not available in Alpine
+	sed -i '/html_theme = "furo"/d' docs/html/conf.py
+
+	# Upstream uses a Python 2/3 compatibility library for csv with Python 3 semantics in tests
+	# We only target Python 3 and csv23 is not (yet) packaged
+	# As of 20.1b1, this workaround was sufficient to get around the missing dependency
+	sed -i 's/csv23/csv/g' tests/lib/wheel.py
+}
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+
+	# see noxfile.py
+	python3 -m venv --clear --without-pip --system-site-packages .docenv
+	.docenv/bin/python3 -m installer .dist/*.whl
+	.docenv/bin/python3 -m sphinx --tag man -c docs/html -d docs/build/doctrees/man -b man docs/man docs/build/man
+}
+
+check() {
+	# avoid "addopt" options in pyproject.toml for pytest plugins we don't have
+	: > empty-pytest.toml
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# --deselect'ed and -k'ed tests are not compatible with the latest virtualenv
+	# These files contain almost 500 tests so we should enable them back
+	# as soon as pip will be compatible upstream
+	# https://github.com/pypa/pip/issues/8273
+	.testenv/bin/python3 -m pytest -c empty-pytest.toml \
+		-m 'not network' \
+		-k "not test_from_link_vcs_with_source_dir_obtains_commit_id and not test_from_link_vcs_without_source_dir and not test_should_cache_git_sha" \
+		--deselect tests/functional \
+		--deselect tests/lib/test_lib.py \
+		--deselect tests/unit/test_build_env.py \
+		--deselect tests/unit/test_vcs.py \
+		--ignore tests/functional/test_proxy.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+
+	install -Dm644 docs/build/man/* -t "$pkgdir"/usr/share/man/man1
+
+	local _py3ver=$(python3 -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+	PYTHONPATH="$pkgdir"/usr/lib/python$_py3ver/site-packages "$pkgdir"/usr/bin/pip \
+		completion --bash | \
+		install -Dm644 /dev/stdin "$pkgdir"/usr/share/bash-completion/completions/pip
+
+	PYTHONPATH="$pkgdir"/usr/lib/python$_py3ver/site-packages "$pkgdir"/usr/bin/pip \
+		completion --zsh | \
+		install -Dm644 /dev/stdin "$pkgdir"/usr/share/zsh/site-functions/_pip
+}
+
+sha512sums="
+e29c98a7da5e329183b7eef86a66f9d6c3473051f64aa6e762714306148547eb0de4220824484071822a9a62bd01a62a09ab16bba4c26e4b847bfc2609728608  pip-26.1.2.tar.gz
+"

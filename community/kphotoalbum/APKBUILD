@@ -1,0 +1,61 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-other
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kphotoalbum
+pkgver=6.2.0
+pkgrel=0
+pkgdesc="KDE Photo Album, picture collection manager"
+url="https://kphotoalbum.org"
+# armhf, armv7, x86, s390x and riscv64 blocked by qt6-qtwebengine -> purpose
+arch="all !armhf !armv7 !x86 !s390x !riscv64"
+license="GPL-2.0-or-later"
+makedepends="
+	exiv2-dev
+	extra-cmake-modules
+	jpeg-dev
+	karchive-dev
+	kcompletion-dev
+	kconfig-dev
+	kcoreaddons-dev
+	kdoctools-dev
+	ki18n-dev
+	kiconthemes-dev
+	kio-dev
+	kjobwidgets-dev
+	ktextwidgets-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	libkdcraw-dev
+	marble-dev
+	phonon-dev
+	purpose-dev
+	qt6-qtbase-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/graphics/kphotoalbum.git"
+source="https://download.kde.org/stable/kphotoalbum/$pkgver/kphotoalbum-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	case "$CARCH" in
+		x86|armv7) wlheadless-run -- ctest --test-dir build -E "TestThumbnailCache" ;;
+		*) wlheadless-run -- ctest --test-dir build ;;
+	esac
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+b87afb23d6c34eef5078e79de41ab0bdea8d72a5b7f836818cba99a03aa8e4d1f291eab85d1f1be3f8b7849f1dc43c59f78d27b954fa3097ed4bb076a55c7e53  kphotoalbum-6.2.0.tar.xz
+"

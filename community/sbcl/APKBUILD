@@ -1,0 +1,83 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Contributor: Eric Timmons <etimmons@alum.mit.edu>
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+maintainer="Will Sinatra <wpsinatra@gmail.com>"
+pkgname=sbcl
+pkgver=2.6.5
+pkgrel=0
+pkgdesc="Steel Bank Common Lisp"
+url="https://www.sbcl.org/"
+# s390x/loongarch64: not currently supported
+arch="all !s390x !loongarch64"
+license="custom"
+options="!check"
+checkdepends="ed"
+makedepends="
+	emacs-nox
+	linux-headers
+	mpfr-dev
+	sbcl-bootstrap
+	zstd-dev
+	"
+subpackages="$pkgname-doc $pkgname-source:_source"
+source="$pkgname-$pkgver.tar.bz2::https://prdownloads.sourceforge.net/sbcl/sbcl-$pkgver-source.tar.bz2
+	ppc-musl.patch
+	musl-time64.patch
+	"
+
+# This follows how other -stage0 aports work, see APKBUILD of
+# sbcl-stage0 for a brief explanation of the bootstrap process.
+provides="sbcl-bootstrap=$pkgver"
+provider_priority=100 # highest
+
+build() {
+	all_arch_conf='--with-sb-core-compression --with-sb-linkable-runtime'
+
+	case "$CARCH" in
+	     armv7)    conf="$all_arch_conf" ;;
+	     x86)      conf="$all_arch_conf --fancy --with-sb-thread" ;;
+	     x86_64)   conf="$all_arch_conf --fancy --with-sb-thread" ;;
+	     aarch64)  conf="$all_arch_conf --fancy --with-sb-thread" ;;
+	     riscv64)  conf="--with-sb-core-compression --fancy --with-sb-thread --without-sb-linkable-runtime" ;;
+	     loongarch64) conf="$all_arch_conf" ;;
+	     ppc64le)  conf="--with-sb-core-compression" ;;
+	esac
+
+	GNUMAKE=make ./make.sh sbcl --prefix=/usr $conf
+
+	HOME="$builddir" src/runtime/sbcl --core output/sbcl.core \
+		--no-sysinit --no-userinit --disable-debugger \
+		--eval '(ignore-errors (sb-ext:set-sbcl-source-location "/usr/share/sbcl/source/"))' \
+		--eval '(sb-ext:save-lisp-and-die "output/sbcl.core")'
+}
+
+
+package() {
+	INSTALL_ROOT="$pkgdir/usr" \
+		LIB_DIR="/usr/lib" \
+		DOC_DIR="$pkgdir/usr/share/doc/$pkgname" \
+		sh install.sh
+
+	install -Dm644 COPYING \
+		"$pkgdir"/usr/share/licenses/$pkgname/LICENSE.txt
+
+	rmdir "$pkgdir"/usr/share/doc/$pkgname/html 2>/dev/null || true
+	rmdir "$pkgdir"/usr/share/info 2>/dev/null || true
+}
+
+_source() {
+	pkgdesc="sbcl source code"
+
+	mkdir -p "$subpkgdir/usr/share/sbcl/source"
+
+	# Source code files are needed for deep introspection tools, like Sly, to operate.
+	cp -r "$builddir/src" "$subpkgdir/usr/share/sbcl/source/"
+	cp -r "$builddir/contrib" "$subpkgdir/usr/share/sbcl/source/"
+}
+
+sha512sums="
+00f0f6a41864ae3f93d95e693744188e3543fae94f465292992d1701e0d022a409574304ed3276789abb0f3a4894f0aaa0dfd2b83613ceec26ea1477d451d4a1  sbcl-2.6.5.tar.bz2
+549cc9936ddbd4c19067a455dfad151bd0ce59200b2dce761de67e259e621e4174beefaa5a322886bcd731d2470d229a3e1b75a55a194c54e2feb7c0bcdffb37  ppc-musl.patch
+c5b23ac36478943370156e8a499393c6923a069d8a38e4bf3b651ea91521353398cd813ef18dbcf9e76e97a24bfd85fb1d9cfb8da90951345a6f7ab0d28d65fc  musl-time64.patch
+"

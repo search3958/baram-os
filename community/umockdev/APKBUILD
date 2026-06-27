@@ -1,0 +1,35 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=umockdev
+pkgver=0.19.7
+pkgrel=0
+pkgdesc="Mock hardware devices for creating unit tests and bug reporting"
+arch="all"
+url="https://github.com/martinpitt/umockdev"
+license="LGPL-2.1-or-later"
+makedepends="eudev-dev gtk-doc meson vala libpcap-dev gobject-introspection-dev"
+checkdepends="gphoto2 libgudev-dev py3-gobject3 usbutils xz"
+if [ "$CARCH" != "ppc64le" ]; then
+	checkdepends="$checkdepends evtest"
+fi
+options="!check" # fail on builders for some reason, works on CI and locally (and for upstream)
+source="https://github.com/martinpitt/umockdev/releases/download/$pkgver/umockdev-$pkgver.tar.xz"
+subpackages="$pkgname-dev $pkgname-doc"
+
+build() {
+	abuild-meson \
+		-Dgtk_doc=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+836d16be6f0441ab16305d41a302b23529fd9b9e62ded0393d97bcdc5842d9ed3240d9b3e93e6e7cf167fd59e0c6372da0e4512a71086bd080526880e6dfcae3  umockdev-0.19.7.tar.xz
+"

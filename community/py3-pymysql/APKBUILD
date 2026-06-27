@@ -1,0 +1,33 @@
+# Contributor: Thomas Boerger <thomas@webhippie.de>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=py3-pymysql
+pkgver=1.1.2
+pkgrel=1
+pkgdesc="Pure Python MySQL Client"
+url="https://pypi.org/project/PyMySQL"
+arch="noarch"
+license="MIT"
+options="!check" #require mysql for tests
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/PyMySQL/PyMySQL/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/PyMySQL-$pkgver"
+
+replaces="py-pymysql" # Backwards  compatibility
+provides="py-pymysql=$pkgver-r$pkgrel" # Backwards  compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8f524ba1fe860e9052e8a0ce299fca32007440111d90f88760b5ec569497ef6c7840ff8b0927d60161ed503b9f09087bf881b1b79a4a55b4dfd1d9eb1cb2aabe  py3-pymysql-1.1.2.tar.gz
+"

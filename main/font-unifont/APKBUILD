@@ -1,0 +1,58 @@
+# Contributor: Breno Leitao <breno.leitao@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=font-unifont
+pkgver=17.0.04
+pkgrel=0
+pkgdesc="GNU Unifont glyphs"
+url="https://unifoundry.com/unifont/index.html"
+arch="all"
+options="!check"  # No way to test fonts.
+license="GFDL-1.3-or-later GPL-2.0-or-later WITH Font-exception-2.0"
+subpackages="unifont-dev unifont-doc unifont-misc unifont-tools"
+source="https://unifoundry.com/pub/unifont/unifont-$pkgver/unifont-$pkgver.tar.gz"
+builddir="$srcdir/unifont-$pkgver"
+
+prepare() {
+	default_prepare
+	# clean precompiled
+	make clean
+}
+
+build() {
+	make
+}
+
+package() {
+	# renamed from unifont
+	provides="unifont=$pkgver-r$pkgrel"
+	replaces="unifont"
+
+	make PREFIX="$pkgdir/usr" install
+
+	cd "$pkgdir"/usr/share/unifont
+	rm -r html ChangeLog* INSTALL* NEWS* README* ./*.pdf
+
+	install -Dm644 "$pkgdir"/usr/share/info/*.info.* "$pkgdir"/usr/share/unifont
+}
+
+tools() {
+	depends="bdftopcf perl-gd"
+
+	amove usr/bin
+}
+
+doc() {
+	default_doc
+	amove usr/share/unifont/*.info.*
+	rm -r "$subpkgdir"/usr/share/info
+}
+
+misc() {
+	pkgdesc="$pkgdesc (misc hex/bmp files)"
+
+	amove usr/share/unifont
+}
+
+sha512sums="
+6cfec28f5322290002ab4b304e5f7fd78e56802dac89704c64bf5be725307d7abefd8ce1b4d07eb9a1d217a359128281e51c97f8da4e9000db64c5f0cf05d60d  unifont-17.0.04.tar.gz
+"

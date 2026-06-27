@@ -1,0 +1,40 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-us
+_pkgname=us
+pkgver=3.2.0
+pkgrel=1
+pkgdesc="US state meta information and other fun stuff"
+url="https://github.com/unitedstates/python-us"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-jellyfish python3"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-pytest py3-tz"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-us" # for backwards compatibility
+provides="py-us=$pkgver-r$pkgrel" # for backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+9c4b98480ac5c1743cfb95fccd3dcdc9ccca4a0e19a47398e86c5cf9288be932d0d83e05e232817ee86ab0e9cc46c6dc43aad1ec8c3b1ecbf28121cc8378c1c9  us-3.2.0.tar.gz
+"

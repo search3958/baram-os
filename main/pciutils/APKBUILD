@@ -1,0 +1,40 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=pciutils
+pkgver=3.15.0
+pkgrel=0
+pkgdesc="PCI bus configuration space access library and tools"
+url="http://mj.ucw.cz/pciutils.html"
+arch="all"
+license="GPL-2.0-or-later"
+depends="hwdata-pci"
+makedepends="linux-headers"
+options="!check"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-libs"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pciutils/pciutils/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	make OPT="$CFLAGS -fPIC -flto=auto" ZLIB=no \
+		SHARED=yes \
+		PREFIX=/usr \
+		SHAREDIR=/usr/share/hwdata \
+		MANDIR=/usr/share/man \
+		all
+}
+
+package() {
+	make PREFIX="$pkgdir"/usr \
+		SHARED=yes \
+		SHAREDIR="$pkgdir"/usr/share/hwdata \
+		MANDIR="$pkgdir"/usr/share/man \
+		install install-lib
+
+	# this is now supplied by the hwids package
+	rm -rf "$pkgdir"/usr/sbin/update-pciids
+	rm -rf "$pkgdir"/usr/share/man/man8/update-pciids.8
+	rm -rf "$pkgdir"/usr/share/hwdata
+}
+
+sha512sums="
+8164652b4283edd5bbb9db6604aee4135f4ca4398de337bf111fec09b8a8825d00a4ad363cd4a0848bd750c846c0037bfaa4f88c36fe709b4fd67462c6501abf  pciutils-3.15.0.tar.gz
+"

@@ -1,0 +1,186 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=squid
+pkgver=7.5
+pkgrel=0
+_langpack=20240307
+pkgdesc="Full-featured Web proxy cache server"
+url="https://www.squid-cache.org/"
+install="squid.pre-install squid.pre-upgrade"
+arch="all"
+license="GPL-2.0-or-later"
+depends="logrotate"
+makedepends="
+	autoconf
+	automake
+	libtool
+	heimdal-dev
+	libcap-dev
+	linux-headers
+	openssl-dev>3
+	perl-dev
+	"
+subpackages="$pkgname-openrc $pkgname-doc"
+for _lang in af ar az bg ca cs da de el es et fa fi fr he hu hy id it ja ka ko lt \
+	lv ms nl oc pl pt ro ru sk sl spq sr sv th tr uk uz vi zh; do
+	subpackages="$subpackages $pkgname-lang-$_lang:_lang:noarch"
+done
+source="$pkgname-$pkgver.tar.gz::https://github.com/squid-cache/squid/archive/refs/tags/SQUID_${pkgver//./_}.tar.gz
+	squid-langpack-$_langpack.tar.gz.noauto::https://www.squid-cache.org/Versions/langpack/squid-langpack-$_langpack.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+	$pkgname.logrotate
+	"
+builddir="$srcdir/$pkgname-SQUID_${pkgver//./_}"
+pkgusers="squid"
+pkggroups="squid"
+options="!check"
+
+# secfixes:
+#   7.3-r0:
+#     - CVE-2025-59362
+#     - CVE-2025-62168
+#   6.6-r0:
+#     - CVE-2023-50269
+#   6.5-r0:
+#     - CVE-2023-49285
+#     - CVE-2023-49286
+#   6.4-r0:
+#     - CVE-2023-46847
+#     - CVE-2023-46846
+#     - CVE-2023-46724
+#     - CVE-2023-46848
+#   6.1-r0:
+#     - CVE-2023-49288
+#   5.7-r0:
+#     - CVE-2022-41317
+#   5.2-r0:
+#     - CVE-2021-41611
+#     - CVE-2021-28116
+#   5.0.6-r0:
+#     - CVE-2021-28651
+#     - CVE-2021-28652
+#     - CVE-2021-28662
+#     - CVE-2021-31806
+#     - CVE-2021-31807
+#     - CVE-2021-31808
+#     - CVE-2021-33620
+#   5.0.5-r0:
+#     - CVE-2020-25097
+#   4.13.0-r0:
+#     - CVE-2020-15810
+#     - CVE-2020-15811
+#     - CVE-2020-24606
+#   4.12.0-r0:
+#     - CVE-2020-15049
+#   4.10-r0:
+#     - CVE-2020-8449
+#     - CVE-2020-8450
+#     - CVE-2019-12528
+#     - CVE-2020-8517
+#   4.9-r0:
+#     - CVE-2019-18679
+#   4.8-r0:
+#     - CVE-2019-13345
+#   3.5.27-r2:
+#     - CVE-2018-1000024
+#     - CVE-2018-1000027
+#     - CVE-2018-1172
+
+unpack() {
+	default_unpack
+	mkdir -p "$srcdir"/langpack
+	tar -xzf "$srcdir"/squid-langpack-$_langpack.tar.gz.noauto -C "$srcdir"/langpack
+}
+
+prepare() {
+	default_prepare
+	autoreconf -fiv
+
+	cd "$srcdir"/langpack
+	# create symlink names for languages
+	./alias-link.sh ln rm . aliases
+	# delete non-translation files already installed
+	rm -r templates COPYRIGHT TRANSLATORS aliases alias-link.sh
+}
+
+build() {
+	CXXFLAGS="$CXXFLAGS -O2 -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--datadir=/usr/share/squid \
+		--sysconfdir=/etc/squid \
+		--libexecdir=/usr/lib/squid \
+		--localstatedir=/var \
+		--with-logdir=/var/log/squid \
+		--disable-strict-error-checking \
+		--disable-arch-native \
+		--enable-removal-policies="lru,heap" \
+		--enable-storeio="aufs,ufs,diskd,rock" \
+		--enable-auth-basic \
+		--enable-auth-digest \
+		--enable-auth-negotiate \
+		--disable-mit \
+		--enable-heimdal \
+		--enable-delay-pools \
+		--enable-arp-acl \
+		--enable-openssl \
+		--enable-ssl-crtd \
+		--enable-linux-netfilter \
+		--enable-ident-lookups \
+		--enable-useragent-log \
+		--enable-cache-digests \
+		--enable-referer-log \
+		--enable-async-io \
+		--enable-truncate \
+		--enable-arp-acl \
+		--enable-htcp \
+		--enable-carp \
+		--enable-poll \
+		--enable-epoll \
+		--enable-follow-x-forwarded-for \
+		--with-large-files \
+		--with-default-user=squid \
+		--with-openssl
+
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.logrotate \
+		"$pkgdir"/etc/logrotate.d/squid
+
+	install -d -o squid -g squid \
+		"$pkgdir"/var/cache/squid \
+		"$pkgdir"/var/log/squid \
+		"$pkgdir"/var/run/squid
+	chmod +x "$pkgdir"/usr/lib/squid/*
+
+	cp -r "$srcdir"/langpack/* "$pkgdir"/usr/share/squid/errors/
+}
+
+squid_kerb_auth() {
+	pkgdesc="Squid kerberos authentication helper"
+
+	amove usr/lib/squid/squid_kerb_auth
+}
+
+_lang() {
+	local lang=${subpkgname##*-}
+	pkgdesc="$pkgname language pack for $lang"
+	amove usr/share/squid/errors/$lang*
+}
+
+sha512sums="
+d60788d95d09f0b25c33b4dba76f1fd0343dd76ca264fc64fd7cbd87e372163c402599a14b44c6ac7b5a6d0dee2499188341c5b279482e8f8e7a3907b6eea94a  squid-7.5.tar.gz
+e41fc9bca1f0f98943bc647fc7b468de808814579b39b204ae72d7bea77b26c9d8959764c559faef7873feb8d8dde504cd1d21cf1289b78f3b87b13da834f473  squid-langpack-20240307.tar.gz.noauto
+e3968a6b97baebfe18e1e978c76f6ef7a8a60cfb96dfc2d5199e91a84a065fe964aed6531aa04fe3824c5fd0644adec28ff81ff2f4fed424a29e636829b118d8  squid.initd
+7292661de344e8a87d855c83afce49511685d2680effab3afab110e45144c0117935f3bf73ab893c9e6d43f7fb5ba013635e24f6da6daf0eeb895ef2e9b5baa9  squid.confd
+89a703fa4f21b6c7c26e64a46fd52407e20f00c34146ade0bea0c4b63d050117c0f8e218f2256a1fbf6abb84f4ec9b0472c9a4092ff6e78f07c4f5a25d0892a5  squid.logrotate
+"

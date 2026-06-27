@@ -1,0 +1,41 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gnuchess
+pkgver=6.3.0
+pkgrel=0
+pkgdesc="The GNU chess program"
+url="https://www.gnu.org/software/chess/"
+arch="all"
+makedepends="automake autoconf gettext-tiny-dev xz"
+license="GPL-3.0-or-later"
+subpackages="$pkgname-doc"
+source="https://ftp.gnu.org/gnu/chess/gnuchess-$pkgver.tar.gz"
+
+# secfixes:
+#   6.2.9-r0:
+#     - CVE-2021-30184
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	LDFLAGS="$LDFLAGS -Wl,-z,stack-size=2097152"
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+093bdf37ab67d55ff449c8367ccf0e0c52012ee164a0cf11b42c44c4025df0996c9efdcf42136746633d2d020d7fb8f338c1b04dcf8044e48629f1da7642fb81  gnuchess-6.3.0.tar.gz
+"

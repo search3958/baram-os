@@ -1,0 +1,37 @@
+# Contributor: Daniel Santana <daniel@santana.tech>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=e2tools
+pkgver=0.1.2
+pkgrel=1
+pkgdesc="Utilities for manipulating files in an ext2/ext3 filesystem"
+url="https://e2tools.github.io/"
+arch="all"
+license="GPL-2.0-only"
+makedepends="e2fsprogs-dev"
+checkdepends="e2fsprogs"
+subpackages="$pkgname-doc"
+source="https://github.com/e2tools/e2tools/releases/download/v$pkgver/e2tools-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+511da5b19be72bee2f8529e571901f38c437a8adfcecfbda64b3f167be931951170e0499ae9d147a770fa232be7ba11a4175e73339e206fdfd500b67f8329380  e2tools-0.1.2.tar.gz
+"

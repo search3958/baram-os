@@ -1,0 +1,68 @@
+diff --git a/plymouth.c b/plymouth.c
+index d0a5d2c..0bb5485 100644
+--- a/plymouth.c
++++ b/plymouth.c
+@@ -86,13 +86,13 @@ int commandf(const char* cmd, ...)
+ 
+ bool ply_message(const char* hook, const char* name)
+ {
+-    return (commandf("/bin/plymouth message --text=\"%s %s\"", hook, name) == 0);
++    return (commandf("/usr/bin/plymouth message --text=\"%s %s\"", hook, name) == 0);
+ }
+ 
+ 
+ bool ply_ping()
+ {
+-    return (system("/bin/plymouth --ping") == 0);
++    return (system("/usr/bin/plymouth --ping") == 0);
+ }
+ 
+ 
+@@ -101,9 +101,9 @@ bool ply_quit(int mode)
+     int rv = 0;
+ 
+     if(mode == PLY_MODE_BOOT)
+-        rv = command("/bin/plymouth quit");
++        rv = command("/usr/bin/plymouth quit");
+     else if(mode == PLY_MODE_SHUTDOWN)
+-        rv = command("/bin/plymouth quit --retain-splash");
++        rv = command("/usr/bin/plymouth quit --retain-splash");
+     else
+         assert(0 && "Unknown mode");
+ 
+@@ -125,7 +125,7 @@ bool ply_start(int mode)
+             }
+         }
+ 
+-#define PLYD "/sbin/plymouthd --attach-to-session --pid-file=" PID_FILE \
++#define PLYD "/usr/sbin/plymouthd --attach-to-session --pid-file=" PID_FILE \
+     " --mode="
+         if(mode == PLY_MODE_BOOT)
+             rv = command(PLYD "boot");
+@@ -136,7 +136,7 @@ bool ply_start(int mode)
+ #undef PLYD
+         eend(rv, "");
+ 
+-        if((rv == 0) && command("/bin/plymouth --show-splash") != 0)
++        if((rv == 0) && command("/usr/bin/plymouth --show-splash") != 0)
+             return false;
+     }
+ 
+@@ -146,7 +146,7 @@ bool ply_start(int mode)
+ 
+ bool ply_update_status(int hook, const char* name)
+ {
+-    return (commandf("/bin/plymouth update --status=%d-%s", hook, name) == 0);
++    return (commandf("/usr/bin/plymouth update --status=%d-%s", hook, name) == 0);
+ }
+ 
+ 
+@@ -161,7 +161,7 @@ bool ply_update_rootfs_rw()
+         return false;
+     }
+ 
+-    return (command("/bin/plymouth update-root-fs --read-write") == 0);
++    return (command("/usr/bin/plymouth update-root-fs --read-write") == 0);
+ }
+ 
+ 

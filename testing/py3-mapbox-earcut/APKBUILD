@@ -1,0 +1,41 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+maintainer="Leon White <badfunkstripe@gmail.com>"
+pkgname=py3-mapbox-earcut
+pkgver=2.0.0
+pkgrel=0
+pkgdesc="Python bindings for the mapbox earcut c++ library"
+url="https://github.com/skogler/mapbox_earcut_python"
+arch="all"
+license="ISC"
+depends="py3-numpy"
+makedepends="
+	py3-gpep517
+	py3-nanobind
+	py3-scikit-build-core
+	python3-dev
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/skogler/mapbox_earcut_python/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/mapbox_earcut_python-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -P -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e673b89e16a2007085e6e036b32867bdcdf984b3dec3bf93182ad352b36d6bf3ae4f750de136a9833b3328241fdf725b4f11c4981f9334a9a27e1b4077af1cea  py3-mapbox-earcut-2.0.0.tar.gz
+"

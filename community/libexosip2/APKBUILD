@@ -1,0 +1,48 @@
+# Contributor: David Sugar <tychosoft@gmail.com>
+# Maintainer: David Sugar <tychosoft@gmail.com>
+pkgname=libexosip2
+# Needs to be kept in sync with libosip2
+pkgver=5.3.0
+pkgrel=2
+pkgdesc="Extended osip2 library"
+url="http://savannah.nongnu.org/projects/exosip"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	libtool
+	c-ares-dev
+	libosip2-dev
+	openssl-dev
+"
+options="libtool"
+subpackages="$pkgname-dev"
+source="http://download.savannah.nongnu.org/releases/exosip/libexosip2-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	update_config_sub
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-tools \
+		--enable-pthread \
+		--with-gnu-ld \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+546491224d2ac542c032d704be0e08ef0a08dcf74aa706ad40bd0d30d8e3c28419139d14fa2c31f601e19879d00b2b0cea65c08edecbf560b3f5599ef0335828  libexosip2-5.3.0.tar.gz
+"

@@ -1,0 +1,17 @@
+modname=zfs
+modver=
+makedepends="libtool linux-headers glib-dev e2fsprogs-dev util-linux-dev libtirpc-dev"
+built_modules="module/spl.ko module/zfs.ko"
+
+build() {
+	cd "$builddir"
+	./configure --prefix=/usr \
+		--with-tirpc \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--with-config=kernel \
+		--with-linux="$kernel_srcdir"
+	make $MAKEFLAGS
+}

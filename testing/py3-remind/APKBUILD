@@ -1,0 +1,36 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-remind
+pkgver=0.19.2
+pkgrel=1
+pkgdesc="Python library to convert between Remind and iCalendar"
+url="https://github.com/jspricke/python-remind"
+arch="noarch"
+license="GPL-3.0-only"
+depends="python3 remind py3-dateutil py3-tz py3-tzlocal py3-vobject"
+makedepends="py3-setuptools py3-wheel py3-gpep517"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jspricke/python-remind/archive/v$pkgver.tar.gz"
+builddir="$srcdir/python-remind-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+373c0fd3c54ab7af09cae082b6131aa51e3e73831f09b8f872de191eefe4b97357fcd368e6d42109784da36aceb523a8e99ffc543339ed2a14827f85486ddacd  py3-remind-0.19.2.tar.gz
+"

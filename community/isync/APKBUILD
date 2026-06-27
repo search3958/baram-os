@@ -1,0 +1,43 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=isync
+pkgver=1.5.1
+pkgrel=1
+pkgdesc="IMAP and MailDir mailbox synchronizer"
+url="https://isync.sourceforge.io"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="openssl-dev cyrus-sasl-dev zlib-dev perl-dev db-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://downloads.sourceforge.net/sourceforge/isync/isync-$pkgver.tar.gz"
+
+# secfixes:
+#   1.4.4-r0:
+#     - CVE-2021-3657
+#     - CVE-2021-44143
+#   1.4.2-r0:
+#     - CVE-2021-3578
+#   1.4.1-r0:
+#     - CVE-2021-20247
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3ccc37b9f902841e244acb16d574991062090770b5d8efb0079cee507f4352752e248f28cb6da63d21987f5c616e36d0dc6b8a7b20a89bcf805cd37429473d02  isync-1.5.1.tar.gz
+"

@@ -1,0 +1,22 @@
+# Contributor: Alan Lacerda <alacerda@alpinelinux.org>
+# Maintainer: Alan Lacerda <alacerda@alpinelinux.org>
+pkgname=openvpn-ad-check
+pkgver=1.1
+pkgrel=4
+pkgdesc="Authenticate OpenVPN users against AD server and verify if they are member of a specific group."
+url="https://sourceforge.net/p/openvpnadcheck"
+arch="noarch"
+license="GPL-3.0-only"
+depends="openvpn lua-ldap"
+source="https://sourceforge.net/projects/openvpnadcheck/files/openvpn-ad-check-$pkgver.tgz"
+builddir="$srcdir/openvpn-ad-check"
+options="!check" # no tests
+
+package() {
+	install -Dm755 openvpnadcheck.lua -t "$pkgdir"/etc/openvpn
+	install -Dm644 openvpnadcheck.conf -t "$pkgdir"/etc/openvpn
+}
+
+sha512sums="
+0d2237acb3b227184b4f7c1ff34516d1dc0a04b09faba940afa9c8bb179cd608f43939f851109662dd0956ba9b8e24e2aad416e140554cc5b4006202fad2feab  openvpn-ad-check-1.1.tgz
+"

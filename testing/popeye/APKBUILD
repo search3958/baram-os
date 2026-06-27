@@ -1,0 +1,47 @@
+# Contributor: Hoang Nguyen <folliekazetani@protonmail.com>
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=popeye
+pkgver=0.22.1
+pkgrel=14
+pkgdesc="Kubernetes cluster resource sanitizer"
+url="https://popeyecli.io/"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/derailed/popeye/archive/refs/tags/v$pkgver.tar.gz
+	fix-cilium-integer-overflow_patch
+	"
+options="net" # download Go modules
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+prepare() {
+	default_prepare
+
+	go mod vendor
+	patch -p1 -i "$srcdir"/fix-cilium-integer-overflow_patch
+}
+
+build() {
+	GOLDFLAGS="
+	-X github.com/derailed/popeye/cmd.version=v$pkgver
+	-X github.com/derailed/popeye/cmd.commit=AlpineLinux
+	-X github.com/derailed/popeye/cmd.date=$(date +%FT%T%Z)
+	"
+	go build -v -tags netgo -o $pkgname -ldflags "$GOLDFLAGS"
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 $pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+ddaec0c3d046613e31f3c116cd1d0ae3977ff2a214fa1547c1af9c17991c95dd0aaf30abd5cb7f60040e03beeb28c37b7a0bdf5277a2a323d2c112360e75cc50  popeye-0.22.1.tar.gz
+99a989c069454af9b90d068056e3169f0d03af016264e1473748142fefaa3b47eabc89e93bd440aacda7ed3948cd685c6482830673832610b577cdbfeb54fed6  fix-cilium-integer-overflow_patch
+"

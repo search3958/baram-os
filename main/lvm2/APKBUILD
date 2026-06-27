@@ -1,0 +1,133 @@
+# Contributor: Jacek Migacz <jacekmigacz@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=lvm2
+pkgver=2.03.35
+pkgrel=2
+pkgdesc="Logical Volume Manager 2 utilities"
+url="https://sourceware.org/lvm2/"
+arch="all"
+options="!check"  # Test tries to use real /dev/mapper/control.
+license="GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-2-Clause"
+# lvm2 will dlopen libs so we need to add explicit depend
+depends="lvm2-libs=$pkgver-r$pkgrel"
+depends_dev="device-mapper-dev~$pkgver linux-headers"
+makedepends_host="$depends_dev libaio-dev util-linux-static util-linux-dev eudev-dev sanlock-dev"
+source="https://mirrors.kernel.org/sourceware/lvm2/LVM2.$pkgver.tgz
+	default-udev-sync.patch
+	fix-stdio-usage.patch
+	library_dir-default-config.patch
+	mlockall-default-config.patch
+	no-systemd.patch
+	0001-lvresize-use-POSIX-shell.patch
+
+	lvm.initd
+	lvm.confd
+	lvmlockd.initd
+	"
+subpackages="
+	$pkgname-static:lvm2_static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-libs
+	$pkgname-extra::noarch
+	$pkgname-lockd
+	$pkgname-lockd-openrc:lockd_openrc
+	$pkgname-udev
+	"
+builddir="$srcdir/LVM2.$pkgver"
+
+build() {
+	# during cross-compilation malloc test goes wrong
+	export ac_cv_func_malloc_0_nonnull=yes
+	export ac_cv_func_realloc_0_nonnull=yes
+
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--sbindir=/sbin \
+		--localstatedir=/var \
+		--enable-static_link \
+		--disable-dependency-tracking \
+		--disable-nls \
+		--disable-readline \
+		--enable-pkgconfig \
+		--with-thin=internal \
+		--enable-dmeventd \
+		--enable-cmdlib \
+		--with-thin-check=/usr/sbin/thin_check \
+		--disable-thin_check_needs_check \
+		--with-thin-dump=/usr/sbin/thin_dump \
+		--with-thin-repair=/usr/sbin/thin_repair \
+		--with-thin-restore=/usr/sbin/thin_restore \
+		--with-cache-check=/usr/sbin/cache_check \
+		--disable-cache_check_needs_check \
+		--with-cache-dump=/usr/sbin/cache_dump \
+		--with-cache-repair=/usr/sbin/cache_repair \
+		--with-cache-restore=/usr/sbin/cache_restore \
+		--with-dmeventd-path=/sbin/dmeventd \
+		--without-systemd-run \
+		--enable-udev_rules \
+		--enable-write_install \
+		--enable-lvmlockd-sanlock \
+		--disable-udev_sync \
+		CLDFLAGS="$LDFLAGS"
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install_lvm2
+	# blkdeactivate is part of install_device-mapper upstream, but goes in lvm2-extra
+	install -Dm755 scripts/blkdeactivate.sh "$pkgdir"/sbin/blkdeactivate
+	install -d "$pkgdir"/etc/lvm/archive "$pkgdir"/etc/lvm/backup
+	install -Dm755 "$srcdir"/lvm.initd "$pkgdir"/etc/init.d/lvm
+	install -Dm644 "$srcdir"/lvm.confd "$pkgdir"/etc/conf.d/lvm
+}
+
+libs() {
+	pkgdesc="LVM2 shared libraries"
+	depends=
+	amove usr/lib/liblvm2*.so.* \
+		usr/lib/libdevmapper-event-lvm2*.so.* \
+		usr/lib/device-mapper
+}
+
+lvm2_static() {
+	pkgdesc="$pkgdesc static library"
+	amove usr/lib/liblvm2*.a usr/sbin/lvm.static
+}
+
+extra() {
+	pkgdesc="LVM2 extra utilities"
+	depends="bash coreutils"
+	amove sbin/lvmdump sbin/fsadm sbin/blkdeactivate sbin/lvm_import_vdo
+}
+
+lockd() {
+	pkgdesc="LVM2 locking daemon"
+	depends="sanlock"
+	# lvmpolld isn't strictly part of this, but is enabled by enabling this, so put it here too
+	amove sbin/lvmlockctl sbin/lvmlockd sbin/lvmpolld
+}
+
+lockd_openrc() {
+	pkgdesc="LVM2 locking daemon (OpenRC init scripts)"
+	install_if="$pkgname-lockd=$pkgver-r$pkgrel openrc"
+
+	install -Dm755 "$srcdir"/lvmlockd.initd "$subpkgdir"/etc/init.d/lvmlockd
+}
+
+sha512sums="
+e925a7685b1a4d96046187e495627176b7c623418116f01fda6a26e607f9c2d2c3f70fe996a6bbe043d79e0e084a4a7385c853114747e61c2bebc42a16d61f11  LVM2.2.03.35.tgz
+ce526e0b58236d26fcb21c81090f8a5baecc0909e645696dccf4c9c7b7adc31fb6f2ababb158217a81324aca14a55631d2fac3176177d81f0bbd35032c0b9979  default-udev-sync.patch
+cedd690408fe015662022c75da84725fa3b62f1b473a23d1dcda218d9944ea64cb6f46628d8eb749d6274f6c58b189f45953fc73d6500f0b054455bfbea495de  fix-stdio-usage.patch
+256a1335c40d8add7e683f53902a1c7decfa4d2a8bc4a5e87000a60200face234f6b401550fd605a0ac69f7d749e82d420251674975179ff773fff04aeb3f9be  library_dir-default-config.patch
+07f77491cffa0d9dcda86004e2df428d5d52652a3bda8037a4b09c9c786146253314a11bae42512231c664a8fae110fec815bd12135fc3c6152b94e2101f8213  mlockall-default-config.patch
+dfcda00e5607606ae8f10e5765de048af933afd05e0719b14036ba84ebc3b4eb07b138e5ce9af9f653416b4a6cc42161591e6f93ee3a36721a2b7396d70d5d91  no-systemd.patch
+3cec0a44e44b15dcfc0bb22f8a4318e76bf719fe9a550b6cf99160ea4181707f81ba6a50c8dafedc942638b1ae8bfde901eeff83ba0d6cb8383a178274ba54a5  0001-lvresize-use-POSIX-shell.patch
+714e6aaba3437b43af38b0b559d0f983b2cea023e2bc64e0c3763e9c78ae4ca125fb75839fda52128e7044a4add81940fd69e92439d30d232cf20a4204f0e321  lvm.initd
+07caf8fa942290f3c953cc2463aaf55bac01d0bcb9351daf3880fa4d0eefb67fe00761c46a7a4da91cd2f8e492a12fed35853a15dc939cd80d19d3303bc3951d  lvm.confd
+7215daf0872063672d5ad13f65ccd90833c6ebea7347149789b97a232d92af28ddc21c2893cb9ee2cb004f857700822917152c2005300a5060b3095f0582bfdd  lvmlockd.initd
+"

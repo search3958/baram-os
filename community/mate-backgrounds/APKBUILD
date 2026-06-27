@@ -1,0 +1,38 @@
+# Contributor: Alan Lacerda <alacerda@alpinelinux.org>
+# Maintainer: Alan Lacerda <alacerda@alpinelinux.org>
+pkgname=mate-backgrounds
+pkgver=1.28.0
+pkgrel=0
+pkgdesc="Background images and data for MATE"
+url="https://github.com/mate-desktop/mate-backgrounds"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="mate-common"
+makedepends="intltool"
+source="https://pub.mate-desktop.org/releases/${pkgver%.*}/mate-backgrounds-$pkgver.tar.xz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--sysconfdir=/etc \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+3bc5c4cdac247908f0fc726309bb1f9255987d9a8338fcff7f83c511198b4b2c456170097cc9d2243d2b4eb3ddac45652336ed9321e402ef561d27b17d4dc206  mate-backgrounds-1.28.0.tar.xz
+"

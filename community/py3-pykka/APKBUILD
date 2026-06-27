@@ -1,0 +1,45 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-pykka
+pkgver=4.4.2
+pkgrel=1
+pkgdesc="Concurrency abstractions for Python3 using the actor model"
+url="https://pykka.readthedocs.org/"
+arch="noarch"
+license="Apache-2.0"
+makedepends="
+	py3-gpep517
+	py3-hatchling
+	py3-installer
+	"
+checkdepends="
+	py3-mock
+	py3-pytest
+	py3-pytest-mock
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/jodal/pykka/archive/v$pkgver/pykka-$pkgver.tar.gz"
+builddir="$srcdir/pykka-$pkgver"
+
+replaces="py-pykka" # Backwards compatibility
+provides="py-pykka=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8c704ed2770e61373f5455f77d7eb03c875c31304dd3404a01c54263d3e61c53e21c55b4c9242cb5fd5afd1e41e4486ddea775789abb79590446269fa57212de  pykka-4.4.2.tar.gz
+"

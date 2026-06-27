@@ -1,0 +1,87 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=breeze
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="Artwork, styles and assets for the Breeze visual style for the Plasma Desktop"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+license="GPL-2.0-or-later"
+depends_dev="
+	frameworkintegration-dev
+	frameworkintegration5-dev
+	kcmutils-dev
+	kcolorscheme-dev
+	kconfig-dev
+	kconfig5-dev
+	kconfigwidgets5-dev
+	kcoreaddons-dev
+	kcoreaddons5-dev
+	kdecoration-dev
+	kguiaddons-dev
+	kguiaddons5-dev
+	ki18n-dev
+	kiconthemes-dev
+	kiconthemes5-dev
+	kirigami-dev
+	kirigami2-dev
+	kwindowsystem-dev
+	kwindowsystem5-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt5-qtx11extras-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	extra-cmake-modules
+	samurai
+	"
+checkdepends="xwayland-run"
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+subpackages="
+	$pkgname-dev
+	$pkgname-lang
+	$pkgname-wallpapers::noarch
+	$pkgname-cursors::noarch
+	"
+_repo_url="https://invent.kde.org/plasma/breeze.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/breeze-$pkgver.tar.xz"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "(breezestyleconfig_smoke|kcm_breezedecoration_smoke)test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+wallpapers() {
+	pkgdesc="$pkgdesc (wallpapers)"
+	install_if="$pkgname=$pkgver-r$pkgrel"
+	amove usr/share/wallpapers
+}
+
+cursors() {
+	pkgdesc="$pkgdesc (cursors)"
+	install_if="$pkgname=$pkgver-r$pkgrel"
+	amove usr/share/icons/Breeze_Light
+	amove usr/share/icons/breeze_cursors
+}
+
+sha512sums="
+bccf36da14dde9c562e375c28ab890e9cbec6bd8fa88a93c1f097cbcd0ebbb68fb53a10bae0afe232b9e98bc2b02d7e7e836dce534e47adc2911d7b4097d6725  breeze-6.7.1.tar.xz
+"

@@ -1,0 +1,38 @@
+# Maintainer: Jordan Christiansen <xordspar0@gmail.com>
+pkgname=chocolate-doom
+pkgver=3.1.1
+pkgrel=0
+pkgdesc="Portable release of Doom, Heretic, Hexen, and Strife"
+url="https://www.chocolate-doom.org"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="autoconf automake sdl2-dev sdl2_net-dev sdl2_mixer-dev libpng-dev
+	libsamplerate-dev mesa-dev fluidsynth-dev"
+subpackages="$pkgname-doc"
+options="!check" # no test suite
+source="https://github.com/chocolate-doom/chocolate-doom/archive/refs/tags/chocolate-doom-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgname-$pkgver/"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make appdatadir=/usr/share/metainfo DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+61cb60aedac61eefd9d84a06a1514c4b5894a950fc8d234736fadc7b4a470ebab1aee751bc46dfd2038f5d8eaa55e67d9d9720d7dc16d539061e117e80e02ada  chocolate-doom-3.1.1.tar.gz
+"

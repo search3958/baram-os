@@ -1,0 +1,176 @@
+# Contributor: Isaac Dunham <ibid.ag@gmail.com>
+# Maintainer: Holger Jaekel <holger.jaekel@gmx.de>
+#
+# HDF5 depends on zlib and provides a C interface by default.
+# Optionally, it can be built with szip (which has limitations on
+# commercial use and thus is non-free), MPI, and C++ and Fortran bindings.
+# C++ and Fortran bindings may not be thread-safe:
+# building either and passing --enable-threadsafe is unsupported.
+# Additionally, the 'high-level' bindings are incompatible with threadsafe
+# builds, due to inadequate locking.
+
+pkgname=hdf5
+_basepkgver=1.14.4
+_suffixpkgver=2
+pkgver=$_basepkgver.$_suffixpkgver
+pkgrel=1
+pkgdesc="HDF5 is a data model, library, and file format for storing and managing data"
+url="https://www.hdfgroup.org/solutions/hdf5/"
+arch="all"
+license="custom"
+depends_dev="zlib-dev"
+makedepends="cmake $depends_dev gfortran libaec-dev perl"
+checkdepends="diffutils"
+subpackages="$pkgname-tools $pkgname-fortran $pkgname-cpp $pkgname-hl $pkgname-hl-fortran:hl_fortran $pkgname-hl-cpp:hl_cpp $pkgname-static $pkgname-doc $pkgname-dev"
+source="https://github.com/HDFGroup/hdf5/releases/download/hdf5_$pkgver/hdf5-$_basepkgver-$_suffixpkgver.tar.gz
+	10-version.patch"
+builddir=$srcdir/$pkgname-$_basepkgver-$_suffixpkgver
+
+# Optional dependency java-jdk is not available on riscv64 and loongarch64
+# Tests fail on s390x and x86
+_with_java=""
+_enable_java=""
+case "$CARCH" in
+	riscv64 | s390x | x86 | loongarch64) ;;
+	*)
+		makedepends="$makedepends openjdk8"
+		subpackages="$subpackages java-$pkgname:java"
+		_with_java="-DHDF5_BUILD_JAVA=ON -DJAVA_HOME=/usr/lib/jvm/default-jvm"
+		_enable_java="--enable-java"
+		;;
+esac
+
+# secfixes:
+#   1.12.2-r0:
+#     - CVE-2018-17432
+#   1.12.1-r0:
+#     - CVE-2018-11206
+#     - CVE-2018-13869
+#     - CVE-2018-13870
+#     - CVE-2018-14033
+#     - CVE-2018-14460
+#     - CVE-2018-17435
+#     - CVE-2019-9151
+#     - CVE-2020-10811
+
+prepare() {
+	default_prepare
+
+	# Don't mess with build flags
+	sed -e '/-Werror/d' -i configure
+}
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	export PATH=/usr/lib/jvm/default-jvm/bin:$PATH
+
+	# Crazy workaround: run CMake to generate pkg-config file
+	# 2nd workaround: cmake creates the file pac_Cconftest.out in the current
+	# directory, but checks if it is successfully created in the build dir.
+	# So the current directory must be build.
+	mkdir build && cd build
+	cmake -G "Unix Makefiles" \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DHDF5_BUILD_HL_LIB=ON \
+		-DHDF5_BUILD_CPP_LIB=ON \
+		-DHDF5_BUILD_FORTRAN=ON \
+		$_with_java \
+		-DHDF5_ENABLE_Z_LIB_SUPPORT=ON \
+		-DHDF5_ENABLE_SZIP_SUPPORT=ON \
+		-DHDF5_ENABLE_SZIP_ENCODING=ON \
+		-DUSE_LIBAEC=ON \
+		-DDEFAULT_API_VERSION=v18 \
+		$CMAKE_CROSSOPTS ..
+	cd $builddir
+
+	# But don’t build with it, it’s quite broken
+	./configure \
+		--prefix=/usr \
+		--docdir=/usr/share/doc/hdf5/ \
+		--with-examplesdir='/usr/share/doc/hdf5/examples' \
+		--enable-static \
+		--disable-sharedlib-rpath \
+		--enable-build-mode=production \
+		--enable-hl \
+		--enable-cxx \
+		--enable-fortran \
+		$_enable_java \
+		--with-pic \
+		--with-zlib \
+		--with-szlib \
+		--with-default-api-version=v18
+	make
+}
+
+check() {
+	# Without this, checks are failing with messages like
+	# "error while loading shared libraries: libhdf5.so.101: cannot open shared object file: No such file or directory"
+	export LD_LIBRARY_PATH="$srcdir"/$pkgname-${pkgver/_/-}/src/.libs/
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH":"$builddir/c++/src/.libs/"
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH":"$builddir/fortran/src/.libs/"
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH":"$builddir/hl/src/.libs/"
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH":"$builddir/hl/c++/src/.libs/"
+	export LD_LIBRARY_PATH="$LD_LIBRARY_PATH":"$builddir/hl/fortran/src/.libs/"
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm0644 COPYING "$pkgdir"/usr/share/licenses/"$pkgname"/COPYING
+
+	# Install pkg-config files from CMake tree
+	install -Dm644 build/CMakeFiles/hdf5*.pc -t "$pkgdir"/usr/lib/pkgconfig/
+}
+
+tools() {
+	pkgdesc="Runtime tools for HDF5 library"
+	amove usr/bin/*
+}
+
+fortran() {
+	pkgdesc="Fortran runtime files for serial platforms for HDF5 library"
+	amove usr/lib/libhdf5_fortran.so.*
+}
+
+cpp() {
+	pkgdesc="C++ runtime files for serial platforms for HDF5 library"
+	amove usr/lib/libhdf5_cpp.so.*
+}
+
+hl() {
+	pkgdesc="High Level C API runtime files for serial platforms for HDF5 library"
+	amove usr/lib/libhdf5_hl.so.*
+}
+
+hl_fortran() {
+	pkgdesc="High Level Fortran runtime files for serial platforms for HDF5 library"
+	amove usr/lib/libhdf5hl_fortran.so.*
+}
+
+hl_cpp() {
+	pkgdesc="High Level C++ runtime files for serial platforms for HDF5 library"
+	amove usr/lib/libhdf5_hl_cpp.so.*
+}
+
+java() {
+	pkgdesc="Java bindings for HDF5 library"
+	mkdir -p "$subpkgdir"/usr/share/java/
+	mkdir -p "$subpkgdir"/usr/lib/jni/
+	mv "$pkgdir"/usr/lib/jarhdf5-$_basepkgver.jar "$subpkgdir"/usr/share/java/
+	ln -s jarhdf5-$_basepkgver.jar "$subpkgdir"/usr/share/java/jarhdf5.jar
+	mv "$pkgdir"/usr/lib/libhdf5_java.so "$subpkgdir"/usr/lib/jni/
+}
+
+dev() {
+	default_dev
+	amove usr/lib/libhdf5.settings
+}
+
+sha512sums="
+f1714b7999468d580b7cae2e575d3d7f31cea2fb81bfa4e37abd248d7223476b2351d1714197ace04eee970b451cf1f6971f5a291fd7426398737b8d7eb26924  hdf5-1.14.4-2.tar.gz
+4648fea26aebc3fe34befd99ce58adbef5f22bac96cda68f1154bb09b8a2d5bca07023e884615235741767927cf051340544df6a35e33b2d09cfd5e7c5540389  10-version.patch
+"

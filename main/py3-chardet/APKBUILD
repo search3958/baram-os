@@ -1,0 +1,40 @@
+# Contributor: <xmingske@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+_pkgname=chardet
+pkgname=py3-$_pkgname
+pkgver=5.2.0
+pkgrel=2
+pkgdesc="The Universal Character Encoding Detector"
+url="https://github.com/chardet/chardet/"
+arch="noarch"
+license="LGPL-2.1-or-later"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/chardet/chardet/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-chardet" # Backwards compatibility
+provides="py-chardet=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+af47dd3b265245ad43d0a495a2100ba0abf05e67321c8000908979404c4e6adcde381497c08ee56a0e78627f79ccbdb378bc900d4a0d98de9b7ef89adcb1709d  py3-chardet-5.2.0.tar.gz
+"

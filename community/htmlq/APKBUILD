@@ -1,0 +1,34 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=htmlq
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Like jq, but for HTML"
+url="https://github.com/mgdm/htmlq"
+license="MIT"
+arch="all"
+makedepends="cargo cargo-auditable"
+source="https://github.com/mgdm/htmlq/archive/v$pkgver/htmlq-$pkgver.tar.gz
+	update-libc.patch"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --locked
+}
+
+check() {
+	cargo test --locked
+}
+
+package() {
+	install -Dm755 target/release/htmlq "$pkgdir"/usr/bin/htmlq
+}
+
+sha512sums="
+3cbb53b66ca894b17c95487fe33a11587449af1b0acd5fa9e804b046e15fdd50a997b5367d0b00c20dce2587cfdf9d15b75cdd97007082928228a53b2f12fde7  htmlq-0.4.0.tar.gz
+74abd6b4d0e0dc1dff3dc638621cf0c2bd72100f84aace70786be307d77e218f85ccf298cb4e8a280409a4dc1f5fb0f59f01b925df79c14f263298e9c10a461a  update-libc.patch
+"

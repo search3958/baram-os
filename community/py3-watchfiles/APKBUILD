@@ -1,0 +1,62 @@
+# Contributor: Newbyte <newbyte@disroot.org>
+# Maintainer: Julien Voisin <julien.voisin@dustri.org>
+pkgname=py3-watchfiles
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="Simple, modern file watching and code reload in Python"
+url="https://github.com/samuelcolvin/watchfiles"
+arch="all"
+license="MIT"
+depends="py3-anyio"
+makedepends="
+	cargo
+	maturin
+	py3-gpep517
+	py3-maturin
+	"
+checkdepends="py3-pytest py3-pytest-asyncio py3-pytest-mock py3-pytest-timeout py3-dirty-equals"
+subpackages="$pkgname-pyc"
+source="
+	$pkgname-v$pkgver.tar.gz::https://github.com/samuelcolvin/watchfiles/archive/refs/tags/v$pkgver.tar.gz
+	"
+builddir="$srcdir/watchfiles-$pkgver"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --locked
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--config-json '{"build-args": "--frozen"}' \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	cd .testenv
+	# Fails on slow systems or when system is under heavy load.
+	# See upstream issue #84
+	# test_awatch_interrupt_raise: loops while trying to handle the exception
+	# maybe due anyio 4
+	# https://github.com/samuelcolvin/watchfiles/issues/254
+	# According to .github/workflows/ci.yml,
+	# WATCHFILES_TEST_PERMISSION_DENIED_PATH is set to a directory owned by
+	# root with chmod 700, in alpine-baselayout /root fits this criteria
+	WATCHFILES_TEST_PERMISSION_DENIED_PATH=/root \
+	bin/python3 -m pytest --import-mode=importlib -v ..
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e558ea345f898a9611af1d4c7eef0a62c5250cc899d6debaef3940c9b81ef5076b866018abb7838892cddfb9b3ffe615e57ac8107ae164f4e7430dfebebede70  py3-watchfiles-v1.2.0.tar.gz
+"

@@ -1,0 +1,30 @@
+# Maintainer: Cowington Post <cowingtonpost@gmail.com>
+pkgname=maildir2rss
+pkgver=0.0.7
+pkgrel=15
+pkgdesc="Convert a maildir to a rss feed"
+url="https://git.sr.ht/~cowingtonpost/maildir2rss"
+arch="all"
+license="MPL-2.0"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~cowingtonpost/maildir2rss/archive/v$pkgver.tar.gz"
+builddir="$srcdir/maildir2rss-v$pkgver"
+options="net !check" # no tests
+
+export GOPATH="$srcdir/go"
+export GOCACHE="$srcdir/go-build"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+export GOFLAGS="$GOFLAGS -modcacherw"
+
+build() {
+	make
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+36bafcb5921b8298e73d4379c9c9b76c3316c22cc508a20607f87dce629991281a293c07fcd91293f6147ea1efcb228bfd6a6579c347cc86b1bc914ff1669a75  maildir2rss-0.0.7.tar.gz
+"

@@ -1,0 +1,38 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-crispy-bootstrap4
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=crispy-bootstrap4
+pkgver=2026.2
+pkgrel=2
+pkgdesc="Bootstrap4 template pack for django-crispy-forms"
+url="https://pypi.org/project/crispy-bootstrap4/"
+arch="noarch"
+license="MIT"
+depends="python3 py3-django-crispy-forms"
+checkdepends="python3-dev py3-pytest py3-pytest-cov py3-pytest-django"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+source="$pkgname-$pkgver.tar.gz::https://github.com/django-crispy-forms/crispy-bootstrap4/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6a93c028337702ae921097b4018ebd1db08f0ed13dab4826910670595a17f833bb013f99fc2baffe597cb4cb9cb72faf6b88b12d6e4047e9a089c36118717374  py3-crispy-bootstrap4-2026.2.tar.gz
+"

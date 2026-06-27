@@ -1,0 +1,63 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gmp
+pkgver=6.3.0
+pkgrel=4
+pkgdesc="free library for arbitrary precision arithmetic"
+url="https://gmplib.org/"
+arch="all"
+license="LGPL-3.0-or-later OR GPL-2.0-or-later"
+makedepends="m4 texinfo libtool autoconf automake"
+subpackages="$pkgname-static $pkgname-doc $pkgname-dev libgmpxx"
+source="https://gmplib.org/download/gmp/gmp-$pkgver.tar.xz
+	gcc15.patch
+	"
+replaces="gmp5"
+
+# secfixes:
+#   6.2.1-r1:
+#     - CVE-2021-43618
+
+prepare() {
+	default_prepare
+	# force update to libtool with fixed cross-build support
+	autoreconf -vif
+}
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--with-sysroot=$CBUILDROOT \
+		--prefix=/usr \
+		--infodir=/usr/share/info \
+		--mandir=/usr/share/man \
+		--localstatedir=/var/state/gmp \
+		--enable-cxx \
+		--with-pic
+	make
+}
+
+check() {
+	[ "$CBUILD" = "$CHOST" ] && make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+libgmpxx() {
+	pkgdesc="C++ support for gmp"
+	mkdir -p "$subpkgdir"/usr/lib/
+	mv "$pkgdir"/usr/lib/libgmpxx.so.* "$subpkgdir"/usr/lib/
+}
+
+doc() {
+	default_doc
+	replaces="gmp5-doc"
+}
+
+sha512sums="
+e85a0dab5195889948a3462189f0e0598d331d3457612e2d3350799dba2e244316d256f8161df5219538eb003e4b5343f989aaa00f96321559063ed8c8f29fd2  gmp-6.3.0.tar.xz
+85e367507f49288f14c929717ffc71c3b553315c95682bf2464422c3f778f5d1eae3ef30af23653b7046fb921b5862c26cdcde9fe909dd4209d589e633e8853c  gcc15.patch
+"

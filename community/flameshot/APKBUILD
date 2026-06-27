@@ -1,0 +1,62 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=flameshot
+pkgver=13.3.0
+_qtcolorwidgets_commit=352bc8f99bf2174d5724ee70623427aa31ddc26a
+pkgrel=0
+pkgdesc="Featureful screenshot app"
+options="!check" # No test suite
+url="https://github.com/flameshot-org/flameshot"
+arch="all !armhf" # kguiaddons
+license="GPL-3.0-or-later"
+depends="qt6-qtsvg"
+makedepends="
+	cmake
+	kdsingleapplication-dev
+	kguiaddons-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	samurai
+	"
+subpackages="
+	$pkgname-lang
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	$pkgname-doc
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/flameshot-org/flameshot/archive/refs/tags/v$pkgver.tar.gz
+	https://gitlab.com/mattbas/Qt-Color-Widgets/-/archive/$_qtcolorwidgets_commit/Qt-Color-Widgets-$_qtcolorwidgets_commit.tar.gz
+	"
+langdir="/usr/share/flameshot/translations"
+
+prepare() {
+	default_prepare
+	mkdir external
+	mv "$srcdir"/Qt-Color-Widgets-$_qtcolorwidgets_commit external/Qt-Color-Widgets
+}
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DUSE_WAYLAND_CLIPBOARD=ON \
+		-DUSE_BUNDLED_KDSINGLEAPPLICATION=OFF \
+		-DENABLE_CACHE=OFF \
+		-DENABLE_IMGUR=ON \
+		-DDISABLE_UPDATE_CHECKER=ON \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+0f991b58e6e828aceb94d1e7eb4e1b5d946d94ad6434ee5324b1177ec3d235298887b767c6c671124ea82d56e24a05909a21cf13a29777bbcd2358f14a7f2362  flameshot-13.3.0.tar.gz
+985174e041137c5dbb99a235c7afecca462d1e93bb811f06d0e136104011dc4afdd82e81fa25c0cc7158a1ca141c3cb0a46a2d535c0667017a3fa6b26b870f8e  Qt-Color-Widgets-352bc8f99bf2174d5724ee70623427aa31ddc26a.tar.gz
+"

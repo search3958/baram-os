@@ -1,0 +1,43 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=gpscorrelate
+pkgver=2.3
+pkgrel=0
+pkgdesc="Program to match GPS tracks to photographs and store the matches in EXIF"
+url="https://dfandrich.github.io/gpscorrelate/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	desktop-file-utils
+	exiv2-dev
+	gettext-dev
+	gtk+3.0-dev
+	intltool
+	libintl
+	libxml2-dev
+	libxslt-dev
+	"
+checkdepends="exiv2"
+subpackages="$pkgname-cli $pkgname-doc $pkgname-lang"
+source="https://github.com/dfandrich/gpscorrelate/archive/$pkgver/gpscorrelate-$pkgver.tar.gz"
+
+build() {
+	make all build-po
+}
+
+check() {
+	make check
+}
+
+package() {
+	make install install-desktop-file install-po DESTDIR="$pkgdir" prefix=/usr
+}
+
+cli() {
+	pkgdesc="$pkgdesc (cli only)"
+	amove usr/bin/gpscorrelate
+}
+
+sha512sums="
+2370492f0bb23c08c0cfd3d33ed77ea820767d835fecc02a6d82eb0ed463c866a3f498442d7026c70c1724841a09756f0d865f7d9ad899b6591a42291c67d32c  gpscorrelate-2.3.tar.gz
+"

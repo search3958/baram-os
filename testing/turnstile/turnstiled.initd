@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+name=turnstiled
+command="/usr/bin/turnstiled"
+command_background=true
+pidfile="/run/$RC_SVCNAME.pid"
+output_log="/var/log/turnstiled.log"
+error_log="/var/log/turnstiled.err"
+
+depend() {
+	need seatd
+}

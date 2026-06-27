@@ -1,0 +1,37 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+maintainer="Galen Abell <galen@galenabell.com>"
+pkgname=py3-identify
+_pyname=identify
+pkgver=2.6.19
+pkgrel=0
+pkgdesc="File identification library for Python"
+url="https://github.com/pre-commit/identify"
+arch="noarch"
+license="MIT"
+depends="py3-ukkonen"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$_pyname-$pkgver.tar.gz::https://github.com/pre-commit/identify/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+746a9452e2cba83a2054addb564b7d131115166946a2fca6af2f307e20f210c8eb97052ec4d1b596885db71b190c0091d9b3ba3def286079ed9935801631534d  identify-2.6.19.tar.gz
+"

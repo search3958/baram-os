@@ -1,0 +1,42 @@
+for some reasons, tests expect the default branch to be called 'main',
+while on alpine it's still 'master'.
+
+to fix this, we can just rename the branch after cloning a test repo to 'main'.
+
+--- a/Makefile
++++ b/Makefile
+@@ -596,6 +596,7 @@ test : fmt $(.DEFAULT_GOAL)
+ 		tempdir="$$(mktemp -d)"; \
+ 		export HOME="$$tempdir"; \
+ 		export GIT_CONFIG_NOSYSTEM=1; \
++		git config --global init.defaultBranch main; \
+ 		$(GO) test -count=1 $(GO_TEST_EXTRA_ARGS) $(addprefix ./,$(PKGS)); \
+ 		RET=$$?; \
+ 		chmod -R u+w "$$tempdir"; \
+--- a/t/testhelpers.sh
++++ b/t/testhelpers.sh
+@@ -439,6 +439,7 @@ clone_repo() {
+   fi
+ 
+   cd "$dir"
++  git branch -m main
+   mv ../clone.log .
+ 
+   git config credential.helper lfstest
+@@ -459,6 +460,7 @@ clone_repo_url() {
+   fi
+ 
+   cd "$dir"
++  git branch -m main
+   mv ../clone.log .
+ 
+   git config credential.helper lfstest
+@@ -633,6 +635,8 @@ setup() {
+   # setup the git credential password storage
+   setup_creds
+ 
++  git config --global init.defaultBranch main
++
+   echo "#"
+   echo "# HOME: $HOME"
+   echo "# TMP: $TMPDIR"

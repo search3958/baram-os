@@ -1,0 +1,26 @@
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=wmutils
+pkgver=1.7
+pkgrel=2
+pkgdesc="Set of X11 windows manipulation tools"
+options="!check" # No testsuite
+url="https://github.com/wmutils/core"
+arch="all"
+license="ISC"
+makedepends="libxcb-dev xcb-util-dev xcb-util-cursor-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/wmutils/core/archive/v$pkgver.tar.gz"
+builddir="$srcdir/core-$pkgver"
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr MANPREFIX=/usr/share/man install
+}
+
+sha512sums="
+726fb328f503c6338f3b855ea77d797db647a78d1de02cfbb3778f27d10dbaa6cec14f46558d46da866b33467a1ab7871634075800d8f2ef00d3e0b5d331c65a  wmutils-1.7.tar.gz
+"

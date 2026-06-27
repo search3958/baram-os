@@ -1,0 +1,46 @@
+# Maintainer: Taner Tas <taner76@gmail.com>
+pkgname=advancescan
+pkgver=1.18
+pkgrel=1
+pkgdesc="Command line rom manager for AdvanceMAME and AdvanceMESS"
+url="http://www.advancemame.it"
+arch="all"
+license="GPL"
+makedepends="zlib-dev"
+subpackages="$pkgname-doc"
+source="https://github.com/amadvance/advancescan/releases/download/v$pkgver/advancescan-$pkgver.tar.gz
+	0001-cpp17-throw.patch
+	"
+options="!check"
+
+prepare() {
+	default_prepare
+
+	update_config_guess
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+	make
+}
+
+package() {
+	make \
+		bindir="$pkgdir/usr/bin/" \
+		datadir="$pkgdir/usr/share/" \
+		mandir="$pkgdir/usr/share/man/" \
+		pkgdocdir="$pkgdir/usr/share/doc/advancescan/" \
+		install
+}
+
+sha512sums="
+ad7529fb2dd625f8d5aa5f5d1cabfbeb5612b1da6e0952a451abd162a95aadf616b74b2bf5b6c4963188cea1267394f2ee84c3f47a323d345d285e9c63622889  advancescan-1.18.tar.gz
+795b13bf7f11fdad59644de6cd03196ea05a87ba9c70b3fd89da0f6b2d202759dbecc70736603cb56aea0cd4cb33cb62fcf067c4ea8a061d45d7786c0881f6ef  0001-cpp17-throw.patch
+"

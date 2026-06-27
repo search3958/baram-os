@@ -1,0 +1,49 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=pcsc-tools
+pkgver=1.7.3
+pkgrel=1
+pkgdesc="tools to test a PC/SC driver, card or reader or send commands"
+url="https://pcsc-tools.apdu.fr/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="pcsc-perl"
+makedepends="pcsc-lite-dev"
+subpackages="
+	$pkgname-doc
+	$pkgname-gscriptor::noarch
+	"
+source="https://pcsc-tools.apdu.fr/pcsc-tools-$pkgver.tar.bz2"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+gscriptor() {
+	pkgdesc="gtk3 gui tool from $pkgname"
+	depends="perl-glib perl-gtk3 perl-libintl-perl $pkgname=$pkgver-r$pkgrel"
+
+	amove \
+		usr/bin/gscriptor \
+		usr/share/applications/gscriptor.desktop \
+		usr/share/pcsc/gscriptor.png
+}
+
+sha512sums="
+2659d5d3d1de147fc5373aaf1bea27692d57ace1f9cd19b2181c0ef43d94c77ecff78f4c784238b9ee05f154550535eb966814f1bd9143ad7ae6842f8b92d5c0  pcsc-tools-1.7.3.tar.bz2
+"

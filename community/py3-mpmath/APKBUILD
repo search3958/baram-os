@@ -1,0 +1,52 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-mpmath
+_pkgorig=mpmath
+pkgver=1.4.1
+pkgrel=2
+pkgdesc="A Python library for arbitrary-precision floating-point arithmetic"
+url="https://mpmath.org/"
+arch="all"
+license="BSD-3-Clause"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+checkdepends="
+	python3
+	py3-hypothesis
+	py3-pexpect
+	py3-pycodestyle
+	py3-pytest-xdist
+	py3-pytest-cov
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/m/mpmath/mpmath-$pkgver.tar.gz
+	0001-Revert-Add-a-workaround-for-test-on-s390x.patch
+	"
+builddir="$srcdir/$_pkgorig-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	cd build/lib/mpmath/tests/
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v \
+		-k "not (manydigits or pidigits or test_sofa or test_taylor or test_hexadecimal_with_libc_bulk)" \
+		.
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	rm -r "$pkgdir"/usr/lib/python3.*/site-packages/mpmath/tests
+}
+
+sha512sums="
+aef995ece7db9168142d2041e7bad1596713de0de4dcfde1d7ea173cd628edd791335db68bb6d73cda7bece78e42e1fb4c595bac69d084afaca59a6e3a22af16  py3-mpmath-1.4.1.tar.gz
+4a0e15e91687f293bc6cf68c244dc18147bfcf75bb303730e84b7d6071686754f0dbecd4cf12afceea3666b235b8629b1c0ba2106cf41a2880af1a3af80b7b6e  0001-Revert-Add-a-workaround-for-test-on-s390x.patch
+"

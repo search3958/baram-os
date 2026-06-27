@@ -1,0 +1,41 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=raku-terminal-ansicolor
+pkgver=0.14
+pkgrel=0
+pkgdesc="Color screen output using ANSI escape sequences"
+url="https://github.com/raku-community-modules/Terminal-ANSIColor"
+arch="all"
+license="MIT"
+depends="rakudo"
+makedepends="moarvm-dev rakudo-dev"
+checkdepends="perl-utils"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/raku-community-modules/Terminal-ANSIColor/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/Terminal-ANSIColor-$pkgver"
+options="!archcheck" # Precompiled arch dependent files included (quiet noarch warning)
+
+build() {
+	RAKUDO_RERESOLVE_DEPENDENCIES=0 \
+	/usr/share/rakudo/tools/install-dist.raku \
+		--to=output --for=vendor
+}
+
+check() {
+	prove -e 'raku -Ilib' --ext .rakutest
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/share/rakudo
+	cp -RT output "$pkgdir"/usr/share/rakudo/vendor
+
+	install -Dvm644 META6.json README.md \
+		-t "$pkgdir"/usr/share/doc/$pkgname/
+
+	install -Dvm644 LICENSE \
+		-t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+503a06c47dfac42e7915e5ab61b163f5cf77cd5f2f8c0f40ed82912f73fd9710e727d11939e82c47e69f57e1fe8f7f3eaf765c324464288e840a5954694acebd  raku-terminal-ansicolor-0.14.tar.gz
+"

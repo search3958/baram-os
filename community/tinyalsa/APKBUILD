@@ -1,0 +1,28 @@
+# Contributor: Minecrell <minecrell@minecrell.net>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=tinyalsa
+pkgver=2.0.0
+pkgrel=4
+pkgdesc="Tiny library to interface with ALSA in the Linux kernel"
+url="https://github.com/tinyalsa/tinyalsa"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	bash
+	linux-headers
+	doxygen
+	graphviz
+	"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc $pkgname-libs"
+source="$pkgname-$pkgver.tar.gz::https://github.com/tinyalsa/tinyalsa/archive/v$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="2fd6a96f88d384043fb57c83fc9720769f5b3f30fea9e692aac1075eed76f13409ad7fd849d243313c30b5bd7d44ed3f7594e02e8158224d6c961c3be8c9e5da  tinyalsa-2.0.0.tar.gz"

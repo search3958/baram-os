@@ -1,0 +1,52 @@
+# Contributor: Cedric Bellegarde <cedric.bellegarde@adishatz.org>
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=power-profiles-daemon
+pkgver=0.30
+pkgrel=1
+pkgdesc="Makes power profiles handling available over D-Bus"
+url="https://gitlab.freedesktop.org/upower/power-profiles-daemon"
+arch="all"
+license="GPL-3.0-or-later"
+provides="power-profiles-provider"
+provider_priority=10 # highest
+depends="
+	glib
+	py3-gobject3
+	"
+makedepends="
+	glib-dev
+	libgudev-dev
+	meson
+	polkit-dev
+	upower-dev
+	"
+checkdepends="
+	py3-dbusmock
+	umockdev
+	"
+subpackages="$pkgname-systemd"
+source="https://gitlab.freedesktop.org/upower/power-profiles-daemon/-/archive/$pkgver/power-profiles-daemon-$pkgver.tar.gz
+	0001-dbus-no-systemd.patch
+	"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dsystemdsystemunitdir=/usr/lib/systemd/system \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+5ed70c5db9ee7337564594603635927e9bb78102f706c38db4960d28633a95abab15bf321703b7891243669736455259b7ab5b7d4d323265970dc29217434b6a  power-profiles-daemon-0.30.tar.gz
+62dcec5d54b9014d16ec74448782beee656d4736c24e69c6a2111c92f895ee6869311e4f7e72a679226485374db14274d6e2ad54e62103b29c3301d6840d8891  0001-dbus-no-systemd.patch
+"

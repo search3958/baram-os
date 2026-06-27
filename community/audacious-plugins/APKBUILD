@@ -1,0 +1,75 @@
+# Contributor: Łukasz Jendrysik <scadu@yandex.com>
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Ariadne Conill <ariadne@dereferenced.org>
+pkgname=audacious-plugins
+pkgver=4.5.1
+pkgrel=0
+pkgdesc="A playlist-oriented media player with multiple interfaces (plugins)"
+url="https://audacious-media-player.org/"
+arch="all"
+license="BSD-2-Clause AND BSD-3-Clause AND ISC AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later"
+depends="audacious"
+install_if="audacious"
+makedepends="
+	alsa-lib-dev
+	audacious-dev
+	autoconf
+	automake
+	curl-dev
+	faad2-dev
+	ffmpeg-dev
+	flac-dev
+	fluidsynth-dev
+	lame-dev
+	libcddb-dev
+	libcdio-dev
+	libcdio-paranoia-dev
+	libcue-dev
+	libmms-dev
+	libnotify-dev
+	libogg-dev
+	libopenmpt-dev
+	libsamplerate-dev
+	libsndfile-dev
+	libvorbis-dev
+	libxcomposite-dev
+	libxml2-dev
+	meson
+	mpg123-dev
+	neon-dev
+	opusfile-dev
+	pipewire-dev
+	pulseaudio-dev
+	sdl2-dev
+	wavpack-dev
+	"
+subpackages="$pkgname-dbg $pkgname-lang"
+source="http://distfiles.audacious-media-player.org/audacious-plugins-$pkgver.tar.bz2"
+options="!check" # No test suite (or any plans for one)
+
+build() {
+	case "$CARCH" in
+	arm*|aarch64)
+		local qtgl=false
+		;;
+	*)
+		local qtgl=true
+		;;
+	esac
+	abuild-meson \
+		-Db_lto=true \
+		-Dgtk=false \
+		-Dqt=true \
+		-Dgl-spectrum=$qtgl \
+		. output
+
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+432154033e23cb47f408d5441e1586e4790887d1bda5be6f01a2335e9933a2a9ca45d6c5b13bd70da014f86c54edb13517497e2a8af6dcdb391faab9e0d58960  audacious-plugins-4.5.1.tar.bz2
+"

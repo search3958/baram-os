@@ -1,5 +1,0 @@
-#TODO mlua-sys crate error
-[source]
-git = "https://github.com/Etto48/HexPatch"
-[build]
-template = "cargo"

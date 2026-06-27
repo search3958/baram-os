@@ -1,0 +1,41 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=apulse
+pkgver=0.1.14
+pkgrel=0
+pkgdesc="PulseAudio emulation for ALSA"
+url="https://github.com/i-rinat/apulse"
+arch="all"
+license="MIT"
+makedepends="
+	alsa-lib-dev
+	cmake
+	glib-dev
+	libpulse
+	samurai
+	"
+options="!check"  # no tests
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/i-rinat/apulse/archive/v$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	# TODO -DUSE_BUNDLED_PULSEAUDIO_HEADERS=0
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+7084145c89fb1728a3d041ce66386ab06decc7fd4a721ca8cc3e713b548daba0b2c076d2a5be64dc749cb0250270e8045aee1dc7193bc5e76268ba76fa359f09  apulse-0.1.14.tar.gz
+"

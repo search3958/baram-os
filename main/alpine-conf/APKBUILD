@@ -1,0 +1,32 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=alpine-conf
+pkgver=3.22.0
+pkgrel=0
+pkgdesc="Alpine configuration management scripts"
+url="https://gitlab.alpinelinux.org/alpine/alpine-conf"
+arch="all"
+license="MIT"
+depends="openrc>=0.24.1-r6 busybox>=1.26.1-r3"
+makedepends="scdoc"
+checkdepends="kyua sfdisk"
+subpackages="$pkgname-doc"
+source="https://gitlab.alpinelinux.org/alpine/alpine-conf/-/archive/$pkgver/alpine-conf-$pkgver.tar.gz"
+
+build() {
+	make PREFIX="/usr" VERSION=$pkgver-r$pkgrel
+}
+
+package() {
+	make install PREFIX="/usr" DESTDIR="$pkgdir"
+	for i in commit exclude include status; do
+		ln -s lbu "$pkgdir"/usr/sbin/lbu_$i
+	done
+}
+
+check() {
+	make check
+}
+
+sha512sums="
+601f352c54ed1a543c706bff804a508005296d4c1d26d6d8dc643cf4c038c2d0189fbb78c07098e8565269841de19c68ad1cbfb379ab8c1e30492ca5b4907afc  alpine-conf-3.22.0.tar.gz
+"

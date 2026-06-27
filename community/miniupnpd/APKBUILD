@@ -1,0 +1,98 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Contributor: Ariadne Conill <ariadne@ariadne.space>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=miniupnpd
+pkgver=2.3.10
+pkgrel=0
+pkgdesc="Lightweight UPnP IGD & PCP/NAT-PMP daemon"
+url="https://miniupnp.tuxfamily.org/"
+arch="all"
+license="BSD-3-Clause"
+install="$pkgname.post-install"
+depends="uuidgen"
+makedepends="bsd-compat-headers iptables-dev libnfnetlink-dev libmnl-dev libnftnl-dev openssl-dev>3"
+checkdepends="util-linux-dev"
+subpackages="$pkgname-doc $pkgname-openrc
+	$pkgname-iptables:_fwscripts:noarch
+	$pkgname-ip6tables:_fwscripts:noarch
+	$pkgname-nftables
+	"
+source="http://miniupnp.free.fr/files/miniupnpd-$pkgver.tar.gz
+	$pkgname.initd
+"
+# tests require a physical network device
+options="!check"
+
+# secfixes:
+#   2.3.10-r0:
+#     - CVE-2026-5720
+#   2.2.2-r0:
+#     - CVE-2019-12107
+#     - CVE-2019-12108
+#     - CVE-2019-12109
+#     - CVE-2019-12110
+#     - CVE-2019-12111
+
+prepare() {
+	default_prepare
+	mv "$builddir" "${builddir}-iptables"
+	cp -al "${builddir}-iptables" "${builddir}-nftables"
+}
+
+build_variant() {
+	cd "${srcdir}/${pkgname}-${pkgver}-$1"
+	./configure \
+		--firewall="$1" \
+		--vendorcfg \
+		--leasefile \
+		--ipv6 \
+		--igd2
+	make ISGITREPO=""
+}
+
+build() {
+	build_variant iptables
+	build_variant nftables
+}
+
+check_variant() {
+	cd "${srcdir}/${pkgname}-${pkgver}-$1"
+	make check ISGITREPO=""
+}
+
+check() {
+	check_variant iptables
+	check_variant nftables
+}
+
+package() {
+	cd "${srcdir}/${pkgname}-${pkgver}-iptables"
+	make PREFIX="$pkgdir/" ISGITREPO="" install
+	install -m755 -D "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+}
+
+nftables() {
+	provides="${pkgname}=${pkgver}-r${pkgrel}"
+	cd "${srcdir}/${pkgname}-${pkgver}-nftables"
+	make PREFIX="$subpkgdir/" ISGITREPO="" install
+
+	rm -rf "$subpkgdir"/etc/init.d
+	rm -rf "$subpkgdir"/usr/share
+
+	install -D -m755 "${srcdir}/${pkgname}-${pkgver}-nftables/netfilter_nft/scripts/miniupnpd_functions.sh" "$subpkgdir"/etc/miniupnpd
+}
+
+_fwscripts() {
+	depends=
+	local _tables=${subpkgname#$pkgname-}
+	pkgdesc="$_tables scripts for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel $_tables"
+	amove	etc/miniupnpd/${_tables}_init.sh \
+		etc/miniupnpd/${_tables}_removeall.sh
+}
+
+sha512sums="
+0e027730ea4c615eefc391c8f6b9160708abe7c3ee7a31677174880170c06fcb03cb3381750d9047a67a55c500d6e6b8c6692a88b0a192387dd82de602288390  miniupnpd-2.3.10.tar.gz
+3619d66b5d27369e9ae368f189fc4f4e25a803b460a954f47fd749195755bda8e828fbaa4e04ffc980aa72078f790d41a313c2ab7d0de7d4c284251a577b7a90  miniupnpd.initd
+"

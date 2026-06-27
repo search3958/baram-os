@@ -1,0 +1,44 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=aws-checksums
+pkgver=0.2.10
+pkgrel=0
+pkgdesc="AWS Cross-Platform HW accelerated CRC32c and CRC32 with fallback to efficient SW implementations"
+url="https://github.com/awslabs/aws-checksums"
+arch="all"
+license="Apache-2.0"
+makedepends="
+	aws-c-common-dev
+	cmake
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/awslabs/aws-checksums/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	CFLAGS="$CFLAGS -flto=auto" \
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=/usr/lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_TESTING="$(want_check && echo ON || echo OFF)" \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+c61d0ea4129b717d3bf3760b6fc8fa8e04af9b1810ca390feab644c12889455a3d7d8886ce88f76dc6770ae65eb6558417df0760fc62145fa46f9e13ea0d3993  aws-checksums-0.2.10.tar.gz
+"

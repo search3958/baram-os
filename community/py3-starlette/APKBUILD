@@ -1,0 +1,55 @@
+# Contributor: Marten Ringwelski <git+alpine@maringuu.de>
+# Contributor: Steven Guikal <apk-void@fluix.one>
+# Maintainer: Steven Guikal <apk-void@fluix.one>
+pkgname=py3-starlette
+pkgver=1.1.0
+pkgrel=0
+pkgdesc="Lightweight ASGI framework/toolkit, which is ideal for building async web services in Python"
+url="https://github.com/encode/starlette"
+arch="noarch"
+license="MIT"
+depends="
+	py3-anyio
+	py3-typing-extensions
+	"
+makedepends="
+	py3-gpep517
+	py3-hatchling
+	py3-installer
+	"
+checkdepends="
+	py3-httpx
+	py3-itsdangerous
+	py3-jinja2
+	py3-pytest-forked
+	py3-pytest-xdist
+	py3-python-multipart
+	py3-trio
+	py3-yaml
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/encode/starlette/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/starlette-$pkgver"
+
+# secfixes:
+#   1.1.0-r0:
+#     - CVE-2026-48710
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m pytest -n auto --forked
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/starlette*.whl
+}
+
+sha512sums="
+a351b971ee4ed3d2c305c3811e1fd0649f7039d4a72ed70ddbd3054a68ca3ccb89dea444647b31abf15057db7c03fa05fd92a488871febdd2b9bf7c421aad72f  py3-starlette-1.1.0.tar.gz
+"

@@ -1,0 +1,31 @@
+# Contributor: Kaarle Ritvanen <kunkku@alpinelinux.org>
+# Maintainer: Kaarle Ritvanen <kunkku@alpinelinux.org>
+pkgname=py3-django-appconf
+_pkgname=django_appconf
+pkgver=1.2.0
+pkgrel=2
+pkgdesc="Packaged application configuation helper for Django"
+url="https://django-appconf.readthedocs.io/en/latest/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="python3 py3-django"
+makedepends="py3-setuptools"
+options="!check"  # No test suite available
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/d/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-django-appconf" # Backwards compatibility
+provides="py-django-appconf=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	python3 setup.py build
+}
+
+package() {
+	python3 setup.py install --root "$pkgdir"
+}
+
+sha512sums="
+47e344cac2abe321c62f93850bbd774f12689ef88975fc31a00d75251fe1daae3643c14ae1460abd9ff4c400426c99fb09122567246cdcbe645e752e8376111f  django_appconf-1.2.0.tar.gz
+"

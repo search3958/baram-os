@@ -1,0 +1,11 @@
+--- a/include/tin.h
++++ b/include/tin.h
+@@ -648,7 +648,7 @@ enum rc_state { RC_IGNORE, RC_UPGRADE, RC_DOWNGRADE, RC_ERROR };
+ #define SERVERCONFIG_FILE	"serverrc"
+ #define DEFAULT_MAILDIR	"Mail"
+ #define DEFAULT_SAVEDIR	"News"
+-#define DEFAULT_URL_HANDLER "url_handler.pl"
++#define DEFAULT_URL_HANDLER "tin_url_handler.pl"
+ /* Prefixes saved attachments with no set filename */
+ #define SAVEFILE_PREFIX		"unknown"
+ 

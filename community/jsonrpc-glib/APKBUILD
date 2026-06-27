@@ -1,0 +1,33 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <kboykinov@teamcentrixx.com>"
+pkgname=jsonrpc-glib
+pkgver=3.44.2
+pkgrel=0
+# NOTE: Upgrade only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="Library to communicate using the JSON-RPC 2.0 specification"
+url="https://gitlab.gnome.org/GNOME/jsonrpc-glib"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="gtk+3.0-dev vala gobject-introspection-dev meson json-glib-dev"
+subpackages="$pkgname-dev"
+source="https://download.gnome.org/sources/jsonrpc-glib/${pkgver%.*}/jsonrpc-glib-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Denable_gtk_doc=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+f91e57b36f2902d3281ce4ab493f45c1d589cdda08b95482d97bd66ba5a8a73344c3becfb6bdcd3ef9215be376cbcf80e5d89d8d0fe3807fd7e2879c513ab6f6  jsonrpc-glib-3.44.2.tar.xz
+"

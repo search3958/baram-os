@@ -1,0 +1,35 @@
+# Maintainer:
+pkgname=py3-pytest-xprocess
+pkgver=0.23.0
+pkgrel=2
+pkgdesc="pytest external process plugin"
+url="https://github.com/pytest-dev/pytest-xprocess"
+arch="noarch"
+license="MIT"
+depends="python3 py3-psutil py3-pytest py3-py"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pytest-dev/pytest-xprocess/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/pytest-xprocess-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+80b577257413ed1bc4e7799d9c6b90f05a7ff318c273a9c7be902bc996cb99e383ad93e145eb1eabdff23a0d47b7c26174e81fd1933753f53de81816798a05ed  py3-pytest-xprocess-0.23.0.tar.gz
+"

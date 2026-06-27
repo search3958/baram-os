@@ -1,0 +1,38 @@
+# Contributor: guddaff <guddaff@protonmail.com>
+# Maintainer: guddaff <guddaff@protonmail.com>
+pkgname=rustscan
+pkgver=2.4.1
+pkgrel=0
+pkgdesc="Modern Port Scanner"
+url="https://github.com/RustScan/RustScan"
+license="GPL-3.0-or-later"
+# armhf timout while building
+arch="all !armhf"
+makedepends="cargo cargo-auditable"
+checkdepends="bash perl python3"
+source="https://github.com/RustScan/RustScan/archive/$pkgver/rustscan-$pkgver.tar.gz"
+options="net"
+builddir="$srcdir/RustScan-$pkgver"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm0755 target/release/rustscan -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+c55edabd03bef7540633212110c8ebdf483632cd8602b1ad8481063f6d3bba1b1ee5c03ec5ae32ac71bd75e0ee0ecc7195b5ccbe76b1e91a6a3155bc6df06de0  rustscan-2.4.1.tar.gz
+"

@@ -1,0 +1,55 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=oniux
+pkgver=0.11.0
+pkgrel=0
+pkgdesc="Linux namespace Tor isolation for any program (except libcurl/c-ares dependants)"
+url="https://gitlab.torproject.org/tpo/core/oniux"
+license="Apache-2.0"
+# s390x: merlin crate doesn't support big-endian targets
+arch="all !s390x"
+makedepends="cargo
+	cargo-auditable
+	openssl-dev>3
+	sqlite-dev
+	xz-dev
+	zstd-dev
+	"
+subpackages="$pkgname-doc"
+source="https://gitlab.torproject.org/tpo/core/oniux/-/archive/v$pkgver/oniux-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+export OPENSSL_NO_VENDOR=1
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+
+	# Build against system-provided libs
+	mkdir -p .cargo
+	cat >> .cargo/config.toml <<-EOF
+		[target.$CHOST]
+		zstd = { rustc-link-lib = ["zstd"] }
+	EOF
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	./target/release/"$pkgname" --help
+
+	# when using oniux in CI:
+	# Error: EPERM: Operation not permitted
+}
+
+package() {
+	install -Dm755 -t "$pkgdir"/usr/bin/ target/release/oniux
+	install -Dm755 -t "$pkgdir"/usr/share/doc/"$pkgname"/ README.md
+}
+
+sha512sums="
+2e6bb6a83e35e64f57ffb294249a2d2397ad61787f22641cfaeb6119a4fb35a23d5e67d95c0df74592cea0f9fdfae42c697f18bc81ee406a33a77dd3c0f1aa7f  oniux-v0.11.0.tar.gz
+"

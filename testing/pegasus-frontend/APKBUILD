@@ -1,0 +1,69 @@
+# Contributor: Díaz Urbaneja Diego <sodomon2@gmail.com>
+# Maintainer: Díaz Urbaneja Diego <sodomon2@gmail.com>
+pkgname=pegasus-frontend
+pkgver=16_alpha
+_realver=weekly_2023w20
+_translations_commit=e1afa445aa55f877f48fba600706c712113e5508
+_thirdparty_commit=2061f8136ba372fd06c1928a610258b7d88cb144
+_theme_commit=d7533c825c769a2240ed1a70cbbb1178793e871b
+pkgrel=0
+pkgdesc="A cross platform, customizable graphical frontend for launching emulators and managing your game collection."
+url="https://pegasus-frontend.org"
+arch="all !armhf"
+license="GPL-1.0-or-later"
+depends="
+	gst-libav
+	gst-plugins-good
+	mesa
+	qt5-qtgraphicaleffects
+	qt5-qtgamepad
+	qt5-qtmultimedia
+	qt5-qtquickcontrols
+	"
+makedepends="
+	openssl
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt5-qtgamepad-dev
+	qt5-qtmultimedia-dev
+	qt5-qtquickcontrols2-dev
+	qt5-qtsvg-dev
+	qt5-qttools-dev
+	"
+subpackages="$pkgname-doc"
+options="!check" #disabled due to compilation problems
+source="$pkgname-$pkgver.tar.gz::https://github.com/mmatyas/pegasus-frontend/archive/$_realver.tar.gz
+	$pkgname-$pkgver-translations.tar.gz::https://github.com/mmatyas/pegasus-frontend-translations/archive/$_translations_commit.tar.gz
+	$pkgname-$pkgver-thirdparty.tar.gz::https://github.com/mmatyas/SortFilterProxyModel/archive/$_thirdparty_commit.tar.gz
+	$pkgname-$pkgver-themes.tar.gz::https://github.com/mmatyas/pegasus-theme-grid/archive/$_theme_commit.tar.gz
+	"
+builddir="$srcdir/$pkgname-$_realver"
+
+prepare() {
+	default_prepare
+	mv "$srcdir"/$pkgname-translations-$_translations_commit/* "$builddir"/lang
+	mv "$srcdir"/SortFilterProxyModel-$_thirdparty_commit/* "$builddir"/thirdparty/SortFilterProxyModel
+	mv "$srcdir"/pegasus-theme-grid-$_theme_commit/* "$builddir"/src/themes/pegasus-theme-grid
+}
+
+build() {
+	qmake pegasus.pro \
+	    USE_SDL_GAMEPAD=1 \
+	    INSTALL_BINDIR=/usr/bin \
+	    INSTALL_DATADIR=/usr/share/pegasus-frontend \
+	    INSTALL_DOCDIR=/usr/share/doc/pegasus-frontend \
+	    INSTALL_ICONDIR=/usr/share/pixmaps \
+	    INSTALL_DESKTOPDIR=/usr/share/applications
+	make
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+}
+
+sha512sums="
+a9882d3ab0474ea6a5a25fcd6e32c0a305d13d13e499ecdce3ffb5b6c793bd9c052f50b6589eb8a3b825750e1f25a45ff3448f47270c97c368402bde3d8c492e  pegasus-frontend-16_alpha.tar.gz
+ef056ef35bdfdb8886d1b2fa84bb39bedee54685e0125017fcdf04ba591aeff9698fde95929ed58f14c07ba999b2a88a5e39d3bf3c7a3854296398e8ad975813  pegasus-frontend-16_alpha-translations.tar.gz
+daccae2b3b51c46c304aeb36ff83fadb20cd0ca078cb4f757dc37b4242157be425952f90f3720a54d5cb80285a35031504e1b6f9bf48fe47e0716625aaf9b546  pegasus-frontend-16_alpha-thirdparty.tar.gz
+d0bbc7b45f6fb943a3d738b10be0c2daecbfef67c787dc07d75082ae25d59cb111a5199121131e7543367849c95835640fa2837588a6cda753cff59f52741d97  pegasus-frontend-16_alpha-themes.tar.gz
+"

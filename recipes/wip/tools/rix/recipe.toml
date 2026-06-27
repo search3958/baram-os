@@ -1,5 +1,0 @@
-#TODO compilation error
-[source]
-git = "https://github.com/urbas/rix"
-[build]
-template = "cargo"

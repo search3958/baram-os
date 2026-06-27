@@ -1,0 +1,50 @@
+# Contributor: Andy Hawkins <andy@gently.org.uk>
+# Maintainer: Andy Hawkins <andy@gently.org.uk>
+pkgname=py3-pytest-tmp-files
+pkgver=0.0.2
+pkgrel=2
+pkgdesc="Temporary file hierarchies for pytest"
+url="https://pypi.org/project/pytest-tmp-files/"
+arch="noarch"
+license="MIT"
+depends="
+	py3-dateutil
+	py3-pytest
+	"
+makedepends="
+	py3-flit-core
+	py3-gpep517
+	"
+checkdepends="
+	py3-parametrize-from-file
+	py3-openpyxl
+	"
+subpackages="$pkgname-pyc"
+source="
+	https://github.com/kalekundert/pytest_tmp_files/archive/v$pkgver/pytest_tmp_files-$pkgver.tar.gz
+	00-fix-version.patch
+	"
+builddir="$srcdir/pytest_tmp_files-$pkgver"
+options="!check" #15980
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages test-env
+	test-env/bin/python3 -m installer .dist/pytest_tmp_files-$pkgver*-py3-none-any.whl
+	test-env/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/pytest_tmp_files-$pkgver*-py3-none-any.whl
+}
+
+sha512sums="
+cb95bb2d6dc54b7405d107380835a4bfaed67ad9f4c9f443a07e3e54d60ee83cec533c742fd8dc1b382fd9e78030e8688eb5820dde816d97d3b5fa1b8b60a89c  pytest_tmp_files-0.0.2.tar.gz
+d111905726cd7b83578d312de0235c36cd0dd88fd10c789e68c8d07c5241b57b5cf5304c57a2e9c34ac878903a550ee1d12544e844716cafb8914e152f32af09  00-fix-version.patch
+"

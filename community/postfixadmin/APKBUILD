@@ -1,0 +1,98 @@
+# Contributor: Sergei Lukin <sergej.lukin@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+_php=php85
+pkgname=postfixadmin
+pkgver=4.0.1
+pkgrel=1
+pkgdesc="Web Based Management tool for Postfix"
+url="https://postfixadmin.github.io/postfixadmin/"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="
+	$_php
+	$_php-ctype
+	$_php-dom
+	$_php-gd
+	$_php-iconv
+	$_php-mbstring
+	$_php-mysqli
+	$_php-session
+	$_php-simplexml
+	$_php-xml
+	$_php-xmlwriter
+	"
+makedepends="
+	$_php-pdo_sqlite
+	$_php-phar
+	$_php-sqlite3
+	$_php-tokenizer
+	composer
+	"
+options="net" # composer install
+subpackages="$pkgname-doc $pkgname-contrib"
+source="https://github.com/postfixadmin/postfixadmin/archive/postfixadmin-$pkgver.tar.gz"
+
+# secfixes:
+#   3.0.2-r0:
+#     - CVE-2017-5930
+
+builddir="$srcdir/$pkgname-$pkgname-$pkgver"
+
+prepare() {
+	default_prepare
+
+	# Drop deprecated thecodingmachine/safe transitive dep.
+	# https://github.com/postfixadmin/postfixadmin/commit/29a7c846f
+	$_php /usr/bin/composer.phar require --no-interaction --no-progress --no-cache \
+		spomky-labs/otphp:^11.0
+
+	# Quota * 1MiB overflows PHP_INT_MAX on 32-bit; wontfix upstream.
+	# https://github.com/postfixadmin/postfixadmin/issues/568
+	case "$CARCH" in
+		x86|armhf|armv7)
+			sed -i 's/123456/1234/g' tests/MailboxHandlerTest.php
+			;;
+	esac
+}
+
+check() {
+	$_php /usr/bin/composer.phar run-script test
+}
+
+package() {
+	$_php /usr/bin/composer.phar install -o --no-dev --no-interaction --no-progress
+
+	mkdir -p "$pkgdir"/usr/share/webapps/postfixadmin \
+		"$pkgdir"/etc/postfixadmin
+	cp -r -- * "$pkgdir"/usr/share/webapps/postfixadmin/
+
+	# move config to /etc/postfixadmin and create symlink
+	mv "$pkgdir"/usr/share/webapps/postfixadmin/config.inc.php \
+		"$pkgdir"/etc/postfixadmin/
+	ln -s /etc/postfixadmin/config.inc.php \
+		"$pkgdir"/usr/share/webapps/postfixadmin/config.inc.php
+	ln -s /etc/postfixadmin/config.local.php \
+		"$pkgdir"/usr/share/webapps/postfixadmin/config.local.php
+	mkdir -p "$pkgdir"/var/cache/postfixadmin/templates_c
+	ln -s /var/cache/postfixadmin/templates_c \
+		"$pkgdir"/usr/share/webapps/postfixadmin/templates_c
+	echo -e "User-Agent: *\nDisallow: /" \
+		> "$pkgdir"/usr/share/webapps/postfixadmin/robots.txt
+}
+
+doc() {
+	install -d "$subpkgdir"/usr/share/doc/$pkgname
+	mv "$builddir"/*.TXT "$subpkgdir"/usr/share/doc/$pkgname
+	mv "$builddir"/DOCUMENTS "$subpkgdir"/usr/share/doc/$pkgname
+}
+
+contrib() {
+	install -d "$subpkgdir"/usr/share/webapps/$pkgname
+	for dir in debian ADDITIONS VIRTUAL_VACATION; do
+		mv "$builddir"/$dir "$subpkgdir"/usr/share/webapps/$pkgname/
+	done
+}
+
+sha512sums="
+746022c44f8ac4faea01c9fd2034e95c94cc2acd6e3b346cc6ef79c31fb645c78aa0bc391941d2213ca9f7dccf1befd84ae57205c90f44d3191d642943584ea0  postfixadmin-4.0.1.tar.gz
+"

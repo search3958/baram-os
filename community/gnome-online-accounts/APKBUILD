@@ -1,0 +1,59 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+maintainer="team/gnome <ncopa@alpinelinux.org>"
+pkgname=gnome-online-accounts
+pkgver=3.58.1
+pkgrel=0
+# NOTE: Upgrade only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="Single sign-on framework for GNOME"
+url="https://gitlab.gnome.org/GNOME/gnome-online-accounts/-/wikis/home"
+arch="all"
+license="GPL-2.0-or-later"
+depends="dbus:org.freedesktop.Secrets"
+makedepends="
+	docbook-xml
+	docbook-xsl
+	gcr4-dev
+	gi-docgen
+	gnome-desktop-dev
+	gobject-introspection-dev
+	gtk-doc
+	itstool
+	json-glib-dev
+	keyutils-dev
+	krb5-dev
+	libadwaita-dev
+	libsecret-dev
+	libxml2-utils
+	libxslt
+	meson
+	rest1-dev
+	vala
+	webkit2gtk-4.1-dev
+	"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-lang $pkgname-doc"
+source="https://download.gnome.org/sources/gnome-online-accounts/${pkgver%.*}/gnome-online-accounts-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+dev() {
+	provides="$pkgname-static=$pkgver-r$pkgrel"
+	replaces="$pkgname-static"
+	default_dev
+}
+
+sha512sums="
+4d466a14086ec199b5693727c29e8c159e85eef9949c2b30f5680c25b791653b1c468aedfd3176662dc934927d35df5f1e0c2ae8d6ec37d7d9515bbb8ca2ea15  gnome-online-accounts-3.58.1.tar.xz
+"

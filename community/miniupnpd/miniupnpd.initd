@@ -1,0 +1,30 @@
+#!/sbin/openrc-run
+
+command="/usr/sbin/miniupnpd"
+: ${command_args:="${ARGS:--f /etc/miniupnpd/miniupnpd.conf}"}
+: ${pidfile:=/var/run/miniupnpd.pid}
+
+depend() {
+	need net
+	use iptables ip6tables minissdpd
+}
+
+run_scripts() {
+	local ret=0 suffix="$1"
+
+	if [ -x /etc/miniupnpd/iptables_"$suffix" ]; then
+		/etc/miniupnpd/iptables_"$suffix" || ret=$?
+	fi
+	if [ -x /etc/miniupnpd/ip6tables_"$suffix" ]; then
+		/etc/miniupnpd/ip6tables_"$suffix" || ret=$?
+	fi
+	return $ret
+}
+
+start_pre() {
+	run_scripts init.sh
+}
+
+stop_post() {
+	run_scripts removeall.sh
+}

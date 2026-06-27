@@ -1,0 +1,34 @@
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=spread-sheet-widget
+pkgver=0.10
+pkgrel=0
+pkgdesc="gtk+ lib for 2 dimensional tabular data"
+url="https://www.gnu.org/software/ssw/"
+arch="all"
+license="GPL-3.0-only"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc"
+source="https://alpha.gnu.org/gnu/ssw/spread-sheet-widget-$pkgver.tar.gz"
+makedepends="
+	gtk+3.0-dev
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-stripping
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+8d198e107fac24883c2b726cb506a212aff874935c9b04a0da599e4552fff50db24b069ec7156982b07679e697a2d8b4cf758d27f7f20119c08a4442c8ae543d  spread-sheet-widget-0.10.tar.gz
+"

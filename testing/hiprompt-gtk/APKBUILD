@@ -1,0 +1,25 @@
+# Contributor: Hannes Braun <hannes@hannesbraun.net>
+# Maintainer: Hannes Braun <hannes@hannesbraun.net>
+pkgname=hiprompt-gtk
+pkgver=0.10
+pkgrel=0
+pkgdesc="GTK4 prompter for Himitsu"
+url="https://git.sr.ht/~sircmpwn/hiprompt-gtk"
+# riscv64,aarch64: hare does not support PIE, but it seems to be required to access libc's environ variable
+arch="x86_64" # blocked by hare
+license="GPL-3.0-only"
+makedepends="hare hare-adwaita hare-gi hare-gtk4-layer-shell himitsu-dev"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~sircmpwn/hiprompt-gtk/archive/$pkgver.tar.gz"
+options="!check" # no test suite
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+aa90b2ab4f808d0d2b9409f3f2868e0c6e6e692e197d3d19697db492966da45f1cac28ef76920f0ff48ca4a8572ca090bd19b56d996448be2bcd76b38eafd50b  hiprompt-gtk-0.10.tar.gz
+"

@@ -1,0 +1,38 @@
+maintainer="Michał Polański <michal@polanski.me>"
+pkgname=cargo-release
+pkgver=1.1.2
+pkgrel=0
+pkgdesc="Everything about releasing a rust crate"
+url="https://github.com/crate-ci/cargo-release"
+license="MIT OR Apache-2.0"
+arch="all !armhf !armv7 !x86" # fails to build
+makedepends="
+	cargo
+	cargo-auditable
+	libgit2-dev
+	openssl-dev
+	"
+source="https://github.com/crate-ci/cargo-release/archive/v$pkgver/cargo-release-$pkgver.tar.gz"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release --no-default-features
+}
+
+check() {
+	cargo test --frozen --no-default-features
+}
+
+package() {
+	install -Dm755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+b214290fab0952df8c59fc179d714d240a0266a32c8234d9e966d825c7fa615ae267f66b8719a209041d18e10834bb5808148bf62e2257b8b1ebbace9af636b8  cargo-release-1.1.2.tar.gz
+"

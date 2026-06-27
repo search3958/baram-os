@@ -1,0 +1,37 @@
+# Contributor: Nick Black <dankamongmen@gmail.com>
+# Maintainer: Nick Black <dankamongmen@gmail.com>
+pkgname=doctest
+pkgver=2.4.12
+pkgrel=0
+pkgdesc="Fast header-only C++ unit testing"
+url="https://github.com/doctest/doctest"
+arch="noarch"
+license="MIT"
+subpackages="$pkgname-dev"
+makedepends="cmake samurai"
+source="$pkgname-$pkgver.tar.gz::https://github.com/doctest/doctest/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d55aae632e6d66add7b65d0e97bde5063cdae7512836f278613af35957c62dbc6b0b0febbe2eb1eddd334a7a5343faca7357a2eeebbf1428cafffeb5d18e610c  doctest-2.4.12.tar.gz
+"

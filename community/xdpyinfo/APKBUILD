@@ -1,0 +1,28 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xdpyinfo
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="display information utility for X"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="custom"
+subpackages="$pkgname-doc"
+makedepends="libxtst-dev"
+source="https://www.x.org/releases/individual/app/xdpyinfo-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+478dd3de58950eeca213a51820445e62a5a63b2fa9ff3505f22802a7980f855fc11f1465e57ff4c34cdf8df0a0ff3c576804ef44f11f3b52c1c9da4ecc5a62d3  xdpyinfo-1.4.0.tar.xz
+"

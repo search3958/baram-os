@@ -1,0 +1,201 @@
+# Contributor: Valery Kartel <valery.kartel@gmail.com>
+# Maintainer: Valery Kartel <valery.kartel@gmail.com>
+pkgname=otrs
+_pkgname=znuny
+pkgver=6.0.48
+pkgrel=2
+pkgdesc="Flexible Open Source Service Management Software"
+url="https://www.znuny.org/"
+arch="noarch"
+license="AGPL-3.0-or-later"
+pkgusers="otrs"
+pkggroups="www-data"
+depends="perl perl-archive-zip perl-crypt-eksblowfish perl-crypt-ssleay
+	perl-timedate perl-dbi perl-encode-hanextra perl-io-socket-ssl perl-json-xs
+	perl-ldap perl-libwww perl-mail-imapclient perl-net-dns perl-template-toolkit
+	perl-text-csv perl-text-csv_xs perl-uri perl-xml-libxml perl-xml-libxslt
+	perl-xml-parser perl-yaml-xs font-dejavu perl-datetime perl-moo
+	perl-css-minifier-xs perl-javascript-minifier-xs"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-setup $pkgname-apache2
+	$pkgname-fastcgi $pkgname-nginx $pkgname-bash-completion
+	$pkgname-openrc"
+install="$pkgname.pre-install $pkgname.post-install $pkgname.post-upgrade
+	$pkgname-setup.post-install $pkgname-setup.post-deinstall"
+source="https://download.znuny.org/releases/$_pkgname-$pkgver.tar.bz2
+	$pkgname.initd
+	$pkgname.spawn-fcgi
+	$pkgname.nginx.conf
+	"
+builddir=$srcdir/$_pkgname-$pkgver
+
+# secfixes:
+#   6.0.48-r0:
+#     - CVE-2022-4427
+#   6.0.44-r0:
+#     - ZSA-2022-05
+#     - ZSA-2022-06
+#   6.0.43-r0:
+#     - ZSA-2022-04
+#   6.0.40-r0:
+#     - CVE-2021-41182
+#     - CVE-2021-41183
+#     - CVE-2021-41184
+#   6.0.39-r0:
+#     - CVE-2021-21252
+#     - CVE-2021-21440
+#     - CVE-2021-21443
+#     - CVE-2021-36091
+#   6.0.33-r0:
+#     - CVE-2017-16664
+#     - CVE-2017-16854
+#     - CVE-2017-16921
+#     - CVE-2017-17476
+#     - CVE-2018-14593
+#     - CVE-2018-16586
+#     - CVE-2018-16587
+#     - CVE-2018-17960
+#     - CVE-2018-19141
+#     - CVE-2018-19143
+#     - CVE-2018-20800
+#     - CVE-2019-10065
+#     - CVE-2019-10066
+#     - CVE-2019-10067
+#     - CVE-2019-11358
+#     - CVE-2019-12248
+#     - CVE-2019-12497
+#     - CVE-2019-12746
+#     - CVE-2019-13457
+#     - CVE-2019-13458
+#     - CVE-2019-16375
+#     - CVE-2019-18179
+#     - CVE-2019-18180
+#     - CVE-2019-9752
+#     - CVE-2019-9892
+#     - CVE-2020-11022
+#     - CVE-2020-11023
+#     - CVE-2020-1765
+#     - CVE-2020-1766
+#     - CVE-2020-1767
+#     - CVE-2020-1769
+#     - CVE-2020-1770
+#     - CVE-2020-1771
+#     - CVE-2020-1772
+#     - CVE-2020-1773
+#     - CVE-2020-1774
+#     - CVE-2020-1776
+#     - CVE-2021-21434
+#   5.0.23-r0:
+#     - CVE-2017-14635
+
+prepare() {
+	default_prepare
+
+	find "$builddir" -type f -exec \
+		sed -i 's:/opt/otrs:/var/lib/otrs:g' {} +
+}
+
+package() {
+	local file
+
+	mkdir -p "$pkgdir"/var/lib/$pkgname
+
+	cd "$pkgdir"
+
+	cp -r "$builddir"/* var/lib/$pkgname
+	install -Dm755 "$srcdir"/$pkgname.initd etc/init.d/$pkgname
+	install -Dm644 "$builddir"/.bash_completion \
+		usr/share/bash-completion/completions/$pkgname
+
+	# switch to system fonts
+	rm -fr var/lib/$pkgname/var/fonts
+	ln -s /usr/share/fonts/dejavu \
+		var/lib/$pkgname/var/fonts
+
+	# fix *.dist files
+	for file in "var/lib/$pkgname/var/cron"/*.dist \
+		var/lib/$pkgname/Kernel/Config.pod.dist
+	do
+		mv $file ${file%.dist}
+	done
+}
+
+check() {
+	"$builddir"/bin/otrs.CheckModules.pl
+}
+
+doc() {
+	default_doc
+
+	amove var/lib/$pkgname/doc
+
+	local IFS=$'\n'
+	amove $(cd "$pkgdir"; find . -name "*.md" -o -name "*.pod" \
+		-o -name "*.txt" -o -name "ARCHIVE" -o -name "README"  \
+		-o -name "UPGRADING" -o -name "COPYING*")
+}
+
+dev() {
+	default_dev
+
+	local i
+	for i in auto_build tools test contrib rpc-example.pl; do
+		amove var/lib/$pkgname/scripts/$i
+	done
+
+	amove var/lib/$pkgname/var/*/examples
+	amove var/lib/$pkgname/var/httpd/htdocs/js/test
+}
+
+setup() {
+	local file
+	pkgdesc="$pkgdesc (initial setup)"
+	depends="$pkgname"
+
+	amove var/lib/$pkgname/scripts/DBUpdate-*
+	amove var/lib/$pkgname/scripts/database
+	amove var/lib/$pkgname/bin/cgi-bin/installer.pl
+	amove var/lib/$pkgname/bin/fcgi-bin/installer.pl
+
+	amove var/lib/$pkgname/bin/$pkgname.Check*.pl
+
+	for file in fetchmailrc mailfilter procmailrc; do
+		install -Dm644 "$builddir"/.$file.dist \
+			"$subpkgdir"/var/lib/$pkgname/.$file.dist
+	done
+
+	amove var/lib/$pkgname/scripts/apache2-httpd-plack-proxy.conf
+}
+
+apache2() {
+	pkgdesc="$pkgdesc (apache2 configuration)"
+	depends="$pkgname apache2 apache2-mod-perl"
+
+	amove var/lib/$pkgname/scripts/apache2-httpd.include.conf
+	amove var/lib/$pkgname/scripts/apache2-perl-startup.pl
+}
+
+fastcgi() {
+	pkgdesc="$pkgdesc (fastcgi configuration)"
+	depends="$pkgname fcgiwrap perl-cgi-fast spawn-fcgi"
+
+	install -Dm644 "$srcdir"/$pkgname.spawn-fcgi \
+		"$subpkgdir"/etc/conf.d/spawn-fcgi.$pkgname
+
+	mkdir -p "$subpkgdir"/etc/init.d
+	ln -s spawn-fcgi "$subpkgdir"/etc/init.d/spawn-fcgi.$pkgname
+}
+
+nginx() {
+	pkgdesc="$pkgdesc (nginx configuration)"
+	depends="$pkgname $pkgname-fastcgi nginx"
+
+	install -Dm644 "$srcdir"/$pkgname.nginx.conf \
+		"$subpkgdir"/etc/nginx/$pkgname.conf
+}
+
+sha512sums="
+898d97edffb82965767d77f5c7f0bdf9cf286008ce32fb46d67eb5d571b9576777d95573e2ed66d69db6141039f9b350f8c64e022478b08cd9b0d00d9c87f2a8  znuny-6.0.48.tar.bz2
+90d43b350a00fa1648c8add5e2af9b88f78cb583f71438306a9b80ee45a939eda903472b84db1327e0579a5d8c5fd88e3c1e7d55a15106aeef426b16e932363d  otrs.initd
+7bab58132a5705c8e8ecade8e4aea3b0f04af66a71e4ae08cfeda91b0e143607de350debdc49bf2ce022277ee3804aead3ca8825804d073690c2f5f3a19d776e  otrs.spawn-fcgi
+f79474575ac7c734edcfbaf56fc8062c3594749791f9d1fa4328c6bde71747f0ce6219d47ba7ab409927b7343b36dc0c4aa29cd03600c2d806ed5409edab6b14  otrs.nginx.conf
+"

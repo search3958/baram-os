@@ -1,0 +1,26 @@
+# Contributor: Lazy Walker <lazywalkerz@gmail.com>
+# Maintainer: Lazy Walker <lazywalkerz@gmail.com>
+pkgname=tintin
+pkgver=2.02.61
+pkgrel=0
+pkgdesc="TinTin++ (aka tt++) is a free Mud client with features an advanced automapper, scripting language and VT100 interface."
+url="https://tintin.mudhalla.net"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="pcre2-dev"
+source="https://downloads.sf.net/tintin/tintin-$pkgver.tar.gz"
+builddir="$srcdir/tt/src"
+options="!check"
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a285f6f88b3aac8385ab9e199ac20e234929222d3d5e563cfe522c84b061293c86ef679caedadfd8f2e9eae84d85ed96a617ba9a33e714d711df106503db8b58  tintin-2.02.61.tar.gz
+"

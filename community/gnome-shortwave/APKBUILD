@@ -1,0 +1,56 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gnome-shortwave
+pkgver=5.0.0
+pkgrel=0
+pkgdesc="Listen to internet radio"
+url="https://gitlab.gnome.org/World/Shortwave"
+arch="all"
+license="GPL-3.0-only"
+depends="
+	gst-libav
+	gst-plugins-bad
+	gst-plugins-good
+	"
+makedepends="
+	cargo
+	curl-dev
+	desktop-file-utils
+	glib-dev
+	gst-plugins-bad-dev
+	gst-plugins-base-dev
+	gstreamer-dev
+	gtk4.0-dev
+	lcms2-dev
+	libadwaita-dev
+	libseccomp-dev
+	libshumate-dev
+	meson
+	openssl-dev>3
+	sqlite-dev
+	"
+checkdepends="
+	appstream-glib
+	xvfb-run
+	"
+source="https://gitlab.gnome.org/World/Shortwave/-/archive/$pkgver/Shortwave-$pkgver.tar.gz"
+subpackages="$pkgname-lang"
+builddir="$srcdir/Shortwave-$pkgver"
+options="net"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	xvfb-run -a meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+45e9f40558ac71c14594d30c9e25da7e538a351b7d6d0acc20c3addb0071b127c9781facac10a23a511d5a3e59d26c269f2f5f71dd56418e88de8319b40801f5  Shortwave-5.0.0.tar.gz
+"

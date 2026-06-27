@@ -1,0 +1,87 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=cfengine
+# Upgrade to LTS versions only: https://cfengine.com/supported-versions/
+pkgver=3.27.1
+pkgrel=0
+pkgdesc="A systems administration tool for networks"
+url="https://www.cfengine.com/"
+arch="all"
+license="GPL-3.0-only"
+install="$pkgname.post-install"
+makedepends="
+	acl-dev
+	bison
+	flex-dev
+	librsync-dev
+	linux-headers
+	lmdb-dev
+	openssl-dev>3
+	pcre2-dev
+	"
+depends="procps"
+subpackages="$pkgname-doc $pkgname-masterfiles::noarch"
+source="https://cfengine-package-repos.s3.amazonaws.com/tarballs/cfengine-community-$pkgver.tar.gz
+	https://cfengine-package-repos.s3.amazonaws.com/tarballs/cfengine-masterfiles-$pkgver.tar.gz
+	fix-32bit-ulong.patch
+	"
+
+_builddirmasterfiles="$srcdir"/cfengine-masterfiles-${pkgver%_p*}
+options="!check" # testsuite shows some unknown errors
+
+# secfixes:
+#   3.12.2-r0:
+#     - CVE-2019-9929
+
+prepare() {
+	default_prepare
+	update_config_sub
+
+	# Also extract masterfiles
+	cd $srcdir
+	tar xf $pkgname-masterfiles-$pkgver.tar.gz
+	cd "$_builddirmasterfiles"
+	update_config_guess
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--with-pic \
+		--prefix=/usr \
+		--enable-fhs \
+		--localstatedir=/var \
+		--mandir=/usr/share/man \
+		--with-lmdb \
+		--without-pam
+	make
+
+	cd "$_builddirmasterfiles"
+	./configure \
+		--prefix=/var/lib/cfengine
+	make
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+
+	# not FHS but the tools seems to require those
+	install -d "$pkgdir"/var/lib/cfengine/bin
+	for i in "$pkgdir"/usr/bin/*; do
+		ln -s ../../../../usr/bin/${i##*/} "$pkgdir"/var/lib/cfengine/bin/
+	done
+}
+
+masterfiles() {
+	pkgdesc="Cfengine default masterfiles"
+	depends="cfengine"
+
+	cd "$_builddirmasterfiles"
+	make install DESTDIR="$subpkgdir"
+}
+
+sha512sums="
+07497bf98ea931d67d13ef3731be575dceefe4cd2af422069c573466f4c276e7191dbfe6216c8d2497d5315d992306bfb4544e90289363b8d3e40e836e0263ae  cfengine-community-3.27.1.tar.gz
+763a004282e80a7609e51e17e1ecdc74a647db8c24c7727373c03581f73c00a853fab89fc691560f5b3bfb153425146de4bc2572e7677593f3f91cd357df63b6  cfengine-masterfiles-3.27.1.tar.gz
+3d194074562477f48dcb4c8c63d4d82d59a0da6f15c2806dedae68472c8b10e20b98c25e4aa693e91d6fe33561843c89df82e7cc4eff4c43917ea62e1a8004b2  fix-32bit-ulong.patch
+"

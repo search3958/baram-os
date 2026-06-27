@@ -1,0 +1,46 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=libcerf
+pkgver=3.3
+pkgrel=1
+pkgdesc="Self-contained complex error function library"
+url="https://jugit.fz-juelich.de/mlz/libcerf/"
+arch="all"
+license="MIT"
+makedepends="cmake perl samurai"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	libcerfcpp
+	"
+source="https://jugit.fz-juelich.de/mlz/libcerf/-/archive/v$pkgver/libcerf-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+libcerfcpp() {
+	pkgdesc="$pkgdesc (C++ interface)"
+
+	amove usr/lib/libcerfcpp.so.*
+}
+
+sha512sums="
+c4497e1fe13f2f6020b87194e9bb73e0d4872fc3574e36ed1a4dda285d8d0af2d4fac49b0c329a4a02fc767e0902d4040a8183b3f9f8de757746f230ead4eb4f  libcerf-v3.3.tar.gz
+"

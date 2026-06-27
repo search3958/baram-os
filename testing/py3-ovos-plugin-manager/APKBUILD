@@ -1,0 +1,40 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-ovos-plugin-manager
+pkgver=1.0.3
+pkgrel=0
+pkgdesc="Plugin manager for OpenVoiceOS, STT/TTS/Wakewords that can be used anywhere"
+url="https://github.com/OpenVoiceOS/OVOS-plugin-manager"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-combo-lock
+	py3-langcodes
+	py3-ovos-bus-client
+	py3-ovos-utils
+	py3-quebra-frases
+	py3-requests
+	"
+makedepends="
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/OpenVoiceOS/OVOS-plugin-manager/archive/$pkgver/ovos-plugin-manager-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/ovos-plugin-manager-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+6be3354438cde0bf3ed371441d3ce94875652d6040912a0c027aa558a7af3287a17cbb75b17b8c3b0c1985aa3d1da1ac60a0c67ad5b7af74a09332f4495a9eae  ovos-plugin-manager-1.0.3.tar.gz
+"

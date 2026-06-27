@@ -1,0 +1,62 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=font-noto-cjk
+pkgver=0_git20220127
+# actual tagged release, but stuff is kinda funny here, so keep naming it 'git'
+_rev=Sans2.004
+pkgrel=1
+pkgdesc="Google's font family that aims to support all the world's languages (cjk)"
+url="https://github.com/notofonts/noto-fonts"
+arch="noarch"
+license="OFL-1.1"
+depends="fontconfig"
+subpackages="$pkgname-extra:_extra"
+source="https://dev.alpinelinux.org/archive/font-noto-cjk/font-noto-cjk-$pkgver.tar.xz"
+options="!check" # font
+
+# the git repo tarballs don't give any fonts (?),
+# and the releases have the wrong files
+snapshot() {
+	clean
+	makedepends="tar git xz" deps
+	mkdir -p "$srcdir"
+	cd "$srcdir"
+	git clone --depth=1 -b $_rev https://github.com/notofonts/noto-cjk .
+	mkdir -p $pkgname-$pkgver
+	cp ./*/OTC/*.ttc $pkgname-$pkgver/
+
+	tar cf $pkgname-$pkgver.tar $pkgname-$pkgver
+	xz -e -vv -9 -T0 $pkgname-$pkgver.tar
+}
+
+package() {
+	for font in NotoSansCJK-Bold.ttc \
+		NotoSansCJK-Regular.ttc \
+		NotoSerifCJK-Bold.ttc \
+		NotoSerifCJK-Regular.ttc
+	do
+		install -Dm644 ./$font \
+			-t "$pkgdir"/usr/share/fonts/noto/
+	done
+}
+
+_extra() {
+	for font in NotoSansCJK-Black.ttc \
+		NotoSansCJK-DemiLight.ttc \
+		NotoSansCJK-Light.ttc \
+		NotoSansCJK-Medium.ttc \
+		NotoSansCJK-Thin.ttc \
+		NotoSerifCJK-Black.ttc \
+		NotoSerifCJK-ExtraLight.ttc \
+		NotoSerifCJK-Light.ttc \
+		NotoSerifCJK-Medium.ttc \
+		NotoSerifCJK-SemiBold.ttc
+	do
+		install -Dm644 "$builddir"/$font \
+			-t "$subpkgdir"/usr/share/fonts/noto/
+	done
+}
+
+sha512sums="
+ee98197dcd2c2eb0a42e6057d5269fe33ab18d3ead2062956364af4c5a4886d9cd8293439c3c8b1983a9166119fb4ab710c16dac63ff571e6a4752315935c4b1  font-noto-cjk-0_git20220127.tar.xz
+"

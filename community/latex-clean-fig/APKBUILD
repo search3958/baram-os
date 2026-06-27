@@ -1,0 +1,36 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=latex-clean-fig
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="Remove unused image files from a LaTeX project directory"
+url="https://github.com/firefly-cpp/latex-clean-fig"
+arch="noarch"
+license="MIT"
+depends="python3 py3-typer"
+checkdepends="py3-pytest-xdist"
+makedepends="py3-gpep517 py3-poetry-core"
+subpackages="$pkgname-pyc"
+source="https://github.com/firefly-cpp/latex-clean-fig/archive/$pkgver/latex-clean-fig-$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/latex_clean_fig-$pkgver-py3-none-any.whl
+
+}
+
+sha512sums="
+65c4ef4654a7a277fdacbaf84bda2de82eec091c8b3b03e3bb7c3b7081997a9ce6cf6fd12918a03ee07ccbc8663661d4a9dd1e179d2bde22cc29879eb2b9a0ee  latex-clean-fig-0.3.0.tar.gz
+"

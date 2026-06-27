@@ -1,0 +1,34 @@
+maintainer="team/gnome <Saijin-Naib_package-maintenance@outlook.com>"
+pkgname=xdg-user-dirs-gtk
+pkgver=0.16
+pkgrel=0
+pkgdesc="GTK frontend for xdg-user-dirs"
+url="https://gitlab.gnome.org/GNOME/xdg-user-dirs-gtk"
+arch="all"
+license="GPL-2.0-or-later"
+depends="xdg-user-dirs"
+makedepends="gtk+3.0-dev intltool meson"
+subpackages="$pkgname-lang $pkgname-systemd"
+source="https://download.gnome.org/sources/xdg-user-dirs-gtk/$pkgver/xdg-user-dirs-gtk-$pkgver.tar.xz
+	more-desktops.patch
+	"
+options="!check" # no tests
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+e491931b53480fcf067eb4077a1c547b196f27bf37d3ab56cf6849345c24b66af1d2d58c0b4818c144ad062cab47cbff951f547f27b5b574fde19c0d1eacfd19  xdg-user-dirs-gtk-0.16.tar.xz
+72cc9d75548c094f21f10f6c2076607c46cf1b09b22e6bf690fec1ea5738caba8ae84732a116b4bba536c471dc128721bcf9c8d62dc56cc9af0d339d031250fb  more-desktops.patch
+"

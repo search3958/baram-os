@@ -1,0 +1,48 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-python-memcached
+_pyname=python-memcached
+pkgver=1.62
+pkgrel=4
+arch="noarch"
+pkgdesc="Python interface to memcached"
+url="https://pypi.python.org/project/$_pyname"
+license="Python-2.0"
+makedepends="
+	py3-setuptools
+	py3-wheel
+	py3-gpep517
+	"
+checkdepends="
+	py3-pytest
+	memcached
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/linsomniac/python-memcached/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir"/$_pyname-$pkgver
+subpackages="$pkgname-pyc"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	memcached &
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -v || local FAIL=true
+	pkill memcached
+	if [ "$FAIL" = "true" ]; then
+		return 1
+	fi
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+0394a3c6c1521e2dd5ce27953ebe285ab6ffc514ea64f8da22e9e630d01d49e975f5f81e8fc12080424a35409f7b39b4d8a0ff9893ab4b4985bad1005c6c1026  py3-python-memcached-1.62.tar.gz
+"

@@ -1,0 +1,51 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=catfish
+pkgver=4.20.1
+pkgrel=1
+pkgdesc="Catfish is a handy file searching tool for Linux and Unix"
+url="https://docs.xfce.org/apps/catfish/start"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="
+	gtk+3.0
+	plocate
+	py3-cairo
+	py3-dbus
+	py3-gobject3
+	py3-pexpect
+	py3-zeitgeist
+	zeitgeist
+	"
+makedepends="
+	cmake
+	desktop-file-utils
+	gtk+3.0-dev
+	gtk-update-icon-cache
+	intltool
+	meson
+	xfconf-dev
+	zeitgeist-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang $pkgname-pyc"
+source="https://gitlab.xfce.org/apps/catfish/-/archive/catfish-$pkgver/catfish-catfish-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgname-$pkgver"
+options="!check" # No upstream test suite
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+aca159deea867ce7c957ffbf2cba9c18ef46cdbc23b246af68ed8355e98c9608a6937a5ae26fb0d93bb5f729b02699573ae919e146ebc6f75e4463b536dba84c  catfish-catfish-4.20.1.tar.gz
+"

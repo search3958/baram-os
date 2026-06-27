@@ -1,0 +1,46 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=delve
+pkgver=1.26.2
+pkgrel=1
+pkgdesc="Debugger for the Go programming language"
+url="https://github.com/go-delve/delve"
+arch="x86 x86_64 aarch64 loongarch64 riscv64"
+license="MIT"
+makedepends="go"
+options="net chmod-clean"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/go-delve/delve/archive/refs/tags/v$pkgver.tar.gz"
+
+case "$CARCH" in
+	loongarch64)
+		export GOFLAGS=" $GOFLAGS -tags=exp.linuxloong64"
+		;;
+	riscv64)
+		export GOFLAGS=" $GOFLAGS -tags=exp.linuxriscv64"
+		;;
+esac
+
+build() {
+	mkdir bin
+	go build $GOFLAGS -v -trimpath -o bin ./cmd/dlv/...
+}
+
+check() {
+	# TestGeneratedDoc and TestBuild require a proper $GOPATH setup.
+	go test $GOFLAGS -run '!(^(TestGeneratedDoc|TestBuild)$)' ./cmd/dlv/...
+}
+
+package() {
+	install -Dm755 bin/* -t "$pkgdir"/usr/bin/
+
+	# Install additional documentation files.
+	mkdir -p "$pkgdir"/usr/share/doc/$pkgname
+	cp -r Documentation/* "$pkgdir"/usr/share/doc/$pkgname
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+3069737d236699866d3a9b3b043da92a0e71301b358b1ad7ef530088cfb9c146260e642ecb89c41feafc5ad98571c6a731911b1b2a068bb8c72ae8d798c9ad46  delve-1.26.2.tar.gz
+"

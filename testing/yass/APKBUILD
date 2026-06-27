@@ -1,0 +1,31 @@
+# Contributor: Patrycja Rosa <alpine@ptrcnull.me>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=yass
+pkgver=2.5.0
+pkgrel=0
+pkgdesc="Karaoke Editor"
+url="https://yass-along.com/"
+# blocked by openjdk11-jre-headless
+arch="all !x86 !armhf !armv7 !riscv64"
+license="GPL-3.0-or-later"
+depends="openjdk11-jre"
+makedepends="apache-ant openjdk8"
+source="https://github.com/SarutaSan72/Yass/archive/refs/tags/$pkgver/yass-$pkgver.tar.gz
+	yass
+	"
+builddir="$srcdir/Yass-$pkgver"
+options="!check" # no tests provided
+
+build() {
+	JAVA_HOME="/usr/lib/jvm/java-8-openjdk" ant -f build-jar.xml compile jar
+}
+
+package() {
+	install -Dm644 "$builddir"/release/yass-$pkgver.jar "$pkgdir"/usr/share/yass/yass.jar
+	install -Dm755 "$srcdir"/yass "$pkgdir"/usr/bin/yass
+}
+
+sha512sums="
+0d64caf7c34b0bb16473025941baff8f91573020cddea7a128386159f0580b955361a0afdd31c00a64779f360b4f46131ee43384011f8d09d25c831341cbd2fd  yass-2.5.0.tar.gz
+7f8fb663aeef66e1659ac3e4bafa0aec9074e4caa2bf7894be28e33a6efbea1199cb47d19068f6637269636c8ab5e254486fad2113fad854d70df0dc78b7a305  yass
+"

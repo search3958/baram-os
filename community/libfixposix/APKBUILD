@@ -1,0 +1,34 @@
+# Contributor: Will Sinatra <wpsinatra@gmail.com>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=libfixposix
+pkgver=0.5.1
+pkgrel=0
+pkgdesc="Thin wrapper over POSIX syscalls"
+url="https://github.com/sionescu/libfixposix"
+arch="all"
+license="BSL-1.0"
+makedepends="autoconf automake libtool"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sionescu/libfixposix/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -f -i
+}
+
+check() {
+	make check
+}
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+7749f560e779d4dc5712f9871fcca6b6143c482cef90c1785616c2520d75a82b22831ab5e6b76e703dccd1f5344baddf847623ccb91b0552feae6aa7054ac859  libfixposix-0.5.1.tar.gz
+"

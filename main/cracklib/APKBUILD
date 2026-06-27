@@ -1,0 +1,64 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=cracklib
+pkgver=2.10.3
+pkgrel=1
+pkgdesc="Library used to enforce strong passwords"
+url="https://github.com/cracklib/cracklib"
+arch="all"
+license="LGPL-2.1-or-later"
+triggers="$pkgname.trigger=/usr/share/cracklib"
+makedepends="autoconf automake libtool gettext-dev python3-dev zlib-dev"
+subpackages="py3-$pkgname-pyc py3-$pkgname:py $pkgname-doc $pkgname-dev $pkgname-words::noarch"
+source="https://github.com/cracklib/cracklib/releases/download/v$pkgver/cracklib-$pkgver.tar.xz
+	https://github.com/cracklib/cracklib/releases/download/v$pkgver/cracklib-words-$pkgver.gz
+	"
+
+# secfixes:
+#   2.9.7-r0:
+#     - CVE-2016-6318
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-nls \
+		--disable-static
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	for x in "$pkgdir"/usr/share/cracklib/*; do
+		gzip -9 -c "$x" > "$x".gz
+		rm "$x"
+	done
+
+	install -Dm644 "$srcdir"/cracklib-words-$pkgver.gz "$pkgdir"/usr/share/cracklib/cracklib-words.gz
+
+	find "$pkgdir"/usr/lib/python* -name "*.opt-1.pyc" -delete
+	find "$pkgdir"/usr/lib/python* -name "test_cracklib*" -delete
+}
+
+py() {
+	pkgdesc="$pkgdesc (python module)"
+	amove usr/lib/python*
+}
+
+words() {
+	pkgdesc="Large list of words for crack/cracklib"
+	license="Public-Domain"
+	depends=""
+
+	amove usr/share/cracklib/cracklib-words.gz
+}
+
+sha512sums="
+5a86116b888dd324d17495c3ccefb061bfc6b31a7dcebc394324d87878dec5dec268591f9d7ef30cf60f70df9ff3bbf3d891c60efc198dba80f83cc43a08273c  cracklib-2.10.3.tar.xz
+4959918989eb925fc63d22891e71f8cbf6f0b8cdf4f11094444704cbeac467f6c67dbb644932e45e349849b682b3b563f33e1ecacfd141485ddda1a6cc37bbaa  cracklib-words-2.10.3.gz
+"

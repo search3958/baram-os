@@ -1,0 +1,50 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libjcat
+pkgver=0.2.3
+pkgrel=2
+pkgdesc="Library for reading and writing Jcat files"
+url="https://github.com/hughsie/libjcat"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	glib-dev
+	gnutls-dev
+	gnutls-utils
+	gobject-introspection-dev
+	gpgme-dev
+	help2man
+	json-glib-dev
+	libgpg-error-dev
+	meson
+	py3-setuptools
+	vala
+	"
+subpackages="$pkgname-dev $pkgname-tools $pkgname-doc"
+source="https://github.com/hughsie/libjcat/archive/$pkgver/libjcat-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dgtkdoc=false \
+		-Dcli=true \
+		. output
+	ninja -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	rm -r "$pkgdir"/usr/libexec/installed-tests
+}
+
+tools() {
+	amove usr/bin
+}
+
+sha512sums="
+890fede822075df8c65d0402b7b2bd0e4db4fab530f9d88ed8167ffaa7ad958c65da944a92e5350edd118860be7693ddc8c6b1321f2ef469b3bea04e410ac007  libjcat-0.2.3.tar.gz
+"

@@ -1,0 +1,83 @@
+# Contributor: Daniel Everett <deverett@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=yubikey-manager
+pkgver=5.8.0
+pkgrel=3
+pkgdesc="Python library and command line tool for configuring any YubiKey over all USB interfaces"
+url="https://developers.yubico.com/yubikey-manager/"
+arch="noarch"
+license="BSD-2-Clause"
+depends="
+	ccid
+	pcsc-lite
+	pcsc-lite-libs
+	py3-click
+	py3-cryptography
+	py3-fido2
+	py3-keyring
+	py3-pyscard
+	py3-ykman
+	python3
+	"
+makedepends="
+	py3-poetry-core
+	py3-gpep517
+	bash
+	"
+checkdepends="py3-pytest py3-makefun"
+subpackages="
+	$pkgname-pyc
+	py3-ykman
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	$pkgname-udev
+	"
+source="https://github.com/Yubico/yubikey-manager/releases/download/$pkgver/yubikey_manager-$pkgver.tar.gz"
+builddir="$srcdir/yubikey_manager-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -dm755 "$pkgdir/usr/share/zsh/site-functions/" \
+		"$pkgdir/usr/share/bash-completion/completions/" \
+		"$pkgdir/usr/share/fish/vendor_completions.d/"
+
+	local _pypkgs=$(python -c 'import site; print(site.getsitepackages()[0])')
+	PYTHONPATH="$pkgdir$_pypkgs/" _YKMAN_COMPLETE=zsh_source "$pkgdir/usr/bin/ykman" > \
+		"$pkgdir/usr/share/zsh/site-functions/_ykman"
+	PYTHONPATH="$pkgdir$_pypkgs/" _YKMAN_COMPLETE=bash_source "$pkgdir/usr/bin/ykman" > \
+		"$pkgdir/usr/share/bash-completion/completions/ykman"
+	PYTHONPATH="$pkgdir$_pypkgs/" _YKMAN_COMPLETE=fish_source "$pkgdir/usr/bin/ykman" > \
+		"$pkgdir/usr/share/fish/vendor_completions.d/ykman.fish"
+}
+
+ykman() {
+	depends=
+	amove usr/lib
+}
+
+udev() {
+	depends="libfido2-udev"
+	pkgdesc="$pkgdesc (udev support)"
+	install_if="udev $pkgname=$pkgver-r$pkgrel"
+
+	mkdir -p "$subpkgdir"
+}
+
+sha512sums="
+8c22dd65e37d4bc78a16c62b24244f2cd180237354d4b325d2786614ef75651104eb92a0ad751f66af7812746669b397e4cab7ed41c9016cb73081f6740ca604  yubikey_manager-5.8.0.tar.gz
+"

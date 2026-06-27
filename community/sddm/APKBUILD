@@ -1,0 +1,108 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=sddm
+pkgver=0.21.0
+pkgrel=10
+pkgdesc="Simple Desktop Display Manager"
+url="https://github.com/sddm/sddm/"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+license="GPL-2.0-or-later"
+depends="
+	dbus
+	elogind
+	linux-pam
+	upower
+	"
+makedepends="
+	elogind-dev
+	extra-cmake-modules
+	libxcb-dev
+	linux-pam-dev
+	py3-docutils
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qttools-dev
+	samurai
+	upower-dev
+	utmps-dev
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-openrc
+	$pkgname-weston::noarch
+	"
+install="sddm.pre-install"
+langdir="/usr/share/sddm/translations"
+pkgusers="sddm"
+pkggroups="sddm"
+source="https://github.com/sddm/sddm/archive/v$pkgver/sddm-v$pkgver.tar.gz
+	0001-pam-path-fix.patch
+	0002-disable-automatic-portal-launching.patch
+	0003-CMake-Raise-required-version-to-3.5.patch
+	sddm.initd
+	sddm.confd
+	weston.conf
+	"
+
+# secfixes:
+#   0.19.0-r0:
+#     - CVE-2020-28049
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_MAN_PAGES=ON \
+		-DBUILD_WITH_QT6=ON \
+		-DENABLE_JOURNALD=OFF \
+		-DNO_SYSTEMD=ON \
+		-DUSE_ELOGIND=ON \
+		-DUID_MIN=1000 \
+		-DUID_MAX=65000 \
+		-DDBUS_CONFIG_DIR=/usr/share/dbus-1/system.d \
+		-DDBUS_CONFIG_FILENAME=sddm_org.freedesktop.DisplayManager.conf \
+		-DSDDM_INITIAL_VT=7
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm755 "$srcdir"/sddm.initd "$pkgdir"/etc/init.d/sddm
+	install -Dm644 "$srcdir"/sddm.confd "$pkgdir"/etc/conf.d/sddm
+
+	mv "$pkgdir"/etc/pam.d "$pkgdir"/usr/lib/
+}
+
+lang() {
+	pkgdesc="Languages for package $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel lang"
+	depends="$depends_lang"
+
+	amove usr/share/sddm/translations-qt6
+}
+
+weston() {
+	depends="$pkgname
+		weston
+		"
+
+	install -Dm644 "$srcdir"/weston.conf "$subpkgdir"/usr/lib/sddm/sddm.conf.d/weston.conf
+}
+
+sha512sums="
+2e8e460e7f318f20a406dcbb1a9fa1dc78b6a5b8d888bfbbaae22b9c642dbc49cf2ac682b4ea9ed847bbafa9bdc361ba08795e59cad970088b370caaaa70f458  sddm-v0.21.0.tar.gz
+42a0b24717820d98a42d178b5d3a40441672d496c9d8f7c2f8002d770a2718324e9d00d0f27602232b91e8bb042693125507d6cb8371b6f6f211f2b95babe666  0001-pam-path-fix.patch
+bc7b572331de32245abba234e3537885a3d9dd20273a12bd7a82eb754467dd3c753fc4d90ec24cc206f7df0210cf3119dd056c477168b4173b77fc335b6546b0  0002-disable-automatic-portal-launching.patch
+3f7162b4dc46dc07ad5574a1f39390a68e1074a60c1a842725932d06866cfcdb2f15347bf4228b1e2b6573fc6cfd7bf36abe16ef7d17e873fffac32d9f5ad670  0003-CMake-Raise-required-version-to-3.5.patch
+aa2dba75888e56f0b1203a59400a4fcd71382763375f958372d7c6f929b09f4e0966f10632ec055bcee405e6818e8ffe0d14b262bedae411217538b41f7bd253  sddm.initd
+b841282b96110ec59a7aa539db0737327b09549d55c78dc4b2c3b28b4a6ad1facf015b3175cb6d3a38f13e47aa6314ef3dc1514a4e60dd653a97409ec54ba706  sddm.confd
+7431d893cf30b4e212403d88f1a7a617f8d5613aa1083e4646cdb8ce511c89478128c546f56026c1ec1b41dd10c74597409321dd18ff3e4afc008df917b9dcf3  weston.conf
+"

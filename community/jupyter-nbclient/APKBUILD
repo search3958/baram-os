@@ -1,0 +1,41 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=jupyter-nbclient
+pkgver=0.11.0
+pkgrel=0
+pkgdesc="Client library for executing notebooks"
+url="https://github.com/jupyter/nbclient"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-jupyter_client
+	jupyter-nbformat
+	py3-nest_asyncio
+	py3-traitlets
+	"
+makedepends="py3-gpep517 py3-hatchling"
+checkdepends="py3-pytest py3-xmltodict jupyter-nbconvert py3-ipykernel py3-flaky"
+options="!check" # circular dependency with jupyter-nbconvert
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jupyter/nbclient/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/nbclient-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest \
+		--deselect nbclient/tests/test_client.py::TestExecute::test_widgets \
+		--deselect nbclient/tests/test_client.py::test_run_all_notebooks
+}
+
+package() {
+	python3 -m installer --destdir="$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+5b2cd7406928856fbe1ccfee0e30e869640ffba6e1219dc7747dec802a46eb0e91b044608963226accdcfd06a13bec7c4696e850d97e8ac9646fae148fd3c4ec  jupyter-nbclient-0.11.0.tar.gz
+"

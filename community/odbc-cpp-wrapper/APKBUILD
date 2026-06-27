@@ -1,0 +1,45 @@
+# Contributor: Holger Jaekel <holger.jaekel@gmx.de>
+# Maintainer: Holger Jaekel <holger.jaekel@gmx.de>
+pkgname=odbc-cpp-wrapper
+pkgver=1.6
+pkgrel=0
+pkgdesc="An object-oriented C++-wrapper of the ODBC API"
+url="https://github.com/SAP/odbc-cpp-wrapper"
+arch="all"
+license="Apache-2.0"
+makedepends="
+	cmake
+	gtest-dev
+	samurai
+	unixodbc-dev
+	"
+subpackages="$pkgname-dev"
+source="odbc-cpp-wrapper-$pkgver.tar.gz::https://github.com/SAP/odbc-cpp-wrapper/archive/refs/tags/v$pkgver.tar.gz
+	10_soversion.patch"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DODBCCPP_VERSION=$pkgver \
+		$CMAKE_CROSSOPTS
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+c36d83b0ec5a560c2e845001594f549d1cc39d721e25345cbc6525458ec1591e01e5ae49cacd01807eed86db38ed717d55d63c94d7e7179010752044855bf838  odbc-cpp-wrapper-1.6.tar.gz
+49d88fb796b90669762d0bcdef83cbbf92c77629cc448087706834d396ec0b4f9bdc7d1b4bf25295d3329792f871908efe805665168dccc64972d65fcaa92382  10_soversion.patch
+"

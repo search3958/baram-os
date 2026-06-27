@@ -1,0 +1,43 @@
+# Contributor: Matthew T Hoare <matthew.t.hoare@gmail.com>
+# Maintainer: Matthew T Hoare <matthew.t.hoare@gmail.com>
+pkgname=azote
+pkgver=1.14.0
+pkgrel=1
+pkgdesc="Wallpaper and colour manager for Sway, i3 and other window managers"
+url="https://github.com/nwg-piotr/azote"
+arch="noarch"
+license="GPL-3.0-or-later AND BSD-3-Clause"
+depends="
+	feh
+	gtk+3.0
+	py3-cairo
+	py3-gobject3
+	py3-pillow
+	py3-send2trash
+	python3
+	xrandr
+	"
+makedepends="py3-setuptools py3-gpep517 py3-wheel"
+options="!check" # no checks
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/nwg-piotr/azote/archive/v$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+
+	install -D -t "$pkgdir"/usr/share/icons/hicolor/scalable/apps/azote.svg dist/azote.svg
+	install -D -t "$pkgdir"/usr/share/"$pkgname" dist/indicator_active.png
+	install -D -t "$pkgdir"/usr/share/"$pkgname" dist/indicator_attention.png
+	install -D -t "$pkgdir"/usr/share/applications dist/azote.desktop
+}
+
+sha512sums="
+c700946cb56c9d15111949f46e107cc6b9887916ab90c782fe78c7deb09a6964cf19e69f143b86cdc44a34ea6aaeec5b0d28d64f7bc24402fc44fc201531f9ef  azote-1.14.0.tar.gz
+"

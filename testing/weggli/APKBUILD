@@ -1,0 +1,36 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=weggli
+pkgver=0.2.4
+pkgrel=1
+pkgdesc="Semantic search tool for C and C++ codebases"
+url="https://github.com/googleprojectzero/weggli"
+license="Apache-2.0"
+# s390x, riscv64: blocked by rust/cargo
+# loongarch64: fail to build nix
+arch="all !s390x !riscv64 !loongarch64"
+makedepends="cargo cargo-auditable"
+source="https://github.com/googleprojectzero/weggli/archive/v$pkgver/weggli-$pkgver.tar.gz"
+
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/weggli -t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+2473415f60f2834e652d3f6f933bc648e659fca8fef85e82d2cfb87cb039727a38aa32b2eb90ac93cf7d2f11a803daeb73350e85ac1144ed9194757854bc225e  weggli-0.2.4.tar.gz
+"

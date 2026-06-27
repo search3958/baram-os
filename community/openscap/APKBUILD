@@ -1,0 +1,87 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=openscap
+pkgver=1.4.4
+pkgrel=0
+pkgdesc="NIST Certified SCAP 1.2 toolkit"
+url="https://www.open-scap.org/tools/openscap-base/"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="bash"
+makedepends="
+	acl-dev
+	apt-dev
+	asciidoc
+	bzip2-dev
+	cmake
+	curl-dev
+	dbus-dev
+	doxygen
+	libblkid
+	libbz2
+	libcap-dev
+	libgcrypt-dev
+	libselinux-dev
+	libxml2-dev
+	libxslt-dev
+	musl-fts-dev
+	nss-dev
+	opendbx-dev
+	openldap-dev
+	openssl-dev>3
+	pcre2-dev
+	perl-dev
+	perl-xml-parser
+	perl-xml-xpath
+	procps-compat-dev
+	python3-dev
+	rpm-dev
+	samurai
+	swig
+	util-linux-dev
+	xmlsec-dev
+	"
+options="!check"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-bash-completion $pkgname-docker::noarch"
+source="https://github.com/OpenSCAP/openscap/releases/download/$pkgver/openscap-$pkgver.tar.gz
+	fix-ppc64le-path_max.patch
+	path_mounted.patch
+	implicit-function-decl.patch
+	"
+
+build() {
+	export LIBS=-lfts
+	export CFLAGS="$CFLAGS -flto=auto"
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None \
+		-DENABLE_DOCS=ON \
+		-DENABLE_PERL=OFF \
+		-DENABLE_TESTS=OFF \
+		-DWITH_PCRE2=True
+
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm644 "$builddir"/dist/bash_completion.d/oscap \
+		"$pkgdir"/usr/share/bash-completion/completions/$pkgname
+}
+
+docker() {
+	pkgdesc="$pkgdesc (docker support)"
+	depends="$pkgname=$pkgver-r$pkgrel py3-docker-py python3"
+
+	amove usr/bin/oscap-docker
+	amove usr/lib/python3*/site-packages/oscap_docker_python
+}
+
+sha512sums="
+c69736bee997e50a04aff8e4f22da880f342190e1289c5df0fb73b7af34833d3bd9f4e5055b227a18d571167671f821701a09f8c9a3e4568c7da68cc4be51133  openscap-1.4.4.tar.gz
+0d8e5eb492b4439b82e35e4a87a2030f9aeff3173bda60d8ce57584fa7d7dda970ad35099e45fe46a7e135d9a55d6c2ced0a8b180556e37c7a9926de28244133  fix-ppc64le-path_max.patch
+f2157d6b1d31affe16edb184a287b69d28808123f1cc26a5a4238040d935517b307772b1f2d66271b8ee99b59a4d204930f9147b78478c83c36c7fc8718ec1d9  path_mounted.patch
+7482aba195a0c02382a2d30da9c99df9fefaf6b4ea31f53d5f89123ad072d599aa1f5bd20a5d1c02d8c5a566dfd53842f3c99e0af221a8115f1ed935a9c8a021  implicit-function-decl.patch
+"

@@ -1,0 +1,65 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kcontacts
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Address book API for KDE"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.0-or-later"
+# TODO: Replace gnupg with specific gnupg subpackages that kcontacts really needs.
+depends="
+	gnupg
+	iso-codes
+	"
+depends_dev="
+	kcodecs-dev
+	kconfig-dev
+	kcoreaddons-dev
+	ki18n-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="$depends_dev
+	doxygen
+	extra-cmake-modules
+	graphviz
+	kde-qdoc-common
+	qt6-qtdeclarative-private-dev
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang"
+_repo_url="https://invent.kde.org/frameworks/kcontacts.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/kcontacts-$pkgver.tar.xz"
+
+build() {
+	export KDE_DOCS=/usr/share/kde/documentation
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+
+	cmake --build build --target prepare_docs
+	cmake --build build --target generate_docs
+	cmake --build build --target generate_qch
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "kcontacts-(addressformat|address|vcarddrag)test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	DESTDIR="$pkgdir" cmake --build build --target install_html_docs
+	DESTDIR="$pkgdir" cmake --build build --target install_qch_docs
+}
+
+sha512sums="
+2ebc70689ebba4d7c1dd195f2c7381643b0e9c082c51c78f06294ebbd26eb25611eb6b68298da1f4c4d9e3d570c69289cedb897f7743fce8a6b63695125f09de  kcontacts-6.27.0.tar.xz
+"

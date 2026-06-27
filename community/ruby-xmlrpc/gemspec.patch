@@ -1,0 +1,5 @@
+--- a/xmlrpc.gemspec
++++ b/xmlrpc.gemspec
+@@ -17 +17 @@
+-  spec.files         = `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
++  spec.files         = Dir["lib/**/*.rb"]

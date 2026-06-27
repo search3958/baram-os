@@ -1,0 +1,84 @@
+maintainer="team/alpine-desktop <bribbers@disroot.org>"
+pkgname=wireplumber
+pkgver=0.5.15
+pkgrel=0
+pkgdesc="Session / policy manager implementation for PipeWire"
+url="https://pipewire.org/"
+arch="all"
+license="MIT"
+depends_dev="
+	elogind-dev
+	glib-dev
+	lua5.4-dev
+	pipewire-dev>=0.3.39
+	"
+makedepends="$depends_dev
+	doxygen
+	gobject-introspection-dev
+	graphviz
+	meson
+	py3-lxml
+	"
+checkdepends="
+	dbus
+	pipewire
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-libs
+	$pkgname-dev
+	$pkgname-logind
+	$pkgname-lang
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-systemd
+	"
+source="https://gitlab.freedesktop.org/PipeWire/wireplumber/-/archive/$pkgver/wireplumber-$pkgver.tar.gz
+	wireplumber.initd
+	"
+
+provides="pipewire-session-manager"
+provider_priority=50
+
+build() {
+	abuild-meson \
+		-Db_lto=true \
+		-Dintrospection=enabled \
+		-Dsystem-lua=true \
+		-Delogind=enabled \
+		-Dsystemd-user-service=true \
+		-Dsystemd-user-unit-dir="/usr/lib/systemd/user" \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+
+	install -Dm755 "$srcdir"/wireplumber.initd "$pkgdir"/etc/user/init.d/wireplumber
+}
+
+logind() {
+	# This not only needs libelogind, but also elogind being installed and
+	# running. Otherwise wireplumber fails to launch.
+	depends="$depends elogind"
+	# The purpose of the (e)logind module currently is limited to preventing
+	# GDM from hijacking the Bluetooth HFP/HSP profile. But GDM users cannot
+	# use bluetooth audio without, so install it for them
+	install_if="$pkgname=$pkgver-r$pkgrel gdm"
+	pkgdesc="wireplumbers optional (e)logind integration needed by GDM users"
+
+	amove usr/lib/wireplumber-0.5/libwireplumber-module-logind.so
+}
+
+sha512sums="
+4e27d2d425d926458f9b0cbcc191aa57698dfd4f0d71aedde9e04e6d5ec51a64e97e7faab3e827ad88d7f449c8665addaba9f30569c4ebf1b869caf5475492ea  wireplumber-0.5.15.tar.gz
+49498bf81297e0816c871324d20d6174fb30b7ce564f9a4d4975f141e5829308c6a7d99d96a3a20773e40aa9f3492ce34e9cf10ccd9e125b6b8ac49107d99e57  wireplumber.initd
+"

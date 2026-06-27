@@ -1,0 +1,54 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=py3-databases
+pkgver=0.9.0
+pkgrel=1
+pkgdesc="Async database support for Python"
+url="https://www.encode.io/databases/"
+arch="noarch"
+license="BSD-3-Clause"
+makedepends="
+	py3-build
+	py3-gpep517
+	py3-setuptools
+	py3-wheel"
+checkdepends="
+	py3-aiopg
+	py3-httpx
+	py3-pytest
+	py3-pytest-cov
+	py3-sqlalchemy
+	py3-starlette
+	py3-requests
+	"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="databases-$pkgver.tar.gz::https://github.com/encode/databases/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/databases-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages testenv
+	testenv/bin/python3 -m installer dist/*.whl
+
+	# some tests need databases and some tests known to fail
+	export TEST_DATABASE_URLS="postgres://localhost"
+	testenv/bin/python3 -m pytest \
+		--ignore tests/test_connection_options.py \
+		--ignore tests/test_databases.py \
+		--ignore tests/test_integration.py
+}
+
+package() {
+	python -m installer -d "$pkgdir" dist/*.whl
+
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+7977cb4fbe80250d1c27372828acf700a1b98c06cd3c77ee37fb8d56162f8b3bb617c12ad37e6fa1bc7b745421b43b046fdfb1bb8746e20157e80d775214bb39  databases-0.9.0.tar.gz
+"

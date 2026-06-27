@@ -1,0 +1,36 @@
+# Contributor: Alexey Yerin <yyp@disroot.org>
+# Maintainer: Alexey Yerin <yyp@disroot.org>
+pkgname=opustags
+pkgver=1.10.1
+pkgrel=0
+pkgdesc="Ogg Opus tags editor"
+url="https://github.com/fmang/opustags"
+arch="all"
+license="BSD-3-Clause"
+makedepends="cmake libogg-dev samurai"
+subpackages="$pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/fmang/opustags/archive/refs/tags/$pkgver.tar.gz
+"
+options="!check" # Contains no tests
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=None \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+df48d9f9344bf9f5300cc998f753b162ff1312809b77c958ce530ab96095c9b200d4df30e27e6aead84918591846d5f0ab3d1b802e6f10856f2754be8cb3b050  opustags-1.10.1.tar.gz
+"

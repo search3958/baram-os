@@ -1,0 +1,39 @@
+# Contributor: qaqland <qaq@qaq.land>
+# Maintainer: qaqland <qaq@qaq.land>
+pkgname=pfetch-rs
+pkgver=2.11.1
+pkgrel=0
+pkgdesc="A rewrite of the pfetch system information tool in Rust"
+url="https://crates.io/crates/pfetch"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+checkdepends="bash"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Gobidev/pfetch-rs/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # cargo fetch
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+	export PF_COLOR=0
+	cd tools && ./print_all.sh ../target/release/pfetch
+}
+
+package() {
+	install -Dm755 target/release/pfetch "$pkgdir"/usr/bin/pfetch-rs
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+0191b32ad7dd98f6447c7b739e2eb81250768102ce95be89aa5cae00f2e29f981a2a6bd0b438f2dae8f82d9b914e19bccefb73a0b9c8cabecc81676dd3b9fec1  pfetch-rs-2.11.1.tar.gz
+"

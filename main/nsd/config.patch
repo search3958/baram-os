@@ -1,0 +1,21 @@
+--- a/nsd.conf.sample.in
++++ b/nsd.conf.sample.in
+@@ -264,7 +264,9 @@
+ remote-control:
+ 	# Enable remote control with nsd-control(8) here.
+ 	# set up the keys and certificates with nsd-control-setup.
+-	# control-enable: no
++	# (This needs to be enabled to use init script's commands reload and
++	# reopen)
++	control-enable: yes
+ 
+ 	# what interfaces are listened to for control, default is on localhost.
+ 	# interfaces can be specified by IP address or interface name.
+@@ -275,6 +277,7 @@
+ 	# control-interface: 127.0.0.1
+ 	# control-interface: ::1
+ 	# control-interface: lo
++	control-interface: /run/nsd.control.sock
+ 
+ 	# port number for remote control operations (uses TLS over TCP).
+ 	# control-port: 8952

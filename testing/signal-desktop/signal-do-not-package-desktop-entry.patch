@@ -1,0 +1,16 @@
+diff --git a/Signal-Desktop/package.json.orig b/Signal-Desktop/package.json
+index 64782c6..0880002 100644
+--- a/Signal-Desktop/package.json.orig
++++ b/Signal-Desktop/package.json
+@@ -522,11 +522,6 @@
+     "linux": {
+       "executableName": "signal-desktop",
+       "category": "Network;InstantMessaging;Chat",
+-      "desktop": {
+-        "entry": {
+-          "StartupWMClass": "signal"
+-        }
+-      },
+       "artifactName": "${name}_${version}_${arch}.${ext}",
+       "target": [
+         "deb"

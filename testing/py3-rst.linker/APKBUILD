@@ -1,0 +1,38 @@
+# Contributor: Duncan Bellamy <dunk@denkimushi.com>
+# Maintainer: Duncan Bellamy <dunk@denkimushi.com>
+pkgname=py3-rst.linker
+pkgver=2.6.0
+pkgrel=1
+pkgdesc="Tools for adding metadata and hyperlinks to reStructuredText"
+url="https://github.com/jaraco/rst.linker"
+arch="noarch"
+license="MIT"
+depends="py3-jaraco.context py3-jaraco.vcs"
+makedepends="py3-gpep517 py3-installer py3-setuptools_scm py3-wheel"
+checkdepends="py3-path py3-pytest py3-pytest-subprocess"
+subpackages="$pkgname-pyc"
+#source="https://files.pythonhosted.org/packages/source/r/rst.linker/rst_linker-$pkgver.tar.gz"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jaraco/rst.linker/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/rst.linker-$pkgver"
+
+build() {
+	export SETUPTOOLS_SCM_PRETEND_VERSION=$pkgver
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+7f0996858e164a71ce99e543bc2b5d78ab4a7e238f298127e60409b71e3a90400960093358df5dc5598c6fdeb41fb87a7d6fe8575954098c259040067e382a56  py3-rst.linker-2.6.0.tar.gz
+"

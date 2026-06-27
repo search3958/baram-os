@@ -1,0 +1,73 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gitg
+pkgver=44
+pkgrel=4
+pkgdesc="gitg is the GNOME GUI client to view git repositories"
+url="https://gitlab.gnome.org/GNOME/gitg"
+arch="all"
+license="GPL-2.0-or-later"
+depends="gsettings-desktop-schemas"
+makedepends="
+	git
+	glib-dev
+	gobject-introspection-dev
+	gpgme-dev
+	gsettings-desktop-schemas-dev
+	gspell-dev
+	gtk+3.0-dev
+	gtksourceview4-dev
+	json-glib-dev
+	libdazzle-dev
+	libgee-dev
+	libgit2-glib-dev
+	libhandy1-dev
+	libpeas-dev
+	libsecret-dev
+	libxml2-dev
+	meson
+	vala
+	"
+checkdepends="bash xvfb-run"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-lang $pkgname-pyc"
+source="https://download.gnome.org/sources/gitg/${pkgver%.*}/gitg-$pkgver.tar.xz
+	girepository2.patch
+	"
+
+prepare() {
+	default_prepare
+
+	if want_check; then
+		# the test needs a git repository, so we make one here
+		# (we can't run this on aports since it's too large)
+		mkdir "$builddir"/tmprepo
+		cd "$builddir"/tmprepo
+		git init
+		# sometimes git fails to guess the email which would cause a failed
+		# build, this fixes it
+		git config --local user.name "test commiter"
+		git config --local user.email "test@example.com"
+		echo "test" > README.md
+		git add "README.md"
+		git commit -m "test commit"
+	fi
+}
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	cd "$builddir/tmprepo"
+	xvfb-run -a meson test --print-errorlogs -C ../output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+34eb346790d8ea3e766b84419e75d26888222b602c8f67d934ab37e335762d9c30873a48b0582646dc371533440442bb1941ef2e79a0fe86c7c580111f73db01  gitg-44.tar.xz
+6a90b94419c678b23f87f7faa605654af9091f88b6c118898ed664f82ff88345db54dcebeebf6d27a9092797e506a3222b2f9d6fddce4c40bc1dac2c7f95c5f9  girepository2.patch
+"

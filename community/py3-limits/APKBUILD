@@ -1,0 +1,61 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-limits
+pkgver=5.8.0
+pkgrel=1
+pkgdesc="Rate limiting using various strategies and storage backends such as redis & memcached"
+url="https://github.com/alisaifee/limits"
+arch="noarch"
+license="MIT"
+depends="
+	py3-deprecated
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-hatchling
+	py3-hatch-vcs
+	"
+checkdepends="
+	py3-flaky
+	py3-mongo
+	py3-pytest
+	py3-pytest-asyncio
+	py3-pytest-benchmark
+	py3-pytest-cov
+	py3-pytest-lazy-fixtures
+	py3-pymemcache
+	py3-redis
+	"
+subpackages="$pkgname-pyc"
+source="
+	https://github.com/alisaifee/limits/archive/refs/tags/$pkgver/limits-$pkgver.tar.gz
+	tests-drop-valkey-and-k-argument.patch
+	"
+builddir="$srcdir/limits-$pkgver"
+
+export SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -W ignore::DeprecationWarning \
+		-m 'not benchmark and not valkey and not integration and not memcached' \
+		-k 'not aio and not Storage and not strategy' -v
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+f97cb5e22467a1fe91f257fc13f783b45d2f78960b5badacb255c3c06abd04cf1d63e3b91e11d00ffd02c1c69706f72cde33a1d6f1f472cc652fb75c9650bb63  limits-5.8.0.tar.gz
+c9d6ca051476b76ab99a9e325c6625c4fa7181444b57aca96bf64e61e80679b859bcfbf7c79dea1a1a16cbc24f9ab35f1e4aa1d0ebc15acc1978f8ca1bae4a64  tests-drop-valkey-and-k-argument.patch
+"

@@ -1,0 +1,30 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-pyalsaaudio
+pkgver=0.10.0
+pkgrel=2
+pkgdesc="ALSA bindings"
+url="https://larsimmisch.github.io/pyalsaaudio/"
+arch="all"
+license="PSF-2.0"
+depends="python3"
+makedepends="py3-setuptools python3-dev alsa-lib-dev"
+source="https://pypi.python.org/packages/source/p/pyalsaaudio/pyalsaaudio-$pkgver.tar.gz"
+options="!check" # Requires specific audio setup
+builddir="$srcdir/pyalsaaudio-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py test
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+920b315f4c13c281edca54a9d5b456cce3fd502b2721ef0b4e1674d6627e8e2e8f7ab10150a2fa9448a7dd5cfe98930398e750771f3f0d639e4cb86a7fc431a3  pyalsaaudio-0.10.0.tar.gz
+"

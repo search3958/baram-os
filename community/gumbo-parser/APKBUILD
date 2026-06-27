@@ -1,0 +1,35 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: Haelwenn (lanodan) Monnier <contact+alpine@hacktivis.me>
+pkgname=gumbo-parser
+pkgver=0.13.2
+pkgrel=0
+pkgdesc="An HTML5 parsing library in pure C99"
+url="https://codeberg.org/grisha/gumbo-parser"
+arch="all"
+license="Apache-2.0"
+makedepends="meson gtest-dev"
+checkdepends="gtest"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/grisha/gumbo-parser/archive/$pkgver.tar.gz"
+builddir="$srcdir/gumbo-parser"
+
+build() {
+	abuild-meson build
+	meson compile -C build
+}
+
+check() {
+	meson test -C build
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C build
+
+	install -Dm 644 -t "$pkgdir/usr/share/licenses/$pkgname/" doc/COPYING
+	install -Dm 644 -t "$pkgdir/usr/share/doc/$pkgname/" README.md
+}
+
+sha512sums="
+1513e88acfc3240081039b30ab63ca6fc23a85b7d1415cb8e90e9c43f9c3d99d37634a7a50d81ef7f6d43a4facac3802feea6959256a2330b26b16523a288568  gumbo-parser-0.13.2.tar.gz
+"

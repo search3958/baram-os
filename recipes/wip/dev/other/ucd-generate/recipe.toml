@@ -1,5 +1,0 @@
-#TODO compiled but not tested
-[source]
-git = "https://github.com/BurntSushi/ucd-generate"
-[build]
-template = "cargo"

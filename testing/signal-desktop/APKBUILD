@@ -1,0 +1,518 @@
+# Contributor: lauren n. liberda <lauren@selfisekai.rocks>
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=signal-desktop
+pkgver=8.5.0
+pkgrel=1
+pkgdesc="A messaging app for simple private communication with friends"
+url="https://github.com/signalapp/Signal-Desktop/"
+# same as electron
+arch="aarch64 x86_64"
+license="AGPL-3.0-only"
+_llvmver=22
+depends="
+	electron
+	font-barlow
+	font-eb-garamond
+	font-inter
+	font-parisienne
+	"
+makedepends="
+	alsa-lib-dev
+	aom-dev
+	brotli-dev
+	bsd-compat-headers
+	cargo
+	cargo-auditable
+	cbindgen
+	clang$_llvmver-dev
+	cmake
+	crc32c-dev
+	dav1d-dev
+	electron-dev
+	electron-tasje
+	ffmpeg-dev
+	git-lfs
+	glib-dev
+	gn
+	jsoncpp-dev
+	libjpeg-turbo-dev
+	libepoxy-dev
+	libsecret-dev
+	libvpx-dev
+	libwebp-dev
+	libxml2-dev
+	lld
+	llvm$_llvmver-dev
+	mesa-dev
+	nodejs
+	npm
+	pnpm
+	openh264-dev
+	openssl-dev
+	opus-dev
+	pipewire-dev
+	protobuf-dev
+	protoc
+	pulseaudio-dev
+	py3-setuptools
+	python3
+	re2-dev
+	samurai
+	sqlcipher-dev
+	vips-dev
+	yarn
+	"
+options="net !check"
+
+# use _check_depends to validate this
+_libsignalver=0.89.2
+_ringrtcver=2.67.0
+_webrtcver=7444h
+_sqlcipherver=3.2.1
+_chromiumver=142.0.7444.0
+_opus_overlay_commit=22244de5a79bd1d6d623c32e72bf1954b56235be
+
+source="
+	https://github.com/signalapp/Signal-Desktop/archive/refs/tags/v$pkgver/Signal-Desktop-$pkgver.tar.gz
+	https://github.com/signalapp/libsignal/archive/refs/tags/v$_libsignalver/libsignal-$_libsignalver.tar.gz
+	https://github.com/signalapp/ringrtc/archive/refs/tags/v$_ringrtcver/ringrtc-$_ringrtcver.tar.gz
+	https://github.com/signalapp/node-sqlcipher/archive/refs/tags/v$_sqlcipherver/node-sqlcipher-$_sqlcipherver.tar.gz
+	https://github.com/signalapp/webrtc/archive/refs/tags/$_webrtcver/webrtc-$_webrtcver.tar.gz
+	opus-$_opus_overlay_commit.tar.gz::https://github.com/xiph/opus/archive/$_opus_overlay_commit.tar.gz
+	https://commondatastorage.googleapis.com/chromium-browser-official/chromium-$_chromiumver-lite.tar.xz
+
+	libsignal-auditable.patch
+	signal-use-system-sqlcipher.patch
+	signal-disable-updates.patch
+	signal-update-links.patch
+	signal-show-window-please.patch
+	signal-rollback-locale-changes.patch
+	signal-do-not-package-sqlcipher-deps.patch
+	signal-do-not-package-desktop-entry.patch
+	ringrtc-webrtc-renamed.patch
+	ringrtc-use-sh.patch
+	webrtc-shared-libs.patch
+	webrtc-compiler.patch
+	webrtc-use-only-payloadtypesuggester-for-pt-assignement.patch
+	webrtc-rtcbase-platform-thread-type-do-not-include-linux-prctl-header.patch
+
+	signal-desktop.sh
+	"
+builddir="$srcdir"
+
+# Required for cubeb-sys's.
+unset CARGO_TARGET_DIR
+
+# webrtc broken on clang https://gcc.gnu.org/bugzilla/show_bug.cgi?id=101227
+export CC=gcc
+export CXX=g++
+
+# required to find the tools
+export AR=ar
+export NM=nm
+export LD=g++
+
+# less log spam, reproducible, allow lto with rust
+export CFLAGS="${CFLAGS/-g/} -O2 -Wno-error -Wno-deprecated-builtins -Wno-unknown-warning-option -Wno-builtin-macro-redefined -Wno-deprecated-declarations"
+export CXXFLAGS="${CXXFLAGS/-g/} -O2 -Wno-error -Wno-deprecated-builtins -Wno-unknown-warning-option -Wno-builtin-macro-redefined -Wno-deprecated-declarations"
+export CPPFLAGS="$CPPFLAGS -D__DATE__=  -D__TIME__=  -D__TIMESTAMP__="
+
+# stdatomic from compiler-rt uses implicit function declaration
+export CFLAGS="$CFLAGS -Wno-implicit-function-declaration"
+export CXXFLAGS="$CXXFLAGS -Wno-implicit-function-declaration"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL=2
+export CARGO_PROFILE_RELEASE_STRIP="symbols"
+#export RUSTFLAGS="$RUSTFLAGS -C linker=clang"
+
+export YARN_CACHE_FOLDER="$srcdir/.yarn"
+
+_update_depends() {
+	msg "Updating extra dependencies version information in $APKBUILD..."
+
+	# signal-desktop package.json -> dependency versions
+	local _pkg_json
+	_pkg_json=$(curl --silent "https://raw.githubusercontent.com/signalapp/Signal-Desktop/v$pkgver/package.json")
+
+	local _libsignalver=$(echo "$_pkg_json" | grep "@signalapp/libsignal-client\": \"" | awk '{print $2}' | tr -d ',"' | head -n 1)
+	local _ringrtcver=$(echo "$_pkg_json" | grep "@signalapp/ringrtc\": \"" | awk '{print $2}' | tr -d ',"' | head -n 1)
+	local _sqlcipherver=$(echo "$_pkg_json" | grep "@signalapp/sqlcipher\": \"" | awk '{print $2}' | tr -d ',"' | head -n 1)
+
+	# ringrtc config -> webrtc version tag
+	local _webrtcver=$(curl --silent "https://raw.githubusercontent.com/signalapp/ringrtc/v$_ringrtcver/config/version.properties" \
+		| awk -F= '/^webrtc.version=/{print $2}')
+
+	msg "  signal: libsignal=$_libsignalver ringrtc=$_ringrtcver sqlcipher=$_sqlcipherver webrtc=$_webrtcver"
+
+	# webrtc DEPS -> commit hashes for opus and chromium.
+	local _deps
+	_deps=$(curl --silent "https://raw.githubusercontent.com/signalapp/webrtc/$_webrtcver/DEPS")
+
+	local _opus_overlay_commit=$(echo "$_deps" | grep -A3 "'src/ringrtc/opus/src':" \
+		| head -4 | grep -oE '[a-f0-9]{40}' | head -1)
+
+	local _chromium_rev=$(echo "$_deps" | grep -oE "'chromium_revision': '[a-f0-9]{40}'" \
+		| grep -oE '[a-f0-9]{40}')
+	local _chrome_version=$(curl --silent \
+		"https://chromium.googlesource.com/chromium/src/+/$_chromium_rev/chrome/VERSION?format=TEXT" \
+		| base64 -d)
+	local _chromiumver="$(echo "$_chrome_version" | awk -F= '/^MAJOR/{maj=$2} /^MINOR/{min=$2} /^BUILD/{bld=$2} /^PATCH/{pat=$2} END{print maj"."min"."bld"."pat}')"
+
+	msg "  chromium=$_chromiumver opus_overlay=$_opus_overlay_commit"
+
+	sed -i \
+		-e "s|^_libsignalver=.*|_libsignalver=$_libsignalver|" \
+		-e "s|^_ringrtcver=.*|_ringrtcver=$_ringrtcver|" \
+		-e "s|^_webrtcver=.*|_webrtcver=$_webrtcver|" \
+		-e "s|^_sqlcipherver=.*|_sqlcipherver=$_sqlcipherver|" \
+		-e "s|^_chromiumver=.*|_chromiumver=$_chromiumver|" \
+		-e "s|^_opus_overlay_commit=.*|_opus_overlay_commit=$_opus_overlay_commit|" \
+		"$APKBUILD"
+}
+
+prepare() {
+	# Move non-webrtc sources to their build directories.
+	for i in Signal-Desktop-$pkgver libsignal-$_libsignalver ringrtc-$_ringrtcver node-sqlcipher-$_sqlcipherver; do
+		mv "$srcdir"/$i "$builddir"/${i%-*}
+	done
+
+	# Assemble WebRTC tree: webrtc source + chromium build/third_party deps.
+	mv "$srcdir"/webrtc-$_webrtcver "$builddir"/webrtc
+	local _chromium="$srcdir"/chromium-$_chromiumver
+	for dir in build buildtools testing tools third_party; do
+		cp -r "$_chromium"/$dir "$builddir"/webrtc/
+	done
+
+	# Opus source overlay for ringrtc.
+	mkdir -p "$builddir"/webrtc/ringrtc/opus/src
+	cp -r "$srcdir"/opus-$_opus_overlay_commit/* "$builddir"/webrtc/ringrtc/opus/src/
+
+	echo "LASTCHANGE=$_webrtcver" > "$builddir"/webrtc/build/util/LASTCHANGE
+
+	mkdir -p "$builddir"/webrtc/build/config
+	cat > "$builddir"/webrtc/build/config/gclient_args.gni <<-EOF
+		generate_location_tags = false
+	EOF
+
+	# Use system libatomic instead of compiling compiler-rt's atomic.c
+	cat > "$builddir"/webrtc/third_party/compiler-rt/BUILD.gn <<-'EOGN'
+		config("atomic_config") {
+		  libs = [ "atomic" ]
+		}
+		group("atomic") {
+		  public_configs = [ ":atomic_config" ]
+		}
+	EOGN
+
+	default_prepare
+
+	cd "$builddir"/Signal-Desktop
+
+	# puts node modules in the root node_modules instead of under .pnpm
+	echo "node-linker=hoisted" >> .npmrc
+
+	msg "Installing signal-desktop JS dependencies"
+	pnpm install --ignore-scripts
+
+	# remove shipped fonts for system-provided (part 1)
+	rm -rf fonts/
+
+	(
+		cd "$builddir"/webrtc
+
+		local use_system="
+			brotli
+			crc32c
+			dav1d
+			ffmpeg
+			flatbuffers
+			fontconfig
+			freetype
+			harfbuzz-ng
+			highway
+			icu
+			jsoncpp
+			libaom
+			libdrm
+			libjpeg
+			libpng
+			libsecret
+			libvpx
+			libwebp
+			libxml
+			libxslt
+			openh264
+			opus
+			re2
+			snappy
+			woff2
+			zlib
+			"
+		for _lib in $use_system double_conversion libjpeg_turbo; do
+			msg "Removing buildscripts for system provided $_lib"
+			find . -type f -path "*{third_party,ringrtc}/$_lib/*" \
+				\! -path "*third_party/$_lib/chromium/*" \
+				\! -path "*third_party/$_lib/google/*" \
+				\! -path './base/third_party/icu/*' \
+				\! -path './third_party/libxml/*' \
+				\! -path './third_party/re2/*' \
+				\! -path './third_party/pdfium/third_party/freetype/include/pstables.h' \
+				\! -path './third_party/harfbuzz-ng/utils/hb_scoped.h' \
+				\! -path './third_party/crashpad/crashpad/third_party/zlib/zlib_crashpad.h' \
+				\! -regex '.*\.\(gn\|gni\|isolate\|py\)' \
+				-delete
+		done
+
+		touch third_party/libjpeg.gni
+
+		msg "Replacing gn files"
+		python3 build/linux/unbundle/replace_gn_files.py --system-libraries \
+			$use_system
+
+		# zlib depends on base for no reason
+		sed -i '/\/\/base/d' ./third_party/zlib/BUILD.gn
+
+		# allow system dependencies in "official builds"
+		sed -i 's/OFFICIAL_BUILD/GOOGLE_CHROME_BUILD/' \
+			tools/generate_shim_headers/generate_shim_headers.py
+
+		mkdir path
+		ln -s /usr/bin/python3 path/vpython3
+	)
+
+	(
+		cd "$builddir"/ringrtc/src/rust
+
+		msg "Installing ringrtc rust dependencies"
+		cargo fetch --target="$CTARGET" --locked
+	)
+
+	(
+		cd "$builddir"/libsignal
+
+		msg "Installing libsignal rust dependencies"
+		cargo fetch --target="$CTARGET" --locked
+	)
+
+	(
+		cd "$builddir"/node-sqlcipher
+
+		# fix target
+		sed -i 's/unknown-linux-gnu/alpine-linux-musl/g' deps/extension/extension.gyp
+
+		msg "Installing sqlcipher js dependencies"
+		pnpm install --ignore-scripts
+	)
+
+	(
+		cd "$builddir"/ringrtc/src/node
+
+		msg "Installing ringrtc js dependencies"
+		npm ci --ignore-scripts
+	)
+
+	(
+		cd "$builddir"/libsignal/node
+
+		# fix target
+		sed -i 's/unknown-linux-gnu/alpine-linux-musl/g' build_node_bridge.py
+
+		msg "Installing libsignal js dependencies"
+		yarn --ignore-scripts --frozen-lockfile
+	)
+}
+
+build() {
+	chromium_arch="$(node -e 'console.log(process.arch)')"
+
+	# required dependency of ringrtc
+	(
+		cd "$builddir"/webrtc
+		export PATH="$PWD/path:$PATH"
+
+		# shellcheck disable=2089
+		local webrtc_args="
+			rtc_build_examples=false
+			rtc_build_tools=false
+			rtc_enable_protobuf=false
+			rtc_enable_sctp=false
+			rtc_include_tests=false
+			rtc_include_ilbc=false
+			rtc_enable_google_benchmarks=false
+			rtc_libvpx_build_vp9=true
+			rtc_use_x11=false
+			rustc_version=\"yes\"
+			rust_bindgen_root=\"/usr\"
+			rust_sysroot_absolute=\"/usr\"
+
+			build_with_mozilla=false
+			chrome_pgo_phase=0
+			clang_use_chrome_plugins=false
+			clang_base_path=\"/usr\"
+			custom_toolchain=\"//build/toolchain/linux/unbundle:default\"
+			is_cfi=false
+			is_clang=false
+			is_debug=false
+			is_official_build=true
+			host_toolchain=\"//build/toolchain/linux/unbundle:default\"
+			proprietary_codecs=true
+			rtc_link_pipewire=true
+			rtc_use_pipewire=true
+			symbol_level=0
+			use_custom_libcxx=false
+			use_lld=true
+			use_sysroot=false
+		"
+		mkdir -p "$builddir"/ringrtc/out/release
+		msg "Building signal's webrtc"
+		# shellcheck disable=2090,2116
+		gn gen "$builddir"/ringrtc/out/release --args="$(echo $webrtc_args)"
+		ninja -C "$builddir"/ringrtc/out/release signaldeswebrtc
+	)
+
+	(
+		cd "$builddir"/ringrtc
+
+		msg "Building libringrtc"
+		OUTPUT_DIR="$builddir"/ringrtc/out \
+			cargo auditable build --features electron --release -p ringrtc
+
+		mkdir -p src/node/build/linux
+		cp -fv out/release/libsignaldeswebrtc.so src/node/build/linux/libsignaldeswebrtc.so
+		cp -fv target/release/libringrtc.so src/node/build/linux/libringrtc-$chromium_arch.node
+	)
+
+	(
+		cd "$builddir"/ringrtc/src/node
+		msg "Building ringrtc JS glue code"
+		npm run build
+
+		msg "Cleaning dev dependencies for ringrtc"
+		npm prune --ignore-scripts --omit=dev
+	)
+
+	# module on npm intentionally unbuildable: https://github.com/signalapp/libsignal/issues/464#issuecomment-1160665052
+	(
+		cd "$builddir"/libsignal/node
+
+		msg "Building libsignal"
+		npm_config_nodedir=/usr/include/electron/node_headers python3 build_node_bridge.py
+
+		mkdir -p prebuilds/linux-$chromium_arch
+		mv build/Release/libsignal_client_linux_$chromium_arch.node prebuilds/linux-$chromium_arch/node.napi.node
+
+		msg "Building libsignal glue code"
+		npm run tsc
+
+		msg "Cleaning dev dependencies for libsignal"
+		npm prune -ignore-scripts --omit=dev
+	)
+
+	(
+		cd "$builddir"/node-sqlcipher
+
+		(
+			cd deps/extension
+			msg "Building sqlcipher-extension"
+			cargo auditable build --release --target $CTARGET
+		)
+
+		msg "Building sqlcipher"
+		node-gyp configure --nodedir=/usr/include/electron/node_headers --build-from-source
+		node-gyp build --nodedir=/usr/include/electron/node_headers --build-from-source
+
+		msg "Building sqlcipher glue code"
+		pnpm build
+
+		mkdir -p prebuilds/linux-$chromium_arch
+		mv build/Release/obj.target/node_sqlcipher.node prebuilds/linux-$chromium_arch/node.napi.node
+
+		msg "Cleaning dev dependencies for sqlcipher"
+		pnpm prune --ignore-scripts --prod
+	)
+
+	msg "Building signal-desktop"
+	cd "$builddir"/Signal-Desktop
+
+	# from package.json postinstall
+	pnpm run build:acknowledgments
+	rm -rf node_modules/dtrace-provider
+
+	# get esbuild installed (needed for next step)
+	pnpm rebuild esbuild
+
+	# build front
+	# resets GIT_CEILING_DIRECTORIES as sometimes abuild sets this and breaks get-expire-time
+	NODE_ENV=production \
+	SIGNAL_ENV=production \
+	NODE_OPTIONS=--openssl-legacy-provider \
+	GIT_CEILING_DIRECTORIES= \
+	pnpm run build:dev
+
+	# purge non-production deps
+	CI=true pnpm prune --ignore-scripts --prod
+
+	# use our libsignal
+	rm -rf node_modules/@signalapp/libsignal-client/
+	cp -r "$builddir"/libsignal/node/ node_modules/@signalapp/libsignal-client
+
+	# use our libringrtc
+	rm -rf node_modules/@signalapp/ringrtc/
+	cp -r "$builddir"/ringrtc/src/node/ node_modules/@signalapp/ringrtc
+
+	# use our sqlcipher
+	rm -rf node_modules/@signalapp/sqlcipher/
+	cp -r "$builddir"/node-sqlcipher node_modules/@signalapp/sqlcipher
+
+	SIGNAL_ENV=production \
+	tasje pack
+}
+
+check() {
+	cd "$builddir"/Signal-Desktop
+	# tests run against downloaded build of electron for glibc, probably can be patched
+	pnpm run test
+}
+
+package() {
+	cd "$builddir"/Signal-Desktop/tasje_out
+
+	install -Dm644 resources/app.asar "$pkgdir"/usr/lib/$pkgname/app.asar
+	cp -r resources/app.asar.unpacked "$pkgdir"/usr/lib/$pkgname/app.asar.unpacked
+	install -Dm644 signal.desktop "$pkgdir"/usr/share/applications/$pkgname.desktop
+
+	# this should be in /usr/lib/signal-desktop. however, it does not simply work and I stopped to care
+	install -Dm755 "$builddir"/ringrtc/out/release/libsignaldeswebrtc.so "$pkgdir"/usr/lib/libsignaldeswebrtc.so
+
+	install -Dm755 "$srcdir"/signal-desktop.sh "$pkgdir"/usr/bin/signal-desktop
+
+	while read -r size; do
+		install -Dm644 icons/$size.png "$pkgdir"/usr/share/icons/hicolor/$size/apps/$pkgname.png
+	done < icons/size-list
+}
+
+sha512sums="
+ad14408978a991374dc67d74017daa287460497c7b8c7a780c5bf33aa1906a4402afbf3262d2bf4a3442202483e5d7df490d76bbe3883f158505e78d3f95ecd2  Signal-Desktop-8.5.0.tar.gz
+bf233af7554a842b4ed8cfafc258989dcb808f8a588c2ebc72fd86d0a900284c30e4135f7efe34931a8a8bd0ab5a05ae46da2f9fd728d697907dacb21b3e21be  libsignal-0.89.2.tar.gz
+8b4d220a87fb38c748dcc242da13b6705c9713e7b9b8735c88dae9dd1fa21130b3e166cdac6de99530691fe98f18c319a6be0456aff7c84546d840702433d958  ringrtc-2.67.0.tar.gz
+5c17c3300caebc3a9d86bf7e1c9f4927cc534bd46d528667abc13409d46418f68efced9716793b444ce8593b66e2865caf1e925fd073e07f9954e7cdb8133ff3  node-sqlcipher-3.2.1.tar.gz
+d769637eb62542b04492d0f8a2339feb33a62cf0e166fab033ece5bd5bffc655c4b8306b27f454dbd33408eb4f914f1ab0590a07012a81dcc6950f35f2e311ca  webrtc-7444h.tar.gz
+f2735ee9ae63627ea7dfc4066f3dbf101967011d04784babadde1769808c06c8dae9e0ec4e2f14cb29683bf9db733fb641125d001db6c3779fc20c3190c88465  opus-22244de5a79bd1d6d623c32e72bf1954b56235be.tar.gz
+4bf51fea87f1f6c70f5b59f373d7f3e726663ae752e5b9d8089e44d13dd7a930fba5380e515ebc82a661da422482fd0fc848622709a80bef4902f715ba69b612  chromium-142.0.7444.0-lite.tar.xz
+8d2d2d82c8546c2dd1fef161b61df79918f8c22235a56a46adb375a0beb4acef12c5fe53e67242a4be97f77adc522ff79b47949c352956c742a70d50f4179f7f  libsignal-auditable.patch
+7ee747c8aaa9d6e9149fe0a031e3d4cc9e9c08f22c42076bd05e2acb86952f8170032613d13a53716010edfa3f26ad97b530e82460318eb46a42e28cf5faeb9d  signal-use-system-sqlcipher.patch
+ef3622da416a5bd2d4bea4f2a4fbb21a985f660d4acc17bbe66ce51ac1180ab92c0c843a5414ff56ea1deda87c2b0f611a299ca8ebe4d6a24df53626b36ceea8  signal-disable-updates.patch
+60f843fb72d18aa7a48e47a751737b9432e3860dc7390b9094acb211df8b383293f2b4299787a6458999dfd185b502bdeecb717731724e68e37fc098a3afa3ed  signal-update-links.patch
+e09a573e579bb464fccecbe80d1c197ec316dce420d1e2cd18a5661c2831871099766439d08b8000638c23b9652b3ef598a33c7453507b3fd246e9630c86bdd2  signal-show-window-please.patch
+9e80d9e8b8c2aa4e42c2749086762394a2f61ac961011ffb0882d80bb5973d6c6f2ca1757f973951af207c48c5837cad5accddafe9603f202d7ca29ea2d19869  signal-rollback-locale-changes.patch
+961568777b86f8fbcc73360252123686c9d1e16b2650f23d8afbc6d7580d53024f81b62e9e9cbdcd0031b5cf99854bd47c6dd4580197f2b27b8b4cbb51c6c9c9  signal-do-not-package-sqlcipher-deps.patch
+03ee8d925d610990a1003e976d91f214a4781c879063bdc91ba9a705edfd3f25235f6ec075d4e663a296cdbd872832b7e818aec4c451716d1000f393dc0d39ee  signal-do-not-package-desktop-entry.patch
+02a648bb8541a39c75fec2db39f024a27976afca41908eefa2fe1f2e30b05b5d59f980ccc930021c0b0c09ba8b0cbcae071e9f0dd530543c667adbc4272af552  ringrtc-webrtc-renamed.patch
+19d2e07bdc0b160ec542fcb0a3d94ae1e37dcb1b3455e57b278cf074f8aac625341b47f4f06a1f7eb5a197cb0f11754de8785ffd10876852972cbfafdc2615db  ringrtc-use-sh.patch
+0886db42302cdde60a2a1854ed7621c796d0a6f55daee4f830af9b208e1da50bdb55c1b7ead7a79d12d7b758c8901f7ca28885b759e28976a7b4638d11b16ee3  webrtc-shared-libs.patch
+8ba740f0552872ddf383545a6bb99bf7bcdd2610cee51c6e69dc667893006facd5d72f62274e25c1a58e1a58c8e8b0b5303b648e4c74a71925639cc9691c72c4  webrtc-compiler.patch
+d44f62e4ccf2d9094d6ed217b24fa2cde276c7f64f4d6fd26e84dfc021ea667abcb21f9e4666cfd0d88d6ee0a6b1a20b6cc68c8720462711e3b5451e263f6c4a  webrtc-use-only-payloadtypesuggester-for-pt-assignement.patch
+d17ecd89e867b24a21144d267e1bf7d09e3898018a0f9fcd87084b9de8091bc56f904a1cabdc487a8e46ab509c11ddd363c574d75d85a79e3c4d9424a13b2093  webrtc-rtcbase-platform-thread-type-do-not-include-linux-prctl-header.patch
+8e1de53ec1608fa05972af605213e8423b8f88cfd8d6a1989bdcaf77ed1420871c39efa15c56ffeccb6ff86677acc5bc436020f3554bee4f94930c7d9f4e16b6  signal-desktop.sh
+"

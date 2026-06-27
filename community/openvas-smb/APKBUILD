@@ -1,0 +1,56 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=openvas-smb
+pkgver=22.5.10
+pkgrel=1
+pkgdesc="SMB module for OpenVAS Scanner"
+url="https://github.com/greenbone/openvas-smb"
+arch="x86 x86_64"
+license="GPL-2.0"
+options="!check" #no check available
+makedepends="
+	cmake
+	doxygen
+	glib-dev
+	gnutls-dev
+	graphviz
+	gvm-libs-dev
+	heimdal-dev
+	libunistring-dev
+	mingw-w64-binutils
+	mingw-w64-crt
+	mingw-w64-gcc
+	mingw-w64-headers
+	perl-dev
+	popt-dev
+	samurai
+	sqlite-dev
+	xmltoman
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/greenbone/openvas-smb/archive/v$pkgver.tar.gz
+	fix-missing-includes-path.patch
+	comparison_fn_t.patch
+	disable-backtrace.patch
+	implicit.patch
+	"
+
+build() {
+	export CFLAGS="$CFLAGS -Wno-incompatible-pointer-types"
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+b7252177cf9454b58ae8ee3ac6cf5b6e86e3514176b68a5feea4068975ba91c0974261c1a6bf11b94a862a565ac5ea1a91e2ee14606cbe7a90cb2e5f387a4af4  openvas-smb-22.5.10.tar.gz
+126d522efcf7341680ba88e3545cee1da70b44bd2b9618d1f4324941ac38c9159eef8449a34acd71d9c0a2ccb8b98fa98a3bd1fc66608d99bd19365eceb6f3eb  fix-missing-includes-path.patch
+96b81bb378d0a70b1d31c19c646a95b96056ca3f85c02edc221bc17093b5403ba1fcdf9f3175e455aa32b7399e58a1c9cda525985c09c8b7dee8068bf3643a14  comparison_fn_t.patch
+6a5f67177ca74ce051d190a81727b94938addf538c52831b5af3394f4d8d2ea990bcd58e3dc92570c7c4b0719deea49e2aa2fa549297c6e36ec4f8fa3f0a5270  disable-backtrace.patch
+cdd3a45f33b651c31dcff40c1876f410a5fb63f579a2e91fb8824fa4f34524d1fd49478f074982c08a2009ef582f5ff9e23fc0d5b5aa9d905aa1048e0ed2a801  implicit.patch
+"

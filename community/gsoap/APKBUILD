@@ -1,0 +1,55 @@
+# Contributor: <xmingske@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gsoap
+pkgver=2.8.139
+pkgrel=0
+arch="all"
+pkgdesc="Cross-platform C and C++ SDK for SOAP/XML Web services"
+license="GPL-2.0-or-later gSOAP-1.3b"
+url="https://www.genivia.com/dev.html"
+depends_dev="$pkgname-tools=$pkgver-r$pkgrel"
+makedepends="autoconf automake bison flex openssl-dev>3 libtool zlib-dev"
+subpackages="$pkgname-tools $pkgname-dev"
+source="https://prdownloads.sourceforge.net/gsoap2/gsoap_$pkgver.zip
+	gsoap-libtool.patch
+	musl-fixes.patch
+	"
+builddir="$srcdir/$pkgname-${pkgver%.*}"
+
+# secfixes:
+#   2.8.113-r0:
+#     - CVE-2021-21783
+
+prepare() {
+	default_prepare
+	autoreconf -vif
+}
+
+build() {
+	export CFLAGS="$CFLAGS -D_GNU_SOURCE"
+	./configure \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--exec-prefix=/usr \
+		--enable-ipv6 \
+		--enable-c-locale \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+
+	amove usr/bin
+}
+
+sha512sums="
+355aeddca1e0b2c871b39d7e33e007660523dafbf12f4aee850eaf110cbff349ec4b319a3dcd4a4d7a84e193fa56547f341fe98820e5339446f45676d0464bd2  gsoap_2.8.139.zip
+079bb9191f7c756d8e3d87a48f412ff60ef1190b6a1353cdd7ef54b6ade270152bd628b102332a2fdf7b8bbeeb9c7c387c6741c23d10d4024e691c3b260a9ef4  gsoap-libtool.patch
+4b8f216c577ee91dd0d8b4d894e7923c62831dcc313363d7b9716fd0cb2786830073a7b20bf9466b3bceb1ac12d9816d1b92caaa2bd8add2d12ae5991f338f13  musl-fixes.patch
+"

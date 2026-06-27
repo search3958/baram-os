@@ -1,0 +1,54 @@
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=theforceengine
+pkgver=1.09.540
+pkgrel=2
+pkgdesc="Modern rebuild of the Jedi Engine (needs purchased copy of game data files to run)"
+arch="all"
+url="https://theforceengine.github.io/"
+license="GPL-2.0-only"
+makedepends="
+	cmake
+	devil
+	devil-dev
+	glew-dev
+	libunwind-dev
+	rtmidi-dev
+	samurai
+	sdl2-dev
+	sdl2_image-dev
+	"
+source="
+	theforceengine-$pkgver.tar.gz::https://github.com/luciusDXL/TheForceEngine/archive/refs/tags/v$pkgver.tar.gz
+
+	backtrace.patch
+	path_max.patch
+	compilation_32bit_systems.patch
+	"
+subpackages="$pkgname-doc"
+options="!check" # no unit tests provided
+builddir="$srcdir/TheForceEngine-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+doc() {
+	default_doc
+
+	amove usr/share/TheForceEngine/Documentation
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+db69909e6276e1a6a8ed9aad74566d1873970340ee2f49d6bb72b78e3b7c7eb46a6c415a0cff273f464292590cf924c96efe61f6dece73a0f063259772e0d4c0  theforceengine-1.09.540.tar.gz
+6bff94570ec327556b78dd1f967f00ff85c06325f5a017624a33c7b02a03dbf595b6921e7cb164f6556a485dfa5f269617d61213bde84056859c9719ef8c093c  backtrace.patch
+d9b59854aa191fd18ff9b9a39f6f7ea1472cc60eb340ef86ef721f9f88a93fe2359eb0ed3b3253c2b44b6f28a2f5bd7bfaef6ec13ad287cadf0cf013ee5042c9  path_max.patch
+b5487f619da23f75babf735f42edfc58611791094135f1dca83c37aca30b6ab0bb138887a38f337237981cba8402e0bacc6a54315700fb9a3b36dae608ed5da3  compilation_32bit_systems.patch
+"

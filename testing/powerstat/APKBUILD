@@ -1,0 +1,25 @@
+# Contributor: Niklas Cathor <niklas.cathor@gmx.de>
+# Maintainer: Niklas Cathor <niklas.cathor@gmx.de>
+pkgname=powerstat
+pkgver=0.04.01
+pkgrel=0
+pkgdesc="Measures power consumption via ACPI battery data"
+url="https://github.com/ColinIanKing/powerstat"
+arch="all"
+license="GPL-2.0-only"
+depends="linux-headers"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="https://github.com/ColinIanKing/powerstat/archive/V$pkgver/powerstat-$pkgver.tar.gz"
+options="!check" # no tests
+
+build() {
+	make PEDANTIC=1
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+}
+
+sha512sums="
+83d6381fc311968466a02bf578c279e48796bf53120c2583dfcbed2f3ee3deef21771a1d0ecfcc6774b7cc068a9657d624bc5f23ba2eaf7dbfd539b1c60cf201  powerstat-0.04.01.tar.gz
+"

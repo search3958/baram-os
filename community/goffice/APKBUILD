@@ -1,0 +1,52 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=goffice
+pkgver=0.10.60
+pkgrel=0
+_maj=${pkgver%%.*}
+_min=${pkgver#$_maj.}
+_min=${_min%%.*}
+pkgdesc="Library of document-centric objects and utilities built on top of GLib and Gtk+"
+url="https://www.gnome.org/"
+arch="all"
+license="GPL-2.0-or-later OR GPL-3.0-or-later"
+makedepends="
+	autoconf
+	automake
+	cairo-dev
+	glib-dev
+	gobject-introspection-dev
+	gtk+3.0-dev
+	gtk-doc
+	intltool
+	libgsf-dev
+	librsvg-dev
+	libtool
+	libxml2-dev
+	libxslt-dev
+	"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc $pkgname-lang"
+source="https://download.gnome.org/sources/goffice/$_maj.$_min/goffice-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		--disable-static \
+		--enable-introspection
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+7428fe7785aa633eb35707dbd0f504d43b4c982f618073344b7fec535a4ea8e71d70628ea9ae31622db4439708c19bdf782809b8b17bc225024ef5ad181a9180  goffice-0.10.60.tar.xz
+"

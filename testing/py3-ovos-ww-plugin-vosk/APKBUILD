@@ -1,0 +1,41 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-ovos-ww-plugin-vosk
+pkgver=0.1.7
+pkgrel=0
+pkgdesc="Vosk wake word plugin for OVOS"
+url="https://github.com/OpenVoiceOS/ovos-ww-plugin-vosk"
+# only x86_64, aarch64 and armv7 supported by vosk-api
+arch="noarch !x86 !armhf !s390x !ppc64le !riscv64 !loongarch64"
+license="Apache-2.0"
+depends="
+	ovos-skill-installer
+	py3-numpy
+	py3-ovos-plugin-manager
+	py3-ovos-utils
+	py3-speechrecognition
+	py3-vosk-api
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/OpenVoiceOS/ovos-ww-plugin-vosk/archive/refs/tags/V$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/ovos-ww-plugin-vosk-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ee06456446bdede1ca64c564c5eed83336c00e71b1108ad0819ed80e2394694ec26f129a36e6628c894bec93cd66daeb06c8ce6e5eb1c09f7c2298e712af86fb  py3-ovos-ww-plugin-vosk-0.1.7.tar.gz
+"

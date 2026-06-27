@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+
+name=FreeSwitch
+command=/usr/bin/freeswitch
+command_args="-u ${FREESWITCH_USER:-freeswitch} -g ${FREESWITCH_GROUP:-freeswitch} -c ${FREESWITCH_OPTS}"
+command_user=${FREESWITCH_USER:-freeswitch}
+command_group=${FREESWITCH_GROUP:-freeswitch}
+command_background=yes
+extra_started_commands="reload"
+# use 'openrc' suffix so it do not clashes with FS pidfile (there's no way to disable pidfile in FS)
+pidfile=/run/freeswitch/${RC_SVCNAME}.openrc.pid
+retry=${FREESWITCH_STOP_TIMEOUT:-20}
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	checkpath --quiet --directory --owner $command_user:$command_group --mode 0770 ${pidfile%/*}
+}
+
+reload() {
+	start-stop-daemon --stop --signal 1 --quiet \
+		--pidfile $pidfile --name freeswitch
+	return 0
+}

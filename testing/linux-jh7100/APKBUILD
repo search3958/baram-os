@@ -1,0 +1,245 @@
+# Maintainer: Milan P. Stanić <mps@arvanta.net>
+
+_flavor=jh7100
+pkgname=linux-$_flavor
+pkgver=6.16.4
+_kernver=${pkgver%.*}
+pkgrel=0
+pkgdesc="linux kernel for starfive jh7100 SoC"
+url="https://www.kernel.org"
+depends="initramfs-generator"
+_depends_dev="perl gmp-dev elfutils-dev flex bison"
+makedepends="$_depends_dev
+	bc
+	diffutils
+	findutils
+	hexdump
+	installkernel
+	linux-headers
+	linux-firmware-any
+	openssl-dev
+	python3
+	sed
+	xz"
+
+options="!strip !check"
+_config=${config:-config-$_flavor.${CARCH}}
+
+subpackages="$pkgname-dev:_dev:$CBUILD_ARCH $pkgname-doc:_doc"
+source="https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/linux-$_kernver.tar.xz"
+case $pkgver in
+	*.*.0)	source="$source";;
+	*.*.*)	source="
+	patch-$pkgver.patch.xz::https://cdn.kernel.org/pub/linux/kernel/v${pkgver%%.*}.x/patch-$pkgver.xz
+	$source" ;;
+esac
+source="$source
+	config-jh7100.riscv64
+	esmil-jh7100.patch
+	"
+
+builddir="$srcdir/linux-$_kernver"
+arch="riscv64"
+license="GPL-2.0-only"
+
+_flavors=
+for _i in $source; do
+	case $_i in
+	config-*.$CARCH)
+		_f=${_i%.$CARCH}
+		_f=${_f#config-}
+		_flavors="$_flavors $_f"
+		if [ "linux-$_f" != "$pkgname" ]; then
+			subpackages="$subpackages linux-$_f::$CBUILD_ARCH linux-$_f-dev:_dev:$CBUILD_ARCH"
+		fi
+		;;
+	esac
+done
+
+_carch=$CARCH
+case "$_carch" in
+aarch64*) _carch="arm64" ;;
+arm*) _carch="arm" ;;
+riscv64) _carch="riscv" ;;
+loongarch64) _carch="loongarch" ;;
+esac
+
+prepare() {
+	default_prepare
+
+	# remove localversion from patch if any
+	rm -f localversion*
+	oldconfig
+}
+
+oldconfig() {
+	for i in $_flavors; do
+		local _config=config-$i.$CARCH
+		mkdir -p "$builddir"
+		echo "-$pkgrel-$i" > "$builddir"/localversion-alpine \
+			|| return 1
+
+		install -m644 "$srcdir"/$_config "$builddir"/.config
+		make -C $builddir \
+			O="$builddir" \
+			ARCH="$_carch" \
+			listnewconfig oldconfig
+	done
+}
+
+build() {
+	unset LDFLAGS
+	export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EPOCH})"
+	make ARCH="$_carch" DTC_FLAGS="-@" CC="${CC:-gcc}" \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-Alpine"
+}
+
+_package() {
+	local _buildflavor="$1" _outdir="$2"
+	local _abi_release=$pkgver-$pkgrel-$_buildflavor
+	export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EPOCH})"
+
+	# modules_install seems to regenerate a defect Modules.symvers on s390x. Work
+	# around it by backing it up and restore it after modules_install
+	cp Module.symvers Module.symvers.backup
+
+	mkdir -p "$_outdir"/boot "$_outdir"/lib/modules
+
+	local _install
+	case "$CARCH" in
+		arm*|aarch64) _install="zinstall dtbs_install";;
+		riscv64) _install="zinstall dtbs_install";;
+		*) _install=install;;
+	esac
+
+	make -j1 modules_install $_install \
+		ARCH="$_carch" \
+		INSTALL_MOD_PATH="$_outdir" \
+		INSTALL_PATH="$_outdir"/boot \
+		INSTALL_DTBS_PATH="$_outdir/boot/dtbs-$_buildflavor"
+
+	cp Module.symvers.backup Module.symvers
+
+	rm -f "$_outdir"/lib/modules/$_abi_release/build \
+		"$_outdir"/lib/modules/$_abi_release/source
+	rm -rf "$_outdir"/lib/firmware
+
+	install -D -m644 include/config/kernel.release \
+		"$_outdir"/usr/share/kernel/$_buildflavor/kernel.release
+	cp "$builddir"/.config $pkgdir/boot/config-$_flavor
+	rm -rf "$_outdir"/boot/config-$_abi_release
+	rm -rf "$_outdir"/boot/System.map-$_abi_release
+
+}
+
+# main flavor installs in $pkgdir
+package() {
+	depends="$depends linux-firmware-any"
+
+	_package $_flavor "$pkgdir"
+}
+
+_dev() {
+	local _flavor=$(echo $subpkgname | sed -E 's/(^linux-|-dev$)//g')
+	local _abi_release=$pkgver-$pkgrel-$_flavor
+	# copy the only the parts that we really need for build 3rd party
+	# kernel modules and install those as /usr/src/linux-headers,
+	# simlar to what ubuntu does
+	#
+	# this way you dont need to install the 300-400 kernel sources to
+	# build a tiny kernel module
+	#
+	pkgdesc="Headers and script for third party modules for $_flavor kernel"
+	depends="$_depends_dev"
+	local dir="$subpkgdir"/usr/src/linux-headers-$_abi_release
+	export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EPOCH})"
+
+	# first we import config, run prepare to set up for building
+	# external modules, and create the scripts
+	mkdir -p $dir
+	install -m644 "$srcdir"/config-$_flavor.$CARCH "$dir"/.config
+	echo "-$pkgrel-$_flavor" > "$dir"/localversion-alpine
+	cd $builddir
+
+	echo "Installing headers..."
+	cp -t $dir -a include
+
+	install -Dt $dir -m644 Makefile
+	install -Dt $dir -m644 Module.symvers
+	install -Dt $dir -m644 System.map
+	cp -t $dir -a scripts
+
+	install -Dt "$dir/arch/$_carch" -m644 arch/$_carch/Makefile
+	install -Dt "$dir/arch/$_carch/kernel" -m644 arch/$_carch/kernel/asm-offsets.s
+	cp -t "$dir/arch/$_carch" -a arch/$_carch/include
+
+	install -Dt "$dir/drivers/md" -m644 drivers/md/*.h
+	install -Dt "$dir/net/mac80211" -m644 net/mac80211/*.h
+
+	# https://bugs.archlinux.org/task/13146
+	install -Dt "$dir/drivers/media/i2c" -m644 drivers/media/i2c/msp3400-driver.h
+
+	# https://bugs.archlinux.org/task/20402
+	install -Dt "$dir/drivers/media/usb/dvb-usb" -m644 drivers/media/usb/dvb-usb/*.h
+	install -Dt "$dir/drivers/media/dvb-frontends" -m644 drivers/media/dvb-frontends/*.h
+	install -Dt "$dir/drivers/media/tuners" -m644 drivers/media/tuners/*.h
+
+	# https://bugs.archlinux.org/task/71392
+	install -Dt "$dir/drivers/iio/common/hid-sensors" -m644 drivers/iio/common/hid-sensors/*.h
+
+	echo "Installing KConfig files..."
+	find . -name 'Kconfig*' -exec install -Dm644 {} "$dir/{}" \;
+
+	echo "Removing unneeded architectures..."
+	local arch
+	for arch in "$dir"/arch/*/; do
+		case $(basename "$arch") in $_carch) continue ;; esac
+		echo "Removing $(basename "$arch")"
+		rm -r "$arch"
+	done
+
+	echo "Removing broken symlinks..."
+	find -L "$builddir" -type l -printf 'Removing %P\n' -delete
+
+	echo "Removing loose objects..."
+	find "$builddir" -type f -name '*.o' -printf 'Removing %P\n' -delete
+
+	echo "Stripping build tools..."
+	local file
+	while read -rd '' file; do
+		case "$(file -bi "$file")" in
+			application/x-sharedlib\;*)      # Libraries (.so)
+				strip -v $STRIP_SHARED "$file" ;;
+			application/x-archive\;*)        # Libraries (.a)
+				strip -v $STRIP_STATIC "$file" ;;
+			application/x-executable\;*)     # Binaries
+				strip -v $STRIP_BINARIES "$file" ;;
+			application/x-pie-executable\;*) # Relocatable binaries
+				strip -v $STRIP_SHARED "$file" ;;
+		esac
+	done < <(find "$builddir" -type f -perm -u+x ! -name vmlinux -print0)
+
+	echo "Stripping vmlinux..."
+	strip -v $STRIP_STATIC "$builddir/vmlinux"
+
+	echo "Adding symlink..."
+	mkdir -p "$subpkgdir"/lib/modules/$_abi_release
+	ln -sf /usr/src/linux-headers-$_abi_release \
+		"$subpkgdir"/lib/modules/$_abi_release/build
+}
+
+_doc() {
+	pkgdesc="documentation for $_flavor kernel"
+	depends=""
+	mkdir -p "$subpkgdir"/usr/share/doc/linux-edge-doc
+	cp -r "$builddir"/Documentation \
+		"$subpkgdir"/usr/share/doc/linux-edge-doc/
+
+}
+
+sha512sums="
+b71b17fdc8f25e4e4e05b364c31a66502a3e00e6e3d66808f9726098f1f2e315e3666aa69c6f164a6cf8f1c2c4359fcd620b0dd624a98d007da4bd34310b03f1  patch-6.16.4.patch.xz
+55a00f89ad6db6db2e26ff5dc5cfc96bbf6654e5bd5d17d2a3b944a47640367e54139716d230923187bebc6cb7756edc9511a620fb8abc6f32c50a658a734784  linux-6.16.tar.xz
+cbb68f7ebbc18ec52e2daa64b600ec9b74f3506ed1e8481755b4ad0e6a2d2e4ea093a0f4991019370b8c6608730101b0277245a4c52eb1ca11941e3ec300973d  config-jh7100.riscv64
+c56ce0c47a785db90e137545bf1ff7c1281eaf10bf95a4ac1b44a9b7a7f38867189859c0d02681225177d1d450849ea0434563a43827456dbb627408c600d21a  esmil-jh7100.patch
+"

@@ -1,0 +1,35 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=jaq
+pkgver=2.3.0
+pkgrel=0
+pkgdesc="jq clone focused on correctness, speed and simplicity"
+url="https://github.com/01mf02/jaq"
+# s390x: ackermann test panics (stack overflow)
+arch="all !s390x"
+license="MIT"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-doc"
+source="https://github.com/01mf02/jaq/archive/v$pkgver/jaq-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/jaq -t "$pkgdir"/usr/bin/
+	install -Dm644 LICENSE-MIT "$pkgdir"/usr/share/licenses/$pkgname/LICENSE-MIT
+}
+
+sha512sums="
+73c38f0938d8cb667911a634d5b9b49af973637420f449a63baf2db526d6816a5ff42e1f9db1a24114175df8073c797e8e2ac9793bdcd8006731832e9779b0a1  jaq-2.3.0.tar.gz
+"

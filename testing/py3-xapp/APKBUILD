@@ -1,0 +1,28 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=py3-xapp
+pkgver=3.0.3
+pkgrel=0
+pkgdesc="Python3 Xapp Library"
+url="https://github.com/linuxmint/python3-xapp"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="xapp"
+makedepends="gettext-dev meson"
+source="$pkgname-$pkgver.tar.gz::https://github.com/linuxmint/python3-xapp/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/python3-xapp-$pkgver/"
+options="!check" # doesn't have tests
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+0e2a04d1441db8b92118c5fea6a4f923a805510a312eb50b737ad9bd95e3c130bc91ae5fc8129d795484921ac6744f4f29b649ba1c379c5a086ea4e5f790d3bc  py3-xapp-3.0.3.tar.gz
+"

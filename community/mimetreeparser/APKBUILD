@@ -1,0 +1,73 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=mimetreeparser
+pkgver=26.04.2
+pkgrel=0
+pkgdesc="Parser for MIME trees"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.0-or-later AND LGPL-2.0-only AND LGPL-2.1-or-later AND BSD-3-Clause AND GPL-2.0-or-later"
+makedepends="
+	doxygen
+	extra-cmake-modules
+	gpgme-dev
+	gpgmepp-dev
+	graphviz
+	kcalendarcore-dev
+	kcodecs-dev
+	kcolorscheme-dev
+	kconfig-dev
+	kde-qdoc-common
+	ki18n-dev
+	kio-dev
+	kmbox-dev
+	kmime-dev
+	kwidgetsaddons-dev
+	libkleo-dev
+	qgpgme-dev
+	qt6-qt5compat-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="
+	gpg-agent
+	xwayland-run
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-lang
+	"
+_repo_url="https://invent.kde.org/pim/mimetreeparser.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/mimetreeparser-$pkgver.tar.xz"
+
+build() {
+	export KDE_DOCS=/usr/share/kde/documentation
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+
+	#cmake --build build --target prepare_docs
+	#cmake --build build --target generate_docs
+	#cmake --build build --target generate_qch
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E "(core-attachment|core-cryptohelper|core-mimetreeparser|core-gpgerror|core-partmodel|widgets-messageviewer|widgets-messageviewerdialog)test"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	#DESTDIR="$pkgdir" cmake --build build --target install_html_docs
+	#DESTDIR="$pkgdir" cmake --build build --target install_qch_docs
+}
+sha512sums="
+3514ecd75392c01149d068dbfa4e716325e6849fde75cfacc6bf566b866d8f9c70a003bf51eeb1b7e389aa8e7eb516224cecde5107ddfdcd31373fff00e83565  mimetreeparser-26.04.2.tar.xz
+"

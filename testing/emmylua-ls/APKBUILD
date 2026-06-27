@@ -1,0 +1,63 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=emmylua-ls
+pkgver=0.21.0
+pkgrel=0
+pkgdesc="EmmyLua language server"
+url="https://github.com/EmmyLuaLs/emmylua-analyzer-rust"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+subpackages="
+	$pkgname-doc
+	emmylua-check:_check_cli
+	emmylua-doc-cli:_doc_cli
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/EmmyLuaLs/emmylua-analyzer-rust/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/emmylua-analyzer-rust-$pkgver"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen --bins
+}
+
+check() {
+	# riscv64 and loongarch64 CI are too slow to pass the test duration asserts
+	cargo test --frozen -- --skip handlers::document_formatting::format_diff::performance_tests::benchmark_
+}
+
+package() {
+	install -Dm755 -t "$pkgdir"/usr/bin/ \
+		target/release/emmylua_ls \
+		target/release/emmylua_check \
+		target/release/emmylua_doc_cli
+
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+	# Only install the English variant of the documentation
+	install -Dm644 docs/config/emmyrc_json_EN.md \
+		"$pkgdir/usr/share/doc/$pkgname/config/emmyrc_json.md"
+	install -Dm644 docs/emmylua_doc/annotations_EN/*.md \
+		-t "$pkgdir/usr/share/doc/$pkgname/emmylua_doc/annotations/"
+	install -Dm644 docs/external_format/external_formatter_options_EN.md \
+		"$pkgdir/usr/share/doc/$pkgname/external_format/external_formatter_options.md"
+	install -Dm644 docs/features/features_EN.md \
+		"$pkgdir/usr/share/doc/$pkgname/features/features.md"
+}
+
+_check_cli() {
+	pkgdesc="EmmyLua static analysis tool"
+	amove usr/bin/emmylua_check
+}
+
+_doc_cli() {
+	pkgdesc="Documentation generator for Lua source code and EmmyLua annotations"
+	amove usr/bin/emmylua_doc_cli
+}
+
+sha512sums="
+5c3eba41663e079d6426a2592cef60755b95d13d97a08691d78978434ce85d779923d83d013468e215583be68d55a63ca0879da10f78e72b67f6bc06fb694a12  emmylua-ls-0.21.0.tar.gz
+"

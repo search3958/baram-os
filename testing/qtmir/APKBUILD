@@ -1,0 +1,88 @@
+# Contributor: Aster Boese <asterboese@mailbox.org>
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=qtmir
+pkgver=0.7.2_git20260108
+pkgrel=1
+pkgdesc="QPA plugin to make Qt a Mir server"
+# armhf: blocked by lots of dependencies
+arch="all !armhf"
+url="https://gitlab.com/ubports/development/core/qtmir"
+license="LGPL-3.0-only"
+makedepends="
+	cmake
+	cmake-extras
+	gsettings-qt-dev
+	gtest-dev
+	libqtdbusmock
+	libqtdbustest
+	lomiri-app-launch-dev
+	lomiri-content-hub-dev
+	lomiri-url-dispatcher-dev
+	lttng-ust-tools
+	mir-dev
+	process-cpp-dev
+	qt5-qtdeclarative-dev
+	qt5-qtsensors-dev
+	samurai
+	"
+checkdepends="
+	dbus
+	py3-dbusmock
+	"
+_commit="f07982e5b4b3d04dca9245e7cdd8f0a6ba19168a" # personal/sunweaver/debian-upstream
+source="https://gitlab.com/ubports/development/core/qtmir/-/archive/$_commit/qtmir-$_commit.tar.gz
+	101.patch
+	107.patch
+	"
+subpackages="$pkgname-dev"
+options="!check" # -DWITH_MIR2=ON currently disables tests
+builddir="$srcdir/qtmir-$_commit"
+
+_cmake_opts=""
+case "$CARCH" in
+	# valgrind is not available on these architectures
+	riscv64|loongarch64) _cmake_opts="-DWITH_VALGRIND=OFF" ;;
+	*) makedepends="$makedepends valgrind-dev" ;;
+esac
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DWITH_MIR2=ON \
+		$_cmake_opts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# Remove files for testing only
+	# https://gitlab.com/ubports/development/core/qtmir/-/blob/main/debian/qtmir-tests.install
+	rm "$pkgdir"/usr/bin/qtmir-demo-client
+	rm "$pkgdir"/usr/bin/qtmir-demo-shell
+	rm "$pkgdir"/usr/share/applications/qtmir-demo-client.desktop
+	rm "$pkgdir"/usr/share/applications/xwayland.qtmir.desktop
+	rm "$pkgdir"/usr/share/qtmir/benchmarks/common.py
+	rm "$pkgdir"/usr/share/qtmir/benchmarks/report_types.py
+	rm "$pkgdir"/usr/share/qtmir/benchmarks/touch_event_latency.py
+	rm "$pkgdir"/usr/share/qtmir/benchmarks/touch_event_latency.R
+	rmdir "$pkgdir"/usr/share/applications/
+	rm -r "$pkgdir"/usr/share/qtmir/qtmir-demo-client/
+	rm -r "$pkgdir"/usr/share/qtmir/qtmir-demo-shell/
+	rm -r "$pkgdir"/usr/share/qtmir/benchmarks/
+	rmdir "$pkgdir"/usr/share/qtmir/
+}
+
+sha512sums="
+476d90d0828d92535308e65b75f11c6b070ac66a9fe32dce242eccc31e3935e8d2fc3a3f87816d494cd6980504b2e1ae6ca88487e9cf82fa4d860709b2c5bd43  qtmir-f07982e5b4b3d04dca9245e7cdd8f0a6ba19168a.tar.gz
+b147e369dfe8afe515917c2a573f04d7b61d8271d6de821ad36d66bf19d41045f6573363be8643d86ca832dc3d4a7081734f534f9e7121d68fb8b6dc5d1c85ed  101.patch
+39e30e42ae0c5532498da289be08a3c339bc2e13afae538228d908e9a7db53d13f77425c9b4844ba3af63e8a9b011bdb68d4725b66cbe888679a1f63a957372c  107.patch
+"

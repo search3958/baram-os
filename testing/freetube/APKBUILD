@@ -1,0 +1,56 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=freetube
+pkgver=0.24.1
+pkgrel=0
+pkgdesc="An open source desktop YouTube player built with privacy in mind."
+arch="x86_64 aarch64" # blocked by electron
+license="AGPL-3.0-only"
+depends="
+	electron
+	font-roboto
+	"
+makedepends="
+	electron-tasje
+	nodejs
+	yarn
+	"
+url="https://freetubeapp.io"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/FreeTubeApp/FreeTube/archive/v$pkgver-beta.tar.gz
+	freetube.sh
+	tasje-dotdash.patch
+	"
+options="net !check" # No testsuite
+builddir="$srcdir"/FreeTube-$pkgver-beta
+
+export npm_config_nodedir=/usr/include/electron/node_headers
+export npm_config_build_from_source=true
+
+prepare() {
+	default_prepare
+
+	yarn --cache-folder "$srcdir"/yarn-cache install --frozen-lockfile --ignore-scripts
+}
+
+build() {
+	yarn --cache-folder "$srcdir"/yarn-cache run pack
+
+	tasje --config _scripts/ebuilder.config.mjs pack
+}
+
+package() {
+	# directory creation + program copy
+	install -Dm755 build/resources/app.asar -t "$pkgdir"/usr/lib/$pkgname/
+
+	# link binaries + other items
+	install -Dm755 "$srcdir"/freetube.sh "$pkgdir"/usr/bin/$pkgname
+	install -Dm644 "$builddir"/_icons/icon.svg "$pkgdir"/usr/share/icons/hicolor/scalable/$pkgname.svg
+	install -Dm644 build/freetube.desktop "$pkgdir"/usr/share/applications/$pkgname.desktop
+}
+
+sha512sums="
+dea418edcfe69412643e5a335d053777fef4a127ea4a8a6238991e53c23b5ac4e42ec39a8dd1aa8f2bcc2bfa724b6bfc02b85ca1a480961133115c103369ba85  freetube-0.24.1.tar.gz
+2ce2effc794bb663789cefe968b5899122127983dbfa1b240aa33a2be383720b18204e6d01b4a550df72956f02b6636b79c93a58f470a970b09b770f5b8f2fc4  freetube.sh
+df9f5e5e1ef1aa518589854adcea385b5257f2ff3caeaa1c03e81ba37f06176a04d50b694e2d3bfe2601ede3994e3b327b7f1c9eea6bc389e61ccc5b32d0e882  tasje-dotdash.patch
+"

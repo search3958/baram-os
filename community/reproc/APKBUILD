@@ -1,0 +1,40 @@
+# Contributor: Jakub Panek <me@panekj.dev>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=reproc
+pkgver=14.2.5
+pkgrel=0
+pkgdesc="Cross-platform (C99/C++11) process library"
+url="https://github.com/DaanDeMeyer/reproc"
+arch="all"
+license="MIT"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+source="https://github.com/DaanDeMeyer/reproc/archive/v$pkgver/reproc-$pkgver.tar.gz"
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DREPROC++=ON \
+		-DREPROC_TEST=ON \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+}
+
+check() {
+	cd build
+	ctest
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+d6c8abfc4fbef894310f4ad6250ddf269279bce13954ba6bc0147e0bf7e08f5a5e924ba079205881d6bf1dfe865e5f4389517d6d3bbafdede24ed328c549a991  reproc-14.2.5.tar.gz
+"

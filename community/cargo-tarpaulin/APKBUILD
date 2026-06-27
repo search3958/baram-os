@@ -1,0 +1,45 @@
+maintainer="Leon White <badfunkstripe@gmail.com>"
+pkgname=cargo-tarpaulin
+pkgver=0.35.4
+pkgrel=0
+pkgdesc="Code coverage tool for Rust projects"
+url="https://github.com/xd009642/tarpaulin"
+arch="all"
+license="Apache-2.0 OR MIT"
+depends="cargo"
+makedepends="
+	cargo-auditable
+	openssl-dev
+	"
+source="https://github.com/xd009642/tarpaulin/archive/refs/tags/$pkgver/cargo-tarpaulin-$pkgver.tar.gz"
+builddir="$srcdir/tarpaulin-$pkgver"
+options="net !check" # tests broken
+
+export LIBSSH2_SYS_USE_PKG_CONFIG=1
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen -- \
+		--skip git_info_correct \
+		--skip kill_used_in_test \
+		--skip llvm_sanity_test \
+		--skip picking_up_shared_objects \
+		--skip rustflags_handling
+}
+
+package() {
+	install -Dm755 target/release/cargo-tarpaulin \
+		-t "$pkgdir"/usr/bin
+}
+
+sha512sums="
+0e03905d2e6081df8ed2fe360b85c9b4df1ba2ff7051db48114a8340f14f361fd2df40c29021416516c7b473f973ddd3723266596b0e3ea3f567c6360f12d05f  cargo-tarpaulin-0.35.4.tar.gz
+"

@@ -1,0 +1,40 @@
+# Contributor: knuxify <knuxify@gmail.com>
+# Maintainer: knuxify <knuxify@gmail.com>
+pkgname=distroshelf
+pkgver=1.4.8
+pkgrel=0
+pkgdesc="GUI for managing Distrobox containers"
+url="https://github.com/ranfdev/DistroShelf"
+arch="all"
+license="GPL-3.0-or-later"
+depends="distrobox which"
+makedepends="
+	cargo
+	desktop-file-utils
+	glib-dev
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	vte3-dev
+	"
+checkdepends="appstream-glib"
+subpackages="$pkgname-lang"
+source="https://github.com/ranfdev/DistroShelf/releases/download/v$pkgver/distroshelf-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+a4bd84d68eb58114a05b057395e2479aeb7245940bc304887a95753759cd97abdcd6d6b47b0300437b68e136c9977d1ca3a8f4767409a33d2511f60c08c8d895  distroshelf-1.4.8.tar.xz
+"

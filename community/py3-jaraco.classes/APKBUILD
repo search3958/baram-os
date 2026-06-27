@@ -1,0 +1,45 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-jaraco.classes
+pkgver=3.4.0
+pkgrel=2
+pkgdesc="Utility functions for Python class constructs"
+url="https://github.com/jaraco/jaraco.classes"
+arch="noarch"
+license="MIT"
+depends="python3 py3-more-itertools"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-setuptools_scm
+	py3-wheel
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/j/jaraco.classes/jaraco.classes-$pkgver.tar.gz"
+builddir="$srcdir/jaraco.classes-$pkgver"
+
+# backwards compatibility for old name
+replaces="py3-jaraco-classes"
+provides="py3-jaraco-classes=$pkgver-r$pkgrel"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+94e5163120117c51f129d43e85f92ee19efcf8b10683142679511f8b33f4a1fd6c51516b7551aeab9d68c1936791bafc47328b5560ee3fe28e553fe463ea968f  jaraco.classes-3.4.0.tar.gz
+"

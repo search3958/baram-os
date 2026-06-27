@@ -1,0 +1,36 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=keybase-client
+pkgver=6.5.1
+pkgrel=4
+pkgdesc="CLI client for keybase.io"
+url="https://github.com/keybase/client"
+arch="all"
+license="BSD-3-Clause"
+makedepends="go"
+options="net !check" # go, need access to localhost:3000, which doesn't work with our infra
+source="$pkgname-$pkgver.tar.gz::https://github.com/keybase/client/archive/v$pkgver.tar.gz"
+builddir="$srcdir/client-$pkgver"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	cd "$srcdir"
+	export GOPATH="$PWD"
+
+	mkdir -p src/github.com/keybase
+	cp -r "$srcdir/client-$pkgver" src/github.com/keybase/client
+	cd src/github.com/keybase/client/go/keybase
+	go build -v -a -tags production -o "$srcdir/keybase"
+}
+
+package() {
+	install -Dm755 "$srcdir/keybase" "$pkgdir/usr/bin/keybase"
+}
+
+sha512sums="
+306370f675344b920f7726111ece32e6753a482164be056ce875026659fe55a277ff9dc41ef0fa78c31d5048f514c4f2b33e05f09acfe0bb6995100a24645fce  keybase-client-6.5.1.tar.gz
+"

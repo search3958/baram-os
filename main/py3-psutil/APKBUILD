@@ -1,0 +1,41 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=py3-psutil
+_pkgname=psutil
+pkgver=7.2.2
+pkgrel=0
+pkgdesc="A cross-platform process and system utilities module for Python"
+url="https://github.com/giampaolo/psutil"
+arch="all"
+license="BSD-3-Clause"
+makedepends="linux-headers python3-dev py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-psutil" # Backwards compatibility
+provides="py-psutil=$pkgver-r$pkgrel" # Backwards compatibility
+
+# secfixes:
+#   5.6.7-r0:
+#     - CVE-2019-18874
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	cd /tmp && "$builddir"/.testenv/bin/python3 -c 'import psutil'
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+2de05c69d152a8582a4d8f1f02233cae5927baaa35f8797e4b0745f33e6b3c7239b9a54b719b0582b0b6c5b4bbc86d2e1e226c3e9854e4e5be9c5e349c704961  psutil-7.2.2.tar.gz
+"

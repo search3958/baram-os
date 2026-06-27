@@ -1,0 +1,41 @@
+# Contributor: Kaarle Ritvanen <kunkku@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=remind
+pkgver=06.02.06
+pkgrel=0
+pkgdesc="Sophisticated calendar and alarm program"
+url="https://dianne.skoll.ca/projects/remind/"
+arch="all"
+license="GPL-2.0-only"
+checkdepends="tzdata"
+options="!check"
+subpackages="$pkgname-doc tkremind::noarch"
+source="https://dianne.skoll.ca/projects/remind/download/remind-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make -j1 test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+tkremind() {
+	depends="$pkgname=$pkgver-r$pkgrel tk tcl-lib"
+
+	amove usr/bin/tkremind
+	amove usr/share/applications/tkremind.desktop
+	amove usr/share/pixmaps/tkremind.png
+}
+
+sha512sums="
+30ef90ae2030253180262a3fa3bd63eee819527213cc191de46e6f8e8402aaa4f6210dbe9f13d0d413e39b41d4014192342bb08e644450826dce0ce87bb2b2f9  remind-06.02.06.tar.gz
+"

@@ -1,0 +1,35 @@
+# Contributor: Alan Lacerda <alacerda@alpinelinux.org>
+# Maintainer: Alan Lacerda <alacerda@alpinelinux.org>
+pkgname=libmatekbd
+pkgver=1.28.0
+pkgrel=0
+pkgdesc="MATE keyboard library"
+url="https://github.com/mate-desktop/libmatekbd"
+arch="all"
+license="LGPL-2.1-or-later"
+depends="mate-common freetype"
+makedepends="libxklavier-dev libtool intltool gtk+3.0-dev"
+subpackages="$pkgname-dev $pkgname-lang"
+source="https://pub.mate-desktop.org/releases/${pkgver%.*}/libmatekbd-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--sysconfdir=/etc \
+		--enable-static=no \
+		--prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+303d75e8c082e4af5a031ede8a94f155739c1f7b2835ed66a0072840d76d2711c6b215bd3f580cffdc9d0b0120b2fa8a14781ce893707f3361bd6534932ba199  libmatekbd-1.28.0.tar.xz
+"

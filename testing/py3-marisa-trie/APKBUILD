@@ -1,0 +1,52 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=py3-marisa-trie
+pkgver=1.4.1
+pkgrel=0
+pkgdesc="Static memory-efficient and fast Trie-like structures for Python"
+url="https://github.com/kmike/marisa-trie"
+arch="all"
+license="MIT"
+makedepends="
+	cython
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	py3-hypothesis
+	py3-pytest
+	py3-readme_renderer
+	"
+source="https://pypi.python.org/packages/source/m/marisa_trie/marisa_trie-$pkgver.tar.gz"
+builddir="$srcdir/marisa_trie-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	case "$CARCH" in
+	arm*)
+		.testenv/bin/python3 -m pytest \
+			--ignore tests/test_trie.py
+		# https://github.com/pytries/marisa-trie/issues/96
+		;;
+	*)
+		.testenv/bin/python3 -m pytest
+		;;
+	esac
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+cba5b6b434048d5783f05ba3eadfebf5f35cbed4e028775dc458b76506ed72090288d783221e7fbcc92fb638557d3100b9748700bfcc98bc922c1d4d779ddd39  marisa_trie-1.4.1.tar.gz
+"

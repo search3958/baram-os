@@ -1,7 +1,0 @@
-#TODO not compiled or tested
-[source]
-git = "https://github.com/vyfor/rattles"
-shallow_clone = true
-[build]
-template = "cargo"
-cargoexamples = ["ratatui","showcase",]

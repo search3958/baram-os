@@ -1,6 +1,0 @@
-#TODO fs2 crate error
-[source]
-git = "https://github.com/bytecodealliance/cargo-wasi"
-shallow_clone = true
-[build]
-template = "cargo"

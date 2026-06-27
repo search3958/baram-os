@@ -1,0 +1,62 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+_luaversions="5.1 5.2 5.3 5.4 5.5"
+pkgname=lua-md5
+_name=md5
+pkgver=1.3
+pkgrel=3
+pkgdesc="Basic cryptographic facilities for Lua"
+url="https://github.com/keplerproject/md5"
+arch="all"
+license="MIT"
+for _i in $_luaversions; do
+	makedepends="$makedepends lua$_i-dev"
+	subpackages="$subpackages lua$_i-md5:_split"
+done
+source="lua-md5-$pkgver.tar.gz::https://github.com/keplerproject/md5/archive/$pkgver.tar.gz
+	create-libdir.patch
+	"
+
+builddir="$srcdir"/md5-$pkgver
+options="!check"
+
+prepare() {
+	default_prepare
+
+	sed -i -e "s:^PREFIX.*=.*:PREFIX =/usr:" config
+
+	for _i in $_luaversions; do
+		cp -r "$builddir" "$srcdir"/build-$_i
+		sed -i -e "s/5.1/$_i/" "$srcdir"/build-$_i/config
+	done
+}
+
+build() {
+	for _i in $_luaversions; do
+		cd "$srcdir"/build-$_i
+		make CFLAGS="$CFLAGS $(pkg-config --cflags lua$_i)"
+	done
+}
+
+package() {
+	for _i in $_luaversions; do
+		cd "$srcdir"/build-$_i
+		make PREFIX="$pkgdir"/usr LUA_SYS_VER=$_i install
+	done
+}
+
+_split() {
+	local d= _ver=${subpkgname%%-*}
+	_ver=${_ver#lua}
+	pkgdesc="Basic cryptographic facilities for Lua $_ver"
+	install_if="lua$_ver $pkgname=$pkgver-r$pkgrel"
+	depends=
+	for d in usr/lib/lua usr/share/lua; do
+		if [ -d "$pkgdir"/$d/$_ver ]; then
+			mkdir -p "$subpkgdir"/$d
+			mv "$pkgdir"/$d/$_ver "$subpkgdir"/$d/
+		fi
+	done
+}
+
+sha512sums="eda222b89432228a03c603237a787d55b6d0251f53ee3da11aaf0369ff26e3497ed8479a295b659e02b3fee85c636cd5f8cc9fd68367bf4ed2d3edcbbc373903  lua-md5-1.3.tar.gz
+85d267a648f2aa764841a131082952a8605a7892f491e271ed83f0413c8a7fa9fa30d89928da63d89883eecddb89e67473b37daed7036f8a535a557d4e3f27d8  create-libdir.patch"

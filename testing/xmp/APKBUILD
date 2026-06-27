@@ -1,0 +1,38 @@
+# Contributor: Dominika Liberda <ja@sdomi.pl>
+# Maintainer: Dominika Liberda <ja@sdomi.pl>
+pkgname=xmp
+pkgver=4.2.0
+pkgrel=0
+pkgdesc="Command-line mod player using libxmp"
+url="https://github.com/libxmp/xmp-cli"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	alsa-lib-dev
+	autoconf
+	automake
+	libxmp-dev
+	pulseaudio-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/libxmp/xmp-cli/archive/refs/tags/xmp-$pkgver.tar.gz"
+options="!check" # no test suite
+builddir="$srcdir/$pkgname-cli-$pkgname-$pkgver/"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure --disable-oss --enable-pulseaudio prefix=/usr
+	make
+}
+
+package() {
+	make install DESTDIR="$pkgdir" PREFIX=/usr
+}
+
+sha512sums="
+60d625e83cff6af80382d75b09a0ef1d9b60d86c2cae5ba79b619d8b4999bf15398efefde446670323a17e6f30ca17b0dc737a9265bd7299cf832074291c1c14  xmp-4.2.0.tar.gz
+"

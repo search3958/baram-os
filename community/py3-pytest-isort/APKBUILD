@@ -1,0 +1,35 @@
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+pkgname=py3-pytest-isort
+_pyname=pytest-isort
+pkgver=4.0.0
+pkgrel=2
+pkgdesc="pytest plugin to check import ordering using isort"
+url="https://pypi.org/project/pytest-isort/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-pytest py3-isort"
+makedepends="py3-gpep517 py3-poetry-core"
+subpackages="$pkgname-pyc"
+source="https://github.com/stephrdev/pytest-isort/archive/refs/tags/$pkgver/py3-pytest-isort-$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages test-env
+	test-env/bin/python3 -m installer .dist/pytest_isort-*.whl
+	test-env/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/pytest_isort-*.whl
+}
+
+sha512sums="
+dff28d9c402767827fc0132b3b9426ef9307e82ffbb2e7c127393102b4b77fd6436adb4baafc0239164edeeaad4648a969da5b1da6972c6678339f02367660ac  py3-pytest-isort-4.0.0.tar.gz
+"

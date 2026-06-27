@@ -1,0 +1,35 @@
+# Contributor: tetsumaki <yd-alpine@tetsumaki.net>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=fx
+pkgver=39.2.0
+pkgrel=6
+pkgdesc="Command-line tool and terminal JSON viewer"
+url="https://github.com/antonmedv/fx"
+arch="all"
+license="MIT"
+makedepends="go"
+subpackages="$pkgname-doc"
+options="net" # go
+source="$pkgname-$pkgver.tar.gz::https://github.com/antonmedv/fx/archive/refs/tags/$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build .
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dvm0755 fx -t "$pkgdir"/usr/bin/
+	install -Dvm0644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+51236327fd35bd0e98a088edb932cb97222ba48b00d978629d152a0a235a6946e7e2a7ac7a96cd6cfcafdb5ac5281b5fa8de316af40bfc75c8b2af5aeebd415d  fx-39.2.0.tar.gz
+"

@@ -1,0 +1,30 @@
+# Contributor: Damian Kurek <starfire24680@gmail.com>
+# Maintainer: Damian Kurek <starfire24680@gmail.com>
+pkgname=kodi-audioencoder-wav
+pkgver=20.2.0
+_realname=Nexus
+pkgrel=1
+pkgdesc="WAV encoder addon for Kodi"
+options="!check" # no test suite
+url="https://github.com/xbmc/audioencoder.wav"
+arch="all !armhf !loongarch64" # kodi is available only on these architectures
+license="GPL-2.0-only"
+makedepends="cmake kodi-dev samurai"
+source="$pkgname-$pkgver-$_realname.tar.gz::https://github.com/xbmc/audioencoder.wav/archive/$pkgver-$_realname.tar.gz"
+builddir="$srcdir/audioencoder.wav-$pkgver-$_realname"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_MODULE_PATH=/usr/lib/cmake/kodi
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+7249bfbb0f01820353b089456fa766727dda62ab88306671e0e0941079808ee452f2d1f2824c30b6910bac37547a635f76f04ca682f4d8e5cfb3addffbff3459  kodi-audioencoder-wav-20.2.0-Nexus.tar.gz
+"

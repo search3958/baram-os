@@ -1,0 +1,37 @@
+# Contributor: prspkt <prspkt@protonmail.com>
+# Maintainer: prspkt <prspkt@protonmail.com>
+pkgname=py3-wrapt
+_pkgname=wrapt
+pkgver=2.1.2
+pkgrel=0
+pkgdesc="Module for decorators, wrappers and monkey patching"
+url="https://github.com/GrahamDumpleton/wrapt"
+arch="all"
+license="BSD-2-Clause"
+depends="python3"
+makedepends="python3-dev py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/GrahamDumpleton/wrapt/archive/$pkgver/py3-wrapt-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+91fcf4bd1af0ab1175cc8bc31acf5a3aaaa0fa4893e65273b31c8953ebfe2929fe7ec9927b61403230ab21c4029e9c4f1396d13fc649de40dcb9729eee672070  py3-wrapt-2.1.2.tar.gz
+"

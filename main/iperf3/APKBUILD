@@ -1,0 +1,55 @@
+# Contributor: Michael Mason <ms13sp@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=iperf3
+_pkgname=iperf
+pkgver=3.21
+pkgrel=0
+pkgdesc="Tool to measure IP bandwidth using UDP or TCP"
+url="https://github.com/esnet/iperf"
+arch="all"
+license="BSD-3-Clause-LBNL"
+makedepends="openssl-dev"
+subpackages="$pkgname-dev $pkgname-doc $pkgname-openrc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/esnet/$_pkgname/archive/$pkgver.tar.gz
+	$pkgname.initd
+	$pkgname.confd
+	"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-static
+	make
+}
+
+check() {
+	make check || { cat src/test-suite.log; return 1; }
+}
+
+# secfixes:
+#   3.19.1-r0:
+#     - CVE-2025-54349
+#     - CVE-2025-54350
+#     - CVE-2025-54351
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm755 "$srcdir"/$pkgname.initd \
+		"$pkgdir"/etc/init.d/$pkgname
+	install -Dm644 "$srcdir"/$pkgname.confd \
+		"$pkgdir"/etc/conf.d/$pkgname
+}
+
+sha512sums="
+6418c5521ab4e7ab9a18ecf07b3c0b9460d0015314bf6fdea9b3a748b1deb8c47a6ed1e5fd86cc0a99e0f6877e943f44488387f1fc2c3c17e091014fb9ad003c  iperf3-3.21.tar.gz
+fdaf06316886ae02a865848ea6df6b77aecde78fab15bcbc22e077871c3f567521eeee19ef13c402fef467c2edd916a7d976a4c933dbfb637373145a18563ef9  iperf3.initd
+4c6b766c154612f5f2e5f6150396f443ba37ec59ed0a8a994bf84612059db22827aee3dd3b7c3249e0bb6037163788d830efcb1caad5eba1c97d2349bdbc55f9  iperf3.confd
+"

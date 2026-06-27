@@ -1,0 +1,29 @@
+# Contributor: Magnus Sandin <magnus.sandin@valitron.se>
+# Maintainer: Magnus Sandin <magnus.sandin@valitron.se>
+pkgname=sway-launcher-desktop
+pkgver=1.7.0
+pkgrel=1
+pkgdesc="Text based launcher menu"
+url="https://github.com/Biont/sway-launcher-desktop"
+arch="noarch"
+license="GPL-3.0-only"
+depends="bash gawk fzf"
+checkdepends="bats"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Biont/sway-launcher-desktop/archive/refs/tags/v$pkgver.tar.gz
+	remove-ls-test.patch
+	"
+check() {
+	cd "$builddir/tests" && bats ./*.bats
+}
+
+package() {
+	install -m755 -D "$builddir/$pkgname.sh"  "$pkgdir/usr/bin/$pkgname"
+	install -m644 -D "$builddir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+	sed -i 's/\.sh//g' "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
+
+sha512sums="
+900657f1ef2073b1e291ef9affb361b1eb010f2599bfa9c5f1b027dbd7d76abba2d5470ed415431eb6f413f45f09b390e77243189ce7c2c335902b6bfeca19be  sway-launcher-desktop-1.7.0.tar.gz
+b1877cb93d120823f95611f02ced064e1a22247d7e03ab1415156a09c6343bf0c4d9f444f1364a6eeef7cf43268a417b291e0e9d6343e6cfdcdbaadfee3483e9  remove-ls-test.patch
+"

@@ -1,0 +1,74 @@
+# Contributor: Aiden Grossman <agrossman154@yahoo.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=py3-trimesh
+pkgver=4.12.2
+pkgrel=0
+pkgdesc="Python library for working with triangular meshes"
+url="https://github.com/mikedh/trimesh"
+arch="noarch"
+license="MIT"
+depends="
+	py3-colorlog
+	py3-jsonschema
+	py3-lxml
+	py3-mapbox-earcut
+	py3-msgpack
+	py3-networkx
+	py3-numpy
+	py3-pillow
+	py3-pycollada
+	py3-requests
+	py3-rtree
+	py3-scipy
+	py3-shapely
+	py3-svgpath
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-httpx
+	py3-pyinstrument
+	py3-pytest
+	py3-pytest-xdist
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mikedh/trimesh/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/trimesh-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# test_contains_cavity requires manifold3d boolean backend
+	# https://pypi.org/project/manifold3d/
+	local skip="
+		--deselect=tests/test_ray.py::test_contains_cavity
+		"
+	case "$CARCH" in
+		riscv64|s390x)
+			# test successful but too slow to pass on riscv64 or s390x
+			skip="$skip
+				--deselect=tests/test_bounds.py::BoundsTest::test_obb_mesh_large
+				"
+			;;
+	esac
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto $skip
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+4f8cfee0435c16b932740f4900f1ef75046c06bb64a20fe49c2a858aba7392009d6dcdeab80a08392e185e2f2890198078213e984563bfebd059b339852fb18d  py3-trimesh-4.12.2.tar.gz
+"

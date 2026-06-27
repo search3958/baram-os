@@ -1,0 +1,38 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-scikit-opt
+pkgver=0.6.6
+pkgrel=5
+pkgdesc="Swarm Intelligence in Python"
+url="https://github.com/guofei9987/scikit-opt"
+arch="noarch !x86" # AssertionErrors
+license="MIT"
+depends="python3 py3-numpy py3-scipy"
+checkdepends="py3-pytest-xdist"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/s/scikit-opt/scikit-opt-$pkgver.tar.gz
+	do-not-install-tests.patch"
+builddir="$srcdir/scikit-opt-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -n auto
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b71813b0be3345cffe394e2f822edbe108cecec21308a4a8a46763f41237178d7b7a74a2a2fb9747ae51e04e0b44c933ede8c5885e5762ad53fbec37d232c5f9  py3-scikit-opt-0.6.6.tar.gz
+488a2eefbd52e9b1c4a38e42d8dc6980db5fba1ef690a62fe594ecdd1675fe7c193576cbacea452c9ffc8a7b792a225a3e4ca12f073276db77dd0050155e43f3  do-not-install-tests.patch
+"

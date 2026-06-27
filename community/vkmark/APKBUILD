@@ -1,0 +1,38 @@
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=vkmark
+pkgver=2025.01
+pkgrel=2
+pkgdesc="Vulkan benchmark"
+url="https://github.com/vkmark/vkmark"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	assimp-dev
+	glm-dev
+	meson
+	vulkan-loader-dev
+	wayland-dev
+	wayland-protocols
+	xcb-util-wm-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/vkmark/vkmark/archive/$pkgver/vkmark-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	# Skip failing "util image file reads" test
+	meson test --print-errorlogs -C output --test-args "exclude:Scenario: util image file reads"
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+df66ce405548495732e2ffc3f71364787f50f175268294ada98328d152c05e63f79f97226969aecf05a8b4097932f15d4ac95804747895d54bb1b241dcf90f12  vkmark-2025.01.tar.gz
+"

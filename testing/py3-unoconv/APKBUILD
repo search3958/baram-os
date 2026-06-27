@@ -1,0 +1,42 @@
+# Contributor: TBK <tbk@jjtc.eu>
+# Maintainer:
+pkgname=py3-unoconv
+pkgver=0.9.0
+pkgrel=5
+pkgdesc="Tool to convert between any document format supported by LibreOffice"
+url="http://dag.wieers.com/home-made/unoconv/"
+arch="noarch !armhf !s390x !ppc64le !riscv64 !loongarch64" # blocked by libreoffice
+license="GPL-2.0-only"
+depends="libreoffice python3"
+makedepends="py3-setuptools py3-gpep517"
+options="!check"
+source="unoconv-$pkgver.tar.gz::https://github.com/dagwieers/unoconv/archive/$pkgver.tar.gz
+	setup.py CVE-2019-17400.patch"
+
+builddir="$srcdir"/unoconv-$pkgver
+
+# secfixes:
+#   0.8.2-r0:
+#     - CVE-2019-17400
+
+prepare() {
+	cp "$srcdir"/setup.py "$builddir"/
+	default_prepare
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+37d63ada32675fd0ebd089a74db453fdb7332a24e62cbf3e060d6d15cc503c76ede9ccc5e09467f4a38833a8358c09fde23cc8780a77c343268f20e0c37f2469  unoconv-0.9.0.tar.gz
+b4fa76011fb96ba9521bb09d1a5c43dbd457c50bb2c6d66a5bc65928cde1e1d8174e43ad86f8f53755f222127cc5b0084b4564c248ce1fca56f9acfb4c03d86d  setup.py
+ea4c2f734fec724596052b0ece570755500a368ed36e951eee1f81c4e62419d4e86d1064b38defc474da44c584848cfe2b8d8b03c6bdf5828e78969180b9d214  CVE-2019-17400.patch
+"

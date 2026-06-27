@@ -1,0 +1,41 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=moor
+pkgver=2.10.2
+pkgrel=4
+pkgdesc="Pager designed to do the right thing without any configuration"
+url="https://github.com/walles/moor"
+arch="all"
+license="BSD-2-Clause-Views"
+makedepends="go"
+subpackages="$pkgname-doc"
+source="https://github.com/walles/moor/archive/v$pkgver/moor-$pkgver.tar.gz
+	fix-test.patch
+	"
+options="net" # for downloading Go modules
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build \
+		-ldflags "-X main.versionString=v$pkgver" \
+		-v ./cmd/moor
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dvm755 moor -t "$pkgdir"/usr/bin/
+
+	install -Dvm644 moor.1 -t "$pkgdir"/usr/share/man/man1/
+	install -Dvm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+a81a8c3888b1c2cd163f51e325ebd9fee2a4c275e188d95598d690cebae0bfb2d4241394287dba9e94eada718789ccb4e09fbf0698df2fe82dd77839907a6d4a  moor-2.10.2.tar.gz
+dcc1802281b9cb61cde63b9e9bf743cabd619d8a24933e67fcb062657c18400426aeabfd5dd7a97a64e5bf6cf9482daecf2f0d128234182d06ffaf28d6686735  fix-test.patch
+"

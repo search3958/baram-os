@@ -1,0 +1,26 @@
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: David Demelier <markand@malikania.fr>
+pkgname=libretro-hatari
+pkgver=0_git20241021
+pkgrel=0
+_commit="7008194d3f951a157997f67a820578f56f7feee0"
+pkgdesc="Atari ST/STE/TT/Falcon emulator for libretro"
+url="https://github.com/libretro/hatari"
+arch="all"
+license="GPL-2.0-only"
+makedepends="zlib-dev"
+source="$pkgname-$_commit.tar.gz::https://github.com/libretro/hatari/archive/$_commit.tar.gz"
+builddir="$srcdir/hatari-$_commit"
+options="!check" # No tests
+
+build() {
+	make -f Makefile.libretro
+}
+
+package() {
+	install -Dm644 hatari_libretro.so "$pkgdir"/usr/lib/libretro/hatari_libretro.so
+}
+
+sha512sums="
+96af7b1a4f4fefe8d73de3c1b3891342a5c285913e9e2d85f561c123cf04e3ea4e41e98bfe71d2cedb48778c16cf7a804be919461ddad69ed242235abf18fbf9  libretro-hatari-7008194d3f951a157997f67a820578f56f7feee0.tar.gz
+"

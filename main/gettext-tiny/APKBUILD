@@ -1,0 +1,28 @@
+# Contributor: TBK <alpine@jjtc.eu>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gettext-tiny
+pkgver=0.3.3
+pkgrel=0
+pkgdesc="Tiny Internationalized Message Handling Library and tools"
+url="https://github.com/sabotage-linux/gettext-tiny"
+arch="all"
+license="MIT"
+options="!check" # No test suite
+depends_dev="musl-libintl"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sabotage-linux/gettext-tiny/archive/v$pkgver.tar.gz
+	line-length.patch
+	"
+
+build() {
+	make LIBINTL=MUSL prefix=/usr
+}
+
+package() {
+	make LIBINTL=MUSL prefix=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+6084c6af1e215f095589de6c766cd091c308062deca55b4b717bb6ae94d6e9148ead5dabeed40b50623d5009fb66daac4f4fdff84c2531b1189ff77523b34e04  gettext-tiny-0.3.3.tar.gz
+0a26a8481bffe2ce8c73f7f500963aea9db8379fb87849142d8efabf1656604b22f6ad345483256f14c388466f2f44e5924b9f65d88f26867a753a96d1529270  line-length.patch
+"

@@ -1,0 +1,31 @@
+# Contributor: Sol Fisher Romanoff <sol@solfisher.com>
+# Maintainer: Sol Fisher Romanoff <sol@solfisher.com>
+pkgname=portsmf
+pkgver=239
+pkgrel=2
+pkgdesc="C++ library for reading and writing Standard MIDI Files"
+url="https://codeberg.org/tenacityteam/portsmf"
+arch="all"
+license="MIT"
+makedepends="cmake samurai"
+subpackages="$pkgname-dev"
+options="!check" # No testsuite
+source="$pkgname-$pkgver-1.tar.gz::https://codeberg.org/tenacityteam/portsmf/archive/$pkgver.tar.gz"
+builddir="$srcdir/$pkgname"
+
+build() {
+	cmake3.5 \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DCMAKE_BUILD_TYPE=None \
+		-S . -B build
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+522ef6e92de6497c66d6b9adf2b6b4e419024d26fac421096718b024ea0e183d322d3f0cd9fc357e0ba983371cf313d7a0b93b8b24aff5c9cb1ab61c915725ff  portsmf-239-1.tar.gz
+"

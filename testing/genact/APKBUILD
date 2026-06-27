@@ -1,0 +1,34 @@
+# Contributor: Guy Godfroy <guy.godfroy@gugod.fr>
+# Maintainer: Guy Godfroy <guy.godfroy@gugod.fr>
+pkgname=genact
+pkgver=1.5.1
+pkgrel=0
+pkgdesc="A nonsense activity generator"
+url="https://github.com/svenstaro/genact"
+arch="all"
+license="MIT"
+makedepends="cargo cargo-auditable"
+source="$pkgname-$pkgver.tar.gz::https://github.com/svenstaro/genact/archive/refs/tags/v$pkgver.tar.gz"
+options="net"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/genact "$pkgdir"/usr/bin/genact
+}
+
+sha512sums="
+1f8021232e5e7926172194ce52f13088539708f5ba66c1cd523231c9ed14441d04221e3caefcc7b1083df253ed497c285a273e872c2554166156e44ea95e528c  genact-1.5.1.tar.gz
+"

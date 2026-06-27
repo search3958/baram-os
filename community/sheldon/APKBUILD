@@ -1,0 +1,61 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=sheldon
+pkgver=0.8.1
+pkgrel=0
+pkgdesc="Fast, configurable, shell plugin manager"
+url="https://github.com/rossmacarthur/sheldon"
+arch="all"
+license="MIT OR Apache-2.0"
+makedepends="
+	cargo
+	cargo-auditable
+	curl-dev
+	libgit2-dev
+	libssh2-dev
+	openssl-dev
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/rossmacarthur/sheldon/archive/$pkgver/sheldon-$pkgver.tar.gz
+	"
+options="net" # cargo fetch and online tests
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+export LIBSSH2_SYS_USE_PKG_CONFIG=1  # use system libssh2
+export LIBGIT2_NO_VENDOR=1 # use system libgit2
+
+_cargo_opts="--frozen --no-default-features"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build $_cargo_opts --release
+}
+
+check() {
+	# Skipped tests - https://github.com/rossmacarthur/sheldon/issues/140
+	GIT_COMMIT_HASH="unknown" \
+	GIT_COMMIT_SHORT_HASH="unknown" \
+	GIT_COMMIT_DATE="unknown" \
+	cargo test $_cargo_opts -- --skip lock --skip directories
+}
+
+package() {
+	install -D -m755 target/release/sheldon -t "$pkgdir"/usr/bin/
+
+	install -D -m644 completions/sheldon.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_sheldon
+	install -D -m644 completions/sheldon.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/sheldon
+}
+
+sha512sums="
+897390aa450f62c533488cb345fdcf7e7d1ce1f0a2b52a0dba26f48c901de01aa09635826d93610c5a71c0a6b1ce443aea801691e9d43f278fb35fcaff1afa83  sheldon-0.8.1.tar.gz
+"

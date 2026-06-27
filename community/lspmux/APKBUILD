@@ -1,0 +1,36 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=lspmux
+pkgver=0.3.0
+pkgrel=0
+pkgdesc="Share one instance of an LSP between multiple clients"
+url="https://codeberg.org/p2502/lspmux"
+arch="all"
+license="EUPL-1.2"
+makedepends="cargo-auditable"
+subpackages="$pkgname-doc"
+source="lspmux-$pkgver.tar.gz::https://codeberg.org/p2502/lspmux/archive/v$pkgver.tar.gz"
+options="net" # fetch dependencies
+builddir="$srcdir/lspmux"
+provides="ra-multiplex=$pkgver-r$pkgrel" # old name
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/lspmux -t "$pkgdir/usr/bin/"
+	install -Dm755 LICENSE defaults.toml -t "$pkgdir/usr/share/doc/$pkgname/"
+}
+
+sha512sums="
+41b971a71ace176f058cbb235297f05afcb96aee86845fe764559128ef2b48e4e10001535fcf730af1e88f2755e6255cbef882e8e866a351a20fcc5cbcc50483  lspmux-0.3.0.tar.gz
+"

@@ -1,0 +1,40 @@
+# Contributor: Sören Tempel <soeren+alpine@soeren-tempel.net>
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=libjaylink
+pkgver=0.4.0
+pkgrel=0
+pkgdesc="C library to access SEGGER J-Link and other compatible devices"
+url="https://gitlab.zapb.de/libjaylink/libjaylink"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="automake autoconf libtool libusb-dev"
+subpackages="$pkgname-dev"
+source="https://gitlab.zapb.de/libjaylink/libjaylink/-/archive/$pkgver/libjaylink-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+e44dfe59b265b4304d263b4d02ae1b4704ad5dc0c43fc325d739177630b34410cf78cdf469c69a16d208ab1f83291aa411273baa67e4c4134e1c25dfd3503f39  libjaylink-0.4.0.tar.gz
+"

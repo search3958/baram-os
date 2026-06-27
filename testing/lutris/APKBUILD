@@ -1,0 +1,45 @@
+# Contributor: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+# Maintainer: Saijin-Naib <Saijin-Naib_package-maintenance@outlook.com>
+pkgname=lutris
+pkgver=0.5.22
+pkgrel=1
+pkgdesc="Lutris is a video game preservation platform"
+url="https://lutris.net/"
+arch="noarch"
+license="GPL-3.0-only"
+# TODO: add musl-utils for ldconfig, but now there is no -p option
+depends="
+	7zip
+	gnutls
+	mesa-gl
+	py3-lxml
+	py3-pillow
+	py3-cairo
+	py3-requests
+	py3-dbus
+	py3-distro
+	vulkan-loader
+	webkit2gtk-4.1
+	xrandr
+"
+makedepends="appstream-glib desktop-file-utils gettext meson"
+subpackages="$pkgname-doc $pkgname-lang $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/lutris/lutris/archive/refs/tags/v$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+eef9dbe8d246e17b3a3f62bde02d0af889daeb8d1c1fbaa53e09ab6fc21893d002ad9954024e7d4cb2279885768819a77acfa516107b527c5038702eb799b23a  lutris-0.5.22.tar.gz
+"

@@ -1,0 +1,220 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=uutils
+pkgver=0.9.0
+pkgrel=0
+pkgdesc="Rust rewrite of the GNU coreutils"
+arch="all"
+url="https://uutils.github.io/coreutils/"
+license="MIT"
+makedepends="cargo help2man oniguruma-dev cargo-auditable"
+checkdepends="coreutils" # test_ls.rs incompatible with busybox truncate
+subpackages="$pkgname-doc
+	$pkgname-coreutils:_coreutils
+	$pkgname-coreutils-doc:_coreutils_doc
+	$pkgname-coreutils-groups:_groups
+	$pkgname-coreutils-groups-doc:_groups_doc
+	$pkgname-coreutils-hostname:_hostname
+	$pkgname-coreutils-hostname-doc:_hostname_doc
+	$pkgname-coreutils-more:_more
+	$pkgname-coreutils-more-doc:_more_doc
+	$pkgname-coreutils-uptime:_uptime
+	$pkgname-coreutils-uptime-doc:_uptime_doc
+	"
+source="$pkgname-coreutils-$pkgver.tar.gz::https://github.com/uutils/coreutils/archive/$pkgver.tar.gz
+	fix-ppc64le-build.patch
+	"
+builddir="$srcdir/coreutils-$pkgver"
+options="net"
+
+export RUSTONIG_DYNAMIC_LIBONIG=1
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --frozen \
+		--profile=release-small --features=feat_os_unix
+
+	install -Dm0755 target/release-small/coreutils build/bin/"$pkgname"
+
+	cd build
+
+	help2man --no-info --name=uutils --manual="$pkgname" \
+		--version-string="$pkgver" bin/"$pkgname" > "$pkgname".1
+
+	# create symlinks and individual man pages
+	install -dm0755 man1/ usr/bin/ && cd usr/bin
+	for uutil in $(../../bin/uutils --list); do
+		ln -s ../../bin/uutils $uutil
+		case "$uutil" in
+			test) ;; # helpless
+			\[) help2man --no-info --name=test --manual="$pkgname coreutils" \
+				./"$uutil" > ../../man1/test.1 ;;
+			uniq) help2man --no-info --name="$uutil" --manual="$pkgname coreutils" \
+				--no-discard-stderr \
+				./"$uutil" > ../../man1/"$uutil".1 ;;
+			*) help2man --no-info --name="$uutil" --manual="$pkgname coreutils" \
+				./"$uutil" > ../../man1/"$uutil".1 ;;
+		esac
+	done
+}
+
+check() {
+	ulimit -n 4096 # running out of file descriptors
+
+	cargo test --frozen \
+		--features=feat_os_unix \
+		--no-fail-fast -- \
+		--skip "test_error_messages_french_translation" \
+		--skip "test_french_colored_error_messages" \
+		--skip "test_help_messages_french_translation" \
+		|| true # TODO: FIXME
+}
+
+package() {
+	pkgdesc="$pkgdesc - main binary"
+	replaces="uutils-coreutils<0.0.28-r0"
+
+	# Install to /bin to fix symlinks on usr-merged systems
+	install -Dm0755 build/bin/"$pkgname" -t "$pkgdir"/bin/
+	# remove the binary and keep the symlinks
+	rm build/bin/"$pkgname"
+
+	install -Dm0644 build/"$pkgname".1 -t "$pkgdir"/usr/share/man/man1/
+	install -Dm0644 LICENSE -t "$pkgdir"/usr/share/licenses/"$pkgname"/
+}
+
+_coreutils() {
+	# prefix with 0. to ensure it never gets above GNU coreutils' version
+	provides="coreutils=0.$pkgver-r$pkgrel"
+	# stat used to be a separate subpackage
+	provides="$provides uutils-coreutils-stat=$pkgver-r$pkgrel"
+	depends="$pkgname"
+
+	# binaries that busybox puts in /bin (mimic main/coreutils)
+	local busybox_bin="arch base64 cat chgrp chmod chown cp date dd df echo
+		false kill link ln ls mkdir mknod mktemp mv nice printenv pwd rm rmdir
+		sleep stty sync touch true uname"
+
+	# as these binaries live in /bin on busybox, we want to put them in /bin with uutils
+	install -dm0755 "$subpkgdir"/bin/
+	for bbb in $busybox_bin; do
+		rm "$builddir"/build/usr/bin/"$bbb"
+		ln -s "$pkgname" "$subpkgdir"/bin/"$bbb"
+	done
+
+	# chroot lives in /usr/sbin with busybox
+	rm "$builddir"/build/usr/bin/chroot
+	install -dm0755 "$subpkgdir"/usr/sbin/
+	ln -s ../../bin/"$pkgname" "$subpkgdir"/usr/sbin/chroot
+
+	# resolve conflict between shadow and uutils-coreutils for cmd:groups
+	rm "$builddir"/build/usr/bin/groups
+	mv "$builddir"/build/man1/groups.1 "$builddir"/
+	# TODO: resolve this some other way between this aport, main/coreutils and
+	# community/shadow
+
+	# resolve conflict between procps-ng and uutils-coreutils for cmd:uptime
+	rm "$builddir"/build/usr/bin/uptime
+	mv "$builddir"/build/man1/uptime.1 "$builddir"/
+	# TODO: resolve this some other way between this aport and main/procps-ng
+
+	# uutils hostname does not take -F FILE (keep busybox for now)
+	rm "$builddir"/build/usr/bin/hostname
+	mv "$builddir"/build/man1/hostname.1 "$builddir"/
+
+	# resolve conflict between utils-linux-misc and uutils-coreutils for cmd:more
+	rm "$builddir"/build/usr/bin/more
+	mv "$builddir"/build/man1/more.1 "$builddir"/
+
+	# install what's left
+	install -dm0755 "$subpkgdir"/usr/bin/
+	mv "$builddir"/build/usr/bin/* "$subpkgdir"/usr/bin/
+}
+
+_coreutils_doc() {
+	# prefix with 0. to ensure it never gets above GNU coreutils' version
+	provides="coreutils-doc=0.$pkgver-r$pkgrel"
+	# stat used to be a separate subpackage
+	provides="$provides uutils-coreutils-stat-doc=$pkgver-r$pkgrel"
+
+	install -Dm0644 "$builddir"/build/man1/* -t "$subpkgdir"/usr/share/man/man1/
+
+	default_doc
+}
+
+_groups() {
+	pkgdesc="$pkgdesc - cmd:groups"
+	depends="$pkgname"
+
+	install -dm0755 "$subpkgdir"/usr/bin/
+	ln -s ../../bin/"$pkgname" "$subpkgdir"/usr/bin/groups
+}
+
+_groups_doc() {
+	pkgdesc="$pkgdesc - cmd:groups (documentation)"
+	install_if="docs $pkgname-coreutils-groups=$pkgver-r$pkgrel"
+
+	install -Dm0644 "$builddir"/groups.1 -t "$subpkgdir"/usr/share/man/man1/
+	gzip -n -9 "$subpkgdir"/usr/share/man/man1/groups.1
+}
+
+_hostname() {
+	pkgdesc="$pkgdesc - cmd:hostname"
+	depends="$pkgname"
+
+	# busybox path
+	install -dm0755 "$subpkgdir"/bin/
+	ln -s "$pkgname" "$subpkgdir"/bin/hostname
+}
+
+_hostname_doc() {
+	pkgdesc="$pkgdesc - cmd:hostname (documentation)"
+	install_if="docs $pkgname-coreutils-hostname=$pkgver-r$pkgrel"
+
+	install -Dm0644 "$builddir"/hostname.1 -t "$subpkgdir"/usr/share/man/man1/
+	gzip -n -9 "$subpkgdir"/usr/share/man/man1/hostname.1
+}
+
+_more() {
+	pkgdesc="$pkgdesc - cmd:more"
+	depends="$pkgname"
+
+	# busybox/util-linux-misc path
+	install -dm0755 "$subpkgdir"/bin/
+	ln -s "$pkgname" "$subpkgdir"/bin/more
+}
+
+_more_doc() {
+	pkgdesc="$pkgdesc - cmd:more (documentation)"
+	install_if="docs $pkgname-coreutils-more=$pkgver-r$pkgrel"
+
+	install -Dm0644 "$builddir"/more.1 -t "$subpkgdir"/usr/share/man/man1/
+	gzip -n -9 "$subpkgdir"/usr/share/man/man1/more.1
+}
+
+_uptime() {
+	pkgdesc="$pkgdesc - cmd:uptime"
+	depends="$pkgname"
+
+	# busybox/procps-ng path
+	install -dm0755 "$subpkgdir"/usr/bin/
+	ln -s ../../bin/"$pkgname" "$subpkgdir"/usr/bin/uptime
+}
+
+_uptime_doc() {
+	pkgdesc="$pkgdesc - cmd:uptime (documentation)"
+	install_if="docs $pkgname-coreutils-uptime=$pkgver-r$pkgrel"
+
+	install -Dm0644 "$builddir"/uptime.1 -t "$subpkgdir"/usr/share/man/man1/
+	gzip -n -9 "$subpkgdir"/usr/share/man/man1/uptime.1
+}
+
+sha512sums="
+66aa65d208b4488c308702fec2a4fecc79afbba9d6725a0077969022aca4f26f71e46022eee31800b907fe75d3914f81a35f9d660bdbc74e166ea03acded839b  uutils-coreutils-0.9.0.tar.gz
+84183477ed00dc1ab62e88684954046625b9729fc1d1415133e77e814de7a882723292ad4ce50c0eb53385afc8e24195b5eab082dbe56a55ae15b8d525261b8a  fix-ppc64le-build.patch
+"

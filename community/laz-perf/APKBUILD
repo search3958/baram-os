@@ -1,0 +1,39 @@
+# Contributor: Bradley J Chambers <brad.chambers@gmail.com>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=laz-perf
+pkgver=3.4.0
+pkgrel=2
+pkgdesc="Alternative LAZ implementation for C++ and JavaScript"
+url="https://github.com/hobuinc/laz-perf"
+# armhf, armv7: io_test segfaults
+# s390x: broken on big endian
+arch="all !armhf !armv7 !s390x"
+license="Apache-2.0"
+depends_dev="$pkgname"
+makedepends="
+	cmake
+	python3-dev
+	samurai
+	"
+subpackages="$pkgname-dev"
+source="https://github.com/hobuinc/laz-perf/archive/$pkgver/laz-perf-$pkgver.tar.gz"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_BUILD_TYPE=None \
+		-DWITH_TESTS=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+ec3e133d671a388f9cc448599035a57d0334015f18e6787ed05e463b4d3eddb5a4a09336a410f23c24d590d0d3242f3621ab49d4ce1400f226112e26f0759311  laz-perf-3.4.0.tar.gz
+"

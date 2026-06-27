@@ -1,0 +1,87 @@
+# Contributor: Sergei Lukin <sergej.lukin@gmail.com>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libvncserver
+pkgver=0.9.15
+pkgrel=0
+pkgdesc="Library to make writing a vnc server easy"
+url="https://libvncserver.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+depends_dev="
+	libgcrypt-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	libice-dev
+	libx11-dev
+	libxdamage-dev
+	libxext-dev
+	libxfixes-dev
+	libxi-dev
+	libxinerama-dev
+	libxrandr-dev
+	libxtst-dev
+	openssl-dev>3
+	lzo-dev
+	"
+makedepends="$depends_dev cmake samurai"
+subpackages="$pkgname-dev"
+source="https://github.com/LibVNC/libvncserver/archive/LibVNCServer-$pkgver.tar.gz"
+
+# secfixes:
+#   0.9.13-r5:
+#     - CVE-2020-29260
+#   0.9.13-r0:
+#     - CVE-2019-20839
+#     - CVE-2019-20840
+#     - CVE-2020-14397
+#     - CVE-2020-14399
+#     - CVE-2020-14400
+#     - CVE-2020-14401
+#     - CVE-2020-14402
+#     - CVE-2020-14403
+#     - CVE-2020-14404
+#     - CVE-2020-14405
+#     - CVE-2020-25708
+#   0.9.12-r1:
+#     - CVE-2019-15681
+#   0.9.11-r2:
+#     - CVE-2018-7225
+#   0.9.11-r0:
+#     - CVE-2016-9941
+#     - CVE-2016-9942
+
+builddir="$srcdir"/libvncserver-LibVNCServer-$pkgver
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DWITH_ZLIB=ON \
+		-DWITH_LZO=ON \
+		-DWITH_JPEG=ON \
+		-DWITH_PNG=ON \
+		-DWITH_SDL=ON \
+		-DWITH_THREADS=ON \
+		-DWITH_GNUTLS=ON \
+		-DWITH_OPENSSL=ON \
+		-DWITH_SYSTEMD=OFF \
+		-DWITH_GCRYPT=ON \
+		-DWITH_FFMPEG=ON \
+		-DWITH_WEBSOCKETS=ON \
+		-DWITH_SASL=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+3ad7e14eef3b591574714e320257ac465778e05bd157ddff09e48b990f35890bfa6883ce4ac027fcb08dccd96f721117d56aaee681482f7643cfee9adc59804b  LibVNCServer-0.9.15.tar.gz
+"

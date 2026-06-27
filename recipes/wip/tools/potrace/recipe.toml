@@ -1,8 +1,0 @@
-#TODO compiled but not tested
-[source]
-tar = "https://potrace.sourceforge.net/download/1.16/potrace-1.16.tar.gz"
-[build]
-template = "configure"
-dependencies = [
-    "zlib",
-]

@@ -1,0 +1,45 @@
+# Contributor: Wen Heping <wenhepingalpine@sohu.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=perl-imager
+pkgver=1.031
+pkgrel=0
+# _pkgreal is used by apkbuild-cpan to find modules at MetaCpan
+_pkgreal=Imager
+pkgdesc="Perl extension for Generating 24 bit Images"
+url="https://metacpan.org/release/Imager/"
+arch="all"
+license="GPL-1.0-or-later OR Artistic-1.0-Perl"
+depends="perl"
+makedepends="perl-dev"
+subpackages="$pkgname-doc"
+source="https://cpan.metacpan.org/authors/id/T/TO/TONYC/Imager-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	PERL_MM_USE_DEFAULT=1 perl -I. Makefile.PL \
+		INSTALLDIRS=vendor \
+		NO_PACKLIST=1 \
+		NO_PERLLOCAL=1
+	make
+}
+
+check() {
+	export CFLAGS=$(perl -MConfig -E 'say $Config{ccflags}')
+	make test
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+doc() {
+	local file; find "$pkgdir" -name "*.pod" | while read -r file; do
+		amove "${file#"$pkgdir"}"
+	done
+	default_doc
+}
+
+sha512sums="
+a43b077e03c4f12bb129d020167e06ebc6a5d476c154219205e56ab333fb1c22120ff94057e9bfa9bf1decc2cb6fd7020e0aca321b63e0ef4cdfbbce3a809dfc  Imager-1.031.tar.gz
+"

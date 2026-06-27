@@ -1,0 +1,51 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=babl
+pkgver=0.1.126
+pkgrel=0
+pkgdesc="Dynamic, any to any, pixel format conversion library"
+url="https://gegl.org/babl"
+arch="all"
+license="LGPL-3.0-or-later"
+depends_dev="$pkgname-tools=$pkgver-r$pkgrel"
+makedepends="meson gobject-introspection-dev lcms2-dev vala"
+subpackages="$pkgname-dev $pkgname-tools"
+source="https://download.gimp.org/pub/babl/${pkgver%.*}/babl-$pkgver.tar.xz"
+
+prepare() {
+	default_prepare
+
+	# Since 10th February 2024, float-to-8bit is also failing on s390x.
+	# Even on 3.19, a rebuild of babl 0.1.106 will cause this test to fail.
+	# This is a known issue: https://gitlab.gnome.org/GNOME/babl/-/issues/88
+	case $CARCH in
+	aarch64|s390x)
+		sed -i \
+			-e "/float-to-8bit/d" \
+			tests/meson.build
+		;;
+	esac
+}
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	abuild-meson -Db_lto=true . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+tools() {
+	pkgdesc="$pkgdesc (cli tool)"
+
+	amove usr/bin
+}
+
+sha512sums="
+953037386e1763b28385f0f1802a657e2b918b5db3932cc62e75aa32c36b36b0513258f1b5548dfebedb51fb6de47412503ea8f8aff4ce79c314e33a28d27166  babl-0.1.126.tar.xz
+"

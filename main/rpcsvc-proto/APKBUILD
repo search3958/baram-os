@@ -1,0 +1,34 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=rpcsvc-proto
+pkgver=1.4.4
+pkgrel=0
+pkgdesc="rpcsvc protocol definitions from glibc"
+url="https://github.com/thkukuk/rpcsvc-proto"
+arch="all"
+license="BSD-3-Clause"
+makedepends="musl-libintl"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://github.com/thkukuk/rpcsvc-proto/releases/download/v$pkgver/rpcsvc-proto-$pkgver.tar.xz"
+
+prepare() {
+ 	default_prepare
+	update_config_guess
+}
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+0138ac8fb2d8de3cb56f661bd1b6435fa0a35d3bd12c5cb7081c9ae1701e3620f47fe3dd002263db456655b61316749768e9a1a44325a1a6a542beae364a0393  rpcsvc-proto-1.4.4.tar.xz
+"

@@ -1,0 +1,27 @@
+From 05938e2fda5543c0e35e8b1f31faf6e81b216728 Mon Sep 17 00:00:00 2001
+From: Leon Marz <main@lmarz.org>
+Date: Sat, 18 Apr 2026 12:17:55 +0200
+Subject: [PATCH 2/2] fix build
+
+---
+ src/ptex/PtexWriter.cpp | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/src/ptex/PtexWriter.cpp b/src/ptex/PtexWriter.cpp
+index 99df951..6fc88be 100644
+--- a/src/ptex/PtexWriter.cpp
++++ b/src/ptex/PtexWriter.cpp
+@@ -42,10 +42,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+ #include <algorithm>
+ #include <iostream>
+ #include <sstream>
+-#if defined(__FreeBSD__)
+     #include <unistd.h>
+     #include <stddef.h>
+-#endif
+ #include <libdeflate.h>
+ 
+ #include "Ptexture.h"
+-- 
+2.53.0
+

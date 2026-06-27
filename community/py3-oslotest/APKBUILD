@@ -1,0 +1,38 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-oslotest
+pkgver=4.5.0
+pkgrel=5
+pkgdesc="Oslo test framework"
+url="https://docs.openstack.org/oslotest/latest/"
+arch="noarch"
+license="Apache-2.0"
+depends="python3"
+makedepends="
+	py3-pbr
+	py3-setuptools
+	"
+checkdepends="
+	py3-subunit
+	py3-testtools
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/o/oslotest/oslotest-$pkgver.tar.gz"
+options="!check" # Requires old package traceback2
+builddir="$srcdir/oslotest-$pkgver"
+
+build() {
+	python3 setup.py build
+}
+
+check() {
+	python3 setup.py test
+}
+
+package() {
+	python3 setup.py install --skip-build --root="$pkgdir"
+}
+
+sha512sums="
+2dc0644365621fe271e09f2f7be631f697749c9d343f1ce9b635986df41ec5be8787350b3f2eb6b6501f4baac1ec597b2f0ecada7936db967075ebce837e1517  oslotest-4.5.0.tar.gz
+"

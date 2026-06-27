@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+name=qbittorrent-nox
+description="qbittorrent torrent daemon"
+command="/usr/bin/qbittorrent-nox"
+command_background=true
+: ${directory:=/var/lib/qbittorrent}
+: ${command_user:=qbittorrent:qbittorrent}
+: ${umask:=0022}
+# raise file descriptor count (many open files..)
+rc_ulimit="-n 50000"
+
+depend() {
+	need net
+	after firewall
+}
+
+start_pre() {
+	checkpath -d -o $command_user "$directory"
+}

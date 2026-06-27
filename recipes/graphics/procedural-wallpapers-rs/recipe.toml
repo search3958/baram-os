@@ -1,6 +1,0 @@
-[source]
-git = "https://github.com/lukas-kirschner/procedural-wallpapers-rs.git"
-
-[build]
-template = "cargo"
-cargopath = "procedural_wallpapers"

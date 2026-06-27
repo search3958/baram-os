@@ -1,0 +1,71 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kscreen
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="KDE's screen management software"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+depends="
+	hicolor-icon-theme
+	kimageformats
+	kitemmodels
+	plasma5support
+	"
+makedepends="
+	extra-cmake-modules
+	kcmutils-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	kglobalaccel-dev
+	ki18n-dev
+	kiconthemes-dev
+	ksvg-dev
+	kwidgetsaddons-dev
+	kxmlgui-dev
+	layer-shell-qt-dev
+	libkscreen-dev
+	libplasma-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtdeclarative-private-dev
+	qt6-qtsensors-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="
+	$pkgname-systemd
+	$pkgname-lang
+	"
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+_repo_url="https://invent.kde.org/plasma/kscreen.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/kscreen-$pkgver.tar.xz"
+options="!check" # Tests fail, need looking into
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+caeb615548a5ac64ff9760ccea4d77f6aa58873ece44de9601b3b512649f83d579b47b2f45fa2996f31434a1282b39dd3813d2c35ebe5ca50c33f0c6a79050ee  kscreen-6.7.1.tar.xz
+"

@@ -1,0 +1,54 @@
+# Contributor: Paul Onyschuk <blink@bojary.koba.pl>
+# Contributor: David Demelier <markand@malikania.fr>
+# Maintainer: mio <miyopan@e.email>
+maintainer="mio <miyopan@e.email>"
+pkgname=fossil
+pkgver=2.28
+pkgrel=0
+pkgdesc="Simple, high-reliability, distributed software configuration management"
+url="https://www.fossil-scm.org/"
+arch="all"
+license="BSD-2-Clause"
+makedepends_host="openssl-dev tcl-dev zlib-dev"
+checkdepends="ed sqlite-tcl tcl-lib"
+subpackages="$pkgname-bash-completion $pkgname-zsh-completion"
+source="https://www.fossil-scm.org/home/tarball/version-$pkgver/fossil-src-$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-src-$pkgver"
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--json \
+		--with-th1-docs \
+		--with-th1-hooks \
+		--with-tcl=1 \
+		--with-tcl-private-stubs
+
+	make \
+		BCC="${HOSTCC:-$CC}" \
+		BCCFLAGS="${HOSTCFLAGS:-$CFLAGS}" \
+		TCC="$CC $CFLAGS"
+}
+
+check() {
+	# 2.28: testing system disabled
+	# https://fossil-scm.org/home/info/1ba3a483dc002735
+	export USER="${USER:-$(id -un)}"
+	make TESTFLAGS="-verbose" test
+}
+
+package() {
+	install -Dm755 fossil -t "$pkgdir"/usr/bin/
+
+	# add shell completions
+	install -Dm644 tools/fossil-autocomplete.bash \
+		"$pkgdir"/usr/share/bash-completion/completions/fossil
+	install -Dm644 tools/fossil-autocomplete.zsh \
+		"$pkgdir"/usr/share/zsh/site-functions/_fossil
+}
+
+sha512sums="
+acf19afb41fec0b56e8ddc40c7c22ded69e39f2fa12daa95bb8f5c19b625ad24749e525491db53689a1c96e5738fb2e38ad85ed86343bf00a1ff7f1ac534eb12  fossil-src-2.28.tar.gz
+"

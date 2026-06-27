@@ -1,0 +1,64 @@
+# Contributor: solidnerd <niclas@mietz.io>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=glab
+pkgver=1.102.0
+pkgrel=0
+pkgdesc="Open source GitLab CLI tool written in Go"
+url="https://gitlab.com/gitlab-org/cli"
+arch="all"
+license="MIT"
+depends="git"
+makedepends="go"
+options="!check net" # ..., go
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://gitlab.com/gitlab-org/cli/-/archive/v$pkgver/cli-v$pkgver.tar.gz
+	no-telemetry.patch
+	"
+builddir="$srcdir/cli-v$pkgver"
+
+build() {
+	# date seems a little broken to override
+	go build -ldflags "
+		-X main.debugMode=false
+		-X main.version=v$pkgver
+		-X main.buildDate=$(date -u "+%Y-%m-%d" ${SOURCE_DATE_EPOCH:+-d @$SOURCE_DATE_EPOCH})
+		-extldflags \"$LDFLAGS\"
+		" \
+		-o build/bin/glab \
+		./cmd/glab/main.go
+
+	go run ./cmd/gen-docs/docs.go --manpage --path ./build/man
+
+	# XXX: When glab is run in fakeroot it segfaults for some reason
+	# on ppc64le. By generating the compilation files here we
+	# workaround that but we need to investigate why it segfaults in
+	# fakeroot eventually.
+	mkdir -p build/shell
+	build/bin/glab completion --shell bash > build/shell/bash.comp
+	build/bin/glab completion --shell zsh > build/shell/zsh.comp
+	build/bin/glab completion --shell fish > build/shell/fish.comp
+}
+
+package() {
+	install -Dm755 build/bin/glab -t "$pkgdir"/usr/bin/
+
+	install -Dm644 build/man/*.1 -t "$pkgdir"/usr/share/man/man1/
+
+	install -Dm644 build/shell/bash.comp \
+		"$pkgdir"/usr/share/bash-completion/completions/glab.bash
+	install -Dm644 build/shell/zsh.comp \
+		"$pkgdir"/usr/share/zsh/site-functions/_glab
+	install -Dm644 build/shell/fish.comp \
+		"$pkgdir"/usr/share/fish/vendor_completions.d/glab.fish
+}
+
+sha512sums="
+5015ecee3240514b135b0498183b9a912ad4b4fcdc7b1f06d62777904084aeece14ef585c5fee733b5cf5392a214d9b05fe7053b4c6dd21a38c9a3552e748b17  glab-1.102.0.tar.gz
+be3c2cfeee6583fc0a765bffa59508c2103db9109bfba12bbc2f8e99f7d0ded2d0c4a04c623801f84535f0642da45e922cc7aa5da767d983e2a7899cee308adb  no-telemetry.patch
+"

@@ -1,0 +1,96 @@
+maintainer="team/gnome <achill@achill.org>"
+pkgname=glycin
+pkgver=2.1.0
+pkgrel=0
+# NOTE: community/glycin, community/libglycin & community/libglycin-gtk4 MUST be kept in sync.
+#       These packages are split in seperate packages, to be distributed across
+#       the build chain which resolves cyclic dependencies.
+# NOTE: Please review upstream's default loaders on upgrade & adapt _loaders.
+pkgdesc="Sandboxed and extendable image decoding"
+url="https://gitlab.gnome.org/GNOME/glycin"
+arch="noarch"
+license="MPL-2.0 OR LGPL-2.0-or-later"
+makedepends="
+	cargo
+	clang-dev
+	cmake
+	gdk-pixbuf-dev
+	gobject-introspection-dev
+	lcms2-dev
+	libheif-dev
+	libjxl-dev
+	librsvg-dev
+	libseccomp-dev
+	meson
+	vala
+	"
+subpackages="
+	$pkgname-loaders-all:loaders_all
+	$pkgname-thumbnailer::all
+	"
+source="https://gitlab.gnome.org/GNOME/glycin/-/archive/$pkgver/glycin-$pkgver.tar.gz
+	bwrap-blocked.patch
+	bump-nix.patch
+	"
+# !check: depends on gtk4, which breaks bootstrap (cyclic dep)
+# net: cargo crates
+options="!check net"
+
+_loaders="heif image-rs jxl svg"
+for i in $_loaders; do subpackages="$subpackages $pkgname-$i:loader:all"; done
+
+provides="glycin-loaders=$pkgver-r$pkgrel" # for backward compatibility
+replaces="glycin-loaders" # for backward compatibility
+
+build() {
+	_split=; for i in $_loaders; do _loaders_opt="${_loaders_opt}$_split$pkgname-$i"; _split=,; done
+	abuild-meson \
+		-Dlibglycin=false \
+		-Dlibglycin-gtk4=false \
+		-Dloaders="$_loaders_opt" \
+		-Dtest_skip_install=true \
+		-Dtests="$(want_check && echo true || echo false)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+loader() {
+	pkgdesc="$pkgdesc ($subpkgname loader)"
+	depends=
+
+	case "$subpkgname" in
+		$pkgname-image-rs|$pkgname-svg) install_if="libglycin~$pkgver" ;;
+	esac
+
+	amove usr/libexec/glycin-loaders/2+/$subpkgname
+	amove usr/share/glycin-loaders/2+/conf.d/$subpkgname.conf
+	amove usr/share/thumbnailers/$subpkgname.thumbnailer
+}
+
+loaders_all() {
+	pkgdesc="$pkgdesc (all loaders)"
+	for i in $_loaders; do depends="$depends $pkgname-$i"; done
+
+	mkdir -p "$subpkgdir"
+}
+
+thumbnailer() {
+	pkgdesc="$pkgdesc (thumbnailer)"
+	depends=
+
+	amove usr/bin/glycin-thumbnailer
+}
+
+sha512sums="
+ec2233fd9f17426c6d94944ba7597a486cc0c1680a24b681087dfca9235e37710f60ba903774ac51ea9a01d703a2b133766f82a7f9bce7d9d2182cf632dfd919  glycin-2.1.0.tar.gz
+43798f4433a9574a70097fc5295c30e0110affd20c7f9539d9548bfd2a20a03fc8e0d1fd9d219de6f9b1bc86fcbf87c7388eb7d9702ea8699cbcafb9af1097bc  bwrap-blocked.patch
+879e35da36eb31bb89a5a681429eb0142f78622d123154ed475a7529ff7a6bbc9ec1061f3b739e2e2ef463cd4a29303d55f9aa7aec62fd03897bc41c19c1d014  bump-nix.patch
+"

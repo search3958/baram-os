@@ -1,0 +1,66 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=libqofono
+pkgver=0.130
+pkgrel=0
+pkgdesc="Library for accessing the ofono daemon, and a Qt declarative plugin for it"
+url="https://github.com/sailfishos/libqofono"
+# armhf: blocked by qt5-qtdeclarative
+# riscv64: Qt6 build segfaults
+arch="all !armhf !riscv64"
+license="LGPL-2.1-or-later"
+depends_dev="
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+makedepends="
+	$depends_dev
+	cmake
+	samurai
+	"
+subpackages="$pkgname-dev $pkgname-qt5:_qt5 $pkgname-qt6:_qt6"
+source="https://github.com/sailfishos/libqofono/archive/$pkgver/libqofono-$pkgver.tar.gz"
+options="!check" # requires running ofono
+
+build() {
+	cmake -B build-qt5 \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DQT_MAJOR_VERSION=5
+	cmake --build build-qt5
+
+
+	cmake -B build-qt6 \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DQT_MAJOR_VERSION=6
+	cmake --build build-qt6
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build-qt5
+	DESTDIR="$pkgdir" cmake --install build-qt6
+
+	# Remove installed tests
+	rm -r "$pkgdir"/opt
+}
+
+_qt5() {
+	amove usr/lib/libqofono-qt5.so*
+	amove usr/lib/qt5
+}
+
+_qt6() {
+	amove usr/lib/libqofono-qt6.so*
+	amove usr/lib/qt6
+}
+
+sha512sums="
+984b62fb609df25762d41e67723036ba6eba8570096e5944fe76f1d47b897293aab173a4638d073214d3e45b6706646e59ea994803e6a0b2cc9949bb1f07a50e  libqofono-0.130.tar.gz
+"

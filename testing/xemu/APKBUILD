@@ -1,0 +1,67 @@
+# Contributor: Díaz Urbaneja Diego <sodomon2@gmail.com>
+# Maintainer: Díaz Urbaneja Diego <sodomon2@gmail.com>
+pkgname=xemu
+pkgver=0.8.74
+pkgrel=0
+pkgdesc="Original Xbox Emulator for Windows, macOS, and Linux."
+url="https://xemu.app/"
+#x86/armv7/armhf failed compilation because of lto (without lto it still doesn't work)
+#riscv64 QEMU_BUILD_BUG_ON bug see https://github.com/xemu-project/xemu/issues/159
+arch="all !riscv64 !x86 !armv7 !armhf"
+license="GPL-2.0-only AND LGPL-2.1-only"
+makedepends="
+	bash
+	cmake
+	gmp-dev
+	gtk+3.0-dev
+	glu-dev
+	iasl
+	keyutils-dev
+	libslirp-dev
+	libpcap-dev
+	libsamplerate-dev
+	nlohmann-json
+	openssl-dev
+	python3
+	py3-setuptools
+	py3-yaml
+	samurai
+	sdl2-dev
+	tomlplusplus-dev
+	vulkan-loader-dev
+	"
+options="!check" # checks fails with xbox parameter
+source="$pkgname-$pkgver.tar.gz::https://github.com/xemu-project/xemu/releases/download/v$pkgver/src.tar.gz
+	fix-missing-include.patch
+	use-system-libs.patch
+	basename.patch
+	"
+builddir="$srcdir/"
+
+prepare() {
+	default_prepare
+	python scripts/gen-license.py > LICENSE
+}
+
+build() {
+	./configure \
+		--target-list="i386-softmmu" \
+		--extra-cflags="-DXBOX=1" \
+		--disable-werror
+	make qemu-system-i386
+}
+
+package() {
+	install -Dm755 build/qemu-system-i386 "$pkgdir/usr/bin/$pkgname"
+	install -Dm644 ui/xemu.desktop "$pkgdir/usr/share/applications/$pkgname.desktop"
+
+	install -Dm644 ui/icons/xemu.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/$pkgname.svg"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+sha512sums="
+cb8d6b7106a7789e130f5ed0a8211e9ce4aa4f8f6324968e5dc719fe793236f963a4c3cdd12ddeccfb2230592b3fe8657e07b5173837a53f7eac5876e1bacaab  xemu-0.8.74.tar.gz
+fc5e9c74c48496ccd1ea5227901b60d11af686641e5a724ad20f866c7ef7a4038ab00d06ba55fbb8e84c202b69a72304ed8a65855f53f6a0403f526dcd3928b8  fix-missing-include.patch
+bd72f01a88328c5005f40604e088d81b2ac29206cffa4deaf7eb20db32d5b8208f9ba6b5f64cca855dd1ec6f206d30966c103a0696dd856455ecc04b3c9cd8bd  use-system-libs.patch
+fe7f53a1068af46469f20e3bab994a9f8c18bba7e4863f5a68bd263c5a44c76dd2f7d69db3f2041222db713a5291a8648318f4a7f0138fe16fb1c3657f5e2b9d  basename.patch
+"

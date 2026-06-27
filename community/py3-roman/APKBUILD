@@ -1,0 +1,42 @@
+# Contributor: Matt Smith <mcs@darkregion.net>
+# Maintainer: Matt Smith <mcs@darkregion.net>
+pkgname=py3-roman
+_pkgname=roman
+pkgver=5.2
+pkgrel=1
+pkgdesc="Integer to Roman numerals converter"
+url="https://pypi.org/project/roman"
+arch="noarch"
+license="ZPL-2.1"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+replaces="py-roman" # Backwards compatibility
+provides="py-roman=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 src/tests.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+60d32796314fc04e5a0b79ef9660f15a850104d582dc1195de820bc5ce977294f9080da9ba2edb9ab6b8187122bc1abd01d46767d39746a64aad58c045b79bd1  roman-5.2.tar.gz
+"

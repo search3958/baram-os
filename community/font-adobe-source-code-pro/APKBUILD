@@ -1,0 +1,24 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=font-adobe-source-code-pro
+pkgver=2.042
+# hardcoded below, update manually
+pkgrel=0
+pkgdesc="Monospaced font family for user interface and coding environments"
+url="https://adobe-fonts.github.io/source-code-pro/"
+arch="noarch"
+license="OFL-1.1"
+depends="font-util"
+options="!check"
+source="https://github.com/adobe-fonts/source-code-pro/archive/refs/tags/2.042R-u/1.062R-i/1.026R-vf.tar.gz"
+builddir="$srcdir"
+
+package() {
+	for x in "$builddir"/source-*/OTF/*.otf; do
+		install -Dm644 "$x" -t "$pkgdir"/usr/share/fonts/OTF
+	done
+}
+
+sha512sums="
+2cc2373c8f5ec817ee44e2c754735a4d21d989fd581bf1cdb764ba98a26b186574d7f583ebe0da905c4db029d12fd4df54ace43a191e274f76995940a618a91c  1.026R-vf.tar.gz
+"

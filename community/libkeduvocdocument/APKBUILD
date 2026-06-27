@@ -1,0 +1,42 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-applications
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=libkeduvocdocument
+pkgver=26.04.2
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative -> ki18n
+arch="all !armhf"
+url="https://edu.kde.org"
+pkgdesc="Library to parse, convert, and manipulate KVTML files"
+license="GPL-2.0-or-later AND GFDL-1.2-only"
+makedepends="
+	extra-cmake-modules
+	karchive-dev
+	ki18n-dev
+	kio-dev
+	qt6-qtbase-dev
+	samurai
+	"
+_repo_url="https://invent.kde.org/education/libkeduvocdocument.git"
+source="https://download.kde.org/stable/release-service/$pkgver/src/libkeduvocdocument-$pkgver.tar.xz"
+subpackages="$pkgname-dev $pkgname-lang"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+56f21e3e4d7f61b93b19277aa7a564bf1592f51a53e9ddd0792f3e371bcd1fcdcef6dbb01debae124c46cd47416bf77f4b7178f7d0b3f3cf550580b742e86cac  libkeduvocdocument-26.04.2.tar.xz
+"

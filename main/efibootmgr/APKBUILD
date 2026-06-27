@@ -1,0 +1,31 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Lucas Ramage <ramage.lucas@protonmail.com>
+pkgname=efibootmgr
+pkgver=18
+pkgrel=2
+pkgdesc="Linux user-space application to modify the Intel Extensible Firmware Interface"
+url="https://github.com/rhboot/efibootmgr"
+arch="x86 x86_64 armhf armv7 aarch64 riscv64 loongarch64"
+license="GPL-2.0-or-later"
+makedepends="efivar-dev linux-headers popt-dev gettext-dev"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/rhboot/efibootmgr/archive/$pkgver.tar.gz
+	musl-gettext.patch"
+
+build() {
+	PCDIR=/usr/lib/pkgconfig EFIDIR="/boot/efi" make
+}
+
+package() {
+	EFIDIR="/boot/efi" make DESTDIR="$pkgdir" install
+}
+
+check() {
+	"$builddir"/src/efibootdump --help > /dev/null
+	"$builddir"/src/efibootmgr --help > /dev/null
+}
+
+sha512sums="
+04e40a705cb82440fd823043b598ef9fd1acc2ceda3e8d043a93e49d43ea9481b7386cad0f46de9862beff19b8a5480d79e7d6522ae584aff6655472f967764d  efibootmgr-18.tar.gz
+3ed49c6d267e6f14bf43207fecb55ebc984f6fbd15d77cd1b8f466c8d0a4c3ab9bb276e8ed183b5ab0129fde5c06ffcd0450ffb7dad0edfa18b4c472e481373b  musl-gettext.patch
+"

@@ -1,0 +1,27 @@
+# Contributor: Robert Hencke <robert.hencke@gmail.com>
+maintainer="Jakko <jahau@rocketmail.com>"
+pkgname=xfce4-genmon-plugin
+pkgver=4.3.0
+pkgrel=0
+pkgdesc="A generic, script-driven monitoring plugin for the Xfce panel"
+url="https://docs.xfce.org/panel-plugins/xfce4-genmon-plugin"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="libxfce4ui-dev meson xfce4-panel-dev"
+options="!check" # no tests
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-genmon-plugin/${pkgver%.*}/xfce4-genmon-plugin-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+fb6f542e809db60b4dcfd3174cd2a2942cded9e27e98a1ef886af5a26598e0abba9ef587c7026e3371d225785e35d52b8be3f92baa6f76cbacda90abf7a690e2  xfce4-genmon-plugin-4.3.0.tar.xz
+"

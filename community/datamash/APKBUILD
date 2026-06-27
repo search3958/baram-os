@@ -1,0 +1,45 @@
+# Contributor: Assaf Gordon <assafgordon@gmail.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=datamash
+pkgver=1.9
+pkgrel=1
+pkgdesc="Command-line text/math processing"
+url="https://www.gnu.org/software/datamash/"
+arch="all"
+license="GPL-3.0-or-later"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="https://ftpmirror.gnu.org/datamash/datamash-$pkgver.tar.gz
+	disable-failing-tests.patch
+	"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-nls \
+		--disable-werror \
+		--with-bash-completion-dir=/usr/share/bash-completion/completions
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+
+	rm -vrf "$pkgdir"/usr/share/datamash/examples
+	rmdir -v "$pkgdir"/usr/share/datamash
+}
+
+sha512sums="
+f8b081e6bc2579bdd753817aeaa09ea12e8c2bfa0a2b9a1071e10b402cf2a34f9cc76a7cadf5f1ecb9d88ea68e5aa99685496be8c4a41044e4e7e33a2105a57f  datamash-1.9.tar.gz
+012c6deb6883d456486a97f21d8756c89bd8b0e54b37184f7082ac297458fd2f30dfac34b342ff2605bc03a4e941378a1c984594d3d0cf420242f348678886c9  disable-failing-tests.patch
+"

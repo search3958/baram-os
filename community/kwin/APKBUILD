@@ -1,0 +1,141 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=kwin
+pkgver=6.7.1
+pkgrel=0
+pkgdesc="An easy to use, but flexible, composited Window Manager"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://kde.org/plasma-desktop/"
+license="GPL-2.0-or-later AND (GPL-2.0-only OR GPL-3.0-only) AND LGPL-2.1-only"
+depends="
+	aurorae
+	hwdata
+	kirigami
+	qt6-qtmultimedia
+	qt6-qtwayland
+	xwayland
+	"
+depends_dev="
+	breeze-dev
+	eudev-dev
+	fontconfig-dev
+	kcmutils-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kcrash-dev
+	kdeclarative-dev
+	kdecoration-dev
+	kglobalaccel-dev
+	ki18n-dev
+	kiconthemes-dev
+	kidletime-dev
+	kio-dev
+	knewstuff-dev
+	knighttime-dev
+	knotifications-dev
+	kpackage-dev
+	krunner-dev
+	kscreenlocker-dev
+	kservice-dev
+	ksvg-dev
+	ktextwidgets-dev
+	kwayland-dev
+	kwidgetsaddons-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	lcms2-dev
+	libdrm-dev
+	libei-dev
+	libepoxy-dev
+	libinput-dev
+	libplasma-dev
+	libqaccessibilityclient-dev
+	libxcvt-dev
+	libxi-dev
+	libxkbcommon-dev
+	mesa-dev
+	mesa-gbm
+	pipewire-dev
+	plasma-activities-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	qt6-qtsensors-dev
+	wayland-dev
+	xcb-util-cursor-dev
+	xcb-util-image-dev
+	xcb-util-wm-dev
+	"
+case "$CARCH" in
+	armv7|x86) ;;
+	*) depends_dev="$depends_dev libevdev-dev" ;;
+esac
+makedepends="$depends_dev
+	extra-cmake-modules
+	kglobalacceld-dev
+	kpipewire-dev
+	libcap-utils
+	libdisplay-info-dev
+	plasma-wayland-protocols
+	qt6-qtdeclarative-private-dev
+	qt6-qttools-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+
+subpackages="
+	$pkgname-systemd
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-lang
+	"
+
+case "$CARCH" in
+	x86|armv7) ;;
+	*)
+		makedepends="$makedepends kdoctools-dev"
+		subpackages="$subpackages $pkgname-doc"
+		;;
+esac
+
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+
+# strip fourth version component for source URL
+case "$pkgver" in
+	*.*.*.*) _pkgver="${pkgver%.*}" ;;
+	*) _pkgver="$pkgver" ;;
+esac
+
+_repo_url="https://invent.kde.org/plasma/kwin.git"
+source="https://download.kde.org/$_rel/plasma/$_pkgver/kwin-$pkgver.tar.xz"
+# Broken, fails to setup due to missing or invalid XDG_RUNTIME_DIR?
+options="!check"
+
+build() {
+	# significantly reduce debug symbol size
+	# use None here to not make cmake pass bare -g (-g2)
+	CFLAGS="$CFLAGS -O2 -g1" CXXFLAGS="$CXXFLAGS -O2 -g1" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib
+	cmake --build build
+}
+
+check() {
+	XDG_RUNTIME_DIR="$(mktemp -p -d "$builddir")" \
+	wlheadless-run ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+sha512sums="
+6608067c133e61071045412c7acd1c370fc4aee95e51e176f6bf53b5b1f1162e069caa0da99fc1821a2efaf59e00370ed5d0d54856f65d9d08e635ce051bb3ee  kwin-6.7.1.tar.xz
+"

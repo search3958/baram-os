@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: dSFMT
+Version: @VERSION@
+URL: https://github.com/MersenneTwister-Lab/dSFMT
+Description: Double precision SIMD-oriented Fast Mersenne Twister
+Cflags: -I${includedir}
+Libs: -L${libdir} -ldSFMT

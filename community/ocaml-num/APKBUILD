@@ -1,0 +1,77 @@
+# Contributor: alpine-mips-patches <info@mobile-stream.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-num
+_pkgname=num
+pkgver=1.4
+pkgrel=6
+pkgdesc="Arbitray-precision rational arithmetic for OCaml"
+url="https://github.com/ocaml/num"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-2.1-only WITH OCaml-LGPL-linking-exception AND MIT"
+depends_dev="$pkgname=$pkgver-r$pkgrel"
+makedepends="ocaml ocaml-compiler-libs ocaml-findlib"
+subpackages="$pkgname-dev"
+source="$pkgname-$pkgver.tar.gz::https://github.com/ocaml/$_pkgname/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+# 32bit archs
+case "$CARCH" in
+armv7|armhf|x86) options="$options textrels" ;;
+esac
+
+build() {
+	make
+}
+
+check() {
+	make test
+}
+
+package() {
+	local _libdir="usr/lib/ocaml"
+	mkdir -p "$pkgdir/$_libdir"
+
+	OCAMLFIND_DESTDIR="$pkgdir/$_libdir" \
+	OCAMLFIND_LDCONF="ignore" \
+	make DESTDIR="$pkgdir" findlib-install
+
+	# drop temporary files
+	find "$pkgdir/$_libdir" -name '*.cmti' -delete
+
+	# move dllnums.so into standard shared stublibs dir
+	local _numdir="$_libdir/$_pkgname"
+	mkdir -p "$pkgdir/$_libdir/stublibs"
+	mv "$pkgdir/$_numdir/"dll*.so "$pkgdir/$_libdir/stublibs"
+}
+
+dev() {
+	default_dev
+
+	amove usr/lib/ocaml/$_pkgname/*.mli
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+0cc9be8ad95704bb683b4bf6698bada1ee9a40dc05924b72adc7b969685c33eeb68ccf174cc09f6a228c48c18fe94af06f28bebc086a24973a066da620db8e6f  ocaml-num-1.4.tar.gz
+"

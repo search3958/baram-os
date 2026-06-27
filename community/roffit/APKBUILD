@@ -1,0 +1,23 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: Will Sinatra <wpsinatra@gmail.com>
+pkgname=roffit
+pkgver=0.17
+pkgrel=0
+pkgdesc="Command line tool that reads nroff and outputs HTML"
+url="https://daniel.haxx.se/projects/roffit"
+arch="noarch"
+license="curl"
+options="!check" # no test suite
+depends="perl"
+subpackages="$pkgname-doc"
+source="https://github.com/bagder/roffit/archive/$pkgver/roffit-$pkgver.tar.gz"
+
+package() {
+	install -Dm755 roffit "$pkgdir"/usr/bin/roffit
+	install -Dm644 roffit.1 "$pkgdir"/usr/share/man/man1/roffit.1
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/roffit/LICENSE
+}
+
+sha512sums="
+ca44ed66450e529de355abe03b55c2e494aa904cfc2b3f00d88e9468e8000f39fe93d04a85a31c6ad9da9b09b143ead33e0e6356afb0485e90e3fb3d1573d997  roffit-0.17.tar.gz
+"

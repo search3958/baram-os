@@ -1,0 +1,56 @@
+# Contributor: Thomas Kienlen <kommander@laposte.net>
+# Maintainer: Thomas Kienlen <kommander@laposte.net>
+pkgname=libkiwix
+pkgver=14.2.0
+pkgrel=1
+pkgdesc="Common code base for all Kiwix ports"
+url="https://github.com/kiwix/libkiwix"
+license="GPL-3.0-or-later"
+arch="all"
+depends="aria2"
+makedepends="
+	curl-dev
+	gtest-dev
+	icu-data-full
+	libmicrohttpd-dev
+	libzim-dev
+	meson
+	mustache
+	pugixml-dev
+	python3
+	samurai
+	xapian-core-dev
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/kiwix/libkiwix/archive/$pkgver.tar.gz"
+subpackages="$pkgname-dev $pkgname-doc"
+replaces="kiwix-lib" # for backward compatibility
+provides="kiwix-lib=$pkgver-r$pkgrel" # for backward compatibility
+
+build() {
+	abuild-meson . build
+	ninja -C build
+}
+
+check() {
+	if [ "${CBUILD#*-}" = "armv7" ]; then
+	# Skip the flaky spelling test on armv7; keep others
+	meson test \
+		--print-errorlogs \
+		-C build \
+		--suite \
+		libkiwix:library \
+		libkiwix:library_server \
+		libkiwix:server_search \
+		libkiwix:server
+	else
+		meson test --print-errorlogs -C build
+	fi
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install -C build --no-rebuild
+}
+
+sha512sums="
+5ee080652c1359a8ba2fa13188cb5fea98f24f2876b3dfaa497858a3db68d6544f88b822a63520105ed1b9ca520cffd95a3bdb1aa679688880ca19c2543191da  libkiwix-14.2.0.tar.gz
+"

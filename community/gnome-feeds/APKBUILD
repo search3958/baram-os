@@ -1,0 +1,67 @@
+# Contributor: Rasmus Thomsen <oss@cogitri.dev>
+# Maintainer: knuxify <knuxify@gmail.com>
+pkgname=gnome-feeds
+pkgver=2.2.0
+pkgrel=6
+pkgdesc="RSS/Atom feed reader for GNOME"
+url="https://gitlab.gnome.org/World/gfeeds"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	gtk4.0
+	libadwaita
+	py3-beautifulsoup4
+	py3-certifi
+	py3-chardet
+	py3-cssselect
+	py3-dateutil
+	py3-gobject3
+	py3-humanize
+	py3-idna
+	py3-lxml
+	py3-lxml-html-clean
+	py3-magic
+	py3-pillow
+	py3-pygments
+	py3-readability-lxml
+	py3-requests
+	py3-soupsieve
+	py3-syndom
+	py3-tz
+	py3-urllib3
+	python3
+	webkit2gtk-6.0
+	"
+makedepends="
+	blueprint-compiler
+	gettext
+	glib-dev
+	gobject-introspection-dev
+	gtk4.0-dev
+	libadwaita-dev
+	meson
+	webkit2gtk-6.0-dev
+	"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://gitlab.gnome.org/World/gfeeds/-/archive/$pkgver/gfeeds-$pkgver.tar.gz
+	blueprint-0.8.patch
+	"
+builddir="$srcdir/gfeeds-$pkgver"
+
+build() {
+	abuild-meson . output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+8f9ac30462c0fc669aec55160b02246c9f52249ddfe19af15bb0003ee6c55a77e808a6df4567f40149d3df18296b87bdcad05ca35c3cea9db0fc9a9414f40384  gfeeds-2.2.0.tar.gz
+dcafe57500c67bb5ea71eba2d06b33d0f2d938369ae30bfba206eec74cbf696c84a2405e3654fe6f0bc2ae54f0fe8e76afb74ec03a71f7a02dffd9aa700f7e0c  blueprint-0.8.patch
+"

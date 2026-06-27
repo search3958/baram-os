@@ -1,0 +1,38 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-mopidy-mpd
+_pyname=Mopidy-MPD
+pkgver=3.3.0
+pkgrel=6
+pkgdesc="Mopidy extension for controlling playback from MPD clients"
+url="https://github.com/mopidy/mopidy-mpd"
+arch="noarch"
+license="Apache-2.0"
+depends="python3 mopidy py3-pykka"
+makedepends="py3-setuptools py3-gpep517 py3-wheel py3-installer"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pyname%"${_pyname#?}"}/$_pyname/$_pyname-$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+options="!check" # response verification fails
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+a8d59e3c8908390603a275af6d8b6e5bd48fcb2dd35e97d3313d0384bb31f97e832513432a95b1dec8bafba67c7a54170c55caef5f3db8fc5256d0814fda3121  Mopidy-MPD-3.3.0.tar.gz
+"

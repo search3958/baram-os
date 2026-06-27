@@ -1,0 +1,52 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=notus-scanner
+pkgver=22.7.2
+pkgrel=1
+pkgdesc="Notus is a vulnerability scanner for creating results from local security checks "
+url="https://github.com/greenbone/notus-scanner"
+arch="noarch"
+license="AGPL-3.0-or-later"
+pkgusers="gvm"
+pkggroups="gvm"
+depends="
+	mosquitto
+	paho-mqtt-c
+	py3-gnupg
+	py3-packaging
+	py3-paho-mqtt
+	py3-psutil
+	"
+makedepends="py3-gpep517 python3-dev py3-poetry-core"
+checkdepends="py3-pytest"
+subpackages="$pkgname-openrc $pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/greenbone/notus-scanner/archive/refs/tags/v$pkgver.tar.gz
+	notus-scanner.initd
+	"
+# fhs: /run/notus-scanner created in package() and referenced in config.py
+options="!fhs"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+	install -d -o $pkgusers -g $pkggroups "$pkgdir"/var/lib/notus
+	install -d -o $pkgusers -g $pkggroups "$pkgdir"/var/lib/openvas/plugins/notus/products
+	install -d -o $pkgusers -g $pkggroups "$pkgdir"/run/notus-scanner
+	install -Dm755 "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+}
+
+sha512sums="
+447a18c8498a412298a7fde4059f9cd20ec57bc5918176dc330ea1f428540651e13d8a9312310e7c0d6809bbc19e9e684d96d6b4866f6e55d25ba0cf918aad32  notus-scanner-22.7.2.tar.gz
+d5d6adb9ecdb074cefcc1575e277918bbbde83ddf75997c23bd53609147b434ef7f41ae08090625593616d0829059c141c4ec7f2e567167a40a2e2b3fcf3e903  notus-scanner.initd
+"

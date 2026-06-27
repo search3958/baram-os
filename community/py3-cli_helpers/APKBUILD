@@ -1,0 +1,35 @@
+# Contributor: Thomas Boerger <thomas@webhippie.de>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=py3-cli_helpers
+_pkgname=cli_helpers
+pkgver=2.14.0
+pkgrel=0
+pkgdesc="A helper library for command-line interfaces"
+url="https://pypi.org/project/cli-helpers"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-tabulate py3-configobj"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest py3-wcwidth"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/dbcli/cli_helpers/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+d432b09906d5ec6c64888313af0ed0daea02e8ed799afa576db44d5c87b3b657d6b88f2f9ed1656cbab522a9bc8e88a35cdbb1f81fd4ccd1b10a4beeb8be74f7  py3-cli_helpers-2.14.0.tar.gz
+"

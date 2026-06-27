@@ -1,0 +1,66 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=cosmic-session
+pkgver=1.0.16
+_upstreamver="${pkgver/_beta/-beta.}"
+_upstreamver="${_upstreamver/_p/.}"
+pkgrel=0
+pkgdesc="Session manager for the COSMIC Desktop Environment"
+url="https://github.com/pop-os/cosmic-session"
+# riscv64: too slow to build
+arch="all !armhf !armv7 !s390x !x86 !riscv64" # many apps missing
+license="GPL-3.0-or-later"
+depends="
+	bash
+	cosmic-app-library
+	cosmic-applets
+	cosmic-bg
+	cosmic-comp
+	cosmic-files
+	cosmic-greeter
+	cosmic-icons
+	cosmic-idle
+	cosmic-launcher
+	cosmic-notifications
+	cosmic-osd
+	cosmic-panel
+	cosmic-randr
+	cosmic-screenshot
+	cosmic-settings
+	cosmic-settings-daemon
+	cosmic-workspaces
+	dbus
+	xwayland
+"
+makedepends="
+	cargo-auditable
+	dbus-dev
+	glib-dev
+	just
+	wayland-protocols
+"
+options="net !check"  # fetch dependencies, no tests
+subpackages="$pkgname-systemd"
+source="$pkgname-$pkgver.tar.gz::https://github.com/pop-os/cosmic-session/archive/refs/tags/epoch-$_upstreamver.tar.gz"
+builddir="$srcdir/$pkgname-epoch-$_upstreamver"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	just rootdir="$pkgdir" install
+}
+
+sha512sums="
+f2eee33b2eaaf345bf355129e7a22535f6625b5f7b683950e383f6992316d9ab397e831c5e59240d6978274aa52042af9eca7d53a2573ce8c561404d8d0c89bf  cosmic-session-1.0.16.tar.gz
+"

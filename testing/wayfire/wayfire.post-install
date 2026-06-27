@@ -1,0 +1,9 @@
+#!/bin/sh
+
+cat >&2 <<EOF
+*
+* Please copy the default config file from /usr/share/wayfire/wayfire.ini.default
+* to ~/.config/wayfire.ini
+* You can install wcm package to config Wayfire.
+*
+EOF

@@ -1,0 +1,36 @@
+# Maintainer: Milan P. Stanić <mps@arvanta.net>
+pkgname=asahi-fwextract
+pkgver=0.7.9
+pkgrel=2
+pkgdesc="Asahi Linux firmware extractor"
+_sourcename=asahi-installer
+_installerver=0.7.9
+arch="aarch64"
+url="https://asahilinux.org"
+license="MIT"
+depends="
+	asahi-scripts
+	lzfse
+	python3
+	"
+makedepends="
+	py3-build
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$_installerver.tar.gz::https://github.com/AsahiLinux/asahi-installer/archive/refs/tags/v$_installerver.tar.gz"
+builddir="$srcdir"/$_sourcename-$_installerver
+
+build() {
+	python -m build --wheel --no-isolation
+}
+
+package() {
+	python -m installer --destdir="$pkgdir" dist/*.whl
+}
+
+sha512sums="
+c533fd34cd2360f28c3ff76fa839bd2c9994cc457045a826c36e4f989af9b424375991a93246f264991289ad5aeb0a642c7d6bdfd7683dd6c6c77621f5d0129e  asahi-fwextract-0.7.9.tar.gz
+"

@@ -1,0 +1,52 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-openapi-spec-validator
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=openapi-spec-validator
+pkgver=0.8.5
+pkgrel=0
+pkgdesc="OpenAPI 2.0 (aka Swagger) and OpenAPI 3 spec validator"
+url="https://github.com/python-openapi/openapi-spec-validator"
+arch="noarch"
+license="Apache-2.0"
+depends="
+	py3-jsonschema
+	py3-jsonschema-path
+	py3-openapi-schema-validator
+	py3-lazy-object-proxy
+	py3-pydantic-settings
+"
+checkdepends="
+	py3-pytest
+	py3-pytest-cov
+"
+makedepends="
+	poetry
+	py3-setuptools
+	py3-gpep517
+	py3-wheel
+"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/python-openapi/openapi-spec-validator/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+8a3cd0ee84c39e629f31c66443be6dcdda7d1467bab5ab1776260b2d7560c24234f283e154d54deba36940ef65ec5f5cf5f71de0a490832e6372621a5708b772  py3-openapi-spec-validator-0.8.5.tar.gz
+"

@@ -1,0 +1,45 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=reflex
+pkgver=20260131
+pkgrel=0
+pkgdesc="Relocalizable fast lexical scanner"
+url="https://invisible-island.net/reflex/"
+arch="all"
+license="BSD-3-Clause-flex"
+depends="$pkgname-dev=$pkgver-r$pkgrel byacc"
+makedepends="diffutils"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://invisible-mirror.net/archives/reflex/reflex-$pkgver.tgz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	case "$CARCH" in
+	x86*|loongarch64)
+		make bigcheck
+		;;
+	*)
+		# bigcheck: unknown -C option '.'
+		make check
+		;;
+	esac
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+25df919dc31ff33b9e7d18218d32898d35b4a8484e98a45796dbea191f5d2a379766d400cc211acc795bfb91226c75f664c8dd6cda9cd46d5d606298665a0014  reflex-20260131.tgz
+"

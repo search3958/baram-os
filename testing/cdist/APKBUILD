@@ -1,0 +1,41 @@
+# Contributor: Lucas Ramage <lucas.ramage@infinite-omicron.com>
+# Maintainer: Lucas Ramage <lucas.ramage@infinite-omicron.com>
+pkgname=cdist
+pkgver=7.0.0
+pkgrel=7
+pkgdesc="A Usable Configuration Management System"
+url="https://www.cdi.st"
+license="GPL-3.0-or-later"
+arch="noarch"
+depends="python3"
+makedepends="py3-setuptools py3-gpep517"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver-1.tar.gz::https://code.ungleich.ch/ungleich-public/cdist/archive/$pkgver.tar.gz"
+builddir="$srcdir/cdist"
+
+prepare() {
+	default_prepare
+
+	echo "VERSION = \"$pkgver\"" > cdist/version.py
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+88c6f7ff68c42dc7db37a5df1fa48ee06b1dc505ec78148bc65923dab68c9dbcf302dc2fb7197f43202ffbcb11c3a82b7303398a805b445f18e43b6fec30c813  cdist-7.0.0-1.tar.gz
+"

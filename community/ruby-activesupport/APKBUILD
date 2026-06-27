@@ -1,0 +1,58 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=ruby-activesupport
+_gemname=activesupport
+pkgver=8.0.0
+pkgrel=1
+pkgdesc="Utility classes and Ruby extensions from Rails"
+url="https://rubyonrails.org/"
+arch="noarch"
+license="MIT"
+depends="
+	ruby
+	ruby-base64
+	ruby-bigdecimal
+	ruby-connection_pool
+	ruby-concurrent-ruby
+	ruby-drb
+	ruby-i18n
+	ruby-minitest
+	ruby-tzinfo
+	"
+checkdepends="ruby-rake"
+source="https://github.com/rails/rails/archive/v$pkgver/ruby-activesupport-$pkgver.tar.gz"
+builddir="$srcdir/rails-$pkgver/activesupport"
+options="!check"  # FIXME
+
+# secfixes:
+#   7.0.4.3-r0:
+#     - CVE-2023-28120
+#     - CVE-2023-22796
+
+build() {
+	gem build $_gemname.gemspec
+}
+
+check() {
+	rake test
+}
+
+package() {
+	local gemdir="$pkgdir/$(ruby -e 'puts Gem.default_dir')"
+
+	gem install \
+		--local \
+		--install-dir "$gemdir" \
+		--ignore-dependencies \
+		--no-document \
+		--verbose \
+		$_gemname
+
+	# Remove unnecessary files and rubbish...
+	cd "$gemdir"
+	rm -r cache build_info doc extensions plugins
+}
+
+sha512sums="
+b28401f0ab23a99e9ce113ce278bbd6cb69d7e21f414a17d0059821eef6ed6fbd0a04ccd9a3da34f8934ad0b7374314233c69c66f550c3e60f73766a26f38cef  ruby-activesupport-8.0.0.tar.gz
+"

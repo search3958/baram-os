@@ -1,0 +1,82 @@
+# Contributor: Wen Heping <wenhepingalpine@sohu.com>
+# Contributor: Steven Guikal <void@fluix.one>
+# Maintainer: Steven Guikal <void@fluix.one>
+pkgname=py3-fastapi
+_pkgname=fastapi
+pkgver=0.136.1
+pkgrel=0
+pkgdesc="Modern, high-performance, web framework for building APIs based on standard Python type hints"
+url="https://github.com/fastapi/fastapi"
+arch="noarch"
+license="MIT"
+depends="
+	py3-annotated-doc
+	py3-pydantic
+	py3-starlette
+	uvicorn
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-pdm-backend
+	"
+checkdepends="
+	py3-a2wsgi
+	py3-aiosqlite
+	py3-anyio
+	py3-databases
+	py3-dirty-equals
+	py3-email-validator
+	py3-flask
+	py3-httpx
+	py3-inline-snapshot
+	py3-jwt
+	py3-orjson
+	py3-pwdlib
+	py3-pytest
+	py3-pydantic-settings
+	py3-pytest-timeout
+	py3-pytest-xdist
+	py3-python-jose
+	py3-python-multipart
+	py3-sqlalchemy
+	py3-trio
+	py3-typer
+	py3-ujson
+	py3-yaml
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages testenv
+	testenv/bin/python3 -m installer .dist/*.whl
+
+	# Set a timeout in the event tests occasionally hang on the builders
+	# e.g. tests/test_tutorial/test_websockets/test_tutorial003.py
+	# The deselected test wants to run fastapi cli from $PATH or depend on sqlmodel which itself checkdepends on fastapi. That would cause a cyclic dependency.
+	timeout 30m \
+	testenv/bin/python3 -m pytest \
+		--deselect tests/test_fastapi_cli.py::test_fastapi_cli \
+		--ignore tests/test_tutorial/test_sql_databases/test_tutorial001.py \
+		--ignore tests/test_tutorial/test_sql_databases/test_tutorial002.py \
+		--ignore tests/test_tutorial/test_header_param_models/test_tutorial001.py \
+		--ignore tests/test_tutorial/test_header_param_models/test_tutorial003.py \
+		--ignore tests/test_tutorial/test_graphql/test_tutorial001.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+78ca4e6409d15c36f93c9975baa1e13007730192077d106663c7d4dbc063fa4b4d0097838143411eb475265eb39a7d16ee412a5a3d4a207e1c3d2c93dc536bdf  py3-fastapi-0.136.1.tar.gz
+"

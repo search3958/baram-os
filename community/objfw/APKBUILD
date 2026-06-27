@@ -1,0 +1,142 @@
+# Contributor: Jonathan Schleifer <js@nil.im>
+# Maintainer: Jonathan Schleifer <js@nil.im>
+pkgname=objfw
+pkgver=1.5.4
+pkgrel=0
+pkgdesc="Portable, lightweight framework for the Objective-C language"
+url="https://objfw.nil.im/"
+arch="all"
+license="LGPL-3.0-only"
+_llvmver=22
+makedepends="
+	clang$_llvmver
+	openssl-dev
+	zlib-dev
+	doxygen
+	autoconf
+	automake
+	linux-headers"
+subpackages="$pkgname-dev $pkgname-dbg $pkgname-doc
+	libobjfw1:_libobjfw
+	libobjfwhid1:_libobjfwhid
+	libobjfwrt1:_libobjfwrt
+	libobjfwtls1:_libobjfwtls
+	ofarc:_ofarc
+	ofdns:_ofdns
+	ofhash:_ofhash
+	ofhttp:_ofhttp
+	ofgctester:_ofgctester"
+source="https://objfw.nil.im/downloads/objfw-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--disable-rpath \
+		OBJC="clang-$_llvmver -target $CHOST"
+	make
+	make docs
+}
+
+check() {
+	make check
+}
+
+package() {
+	depends="libobjfw1=$pkgver-r$pkgrel libobjfwrt1=$pkgver-r$pkgrel
+		libobjfwtls1=$pkgver-r$pkgrel libobjfwhid1=$pkgver-r$pkgrel
+		objfw-dev=$pkgver-r$pkgrel objfw-doc=$pkgver-r$pkgrel
+		ofarc=$pkgver-r$pkgrel ofdns=$pkgver-r$pkgrel
+		ofhash=$pkgver-r$pkgrel ofhttp=$pkgver-r$pkgrel
+		ofgctester=$pkgver-r$pkgrel"
+
+	make DESTDIR="$pkgdir" install
+}
+
+dev() {
+	depends="clang$_llvmver"
+
+	amove usr/bin/objfw-compile
+	amove usr/bin/objfw-config
+	amove usr/bin/objfw-embed
+	amove usr/bin/objfw-new
+	amove usr/include
+	amove usr/lib/*.so
+	amove usr/lib/cmake
+	amove usr/lib/objfw-config
+}
+
+doc() {
+	default_doc
+
+	mkdir -p "$subpkgdir"/usr/share/doc/objfw
+	cp -r "$builddir/docs" "$subpkgdir"/usr/share/doc/objfw/html
+}
+
+_libobjfw() {
+	pkgdesc="Library needed by programs using ObjFW"
+
+	amove usr/lib/libobjfw.so.*
+}
+
+_libobjfwrt() {
+	pkgdesc="ObjFW Objective-C runtime library"
+
+	amove usr/lib/libobjfwrt.so.*
+}
+
+_libobjfwtls() {
+	pkgdesc="Library for TLS support for ObjFW"
+
+	amove usr/lib/libobjfwtls.so.*
+}
+
+_libobjfwhid() {
+	pkgdesc="Library for HID support for ObjFW"
+
+	amove usr/lib/libobjfwhid.so.*
+}
+
+_ofarc() {
+	pkgdesc="Utility for handling ZIP, Tar and LHA archives"
+
+	amove usr/bin/ofarc
+	amove usr/share/ofarc
+}
+
+_ofdns() {
+	pkgdesc="Utility for performing DNS requests on the command line"
+
+	amove usr/bin/ofdns
+	amove usr/share/ofdns
+}
+
+_ofhash() {
+	pkgdesc="Utility to hash files with various cryptographic hashes"
+
+	amove usr/bin/ofhash
+	amove usr/share/ofhash
+}
+
+_ofhttp() {
+	pkgdesc="Command line downloader for HTTP(S)"
+
+	amove usr/bin/ofhttp
+	amove usr/share/ofhttp
+}
+
+_ofgctester() {
+	pkgdesc="Game controller tester for the terminal"
+
+	amove usr/bin/ofgctester
+}
+
+sha512sums="
+c8591590ccbcc5246f63fe1a0e7fc93b426fc7d97ad2c22798845540bdd28c0e8e0c39ea29a8573d6edfa6bbf4276a9495b0c8f2af9c9ec4787a56f8b44dcc9b  objfw-1.5.4.tar.gz
+"

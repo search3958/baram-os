@@ -1,0 +1,33 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=rlog
+pkgver=1.4
+pkgrel=7
+pkgdesc="A flexible message logging facility for C++ programs and libraries."
+url="https://code.google.com/archive/p/rlog/"
+arch="all"
+license="LGPL-2.1-or-later"
+options="!check" # no testsuite
+subpackages="$pkgname-doc $pkgname-dev"
+source="https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/rlog/rlog-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	update_config_sub
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+a0af9afd6c5329ec4269a7778c3236b9e0b438cba65ed0a6f9cd7e802d196b7908eed5ab663f52905869cacffc7f1964b20ab2a53b37dbe65f1c8a9226cc423e  rlog-1.4.tar.gz
+"

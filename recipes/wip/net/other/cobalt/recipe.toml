@@ -1,5 +1,0 @@
-#TODO compilation error (after an update on proc-macro2)
-[source]
-git = "https://github.com/cobalt-org/cobalt.rs"
-[build]
-template = "cargo"

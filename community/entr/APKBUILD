@@ -1,0 +1,38 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=entr
+pkgver=5.8
+pkgrel=0
+pkgdesc="Event Notify Test Runner: Run arbitrary commands when files change"
+url="https://eradman.com/entrproject"
+arch="all"
+license="ISC"
+subpackages="$pkgname-doc"
+makedepends="vim mercurial file util-linux"
+checkdepends="bash tmux util-linux-misc"
+source="https://eradman.com/entrproject/code/entr-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	# The test script is not compatibile with BusyBox ash
+	# and also uses several GNU extensions (e.g. function syntax).
+	sed -i system_test.sh -e 's|#!/bin/sh|#!/bin/bash|'
+}
+
+build() {
+	./configure
+	make
+}
+
+check() {
+	SHELL=/bin/sh script --return --quiet -c "make -j1 test" /dev/null
+}
+
+package() {
+	PREFIX="$pkgdir/usr" make install
+}
+
+sha512sums="
+ceae34406930cffc931d139857cde17757fe1fc5727d9b0d278d9615f93cb007c238378ed4f852db40a62e1031e5c8f7f6569de75a50f11b518c1eefdccafbe8  entr-5.8.tar.gz
+"

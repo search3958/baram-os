@@ -1,0 +1,64 @@
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=gutenprint
+pkgver=5.3.5
+pkgrel=0
+pkgdesc="Top quality printer drivers for POSIX systems"
+url="https://gimp-print.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	bash
+	cups-dev
+	gettext-dev
+	ghostscript-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	libusb-dev
+	tiff-dev
+	"
+subpackages="$pkgname-static $pkgname-dev $pkgname-doc $pkgname-lang $pkgname-libs $pkgname-cups $pkgname-samples"
+source="https://downloads.sourceforge.net/gimp-print/gutenprint-$pkgver.tar.xz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-nls \
+		--enable-cups-ppds \
+		--enable-simplified-cups-ppds
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	rm -r "$pkgdir"/usr/share/gutenprint/doc \
+		"$pkgdir"/etc/cups/command.types
+}
+
+cups() {
+	pkgdesc="CUPS drivers for Canon, Epson, HP and compatible printers"
+	amove \
+		usr/share/cups* \
+		usr/lib/cups* \
+		usr/bin/cups* \
+		usr/sbin/cups* \
+		etc/cups
+}
+
+samples() {
+	pkgdesc="Sample test pattern generator for gutenprint-dev"
+	amove \
+		usr/share/gutenprint/samples \
+		usr/bin/testpattern
+
+}
+
+sha512sums="
+18ac06e77fef012650515db0fa551f68c93941250e5f254d71381f20822d7682eae148142ad1bb650440c6b790f90daf9801b742f20dd081a05076d81275ba7c  gutenprint-5.3.5.tar.xz
+"

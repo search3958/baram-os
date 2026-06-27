@@ -1,0 +1,64 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=kdsoap
+pkgver=2.3.0
+pkgrel=0
+pkgdesc="A Qt-based client-side and server-side SOAP component"
+arch="all"
+url="https://www.kdab.com/development-resources/qt-tools/kd-soap/"
+license="LGPL-2.1-only AND LGPL-3.0-only AND (GPL-2.0-only OR GPL-3.0-only) AND AGPL-3.0-only"
+makedepends="
+	cmake
+	doxygen
+	qt6-qtbase-dev
+	samurai
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	"
+source="https://github.com/KDAB/KDSoap/releases/download/kdsoap-$pkgver/kdsoap-$pkgver.tar.gz"
+options="!check" # no tests were found
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DKDSoap_TESTS=true \
+		-DKDSoap_EXAMPLES=false \
+		-DKDSoap_QT6=true
+
+	cmake --build build
+}
+
+check() {
+	# kdsoap-webcalls, kdsoap-webcalls_wsdl and kdsoap-test_calc require network access
+	# kdsoap-test_wsdl_document is broken on s390x, https://github.com/KDAB/KDSoap/issues/245
+	local skipped_tests="kdsoap-("
+	local tests="
+		webcalls
+		webcalls_wsdl
+		test_calc
+		"
+	[ "$CARCH" = "s390x" ] && tests="$tests test_wsdl_document"
+	for test in $tests; do
+		skipped_tests="$skipped_tests|$test"
+	done
+	skipped_tests="$skipped_tests)"
+	ctest --test-dir build -E "$skipped_tests"
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+dev() {
+	provides="$pkgname-qt6-dev=$pkgver-r$pkgrel"
+	default_dev
+
+	amove usr/bin/kdwsdl2cpp-qt6
+}
+
+sha512sums="
+5903a793550d206dafcc9683c86b3e4098294ce86ecc535304cae27994c8675f037e93daad1f22a920f32772076ace1c95d30428473da2515dafee516ebd199e  kdsoap-2.3.0.tar.gz
+"

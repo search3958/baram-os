@@ -1,0 +1,21 @@
+# Contributor: Ted Trask <ttrask01@yahoo.com>
+# Maintainer: Ted Trask <ttrask01@yahoo.com>
+pkgname=acf-jquery
+pkgver=0.4.3
+pkgrel=2
+pkgdesc="jquery libraries for ACF"
+url="https://gitlab.alpinelinux.org/acf/acf-jquery"
+arch="noarch"
+license="GPL-2.0-only"
+options="!check" # no test suite
+replaces="acf-core"
+source="https://gitlab.alpinelinux.org/acf/acf-jquery/-/archive/v$pkgver/acf-jquery-v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+7d95fb67659e0ad21be0a48ace6652cb56b59a76068391addcb134d524a6ca28a83209aa7cdb63f0d4a942e15d2f72c31696067fdfee954760f6fe2656ad8c71  acf-jquery-v0.4.3.tar.gz
+"

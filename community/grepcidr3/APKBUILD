@@ -1,0 +1,28 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=grepcidr3
+pkgver=3.0.3
+pkgrel=0
+pkgdesc="High performance search for IP addresses and CIDR ranges"
+url="https://github.com/jrlevine/grepcidr3"
+arch="all"
+options="!check" # no tests
+license="GPL-2.0"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jrlevine/grepcidr3/archive/refs/tags/$pkgver.tar.gz
+fix-makefile.patch"
+
+build() {
+	make
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin
+	mkdir -p "$pkgdir"/usr/share/man/man1
+	make INSTALLDIR="$pkgdir"/usr install
+}
+
+sha512sums="
+ee629c409b74fe4ac7684dcd6dc9b8ee2b96b87ef4193855e6dbd885f2287913dd274aa9d858adab730d27365167dadfdda8aeaf7905e34e4a7551c71b9e39bb  grepcidr3-3.0.3.tar.gz
+e18c36ccfed68ed6023d99c5fc50d6b76151d0acef3a0996532b617103a87a5bc6df64e7c951fbd2c73fb7a925e2f6cc030ad1846284c0f40d9432b44cfa4a47  fix-makefile.patch
+"

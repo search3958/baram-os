@@ -1,0 +1,31 @@
+# Maintainer: Willow Barraco <contact@willowbarraco.fr>
+pkgname=gmnitohtml
+pkgver=0.1.3
+pkgrel=15
+pkgdesc="Gemini text to HTML converter"
+options="!check" # No testsuite
+url="https://git.sr.ht/~adnano/gmnitohtml"
+arch="all"
+license="GPL-3.0-only"
+makedepends="go scdoc"
+subpackages="$pkgname-doc"
+source="
+	$pkgname-$pkgver.tar.gz::https://git.sr.ht/~adnano/gmnitohtml/archive/$pkgver.tar.gz
+	"
+options="$options net" # fetch dependencies
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make GOFLAGS="$GOFLAGS --tags=extended"
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+129ba03e93693e1121129f554b2255733633a22d5cfbba97ba9311ac16da8d7163bf8c9ef009d0c73b99394c3d98bbfffaadd3b5d05b5ccf2788ee34f12079a1  gmnitohtml-0.1.3.tar.gz
+"

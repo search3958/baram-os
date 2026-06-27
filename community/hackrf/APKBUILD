@@ -1,0 +1,50 @@
+# Contributor: Martin Kjær Jørgensen <me@lagy.org>
+# Contributor: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+# Maintainer: Marian Buschsieweke <marian.buschsieweke@posteo.net>
+pkgname=hackrf
+pkgver=2026.01.3
+pkgrel=1
+pkgdesc="Driver for HackRF, allowing general purpose software defined radio"
+url="https://github.com/greatscottgadgets/hackrf"
+arch="all"
+license="GPL-2.0-only"
+options="!check"  # no test suite
+makedepends="
+	cmake
+	fftw-dev
+	libusb-dev
+	samurai
+	"
+subpackages="
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-firmware:firmware:noarch
+	$pkgname-libs
+	$pkgname-udev
+	"
+source="$pkgname-$pkgver.tar.xz::https://github.com/greatscottgadgets/hackrf/releases/download/v$pkgver/hackrf-$pkgver.tar.xz"
+
+build() {
+	cmake3.5 -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DUDEV_RULES_GROUP=plugdev \
+		-DUDEV_RULES_PATH=/usr/lib/udev/rules.d \
+		host
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+firmware() {
+	pkgdesc="$pkgdesc (firmware)"
+
+	find "$builddir/firmware-bin" -type f -exec install -Dm644 -t "$subpkgdir/usr/share/hackrf/" {} \;
+}
+
+sha512sums="
+776aab11d23976ba87bf9c8af9c669b1e4967540a5b48d23d355cd0759d08b7fb36c88675082819fbca4cfd2fcdd19afbd79dea04f79128c23063334c45dd6b9  hackrf-2026.01.3.tar.xz
+"

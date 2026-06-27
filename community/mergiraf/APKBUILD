@@ -1,0 +1,52 @@
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=mergiraf
+pkgver=0.17.0
+pkgrel=0
+pkgdesc="syntax-aware git merge driver for a growing collection of programming languages and file formats"
+arch="all"
+url="https://mergiraf.org/"
+license="GPL-3.0-or-later"
+makedepends="cargo cargo-auditable"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://codeberg.org/mergiraf/mergiraf/archive/v$pkgver.tar.gz
+	helpers-README
+	"
+builddir="$srcdir/$pkgname"
+
+prepare() {
+	default_prepare
+	cargo fetch --target="$CHOST" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm0755 -t "$pkgdir"/usr/bin/ target/release/"$pkgname"
+
+
+	install -Dm0644 -t "$pkgdir"/usr/share/doc/"$pkgname"/ \
+		doc/src/adding-a-language.md \
+		doc/src/architecture.md \
+		doc/src/conflicts.md \
+		doc/src/languages.md \
+		doc/src/related-work.md \
+		doc/src/usage.md \
+		doc/src/*.svg
+
+	install -Dm0644 -t "$pkgdir"/usr/share/doc/"$pkgname"/helpers/ \
+		helpers/*.sh
+	install -Dm0644 "$srcdir"/helpers-README \
+		"$pkgdir"/usr/share/doc/"$pkgname"/helpers/README
+}
+
+sha512sums="
+71d995078014348a4ba31b6c661f28cc2bc157da323be3dd58fef31bb99037005e31ba3aaade993c61bf2a2c613dcda086eff23d6820e2ec56a264c42ee4273c  mergiraf-0.17.0.tar.gz
+80ba290a5aefb3a42ded35459f5ddbca94710dcb71f31d372db54a1c80ed0f20b77aec95f39f731a6800c23920be6cca0abbd1ddd93289f1507bf438995ff6d8  helpers-README
+"

@@ -1,0 +1,40 @@
+# Contributor: Noel Kuntze <noel.kuntze@thermi.consulting>
+# Maintainer: Noel Kuntze <noel.kuntze@thermi.consulting>
+pkgname=py3-pytest-freezer
+pkgver=0.4.9
+pkgrel=0
+pkgdesc="Pytest plugin providing a fixture interface for freezegun"
+url="https://github.com/pytest-dev/pytest-freezer"
+arch="noarch"
+license="MIT"
+depends="py3-pytest py3-freezegun"
+makedepends="
+	py3-flit-core
+	py3-gpep517
+	py3-wheel"
+subpackages="$pkgname-pyc"
+
+source="$pkgname-$pkgver.tar.gz::https://github.com/pytest-dev/pytest-freezer/archive/refs/tags/$pkgver.tar.gz"
+
+builddir="$srcdir/pytest-freezer-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	local _site_packages=$(python -c "import site; print(site.getsitepackages()[0])")
+	python3 -m installer -d test_dir dist/*.whl
+	export PYTHONPATH="$PWD/test_dir/$_site_packages:$PYTHONPATH"
+	pytest -vv --deselect tests/test_typing.py tests/
+}
+
+package() {
+	python -m installer -d "$pkgdir" dist/*.whl
+}
+
+sha512sums="
+e3de8ebb3fbd5b822a268ada5693028f6669325f7fe48990be715cf3ff171cb4d0490f71eed642d6c2fed2daac04a529e0351c9970bc6346aae577c83be04860  py3-pytest-freezer-0.4.9.tar.gz
+"

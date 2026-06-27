@@ -1,0 +1,15 @@
+Change "control_socket" to correct location for Alpine linux
+Stop rspamd writing its own pid file
+
+diff -Nurp a/conf/options.inc b/conf/options.inc
+--- a/conf/options.inc	2020-05-10 21:06:38.577103479 +0100
++++ b/conf/options.inc	2020-05-16 06:41:17.587431999 +0100
+@@ -44,7 +44,7 @@ classify_headers = [
+ 	"X-MimeOLE",
+ ];
+ 
+-control_socket = "$DBDIR/rspamd.sock mode=0600";
++control_socket = "$RUNDIR/rspamd.sock mode=0600";
+ history_rows = 200;
+ explicit_modules = ["settings", "bayes_expiry"];
+ 

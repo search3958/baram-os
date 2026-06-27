@@ -1,0 +1,74 @@
+# Contributor: Anjandev Momi <anjan@momi.ca>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=nlopt
+pkgver=2.11.0
+pkgrel=0
+pkgdesc="Library for nonlinear optimization"
+url="https://github.com/stevengj/nlopt"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="
+	cmake
+	guile-dev
+	python3-dev
+	samurai
+	swig
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-guile
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/stevengj/nlopt/archive/refs/tags/v$pkgver.tar.gz
+	"
+
+case "$CARCH" in
+# octave unavailable
+ppc64le) ;;
+*)
+	makedepends="$makedepends octave-dev"
+	subpackages="$subpackages $pkgname-octave"
+	;;
+esac
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		local crossopts="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=MinSizeRel \
+		-DCMAKE_SKIP_INSTALL_RPATH=ON \
+		-DNLOPT_TESTS="$(want_check && echo ON || echo OFF)" \
+		$crossopts
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+guile() {
+	pkgdesc="$pkgdesc (Guile bindings)"
+	depends="$pkgname=$pkgver-r$pkgrel guile"
+
+	amove usr/lib/guile usr/share/guile
+}
+
+octave() {
+	pkgdesc="$pkgdesc (Octave bindings)"
+	depends="$pkgname=$pkgver-r$pkgrel octave"
+
+	amove usr/lib/octave usr/share/octave
+}
+
+sha512sums="
+72dfb5374f89f6a507f0a22317fd76b4fc26795d7868842e02dc67a76fbbaf04fb769cec7b366774f5d2a1ed0c2305878c9d82e0ef85e449f9350cdcaa58c262  nlopt-2.11.0.tar.gz
+"

@@ -1,0 +1,46 @@
+# Maintainer: Sören Tempel <soeren+alpine@soeren-tempel.net>
+pkgname=rlwrap
+pkgver=0.48
+pkgrel=0
+pkgdesc="readline wrapper"
+url="https://github.com/hanslub42/rlwrap"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	autoconf
+	automake
+	libptytty-dev
+	libtool
+	ncurses-dev
+	readline-dev
+	"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/hanslub42/rlwrap/archive/refs/tags/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+380a0a686814b004134582cd0e19001d092cf2330e9c2b5ae29ca3b86440eae2cdb144fd238380059bc37dec2203b06e75004530d9dbc3ceae9d7847bae7fc8b  rlwrap-0.48.tar.gz
+"

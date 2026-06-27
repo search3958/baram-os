@@ -1,0 +1,40 @@
+mutt_path_to_absolute.c:102: Check test_check_str_eq... failed
+
+--- a/test/Makefile.autosetup
++++ b/test/Makefile.autosetup
+@@ -89,7 +89,6 @@ BUFFER_OBJS	= test/buffer/buf_add_printf.o \
+ 		  test/buffer/buf_new.o \
+ 		  test/buffer/buf_printf.o \
+ 		  test/buffer/buf_reset.o \
+-		  test/buffer/buf_rfind.o \
+ 		  test/buffer/buf_seek.o \
+ 		  test/buffer/buf_startswith.o \
+ 		  test/buffer/buf_strcpy.o \
+@@ -516,8 +515,7 @@ PATH_OBJS	= test/path/mutt_path_abbr_folder.o \
+ 		  test/path/mutt_path_tidy.o \
+ 		  test/path/mutt_path_tidy_dotdot.o \
+ 		  test/path/mutt_path_tidy_slash.o \
+-		  test/path/mutt_path_tilde.o \
+-		  test/path/mutt_path_to_absolute.o
++		  test/path/mutt_path_tilde.o
+ 
+ PATTERN_OBJS	= pattern/pattern.o \
+ 		  test/pattern/comp.o \
+--- a/test/main.c
++++ b/test/main.c
+@@ -132,7 +132,6 @@ void test_fini(void);
+   NEOMUTT_TEST_ITEM(test_buf_pool_release)                                     \
+   NEOMUTT_TEST_ITEM(test_buf_printf)                                           \
+   NEOMUTT_TEST_ITEM(test_buf_reset)                                            \
+-  NEOMUTT_TEST_ITEM(test_buf_rfind)                                            \
+   NEOMUTT_TEST_ITEM(test_buf_seek)                                             \
+   NEOMUTT_TEST_ITEM(test_buf_startswith)                                       \
+   NEOMUTT_TEST_ITEM(test_buf_strcpy)                                           \
+@@ -566,7 +565,6 @@ void test_fini(void);
+   NEOMUTT_TEST_ITEM(test_mutt_path_tidy_dotdot)                                \
+   NEOMUTT_TEST_ITEM(test_mutt_path_tidy_slash)                                 \
+   NEOMUTT_TEST_ITEM(test_mutt_path_tilde)                                      \
+-  NEOMUTT_TEST_ITEM(test_mutt_path_to_absolute)                                \
+                                                                                \
+   /* pattern */                                                                \
+   NEOMUTT_TEST_ITEM(test_mutt_pattern_comp)                                    \

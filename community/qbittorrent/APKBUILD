@@ -1,0 +1,104 @@
+# Contributor: Jan Tatje <jan@jnt.io>
+# Contributor: Fabricio Silva <hi@fabricio.dev>
+# Maintainer: Simon Zeni <simon@bl4ckb0ne.ca>
+pkgname=qbittorrent
+pkgver=5.2.2
+pkgrel=0
+pkgdesc="qBittorrent client"
+url="https://www.qbittorrent.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	boost-dev
+	cmake
+	libtorrent-rasterbar-dev
+	openssl-dev>3
+	qt6-qtbase-dev
+	qt6-qtbase-private-dev
+	qt6-qtsvg-dev
+	qt6-qttools-dev
+	samurai
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-nox
+	$pkgname-nox-openrc:nox_openrc
+	$pkgname-nox-doc:nox_doc
+	"
+install="$pkgname-nox.pre-install"
+source="$pkgname-$pkgver.tar.gz::https://github.com/qbittorrent/qBittorrent/archive/refs/tags/release-$pkgver.tar.gz
+	qbittorrent-nox.initd
+	qbittorrent-nox.confd
+	"
+builddir="$srcdir/qBittorrent-release-$pkgver"
+
+# secfixes:
+#   5.0.1-r0:
+#     - CVE-2024-51774
+#   4.1.6-r3:
+#     - CVE-2019-13640
+
+build() {
+	export CFLAGS="$CFLAGS -DNDEBUG -O2 -flto=auto"
+	export CXXFLAGS="$CXXFLAGS -DNDEBUG -O2 -flto=auto"
+
+	cmake -B build-gui -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DGUI=ON \
+		-DWEBUI=ON \
+		-DSTACKTRACE=OFF \
+		-DTESTING=ON
+	cmake --build build-gui
+
+	cmake -B build-nox -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DGUI=OFF \
+		-DWEBUI=ON \
+		-DSTACKTRACE=OFF \
+		-DTESTING=OFF
+	cmake --build build-nox
+}
+
+check() {
+	cmake --build build-gui --target check
+}
+
+package() {
+	depends="qt6-qtsvg" # needed for ui icons
+	DESTDIR="$pkgdir" cmake --install build-gui
+
+	# remove stub language https://github.com/qbittorrent/qBittorrent/pull/19515
+	rm -rf "$pkgdir"/usr/share/man/ru
+
+	install -Dm755 build-nox/qbittorrent-nox \
+		-t "$pkgdir"/usr/bin
+	install -Dm755 "$srcdir"/$pkgname-nox.initd \
+		"$pkgdir"/etc/init.d/$pkgname-nox
+	install -Dm644 "$srcdir"/$pkgname-nox.confd \
+		"$pkgdir"/etc/conf.d/$pkgname-nox
+}
+
+nox() {
+	pkgdesc="$pkgdesc (webui)"
+
+	amove usr/bin/qbittorrent-nox
+}
+
+nox_doc() {
+	install -Dm644 "$builddir"/doc/en/qbittorrent-nox.1 \
+		-t "$subpkgdir"/usr/share/man/man1
+	default_doc
+}
+
+nox_openrc() {
+	default_openrc
+	pkgdesc="$pkgdesc (webui) (OpenRC init scripts)"
+}
+
+sha512sums="
+9cd7ad5302be5b140fa1c37824c41642e4123ae8a7bcfbb4bec2ad7dda06737c28d950410949d051f261f9bbc9f8dfb3cd316e6a1c8ca903a796ff56011296f7  qbittorrent-5.2.2.tar.gz
+e84943b4e53717d4c53dc0a454aae2c43390b90afbd7e9d48c50cb914ac9041152a197677343ec81c6881bceb55228a2519bca9fffc158a713305214d0570711  qbittorrent-nox.initd
+5cc840181f8b9febdc99b28dca9fe3f6b27a36bad0b20266e46d6ff148dfc9c5d9e6cba552198cd3d1b8ac5c21e2881d7defd8f13fcc8a862b93f4c80c1d4b19  qbittorrent-nox.confd
+"

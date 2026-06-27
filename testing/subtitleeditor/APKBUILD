@@ -1,0 +1,40 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=subtitleeditor
+pkgver=0.56.2
+pkgrel=0
+pkgdesc="GTK+3 tool to create and edit subtitles"
+url="https://kitone.github.io/subtitleeditor/"
+arch="x86 x86_64"
+license="GPL-3.0-or-later"
+makedepends="libxml++-2.6-dev enchant2-dev libsigc++-dev xdg-utils gtkmm3-dev
+	gtk+3.0-dev gst-plugins-base-dev gstreamer-dev gstreamermm-dev iso-codes-dev
+	gst-libav desktop-file-utils gst-plugins-ugly automake autoconf libtool
+	intltool"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/subtitleeditor/subtitleeditor/archive/refs/tags/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--disable-debug \
+		--disable-nls
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+f25e6f5be5756a32f4e87a72e4a746f121a2e995e3983f7d0320756c27d225796057b9f63485708d87f9c87350ca14cb9fa8432f26d58af5f59ad51b7505503e  subtitleeditor-0.56.2.tar.gz
+"

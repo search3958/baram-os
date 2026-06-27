@@ -1,0 +1,71 @@
+# Contributor: kpcyrd <git@rxv.cc>
+# Maintainer: kpcyrd <git@rxv.cc>
+pkgname=rekor
+pkgver=1.5.2
+pkgrel=0
+pkgdesc="Signature transparency log"
+url="https://github.com/sigstore/rekor"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+subpackages="$pkgname-server
+	$pkgname-bash-completion
+	$pkgname-zsh-completion
+	$pkgname-fish-completion
+	"
+options="net"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sigstore/rekor/archive/v$pkgver.tar.gz"
+
+export GOFLAGS="$GOFLAGS -ldflags=-X=sigs.k8s.io/release-utils/version.gitVersion=v$pkgver"
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+# secfixes:
+#   1.1.1-r0:
+#     - CVE-2023-30551
+
+build() {
+	go build -o cmd/rekor-cli/rekor-cli cmd/rekor-cli/main.go
+	go build -o cmd/rekor-server/rekor-server cmd/rekor-server/main.go
+
+	mkdir -p completions
+	cmd/rekor-cli/rekor-cli completion bash > completions/rekor-cli.bash
+	cmd/rekor-cli/rekor-cli completion zsh > completions/_rekor-cli
+	cmd/rekor-cli/rekor-cli completion fish > completions/rekor-cli.fish
+
+	cmd/rekor-server/rekor-server completion bash > completions/rekor-server.bash
+	cmd/rekor-server/rekor-server completion zsh > completions/_rekor-server
+	cmd/rekor-server/rekor-server completion fish > completions/rekor-server.fish
+}
+
+check() {
+	go test -v ./...
+}
+
+package() {
+	install -Dm755 "$builddir/cmd/rekor-cli/rekor-cli" "$pkgdir/usr/bin/rekor-cli"
+
+	install -Dm644 "$builddir/completions/rekor-cli.bash" \
+		"$pkgdir/usr/share/bash-completion/completions/rekor-cli"
+	install -Dm644 "$builddir/completions/_rekor-cli" \
+	    "$pkgdir/usr/share/zsh/site-functions/_rekor-cli"
+	install -Dm644 "$builddir/completions/rekor-cli.fish" \
+		"$pkgdir/usr/share/fish/vendor_completions.d/rekor-cli.fish"
+
+	install -Dm644 "$builddir/completions/rekor-server.bash" \
+		"$pkgdir/usr/share/bash-completion/completions/rekor-server"
+	install -Dm644 "$builddir/completions/_rekor-server" \
+	    "$pkgdir/usr/share/zsh/site-functions/_rekor-server"
+	install -Dm644 "$builddir/completions/rekor-server.fish" \
+		"$pkgdir/usr/share/fish/vendor_completions.d/rekor-server.fish"
+}
+
+server() {
+	pkgdesc="Signature Transparency Log (server)"
+	install -Dm755 "$builddir/cmd/rekor-server/rekor-server" "$subpkgdir/usr/bin/rekor-server"
+}
+
+sha512sums="
+da4ab43bb3e3b90806c3af1b208a891fc3fb1a88e9ee822e49bfe43d2a31e4fd123c8157c4cfde1b2973ed83c378dc759bd82180c48bd5eb0f4a3e4c7d789d23  rekor-1.5.2.tar.gz
+"

@@ -1,0 +1,41 @@
+# Contributor: Clayton Craft <clayton@craftyguy.net>
+# Maintainer: Clayton Craft <clayton@craftyguy.net>
+pkgname=py3-whatthepatch
+pkgver=1.0.7
+pkgrel=1
+pkgdesc="library for parsing and applying patch files"
+url="https://github.com/cscorley/whatthepatch"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-installer py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/cscorley/whatthepatch/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/whatthepatch-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m installer -d testenv .dist/*.whl
+
+	case "$CARCH" in
+		# test_huge_patch: fails on edge riscv64 builder with AssertionError
+		riscv64) .testenv/bin/python3 -m pytest -k 'not test_huge_patch' ;;
+		*) .testenv/bin/python3 -m pytest ;;
+	esac
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+2e1492f062231e78dd1d9798cdd4445d14d04f0d6f30cdc5863017bd028fed7b670f9f3bf9928740c78c1b3286ce2121cd77690d3b7f259c26d5045514debfd1  py3-whatthepatch-1.0.7.tar.gz
+"

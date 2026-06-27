@@ -1,0 +1,118 @@
+# Contributor: Francesco Camuffo <dev@fmac.xyz>
+# Maintainer: Francesco Camuffo <dev@fmac.xyz>
+pkgname=faust
+pkgver=2.85.5
+pkgrel=0
+_llvmver=20
+pkgdesc="Functional programming language for realtime audio signal processing"
+url="https://faust.grame.fr"
+arch="all"
+license="GPL-2.0-or-later"
+# all faust* tools are bash
+depends="bash"
+depends_dev="$pkgname-tools=$pkgver-r$pkgrel"
+makedepends="
+	cmake
+	libmicrohttpd-dev
+	libsndfile-dev
+	llvm$_llvmver-dev
+	samurai
+	"
+subpackages="
+	$pkgname-tools
+	$pkgname-static
+	$pkgname-doc
+	$pkgname-dev
+	$pkgname-vim::noarch
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/grame-cncm/faust/releases/download/$pkgver/faust-$pkgver.tar.gz
+	busybox.patch
+	usage.patch
+	test-libs.patch
+	"
+
+prepare() {
+	default_prepare
+
+	# XXX: if the tests compile this faust segfaults
+	rm -v examples/physicalModeling/fds/2dKirchhoffThinPlate.dsp
+	# FIXME test fails
+	rm -v examples/misc/sflooper.dsp
+}
+
+build() {
+	cmake -B .build -G Ninja \
+		-S build \
+		-C build/backends/all.cmake \
+		-C build/targets/all.cmake \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DINCLUDE_DYNAMIC=ON \
+		-DINCLUDE_STATIC=OFF \
+		-DINCLUDE_ITP=ON \
+		-DLINK_LLVM_STATIC=OFF \
+		-DLLVM_CONFIG=/usr/lib/llvm$_llvmver/bin/llvm-config \
+		-Wno-dev
+	cmake --build .build
+	make VERBOSE=1 -C tools/sound2faust sound2faust sound2file
+}
+
+check() {
+	make interp llvm -C tests/compile-tests
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install .build
+	make VERBOSE=1 PREFIX=/usr DESTDIR="$pkgdir" install -C tools/sound2faust
+
+	# remove support for platforms not likely wanted
+	rm -rv "$pkgdir"/usr/bin/faust2au \
+		"$pkgdir"/usr/lib/ios-libsndfile.a \
+		"$pkgdir"/usr/share/faust/AU \
+		"$pkgdir"/usr/share/faust/android \
+		"$pkgdir"/usr/share/faust/iOS \
+		"$pkgdir"/usr/share/faust/smartKeyboard \
+		"$pkgdir"/usr/share/faust/max-msp/sndfile
+	# rename generically named usage script
+	mv "$pkgdir"/usr/bin/usage.sh "$pkgdir"/usr/bin/faust-usage.sh
+
+	install -Dm644 syntax-highlighting/faust.vim \
+		-t "$pkgdir"/usr/share/vim/vimfiles/syntax/
+}
+
+doc() {
+	default_doc
+
+	amove usr/share/faust/examples
+}
+
+dev() {
+	pkgdesc="$pkgdesc (development files)"
+	depends="$depends_dev"
+	amove \
+		usr/bin/faust-config \
+		usr/include/* \
+		usr/lib/*.so
+}
+
+tools() {
+	pkgdesc="$pkgdesc (tools)"
+	amove usr/bin/encoderunitypackage \
+		usr/bin/faust2* \
+		usr/bin/filename2ident \
+		usr/bin/sound2*
+}
+
+vim() {
+	pkgdesc="$pkgdesc (vim syntax)"
+	install_if="vim $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/share/vim/vimfiles
+}
+
+sha512sums="
+d48af40e105a93b9cd619e4f4617c88310765b6a25429137f015c589bfc16bf1bafe5ab9ddb0648b894b412c6eff63a3c363db0aee7c74cfcfd83e483cff9496  faust-2.85.5.tar.gz
+2e2aae4b3fe760e41b3a9b1b82edc9cfac674944efb41c296e1c71f80763cbadc72544e0cbd7f5048095322779c3d432838ea66d32376a29b95bb08fe8c25e96  busybox.patch
+ab000187d62478d68cad1c520dde86fd774709b32c49d7d278f366b02a37599ab983f195a8c8cc7bee94607c5507930c254f9b8583ee3cdd20df62e69e8214c6  usage.patch
+1c92d5aa0cf23c2acf11b263288a9e2850e9965819c0c7847b89aaade46839eb687f0dc91ab34fb425f2ec7872dbc45e2dc7ca9ac7e32bb4f9d93a7a7391b9d9  test-libs.patch
+"

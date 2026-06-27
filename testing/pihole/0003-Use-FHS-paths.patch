@@ -1,0 +1,128 @@
+From 5242296ac0359f2073b404c97435fcea99173378 Mon Sep 17 00:00:00 2001
+From: Mike Crute <mike@crute.us>
+Date: Sat, 10 May 2025 15:57:01 -0700
+Subject: [PATCH] Use FHS paths
+
+---
+ advanced/Scripts/database_migration/gravity-db.sh |  2 +-
+ advanced/Scripts/piholeNetworkFlush.sh            |  4 ++--
+ advanced/Scripts/query.sh                         |  2 +-
+ advanced/Templates/gravity_copy.sql               |  2 +-
+ gravity.sh                                        | 12 ++++++------
+ pihole                                            |  5 +++--
+ 6 files changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/pi-hole-6.4/advanced/Scripts/database_migration/gravity-db.sh b/pi-hole-6.4/advanced/Scripts/database_migration/gravity-db.sh
+index 5cf4cc34a3b5..98fcb33a2738 100755
+--- a/pi-hole-6.4/advanced/Scripts/database_migration/gravity-db.sh
++++ b/pi-hole-6.4/advanced/Scripts/database_migration/gravity-db.sh
+@@ -10,7 +10,7 @@
+ # This file is copyright under the latest version of the EUPL.
+ # Please see LICENSE file for your rights under this license.
+ 
+-readonly scriptPath="/etc/.pihole/advanced/Scripts/database_migration/gravity"
++readonly scriptPath="/usr/share/pihole/database_migration/gravity"
+ 
+ upgrade_gravityDB(){
+     local database version
+diff --git a/pi-hole-6.4/advanced/Scripts/piholeNetworkFlush.sh b/pi-hole-6.4/advanced/Scripts/piholeNetworkFlush.sh
+index f8841a6cf14a..e72b4912c136 100755
+--- a/pi-hole-6.4/advanced/Scripts/piholeNetworkFlush.sh
++++ b/pi-hole-6.4/advanced/Scripts/piholeNetworkFlush.sh
+@@ -9,8 +9,8 @@
+ # This file is copyright under the latest version of the EUPL.
+ # Please see LICENSE file for your rights under this license.
+ 
+-readonly PI_HOLE_SCRIPT_DIR="/opt/pihole"
+-readonly PI_HOLE_DATA_DIR="/etc/pihole"
++readonly PI_HOLE_SCRIPT_DIR="/usr/share/pihole"
++readonly PI_HOLE_DATA_DIR="/var/lib/pihole"
+ 
+ coltable="${PI_HOLE_SCRIPT_DIR}/COL_TABLE"
+ if [[ -f ${coltable} ]]; then
+diff --git a/pi-hole-6.4/advanced/Scripts/query.sh b/pi-hole-6.4/advanced/Scripts/query.sh
+index d58694993940..bd261e311b09 100755
+--- a/pi-hole-6.4/advanced/Scripts/query.sh
++++ b/pi-hole-6.4/advanced/Scripts/query.sh
+@@ -10,7 +10,7 @@
+ # Please see LICENSE file for your rights under this license.
+ 
+ # Globals
+-PI_HOLE_INSTALL_DIR="/opt/pihole"
++PI_HOLE_INSTALL_DIR="/usr/share/pihole"
+ max_results="20"
+ partial="false"
+ domain=""
+diff --git a/pi-hole-6.4/advanced/Templates/gravity_copy.sql b/pi-hole-6.4/advanced/Templates/gravity_copy.sql
+index f9f9844612d0..7ffe29d75f34 100644
+--- a/pi-hole-6.4/advanced/Templates/gravity_copy.sql
++++ b/pi-hole-6.4/advanced/Templates/gravity_copy.sql
+@@ -1,6 +1,6 @@
+ .timeout 30000
+ 
+-ATTACH DATABASE '/etc/pihole/gravity.db' AS OLD;
++ATTACH DATABASE '/var/lib/pihole/gravity.db' AS OLD;
+ 
+ BEGIN TRANSACTION;
+ 
+diff --git a/pi-hole-6.4/gravity.sh b/pi-hole-6.4/gravity.sh
+index abaa1d528202..6a3a873de0bb 100755
+--- a/pi-hole-6.4/gravity.sh
++++ b/pi-hole-6.4/gravity.sh
+@@ -12,8 +12,8 @@
+ 
+ export LC_ALL=C
+ 
+-PI_HOLE_SCRIPT_DIR="/opt/pihole"
+-PI_HOLE_MIGRATIONS_DIR="/etc/.pihole/advanced/Scripts/database_migration"
++PI_HOLE_SCRIPT_DIR="/usr/share/pihole"
++PI_HOLE_MIGRATIONS_DIR="${PI_HOLE_SCRIPT_DIR}/database_migration"
+ # Source utils.sh for GetFTLConfigValue
+ utilsfile="${PI_HOLE_SCRIPT_DIR}/utils.sh"
+ # shellcheck source=./advanced/Scripts/utils.sh
+@@ -26,9 +26,9 @@ coltable="${PI_HOLE_SCRIPT_DIR}/COL_TABLE"
+ . "${PI_HOLE_MIGRATIONS_DIR}/gravity-db.sh"
+ 
+ basename="pihole"
+-PIHOLE_COMMAND="/usr/local/bin/${basename}"
++PIHOLE_COMMAND="/usr/bin/${basename}"
+ 
+-piholeDir="/etc/${basename}"
++piholeDir="/var/lib/pihole"
+ 
+ # Gravity aux files directory
+ listsCacheDir="${piholeDir}/listsCache"
+@@ -39,8 +39,8 @@ blacklistFile="${piholeDir}/blacklist.txt"
+ regexFile="${piholeDir}/regex.list"
+ adListFile="${piholeDir}/adlists.list"
+ 
+-piholeGitDir="/etc/.pihole"
+-piholeSchemaTemplateDir="${piholeGitDir}/advanced/Templates"
++piholeGitDir="/usr/share/pihole"
++piholeSchemaTemplateDir="${piholeGitDir}/templates"
+ GRAVITYDB=$(getFTLConfigValue files.gravity)
+ GRAVITY_TMPDIR=$(getFTLConfigValue files.gravity_tmp)
+ gravityDBschema="${piholeSchemaTemplateDir}/gravity.db.sql"
+diff --git a/pi-hole-6.4/pihole b/pi-hole-6.4/pihole
+index 23856c8e7a33..5856dcc4b40b 100755
+--- a/pi-hole-6.4/pihole
++++ b/pi-hole-6.4/pihole
+@@ -9,12 +9,13 @@
+ # This file is copyright under the latest version of the EUPL.
+ # Please see LICENSE file for your rights under this license.
+ 
+-PI_HOLE_SCRIPT_DIR="/opt/pihole"
++readonly LINUX_DISTRO_PACKAGE="Alpine"
++readonly PI_HOLE_SCRIPT_DIR="/usr/share/pihole"
+ 
+ # PI_HOLE_BIN_DIR is not readonly here because in some functions (checkout),
+ # they might get set again when the installer is sourced. This causes an
+ # error due to modifying a readonly variable.
+-PI_HOLE_BIN_DIR="/usr/local/bin"
++PI_HOLE_BIN_DIR="/usr/bin"
+ 
+ readonly colfile="${PI_HOLE_SCRIPT_DIR}/COL_TABLE"
+ # shellcheck source=./advanced/Scripts/COL_TABLE
+-- 
+2.53.0
+

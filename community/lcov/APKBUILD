@@ -1,0 +1,37 @@
+# Contributor: Shiva Velmurugan <shiv@shiv.me>
+# Maintainer: Shiva Velmurugan <shiv@shiv.me>
+pkgname=lcov
+pkgver=2.3.1
+pkgrel=1
+pkgdesc="LCOV is an extension to GCOV. It provides a graphical frontend for converage information"
+url="https://github.com/linux-test-project/lcov"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="
+	bash
+	perl
+	perl-capture-tiny
+	perl-datetime
+	perl-devel-cover
+	perl-digest-md5
+	perl-json
+	perl-json-xs
+	perl-memory-process
+	perl-time-hires
+	perl-timedate
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/linux-test-project/lcov/releases/download/v$pkgver/lcov-$pkgver.tar.gz"
+options="!check"
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX="/usr" CFG_DIR="/etc" install
+}
+
+check() {
+	make test
+}
+
+sha512sums="
+42a6a09a6cacb6dd840bf6343a86dbeb5c655c724b64b699213d58ac7b4a8768d046e6e086f11ee35a36ad15610a8bb6b2b8451b456fffd858805a12d68efb63  lcov-2.3.1.tar.gz
+"

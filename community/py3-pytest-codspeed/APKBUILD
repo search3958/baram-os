@@ -1,0 +1,51 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=py3-pytest-codspeed
+pkgver=5.0.3
+pkgrel=0
+pkgdesc="Pytest plugin to create CodSpeed benchmarks"
+url="https://codspeed.io/"
+arch="noarch"
+license="MIT"
+depends="
+	py3-pytest
+	py3-rich
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="py3-pytest-codspeed-$pkgver.tar.gz::https://files.pythonhosted.org/packages/source/p/pytest-codspeed/pytest_codspeed-$pkgver.tar.gz"
+builddir="$srcdir/pytest_codspeed-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+
+	# disable following tests due to missing
+	# tests/conftest.py in tarball
+	.testenv/bin/python3 -m pytest \
+		--ignore=tests/test_pytest_plugin.py \
+		--ignore=tests/test_pytest_plugin_cpu_instrumentation.py \
+		--ignore=tests/test_pytest_plugin_walltime.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	install -Dm644 README.md -t "$pkgdir"/usr/share/doc/$pkgname
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname
+}
+
+sha512sums="
+ffbb2cfedba89da8ec55a9a345daf6d1af8822e9309fdd75f2dfa35299585e6f369ccc5550cfa86506df0ff85d8882cc6c09a7406c65a026056ee6c32998cb48  py3-pytest-codspeed-5.0.3.tar.gz
+"

@@ -1,0 +1,33 @@
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=uncrustify
+pkgver=0.83.0
+pkgrel=0
+pkgdesc="Source code beautifier"
+url="https://github.com/uncrustify/uncrustify"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="cmake python3 samurai"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/uncrustify/uncrustify/archive/uncrustify-$pkgver.tar.gz"
+builddir="$srcdir/uncrustify-uncrustify-$pkgver"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_INSTALL_PREFIX=/usr
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm644 etc/*.cfg -t "$pkgdir"/usr/share/$pkgname
+}
+
+sha512sums="
+a50ba2eb7ed352d07f89e11be724c93e3b5724d9aa7249273d149f3f6ac0096fa704e07f79323e57442071bac0b29e942b118b0a58a315ca005e1570ecab57d9  uncrustify-0.83.0.tar.gz
+"

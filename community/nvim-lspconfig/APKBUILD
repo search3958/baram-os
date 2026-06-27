@@ -1,0 +1,35 @@
+# Contributor: Maxim Karasev <begs@disroot.org>
+# Contributor: Dhruvin Gandhi <contact@dhru.vin>
+maintainer="Natanael Copa <ncopa@alpinelinux.org>"
+pkgname=nvim-lspconfig
+pkgver=2.5.0
+pkgrel=2
+pkgdesc="quickstart configurations for the neovim LSP client"
+url="https://github.com/neovim/nvim-lspconfig"
+arch="noarch"
+license="Apache-2.0"
+subpackages="$pkgname-doc"
+source="https://github.com/neovim/nvim-lspconfig/archive/refs/tags/v$pkgver/nvim-lspconfig-$pkgver.tar.gz"
+depends="neovim"
+options="!check" # requires vusted
+
+build() {
+	nvim -u NONE -i NONE -e --headless -c "helptags doc" -c quit
+}
+
+package() {
+	local plgdir="$pkgdir"/usr/share/nvim/site/pack/dist/opt/$pkgname
+	install -d "$plgdir"
+	cp -a lsp lua plugin "$plgdir"
+	install -Dm644 doc/*.txt doc/tags -t "$plgdir"/doc
+	install -Dm644 doc/*.md README.md -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+doc() {
+	default_doc
+	amove usr/share/nvim/site/pack/dist/opt/$pkgname/doc
+}
+
+sha512sums="
+b620cf9cdf778dffb8302334a472dda2dec430e33cc67f2eb0363f263fdd626ddb42fb68207611cffdcb1e3b9e9fa58b3ae2b56b75d182f391d089aa3477301f  nvim-lspconfig-2.5.0.tar.gz
+"

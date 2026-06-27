@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+
+name=miniflux
+description="Miniflux Feed Reader"
+
+: ${miniflux_opts:="-config-file /etc/miniflux.conf"}
+: ${miniflux_log_file:="/var/log/miniflux.log"}
+
+command="/usr/bin/miniflux"
+command_args="$miniflux_opts"
+command_background="yes"
+command_user="miniflux:miniflux"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="$miniflux_log_file"
+error_log="$miniflux_log_file"
+
+depend() {
+	need net
+	after firewall postgresql
+}
+
+start_pre() {
+	checkpath -f -m 0644 -o "$command_user" "$miniflux_log_file"
+}

@@ -1,0 +1,34 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=efm-langserver
+pkgver=0.0.56
+pkgrel=2
+pkgdesc="General purpose language server"
+url="https://github.com/mattn/efm-langserver"
+arch="all"
+license="MIT"
+makedepends="go"
+options="net chmod-clean"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/mattn/efm-langserver/archive/refs/tags/v$pkgver.tar.gz"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	go build -ldflags="-X main.revision=$pkgver" -o $pkgname .
+}
+
+check() {
+	go test ./...
+}
+
+package() {
+	install -Dm755 $pkgname "$pkgdir"/usr/bin/$pkgname
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}
+
+sha512sums="
+7ec1c9a31f933322d1b1a06d4afe110651b51125da60d87f0bfe4944e39d83f007642e0cd483348be13dee7e62b2ae2c48863aee9bcf174f587c00056168bbb2  efm-langserver-0.0.56.tar.gz
+"

@@ -1,0 +1,36 @@
+# Contributor: Carlo Landmeter <clandmeter@alpinelinux.org>
+# Maintainer: Carlo Landmeter <clandmeter@alpinelinux.org>
+pkgname=paper-gtk-theme
+pkgver=2.1.0
+pkgrel=3
+pkgdesc="Paper Theme Suite"
+url="https://snwh.org/paper"
+arch="noarch"
+options="!strip"
+license="GPL-3.0-only"
+makedepends="automake autoconf libtool"
+source="https://dev.alpinelinux.org/archive/paper-gtk-theme/paper-gtk-theme-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	autoreconf -vif
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+2ceffba42a03d897694d1a1f4817736f6750d393174582f4dc3d19ab5563988d521558d9d7c49a3075386999562907a3ae9eea2734a0f9f423e438c89756c65c  paper-gtk-theme-2.1.0.tar.gz
+"

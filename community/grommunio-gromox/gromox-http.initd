@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+supervisor=supervise-daemon
+name=$RC_SVCNAME
+description="Gromox HTTP service"
+description_reload="Reload configuration without exiting"
+
+command="/usr/libexec/gromox/http"
+
+extra_started_commands="reload"
+
+depend() {
+    after mariadb
+}
+
+reload() {
+    ebegin "Reloading configuration"
+    $supervisor $RC_SVCNAME --signal HUP
+    eend $?
+}

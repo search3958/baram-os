@@ -1,0 +1,25 @@
+#!/bin/sh
+
+if [ "$APK_SCRIPT" = 'post-install' ]; then
+	modprobe fuse
+
+	cat >&2 <<-EOF
+	*
+	* To enable access to XDG directories (e.g. ~/Desktop, ~/Downloads, ...) in
+	* Flatpak apps, run xdg-user-dirs-update (from xdg-user-dirs package) as a
+	* regular user that will use Flatpak.
+	*
+	EOF
+fi
+
+# See https://gitlab.alpinelinux.org/alpine/aports/-/issues/16912
+if ! [ -e /var/lib/flatpak/repo/config ]; then
+	cat > /var/lib/flatpak/repo/config <<-EOF
+	[core]
+	repo_version=1
+	mode=bare-user-only
+	min-free-space-size=500MB
+	EOF
+fi
+
+exit 0

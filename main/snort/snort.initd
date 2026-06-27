@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+
+command="/usr/bin/snort"
+command_args="$SNORT_OPTS"
+extra_commands="reload"
+required_files="$CONF"
+
+depend() {
+	need net
+	after firewall
+}
+
+reload() {
+	ebegin "Reloading snort rules"
+	start-stop-daemon --stop --quiet --signal HUP --pidfile ${PIDFILE}
+	#FIXME
+	return 0
+	eend $?
+}

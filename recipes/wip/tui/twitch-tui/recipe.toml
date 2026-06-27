@@ -1,8 +1,0 @@
-#TODO rustyline crate error
-[source]
-git = "https://github.com/Xithrius/twitch-tui"
-[build]
-template = "cargo"
-dependencies = [
-    "openssl3",
-]

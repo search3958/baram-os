@@ -1,0 +1,8 @@
+# basic PAM configuration for Alpine.
+
+auth required pam_unix.so nullok
+auth required pam_nologin.so
+auth required pam_env.so
+
+-auth optional pam_gnome_keyring.so
+-auth optional pam_kwallet5.so

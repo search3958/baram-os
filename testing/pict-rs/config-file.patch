@@ -1,0 +1,250 @@
+--- a/pict-rs.toml
++++ b/pict-rs.toml
+@@ -3,7 +3,7 @@
+ ## Optional: pict-rs binding address
+ # environment variable: PICTRS__SERVER__ADDRESS
+ # default: 0.0.0.0:8080
+-address = '0.0.0.0:8080'
++address = '127.0.0.1:8080'
+ 
+ ## Optional: whether to reject any operations that would change the state of pict-rs.
+ # environment variable: PICTRS__SERVER__READ_ONLY
+@@ -47,14 +47,14 @@ cleanup_temporary_directory = true
+ # default: empty
+ #
+ # Note that both certificate and private_key must be set to enable TLS
+-certificate = "/path/to/server.crt"
++#certificate = "/path/to/server.crt"
+ 
+ ## Optional: path to server key to enable TLS
+ # environment variable: PICTRS__SERVER__PRIVATE_KEY
+ # default: empty
+ #
+ # Note that both private_key and certificate must be set to enable TLS
+-private_key = "/path/to/server.key"
++#private_key = "/path/to/server.key"
+ 
+ ## Client configuration
+ [client]
+@@ -110,7 +110,7 @@ log_requests = false
+ 
+ 
+ ## Console configuration
+-[tracing.console]
++#[tracing.console]
+ ## Optional: console address
+ # environment variable: PICTRS__TRACING__CONSOLE__ADDRESS
+ # default: empty
+@@ -139,7 +139,7 @@ log_requests = false
+ # ```
+ # $ tokio-console http://localhost:6669
+ # ```
+-address = '0.0.0.0:6669'
++#address = '0.0.0.0:6669'
+ 
+ ## Optional: console buffer capacity
+ # environment variable: PICTRS__TRACING__CONSOLE__BUFFER_CAPACITY
+@@ -147,11 +147,11 @@ address = '0.0.0.0:6669'
+ #
+ # This is the number of _events_ to buffer, not the number of bytes. In reality, the amount of
+ # RAM used will be significatnly larger (in bytes) than the buffer capacity (in events)
+-buffer_capacity = 102400
++#buffer_capacity = 102400
+ 
+ 
+ ## OpenTelemetry configuration
+-[tracing.opentelemetry]
++#[tracing.opentelemetry]
+ ## Optional: url for exporting otlp traces
+ # environment variable: PICTRS__TRACING__OPENTELEMETRY__URL
+ # default: empty
+@@ -160,36 +160,36 @@ buffer_capacity = 102400
+ # When set, pict-rs will export OpenTelemetry traces to the provided URL. If the URL is
+ # inaccessible, this can cause performance degredation in pict-rs, so it is best left unset unless
+ # you have an OpenTelemetry collector
+-url = 'http://localhost:4317/'
++#url = 'http://localhost:4317/'
+ 
+ ## Optional: name to relate OpenTelemetry traces
+ # environment variable: PICTRS__TRACING__OPENTELEMETRY__SERVICE_NAME
+ # default: pict-rs
+-service_name = 'pict-rs'
++#service_name = 'pict-rs'
+ 
+ ## Optional: trace level to export
+ # environment variable: PICTRS__TRACING__OPENTELEMETRY__TARGETS
+ # default: info
+ #
+ # Follows the same format as RUST_LOG
+-targets = 'info'
++#targets = 'info'
+ 
+-[metrics]
++#[metrics]
+ ## Optional: enable a prometheus scrape endpoint for pict-rs
+ # environment variable: PICTRS__METRICS__PROMETHEUS_ADDRESS
+ # default: empty
+ #
+ # Setting this value enables pointing prometheus at pict-rs to receive metrics. It can also be
+ # queried with curl.
+-prometheus_address = "0.0.0.0:9000"
++#prometheus_address = "0.0.0.0:9000"
+ 
+ 
+ ## Configuration for migrating from pict-rs 0.4
+-[old_repo]
++#[old_repo]
+ ## Optional: path to sled repository
+ # environment variable: PICTRS__OLD_REPO__PATH
+ # default: /mnt/sled-repo
+-path = '/mnt/sled-repo'
++#path = '/mnt/sled-repo'
+ 
+ 
+ ## Media Processing Configuration
+@@ -628,7 +628,7 @@ type = 'sled'
+ ## Optional: path to sled repository
+ # environment variable: PICTRS__REPO__PATH
+ # default: /mnt/sled-repo
+-path = '/mnt/sled-repo'
++path = '/var/lib/pict-rs/sled-repo'
+ 
+ ## Optional: in-memory cache capacity for sled data (in bytes)
+ # environment variable: PICTRS__REPO__CACHE_CAPACITY
+@@ -641,32 +641,32 @@ cache_capacity = 67108864
+ #
+ # Used in combination with the /internal/export endpoint to dump the current sled database into a
+ # new file. This can be helpful for backing up a running pict-rs server.
+-export_path = "/mnt/exports"
++export_path = "/var/lib/pict-rs/exports"
+ 
+ 
+ ## Postgres repo configuration example
+-[repo]
++#[repo]
+ ## Optional: database backend to use
+ # environment variable: PICTRS__REPO__TYPE
+ # default: sled
+ #
+ # available options: sled, postgres, fjall
+-type = 'postgres'
++#type = 'postgres'
+ 
+ ## Required: URL to postgres database
+ # environment variable: PICTRS__REPO__URL
+ # default: empty
+-url = 'postgres://user:password@host:5432/db'
++#url = 'postgres://user:password@host:5432/db'
+ 
+ ## Optional: Whether to use TLS when connecting to postgres
+ # environment variable: PICTRS__REPO__USE_TLS
+ # default: false
+-use_tls = false
++#use_tls = false
+ 
+ ## Optional: The CA Certificate used to verify the postgres TLS certificate
+ # environment variable: PICTRS__REPO__CERTIFICATE_FILE
+ # default: empty
+-certificate_file = '/etc/ca-certificate.crt'
++#certificate_file = '/etc/ca-certificate.crt'
+ 
+ 
+ ## Fjall repo configuration example
+@@ -681,7 +681,7 @@ type = 'fjall'
+ ## Optional: path to fjall repository
+ # environment variable: PICTRS__REPO__FJALL_PATH
+ # default: /mnt/fjall-repo
+-fjall_path = '/mnt/fjall-repo'
++fjall_path = '/var/lib/pict-rs/fjall-repo'
+ 
+ ## Optional: path to write fjall's contents to
+ # environment variable: PICTRS__REPO__DEBUG_DUMP_DB_PATH
+@@ -706,17 +706,17 @@ type = 'filesystem'
+ ## Optional: path to uploaded media
+ # environment variable: PICTRS__STORE__PATH
+ # default: /mnt/files
+-path = '/mnt/files'
++path = '/var/lib/pict-rs/files'
+ 
+ 
+ ## Object media storage example
+-[store]
++#[store]
+ ## Optional: type of media storage to use
+ # environment variable: PICTRS__STORE__TYPE
+ # default: filesystem
+ #
+ # available options: filesystem, object_storage
+-type = 'object_storage'
++#type = 'object_storage'
+ 
+ ## Required: endpoint at which the object storage exists
+ # environment variable: PICTRS__STORE__ENDPOINT
+@@ -725,7 +725,7 @@ type = 'object_storage'
+ # examples:
+ # - `http://localhost:9000` # minio
+ # - `https://s3.dualstack.eu-west-1.amazonaws.com` # s3
+-endpoint = 'http://minio:9000'
++#endpoint = 'http://minio:9000'
+ 
+ ## Optional: How to format object storage requests
+ # environment variable: PICTRS__STORE__USE_PATH_STYLE
+@@ -735,34 +735,34 @@ endpoint = 'http://minio:9000'
+ # When false, objects will be fetched from http{s}://{bucket_name}.{endpoint}:{port}/{object}
+ #
+ # Set to true when using minio
+-use_path_style = false
++#use_path_style = false
+ 
+ ## Required: object storage bucket name
+ # environment variable: PICTRS__STORE__BUCKET_NAME
+ # default: empty
+-bucket_name = 'pict-rs'
++#bucket_name = 'pict-rs'
+ 
+ ## Required: object storage region
+ # environment variable: PICTRS__STORE__REGION
+ # default: empty
+ #
+ # When using minio, this can be set to `minio`
+-region = 'minio'
++#region = 'minio'
+ 
+ ## Required: object storage access key
+ # environment variable: PICTRS__STORE__ACCESS_KEY
+ # default: empty
+-access_key = 'ACCESS_KEY'
++#access_key = 'ACCESS_KEY'
+ 
+ ## Required: object storage secret key
+ # environment variable: PICTRS__STORE__SECRET_KEY
+ # default: empty
+-secret_key = 'SECRET_KEY'
++#secret_key = 'SECRET_KEY'
+ 
+ ## Optional: object storage session token
+ # environment variable: PICTRS__STORE__SESSION_TOKEN
+ # default: empty
+-session_token = 'SESSION_TOKEN'
++#session_token = 'SESSION_TOKEN'
+ 
+ ## Optional: set how long pict-rs will wait (in seconds) for a response from object storage
+ # environment variable: PICTRS__STORE__CLIENT_TIMEOUT
+@@ -770,7 +770,7 @@ session_token = 'SESSION_TOKEN'
+ #
+ # This value is the total wait time, and not additional wait time on top of the
+ # signature_expiration.
+-client_timeout = 30
++#client_timeout = 30
+ 
+ ## Optional: URL to a CDN at which pict-rs files are available for web consumption
+ # environment variable: PICTRS__STORE__PUBLIC_ENDPOINT
+@@ -783,7 +783,7 @@ client_timeout = 30
+ # Note that in order for clients to fetch media from this URL directly, any server between the
+ # client and pict-rs must not be configured to follow redirects, or else that server will fetch from
+ # this public URL and serve the file itself.
+-public_endpoint = "https://pict-rs.some.cdn.example.com/subpath/"
++#public_endpoint = "https://pict-rs.some.cdn.example.com/subpath/"
+ 
+ ## Optional: Whether to tag the health-check file with the tag pict-rs:health-check
+ # environment variable: PICT_RS__STORE__TAG_HEALTHZ

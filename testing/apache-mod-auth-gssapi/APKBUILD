@@ -1,0 +1,39 @@
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Maintainer: Francesco Colista <fcolista@alpinelinux.org>
+pkgname=apache-mod-auth-gssapi
+pkgver=1.6.5
+pkgrel=1
+pkgdesc="GSSAPI authentication for Apache"
+url="https://github.com/gssapi/mod_auth_gssapi"
+arch="all"
+license="MIT"
+depends="apache2"
+makedepends="apache2-dev krb5-dev openssl-dev>3
+automake autoconf m4 libtool flex bison"
+options="!check" # some packages missing from Alpine, see: https://github.com/gssapi/mod_auth_gssapi/ on "Tests" paragraph
+source="$pkgname-$pkgver.zip::https://github.com/gssapi/mod_auth_gssapi/archive/v$pkgver.zip
+mod-auth-gssapi.conf"
+builddir="$srcdir"/mod_auth_gssapi-$pkgver
+
+prepare() {
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--enable-static=no
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	mkdir -p "$pkgdir"/etc/apache2/conf.d
+	install -D -m644 ../../mod-auth-gssapi.conf "$pkgdir"/etc/apache2/conf.d/mod-auth-gssapi.conf
+	install -Dm644 COPYING "$pkgdir"/usr/share/licenses/$pkgname/COPYING
+}
+
+sha512sums="
+356f2b0287bc8d3a976f1c5251654362b6489f0cda177fe43811fa873b8bccd6de6b5cb111dc8c13b40d3235ee4200aeac0bfa49ae8f3575b96292a65f647e51  apache-mod-auth-gssapi-1.6.5.zip
+45658d5446f18315de1a66b682a0669d15b0782e46e649b7d5c4bea2e1c9735909ee1b4d36e9eaa0e54bac68773bb68610d4a0bf68a9eccb368d569489246dfa  mod-auth-gssapi.conf
+"

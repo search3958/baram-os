@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+supervisor=supervise-daemon
+
+name="Dendrite"
+description="Second-generation Matrix homeserver written in Go"
+
+: ${dendrite_config:="/etc/dendrite/dendrite.yaml"}
+
+command="/usr/bin/dendrite"
+command_args="-config $dendrite_config $dendrite_opts"
+command_user="dendrite:dendrite"
+
+# make relative paths in config relative to the state directory
+directory="/var/lib/dendrite"
+
+# increase the amount of allowed file descriptors
+rc_ulimit="-n 65535"
+
+depend() {
+	need net
+	after firewall
+	use postgresql turnserver
+}
+
+start_pre() {
+	checkpath --directory --owner "$command_user" --mode 755 /var/lib/dendrite
+	checkpath --directory --owner "$command_user" --mode 755 /var/log/dendrite
+}

@@ -1,0 +1,31 @@
+# Maintainer: Daniel Fancsali <fancsali@gmail.com>
+pkgname=xfce4-systemload-plugin
+pkgver=1.3.3
+pkgrel=0
+pkgdesc="System load plugin for the Xfce Panel"
+url="https://docs.xfce.org/panel-plugins/xfce4-systemload-plugin/start"
+arch="all"
+license="BSD-2-Clause"
+makedepends="xfce4-panel-dev libxfce4ui-dev"
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-systemload-plugin/${pkgver%.*}/xfce4-systemload-plugin-$pkgver.tar.bz2"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--libexecdir=/usr/lib/xfce4 \
+		--localstatedir=/var \
+		--disable-static
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+5dd74af41df01af1cf064effd33e13f26f530ffe0a043cce7b6519187393099a4da7e8c8e035c50796d1d19f09e38d2d75966e1e4fa5d1db8cb44d0e020a802c  xfce4-systemload-plugin-1.3.3.tar.bz2
+"

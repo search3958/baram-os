@@ -1,0 +1,39 @@
+# Contributor: Pedro Filipe <xpecex@outlook.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=py3-patiencediff
+pkgver=0.2.18
+pkgrel=2
+pkgdesc="Patiencediff Python and Rust implementations"
+url="https://www.breezy-vcs.org/"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	py3-gpep517
+	py3-setuptools-rust
+	python3-dev
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/breezy-team/patiencediff/archive/v$pkgver.tar.gz"
+builddir="$srcdir/patiencediff-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+12514e83c2bb8770f90955cba484775cd649b8ea8512c8a8df52d419b0d98fade5bb22246fc9558e94aa868fb854ea8d5a29531de494c48370778806a86e30fe  py3-patiencediff-0.2.18.tar.gz
+"

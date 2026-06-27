@@ -1,0 +1,29 @@
+We still need to keep
+
+  #journald = ""
+
+for tests to build.
+
+--- a/crates/arti/src/arti-example-config.toml
++++ b/crates/arti/src/arti-example-config.toml
+@@ -92,17 +92,15 @@
+ # the system syslog. Empty string means not to use syslog.
+ #syslog = ""
+ 
+-# As above, but specify filtering directives for sending trace messages to
+-# the journald logging system.  Empty string means not to use journald.
++# No journald support in Alpine.  Empty string means not to use journald.
+ #journald = ""
+ 
+ # You can also configure one or more log files, with different filters, and optional
+ # rotation.
+ #
+-# For example (not the default):
++# Example for use with the Alpine arti-openrc package (not the default):
+ #files = [
+-#         {path = "~/logs/debug.log", filter="debug"},
+-#         {path = "~/logs/trace.log", filter="trace", rotate="daily"},
++#         {path = "/var/log/arti/info.log", filter="info"},
+ #]
+ 
+ # Whether to log sensitive information (such as target hostnames and ip addresses)

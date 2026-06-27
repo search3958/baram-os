@@ -1,0 +1,47 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-websockets
+_pkgname=websockets
+pkgver=16.0
+pkgrel=1
+pkgdesc="An implementation of the WebSocket Protocol (RFC 6455)"
+url="https://websockets.readthedocs.io/"
+arch="all"
+license="BSD-3-Clause"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/aaugustin/websockets/archive/$pkgver.tar.gz
+	skip-reconnect-test.patch
+	"
+builddir="$srcdir"/$_pkgname-$pkgver
+options="!check" # fail for now with context manager errors
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	export WEBSOCKETS_TESTS_TIMEOUT_FACTOR=30
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ed0bfe6e6402c1504680e9afcb7478e06a5f1af6c0761e35a9a6192569b59c5cce5d0a9f0aaea35922e499a3968dba409cb8d398829e9dff6466db5cb5b98b98  py3-websockets-16.0.tar.gz
+0849fa337f6a00297774cc3a3dd61497bbc99dc3b12632a385056a82e50fd04bf057068eeef6f9b705c257e3017b127ee38183461615d09549145889767bdc0b  skip-reconnect-test.patch
+"

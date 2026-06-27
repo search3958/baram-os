@@ -1,0 +1,235 @@
+# Contributor: Leonardo Arena <rnalrd@alpinelinux.org>
+# Contributor: Francesco Colista <fcolista@alpinelinux.org>
+# Contributor: Nicolas Lorin <androw95220@gmail.com>
+# Contributor: John Regan <john@jrjrtech.com>
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ejabberd
+pkgver=26.02
+pkgrel=0
+
+_base64url=1.0.1
+_cache_tab=1.0.33
+_eimp=1.0.26
+_ejabberd_po=9c0942f37b4239cef4291221e8997974bd8c63cc
+_epam=1.0.14
+_eredis=1.7.1
+_esip=1.0.59
+_ezlib=1.0.15
+_fast_tls=1.1.25
+_fast_xml=1.1.57
+_fast_yaml=1.0.39
+_idna=7.1.0
+_jiffy=1.1.2
+_jose=1.11.12
+_luerl=1.5.1
+_mqtree=1.0.19
+_p1_acme=1.0.30
+_p1_mysql=1.0.27
+_p1_oauth2=0.6.14
+_p1_pgsql=1.1.38
+_p1_utils=1.0.28
+_pkix=1.0.10
+_sqlite3=1.1.15
+_stringprep=1.0.33
+_stun=1.2.21
+_unicode_util_compat=0.7.0
+_xmpp=1.12.0
+_yconf=1.0.22
+
+pkgdesc="Robust, Ubiquitous and Massively Scalable Messaging Platform for XMPP, MQTT, and SIP Protocols"
+url="https://www.ejabberd.im/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="
+	erlang
+	elixir
+	"
+makedepends="
+	autoconf
+	automake
+	erlang-dev
+	expat-dev
+	gd-dev
+	heimdal-dev
+	linux-pam-dev
+	openssl-dev
+	rebar3
+	sqlite-dev
+	yaml-dev
+	zlib-dev
+	"
+pkgusers="ejabberd"
+pkggroups="ejabberd"
+install="$pkgname.pre-install"
+options="!check" # test suite requires all kinds of services running
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-openrc
+	$pkgname-bash-completion
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/processone/ejabberd/archive/$pkgver.tar.gz
+	base64url-$_base64url.tar.gz::https://github.com/dvv/base64url/archive/refs/tags/$_base64url.tar.gz
+	cache_tab-$_cache_tab.tar.gz::https://github.com/processone/cache_tab/archive/refs/tags/$_cache_tab.tar.gz
+	eimp-$_eimp.tar.gz::https://github.com/processone/eimp/archive/refs/tags/$_eimp.tar.gz
+	ejabberd_po-$_ejabberd_po.tar.gz::https://github.com/processone/ejabberd-po/archive/$_ejabberd_po.tar.gz
+	epam-$_epam.tar.gz::https://github.com/processone/epam/archive/refs/tags/$_epam.tar.gz
+	eredis-$_eredis.tar.gz::https://github.com/Nordix/eredis/archive/refs/tags/v$_eredis.tar.gz
+	esip-$_esip.tar.gz::https://github.com/processone/esip/archive/refs/tags/$_esip.tar.gz
+	ezlib-$_ezlib.tar.gz::https://github.com/processone/ezlib/archive/refs/tags/$_ezlib.tar.gz
+	fast_tls-$_fast_tls.tar.gz::https://github.com/processone/fast_tls/archive/refs/tags/$_fast_tls.tar.gz
+	fast_xml-$_fast_xml.tar.gz::https://github.com/processone/fast_xml/archive/refs/tags/$_fast_xml.tar.gz
+	fast_yaml-$_fast_yaml.tar.gz::https://github.com/processone/fast_yaml/archive/refs/tags/$_fast_yaml.tar.gz
+	idna-$_idna.tar.gz::https://github.com/benoitc/erlang-idna/archive/refs/tags/$_idna.tar.gz
+	jiffy-$_jiffy.tar.gz::https://github.com/davisp/jiffy/archive/refs/tags/$_jiffy.tar.gz
+	jose-$_jose.tar.gz::https://github.com/potatosalad/erlang-jose/archive/refs/tags/$_jose.tar.gz
+	luerl-$_luerl.tar.gz::https://github.com/rvirding/luerl/archive/refs/tags/v$_luerl.tar.gz
+	mqtree-$_mqtree.tar.gz::https://github.com/processone/mqtree/archive/refs/tags/$_mqtree.tar.gz
+	p1_acme-$_p1_acme.tar.gz::https://github.com/processone/p1_acme/archive/refs/tags/$_p1_acme.tar.gz
+	p1_mysql-$_p1_mysql.tar.gz::https://github.com/processone/p1_mysql/archive/refs/tags/$_p1_mysql.tar.gz
+	p1_oauth2-$_p1_oauth2.tar.gz::https://github.com/processone/p1_oauth2/archive/refs/tags/$_p1_oauth2.tar.gz
+	p1_pgsql-$_p1_pgsql.tar.gz::https://github.com/processone/p1_pgsql/archive/refs/tags/$_p1_pgsql.tar.gz
+	p1_utils-$_p1_utils.tar.gz::https://github.com/processone/p1_utils/archive/refs/tags/$_p1_utils.tar.gz
+	pkix-$_pkix.tar.gz::https://github.com/processone/pkix/archive/refs/tags/$_pkix.tar.gz
+	sqlite3-$_sqlite3.tar.gz::https://github.com/processone/erlang-sqlite3/archive/refs/tags/$_sqlite3.tar.gz
+	stringprep-$_stringprep.tar.gz::https://github.com/processone/stringprep/archive/refs/tags/$_stringprep.tar.gz
+	stun-$_stun.tar.gz::https://github.com/processone/stun/archive/refs/tags/$_stun.tar.gz
+	unicode_util_compat-$_unicode_util_compat.tar.gz::https://github.com/benoitc/unicode_util_compat/archive/refs/tags/$_unicode_util_compat.tar.gz
+	xmpp-$_xmpp.tar.gz::https://github.com/processone/xmpp/archive/refs/tags/$_xmpp.tar.gz
+	yconf-$_yconf.tar.gz::https://github.com/processone/yconf/archive/refs/tags/$_yconf.tar.gz
+
+	$pkgname.initd
+	$pkgname.logrotate
+	$pkgname.confd
+
+	jiffy-double-conversion-loongarch64.patch
+	"
+
+export HEX_HOME="${HEX_HOME:-"$srcdir/hex"}"
+export MIX_HOME="${MIX_HOME:-"$srcdir/mix"}"
+export MIX_ARCHIVES="${MIX_ARCHIVES:-"$srcdir/mix/archives"}"
+
+prepare() {
+	mkdir -vp _build/default/lib
+	for i in \
+	base64url-$_base64url \
+	cache_tab-$_cache_tab \
+	eimp-$_eimp \
+	epam-$_epam \
+	eredis-$_eredis \
+	esip-$_esip \
+	ezlib-$_ezlib \
+	fast_tls-$_fast_tls \
+	fast_xml-$_fast_xml \
+	fast_yaml-$_fast_yaml \
+	jiffy-$_jiffy \
+	luerl-$_luerl \
+	mqtree-$_mqtree \
+	p1_acme-$_p1_acme \
+	p1_mysql-$_p1_mysql \
+	p1_oauth2-$_p1_oauth2 \
+	p1_pgsql-$_p1_pgsql \
+	p1_utils-$_p1_utils \
+	pkix-$_pkix \
+	stringprep-$_stringprep \
+	stun-$_stun \
+	unicode_util_compat-$_unicode_util_compat \
+	xmpp-$_xmpp \
+	yconf-$_yconf; do
+		mv -v "$srcdir"/"$i" "$builddir"/_build/default/lib/${i%-*}
+	done
+	mv -v "$srcdir"/ejabberd-po-$_ejabberd_po "$builddir"/_build/default/lib/ejabberd_po
+	mv -v "$srcdir"/erlang-sqlite3-$_sqlite3 "$builddir"/_build/default/lib/sqlite3
+	mv -v "$srcdir"/erlang-idna-$_idna "$builddir"/_build/default/lib/idna
+	mv -v "$srcdir"/erlang-jose-$_jose  "$builddir"/_build/default/lib/jose
+
+	if command -v mix >/dev/null; then
+		mix local.hex --force
+		mix local.rebar --force rebar3 /usr/bin/rebar3
+	fi
+
+	default_prepare
+	GIT_DIR=. sh ./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--sbindir=/usr/sbin \
+		--libdir=/usr/lib/ejabberd \
+		--localstatedir=/var \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--with-rebar=rebar3 \
+		--disable-tools \
+		--enable-user=ejabberd \
+		--enable-group=ejabberd \
+		--enable-all
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	install -Dm755 tools/captcha* \
+		-t "$pkgdir"/usr/share/doc/$pkgname/examples
+	install -Dm644 tools/ejabberdctl.bc \
+		"$pkgdir"/usr/share/bash-completion/completions/ejabberdctl
+
+	install -d "$pkgdir"/var/spool/$pkgname
+	install -d "$pkgdir"/var/lib/$pkgname
+	install -D -m0644 "$srcdir"/$pkgname.logrotate \
+		"$pkgdir"/etc/logrotate.d/$pkgname
+	install -m755 -D "$srcdir"/$pkgname.initd "$pkgdir"/etc/init.d/$pkgname
+	install -m644 -D "$srcdir"/$pkgname.confd "$pkgdir"/etc/conf.d/$pkgname
+	chown -R ejabberd:ejabberd "$pkgdir"/var/log/ejabberd
+	chown -R ejabberd:ejabberd "$pkgdir"/var/spool/ejabberd
+	chown -R ejabberd:ejabberd "$pkgdir"/var/lib/ejabberd
+	chgrp ejabberd "$pkgdir"/etc/ejabberd/ejabberd.yml \
+		"$pkgdir"/etc/ejabberd/ejabberdctl.cfg "$pkgdir"/etc/ejabberd
+
+	cd "$pkgdir"/usr/lib/ejabberd/ejabberd-$pkgver/priv/bin/
+	rm -vf captcha.sh
+	ln -vsf ../../../*/priv/bin/* .
+}
+
+sha512sums="
+0057f73ce996173365e73ca3779027ff656f0c678ee632b50815703c5593a9c94818fa3eb635e73739f42af9e4beb955dcbbd9bf76451b768f345156e9cdbc9f  ejabberd-26.02.tar.gz
+7398dc99078053b6e0544eb8ca93e9616549493c02245084c220ec854f429139dcaba38dd522858dd74b95067979a3ec4378eb3abd5f6d1662af27687381c738  base64url-1.0.1.tar.gz
+f9dcfd7de43080a3b669e05d6b6fe7d1bdaaac371d6346d9bb3bb3ac789de046780e6056c0c56eeadcf06073721a26e0d81af301f6f27c19c4fe29eb6d48e181  cache_tab-1.0.33.tar.gz
+2cb77f89f48905fafdf6009ad362c82fb5820ec58b9fb2304ef7aae259044ea12714886ada326142ce724955b5b4567c18da52dd4fc576caef0de42779003cf2  eimp-1.0.26.tar.gz
+1f17c267257c6b5e5f5640ac58140441f71d70c1f25d9a4f82e49feb17b7e9a0587c42d74a962c4b6a7ee3d74089d5d6d9d6801fb79886e67e598c97d23557d4  ejabberd_po-9c0942f37b4239cef4291221e8997974bd8c63cc.tar.gz
+a8ff1e6095ad6f2cdf8a9766a7d846377e6ac5659851078a67a80595710fbd1552f900f0b4cad0baa54d63d3fbbe6009371f3a51dcaffe95c17565c0f7177678  epam-1.0.14.tar.gz
+e9ce866dc6723001bf2d1410a8b906fca8e6bb1009216e62c031b924e376a673e057782c5769a2d49c9f151f0a820c99061c53d3360f609e2e4925e7310b3eb0  eredis-1.7.1.tar.gz
+5622e41e3bbfdeb2de356af7f9964390780372393ead20956edb1cd1e3777f10591decfb7309a947ccdb5085d5deb802d450b81d2a3d223e3b599c958b8337be  esip-1.0.59.tar.gz
+ecdc551ccd93c483d1a7bcc2e3101527fa02d73ec751eea6fe8aa981df3239b18d6c0fb1d905478e9500ac8913aa9f45623160f592ed29f4afde0a169c4ff7da  ezlib-1.0.15.tar.gz
+6371291e225bc3bcdce03109ed5a7e6277fad01914c6eb85b4cb87fcfab3af2f99b42d45742e5bd4f4ae2b17bba3fcf174e632e1d4b20bb87ee5d063d60e21a9  fast_tls-1.1.25.tar.gz
+97108c6d2df5c3254331a4e6870e9b2eada54c0b4cff35e004e28a00e7e668f68d3436d967f793ae0113c8e3cfeabe217a31492f7c4da655dc79481d20ebef3f  fast_xml-1.1.57.tar.gz
+ebde0ca834cc0a8e77950c22cca8b37b9d231e8e536ee0131574b14641e5c4bb5469384390a2b8bf03e8898e684a3f2c0468f7dc3d0639e0e945f871937dd5e1  fast_yaml-1.0.39.tar.gz
+41a5e75e4ba235544351819469173d95039604538a81a4549b3130a54a07848c2f3990ff176a31ef52a0cd31882b3818aca457b214fab8ee85904357695b74e5  idna-7.1.0.tar.gz
+4f04246f6de11535ce8c5e1361646a7526d12944a08e9a496f5fe8ae8ef3d4afc4524b3ccb5fb5832ebf18fc8acae3283de377986f9bc8dd70e55a9eae7e45ab  jiffy-1.1.2.tar.gz
+a564edd6450939ac5228ce274035683bfffac0f5ee0d84648b8f13004b6993acc8319f61c27f4823757b265c0637142864f857d00acc1ef186afe2862e5eccc8  jose-1.11.12.tar.gz
+7b89386b78957171a6624ef1f1ffba3223c09f714981f2b0ab7b9c5005a7d298816ecc6ce93e195ef644daa8a741af4d8a7ccc86ba08a031dc106756e75549c8  luerl-1.5.1.tar.gz
+73d013cd49fe91f4f92f47b6fc1f47700fb5cc30b1620b01f8dc231dd5249867ddeacfd2190c262c0efd3b2cd1859e9c4cb0729d850cb9f407e8a6d01ab4f9d1  mqtree-1.0.19.tar.gz
+c6c2a289e6e18d0878db47c626fdb3d60dd84ffb81e9a87d0c7239b591fe2cba79b7c099d268a2ecc3a9b6911eac74f9565aa470ffd44b64a0aa6d49fa527af0  p1_acme-1.0.30.tar.gz
+28d180a7f02c050a4cf6497773b40b06406687741d0b08b8d8ec39d5bef748760135c05352ac792e9ce7c2045223e0e07b9b17af269e0045c8c7e29612bceb6d  p1_mysql-1.0.27.tar.gz
+cda660e2401a951864d365017f508c2e317794a7aec7ee3aae96d476764252b56de516b31ca73da00c4a9ceefeefe22d673b4659e988179aeb9bb3eef0bf66ed  p1_oauth2-0.6.14.tar.gz
+4ba5ae8a5cea10cf2ec4ba1212b0b9feaf30374a2d53e8d2097a65bdc17551a6bc1d5b92c97e266b0f6fd2d5f538faff3e1e950256902e4330663f2707a71a99  p1_pgsql-1.1.38.tar.gz
+075577e0bbe8fd4fb1cb28089a8b6468c57b269ee4e22e1b29443ea4747abcfc68207d0e32513dfa64e92129c0cb8150618771d97e1d3d480d2b120476c08d7d  p1_utils-1.0.28.tar.gz
+955308820b49d8f2ae155ad4b60704aca0706bbf0ced759c7a47b8e34c585a326eb7f29495174c8599054311414acd3de48fc03b7f5f9a669eb7956e76f36581  pkix-1.0.10.tar.gz
+d055bd622c213f0dc8d6fa5ee50eab52e4aae264a9d59ea6e24f305d4a1388be9c1494b02a3e02ada3b3158bc594f9e912dfb1646c4518c8007e378d903355f1  sqlite3-1.1.15.tar.gz
+b49ed091785ec7add0e22fa98137976899ffbd0281d01f54edc322942eeec7a1bba9394df55911f2c8084b7b379ce9c542f251d1ffef921392359a127cbcd1fe  stringprep-1.0.33.tar.gz
+9a0474f959c93e5d80af6c6b8983fe2f8f1b08c7ff2706e8893ce6439f4870e6498b0524b67a569c96e073c1a87d2fd6943707817bba0bbd592558410f316848  stun-1.2.21.tar.gz
+de382c9f0af745d1565c90750a22aa42ba4ee6551606ac9ac92e7e93b8317a23d77f1d57e2c74911febb94ceda38ba19d7ac863c754aff97abee64a6307818d0  unicode_util_compat-0.7.0.tar.gz
+f0d57c1ae8e406c8d6a2f7ede250312a0767942e2d15027105fc6b4ae37ce299faef99345399b7df9742f6ad2ceddea0754c0d49e153c4ca63bfc5d61e1a6398  xmpp-1.12.0.tar.gz
+43b8bb4a11b5fb8fa31f5c97f019cede3638edb3239ac8c5c378ca3b1560a1fa713eaed727ff21a9e17380daa20c320ed2eebb1d8f3345ee7318e53137b2d8ff  yconf-1.0.22.tar.gz
+18fb890794be6b0e63960af80a39a97b8c70a6c0ab9a91a95d0f623257e38f5a43c012430ccf871038fc440d06720c573821b485a94191bd73e3924e670683c5  ejabberd.initd
+47fd2cfd9177c4e978a9799a153ba74392a9891822221af8194686a40f6bf01f38644833e1e1f5416c6357e0bfb7ca3dae96f55a4fcd7cd629ec798d85a72807  ejabberd.logrotate
+96a571c0ab2be366e931bda423a61ef920cbaba2107e61ddbc501472ce3efe2804418cc6579c99310b902a9a99aaecb9284cf2420c071dbca2f670efb4034135  ejabberd.confd
+60cc50b74d94f3c55f8fd76c345eadd34977460b0bd4a43701373324acc10850aa21d51edc74155aaf402915f7f5cf4ddd0d024bf45797f2d0e1a889dd77f36d  jiffy-double-conversion-loongarch64.patch
+"

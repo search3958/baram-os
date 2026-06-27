@@ -1,0 +1,86 @@
+# Maintainer: yurenchen <yurenchen@yeah.net>
+pkgname=ubus
+pkgver=2025.10.17
+pkgrel=0
+_owrtgit=60e04048
+pkgdesc="OpenWrt RPC daemon and utils"
+url="https://git.openwrt.org/project/ubus.git"
+arch="all"
+license="LGPL-2.1-only"
+
+depends_dev="libubox-dev"
+makedepends="cmake samurai zstd json-c-dev libblobmsg $depends_dev"
+subpackages="$pkgname-dev "
+
+source="https://sources.openwrt.org/ubus-$pkgver~$_owrtgit.tar.zst"
+builddir="$srcdir/ubus-$pkgver~$_owrtgit"
+
+options="!check" ## need '-lasan -lubsan'
+
+_luaversions="5.1 5.2"
+for _v in $_luaversions; do
+	makedepends="$makedepends lua$_v-dev"
+	subpackages="$subpackages lua$_v-${pkgname#lua-}:_subpackage"
+done
+
+build() {
+	if [ "$CBUILD" != "$CHOST" ]; then
+		CMAKE_CROSSOPTS="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_HOST_SYSTEM_NAME=Linux"
+	fi
+	## c lib & bin
+	CFLAGS="$CFLAGS -fPIC -DPIC" cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=True \
+		-DBUILD_STATIC=OFF \
+		-DCMAKE_BUILD_TYPE=None \
+		-DBUILD_LUA=OFF \
+		-DBUILD_EXAMPLES=OFF \
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+		$CMAKE_CROSSOPTS .
+	cmake --build build
+
+	## lua-ubus
+	local lver; for lver in $_luaversions; do
+		msg "==Building for Lua $lver... @ $PWD"
+		CFLAGS="$CFLAGS -fPIC -DPIC" cmake -B "build-$lver" -G Ninja \
+			-DCMAKE_INSTALL_PREFIX=/usr \
+			-DCMAKE_INSTALL_LIBDIR=lib \
+			-DBUILD_SHARED_LIBS=True \
+			-DBUILD_STATIC=OFF \
+			-DCMAKE_BUILD_TYPE=None \
+			-DBUILD_LUA=ON \
+			-DLUAPATH="$(pkg-config --variable=INSTALL_CMOD  "lua$lver")" \
+			-DBUILD_EXAMPLES=OFF \
+			-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+			$CMAKE_CROSSOPTS .
+		cmake --build "build-$lver" --target ubus_lua
+	done
+}
+
+
+_subpackage() {
+	## lua-ubus
+	local lver="${subpkgname:3:3}"
+	pkgdesc="OpenWrt RPC lib for Lua $lver"
+	depends="lua$lver"
+	install_if="$pkgname=$pkgver-r$pkgrel lua$lver"
+	local rockdir="$subpkgdir/usr/lib/luarocks/rocks-$lver/$pkgname/$pkgver-1"
+
+	msg "==Installing for Lua $lver... // $subpkgname @ $PWD"
+	mkdir -p "$rockdir"
+	echo 'rock_manifest = {}' > "$rockdir"/rock_manifest
+
+	cd "$builddir"
+	DESTDIR=$subpkgdir cmake --install build-$lver/lua -v
+}
+
+package() {
+	## c lib & bin
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+
+sha512sums="
+8453a730335c4b3bff048cfb78709ea0bb35f59c9d5dfc12021cabac43a2ee37bb7d042eadef21cadfb779e542620f8095236937e812810e6236e1a9d533bd4a  ubus-2025.10.17~60e04048.tar.zst
+"

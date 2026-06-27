@@ -1,0 +1,53 @@
+# Contributor: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+# Maintainer: Iztok Fister, Jr. <iztok@iztok-jr-fister.eu>
+pkgname=py3-sport-activities-features
+pkgver=0.5.4
+pkgrel=1
+pkgdesc="A minimalistic toolbox for extracting features from sport activity files"
+url="https://github.com/firefly-cpp/sport-activities-features"
+arch="noarch"
+license="MIT"
+depends="
+	python3
+	py3-geopy
+	py3-geotiler
+	py3-gpxpy
+	py3-matplotlib
+	py3-niaaml
+	py3-overpy
+	py3-tcx2gpx
+	py3-tcxreader
+	"
+checkdepends="py3-pytest"
+makedepends="py3-gpep517 py3-poetry-core"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://github.com/firefly-cpp/sport-activities-features/archive/$pkgver/sport-activities-features-$pkgver.tar.gz"
+builddir="$srcdir/sport-activities-features-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	# EXCLUDE network tests and ignore tests with problematic dependencies
+	local _skipped_tests="
+		test_weather
+		and overpy_node_manipulation"
+
+	# shellcheck disable=SC2116
+	python3 -m pytest -k "not $(echo $_skipped_tests)" --ignore=tests/test_area_identification.py --ignore=tests/test_dead_end_identification.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/sport_activities_features-$pkgver-py3-none-any.whl
+
+	install -Dm644 docs/preprints/A_minimalistic_toolbox.pdf -t "$pkgdir"/usr/share/doc/$pkgname
+	install -Dm644 CITATION.cff -t "$pkgdir"/usr/share/doc/$pkgname
+}
+
+sha512sums="
+3ee3f2dede95dd28fc0d79d48a4ae47dbccbde96d2eb7044885771f50114d9c0fa8d640bb835035edbd67fb6065dd30f56056a25b835ba93e99dd1dbfcff1baa  sport-activities-features-0.5.4.tar.gz
+"

@@ -1,0 +1,53 @@
+# Contributor: Noel Kuntze <noel.kuntze@thermi.consulting>
+# Maintainer: Noel Kuntze <noel.kuntze@thermi.consulting>
+pkgname=py3-krb5
+_pkgname=pykrb5
+pkgver=0.5.1
+pkgrel=1
+pkgdesc="krb5 API interface"
+url="https://github.com/jborean93/pykrb5"
+arch="all"
+license="MIT"
+depends="python3 krb5"
+# Heimdal might be required for the Samba integration but does not work with py3-k5test
+#depends="python3 heimdal"
+# need to check if python3 pre-commit package is in testing
+makedepends="
+	cython
+	krb5-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="
+	black
+	py3-isort
+	py3-k5test
+	py3-mypy
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/jborean93/pykrb5/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+ae619ec15430be48c7ee406f46eb329a8f80adb80e4deaa738cf5f6c919ca008b1d16298c36d2800b5e408e320adbe4ab7929fa144fc07787bcc665ce70116d5  py3-krb5-0.5.1.tar.gz
+"

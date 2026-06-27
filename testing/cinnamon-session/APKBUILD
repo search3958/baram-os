@@ -1,0 +1,43 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=cinnamon-session
+pkgver=6.6.4
+pkgrel=0
+pkgdesc="Cinnamon session manager (fork of gnome-session)"
+url="https://github.com/linuxmint/cinnamon-session"
+arch="all !armhf !armv7" # cinnamon -> cjs -> mozjs
+license="GPL-2.0-or-later"
+depends="
+	cinnamon
+	cinnamon-screensaver
+	cinnamon-settings-daemon
+	nemo
+	"
+makedepends="
+	cinnamon-desktop-dev
+	glib-dev
+	gtk+3.0-dev
+	libcanberra-dev
+	libsm-dev
+	meson
+	xapp-dev
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/linuxmint/cinnamon-session/archive/$pkgver/cinnamon-session-$pkgver.tar.gz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+3c9d931ccd7084293025cafb792d76b34c08c19105510cde377e297cdca1ab83f84bcb2ec775357ba802cff2e6b9060a6e7f7d67dd3a0cb6e4272a729b3f407a  cinnamon-session-6.6.4.tar.gz
+"

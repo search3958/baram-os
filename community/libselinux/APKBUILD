@@ -1,0 +1,58 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=libselinux
+pkgver=3.10
+pkgrel=1
+pkgdesc="SELinux library and simple utilities"
+url="https://github.com/SELinuxProject/selinux/wiki"
+arch="all"
+license="Public-Domain"
+# we need coreutils for ln --relative
+makedepends="
+	coreutils
+	libsepol-dev
+	linux-headers
+	musl-fts-dev
+	pcre2-dev
+	py3-pip
+	py3-setuptools
+	python3-dev
+	swig
+	"
+subpackages="
+	py3-$pkgname:py3
+	$pkgname-static
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-utils
+	"
+source="https://github.com/SELinuxProject/selinux/releases/download/$pkgver/libselinux-$pkgver.tar.gz
+	lfs64.patch
+	"
+
+build() {
+	make SHLIBDIR="/usr/lib" FTS_LDLIBS="-lfts"
+	make SHLIBDIR="/usr/lib" FTS_LDLIBS="-lfts" pywrap
+}
+
+package() {
+	make SHLIBDIR="/usr/lib" DESTDIR="$pkgdir" install
+	make SHLIBDIR="/usr/lib" DESTDIR="$pkgdir" install-pywrap
+}
+
+utils() {
+	pkgdesc="SELinux libselinux utilies"
+
+	amove usr/sbin
+}
+
+py3() {
+	pkgdesc="$pkgdesc (python library)"
+	depends=""
+
+	amove usr/lib/python*
+}
+
+sha512sums="
+5783f737675eb94e0bdff082013589e5bddfa0669a357df185eb89f4f88cec8b90779e86c4b17b58f5c248175da0208c80cc2642046e348c7384dd799f1ba4c1  libselinux-3.10.tar.gz
+a6098386275c67b5070cc62cd4f4d6ad5917182829e151b2d740ab71eec9e8c9835b633898537b62bf3811ac7e8a229de33bc650e8711e499256372ddec5e7fc  lfs64.patch
+"

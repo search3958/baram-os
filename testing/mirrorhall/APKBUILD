@@ -1,0 +1,43 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=mirrorhall
+pkgver=0.1.1
+pkgrel=2
+pkgdesc="Low-latency virtual screen sharing app between Linux devices"
+url="https://gitlab.com/nokun/mirrorhall"
+arch="noarch"
+license="GPL-3.0-only"
+depends="
+	gtk4.0
+	libadwaita
+	py3-netifaces
+	py3-zeroconf
+	"
+makedepends="
+	desktop-file-utils
+	gettext
+	glib-dev
+	gtk-update-icon-cache
+	meson
+	"
+source="https://gitlab.com/nokun/mirrorhall/-/archive/$pkgver/mirrorhall-$pkgver.tar.gz
+	rm-gnome-47-warning.patch
+	"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+f19f377fb8542c0f7e6736b491867261cf22084be42908984edf1783643ec65b62bee633d0077ea35c2879e727d4fee081aba2fa9473e13f2c647c5961a963ce  mirrorhall-0.1.1.tar.gz
+3f5dadfb0cd68ce0a4687e8c599b620d36f2f246d7edc0c9a9009c65148b453fd12d62b9e2eca25799f16b27b3a069d5f16d1cb09257f2fcc487941c6e0111d3  rm-gnome-47-warning.patch
+"

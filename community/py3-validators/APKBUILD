@@ -1,0 +1,35 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-validators
+pkgver=0.35.0
+pkgrel=2
+pkgdesc="Python3 Data Validation for Humans"
+url="https://github.com/python-validators/validators"
+arch="noarch"
+license="MIT"
+depends="py3-decorator py3-pycryptodome py3-eth-hash"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-isort py3-pytest py3-flake8"
+subpackages="$pkgname-pyc"
+source="https://github.com/python-validators/validators/archive/$pkgver/py3-validators-$pkgver.tar.gz"
+builddir="$srcdir/validators-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+f3a588a4b50a06b379e886d7a274a145c92f01e05f0292f2b67611d6d9ba2c9b7285d928a7614c5ec83454c1682c66c32814d9d653f6d67bef26e5f6e193e086  py3-validators-0.35.0.tar.gz
+"

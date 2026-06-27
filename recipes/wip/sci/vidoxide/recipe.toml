@@ -1,9 +1,0 @@
-#TODO require camera drivers: https://github.com/GreatAttractor/vidoxide#3-building
-[source]
-git = "https://github.com/GreatAttractor/vidoxide"
-shallow_clone = true
-[build]
-template = "cargo"
-dependencies = [
-    "gtk3",
-]

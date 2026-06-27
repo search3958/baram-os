@@ -1,0 +1,34 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+# Maintainer: Fabian Affolter <fabian@affolter-engineering.ch>
+pkgname=py3-flake8-blind-except
+_pkgname=flake8-blind-except
+pkgver=0.2.1
+pkgrel=5
+pkgdesc="Extension for flake8 which checks for blind except: statements"
+options="!check" # No testsuite
+url="https://github.com/elijahandrews/flake8-blind-except"
+arch="noarch"
+license="MIT"
+depends="py3-flake8 py3-setuptools"
+makedepends="py3-gpep517 py3-wheel"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgname:0:1}/$_pkgname/$_pkgname-$pkgver.tar.gz"
+builddir="$srcdir"/$_pkgname-$pkgver
+
+replaces="py-flake8-blind-except"                  # Backwards compatibility
+provides="py-flake8-blind-except=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+0917df4610c6c25319f6382b92f8a2a67519b2a6266f43ae23ea2e44f0416f93cacdd7cc39bb69c817f608becf726839c81c93425ecf66ffb95b49eeb2e0145b  flake8-blind-except-0.2.1.tar.gz
+"

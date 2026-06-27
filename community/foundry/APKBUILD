@@ -1,0 +1,72 @@
+maintainer="team/gnome <achill@achill.org>"
+pkgname=foundry
+pkgver=1.1.1
+pkgrel=0
+pkgdesc="Companion command-line tool for IDE features of GNOME Builder"
+url="https://gitlab.gnome.org/GNOME/foundry"
+arch="all"
+license="LGPL-2.1-or-later"
+depends_libs="flatpak-xdg-utils"
+makedepends="
+	cmark-dev
+	editorconfig-dev
+	flatpak-dev
+	glib-dev
+	gobject-introspection-dev
+	gom-dev
+	gtksourceview5-dev
+	json-glib-dev
+	jsonrpc-glib-dev
+	libadwaita-dev
+	libdex-dev
+	libgit2-dev
+	libpanel-dev
+	libpeas2-dev
+	libsecret-dev
+	libspelling-dev
+	libxml2-dev
+	meson
+	readline-dev
+	sysprof-dev
+	sysprof-static
+	template-glib-dev
+	vte3-dev
+	webkit2gtk-6.0-dev
+	yaml-dev
+	"
+subpackages="
+	$pkgname-bash-completion
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-lang
+	$pkgname-libs
+	"
+source="https://gitlab.gnome.org/GNOME/foundry/-/archive/$pkgver/foundry-$pkgver.tar.gz
+	fix-pc.patch
+	"
+options="!check" # TODO: stuck
+
+build() {
+	abuild-meson \
+		. output
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+libs() {
+	default_libs
+	amove usr/lib/girepository-1.0
+	amove usr/share/glib-2.0/schemas
+}
+
+sha512sums="
+33437cb07ecf19efd23ddbcc677563a59bfe6bee02927b7252157f098df024a14cd82a51c2412da2faeaa5c26478107b46e66f51f34ea6e0ca595dd25ff3e1a0  foundry-1.1.1.tar.gz
+4144cd9bb804a2ceac6e8aaf66574baf2545d96a96e9de1949ae55e63db48b2c44f7d4981c9b4163f8f2ec0f7b87410c10fcaf712a94c4326a5c4fc325a14a23  fix-pc.patch
+"

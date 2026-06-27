@@ -1,5 +1,0 @@
-#TODO glutin crate error
-[source]
-git = "https://github.com/xairy/rust-sudoku"
-[build]
-template = "cargo"

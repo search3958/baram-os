@@ -1,0 +1,188 @@
+# Contributor: Ariadne Conill <ariadne@dereferenced.org>
+# Contributor: Timo Teräs <timo.teras@iki.fi>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=musl
+pkgver=1.2.6
+pkgrel=2
+pkgdesc="the musl c library (libc) implementation"
+url="https://musl.libc.org/"
+arch="all"
+license="MIT"
+options="lib64 !check"
+subpackages="
+	$pkgname-dbg
+	$pkgname-libintl:libintl:noarch
+	$pkgname-dev
+	"
+case "$BOOTSTRAP" in
+nocc)	pkgname="musl-dev"; subpackages="";;
+nolibc) ;;
+*)	subpackages="$subpackages $pkgname-utils";;
+esac
+source="https://musl.libc.org/releases/musl-$pkgver.tar.gz
+	handle-aux-at_base.patch
+	0001-add-stub-for-pthread_mutexattr_setprioceiling.patch
+	fix-loongarch64-zero-len-extcontext.patch
+	CVE-2026-6042.patch
+	CVE-2026-40200.patch
+
+	ldconfig
+	__stack_chk_fail_local.c
+	getconf.c
+	getent.c
+	iconv.c
+	"
+# this is needed for BOOTSTRAP=nocc (see above)
+builddir="$srcdir/musl-$pkgver"
+
+# secfixes:
+#   1.2.6-r2:
+#     - CVE-2026-40200
+#   1.2.6-r1:
+#     - CVE-2026-6042
+#   1.2.5-r10:
+#     - CVE-2025-26519
+#   1.2.2_pre2-r0:
+#     - CVE-2020-28928
+#   1.1.23-r2:
+#     - CVE-2019-14697
+#   1.1.15-r4:
+#     - CVE-2016-8859
+
+prepare() {
+	default_prepare
+
+	echo "$pkgver" > VERSION
+
+	# delete hand-optimized x86-64 string manipulation functions
+	# as modern GCC generates faster code
+	rm src/string/x86_64/memcpy.s src/string/x86_64/memmove.s
+}
+
+build() {
+	[ "$BOOTSTRAP" = "nocc" ] && return 0
+
+	# provide minimal libssp_nonshared.a so we don't need libssp from gcc
+	${CROSS_COMPILE}cc $CFLAGS -c "$srcdir"/__stack_chk_fail_local.c -o __stack_chk_fail_local.o
+	${CROSS_COMPILE}ar r libssp_nonshared.a __stack_chk_fail_local.o
+
+	if [ "$BOOTSTRAP" != "nolibc" ]; then
+		# getconf/getent/iconv
+		local i
+		for i in getconf getent iconv ; do
+			${CROSS_COMPILE}cc $CPPFLAGS $CFLAGS "$srcdir"/$i.c -o $i
+		done
+	fi
+
+	# musl sets a sane default for flags that they tune based on -O2 with alignment things turned off.
+	# see https://git.musl-libc.org/cgit/musl/commit/?id=b90841e2583237a4132bbbd74752e0e9563660cd ,
+	# and the discussion in https://www.openwall.com/lists/musl/2023/05/22/2
+	# this makes libc.so about 5% bigger in itself, but should yield an overall improved libc.so for general use.
+	# NB: if musl detects an -O it skips its own, so remove just the O value.
+	# Also environment CFLAGS are placed after automatic flags so --enable-optimize doesn't work.
+	export CFLAGS="${CFLAGS/-O* /}"
+
+	# note: not autotools
+	# shellcheck disable=2153
+	LDFLAGS="$LDFLAGS -Wl,-soname,libc.musl-$CARCH.so.1" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--enable-debug
+	make
+}
+
+package() {
+	case "$CARCH" in
+	aarch64*)	ARCH="aarch64" ;;
+	arm*)		ARCH="arm" ;;
+	x86)		ARCH="i386" ;;
+	x86_64)		ARCH="x86_64" ;;
+	ppc)		ARCH="powerpc" ;;
+	ppc64*)		ARCH="powerpc64" ;;
+	s390*)		ARCH="s390x" ;;
+	mips64*)	ARCH="mips64" ;;
+	mips*)		ARCH="mips" ;;
+	riscv64)	ARCH="riscv64" ;;
+	loongarch64)	ARCH="loongarch64" ;;
+	esac
+
+	if [ "$BOOTSTRAP" = "nocc" ]; then
+		make ARCH="$ARCH" prefix=/usr DESTDIR="$pkgdir" install-headers
+	else
+		make DESTDIR="$pkgdir" install
+
+		cp libssp_nonshared.a "$pkgdir"/usr/lib
+
+		# make LDSO the be the real file, and libc the symlink
+		local rule="$(printf "%s\n\t%s\n" 'print-ldso:' '@echo $$(basename $(LDSO_PATHNAME))')"
+		local LDSO=$(make -f Makefile --eval "$rule" print-ldso)
+		mv -f "$pkgdir"/usr/lib/libc.so "$pkgdir"/lib/"$LDSO"
+		ln -sf "$LDSO" "$pkgdir"/lib/libc.musl-$CARCH.so.1
+		ln -sf ../../lib/"$LDSO" "$pkgdir"/usr/lib/libc.so
+		mkdir -p "$pkgdir"/usr/bin
+
+		cat >>"$pkgdir"/usr/bin/ldd <<-EOF
+		#!/bin/sh
+		exec /lib/$LDSO --list "\$@"
+		EOF
+		chmod 755 "$pkgdir"/usr/bin/ldd
+	fi
+
+}
+
+utils() {
+	depends="scanelf"
+	replaces="libiconv"
+	license="MIT AND BSD-2-Clause AND GPL-2.0-or-later"
+
+	# for backwards compatibility
+	provides="libc-utils=$pkgver-r$pkgrel"
+
+	mkdir -p "$subpkgdir"/usr "$subpkgdir"/sbin
+	mv "$pkgdir"/usr/bin "$subpkgdir"/usr/
+
+	install -D \
+		"$builddir"/getent \
+		"$builddir"/getconf \
+		"$builddir"/iconv \
+		"$subpkgdir"/usr/bin
+
+	install -D -m755 "$srcdir"/ldconfig "$subpkgdir"/sbin
+}
+
+# currently we don't want by default any NLS
+# and use GNU gettext where needed. the plan is to migrate to
+# musl gettext() later on as fully as possible.
+libintl() {
+	pkgdesc="musl libintl.h header"
+	mkdir -p "$subpkgdir"/usr/include
+	mv "$pkgdir"/usr/include/libintl.h \
+		"$subpkgdir"/usr/include/
+}
+
+dev() {
+	default_dev
+
+	# for backwards compatibility
+	provides="libc-dev=$pkgver-r$pkgrel"
+}
+
+sha512sums="
+1adad96eddb3a2eb0cacb3e363b0046568925fcdd75cf8b0503f2139df1f693d64730779ca0ce8131b7624ab2d37f4247bb1d3393c523de6e30d2b1d7732555c  musl-1.2.6.tar.gz
+a76f79b801497ad994746cf82bb6eaf86f9e1ae646e6819fbae8532a7f4eee53a96ac1d4e789ec8f66aea2a68027b0597f7a579b3369e01258da8accfce41370  handle-aux-at_base.patch
+83ec0f774dbb5d4f4d4b917d149ea0ef609d028d18ae7624e90fedda6e3174c91ade93751bfd376adfa2848155110fc4dd02b6790363b98e5395c4787e8731e8  0001-add-stub-for-pthread_mutexattr_setprioceiling.patch
+6eae45aa82db69bc96386aedf3d1bfe83dfa0a7b4b824326c1c7e1bab31100d635ed0e8930c26a1694697fad59167a42e2b5f3a2ac51b07e36d85f047e268cff  fix-loongarch64-zero-len-extcontext.patch
+f7849abeab0e4eab992a80464afa07b9c8aae5cee76040523b9dbc0931435f28ea8f5792b8a4a0cd6d608ac2f37e3225e89afcb3171a0a6df44450ed57cee83b  CVE-2026-6042.patch
+a64ab7688d1a85e560b5687783df482d2467a79a74400da5a1601382847d6b4e6a79b7529a8dc80c46ddda8dc2a812f2261557fc8ee98dc3bdf7322761bd6d9c  CVE-2026-40200.patch
+29da5e89358103846a42987c2a5ff26ec131e29a6a7a714cd0e2941baf1f1e5cd9b1ee66f488c8e222135031bf2de507d7d05b037ab65c30482147dba63d2e52  ldconfig
+062bb49fa54839010acd4af113e20f7263dde1c8a2ca359b5fb2661ef9ed9d84a0f7c3bc10c25dcfa10bb3c5a4874588dff636ac43d5dbb3d748d75400756d0b  __stack_chk_fail_local.c
+0d80f37b34a35e3d14b012257c50862dfeb9d2c81139ea2dfa101d981d093b009b9fa450ba27a708ac59377a48626971dfc58e20a3799084a65777a0c32cbc7d  getconf.c
+246e029350d4295147fe311108dcfb991ef130271b856040c1fb6a9955414f263d2a51f978b8ae91f52ff49705e8e4572b8f0e6939801fa854e3f095a67d3d64  getent.c
+9d42d66fb1facce2b85dad919be5be819ee290bd26ca2db00982b2f8e055a0196290a008711cbe2b18ec9eee8d2270e3b3a4692c5a1b807013baa5c2b70a2bbf  iconv.c
+"

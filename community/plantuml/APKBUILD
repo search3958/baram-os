@@ -1,0 +1,59 @@
+# Contributor: Krassy Boykinov <kboykinov@teamcentrixx.com>
+# Maintainer: Krystian Chachuła <krystian@krystianch.com>
+pkgname=plantuml
+pkgver=1.2025.10
+pkgrel=0
+pkgdesc="Draw UML diagrams, using a simple and human readable text description"
+url="https://plantuml.com/"
+arch="noarch"
+license="GPL-3.0-or-later"
+depends="
+	busybox
+	graphviz
+	gtk+2.0
+	java-common
+	java-jre
+	"
+makedepends="
+	font-dejavu
+	gradle
+	java-jdk
+	"
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/plantuml/plantuml/archive/refs/tags/v$pkgver.tar.gz
+	plantuml.run
+	"
+
+case "$CTARGET_ARCH" in
+# Tests require Java 17
+armhf|armv7|x86)	options="!check" ;;
+esac
+
+# secfixes
+#   1.2023.10:
+#     - CVE-2023-3431
+#     - CVE-2023-3432
+
+build() {
+	# exclude lesser functional versions with different license
+	sed -e "/include/d" -i settings.gradle.kts
+	export GRADLE_USER_HOME="$srcdir"/.gradle
+	gradle --no-daemon --parallel --stacktrace assemble
+}
+
+check() {
+	# gradle test (will be seperate call with gradle v9)
+	gradle --no-daemon --parallel --stacktrace check
+}
+
+package() {
+	install -Dm644 ./build/libs/plantuml-$pkgver.jar \
+		"$pkgdir/usr/share/java/plantuml.jar"
+	install -Dm755 "$srcdir/plantuml.run" \
+		"$pkgdir/usr/bin/plantuml"
+}
+
+sha512sums="
+4467e86b9a99a2e0496c6442e34e871a2a89984fa45afbdd2ed500f2c3824624c600c7f17333df9398e192cb8949b34ffb9c2f59d8c54b44cabdc2d2c7c7468b  plantuml-1.2025.10.tar.gz
+4b2be5783dffd9aeb4e49c4c192f24e182cc55e39dae45a34f7cf42a0174c22aa0ada60230d6714e473f316ec230d0abec09cfdbeae27e3de0f26861a9814f8e  plantuml.run
+"

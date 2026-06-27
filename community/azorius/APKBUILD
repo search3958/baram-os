@@ -1,0 +1,76 @@
+# Maintainer: DWwanghao <wanghao03@loongson.cn>
+maintainer="DWwanghao <wanghao03@loongson.cn>"
+pkgname=azorius
+pkgver=0.3.4
+pkgrel=20
+pkgdesc="Social link aggregator and comment forum with ActivityPub"
+url="https://azorius.net/"
+arch="all"
+license="ISC"
+makedepends="go sqlite-dev"
+install="$pkgname.pre-install"
+pkgusers="azorius"
+pkggroups="azorius"
+subpackages="$pkgname-doc $pkgname-openrc"
+# Upstream source url timed out, may be permanently offline
+# source="https://humungus.tedunangst.com/r/azorius/d/azorius-$pkgver.tgz
+source="https://dev.alpinelinux.org/archive/azorius/azorius-$pkgver.tgz
+	azorius.initd
+	azorius.confd
+
+	upgradedb.patch
+	"
+
+export GOCACHE="${GOCACHE:-"$srcdir/go-cache"}"
+export GOTMPDIR="${GOTMPDIR:-"$srcdir"}"
+export GOMODCACHE="${GOMODCACHE:-"$srcdir/go"}"
+
+build() {
+	make
+}
+
+check() {
+	./azorius version
+
+	go test -v ./...
+}
+
+package() {
+	install -Dm755 azorius -t "$pkgdir"/usr/bin/
+	install -dm750 -o azorius -g azorius "$pkgdir"/var/lib/azorius
+
+	install -dm755 "$pkgdir"/usr/share/webapps/azorius
+	install -Dm644 docs/*.html -t "$pkgdir"/usr/share/webapps/azorius/docs/
+	install -Dm644 views/* -t "$pkgdir"/usr/share/webapps/azorius/views/
+
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+	local man sec fname; for man in \
+		docs/*.1 \
+		docs/*.7 \
+		docs/*.8
+	do
+		fname="$(basename $man)"
+		sec="${fname##*.}"
+
+		case "$fname" in
+		azorius*)
+			install -Dm644 $man \
+				"$pkgdir"/usr/share/man/man$sec/$fname
+			;;
+		*)
+			install -Dm644 $man \
+				"$pkgdir"/usr/share/man/man$sec/azorius-$fname
+			;;
+		esac
+	done
+
+	install -Dm755 "$srcdir"/azorius.initd "$pkgdir"/etc/init.d/azorius
+	install -Dm644 "$srcdir"/azorius.confd "$pkgdir"/etc/conf.d/azorius
+}
+
+sha512sums="
+6475846d8f6972d34a6672eee62ce7fbcce7524fd6e980c60e874699b714c4ce550b35806625e6b60f00b9e2fb85175998d715644993fb169809b60343642725  azorius-0.3.4.tgz
+aa8641ef0a4c6b27d4ac21f2dd974dcd090f5867ee314c4322f39284a8e80b430f522fcb75c51db8dd0c00791a2c76652827eda091183ee57a2b3f8c97d8b88c  azorius.initd
+fb522c19c7debd64c57087d5a77f03f0418e0eb929c570cbb0cb5fb36a97e63b09b34bc4137aff36fe625fb3ced8b1d16529a8ba1af79cffa67a9033acfa7a1d  azorius.confd
+29d2855ae37fdea1d001c327fa882e726af3b8eac0dc3b17beceedfae37eece2337cc5d12f80d9ac79fd704bcd19103470ae8f6f2beb3e3854b8b349dd106fff  upgradedb.patch
+"

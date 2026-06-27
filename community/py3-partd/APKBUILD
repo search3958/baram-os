@@ -1,0 +1,48 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-partd
+pkgver=1.4.1
+pkgrel=3
+pkgdesc="Concurrent appendable key-value storage"
+url="https://github.com/dask/partd/"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-locket
+	py3-numpy
+	py3-pandas
+	py3-pyzmq
+	py3-toolz
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	py3-python-versioneer
+	"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/p/partd/partd-$pkgver.tar.gz"
+options="!check" # No tests
+builddir="$srcdir/partd-$pkgver"
+
+build() {
+	rm versioneer.py
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+0bf285a33731d3c000e6c2c1958cda0df21c3a2be31694ac31ce0cc45aa2b31b8631f962c25b9ecac3831474abb5872748bd3348f99e13faadee467a1f164492  partd-1.4.1.tar.gz
+"

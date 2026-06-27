@@ -1,0 +1,44 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=py3-pylink-square
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Python interface for SEGGER J-Link"
+url="https://github.com/Square/pylink"
+arch="noarch !s390x" # fails tests on big-endian
+license="Apache-2.0"
+depends="
+	py3-psutil
+	py3-six
+	"
+makedepends="
+	py3-gpep517
+	py3-installer
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="py3-mock py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://pypi.python.org/packages/source/p/pylink-square/pylink_square-$pkgver.tar.gz"
+builddir="$srcdir/pylink_square-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -k 'not test_initialize_windows'
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+cd4994326924f1f3e875af0d9af1cead5a016140b00d80262090965836eac6f6218fb8f04f82f0a3866e86cfc77e596993dc2413bba50362ac934fdb899470f5  pylink_square-2.0.0.tar.gz
+"

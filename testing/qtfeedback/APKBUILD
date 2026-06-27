@@ -1,0 +1,47 @@
+maintainer="Bart Ribbers <bribbers@disroot.org>"
+pkgname=qtfeedback
+pkgver=5.2.0_git10
+pkgrel=0
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://qt-project.org/"
+license="LGPL-2.1-only AND LGPL-3.0-only AND GPL-3.0-only AND Qt-GPL-exception-1.0"
+pkgdesc="Qt Tactile Feedback"
+depends_dev="qt6-qtdeclarative-dev"
+makedepends="$depends_dev
+	qt6-qtbase-doc
+	qt6-qttools
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/sailfishos/qtfeedback/archive/refs/tags/mer/${pkgver/_/+}.tar.gz"
+builddir="$srcdir/qtfeedback-mer-${pkgver/_/-}"
+
+build() {
+	qmake6 \
+		CONFIG+=package \
+		multimedia_disabled=yes \
+		immersion_enabled=no \
+		meegotouchfeedback_enabled=no
+	make
+	make docs
+}
+
+check() {
+	make check
+}
+
+package() {
+	make INSTALL_ROOT="$pkgdir" install
+	make INSTALL_ROOT="$pkgdir" install_qch_docs
+
+	# Drop QMAKE_PRL_BUILD_DIR because reference the build dir
+	find "$pkgdir/usr/lib" -type f -name '*.prl' \
+		-exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
+}
+
+sha512sums="
+28b13a4a620837485b430969e2eb1d4fb95d51064a22e7a55e70dc68e7c318d3037732cc83fd4c7d3c126e1deb03714e627dbab2b9360d5c50c07e145127303b  qtfeedback-5.2.0_git10.tar.gz
+"

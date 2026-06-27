@@ -1,0 +1,58 @@
+# Contributor: Antoine Martin (ayakael) <dev@ayakael.net>
+# Maintainer: Antoine Martin (ayakael) <dev@ayakael.net>
+pkgname=py3-pytest-celery
+#_pkgreal is used by apkbuild-pypi to find modules at PyPI
+_pkgreal=pytest-celery
+pkgver=1.3.0
+pkgrel=0
+pkgdesc="Official pytest plugin for Celery."
+url="https://github.com/celery/pytest-celery"
+arch="noarch"
+license="BSD-3-Clause"
+depends="
+	py3-redis
+	py3-python-memcached
+	py3-pytest-docker-tools
+	py3-tenacity
+	py3-psutil
+"
+checkdepends="
+	py3-celery
+	py3-pytest
+	py3-coverage
+	py3-pytest-sugar
+	py3-pytest-cov
+	py3-pytest-xdist
+	py3-pytest-subtests
+	py3-pytest-rerunfailures
+"
+makedepends="
+	poetry
+	py3-gpep517
+	py3-wheel
+"
+options="!check" # requires docker and has circular dependency with py3-celery
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/celery/pytest-celery/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer "$builddir"/.dist/*.whl
+	.testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+87694074796649db1a6e89c0c4a24b00964f2f48ac577f837351096c76ff82caca8b94b0b547fd8f97655294b9b3af14f0f12c6a3f45400ac76b0efcf50c3ac7  py3-pytest-celery-1.3.0.tar.gz
+"

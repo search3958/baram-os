@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# Create the feedbackd group if not existing
+GROUP=feedbackd
+
+if ! getent group $GROUP >/dev/null; then
+	addgroup -S $GROUP 2>/dev/null
+fi
+
+exit 0
+

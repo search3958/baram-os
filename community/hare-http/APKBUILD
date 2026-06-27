@@ -1,0 +1,22 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=hare-http
+pkgver=0.26.0.0
+pkgrel=0
+pkgdesc="HTTP(s) support for Hare"
+url="https://git.sr.ht/~sircmpwn/hare-http"
+arch="noarch !armhf !armv7 !ppc64le !s390x !x86 !loongarch64" # blocked by hare
+license="MPL-2.0"
+checkdepends="hare hare-ev"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~sircmpwn/hare-http/archive/$pkgver.tar.gz"
+
+check() {
+	hare test
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+a2369ff22a42998b1674d3de66343a1ef8bdf9ee4d7635b8dda1556e8e15b83713bc85db397f9b18e0dde750b181277cbfc78ca44479d3d0cc23651b8e568347  hare-http-0.26.0.0.tar.gz
+"

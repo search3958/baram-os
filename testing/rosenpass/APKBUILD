@@ -1,0 +1,35 @@
+# Contributor: guddaff <alpine@guddaff.de>
+# Maintainer: guddaff <alpine@guddaff.de>
+pkgname=rosenpass
+pkgver=0.2.2
+pkgrel=1
+pkgdesc="Formally verified, post-quantum secure VPN using WireGuard"
+url="https://rosenpass.eu/"
+license="MIT OR Apache-2.0"
+# armv7/riscv64/loongarch64 cmake fails (OQS), armhf build freezes
+arch="all !armv7 !armhf !riscv64 !loongarch64"
+makedepends="cargo clang-dev cmake libsodium-dev linux-headers cargo-auditable"
+depends="wireguard-tools-wg"
+source="https://github.com/rosenpass/rosenpass/archive/v$pkgver/rosenpass-$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --locked --target="$CTARGET"
+}
+
+build() {
+	cargo auditable build --frozen --release
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm755 target/release/rosenpass rp -t "$pkgdir"/usr/sbin/
+}
+
+sha512sums="
+5087914327b1339808f2c27d61ba77ce00fbb886d0c20450ba7c35040226edbcbf01c1c0317e8ce89f811595129171ff68a8c26a970043fae44ad2a2a717403f  rosenpass-0.2.2.tar.gz
+"

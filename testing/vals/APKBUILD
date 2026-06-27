@@ -1,0 +1,36 @@
+maintainer="Hoang Nguyen <folliekazetani@protonmail.com>"
+pkgname=vals
+pkgver=0.42.4
+pkgrel=6
+pkgdesc="Helm-like configuration values loader with support for various sources"
+url="https://github.com/helmfile/vals"
+arch="all"
+license="Apache-2.0"
+makedepends="go"
+source="$pkgname-$pkgver.tar.gz::https://github.com/helmfile/vals/archive/refs/tags/v$pkgver.tar.gz"
+options="net" # download Go modules
+
+build() {
+	go build -v \
+		-o bin/$pkgname \
+		-ldflags "-X main.version=v$pkgver -X main.commit=AlpineLinux" \
+		./cmd/vals
+}
+
+check() {
+	# 0.38.0: Test_HttpJson/Error_getting_document_from_location_jsonquery.LoadURL
+	# fails at vals_httpjson_test.go:151
+	# TestValues_.* tests require the running backend services
+	# Tests in pkg/providers/k8s module requires a kubeconfig file with a locally running k8s cluster
+	# shellcheck disable=2046
+	go test -skip 'Test_HttpJson|TestValues_.*' \
+		$(go list ./... | grep -v 'pkg/providers/k8s')
+}
+
+package() {
+	install -Dm755 bin/$pkgname -t "$pkgdir"/usr/bin/
+}
+
+sha512sums="
+44a31ce6274bfa5921befe8538b41d655dc26b96a47b839610335cca6b805521a587c265bc2c22bfeedee3cce99bc6016774c855c80b47de4fe31929f61da321  vals-0.42.4.tar.gz
+"

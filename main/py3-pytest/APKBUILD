@@ -1,0 +1,58 @@
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-pytest
+pkgver=9.1.1
+pkgrel=0
+pkgdesc="Python3 testing library"
+url="https://docs.pytest.org/en/latest/"
+arch="noarch"
+license="MIT"
+depends="
+	py3-iniconfig
+	py3-packaging
+	py3-pluggy
+	py3-py
+	py3-pygments
+	"
+makedepends="py3-gpep517 py3-setuptools_scm py3-wheel"
+checkdepends="bash py3-hypothesis py3-virtualenv py3-xmlschema"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/p/pytest/pytest-$pkgver.tar.gz
+	"
+builddir="$srcdir/pytest-$pkgver"
+options="!check" # causes bootstrapping issues because of checkdepends
+
+replaces="pytest" # Backwards compatibility
+provides="pytest=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	SETUPTOOLS_SCM_PRETEND_VERSION="$pkgver" \
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages test-env
+	test-env/bin/python3 -m installer .dist/pytest*.whl
+
+	test-env/bin/python3 -m pytest
+}
+
+package() {
+	mkdir -p "$pkgdir"/usr/bin
+
+	local name; for name in py.test pytest; do
+		ln -s $name-3 "$pkgdir"/usr/bin/$name
+	done
+
+	python3 -m installer -d "$pkgdir" \
+		.dist/pytest*.whl
+
+	# remove shim for pylib, since we depend on py3-py anyway
+	rm -f "$pkgdir"/usr/lib/python3*/site-packages/py.py
+}
+
+sha512sums="
+10065997d09e8614ccf064b673e9dde8a4048eb0d701dd1e1e45b9b3751788d1060093aded2b180779852d981b3521b6d08e27fc86fb087b31933e55f57e8292  pytest-9.1.1.tar.gz
+"

@@ -1,0 +1,35 @@
+# Contributor: Leo <thinkabit.ukim@gmail.com>
+# Contributor: Peter Shkenev <santurysim@gmail.com>
+# Maintainer: Patrycja Rosa <alpine@ptrcnull.me>
+maintainer="Patrycja Rosa <alpine@ptrcnull.me>"
+pkgname=py3-orderly-set
+pkgver=5.5.0
+pkgrel=1
+pkgdesc="Package containing multiple implementations of Ordered Set"
+url="https://github.com/seperman/orderly-set"
+arch="noarch"
+license="MIT"
+makedepends="py3-gpep517 py3-flit-core"
+checkdepends="py3-pytest py3-mypy"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/seperman/orderly-set/archive/refs/tags/$pkgver.tar.gz"
+builddir="$srcdir/orderly-set-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/orderly_set-*.whl
+}
+
+sha512sums="
+a3437d94ec31a227c874f8aebf0aa4d6aa8bcdce9194ec5a0510865822b4ed2d9bacdae3b875adeefe28fce8d7817291e79c251cf6214d8e99bf3eba5218a01e  py3-orderly-set-5.5.0.tar.gz
+"

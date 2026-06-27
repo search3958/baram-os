@@ -1,0 +1,25 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=zzz
+pkgver=0.2.0
+pkgrel=0
+pkgdesc="Suspend or hibernate your computer"
+url="https://github.com/jirutka/zzz"
+arch="all"
+license="MIT"
+makedepends="asciidoctor"
+subpackages="$pkgname-doc"
+source="https://github.com/jirutka/zzz/archive/v$pkgver/zzz-$pkgver.tar.gz"
+options="!check"  # no tests provided
+
+build() {
+	make CFLAGS="$CFLAGS -DZZZ_LOCK_FILE='\"/run/zzz.lock\"'"
+}
+
+package() {
+	make install DESTDIR="$pkgdir" prefix=/usr
+}
+
+sha512sums="
+91ffd9c133b553e50bcc17d0b70563701c9b09b5ddfdbe15d9e565dfd887a38069e50e37b13b713e6d9e9e3cbb8b70e35fc373aa1562b35de96602a97466ffad  zzz-0.2.0.tar.gz
+"

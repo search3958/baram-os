@@ -1,0 +1,33 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=xfce4-calculator-plugin
+pkgver=0.8.0
+pkgrel=0
+pkgdesc="Calculator plugin for the Xfce4 panel"
+url="https://gitlab.xfce.org/panel-plugins/xfce4-calculator-plugin"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	xfce4-panel-dev
+	meson
+	libxfce4ui-dev
+	"
+subpackages="$pkgname-lang"
+source="https://archive.xfce.org/src/panel-plugins/xfce4-calculator-plugin/${pkgver%.*}/xfce4-calculator-plugin-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+524de531cbb9da846596345ebf23691f8a7a2fc02f7f77f3318e70dfde08f9bfd1d920a015391f7d06056edfcf4517b22e05c33afe76345607a53054053d699e  xfce4-calculator-plugin-0.8.0.tar.xz
+"

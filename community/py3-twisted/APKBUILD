@@ -1,0 +1,113 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=py3-twisted
+pkgver=25.5.0
+pkgrel=1
+pkgdesc="Asynchronous networking framework written in Python3"
+url="https://twistedmatrix.com/"
+arch="noarch"
+license="MIT"
+depends="
+	py3-cryptography
+	py3-zope-interface
+	py3-constantly
+	py3-incremental
+	py3-automat
+	py3-hyperlink
+	py3-attrs
+	py3-typing-extensions
+	py3-pyhamcrest
+	py3-service_identity
+	py3-idna
+	py3-pyserial
+	py3-h2
+	py3-setuptools
+	"
+makedepends="
+	py3-gpep517
+	py3-hatch-fancy-pypi-readme
+	py3-hatchling
+	py3-incremental
+	py3-wheel
+"
+checkdepends="xvfb-run py3-appdirs tzdata py3-asn1 py3-bcrypt"
+subpackages="$pkgname-doc $pkgname-tests $pkgname-pyc"
+source="https://github.com/twisted/twisted/archive/twisted-$pkgver.tar.gz
+	hanging-test.patch
+	"
+builddir="$srcdir"/twisted-twisted-$pkgver
+options="!check" # bunch of random failures
+
+replaces="py-twisted" # Backwards compatibility
+provides="py-twisted=$pkgver-r$pkgrel" # Backwards compatibility
+
+case "$CARCH" in
+	s390x) options="$options !check" # Builders don't have IPV6 ;;
+esac
+
+# secfixes:
+#   22.4.0-r0:
+#     - CVE-2022-24801
+#   22.2.0-r0:
+#     - CVE-2022-21716
+#   22.1.0-r0:
+#     - CVE-2022-21712
+#   20.3.0-r0:
+#     - CVE-2020-10108
+#     - CVE-2020-10109
+#   19.10.0-r0:
+#     - CVE-2019-9512
+#     - CVE-2019-9514
+#     - CVE-2019-9515
+#   19.7.0-r0:
+#     - CVE-2019-12387
+#     - CVE-2019-12855
+#   16.4.0-r0:
+#     - CVE-2016-1000111
+
+prepare() {
+	default_prepare
+	# Remove tests that always fail due to our not-upstream testing procedure
+	# these tests if invoking the Twisted binary and twisted.trial tests work
+	rm -f src/twisted/test/test_main.py
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	PYTHONPATH="$(echo $PWD/build/lib*)" xvfb-run -a python3 \
+		-c 'from twisted.scripts.trial import run; run()' twisted
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/twisted*.whl
+	# python3 setup.py install --skip-build --root="$pkgdir"
+	# Do not remove the test as it is a legitimate module and not
+	# a (common) packaging mistake by upstream
+	# rm -rf "$pkgdir"/usr/lib/python3*/site-packages/twisted/test
+
+	_mans="pyhtmlizer.1 trial.1 twistd.1"
+	for _man in $_mans; do
+		install -m644 -D "$builddir"/docs/core/man/$_man \
+			"$pkgdir"/usr/share/man/man1/$_man
+	done
+}
+
+tests() {
+	amove usr/lib/python3*/site-packages/twisted/test
+	amove usr/lib/python3*/site-packages/twisted/*/test
+}
+
+doc() {
+	replaces="py-twisted-doc" # Backwards compatibility
+	default_doc
+}
+
+sha512sums="
+2cc54ace787b986a1682a500e41b64f2c17cc1c608b054e64ad932f6bf42ec19979cbdc3a6121e879e1b1d4578ea1f4a66b992489ee00a3a85e601d0f29b711a  twisted-25.5.0.tar.gz
+523a4d89343cc2c9914e15fdfd25b9f89c9bee2a00d6b10c808ad4af4dd46689f5f0ebe529bd2ba4855dc7d80192e79f829192bc9171a5b2ae13dc04a181e352  hanging-test.patch
+"

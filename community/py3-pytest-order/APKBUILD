@@ -1,0 +1,37 @@
+# Contributor: Hannes Braun <hannes@hannesbraun.net>
+# Maintainer: Hannes Braun <hannes@hannesbraun.net>
+pkgname=py3-pytest-order
+pkgver=1.5.0
+pkgrel=0
+pkgdesc="pytest plugin that allows to customize the test execution order"
+url="https://github.com/pytest-dev/pytest-order"
+arch="noarch"
+license="MIT"
+depends="py3-pytest"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest-dependency py3-pytest-mock py3-pytest-xdist"
+subpackages="$pkgname-doc $pkgname-pyc"
+source="https://github.com/pytest-dev/pytest-order/archive/v$pkgver/py3-pytest-order-$pkgver.tar.gz"
+builddir="$srcdir/pytest-order-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	install -Dm644 LICENSE -t "$pkgdir"/usr/share/licenses/$pkgname/
+}
+
+sha512sums="
+54b9d48197d30b25d31514c9097b1af2739ff900b22650fbe57d1b6648706cd8cf7bd1e689516241ffe33a56acdc6b9e45615b70dbc13fd24ba387f6635de706  py3-pytest-order-1.5.0.tar.gz
+"

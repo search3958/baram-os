@@ -1,0 +1,27 @@
+# Contributor: Oleg Titov <oleg.titov@gmail.com>
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+pkgname=lzbench
+pkgver=2.2
+pkgrel=0
+pkgdesc="lzbench is an in-memory benchmark of open-source LZ77/LZSS/LZMA compressors"
+url="https://github.com/inikep/lzbench"
+arch="all !s390x"
+license="GPL zlib MIT Unlicense BSD Apache-2.0 CDDL CC0 custom"
+options="!check" # No test suite from upstream
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/inikep/lzbench/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-$pkgver/"
+
+build() {
+	make MOREFLAGS="$CFLAGS -D_DEFAULT_SOURCE -Wno-int-conversion"
+}
+
+package() {
+	install -Dm 755 lzbench "$pkgdir"/usr/bin/lzbench
+
+	install -Dm 644 -t "$pkgdir"/usr/share/doc/$pkgname/ README.md
+}
+
+sha512sums="
+65a5d0544c3252fbe067bac2f0409295107b9c3cb53471b9e07ede151decf1d8d2a97e292cccc4d6e4d38b2730f42c90f031bd975814d9691f5d8102984e7f61  lzbench-2.2.tar.gz
+"

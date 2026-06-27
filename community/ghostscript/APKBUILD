@@ -1,0 +1,228 @@
+# Contributor: Cameron Banta <cbanta@gmail.com>
+# Maintainer: Cameron Banta <cbanta@gmail.com>
+pkgname=ghostscript
+pkgver=10.07.1
+pkgrel=0
+pkgdesc="Interpreter for the PostScript language and for PDF"
+url="https://ghostscript.com/"
+arch="all"
+license="AGPL-3.0-or-later"
+options="!check"
+makedepends="
+	autoconf
+	automake
+	cups-dev
+	expat-dev
+	freetype-dev
+	gtk+3.0-dev
+	jbig2dec-dev
+	lcms2-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	libtool
+	openjpeg-dev
+	tiff-dev
+	zlib-dev
+	libxt-dev
+	"
+subpackages="$pkgname-dbg $pkgname-doc $pkgname-dev $pkgname-gtk"
+source="https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs${pkgver//./}/ghostscript-$pkgver.tar.gz
+	ghostscript-system-zlib.patch
+	fix-sprintf.patch
+	pass-cflags-to-so-link.patch
+	disable-armv7-brotli-huffman-code-fast-load.patch
+	"
+
+# secfixes:
+#   10.06.0-r0:
+#     - CVE-2025-59798
+#     - CVE-2025-59799
+#     - CVE-2025-59800
+#     - CVE-2025-59801
+#   10.05.1-r0:
+#     - CVE-2025-46646
+#   10.05.0-r0:
+#     - CVE-2025-27830
+#     - CVE-2025-27831
+#     - CVE-2025-27832
+#     - CVE-2025-27833
+#     - CVE-2025-27834
+#     - CVE-2025-27835
+#     - CVE-2025-27836
+#     - CVE-2025-27837
+#   10.04.0-r0:
+#     - CVE-2024-46951
+#     - CVE-2024-46952
+#     - CVE-2024-46953
+#     - CVE-2024-46954
+#     - CVE-2024-46955
+#     - CVE-2024-46956
+#   10.03.1-r0:
+#     - CVE-2023-52722
+#     - CVE-2024-29510
+#     - CVE-2024-33869
+#     - CVE-2024-33870
+#     - CVE-2024-33871
+#   10.02.0-r0:
+#     - CVE-2023-43115
+#   9.54-r1:
+#     - CVE-2021-3781
+#   9.51-r0:
+#     - CVE-2020-16287
+#     - CVE-2020-16288
+#     - CVE-2020-16289
+#     - CVE-2020-16290
+#     - CVE-2020-16291
+#     - CVE-2020-16292
+#     - CVE-2020-16293
+#     - CVE-2020-16294
+#     - CVE-2020-16295
+#     - CVE-2020-16296
+#     - CVE-2020-16297
+#     - CVE-2020-16298
+#     - CVE-2020-16299
+#     - CVE-2020-16300
+#     - CVE-2020-16301
+#     - CVE-2020-16302
+#     - CVE-2020-16303
+#     - CVE-2020-16304
+#     - CVE-2020-16305
+#     - CVE-2020-16306
+#     - CVE-2020-16307
+#     - CVE-2020-16308
+#     - CVE-2020-16309
+#     - CVE-2020-16310
+#     - CVE-2020-17538
+#   9.50-r0:
+#     - CVE-2019-14869
+#   9.27-r4:
+#     - CVE-2019-14817
+#   9.27-r3:
+#     - CVE-2019-14811
+#     - CVE-2019-14812
+#     - CVE-2019-14813
+#   9.27-r2:
+#     - CVE-2019-10216
+#   9.26-r2:
+#     - CVE-2019-3835
+#     - CVE-2019-3838
+#   9.26-r1:
+#     - CVE-2019-6116
+#   9.26-r0:
+#     - CVE-2018-19409
+#     - CVE-2018-19475
+#     - CVE-2018-19476
+#     - CVE-2018-19477
+#   9.25-r1:
+#     - CVE-2018-17961
+#     - CVE-2018-18073
+#     - CVE-2018-18284
+#   9.25-r0:
+#     - CVE-2018-16802
+#   9.24-r0:
+#     - CVE-2018-15908
+#     - CVE-2018-15909
+#     - CVE-2018-15910
+#     - CVE-2018-15911
+#   9.23-r0:
+#     - CVE-2018-10194
+#   9.21-r2:
+#     - CVE-2017-8291
+#   9.21-r3:
+#     - CVE-2017-7207
+#     - CVE-2017-5951
+
+prepare() {
+	default_prepare # apply patches
+
+	# force it to use system-libs
+	rm -r \
+		cups/libs \
+		freetype \
+		jbig2dec \
+		jpeg \
+		lcms2mt \
+		libpng \
+		openjpeg \
+		tiff \
+		zlib
+
+	# fails to build tesseract due missing SIMD instructions on arm32:
+	case "$CARCH" in
+		armhf|armv7)
+			rm -r leptonica tesseract
+			;;
+	esac
+
+	# fix parallel builds
+	sed -i -e 's/ECHO_XE/ECHOGS_XE/g' \
+		-e 's/^\($(GLOBJ)md5.$(OBJ) :.*\)/\1 $(ECHOGS_XE)/' \
+		base/lib.mak
+	aclocal && autoconf --force
+
+	cd $builddir/ijs
+	libtoolize --force && aclocal && autoconf && automake --add-missing
+}
+
+build() {
+	export CFLAGS="$CFLAGS -flto=auto -std=gnu89"
+	# https://bugs.ghostscript.com/show_bug.cgi?id=708608
+
+	# build ijs
+	cd "$builddir"/ijs
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--enable-shared \
+		--disable-static
+	make
+
+	cd "$builddir"
+
+	# --disable-compile-inits is needed to link with system-zlib
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--docdir=/usr/share/doc/"$pkgname" \
+		--with-system-libtiff \
+		--with-ijs \
+		--with-jbig2dec \
+		--without-libpaper \
+		--without-versioned-path \
+		--enable-gtk \
+		--with-drivers=ALL \
+		--with-fontpath=/usr/share/fonts/Type1:/usr/share/fonts \
+		--disable-compile-inits
+
+	make so all
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install soinstall
+
+	cd "$builddir"/ijs
+	make -j1 DESTDIR="$pkgdir" install
+	cd ..
+
+	# create empty dir for future fonts
+	mkdir -p "$pkgdir"/usr/share/fonts/Type1
+}
+
+gtk() {
+	pkgdesc="A GTK-enabled PostScript interpreter and renderer"
+
+	amove usr/bin/gsx
+}
+
+sha512sums="
+480aef1284dbe4d059dd0f9cc60dd5772d5093239df68b838f7f4f7d2efd77de8f03a7baeffbdbe65126a660c1c169137dd7d8cc28dd3bab59cd286a24ca1491  ghostscript-10.07.1.tar.gz
+b17d69c754b78749b5506d3f9726158c1bf5b15d96b242d6ff1f1554f1530e5e69ab71d6f6f8d66af674011e5bc8f704d8927bae85956baf1567e5bcfbe09dcd  ghostscript-system-zlib.patch
+f3cce4068fbe6b2073f6e7017bd2c4d4f1d2aa6e03c47d2203441fb1d991a482632fc703f06489ef4195471213ab4870a33dc1ea85255500c0a415f244b205ce  fix-sprintf.patch
+e80cb68e29bc87bfbf0efd359e8d070b160fcdc43eb5220faa77b37a23b338b287ad7307f270ae6258f474a6a0b6ebbc0c15af5ad2b33a6fc3461ae96b08f476  pass-cflags-to-so-link.patch
+be0cb9a054af1861027ab45d7a6cdf75f9c284d59f5942451f3981365e19ddd162604d96edaeaab276b3438172dd272aebc5e782c0b0b11582d2f2fa939343a8  disable-armv7-brotli-huffman-code-fast-load.patch
+"

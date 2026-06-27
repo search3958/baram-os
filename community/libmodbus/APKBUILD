@@ -1,0 +1,37 @@
+# Contributor: Oz Tiram <oz.tiram@gmail.com>
+# Maintainer: Oz Tiram <oz.tiram@gmail.com>
+pkgname=libmodbus
+pkgver=3.1.10
+pkgrel=0
+pkgdesc="Modbus library which supports RTU communication over a serial line or a TCP link"
+url="https://libmodbus.org/"
+source="https://github.com/stephane/libmodbus/releases/download/v$pkgver/libmodbus-$pkgver.tar.gz"
+arch="all"
+license="LGPL-2.1-or-later"
+makedepends="linux-headers"
+subpackages="$pkgname-dev $pkgname-doc"
+
+# secfixes:
+#   3.1.8-r0:
+#     - CVE-2022-0367
+
+build() {
+	./configure \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+d9a56d2cd3285823b287b6bf4f79741f2e626e09cfc1872405a306e8dcc0f64c15695e8aee45614071c615cd248b87293ef2351c830120a515d28303bad0ccee  libmodbus-3.1.10.tar.gz
+"

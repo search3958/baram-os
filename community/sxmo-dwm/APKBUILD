@@ -1,0 +1,47 @@
+# Contributor: Maarten van Gompel <proycon@anaproy.nl>
+# Maintainer: Anjandev Momi <anjan@momi.ca>
+pkgname=sxmo-dwm
+pkgver=6.3.1
+pkgrel=0
+pkgdesc="Dwm fork for Sxmo UI; supports volume-key hotkeys, swallow, keyboard, among other patches"
+url="https://git.sr.ht/~mil/sxmo-dwm"
+arch="all"
+license="MIT"
+depends="xorg-server"
+makedepends="libxft-dev libx11-dev libxinerama-dev pango-dev"
+subpackages="$pkgname-doc"
+provides="dwm"
+provider_priority=10
+options="!check" # has no tests
+source="$pkgname-$pkgver-2.tar.gz::https://git.sr.ht/~mil/sxmo-dwm/archive/$pkgver.tar.gz
+	gcc14.patch"
+
+prepare() {
+	default_prepare
+	sed -i -e '/CFLAGS/{s/-Os//;s/=/+=/}' \
+		-e '/LDFLAGS/{s/=/+=/}' \
+		"$builddir"/config.mk
+
+	case "$CARCH" in
+		x86_64|aarch64) ;;
+		*)
+			sed -i 's|#NOBONSAIFLAGS = -DNOBONSAI|NOBONSAIFLAGS = -DNOBONSAI|' \
+				"$builddir"/config.mk
+		;;
+	esac
+}
+
+build() {
+	make X11INC=/usr/include/X11 \
+		X11LIB=/usr/lib/X11 \
+		FREETYPEINC=/usr/include/freetype2
+}
+
+package() {
+	make PREFIX=/usr DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+e03dead13e4586f5bfe8cc47f090ccb28c97c3e4541da997ddf47ee160eea92cb21535048835d2f0992de1da7695c961d80eb7a4727584ddfdbfadae2e2d76eb  sxmo-dwm-6.3.1-2.tar.gz
+9e656717f4e15721cc718f115f27b2267bc7a9d979b7429d1594107309d150ac43421b0609c1af99b3c2d3eeee7e655138c0c4c225d10704f12bc1e65773de7a  gcc14.patch
+"

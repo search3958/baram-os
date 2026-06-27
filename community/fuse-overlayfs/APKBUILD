@@ -1,0 +1,44 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=fuse-overlayfs
+pkgver=1.16
+pkgrel=0
+pkgdesc="FUSE implementation for overlayfs"
+url="https://github.com/containers/fuse-overlayfs"
+license="GPL-2.0-or-later"
+arch="all"
+depends="fuse3"
+makedepends="linux-headers fuse3-dev autoconf automake"
+install="$pkgname.post-install"
+subpackages="$pkgname-doc"
+source="https://github.com/containers/fuse-overlayfs/archive/v$pkgver/fuse-overlayfs-$pkgver.tar.gz
+	modules-load.conf
+	"
+
+prepare() {
+	default_prepare
+	autoreconf -fis
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--mandir=/usr/share/man
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+	install -Dm644 "$srcdir"/modules-load.conf "$pkgdir"/usr/lib/modules-load.d/fuse-overlayfs.conf
+}
+
+sha512sums="
+d72ef0881b788c8f907e0e83bbb5aaa93f37068670781443401234ae04b7347f216bf88fced429d8f6ad76790fa2de6267fd6f6da8327b0d1bb5902b1a5ec468  fuse-overlayfs-1.16.tar.gz
+57d23d2778556eafc3035e6be575bf95b4032f123b35f2b1657eff5e7496de253173edc657f90531ee58e25673f4f27a5cd1cc76b14a038edb244f104a231771  modules-load.conf
+"

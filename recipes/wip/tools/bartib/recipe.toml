@@ -1,5 +1,0 @@
-#TODO promote
-[source]
-git = "https://github.com/nikolassv/bartib"
-[build]
-template = "cargo"

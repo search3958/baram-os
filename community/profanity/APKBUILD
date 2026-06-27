@@ -1,0 +1,52 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=profanity
+pkgver=0.18.2
+pkgrel=0
+pkgdesc="Ncurses based XMPP client"
+url="https://github.com/profanity-im/profanity"
+arch="all"
+license="GPL-3.0-or-later"
+makedepends="
+	cmocka-dev
+	curl-dev
+	glib-dev
+	libgcrypt-dev
+	libotr-dev
+	libsignal-protocol-c-dev
+	libstrophe-dev
+	libtool
+	meson
+	ncurses-dev
+	pkgconf
+	readline-dev
+	sqlite-dev
+"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/profanity-im/profanity/archive/$pkgver.tar.gz
+	"
+
+build() {
+	# GPG is "suboptimal" for chat, since it doesn't provide forward secrecy, deniability, ...
+	# Its usage/support is currently discouraged in XMPP.
+	# Users are encouraged to use OTR, or even better, OMEMO.
+	abuild-meson \
+		-Dotr=enabled \
+		-Domemo=enabled \
+		-Domemo-backend=libsignal \
+		-Dtests=true \
+		output
+	meson compile -C output
+}
+
+check() {
+	LANG=en_US.UTF-8 meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+ca1972f4262f8ca92aa268fcba48e50ad8b9685446aafe1ab2097cd750e4b4a17c6ae669feecd8cfff748fe30e9986933d511ad12bd68822c80e8ef5bea41c27  profanity-0.18.2.tar.gz
+"

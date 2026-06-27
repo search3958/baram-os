@@ -1,0 +1,59 @@
+# Contributor: Sean McAvoy <seanmcavoy@gmail.com>
+# Maintainer: Sean McAvoy <seanmcavoy@gmail.com>
+pkgname=exabgp
+pkgver=5.0.4
+pkgrel=1
+pkgdesc="BGP swiss army knife of networking"
+url="https://github.com/Exa-Networks/exabgp"
+arch="noarch"
+license="BSD-3-Clause"
+depends="py3-parsing py3-bitstring"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="
+	py3-hypothesis
+	py3-psutil
+	py3-pytest
+	py3-pytest-asyncio
+	py3-pytest-benchmark
+	py3-pytest-timeout
+"
+subpackages="$pkgname-doc $pkgname-openrc $pkgname-pyc"
+pkgusers="exabgp"
+pkggroups="exabgp"
+install="$pkgname.pre-install"
+source="exabgp-$pkgver.tar.gz::https://github.com/Exa-Networks/exabgp/archive/refs/tags/$pkgver.tar.gz
+	exabgp.initd
+	exabgp.confd
+	"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+	rm -rf "$pkgdir"/usr/etc
+	install -Dm644 -t "$pkgdir"/etc/exabgp/ "$builddir"/etc/exabgp/*.conf
+	install -Dm644 -t "$pkgdir"/etc/exabgp/ "$builddir"/etc/exabgp/*.run
+	install -Dm644 -t "$pkgdir"/etc/exabgp/run "$builddir"/etc/exabgp/run/*
+	install -Dm644 "$builddir"/doc/man/exabgp.1 "$pkgdir"/usr/share/man/man1/exabgp.1
+	install -Dm644 "$builddir"/doc/man/exabgp.conf.5 "$pkgdir"/usr/share/man/man5/exabgp.conf.5
+	install -Dm755 "$srcdir"/exabgp.initd "$pkgdir"/etc/init.d/exabgp
+	install -Dm644 "$srcdir"/exabgp.confd "$pkgdir"/etc/conf.d/exabgp
+	PYTHONPATH="$builddir"/build/lib "$pkgdir"/usr/bin/exabgp --fi | sed "s/nobody/$pkgusers/g" > "$pkgdir"/etc/exabgp/exabgp.env
+}
+
+sha512sums="
+713c4dd90ff096ccb8ab14d922061d1ef12213dd3de8a0a8f1620d8141c8df1dcf5fd9ea77fc5e8dcd083482ae17203ab19d5b459de7518a96ec4049f06d8ea4  exabgp-5.0.4.tar.gz
+0a6ee4116632d1d869216804d6ace385238347a871cf243b29cf3a77ed04366395ef4fdc28e749daf8f28f048e6eb8fd80bc82e74ad1e5f80b782548d7746a34  exabgp.initd
+32d54bfd02f13d75c5d544141a4e3569ae873ab1ea77cb697a4475f18329c5b4e15a59ab0345b77a20bdfbe60e8322eb373af1f8530f96d5be07f4fb69ccba80  exabgp.confd
+"

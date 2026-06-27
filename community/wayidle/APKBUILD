@@ -1,0 +1,37 @@
+maintainer="Hugo Osvaldo Barrera <hugo@whynothugo.nl>"
+pkgname=wayidle
+pkgver=1.0.1
+pkgrel=0
+pkgdesc="Wait for wayland compositor idle timeouts"
+url="https://git.sr.ht/~whynothugo/wayidle"
+arch="all"
+license="ISC"
+makedepends="cargo cargo-auditable scdoc"
+subpackages="$pkgname-doc"
+source="wayidle-$pkgver.tar.gz::https://git.sr.ht/~whynothugo/wayidle/archive/v$pkgver.tar.gz"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="net" # fetch dependencies
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+	scdoc < wayidle.1.scd > wayidle.1
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -Dm 0755 target/release/wayidle -t "$pkgdir"/usr/bin/
+	install -Dm 0644 wayidle.1 -t "$pkgdir"/usr/share/man/man1/
+}
+
+sha512sums="
+977fa7c9e065a3af28e7e6e85181ee47c4a88c08d43a8c2738480ac2393f0ef3dd0e97e954edeadd85b946b231cc4d058612318c244e34318bebd20886e802d9  wayidle-1.0.1.tar.gz
+"

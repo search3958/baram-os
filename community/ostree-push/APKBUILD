@@ -1,0 +1,51 @@
+# Maintainer: Jian-Hong Pan <jhp@endlessos.org>
+pkgname=ostree-push
+pkgver=1.2.0
+pkgrel=1
+pkgdesc="Push commits from local OSTree repo to a remote"
+url="https://github.com/dbnicholson/ostree-push"
+arch="noarch !loongarch64 !riscv64" # riscv64: test fails
+license="GPL-2.0-only"
+depends="
+	openssh-client
+	ostree
+	ostree-gir
+	py3-gobject3
+	py3-yaml
+	python3
+	"
+makedepends="
+	cairo-dev
+	py3-gobject3-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="$pkgname-v$pkgver.tar.gz::https://github.com/dbnicholson/ostree-push/archive/refs/tags/v$pkgver.tar.gz
+	python-3.14.patch
+	"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+90c10f004692a3ef53a22ccd5c58ca3fc5b9806ea94635d787db293b319b3c1e30fbce168a2d30db5046bd2c26f228fc3f987a1d36065dfd530e67fbbdc14dc4  ostree-push-v1.2.0.tar.gz
+a29b24a895642ec1a503e6a21ced381c0ea4d620fb5b5634f17c416b362f63ba17999bb30307f55ccb6aa5ec60295e2567c0d8bc5768377104d1af5c6cd7cc84  python-3.14.patch
+"

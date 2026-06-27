@@ -1,0 +1,87 @@
+# Contributor: Jakob Meier <comcloudway@ccw.icu>
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer: Jakob Meier <comcloudway@ccw.icu>
+pkgname=maxima
+pkgver=5.48.1
+pkgrel=9
+pkgdesc="Sophisticated computer algebra system"
+url="http://maxima.sourceforge.net"
+arch="all"
+license="GPL-2.0-or-later"
+_ecl_version="24.5.10"
+depends="texinfo shared-mime-info"
+makedepends="
+	autoconf
+	automake
+	ecl-dev~$_ecl_version
+	gc-dev
+	gmp-dev
+	libffi-dev
+	perl
+	python3
+	"
+checkdepends="gnuplot"
+subpackages="
+	$pkgname-doc
+	$pkgname-doc-extra
+	$pkgname-bash-completion
+	$pkgname-emacs
+	"
+source="
+	maxima-$pkgver.tar.gz::https://sourceforge.net/projects/maxima/files/Maxima-source/$pkgver-source/maxima-$pkgver.tar.gz/download
+	handle-multiple-ldflags.patch
+	"
+options="!check" # take hours
+
+prepare() {
+	default_prepare
+	autoreconf -fi
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--libexecdir=/usr/lib \
+		--localstatedir=/var \
+		--enable-ecl \
+		--with-default-lisp=ecl
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+
+	# remove unused files
+	find "$pkgdir" -type d -iname tests -exec rm -r {} \+
+
+	install -Dm664 src/binary-ecl/maxima.fas -t "$pkgdir"/usr/lib/ecl-$_ecl_version/
+}
+
+extra() {
+	pkgdesc="$pkgdesc (extra html documentation + demos)"
+
+	amove usr/share/$pkgname/$pkgver/doc
+	amove usr/share/$pkgname/$pkgver/demo
+}
+
+emacs() {
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="$pkgname=$pkgver-r$pkgrel emacs"
+	pkgdesc="Emacs plugins for $pkgname"
+
+	amove usr/share/emacs
+}
+
+sha512sums="
+d7fbcee59d7204e8a6bc0deeaa94f9cfd7cf22ae9e63c07769ddaade253c3403b8158d80258edf44a4b25993ebcbcae48b6d8e34def028e1df40fdb1b9ee3f8d  maxima-5.48.1.tar.gz
+58b574a91f14aa1568b43ce96ac847babed75e91b68be25f40d7da1f09d1e4c8a37f549d33d7566c54e546f4825e8f8f9038777460beea0d3f9282e1ead27eb0  handle-multiple-ldflags.patch
+"

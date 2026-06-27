@@ -1,0 +1,29 @@
+# Contributor: Matthew T Hoare <matthew.t.hoare@gmail.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Runxi Yu <me@runxiyu.org>
+maintainer="Runxi Yu <me@runxiyu.org>"
+pkgname=oksh
+pkgver=7.8
+pkgrel=1
+pkgdesc="Portable OpenBSD ksh, based on the Public Domain KornShell (pdksh)"
+url="https://github.com/ibara/oksh"
+arch="all"
+license="Public-Domain"
+options="!check" # no checks
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname.pre-deinstall"
+makedepends="ncurses-dev"
+subpackages="$pkgname-doc"
+source="https://github.com/ibara/oksh/releases/download/oksh-$pkgver/oksh-$pkgver.tar.gz"
+
+build() {
+	./configure --prefix=/usr
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+51043a68dbecf735c0c74600d251171fdcff3dd25753c5a9c829ef349b9f516596773a69365500b3d7073d5f093806d04e74a426eeabb3318483327b1dde9824  oksh-7.8.tar.gz
+"

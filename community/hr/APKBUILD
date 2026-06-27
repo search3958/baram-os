@@ -1,0 +1,24 @@
+# Contributor: Grigory Kirillov <txgk@bk.ru>
+# Maintainer:
+pkgname=hr
+pkgver=1.5
+pkgrel=0
+pkgdesc="Script that prints characters in the entire width of the terminal"
+url="https://github.com/LuRsT/hr"
+arch="noarch"
+license="MIT"
+options="!check" # no test suite
+depends="
+	ncurses
+	"
+subpackages="$pkgname-doc"
+source="https://github.com/LuRsT/hr/archive/$pkgver/hr-$pkgver.tar.gz"
+
+package() {
+	install -Dm755 hr -t "$pkgdir"/usr/bin/
+	install -Dm644 hr.1 -t "$pkgdir"/usr/share/man/man1/
+}
+
+sha512sums="
+154ebeb5300dd78ba1d1195183a4a18d85c1deba781a8499cd706ba90959249a2a3e36778dbce0904732f91736d98e4406290769489eeda7cab899d15fc9901f  hr-1.5.tar.gz
+"

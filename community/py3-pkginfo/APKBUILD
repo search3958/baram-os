@@ -1,0 +1,39 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=py3-pkginfo
+pkgver=1.12.1.2
+pkgrel=1
+pkgdesc="Parses metadata stored by distutils in PKG-INFO"
+url="https://code.launchpad.net/~tseaver/pkginfo"
+arch="noarch"
+license="MIT"
+depends="python3"
+makedepends="py3-gpep517 py3-setuptools py3-wheel"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/p/pkginfo/pkginfo-$pkgver.tar.gz
+	dont-package-tests.patch
+	"
+builddir="$srcdir/pkginfo-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest -k 'not test_installed_ctor_w_dist_info'
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+16eed4c19b92384aa422d7a4e352746270bab8dc80b503c73aae0554eca012f38e2099867febf1a205d6fa572f4738f503a80e51ea247af4404581eea4a2d1d4  pkginfo-1.12.1.2.tar.gz
+49a37caa2e03aef822dbad47c18fbf0ee1aefbe6b555590c75c0b89aa9b36ba8bbf5256c90c6690e97a81a3aeea07133e19a954648b40de36bbdfa1424c3e282  dont-package-tests.patch
+"

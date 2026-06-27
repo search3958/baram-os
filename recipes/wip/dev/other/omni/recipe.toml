@@ -1,5 +1,0 @@
-#TODO openssl-sys crate error
-[source]
-git = "https://github.com/XaF/omni"
-[build]
-template = "cargo"

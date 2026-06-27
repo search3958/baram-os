@@ -1,0 +1,39 @@
+# Contributor: Dominika Liberda <ja@sdomi.pl>
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=gparted
+pkgver=1.8.1
+pkgrel=0
+pkgdesc="graphical partition editor for creating, reorganizing, and deleting disk partitions"
+url="https://gparted.sourceforge.net/"
+arch="all"
+license="GPL-2.0-or-later"
+depends="e2fsprogs"
+makedepends="
+	gettext-dev
+	gtkmm3-dev
+	parted-dev
+	polkit-dev
+	util-linux-dev
+	"
+subpackages="$pkgname-doc $pkgname-lang"
+source="https://downloads.sourceforge.net/project/gparted/gparted/gparted-$pkgver/gparted-$pkgver.tar.gz"
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--disable-doc
+	make
+}
+
+package() {
+	make appdatadir=/usr/share/metainfo DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+aa191bc30d8ca5e0ee8a74464c1a829b99336ffc49580e1908a1890e654e6164b7ff99f7a505f8c25e0b85b1333aa5acd3915ee8fccd697370ec78cca4946a15  gparted-1.8.1.tar.gz
+"

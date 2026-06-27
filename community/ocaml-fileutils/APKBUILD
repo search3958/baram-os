@@ -1,0 +1,92 @@
+# Contributor: Fernando Casas Schossow <casasfernando@outlook.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=ocaml-fileutils
+_pkgname=fileutils
+pkgver=0.6.4
+pkgrel=5
+pkgdesc="OCaml library for common file and filename operations"
+url="https://github.com/gildor478/ocaml-fileutils"
+arch="all !riscv64 !loongarch64" # ocaml
+license="LGPL-2.1-or-later WITH OCaml-LGPL-linking-exception"
+makedepends="
+	dune
+	ocaml
+	ocaml-compiler-libs
+	ocaml-findlib-dev
+	ocaml-ocamldoc
+	ocaml-seq-dev
+	ocaml-stdlib-shims
+	ocamlbuild
+	"
+options="!check"
+subpackages="$pkgname-dev $pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/gildor478/ocaml-fileutils/archive/v$pkgver.tar.gz"
+
+# 32-bit archs
+case "$CARCH" in
+	arm*|x86) options="$options textrels" ;;
+esac
+
+build() {
+	export OCAMLPATH=/usr/lib/ocaml
+	dune build -p fileutils
+}
+
+check() {
+	make test
+}
+
+package() {
+	dune install \
+		--destdir="$pkgdir" \
+		--prefix=/usr \
+		--libdir=/usr/lib/ocaml \
+		fileutils
+
+	cd "$pkgdir"
+	mkdir -vp usr/share/doc
+	mv -v usr/doc/"$_pkgname" \
+		usr/share/doc/"$pkgname"
+}
+
+dev() {
+	default_dev
+
+	cd "$pkgdir"
+
+	local path; find usr/lib/ocaml \( \
+			-name '*.cmt' -o \
+			-name '*.cmti' -o \
+			-name '*.ml' -o \
+			-name '*.mli' \
+		\) | while read -r path
+	do
+		amove "$path"
+	done
+}
+
+prepare_py_provides() {
+	local datadir="${subpkgdir:-$pkgdir}"
+	local pkgbasedir=${pkgbasedir:-"$startdir/pkg"}
+	local controldir="$pkgbasedir"/.control.${subpkgname:-$pkgname}
+
+	options_has "!tracedeps" && return 0
+
+	ocaml4-abuild-find provides \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir" \
+		"$pkgver-r$pkgrel"
+}
+
+scan_python3_dependency() {
+	local controldir="$2" datadir="$3"
+
+	ocaml4-abuild-find requires \
+		"$datadir"/usr/lib/ocaml \
+		"$controldir"
+}
+
+sha512sums="
+fed41c0c98bd9a2dde18335f0c7fd721b609f936001424eff200bca058146af55134f1d245b143bd211ece37bc036b3308528b193a6b578735b27891181f07e1  ocaml-fileutils-0.6.4.tar.gz
+"

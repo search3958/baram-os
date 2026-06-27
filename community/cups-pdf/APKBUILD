@@ -1,0 +1,30 @@
+# Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
+pkgname=cups-pdf
+pkgver=3.0.2
+pkgrel=0
+pkgdesc="CUPS PDF printer"
+url="https://www.cups-pdf.de"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="cups-dev"
+options="!check"
+pkgusers="lp"
+pkggroups="lp"
+source="https://www.cups-pdf.de/src/cups-pdf_$pkgver.tar.gz"
+
+build() {
+	cd "$builddir/src"
+	gcc -Os -s cups-pdf.c -o cups-pdf -lcups
+}
+
+package() {
+	install -D -m755 src/cups-pdf "$pkgdir"/usr/lib/cups/backend/cups-pdf
+	install -d -g lp "$pkgdir"/etc/cups
+	install -D -m644 -g lp extra/cups-pdf.conf "$pkgdir"/etc/cups/cups-pdf.conf
+	install -D -m644 extra/CUPS-PDF_opt.ppd "$pkgdir"/usr/share/ppd/cups-pdf/cups-pdf.ppd
+	install -d -o lp -g lp "$pkgdir"/var/spool/cups-pdf
+}
+
+sha512sums="
+e400a12da4b6cdfd9e77bf03e3a4e87f3512a01e5272d94e58ddf51b3cab54d8978c43c8bfd9490e4c7456523662df522ef783aa723332d32b657b6448320618  cups-pdf_3.0.2.tar.gz
+"

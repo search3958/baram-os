@@ -1,0 +1,109 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=cups-filters
+pkgver=1.28.17
+pkgrel=9
+pkgdesc="OpenPrinting CUPS filters and backends"
+url="https://wiki.linuxfoundation.org/openprinting/cups-filters"
+arch="all"
+license="GPL-2.0-or-later LGPL-2.1-or-later MIT"
+# while textonly is originally a bash script, it only needs a few changes
+# to work with any shell (dash being the problematic one)
+# foomatic-rip needs "a modern shell" in case the PPD requires some
+# newer constructs; bash, ksh, and zsh are documented as working,
+# and busybox ash supports most of what bash does
+# texttops/textopdf need FreeMono from font-freefont
+# for text printing to work
+depends="poppler-utils bc font-freefont ghostscript"
+makedepends="
+	avahi-dev
+	bash
+	cups-dev
+	dbus-dev
+	font-dejavu
+	fontconfig-dev
+	freetype-dev
+	ghostscript-dev
+	lcms2-dev
+	libexif-dev
+	libjpeg-turbo-dev
+	libpng-dev
+	linux-headers
+	mupdf-tools
+	poppler-dev
+	qpdf-dev
+	tiff-dev
+	zlib-dev
+	"
+subpackages="
+	$pkgname-dev
+	$pkgname-doc
+	$pkgname-libs
+	$pkgname-systemd
+	"
+pkggroups="lp"
+source="https://github.com/OpenPrinting/cups-filters/releases/download/$pkgver/cups-filters-$pkgver.tar.xz
+	CVE-2023-24805.patch
+	0006-qpdf-12.patch
+	"
+
+# secfixes:
+#   1.28.17-r3:
+#     - CVE-2023-24805
+
+build() {
+	CXXFLAGS="$CXXFLAGS -flto=auto -std=c++17" \
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--infodir=/usr/share/info \
+		--localstatedir=/var \
+		--disable-static \
+		--with-pdftops=pdftops \
+		--with-shell=/bin/sh \
+		--without-rcdir \
+		--without-rclevels \
+		--with-test-font-path=/usr/share/fonts/dejavu/DejaVuSans.ttf
+	# workaround parallel build issue by building libcupsfilters.la first
+	make libcupsfilters.la
+	make libfontembed.la
+	make
+}
+
+check() {
+	make check
+}
+
+package() {
+	make -j1 DESTDIR="$pkgdir" install
+	#the pdf.utf-8 symlink isn't quite good enough
+	cd "$pkgdir"/usr/share/cups/charsets && \
+	ln -s pdf.utf-8.simple pdf.UTF-8
+
+	chgrp -R lp "$pkgdir"/etc/cups
+
+	install -Dm644 "$builddir"/utils/cups-browsed.service \
+		-t "$pkgdir"/usr/lib/systemd/system/
+}
+
+dev() {
+	default_dev
+
+	# cupsfilters.drv needs pcl.h
+	install -Dm644 "$builddir"/filter/pcl.h \
+		"$pkgdir"/usr/share/cups/ppdc/pcl.h
+}
+
+libs() {
+	pkgdesc="OpenPrinting CUPS filters and backends - cupsfilters and fontembed libraries"
+
+	amove usr/lib/lib*.so.*
+}
+
+sha512sums="
+320544a48206165581adafb28dbef58f39c66bebd3641be3d180a692605349d9e6af6d464044db9f7bda17a67f4a079370d8cc880cd7873d684b2209882deb35  cups-filters-1.28.17.tar.xz
+7ca0c262c5f85236c85ca076c2739e5bfd53c873896a57d3b92943f4c08d49f131a8d804432462e13d184b8af971a8b0efe908aa0277438a0f4a94dc9aaf5796  CVE-2023-24805.patch
+0733ccd1f00fa96c6353b24237cfd860e08950977f3db97ec94343dee0eeb053fb9fecd5c026f1211039d1fddd41c6b87c8a480c78d42cfe596c650ae097bb33  0006-qpdf-12.patch
+"

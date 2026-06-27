@@ -1,0 +1,28 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=tree-sitter-rust
+pkgver=0.24.0
+pkgrel=1
+pkgdesc="Rust grammar for tree-sitter"
+url="https://github.com/tree-sitter/tree-sitter-rust"
+arch="all"
+license="MIT"
+makedepends="tree-sitter-dev"
+checkdepends="tree-sitter-cli"
+install_if="tree-sitter-grammars"
+source="https://github.com/tree-sitter/tree-sitter-rust/archive/v$pkgver/tree-sitter-rust-$pkgver.tar.gz"
+
+build() {
+	abuild-tree-sitter build
+}
+
+check() {
+	tree-sitter test
+}
+package() {
+	DESTDIR="$pkgdir" abuild-tree-sitter install
+}
+
+sha512sums="
+449bd649860481508d7ad16f83ef850f49a4e8af89467ea4212c75b8af965611be48208775042ce3c12372f9e6b382b0657ddd894f9a793b51425d4fd8ffa73c  tree-sitter-rust-0.24.0.tar.gz
+"

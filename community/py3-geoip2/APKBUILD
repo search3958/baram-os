@@ -1,0 +1,46 @@
+# Contributor: Kevin Daudt <kdaudt@alpinelinux.org>
+# Maintainer: Kevin Daudt <kdaudt@alpinelinux.org>
+pkgname=py3-geoip2
+pkgver=5.2.0
+pkgrel=1
+pkgdesc="API for the GeoIP2 web services and databases"
+url="https://www.maxmind.com/en/home"
+arch="noarch"
+license="Apache-2.0"
+depends="py3-requests py3-maxminddb py3-aiohttp py3-urllib3"
+makedepends="python3-dev py3-gpep517 py3-wheel libmaxminddb-dev py3-uv-build"
+checkdepends="py3-pytest py3-pytest-httpserver"
+_test_data_commit=b5ff09ebb67d959ae68118a058fe344a6994b046
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/maxmind/GeoIP2-python/archive/v$pkgver.tar.gz
+	MaxMind-DB-test-data-$_test_data_commit.tar.gz::https://github.com/maxmind/MaxMind-DB/archive/$_test_data_commit.tar.gz"
+builddir="$srcdir/GeoIP2-python-$pkgver"
+
+prepare() {
+	default_prepare
+
+	rmdir tests/data
+	mv "$srcdir/MaxMind-DB-$_test_data_commit" tests/data
+}
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+e43d2fd34a4434ec159372d51da67fbb53ed0536f3d3c2e465d71e306998e4ee2e70e0a132476add6393a91522f28839490dfd0093add20327a09263dadaf07b  py3-geoip2-5.2.0.tar.gz
+34a8054cf139e11da39b970c34c0c9030e7b056fbf2feffeda2780efbcf9bbcbc40b449b7770d0215317fe51d1983d85787bdcc33334581d746c0b81805fd354  MaxMind-DB-test-data-b5ff09ebb67d959ae68118a058fe344a6994b046.tar.gz
+"

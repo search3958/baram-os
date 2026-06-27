@@ -1,0 +1,58 @@
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-awscrt
+pkgver=0.34.1
+pkgrel=0
+pkgdesc="Python bindings for the AWS Common Runtime"
+url="https://github.com/awslabs/aws-crt-python"
+arch="all"
+license="Apache-2.0"
+# use the cpp one to just pull the aws stack
+makedepends="
+	aws-crt-cpp-dev
+	openssl-dev
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	python3-dev
+	samurai
+	"
+checkdepends="py3-websockets"
+subpackages="$pkgname-pyc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/awslabs/aws-crt-python/archive/refs/tags/v$pkgver.tar.gz"
+builddir="$srcdir/aws-crt-python-$pkgver"
+options="net" # tests need internet
+
+case "$CARCH" in
+arm*|aarch64|ppc64le|loongarch64)
+	# too slow at running tests / fix later
+	options="$options !check"
+	;;
+esac
+prepare() {
+	default_prepare
+
+	# by default it's just 1.0.0.dev0
+	echo "__version__ = '$pkgver'" >> awscrt/__init__.py
+}
+
+build() {
+	export AWS_CRT_BUILD_USE_SYSTEM_LIBCRYPTO=1
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m unittest discover test
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+b2c0ce5b88e164c3e0dd8719e2ec0adb36457bb7c28c7f44395285f0b7b52a7364b49ea329f390e44b1f58984835a31e466e8e49d1a05c3b3b2836803595b28d  py3-awscrt-0.34.1.tar.gz
+"

@@ -1,6 +1,0 @@
-#TODO CMake error
-[source]
-git = "https://github.com/COMBINE-lab/piscem"
-shallow_clone = true
-[build]
-template = "cargo"

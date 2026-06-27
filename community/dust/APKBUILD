@@ -1,0 +1,49 @@
+# Contributor: Jakub Jirutka <jakub@jirutka.cz>
+# Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+pkgname=dust
+pkgver=1.2.4
+pkgrel=0
+pkgdesc="A more intuitive version of du in Rust"
+url="https://github.com/bootandy/dust"
+arch="all"
+license="Apache-2.0"
+makedepends="cargo cargo-auditable"
+options="net"
+subpackages="
+	$pkgname-doc
+	$pkgname-bash-completion
+	$pkgname-fish-completion
+	$pkgname-zsh-completion
+	"
+source="https://github.com/bootandy/dust/archive/v$pkgver/dust-$pkgver.tar.gz"
+
+export CARGO_PROFILE_RELEASE_OPT_LEVEL="z"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --target="$CTARGET" --locked
+	# this test runs dust and expects the output to match 100%,
+	# which fails a lot of the time on various systems as you can't guarantee that
+	rm tests/test_exact_output.rs
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+check() {
+	cargo test --frozen
+}
+
+package() {
+	install -D -m755 target/release/$pkgname -t "$pkgdir"/usr/bin/
+	install -D -m644 completions/dust.bash "$pkgdir"/usr/share/bash-completion/completions/dust
+	install -D -m644 completions/dust.fish "$pkgdir"/usr/share/fish/vendor_completions.d/dust.fish
+	install -D -m644 completions/_dust "$pkgdir"/usr/share/zsh/site-functions/_dust
+	install -D -m644 man-page/dust.1 "$pkgdir"/usr/share/man/man1/dust.1
+}
+
+sha512sums="
+4f377aecf2d8dd7943656c41ebab304c8a05c2bdba11d8fca7a66429cf94663fd421cbc682cc2a1b9db31a3930fc0b4e330a2f21d750974c82d7ac7ba04b6671  dust-1.2.4.tar.gz
+"

@@ -1,0 +1,72 @@
+# Contributor: André Klitzing <aklitzing@gmail.com>
+# Maintainer: André Klitzing <aklitzing@gmail.com>
+pkgname=rbtools
+pkgver=6.0
+pkgrel=1
+pkgdesc="Client tools for Review Board"
+url="https://www.reviewboard.org/docs/releasenotes/rbtools/"
+# pydiffx
+arch="noarch !s390x"
+license="MIT"
+depends="
+	py3-appdirs
+	py3-certifi
+	py3-colorama
+	py3-texttable
+	py3-tqdm
+	py3-typing-extensions
+	py3-typelets
+	py3-housekeeping
+	py3-packaging
+	py3-importlib-metadata
+	py3-importlib-resources
+	py3-puremagic
+	pydiffx
+	python3
+	"
+makedepends="
+	py3-gpep517
+	py3-wheel
+	py3-setuptools
+	"
+checkdepends="
+	py3-kgb
+	py3-pytest
+	py3-pytest-env
+	"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/r/rbtools/rbtools-$pkgver.tar.gz"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	# skip tests that either need special tools or are outdated
+	.testenv/bin/python3 -m pytest \
+		--ignore rbtools/clients/tests/test_svn.py \
+		--ignore rbtools/clients/tests/test_scanning.py \
+		--ignore rbtools/utils/tests/test_source_tree.py \
+		--deselect=rbtools/clients/tests/test_cvs.py \
+		--deselect=rbtools/clients/tests/test_git.py \
+		--deselect=rbtools/clients/tests/test_mercurial.py \
+		--deselect=rbtools/utils/tests/test_console.py \
+		--deselect=rbtools/diffs/tests/test_apple_diff_tool.py \
+		--deselect=rbtools/clients/tests/test_base_scmclient.py
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+
+	# cleanup tests
+	find "$pkgdir" \( -name "tests" -o -name "testing" \) -a -type d -exec rm -r {} \+
+}
+
+sha512sums="
+1530450801984b7d63376b0af13986bcc97b3e28b8c9bf42030774b820ee39686cff7e90b981224f068d8dacf17d0aace0655c758c149158fa6be2e3c3126af8  rbtools-6.0.tar.gz
+"

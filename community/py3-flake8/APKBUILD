@@ -1,0 +1,48 @@
+# Contributor: Peter Bui <pnutzh4x0r@gmail.com>
+# Contributor: Fabian Affolter <fabian@affolter-engineering.ch>
+maintainer="Achill Gilgenast <achill@achill.org>"
+pkgname=py3-flake8
+pkgver=7.3.0
+pkgrel=2
+pkgdesc="Modular source code checker"
+url="https://github.com/PyCQA/flake8"
+arch="noarch"
+license="MIT"
+depends="
+	py3-pyflakes
+	py3-pycodestyle
+	py3-mccabe
+	"
+makedepends="
+	py3-gpep517
+	py3-setuptools
+	py3-wheel
+	"
+checkdepends="
+	py3-pytest
+	"
+subpackages="$pkgname-pyc"
+source="https://github.com/PyCQA/flake8/archive/refs/tags/$pkgver/py3-flake8-$pkgver.tar.gz"
+builddir="$srcdir/flake8-$pkgver"
+options="net"
+
+replaces="py-flake8" # Backwards compatibility
+provides="py-flake8=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel --wheel-dir .dist --output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages testenv
+	testenv/bin/python3 setup.py install
+	testenv/bin/python3 -m pytest -v
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+46e843fc6c3fae0e3b2cd5de09af4131ccdd2c0d7b09fe4942203d065e8625a0f95a3e6cbb89cc94bdb2925c1bd87ec8ba56211a9d695045fb64de91056236d8  py3-flake8-7.3.0.tar.gz
+"

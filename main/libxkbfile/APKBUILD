@@ -1,0 +1,35 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=libxkbfile
+pkgver=1.2.0
+pkgrel=0
+pkgdesc="X11 keyboard file manipulation library"
+url="https://xorg.freedesktop.org/"
+arch="all"
+license="MIT"
+makedepends="
+	libx11-dev
+	meson
+	util-macros
+	"
+subpackages="$pkgname-dev $pkgname-doc"
+source="https://www.x.org/releases/individual/lib/libxkbfile-$pkgver.tar.xz"
+
+build() {
+	abuild-meson \
+		output .
+	meson compile -C output
+}
+
+check() {
+	meson test --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+	install -D -m644 COPYING \
+		"$pkgdir"/usr/share/licenses/$pkgname/COPYING
+}
+
+sha512sums="
+772035b6bc1d692e8141e095fc2a8cf2ba7daed1d7148def862103160e0d7706f46865367befbbe4c777e7311b224d2cd4474f399d747b122dd395deac3e7cb7  libxkbfile-1.2.0.tar.xz
+"

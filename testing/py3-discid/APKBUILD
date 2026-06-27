@@ -1,0 +1,36 @@
+# Contributor: Galen Abell <galen@galenabell.com>
+# Maintainer: Galen Abell <galen@galenabell.com>
+pkgname=py3-discid
+_pyname=discid
+pkgver=1.4.0
+pkgrel=0
+pkgdesc="python bindings for libdiscid"
+url="https://python-discid.readthedocs.io/en/latest/"
+arch="noarch"
+license="LGPL-3.0-or-later"
+depends="python3 libdiscid"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pyname%${_pyname#?}}/$_pyname/$_pyname-$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+1b43e298ddd1a91bde46394a02df31b5ef64fa6cd8896e35e3df30c7ef2cf24c5123cda4e1248d85ba85f311c90d0b8295c3e4ce1e80ee6ef3f1efec99053d74  discid-1.4.0.tar.gz
+"

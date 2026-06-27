@@ -1,0 +1,43 @@
+# Contributor: Bart Ribbers <bribbers@disroot.org>
+# Maintainer: Bart Ribbers <bribbers@disroot.org>
+pkgname=xrdesktop
+pkgver=0.16.0
+pkgrel=6
+pkgdesc="A library for XR interaction with traditional desktop compositors"
+url="https://gitlab.freedesktop.org/xrdesktop/xrdesktop"
+arch="all"
+license="MIT AND CC-BY-SA-4.0"
+depends="python3"
+depends_dev="py3-gobject3-dev"
+makedepends="$depends_dev
+	g3k-dev
+	glslang
+	gxr-dev
+	meson
+	python3-dev
+	"
+source="https://gitlab.freedesktop.org/xrdesktop/xrdesktop/-/archive/$pkgver/xrdesktop-$pkgver.tar.gz
+	0001-Fix-build-in-git-repo.patch
+	"
+subpackages="$pkgname-libs $pkgname-dev"
+
+build() {
+	abuild-meson \
+		-Dapi_doc=false \
+		. output
+	meson compile -C output
+}
+
+check() {
+	# The XR tests require a working VR setup
+	meson test --print-errorlogs -C output --no-suite xr --no-suite post-install
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+sha512sums="
+04786cf892d6d8111a14465fd5f093dd142b38fd682c54c17496a98663e3700310cf123eb69a2173b1daf8eaf0af81b101adcb28511fe9c5afbb23fcd3301255  xrdesktop-0.16.0.tar.gz
+ef143e2d3a09fe620d1def969cfdde8c37a0607b396b3ed8afc4abb0a5463774889cd35db40d39485a58a1bbe8d5d6966ba633c7f40bb713c698c80774f64e32  0001-Fix-build-in-git-repo.patch
+"

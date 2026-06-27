@@ -1,0 +1,61 @@
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-frameworks
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=purpose
+pkgver=6.27.0
+pkgrel=0
+pkgdesc="Framework for providing abstractions to get the developer's purposes fulfilled"
+# armhf blocked by qt6-qtdeclarative -> kirigami
+arch="all !armhf"
+url="https://community.kde.org/Frameworks"
+license="LGPL-2.1-or-later"
+depends="
+	kitemmodels
+	prison
+	"
+depends_dev="
+	kconfig-dev
+	kcoreaddons-dev
+	ki18n-dev
+	kio-dev
+	kirigami-dev
+	qt6-qtbase-dev
+	qt6-qtdeclarative-dev
+	"
+case "$CARCH" in
+	x86|s390x|riscv64|armv7|loongarch64) ;;
+	*) depends_dev="$depends_dev kaccounts-integration-dev" ;;
+esac
+makedepends="$depends_dev
+	extra-cmake-modules
+	kcmutils
+	qt6-qtdeclarative-private-dev
+	samurai
+	"
+checkdepends="xwayland-run"
+subpackages="$pkgname-dev $pkgname-lang"
+_repo_url="https://invent.kde.org/frameworks/purpose.git"
+source="https://download.kde.org/stable/frameworks/${pkgver%.*}/purpose-$pkgver.tar.xz"
+
+replaces="purpose5"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_TESTING=ON
+	cmake --build build
+}
+
+check() {
+	wlheadless-run -- ctest --test-dir build -E 'menutest'
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+e6a0b36b7a39c9c5b493da681a7e696f2c2cef062d70f85183f82ca54645c91a3ef656ea56403b51c9115a6ccbd98c9e427109050d5e071d9e3ffaacbd4263a8  purpose-6.27.0.tar.xz
+"

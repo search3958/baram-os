@@ -1,0 +1,133 @@
+# Maintainer: Natanael Copa <ncopa@alpinelinux.org>
+pkgname=iptables
+pkgver=1.8.13
+pkgrel=0
+pkgdesc="Linux kernel firewall, NAT and packet mangling tools"
+url="https://www.netfilter.org/projects/iptables/index.html"
+arch="all"
+license="GPL-2.0-or-later"
+depends_dev="linux-headers"
+install="$pkgname.post-upgrade"
+makedepends="$depends_dev libnftnl-dev bison flex autoconf automake libtool"
+subpackages="
+	iptables-legacy
+	libip4tc
+	libip6tc
+	libipq
+	libxtables
+	$pkgname-doc
+	$pkgname-dev
+	$pkgname-openrc
+	"
+provides="ip6tables=$pkgver-r$pkgrel ebtables=$pkgver-r$pkgrel" # for backards compat
+replaces="ip6tables ebtables"
+source="https://www.netfilter.org/projects/iptables/files/iptables-$pkgver.tar.xz
+	use-sh-iptables-apply.patch
+	iptables.initd
+	iptables.confd
+	ip6tables.confd
+	ebtables.initd
+	ebtables.confd
+	"
+options="!check"
+
+prepare() {
+	default_prepare
+
+	# For configure-Avoid-addition-assignment-operators.patch
+	autoreconf -vfi
+}
+
+build() {
+	./configure \
+		--build="$CBUILD" \
+		--host="$CHOST" \
+		--prefix=/usr \
+		--mandir=/usr/share/man \
+		--sysconfdir=/etc \
+		--without-kernel \
+		--enable-devel \
+		--enable-libipq \
+		--enable-shared
+
+	# do not use rpath
+	sed -i 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool
+	sed -i 's|^runpath_var=LD_RUN_PATH|runpath_var=DIE_RPATH_DIE|g' libtool
+
+	make
+}
+
+package() {
+	make install DESTDIR="$pkgdir"
+
+	mkdir -p "$pkgdir"/usr/lib \
+		"$pkgdir"/var/lib/iptables \
+		"$pkgdir"/var/lib/ip6tables \
+		"$pkgdir"/etc/iptables
+
+	install -Dm644 include/iptables.h include/ip6tables.h \
+		-t "$pkgdir"/usr/include/
+	install -Dm644 include/libiptc/*.h -t "$pkgdir"/usr/include/libiptc/
+
+	install -D -m755 "$srcdir"/iptables.initd "$pkgdir"/etc/init.d/iptables
+	install -D -m644 "$srcdir"/iptables.confd "$pkgdir"/etc/conf.d/iptables
+	install -D -m755 "$srcdir"/iptables.initd "$pkgdir"/etc/init.d/ip6tables
+	install -D -m644 "$srcdir"/ip6tables.confd "$pkgdir"/etc/conf.d/ip6tables
+	install -D -m755 "$srcdir"/ebtables.initd "$pkgdir"/etc/init.d/ebtables
+	install -D -m644 "$srcdir"/ebtables.confd "$pkgdir"/etc/conf.d/ebtables
+
+	ln -sfv xtables-nft-multi "$pkgdir"/usr/sbin/iptables
+	ln -sfv xtables-nft-multi "$pkgdir"/usr/sbin/iptables-save
+	ln -sfv xtables-nft-multi "$pkgdir"/usr/sbin/iptables-restore
+	ln -sfv xtables-nft-multi "$pkgdir"/usr/sbin/ip6tables
+	ln -sfv xtables-nft-multi "$pkgdir"/usr/sbin/ip6tables-save
+	ln -sfv xtables-nft-multi "$pkgdir"/usr/sbin/ip6tables-restore
+}
+
+legacy() {
+	pkgdesc="$pkgdesc (legacy xtables-legacy binaries)"
+
+	amove \
+		usr/sbin/*legacy* \
+		usr/bin/iptables-xml
+}
+
+libip4tc() {
+	pkgdesc="$pkgdesc (legacy libip4tc library)"
+
+	amove usr/lib/libip4tc.so.*
+}
+
+libip6tc() {
+	pkgdesc="$pkgdesc (legacy libip6tc library)"
+
+	amove usr/lib/libip6tc.so.*
+}
+
+libipq() {
+	pkgdesc="$pkgdesc (legacy libipq library)"
+
+	amove usr/lib/libipq.so.*
+}
+
+libxtables() {
+	pkgdesc="$pkgdesc (xtables library)"
+
+	amove usr/lib/libxtables.so.*
+}
+
+openrc() {
+	default_openrc
+	provides="ip6tables-openrc=$pkgver-r$pkgrel"
+	replaces="ip6tables-openrc"
+}
+
+sha512sums="
+3aefd76ca60d00f46ba4d6f39cbcfdc60517d03b6714da25dcd67542f6f4eea8d82c4855bdd9124efe18b769f41951772b8340a6eda75b85f8dd52b2289b145b  iptables-1.8.13.tar.xz
+ac78898c2acbe66ed8d32a06f41ff08cde7c22c3df6dfec6bc89a912d2cef2bde730de19d25a5407886d567cb0972a0b7bde7e6b18a34c4511495b4dad3b90ad  use-sh-iptables-apply.patch
+5e216351e1295ccd9db13b22720a4e5502584fe8bceacfc5c02e59ac9bf700be7b0128cf4845e717837270dbe1561e1a66b6fb82c8e0e55d56aa4ff89108b9f3  iptables.initd
+cb7fecd5cab2c78bd3f215a41f39ec11c37eb360efbe83982378a0e647e0aa9dc0b7ec915a5b5081aa2f7747464787e69404aa15ba15a063c32cb8fb7dd13d1e  iptables.confd
+0897a7a22f8b700f7f1f5c355ad6cbf39740e44d6c962af99e479978d8a2d556ca7fe4e31f238829046b4a871ce0b5fd52e2544f1361d15dd1ea3e33992646c4  ip6tables.confd
+0fa11231240c3a4a6c23e425b29a8e917bff4ab1283d971d7bcc134840c8a25aabfd2fcfb8fe8aeea866ac3895012554055f0c64a7cc0a649f581088fe5226fa  ebtables.initd
+1623109d7b564b817904e35b6c6964ce84fe123a8ae1b656944648a39cfef719431cfad313b48eb36ae53a0d1a6b388a5caec1a990448d02f77e5d12b1f7ee9d  ebtables.confd
+"

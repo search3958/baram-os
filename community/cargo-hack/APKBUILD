@@ -1,0 +1,45 @@
+maintainer="Paolo Barbolini <paolo.barbolini@m4ss.net>"
+pkgname=cargo-hack
+pkgver=0.6.45
+pkgrel=0
+pkgdesc="Cargo subcommand to provide various options useful for testing and continuous integration."
+url="https://github.com/taiki-e/cargo-hack"
+arch="all"
+license="MIT OR Apache-2.0"
+makedepends="
+	cargo
+	cargo-auditable
+	"
+subpackages="$pkgname-doc"
+# Cargo.lock extracted from https://static.crates.io/crates/cargo-hack/cargo-hack-$pkgver.crate
+source="
+	$pkgname-$pkgver.tar.gz::https://github.com/taiki-e/cargo-hack/archive/refs/tags/v$pkgver.tar.gz
+	Cargo.lock
+"
+# net: cargo fetch
+# !check: tests expect to be running in a git checkout
+options="net !check"
+
+prepare() {
+	default_prepare
+
+	cp "$srcdir"/Cargo.lock .
+	cargo fetch --target="$CTARGET" --locked
+}
+
+build() {
+	cargo auditable build --release --frozen
+}
+
+package() {
+	install -Dm755 target/release/cargo-hack -t "$pkgdir"/usr/bin/
+
+	install -Dm 644 README.md -t "$pkgdir"/usr/share/doc/"$pkgname"/
+	install -Dm 644 LICENSE-MIT -t "$pkgdir"/usr/share/licenses/"$pkgname"/
+	install -Dm 644 LICENSE-APACHE -t "$pkgdir"/usr/share/licenses/"$pkgname"/
+}
+
+sha512sums="
+5bfab4f5dfcac9629731aa366187352a6ddeea4049a9ef73d741e7691a9b33ae6c219f88b5365d8be1c3c67c5627b6ad17566ea3c5b875af2206f59019b7ab8b  cargo-hack-0.6.45.tar.gz
+915e00552b0bf9ec1c1cf1dca1a4d59c2d2adba03ba3f2a648fb496f39d33218f95c5dd0396ec8d2b90134b9fe9699a637144eb5f937e1df3e68e71bc6392522  Cargo.lock
+"

@@ -1,0 +1,34 @@
+# Contributor: ScrumpyJack <scrumpyjack@st.ilet.to>
+# Maintainer: ScrumpyJack <scrumpyjack@st.ilet.to>
+pkgname=volumeicon
+pkgver=0.5.1
+pkgrel=1
+pkgdesc="Volume Icon is a lightweight volume control that sits in your systray"
+url="http://softwarebakery.com/maato/volumeicon.html"
+arch="all"
+license="GPL-3.0-only"
+makedepends="gtk+3.0-dev intltool alsa-lib-dev libnotify-dev
+	automake autoconf libtool"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/Maato/volumeicon/archive/$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+	./autogen.sh
+}
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--enable-notify
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="c158a1a1bdf84e91fa039defc4c2a7fefa53f9a3ffc48b92388144fee6f7400f2e20618d3527d5c26f694d2280b1035fa4f91080ffe3b4baa5d229130d0c13b7  volumeicon-0.5.1.tar.gz"

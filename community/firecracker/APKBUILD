@@ -1,0 +1,91 @@
+# Contributor: Dennis Przytarski <dennis@przytarski.com>
+# Maintainer: omni <omni+alpine@hack.org>
+maintainer="omni <omni+alpine@hack.org>"
+pkgname=firecracker
+pkgver=1.16.0
+pkgrel=0
+pkgdesc="Secure and fast microVMs for serverless computing"
+url="https://github.com/firecracker-microvm/firecracker"
+# limited by src/vmm/src/arch/mod.rs
+arch="aarch64 x86_64"
+license="Apache-2.0"
+makedepends="cargo
+	cargo-auditable
+	clang-dev
+	cmake
+	libseccomp-dev
+	linux-headers
+	samurai
+	"
+subpackages="
+	$pkgname-doc
+	$pkgname-seccompiler
+	$pkgname-rebase-snap:rebase_snap
+	"
+source="$pkgname-$pkgver.tar.gz::https://github.com/firecracker-microvm/firecracker/archive/v$pkgver.tar.gz"
+
+prepare() {
+	default_prepare
+
+	cargo fetch --locked --target "$CTARGET"
+
+	# Change the seccomp filters' names so they get embedded into the binary
+	for a in $arch; do
+		mv -v resources/seccomp/"$a-unknown-linux-musl.json" resources/seccomp/"$a-alpine-linux-musl.json"
+	done
+}
+
+build() {
+	export CARGO_PROFILE_RELEASE_OPT_LEVEL=2
+	cargo auditable build \
+		--package firecracker \
+		--package jailer \
+		--package seccompiler \
+		--package rebase-snap \
+		--target "$CTARGET" \
+		--frozen \
+		--release
+}
+
+check() {
+	# jailer: tests failed testing functionality of cgroups
+	# seccompiler: tests failed spawning a thread
+	cargo test \
+		--package firecracker \
+		--package rebase-snap \
+		--target "$CTARGET" \
+		--frozen
+
+	# Other integration tests need pytest and docker
+}
+
+package() {
+	install -Dm0755 build/cargo_target/"$CTARGET"/release/firecracker \
+		-t "$pkgdir"/usr/bin
+	install -Dm0755 build/cargo_target/"$CTARGET"/release/jailer \
+		-t "$pkgdir"/usr/bin
+	install -Dm0755 build/cargo_target/"$CTARGET"/release/rebase-snap \
+		-t "$pkgdir"/usr/bin
+	install -Dm0755 build/cargo_target/"$CTARGET"/release/seccompiler-bin \
+		-t "$pkgdir"/usr/bin
+
+	rm docs/images/*logo*.png
+	install -dm0755 "$pkgdir"/usr/share/doc/"$pkgname"/
+	mv docs/* "$pkgdir"/usr/share/doc/"$pkgname"/
+}
+
+seccompiler() {
+	pkgdesc="$pkgdesc - seccompiler"
+
+	amove usr/bin/seccompiler-bin
+}
+
+rebase_snap() {
+	pkgdesc="$pkgdesc - rebasing diff snapshot tool"
+
+	amove usr/bin/rebase-snap
+}
+
+sha512sums="
+59e58b810f2ee13352a94e966254e58d48da7fd703aa16ef7fb97af73ea0680ef9982558f848fab6907cebcdcae86799b65a5d7d0bc298a15bfd9c93619224d8  firecracker-1.16.0.tar.gz
+"

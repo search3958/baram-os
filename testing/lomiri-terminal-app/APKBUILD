@@ -1,0 +1,54 @@
+# Contributor: Aster Boese <asterboese@mailbox.org>
+# Maintainer: Luca Weiss <luca@lucaweiss.eu>
+pkgname=lomiri-terminal-app
+pkgver=2.0.5
+pkgrel=0
+pkgdesc="A terminal app for desktop and mobile devices"
+url="https://gitlab.com/ubports/development/apps/lomiri-terminal-app"
+# armhf: blocked by lomiri-ui-toolkit
+arch="all !armhf"
+license="GPL-3.0-only"
+depends="
+	gsettings-qt
+	lomiri-ui-extras
+	lomiri-ui-toolkit
+	qmltermwidget
+	"
+makedepends="
+	click-dev
+	cmake
+	cmake-extras
+	gnome-desktop-dev
+	lomiri-trust-store-dev
+	qt5-qtbase-dev
+	qt5-qtdeclarative-dev
+	samurai
+	"
+checkdepends="
+	py3-dbusmock
+	py3-xdg
+	xvfb-run
+	"
+source="https://gitlab.com/ubports/development/apps/lomiri-terminal-app/-/archive/v$pkgver/lomiri-terminal-app-v$pkgver.tar.gz"
+subpackages="$pkgname-doc $pkgname-lang"
+builddir="$srcdir/$pkgname-v$pkgver"
+options="!check" # no tests
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCLICK_MODE=OFF \
+		-DINSTALL_TESTS=OFF
+	cmake --build build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+}
+
+sha512sums="
+65817a2db3b489057f59470848742c0a4b49b521dc5dd2d26a8fb8e88c3334daf9aaf83e75e3ac306cd896309faac06f5024ce3ded77e2cb31e1428923bf81a9  lomiri-terminal-app-v2.0.5.tar.gz
+"

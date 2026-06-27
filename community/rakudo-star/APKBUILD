@@ -1,0 +1,64 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer:
+pkgname=rakudo-star
+pkgver=2025.05
+pkgrel=1
+pkgdesc="Rakudo modules distribution"
+url="https://rakudo.org/star/"
+# riscv64: takes longer than the 45m timeout
+arch="all !riscv64"
+license="Artistic-2.0"
+depends="
+	libssl3
+	rakudo>$pkgver
+	readline
+	"
+makedepends="
+	bash
+	libxml2-dev
+	moarvm-dev>$pkgver
+	perl-utils
+	"
+# net: download missing dependencies, !check: no unified test suite
+options="net !check"
+source="https://github.com/rakudo/star/releases/download/$pkgver/rakudo-star-$pkgver.tar.gz
+	rakudo-not-perl6.patch
+	openssl-nativelib.patch
+	use-newer-versions.patch
+	reorder-modules.patch
+	lock-depends-version.patch
+	"
+_prefixdir="$srcdir"/prefix
+_rakudodir="$_prefixdir"/share/rakudo
+
+prepare() {
+	default_prepare
+
+	install -dv "$_prefixdir"/bin "$_rakudodir"
+	ln -sv /usr/bin/raku "$_prefixdir"/bin/
+	ln -sv /usr/share/rakudo/core "$_rakudodir"/
+}
+
+build() {
+	export RAKUDO_PREFIX="$_rakudodir"
+
+	# This usually builds in around 20 minutes, but give it 45
+	# to account for slow net/CPU load. Any more than that could
+	# mean the build process has hung, and should be restarted.
+	# Similar solutions are used for OpenJDK and Gitea/Forgejo.
+	timeout 45m ./bin/rstar install -p "$_prefixdir" modules
+}
+
+package() {
+	install -dv "$pkgdir"/usr/share/rakudo
+	cp -a "$_rakudodir"/site "$pkgdir"/usr/share/rakudo/
+}
+
+sha512sums="
+e75fe4aeb32690ef4f32ac1ac4bbef821c18f91e16b8af89677aa6f3646e9362e70fc04f37b75941f2e3a8ff781987bf4cbb4756985464c812a54a701418e9e1  rakudo-star-2025.05.tar.gz
+7c61dbf2dc221a9f6c493662d91098e1f55190fd6942fc29da1023654b3e936aad485e502fc1c62016fa4fe1f592f040e6c6076411a032d97c4c044a047d8405  rakudo-not-perl6.patch
+2a665f5131ca276c3bb7d083bafd3cfc5490e6946001be93cb088f2343420dae7cd4bb830afb5d5fe246605ef2b200eeb382c50f635946de75ba6db3e292efc4  openssl-nativelib.patch
+8dc10d54de050c54f17de32694e8bb4e7ca0895bcd092e9f566f3aeff10893c21dbaa267a2b362e281ad552d8e815519260f7a37119e7da3c7189e6ba3d4a802  use-newer-versions.patch
+354a2ee6d2de6dc8aebce3dc4af5d64c0b88e533b79a5f644a0dd3805ecfdc6522d6904f30f485a26a30a7d1253f26041bb1a02bd00856e468cfa909a3bacafb  reorder-modules.patch
+37e31eccc90b61f16df54a0357d4891da021e78f9c2731b0af9023af881db0997be977b19dd323a82111204be530a3e76b73bdf1b9e5229783ca24848949882d  lock-depends-version.patch
+"

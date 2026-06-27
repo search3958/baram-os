@@ -1,0 +1,37 @@
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: John Vogel <jvogel@stygian.me>
+maintainer="John Vogel <jvogel@stygian.me>"
+pkgname=texinfo
+pkgver=7.3
+pkgrel=0
+pkgdesc="Utilities to work with and produce manuals, ASCII text, and on-line documentation from a single source file"
+url="https://www.gnu.org/software/texinfo/"
+arch="all"
+license="GPL-3.0-or-later"
+depends="perl"
+makedepends="ncurses-dev perl-dev"
+install="texinfo.pre-deinstall"
+triggers="texinfo.trigger=/usr/share/info"
+subpackages="$pkgname-doc"
+source="https://ftpmirror.gnu.org/gnu/texinfo/texinfo-$pkgver.tar.xz"
+options="!check" # Test dependencies are not packaged
+
+build() {
+	./configure \
+		--build=$CBUILD \
+		--host=$CHOST \
+		--prefix=/usr \
+		--sysconfdir=/etc \
+		--mandir=/usr/share/man \
+		--localstatedir=/var \
+		--disable-nls
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" install
+}
+
+sha512sums="
+fb1a16df67f870e79c31f4b96d8431d9c944eb84e5aa71e9d94890417ce63047918d55620fa63bd582232c47e9b412a6f95a11a2479f53f40e92e49bc018d926  texinfo-7.3.tar.xz
+"

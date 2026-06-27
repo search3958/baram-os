@@ -1,0 +1,63 @@
+# Maintainer: Daniel Fancsali <fancsali@gmail.com>
+pkgname=gpsbabel
+pkgver=1.10.0
+pkgrel=0
+pkgdesc="Convert, manipulate, and transfer data from GPS programs or GPS receivers"
+url="https://www.gpsbabel.org/"
+# blocked by qt6-qtwebengine
+arch="all !riscv64 !s390x !ppc64le !armhf !x86"
+license="GPL-2.0-or-later"
+makedepends="
+	cmake
+	libusb-dev
+	qt6-qtserialport-dev
+	qt6-qttools-dev
+	qt6-qtwebchannel-dev
+	qt6-qtwebengine-dev
+	qt6-qt5compat-dev
+	samurai
+	shapelib-dev
+	zlib-dev
+	"
+checkdepends="diffutils"
+subpackages="$pkgname-lang"
+source="$pkgname-$pkgver.tar.gz::https://github.com/GPSBabel/gpsbabel/archive/refs/tags/gpsbabel_${pkgver//./_}.tar.gz"
+builddir="$srcdir/gpsbabel-gpsbabel_${pkgver//./_}"
+
+build() {
+	CFLAGS="$CFLAGS -flto=auto -O2" \
+	CXXFLAGS="$CXXFLAGS -flto=auto -O2" \
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_SKIP_INSTALL_RPATH=ON \
+		-DGPSBABEL_WITH_ZLIB=pkgconfig \
+		-DGPSBABEL_WITH_SHAPELIB=pkgconfig \
+		-DGPSBABEL_WITH_LIBUSB=pkgconfig
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	# XXX: the above doesn't install anything (broken)
+	install -Dm755 build/gpsbabel build/gui/GPSBabelFE/gpsbabelfe -t "$pkgdir"/usr/bin
+	install -Dm644 gui/*.qm gui/coretool/*.qm -t "$pkgdir"/usr/share/gpsbabel/translations
+	install -Dm644 gui/gmapbase.html -t "$pkgdir"/usr/share/gpsbabel
+	install -Dm644 gui/gpsbabel.desktop -t "$pkgdir"/usr/share/applications
+}
+
+lang() {
+	pkgdesc="translations for $pkgname"
+	install_if="$pkgname=$pkgver-r$pkgrel lang"
+
+	amove usr/share/gpsbabel/translations
+}
+
+sha512sums="
+049c314b8353cd923f5fe82671e21b64c3f057b25968f9e2f14e028a995c5689b4990895431c949d9c18b6ed3481368360543c09af1a54400639cb1594e214d6  gpsbabel-1.10.0.tar.gz
+"

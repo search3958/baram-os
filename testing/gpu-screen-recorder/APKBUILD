@@ -1,0 +1,59 @@
+# Contributor: Zhurman <svyat0063@gmail.com>
+# Maintainer: Zhurman <svyat0063@gmail.com>
+pkgname=gpu-screen-recorder
+pkgver=5.13.9
+pkgrel=0
+pkgdesc="Shadowplay-like screen recorder for X11 and Wayland. The fastest screen recorder for Linux"
+url="https://git.dec05eba.com/gpu-screen-recorder/about/"
+
+arch="all"
+license="GPL-3.0-only"
+install="$pkgname.post-install"
+
+subpackages="$pkgname-doc $pkgname-systemd"
+# !check: project doesn't provides any tests
+options="!check"
+makedepends="
+	meson
+	pkgconfig
+	wayland-dev
+	dbus-dev
+	ffmpeg-dev
+	libcap-dev
+	libdrm-dev
+	mesa-dev
+	vulkan-loader-dev
+	libva-dev
+	libx11-dev
+	libxcomposite-dev
+	libxcursor-dev
+	libxdamage-dev
+	libxext-dev
+	libxfixes-dev
+	libxi-dev
+	libxinerama-dev
+	libxrandr-dev
+	pipewire-dev
+	pulseaudio-dev
+	libcap-setcap
+"
+
+source="https://dec05eba.com/snapshot/gpu-screen-recorder.git.$pkgver.tar.gz"
+builddir="$srcdir/"
+
+
+build() {
+	abuild-meson build
+
+	meson compile -C build
+}
+
+package() {
+	DESTDIR="$pkgdir/" meson install -C build
+	setcap -r "$pkgdir"/usr/bin/gsr-kms-server
+}
+
+
+sha512sums="
+a2d5adceb2c99f51383dbf9d69239906743ce52024628f70ef62e23795381305a1eb028cc34609a26c7c8b35bc470205120978621656bea8565a15a7d36dcb84  gpu-screen-recorder.git.5.13.9.tar.gz
+"

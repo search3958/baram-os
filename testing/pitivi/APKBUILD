@@ -1,0 +1,63 @@
+# Maintainer: Pellegrino Prevete <pellegrinoprevete@gmail.com>
+pkgname=pitivi
+pkgver=2023.03
+pkgrel=3
+pkgdesc="Editor for audio/video projects using the GStreamer framework"
+url="https://pitivi.org"
+arch="all !s390x !riscv64" # missing gst-editing-services
+license="LGPL-2.1-or-later"
+depends="
+	gsound
+	gst-editing-services
+	gst-libav
+	gst-plugins-bad
+	gst-plugins-good
+	gst-plugins-good-gtk
+	gtk+3.0
+	libnotify
+	libpeas
+	py3-cairo
+	py3-gobject3
+	py3-gst
+	py3-matplotlib
+	py3-matplotlib-gtk3
+	py3-numpy
+	py3-scipy
+	"
+makedepends="
+	gstreamer-dev
+	itstool
+	meson
+	py3-cairo-dev
+	python3-dev
+	"
+checkdepends="appstream-glib"
+subpackages="$pkgname-lang $pkgname-pyc"
+source="https://download.gnome.org/sources/pitivi/${pkgver%.*}/pitivi-$pkgver.tar.xz"
+
+build() {
+	abuild-meson . build
+	meson compile -C build
+}
+
+check() {
+	meson test -C build --print-errorlogs
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install -C build
+}
+
+pyc() {
+	pkgdesc="Precompiled Python bytecode for ${subpkgname%-pyc}"
+	install_if="${subpkgname%-pyc}=$pkgver-r$pkgrel pyc"
+
+	cd "$pkgdir" || return 0
+	local IFS='
+'
+	amove $(find usr/lib -type d -name __pycache__)
+}
+
+sha512sums="
+505c011bb375fcce250a46c958ef06d050f83e73fa41a66f8ba3be6a41332a4a05838b8245233f481146edae9af924b618901b7ed0600f642ebe550c151f52b0  pitivi-2023.03.tar.xz
+"

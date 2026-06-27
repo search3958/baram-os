@@ -1,0 +1,53 @@
+# Contributor: Stuart Cardall <developer@it-offshore.co.uk>
+# Maintainer: Stuart Cardall <developer@it-offshore.co.uk>
+pkgname=py3-opencl
+_pkgreal=pyopencl
+pkgver=2025.2.6
+pkgrel=1
+pkgdesc="Python3 wrapper for OpenCL"
+url="https://pypi.org/project/pyopencl"
+arch="all"
+license="MIT"
+depends="py3-platformdirs py3-numpy py3-mako py3-pytools"
+makedepends="
+	libffi-dev
+	mesa-dev
+	opencl-dev
+	py3-gpep517
+	py3-nanobind
+	py3-numpy-dev
+	py3-scikit-build-core
+	python3-dev
+	"
+checkdepends="py3-pytest py3-py py3-mako"
+subpackages="$pkgname-pyc"
+source="https://files.pythonhosted.org/packages/source/${_pkgreal:0:1}/$_pkgreal/$_pkgreal-$pkgver.tar.gz"
+builddir="$srcdir/$_pkgreal-$pkgver"
+# check: requires OpenCL platform
+options="!check"
+
+replaces="py-opencl" # Backwards compatibility
+provides="py-opencl=$pkgver-r$pkgrel" # Backwards compatibility
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" \
+		.dist/*.whl
+	# Remove incorrectly installed files
+	find "$pkgdir" \( -name .gitignore -o -name pyproject.toml \) -delete
+}
+
+sha512sums="
+5f411ce87999de01b913d49b571442e24cf118e84c20a17b949a4b2f3ea33fba26f8f1286068f46fa433f881eba663120a5fa8f6abfaff8d64e748748f7d2493  pyopencl-2025.2.6.tar.gz
+"

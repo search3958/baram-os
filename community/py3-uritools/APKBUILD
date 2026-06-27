@@ -1,0 +1,36 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=py3-uritools
+_pyname=uritools
+pkgver=4.0.3
+pkgrel=1
+pkgdesc="Python functions for URI parsing, classification, and composition"
+url="https://github.com/tkem/uritools"
+license="MIT"
+arch="noarch"
+makedepends="py3-setuptools py3-gpep517"
+checkdepends="py3-pytest"
+subpackages="$pkgname-pyc"
+source="https://github.com/tkem/uritools/archive/v$pkgver/py3-uritools-$pkgver.tar.gz"
+builddir="$srcdir/$_pyname-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	python3 -m venv --clear --without-pip --system-site-packages .testenv
+	.testenv/bin/python3 -m installer .dist/*.whl
+	.testenv/bin/python3 -m pytest
+}
+
+package() {
+	gpep517 install-wheel --destdir "$pkgdir" \
+		.dist/*.whl
+}
+
+sha512sums="
+cf075e60544a4638dbb648062b4d9fc879ccd0a609dc353fb3b73defc42ab38bf03d8baca47e7d3128c0f4ff58352854f39674fa5aa3a57cc121e021d3e0bd47  py3-uritools-4.0.3.tar.gz
+"

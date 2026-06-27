@@ -1,0 +1,36 @@
+# Maintainer: Patrick Gansterer <paroga@paroga.com>
+pkgname=postgresql-uint
+_pkgname=pguint
+pkgver=1.20250815
+pkgrel=0
+pkgdesc="Unsigned and other extra integer types for PostgreSQL"
+url="https://github.com/petere/pguint"
+arch="all"
+license="PostgreSQL"
+makedepends="postgresql-dev python3"
+subpackages="$pkgname-bitcode"
+source="$pkgname-$pkgver.tar.gz::https://github.com/petere/pguint/archive/$pkgver.tar.gz"
+builddir="$srcdir/$_pkgname-$pkgver"
+options="!check"  # XXX: installcheck requires running PostgreSQL
+
+build() {
+	make
+}
+
+package() {
+	depends="postgresql$(pg_config --major-version)"
+
+	make DESTDIR="$pkgdir" install
+}
+
+bitcode() {
+	pkgdesc="$pkgdesc (bitcode for JIT)"
+	depends="$pkgname=$pkgver-r$pkgrel"
+	install_if="postgresql$(pg_config --major-version)-jit $pkgname=$pkgver-r$pkgrel"
+
+	amove usr/lib/postgresql*/bitcode
+}
+
+sha512sums="
+63816ee280debee85879401a5c86b2b6bbb540e23ca354ccc939698a0218a44fb416d01824d73d2dac061785b1ac7e396749b543d7fc0a747a574bd319cedcf9  postgresql-uint-1.20250815.tar.gz
+"

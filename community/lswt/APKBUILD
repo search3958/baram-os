@@ -1,0 +1,29 @@
+# Contributor: Michał Polański <michal@polanski.me>
+# Maintainer: Michał Polański <michal@polanski.me>
+pkgname=lswt
+pkgver=2.0.0
+pkgrel=0
+pkgdesc="List Wayland toplevels"
+url="https://git.sr.ht/~leon_plickat/lswt"
+license="GPL-3.0-only"
+arch="all"
+makedepends="wayland-dev"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="$pkgname-$pkgver.tar.gz::https://git.sr.ht/~leon_plickat/lswt/archive/v$pkgver.tar.gz
+	size_t.patch
+	"
+builddir="$srcdir/lswt-v$pkgver"
+options="!check" # no test suite
+
+build() {
+	make
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+147c4a0f7f2410230b9a27adb669ce7004f19701bf50d8e3c540fedb79ad37a282ce7968d2f1abdef6991b297f5d2b6b913ffbf4a4ef3ebc4481ff0cc803a01f  lswt-2.0.0.tar.gz
+4b361de873b76fcfc48f11c7420a6891c4619ea7fa2f9c9342efe120f1e22d3d90eeef6eefd3d10bdf52b1394748d8443074141aa1bad9b4a1e835f86092f030  size_t.patch
+"

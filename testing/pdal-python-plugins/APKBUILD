@@ -1,0 +1,44 @@
+# Contributor: Brian Vuyk <bvuyk@sama.com>
+# Maintainer: Brian Vuyk <bvuyk@sama.com>
+pkgname=pdal-python-plugins
+pkgver=1.6.6
+pkgrel=1
+pkgdesc="Supports embedding Python in PDAL pipelines with the readers.numpy and filters.python drivers."
+url="https://github.com/PDAL/python-plugins"
+arch="all !s390x" # Exclude s390x due to test failures.
+license="BSD-3-Clause"
+depends="python3 py3-numpy"
+checkdepends="pdal"
+makedepends="cmake pdal-dev py3-gpep517 py3-numpy-dev py3-pybind11
+	py3-scikit-build-core python3-dev samurai"
+source="https://files.pythonhosted.org/packages/source/p/pdal-plugins/pdal_plugins-$pkgver.tar.gz
+	enable-tests.patch"
+builddir="$srcdir/pdal_plugins-$pkgver"
+
+build() {
+	gpep517 build-wheel \
+		--wheel-dir .dist \
+		--output-fd 3 3>&1 >&2
+}
+
+check() {
+	export WHEEL_DIR="$(python3 -m "scikit_build_core.builder.wheel_tag")"
+	export PDAL_DRIVER_PATH="$builddir"/build/$WHEEL_DIR/Release
+	# filters.python should appear in pdal output
+	pdal --drivers
+
+	# Copy test data where tests can find them
+	mkdir -p $PDAL_DRIVER_PATH/src/pdal/test/
+	cp -r "$builddir"/src/pdal/test/data $PDAL_DRIVER_PATH/src/pdal/test/
+	$PDAL_DRIVER_PATH/pdal_filters_python_test --gtest_filter=-PLangTest.log
+	$PDAL_DRIVER_PATH/pdal_io_numpy_test
+}
+
+package() {
+	python3 -m installer -d "$pkgdir" .dist/*.whl
+}
+
+sha512sums="
+ed5ac3bbc77fe48b0de148f48e4b756f1e7b0f34d3e55ecf47ad87468944e107ff020bc61ee369343257b5f7506bb35c35663639936b91811cf143d7c259330a  pdal_plugins-1.6.6.tar.gz
+6597ac5f0218a080ae0510f87c534ed794914c0882118524c0a9ff91435e348b6a1f689f1122fde02dea04524dcc2ad2dc5bfc74e1477c15f8bc451b1e1453c5  enable-tests.patch
+"

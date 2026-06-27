@@ -1,0 +1,83 @@
+# Contributor: rubicon <rubicon@mailo.com>
+# Contributor: Celeste <cielesti@protonmail.com>
+# Maintainer: Wen Heping <wenhepingalpine@sohu.com>
+pkgname=picolisp
+pkgver=26.3
+pkgrel=0
+pkgdesc="Fast, lightweight Lisp interpreter and application server framework"
+url="https://picolisp.com/"
+# x86, armv7, armhf: 64-bits only
+# s390x: check fails with "ht:Pack -- Undefined"
+# ppc64le: testsuite segfaults
+arch="all !x86 !armv7 !armhf !s390x !ppc64le"
+license="MIT"
+depends="w3m"
+_llvmver=21
+makedepends="
+	clang$_llvmver
+	libffi-dev
+	llvm$_llvmver-dev
+	openssl-dev
+	readline-dev
+	"
+subpackages="$pkgname-doc $pkgname-bash-completion"
+source="$pkgname-$pkgver.tar.gz::https://software-lab.de/picoLisp-$pkgver.tgz
+	fix-shebang-lines.patch
+	"
+builddir="$srcdir/pil21"
+
+build() {
+	local cc="clang-$_llvmver"
+	local makeopts=""
+	case "$CARCH" in
+	riscv64)
+		makeopts="SHARED=-shared -Wl,--no-relax"
+		;;
+	esac
+
+	PATH="/usr/lib/llvm$_llvmver/bin:$PATH" \
+		make -C src CC="$cc" "$makeopts"
+}
+
+check() {
+	./pil @lib/test.l -bye +
+}
+
+package() {
+	mkdir -vp "$pkgdir"/usr/bin "$pkgdir"/usr/share
+	ln -sv	../lib/$pkgname/bin/picolisp \
+		../lib/$pkgname/bin/pil \
+		"$pkgdir"/usr/bin/
+	ln -sv	../lib/$pkgname \
+		"$pkgdir"/usr/share/$pkgname
+
+	# add bash completion
+	mkdir -vp "$pkgdir"/usr/share/bash-completion/completions
+	mv -v	lib/bash_completion \
+		"$pkgdir"/usr/share/bash-completion/completions/pil
+
+	# move documentation
+	mkdir -vp "$pkgdir"/usr/share/doc
+	chmod -f 644 doc/*.html loc/*
+	mv -v doc "$pkgdir"/usr/share/doc/$pkgname
+	mv -v COPYING INSTALL README "$pkgdir"/usr/share/doc/$pkgname/
+	rm -vf man/man1/pil.1
+	ln -sv picolisp.1 man/man1/pil.1
+	mv -v man "$pkgdir"/usr/share/
+
+	mkdir -vp "$pkgdir"/usr/lib
+	rm -vf pil vip
+	mv -v "$builddir" "$pkgdir"/usr/lib/$pkgname
+}
+
+doc() {
+	default_doc
+
+	mkdir -vp "$subpkgdir"/usr/lib/$pkgname
+	ln -sv ../../share/doc/$pkgname "$subpkgdir"/usr/lib/$pkgname/doc
+}
+
+sha512sums="
+bf4b6ecdf3fac1872a6968a7603c4c74e12964c025c50b0583ed73edcd980f2d06818cb805d2641b7008ec96a067e17496d40ef1697c1bb726722c5edd92e668  picolisp-26.3.tar.gz
+dd05ba8b0a6bb6dd5d2a0c676240e01a37adfb1413520b934cf6adc50eccbeff01189dc50514d46802385b8c2842afd61b8364947e71d15bfc4f7f030cfb448e  fix-shebang-lines.patch
+"
