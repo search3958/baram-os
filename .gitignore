@@ -1,24 +1,23 @@
 ```
 # Build artifacts
+build/
+dist/
 *.o
 *.obj
 *.out
-build/
-dist/
 
 # Dependencies
 node_modules/
-venv/
 .venv/
+venv/
 __pycache__/
-*.egg-info/
 
-# Logs and temp files
+# Logs and temporary files
 *.log
 *.tmp
 *.swp
 
-# Environment
+# Environment files
 .env
 .env.local
 *.env.*
@@ -31,7 +30,12 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Compression
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
+
+# Compression files
 *.zip
 *.gz
 *.tar
