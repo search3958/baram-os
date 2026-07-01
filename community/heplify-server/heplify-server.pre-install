@@ -1,5 +1,0 @@
-#!/bin/sh
-
-addgroup -S homer 2>/dev/null
-adduser -S -G homer -s /sbin/nologin -D homer 2>/dev/null
-exit 0

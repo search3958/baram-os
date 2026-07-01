@@ -1,9 +1,0 @@
-#!/sbin/openrc-run
-
-description="MPRIS music scrobbler daemon"
-command="/usr/bin/rescrobbled"
-supervisor=supervise-daemon
-
-depend() {
-	need mpd
-}

@@ -1,3 +1,0 @@
-JANUS_USER="janus"
-JANUS_GROUP="janus"
-JANUS_OPTS="-D -o"

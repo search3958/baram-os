@@ -1,9 +1,0 @@
-# autobrr configuration options
-
-command_user="autobrr:autobrr" # user:group
-directory="/var/lib/autobrr"
-supervisor="supervise-daemon"
-logdir="/var/log/autobrr"
-
-# Environment variables overrides the config file
-export AUTOBRR__LOG_PATH="$logdir/output.log"

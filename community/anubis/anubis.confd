@@ -1,5 +1,0 @@
-export BIND=:8923
-export DIFFICULTY=4
-export METRICS_BIND=:9090
-export SERVE_ROBOTS_TXT=0
-export TARGET=http://localhost:3000

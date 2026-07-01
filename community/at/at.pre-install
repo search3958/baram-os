@@ -1,6 +1,0 @@
-#!/bin/sh
-
-addgroup -g 25 -S at 2>/dev/null
-adduser -u 25 -S -D -H -s /sbin/nologin -h /var/spool/atd -G at -g at at 2>/dev/null
-
-exit 0

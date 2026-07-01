@@ -1,4 +1,0 @@
-# Configuration for /etc/init.d/innernet-server
-
-# extra arguments for command, see innernet-server(8)
-#command_extra_args=""

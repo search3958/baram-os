@@ -1,5 +1,0 @@
-#!/bin/sh
-
-addgroup -Sg 82 www-data 2>/dev/null
-
-exit 0

@@ -1,5 +1,0 @@
-#!/bin/sh
-
-addgroup -S pebble-le 2>/dev/null
-
-exit 0

@@ -1,3 +1,0 @@
-#!/bin/sh -e
-
-exec node /usr/lib/node_modules/yaml-language-server/out/server/src/server.js "$@"

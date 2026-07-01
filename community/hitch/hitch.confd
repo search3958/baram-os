@@ -1,7 +1,0 @@
-# Configuration file for /etc/init.d/hitch
-
-# Path to the hitch configuration file.
-#cfgfile="/etc/hitch/${RC_SVCNAME#hitch.}.conf"
-
-# Uncomment to use process supervisor.
-#supervisor="supervise-daemon"

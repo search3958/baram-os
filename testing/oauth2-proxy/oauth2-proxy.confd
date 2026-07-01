@@ -1,5 +1,0 @@
-# comment to not use process supervisor
-supervisor=supervise-daemon
-
-# extra args
-#command_args=""

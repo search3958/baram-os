@@ -1,9 +1,0 @@
-#!/bin/sh
-
-cat <<EOF
-Although assets of a retail copy of RollerCoaster Tycoon 2 are required
-for the client, this is not the case for the headless server.
-
-After installing this package, the server can be launched directly with
-openrct2-cli host <path/to/save file>
-EOF

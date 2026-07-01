@@ -1,5 +1,0 @@
-# Configuration file for conduit
-
-supervisor=supervise-daemon
-
-export CONDUIT_CONFIG=/etc/conduit/conduit.toml

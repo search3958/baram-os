@@ -1,8 +1,0 @@
-# /etc/conf.d/mdnsd: config file for /etc/init.d/mdnsd
-
-# -l LEVEL  Set log level: none, err, notice (default), info, debug
-# -n        Run in foreground, do not detach from controlling terminal
-# -s        Use syslog even if running in foreground
-# -t TTL    Set TTL of mDNS packets, default: 1 (link-local only)
-
-MDNSD_OPTS="-n"

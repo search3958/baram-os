@@ -1,5 +1,0 @@
-#!/bin/sh
-
-addgroup -S janus 2>/dev/null
-adduser -S -G janus -s /sbin/nologin -D janus 2>/dev/null
-exit 0

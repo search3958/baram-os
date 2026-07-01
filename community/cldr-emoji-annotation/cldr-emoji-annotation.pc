@@ -1,5 +1,0 @@
-prefix=/usr
-
-Name: cldr-emoji-annotations
-Description: annotation files in CLDR
-Version: version

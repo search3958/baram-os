@@ -1,4 +1,0 @@
-# Configuration for /etc/conf.d/inspircd
-
-# User to run inspircd as.
-#command_user="inspircd"

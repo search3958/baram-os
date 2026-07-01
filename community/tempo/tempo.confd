@@ -1,5 +1,0 @@
-# The loki config file
-TEMPO_CONF="/etc/tempo/tempo.yaml"
-
-# Add any extra options to pass to tempo to this setting.
-#TEMPO_OPTS=""

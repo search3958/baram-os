@@ -1,3 +1,0 @@
-#!/bin/sh
-
-exec dartaotruntime /usr/lib/dart-sass/sass.aot "$@"

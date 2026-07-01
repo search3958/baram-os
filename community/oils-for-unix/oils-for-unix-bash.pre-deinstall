@@ -1,3 +1,0 @@
-#!/bin/bash
-remove-shell '/bin/bash'
-exit 0

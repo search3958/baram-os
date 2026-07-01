@@ -1,3 +1,0 @@
-#!/bin/sh
-
-echo "Using rc-service trafficserver <cmd> is recommended over trafficserver <cmd>."

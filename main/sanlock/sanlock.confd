@@ -1,5 +1,0 @@
-#
-# Specify daemon options here.
-#
-
-sanlock_opts="-w 0 -U sanlock -G sanlock"

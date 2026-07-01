@@ -1,3 +1,0 @@
-#!/usr/bin/dash
-remove-shell '/usr/bin/dash'
-exit 0

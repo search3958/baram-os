@@ -1,4 +1,0 @@
-# container names to run unprivileged
-# can also be set to "all"
-UNPRIV=""
-

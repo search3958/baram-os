@@ -1,4 +1,0 @@
-# /etc/conf.d/reaction
-
-CONFIG="/etc/reaction.yml"
-ARGS=""

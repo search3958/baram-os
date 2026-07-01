@@ -1,3 +1,0 @@
-#!/bin/sh
-adduser -g icingaweb2 -D -h /var/lib/icingadirector -s /bin/false icingadirector 2>/dev/null
-exit 0

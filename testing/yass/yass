@@ -1,3 +1,0 @@
-#!/bin/sh
-
-/usr/lib/jvm/java-11-openjdk/bin/java -jar /usr/share/yass/yass.jar "$@"

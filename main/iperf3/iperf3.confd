@@ -1,3 +1,0 @@
-# Default option for iperf3: --server (runs in TCP/5201 mode)
-# For further server options check --help flag
-command_args=""

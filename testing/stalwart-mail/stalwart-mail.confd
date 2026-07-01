@@ -1,3 +1,0 @@
-DATA_DIR="/var/lib/stalwart"
-CONF_DIR="/etc/stalwart"
-LOG_DIR="/var/log/stalwart"

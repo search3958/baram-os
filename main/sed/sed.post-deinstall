@@ -1,6 +1,0 @@
-#!/bin/sh
-
-# we cannot rely on the busybox trigger since sed might be used from install
-# scripts
-
-[ -x /bin/busybox ] && exec /bin/busybox --install -s

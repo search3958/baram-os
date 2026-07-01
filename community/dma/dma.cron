@@ -1,5 +1,0 @@
-#!/bin/sh
-# Flush the DMA queue automatically.
-
-/usr/sbin/dma -q1
-exit 0

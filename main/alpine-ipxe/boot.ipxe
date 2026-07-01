@@ -1,5 +1,0 @@
-#!ipxe
-ifconf
-set alpine_loader true ||
-chain https://boot.alpinelinux.org/boot.ipxe || shell
-exit

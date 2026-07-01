@@ -1,5 +1,0 @@
-#!/bin/sh
-
-#splice fwsnort rules into iptables whenever the network comes up
-/var/lib/fwsnort/fwsnort.sh
-

@@ -1,5 +1,0 @@
-#!/bin/sh
-
-if which xmlcatalog >/dev/null; then
-	xmlcatalog --noout --del file:///etc/xml/docbook-xml etc/xml/catalog
-fi

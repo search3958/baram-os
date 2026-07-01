@@ -1,9 +1,0 @@
-#!/sbin/openrc-run
-
-command=/usr/sbin/mfschunkserver
-
-depend() {
-	need syslog
-	after net
-}
-

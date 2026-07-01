@@ -1,6 +1,0 @@
-#!/bin/sh
-
-addgroup -S redis 2>/dev/null
-addgroup redict redis 2>/dev/null
-
-exit 0

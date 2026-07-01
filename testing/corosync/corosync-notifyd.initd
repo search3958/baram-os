@@ -1,8 +1,0 @@
-#!/sbin/openrc-run
-
-pidfile="/run/$RC_SVCNAME.pid"
-command="/usr/sbin/corosync-notifyd"
-
-depend() {
-        need net
-}

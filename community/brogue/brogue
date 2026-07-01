@@ -1,9 +1,0 @@
-#!/bin/sh
-
-set -e
-
-userdir=${XDG_DATA_HOME:-$HOME/.local/share}/brogue
-mkdir -p "$userdir"
-
-cd "$userdir"
-exec /usr/libexec/brogue "$@"

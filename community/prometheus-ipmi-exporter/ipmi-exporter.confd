@@ -1,5 +1,0 @@
-# Custom arguments can be specified like:
-#
-# ARGS="--web.listen-address=':9100'"
-
-ARGS=""

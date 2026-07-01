@@ -1,3 +1,0 @@
-#!/bin/sh
-adduser -S -D -H -h /dev/null -s /sbin/nologin -G postgres -g pgbouncer pgbouncer 2>/dev/null
-exit 0

@@ -1,6 +1,0 @@
-#!/bin/sh
-
-addgroup -S _tuptime 2>/dev/null
-adduser -SDH -h /dev/null -s /sbin/nologin -G _tuptime -g "Tuptime exec user" _tuptime 2>/dev/null
-
-exit 0

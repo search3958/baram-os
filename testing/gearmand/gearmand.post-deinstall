@@ -1,3 +1,0 @@
-#!/bin/sh
-
-echo "Please manually remove the 'gearman' user and group if no longer needed" >&2

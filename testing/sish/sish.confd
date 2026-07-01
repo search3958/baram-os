@@ -1,4 +1,0 @@
-# Configuration file for sish
-
-supervisor=supervise-daemon
-#config_path="/etc/sish/config.yml"

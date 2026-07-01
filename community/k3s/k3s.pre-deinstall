@@ -1,9 +1,0 @@
-#!/bin/sh
-
-cd /
-for link in kubectl crictl ctr; do
-	target=/usr/bin/$link
-	if [ -L $target ] && [ "$(readlink $target)" = "/usr/bin/k3s" ]; then
-		rm $target
-	fi
-done

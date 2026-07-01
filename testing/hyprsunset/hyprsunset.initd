@@ -1,9 +1,0 @@
-#!/sbin/openrc-run
-
-description="Application to enable a blue-light filter on Hyprland"
-
-command="/usr/bin/hyprsunset"
-
-supervisor=supervise-daemon
-error_logger="logger -t '${RC_SVCNAME}' -p daemon.error"
-

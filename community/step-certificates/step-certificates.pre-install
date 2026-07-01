@@ -1,9 +1,0 @@
-#!/bin/sh
-
-config_dir="/etc/step-ca"
-
-addgroup -S step-ca 2>/dev/null
-adduser -S -D -h ${config_dir} -s /bin/sh -G step-ca \
-	-g "step-ca user" step-ca 2>/dev/null
-
-exit 0

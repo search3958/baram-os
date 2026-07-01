@@ -1,7 +1,0 @@
-#!/bin/sh
-
-cat >&2 <<EOF
-*
-* Use setup-sbase to install sbase applet symlinks.
-*
-EOF

@@ -1,6 +1,0 @@
-#!/bin/sh
-
-addgroup -S defang 2>/dev/null
-adduser -S -D -H -h /var/spool/MIMEDefang -s /sbin/nologin -G defang -g defang defang 2>/dev/null
-
-exit 0

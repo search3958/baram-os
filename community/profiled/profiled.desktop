@@ -1,7 +1,0 @@
-[Desktop Entry]
-Name=profiled
-Comment=Start profiled
-Type=Application
-Exec=/usr/bin/profiled
-TryExec=/usr/bin/profiled
-Terminal=false

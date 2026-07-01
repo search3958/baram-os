@@ -1,7 +1,0 @@
-# /etc/conf.d/alertmanager-irc-relay
-
-# Custom arguments can be specified like:
-#
-# ARGS="--config=..."
-
-ARGS="--config=/etc/alertmanager-irc-relay.yaml"

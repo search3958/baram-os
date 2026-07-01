@@ -1,7 +1,0 @@
-# Configuration for /etc/init.d/redict
-
-# User (and group) to run redict as.
-#command_user="redict:redict"
-
-# redict configuration file.
-#cfgfile="/etc/redict.conf"

@@ -1,3 +1,0 @@
-command_user="msh:msh"
-directory="/etc/msh"
-logdir="/var/log/msh"

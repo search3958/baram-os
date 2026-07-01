@@ -1,4 +1,0 @@
-/var/log/ergo.log {
-	missingok
-	notifempty
-}

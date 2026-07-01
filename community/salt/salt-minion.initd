@@ -1,6 +1,0 @@
-#!/sbin/openrc-run
-supervisor=supervise-daemon
-
-name='SaltStack Minion'
-command='/usr/bin/salt-minion'
-command_args="${SALT_OPTS}"

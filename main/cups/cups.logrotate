@@ -1,8 +1,0 @@
-/var/log/cups/*log {
-	missingok
-	notifempty
-	delaycompress
-	postrotate
-		/etc/init.d/cupsd --quiet --ifstarted reload
-	endscript
-}

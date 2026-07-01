@@ -1,9 +1,0 @@
---- a/rspec-core.gemspec
-+++ b/rspec-core.gemspec
-@@ -24,2 +24 @@
--  s.files            = `git ls-files -- lib/*`.split("\n")
--  s.files           += %w[README.md LICENSE.md Changelog.md .yardopts .document]
-+  s.files            = Dir["lib/**/*"]
-@@ -28 +27 @@
--  s.executables      = ['rspec']
-+  s.executables      = Dir["exe/*"].map{ |f| File.basename(f) }

@@ -1,3 +1,0 @@
-#!/usr/bin/dash
-add-shell '/usr/bin/dash'
-exit 0

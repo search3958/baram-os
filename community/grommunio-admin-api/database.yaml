@@ -1,6 +1,0 @@
-DB:
-  host: 'localhost'
-  user: 'grommunio'
-  pass: '<password>'
-  database: 'grommunio'
-

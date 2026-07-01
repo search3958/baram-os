@@ -1,9 +1,0 @@
-/var/log/samba/*.log {
-	notifempty
-	missingok
-	sharedscripts
-	copytruncate
-	postrotate
-		/etc/init.d/samba --quiet --ifstarted reload
-	endscript
-}

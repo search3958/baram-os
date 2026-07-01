@@ -1,6 +1,0 @@
-#!/bin/sh
-
-rm -r -f usr/lib/vlc/plugins/plugins.dat 2>/dev/null
-rmdir -p usr/lib/vlc/plugins 2>/dev/null
-
-exit 0

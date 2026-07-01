@@ -1,9 +1,0 @@
-#!/sbin/openrc-run
-
-name=mbpfan
-command=/usr/sbin/mbpfan
-start_stop_daemon_args="--quiet"
-
-depend() {
-	use logger
-}

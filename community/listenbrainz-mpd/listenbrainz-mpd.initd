@@ -1,9 +1,0 @@
-#!/sbin/openrc-run
-
-description="ListenBrainz submission client for MPD written in Rust"
-command="/usr/bin/lisenbrainz-mpd"
-supervisor=supervise-daemon
-
-depend() {
-	need mpd
-}

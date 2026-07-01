@@ -1,7 +1,0 @@
-# openconnect logrotate for Alpine Linux
-#
-/var/log/openconnect/*/* {
-  missingok
-  size 5M
-  notifempty
-}

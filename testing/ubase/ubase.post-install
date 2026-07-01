@@ -1,7 +1,0 @@
-#!/bin/sh
-
-cat >&2 <<EOF
-*
-* Use setup-ubase to install ubase applet symlinks.
-*
-EOF

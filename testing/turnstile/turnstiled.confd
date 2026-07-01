@@ -1,2 +1,0 @@
-# uncomment to not use supervisor
-supervisor=supervise-daemon

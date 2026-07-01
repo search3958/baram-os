@@ -1,3 +1,0 @@
-# tlsrouter options
-
-tlsrouter_opts="-conf /etc/tlsrouter/tlsrouter.conf -listen :443"

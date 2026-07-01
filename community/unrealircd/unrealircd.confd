@@ -1,4 +1,0 @@
-# Configuration for /etc/init.d/unrealircd
-
-# Comment out to run without process supervisor.
-supervisor=supervise-daemon

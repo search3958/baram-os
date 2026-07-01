@@ -1,3 +1,0 @@
-#!/bin/bash
-add-shell '/bin/bash'
-exit 0

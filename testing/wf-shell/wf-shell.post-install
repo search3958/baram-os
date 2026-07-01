@@ -1,8 +1,0 @@
-#!/bin/sh
-
-cat >&2 <<EOF
-*
-* Please copy the default config file from /usr/share/wf-shell/wf-shell.ini.example
-* to ~/.config/wf-shell.ini
-*
-EOF

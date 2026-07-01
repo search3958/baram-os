@@ -1,8 +1,0 @@
-Build env_logger without unnecessary features to reduce the binary size by
-a factor of two.
-
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -18,1 +18,1 @@
--env_logger = "0.11.6"
-+env_logger = { version = "0.11.6", default-features = false, features = ["humantime"] }

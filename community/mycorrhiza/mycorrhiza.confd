@@ -1,2 +1,0 @@
-output_log=/var/log/mycorrhiza.log
-error_log=/var/log/mycorrhiza.log

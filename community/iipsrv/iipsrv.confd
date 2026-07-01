@@ -1,9 +1,0 @@
-HOST="0.0.0.0"
-PORT=9000
-USER=iipsrv
-GROUP=iipsrv
-
-# Parameters passed to iipsrv
-export VERBOSITY=1
-export URI_MAP="iiif=>IIIF"
-export LOGFILE="/var/log/iipsrv.log"

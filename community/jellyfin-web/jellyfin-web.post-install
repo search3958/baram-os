@@ -1,6 +1,0 @@
-#!/bin/sh
-
-printf "  *\n  * The default jellyfin configuration does not enable the web ui.\n"
-printf "  * Remove the '--nowebclient' option from /etc/conf.d/jellyfin to enable it.\n  *\n"
-
-exit 0

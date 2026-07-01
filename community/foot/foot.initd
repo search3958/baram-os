@@ -1,6 +1,0 @@
-#!/sbin/openrc-run
-
-command="/usr/bin/foot"
-supervisor=supervise-daemon
-command_args="--print-pid=3 --server $command_args"
-notify=fd:3

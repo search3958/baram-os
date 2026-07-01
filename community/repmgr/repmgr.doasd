@@ -1,4 +1,0 @@
-# Rules for repmgr and repmgrd. Installed by package repmgr.
-
-permit nopass postgres as root cmd /etc/init.d/postgresql
-permit nopass postgres as root cmd /etc/init.d/repmgrd

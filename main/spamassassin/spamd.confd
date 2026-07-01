@@ -1,2 +1,0 @@
-#pidfile=/run/spamd.pid
-#command_args="-m 5 -c -H"

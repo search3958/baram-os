@@ -1,7 +1,0 @@
-#!/sbin/openrc-run
-supervisor=supervise-daemon
-
-name='SaltStack Master'
-command='/usr/bin/salt-master'
-command_args="${SALT_OPTS}"
-

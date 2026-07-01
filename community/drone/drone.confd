@@ -1,4 +1,0 @@
-# Configuration for /etc/init.d/drone
-
-# env file path
-#env_file="/etc/drone.conf"

@@ -1,4 +1,0 @@
-# Set the full path to the turbo script
-TURBO_SCRIPT=""
-TURBO_USER="nobody"
-TURBO_GROUP="nobody"

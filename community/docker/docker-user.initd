@@ -1,8 +1,0 @@
-#!/sbin/openrc-run
-
-name="Rootless Docker Daemon"
-description="Persistent process that manages docker containers"
-
-supervisor=supervise-daemon
-command="dockerd-rootless"
-command_args=""

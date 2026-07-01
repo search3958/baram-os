@@ -1,4 +1,0 @@
-#!/bin/sh
-remove-shell '/bin/csh'
-remove-shell '/bin/tcsh'
-exit 0

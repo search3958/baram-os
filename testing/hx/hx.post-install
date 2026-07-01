@@ -1,7 +1,0 @@
-#!/bin/sh
-
-cat >&2 <<-EOF
-*
-* binary is renamed from 'hx' to 'hx-editor' to avoid conflicts
-*
-EOF

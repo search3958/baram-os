@@ -1,8 +1,0 @@
-/var/log/transmission/transmission.log {
-        daily
-        missingok
-        copytruncate
-        rotate 7
-        compress
-        notifempty
-}

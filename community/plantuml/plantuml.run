@@ -1,2 +1,0 @@
-#!/bin/sh
-exec /usr/bin/java -Dswing.defaultlaf=com.sun.java.swing.plaf.gtk.GTKLookAndFeel -jar '/usr/share/java/plantuml.jar' "$@"

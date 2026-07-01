@@ -1,2 +1,0 @@
-# comment out to not use process supervisor
-supervisor=supervise-daemon

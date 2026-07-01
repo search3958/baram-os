@@ -1,3 +1,0 @@
-#!/usr/bin/yash
-remove-shell '/usr/bin/yash'
-exit 0

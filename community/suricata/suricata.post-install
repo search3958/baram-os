@@ -1,7 +1,0 @@
-#!/bin/sh
-
-# install rules not possible during install-full
-suricata-update \
-	--suricata /usr/bin/suricata \
-	--suricata-conf /etc/suricata/suricata.yaml \
-	--no-test --no-reload

@@ -1,7 +1,0 @@
-/var/log/step-ca/step-ca.err /var/log/step-ca/step-ca.log {
-	compress
-	delaycompress
-	missingok
-	monthly
-	notifempty
-}

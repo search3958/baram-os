@@ -1,4 +1,0 @@
-#command_user="ombi:ombi" # user:group
-#umask=0002
-#storage_directory=/var/lib/ombi
-#port=3579

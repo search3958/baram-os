@@ -1,8 +1,0 @@
-/var/log/pgbackrest/*.log {
-	compress
-	copytruncate
-	create 0640 postgres postgres
-	missingok
-	notifempty
-	sharedscripts
-}

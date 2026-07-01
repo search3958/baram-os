@@ -1,5 +1,0 @@
-#!/bin/sh
-
-if [ -e /usr/lib/graphviz/config6 ]; then
-	rm /usr/lib/graphviz/config6
-fi

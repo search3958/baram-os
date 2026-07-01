@@ -1,4 +1,0 @@
-# amavisd conf.d
-
-user="amavis"
-group="amavis"

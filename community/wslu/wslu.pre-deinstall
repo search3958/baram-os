@@ -1,3 +1,0 @@
-#!/bin/sh
-rm /usr/share/wslu/updated_time
-exit 0

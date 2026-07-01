@@ -1,2 +1,0 @@
-# enter the irccd options
-IRCCD_OPTS="-c /etc/irccd.conf"
