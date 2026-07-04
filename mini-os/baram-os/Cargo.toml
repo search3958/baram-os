@@ -1,7 +1,0 @@
-[package]
-name = "baram-os"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-uefi = { version = "0.28.0", features = ["alloc"] }

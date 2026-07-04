@@ -1,0 +1,11 @@
+[package]
+name = "os"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uefi = "0.28.0"
+uefi-services = "0.25.0"
+
+[profile.release]
+opt-level = "s"

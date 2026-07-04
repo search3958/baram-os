@@ -1,8 +1,0 @@
-[package]
-name = "mini-os"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-uefi = { version = "0.28", features = ["alloc"] }
-uefi-services = "0.25"
