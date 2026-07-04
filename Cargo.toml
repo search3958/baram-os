@@ -1,0 +1,20 @@
+[package]
+name = "myos"
+version = "0.1.0"
+edition = "2021"
+authors = ["MyOS Project"]
+description = "A small UEFI-based ARM64 OS with mouse cursor and keyboard input"
+
+[[bin]]
+name = "bootaa64"
+path = "src/main.rs"
+
+[dependencies]
+uefi = { version = "0.38", features = ["alloc", "logger", "panic_handler", "global_allocator"] }
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = false
