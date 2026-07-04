@@ -365,6 +365,7 @@ Install QEMU:
         -device "ramfb" \
         -device "qemu-xhci" \
         -device "usb-tablet" \
+        -device "usb-mouse" \
         -device "usb-kbd" \
         -display "$QEMU_DISPLAY" \
         -serial "$QEMU_SERIAL" \

@@ -1,193 +1,250 @@
-//! Combined mouse driver: Absolute Pointer (usb-tablet) + Simple Pointer
-//! (usb-mouse).
-//!
-//! We prefer Absolute Pointer because:
-//!  1. QEMU's `usb-tablet` device is exposed by AAVMF via this protocol.
-//!  2. Absolute coordinates are perfect for a UI cursor (no acceleration,
-//!     no relative drift, no edge clamping).
-//!  3. `mouse_move` HMP commands actually generate events that the
-//!     Absolute Pointer driver picks up (unlike Simple Pointer + usb-mouse,
-//!     which often silently drops them).
-//!
-//! As a fallback we also support Simple Pointer for keyboards-with-
-//! trackpad combos on real hardware.
-//!
-//! Important: we open the protocol ONCE at startup and keep the
-//! `ScopedProtocol` alive for the lifetime of the OS.  Re-opening every
-//! frame (as the previous version did) was the main reason events were
-//! dropped — `open_protocol_exclusive` interferes with the firmware's
-//! internal USB polling state.
+// Mouse driver — USB IO Protocol async interrupt transfer.
+// Bypasses firmware's broken mouse driver entirely.
 
-use crate::absolute_pointer::AbsolutePointer;
-use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, ScopedProtocol};
+use alloc::format;
+use alloc::vec;
+use alloc::vec::Vec;
+use uefi::boot;
+use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::proto::console::pointer::Pointer;
+use crate::absolute_pointer::AbsolutePointer;
 
-/// One mouse event, normalised to absolute screen coordinates.
 #[derive(Clone, Copy, Debug, Default)]
-#[allow(dead_code)]
 pub struct MouseEvent {
-    /// Absolute X coordinate (0..=abs_max_x from device mode).
     pub abs_x: u64,
-    /// Absolute Y coordinate (0..=abs_max_y from device mode).
     pub abs_y: u64,
-    /// Relative X delta (only meaningful for Simple Pointer sources).
     pub rel_dx: i32,
-    /// Relative Y delta (only meaningful for Simple Pointer sources).
     pub rel_dy: i32,
-    /// True if this event came from an Absolute Pointer device.
     pub is_absolute: bool,
-    /// Left mouse button state.
     pub left: bool,
-    /// Right mouse button state.
     pub right: bool,
-    /// Middle/alt button state (Absolute Pointer exposes a 3rd "active"
-    /// button; Simple Pointer only has 2).
     pub middle: bool,
 }
 
-/// Owned mouse device — either an Absolute Pointer or a Simple Pointer.
-///
-/// We hold a `ScopedProtocol` so the protocol stays open for the lifetime
-/// of the OS.  We use `GetProtocol` (non-exclusive) instead of
-/// `Exclusive` because the latter disconnects the firmware's USB polling
-/// driver, which stops events from being delivered.
-enum MouseHandle {
-    Absolute(ScopedProtocol<AbsolutePointer>, u64, u64),  // ptr, max_x, max_y
-    Simple(ScopedProtocol<Pointer>),
-}
-
 pub struct Mouse {
-    handle: MouseHandle,
+    usb_io: Option<boot::ScopedProtocol<UsbIo>>,
+    ep_addr: u8,
+    report_buf: Vec<u8>,
+    // Fallback
+    abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64)>,
+    simple: Option<boot::ScopedProtocol<Pointer>>,
 }
 
 impl Mouse {
-    /// Locate and open the best available mouse device.  Tries Absolute
-    /// Pointer first, then Simple Pointer.  Returns `Err` if neither is
-    /// present.
     pub fn open() -> Result<Mouse, &'static str> {
-        // Try Absolute Pointer first.
-        if let Ok(handle) = boot::get_handle_for_protocol::<AbsolutePointer>() {
-            // Open with GetProtocol (non-exclusive) so the firmware's
-            // USB polling driver keeps running and continues to deliver
-            // events via GetState.
-            let params = OpenProtocolParams {
+        // Try USB IO Protocol first (direct USB access)
+        if let Some(m) = Self::try_usb_io() {
+            log_line_str("Mouse: USB IO (direct HID)");
+            return Ok(m);
+        }
+
+        // Fallback: UEFI protocols
+        let mut abs = None;
+        let mut simple = None;
+
+        if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
+            if let Ok(mut ptr) = boot::open_protocol_exclusive::<AbsolutePointer>(h) {
+                let _ = ptr.reset(false);
+                uefi::boot::stall(core::time::Duration::from_millis(50));
+                let mx = ptr.mode().absolute_max_x.max(1);
+                let my = ptr.mode().absolute_max_y.max(1);
+                log_line_str(&format!("  Absolute Pointer: max=({},{})", mx, my));
+                abs = Some((ptr, mx, my));
+            }
+        }
+        if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
+            if let Ok(mut ptr) = boot::open_protocol_exclusive::<Pointer>(h) {
+                let _ = ptr.reset(false);
+                uefi::boot::stall(core::time::Duration::from_millis(50));
+                log_line_str("  Simple Pointer: ready");
+                simple = Some(ptr);
+            }
+        }
+
+        if abs.is_some() || simple.is_some() {
+            Ok(Mouse { usb_io: None, ep_addr: 0, report_buf: vec![0u8; 8], abs, simple })
+        } else {
+            Err("no mouse device found")
+        }
+    }
+
+    fn try_usb_io() -> Option<Mouse> {
+        let handles = boot::find_handles::<UsbIo>().ok()?;
+        log_line_str(&format!("  Found {} USB IO handles", handles.len()));
+
+        for handle in handles {
+            let params = boot::OpenProtocolParams {
                 handle,
                 agent: boot::image_handle(),
                 controller: None,
             };
-            // SAFETY: We keep the ScopedProtocol alive for the lifetime
-            // of the OS, so the protocol interface remains valid.  We
-            // only call immutable methods (`get_state`, `mode`) plus the
-            // documented `reset`.  No conflicting concurrent access
-            // because UEFI is single-threaded.
-            if let Ok(ptr) = unsafe {
-                boot::open_protocol::<AbsolutePointer>(params, OpenProtocolAttributes::GetProtocol)
-            } {
-                let mode = ptr.mode();
-                let max_x = mode.absolute_max_x.max(1);
-                let max_y = mode.absolute_max_y.max(1);
-                let mut m = Mouse { handle: MouseHandle::Absolute(ptr, max_x, max_y) };
-                let _ = m.reset();
-                return Ok(m);
-            }
-        }
-        // Fall back to Simple Pointer.
-        if let Ok(handle) = boot::get_handle_for_protocol::<Pointer>() {
-            let params = OpenProtocolParams {
-                handle,
-                agent: boot::image_handle(),
-                controller: None,
+            let mut usb = unsafe {
+                boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
             };
-            // SAFETY: same as above.
-            if let Ok(ptr) = unsafe {
-                boot::open_protocol::<Pointer>(params, OpenProtocolAttributes::GetProtocol)
-            } {
-                let mut m = Mouse { handle: MouseHandle::Simple(ptr) };
-                let _ = m.reset();
-                return Ok(m);
+
+            // Get device descriptor
+            let mut dev_buf = vec![0u8; 18];
+            let _ = usb.control_transfer(0x80, 6, 0x0100, 0, ControlTransfer::DataIn(&mut dev_buf), 5000);
+
+            // Get configuration descriptor
+            let mut cfg_buf = vec![0u8; 512];
+            let _ = usb.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
+
+            // Find HID interface with interrupt IN endpoint
+            let mut off = 0;
+            let mut in_hid = false;
+            let mut iface_num: u8 = 0;
+            let mut intr_ep: Option<u8> = None;
+            let mut intr_mps: u16 = 0;
+
+            while off + 2 < cfg_buf.len() {
+                let b_len = cfg_buf[off] as usize;
+                let b_type = cfg_buf[off + 1];
+                if b_len < 2 || off + b_len > cfg_buf.len() { break; }
+
+                match b_type {
+                    4 => {
+                        // Interface descriptor
+                        in_hid = cfg_buf[off + 5] == 3; // HID class
+                        iface_num = cfg_buf[off + 2];
+                    }
+                    5 => {
+                        // Endpoint descriptor
+                        if b_len >= 7 && in_hid && intr_ep.is_none() {
+                            let ea = cfg_buf[off + 2];
+                            let attrs = cfg_buf[off + 3];
+                            if ea & 0x80 != 0 && attrs & 0x03 == 3 {
+                                intr_ep = Some(ea);
+                                intr_mps = u16::from_le_bytes([cfg_buf[off + 4], cfg_buf[off + 5]]);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                off += b_len;
             }
+
+            let ep = match intr_ep {
+                Some(e) => e,
+                None => continue,
+            };
+
+            log_line_str(&format!("  USB IO: HID iface={} ep=0x{:02x} mps={}", iface_num, ep, intr_mps));
+
+            // SET_PROTOCOL = Report (1)
+            let _ = usb.control_transfer(0x21, 0x0B, 1, iface_num as u16, ControlTransfer::None, 5000);
+            // SET_IDLE
+            let _ = usb.control_transfer(0x21, 0x0A, 0, iface_num as u16, ControlTransfer::None, 5000);
+
+            let report_buf = vec![0u8; intr_mps as usize];
+
+            return Some(Mouse {
+                usb_io: Some(usb),
+                ep_addr: ep,
+                report_buf,
+                abs: None,
+                simple: None,
+            });
         }
-        Err("no mouse device found")
+        None
     }
 
-    /// Reset the device (flush queued events).
-    pub fn reset(&mut self) -> uefi::Result {
-        match &mut self.handle {
-            MouseHandle::Absolute(p, _, _) => p.reset(false),
-            MouseHandle::Simple(p) => p.reset(false),
-        }
-    }
-
-    /// Returns true if this mouse is an Absolute Pointer.
     pub fn is_absolute(&self) -> bool {
-        matches!(self.handle, MouseHandle::Absolute(..))
+        self.usb_io.is_some() || self.abs.is_some()
     }
 
-    /// Returns the (max_x, max_y) for an absolute pointer, or (0, 0) for
-    /// a simple pointer.
     pub fn abs_max(&self) -> (u64, u64) {
-        match &self.handle {
-            MouseHandle::Absolute(_, mx, my) => (*mx, *my),
-            MouseHandle::Simple(_) => (0, 0),
+        match &self.abs {
+            Some((_, mx, my)) => (*mx, *my),
+            None => (0, 0),
         }
     }
 
-    /// Poll the device.  Drains all queued events and returns the merged
-    /// result.  Returns `None` if no events were waiting.
-    ///
-    /// **Polling strategy**: We call `get_state` (or `read_state`) in a
-    /// tight loop.  UEFI returns `NOT_READY` when the queue is empty, so
-    /// we break on that.  We *don't* use `check_event` on the
-    /// WaitForInput event because on QEMU+AAVMF the event is never
-    /// signalled for usb-tablet — only `get_state` returns events.
     pub fn poll(&mut self) -> Option<MouseEvent> {
-        match &mut self.handle {
-            MouseHandle::Absolute(ptr, max_x, max_y) => {
-                let mut acc = MouseEvent::default();
-                acc.is_absolute = true;
-                let mut got = false;
-                // Drain all queued state changes.  We also do one extra
-                // `get_state` call after the queue empties, because some
-                // firmware coalesces multiple state changes into one
-                // final value and only returns it on the next read.
-                let mut empty_polls = 0;
-                loop {
-                    match ptr.get_state() {
-                        Ok(Some(state)) => {
-                            acc.abs_x = state.current_x;
-                            acc.abs_y = state.current_y;
-                            if state.active_buttons & 0x1 != 0 { acc.left = true; }
-                            if state.active_buttons & 0x2 != 0 { acc.right = true; }
-                            got = true;
-                            empty_polls = 0;
-                        }
-                        _ => {
-                            empty_polls += 1;
-                            if empty_polls >= 1 { break; }
-                        }
-                    }
+        // Try USB IO interrupt transfer
+        if let Some(usb) = &mut self.usb_io {
+            if self.ep_addr != 0 {
+                let n = usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 10).ok()?;
+                if n == 0 { return None; }
+                let r = &self.report_buf[..n];
+
+                // Parse HID boot mouse report: [buttons, x, y]
+                let mut ev = MouseEvent::default();
+                ev.is_absolute = false;
+                if n >= 4 {
+                    // Boot mouse report: buttons, x, y, (optional wheel)
+                    ev.left = r[0] & 0x01 != 0;
+                    ev.right = r[0] & 0x02 != 0;
+                    ev.middle = r[0] & 0x04 != 0;
+                    ev.rel_dx = r[1] as i8 as i32;
+                    ev.rel_dy = r[2] as i8 as i32;
+                } else if n >= 3 {
+                    ev.left = r[0] & 0x01 != 0;
+                    ev.right = r[0] & 0x02 != 0;
+                    ev.rel_dx = r[1] as i8 as i32;
+                    ev.rel_dy = r[2] as i8 as i32;
                 }
-                let _ = (max_x, max_y);
-                if got { Some(acc) } else { None }
-            }
-            MouseHandle::Simple(ptr) => {
-                let mut acc = MouseEvent::default();
-                acc.is_absolute = false;
-                let mut got = false;
-                loop {
-                    match ptr.read_state() {
-                        Ok(Some(state)) => {
-                            acc.rel_dx += state.relative_movement[0] / 2;
-                            acc.rel_dy += state.relative_movement[1] / 2;
-                            if state.button[0] { acc.left = true; }
-                            if state.button[1] { acc.right = true; }
-                            got = true;
-                        }
-                        _ => break,
-                    }
-                }
-                if got { Some(acc) } else { None }
+                return Some(ev);
             }
         }
+
+        // Fallback: Absolute Pointer
+        if let Some((ptr, _mx, _my)) = &mut self.abs {
+            let mut acc = MouseEvent::default();
+            acc.is_absolute = true;
+            let mut got = false;
+            let mut empty = 0;
+            loop {
+                match ptr.get_state() {
+                    Ok(Some(state)) => {
+                        acc.abs_x = state.current_x;
+                        acc.abs_y = state.current_y;
+                        if state.active_buttons & 0x1 != 0 { acc.left = true; }
+                        if state.active_buttons & 0x2 != 0 { acc.right = true; }
+                        got = true; empty = 0;
+                    }
+                    _ => { empty += 1; if empty >= 5 { break; } }
+                }
+            }
+            if got { return Some(acc); }
+        }
+
+        // Fallback: Simple Pointer
+        if let Some(ptr) = &mut self.simple {
+            let mut acc = MouseEvent::default();
+            acc.is_absolute = false;
+            let mut got = false;
+            loop {
+                match ptr.read_state() {
+                    Ok(Some(state)) => {
+                        acc.rel_dx += state.relative_movement[0];
+                        acc.rel_dy += state.relative_movement[1];
+                        if state.button[0] { acc.left = true; }
+                        if state.button[1] { acc.right = true; }
+                        got = true;
+                    }
+                    _ => break,
+                }
+            }
+            if got { return Some(acc); }
+        }
+
+        None
     }
+}
+
+pub fn log_line_str(s: &str) {
+    uefi::system::with_stdout(|stdout| {
+        let _ = stdout.output_string(uefi::cstr16!("MyOS: "));
+        let mut buf = Vec::<u16>::with_capacity(s.len() + 1);
+        for &b in s.as_bytes() {
+            if b >= 0x80 { break; }
+            buf.push(b as u16);
+        }
+        buf.push(0);
+        if let Ok(cs) = uefi::CStr16::from_u16_with_nul(&buf) {
+            let _ = stdout.output_string(cs);
+        }
+        let _ = stdout.output_string(uefi::cstr16!("\r\n"));
+    });
 }

@@ -30,9 +30,9 @@ mod gop;
 mod keyboard;
 mod mouse;
 mod ui;
+mod usb_hid;
 
 use alloc::format;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use uefi::prelude::*;
@@ -100,8 +100,8 @@ fn main() -> Status {
 
     // Mouse mode for UI display.
     let mouse_mode_label = match &mouse_opt {
-        Some(m) if m.is_absolute() => "OK (Absolute Pointer / usb-tablet)",
-        Some(_)                    => "OK (Simple Pointer / usb-mouse)",
+        Some(m) if m.is_absolute() => "OK (Absolute + Simple Pointer)",
+        Some(_)                    => "OK (Simple Pointer / PS2)",
         None                       => "Not present",
     };
     let (abs_max_x, abs_max_y) = mouse_opt.as_ref()
