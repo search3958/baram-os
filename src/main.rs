@@ -3,7 +3,8 @@
 //! This crate is a UEFI application (PE32+ image) targeting `aarch64-unknown-uefi`.
 //! It uses:
 //!   * Graphics Output Protocol   — direct framebuffer drawing
-//!   * Simple Pointer Protocol    — mouse driver (delta input → absolute cursor)
+//!   * Absolute Pointer Protocol  — preferred mouse driver (usb-tablet)
+//!   * Simple Pointer Protocol    — fallback mouse driver (usb-mouse)
 //!   * Simple Text Input          — keyboard driver
 //!
 //! The application initialises all three protocols, renders a small status
@@ -22,6 +23,7 @@
 
 extern crate alloc;
 
+mod absolute_pointer;
 mod cursor;
 mod font;
 mod gop;
@@ -29,6 +31,8 @@ mod keyboard;
 mod mouse;
 mod ui;
 
+use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use uefi::prelude::*;
@@ -37,7 +41,9 @@ use uefi::runtime;
 use crate::cursor::Cursor;
 use crate::gop::{Color, Screen};
 use crate::keyboard::Keyboard;
+use crate::mouse::{Mouse, MouseEvent};
 use crate::ui::{FmtBuf, put_str, put_str_transparent};
+
 /// Entry point.  In uefi-rs 0.38 the entry function takes no arguments;
 /// the system table is reached via the `uefi::system` / `uefi::boot`
 /// module functions.
@@ -61,11 +67,20 @@ fn main() -> Status {
     // Boot splash.
     draw_boot_splash(&mut screen);
 
-    // Peripherals.
-    let has_mouse = mouse::mouse_present();
+    // Peripherals.  Try to open the mouse; this will succeed for
+    // usb-tablet (Absolute Pointer) or usb-mouse (Simple Pointer).
+    let mut mouse_opt: Option<Mouse> = match Mouse::open() {
+        Ok(m) => {
+            log_line(&format!("Mouse opened: absolute={}", m.is_absolute()));
+            Some(m)
+        }
+        Err(reason) => {
+            log_line(&format!("Mouse open failed: {reason}"));
+            None
+        }
+    };
     let has_kbd = Keyboard::is_present();
     if has_kbd { Keyboard::reset(); }
-    if has_mouse { mouse::reset_all(); }
 
     // Cursor (centre of screen).
     let mut cursor = Cursor::new(
@@ -83,9 +98,18 @@ fn main() -> Status {
     let mut fps: u32 = 0;
     let mut start_time = runtime::get_time().unwrap_or_else(|_| runtime::Time::invalid());
 
+    // Mouse mode for UI display.
+    let mouse_mode_label = match &mouse_opt {
+        Some(m) if m.is_absolute() => "OK (Absolute Pointer / usb-tablet)",
+        Some(_)                    => "OK (Simple Pointer / usb-mouse)",
+        None                       => "Not present",
+    };
+    let (abs_max_x, abs_max_y) = mouse_opt.as_ref()
+        .map(|m| m.abs_max()).unwrap_or((0, 0));
+
     // Initial full UI paint.
-    draw_ui(&mut screen, &cursor, &last_keys, mouse_ev_count, key_ev_count, fps,
-            has_mouse, has_kbd);
+    draw_ui(&mut screen, &cursor, &last_keys, mouse_ev_count, key_ev_count,
+            fps, mouse_mode_label, has_kbd);
     cursor.draw(&mut screen);
 
     // Main loop.  Runs forever; user powers off the VM.
@@ -98,14 +122,34 @@ fn main() -> Status {
                 key_ev_count = key_ev_count.wrapping_add(1);
                 if last_keys.len() >= 6 { last_keys.remove(0); }
                 last_keys.push(ev.label());
+
+                // Arrow keys move the cursor — this gives us a way to
+                // test the cursor drawing code in headless QEMU where
+                // the mouse_move HMP command doesn't reach usb-tablet.
+                // On real hardware the mouse will be the primary input.
+                let step = 12i32;
+                match ev.scancode {
+                    0x01 => cursor.move_by(0, -step, screen.width() as i32, screen.height() as i32),  // UP
+                    0x02 => cursor.move_by(0,  step, screen.width() as i32, screen.height() as i32),  // DOWN
+                    0x03 => cursor.move_by( step, 0, screen.width() as i32, screen.height() as i32),  // RIGHT
+                    0x04 => cursor.move_by(-step, 0, screen.width() as i32, screen.height() as i32),  // LEFT
+                    _ => {}
+                }
                 dirty = true;
             }
         }
-        if has_mouse {
-            while let Some(ev) = mouse::poll_mouse() {
+        if let Some(mouse) = mouse_opt.as_mut() {
+            while let Some(ev) = mouse.poll() {
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
-                cursor.move_by(ev.dx, ev.dy,
-                               screen.width() as i32, screen.height() as i32);
+                if mouse_ev_count <= 5 {
+                    log_line(&format!(
+                        "mouse ev #{}: abs=({}, {}) rel=({}, {}) btn L={} R={}",
+                        mouse_ev_count, ev.abs_x, ev.abs_y,
+                        ev.rel_dx, ev.rel_dy, ev.left, ev.right
+                    ));
+                }
+                apply_mouse_event(&mut cursor, &ev, screen.width(), screen.height(),
+                                  abs_max_x, abs_max_y);
                 dirty = true;
             }
         }
@@ -131,7 +175,7 @@ fn main() -> Status {
             cursor.restore_bg(&mut screen);
             // Repaint UI.
             draw_ui(&mut screen, &cursor, &last_keys, mouse_ev_count,
-                    key_ev_count, fps, has_mouse, has_kbd);
+                    key_ev_count, fps, mouse_mode_label, has_kbd);
             // Draw cursor at new position.
             cursor.draw(&mut screen);
         }
@@ -139,6 +183,23 @@ fn main() -> Status {
         // Yield to firmware briefly so it can flush the framebuffer.
         // ~8ms (~120fps cap)
         uefi::boot::stall(core::time::Duration::from_micros(8_000));
+    }
+}
+
+/// Apply a mouse event to the cursor.  Absolute events set the cursor
+/// directly; relative events add deltas.
+fn apply_mouse_event(cursor: &mut Cursor, ev: &MouseEvent,
+                     screen_w: usize, screen_h: usize,
+                     abs_max_x: u64, abs_max_y: u64) {
+    if ev.is_absolute && abs_max_x > 0 && abs_max_y > 0 {
+        // Convert device coordinates to screen coordinates.
+        let new_x = ((ev.abs_x as u128 * screen_w as u128) / abs_max_x as u128) as i32;
+        let new_y = ((ev.abs_y as u128 * screen_h as u128) / abs_max_y as u128) as i32;
+        cursor.x = new_x.max(0).min(screen_w as i32 - 1);
+        cursor.y = new_y.max(0).min(screen_h as i32 - 1);
+    } else {
+        cursor.move_by(ev.rel_dx, ev.rel_dy,
+                       screen_w as i32, screen_h as i32);
     }
 }
 
@@ -160,9 +221,9 @@ fn draw_boot_splash(screen: &mut Screen) {
     // Title bar across the top.
     screen.fill_rect(0, 0, w, 36, Color::PANEL);
     screen.fill_rect(0, 36, w, 2, Color::ACCENT);
-    put_str(screen, 16, 10, "MyOS  v0.1  -  UEFI ARM64  (Raspberry Pi / QEMU virt)",
+    put_str(screen, 16, 10, "MyOS  v0.2  -  UEFI ARM64  (Raspberry Pi / QEMU virt)",
             Color::TEXT, Color::PANEL);
-    put_str(screen, 16, 22, "Mouse + Keyboard + Graphics demo",
+    put_str(screen, 16, 22, "Absolute Pointer + Keyboard + Graphics demo",
             Color::MUTED, Color::PANEL);
 
     // Footer hint bar.
@@ -181,7 +242,7 @@ fn draw_ui(screen: &mut Screen,
            mouse_ev: u32,
            key_ev: u32,
            fps: u32,
-           has_mouse: bool,
+           mouse_mode: &str,
            has_kbd: bool) {
     let w = screen.width();
     let h = screen.height();
@@ -189,8 +250,8 @@ fn draw_ui(screen: &mut Screen,
     // Side panel on the left.
     let px = 16;
     let py = 56;
-    let pw = 320.min(w.saturating_sub(40));
-    let ph = 220.min(h.saturating_sub(py + 60));
+    let pw = 360.min(w.saturating_sub(40));
+    let ph = 240.min(h.saturating_sub(py + 60));
     screen.fill_rect(px, py, pw, ph, Color::PANEL);
     screen.rect_outline(px, py, pw, ph, Color::ACCENT);
 
@@ -203,7 +264,7 @@ fn draw_ui(screen: &mut Screen,
     line += GLYPH_H_ + 4;
     let mut buf = FmtBuf::new();
     buf.push_str("Driver: ");
-    buf.push_str(if has_mouse { "OK (Simple Pointer)" } else { "Not present" });
+    buf.push_str(mouse_mode);
     put_str(screen, px + 12, line, buf.as_str(), Color::MUTED, Color::PANEL);
     line += GLYPH_H_ + 4;
 
@@ -275,7 +336,7 @@ fn draw_ui(screen: &mut Screen,
         put_str_transparent(screen, 16, mid_y,
             "This is a UEFI application running in graphics mode.", Color::MUTED);
         put_str_transparent(screen, 16, mid_y + 20,
-            "Framebuffer is mapped directly; no GPU driver required.", Color::MUTED);
+            "Mouse uses Absolute Pointer (usb-tablet) when available.", Color::MUTED);
         put_str_transparent(screen, 16, mid_y + 40,
             "The same .efi boots on real Raspberry Pi 4/5 (with UEFI firmware).",
             Color::MUTED);
@@ -284,3 +345,22 @@ fn draw_ui(screen: &mut Screen,
 
 /// Glyph height convenience constant.
 const GLYPH_H_: usize = 16;
+
+/// Write a line to the UEFI text output (visible on serial console when
+/// QEMU is launched with `-serial stdio`).  Used for debug logging.
+fn log_line(s: &str) {
+    uefi::system::with_stdout(|stdout| {
+        let _ = stdout.output_string(cstr16!("MyOS: "));
+        // Build a UCS-2 buffer with null terminator.
+        let mut buf = alloc::vec::Vec::<u16>::with_capacity(s.len() + 1);
+        for &b in s.as_bytes() {
+            if b >= 0x80 { break; }
+            buf.push(b as u16);
+        }
+        buf.push(0);
+        if let Ok(cs) = uefi::CStr16::from_u16_with_nul(&buf) {
+            let _ = stdout.output_string(cs);
+        }
+        let _ = stdout.output_string(cstr16!("\r\n"));
+    });
+}

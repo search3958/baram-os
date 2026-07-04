@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 uefi = { version = "0.38", features = ["alloc", "logger", "panic_handler", "global_allocator"] }
+uefi-raw = "0.15"
 
 [profile.release]
 opt-level = 2

@@ -99,7 +99,10 @@ fi
 # ---------- step 2: build the EFI app ----------
 build_efi() {
     log "Building $EFI_NAME ..."
-    cargo +nightly build --release
+    cargo +nightly build --release --target aarch64-unknown-uefi
+    if [ -f "$TARGET_DIR/bootaa64" ] && [ ! -f "$TARGET_DIR/$EFI_NAME" ]; then
+        cp "$TARGET_DIR/bootaa64" "$TARGET_DIR/$EFI_NAME"
+    fi
     test -f "$TARGET_DIR/$EFI_NAME" || die "Build did not produce $EFI_NAME"
     log "  -> $TARGET_DIR/$EFI_NAME ($(stat -c %s "$TARGET_DIR/$EFI_NAME" 2>/dev/null || stat -f %z "$TARGET_DIR/$EFI_NAME") bytes)"
 }
@@ -125,6 +128,9 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        # Auto-boot script: tells the UEFI shell to run our EFI binary
+        # without waiting for the 5-second startup.nsh countdown.
+        printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
     fi
@@ -140,6 +146,8 @@ make_fat_image() {
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+        # Auto-boot script.
+        printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
         sync
         hdiutil detach "$tmp_mount" >/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
@@ -155,6 +163,8 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        # Auto-boot script.
+        printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
     fi
@@ -321,15 +331,20 @@ Install QEMU:
     #                              alternative: -device virtio-gpu-device (better resolution,
     #                              needs virtio-gpu driver in firmware)
     #   -device qemu-xhci        : USB 3.0 host controller (required for usb-kbd / usb-mouse)
+    #   -device usb-tablet       : USB absolute pointing device (exposed by AAVMF as the
+    #                              EFI Absolute Pointer Protocol — best mouse support)
     #   -device usb-kbd          : USB keyboard (Simple Text Input)
-    #   -device usb-mouse        : USB mouse (Simple Pointer)
     #   -display <disp>          : GUI window (use 'none' for headless)
-    #   -serial stdio            : serial console -> current terminal
+    #   -serial <serial>         : serial console
+    #   -monitor <monitor>       : HMP monitor (use 'none' to disable, 'stdio' to control
+    #                              QEMU via the terminal — try `screendump`, `sendkey`, `quit`)
     #
     # Optional env vars:
     #   QEMU_DATADIR             : path to QEMU's data dir (auto-detected normally;
     #                              set this only if QEMU can't find its romfiles)
     #   QEMU_EXTRA_ARGS          : extra args appended verbatim to the QEMU command line
+    #   QEMU_SERIAL              : where serial console goes ('stdio', 'null', 'file:PATH')
+    #   QEMU_MONITOR             : where HMP monitor goes ('none', 'stdio')
     local extra_args=()
     if [ -n "${QEMU_DATADIR:-}" ]; then
         extra_args+=(-L "$QEMU_DATADIR")
@@ -349,8 +364,8 @@ Install QEMU:
         -device "virtio-blk-device,drive=hd0" \
         -device "ramfb" \
         -device "qemu-xhci" \
+        -device "usb-tablet" \
         -device "usb-kbd" \
-        -device "usb-mouse" \
         -display "$QEMU_DISPLAY" \
         -serial "$QEMU_SERIAL" \
         -monitor "$QEMU_MONITOR"

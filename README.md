@@ -4,14 +4,14 @@ A tiny but complete UEFI-based ARM64 operating system that boots in QEMU
 (and on real Raspberry Pi 4/5 hardware) and demonstrates:
 
 - **Graphics mode** via the UEFI Graphics Output Protocol (direct framebuffer writes)
-- **Mouse pointer** with a hand-drawn arrow cursor that tracks movement
-- **Keyboard input** driver via the UEFI Simple Text Input protocol
+- **Mouse pointer** via the **EFI Absolute Pointer Protocol** (usb-tablet)
+  with fallback to Simple Pointer Protocol (usb-mouse)
+- **Keyboard input** via UEFI Simple Text Input — arrow keys also move the
+  cursor so you can test cursor drawing in headless QEMU
 - **Live UI** showing mouse position, key events, FPS counter, and recent keys
 
 The whole project builds and runs from a single `./build.sh` script on
 macOS (Intel and Apple Silicon) and Linux.
-
-![Boot screenshot](../../download/myos_boot_screenshot.png)
 
 ---
 
@@ -21,8 +21,10 @@ macOS (Intel and Apple Silicon) and Linux.
 |---|---|
 | UEFI boot | PE32+ ARM64 application built with `cargo +nightly` |
 | Graphics | Direct framebuffer writes via Graphics Output Protocol (GOP) |
-| Mouse | UEFI Simple Pointer Protocol — relative deltas → absolute cursor |
+| Mouse (preferred) | **EFI Absolute Pointer Protocol** — usb-tablet, absolute (X, Y) |
+| Mouse (fallback) | EFI Simple Pointer Protocol — usb-mouse, relative (ΔX, ΔY) |
 | Keyboard | UEFI Simple Text Input Protocol — printable + scancode labels |
+| Arrow keys | Move the cursor (handy for headless QEMU testing) |
 | Cursor | 13×18 arrow sprite with drop shadow + background save/restore |
 | Text | Built-in 8×16 VGA bitmap font (printable ASCII 0x20–0x7E) |
 | UI | Title bar, status panels, recent-keys list, FPS counter |
@@ -211,8 +213,22 @@ don't ship a virtio-gpu driver in the firmware; `ramfb` works everywhere.
 
 **`Mouse: Not present` in the UI**
 The QEMU `virt` machine exposes a USB mouse through the XHCI controller.
-Make sure your QEMU command line includes `-device qemu-xhci -device usb-mouse`.
+Make sure your QEMU command line includes `-device qemu-xhci -device usb-tablet`.
 On real Pi hardware, the UEFI firmware exposes a mouse via USB automatically.
+
+**Mouse driver loads but events count stays at 0 (headless QEMU)**
+This is a **known limitation of QEMU's HMP `mouse_move` command** — it
+sends events to the legacy PS/2 mouse input layer, which the UEFI USB
+HID driver doesn't see.  Two workarounds:
+
+1. **Use the QEMU GUI window**: run `./build.sh` without overriding
+   `QEMU_DISPLAY`.  Click inside the QEMU window to grab the mouse, then
+   move it — the OS will see the events.
+2. **Use arrow keys**: ↑↓←→ also move the cursor (12 px per press) — this
+   works in headless QEMU and lets you verify the cursor drawing code.
+
+On real Raspberry Pi 4/5 hardware, a USB mouse works without any of these
+workarounds.
 
 **Build error: `can't find crate for 'core'`**
 You're missing the `aarch64-unknown-uefi` target. Run:
