@@ -100,8 +100,8 @@ fn main() -> Status {
 
     // Mouse mode for UI display.
     let mouse_mode_label = match &mouse_opt {
-        Some(m) if m.is_absolute() => "OK (Absolute + Simple Pointer)",
-        Some(_)                    => "OK (Simple Pointer / PS2)",
+        Some(m) if m.is_absolute() => "OK (USB IO / Absolute)",
+        Some(_)                    => "OK (Simple Pointer)",
         None                       => "Not present",
     };
     let (abs_max_x, abs_max_y) = mouse_opt.as_ref()

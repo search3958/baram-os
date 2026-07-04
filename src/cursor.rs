@@ -74,8 +74,9 @@ impl Cursor {
 
     /// Apply a relative movement, clamping to the visible area.
     pub fn move_by(&mut self, dx: i32, dy: i32, w: i32, h: i32) {
-        self.x = (self.x + dx).max(0).min(w - 1);
-        self.y = (self.y + dy).max(0).min(h - 1);
+        if w <= 0 || h <= 0 { return; }
+        self.x = (self.x + dx).clamp(0, w - 1);
+        self.y = (self.y + dy).clamp(0, h - 1);
     }
 
     /// Restore the previously-saved background.  Should be called before

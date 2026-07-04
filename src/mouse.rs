@@ -2,6 +2,7 @@
 // Bypasses firmware's broken mouse driver entirely.
 
 use alloc::format;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use uefi::boot;
@@ -156,7 +157,7 @@ impl Mouse {
     pub fn abs_max(&self) -> (u64, u64) {
         match &self.abs {
             Some((_, mx, my)) => (*mx, *my),
-            None => (0, 0),
+            None => (32767, 32767), // QEMU usb-tablet の標準解像度
         }
     }
 
@@ -168,22 +169,33 @@ impl Mouse {
                 if n == 0 { return None; }
                 let r = &self.report_buf[..n];
 
-                // Parse HID boot mouse report: [buttons, x, y]
                 let mut ev = MouseEvent::default();
-                ev.is_absolute = false;
-                if n >= 4 {
-                    // Boot mouse report: buttons, x, y, (optional wheel)
+                
+                // 6バイトの絶対座標（タブレット）レポートとして処理
+                if n >= 5 {
+                    ev.left = r[0] & 0x01 != 0;
+                    ev.right = r[0] & 0x02 != 0;
+                    ev.middle = r[0] & 0x04 != 0;
+                    
+                    // X, Y を 16bit の絶対座標として結合
+                    ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
+                    ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
+                    ev.is_absolute = true;
+                } 
+                // 念のため3バイトの相対座標レポートへのフォールバックも残す
+                else if n >= 3 {
                     ev.left = r[0] & 0x01 != 0;
                     ev.right = r[0] & 0x02 != 0;
                     ev.middle = r[0] & 0x04 != 0;
                     ev.rel_dx = r[1] as i8 as i32;
                     ev.rel_dy = r[2] as i8 as i32;
-                } else if n >= 3 {
-                    ev.left = r[0] & 0x01 != 0;
-                    ev.right = r[0] & 0x02 != 0;
-                    ev.rel_dx = r[1] as i8 as i32;
-                    ev.rel_dy = r[2] as i8 as i32;
+                    ev.is_absolute = false;
                 }
+
+                // Debug: log raw bytes
+                let mut raw = alloc::string::String::new();
+                for &b in r { raw.push_str(&alloc::format!("{:02x} ", b)); }
+                log_line_str(&alloc::format!("RAW[{}]: {}", n, raw));
                 return Some(ev);
             }
         }
