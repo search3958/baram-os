@@ -1,275 +1,116 @@
-//! QOI image decoder for embedded applications.
-//!
-//! `tinyqoi` is a QOI image decoder mainly targeted at use with [`embedded_graphics`].
-//!
-//! Visit <https://qoiformat.org> for additional information about the QOI format.
-//!
-//! # Examples
-//!
-//! A [`Qoi`] image can be wrapped in an embedded-graphics
-//! [`Image`](embedded_graphics::image::Image) to display it on any [`DrawTarget`] which uses
-//! [`Rgb888`] colors:
-//!
-//! ```rust
-//! use tinyqoi::Qoi;
-//! use embedded_graphics::{prelude::*, image::Image};
-//!
-//! # let mut display = embedded_graphics::mock_display::MockDisplay::new();
-//! // Parse QOI image.
-//! let data = include_bytes!("../tests/colors.qoi");
-//! let qoi = Qoi::new(data).unwrap();
-//!
-//! // Draw image to display.
-//! Image::new(&qoi, Point::zero()).draw(&mut display).unwrap();
-//! ```
+//! QOI image decoder — minimal, no_std compatible.
 
-#![no_std]
-#![deny(missing_docs)]
-#![deny(missing_debug_implementations)]
+use crate::gop::Color;
 
-use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
+const HEADER_LEN: usize = 14;
+const END_MARKER: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 1];
 
-const MAGIC: &[u8] = b"qoif";
-const HEADER_LENGTH: usize = 14;
-const STREAM_END: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 1];
-
-/// QOI image.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Qoi<'a> {
-    data: &'a [u8],
-    size: Size,
-}
-
-impl<'a> Qoi<'a> {
-    /// Creates a new OOI image.
-    pub fn new(data: &'a [u8]) -> Result<Self, Error> {
-        if data.len() < (HEADER_LENGTH + STREAM_END.len()) {
-            return Err(Error::TruncatedFile);
-        }
-
-        let (header, data) = data.split_at(HEADER_LENGTH);
-        let (magic, header) = header.split_at(MAGIC.len());
-        let (data, end) = data.split_at(data.len() - STREAM_END.len());
-
-        if magic != MAGIC {
-            return Err(Error::InvalidMagic);
-        }
-        if end != STREAM_END {
-            return Err(Error::TruncatedFile);
-        }
-
-        let width = u32::from_be_bytes(header[0..4].try_into().unwrap());
-        let height = u32::from_be_bytes(header[4..8].try_into().unwrap());
-        let _channels = header[8];
-        let _colorspace = header[9];
-
-        Ok(Self {
-            data,
-            size: Size::new(width, height),
-        })
-    }
-
-    /// Returns an iterator over this pixels in this image.
-    pub fn pixels(&'a self) -> PixelsIter<'a> {
-        PixelsIter::new(self)
-    }
-}
-
-impl ImageDrawable for Qoi<'_> {
-    type Color = Rgb888;
-
-    fn draw<D>(&self, target: &mut D) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Self::Color>,
-    {
-        target.fill_contiguous(&self.bounding_box(), self.pixels())
-    }
-
-    fn draw_sub_image<D>(
-        &self,
-        target: &mut D,
-        area: &embedded_graphics::primitives::Rectangle,
-    ) -> Result<(), D::Error>
-    where
-        D: DrawTarget<Color = Self::Color>,
-    {
-        self.draw(&mut target.translated(-area.top_left).clipped(area))
-    }
-}
-
-impl OriginDimensions for Qoi<'_> {
-    fn size(&self) -> Size {
-        self.size
-    }
-}
-
-fn hash_pixel(pixel: Rgb888, alpha: u8) -> u8 {
-    pixel
-        .r()
-        .wrapping_mul(3)
-        .wrapping_add(pixel.g().wrapping_mul(5))
-        .wrapping_add(pixel.b().wrapping_mul(7))
-        .wrapping_add(alpha.wrapping_mul(11))
-        % 64
-}
-
-/// Iterator over the pixels of a QOI image.
 #[derive(Debug)]
-pub struct PixelsIter<'a> {
-    previous_color: Rgb888,
-    previous_alpha: u8,
-    previous_colors: [Rgb888; 64],
-    previous_alphas: [u8; 64],
-    data: &'a [u8],
-    run_length: u8,
+pub struct QoiImage {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: alloc::vec::Vec<Color>,
 }
 
-impl<'a> PixelsIter<'a> {
-    fn new(qoi: &'a Qoi<'a>) -> Self {
-        Self {
-            previous_color: Rgb888::BLACK,
-            previous_alpha: 255,
-            previous_colors: [Rgb888::BLACK; 64],
-            previous_alphas: [0; 64],
-            data: qoi.data,
-            run_length: 0,
-        }
+pub fn decode(data: &[u8]) -> Option<QoiImage> {
+    if data.len() < HEADER_LEN + END_MARKER.len() {
+        return None;
     }
-}
 
-impl Iterator for PixelsIter<'_> {
-    type Item = Rgb888;
+    let (header, rest) = data.split_at(HEADER_LEN);
+    if &header[0..4] != b"qoif" {
+        return None;
+    }
+    let end = &rest[rest.len() - END_MARKER.len()..];
+    if end != END_MARKER {
+        return None;
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.run_length > 0 {
-            self.run_length -= 1;
-            return Some(self.previous_color);
-        }
+    // header[0..4] = magic, [4..8] = width, [8..12] = height, [12] = channels, [13] = colorspace
+    let width = u32::from_be_bytes(header[4..8].try_into().ok()?);
+    let height = u32::from_be_bytes(header[8..12].try_into().ok()?);
 
-        let (byte, rest) = self.data.split_first()?;
-        self.data = rest;
+    let pixel_data = &rest[..rest.len() - END_MARKER.len()];
+    let total = (width as usize) * (height as usize);
 
-        match byte {
-            0b11111110 => {
-                // QOI_OP_RGB
-                if self.data.len() >= 3 {
-                    self.previous_color = Rgb888::new(self.data[0], self.data[1], self.data[2]);
-                    self.data = &self.data[3..];
-                } else {
-                    return None;
-                }
+    let mut pixels = alloc::vec::Vec::with_capacity(total);
+    let mut index = [(0u8, 0u8, 0u8, 0u8); 64];
+    let mut prev_r: u8 = 0;
+    let mut prev_g: u8 = 0;
+    let mut prev_b: u8 = 0;
+    let mut prev_a: u8 = 255;
+    let mut pos = 0;
+    let mut run: i32 = 0;
+
+    for _ in 0..total {
+        let (r, g, b, a) = if run > 0 {
+            run -= 1;
+            (prev_r, prev_g, prev_b, prev_a)
+        } else {
+            if pos >= pixel_data.len() {
+                return None;
             }
-            0b11111111 => {
-                // QOI_OP_RGBA
-                if self.data.len() >= 4 {
-                    self.previous_color = Rgb888::new(self.data[0], self.data[1], self.data[2]);
-                    self.previous_alpha = self.data[3];
-                    self.data = &self.data[4..];
-                } else {
-                    return None;
+            let byte = pixel_data[pos];
+            pos += 1;
+
+            match byte {
+                0xFE => {
+                    if pos + 2 >= pixel_data.len() { return None; }
+                    let c = (pixel_data[pos], pixel_data[pos+1], pixel_data[pos+2]);
+                    pos += 3;
+                    (c.0, c.1, c.2, prev_a)
                 }
-            }
-            _ => match byte & 0b11000000 {
-                0b00000000 => {
-                    // QOI_OP_INDEX
-                    let index = usize::from(byte & 0x3F);
-                    self.previous_color = self.previous_colors[index];
-                    self.previous_alpha = self.previous_alphas[index];
-                    return Some(self.previous_color);
+                0xFF => {
+                    if pos + 3 >= pixel_data.len() { return None; }
+                    let c = (pixel_data[pos], pixel_data[pos+1], pixel_data[pos+2], pixel_data[pos+3]);
+                    pos += 4;
+                    c
                 }
-                0b01000000 => {
-                    // QOI_OP_DIFF
-                    let dr = (byte >> 4) & 0x3;
-                    let dg = (byte >> 2) & 0x3;
-                    let db = byte & 0x3;
-
-                    let r = self.previous_color.r().wrapping_add(dr).wrapping_sub(2);
-                    let g = self.previous_color.g().wrapping_add(dg).wrapping_sub(2);
-                    let b = self.previous_color.b().wrapping_add(db).wrapping_sub(2);
-
-                    self.previous_color = Rgb888::new(r, g, b);
+                b if b & 0xC0 == 0x00 => {
+                    index[(b & 0x3F) as usize]
                 }
-                0b10000000 => {
-                    // QOI_OP_LUMA
-                    if self.data.len() >= 1 {
-                        let byte2 = self.data[0];
-                        self.data = &self.data[1..];
-
-                        let dg = (byte & 0x3F).wrapping_sub(32);
-                        let dr = (byte2 >> 4).wrapping_sub(8).wrapping_add(dg);
-                        let db = (byte2 & 0x0F).wrapping_sub(8).wrapping_add(dg);
-
-                        let r = self.previous_color.r().wrapping_add(dr);
-                        let g = self.previous_color.g().wrapping_add(dg);
-                        let b = self.previous_color.b().wrapping_add(db);
-
-                        self.previous_color = Rgb888::new(r, g, b);
-                    } else {
-                        return None;
-                    }
+                b if b & 0xC0 == 0x40 => {
+                    let dr = ((b >> 4) & 0x3) as i16 - 2;
+                    let dg = ((b >> 2) & 0x3) as i16 - 2;
+                    let db = (b & 0x3) as i16 - 2;
+                    (
+                        (prev_r as i16 + dr) as u8,
+                        (prev_g as i16 + dg) as u8,
+                        (prev_b as i16 + db) as u8,
+                        prev_a,
+                    )
                 }
-                0b11000000 | _ => {
+                b if b & 0xC0 == 0x80 => {
+                    if pos >= pixel_data.len() { return None; }
+                    let byte2 = pixel_data[pos];
+                    pos += 1;
+                    let dg = (b & 0x3F) as i16 - 32;
+                    let dr = ((byte2 >> 4) & 0x0F) as i16 - 8 + dg;
+                    let db = (byte2 & 0x0F) as i16 - 8 + dg;
+                    (
+                        (prev_r as i16 + dr) as u8,
+                        (prev_g as i16 + dg) as u8,
+                        (prev_b as i16 + db) as u8,
+                        prev_a,
+                    )
+                }
+                b => {
                     // QOI_OP_RUN
-                    self.run_length = byte & 0x3F;
-                    return Some(self.previous_color);
+                    run = (b & 0x3F) as i32;
+                    (prev_r, prev_g, prev_b, prev_a)
                 }
-            },
-        }
+            }
+        };
 
-        let index = usize::from(hash_pixel(self.previous_color, self.previous_alpha));
-        self.previous_colors[index] = self.previous_color;
-        self.previous_alphas[index] = self.previous_alpha;
-        Some(self.previous_color)
-    }
-}
+        let h = ((r as usize * 3 + g as usize * 5 + b as usize * 7 + a as usize * 11) % 64) as usize;
+        index[h] = (r, g, b, a);
+        prev_r = r;
+        prev_g = g;
+        prev_b = b;
+        prev_a = a;
 
-/// Error.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Error {
-    /// Invalid magic value.
-    InvalidMagic,
-    /// File is too short.
-    TruncatedFile,
-}
-
-#[cfg(test)]
-mod tests {
-    use embedded_graphics::{image::Image, mock_display::MockDisplay};
-
-    use super::*;
-
-    #[test]
-    fn invalid_magic() {
-        let data = b"not a valid qoi file!!!!!!!!";
-        assert_eq!(Qoi::new(data), Err(Error::InvalidMagic));
+        pixels.push(Color::rgb(r, g, b));
     }
 
-    #[test]
-    fn truncated_header() {
-        let data = b"too short";
-        assert_eq!(Qoi::new(data), Err(Error::TruncatedFile));
-    }
-
-    #[test]
-    fn truncated_file() {
-        let data = include_bytes!("../tests/colors.qoi");
-        let (_, data) = data.split_last().unwrap();
-        assert_eq!(Qoi::new(data), Err(Error::TruncatedFile));
-    }
-
-    #[test]
-    fn image() {
-        let data = include_bytes!("../tests/colors.qoi");
-        let qoi = Qoi::new(data).unwrap();
-        assert_eq!(qoi.size(), Size::new(3, 3));
-
-        let mut display = MockDisplay::<Rgb888>::new();
-        Image::new(&qoi, Point::zero()).draw(&mut display).unwrap();
-
-        display.assert_pattern(&[
-            "RGB", //
-            "WWW", //
-            "KKK", //
-        ]);
-    }
+    Some(QoiImage { width, height, pixels })
 }

@@ -11,6 +11,7 @@ mod keyboard;
 mod mouse;
 mod svg;
 mod ttf_font;
+mod tinyqoi;
 mod ui;
 mod uiscript;
 mod usb_hid;
@@ -36,6 +37,9 @@ const CURSOR_BOX_H: usize = 32;
 
 // UI Script apps embedded at compile time from src/app/*.u1
 const APP_DEMO: &str = include_str!("app/demo.u1");
+
+// Wallpaper embedded at compile time
+const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
@@ -65,6 +69,9 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
+    // Decode wallpaper
+    let wallpaper = tinyqoi::decode(WALLPAPER_QOI);
+
     // Create initial windows
     wm.add("システム情報", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
@@ -92,7 +99,7 @@ fn main() -> Status {
     // Initial full paint
     render_frame(&mut layer, &wm, &last_keys, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label, cursor_x, cursor_y,
-                 &ui_commands, Some(ui_win_id));
+                 &ui_commands, Some(ui_win_id), wallpaper.as_ref());
     layer.flush(&mut screen);
 
     loop {
@@ -190,7 +197,7 @@ fn main() -> Status {
         if dirty || frames % 4 == 0 {
             render_frame(&mut layer, &wm, &last_keys, mouse_ev_count,
                          key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
-                         &ui_commands, Some(ui_win_id));
+                         &ui_commands, Some(ui_win_id), wallpaper.as_ref());
             layer.flush(&mut screen);
         }
 
@@ -202,12 +209,26 @@ fn main() -> Status {
 fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
-                ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>) {
+                ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
+                wallpaper: Option<&tinyqoi::QoiImage>) {
     let w = layer.width();
     let h = layer.height();
 
-    // 1. Background
-    layer.clear(Color::BG);
+    // 1. Background — wallpaper or solid color
+    if let Some(img) = wallpaper {
+        let img_w = img.width as usize;
+        let img_h = img.height as usize;
+        for y in 0..h {
+            let iy = y % img_h;
+            for x in 0..w {
+                let ix = x % img_w;
+                let c = img.pixels[iy * img_w + ix];
+                layer.put_pixel(x, y, c);
+            }
+        }
+    } else {
+        layer.clear(Color::BG);
+    }
 
     // 2. Title bar
     layer.fill_rect(0, 0, w, 36, Color::WIN_INACTIVE);
