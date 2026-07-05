@@ -20,6 +20,7 @@ pub struct MouseEvent {
     pub left: bool,
     pub right: bool,
     pub middle: bool,
+    pub scroll: i32,
 }
 
 pub struct Mouse {
@@ -171,18 +172,26 @@ impl Mouse {
 
                 let mut ev = MouseEvent::default();
                 
-                // 6バイトの絶対座標（タブレット）レポートとして処理
+                // 5+ bytes: absolute tablet report
                 if n >= 5 {
                     ev.left = r[0] & 0x01 != 0;
                     ev.right = r[0] & 0x02 != 0;
                     ev.middle = r[0] & 0x04 != 0;
-                    
-                    // X, Y を 16bit の絶対座標として結合
                     ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
                     ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
                     ev.is_absolute = true;
-                } 
-                // 念のため3バイトの相対座標レポートへのフォールバックも残す
+                }
+                // 4 bytes: relative mouse with scroll wheel
+                else if n >= 4 {
+                    ev.left = r[0] & 0x01 != 0;
+                    ev.right = r[0] & 0x02 != 0;
+                    ev.middle = r[0] & 0x04 != 0;
+                    ev.rel_dx = r[1] as i8 as i32;
+                    ev.rel_dy = r[2] as i8 as i32;
+                    ev.scroll = r[3] as i8 as i32;
+                    ev.is_absolute = false;
+                }
+                // 3 bytes: relative mouse without scroll
                 else if n >= 3 {
                     ev.left = r[0] & 0x01 != 0;
                     ev.right = r[0] & 0x02 != 0;

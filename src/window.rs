@@ -8,7 +8,6 @@ const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
 
-// Icon SVGs embedded at compile time from src/data/.
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("data/close.svg");
@@ -28,7 +27,7 @@ pub struct Window {
     pub visible: bool,
     pub focused: bool,
     pub maximized: bool,
-    // saved position/size before maximize
+    pub scroll_y: i32,
     save_x: i32,
     save_y: i32,
     save_w: usize,
@@ -53,6 +52,7 @@ impl Window {
             id, title: tb, title_len: n,
             x, y, w, h, z,
             visible: true, focused: false, maximized: false,
+            scroll_y: 0,
             save_x: x, save_y: y, save_w: w, save_h: h,
             dragging: false, resizing: false,
             drag_ox: 0, drag_oy: 0,
@@ -70,19 +70,19 @@ impl Window {
     }
 
     fn title_bar_hit(&self, px: i32, py: i32) -> bool {
-        px >= self.x && px < self.x + self.w as i32 && py >= self.y && py < self.y + TITLE_BAR_H as i32
+        px >= self.x && px < self.x + self.w as i32
+            && py >= self.y && py < self.y + TITLE_BAR_H as i32
     }
 
-    /// Returns which button was hit: 'c'lose, 'm'aximize, 'n'one.
     fn button_hit(&self, px: i32, py: i32) -> char {
         let base_x = self.x + self.w as i32 - (BTN_SIZE as i32) * 3;
         let btn_y = self.y + 5;
         if py >= btn_y && py < btn_y + BTN_SIZE as i32 {
             if px >= base_x && px < base_x + BTN_SIZE as i32 {
-                return 'm'; // maximize
+                return 'm';
             }
             if px >= base_x + BTN_SIZE as i32 * 2 && px < base_x + BTN_SIZE as i32 * 3 {
-                return 'c'; // close
+                return 'c';
             }
         }
         'n'
@@ -93,33 +93,32 @@ impl Window {
             && py >= self.y + self.h as i32 - 6
     }
 
+    pub fn scroll(&mut self, delta: i32) {
+        self.scroll_y = self.scroll_y.saturating_add(delta).max(0);
+    }
+
     pub fn toggle_maximize(&mut self, screen_w: i32, screen_h: i32) {
         if self.maximized {
-            // Restore
             self.x = self.save_x;
             self.y = self.save_y;
             self.w = self.save_w;
             self.h = self.save_h;
             self.maximized = false;
         } else {
-            // Save current position
             self.save_x = self.x;
             self.save_y = self.y;
             self.save_w = self.w;
             self.save_h = self.h;
-            // Maximize: fill screen (leave taskbar space)
             self.x = 0;
             self.y = 0;
             self.w = screen_w as usize;
-            self.h = (screen_h - TITLE_BAR_H as i32 - 32) as usize; // 32 = taskbar
+            self.h = (screen_h - TITLE_BAR_H as i32 - 32) as usize;
             self.maximized = true;
         }
     }
 
     pub fn start_drag(&mut self, px: i32, py: i32) {
-        // If maximized, restore first then start drag
         if self.maximized {
-            // Map mouse to restored position proportionally
             let ratio = px as f64 / self.w as f64;
             self.w = self.save_w;
             self.h = self.save_h;
@@ -185,6 +184,20 @@ impl WindowManager {
         self.focused_id = Some(id);
     }
 
+    pub fn scroll_focused(&mut self, delta: i32) {
+        if let Some(id) = self.focused_id {
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                w.scroll(delta);
+            }
+        }
+    }
+
+    pub fn scroll_window(&mut self, id: WinId, delta: i32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.scroll(delta);
+        }
+    }
+
     pub fn window_at(&self, px: i32, py: i32) -> Option<WinId> {
         let mut sorted: Vec<&Window> = self.windows.iter().collect();
         sorted.sort_by(|a, b| b.z.cmp(&a.z));
@@ -203,7 +216,6 @@ impl WindowManager {
         v
     }
 
-    /// Returns Some('c') if close was clicked, Some('m') if maximize toggled.
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
         if let Some(id) = self.window_at(px, py) {
             self.focus(id);
@@ -226,7 +238,6 @@ impl WindowManager {
                 }
                 _ => {}
             }
-            // Start drag or resize
             let resize = {
                 let win = self.windows.iter().find(|w| w.id == id).unwrap();
                 win.resize_handle_hit(px, py)
@@ -268,12 +279,35 @@ impl WindowManager {
         }
     }
 
-    pub fn draw_all(&self, layer: &mut LayerSystem) {
+    /// Draw all windows in z-order. `draw_window_content` is called between
+    /// filling the body and drawing the frame, so content is clipped by the
+    /// window borders.
+    pub fn draw_all(
+        &self,
+        layer: &mut LayerSystem,
+        ui_win: Option<(WinId, &[super::uiscript::Command])>,
+    ) {
         let mut sorted: Vec<&Window> = self.windows.iter().collect();
         sorted.sort_by(|a, b| a.z.cmp(&b.z));
         for w in &sorted {
             if w.visible {
                 draw_window(layer, w);
+                if let Some((uid, cmds)) = ui_win {
+                    if w.id == uid {
+                        layer.push_clip(
+                            w.x.max(0) as usize,
+                            (w.y + TITLE_BAR_H as i32).max(0) as usize,
+                            (w.x + w.w as i32).max(0) as usize,
+                            (w.y + w.h as i32).max(0) as usize,
+                        );
+                        super::uiscript::render(
+                            layer, cmds,
+                            w.x, w.y, w.w, w.h,
+                            TITLE_BAR_H, w.scroll_y,
+                        );
+                        layer.pop_clip();
+                    }
+                }
             }
         }
     }
@@ -285,8 +319,15 @@ impl WindowManager {
     pub fn get_title(&self, id: WinId) -> Option<&str> {
         self.windows.iter().find(|w| w.id == id).map(|w| w.title_str())
     }
+
+    pub fn get_window_rect(&self, id: WinId) -> Option<(i32, i32, usize, usize, i32)> {
+        self.windows.iter().find(|w| w.id == id).map(|w| (w.x, w.y, w.w, w.h, w.scroll_y))
+    }
 }
 
+/// Draw a single window frame. After filling the body, the caller should draw
+/// content (UI Script etc.), then this function draws the title bar and borders
+/// on top to naturally clip the content.
 fn draw_window(layer: &mut LayerSystem, w: &Window) {
     let x = w.x.max(0) as usize;
     let y = w.y.max(0) as usize;
@@ -299,14 +340,13 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
     let h_draw = y1.saturating_sub(y);
     if w_draw == 0 || h_draw == 0 { return; }
 
-    // --- Colors (Windows 10 dark) ---
     let (title_bg, body_bg, border) = if w.focused {
         (Color::ACCENT, Color::WIN_BG, Color::ACCENT)
     } else {
         (Color::WIN_INACTIVE, Color::WIN_BG, Color::BORDER)
     };
 
-    // Shadow (subtle)
+    // Shadow
     if !w.maximized {
         let sx = (x + 3).min(sw);
         let sy = (y + 3).min(sh);
@@ -315,33 +355,26 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         layer.fill_rect(sx, sy, sw2, sh2, Color::rgb(0, 0, 0));
     }
 
-    // Window body
+    // 1. Fill entire window body (content will be drawn on top by caller)
     layer.fill_rect(x, y, w_draw, h_draw, body_bg);
 
-    // Title bar
+    // 2. Title bar
     let tb_h = TITLE_BAR_H.min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
-
-    // Title text (white on accent)
     layer.put_str(x + 10, y + 7, w.title_str(), Color::TEXT);
 
-    // --- Title bar buttons (right to left: close, maximize, minimize) ---
+    // Title bar buttons
     let base_x = x + w_draw - BTN_SIZE * 3;
     let btn_y = y + 5;
 
-    // Maximize/Restore button — background only; icon drawn from SVG.
     if base_x + BTN_SIZE <= sw && btn_y + BTN_SIZE <= sh {
-        let mx_color = title_bg;
-        layer.fill_rect(base_x, btn_y, BTN_SIZE, BTN_SIZE, mx_color);
-        // Draw the maximize (or restore) icon from src/data/max.svg centred
-        // inside the button.  When maximized, use mini.svg instead.
+        layer.fill_rect(base_x, btn_y, BTN_SIZE, BTN_SIZE, title_bg);
         let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
         svg::draw_svg_into(layer, icon,
             base_x as i32 + 4, btn_y as i32 + 4,
             (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
     }
 
-    // Close button — background only; icon drawn from SVG.
     let close_x = x + w_draw - BTN_SIZE;
     if close_x <= sw && btn_y + BTN_SIZE <= sh {
         svg::draw_svg_into(layer, CLOSE_ICON_SVG,
@@ -349,12 +382,26 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
             (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
     }
 
-    // Border (1px)
+    // 3. Borders (drawn LAST to clip content)
     if !w.maximized {
-        layer.rect_outline(x, y, w_draw, h_draw, border);
+        // Top border (1px line just below title bar)
+        let border_y = y + tb_h;
+        if border_y < y1 {
+            layer.fill_rect(x, border_y, w_draw, 1, border);
+        }
+        // Left border
+        layer.fill_rect(x, y + tb_h, 1, h_draw.saturating_sub(tb_h), border);
+        // Right border
+        if w_draw > 1 {
+            layer.fill_rect(x + w_draw - 1, y + tb_h, 1, h_draw.saturating_sub(tb_h), border);
+        }
+        // Bottom border
+        if h_draw > 1 {
+            layer.fill_rect(x, y + h_draw - 1, w_draw, 1, border);
+        }
     }
 
-    // Resize grip (bottom-right corner, only if not maximized)
+    // Resize grip
     if !w.maximized {
         let rx = x + w_draw - 6;
         let ry = y + h_draw - 6;
@@ -371,12 +418,7 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
 }
 
 // ---------------------------------------------------------------------------
-// LayerSystem — full-frame off-screen renderer
-//
-// Every frame the entire scene is drawn into `buf` (a Vec<u32> in
-// Color.0 format).  `flush()` then copies the whole buffer to the
-// framebuffer in a single pass, converting pixel format on the fly.
-// This is simple, correct, and fast enough at 640×480 / 1024×768.
+// LayerSystem — full-frame off-screen renderer with clip rect support
 // ---------------------------------------------------------------------------
 
 pub struct LayerSystem {
@@ -384,6 +426,8 @@ pub struct LayerSystem {
     height: usize,
     buf: Vec<u32>,
     frame_count: u64,
+    clip_stack: Vec<(usize, usize, usize, usize)>,
+    clip: Option<(usize, usize, usize, usize)>,
 }
 
 impl LayerSystem {
@@ -393,6 +437,45 @@ impl LayerSystem {
             height: h,
             buf: vec![Color::BG.0; w * h],
             frame_count: 0,
+            clip_stack: Vec::new(),
+            clip: None,
+        }
+    }
+
+    pub fn push_clip(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
+        let x0 = x0.min(self.width);
+        let y0 = y0.min(self.height);
+        let x1 = x1.min(self.width);
+        let y1 = y1.min(self.height);
+        // Save current clip to stack
+        if let Some(cur) = self.clip {
+            self.clip_stack.push(cur);
+            // Intersect with current clip
+            self.clip = Some((
+                x0.max(cur.0),
+                y0.max(cur.1),
+                x1.min(cur.2),
+                y1.min(cur.3),
+            ));
+        } else {
+            self.clip = Some((x0, y0, x1, y1));
+        }
+    }
+
+    pub fn pop_clip(&mut self) {
+        if let Some(prev) = self.clip_stack.pop() {
+            self.clip = Some(prev);
+        } else {
+            self.clip = None;
+        }
+    }
+
+    #[inline]
+    fn clip_test(&self, x: usize, y: usize) -> bool {
+        if let Some((cx0, cy0, cx1, cy1)) = self.clip {
+            x >= cx0 && x < cx1 && y >= cy0 && y < cy1
+        } else {
+            true
         }
     }
 
@@ -405,7 +488,7 @@ impl LayerSystem {
 
     #[inline]
     pub fn put_pixel(&mut self, x: usize, y: usize, c: Color) {
-        if x < self.width && y < self.height {
+        if x < self.width && y < self.height && self.clip_test(x, y) {
             self.buf[y * self.width + x] = c.0;
         }
     }
@@ -420,17 +503,33 @@ impl LayerSystem {
     }
 
     pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
-        let x0 = x.min(self.width);
-        let y0 = y.min(self.height);
-        let x1 = (x + w).min(self.width);
-        let y1 = (y + h).min(self.height);
-        if x0 >= x1 || y0 >= y1 { return; }
-        let v = c.0;
-        let stride = self.width;
-        for yy in y0..y1 {
-            let row = yy * stride;
-            for xx in x0..x1 {
-                self.buf[row + xx] = v;
+        if let Some((cx0, cy0, cx1, cy1)) = self.clip {
+            let x0 = x.max(cx0).min(self.width);
+            let y0 = y.max(cy0).min(self.height);
+            let x1 = (x + w).min(cx1).min(self.width);
+            let y1 = (y + h).min(cy1).min(self.height);
+            if x0 >= x1 || y0 >= y1 { return; }
+            let v = c.0;
+            let stride = self.width;
+            for yy in y0..y1 {
+                let row = yy * stride;
+                for xx in x0..x1 {
+                    self.buf[row + xx] = v;
+                }
+            }
+        } else {
+            let x0 = x.min(self.width);
+            let y0 = y.min(self.height);
+            let x1 = (x + w).min(self.width);
+            let y1 = (y + h).min(self.height);
+            if x0 >= x1 || y0 >= y1 { return; }
+            let v = c.0;
+            let stride = self.width;
+            for yy in y0..y1 {
+                let row = yy * stride;
+                for xx in x0..x1 {
+                    self.buf[row + xx] = v;
+                }
             }
         }
     }
@@ -454,6 +553,7 @@ impl LayerSystem {
                     for col in 0..glyph.w {
                         let px = x as i32 + col;
                         if px < 0 || px >= self.width as i32 { continue; }
+                        if !self.clip_test(px as usize, py as usize) { continue; }
                         let alpha = glyph.data[(row * glyph.w + col) as usize];
                         if alpha > 0 {
                             let a = alpha as u32;
@@ -484,7 +584,7 @@ impl LayerSystem {
             for col in 0..GLYPH_W {
                 if (bits >> (7 - col)) & 1 == 1 {
                     let px = x + col;
-                    if px < self.width {
+                    if px < self.width && self.clip_test(px, py) {
                         self.buf[py * self.width + px] = fg.0;
                     }
                 }
@@ -514,8 +614,6 @@ impl LayerSystem {
         }
     }
 
-    /// Write the entire buffer to the framebuffer via Screen.
-    /// Every pixel is written every frame — no differential rendering.
     pub fn flush(&mut self, screen: &mut Screen) {
         let w = self.width;
         let h = self.height;

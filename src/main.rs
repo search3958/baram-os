@@ -12,6 +12,7 @@ mod mouse;
 mod svg;
 mod ttf_font;
 mod ui;
+mod uiscript;
 mod usb_hid;
 mod window;
 
@@ -27,13 +28,14 @@ use crate::ui::FmtBuf;
 use crate::window::{WindowManager, LayerSystem};
 
 const TASKBAR_H: usize = 32;
+const SCROLL_SPEED: i32 = 30;
 
-// Mouse cursor SVG embedded at compile time from src/data/mouse.svg.
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
-// Cursor hit-box / draw-box size in pixels.  The SVG (15×19) is rendered
-// inside this rectangle preserving aspect ratio.
 const CURSOR_BOX_W: usize = 26;
 const CURSOR_BOX_H: usize = 32;
+
+// UI Script apps embedded at compile time from src/app/*.u1
+const APP_DEMO: &str = include_str!("app/demo.u1");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
@@ -67,6 +69,10 @@ fn main() -> Status {
     wm.add("システム情報", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
 
+    // UI Script window — load from embedded .u1 file
+    let ui_win_id = wm.add("UI Script Demo", 600, 100, 400, 350);
+    let ui_commands = uiscript::parse(APP_DEMO);
+
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);
     let mut mouse_ev_count: u32 = 0;
     let mut key_ev_count: u32 = 0;
@@ -85,27 +91,23 @@ fn main() -> Status {
 
     // Initial full paint
     render_frame(&mut layer, &wm, &last_keys, mouse_ev_count, key_ev_count,
-                 fps, mouse_mode_label, cursor_x, cursor_y);
+                 fps, mouse_mode_label, cursor_x, cursor_y,
+                 &ui_commands, Some(ui_win_id));
     layer.flush(&mut screen);
 
     loop {
         let mut dirty = false;
 
-        // ----- input -----
+        // ----- keyboard input -----
         if has_kbd {
             while let Some(ev) = Keyboard::poll() {
                 key_ev_count = key_ev_count.wrapping_add(1);
                 if last_keys.len() >= 6 { last_keys.remove(0); }
                 last_keys.push(ev.label());
 
-                let step = 12i32;
-                let sw = layer.width() as i32;
-                let sh = layer.height() as i32;
                 match ev.scancode {
-                    0x01 => cursor_y = (cursor_y - step).max(0),
-                    0x02 => cursor_y = (cursor_y + step).min(sh - 1),
-                    0x03 => cursor_x = (cursor_x + step).min(sw - 1),
-                    0x04 => cursor_x = (cursor_x - step).max(0),
+                    0x01 => wm.scroll_focused(-SCROLL_SPEED),
+                    0x02 => wm.scroll_focused(SCROLL_SPEED),
                     _ => {}
                 }
                 if let Some(c) = ev.printable {
@@ -125,6 +127,7 @@ fn main() -> Status {
             }
         }
 
+        // ----- mouse input -----
         if let Some(mouse) = mouse_opt.as_mut() {
             while let Some(ev) = mouse.poll() {
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
@@ -133,6 +136,14 @@ fn main() -> Status {
                     &mut cursor_x, &mut cursor_y, &ev,
                     screen.width(), screen.height(), mouse.abs_max(),
                 );
+
+                // Mouse scroll — scroll the window under the cursor
+                if ev.scroll != 0 {
+                    let scroll_delta = -ev.scroll * SCROLL_SPEED;
+                    if let Some(id) = wm.window_at(cx, cy) {
+                        wm.scroll_window(id, scroll_delta);
+                    }
+                }
 
                 if ev.left && !mouse_down {
                     mouse_down = true;
@@ -178,7 +189,8 @@ fn main() -> Status {
 
         if dirty || frames % 4 == 0 {
             render_frame(&mut layer, &wm, &last_keys, mouse_ev_count,
-                         key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y);
+                         key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
+                         &ui_commands, Some(ui_win_id));
             layer.flush(&mut screen);
         }
 
@@ -189,14 +201,15 @@ fn main() -> Status {
 /// Render the entire scene into the layer buffer.
 fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
-                fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32) {
+                fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
+                ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>) {
     let w = layer.width();
     let h = layer.height();
 
     // 1. Background
     layer.clear(Color::BG);
 
-    // 2. Title bar (Windows 10 dark style)
+    // 2. Title bar
     layer.fill_rect(0, 0, w, 36, Color::WIN_INACTIVE);
     layer.put_str(16, 10, "BaramOS ウィンドウマネージャー", Color::TEXT);
 
@@ -215,7 +228,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
     layer.put_str(16, 22, fb2.as_str(), Color::MUTED);
 
     // 3. Windows (z-sorted)
-    wm.draw_all(layer);
+    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
     // 4. Taskbar
     let tb_y = h.saturating_sub(TASKBAR_H);
@@ -234,9 +247,9 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
 
     // 5. Hint text
     let mid_y = tb_y.saturating_sub(20);
-    layer.put_str(16, mid_y, "N: 新規ウィンドウ  |  Arrow keys: カーソルを移動", Color::MUTED);
+    layer.put_str(16, mid_y, "↑↓: スクロール  |  ←→: カーソル移動  |  マウスホイール: スクロール", Color::MUTED);
 
-    // 6. Cursor (on top of everything)
+    // 6. Cursor (on top)
     draw_cursor_into_layer(layer, cursor_x, cursor_y);
 }
 
