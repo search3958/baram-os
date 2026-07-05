@@ -411,6 +411,140 @@ fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i
     }
 }
 
+/// Blit a cached shadow (black with varying alpha) onto the layer.
+fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
+    let lw = layer.width();
+    let lh = layer.height();
+    let stride = w * 4;
+    for sy in 0..h {
+        let dst_y = oy as usize + sy;
+        if dst_y >= lh { break; }
+        let row = sy * stride;
+        for sx in 0..w {
+            let dst_x = ox as usize + sx;
+            if dst_x >= lw { break; }
+            let a = pixels[row + sx * 4 + 3] as u32;
+            if a == 0 { continue; }
+            let inv = 255 - a;
+            let bg = layer.get_pixel(dst_x, dst_y);
+            let r = (bg.r() as u32 * inv) / 255;
+            let g = (bg.g() as u32 * inv) / 255;
+            let b = (bg.b() as u32 * inv) / 255;
+            layer.put_pixel(dst_x, dst_y, Color::rgb(r as u8, g as u8, b as u8));
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Cursor shadow cache
+// ─────────────────────────────────────────────────────────────────────
+
+static mut CURSOR_SHADOW_CACHE: Option<(usize, usize, Vec<u8>)> = None;
+
+/// Draw a shadow version of an SVG (black, blurred) at the given position.
+pub fn draw_svg_shadow(
+    layer: &mut LayerSystem,
+    svg: &str,
+    ox: i32,
+    oy: i32,
+    target_w: f32,
+    target_h: f32,
+    blur_r: i32,
+    _offset_y: i32,
+) {
+    let tw = target_w as usize;
+    let th = target_h as usize;
+    if tw == 0 || th == 0 { return; }
+
+    // Check cache
+    unsafe {
+        if let Some((cw, ch, ref cached)) = CURSOR_SHADOW_CACHE {
+            if cw == tw && ch == th {
+                // cached stores (tw, th) but actual buffer is padded
+                // Reconstruct padded size from the cached data
+                let pad = blur_r as usize;
+                let pw = tw + pad * 2;
+                let ph = th + pad * 2;
+                blit_shadow(layer, cached, pw, ph, ox - pad as i32, oy - pad as i32);
+                return;
+            }
+        }
+    }
+
+    // 1. Render SVG at cursor size to get the silhouette alpha
+    let svg_buf = rasterize_svg_to_buffer(svg, tw, th);
+
+    // 2. Create solid silhouette mask (1.0 where SVG has any coverage)
+    let mut silhouette: Vec<f32> = alloc::vec![0.0; tw * th];
+    for i in 0..tw * th {
+        if svg_buf[i * 4 + 3] > 0 {
+            silhouette[i] = 1.0;
+        }
+    }
+
+    // 3. Pad silhouette with zeros for blur spread
+    let pad = blur_r as usize;
+    let pw = tw + pad * 2;
+    let ph = th + pad * 2;
+    let mut padded: Vec<f32> = alloc::vec![0.0; pw * ph];
+    for y in 0..th {
+        for x in 0..tw {
+            padded[(y + pad) * pw + (x + pad)] = silhouette[y * tw + x];
+        }
+    }
+
+    // 4. Two-pass box blur on padded buffer
+    let mut tmp: Vec<f32> = alloc::vec![0.0; pw * ph];
+    // Horizontal
+    for y in 0..ph {
+        for x in 0..pw {
+            let mut sum = 0.0f32;
+            let mut cnt = 0.0f32;
+            for dx in -blur_r..=blur_r {
+                let sx = x as i32 + dx;
+                if sx >= 0 && sx < pw as i32 {
+                    sum += padded[y * pw + sx as usize];
+                    cnt += 1.0;
+                }
+            }
+            tmp[y * pw + x] = sum / cnt;
+        }
+    }
+    // Vertical
+    let mut result: Vec<f32> = alloc::vec![0.0; pw * ph];
+    for y in 0..ph {
+        for x in 0..pw {
+            let mut sum = 0.0f32;
+            let mut cnt = 0.0f32;
+            for dy in -blur_r..=blur_r {
+                let sy = y as i32 + dy;
+                if sy >= 0 && sy < ph as i32 {
+                    sum += tmp[sy as usize * pw + x];
+                    cnt += 1.0;
+                }
+            }
+            result[y * pw + x] = sum / cnt;
+        }
+    }
+
+    // 5. Write RGBA shadow buffer
+    let mut shadow: Vec<u8> = alloc::vec![0u8; pw * ph * 4];
+    for i in 0..pw * ph {
+        let a = (result[i] * 120.0).min(255.0) as u8;
+        shadow[i * 4] = 0;
+        shadow[i * 4 + 1] = 0;
+        shadow[i * 4 + 2] = 0;
+        shadow[i * 4 + 3] = a;
+    }
+
+    // 6. Blit with offset to account for padding
+    blit_shadow(layer, &shadow, pw, ph, ox - pad as i32, oy - pad as i32);
+
+    unsafe {
+        CURSOR_SHADOW_CACHE = Some((tw, th, shadow));
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Fill rule
 // ─────────────────────────────────────────────────────────────────────

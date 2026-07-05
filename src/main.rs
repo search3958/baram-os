@@ -42,6 +42,10 @@ const APP_DEMO: &str = include_str!("app/demo.u1");
 const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
+    // Draw shadow first (black, blurred, offset 3px right, 4px down)
+    svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 3, cy + 4,
+        CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 8, 0);
+    // Draw cursor on top
     svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
         CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
 }

@@ -346,13 +346,52 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         (Color::WIN_INACTIVE, Color::WIN_BG, Color::BORDER)
     };
 
-    // Shadow
+    // Shadow — smooth blurred shadow, 2px down offset
     if !w.maximized {
-        let sx = (x + 3).min(sw);
-        let sy = (y + 3).min(sh);
-        let sw2 = w_draw.min(sw.saturating_sub(sx));
-        let sh2 = h_draw.min(sh.saturating_sub(sy));
-        layer.fill_rect(sx, sy, sw2, sh2, Color::SHADOW);
+        let blur_r: i32 = 30;
+        let offset_y: i32 = 2;
+        let win_x0 = x as i32;
+        let win_y0 = y as i32 + offset_y;
+        let win_x1 = x as i32 + w_draw as i32;
+        let win_y1 = y as i32 + h_draw as i32 + offset_y;
+        let sx = (win_x0 - blur_r).max(0) as usize;
+        let sy = (win_y0 - blur_r).max(0) as usize;
+        let ex = (win_x1 + blur_r).min(sw as i32) as usize;
+        let ey = (win_y1 + blur_r).min(sh as i32) as usize;
+        if ex > sx && ey > sy {
+            for py in sy..ey {
+                let py_i = py as i32;
+                let edge_y = if py_i >= win_y0 && py_i < win_y1 {
+                    0
+                } else if py_i < win_y0 {
+                    win_y0 - py_i
+                } else {
+                    py_i - (win_y1 - 1)
+                };
+                for px in sx..ex {
+                    let px_i = px as i32;
+                    let edge_x = if px_i >= win_x0 && px_i < win_x1 {
+                        0
+                    } else if px_i < win_x0 {
+                        win_x0 - px_i
+                    } else {
+                        px_i - (win_x1 - 1)
+                    };
+                    let edge = edge_x.max(edge_y);
+                    if edge >= blur_r { continue; }
+                    let t = (blur_r - edge) as f32 / blur_r as f32;
+                    let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+                    let a = (alpha_f * 255.0) as u32;
+                    if a == 0 { continue; }
+                    let inv = 255 - a;
+                    let bg = layer.get_pixel(px, py);
+                    let r = (bg.r() as u32 * inv) / 255;
+                    let g = (bg.g() as u32 * inv) / 255;
+                    let b = (bg.b() as u32 * inv) / 255;
+                    layer.put_pixel(px, py, Color::rgb(r as u8, g as u8, b as u8));
+                }
+            }
+        }
     }
 
     // 1. Fill entire window body (content will be drawn on top by caller)
