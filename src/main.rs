@@ -8,7 +8,6 @@ mod cursor;
 mod font;
 mod gop;
 mod keyboard;
-mod minipng;
 mod mouse;
 mod svg;
 mod ttf_font;
@@ -39,8 +38,8 @@ const CURSOR_BOX_H: usize = 32;
 // UI Script apps embedded at compile time from src/app/*.u1
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
-// Wallpaper embedded at compile time (PNG format)
-const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
+// Wallpaper embedded at compile time
+const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     // Draw shadow first (black, blurred, offset 3px right, 4px down)
@@ -74,19 +73,8 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    // Decode wallpaper from PNG
-    let mut png_buf = [0u8; 1920 * 1080 * 4]; // Max buffer for RGBA
-    let wallpaper = match minipng::decode_png(WALLPAPER_PNG, &mut png_buf) {
-        Ok(mut img_data) => {
-            let _ = img_data.convert_to_rgba8bpc();
-            Some(WallpaperImage {
-                width: img_data.width(),
-                height: img_data.height(),
-                pixels: img_data.pixels().to_vec(),
-            })
-        }
-        Err(_) => None,
-    };
+    // Decode wallpaper
+    let wallpaper = tinyqoi::decode(WALLPAPER_QOI);
 
     // Create initial windows
     wm.add("システム情報", 40, 60, 320, 220);
@@ -221,19 +209,12 @@ fn main() -> Status {
     }
 }
 
-/// Wallpaper image structure for PNG-decoded images
-struct WallpaperImage {
-    width: u32,
-    height: u32,
-    pixels: alloc::vec::Vec<u8>, // RGBA bytes
-}
-
 /// Render the entire scene into the layer buffer.
 fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                wallpaper: Option<&WallpaperImage>) {
+                wallpaper: Option<&tinyqoi::QoiImage>) {
     let w = layer.width();
     let h = layer.height();
 
@@ -262,11 +243,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
             let dst_row = y * w;
             for x in 0..w {
                 let sx = x * src_w / w;
-                let pixel_offset = (src_row + sx) * 4; // RGBA = 4 bytes
-                let r = img.pixels[pixel_offset];
-                let g = img.pixels[pixel_offset + 1];
-                let b = img.pixels[pixel_offset + 2];
-                buf[dst_row + x] = Color::rgb(r, g, b).0;
+                buf[dst_row + x] = img.pixels[src_row + sx].0;
             }
         }
     } else {
