@@ -95,7 +95,7 @@ fn main() -> Status {
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
     // Create initial windows
-    wm.add("System Info", 40, 60, 320, 220);
+    wm.add("システム情報", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
 
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);

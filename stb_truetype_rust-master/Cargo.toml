@@ -1,5 +1,0 @@
-[workspace]
-members = [
-	"stb_truetype_rust",
-	"samples"
-]

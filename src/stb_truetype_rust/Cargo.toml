@@ -1,0 +1,13 @@
+[package]
+name = "stb_truetype_rust"
+version = "1.26.1"
+authors = ["StbRust Team"]
+description = "Rust port of the stb_truetype"
+repository = "https://github.com/StbRust/stb_truetype_rust"
+keywords = ["ttf", "truetype"]
+license = "Unlicense"
+
+[dependencies]
+libm = "0.2"
+
+[lib]

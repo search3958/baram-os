@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 uefi = { version = "0.38", features = ["alloc", "logger", "panic_handler", "global_allocator"] }
 uefi-raw = "0.15"
-stb_truetype_rust = { path = "stb_truetype_rust-master/stb_truetype_rust" }
+stb_truetype_rust = { path = "src/stb_truetype_rust" }
 
 [profile.release]
 opt-level = 2
