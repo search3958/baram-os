@@ -34,31 +34,72 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
     let bytes = svg.as_bytes();
     let len = bytes.len();
     let mut i = 0;
+    // Depth of <defs> nesting.  Tags inside <defs> (clip paths, gradients,
+    // patterns, masks, ...) are NOT rendered directly — they are referenced
+    // by id from other elements.  Skipping them prevents, e.g., the
+    // `<rect fill="white">` inside a `<clipPath>` from being painted as a
+    // normal rectangle and clobbering the rest of the SVG.
+    let mut defs_depth: u32 = 0;
     while i < len {
         if bytes[i] == b'<' {
-            let start = i + 1;
-            i += 1;
-            if i < len && bytes[i] == b'/' { i += 1; }       // skip </
-            if i < len && bytes[i] == b'?' { i += 1; }       // skip <?
-            if i < len && bytes[i] == b'!' {                   // skip <!...
+            let mut j = i + 1;
+            let is_close = j < len && bytes[j] == b'/';
+            if is_close { j += 1; }
+            if j < len && bytes[j] == b'?' { /* XML decl */ }
+            else if j < len && bytes[j] == b'!' {
+                // skip <!...> entirely (comments, DOCTYPE, CDATA)
                 while i < len && bytes[i] != b'>' { i += 1; }
                 i += 1;
                 continue;
             }
-            let tag_start = i;
-            while i < len && bytes[i] != b'>' && bytes[i] != b' ' && bytes[i] != b'\t'
-                    && bytes[i] != b'\n' && bytes[i] != b'\r' && bytes[i] != b'/' {
-                i += 1;
+            // Extract the tag name.
+            let name_start = j;
+            while j < len && bytes[j] != b'>' && bytes[j] != b' ' && bytes[j] != b'\t'
+                    && bytes[j] != b'\n' && bytes[j] != b'\r' && bytes[j] != b'/' {
+                j += 1;
             }
-            let name = String::from_utf8_lossy(&bytes[tag_start..i]).to_string();
-            while i < len && bytes[i] != b'>' && !(bytes[i] == b'/' && i + 1 < len && bytes[i+1] == b'>') {
-                i += 1;
+            let name = String::from_utf8_lossy(&bytes[name_start..j]).to_string();
+            // Find end of tag (either /> or >).
+            let mut k = j;
+            while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
+                k += 1;
             }
-            let attr_start = i;
-            if i < len && bytes[i] == b'/' { i += 2; }        // />
-            else if i < len { i += 1; }                         // >
-            let attr_end = if attr_start < i { i - 1 } else { i };
+            let attr_start = k;
+            let self_closing = k < len && bytes[k] == b'/';
+            if k < len { k += if self_closing { 2 } else { 1 }; }
+            let attr_end = if attr_start < k { k - 1 } else { k };
             let attrs = String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
+            i = k;
+
+            // Track <defs> open/close (only for non-self-closing tags).
+            if name == "defs" {
+                if is_close { if defs_depth > 0 { defs_depth -= 1; } }
+                else if !self_closing { defs_depth += 1; }
+                continue;
+            }
+            // Also skip standalone clipPath / mask / pattern / linearGradient
+            // / radialGradient / symbol / marker tags (these define paint
+            // servers or clip/mask regions but are not drawn directly).
+            let is_definition_only = matches!(name.as_str(),
+                "clipPath" | "mask" | "pattern" | "linearGradient"
+                | "radialGradient" | "symbol" | "marker" | "filter");
+            if is_definition_only && !is_close && !self_closing {
+                // Treat as a defs-like block — skip its children.
+                defs_depth = defs_depth.saturating_add(1);
+                // Track the close tag too.  We use a sentinel: any increase
+                // for these tags is matched by their corresponding close tag
+                // (</clipPath> etc.), which we also need to handle.
+                // Push the tag name onto a small stack — but to keep this
+                // simple, we reuse the same counter; the matching close tag
+                // has the same name and will decrement.
+                continue;
+            }
+            if is_definition_only && is_close {
+                if defs_depth > 0 { defs_depth -= 1; }
+                continue;
+            }
+
+            if defs_depth > 0 { continue; }
             if !name.is_empty() && name != "svg" && name != "g" && name != "?xml" && !name.starts_with('!') {
                 tags.push(Tag { name, attrs });
             }
@@ -335,20 +376,21 @@ fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i3
     if pts.len() < 3 { return; }
     let sw = layer.width() as i32;
     let sh = layer.height() as i32;
-    let mut min_y = pts[0].y as i32;
+    let mut min_y = (pts[0].y as i32 + oy).max(0);
     let mut max_y = min_y;
-    for p in pts { let py = p.y as i32; if py < min_y { min_y = py; } if py > max_y { max_y = py; } }
+    for p in pts { let py = (p.y as i32 + oy).max(0); if py < min_y { min_y = py; } if py > max_y { max_y = py; } }
     min_y = min_y.max(0); max_y = max_y.min(sh - 1);
 
-    for y in min_y..=max_y {
+    for sy in min_y..=max_y {
         let mut xints: Vec<f32> = Vec::new();
         let n = pts.len();
         for i in 0..n {
             let j = (i + 1) % n;
-            let ya = pts[i].y; let yb = pts[j].y;
-            if (ya <= y as f32 && yb > y as f32) || (yb <= y as f32 && ya > y as f32) {
+            let ya = pts[i].y + oy as f32;
+            let yb = pts[j].y + oy as f32;
+            if (ya <= sy as f32 && yb > sy as f32) || (yb <= sy as f32 && ya > sy as f32) {
                 if (ya - yb).abs() < 0.001 { continue; }
-                let t = (y as f32 - ya) / (yb - ya);
+                let t = (sy as f32 - ya) / (yb - ya);
                 xints.push(pts[i].x + t * (pts[j].x - pts[i].x));
             }
         }
@@ -357,7 +399,57 @@ fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i3
         while k + 1 < xints.len() {
             let x0 = (xints[k] as i32 + ox).max(0) as usize;
             let x1 = (xints[k+1] as i32 + ox).min(sw) as usize;
-            for x in x0..x1 { layer.put_pixel(x, y as usize, c); }
+            for x in x0..x1 { layer.put_pixel(x, sy as usize, c); }
+            k += 2;
+        }
+    }
+}
+
+/// Even-odd rasterize over multiple contours (sub-paths).  Each contour is
+/// closed implicitly — we do NOT add a closing edge between the end of one
+/// contour and the start of the next.  This is what makes SVG path "donut"
+/// shapes (a path whose `d` contains multiple `M` sub-paths) render correctly.
+fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color, ox: i32, oy: i32) {
+    let sw = layer.width() as i32;
+    let sh = layer.height() as i32;
+    let mut min_y = i32::MAX;
+    let mut max_y = i32::MIN;
+    let mut any = false;
+    for contour in contours {
+        if contour.len() < 2 { continue; }
+        for p in contour {
+            let py = p.y as i32 + oy;
+            if py < min_y { min_y = py; }
+            if py > max_y { max_y = py; }
+            any = true;
+        }
+    }
+    if !any { return; }
+    min_y = min_y.max(0); max_y = max_y.min(sh - 1);
+    if min_y > max_y { return; }
+
+    for sy in min_y..=max_y {
+        let mut xints: Vec<f32> = Vec::new();
+        for contour in contours {
+            let n = contour.len();
+            if n < 2 { continue; }
+            for i in 0..n {
+                let j = (i + 1) % n;
+                let ya = contour[i].y + oy as f32;
+                let yb = contour[j].y + oy as f32;
+                if (ya <= sy as f32 && yb > sy as f32) || (yb <= sy as f32 && ya > sy as f32) {
+                    if (ya - yb).abs() < 0.001 { continue; }
+                    let t = (sy as f32 - ya) / (yb - ya);
+                    xints.push(contour[i].x + t * (contour[j].x - contour[i].x));
+                }
+            }
+        }
+        xints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+        let mut k = 0;
+        while k + 1 < xints.len() {
+            let x0 = (xints[k] as i32 + ox).max(0) as usize;
+            let x1 = (xints[k+1] as i32 + ox).min(sw) as usize;
+            for x in x0..x1 { layer.put_pixel(x, sy as usize, c); }
             k += 2;
         }
     }
@@ -447,16 +539,42 @@ fn thick_line(layer: &mut LayerSystem, x0: i32, y0: i32, x1: i32, y1: i32, c: Co
 
 // ── public API ───────────────────────────────────────────────────────
 
+/// Draw an SVG into the layer where the SVG's viewBox maps onto the entire
+/// layer (legacy behaviour).  Used for full-screen backgrounds.
 pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
+    draw_svg_scaled_into(layer, svg, ox, oy,
+        layer.width() as f32, layer.height() as f32,
+        /*target_w=*/ layer.width() as f32,
+        /*target_h=*/ layer.height() as f32);
+}
+
+/// Draw an SVG into a target rectangle (ox, oy, target_w, target_h).
+/// The SVG's viewBox is mapped onto that rectangle, preserving aspect ratio
+/// (letterboxed).  Useful for icons (window buttons, cursors, ...).
+pub fn draw_svg_into(layer: &mut LayerSystem, svg: &str,
+                     ox: i32, oy: i32, target_w: f32, target_h: f32) {
+    draw_svg_scaled_into(layer, svg, ox, oy,
+        layer.width() as f32, layer.height() as f32,
+        target_w, target_h);
+}
+
+fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
+                        ox: i32, oy: i32,
+                        _layer_w: f32, _layer_h: f32,
+                        target_w: f32, target_h: f32) {
     let tags = extract_tags(svg);
 
     let mut vb_x = 0.0f32;
     let mut vb_y = 0.0f32;
     let mut vb_w = 0.0f32;
     let mut vb_h = 0.0f32;
+    let mut svg_w = 0.0f32;
+    let mut svg_h = 0.0f32;
 
     for tag in &tags {
         if tag.name == "svg" {
+            svg_w = attr_f32(&tag.attrs, "width");
+            svg_h = attr_f32(&tag.attrs, "height");
             if let Some(vb) = attr_str(&tag.attrs, "viewBox") {
                 let parts: Vec<&str> = vb.split(|c: char| c == ' ' || c == ',').collect();
                 if parts.len() >= 4 {
@@ -469,9 +587,26 @@ pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
         }
     }
 
-    let (sx, sy) = if vb_w > 0.0 && vb_h > 0.0 {
-        (layer.width() as f32 / vb_w, layer.height() as f32 / vb_h)
-    } else { (1.0, 1.0) };
+    // Prefer viewBox dimensions; fall back to width/height attributes.
+    let src_w = if vb_w > 0.0 { vb_w } else { svg_w };
+    let src_h = if vb_h > 0.0 { vb_h } else { svg_h };
+
+    // Compute scale that fits src_w x src_h inside target_w x target_h.
+    let (sx, sy, dx, dy) = if src_w > 0.0 && src_h > 0.0 {
+        let scale = (target_w / src_w).min(target_h / src_h);
+        let draw_w = src_w * scale;
+        let draw_h = src_h * scale;
+        let dx = ((target_w - draw_w) * 0.5).max(0.0);
+        let dy = ((target_h - draw_h) * 0.5).max(0.0);
+        (scale, scale, dx, dy)
+    } else {
+        (1.0, 1.0, 0.0, 0.0)
+    };
+
+    // Final origin offset: user-requested (ox, oy) + centering (dx, dy)
+    // inside the target rectangle.
+    let ox = ox + (dx as i32);
+    let oy = oy + (dy as i32);
 
     let mut elems: Vec<Elem> = Vec::new();
 
@@ -572,10 +707,21 @@ pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
                 if *stroke != Color::TRANSPARENT { rasterize_stroke(layer, &s, *stroke, *sw, ox, oy); }
             }
             Elem::Path { d, fill, stroke, sw } => {
-                let pts = flatten(d);
-                let s = scale_pts(&pts, sx, sy);
-                if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT { rasterize_stroke(layer, &s, *stroke, *sw, ox, oy); }
+                // Preserve contour boundaries so multi-subpath `d` attributes
+                // (e.g. the donut-shaped white outline of the cursor SVG)
+                // render correctly under the even-odd fill rule.
+                let contours = eval_d(d);
+                let scaled: Vec<Vec<Pt>> = contours.iter()
+                    .map(|c| scale_pts(c, sx, sy))
+                    .collect();
+                if *fill != Color::TRANSPARENT {
+                    rasterize_fill_multi(layer, &scaled, *fill, ox, oy);
+                }
+                if *stroke != Color::TRANSPARENT {
+                    for c in &scaled {
+                        rasterize_stroke(layer, c, *stroke, *sw, ox, oy);
+                    }
+                }
             }
         }
     }

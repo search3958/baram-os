@@ -28,48 +28,16 @@ use crate::window::{WindowManager, LayerSystem};
 
 const TASKBAR_H: usize = 32;
 
-/// 13×18 arrow cursor mask (same as cursor.rs but drawn into the layer).
-const CURSOR_W: usize = 13;
-const CURSOR_H: usize = 18;
-const CURSOR_MASK: [[u8; CURSOR_W]; CURSOR_H] = [
-    [1,0,0,0,0,0,0,0,0,0,0,0,0],
-    [1,1,0,0,0,0,0,0,0,0,0,0,0],
-    [1,1,1,0,0,0,0,0,0,0,0,0,0],
-    [1,1,1,1,0,0,0,0,0,0,0,0,0],
-    [1,1,1,1,1,0,0,0,0,0,0,0,0],
-    [1,1,1,1,1,1,0,0,0,0,0,0,0],
-    [1,1,1,1,1,1,1,0,0,0,0,0,0],
-    [1,1,1,1,1,1,1,1,0,0,0,0,0],
-    [1,1,1,1,1,1,1,1,1,0,0,0,0],
-    [1,1,1,1,1,1,1,1,1,1,0,0,0],
-    [1,1,1,1,1,1,1,1,1,1,1,0,0],
-    [1,1,1,1,1,1,1,1,1,0,0,0,0],
-    [1,1,1,1,1,1,1,0,0,0,0,0,0],
-    [1,1,1,0,1,1,1,1,0,0,0,0,0],
-    [1,1,0,0,0,1,1,1,1,0,0,0,0],
-    [1,0,0,0,0,0,1,1,1,1,0,0,0],
-    [0,0,0,0,0,0,0,1,1,1,1,0,0],
-    [0,0,0,0,0,0,0,0,1,1,1,1,0],
-];
+// Mouse cursor SVG embedded at compile time from src/data/mouse.svg.
+const CURSOR_SVG: &str = include_str!("data/mouse.svg");
+// Cursor hit-box / draw-box size in pixels.  The SVG (15×19) is rendered
+// inside this rectangle preserving aspect ratio.
+const CURSOR_BOX_W: usize = 15;
+const CURSOR_BOX_H: usize = 19;
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
-    let sw = layer.width();
-    let sh = layer.height();
-    for yy in 0..CURSOR_H {
-        for xx in 0..CURSOR_W {
-            if CURSOR_MASK[yy][xx] == 1 {
-                let px = cx as usize + xx;
-                let py = cy as usize + yy;
-                if px < sw && py < sh {
-                    // Shadow
-                    if px + 1 < sw && py + 1 < sh {
-                        layer.put_pixel(px + 1, py + 1, Color::BLACK);
-                    }
-                    layer.put_pixel(px, py, Color::CURSOR);
-                }
-            }
-        }
-    }
+    svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
+        CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
 }
 
 #[entry]
