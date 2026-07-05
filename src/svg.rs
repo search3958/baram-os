@@ -374,53 +374,97 @@ fn bezier2(p0: &Pt, p1: &Pt, p2: &Pt) -> Vec<Pt> {
 
 // ── rasterizer ───────────────────────────────────────────────────────
 
+fn blend_pixel(layer: &mut LayerSystem, x: usize, y: usize, c: Color, coverage: f32) {
+    if x >= layer.width() || y >= layer.height() || coverage <= 0.0 { return; }
+    let cov = coverage.min(1.0);
+    let bg = layer.get_pixel(x, y);
+    let a = (cov * 255.0) as u32;
+    let inv = 255 - a;
+    let r = (c.r() as u32 * a + bg.r() as u32 * inv) / 255;
+    let g = (c.g() as u32 * a + bg.g() as u32 * inv) / 255;
+    let b = (c.b() as u32 * a + bg.b() as u32 * inv) / 255;
+    layer.put_pixel(x, y, Color(0xFF00_0000 | (r << 16) | (g << 8) | b));
+}
+
 fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i32) {
-    if pts.len() < 3 { return; }
+    let n = pts.len();
+    if n < 3 { return; }
     let sw = layer.width() as i32;
     let sh = layer.height() as i32;
-    let mut min_y = (pts[0].y as i32 + oy).max(0);
+
+    let sp: alloc::vec::Vec<Pt> = pts.iter()
+        .map(|p| Pt { x: p.x + ox as f32, y: p.y + oy as f32 })
+        .collect();
+
+    let mut min_y = libm::floorf(sp[0].y) as i32;
     let mut max_y = min_y;
-    for p in pts { let py = (p.y as i32 + oy).max(0); if py < min_y { min_y = py; } if py > max_y { max_y = py; } }
+    for p in &sp { let py = libm::floorf(p.y) as i32; if py < min_y { min_y = py; } if py > max_y { max_y = py; } }
     min_y = min_y.max(0); max_y = max_y.min(sh - 1);
+    if min_y > max_y { return; }
 
     for sy in min_y..=max_y {
-        let mut xints: Vec<f32> = Vec::new();
-        let n = pts.len();
+        let yf = sy as f32;
+        let mut xints: alloc::vec::Vec<f32> = Vec::new();
         for i in 0..n {
             let j = (i + 1) % n;
-            let ya = pts[i].y + oy as f32;
-            let yb = pts[j].y + oy as f32;
-            if (ya <= sy as f32 && yb > sy as f32) || (yb <= sy as f32 && ya > sy as f32) {
-                if (ya - yb).abs() < 0.001 { continue; }
-                let t = (sy as f32 - ya) / (yb - ya);
-                xints.push(pts[i].x + t * (pts[j].x - pts[i].x));
+            let ya = sp[i].y;
+            let yb = sp[j].y;
+            if (ya - yb).abs() < 0.001 { continue; }
+            let down = ya <= yf && yb > yf;
+            let up   = yb <= yf && ya > yf;
+            if down || up {
+                let t = (yf - ya) / (yb - ya);
+                xints.push(sp[i].x + t * (sp[j].x - sp[i].x));
             }
         }
         xints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+
         let mut k = 0;
         while k + 1 < xints.len() {
-            let x0 = (xints[k] as i32 + ox).max(0) as usize;
-            let x1 = (xints[k+1] as i32 + ox).min(sw) as usize;
-            for x in x0..x1 { layer.put_pixel(x, sy as usize, c); }
+            let x0f = xints[k];
+            let x1f = xints[k + 1];
+            let x0 = libm::floorf(x0f) as i32;
+            let x1 = libm::ceilf(x1f) as i32;
+            let x0c = x0.max(0) as usize;
+            let x1c = x1.min(sw) as usize;
+            let yi = sy as usize;
+            // Full interior pixels
+            for x in (x0c + 1)..x1c.saturating_sub(1) {
+                layer.put_pixel(x, yi, c);
+            }
+            // Left edge AA
+            if x0c < layer.width() && yi < layer.height() {
+                let frac = x0f - libm::floorf(x0f);
+                blend_pixel(layer, x0c, yi, c, 1.0 - frac);
+            }
+            // Right edge AA
+            let re = x1c.saturating_sub(1);
+            if re < layer.width() && re >= x0c && yi < layer.height() {
+                let frac = x1f - libm::floorf(x1f);
+                blend_pixel(layer, re, yi, c, frac);
+            }
             k += 2;
         }
     }
 }
 
-/// Even-odd rasterize over multiple contours (sub-paths).  Each contour is
-/// closed implicitly — we do NOT add a closing edge between the end of one
-/// contour and the start of the next.  This is what makes SVG path "donut"
-/// shapes (a path whose `d` contains multiple `M` sub-paths) render correctly.
 fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color, ox: i32, oy: i32) {
     let sw = layer.width() as i32;
     let sh = layer.height() as i32;
+
+    let sc: alloc::vec::Vec<alloc::vec::Vec<Pt>> = contours.iter()
+        .map(|cont| cont.iter()
+            .map(|p| Pt { x: p.x + ox as f32, y: p.y + oy as f32 })
+            .collect())
+        .collect();
+
     let mut min_y = i32::MAX;
     let mut max_y = i32::MIN;
     let mut any = false;
-    for contour in contours {
-        if contour.len() < 2 { continue; }
-        for p in contour {
-            let py = p.y as i32 + oy;
+    for cont in &sc {
+        if cont.len() < 2 { continue; }
+        for p in cont {
+            let py = libm::floorf(p.y) as i32;
             if py < min_y { min_y = py; }
             if py > max_y { max_y = py; }
             any = true;
@@ -431,27 +475,47 @@ fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color,
     if min_y > max_y { return; }
 
     for sy in min_y..=max_y {
-        let mut xints: Vec<f32> = Vec::new();
-        for contour in contours {
-            let n = contour.len();
+        let yf = sy as f32;
+        let mut xints: alloc::vec::Vec<f32> = Vec::new();
+        for cont in &sc {
+            let n = cont.len();
             if n < 2 { continue; }
             for i in 0..n {
                 let j = (i + 1) % n;
-                let ya = contour[i].y + oy as f32;
-                let yb = contour[j].y + oy as f32;
-                if (ya <= sy as f32 && yb > sy as f32) || (yb <= sy as f32 && ya > sy as f32) {
-                    if (ya - yb).abs() < 0.001 { continue; }
-                    let t = (sy as f32 - ya) / (yb - ya);
-                    xints.push(contour[i].x + t * (contour[j].x - contour[i].x));
+                let ya = cont[i].y;
+                let yb = cont[j].y;
+                if (ya - yb).abs() < 0.001 { continue; }
+                let down = ya <= yf && yb > yf;
+                let up   = yb <= yf && ya > yf;
+                if down || up {
+                    let t = (yf - ya) / (yb - ya);
+                    xints.push(cont[i].x + t * (cont[j].x - cont[i].x));
                 }
             }
         }
         xints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+
         let mut k = 0;
         while k + 1 < xints.len() {
-            let x0 = (xints[k] as i32 + ox).max(0) as usize;
-            let x1 = (xints[k+1] as i32 + ox).min(sw) as usize;
-            for x in x0..x1 { layer.put_pixel(x, sy as usize, c); }
+            let x0f = xints[k];
+            let x1f = xints[k + 1];
+            let x0 = libm::floorf(x0f) as i32;
+            let x1 = libm::ceilf(x1f) as i32;
+            let x0c = x0.max(0) as usize;
+            let x1c = x1.min(sw) as usize;
+            let yi = sy as usize;
+            for x in (x0c + 1)..x1c.saturating_sub(1) {
+                layer.put_pixel(x, yi, c);
+            }
+            if x0c < layer.width() && yi < layer.height() {
+                let frac = x0f - libm::floorf(x0f);
+                blend_pixel(layer, x0c, yi, c, 1.0 - frac);
+            }
+            let re = x1c.saturating_sub(1);
+            if re < layer.width() && re >= x0c && yi < layer.height() {
+                let frac = x1f - libm::floorf(x1f);
+                blend_pixel(layer, re, yi, c, frac);
+            }
             k += 2;
         }
     }
@@ -459,34 +523,66 @@ fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color,
 
 fn rasterize_stroke(layer: &mut LayerSystem, pts: &[Pt], c: Color, sw: f32, ox: i32, oy: i32) {
     if pts.len() < 2 { return; }
-    let w = (sw * 0.5).max(0.5) as i32;
+    let hw = (sw * 0.5).max(0.5);
     for i in 0..pts.len()-1 {
-        bresenham_thick(layer,
-            pts[i].x as i32 + ox, pts[i].y as i32 + oy,
-            pts[i+1].x as i32 + ox, pts[i+1].y as i32 + oy, c, w);
+        let x0 = pts[i].x + ox as f32;
+        let y0 = pts[i].y + oy as f32;
+        let x1 = pts[i+1].x + ox as f32;
+        let y1 = pts[i+1].y + oy as f32;
+        draw_aa_thick_line(layer, x0, y0, x1, y1, c, hw);
     }
 }
 
-fn bresenham_thick(layer: &mut LayerSystem, mut x0: i32, mut y0: i32, x1: i32, y1: i32, c: Color, w: i32) {
-    let dx = (x1 - x0).abs();
-    let dy = (y1 - y0).abs();
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let mut err = dx - dy;
-    loop {
-        for wy in -w..=w {
-            for wx in -w..=w {
-                let px = x0 + wx;
-                let py = y0 + wy;
-                if px >= 0 && py >= 0 && (px as usize) < layer.width() && (py as usize) < layer.height() {
-                    layer.put_pixel(px as usize, py as usize, c);
+fn draw_aa_thick_line(layer: &mut LayerSystem, x0: f32, y0: f32, x1: f32, y1: f32, c: Color, hw: f32) {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let len = libm::sqrtf(dx * dx + dy * dy);
+    if len < 0.001 {
+        let cx = x0;
+        let cy = y0;
+        let r = hw;
+        let min_x = libm::floorf(cx - r) as i32;
+        let max_x = libm::ceilf(cx + r) as i32;
+        let min_y = libm::floorf(cy - r) as i32;
+        let max_y = libm::ceilf(cy + r) as i32;
+        for py in min_y..=max_y {
+            for px in min_x..=max_x {
+                let ddx = px as f32 + 0.5 - cx;
+                let ddy = py as f32 + 0.5 - cy;
+                let dist = libm::sqrtf(ddx * ddx + ddy * ddy);
+                if dist <= r {
+                    blend_pixel(layer, px as usize, py as usize, c, 1.0);
+                } else if dist <= r + 1.0 {
+                    blend_pixel(layer, px as usize, py as usize, c, 1.0 - (dist - r));
                 }
             }
         }
-        if x0 == x1 && y0 == y1 { break; }
-        let e2 = 2 * err;
-        if e2 > -dy { err -= dy; x0 += sx; }
-        if e2 < dx { err += dx; y0 += sy; }
+        return;
+    }
+
+    let steps = libm::ceilf(len * 2.0) as i32;
+    for s in 0..=steps {
+        let t = s as f32 / steps as f32;
+        let cx = x0 + dx * t;
+        let cy = y0 + dy * t;
+
+        let min_px = libm::floorf(cx - hw - 1.0) as i32;
+        let max_px = libm::ceilf(cx + hw + 1.0) as i32;
+        let min_py = libm::floorf(cy - hw - 1.0) as i32;
+        let max_py = libm::ceilf(cy + hw + 1.0) as i32;
+
+        for py in min_py..=max_py {
+            for px in min_px..=max_px {
+                let pcx = px as f32 + 0.5 - cx;
+                let pcy = py as f32 + 0.5 - cy;
+                let dist = libm::sqrtf(pcx * pcx + pcy * pcy);
+                if dist <= hw {
+                    blend_pixel(layer, px as usize, py as usize, c, 1.0);
+                } else if dist <= hw + 1.0 {
+                    blend_pixel(layer, px as usize, py as usize, c, 1.0 - (dist - hw));
+                }
+            }
+        }
     }
 }
 
@@ -536,7 +632,7 @@ fn flatten(d: &str) -> Vec<Pt> {
 }
 
 fn thick_line(layer: &mut LayerSystem, x0: i32, y0: i32, x1: i32, y1: i32, c: Color, w: i32) {
-    bresenham_thick(layer, x0, y0, x1, y1, c, w);
+    draw_aa_thick_line(layer, x0 as f32, y0 as f32, x1 as f32, y1 as f32, c, w as f32);
 }
 
 // ── public API ───────────────────────────────────────────────────────
