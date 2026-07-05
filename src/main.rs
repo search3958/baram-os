@@ -214,15 +214,26 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
     let w = layer.width();
     let h = layer.height();
 
-    // 1. Background — wallpaper or solid color
+    // 1. Background — wallpaper scaled to screen (aspect ratio preserved, cover)
     if let Some(img) = wallpaper {
         let img_w = img.width as usize;
         let img_h = img.height as usize;
+        // cover: whichever dimension needs more scaling wins
+        let scale_x = (w << 16) / img_w;
+        let scale_y = (h << 16) / img_h;
+        let scale = if scale_x > scale_y { scale_x } else { scale_y };
+        // source rectangle size in fixed-point (16.16)
+        let src_w_fp = ((w as u64) << 16) / (scale as u64);
+        let src_h_fp = ((h as u64) << 16) / (scale as u64);
+        let src_w = (src_w_fp as usize + 1).min(img_w);
+        let src_h = (src_h_fp as usize + 1).min(img_h);
+        let ox = (img_w.saturating_sub(src_w)) / 2;
+        let oy = (img_h.saturating_sub(src_h)) / 2;
         for y in 0..h {
-            let iy = y % img_h;
+            let sy = y * src_h / h;
             for x in 0..w {
-                let ix = x % img_w;
-                let c = img.pixels[iy * img_w + ix];
+                let sx = x * src_w / w;
+                let c = img.pixels[(oy + sy) * img_w + (ox + sx)];
                 layer.put_pixel(x, y, c);
             }
         }
