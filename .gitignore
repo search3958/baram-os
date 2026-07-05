@@ -1,0 +1,3 @@
+*.efi
+*.pdb
+target/aarch64-unknown-uefi/.DS_Store

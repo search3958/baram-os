@@ -218,23 +218,28 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
     if let Some(img) = wallpaper {
         let img_w = img.width as usize;
         let img_h = img.height as usize;
-        // cover: whichever dimension needs more scaling wins
-        let scale_x = (w << 16) / img_w;
-        let scale_y = (h << 16) / img_h;
-        let scale = if scale_x > scale_y { scale_x } else { scale_y };
-        // source rectangle size in fixed-point (16.16)
-        let src_w_fp = ((w as u64) << 16) / (scale as u64);
-        let src_h_fp = ((h as u64) << 16) / (scale as u64);
-        let src_w = (src_w_fp as usize + 1).min(img_w);
-        let src_h = (src_h_fp as usize + 1).min(img_h);
-        let ox = (img_w.saturating_sub(src_w)) / 2;
-        let oy = (img_h.saturating_sub(src_h)) / 2;
+        // cover: sample region so screen is fully filled, centered
+        let sw_sh = w * img_h;
+        let sh_sw = h * img_w;
+        let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
+            // screen wider relative to image → crop height
+            let sw = img_w;
+            let sh = (img_w * h + w - 1) / w;
+            let sh = sh.min(img_h);
+            (sw, sh, 0, (img_h - sh) / 2)
+        } else {
+            // screen taller relative to image → crop width
+            let sh = img_h;
+            let sw = (img_h * w + h - 1) / h;
+            let sw = sw.min(img_w);
+            (sw, sh, (img_w - sw) / 2, 0)
+        };
         for y in 0..h {
             let sy = y * src_h / h;
+            let src_row = (oy + sy) * img_w + ox;
             for x in 0..w {
                 let sx = x * src_w / w;
-                let c = img.pixels[(oy + sy) * img_w + (ox + sx)];
-                layer.put_pixel(x, y, c);
+                layer.put_pixel(x, y, img.pixels[src_row + sx]);
             }
         }
     } else {
