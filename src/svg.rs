@@ -339,14 +339,26 @@ fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i3
         while k + 1 < xints.len() {
             let x0f = xints[k];
             let x1f = xints[k + 1];
-            let x0 = libm::ceilf(x0f) as i32;
-            let x1 = libm::floorf(x1f) as i32;
             let yi = sy as usize;
-            for x in x0..=x1 {
+
+            let left_px = libm::ceilf(x0f - 0.5) as i32;
+            let right_px = libm::floorf(x1f - 0.5) as i32;
+
+            for x in (left_px + 1)..right_px {
                 if x >= 0 && x < sw {
                     layer.put_pixel(x as usize, yi, c);
                 }
             }
+
+            if left_px >= 0 && left_px < sw {
+                let frac = (left_px as f32 + 1.0 - x0f).max(0.0).min(1.0);
+                blend_pixel(layer, left_px as usize, yi, c, frac);
+            }
+            if right_px >= 0 && right_px < sw && right_px != left_px {
+                let frac = (x1f - right_px as f32).max(0.0).min(1.0);
+                blend_pixel(layer, right_px as usize, yi, c, frac);
+            }
+
             k += 2;
         }
     }
@@ -404,14 +416,26 @@ fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color,
         while k + 1 < xints.len() {
             let x0f = xints[k];
             let x1f = xints[k + 1];
-            let x0 = libm::ceilf(x0f) as i32;
-            let x1 = libm::floorf(x1f) as i32;
             let yi = sy as usize;
-            for x in x0..=x1 {
+
+            let left_px = libm::ceilf(x0f - 0.5) as i32;
+            let right_px = libm::floorf(x1f - 0.5) as i32;
+
+            for x in (left_px + 1)..right_px {
                 if x >= 0 && x < sw {
                     layer.put_pixel(x as usize, yi, c);
                 }
             }
+
+            if left_px >= 0 && left_px < sw {
+                let frac = (left_px as f32 + 1.0 - x0f).max(0.0).min(1.0);
+                blend_pixel(layer, left_px as usize, yi, c, frac);
+            }
+            if right_px >= 0 && right_px < sw && right_px != left_px {
+                let frac = (x1f - right_px as f32).max(0.0).min(1.0);
+                blend_pixel(layer, right_px as usize, yi, c, frac);
+            }
+
             k += 2;
         }
     }
