@@ -23,19 +23,21 @@ impl Color {
     pub const fn b(self) -> u8 { ((self.0 >>  0) & 0xFF) as u8 }
 
     pub const BLACK:   Color = Color::rgb(0x00, 0x00, 0x00);
-    pub const BG:      Color = Color::rgb(0x1B, 0x1B, 0x1B);
-    pub const PANEL:   Color = Color::rgb(0x2D, 0x2D, 0x2D);
+    pub const BG:      Color = Color::rgb(0xF0, 0xF0, 0xF0);
+    pub const PANEL:   Color = Color::rgb(0xFF, 0xFF, 0xFF);
     pub const ACCENT:  Color = Color::rgb(0x00, 0x78, 0xD7);
-    pub const TEXT:    Color = Color::rgb(0xFF, 0xFF, 0xFF);
-    pub const MUTED:   Color = Color::rgb(0x99, 0x99, 0x99);
-    pub const GOOD:    Color = Color::rgb(0x5B, 0xCC, 0x7A);
+    pub const TEXT:    Color = Color::rgb(0x1A, 0x1A, 0x1A);
+    pub const MUTED:   Color = Color::rgb(0x66, 0x66, 0x66);
+    pub const GOOD:    Color = Color::rgb(0x10, 0x7C, 0x10);
     #[allow(dead_code)]
-    pub const WARN:    Color = Color::rgb(0x00, 0x78, 0xD7);
-    pub const CURSOR:  Color = Color::rgb(0xFF, 0xFF, 0xFF);
-    pub const BORDER:  Color = Color::rgb(0x3D, 0x3D, 0x3D);
-    pub const TASKBAR: Color = Color::rgb(0x1F, 0x1F, 0x1F);
-    pub const WIN_BG:  Color = Color::rgb(0x2D, 0x2D, 0x2D);
-    pub const WIN_INACTIVE: Color = Color::rgb(0x3D, 0x3D, 0x3D);
+    pub const WARN:    Color = Color::rgb(0xD8, 0x3B, 0x01);
+    pub const CURSOR:  Color = Color::rgb(0x1A, 0x1A, 0x1A);
+    pub const BORDER:  Color = Color::rgb(0xD0, 0xD0, 0xD0);
+    pub const TASKBAR: Color = Color::rgb(0xF0, 0xF0, 0xF0);
+    pub const WIN_BG:  Color = Color::rgb(0xFF, 0xFF, 0xFF);
+    pub const WIN_INACTIVE: Color = Color::rgb(0xE8, 0xE8, 0xE8);
+    pub const CARD_BG: Color = Color::rgb(0xF5, 0xF5, 0xF5);
+    pub const SHADOW:  Color = Color::rgb(0xA0, 0xA0, 0xA0);
     pub const TRANSPARENT: Color = Color(0x0000_0000);
 }
 

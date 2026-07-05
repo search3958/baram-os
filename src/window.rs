@@ -352,7 +352,7 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         let sy = (y + 3).min(sh);
         let sw2 = w_draw.min(sw.saturating_sub(sx));
         let sh2 = h_draw.min(sh.saturating_sub(sy));
-        layer.fill_rect(sx, sy, sw2, sh2, Color::rgb(0, 0, 0));
+        layer.fill_rect(sx, sy, sw2, sh2, Color::SHADOW);
     }
 
     // 1. Fill entire window body (content will be drawn on top by caller)

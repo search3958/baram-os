@@ -370,7 +370,7 @@ pub fn render(
                 let bx = content_x as usize;
                 let by = sy as usize;
 
-                layer.fill_rect(bx, by, card_w, card_h, Color::rgb(0x3D, 0x3D, 0x3D));
+                layer.fill_rect(bx, by, card_w, card_h, Color::CARD_BG);
                 layer.rect_outline(bx, by, card_w, card_h, Color::BORDER);
                 layer.put_str(bx + 8, by + 8, title, text_color);
                 layer.put_str(bx + 8, by + 28, text, muted);
