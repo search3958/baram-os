@@ -9,6 +9,28 @@ use crate::gop::{Color, Screen};
 /// Draw a single ASCII glyph at `(x, y)` with `fg` foreground and `bg`
 /// background.  Non-ASCII bytes render as a filled background block.
 pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: Color) {
+    if crate::ttf_font::is_available() && c >= 0x20 {
+        let glyph = crate::ttf_font::glyph(c as char);
+        if glyph.w > 0 && glyph.h > 0 {
+            let ascent = crate::ttf_font::ascent();
+            let py_base = y as i32 + ascent;
+            for row in 0..glyph.h {
+                let py = py_base + row;
+                if py < 0 { continue; }
+                for col in 0..glyph.w {
+                    let px = x as i32 + col;
+                    if px < 0 { continue; }
+                    let alpha = glyph.data[(row * glyph.w + col) as usize];
+                    if alpha > 0 {
+                        screen.put_pixel(px as usize, py as usize, fg);
+                    } else {
+                        screen.put_pixel(px as usize, py as usize, bg);
+                    }
+                }
+            }
+            return;
+        }
+    }
     let glyph = font::glyph(c);
     for row in 0..GLYPH_H {
         let bits = glyph[row];
@@ -22,6 +44,20 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
 
 /// Draw an ASCII string.  Stops at the first non-ASCII byte.
 pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, bg: Color) {
+    if crate::ttf_font::is_available() {
+        for ch in s.chars() {
+            let glyph = crate::ttf_font::glyph(ch);
+            if glyph.w > 0 && glyph.h > 0 {
+                let c = if ch as u32 <= 0x7E { ch as u8 } else { b'?' };
+                put_char(screen, x, y, c, fg, bg);
+                x += glyph.advance.max(0) as usize;
+            } else {
+                put_char(screen, x, y, b' ', fg, bg);
+                x += GLYPH_W;
+            }
+        }
+        return;
+    }
     for &b in s.as_bytes() {
         if b >= 0x80 { break; }
         put_char(screen, x, y, b, fg, bg);

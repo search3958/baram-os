@@ -9,6 +9,7 @@ mod font;
 mod gop;
 mod keyboard;
 mod mouse;
+mod ttf_font;
 mod ui;
 mod usb_hid;
 mod window;
@@ -73,6 +74,7 @@ fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
 #[entry]
 fn main() -> Status {
     let _ = uefi::helpers::init();
+    ttf_font::init();
 
     let mut screen = match Screen::take() {
         Ok(s) => s,

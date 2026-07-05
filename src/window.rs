@@ -457,6 +457,37 @@ impl LayerSystem {
     }
 
     pub fn put_char(&mut self, x: usize, y: usize, ch: u8, fg: Color) {
+        if crate::ttf_font::is_available() && ch >= 0x20 {
+            let glyph = crate::ttf_font::glyph(ch as char);
+            if glyph.w > 0 && glyph.h > 0 {
+                let ascent = crate::ttf_font::ascent();
+                let py_base = y as i32 + ascent;
+                for row in 0..glyph.h {
+                    let py = py_base + row;
+                    if py < 0 || py >= self.height as i32 { continue; }
+                    for col in 0..glyph.w {
+                        let px = x as i32 + col;
+                        if px < 0 || px >= self.width as i32 { continue; }
+                        let alpha = glyph.data[(row * glyph.w + col) as usize];
+                        if alpha > 0 {
+                            let a = alpha as u32;
+                            let bg = self.buf[py as usize * self.width + px as usize];
+                            let br = (bg >> 16) & 0xFF;
+                            let bg2 = (bg >> 8) & 0xFF;
+                            let bb = bg & 0xFF;
+                            let fr = (fg.0 >> 16) & 0xFF;
+                            let fg2 = (fg.0 >> 8) & 0xFF;
+                            let fb = fg.0 & 0xFF;
+                            let r = (fr * a + br * (255 - a)) / 255;
+                            let g = (fg2 * a + bg2 * (255 - a)) / 255;
+                            let b = (fb * a + bb * (255 - a)) / 255;
+                            self.buf[py as usize * self.width + px as usize] = (r << 16) | (g << 8) | b;
+                        }
+                    }
+                }
+                return;
+            }
+        }
         use crate::font::{self, GLYPH_W, GLYPH_H};
         let glyph = font::glyph(ch);
         for row in 0..GLYPH_H {
@@ -475,6 +506,19 @@ impl LayerSystem {
     }
 
     pub fn put_str(&mut self, mut x: usize, y: usize, s: &str, fg: Color) {
+        if crate::ttf_font::is_available() {
+            for ch in s.chars() {
+                if ch as u32 >= 0x80 && ch as u32 <= 0xFF { continue; }
+                let glyph = crate::ttf_font::glyph(ch);
+                if glyph.w > 0 && glyph.h > 0 {
+                    self.put_char(x, y, ch as u8, fg);
+                    x += glyph.advance.max(0) as usize;
+                } else {
+                    x += crate::font::GLYPH_W;
+                }
+            }
+            return;
+        }
         use crate::font::GLYPH_W;
         for &b in s.as_bytes() {
             if b >= 0x80 { break; }

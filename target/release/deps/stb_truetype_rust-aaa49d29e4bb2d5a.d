@@ -1,0 +1,15 @@
+/Users/cheontaerang/Documents/GitHub/baram-os/target/release/deps/stb_truetype_rust-aaa49d29e4bb2d5a.d: stb_truetype_rust-master/stb_truetype_rust/src/lib.rs stb_truetype_rust-master/stb_truetype_rust/src/c_runtime.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_bitmap.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_buf.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_charString.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_common.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_fontInfo.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_heap.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_rectPack.rs
+
+/Users/cheontaerang/Documents/GitHub/baram-os/target/release/deps/libstb_truetype_rust-aaa49d29e4bb2d5a.rlib: stb_truetype_rust-master/stb_truetype_rust/src/lib.rs stb_truetype_rust-master/stb_truetype_rust/src/c_runtime.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_bitmap.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_buf.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_charString.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_common.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_fontInfo.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_heap.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_rectPack.rs
+
+/Users/cheontaerang/Documents/GitHub/baram-os/target/release/deps/libstb_truetype_rust-aaa49d29e4bb2d5a.rmeta: stb_truetype_rust-master/stb_truetype_rust/src/lib.rs stb_truetype_rust-master/stb_truetype_rust/src/c_runtime.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_bitmap.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_buf.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_charString.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_common.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_fontInfo.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_heap.rs stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_rectPack.rs
+
+stb_truetype_rust-master/stb_truetype_rust/src/lib.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/c_runtime.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_bitmap.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_buf.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_charString.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_common.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_fontInfo.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_heap.rs:
+stb_truetype_rust-master/stb_truetype_rust/src/stb_truetype_rectPack.rs:
