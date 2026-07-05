@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::format;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::gop::Color;
@@ -34,66 +33,45 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
     let bytes = svg.as_bytes();
     let len = bytes.len();
     let mut i = 0;
-    // Depth of <defs> nesting.  Tags inside <defs> (clip paths, gradients,
-    // patterns, masks, ...) are NOT rendered directly — they are referenced
-    // by id from other elements.  Skipping them prevents, e.g., the
-    // `<rect fill="white">` inside a `<clipPath>` from being painted as a
-    // normal rectangle and clobbering the rest of the SVG.
     let mut defs_depth: u32 = 0;
     while i < len {
         if bytes[i] == b'<' {
             let mut j = i + 1;
             let is_close = j < len && bytes[j] == b'/';
             if is_close { j += 1; }
-            if j < len && bytes[j] == b'?' { /* XML decl */ }
+            if j < len && bytes[j] == b'?' { }
             else if j < len && bytes[j] == b'!' {
-                // skip <!...> entirely (comments, DOCTYPE, CDATA)
                 while i < len && bytes[i] != b'>' { i += 1; }
                 i += 1;
                 continue;
             }
-            // Extract the tag name.
             let name_start = j;
             while j < len && bytes[j] != b'>' && bytes[j] != b' ' && bytes[j] != b'\t'
                     && bytes[j] != b'\n' && bytes[j] != b'\r' && bytes[j] != b'/' {
                 j += 1;
             }
             let name = String::from_utf8_lossy(&bytes[name_start..j]).to_string();
-            // Find end of tag (either /> or >).
             let mut k = j;
             while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
                 k += 1;
             }
-            // Extract attributes: everything between tag-name end (j)
-            // and the closing ">" or "/>" (k).
             let attr_start = j;
             let self_closing = k < len && bytes[k] == b'/';
             if k < len { k += if self_closing { 2 } else { 1 }; }
-            let attr_end = k.saturating_sub(1);  // back up past '>'
+            let attr_end = k.saturating_sub(1);
             let attrs = String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
             i = k;
 
-            // Track <defs> open/close (only for non-self-closing tags).
             if name == "defs" {
                 if is_close { if defs_depth > 0 { defs_depth -= 1; } }
                 else if !self_closing { defs_depth += 1; }
                 continue;
             }
-            // Also skip standalone clipPath / mask / pattern / linearGradient
-            // / radialGradient / symbol / marker tags (these define paint
-            // servers or clip/mask regions but are not drawn directly).
             let is_definition_only = matches!(name.as_str(),
                 "clipPath" | "mask" | "pattern" | "linearGradient"
                 | "radialGradient" | "symbol" | "marker" | "filter");
             if is_definition_only && !is_close && !self_closing {
-                // Treat as a defs-like block — skip its children.
                 defs_depth = defs_depth.saturating_add(1);
-                // Track the close tag too.  We use a sentinel: any increase
-                // for these tags is matched by their corresponding close tag
-                // (</clipPath> etc.), which we also need to handle.
-                // Push the tag name onto a small stack — but to keep this
-                // simple, we reuse the same counter; the matching close tag
-                // has the same name and will decrement.
                 continue;
             }
             if is_definition_only && is_close {
@@ -175,24 +153,27 @@ fn attr_color(attrs: &str, key: &str) -> Color {
     attr_str(attrs, key).map(parse_color).unwrap_or(Color::TRANSPARENT)
 }
 
-// ── SVG path 'd' parser ──────────────────────────────────────────────
+// ── SVG path 'd' parser (M/L/H/V/Z only, everything else → L to endpoint) ─
 
-#[derive(Clone)]
-enum Cmd {
-    M(f32, f32), L(f32, f32),
-    C(f32, f32, f32, f32, f32, f32),
-    SC(f32, f32, f32, f32),
-    Q(f32, f32, f32, f32), SQ(f32, f32), Z,
-}
-
-fn tokenize_d(d: &str) -> Vec<Cmd> {
+fn eval_d(d: &str) -> Vec<Vec<Pt>> {
     let b: Vec<char> = d.chars().collect();
     let n = b.len();
     let mut i = 0;
-    let mut out = Vec::new();
+
+    let mut contours: Vec<Vec<Pt>> = Vec::new();
+    let mut cur: Vec<Pt> = Vec::new();
+    let mut cx: f32 = 0.0;
+    let mut cy: f32 = 0.0;
+    let mut sx: f32 = 0.0;
+    let mut sy: f32 = 0.0;
+    let mut has_start = false;
+
     while i < n {
         if b[i].is_whitespace() || b[i] == ',' { i += 1; continue; }
-        let cmd = b[i]; i += 1;
+
+        let cmd = b[i];
+        i += 1;
+
         let mut nums: Vec<f32> = Vec::new();
         while i < n {
             while i < n && (b[i].is_whitespace() || b[i] == ',') { i += 1; }
@@ -213,163 +194,93 @@ fn tokenize_d(d: &str) -> Vec<Cmd> {
                 if let Ok(v) = t.parse::<f32>() { nums.push(v); }
             } else { break; }
         }
-        let p = |v: f32, ref_val: f32, abs: bool| -> f32 { if abs { v } else { ref_val + v } };
+
+        let is_abs = cmd.is_uppercase();
+        let lx = cx;
+        let ly = cy;
+        let coord = |v: f32| -> f32 { if is_abs { v } else { lx + v } };
+        let coordy = |v: f32| -> f32 { if is_abs { v } else { ly + v } };
+
         match cmd {
             'M' | 'm' => {
-                let mut j = 0; let mut rx = 0.0f32; let mut ry = 0.0f32;
+                let mut j = 0;
                 while j + 1 < nums.len() {
-                    let x = nums[j]; let y = nums[j+1];
-                    if cmd == 'm' { rx += x; ry += y; } else { rx = x; ry = y; }
-                    out.push(Cmd::M(rx, ry)); j += 2;
+                    cx = coord(nums[j]);
+                    cy = coordy(nums[j + 1]);
+                    j += 2;
+                    if !has_start { sx = cx; sy = cy; has_start = true; }
+                    if cur.len() > 1 { contours.push(cur); }
+                    cur = Vec::new();
+                    cur.push(Pt { x: cx, y: cy });
                 }
             }
             'L' | 'l' => {
                 let mut j = 0;
                 while j + 1 < nums.len() {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    out.push(Cmd::L(p(nums[j], lx, cmd=='L'), p(nums[j+1], ly, cmd=='L')));
+                    cx = coord(nums[j]);
+                    cy = coordy(nums[j + 1]);
+                    cur.push(Pt { x: cx, y: cy });
                     j += 2;
                 }
             }
             'H' | 'h' => {
                 for &v in &nums {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    out.push(Cmd::L(p(v, lx, cmd=='H'), ly));
+                    cx = coord(v);
+                    cur.push(Pt { x: cx, y: cy });
                 }
             }
             'V' | 'v' => {
                 for &v in &nums {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    out.push(Cmd::L(lx, p(v, ly, cmd=='V')));
+                    cy = coordy(v);
+                    cur.push(Pt { x: cx, y: cy });
                 }
             }
             'C' | 'c' => {
-                let mut j = 0;
-                while j + 5 < nums.len() {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    let abs = cmd == 'C';
-                    out.push(Cmd::C(p(nums[j],lx,abs), p(nums[j+1],ly,abs),
-                                     p(nums[j+2],lx,abs), p(nums[j+3],ly,abs),
-                                     p(nums[j+4],lx,abs), p(nums[j+5],ly,abs)));
-                    j += 6;
+                if nums.len() >= 6 {
+                    cx = coord(nums[4]);
+                    cy = coordy(nums[5]);
+                    cur.push(Pt { x: cx, y: cy });
                 }
             }
             'S' | 's' => {
-                let mut j = 0;
-                while j + 3 < nums.len() {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    let abs = cmd == 'S';
-                    out.push(Cmd::SC(p(nums[j],lx,abs), p(nums[j+1],ly,abs),
-                                      p(nums[j+2],lx,abs), p(nums[j+3],ly,abs)));
-                    j += 4;
+                if nums.len() >= 4 {
+                    cx = coord(nums[2]);
+                    cy = coordy(nums[3]);
+                    cur.push(Pt { x: cx, y: cy });
                 }
             }
             'Q' | 'q' => {
-                let mut j = 0;
-                while j + 3 < nums.len() {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    let abs = cmd == 'Q';
-                    out.push(Cmd::Q(p(nums[j],lx,abs), p(nums[j+1],ly,abs),
-                                     p(nums[j+2],lx,abs), p(nums[j+3],ly,abs)));
-                    j += 4;
+                if nums.len() >= 4 {
+                    cx = coord(nums[2]);
+                    cy = coordy(nums[3]);
+                    cur.push(Pt { x: cx, y: cy });
                 }
             }
             'T' | 't' => {
                 let mut j = 0;
                 while j + 1 < nums.len() {
-                    let lx = if let Some(Cmd::M(x,_))|Some(Cmd::L(x,_)) = out.last() { *x } else { 0.0 };
-                    let ly = if let Some(Cmd::M(_,y))|Some(Cmd::L(_,y)) = out.last() { *y } else { 0.0 };
-                    let abs = cmd == 'T';
-                    out.push(Cmd::SQ(p(nums[j],lx,abs), p(nums[j+1],ly,abs)));
+                    cx = coord(nums[j]);
+                    cy = coordy(nums[j + 1]);
+                    cur.push(Pt { x: cx, y: cy });
                     j += 2;
                 }
             }
-            'Z' | 'z' => { out.push(Cmd::Z); }
-            _ => {}
-        }
-    }
-    out
-}
-
-fn eval_d(d: &str) -> Vec<Vec<Pt>> {
-    let cmds = tokenize_d(d);
-    let mut contours: Vec<Vec<Pt>> = Vec::new();
-    let mut cur = Vec::new();
-    let mut cp = Pt { x: 0.0, y: 0.0 };
-    let mut prev = Pt { x: 0.0, y: 0.0 };
-    let mut start = Pt { x: 0.0, y: 0.0 };
-
-    for c in &cmds {
-        match c {
-            Cmd::M(x, y) => {
-                if cur.len() > 1 { contours.push(cur); }
-                cur = Vec::new();
-                cp = Pt { x: *x, y: *y }; prev = cp; start = cp;
-                cur.push(cp);
-            }
-            Cmd::L(x, y) => { cp = Pt { x: *x, y: *y }; cur.push(cp); prev = cp; }
-            Cmd::C(x1,y1,x2,y2,x,y) => {
-                let pts = bezier3(&cp, &Pt{x:*x1,y:*y1}, &Pt{x:*x2,y:*y2}, &Pt{x:*x,y:*y});
-                for p in &pts[1..] { cur.push(p.clone()); }
-                cp = Pt{x:*x,y:*y}; prev = Pt{x:*x2,y:*y2};
-            }
-            Cmd::SC(x2,y2,x,y) => {
-                let ref_ = Pt { x: 2.0*cp.x - prev.x, y: 2.0*cp.y - prev.y };
-                let pts = bezier3(&cp, &ref_, &Pt{x:*x2,y:*y2}, &Pt{x:*x,y:*y});
-                for p in &pts[1..] { cur.push(p.clone()); }
-                cp = Pt{x:*x,y:*y}; prev = Pt{x:*x2,y:*y2};
-            }
-            Cmd::Q(x1,y1,x,y) => {
-                let pts = bezier2(&cp, &Pt{x:*x1,y:*y1}, &Pt{x:*x,y:*y});
-                for p in &pts[1..] { cur.push(p.clone()); }
-                cp = Pt{x:*x,y:*y}; prev = Pt{x:*x1,y:*y1};
-            }
-            Cmd::SQ(x,y) => {
-                let ref_ = Pt { x: 2.0*cp.x - prev.x, y: 2.0*cp.y - prev.y };
-                let pts = bezier2(&cp, &ref_, &Pt{x:*x,y:*y});
-                for p in &pts[1..] { cur.push(p.clone()); }
-                cp = Pt{x:*x,y:*y}; prev = ref_;
-            }
-            Cmd::Z => {
-                if !cur.is_empty() && (cur.last().unwrap().x != start.x || cur.last().unwrap().y != start.y) {
-                    cur.push(start);
+            'Z' | 'z' => {
+                if !cur.is_empty() {
+                    if (cur.last().unwrap().x - sx).abs() > 0.001
+                        || (cur.last().unwrap().y - sy).abs() > 0.001 {
+                        cur.push(Pt { x: sx, y: sy });
+                    }
                 }
-                cp = start; prev = start;
+                cx = sx;
+                cy = sy;
+                has_start = false;
             }
+            _ => {}
         }
     }
     if cur.len() > 1 { contours.push(cur); }
     contours
-}
-
-fn bezier3(p0: &Pt, p1: &Pt, p2: &Pt, p3: &Pt) -> Vec<Pt> {
-    let mut out = Vec::new();
-    for i in 0..=16 {
-        let t = i as f32 / 16.0;
-        let mt = 1.0 - t;
-        let x = mt*mt*mt*p0.x + 3.0*mt*mt*t*p1.x + 3.0*mt*t*t*p2.x + t*t*t*p3.x;
-        let y = mt*mt*mt*p0.y + 3.0*mt*mt*t*p1.y + 3.0*mt*t*t*p2.y + t*t*t*p3.y;
-        out.push(Pt{x,y});
-    }
-    out
-}
-
-fn bezier2(p0: &Pt, p1: &Pt, p2: &Pt) -> Vec<Pt> {
-    let mut out = Vec::new();
-    for i in 0..=12 {
-        let t = i as f32 / 12.0;
-        let mt = 1.0 - t;
-        let x = mt*mt*p0.x + 2.0*mt*t*p1.x + t*t*p2.x;
-        let y = mt*mt*p0.y + 2.0*mt*t*p1.y + t*t*p2.y;
-        out.push(Pt{x,y});
-    }
-    out
 }
 
 // ── rasterizer ───────────────────────────────────────────────────────
@@ -398,12 +309,17 @@ fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i3
 
     let mut min_y = libm::floorf(sp[0].y) as i32;
     let mut max_y = min_y;
-    for p in &sp { let py = libm::floorf(p.y) as i32; if py < min_y { min_y = py; } if py > max_y { max_y = py; } }
-    min_y = min_y.max(0); max_y = max_y.min(sh - 1);
+    for p in &sp {
+        let py = libm::floorf(p.y) as i32;
+        if py < min_y { min_y = py; }
+        if py > max_y { max_y = py; }
+    }
+    min_y = min_y.max(0);
+    max_y = max_y.min(sh - 1);
     if min_y > max_y { return; }
 
     for sy in min_y..=max_y {
-        let yf = sy as f32;
+        let yf = sy as f32 + 0.5;
         let mut xints: alloc::vec::Vec<f32> = Vec::new();
         for i in 0..n {
             let j = (i + 1) % n;
@@ -423,25 +339,13 @@ fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i3
         while k + 1 < xints.len() {
             let x0f = xints[k];
             let x1f = xints[k + 1];
-            let x0 = libm::floorf(x0f) as i32;
-            let x1 = libm::ceilf(x1f) as i32;
-            let x0c = x0.max(0) as usize;
-            let x1c = x1.min(sw) as usize;
+            let x0 = libm::ceilf(x0f) as i32;
+            let x1 = libm::floorf(x1f) as i32;
             let yi = sy as usize;
-            // Full interior pixels
-            for x in (x0c + 1)..x1c.saturating_sub(1) {
-                layer.put_pixel(x, yi, c);
-            }
-            // Left edge AA
-            if x0c < layer.width() && yi < layer.height() {
-                let frac = x0f - libm::floorf(x0f);
-                blend_pixel(layer, x0c, yi, c, 1.0 - frac);
-            }
-            // Right edge AA
-            let re = x1c.saturating_sub(1);
-            if re < layer.width() && re >= x0c && yi < layer.height() {
-                let frac = x1f - libm::floorf(x1f);
-                blend_pixel(layer, re, yi, c, frac);
+            for x in x0..=x1 {
+                if x >= 0 && x < sw {
+                    layer.put_pixel(x as usize, yi, c);
+                }
             }
             k += 2;
         }
@@ -471,11 +375,12 @@ fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color,
         }
     }
     if !any { return; }
-    min_y = min_y.max(0); max_y = max_y.min(sh - 1);
+    min_y = min_y.max(0);
+    max_y = max_y.min(sh - 1);
     if min_y > max_y { return; }
 
     for sy in min_y..=max_y {
-        let yf = sy as f32;
+        let yf = sy as f32 + 0.5;
         let mut xints: alloc::vec::Vec<f32> = Vec::new();
         for cont in &sc {
             let n = cont.len();
@@ -499,22 +404,13 @@ fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color,
         while k + 1 < xints.len() {
             let x0f = xints[k];
             let x1f = xints[k + 1];
-            let x0 = libm::floorf(x0f) as i32;
-            let x1 = libm::ceilf(x1f) as i32;
-            let x0c = x0.max(0) as usize;
-            let x1c = x1.min(sw) as usize;
+            let x0 = libm::ceilf(x0f) as i32;
+            let x1 = libm::floorf(x1f) as i32;
             let yi = sy as usize;
-            for x in (x0c + 1)..x1c.saturating_sub(1) {
-                layer.put_pixel(x, yi, c);
-            }
-            if x0c < layer.width() && yi < layer.height() {
-                let frac = x0f - libm::floorf(x0f);
-                blend_pixel(layer, x0c, yi, c, 1.0 - frac);
-            }
-            let re = x1c.saturating_sub(1);
-            if re < layer.width() && re >= x0c && yi < layer.height() {
-                let frac = x1f - libm::floorf(x1f);
-                blend_pixel(layer, re, yi, c, frac);
+            for x in x0..=x1 {
+                if x >= 0 && x < sw {
+                    layer.put_pixel(x as usize, yi, c);
+                }
             }
             k += 2;
         }
@@ -538,17 +434,15 @@ fn draw_aa_thick_line(layer: &mut LayerSystem, x0: f32, y0: f32, x1: f32, y1: f3
     let dy = y1 - y0;
     let len = libm::sqrtf(dx * dx + dy * dy);
     if len < 0.001 {
-        let cx = x0;
-        let cy = y0;
         let r = hw;
-        let min_x = libm::floorf(cx - r) as i32;
-        let max_x = libm::ceilf(cx + r) as i32;
-        let min_y = libm::floorf(cy - r) as i32;
-        let max_y = libm::ceilf(cy + r) as i32;
+        let min_x = libm::floorf(x0 - r) as i32;
+        let max_x = libm::ceilf(x0 + r) as i32;
+        let min_y = libm::floorf(y0 - r) as i32;
+        let max_y = libm::ceilf(y0 + r) as i32;
         for py in min_y..=max_y {
             for px in min_x..=max_x {
-                let ddx = px as f32 + 0.5 - cx;
-                let ddy = py as f32 + 0.5 - cy;
+                let ddx = px as f32 + 0.5 - x0;
+                let ddy = py as f32 + 0.5 - y0;
                 let dist = libm::sqrtf(ddx * ddx + ddy * ddy);
                 if dist <= r {
                     blend_pixel(layer, px as usize, py as usize, c, 1.0);
@@ -565,12 +459,10 @@ fn draw_aa_thick_line(layer: &mut LayerSystem, x0: f32, y0: f32, x1: f32, y1: f3
         let t = s as f32 / steps as f32;
         let cx = x0 + dx * t;
         let cy = y0 + dy * t;
-
         let min_px = libm::floorf(cx - hw - 1.0) as i32;
         let max_px = libm::ceilf(cx + hw + 1.0) as i32;
         let min_py = libm::floorf(cy - hw - 1.0) as i32;
         let max_py = libm::ceilf(cy + hw + 1.0) as i32;
-
         for py in min_py..=max_py {
             for px in min_px..=max_px {
                 let pcx = px as f32 + 0.5 - cx;
@@ -625,30 +517,20 @@ fn scale_pts(pts: &[Pt], sx: f32, sy: f32) -> Vec<Pt> {
     pts.iter().map(|p| Pt { x: p.x * sx, y: p.y * sy }).collect()
 }
 
-fn flatten(d: &str) -> Vec<Pt> {
-    let mut all = Vec::new();
-    for c in eval_d(d) { all.extend(c); }
-    all
-}
-
-fn thick_line(layer: &mut LayerSystem, x0: i32, y0: i32, x1: i32, y1: i32, c: Color, w: i32) {
-    draw_aa_thick_line(layer, x0 as f32, y0 as f32, x1 as f32, y1 as f32, c, w as f32);
+fn scaled_stroke_width(sw: f32, sx: f32, sy: f32) -> f32 {
+    let scale = (sx.abs() + sy.abs()) * 0.5;
+    (sw * scale).max(0.5)
 }
 
 // ── public API ───────────────────────────────────────────────────────
 
-/// Draw an SVG into the layer where the SVG's viewBox maps onto the entire
-/// layer (legacy behaviour).  Used for full-screen backgrounds.
 pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
     draw_svg_scaled_into(layer, svg, ox, oy,
         layer.width() as f32, layer.height() as f32,
-        /*target_w=*/ layer.width() as f32,
-        /*target_h=*/ layer.height() as f32);
+        layer.width() as f32,
+        layer.height() as f32);
 }
 
-/// Draw an SVG into a target rectangle (ox, oy, target_w, target_h).
-/// The SVG's viewBox is mapped onto that rectangle, preserving aspect ratio
-/// (letterboxed).  Useful for icons (window buttons, cursors, ...).
 pub fn draw_svg_into(layer: &mut LayerSystem, svg: &str,
                      ox: i32, oy: i32, target_w: f32, target_h: f32) {
     draw_svg_scaled_into(layer, svg, ox, oy,
@@ -656,10 +538,6 @@ pub fn draw_svg_into(layer: &mut LayerSystem, svg: &str,
         target_w, target_h);
 }
 
-/// Extract the attributes string of the root <svg …> tag directly from
-/// the raw SVG text.  This is needed because `extract_tags()` intentionally
-/// skips the `<svg>` element itself, so its width/height/viewBox would
-/// otherwise be unreachable.
 fn svg_root_attrs(svg: &str) -> String {
     let bytes = svg.as_bytes();
     let len = bytes.len();
@@ -667,15 +545,12 @@ fn svg_root_attrs(svg: &str) -> String {
     while i < len {
         if bytes[i] == b'<' {
             let mut j = i + 1;
-            // skip close tags
             if j < len && bytes[j] == b'/' { i += 1; continue; }
-            // skip XML decl / comments
             if j < len && (bytes[j] == b'?' || bytes[j] == b'!') {
                 while i < len && bytes[i] != b'>' { i += 1; }
                 i += 1;
                 continue;
             }
-            // tag name
             let name_start = j;
             while j < len && bytes[j] != b'>' && bytes[j] != b' '
                     && bytes[j] != b'\t' && bytes[j] != b'\n'
@@ -684,7 +559,6 @@ fn svg_root_attrs(svg: &str) -> String {
             }
             let name = &bytes[name_start..j];
             if name == b"svg" {
-                // Found it — extract attrs between end-of-name and '>'
                 let attr_start = j;
                 let mut k = j;
                 while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
@@ -693,7 +567,6 @@ fn svg_root_attrs(svg: &str) -> String {
                 let attr_end = k.saturating_sub(1);
                 return String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
             }
-            // Not the svg tag — skip to end of this tag and continue.
             while i < len && bytes[i] != b'>' { i += 1; }
             i += 1;
         } else {
@@ -709,34 +582,22 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
                         target_w: f32, target_h: f32) {
     let tags = extract_tags(svg);
 
-    let mut vb_x = 0.0f32;
-    let mut vb_y = 0.0f32;
     let mut vb_w = 0.0f32;
     let mut vb_h = 0.0f32;
-    let mut svg_w = 0.0f32;
-    let mut svg_h = 0.0f32;
-
-    // Read width / height / viewBox from the root <svg> tag.
-    // (extract_tags intentionally skips the <svg> element, so we parse
-    //  its attributes directly from the source string.)
     let root_attrs = svg_root_attrs(svg);
-    svg_w = attr_f32(&root_attrs, "width");
-    svg_h = attr_f32(&root_attrs, "height");
+    let svg_w = attr_f32(&root_attrs, "width");
+    let svg_h = attr_f32(&root_attrs, "height");
     if let Some(vb) = attr_str(&root_attrs, "viewBox") {
         let parts: Vec<&str> = vb.split(|c: char| c == ' ' || c == ',').collect();
         if parts.len() >= 4 {
-            vb_x = parts[0].trim().parse().unwrap_or(0.0);
-            vb_y = parts[1].trim().parse().unwrap_or(0.0);
             vb_w = parts[2].trim().parse().unwrap_or(0.0);
             vb_h = parts[3].trim().parse().unwrap_or(0.0);
         }
     }
 
-    // Prefer viewBox dimensions; fall back to width/height attributes.
     let src_w = if vb_w > 0.0 { vb_w } else { svg_w };
     let src_h = if vb_h > 0.0 { vb_h } else { svg_h };
 
-    // Compute scale that fits src_w x src_h inside target_w x target_h.
     let (sx, sy, dx, dy) = if src_w > 0.0 && src_h > 0.0 {
         let scale = (target_w / src_w).min(target_h / src_h);
         let draw_w = src_w * scale;
@@ -748,8 +609,6 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
         (1.0, 1.0, 0.0, 0.0)
     };
 
-    // Final origin offset: user-requested (ox, oy) + centering (dx, dy)
-    // inside the target rectangle.
     let ox = ox + (dx as i32);
     let oy = oy + (dy as i32);
 
@@ -810,7 +669,9 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
                     let pts = rounded_rect_pts(*x, *y, *w, *h, *rx);
                     let s = scale_pts(&pts, sx, sy);
                     if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                    if *stroke != Color::TRANSPARENT { rasterize_stroke(layer, &s, *stroke, *sw, ox, oy); }
+                    if *stroke != Color::TRANSPARENT {
+                        rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
+                    }
                 } else {
                     if *fill != Color::TRANSPARENT {
                         layer.fill_rect(
@@ -830,31 +691,34 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
                 let pts = circle_pts(*cx, *cy, *r);
                 let s = scale_pts(&pts, sx, sy);
                 if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT { rasterize_stroke(layer, &s, *stroke, *sw, ox, oy); }
+                if *stroke != Color::TRANSPARENT {
+                    rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
+                }
             }
             Elem::Ellipse { cx, cy, rx, ry, fill, stroke, sw } => {
                 let pts = ellipse_pts(*cx, *cy, *rx, *ry);
                 let s = scale_pts(&pts, sx, sy);
                 if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT { rasterize_stroke(layer, &s, *stroke, *sw, ox, oy); }
+                if *stroke != Color::TRANSPARENT {
+                    rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
+                }
             }
             Elem::Line { x1, y1, x2, y2, stroke, sw } => {
                 if *stroke != Color::TRANSPARENT {
-                    thick_line(layer,
-                        (*x1 * sx) as i32 + ox, (*y1 * sy) as i32 + oy,
-                        (*x2 * sx) as i32 + ox, (*y2 * sy) as i32 + oy,
-                        *stroke, (*sw * 0.5) as i32);
+                    draw_aa_thick_line(layer,
+                        (*x1 * sx) as f32 + ox as f32, (*y1 * sy) as f32 + oy as f32,
+                        (*x2 * sx) as f32 + ox as f32, (*y2 * sy) as f32 + oy as f32,
+                        *stroke, scaled_stroke_width(*sw, sx, sy));
                 }
             }
             Elem::Poly { pts, fill, stroke, sw } => {
                 let s = scale_pts(pts, sx, sy);
                 if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT { rasterize_stroke(layer, &s, *stroke, *sw, ox, oy); }
+                if *stroke != Color::TRANSPARENT {
+                    rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
+                }
             }
             Elem::Path { d, fill, stroke, sw } => {
-                // Preserve contour boundaries so multi-subpath `d` attributes
-                // (e.g. the donut-shaped white outline of the cursor SVG)
-                // render correctly under the even-odd fill rule.
                 let contours = eval_d(d);
                 let scaled: Vec<Vec<Pt>> = contours.iter()
                     .map(|c| scale_pts(c, sx, sy))
@@ -864,7 +728,7 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
                 }
                 if *stroke != Color::TRANSPARENT {
                     for c in &scaled {
-                        rasterize_stroke(layer, c, *stroke, *sw, ox, oy);
+                        rasterize_stroke(layer, c, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
                     }
                 }
             }
