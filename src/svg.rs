@@ -383,29 +383,34 @@ fn stroke_path_to_buf(
 fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();
     let lh = layer.height();
+    let buf = layer.buf_mut();
     let stride = w * 4;
     for sy in 0..h {
         let dst_y = oy as usize + sy;
         if dst_y >= lh { break; }
         let row = sy * stride;
-        for sx in 0..w {
+        let dst_row = dst_y * lw;
+        let dst_x0 = ox.max(0) as usize;
+        let sx0 = dst_x0.saturating_sub(ox as usize);
+        for sx in sx0..w {
             let dst_x = ox as usize + sx;
             if dst_x >= lw { break; }
             let off = row + sx * 4;
             let a = pixels[off + 3] as u32;
             if a == 0 { continue; }
+            let dst = &mut buf[dst_row + dst_x];
             if a == 255 {
-                layer.put_pixel(dst_x, dst_y, Color::rgb(pixels[off], pixels[off+1], pixels[off+2]));
+                *dst = Color::rgb(pixels[off], pixels[off+1], pixels[off+2]).0;
             } else {
                 let cr = pixels[off] as u32;
                 let cg = pixels[off+1] as u32;
                 let cb = pixels[off+2] as u32;
-                let bg = layer.get_pixel(dst_x, dst_y);
+                let bg = Color(*dst);
                 let inv = 255 - a;
                 let r = (cr * a + bg.r() as u32 * inv) / 255;
                 let g = (cg * a + bg.g() as u32 * inv) / 255;
                 let b = (cb * a + bg.b() as u32 * inv) / 255;
-                layer.put_pixel(dst_x, dst_y, Color::rgb(r as u8, g as u8, b as u8));
+                *dst = Color::rgb(r as u8, g as u8, b as u8).0;
             }
         }
     }
@@ -415,22 +420,26 @@ fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i
 fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();
     let lh = layer.height();
+    let buf = layer.buf_mut();
     let stride = w * 4;
     for sy in 0..h {
         let dst_y = oy as usize + sy;
         if dst_y >= lh { break; }
         let row = sy * stride;
-        for sx in 0..w {
+        let dst_row = dst_y * lw;
+        let dst_x0 = ox.max(0) as usize;
+        let sx0 = dst_x0.saturating_sub(ox as usize);
+        for sx in sx0..w {
             let dst_x = ox as usize + sx;
             if dst_x >= lw { break; }
             let a = pixels[row + sx * 4 + 3] as u32;
             if a == 0 { continue; }
             let inv = 255 - a;
-            let bg = layer.get_pixel(dst_x, dst_y);
+            let bg = Color(buf[dst_row + dst_x]);
             let r = (bg.r() as u32 * inv) / 255;
             let g = (bg.g() as u32 * inv) / 255;
             let b = (bg.b() as u32 * inv) / 255;
-            layer.put_pixel(dst_x, dst_y, Color::rgb(r as u8, g as u8, b as u8));
+            buf[dst_row + dst_x] = Color::rgb(r as u8, g as u8, b as u8).0;
         }
     }
 }
@@ -778,18 +787,19 @@ fn blend_pixel(layer: &mut LayerSystem, x: usize, y: usize, c: Color, coverage: 
         return;
     }
     let cov = if coverage >= 1.0 { 1.0 } else { coverage };
-    // Fast path: full coverage → opaque replacement.
+    let w = layer.width();
+    let buf = &mut layer.buf_mut()[y * w..];
     if cov >= 1.0 {
-        layer.put_pixel(x, y, c);
+        buf[x] = c.0;
         return;
     }
-    let bg = layer.get_pixel(x, y);
     let a = (cov * 255.0) as u32;
     let inv = 255 - a;
+    let bg = Color(buf[x]);
     let r = (c.r() as u32 * a + bg.r() as u32 * inv) / 255;
     let g = (c.g() as u32 * a + bg.g() as u32 * inv) / 255;
     let b = (c.b() as u32 * a + bg.b() as u32 * inv) / 255;
-    layer.put_pixel(x, y, Color(0xFF00_0000 | (r << 16) | (g << 8) | b));
+    buf[x] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -979,8 +989,13 @@ fn paint_span(layer: &mut LayerSystem, x0: f64, x1: f64, py: usize, color: Color
     }
 
     blend_pixel(layer, xs, py, color, left_cov as f32);
-    for px in (xs + 1)..(xe.saturating_sub(1)) {
-        layer.put_pixel(px, py, color);
+    {
+        let lw = layer.width();
+        let row = &mut layer.buf_mut()[py * lw..];
+        let v = color.0;
+        for px in (xs + 1)..(xe.saturating_sub(1)) {
+            row[px] = v;
+        }
     }
     if xe > xs + 1 {
         blend_pixel(layer, xe - 1, py, color, right_cov as f32);

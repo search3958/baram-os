@@ -201,6 +201,29 @@ impl Screen {
         }
     }
 
+    /// Blit one row of layer pixels to the framebuffer (with pixel format conversion).
+    /// `row` is a slice of `width` ARGB u32 values from the layer buffer.
+    pub fn flush_layer_row(&mut self, y: usize, row: &[u32]) {
+        if y >= self.info.height { return; }
+        let pf = self.info.pixel_format;
+        let stride = self.info.stride;
+        let base = self.fb_ptr;
+        let n = row.len().min(self.info.width);
+        for x in 0..n {
+            let c = Color(row[x]);
+            let v = match pf {
+                PixelFormat::Rgb => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
+                PixelFormat::Bgr => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
+                PixelFormat::Bitmask => c.0,
+                _ => c.0,
+            };
+            let off = (y * stride + x) * 4;
+            unsafe {
+                ptr::write_volatile(base.add(off) as *mut u32, v);
+            }
+        }
+    }
+
     /// Draw an outline rectangle (1px).
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
         if w == 0 || h == 0 { return; }

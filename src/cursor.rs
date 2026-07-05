@@ -84,12 +84,12 @@ impl Cursor {
     pub fn restore_bg(&mut self, screen: &mut Screen) {
         if let Some(buf) = self.saved.as_mut() {
             for yy in 0..self.saved_h {
+                let src_row = yy * self.saved_w;
+                let dst_y = self.saved_y + yy;
                 for xx in 0..self.saved_w {
                     let px = self.saved_x + xx;
-                    let py = self.saved_y + yy;
-                    if px < screen.width() && py < screen.height() {
-                        let c = buf[yy * self.saved_w + xx];
-                        screen.put_pixel(px, py, Color(c));
+                    if px < screen.width() && dst_y < screen.height() {
+                        screen.put_pixel(px, dst_y, Color(buf[src_row + xx]));
                     }
                 }
             }

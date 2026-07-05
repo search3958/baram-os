@@ -198,7 +198,7 @@ fn main() -> Status {
             }
         }
 
-        if dirty || frames % 4 == 0 {
+        if dirty {
             render_frame(&mut layer, &wm, &last_keys, mouse_ev_count,
                          key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
                          &ui_commands, Some(ui_win_id), wallpaper.as_ref());
@@ -226,24 +226,24 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
         let sw_sh = w * img_h;
         let sh_sw = h * img_w;
         let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
-            // screen wider relative to image → crop height
             let sw = img_w;
             let sh = (img_w * h + w - 1) / w;
             let sh = sh.min(img_h);
             (sw, sh, 0, (img_h - sh) / 2)
         } else {
-            // screen taller relative to image → crop width
             let sh = img_h;
             let sw = (img_h * w + h - 1) / h;
             let sw = sw.min(img_w);
             (sw, sh, (img_w - sw) / 2, 0)
         };
+        let buf = layer.buf_mut();
         for y in 0..h {
             let sy = y * src_h / h;
             let src_row = (oy + sy) * img_w + ox;
+            let dst_row = y * w;
             for x in 0..w {
                 let sx = x * src_w / w;
-                layer.put_pixel(x, y, img.pixels[src_row + sx]);
+                buf[dst_row + x] = img.pixels[src_row + sx].0;
             }
         }
     } else {

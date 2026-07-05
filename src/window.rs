@@ -287,9 +287,24 @@ impl WindowManager {
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
     ) {
-        let mut sorted: Vec<&Window> = self.windows.iter().collect();
-        sorted.sort_by(|a, b| a.z.cmp(&b.z));
-        for w in &sorted {
+        if self.windows.is_empty() { return; }
+        // Stack-allocated sort buffer — avoids heap allocation every frame.
+        const MAX_WINDOWS: usize = 16;
+        let n = self.windows.len().min(MAX_WINDOWS);
+        let mut sorted: [&Window; MAX_WINDOWS] = [&self.windows[0]; MAX_WINDOWS];
+        for i in 0..n {
+            sorted[i] = &self.windows[i];
+        }
+        // Insertion sort (fast for small n)
+        for i in 1..n {
+            let mut j = i;
+            while j > 0 && sorted[j - 1].z > sorted[j].z {
+                sorted.swap(j - 1, j);
+                j -= 1;
+            }
+        }
+        for i in 0..n {
+            let w = sorted[i];
             if w.visible {
                 draw_window(layer, w);
                 if let Some((uid, cmds)) = ui_win {
@@ -359,36 +374,50 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         let ex = (win_x1 + blur_r).min(sw as i32) as usize;
         let ey = (win_y1 + blur_r).min(sh as i32) as usize;
         if ex > sx && ey > sy {
+            // Precompute vertical edge distances for each row
+            let mut vert = alloc::vec![0i32; ey - sy];
             for py in sy..ey {
                 let py_i = py as i32;
-                let edge_y = if py_i >= win_y0 && py_i < win_y1 {
+                vert[py - sy] = if py_i >= win_y0 && py_i < win_y1 {
                     0
                 } else if py_i < win_y0 {
                     win_y0 - py_i
                 } else {
                     py_i - (win_y1 - 1)
                 };
-                for px in sx..ex {
-                    let px_i = px as i32;
-                    let edge_x = if px_i >= win_x0 && px_i < win_x1 {
-                        0
-                    } else if px_i < win_x0 {
-                        win_x0 - px_i
-                    } else {
-                        px_i - (win_x1 - 1)
-                    };
-                    let edge = edge_x.max(edge_y);
+            }
+            // Precompute horizontal edge distances for each column
+            let mut horiz = alloc::vec![0i32; ex - sx];
+            for px in sx..ex {
+                let px_i = px as i32;
+                horiz[px - sx] = if px_i >= win_x0 && px_i < win_x1 {
+                    0
+                } else if px_i < win_x0 {
+                    win_x0 - px_i
+                } else {
+                    px_i - (win_x1 - 1)
+                };
+            }
+            // Direct buffer access — avoids per-pixel put_pixel/get_pixel overhead
+            let buf = &mut layer.buf;
+            let width = layer.width;
+            let blur_r_f = blur_r as f32;
+            for (py_off, &vy) in vert.iter().enumerate() {
+                let py = sy + py_off;
+                let row_start = py * width + sx;
+                for (px_off, &hx) in horiz.iter().enumerate() {
+                    let edge = hx.max(vy);
                     if edge >= blur_r { continue; }
-                    let t = (blur_r - edge) as f32 / blur_r as f32;
+                    let t = (blur_r - edge) as f32 / blur_r_f;
                     let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
                     let a = (alpha_f * 255.0) as u32;
                     if a == 0 { continue; }
                     let inv = 255 - a;
-                    let bg = layer.get_pixel(px, py);
+                    let bg = Color(buf[row_start + px_off]);
                     let r = (bg.r() as u32 * inv) / 255;
                     let g = (bg.g() as u32 * inv) / 255;
                     let b = (bg.b() as u32 * inv) / 255;
-                    layer.put_pixel(px, py, Color::rgb(r as u8, g as u8, b as u8));
+                    buf[row_start + px_off] = Color::rgb(r as u8, g as u8, b as u8).0;
                 }
             }
         }
@@ -519,10 +548,7 @@ impl LayerSystem {
     }
 
     pub fn clear(&mut self, c: Color) {
-        let v = c.0;
-        for p in self.buf.iter_mut() {
-            *p = v;
-        }
+        self.buf.fill(c.0);
     }
 
     #[inline]
@@ -541,34 +567,37 @@ impl LayerSystem {
         }
     }
 
+    /// Direct mutable access to the backing pixel buffer.
+    #[inline]
+    pub fn buf_mut(&mut self) -> &mut [u32] {
+        &mut self.buf
+    }
+
+    #[inline]
+    pub fn buf_ref(&self) -> &[u32] {
+        &self.buf
+    }
+
     pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
+        let v = c.0;
+        let stride = self.width;
         if let Some((cx0, cy0, cx1, cy1)) = self.clip {
-            let x0 = x.max(cx0).min(self.width);
+            let x0 = x.max(cx0).min(stride);
             let y0 = y.max(cy0).min(self.height);
-            let x1 = (x + w).min(cx1).min(self.width);
+            let x1 = (x + w).min(cx1).min(stride);
             let y1 = (y + h).min(cy1).min(self.height);
             if x0 >= x1 || y0 >= y1 { return; }
-            let v = c.0;
-            let stride = self.width;
             for yy in y0..y1 {
-                let row = yy * stride;
-                for xx in x0..x1 {
-                    self.buf[row + xx] = v;
-                }
+                self.buf[yy * stride + x0..yy * stride + x1].fill(v);
             }
         } else {
-            let x0 = x.min(self.width);
+            let x0 = x.min(stride);
             let y0 = y.min(self.height);
-            let x1 = (x + w).min(self.width);
+            let x1 = (x + w).min(stride);
             let y1 = (y + h).min(self.height);
             if x0 >= x1 || y0 >= y1 { return; }
-            let v = c.0;
-            let stride = self.width;
             for yy in y0..y1 {
-                let row = yy * stride;
-                for xx in x0..x1 {
-                    self.buf[row + xx] = v;
-                }
+                self.buf[yy * stride + x0..yy * stride + x1].fill(v);
             }
         }
     }
@@ -781,10 +810,8 @@ impl LayerSystem {
         let w = self.width;
         let h = self.height;
         for y in 0..h {
-            for x in 0..w {
-                let c = Color(self.buf[y * w + x]);
-                screen.put_pixel(x, y, c);
-            }
+            let row = &self.buf[y * w..(y + 1) * w];
+            screen.flush_layer_row(y, row);
         }
         self.frame_count += 1;
     }
