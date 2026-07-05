@@ -26,7 +26,7 @@ FIRMWARE_NAME="edk2-x86_64-code.fd"
 RUNTIME_DIR="$SCRIPT_DIR/runtime"
 TARGET_DIR="$SCRIPT_DIR/target/x86_64-unknown-uefi/release"
 
-QEMU_RAM="${QEMU_RAM:-1G}"
+QEMU_RAM="${QEMU_RAM:-0.25G}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
 QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
 QEMU_MONITOR="${QEMU_MONITOR:-none}"

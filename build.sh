@@ -44,7 +44,7 @@ TARGET_DIR="$SCRIPT_DIR/target/aarch64-unknown-uefi/release"
 # QEMU defaults — override via env vars if desired.
 QEMU_MACHINE="${QEMU_MACHINE:-virt}"
 QEMU_CPU="${QEMU_CPU:-cortex-a72}"
-QEMU_RAM="${QEMU_RAM:-1G}"
+QEMU_RAM="${QEMU_RAM:-0.25G}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
 # Where the firmware/OS serial output goes.  Default is `stdio` so you can
 # see boot logs in the terminal.  Use `null` to silence serial.
