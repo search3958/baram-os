@@ -1,3 +1,3 @@
-*.efi
-*.pdb
-target/aarch64-unknown-uefi/.DS_Store
+(src/data/wallpaper/bada.png
+src/data/wallpaper/hanul.png
+src/data/wallpaper/samag.png)
