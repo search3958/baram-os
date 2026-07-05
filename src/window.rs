@@ -456,9 +456,9 @@ impl LayerSystem {
         self.fill_rect(x + w - 1, y, 1, h, c);
     }
 
-    pub fn put_char(&mut self, x: usize, y: usize, ch: u8, fg: Color) {
-        if crate::ttf_font::is_available() && ch >= 0x20 {
-            let glyph = crate::ttf_font::glyph(ch as char);
+    pub fn put_char(&mut self, x: usize, y: usize, ch: char, fg: Color) {
+        if crate::ttf_font::is_available() && ch as u32 >= 0x20 {
+            let glyph = crate::ttf_font::glyph(ch);
             if glyph.w > 0 && glyph.h > 0 {
                 let baseline = y as i32 + crate::ttf_font::ascent();
                 for row in 0..glyph.h {
@@ -487,8 +487,9 @@ impl LayerSystem {
                 return;
             }
         }
+        if (ch as u32) < 0x20 || (ch as u32) > 0x7E { return; }
         use crate::font::{self, GLYPH_W, GLYPH_H};
-        let glyph = font::glyph(ch);
+        let glyph = font::glyph(ch as u8);
         for row in 0..GLYPH_H {
             let bits = glyph[row];
             let py = y + row;
@@ -507,12 +508,12 @@ impl LayerSystem {
     pub fn put_str(&mut self, mut x: usize, y: usize, s: &str, fg: Color) {
         if crate::ttf_font::is_available() {
             for ch in s.chars() {
-                if ch as u32 >= 0x80 && ch as u32 <= 0xFF { continue; }
                 let glyph = crate::ttf_font::glyph(ch);
                 if glyph.w > 0 && glyph.h > 0 {
-                    self.put_char(x, y, ch as u8, fg);
+                    self.put_char(x, y, ch, fg);
                     x += glyph.advance.max(0) as usize;
-                } else {
+                } else if (ch as u32) < 0x80 {
+                    self.put_char(x, y, ch, fg);
                     x += crate::font::GLYPH_W;
                 }
             }
@@ -521,7 +522,7 @@ impl LayerSystem {
         use crate::font::GLYPH_W;
         for &b in s.as_bytes() {
             if b >= 0x80 { break; }
-            self.put_char(x, y, b, fg);
+            self.put_char(x, y, b as char, fg);
             x += GLYPH_W;
         }
     }
