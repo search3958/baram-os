@@ -127,12 +127,13 @@ fn parse_inline(text: &str) -> Vec<InlineElement> {
 }
 
 fn hex_to_color(hex: &str) -> Color {
+    let hex = hex.trim_start_matches('#');
     if hex.len() != 6 {
         return Color::TEXT;
     }
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
     Color::rgb(r, g, b)
 }
 
@@ -348,17 +349,18 @@ pub fn render(
                 let h = 24usize;
                 let bx = content_x as usize;
                 let by = sy as usize;
+                let radius = 6;
 
                 match btn_type.as_str() {
                     "outline" => {
-                        layer.rect_outline(bx, by, w, h, accent);
+                        layer.rounded_rect_outline(bx, by, w, h, radius, accent);
                         layer.put_str(bx + 10, by + 5, &plain, accent);
                     }
                     "text" => {
                         layer.put_str(bx + 4, by + 5, &plain, accent);
                     }
                     _ => {
-                        layer.fill_rect(bx, by, w, h, accent);
+                        layer.fill_rounded_rect(bx, by, w, h, radius, accent);
                         layer.put_str(bx + 10, by + 5, &plain, Color::TEXT);
                     }
                 }
@@ -369,14 +371,15 @@ pub fn render(
                 let card_h = 80usize;
                 let bx = content_x as usize;
                 let by = sy as usize;
+                let radius = 8;
 
-                layer.fill_rect(bx, by, card_w, card_h, Color::CARD_BG);
-                layer.rect_outline(bx, by, card_w, card_h, Color::BORDER);
+                layer.fill_rounded_rect(bx, by, card_w, card_h, radius, Color::CARD_BG);
+                layer.rounded_rect_outline(bx, by, card_w, card_h, radius, Color::BORDER);
                 layer.put_str(bx + 8, by + 8, title, text_color);
                 layer.put_str(bx + 8, by + 28, text, muted);
                 if !button.is_empty() {
                     let btn_w = (button.len() * 8 + 20).min(card_w - 16);
-                    layer.fill_rect(bx + 8, by + 48, btn_w, 24, accent);
+                    layer.fill_rounded_rect(bx + 8, by + 48, btn_w, 24, 6, accent);
                     layer.put_str(bx + 18, by + 53, button, Color::TEXT);
                 }
                 ly += card_h as i32 + 8;
@@ -386,14 +389,15 @@ pub fn render(
                 let list_h = 80usize;
                 let bx = content_x as usize;
                 let by = sy as usize;
+                let radius = 8;
 
-                layer.fill_rect(bx, by, list_w, list_h, Color::WIN_BG);
-                layer.rect_outline(bx, by, list_w, list_h, Color::BORDER);
+                layer.fill_rounded_rect(bx, by, list_w, list_h, radius, Color::WIN_BG);
+                layer.rounded_rect_outline(bx, by, list_w, list_h, radius, Color::BORDER);
                 layer.put_str(bx + 8, by + 8, title, text_color);
                 layer.put_str(bx + 8, by + 28, text, muted);
                 if !button.is_empty() {
                     let btn_w = (button.len() * 8 + 20).min(list_w - 16);
-                    layer.fill_rect(bx + 8, by + 48, btn_w, 24, accent);
+                    layer.fill_rounded_rect(bx + 8, by + 48, btn_w, 24, 6, accent);
                     layer.put_str(bx + 18, by + 53, button, Color::TEXT);
                 }
                 ly += list_h as i32 + 8;

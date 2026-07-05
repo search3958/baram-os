@@ -534,6 +534,130 @@ impl LayerSystem {
         }
     }
 
+    /// Draw a filled rectangle with rounded corners and anti-aliasing.
+    pub fn fill_rounded_rect(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
+        if w == 0 || h == 0 { return; }
+        let r = r.min(w / 2).min(h / 2);
+        let rf = r as f32;
+        let cr = c.r() as f32;
+        let cg = c.g() as f32;
+        let cb = c.b() as f32;
+        let y0 = y.min(self.height);
+        let y1 = (y + h).min(self.height);
+        let x0 = x.min(self.width);
+        let x1 = (x + w).min(self.width);
+
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let (cx_f, cy_f): (f32, f32) = if px < x + r && py < y + r {
+                    ((x + r) as f32, (y + r) as f32)
+                } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
+                    ((x + w - r - 1) as f32, (y + r) as f32)
+                } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
+                    ((x + r) as f32, (y + h - r - 1) as f32)
+                } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
+                    ((x + w - r - 1) as f32, (y + h - r - 1) as f32)
+                } else {
+                    self.put_pixel(px, py, c);
+                    continue;
+                };
+
+                let dx = px as f32 + 0.5 - cx_f;
+                let dy = py as f32 + 0.5 - cy_f;
+                let dist_sq = dx * dx + dy * dy;
+                let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                    1.0
+                } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                    0.0
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (rf + 0.5 - dist).clamp(0.0, 1.0)
+                };
+
+                if alpha > 0.0 {
+                    let bg = self.buf[py * self.width + px];
+                    let br = ((bg >> 16) & 0xFF) as f32;
+                    let bg2 = ((bg >> 8) & 0xFF) as f32;
+                    let bb = (bg & 0xFF) as f32;
+                    let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
+                    let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
+                    let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
+                    self.put_pixel(px, py, Color::rgb(r2 as u8, g as u8, b as u8));
+                }
+            }
+        }
+    }
+
+    /// Draw a rounded rectangle outline with anti-aliasing.
+    pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
+        if w == 0 || h == 0 { return; }
+        let r = r.min(w / 2).min(h / 2);
+        let rf = r as f32;
+        let cr = c.r() as f32;
+        let cg = c.g() as f32;
+        let cb = c.b() as f32;
+        let y0 = y.min(self.height);
+        let y1 = (y + h).min(self.height);
+        let x0 = x.min(self.width);
+        let x1 = (x + w).min(self.width);
+
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let on_edge = px == x || px == x + w - 1 || py == y || py == y + h - 1;
+                if !on_edge { continue; }
+
+                let dist_to_edge = if px < x + r && py < y + r {
+                    let cx_f = (x + r) as f32;
+                    let cy_f = (y + r) as f32;
+                    let dx = px as f32 + 0.5 - cx_f;
+                    let dy = py as f32 + 0.5 - cy_f;
+                    libm::sqrtf(dx * dx + dy * dy) - rf
+                } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
+                    let cx_f = (x + w - r - 1) as f32;
+                    let cy_f = (y + r) as f32;
+                    let dx = px as f32 + 0.5 - cx_f;
+                    let dy = py as f32 + 0.5 - cy_f;
+                    libm::sqrtf(dx * dx + dy * dy) - rf
+                } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
+                    let cx_f = (x + r) as f32;
+                    let cy_f = (y + h - r - 1) as f32;
+                    let dx = px as f32 + 0.5 - cx_f;
+                    let dy = py as f32 + 0.5 - cy_f;
+                    libm::sqrtf(dx * dx + dy * dy) - rf
+                } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
+                    let cx_f = (x + w - r - 1) as f32;
+                    let cy_f = (y + h - r - 1) as f32;
+                    let dx = px as f32 + 0.5 - cx_f;
+                    let dy = py as f32 + 0.5 - cy_f;
+                    libm::sqrtf(dx * dx + dy * dy) - rf
+                } else {
+                    // Straight edge
+                    self.put_pixel(px, py, c);
+                    continue;
+                };
+
+                let alpha = if dist_to_edge < -0.5 {
+                    0.0
+                } else if dist_to_edge > 0.5 {
+                    0.0
+                } else {
+                    (0.5 - dist_to_edge.abs()).clamp(0.0, 1.0)
+                };
+
+                if alpha > 0.0 {
+                    let bg = self.buf[py * self.width + px];
+                    let br = ((bg >> 16) & 0xFF) as f32;
+                    let bg2 = ((bg >> 8) & 0xFF) as f32;
+                    let bb = (bg & 0xFF) as f32;
+                    let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
+                    let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
+                    let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
+                    self.put_pixel(px, py, Color::rgb(r2 as u8, g as u8, b as u8));
+                }
+            }
+        }
+    }
+
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         self.fill_rect(x, y, w, 1, c);
