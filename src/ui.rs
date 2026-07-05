@@ -12,10 +12,9 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
     if crate::ttf_font::is_available() && c >= 0x20 {
         let glyph = crate::ttf_font::glyph(c as char);
         if glyph.w > 0 && glyph.h > 0 {
-            let ascent = crate::ttf_font::ascent();
-            let py_base = y as i32 + ascent;
+            let baseline = y as i32 + crate::ttf_font::ascent();
             for row in 0..glyph.h {
-                let py = py_base + row;
+                let py = baseline + glyph.y_off + row;
                 if py < 0 { continue; }
                 for col in 0..glyph.w {
                     let px = x as i32 + col;

@@ -20,6 +20,7 @@ struct GlyphEntry {
     w: i32,
     h: i32,
     advance: i32,
+    y_off: i32,
 }
 
 pub fn init() {
@@ -57,12 +58,13 @@ pub struct GlyphBitmap {
     pub w: i32,
     pub h: i32,
     pub advance: i32,
+    pub y_off: i32,
 }
 
 pub fn glyph(ch: char) -> GlyphBitmap {
     unsafe {
         if FONT_INFO.is_none() {
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0 };
+            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0, y_off: 0 };
         }
 
         for entry in CACHE.iter() {
@@ -72,6 +74,7 @@ pub fn glyph(ch: char) -> GlyphBitmap {
                     w: entry.w,
                     h: entry.h,
                     advance: entry.advance,
+                    y_off: entry.y_off,
                 };
             }
         }
@@ -85,9 +88,10 @@ pub fn glyph(ch: char) -> GlyphBitmap {
                 w: 0,
                 h: 0,
                 advance: 0,
+                y_off: 0,
             };
             CACHE.push(entry);
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0 };
+            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0, y_off: 0 };
         }
 
         let mut advance = 0;
@@ -111,9 +115,10 @@ pub fn glyph(ch: char) -> GlyphBitmap {
                 w: 0,
                 h: 0,
                 advance: scaled_advance,
+                y_off: 0,
             };
             CACHE.push(entry);
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: scaled_advance };
+            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: scaled_advance, y_off: 0 };
         }
 
         let mut bitmap = vec![0u8; (gw * gh) as usize];
@@ -125,9 +130,10 @@ pub fn glyph(ch: char) -> GlyphBitmap {
             w: gw,
             h: gh,
             advance: scaled_advance,
+            y_off: y0,
         };
         CACHE.push(entry);
 
-        GlyphBitmap { data: bitmap, w: gw, h: gh, advance: scaled_advance }
+        GlyphBitmap { data: bitmap, w: gw, h: gh, advance: scaled_advance, y_off: y0 }
     }
 }
