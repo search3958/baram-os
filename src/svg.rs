@@ -64,10 +64,12 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
             while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
                 k += 1;
             }
-            let attr_start = k;
+            // Extract attributes: everything between tag-name end (j)
+            // and the closing ">" or "/>" (k).
+            let attr_start = j;
             let self_closing = k < len && bytes[k] == b'/';
             if k < len { k += if self_closing { 2 } else { 1 }; }
-            let attr_end = if attr_start < k { k - 1 } else { k };
+            let attr_end = k.saturating_sub(1);  // back up past '>'
             let attrs = String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
             i = k;
 
@@ -558,6 +560,53 @@ pub fn draw_svg_into(layer: &mut LayerSystem, svg: &str,
         target_w, target_h);
 }
 
+/// Extract the attributes string of the root <svg …> tag directly from
+/// the raw SVG text.  This is needed because `extract_tags()` intentionally
+/// skips the `<svg>` element itself, so its width/height/viewBox would
+/// otherwise be unreachable.
+fn svg_root_attrs(svg: &str) -> String {
+    let bytes = svg.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'<' {
+            let mut j = i + 1;
+            // skip close tags
+            if j < len && bytes[j] == b'/' { i += 1; continue; }
+            // skip XML decl / comments
+            if j < len && (bytes[j] == b'?' || bytes[j] == b'!') {
+                while i < len && bytes[i] != b'>' { i += 1; }
+                i += 1;
+                continue;
+            }
+            // tag name
+            let name_start = j;
+            while j < len && bytes[j] != b'>' && bytes[j] != b' '
+                    && bytes[j] != b'\t' && bytes[j] != b'\n'
+                    && bytes[j] != b'\r' && bytes[j] != b'/' {
+                j += 1;
+            }
+            let name = &bytes[name_start..j];
+            if name == b"svg" {
+                // Found it — extract attrs between end-of-name and '>'
+                let attr_start = j;
+                let mut k = j;
+                while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
+                    k += 1;
+                }
+                let attr_end = k.saturating_sub(1);
+                return String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
+            }
+            // Not the svg tag — skip to end of this tag and continue.
+            while i < len && bytes[i] != b'>' { i += 1; }
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    String::new()
+}
+
 fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
                         ox: i32, oy: i32,
                         _layer_w: f32, _layer_h: f32,
@@ -571,19 +620,19 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
     let mut svg_w = 0.0f32;
     let mut svg_h = 0.0f32;
 
-    for tag in &tags {
-        if tag.name == "svg" {
-            svg_w = attr_f32(&tag.attrs, "width");
-            svg_h = attr_f32(&tag.attrs, "height");
-            if let Some(vb) = attr_str(&tag.attrs, "viewBox") {
-                let parts: Vec<&str> = vb.split(|c: char| c == ' ' || c == ',').collect();
-                if parts.len() >= 4 {
-                    vb_x = parts[0].trim().parse().unwrap_or(0.0);
-                    vb_y = parts[1].trim().parse().unwrap_or(0.0);
-                    vb_w = parts[2].trim().parse().unwrap_or(0.0);
-                    vb_h = parts[3].trim().parse().unwrap_or(0.0);
-                }
-            }
+    // Read width / height / viewBox from the root <svg> tag.
+    // (extract_tags intentionally skips the <svg> element, so we parse
+    //  its attributes directly from the source string.)
+    let root_attrs = svg_root_attrs(svg);
+    svg_w = attr_f32(&root_attrs, "width");
+    svg_h = attr_f32(&root_attrs, "height");
+    if let Some(vb) = attr_str(&root_attrs, "viewBox") {
+        let parts: Vec<&str> = vb.split(|c: char| c == ' ' || c == ',').collect();
+        if parts.len() >= 4 {
+            vb_x = parts[0].trim().parse().unwrap_or(0.0);
+            vb_y = parts[1].trim().parse().unwrap_or(0.0);
+            vb_w = parts[2].trim().parse().unwrap_or(0.0);
+            vb_h = parts[3].trim().parse().unwrap_or(0.0);
         }
     }
 
