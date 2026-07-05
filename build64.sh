@@ -20,9 +20,8 @@ cd "$SCRIPT_DIR"
 
 PROJECT_NAME="baramos"
 EFI_NAME="bootx64.efi"
-IMAGE_NAME="osdisk.img"
+IMAGE_NAME="osdisk-x64.img"
 IMAGE_SIZE_MB=64
-FIRMWARE_NAME="edk2-x86_64-code.fd"
 RUNTIME_DIR="$SCRIPT_DIR/runtime"
 TARGET_DIR="$SCRIPT_DIR/target/x86_64-unknown-uefi/release"
 
@@ -56,11 +55,21 @@ if ! rustup target list --installed 2>/dev/null | grep -q '^x86_64-unknown-uefi'
     rustup target add x86_64-unknown-uefi || die "Failed to add UEFI target"
 fi
 
+if ! rustup toolchain list --installed 2>/dev/null | grep -q '^nightly'; then
+    log "Installing Rust nightly toolchain (required for build-std) ..."
+    rustup toolchain install nightly --component rust-src || die "Failed to install nightly"
+fi
+rustup override set nightly >/dev/null 2>&1 || true
+if ! rustup target list --installed 2>/dev/null | grep -q '^x86_64-unknown-uefi'; then
+    rustup target add x86_64-unknown-uefi --toolchain nightly || true
+fi
+
 build_efi() {
     log "Building $EFI_NAME ..."
-    cargo build --release --target x86_64-unknown-uefi
+    rm -f "$TARGET_DIR/$EFI_NAME"
+    cargo +nightly build --release --target x86_64-unknown-uefi
     # The Cargo.toml names the binary "bootaa64"; copy to BOOTX64.EFI for x86_64.
-    if [ -f "$TARGET_DIR/bootaa64.efi" ] && [ ! -f "$TARGET_DIR/$EFI_NAME" ]; then
+    if [ -f "$TARGET_DIR/bootaa64.efi" ]; then
         cp "$TARGET_DIR/bootaa64.efi" "$TARGET_DIR/$EFI_NAME"
     fi
     test -f "$TARGET_DIR/$EFI_NAME" || die "Build did not produce $EFI_NAME"
@@ -122,20 +131,31 @@ make_fat_image() {
 }
 
 ensure_firmware() {
-    local fw="$RUNTIME_DIR/$FIRMWARE_NAME"
-    if [ -f "$fw" ]; then
-        log "Firmware present: $fw"
+    local fw_code="$RUNTIME_DIR/edk2-x86_64-code.fd"
+    local fw_vars="$RUNTIME_DIR/edk2-x86_64-vars.fd"
+
+    if [ -f "$fw_code" ] && [ -f "$fw_vars" ]; then
+        log "Firmware present (split): $fw_code + $fw_vars"
         return 0
     fi
 
     log "Looking for x86_64 UEFI firmware (OVMF) ..."
 
-    local fw_path
-    fw_path=$(find /opt/homebrew /usr/local -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
-    if [ -n "$fw_path" ]; then
-        log "  found: $fw_path"
-        cp "$fw_path" "$fw"
-        log "  -> $fw"
+    local code_path vars_path
+    code_path=$(find /opt/homebrew /usr/local -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
+    vars_path=$(find /opt/homebrew /usr/local -name "edk2-i386-vars.fd" 2>/dev/null | head -n 1)
+
+    if [ -n "$code_path" ]; then
+        log "  found code: $code_path"
+        cp "$code_path" "$fw_code"
+        if [ -n "$vars_path" ]; then
+            log "  found vars: $vars_path"
+            cp "$vars_path" "$fw_vars"
+        else
+            log "  vars not found, creating empty vars (64 MiB)"
+            dd if=/dev/zero of="$fw_vars" bs=1m count=64 2>/dev/null
+        fi
+        log "  -> $fw_code + $fw_vars"
         return 0
     fi
 
@@ -168,15 +188,16 @@ Install QEMU:
   Ubuntu : sudo apt install qemu-system-x86
   Arch   : sudo pacman -S qemu-full
 "
-    local fw="$RUNTIME_DIR/$FIRMWARE_NAME"
+    local fw_code="$RUNTIME_DIR/edk2-x86_64-code.fd"
+    local fw_vars="$RUNTIME_DIR/edk2-x86_64-vars.fd"
     local img="$RUNTIME_DIR/$IMAGE_NAME"
     [ -f "$img" ] || die "Disk image missing. Run './build64.sh' first."
-    [ -f "$fw" ]  || die "Firmware missing. Run './build64.sh' first."
+    [ -f "$fw_code" ] && [ -f "$fw_vars" ] || die "Firmware missing. Run './build64.sh' first."
 
     log "Launching QEMU ..."
     log "  cpu     : qemu64"
     log "  ram     : $QEMU_RAM"
-    log "  firmware: $fw (OVMF pflash)"
+    log "  firmware: $fw_code + $fw_vars (OVMF pflash)"
     log "  disk    : $img"
     echo
 
@@ -192,7 +213,8 @@ Install QEMU:
         "${extra_args[@]}" \
         -cpu qemu64 \
         -m "$QEMU_RAM" \
-        -drive "if=pflash,format=raw,readonly=on,file=$fw" \
+        -drive "if=pflash,format=raw,readonly=on,file=$fw_code" \
+        -drive "if=pflash,format=raw,file=$fw_vars" \
         -drive "if=none,file=$img,format=raw,id=hd0" \
         -device "virtio-blk-pci,drive=hd0" \
         -device "virtio-vga" \
@@ -228,7 +250,8 @@ case "${1:-build-run}" in
     clean)
         log "cargo clean"
         cargo clean
-        rm -rf "$RUNTIME_DIR/$IMAGE_NAME" "$RUNTIME_DIR/$FIRMWARE_NAME"
+        rm -rf "$RUNTIME_DIR/$IMAGE_NAME" \
+               "$RUNTIME_DIR/edk2-x86_64-code.fd" "$RUNTIME_DIR/edk2-x86_64-vars.fd"
         ;;
     help|-h|--help)
         sed -n '2,/^# =\+/p' "$0" | sed 's/^# \?//'

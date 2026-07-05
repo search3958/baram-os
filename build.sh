@@ -35,7 +35,7 @@ cd "$SCRIPT_DIR"
 
 PROJECT_NAME="baramos"
 EFI_NAME="bootaa64.efi"
-IMAGE_NAME="osdisk.img"
+IMAGE_NAME="osdisk-arm64.img"
 IMAGE_SIZE_MB=64
 FIRMWARE_NAME="QEMU_EFI.fd"
 RUNTIME_DIR="$SCRIPT_DIR/runtime"
