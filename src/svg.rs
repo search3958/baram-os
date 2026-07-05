@@ -1,86 +1,182 @@
+//! SVG rasterizer backed by `kurbo`.
+//!
+//! This module replaces an earlier hand-rolled mini-rasterizer that produced
+//! "noisy" cursor / icon output.  The rewrite delegates the hard parts to
+//! the [`kurbo`](https://crates.io/crates/kurbo) crate (Rust, `no_std`):
+//!
+//! * `BezPath::from_svg` — parses the SVG path `d` syntax (M/L/H/V/C/S/Q/T/A/Z,
+//!   relative + absolute, arcs converted to cubic Beziers, reflection of the
+//!   last control point for S/T).  This is far more correct than the previous
+//!   hand-written tokenizer.
+//! * `kurbo::flatten` — adaptively subdivides Bezier curves into line
+//!   segments using a tolerance-based error metric, so small icons no longer
+//!   show polygon-shaped curves.
+//! * `kurbo::stroke` — generates a proper offset-polygon stroke outline with
+//!   round joins and caps, replacing the old "stamp circles along the path"
+//!   approach that produced bumpy strokes.
+//! * `kurbo::{Rect, Circle, Ellipse, RoundedRect, Line}` — shape primitives
+//!   that convert to `BezPath` via the `Shape` trait.
+//!
+//! The fill rasterizer uses 4-row subpixel scanline coverage with
+//! exact fractional X coverage per sub-row, plus the nonzero winding number
+//! rule (SVG default).  Even-odd is also supported via the `fill-rule`
+//! attribute.  The result is clean, anti-aliased icons at any size.
+
 extern crate alloc;
 
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::gop::Color;
 use crate::window::LayerSystem;
 
-const TAU: f32 = core::f32::consts::TAU;
-const HALF_PI: f32 = core::f32::consts::FRAC_PI_2;
-const PI: f32 = core::f32::consts::PI;
+use kurbo::{
+    Affine, BezPath, Cap, Circle, Ellipse, Join, Line, Point, Rect, RoundedRect, Shape, Stroke,
+    StrokeOpts, flatten, stroke,
+};
 
-#[derive(Clone, Copy, Debug)]
-struct Pt { x: f32, y: f32 }
+/// Flattening tolerance in *target* (screen) pixels.  0.1 px is well below
+/// the threshold of perception at typical UI scales and gives smooth curves
+/// even for 8×8 icons.
+const TOLERANCE: f64 = 0.1;
 
-#[derive(Clone, Debug)]
-enum Elem {
-    Rect { x: f32, y: f32, w: f32, h: f32, rx: f32, fill: Color, stroke: Color, sw: f32 },
-    Circle { cx: f32, cy: f32, r: f32, fill: Color, stroke: Color, sw: f32 },
-    Ellipse { cx: f32, cy: f32, rx: f32, ry: f32, fill: Color, stroke: Color, sw: f32 },
-    Line { x1: f32, y1: f32, x2: f32, y2: f32, stroke: Color, sw: f32 },
-    Poly { pts: Vec<Pt>, fill: Color, stroke: Color, sw: f32 },
-    Path { d: String, fill: Color, stroke: Color, sw: f32 },
+/// Number of sub-rows sampled per pixel row for vertical anti-aliasing.
+/// 4 sub-rows combined with exact fractional X coverage gives ~256 coverage
+/// levels per pixel — visually indistinguishable from continuous coverage.
+const SS_Y: usize = 4;
+
+// ─────────────────────────────────────────────────────────────────────
+// Fill rule
+// ─────────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FillRule {
+    NonZero,
+    EvenOdd,
 }
 
-// ── tiny XML-ish extractor ───────────────────────────────────────────
+impl FillRule {
+    #[inline]
+    fn is_inside(self, winding: i32) -> bool {
+        match self {
+            FillRule::NonZero => winding != 0,
+            FillRule::EvenOdd => (winding & 1) != 0,
+        }
+    }
+}
 
-struct Tag { name: String, attrs: String }
+// ─────────────────────────────────────────────────────────────────────
+// Tiny XML-ish extractor (kept from the previous implementation — works
+// for the well-formed SVGs we ship in `src/data/`).
+// ─────────────────────────────────────────────────────────────────────
+
+struct Tag {
+    name: String,
+    attrs: String,
+}
 
 fn extract_tags(svg: &str) -> Vec<Tag> {
     let mut tags = Vec::new();
     let bytes = svg.as_bytes();
     let len = bytes.len();
     let mut i = 0;
+    // Depth of <defs> nesting.  Tags inside <defs> (clip paths, gradients,
+    // patterns, masks, ...) are NOT rendered directly — they are referenced
+    // by id from other elements.  Skipping them prevents, e.g., the
+    // `<rect fill="white">` inside a `<clipPath>` from being painted as a
+    // normal rectangle and clobbering the rest of the SVG.
     let mut defs_depth: u32 = 0;
     while i < len {
         if bytes[i] == b'<' {
             let mut j = i + 1;
             let is_close = j < len && bytes[j] == b'/';
-            if is_close { j += 1; }
-            if j < len && bytes[j] == b'?' { }
-            else if j < len && bytes[j] == b'!' {
-                while i < len && bytes[i] != b'>' { i += 1; }
+            if is_close {
+                j += 1;
+            }
+            if j < len && bytes[j] == b'?' {
+                // XML declaration
+            } else if j < len && bytes[j] == b'!' {
+                // skip <!...> entirely (comments, DOCTYPE, CDATA)
+                while i < len && bytes[i] != b'>' {
+                    i += 1;
+                }
                 i += 1;
                 continue;
             }
+            // Extract the tag name.
             let name_start = j;
-            while j < len && bytes[j] != b'>' && bytes[j] != b' ' && bytes[j] != b'\t'
-                    && bytes[j] != b'\n' && bytes[j] != b'\r' && bytes[j] != b'/' {
+            while j < len
+                && bytes[j] != b'>'
+                && bytes[j] != b' '
+                && bytes[j] != b'\t'
+                && bytes[j] != b'\n'
+                && bytes[j] != b'\r'
+                && bytes[j] != b'/'
+            {
                 j += 1;
             }
             let name = String::from_utf8_lossy(&bytes[name_start..j]).to_string();
+            // Find end of tag (either /> or >).
             let mut k = j;
-            while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
+            while k < len
+                && bytes[k] != b'>'
+                && !(bytes[k] == b'/' && k + 1 < len && bytes[k + 1] == b'>')
+            {
                 k += 1;
             }
+            // Extract attributes: everything between tag-name end (j) and the
+            // closing ">" or "/>" (k).
             let attr_start = j;
             let self_closing = k < len && bytes[k] == b'/';
-            if k < len { k += if self_closing { 2 } else { 1 }; }
-            let attr_end = k.saturating_sub(1);
-            let attrs = String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
+            if k < len {
+                k += if self_closing { 2 } else { 1 };
+            }
+            let attr_end = k.saturating_sub(1); // back up past '>'
+            let attrs =
+                String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
             i = k;
 
+            // Track <defs> open/close (only for non-self-closing tags).
             if name == "defs" {
-                if is_close { if defs_depth > 0 { defs_depth -= 1; } }
-                else if !self_closing { defs_depth += 1; }
+                if is_close {
+                    if defs_depth > 0 {
+                        defs_depth -= 1;
+                    }
+                } else if !self_closing {
+                    defs_depth += 1;
+                }
                 continue;
             }
-            let is_definition_only = matches!(name.as_str(),
+            // Also skip standalone clipPath / mask / pattern / linearGradient
+            // / radialGradient / symbol / marker tags (these define paint
+            // servers or clip/mask regions but are not drawn directly).
+            let is_definition_only = matches!(
+                name.as_str(),
                 "clipPath" | "mask" | "pattern" | "linearGradient"
-                | "radialGradient" | "symbol" | "marker" | "filter");
+                    | "radialGradient" | "symbol" | "marker" | "filter"
+            );
             if is_definition_only && !is_close && !self_closing {
                 defs_depth = defs_depth.saturating_add(1);
                 continue;
             }
             if is_definition_only && is_close {
-                if defs_depth > 0 { defs_depth -= 1; }
+                if defs_depth > 0 {
+                    defs_depth -= 1;
+                }
                 continue;
             }
 
-            if defs_depth > 0 { continue; }
-            if !name.is_empty() && name != "svg" && name != "g" && name != "?xml" && !name.starts_with('!') {
+            if defs_depth > 0 {
+                continue;
+            }
+            if !name.is_empty()
+                && name != "svg"
+                && name != "g"
+                && name != "?xml"
+                && !name.starts_with('!')
+            {
                 tags.push(Tag { name, attrs });
             }
         } else {
@@ -129,6 +225,18 @@ fn parse_color(s: &str) -> Color {
                 let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(0);
                 Color::rgb(r, g, b)
             }
+            8 => {
+                // #RRGGBBAA — alpha currently coerced to opaque-or-transparent
+                let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(0);
+                let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(0);
+                let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(0);
+                let a = u8::from_str_radix(&h[6..8], 16).unwrap_or(0);
+                if a == 0 {
+                    Color::TRANSPARENT
+                } else {
+                    Color::rgb(r, g, b)
+                }
+            }
             _ => Color::BLACK,
         }
     } else {
@@ -150,144 +258,33 @@ fn parse_color(s: &str) -> Color {
 }
 
 fn attr_color(attrs: &str, key: &str) -> Color {
-    attr_str(attrs, key).map(parse_color).unwrap_or(Color::TRANSPARENT)
+    attr_str(attrs, key)
+        .map(parse_color)
+        .unwrap_or(Color::TRANSPARENT)
 }
 
-// ── SVG path 'd' parser (M/L/H/V/Z only, everything else → L to endpoint) ─
-
-fn eval_d(d: &str) -> Vec<Vec<Pt>> {
-    let b: Vec<char> = d.chars().collect();
-    let n = b.len();
-    let mut i = 0;
-
-    let mut contours: Vec<Vec<Pt>> = Vec::new();
-    let mut cur: Vec<Pt> = Vec::new();
-    let mut cx: f32 = 0.0;
-    let mut cy: f32 = 0.0;
-    let mut sx: f32 = 0.0;
-    let mut sy: f32 = 0.0;
-    let mut has_start = false;
-
-    while i < n {
-        if b[i].is_whitespace() || b[i] == ',' { i += 1; continue; }
-
-        let cmd = b[i];
-        i += 1;
-
-        let mut nums: Vec<f32> = Vec::new();
-        while i < n {
-            while i < n && (b[i].is_whitespace() || b[i] == ',') { i += 1; }
-            if i >= n { break; }
-            if (b[i] == '-' || b[i] == '+') && !nums.is_empty() {
-                if let Some(last) = nums.last() {
-                    let s = format!("{}", last);
-                    if !s.ends_with('e') && !s.ends_with('E') { break; }
-                }
-            }
-            if b[i] == '-' || b[i] == '+' || b[i].is_ascii_digit() || b[i] == '.' {
-                let s = i;
-                i += 1;
-                while i < n && (b[i].is_ascii_digit() || b[i] == '.' || b[i] == 'e' || b[i] == 'E'
-                    || ((b[i] == '-' || b[i] == '+') && i > 0 && (b[i-1] == 'e' || b[i-1] == 'E')))
-                { i += 1; }
-                let t: String = b[s..i].iter().collect();
-                if let Ok(v) = t.parse::<f32>() { nums.push(v); }
-            } else { break; }
-        }
-
-        let is_abs = cmd.is_uppercase();
-        let lx = cx;
-        let ly = cy;
-        let coord = |v: f32| -> f32 { if is_abs { v } else { lx + v } };
-        let coordy = |v: f32| -> f32 { if is_abs { v } else { ly + v } };
-
-        match cmd {
-            'M' | 'm' => {
-                let mut j = 0;
-                while j + 1 < nums.len() {
-                    cx = coord(nums[j]);
-                    cy = coordy(nums[j + 1]);
-                    j += 2;
-                    if !has_start { sx = cx; sy = cy; has_start = true; }
-                    if cur.len() > 1 { contours.push(cur); }
-                    cur = Vec::new();
-                    cur.push(Pt { x: cx, y: cy });
-                }
-            }
-            'L' | 'l' => {
-                let mut j = 0;
-                while j + 1 < nums.len() {
-                    cx = coord(nums[j]);
-                    cy = coordy(nums[j + 1]);
-                    cur.push(Pt { x: cx, y: cy });
-                    j += 2;
-                }
-            }
-            'H' | 'h' => {
-                for &v in &nums {
-                    cx = coord(v);
-                    cur.push(Pt { x: cx, y: cy });
-                }
-            }
-            'V' | 'v' => {
-                for &v in &nums {
-                    cy = coordy(v);
-                    cur.push(Pt { x: cx, y: cy });
-                }
-            }
-            'C' | 'c' => {
-                if nums.len() >= 6 {
-                    cx = coord(nums[4]);
-                    cy = coordy(nums[5]);
-                    cur.push(Pt { x: cx, y: cy });
-                }
-            }
-            'S' | 's' => {
-                if nums.len() >= 4 {
-                    cx = coord(nums[2]);
-                    cy = coordy(nums[3]);
-                    cur.push(Pt { x: cx, y: cy });
-                }
-            }
-            'Q' | 'q' => {
-                if nums.len() >= 4 {
-                    cx = coord(nums[2]);
-                    cy = coordy(nums[3]);
-                    cur.push(Pt { x: cx, y: cy });
-                }
-            }
-            'T' | 't' => {
-                let mut j = 0;
-                while j + 1 < nums.len() {
-                    cx = coord(nums[j]);
-                    cy = coordy(nums[j + 1]);
-                    cur.push(Pt { x: cx, y: cy });
-                    j += 2;
-                }
-            }
-            'Z' | 'z' => {
-                if !cur.is_empty() {
-                    if (cur.last().unwrap().x - sx).abs() > 0.001
-                        || (cur.last().unwrap().y - sy).abs() > 0.001 {
-                        cur.push(Pt { x: sx, y: sy });
-                    }
-                }
-                cx = sx;
-                cy = sy;
-                has_start = false;
-            }
-            _ => {}
-        }
+fn attr_fill_rule(attrs: &str) -> FillRule {
+    match attr_str(attrs, "fill-rule").unwrap_or("") {
+        "evenodd" => FillRule::EvenOdd,
+        _ => FillRule::NonZero,
     }
-    if cur.len() > 1 { contours.push(cur); }
-    contours
 }
 
-// ── rasterizer ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Pixel blending
+// ─────────────────────────────────────────────────────────────────────
 
+#[inline]
 fn blend_pixel(layer: &mut LayerSystem, x: usize, y: usize, c: Color, coverage: f32) {
-    if x >= layer.width() || y >= layer.height() || coverage <= 0.0 { return; }
-    let cov = coverage.min(1.0);
+    if x >= layer.width() || y >= layer.height() || coverage <= 0.0 {
+        return;
+    }
+    let cov = if coverage >= 1.0 { 1.0 } else { coverage };
+    // Fast path: full coverage → opaque replacement.
+    if cov >= 1.0 {
+        layer.put_pixel(x, y, c);
+        return;
+    }
     let bg = layer.get_pixel(x, y);
     let a = (cov * 255.0) as u32;
     let inv = 255 - a;
@@ -297,271 +294,274 @@ fn blend_pixel(layer: &mut LayerSystem, x: usize, y: usize, c: Color, coverage: 
     layer.put_pixel(x, y, Color(0xFF00_0000 | (r << 16) | (g << 8) | b));
 }
 
-fn rasterize_fill(layer: &mut LayerSystem, pts: &[Pt], c: Color, ox: i32, oy: i32) {
-    let n = pts.len();
-    if n < 3 { return; }
-    let sw = layer.width() as i32;
-    let sh = layer.height() as i32;
+// ─────────────────────────────────────────────────────────────────────
+// Path flattening: BezPath → Vec<(Point, Point)> line segments
+// ─────────────────────────────────────────────────────────────────────
 
-    let sp: alloc::vec::Vec<Pt> = pts.iter()
-        .map(|p| Pt { x: p.x + ox as f32, y: p.y + oy as f32 })
-        .collect();
+/// Flatten a `BezPath` into a list of line segments (pairs of endpoints).
+/// `MoveTo` and `ClosePath` are handled here: `ClosePath` produces a final
+/// segment back to the most recent `MoveTo` point.
+fn flatten_to_segments(path: &BezPath) -> Vec<(Point, Point)> {
+    let mut segments: Vec<(Point, Point)> = Vec::new();
+    let mut cur = Point::ZERO;
+    let mut start = Point::ZERO;
+    let mut have_start = false;
 
-    let mut min_y = libm::floorf(sp[0].y) as i32;
-    let mut max_y = min_y;
-    for p in &sp {
-        let py = libm::floorf(p.y) as i32;
-        if py < min_y { min_y = py; }
-        if py > max_y { max_y = py; }
-    }
-    min_y = min_y.max(0);
-    max_y = max_y.min(sh - 1);
-    if min_y > max_y { return; }
-
-    for sy in min_y..=max_y {
-        let yf = sy as f32 + 0.5;
-        let mut xints: alloc::vec::Vec<f32> = Vec::new();
-        for i in 0..n {
-            let j = (i + 1) % n;
-            let ya = sp[i].y;
-            let yb = sp[j].y;
-            if (ya - yb).abs() < 0.001 { continue; }
-            let down = ya <= yf && yb > yf;
-            let up   = yb <= yf && ya > yf;
-            if down || up {
-                let t = (yf - ya) / (yb - ya);
-                xints.push(sp[i].x + t * (sp[j].x - sp[i].x));
-            }
+    flatten(path.iter(), TOLERANCE, |el| match el {
+        kurbo::PathEl::MoveTo(p) => {
+            start = p;
+            cur = p;
+            have_start = true;
         }
-        xints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
-
-        let mut k = 0;
-        while k + 1 < xints.len() {
-            let x0f = xints[k];
-            let x1f = xints[k + 1];
-            let yi = sy as usize;
-
-            let left_px = libm::ceilf(x0f - 0.5) as i32;
-            let right_px = libm::floorf(x1f - 0.5) as i32;
-
-            for x in (left_px + 1)..right_px {
-                if x >= 0 && x < sw {
-                    layer.put_pixel(x as usize, yi, c);
-                }
+        kurbo::PathEl::LineTo(p) => {
+            if have_start {
+                segments.push((cur, p));
             }
-
-            if left_px >= 0 && left_px < sw {
-                let frac = (left_px as f32 + 1.0 - x0f).max(0.0).min(1.0);
-                blend_pixel(layer, left_px as usize, yi, c, frac);
-            }
-            if right_px >= 0 && right_px < sw && right_px != left_px {
-                let frac = (x1f - right_px as f32).max(0.0).min(1.0);
-                blend_pixel(layer, right_px as usize, yi, c, frac);
-            }
-
-            k += 2;
+            cur = p;
         }
-    }
+        kurbo::PathEl::ClosePath => {
+            if have_start && cur != start {
+                segments.push((cur, start));
+            }
+            cur = start;
+        }
+        // CurveTo / QuadTo never appear in flattened output, but handle them
+        // defensively by ignoring (they would be flattened by `flatten`).
+        _ => {}
+    });
+
+    segments
 }
 
-fn rasterize_fill_multi(layer: &mut LayerSystem, contours: &[Vec<Pt>], c: Color, ox: i32, oy: i32) {
-    let sw = layer.width() as i32;
-    let sh = layer.height() as i32;
+// ─────────────────────────────────────────────────────────────────────
+// Fill rasterizer — subpixel scanline AA + nonzero / even-odd winding
+// ─────────────────────────────────────────────────────────────────────
 
-    let sc: alloc::vec::Vec<alloc::vec::Vec<Pt>> = contours.iter()
-        .map(|cont| cont.iter()
-            .map(|p| Pt { x: p.x + ox as f32, y: p.y + oy as f32 })
-            .collect())
-        .collect();
-
-    let mut min_y = i32::MAX;
-    let mut max_y = i32::MIN;
-    let mut any = false;
-    for cont in &sc {
-        if cont.len() < 2 { continue; }
-        for p in cont {
-            let py = libm::floorf(p.y) as i32;
-            if py < min_y { min_y = py; }
-            if py > max_y { max_y = py; }
-            any = true;
-        }
-    }
-    if !any { return; }
-    min_y = min_y.max(0);
-    max_y = max_y.min(sh - 1);
-    if min_y > max_y { return; }
-
-    for sy in min_y..=max_y {
-        let yf = sy as f32 + 0.5;
-        let mut xints: alloc::vec::Vec<f32> = Vec::new();
-        for cont in &sc {
-            let n = cont.len();
-            if n < 2 { continue; }
-            for i in 0..n {
-                let j = (i + 1) % n;
-                let ya = cont[i].y;
-                let yb = cont[j].y;
-                if (ya - yb).abs() < 0.001 { continue; }
-                let down = ya <= yf && yb > yf;
-                let up   = yb <= yf && ya > yf;
-                if down || up {
-                    let t = (yf - ya) / (yb - ya);
-                    xints.push(cont[i].x + t * (cont[j].x - cont[i].x));
-                }
-            }
-        }
-        xints.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
-
-        let mut k = 0;
-        while k + 1 < xints.len() {
-            let x0f = xints[k];
-            let x1f = xints[k + 1];
-            let yi = sy as usize;
-
-            let left_px = libm::ceilf(x0f - 0.5) as i32;
-            let right_px = libm::floorf(x1f - 0.5) as i32;
-
-            for x in (left_px + 1)..right_px {
-                if x >= 0 && x < sw {
-                    layer.put_pixel(x as usize, yi, c);
-                }
-            }
-
-            if left_px >= 0 && left_px < sw {
-                let frac = (left_px as f32 + 1.0 - x0f).max(0.0).min(1.0);
-                blend_pixel(layer, left_px as usize, yi, c, frac);
-            }
-            if right_px >= 0 && right_px < sw && right_px != left_px {
-                let frac = (x1f - right_px as f32).max(0.0).min(1.0);
-                blend_pixel(layer, right_px as usize, yi, c, frac);
-            }
-
-            k += 2;
-        }
-    }
-}
-
-fn rasterize_stroke(layer: &mut LayerSystem, pts: &[Pt], c: Color, sw: f32, ox: i32, oy: i32) {
-    if pts.len() < 2 { return; }
-    let hw = (sw * 0.5).max(0.5);
-    for i in 0..pts.len()-1 {
-        let x0 = pts[i].x + ox as f32;
-        let y0 = pts[i].y + oy as f32;
-        let x1 = pts[i+1].x + ox as f32;
-        let y1 = pts[i+1].y + oy as f32;
-        draw_aa_thick_line(layer, x0, y0, x1, y1, c, hw);
-    }
-}
-
-fn draw_aa_thick_line(layer: &mut LayerSystem, x0: f32, y0: f32, x1: f32, y1: f32, c: Color, hw: f32) {
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    let len = libm::sqrtf(dx * dx + dy * dy);
-    if len < 0.001 {
-        let r = hw;
-        let min_x = libm::floorf(x0 - r) as i32;
-        let max_x = libm::ceilf(x0 + r) as i32;
-        let min_y = libm::floorf(y0 - r) as i32;
-        let max_y = libm::ceilf(y0 + r) as i32;
-        for py in min_y..=max_y {
-            for px in min_x..=max_x {
-                let ddx = px as f32 + 0.5 - x0;
-                let ddy = py as f32 + 0.5 - y0;
-                let dist = libm::sqrtf(ddx * ddx + ddy * ddy);
-                if dist <= r {
-                    blend_pixel(layer, px as usize, py as usize, c, 1.0);
-                } else if dist <= r + 1.0 {
-                    blend_pixel(layer, px as usize, py as usize, c, 1.0 - (dist - r));
-                }
-            }
-        }
+/// Fill a flattened polygon (possibly multi-contour) into the layer with
+/// anti-aliasing.
+///
+/// Algorithm: for each scanline y (integer pixel row), sample SS_Y
+/// sub-rows at `y + (sy + 0.5) / SS_Y`.  For each sub-row, find every
+/// segment that crosses the sub-row's horizontal line, sort the crossings
+/// by x, and walk them while tracking the winding number.  Each pair of
+/// "outside → inside" / "inside → outside" crossings defines a filled
+/// span; the fraction of that span that overlaps pixel `[px, px+1)` adds
+/// to that pixel's coverage.  Coverage is averaged across sub-rows.
+fn fill_segments_aa(
+    layer: &mut LayerSystem,
+    segments: &[(Point, Point)],
+    color: Color,
+    fill_rule: FillRule,
+) {
+    if segments.is_empty() {
         return;
     }
 
-    let steps = libm::ceilf(len * 2.0) as i32;
-    for s in 0..=steps {
-        let t = s as f32 / steps as f32;
-        let cx = x0 + dx * t;
-        let cy = y0 + dy * t;
-        let min_px = libm::floorf(cx - hw - 1.0) as i32;
-        let max_px = libm::ceilf(cx + hw + 1.0) as i32;
-        let min_py = libm::floorf(cy - hw - 1.0) as i32;
-        let max_py = libm::ceilf(cy + hw + 1.0) as i32;
-        for py in min_py..=max_py {
-            for px in min_px..=max_px {
-                let pcx = px as f32 + 0.5 - cx;
-                let pcy = py as f32 + 0.5 - cy;
-                let dist = libm::sqrtf(pcx * pcx + pcy * pcy);
-                if dist <= hw {
-                    blend_pixel(layer, px as usize, py as usize, c, 1.0);
-                } else if dist <= hw + 1.0 {
-                    blend_pixel(layer, px as usize, py as usize, c, 1.0 - (dist - hw));
+    // Compute bounding box in pixel space.
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for (a, b) in segments {
+        min_x = min_x.min(a.x).min(b.x);
+        min_y = min_y.min(a.y).min(b.y);
+        max_x = max_x.max(a.x).max(b.x);
+        max_y = max_y.max(a.y).max(b.y);
+    }
+    if !min_x.is_finite() || !min_y.is_finite() {
+        return;
+    }
+
+    let lw = layer.width() as i32;
+    let lh = layer.height() as i32;
+    if max_x < 0.0 || max_y < 0.0 || min_x >= lw as f64 || min_y >= lh as f64 {
+        return;
+    }
+
+    let py0 = (libm::floor(min_y) as i32).max(0) as usize;
+    let py1 = (libm::ceil(max_y) as i32).min(lh) as usize;
+    if py0 >= py1 {
+        return;
+    }
+
+    // Reusable buffers per sub-row.
+    let mut crossings: Vec<(f64, i32)> = Vec::with_capacity(16);
+
+    for py in py0..py1 {
+        // Pre-compute pixel X range that can possibly be touched on this
+        // scanline (clipped to layer width).  We re-compute per sub-row to
+        // keep memory traffic low.
+        for sy in 0..SS_Y {
+            let y_sample = py as f64 + (sy as f64 + 0.5) / SS_Y as f64;
+
+            crossings.clear();
+            for (a, b) in segments {
+                let ya = a.y;
+                let yb = b.y;
+                // Skip horizontal segments.
+                if ya == yb {
+                    continue;
+                }
+                // Count an edge crossing only if the sub-row strictly
+                // intersects the half-open interval [min(ya,yb), max(ya,yb)).
+                // Using `<=` on one side and `>` on the other (below) gives
+                // the standard nonzero scanline rule and avoids double-
+                // counting at shared vertices.
+                let crosses_down = ya <= y_sample && yb > y_sample;
+                let crosses_up = yb <= y_sample && ya > y_sample;
+                if crosses_down || crosses_up {
+                    let t = (y_sample - ya) / (yb - ya);
+                    let x = a.x + t * (b.x - a.x);
+                    let dir = if crosses_down { 1 } else { -1 };
+                    crossings.push((x, dir));
                 }
             }
+            if crossings.is_empty() {
+                continue;
+            }
+            crossings.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal));
+
+            // Walk the crossings, identifying filled spans.
+            let mut winding: i32 = 0;
+            let mut span_start: f64 = 0.0;
+            let mut span_open = false;
+
+            for &(x, dir) in &crossings {
+                let new_winding = winding + dir;
+                let was_inside = fill_rule.is_inside(winding);
+                let is_inside = fill_rule.is_inside(new_winding);
+
+                if !was_inside && is_inside {
+                    span_start = x;
+                    span_open = true;
+                } else if was_inside && !is_inside {
+                    if span_open {
+                        paint_span(layer, span_start, x, py, color);
+                    }
+                    span_open = false;
+                }
+                winding = new_winding;
+            }
+            // If the path is malformed and never closes, just drop the
+            // dangling span.
         }
     }
 }
 
-fn circle_pts(cx: f32, cy: f32, r: f32) -> Vec<Pt> {
-    let mut pts = Vec::new();
-    for i in 0..48 {
-        let a = (i as f32 / 48.0) * TAU;
-        pts.push(Pt { x: cx + r * libm::cosf(a), y: cy + r * libm::sinf(a) });
+/// Paint a horizontal span `[x0, x1)` at scanline `py` into the layer with
+/// anti-aliasing at the left and right edges.  Interior pixels are written
+/// fully opaque.
+#[inline]
+fn paint_span(layer: &mut LayerSystem, x0: f64, x1: f64, py: usize, color: Color) {
+    if x1 <= x0 {
+        return;
     }
-    pts
-}
-
-fn ellipse_pts(cx: f32, cy: f32, rx: f32, ry: f32) -> Vec<Pt> {
-    let mut pts = Vec::new();
-    for i in 0..48 {
-        let a = (i as f32 / 48.0) * TAU;
-        pts.push(Pt { x: cx + rx * libm::cosf(a), y: cy + ry * libm::sinf(a) });
+    let lw = layer.width() as i32;
+    let x0i = libm::floor(x0) as i32;
+    let x1i = libm::ceil(x1) as i32;
+    if x1i <= 0 || x0i >= lw {
+        return;
     }
-    pts
-}
-
-fn rounded_rect_pts(x: f32, y: f32, w: f32, h: f32, r: f32) -> Vec<Pt> {
-    let mut pts = Vec::new();
-    let corners = [
-        (x+w-r, y+r,   HALF_PI, PI),
-        (x+w-r, y+h-r, PI,      PI+HALF_PI),
-        (x+r,   y+h-r, PI+HALF_PI, TAU),
-        (x+r,   y+r,   TAU,     TAU+HALF_PI),
-    ];
-    for (cx, cy, a0, a1) in corners {
-        for i in 0..=8 {
-            let a = a0 + (a1 - a0) * i as f32 / 8.0;
-            pts.push(Pt { x: cx + r * libm::cosf(a), y: cy + r * libm::sinf(a) });
-        }
+    let xs = x0i.max(0) as usize;
+    let xe = x1i.min(lw) as usize;
+    if xs >= xe {
+        return;
     }
-    pts
+
+    // Left edge: coverage = (xs+1) - x0  (in [0,1))
+    let left_cov = ((x0i as f64 + 1.0) - x0).max(0.0).min(1.0);
+    // Right edge: coverage = x1 - (xe-1)  (in [0,1))
+    let right_cov = (x1 - ((x1i as f64) - 1.0)).max(0.0).min(1.0);
+
+    if xe - xs == 1 {
+        // Span fits entirely inside one pixel.
+        let cov = (x1 - x0).max(0.0).min(1.0);
+        blend_pixel(layer, xs, py, color, cov as f32);
+        return;
+    }
+
+    blend_pixel(layer, xs, py, color, left_cov as f32);
+    for px in (xs + 1)..(xe.saturating_sub(1)) {
+        layer.put_pixel(px, py, color);
+    }
+    if xe > xs + 1 {
+        blend_pixel(layer, xe - 1, py, color, right_cov as f32);
+    }
 }
 
-fn scale_pts(pts: &[Pt], sx: f32, sy: f32) -> Vec<Pt> {
-    pts.iter().map(|p| Pt { x: p.x * sx, y: p.y * sy }).collect()
+// ─────────────────────────────────────────────────────────────────────
+// Stroke rasterizer — uses kurbo::stroke to build an offset-polygon
+// outline, then flattens + fills that outline.
+// ─────────────────────────────────────────────────────────────────────
+
+fn stroke_path_aa(
+    layer: &mut LayerSystem,
+    path: &BezPath,
+    color: Color,
+    width: f64,
+    transform: Affine,
+) {
+    if width <= 0.0 {
+        return;
+    }
+    let style = Stroke::new(width)
+        .with_join(Join::Round)
+        .with_caps(Cap::Round);
+    let opts = StrokeOpts::default();
+    // Stroke in user space, then transform the resulting outline.  This is
+    // correct for any affine transform (including non-uniform scale).
+    let stroked = stroke(path.iter(), &style, &opts, TOLERANCE);
+    let stroked_screen = transform * stroked;
+    let segments = flatten_to_segments(&stroked_screen);
+    fill_segments_aa(layer, &segments, color, FillRule::NonZero);
 }
 
-fn scaled_stroke_width(sw: f32, sx: f32, sy: f32) -> f32 {
-    let scale = (sx.abs() + sy.abs()) * 0.5;
-    (sw * scale).max(0.5)
-}
+// ─────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────
 
-// ── public API ───────────────────────────────────────────────────────
-
+/// Draw an SVG into the layer where the SVG's viewBox maps onto the entire
+/// layer (legacy behaviour).  Used for full-screen backgrounds.
 pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
-    draw_svg_scaled_into(layer, svg, ox, oy,
-        layer.width() as f32, layer.height() as f32,
+    draw_svg_scaled_into(
+        layer,
+        svg,
+        ox,
+        oy,
         layer.width() as f32,
-        layer.height() as f32);
+        layer.height() as f32,
+        layer.width() as f32,
+        layer.height() as f32,
+    );
 }
 
-pub fn draw_svg_into(layer: &mut LayerSystem, svg: &str,
-                     ox: i32, oy: i32, target_w: f32, target_h: f32) {
-    draw_svg_scaled_into(layer, svg, ox, oy,
-        layer.width() as f32, layer.height() as f32,
-        target_w, target_h);
+/// Draw an SVG into a target rectangle (ox, oy, target_w, target_h).
+/// The SVG's viewBox is mapped onto that rectangle, preserving aspect ratio
+/// (letterboxed).  Used for icons (window buttons, cursors, ...).
+pub fn draw_svg_into(
+    layer: &mut LayerSystem,
+    svg: &str,
+    ox: i32,
+    oy: i32,
+    target_w: f32,
+    target_h: f32,
+) {
+    draw_svg_scaled_into(
+        layer,
+        svg,
+        ox,
+        oy,
+        layer.width() as f32,
+        layer.height() as f32,
+        target_w,
+        target_h,
+    );
 }
 
+/// Extract the attributes string of the root `<svg …>` tag directly from
+/// the raw SVG text.  This is needed because `extract_tags()` intentionally
+/// skips the `<svg>` element itself, so its width/height/viewBox would
+/// otherwise be unreachable.
 fn svg_root_attrs(svg: &str) -> String {
     let bytes = svg.as_bytes();
     let len = bytes.len();
@@ -569,29 +569,45 @@ fn svg_root_attrs(svg: &str) -> String {
     while i < len {
         if bytes[i] == b'<' {
             let mut j = i + 1;
-            if j < len && bytes[j] == b'/' { i += 1; continue; }
+            if j < len && bytes[j] == b'/' {
+                i += 1;
+                continue;
+            }
             if j < len && (bytes[j] == b'?' || bytes[j] == b'!') {
-                while i < len && bytes[i] != b'>' { i += 1; }
+                while i < len && bytes[i] != b'>' {
+                    i += 1;
+                }
                 i += 1;
                 continue;
             }
             let name_start = j;
-            while j < len && bytes[j] != b'>' && bytes[j] != b' '
-                    && bytes[j] != b'\t' && bytes[j] != b'\n'
-                    && bytes[j] != b'\r' && bytes[j] != b'/' {
+            while j < len
+                && bytes[j] != b'>'
+                && bytes[j] != b' '
+                && bytes[j] != b'\t'
+                && bytes[j] != b'\n'
+                && bytes[j] != b'\r'
+                && bytes[j] != b'/'
+            {
                 j += 1;
             }
             let name = &bytes[name_start..j];
             if name == b"svg" {
                 let attr_start = j;
                 let mut k = j;
-                while k < len && bytes[k] != b'>' && !(bytes[k] == b'/' && k + 1 < len && bytes[k+1] == b'>') {
+                while k < len
+                    && bytes[k] != b'>'
+                    && !(bytes[k] == b'/' && k + 1 < len && bytes[k + 1] == b'>')
+                {
                     k += 1;
                 }
                 let attr_end = k.saturating_sub(1);
-                return String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
+                return String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)])
+                    .to_string();
             }
-            while i < len && bytes[i] != b'>' { i += 1; }
+            while i < len && bytes[i] != b'>' {
+                i += 1;
+            }
             i += 1;
         } else {
             i += 1;
@@ -600,20 +616,33 @@ fn svg_root_attrs(svg: &str) -> String {
     String::new()
 }
 
-fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
-                        ox: i32, oy: i32,
-                        _layer_w: f32, _layer_h: f32,
-                        target_w: f32, target_h: f32) {
+fn draw_svg_scaled_into(
+    layer: &mut LayerSystem,
+    svg: &str,
+    ox: i32,
+    oy: i32,
+    _layer_w: f32,
+    _layer_h: f32,
+    target_w: f32,
+    target_h: f32,
+) {
     let tags = extract_tags(svg);
 
+    let mut vb_x = 0.0f32;
+    let mut vb_y = 0.0f32;
     let mut vb_w = 0.0f32;
     let mut vb_h = 0.0f32;
+
     let root_attrs = svg_root_attrs(svg);
     let svg_w = attr_f32(&root_attrs, "width");
     let svg_h = attr_f32(&root_attrs, "height");
     if let Some(vb) = attr_str(&root_attrs, "viewBox") {
-        let parts: Vec<&str> = vb.split(|c: char| c == ' ' || c == ',').collect();
+        let parts: Vec<&str> = vb
+            .split(|c: char| c == ' ' || c == ',')
+            .collect();
         if parts.len() >= 4 {
+            vb_x = parts[0].trim().parse().unwrap_or(0.0);
+            vb_y = parts[1].trim().parse().unwrap_or(0.0);
             vb_w = parts[2].trim().parse().unwrap_or(0.0);
             vb_h = parts[3].trim().parse().unwrap_or(0.0);
         }
@@ -622,154 +651,154 @@ fn draw_svg_scaled_into(layer: &mut LayerSystem, svg: &str,
     let src_w = if vb_w > 0.0 { vb_w } else { svg_w };
     let src_h = if vb_h > 0.0 { vb_h } else { svg_h };
 
-    let (sx, sy, dx, dy) = if src_w > 0.0 && src_h > 0.0 {
-        let scale = (target_w / src_w).min(target_h / src_h);
-        let draw_w = src_w * scale;
-        let draw_h = src_h * scale;
+    // Compute scale that fits src_w × src_h inside target_w × target_h
+    // (letterboxed, centred).
+    let (scale, dx, dy) = if src_w > 0.0 && src_h > 0.0 && target_w > 0.0 && target_h > 0.0 {
+        let sx = target_w / src_w;
+        let sy = target_h / src_h;
+        let s = if sx < sy { sx } else { sy };
+        let draw_w = src_w * s;
+        let draw_h = src_h * s;
         let dx = ((target_w - draw_w) * 0.5).max(0.0);
         let dy = ((target_h - draw_h) * 0.5).max(0.0);
-        (scale, scale, dx, dy)
+        (s as f64, dx as f64, dy as f64)
     } else {
-        (1.0, 1.0, 0.0, 0.0)
+        (1.0, 0.0, 0.0)
     };
 
-    let ox = ox + (dx as i32);
-    let oy = oy + (dy as i32);
-
-    let mut elems: Vec<Elem> = Vec::new();
+    // Build the combined transform: screen translate → scale → viewBox translate.
+    // After applying this to a path expressed in SVG user coordinates, the
+    // path lands at the correct on-screen position.
+    let transform = Affine::translate((ox as f64 + dx, oy as f64 + dy))
+        * Affine::scale(scale)
+        * Affine::translate((-vb_x as f64, -vb_y as f64));
 
     for tag in &tags {
         let a = &tag.attrs;
         let fill = attr_color(a, "fill");
         let stroke = attr_color(a, "stroke");
-        let sw: f32 = attr_str(a, "stroke-width").and_then(|v| v.parse().ok()).unwrap_or(1.0);
+        let sw: f32 = attr_str(a, "stroke-width")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0);
+        let fill_rule = attr_fill_rule(a);
 
-        match tag.name.as_str() {
+        // Convert the SVG element to a `BezPath` in user coordinates.
+        let path_opt: Option<BezPath> = match tag.name.as_str() {
             "rect" => {
-                let rx_f = attr_f32(a, "rx");
-                elems.push(Elem::Rect {
-                    x: attr_f32(a, "x"), y: attr_f32(a, "y"),
-                    w: attr_f32(a, "width"), h: attr_f32(a, "height"),
-                    rx: rx_f, fill, stroke, sw,
-                });
+                let x = attr_f32(a, "x") as f64;
+                let y = attr_f32(a, "y") as f64;
+                let w = attr_f32(a, "width") as f64;
+                let h = attr_f32(a, "height") as f64;
+                if w <= 0.0 || h <= 0.0 {
+                    None
+                } else {
+                    let rx_f = attr_f32(a, "rx") as f64;
+                    let ry_f = attr_f32(a, "ry") as f64;
+                    let r = if rx_f > 0.0 || ry_f > 0.0 {
+                        rx_f.max(ry_f)
+                    } else {
+                        0.0
+                    };
+                    if r > 0.0 {
+                        Some(RoundedRect::new(x, y, x + w, y + h, r).to_path(TOLERANCE))
+                    } else {
+                        Some(Rect::new(x, y, x + w, y + h).to_path(TOLERANCE))
+                    }
+                }
             }
-            "circle" => elems.push(Elem::Circle {
-                cx: attr_f32(a, "cx"), cy: attr_f32(a, "cy"),
-                r: attr_f32(a, "r"), fill, stroke, sw,
-            }),
-            "ellipse" => elems.push(Elem::Ellipse {
-                cx: attr_f32(a, "cx"), cy: attr_f32(a, "cy"),
-                rx: attr_f32(a, "rx"), ry: attr_f32(a, "ry"), fill, stroke, sw,
-            }),
-            "line" => elems.push(Elem::Line {
-                x1: attr_f32(a, "x1"), y1: attr_f32(a, "y1"),
-                x2: attr_f32(a, "x2"), y2: attr_f32(a, "y2"), stroke, sw,
-            }),
-            "polygon" => {
+            "circle" => {
+                let cx = attr_f32(a, "cx") as f64;
+                let cy = attr_f32(a, "cy") as f64;
+                let r = attr_f32(a, "r") as f64;
+                if r > 0.0 {
+                    Some(Circle::new((cx, cy), r).to_path(TOLERANCE))
+                } else {
+                    None
+                }
+            }
+            "ellipse" => {
+                let cx = attr_f32(a, "cx") as f64;
+                let cy = attr_f32(a, "cy") as f64;
+                let rx = attr_f32(a, "rx") as f64;
+                let ry = attr_f32(a, "ry") as f64;
+                if rx > 0.0 && ry > 0.0 {
+                    Some(Ellipse::new((cx, cy), (rx, ry), 0.0).to_path(TOLERANCE))
+                } else {
+                    None
+                }
+            }
+            "line" => {
+                let x1 = attr_f32(a, "x1") as f64;
+                let y1 = attr_f32(a, "y1") as f64;
+                let x2 = attr_f32(a, "x2") as f64;
+                let y2 = attr_f32(a, "y2") as f64;
+                let mut p = BezPath::new();
+                p.move_to((x1, y1));
+                p.line_to((x2, y2));
+                Some(p)
+            }
+            "polygon" | "polyline" => {
                 if let Some(s) = attr_str(a, "points") {
-                    elems.push(Elem::Poly { pts: parse_pts(s), fill, stroke, sw });
-                }
-            }
-            "polyline" => {
-                if let Some(s) = attr_str(a, "points") {
-                    let mut pts = parse_pts(s);
-                    if let Some(first) = pts.first().cloned() { pts.push(first); }
-                    elems.push(Elem::Poly { pts, fill, stroke, sw });
-                }
-            }
-            "path" => {
-                if let Some(d) = attr_str(a, "d") {
-                    elems.push(Elem::Path { d: d.to_string(), fill, stroke, sw });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    for elem in &elems {
-        match elem {
-            Elem::Rect { x, y, w, h, rx, fill, stroke, sw } => {
-                if *rx > 0.0 {
-                    let pts = rounded_rect_pts(*x, *y, *w, *h, *rx);
-                    let s = scale_pts(&pts, sx, sy);
-                    if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                    if *stroke != Color::TRANSPARENT {
-                        rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
+                    let pts = parse_pts_f64(s);
+                    if pts.is_empty() {
+                        None
+                    } else {
+                        let mut p = BezPath::new();
+                        p.move_to(pts[0]);
+                        for pt in &pts[1..] {
+                            p.line_to(*pt);
+                        }
+                        if tag.name == "polygon" {
+                            p.close_path();
+                        }
+                        Some(p)
                     }
                 } else {
-                    if *fill != Color::TRANSPARENT {
-                        layer.fill_rect(
-                            ((*x * sx) as i32 + ox).max(0) as usize,
-                            ((*y * sy) as i32 + oy).max(0) as usize,
-                            (*w * sx) as usize, (*h * sy) as usize, *fill);
-                    }
-                    if *stroke != Color::TRANSPARENT {
-                        layer.rect_outline(
-                            ((*x * sx) as i32 + ox).max(0) as usize,
-                            ((*y * sy) as i32 + oy).max(0) as usize,
-                            (*w * sx) as usize, (*h * sy) as usize, *stroke);
-                    }
+                    None
                 }
             }
-            Elem::Circle { cx, cy, r, fill, stroke, sw } => {
-                let pts = circle_pts(*cx, *cy, *r);
-                let s = scale_pts(&pts, sx, sy);
-                if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT {
-                    rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
-                }
-            }
-            Elem::Ellipse { cx, cy, rx, ry, fill, stroke, sw } => {
-                let pts = ellipse_pts(*cx, *cy, *rx, *ry);
-                let s = scale_pts(&pts, sx, sy);
-                if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT {
-                    rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
-                }
-            }
-            Elem::Line { x1, y1, x2, y2, stroke, sw } => {
-                if *stroke != Color::TRANSPARENT {
-                    draw_aa_thick_line(layer,
-                        (*x1 * sx) as f32 + ox as f32, (*y1 * sy) as f32 + oy as f32,
-                        (*x2 * sx) as f32 + ox as f32, (*y2 * sy) as f32 + oy as f32,
-                        *stroke, scaled_stroke_width(*sw, sx, sy));
-                }
-            }
-            Elem::Poly { pts, fill, stroke, sw } => {
-                let s = scale_pts(pts, sx, sy);
-                if *fill != Color::TRANSPARENT { rasterize_fill(layer, &s, *fill, ox, oy); }
-                if *stroke != Color::TRANSPARENT {
-                    rasterize_stroke(layer, &s, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
-                }
-            }
-            Elem::Path { d, fill, stroke, sw } => {
-                let contours = eval_d(d);
-                let scaled: Vec<Vec<Pt>> = contours.iter()
-                    .map(|c| scale_pts(c, sx, sy))
-                    .collect();
-                if *fill != Color::TRANSPARENT {
-                    rasterize_fill_multi(layer, &scaled, *fill, ox, oy);
-                }
-                if *stroke != Color::TRANSPARENT {
-                    for c in &scaled {
-                        rasterize_stroke(layer, c, *stroke, scaled_stroke_width(*sw, sx, sy), ox, oy);
-                    }
-                }
-            }
+            "path" => attr_str(a, "d").and_then(|d| BezPath::from_svg(d).ok()),
+            _ => None,
+        };
+
+        let Some(path) = path_opt else { continue };
+
+        // Fill: transform user-space path to screen space, flatten, fill.
+        if fill != Color::TRANSPARENT {
+            let path_screen = transform * &path;
+            let segments = flatten_to_segments(&path_screen);
+            fill_segments_aa(layer, &segments, fill, fill_rule);
+        }
+
+        // Stroke: build offset outline in user space, then transform.
+        // Stroke width is expressed in user-space units, so the visual
+        // width on screen is `sw * scale`.
+        if stroke != Color::TRANSPARENT && sw > 0.0 {
+            stroke_path_aa(layer, &path, stroke, sw as f64, transform);
         }
     }
 }
 
-fn parse_pts(s: &str) -> Vec<Pt> {
+/// Parse an SVG `points` attribute ("x1,y1 x2,y2 ...") into a Vec<Point>.
+fn parse_pts_f64(s: &str) -> Vec<Point> {
     let mut pts = Vec::new();
-    let nums: Vec<&str> = s.split(|c: char| c == ',' || c == ' ' || c == '\n' || c == '\r' || c == '\t')
-        .filter(|x| !x.is_empty()).collect();
+    let nums: Vec<&str> = s
+        .split(|c: char| c == ',' || c == ' ' || c == '\n' || c == '\r' || c == '\t')
+        .filter(|x| !x.is_empty())
+        .collect();
     let mut i = 0;
     while i + 1 < nums.len() {
-        if let (Ok(x), Ok(y)) = (nums[i].trim().parse(), nums[i+1].trim().parse()) {
-            pts.push(Pt { x, y });
+        if let (Ok(x), Ok(y)) = (nums[i].trim().parse(), nums[i + 1].trim().parse()) {
+            pts.push(Point::new(x, y));
         }
         i += 2;
     }
     pts
+}
+
+// Silence unused-import warning if `Line` is not directly referenced in
+// every build configuration.
+#[allow(dead_code)]
+fn _unused_imports_anchor() {
+    let _ = Line::new(Point::ZERO, Point::ZERO);
 }

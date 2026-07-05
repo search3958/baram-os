@@ -121,7 +121,7 @@ QEMU_RAM=2G QEMU_DISPLAY=gtk ./build.sh
 ```
 baramos/
 ├── build.sh                 # one-shot build + run script
-├── Cargo.toml               # crate manifest (uses uefi-rs 0.38)
+├── Cargo.toml               # crate manifest (uses uefi-rs 0.38 + kurbo 0.13)
 ├── rust-toolchain.toml      # pins Rust nightly + UEFI target
 ├── .cargo/config.toml       # build-std config (needed for no_std + alloc)
 ├── README.md                # this file
@@ -135,6 +135,9 @@ baramos/
 │   ├── cursor.rs            # 13×18 mouse cursor sprite + background save/restore
 │   ├── font.rs              # 8×16 bitmap font API
 │   ├── font_data.rs         # generated font table (95 glyphs, ASCII 0x20–0x7E)
+│   ├── svg.rs               # SVG rasterizer backed by `kurbo` (path parsing,
+│   │                        # adaptive Bezier flattening, offset-polygon stroke,
+│   │                        # subpixel scanline AA fill with nonzero/even-odd rule)
 │   └── ui.rs                # text rendering + small FmtBuf helper
 └── runtime/                 # QEMU_EFI.fd and osdisk.img land here (gitignored)
 ```

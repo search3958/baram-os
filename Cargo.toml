@@ -14,6 +14,10 @@ uefi = { version = "0.38", features = ["alloc", "logger", "panic_handler", "glob
 uefi-raw = "0.15"
 stb_truetype_rust = { path = "src/stb_truetype_rust" }
 libm = "0.2"
+# kurbo: 2D curve library. Used for SVG path parsing, adaptive Bezier
+# flattening, and offset-polygon stroking. The `libm` feature gives us
+# transcendentals in `no_std` (needed for `aarch64-unknown-uefi`).
+kurbo = { version = "0.13", default-features = false, features = ["libm"] }
 
 [profile.release]
 opt-level = 2
