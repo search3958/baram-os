@@ -250,28 +250,10 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
         layer.clear(Color::BG);
     }
 
-    // 2. Title bar
-    layer.fill_rect(0, 0, w, 36, Color::WIN_INACTIVE);
-    layer.put_str(16, 10, "BaramOS ウィンドウマネージャー", Color::TEXT);
-
-    let mut fb = FmtBuf::new();
-    fb.push_str("ウィンドウ数:");
-    fb.push_u32(wm.count() as u32);
-    fb.push_str(" FPS:");
-    fb.push_u32(fps);
-    layer.put_str(380, 10, fb.as_str(), Color::MUTED);
-
-    let mut fb2 = FmtBuf::new();
-    fb2.push_str("Mouse:");
-    fb2.push_str(mouse_mode);
-    fb2.push_str(" Keys:");
-    fb2.push_u32(key_ev);
-    layer.put_str(16, 22, fb2.as_str(), Color::MUTED);
-
-    // 3. Windows (z-sorted)
+    // 2. Windows (z-sorted)  ← 元の3番目、番号だけ詰めた
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
-    // 4. Taskbar
+    // 3. Taskbar  ← 元の4番目
     let tb_y = h.saturating_sub(TASKBAR_H);
     layer.fill_rect(0, tb_y, w, TASKBAR_H, Color::TASKBAR);
 
@@ -286,11 +268,21 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
         bx += 88;
     }
 
-    // 5. Hint text
-    let mid_y = tb_y.saturating_sub(20);
-    layer.put_str(16, mid_y, "↑↓: スクロール  |  ←→: カーソル移動  |  マウスホイール: スクロール", Color::MUTED);
+    // 4. Status — タスクバー上に2行表示  ← ここを新規作成
+    let mut fb = FmtBuf::new();
+    fb.push_str("Key:");
+    fb.push_u32(key_ev);
+    fb.push_str(" Window:");
+    fb.push_u32(wm.count() as u32);
+    fb.push_str(" ");
+    fb.push_u32(fps);
+    fb.push_str("FPS");
 
-    // 6. Cursor (on top)
+    // タスクバーすぐ上、左寄せ 2行
+    layer.put_str(16, tb_y.saturating_sub(32), "Baram OS (b2)", Color::MUTED);
+    layer.put_str(16, tb_y.saturating_sub(20), fb.as_str(),  Color::MUTED);
+
+    // 5. Cursor (on top)  ← 元の6番目
     draw_cursor_into_layer(layer, cursor_x, cursor_y);
 }
 
