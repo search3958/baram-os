@@ -32,8 +32,8 @@ const TASKBAR_H: usize = 32;
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
 // Cursor hit-box / draw-box size in pixels.  The SVG (15×19) is rendered
 // inside this rectangle preserving aspect ratio.
-const CURSOR_BOX_W: usize = 15;
-const CURSOR_BOX_H: usize = 19;
+const CURSOR_BOX_W: usize = 26;
+const CURSOR_BOX_H: usize = 32;
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,

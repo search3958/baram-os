@@ -10,6 +10,7 @@ const BTN_SIZE: usize = 20;
 
 // Icon SVGs embedded at compile time from src/data/.
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
+const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("data/close.svg");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -333,12 +334,9 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         let mx_color = title_bg;
         layer.fill_rect(base_x, btn_y, BTN_SIZE, BTN_SIZE, mx_color);
         // Draw the maximize (or restore) icon from src/data/max.svg centred
-        // inside the button.  For the "maximized" state we draw the same SVG
-        // but rotated 180° to mimic the Windows-style restore glyph.  Because
-        // our SVG renderer has no rotation API, we simply reuse the same icon
-        // — visually it still reads as a window control glyph.
-        let _ = w.maximized; // (state is reflected by cursor interaction)
-        svg::draw_svg_into(layer, MAX_ICON_SVG,
+        // inside the button.  When maximized, use mini.svg instead.
+        let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
+        svg::draw_svg_into(layer, icon,
             base_x as i32 + 4, btn_y as i32 + 4,
             (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
     }

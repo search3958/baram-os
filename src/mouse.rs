@@ -192,10 +192,6 @@ impl Mouse {
                     ev.is_absolute = false;
                 }
 
-                // Debug: log raw bytes
-                let mut raw = alloc::string::String::new();
-                for &b in r { raw.push_str(&alloc::format!("{:02x} ", b)); }
-                log_line_str(&alloc::format!("RAW[{}]: {}", n, raw));
                 return Some(ev);
             }
         }
