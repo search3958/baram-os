@@ -18,14 +18,57 @@ use alloc::vec::Vec;
 use uefi::prelude::*;
 use uefi::runtime;
 
-use crate::cursor::Cursor;
 use crate::gop::{Color, Screen};
 use crate::keyboard::Keyboard;
 use crate::mouse::{Mouse, MouseEvent};
-use crate::ui::{FmtBuf, put_str};
+use crate::ui::FmtBuf;
 use crate::window::{WindowManager, LayerSystem};
 
 const TASKBAR_H: usize = 32;
+
+/// 13×18 arrow cursor mask (same as cursor.rs but drawn into the layer).
+const CURSOR_W: usize = 13;
+const CURSOR_H: usize = 18;
+const CURSOR_MASK: [[u8; CURSOR_W]; CURSOR_H] = [
+    [1,0,0,0,0,0,0,0,0,0,0,0,0],
+    [1,1,0,0,0,0,0,0,0,0,0,0,0],
+    [1,1,1,0,0,0,0,0,0,0,0,0,0],
+    [1,1,1,1,0,0,0,0,0,0,0,0,0],
+    [1,1,1,1,1,0,0,0,0,0,0,0,0],
+    [1,1,1,1,1,1,0,0,0,0,0,0,0],
+    [1,1,1,1,1,1,1,0,0,0,0,0,0],
+    [1,1,1,1,1,1,1,1,0,0,0,0,0],
+    [1,1,1,1,1,1,1,1,1,0,0,0,0],
+    [1,1,1,1,1,1,1,1,1,1,0,0,0],
+    [1,1,1,1,1,1,1,1,1,1,1,0,0],
+    [1,1,1,1,1,1,1,1,1,0,0,0,0],
+    [1,1,1,1,1,1,1,0,0,0,0,0,0],
+    [1,1,1,0,1,1,1,1,0,0,0,0,0],
+    [1,1,0,0,0,1,1,1,1,0,0,0,0],
+    [1,0,0,0,0,0,1,1,1,1,0,0,0],
+    [0,0,0,0,0,0,0,1,1,1,1,0,0],
+    [0,0,0,0,0,0,0,0,1,1,1,1,0],
+];
+
+fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
+    let sw = layer.width();
+    let sh = layer.height();
+    for yy in 0..CURSOR_H {
+        for xx in 0..CURSOR_W {
+            if CURSOR_MASK[yy][xx] == 1 {
+                let px = cx as usize + xx;
+                let py = cy as usize + yy;
+                if px < sw && py < sh {
+                    // Shadow
+                    if px + 1 < sw && py + 1 < sh {
+                        layer.put_pixel(px + 1, py + 1, Color::BLACK);
+                    }
+                    layer.put_pixel(px, py, Color::CURSOR);
+                }
+            }
+        }
+    }
+}
 
 #[entry]
 fn main() -> Status {
@@ -36,9 +79,6 @@ fn main() -> Status {
         Err(_s) => return Status::UNSUPPORTED,
     };
 
-    screen.clear(Color::BG);
-    draw_boot_splash(&mut screen);
-
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
         Ok(m) => Some(m),
         Err(_) => None,
@@ -46,16 +86,13 @@ fn main() -> Status {
     let has_kbd = Keyboard::is_present();
     if has_kbd { Keyboard::reset(); }
 
-    let mut cursor = Cursor::new(
-        (screen.width() / 2) as i32,
-        (screen.height() / 2) as i32,
-    );
-    cursor.init_save_buffer();
+    let mut cursor_x: i32 = (screen.width() / 2) as i32;
+    let mut cursor_y: i32 = (screen.height() / 2) as i32;
 
-    let mut wm = WindowManager::new();
-    let mut _layer = LayerSystem::new(screen.width(), screen.height());
+    let mut wm = WindowManager::new(screen.width(), screen.height());
+    let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    // Create initial windows (the "2 cards" → 2 windows)
+    // Create initial windows
     wm.add("System Info", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
 
@@ -76,9 +113,9 @@ fn main() -> Status {
     };
 
     // Initial full paint
-    draw_all(&mut screen, &cursor, &wm, &last_keys, mouse_ev_count, key_ev_count,
-             fps, mouse_mode_label, has_kbd);
-    cursor.draw(&mut screen);
+    render_frame(&mut layer, &wm, &last_keys, mouse_ev_count, key_ev_count,
+                 fps, mouse_mode_label, cursor_x, cursor_y);
+    layer.flush(&mut screen);
 
     loop {
         let mut dirty = false;
@@ -91,11 +128,13 @@ fn main() -> Status {
                 last_keys.push(ev.label());
 
                 let step = 12i32;
+                let sw = layer.width() as i32;
+                let sh = layer.height() as i32;
                 match ev.scancode {
-                    0x01 => cursor.move_by(0, -step, screen.width() as i32, screen.height() as i32),
-                    0x02 => cursor.move_by(0,  step, screen.width() as i32, screen.height() as i32),
-                    0x03 => cursor.move_by( step, 0, screen.width() as i32, screen.height() as i32),
-                    0x04 => cursor.move_by(-step, 0, screen.width() as i32, screen.height() as i32),
+                    0x01 => cursor_y = (cursor_y - step).max(0),
+                    0x02 => cursor_y = (cursor_y + step).min(sh - 1),
+                    0x03 => cursor_x = (cursor_x + step).min(sw - 1),
+                    0x04 => cursor_x = (cursor_x - step).max(0),
                     _ => {}
                 }
                 if let Some(c) = ev.printable {
@@ -120,16 +159,14 @@ fn main() -> Status {
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
 
                 let (cx, cy) = apply_mouse_event(
-                    &mut cursor, &ev, screen.width(), screen.height(),
-                    mouse.abs_max(),
+                    &mut cursor_x, &mut cursor_y, &ev,
+                    screen.width(), screen.height(), mouse.abs_max(),
                 );
 
                 if ev.left && !mouse_down {
                     mouse_down = true;
-                    // Check taskbar clicks
                     let sh = screen.height();
                     if cy >= sh as i32 - TASKBAR_H as i32 {
-                        // Taskbar: click on window button to focus
                         let ids = wm.sorted_ids();
                         let mut bx = 8i32;
                         for id in &ids {
@@ -169,30 +206,83 @@ fn main() -> Status {
         }
 
         if dirty || frames % 4 == 0 {
-            _layer.tick();
-            cursor.restore_bg(&mut screen);
-            draw_all(&mut screen, &cursor, &wm, &last_keys, mouse_ev_count,
-                     key_ev_count, fps, mouse_mode_label, has_kbd);
-            cursor.draw(&mut screen);
+            render_frame(&mut layer, &wm, &last_keys, mouse_ev_count,
+                         key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y);
+            layer.flush(&mut screen);
         }
 
         uefi::boot::stall(core::time::Duration::from_micros(8_000));
     }
 }
 
-fn apply_mouse_event(cursor: &mut Cursor, ev: &MouseEvent,
+/// Render the entire scene into the layer buffer.
+fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
+                _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
+                fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32) {
+    let w = layer.width();
+    let h = layer.height();
+
+    // 1. Background
+    layer.clear(Color::BG);
+
+    // 2. Title bar (Windows 10 dark style)
+    layer.fill_rect(0, 0, w, 36, Color::WIN_INACTIVE);
+    layer.put_str(16, 10, "MyOS  v0.4  -  Window Manager", Color::TEXT);
+
+    let mut fb = FmtBuf::new();
+    fb.push_str("Win:");
+    fb.push_u32(wm.count() as u32);
+    fb.push_str(" FPS:");
+    fb.push_u32(fps);
+    layer.put_str(380, 10, fb.as_str(), Color::MUTED);
+
+    let mut fb2 = FmtBuf::new();
+    fb2.push_str("Mouse:");
+    fb2.push_str(mouse_mode);
+    fb2.push_str(" Keys:");
+    fb2.push_u32(key_ev);
+    layer.put_str(16, 22, fb2.as_str(), Color::MUTED);
+
+    // 3. Windows (z-sorted)
+    wm.draw_all(layer);
+
+    // 4. Taskbar
+    let tb_y = h.saturating_sub(TASKBAR_H);
+    layer.fill_rect(0, tb_y, w, TASKBAR_H, Color::TASKBAR);
+
+    let ids = wm.sorted_ids();
+    let mut bx = 8i32;
+    for id in &ids {
+        let title = wm.get_title(*id).unwrap_or("???");
+        let is_focused = wm.focused_id == Some(*id);
+        let bg = if is_focused { Color::ACCENT } else { Color::WIN_INACTIVE };
+        layer.fill_rect(bx as usize, tb_y + 6, 80, 20, bg);
+        layer.put_str(bx as usize + 4, tb_y + 9, title, Color::TEXT);
+        bx += 88;
+    }
+
+    // 5. Hint text
+    let mid_y = tb_y.saturating_sub(20);
+    layer.put_str(16, mid_y, "N: new window  |  Arrow keys: move cursor", Color::MUTED);
+
+    // 6. Cursor (on top of everything)
+    draw_cursor_into_layer(layer, cursor_x, cursor_y);
+}
+
+fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,
                      screen_w: usize, screen_h: usize,
                      abs_max: (u64, u64)) -> (i32, i32) {
     let (abs_max_x, abs_max_y) = abs_max;
     if ev.is_absolute && abs_max_x > 0 && abs_max_y > 0 {
         let new_x = ((ev.abs_x as u128 * screen_w as u128) / abs_max_x as u128) as i32;
         let new_y = ((ev.abs_y as u128 * screen_h as u128) / abs_max_y as u128) as i32;
-        cursor.x = new_x.max(0).min(screen_w as i32 - 1);
-        cursor.y = new_y.max(0).min(screen_h as i32 - 1);
+        *cx = new_x.max(0).min(screen_w as i32 - 1);
+        *cy = new_y.max(0).min(screen_h as i32 - 1);
     } else {
-        cursor.move_by(ev.rel_dx, ev.rel_dy, screen_w as i32, screen_h as i32);
+        *cx = (*cx + ev.rel_dx).clamp(0, screen_w as i32 - 1);
+        *cy = (*cy + ev.rel_dy).clamp(0, screen_h as i32 - 1);
     }
-    (cursor.x, cursor.y)
+    (*cx, *cy)
 }
 
 fn time_diff_ns(a: &runtime::Time, b: &runtime::Time) -> u64 {
@@ -200,89 +290,4 @@ fn time_diff_ns(a: &runtime::Time, b: &runtime::Time) -> u64 {
     let b_s = (b.hour() as u64) * 3600 + (b.minute() as u64) * 60 + b.second() as u64;
     let diff_s = b_s.saturating_sub(a_s);
     diff_s * 1_000_000_000 + (b.nanosecond() as u64).saturating_sub(a.nanosecond() as u64)
-}
-
-fn draw_boot_splash(screen: &mut Screen) {
-    let w = screen.width();
-    let h = screen.height();
-    screen.fill_rect(0, 0, w, 36, Color::PANEL);
-    screen.fill_rect(0, 36, w, 2, Color::ACCENT);
-    put_str(screen, 16, 10, "MyOS  v0.3  -  Window Manager",
-            Color::TEXT, Color::PANEL);
-    put_str(screen, 16, 22, "Drag title bars  |  Resize from corner  |  N=new  Q=quit",
-            Color::MUTED, Color::PANEL);
-
-    let fy = h.saturating_sub(TASKBAR_H + 2);
-    screen.fill_rect(0, fy, w, 2, Color::ACCENT);
-}
-
-fn draw_all(screen: &mut Screen, _cursor: &Cursor, wm: &WindowManager,
-            _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
-            fps: u32, mouse_mode: &str, _has_kbd: bool) {
-    let w = screen.width();
-    let h = screen.height();
-
-    // Background
-    screen.fill_rect(0, 0, w, h, Color::BG);
-
-    // Title bar
-    screen.fill_rect(0, 0, w, 36, Color::PANEL);
-    screen.fill_rect(0, 36, w, 2, Color::ACCENT);
-    put_str(screen, 16, 10, "MyOS  v0.3  -  Window Manager",
-            Color::TEXT, Color::PANEL);
-
-    let mut fb = FmtBuf::new();
-    fb.push_str("Win:");
-    fb.push_u32(wm.count() as u32);
-    fb.push_str(" FPS:");
-    fb.push_u32(fps);
-    put_str(screen, 380, 10, fb.as_str(), Color::MUTED, Color::PANEL);
-
-    let mut fb2 = FmtBuf::new();
-    fb2.push_str("Mouse:");
-    fb2.push_str(mouse_mode);
-    fb2.push_str(" Keys:");
-    fb2.push_u32(key_ev);
-    put_str(screen, 16, 22, fb2.as_str(), Color::MUTED, Color::PANEL);
-
-    // Windows
-    wm.draw_all(screen);
-
-    // Taskbar
-    let tb_y = h.saturating_sub(TASKBAR_H);
-    screen.fill_rect(0, tb_y, w, TASKBAR_H, Color::PANEL);
-    screen.fill_rect(0, tb_y, w, 2, Color::ACCENT);
-
-    let ids = wm.sorted_ids();
-    let mut bx = 8i32;
-    for id in &ids {
-        let title = wm.get_title(*id).unwrap_or("???");
-        let is_focused = wm.focused_id == Some(*id);
-        let bg = if is_focused { Color::ACCENT } else { Color::BLACK };
-        screen.fill_rect(bx as usize, tb_y + 6, 80, 20, bg);
-        put_str(screen, bx as usize + 4, tb_y + 9, title, Color::TEXT, bg);
-        bx += 88;
-    }
-
-    // Bottom hint
-    let mid_y = tb_y.saturating_sub(20);
-    put_str(screen, 16, mid_y,
-            "N: new window  |  Arrow keys: move cursor",
-            Color::MUTED, Color::BG);
-}
-
-fn log_line(s: &str) {
-    uefi::system::with_stdout(|stdout| {
-        let _ = stdout.output_string(cstr16!("MyOS: "));
-        let mut buf = alloc::vec::Vec::<u16>::with_capacity(s.len() + 1);
-        for &b in s.as_bytes() {
-            if b >= 0x80 { break; }
-            buf.push(b as u16);
-        }
-        buf.push(0);
-        if let Ok(cs) = uefi::CStr16::from_u16_with_nul(&buf) {
-            let _ = stdout.output_string(cs);
-        }
-        let _ = stdout.output_string(cstr16!("\r\n"));
-    });
 }

@@ -22,17 +22,20 @@ impl Color {
     pub const fn g(self) -> u8 { ((self.0 >>  8) & 0xFF) as u8 }
     pub const fn b(self) -> u8 { ((self.0 >>  0) & 0xFF) as u8 }
 
-    // Common UI palette.
-    pub const BLACK:   Color = Color::rgb(0x10, 0x10, 0x14);
-    pub const BG:      Color = Color::rgb(0x1A, 0x1F, 0x2E);
-    pub const PANEL:   Color = Color::rgb(0x24, 0x2B, 0x3D);
-    pub const ACCENT:  Color = Color::rgb(0x4F, 0x9C, 0xFF);
-    pub const TEXT:    Color = Color::rgb(0xE6, 0xE9, 0xF0);
-    pub const MUTED:   Color = Color::rgb(0x8B, 0x93, 0xA7);
+    pub const BLACK:   Color = Color::rgb(0x00, 0x00, 0x00);
+    pub const BG:      Color = Color::rgb(0x1B, 0x1B, 0x1B);
+    pub const PANEL:   Color = Color::rgb(0x2D, 0x2D, 0x2D);
+    pub const ACCENT:  Color = Color::rgb(0x00, 0x78, 0xD7);
+    pub const TEXT:    Color = Color::rgb(0xFF, 0xFF, 0xFF);
+    pub const MUTED:   Color = Color::rgb(0x99, 0x99, 0x99);
     pub const GOOD:    Color = Color::rgb(0x5B, 0xCC, 0x7A);
     #[allow(dead_code)]
-    pub const WARN:    Color = Color::rgb(0xF2, 0xC9, 0x4F);
+    pub const WARN:    Color = Color::rgb(0x00, 0x78, 0xD7);
     pub const CURSOR:  Color = Color::rgb(0xFF, 0xFF, 0xFF);
+    pub const BORDER:  Color = Color::rgb(0x3D, 0x3D, 0x3D);
+    pub const TASKBAR: Color = Color::rgb(0x1F, 0x1F, 0x1F);
+    pub const WIN_BG:  Color = Color::rgb(0x2D, 0x2D, 0x2D);
+    pub const WIN_INACTIVE: Color = Color::rgb(0x3D, 0x3D, 0x3D);
 }
 
 /// Cached framebuffer info so we can draw pixels directly.
@@ -142,8 +145,8 @@ impl Screen {
         let stride = self.info.stride;
         let base = self.fb_ptr;
         let v = match pf {
-            PixelFormat::Bgr => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
-            PixelFormat::Rgb => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
+            PixelFormat::Rgb => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
+            PixelFormat::Bgr => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
             PixelFormat::Bitmask => c.0,
             _ => c.0,
         };
@@ -165,12 +168,12 @@ impl Screen {
         let off = (y * stride + x) * 4;
         let v = unsafe { ptr::read_volatile(base.add(off) as *const u32) };
         match self.info.pixel_format {
+            PixelFormat::Rgb => Color::rgb((v & 0xFF) as u8,
+                                           ((v >>  8) & 0xFF) as u8,
+                                           ((v >> 16) & 0xFF) as u8),
             PixelFormat::Bgr => Color::rgb(((v >> 16) & 0xFF) as u8,
                                            ((v >>  8) & 0xFF) as u8,
-                                           ((v >>  0) & 0xFF) as u8),
-            PixelFormat::Rgb => Color::rgb(((v >> 16) & 0xFF) as u8,
-                                           ((v >>  8) & 0xFF) as u8,
-                                           ((v >>  0) & 0xFF) as u8),
+                                           (v & 0xFF) as u8),
             _ => Color(v),
         }
     }
@@ -184,8 +187,8 @@ impl Screen {
         let stride = self.info.stride;
         let base = self.fb_ptr;
         let v = match pf {
-            PixelFormat::Bgr => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
-            PixelFormat::Rgb => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
+            PixelFormat::Rgb => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
+            PixelFormat::Bgr => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
             PixelFormat::Bitmask => c.0,
             _ => c.0,
         };
