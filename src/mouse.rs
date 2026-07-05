@@ -247,7 +247,7 @@ impl Mouse {
 
 pub fn log_line_str(s: &str) {
     uefi::system::with_stdout(|stdout| {
-        let _ = stdout.output_string(uefi::cstr16!("MyOS: "));
+        let _ = stdout.output_string(uefi::cstr16!("BaramOS: "));
         let mut buf = Vec::<u16>::with_capacity(s.len() + 1);
         for &b in s.as_bytes() {
             if b >= 0x80 { break; }

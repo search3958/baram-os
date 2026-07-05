@@ -1,4 +1,4 @@
-# MyOS — UEFI ARM64 OS with Mouse + Keyboard + Graphics
+# BaramOS — UEFI ARM64 OS with Mouse + Keyboard + Graphics
 
 A tiny but complete UEFI-based ARM64 operating system that boots in QEMU
 (and on real Raspberry Pi 4/5 hardware) and demonstrates:
@@ -79,7 +79,7 @@ The first run will:
 4. Download `QEMU_EFI.fd` (AAVMF firmware, ≈3 MB) from a public mirror
 5. Launch QEMU with mouse + keyboard + graphical display
 
-When the QEMU window opens, you should see the MyOS UI with a white arrow
+When the QEMU window opens, you should see the BaramOS UI with a white arrow
 cursor in the centre. Move your mouse to drag the cursor; press any key to
 add it to the recent-keys list.
 
@@ -119,7 +119,7 @@ QEMU_RAM=2G QEMU_DISPLAY=gtk ./build.sh
 ## 📁 Project layout
 
 ```
-myos/
+baramos/
 ├── build.sh                 # one-shot build + run script
 ├── Cargo.toml               # crate manifest (uses uefi-rs 0.38)
 ├── rust-toolchain.toml      # pins Rust nightly + UEFI target
@@ -154,10 +154,10 @@ The same `bootaa64.efi` boots on real Raspberry Pi hardware. To deploy:
    to `EFI/BOOT/BOOTAA64.EFI` on the same SD card.
 
 3. **Boot** the Pi with the SD card inserted. The UEFI firmware will find
-   `EFI/BOOT/BOOTAA64.EFI` and launch MyOS.
+   `EFI/BOOT/BOOTAA64.EFI` and launch BaramOS.
 
 > The QEMU `virt` machine and the Pi UEFI firmware both implement the
-> standard UEFI protocols MyOS relies on (GOP, Simple Pointer, Simple
+> standard UEFI protocols BaramOS relies on (GOP, Simple Pointer, Simple
 > Text Input), so no code changes are required.
 
 ---

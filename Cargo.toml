@@ -1,8 +1,8 @@
 [package]
-name = "myos"
+name = "baramos"
 version = "0.1.0"
 edition = "2021"
-authors = ["MyOS Project"]
+authors = ["BaramOS Project"]
 description = "A small UEFI-based ARM64 OS with mouse cursor and keyboard input"
 
 [[bin]]
@@ -13,6 +13,7 @@ path = "src/main.rs"
 uefi = { version = "0.38", features = ["alloc", "logger", "panic_handler", "global_allocator"] }
 uefi-raw = "0.15"
 stb_truetype_rust = { path = "src/stb_truetype_rust" }
+libm = "0.2"
 
 [profile.release]
 opt-level = 2

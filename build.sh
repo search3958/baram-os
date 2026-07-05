@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  build.sh — one-shot build + run script for MyOS (UEFI ARM64)
+#  build.sh — one-shot build + run script for BaramOS (UEFI ARM64)
 # =============================================================================
 #
 #  What this script does:
@@ -33,7 +33,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PROJECT_NAME="myos"
+PROJECT_NAME="baramos"
 EFI_NAME="bootaa64.efi"
 IMAGE_NAME="osdisk.img"
 IMAGE_SIZE_MB=64
@@ -139,7 +139,7 @@ make_fat_image() {
     if [ "$OS" = "Darwin" ]; then
         log "  using macOS hdiutil"
         local tmp_mount
-        tmp_mount="$(mktemp -d /tmp/myos_mount.XXXXXX)"
+        tmp_mount="$(mktemp -d /tmp/baramos_mount.XXXXXX)"
         hdiutil create -size "${IMAGE_SIZE_MB}m" -fs "MS-DOS FAT32" -volname "EFI" \
             -ov "$out" >/dev/null
         # hdiutil create appends .dmg unless we use -type UDIF; rename to be safe.
@@ -175,7 +175,7 @@ make_fat_image() {
         truncate -s "${IMAGE_SIZE_MB}M" "$out"
         mkfs.vfat -F 32 -n EFI "$out" >/dev/null
         local tmp_mount
-        tmp_mount="$(mktemp -d /tmp/myos_mount.XXXXXX)"
+        tmp_mount="$(mktemp -d /tmp/baramos_mount.XXXXXX)"
         sudo mount -o loop "$out" "$tmp_mount" 2>/dev/null || \
             mount -o loop "$out" "$tmp_mount" 2>/dev/null || {
                 err "Could not mount loop device. Install 'mtools' for non-root image creation."

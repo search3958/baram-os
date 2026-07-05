@@ -9,6 +9,7 @@ mod font;
 mod gop;
 mod keyboard;
 mod mouse;
+mod svg;
 mod ttf_font;
 mod ui;
 mod usb_hid;
@@ -229,10 +230,10 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
 
     // 2. Title bar (Windows 10 dark style)
     layer.fill_rect(0, 0, w, 36, Color::WIN_INACTIVE);
-    layer.put_str(16, 10, "MyOS  v0.4  -  Window Manager", Color::TEXT);
+    layer.put_str(16, 10, "BaramOS ウィンドウマネージャー", Color::TEXT);
 
     let mut fb = FmtBuf::new();
-    fb.push_str("Win:");
+    fb.push_str("ウィンドウ数:");
     fb.push_u32(wm.count() as u32);
     fb.push_str(" FPS:");
     fb.push_u32(fps);
@@ -265,7 +266,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
 
     // 5. Hint text
     let mid_y = tb_y.saturating_sub(20);
-    layer.put_str(16, mid_y, "N: new window  |  Arrow keys: move cursor", Color::MUTED);
+    layer.put_str(16, mid_y, "N: 新規ウィンドウ  |  Arrow keys: カーソルを移動", Color::MUTED);
 
     // 6. Cursor (on top of everything)
     draw_cursor_into_layer(layer, cursor_x, cursor_y);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  build64.sh — one-shot build + run script for MyOS (UEFI x86_64)
+#  build64.sh — one-shot build + run script for BaramOS (UEFI x86_64)
 # =============================================================================
 #
 #  Usage:
@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PROJECT_NAME="myos"
+PROJECT_NAME="baramos"
 EFI_NAME="bootx64.efi"
 IMAGE_NAME="osdisk.img"
 IMAGE_SIZE_MB=64
@@ -92,7 +92,7 @@ make_fat_image() {
     if [ "$OS" = "Darwin" ]; then
         log "  using macOS hdiutil"
         local tmp_mount
-        tmp_mount="$(mktemp -d /tmp/myos_mount.XXXXXX)"
+        tmp_mount="$(mktemp -d /tmp/baramos_mount.XXXXXX)"
         hdiutil create -size "${IMAGE_SIZE_MB}m" -fs "MS-DOS FAT32" -volname "EFI" \
             -ov "$out" >/dev/null
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null

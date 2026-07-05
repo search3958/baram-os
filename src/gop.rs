@@ -11,7 +11,7 @@ use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::Status;
 
 /// 32-bit colour used throughout the UI.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Color(pub u32);
 
 impl Color {
@@ -36,6 +36,7 @@ impl Color {
     pub const TASKBAR: Color = Color::rgb(0x1F, 0x1F, 0x1F);
     pub const WIN_BG:  Color = Color::rgb(0x2D, 0x2D, 0x2D);
     pub const WIN_INACTIVE: Color = Color::rgb(0x3D, 0x3D, 0x3D);
+    pub const TRANSPARENT: Color = Color(0x0000_0000);
 }
 
 /// Cached framebuffer info so we can draw pixels directly.
