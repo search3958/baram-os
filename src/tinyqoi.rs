@@ -26,7 +26,7 @@ pub fn decode(data: &[u8]) -> Option<QoiImage> {
         return None;
     }
 
-    // header[0..4] = magic, [4..8] = width, [8..12] = height, [12] = channels, [13] = colorspace
+    
     let width = u32::from_be_bytes(header[4..8].try_into().ok()?);
     let height = u32::from_be_bytes(header[8..12].try_into().ok()?);
 
@@ -95,7 +95,7 @@ pub fn decode(data: &[u8]) -> Option<QoiImage> {
                     )
                 }
                 b => {
-                    // QOI_OP_RUN
+                    
                     run = (b & 0x3F) as i32;
                     (prev_r, prev_g, prev_b, prev_a)
                 }

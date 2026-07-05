@@ -1,5 +1,5 @@
-// Mouse driver — USB IO Protocol async interrupt transfer.
-// Bypasses firmware's broken mouse driver entirely.
+
+
 
 use alloc::format;
 use alloc::string::String;
@@ -27,20 +27,20 @@ pub struct Mouse {
     usb_io: Option<boot::ScopedProtocol<UsbIo>>,
     ep_addr: u8,
     report_buf: Vec<u8>,
-    // Fallback
+    
     abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64)>,
     simple: Option<boot::ScopedProtocol<Pointer>>,
 }
 
 impl Mouse {
     pub fn open() -> Result<Mouse, &'static str> {
-        // Try USB IO Protocol first (direct USB access)
+        
         if let Some(m) = Self::try_usb_io() {
             log_line_str("Mouse: USB IO (direct HID)");
             return Ok(m);
         }
 
-        // Fallback: UEFI protocols
+        
         let mut abs = None;
         let mut simple = None;
 
@@ -84,15 +84,15 @@ impl Mouse {
                 boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
             };
 
-            // Get device descriptor
+            
             let mut dev_buf = vec![0u8; 18];
             let _ = usb.control_transfer(0x80, 6, 0x0100, 0, ControlTransfer::DataIn(&mut dev_buf), 5000);
 
-            // Get configuration descriptor
+            
             let mut cfg_buf = vec![0u8; 512];
             let _ = usb.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
 
-            // Find HID interface with interrupt IN endpoint
+            
             let mut off = 0;
             let mut in_hid = false;
             let mut iface_num: u8 = 0;
@@ -106,12 +106,12 @@ impl Mouse {
 
                 match b_type {
                     4 => {
-                        // Interface descriptor
-                        in_hid = cfg_buf[off + 5] == 3; // HID class
+                        
+                        in_hid = cfg_buf[off + 5] == 3; 
                         iface_num = cfg_buf[off + 2];
                     }
                     5 => {
-                        // Endpoint descriptor
+                        
                         if b_len >= 7 && in_hid && intr_ep.is_none() {
                             let ea = cfg_buf[off + 2];
                             let attrs = cfg_buf[off + 3];
@@ -133,9 +133,9 @@ impl Mouse {
 
             log_line_str(&format!("  USB IO: HID iface={} ep=0x{:02x} mps={}", iface_num, ep, intr_mps));
 
-            // SET_PROTOCOL = Report (1)
+            
             let _ = usb.control_transfer(0x21, 0x0B, 1, iface_num as u16, ControlTransfer::None, 5000);
-            // SET_IDLE
+            
             let _ = usb.control_transfer(0x21, 0x0A, 0, iface_num as u16, ControlTransfer::None, 5000);
 
             let report_buf = vec![0u8; intr_mps as usize];
@@ -158,12 +158,12 @@ impl Mouse {
     pub fn abs_max(&self) -> (u64, u64) {
         match &self.abs {
             Some((_, mx, my)) => (*mx, *my),
-            None => (32767, 32767), // QEMU usb-tablet の標準解像度
+            None => (32767, 32767), 
         }
     }
 
     pub fn poll(&mut self) -> Option<MouseEvent> {
-        // Try USB IO interrupt transfer
+        
         if let Some(usb) = &mut self.usb_io {
             if self.ep_addr != 0 {
                 let n = usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 10).ok()?;
@@ -172,7 +172,7 @@ impl Mouse {
 
                 let mut ev = MouseEvent::default();
                 
-                // 5+ bytes: absolute tablet report
+                
                 if n >= 5 {
                     ev.left = r[0] & 0x01 != 0;
                     ev.right = r[0] & 0x02 != 0;
@@ -181,7 +181,7 @@ impl Mouse {
                     ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
                     ev.is_absolute = true;
                 }
-                // 4 bytes: relative mouse with scroll wheel
+                
                 else if n >= 4 {
                     ev.left = r[0] & 0x01 != 0;
                     ev.right = r[0] & 0x02 != 0;
@@ -191,7 +191,7 @@ impl Mouse {
                     ev.scroll = r[3] as i8 as i32;
                     ev.is_absolute = false;
                 }
-                // 3 bytes: relative mouse without scroll
+                
                 else if n >= 3 {
                     ev.left = r[0] & 0x01 != 0;
                     ev.right = r[0] & 0x02 != 0;
@@ -205,7 +205,7 @@ impl Mouse {
             }
         }
 
-        // Fallback: Absolute Pointer
+        
         if let Some((ptr, _mx, _my)) = &mut self.abs {
             let mut acc = MouseEvent::default();
             acc.is_absolute = true;
@@ -226,7 +226,7 @@ impl Mouse {
             if got { return Some(acc); }
         }
 
-        // Fallback: Simple Pointer
+        
         if let Some(ptr) = &mut self.simple {
             let mut acc = MouseEvent::default();
             acc.is_absolute = false;

@@ -35,17 +35,17 @@ const CURSOR_SVG: &str = include_str!("data/mouse.svg");
 const CURSOR_BOX_W: usize = 26;
 const CURSOR_BOX_H: usize = 32;
 
-// UI Script apps embedded at compile time from src/app/*.u1
+
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
-// Wallpaper embedded at compile time
+
 const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
-    // Draw shadow first (black, blurred, offset 3px right, 4px down)
+    
     svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 3, cy + 4,
         CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 8, 0);
-    // Draw cursor on top
+    
     svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
         CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
 }
@@ -73,14 +73,14 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    // Decode wallpaper
+    
     let wallpaper = tinyqoi::decode(WALLPAPER_QOI);
 
-    // Create initial windows
+    
     wm.add("システム情報", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
 
-    // UI Script window — load from embedded .u1 file
+    
     let ui_win_id = wm.add("UI Script Demo", 600, 100, 400, 350);
     let ui_commands = uiscript::parse(APP_DEMO);
 
@@ -100,7 +100,7 @@ fn main() -> Status {
         None => "None",
     };
 
-    // Initial full paint
+    
     render_frame(&mut layer, &wm, &last_keys, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label, cursor_x, cursor_y,
                  &ui_commands, Some(ui_win_id), wallpaper.as_ref());
@@ -109,7 +109,7 @@ fn main() -> Status {
     loop {
         let mut dirty = false;
 
-        // ----- keyboard input -----
+        
         if has_kbd {
             while let Some(ev) = Keyboard::poll() {
                 key_ev_count = key_ev_count.wrapping_add(1);
@@ -138,7 +138,7 @@ fn main() -> Status {
             }
         }
 
-        // ----- mouse input -----
+        
         if let Some(mouse) = mouse_opt.as_mut() {
             while let Some(ev) = mouse.poll() {
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
@@ -148,7 +148,7 @@ fn main() -> Status {
                     screen.width(), screen.height(), mouse.abs_max(),
                 );
 
-                // Mouse scroll — scroll the window under the cursor
+                
                 if ev.scroll != 0 {
                     let scroll_delta = -ev.scroll * SCROLL_SPEED;
                     if let Some(id) = wm.window_at(cx, cy) {
@@ -185,7 +185,7 @@ fn main() -> Status {
             }
         }
 
-        // ----- frame timing -----
+        
         frames = frames.wrapping_add(1);
         frames_since_tick = frames_since_tick.wrapping_add(1);
         if let Ok(now) = runtime::get_time() {
@@ -209,7 +209,7 @@ fn main() -> Status {
     }
 }
 
-/// Render the entire scene into the layer buffer.
+
 fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
@@ -218,11 +218,11 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
     let w = layer.width();
     let h = layer.height();
 
-    // 1. Background — wallpaper scaled to screen (aspect ratio preserved, cover)
+    
     if let Some(img) = wallpaper {
         let img_w = img.width as usize;
         let img_h = img.height as usize;
-        // cover: sample region so screen is fully filled, centered
+        
         let sw_sh = w * img_h;
         let sh_sw = h * img_w;
         let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
@@ -250,10 +250,10 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
         layer.clear(Color::BG);
     }
 
-    // 2. Windows (z-sorted)  ← 元の3番目、番号だけ詰めた
+    
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
-    // 3. Taskbar  ← 元の4番目
+    
     let tb_y = h.saturating_sub(TASKBAR_H);
     layer.fill_rect(0, tb_y, w, TASKBAR_H, Color::TASKBAR);
 
@@ -268,7 +268,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
         bx += 88;
     }
 
-    // 4. Status — タスクバー上に2行表示  ← ここを新規作成
+    
     let mut fb = FmtBuf::new();
     fb.push_str("Key:");
     fb.push_u32(key_ev);
@@ -278,11 +278,11 @@ fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    // タスクバーすぐ上、左寄せ 2行
+    
     layer.put_str(16, tb_y.saturating_sub(32), "Baram OS (b2)", Color::MUTED);
     layer.put_str(16, tb_y.saturating_sub(20), fb.as_str(),  Color::MUTED);
 
-    // 5. Cursor (on top)  ← 元の6番目
+    
     draw_cursor_into_layer(layer, cursor_x, cursor_y);
 }
 

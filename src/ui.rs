@@ -6,8 +6,8 @@
 use crate::font::{self, GLYPH_H, GLYPH_W};
 use crate::gop::{Color, Screen};
 
-/// Draw a single ASCII glyph at `(x, y)` with `fg` foreground and `bg`
-/// background.  Non-ASCII bytes render as a filled background block.
+
+
 pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: Color) {
     if crate::ttf_font::is_available() && c >= 0x20 {
         let glyph = crate::ttf_font::glyph(c as char);
@@ -41,7 +41,7 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
     }
 }
 
-/// Draw an ASCII string.  Stops at the first non-ASCII byte.
+
 pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, bg: Color) {
     if crate::ttf_font::is_available() {
         for ch in s.chars() {
@@ -64,7 +64,7 @@ pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, 
     }
 }
 
-/// Draw a string with a transparent background (skip background pixels).
+
 pub fn put_str_transparent(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color) {
     for &b in s.as_bytes() {
         if b >= 0x80 { break; }
@@ -81,7 +81,7 @@ pub fn put_str_transparent(screen: &mut Screen, mut x: usize, y: usize, s: &str,
     }
 }
 
-/// Format an unsigned integer into a fixed-width decimal buffer.
+
 pub fn u32_to_str(mut n: u32, out: &mut [u8]) -> usize {
     if n == 0 {
         out[0] = b'0';
@@ -94,14 +94,14 @@ pub fn u32_to_str(mut n: u32, out: &mut [u8]) -> usize {
         len += 1;
         n /= 10;
     }
-    // Reverse into out.
+    
     for i in 0..len {
         out[i] = tmp[len - 1 - i];
     }
     len
 }
 
-/// Format a signed integer with optional sign.
+
 pub fn i32_to_str(n: i32, out: &mut [u8]) -> usize {
     if n < 0 {
         out[0] = b'-';
@@ -112,7 +112,7 @@ pub fn i32_to_str(n: i32, out: &mut [u8]) -> usize {
     }
 }
 
-/// Right-justify a number in `width` characters.
+
 #[allow(dead_code)]
 pub fn i32_to_str_padded(n: i32, width: usize, out: &mut [u8]) -> usize {
     let mut tmp = [0u8; 16];
@@ -128,7 +128,7 @@ pub fn i32_to_str_padded(n: i32, width: usize, out: &mut [u8]) -> usize {
     }
 }
 
-/// Format `value` as a hex string of `digits` width with leading zeros.
+
 #[allow(dead_code)]
 pub fn u32_to_hex(value: u32, digits: usize, out: &mut [u8]) -> usize {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
@@ -139,7 +139,7 @@ pub fn u32_to_hex(value: u32, digits: usize, out: &mut [u8]) -> usize {
     digits
 }
 
-/// Format a byte count as a human-readable string (KiB/MiB).
+
 #[allow(dead_code)]
 pub fn bytes_human(bytes: u64, out: &mut [u8]) -> usize {
     let kb = bytes / 1024;
@@ -161,8 +161,8 @@ pub fn bytes_human(bytes: u64, out: &mut [u8]) -> usize {
     }
 }
 
-/// Small helper to format `prefix` + number + `suffix` directly into a
-/// scratch buffer that lives on the stack.
+
+
 pub struct FmtBuf {
     pub buf: [u8; 64],
     pub len: usize,
@@ -196,7 +196,7 @@ impl FmtBuf {
         self.len += n;
     }
 
-    /// View as `&str` (the buffer only contains ASCII when callers are well-behaved).
+    
     pub fn as_str(&self) -> &str {
         core::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
     }

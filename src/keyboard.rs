@@ -7,12 +7,12 @@
 use uefi::proto::console::text::{Input, Key, ScanCode};
 use uefi::system::with_stdin;
 
-/// A high-level keyboard event.
+
 #[derive(Clone, Copy, Debug)]
 pub struct KeyEvent {
-    /// Printable ASCII char if the key maps to one, otherwise `None`.
+    
     pub printable: Option<u8>,
-    /// Raw UEFI scan code for special keys (arrows, function keys, etc.).
+    
     pub scancode: u16,
 }
 
@@ -20,8 +20,8 @@ impl KeyEvent {
     #[allow(dead_code)]
     pub fn is_special(&self) -> bool { self.scancode != 0 }
 
-    /// Human-readable label for the UI.  Function keys, arrows, etc. get
-    /// short textual names; printable keys return their character.
+    
+    
     pub fn label(&self) -> &'static str {
         if let Some(c) = self.printable {
             return match c {
@@ -33,7 +33,7 @@ impl KeyEvent {
                 _     => "ASCII",
             };
         }
-        // ScanCode is a newtype around u16; construct from the raw value.
+        
         let sc = ScanCode(self.scancode);
         if sc == ScanCode::UP         { return "UP"; }
         if sc == ScanCode::DOWN       { return "DOWN"; }
@@ -65,26 +65,26 @@ impl KeyEvent {
 pub struct Keyboard;
 
 impl Keyboard {
-    /// Detect whether the firmware provides a Simple Text Input protocol.
-    /// (It almost always does — this is the same protocol that backs
-    /// `uefi::system::with_stdin`.)
+    
+    
+    
     pub fn is_present() -> bool {
-        // We can detect this by trying to find a handle for the protocol.
+        
         uefi::boot::get_handle_for_protocol::<Input>().is_ok()
     }
 
-    /// Reset the input queue.  Called once at startup.
+    
     pub fn reset() {
         with_stdin(|input| { let _ = input.reset(false); });
     }
 
-    /// Pop the next key event, if any.  Returns `None` when the queue is
-    /// empty (UEFI's `read_key_stroke` returns `NOT_READY` in that case).
+    
+    
     pub fn poll() -> Option<KeyEvent> {
         with_stdin(|input| {
             match input.read_key() {
                 Ok(Some(Key::Printable(ch))) => {
-                    // Char16 wraps a u16; convert to u16 then check ASCII range.
+                    
                     let v: u16 = ch.into();
                     let printable = if v < 0x80 { Some(v as u8) } else { None };
                     Some(KeyEvent { printable, scancode: 0 })

@@ -273,8 +273,8 @@ fn strip_icons(text: &str) -> String {
     result
 }
 
-/// Render parsed UI Script commands.
-/// Caller must set up clip_rect before calling.
+
+
 pub fn render(
     layer: &mut LayerSystem,
     commands: &[Command],

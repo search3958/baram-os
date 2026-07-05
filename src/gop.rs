@@ -10,7 +10,7 @@ use uefi::boot::{self, ScopedProtocol};
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::Status;
 
-/// 32-bit colour used throughout the UI.
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Color(pub u32);
 
@@ -41,7 +41,7 @@ impl Color {
     pub const TRANSPARENT: Color = Color(0x0000_0000);
 }
 
-/// Cached framebuffer info so we can draw pixels directly.
+
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct FramebufferInfo {
@@ -49,35 +49,35 @@ pub struct FramebufferInfo {
     pub size: usize,
     pub width: usize,
     pub height: usize,
-    pub stride: usize,        // pixels per scanline
+    pub stride: usize,        
     pub pixel_format: PixelFormat,
 }
 
-/// Top-level graphics context.  Holds an open GOP protocol and cached mode
-/// information.
+
+
 pub struct Screen {
     info: FramebufferInfo,
     fb_ptr: *mut u8,
-    // Kept alive so the protocol stays open for the lifetime of the screen.
+    
     _gop: ScopedProtocol<GraphicsOutput>,
 }
 
-// The framebuffer pointer is Send/Sync-safe while we're in a single-threaded
-// UEFI environment.
+
+
 unsafe impl Send for Screen {}
 unsafe impl Sync for Screen {}
 
 impl Screen {
-    /// Open the Graphics Output Protocol and pick the highest-resolution
-    /// available mode.
+    
+    
     pub fn take() -> Result<Screen, Status> {
-        // Find a handle that supports GOP, then open it exclusively.
+        
         let handle = boot::get_handle_for_protocol::<GraphicsOutput>()
             .map_err(|_| Status::UNSUPPORTED)?;
         let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle)
             .map_err(|_| Status::UNSUPPORTED)?;
 
-        // Pick the largest available graphics mode.
+        
         let mut best_area: usize = 0;
         let mut best_mode: Option<uefi::proto::console::gop::Mode> = None;
         for mode in gop.modes() {
@@ -97,10 +97,10 @@ impl Screen {
         let stride = info.stride();
         let pf = info.pixel_format();
 
-        // Get framebuffer base/size via the FrameBuffer accessor.
+        
         let (fb_base, fb_size) = {
             let mut fb = gop.frame_buffer();
-            // SAFETY: we copy out the pointer + size before the borrow ends.
+            
             (fb.as_mut_ptr() as usize, fb.size())
         };
 
@@ -123,12 +123,12 @@ impl Screen {
     #[allow(dead_code)]
     pub fn info(&self) -> FramebufferInfo { self.info }
 
-    /// Fill the whole framebuffer with `c`.
+    
     pub fn clear(&mut self, c: Color) {
         self.fill_rect(0, 0, self.info.width, self.info.height, c);
     }
 
-    /// Solid rectangle.  Coordinates are clipped to the framebuffer.
+    
     pub fn fill_rect(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
         let x0 = x.min(self.info.width);
         let y0 = y.min(self.info.height);
@@ -142,7 +142,7 @@ impl Screen {
         }
     }
 
-    /// Direct framebuffer write for one horizontal span.
+    
     fn fill_line(&mut self, x0: usize, y: usize, x1: usize, c: Color) {
         let pf = self.info.pixel_format;
         let stride = self.info.stride;
@@ -161,7 +161,7 @@ impl Screen {
         }
     }
 
-    /// Read a single pixel from the framebuffer.
+    
     pub fn read_pixel(&self, x: usize, y: usize) -> Color {
         if x >= self.info.width || y >= self.info.height {
             return Color::BLACK;
@@ -181,7 +181,7 @@ impl Screen {
         }
     }
 
-    /// Plot a single pixel.
+    
     pub fn put_pixel(&mut self, x: usize, y: usize, c: Color) {
         if x >= self.info.width || y >= self.info.height {
             return;
@@ -201,8 +201,8 @@ impl Screen {
         }
     }
 
-    /// Blit one row of layer pixels to the framebuffer (with pixel format conversion).
-    /// `row` is a slice of `width` ARGB u32 values from the layer buffer.
+    
+    
     pub fn flush_layer_row(&mut self, y: usize, row: &[u32]) {
         if y >= self.info.height { return; }
         let pf = self.info.pixel_format;
@@ -224,7 +224,7 @@ impl Screen {
         }
     }
 
-    /// Draw an outline rectangle (1px).
+    
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         self.fill_rect(x, y, w, 1, c);

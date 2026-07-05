@@ -1,9 +1,9 @@
-// USB HID report descriptor parser.
-//
-// Parses the HID report descriptor to extract field layouts for
-// absolute pointer (tablet) devices.
 
-/// A single field parsed from the HID report descriptor.
+//
+
+
+
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HidField {
     pub usage_page: u16,
@@ -17,7 +17,7 @@ pub struct HidField {
     pub is_relative: bool,
 }
 
-/// Parsed report layout for a mouse/tablet.
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HidReportLayout {
     pub button_bits: u8,
@@ -31,7 +31,7 @@ pub struct HidReportLayout {
     pub is_absolute: bool,
 }
 
-/// Parse a HID report descriptor and produce a report layout.
+
 pub fn parse_hid_report_desc(desc: &[u8]) -> HidReportLayout {
     let mut layout = HidReportLayout::default();
     let mut usage_page: u16 = 0;
@@ -60,9 +60,9 @@ pub fn parse_hid_report_desc(desc: &[u8]) -> HidReportLayout {
 
         match b_type {
             0 => {
-                // Main item
+                
                 match b_tag {
-                    0x8 => { // Input
+                    0x8 => { 
                         if in_collection && report_count > 0 {
                             let is_const = (value & 1) != 0;
                             let _is_var = (value & 2) != 0;
@@ -99,7 +99,7 @@ pub fn parse_hid_report_desc(desc: &[u8]) -> HidReportLayout {
                 }
             }
             1 => {
-                // Global item
+                
                 match b_tag {
                     0x0 => usage_page = value as u16,
                     0x1 => _logical_min = value,
@@ -110,7 +110,7 @@ pub fn parse_hid_report_desc(desc: &[u8]) -> HidReportLayout {
                 }
             }
             2 => {
-                // Local item
+                
                 match b_tag {
                     0x0 => usage = value as u16,
                     _ => {}
@@ -126,7 +126,7 @@ pub fn parse_hid_report_desc(desc: &[u8]) -> HidReportLayout {
     layout
 }
 
-/// A parsed mouse/tablet event.
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HidParsedEvent {
     pub x: i32,
@@ -137,11 +137,11 @@ pub struct HidParsedEvent {
     pub y_max: i32,
 }
 
-/// Extract mouse event from an input report using the parsed layout.
+
 pub fn parse_input_report(layout: &HidReportLayout, report: &[u8]) -> HidParsedEvent {
     let mut ev = HidParsedEvent::default();
 
-    // Buttons are at bit offset 0
+    
     for i in 0..layout.button_bits.min(8) {
         let byte = (i / 8) as usize;
         let bit = i % 8;

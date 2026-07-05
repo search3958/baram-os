@@ -279,23 +279,23 @@ impl WindowManager {
         }
     }
 
-    /// Draw all windows in z-order. `draw_window_content` is called between
-    /// filling the body and drawing the frame, so content is clipped by the
-    /// window borders.
+    
+    
+    
     pub fn draw_all(
         &self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
     ) {
         if self.windows.is_empty() { return; }
-        // Stack-allocated sort buffer — avoids heap allocation every frame.
+        
         const MAX_WINDOWS: usize = 16;
         let n = self.windows.len().min(MAX_WINDOWS);
         let mut sorted: [&Window; MAX_WINDOWS] = [&self.windows[0]; MAX_WINDOWS];
         for i in 0..n {
             sorted[i] = &self.windows[i];
         }
-        // Insertion sort (fast for small n)
+        
         for i in 1..n {
             let mut j = i;
             while j > 0 && sorted[j - 1].z > sorted[j].z {
@@ -340,9 +340,9 @@ impl WindowManager {
     }
 }
 
-/// Draw a single window frame. After filling the body, the caller should draw
-/// content (UI Script etc.), then this function draws the title bar and borders
-/// on top to naturally clip the content.
+
+
+
 fn draw_window(layer: &mut LayerSystem, w: &Window) {
     let x = w.x.max(0) as usize;
     let y = w.y.max(0) as usize;
@@ -361,7 +361,7 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         (Color::WIN_INACTIVE, Color::WIN_BG, Color::BORDER)
     };
 
-    // Shadow — smooth blurred shadow, 2px down offset
+    
     if !w.maximized {
         let blur_r: i32 = 30;
         let offset_y: i32 = 2;
@@ -374,7 +374,7 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         let ex = (win_x1 + blur_r).min(sw as i32) as usize;
         let ey = (win_y1 + blur_r).min(sh as i32) as usize;
         if ex > sx && ey > sy {
-            // Precompute vertical edge distances for each row
+            
             let mut vert = alloc::vec![0i32; ey - sy];
             for py in sy..ey {
                 let py_i = py as i32;
@@ -386,7 +386,7 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
                     py_i - (win_y1 - 1)
                 };
             }
-            // Precompute horizontal edge distances for each column
+            
             let mut horiz = alloc::vec![0i32; ex - sx];
             for px in sx..ex {
                 let px_i = px as i32;
@@ -398,7 +398,7 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
                     px_i - (win_x1 - 1)
                 };
             }
-            // Direct buffer access — avoids per-pixel put_pixel/get_pixel overhead
+            
             let buf = &mut layer.buf;
             let width = layer.width;
             let blur_r_f = blur_r as f32;
@@ -423,15 +423,15 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
         }
     }
 
-    // 1. Fill entire window body (content will be drawn on top by caller)
+    
     layer.fill_rect(x, y, w_draw, h_draw, body_bg);
 
-    // 2. Title bar
+    
     let tb_h = TITLE_BAR_H.min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
     layer.put_str(x + 10, y + 7, w.title_str(), Color::TEXT);
 
-    // Title bar buttons
+    
     let base_x = x + w_draw - BTN_SIZE * 3;
     let btn_y = y + 5;
 
@@ -450,26 +450,26 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
             (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
     }
 
-    // 3. Borders (drawn LAST to clip content)
+    
     if !w.maximized {
-        // Top border (1px line just below title bar)
+        
         let border_y = y + tb_h;
         if border_y < y1 {
             layer.fill_rect(x, border_y, w_draw, 1, border);
         }
-        // Left border
+        
         layer.fill_rect(x, y + tb_h, 1, h_draw.saturating_sub(tb_h), border);
-        // Right border
+        
         if w_draw > 1 {
             layer.fill_rect(x + w_draw - 1, y + tb_h, 1, h_draw.saturating_sub(tb_h), border);
         }
-        // Bottom border
+        
         if h_draw > 1 {
             layer.fill_rect(x, y + h_draw - 1, w_draw, 1, border);
         }
     }
 
-    // Resize grip
+    
     if !w.maximized {
         let rx = x + w_draw - 6;
         let ry = y + h_draw - 6;
@@ -485,9 +485,9 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// LayerSystem — full-frame off-screen renderer with clip rect support
-// ---------------------------------------------------------------------------
+
+
+
 
 pub struct LayerSystem {
     width: usize,
@@ -515,10 +515,10 @@ impl LayerSystem {
         let y0 = y0.min(self.height);
         let x1 = x1.min(self.width);
         let y1 = y1.min(self.height);
-        // Save current clip to stack
+        
         if let Some(cur) = self.clip {
             self.clip_stack.push(cur);
-            // Intersect with current clip
+            
             self.clip = Some((
                 x0.max(cur.0),
                 y0.max(cur.1),
@@ -567,7 +567,7 @@ impl LayerSystem {
         }
     }
 
-    /// Direct mutable access to the backing pixel buffer.
+    
     #[inline]
     pub fn buf_mut(&mut self) -> &mut [u32] {
         &mut self.buf
@@ -602,7 +602,7 @@ impl LayerSystem {
         }
     }
 
-    /// Draw a filled rectangle with rounded corners and anti-aliasing.
+    
     pub fn fill_rounded_rect(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
@@ -656,7 +656,7 @@ impl LayerSystem {
         }
     }
 
-    /// Draw a rounded rectangle outline with anti-aliasing.
+    
     pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
@@ -699,7 +699,7 @@ impl LayerSystem {
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else {
-                    // Straight edge
+                    
                     self.put_pixel(px, py, c);
                     continue;
                 };

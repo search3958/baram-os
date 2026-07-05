@@ -40,21 +40,21 @@ use kurbo::{
 const TOLERANCE: f64 = 0.1;
 const SS_Y: usize = 4;
 
-// ─────────────────────────────────────────────────────────────────────
-// SVG cache: stores pre-rasterized SVG pixel buffers to avoid
-// re-parsing and re-rasterizing every frame.
-// ─────────────────────────────────────────────────────────────────────
+
+
+
+
 
 struct CachedSvg {
-    /// Pointer to the SVG source string (used as identity key).
+    
     svg_ptr: *const str,
     width: usize,
     height: usize,
-    /// RGBA pixel data: [r, g, b, a] per pixel, row-major.
+    
     pixels: Vec<u8>,
 }
 
-/// Fixed-capacity cache for rasterized SVGs.
+
 const SVG_CACHE_CAP: usize = 32;
 
 static mut SVG_CACHE: [Option<CachedSvg>; SVG_CACHE_CAP] = [
@@ -64,7 +64,7 @@ static mut SVG_CACHE: [Option<CachedSvg>; SVG_CACHE_CAP] = [
     None, None, None, None, None, None, None, None,
 ];
 
-/// Look up a cached SVG. Returns `(pixel_ptr, width, height)` or None.
+
 fn cache_lookup(svg: &str, w: usize, h: usize) -> Option<(*const u8, usize, usize)> {
     let ptr = svg as *const str;
     unsafe {
@@ -79,11 +79,11 @@ fn cache_lookup(svg: &str, w: usize, h: usize) -> Option<(*const u8, usize, usiz
     None
 }
 
-/// Store a rasterized SVG in the cache.
+
 fn cache_store(svg: &str, w: usize, h: usize, pixels: Vec<u8>) {
     let ptr = svg as *const str;
     unsafe {
-        // Try to find an empty slot or replace the oldest.
+        
         for entry in SVG_CACHE.iter_mut() {
             if entry.is_none() {
                 *entry = Some(CachedSvg {
@@ -95,7 +95,7 @@ fn cache_store(svg: &str, w: usize, h: usize, pixels: Vec<u8>) {
                 return;
             }
         }
-        // Cache full — replace slot 0 (simple eviction).
+        
         SVG_CACHE[0] = Some(CachedSvg {
             svg_ptr: ptr,
             width: w,
@@ -105,7 +105,7 @@ fn cache_store(svg: &str, w: usize, h: usize, pixels: Vec<u8>) {
     }
 }
 
-/// Rasterize an SVG into a standalone RGBA pixel buffer (used for caching).
+
 fn rasterize_svg_to_buffer(
     svg: &str,
     target_w: usize,
@@ -231,7 +231,7 @@ fn rasterize_svg_to_buffer(
     buf
 }
 
-/// Fill segments into an RGBA buffer with proper multi-sample anti-aliasing.
+
 fn fill_segments_to_buf(
     buf: &mut [u8],
     buf_w: usize,
@@ -264,7 +264,7 @@ fn fill_segments_to_buf(
 
     for py in py0..py1 {
         let row = py * stride;
-        // Accumulate float coverage across sub-rows.
+        
         let mut coverage_f: Vec<f32> = alloc::vec![0.0; buf_w];
 
         for sy in 0..SS_Y {
@@ -304,8 +304,8 @@ fn fill_segments_to_buf(
             }
         }
 
-        // Write accumulated coverage to buffer.
-        // coverage_f is in [0.0, SS_Y] (sum of per-sub-row coverage).
+        
+        
         let ss_y_inv = 1.0 / SS_Y as f32;
         for px in 0..buf_w {
             let cov_sum = coverage_f[px];
@@ -329,9 +329,9 @@ fn fill_segments_to_buf(
     }
 }
 
-/// Accumulate sub-pixel coverage for a horizontal span into the coverage buffer.
-/// Tracks fractional X coverage at left/right edges for anti-aliasing.
-/// `coverage_f[px]` accumulates float coverage in [0.0, 1.0] per sub-row.
+
+
+
 fn accumulate_span(coverage_f: &mut [f32], buf_w: usize, x0: f64, x1: f64) {
     if x1 <= x0 { return; }
     let x0i = libm::floor(x0) as i32;
@@ -341,22 +341,22 @@ fn accumulate_span(coverage_f: &mut [f32], buf_w: usize, x0: f64, x1: f64) {
     if xs >= xe { return; }
 
     if xe - xs == 1 {
-        // Span fits entirely inside one pixel.
+        
         let cov = (x1 - x0).max(0.0).min(1.0) as f32;
         coverage_f[xs] += cov;
         return;
     }
 
-    // Left edge: fractional coverage
+    
     let left_cov = ((x0i as f64 + 1.0) - x0).max(0.0).min(1.0) as f32;
     coverage_f[xs] += left_cov;
 
-    // Interior pixels: full coverage
+    
     for px in (xs + 1)..(xe - 1) {
         coverage_f[px] += 1.0;
     }
 
-    // Right edge: fractional coverage
+    
     let right_cov = (x1 - (x1i as f64 - 1.0)).max(0.0).min(1.0) as f32;
     coverage_f[xe - 1] += right_cov;
 }
@@ -379,7 +379,7 @@ fn stroke_path_to_buf(
     fill_segments_to_buf(buf, buf_w, buf_h, &segments, color, FillRule::NonZero);
 }
 
-/// Blit a cached RGBA buffer onto the layer at (ox, oy).
+
 fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();
     let lh = layer.height();
@@ -416,7 +416,7 @@ fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i
     }
 }
 
-/// Blit a cached shadow (black with varying alpha) onto the layer.
+
 fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();
     let lh = layer.height();
@@ -444,13 +444,13 @@ fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Cursor shadow cache
-// ─────────────────────────────────────────────────────────────────────
+
+
+
 
 static mut CURSOR_SHADOW_CACHE: Option<(usize, usize, Vec<u8>)> = None;
 
-/// Draw a shadow version of an SVG (black, blurred) at the given position.
+
 pub fn draw_svg_shadow(
     layer: &mut LayerSystem,
     svg: &str,
@@ -465,12 +465,12 @@ pub fn draw_svg_shadow(
     let th = target_h as usize;
     if tw == 0 || th == 0 { return; }
 
-    // Check cache
+    
     unsafe {
         if let Some((cw, ch, ref cached)) = CURSOR_SHADOW_CACHE {
             if cw == tw && ch == th {
-                // cached stores (tw, th) but actual buffer is padded
-                // Reconstruct padded size from the cached data
+                
+                
                 let pad = blur_r as usize;
                 let pw = tw + pad * 2;
                 let ph = th + pad * 2;
@@ -480,10 +480,10 @@ pub fn draw_svg_shadow(
         }
     }
 
-    // 1. Render SVG at cursor size to get the silhouette alpha
+    
     let svg_buf = rasterize_svg_to_buffer(svg, tw, th);
 
-    // 2. Create solid silhouette mask (1.0 where SVG has any coverage)
+    
     let mut silhouette: Vec<f32> = alloc::vec![0.0; tw * th];
     for i in 0..tw * th {
         if svg_buf[i * 4 + 3] > 0 {
@@ -491,7 +491,7 @@ pub fn draw_svg_shadow(
         }
     }
 
-    // 3. Pad silhouette with zeros for blur spread
+    
     let pad = blur_r as usize;
     let pw = tw + pad * 2;
     let ph = th + pad * 2;
@@ -502,9 +502,9 @@ pub fn draw_svg_shadow(
         }
     }
 
-    // 4. Two-pass box blur on padded buffer
+    
     let mut tmp: Vec<f32> = alloc::vec![0.0; pw * ph];
-    // Horizontal
+    
     for y in 0..ph {
         for x in 0..pw {
             let mut sum = 0.0f32;
@@ -519,7 +519,7 @@ pub fn draw_svg_shadow(
             tmp[y * pw + x] = sum / cnt;
         }
     }
-    // Vertical
+    
     let mut result: Vec<f32> = alloc::vec![0.0; pw * ph];
     for y in 0..ph {
         for x in 0..pw {
@@ -536,7 +536,7 @@ pub fn draw_svg_shadow(
         }
     }
 
-    // 5. Write RGBA shadow buffer
+    
     let mut shadow: Vec<u8> = alloc::vec![0u8; pw * ph * 4];
     for i in 0..pw * ph {
         let a = (result[i] * 120.0).min(255.0) as u8;
@@ -546,7 +546,7 @@ pub fn draw_svg_shadow(
         shadow[i * 4 + 3] = a;
     }
 
-    // 6. Blit with offset to account for padding
+    
     blit_shadow(layer, &shadow, pw, ph, ox - pad as i32, oy - pad as i32);
 
     unsafe {
@@ -554,9 +554,9 @@ pub fn draw_svg_shadow(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Fill rule
-// ─────────────────────────────────────────────────────────────────────
+
+
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FillRule {
@@ -574,10 +574,10 @@ impl FillRule {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Tiny XML-ish extractor (kept from the previous implementation — works
-// for the well-formed SVGs we ship in `src/data/`).
-// ─────────────────────────────────────────────────────────────────────
+
+
+
+
 
 struct Tag {
     name: String,
@@ -589,11 +589,11 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
     let bytes = svg.as_bytes();
     let len = bytes.len();
     let mut i = 0;
-    // Depth of <defs> nesting.  Tags inside <defs> (clip paths, gradients,
-    // patterns, masks, ...) are NOT rendered directly — they are referenced
-    // by id from other elements.  Skipping them prevents, e.g., the
-    // `<rect fill="white">` inside a `<clipPath>` from being painted as a
-    // normal rectangle and clobbering the rest of the SVG.
+    
+    
+    
+    
+    
     let mut defs_depth: u32 = 0;
     while i < len {
         if bytes[i] == b'<' {
@@ -603,16 +603,16 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
                 j += 1;
             }
             if j < len && bytes[j] == b'?' {
-                // XML declaration
+                
             } else if j < len && bytes[j] == b'!' {
-                // skip <!...> entirely (comments, DOCTYPE, CDATA)
+                
                 while i < len && bytes[i] != b'>' {
                     i += 1;
                 }
                 i += 1;
                 continue;
             }
-            // Extract the tag name.
+            
             let name_start = j;
             while j < len
                 && bytes[j] != b'>'
@@ -625,7 +625,7 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
                 j += 1;
             }
             let name = String::from_utf8_lossy(&bytes[name_start..j]).to_string();
-            // Find end of tag (either /> or >).
+            
             let mut k = j;
             while k < len
                 && bytes[k] != b'>'
@@ -633,19 +633,19 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
             {
                 k += 1;
             }
-            // Extract attributes: everything between tag-name end (j) and the
-            // closing ">" or "/>" (k).
+            
+            
             let attr_start = j;
             let self_closing = k < len && bytes[k] == b'/';
             if k < len {
                 k += if self_closing { 2 } else { 1 };
             }
-            let attr_end = k.saturating_sub(1); // back up past '>'
+            let attr_end = k.saturating_sub(1); 
             let attrs =
                 String::from_utf8_lossy(&bytes[attr_start.min(len)..attr_end.min(len)]).to_string();
             i = k;
 
-            // Track <defs> open/close (only for non-self-closing tags).
+            
             if name == "defs" {
                 if is_close {
                     if defs_depth > 0 {
@@ -656,9 +656,9 @@ fn extract_tags(svg: &str) -> Vec<Tag> {
                 }
                 continue;
             }
-            // Also skip standalone clipPath / mask / pattern / linearGradient
-            // / radialGradient / symbol / marker tags (these define paint
-            // servers or clip/mask regions but are not drawn directly).
+            
+            
+            
             let is_definition_only = matches!(
                 name.as_str(),
                 "clipPath" | "mask" | "pattern" | "linearGradient"
@@ -733,7 +733,7 @@ fn parse_color(s: &str) -> Color {
                 Color::rgb(r, g, b)
             }
             8 => {
-                // #RRGGBBAA — alpha currently coerced to opaque-or-transparent
+                
                 let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(0);
                 let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(0);
                 let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(0);
@@ -777,9 +777,9 @@ fn attr_fill_rule(attrs: &str) -> FillRule {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Pixel blending
-// ─────────────────────────────────────────────────────────────────────
+
+
+
 
 #[inline]
 fn blend_pixel(layer: &mut LayerSystem, x: usize, y: usize, c: Color, coverage: f32) {
@@ -802,13 +802,13 @@ fn blend_pixel(layer: &mut LayerSystem, x: usize, y: usize, c: Color, coverage: 
     buf[x] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Path flattening: BezPath → Vec<(Point, Point)> line segments
-// ─────────────────────────────────────────────────────────────────────
 
-/// Flatten a `BezPath` into a list of line segments (pairs of endpoints).
-/// `MoveTo` and `ClosePath` are handled here: `ClosePath` produces a final
-/// segment back to the most recent `MoveTo` point.
+
+
+
+
+
+
 fn flatten_to_segments(path: &BezPath) -> Vec<(Point, Point)> {
     let mut segments: Vec<(Point, Point)> = Vec::new();
     let mut cur = Point::ZERO;
@@ -833,28 +833,28 @@ fn flatten_to_segments(path: &BezPath) -> Vec<(Point, Point)> {
             }
             cur = start;
         }
-        // CurveTo / QuadTo never appear in flattened output, but handle them
-        // defensively by ignoring (they would be flattened by `flatten`).
+        
+        
         _ => {}
     });
 
     segments
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Fill rasterizer — subpixel scanline AA + nonzero / even-odd winding
-// ─────────────────────────────────────────────────────────────────────
 
-/// Fill a flattened polygon (possibly multi-contour) into the layer with
-/// anti-aliasing.
-///
-/// Algorithm: for each scanline y (integer pixel row), sample SS_Y
-/// sub-rows at `y + (sy + 0.5) / SS_Y`.  For each sub-row, find every
-/// segment that crosses the sub-row's horizontal line, sort the crossings
-/// by x, and walk them while tracking the winding number.  Each pair of
-/// "outside → inside" / "inside → outside" crossings defines a filled
-/// span; the fraction of that span that overlaps pixel `[px, px+1)` adds
-/// to that pixel's coverage.  Coverage is averaged across sub-rows.
+
+
+
+
+
+
+
+
+
+
+
+
+
 fn fill_segments_aa(
     layer: &mut LayerSystem,
     segments: &[(Point, Point)],
@@ -865,7 +865,7 @@ fn fill_segments_aa(
         return;
     }
 
-    // Compute bounding box in pixel space.
+    
     let mut min_x = f64::INFINITY;
     let mut min_y = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
@@ -892,13 +892,13 @@ fn fill_segments_aa(
         return;
     }
 
-    // Reusable buffers per sub-row.
+    
     let mut crossings: Vec<(f64, i32)> = Vec::with_capacity(16);
 
     for py in py0..py1 {
-        // Pre-compute pixel X range that can possibly be touched on this
-        // scanline (clipped to layer width).  We re-compute per sub-row to
-        // keep memory traffic low.
+        
+        
+        
         for sy in 0..SS_Y {
             let y_sample = py as f64 + (sy as f64 + 0.5) / SS_Y as f64;
 
@@ -906,15 +906,15 @@ fn fill_segments_aa(
             for (a, b) in segments {
                 let ya = a.y;
                 let yb = b.y;
-                // Skip horizontal segments.
+                
                 if ya == yb {
                     continue;
                 }
-                // Count an edge crossing only if the sub-row strictly
-                // intersects the half-open interval [min(ya,yb), max(ya,yb)).
-                // Using `<=` on one side and `>` on the other (below) gives
-                // the standard nonzero scanline rule and avoids double-
-                // counting at shared vertices.
+                
+                
+                
+                
+                
                 let crosses_down = ya <= y_sample && yb > y_sample;
                 let crosses_up = yb <= y_sample && ya > y_sample;
                 if crosses_down || crosses_up {
@@ -929,7 +929,7 @@ fn fill_segments_aa(
             }
             crossings.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal));
 
-            // Walk the crossings, identifying filled spans.
+            
             let mut winding: i32 = 0;
             let mut span_start: f64 = 0.0;
             let mut span_open = false;
@@ -950,15 +950,15 @@ fn fill_segments_aa(
                 }
                 winding = new_winding;
             }
-            // If the path is malformed and never closes, just drop the
-            // dangling span.
+            
+            
         }
     }
 }
 
-/// Paint a horizontal span `[x0, x1)` at scanline `py` into the layer with
-/// anti-aliasing at the left and right edges.  Interior pixels are written
-/// fully opaque.
+
+
+
 #[inline]
 fn paint_span(layer: &mut LayerSystem, x0: f64, x1: f64, py: usize, color: Color) {
     if x1 <= x0 {
@@ -976,13 +976,13 @@ fn paint_span(layer: &mut LayerSystem, x0: f64, x1: f64, py: usize, color: Color
         return;
     }
 
-    // Left edge: coverage = (xs+1) - x0  (in [0,1))
+    
     let left_cov = ((x0i as f64 + 1.0) - x0).max(0.0).min(1.0);
-    // Right edge: coverage = x1 - (xe-1)  (in [0,1))
+    
     let right_cov = (x1 - ((x1i as f64) - 1.0)).max(0.0).min(1.0);
 
     if xe - xs == 1 {
-        // Span fits entirely inside one pixel.
+        
         let cov = (x1 - x0).max(0.0).min(1.0);
         blend_pixel(layer, xs, py, color, cov as f32);
         return;
@@ -1002,10 +1002,10 @@ fn paint_span(layer: &mut LayerSystem, x0: f64, x1: f64, py: usize, color: Color
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Stroke rasterizer — uses kurbo::stroke to build an offset-polygon
-// outline, then flattens + fills that outline.
-// ─────────────────────────────────────────────────────────────────────
+
+
+
+
 
 fn stroke_path_aa(
     layer: &mut LayerSystem,
@@ -1021,20 +1021,20 @@ fn stroke_path_aa(
         .with_join(Join::Round)
         .with_caps(Cap::Round);
     let opts = StrokeOpts::default();
-    // Stroke in user space, then transform the resulting outline.  This is
-    // correct for any affine transform (including non-uniform scale).
+    
+    
     let stroked = stroke(path.iter(), &style, &opts, TOLERANCE);
     let stroked_screen = transform * stroked;
     let segments = flatten_to_segments(&stroked_screen);
     fill_segments_aa(layer, &segments, color, FillRule::NonZero);
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────────────────────────────
 
-/// Draw an SVG into the layer where the SVG's viewBox maps onto the entire
-/// layer (legacy behaviour).  Used for full-screen backgrounds.
+
+
+
+
+
 pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
     draw_svg_scaled_into(
         layer,
@@ -1048,9 +1048,9 @@ pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
     );
 }
 
-/// Draw an SVG into a target rectangle (ox, oy, target_w, target_h).
-/// The SVG's viewBox is mapped onto that rectangle, preserving aspect ratio
-/// (letterboxed).  Used for icons (window buttons, cursors, ...).
+
+
+
 pub fn draw_svg_into(
     layer: &mut LayerSystem,
     svg: &str,
@@ -1071,10 +1071,10 @@ pub fn draw_svg_into(
     );
 }
 
-/// Extract the attributes string of the root `<svg …>` tag directly from
-/// the raw SVG text.  This is needed because `extract_tags()` intentionally
-/// skips the `<svg>` element itself, so its width/height/viewBox would
-/// otherwise be unreachable.
+
+
+
+
 fn svg_root_attrs(svg: &str) -> String {
     let bytes = svg.as_bytes();
     let len = bytes.len();
@@ -1143,7 +1143,7 @@ fn draw_svg_scaled_into(
     let th = target_h as usize;
     if tw == 0 || th == 0 { return; }
 
-    // Check cache first
+    
     if let Some((ptr, w, h)) = cache_lookup(svg, tw, th) {
         let len = w * h * 4;
         let pixels = unsafe { core::slice::from_raw_parts(ptr, len) };
@@ -1151,13 +1151,13 @@ fn draw_svg_scaled_into(
         return;
     }
 
-    // Cache miss — rasterize and store
+    
     let pixels = rasterize_svg_to_buffer(svg, tw, th);
     blit_cached(layer, &pixels, tw, th, ox, oy);
     cache_store(svg, tw, th, pixels);
 }
 
-/// Parse an SVG `points` attribute ("x1,y1 x2,y2 ...") into a Vec<Point>.
+
 fn parse_pts_f64(s: &str) -> Vec<Point> {
     let mut pts = Vec::new();
     let nums: Vec<&str> = s
@@ -1174,8 +1174,8 @@ fn parse_pts_f64(s: &str) -> Vec<Point> {
     pts
 }
 
-// Silence unused-import warning if `Line` is not directly referenced in
-// every build configuration.
+
+
 #[allow(dead_code)]
 fn _unused_imports_anchor() {
     let _ = Line::new(Point::ZERO, Point::ZERO);

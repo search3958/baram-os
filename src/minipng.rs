@@ -8,61 +8,61 @@ use core::fmt::{self, Debug, Display};
 #[cfg(test)]
 mod test;
 
-/// decoding error
+
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
-	/// unexpected end-of-file
+	
 	UnexpectedEof,
-	/// the buffer you provided is too small
-	/// (see [`ImageHeader::required_bytes()`])
+	
+	
 	BufferTooSmall,
-	/// having the whole image in memory would require close to `usize::MAX` bytes
+	
 	TooLargeForUsize,
-	/// this file is not a PNG file (missing PNG signature).
+	
 	NotPng,
-	/// bad IHDR block (invalid PNG file)
+	
 	BadIhdr,
-	/// unrecognized critical PNG chunk (invalid PNG file)
+	
 	UnrecognizedChunk,
-	/// bad ZLIB block type (invalid PNG file)
+	
 	BadBlockType,
-	/// ZLIB LEN doesn't match NLEN (invalid PNG file)
+	
 	BadNlen,
-	/// decompressed data is larger than it should be (invalid PNG file)
+	
 	TooMuchData,
-	/// unexpected end of PNG block (invalid PNG file)
+	
 	UnexpectedEob,
-	/// bad zlib header (invalid PNG file)
+	
 	BadZlibHeader,
-	/// bad huffman code (invalid PNG file)
+	
 	BadCode,
-	/// bad huffman dictionary definition (invalid PNG file)
+	
 	BadHuffmanDict,
-	/// bad LZ77 back reference (invalid PNG file)
+	
 	BadBackReference,
-	/// unsupported interlace method (Adam7 interlacing is not currently supported)
+	
 	UnsupportedInterlace,
-	/// bad filter number (invalid PNG file)
+	
 	BadFilter,
-	/// bad PLTE chunk (invalid PNG file)
+	
 	BadPlteChunk,
-	/// bad tRNS chunk (invalid PNG file)
+	
 	BadTrnsChunk,
-	/// missing IDAT chunk (invalid PNG file)
+	
 	NoIdat,
-	/// Adler-32 checksum doesn't check out (invalid PNG file)
+	
 	BadAdlerChecksum,
-	/// e.g. chunk is larger than 2GB, chunk goes past end of file (invalid PNG)
+	
 	BadChunkSize,
-	/// compressed data cannot possibly be expanded to the full image because it's too small (invalid PNG)
+	
 	CompressedSizeTooSmall,
 }
 
 #[cold]
 fn cold() {}
 
-/// alias for `Result<T, Error>`
+
 pub type Result<T> = core::result::Result<T, Error>;
 
 impl Display for Error {
@@ -176,7 +176,7 @@ impl<'a> IdatReader<'a> {
 				Some(n) => {
 					let n = n as usize;
 					self.block_reader = self.full_reader.take(n);
-					self.full_reader.skip_bytes(n + 4)?; // skip block + CRC in full_reader
+					self.full_reader.skip_bytes(n + 4)?; 
 					Ok(self.read(&mut buf[count..])? + count)
 				}
 			}
@@ -206,37 +206,37 @@ impl<'a> IdatReader<'a> {
 	}
 }
 
-/// color bit depth
-///
-/// note that [`Self::One`], [`Self::Two`], [`Self::Four`] are only used with
-/// indexed and grayscale images.
+
+
+
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum BitDepth {
-	/// 1 bit per pixel
+	
 	One = 1,
-	/// 2 bits per pixel
+	
 	Two = 2,
-	/// 4 bits per pixel
+	
 	Four = 4,
-	/// 8 bits per channel (most common)
+	
 	Eight = 8,
-	/// 16 bits per channel
+	
 	Sixteen = 16,
 }
 
-/// color format
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ColorType {
-	/// grayscale
+	
 	Gray,
-	/// grayscale + alpha
+	
 	GrayAlpha,
-	/// RGB
+	
 	Rgb,
-	/// RGBA
+	
 	Rgba,
-	/// indexed color (each pixel is an index to be passed into [`ImageData::palette`])
+	
 	Indexed,
 }
 
@@ -275,7 +275,7 @@ impl ColorType {
 	}
 }
 
-/// image metadata found at the start of the PNG file.
+
 #[derive(Debug, Clone, Copy)]
 pub struct ImageHeader {
 	width: u32,
@@ -286,20 +286,20 @@ pub struct ImageHeader {
 }
 
 impl ImageHeader {
-	/// width of image in pixels
+	
 	pub fn width(&self) -> u32 {
 		self.width
 	}
-	/// height of image in pixels
+	
 	pub fn height(&self) -> u32 {
 		self.height
 	}
 
-	/// bits per sample of image
+	
 	pub fn bit_depth(&self) -> BitDepth {
 		self.bit_depth
 	}
-	/// number and type of color channels
+	
 	pub fn color_type(&self) -> ColorType {
 		self.color_type
 	}
@@ -307,12 +307,12 @@ impl ImageHeader {
 		(self.bytes_per_row() + 1) * self.height() as usize
 	}
 
-	/// number of bytes needed for [`decode_png`]
+	
 	pub fn required_bytes(&self) -> usize {
 		self.decompressed_size()
 	}
 
-	/// number of bytes needed for [`decode_png`], followed by [`ImageData::convert_to_rgba8bpc`]
+	
 	pub fn required_bytes_rgba8bpc(&self) -> usize {
 		max(
 			self.required_bytes(),
@@ -320,7 +320,7 @@ impl ImageHeader {
 		)
 	}
 
-	/// number of bytes in a single row of pixels
+	
 	pub fn bytes_per_row(&self) -> usize {
 		(self.width() as usize
 			* usize::from(self.bit_depth() as u8)
@@ -335,9 +335,9 @@ impl ImageHeader {
 
 type Palette = [[u8; 4]; 256];
 
-/// number of bits to read in each [`Read::read`] call.
+
 type ReadBits = u32;
-/// number of bits to store in the [`BitReader`] buffer.
+
 type Bits = u64;
 
 struct BitReader<'a> {
@@ -362,8 +362,8 @@ impl BitReader<'_> {
 		let mut new_bits = [0; BYTES];
 		let block_reader = &mut self.inner.block_reader.0;
 		if block_reader.len() >= BYTES {
-			// no bull shit goin on we can go right past everyone
-			//  (fast path for ~99.9% of calls)
+			
+			
 			new_bits.copy_from_slice(&block_reader[..BYTES]);
 			*block_reader = &block_reader[BYTES..];
 		} else {
@@ -390,7 +390,7 @@ impl BitReader<'_> {
 		Ok(bits)
 	}
 
-	/// at least `count` bits MUST have been peeked before calling this!
+	
 	fn skip_peeked_bits(&mut self, count: u8) {
 		debug_assert!(self.bits_left >= count);
 		self.bits_left -= count;
@@ -467,18 +467,18 @@ impl DecompressedDataWriter<'_> {
 
 const HUFFMAN_MAX_CODES: usize = 286;
 const HUFFMAN_MAX_BITS: u8 = 15;
-/// wow i benchmarked this and got the same optimal number as miniz. cool.
+
 const HUFFMAN_MAIN_TABLE_BITS: u8 = 10;
 const HUFFMAN_MAIN_TABLE_SIZE: usize = 1 << HUFFMAN_MAIN_TABLE_BITS;
 
-/// table used for huffman lookup
-///
-/// the idea for this huffman table is stolen from miniz.
-/// it's a combination of a look-up table and huffman tree.
-/// for short codes, the look-up table returns a positive value
-/// which is just the encoded value and length.
-/// for long codes, the look-up table returns a position in the tree
-/// to start from.
+
+
+
+
+
+
+
+
 #[derive(Debug, Clone, Copy)]
 struct HuffmanTable {
 	main_table: [i16; HUFFMAN_MAIN_TABLE_SIZE],
@@ -491,7 +491,7 @@ impl Default for HuffmanTable {
 		Self {
 			main_table: [0; HUFFMAN_MAIN_TABLE_SIZE],
 			tree: [0; HUFFMAN_MAX_CODES * 2 + 1],
-			// reserve "null" tree index
+			
 			tree_used: 1,
 		}
 	}
@@ -502,29 +502,29 @@ impl HuffmanTable {
 		if length == 0 {
 			return;
 		}
-		// reverse code
+		
 		let code = code.reverse_bits() >> (16 - length);
 
 		if length <= HUFFMAN_MAIN_TABLE_BITS {
-			// just throw it in the main table
+			
 			let increment = 1 << length;
 			let mut i = usize::from(code);
 			let entry = value as i16 | i16::from(length) << 9;
-			// we need to account for all the possible bits that could appear after the code
-			//  (since when we're decoding we read HUFFMAN_MAX_BITS bits regardless of the code length)
+			
+			
 			for _ in 0..1u16 << (HUFFMAN_MAIN_TABLE_BITS - length) {
 				self.main_table[i] = entry;
 				i += increment;
 			}
 		} else {
-			// put it in the tree
+			
 			let main_table_entry = usize::from(code) & (HUFFMAN_MAIN_TABLE_SIZE - 1);
 			let mut code = code >> HUFFMAN_MAIN_TABLE_BITS;
 			let mut entry = &mut self.main_table[main_table_entry];
 			for _ in 0..length - HUFFMAN_MAIN_TABLE_BITS {
 				if *entry == 0 {
 					let i = self.tree_used;
-					// allocate "left" and "right" branches of entry
+					
 					self.tree_used += 2;
 					*entry = -i;
 				} else {
@@ -583,7 +583,7 @@ impl HuffmanTable {
 	}
 }
 
-/// image data
+
 #[derive(Debug)]
 pub struct ImageData<'a> {
 	header: ImageHeader,
@@ -592,16 +592,16 @@ pub struct ImageData<'a> {
 }
 
 impl ImageData<'_> {
-	/// get pixel values encoded as bytes.
-	///
-	/// this is guaranteed to be a prefix of the buffer passed to [`decode_png`].
+	
+	
+	
 	pub fn pixels(&self) -> &[u8] {
 		&self.buffer[..self.header.data_size()]
 	}
 
-	/// get color in palette at index.
-	///
-	/// returns `[0, 0, 0, 255]` if `index` is out of range.
+	
+	
+	
 	pub fn palette(&self, index: u8) -> [u8; 4] {
 		self.palette
 			.get(usize::from(index))
@@ -609,36 +609,36 @@ impl ImageData<'_> {
 			.unwrap_or([0, 0, 0, 255])
 	}
 
-	/// image width in pixels
+	
 	pub fn width(&self) -> u32 {
 		self.header.width
 	}
 
-	/// image height in pixels
+	
 	pub fn height(&self) -> u32 {
 		self.header.height
 	}
 
-	/// bits per sample of image
+	
 	pub fn bit_depth(&self) -> BitDepth {
 		self.header.bit_depth
 	}
 
-	/// number and type of color channels
+	
 	pub fn color_type(&self) -> ColorType {
 		self.header.color_type
 	}
 
-	/// number of bytes in a single row of pixels
+	
 	pub fn bytes_per_row(&self) -> usize {
 		self.header.bytes_per_row()
 	}
 
-	/// convert `self` to 8-bits-per-channel RGBA
-	///
-	/// note: this function can fail with [`Error::BufferTooSmall`]
-	///       if the buffer you allocated is too small!
-	///       make sure to use [`ImageHeader::required_bytes_rgba8bpc`] for this.
+	
+	
+	
+	
+	
 	pub fn convert_to_rgba8bpc(&mut self) -> Result<()> {
 		let bit_depth = self.bit_depth();
 		let color_type = self.color_type();
@@ -654,8 +654,8 @@ impl ImageData<'_> {
 		match (bit_depth, color_type) {
 			(BitDepth::Eight, ColorType::Rgba) => {}
 			(BitDepth::Eight, ColorType::Rgb) => {
-				// we have to process the pixels in reverse
-				// to avoid overwriting data we'll need later
+				
+				
 				let mut dest = 4 * area;
 				let mut src = 3 * area;
 				for _ in 0..area {
@@ -730,8 +730,8 @@ impl ImageData<'_> {
 			(BitDepth::Sixteen, ColorType::GrayAlpha) => {
 				let mut i = 0;
 				for _ in 0..area {
-					// Ghi Glo Ahi Alo
-					// i   i+1 i+2 i+3
+					
+					
 					buffer[i + 3] = buffer[i + 2];
 					buffer[i + 1] = buffer[i];
 					buffer[i + 2] = buffer[i];
@@ -764,7 +764,7 @@ impl ImageData<'_> {
 							src_bit = 8;
 						}
 						src_bit -= bit_depth;
-						// NOTE: PNG uses most-significant-bit first, unlike everyone else in the world.
+						
 						let index: usize = ((buffer[src] >> (8 - bit_depth - src_bit))
 							& ((1 << bit_depth) - 1))
 							.into();
@@ -786,10 +786,10 @@ impl ImageData<'_> {
 	}
 }
 
-/// decode image metadata.
-///
-/// this function only needs to read a few bytes from the start of the file,
-/// so it should be very fast.
+
+
+
+
 pub fn decode_png_header(bytes: &[u8]) -> Result<ImageHeader> {
 	let mut signature = [0; 8];
 	let mut reader = SliceReader::from(bytes);
@@ -804,7 +804,7 @@ pub fn decode_png_header(bytes: &[u8]) -> Result<ImageHeader> {
 	if ihdr_len > 0x7FFF_FFFF {
 		return Err(Error::BadIhdr);
 	}
-	let ihdr_len = (ihdr_len + 12) as usize; // include chunk type, length, CRC
+	let ihdr_len = (ihdr_len + 12) as usize; 
 	if &ihdr[4..8] != b"IHDR" || ihdr_len < ihdr.len() {
 		return Err(Error::BadIhdr);
 	}
@@ -816,9 +816,9 @@ pub fn decode_png_header(bytes: &[u8]) -> Result<ImageHeader> {
 		return Err(Error::BadIhdr);
 	}
 
-	// worst-case scenario this is a RGBA 16bpc image
-	// we could do a tighter check here but whatever
-	//   on 32-bit this is only relevant for, like, >23000x23000 images
+	
+	
+	
 	if usize::try_from(width + 1)
 		.ok()
 		.and_then(|x| {
@@ -865,8 +865,8 @@ pub fn decode_png_header(bytes: &[u8]) -> Result<ImageHeader> {
 		color_type,
 		length: 8 + ihdr_len,
 	};
-	// in the best-case scenario, each bit can decompress to 258 bytes
-	//   (see DEFLATE RFC especially §3.2.5).
+	
+	
 	if hdr.decompressed_size() / (8 * 258) > bytes.len() {
 		return Err(Error::CompressedSizeTooSmall);
 	}
@@ -922,8 +922,8 @@ fn read_dynamic_huffman_dictionary(reader: &mut BitReader) -> Result<(HuffmanTab
 				i += 1;
 			}
 		} else {
-			// since we only assigned 0..=18 in the huffman table,
-			// we should never get a value outside that range.
+			
+			
 			debug_assert!(false, "should not be reachable");
 		}
 		if i >= total_code_lengths {
@@ -979,7 +979,7 @@ fn read_compressed_block(
 				base + extra
 			}
 			285 => 258,
-			_ => unreachable!(), // we only could've assigned up to 285.
+			_ => unreachable!(), 
 		})
 	}
 
@@ -996,7 +996,7 @@ fn read_compressed_block(
 				let extra = reader.read_bits_u16(extra_bits)?;
 				base + extra
 			}
-			_ => unreachable!(), // we only could've assigned up to 29.
+			_ => unreachable!(), 
 		})
 	}
 
@@ -1010,18 +1010,18 @@ fn read_compressed_block(
 		let literal_length = literal_length_table.read_value(reader)?;
 		match literal_length {
 			0..=255 => {
-				// literal
+				
 				writer.write_byte(literal_length as u8)?;
 			}
 			257.. => {
-				// length + distance
+				
 				let length = parse_length(reader, literal_length)?;
 				let distance_code = distance_table.read_value(reader)?;
 				let distance = parse_distance(reader, distance_code)?;
 				writer.copy(usize::from(distance), usize::from(length))?;
 			}
 			256 => {
-				// end of block
+				
 				break;
 			}
 		}
@@ -1051,10 +1051,10 @@ fn read_uncompressed_block(
 
 fn read_image(reader: IdatReader, writer: &mut DecompressedDataWriter) -> Result<Palette> {
 	let mut reader = BitReader::from(reader);
-	// zlib header
+	
 	let cmf = reader.read_bits(8)?;
 	let flags = reader.read_bits(8)?;
-	// check zlib checksum
+	
 	if (cmf * 256 + flags) % 31 != 0 {
 		return Err(Error::BadZlibHeader);
 	}
@@ -1063,7 +1063,7 @@ fn read_image(reader: IdatReader, writer: &mut DecompressedDataWriter) -> Result
 	if compression_method != 8 || compression_info > 7 {
 		return Err(Error::BadZlibHeader);
 	}
-	// no preset dictionary
+	
 	if (flags & 0x100) != 0 {
 		return Err(Error::BadZlibHeader);
 	}
@@ -1074,15 +1074,15 @@ fn read_image(reader: IdatReader, writer: &mut DecompressedDataWriter) -> Result
 		let btype = reader.read_bits(2)?;
 		match btype {
 			0 => {
-				// uncompressed block
+				
 				read_uncompressed_block(&mut reader, writer)?;
 			}
 			1 | 2 => {
-				// compressed block
+				
 				read_compressed_block(&mut reader, writer, btype == 2)?;
 			}
 			_ => {
-				// 0b11 is not a valid block type
+				
 				return Err(Error::BadBlockType);
 			}
 		}
@@ -1093,13 +1093,13 @@ fn read_image(reader: IdatReader, writer: &mut DecompressedDataWriter) -> Result
 
 	if cfg!(feature = "adler") {
 		const BASE: u32 = 65521;
-		// Adler-32 checksum
+		
 		let padding = reader.bits_left % 8;
 		if padding > 0 {
 			reader.bits >>= padding;
 			reader.bits_left -= padding;
 		}
-		// NOTE: currently `read_bits` doesn't support reads of 32 bits.
+		
 		let mut expected_adler = reader.read_bits(16)?;
 		expected_adler |= reader.read_bits(16)? << 16;
 		expected_adler = expected_adler.swap_bytes();
@@ -1122,7 +1122,7 @@ fn read_image(reader: IdatReader, writer: &mut DecompressedDataWriter) -> Result
 		}
 	}
 
-	// padding bytes
+	
 	reader.inner.read_to_end()?;
 
 	Ok(reader.inner.palette)
@@ -1231,7 +1231,7 @@ fn read_non_idat_chunks(
 			chunk_header[7],
 		];
 		if &chunk_type == b"IEND" {
-			reader.skip_bytes(4)?; // CRC
+			reader.skip_bytes(4)?; 
 			break;
 		} else if &chunk_type == b"IDAT" {
 			return Ok(Some(chunk_len as u32));
@@ -1245,7 +1245,7 @@ fn read_non_idat_chunks(
 			for i in 0..count {
 				palette[i][0..3].copy_from_slice(&data[3 * i..3 * i + 3]);
 			}
-			reader.skip_bytes(4)?; // CRC
+			reader.skip_bytes(4)?; 
 		} else if &chunk_type == b"tRNS" && header.color_type == ColorType::Indexed {
 			if chunk_len > 256 {
 				return Err(Error::BadTrnsChunk);
@@ -1255,9 +1255,9 @@ fn read_non_idat_chunks(
 			for i in 0..chunk_len {
 				palette[i][3] = data[i];
 			}
-			reader.skip_bytes(4)?; // CRC
+			reader.skip_bytes(4)?; 
 		} else if (chunk_type[0] & 0x20) != 0 || &chunk_type == b"PLTE" {
-			// non-essential chunk
+			
 			reader.skip_bytes(chunk_len + 4)?;
 		} else {
 			return Err(Error::UnrecognizedChunk);
@@ -1266,11 +1266,11 @@ fn read_non_idat_chunks(
 	Ok(None)
 }
 
-/// decode image data.
-///
-/// the only non-stack memory used by this function is `buf` — it should be at least
-/// [`ImageHeader::required_bytes()`] bytes long, otherwise an [`Error::BufferTooSmall`]
-/// will be returned.
+
+
+
+
+
 pub fn decode_png<'a>(bytes: &[u8], buf: &'a mut [u8]) -> Result<ImageData<'a>> {
 	let header = decode_png_header(bytes)?;
 	let bytes = &bytes[header.length..];
@@ -1283,15 +1283,15 @@ pub fn decode_png<'a>(bytes: &[u8], buf: &'a mut [u8]) -> Result<ImageData<'a>> 
 	let mut palette = read_image(IdatReader::new(&mut reader, header)?, &mut writer)?;
 
 	if header.color_type == ColorType::Gray {
-		// set palette appropriately so that conversion functions don't have
-		// to deal with grayscale/indexed <8bpp separately.
+		
+		
 		match header.bit_depth {
 			BitDepth::One => {
 				palette[0] = [0, 0, 0, 255];
 				palette[1] = [255, 255, 255, 255];
 			}
 			BitDepth::Two => {
-				// clippy's suggestion here is more unreadable imo
+				
 				#[allow(clippy::needless_range_loop)]
 				for i in 0..4 {
 					let v = (255 * i / 3) as u8;
