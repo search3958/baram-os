@@ -1,3 +1,5 @@
-(src/data/wallpaper/bada.png
-src/data/wallpaper/hanul.png
-src/data/wallpaper/samag.png)
+```rust
+target/
+Cargo.lock
+*.rs.bk
+```

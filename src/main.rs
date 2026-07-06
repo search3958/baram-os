@@ -131,9 +131,8 @@ fn main() -> Status {
         let mut buf = alloc::vec![0u32; w * h];
         
         // RGBA 変換
-        let mut rgba_img = img.clone();
-        let _ = rgba_img.convert_to_rgba8bpc();
-        let pixels = rgba_img.pixels();
+        img.convert_to_rgba8bpc();
+        let pixels = img.pixels();
         
         for y in 0..h {
             let sy = y * src_h / h;
@@ -156,7 +155,6 @@ fn main() -> Status {
     let mut prev_cursor_x = cursor_x;
     let mut prev_cursor_y = cursor_y;
     let shadow_pad = 35i32;
-    let mut prev_dirty: (usize, usize, usize, usize) = (0, 0, screen.width(), screen.height());
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
@@ -168,7 +166,7 @@ fn main() -> Status {
     loop {
         let mut dirty = false;
 
-        prev_dirty = wm.dirty_bbox(shadow_pad);
+        let prev_dirty = wm.dirty_bbox(shadow_pad);
 
         
         if has_kbd {
