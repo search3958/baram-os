@@ -812,22 +812,33 @@ impl LayerSystem {
         let y1 = (y + h).min(self.height);
         let x0 = x.min(self.width);
         let x1 = (x + w).min(self.width);
+        let v = c.0;
+        let stride = self.width;
 
         for py in y0..y1 {
+            let row = py * stride;
+            if r == 0 {
+                self.buf[row + x0..row + x1].fill(v);
+                continue;
+            }
+            let corner_top = py < y + r;
+            let corner_bot = py >= y + h.saturating_sub(r);
+            if !corner_top && !corner_bot {
+                self.buf[row + x0..row + x1].fill(v);
+                continue;
+            }
             for px in x0..x1 {
-                let (cx_f, cy_f): (f32, f32) = if px < x + r && py < y + r {
-                    ((x + r) as f32, (y + r) as f32)
-                } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
-                    ((x + w - r - 1) as f32, (y + r) as f32)
-                } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
-                    ((x + r) as f32, (y + h - r - 1) as f32)
-                } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
-                    ((x + w - r - 1) as f32, (y + h - r - 1) as f32)
-                } else {
-                    self.put_pixel(px, py, c);
+                let in_corner = (px < x + r && corner_top)
+                    || (px >= x + w.saturating_sub(r) && corner_top)
+                    || (px < x + r && corner_bot)
+                    || (px >= x + w.saturating_sub(r) && corner_bot);
+                if !in_corner {
+                    self.buf[row + px] = v;
                     continue;
-                };
+                }
 
+                let cx_f = if px < x + r { x + r } else { x + w - r - 1 } as f32;
+                let cy_f = if corner_top { y + r } else { y + h - r - 1 } as f32;
                 let dx = px as f32 + 0.5 - cx_f;
                 let dy = py as f32 + 0.5 - cy_f;
                 let dist_sq = dx * dx + dy * dy;
@@ -841,14 +852,18 @@ impl LayerSystem {
                 };
 
                 if alpha > 0.0 {
-                    let bg = self.buf[py * self.width + px];
-                    let br = ((bg >> 16) & 0xFF) as f32;
-                    let bg2 = ((bg >> 8) & 0xFF) as f32;
-                    let bb = (bg & 0xFF) as f32;
-                    let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
-                    let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
-                    let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
-                    self.put_pixel(px, py, Color::rgb(r2 as u8, g as u8, b as u8));
+                    if alpha >= 1.0 {
+                        self.buf[row + px] = v;
+                    } else {
+                        let bg = self.buf[row + px];
+                        let br = ((bg >> 16) & 0xFF) as f32;
+                        let bg2 = ((bg >> 8) & 0xFF) as f32;
+                        let bb = (bg & 0xFF) as f32;
+                        let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
+                        let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
+                        let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
+                        self.buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
+                    }
                 }
             }
         }
@@ -1014,6 +1029,18 @@ impl LayerSystem {
         self.frame_count += 1;
     }
 
+    pub fn flush_rect(&self, screen: &mut Screen, x0: usize, y0: usize, x1: usize, y1: usize) {
+        let w = self.width;
+        let y0 = y0.min(self.height);
+        let y1 = y1.min(self.height);
+        let x0 = x0.min(w);
+        let x1 = x1.min(w);
+        for y in y0..y1 {
+            let row = &self.buf[y * w + x0..y * w + x1];
+            screen.flush_layer_row_range(y, x0, row);
+        }
+    }
+
     pub fn composit_rounded(
         &mut self,
         src: &LayerSystem,
@@ -1070,18 +1097,22 @@ impl LayerSystem {
                 if alpha <= 0.0 { continue; }
                 if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
 
-                let dst_idx = dst_y * dw + dst_x;
-                let dst_pixel = Color(self.buf[dst_idx]);
-                let sr = src_pixel.r() as f32;
-                let sg = src_pixel.g() as f32;
-                let sb = src_pixel.b() as f32;
-                let dr = dst_pixel.r() as f32;
-                let dg = dst_pixel.g() as f32;
-                let db = dst_pixel.b() as f32;
-                let out_r = (sr * alpha + dr * (1.0 - alpha)) as u32;
-                let out_g = (sg * alpha + dg * (1.0 - alpha)) as u32;
-                let out_b = (sb * alpha + db * (1.0 - alpha)) as u32;
-                self.buf[dst_idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
+                if alpha >= 1.0 {
+                    self.buf[dst_y * dw + dst_x] = src_pixel.0;
+                } else {
+                    let dst_idx = dst_y * dw + dst_x;
+                    let dst_pixel = Color(self.buf[dst_idx]);
+                    let sr = src_pixel.r() as f32;
+                    let sg = src_pixel.g() as f32;
+                    let sb = src_pixel.b() as f32;
+                    let dr = dst_pixel.r() as f32;
+                    let dg = dst_pixel.g() as f32;
+                    let db = dst_pixel.b() as f32;
+                    let out_r = (sr * alpha + dr * (1.0 - alpha)) as u32;
+                    let out_g = (sg * alpha + dg * (1.0 - alpha)) as u32;
+                    let out_b = (sb * alpha + db * (1.0 - alpha)) as u32;
+                    self.buf[dst_idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
+                }
             }
         }
     }

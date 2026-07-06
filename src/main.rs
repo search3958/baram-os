@@ -133,9 +133,15 @@ fn main() -> Status {
         cached_wallpaper = Some(buf);
     }
 
+    let mut scene_dirty = true;
+    let mut cached_scene: Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
+    let mut prev_cursor_x = cursor_x;
+    let mut prev_cursor_y = cursor_y;
+
     render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label, cursor_x, cursor_y,
                  &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+    cached_scene.copy_from_slice(layer.buf_ref());
     layer.flush(&mut screen);
 
     loop {
@@ -167,6 +173,7 @@ fn main() -> Status {
                     }
                 }
                 dirty = true;
+                scene_dirty = true;
             }
         }
 
@@ -185,6 +192,7 @@ fn main() -> Status {
                     let scroll_delta = -ev.scroll * SCROLL_SPEED;
                     if let Some(id) = wm.window_at(cx, cy) {
                         wm.scroll_window(id, scroll_delta);
+                        scene_dirty = true;
                     }
                 }
 
@@ -204,13 +212,16 @@ fn main() -> Status {
                     } else {
                         wm.on_mouse_down(cx, cy);
                     }
+                    scene_dirty = true;
                 } else if !ev.left && mouse_down {
                     mouse_down = false;
                     wm.on_mouse_up();
+                    scene_dirty = true;
                 }
 
                 if mouse_down {
                     wm.on_mouse_drag(cx, cy);
+                    scene_dirty = true;
                 }
 
                 dirty = true;
@@ -227,14 +238,36 @@ fn main() -> Status {
                 frames_since_tick = 0;
                 start_time = now;
                 dirty = true;
+                scene_dirty = true;
             }
         }
 
         if dirty {
-            render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count,
-                         key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
-                         &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
-            layer.flush(&mut screen);
+            if scene_dirty {
+                prev_cursor_x = cursor_x;
+                prev_cursor_y = cursor_y;
+                render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count,
+                             key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
+                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+                cached_scene.copy_from_slice(layer.buf_ref());
+                scene_dirty = false;
+                layer.flush(&mut screen);
+            } else {
+                let w = screen.width();
+                let h = screen.height();
+                layer.buf_mut()[..w * h].copy_from_slice(&cached_scene);
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
+
+                let pad = 32i32;
+                let x0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
+                let y0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
+                let x1 = (prev_cursor_x.max(cursor_x) + CURSOR_BOX_W as i32 + pad).min(w as i32) as usize;
+                let y1 = (prev_cursor_y.max(cursor_y) + CURSOR_BOX_H as i32 + pad).min(h as i32) as usize;
+                layer.flush_rect(&mut screen, x0, y0, x1, y1);
+
+                prev_cursor_x = cursor_x;
+                prev_cursor_y = cursor_y;
+            }
         }
 
         uefi::boot::stall(core::time::Duration::from_micros(8_000));

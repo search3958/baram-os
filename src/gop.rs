@@ -224,6 +224,42 @@ impl Screen {
         }
     }
 
+    pub fn flush_layer_row_range(&mut self, y: usize, x_offset: usize, row: &[u32]) {
+        if y >= self.info.height { return; }
+        let pf = self.info.pixel_format;
+        let stride = self.info.stride;
+        let base = self.fb_ptr;
+        let n = row.len().min(self.info.width.saturating_sub(x_offset));
+        let off_base = (y * stride + x_offset) * 4;
+        match pf {
+            PixelFormat::Bgr => {
+                for x in 0..n {
+                    let v = row[x];
+                    unsafe {
+                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
+                    }
+                }
+            }
+            PixelFormat::Rgb => {
+                for x in 0..n {
+                    let c = Color(row[x]);
+                    let v = ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32);
+                    unsafe {
+                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
+                    }
+                }
+            }
+            _ => {
+                for x in 0..n {
+                    let v = row[x];
+                    unsafe {
+                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
+                    }
+                }
+            }
+        }
+    }
+
     
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
         if w == 0 || h == 0 { return; }
