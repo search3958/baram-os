@@ -32,8 +32,8 @@ const TASKBAR_H: usize = 32;
 const SCROLL_SPEED: i32 = 30;
 
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
-const CURSOR_BOX_W: usize = 26;
-const CURSOR_BOX_H: usize = 32;
+const CURSOR_BOX_W: usize = 15;
+const CURSOR_BOX_H: usize = 19;
 
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
