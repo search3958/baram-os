@@ -101,9 +101,41 @@ fn main() -> Status {
     };
 
     
-    render_frame(&mut layer, &wm, &last_keys, mouse_ev_count, key_ev_count,
+    let mut cached_wallpaper: Option<Vec<u32>> = None;
+    if let Some(ref img) = wallpaper {
+        let w = screen.width();
+        let h = screen.height();
+        let img_w = img.width as usize;
+        let img_h = img.height as usize;
+        let sw_sh = w * img_h;
+        let sh_sw = h * img_w;
+        let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
+            let sw = img_w;
+            let sh = (img_w * h + w - 1) / w;
+            let sh = sh.min(img_h);
+            (sw, sh, 0, (img_h - sh) / 2)
+        } else {
+            let sh = img_h;
+            let sw = (img_h * w + h - 1) / h;
+            let sw = sw.min(img_w);
+            (sw, sh, (img_w - sw) / 2, 0)
+        };
+        let mut buf = alloc::vec![0u32; w * h];
+        for y in 0..h {
+            let sy = y * src_h / h;
+            let src_row = (oy + sy) * img_w + ox;
+            let dst_row = y * w;
+            for x in 0..w {
+                let sx = x * src_w / w;
+                buf[dst_row + x] = img.pixels[src_row + sx].0;
+            }
+        }
+        cached_wallpaper = Some(buf);
+    }
+
+    render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label, cursor_x, cursor_y,
-                 &ui_commands, Some(ui_win_id), wallpaper.as_ref());
+                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
     layer.flush(&mut screen);
 
     loop {
@@ -199,9 +231,9 @@ fn main() -> Status {
         }
 
         if dirty {
-            render_frame(&mut layer, &wm, &last_keys, mouse_ev_count,
+            render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count,
                          key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
-                         &ui_commands, Some(ui_win_id), wallpaper.as_ref());
+                         &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
             layer.flush(&mut screen);
         }
 
@@ -210,42 +242,16 @@ fn main() -> Status {
 }
 
 
-fn render_frame(layer: &mut LayerSystem, wm: &WindowManager,
+fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                wallpaper: Option<&tinyqoi::QoiImage>) {
+                wallpaper: Option<&[u32]>) {
     let w = layer.width();
     let h = layer.height();
 
-    
-    if let Some(img) = wallpaper {
-        let img_w = img.width as usize;
-        let img_h = img.height as usize;
-        
-        let sw_sh = w * img_h;
-        let sh_sw = h * img_w;
-        let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
-            let sw = img_w;
-            let sh = (img_w * h + w - 1) / w;
-            let sh = sh.min(img_h);
-            (sw, sh, 0, (img_h - sh) / 2)
-        } else {
-            let sh = img_h;
-            let sw = (img_h * w + h - 1) / h;
-            let sw = sw.min(img_w);
-            (sw, sh, (img_w - sw) / 2, 0)
-        };
-        let buf = layer.buf_mut();
-        for y in 0..h {
-            let sy = y * src_h / h;
-            let src_row = (oy + sy) * img_w + ox;
-            let dst_row = y * w;
-            for x in 0..w {
-                let sx = x * src_w / w;
-                buf[dst_row + x] = img.pixels[src_row + sx].0;
-            }
-        }
+    if let Some(pixels) = wallpaper {
+        layer.buf_mut()[..w * h].copy_from_slice(pixels);
     } else {
         layer.clear(Color::BG);
     }

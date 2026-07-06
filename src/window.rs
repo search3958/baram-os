@@ -133,6 +133,18 @@ impl Window {
     }
 }
 
+struct CachedShadow {
+    win_x: i32,
+    win_y: i32,
+    win_w: usize,
+    win_h: usize,
+    alpha: Vec<u8>,
+    x0: usize,
+    y0: usize,
+    w: usize,
+    h: usize,
+}
+
 pub struct WindowManager {
     windows: Vec<Window>,
     next_z: i32,
@@ -140,6 +152,7 @@ pub struct WindowManager {
     pub focused_id: Option<WinId>,
     screen_w: i32,
     screen_h: i32,
+    shadow_cache: Vec<Option<CachedShadow>>,
 }
 
 impl WindowManager {
@@ -151,6 +164,7 @@ impl WindowManager {
             focused_id: None,
             screen_w: screen_w as i32,
             screen_h: screen_h as i32,
+            shadow_cache: Vec::new(),
         }
     }
 
@@ -160,12 +174,18 @@ impl WindowManager {
         self.next_z += 1;
         let win = Window::new(id, title, x, y, w, h, self.next_z);
         self.windows.push(win);
+        self.shadow_cache.push(None);
         self.focus(id);
         id
     }
 
     pub fn remove(&mut self, id: WinId) {
-        self.windows.retain(|w| w.id != id);
+        if let Some(pos) = self.windows.iter().position(|w| w.id == id) {
+            self.windows.remove(pos);
+            if pos < self.shadow_cache.len() {
+                self.shadow_cache.remove(pos);
+            }
+        }
         if self.focused_id == Some(id) {
             self.focused_id = self.windows.last().map(|w| w.id);
             if let Some(fid) = self.focused_id {
@@ -200,21 +220,25 @@ impl WindowManager {
     }
 
     pub fn window_at(&self, px: i32, py: i32) -> Option<WinId> {
-        let mut sorted: Vec<&Window> = self.windows.iter().collect();
-        sorted.sort_by(|a, b| b.z.cmp(&a.z));
-        sorted.into_iter()
-            .find(|w| w.visible && w.contains(px, py))
-            .map(|w| w.id)
+        let mut best: Option<(&Window, i32)> = None;
+        for w in &self.windows {
+            if w.visible && w.contains(px, py) {
+                match best {
+                    None => best = Some((w, w.z)),
+                    Some((_, best_z)) if w.z > best_z => best = Some((w, w.z)),
+                    _ => {}
+                }
+            }
+        }
+        best.map(|(w, _)| w.id)
     }
 
     pub fn sorted_ids(&self) -> Vec<WinId> {
-        let mut v: Vec<WinId> = self.windows.iter().map(|w| w.id).collect();
-        v.sort_by(|&a, &b| {
-            let za = self.windows.iter().find(|w| w.id == a).map(|w| w.z).unwrap_or(0);
-            let zb = self.windows.iter().find(|w| w.id == b).map(|w| w.z).unwrap_or(0);
-            zb.cmp(&za)
-        });
-        v
+        let mut v: Vec<(WinId, i32)> = self.windows.iter()
+            .map(|w| (w.id, w.z))
+            .collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1));
+        v.into_iter().map(|(id, _)| id).collect()
     }
 
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
@@ -284,7 +308,7 @@ impl WindowManager {
     
     
     pub fn draw_all(
-        &self,
+        &mut self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
     ) {
@@ -309,9 +333,21 @@ impl WindowManager {
         for i in 0..n {
             let w = sorted[i];
             if w.visible && !w.maximized {
-                draw_shadow(layer, w);
+                let need_recompute = match self.shadow_cache.get(i) {
+                    Some(Some(c)) => c.win_x != w.x || c.win_y != w.y || c.win_w != w.w || c.win_h != w.h,
+                    _ => true,
+                };
+                if need_recompute {
+                    self.shadow_cache[i] = compute_shadow_alpha(w, self.screen_w, self.screen_h);
+                }
+                if let Some(ref cache) = self.shadow_cache[i] {
+                    blit_cached_shadow(layer, cache);
+                }
             }
         }
+
+        
+        let mut temp = LayerSystem::new_transparent(layer.width(), layer.height());
 
         
         for i in 0..n {
@@ -340,7 +376,7 @@ impl WindowManager {
             }
 
             
-            let mut temp = LayerSystem::new_transparent(layer.width(), layer.height());
+            temp.clear(Color::TRANSPARENT);
             draw_window_body(&mut temp, w);
 
             
@@ -385,6 +421,106 @@ impl WindowManager {
 
 
 
+
+fn compute_shadow_alpha(w: &Window, screen_w: i32, screen_h: i32) -> Option<CachedShadow> {
+    let blur_r: i32 = 30;
+    let r = WIN_RADIUS as i32;
+    let win_x0 = w.x;
+    let win_y0 = w.y;
+    let win_x1 = w.x + w.w as i32;
+    let win_y1 = w.y + w.h as i32;
+    let sx = (win_x0 - blur_r).max(0) as usize;
+    let sy = (win_y0 - blur_r).max(0) as usize;
+    let ex = (win_x1 + blur_r).min(screen_w) as usize;
+    let ey = (win_y1 + blur_r).min(screen_h) as usize;
+    let sw = ex.saturating_sub(sx);
+    let sh = ey.saturating_sub(sy);
+    if sw == 0 || sh == 0 { return None; }
+
+    let blur_r_f = blur_r as f32;
+    let mut alpha = Vec::with_capacity(sw * sh);
+
+    for py_i in sy as i32..ey as i32 {
+        for px_i in sx as i32..ex as i32 {
+            let edge = if px_i >= win_x0 && px_i < win_x1 && py_i >= win_y0 && py_i < win_y1 {
+                let in_top_left = px_i < win_x0 + r && py_i < win_y0 + r;
+                let in_top_right = px_i >= win_x1 - r && py_i < win_y0 + r;
+                let in_bottom_left = px_i < win_x0 + r && py_i >= win_y1 - r;
+                let in_bottom_right = px_i >= win_x1 - r && py_i >= win_y1 - r;
+                if in_top_left || in_top_right || in_bottom_left || in_bottom_right {
+                    let (cx, cy) = if in_top_left {
+                        (win_x0 + r, win_y0 + r)
+                    } else if in_top_right {
+                        (win_x1 - r - 1, win_y0 + r)
+                    } else if in_bottom_left {
+                        (win_x0 + r, win_y1 - r - 1)
+                    } else {
+                        (win_x1 - r - 1, win_y1 - r - 1)
+                    };
+                    let dx = px_i as f32 + 0.5 - cx as f32;
+                    let dy = py_i as f32 + 0.5 - cy as f32;
+                    let dist = libm::sqrtf(dx * dx + dy * dy);
+                    let d = r as f32 - dist;
+                    if d > 0.0 { -1 } else { (-d) as i32 }
+                } else {
+                    -1
+                }
+            } else if px_i >= win_x0 && px_i < win_x1 {
+                if py_i < win_y0 { win_y0 - py_i } else { py_i - (win_y1 - 1) }
+            } else if py_i >= win_y0 && py_i < win_y1 {
+                if px_i < win_x0 { win_x0 - px_i } else { px_i - (win_x1 - 1) }
+            } else {
+                let (cx, cy) = if px_i < win_x0 && py_i < win_y0 {
+                    (win_x0 + r, win_y0 + r)
+                } else if px_i >= win_x1 && py_i < win_y0 {
+                    (win_x1 - r - 1, win_y0 + r)
+                } else if px_i < win_x0 && py_i >= win_y1 {
+                    (win_x0 + r, win_y1 - r - 1)
+                } else {
+                    (win_x1 - r - 1, win_y1 - r - 1)
+                };
+                let dx = px_i as f32 + 0.5 - cx as f32;
+                let dy = py_i as f32 + 0.5 - cy as f32;
+                let dist = libm::sqrtf(dx * dx + dy * dy);
+                (dist - r as f32) as i32
+            };
+
+            if edge < 0 || edge >= blur_r {
+                alpha.push(0u8);
+            } else {
+                let t = (blur_r - edge) as f32 / blur_r_f;
+                let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+                alpha.push((alpha_f * 255.0) as u8);
+            }
+        }
+    }
+
+    Some(CachedShadow {
+        win_x: w.x, win_y: w.y, win_w: w.w, win_h: w.h,
+        alpha, x0: sx, y0: sy, w: sw, h: sh,
+    })
+}
+
+fn blit_cached_shadow(layer: &mut LayerSystem, cache: &CachedShadow) {
+    let buf = &mut layer.buf;
+    let lw = layer.width;
+    for py in 0..cache.h {
+        let dst_y = cache.y0 + py;
+        if dst_y >= layer.height { break; }
+        let row_start = dst_y * lw + cache.x0;
+        let alpha_row = py * cache.w;
+        for px in 0..cache.w {
+            let a = cache.alpha[alpha_row + px] as u32;
+            if a == 0 { continue; }
+            let inv = 255 - a;
+            let bg = Color(buf[row_start + px]);
+            let cr = (bg.r() as u32 * inv) / 255;
+            let cg = (bg.g() as u32 * inv) / 255;
+            let cb = (bg.b() as u32 * inv) / 255;
+            buf[row_start + px] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
+        }
+    }
+}
 
 fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
     let x = w.x.max(0) as usize;
