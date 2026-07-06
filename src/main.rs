@@ -110,7 +110,7 @@ fn main() -> Status {
 
     
     let mut cached_wallpaper: Option<Vec<u32>> = None;
-    if let Some(ref img) = wallpaper {
+    if let Some(ref mut img) = wallpaper {
         let w = screen.width();
         let h = screen.height();
         let img_w = img.width() as usize;
@@ -321,7 +321,7 @@ fn main() -> Status {
 
 fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
-                fps: u32, mouse_mode: &str,
+                fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
                 wallpaper: Option<&[u32]>) {
     let w = layer.width();
