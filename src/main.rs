@@ -8,10 +8,10 @@ mod cursor;
 mod font;
 mod gop;
 mod keyboard;
+mod minipng;
 mod mouse;
 mod svg;
 mod ttf_font;
-mod tinyqoi;
 mod ui;
 mod uiscript;
 mod usb_hid;
@@ -39,7 +39,7 @@ const CURSOR_BOX_H: usize = 19;
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
 
-const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
+const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     
@@ -74,7 +74,15 @@ fn main() -> Status {
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
     
-    let wallpaper = tinyqoi::decode(WALLPAPER_QOI);
+    // PNG デコード用のバッファを確保（最大サイズ：4 * width * height）
+    const MAX_WIDTH: usize = 1920;
+    const MAX_HEIGHT: usize = 1080;
+    static mut PNG_BUF: [u8; MAX_WIDTH * MAX_HEIGHT * 4] = [0u8; MAX_WIDTH * MAX_HEIGHT * 4];
+    
+    let wallpaper = unsafe {
+        let buf = core::slice::from_raw_parts_mut(PNG_BUF.as_mut_ptr(), PNG_BUF.len());
+        minipng::decode_png(WALLPAPER_PNG, buf).ok()
+    };
 
     
     wm.add("システム情報", 40, 60, 320, 220);
@@ -105,8 +113,8 @@ fn main() -> Status {
     if let Some(ref img) = wallpaper {
         let w = screen.width();
         let h = screen.height();
-        let img_w = img.width as usize;
-        let img_h = img.height as usize;
+        let img_w = img.width() as usize;
+        let img_h = img.height() as usize;
         let sw_sh = w * img_h;
         let sh_sw = h * img_w;
         let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
@@ -121,13 +129,23 @@ fn main() -> Status {
             (sw, sh, (img_w - sw) / 2, 0)
         };
         let mut buf = alloc::vec![0u32; w * h];
+        
+        // RGBA 変換
+        let mut rgba_img = img.clone();
+        let _ = rgba_img.convert_to_rgba8bpc();
+        let pixels = rgba_img.pixels();
+        
         for y in 0..h {
             let sy = y * src_h / h;
-            let src_row = (oy + sy) * img_w + ox;
+            let src_row = ((oy + sy) * img_w + ox) * 4; // RGBA なので 4 バイト/ピクセル
             let dst_row = y * w;
             for x in 0..w {
                 let sx = x * src_w / w;
-                buf[dst_row + x] = img.pixels[src_row + sx].0;
+                let px_offset = src_row + sx * 4;
+                let r = pixels[px_offset];
+                let g = pixels[px_offset + 1];
+                let b = pixels[px_offset + 2];
+                buf[dst_row + x] = Color::rgb(r, g, b).0;
             }
         }
         cached_wallpaper = Some(buf);
