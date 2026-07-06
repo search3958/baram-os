@@ -308,40 +308,65 @@ impl WindowManager {
         
         for i in 0..n {
             let w = sorted[i];
-            if w.visible {
-                draw_window(layer, w);
+            if w.visible && !w.maximized {
+                draw_shadow(layer, w);
             }
         }
 
         
-        if let Some((uid, cmds)) = ui_win {
-            if let Some(w) = self.windows.iter().find(|w| w.id == uid) {
-                if w.visible {
-                    let content_x = w.x.max(0) as usize;
-                    let content_y = (w.y + TITLE_BAR_H as i32).max(0) as usize;
-                    let content_w = w.w;
-                    let content_h = w.h.saturating_sub(TITLE_BAR_H);
-                    if content_w > 0 && content_h > 0 {
-                        let mut temp = LayerSystem::new_transparent(layer.width(), layer.height());
-                        temp.fill_rect(
-                            content_x, content_y,
-                            content_w, content_h,
-                            Color::WIN_BG,
+        for i in 0..n {
+            let w = sorted[i];
+            if !w.visible { continue; }
+
+            if w.maximized {
+                draw_window(layer, w);
+                if let Some((uid, cmds)) = ui_win {
+                    if w.id == uid {
+                        layer.push_clip(
+                            w.x.max(0) as usize,
+                            (w.y + TITLE_BAR_H as i32).max(0) as usize,
+                            (w.x + w.w as i32).max(0) as usize,
+                            (w.y + w.h as i32).max(0) as usize,
                         );
                         super::uiscript::render(
-                            &mut temp, cmds,
+                            layer, cmds,
                             w.x, w.y, w.w, w.h,
                             TITLE_BAR_H, w.scroll_y,
                         );
-                        layer.composit_rect(
-                            &temp,
-                            content_x, content_y,
-                            content_x, content_y,
-                            content_w, content_h,
-                        );
+                        layer.pop_clip();
                     }
                 }
+                continue;
             }
+
+            
+            let mut temp = LayerSystem::new_transparent(layer.width(), layer.height());
+            draw_window_body(&mut temp, w);
+
+            
+            if let Some((uid, cmds)) = ui_win {
+                if w.id == uid {
+                    super::uiscript::render(
+                        &mut temp, cmds,
+                        w.x, w.y, w.w, w.h,
+                        TITLE_BAR_H, w.scroll_y,
+                    );
+                }
+            }
+
+            
+            let wx = w.x.max(0) as usize;
+            let wy = w.y.max(0) as usize;
+            layer.composit_rounded(
+                &temp,
+                wx, wy,
+                wx, wy,
+                w.w, w.h,
+                WIN_RADIUS,
+            );
+
+            
+            draw_window_border(layer, w);
         }
     }
 
@@ -361,7 +386,7 @@ impl WindowManager {
 
 
 
-fn draw_window(layer: &mut LayerSystem, w: &Window) {
+fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
     let x = w.x.max(0) as usize;
     let y = w.y.max(0) as usize;
     let sw = layer.width();
@@ -373,80 +398,114 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
     let h_draw = y1.saturating_sub(y);
     if w_draw == 0 || h_draw == 0 { return; }
 
-    let (title_bg, body_bg, border) = if w.focused {
-        (Color::ACCENT, Color::WIN_BG, Color::ACCENT)
+    let blur_r: i32 = 30;
+    let r = WIN_RADIUS as i32;
+    let win_x0 = x as i32;
+    let win_y0 = y as i32;
+    let win_x1 = x as i32 + w_draw as i32;
+    let win_y1 = y as i32 + h_draw as i32;
+    let sx = (win_x0 - blur_r).max(0) as usize;
+    let sy = (win_y0 - blur_r).max(0) as usize;
+    let ex = (win_x1 + blur_r).min(sw as i32) as usize;
+    let ey = (win_y1 + blur_r).min(sh as i32) as usize;
+    if ex <= sx || ey <= sy { return; }
+
+    let buf = &mut layer.buf;
+    let width = layer.width;
+    let blur_r_f = blur_r as f32;
+    for py in sy..ey {
+        let py_i = py as i32;
+        let row_start = py * width + sx;
+        for px in sx..ex {
+            let px_i = px as i32;
+
+            
+            let edge = if px_i >= win_x0 && px_i < win_x1 && py_i >= win_y0 && py_i < win_y1 {
+                let in_top_left = px_i < win_x0 + r && py_i < win_y0 + r;
+                let in_top_right = px_i >= win_x1 - r && py_i < win_y0 + r;
+                let in_bottom_left = px_i < win_x0 + r && py_i >= win_y1 - r;
+                let in_bottom_right = px_i >= win_x1 - r && py_i >= win_y1 - r;
+                if in_top_left || in_top_right || in_bottom_left || in_bottom_right {
+                    let (cx, cy) = if in_top_left {
+                        (win_x0 + r, win_y0 + r)
+                    } else if in_top_right {
+                        (win_x1 - r - 1, win_y0 + r)
+                    } else if in_bottom_left {
+                        (win_x0 + r, win_y1 - r - 1)
+                    } else {
+                        (win_x1 - r - 1, win_y1 - r - 1)
+                    };
+                    let dx = px_i as f32 + 0.5 - cx as f32;
+                    let dy = py_i as f32 + 0.5 - cy as f32;
+                    let dist = libm::sqrtf(dx * dx + dy * dy);
+                    let d = r as f32 - dist;
+                    if d > 0.0 { continue; }
+                    (-d) as i32
+                } else {
+                    continue;
+                }
+            } else if px_i >= win_x0 && px_i < win_x1 {
+                if py_i < win_y0 { win_y0 - py_i } else { py_i - (win_y1 - 1) }
+            } else if py_i >= win_y0 && py_i < win_y1 {
+                if px_i < win_x0 { win_x0 - px_i } else { px_i - (win_x1 - 1) }
+            } else {
+                let (cx, cy) = if px_i < win_x0 && py_i < win_y0 {
+                    (win_x0 + r, win_y0 + r)
+                } else if px_i >= win_x1 && py_i < win_y0 {
+                    (win_x1 - r - 1, win_y0 + r)
+                } else if px_i < win_x0 && py_i >= win_y1 {
+                    (win_x0 + r, win_y1 - r - 1)
+                } else {
+                    (win_x1 - r - 1, win_y1 - r - 1)
+                };
+                let dx = px_i as f32 + 0.5 - cx as f32;
+                let dy = py_i as f32 + 0.5 - cy as f32;
+                let dist = libm::sqrtf(dx * dx + dy * dy);
+                (dist - r as f32) as i32
+            };
+
+            if edge >= blur_r { continue; }
+            let t = (blur_r - edge) as f32 / blur_r_f;
+            let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+            let a = (alpha_f * 255.0) as u32;
+            if a == 0 { continue; }
+            let inv = 255 - a;
+            let bg = Color(buf[row_start + (px - sx)]);
+            let cr = (bg.r() as u32 * inv) / 255;
+            let cg = (bg.g() as u32 * inv) / 255;
+            let cb = (bg.b() as u32 * inv) / 255;
+            buf[row_start + (px - sx)] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
+        }
+    }
+}
+
+fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
+    let x = w.x.max(0) as usize;
+    let y = w.y.max(0) as usize;
+    let sw = layer.width();
+    let sh = layer.height();
+    if x >= sw || y >= sh { return; }
+    let x1 = (x + w.w).min(sw);
+    let y1 = (y + w.h).min(sh);
+    let w_draw = x1.saturating_sub(x);
+    let h_draw = y1.saturating_sub(y);
+    if w_draw == 0 || h_draw == 0 { return; }
+
+    let (title_bg, body_bg) = if w.focused {
+        (Color::ACCENT, Color::WIN_BG)
     } else {
-        (Color::WIN_INACTIVE, Color::WIN_BG, Color::BORDER)
+        (Color::WIN_INACTIVE, Color::WIN_BG)
     };
 
     
-    if !w.maximized {
-        let blur_r: i32 = 30;
-        let offset_y: i32 = 2;
-        let win_x0 = x as i32;
-        let win_y0 = y as i32 + offset_y;
-        let win_x1 = x as i32 + w_draw as i32;
-        let win_y1 = y as i32 + h_draw as i32 + offset_y;
-        let sx = (win_x0 - blur_r).max(0) as usize;
-        let sy = (win_y0 - blur_r).max(0) as usize;
-        let ex = (win_x1 + blur_r).min(sw as i32) as usize;
-        let ey = (win_y1 + blur_r).min(sh as i32) as usize;
-        if ex > sx && ey > sy {
-            
-            let mut vert = alloc::vec![0i32; ey - sy];
-            for py in sy..ey {
-                let py_i = py as i32;
-                vert[py - sy] = if py_i >= win_y0 && py_i < win_y1 {
-                    0
-                } else if py_i < win_y0 {
-                    win_y0 - py_i
-                } else {
-                    py_i - (win_y1 - 1)
-                };
-            }
-            
-            let mut horiz = alloc::vec![0i32; ex - sx];
-            for px in sx..ex {
-                let px_i = px as i32;
-                horiz[px - sx] = if px_i >= win_x0 && px_i < win_x1 {
-                    0
-                } else if px_i < win_x0 {
-                    win_x0 - px_i
-                } else {
-                    px_i - (win_x1 - 1)
-                };
-            }
-            
-            let buf = &mut layer.buf;
-            let width = layer.width;
-            let blur_r_f = blur_r as f32;
-            for (py_off, &vy) in vert.iter().enumerate() {
-                let py = sy + py_off;
-                let row_start = py * width + sx;
-                for (px_off, &hx) in horiz.iter().enumerate() {
-                    let edge = hx.max(vy);
-                    if edge >= blur_r { continue; }
-                    let t = (blur_r - edge) as f32 / blur_r_f;
-                    let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
-                    let a = (alpha_f * 255.0) as u32;
-                    if a == 0 { continue; }
-                    let inv = 255 - a;
-                    let bg = Color(buf[row_start + px_off]);
-                    let r = (bg.r() as u32 * inv) / 255;
-                    let g = (bg.g() as u32 * inv) / 255;
-                    let b = (bg.b() as u32 * inv) / 255;
-                    buf[row_start + px_off] = Color::rgb(r as u8, g as u8, b as u8).0;
-                }
-            }
-        }
-    }
-
-    
-    layer.fill_rect(x, y, w_draw, h_draw, body_bg);
+    layer.fill_rounded_rect(x, y, w_draw, h_draw, WIN_RADIUS, body_bg);
 
     
     let tb_h = TITLE_BAR_H.min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
+    layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS * 2, WIN_RADIUS, title_bg);
+
+    
     layer.put_str(x + 10, y + 7, w.title_str(), Color::TEXT);
 
     
@@ -467,40 +526,14 @@ fn draw_window(layer: &mut LayerSystem, w: &Window) {
             close_x as i32 + 4, btn_y as i32 + 4,
             (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
     }
+}
 
-    
-    if !w.maximized {
-        
-        let border_y = y + tb_h;
-        if border_y < y1 {
-            layer.fill_rect(x, border_y, w_draw, 1, border);
-        }
-        
-        layer.fill_rect(x, y + tb_h, 1, h_draw.saturating_sub(tb_h), border);
-        
-        if w_draw > 1 {
-            layer.fill_rect(x + w_draw - 1, y + tb_h, 1, h_draw.saturating_sub(tb_h), border);
-        }
-        
-        if h_draw > 1 {
-            layer.fill_rect(x, y + h_draw - 1, w_draw, 1, border);
-        }
-    }
+fn draw_window_border(layer: &mut LayerSystem, w: &Window) {
+}
 
-    
-    if !w.maximized {
-        let rx = x + w_draw - 6;
-        let ry = y + h_draw - 6;
-        for i in 0..3 {
-            let gx = rx + i * 2;
-            let gy = ry + i * 2;
-            if gx < sw && gy < sh {
-                layer.put_pixel(gx, gy, Color::MUTED);
-                if gx + 1 < sw { layer.put_pixel(gx + 1, gy, Color::MUTED); }
-                if gy + 1 < sh { layer.put_pixel(gx, gy + 1, Color::MUTED); }
-            }
-        }
-    }
+fn draw_window(layer: &mut LayerSystem, w: &Window) {
+    draw_window_body(layer, w);
+    draw_window_border(layer, w);
 }
 
 
