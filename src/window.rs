@@ -7,6 +7,7 @@ const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
+const WIN_RADIUS: usize = 10;
 
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
@@ -303,24 +304,41 @@ impl WindowManager {
                 j -= 1;
             }
         }
+
+        
         for i in 0..n {
             let w = sorted[i];
             if w.visible {
                 draw_window(layer, w);
-                if let Some((uid, cmds)) = ui_win {
-                    if w.id == uid {
-                        layer.push_clip(
-                            w.x.max(0) as usize,
-                            (w.y + TITLE_BAR_H as i32).max(0) as usize,
-                            (w.x + w.w as i32).max(0) as usize,
-                            (w.y + w.h as i32).max(0) as usize,
+            }
+        }
+
+        
+        if let Some((uid, cmds)) = ui_win {
+            if let Some(w) = self.windows.iter().find(|w| w.id == uid) {
+                if w.visible {
+                    let content_x = w.x.max(0) as usize;
+                    let content_y = (w.y + TITLE_BAR_H as i32).max(0) as usize;
+                    let content_w = w.w;
+                    let content_h = w.h.saturating_sub(TITLE_BAR_H);
+                    if content_w > 0 && content_h > 0 {
+                        let mut temp = LayerSystem::new_transparent(layer.width(), layer.height());
+                        temp.fill_rect(
+                            content_x, content_y,
+                            content_w, content_h,
+                            Color::WIN_BG,
                         );
                         super::uiscript::render(
-                            layer, cmds,
+                            &mut temp, cmds,
                             w.x, w.y, w.w, w.h,
                             TITLE_BAR_H, w.scroll_y,
                         );
-                        layer.pop_clip();
+                        layer.composit_rect(
+                            &temp,
+                            content_x, content_y,
+                            content_x, content_y,
+                            content_w, content_h,
+                        );
                     }
                 }
             }
@@ -504,6 +522,17 @@ impl LayerSystem {
             width: w,
             height: h,
             buf: vec![Color::BG.0; w * h],
+            frame_count: 0,
+            clip_stack: Vec::new(),
+            clip: None,
+        }
+    }
+
+    pub fn new_transparent(w: usize, h: usize) -> Self {
+        Self {
+            width: w,
+            height: h,
+            buf: vec![Color::TRANSPARENT.0; w * h],
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,
@@ -814,6 +843,108 @@ impl LayerSystem {
             screen.flush_layer_row(y, row);
         }
         self.frame_count += 1;
+    }
+
+    pub fn composit_rounded(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+        r: usize,
+    ) {
+        let r = r.min(w / 2).min(h / 2);
+        let rf = r as f32;
+        let sw = src.width;
+        let sh = src.height;
+        let dw = self.width;
+        let dh = self.height;
+
+        for py in 0..h {
+            let src_y = sy + py;
+            let dst_y = dy + py;
+            if src_y >= sh || dst_y >= dh { continue; }
+
+            for px in 0..w {
+                let src_x = sx + px;
+                let dst_x = dx + px;
+                if src_x >= sw || dst_x >= dw { continue; }
+
+                let src_pixel = Color(src.buf[src_y * sw + src_x]);
+
+                let alpha = if r == 0 {
+                    1.0f32
+                } else {
+                    let in_corner = (px < r && py < r)
+                        || (px >= w.saturating_sub(r) && py < r)
+                        || (px < r && py >= h.saturating_sub(r))
+                        || (px >= w.saturating_sub(r) && py >= h.saturating_sub(r));
+                    if !in_corner {
+                        1.0
+                    } else {
+                        let cx_f = if px < r { r } else { w - r - 1 } as f32;
+                        let cy_f = if py < r { r } else { h - r - 1 } as f32;
+                        let dx_f = px as f32 + 0.5 - cx_f;
+                        let dy_f = py as f32 + 0.5 - cy_f;
+                        let dist_sq = dx_f * dx_f + dy_f * dy_f;
+                        if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                            1.0
+                        } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                            0.0
+                        } else {
+                            let dist = libm::sqrtf(dist_sq);
+                            (rf + 0.5 - dist).clamp(0.0, 1.0)
+                        }
+                    }
+                };
+
+                if alpha <= 0.0 { continue; }
+                if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
+
+                let dst_idx = dst_y * dw + dst_x;
+                let dst_pixel = Color(self.buf[dst_idx]);
+                let sr = src_pixel.r() as f32;
+                let sg = src_pixel.g() as f32;
+                let sb = src_pixel.b() as f32;
+                let dr = dst_pixel.r() as f32;
+                let dg = dst_pixel.g() as f32;
+                let db = dst_pixel.b() as f32;
+                let out_r = (sr * alpha + dr * (1.0 - alpha)) as u32;
+                let out_g = (sg * alpha + dg * (1.0 - alpha)) as u32;
+                let out_b = (sb * alpha + db * (1.0 - alpha)) as u32;
+                self.buf[dst_idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
+            }
+        }
+    }
+
+    pub fn composit_rect(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+    ) {
+        let sw = src.width;
+        let sh = src.height;
+        let dw = self.width;
+        let dh = self.height;
+
+        for py in 0..h {
+            let src_y = sy + py;
+            let dst_y = dy + py;
+            if src_y >= sh || dst_y >= dh { continue; }
+
+            for px in 0..w {
+                let src_x = sx + px;
+                let dst_x = dx + px;
+                if src_x >= sw || dst_x >= dw { continue; }
+
+                let src_pixel = Color(src.buf[src_y * sw + src_x]);
+                if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
+
+                self.buf[dst_y * dw + dst_x] = src_pixel.0;
+            }
+        }
     }
 
     pub fn frame_count(&self) -> u64 { self.frame_count }
