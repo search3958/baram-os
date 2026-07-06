@@ -11,7 +11,6 @@ mod keyboard;
 mod mouse;
 mod svg;
 mod ttf_font;
-mod tinyqoi;
 mod ui;
 mod uiscript;
 mod usb_hid;
@@ -39,7 +38,7 @@ const CURSOR_BOX_H: usize = 19;
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
 
-const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
+const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     
@@ -73,17 +72,62 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    
-    let wallpaper = tinyqoi::decode(WALLPAPER_QOI);
+    // PNG デコーダを使用して壁紙をデコード
+    let mut png_buf = [0u8; 1920 * 1080 * 4]; // 最大サイズのバッファ
+    let wallpaper = minipng::decode_png(WALLPAPER_PNG, &mut png_buf);
 
-    
+    // レイヤーシステムのバッファを直接取得して使用
+    let mut cached_wallpaper: Option<Vec<u32>> = None;
+    if let Ok(ref img) = wallpaper {
+        let w = screen.width();
+        let h = screen.height();
+        let img_w = img.width() as usize;
+        let img_h = img.height() as usize;
+        let sw_sh = w * img_h;
+        let sh_sw = h * img_w;
+        let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
+            let sw = img_w;
+            let sh = (img_w * h + w - 1) / w;
+            let sh = sh.min(img_h);
+            (sw, sh, 0, (img_h - sh) / 2)
+        } else {
+            let sh = img_h;
+            let sw = (img_h * w + h - 1) / h;
+            let sw = sw.min(img_w);
+            (sw, sh, (img_w - sw) / 2, 0)
+        };
+        let mut buf = alloc::vec![0u32; w * h];
+        
+        // RGBA 形式に変換
+        let mut rgba_img = img.clone();
+        let _ = rgba_img.convert_to_rgba8bpc();
+        let pixels = rgba_img.pixels();
+        
+        for y in 0..h {
+            let sy = y * src_h / h;
+            let src_row = (oy + sy) * img_w * 4; // 4 bytes per pixel (RGBA)
+            let dst_row = y * w;
+            for x in 0..w {
+                let sx = x * src_w / w;
+                let px_offset = src_row + sx * 4;
+                let r = pixels[px_offset];
+                let g = pixels[px_offset + 1];
+                let b = pixels[px_offset + 2];
+                buf[dst_row + x] = Color::rgb(r, g, b).0;
+            }
+        }
+        cached_wallpaper = Some(buf);
+    }
+
+    // ウィンドウの初期化
     wm.add("システム情報", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
 
-    
+    // UI Script の初期化
     let ui_win_id = wm.add("UI Script Demo", 600, 100, 400, 350);
     let ui_commands = uiscript::parse(APP_DEMO);
 
+    // ステート変数の初期化
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);
     let mut mouse_ev_count: u32 = 0;
     let mut key_ev_count: u32 = 0;
@@ -99,39 +143,6 @@ fn main() -> Status {
         Some(_) => "Simple Ptr",
         None => "None",
     };
-
-    
-    let mut cached_wallpaper: Option<Vec<u32>> = None;
-    if let Some(ref img) = wallpaper {
-        let w = screen.width();
-        let h = screen.height();
-        let img_w = img.width as usize;
-        let img_h = img.height as usize;
-        let sw_sh = w * img_h;
-        let sh_sw = h * img_w;
-        let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
-            let sw = img_w;
-            let sh = (img_w * h + w - 1) / w;
-            let sh = sh.min(img_h);
-            (sw, sh, 0, (img_h - sh) / 2)
-        } else {
-            let sh = img_h;
-            let sw = (img_h * w + h - 1) / h;
-            let sw = sw.min(img_w);
-            (sw, sh, (img_w - sw) / 2, 0)
-        };
-        let mut buf = alloc::vec![0u32; w * h];
-        for y in 0..h {
-            let sy = y * src_h / h;
-            let src_row = (oy + sy) * img_w + ox;
-            let dst_row = y * w;
-            for x in 0..w {
-                let sx = x * src_w / w;
-                buf[dst_row + x] = img.pixels[src_row + sx].0;
-            }
-        }
-        cached_wallpaper = Some(buf);
-    }
 
     let mut scene_dirty = true;
     let mut cached_scene: Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
