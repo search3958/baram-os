@@ -153,6 +153,7 @@ pub struct WindowManager {
     screen_w: i32,
     screen_h: i32,
     shadow_cache: Vec<(WinId, Option<CachedShadow>)>,
+    temp_layer: Option<LayerSystem>,
 }
 
 impl WindowManager {
@@ -165,6 +166,7 @@ impl WindowManager {
             screen_w: screen_w as i32,
             screen_h: screen_h as i32,
             shadow_cache: Vec::new(),
+            temp_layer: None,
         }
     }
 
@@ -314,14 +316,20 @@ impl WindowManager {
     ) {
         if self.windows.is_empty() { return; }
         
+        let n = self.windows.len();
+        
+        if self.temp_layer.is_none() {
+            self.temp_layer = Some(LayerSystem::new_transparent(layer.width(), layer.height()));
+        }
+        let temp = self.temp_layer.as_mut().unwrap();
+
         const MAX_WINDOWS: usize = 16;
-        let n = self.windows.len().min(MAX_WINDOWS);
+        let sort_n = n.min(MAX_WINDOWS);
         let mut sorted: [&Window; MAX_WINDOWS] = [&self.windows[0]; MAX_WINDOWS];
-        for i in 0..n {
+        for i in 0..sort_n {
             sorted[i] = &self.windows[i];
         }
-        
-        for i in 1..n {
+        for i in 1..sort_n {
             let mut j = i;
             while j > 0 && sorted[j - 1].z > sorted[j].z {
                 sorted.swap(j - 1, j);
@@ -330,27 +338,28 @@ impl WindowManager {
         }
 
         
-        let mut temp = LayerSystem::new_transparent(layer.width(), layer.height());
-
-        
-        for i in 0..n {
+        for i in 0..sort_n {
             let w = sorted[i];
             if !w.visible { continue; }
 
             
             if !w.maximized {
-                let need_recompute = match self.shadow_cache.iter().find(|(wid, _)| *wid == w.id) {
-                    Some((_, Some(c))) => c.win_x != w.x || c.win_y != w.y || c.win_w != w.w || c.win_h != w.h,
-                    _ => true,
-                };
-                if need_recompute {
-                    let shadow = compute_shadow_alpha(w, self.screen_w, self.screen_h);
-                    if let Some(entry) = self.shadow_cache.iter_mut().find(|(wid, _)| *wid == w.id) {
-                        entry.1 = shadow;
+                let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
+                if let Some((_, ref mut cache_opt)) = entry {
+                    let need_recompute = match cache_opt {
+                        Some(c) => c.win_w != w.w || c.win_h != w.h,
+                        None => true,
+                    };
+                    if need_recompute {
+                        *cache_opt = compute_shadow_alpha(w, self.screen_w, self.screen_h);
                     }
-                }
-                if let Some((_, Some(ref cache))) = self.shadow_cache.iter().find(|(wid, _)| *wid == w.id) {
-                    blit_cached_shadow(layer, cache);
+                    if let Some(ref mut c) = cache_opt {
+                        c.win_x = w.x;
+                        c.win_y = w.y;
+                    }
+                    if let Some(ref c) = cache_opt {
+                        blit_cached_shadow(layer, c);
+                    }
                 }
             }
 
@@ -374,13 +383,22 @@ impl WindowManager {
                     }
                 }
             } else {
-                temp.clear(Color::TRANSPARENT);
-                draw_window_body(&mut temp, w);
+                let wx = w.x.max(0) as usize;
+                let wy = w.y.max(0) as usize;
+                let clear_w = w.w.min(temp.width() - wx);
+                let clear_h = w.h.min(temp.height() - wy);
+                if clear_w > 0 && clear_h > 0 {
+                    for cy in wy..wy + clear_h {
+                        let row = cy * temp.width + wx;
+                        temp.buf[row..row + clear_w].fill(Color::TRANSPARENT.0);
+                    }
+                }
+                draw_window_body(temp, w);
 
                 if let Some((uid, cmds)) = ui_win {
                     if w.id == uid {
                         super::uiscript::render(
-                            &mut temp, cmds,
+                            temp, cmds,
                             w.x, w.y, w.w, w.h,
                             TITLE_BAR_H, w.scroll_y,
                         );
@@ -390,7 +408,7 @@ impl WindowManager {
                 let wx = w.x.max(0) as usize;
                 let wy = w.y.max(0) as usize;
                 layer.composit_rounded(
-                    &temp,
+                    temp,
                     wx, wy,
                     wx, wy,
                     w.w, w.h,
@@ -413,70 +431,94 @@ impl WindowManager {
     pub fn get_window_rect(&self, id: WinId) -> Option<(i32, i32, usize, usize, i32)> {
         self.windows.iter().find(|w| w.id == id).map(|w| (w.x, w.y, w.w, w.h, w.scroll_y))
     }
+
+    pub fn dirty_bbox(&self, shadow_pad: i32) -> (usize, usize, usize, usize) {
+        let sw = self.screen_w as usize;
+        let sh = self.screen_h as usize;
+        if self.windows.is_empty() {
+            return (0, 0, sw, sh);
+        }
+        let mut min_x = sw;
+        let mut min_y = sh;
+        let mut max_x = 0usize;
+        let mut max_y = 0usize;
+        for w in &self.windows {
+            if !w.visible { continue; }
+            let x0 = (w.x - shadow_pad).max(0) as usize;
+            let y0 = (w.y - shadow_pad).max(0) as usize;
+            let x1 = (w.x + w.w as i32 + shadow_pad).min(sw as i32) as usize;
+            let y1 = (w.y + w.h as i32 + shadow_pad).min(sh as i32) as usize;
+            if x0 < min_x { min_x = x0; }
+            if y0 < min_y { min_y = y0; }
+            if x1 > max_x { max_x = x1; }
+            if y1 > max_y { max_y = y1; }
+        }
+        if max_x <= min_x || max_y <= min_y {
+            return (0, 0, sw, sh);
+        }
+        (min_x, min_y, max_x, max_y)
+    }
 }
 
 
 
 
-fn compute_shadow_alpha(w: &Window, screen_w: i32, screen_h: i32) -> Option<CachedShadow> {
+fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<CachedShadow> {
     let blur_r: i32 = 30;
     let r = WIN_RADIUS as i32;
-    let win_x0 = w.x;
-    let win_y0 = w.y;
-    let win_x1 = w.x + w.w as i32;
-    let win_y1 = w.y + w.h as i32;
-    let sx = (win_x0 - blur_r).max(0) as usize;
-    let sy = (win_y0 - blur_r).max(0) as usize;
-    let ex = (win_x1 + blur_r).min(screen_w) as usize;
-    let ey = (win_y1 + blur_r).min(screen_h) as usize;
-    let sw = ex.saturating_sub(sx);
-    let sh = ey.saturating_sub(sy);
+    let ww = w.w as i32;
+    let wh = w.h as i32;
+    let pad = blur_r as usize;
+    let sw = (ww + blur_r * 2) as usize;
+    let sh = (wh + blur_r * 2) as usize;
     if sw == 0 || sh == 0 { return None; }
 
     let blur_r_f = blur_r as f32;
     let mut alpha = Vec::with_capacity(sw * sh);
 
-    for py_i in sy as i32..ey as i32 {
-        for px_i in sx as i32..ex as i32 {
-            let edge = if px_i >= win_x0 && px_i < win_x1 && py_i >= win_y0 && py_i < win_y1 {
-                let in_top_left = px_i < win_x0 + r && py_i < win_y0 + r;
-                let in_top_right = px_i >= win_x1 - r && py_i < win_y0 + r;
-                let in_bottom_left = px_i < win_x0 + r && py_i >= win_y1 - r;
-                let in_bottom_right = px_i >= win_x1 - r && py_i >= win_y1 - r;
+    for py_i in 0..sh as i32 {
+        for px_i in 0..sw as i32 {
+            let sx_i = px_i - blur_r;
+            let sy_i = py_i - blur_r;
+            let edge = if sx_i >= 0 && sx_i < ww && sy_i >= 0 && sy_i < wh {
+                let in_top_left = sx_i < r && sy_i < r;
+                let in_top_right = sx_i >= ww - r && sy_i < r;
+                let in_bottom_left = sx_i < r && sy_i >= wh - r;
+                let in_bottom_right = sx_i >= ww - r && sy_i >= wh - r;
                 if in_top_left || in_top_right || in_bottom_left || in_bottom_right {
                     let (cx, cy) = if in_top_left {
-                        (win_x0 + r, win_y0 + r)
+                        (r, r)
                     } else if in_top_right {
-                        (win_x1 - r - 1, win_y0 + r)
+                        (ww - r - 1, r)
                     } else if in_bottom_left {
-                        (win_x0 + r, win_y1 - r - 1)
+                        (r, wh - r - 1)
                     } else {
-                        (win_x1 - r - 1, win_y1 - r - 1)
+                        (ww - r - 1, wh - r - 1)
                     };
-                    let dx = px_i as f32 + 0.5 - cx as f32;
-                    let dy = py_i as f32 + 0.5 - cy as f32;
+                    let dx = sx_i as f32 + 0.5 - cx as f32;
+                    let dy = sy_i as f32 + 0.5 - cy as f32;
                     let dist = libm::sqrtf(dx * dx + dy * dy);
                     let d = r as f32 - dist;
                     if d > 0.0 { -1 } else { (-d) as i32 }
                 } else {
                     -1
                 }
-            } else if px_i >= win_x0 && px_i < win_x1 {
-                if py_i < win_y0 { win_y0 - py_i } else { py_i - (win_y1 - 1) }
-            } else if py_i >= win_y0 && py_i < win_y1 {
-                if px_i < win_x0 { win_x0 - px_i } else { px_i - (win_x1 - 1) }
+            } else if sx_i >= 0 && sx_i < ww {
+                if sy_i < 0 { -sy_i } else { sy_i - (wh - 1) }
+            } else if sy_i >= 0 && sy_i < wh {
+                if sx_i < 0 { -sx_i } else { sx_i - (ww - 1) }
             } else {
-                let (cx, cy) = if px_i < win_x0 && py_i < win_y0 {
-                    (win_x0 + r, win_y0 + r)
-                } else if px_i >= win_x1 && py_i < win_y0 {
-                    (win_x1 - r - 1, win_y0 + r)
-                } else if px_i < win_x0 && py_i >= win_y1 {
-                    (win_x0 + r, win_y1 - r - 1)
+                let (cx, cy) = if sx_i < 0 && sy_i < 0 {
+                    (r, r)
+                } else if sx_i >= ww && sy_i < 0 {
+                    (ww - r - 1, r)
+                } else if sx_i < 0 && sy_i >= wh {
+                    (r, wh - r - 1)
                 } else {
-                    (win_x1 - r - 1, win_y1 - r - 1)
+                    (ww - r - 1, wh - r - 1)
                 };
-                let dx = px_i as f32 + 0.5 - cx as f32;
-                let dy = py_i as f32 + 0.5 - cy as f32;
+                let dx = sx_i as f32 + 0.5 - cx as f32;
+                let dy = sy_i as f32 + 0.5 - cy as f32;
                 let dist = libm::sqrtf(dx * dx + dy * dy);
                 (dist - r as f32) as i32
             };
@@ -493,27 +535,35 @@ fn compute_shadow_alpha(w: &Window, screen_w: i32, screen_h: i32) -> Option<Cach
 
     Some(CachedShadow {
         win_x: w.x, win_y: w.y, win_w: w.w, win_h: w.h,
-        alpha, x0: sx, y0: sy, w: sw, h: sh,
+        alpha, x0: pad, y0: pad, w: sw, h: sh,
     })
 }
 
 fn blit_cached_shadow(layer: &mut LayerSystem, cache: &CachedShadow) {
     let buf = &mut layer.buf;
     let lw = layer.width;
-    for py in 0..cache.h {
-        let dst_y = cache.y0 + py;
-        if dst_y >= layer.height { break; }
-        let row_start = dst_y * lw + cache.x0;
+    let lh = layer.height;
+    let blur_r = 30i32;
+    let screen_x0 = (cache.win_x - blur_r).max(0) as usize;
+    let screen_y0 = (cache.win_y - blur_r).max(0) as usize;
+    let x_off = (blur_r - cache.win_x).max(0) as usize;
+    let y_off = (blur_r - cache.win_y).max(0) as usize;
+    for py in y_off..cache.h {
+        let dst_y = screen_y0 + (py - y_off);
+        if dst_y >= lh { break; }
+        let row_start = dst_y * lw + screen_x0;
         let alpha_row = py * cache.w;
-        for px in 0..cache.w {
+        for px in x_off..cache.w {
+            let dst_x = screen_x0 + (px - x_off);
+            if dst_x >= lw { break; }
             let a = cache.alpha[alpha_row + px] as u32;
             if a == 0 { continue; }
             let inv = 255 - a;
-            let bg = Color(buf[row_start + px]);
+            let bg = Color(buf[row_start + (px - x_off)]);
             let cr = (bg.r() as u32 * inv) / 255;
             let cg = (bg.g() as u32 * inv) / 255;
             let cb = (bg.b() as u32 * inv) / 255;
-            buf[row_start + px] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
+            buf[row_start + (px - x_off)] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
         }
     }
 }
@@ -1052,21 +1102,56 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
+        if r == 0 {
+            for py in 0..h {
+                let src_y = sy + py;
+                let dst_y = dy + py;
+                if src_y >= sh || dst_y >= dh { continue; }
+                let src_row_start = src_y * sw + sx;
+                let dst_row_start = dst_y * dw + dx;
+                let copy_w = w.min(sw - sx).min(dw - dx);
+                for px in 0..copy_w {
+                    let sp = src.buf[src_row_start + px];
+                    if sp != Color::TRANSPARENT.0 {
+                        self.buf[dst_row_start + px] = sp;
+                    }
+                }
+            }
+            return;
+        }
+
+        let corner_end = r;
+        let straight_start = r;
+        let straight_end = h.saturating_sub(r);
+        let corner_row_start = h.saturating_sub(r);
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
             if src_y >= sh || dst_y >= dh { continue; }
 
-            for px in 0..w {
-                let src_x = sx + px;
-                let dst_x = dx + px;
-                if src_x >= sw || dst_x >= dw { continue; }
+            let src_row = src_y * sw + sx;
+            let dst_row = dst_y * dw + dx;
 
-                let src_pixel = Color(src.buf[src_y * sw + src_x]);
+            let in_top_corner = py < corner_end;
+            let in_bot_corner = py >= corner_row_start;
 
-                let alpha = if r == 0 {
-                    1.0f32
-                } else {
+            if !in_top_corner && !in_bot_corner {
+                let copy_w = w.min(sw - sx).min(dw - dx);
+                for px in 0..copy_w {
+                    let sp = src.buf[src_row + px];
+                    if sp != Color::TRANSPARENT.0 {
+                        self.buf[dst_row + px] = sp;
+                    }
+                }
+                continue;
+            }
+
+            let end_x = w.min(sw - sx).min(dw - dx);
+            for px in 0..end_x {
+                let src_pixel = Color(src.buf[src_row + px]);
+
+                let alpha = {
                     let in_corner = (px < r && py < r)
                         || (px >= w.saturating_sub(r) && py < r)
                         || (px < r && py >= h.saturating_sub(r))
@@ -1094,9 +1179,9 @@ impl LayerSystem {
                 if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
 
                 if alpha >= 1.0 {
-                    self.buf[dst_y * dw + dst_x] = src_pixel.0;
+                    self.buf[dst_row + px] = src_pixel.0;
                 } else {
-                    let dst_idx = dst_y * dw + dst_x;
+                    let dst_idx = dst_row + px;
                     let dst_pixel = Color(self.buf[dst_idx]);
                     let sr = src_pixel.r() as f32;
                     let sg = src_pixel.g() as f32;

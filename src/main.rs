@@ -137,6 +137,8 @@ fn main() -> Status {
     let mut cached_scene: Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
     let mut prev_cursor_x = cursor_x;
     let mut prev_cursor_y = cursor_y;
+    let shadow_pad = 35i32;
+    let mut prev_dirty: (usize, usize, usize, usize) = (0, 0, screen.width(), screen.height());
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
@@ -147,6 +149,8 @@ fn main() -> Status {
 
     loop {
         let mut dirty = false;
+
+        prev_dirty = wm.dirty_bbox(shadow_pad);
 
         
         if has_kbd {
@@ -245,13 +249,37 @@ fn main() -> Status {
 
         if dirty {
             if scene_dirty {
+                let (bx0, by0, bx1, by1) = prev_dirty;
+
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
                              &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+
+                let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
+                let rx0 = bx0.min(ax0);
+                let ry0 = by0.min(ay0);
+                let rx1 = bx1.max(ax1);
+                let ry1 = by1.max(ay1);
+
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
                 draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
-                layer.flush(&mut screen);
+
+                let w = screen.width();
+                let h = screen.height();
+                let pad = 32i32;
+                let cx0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
+                let cy0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
+                let cx1 = (prev_cursor_x.max(cursor_x) + CURSOR_BOX_W as i32 + pad).min(w as i32) as usize;
+                let cy1 = (prev_cursor_y.max(cursor_y) + CURSOR_BOX_H as i32 + pad).min(h as i32) as usize;
+                let fx0 = rx0.min(cx0);
+                let fy0 = ry0.min(cy0);
+                let fx1 = rx1.max(cx1);
+                let fy1 = ry1.max(cy1);
+                layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
+
+                prev_cursor_x = cursor_x;
+                prev_cursor_y = cursor_y;
             } else {
                 let w = screen.width();
                 let h = screen.height();
