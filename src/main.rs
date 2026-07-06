@@ -138,10 +138,11 @@ fn main() -> Status {
     let mut prev_cursor_x = cursor_x;
     let mut prev_cursor_y = cursor_y;
 
-    render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count, key_ev_count,
-                 fps, mouse_mode_label, cursor_x, cursor_y,
+    render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
+                 fps, mouse_mode_label,
                  &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
     cached_scene.copy_from_slice(layer.buf_ref());
+    draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
     layer.flush(&mut screen);
 
     loop {
@@ -244,13 +245,12 @@ fn main() -> Status {
 
         if dirty {
             if scene_dirty {
-                prev_cursor_x = cursor_x;
-                prev_cursor_y = cursor_y;
-                render_frame(&mut layer, &mut wm, &last_keys, mouse_ev_count,
-                             key_ev_count, fps, mouse_mode_label, cursor_x, cursor_y,
+                render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
+                             fps, mouse_mode_label,
                              &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
                 layer.flush(&mut screen);
             } else {
                 let w = screen.width();
@@ -275,9 +275,9 @@ fn main() -> Status {
 }
 
 
-fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
-                _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
-                fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
+fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
+                _mouse_ev: u32, key_ev: u32,
+                fps: u32, mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
                 wallpaper: Option<&[u32]>) {
     let w = layer.width();
@@ -289,10 +289,8 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
         layer.clear(Color::BG);
     }
 
-    
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
-    
     let tb_y = h.saturating_sub(TASKBAR_H);
     layer.fill_rect(0, tb_y, w, TASKBAR_H, Color::TASKBAR);
 
@@ -307,7 +305,6 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
         bx += 88;
     }
 
-    
     let mut fb = FmtBuf::new();
     fb.push_str("Key:");
     fb.push_u32(key_ev);
@@ -317,11 +314,17 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    
     layer.put_str(16, tb_y.saturating_sub(32), "Baram OS (b2)", Color::MUTED);
     layer.put_str(16, tb_y.saturating_sub(20), fb.as_str(),  Color::MUTED);
+}
 
-    
+fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
+                _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
+                fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
+                ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
+                wallpaper: Option<&[u32]>) {
+    render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
+                 ui_commands, ui_win_id, wallpaper);
     draw_cursor_into_layer(layer, cursor_x, cursor_y);
 }
 
