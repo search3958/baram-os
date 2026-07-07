@@ -121,7 +121,7 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
 
-const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
+const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool) {
     unsafe {
@@ -211,27 +211,14 @@ fn main() -> Status {
         let h = screen.height();
         let img_w = header.width as usize;
         let img_h = header.height as usize;
-        let sw_sh = w * img_h;
-        let sh_sw = h * img_w;
-        let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
-            let sw = img_w;
-            let sh = (img_w * h + w - 1) / w;
-            let sh = sh.min(img_h);
-            (sw, sh, 0, (img_h - sh) / 2)
-        } else {
-            let sh = img_h;
-            let sw = (img_h * w + h - 1) / h;
-            let sw = sw.min(img_w);
-            (sw, sh, (img_w - sw) / 2, 0)
-        };
         let mut buf = alloc::vec![0u32; w * h];
 
         for y in 0..h {
-            let sy = y * src_h / h;
-            let src_row = (oy + sy) * img_w + ox;
+            let sy = y * img_h / h;
+            let src_row = sy * img_w;
             let dst_row = y * w;
             for x in 0..w {
-                let sx = x * src_w / w;
+                let sx = x * img_w / w;
                 let px = pixels[src_row + sx];
                 buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
             }
@@ -435,10 +422,23 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         layer.clear(Color::BG);
     }
 
-    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
-
     let tb_y = h.saturating_sub(TASKBAR_H);
-    layer.fill_rect(0, tb_y, w, TASKBAR_H, Color::TASKBAR);
+    let tb_alpha = 180u32;
+    let tb_inv = 255 - tb_alpha;
+    let tb_color = Color::TASKBAR;
+    for y in tb_y..h {
+        let row_start = y * w;
+        for x in 0..w {
+            let idx = row_start + x;
+            let bg = Color(layer.buf_ref()[idx]);
+            let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
+            let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
+            let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
+            layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+        }
+    }
+
+    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
     let ids = wm.sorted_ids();
     let mut bx = 8i32;
