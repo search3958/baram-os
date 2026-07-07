@@ -28,7 +28,8 @@ use crate::mouse::{Mouse, MouseEvent};
 use crate::ui::FmtBuf;
 use crate::window::{WindowManager, LayerSystem};
 
-const TASKBAR_H: usize = 32;
+const TASKBAR_H: usize = 48;
+const TASKBAR_BLUR_R: i32 = 30;
 const SCROLL_SPEED: i32 = 30;
 
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
@@ -120,8 +121,56 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
-
 const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
+const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
+const ICON_FILES_PNG: &[u8] = include_bytes!("app/icon/files.png");
+const ICON_MANAGER_PNG: &[u8] = include_bytes!("app/icon/manager.png");
+
+struct IconBitmap {
+    pixels: Vec<[u8; 4]>,
+    w: usize,
+    h: usize,
+}
+
+static mut ICON_NONAME: Option<IconBitmap> = None;
+static mut ICON_FILES: Option<IconBitmap> = None;
+static mut ICON_MANAGER: Option<IconBitmap> = None;
+
+fn decode_icon(bytes: &[u8], size: usize) -> Option<IconBitmap> {
+    let (header, pixels) = png_decoder::decode(bytes).ok()?;
+    let src_w = header.width as usize;
+    let src_h = header.height as usize;
+    let mut buf = alloc::vec![[0u8; 4]; size * size];
+    for y in 0..size {
+        let sy = y * src_h / size;
+        for x in 0..size {
+            let sx = x * src_w / size;
+            buf[y * size + x] = pixels[sy * src_w + sx];
+        }
+    }
+    Some(IconBitmap { pixels: buf, w: size, h: size })
+}
+
+fn ensure_icon(icon: &mut Option<IconBitmap>, bytes: &[u8], size: usize) {
+    if icon.is_none() {
+        *icon = decode_icon(bytes, size);
+    }
+}
+
+fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
+    unsafe {
+        if title.contains("Manager") || title.contains("タスク") {
+            ensure_icon(&mut ICON_MANAGER, ICON_MANAGER_PNG, 40);
+            ICON_MANAGER.as_ref()
+        } else if title.contains("File") || title.contains("Explorer") || title.contains("ファイル") {
+            ensure_icon(&mut ICON_FILES, ICON_FILES_PNG, 40);
+            ICON_FILES.as_ref()
+        } else {
+            ensure_icon(&mut ICON_NONAME, ICON_NONAME_PNG, 40);
+            ICON_NONAME.as_ref()
+        }
+    }
+}
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool) {
     unsafe {
@@ -233,9 +282,16 @@ fn main() -> Status {
     let mut prev_is_resizing = false;
     let shadow_pad = 35i32;
 
+    let mut cached_taskbar: Option<Vec<u32>> = None;
+
+    let mut tb_add_progress: f32 = -1.0f32;
+    let mut tb_remove_progress: f32 = -1.0f32;
+    let mut tb_shift_x: f32 = 0.0f32;
+
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
-                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                 &mut cached_taskbar, -1.0, -1.0, 0.0);
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
@@ -265,6 +321,8 @@ fn main() -> Status {
                             let x = 60 + ((new_window_idx as i32 * 37) % 300);
                             let y = 80 + ((new_window_idx as i32 * 23) % 200);
                             wm.add(titles[idx], x, y, 300, 200);
+                            tb_add_progress = 0.0;
+                            tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
                         }
                         _ => {}
@@ -298,17 +356,30 @@ fn main() -> Status {
                     mouse_down = true;
                     let sh = screen.height();
                     if cy >= sh as i32 - TASKBAR_H as i32 {
-                        let ids = wm.sorted_ids();
-                        let mut bx = 8i32;
+                        let ids = wm.insertion_ids();
+                        let count = ids.len();
+                        let btn_d = 40i32;
+                        let btn_gap = 12i32;
+                        let total_w = count as i32 * (btn_d + btn_gap) - btn_gap;
+                        let mut bx = ((screen.width() as i32 - total_w) / 2).max(0);
+                        let btn_y = (sh as usize).saturating_sub(TASKBAR_H) + (TASKBAR_H - 40) / 2;
                         for id in &ids {
-                            if cx >= bx && cx < bx + 80 {
+                            let dx = cx - bx - btn_d / 2;
+                            let dy = cy - btn_y as i32 - btn_d / 2;
+                            if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
                                 wm.focus(*id);
                                 break;
                             }
-                            bx += 88;
+                            bx += btn_d + btn_gap;
                         }
                     } else {
+                        let before = wm.insertion_ids();
                         wm.on_mouse_down(cx, cy);
+                        let after = wm.insertion_ids();
+                        if after.len() < before.len() {
+                            tb_remove_progress = 0.0;
+                            tb_shift_x = -26.0;
+                        }
                     }
                     scene_dirty = true;
                 } else if !ev.left && mouse_down {
@@ -336,8 +407,34 @@ fn main() -> Status {
                 frames_since_tick = 0;
                 start_time = now;
                 dirty = true;
-                scene_dirty = true;
             }
+        }
+
+        if wm.take_order_changed() {
+            scene_dirty = true;
+            dirty = true;
+        }
+
+        let anim_speed = 10.0f32;
+        let dt = 0.008f32;
+
+        if tb_add_progress >= 0.0 {
+            tb_add_progress = (tb_add_progress + anim_speed * dt).min(1.0);
+            dirty = true;
+            scene_dirty = true;
+        }
+
+        if tb_remove_progress >= 0.0 {
+            tb_remove_progress = (tb_remove_progress + anim_speed * dt).min(1.0);
+            dirty = true;
+            scene_dirty = true;
+        }
+
+        if tb_shift_x.abs() > 0.5 {
+            tb_shift_x *= 0.8;
+            dirty = true;
+            scene_dirty = true;
+            if tb_shift_x.abs() < 0.5 { tb_shift_x = 0.0; }
         }
 
         if dirty {
@@ -348,7 +445,13 @@ fn main() -> Status {
 
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
-                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                             &mut cached_taskbar,
+                             tb_add_progress, tb_remove_progress,
+                             tb_shift_x);
+
+                if tb_add_progress >= 1.0 { tb_add_progress = -1.0; }
+                if tb_remove_progress >= 1.0 { tb_remove_progress = -1.0; }
 
                 let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
                 let rx0 = bx0.min(ax0);
@@ -356,12 +459,16 @@ fn main() -> Status {
                 let rx1 = bx1.max(ax1);
                 let ry1 = by1.max(ay1);
 
+                let w = screen.width();
+                let h = screen.height();
+                let tb_y = h.saturating_sub(TASKBAR_H);
+                let ry1 = ry1.max(h);
+                let ry0 = ry0.min(tb_y);
+
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
                 draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
 
-                let w = screen.width();
-                let h = screen.height();
                 let pad = 32i32;
                 let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
                 let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
@@ -412,7 +519,11 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
                 fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                wallpaper: Option<&[u32]>) {
+                wallpaper: Option<&[u32]>,
+                cached_taskbar: &mut Option<Vec<u32>>,
+                add_progress: f32,
+                remove_progress: f32,
+                shift_x: f32) {
     let w = layer.width();
     let h = layer.height();
 
@@ -423,32 +534,167 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     let tb_y = h.saturating_sub(TASKBAR_H);
-    let tb_alpha = 180u32;
-    let tb_inv = 255 - tb_alpha;
-    let tb_color = Color::TASKBAR;
-    for y in tb_y..h {
-        let row_start = y * w;
-        for x in 0..w {
-            let idx = row_start + x;
-            let bg = Color(layer.buf_ref()[idx]);
-            let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
-            let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
-            let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
-            layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+
+    if let Some(ref cached) = cached_taskbar {
+        layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
+    } else {
+        let blur_r = TASKBAR_BLUR_R;
+
+        let sigma = blur_r as f32 / 3.0;
+        let sigma_sq2 = 2.0 * sigma * sigma;
+        let kernel_size = (blur_r * 2 + 1) as usize;
+        let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
+        let mut ksum = 0.0f32;
+        for i in -blur_r..=blur_r {
+            let kw = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
+            kernel.push(kw);
+            ksum += kw;
         }
+        for kw in &mut kernel {
+            *kw /= ksum;
+        }
+
+        let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * TASKBAR_H];
+
+        for y in tb_y..h {
+            for x in 0..w {
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+                for (i, &kw) in kernel.iter().enumerate() {
+                    let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
+                    let pixel = Color(layer.buf_ref()[y * w + sx]);
+                    r += pixel.r() as f32 * kw;
+                    g += pixel.g() as f32 * kw;
+                    b += pixel.b() as f32 * kw;
+                }
+                tmp[(y - tb_y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+
+        for y in tb_y..h {
+            for x in 0..w {
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+                for (i, &kw) in kernel.iter().enumerate() {
+                    let sy = (y as i32 + i as i32 - blur_r).max(tb_y as i32).min(h as i32 - 1) as usize;
+                    let pixel = Color(tmp[(sy - tb_y) * w + x]);
+                    r += pixel.r() as f32 * kw;
+                    g += pixel.g() as f32 * kw;
+                    b += pixel.b() as f32 * kw;
+                }
+                layer.buf_mut()[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+
+        let tb_alpha = 120u32;
+        let tb_inv = 255 - tb_alpha;
+        let tb_color = Color::TASKBAR;
+        for y in tb_y..h {
+            let row_start = y * w;
+            for x in 0..w {
+                let idx = row_start + x;
+                let bg = Color(layer.buf_ref()[idx]);
+                let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
+                let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
+                let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+
+        let mut bar = alloc::vec![0u32; w * TASKBAR_H];
+        bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+        *cached_taskbar = Some(bar);
     }
 
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
-    let ids = wm.sorted_ids();
-    let mut bx = 8i32;
-    for id in &ids {
+    let ids = wm.insertion_ids();
+    let count = ids.len();
+    let btn_d = 40usize;
+    let btn_gap = 12i32;
+    let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
+    let base_bx = ((w as i32 - total_w) / 2).max(0);
+    let btn_y = tb_y + (TASKBAR_H - btn_d) / 2;
+
+    let add_scale = if add_progress >= 0.0 {
+        ease_out_back(add_progress)
+    } else {
+        1.0
+    };
+
+    for (i, id) in ids.iter().enumerate() {
         let title = wm.get_title(*id).unwrap_or("???");
         let is_focused = wm.focused_id == Some(*id);
-        let bg = if is_focused { Color::ACCENT } else { Color::WIN_INACTIVE };
-        layer.fill_rect(bx as usize, tb_y + 6, 80, 20, bg);
-        layer.put_str(bx as usize + 4, tb_y + 9, title, Color::TEXT);
-        bx += 88;
+
+        let scale = if add_progress >= 0.0 && i == count - 1 {
+            add_scale
+        } else {
+            1.0
+        };
+
+        let ca = if is_focused { 255u32 } else { 100u32 };
+        let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
+        let scaled_d = (btn_d as f32 * scale) as usize;
+        if scaled_d == 0 { continue; }
+        let offset = if scaled_d > btn_d { 0 } else { (btn_d - scaled_d) / 2 };
+        for py in 0..scaled_d {
+            for px in 0..scaled_d {
+                let dx = px as f32 + 0.5 - scaled_d as f32 / 2.0;
+                let dy = py as f32 + 0.5 - scaled_d as f32 / 2.0;
+                let dist_sq = dx * dx + dy * dy;
+                let r_f = scaled_d as f32 / 2.0;
+                let alpha = if dist_sq < (r_f - 1.0) * (r_f - 1.0) {
+                    1.0f32
+                } else if dist_sq > (r_f + 0.5) * (r_f + 0.5) {
+                    0.0
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (r_f + 0.5 - dist).clamp(0.0, 1.0)
+                };
+                if alpha <= 0.0 { continue; }
+                let sx = bx as usize + offset + px;
+                let sy = btn_y + offset + py;
+                if sx >= w || sy >= h { continue; }
+                let idx = sy * w + sx;
+                let bg = Color(layer.buf_ref()[idx]);
+                let a = (alpha * ca as f32) as u32;
+                let inv = 255 - a;
+                let r = (255 * a + bg.r() as u32 * inv) / 255;
+                let g = (255 * a + bg.g() as u32 * inv) / 255;
+                let b = (255 * a + bg.b() as u32 * inv) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+
+        if let Some(icon) = icon_for_title(title) {
+            let icon_draw = (btn_d as f32 * scale) as usize;
+            if icon_draw > 0 {
+                let icon_offset = if icon_draw > btn_d { 0 } else { (btn_d - icon_draw) / 2 };
+                let ix = bx as usize + icon_offset;
+                let iy = btn_y + icon_offset;
+                for py in 0..icon_draw {
+                    for px in 0..icon_draw {
+                        let src_x = px * icon.w / icon_draw;
+                        let src_y = py * icon.h / icon_draw;
+                        let src = icon.pixels[src_y * icon.w + src_x];
+                        let a = src[3] as u32;
+                        if a == 0 { continue; }
+                        let sx = ix + px;
+                        let sy = iy + py;
+                        if sx >= w || sy >= h { continue; }
+                        let idx = sy * w + sx;
+                        let bg = Color(layer.buf_ref()[idx]);
+                        let inv = 255 - a;
+                        let r = (src[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                        let g = (src[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                        let b = (src[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                        layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                    }
+                }
+            }
+        }
     }
 
     let mut fb = FmtBuf::new();
@@ -460,19 +706,30 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    layer.put_str(16, tb_y.saturating_sub(32), "Baram OS (b2)", Color::MUTED);
-    layer.put_str(16, tb_y.saturating_sub(20), fb.as_str(),  Color::MUTED);
+    layer.put_str(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
+    layer.put_str(16, tb_y + 26, fb.as_str(), Color::MUTED);
 }
 
 fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                wallpaper: Option<&[u32]>) {
+                wallpaper: Option<&[u32]>,
+                cached_taskbar: &mut Option<Vec<u32>>,
+                add_progress: f32, remove_progress: f32,
+                shift_x: f32) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
-                 ui_commands, ui_win_id, wallpaper);
+                 ui_commands, ui_win_id, wallpaper, cached_taskbar,
+                 add_progress, remove_progress, shift_x);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
+}
+
+fn ease_out_back(t: f32) -> f32 {
+    let c1 = 1.70158f32;
+    let c3 = c1 + 1.0;
+    let t = t.min(1.0);
+    1.0 + c3 * libm::powf(t - 1.0, 3.0) + c1 * libm::powf(t - 1.0, 2.0)
 }
 
 fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,
