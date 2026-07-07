@@ -157,6 +157,7 @@ pub struct WindowManager {
     screen_h: i32,
     shadow_cache: Vec<(WinId, Option<CachedShadow>)>,
     temp_layer: Option<LayerSystem>,
+    order_changed: bool,
 }
 
 impl WindowManager {
@@ -170,6 +171,7 @@ impl WindowManager {
             screen_h: screen_h as i32,
             shadow_cache: Vec::new(),
             temp_layer: None,
+            order_changed: false,
         }
     }
 
@@ -181,6 +183,7 @@ impl WindowManager {
         self.windows.push(win);
         self.shadow_cache.push((id, None));
         self.focus(id);
+        self.order_changed = true;
         id
     }
 
@@ -190,6 +193,7 @@ impl WindowManager {
             if let Some(pos) = self.shadow_cache.iter().position(|(wid, _)| *wid == id) {
                 self.shadow_cache.remove(pos);
             }
+            self.order_changed = true;
         }
         if self.focused_id == Some(id) {
             self.focused_id = self.windows.last().map(|w| w.id);
@@ -208,6 +212,7 @@ impl WindowManager {
             w.z = self.next_z;
         }
         self.focused_id = Some(id);
+        self.order_changed = true;
     }
 
     pub fn scroll_focused(&mut self, delta: i32) {
@@ -433,6 +438,12 @@ impl WindowManager {
 
     pub fn count(&self) -> usize {
         self.windows.len()
+    }
+
+    pub fn take_order_changed(&mut self) -> bool {
+        let v = self.order_changed;
+        self.order_changed = false;
+        v
     }
 
     pub fn get_title(&self, id: WinId) -> Option<&str> {

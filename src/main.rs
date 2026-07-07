@@ -340,6 +340,11 @@ fn main() -> Status {
             }
         }
 
+        if wm.take_order_changed() {
+            scene_dirty = true;
+            dirty = true;
+        }
+
         if dirty {
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
@@ -356,12 +361,16 @@ fn main() -> Status {
                 let rx1 = bx1.max(ax1);
                 let ry1 = by1.max(ay1);
 
+                let w = screen.width();
+                let h = screen.height();
+                let tb_y = h.saturating_sub(TASKBAR_H);
+                let ry1 = ry1.max(h);
+                let ry0 = ry0.min(tb_y);
+
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
                 draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
 
-                let w = screen.width();
-                let h = screen.height();
                 let pad = 32i32;
                 let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
                 let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
