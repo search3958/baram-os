@@ -90,8 +90,11 @@ impl Window {
     }
 
     fn resize_handle_hit(&self, px: i32, py: i32) -> bool {
-        px >= self.x + self.w as i32 - 6
-            && py >= self.y + self.h as i32 - 6
+        let hw = 12i32;
+        px >= self.x + self.w as i32 - hw
+            && px < self.x + self.w as i32
+            && py >= self.y + self.h as i32 - hw
+            && py < self.y + self.h as i32
     }
 
     pub fn scroll(&mut self, delta: i32) {
@@ -420,6 +423,14 @@ impl WindowManager {
         }
     }
 
+    pub fn is_any_resizing(&self) -> bool {
+        self.windows.iter().any(|w| w.resizing)
+    }
+
+    pub fn is_over_resize_handle(&self, px: i32, py: i32) -> bool {
+        self.windows.iter().any(|w| w.visible && w.resize_handle_hit(px, py))
+    }
+
     pub fn count(&self) -> usize {
         self.windows.len()
     }
@@ -430,6 +441,10 @@ impl WindowManager {
 
     pub fn get_window_rect(&self, id: WinId) -> Option<(i32, i32, usize, usize, i32)> {
         self.windows.iter().find(|w| w.id == id).map(|w| (w.x, w.y, w.w, w.h, w.scroll_y))
+    }
+
+    pub fn all_window_rects(&self) -> alloc::vec::Vec<(i32, i32, usize, usize)> {
+        self.windows.iter().filter(|w| w.visible).map(|w| (w.x, w.y, w.w, w.h)).collect()
     }
 
     pub fn dirty_bbox(&self, shadow_pad: i32) -> (usize, usize, usize, usize) {

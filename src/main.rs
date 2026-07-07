@@ -32,28 +32,135 @@ const TASKBAR_H: usize = 32;
 const SCROLL_SPEED: i32 = 30;
 
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
+const CURSOR_SVG_SIZE: &str = include_str!("data/mouse_size.svg");
 const CURSOR_BOX_W: usize = 15;
 const CURSOR_BOX_H: usize = 19;
+const CURSOR_BOX_SIZE_W: usize = 19;
+const CURSOR_BOX_SIZE_H: usize = 19;
 
+struct CursorBitmap {
+    pixels: Vec<u8>,
+    shadow: Vec<u8>,
+    w: usize,
+    h: usize,
+    shadow_w: usize,
+    shadow_h: usize,
+}
+
+static mut CURSOR_NORMAL: Option<CursorBitmap> = None;
+static mut CURSOR_RESIZE: Option<CursorBitmap> = None;
+
+fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap {
+    let svg_buf = svg::rasterize_svg_to_buffer(svg, w, h);
+
+    let mut silhouette: Vec<f32> = alloc::vec![0.0; w * h];
+    for i in 0..w * h {
+        if svg_buf[i * 4 + 3] > 0 {
+            silhouette[i] = 1.0;
+        }
+    }
+
+    let pad = blur_r as usize;
+    let pw = w + pad * 2;
+    let ph = h + pad * 2;
+    let mut padded: Vec<f32> = alloc::vec![0.0; pw * ph];
+    for y in 0..h {
+        for x in 0..w {
+            padded[(y + pad) * pw + (x + pad)] = silhouette[y * w + x];
+        }
+    }
+
+    let mut tmp: Vec<f32> = alloc::vec![0.0; pw * ph];
+    for y in 0..ph {
+        for x in 0..pw {
+            let mut sum = 0.0f32;
+            let mut cnt = 0.0f32;
+            for dx in -blur_r..=blur_r {
+                let sx = x as i32 + dx;
+                if sx >= 0 && sx < pw as i32 {
+                    sum += padded[y * pw + sx as usize];
+                    cnt += 1.0;
+                }
+            }
+            tmp[y * pw + x] = sum / cnt;
+        }
+    }
+    let mut result: Vec<f32> = alloc::vec![0.0; pw * ph];
+    for y in 0..ph {
+        for x in 0..pw {
+            let mut sum = 0.0f32;
+            let mut cnt = 0.0f32;
+            for dy in -blur_r..=blur_r {
+                let sy = y as i32 + dy;
+                if sy >= 0 && sy < ph as i32 {
+                    sum += tmp[sy as usize * pw + x];
+                    cnt += 1.0;
+                }
+            }
+            result[y * pw + x] = sum / cnt;
+        }
+    }
+
+    let mut shadow: Vec<u8> = alloc::vec![0u8; pw * ph * 4];
+    for i in 0..pw * ph {
+        let a = (result[i] * 120.0).min(255.0) as u8;
+        shadow[i * 4] = 0;
+        shadow[i * 4 + 1] = 0;
+        shadow[i * 4 + 2] = 0;
+        shadow[i * 4 + 3] = a;
+    }
+
+    CursorBitmap {
+        pixels: svg_buf,
+        shadow,
+        w, h,
+        shadow_w: pw, shadow_h: ph,
+    }
+}
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
 
 const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
 
-fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
-    
-    svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 3, cy + 4,
-        CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 8, 0);
-    
-    svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
-        CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
+fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool) {
+    unsafe {
+        let bitmap = if resizing {
+            CURSOR_RESIZE.as_ref()
+        } else {
+            CURSOR_NORMAL.as_ref()
+        };
+        if let Some(bmp) = bitmap {
+            let blur_r = 8i32;
+            let pad = blur_r as i32;
+            svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
+                cx + 3 - pad, cy + 4 - pad);
+            svg::blit_cached(layer, &bmp.pixels, bmp.w, bmp.h, cx, cy);
+            return;
+        }
+    }
+    if resizing {
+        svg::draw_svg_shadow(layer, CURSOR_SVG_SIZE, cx + 3, cy + 4,
+            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32, 8, 0);
+        svg::draw_svg_into(layer, CURSOR_SVG_SIZE, cx, cy,
+            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32);
+    } else {
+        svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 3, cy + 4,
+            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 8, 0);
+        svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
+            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
+    }
 }
 
 #[entry]
 fn main() -> Status {
     let _ = uefi::helpers::init();
     ttf_font::init();
+
+    unsafe {
+        CURSOR_NORMAL = Some(prerender_cursor(CURSOR_SVG, CURSOR_BOX_W, CURSOR_BOX_H, 8));
+        CURSOR_RESIZE = Some(prerender_cursor(CURSOR_SVG_SIZE, CURSOR_BOX_SIZE_W, CURSOR_BOX_SIZE_H, 8));
+    }
 
     let mut screen = match Screen::take() {
         Ok(s) => s,
@@ -136,13 +243,14 @@ fn main() -> Status {
     let mut cached_scene: Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
     let mut prev_cursor_x = cursor_x;
     let mut prev_cursor_y = cursor_y;
+    let mut prev_is_resizing = false;
     let shadow_pad = 35i32;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
                  &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
     cached_scene.copy_from_slice(layer.buf_ref());
-    draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
+    draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
 
     loop {
@@ -246,6 +354,8 @@ fn main() -> Status {
         }
 
         if dirty {
+            let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
+
             if scene_dirty {
                 let (bx0, by0, bx1, by1) = prev_dirty;
 
@@ -261,15 +371,19 @@ fn main() -> Status {
 
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
-                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
 
                 let w = screen.width();
                 let h = screen.height();
                 let pad = 32i32;
+                let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
+                let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
+                let prev_w = if prev_is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
+                let prev_h = if prev_is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
                 let cx0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
                 let cy0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
-                let cx1 = (prev_cursor_x.max(cursor_x) + CURSOR_BOX_W as i32 + pad).min(w as i32) as usize;
-                let cy1 = (prev_cursor_y.max(cursor_y) + CURSOR_BOX_H as i32 + pad).min(h as i32) as usize;
+                let cx1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad).min(w as i32) as usize;
+                let cy1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad).min(h as i32) as usize;
                 let fx0 = rx0.min(cx0);
                 let fy0 = ry0.min(cy0);
                 let fx1 = rx1.max(cx1);
@@ -278,21 +392,27 @@ fn main() -> Status {
 
                 prev_cursor_x = cursor_x;
                 prev_cursor_y = cursor_y;
+                prev_is_resizing = is_resizing;
             } else {
                 let w = screen.width();
                 let h = screen.height();
                 layer.buf_mut()[..w * h].copy_from_slice(&cached_scene);
-                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y);
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
 
                 let pad = 32i32;
+                let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
+                let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
+                let prev_w = if prev_is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
+                let prev_h = if prev_is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
                 let x0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
                 let y0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
-                let x1 = (prev_cursor_x.max(cursor_x) + CURSOR_BOX_W as i32 + pad).min(w as i32) as usize;
-                let y1 = (prev_cursor_y.max(cursor_y) + CURSOR_BOX_H as i32 + pad).min(h as i32) as usize;
+                let x1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad).min(w as i32) as usize;
+                let y1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad).min(h as i32) as usize;
                 layer.flush_rect(&mut screen, x0, y0, x1, y1);
 
                 prev_cursor_x = cursor_x;
                 prev_cursor_y = cursor_y;
+                prev_is_resizing = is_resizing;
             }
         }
 
@@ -351,7 +471,8 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, wallpaper);
-    draw_cursor_into_layer(layer, cursor_x, cursor_y);
+    let is_resizing = wm.is_any_resizing();
+    draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
 }
 
 fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,

@@ -106,7 +106,7 @@ fn cache_store(svg: &str, w: usize, h: usize, pixels: Vec<u8>) {
 }
 
 
-fn rasterize_svg_to_buffer(
+pub fn rasterize_svg_to_buffer(
     svg: &str,
     target_w: usize,
     target_h: usize,
@@ -380,7 +380,7 @@ fn stroke_path_to_buf(
 }
 
 
-fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
+pub fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();
     let lh = layer.height();
     let buf = layer.buf_mut();
@@ -417,7 +417,7 @@ fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i
 }
 
 
-fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
+pub fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();
     let lh = layer.height();
     let buf = layer.buf_mut();
