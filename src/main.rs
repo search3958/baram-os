@@ -234,9 +234,12 @@ fn main() -> Status {
     let mut prev_is_resizing = false;
     let shadow_pad = 35i32;
 
+    let mut cached_taskbar: Option<Vec<u32>> = None;
+
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
-                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                 &mut cached_taskbar);
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
@@ -337,7 +340,6 @@ fn main() -> Status {
                 frames_since_tick = 0;
                 start_time = now;
                 dirty = true;
-                scene_dirty = true;
             }
         }
 
@@ -354,7 +356,8 @@ fn main() -> Status {
 
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
-                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref());
+                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                             &mut cached_taskbar);
 
                 let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
                 let rx0 = bx0.min(ax0);
@@ -422,7 +425,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
                 fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                wallpaper: Option<&[u32]>) {
+                wallpaper: Option<&[u32]>,
+                cached_taskbar: &mut Option<Vec<u32>>) {
     let w = layer.width();
     let h = layer.height();
 
@@ -433,69 +437,78 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     let tb_y = h.saturating_sub(TASKBAR_H);
-    let blur_r = TASKBAR_BLUR_R;
 
-    let sigma = blur_r as f32 / 3.0;
-    let sigma_sq2 = 2.0 * sigma * sigma;
-    let kernel_size = (blur_r * 2 + 1) as usize;
-    let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
-    let mut ksum = 0.0f32;
-    for i in -blur_r..=blur_r {
-        let w = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
-        kernel.push(w);
-        ksum += w;
-    }
-    for kw in &mut kernel {
-        *kw /= ksum;
-    }
+    if let Some(ref cached) = cached_taskbar {
+        layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
+    } else {
+        let blur_r = TASKBAR_BLUR_R;
 
-    let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * TASKBAR_H];
+        let sigma = blur_r as f32 / 3.0;
+        let sigma_sq2 = 2.0 * sigma * sigma;
+        let kernel_size = (blur_r * 2 + 1) as usize;
+        let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
+        let mut ksum = 0.0f32;
+        for i in -blur_r..=blur_r {
+            let kw = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
+            kernel.push(kw);
+            ksum += kw;
+        }
+        for kw in &mut kernel {
+            *kw /= ksum;
+        }
 
-    for y in tb_y..h {
-        for x in 0..w {
-            let mut r = 0.0f32;
-            let mut g = 0.0f32;
-            let mut b = 0.0f32;
-            for (i, &kw) in kernel.iter().enumerate() {
-                let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
-                let pixel = Color(layer.buf_ref()[y * w + sx]);
-                r += pixel.r() as f32 * kw;
-                g += pixel.g() as f32 * kw;
-                b += pixel.b() as f32 * kw;
+        let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * TASKBAR_H];
+
+        for y in tb_y..h {
+            for x in 0..w {
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+                for (i, &kw) in kernel.iter().enumerate() {
+                    let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
+                    let pixel = Color(layer.buf_ref()[y * w + sx]);
+                    r += pixel.r() as f32 * kw;
+                    g += pixel.g() as f32 * kw;
+                    b += pixel.b() as f32 * kw;
+                }
+                tmp[(y - tb_y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
-            tmp[(y - tb_y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
         }
-    }
 
-    for y in tb_y..h {
-        for x in 0..w {
-            let mut r = 0.0f32;
-            let mut g = 0.0f32;
-            let mut b = 0.0f32;
-            for (i, &kw) in kernel.iter().enumerate() {
-                let sy = (y as i32 + i as i32 - blur_r).max(tb_y as i32).min(h as i32 - 1) as usize;
-                let pixel = Color(tmp[(sy - tb_y) * w + x]);
-                r += pixel.r() as f32 * kw;
-                g += pixel.g() as f32 * kw;
-                b += pixel.b() as f32 * kw;
+        for y in tb_y..h {
+            for x in 0..w {
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+                for (i, &kw) in kernel.iter().enumerate() {
+                    let sy = (y as i32 + i as i32 - blur_r).max(tb_y as i32).min(h as i32 - 1) as usize;
+                    let pixel = Color(tmp[(sy - tb_y) * w + x]);
+                    r += pixel.r() as f32 * kw;
+                    g += pixel.g() as f32 * kw;
+                    b += pixel.b() as f32 * kw;
+                }
+                layer.buf_mut()[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
-            layer.buf_mut()[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
         }
-    }
 
-    let tb_alpha = 120u32;
-    let tb_inv = 255 - tb_alpha;
-    let tb_color = Color::TASKBAR;
-    for y in tb_y..h {
-        let row_start = y * w;
-        for x in 0..w {
-            let idx = row_start + x;
-            let bg = Color(layer.buf_ref()[idx]);
-            let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
-            let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
-            let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
-            layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+        let tb_alpha = 120u32;
+        let tb_inv = 255 - tb_alpha;
+        let tb_color = Color::TASKBAR;
+        for y in tb_y..h {
+            let row_start = y * w;
+            for x in 0..w {
+                let idx = row_start + x;
+                let bg = Color(layer.buf_ref()[idx]);
+                let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
+                let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
+                let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
         }
+
+        let mut bar = alloc::vec![0u32; w * TASKBAR_H];
+        bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+        *cached_taskbar = Some(bar);
     }
 
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
@@ -528,9 +541,10 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                wallpaper: Option<&[u32]>) {
+                wallpaper: Option<&[u32]>,
+                cached_taskbar: &mut Option<Vec<u32>>) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
-                 ui_commands, ui_win_id, wallpaper);
+                 ui_commands, ui_win_id, wallpaper, cached_taskbar);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
 }
