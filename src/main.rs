@@ -422,14 +422,12 @@ fn main() -> Status {
             tb_add_progress = (tb_add_progress + anim_speed * dt).min(1.0);
             dirty = true;
             scene_dirty = true;
-            if tb_add_progress >= 1.0 { tb_add_progress = -1.0; }
         }
 
         if tb_remove_progress >= 0.0 {
             tb_remove_progress = (tb_remove_progress + anim_speed * dt).min(1.0);
             dirty = true;
             scene_dirty = true;
-            if tb_remove_progress >= 1.0 { tb_remove_progress = -1.0; }
         }
 
         if tb_shift_x.abs() > 0.5 {
@@ -451,6 +449,9 @@ fn main() -> Status {
                              &mut cached_taskbar,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x);
+
+                if tb_add_progress >= 1.0 { tb_add_progress = -1.0; }
+                if tb_remove_progress >= 1.0 { tb_remove_progress = -1.0; }
 
                 let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
                 let rx0 = bx0.min(ax0);
@@ -637,7 +638,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
         let scaled_d = (btn_d as f32 * scale) as usize;
         if scaled_d == 0 { continue; }
-        let offset = (btn_d - scaled_d) / 2;
+        let offset = if scaled_d > btn_d { 0 } else { (btn_d - scaled_d) / 2 };
         for py in 0..scaled_d {
             for px in 0..scaled_d {
                 let dx = px as f32 + 0.5 - scaled_d as f32 / 2.0;
@@ -670,8 +671,9 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         if let Some(icon) = icon_for_title(title) {
             let icon_draw = (btn_d as f32 * scale) as usize;
             if icon_draw > 0 {
-                let ix = bx as usize + (btn_d - icon_draw) / 2;
-                let iy = btn_y + (btn_d - icon_draw) / 2;
+                let icon_offset = if icon_draw > btn_d { 0 } else { (btn_d - icon_draw) / 2 };
+                let ix = bx as usize + icon_offset;
+                let iy = btn_y + icon_offset;
                 for py in 0..icon_draw {
                     for px in 0..icon_draw {
                         let src_x = px * icon.w / icon_draw;
