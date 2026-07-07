@@ -1095,6 +1095,47 @@ impl LayerSystem {
         }
     }
 
+    pub fn put_str_hud(&mut self, mut x: usize, y: usize, s: &str, fg: Color) {
+        if crate::ttf_font_hud::is_available() {
+            for ch in s.chars() {
+                let glyph = crate::ttf_font_hud::glyph(ch);
+                if glyph.w > 0 && glyph.h > 0 {
+                    let baseline = y as i32 + crate::ttf_font_hud::ascent();
+                    for row in 0..glyph.h {
+                        let py = baseline + glyph.y_off + row;
+                        if py < 0 || py >= self.height as i32 { continue; }
+                        for col in 0..glyph.w {
+                            let px = x as i32 + col;
+                            if px < 0 || px >= self.width as i32 { continue; }
+                            if !self.clip_test(px as usize, py as usize) { continue; }
+                            let alpha = glyph.data[(row * glyph.w + col) as usize];
+                            if alpha > 0 {
+                                let a = alpha as u32;
+                                let bg = self.buf[py as usize * self.width + px as usize];
+                                let br = (bg >> 16) & 0xFF;
+                                let bg2 = (bg >> 8) & 0xFF;
+                                let bb = bg & 0xFF;
+                                let fr = (fg.0 >> 16) & 0xFF;
+                                let fg2 = (fg.0 >> 8) & 0xFF;
+                                let fb = fg.0 & 0xFF;
+                                let r = (fr * a + br * (255 - a)) / 255;
+                                let g = (fg2 * a + bg2 * (255 - a)) / 255;
+                                let b = (fb * a + bb * (255 - a)) / 255;
+                                self.buf[py as usize * self.width + px as usize] = (r << 16) | (g << 8) | b;
+                            }
+                        }
+                    }
+                    x += glyph.advance.max(0) as usize;
+                } else if (ch as u32) < 0x80 {
+                    self.put_char(x, y, ch, fg);
+                    x += crate::font::GLYPH_W;
+                }
+            }
+            return;
+        }
+        self.put_str(x, y, s, fg);
+    }
+
     pub fn flush(&mut self, screen: &mut Screen) {
         let w = self.width;
         let h = self.height;

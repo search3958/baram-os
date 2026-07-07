@@ -12,6 +12,7 @@ mod keyboard;
 mod mouse;
 mod svg;
 mod ttf_font;
+mod ttf_font_hud;
 mod ui;
 mod uiscript;
 mod usb_hid;
@@ -205,6 +206,7 @@ fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: b
 fn main() -> Status {
     let _ = uefi::helpers::init();
     ttf_font::init();
+    ttf_font_hud::init();
 
     unsafe {
         CURSOR_NORMAL = Some(prerender_cursor(CURSOR_SVG, CURSOR_BOX_W, CURSOR_BOX_H, 8));
@@ -706,8 +708,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    layer.put_str(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
-    layer.put_str(16, tb_y + 26, fb.as_str(), Color::MUTED);
+    layer.put_str_hud(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
+    layer.put_str_hud(16, tb_y + 26, fb.as_str(), Color::MUTED);
 }
 
 fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
