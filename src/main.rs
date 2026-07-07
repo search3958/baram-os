@@ -8,10 +8,10 @@ mod cursor;
 mod font;
 mod gop;
 mod keyboard;
+
 mod mouse;
 mod svg;
 mod ttf_font;
-mod tinyqoi;
 mod ui;
 mod uiscript;
 mod usb_hid;
@@ -39,7 +39,7 @@ const CURSOR_BOX_H: usize = 19;
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
 
-const WALLPAPER_QOI: &[u8] = include_bytes!("data/wallpaper/hanul.qoi");
+const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32) {
     
@@ -74,9 +74,6 @@ fn main() -> Status {
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
     
-    let wallpaper = tinyqoi::decode(WALLPAPER_QOI);
-
-    
     wm.add("システム情報", 40, 60, 320, 220);
     wm.add("Task Manager", 400, 80, 340, 260);
 
@@ -102,11 +99,11 @@ fn main() -> Status {
 
     
     let mut cached_wallpaper: Option<Vec<u32>> = None;
-    if let Some(ref img) = wallpaper {
+    if let Ok((header, pixels)) = png_decoder::decode(WALLPAPER_PNG) {
         let w = screen.width();
         let h = screen.height();
-        let img_w = img.width as usize;
-        let img_h = img.height as usize;
+        let img_w = header.width as usize;
+        let img_h = header.height as usize;
         let sw_sh = w * img_h;
         let sh_sw = h * img_w;
         let (src_w, src_h, ox, oy) = if sw_sh > sh_sw {
@@ -121,13 +118,15 @@ fn main() -> Status {
             (sw, sh, (img_w - sw) / 2, 0)
         };
         let mut buf = alloc::vec![0u32; w * h];
+
         for y in 0..h {
             let sy = y * src_h / h;
             let src_row = (oy + sy) * img_w + ox;
             let dst_row = y * w;
             for x in 0..w {
                 let sx = x * src_w / w;
-                buf[dst_row + x] = img.pixels[src_row + sx].0;
+                let px = pixels[src_row + sx];
+                buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
             }
         }
         cached_wallpaper = Some(buf);
@@ -138,7 +137,6 @@ fn main() -> Status {
     let mut prev_cursor_x = cursor_x;
     let mut prev_cursor_y = cursor_y;
     let shadow_pad = 35i32;
-    let mut prev_dirty: (usize, usize, usize, usize) = (0, 0, screen.width(), screen.height());
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
@@ -150,7 +148,7 @@ fn main() -> Status {
     loop {
         let mut dirty = false;
 
-        prev_dirty = wm.dirty_bbox(shadow_pad);
+        let prev_dirty = wm.dirty_bbox(shadow_pad);
 
         
         if has_kbd {
@@ -305,7 +303,7 @@ fn main() -> Status {
 
 fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
-                fps: u32, mouse_mode: &str,
+                fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
                 wallpaper: Option<&[u32]>) {
     let w = layer.width();
