@@ -29,6 +29,7 @@ use crate::ui::FmtBuf;
 use crate::window::{WindowManager, LayerSystem};
 
 const TASKBAR_H: usize = 32;
+const TASKBAR_BLUR_R: i32 = 30;
 const SCROLL_SPEED: i32 = 30;
 
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
@@ -432,7 +433,57 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     let tb_y = h.saturating_sub(TASKBAR_H);
-    let tb_alpha = 180u32;
+    let blur_r = TASKBAR_BLUR_R;
+
+    let sigma = blur_r as f32 / 3.0;
+    let sigma_sq2 = 2.0 * sigma * sigma;
+    let kernel_size = (blur_r * 2 + 1) as usize;
+    let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
+    let mut ksum = 0.0f32;
+    for i in -blur_r..=blur_r {
+        let w = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
+        kernel.push(w);
+        ksum += w;
+    }
+    for kw in &mut kernel {
+        *kw /= ksum;
+    }
+
+    let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * TASKBAR_H];
+
+    for y in tb_y..h {
+        for x in 0..w {
+            let mut r = 0.0f32;
+            let mut g = 0.0f32;
+            let mut b = 0.0f32;
+            for (i, &kw) in kernel.iter().enumerate() {
+                let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
+                let pixel = Color(layer.buf_ref()[y * w + sx]);
+                r += pixel.r() as f32 * kw;
+                g += pixel.g() as f32 * kw;
+                b += pixel.b() as f32 * kw;
+            }
+            tmp[(y - tb_y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
+        }
+    }
+
+    for y in tb_y..h {
+        for x in 0..w {
+            let mut r = 0.0f32;
+            let mut g = 0.0f32;
+            let mut b = 0.0f32;
+            for (i, &kw) in kernel.iter().enumerate() {
+                let sy = (y as i32 + i as i32 - blur_r).max(tb_y as i32).min(h as i32 - 1) as usize;
+                let pixel = Color(tmp[(sy - tb_y) * w + x]);
+                r += pixel.r() as f32 * kw;
+                g += pixel.g() as f32 * kw;
+                b += pixel.b() as f32 * kw;
+            }
+            layer.buf_mut()[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
+        }
+    }
+
+    let tb_alpha = 120u32;
     let tb_inv = 255 - tb_alpha;
     let tb_color = Color::TASKBAR;
     for y in tb_y..h {
