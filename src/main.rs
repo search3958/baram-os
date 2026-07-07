@@ -290,13 +290,11 @@ fn main() -> Status {
     let mut tb_remove_title_len: usize = 0;
     let mut tb_remove_old_idx: usize = 0;
     let mut tb_shift_x: f32 = 0.0f32;
-    let mut tb_focus_progress: f32 = 1.0f32;
-    let mut tb_prev_focused: Option<window::WinId> = None;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
                  &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
-                 &mut cached_taskbar, -1.0, -1.0, &[0u8; 24], 0, 0, 0.0, 1.0, None);
+                 &mut cached_taskbar, -1.0, -1.0, &[0u8; 24], 0, 0, 0.0);
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
@@ -327,7 +325,7 @@ fn main() -> Status {
                             let y = 80 + ((new_window_idx as i32 * 23) % 200);
                             wm.add(titles[idx], x, y, 300, 200);
                             tb_add_progress = 0.0;
-                            tb_shift_x = 52.0;
+                            tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
                         }
                         _ => {}
@@ -398,7 +396,7 @@ fn main() -> Status {
                             tb_remove_title_len = removed_title_len;
                             tb_remove_old_idx = removed_idx;
                             tb_remove_progress = 0.0;
-                            tb_shift_x = -52.0;
+                            tb_shift_x = -26.0;
                         }
                     }
                     scene_dirty = true;
@@ -435,7 +433,7 @@ fn main() -> Status {
             dirty = true;
         }
 
-        let anim_speed = 5.0f32;
+        let anim_speed = 10.0f32;
         let dt = 0.008f32;
 
         if tb_add_progress >= 0.0 {
@@ -453,21 +451,11 @@ fn main() -> Status {
         }
 
         if tb_shift_x.abs() > 0.5 {
-            tb_shift_x *= 0.85;
+            tb_shift_x *= 0.8;
             dirty = true;
             scene_dirty = true;
             if tb_shift_x.abs() < 0.5 { tb_shift_x = 0.0; }
         }
-
-        if wm.focused_id != tb_prev_focused && tb_focus_progress >= 1.0 {
-            tb_focus_progress = 0.0;
-        }
-        if tb_focus_progress < 1.0 {
-            tb_focus_progress = (tb_focus_progress + 10.0 * dt).min(1.0);
-            dirty = true;
-            scene_dirty = true;
-        }
-        tb_prev_focused = wm.focused_id;
 
         if dirty {
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
@@ -481,7 +469,7 @@ fn main() -> Status {
                              &mut cached_taskbar,
                              tb_add_progress, tb_remove_progress,
                              &tb_remove_title, tb_remove_title_len, tb_remove_old_idx,
-                             tb_shift_x, tb_focus_progress, tb_prev_focused);
+                             tb_shift_x);
 
                 let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
                 let rx0 = bx0.min(ax0);
@@ -556,9 +544,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 remove_title: &[u8; 24],
                 remove_title_len: usize,
                 remove_old_idx: usize,
-                shift_x: f32,
-                focus_progress: f32,
-                prev_focused: Option<window::WinId>) {
+                shift_x: f32) {
     let w = layer.width();
     let h = layer.height();
 
@@ -669,20 +655,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             1.0
         };
 
-        let focus_a = if focus_progress < 1.0 {
-            let was_focused = prev_focused == Some(*id);
-            let now_focused = wm.focused_id == Some(*id);
-            if was_focused && !now_focused {
-                1.0 - ease_in_cubic(focus_progress)
-            } else if !was_focused && now_focused {
-                0.392 + ease_in_cubic(focus_progress) * 0.608
-            } else if now_focused { 1.0 } else { 0.392 }
-        } else {
-            if is_focused { 1.0 } else { 0.392 }
-        };
-
+        let ca = if is_focused { 255u32 } else { 100u32 };
         let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
-        let ca = (focus_a * 255.0) as u32;
         let scaled_d = (btn_d as f32 * scale) as usize;
         if scaled_d == 0 { continue; }
         let offset = (btn_d - scaled_d) / 2;
@@ -833,12 +807,11 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 add_progress: f32, remove_progress: f32,
                 remove_title: &[u8; 24], remove_title_len: usize, remove_old_idx: usize,
-                shift_x: f32,
-                focus_progress: f32, prev_focused: Option<window::WinId>) {
+                shift_x: f32) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, wallpaper, cached_taskbar,
                  add_progress, remove_progress, remove_title, remove_title_len, remove_old_idx,
-                 shift_x, focus_progress, prev_focused);
+                 shift_x);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
 }
