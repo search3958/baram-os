@@ -286,15 +286,12 @@ fn main() -> Status {
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
-    let mut tb_remove_title: [u8; 24] = [0u8; 24];
-    let mut tb_remove_title_len: usize = 0;
-    let mut tb_remove_old_idx: usize = 0;
     let mut tb_shift_x: f32 = 0.0f32;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
                  &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
-                 &mut cached_taskbar, -1.0, -1.0, &[0u8; 24], 0, 0, 0.0);
+                 &mut cached_taskbar, -1.0, -1.0, 0.0);
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
@@ -377,24 +374,9 @@ fn main() -> Status {
                         }
                     } else {
                         let before = wm.insertion_ids();
-                        let mut removed_title = [0u8; 24];
-                        let mut removed_title_len = 0usize;
-                        let mut removed_idx = 0usize;
-                        for (i, id) in before.iter().enumerate() {
-                            if let Some(title) = wm.get_title(*id) {
-                                let bytes = title.as_bytes();
-                                let n = bytes.len().min(23);
-                                removed_title[..n].copy_from_slice(&bytes[..n]);
-                                removed_title_len = n;
-                                removed_idx = i;
-                            }
-                        }
                         wm.on_mouse_down(cx, cy);
                         let after = wm.insertion_ids();
                         if after.len() < before.len() {
-                            tb_remove_title = removed_title;
-                            tb_remove_title_len = removed_title_len;
-                            tb_remove_old_idx = removed_idx;
                             tb_remove_progress = 0.0;
                             tb_shift_x = -26.0;
                         }
@@ -468,7 +450,6 @@ fn main() -> Status {
                              &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
                              tb_add_progress, tb_remove_progress,
-                             &tb_remove_title, tb_remove_title_len, tb_remove_old_idx,
                              tb_shift_x);
 
                 let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
@@ -541,9 +522,6 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 add_progress: f32,
                 remove_progress: f32,
-                remove_title: &[u8; 24],
-                remove_title_len: usize,
-                remove_old_idx: usize,
                 shift_x: f32) {
     let w = layer.width();
     let h = layer.height();
@@ -717,75 +695,6 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         }
     }
 
-    if remove_progress >= 0.0 && remove_progress < 1.0 {
-        let r_scale = 1.0 - ease_in_cubic(remove_progress);
-        let r_alpha = 1.0 - remove_progress;
-        let r_solid_d = (btn_d as f32 * r_scale) as usize;
-        if r_solid_d > 0 {
-            let r_offset = (btn_d - r_solid_d) / 2;
-            let r_total_w = (count as i32 + 1) * (btn_d as i32 + btn_gap) - btn_gap;
-            let r_bx_start = ((w as i32 - r_total_w) / 2).max(0);
-            let r_bx = r_bx_start + shift_x as i32 + remove_old_idx as i32 * (btn_d as i32 + btn_gap);
-
-            for py in 0..r_solid_d {
-                for px in 0..r_solid_d {
-                    let dx = px as f32 + 0.5 - r_solid_d as f32 / 2.0;
-                    let dy = py as f32 + 0.5 - r_solid_d as f32 / 2.0;
-                    let dist_sq = dx * dx + dy * dy;
-                    let r_f = r_solid_d as f32 / 2.0;
-                    let alpha = if dist_sq < (r_f - 1.0) * (r_f - 1.0) {
-                        1.0f32
-                    } else if dist_sq > (r_f + 0.5) * (r_f + 0.5) {
-                        0.0
-                    } else {
-                        let dist = libm::sqrtf(dist_sq);
-                        (r_f + 0.5 - dist).clamp(0.0, 1.0)
-                    };
-                    if alpha <= 0.0 { continue; }
-                    let sx = r_bx as usize + r_offset + px;
-                    let sy = btn_y + r_offset + py;
-                    if sx >= w || sy >= h { continue; }
-                    let idx = sy * w + sx;
-                    let bg = Color(layer.buf_ref()[idx]);
-                    let a = (alpha * r_alpha * 255.0) as u32;
-                    let inv = 255 - a;
-                    let r = (255 * a + bg.r() as u32 * inv) / 255;
-                    let g = (255 * a + bg.g() as u32 * inv) / 255;
-                    let b = (255 * a + bg.b() as u32 * inv) / 255;
-                    layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
-                }
-            }
-
-            let remove_title_str = core::str::from_utf8(&remove_title[..remove_title_len]).unwrap_or("???");
-            if let Some(icon) = icon_for_title(remove_title_str) {
-                let icon_draw = (btn_d as f32 * r_scale) as usize;
-                if icon_draw > 0 {
-                    let ix = r_bx as usize + (btn_d - icon_draw) / 2;
-                    let iy = btn_y + (btn_d - icon_draw) / 2;
-                    for py in 0..icon_draw {
-                        for px in 0..icon_draw {
-                            let src_x = px * icon.w / icon_draw;
-                            let src_y = py * icon.h / icon_draw;
-                            let src = icon.pixels[src_y * icon.w + src_x];
-                            let a = (src[3] as u32 * (r_alpha * 255.0) as u32) / 255;
-                            if a == 0 { continue; }
-                            let sx = ix + px;
-                            let sy = iy + py;
-                            if sx >= w || sy >= h { continue; }
-                            let idx = sy * w + sx;
-                            let bg = Color(layer.buf_ref()[idx]);
-                            let inv = 255 - a;
-                            let r = (src[0] as u32 * a + bg.r() as u32 * inv) / 255;
-                            let g = (src[1] as u32 * a + bg.g() as u32 * inv) / 255;
-                            let b = (src[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                            layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     let mut fb = FmtBuf::new();
     fb.push_str("Key:");
     fb.push_u32(key_ev);
@@ -806,12 +715,10 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 add_progress: f32, remove_progress: f32,
-                remove_title: &[u8; 24], remove_title_len: usize, remove_old_idx: usize,
                 shift_x: f32) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, wallpaper, cached_taskbar,
-                 add_progress, remove_progress, remove_title, remove_title_len, remove_old_idx,
-                 shift_x);
+                 add_progress, remove_progress, shift_x);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
 }
@@ -821,11 +728,6 @@ fn ease_out_back(t: f32) -> f32 {
     let c3 = c1 + 1.0;
     let t = t.min(1.0);
     1.0 + c3 * libm::powf(t - 1.0, 3.0) + c1 * libm::powf(t - 1.0, 2.0)
-}
-
-fn ease_in_cubic(t: f32) -> f32 {
-    let t = t.min(1.0);
-    t * t * t
 }
 
 fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,
