@@ -251,6 +251,10 @@ impl WindowManager {
         v.into_iter().map(|(id, _)| id).collect()
     }
 
+    pub fn insertion_ids(&self) -> Vec<WinId> {
+        self.windows.iter().map(|w| w.id).collect()
+    }
+
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
         if let Some(id) = self.window_at(px, py) {
             self.focus(id);

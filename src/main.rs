@@ -121,8 +121,55 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 
-
 const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
+const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
+const ICON_FILES_PNG: &[u8] = include_bytes!("app/icon/files.png");
+const ICON_MANAGER_PNG: &[u8] = include_bytes!("app/icon/manager.png");
+
+struct IconBitmap {
+    pixels: Vec<[u8; 4]>,
+    w: usize,
+    h: usize,
+}
+
+static mut ICON_NONAME: Option<IconBitmap> = None;
+static mut ICON_FILES: Option<IconBitmap> = None;
+static mut ICON_MANAGER: Option<IconBitmap> = None;
+
+fn decode_icon(bytes: &[u8], size: usize) -> Option<IconBitmap> {
+    let (header, pixels) = png_decoder::decode(bytes).ok()?;
+    let src_w = header.width as usize;
+    let src_h = header.height as usize;
+    let mut buf = alloc::vec![[0u8; 4]; size * size];
+    for y in 0..size {
+        let sy = y * src_h / size;
+        for x in 0..size {
+            let sx = x * src_w / size;
+            buf[y * size + x] = pixels[sy * src_w + sx];
+        }
+    }
+    Some(IconBitmap { pixels: buf, w: size, h: size })
+}
+
+fn prerender_icons(icon_size: usize) {
+    unsafe {
+        ICON_NONAME = decode_icon(ICON_NONAME_PNG, icon_size);
+        ICON_FILES = decode_icon(ICON_FILES_PNG, icon_size);
+        ICON_MANAGER = decode_icon(ICON_MANAGER_PNG, icon_size);
+    }
+}
+
+fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
+    unsafe {
+        if title.contains("Manager") || title.contains("タスク") {
+            ICON_MANAGER.as_ref()
+        } else if title.contains("File") || title.contains("Explorer") || title.contains("ファイル") {
+            ICON_FILES.as_ref()
+        } else {
+            ICON_NONAME.as_ref()
+        }
+    }
+}
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool) {
     unsafe {
@@ -162,6 +209,7 @@ fn main() -> Status {
         CURSOR_NORMAL = Some(prerender_cursor(CURSOR_SVG, CURSOR_BOX_W, CURSOR_BOX_H, 8));
         CURSOR_RESIZE = Some(prerender_cursor(CURSOR_SVG_SIZE, CURSOR_BOX_SIZE_W, CURSOR_BOX_SIZE_H, 8));
     }
+    prerender_icons(40);
 
     let mut screen = match Screen::take() {
         Ok(s) => s,
@@ -302,18 +350,21 @@ fn main() -> Status {
                     mouse_down = true;
                     let sh = screen.height();
                     if cy >= sh as i32 - TASKBAR_H as i32 {
-                        let ids = wm.sorted_ids();
+                        let ids = wm.insertion_ids();
                         let count = ids.len();
-                        let btn_w = 80i32;
-                        let btn_gap = 8i32;
-                        let total_w = count as i32 * (btn_w + btn_gap) - btn_gap;
+                        let btn_d = 40i32;
+                        let btn_gap = 12i32;
+                        let total_w = count as i32 * (btn_d + btn_gap) - btn_gap;
                         let mut bx = ((screen.width() as i32 - total_w) / 2).max(0);
+                        let btn_y = (sh as usize).saturating_sub(TASKBAR_H) + (TASKBAR_H - 40) / 2;
                         for id in &ids {
-                            if cx >= bx && cx < bx + btn_w {
+                            let dx = cx - bx - btn_d / 2;
+                            let dy = cy - btn_y as i32 - btn_d / 2;
+                            if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
                                 wm.focus(*id);
                                 break;
                             }
-                            bx += btn_w + btn_gap;
+                            bx += btn_d + btn_gap;
                         }
                     } else {
                         wm.on_mouse_down(cx, cy);
@@ -517,21 +568,73 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
 
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
-    let ids = wm.sorted_ids();
+    let ids = wm.insertion_ids();
     let count = ids.len();
-    let btn_w = 80usize;
-    let btn_h = 28usize;
-    let btn_gap = 8i32;
-    let total_w = count as i32 * (btn_w as i32 + btn_gap) - btn_gap;
+    let btn_d = 40usize;
+    let btn_gap = 12i32;
+    let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
     let mut bx = ((w as i32 - total_w) / 2).max(0);
-    let btn_y = tb_y + (TASKBAR_H - btn_h) / 2;
+    let btn_y = tb_y + (TASKBAR_H - btn_d) / 2;
     for id in &ids {
         let title = wm.get_title(*id).unwrap_or("???");
         let is_focused = wm.focused_id == Some(*id);
-        let bg = if is_focused { Color::ACCENT } else { Color::WIN_INACTIVE };
-        layer.fill_rounded_rect(bx as usize, btn_y, btn_w, btn_h, 6, bg);
-        layer.put_str(bx as usize + 4, btn_y + 7, title, Color::TEXT);
-        bx += btn_w as i32 + btn_gap;
+
+        let (cr, cg, cb, ca) = if is_focused {
+            (255u32, 255, 255, 255)
+        } else {
+            (255, 255, 255, 153)
+        };
+        for py in 0..btn_d {
+            for px in 0..btn_d {
+                let dx = px as f32 + 0.5 - btn_d as f32 / 2.0;
+                let dy = py as f32 + 0.5 - btn_d as f32 / 2.0;
+                let dist_sq = dx * dx + dy * dy;
+                let r_f = btn_d as f32 / 2.0;
+                let alpha = if dist_sq < (r_f - 1.0) * (r_f - 1.0) {
+                    1.0f32
+                } else if dist_sq > (r_f + 0.5) * (r_f + 0.5) {
+                    0.0
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (r_f + 0.5 - dist).clamp(0.0, 1.0)
+                };
+                if alpha <= 0.0 { continue; }
+                let sx = bx as usize + px;
+                let sy = btn_y + py;
+                if sx >= w || sy >= h { continue; }
+                let idx = sy * w + sx;
+                let bg = Color(layer.buf_ref()[idx]);
+                let a = (alpha * ca as f32) as u32;
+                let inv = 255 - a;
+                let r = (cr * a + bg.r() as u32 * inv) / 255;
+                let g = (cg * a + bg.g() as u32 * inv) / 255;
+                let b = (cb * a + bg.b() as u32 * inv) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+
+        if let Some(icon) = icon_for_title(title) {
+            let ix = bx as usize;
+            let iy = btn_y;
+            for py in 0..btn_d {
+                for px in 0..btn_d {
+                    let src = icon.pixels[py * icon.w + px];
+                    let a = src[3] as u32;
+                    if a == 0 { continue; }
+                    let sx = ix + px;
+                    let sy = iy + py;
+                    if sx >= w || sy >= h { continue; }
+                    let idx = sy * w + sx;
+                    let bg = Color(layer.buf_ref()[idx]);
+                    let inv = 255 - a;
+                    let r = (src[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                    let g = (src[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                    let b = (src[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                    layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                }
+            }
+        }
+        bx += btn_d as i32 + btn_gap;
     }
 
     let mut fb = FmtBuf::new();
