@@ -28,7 +28,7 @@ use crate::mouse::{Mouse, MouseEvent};
 use crate::ui::FmtBuf;
 use crate::window::{WindowManager, LayerSystem};
 
-const TASKBAR_H: usize = 32;
+const TASKBAR_H: usize = 48;
 const TASKBAR_BLUR_R: i32 = 30;
 const SCROLL_SPEED: i32 = 30;
 
@@ -303,13 +303,17 @@ fn main() -> Status {
                     let sh = screen.height();
                     if cy >= sh as i32 - TASKBAR_H as i32 {
                         let ids = wm.sorted_ids();
-                        let mut bx = 8i32;
+                        let count = ids.len();
+                        let btn_w = 80i32;
+                        let btn_gap = 8i32;
+                        let total_w = count as i32 * (btn_w + btn_gap) - btn_gap;
+                        let mut bx = ((screen.width() as i32 - total_w) / 2).max(0);
                         for id in &ids {
-                            if cx >= bx && cx < bx + 80 {
+                            if cx >= bx && cx < bx + btn_w {
                                 wm.focus(*id);
                                 break;
                             }
-                            bx += 88;
+                            bx += btn_w + btn_gap;
                         }
                     } else {
                         wm.on_mouse_down(cx, cy);
@@ -514,14 +518,20 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
 
     let ids = wm.sorted_ids();
-    let mut bx = 8i32;
+    let count = ids.len();
+    let btn_w = 80usize;
+    let btn_h = 28usize;
+    let btn_gap = 8i32;
+    let total_w = count as i32 * (btn_w as i32 + btn_gap) - btn_gap;
+    let mut bx = ((w as i32 - total_w) / 2).max(0);
+    let btn_y = tb_y + (TASKBAR_H - btn_h) / 2;
     for id in &ids {
         let title = wm.get_title(*id).unwrap_or("???");
         let is_focused = wm.focused_id == Some(*id);
         let bg = if is_focused { Color::ACCENT } else { Color::WIN_INACTIVE };
-        layer.fill_rect(bx as usize, tb_y + 6, 80, 20, bg);
-        layer.put_str(bx as usize + 4, tb_y + 9, title, Color::TEXT);
-        bx += 88;
+        layer.fill_rounded_rect(bx as usize, btn_y, btn_w, btn_h, 6, bg);
+        layer.put_str(bx as usize + 4, btn_y + 7, title, Color::TEXT);
+        bx += btn_w as i32 + btn_gap;
     }
 
     let mut fb = FmtBuf::new();
@@ -533,8 +543,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    layer.put_str(16, tb_y.saturating_sub(32), "Baram OS (b2)", Color::MUTED);
-    layer.put_str(16, tb_y.saturating_sub(20), fb.as_str(),  Color::MUTED);
+    layer.put_str(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
+    layer.put_str(16, tb_y + 26, fb.as_str(), Color::MUTED);
 }
 
 fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
