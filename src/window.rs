@@ -10,6 +10,7 @@ const BTN_SIZE: usize = 20;
 const BTN_AREA_W: usize = BTN_SIZE * 3 + 23;
 const WIN_RADIUS: usize = 16;
 const TASKBAR_H: usize = 48;
+const SHADOW_PAD: i32 = 30;
 const BTN_BG_RADIUS: usize = 8;
 const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
 
@@ -47,6 +48,10 @@ pub struct Window {
     resize_sy: i32,
     resize_sw: usize,
     resize_sh: usize,
+    pub layer: Option<LayerSystem>,
+    pub shadow_layer: Option<LayerSystem>,
+    pub content_dirty: bool,
+    pub shadow_dirty: bool,
 }
 
 impl Window {
@@ -64,11 +69,34 @@ impl Window {
             dragging: false, resizing: false,
             drag_ox: 0, drag_oy: 0,
             resize_sx: 0, resize_sy: 0, resize_sw: 0, resize_sh: 0,
+            layer: Some(LayerSystem::new_transparent(w, h)),
+            shadow_layer: Some(LayerSystem::new_transparent(w + SHADOW_PAD as usize * 2, h + SHADOW_PAD as usize * 2)),
+            content_dirty: true,
+            shadow_dirty: true,
         }
     }
 
     fn title_str(&self) -> &str {
         core::str::from_utf8(&self.title[..self.title_len]).unwrap_or("")
+    }
+
+    fn ensure_layer(&mut self, screen_w: usize, screen_h: usize) {
+        let need_w = self.w.min(screen_w);
+        let need_h = self.h.min(screen_h);
+        match &self.layer {
+            Some(l) if l.width() == need_w && l.height() == need_h => {}
+            _ => {
+                self.layer = Some(LayerSystem::new_transparent(need_w, need_h));
+            }
+        }
+        let sw = need_w + SHADOW_PAD as usize * 2;
+        let sh = need_h + SHADOW_PAD as usize * 2;
+        match &self.shadow_layer {
+            Some(l) if l.width() == sw && l.height() == sh => {}
+            _ => {
+                self.shadow_layer = Some(LayerSystem::new_transparent(sw, sh));
+            }
+        }
     }
 
     fn contains(&self, px: i32, py: i32) -> bool {
@@ -109,6 +137,7 @@ impl Window {
 
     pub fn scroll(&mut self, delta: i32) {
         self.scroll_y = self.scroll_y.saturating_add(delta).max(0);
+        self.content_dirty = true;
     }
 
     pub fn toggle_maximize(&mut self, screen_w: i32, screen_h: i32) {
@@ -129,6 +158,8 @@ impl Window {
             self.h = (screen_h - TASKBAR_H as i32) as usize;
             self.maximized = true;
         }
+        self.content_dirty = true;
+        self.shadow_dirty = true;
     }
 
     pub fn toggle_minimize(&mut self) {
@@ -137,6 +168,7 @@ impl Window {
         } else {
             self.minimized = true;
         }
+        self.content_dirty = true;
     }
 
     pub fn start_drag(&mut self, px: i32, py: i32) {
@@ -147,6 +179,8 @@ impl Window {
             self.x = px - (self.w as f64 * ratio) as i32;
             self.y = py - 10;
             self.maximized = false;
+            self.content_dirty = true;
+            self.shadow_dirty = true;
         }
         self.dragging = true;
         self.drag_ox = px - self.x;
@@ -223,6 +257,9 @@ impl WindowManager {
 
     pub fn focus(&mut self, id: WinId) {
         for w in &mut self.windows {
+            if w.focused != (w.id == id) {
+                w.content_dirty = true;
+            }
             w.focused = w.id == id;
         }
         self.next_z += 1;
@@ -345,8 +382,14 @@ impl WindowManager {
             if w.resizing {
                 let dw = px - w.resize_sx;
                 let dh = py - w.resize_sy;
-                w.w = (w.resize_sw as i32 + dw).max(MIN_WIN_W as i32) as usize;
-                w.h = (w.resize_sh as i32 + dh).max(MIN_WIN_H as i32) as usize;
+                let new_w = (w.resize_sw as i32 + dw).max(MIN_WIN_W as i32) as usize;
+                let new_h = (w.resize_sh as i32 + dh).max(MIN_WIN_H as i32) as usize;
+                if new_w != w.w || new_h != w.h {
+                    w.w = new_w;
+                    w.h = new_h;
+                    w.content_dirty = true;
+                    w.shadow_dirty = true;
+                }
             }
         }
     }
@@ -354,114 +397,211 @@ impl WindowManager {
     
     
     
-    pub fn draw_all(
+        pub fn draw_all(
         &mut self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
+        warp_win: Option<(WinId, &mut super::warp::WarpEngine)>,
     ) {
-        if self.windows.is_empty() { return; }
-        
-        let n = self.windows.len();
-        
-        if self.temp_layer.is_none() {
-            self.temp_layer = Some(LayerSystem::new_transparent(layer.width(), layer.height()));
+        if self.windows.is_empty() {
+            return;
         }
-        let temp = self.temp_layer.as_mut().unwrap();
 
+        let n = self.windows.len();
+        let screen_w = layer.width();
+        let screen_h = layer.height();
+
+        // ---- z-order 昇順（下→上）のインデックスリストを固定配列で作成 ----
         const MAX_WINDOWS: usize = 16;
         let sort_n = n.min(MAX_WINDOWS);
-        let mut sorted: [&Window; MAX_WINDOWS] = [&self.windows[0]; MAX_WINDOWS];
+        let mut indices = [0usize; MAX_WINDOWS];
         for i in 0..sort_n {
-            sorted[i] = &self.windows[i];
+            indices[i] = i;
         }
         for i in 1..sort_n {
             let mut j = i;
-            while j > 0 && sorted[j - 1].z > sorted[j].z {
-                sorted.swap(j - 1, j);
+            while j > 0 && self.windows[indices[j - 1]].z > self.windows[indices[j]].z {
+                indices.swap(j - 1, j);
                 j -= 1;
             }
         }
 
-        
+        // ---- シャドウキャッシュの更新 ----
         for i in 0..sort_n {
-            let w = sorted[i];
-            if !w.visible || w.minimized { continue; }
+            let idx = indices[i];
+            let w = &self.windows[idx];
+            if !w.visible || w.minimized || w.maximized {
+                continue;
+            }
+            let entry = self
+                .shadow_cache
+                .iter_mut()
+                .find(|(wid2, _)| *wid2 == w.id);
+            if let Some((_, ref mut cache_opt)) = entry {
+                let need_recompute = match cache_opt {
+                    Some(c) => c.win_w != w.w || c.win_h != w.h,
+                    None => true,
+                };
+                if need_recompute {
+                    *cache_opt = compute_shadow_alpha(w, self.screen_w, self.screen_h);
+                }
+                if let Some(ref mut c) = cache_opt {
+                    c.win_x = w.x;
+                    c.win_y = w.y;
+                }
+            }
+        }
 
-            
-            if !w.maximized {
-                let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
-                if let Some((_, ref mut cache_opt)) = entry {
-                    let need_recompute = match cache_opt {
-                        Some(c) => c.win_w != w.w || c.win_h != w.h,
-                        None => true,
-                    };
-                    if need_recompute {
-                        *cache_opt = compute_shadow_alpha(w, self.screen_w, self.screen_h);
+        // ---- z-order 順（下→上）で描画 ----
+        for i in 0..sort_n {
+            let idx = indices[i];
+            if !self.windows[idx].visible || self.windows[idx].minimized {
+                continue;
+            }
+            self.windows[idx].ensure_layer(screen_w, screen_h);
+
+            let wx = self.windows[idx].x;
+            let wy = self.windows[idx].y;
+            let ww = self.windows[idx].w;
+            let wh = self.windows[idx].h;
+            let scroll_y = self.windows[idx].scroll_y;
+            let win_id = self.windows[idx].id;
+            let is_max = self.windows[idx].maximized;
+            let shadow_dirty = self.windows[idx].shadow_dirty;
+            let content_dirty = self.windows[idx].content_dirty;
+
+            // ===== シャドウ描画 =====
+            if !is_max {
+                if shadow_dirty {
+                    if let Some(entry) = self
+                        .shadow_cache
+                        .iter()
+                        .find(|(wid2, _)| *wid2 == win_id)
+                    {
+                        if let Some(ref cache) = entry.1 {
+                            let shadow_layer =
+                                self.windows[idx].shadow_layer.as_mut().unwrap();
+                            let slw = shadow_layer.width();
+                            let slh = shadow_layer.height();
+                            shadow_layer.buf_mut()[..slw * slh].fill(Color::TRANSPARENT.0);
+                            let shadow_buf = shadow_layer.buf_mut();
+                            for py in 0..cache.h {
+                                let alpha_row = py * cache.w;
+                                for px in 0..cache.w {
+                                    let a = cache.alpha[alpha_row + px];
+                                    if a == 0 { continue; }
+                                    if px >= slw || py >= slh { continue; }
+                                    shadow_buf[py * slw + px] = 0x0000_0000 | (a as u32);
+                                }
+                            }
+                            self.windows[idx].shadow_dirty = false;
+                        }
                     }
-                    if let Some(ref mut c) = cache_opt {
-                        c.win_x = w.x;
-                        c.win_y = w.y;
-                    }
-                    if let Some(ref c) = cache_opt {
-                        blit_cached_shadow(layer, c);
+                }
+
+                // shadow_layer を main layer に合成（常に実行 — 位置は変わる）
+                if let Some(entry) = self
+                    .shadow_cache
+                    .iter()
+                    .find(|(wid2, _)| *wid2 == win_id)
+                {
+                    if entry.1.is_some() {
+                        let shadow_ref =
+                            self.windows[idx].shadow_layer.as_ref().unwrap();
+                        let src_x = (SHADOW_PAD - wx).max(0) as usize;
+                        let src_y = (SHADOW_PAD - wy).max(0) as usize;
+                        let dst_x = (wx - SHADOW_PAD).max(0) as usize;
+                        let dst_y = (wy - SHADOW_PAD).max(0) as usize;
+                        layer.composit_shadow_alpha(
+                            shadow_ref,
+                            dst_x,
+                            dst_y,
+                            src_x,
+                            src_y,
+                            ww + SHADOW_PAD as usize * 2,
+                            wh + SHADOW_PAD as usize * 2,
+                        );
                     }
                 }
             }
 
-            
-            if w.maximized {
-                draw_window(layer, w);
-                if let Some((uid, cmds)) = ui_win {
-                    if w.id == uid {
-                        layer.push_clip(
-                            w.x.max(0) as usize,
-                            (w.y + TITLE_BAR_H as i32).max(0) as usize,
-                            (w.x + w.w as i32).max(0) as usize,
-                            (w.y + w.h as i32).max(0) as usize,
-                        );
-                        super::uiscript::render(
-                            layer, cmds,
-                            w.x, w.y, w.w, w.h,
-                            TITLE_BAR_H, w.scroll_y,
-                        );
-                        layer.pop_clip();
+            // ===== ウィンドウ本体描画 =====
+            if content_dirty {
+                let layer_ptr =
+                    self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
+                let w_ptr = &self.windows[idx] as *const Window;
+                unsafe {
+                    let lw = (*layer_ptr).width();
+                    let lh = (*layer_ptr).height();
+                    (*layer_ptr).buf_mut()[..lw * lh].fill(Color::TRANSPARENT.0);
+
+                    if is_max {
+                        draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
+                    } else {
+                        draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
+                    }
+
+                    if let Some((uid, cmds)) = ui_win {
+                        if win_id == uid {
+                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
+                            super::uiscript::render(
+                                &mut *layer_ptr,
+                                cmds,
+                                0,
+                                0,
+                                ww,
+                                wh,
+                                TITLE_BAR_H,
+                                scroll_y,
+                            );
+                            (*layer_ptr).pop_clip();
+                        }
+                    }
+                    if let Some((wid, ref engine)) = warp_win {
+                        if win_id == wid {
+                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
+                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
+                            engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
+                            (*layer_ptr).pop_clip();
+                        }
                     }
                 }
+                self.windows[idx].content_dirty = false;
+            }
+
+            // ===== ウィンドウ本体を main layer に合成（常に実行）=====
+            let win_layer = self.windows[idx].layer.as_ref().unwrap();
+            if is_max {
+                layer.composit_rect(
+                    win_layer,
+                    wx.max(0) as usize,
+                    wy.max(0) as usize,
+                    0,
+                    0,
+                    ww,
+                    wh,
+                );
             } else {
-                let wx = w.x.max(0) as usize;
-                let wy = w.y.max(0) as usize;
-                let clear_w = w.w.min(temp.width() - wx);
-                let clear_h = w.h.min(temp.height() - wy);
-                if clear_w > 0 && clear_h > 0 {
-                    for cy in wy..wy + clear_h {
-                        let row = cy * temp.width + wx;
-                        temp.buf[row..row + clear_w].fill(Color::TRANSPARENT.0);
-                    }
-                }
-                draw_window_body(temp, w, true);
-
-                if let Some((uid, cmds)) = ui_win {
-                    if w.id == uid {
-                        super::uiscript::render(
-                            temp, cmds,
-                            w.x, w.y, w.w, w.h,
-                            TITLE_BAR_H, w.scroll_y,
-                        );
-                    }
-                }
-
-                let wx = w.x.max(0) as usize;
-                let wy = w.y.max(0) as usize;
+                let wx_usize = wx.max(0) as usize;
+                let wy_usize = wy.max(0) as usize;
                 layer.composit_rounded(
-                    temp,
-                    wx, wy,
-                    wx, wy,
-                    w.w, w.h,
+                    win_layer,
+                    wx_usize,
+                    wy_usize,
+                    0,
+                    0,
+                    ww,
+                    wh,
                     WIN_RADIUS,
                 );
-
-                draw_window_border(layer, w);
+                draw_window_border(layer, &self.windows[idx]);
             }
+        }
+    }
+
+    pub fn set_content_dirty(&mut self, id: WinId) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.content_dirty = true;
         }
     }
 
@@ -698,9 +838,9 @@ fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
     }
 }
 
-fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool) {
-    let x = w.x.max(0) as usize;
-    let y = w.y.max(0) as usize;
+fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32, oy: i32) {
+    let x = ox.max(0) as usize;
+    let y = oy.max(0) as usize;
     let sw = layer.width();
     let sh = layer.height();
     if x >= sw || y >= sh { return; }
@@ -784,8 +924,8 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool) {
 fn draw_window_border(layer: &mut LayerSystem, w: &Window) {
 }
 
-fn draw_window(layer: &mut LayerSystem, w: &Window) {
-    draw_window_body(layer, w, false);
+fn draw_window(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
+    draw_window_body(layer, w, false, ox, oy);
     draw_window_border(layer, w);
 }
 
@@ -1350,6 +1490,53 @@ impl LayerSystem {
         }
     }
 
+        /// Shadow layer を合成する。src の各ピクセルの下位バイトを
+    /// アルファ値として読み取り、dst（self）を暗くする。
+    pub fn composit_shadow_alpha(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
+    ) {
+        let sw = src.width;
+        let sh = src.height;
+        let dw = self.width;
+        let dh = self.height;
+
+        for py in 0..h {
+            let src_y = sy + py;
+            let dst_y = dy + py;
+            if src_y >= sh || dst_y >= dh {
+                continue;
+            }
+
+            let src_row = src_y * sw + sx;
+            let dst_row = dst_y * dw + dx;
+            let max_px = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
+
+            for px in 0..max_px {
+                let a = src.buf[src_row + px] & 0xFF;
+                if a == 0 {
+                    continue;
+                }
+                let inv = 255 - a;
+                let idx = dst_row + px;
+                let bg = self.buf[idx];
+                let br = (bg >> 16) & 0xFF;
+                let bg2 = (bg >> 8) & 0xFF;
+                let bb = bg & 0xFF;
+                let r = (br * inv) / 255;
+                let g = (bg2 * inv) / 255;
+                let b = (bb * inv) / 255;
+                self.buf[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+    }
+
     pub fn composit_rect(
         &mut self,
         src: &LayerSystem,
@@ -1376,6 +1563,51 @@ impl LayerSystem {
                 if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
 
                 self.buf[dst_y * dw + dst_x] = src_pixel.0;
+            }
+        }
+    }
+
+    pub fn composit_rect_alpha(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+    ) {
+        let sw = src.width;
+        let sh = src.height;
+        let dw = self.width;
+        let dh = self.height;
+
+        for py in 0..h {
+            let src_y = sy + py;
+            let dst_y = dy + py;
+            if src_y >= sh || dst_y >= dh { continue; }
+
+            for px in 0..w {
+                let src_x = sx + px;
+                let dst_x = dx + px;
+                if src_x >= sw || dst_x >= dw { continue; }
+
+                let sp = src.buf[src_y * sw + src_x];
+                let src_a = ((sp >> 24) & 0xFF) as u32;
+                if src_a == 0 { continue; }
+                if src_a >= 255 {
+                    self.buf[dst_y * dw + dst_x] = sp;
+                } else {
+                    let inv = 255 - src_a;
+                    let sr = (sp >> 16) & 0xFF;
+                    let sg = (sp >> 8) & 0xFF;
+                    let sb = sp & 0xFF;
+                    let dp = self.buf[dst_y * dw + dst_x];
+                    let dr = (dp >> 16) & 0xFF;
+                    let dg = (dp >> 8) & 0xFF;
+                    let db = dp & 0xFF;
+                    let r = (sr * src_a + dr * inv) / 255;
+                    let g = (sg * src_a + dg * inv) / 255;
+                    let b = (sb * src_a + db * inv) / 255;
+                    self.buf[dst_y * dw + dst_x] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+                }
             }
         }
     }

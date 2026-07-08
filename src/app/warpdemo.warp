@@ -1,0 +1,331 @@
+screen{
+    id: (main),
+
+    Header{
+        text: ("Warp Demo v1"),
+
+        button{
+            --headerText: (""),
+            text: ("⚠️" + --headerText),
+            oneClick: (--headerText = "Please wait", reset{now})
+        },
+        
+        button{
+            --headerText: ("🐛"),
+            text: (--headerText),
+            oneClick: (devClickCheck = "true")
+        }
+    },
+    
+    text{
+        text: ("これは新しい、ネイティブと Web 技術が融合する言語です。気になる反応は" + --mainText),
+        --mainText: ("...")
+    },
+    card{
+        text: ("内容変更"),
+
+        text{
+            text: ("クリックにより表示内容が変更されます")
+        },
+
+        hStack{
+            button{
+                text: ("👍"),
+                oneClick: (--mainText = "良いみたいです!")
+            },
+
+            button{
+                text: ("🤔"),
+                oneClick: (--mainText = "あまり良くないようですね。"),
+                offset: (left = 10)
+            },
+
+            button{
+                text: ("❌"),
+                status: (disabled),
+                oneClick: (--mainText = "最悪ですね"),
+                id: (disabledButton)
+            },
+
+            button{
+                text: ("ボタンを有効化"),
+                oneClick: (disabledButton.setStatus{unset})
+            }
+        },
+
+        button{
+            text: ("Click"),
+            --color: (yellow),
+            color: (--color),
+            oneClick: (--color = red),
+            longPress: (--color = blue)
+        }
+    },
+
+    card{
+        text: ("button"),
+
+        text{
+            text: ("通常ボタン")
+        },
+
+        hStack{
+            button{
+                text: ("戻る")
+            },
+
+            tonalButton{
+                text: ("注文"),
+                width: (max)
+            }
+        },
+
+        card{
+            text: ("使用例"),
+            color: (#091529),
+            textColor: (#eeeeff),
+
+            text{
+                text: ("button{\n  text: (\"戻る\")\n}")
+            }
+        }
+    },
+
+    card{
+        text: ("複数画面"),
+
+        button{
+            text: ("Screen1 に移動する"),
+            oneClick: (setScreen{screen1})
+        }
+    },
+
+    card{
+        text: ("入力"),
+
+        switch{
+            --switchMain: (falseDisabled),
+            status: (--switchMain),
+            output: (--switchMain)
+        },
+
+        text{
+            text: ("スイッチの状態は" + --switchMain + "となっています")
+        },
+
+        button{
+            text: ("スイッチを無効化"),
+            oneClick: (--switchMain = --switchMain + "Disabled")
+        },
+
+        button{
+            text: ("スイッチを有効化"),
+            oneClick: (--switchMain = --switchMain.replace{"Disabled", ""})
+        },
+
+        input{
+            --inputMain: ("私の名前はです。"),
+            output: (--inputMain),
+            placeholder: ("自己紹介文を入力"),
+            id: (nameInput)
+        },
+
+        button{
+            text: ("保存"),
+            oneClick: (~~data/testapp-data/name = --inputMain, --saveStatus = "保存完了", wait: (1), --saveStatus = null)
+        },
+
+        button{
+            text: ("復元"),
+            oneClick: (nameInput.changeContent{~~data/testapp-data/name}, --saveStatus = "復元完了", wait: (1), --saveStatus = null)
+        },
+
+        text{
+            --saveStatus: (null),
+            text: (--saveStatus)
+        }
+    },
+
+    card{
+        text: ("小計算機"),
+
+        text{
+            --calc: (""),
+            text: (--calc),
+            id: (calcDebug),
+            textColor: (gray)
+        },
+
+        text{
+            --calc-a: (0),
+            text: (--calc-a)
+        },
+
+        hStack{
+            tonalButton{
+                text: ("1"),
+                oneClick: (--calc = --calc + "1")
+            },
+
+            tonalButton{
+                text: ("2"),
+                oneClick: (--calc = --calc + "2")
+            },
+
+            tonalButton{
+                text: ("3"),
+                oneClick: (--calc = --calc + "3")
+            },
+
+            button{
+                text: ("+"),
+                oneClick: (--calc = --calc + "+")
+            }
+        },
+
+        hStack{
+            tonalButton{
+                text: ("4"),
+                oneClick: (--calc = --calc + "4")
+            },
+
+            tonalButton{
+                text: ("5"),
+                oneClick: (--calc = --calc + "5")
+            },
+
+            tonalButton{
+                text: ("6"),
+                oneClick: (--calc = --calc + "6")
+            },
+
+            button{
+                text: ("-"),
+                oneClick: (--calc = --calc + "-")
+            }
+        },
+
+        hStack{
+            tonalButton{
+                text: ("7"),
+                oneClick: (--calc = --calc + "7")
+            },
+
+            tonalButton{
+                text: ("8"),
+                oneClick: (--calc = --calc + "8")
+            },
+
+            tonalButton{
+                text: ("9"),
+                oneClick: (--calc = --calc + "9")
+            },
+
+            button{
+                text: ("×"),
+                oneClick: (--calc = --calc + "*")
+            }
+        },
+
+        hStack{
+            tonalButton{
+                text: ("0"),
+                oneClick: (--calc = --calc + "0")
+            },
+
+            button{
+                text: ("="),
+                oneClick: (--calc-a = calc{--calc}),
+                color: (yellow)
+            },
+
+            tonalButton{
+                text: ("C"),
+                oneClick: (--calc = "0", --calc-a = 0),
+                color: (yellow)
+            },
+
+            button{
+                text: ("÷"),
+                oneClick: (--calc = --calc + "/")
+            }
+        },
+
+        button{
+            --calcButtonText: ("途中式を非表示"),
+            --calcDebugHide: (false),
+            text: (--calcButtonText),
+            oneClick: (script{calcText})
+        }
+    },
+
+    card{
+        text: ("要素追加"),
+
+        hStack{
+            button{
+                text: ("追加"),
+                oneClick: (--cb = "add", script{ctrl})
+            },
+
+            button{
+                text: ("1 つ削除"),
+                oneClick: (--cb = "del", script{ctrl})
+            },
+
+            button{
+                text: ("クリア"),
+                oneClick: (--cb = "clr", script{ctrl})
+            }
+        },
+
+        vStack{
+            id: (cList)
+        }
+    }
+}
+
+@ctrl{
+    if: (--cb = "add") {
+        add{cList: ("button{text: ('ボタンを追加')}")}
+    },
+
+    if: (--cb = "del") {
+        del{cList: (button)}
+    },
+
+    if: (--cb = "clr") {
+        clr{cList}
+    }
+}
+
+@calcText{
+    if: (--calcDebugHide = false) {
+        --calcButtonText = "途中式を表示",
+        hide{calcDebug},
+        --calcDebugHide = true
+    },
+
+    elseIf: (--calcDebugHide = true) {
+        --calcButtonText = "途中式を非表示",
+        show{calcDebug},
+        --calcDebugHide = false
+    }
+}
+
+screen{
+    id: (screen1),
+
+    Header{
+        text: ("Screen1")
+    },
+
+    text{
+        text: ("Screen1 の内容です。")
+    },
+
+    button{
+        text: ("main に戻る"),
+        oneClick: (setScreen{main})
+    }
+}

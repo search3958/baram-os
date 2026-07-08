@@ -16,6 +16,7 @@ mod ttf_font_hud;
 mod ui;
 mod uiscript;
 mod usb_hid;
+mod warp;
 mod window;
 
 use alloc::vec::Vec;
@@ -130,6 +131,7 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 }
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
+const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
 
 const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
 const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
@@ -248,6 +250,10 @@ fn main() -> Status {
     let ui_win_id = wm.add("UI Script Demo", 600, 100, 400, 350);
     let ui_commands = uiscript::parse(APP_DEMO);
 
+    let warp_win_id = wm.add("Warp Demo", 100, 80, 420, 600);
+    let mut warp_engine = warp::WarpEngine::new(WARP_DEMO);
+    warp_engine.update(400, 560);
+
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);
     let mut mouse_ev_count: u32 = 0;
     let mut key_ev_count: u32 = 0;
@@ -294,15 +300,24 @@ fn main() -> Status {
     let shadow_pad = 35i32;
 
     let mut cached_taskbar: Option<Vec<u32>> = None;
+    let mut cached_taskbar_strip: Option<Vec<u32>> = None;
+    let mut prev_window_count: usize = 0;
+    let mut prev_focused_id: Option<window::WinId> = None;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
+    let mut prev_warp_w: usize = 420;
+    let mut prev_warp_h: usize = 600;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
-                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
-                 &mut cached_taskbar, -1.0, -1.0, 0.0);
+                 &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
+                 cached_wallpaper.as_deref(),
+                 &mut cached_taskbar, &mut cached_taskbar_strip, true,
+                 -1.0, -1.0, 0.0);
+    prev_window_count = wm.count();
+    prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
@@ -394,6 +409,17 @@ fn main() -> Status {
                             tb_remove_progress = 0.0;
                             tb_shift_x = -26.0;
                         }
+                        if wm.window_at(cx, cy) == Some(warp_win_id) {
+                            if let Some((wx, wy, ww, wh, _scroll)) = wm.get_window_rect(warp_win_id) {
+                                let rel_x = cx - wx;
+                                let rel_y = cy - wy - 30;
+                                warp_engine.click(rel_x, rel_y);
+                                let content_h = wh.saturating_sub(30);
+                                warp_engine.update(ww as i32, content_h as i32);
+                                wm.set_content_dirty(warp_win_id);
+                                scene_dirty = true;
+                            }
+                        }
                     }
                     scene_dirty = true;
                 } else if !ev.left && mouse_down {
@@ -429,6 +455,18 @@ fn main() -> Status {
             dirty = true;
         }
 
+        if let Some((_, _, ww, wh, _)) = wm.get_window_rect(warp_win_id) {
+            if ww != prev_warp_w || wh != prev_warp_h {
+                prev_warp_w = ww;
+                prev_warp_h = wh;
+                let content_h = wh.saturating_sub(30);
+                warp_engine.update(ww as i32, content_h as i32);
+                wm.set_content_dirty(warp_win_id);
+                scene_dirty = true;
+                dirty = true;
+            }
+        }
+
         let anim_speed = 10.0f32;
         let dt = 0.008f32;
 
@@ -457,12 +495,23 @@ fn main() -> Status {
             if scene_dirty {
                 let (bx0, by0, bx1, by1) = prev_dirty;
 
+                let taskbar_dirty = cached_taskbar_strip.is_none()
+                    || tb_add_progress >= 0.0
+                    || tb_remove_progress >= 0.0
+                    || tb_shift_x.abs() > 0.5
+                    || wm.count() != prev_window_count
+                    || wm.focused_id != prev_focused_id;
+
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
-                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                             &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
+                             cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
+                             &mut cached_taskbar_strip, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x);
+                prev_window_count = wm.count();
+                prev_focused_id = wm.focused_id;
 
                 if tb_add_progress >= 1.0 { tb_add_progress = -1.0; }
                 if tb_remove_progress >= 1.0 { tb_remove_progress = -1.0; }
@@ -504,9 +553,6 @@ fn main() -> Status {
             } else {
                 let w = screen.width();
                 let h = screen.height();
-                layer.buf_mut()[..w * h].copy_from_slice(&cached_scene);
-                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
-
                 let pad = 32i32;
                 let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
                 let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
@@ -516,6 +562,16 @@ fn main() -> Status {
                 let y0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
                 let x1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad).min(w as i32) as usize;
                 let y1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad).min(h as i32) as usize;
+
+                {
+                    let buf = layer.buf_mut();
+                    for y in y0..y1 {
+                        let s = y * w + x0;
+                        let e = y * w + x1;
+                        buf[s..e].copy_from_slice(&cached_scene[s..e]);
+                    }
+                }
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
                 layer.flush_rect(&mut screen, x0, y0, x1, y1);
 
                 prev_cursor_x = cursor_x;
@@ -533,8 +589,11 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
                 fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
+                warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
+                cached_taskbar_strip: &mut Option<Vec<u32>>,
+                taskbar_dirty: bool,
                 add_progress: f32,
                 remove_progress: f32,
                 shift_x: f32) {
@@ -622,7 +681,15 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         *cached_taskbar = Some(bar);
     }
 
-    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
+    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
+        Some((warp_win_id, warp_engine)));
+
+    if !taskbar_dirty {
+        if let Some(ref strip) = cached_taskbar_strip {
+            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
+            return;
+        }
+    }
 
     let ids = wm.insertion_ids();
     let count = ids.len();
@@ -724,18 +791,26 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
 
     layer.put_str_hud(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
     layer.put_str_hud(16, tb_y + 26, fb.as_str(), Color::MUTED);
+
+    let mut strip = alloc::vec![0u32; w * TASKBAR_H];
+    strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+    *cached_taskbar_strip = Some(strip);
 }
 
 fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
+                warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
+                cached_taskbar_strip: &mut Option<Vec<u32>>,
+                taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
-                 ui_commands, ui_win_id, wallpaper, cached_taskbar,
+                 ui_commands, ui_win_id, warp_engine, warp_win_id, wallpaper, cached_taskbar,
+                 cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
