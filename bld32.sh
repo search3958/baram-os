@@ -77,10 +77,12 @@ do_build_and_run() {
     i686-elf-gcc $CFLAGS -c ui/warp_engine.c -o output/warp_engine.o || return 1
     show_progress 70
     i686-elf-gcc $CFLAGS -c ui/warp1_engine.c -o output/warp1_engine.o || return 1
+    show_progress 75
+    i686-elf-gcc $CFLAGS -c files.c -o output/files.o || return 1
     show_progress 80
 
     i686-elf-gcc -T link.ld -o output/kernel.bin \
-        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o \
+        output/boot.o output/isr.o output/kernel.o output/drivers.o output/storage.o output/fs.o output/warp_engine.o output/warp1_engine.o output/files.o \
         -ffreestanding -O2 -m32 -nostdlib -static-libgcc -lgcc || return 1
     show_progress 85
 
