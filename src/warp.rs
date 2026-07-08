@@ -843,11 +843,12 @@ impl WarpEngine {
                     let ry = parse_svg_attr(attrs_str, "y").unwrap_or(0.0) as i32 + oy;
                     let rw = parse_svg_attr(attrs_str, "width").unwrap_or(0.0) as usize;
                     let rh = parse_svg_attr(attrs_str, "height").unwrap_or(0.0) as usize;
+                    let rr = parse_svg_attr(attrs_str, "rx").unwrap_or(0.0) as usize;
                     let fill = parse_svg_fill(attrs_str);
                     let stroke = parse_svg_stroke(attrs_str);
                     let stroke_w = parse_svg_attr(attrs_str, "stroke-width").unwrap_or(0.0) as usize;
                     let opacity = parse_svg_opacity(attrs_str);
-                    fill_rounded_rect_in_buf(buf, lw, lh, rx as usize, ry as usize, rw, rh, 8, fill, opacity);
+                    fill_rounded_rect_in_buf(buf, lw, lh, rx as usize, ry as usize, rw, rh, rr, fill, opacity);
                     if stroke_w > 0 {
                         outline_rect_in_buf(buf, lw, lh, rx as usize, ry as usize, rw, rh, stroke, opacity);
                     }
@@ -855,7 +856,7 @@ impl WarpEngine {
                     if let Some(d) = parse_svg_attr_str(attrs_str, "d") {
                         let stroke = parse_svg_stroke(attrs_str);
                         let sw = parse_svg_attr(attrs_str, "stroke-width").unwrap_or(1.0) as u32;
-                        draw_svg_path_simple(buf, lw, lh, d, stroke, sw, ox, oy);
+                        draw_svg_path_simple(buf, lw, lh, d, stroke, sw, 0, 0);
                     }
                 }
             } else {
@@ -936,30 +937,69 @@ fn parse_hex_color(s: &str) -> Color {
 }
 
 fn fill_rounded_rect_in_buf(buf: &mut [u32], stride: usize, buf_h: usize, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color, opacity: f32) {
+    if w == 0 || h == 0 { return; }
     let r = r.min(w / 2).min(h / 2);
     let x0 = x.min(stride);
     let y0 = y.min(buf_h);
     let x1 = (x + w).min(stride);
     let y1 = (y + h).min(buf_h);
     if x0 >= x1 || y0 >= y1 { return; }
-    let v = c.0;
     let a = (opacity * 255.0) as u32;
-    if a >= 255 {
+    let inv = 255 - a;
+    let cr = c.r() as u32;
+    let cg = c.g() as u32;
+    let cb = c.b() as u32;
+
+    if r == 0 || a >= 255 {
+        let v = c.0;
         for py in y0..y1 {
             buf[py * stride + x0..py * stride + x1].fill(v);
         }
-    } else {
-        let inv = 255 - a;
-        let cr = c.r() as u32;
-        let cg = c.g() as u32;
-        let cb = c.b() as u32;
-        for py in y0..y1 {
-            for px in x0..x1 {
-                let bg = Color(buf[py * stride + px]);
+        return;
+    }
+
+    let rf = r as f32;
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let in_corner_top = py < y + r;
+            let in_corner_bot = py >= y + h.saturating_sub(r);
+            let in_corner_left = px < x + r;
+            let in_corner_right = px >= x + w.saturating_sub(r);
+            let in_corner = (in_corner_top || in_corner_bot) && (in_corner_left || in_corner_right);
+
+            if !in_corner {
+                let idx = py * stride + px;
+                let bg = Color(buf[idx]);
                 let r2 = (cr * a + bg.r() as u32 * inv) / 255;
                 let g2 = (cg * a + bg.g() as u32 * inv) / 255;
                 let b2 = (cb * a + bg.b() as u32 * inv) / 255;
-                buf[py * stride + px] = Color::rgb(r2 as u8, g2 as u8, b2 as u8).0;
+                buf[idx] = Color::rgb(r2 as u8, g2 as u8, b2 as u8).0;
+                continue;
+            }
+
+            let cx_f = if px < x + r { (x + r) as f32 } else { (x + w - r) as f32 };
+            let cy_f = if in_corner_top { (y + r) as f32 } else { (y + h - r) as f32 };
+            let dx = px as f32 + 0.5 - cx_f;
+            let dy = py as f32 + 0.5 - cy_f;
+            let dist_sq = dx * dx + dy * dy;
+            let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                1.0f32
+            } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                0.0
+            } else {
+                let dist = libm::sqrtf(dist_sq);
+                (rf + 0.5 - dist).clamp(0.0, 1.0)
+            };
+
+            if alpha > 0.0 {
+                let aa = (alpha * a as f32) as u32;
+                let inv2 = 255 - aa;
+                let idx = py * stride + px;
+                let bg = Color(buf[idx]);
+                let r2 = (cr * aa + bg.r() as u32 * inv2) / 255;
+                let g2 = (cg * aa + bg.g() as u32 * inv2) / 255;
+                let b2 = (cb * aa + bg.b() as u32 * inv2) / 255;
+                buf[idx] = Color::rgb(r2 as u8, g2 as u8, b2 as u8).0;
             }
         }
     }

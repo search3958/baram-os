@@ -304,6 +304,8 @@ fn main() -> Status {
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
+    let mut prev_warp_w: usize = 420;
+    let mut prev_warp_h: usize = 600;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
@@ -401,6 +403,14 @@ fn main() -> Status {
                             tb_remove_progress = 0.0;
                             tb_shift_x = -26.0;
                         }
+                        if wm.window_at(cx, cy) == Some(warp_win_id) {
+                            if let Some((wx, wy, ww, wh, _scroll)) = wm.get_window_rect(warp_win_id) {
+                                let rel_x = cx - wx;
+                                let rel_y = cy - wy - 30;
+                                warp_engine.click(rel_x, rel_y);
+                                scene_dirty = true;
+                            }
+                        }
                     }
                     scene_dirty = true;
                 } else if !ev.left && mouse_down {
@@ -434,6 +444,17 @@ fn main() -> Status {
         if wm.take_order_changed() {
             scene_dirty = true;
             dirty = true;
+        }
+
+        if let Some((_, _, ww, wh, _)) = wm.get_window_rect(warp_win_id) {
+            if ww != prev_warp_w || wh != prev_warp_h {
+                prev_warp_w = ww;
+                prev_warp_h = wh;
+                let content_h = wh.saturating_sub(30);
+                warp_engine.update(ww as i32, content_h as i32);
+                scene_dirty = true;
+                dirty = true;
+            }
         }
 
         let anim_speed = 10.0f32;

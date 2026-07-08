@@ -490,7 +490,7 @@ impl WindowManager {
                     let content_w = w.w;
                     let content_h = w.h.saturating_sub(TITLE_BAR_H);
                     let temp2 = self.temp_layer.as_mut().unwrap();
-                    engine.draw_svg_to_layer(temp2, ox, oy, content_w, content_h);
+                    engine.draw_svg_to_layer(temp2, ox, oy - w.scroll_y, content_w, content_h);
                     engine.draw_texts(temp2, ox, oy - w.scroll_y, 1.0);
                     let wx = w.x.max(0) as usize;
                     let wy = w.y.max(0) as usize;
