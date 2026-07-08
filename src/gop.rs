@@ -25,9 +25,10 @@ impl Color {
     pub const BLACK:   Color = Color::rgb(0x00, 0x00, 0x00);
     pub const BG:      Color = Color::rgb(0xF0, 0xF0, 0xF0);
     pub const PANEL:   Color = Color::rgb(0xFF, 0xFF, 0xFF);
-    pub const ACCENT:  Color = Color::rgb(0x00, 0x78, 0xD7);
+    pub const ACCENT:  Color = Color::rgb(0xFF, 0xFF, 0xFF);
     pub const TEXT:    Color = Color::rgb(0x1A, 0x1A, 0x1A);
     pub const MUTED:   Color = Color::rgb(0x66, 0x66, 0x66);
+    pub const TITLE_INACTIVE: Color = Color::rgb(0x88, 0x88, 0x88);
     pub const GOOD:    Color = Color::rgb(0x10, 0x7C, 0x10);
     #[allow(dead_code)]
     pub const WARN:    Color = Color::rgb(0xD8, 0x3B, 0x01);

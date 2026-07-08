@@ -72,34 +72,43 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
         }
     }
 
+    let sigma = blur_r as f32 / 3.0;
+    let mut kernel: Vec<f32> = alloc::vec![0.0; (blur_r * 2 + 1) as usize];
+    let mut k_sum = 0.0f32;
+    for i in 0..=blur_r * 2 {
+        let x = (i - blur_r) as f32;
+        let w = libm::expf(-x * x / (2.0 * sigma * sigma));
+        kernel[i as usize] = w;
+        k_sum += w;
+    }
+    for k in kernel.iter_mut() {
+        *k /= k_sum;
+    }
+
     let mut tmp: Vec<f32> = alloc::vec![0.0; pw * ph];
     for y in 0..ph {
         for x in 0..pw {
             let mut sum = 0.0f32;
-            let mut cnt = 0.0f32;
             for dx in -blur_r..=blur_r {
                 let sx = x as i32 + dx;
                 if sx >= 0 && sx < pw as i32 {
-                    sum += padded[y * pw + sx as usize];
-                    cnt += 1.0;
+                    sum += padded[y * pw + sx as usize] * kernel[(dx + blur_r) as usize];
                 }
             }
-            tmp[y * pw + x] = sum / cnt;
+            tmp[y * pw + x] = sum;
         }
     }
     let mut result: Vec<f32> = alloc::vec![0.0; pw * ph];
     for y in 0..ph {
         for x in 0..pw {
             let mut sum = 0.0f32;
-            let mut cnt = 0.0f32;
             for dy in -blur_r..=blur_r {
                 let sy = y as i32 + dy;
                 if sy >= 0 && sy < ph as i32 {
-                    sum += tmp[sy as usize * pw + x];
-                    cnt += 1.0;
+                    sum += tmp[sy as usize * pw + x] * kernel[(dy + blur_r) as usize];
                 }
             }
-            result[y * pw + x] = sum / cnt;
+            result[y * pw + x] = sum;
         }
     }
 
@@ -181,7 +190,7 @@ fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: b
             CURSOR_NORMAL.as_ref()
         };
         if let Some(bmp) = bitmap {
-            let blur_r = 8i32;
+            let blur_r = 12i32;
             let pad = blur_r as i32;
             svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
                 cx + 3 - pad, cy + 4 - pad);
@@ -190,13 +199,13 @@ fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: b
         }
     }
     if resizing {
-        svg::draw_svg_shadow(layer, CURSOR_SVG_SIZE, cx + 3, cy + 4,
-            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32, 8, 0);
+        svg::draw_svg_shadow(layer, CURSOR_SVG_SIZE, cx + 5, cy + 4,
+            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32, 12, 0);
         svg::draw_svg_into(layer, CURSOR_SVG_SIZE, cx, cy,
             CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32);
     } else {
-        svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 3, cy + 4,
-            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 8, 0);
+        svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 5, cy + 4,
+            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 12, 0);
         svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
             CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
     }
@@ -369,6 +378,9 @@ fn main() -> Status {
                             let dx = cx - bx - btn_d / 2;
                             let dy = cy - btn_y as i32 - btn_d / 2;
                             if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
+                                if wm.is_minimized(*id) {
+                                    wm.restore_minimized(*id);
+                                }
                                 wm.focus(*id);
                                 break;
                             }
@@ -629,6 +641,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     for (i, id) in ids.iter().enumerate() {
         let title = wm.get_title(*id).unwrap_or("???");
         let is_focused = wm.focused_id == Some(*id);
+        let is_minimized = wm.is_minimized(*id);
 
         let scale = if add_progress >= 0.0 && i == count - 1 {
             add_scale
@@ -676,12 +689,13 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 let icon_offset = if icon_draw > btn_d { 0 } else { (btn_d - icon_draw) / 2 };
                 let ix = bx as usize + icon_offset;
                 let iy = btn_y + icon_offset;
+                let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
                 for py in 0..icon_draw {
                     for px in 0..icon_draw {
                         let src_x = px * icon.w / icon_draw;
                         let src_y = py * icon.h / icon_draw;
                         let src = icon.pixels[src_y * icon.w + src_x];
-                        let a = src[3] as u32;
+                        let a = (src[3] as u32 * icon_alpha / 255) as u32;
                         if a == 0 { continue; }
                         let sx = ix + px;
                         let sy = iy + py;

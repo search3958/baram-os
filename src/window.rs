@@ -7,11 +7,16 @@ const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
-const WIN_RADIUS: usize = 10;
+const BTN_AREA_W: usize = BTN_SIZE * 3 + 23;
+const WIN_RADIUS: usize = 16;
+const TASKBAR_H: usize = 48;
+const BTN_BG_RADIUS: usize = 8;
+const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
 
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("data/close.svg");
+const MIN_ICON_SVG: &str = include_str!("data/min.svg");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WinId(pub u32);
@@ -28,6 +33,7 @@ pub struct Window {
     pub visible: bool,
     pub focused: bool,
     pub maximized: bool,
+    pub minimized: bool,
     pub scroll_y: i32,
     save_x: i32,
     save_y: i32,
@@ -52,7 +58,7 @@ impl Window {
         Self {
             id, title: tb, title_len: n,
             x, y, w, h, z,
-            visible: true, focused: false, maximized: false,
+            visible: true, focused: false, maximized: false, minimized: false,
             scroll_y: 0,
             save_x: x, save_y: y, save_w: w, save_h: h,
             dragging: false, resizing: false,
@@ -76,14 +82,18 @@ impl Window {
     }
 
     fn button_hit(&self, px: i32, py: i32) -> char {
-        let base_x = self.x + self.w as i32 - (BTN_SIZE as i32) * 3;
+        let base_x = self.x + 6;
         let btn_y = self.y + 5;
-        if py >= btn_y && py < btn_y + BTN_SIZE as i32 {
-            if px >= base_x && px < base_x + BTN_SIZE as i32 {
-                return 'm';
-            }
-            if px >= base_x + BTN_SIZE as i32 * 2 && px < base_x + BTN_SIZE as i32 * 3 {
+        let bs = BTN_SIZE as i32;
+        if py >= btn_y && py < btn_y + bs {
+            if px >= base_x && px < base_x + bs {
                 return 'c';
+            }
+            if px >= base_x + bs + 5 && px < base_x + bs * 2 + 5 {
+                return 'i';
+            }
+            if px >= base_x + bs * 2 + 10 && px < base_x + bs * 3 + 10 {
+                return 'm';
             }
         }
         'n'
@@ -116,8 +126,16 @@ impl Window {
             self.x = 0;
             self.y = 0;
             self.w = screen_w as usize;
-            self.h = (screen_h - TITLE_BAR_H as i32 - 32) as usize;
+            self.h = (screen_h - TASKBAR_H as i32) as usize;
             self.maximized = true;
+        }
+    }
+
+    pub fn toggle_minimize(&mut self) {
+        if self.minimized {
+            self.minimized = false;
+        } else {
+            self.minimized = true;
         }
     }
 
@@ -275,6 +293,21 @@ impl WindowManager {
                     }
                     return Some('m');
                 }
+                'i' => {
+                    if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                        w.toggle_minimize();
+                    }
+                    if let Some(w) = self.windows.iter().find(|w| w.id == id) {
+                        if w.minimized {
+                            if let Some(next) = self.windows.iter()
+                                .filter(|w| w.visible && !w.minimized && w.id != id)
+                                .max_by_key(|w| w.z) {
+                                self.focus(next.id);
+                            }
+                        }
+                    }
+                    return Some('i');
+                }
                 _ => {}
             }
             let resize = {
@@ -352,7 +385,7 @@ impl WindowManager {
         
         for i in 0..sort_n {
             let w = sorted[i];
-            if !w.visible { continue; }
+            if !w.visible || w.minimized { continue; }
 
             
             if !w.maximized {
@@ -405,7 +438,7 @@ impl WindowManager {
                         temp.buf[row..row + clear_w].fill(Color::TRANSPARENT.0);
                     }
                 }
-                draw_window_body(temp, w);
+                draw_window_body(temp, w, true);
 
                 if let Some((uid, cmds)) = ui_win {
                     if w.id == uid {
@@ -454,6 +487,16 @@ impl WindowManager {
         self.windows.iter().find(|w| w.id == id).map(|w| w.title_str())
     }
 
+    pub fn is_minimized(&self, id: WinId) -> bool {
+        self.windows.iter().find(|w| w.id == id).map_or(false, |w| w.minimized)
+    }
+
+    pub fn restore_minimized(&mut self, id: WinId) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.minimized = false;
+        }
+    }
+
     pub fn get_window_rect(&self, id: WinId) -> Option<(i32, i32, usize, usize, i32)> {
         self.windows.iter().find(|w| w.id == id).map(|w| (w.x, w.y, w.w, w.h, w.scroll_y))
     }
@@ -491,11 +534,9 @@ impl WindowManager {
 }
 
 
-
-
 fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<CachedShadow> {
     let blur_r: i32 = 30;
-    let r = WIN_RADIUS as i32;
+    let r = WIN_RADIUS as f32;
     let ww = w.w as i32;
     let wh = w.h as i32;
     let pad = blur_r as usize;
@@ -506,58 +547,44 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
     let blur_r_f = blur_r as f32;
     let mut alpha = Vec::with_capacity(sw * sh);
 
+    // SDF計算用の事前準備
+    let hww = ww as f32 / 2.0;
+    let hwh = wh as f32 / 2.0;
+    let center_x = hww;
+    let center_y = hwh;
+    // コーナーの円の起点となる内部矩形のサイズ
+    let box_w = hww - r;
+    let box_h = hwh - r;
+
     for py_i in 0..sh as i32 {
+        let py_f = (py_i - blur_r) as f32 + 0.5;
         for px_i in 0..sw as i32 {
-            let sx_i = px_i - blur_r;
-            let sy_i = py_i - blur_r;
-            let edge = if sx_i >= 0 && sx_i < ww && sy_i >= 0 && sy_i < wh {
-                let in_top_left = sx_i < r && sy_i < r;
-                let in_top_right = sx_i >= ww - r && sy_i < r;
-                let in_bottom_left = sx_i < r && sy_i >= wh - r;
-                let in_bottom_right = sx_i >= ww - r && sy_i >= wh - r;
-                if in_top_left || in_top_right || in_bottom_left || in_bottom_right {
-                    let (cx, cy) = if in_top_left {
-                        (r, r)
-                    } else if in_top_right {
-                        (ww - r - 1, r)
-                    } else if in_bottom_left {
-                        (r, wh - r - 1)
-                    } else {
-                        (ww - r - 1, wh - r - 1)
-                    };
-                    let dx = sx_i as f32 + 0.5 - cx as f32;
-                    let dy = sy_i as f32 + 0.5 - cy as f32;
-                    let dist = libm::sqrtf(dx * dx + dy * dy);
-                    let d = r as f32 - dist;
-                    if d > 0.0 { -1 } else { (-d) as i32 }
-                } else {
-                    -1
-                }
-            } else if sx_i >= 0 && sx_i < ww {
-                if sy_i < 0 { -sy_i } else { sy_i - (wh - 1) }
-            } else if sy_i >= 0 && sy_i < wh {
-                if sx_i < 0 { -sx_i } else { sx_i - (ww - 1) }
+            let px_f = (px_i - blur_r) as f32 + 0.5;
+
+            // 中心からの絶対値（第1象限に折りたたむ）
+            let qx = (px_f - center_x).abs();
+            let qy = (py_f - center_y).abs();
+
+            // 内部矩形からの距離
+            let dx = qx - box_w;
+            let dy = qy - box_h;
+
+            // 角丸矩形のSDFによる正確な距離計算
+            let dist = if dx > 0.0 && dy > 0.0 {
+                libm::sqrtf(dx * dx + dy * dy)
             } else {
-                let (cx, cy) = if sx_i < 0 && sy_i < 0 {
-                    (r, r)
-                } else if sx_i >= ww && sy_i < 0 {
-                    (ww - r - 1, r)
-                } else if sx_i < 0 && sy_i >= wh {
-                    (r, wh - r - 1)
-                } else {
-                    (ww - r - 1, wh - r - 1)
-                };
-                let dx = sx_i as f32 + 0.5 - cx as f32;
-                let dy = sy_i as f32 + 0.5 - cy as f32;
-                let dist = libm::sqrtf(dx * dx + dy * dy);
-                (dist - r as f32) as i32
+                dx.max(dy)
             };
 
-            if edge < 0 || edge >= blur_r {
+            // 最終的なエッジからの距離（0.0が境界、> 0.0が外側）
+            let edge_dist = dist - r;
+
+            // ウィンドウの内部（edge_dist <= 0.0）、またはブラー半径の外側
+            if edge_dist <= 0.0 || edge_dist >= blur_r_f {
                 alpha.push(0u8);
             } else {
-                let t = (blur_r - edge) as f32 / blur_r_f;
-                let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+                let t = (blur_r_f - edge_dist) / blur_r_f;
+                let alpha_f = t * t * 0.175;
                 alpha.push((alpha_f * 255.0) as u8);
             }
         }
@@ -599,99 +626,79 @@ fn blit_cached_shadow(layer: &mut LayerSystem, cache: &CachedShadow) {
 }
 
 fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
-    let x = w.x.max(0) as usize;
-    let y = w.y.max(0) as usize;
-    let sw = layer.width();
-    let sh = layer.height();
-    if x >= sw || y >= sh { return; }
-    let x1 = (x + w.w).min(sw);
-    let y1 = (y + w.h).min(sh);
-    let w_draw = x1.saturating_sub(x);
-    let h_draw = y1.saturating_sub(y);
-    if w_draw == 0 || h_draw == 0 { return; }
-
     let blur_r: i32 = 30;
-    let r = WIN_RADIUS as i32;
-    let win_x0 = x as i32;
-    let win_y0 = y as i32;
-    let win_x1 = x as i32 + w_draw as i32;
-    let win_y1 = y as i32 + h_draw as i32;
-    let sx = (win_x0 - blur_r).max(0) as usize;
-    let sy = (win_y0 - blur_r).max(0) as usize;
-    let ex = (win_x1 + blur_r).min(sw as i32) as usize;
-    let ey = (win_y1 + blur_r).min(sh as i32) as usize;
+    let r = WIN_RADIUS as f32;
+    let sw = layer.width() as i32;
+    let sh = layer.height() as i32;
+    
+    // クリップ前の実際のウィンドウ座標とサイズを使用する
+    let win_x0 = w.x;
+    let win_y0 = w.y;
+    let ww = w.w as i32;
+    let wh = w.h as i32;
+    let win_x1 = win_x0 + ww;
+    let win_y1 = win_y0 + wh;
+
+    // 描画範囲（画面外に出ないようにクリップ）
+    let sx = (win_x0 - blur_r).max(0).min(sw) as usize;
+    let sy = (win_y0 - blur_r).max(0).min(sh) as usize;
+    let ex = (win_x1 + blur_r).max(0).min(sw) as usize;
+    let ey = (win_y1 + blur_r).max(0).min(sh) as usize;
     if ex <= sx || ey <= sy { return; }
 
     let buf = &mut layer.buf;
     let width = layer.width;
     let blur_r_f = blur_r as f32;
+    
+    // SDF計算用の事前準備
+    let hww = ww as f32 / 2.0;
+    let hwh = wh as f32 / 2.0;
+    let center_x = win_x0 as f32 + hww;
+    let center_y = win_y0 as f32 + hwh;
+    let box_w = hww - r;
+    let box_h = hwh - r;
+
     for py in sy..ey {
-        let py_i = py as i32;
-        let row_start = py * width + sx;
+        let py_f = py as f32 + 0.5;
+        let row_start = py * width;
         for px in sx..ex {
-            let px_i = px as i32;
-
+            let px_f = px as f32 + 0.5;
             
-            let edge = if px_i >= win_x0 && px_i < win_x1 && py_i >= win_y0 && py_i < win_y1 {
-                let in_top_left = px_i < win_x0 + r && py_i < win_y0 + r;
-                let in_top_right = px_i >= win_x1 - r && py_i < win_y0 + r;
-                let in_bottom_left = px_i < win_x0 + r && py_i >= win_y1 - r;
-                let in_bottom_right = px_i >= win_x1 - r && py_i >= win_y1 - r;
-                if in_top_left || in_top_right || in_bottom_left || in_bottom_right {
-                    let (cx, cy) = if in_top_left {
-                        (win_x0 + r, win_y0 + r)
-                    } else if in_top_right {
-                        (win_x1 - r - 1, win_y0 + r)
-                    } else if in_bottom_left {
-                        (win_x0 + r, win_y1 - r - 1)
-                    } else {
-                        (win_x1 - r - 1, win_y1 - r - 1)
-                    };
-                    let dx = px_i as f32 + 0.5 - cx as f32;
-                    let dy = py_i as f32 + 0.5 - cy as f32;
-                    let dist = libm::sqrtf(dx * dx + dy * dy);
-                    let d = r as f32 - dist;
-                    if d > 0.0 { continue; }
-                    (-d) as i32
-                } else {
-                    continue;
-                }
-            } else if px_i >= win_x0 && px_i < win_x1 {
-                if py_i < win_y0 { win_y0 - py_i } else { py_i - (win_y1 - 1) }
-            } else if py_i >= win_y0 && py_i < win_y1 {
-                if px_i < win_x0 { win_x0 - px_i } else { px_i - (win_x1 - 1) }
+            let qx = (px_f - center_x).abs();
+            let qy = (py_f - center_y).abs();
+            
+            let dx = qx - box_w;
+            let dy = qy - box_h;
+            
+            let dist = if dx > 0.0 && dy > 0.0 {
+                libm::sqrtf(dx * dx + dy * dy)
             } else {
-                let (cx, cy) = if px_i < win_x0 && py_i < win_y0 {
-                    (win_x0 + r, win_y0 + r)
-                } else if px_i >= win_x1 && py_i < win_y0 {
-                    (win_x1 - r - 1, win_y0 + r)
-                } else if px_i < win_x0 && py_i >= win_y1 {
-                    (win_x0 + r, win_y1 - r - 1)
-                } else {
-                    (win_x1 - r - 1, win_y1 - r - 1)
-                };
-                let dx = px_i as f32 + 0.5 - cx as f32;
-                let dy = py_i as f32 + 0.5 - cy as f32;
-                let dist = libm::sqrtf(dx * dx + dy * dy);
-                (dist - r as f32) as i32
+                dx.max(dy)
             };
-
-            if edge >= blur_r { continue; }
-            let t = (blur_r - edge) as f32 / blur_r_f;
-            let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+            
+            let edge_dist = dist - r;
+            
+            if edge_dist <= 0.0 || edge_dist >= blur_r_f {
+                continue;
+            }
+            
+            let t = (blur_r_f - edge_dist) / blur_r_f;
+            let alpha_f = t * t * 0.175;
             let a = (alpha_f * 255.0) as u32;
             if a == 0 { continue; }
+            
             let inv = 255 - a;
-            let bg = Color(buf[row_start + (px - sx)]);
+            let idx = row_start + px;
+            let bg = Color(buf[idx]);
             let cr = (bg.r() as u32 * inv) / 255;
             let cg = (bg.g() as u32 * inv) / 255;
             let cb = (bg.b() as u32 * inv) / 255;
-            buf[row_start + (px - sx)] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
+            buf[idx] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
         }
     }
 }
 
-fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
+fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool) {
     let x = w.x.max(0) as usize;
     let y = w.y.max(0) as usize;
     let sw = layer.width();
@@ -708,43 +715,77 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     } else {
         (Color::WIN_INACTIVE, Color::WIN_BG)
     };
+    let title_color = if w.focused { Color::TEXT } else { Color::TITLE_INACTIVE };
 
     
-    layer.fill_rounded_rect(x, y, w_draw, h_draw, WIN_RADIUS, body_bg);
+    if rounded {
+        layer.fill_rounded_rect(x, y, w_draw, h_draw, WIN_RADIUS, body_bg);
+    } else {
+        layer.fill_rect(x, y, w_draw, h_draw, body_bg);
+    }
 
     
     let tb_h = TITLE_BAR_H.min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
-    layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS * 2, WIN_RADIUS, title_bg);
 
     
-    layer.put_str(x + 10, y + 7, w.title_str(), Color::TEXT);
+    let base_x = x as i32 + 6;
+    let btn_y = y as i32 + 5;
+    let bs = BTN_SIZE as i32;
+    let btn_center_x = base_x + bs / 2;
+    let btn_center_y = btn_y + bs / 2;
+
+    if btn_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
+        layer.fill_circle(btn_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
+    }
+
+    let mini_x = base_x + bs + 5;
+    let mini_center_x = mini_x + bs / 2;
+
+    if mini_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
+        layer.fill_circle(mini_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
+    }
+
+    let max_x = base_x + bs * 2 + 10;
+    let max_center_x = max_x + bs / 2;
+
+    if max_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
+        layer.fill_circle(max_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
+    }
+
+    if w.focused {
+        if base_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(layer, CLOSE_ICON_SVG,
+                base_x + 4, btn_y + 4,
+                (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32,
+                77u32);
+        }
+
+        if mini_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(layer, MIN_ICON_SVG,
+                mini_x + 4, btn_y + 4,
+                (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32,
+                77u32);
+        }
+
+        if max_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
+            svg::draw_svg_into_alpha(layer, icon,
+                max_x + 4, btn_y + 4,
+                (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32,
+                77u32);
+        }
+    }
 
     
-    let base_x = x + w_draw - BTN_SIZE * 3;
-    let btn_y = y + 5;
-
-    if base_x + BTN_SIZE <= sw && btn_y + BTN_SIZE <= sh {
-        layer.fill_rect(base_x, btn_y, BTN_SIZE, BTN_SIZE, title_bg);
-        let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
-        svg::draw_svg_into(layer, icon,
-            base_x as i32 + 4, btn_y as i32 + 4,
-            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
-    }
-
-    let close_x = x + w_draw - BTN_SIZE;
-    if close_x <= sw && btn_y + BTN_SIZE <= sh {
-        svg::draw_svg_into(layer, CLOSE_ICON_SVG,
-            close_x as i32 + 4, btn_y as i32 + 4,
-            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
-    }
+    layer.put_str(x + BTN_AREA_W, y + 8, w.title_str(), title_color);
 }
 
 fn draw_window_border(layer: &mut LayerSystem, w: &Window) {
 }
 
 fn draw_window(layer: &mut LayerSystem, w: &Window) {
-    draw_window_body(layer, w);
+    draw_window_body(layer, w, false);
     draw_window_border(layer, w);
 }
 
@@ -913,8 +954,8 @@ impl LayerSystem {
                     continue;
                 }
 
-                let cx_f = if px < x + r { x + r } else { x + w - r - 1 } as f32;
-                let cy_f = if corner_top { y + r } else { y + h - r - 1 } as f32;
+                let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
+                let cy_f = if corner_top { y + r } else { y + h - r } as f32;
                 let dx = px as f32 + 0.5 - cx_f;
                 let dy = py as f32 + 0.5 - cy_f;
                 let dist_sq = dx * dx + dy * dy;
@@ -945,6 +986,46 @@ impl LayerSystem {
         }
     }
 
+    pub fn fill_circle(&mut self, cx: usize, cy: usize, r: usize, c: Color) {
+        if r == 0 { return; }
+        let rf = r as f32;
+        let cr = c.r() as f32;
+        let cg = c.g() as f32;
+        let cb = c.b() as f32;
+        let x0 = cx.saturating_sub(r).min(self.width);
+        let y0 = cy.saturating_sub(r).min(self.height);
+        let x1 = (cx + r + 1).min(self.width);
+        let y1 = (cy + r + 1).min(self.height);
+        for py in y0..y1 {
+            let row = py * self.width;
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx as f32;
+                let dy = py as f32 + 0.5 - cy as f32;
+                let dist_sq = dx * dx + dy * dy;
+                let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                    1.0
+                } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                    continue;
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (rf + 0.5 - dist).clamp(0.0, 1.0)
+                };
+                if alpha >= 1.0 {
+                    self.buf[row + px] = c.0;
+                } else {
+                    let bg = self.buf[row + px];
+                    let br = ((bg >> 16) & 0xFF) as f32;
+                    let bg2 = ((bg >> 8) & 0xFF) as f32;
+                    let bb = (bg & 0xFF) as f32;
+                    let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
+                    let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
+                    let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
+                    self.buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
+                }
+            }
+        }
+    }
+
     
     pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
         if w == 0 || h == 0 { return; }
@@ -970,20 +1051,20 @@ impl LayerSystem {
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
-                    let cx_f = (x + w - r - 1) as f32;
+                    let cx_f = (x + w - r) as f32;
                     let cy_f = (y + r) as f32;
                     let dx = px as f32 + 0.5 - cx_f;
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
                     let cx_f = (x + r) as f32;
-                    let cy_f = (y + h - r - 1) as f32;
+                    let cy_f = (y + h - r) as f32;
                     let dx = px as f32 + 0.5 - cx_f;
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
-                    let cx_f = (x + w - r - 1) as f32;
-                    let cy_f = (y + h - r - 1) as f32;
+                    let cx_f = (x + w - r) as f32;
+                    let cy_f = (y + h - r) as f32;
                     let dx = px as f32 + 0.5 - cx_f;
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
@@ -1230,8 +1311,8 @@ impl LayerSystem {
                     if !in_corner {
                         1.0
                     } else {
-                        let cx_f = if px < r { r } else { w - r - 1 } as f32;
-                        let cy_f = if py < r { r } else { h - r - 1 } as f32;
+                        let cx_f = if px < r { r } else { w - r } as f32;
+                        let cy_f = if py < r { r } else { h - r } as f32;
                         let dx_f = px as f32 + 0.5 - cx_f;
                         let dy_f = py as f32 + 0.5 - cy_f;
                         let dist_sq = dx_f * dx_f + dy_f * dy_f;
