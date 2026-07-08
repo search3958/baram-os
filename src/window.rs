@@ -378,37 +378,34 @@ impl WindowManager {
     
     
     
-    pub fn draw_all(
+        pub fn draw_all(
         &mut self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
         warp_win: Option<(WinId, &mut super::warp::WarpEngine)>,
     ) {
-        if self.windows.is_empty() { return; }
-        
+        if self.windows.is_empty() {
+            return;
+        }
+
         let n = self.windows.len();
         let screen_w = layer.width();
         let screen_h = layer.height();
 
-        const MAX_WINDOWS: usize = 16;
-        let sort_n = n.min(MAX_WINDOWS);
-        let mut sorted: [&Window; MAX_WINDOWS] = [&self.windows[0]; MAX_WINDOWS];
-        for i in 0..sort_n {
-            sorted[i] = &self.windows[i];
-        }
-        for i in 1..sort_n {
-            let mut j = i;
-            while j > 0 && sorted[j - 1].z > sorted[j].z {
-                sorted.swap(j - 1, j);
-                j -= 1;
-            }
-        }
+        // ---- z-order 昇順（下→上）のインデックスリストを作成 ----
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.sort_by_key(|&i| self.windows[i].z);
 
-        
-        for i in 0..sort_n {
-            let w = sorted[i];
-            if !w.visible || w.minimized || w.maximized { continue; }
-            let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
+        // ---- シャドウキャッシュの更新 ----
+        for &idx in &indices {
+            let w = &self.windows[idx];
+            if !w.visible || w.minimized || w.maximized {
+                continue;
+            }
+            let entry = self
+                .shadow_cache
+                .iter_mut()
+                .find(|(wid2, _)| *wid2 == w.id);
             if let Some((_, ref mut cache_opt)) = entry {
                 let need_recompute = match cache_opt {
                     Some(c) => c.win_w != w.w || c.win_h != w.h,
@@ -424,9 +421,11 @@ impl WindowManager {
             }
         }
 
-        
-        for idx in 0..n {
-            if !self.windows[idx].visible || self.windows[idx].minimized { continue; }
+        // ---- z-order 順（下→上）で描画 ----
+        for &idx in &indices {
+            if !self.windows[idx].visible || self.windows[idx].minimized {
+                continue;
+            }
             self.windows[idx].ensure_layer(screen_w, screen_h);
 
             let wx = self.windows[idx].x;
@@ -437,33 +436,51 @@ impl WindowManager {
             let win_id = self.windows[idx].id;
             let is_max = self.windows[idx].maximized;
 
-            
+            // ===== シャドウ描画（各ウィンドウの shadow_layer に独立描画 → main layer へ合成）=====
             if !is_max {
-                if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id) {
+                if let Some(entry) = self
+                    .shadow_cache
+                    .iter()
+                    .find(|(wid2, _)| *wid2 == win_id)
+                {
                     if let Some(ref cache) = entry.1 {
-                        let shadow_layer = self.windows[idx].shadow_layer.as_mut().unwrap();
-                        let slw = shadow_layer.width();
-                        let slh = shadow_layer.height();
-                        shadow_layer.buf_mut()[..slw * slh].fill(Color::TRANSPARENT.0);
-                        let shadow_buf = shadow_layer.buf_mut();
-                        for py in 0..cache.h {
-                            let alpha_row = py * cache.w;
-                            for px in 0..cache.w {
-                                let a = cache.alpha[alpha_row + px];
-                                if a == 0 { continue; }
-                                let dst_x = px;
-                                let dst_y = py;
-                                if dst_x >= slw || dst_y >= slh { continue; }
-                                shadow_buf[dst_y * slw + dst_x] = 0x0000_0000 | (a as u32);
+                        // shadow_layer へシャドウアルファ値を書き込む
+                        {
+                            let shadow_layer =
+                                self.windows[idx].shadow_layer.as_mut().unwrap();
+                            let slw = shadow_layer.width();
+                            let slh = shadow_layer.height();
+                            shadow_layer.buf_mut()[..slw * slh].fill(Color::TRANSPARENT.0);
+                            let shadow_buf = shadow_layer.buf_mut();
+                            for py in 0..cache.h {
+                                let alpha_row = py * cache.w;
+                                for px in 0..cache.w {
+                                    let a = cache.alpha[alpha_row + px];
+                                    if a == 0 {
+                                        continue;
+                                    }
+                                    if px >= slw || py >= slh {
+                                        continue;
+                                    }
+                                    shadow_buf[py * slw + px] = 0x0000_0000 | (a as u32);
+                                }
                             }
                         }
-                        let shadow_ref = self.windows[idx].shadow_layer.as_ref().unwrap();
+
+                        // shadow_layer を main layer に合成（暗くする）
+                        let shadow_ref =
+                            self.windows[idx].shadow_layer.as_ref().unwrap();
+                        // 画面外にはみ出す部分をクリップした座標を計算
+                        let src_x = (SHADOW_PAD - wx).max(0) as usize;
+                        let src_y = (SHADOW_PAD - wy).max(0) as usize;
                         let dst_x = (wx - SHADOW_PAD).max(0) as usize;
                         let dst_y = (wy - SHADOW_PAD).max(0) as usize;
-                        layer.composit_rect_alpha(
+                        layer.composit_shadow_alpha(
                             shadow_ref,
-                            dst_x, dst_y,
-                            0, 0,
+                            dst_x,
+                            dst_y,
+                            src_x,
+                            src_y,
                             ww + SHADOW_PAD as usize * 2,
                             wh + SHADOW_PAD as usize * 2,
                         );
@@ -471,9 +488,10 @@ impl WindowManager {
                 }
             }
 
-            
+            // ===== ウィンドウ本体描画（各ウィンドウの layer に独立描画）=====
             {
-                let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
+                let layer_ptr =
+                    self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
                 let w_ptr = &self.windows[idx] as *const Window;
                 unsafe {
                     let lw = (*layer_ptr).width();
@@ -490,9 +508,14 @@ impl WindowManager {
                         if win_id == uid {
                             (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
                             super::uiscript::render(
-                                &mut *layer_ptr, cmds,
-                                0, 0, ww, wh,
-                                TITLE_BAR_H, scroll_y,
+                                &mut *layer_ptr,
+                                cmds,
+                                0,
+                                0,
+                                ww,
+                                wh,
+                                TITLE_BAR_H,
+                                scroll_y,
                             );
                             (*layer_ptr).pop_clip();
                         }
@@ -508,23 +531,29 @@ impl WindowManager {
                 }
             }
 
+            // ===== ウィンドウ本体を main layer に合成 =====
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
             if is_max {
                 layer.composit_rect(
                     win_layer,
                     wx.max(0) as usize,
                     wy.max(0) as usize,
-                    0, 0,
-                    ww, wh,
+                    0,
+                    0,
+                    ww,
+                    wh,
                 );
             } else {
                 let wx_usize = wx.max(0) as usize;
                 let wy_usize = wy.max(0) as usize;
                 layer.composit_rounded(
                     win_layer,
-                    wx_usize, wy_usize,
-                    0, 0,
-                    ww, wh,
+                    wx_usize,
+                    wy_usize,
+                    0,
+                    0,
+                    ww,
+                    wh,
                     WIN_RADIUS,
                 );
                 draw_window_border(layer, &self.windows[idx]);
@@ -1413,6 +1442,53 @@ impl LayerSystem {
                     let out_b = (sb * alpha + db * (1.0 - alpha)) as u32;
                     self.buf[dst_idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
                 }
+            }
+        }
+    }
+
+        /// Shadow layer を合成する。src の各ピクセルの下位バイトを
+    /// アルファ値として読み取り、dst（self）を暗くする。
+    pub fn composit_shadow_alpha(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
+    ) {
+        let sw = src.width;
+        let sh = src.height;
+        let dw = self.width;
+        let dh = self.height;
+
+        for py in 0..h {
+            let src_y = sy + py;
+            let dst_y = dy + py;
+            if src_y >= sh || dst_y >= dh {
+                continue;
+            }
+
+            let src_row = src_y * sw + sx;
+            let dst_row = dst_y * dw + dx;
+            let max_px = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
+
+            for px in 0..max_px {
+                let a = src.buf[src_row + px] & 0xFF;
+                if a == 0 {
+                    continue;
+                }
+                let inv = 255 - a;
+                let idx = dst_row + px;
+                let bg = self.buf[idx];
+                let br = (bg >> 16) & 0xFF;
+                let bg2 = (bg >> 8) & 0xFF;
+                let bb = bg & 0xFF;
+                let r = (br * inv) / 255;
+                let g = (bg2 * inv) / 255;
+                let b = (bb * inv) / 255;
+                self.buf[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
         }
     }
