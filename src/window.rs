@@ -711,6 +711,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     } else {
         (Color::WIN_INACTIVE, Color::WIN_BG)
     };
+    let title_color = if w.focused { Color::TEXT } else { Color::TITLE_INACTIVE };
 
     
     layer.fill_rounded_rect(x, y, w_draw, h_draw, WIN_RADIUS, body_bg);
@@ -747,7 +748,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     }
 
     
-    layer.put_str(x + BTN_AREA_W, y + 7, w.title_str(), Color::TEXT);
+    layer.put_str(x + BTN_AREA_W, y + 7, w.title_str(), title_color);
 }
 
 fn draw_window_border(layer: &mut LayerSystem, w: &Window) {
