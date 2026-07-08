@@ -10,6 +10,7 @@ mod gop;
 mod keyboard;
 
 mod mouse;
+mod panic;
 mod svg;
 mod ttf_font;
 mod ttf_font_hud;
@@ -133,7 +134,7 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
 
-const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
+const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/light.png");
 const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
 const ICON_FILES_PNG: &[u8] = include_bytes!("app/icon/files.png");
 const ICON_MANAGER_PNG: &[u8] = include_bytes!("app/icon/manager.png");
@@ -229,6 +230,8 @@ fn main() -> Status {
         Err(_s) => return Status::UNSUPPORTED,
     };
 
+    unsafe { panic::init_from_screen(&screen) };
+
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
         Ok(m) => Some(m),
         Err(_) => None,
@@ -279,12 +282,22 @@ fn main() -> Status {
         let img_h = header.height as usize;
         let mut buf = alloc::vec![0u32; w * h];
 
+        let scale = if w * img_h > h * img_w {
+            w as f64 / img_w as f64
+        } else {
+            h as f64 / img_h as f64
+        };
+        let src_w = (w as f64 / scale) as usize;
+        let src_h = (h as f64 / scale) as usize;
+        let src_x = (img_w.saturating_sub(src_w)) / 2;
+        let src_y = (img_h.saturating_sub(src_h)) / 2;
+
         for y in 0..h {
-            let sy = y * img_h / h;
+            let sy = (y * src_h / h).min(src_h - 1) + src_y;
             let src_row = sy * img_w;
             let dst_row = y * w;
             for x in 0..w {
-                let sx = x * img_w / w;
+                let sx = (x * src_w / w).min(src_w - 1) + src_x;
                 let px = pixels[src_row + sx];
                 buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
             }

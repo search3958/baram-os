@@ -81,6 +81,7 @@ impl Keyboard {
     
     
     pub fn poll() -> Option<KeyEvent> {
+        //panic!("自分で設定した例外を忘れないで");
         with_stdin(|input| {
             match input.read_key() {
                 Ok(Some(Key::Printable(ch))) => {
