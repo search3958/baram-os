@@ -408,6 +408,8 @@ fn main() -> Status {
                                 let rel_x = cx - wx;
                                 let rel_y = cy - wy - 30;
                                 warp_engine.click(rel_x, rel_y);
+                                let content_h = wh.saturating_sub(30);
+                                warp_engine.update(ww as i32, content_h as i32);
                                 scene_dirty = true;
                             }
                         }

@@ -76,11 +76,10 @@ pub struct WarpEngine {
     tokens: Vec<Token>,
     token_pos: usize,
     pub texts: Vec<TextElem>,
-    pub svg_output: String,
     pub dirty: bool,
 }
 
-fn measure_text_width(text: &str, size: f32) -> i32 {
+fn measure_text_width(text: &str, _size: f32) -> i32 {
     if !ttf_font::is_available() {
         return (text.len() as i32) * 8;
     }
@@ -111,7 +110,6 @@ impl WarpEngine {
             tokens: Vec::new(),
             token_pos: 0,
             texts: Vec::new(),
-            svg_output: String::new(),
             dirty: true,
         };
         loop {
@@ -170,21 +168,13 @@ impl WarpEngine {
     pub fn update(&mut self, width: i32, height: i32) {
         self.parse_current_screen();
         self.texts.clear();
-        self.svg_output.clear();
         let root_nodes = self.root_nodes.clone();
         let mut total_h = height;
         for node_idx in &root_nodes {
             let h = self.layout_node(*node_idx, 0, 0, width);
             if h > total_h { total_h = h; }
         }
-        self.svg_output.push_str(&format!(
-            "<svg width=\"{}\" height=\"{}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-            width, total_h
-        ));
-        for node_idx in &root_nodes {
-            self.emit_svg(*node_idx);
-        }
-        self.svg_output.push_str("</svg>");
+        let _ = total_h;
         self.dirty = true;
     }
 
@@ -635,58 +625,49 @@ impl WarpEngine {
         } else { raw }
     }
 
-    fn emit_svg(&mut self, idx: usize) {
-        let tag = self.nodes[idx].tag.clone();
-        if tag == "screen" {
-            // transparent background
-        } else if tag == "card" {
+    pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+        for idx in 0..self.nodes.len() {
+            let tag = self.nodes[idx].tag.as_str();
             let n = &self.nodes[idx];
-            self.svg_output.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"12\" ry=\"12\" fill=\"#ffffff\" />\n",
-                n.x, n.y, n.w, n.h
-            ));
-        } else if tag == "button" {
-            let n = &self.nodes[idx];
-            self.svg_output.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"20\" ry=\"20\" fill=\"#0A60FF\" />\n",
-                n.x, n.y, n.w, n.h
-            ));
-        } else if tag == "tonalButton" {
-            let n = &self.nodes[idx];
-            self.svg_output.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"20\" ry=\"20\" fill=\"#000000\" opacity=\"0.1\" />\n",
-                n.x, n.y, n.w, n.h
-            ));
-        } else if tag == "switch" {
-            let out_var = self.parse_out_var(idx);
-            let val = self.get_state(&out_var);
-            let on = val.contains("true");
-            let bg = if on { "#0A60FF" } else { "#dddddd" };
-            let n = &self.nodes[idx];
-            let x = n.x + (n.w - 44) / 2;
-            let y = n.y + (n.h - 44) / 2;
-            self.svg_output.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"44\" height=\"44\" rx=\"22\" ry=\"22\" fill=\"{}\" />\n",
-                x, y, bg
-            ));
-            if on {
-                self.svg_output.push_str(&format!(
-                    "<path d=\"M{} {} L{} {} L{} {}\" stroke=\"#ffffff\" stroke-width=\"4\" fill=\"none\" />\n",
-                    x + 12, y + 22, x + 20, y + 30, x + 34, y + 14
-                ));
+            let x = (n.x + ox) as usize;
+            let y = (n.y + oy) as usize;
+            let w = n.w as usize;
+            let h = n.h as usize;
+
+            match tag {
+                "card" => {
+                    layer.fill_rounded_rect(x, y, w, h, 12, Color::rgb(0xf5, 0xf5, 0xf6));
+                }
+                "button" => {
+                    layer.fill_rounded_rect(x, y, w, h, 20, Color::rgb(0x0A, 0x60, 0xFF));
+                }
+                "tonalButton" => {
+                    layer.fill_rounded_rect(x, y, w, h, 20, Color::rgb(230, 230, 230));
+                }
+                "switch" => {
+                    let out_var = self.parse_out_var(idx);
+                    let val = self.get_state(&out_var);
+                    let on = val.contains("true");
+                    let bg = if on { Color::rgb(0x0A, 0x60, 0xFF) } else { Color::rgb(0xdd, 0xdd, 0xdd) };
+                    let sx = (n.x + ox + (n.w - 44) / 2) as usize;
+                    let sy = (n.y + oy + (n.h - 44) / 2) as usize;
+                    layer.fill_rounded_rect(sx, sy, 44, 44, 22, bg);
+                }
+                "input" => {
+                    layer.fill_rounded_rect(x, y, w, h, 8, Color::WIN_BG);
+                    layer.rounded_rect_outline(x, y, w, h, 8, Color::BORDER);
+                }
+                _ => {}
             }
-        } else if tag == "input" {
-            let n = &self.nodes[idx];
-            self.svg_output.push_str(&format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"8\" ry=\"8\" fill=\"#ffffff\" stroke=\"#dddddd\" stroke-width=\"1\" />\n",
-                n.x, n.y, n.w, n.h
-            ));
         }
-        let children = self.nodes[idx].children.clone();
-        for ci in children {
-            if self.nodes[ci].tag != "Header" {
-                self.emit_svg(ci);
-            }
+    }
+
+    pub fn draw_texts(&self, layer: &mut LayerSystem, ox: i32, oy: i32, _scale: f32) {
+        for t in &self.texts {
+            let x = t.x + ox;
+            let y = t.y + oy;
+            if t.text.is_empty() { continue; }
+            layer.put_str(x as usize, y as usize, &t.text, t.color);
         }
     }
 
@@ -800,303 +781,6 @@ impl WarpEngine {
                     self.eval_expr(rhs)
                 };
                 self.set_state(var_name, &val);
-            }
-        }
-    }
-
-    pub fn draw_texts(&self, layer: &mut LayerSystem, ox: i32, oy: i32, scale: f32) {
-        for t in &self.texts {
-            let x = ((t.x as f32) * scale) as i32 + ox;
-            let y = ((t.y as f32) * scale) as i32 + oy;
-            let sz = t.size * scale;
-            if t.text.is_empty() { continue; }
-            if sz >= 14.0 {
-                layer.put_str(x as usize, y as usize, &t.text, t.color);
-            } else {
-                layer.put_str(x as usize, y as usize, &t.text, t.color);
-            }
-        }
-    }
-
-    pub fn draw_svg_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32, win_w: usize, win_h: usize) {
-        if self.svg_output.is_empty() { return; }
-        let lw = layer.width();
-        let lh = layer.height();
-        let buf = layer.buf_mut();
-        let bytes = self.svg_output.as_bytes();
-        let len = bytes.len();
-        let mut i = 0;
-        while i < len {
-            if bytes[i] == b'<' {
-                let mut j = i + 1;
-                if j < len && bytes[j] == b'/' { i += 1; continue; }
-                let name_start = j;
-                while j < len && bytes[j] != b'>' && bytes[j] != b' ' && bytes[j] != b'/' { j += 1; }
-                let name = &bytes[name_start..j];
-                let attr_start = j;
-                while j < len && bytes[j] != b'>' { j += 1; }
-                if j < len { j += 1; }
-                let attrs_str = core::str::from_utf8(&bytes[attr_start..j.min(len)]).unwrap_or("");
-                i = j;
-                if name == b"rect" {
-                    let rx = parse_svg_attr(attrs_str, "x").unwrap_or(0.0) as i32 + ox;
-                    let ry = parse_svg_attr(attrs_str, "y").unwrap_or(0.0) as i32 + oy;
-                    let rw = parse_svg_attr(attrs_str, "width").unwrap_or(0.0) as usize;
-                    let rh = parse_svg_attr(attrs_str, "height").unwrap_or(0.0) as usize;
-                    let rr = parse_svg_attr(attrs_str, "rx").unwrap_or(0.0) as usize;
-                    let fill = parse_svg_fill(attrs_str);
-                    let stroke = parse_svg_stroke(attrs_str);
-                    let stroke_w = parse_svg_attr(attrs_str, "stroke-width").unwrap_or(0.0) as usize;
-                    let opacity = parse_svg_opacity(attrs_str);
-                    fill_rounded_rect_in_buf(buf, lw, lh, rx as usize, ry as usize, rw, rh, rr, fill, opacity);
-                    if stroke_w > 0 {
-                        outline_rect_in_buf(buf, lw, lh, rx as usize, ry as usize, rw, rh, stroke, opacity);
-                    }
-                } else if name == b"path" {
-                    if let Some(d) = parse_svg_attr_str(attrs_str, "d") {
-                        let stroke = parse_svg_stroke(attrs_str);
-                        let sw = parse_svg_attr(attrs_str, "stroke-width").unwrap_or(1.0) as u32;
-                        draw_svg_path_simple(buf, lw, lh, d, stroke, sw, 0, 0);
-                    }
-                }
-            } else {
-                i += 1;
-            }
-        }
-    }
-}
-
-fn parse_svg_attr(attrs: &str, key: &str) -> Option<f32> {
-    let needle_len = key.len() + 2;
-    let mut i = 0;
-    let bytes = attrs.as_bytes();
-    while i < bytes.len() {
-        if i + key.len() + 1 < bytes.len() && &bytes[i..i + key.len()] == key.as_bytes() && bytes[i + key.len()] == b'=' {
-            let mut j = i + key.len() + 1;
-            if j < bytes.len() && bytes[j] == b'"' {
-                j += 1;
-                let start = j;
-                while j < bytes.len() && bytes[j] != b'"' { j += 1; }
-                if let Ok(v) = core::str::from_utf8(&bytes[start..j]) {
-                    return v.trim().parse().ok();
-                }
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-fn parse_svg_attr_str<'a>(attrs: &'a str, key: &str) -> Option<&'a str> {
-    let bytes = attrs.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if i + key.len() + 1 < bytes.len() && &bytes[i..i + key.len()] == key.as_bytes() && bytes[i + key.len()] == b'=' {
-            let mut j = i + key.len() + 1;
-            if j < bytes.len() && bytes[j] == b'"' {
-                j += 1;
-                let start = j;
-                while j < bytes.len() && bytes[j] != b'"' { j += 1; }
-                return core::str::from_utf8(&bytes[start..j]).ok();
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-fn parse_svg_fill(attrs: &str) -> Color {
-    if let Some(v) = parse_svg_attr_str(attrs, "fill") { parse_hex_color(v) } else { Color::BLACK }
-}
-
-fn parse_svg_stroke(attrs: &str) -> Color {
-    if let Some(v) = parse_svg_attr_str(attrs, "stroke") { parse_hex_color(v) } else { Color::TRANSPARENT }
-}
-
-fn parse_svg_opacity(attrs: &str) -> f32 {
-    parse_svg_attr(attrs, "opacity").unwrap_or(1.0)
-}
-
-fn parse_hex_color(s: &str) -> Color {
-    let s = s.trim().trim_start_matches('#');
-    match s.len() {
-        6 => {
-            let r = u8::from_str_radix(&s[0..2], 16).unwrap_or(0);
-            let g = u8::from_str_radix(&s[2..4], 16).unwrap_or(0);
-            let b = u8::from_str_radix(&s[4..6], 16).unwrap_or(0);
-            Color::rgb(r, g, b)
-        }
-        3 => {
-            let r = u8::from_str_radix(&s[0..1], 16).unwrap_or(0) * 17;
-            let g = u8::from_str_radix(&s[1..2], 16).unwrap_or(0) * 17;
-            let b = u8::from_str_radix(&s[2..3], 16).unwrap_or(0) * 17;
-            Color::rgb(r, g, b)
-        }
-        _ => Color::BLACK,
-    }
-}
-
-fn fill_rounded_rect_in_buf(buf: &mut [u32], stride: usize, buf_h: usize, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color, opacity: f32) {
-    if w == 0 || h == 0 { return; }
-    let r = r.min(w / 2).min(h / 2);
-    let x0 = x.min(stride);
-    let y0 = y.min(buf_h);
-    let x1 = (x + w).min(stride);
-    let y1 = (y + h).min(buf_h);
-    if x0 >= x1 || y0 >= y1 { return; }
-    let a = (opacity * 255.0) as u32;
-    let inv = 255 - a;
-    let cr = c.r() as u32;
-    let cg = c.g() as u32;
-    let cb = c.b() as u32;
-
-    if r == 0 || a >= 255 {
-        let v = c.0;
-        for py in y0..y1 {
-            buf[py * stride + x0..py * stride + x1].fill(v);
-        }
-        return;
-    }
-
-    let rf = r as f32;
-    for py in y0..y1 {
-        for px in x0..x1 {
-            let in_corner_top = py < y + r;
-            let in_corner_bot = py >= y + h.saturating_sub(r);
-            let in_corner_left = px < x + r;
-            let in_corner_right = px >= x + w.saturating_sub(r);
-            let in_corner = (in_corner_top || in_corner_bot) && (in_corner_left || in_corner_right);
-
-            if !in_corner {
-                let idx = py * stride + px;
-                let bg = Color(buf[idx]);
-                let r2 = (cr * a + bg.r() as u32 * inv) / 255;
-                let g2 = (cg * a + bg.g() as u32 * inv) / 255;
-                let b2 = (cb * a + bg.b() as u32 * inv) / 255;
-                buf[idx] = Color::rgb(r2 as u8, g2 as u8, b2 as u8).0;
-                continue;
-            }
-
-            let cx_f = if px < x + r { (x + r) as f32 } else { (x + w - r) as f32 };
-            let cy_f = if in_corner_top { (y + r) as f32 } else { (y + h - r) as f32 };
-            let dx = px as f32 + 0.5 - cx_f;
-            let dy = py as f32 + 0.5 - cy_f;
-            let dist_sq = dx * dx + dy * dy;
-            let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
-                1.0f32
-            } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
-                0.0
-            } else {
-                let dist = libm::sqrtf(dist_sq);
-                (rf + 0.5 - dist).clamp(0.0, 1.0)
-            };
-
-            if alpha > 0.0 {
-                let aa = (alpha * a as f32) as u32;
-                let inv2 = 255 - aa;
-                let idx = py * stride + px;
-                let bg = Color(buf[idx]);
-                let r2 = (cr * aa + bg.r() as u32 * inv2) / 255;
-                let g2 = (cg * aa + bg.g() as u32 * inv2) / 255;
-                let b2 = (cb * aa + bg.b() as u32 * inv2) / 255;
-                buf[idx] = Color::rgb(r2 as u8, g2 as u8, b2 as u8).0;
-            }
-        }
-    }
-}
-
-fn outline_rect_in_buf(buf: &mut [u32], stride: usize, buf_h: usize, x: usize, y: usize, w: usize, h: usize, c: Color, opacity: f32) {
-    if w == 0 || h == 0 { return; }
-    let x0 = x.min(stride);
-    let y0 = y.min(buf_h);
-    let x1 = (x + w).min(stride);
-    let y1 = (y + h).min(buf_h);
-    let a = (opacity * 255.0) as u32;
-    let inv = 255 - a;
-    let cr = c.r() as u32;
-    let cg = c.g() as u32;
-    let cb = c.b() as u32;
-    let draw = |buf: &mut [u32], px: usize, py: usize| {
-        if px >= x0 && px < x1 && py >= y0 && py < y1 {
-            let idx = py * stride + px;
-            let bg = Color(buf[idx]);
-            let r2 = (cr * a + bg.r() as u32 * inv) / 255;
-            let g2 = (cg * a + bg.g() as u32 * inv) / 255;
-            let b2 = (cb * a + bg.b() as u32 * inv) / 255;
-            buf[idx] = Color::rgb(r2 as u8, g2 as u8, b2 as u8).0;
-        }
-    };
-    for px in x0..x1 { draw(buf, px, y0); draw(buf, px, (y1 - 1).min(buf_h - 1)); }
-    for py in y0..y1 { draw(buf, x0, py); draw(buf, (x1 - 1).min(stride - 1), py); }
-}
-
-fn draw_svg_path_simple(buf: &mut [u32], stride: usize, buf_h: usize, d: &str, color: Color, sw: u32, ox: i32, oy: i32) {
-    let mut px = 0.0f32;
-    let mut py = 0.0f32;
-    let bytes = d.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let mut last_x = 0.0f32;
-    let mut last_y = 0.0f32;
-    while i < len {
-        while i < len && (bytes[i] == b' ' || bytes[i] == b',') { i += 1; }
-        if i >= len { break; }
-        let cmd = bytes[i] as char;
-        i += 1;
-        match cmd {
-            'M' | 'm' => {
-                let nx = parse_svg_num(d, &mut i);
-                let ny = parse_svg_num(d, &mut i);
-                if cmd == 'm' { px += nx; py += ny; } else { px = nx; py = ny; }
-                last_x = px; last_y = py;
-            }
-            'L' | 'l' => {
-                let nx = parse_svg_num(d, &mut i);
-                let ny = parse_svg_num(d, &mut i);
-                if cmd == 'l' { px += nx; py += ny; } else { px = nx; py = ny; }
-                draw_line_simple(buf, stride, buf_h, last_x + ox as f32, last_y + oy as f32, px + ox as f32, py + oy as f32, color, sw);
-                last_x = px; last_y = py;
-            }
-            'Z' | 'z' => {
-                draw_line_simple(buf, stride, buf_h, last_x + ox as f32, last_y + oy as f32, px + ox as f32, py + oy as f32, color, sw);
-            }
-            _ => {
-                while i < len && bytes[i] != b'M' && bytes[i] != b'm' && bytes[i] != b'L' && bytes[i] != b'l' && bytes[i] != b'Z' && bytes[i] != b'z' { i += 1; }
-            }
-        }
-    }
-}
-
-fn parse_svg_num(s: &str, i: &mut usize) -> f32 {
-    let bytes = s.as_bytes();
-    let len = bytes.len();
-    while *i < len && (bytes[*i] == b' ' || bytes[*i] == b',') { *i += 1; }
-    let start = *i;
-    if *i < len && bytes[*i] == b'-' { *i += 1; }
-    while *i < len && bytes[*i].is_ascii_digit() { *i += 1; }
-    if *i < len && bytes[*i] == b'.' { *i += 1; while *i < len && bytes[*i].is_ascii_digit() { *i += 1; } }
-    if *i == start { return 0.0; }
-    core::str::from_utf8(&bytes[start..*i]).unwrap_or("0").parse().unwrap_or(0.0)
-}
-
-fn draw_line_simple(buf: &mut [u32], stride: usize, buf_h: usize, x0: f32, y0: f32, x1: f32, y1: f32, color: Color, sw: u32) {
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    let steps = (dx.abs().max(dy.abs()) * 2.0) as i32;
-    if steps == 0 { return; }
-    let inv_steps = 1.0 / steps as f32;
-    let hw = sw as f32 / 2.0;
-    for s in 0..=steps {
-        let t = s as f32 * inv_steps;
-        let cx = x0 + dx * t;
-        let cy = y0 + dy * t;
-        let min_x = (cx - hw).max(0.0) as usize;
-        let max_x = (cx + hw).min(stride as f32 - 1.0) as usize + 1;
-        let min_y = (cy - hw).max(0.0) as usize;
-        let max_y = (cy + hw).min(buf_h as f32 - 1.0) as usize + 1;
-        for py in min_y..max_y {
-            for px in min_x..max_x {
-                buf[py * stride + px] = color.0;
             }
         }
     }
