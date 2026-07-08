@@ -7,8 +7,8 @@ const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
-const BTN_AREA_W: usize = BTN_SIZE * 3 + 10;
-const WIN_RADIUS: usize = 10;
+const BTN_AREA_W: usize = BTN_SIZE * 3 + 30;
+const WIN_RADIUS: usize = 20;
 
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
@@ -718,8 +718,10 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
 
     
     let tb_h = TITLE_BAR_H.min(h_draw);
-    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
-    layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS * 2, WIN_RADIUS, title_bg);
+    layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS, WIN_RADIUS, title_bg);
+    if tb_h > WIN_RADIUS {
+        layer.fill_rect(x, y + WIN_RADIUS, w_draw, tb_h - WIN_RADIUS, title_bg);
+    }
 
     
     let base_x = x as i32 + 8;
