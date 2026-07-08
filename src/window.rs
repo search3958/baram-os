@@ -50,6 +50,8 @@ pub struct Window {
     resize_sh: usize,
     pub layer: Option<LayerSystem>,
     pub shadow_layer: Option<LayerSystem>,
+    pub content_dirty: bool,
+    pub shadow_dirty: bool,
 }
 
 impl Window {
@@ -69,6 +71,8 @@ impl Window {
             resize_sx: 0, resize_sy: 0, resize_sw: 0, resize_sh: 0,
             layer: Some(LayerSystem::new_transparent(w, h)),
             shadow_layer: Some(LayerSystem::new_transparent(w + SHADOW_PAD as usize * 2, h + SHADOW_PAD as usize * 2)),
+            content_dirty: true,
+            shadow_dirty: true,
         }
     }
 
@@ -133,6 +137,7 @@ impl Window {
 
     pub fn scroll(&mut self, delta: i32) {
         self.scroll_y = self.scroll_y.saturating_add(delta).max(0);
+        self.content_dirty = true;
     }
 
     pub fn toggle_maximize(&mut self, screen_w: i32, screen_h: i32) {
@@ -153,6 +158,8 @@ impl Window {
             self.h = (screen_h - TASKBAR_H as i32) as usize;
             self.maximized = true;
         }
+        self.content_dirty = true;
+        self.shadow_dirty = true;
     }
 
     pub fn toggle_minimize(&mut self) {
@@ -161,6 +168,7 @@ impl Window {
         } else {
             self.minimized = true;
         }
+        self.content_dirty = true;
     }
 
     pub fn start_drag(&mut self, px: i32, py: i32) {
@@ -171,6 +179,8 @@ impl Window {
             self.x = px - (self.w as f64 * ratio) as i32;
             self.y = py - 10;
             self.maximized = false;
+            self.content_dirty = true;
+            self.shadow_dirty = true;
         }
         self.dragging = true;
         self.drag_ox = px - self.x;
@@ -247,6 +257,9 @@ impl WindowManager {
 
     pub fn focus(&mut self, id: WinId) {
         for w in &mut self.windows {
+            if w.focused != (w.id == id) {
+                w.content_dirty = true;
+            }
             w.focused = w.id == id;
         }
         self.next_z += 1;
@@ -369,8 +382,14 @@ impl WindowManager {
             if w.resizing {
                 let dw = px - w.resize_sx;
                 let dh = py - w.resize_sy;
-                w.w = (w.resize_sw as i32 + dw).max(MIN_WIN_W as i32) as usize;
-                w.h = (w.resize_sh as i32 + dh).max(MIN_WIN_H as i32) as usize;
+                let new_w = (w.resize_sw as i32 + dw).max(MIN_WIN_W as i32) as usize;
+                let new_h = (w.resize_sh as i32 + dh).max(MIN_WIN_H as i32) as usize;
+                if new_w != w.w || new_h != w.h {
+                    w.w = new_w;
+                    w.h = new_h;
+                    w.content_dirty = true;
+                    w.shadow_dirty = true;
+                }
             }
         }
     }
@@ -392,12 +411,24 @@ impl WindowManager {
         let screen_w = layer.width();
         let screen_h = layer.height();
 
-        // ---- z-order 昇順（下→上）のインデックスリストを作成 ----
-        let mut indices: Vec<usize> = (0..n).collect();
-        indices.sort_by_key(|&i| self.windows[i].z);
+        // ---- z-order 昇順（下→上）のインデックスリストを固定配列で作成 ----
+        const MAX_WINDOWS: usize = 16;
+        let sort_n = n.min(MAX_WINDOWS);
+        let mut indices = [0usize; MAX_WINDOWS];
+        for i in 0..sort_n {
+            indices[i] = i;
+        }
+        for i in 1..sort_n {
+            let mut j = i;
+            while j > 0 && self.windows[indices[j - 1]].z > self.windows[indices[j]].z {
+                indices.swap(j - 1, j);
+                j -= 1;
+            }
+        }
 
         // ---- シャドウキャッシュの更新 ----
-        for &idx in &indices {
+        for i in 0..sort_n {
+            let idx = indices[i];
             let w = &self.windows[idx];
             if !w.visible || w.minimized || w.maximized {
                 continue;
@@ -422,7 +453,8 @@ impl WindowManager {
         }
 
         // ---- z-order 順（下→上）で描画 ----
-        for &idx in &indices {
+        for i in 0..sort_n {
+            let idx = indices[i];
             if !self.windows[idx].visible || self.windows[idx].minimized {
                 continue;
             }
@@ -435,17 +467,18 @@ impl WindowManager {
             let scroll_y = self.windows[idx].scroll_y;
             let win_id = self.windows[idx].id;
             let is_max = self.windows[idx].maximized;
+            let shadow_dirty = self.windows[idx].shadow_dirty;
+            let content_dirty = self.windows[idx].content_dirty;
 
-            // ===== シャドウ描画（各ウィンドウの shadow_layer に独立描画 → main layer へ合成）=====
+            // ===== シャドウ描画 =====
             if !is_max {
-                if let Some(entry) = self
-                    .shadow_cache
-                    .iter()
-                    .find(|(wid2, _)| *wid2 == win_id)
-                {
-                    if let Some(ref cache) = entry.1 {
-                        // shadow_layer へシャドウアルファ値を書き込む
-                        {
+                if shadow_dirty {
+                    if let Some(entry) = self
+                        .shadow_cache
+                        .iter()
+                        .find(|(wid2, _)| *wid2 == win_id)
+                    {
+                        if let Some(ref cache) = entry.1 {
                             let shadow_layer =
                                 self.windows[idx].shadow_layer.as_mut().unwrap();
                             let slw = shadow_layer.width();
@@ -456,21 +489,25 @@ impl WindowManager {
                                 let alpha_row = py * cache.w;
                                 for px in 0..cache.w {
                                     let a = cache.alpha[alpha_row + px];
-                                    if a == 0 {
-                                        continue;
-                                    }
-                                    if px >= slw || py >= slh {
-                                        continue;
-                                    }
+                                    if a == 0 { continue; }
+                                    if px >= slw || py >= slh { continue; }
                                     shadow_buf[py * slw + px] = 0x0000_0000 | (a as u32);
                                 }
                             }
+                            self.windows[idx].shadow_dirty = false;
                         }
+                    }
+                }
 
-                        // shadow_layer を main layer に合成（暗くする）
+                // shadow_layer を main layer に合成（常に実行 — 位置は変わる）
+                if let Some(entry) = self
+                    .shadow_cache
+                    .iter()
+                    .find(|(wid2, _)| *wid2 == win_id)
+                {
+                    if entry.1.is_some() {
                         let shadow_ref =
                             self.windows[idx].shadow_layer.as_ref().unwrap();
-                        // 画面外にはみ出す部分をクリップした座標を計算
                         let src_x = (SHADOW_PAD - wx).max(0) as usize;
                         let src_y = (SHADOW_PAD - wy).max(0) as usize;
                         let dst_x = (wx - SHADOW_PAD).max(0) as usize;
@@ -488,8 +525,8 @@ impl WindowManager {
                 }
             }
 
-            // ===== ウィンドウ本体描画（各ウィンドウの layer に独立描画）=====
-            {
+            // ===== ウィンドウ本体描画 =====
+            if content_dirty {
                 let layer_ptr =
                     self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
                 let w_ptr = &self.windows[idx] as *const Window;
@@ -529,9 +566,10 @@ impl WindowManager {
                         }
                     }
                 }
+                self.windows[idx].content_dirty = false;
             }
 
-            // ===== ウィンドウ本体を main layer に合成 =====
+            // ===== ウィンドウ本体を main layer に合成（常に実行）=====
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
             if is_max {
                 layer.composit_rect(
@@ -558,6 +596,12 @@ impl WindowManager {
                 );
                 draw_window_border(layer, &self.windows[idx]);
             }
+        }
+    }
+
+    pub fn set_content_dirty(&mut self, id: WinId) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.content_dirty = true;
         }
     }
 

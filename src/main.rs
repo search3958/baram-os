@@ -416,6 +416,7 @@ fn main() -> Status {
                                 warp_engine.click(rel_x, rel_y);
                                 let content_h = wh.saturating_sub(30);
                                 warp_engine.update(ww as i32, content_h as i32);
+                                wm.set_content_dirty(warp_win_id);
                                 scene_dirty = true;
                             }
                         }
@@ -460,6 +461,7 @@ fn main() -> Status {
                 prev_warp_h = wh;
                 let content_h = wh.saturating_sub(30);
                 warp_engine.update(ww as i32, content_h as i32);
+                wm.set_content_dirty(warp_win_id);
                 scene_dirty = true;
                 dirty = true;
             }
