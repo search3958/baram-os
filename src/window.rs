@@ -522,11 +522,11 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
                     let (cx, cy) = if in_top_left {
                         (r, r)
                     } else if in_top_right {
-                        (ww - r - 1, r)
+                        (ww - r, r)
                     } else if in_bottom_left {
-                        (r, wh - r - 1)
+                        (r, wh - r)
                     } else {
-                        (ww - r - 1, wh - r - 1)
+                        (ww - r, wh - r)
                     };
                     let dx = sx_i as f32 + 0.5 - cx as f32;
                     let dy = sy_i as f32 + 0.5 - cy as f32;
@@ -544,11 +544,11 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
                 let (cx, cy) = if sx_i < 0 && sy_i < 0 {
                     (r, r)
                 } else if sx_i >= ww && sy_i < 0 {
-                    (ww - r - 1, r)
+                    (ww - r, r)
                 } else if sx_i < 0 && sy_i >= wh {
-                    (r, wh - r - 1)
+                    (r, wh - r)
                 } else {
-                    (ww - r - 1, wh - r - 1)
+                    (ww - r, wh - r)
                 };
                 let dx = sx_i as f32 + 0.5 - cx as f32;
                 let dy = sy_i as f32 + 0.5 - cy as f32;
@@ -644,11 +644,11 @@ fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
                     let (cx, cy) = if in_top_left {
                         (win_x0 + r, win_y0 + r)
                     } else if in_top_right {
-                        (win_x1 - r - 1, win_y0 + r)
+                        (win_x1 - r, win_y0 + r)
                     } else if in_bottom_left {
-                        (win_x0 + r, win_y1 - r - 1)
+                        (win_x0 + r, win_y1 - r)
                     } else {
-                        (win_x1 - r - 1, win_y1 - r - 1)
+                        (win_x1 - r, win_y1 - r)
                     };
                     let dx = px_i as f32 + 0.5 - cx as f32;
                     let dy = py_i as f32 + 0.5 - cy as f32;
@@ -667,11 +667,11 @@ fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
                 let (cx, cy) = if px_i < win_x0 && py_i < win_y0 {
                     (win_x0 + r, win_y0 + r)
                 } else if px_i >= win_x1 && py_i < win_y0 {
-                    (win_x1 - r - 1, win_y0 + r)
+                    (win_x1 - r, win_y0 + r)
                 } else if px_i < win_x0 && py_i >= win_y1 {
-                    (win_x0 + r, win_y1 - r - 1)
+                    (win_x0 + r, win_y1 - r)
                 } else {
-                    (win_x1 - r - 1, win_y1 - r - 1)
+                    (win_x1 - r, win_y1 - r)
                 };
                 let dx = px_i as f32 + 0.5 - cx as f32;
                 let dy = py_i as f32 + 0.5 - cy as f32;
@@ -926,8 +926,8 @@ impl LayerSystem {
                     continue;
                 }
 
-                let cx_f = if px < x + r { x + r } else { x + w - r - 1 } as f32;
-                let cy_f = if corner_top { y + r } else { y + h - r - 1 } as f32;
+                let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
+                let cy_f = if corner_top { y + r } else { y + h - r } as f32;
                 let dx = px as f32 + 0.5 - cx_f;
                 let dy = py as f32 + 0.5 - cy_f;
                 let dist_sq = dx * dx + dy * dy;
@@ -983,20 +983,20 @@ impl LayerSystem {
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
-                    let cx_f = (x + w - r - 1) as f32;
+                    let cx_f = (x + w - r) as f32;
                     let cy_f = (y + r) as f32;
                     let dx = px as f32 + 0.5 - cx_f;
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
                     let cx_f = (x + r) as f32;
-                    let cy_f = (y + h - r - 1) as f32;
+                    let cy_f = (y + h - r) as f32;
                     let dx = px as f32 + 0.5 - cx_f;
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
                 } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
-                    let cx_f = (x + w - r - 1) as f32;
-                    let cy_f = (y + h - r - 1) as f32;
+                    let cx_f = (x + w - r) as f32;
+                    let cy_f = (y + h - r) as f32;
                     let dx = px as f32 + 0.5 - cx_f;
                     let dy = py as f32 + 0.5 - cy_f;
                     libm::sqrtf(dx * dx + dy * dy) - rf
@@ -1243,8 +1243,8 @@ impl LayerSystem {
                     if !in_corner {
                         1.0
                     } else {
-                        let cx_f = if px < r { r } else { w - r - 1 } as f32;
-                        let cy_f = if py < r { r } else { h - r - 1 } as f32;
+                        let cx_f = if px < r { r } else { w - r } as f32;
+                        let cy_f = if py < r { r } else { h - r } as f32;
                         let dx_f = px as f32 + 0.5 - cx_f;
                         let dy_f = py as f32 + 0.5 - cy_f;
                         let dist_sq = dx_f * dx_f + dy_f * dy_f;
