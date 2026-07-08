@@ -20,6 +20,9 @@ png-decoder = { path = "src/png-decoder" }
 # transcendentals in `no_std` (needed for `aarch64-unknown-uefi`).
 kurbo = { version = "0.13", default-features = false, features = ["libm"] }
 
+[profile.dev]
+panic = "abort"
+
 [profile.release]
 opt-level = 2
 lto = true

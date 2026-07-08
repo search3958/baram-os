@@ -358,6 +358,7 @@ impl WindowManager {
         &mut self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
+        warp_win: Option<(WinId, &mut super::warp::WarpEngine)>,
     ) {
         if self.windows.is_empty() { return; }
         
@@ -461,6 +462,47 @@ impl WindowManager {
                 );
 
                 draw_window_border(layer, w);
+            }
+        }
+
+        
+        if let Some((wid, engine)) = warp_win {
+            for i in 0..sort_n {
+                let w = sorted[i];
+                if !w.visible || w.minimized || w.id != wid { continue; }
+                if w.maximized {
+                    layer.push_clip(
+                        w.x.max(0) as usize,
+                        (w.y + TITLE_BAR_H as i32).max(0) as usize,
+                        (w.x + w.w as i32).max(0) as usize,
+                        (w.y + w.h as i32).max(0) as usize,
+                    );
+                    let ox = w.x;
+                    let oy = w.y + TITLE_BAR_H as i32;
+                    let content_w = w.w;
+                    let content_h = w.h.saturating_sub(TITLE_BAR_H);
+                    engine.draw_svg_to_layer(layer, ox, oy, content_w, content_h);
+                    engine.draw_texts(layer, ox, oy - w.scroll_y, 1.0);
+                    layer.pop_clip();
+                } else {
+                    let ox = w.x;
+                    let oy = w.y + TITLE_BAR_H as i32;
+                    let content_w = w.w;
+                    let content_h = w.h.saturating_sub(TITLE_BAR_H);
+                    let temp2 = self.temp_layer.as_mut().unwrap();
+                    engine.draw_svg_to_layer(temp2, ox, oy, content_w, content_h);
+                    engine.draw_texts(temp2, ox, oy - w.scroll_y, 1.0);
+                    let wx = w.x.max(0) as usize;
+                    let wy = w.y.max(0) as usize;
+                    layer.composit_rounded(
+                        temp2,
+                        wx, wy,
+                        wx, wy,
+                        w.w, w.h,
+                        WIN_RADIUS,
+                    );
+                }
+                break;
             }
         }
     }

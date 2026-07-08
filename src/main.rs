@@ -16,6 +16,7 @@ mod ttf_font_hud;
 mod ui;
 mod uiscript;
 mod usb_hid;
+mod warp;
 mod window;
 
 use alloc::vec::Vec;
@@ -130,6 +131,7 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 }
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
+const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
 
 const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
 const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
@@ -248,6 +250,10 @@ fn main() -> Status {
     let ui_win_id = wm.add("UI Script Demo", 600, 100, 400, 350);
     let ui_commands = uiscript::parse(APP_DEMO);
 
+    let warp_win_id = wm.add("Warp Demo", 100, 80, 420, 600);
+    let mut warp_engine = warp::WarpEngine::new(WARP_DEMO);
+    warp_engine.update(400, 560);
+
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);
     let mut mouse_ev_count: u32 = 0;
     let mut key_ev_count: u32 = 0;
@@ -301,7 +307,8 @@ fn main() -> Status {
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
-                 &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                 &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
+                 cached_wallpaper.as_deref(),
                  &mut cached_taskbar, -1.0, -1.0, 0.0);
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
@@ -459,7 +466,8 @@ fn main() -> Status {
 
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
-                             &ui_commands, Some(ui_win_id), cached_wallpaper.as_deref(),
+                             &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
+                             cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x);
@@ -533,6 +541,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
                 fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
+                warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 add_progress: f32,
@@ -622,7 +631,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         *cached_taskbar = Some(bar);
     }
 
-    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)));
+    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
+        Some((warp_win_id, warp_engine)));
 
     let ids = wm.insertion_ids();
     let count = ids.len();
@@ -730,12 +740,13 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
+                warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
-                 ui_commands, ui_win_id, wallpaper, cached_taskbar,
+                 ui_commands, ui_win_id, warp_engine, warp_win_id, wallpaper, cached_taskbar,
                  add_progress, remove_progress, shift_x);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
