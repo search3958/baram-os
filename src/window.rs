@@ -7,7 +7,7 @@ const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
-const BTN_AREA_W: usize = BTN_SIZE * 3 + 30;
+const BTN_AREA_W: usize = BTN_SIZE * 3 + 23;
 const WIN_RADIUS: usize = 18;
 const BTN_BG_RADIUS: usize = 8;
 const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
@@ -745,7 +745,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     }
 
     
-    layer.put_str(x + BTN_AREA_W, y + 7, w.title_str(), title_color);
+    layer.put_str(x + BTN_AREA_W, y + 8, w.title_str(), title_color);
 }
 
 fn draw_window_border(layer: &mut LayerSystem, w: &Window) {

@@ -199,13 +199,13 @@ fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: b
         }
     }
     if resizing {
-        svg::draw_svg_shadow(layer, CURSOR_SVG_SIZE, cx + 3, cy + 4,
-            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32, 8, 0);
+        svg::draw_svg_shadow(layer, CURSOR_SVG_SIZE, cx + 5, cy + 4,
+            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32, 12, 0);
         svg::draw_svg_into(layer, CURSOR_SVG_SIZE, cx, cy,
             CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32);
     } else {
-        svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 3, cy + 4,
-            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 8, 0);
+        svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 5, cy + 4,
+            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 12, 0);
         svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
             CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
     }
