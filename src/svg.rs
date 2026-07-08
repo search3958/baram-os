@@ -506,21 +506,31 @@ pub fn draw_svg_shadow(
         }
     }
 
+    let sigma = blur_r as f32 / 3.0;
+    let mut kernel: Vec<f32> = alloc::vec![0.0; (blur_r * 2 + 1) as usize];
+    let mut k_sum = 0.0f32;
+    for i in 0..=blur_r * 2 {
+        let x = (i - blur_r) as f32;
+        let w = libm::expf(-x * x / (2.0 * sigma * sigma));
+        kernel[i as usize] = w;
+        k_sum += w;
+    }
+    for k in kernel.iter_mut() {
+        *k /= k_sum;
+    }
+
     
     let mut tmp: Vec<f32> = alloc::vec![0.0; pw * ph];
-    
     for y in 0..ph {
         for x in 0..pw {
             let mut sum = 0.0f32;
-            let mut cnt = 0.0f32;
             for dx in -blur_r..=blur_r {
                 let sx = x as i32 + dx;
                 if sx >= 0 && sx < pw as i32 {
-                    sum += padded[y * pw + sx as usize];
-                    cnt += 1.0;
+                    sum += padded[y * pw + sx as usize] * kernel[(dx + blur_r) as usize];
                 }
             }
-            tmp[y * pw + x] = sum / cnt;
+            tmp[y * pw + x] = sum;
         }
     }
     
@@ -528,15 +538,13 @@ pub fn draw_svg_shadow(
     for y in 0..ph {
         for x in 0..pw {
             let mut sum = 0.0f32;
-            let mut cnt = 0.0f32;
             for dy in -blur_r..=blur_r {
                 let sy = y as i32 + dy;
                 if sy >= 0 && sy < ph as i32 {
-                    sum += tmp[sy as usize * pw + x];
-                    cnt += 1.0;
+                    sum += tmp[sy as usize * pw + x] * kernel[(dy + blur_r) as usize];
                 }
             }
-            result[y * pw + x] = sum / cnt;
+            result[y * pw + x] = sum;
         }
     }
 

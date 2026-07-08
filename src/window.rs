@@ -551,9 +551,8 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
             if edge_dist <= 0.0 || edge_dist >= blur_r_f {
                 alpha.push(0u8);
             } else {
-                // 滑らかなイージング（小数のまま計算する）
                 let t = (blur_r_f - edge_dist) / blur_r_f;
-                let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+                let alpha_f = t * t * 0.175;
                 alpha.push((alpha_f * 255.0) as u8);
             }
         }
@@ -652,7 +651,7 @@ fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
             }
             
             let t = (blur_r_f - edge_dist) / blur_r_f;
-            let alpha_f = t * t * (3.0 - 2.0 * t) * 0.175;
+            let alpha_f = t * t * 0.175;
             let a = (alpha_f * 255.0) as u32;
             if a == 0 { continue; }
             
