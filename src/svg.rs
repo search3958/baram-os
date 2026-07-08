@@ -381,6 +381,10 @@ fn stroke_path_to_buf(
 
 
 pub fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
+    blit_cached_alpha(layer, pixels, w, h, ox, oy, 255);
+}
+
+pub fn blit_cached_alpha(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32, alpha_scale: u32) {
     let lw = layer.width();
     let lh = layer.height();
     let buf = layer.buf_mut();
@@ -396,7 +400,7 @@ pub fn blit_cached(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, o
             let dst_x = ox as usize + sx;
             if dst_x >= lw { break; }
             let off = row + sx * 4;
-            let a = pixels[off + 3] as u32;
+            let a = (pixels[off + 3] as u32 * alpha_scale / 255) as u32;
             if a == 0 { continue; }
             let dst = &mut buf[dst_row + dst_x];
             if a == 255 {
@@ -1045,6 +1049,7 @@ pub fn draw_svg(layer: &mut LayerSystem, svg: &str, ox: i32, oy: i32) {
         layer.height() as f32,
         layer.width() as f32,
         layer.height() as f32,
+        255,
     );
 }
 
@@ -1068,6 +1073,29 @@ pub fn draw_svg_into(
         layer.height() as f32,
         target_w,
         target_h,
+        255,
+    );
+}
+
+pub fn draw_svg_into_alpha(
+    layer: &mut LayerSystem,
+    svg: &str,
+    ox: i32,
+    oy: i32,
+    target_w: f32,
+    target_h: f32,
+    alpha_scale: u32,
+) {
+    draw_svg_scaled_into(
+        layer,
+        svg,
+        ox,
+        oy,
+        layer.width() as f32,
+        layer.height() as f32,
+        target_w,
+        target_h,
+        alpha_scale,
     );
 }
 
@@ -1138,6 +1166,7 @@ fn draw_svg_scaled_into(
     _layer_h: f32,
     target_w: f32,
     target_h: f32,
+    alpha_scale: u32,
 ) {
     let tw = target_w as usize;
     let th = target_h as usize;
@@ -1147,13 +1176,13 @@ fn draw_svg_scaled_into(
     if let Some((ptr, w, h)) = cache_lookup(svg, tw, th) {
         let len = w * h * 4;
         let pixels = unsafe { core::slice::from_raw_parts(ptr, len) };
-        blit_cached(layer, pixels, w, h, ox, oy);
+        blit_cached_alpha(layer, pixels, w, h, ox, oy, alpha_scale);
         return;
     }
 
     
     let pixels = rasterize_svg_to_buffer(svg, tw, th);
-    blit_cached(layer, &pixels, tw, th, ox, oy);
+    blit_cached_alpha(layer, &pixels, tw, th, ox, oy, alpha_scale);
     cache_store(svg, tw, th, pixels);
 }
 

@@ -9,6 +9,8 @@ const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
 const BTN_AREA_W: usize = BTN_SIZE * 3 + 30;
 const WIN_RADIUS: usize = 20;
+const BTN_BG_RADIUS: usize = 8;
+const BTN_BG_COLOR: Color = Color::rgb(210, 210, 210);
 
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
@@ -727,26 +729,49 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     let base_x = x as i32 + 8;
     let btn_y = y as i32 + 5;
     let bs = BTN_SIZE as i32;
+    let btn_center_x = base_x + bs / 2;
+    let btn_center_y = btn_y + bs / 2;
 
-    if base_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
-        svg::draw_svg_into(layer, CLOSE_ICON_SVG,
-            base_x + 4, btn_y + 4,
-            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
+    if btn_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
+        layer.fill_circle(btn_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
     }
 
     let mini_x = base_x + bs + 6;
-    if mini_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
-        svg::draw_svg_into(layer, MIN_ICON_SVG,
-            mini_x + 4, btn_y + 4,
-            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
+    let mini_center_x = mini_x + bs / 2;
+
+    if mini_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
+        layer.fill_circle(mini_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
     }
 
     let max_x = base_x + bs * 2 + 12;
-    if max_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
-        let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
-        svg::draw_svg_into(layer, icon,
-            max_x + 4, btn_y + 4,
-            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
+    let max_center_x = max_x + bs / 2;
+
+    if max_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
+        layer.fill_circle(max_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
+    }
+
+    if w.focused {
+        if base_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(layer, CLOSE_ICON_SVG,
+                base_x + 4, btn_y + 4,
+                (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32,
+                77u32);
+        }
+
+        if mini_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(layer, MIN_ICON_SVG,
+                mini_x + 4, btn_y + 4,
+                (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32,
+                77u32);
+        }
+
+        if max_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
+            svg::draw_svg_into_alpha(layer, icon,
+                max_x + 4, btn_y + 4,
+                (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32,
+                77u32);
+        }
     }
 
     
@@ -953,6 +978,46 @@ impl LayerSystem {
                         let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
                         self.buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
                     }
+                }
+            }
+        }
+    }
+
+    pub fn fill_circle(&mut self, cx: usize, cy: usize, r: usize, c: Color) {
+        if r == 0 { return; }
+        let rf = r as f32;
+        let cr = c.r() as f32;
+        let cg = c.g() as f32;
+        let cb = c.b() as f32;
+        let x0 = cx.saturating_sub(r).min(self.width);
+        let y0 = cy.saturating_sub(r).min(self.height);
+        let x1 = (cx + r + 1).min(self.width);
+        let y1 = (cy + r + 1).min(self.height);
+        for py in y0..y1 {
+            let row = py * self.width;
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx as f32;
+                let dy = py as f32 + 0.5 - cy as f32;
+                let dist_sq = dx * dx + dy * dy;
+                let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                    1.0
+                } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                    continue;
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (rf + 0.5 - dist).clamp(0.0, 1.0)
+                };
+                if alpha >= 1.0 {
+                    self.buf[row + px] = c.0;
+                } else {
+                    let bg = self.buf[row + px];
+                    let br = ((bg >> 16) & 0xFF) as f32;
+                    let bg2 = ((bg >> 8) & 0xFF) as f32;
+                    let bb = (bg & 0xFF) as f32;
+                    let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
+                    let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
+                    let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
+                    self.buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
                 }
             }
         }
