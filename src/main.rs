@@ -300,6 +300,9 @@ fn main() -> Status {
     let shadow_pad = 35i32;
 
     let mut cached_taskbar: Option<Vec<u32>> = None;
+    let mut cached_taskbar_strip: Option<Vec<u32>> = None;
+    let mut prev_window_count: usize = 0;
+    let mut prev_focused_id: Option<window::WinId> = None;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
@@ -311,7 +314,10 @@ fn main() -> Status {
                  fps, mouse_mode_label,
                  &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
                  cached_wallpaper.as_deref(),
-                 &mut cached_taskbar, -1.0, -1.0, 0.0);
+                 &mut cached_taskbar, &mut cached_taskbar_strip, true,
+                 -1.0, -1.0, 0.0);
+    prev_window_count = wm.count();
+    prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
     draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
     layer.flush(&mut screen);
@@ -487,13 +493,23 @@ fn main() -> Status {
             if scene_dirty {
                 let (bx0, by0, bx1, by1) = prev_dirty;
 
+                let taskbar_dirty = cached_taskbar_strip.is_none()
+                    || tb_add_progress >= 0.0
+                    || tb_remove_progress >= 0.0
+                    || tb_shift_x.abs() > 0.5
+                    || wm.count() != prev_window_count
+                    || wm.focused_id != prev_focused_id;
+
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
                              &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
                              cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
+                             &mut cached_taskbar_strip, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x);
+                prev_window_count = wm.count();
+                prev_focused_id = wm.focused_id;
 
                 if tb_add_progress >= 1.0 { tb_add_progress = -1.0; }
                 if tb_remove_progress >= 1.0 { tb_remove_progress = -1.0; }
@@ -574,6 +590,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
+                cached_taskbar_strip: &mut Option<Vec<u32>>,
+                taskbar_dirty: bool,
                 add_progress: f32,
                 remove_progress: f32,
                 shift_x: f32) {
@@ -663,6 +681,13 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
 
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
         Some((warp_win_id, warp_engine)));
+
+    if !taskbar_dirty {
+        if let Some(ref strip) = cached_taskbar_strip {
+            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
+            return;
+        }
+    }
 
     let ids = wm.insertion_ids();
     let count = ids.len();
@@ -764,6 +789,10 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
 
     layer.put_str_hud(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
     layer.put_str_hud(16, tb_y + 26, fb.as_str(), Color::MUTED);
+
+    let mut strip = alloc::vec![0u32; w * TASKBAR_H];
+    strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+    *cached_taskbar_strip = Some(strip);
 }
 
 fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
@@ -773,10 +802,13 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
+                cached_taskbar_strip: &mut Option<Vec<u32>>,
+                taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engine, warp_win_id, wallpaper, cached_taskbar,
+                 cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
