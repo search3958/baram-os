@@ -726,14 +726,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool) {
 
     
     let tb_h = TITLE_BAR_H.min(h_draw);
-    if rounded {
-        layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS, WIN_RADIUS, title_bg);
-        if tb_h > WIN_RADIUS {
-            layer.fill_rect(x, y + WIN_RADIUS, w_draw, tb_h - WIN_RADIUS, title_bg);
-        }
-    } else {
-        layer.fill_rect(x, y, w_draw, tb_h, title_bg);
-    }
+    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
 
     
     let base_x = x as i32 + 6;
