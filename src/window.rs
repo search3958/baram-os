@@ -8,9 +8,9 @@ const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
 const BTN_AREA_W: usize = BTN_SIZE * 3 + 30;
-const WIN_RADIUS: usize = 20;
+const WIN_RADIUS: usize = 18;
 const BTN_BG_RADIUS: usize = 8;
-const BTN_BG_COLOR: Color = Color::rgb(210, 210, 210);
+const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
 
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
@@ -80,14 +80,17 @@ impl Window {
     }
 
     fn button_hit(&self, px: i32, py: i32) -> char {
-        let base_x = self.x + 8;
+        let base_x = self.x + 6;
         let btn_y = self.y + 5;
         let bs = BTN_SIZE as i32;
         if py >= btn_y && py < btn_y + bs {
             if px >= base_x && px < base_x + bs {
                 return 'c';
             }
-            if px >= base_x + bs * 2 + 12 && px < base_x + bs * 3 + 12 {
+            if px >= base_x + bs + 5 && px < base_x + bs * 2 + 5 {
+                return 'i';
+            }
+            if px >= base_x + bs * 2 + 10 && px < base_x + bs * 3 + 10 {
                 return 'm';
             }
         }
@@ -279,6 +282,9 @@ impl WindowManager {
                         w.toggle_maximize(sw, sh);
                     }
                     return Some('m');
+                }
+                'i' => {
+                    return Some('i');
                 }
                 _ => {}
             }
@@ -726,7 +732,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     }
 
     
-    let base_x = x as i32 + 8;
+    let base_x = x as i32 + 6;
     let btn_y = y as i32 + 5;
     let bs = BTN_SIZE as i32;
     let btn_center_x = base_x + bs / 2;
@@ -736,14 +742,14 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
         layer.fill_circle(btn_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
     }
 
-    let mini_x = base_x + bs + 6;
+    let mini_x = base_x + bs + 5;
     let mini_center_x = mini_x + bs / 2;
 
     if mini_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
         layer.fill_circle(mini_center_x as usize, btn_center_y as usize, BTN_BG_RADIUS, BTN_BG_COLOR);
     }
 
-    let max_x = base_x + bs * 2 + 12;
+    let max_x = base_x + bs * 2 + 10;
     let max_center_x = max_x + bs / 2;
 
     if max_center_x + BTN_BG_RADIUS as i32 <= sw as i32 && btn_center_y + BTN_BG_RADIUS as i32 <= sh as i32 {
