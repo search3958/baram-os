@@ -7,11 +7,13 @@ const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
+const BTN_AREA_W: usize = BTN_SIZE * 3 + 10;
 const WIN_RADIUS: usize = 10;
 
 const MAX_ICON_SVG: &str = include_str!("data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("data/close.svg");
+const MIN_ICON_SVG: &str = include_str!("data/min.svg");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WinId(pub u32);
@@ -76,14 +78,15 @@ impl Window {
     }
 
     fn button_hit(&self, px: i32, py: i32) -> char {
-        let base_x = self.x + self.w as i32 - (BTN_SIZE as i32) * 3;
+        let base_x = self.x + 8;
         let btn_y = self.y + 5;
-        if py >= btn_y && py < btn_y + BTN_SIZE as i32 {
-            if px >= base_x && px < base_x + BTN_SIZE as i32 {
-                return 'm';
-            }
-            if px >= base_x + BTN_SIZE as i32 * 2 && px < base_x + BTN_SIZE as i32 * 3 {
+        let bs = BTN_SIZE as i32;
+        if py >= btn_y && py < btn_y + bs {
+            if px >= base_x && px < base_x + bs {
                 return 'c';
+            }
+            if px >= base_x + bs * 2 + 12 && px < base_x + bs * 3 + 12 {
+                return 'm';
             }
         }
         'n'
@@ -718,26 +721,33 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS * 2, WIN_RADIUS, title_bg);
 
     
-    layer.put_str(x + 10, y + 7, w.title_str(), Color::TEXT);
+    let base_x = x as i32 + 8;
+    let btn_y = y as i32 + 5;
+    let bs = BTN_SIZE as i32;
 
-    
-    let base_x = x + w_draw - BTN_SIZE * 3;
-    let btn_y = y + 5;
+    if base_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+        svg::draw_svg_into(layer, CLOSE_ICON_SVG,
+            base_x + 4, btn_y + 4,
+            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
+    }
 
-    if base_x + BTN_SIZE <= sw && btn_y + BTN_SIZE <= sh {
-        layer.fill_rect(base_x, btn_y, BTN_SIZE, BTN_SIZE, title_bg);
+    let mini_x = base_x + bs + 6;
+    if mini_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+        svg::draw_svg_into(layer, MIN_ICON_SVG,
+            mini_x + 4, btn_y + 4,
+            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
+    }
+
+    let max_x = base_x + bs * 2 + 12;
+    if max_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
         let icon = if w.maximized { MINI_ICON_SVG } else { MAX_ICON_SVG };
         svg::draw_svg_into(layer, icon,
-            base_x as i32 + 4, btn_y as i32 + 4,
+            max_x + 4, btn_y + 4,
             (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
     }
 
-    let close_x = x + w_draw - BTN_SIZE;
-    if close_x <= sw && btn_y + BTN_SIZE <= sh {
-        svg::draw_svg_into(layer, CLOSE_ICON_SVG,
-            close_x as i32 + 4, btn_y as i32 + 4,
-            (BTN_SIZE - 8) as f32, (BTN_SIZE - 8) as f32);
-    }
+    
+    layer.put_str(x + BTN_AREA_W, y + 7, w.title_str(), Color::TEXT);
 }
 
 fn draw_window_border(layer: &mut LayerSystem, w: &Window) {
