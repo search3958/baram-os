@@ -9,6 +9,7 @@ const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
 const BTN_AREA_W: usize = BTN_SIZE * 3 + 23;
 const WIN_RADIUS: usize = 18;
+const TASKBAR_H: usize = 48;
 const BTN_BG_RADIUS: usize = 8;
 const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
 
@@ -124,7 +125,7 @@ impl Window {
             self.x = 0;
             self.y = 0;
             self.w = screen_w as usize;
-            self.h = (screen_h - TITLE_BAR_H as i32 - 32) as usize;
+            self.h = (screen_h - TASKBAR_H as i32) as usize;
             self.maximized = true;
         }
     }
@@ -416,7 +417,7 @@ impl WindowManager {
                         temp.buf[row..row + clear_w].fill(Color::TRANSPARENT.0);
                     }
                 }
-                draw_window_body(temp, w);
+                draw_window_body(temp, w, true);
 
                 if let Some((uid, cmds)) = ui_win {
                     if w.id == uid {
@@ -666,7 +667,7 @@ fn draw_shadow(layer: &mut LayerSystem, w: &Window) {
     }
 }
 
-fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
+fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool) {
     let x = w.x.max(0) as usize;
     let y = w.y.max(0) as usize;
     let sw = layer.width();
@@ -686,13 +687,21 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window) {
     let title_color = if w.focused { Color::TEXT } else { Color::TITLE_INACTIVE };
 
     
-    layer.fill_rounded_rect(x, y, w_draw, h_draw, WIN_RADIUS, body_bg);
+    if rounded {
+        layer.fill_rounded_rect(x, y, w_draw, h_draw, WIN_RADIUS, body_bg);
+    } else {
+        layer.fill_rect(x, y, w_draw, h_draw, body_bg);
+    }
 
     
     let tb_h = TITLE_BAR_H.min(h_draw);
-    layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS, WIN_RADIUS, title_bg);
-    if tb_h > WIN_RADIUS {
-        layer.fill_rect(x, y + WIN_RADIUS, w_draw, tb_h - WIN_RADIUS, title_bg);
+    if rounded {
+        layer.fill_rounded_rect(x, y, w_draw, WIN_RADIUS, WIN_RADIUS, title_bg);
+        if tb_h > WIN_RADIUS {
+            layer.fill_rect(x, y + WIN_RADIUS, w_draw, tb_h - WIN_RADIUS, title_bg);
+        }
+    } else {
+        layer.fill_rect(x, y, w_draw, tb_h, title_bg);
     }
 
     
@@ -752,7 +761,7 @@ fn draw_window_border(layer: &mut LayerSystem, w: &Window) {
 }
 
 fn draw_window(layer: &mut LayerSystem, w: &Window) {
-    draw_window_body(layer, w);
+    draw_window_body(layer, w, false);
     draw_window_border(layer, w);
 }
 
