@@ -535,9 +535,6 @@ fn main() -> Status {
             } else {
                 let w = screen.width();
                 let h = screen.height();
-                layer.buf_mut()[..w * h].copy_from_slice(&cached_scene);
-                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
-
                 let pad = 32i32;
                 let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
                 let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
@@ -547,6 +544,16 @@ fn main() -> Status {
                 let y0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
                 let x1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad).min(w as i32) as usize;
                 let y1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad).min(h as i32) as usize;
+
+                {
+                    let buf = layer.buf_mut();
+                    for y in y0..y1 {
+                        let s = y * w + x0;
+                        let e = y * w + x1;
+                        buf[s..e].copy_from_slice(&cached_scene[s..e]);
+                    }
+                }
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
                 layer.flush_rect(&mut screen, x0, y0, x1, y1);
 
                 prev_cursor_x = cursor_x;
