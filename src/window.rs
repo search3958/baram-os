@@ -8,7 +8,7 @@ const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
 const BTN_SIZE: usize = 20;
 const BTN_AREA_W: usize = BTN_SIZE * 3 + 23;
-const WIN_RADIUS: usize = 18;
+const WIN_RADIUS: usize = 16;
 const TASKBAR_H: usize = 48;
 const BTN_BG_RADIUS: usize = 8;
 const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
@@ -33,6 +33,7 @@ pub struct Window {
     pub visible: bool,
     pub focused: bool,
     pub maximized: bool,
+    pub minimized: bool,
     pub scroll_y: i32,
     save_x: i32,
     save_y: i32,
@@ -57,7 +58,7 @@ impl Window {
         Self {
             id, title: tb, title_len: n,
             x, y, w, h, z,
-            visible: true, focused: false, maximized: false,
+            visible: true, focused: false, maximized: false, minimized: false,
             scroll_y: 0,
             save_x: x, save_y: y, save_w: w, save_h: h,
             dragging: false, resizing: false,
@@ -127,6 +128,14 @@ impl Window {
             self.w = screen_w as usize;
             self.h = (screen_h - TASKBAR_H as i32) as usize;
             self.maximized = true;
+        }
+    }
+
+    pub fn toggle_minimize(&mut self) {
+        if self.minimized {
+            self.minimized = false;
+        } else {
+            self.minimized = true;
         }
     }
 
@@ -285,6 +294,17 @@ impl WindowManager {
                     return Some('m');
                 }
                 'i' => {
+                    if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                        w.toggle_minimize();
+                    }
+                    if let Some(w) = self.windows.iter().find(|w| w.id == id) {
+                        if w.minimized {
+                            if let Some(next) = self.windows.iter()
+                                .find(|w| w.visible && !w.minimized && w.id != id) {
+                                self.focus(next.id);
+                            }
+                        }
+                    }
                     return Some('i');
                 }
                 _ => {}
@@ -364,7 +384,7 @@ impl WindowManager {
         
         for i in 0..sort_n {
             let w = sorted[i];
-            if !w.visible { continue; }
+            if !w.visible || w.minimized { continue; }
 
             
             if !w.maximized {
@@ -464,6 +484,16 @@ impl WindowManager {
 
     pub fn get_title(&self, id: WinId) -> Option<&str> {
         self.windows.iter().find(|w| w.id == id).map(|w| w.title_str())
+    }
+
+    pub fn is_minimized(&self, id: WinId) -> bool {
+        self.windows.iter().find(|w| w.id == id).map_or(false, |w| w.minimized)
+    }
+
+    pub fn restore_minimized(&mut self, id: WinId) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.minimized = false;
+        }
     }
 
     pub fn get_window_rect(&self, id: WinId) -> Option<(i32, i32, usize, usize, i32)> {

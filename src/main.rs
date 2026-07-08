@@ -378,6 +378,9 @@ fn main() -> Status {
                             let dx = cx - bx - btn_d / 2;
                             let dy = cy - btn_y as i32 - btn_d / 2;
                             if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
+                                if wm.is_minimized(*id) {
+                                    wm.restore_minimized(*id);
+                                }
                                 wm.focus(*id);
                                 break;
                             }
@@ -638,6 +641,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     for (i, id) in ids.iter().enumerate() {
         let title = wm.get_title(*id).unwrap_or("???");
         let is_focused = wm.focused_id == Some(*id);
+        let is_minimized = wm.is_minimized(*id);
 
         let scale = if add_progress >= 0.0 && i == count - 1 {
             add_scale
@@ -685,12 +689,13 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 let icon_offset = if icon_draw > btn_d { 0 } else { (btn_d - icon_draw) / 2 };
                 let ix = bx as usize + icon_offset;
                 let iy = btn_y + icon_offset;
+                let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
                 for py in 0..icon_draw {
                     for px in 0..icon_draw {
                         let src_x = px * icon.w / icon_draw;
                         let src_y = py * icon.h / icon_draw;
                         let src = icon.pixels[src_y * icon.w + src_x];
-                        let a = src[3] as u32;
+                        let a = (src[3] as u32 * icon_alpha / 255) as u32;
                         if a == 0 { continue; }
                         let sx = ix + px;
                         let sy = iy + py;
