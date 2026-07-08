@@ -10,6 +10,7 @@ const BTN_SIZE: usize = 20;
 const BTN_AREA_W: usize = BTN_SIZE * 3 + 23;
 const WIN_RADIUS: usize = 16;
 const TASKBAR_H: usize = 48;
+const SHADOW_PAD: i32 = 30;
 const BTN_BG_RADIUS: usize = 8;
 const BTN_BG_COLOR: Color = Color::rgb(216, 216, 216);
 
@@ -48,6 +49,7 @@ pub struct Window {
     resize_sw: usize,
     resize_sh: usize,
     pub layer: Option<LayerSystem>,
+    pub shadow_layer: Option<LayerSystem>,
 }
 
 impl Window {
@@ -66,6 +68,7 @@ impl Window {
             drag_ox: 0, drag_oy: 0,
             resize_sx: 0, resize_sy: 0, resize_sw: 0, resize_sh: 0,
             layer: Some(LayerSystem::new_transparent(w, h)),
+            shadow_layer: Some(LayerSystem::new_transparent(w + SHADOW_PAD as usize * 2, h + SHADOW_PAD as usize * 2)),
         }
     }
 
@@ -80,6 +83,14 @@ impl Window {
             Some(l) if l.width() == need_w && l.height() == need_h => {}
             _ => {
                 self.layer = Some(LayerSystem::new_transparent(need_w, need_h));
+            }
+        }
+        let sw = need_w + SHADOW_PAD as usize * 2;
+        let sh = need_h + SHADOW_PAD as usize * 2;
+        match &self.shadow_layer {
+            Some(l) if l.width() == sw && l.height() == sh => {}
+            _ => {
+                self.shadow_layer = Some(LayerSystem::new_transparent(sw, sh));
             }
         }
     }
@@ -396,24 +407,19 @@ impl WindowManager {
         
         for i in 0..sort_n {
             let w = sorted[i];
-            if !w.visible || w.minimized { continue; }
-            if !w.maximized {
-                let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
-                if let Some((_, ref mut cache_opt)) = entry {
-                    let need_recompute = match cache_opt {
-                        Some(c) => c.win_w != w.w || c.win_h != w.h,
-                        None => true,
-                    };
-                    if need_recompute {
-                        *cache_opt = compute_shadow_alpha(w, self.screen_w, self.screen_h);
-                    }
-                    if let Some(ref mut c) = cache_opt {
-                        c.win_x = w.x;
-                        c.win_y = w.y;
-                    }
-                    if let Some(ref c) = cache_opt {
-                        blit_cached_shadow(layer, c);
-                    }
+            if !w.visible || w.minimized || w.maximized { continue; }
+            let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
+            if let Some((_, ref mut cache_opt)) = entry {
+                let need_recompute = match cache_opt {
+                    Some(c) => c.win_w != w.w || c.win_h != w.h,
+                    None => true,
+                };
+                if need_recompute {
+                    *cache_opt = compute_shadow_alpha(w, self.screen_w, self.screen_h);
+                }
+                if let Some(ref mut c) = cache_opt {
+                    c.win_x = w.x;
+                    c.win_y = w.y;
                 }
             }
         }
@@ -421,7 +427,6 @@ impl WindowManager {
         
         for idx in 0..n {
             if !self.windows[idx].visible || self.windows[idx].minimized { continue; }
-            if !self.windows[idx].maximized { continue; }
             self.windows[idx].ensure_layer(screen_w, screen_h);
 
             let wx = self.windows[idx].x;
@@ -430,55 +435,41 @@ impl WindowManager {
             let wh = self.windows[idx].h;
             let scroll_y = self.windows[idx].scroll_y;
             let win_id = self.windows[idx].id;
+            let is_max = self.windows[idx].maximized;
 
-            {
-                let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
-                let w_ptr = &self.windows[idx] as *const Window;
-                unsafe {
-                    draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
-                    if let Some((uid, cmds)) = ui_win {
-                        if win_id == uid {
-                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
-                            super::uiscript::render(
-                                &mut *layer_ptr, cmds,
-                                0, 0, ww, wh,
-                                TITLE_BAR_H, scroll_y,
-                            );
-                            (*layer_ptr).pop_clip();
+            
+            if !is_max {
+                if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id) {
+                    if let Some(ref cache) = entry.1 {
+                        let shadow_layer = self.windows[idx].shadow_layer.as_mut().unwrap();
+                        let slw = shadow_layer.width();
+                        let slh = shadow_layer.height();
+                        shadow_layer.buf_mut()[..slw * slh].fill(Color::TRANSPARENT.0);
+                        let shadow_buf = shadow_layer.buf_mut();
+                        for py in 0..cache.h {
+                            let alpha_row = py * cache.w;
+                            for px in 0..cache.w {
+                                let a = cache.alpha[alpha_row + px];
+                                if a == 0 { continue; }
+                                let dst_x = px;
+                                let dst_y = py;
+                                if dst_x >= slw || dst_y >= slh { continue; }
+                                shadow_buf[dst_y * slw + dst_x] = 0x0000_0000 | (a as u32);
+                            }
                         }
-                    }
-                    if let Some((wid, ref engine)) = warp_win {
-                        if win_id == wid {
-                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
-                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
-                            engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
-                            (*layer_ptr).pop_clip();
-                        }
+                        let shadow_ref = self.windows[idx].shadow_layer.as_ref().unwrap();
+                        let dst_x = (wx - SHADOW_PAD).max(0) as usize;
+                        let dst_y = (wy - SHADOW_PAD).max(0) as usize;
+                        layer.composit_rect_alpha(
+                            shadow_ref,
+                            dst_x, dst_y,
+                            0, 0,
+                            ww + SHADOW_PAD as usize * 2,
+                            wh + SHADOW_PAD as usize * 2,
+                        );
                     }
                 }
             }
-            let win_layer = self.windows[idx].layer.as_ref().unwrap();
-            layer.composit_rect(
-                win_layer,
-                wx.max(0) as usize,
-                wy.max(0) as usize,
-                0, 0,
-                ww, wh,
-            );
-        }
-
-        
-        for idx in 0..n {
-            if !self.windows[idx].visible || self.windows[idx].minimized { continue; }
-            if self.windows[idx].maximized { continue; }
-            self.windows[idx].ensure_layer(screen_w, screen_h);
-
-            let wx = self.windows[idx].x;
-            let wy = self.windows[idx].y;
-            let ww = self.windows[idx].w;
-            let wh = self.windows[idx].h;
-            let scroll_y = self.windows[idx].scroll_y;
-            let win_id = self.windows[idx].id;
 
             
             {
@@ -488,45 +479,56 @@ impl WindowManager {
                     let lw = (*layer_ptr).width();
                     let lh = (*layer_ptr).height();
                     (*layer_ptr).buf_mut()[..lw * lh].fill(Color::TRANSPARENT.0);
-                    draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
-                }
-            }
 
-            {
-                let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
-                let w_ptr = &self.windows[idx] as *const Window;
-                unsafe {
+                    if is_max {
+                        draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
+                    } else {
+                        draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
+                    }
+
                     if let Some((uid, cmds)) = ui_win {
                         if win_id == uid {
+                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
                             super::uiscript::render(
                                 &mut *layer_ptr, cmds,
                                 0, 0, ww, wh,
                                 TITLE_BAR_H, scroll_y,
                             );
+                            (*layer_ptr).pop_clip();
                         }
                     }
                     if let Some((wid, ref engine)) = warp_win {
                         if win_id == wid {
+                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
+                            (*layer_ptr).pop_clip();
                         }
                     }
-                    let _ = w_ptr;
                 }
             }
 
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
-            let wx_usize = wx.max(0) as usize;
-            let wy_usize = wy.max(0) as usize;
-            layer.composit_rounded(
-                win_layer,
-                wx_usize, wy_usize,
-                0, 0,
-                ww, wh,
-                WIN_RADIUS,
-            );
-
-            draw_window_border(layer, &self.windows[idx]);
+            if is_max {
+                layer.composit_rect(
+                    win_layer,
+                    wx.max(0) as usize,
+                    wy.max(0) as usize,
+                    0, 0,
+                    ww, wh,
+                );
+            } else {
+                let wx_usize = wx.max(0) as usize;
+                let wy_usize = wy.max(0) as usize;
+                layer.composit_rounded(
+                    win_layer,
+                    wx_usize, wy_usize,
+                    0, 0,
+                    ww, wh,
+                    WIN_RADIUS,
+                );
+                draw_window_border(layer, &self.windows[idx]);
+            }
         }
     }
 
@@ -1441,6 +1443,51 @@ impl LayerSystem {
                 if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
 
                 self.buf[dst_y * dw + dst_x] = src_pixel.0;
+            }
+        }
+    }
+
+    pub fn composit_rect_alpha(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+    ) {
+        let sw = src.width;
+        let sh = src.height;
+        let dw = self.width;
+        let dh = self.height;
+
+        for py in 0..h {
+            let src_y = sy + py;
+            let dst_y = dy + py;
+            if src_y >= sh || dst_y >= dh { continue; }
+
+            for px in 0..w {
+                let src_x = sx + px;
+                let dst_x = dx + px;
+                if src_x >= sw || dst_x >= dw { continue; }
+
+                let sp = src.buf[src_y * sw + src_x];
+                let src_a = ((sp >> 24) & 0xFF) as u32;
+                if src_a == 0 { continue; }
+                if src_a >= 255 {
+                    self.buf[dst_y * dw + dst_x] = sp;
+                } else {
+                    let inv = 255 - src_a;
+                    let sr = (sp >> 16) & 0xFF;
+                    let sg = (sp >> 8) & 0xFF;
+                    let sb = sp & 0xFF;
+                    let dp = self.buf[dst_y * dw + dst_x];
+                    let dr = (dp >> 16) & 0xFF;
+                    let dg = (dp >> 8) & 0xFF;
+                    let db = dp & 0xFF;
+                    let r = (sr * src_a + dr * inv) / 255;
+                    let g = (sg * src_a + dg * inv) / 255;
+                    let b = (sb * src_a + db * inv) / 255;
+                    self.buf[dst_y * dw + dst_x] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+                }
             }
         }
     }
