@@ -25,6 +25,16 @@ struct Node {
     event_oneclick: String,
     children: Vec<usize>,
     x: i32, y: i32, w: i32, h: i32,
+    visible: bool,
+}
+
+impl Node {
+    fn get_id(&self) -> &str {
+        for a in &self.attrs {
+            if a.key == "id" { return &a.value; }
+        }
+        ""
+    }
 }
 
 #[derive(Clone, Default)]
@@ -179,6 +189,10 @@ impl WarpEngine {
     }
 
     fn set_state(&mut self, key: &str, val: &str) {
+        if key.eq_ignore_ascii_case("_currentScreen") {
+            self.current_screen = val.chars().take(63).collect();
+            return;
+        }
         for s in &mut self.state {
             if s.0.eq_ignore_ascii_case(key) {
                 s.1 = val.chars().take(511).collect();
@@ -194,6 +208,9 @@ impl WarpEngine {
     }
 
     fn get_state(&self, key: &str) -> String {
+        if key.eq_ignore_ascii_case("_currentScreen") {
+            return self.current_screen.clone();
+        }
         for s in &self.state {
             if s.0.eq_ignore_ascii_case(key) { return s.1.clone(); }
         }
@@ -336,7 +353,9 @@ impl WarpEngine {
     }
 
     fn alloc_node(&mut self) -> Option<usize> {
-        self.nodes.push(Node::default());
+        let mut n = Node::default();
+        n.visible = true;
+        self.nodes.push(n);
         Some(self.nodes.len() - 1)
     }
 
@@ -514,6 +533,7 @@ impl WarpEngine {
     }
 
     fn layout_node(&mut self, idx: usize, px: i32, py: i32, limit_w: i32) -> i32 {
+        if !self.nodes[idx].visible { return 0; }
         self.nodes[idx].x = px;
         self.nodes[idx].y = py;
         self.nodes[idx].w = limit_w;
@@ -627,6 +647,7 @@ impl WarpEngine {
 
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         for idx in 0..self.nodes.len() {
+            if !self.nodes[idx].visible { continue; }
             let tag = self.nodes[idx].tag.as_str();
             let n = &self.nodes[idx];
             let x = (n.x + ox) as usize;
@@ -674,6 +695,7 @@ impl WarpEngine {
     pub fn click(&mut self, x: i32, y: i32) {
         self.parse_current_screen();
         for i in (0..self.nodes.len()).rev() {
+            if !self.nodes[i].visible { continue; }
             let n = &self.nodes[i];
             if x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h {
                 let tag = n.tag.clone();
@@ -709,24 +731,25 @@ impl WarpEngine {
         let scripts = self.scripts.clone();
         for script in &scripts {
             if script.name == name {
-                let mut handled = false;
+                let mut any_matched = false;
                 for block in &script.blocks {
                     let cond = &block.condition;
-                    if cond.contains('=') {
+                    if block.r#type == "elseIf" && any_matched {
+                        continue;
+                    }
+                    if cond.is_empty() {
+                        let actions = block.actions.clone();
+                        self.execute_action(&actions);
+                        any_matched = true;
+                    } else if cond.contains('=') {
                         let parts: alloc::vec::Vec<&str> = cond.splitn(2, '=').collect();
                         let lv = self.eval_expr(parts[0]);
                         let rv = self.eval_expr(parts[1]);
                         if lv == rv {
                             let actions = block.actions.clone();
                             self.execute_action(&actions);
-                            handled = true;
-                            break;
+                            any_matched = true;
                         }
-                    } else if block.r#type == "if" || !handled {
-                        let actions = block.actions.clone();
-                        self.execute_action(&actions);
-                        handled = true;
-                        break;
                     }
                 }
                 return;
@@ -745,6 +768,52 @@ impl WarpEngine {
             } else if act.starts_with("script{") {
                 let sn = act[7..].trim_end_matches('}');
                 self.execute_script(sn);
+            } else if act.starts_with("hide{") {
+                let id = act[5..].trim_end_matches('}');
+                for n in &mut self.nodes {
+                    if n.get_id() == id { n.visible = false; }
+                }
+            } else if act.starts_with("show{") {
+                let id = act[5..].trim_end_matches('}');
+                for n in &mut self.nodes {
+                    if n.get_id() == id { n.visible = true; }
+                }
+            } else if act.starts_with("add{") {
+                let inner = &act[4..].trim_end_matches('}');
+                let parts: alloc::vec::Vec<&str> = inner.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    let container_id = parts[0].trim();
+                    let _child_src = parts[1].trim().trim_matches('"').trim_matches('\'');
+                    let container_idx = self.find_node_by_id(container_id);
+                    if let Some(ci) = container_idx {
+                        let new_idx = self.alloc_node().unwrap_or(0);
+                        self.nodes[new_idx].tag = String::from("button");
+                        self.nodes[new_idx].visible = true;
+                        self.nodes[new_idx].attrs.push(Attr {
+                            key: String::from("text"),
+                            value: String::from("\"ボタンを追加\""),
+                        });
+                        self.nodes[ci].children.push(new_idx);
+                    }
+                }
+            } else if act.starts_with("del{") {
+                let id = act[4..].trim_end_matches('}');
+                let container_idx = self.find_node_by_id(id);
+                if let Some(ci) = container_idx {
+                    if let Some(last) = self.nodes[ci].children.pop() {
+                        self.nodes[last].visible = false;
+                    }
+                }
+            } else if act.starts_with("clr{") {
+                let id = act[4..].trim_end_matches('}');
+                let container_idx = self.find_node_by_id(id);
+                if let Some(ci) = container_idx {
+                    let children: alloc::vec::Vec<usize> = self.nodes[ci].children.clone();
+                    for child_idx in children {
+                        self.nodes[child_idx].visible = false;
+                    }
+                    self.nodes[ci].children.clear();
+                }
             } else if act.contains('.') {
                 let parts: alloc::vec::Vec<&str> = act.splitn(2, '.').collect();
                 let id = parts[0];
@@ -757,8 +826,13 @@ impl WarpEngine {
                         let key = format!("--{}Content", id);
                         self.set_state(&key, &val);
                     } else if method == "setStatus" {
-                        let key = format!("--{}Status", id);
-                        self.set_state(&key, args);
+                        if args.trim() == "unset" {
+                            let key = format!("--{}Disabled", id);
+                            self.set_state(&key, "false");
+                        } else {
+                            let key = format!("--{}Disabled", id);
+                            self.set_state(&key, args);
+                        }
                     }
                 }
             } else if act.contains('=') || act.contains(':') {
@@ -783,5 +857,12 @@ impl WarpEngine {
                 self.set_state(var_name, &val);
             }
         }
+    }
+
+    fn find_node_by_id(&self, id: &str) -> Option<usize> {
+        for (i, n) in self.nodes.iter().enumerate() {
+            if n.get_id() == id { return Some(i); }
+        }
+        None
     }
 }
