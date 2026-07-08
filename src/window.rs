@@ -300,7 +300,8 @@ impl WindowManager {
                     if let Some(w) = self.windows.iter().find(|w| w.id == id) {
                         if w.minimized {
                             if let Some(next) = self.windows.iter()
-                                .find(|w| w.visible && !w.minimized && w.id != id) {
+                                .filter(|w| w.visible && !w.minimized && w.id != id)
+                                .max_by_key(|w| w.z) {
                                 self.focus(next.id);
                             }
                         }
