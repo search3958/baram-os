@@ -87,6 +87,8 @@ pub struct WarpEngine {
     token_pos: usize,
     pub texts: Vec<TextElem>,
     pub dirty: bool,
+    pub hover_idx: Option<usize>,
+    pub last_command: Option<String>,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -121,6 +123,8 @@ impl WarpEngine {
             token_pos: 0,
             texts: Vec::new(),
             dirty: true,
+            hover_idx: None,
+            last_command: None,
         };
         loop {
             let tk = ctx.next_token();
@@ -181,7 +185,7 @@ impl WarpEngine {
         let root_nodes = self.root_nodes.clone();
         let mut total_h = height;
         for node_idx in &root_nodes {
-            let h = self.layout_node(*node_idx, 0, 0, width);
+            let h = self.layout_node(*node_idx, 0, 30, width);
             if h > total_h { total_h = h; }
         }
         let _ = total_h;
@@ -645,6 +649,32 @@ impl WarpEngine {
         } else { raw }
     }
 
+    pub fn set_hover(&mut self, x: i32, y: i32) {
+        self.parse_current_screen();
+        let mut found = None;
+        for i in (0..self.nodes.len()).rev() {
+            if !self.nodes[i].visible { continue; }
+            let tag = self.nodes[i].tag.as_str();
+            if tag != "button" && tag != "tonalButton" { continue; }
+            let n = &self.nodes[i];
+            if x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h {
+                found = Some(i);
+                break;
+            }
+        }
+        if self.hover_idx != found {
+            self.hover_idx = found;
+            self.dirty = true;
+        }
+    }
+
+    pub fn clear_hover(&mut self) {
+        if self.hover_idx.is_some() {
+            self.hover_idx = None;
+            self.dirty = true;
+        }
+    }
+
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         for idx in 0..self.nodes.len() {
             if !self.nodes[idx].visible { continue; }
@@ -660,10 +690,20 @@ impl WarpEngine {
                     layer.fill_rounded_rect(x, y, w, h, 12, Color::rgb(0xf5, 0xf5, 0xf6));
                 }
                 "button" => {
-                    layer.fill_rounded_rect(x, y, w, h, 20, Color::rgb(0x0A, 0x60, 0xFF));
+                    let c = if self.hover_idx == Some(idx) {
+                        Color::rgb(0x08, 0x50, 0xDD)
+                    } else {
+                        Color::rgb(0x0A, 0x60, 0xFF)
+                    };
+                    layer.fill_rounded_rect(x, y, w, h, 20, c);
                 }
                 "tonalButton" => {
-                    layer.fill_rounded_rect(x, y, w, h, 20, Color::rgb(230, 230, 230));
+                    let c = if self.hover_idx == Some(idx) {
+                        Color::rgb(210, 210, 210)
+                    } else {
+                        Color::rgb(230, 230, 230)
+                    };
+                    layer.fill_rounded_rect(x, y, w, h, 20, c);
                 }
                 "switch" => {
                     let out_var = self.parse_out_var(idx);
@@ -835,6 +875,35 @@ impl WarpEngine {
                         }
                     }
                 }
+            } else if act.starts_with("runCommand") {
+                if let Some(eq_pos) = act.find('=') {
+                    let rhs = act[eq_pos + 1..].trim();
+                    let cmd = self.eval_expr(rhs);
+                    if !cmd.is_empty() {
+                        self.last_command = Some(cmd);
+                    }
+                }
+            } else if act.contains('.') {
+                let parts: alloc::vec::Vec<&str> = act.splitn(2, '.').collect();
+                let id = parts[0];
+                let method_with_args = parts[1];
+                if let Some(open_b) = method_with_args.find('{') {
+                    let method = &method_with_args[..open_b];
+                    let args = &method_with_args[open_b + 1..].trim_end_matches('}');
+                    if method == "changeContent" {
+                        let val = self.eval_expr(args);
+                        let key = format!("--{}Content", id);
+                        self.set_state(&key, &val);
+                    } else if method == "setStatus" {
+                        if args.trim() == "unset" {
+                            let key = format!("--{}Disabled", id);
+                            self.set_state(&key, "false");
+                        } else {
+                            let key = format!("--{}Disabled", id);
+                            self.set_state(&key, args);
+                        }
+                    }
+                }
             } else if act.contains('=') || act.contains(':') {
                 let parts: alloc::vec::Vec<&str> = if act.contains('=') { act.splitn(2, '=').collect() } else { act.splitn(2, ':').collect() };
                 let var_name = parts[0].trim();
@@ -864,5 +933,16 @@ impl WarpEngine {
             if n.get_id() == id { return Some(i); }
         }
         None
+    }
+
+    pub fn get_state_value(&self, key: &str) -> Option<&str> {
+        for s in &self.state {
+            if s.0 == key { return Some(&s.1); }
+        }
+        None
+    }
+
+    pub fn set_state_value(&mut self, key: &str, val: &str) {
+        self.set_state(key, val);
     }
 }
