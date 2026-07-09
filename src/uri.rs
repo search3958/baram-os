@@ -4,7 +4,7 @@
 //! Example URIs:
 //!   os://display/pointer?size=1
 //!   os://display/hud?enabled=1
-//!   os://display/wallpaper?file=light.png
+//!   os://display/wallpaper?file=baram.png
 //!   os://display/wallpaper?color=#990000
 
 use alloc::string::String;
@@ -125,7 +125,7 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
             }
             if let Some(file_str) = get_param(cmd, "file") {
                 let idx = match file_str {
-                    "light.png" | "light" => Some(0),
+                    "baram.png" | "baram" => Some(0),
                     "hanul.png" | "hanul" => Some(1),
                     "reflect.png" | "reflect" => Some(2),
                     _ => None,

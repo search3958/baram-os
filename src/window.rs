@@ -650,6 +650,53 @@ impl WindowManager {
         self.windows.iter().find(|w| w.id == id).map(|w| (w.x, w.y, w.w, w.h, w.scroll_y))
     }
 
+    pub fn button_hit_at(&self, id: WinId, px: i32, py: i32) -> char {
+        self.windows.iter().find(|w| w.id == id).map(|w| w.button_hit(px, py)).unwrap_or('n')
+    }
+
+    pub fn toggle_maximize_at(&mut self, id: WinId) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            let sw = self.screen_w;
+            let sh = self.screen_h;
+            w.toggle_maximize(sw, sh);
+        }
+    }
+
+    pub fn toggle_minimize_at(&mut self, id: WinId) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.toggle_minimize();
+        }
+        if let Some(w) = self.windows.iter().find(|w| w.id == id) {
+            if w.minimized {
+                if let Some(next) = self.windows.iter()
+                    .filter(|w| w.visible && !w.minimized && w.id != id)
+                    .max_by_key(|w| w.z) {
+                    self.focus(next.id);
+                }
+            }
+        }
+    }
+
+    pub fn resize_hit_at(&self, id: WinId, px: i32, py: i32) -> bool {
+        self.windows.iter().find(|w| w.id == id).map(|w| w.resize_handle_hit(px, py)).unwrap_or(false)
+    }
+
+    pub fn start_resize_at(&mut self, id: WinId, px: i32, py: i32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.resizing = true;
+            w.resize_sx = px;
+            w.resize_sy = py;
+            w.resize_sw = w.w;
+            w.resize_sh = w.h;
+        }
+    }
+
+    pub fn start_drag_at(&mut self, id: WinId, px: i32, py: i32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.start_drag(px, py);
+        }
+    }
+
     pub fn all_window_rects(&self) -> alloc::vec::Vec<(i32, i32, usize, usize)> {
         self.windows.iter().filter(|w| w.visible).map(|w| (w.x, w.y, w.w, w.h)).collect()
     }

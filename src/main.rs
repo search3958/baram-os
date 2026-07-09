@@ -54,6 +54,26 @@ struct CursorBitmap {
 
 static mut CURSOR_NORMAL: Option<CursorBitmap> = None;
 static mut CURSOR_RESIZE: Option<CursorBitmap> = None;
+static mut CURSOR_SIZE_CACHE: [(Option<CursorBitmap>, Option<CursorBitmap>); 6] = [
+    (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None),
+];
+
+fn get_or_prerender_cursor(svg: &str, size: i32, blur_r: i32, is_resize: bool) -> &'static CursorBitmap {
+    let idx = (size as usize).min(5);
+    unsafe {
+        let cache = &mut CURSOR_SIZE_CACHE[idx];
+        let slot = if is_resize { &mut cache.1 } else { &mut cache.0 };
+        if slot.is_none() {
+            let base_w = if is_resize { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
+            let base_h = if is_resize { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
+            let w = (base_w as i32 * size) as usize;
+            let h = (base_h as i32 * size) as usize;
+            *slot = Some(prerender_cursor(svg, w, h, blur_r));
+        }
+        slot.as_ref().unwrap()
+    }
+}
 
 fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap {
     let svg_buf = svg::rasterize_svg_to_buffer(svg, w, h);
@@ -136,10 +156,10 @@ const APP_DEMO: &str = include_str!("app/demo.u1");
 const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
 const WARP_SETTINGS: &str = include_str!("app/settings.warp");
 
-const WALLPAPER_LIGHT_PNG: &[u8] = include_bytes!("data/wallpaper/light.png");
+const WALLPAPER_baram_PNG: &[u8] = include_bytes!("data/wallpaper/baram.png");
 const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
 const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
-const WALLPAPERS: &[&[u8]] = &[WALLPAPER_LIGHT_PNG, WALLPAPER_HANUL_PNG, WALLPAPER_REFLECT_PNG];
+const WALLPAPERS: &[&[u8]] = &[WALLPAPER_baram_PNG, WALLPAPER_HANUL_PNG, WALLPAPER_REFLECT_PNG];
 const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
 const ICON_FILES_PNG: &[u8] = include_bytes!("app/icon/files.png");
 const ICON_MANAGER_PNG: &[u8] = include_bytes!("app/icon/manager.png");
@@ -191,41 +211,15 @@ fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
 }
 
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: i32) {
-    unsafe {
-        let bitmap = if resizing {
-            CURSOR_RESIZE.as_ref()
-        } else {
-            CURSOR_NORMAL.as_ref()
-        };
-        if let Some(bmp) = bitmap {
-            let blur_r = 12i32;
-            let pad = blur_r as i32;
-            if pointer_size > 1 {
-                let scale = pointer_size;
-                let sw = bmp.shadow_w * scale as usize;
-                let sh = bmp.shadow_h * scale as usize;
-                svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
-                    cx + 3 * scale - pad, cy + 4 * scale - pad);
-                svg::blit_cached_scaled(layer, &bmp.pixels, bmp.w, bmp.h, cx, cy, scale);
-            } else {
-                svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
-                    cx + 3 - pad, cy + 4 - pad);
-                svg::blit_cached(layer, &bmp.pixels, bmp.w, bmp.h, cx, cy);
-            }
-            return;
-        }
-    }
-    if resizing {
-        svg::draw_svg_shadow(layer, CURSOR_SVG_SIZE, cx + 5, cy + 4,
-            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32, 12, 0);
-        svg::draw_svg_into(layer, CURSOR_SVG_SIZE, cx, cy,
-            CURSOR_BOX_SIZE_W as f32, CURSOR_BOX_SIZE_H as f32);
-    } else {
-        svg::draw_svg_shadow(layer, CURSOR_SVG, cx + 5, cy + 4,
-            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32, 12, 0);
-        svg::draw_svg_into(layer, CURSOR_SVG, cx, cy,
-            CURSOR_BOX_W as f32, CURSOR_BOX_H as f32);
-    }
+    let blur_r = 12i32;
+    let pad = blur_r as i32;
+    let bitmap = get_or_prerender_cursor(
+        if resizing { CURSOR_SVG_SIZE } else { CURSOR_SVG },
+        pointer_size, blur_r, resizing,
+    );
+    svg::blit_shadow(layer, &bitmap.shadow, bitmap.shadow_w, bitmap.shadow_h,
+        cx + 3 - pad, cy + 4 - pad);
+    svg::blit_cached(layer, &bitmap.pixels, bitmap.w, bitmap.h, cx, cy);
 }
 
 #[entry]
@@ -442,17 +436,32 @@ fn main() -> Status {
                             bx += btn_d + btn_gap;
                         }
                     } else {
-                        let before = wm.insertion_ids();
-                        wm.on_mouse_down(cx, cy);
-                        let after = wm.insertion_ids();
-                        if after.len() < before.len() {
-                            tb_remove_progress = 0.0;
-                            tb_shift_x = -26.0;
+                        let win_under = wm.window_at(cx, cy);
+                        let is_warp_or_settings = win_under == Some(warp_win_id)
+                            || win_under == Some(settings_win_id);
+
+                        if let Some(id) = win_under {
+                            wm.focus(id);
+                            let btn = wm.button_hit_at(id, cx, cy);
+                            match btn {
+                                'c' => { wm.remove(id); }
+                                'm' => { wm.toggle_maximize_at(id); }
+                                'i' => { wm.toggle_minimize_at(id); }
+                                _ => {
+                                    if wm.resize_hit_at(id, cx, cy) {
+                                        wm.start_resize_at(id, cx, cy);
+                                    } else if !is_warp_or_settings {
+                                        wm.start_drag_at(id, cx, cy);
+                                    }
+                                }
+                            }
+                            let after = wm.insertion_ids();
+                            let _ = after;
                         }
                         if wm.window_at(cx, cy) == Some(warp_win_id) {
-                            if let Some((wx, wy, ww, wh, _scroll)) = wm.get_window_rect(warp_win_id) {
+                            if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(warp_win_id) {
                                 let rel_x = cx - wx;
-                                let rel_y = cy - wy - 30;
+                                let rel_y = cy - wy - 30 + scroll;
                                 warp_engine.click(rel_x, rel_y);
                                 let content_h = wh.saturating_sub(30);
                                 warp_engine.update(ww as i32, content_h as i32);
@@ -461,9 +470,9 @@ fn main() -> Status {
                             }
                         }
                         if wm.window_at(cx, cy) == Some(settings_win_id) {
-                            if let Some((wx, wy, ww, wh, _scroll)) = wm.get_window_rect(settings_win_id) {
+                            if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(settings_win_id) {
                                 let rel_x = cx - wx;
-                                let rel_y = cy - wy - 30;
+                                let rel_y = cy - wy - 30 + scroll;
                                 settings_engine.click(rel_x, rel_y);
                                 let content_h = wh.saturating_sub(30);
                                 settings_engine.update(ww as i32, content_h as i32);
@@ -476,7 +485,7 @@ fn main() -> Status {
                                     settings_engine.set_state_value("--wallpaperChanged", "false");
                                     if let Some(wallpaper) = settings_engine.get_state_value("--wallpaper") {
                                         let changed = match wallpaper {
-                                            "light" => {
+                                            "baram" => {
                                                 if display_state.wallpaper_index != 0 || display_state.wallpaper_color.is_some() {
                                                     display_state.wallpaper_index = 0;
                                                     display_state.wallpaper_color = None;

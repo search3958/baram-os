@@ -14,8 +14,8 @@ screen{
 
         hStack{
             button{
-                text: ("Light"),
-                oneClick: (--wallpaper = "light", --wallpaperChanged = "true")
+                text: ("baram"),
+                oneClick: (--wallpaper = "baram", --wallpaperChanged = "true")
             },
 
             button{

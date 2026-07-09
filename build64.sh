@@ -217,7 +217,7 @@ Install QEMU:
         -drive "if=pflash,format=raw,file=$fw_vars" \
         -drive "if=none,file=$img,format=raw,id=hd0" \
         -device "virtio-blk-pci,drive=hd0" \
-        -device "virtio-vga" \
+        -device "virtio-vga,edid=on,xres=1280,yres=720" \
         -device "qemu-xhci" \
         -device "usb-tablet" \
         -device "usb-mouse" \
