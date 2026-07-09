@@ -883,6 +883,27 @@ impl WarpEngine {
                         self.last_command = Some(cmd);
                     }
                 }
+            } else if act.contains('.') {
+                let parts: alloc::vec::Vec<&str> = act.splitn(2, '.').collect();
+                let id = parts[0];
+                let method_with_args = parts[1];
+                if let Some(open_b) = method_with_args.find('{') {
+                    let method = &method_with_args[..open_b];
+                    let args = &method_with_args[open_b + 1..].trim_end_matches('}');
+                    if method == "changeContent" {
+                        let val = self.eval_expr(args);
+                        let key = format!("--{}Content", id);
+                        self.set_state(&key, &val);
+                    } else if method == "setStatus" {
+                        if args.trim() == "unset" {
+                            let key = format!("--{}Disabled", id);
+                            self.set_state(&key, "false");
+                        } else {
+                            let key = format!("--{}Disabled", id);
+                            self.set_state(&key, args);
+                        }
+                    }
+                }
             } else if act.contains('=') || act.contains(':') {
                 let parts: alloc::vec::Vec<&str> = if act.contains('=') { act.splitn(2, '=').collect() } else { act.splitn(2, ':').collect() };
                 let var_name = parts[0].trim();

@@ -46,7 +46,7 @@ pub fn parse(uri: &str) -> Option<UriCommand> {
 }
 
 pub struct DisplayState {
-    pub pointer_size: i32,
+    pub pointer_size: f32,
     pub hud_enabled: bool,
     pub wallpaper_color: Option<u32>,
     pub wallpaper_index: usize,
@@ -55,7 +55,7 @@ pub struct DisplayState {
 impl DisplayState {
     pub fn new() -> Self {
         Self {
-            pointer_size: 1,
+            pointer_size: 1.0,
             hud_enabled: true,
             wallpaper_color: None,
             wallpaper_index: 0,
@@ -89,8 +89,9 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
     match cmd.action.as_str() {
         "pointer" => {
             if let Some(size_str) = get_param(cmd, "size") {
-                if let Ok(size) = size_str.parse::<i32>() {
-                    if size >= 1 && size <= 5 {
+                if let Ok(v) = size_str.parse::<i32>() {
+                    let size = v as f32 / 10.0;
+                    if size >= 0.5 && size <= 5.0 {
                         state.pointer_size = size;
                         return true;
                     }

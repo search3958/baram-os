@@ -4,7 +4,6 @@
 extern crate alloc;
 
 mod absolute_pointer;
-mod cursor;
 mod font;
 mod gop;
 mod keyboard;
@@ -54,21 +53,31 @@ struct CursorBitmap {
 
 static mut CURSOR_NORMAL: Option<CursorBitmap> = None;
 static mut CURSOR_RESIZE: Option<CursorBitmap> = None;
-static mut CURSOR_SIZE_CACHE: [(Option<CursorBitmap>, Option<CursorBitmap>); 6] = [
-    (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None),
+static mut CURSOR_SIZE_CACHE: [(Option<CursorBitmap>, Option<CursorBitmap>); 51] = [
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None), (None, None), (None, None), (None, None), (None, None),
+    (None, None),
 ];
 
-fn get_or_prerender_cursor(svg: &str, size: i32, blur_r: i32, is_resize: bool) -> &'static CursorBitmap {
-    let idx = (size as usize).min(5);
+fn get_or_prerender_cursor(svg: &str, size: f32, blur_r: i32, is_resize: bool) -> &'static CursorBitmap {
+    let idx = ((size * 10.0) as usize).min(50);
     unsafe {
         let cache = &mut CURSOR_SIZE_CACHE[idx];
         let slot = if is_resize { &mut cache.1 } else { &mut cache.0 };
         if slot.is_none() {
             let base_w = if is_resize { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
             let base_h = if is_resize { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
-            let w = (base_w as i32 * size) as usize;
-            let h = (base_h as i32 * size) as usize;
+            let s10 = (size * 10.0) as i32;
+            let w = (base_w as i32 * s10 / 10) as usize;
+            let h = (base_h as i32 * s10 / 10) as usize;
             *slot = Some(prerender_cursor(svg, w, h, blur_r));
         }
         slot.as_ref().unwrap()
@@ -210,7 +219,7 @@ fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
     }
 }
 
-fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: i32) {
+fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: f32) {
     let blur_r = 12i32;
     let pad = blur_r as i32;
     let bitmap = get_or_prerender_cursor(
@@ -481,50 +490,25 @@ fn main() -> Status {
 
                                 if let Some(cmd) = settings_engine.last_command.take() {
                                     uri::execute(&cmd, &mut display_state);
-                                    match cmd.as_str() {
-                                        s if s.starts_with("os://display/wallpaper?file=") => {
-                                            let file = &s[27..];
-                                            let idx = match file {
-                                                "light.png" | "light" => Some(0),
-                                                "hanul.png" | "hanul" => Some(1),
-                                                "reflect.png" | "reflect" => Some(2),
-                                                _ => None,
-                                            };
-                                            if let Some(i) = idx {
-                                                display_state.wallpaper_color = None;
-                                                display_state.wallpaper_index = i;
-                                                cached_wallpaper = decode_wallpaper(WALLPAPERS[i], screen.width(), screen.height());
-                                                cached_taskbar = None;
-                                                cached_taskbar_strip = None;
-                                                scene_dirty = true;
-                                            }
-                                        }
-                                        s if s.starts_with("os://display/wallpaper?color=") => {
-                                            let hex = &s[28..];
-                                            if hex.len() == 6 {
-                                                if let (Ok(r), Ok(g), Ok(b)) = (
-                                                    u8::from_str_radix(&hex[0..2], 16),
-                                                    u8::from_str_radix(&hex[2..4], 16),
-                                                    u8::from_str_radix(&hex[4..6], 16),
-                                                ) {
-                                                    let new_color = Color::rgb(r, g, b).0;
-                                                    display_state.wallpaper_color = Some(new_color);
-                                                    display_state.wallpaper_index = 0;
-                                                    cached_wallpaper = Some(make_solid_wallpaper(new_color, screen.width(), screen.height()));
-                                                    cached_taskbar = None;
-                                                    cached_taskbar_strip = None;
-                                                    scene_dirty = true;
+                                    if let Some(parsed) = uri::parse(&cmd) {
+                                        if parsed.action == "wallpaper" {
+                                            if uri::get_param(&parsed, "color").is_some() {
+                                                if let Some(color) = display_state.wallpaper_color {
+                                                    cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
+                                                }
+                                            } else {
+                                                if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
+                                                    cached_wallpaper = decode_wallpaper(bytes, screen.width(), screen.height());
+                                                } else {
+                                                    mouse::log_line_str("NO WALLPAPER BYTES");
                                                 }
                                             }
+                                            cached_taskbar = None;
+                                            cached_taskbar_strip = None;
+                                            scene_dirty = true;
+                                        } else if parsed.action == "pointer" || parsed.action == "hud" {
+                                            scene_dirty = true;
                                         }
-                                        s if s.starts_with("os://display/pointer?size=") => {
-                                            if let Ok(size) = s[25..].parse::<i32>() {
-                                                if size >= 1 && size <= 5 {
-                                                    display_state.pointer_size = size;
-                                                }
-                                            }
-                                        }
-                                        _ => {}
                                     }
                                 }
 
@@ -704,7 +688,14 @@ fn main() -> Status {
                 let fy0 = ry0.min(cy0);
                 let fx1 = rx1.max(cx1);
                 let fy1 = ry1.max(cy1);
-                layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
+                let fw = fx1 - fx0;
+                let fh = fy1 - fy0;
+                let full_area = w * h;
+                if fw * fh >= full_area * 3 / 4 {
+                    layer.flush(&mut screen);
+                } else {
+                    layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
+                }
 
                 prev_cursor_x = cursor_x;
                 prev_cursor_y = cursor_y;
@@ -972,7 +963,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
-                shift_x: f32, pointer_size: i32, hud_enabled: bool) {
+                shift_x: f32, pointer_size: f32, hud_enabled: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engine, warp_win_id,
                  settings_engine, settings_win_id, wallpaper, cached_taskbar,
