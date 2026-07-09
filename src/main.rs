@@ -576,7 +576,42 @@ fn main() -> Status {
             }
         }
 
-        
+        {
+            let prev_warp_hover = warp_engine.hover_idx;
+            let prev_settings_hover = settings_engine.hover_idx;
+            let mut hovered_any = false;
+            if wm.window_at(cursor_x, cursor_y) == Some(warp_win_id) {
+                if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(warp_win_id) {
+                    let rel_x = cursor_x - wx;
+                    let rel_y = cursor_y - wy - 30 + scroll;
+                    warp_engine.set_hover(rel_x, rel_y);
+                    hovered_any = true;
+                }
+            }
+            if wm.window_at(cursor_x, cursor_y) == Some(settings_win_id) {
+                if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(settings_win_id) {
+                    let rel_x = cursor_x - wx;
+                    let rel_y = cursor_y - wy - 30 + scroll;
+                    settings_engine.set_hover(rel_x, rel_y);
+                    hovered_any = true;
+                }
+            }
+            if !hovered_any {
+                warp_engine.clear_hover();
+                settings_engine.clear_hover();
+            }
+            if warp_engine.hover_idx != prev_warp_hover {
+                wm.set_content_dirty(warp_win_id);
+                scene_dirty = true;
+                dirty = true;
+            }
+            if settings_engine.hover_idx != prev_settings_hover {
+                wm.set_content_dirty(settings_win_id);
+                scene_dirty = true;
+                dirty = true;
+            }
+        }
+
         frames = frames.wrapping_add(1);
         frames_since_tick = frames_since_tick.wrapping_add(1);
         if let Ok(now) = runtime::get_time() {

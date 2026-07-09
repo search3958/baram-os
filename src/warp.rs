@@ -87,6 +87,7 @@ pub struct WarpEngine {
     token_pos: usize,
     pub texts: Vec<TextElem>,
     pub dirty: bool,
+    pub hover_idx: Option<usize>,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -121,6 +122,7 @@ impl WarpEngine {
             token_pos: 0,
             texts: Vec::new(),
             dirty: true,
+            hover_idx: None,
         };
         loop {
             let tk = ctx.next_token();
@@ -645,6 +647,32 @@ impl WarpEngine {
         } else { raw }
     }
 
+    pub fn set_hover(&mut self, x: i32, y: i32) {
+        self.parse_current_screen();
+        let mut found = None;
+        for i in (0..self.nodes.len()).rev() {
+            if !self.nodes[i].visible { continue; }
+            let tag = self.nodes[i].tag.as_str();
+            if tag != "button" && tag != "tonalButton" { continue; }
+            let n = &self.nodes[i];
+            if x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h {
+                found = Some(i);
+                break;
+            }
+        }
+        if self.hover_idx != found {
+            self.hover_idx = found;
+            self.dirty = true;
+        }
+    }
+
+    pub fn clear_hover(&mut self) {
+        if self.hover_idx.is_some() {
+            self.hover_idx = None;
+            self.dirty = true;
+        }
+    }
+
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         for idx in 0..self.nodes.len() {
             if !self.nodes[idx].visible { continue; }
@@ -660,10 +688,20 @@ impl WarpEngine {
                     layer.fill_rounded_rect(x, y, w, h, 12, Color::rgb(0xf5, 0xf5, 0xf6));
                 }
                 "button" => {
-                    layer.fill_rounded_rect(x, y, w, h, 20, Color::rgb(0x0A, 0x60, 0xFF));
+                    let c = if self.hover_idx == Some(idx) {
+                        Color::rgb(0x08, 0x50, 0xDD)
+                    } else {
+                        Color::rgb(0x0A, 0x60, 0xFF)
+                    };
+                    layer.fill_rounded_rect(x, y, w, h, 20, c);
                 }
                 "tonalButton" => {
-                    layer.fill_rounded_rect(x, y, w, h, 20, Color::rgb(230, 230, 230));
+                    let c = if self.hover_idx == Some(idx) {
+                        Color::rgb(210, 210, 210)
+                    } else {
+                        Color::rgb(230, 230, 230)
+                    };
+                    layer.fill_rounded_rect(x, y, w, h, 20, c);
                 }
                 "switch" => {
                     let out_var = self.parse_out_var(idx);

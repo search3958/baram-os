@@ -50,12 +50,12 @@ screen{
 
             button{
                 text: ("Medium"),
-                oneClick: (--pointerSize = "2", --pointerChanged = "true")
+                oneClick: (--pointerSize = "1.5", --pointerChanged = "true")
             },
 
             button{
                 text: ("Large"),
-                oneClick: (--pointerSize = "3", --pointerChanged = "true")
+                oneClick: (--pointerSize = "2", --pointerChanged = "true")
             },
         },
     },
