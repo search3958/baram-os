@@ -420,6 +420,49 @@ pub fn blit_cached_alpha(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: us
     }
 }
 
+pub fn blit_cached_scaled(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32, scale: i32) {
+    if scale <= 1 {
+        blit_cached(layer, pixels, w, h, ox, oy);
+        return;
+    }
+    let lw = layer.width();
+    let lh = layer.height();
+    let buf = layer.buf_mut();
+    let src_stride = w * 4;
+    let dst_w = w * scale as usize;
+    let dst_h = h * scale as usize;
+    for sy in 0..dst_h {
+        let dst_y = oy as usize + sy;
+        if dst_y >= lh { break; }
+        let src_y = sy / scale as usize;
+        if src_y >= h { break; }
+        let src_row = src_y * src_stride;
+        let dst_row = dst_y * lw;
+        for sx in 0..dst_w {
+            let dst_x = ox as usize + sx;
+            if dst_x >= lw { break; }
+            let src_x = sx / scale as usize;
+            if src_x >= w { break; }
+            let off = src_row + src_x * 4;
+            let a = pixels[off + 3] as u32;
+            if a == 0 { continue; }
+            let dst = &mut buf[dst_row + dst_x];
+            if a == 255 {
+                *dst = Color::rgb(pixels[off], pixels[off+1], pixels[off+2]).0;
+            } else {
+                let cr = pixels[off] as u32;
+                let cg = pixels[off+1] as u32;
+                let cb = pixels[off+2] as u32;
+                let bg = Color(*dst);
+                let inv = 255 - a;
+                let r = (cr * a + bg.r() as u32 * inv) / 255;
+                let g = (cg * a + bg.g() as u32 * inv) / 255;
+                let b = (cb * a + bg.b() as u32 * inv) / 255;
+                *dst = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+    }
+}
 
 pub fn blit_shadow(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: usize, ox: i32, oy: i32) {
     let lw = layer.width();

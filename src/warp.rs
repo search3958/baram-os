@@ -865,4 +865,15 @@ impl WarpEngine {
         }
         None
     }
+
+    pub fn get_state_value(&self, key: &str) -> Option<&str> {
+        for s in &self.state {
+            if s.0 == key { return Some(&s.1); }
+        }
+        None
+    }
+
+    pub fn set_state_value(&mut self, key: &str, val: &str) {
+        self.set_state(key, val);
+    }
 }

@@ -15,6 +15,7 @@ mod svg;
 mod ttf_font;
 mod ttf_font_hud;
 mod ui;
+mod uri;
 mod uiscript;
 mod usb_hid;
 mod warp;
@@ -133,8 +134,12 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
+const WARP_SETTINGS: &str = include_str!("app/settings.warp");
 
-const WALLPAPER_PNG: &[u8] = include_bytes!("data/wallpaper/light.png");
+const WALLPAPER_LIGHT_PNG: &[u8] = include_bytes!("data/wallpaper/light.png");
+const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
+const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
+const WALLPAPERS: &[&[u8]] = &[WALLPAPER_LIGHT_PNG, WALLPAPER_HANUL_PNG, WALLPAPER_REFLECT_PNG];
 const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
 const ICON_FILES_PNG: &[u8] = include_bytes!("app/icon/files.png");
 const ICON_MANAGER_PNG: &[u8] = include_bytes!("app/icon/manager.png");
@@ -185,7 +190,7 @@ fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
     }
 }
 
-fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool) {
+fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: i32) {
     unsafe {
         let bitmap = if resizing {
             CURSOR_RESIZE.as_ref()
@@ -195,9 +200,18 @@ fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: b
         if let Some(bmp) = bitmap {
             let blur_r = 12i32;
             let pad = blur_r as i32;
-            svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
-                cx + 3 - pad, cy + 4 - pad);
-            svg::blit_cached(layer, &bmp.pixels, bmp.w, bmp.h, cx, cy);
+            if pointer_size > 1 {
+                let scale = pointer_size;
+                let sw = bmp.shadow_w * scale as usize;
+                let sh = bmp.shadow_h * scale as usize;
+                svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
+                    cx + 3 * scale - pad, cy + 4 * scale - pad);
+                svg::blit_cached_scaled(layer, &bmp.pixels, bmp.w, bmp.h, cx, cy, scale);
+            } else {
+                svg::blit_shadow(layer, &bmp.shadow, bmp.shadow_w, bmp.shadow_h,
+                    cx + 3 - pad, cy + 4 - pad);
+                svg::blit_cached(layer, &bmp.pixels, bmp.w, bmp.h, cx, cy);
+            }
             return;
         }
     }
@@ -257,6 +271,10 @@ fn main() -> Status {
     let mut warp_engine = warp::WarpEngine::new(WARP_DEMO);
     warp_engine.update(400, 560);
 
+    let settings_win_id = wm.add("Settings", 550, 150, 380, 450);
+    let mut settings_engine = warp::WarpEngine::new(WARP_SETTINGS);
+    settings_engine.update(360, 410);
+
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);
     let mut mouse_ev_count: u32 = 0;
     let mut key_ev_count: u32 = 0;
@@ -274,35 +292,42 @@ fn main() -> Status {
     };
 
     
-    let mut cached_wallpaper: Option<Vec<u32>> = None;
-    if let Ok((header, pixels)) = png_decoder::decode(WALLPAPER_PNG) {
-        let w = screen.width();
-        let h = screen.height();
+    let mut display_state = uri::DisplayState::new();
+
+    fn decode_wallpaper(bytes: &[u8], screen_w: usize, screen_h: usize) -> Option<Vec<u32>> {
+        let (header, pixels) = png_decoder::decode(bytes).ok()?;
         let img_w = header.width as usize;
         let img_h = header.height as usize;
-        let mut buf = alloc::vec![0u32; w * h];
-
-        let scale = if w * img_h > h * img_w {
-            w as f64 / img_w as f64
+        let mut buf = alloc::vec![0u32; screen_w * screen_h];
+        let scale = if screen_w * img_h > screen_h * img_w {
+            screen_w as f64 / img_w as f64
         } else {
-            h as f64 / img_h as f64
+            screen_h as f64 / img_h as f64
         };
-        let src_w = (w as f64 / scale) as usize;
-        let src_h = (h as f64 / scale) as usize;
+        let src_w = (screen_w as f64 / scale) as usize;
+        let src_h = (screen_h as f64 / scale) as usize;
         let src_x = (img_w.saturating_sub(src_w)) / 2;
         let src_y = (img_h.saturating_sub(src_h)) / 2;
-
-        for y in 0..h {
-            let sy = (y * src_h / h).min(src_h - 1) + src_y;
+        for y in 0..screen_h {
+            let sy = (y * src_h / screen_h).min(src_h - 1) + src_y;
             let src_row = sy * img_w;
-            let dst_row = y * w;
-            for x in 0..w {
-                let sx = (x * src_w / w).min(src_w - 1) + src_x;
+            let dst_row = y * screen_w;
+            for x in 0..screen_w {
+                let sx = (x * src_w / screen_w).min(src_w - 1) + src_x;
                 let px = pixels[src_row + sx];
                 buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
             }
         }
-        cached_wallpaper = Some(buf);
+        Some(buf)
+    }
+
+    fn make_solid_wallpaper(color: u32, screen_w: usize, screen_h: usize) -> Vec<u32> {
+        alloc::vec![color; screen_w * screen_h]
+    }
+
+    let mut cached_wallpaper: Option<Vec<u32>> = None;
+    if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
+        cached_wallpaper = decode_wallpaper(bytes, screen.width(), screen.height());
     }
 
     let mut scene_dirty = true;
@@ -325,14 +350,16 @@ fn main() -> Status {
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
-                 &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
+                 &ui_commands, Some(ui_win_id),
+                 &mut warp_engine, warp_win_id,
+                 &mut settings_engine, settings_win_id,
                  cached_wallpaper.as_deref(),
                  &mut cached_taskbar, &mut cached_taskbar_strip, true,
-                 -1.0, -1.0, 0.0);
+                 -1.0, -1.0, 0.0, display_state.hud_enabled);
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
-    draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false);
+    draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false, display_state.pointer_size);
     layer.flush(&mut screen);
 
     loop {
@@ -433,6 +460,86 @@ fn main() -> Status {
                                 scene_dirty = true;
                             }
                         }
+                        if wm.window_at(cx, cy) == Some(settings_win_id) {
+                            if let Some((wx, wy, ww, wh, _scroll)) = wm.get_window_rect(settings_win_id) {
+                                let rel_x = cx - wx;
+                                let rel_y = cy - wy - 30;
+                                settings_engine.click(rel_x, rel_y);
+                                let content_h = wh.saturating_sub(30);
+                                settings_engine.update(ww as i32, content_h as i32);
+                                wm.set_content_dirty(settings_win_id);
+                                scene_dirty = true;
+
+                                if let Some(wallpaper) = settings_engine.get_state_value("--wallpaper") {
+                                    let changed = match wallpaper {
+                                        "light" => {
+                                            if display_state.wallpaper_index != 0 || display_state.wallpaper_color.is_some() {
+                                                display_state.wallpaper_index = 0;
+                                                display_state.wallpaper_color = None;
+                                                cached_wallpaper = decode_wallpaper(WALLPAPERS[0], screen.width(), screen.height());
+                                                true
+                                            } else { false }
+                                        }
+                                        "hanul" => {
+                                            if display_state.wallpaper_index != 1 || display_state.wallpaper_color.is_some() {
+                                                display_state.wallpaper_index = 1;
+                                                display_state.wallpaper_color = None;
+                                                cached_wallpaper = decode_wallpaper(WALLPAPERS[1], screen.width(), screen.height());
+                                                true
+                                            } else { false }
+                                        }
+                                        "reflect" => {
+                                            if display_state.wallpaper_index != 2 || display_state.wallpaper_color.is_some() {
+                                                display_state.wallpaper_index = 2;
+                                                display_state.wallpaper_color = None;
+                                                cached_wallpaper = decode_wallpaper(WALLPAPERS[2], screen.width(), screen.height());
+                                                true
+                                            } else { false }
+                                        }
+                                        s if s.starts_with("color:") => {
+                                            let hex = &s[6..];
+                                            if hex.len() == 6 {
+                                                if let (Ok(r), Ok(g), Ok(b)) = (
+                                                    u8::from_str_radix(&hex[0..2], 16),
+                                                    u8::from_str_radix(&hex[2..4], 16),
+                                                    u8::from_str_radix(&hex[4..6], 16),
+                                                ) {
+                                                    let new_color = Color::rgb(r, g, b).0;
+                                                    if display_state.wallpaper_color != Some(new_color) {
+                                                        display_state.wallpaper_color = Some(new_color);
+                                                        display_state.wallpaper_index = 0;
+                                                        cached_wallpaper = Some(make_solid_wallpaper(new_color, screen.width(), screen.height()));
+                                                        true
+                                                    } else { false }
+                                                } else { false }
+                                            } else { false }
+                                        }
+                                        _ => false,
+                                    };
+                                    if changed {
+                                        cached_taskbar = None;
+                                        cached_taskbar_strip = None;
+                                        scene_dirty = true;
+                                    }
+                                }
+
+                                if let Some(size_str) = settings_engine.get_state_value("--pointerSize") {
+                                    if let Ok(size) = size_str.parse::<i32>() {
+                                        if size >= 1 && size <= 5 && display_state.pointer_size != size {
+                                            display_state.pointer_size = size;
+                                        }
+                                    }
+                                }
+
+                                if let Some(enabled_str) = settings_engine.get_state_value("--hudEnabled") {
+                                    let new_enabled = enabled_str == "true";
+                                    if display_state.hud_enabled != new_enabled {
+                                        display_state.hud_enabled = new_enabled;
+                                        scene_dirty = true;
+                                    }
+                                }
+                            }
+                        }
                     }
                     scene_dirty = true;
                 } else if !ev.left && mouse_down {
@@ -480,6 +587,11 @@ fn main() -> Status {
             }
         }
 
+        if let Some((_, _, ww, wh, _)) = wm.get_window_rect(settings_win_id) {
+            let content_h = wh.saturating_sub(30);
+            settings_engine.update(ww as i32, content_h as i32);
+        }
+
         let anim_speed = 10.0f32;
         let dt = 0.008f32;
 
@@ -517,12 +629,14 @@ fn main() -> Status {
 
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
-                             &ui_commands, Some(ui_win_id), &mut warp_engine, warp_win_id,
+                             &ui_commands, Some(ui_win_id),
+                             &mut warp_engine, warp_win_id,
+                             &mut settings_engine, settings_win_id,
                              cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
                              &mut cached_taskbar_strip, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
-                             tb_shift_x);
+                             tb_shift_x, display_state.hud_enabled);
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
 
@@ -543,7 +657,7 @@ fn main() -> Status {
 
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
-                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
 
                 let pad = 32i32;
                 let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
@@ -584,7 +698,7 @@ fn main() -> Status {
                         buf[s..e].copy_from_slice(&cached_scene[s..e]);
                     }
                 }
-                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing);
+                draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
                 layer.flush_rect(&mut screen, x0, y0, x1, y1);
 
                 prev_cursor_x = cursor_x;
@@ -603,13 +717,15 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
                 warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
+                settings_engine: &mut warp::WarpEngine, settings_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32,
                 remove_progress: f32,
-                shift_x: f32) {
+                shift_x: f32,
+                hud_enabled: bool) {
     let w = layer.width();
     let h = layer.height();
 
@@ -695,7 +811,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
-        Some((warp_win_id, warp_engine)));
+        Some((warp_win_id, warp_engine)),
+        Some((settings_win_id, settings_engine)));
 
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
@@ -802,8 +919,10 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    layer.put_str_hud(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
-    layer.put_str_hud(16, tb_y + 26, fb.as_str(), Color::MUTED);
+    if hud_enabled {
+        layer.put_str_hud(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
+        layer.put_str_hud(16, tb_y + 26, fb.as_str(), Color::MUTED);
+    }
 
     let mut strip = alloc::vec![0u32; w * TASKBAR_H];
     strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
@@ -815,18 +934,20 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
                 warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
+                settings_engine: &mut warp::WarpEngine, settings_win_id: window::WinId,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
-                shift_x: f32) {
+                shift_x: f32, pointer_size: i32, hud_enabled: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
-                 ui_commands, ui_win_id, warp_engine, warp_win_id, wallpaper, cached_taskbar,
+                 ui_commands, ui_win_id, warp_engine, warp_win_id,
+                 settings_engine, settings_win_id, wallpaper, cached_taskbar,
                  cached_taskbar_strip, taskbar_dirty,
-                 add_progress, remove_progress, shift_x);
+                 add_progress, remove_progress, shift_x, hud_enabled);
     let is_resizing = wm.is_any_resizing();
-    draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing);
+    draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
 }
 
 fn ease_out_back(t: f32) -> f32 {

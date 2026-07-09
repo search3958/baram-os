@@ -1,0 +1,75 @@
+screen{
+    id: (main),
+
+    Header{
+        text: ("Settings"),
+    },
+
+    card{
+        text: ("Wallpaper"),
+
+        text{
+            text: ("Select a wallpaper theme")
+        },
+
+        hStack{
+            button{
+                text: ("Light"),
+                oneClick: (--wallpaper = "light")
+            },
+
+            button{
+                text: ("Hanul"),
+                oneClick: (--wallpaper = "hanul")
+            },
+
+            button{
+                text: ("Reflect"),
+                oneClick: (--wallpaper = "reflect")
+            },
+        },
+
+        button{
+            text: ("Solid Red"),
+            oneClick: (--wallpaper = "color:#990000")
+        },
+    },
+
+    card{
+        text: ("Pointer"),
+
+        text{
+            text: ("Pointer size: " + --pointerSize)
+        },
+
+        hStack{
+            button{
+                text: ("Small"),
+                oneClick: (--pointerSize = "1")
+            },
+
+            button{
+                text: ("Medium"),
+                oneClick: (--pointerSize = "2")
+            },
+
+            button{
+                text: ("Large"),
+                oneClick: (--pointerSize = "3")
+            },
+        },
+    },
+
+    card{
+        text: ("HUD"),
+
+        text{
+            text: ("Status bar display")
+        },
+
+        switch{
+            --hudEnabled: ("true"),
+            output: (--hudEnabled)
+        },
+    },
+}

@@ -402,6 +402,7 @@ impl WindowManager {
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
         warp_win: Option<(WinId, &mut super::warp::WarpEngine)>,
+        settings_win: Option<(WinId, &mut super::warp::WarpEngine)>,
     ) {
         if self.windows.is_empty() {
             return;
@@ -558,6 +559,14 @@ impl WindowManager {
                         }
                     }
                     if let Some((wid, ref engine)) = warp_win {
+                        if win_id == wid {
+                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
+                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
+                            engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
+                            (*layer_ptr).pop_clip();
+                        }
+                    }
+                    if let Some((wid, ref engine)) = settings_win {
                         if win_id == wid {
                             (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
