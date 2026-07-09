@@ -185,7 +185,7 @@ impl WarpEngine {
         let root_nodes = self.root_nodes.clone();
         let mut total_h = height;
         for node_idx in &root_nodes {
-            let h = self.layout_node(*node_idx, 0, 0, width);
+            let h = self.layout_node(*node_idx, 0, 30, width);
             if h > total_h { total_h = h; }
         }
         let _ = total_h;

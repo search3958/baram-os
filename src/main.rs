@@ -461,7 +461,7 @@ fn main() -> Status {
                         if wm.window_at(cx, cy) == Some(warp_win_id) {
                             if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(warp_win_id) {
                                 let rel_x = cx - wx;
-                                let rel_y = cy - wy - 30 + scroll;
+                                let rel_y = cy - wy + scroll;
                                 warp_engine.click(rel_x, rel_y);
                                 let content_h = wh.saturating_sub(30);
                                 warp_engine.update(ww as i32, content_h as i32);
@@ -472,7 +472,7 @@ fn main() -> Status {
                         if wm.window_at(cx, cy) == Some(settings_win_id) {
                             if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(settings_win_id) {
                                 let rel_x = cx - wx;
-                                let rel_y = cy - wy - 30 + scroll;
+                                let rel_y = cy - wy + scroll;
                                 settings_engine.click(rel_x, rel_y);
                                 let content_h = wh.saturating_sub(30);
                                 settings_engine.update(ww as i32, content_h as i32);
@@ -561,7 +561,7 @@ fn main() -> Status {
             if wm.window_at(cursor_x, cursor_y) == Some(warp_win_id) {
                 if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(warp_win_id) {
                     let rel_x = cursor_x - wx;
-                    let rel_y = cursor_y - wy - 30 + scroll;
+                    let rel_y = cursor_y - wy + scroll;
                     warp_engine.set_hover(rel_x, rel_y);
                     hovered_any = true;
                 }
@@ -569,7 +569,7 @@ fn main() -> Status {
             if wm.window_at(cursor_x, cursor_y) == Some(settings_win_id) {
                 if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(settings_win_id) {
                     let rel_x = cursor_x - wx;
-                    let rel_y = cursor_y - wy - 30 + scroll;
+                    let rel_y = cursor_y - wy + scroll;
                     settings_engine.set_hover(rel_x, rel_y);
                     hovered_any = true;
                 }
