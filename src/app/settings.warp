@@ -15,23 +15,23 @@ screen{
         hStack{
             button{
                 text: ("Light"),
-                oneClick: (--wallpaper = "light")
+                oneClick: (--wallpaper = "light", --wallpaperChanged = "true")
             },
 
             button{
                 text: ("Hanul"),
-                oneClick: (--wallpaper = "hanul")
+                oneClick: (--wallpaper = "hanul", --wallpaperChanged = "true")
             },
 
             button{
                 text: ("Reflect"),
-                oneClick: (--wallpaper = "reflect")
+                oneClick: (--wallpaper = "reflect", --wallpaperChanged = "true")
             },
         },
 
         button{
             text: ("Solid Red"),
-            oneClick: (--wallpaper = "color:#990000")
+            oneClick: (--wallpaper = "color:#990000", --wallpaperChanged = "true")
         },
     },
 
@@ -45,17 +45,17 @@ screen{
         hStack{
             button{
                 text: ("Small"),
-                oneClick: (--pointerSize = "1")
+                oneClick: (--pointerSize = "1", --pointerChanged = "true")
             },
 
             button{
                 text: ("Medium"),
-                oneClick: (--pointerSize = "2")
+                oneClick: (--pointerSize = "2", --pointerChanged = "true")
             },
 
             button{
                 text: ("Large"),
-                oneClick: (--pointerSize = "3")
+                oneClick: (--pointerSize = "3", --pointerChanged = "true")
             },
         },
     },
