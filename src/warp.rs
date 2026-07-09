@@ -88,6 +88,7 @@ pub struct WarpEngine {
     pub texts: Vec<TextElem>,
     pub dirty: bool,
     pub hover_idx: Option<usize>,
+    pub last_command: Option<String>,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -123,6 +124,7 @@ impl WarpEngine {
             texts: Vec::new(),
             dirty: true,
             hover_idx: None,
+            last_command: None,
         };
         loop {
             let tk = ctx.next_token();
@@ -871,6 +873,14 @@ impl WarpEngine {
                             let key = format!("--{}Disabled", id);
                             self.set_state(&key, args);
                         }
+                    }
+                }
+            } else if act.starts_with("runCommand") {
+                if let Some(eq_pos) = act.find('=') {
+                    let rhs = act[eq_pos + 1..].trim();
+                    let cmd = self.eval_expr(rhs);
+                    if !cmd.is_empty() {
+                        self.last_command = Some(cmd);
                     }
                 }
             } else if act.contains('=') || act.contains(':') {

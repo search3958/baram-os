@@ -479,74 +479,52 @@ fn main() -> Status {
                                 wm.set_content_dirty(settings_win_id);
                                 scene_dirty = true;
 
-                                let wp_changed = settings_engine.get_state_value("--wallpaperChanged")
-                                    .map(|v| v == "true").unwrap_or(false);
-                                if wp_changed {
-                                    settings_engine.set_state_value("--wallpaperChanged", "false");
-                                    if let Some(wallpaper) = settings_engine.get_state_value("--wallpaper") {
-                                        let changed = match wallpaper {
-                                            "baram" => {
-                                                if display_state.wallpaper_index != 0 || display_state.wallpaper_color.is_some() {
+                                if let Some(cmd) = settings_engine.last_command.take() {
+                                    uri::execute(&cmd, &mut display_state);
+                                    match cmd.as_str() {
+                                        s if s.starts_with("os://display/wallpaper?file=") => {
+                                            let file = &s[27..];
+                                            let idx = match file {
+                                                "light.png" | "light" => Some(0),
+                                                "hanul.png" | "hanul" => Some(1),
+                                                "reflect.png" | "reflect" => Some(2),
+                                                _ => None,
+                                            };
+                                            if let Some(i) = idx {
+                                                display_state.wallpaper_color = None;
+                                                display_state.wallpaper_index = i;
+                                                cached_wallpaper = decode_wallpaper(WALLPAPERS[i], screen.width(), screen.height());
+                                                cached_taskbar = None;
+                                                cached_taskbar_strip = None;
+                                                scene_dirty = true;
+                                            }
+                                        }
+                                        s if s.starts_with("os://display/wallpaper?color=") => {
+                                            let hex = &s[28..];
+                                            if hex.len() == 6 {
+                                                if let (Ok(r), Ok(g), Ok(b)) = (
+                                                    u8::from_str_radix(&hex[0..2], 16),
+                                                    u8::from_str_radix(&hex[2..4], 16),
+                                                    u8::from_str_radix(&hex[4..6], 16),
+                                                ) {
+                                                    let new_color = Color::rgb(r, g, b).0;
+                                                    display_state.wallpaper_color = Some(new_color);
                                                     display_state.wallpaper_index = 0;
-                                                    display_state.wallpaper_color = None;
-                                                    cached_wallpaper = decode_wallpaper(WALLPAPERS[0], screen.width(), screen.height());
-                                                    true
-                                                } else { false }
-                                            }
-                                            "hanul" => {
-                                                if display_state.wallpaper_index != 1 || display_state.wallpaper_color.is_some() {
-                                                    display_state.wallpaper_index = 1;
-                                                    display_state.wallpaper_color = None;
-                                                    cached_wallpaper = decode_wallpaper(WALLPAPERS[1], screen.width(), screen.height());
-                                                    true
-                                                } else { false }
-                                            }
-                                            "reflect" => {
-                                                if display_state.wallpaper_index != 2 || display_state.wallpaper_color.is_some() {
-                                                    display_state.wallpaper_index = 2;
-                                                    display_state.wallpaper_color = None;
-                                                    cached_wallpaper = decode_wallpaper(WALLPAPERS[2], screen.width(), screen.height());
-                                                    true
-                                                } else { false }
-                                            }
-                                            s if s.starts_with("color:") => {
-                                                let hex = &s[6..];
-                                                if hex.len() == 6 {
-                                                    if let (Ok(r), Ok(g), Ok(b)) = (
-                                                        u8::from_str_radix(&hex[0..2], 16),
-                                                        u8::from_str_radix(&hex[2..4], 16),
-                                                        u8::from_str_radix(&hex[4..6], 16),
-                                                    ) {
-                                                        let new_color = Color::rgb(r, g, b).0;
-                                                        if display_state.wallpaper_color != Some(new_color) {
-                                                            display_state.wallpaper_color = Some(new_color);
-                                                            display_state.wallpaper_index = 0;
-                                                            cached_wallpaper = Some(make_solid_wallpaper(new_color, screen.width(), screen.height()));
-                                                            true
-                                                        } else { false }
-                                                    } else { false }
-                                                } else { false }
-                                            }
-                                            _ => false,
-                                        };
-                                        if changed {
-                                            cached_taskbar = None;
-                                            cached_taskbar_strip = None;
-                                            scene_dirty = true;
-                                        }
-                                    }
-                                }
-
-                                let ptr_changed = settings_engine.get_state_value("--pointerChanged")
-                                    .map(|v| v == "true").unwrap_or(false);
-                                if ptr_changed {
-                                    settings_engine.set_state_value("--pointerChanged", "false");
-                                    if let Some(size_str) = settings_engine.get_state_value("--pointerSize") {
-                                        if let Ok(size) = size_str.parse::<i32>() {
-                                            if size >= 1 && size <= 5 {
-                                                display_state.pointer_size = size;
+                                                    cached_wallpaper = Some(make_solid_wallpaper(new_color, screen.width(), screen.height()));
+                                                    cached_taskbar = None;
+                                                    cached_taskbar_strip = None;
+                                                    scene_dirty = true;
+                                                }
                                             }
                                         }
+                                        s if s.starts_with("os://display/pointer?size=") => {
+                                            if let Ok(size) = s[25..].parse::<i32>() {
+                                                if size >= 1 && size <= 5 {
+                                                    display_state.pointer_size = size;
+                                                }
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
 
