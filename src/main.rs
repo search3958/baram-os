@@ -646,7 +646,11 @@ fn main() -> Status {
                     || wm.count() != prev_window_count
                     || wm.focused_id != prev_focused_id;
 
-                let bg_valid = bg_cache.is_some() && prev_wallpaper_idx == display_state.wallpaper_index;
+                let bg_valid = bg_cache.is_some()
+                    && prev_wallpaper_idx == display_state.wallpaper_index
+                    && tb_add_progress < 0.0
+                    && tb_remove_progress < 0.0
+                    && tb_shift_x.abs() <= 0.5;
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
                              &ui_commands, Some(ui_win_id),
