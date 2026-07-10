@@ -261,11 +261,11 @@ fn fill_segments_to_buf(
     let cg = color.g() as u32;
     let cb = color.b() as u32;
     let stride = buf_w * 4;
+    let mut coverage_f: Vec<f32> = alloc::vec![0.0; buf_w];
 
     for py in py0..py1 {
         let row = py * stride;
-        
-        let mut coverage_f: Vec<f32> = alloc::vec![0.0; buf_w];
+        coverage_f.fill(0.0);
 
         for sy in 0..SS_Y {
             let y_sample = py as f64 + (sy as f64 + 0.5) / SS_Y as f64;

@@ -344,6 +344,8 @@ fn main() -> Status {
     let mut cached_taskbar_strip: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<window::WinId> = None;
+    let mut bg_cache: Option<Vec<u32>> = None;
+    let mut prev_wallpaper_idx: usize = display_state.wallpaper_index;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
@@ -358,7 +360,8 @@ fn main() -> Status {
                  &mut settings_engine, settings_win_id,
                  cached_wallpaper.as_deref(),
                  &mut cached_taskbar, &mut cached_taskbar_strip, true,
-                 -1.0, -1.0, 0.0, display_state.hud_enabled);
+                 -1.0, -1.0, 0.0, display_state.hud_enabled,
+                 &mut bg_cache, false);
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
@@ -503,6 +506,8 @@ fn main() -> Status {
                                             }
                                             cached_taskbar = None;
                                             cached_taskbar_strip = None;
+                                            bg_cache = None;
+                                            prev_wallpaper_idx = display_state.wallpaper_index;
                                             scene_dirty = true;
                                         } else if parsed.action == "pointer" || parsed.action == "hud" {
                                             scene_dirty = true;
@@ -641,6 +646,7 @@ fn main() -> Status {
                     || wm.count() != prev_window_count
                     || wm.focused_id != prev_focused_id;
 
+                let bg_valid = bg_cache.is_some() && prev_wallpaper_idx == display_state.wallpaper_index;
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
                              &ui_commands, Some(ui_win_id),
@@ -650,7 +656,8 @@ fn main() -> Status {
                              &mut cached_taskbar,
                              &mut cached_taskbar_strip, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
-                             tb_shift_x, display_state.hud_enabled);
+                             tb_shift_x, display_state.hud_enabled,
+                             &mut bg_cache, bg_valid);
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
 
@@ -746,11 +753,17 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 add_progress: f32,
                 remove_progress: f32,
                 shift_x: f32,
-                hud_enabled: bool) {
+                hud_enabled: bool,
+                bg_cache: &mut Option<Vec<u32>>,
+                bg_cache_valid: bool) {
     let w = layer.width();
     let h = layer.height();
 
-    if let Some(pixels) = wallpaper {
+    if bg_cache_valid {
+        if let Some(ref cached) = bg_cache {
+            layer.buf_mut()[..w * h].copy_from_slice(cached);
+        }
+    } else if let Some(pixels) = wallpaper {
         layer.buf_mut()[..w * h].copy_from_slice(pixels);
     } else {
         layer.clear(Color::BG);
@@ -758,7 +771,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
 
     let tb_y = h.saturating_sub(TASKBAR_H);
 
-    if let Some(ref cached) = cached_taskbar {
+    if bg_cache_valid {
+    } else if let Some(ref cached) = cached_taskbar {
         layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
     } else {
         let blur_r = TASKBAR_BLUR_R;
@@ -831,6 +845,12 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         *cached_taskbar = Some(bar);
     }
 
+    if !bg_cache_valid {
+        let mut bg = alloc::vec![0u32; w * h];
+        bg.copy_from_slice(layer.buf_ref());
+        *bg_cache = Some(bg);
+    }
+
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
         Some((warp_win_id, warp_engine)),
         Some((settings_win_id, settings_engine)));
@@ -872,32 +892,29 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         let scaled_d = (btn_d as f32 * scale) as usize;
         if scaled_d == 0 { continue; }
         let offset = if scaled_d > btn_d { 0 } else { (btn_d - scaled_d) / 2 };
+        let cached_btn = get_or_render_tb_btn(scaled_d, ca);
         for py in 0..scaled_d {
+            let src_row = py * scaled_d;
+            let dst_y = btn_y + offset + py;
+            if dst_y >= h { continue; }
+            let dst_row = dst_y * w;
             for px in 0..scaled_d {
-                let dx = px as f32 + 0.5 - scaled_d as f32 / 2.0;
-                let dy = py as f32 + 0.5 - scaled_d as f32 / 2.0;
-                let dist_sq = dx * dx + dy * dy;
-                let r_f = scaled_d as f32 / 2.0;
-                let alpha = if dist_sq < (r_f - 1.0) * (r_f - 1.0) {
-                    1.0f32
-                } else if dist_sq > (r_f + 0.5) * (r_f + 0.5) {
-                    0.0
-                } else {
-                    let dist = libm::sqrtf(dist_sq);
-                    (r_f + 0.5 - dist).clamp(0.0, 1.0)
-                };
-                if alpha <= 0.0 { continue; }
+                let sp = cached_btn[src_row + px];
+                let pre_a = (sp >> 24) & 0xFF;
+                if pre_a == 0 { continue; }
                 let sx = bx as usize + offset + px;
-                let sy = btn_y + offset + py;
-                if sx >= w || sy >= h { continue; }
-                let idx = sy * w + sx;
-                let bg = Color(layer.buf_ref()[idx]);
-                let a = (alpha * ca as f32) as u32;
-                let inv = 255 - a;
-                let r = (255 * a + bg.r() as u32 * inv) / 255;
-                let g = (255 * a + bg.g() as u32 * inv) / 255;
-                let b = (255 * a + bg.b() as u32 * inv) / 255;
-                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                if sx >= w { continue; }
+                let idx = dst_row + sx;
+                if pre_a == 255 {
+                    layer.buf_mut()[idx] = 0xFF_FFFFFF;
+                } else {
+                    let inv = 255 - pre_a;
+                    let bg = Color(layer.buf_ref()[idx]);
+                    let r = (255 * pre_a + bg.r() as u32 * inv) / 255;
+                    let g = (255 * pre_a + bg.g() as u32 * inv) / 255;
+                    let b = (255 * pre_a + bg.b() as u32 * inv) / 255;
+                    layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                }
             }
         }
 
@@ -961,14 +978,60 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
-                shift_x: f32, pointer_size: f32, hud_enabled: bool) {
+                shift_x: f32, pointer_size: f32, hud_enabled: bool,
+                bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engine, warp_win_id,
                  settings_engine, settings_win_id, wallpaper, cached_taskbar,
                  cached_taskbar_strip, taskbar_dirty,
-                 add_progress, remove_progress, shift_x, hud_enabled);
+                 add_progress, remove_progress, shift_x, hud_enabled,
+                 bg_cache, bg_cache_valid);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
+}
+
+static mut TB_BTN_CACHE: [Option<(usize, Vec<u32>)>; 4] = [None, None, None, None];
+
+fn get_or_render_tb_btn(size: usize, ca: u32) -> &'static [u32] {
+    let slot_idx = match ca {
+        255 => 0,
+        100 => 1,
+        128 => 2,
+        _ => 3,
+    };
+    unsafe {
+        if let Some((cached_size, ref pixels)) = TB_BTN_CACHE[slot_idx] {
+            if cached_size == size {
+                return pixels;
+            }
+        }
+        let mut pixels = alloc::vec![0u32; size * size];
+        let r_f = size as f32 / 2.0;
+        for py in 0..size {
+            for px in 0..size {
+                let dx = px as f32 + 0.5 - r_f;
+                let dy = py as f32 + 0.5 - r_f;
+                let dist_sq = dx * dx + dy * dy;
+                let alpha = if dist_sq < (r_f - 1.0) * (r_f - 1.0) {
+                    1.0f32
+                } else if dist_sq > (r_f + 0.5) * (r_f + 0.5) {
+                    0.0
+                } else {
+                    let dist = libm::sqrtf(dist_sq);
+                    (r_f + 0.5 - dist).clamp(0.0, 1.0)
+                };
+                if alpha <= 0.0 { continue; }
+                let a = (alpha * ca as f32) as u32;
+                let inv = 255 - a;
+                let r = (255 * a) / 255;
+                let g = (255 * a) / 255;
+                let b = (255 * a) / 255;
+                pixels[py * size + px] = 0xFF00_0000 | (r << 16) | (g << 8) | b | (inv << 24);
+            }
+        }
+        TB_BTN_CACHE[slot_idx] = Some((size, pixels));
+        TB_BTN_CACHE[slot_idx].as_ref().unwrap().1.as_slice()
+    }
 }
 
 fn ease_out_back(t: f32) -> f32 {

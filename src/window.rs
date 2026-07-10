@@ -36,6 +36,8 @@ pub struct Window {
     pub maximized: bool,
     pub minimized: bool,
     pub scroll_y: i32,
+    prev_x: i32,
+    prev_y: i32,
     save_x: i32,
     save_y: i32,
     save_w: usize,
@@ -65,6 +67,7 @@ impl Window {
             x, y, w, h, z,
             visible: true, focused: false, maximized: false, minimized: false,
             scroll_y: 0,
+            prev_x: x, prev_y: y,
             save_x: x, save_y: y, save_w: w, save_h: h,
             dragging: false, resizing: false,
             drag_ox: 0, drag_oy: 0,
@@ -376,8 +379,13 @@ impl WindowManager {
     pub fn on_mouse_drag(&mut self, px: i32, py: i32) {
         for w in &mut self.windows {
             if w.dragging {
+                let old_x = w.x;
+                let old_y = w.y;
                 w.x = px - w.drag_ox;
                 w.y = py - w.drag_oy;
+                if w.x != old_x || w.y != old_y {
+                    w.shadow_dirty = true;
+                }
             }
             if w.resizing {
                 let dw = px - w.resize_sx;
@@ -480,11 +488,25 @@ impl WindowManager {
                         .find(|(wid2, _)| *wid2 == win_id)
                     {
                         if let Some(ref cache) = entry.1 {
+                            let old_sx = (self.windows[idx].prev_x - SHADOW_PAD).max(0) as usize;
+                            let old_sy = (self.windows[idx].prev_y - SHADOW_PAD).max(0) as usize;
+                            let new_sx = (self.windows[idx].x - SHADOW_PAD).max(0) as usize;
+                            let new_sy = (self.windows[idx].y - SHADOW_PAD).max(0) as usize;
                             let shadow_layer =
                                 self.windows[idx].shadow_layer.as_mut().unwrap();
                             let slw = shadow_layer.width();
                             let slh = shadow_layer.height();
-                            shadow_layer.buf_mut()[..slw * slh].fill(Color::TRANSPARENT.0);
+                            let scx0 = old_sx.min(new_sx);
+                            let scy0 = old_sy.min(new_sy);
+                            let scx1 = (old_sx + cache.w).max(new_sx + cache.w).min(slw);
+                            let scy1 = (old_sy + cache.h).max(new_sy + cache.h).min(slh);
+                            if scx1 > scx0 && scy1 > scy0 {
+                                for row in scy0..scy1 {
+                                    let start = row * slw + scx0;
+                                    let end = row * slw + scx1;
+                                    shadow_layer.buf_mut()[start..end].fill(Color::TRANSPARENT.0);
+                                }
+                            }
                             let shadow_buf = shadow_layer.buf_mut();
                             for py in 0..cache.h {
                                 let alpha_row = py * cache.w;
@@ -534,7 +556,21 @@ impl WindowManager {
                 unsafe {
                     let lw = (*layer_ptr).width();
                     let lh = (*layer_ptr).height();
-                    (*layer_ptr).buf_mut()[..lw * lh].fill(Color::TRANSPARENT.0);
+                    let old_x = (*w_ptr).prev_x.max(0) as usize;
+                    let old_y = (*w_ptr).prev_y.max(0) as usize;
+                    let new_x = wx.max(0) as usize;
+                    let new_y = wy.max(0) as usize;
+                    let cx0 = old_x.min(new_x);
+                    let cy0 = old_y.min(new_y);
+                    let cx1 = (old_x + ww).max(new_x + ww).min(lw);
+                    let cy1 = (old_y + wh).max(new_y + wh).min(lh);
+                    if cx1 > cx0 && cy1 > cy0 {
+                        for row in cy0..cy1 {
+                            let start = row * lw + cx0;
+                            let end = row * lw + cx1;
+                            (*layer_ptr).buf_mut()[start..end].fill(Color::TRANSPARENT.0);
+                        }
+                    }
 
                     if is_max {
                         draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
@@ -575,6 +611,8 @@ impl WindowManager {
                         }
                     }
                 }
+                self.windows[idx].prev_x = self.windows[idx].x;
+                self.windows[idx].prev_y = self.windows[idx].y;
                 self.windows[idx].content_dirty = false;
             }
 
