@@ -172,6 +172,8 @@ const WALLPAPERS: &[&[u8]] = &[WALLPAPER_baram_PNG, WALLPAPER_HANUL_PNG, WALLPAP
 const ICON_NONAME_PNG: &[u8] = include_bytes!("app/icon/noname.png");
 const ICON_FILES_PNG: &[u8] = include_bytes!("app/icon/files.png");
 const ICON_MANAGER_PNG: &[u8] = include_bytes!("app/icon/manager.png");
+const ICON_NOTE_PNG: &[u8] = include_bytes!("app/icon/note.png");
+const ICON_SETTINGS_PNG: &[u8] = include_bytes!("app/icon/settings.png");
 
 struct IconBitmap {
     pixels: Vec<[u8; 4]>,
@@ -182,6 +184,8 @@ struct IconBitmap {
 static mut ICON_NONAME: Option<IconBitmap> = None;
 static mut ICON_FILES: Option<IconBitmap> = None;
 static mut ICON_MANAGER: Option<IconBitmap> = None;
+static mut ICON_NOTE: Option<IconBitmap> = None;
+static mut ICON_SETTINGS: Option<IconBitmap> = None;
 
 fn decode_icon(bytes: &[u8], size: usize) -> Option<IconBitmap> {
     let (header, pixels) = png_decoder::decode(bytes).ok()?;
@@ -212,6 +216,12 @@ fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
         } else if title.contains("File") || title.contains("Explorer") || title.contains("ファイル") {
             ensure_icon(&mut ICON_FILES, ICON_FILES_PNG, 40);
             ICON_FILES.as_ref()
+        } else if title.contains("Note") || title.contains("ノート") {
+            ensure_icon(&mut ICON_NOTE, ICON_NOTE_PNG, 40);
+            ICON_NOTE.as_ref()
+        } else if title.contains("Setting") || title.contains("設定") || title.contains("システム") {
+            ensure_icon(&mut ICON_SETTINGS, ICON_SETTINGS_PNG, 40);
+            ICON_SETTINGS.as_ref()
         } else {
             ensure_icon(&mut ICON_NONAME, ICON_NONAME_PNG, 40);
             ICON_NONAME.as_ref()
@@ -925,12 +935,37 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 let ix = bx as usize + icon_offset;
                 let iy = btn_y + icon_offset;
                 let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
+                let src_w = icon.w as f32;
+                let src_h = icon.h as f32;
+                let dst_w = icon_draw as f32;
+                let dst_h = icon_draw as f32;
                 for py in 0..icon_draw {
+                    let sy_f = (py as f32 + 0.5) * src_h / dst_h - 0.5;
+                    let sy_floor = libm::floorf(sy_f);
+                    let sy0 = sy_floor.max(0.0) as usize;
+                    let sy1 = (sy0 + 1).min(icon.h - 1);
+                    let fy = sy_f - sy_floor;
+                    let fy_inv = 1.0 - fy;
                     for px in 0..icon_draw {
-                        let src_x = px * icon.w / icon_draw;
-                        let src_y = py * icon.h / icon_draw;
-                        let src = icon.pixels[src_y * icon.w + src_x];
-                        let a = (src[3] as u32 * icon_alpha / 255) as u32;
+                        let sx_f = (px as f32 + 0.5) * src_w / dst_w - 0.5;
+                        let sx_floor = libm::floorf(sx_f);
+                        let sx0 = sx_floor.max(0.0) as usize;
+                        let sx1 = (sx0 + 1).min(icon.w - 1);
+                        let fx = sx_f - sx_floor;
+                        let fx_inv = 1.0 - fx;
+                        let p00 = &icon.pixels[sy0 * icon.w + sx0];
+                        let p10 = &icon.pixels[sy0 * icon.w + sx1];
+                        let p01 = &icon.pixels[sy1 * icon.w + sx0];
+                        let p11 = &icon.pixels[sy1 * icon.w + sx1];
+                        let r = ((p00[0] as f32 * fx_inv + p10[0] as f32 * fx) * fy_inv
+                            + (p01[0] as f32 * fx_inv + p11[0] as f32 * fx) * fy) as u32;
+                        let g = ((p00[1] as f32 * fx_inv + p10[1] as f32 * fx) * fy_inv
+                            + (p01[1] as f32 * fx_inv + p11[1] as f32 * fx) * fy) as u32;
+                        let b = ((p00[2] as f32 * fx_inv + p10[2] as f32 * fx) * fy_inv
+                            + (p01[2] as f32 * fx_inv + p11[2] as f32 * fx) * fy) as u32;
+                        let a = (((p00[3] as f32 * fx_inv + p10[3] as f32 * fx) * fy_inv
+                            + (p01[3] as f32 * fx_inv + p11[3] as f32 * fx) * fy) as u32
+                            * icon_alpha / 255) as u32;
                         if a == 0 { continue; }
                         let sx = ix + px;
                         let sy = iy + py;
@@ -938,10 +973,10 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                         let idx = sy * w + sx;
                         let bg = Color(layer.buf_ref()[idx]);
                         let inv = 255 - a;
-                        let r = (src[0] as u32 * a + bg.r() as u32 * inv) / 255;
-                        let g = (src[1] as u32 * a + bg.g() as u32 * inv) / 255;
-                        let b = (src[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                        layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                        let out_r = (r * a + bg.r() as u32 * inv) / 255;
+                        let out_g = (g * a + bg.g() as u32 * inv) / 255;
+                        let out_b = (b * a + bg.b() as u32 * inv) / 255;
+                        layer.buf_mut()[idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
                     }
                 }
             }
