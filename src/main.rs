@@ -905,16 +905,12 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 let sx = bx as usize + offset + px;
                 if sx >= w { continue; }
                 let idx = dst_row + sx;
-                if pre_a == 255 {
-                    layer.buf_mut()[idx] = 0xFF_FFFFFF;
-                } else {
-                    let inv = 255 - pre_a;
-                    let bg = Color(layer.buf_ref()[idx]);
-                    let r = (255 * pre_a + bg.r() as u32 * inv) / 255;
-                    let g = (255 * pre_a + bg.g() as u32 * inv) / 255;
-                    let b = (255 * pre_a + bg.b() as u32 * inv) / 255;
-                    layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
-                }
+                let inv = 255 - pre_a;
+                let bg = Color(layer.buf_ref()[idx]);
+                let r = (255 * pre_a + bg.r() as u32 * inv) / 255;
+                let g = (255 * pre_a + bg.g() as u32 * inv) / 255;
+                let b = (255 * pre_a + bg.b() as u32 * inv) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
         }
 
@@ -1022,11 +1018,7 @@ fn get_or_render_tb_btn(size: usize, ca: u32) -> &'static [u32] {
                 };
                 if alpha <= 0.0 { continue; }
                 let a = (alpha * ca as f32) as u32;
-                let inv = 255 - a;
-                let r = (255 * a) / 255;
-                let g = (255 * a) / 255;
-                let b = (255 * a) / 255;
-                pixels[py * size + px] = 0xFF00_0000 | (r << 16) | (g << 8) | b | (inv << 24);
+                pixels[py * size + px] = (a << 24) | 0x00FF_FFFF;
             }
         }
         TB_BTN_CACHE[slot_idx] = Some((size, pixels));
