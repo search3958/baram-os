@@ -164,6 +164,8 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
 const APP_DEMO: &str = include_str!("app/demo.u1");
 const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
 const WARP_SETTINGS: &str = include_str!("app/settings.warp");
+const WARP_BLANK: &str = include_str!("app/blank.warp");
+const APP_INDEX_YAML: &str = include_str!("app/index.yaml");
 
 const WALLPAPER_baram_PNG: &[u8] = include_bytes!("data/wallpaper/baram.png");
 const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
@@ -229,6 +231,102 @@ fn icon_for_title(title: &str) -> Option<&'static IconBitmap> {
     }
 }
 
+struct AppEntry {
+    name: alloc::string::String,
+    app_type: alloc::string::String,
+    title: alloc::string::String,
+}
+
+fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
+    let mut autostart = Vec::new();
+    let mut apps = Vec::new();
+    let mut in_autostart = false;
+    let mut in_apps = false;
+    let mut current_name = alloc::string::String::new();
+    let mut current_type = alloc::string::String::from("warp-2");
+    let mut current_title = alloc::string::String::new();
+    for line in yaml.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        if trimmed == "autostart:" {
+            in_autostart = true;
+            in_apps = false;
+            continue;
+        }
+        if trimmed == "apps:" {
+            in_apps = true;
+            in_autostart = false;
+            if !current_name.is_empty() {
+                let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+                apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title });
+                current_name.clear();
+                current_type = alloc::string::String::from("warp-2");
+                current_title.clear();
+            }
+            continue;
+        }
+        if in_autostart {
+            if trimmed.starts_with("- ") {
+                let name = alloc::string::String::from(trimmed[2..].trim());
+                if !name.is_empty() {
+                    autostart.push(name);
+                }
+            } else if !trimmed.starts_with(' ') && !trimmed.starts_with('\t') {
+                in_autostart = false;
+            }
+        }
+        if in_apps {
+            if !line.starts_with(' ') && !line.starts_with('\t') {
+                if !current_name.is_empty() {
+                    let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title });
+                    current_name.clear();
+                    current_type = alloc::string::String::from("warp-2");
+                    current_title.clear();
+                }
+                in_apps = false;
+                continue;
+            }
+            if trimmed.ends_with(':') && !trimmed.contains("icon") && !trimmed.contains("type") && !trimmed.contains("title") {
+                if !current_name.is_empty() {
+                    let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title });
+                }
+                current_name = alloc::string::String::from(trimmed.trim_end_matches(':'));
+                current_type = alloc::string::String::from("warp-2");
+                current_title.clear();
+            } else if let Some(v) = trimmed.strip_prefix("type:") {
+                current_type = alloc::string::String::from(v.trim().trim_matches('"'));
+            } else if let Some(v) = trimmed.strip_prefix("title:") {
+                current_title = alloc::string::String::from(v.trim().trim_matches('"'));
+            }
+        }
+    }
+    if in_apps && !current_name.is_empty() {
+        let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+        apps.push(AppEntry { name: current_name, app_type: current_type, title });
+    }
+    (autostart, apps)
+}
+
+fn get_warp_source(name: &str) -> &'static str {
+    match name {
+        "settings.warp" => WARP_SETTINGS,
+        "warpdemo.warp" => WARP_DEMO,
+        "blank.warp" => WARP_BLANK,
+        _ => WARP_BLANK,
+    }
+}
+
+fn get_uiscript_source(name: &str) -> &'static str {
+    match name {
+        "demo.u1" => APP_DEMO,
+        _ => APP_DEMO,
+    }
+}
+
 fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: f32) {
     let blur_r = 12i32;
     let pad = blur_r as i32;
@@ -272,21 +370,32 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    
-    wm.add("システム情報", 40, 60, 320, 220);
-    wm.add("Task Manager", 400, 80, 340, 260);
+    let (autostart_list, app_entries) = parse_index_yaml(APP_INDEX_YAML);
+    let mut warp_engines: alloc::vec::Vec<(window::WinId, warp::WarpEngine)> = alloc::vec::Vec::new();
+    let mut ui_win_id: Option<window::WinId> = None;
+    let mut ui_commands: alloc::vec::Vec<uiscript::Command> = alloc::vec::Vec::new();
 
-    
-    let ui_win_id = wm.add("UI Script Demo", 600, 100, 400, 350);
-    let ui_commands = uiscript::parse(APP_DEMO);
-
-    let warp_win_id = wm.add("Warp Demo", 100, 80, 420, 600);
-    let mut warp_engine = warp::WarpEngine::new(WARP_DEMO);
-    warp_engine.update(400, 560);
-
-    let settings_win_id = wm.add("Settings", 550, 150, 380, 450);
-    let mut settings_engine = warp::WarpEngine::new(WARP_SETTINGS);
-    settings_engine.update(360, 410);
+    let mut auto_idx = 0i32;
+    for autostart_name in &autostart_list {
+        if let Some(entry) = app_entries.iter().find(|e| &e.name == autostart_name) {
+            let x = 60 + (auto_idx * 120) % 500;
+            let y = 60 + (auto_idx * 80) % 400;
+            let w = 400;
+            let h = 450;
+            let win_id = wm.add(&entry.title, x, y, w, h);
+            if entry.app_type.starts_with("warp") {
+                let source = get_warp_source(&entry.name);
+                let mut engine = warp::WarpEngine::new(source);
+                engine.update((w as i32) - 20, (h as i32) - 50);
+                warp_engines.push((win_id, engine));
+            } else if entry.app_type.starts_with("uiscript") {
+                let source = get_uiscript_source(&entry.name);
+                ui_commands = uiscript::parse(source);
+                ui_win_id = Some(win_id);
+            }
+            auto_idx += 1;
+        }
+    }
 
     let mut last_keys: Vec<&'static str> = Vec::with_capacity(8);
     let mut mouse_ev_count: u32 = 0;
@@ -360,14 +469,11 @@ fn main() -> Status {
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
-    let mut prev_warp_w: usize = 420;
-    let mut prev_warp_h: usize = 600;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
-                 &ui_commands, Some(ui_win_id),
-                 &mut warp_engine, warp_win_id,
-                 &mut settings_engine, settings_win_id,
+                 &ui_commands, ui_win_id,
+                 &mut warp_engines,
                  cached_wallpaper.as_deref(),
                  &mut cached_taskbar, &mut cached_taskbar_strip, true,
                  -1.0, -1.0, 0.0, display_state.hud_enabled,
@@ -398,11 +504,12 @@ fn main() -> Status {
                 if let Some(c) = ev.printable {
                     match c {
                         b'n' | b'N' => {
-                            let titles = ["Notes", "Terminal", "Files", "Settings", "Explorer"];
-                            let idx = (new_window_idx as usize) % titles.len();
                             let x = 60 + ((new_window_idx as i32 * 37) % 300);
                             let y = 80 + ((new_window_idx as i32 * 23) % 200);
-                            wm.add(titles[idx], x, y, 300, 200);
+                            let new_id = wm.add("New App", x, y, 400, 450);
+                            let mut engine = warp::WarpEngine::new(WARP_BLANK);
+                            engine.update(380, 410);
+                            warp_engines.push((new_id, engine));
                             tb_add_progress = 0.0;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
@@ -478,59 +585,53 @@ fn main() -> Status {
                             let after = wm.insertion_ids();
                             let _ = after;
                         }
-                        if wm.window_at(cx, cy) == Some(warp_win_id) {
-                            if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(warp_win_id) {
-                                let rel_x = cx - wx;
-                                let rel_y = cy - wy + scroll;
-                                warp_engine.click(rel_x, rel_y);
-                                let content_h = wh.saturating_sub(30);
-                                warp_engine.update(ww as i32, content_h as i32);
-                                wm.set_content_dirty(warp_win_id);
-                                scene_dirty = true;
-                            }
-                        }
-                        if wm.window_at(cx, cy) == Some(settings_win_id) {
-                            if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(settings_win_id) {
-                                let rel_x = cx - wx;
-                                let rel_y = cy - wy + scroll;
-                                settings_engine.click(rel_x, rel_y);
-                                let content_h = wh.saturating_sub(30);
-                                settings_engine.update(ww as i32, content_h as i32);
-                                wm.set_content_dirty(settings_win_id);
-                                scene_dirty = true;
+                        if let Some(clicked_id) = wm.window_at(cx, cy) {
+                            for (wid, engine) in warp_engines.iter_mut() {
+                                if clicked_id == *wid {
+                                    if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
+                                        let rel_x = cx - wx;
+                                        let rel_y = cy - wy + scroll;
+                                        engine.click(rel_x, rel_y);
+                                        let content_h = wh.saturating_sub(30);
+                                        engine.update(ww as i32, content_h as i32);
+                                        wm.set_content_dirty(clicked_id);
+                                        scene_dirty = true;
 
-                                if let Some(cmd) = settings_engine.last_command.take() {
-                                    uri::execute(&cmd, &mut display_state);
-                                    if let Some(parsed) = uri::parse(&cmd) {
-                                        if parsed.action == "wallpaper" {
-                                            if uri::get_param(&parsed, "color").is_some() {
-                                                if let Some(color) = display_state.wallpaper_color {
-                                                    cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
-                                                }
-                                            } else {
-                                                if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
-                                                    cached_wallpaper = decode_wallpaper(bytes, screen.width(), screen.height());
-                                                } else {
-                                                    mouse::log_line_str("NO WALLPAPER BYTES");
+                                        if let Some(cmd) = engine.last_command.take() {
+                                            uri::execute(&cmd, &mut display_state);
+                                            if let Some(parsed) = uri::parse(&cmd) {
+                                                if parsed.action == "wallpaper" {
+                                                    if uri::get_param(&parsed, "color").is_some() {
+                                                        if let Some(color) = display_state.wallpaper_color {
+                                                            cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
+                                                        }
+                                                    } else {
+                                                        if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
+                                                            cached_wallpaper = decode_wallpaper(bytes, screen.width(), screen.height());
+                                                        } else {
+                                                            mouse::log_line_str("NO WALLPAPER BYTES");
+                                                        }
+                                                    }
+                                                    cached_taskbar = None;
+                                                    cached_taskbar_strip = None;
+                                                    bg_cache = None;
+                                                    prev_wallpaper_idx = display_state.wallpaper_index;
+                                                    scene_dirty = true;
+                                                } else if parsed.action == "pointer" || parsed.action == "hud" {
+                                                    scene_dirty = true;
                                                 }
                                             }
-                                            cached_taskbar = None;
-                                            cached_taskbar_strip = None;
-                                            bg_cache = None;
-                                            prev_wallpaper_idx = display_state.wallpaper_index;
-                                            scene_dirty = true;
-                                        } else if parsed.action == "pointer" || parsed.action == "hud" {
-                                            scene_dirty = true;
+                                        }
+
+                                        if let Some(enabled_str) = engine.get_state_value("--hudEnabled") {
+                                            let new_enabled = enabled_str == "true";
+                                            if display_state.hud_enabled != new_enabled {
+                                                display_state.hud_enabled = new_enabled;
+                                                scene_dirty = true;
+                                            }
                                         }
                                     }
-                                }
-
-                                if let Some(enabled_str) = settings_engine.get_state_value("--hudEnabled") {
-                                    let new_enabled = enabled_str == "true";
-                                    if display_state.hud_enabled != new_enabled {
-                                        display_state.hud_enabled = new_enabled;
-                                        scene_dirty = true;
-                                    }
+                                    break;
                                 }
                             }
                         }
@@ -552,38 +653,30 @@ fn main() -> Status {
         }
 
         {
-            let prev_warp_hover = warp_engine.hover_idx;
-            let prev_settings_hover = settings_engine.hover_idx;
             let mut hovered_any = false;
-            if wm.window_at(cursor_x, cursor_y) == Some(warp_win_id) {
-                if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(warp_win_id) {
-                    let rel_x = cursor_x - wx;
-                    let rel_y = cursor_y - wy + scroll;
-                    warp_engine.set_hover(rel_x, rel_y);
-                    hovered_any = true;
-                }
-            }
-            if wm.window_at(cursor_x, cursor_y) == Some(settings_win_id) {
-                if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(settings_win_id) {
-                    let rel_x = cursor_x - wx;
-                    let rel_y = cursor_y - wy + scroll;
-                    settings_engine.set_hover(rel_x, rel_y);
-                    hovered_any = true;
+            if let Some(hover_id) = wm.window_at(cursor_x, cursor_y) {
+                for (wid, engine) in warp_engines.iter_mut() {
+                    if hover_id == *wid {
+                        if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
+                            let rel_x = cursor_x - wx;
+                            let rel_y = cursor_y - wy + scroll;
+                            let prev_hover = engine.hover_idx;
+                            engine.set_hover(rel_x, rel_y);
+                            if engine.hover_idx != prev_hover {
+                                wm.set_content_dirty(hover_id);
+                                scene_dirty = true;
+                                dirty = true;
+                            }
+                            hovered_any = true;
+                        }
+                        break;
+                    }
                 }
             }
             if !hovered_any {
-                warp_engine.clear_hover();
-                settings_engine.clear_hover();
-            }
-            if warp_engine.hover_idx != prev_warp_hover {
-                wm.set_content_dirty(warp_win_id);
-                scene_dirty = true;
-                dirty = true;
-            }
-            if settings_engine.hover_idx != prev_settings_hover {
-                wm.set_content_dirty(settings_win_id);
-                scene_dirty = true;
-                dirty = true;
+                for (_, engine) in warp_engines.iter_mut() {
+                    engine.clear_hover();
+                }
             }
         }
 
@@ -604,21 +697,11 @@ fn main() -> Status {
             dirty = true;
         }
 
-        if let Some((_, _, ww, wh, _)) = wm.get_window_rect(warp_win_id) {
-            if ww != prev_warp_w || wh != prev_warp_h {
-                prev_warp_w = ww;
-                prev_warp_h = wh;
+        for (wid, engine) in warp_engines.iter_mut() {
+            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                 let content_h = wh.saturating_sub(30);
-                warp_engine.update(ww as i32, content_h as i32);
-                wm.set_content_dirty(warp_win_id);
-                scene_dirty = true;
-                dirty = true;
+                engine.update(ww as i32, content_h as i32);
             }
-        }
-
-        if let Some((_, _, ww, wh, _)) = wm.get_window_rect(settings_win_id) {
-            let content_h = wh.saturating_sub(30);
-            settings_engine.update(ww as i32, content_h as i32);
         }
 
         let anim_speed = 10.0f32;
@@ -663,9 +746,8 @@ fn main() -> Status {
                     && tb_shift_x.abs() <= 0.5;
                 render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                              fps, mouse_mode_label,
-                             &ui_commands, Some(ui_win_id),
-                             &mut warp_engine, warp_win_id,
-                             &mut settings_engine, settings_win_id,
+                             &ui_commands, ui_win_id,
+                             &mut warp_engines,
                              cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
                              &mut cached_taskbar_strip, taskbar_dirty,
@@ -758,8 +840,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
                 fps: u32, _mouse_mode: &str,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
-                settings_engine: &mut warp::WarpEngine, settings_win_id: window::WinId,
+                warp_engines: &mut alloc::vec::Vec<(window::WinId, warp::WarpEngine)>,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
@@ -866,8 +947,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
-        Some((warp_win_id, warp_engine)),
-        Some((settings_win_id, settings_engine)));
+        warp_engines);
 
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
@@ -1006,8 +1086,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
                 fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
                 ui_commands: &[uiscript::Command], ui_win_id: Option<window::WinId>,
-                warp_engine: &mut warp::WarpEngine, warp_win_id: window::WinId,
-                settings_engine: &mut warp::WarpEngine, settings_win_id: window::WinId,
+                warp_engines: &mut alloc::vec::Vec<(window::WinId, warp::WarpEngine)>,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
@@ -1016,8 +1095,7 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 shift_x: f32, pointer_size: f32, hud_enabled: bool,
                 bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
-                 ui_commands, ui_win_id, warp_engine, warp_win_id,
-                 settings_engine, settings_win_id, wallpaper, cached_taskbar,
+                 ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
                  cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
                  bg_cache, bg_cache_valid);

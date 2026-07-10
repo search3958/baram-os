@@ -1,0 +1,24 @@
+# 自動起動する対象リスト
+autostart:
+  - settings.warp
+  - warpdemo.warp
+  - demo.u1
+
+# 各アプリの詳細設定
+apps:
+  settings.warp:
+    icon: settings.png
+    type: warp-2
+    title: Settings
+  demo.u1:
+    icon: null
+    type: uiscript-1
+    title: UI Script Demo
+  warpdemo.warp:
+    icon: null
+    type: warp-2
+    title: Warp Demo
+  blank.warp:
+    icon: null
+    type: warp-2
+    title: New App

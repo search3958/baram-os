@@ -54,6 +54,8 @@ pub struct Window {
     pub shadow_layer: Option<LayerSystem>,
     pub content_dirty: bool,
     pub shadow_dirty: bool,
+    pub open_progress: f32,
+    pub open_animating: bool,
 }
 
 impl Window {
@@ -76,6 +78,8 @@ impl Window {
             shadow_layer: Some(LayerSystem::new_transparent(w + SHADOW_PAD as usize * 2, h + SHADOW_PAD as usize * 2)),
             content_dirty: true,
             shadow_dirty: true,
+            open_progress: 0.0,
+            open_animating: true,
         }
     }
 
@@ -409,8 +413,7 @@ impl WindowManager {
         &mut self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
-        warp_win: Option<(WinId, &mut super::warp::WarpEngine)>,
-        settings_win: Option<(WinId, &mut super::warp::WarpEngine)>,
+        warp_engines: &mut alloc::vec::Vec<(WinId, super::warp::WarpEngine)>,
     ) {
         if self.windows.is_empty() {
             return;
@@ -478,6 +481,14 @@ impl WindowManager {
             let is_max = self.windows[idx].maximized;
             let shadow_dirty = self.windows[idx].shadow_dirty;
             let content_dirty = self.windows[idx].content_dirty;
+            let open_progress = self.windows[idx].open_progress;
+            let open_animating = self.windows[idx].open_animating;
+            if open_animating {
+                self.windows[idx].open_progress = (open_progress + 0.04).min(1.0);
+                if self.windows[idx].open_progress >= 1.0 {
+                    self.windows[idx].open_animating = false;
+                }
+            }
 
             // ===== シャドウ描画 =====
             if !is_max {
@@ -594,20 +605,14 @@ impl WindowManager {
                             (*layer_ptr).pop_clip();
                         }
                     }
-                    if let Some((wid, ref engine)) = warp_win {
-                        if win_id == wid {
+                    for i in 0..warp_engines.len() {
+                        if win_id == warp_engines[i].0 {
+                            let engine = &mut warp_engines[i].1;
                             (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
                             (*layer_ptr).pop_clip();
-                        }
-                    }
-                    if let Some((wid, ref engine)) = settings_win {
-                        if win_id == wid {
-                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
-                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
-                            engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
-                            (*layer_ptr).pop_clip();
+                            break;
                         }
                     }
                 }
