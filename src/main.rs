@@ -446,8 +446,6 @@ fn main() -> Status {
                         }
                     } else {
                         let win_under = wm.window_at(cx, cy);
-                        let is_warp_or_settings = win_under == Some(warp_win_id)
-                            || win_under == Some(settings_win_id);
 
                         if let Some(id) = win_under {
                             wm.focus(id);
@@ -459,7 +457,7 @@ fn main() -> Status {
                                 _ => {
                                     if wm.resize_hit_at(id, cx, cy) {
                                         wm.start_resize_at(id, cx, cy);
-                                    } else if !is_warp_or_settings {
+                                    } else {
                                         wm.start_drag_at(id, cx, cy);
                                     }
                                 }
