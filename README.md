@@ -1,13 +1,38 @@
 # BaramOS
 
-UEFI-based ARM64 operating system with mouse cursor, keyboard input, and window management.
+UEFI を基盤とした ARM64 向けオペレーティングシステムで、マウスカーソル操作、キーボード入力、ウィンドウ管理機能などGUIと独自のURI形式によるコマンドを備えています。
 
-## Open Source Credits
+## オープンソース利用ライブラリ
 
-| Project | License | Usage |
-|---------|---------|-------|
-| [uefi-rs](https://github.com/rust-embedded-community/uefi-rs) | MIT OR Apache-2.0 | UEFI protocol bindings, allocator, panic handler |
-| [uefi-raw](https://github.com/rust-embedded-community/uefi-rs) | MIT OR Apache-2.0 | Raw UEFI type definitions |
-| [libm](https://github.com/rust-lang/libm) | MIT OR Apache-2.0 | Floating-point math for `no_std` (`aarch64-unknown-uefi`) |
-| [stb_truetype_rust](https://github.com/StbRust/stb_truetype_rust) | Unlicense | TrueType font parsing and rasterization |
-| [kurbo](https://github.com/linebender/kurbo) | MIT OR Apache-2.0 | 2D curve library (Bezier paths, stroke offsets) |
+### uefi-rs
+- **ライセンス**：MIT ライセンス または Apache-2.0 ライセンス
+- **用途**：UEFI プロトコルとの連携、メモリアロケータ、パニック発生時の処理機能を提供します。
+
+### uefi-raw
+- **ライセンス**：MIT ライセンス または Apache-2.0 ライセンス
+- **用途**：UEFI の基本的な型定義を生の形式で提供します。
+
+### libm
+- **ライセンス**：MIT ライセンス または Apache-2.0 ライセンス
+- **用途**：`aarch64-unknown-uefi` 環境向けに、標準ライブラリ非依存（`no_std`）で動作する浮動小数点演算機能を提供します。
+- ※ このリポジトリは 2025年4月28日にアーカイブ（読み取り専用）となっています。
+
+### stb_truetype_rust
+- **ライセンス**：Unlicense
+- **用途**：TrueType フォントの解析と、画面上への文字描画処理を行います。Rust 版に移植されたライブラリです。
+
+### kurbo
+- **ライセンス**：MIT ライセンス または Apache-2.0 ライセンス
+- **用途**：2次元曲線を扱うライブラリで、ベジエ曲線の計算、線の太さ調整、SVG 形式のパスデータの解析などに利用しています。
+
+### png-decoder
+- **ライセンス**：MIT ライセンス、Apache-2.0 ライセンス または Zlib ライセンス
+- **用途**：Rust のみで記述され、標準ライブラリ非依存（`no_std`）環境でも動作する PNG 画像のデコード機能を提供します。
+
+### crc32fast
+- **ライセンス**：MIT ライセンス または Apache-2.0 ライセンス
+- **用途**：SIMD 命令を活用した高速な CRC32 チェックサム計算を行い、データの整合性確認に使用します。
+
+### miniz_oxide
+- **ライセンス**：MIT ライセンス、Apache-2.0 ライセンス または Zlib ライセンス
+- **用途**：DEFLATE 形式で圧縮されたデータの展開処理を行います。

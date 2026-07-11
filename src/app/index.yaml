@@ -1,8 +1,6 @@
 # 自動起動する対象リスト
 autostart:
   - settings.warp
-  - warpdemo.warp
-  - demo.u1
 
 # 各アプリの詳細設定
 apps:

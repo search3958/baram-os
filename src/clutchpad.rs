@@ -548,8 +548,29 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_str("FPS");
 
     if hud_enabled {
-        layer.put_str_hud(16, tb_y + 6, "Baram OS (b2)", Color::MUTED);
-        layer.put_str_hud(16, tb_y + 26, fb.as_str(), Color::MUTED);
+        let hud_text1 = "Baram OS (b2)";
+        let mut hw1 = 0usize;
+        for ch in hud_text1.chars() {
+            if crate::ttf_font_hud::is_available() {
+                let g = crate::ttf_font_hud::glyph(ch);
+                hw1 += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
+            } else {
+                hw1 += 8;
+            }
+        }
+        layer.put_str_hud(w - hw1 - 16, tb_y + 6, hud_text1, Color::MUTED);
+
+        let s2 = fb.as_str();
+        let mut hw2 = 0usize;
+        for ch in s2.chars() {
+            if crate::ttf_font_hud::is_available() {
+                let g = crate::ttf_font_hud::glyph(ch);
+                hw2 += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
+            } else {
+                hw2 += 8;
+            }
+        }
+        layer.put_str_hud(w - hw2 - 16, tb_y + 26, s2, Color::MUTED);
     }
 
     let mut strip = alloc::vec![0u32; w * TASKBAR_H];
