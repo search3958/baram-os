@@ -37,6 +37,7 @@ const SCROLL_SPEED: i32 = 30;
 
 const CURSOR_SVG: &str = include_str!("data/mouse.svg");
 const CURSOR_SVG_SIZE: &str = include_str!("data/mouse_size.svg");
+const APPS_SVG: &str = include_str!("data/apps.svg");
 const CURSOR_BOX_W: usize = 15;
 const CURSOR_BOX_H: usize = 19;
 const CURSOR_BOX_SIZE_W: usize = 19;
@@ -469,6 +470,11 @@ fn main() -> Status {
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
+    let mut show_app_launcher: bool = false;
+    let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+    for entry in &app_entries {
+        app_list.push(entry.title.clone());
+    }
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
@@ -477,7 +483,8 @@ fn main() -> Status {
                  cached_wallpaper.as_deref(),
                  &mut cached_taskbar, &mut cached_taskbar_strip, true,
                  -1.0, -1.0, 0.0, display_state.hud_enabled,
-                 &mut bg_cache, false);
+                 &mut bg_cache, false,
+                 show_app_launcher, &app_list);
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
@@ -545,24 +552,64 @@ fn main() -> Status {
                     mouse_down = true;
                     let sh = screen.height();
                     if cy >= sh as i32 - TASKBAR_H as i32 {
-                        let ids = wm.insertion_ids();
-                        let count = ids.len();
-                        let btn_d = 40i32;
-                        let btn_gap = 12i32;
-                        let total_w = count as i32 * (btn_d + btn_gap) - btn_gap;
-                        let mut bx = ((screen.width() as i32 - total_w) / 2).max(0);
-                        let btn_y = (sh as usize).saturating_sub(TASKBAR_H) + (TASKBAR_H - 40) / 2;
-                        for id in &ids {
-                            let dx = cx - bx - btn_d / 2;
-                            let dy = cy - btn_y as i32 - btn_d / 2;
-                            if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
-                                if wm.is_minimized(*id) {
-                                    wm.restore_minimized(*id);
+                        let apps_icon_x = 16i32;
+                        let apps_icon_size = 24i32;
+                        let apps_icon_y = (sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2) as i32;
+                        if cx >= apps_icon_x && cx < apps_icon_x + apps_icon_size
+                            && cy >= apps_icon_y && cy < apps_icon_y + apps_icon_size
+                        {
+                            show_app_launcher = !show_app_launcher;
+                            scene_dirty = true;
+                        } else if show_app_launcher {
+                            let launcher_w = 260i32;
+                            let launcher_h = (app_list.len() as i32 * 40 + 16).min(sh as i32 - 40);
+                            let launcher_x = 16i32;
+                            let launcher_y = (sh as i32 - TASKBAR_H as i32 - launcher_h - 8).max(0);
+                            if cx >= launcher_x && cx < launcher_x + launcher_w
+                                && cy >= launcher_y && cy < launcher_y + launcher_h
+                            {
+                                let rel_y = cy - launcher_y - 8;
+                                if rel_y >= 0 {
+                                    let item_idx = rel_y as usize / 40;
+                                    if item_idx < app_list.len() {
+                                        let app_title = app_list[item_idx].clone();
+                                        let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                                        let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                                        let new_id = wm.add(&app_title, nx, ny, 400, 450);
+                                        let mut engine = warp::WarpEngine::new(WARP_BLANK);
+                                        engine.update(380, 410);
+                                        warp_engines.push((new_id, engine));
+                                        tb_add_progress = 0.0;
+                                        tb_shift_x = 26.0;
+                                        new_window_idx = new_window_idx.wrapping_add(1);
+                                        show_app_launcher = false;
+                                        scene_dirty = true;
+                                    }
                                 }
-                                wm.focus(*id);
-                                break;
+                            } else {
+                                show_app_launcher = false;
+                                scene_dirty = true;
                             }
-                            bx += btn_d + btn_gap;
+                        } else {
+                            let ids = wm.insertion_ids();
+                            let count = ids.len();
+                            let btn_d = 40i32;
+                            let btn_gap = 12i32;
+                            let total_w = count as i32 * (btn_d + btn_gap) - btn_gap;
+                            let mut bx = ((screen.width() as i32 - total_w) / 2).max(0);
+                            let btn_y = (sh as usize).saturating_sub(TASKBAR_H) + (TASKBAR_H - 40) / 2;
+                            for id in &ids {
+                                let dx = cx - bx - btn_d / 2;
+                                let dy = cy - btn_y as i32 - btn_d / 2;
+                                if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
+                                    if wm.is_minimized(*id) {
+                                        wm.restore_minimized(*id);
+                                    }
+                                    wm.focus(*id);
+                                    break;
+                                }
+                                bx += btn_d + btn_gap;
+                            }
                         }
                     } else {
                         let win_under = wm.window_at(cx, cy);
@@ -753,7 +800,8 @@ fn main() -> Status {
                              &mut cached_taskbar_strip, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x, display_state.hud_enabled,
-                             &mut bg_cache, bg_valid);
+                             &mut bg_cache, bg_valid,
+                             show_app_launcher, &app_list);
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
 
@@ -850,7 +898,9 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 shift_x: f32,
                 hud_enabled: bool,
                 bg_cache: &mut Option<Vec<u32>>,
-                bg_cache_valid: bool) {
+                bg_cache_valid: bool,
+                show_app_launcher: bool,
+                app_list: &[alloc::string::String]) {
     let w = layer.width();
     let h = layer.height();
 
@@ -920,7 +970,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             }
         }
 
-        let tb_alpha = 120u32;
+        let tb_alpha = 170u32;
         let tb_inv = 255 - tb_alpha;
         let tb_color = Color::TASKBAR;
         for y in tb_y..h {
@@ -952,8 +1002,14 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
             layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
-            return;
         }
+        let apps_icon_size = 24usize;
+        let apps_icon_x = 16usize;
+        let apps_icon_y = tb_y + (TASKBAR_H - apps_icon_size) / 2;
+        svg::draw_svg_into(layer, APPS_SVG,
+            apps_icon_x as i32, apps_icon_y as i32,
+            apps_icon_size as f32, apps_icon_size as f32);
+        return;
     }
 
     let ids = wm.insertion_ids();
@@ -1080,6 +1136,30 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     let mut strip = alloc::vec![0u32; w * TASKBAR_H];
     strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
     *cached_taskbar_strip = Some(strip);
+
+    {
+        let apps_icon_size = 24usize;
+        let apps_icon_x = 16usize;
+        let apps_icon_y = tb_y + (TASKBAR_H - apps_icon_size) / 2;
+        svg::draw_svg_into(layer, APPS_SVG,
+            apps_icon_x as i32, apps_icon_y as i32,
+            apps_icon_size as f32, apps_icon_size as f32);
+    }
+
+    if show_app_launcher {
+        let launcher_w = 260usize;
+        let launcher_h = (app_list.len() as usize * 40 + 16).min(h - 40);
+        let launcher_x = 16usize;
+        let launcher_y = (h - TASKBAR_H - launcher_h - 8).max(0);
+        layer.fill_rounded_rect(launcher_x, launcher_y, launcher_w, launcher_h, 12, Color::rgb(40, 40, 40));
+        layer.rect_outline(launcher_x, launcher_y, launcher_w, launcher_h, Color::rgb(60, 60, 60));
+        for (i, name) in app_list.iter().enumerate() {
+            let item_y = launcher_y + 8 + i * 40;
+            if item_y + 32 > launcher_y + launcher_h { break; }
+            layer.fill_rounded_rect(launcher_x + 8, item_y, launcher_w - 16, 32, 6, Color::rgb(55, 55, 55));
+            layer.put_str(launcher_x + 16, item_y + 8, name, Color::rgb(220, 220, 220));
+        }
+    }
 }
 
 fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
@@ -1093,12 +1173,15 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32, pointer_size: f32, hud_enabled: bool,
-                bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool) {
+                bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool,
+                show_app_launcher: bool,
+                app_list: &[alloc::string::String]) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
                  cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
-                 bg_cache, bg_cache_valid);
+                 bg_cache, bg_cache_valid,
+                 show_app_launcher, app_list);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
 }

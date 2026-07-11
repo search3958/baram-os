@@ -34,7 +34,7 @@ impl Color {
     pub const WARN:    Color = Color::rgb(0xD8, 0x3B, 0x01);
     pub const CURSOR:  Color = Color::rgb(0x1A, 0x1A, 0x1A);
     pub const BORDER:  Color = Color::rgb(0xD0, 0xD0, 0xD0);
-    pub const TASKBAR: Color = Color::rgb(0xF0, 0xF0, 0xF0);
+    pub const TASKBAR: Color = Color::rgb(0xFF, 0xFF, 0xFF);
     pub const WIN_BG:  Color = Color::rgb(0xFF, 0xFF, 0xFF);
     pub const WIN_INACTIVE: Color = Color::rgb(0xE8, 0xE8, 0xE8);
     pub const CARD_BG: Color = Color::rgb(0xF5, 0xF5, 0xF5);
