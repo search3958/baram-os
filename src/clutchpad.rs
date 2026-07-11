@@ -630,7 +630,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             let cx = grid_x + col * cell_w + icon_gap / 2;
             let cy = grid_y + row * cell_h;
 
-            layer.fill_rounded_rect(cx, cy, icon_size, icon_size, 14, Color::rgb(70, 70, 70));
+            layer.fill_circle(cx + icon_size / 2, cy + icon_size / 2, icon_size / 2, Color::PANEL);
 
             let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
             let icon_bytes = match icon_name {
@@ -661,10 +661,36 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 }
             }
 
-            let tw = name.len() * 8;
+            let char_w = 8usize;
+            let max_chars = icon_size / char_w;
+            let char_count = name.chars().count();
+            let display_name = if char_count > max_chars {
+                let truncated_len = max_chars.saturating_sub(3);
+                let mut s = alloc::string::String::with_capacity(max_chars * 4);
+                for ch in name.chars().take(truncated_len) {
+                    s.push(ch);
+                }
+                s.push_str("...");
+                s
+            } else {
+                name.clone()
+            };
+            let mut tw = 0usize;
+            for ch in display_name.chars() {
+                if crate::ttf_font::is_available() {
+                    let g = crate::ttf_font::glyph(ch);
+                    if g.w > 0 {
+                        tw += g.advance.max(0) as usize;
+                    } else {
+                        tw += char_w;
+                    }
+                } else {
+                    tw += char_w;
+                }
+            }
             let tx = cx + (icon_size.saturating_sub(tw)) / 2;
             let ty = cy + icon_size + 4;
-            layer.put_str(tx, ty, name, Color::rgb(230, 230, 230));
+            layer.put_str(tx, ty, &display_name, Color::rgb(230, 230, 230));
         }
     }
 }
