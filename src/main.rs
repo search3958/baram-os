@@ -136,9 +136,11 @@ fn main() -> Status {
     let mut tb_shift_x: f32 = 0.0f32;
     let mut show_app_launcher: bool = false;
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+    let mut app_name_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for entry in &app_entries {
         app_list.push(entry.title.clone());
+        app_name_list.push(entry.name.clone());
         app_icon_list.push(entry.icon.clone());
     }
     let mut hover_apps_icon: bool = false;
@@ -221,7 +223,49 @@ fn main() -> Status {
                 if ev.left && !mouse_down {
                     mouse_down = true;
                     let sh = screen.height();
-                    if cy >= sh as i32 - TASKBAR_H as i32 {
+
+                    if show_app_launcher {
+                        let cols = 5usize;
+                        let icon_size = 64usize;
+                        let icon_gap = 24usize;
+                        let label_h = 20usize;
+                        let cell_w = icon_size + icon_gap;
+                        let cell_h = icon_size + label_h + icon_gap;
+                        let grid_w = cols * cell_w;
+                        let rows = (app_list.len() + cols - 1) / cols;
+                        let grid_h = rows * cell_h;
+                        let grid_x = (screen.width().saturating_sub(grid_w)) / 2;
+                        let grid_y = ((screen.height() - TASKBAR_H).saturating_sub(grid_h)) / 2;
+                        let mut clicked_app = None;
+                        for (i, _) in app_list.iter().enumerate() {
+                            let col = i % cols;
+                            let row = i / cols;
+                            let ix = grid_x + col * cell_w + icon_gap / 2;
+                            let iy = grid_y + row * cell_h;
+                            if cx >= ix as i32 && cx < (ix + icon_size) as i32
+                                && cy >= iy as i32 && cy < (iy + icon_size) as i32
+                            {
+                                clicked_app = Some(i);
+                                break;
+                            }
+                        }
+                        if let Some(idx) = clicked_app {
+                            let app_title = app_list[idx].clone();
+                            let app_name = app_name_list[idx].clone();
+                            let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                            let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                            let new_id = wm.add(&app_title, nx, ny, 400, 450);
+                            let source = app::load_app_source(&app_name);
+                            let mut engine = warp::WarpEngine::new(&source);
+                            engine.update(380, 410);
+                            warp_engines.push((new_id, engine));
+                            tb_add_progress = 0.0;
+                            tb_shift_x = 26.0;
+                            new_window_idx = new_window_idx.wrapping_add(1);
+                        }
+                        show_app_launcher = false;
+                        scene_dirty = true;
+                    } else if cy >= sh as i32 - TASKBAR_H as i32 {
                         let apps_icon_x = 16i32;
                         let apps_icon_size = 24i32;
                         let apps_icon_y = (sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2) as i32;
@@ -230,49 +274,6 @@ fn main() -> Status {
                         if on_apps_icon {
                             show_app_launcher = !show_app_launcher;
                             scene_dirty = true;
-                        } else if show_app_launcher {
-                            let cols = 5usize;
-                            let icon_size = 64usize;
-                            let icon_gap = 24usize;
-                            let label_h = 20usize;
-                            let cell_w = icon_size + icon_gap;
-                            let cell_h = icon_size + label_h + icon_gap;
-                            let grid_w = cols * cell_w;
-                            let rows = (app_list.len() + cols - 1) / cols;
-                            let grid_h = rows * cell_h;
-                            let grid_x = (screen.width().saturating_sub(grid_w)) / 2;
-                            let grid_y = ((screen.height() - TASKBAR_H).saturating_sub(grid_h)) / 2;
-                            let mut clicked_app = None;
-                            for (i, _) in app_list.iter().enumerate() {
-                                let col = i % cols;
-                                let row = i / cols;
-                                let ix = grid_x + col * cell_w + icon_gap / 2;
-                                let iy = grid_y + row * cell_h;
-                                if cx >= ix as i32 && cx < (ix + icon_size) as i32
-                                    && cy >= iy as i32 && cy < (iy + icon_size) as i32
-                                {
-                                    clicked_app = Some(i);
-                                    break;
-                                }
-                            }
-                            if let Some(idx) = clicked_app {
-                                let app_title = app_list[idx].clone();
-                                let nx = 100 + ((new_window_idx as i32 * 37) % 300);
-                                let ny = 60 + ((new_window_idx as i32 * 23) % 200);
-                                let new_id = wm.add(&app_title, nx, ny, 400, 450);
-                                let source = app::load_app_source("blank.warp");
-                                let mut engine = warp::WarpEngine::new(&source);
-                                engine.update(380, 410);
-                                warp_engines.push((new_id, engine));
-                                tb_add_progress = 0.0;
-                                tb_shift_x = 26.0;
-                                new_window_idx = new_window_idx.wrapping_add(1);
-                                show_app_launcher = false;
-                                scene_dirty = true;
-                            } else {
-                                show_app_launcher = false;
-                                scene_dirty = true;
-                            }
                         } else {
                             if show_app_launcher {
                                 show_app_launcher = false;

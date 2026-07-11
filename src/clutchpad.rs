@@ -640,56 +640,14 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     if show_app_launcher {
-        let blur_r = 20i32;
-        let sigma = blur_r as f32 / 3.0;
-        let sigma_sq2 = 2.0 * sigma * sigma;
-        let kernel_size = (blur_r * 2 + 1) as usize;
-        let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
-        let mut ksum = 0.0f32;
-        for i in -blur_r..=blur_r {
-            let kw = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
-            kernel.push(kw);
-            ksum += kw;
-        }
-        for kw in &mut kernel { *kw /= ksum; }
-
-        let src = layer.buf_ref();
-        let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * h];
         for y in 0..h {
             for x in 0..w {
-                let mut r = 0.0f32;
-                let mut g = 0.0f32;
-                let mut b = 0.0f32;
-                for (i, &kw) in kernel.iter().enumerate() {
-                    let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
-                    let pixel = Color(src[y * w + sx]);
-                    r += pixel.r() as f32 * kw;
-                    g += pixel.g() as f32 * kw;
-                    b += pixel.b() as f32 * kw;
-                }
-                tmp[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
-            }
-        }
-        let buf = layer.buf_mut();
-        for y in 0..h {
-            for x in 0..w {
-                let mut r = 0.0f32;
-                let mut g = 0.0f32;
-                let mut b = 0.0f32;
-                for (i, &kw) in kernel.iter().enumerate() {
-                    let sy = (y as i32 + i as i32 - blur_r).max(0).min(h as i32 - 1) as usize;
-                    let pixel = Color(tmp[sy * w + x]);
-                    r += pixel.r() as f32 * kw;
-                    g += pixel.g() as f32 * kw;
-                    b += pixel.b() as f32 * kw;
-                }
-                let br = r as u32;
-                let bg = g as u32;
-                let bb = b as u32;
-                let dr = (br * 30) / 255;
-                let dg = (bg * 30) / 255;
-                let db = (bb * 30) / 255;
-                buf[y * w + x] = Color::rgb(dr as u8, dg as u8, db as u8).0;
+                let idx = y * w + x;
+                let bg = Color(layer.buf_ref()[idx]);
+                let r = (bg.r() as u32 * 30) / 255;
+                let g = (bg.g() as u32 * 30) / 255;
+                let b = (bg.b() as u32 * 30) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
         }
 
