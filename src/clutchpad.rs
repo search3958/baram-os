@@ -388,6 +388,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
+                cached_launcher_blur: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32,
                 remove_progress: f32,
@@ -593,15 +594,22 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     if show_app_launcher {
-        let src: &[u32] = if let Some(ref cached) = bg_cache {
-            cached
-        } else if let Some(pixels) = wallpaper {
-            pixels
-        } else {
-            &[]
-        };
-        if !src.is_empty() {
-            blur::blur_region_darkened_to(src, layer.buf_mut(), w, 0, tb_y, 20, 200);
+        if cached_launcher_blur.is_none() {
+            let src: &[u32] = if let Some(ref cached) = bg_cache {
+                cached
+            } else if let Some(pixels) = wallpaper {
+                pixels
+            } else {
+                &[]
+            };
+            if !src.is_empty() {
+                let mut blurred = alloc::vec![0u32; w * tb_y];
+                blur::blur_region_darkened_to(src, &mut blurred, w, 0, tb_y, 20, 200);
+                *cached_launcher_blur = Some(blurred);
+            }
+        }
+        if let Some(ref blur) = cached_launcher_blur {
+            layer.buf_mut()[..tb_y * w].copy_from_slice(blur);
         }
 
         let cols = 5usize;
@@ -669,6 +677,7 @@ pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
+                cached_launcher_blur: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32, pointer_size: f32, hud_enabled: bool,
@@ -679,7 +688,7 @@ pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 hover_apps_icon: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
-                 cached_taskbar_strip, taskbar_dirty,
+                 cached_taskbar_strip, cached_launcher_blur, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
                  bg_cache, bg_cache_valid,
                  show_app_launcher, app_list, app_icon_list, hover_apps_icon);

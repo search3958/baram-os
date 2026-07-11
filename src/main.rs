@@ -127,6 +127,7 @@ fn main() -> Status {
 
     let mut cached_taskbar: Option<Vec<u32>> = None;
     let mut cached_taskbar_strip: Option<Vec<u32>> = None;
+    let mut cached_launcher_blur: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<window::WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
@@ -153,7 +154,7 @@ fn main() -> Status {
                  &ui_commands, ui_win_id,
                  &mut warp_engines,
                  cached_wallpaper.as_deref(),
-                 &mut cached_taskbar, &mut cached_taskbar_strip, true,
+                 &mut cached_taskbar, &mut cached_taskbar_strip, &mut cached_launcher_blur, true,
                  -1.0, -1.0, 0.0, display_state.hud_enabled,
                  &mut bg_cache, false,
                  show_app_launcher, &app_list, &app_icon_list,
@@ -349,6 +350,7 @@ fn main() -> Status {
                                                     }
                                                     cached_taskbar = None;
                                                     cached_taskbar_strip = None;
+                                                    cached_launcher_blur = None;
                                                     bg_cache = None;
                                                     prev_wallpaper_idx = display_state.wallpaper_index;
                                                     scene_dirty = true;
@@ -499,7 +501,7 @@ fn main() -> Status {
                              &mut warp_engines,
                              cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
-                             &mut cached_taskbar_strip, taskbar_dirty,
+                             &mut cached_taskbar_strip, &mut cached_launcher_blur, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x, display_state.hud_enabled,
                              &mut bg_cache, bg_valid,
