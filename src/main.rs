@@ -601,7 +601,6 @@ fn main() -> Status {
             }
         }
 
-        
         if let Some(mouse) = mouse_opt.as_mut() {
             while let Some(ev) = mouse.poll() {
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
@@ -633,32 +632,44 @@ fn main() -> Status {
                             show_app_launcher = !show_app_launcher;
                             scene_dirty = true;
                         } else if show_app_launcher {
-                            let launcher_w = 280i32;
-                            let launcher_h = (app_list.len() as i32 * 40 + 16).min(sh as i32 - 40);
-                            let launcher_x = 16i32;
-                            let launcher_y = (sh as i32 - TASKBAR_H as i32 - launcher_h - 8).max(0);
-                            if cx >= launcher_x && cx < launcher_x + launcher_w
-                                && cy >= launcher_y && cy < launcher_y + launcher_h
-                            {
-                                let rel_y = cy - launcher_y - 8;
-                                if rel_y >= 0 {
-                                    let item_idx = rel_y as usize / 40;
-                                    if item_idx < app_list.len() {
-                                        let app_title = app_list[item_idx].clone();
-                                        let nx = 100 + ((new_window_idx as i32 * 37) % 300);
-                                        let ny = 60 + ((new_window_idx as i32 * 23) % 200);
-                                        let new_id = wm.add(&app_title, nx, ny, 400, 450);
-                                        let source = load_app_source("blank.warp");
-                            let mut engine = warp::WarpEngine::new(&source);
-                                        engine.update(380, 410);
-                                        warp_engines.push((new_id, engine));
-                                        tb_add_progress = 0.0;
-                                        tb_shift_x = 26.0;
-                                        new_window_idx = new_window_idx.wrapping_add(1);
-                                        show_app_launcher = false;
-                                        scene_dirty = true;
-                                    }
+                            let cols = 5usize;
+                            let icon_size = 64usize;
+                            let icon_gap = 24usize;
+                            let label_h = 20usize;
+                            let cell_w = icon_size + icon_gap;
+                            let cell_h = icon_size + label_h + icon_gap;
+                            let grid_w = cols * cell_w;
+                            let rows = (app_list.len() + cols - 1) / cols;
+                            let grid_h = rows * cell_h;
+                            let grid_x = (screen.width().saturating_sub(grid_w)) / 2;
+                            let grid_y = ((screen.height() - TASKBAR_H).saturating_sub(grid_h)) / 2;
+                            let mut clicked_app = None;
+                            for (i, _) in app_list.iter().enumerate() {
+                                let col = i % cols;
+                                let row = i / cols;
+                                let ix = grid_x + col * cell_w + icon_gap / 2;
+                                let iy = grid_y + row * cell_h;
+                                if cx >= ix as i32 && cx < (ix + icon_size) as i32
+                                    && cy >= iy as i32 && cy < (iy + icon_size) as i32
+                                {
+                                    clicked_app = Some(i);
+                                    break;
                                 }
+                            }
+                            if let Some(idx) = clicked_app {
+                                let app_title = app_list[idx].clone();
+                                let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                                let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                                let new_id = wm.add(&app_title, nx, ny, 400, 450);
+                                let source = load_app_source("blank.warp");
+                                let mut engine = warp::WarpEngine::new(&source);
+                                engine.update(380, 410);
+                                warp_engines.push((new_id, engine));
+                                tb_add_progress = 0.0;
+                                tb_shift_x = 26.0;
+                                new_window_idx = new_window_idx.wrapping_add(1);
+                                show_app_launcher = false;
+                                scene_dirty = true;
                             } else {
                                 show_app_launcher = false;
                                 scene_dirty = true;
@@ -689,12 +700,7 @@ fn main() -> Status {
                             }
                         }
                     } else {
-                        if show_app_launcher {
-                            show_app_launcher = false;
-                            scene_dirty = true;
-                        }
                         let win_under = wm.window_at(cx, cy);
-
                         if let Some(id) = win_under {
                             wm.focus(id);
                             let btn = wm.button_hit_at(id, cx, cy);
@@ -981,7 +987,6 @@ fn main() -> Status {
     }
 }
 
-
 fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 _mouse_ev: u32, key_ev: u32,
                 fps: u32, _mouse_mode: &str,
@@ -1243,19 +1248,80 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     if show_app_launcher {
-        let launcher_w = 280usize;
-        let launcher_h = (app_list.len() as usize * 40 + 16).min(h - 40);
-        let launcher_x = 16usize;
-        let launcher_y = (h - TASKBAR_H - launcher_h - 8).max(0);
-        layer.fill_rounded_rect(launcher_x, launcher_y, launcher_w, launcher_h, 12, Color::rgb(40, 40, 40));
-        layer.rect_outline(launcher_x, launcher_y, launcher_w, launcher_h, Color::rgb(60, 60, 60));
+        let blur_r = 20i32;
+        let sigma = blur_r as f32 / 3.0;
+        let sigma_sq2 = 2.0 * sigma * sigma;
+        let kernel_size = (blur_r * 2 + 1) as usize;
+        let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
+        let mut ksum = 0.0f32;
+        for i in -blur_r..=blur_r {
+            let kw = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
+            kernel.push(kw);
+            ksum += kw;
+        }
+        for kw in &mut kernel { *kw /= ksum; }
+
+        let src = layer.buf_ref();
+        let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+                for (i, &kw) in kernel.iter().enumerate() {
+                    let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
+                    let pixel = Color(src[y * w + sx]);
+                    r += pixel.r() as f32 * kw;
+                    g += pixel.g() as f32 * kw;
+                    b += pixel.b() as f32 * kw;
+                }
+                tmp[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
+            }
+        }
+        let buf = layer.buf_mut();
+        for y in 0..h {
+            for x in 0..w {
+                let mut r = 0.0f32;
+                let mut g = 0.0f32;
+                let mut b = 0.0f32;
+                for (i, &kw) in kernel.iter().enumerate() {
+                    let sy = (y as i32 + i as i32 - blur_r).max(0).min(h as i32 - 1) as usize;
+                    let pixel = Color(tmp[sy * w + x]);
+                    r += pixel.r() as f32 * kw;
+                    g += pixel.g() as f32 * kw;
+                    b += pixel.b() as f32 * kw;
+                }
+                let br = r as u32;
+                let bg = g as u32;
+                let bb = b as u32;
+                let dr = (br * 30) / 255;
+                let dg = (bg * 30) / 255;
+                let db = (bb * 30) / 255;
+                buf[y * w + x] = Color::rgb(dr as u8, dg as u8, db as u8).0;
+            }
+        }
+
+        let cols = 5usize;
+        let icon_size = 64usize;
+        let icon_gap = 24usize;
+        let label_h = 20usize;
+        let cell_w = icon_size + icon_gap;
+        let cell_h = icon_size + label_h + icon_gap;
+        let grid_w = cols * cell_w;
+        let rows = (app_list.len() + cols - 1) / cols;
+        let grid_h = rows * cell_h;
+        let grid_x = (w.saturating_sub(grid_w)) / 2;
+        let grid_y = ((h - TASKBAR_H).saturating_sub(grid_h)) / 2;
+
         for (i, name) in app_list.iter().enumerate() {
-            let item_y = launcher_y + 8 + i * 40;
-            if item_y + 32 > launcher_y + launcher_h { break; }
-            layer.fill_rounded_rect(launcher_x + 8, item_y, launcher_w - 16, 32, 6, Color::rgb(55, 55, 55));
+            let col = i % cols;
+            let row = i / cols;
+            let cx = grid_x + col * cell_w + icon_gap / 2;
+            let cy = grid_y + row * cell_h;
+
+            layer.fill_rounded_rect(cx, cy, icon_size, icon_size, 14, Color::rgb(70, 70, 70));
+
             let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
-            let icon_x = launcher_x + 14;
-            let icon_y = item_y + 4;
             let icon_bytes = match icon_name {
                 "settings.png" => ICON_SETTINGS_PNG,
                 "note.png" => ICON_NOTE_PNG,
@@ -1263,28 +1329,31 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 "manager.png" => ICON_MANAGER_PNG,
                 _ => ICON_NONAME_PNG,
             };
-            let icon_drawn = if let Some(icon) = decode_icon(icon_bytes, 24) {
-                for py in 0..24usize {
-                    for px in 0..24usize {
-                        let src = icon.pixels[py * icon.w + px];
-                        let a = src[3] as u32;
+            if let Some(icon) = decode_icon(icon_bytes, icon_size) {
+                let pad = (icon_size - icon.w) / 2;
+                for py in 0..icon.h {
+                    for px in 0..icon.w {
+                        let src_px = icon.pixels[py * icon.w + px];
+                        let a = src_px[3] as u32;
                         if a == 0 { continue; }
-                        let sx = icon_x + px;
-                        let sy = icon_y + py;
+                        let sx = cx + pad + px;
+                        let sy = cy + pad + py;
                         if sx >= w || sy >= h { continue; }
                         let idx = sy * w + sx;
                         let bg = Color(layer.buf_ref()[idx]);
                         let inv = 255 - a;
-                        let r = (src[0] as u32 * a + bg.r() as u32 * inv) / 255;
-                        let g = (src[1] as u32 * a + bg.g() as u32 * inv) / 255;
-                        let b = (src[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                        let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                        let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                        let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
                         layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
                     }
                 }
-                true
-            } else { false };
-            let text_x = if icon_drawn { icon_x + 28 } else { launcher_x + 16 };
-            layer.put_str(text_x, item_y + 8, name, Color::rgb(220, 220, 220));
+            }
+
+            let tw = name.len() * 8;
+            let tx = cx + (icon_size.saturating_sub(tw)) / 2;
+            let ty = cy + icon_size + 4;
+            layer.put_str(tx, ty, name, Color::rgb(230, 230, 230));
         }
     }
 }
