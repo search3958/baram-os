@@ -12,11 +12,14 @@ pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
         Ok(r) => r,
         Err(_) => return alloc::vec::Vec::new(),
     };
+
+    // UEFI paths use backslash
     let mut buf = [0u16; 256];
     let mut i = 0;
-    for ch in path.encode_utf16() {
+    for ch in path.bytes() {
+        let c = if ch == b'/' { b'\\' } else { ch } as u16;
         if i + 1 < buf.len() {
-            buf[i] = ch;
+            buf[i] = c;
             i += 1;
         }
     }
@@ -25,6 +28,7 @@ pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
         Ok(c) => c,
         Err(_) => return alloc::vec::Vec::new(),
     };
+
     let handle = match root.open(cpath, FileMode::Read, FileAttribute::empty()) {
         Ok(h) => h,
         Err(_) => return alloc::vec::Vec::new(),

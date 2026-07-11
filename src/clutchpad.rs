@@ -603,7 +603,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
 
             let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
             if !icon_name.is_empty() {
-                let icon_path = alloc::format!("app/icon/{}", icon_name);
+                let icon_path = alloc::format!("apps/icon/{}", icon_name);
                 let icon_data = crate::vfs::read_file(&icon_path);
                 if !icon_data.is_empty() {
                     if let Some(icon) = decode_icon(&icon_data, icon_size) {
