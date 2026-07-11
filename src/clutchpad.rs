@@ -6,6 +6,7 @@ use crate::ui::FmtBuf;
 use crate::window::{WindowManager, LayerSystem, WinId};
 use crate::warp::WarpEngine;
 use crate::uiscript;
+use crate::blur;
 use uefi::runtime;
 
 pub const TASKBAR_H: usize = 48;
@@ -387,7 +388,6 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
-                cached_launcher_blur: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32,
                 remove_progress: f32,
@@ -418,68 +418,20 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     } else if let Some(ref cached) = cached_taskbar {
         layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
     } else {
-        let blur_r = TASKBAR_BLUR_R;
-
-        let sigma = blur_r as f32 / 3.0;
-        let sigma_sq2 = 2.0 * sigma * sigma;
-        let kernel_size = (blur_r * 2 + 1) as usize;
-        let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
-        let mut ksum = 0.0f32;
-        for i in -blur_r..=blur_r {
-            let kw = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
-            kernel.push(kw);
-            ksum += kw;
-        }
-        for kw in &mut kernel {
-            *kw /= ksum;
-        }
-
-        let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * TASKBAR_H];
-
-        for y in tb_y..h {
-            for x in 0..w {
-                let mut r = 0.0f32;
-                let mut g = 0.0f32;
-                let mut b = 0.0f32;
-                for (i, &kw) in kernel.iter().enumerate() {
-                    let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
-                    let pixel = Color(layer.buf_ref()[y * w + sx]);
-                    r += pixel.r() as f32 * kw;
-                    g += pixel.g() as f32 * kw;
-                    b += pixel.b() as f32 * kw;
-                }
-                tmp[(y - tb_y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
-            }
-        }
-
-        for y in tb_y..h {
-            for x in 0..w {
-                let mut r = 0.0f32;
-                let mut g = 0.0f32;
-                let mut b = 0.0f32;
-                for (i, &kw) in kernel.iter().enumerate() {
-                    let sy = (y as i32 + i as i32 - blur_r).max(tb_y as i32).min(h as i32 - 1) as usize;
-                    let pixel = Color(tmp[(sy - tb_y) * w + x]);
-                    r += pixel.r() as f32 * kw;
-                    g += pixel.g() as f32 * kw;
-                    b += pixel.b() as f32 * kw;
-                }
-                layer.buf_mut()[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
-            }
-        }
-
+        let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
+        blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
         let tb_alpha = 170u32;
         let tb_inv = 255 - tb_alpha;
         let tb_color = Color::TASKBAR;
-        for y in tb_y..h {
+        for y in 0..TASKBAR_H {
             let row_start = y * w;
             for x in 0..w {
                 let idx = row_start + x;
-                let bg = Color(layer.buf_ref()[idx]);
+                let bg = Color(blurred[idx]);
                 let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
                 let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
                 let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
-                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                layer.buf_mut()[(tb_y + y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
         }
 
@@ -641,69 +593,15 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     if show_app_launcher {
-        if cached_launcher_blur.is_none() {
-            let blur_r = 100i32;
-            let sigma = blur_r as f32 / 3.0;
-            let sigma_sq2 = 2.0 * sigma * sigma;
-            let kernel_size = (blur_r * 2 + 1) as usize;
-            let mut kernel: alloc::vec::Vec<f32> = alloc::vec::Vec::with_capacity(kernel_size);
-            let mut ksum = 0.0f32;
-            for i in -blur_r..=blur_r {
-                let kw = libm::expf(-(i as f32) * (i as f32) / sigma_sq2);
-                kernel.push(kw);
-                ksum += kw;
-            }
-            for kw in &mut kernel { *kw /= ksum; }
-
-            let src: &[u32] = if let Some(ref cached) = bg_cache {
-                cached
-            } else if let Some(pixels) = wallpaper {
-                pixels
-            } else {
-                &[]
-            };
-
-            if !src.is_empty() {
-                let mut blurred = alloc::vec![0u32; w * tb_y];
-                let mut tmp: alloc::vec::Vec<u32> = alloc::vec![0u32; w * tb_y];
-                for y in 0..tb_y {
-                    for x in 0..w {
-                        let mut r = 0.0f32;
-                        let mut g = 0.0f32;
-                        let mut b = 0.0f32;
-                        for (i, &kw) in kernel.iter().enumerate() {
-                            let sx = (x as i32 + i as i32 - blur_r).max(0).min(w as i32 - 1) as usize;
-                            let pixel = Color(src[y * w + sx]);
-                            r += pixel.r() as f32 * kw;
-                            g += pixel.g() as f32 * kw;
-                            b += pixel.b() as f32 * kw;
-                        }
-                        tmp[y * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
-                    }
-                }
-                for y in 0..tb_y {
-                    for x in 0..w {
-                        let mut r = 0.0f32;
-                        let mut g = 0.0f32;
-                        let mut b = 0.0f32;
-                        for (i, &kw) in kernel.iter().enumerate() {
-                            let sy = (y as i32 + i as i32 - blur_r).max(0).min(tb_y as i32 - 1) as usize;
-                            let pixel = Color(tmp[sy * w + x]);
-                            r += pixel.r() as f32 * kw;
-                            g += pixel.g() as f32 * kw;
-                            b += pixel.b() as f32 * kw;
-                        }
-                        let dr = ((r as u32) * 200) / 255;
-                        let dg = ((g as u32) * 200) / 255;
-                        let db = ((b as u32) * 200) / 255;
-                        blurred[y * w + x] = Color::rgb(dr as u8, dg as u8, db as u8).0;
-                    }
-                }
-                *cached_launcher_blur = Some(blurred);
-            }
-        }
-        if let Some(ref blur) = cached_launcher_blur {
-            layer.buf_mut()[..tb_y * w].copy_from_slice(blur);
+        let src: &[u32] = if let Some(ref cached) = bg_cache {
+            cached
+        } else if let Some(pixels) = wallpaper {
+            pixels
+        } else {
+            &[]
+        };
+        if !src.is_empty() {
+            blur::blur_region_darkened_to(src, layer.buf_mut(), w, 0, tb_y, 20, 64);
         }
 
         let cols = 5usize;
@@ -775,14 +673,13 @@ pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32, pointer_size: f32, hud_enabled: bool,
                 bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool,
-                cached_launcher_blur: &mut Option<Vec<u32>>,
                 show_app_launcher: bool,
                 app_list: &[alloc::string::String],
                 app_icon_list: &[alloc::string::String],
                 hover_apps_icon: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
-                 cached_taskbar_strip, cached_launcher_blur, taskbar_dirty,
+                 cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
                  bg_cache, bg_cache_valid,
                  show_app_launcher, app_list, app_icon_list, hover_apps_icon);
