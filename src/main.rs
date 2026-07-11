@@ -65,12 +65,8 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    let index_yaml = vfs::read_file_str("apps/index.yaml");
-    let (autostart_list, app_entries) = if index_yaml.is_empty() {
-        parse_index_yaml(app::FALLBACK_INDEX)
-    } else {
-        parse_index_yaml(&index_yaml)
-    };
+    let index_yaml = app::read_index_yaml();
+    let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(window::WinId, warp::WarpEngine)> = alloc::vec::Vec::new();
     let mut ui_win_id: Option<window::WinId> = None;
     let mut ui_commands: alloc::vec::Vec<uiscript::Command> = alloc::vec::Vec::new();
