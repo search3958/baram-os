@@ -250,6 +250,22 @@ impl Mouse {
     }
 }
 
+pub fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,
+                     screen_w: usize, screen_h: usize,
+                     abs_max: (u64, u64)) -> (i32, i32) {
+    let (abs_max_x, abs_max_y) = abs_max;
+    if ev.is_absolute && abs_max_x > 0 && abs_max_y > 0 {
+        let new_x = ((ev.abs_x as u128 * screen_w as u128) / abs_max_x as u128) as i32;
+        let new_y = ((ev.abs_y as u128 * screen_h as u128) / abs_max_y as u128) as i32;
+        *cx = new_x.max(0).min(screen_w as i32 - 1);
+        *cy = new_y.max(0).min(screen_h as i32 - 1);
+    } else {
+        *cx = (*cx + ev.rel_dx).clamp(0, screen_w as i32 - 1);
+        *cy = (*cy + ev.rel_dy).clamp(0, screen_h as i32 - 1);
+    }
+    (*cx, *cy)
+}
+
 pub fn log_line_str(s: &str) {
     uefi::system::with_stdout(|stdout| {
         let _ = stdout.output_string(uefi::cstr16!("BaramOS: "));

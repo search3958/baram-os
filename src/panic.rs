@@ -49,6 +49,38 @@ unsafe fn fill_screen(c: Color) {
 }
 
 fn draw_ttf(mut x: usize, y: usize, s: &str, fg: Color) {
+    draw_ttf_scaled(x, y, s, fg, 14.0);
+}
+
+fn blend_pixel(x: usize, y: usize, fg: Color, alpha: u8) {
+    if alpha == 0 {
+        return;
+    }
+    if alpha == 255 {
+        unsafe { put_pixel(x, y, fg); }
+        return;
+    }
+    let a = alpha as u32;
+    let inv = 255 - a;
+    let bg = unsafe {
+        if FB_BASE == 0 || x >= FB_W || y >= FB_H {
+            return;
+        }
+        let off = (y * FB_STRIDE + x) * 4;
+        let v = ptr::read_volatile((FB_BASE + off) as *const u32);
+        if FB_PF_RGB {
+            Color::rgb(((v >> 16) & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, (v & 0xFF) as u8)
+        } else {
+            Color::rgb((v & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, ((v >> 16) & 0xFF) as u8)
+        }
+    };
+    let r = ((fg.r() as u32 * a + bg.r() as u32 * inv) / 255) as u8;
+    let g = ((fg.g() as u32 * a + bg.g() as u32 * inv) / 255) as u8;
+    let b = ((fg.b() as u32 * a + bg.b() as u32 * inv) / 255) as u8;
+    unsafe { put_pixel(x, y, Color::rgb(r, g, b)); }
+}
+
+fn draw_ttf_scaled(mut x: usize, y: usize, s: &str, fg: Color, pixel_size: f32) {
     if !crate::ttf_font::is_available() {
         for &b in s.as_bytes() {
             if b >= 0x20 && b <= 0x7E {
@@ -58,9 +90,9 @@ fn draw_ttf(mut x: usize, y: usize, s: &str, fg: Color) {
         }
         return;
     }
-    let asc = crate::ttf_font::ascent();
+    let asc = crate::ttf_font::ascent_at_size(pixel_size);
     for ch in s.chars() {
-        let g = crate::ttf_font::glyph(ch);
+        let g = crate::ttf_font::glyph_at_size(ch, pixel_size);
         if g.w > 0 && g.h > 0 {
             let baseline = y as i32 + asc;
             for row in 0..g.h {
@@ -74,11 +106,7 @@ fn draw_ttf(mut x: usize, y: usize, s: &str, fg: Color) {
                         continue;
                     }
                     let alpha = g.data[(row * g.w + col) as usize];
-                    if alpha > 0 {
-                        unsafe {
-                            put_pixel(px as usize, py as usize, fg);
-                        }
-                    }
+                    blend_pixel(px as usize, py as usize, fg, alpha);
                 }
             }
             x += g.advance.max(0) as usize;
@@ -98,6 +126,54 @@ fn draw_bitmap_char(x: usize, y: usize, c: u8, fg: Color) {
                 unsafe {
                     put_pixel(x + col, y + row, fg);
                 }
+            }
+        }
+    }
+}
+
+fn draw_info_icon(ox: usize, oy: usize, size: usize, fg: Color) {
+    let s = size as f32;
+    let cx = s / 2.0;
+    let cy = s / 2.0;
+    let outer_r = s * 10.0 / 22.0;
+    let inner_r = s * 8.0 / 22.0;
+    let ring_w = outer_r - inner_r;
+
+    for py in 0..size {
+        for px in 0..size {
+            let x = px as f32 + 0.5;
+            let y = py as f32 + 0.5;
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = libm::sqrtf(dx * dx + dy * dy);
+
+            let mut alpha: f32 = 0.0;
+
+            if dist >= inner_r - 0.5 && dist <= outer_r + 0.5 {
+                let a_outer = (outer_r + 0.5 - dist).max(0.0).min(1.0);
+                let a_inner = (dist - inner_r + 0.5).max(0.0).min(1.0);
+                alpha = a_outer.min(a_inner);
+            }
+
+            let bx = x / s * 22.0;
+            let by = y / s * 22.0;
+
+            let bar_cx = 11.0;
+            let bar_hw = ring_w / s * 22.0 / 2.0;
+            if bx >= bar_cx - bar_hw && bx <= bar_cx + bar_hw && by >= 5.5 && by <= 12.0 {
+                alpha = 1.0;
+            }
+
+            let dot_cx = 11.0;
+            let dot_cy = 16.0;
+            let dot_hw = ring_w / s * 22.0 / 2.0;
+            if bx >= dot_cx - dot_hw && bx <= dot_cx + dot_hw && by >= dot_cy - dot_hw && by <= dot_cy + dot_hw {
+                alpha = 1.0;
+            }
+
+            if alpha > 0.0 {
+                let a = (alpha * 255.0) as u8;
+                blend_pixel(ox + px, oy + py, fg, a);
             }
         }
     }
@@ -123,28 +199,21 @@ impl Write for FmtWriter {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     unsafe {
-        fill_screen(Color::rgb(200, 0, 0));
+        fill_screen(Color::rgb(0, 0, 0));
     }
 
-    let w = unsafe { FB_W };
+    let margin = 80usize;
 
-    let title = "例外によりシステムが停止しました";
+    let white = Color::rgb(255, 255, 255);
+    let gray = Color::rgb(0xAA, 0xAA, 0xAA);
 
-    let title_w = if crate::ttf_font::is_available() {
-        let mut tw = 0i32;
-        for ch in title.chars() {
-            let g = crate::ttf_font::glyph(ch);
-            tw += g.advance.max(0);
-        }
-        tw as usize
-    } else {
-        title.len() * crate::font::GLYPH_W
-    };
+    let icon_size = 56usize;
+    draw_info_icon(margin, 80, icon_size, white);
 
-    let margin = 40usize;
-    let tx = w.saturating_sub(title_w + margin);
-    let ty = 40usize;
-    draw_ttf(tx, ty, title, Color::BLACK);
+    let title = "問題が発生したためシステムが停止しました";
+    draw_ttf_scaled(margin, 80 + icon_size + 20, title, white, 42.0);
+
+    let detail_y = 80 + icon_size + 20 + 60;
 
     let mut fw = FmtWriter {
         buf: [0u8; 512],
@@ -153,7 +222,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let _ = write!(fw, "{}", info.message());
     if fw.pos > 0 {
         if let Ok(msg) = core::str::from_utf8(&fw.buf[..fw.pos]) {
-            draw_ttf(tx, ty + 50, msg, Color::BLACK);
+            draw_ttf_scaled(margin, detail_y, msg, gray, 18.0);
         }
     }
 
@@ -165,7 +234,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         let _ = write!(fw2, "{}:{}", loc.file(), loc.line());
         if fw2.pos > 0 {
             if let Ok(loc_s) = core::str::from_utf8(&fw2.buf[..fw2.pos]) {
-                draw_ttf(tx, ty + 90, loc_s, Color::BLACK);
+                draw_ttf_scaled(margin, detail_y + 40, loc_s, gray, 18.0);
             }
         }
     }

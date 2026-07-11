@@ -3,6 +3,8 @@ use alloc::vec::Vec;
 use crate::gop::{Color, Screen};
 use crate::svg;
 
+pub const SCROLL_SPEED: i32 = 30;
+
 const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
@@ -26,6 +28,8 @@ pub struct Window {
     pub id: WinId,
     pub title: [u8; 24],
     pub title_len: usize,
+    pub icon_name: [u8; 16],
+    pub icon_name_len: usize,
     pub x: i32,
     pub y: i32,
     pub w: usize,
@@ -54,6 +58,8 @@ pub struct Window {
     pub shadow_layer: Option<LayerSystem>,
     pub content_dirty: bool,
     pub shadow_dirty: bool,
+    pub open_progress: f32,
+    pub open_animating: bool,
 }
 
 impl Window {
@@ -64,6 +70,7 @@ impl Window {
         tb[..n].copy_from_slice(&src[..n]);
         Self {
             id, title: tb, title_len: n,
+            icon_name: [0u8; 16], icon_name_len: 0,
             x, y, w, h, z,
             visible: true, focused: false, maximized: false, minimized: false,
             scroll_y: 0,
@@ -76,11 +83,24 @@ impl Window {
             shadow_layer: Some(LayerSystem::new_transparent(w + SHADOW_PAD as usize * 2, h + SHADOW_PAD as usize * 2)),
             content_dirty: true,
             shadow_dirty: true,
+            open_progress: 0.0,
+            open_animating: true,
         }
     }
 
     fn title_str(&self) -> &str {
         core::str::from_utf8(&self.title[..self.title_len]).unwrap_or("")
+    }
+
+    fn icon_str(&self) -> &str {
+        core::str::from_utf8(&self.icon_name[..self.icon_name_len]).unwrap_or("")
+    }
+
+    pub fn set_icon(&mut self, name: &str) {
+        let src = name.as_bytes();
+        let n = src.len().min(15);
+        self.icon_name[..n].copy_from_slice(&src[..n]);
+        self.icon_name_len = n;
     }
 
     fn ensure_layer(&mut self, screen_w: usize, screen_h: usize) {
@@ -240,6 +260,16 @@ impl WindowManager {
         self.focus(id);
         self.order_changed = true;
         id
+    }
+
+    pub fn set_icon(&mut self, id: WinId, icon_name: &str) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.set_icon(icon_name);
+        }
+    }
+
+    pub fn get_icon_name(&self, id: WinId) -> &str {
+        self.windows.iter().find(|w| w.id == id).map(|w| w.icon_str()).unwrap_or("")
     }
 
     pub fn remove(&mut self, id: WinId) {
@@ -409,8 +439,7 @@ impl WindowManager {
         &mut self,
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[super::uiscript::Command])>,
-        warp_win: Option<(WinId, &mut super::warp::WarpEngine)>,
-        settings_win: Option<(WinId, &mut super::warp::WarpEngine)>,
+        warp_engines: &mut alloc::vec::Vec<(WinId, super::warp::WarpEngine)>,
     ) {
         if self.windows.is_empty() {
             return;
@@ -478,6 +507,14 @@ impl WindowManager {
             let is_max = self.windows[idx].maximized;
             let shadow_dirty = self.windows[idx].shadow_dirty;
             let content_dirty = self.windows[idx].content_dirty;
+            let open_progress = self.windows[idx].open_progress;
+            let open_animating = self.windows[idx].open_animating;
+            if open_animating {
+                self.windows[idx].open_progress = (open_progress + 0.04).min(1.0);
+                if self.windows[idx].open_progress >= 1.0 {
+                    self.windows[idx].open_animating = false;
+                }
+            }
 
             // ===== シャドウ描画 =====
             if !is_max {
@@ -594,20 +631,14 @@ impl WindowManager {
                             (*layer_ptr).pop_clip();
                         }
                     }
-                    if let Some((wid, ref engine)) = warp_win {
-                        if win_id == wid {
+                    for i in 0..warp_engines.len() {
+                        if win_id == warp_engines[i].0 {
+                            let engine = &mut warp_engines[i].1;
                             (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
                             (*layer_ptr).pop_clip();
-                        }
-                    }
-                    if let Some((wid, ref engine)) = settings_win {
-                        if win_id == wid {
-                            (*layer_ptr).push_clip(0, TITLE_BAR_H, ww, wh);
-                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
-                            engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
-                            (*layer_ptr).pop_clip();
+                            break;
                         }
                     }
                 }
