@@ -11,6 +11,7 @@ mod font;
 mod gop;
 mod keyboard;
 
+mod debug_log;
 mod mouse;
 mod panic;
 mod svg;
@@ -37,9 +38,12 @@ use crate::clutchpad::*;
 
 #[entry]
 fn main() -> Status {
+    mouse::log_line_str("BaramOS: starting...");
     let _ = uefi::helpers::init();
+    mouse::log_line_str("BaramOS: UEFI helpers initialized");
     ttf_font::init();
     ttf_font_hud::init();
+    mouse::log_line_str("BaramOS: fonts initialized");
 
     unsafe {
         CURSOR_NORMAL = Some(prerender_cursor(CURSOR_SVG, CURSOR_BOX_W, CURSOR_BOX_H, 8));
@@ -47,12 +51,20 @@ fn main() -> Status {
     }
 
     let mut screen = match Screen::take() {
-        Ok(s) => s,
-        Err(_s) => return Status::UNSUPPORTED,
+        Ok(s) => {
+            mouse::log_line_str(&alloc::format!("BaramOS: screen {}x{}", s.width(), s.height()));
+            unsafe { debug_log::init_screen(&s) };
+            s
+        },
+        Err(_s) => {
+            mouse::log_line_str("BaramOS: screen init failed");
+            return Status::UNSUPPORTED
+        },
     };
 
     unsafe { panic::init_from_screen(&screen) };
 
+    mouse::log_line_str("BaramOS: opening mouse...");
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
         Ok(m) => Some(m),
         Err(_) => None,
@@ -66,7 +78,9 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
+    mouse::log_line_str("BaramOS: loading index.yaml...");
     let index_yaml = app::read_index_yaml();
+    mouse::log_line_str(&alloc::format!("BaramOS: index.yaml {} bytes", index_yaml.len()));
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(window::WinId, warp::WarpEngine)> = alloc::vec::Vec::new();
     let mut ui_win_id: Option<window::WinId> = None;

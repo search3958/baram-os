@@ -34,40 +34,68 @@ pub struct Mouse {
 
 impl Mouse {
     pub fn open() -> Result<Mouse, &'static str> {
-        
-        if let Some(m) = Self::try_usb_io() {
-            log_line_str("Mouse: USB IO (direct HID)");
-            return Ok(m);
+        log_line_str("Mouse: searching for devices...");
+
+        // List all protocol handles for debugging
+        if let Ok(handles) = boot::find_handles::<UsbIo>() {
+            log_line_str(&format!("  UsbIo handles: {}", handles.len()));
+        } else {
+            log_line_str("  UsbIo handles: none");
+        }
+        if let Ok(handles) = boot::find_handles::<AbsolutePointer>() {
+            log_line_str(&format!("  AbsolutePointer handles: {}", handles.len()));
+        } else {
+            log_line_str("  AbsolutePointer handles: none");
+        }
+        if let Ok(handles) = boot::find_handles::<Pointer>() {
+            log_line_str(&format!("  Pointer handles: {}", handles.len()));
+        } else {
+            log_line_str("  Pointer handles: none");
         }
 
-        
+        // Try UEFI protocols first (more reliable on real hardware)
         let mut abs = None;
         let mut simple = None;
 
         if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
+            log_line_str("  Trying AbsolutePointer...");
             if let Ok(mut ptr) = boot::open_protocol_exclusive::<AbsolutePointer>(h) {
                 let _ = ptr.reset(false);
                 uefi::boot::stall(core::time::Duration::from_millis(50));
                 let mx = ptr.mode().absolute_max_x.max(1);
                 let my = ptr.mode().absolute_max_y.max(1);
-                log_line_str(&format!("  Absolute Pointer: max=({},{})", mx, my));
+                log_line_str(&format!("  AbsolutePointer: max=({},{})", mx, my));
                 abs = Some((ptr, mx, my));
+            } else {
+                log_line_str("  AbsolutePointer: open failed");
             }
         }
         if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
+            log_line_str("  Trying SimplePointer...");
             if let Ok(mut ptr) = boot::open_protocol_exclusive::<Pointer>(h) {
                 let _ = ptr.reset(false);
                 uefi::boot::stall(core::time::Duration::from_millis(50));
-                log_line_str("  Simple Pointer: ready");
+                log_line_str("  SimplePointer: ready");
                 simple = Some(ptr);
+            } else {
+                log_line_str("  SimplePointer: open failed");
             }
         }
 
         if abs.is_some() || simple.is_some() {
-            Ok(Mouse { usb_io: None, ep_addr: 0, report_buf: vec![0u8; 8], abs, simple })
-        } else {
-            Err("no mouse device found")
+            log_line_str("Mouse: using UEFI protocol");
+            return Ok(Mouse { usb_io: None, ep_addr: 0, report_buf: vec![0u8; 8], abs, simple });
         }
+
+        // Fallback: direct USB IO (works on QEMU, may not on real hardware)
+        log_line_str("Mouse: UEFI protocols unavailable, trying direct USB IO...");
+        if let Some(m) = Self::try_usb_io() {
+            log_line_str("Mouse: USB IO (direct HID)");
+            return Ok(m);
+        }
+
+        log_line_str("Mouse: no device found via any protocol");
+        Err("no mouse device found")
     }
 
     fn try_usb_io() -> Option<Mouse> {
@@ -210,7 +238,12 @@ impl Mouse {
             let mut acc = MouseEvent::default();
             acc.is_absolute = true;
             let mut got = false;
-            let mut empty = 0;
+
+            // Wait for input event first (required by UEFI spec)
+            let mut evt = ptr.wait_for_input_event();
+            let _ = boot::wait_for_event(&mut [evt]);
+
+            // Drain all pending states
             loop {
                 match ptr.get_state() {
                     Ok(Some(state)) => {
@@ -218,9 +251,9 @@ impl Mouse {
                         acc.abs_y = state.current_y;
                         if state.active_buttons & 0x1 != 0 { acc.left = true; }
                         if state.active_buttons & 0x2 != 0 { acc.right = true; }
-                        got = true; empty = 0;
+                        got = true;
                     }
-                    _ => { empty += 1; if empty >= 5 { break; } }
+                    _ => break,
                 }
             }
             if got { return Some(acc); }
@@ -267,6 +300,7 @@ pub fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,
 }
 
 pub fn log_line_str(s: &str) {
+    // Print to UEFI console
     uefi::system::with_stdout(|stdout| {
         let _ = stdout.output_string(uefi::cstr16!("BaramOS: "));
         let mut buf = Vec::<u16>::with_capacity(s.len() + 1);
@@ -280,4 +314,6 @@ pub fn log_line_str(s: &str) {
         }
         let _ = stdout.output_string(uefi::cstr16!("\r\n"));
     });
+    // Also draw on screen
+    crate::debug_log::log(s);
 }

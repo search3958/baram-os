@@ -112,6 +112,22 @@ make_image() {
         mmd   -i "$img" ::/EFI/BOOT
         mcopy -i "$img" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
 
+        # App files
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mmd   -i "$img" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && mcopy -i "$img" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd   -i "$img" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$img" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
+
         # UEFI shell auto-boot
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$img" - ::/startup.nsh
 
@@ -143,6 +159,20 @@ make_image() {
         # BaramOS EFI
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+
+        # App files
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mkdir -p "$tmp_mount/apps"
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
+            done
+            if [ -d "$app_src/icon" ]; then
+                mkdir -p "$tmp_mount/apps/icon"
+                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
+            fi
+            log "  copied app files to /apps/"
+        fi
 
         # UEFI shell auto-boot
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
