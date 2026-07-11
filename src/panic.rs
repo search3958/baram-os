@@ -131,6 +131,54 @@ fn draw_bitmap_char(x: usize, y: usize, c: u8, fg: Color) {
     }
 }
 
+fn draw_info_icon(ox: usize, oy: usize, size: usize, fg: Color) {
+    let s = size as f32;
+    let cx = s / 2.0;
+    let cy = s / 2.0;
+    let outer_r = s * 10.0 / 22.0;
+    let inner_r = s * 8.0 / 22.0;
+    let ring_w = outer_r - inner_r;
+
+    for py in 0..size {
+        for px in 0..size {
+            let x = px as f32 + 0.5;
+            let y = py as f32 + 0.5;
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = libm::sqrtf(dx * dx + dy * dy);
+
+            let mut alpha: f32 = 0.0;
+
+            if dist >= inner_r - 0.5 && dist <= outer_r + 0.5 {
+                let a_outer = (outer_r + 0.5 - dist).max(0.0).min(1.0);
+                let a_inner = (dist - inner_r + 0.5).max(0.0).min(1.0);
+                alpha = a_outer.min(a_inner);
+            }
+
+            let bx = x / s * 22.0;
+            let by = y / s * 22.0;
+
+            let bar_cx = 11.0;
+            let bar_hw = ring_w / s * 22.0 / 2.0;
+            if bx >= bar_cx - bar_hw && bx <= bar_cx + bar_hw && by >= 5.5 && by <= 12.0 {
+                alpha = 1.0;
+            }
+
+            let dot_cx = 11.0;
+            let dot_cy = 16.0;
+            let dot_hw = ring_w / s * 22.0 / 2.0;
+            if bx >= dot_cx - dot_hw && bx <= dot_cx + dot_hw && by >= dot_cy - dot_hw && by <= dot_cy + dot_hw {
+                alpha = 1.0;
+            }
+
+            if alpha > 0.0 {
+                let a = (alpha * 255.0) as u8;
+                blend_pixel(ox + px, oy + py, fg, a);
+            }
+        }
+    }
+}
+
 struct FmtWriter {
     buf: [u8; 512],
     pos: usize,
@@ -155,13 +203,17 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
 
     let margin = 80usize;
-    let ty = 120usize;
 
     let white = Color::rgb(255, 255, 255);
     let gray = Color::rgb(0xAA, 0xAA, 0xAA);
 
-    let title = "例外によりシステムが停止しました";
-    draw_ttf_scaled(margin, ty, title, white, 42.0);
+    let icon_size = 56usize;
+    draw_info_icon(margin, 80, icon_size, white);
+
+    let title = "問題が発生したためシステムが停止しました";
+    draw_ttf_scaled(margin, 80 + icon_size + 20, title, white, 42.0);
+
+    let detail_y = 80 + icon_size + 20 + 60;
 
     let mut fw = FmtWriter {
         buf: [0u8; 512],
@@ -170,7 +222,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     let _ = write!(fw, "{}", info.message());
     if fw.pos > 0 {
         if let Ok(msg) = core::str::from_utf8(&fw.buf[..fw.pos]) {
-            draw_ttf_scaled(margin, ty + 80, msg, gray, 18.0);
+            draw_ttf_scaled(margin, detail_y, msg, gray, 18.0);
         }
     }
 
@@ -182,7 +234,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         let _ = write!(fw2, "{}:{}", loc.file(), loc.line());
         if fw2.pos > 0 {
             if let Ok(loc_s) = core::str::from_utf8(&fw2.buf[..fw2.pos]) {
-                draw_ttf_scaled(margin, ty + 130, loc_s, gray, 18.0);
+                draw_ttf_scaled(margin, detail_y + 40, loc_s, gray, 18.0);
             }
         }
     }
