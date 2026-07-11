@@ -3,6 +3,8 @@ use alloc::vec::Vec;
 use crate::gop::{Color, Screen};
 use crate::svg;
 
+pub const SCROLL_SPEED: i32 = 30;
+
 const TITLE_BAR_H: usize = 30;
 const MIN_WIN_W: usize = 120;
 const MIN_WIN_H: usize = 60;
