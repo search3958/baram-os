@@ -241,7 +241,12 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
             } else if let Some(v) = trimmed.strip_prefix("title:") {
                 current_title = alloc::string::String::from(v.trim().trim_matches('"'));
             } else if let Some(v) = trimmed.strip_prefix("icon:") {
-                current_icon = alloc::string::String::from(v.trim().trim_matches('"'));
+                let val = v.trim().trim_matches('"');
+                if val.is_empty() || val == "null" {
+                    current_icon = alloc::string::String::from("noname.png");
+                } else {
+                    current_icon = alloc::string::String::from(val);
+                }
             }
         }
     }
@@ -471,8 +476,9 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             }
         }
 
-        if !icon_name.is_empty() {
-            let icon_path = alloc::format!("app/icon/{}", icon_name);
+        let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
+        {
+            let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
             let icon_data = crate::vfs::read_file(&icon_path);
             if !icon_data.is_empty() {
                 if let Some(icon) = decode_icon(&icon_data, 40) {
@@ -602,8 +608,9 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             layer.fill_circle(cx + icon_size / 2, cy + icon_size / 2, icon_size / 2, Color::PANEL);
 
             let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
-            if !icon_name.is_empty() {
-                let icon_path = alloc::format!("apps/icon/{}", icon_name);
+            let resolved_icon = if icon_name.is_empty() || icon_name == "null" { "noname.png" } else { icon_name };
+            {
+                let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
                 let icon_data = crate::vfs::read_file(&icon_path);
                 if !icon_data.is_empty() {
                     if let Some(icon) = decode_icon(&icon_data, icon_size) {
