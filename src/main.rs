@@ -475,6 +475,9 @@ fn main() -> Status {
     for entry in &app_entries {
         app_list.push(entry.title.clone());
     }
+    let mut hover_apps_icon: bool = false;
+    let mut prev_hover_apps_icon: bool = false;
+    let mut prev_show_app_launcher: bool = false;
 
     render_scene(&mut layer, &mut wm, mouse_ev_count, key_ev_count,
                  fps, mouse_mode_label,
@@ -484,7 +487,8 @@ fn main() -> Status {
                  &mut cached_taskbar, &mut cached_taskbar_strip, true,
                  -1.0, -1.0, 0.0, display_state.hud_enabled,
                  &mut bg_cache, false,
-                 show_app_launcher, &app_list);
+                 show_app_launcher, &app_list,
+                 hover_apps_icon);
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
@@ -555,9 +559,9 @@ fn main() -> Status {
                         let apps_icon_x = 16i32;
                         let apps_icon_size = 24i32;
                         let apps_icon_y = (sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2) as i32;
-                        if cx >= apps_icon_x && cx < apps_icon_x + apps_icon_size
-                            && cy >= apps_icon_y && cy < apps_icon_y + apps_icon_size
-                        {
+                        let on_apps_icon = cx >= apps_icon_x && cx < apps_icon_x + apps_icon_size
+                            && cy >= apps_icon_y && cy < apps_icon_y + apps_icon_size;
+                        if on_apps_icon {
                             show_app_launcher = !show_app_launcher;
                             scene_dirty = true;
                         } else if show_app_launcher {
@@ -591,6 +595,10 @@ fn main() -> Status {
                                 scene_dirty = true;
                             }
                         } else {
+                            if show_app_launcher {
+                                show_app_launcher = false;
+                                scene_dirty = true;
+                            }
                             let ids = wm.insertion_ids();
                             let count = ids.len();
                             let btn_d = 40i32;
@@ -612,6 +620,10 @@ fn main() -> Status {
                             }
                         }
                     } else {
+                        if show_app_launcher {
+                            show_app_launcher = false;
+                            scene_dirty = true;
+                        }
                         let win_under = wm.window_at(cx, cy);
 
                         if let Some(id) = win_under {
@@ -696,6 +708,20 @@ fn main() -> Status {
                 }
 
                 dirty = true;
+            }
+        }
+
+        {
+            let sh = screen.height() as i32;
+            let apps_icon_x = 16i32;
+            let apps_icon_size = 24i32;
+            let apps_icon_y = sh - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2;
+            hover_apps_icon = cursor_x >= apps_icon_x && cursor_x < apps_icon_x + apps_icon_size
+                && cursor_y >= apps_icon_y && cursor_y < apps_icon_y + apps_icon_size;
+            if hover_apps_icon != prev_hover_apps_icon {
+                dirty = true;
+                scene_dirty = true;
+                prev_hover_apps_icon = hover_apps_icon;
             }
         }
 
@@ -801,7 +827,8 @@ fn main() -> Status {
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x, display_state.hud_enabled,
                              &mut bg_cache, bg_valid,
-                             show_app_launcher, &app_list);
+                             show_app_launcher, &app_list,
+                             hover_apps_icon);
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
 
@@ -837,10 +864,12 @@ fn main() -> Status {
                 let fy0 = ry0.min(cy0);
                 let fx1 = rx1.max(cx1);
                 let fy1 = ry1.max(cy1);
+                let launcher_changed = show_app_launcher != prev_show_app_launcher;
+                prev_show_app_launcher = show_app_launcher;
                 let fw = fx1 - fx0;
                 let fh = fy1 - fy0;
                 let full_area = w * h;
-                if fw * fh >= full_area * 3 / 4 {
+                if launcher_changed || fw * fh >= full_area * 3 / 4 {
                     layer.flush(&mut screen);
                 } else {
                     layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
@@ -900,7 +929,8 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 bg_cache: &mut Option<Vec<u32>>,
                 bg_cache_valid: bool,
                 show_app_launcher: bool,
-                app_list: &[alloc::string::String]) {
+                app_list: &[alloc::string::String],
+                hover_apps_icon: bool) {
     let w = layer.width();
     let h = layer.height();
 
@@ -1003,14 +1033,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         if let Some(ref strip) = cached_taskbar_strip {
             layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
         }
-        let apps_icon_size = 24usize;
-        let apps_icon_x = 16usize;
-        let apps_icon_y = tb_y + (TASKBAR_H - apps_icon_size) / 2;
-        svg::draw_svg_into(layer, APPS_SVG,
-            apps_icon_x as i32, apps_icon_y as i32,
-            apps_icon_size as f32, apps_icon_size as f32);
-        return;
-    }
+    } else {
 
     let ids = wm.insertion_ids();
     let count = ids.len();
@@ -1136,14 +1159,17 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     let mut strip = alloc::vec![0u32; w * TASKBAR_H];
     strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
     *cached_taskbar_strip = Some(strip);
+    }
 
     {
         let apps_icon_size = 24usize;
         let apps_icon_x = 16usize;
         let apps_icon_y = tb_y + (TASKBAR_H - apps_icon_size) / 2;
-        svg::draw_svg_into(layer, APPS_SVG,
+        let apps_icon_alpha = if hover_apps_icon { 153u32 } else { 255u32 };
+        svg::draw_svg_into_alpha(layer, APPS_SVG,
             apps_icon_x as i32, apps_icon_y as i32,
-            apps_icon_size as f32, apps_icon_size as f32);
+            apps_icon_size as f32, apps_icon_size as f32,
+            apps_icon_alpha);
     }
 
     if show_app_launcher {
@@ -1175,13 +1201,14 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 shift_x: f32, pointer_size: f32, hud_enabled: bool,
                 bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool,
                 show_app_launcher: bool,
-                app_list: &[alloc::string::String]) {
+                app_list: &[alloc::string::String],
+                hover_apps_icon: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
                  cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
                  bg_cache, bg_cache_valid,
-                 show_app_launcher, app_list);
+                 show_app_launcher, app_list, hover_apps_icon);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
 }
