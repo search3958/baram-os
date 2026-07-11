@@ -128,7 +128,7 @@ fn main() -> Status {
 
     let mut cached_taskbar: Option<Vec<u32>> = None;
     let mut cached_taskbar_strip: Option<Vec<u32>> = None;
-    let mut cached_launcher_blur: Option<Vec<u32>> = None;
+    let mut cached_launcher_layer: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<window::WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
@@ -155,7 +155,7 @@ fn main() -> Status {
                  &ui_commands, ui_win_id,
                  &mut warp_engines,
                  cached_wallpaper.as_deref(),
-                 &mut cached_taskbar, &mut cached_taskbar_strip, &mut cached_launcher_blur, true,
+                 &mut cached_taskbar, &mut cached_taskbar_strip, &mut cached_launcher_layer, true,
                  -1.0, -1.0, 0.0, display_state.hud_enabled,
                  &mut bg_cache, false,
                  show_app_launcher, &app_list, &app_icon_list,
@@ -353,7 +353,7 @@ fn main() -> Status {
                                                     }
                                                     cached_taskbar = None;
                                                     cached_taskbar_strip = None;
-                                                    cached_launcher_blur = None;
+                                                    cached_launcher_layer = None;
                                                     bg_cache = None;
                                                     prev_wallpaper_idx = display_state.wallpaper_index;
                                                     scene_dirty = true;
@@ -504,12 +504,23 @@ fn main() -> Status {
                              &mut warp_engines,
                              cached_wallpaper.as_deref(),
                              &mut cached_taskbar,
-                             &mut cached_taskbar_strip, &mut cached_launcher_blur, taskbar_dirty,
+                             &mut cached_taskbar_strip, &mut cached_launcher_layer, taskbar_dirty,
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x, display_state.hud_enabled,
                              &mut bg_cache, bg_valid,
                              show_app_launcher, &app_list, &app_icon_list,
                              hover_apps_icon);
+
+                if show_app_launcher {
+                    if let Some(ref ll) = cached_launcher_layer {
+                        let buf = layer.buf_mut();
+                        let ww = screen.width();
+                        let hh = screen.height();
+                        let tby = hh.saturating_sub(TASKBAR_H);
+                        buf[..tby * ww].copy_from_slice(&ll[..tby * ww]);
+                    }
+                }
+
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
 
@@ -580,6 +591,19 @@ fn main() -> Status {
                         buf[s..e].copy_from_slice(&cached_scene[s..e]);
                     }
                 }
+
+                if show_app_launcher {
+                    if let Some(ref ll) = cached_launcher_layer {
+                        let buf = layer.buf_mut();
+                        let tby = h.saturating_sub(TASKBAR_H);
+                        for y in 0..tby {
+                            let s = y * w;
+                            let e = s + w;
+                            buf[s..e].copy_from_slice(&ll[s..e]);
+                        }
+                    }
+                }
+
                 draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
                 layer.flush_rect(&mut screen, x0, y0, x1, y1);
 

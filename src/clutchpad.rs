@@ -355,7 +355,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
-                cached_launcher_blur: &mut Option<Vec<u32>>,
+                cached_launcher_layer: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32,
                 remove_progress: f32,
@@ -569,7 +569,9 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     if show_app_launcher {
-        if cached_launcher_blur.is_none() {
+        if cached_launcher_layer.is_none() {
+            let mut lsys = LayerSystem::new(w, h);
+            lsys.clear(Color::TRANSPARENT);
             let src: &[u32] = if let Some(ref cached) = bg_cache {
                 cached
             } else if let Some(pixels) = wallpaper {
@@ -578,94 +580,90 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 &[]
             };
             if !src.is_empty() {
-                let mut blurred = alloc::vec![0u32; w * tb_y];
-                blur::blur_region_darkened_to(src, &mut blurred, w, 0, tb_y, 20, 200);
-                *cached_launcher_blur = Some(blurred);
+                blur::blur_region_darkened_to(src, lsys.buf_mut(), w, 0, tb_y, 20, 200);
             }
-        }
-        if let Some(ref blur) = cached_launcher_blur {
-            layer.buf_mut()[..tb_y * w].copy_from_slice(blur);
-        }
 
-        let cols = 5usize;
-        let icon_size = 64usize;
-        let icon_gap = 24usize;
-        let label_h = 20usize;
-        let cell_w = icon_size + icon_gap;
-        let cell_h = icon_size + label_h + icon_gap;
-        let grid_w = cols * cell_w;
-        let rows = (app_list.len() + cols - 1) / cols;
-        let grid_h = rows * cell_h;
-        let grid_x = (w.saturating_sub(grid_w)) / 2;
-        let grid_y = ((h - TASKBAR_H).saturating_sub(grid_h)) / 2;
+            let cols = 5usize;
+            let icon_size = 64usize;
+            let icon_gap = 24usize;
+            let label_h = 20usize;
+            let cell_w = icon_size + icon_gap;
+            let cell_h = icon_size + label_h + icon_gap;
+            let grid_w = cols * cell_w;
+            let rows = (app_list.len() + cols - 1) / cols;
+            let grid_h = rows * cell_h;
+            let grid_x = (w.saturating_sub(grid_w)) / 2;
+            let grid_y = ((h - TASKBAR_H).saturating_sub(grid_h)) / 2;
 
-        for (i, name) in app_list.iter().enumerate() {
-            let col = i % cols;
-            let row = i / cols;
-            let cx = grid_x + col * cell_w + icon_gap / 2;
-            let cy = grid_y + row * cell_h;
+            for (i, name) in app_list.iter().enumerate() {
+                let col = i % cols;
+                let row = i / cols;
+                let cx = grid_x + col * cell_w + icon_gap / 2;
+                let cy = grid_y + row * cell_h;
 
-            layer.fill_circle(cx + icon_size / 2, cy + icon_size / 2, icon_size / 2, Color::PANEL);
+                lsys.fill_circle(cx + icon_size / 2, cy + icon_size / 2, icon_size / 2, Color::PANEL);
 
-            let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
-            let resolved_icon = if icon_name.is_empty() || icon_name == "null" { "noname.png" } else { icon_name };
-            {
-                let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                let icon_data = crate::vfs::read_file(&icon_path);
-                if !icon_data.is_empty() {
-                    if let Some(icon) = decode_icon(&icon_data, icon_size) {
-                        let pad = (icon_size - icon.w) / 2;
-                        for py in 0..icon.h {
-                            for px in 0..icon.w {
-                                let src_px = icon.pixels[py * icon.w + px];
-                                let a = src_px[3] as u32;
-                                if a == 0 { continue; }
-                                let sx = cx + pad + px;
-                                let sy = cy + pad + py;
-                                if sx >= w || sy >= h { continue; }
-                                let idx = sy * w + sx;
-                                let bg = Color(layer.buf_ref()[idx]);
-                                let inv = 255 - a;
-                                let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
-                                let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
-                                let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
+                let resolved_icon = if icon_name.is_empty() || icon_name == "null" { "noname.png" } else { icon_name };
+                {
+                    let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
+                    let icon_data = crate::vfs::read_file(&icon_path);
+                    if !icon_data.is_empty() {
+                        if let Some(icon) = decode_icon(&icon_data, icon_size) {
+                            let pad = (icon_size - icon.w) / 2;
+                            for py in 0..icon.h {
+                                for px in 0..icon.w {
+                                    let src_px = icon.pixels[py * icon.w + px];
+                                    let a = src_px[3] as u32;
+                                    if a == 0 { continue; }
+                                    let sx = cx + pad + px;
+                                    let sy = cy + pad + py;
+                                    if sx >= w || sy >= tb_y { continue; }
+                                    let idx = sy * w + sx;
+                                    let bg = Color(lsys.buf_ref()[idx]);
+                                    let inv = 255 - a;
+                                    let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                                    let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                                    let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                                    lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            let char_w = 8usize;
-            let max_chars = icon_size / char_w;
-            let char_count = name.chars().count();
-            let display_name = if char_count > max_chars {
-                let truncated_len = max_chars.saturating_sub(3);
-                let mut s = alloc::string::String::with_capacity(max_chars * 4);
-                for ch in name.chars().take(truncated_len) {
-                    s.push(ch);
-                }
-                s.push_str("...");
-                s
-            } else {
-                name.clone()
-            };
-            let mut tw = 0usize;
-            for ch in display_name.chars() {
-                if crate::ttf_font::is_available() {
-                    let g = crate::ttf_font::glyph(ch);
-                    if g.w > 0 {
-                        tw += g.advance.max(0) as usize;
+                let char_w = 8usize;
+                let max_chars = icon_size / char_w;
+                let char_count = name.chars().count();
+                let display_name = if char_count > max_chars {
+                    let truncated_len = max_chars.saturating_sub(3);
+                    let mut s = alloc::string::String::with_capacity(max_chars * 4);
+                    for ch in name.chars().take(truncated_len) {
+                        s.push(ch);
+                    }
+                    s.push_str("...");
+                    s
+                } else {
+                    name.clone()
+                };
+                let mut tw = 0usize;
+                for ch in display_name.chars() {
+                    if crate::ttf_font::is_available() {
+                        let g = crate::ttf_font::glyph(ch);
+                        if g.w > 0 {
+                            tw += g.advance.max(0) as usize;
+                        } else {
+                            tw += char_w;
+                        }
                     } else {
                         tw += char_w;
                     }
-                } else {
-                    tw += char_w;
                 }
+                let tx = cx + (icon_size.saturating_sub(tw)) / 2;
+                let ty = cy + icon_size + 4;
+                lsys.put_str(tx, ty, &display_name, Color::rgb(230, 230, 230));
             }
-            let tx = cx + (icon_size.saturating_sub(tw)) / 2;
-            let ty = cy + icon_size + 4;
-            layer.put_str(tx, ty, &display_name, Color::rgb(230, 230, 230));
+            *cached_launcher_layer = Some(lsys.buf_ref().to_vec());
         }
     }
 }
@@ -678,7 +676,7 @@ pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 wallpaper: Option<&[u32]>,
                 cached_taskbar: &mut Option<Vec<u32>>,
                 cached_taskbar_strip: &mut Option<Vec<u32>>,
-                cached_launcher_blur: &mut Option<Vec<u32>>,
+                cached_launcher_layer: &mut Option<Vec<u32>>,
                 taskbar_dirty: bool,
                 add_progress: f32, remove_progress: f32,
                 shift_x: f32, pointer_size: f32, hud_enabled: bool,
@@ -689,7 +687,7 @@ pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 hover_apps_icon: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
-                 cached_taskbar_strip, cached_launcher_blur, taskbar_dirty,
+                 cached_taskbar_strip, cached_launcher_layer, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
                  bg_cache, bg_cache_valid,
                  show_app_launcher, app_list, app_icon_list, hover_apps_icon);
