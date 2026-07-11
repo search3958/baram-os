@@ -18,7 +18,7 @@ fn build_fixed_kernel(blur_r: i32) -> Vec<i32> {
     }
     let scale = FIXED_ONE as f32 / ksum;
     for kw in &mut kernel {
-        *kw = (*kw as f32 * scale) as i32;
+        *kw = (*kw as f32 * scale / FIXED_ONE as f32) as i32;
     }
     kernel
 }
@@ -57,7 +57,6 @@ pub fn blur_region_to(src: &[u32], dst: &mut [u32], w: usize, y_start: usize, y_
     }
 
     for y in 0..region_h {
-        let dst_row = (y + y_start) * w;
         for x in 0..w {
             let mut r_acc = 0i32;
             let mut g_acc = 0i32;
@@ -70,7 +69,7 @@ pub fn blur_region_to(src: &[u32], dst: &mut [u32], w: usize, y_start: usize, y_
                 g_acc += ((px >> 8) & 0xFF) as i32 * kw;
                 b_acc += (px & 0xFF) as i32 * kw;
             }
-            dst[dst_row + x] = Color::rgb(
+            dst[y * w + x] = Color::rgb(
                 clamp_u8(r_acc >> FIXED_SHIFT),
                 clamp_u8(g_acc >> FIXED_SHIFT),
                 clamp_u8(b_acc >> FIXED_SHIFT),

@@ -601,7 +601,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             &[]
         };
         if !src.is_empty() {
-            blur::blur_region_darkened_to(src, layer.buf_mut(), w, 0, tb_y, 20, 64);
+            blur::blur_region_darkened_to(src, layer.buf_mut(), w, 0, tb_y, 20, 200);
         }
 
         let cols = 5usize;
