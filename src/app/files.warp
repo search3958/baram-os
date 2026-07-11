@@ -1,0 +1,11 @@
+screen{
+    id: (main),
+
+    Header{
+        text: ("New App"),
+    },
+
+    text{
+        text: ("空白のアプリです"),
+    },
+}

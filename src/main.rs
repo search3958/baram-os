@@ -162,11 +162,65 @@ fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap 
     }
 }
 
-const APP_DEMO: &str = include_str!("app/demo.u1");
-const WARP_DEMO: &str = include_str!("app/warpdemo.warp");
-const WARP_SETTINGS: &str = include_str!("app/settings.warp");
-const WARP_BLANK: &str = include_str!("app/blank.warp");
-const APP_INDEX_YAML: &str = include_str!("app/index.yaml");
+const FALLBACK_SETTINGS: &str = include_str!("app/settings.warp");
+const FALLBACK_WARPDEMO: &str = include_str!("app/warpdemo.warp");
+const FALLBACK_BLANK: &str = include_str!("app/blank.warp");
+const FALLBACK_DEMO_U1: &str = include_str!("app/demo.u1");
+const FALLBACK_INDEX: &str = include_str!("app/index.yaml");
+
+use uefi::proto::media::file::{File, FileAttribute, FileMode};
+use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::CStr16;
+
+pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
+    let ih = uefi::boot::image_handle();
+    let fs_result = uefi::boot::get_image_file_system(ih);
+    let mut fs = match fs_result {
+        Ok(f) => f,
+        Err(_) => return alloc::vec::Vec::new(),
+    };
+    let mut root = match fs.open_volume() {
+        Ok(r) => r,
+        Err(_) => return alloc::vec::Vec::new(),
+    };
+    let mut buf = [0u16; 256];
+    let mut i = 0;
+    for ch in path.encode_utf16() {
+        if i + 1 < buf.len() {
+            buf[i] = ch;
+            i += 1;
+        }
+    }
+    buf[i] = 0;
+    let cpath = match CStr16::from_u16_with_nul(&buf[..=i]) {
+        Ok(c) => c,
+        Err(_) => return alloc::vec::Vec::new(),
+    };
+    let handle = match root.open(cpath, FileMode::Read, FileAttribute::empty()) {
+        Ok(h) => h,
+        Err(_) => return alloc::vec::Vec::new(),
+    };
+    let mut file = match handle.into_regular_file() {
+        Some(f) => f,
+        None => return alloc::vec::Vec::new(),
+    };
+    let mut info_buf = [0u8; 512];
+    let file_size = match file.get_info::<uefi::proto::media::file::FileInfo>(&mut info_buf) {
+        Ok(info) => info.file_size() as usize,
+        Err(_) => 4096,
+    };
+    let mut contents = alloc::vec![0u8; file_size];
+    match file.read(&mut contents) {
+        Ok(n) => { contents.truncate(n); }
+        Err(_) => {}
+    }
+    contents
+}
+
+pub fn read_file_str(path: &str) -> alloc::string::String {
+    let bytes = read_file(path);
+    alloc::string::String::from_utf8(bytes).unwrap_or_default()
+}
 
 const WALLPAPER_baram_PNG: &[u8] = include_bytes!("data/wallpaper/baram.png");
 const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
@@ -236,6 +290,7 @@ struct AppEntry {
     name: alloc::string::String,
     app_type: alloc::string::String,
     title: alloc::string::String,
+    icon: alloc::string::String,
 }
 
 fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
@@ -246,6 +301,7 @@ fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
     let mut current_name = alloc::string::String::new();
     let mut current_type = alloc::string::String::from("warp-2");
     let mut current_title = alloc::string::String::new();
+    let mut current_icon = alloc::string::String::new();
     for line in yaml.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('#') || trimmed.is_empty() {
@@ -261,10 +317,11 @@ fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
             in_autostart = false;
             if !current_name.is_empty() {
                 let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
-                apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title });
+                apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title, icon: current_icon.clone() });
                 current_name.clear();
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
+                current_icon.clear();
             }
             continue;
         }
@@ -282,10 +339,11 @@ fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
             if !line.starts_with(' ') && !line.starts_with('\t') {
                 if !current_name.is_empty() {
                     let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
-                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title });
+                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title, icon: current_icon.clone() });
                     current_name.clear();
                     current_type = alloc::string::String::from("warp-2");
                     current_title.clear();
+                    current_icon.clear();
                 }
                 in_apps = false;
                 continue;
@@ -293,38 +351,40 @@ fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
             if trimmed.ends_with(':') && !trimmed.contains("icon") && !trimmed.contains("type") && !trimmed.contains("title") {
                 if !current_name.is_empty() {
                     let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
-                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title });
+                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title, icon: current_icon.clone() });
                 }
                 current_name = alloc::string::String::from(trimmed.trim_end_matches(':'));
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
+                current_icon.clear();
             } else if let Some(v) = trimmed.strip_prefix("type:") {
                 current_type = alloc::string::String::from(v.trim().trim_matches('"'));
             } else if let Some(v) = trimmed.strip_prefix("title:") {
                 current_title = alloc::string::String::from(v.trim().trim_matches('"'));
+            } else if let Some(v) = trimmed.strip_prefix("icon:") {
+                current_icon = alloc::string::String::from(v.trim().trim_matches('"'));
             }
         }
     }
     if in_apps && !current_name.is_empty() {
         let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
-        apps.push(AppEntry { name: current_name, app_type: current_type, title });
+        apps.push(AppEntry { name: current_name, app_type: current_type, title, icon: current_icon });
     }
     (autostart, apps)
 }
 
-fn get_warp_source(name: &str) -> &'static str {
-    match name {
-        "settings.warp" => WARP_SETTINGS,
-        "warpdemo.warp" => WARP_DEMO,
-        "blank.warp" => WARP_BLANK,
-        _ => WARP_BLANK,
+fn load_app_source(name: &str) -> alloc::string::String {
+    let path = alloc::format!("apps/{}", name);
+    let content = read_file_str(&path);
+    if !content.is_empty() {
+        return content;
     }
-}
-
-fn get_uiscript_source(name: &str) -> &'static str {
     match name {
-        "demo.u1" => APP_DEMO,
-        _ => APP_DEMO,
+        "settings.warp" => alloc::string::String::from(FALLBACK_SETTINGS),
+        "warpdemo.warp" => alloc::string::String::from(FALLBACK_WARPDEMO),
+        "blank.warp" => alloc::string::String::from(FALLBACK_BLANK),
+        "demo.u1" => alloc::string::String::from(FALLBACK_DEMO_U1),
+        _ => alloc::string::String::new(),
     }
 }
 
@@ -371,7 +431,12 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    let (autostart_list, app_entries) = parse_index_yaml(APP_INDEX_YAML);
+    let index_yaml = read_file_str("apps/index.yaml");
+    let (autostart_list, app_entries) = if index_yaml.is_empty() {
+        parse_index_yaml(FALLBACK_INDEX)
+    } else {
+        parse_index_yaml(&index_yaml)
+    };
     let mut warp_engines: alloc::vec::Vec<(window::WinId, warp::WarpEngine)> = alloc::vec::Vec::new();
     let mut ui_win_id: Option<window::WinId> = None;
     let mut ui_commands: alloc::vec::Vec<uiscript::Command> = alloc::vec::Vec::new();
@@ -385,13 +450,13 @@ fn main() -> Status {
             let h = 450;
             let win_id = wm.add(&entry.title, x, y, w, h);
             if entry.app_type.starts_with("warp") {
-                let source = get_warp_source(&entry.name);
-                let mut engine = warp::WarpEngine::new(source);
+                let source = load_app_source(&entry.name);
+                let mut engine = warp::WarpEngine::new(&source);
                 engine.update((w as i32) - 20, (h as i32) - 50);
                 warp_engines.push((win_id, engine));
             } else if entry.app_type.starts_with("uiscript") {
-                let source = get_uiscript_source(&entry.name);
-                ui_commands = uiscript::parse(source);
+                let source = load_app_source(&entry.name);
+                ui_commands = uiscript::parse(&source);
                 ui_win_id = Some(win_id);
             }
             auto_idx += 1;
@@ -472,8 +537,10 @@ fn main() -> Status {
     let mut tb_shift_x: f32 = 0.0f32;
     let mut show_app_launcher: bool = false;
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+    let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for entry in &app_entries {
         app_list.push(entry.title.clone());
+        app_icon_list.push(entry.icon.clone());
     }
     let mut hover_apps_icon: bool = false;
     let mut prev_hover_apps_icon: bool = false;
@@ -487,7 +554,7 @@ fn main() -> Status {
                  &mut cached_taskbar, &mut cached_taskbar_strip, true,
                  -1.0, -1.0, 0.0, display_state.hud_enabled,
                  &mut bg_cache, false,
-                 show_app_launcher, &app_list,
+                 show_app_launcher, &app_list, &app_icon_list,
                  hover_apps_icon);
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -518,7 +585,8 @@ fn main() -> Status {
                             let x = 60 + ((new_window_idx as i32 * 37) % 300);
                             let y = 80 + ((new_window_idx as i32 * 23) % 200);
                             let new_id = wm.add("New App", x, y, 400, 450);
-                            let mut engine = warp::WarpEngine::new(WARP_BLANK);
+                            let source = load_app_source("blank.warp");
+                            let mut engine = warp::WarpEngine::new(&source);
                             engine.update(380, 410);
                             warp_engines.push((new_id, engine));
                             tb_add_progress = 0.0;
@@ -565,7 +633,7 @@ fn main() -> Status {
                             show_app_launcher = !show_app_launcher;
                             scene_dirty = true;
                         } else if show_app_launcher {
-                            let launcher_w = 260i32;
+                            let launcher_w = 280i32;
                             let launcher_h = (app_list.len() as i32 * 40 + 16).min(sh as i32 - 40);
                             let launcher_x = 16i32;
                             let launcher_y = (sh as i32 - TASKBAR_H as i32 - launcher_h - 8).max(0);
@@ -580,7 +648,8 @@ fn main() -> Status {
                                         let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                                         let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                                         let new_id = wm.add(&app_title, nx, ny, 400, 450);
-                                        let mut engine = warp::WarpEngine::new(WARP_BLANK);
+                                        let source = load_app_source("blank.warp");
+                            let mut engine = warp::WarpEngine::new(&source);
                                         engine.update(380, 410);
                                         warp_engines.push((new_id, engine));
                                         tb_add_progress = 0.0;
@@ -827,7 +896,7 @@ fn main() -> Status {
                              tb_add_progress, tb_remove_progress,
                              tb_shift_x, display_state.hud_enabled,
                              &mut bg_cache, bg_valid,
-                             show_app_launcher, &app_list,
+                             show_app_launcher, &app_list, &app_icon_list,
                              hover_apps_icon);
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
@@ -930,6 +999,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 bg_cache_valid: bool,
                 show_app_launcher: bool,
                 app_list: &[alloc::string::String],
+                app_icon_list: &[alloc::string::String],
                 hover_apps_icon: bool) {
     let w = layer.width();
     let h = layer.height();
@@ -1173,7 +1243,7 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     }
 
     if show_app_launcher {
-        let launcher_w = 260usize;
+        let launcher_w = 280usize;
         let launcher_h = (app_list.len() as usize * 40 + 16).min(h - 40);
         let launcher_x = 16usize;
         let launcher_y = (h - TASKBAR_H - launcher_h - 8).max(0);
@@ -1183,7 +1253,38 @@ fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
             let item_y = launcher_y + 8 + i * 40;
             if item_y + 32 > launcher_y + launcher_h { break; }
             layer.fill_rounded_rect(launcher_x + 8, item_y, launcher_w - 16, 32, 6, Color::rgb(55, 55, 55));
-            layer.put_str(launcher_x + 16, item_y + 8, name, Color::rgb(220, 220, 220));
+            let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
+            let icon_x = launcher_x + 14;
+            let icon_y = item_y + 4;
+            let icon_bytes = match icon_name {
+                "settings.png" => ICON_SETTINGS_PNG,
+                "note.png" => ICON_NOTE_PNG,
+                "files.png" => ICON_FILES_PNG,
+                "manager.png" => ICON_MANAGER_PNG,
+                _ => ICON_NONAME_PNG,
+            };
+            let icon_drawn = if let Some(icon) = decode_icon(icon_bytes, 24) {
+                for py in 0..24usize {
+                    for px in 0..24usize {
+                        let src = icon.pixels[py * icon.w + px];
+                        let a = src[3] as u32;
+                        if a == 0 { continue; }
+                        let sx = icon_x + px;
+                        let sy = icon_y + py;
+                        if sx >= w || sy >= h { continue; }
+                        let idx = sy * w + sx;
+                        let bg = Color(layer.buf_ref()[idx]);
+                        let inv = 255 - a;
+                        let r = (src[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                        let g = (src[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                        let b = (src[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                        layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                    }
+                }
+                true
+            } else { false };
+            let text_x = if icon_drawn { icon_x + 28 } else { launcher_x + 16 };
+            layer.put_str(text_x, item_y + 8, name, Color::rgb(220, 220, 220));
         }
     }
 }
@@ -1202,13 +1303,14 @@ fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                 bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool,
                 show_app_launcher: bool,
                 app_list: &[alloc::string::String],
+                app_icon_list: &[alloc::string::String],
                 hover_apps_icon: bool) {
     render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
                  ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
                  cached_taskbar_strip, taskbar_dirty,
                  add_progress, remove_progress, shift_x, hud_enabled,
                  bg_cache, bg_cache_valid,
-                 show_app_launcher, app_list, hover_apps_icon);
+                 show_app_launcher, app_list, app_icon_list, hover_apps_icon);
     let is_resizing = wm.is_any_resizing();
     draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
 }

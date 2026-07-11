@@ -18,7 +18,15 @@ apps:
     icon: null
     type: warp-2
     title: Warp Demo
-  blank.warp:
-    icon: null
+  files.warp:
+    icon: files.png
     type: warp-2
-    title: New App
+    title: ファイル
+  note.warp:
+    icon: note.png
+    type: warp-2
+    title: ノート
+  task.warp:
+    icon: manager.png
+    type: warp-2
+    title: タスクマネージャー
