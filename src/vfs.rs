@@ -1,40 +1,7 @@
 use uefi::proto::media::file::{File, FileAttribute, FileMode};
 use uefi::CStr16;
 
-struct EmbeddedFile {
-    path: &'static [u8],
-    data: &'static [u8],
-}
-
-static EMBEDDED_FILES: &[EmbeddedFile] = &[
-    EmbeddedFile { path: b"apps/blank.warp", data: include_bytes!("app/blank.warp") },
-    EmbeddedFile { path: b"apps/settings.warp", data: include_bytes!("app/settings.warp") },
-    EmbeddedFile { path: b"apps/warpdemo.warp", data: include_bytes!("app/warpdemo.warp") },
-    EmbeddedFile { path: b"apps/demo.u1", data: include_bytes!("app/demo.u1") },
-    EmbeddedFile { path: b"apps/task.warp", data: include_bytes!("app/task.warp") },
-    EmbeddedFile { path: b"apps/note.warp", data: include_bytes!("app/note.warp") },
-    EmbeddedFile { path: b"apps/files.warp", data: include_bytes!("app/files.warp") },
-    EmbeddedFile { path: b"app/icon/settings.png", data: include_bytes!("app/icon/settings.png") },
-    EmbeddedFile { path: b"app/icon/note.png", data: include_bytes!("app/icon/note.png") },
-    EmbeddedFile { path: b"app/icon/noname.png", data: include_bytes!("app/icon/noname.png") },
-    EmbeddedFile { path: b"app/icon/manager.png", data: include_bytes!("app/icon/manager.png") },
-    EmbeddedFile { path: b"app/icon/files.png", data: include_bytes!("app/icon/files.png") },
-];
-
-fn read_embedded(path: &str) -> Option<&'static [u8]> {
-    for f in EMBEDDED_FILES {
-        if core::str::from_utf8(f.path).ok() == Some(path) {
-            return Some(f.data);
-        }
-    }
-    None
-}
-
 pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
-    if let Some(data) = read_embedded(path) {
-        return alloc::vec::Vec::from(data);
-    }
-
     let ih = uefi::boot::image_handle();
     let fs_result = uefi::boot::get_image_file_system(ih);
     let mut fs = match fs_result {

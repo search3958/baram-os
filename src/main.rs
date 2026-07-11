@@ -80,6 +80,7 @@ fn main() -> Status {
             let w = 400;
             let h = 450;
             let win_id = wm.add(&entry.title, x, y, w, h);
+            wm.set_icon(win_id, &entry.icon);
             if entry.app_type.starts_with("warp") {
                 let source = app::load_app_source(&entry.name);
                 let mut engine = warp::WarpEngine::new(&source);
@@ -254,9 +255,11 @@ fn main() -> Status {
                         if let Some(idx) = clicked_app {
                             let app_title = app_list[idx].clone();
                             let app_name = app_name_list[idx].clone();
+                            let app_icon = app_icon_list[idx].clone();
                             let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                             let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                             let new_id = wm.add(&app_title, nx, ny, 400, 450);
+                            wm.set_icon(new_id, &app_icon);
                             let source = app::load_app_source(&app_name);
                             let mut engine = warp::WarpEngine::new(&source);
                             engine.update(380, 410);

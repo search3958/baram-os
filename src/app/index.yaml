@@ -30,7 +30,3 @@ apps:
     icon: manager.png
     type: warp-2
     title: タスクマネージャー
-  blank.warp:
-    icon: null
-    type: warp-2
-    title: 空白

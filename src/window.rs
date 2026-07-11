@@ -28,6 +28,8 @@ pub struct Window {
     pub id: WinId,
     pub title: [u8; 24],
     pub title_len: usize,
+    pub icon_name: [u8; 16],
+    pub icon_name_len: usize,
     pub x: i32,
     pub y: i32,
     pub w: usize,
@@ -68,6 +70,7 @@ impl Window {
         tb[..n].copy_from_slice(&src[..n]);
         Self {
             id, title: tb, title_len: n,
+            icon_name: [0u8; 16], icon_name_len: 0,
             x, y, w, h, z,
             visible: true, focused: false, maximized: false, minimized: false,
             scroll_y: 0,
@@ -87,6 +90,17 @@ impl Window {
 
     fn title_str(&self) -> &str {
         core::str::from_utf8(&self.title[..self.title_len]).unwrap_or("")
+    }
+
+    fn icon_str(&self) -> &str {
+        core::str::from_utf8(&self.icon_name[..self.icon_name_len]).unwrap_or("")
+    }
+
+    pub fn set_icon(&mut self, name: &str) {
+        let src = name.as_bytes();
+        let n = src.len().min(15);
+        self.icon_name[..n].copy_from_slice(&src[..n]);
+        self.icon_name_len = n;
     }
 
     fn ensure_layer(&mut self, screen_w: usize, screen_h: usize) {
@@ -246,6 +260,16 @@ impl WindowManager {
         self.focus(id);
         self.order_changed = true;
         id
+    }
+
+    pub fn set_icon(&mut self, id: WinId, icon_name: &str) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.set_icon(icon_name);
+        }
+    }
+
+    pub fn get_icon_name(&self, id: WinId) -> &str {
+        self.windows.iter().find(|w| w.id == id).map(|w| w.icon_str()).unwrap_or("")
     }
 
     pub fn remove(&mut self, id: WinId) {
