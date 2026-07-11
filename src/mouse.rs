@@ -27,16 +27,35 @@ pub struct Mouse {
     usb_io: Option<boot::ScopedProtocol<UsbIo>>,
     ep_addr: u8,
     report_buf: Vec<u8>,
-    
+
     abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64)>,
     simple: Option<boot::ScopedProtocol<Pointer>>,
 }
 
 impl Mouse {
+    pub fn get_wait_event() -> Option<uefi::Event> {
+        // Try AbsolutePointer
+        if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
+            let params = boot::OpenProtocolParams {
+                handle: h,
+                agent: boot::image_handle(),
+                controller: None,
+            };
+            if let Ok(ptr) = unsafe {
+                boot::open_protocol::<AbsolutePointer>(params, boot::OpenProtocolAttributes::GetProtocol)
+            } {
+                let evt = ptr.wait_for_input_event();
+                // Event wraps a raw pointer, we can copy the raw pointer
+                let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&evt) };
+                core::mem::forget(ptr); // prevent drop so the event stays valid
+                return Some(unsafe { core::mem::transmute_copy::<usize, uefi::Event>(&raw) });
+            }
+        }
+        None
+    }
     pub fn open() -> Result<Mouse, &'static str> {
         log_line_str("Mouse: searching for devices...");
 
-        // List all protocol handles for debugging
         if let Ok(handles) = boot::find_handles::<UsbIo>() {
             log_line_str(&format!("  UsbIo handles: {}", handles.len()));
         } else {
@@ -53,32 +72,41 @@ impl Mouse {
             log_line_str("  Pointer handles: none");
         }
 
-        // Try UEFI protocols first (more reliable on real hardware)
+        // Try UEFI protocols first (USB IO is broken on pftf)
+        log_line_str("Mouse: trying UEFI protocols...");
         let mut abs = None;
         let mut simple = None;
 
         if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
             log_line_str("  Trying AbsolutePointer...");
-            if let Ok(mut ptr) = boot::open_protocol_exclusive::<AbsolutePointer>(h) {
-                let _ = ptr.reset(false);
-                uefi::boot::stall(core::time::Duration::from_millis(50));
+            let params = boot::OpenProtocolParams {
+                handle: h,
+                agent: boot::image_handle(),
+                controller: None,
+            };
+            if let Ok(ptr) = unsafe {
+                boot::open_protocol::<AbsolutePointer>(params, boot::OpenProtocolAttributes::GetProtocol)
+            } {
                 let mx = ptr.mode().absolute_max_x.max(1);
                 let my = ptr.mode().absolute_max_y.max(1);
                 log_line_str(&format!("  AbsolutePointer: max=({},{})", mx, my));
                 abs = Some((ptr, mx, my));
-            } else {
-                log_line_str("  AbsolutePointer: open failed");
             }
         }
-        if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
-            log_line_str("  Trying SimplePointer...");
-            if let Ok(mut ptr) = boot::open_protocol_exclusive::<Pointer>(h) {
-                let _ = ptr.reset(false);
-                uefi::boot::stall(core::time::Duration::from_millis(50));
-                log_line_str("  SimplePointer: ready");
-                simple = Some(ptr);
-            } else {
-                log_line_str("  SimplePointer: open failed");
+        if abs.is_none() {
+            if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
+                log_line_str("  Trying SimplePointer...");
+                let params = boot::OpenProtocolParams {
+                    handle: h,
+                    agent: boot::image_handle(),
+                    controller: None,
+                };
+                if let Ok(ptr) = unsafe {
+                    boot::open_protocol::<Pointer>(params, boot::OpenProtocolAttributes::GetProtocol)
+                } {
+                    log_line_str("  SimplePointer: ready");
+                    simple = Some(ptr);
+                }
             }
         }
 
@@ -87,10 +115,9 @@ impl Mouse {
             return Ok(Mouse { usb_io: None, ep_addr: 0, report_buf: vec![0u8; 8], abs, simple });
         }
 
-        // Fallback: direct USB IO (works on QEMU, may not on real hardware)
-        log_line_str("Mouse: UEFI protocols unavailable, trying direct USB IO...");
+        // Fallback: USB IO (broken on pftf RPi4, but try anyway)
+        log_line_str("Mouse: trying USB IO (may not work on pftf)...");
         if let Some(m) = Self::try_usb_io() {
-            log_line_str("Mouse: USB IO (direct HID)");
             return Ok(m);
         }
 
@@ -112,20 +139,24 @@ impl Mouse {
                 boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
             };
 
-            
+            // GET_DESCRIPTOR (device)
             let mut dev_buf = vec![0u8; 18];
             let _ = usb.control_transfer(0x80, 6, 0x0100, 0, ControlTransfer::DataIn(&mut dev_buf), 5000);
 
-            
+            let vid = u16::from_le_bytes([dev_buf[8], dev_buf[9]]);
+            let pid = u16::from_le_bytes([dev_buf[10], dev_buf[11]]);
+            log_line_str(&format!("  USB IO: vid=0x{:04x} pid=0x{:04x}", vid, pid));
+
+            // GET_DESCRIPTOR (configuration)
             let mut cfg_buf = vec![0u8; 512];
             let _ = usb.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
 
-            
+            // Parse configuration descriptor to find HID interfaces
             let mut off = 0;
-            let mut in_hid = false;
-            let mut iface_num: u8 = 0;
+            let mut current_iface: u8 = 0;
             let mut intr_ep: Option<u8> = None;
             let mut intr_mps: u16 = 0;
+            let mut is_mouse = false;
 
             while off + 2 < cfg_buf.len() {
                 let b_len = cfg_buf[off] as usize;
@@ -134,18 +165,45 @@ impl Mouse {
 
                 match b_type {
                     4 => {
-                        
-                        in_hid = cfg_buf[off + 5] == 3; 
-                        iface_num = cfg_buf[off + 2];
+                        // Interface descriptor
+                        current_iface = cfg_buf[off + 2];
+                        let class = cfg_buf[off + 5];
+                        let subclass = cfg_buf[off + 6];
+                        intr_ep = None;
+                        is_mouse = false;
+
+                        // HID class = 3
+                        if class == 3 && subclass == 1 {
+                            // Boot interface subclass — could be mouse or keyboard
+                            // Check protocol: 2=mouse, 1=keyboard
+                            let protocol = cfg_buf[off + 7];
+                            if protocol == 2 {
+                                is_mouse = true;
+                                log_line_str(&format!("    iface {} protocol=Mouse", current_iface));
+                            } else if protocol == 1 {
+                                log_line_str(&format!("    iface {} protocol=Keyboard", current_iface));
+                            }
+                        }
                     }
                     5 => {
-                        
-                        if b_len >= 7 && in_hid && intr_ep.is_none() {
+                        // Endpoint descriptor
+                        if b_len >= 7 && intr_ep.is_none() {
                             let ea = cfg_buf[off + 2];
                             let attrs = cfg_buf[off + 3];
                             if ea & 0x80 != 0 && attrs & 0x03 == 3 {
                                 intr_ep = Some(ea);
                                 intr_mps = u16::from_le_bytes([cfg_buf[off + 4], cfg_buf[off + 5]]);
+                            }
+                        }
+                    }
+                    0x24 => {
+                        // HID descriptor (inside interface)
+                        if b_len >= 6 && !is_mouse {
+                            // Check HID report descriptor for usage
+                            let desc_type = cfg_buf[off + 3];
+                            if desc_type == 0x22 {
+                                // HID Report Descriptor follows
+                                // We'll check it after the configuration descriptor
                             }
                         }
                     }
@@ -156,17 +214,38 @@ impl Mouse {
 
             let ep = match intr_ep {
                 Some(e) => e,
-                None => continue,
+                None => {
+                    log_line_str("    no interrupt IN endpoint found");
+                    continue;
+                }
             };
 
-            log_line_str(&format!("  USB IO: HID iface={} ep=0x{:02x} mps={}", iface_num, ep, intr_mps));
+            log_line_str(&format!("    HID ep=0x{:02x} mps={} mouse={}", ep, intr_mps, is_mouse));
 
-            
-            let _ = usb.control_transfer(0x21, 0x0B, 1, iface_num as u16, ControlTransfer::None, 5000);
-            
-            let _ = usb.control_transfer(0x21, 0x0A, 0, iface_num as u16, ControlTransfer::None, 5000);
+            // Only accept mouse HID devices
+            if !is_mouse {
+                log_line_str("    skipping (not mouse)");
+                continue;
+            }
+
+            // Get bConfigurationValue from the configuration descriptor (offset 5 of the first 9-byte desc)
+            let config_value = cfg_buf[5];
+            log_line_str(&format!("    SET_CONFIGURATION config={}", config_value));
+
+            // 1. SET_CONFIGURATION — required before any endpoint transfers
+            let _ = usb.control_transfer(0x00, 0x09, config_value as u16, 0, ControlTransfer::None, 5000);
+
+            // 2. SET_IDLE (bRequest=0x0A) — required for mouse to start sending reports
+            let _ = usb.control_transfer(0x21, 0x0A, 0, current_iface as u16, ControlTransfer::None, 5000);
+
+            // 3. SET_PROTOCOL (bRequest=0x0B, wValue=0 for boot protocol)
+            let _ = usb.control_transfer(0x21, 0x0B, 0, current_iface as u16, ControlTransfer::None, 5000);
+
+            log_line_str("    USB HID configured");
 
             let report_buf = vec![0u8; intr_mps as usize];
+
+            log_line_str("Mouse: using USB IO (direct HID boot protocol)");
 
             return Some(Mouse {
                 usb_io: Some(usb),
@@ -191,60 +270,61 @@ impl Mouse {
     }
 
     pub fn poll(&mut self) -> Option<MouseEvent> {
-        
+        // Try USB IO first
         if let Some(usb) = &mut self.usb_io {
             if self.ep_addr != 0 {
-                let n = usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 10).ok()?;
-                if n == 0 { return None; }
-                let r = &self.report_buf[..n];
+                match usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 100) {
+                    Ok(n) => {
+                        if n == 0 { return None; }
+                        let r = &self.report_buf[..n];
+                        let mut ev = MouseEvent::default();
 
-                let mut ev = MouseEvent::default();
-                
-                
-                if n >= 5 {
-                    ev.left = r[0] & 0x01 != 0;
-                    ev.right = r[0] & 0x02 != 0;
-                    ev.middle = r[0] & 0x04 != 0;
-                    ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
-                    ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
-                    ev.is_absolute = true;
-                }
-                
-                else if n >= 4 {
-                    ev.left = r[0] & 0x01 != 0;
-                    ev.right = r[0] & 0x02 != 0;
-                    ev.middle = r[0] & 0x04 != 0;
-                    ev.rel_dx = r[1] as i8 as i32;
-                    ev.rel_dy = r[2] as i8 as i32;
-                    ev.scroll = r[3] as i8 as i32;
-                    ev.is_absolute = false;
-                }
-                
-                else if n >= 3 {
-                    ev.left = r[0] & 0x01 != 0;
-                    ev.right = r[0] & 0x02 != 0;
-                    ev.middle = r[0] & 0x04 != 0;
-                    ev.rel_dx = r[1] as i8 as i32;
-                    ev.rel_dy = r[2] as i8 as i32;
-                    ev.is_absolute = false;
-                }
+                        if n >= 5 {
+                            ev.left = r[0] & 0x01 != 0;
+                            ev.right = r[0] & 0x02 != 0;
+                            ev.middle = r[0] & 0x04 != 0;
+                            ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
+                            ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
+                            ev.is_absolute = true;
+                        } else if n >= 4 {
+                            ev.left = r[0] & 0x01 != 0;
+                            ev.right = r[0] & 0x02 != 0;
+                            ev.middle = r[0] & 0x04 != 0;
+                            ev.rel_dx = r[1] as i8 as i32;
+                            ev.rel_dy = r[2] as i8 as i32;
+                            ev.scroll = r[3] as i8 as i32;
+                            ev.is_absolute = false;
+                        } else if n >= 3 {
+                            ev.left = r[0] & 0x01 != 0;
+                            ev.right = r[0] & 0x02 != 0;
+                            ev.middle = r[0] & 0x04 != 0;
+                            ev.rel_dx = r[1] as i8 as i32;
+                            ev.rel_dy = r[2] as i8 as i32;
+                            ev.is_absolute = false;
+                        }
 
-                return Some(ev);
+                        return Some(ev);
+                    }
+                    Err(e) => {
+                        static mut ERR_COUNT: u32 = 0;
+                        unsafe {
+                            ERR_COUNT += 1;
+                            if ERR_COUNT <= 3 {
+                                log_line_str(&format!("Mouse USB IO: sync_interrupt error {:?} (count={})", e, ERR_COUNT));
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        
         if let Some((ptr, _mx, _my)) = &mut self.abs {
             let mut acc = MouseEvent::default();
             acc.is_absolute = true;
             let mut got = false;
+            static mut ABS_LOGGED: bool = false;
 
-            // Wait for input event first (required by UEFI spec)
-            let mut evt = ptr.wait_for_input_event();
-            let _ = boot::wait_for_event(&mut [evt]);
-
-            // Drain all pending states
-            loop {
+            for _ in 0..20 {
                 match ptr.get_state() {
                     Ok(Some(state)) => {
                         acc.abs_x = state.current_x;
@@ -252,8 +332,18 @@ impl Mouse {
                         if state.active_buttons & 0x1 != 0 { acc.left = true; }
                         if state.active_buttons & 0x2 != 0 { acc.right = true; }
                         got = true;
+                        unsafe {
+                            if !ABS_LOGGED {
+                                ABS_LOGGED = true;
+                                log_line_str(&format!("AbsPtr: GOT DATA x={} y={} btn={}", state.current_x, state.current_y, state.active_buttons));
+                            }
+                        }
                     }
-                    _ => break,
+                    Ok(None) => { /* NOT_READY */ }
+                    Err(e) => {
+                        log_line_str(&format!("AbsPtr: get_state error: {:?}", e));
+                        break;
+                    }
                 }
             }
             if got { return Some(acc); }
@@ -264,6 +354,7 @@ impl Mouse {
             let mut acc = MouseEvent::default();
             acc.is_absolute = false;
             let mut got = false;
+            static mut SIMPLE_LOGGED: bool = false;
             loop {
                 match ptr.read_state() {
                     Ok(Some(state)) => {
@@ -272,6 +363,12 @@ impl Mouse {
                         if state.button[0] { acc.left = true; }
                         if state.button[1] { acc.right = true; }
                         got = true;
+                        unsafe {
+                            if !SIMPLE_LOGGED {
+                                SIMPLE_LOGGED = true;
+                                log_line_str(&format!("SimplePtr: GOT DATA dx={} dy={} btn={}{}", state.relative_movement[0], state.relative_movement[1], state.button[0] as u8, state.button[1] as u8));
+                            }
+                        }
                     }
                     _ => break,
                 }

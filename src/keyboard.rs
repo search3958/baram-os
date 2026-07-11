@@ -1,27 +1,20 @@
-//! UEFI Simple Text Input wrapper.
-//!
-//! This module exposes a tiny `Keyboard` struct that the main loop polls
-//! each frame.  Returned `KeyEvent`s carry the pressed scan code and an
-//! optional printable ASCII character.
-
+use alloc::format;
+use alloc::vec;
+use alloc::vec::Vec;
+use uefi::boot;
+use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::proto::console::text::{Input, Key, ScanCode};
 use uefi::system::with_stdin;
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct KeyEvent {
-    
     pub printable: Option<u8>,
-    
     pub scancode: u16,
 }
 
 impl KeyEvent {
-    #[allow(dead_code)]
     pub fn is_special(&self) -> bool { self.scancode != 0 }
 
-    
-    
     pub fn label(&self) -> &'static str {
         if let Some(c) = self.printable {
             return match c {
@@ -33,7 +26,6 @@ impl KeyEvent {
                 _     => "ASCII",
             };
         }
-        
         let sc = ScanCode(self.scancode);
         if sc == ScanCode::UP         { return "UP"; }
         if sc == ScanCode::DOWN       { return "DOWN"; }
@@ -62,30 +54,214 @@ impl KeyEvent {
     }
 }
 
-pub struct Keyboard;
+// USB HID boot keyboard report: modifier(1) + reserved(1) + keys(6)
+const BOOT_KEYMAP: [u8; 128] = {
+    let mut map = [0u8; 128];
+    // USB HID usage codes to ASCII
+    map[0x04] = b'a'; map[0x05] = b'b'; map[0x06] = b'c'; map[0x07] = b'd';
+    map[0x08] = b'e'; map[0x09] = b'f'; map[0x0A] = b'g'; map[0x0B] = b'h';
+    map[0x0C] = b'i'; map[0x0D] = b'j'; map[0x0E] = b'k'; map[0x0F] = b'l';
+    map[0x10] = b'm'; map[0x11] = b'n'; map[0x12] = b'o'; map[0x13] = b'p';
+    map[0x14] = b'q'; map[0x15] = b'r'; map[0x16] = b's'; map[0x17] = b't';
+    map[0x18] = b'u'; map[0x19] = b'v'; map[0x1A] = b'w'; map[0x1B] = b'x';
+    map[0x1C] = b'y'; map[0x1D] = b'z';
+    map[0x1E] = b'1'; map[0x1F] = b'2'; map[0x20] = b'3'; map[0x21] = b'4';
+    map[0x22] = b'5'; map[0x23] = b'6'; map[0x24] = b'7'; map[0x25] = b'8';
+    map[0x26] = b'9'; map[0x27] = b'0';
+    map[0x28] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
+    map[0x2F] = b'['; map[0x30] = b']'; map[0x33] = b';'; map[0x34] = b'\'';
+    map[0x36] = b','; map[0x37] = b'.'; map[0x38] = b'/';
+    map
+};
+
+pub struct Keyboard {
+    usb_io: Option<(boot::ScopedProtocol<UsbIo>, u8, Vec<u8>)>,
+    report_buf: Vec<u8>,
+    prev_keys: [u8; 6],
+}
 
 impl Keyboard {
-    
-    
-    
     pub fn is_present() -> bool {
-        
-        uefi::boot::get_handle_for_protocol::<Input>().is_ok()
+        // Check UEFI protocol
+        if uefi::boot::get_handle_for_protocol::<Input>().is_ok() {
+            return true;
+        }
+        // Check USB IO for keyboard HID
+        if let Ok(handles) = boot::find_handles::<UsbIo>() {
+            for handle in handles {
+                if Self::probe_usb_kbd(handle).is_some() {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
-    
+    fn probe_usb_kbd(handle: uefi::Handle) -> Option<(u8, u16)> {
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let mut usb = unsafe {
+            boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
+        };
+
+        let mut dev_buf = vec![0u8; 18];
+        let _ = usb.control_transfer(0x80, 6, 0x0100, 0, ControlTransfer::DataIn(&mut dev_buf), 5000);
+
+        let mut cfg_buf = vec![0u8; 512];
+        let _ = usb.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
+
+        let mut off = 0;
+        let mut current_iface: u8 = 0;
+        let mut intr_ep: Option<u8> = None;
+        let mut intr_mps: u16 = 0;
+        let mut is_keyboard = false;
+
+        while off + 2 < cfg_buf.len() {
+            let b_len = cfg_buf[off] as usize;
+            let b_type = cfg_buf[off + 1];
+            if b_len < 2 || off + b_len > cfg_buf.len() { break; }
+
+            match b_type {
+                4 => {
+                    current_iface = cfg_buf[off + 2];
+                    let class = cfg_buf[off + 5];
+                    let subclass = cfg_buf[off + 6];
+                    let protocol = cfg_buf[off + 7];
+                    intr_ep = None;
+                    is_keyboard = false;
+                    if class == 3 && subclass == 1 && protocol == 1 {
+                        is_keyboard = true;
+                    }
+                }
+                5 => {
+                    if b_len >= 7 && intr_ep.is_none() {
+                        let ea = cfg_buf[off + 2];
+                        let attrs = cfg_buf[off + 3];
+                        if ea & 0x80 != 0 && attrs & 0x03 == 3 {
+                            intr_ep = Some(ea);
+                            intr_mps = u16::from_le_bytes([cfg_buf[off + 4], cfg_buf[off + 5]]);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            off += b_len;
+        }
+
+        if is_keyboard {
+            if let Some(ep) = intr_ep {
+                crate::mouse::log_line_str(&format!("  KBD USB IO: iface={} ep=0x{:02x}", current_iface, ep));
+                return Some((ep, intr_mps));
+            }
+        }
+        None
+    }
+
     pub fn reset() {
         with_stdin(|input| { let _ = input.reset(false); });
     }
 
-    
-    
-    pub fn poll() -> Option<KeyEvent> {
-        //panic!("自分で設定した例外を忘れないで");
+    pub fn open() -> Self {
+        // Try direct USB IO for keyboard
+        if let Ok(handles) = boot::find_handles::<UsbIo>() {
+            for handle in handles {
+                if let Some((ep, mps)) = Self::probe_usb_kbd(handle) {
+                    let params = boot::OpenProtocolParams {
+                        handle,
+                        agent: boot::image_handle(),
+                        controller: None,
+                    };
+                    if let Ok(usb) = unsafe {
+                        boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol)
+                    } {
+                        let mut usb_obj = usb;
+                        // Find interface number from the probe
+                        let mut cfg_buf = vec![0u8; 512];
+                        let _ = usb_obj.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
+                        let mut off = 0;
+                        let mut iface_num: u8 = 0;
+                        while off + 2 < cfg_buf.len() {
+                            let b_len = cfg_buf[off] as usize;
+                            let b_type = cfg_buf[off + 1];
+                            if b_len < 2 || off + b_len > cfg_buf.len() { break; }
+                            if b_type == 4 {
+                                let class = cfg_buf[off + 5];
+                                let subclass = cfg_buf[off + 6];
+                                let protocol = cfg_buf[off + 7];
+                                if class == 3 && subclass == 1 && protocol == 1 {
+                                    iface_num = cfg_buf[off + 2];
+                                }
+                            }
+                            off += b_len;
+                        }
+
+                        let _ = usb_obj.control_transfer(0x21, 0x0B, 0, iface_num as u16, ControlTransfer::None, 5000);
+                        let _ = usb_obj.control_transfer(0x21, 0x0B, 1, iface_num as u16, ControlTransfer::None, 5000);
+
+                        let report_buf = vec![0u8; mps as usize];
+                        crate::mouse::log_line_str("KBD: using USB IO (direct HID boot protocol)");
+                        return Keyboard {
+                            usb_io: Some((usb_obj, ep, report_buf)),
+                            report_buf: vec![0u8; 8],
+                            prev_keys: [0u8; 6],
+                        };
+                    }
+                }
+            }
+        }
+        crate::mouse::log_line_str("KBD: using UEFI protocol");
+        Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6] }
+    }
+
+    pub fn stdin_event() -> Option<uefi::Event> {
+        use uefi::proto::console::text::Input;
+        let handle = uefi::boot::get_handle_for_protocol::<Input>().ok()?;
+        let params = uefi::boot::OpenProtocolParams {
+            handle,
+            agent: uefi::boot::image_handle(),
+            controller: None,
+        };
+        let input = unsafe {
+            uefi::boot::open_protocol::<Input>(params, uefi::boot::OpenProtocolAttributes::GetProtocol).ok()?
+        };
+        input.wait_for_key_event().ok()
+    }
+
+    pub fn poll(&mut self) -> Option<KeyEvent> {
+        // Try USB IO first
+        if let Some((usb, ep, report_buf)) = &mut self.usb_io {
+            if let Ok(n) = usb.sync_interrupt_receive(*ep, report_buf, 10) {
+                if n >= 8 {
+                    let r = &report_buf[..n];
+                    // Boot keyboard report: modifier(1) reserved(1) keys(6)
+                    let _modifiers = r[0];
+                    let keys = [r[2], r[3], r[4], r[5], r[6], r[7]];
+
+                    // Find newly pressed keys
+                    for &key in &keys {
+                        if key == 0 { continue; }
+                        if !self.prev_keys.contains(&key) {
+                            self.prev_keys = keys;
+
+                            let ascii = BOOT_KEYMAP[key as usize];
+                            let printable = if ascii != 0 { Some(ascii) } else { None };
+
+                            return Some(KeyEvent { printable, scancode: 0 });
+                        }
+                    }
+                    self.prev_keys = keys;
+                    return None;
+                }
+            }
+        }
+
+        // Fallback: UEFI protocol
         with_stdin(|input| {
             match input.read_key() {
                 Ok(Some(Key::Printable(ch))) => {
-                    
                     let v: u16 = ch.into();
                     let printable = if v < 0x80 { Some(v as u8) } else { None };
                     Some(KeyEvent { printable, scancode: 0 })
@@ -93,7 +269,11 @@ impl Keyboard {
                 Ok(Some(Key::Special(sc))) => {
                     Some(KeyEvent { printable: None, scancode: sc.0 })
                 }
-                _ => None,
+                Ok(None) => None,
+                Err(e) => {
+                    crate::mouse::log_line_str(&format!("KBD: read_key error: {:?}", e));
+                    None
+                }
             }
         })
     }

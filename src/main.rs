@@ -69,8 +69,28 @@ fn main() -> Status {
         Ok(m) => Some(m),
         Err(_) => None,
     };
-    let has_kbd = Keyboard::is_present();
-    if has_kbd { Keyboard::reset(); }
+    mouse::log_line_str("BaramOS: opening keyboard...");
+    let mut keyboard = Keyboard::open();
+
+    // Create a 1ms periodic timer to keep the UEFI event loop alive
+    let timer_event = unsafe {
+        match uefi::boot::create_event(
+            uefi_raw::table::boot::EventType::TIMER,
+            uefi_raw::table::boot::Tpl::APPLICATION,
+            None,
+            None,
+        ) {
+            Ok(evt) => {
+                let _ = uefi::boot::set_timer(&evt, uefi::boot::TimerTrigger::Periodic(core::time::Duration::from_millis(1)));
+                mouse::log_line_str("BaramOS: timer event created (1ms periodic)");
+                Some(evt)
+            }
+            Err(_) => {
+                mouse::log_line_str("BaramOS: failed to create timer event");
+                None
+            }
+        }
+    };
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -185,38 +205,42 @@ fn main() -> Status {
 
         let prev_dirty = wm.dirty_bbox(shadow_pad);
 
-        
-        if has_kbd {
-            while let Some(ev) = Keyboard::poll() {
-                key_ev_count = key_ev_count.wrapping_add(1);
-                if last_keys.len() >= 6 { last_keys.remove(0); }
-                last_keys.push(ev.label());
+        // Use wait_for_event to pump the UEFI event loop
+        // This processes USB interrupts in the background
+        if let Some(ref timer) = timer_event {
+            let mut events = [unsafe { core::ptr::read(timer) }];
+            let _ = uefi::boot::wait_for_event(&mut events);
+        }
 
-                match ev.scancode {
-                    0x01 => wm.scroll_focused(-window::SCROLL_SPEED),
-                    0x02 => wm.scroll_focused(window::SCROLL_SPEED),
+        while let Some(ev) = keyboard.poll() {
+            key_ev_count = key_ev_count.wrapping_add(1);
+            if last_keys.len() >= 6 { last_keys.remove(0); }
+            last_keys.push(ev.label());
+
+            match ev.scancode {
+                0x01 => wm.scroll_focused(-window::SCROLL_SPEED),
+                0x02 => wm.scroll_focused(window::SCROLL_SPEED),
+                _ => {}
+            }
+            if let Some(c) = ev.printable {
+                match c {
+                    b'n' | b'N' => {
+                        let x = 60 + ((new_window_idx as i32 * 37) % 300);
+                        let y = 80 + ((new_window_idx as i32 * 23) % 200);
+                        let new_id = wm.add("New App", x, y, 400, 450);
+                        let source = app::load_app_source("blank.warp");
+                        let mut engine = warp::WarpEngine::new(&source);
+                        engine.update(380, 410);
+                        warp_engines.push((new_id, engine));
+                        tb_add_progress = 0.0;
+                        tb_shift_x = 26.0;
+                        new_window_idx = new_window_idx.wrapping_add(1);
+                    }
                     _ => {}
                 }
-                if let Some(c) = ev.printable {
-                    match c {
-                        b'n' | b'N' => {
-                            let x = 60 + ((new_window_idx as i32 * 37) % 300);
-                            let y = 80 + ((new_window_idx as i32 * 23) % 200);
-                            let new_id = wm.add("New App", x, y, 400, 450);
-                            let source = app::load_app_source("blank.warp");
-                            let mut engine = warp::WarpEngine::new(&source);
-                            engine.update(380, 410);
-                            warp_engines.push((new_id, engine));
-                            tb_add_progress = 0.0;
-                            tb_shift_x = 26.0;
-                            new_window_idx = new_window_idx.wrapping_add(1);
-                        }
-                        _ => {}
-                    }
-                }
-                dirty = true;
-                scene_dirty = true;
             }
+            dirty = true;
+            scene_dirty = true;
         }
 
         if let Some(mouse) = mouse_opt.as_mut() {
