@@ -26,6 +26,7 @@ pub struct MouseEvent {
 pub struct Mouse {
     usb_io: Option<boot::ScopedProtocol<UsbIo>>,
     ep_addr: u8,
+    iface: u8,
     report_buf: Vec<u8>,
 
     abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64)>,
@@ -72,7 +73,13 @@ impl Mouse {
             log_line_str("  Pointer handles: none");
         }
 
-        // Try UEFI protocols first (USB IO is broken on pftf)
+        log_line_str("Mouse: trying USB IO first...");
+        if let Some(m) = Self::try_usb_io() {
+            log_line_str("Mouse: USB IO initialized successfully!");
+            return Ok(m);
+        }
+
+        // Fallback: Try UEFI protocols
         log_line_str("Mouse: trying UEFI protocols...");
         let mut abs = None;
         let mut simple = None;
@@ -84,9 +91,10 @@ impl Mouse {
                 agent: boot::image_handle(),
                 controller: None,
             };
-            if let Ok(ptr) = unsafe {
+            if let Ok(mut ptr) = unsafe {
                 boot::open_protocol::<AbsolutePointer>(params, boot::OpenProtocolAttributes::GetProtocol)
             } {
+                let _ = ptr.reset(false);
                 let mx = ptr.mode().absolute_max_x.max(1);
                 let my = ptr.mode().absolute_max_y.max(1);
                 log_line_str(&format!("  AbsolutePointer: max=({},{})", mx, my));
@@ -101,9 +109,10 @@ impl Mouse {
                     agent: boot::image_handle(),
                     controller: None,
                 };
-                if let Ok(ptr) = unsafe {
+                if let Ok(mut ptr) = unsafe {
                     boot::open_protocol::<Pointer>(params, boot::OpenProtocolAttributes::GetProtocol)
                 } {
+                    let _ = ptr.reset(false);
                     log_line_str("  SimplePointer: ready");
                     simple = Some(ptr);
                 }
@@ -112,13 +121,7 @@ impl Mouse {
 
         if abs.is_some() || simple.is_some() {
             log_line_str("Mouse: using UEFI protocol");
-            return Ok(Mouse { usb_io: None, ep_addr: 0, report_buf: vec![0u8; 8], abs, simple });
-        }
-
-        // Fallback: USB IO (broken on pftf RPi4, but try anyway)
-        log_line_str("Mouse: trying USB IO (may not work on pftf)...");
-        if let Some(m) = Self::try_usb_io() {
-            return Ok(m);
+            return Ok(Mouse { usb_io: None, ep_addr: 0, iface: 0, report_buf: vec![0u8; 8], abs, simple });
         }
 
         log_line_str("Mouse: no device found via any protocol");
@@ -250,6 +253,7 @@ impl Mouse {
             return Some(Mouse {
                 usb_io: Some(usb),
                 ep_addr: ep,
+                iface: current_iface,
                 report_buf,
                 abs: None,
                 simple: None,
@@ -273,7 +277,7 @@ impl Mouse {
         // Try USB IO first
         if let Some(usb) = &mut self.usb_io {
             if self.ep_addr != 0 {
-                match usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 100) {
+                match usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 1) {
                     Ok(n) => {
                         if n == 0 { return None; }
                         let r = &self.report_buf[..n];
@@ -311,6 +315,53 @@ impl Mouse {
                             ERR_COUNT += 1;
                             if ERR_COUNT <= 3 {
                                 log_line_str(&format!("Mouse USB IO: sync_interrupt error {:?} (count={})", e, ERR_COUNT));
+                            }
+                        }
+                        // Fallback to GET_REPORT if interrupt transfer fails
+                        if usb.control_transfer(0xA1, 0x01, 0x0100, self.iface as u16, ControlTransfer::DataIn(&mut self.report_buf), 1).is_ok() {
+                            let n = self.report_buf.len();
+                            if n > 0 {
+                                let r = &self.report_buf[..n];
+                                static mut LAST_REPORT: [u8; 8] = [0; 8];
+                                let mut changed = false;
+                                for i in 0..n.min(8) {
+                                    if unsafe { LAST_REPORT[i] } != r[i] {
+                                        changed = true;
+                                        break;
+                                    }
+                                }
+                                if changed {
+                                    for i in 0..n.min(8) {
+                                        unsafe { LAST_REPORT[i] = r[i]; }
+                                    }
+                                    let mut ev = MouseEvent::default();
+                                    if n >= 5 {
+                                        ev.left = r[0] & 0x01 != 0;
+                                        ev.right = r[0] & 0x02 != 0;
+                                        ev.middle = r[0] & 0x04 != 0;
+                                        ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
+                                        ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
+                                        ev.is_absolute = true;
+                                        return Some(ev);
+                                    } else if n >= 4 {
+                                        ev.left = r[0] & 0x01 != 0;
+                                        ev.right = r[0] & 0x02 != 0;
+                                        ev.middle = r[0] & 0x04 != 0;
+                                        ev.rel_dx = r[1] as i8 as i32;
+                                        ev.rel_dy = r[2] as i8 as i32;
+                                        ev.scroll = r[3] as i8 as i32;
+                                        ev.is_absolute = false;
+                                        return Some(ev);
+                                    } else if n >= 3 {
+                                        ev.left = r[0] & 0x01 != 0;
+                                        ev.right = r[0] & 0x02 != 0;
+                                        ev.middle = r[0] & 0x04 != 0;
+                                        ev.rel_dx = r[1] as i8 as i32;
+                                        ev.rel_dy = r[2] as i8 as i32;
+                                        ev.is_absolute = false;
+                                        return Some(ev);
+                                    }
+                                }
                             }
                         }
                     }
