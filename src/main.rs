@@ -14,6 +14,7 @@ mod keyboard;
 mod debug_log;
 mod mouse;
 mod panic;
+mod setup;
 mod svg;
 mod ttf_font;
 mod ttf_font_hud;
@@ -94,6 +95,39 @@ fn main() -> Status {
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
+
+    // First-boot setup wizard
+    if !setup::is_setup_done() {
+        mouse::log_line_str("BaramOS: first boot detected, starting setup wizard");
+        let mut wizard = setup::SetupWizard::new();
+        let mut setup_layer = LayerSystem::new(screen.width(), screen.height());
+        let mut setup_buf: alloc::vec::Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
+
+        loop {
+            if let Some(ref timer) = timer_event {
+                let mut events = [unsafe { core::ptr::read(timer) }];
+                let _ = uefi::boot::wait_for_event(&mut events);
+            }
+
+            while let Some(ev) = keyboard.poll() {
+                wizard.on_key(&ev);
+            }
+
+            if wizard.screen == setup::SetupScreen::Done {
+                break;
+            }
+
+            wizard.render(&mut setup_buf, screen.width(), screen.height());
+            setup_layer.buf_mut()[..screen.width() * screen.height()].copy_from_slice(&setup_buf);
+
+            cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
+            cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
+            draw_cursor_into_layer(&mut setup_layer, cursor_x, cursor_y, false, 1.0);
+            setup_layer.flush(&mut screen);
+        }
+        mouse::log_line_str("BaramOS: setup wizard completed");
+        keyboard.shift_key = crate::keyboard::load_shift_key();
+    }
 
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
