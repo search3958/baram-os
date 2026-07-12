@@ -245,31 +245,31 @@ impl Keyboard {
         // Try USB IO first
         if let Some((usb, ep, report_buf)) = &mut self.usb_io {
             if let Ok(n) = usb.sync_interrupt_receive(*ep, report_buf, 10) {
-                if n >= 8 {
+                if n >= 1 {
                     let r = &report_buf[..n];
                     // Boot keyboard report: modifier(1) reserved(1) keys(6)
-                    let modifiers = r[0];
-                    let keys = [r[2], r[3], r[4], r[5], r[6], r[7]];
-                    self.cur_modifiers = modifiers;
-                    self.cur_keys = keys;
+                    self.cur_modifiers = r[0];
+                    if n >= 8 {
+                        let keys = [r[2], r[3], r[4], r[5], r[6], r[7]];
 
-                    // Find newly pressed keys
-                    for &key in &keys {
-                        if key == 0 { continue; }
-                        if !self.prev_keys.contains(&key) {
-                            self.prev_keys = keys;
+                        // Find newly pressed keys
+                        for &key in &keys {
+                            if key == 0 { continue; }
+                            if !self.prev_keys.contains(&key) {
+                                self.prev_keys = keys;
 
-                            let ascii = if (key as usize) < BOOT_KEYMAP.len() {
-                                BOOT_KEYMAP[key as usize]
-                            } else {
-                                0
-                            };
-                            let printable = if ascii != 0 { Some(ascii) } else { None };
+                                let ascii = if (key as usize) < BOOT_KEYMAP.len() {
+                                    BOOT_KEYMAP[key as usize]
+                                } else {
+                                    0
+                                };
+                                let printable = if ascii != 0 { Some(ascii) } else { None };
 
-                            return Some(KeyEvent { printable, scancode: 0, modifiers });
+                                return Some(KeyEvent { printable, scancode: 0, modifiers: self.cur_modifiers });
+                            }
                         }
+                        self.prev_keys = keys;
                     }
-                    self.prev_keys = keys;
                     return None;
                 }
             }
@@ -301,5 +301,9 @@ impl Keyboard {
 
     pub fn ctrl_or_cmd_held(&self) -> bool {
         self.cur_modifiers & 0x11 != 0
+    }
+
+    pub fn shift_held(&self) -> bool {
+        self.cur_modifiers & 0x22 != 0
     }
 }

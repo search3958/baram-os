@@ -142,6 +142,12 @@ fn main() -> Status {
     let mut wasd_first_press: [u64; 4] = [0; 4]; // W, A, S, D
     let mut wasd_moved: [bool; 4] = [false; 4];
 
+    let mut mousekey_mode: bool = false;
+    let mut shift_press_times: [u64; 3] = [0; 3];
+    let mut shift_press_idx: usize = 0;
+    let mut prev_shift_held: bool = false;
+    let mut mousekey_win_id: Option<window::WinId> = None;
+
     let mouse_mode_label = match &mouse_opt {
         Some(m) if m.is_absolute() => "Absolute",
         Some(_) => "Simple Ptr",
@@ -226,7 +232,7 @@ fn main() -> Status {
                 _ => {}
             }
 
-            if ev.ctrl_or_cmd() {
+            if ev.ctrl_or_cmd() || (mousekey_mode && keyboard.shift_held()) {
                 if let Some(c) = ev.printable {
                     match c {
                         b' ' => {
@@ -258,8 +264,57 @@ fn main() -> Status {
             scene_dirty = true;
         }
 
+        // Shift x3 detection for mousekey mode toggle
+        {
+            let shift_held = keyboard.shift_held();
+            let shift_just_pressed = shift_held && !prev_shift_held;
+            prev_shift_held = shift_held;
+
+            if shift_just_pressed {
+                let now_ns = runtime::get_time().map(|t| t.nanosecond() as u64 + t.second() as u64 * 1_000_000_000 + t.minute() as u64 * 60_000_000_000 + t.hour() as u64 * 3_600_000_000_000).unwrap_or(0);
+                let threshold_ns = 1_000_000_000; // 1 second window
+
+                shift_press_times[shift_press_idx % 3] = now_ns;
+                shift_press_idx += 1;
+
+                // Check if 3 presses happened within threshold
+                if shift_press_idx >= 3 {
+                    let oldest = shift_press_times[(shift_press_idx - 3) % 3];
+                    if now_ns.saturating_sub(oldest) <= threshold_ns {
+                        // Toggle mousekey mode
+                        mousekey_mode = !mousekey_mode;
+                        shift_press_idx = 0;
+
+                        if mousekey_mode {
+                            // Launch mousekeydialog.warp
+                            let source = app::load_app_source("mousekeydialog.warp");
+                            let nx = (screen.width() as i32 - 400) / 2;
+                            let ny = (screen.height() as i32 - 300) / 2;
+                            let win_id = wm.add("マウスキー", nx, ny, 400, 300);
+                            let mut engine = warp::WarpEngine::new(&source);
+                            engine.update(380, 260);
+                            warp_engines.push((win_id, engine));
+                            mousekey_win_id = Some(win_id);
+                            tb_add_progress = 0.0;
+                            tb_shift_x = 26.0;
+                            dirty = true;
+                            scene_dirty = true;
+                        } else {
+                            // Close mousekey window
+                            if let Some(wid) = mousekey_win_id.take() {
+                                wm.remove(wid);
+                                warp_engines.retain(|(id, _)| *id != wid);
+                                dirty = true;
+                                scene_dirty = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // WASD movement with repeat delay
-        if keyboard.ctrl_or_cmd_held() {
+        if keyboard.ctrl_or_cmd_held() || mousekey_mode {
             let step = 8i32;
             let now_ns = runtime::get_time().map(|t| t.nanosecond() as u64 + t.second() as u64 * 1_000_000_000 + t.minute() as u64 * 60_000_000_000 + t.hour() as u64 * 3_600_000_000_000).unwrap_or(0);
             let delay_ns = 300_000_000; // 0.3s
