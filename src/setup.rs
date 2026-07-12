@@ -38,14 +38,15 @@ impl SetupWizard {
     }
 
     pub fn on_key(&mut self, ev: &crate::keyboard::KeyEvent) {
+        let is_enter = ev.printable == Some(b'\n') || ev.raw_key == 0x28 || ev.raw_key == 0x58 || ev.scancode == 0x1C;
         match self.screen {
             SetupScreen::Welcome => {
-                if ev.printable == Some(b'\n') || ev.printable == Some(b' ') || ev.scancode == 0x5C {
+                if is_enter {
                     self.screen = SetupScreen::Keyboard;
                 }
             }
             SetupScreen::Keyboard => {
-                if ev.printable == Some(b'\n') {
+                if is_enter {
                     if self.key_detected {
                         crate::keyboard::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;

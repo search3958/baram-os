@@ -76,7 +76,7 @@ const BOOT_KEYMAP: [u8; 128] = {
     map[0x1E] = b'1'; map[0x1F] = b'2'; map[0x20] = b'3'; map[0x21] = b'4';
     map[0x22] = b'5'; map[0x23] = b'6'; map[0x24] = b'7'; map[0x25] = b'8';
     map[0x26] = b'9'; map[0x27] = b'0';
-    map[0x28] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
+    map[0x28] = b'\n'; map[0x58] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
     map[0x2F] = b'['; map[0x30] = b']'; map[0x33] = b';'; map[0x34] = b'\'';
     map[0x36] = b','; map[0x37] = b'.'; map[0x38] = b'/';
     map
@@ -311,10 +311,12 @@ impl Keyboard {
                 Ok(Some(Key::Printable(ch))) => {
                     let v: u16 = ch.into();
                     let printable = if v < 0x80 { Some(v as u8) } else { None };
-                    Some(KeyEvent { printable, scancode: 0, modifiers: 0, raw_key: 0 })
+                    let raw = if v > 0 && v < 256 { v as u8 } else { 0 };
+                    Some(KeyEvent { printable, scancode: 0, modifiers: 0, raw_key: raw })
                 }
                 Ok(Some(Key::Special(sc))) => {
-                    Some(KeyEvent { printable: None, scancode: sc.0, modifiers: 0, raw_key: 0 })
+                    let raw = if sc.0 > 0 && sc.0 < 256 { sc.0 as u8 } else { 0 };
+                    Some(KeyEvent { printable: None, scancode: sc.0, modifiers: 0, raw_key: raw })
                 }
                 Ok(None) => None,
                 Err(e) => {
