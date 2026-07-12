@@ -11,6 +11,7 @@ mod font;
 mod gop;
 mod keyboard;
 
+mod debug_log;
 mod mouse;
 mod panic;
 mod svg;
@@ -37,9 +38,12 @@ use crate::clutchpad::*;
 
 #[entry]
 fn main() -> Status {
+    mouse::log_line_str("BaramOS: starting...");
     let _ = uefi::helpers::init();
+    mouse::log_line_str("BaramOS: UEFI helpers initialized");
     ttf_font::init();
     ttf_font_hud::init();
+    mouse::log_line_str("BaramOS: fonts initialized");
 
     unsafe {
         CURSOR_NORMAL = Some(prerender_cursor(CURSOR_SVG, CURSOR_BOX_W, CURSOR_BOX_H, 8));
@@ -47,18 +51,46 @@ fn main() -> Status {
     }
 
     let mut screen = match Screen::take() {
-        Ok(s) => s,
-        Err(_s) => return Status::UNSUPPORTED,
+        Ok(s) => {
+            mouse::log_line_str(&alloc::format!("BaramOS: screen {}x{}", s.width(), s.height()));
+            unsafe { debug_log::init_screen(&s) };
+            s
+        },
+        Err(_s) => {
+            mouse::log_line_str("BaramOS: screen init failed");
+            return Status::UNSUPPORTED
+        },
     };
 
     unsafe { panic::init_from_screen(&screen) };
 
+    mouse::log_line_str("BaramOS: opening mouse...");
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
         Ok(m) => Some(m),
         Err(_) => None,
     };
-    let has_kbd = Keyboard::is_present();
-    if has_kbd { Keyboard::reset(); }
+    mouse::log_line_str("BaramOS: opening keyboard...");
+    let mut keyboard = Keyboard::open();
+
+    // Create a 1ms periodic timer to keep the UEFI event loop alive
+    let timer_event = unsafe {
+        match uefi::boot::create_event(
+            uefi_raw::table::boot::EventType::TIMER,
+            uefi_raw::table::boot::Tpl::APPLICATION,
+            None,
+            None,
+        ) {
+            Ok(evt) => {
+                let _ = uefi::boot::set_timer(&evt, uefi::boot::TimerTrigger::Periodic(core::time::Duration::from_millis(1)));
+                mouse::log_line_str("BaramOS: timer event created (1ms periodic)");
+                Some(evt)
+            }
+            Err(_) => {
+                mouse::log_line_str("BaramOS: failed to create timer event");
+                None
+            }
+        }
+    };
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -66,7 +98,9 @@ fn main() -> Status {
     let mut wm = WindowManager::new(screen.width(), screen.height());
     let mut layer = LayerSystem::new(screen.width(), screen.height());
 
+    mouse::log_line_str("BaramOS: loading index.yaml...");
     let index_yaml = app::read_index_yaml();
+    mouse::log_line_str(&alloc::format!("BaramOS: index.yaml {} bytes", index_yaml.len()));
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(window::WinId, warp::WarpEngine)> = alloc::vec::Vec::new();
     let mut ui_win_id: Option<window::WinId> = None;
@@ -104,6 +138,15 @@ fn main() -> Status {
     let mut start_time = runtime::get_time().unwrap_or_else(|_| runtime::Time::invalid());
     let mut mouse_down = false;
     let mut new_window_idx: u32 = 0;
+    let mut keyboard_click: bool = false;
+    let mut wasd_first_press: [u64; 4] = [0; 4]; // W, A, S, D
+    let mut wasd_moved: [bool; 4] = [false; 4];
+
+    let mut mousekey_mode: bool = false;
+    let mut shift_press_times: [u64; 3] = [0; 3];
+    let mut shift_press_idx: usize = 0;
+    let mut prev_shift_held: bool = false;
+    let mut mousekey_win_id: Option<window::WinId> = None;
 
     let mouse_mode_label = match &mouse_opt {
         Some(m) if m.is_absolute() => "Absolute",
@@ -171,37 +214,152 @@ fn main() -> Status {
 
         let prev_dirty = wm.dirty_bbox(shadow_pad);
 
-        
-        if has_kbd {
-            while let Some(ev) = Keyboard::poll() {
-                key_ev_count = key_ev_count.wrapping_add(1);
-                if last_keys.len() >= 6 { last_keys.remove(0); }
-                last_keys.push(ev.label());
+        // Use wait_for_event to pump the UEFI event loop
+        // This processes USB interrupts in the background
+        if let Some(ref timer) = timer_event {
+            let mut events = [unsafe { core::ptr::read(timer) }];
+            let _ = uefi::boot::wait_for_event(&mut events);
+        }
 
-                match ev.scancode {
-                    0x01 => wm.scroll_focused(-window::SCROLL_SPEED),
-                    0x02 => wm.scroll_focused(window::SCROLL_SPEED),
-                    _ => {}
-                }
+        while let Some(ev) = keyboard.poll() {
+            key_ev_count = key_ev_count.wrapping_add(1);
+            if last_keys.len() >= 6 { last_keys.remove(0); }
+            last_keys.push(ev.label());
+
+            match ev.scancode {
+                0x01 => wm.scroll_focused(-window::SCROLL_SPEED),
+                0x02 => wm.scroll_focused(window::SCROLL_SPEED),
+                _ => {}
+            }
+
+            if ev.ctrl_or_cmd() || (mousekey_mode && keyboard.shift_held()) {
                 if let Some(c) = ev.printable {
                     match c {
-                        b'n' | b'N' => {
-                            let x = 60 + ((new_window_idx as i32 * 37) % 300);
-                            let y = 80 + ((new_window_idx as i32 * 23) % 200);
-                            let new_id = wm.add("New App", x, y, 400, 450);
-                            let source = app::load_app_source("blank.warp");
-                            let mut engine = warp::WarpEngine::new(&source);
-                            engine.update(380, 410);
-                            warp_engines.push((new_id, engine));
-                            tb_add_progress = 0.0;
-                            tb_shift_x = 26.0;
-                            new_window_idx = new_window_idx.wrapping_add(1);
+                        b' ' => {
+                            keyboard_click = true;
+                            dirty = true;
+                            scene_dirty = true;
                         }
                         _ => {}
                     }
                 }
-                dirty = true;
-                scene_dirty = true;
+            } else if let Some(c) = ev.printable {
+                match c {
+                    b'n' | b'N' => {
+                        let x = 60 + ((new_window_idx as i32 * 37) % 300);
+                        let y = 80 + ((new_window_idx as i32 * 23) % 200);
+                        let new_id = wm.add("New App", x, y, 400, 450);
+                        let source = app::load_app_source("blank.warp");
+                        let mut engine = warp::WarpEngine::new(&source);
+                        engine.update(380, 410);
+                        warp_engines.push((new_id, engine));
+                        tb_add_progress = 0.0;
+                        tb_shift_x = 26.0;
+                        new_window_idx = new_window_idx.wrapping_add(1);
+                    }
+                    _ => {}
+                }
+            }
+            dirty = true;
+            scene_dirty = true;
+        }
+
+        // Shift x3 detection for mousekey mode toggle
+        {
+            let shift_held = keyboard.shift_held();
+            let shift_just_pressed = shift_held && !prev_shift_held;
+            prev_shift_held = shift_held;
+
+            if shift_just_pressed {
+                let now_ns = runtime::get_time().map(|t| t.nanosecond() as u64 + t.second() as u64 * 1_000_000_000 + t.minute() as u64 * 60_000_000_000 + t.hour() as u64 * 3_600_000_000_000).unwrap_or(0);
+                let threshold_ns = 1_000_000_000; // 1 second window
+
+                shift_press_times[shift_press_idx % 3] = now_ns;
+                shift_press_idx += 1;
+
+                // Check if 3 presses happened within threshold
+                if shift_press_idx >= 3 {
+                    let oldest = shift_press_times[(shift_press_idx - 3) % 3];
+                    if now_ns.saturating_sub(oldest) <= threshold_ns {
+                        // Toggle mousekey mode
+                        mousekey_mode = !mousekey_mode;
+                        shift_press_idx = 0;
+
+                        if mousekey_mode {
+                            // Launch mousekeydialog.warp
+                            let source = app::load_app_source("mousekeydialog.warp");
+                            let nx = (screen.width() as i32 - 400) / 2;
+                            let ny = (screen.height() as i32 - 300) / 2;
+                            let win_id = wm.add("マウスキー", nx, ny, 400, 300);
+                            let mut engine = warp::WarpEngine::new(&source);
+                            engine.update(380, 260);
+                            warp_engines.push((win_id, engine));
+                            mousekey_win_id = Some(win_id);
+                            tb_add_progress = 0.0;
+                            tb_shift_x = 26.0;
+                            dirty = true;
+                            scene_dirty = true;
+                        } else {
+                            // Close mousekey window
+                            if let Some(wid) = mousekey_win_id.take() {
+                                wm.remove(wid);
+                                warp_engines.retain(|(id, _)| *id != wid);
+                                dirty = true;
+                                scene_dirty = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // WASD movement with repeat delay
+        if keyboard.ctrl_or_cmd_held() || mousekey_mode {
+            let step = 8i32;
+            let now_ns = runtime::get_time().map(|t| t.nanosecond() as u64 + t.second() as u64 * 1_000_000_000 + t.minute() as u64 * 60_000_000_000 + t.hour() as u64 * 3_600_000_000_000).unwrap_or(0);
+            let delay_ns = 300_000_000; // 0.3s
+
+            let keys = [
+                (0x1A, 0usize), // W
+                (0x04, 1usize), // A
+                (0x16, 2usize), // S
+                (0x07, 3usize), // D
+            ];
+
+            for (usb_code, idx) in keys {
+                if keyboard.is_held(usb_code) {
+                    if wasd_first_press[idx] == 0 {
+                        // First press: move immediately
+                        wasd_first_press[idx] = now_ns;
+                        wasd_moved[idx] = true;
+                        match idx {
+                            0 => { cursor_y = (cursor_y - step).max(0); }
+                            1 => { cursor_x = (cursor_x - step).max(0); }
+                            2 => { cursor_y = (cursor_y + step).min(screen.height() as i32 - 1); }
+                            3 => { cursor_x = (cursor_x + step).min(screen.width() as i32 - 1); }
+                            _ => {}
+                        }
+                        dirty = true;
+                        scene_dirty = true;
+                    } else {
+                        // Held: only move after delay
+                        let elapsed = now_ns.saturating_sub(wasd_first_press[idx]);
+                        if elapsed >= delay_ns {
+                            match idx {
+                                0 => { cursor_y = (cursor_y - step).max(0); }
+                                1 => { cursor_x = (cursor_x - step).max(0); }
+                                2 => { cursor_y = (cursor_y + step).min(screen.height() as i32 - 1); }
+                                3 => { cursor_x = (cursor_x + step).min(screen.width() as i32 - 1); }
+                                _ => {}
+                            }
+                            dirty = true;
+                            scene_dirty = true;
+                        }
+                    }
+                } else {
+                    wasd_first_press[idx] = 0;
+                    wasd_moved[idx] = false;
+                }
             }
         }
 
@@ -390,6 +548,155 @@ fn main() -> Status {
 
                 dirty = true;
             }
+        }
+
+        // Handle Ctrl/Cmd+Space click
+        if keyboard_click {
+            keyboard_click = false;
+            let cx = cursor_x;
+            let cy = cursor_y;
+            let sh = screen.height();
+
+            if show_app_launcher {
+                let cols = 5usize;
+                let icon_size = 64usize;
+                let icon_gap = 24usize;
+                let label_h = 20usize;
+                let cell_w = icon_size + icon_gap;
+                let cell_h = icon_size + label_h + icon_gap;
+                let grid_w = cols * cell_w;
+                let rows = (app_list.len() + cols - 1) / cols;
+                let grid_h = rows * cell_h;
+                let grid_x = (screen.width().saturating_sub(grid_w)) / 2;
+                let grid_y = ((screen.height() - TASKBAR_H).saturating_sub(grid_h)) / 2;
+                let mut clicked_app = None;
+                for (i, _) in app_list.iter().enumerate() {
+                    let col = i % cols;
+                    let row = i / cols;
+                    let ix = grid_x + col * cell_w + icon_gap / 2;
+                    let iy = grid_y + row * cell_h;
+                    if cx >= ix as i32 && cx < (ix + icon_size) as i32
+                        && cy >= iy as i32 && cy < (iy + icon_size) as i32
+                    {
+                        clicked_app = Some(i);
+                        break;
+                    }
+                }
+                if let Some(idx) = clicked_app {
+                    let app_title = app_list[idx].clone();
+                    let app_name = app_name_list[idx].clone();
+                    let app_icon = app_icon_list[idx].clone();
+                    let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                    let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                    let new_id = wm.add(&app_title, nx, ny, 400, 450);
+                    wm.set_icon(new_id, &app_icon);
+                    let source = app::load_app_source(&app_name);
+                    let mut engine = warp::WarpEngine::new(&source);
+                    engine.update(380, 410);
+                    warp_engines.push((new_id, engine));
+                    tb_add_progress = 0.0;
+                    tb_shift_x = 26.0;
+                    new_window_idx = new_window_idx.wrapping_add(1);
+                }
+                show_app_launcher = false;
+                scene_dirty = true;
+            } else if cy >= sh as i32 - TASKBAR_H as i32 {
+                let apps_icon_x = 16i32;
+                let apps_icon_size = 24i32;
+                let apps_icon_y = (sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2) as i32;
+                let on_apps_icon = cx >= apps_icon_x && cx < apps_icon_x + apps_icon_size
+                    && cy >= apps_icon_y && cy < apps_icon_y + apps_icon_size;
+                if on_apps_icon {
+                    show_app_launcher = !show_app_launcher;
+                    scene_dirty = true;
+                } else {
+                    if show_app_launcher {
+                        show_app_launcher = false;
+                        scene_dirty = true;
+                    }
+                    let ids = wm.insertion_ids();
+                    let count = ids.len();
+                    let btn_d = 40i32;
+                    let btn_gap = 12i32;
+                    let total_w = count as i32 * (btn_d + btn_gap) - btn_gap;
+                    let mut bx = ((screen.width() as i32 - total_w) / 2).max(0);
+                    let btn_y = (sh as usize).saturating_sub(TASKBAR_H) + (TASKBAR_H - 40) / 2;
+                    for id in &ids {
+                        let dx = cx - bx - btn_d / 2;
+                        let dy = cy - btn_y as i32 - btn_d / 2;
+                        if dx * dx + dy * dy <= (btn_d / 2) * (btn_d / 2) {
+                            if wm.is_minimized(*id) {
+                                wm.restore_minimized(*id);
+                            }
+                            wm.focus(*id);
+                            break;
+                        }
+                        bx += btn_d + btn_gap;
+                    }
+                }
+            } else {
+                let win_under = wm.window_at(cx, cy);
+                if let Some(id) = win_under {
+                    wm.focus(id);
+                    let btn = wm.button_hit_at(id, cx, cy);
+                    match btn {
+                        'c' => { wm.remove(id); }
+                        'm' => { wm.toggle_maximize_at(id); }
+                        'i' => { wm.toggle_minimize_at(id); }
+                        _ => {}
+                    }
+                }
+                if let Some(clicked_id) = wm.window_at(cx, cy) {
+                    for (wid, engine) in warp_engines.iter_mut() {
+                        if clicked_id == *wid {
+                            if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
+                                let rel_x = cx - wx;
+                                let rel_y = cy - wy + scroll;
+                                engine.click(rel_x, rel_y);
+                                let content_h = wh.saturating_sub(30);
+                                engine.update(ww as i32, content_h as i32);
+                                wm.set_content_dirty(clicked_id);
+                                scene_dirty = true;
+
+                                if let Some(cmd) = engine.last_command.take() {
+                                    uri::execute(&cmd, &mut display_state);
+                                    if let Some(parsed) = uri::parse(&cmd) {
+                                        if parsed.action == "wallpaper" {
+                                            if uri::get_param(&parsed, "color").is_some() {
+                                                if let Some(color) = display_state.wallpaper_color {
+                                                    cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
+                                                }
+                                            } else {
+                                                if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
+                                                    cached_wallpaper = decode_wallpaper(bytes, screen.width(), screen.height());
+                                                }
+                                            }
+                                            cached_taskbar = None;
+                                            cached_taskbar_strip = None;
+                                            cached_launcher_layer = None;
+                                            bg_cache = None;
+                                            prev_wallpaper_idx = display_state.wallpaper_index;
+                                            scene_dirty = true;
+                                        } else if parsed.action == "pointer" || parsed.action == "hud" {
+                                            scene_dirty = true;
+                                        }
+                                    }
+                                }
+
+                                if let Some(enabled_str) = engine.get_state_value("--hudEnabled") {
+                                    let new_enabled = enabled_str == "true";
+                                    if display_state.hud_enabled != new_enabled {
+                                        display_state.hud_enabled = new_enabled;
+                                        scene_dirty = true;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            dirty = true;
         }
 
         {
