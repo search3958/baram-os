@@ -10,6 +10,13 @@ use uefi::system::with_stdin;
 pub struct KeyEvent {
     pub printable: Option<u8>,
     pub scancode: u16,
+    pub modifiers: u8,
+}
+
+impl KeyEvent {
+    pub fn ctrl_or_cmd(&self) -> bool {
+        self.modifiers & 0x11 != 0
+    }
 }
 
 impl KeyEvent {
@@ -78,6 +85,8 @@ pub struct Keyboard {
     usb_io: Option<(boot::ScopedProtocol<UsbIo>, u8, Vec<u8>)>,
     report_buf: Vec<u8>,
     prev_keys: [u8; 6],
+    pub cur_modifiers: u8,
+    pub cur_keys: [u8; 6],
 }
 
 impl Keyboard {
@@ -207,13 +216,15 @@ impl Keyboard {
                             usb_io: Some((usb_obj, ep, report_buf)),
                             report_buf: vec![0u8; 8],
                             prev_keys: [0u8; 6],
+                            cur_modifiers: 0,
+                            cur_keys: [0u8; 6],
                         };
                     }
                 }
             }
         }
         crate::mouse::log_line_str("KBD: using UEFI protocol");
-        Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6] }
+        Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6], cur_modifiers: 0, cur_keys: [0u8; 6] }
     }
 
     pub fn stdin_event() -> Option<uefi::Event> {
@@ -237,8 +248,10 @@ impl Keyboard {
                 if n >= 8 {
                     let r = &report_buf[..n];
                     // Boot keyboard report: modifier(1) reserved(1) keys(6)
-                    let _modifiers = r[0];
+                    let modifiers = r[0];
                     let keys = [r[2], r[3], r[4], r[5], r[6], r[7]];
+                    self.cur_modifiers = modifiers;
+                    self.cur_keys = keys;
 
                     // Find newly pressed keys
                     for &key in &keys {
@@ -246,10 +259,14 @@ impl Keyboard {
                         if !self.prev_keys.contains(&key) {
                             self.prev_keys = keys;
 
-                            let ascii = BOOT_KEYMAP[key as usize];
+                            let ascii = if (key as usize) < BOOT_KEYMAP.len() {
+                                BOOT_KEYMAP[key as usize]
+                            } else {
+                                0
+                            };
                             let printable = if ascii != 0 { Some(ascii) } else { None };
 
-                            return Some(KeyEvent { printable, scancode: 0 });
+                            return Some(KeyEvent { printable, scancode: 0, modifiers });
                         }
                     }
                     self.prev_keys = keys;
@@ -264,10 +281,10 @@ impl Keyboard {
                 Ok(Some(Key::Printable(ch))) => {
                     let v: u16 = ch.into();
                     let printable = if v < 0x80 { Some(v as u8) } else { None };
-                    Some(KeyEvent { printable, scancode: 0 })
+                    Some(KeyEvent { printable, scancode: 0, modifiers: 0 })
                 }
                 Ok(Some(Key::Special(sc))) => {
-                    Some(KeyEvent { printable: None, scancode: sc.0 })
+                    Some(KeyEvent { printable: None, scancode: sc.0, modifiers: 0 })
                 }
                 Ok(None) => None,
                 Err(e) => {
@@ -276,5 +293,13 @@ impl Keyboard {
                 }
             }
         })
+    }
+
+    pub fn is_held(&self, usb_code: u8) -> bool {
+        self.cur_keys.contains(&usb_code)
+    }
+
+    pub fn ctrl_or_cmd_held(&self) -> bool {
+        self.cur_modifiers & 0x11 != 0
     }
 }
