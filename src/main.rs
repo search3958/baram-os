@@ -131,6 +131,10 @@ fn main() -> Status {
                         &mut cursor_x, &mut cursor_y, &ev,
                         screen.width(), screen.height(), mouse.abs_max(),
                     );
+                    wizard.on_hover(cursor_x, cursor_y);
+                    if ev.left {
+                        wizard.on_click(cursor_x, cursor_y);
+                    }
                 }
             }
 

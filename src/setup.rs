@@ -29,12 +29,23 @@ pub enum SetupScreen {
     Done,
 }
 
+pub struct Button {
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+    pub label: &'static str,
+    pub primary: bool,
+}
+
 pub struct SetupWizard {
     pub screen: SetupScreen,
     pub key_detected: bool,
     pub detected_raw_key: u8,
     pub anim_tick: u32,
     pub skipped: bool,
+    pub buttons: alloc::vec::Vec<Button>,
+    pub hover_btn: Option<usize>,
 }
 
 impl SetupWizard {
@@ -45,7 +56,56 @@ impl SetupWizard {
             detected_raw_key: 0,
             anim_tick: 0,
             skipped: false,
+            buttons: alloc::vec::Vec::new(),
+            hover_btn: None,
         }
+    }
+
+    pub fn hit_test(&self, mx: i32, my: i32) -> Option<usize> {
+        for (i, btn) in self.buttons.iter().enumerate() {
+            if mx >= btn.x as i32 && mx < (btn.x + btn.w) as i32
+                && my >= btn.y as i32 && my < (btn.y + btn.h) as i32
+            {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    pub fn on_click(&mut self, mx: i32, my: i32) {
+        if let Some(idx) = self.hit_test(mx, my) {
+            let label = self.buttons[idx].label;
+            match self.screen {
+                SetupScreen::Welcome => {
+                    if label == "続行" {
+                        self.screen = SetupScreen::Keyboard;
+                    } else if label == "スキップ" {
+                        crate::keyboard::save_shift_key(0);
+                        mark_setup_done();
+                        self.skipped = true;
+                        self.screen = SetupScreen::Done;
+                    }
+                }
+                SetupScreen::Keyboard => {
+                    if label == "完了" && self.key_detected {
+                        crate::keyboard::save_shift_key(self.detected_raw_key);
+                        self.screen = SetupScreen::Done;
+                        mark_setup_done();
+                    }
+                    if label == "スキップ" {
+                        crate::keyboard::save_shift_key(0);
+                        mark_setup_done();
+                        self.skipped = true;
+                        self.screen = SetupScreen::Done;
+                    }
+                }
+                SetupScreen::Done => {}
+            }
+        }
+    }
+
+    pub fn on_hover(&mut self, mx: i32, my: i32) {
+        self.hover_btn = self.hit_test(mx, my);
     }
 
     pub fn on_key(&mut self, ev: &crate::keyboard::KeyEvent) {
@@ -81,7 +141,8 @@ impl SetupWizard {
         self.anim_tick = self.anim_tick.wrapping_add(1);
     }
 
-    pub fn render(&self, buf: &mut [u32], w: usize, h: usize) {
+    pub fn render(&mut self, buf: &mut [u32], w: usize, h: usize) {
+        self.buttons.clear();
         draw_wallpaper(buf, w, h);
 
         match self.screen {
@@ -91,7 +152,7 @@ impl SetupWizard {
         }
     }
 
-    fn render_welcome(&self, buf: &mut [u32], w: usize, h: usize) {
+    fn render_welcome(&mut self, buf: &mut [u32], w: usize, h: usize) {
         let card_w = 480;
         let card_h = CARD_H;
         let card_x = w / 2 - card_w / 2;
@@ -103,10 +164,22 @@ impl SetupWizard {
         draw_str_hud_left(buf, w, tx, card_y + 60, "Baram OS", Color::TEXT, 2.0);
         draw_str_left(buf, w, tx, card_y + 120, "ようこそ。", Color::MUTED, 1.0);
         draw_str_left(buf, w, tx, card_y + 160, "Enterキーで開始します。", Color::MUTED, 0.8);
-        draw_str_left(buf, w, tx, card_y + 220, "ESC でスキップ", Color::MUTED, 0.6);
+
+        let btn_y = card_y + card_h - 70;
+        let continue_btn_w = 140;
+        let skip_btn_w = 100;
+        let gap = 16;
+        let continue_x = card_x + card_w - continue_btn_w - 32;
+        let skip_x = continue_x - skip_btn_w - gap;
+
+        self.buttons.push(Button { x: skip_x, y: btn_y, w: skip_btn_w, h: 40, label: "スキップ", primary: false });
+        self.buttons.push(Button { x: continue_x, y: btn_y, w: continue_btn_w, h: 40, label: "続行", primary: true });
+
+        draw_button(buf, w, skip_x, btn_y, skip_btn_w, 40, "スキップ", false, self.hover_btn == Some(0));
+        draw_button(buf, w, continue_x, btn_y, continue_btn_w, 40, "続行", true, self.hover_btn == Some(1));
     }
 
-    fn render_keyboard(&self, buf: &mut [u32], w: usize, h: usize) {
+    fn render_keyboard(&mut self, buf: &mut [u32], w: usize, h: usize) {
         let card_w = 480;
         let card_h = CARD_H;
         let card_x = w / 2 - card_w / 2;
@@ -115,17 +188,31 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
+        let btn_y = card_y + card_h - 70;
+        let skip_btn_w = 100;
+        let continue_btn_w = 140;
+        let gap = 16;
+        let skip_x = card_x + card_w - skip_btn_w - 32;
+        let continue_x = skip_x - continue_btn_w - gap;
+
         if self.key_detected {
             draw_str_left(buf, w, tx, card_y + 100, "完了", Color::TEXT, 1.5);
             draw_str_left(buf, w, tx, card_y + 160, "EnterキーかEscでセットアップを終了します", Color::MUTED, 1.0);
+
+            let btn_x = card_x + card_w - continue_btn_w - 32;
+            self.buttons.push(Button { x: btn_x, y: btn_y, w: continue_btn_w, h: 40, label: "完了", primary: true });
+            draw_button(buf, w, btn_x, btn_y, continue_btn_w, 40, "完了", true, self.hover_btn == Some(0));
         } else {
             draw_str_left(buf, w, tx, card_y + 100, "キーボード設定", Color::TEXT, 1.5);
             draw_str_left(buf, w, tx, card_y + 160, "Shift にしたいキーを押してください", Color::MUTED, 1.0);
             draw_str_left(buf, w, tx, card_y + 220, "待機中...", Color::MUTED, 1.0);
+
+            self.buttons.push(Button { x: skip_x, y: btn_y, w: skip_btn_w, h: 40, label: "スキップ", primary: false });
+            draw_button(buf, w, skip_x, btn_y, skip_btn_w, 40, "スキップ", false, self.hover_btn == Some(0));
         }
     }
 
-    fn render_done(&self, buf: &mut [u32], w: usize, h: usize) {
+    fn render_done(&mut self, buf: &mut [u32], w: usize, h: usize) {
         let card_w = 480;
         let card_h = CARD_H;
         let card_x = w / 2 - card_w / 2;
@@ -507,6 +594,80 @@ fn draw_card_body(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y
                 let g = (panel_g * alpha + bg2 * (1.0 - alpha)) as u32;
                 let b = (panel_b * alpha + bb * (1.0 - alpha)) as u32;
                 buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
+            }
+        }
+    }
+}
+
+fn draw_button(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, label: &str, primary: bool, hover: bool) {
+    let radius = 20usize;
+    let bg = if primary {
+        if hover { Color::rgb(0x08, 0x50, 0xDD) } else { Color::rgb(0x0A, 0x60, 0xFF) }
+    } else {
+        if hover { Color::rgb(210, 210, 210) } else { Color::rgb(230, 230, 230) }
+    };
+    let text_color = if primary { Color::rgb(0xFF, 0xFF, 0xFF) } else { Color::TEXT };
+
+    draw_rounded_rect(buf, screen_w, x, y, w, h, radius, bg);
+
+    let text_color = if primary { Color::rgb(0xFF, 0xFF, 0xFF) } else { Color::TEXT };
+    draw_str_centered(buf, screen_w, x + w / 2, y + h / 2 - 8, label, text_color, 0.9);
+}
+
+fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, radius: usize, color: Color) {
+    let r = radius.min(w / 2).min(h / 2);
+    let rf = r as f32;
+    let screen_h = buf.len() / screen_w;
+
+    let x0 = x.min(screen_w);
+    let y0 = y.min(screen_h);
+    let x1 = (x + w).min(screen_w);
+    let y1 = (y + h).min(screen_h);
+
+    for py in y0..y1 {
+        let row = py * screen_w;
+        if r == 0 {
+            buf[row + x0..row + x1].fill(color.0);
+            continue;
+        }
+        let corner_top = py < y + r;
+        let corner_bot = py >= y + h.saturating_sub(r);
+        if !corner_top && !corner_bot {
+            buf[row + x0..row + x1].fill(color.0);
+            continue;
+        }
+        for px in x0..x1 {
+            let in_corner = (px < x + r && corner_top)
+                || (px >= x + w.saturating_sub(r) && corner_top)
+                || (px < x + r && corner_bot)
+                || (px >= x + w.saturating_sub(r) && corner_bot);
+            if !in_corner {
+                buf[row + px] = color.0;
+                continue;
+            }
+
+            let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
+            let cy_f = if corner_top { y + r } else { y + h - r } as f32;
+            let dx = px as f32 + 0.5 - cx_f;
+            let dy = py as f32 + 0.5 - cy_f;
+            let dist_sq = dx * dx + dy * dy;
+            let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                1.0
+            } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                0.0
+            } else {
+                let dist = libm::sqrtf(dist_sq);
+                (rf + 0.5 - dist).clamp(0.0, 1.0)
+            };
+
+            if alpha >= 1.0 {
+                buf[row + px] = color.0;
+            } else if alpha > 0.0 {
+                let bg_pixel = Color(buf[row + px]);
+                let cr = (color.r() as f32 * alpha + bg_pixel.r() as f32 * (1.0 - alpha)) as u32;
+                let cg = (color.g() as f32 * alpha + bg_pixel.g() as f32 * (1.0 - alpha)) as u32;
+                let cb = (color.b() as f32 * alpha + bg_pixel.b() as f32 * (1.0 - alpha)) as u32;
+                buf[row + px] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
             }
         }
     }
