@@ -4,6 +4,8 @@ use crate::font::{self, GLYPH_H, GLYPH_W};
 use crate::vfs;
 
 const SETUP_DONE_PATH: &str = "apps/.setup_done";
+const WALLPAPER_BYTES: &[u8] = include_bytes!("data/wallpaper/baram.png");
+const CARD_H: usize = 320;
 
 pub fn is_setup_done() -> bool {
     !vfs::read_file(SETUP_DONE_PATH).is_empty()
@@ -73,9 +75,7 @@ impl SetupWizard {
     }
 
     pub fn render(&self, buf: &mut [u32], w: usize, h: usize) {
-        for pixel in buf.iter_mut() {
-            *pixel = Color::BG.0;
-        }
+        draw_wallpaper(buf, w, h);
 
         match self.screen {
             SetupScreen::Welcome => self.render_welcome(buf, w, h),
@@ -85,64 +85,63 @@ impl SetupWizard {
     }
 
     fn render_welcome(&self, buf: &mut [u32], w: usize, h: usize) {
-        let title = "Baram OS";
-        let sub = "初回セットアップへようこそ";
-        let hint = "Enter キーを押して开始";
-        let skip = "ESC でスキップ";
+        let card_w = 480;
+        let card_h = CARD_H;
+        let card_x = w / 2 - card_w / 2;
+        let card_y = h / 2 - card_h / 2;
+        draw_card(buf, w, h, card_x, card_y, card_w, card_h);
 
-        let cx = w / 2;
-        let cy = h / 2;
+        let tx = card_x + 32;
 
-        draw_str_centered(buf, w, cx, cy - 60, title, Color::TEXT, 2.0);
-        draw_str_centered(buf, w, cx, cy, sub, Color::MUTED, 1.0);
-        draw_str_centered(buf, w, cx, cy + 60, hint, Color::MUTED, 0.8);
-        draw_str_centered(buf, w, cx, cy + 100, skip, Color::MUTED, 0.6);
+        draw_str_left(buf, w, tx, card_y + 48, "Baram OS", Color::TEXT, 2.0);
+        draw_str_left(buf, w, tx, card_y + 108, "初回セットアップへようこそ", Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 168, "Enter キーを押して開始", Color::MUTED, 0.8);
+        draw_str_left(buf, w, tx, card_y + 218, "ESC でスキップ", Color::MUTED, 0.6);
     }
 
     fn render_keyboard(&self, buf: &mut [u32], w: usize, h: usize) {
-        let title = "キーボード設定";
-        let instruction = "Shift にしたいキーを押してください";
+        let card_w = 480;
+        let card_h = CARD_H;
+        let card_x = w / 2 - card_w / 2;
+        let card_y = h / 2 - card_h / 2;
+        draw_card(buf, w, h, card_x, card_y, card_w, card_h);
+
+        let tx = card_x + 32;
+
+        draw_str_left(buf, w, tx, card_y + 48, "キーボード設定", Color::TEXT, 1.5);
+        draw_str_left(buf, w, tx, card_y + 100, "Shift にしたいキーを押してください", Color::MUTED, 1.0);
+
         let status = if self.key_detected {
             "キーを検出しました！"
         } else {
             "待機中..."
         };
-        let hint = if self.key_detected {
-            "Enter キーで完了"
-        } else {
-            ""
-        };
-        let skip = "ESC でスキップ";
-
-        let cx = w / 2;
-        let cy = h / 2;
-
-        draw_str_centered(buf, w, cx, cy - 80, title, Color::TEXT, 1.5);
-        draw_str_centered(buf, w, cx, cy - 20, instruction, Color::MUTED, 1.0);
-
         let status_color = if self.key_detected { Color::ACCENT } else { Color::MUTED };
-        draw_str_centered(buf, w, cx, cy + 40, status, status_color, 1.0);
+        draw_str_left(buf, w, tx, card_y + 160, status, status_color, 1.0);
 
-        if !hint.is_empty() {
-            draw_str_centered(buf, w, cx, cy + 100, hint, Color::MUTED, 0.8);
+        if self.key_detected {
+            draw_str_left(buf, w, tx, card_y + 210, "Enter キーで完了", Color::MUTED, 0.8);
         }
-        draw_str_centered(buf, w, cx, cy + 130, skip, Color::MUTED, 0.6);
+        draw_str_left(buf, w, tx, card_y + 250, "ESC でスキップ", Color::MUTED, 0.6);
 
-        let dot_y = cy as i32 + 180;
+        let dot_x = tx + 4;
+        let dot_y = card_y + 290;
         let dot_r = 8i32;
         let dot_color = if self.key_detected { Color::ACCENT } else { Color::MUTED };
-        fill_circle(buf, w, h, cx as i32, dot_y, dot_r, dot_color.0);
+        fill_circle(buf, w, h, dot_x as i32, dot_y as i32, dot_r, dot_color.0);
     }
 
     fn render_done(&self, buf: &mut [u32], w: usize, h: usize) {
-        let title = "セットアップ完了";
-        let sub = "Baram OS を使い始めましょう";
+        let card_w = 480;
+        let card_h = CARD_H;
+        let card_x = w / 2 - card_w / 2;
+        let card_y = h / 2 - card_h / 2;
+        draw_card(buf, w, h, card_x, card_y, card_w, card_h);
 
-        let cx = w / 2;
-        let cy = h / 2;
+        let tx = card_x + 32;
 
-        draw_str_centered(buf, w, cx, cy - 40, title, Color::TEXT, 1.5);
-        draw_str_centered(buf, w, cx, cy + 20, sub, Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 100, "セットアップ完了", Color::TEXT, 1.5);
+        draw_str_left(buf, w, tx, card_y + 160, "Baram OS を使い始めましょう", Color::MUTED, 1.0);
     }
 }
 
@@ -218,6 +217,71 @@ fn draw_str_centered(buf: &mut [u32], screen_w: usize, cx: usize, cy: usize, tex
     }
 }
 
+fn draw_str_left(buf: &mut [u32], screen_w: usize, x0: usize, cy: usize, text: &str, color: Color, scale: f32) {
+    let screen_h = buf.len() / screen_w;
+
+    if !ttf_font::is_available() {
+        let mut x = x0;
+        for &b in text.as_bytes() {
+            if b >= 0x80 { break; }
+            let glyph = font::glyph(b);
+            let gw = (GLYPH_W as f32 * scale) as usize;
+            let gh = (GLYPH_H as f32 * scale) as usize;
+            for row in 0..gh {
+                let src_row = (row as f32 / scale) as usize;
+                if src_row >= GLYPH_H { continue; }
+                let bits = glyph[src_row];
+                for col in 0..gw {
+                    let src_col = (col as f32 / scale) as usize;
+                    if src_col >= GLYPH_W { continue; }
+                    if (bits >> (7 - src_col)) & 1 == 1 {
+                        let px = x + col;
+                        let py = cy + row;
+                        if px < screen_w && py < screen_h {
+                            buf[py * screen_w + px] = color.0;
+                        }
+                    }
+                }
+            }
+            x += gw;
+        }
+        return;
+    }
+
+    let ascent = (ttf_font::ascent() as f32 * scale) as i32;
+    let mut x = x0 as i32;
+    let baseline = cy as i32 + ascent;
+
+    for ch in text.chars() {
+        let g = ttf_font::glyph_at_size(ch, 14.0 * scale);
+        if g.w <= 0 {
+            x += (8.0 * scale) as i32;
+            continue;
+        }
+        let adv = g.advance;
+        for row in 0..g.h {
+            let py = baseline + g.y_off + row;
+            if py < 0 || py >= screen_h as i32 { continue; }
+            for col in 0..g.w {
+                let alpha = g.data[(row * g.w + col) as usize];
+                if alpha == 0 { continue; }
+                let px = x + col;
+                if px < 0 || px >= screen_w as i32 { continue; }
+                let idx = py as usize * screen_w + px as usize;
+                if idx < buf.len() {
+                    let a = alpha as u32;
+                    let bg = Color(buf[idx]);
+                    let r = (color.r() as u32 * a + bg.r() as u32 * (255 - a)) / 255;
+                    let g2 = (color.g() as u32 * a + bg.g() as u32 * (255 - a)) / 255;
+                    let b = (color.b() as u32 * a + bg.b() as u32 * (255 - a)) / 255;
+                    buf[idx] = Color::rgb(r as u8, g2 as u8, b as u8).0;
+                }
+            }
+        }
+        x += adv;
+    }
+}
+
 fn fill_circle(buf: &mut [u32], screen_w: usize, screen_h: usize, cx: i32, cy: i32, r: i32, color: u32) {
     let r2 = r * r;
     for dy in -r..=r {
@@ -228,6 +292,101 @@ fn fill_circle(buf: &mut [u32], screen_w: usize, screen_h: usize, cx: i32, cy: i
                 if px >= 0 && (px as usize) < screen_w && py >= 0 && (py as usize) < screen_h {
                     buf[py as usize * screen_w + px as usize] = color;
                 }
+            }
+        }
+    }
+}
+
+fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
+    if let Ok((header, pixels)) = png_decoder::decode(WALLPAPER_BYTES) {
+        let img_w = header.width as usize;
+        let img_h = header.height as usize;
+        let scale = if screen_w * img_h > screen_h * img_w {
+            screen_w as f64 / img_w as f64
+        } else {
+            screen_h as f64 / img_h as f64
+        };
+        let src_w = (screen_w as f64 / scale) as usize;
+        let src_h = (screen_h as f64 / scale) as usize;
+        let src_x = (img_w.saturating_sub(src_w)) / 2;
+        let src_y = (img_h.saturating_sub(src_h)) / 2;
+        for y in 0..screen_h {
+            let sy = (y * src_h / screen_h).min(src_h.saturating_sub(1)) + src_y;
+            let src_row = sy * img_w;
+            let dst_row = y * screen_w;
+            for x in 0..screen_w {
+                let sx = (x * src_w / screen_w).min(src_w.saturating_sub(1)) + src_x;
+                let px = pixels[src_row + sx];
+                buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
+            }
+        }
+    } else {
+        for pixel in buf.iter_mut() {
+            *pixel = Color::BG.0;
+        }
+    }
+}
+
+fn draw_card(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y: usize, w: usize, h: usize) {
+    let radius = 20usize;
+    let r = radius.min(w / 2).min(h / 2);
+    let rf = r as f32;
+
+    let x0 = x.min(screen_w);
+    let y0 = y.min(screen_h);
+    let x1 = (x + w).min(screen_w);
+    let y1 = (y + h).min(screen_h);
+
+    for py in y0..y1 {
+        let row = py * screen_w;
+        if r == 0 {
+            buf[row + x0..row + x1].fill(Color::PANEL.0);
+            continue;
+        }
+        let corner_top = py < y + r;
+        let corner_bot = py >= y + h.saturating_sub(r);
+        if !corner_top && !corner_bot {
+            buf[row + x0..row + x1].fill(Color::PANEL.0);
+            continue;
+        }
+        for px in x0..x1 {
+            let in_corner = (px < x + r && corner_top)
+                || (px >= x + w.saturating_sub(r) && corner_top)
+                || (px < x + r && corner_bot)
+                || (px >= x + w.saturating_sub(r) && corner_bot);
+            if !in_corner {
+                buf[row + px] = Color::PANEL.0;
+                continue;
+            }
+
+            let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
+            let cy_f = if corner_top { y + r } else { y + h - r } as f32;
+            let dx = px as f32 + 0.5 - cx_f;
+            let dy = py as f32 + 0.5 - cy_f;
+            let dist_sq = dx * dx + dy * dy;
+            let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
+                1.0
+            } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
+                0.0
+            } else {
+                let dist = libm::sqrtf(dist_sq);
+                (rf + 0.5 - dist).clamp(0.0, 1.0)
+            };
+
+            if alpha >= 1.0 {
+                buf[row + px] = Color::PANEL.0;
+            } else if alpha > 0.0 {
+                let bg = buf[row + px];
+                let br = ((bg >> 16) & 0xFF) as f32;
+                let bg2 = ((bg >> 8) & 0xFF) as f32;
+                let bb = (bg & 0xFF) as f32;
+                let panel_r = Color::PANEL.r() as f32;
+                let panel_g = Color::PANEL.g() as f32;
+                let panel_b = Color::PANEL.b() as f32;
+                let r2 = (panel_r * alpha + br * (1.0 - alpha)) as u32;
+                let g = (panel_g * alpha + bg2 * (1.0 - alpha)) as u32;
+                let b = (panel_b * alpha + bb * (1.0 - alpha)) as u32;
+                buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
             }
         }
     }
