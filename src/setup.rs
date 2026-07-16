@@ -2,12 +2,14 @@ use crate::gop::{Color, Screen};
 use crate::ttf_font;
 use crate::font::{self, GLYPH_H, GLYPH_W};
 use crate::vfs;
+use crate::blur;
 
 const SETUP_DONE_PATH: &str = "apps/.setup_done";
 const WALLPAPER_BYTES: &[u8] = include_bytes!("data/wallpaper/baram.png");
 const CARD_H: usize = 320;
+const BLUR_RADIUS: i32 = 60;
 
-static mut CACHED_WALLPAPER: Option<alloc::vec::Vec<u32>> = None;
+static mut CACHED_BLURRED: Option<alloc::vec::Vec<u32>> = None;
 static mut CACHED_W: usize = 0;
 static mut CACHED_H: usize = 0;
 
@@ -304,13 +306,14 @@ fn fill_circle(buf: &mut [u32], screen_w: usize, screen_h: usize, cx: i32, cy: i
 fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
     unsafe {
         if CACHED_W == screen_w && CACHED_H == screen_h {
-            if let Some(ref cached) = CACHED_WALLPAPER {
+            if let Some(ref cached) = CACHED_BLURRED {
                 buf.copy_from_slice(cached);
                 return;
             }
         }
     }
 
+    let mut raw = alloc::vec![0u32; screen_w * screen_h];
     if let Ok((header, pixels)) = png_decoder::decode(WALLPAPER_BYTES) {
         let img_w = header.width as usize;
         let img_h = header.height as usize;
@@ -330,22 +333,90 @@ fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
             for x in 0..screen_w {
                 let sx = (x * src_w / screen_w).min(src_w.saturating_sub(1)) + src_x;
                 let px = pixels[src_row + sx];
-                buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
+                raw[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
             }
         }
-        unsafe {
-            CACHED_WALLPAPER = Some(buf.to_vec());
-            CACHED_W = screen_w;
-            CACHED_H = screen_h;
-        }
     } else {
-        for pixel in buf.iter_mut() {
+        for pixel in raw.iter_mut() {
             *pixel = Color::BG.0;
         }
+    }
+
+    blur::blur_region_to(&raw, buf, screen_w, 0, screen_h, BLUR_RADIUS);
+
+    unsafe {
+        CACHED_BLURRED = Some(buf.to_vec());
+        CACHED_W = screen_w;
+        CACHED_H = screen_h;
     }
 }
 
 fn draw_card(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y: usize, w: usize, h: usize) {
+    draw_shadow(buf, screen_w, screen_h, x, y, w, h, 20);
+    draw_card_body(buf, screen_w, screen_h, x, y, w, h);
+}
+
+fn draw_shadow(buf: &mut [u32], screen_w: usize, screen_h: usize, win_x: usize, win_y: usize, win_w: usize, win_h: usize, radius: usize) {
+    let blur_r: i32 = 30;
+    let r = radius as f32;
+    let ww = win_w as i32;
+    let wh = win_h as i32;
+
+    let sx = (win_x as i32 - blur_r).max(0).min(screen_w as i32) as usize;
+    let sy = (win_y as i32 - blur_r).max(0).min(screen_h as i32) as usize;
+    let ex = (win_x as i32 + ww + blur_r).max(0).min(screen_w as i32) as usize;
+    let ey = (win_y as i32 + wh + blur_r).max(0).min(screen_h as i32) as usize;
+    if ex <= sx || ey <= sy { return; }
+
+    let blur_r_f = blur_r as f32;
+    let hww = ww as f32 / 2.0;
+    let hwh = wh as f32 / 2.0;
+    let center_x = win_x as f32 + hww;
+    let center_y = win_y as f32 + hwh;
+    let box_w = hww - r;
+    let box_h = hwh - r;
+
+    for py in sy..ey {
+        let py_f = py as f32 + 0.5;
+        let row_start = py * screen_w;
+        for px in sx..ex {
+            let px_f = px as f32 + 0.5;
+
+            let qx = (px_f - center_x).abs();
+            let qy = (py_f - center_y).abs();
+
+            let dx = qx - box_w;
+            let dy = qy - box_h;
+
+            let dist = if dx > 0.0 && dy > 0.0 {
+                libm::sqrtf(dx * dx + dy * dy)
+            } else {
+                dx.max(dy)
+            };
+
+            let edge_dist = dist - r;
+
+            if edge_dist <= 0.0 || edge_dist >= blur_r_f {
+                continue;
+            }
+
+            let t = (blur_r_f - edge_dist) / blur_r_f;
+            let alpha_f = t * t * 0.175;
+            let a = (alpha_f * 255.0) as u32;
+            if a == 0 { continue; }
+
+            let inv = 255 - a;
+            let idx = row_start + px;
+            let bg = Color(buf[idx]);
+            let cr = (bg.r() as u32 * inv) / 255;
+            let cg = (bg.g() as u32 * inv) / 255;
+            let cb = (bg.b() as u32 * inv) / 255;
+            buf[idx] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
+        }
+    }
+}
+
+fn draw_card_body(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y: usize, w: usize, h: usize) {
     let radius = 20usize;
     let r = radius.min(w / 2).min(h / 2);
     let rf = r as f32;
