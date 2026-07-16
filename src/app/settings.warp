@@ -72,4 +72,16 @@ screen{
             output: (--hudEnabled)
         },
     },
+
+    card{
+        text: ("System"),
+
+        text{
+            text: ("リセット等")
+        },
+
+        button{
+            oneClick: (runCommand = "os://system/reset?option=all")
+        }
+    }
 }

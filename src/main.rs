@@ -211,6 +211,7 @@ fn main() -> Status {
 
     
     let mut display_state = uri::DisplayState::new();
+    uri::load_settings(&mut display_state);
 
     let mut cached_wallpaper: Option<Vec<u32>> = None;
     if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {

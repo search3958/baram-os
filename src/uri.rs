@@ -9,6 +9,9 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use crate::vfs;
+
+const SETTINGS_PATH: &str = "apps/.display_settings";
 
 pub struct UriCommand {
     pub category: String,
@@ -76,7 +79,14 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
     };
 
     match cmd.category.as_str() {
-        "display" => execute_display(&cmd, state),
+        "display" => {
+            let result = execute_display(&cmd, state);
+            if result {
+                save_settings(state);
+            }
+            result
+        }
+        "system" => execute_system(&cmd, state),
         _ => false,
     }
 }
@@ -141,4 +151,53 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
         }
         _ => false,
     }
+}
+
+fn execute_system(cmd: &UriCommand, state: &mut DisplayState) -> bool {
+    match cmd.action.as_str() {
+        "reset" => {
+            if let Some(option) = get_param(cmd, "option") {
+                if option == "all" {
+                    *state = DisplayState::new();
+                    vfs::remove_file(SETTINGS_PATH);
+                    vfs::remove_file("apps/.setup_done");
+                    uefi::runtime::reset(
+                        uefi_raw::table::runtime::ResetType::COLD,
+                        uefi::Status::SUCCESS,
+                        None,
+                    );
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+pub fn save_settings(state: &DisplayState) {
+    let mut data = alloc::vec![0u8; 16];
+    let ps_bytes = state.pointer_size.to_bits().to_le_bytes();
+    data[0..4].copy_from_slice(&ps_bytes);
+    data[4] = if state.hud_enabled { 1 } else { 0 };
+    data[5] = 0;
+    let wc = state.wallpaper_color.unwrap_or(0);
+    data[6..10].copy_from_slice(&wc.to_le_bytes());
+    data[10..14].copy_from_slice(&(state.wallpaper_index as u32).to_le_bytes());
+    vfs::write_file(SETTINGS_PATH, &data);
+}
+
+pub fn load_settings(state: &mut DisplayState) {
+    let data = vfs::read_file(SETTINGS_PATH);
+    if data.len() < 14 { return; }
+    let mut ps_bytes = [0u8; 4];
+    ps_bytes.copy_from_slice(&data[0..4]);
+    state.pointer_size = f32::from_bits(u32::from_le_bytes(ps_bytes));
+    state.hud_enabled = data[4] != 0;
+    let mut wc_bytes = [0u8; 4];
+    wc_bytes.copy_from_slice(&data[6..10]);
+    let wc = u32::from_le_bytes(wc_bytes);
+    state.wallpaper_color = if wc != 0 { Some(wc) } else { None };
+    let mut idx_bytes = [0u8; 4];
+    idx_bytes.copy_from_slice(&data[10..14]);
+    state.wallpaper_index = u32::from_le_bytes(idx_bytes) as usize;
 }

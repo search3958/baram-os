@@ -155,3 +155,26 @@ pub fn write_file(path: &str, data: &[u8]) {
         }
     }
 }
+
+pub fn remove_file(path: &str) {
+    let ih = uefi::boot::image_handle();
+    if let Ok(mut fs) = uefi::boot::get_image_file_system(ih) {
+        if let Ok(mut root) = fs.open_volume() {
+            let mut buf = [0u16; 256];
+            let mut i = 0;
+            for ch in path.bytes() {
+                let c = if ch == b'/' { b'\\' } else { ch } as u16;
+                if i + 1 < buf.len() {
+                    buf[i] = c;
+                    i += 1;
+                }
+            }
+            buf[i] = 0;
+            if let Ok(cpath) = CStr16::from_u16_with_nul(&buf[..=i]) {
+                if let Ok(handle) = root.open(cpath, FileMode::Read, FileAttribute::empty()) {
+                    let _ = handle.delete();
+                }
+            }
+        }
+    }
+}
