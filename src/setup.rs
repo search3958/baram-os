@@ -7,6 +7,10 @@ const SETUP_DONE_PATH: &str = "apps/.setup_done";
 const WALLPAPER_BYTES: &[u8] = include_bytes!("data/wallpaper/baram.png");
 const CARD_H: usize = 320;
 
+static mut CACHED_WALLPAPER: Option<alloc::vec::Vec<u32>> = None;
+static mut CACHED_W: usize = 0;
+static mut CACHED_H: usize = 0;
+
 pub fn is_setup_done() -> bool {
     !vfs::read_file(SETUP_DONE_PATH).is_empty()
 }
@@ -298,6 +302,15 @@ fn fill_circle(buf: &mut [u32], screen_w: usize, screen_h: usize, cx: i32, cy: i
 }
 
 fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
+    unsafe {
+        if CACHED_W == screen_w && CACHED_H == screen_h {
+            if let Some(ref cached) = CACHED_WALLPAPER {
+                buf.copy_from_slice(cached);
+                return;
+            }
+        }
+    }
+
     if let Ok((header, pixels)) = png_decoder::decode(WALLPAPER_BYTES) {
         let img_w = header.width as usize;
         let img_h = header.height as usize;
@@ -319,6 +332,11 @@ fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
                 let px = pixels[src_row + sx];
                 buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
             }
+        }
+        unsafe {
+            CACHED_WALLPAPER = Some(buf.to_vec());
+            CACHED_W = screen_w;
+            CACHED_H = screen_h;
         }
     } else {
         for pixel in buf.iter_mut() {

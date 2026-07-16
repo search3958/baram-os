@@ -104,6 +104,7 @@ fn main() -> Status {
         let mut setup_buf: alloc::vec::Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
 
         let kbd_event = Keyboard::stdin_event();
+        let mouse_wait_event = Mouse::get_wait_event();
 
         loop {
             let mut events: alloc::vec::Vec<uefi::Event> = alloc::vec::Vec::new();
@@ -113,12 +114,24 @@ fn main() -> Status {
             if let Some(ref ke) = kbd_event {
                 events.push(unsafe { core::ptr::read(ke) });
             }
+            if let Some(ref me) = mouse_wait_event {
+                events.push(unsafe { core::ptr::read(me) });
+            }
             if !events.is_empty() {
                 let _ = uefi::boot::wait_for_event(&mut events);
             }
 
             while let Some(ev) = keyboard.poll() {
                 wizard.on_key(&ev);
+            }
+
+            if let Some(mouse) = mouse_opt.as_mut() {
+                while let Some(ev) = mouse.poll() {
+                    mouse::apply_mouse_event(
+                        &mut cursor_x, &mut cursor_y, &ev,
+                        screen.width(), screen.height(), mouse.abs_max(),
+                    );
+                }
             }
 
             if wizard.screen == setup::SetupScreen::Done {
