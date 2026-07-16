@@ -1,5 +1,6 @@
 use crate::gop::{Color, Screen};
 use crate::ttf_font;
+use crate::ttf_font_hud;
 use crate::font::{self, GLYPH_H, GLYPH_W};
 use crate::vfs;
 use crate::blur;
@@ -99,10 +100,10 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_left(buf, w, tx, card_y + 48, "Baram OS", Color::TEXT, 2.0);
-        draw_str_left(buf, w, tx, card_y + 108, "初回セットアップへようこそ", Color::MUTED, 1.0);
-        draw_str_left(buf, w, tx, card_y + 168, "Enter キーを押して開始", Color::MUTED, 0.8);
-        draw_str_left(buf, w, tx, card_y + 218, "ESC でスキップ", Color::MUTED, 0.6);
+        draw_str_hud_left(buf, w, tx, card_y + 60, "Baram OS", Color::TEXT, 2.0);
+        draw_str_left(buf, w, tx, card_y + 120, "ようこそ。", Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 160, "Enterキーで開始します。", Color::MUTED, 0.8);
+        draw_str_left(buf, w, tx, card_y + 220, "ESC でスキップ", Color::MUTED, 0.6);
     }
 
     fn render_keyboard(&self, buf: &mut [u32], w: usize, h: usize) {
@@ -114,27 +115,14 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_left(buf, w, tx, card_y + 48, "キーボード設定", Color::TEXT, 1.5);
-        draw_str_left(buf, w, tx, card_y + 100, "Shift にしたいキーを押してください", Color::MUTED, 1.0);
-
-        let status = if self.key_detected {
-            "キーを検出しました！"
-        } else {
-            "待機中..."
-        };
-        let status_color = if self.key_detected { Color::ACCENT } else { Color::MUTED };
-        draw_str_left(buf, w, tx, card_y + 160, status, status_color, 1.0);
-
         if self.key_detected {
-            draw_str_left(buf, w, tx, card_y + 210, "Enter キーで完了", Color::MUTED, 0.8);
+            draw_str_left(buf, w, tx, card_y + 100, "完了", Color::TEXT, 1.5);
+            draw_str_left(buf, w, tx, card_y + 160, "EnterキーかEscでセットアップを終了します", Color::MUTED, 1.0);
+        } else {
+            draw_str_left(buf, w, tx, card_y + 100, "キーボード設定", Color::TEXT, 1.5);
+            draw_str_left(buf, w, tx, card_y + 160, "Shift にしたいキーを押してください", Color::MUTED, 1.0);
+            draw_str_left(buf, w, tx, card_y + 220, "待機中...", Color::MUTED, 1.0);
         }
-        draw_str_left(buf, w, tx, card_y + 250, "ESC でスキップ", Color::MUTED, 0.6);
-
-        let dot_x = tx + 4;
-        let dot_y = card_y + 290;
-        let dot_r = 8i32;
-        let dot_color = if self.key_detected { Color::ACCENT } else { Color::MUTED };
-        fill_circle(buf, w, h, dot_x as i32, dot_y as i32, dot_r, dot_color.0);
     }
 
     fn render_done(&self, buf: &mut [u32], w: usize, h: usize) {
@@ -260,6 +248,49 @@ fn draw_str_left(buf: &mut [u32], screen_w: usize, x0: usize, cy: usize, text: &
 
     for ch in text.chars() {
         let g = ttf_font::glyph_at_size(ch, 14.0 * scale);
+        if g.w <= 0 {
+            x += (8.0 * scale) as i32;
+            continue;
+        }
+        let adv = g.advance;
+        for row in 0..g.h {
+            let py = baseline + g.y_off + row;
+            if py < 0 || py >= screen_h as i32 { continue; }
+            for col in 0..g.w {
+                let alpha = g.data[(row * g.w + col) as usize];
+                if alpha == 0 { continue; }
+                let px = x + col;
+                if px < 0 || px >= screen_w as i32 { continue; }
+                let idx = py as usize * screen_w + px as usize;
+                if idx < buf.len() {
+                    let a = alpha as u32;
+                    let bg = Color(buf[idx]);
+                    let r = (color.r() as u32 * a + bg.r() as u32 * (255 - a)) / 255;
+                    let g2 = (color.g() as u32 * a + bg.g() as u32 * (255 - a)) / 255;
+                    let b = (color.b() as u32 * a + bg.b() as u32 * (255 - a)) / 255;
+                    buf[idx] = Color::rgb(r as u8, g2 as u8, b as u8).0;
+                }
+            }
+        }
+        x += adv;
+    }
+}
+
+fn draw_str_hud_left(buf: &mut [u32], screen_w: usize, x0: usize, cy: usize, text: &str, color: Color, scale: f32) {
+    let screen_h = buf.len() / screen_w;
+
+    if !ttf_font_hud::is_available() {
+        draw_str_left(buf, screen_w, x0, cy, text, color, scale);
+        return;
+    }
+
+    let pixel_size = 16.0 * scale;
+    let ascent = ttf_font_hud::ascent_at_size(pixel_size);
+    let mut x = x0 as i32;
+    let baseline = cy as i32 + ascent;
+
+    for ch in text.chars() {
+        let g = ttf_font_hud::glyph_at_size(ch, pixel_size);
         if g.w <= 0 {
             x += (8.0 * scale) as i32;
             continue;
