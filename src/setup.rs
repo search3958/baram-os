@@ -25,6 +25,7 @@ pub struct SetupWizard {
     pub key_detected: bool,
     pub detected_raw_key: u8,
     pub anim_tick: u32,
+    pub skipped: bool,
 }
 
 impl SetupWizard {
@@ -34,10 +35,19 @@ impl SetupWizard {
             key_detected: false,
             detected_raw_key: 0,
             anim_tick: 0,
+            skipped: false,
         }
     }
 
     pub fn on_key(&mut self, ev: &crate::keyboard::KeyEvent) {
+        let is_esc = ev.raw_key == 0x29 || ev.scancode == 0x17;
+        if is_esc && self.screen != SetupScreen::Done {
+            crate::keyboard::save_shift_key(0);
+            mark_setup_done();
+            self.skipped = true;
+            self.screen = SetupScreen::Done;
+            return;
+        }
         let is_enter = ev.printable == Some(b'\n') || ev.raw_key == 0x28 || ev.raw_key == 0x58 || ev.scancode == 0x1C;
         match self.screen {
             SetupScreen::Welcome => {
@@ -78,6 +88,7 @@ impl SetupWizard {
         let title = "Baram OS";
         let sub = "初回セットアップへようこそ";
         let hint = "Enter キーを押して开始";
+        let skip = "ESC でスキップ";
 
         let cx = w / 2;
         let cy = h / 2;
@@ -85,6 +96,7 @@ impl SetupWizard {
         draw_str_centered(buf, w, cx, cy - 60, title, Color::TEXT, 2.0);
         draw_str_centered(buf, w, cx, cy, sub, Color::MUTED, 1.0);
         draw_str_centered(buf, w, cx, cy + 60, hint, Color::MUTED, 0.8);
+        draw_str_centered(buf, w, cx, cy + 100, skip, Color::MUTED, 0.6);
     }
 
     fn render_keyboard(&self, buf: &mut [u32], w: usize, h: usize) {
@@ -100,6 +112,7 @@ impl SetupWizard {
         } else {
             ""
         };
+        let skip = "ESC でスキップ";
 
         let cx = w / 2;
         let cy = h / 2;
@@ -113,8 +126,9 @@ impl SetupWizard {
         if !hint.is_empty() {
             draw_str_centered(buf, w, cx, cy + 100, hint, Color::MUTED, 0.8);
         }
+        draw_str_centered(buf, w, cx, cy + 130, skip, Color::MUTED, 0.6);
 
-        let dot_y = cy as i32 + 160;
+        let dot_y = cy as i32 + 180;
         let dot_r = 8i32;
         let dot_color = if self.key_detected { Color::ACCENT } else { Color::MUTED };
         fill_circle(buf, w, h, cx as i32, dot_y, dot_r, dot_color.0);

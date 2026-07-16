@@ -291,7 +291,6 @@ impl Keyboard {
                         self.prev_modifiers = self.cur_modifiers;
                         let newly_pressed = self.cur_modifiers & !prev_mod;
                         if newly_pressed != 0 {
-                            // Return a synthetic event with raw_key = 0x100 + modifier bit index
                             let bit = newly_pressed.trailing_zeros() as u8;
                             return Some(KeyEvent { printable: None, scancode: 0, modifiers: self.cur_modifiers, raw_key: 0x80 | bit });
                         }
@@ -303,6 +302,7 @@ impl Keyboard {
                     return None;
                 }
             }
+            // USB returned 0 bytes or error — fall through to UEFI
         }
 
         // Fallback: UEFI protocol
