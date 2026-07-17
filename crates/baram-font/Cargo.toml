@@ -1,0 +1,9 @@
+[package]
+name = "baram-font"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+baram-core = { path = "../baram-core" }
+stb_truetype_rust = { path = "../../src/stb_truetype_rust" }
+uefi = { workspace = true }

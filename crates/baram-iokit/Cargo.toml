@@ -1,0 +1,11 @@
+[package]
+name = "baram-iokit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+baram-core = { path = "../baram-core" }
+baram-font = { path = "../baram-font" }
+baram-bsd = { path = "../baram-bsd" }
+uefi = { workspace = true }
+uefi-raw = { workspace = true }

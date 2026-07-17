@@ -1,0 +1,13 @@
+[package]
+name = "baram-windowserver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+baram-core = { path = "../baram-core" }
+baram-font = { path = "../baram-font" }
+baram-graphics = { path = "../baram-graphics" }
+baram-bsd = { path = "../baram-bsd" }
+uefi = { workspace = true }
+libm = { workspace = true }
+png-decoder = { workspace = true }
