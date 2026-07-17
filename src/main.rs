@@ -3,61 +3,54 @@
 
 extern crate alloc;
 
-mod kern;
-mod bsd;
-mod iokit;
-mod pexpert;
-mod libkern;
-mod graphics;
-mod windowserver;
-
 use alloc::vec::Vec;
 
 use uefi::prelude::*;
 use uefi::runtime;
 
-use crate::pexpert::gop::Screen;
-use crate::iokit::keyboard::Keyboard;
-use crate::iokit::mouse::{Mouse, MouseEvent};
-use crate::windowserver::window::WindowManager;
-use crate::windowserver::layer::LayerSystem;
-use crate::windowserver::cursor::*;
-use crate::windowserver::compositor::*;
+use baram_core::{Color, Screen, LayerSystem};
+use baram_font::{LayerFontExt, log_line_str};
+use baram_iokit::keyboard::Keyboard;
+use baram_iokit::mouse::Mouse;
+use baram_windowserver::window::{WindowManager, WinId};
+use baram_windowserver::compositor::*;
+use baram_windowserver::cursor;
+use baram_bsd::shift_key;
 
 #[entry]
 fn main() -> Status {
-    crate::iokit::mouse::log_line_str("BaramOS: starting...");
+    log_line_str("BaramOS: starting...");
     let _ = uefi::helpers::init();
-    crate::iokit::mouse::log_line_str("BaramOS: UEFI helpers initialized");
-    crate::libkern::ttf_font::init();
-    crate::libkern::ttf_font_hud::init();
-    crate::iokit::mouse::log_line_str("BaramOS: fonts initialized");
+    log_line_str("BaramOS: UEFI helpers initialized");
+    baram_font::ttf_font::init();
+    baram_font::ttf_font_hud::init();
+    log_line_str("BaramOS: fonts initialized");
 
     unsafe {
-        CURSOR_NORMAL = Some(prerender_cursor(CURSOR_SVG, CURSOR_BOX_W, CURSOR_BOX_H, 8));
-        CURSOR_RESIZE = Some(prerender_cursor(CURSOR_SVG_SIZE, CURSOR_BOX_SIZE_W, CURSOR_BOX_SIZE_H, 8));
+        baram_windowserver::cursor::CURSOR_NORMAL = Some(cursor::prerender_cursor(cursor::CURSOR_SVG, cursor::CURSOR_BOX_W, cursor::CURSOR_BOX_H, 8));
+        baram_windowserver::cursor::CURSOR_RESIZE = Some(cursor::prerender_cursor(cursor::CURSOR_SVG_SIZE, cursor::CURSOR_BOX_SIZE_W, cursor::CURSOR_BOX_SIZE_H, 8));
     }
 
     let mut screen = match Screen::take() {
         Ok(s) => {
-            crate::iokit::mouse::log_line_str(&alloc::format!("BaramOS: screen {}x{}", s.width(), s.height()));
-            unsafe { crate::iokit::debug_log::init_screen(&s) };
+            log_line_str(&alloc::format!("BaramOS: screen {}x{}", s.width(), s.height()));
+            unsafe { baram_font::log::init_screen(&s) };
             s
         },
         Err(_s) => {
-            crate::iokit::mouse::log_line_str("BaramOS: screen init failed");
+            log_line_str("BaramOS: screen init failed");
             return Status::UNSUPPORTED
         },
     };
 
-    unsafe { crate::kern::panic::init_from_screen(&screen) };
+    unsafe { baram_kern::panic::init_from_screen(&screen) };
 
-    crate::iokit::mouse::log_line_str("BaramOS: opening mouse...");
+    log_line_str("BaramOS: opening mouse...");
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
         Ok(m) => Some(m),
         Err(_) => None,
     };
-    crate::iokit::mouse::log_line_str("BaramOS: opening keyboard...");
+    log_line_str("BaramOS: opening keyboard...");
     let mut keyboard = Keyboard::open();
 
     let timer_event = unsafe {
@@ -69,11 +62,11 @@ fn main() -> Status {
         ) {
             Ok(evt) => {
                 let _ = uefi::boot::set_timer(&evt, uefi::boot::TimerTrigger::Periodic(core::time::Duration::from_millis(1)));
-                crate::iokit::mouse::log_line_str("BaramOS: timer event created (1ms periodic)");
+                log_line_str("BaramOS: timer event created (1ms periodic)");
                 Some(evt)
             }
             Err(_) => {
-                crate::iokit::mouse::log_line_str("BaramOS: failed to create timer event");
+                log_line_str("BaramOS: failed to create timer event");
                 None
             }
         }
@@ -82,10 +75,10 @@ fn main() -> Status {
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
 
-    if !crate::bsd::setup::is_setup_done() {
-        crate::iokit::mouse::log_line_str("BaramOS: first boot detected, starting setup wizard");
-        let mut wizard = crate::bsd::setup::SetupWizard::new();
-        let mut setup_layer = crate::windowserver::layer::LayerSystem::new(screen.width(), screen.height());
+    if !baram_bsd::setup::is_setup_done() {
+        log_line_str("BaramOS: first boot detected, starting setup wizard");
+        let mut wizard = baram_bsd::setup::SetupWizard::new();
+        let mut setup_layer = LayerSystem::new(screen.width(), screen.height());
         let mut setup_buf: alloc::vec::Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
 
         let kbd_event = Keyboard::stdin_event();
@@ -112,7 +105,7 @@ fn main() -> Status {
 
             if let Some(mouse) = mouse_opt.as_mut() {
                 while let Some(ev) = mouse.poll() {
-                    crate::iokit::mouse::apply_mouse_event(
+                    baram_iokit::mouse::apply_mouse_event(
                         &mut cursor_x, &mut cursor_y, &ev,
                         screen.width(), screen.height(), mouse.abs_max(),
                     );
@@ -123,7 +116,7 @@ fn main() -> Status {
                 }
             }
 
-            if wizard.screen == crate::bsd::setup::SetupScreen::Done {
+            if wizard.screen == baram_bsd::setup::SetupScreen::Done {
                 break;
             }
 
@@ -132,23 +125,23 @@ fn main() -> Status {
 
             cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
-            crate::windowserver::cursor::draw_cursor_into_layer(&mut setup_layer, cursor_x, cursor_y, false, 1.0);
+            cursor::draw_cursor_into_layer(&mut setup_layer, cursor_x, cursor_y, false, 1.0);
             setup_layer.flush(&mut screen);
         }
-        crate::iokit::mouse::log_line_str("BaramOS: setup wizard completed");
-        keyboard.shift_key = crate::iokit::keyboard::load_shift_key();
+        log_line_str("BaramOS: setup wizard completed");
+        keyboard.shift_key = shift_key::load_shift_key();
     }
 
     let mut wm = WindowManager::new(screen.width(), screen.height());
-    let mut layer = crate::windowserver::layer::LayerSystem::new(screen.width(), screen.height());
+    let mut layer = LayerSystem::new(screen.width(), screen.height());
 
-    crate::iokit::mouse::log_line_str("BaramOS: loading index.yaml...");
-    let index_yaml = crate::bsd::app::read_index_yaml();
-    crate::iokit::mouse::log_line_str(&alloc::format!("BaramOS: index.yaml {} bytes", index_yaml.len()));
+    log_line_str("BaramOS: loading index.yaml...");
+    let index_yaml = baram_bsd::app::read_index_yaml();
+    log_line_str(&alloc::format!("BaramOS: index.yaml {} bytes", index_yaml.len()));
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
-    let mut warp_engines: alloc::vec::Vec<(crate::windowserver::window::WinId, crate::windowserver::warp::WarpEngine)> = alloc::vec::Vec::new();
-    let mut ui_win_id: Option<crate::windowserver::window::WinId> = None;
-    let mut ui_commands: alloc::vec::Vec<crate::graphics::uiscript::Command> = alloc::vec::Vec::new();
+    let mut warp_engines: alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)> = alloc::vec::Vec::new();
+    let mut ui_win_id: Option<WinId> = None;
+    let mut ui_commands: alloc::vec::Vec<baram_graphics::uiscript::Command> = alloc::vec::Vec::new();
 
     let mut auto_idx = 0i32;
     for autostart_name in &autostart_list {
@@ -160,13 +153,13 @@ fn main() -> Status {
             let win_id = wm.add(&entry.title, x, y, w, h);
             wm.set_icon(win_id, &entry.icon);
             if entry.app_type.starts_with("warp") {
-                let source = crate::bsd::app::load_app_source(&entry.name);
-                let mut engine = crate::windowserver::warp::WarpEngine::new(&source);
+                let source = baram_bsd::app::load_app_source(&entry.name);
+                let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
                 engine.update((w as i32) - 20, (h as i32) - 50);
                 warp_engines.push((win_id, engine));
             } else if entry.app_type.starts_with("uiscript") {
-                let source = crate::bsd::app::load_app_source(&entry.name);
-                ui_commands = crate::graphics::uiscript::parse(&source);
+                let source = baram_bsd::app::load_app_source(&entry.name);
+                ui_commands = baram_graphics::uiscript::parse(&source);
                 ui_win_id = Some(win_id);
             }
             auto_idx += 1;
@@ -190,7 +183,7 @@ fn main() -> Status {
     let mut shift_press_times: [u64; 3] = [0; 3];
     let mut shift_press_idx: usize = 0;
     let mut prev_shift_held: bool = false;
-    let mut mousekey_win_id: Option<crate::windowserver::window::WinId> = None;
+    let mut mousekey_win_id: Option<WinId> = None;
 
     let mouse_mode_label = match &mouse_opt {
         Some(m) if m.is_absolute() => "Absolute",
@@ -198,8 +191,8 @@ fn main() -> Status {
         None => "None",
     };
 
-    let mut display_state = crate::bsd::uri::DisplayState::new();
-    crate::bsd::uri::load_settings(&mut display_state);
+    let mut display_state = baram_bsd::uri::DisplayState::new();
+    baram_bsd::uri::load_settings(&mut display_state);
 
     let mut cached_wallpaper: Option<Vec<u32>> = None;
     if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
@@ -217,7 +210,7 @@ fn main() -> Status {
     let mut cached_taskbar_strip: Option<Vec<u32>> = None;
     let mut cached_launcher_layer: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
-    let mut prev_focused_id: Option<crate::windowserver::window::WinId> = None;
+    let mut prev_focused_id: Option<WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
     let mut prev_wallpaper_idx: usize = display_state.wallpaper_index;
 
@@ -250,7 +243,7 @@ fn main() -> Status {
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
     cached_scene.copy_from_slice(layer.buf_ref());
-    crate::windowserver::cursor::draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false, display_state.pointer_size);
+    cursor::draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, false, display_state.pointer_size);
     layer.flush(&mut screen);
 
     loop {
@@ -269,8 +262,8 @@ fn main() -> Status {
             last_keys.push(ev.label());
 
             match ev.scancode {
-                0x01 => wm.scroll_focused(-crate::windowserver::window::SCROLL_SPEED),
-                0x02 => wm.scroll_focused(crate::windowserver::window::SCROLL_SPEED),
+                0x01 => wm.scroll_focused(-baram_windowserver::window::SCROLL_SPEED),
+                0x02 => wm.scroll_focused(baram_windowserver::window::SCROLL_SPEED),
                 _ => {}
             }
 
@@ -291,8 +284,8 @@ fn main() -> Status {
                         let x = 60 + ((new_window_idx as i32 * 37) % 300);
                         let y = 80 + ((new_window_idx as i32 * 23) % 200);
                         let new_id = wm.add("New App", x, y, 400, 450);
-                        let source = crate::bsd::app::load_app_source("blank.warp");
-                        let mut engine = crate::windowserver::warp::WarpEngine::new(&source);
+                        let source = baram_bsd::app::load_app_source("blank.warp");
+                        let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
                         engine.update(380, 410);
                         warp_engines.push((new_id, engine));
                         tb_add_progress = 0.0;
@@ -325,11 +318,11 @@ fn main() -> Status {
                         shift_press_idx = 0;
 
                         if mousekey_mode {
-                            let source = crate::bsd::app::load_app_source("mousekeydialog.warp");
+                            let source = baram_bsd::app::load_app_source("mousekeydialog.warp");
                             let nx = (screen.width() as i32 - 400) / 2;
                             let ny = (screen.height() as i32 - 300) / 2;
                             let win_id = wm.add("マウスキー", nx, ny, 400, 300);
-                            let mut engine = crate::windowserver::warp::WarpEngine::new(&source);
+                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
                             engine.update(380, 260);
                             warp_engines.push((win_id, engine));
                             mousekey_win_id = Some(win_id);
@@ -401,13 +394,13 @@ fn main() -> Status {
             while let Some(ev) = mouse.poll() {
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
 
-                let (cx, cy) = crate::iokit::mouse::apply_mouse_event(
+                let (cx, cy) = baram_iokit::mouse::apply_mouse_event(
                     &mut cursor_x, &mut cursor_y, &ev,
                     screen.width(), screen.height(), mouse.abs_max(),
                 );
 
                 if ev.scroll != 0 {
-                    let scroll_delta = -ev.scroll * crate::windowserver::window::SCROLL_SPEED;
+                    let scroll_delta = -ev.scroll * baram_windowserver::window::SCROLL_SPEED;
                     if let Some(id) = wm.window_at(cx, cy) {
                         wm.scroll_window(id, scroll_delta);
                         scene_dirty = true;
@@ -451,8 +444,8 @@ fn main() -> Status {
                             let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                             let new_id = wm.add(&app_title, nx, ny, 400, 450);
                             wm.set_icon(new_id, &app_icon);
-                            let source = crate::bsd::app::load_app_source(&app_name);
-                            let mut engine = crate::windowserver::warp::WarpEngine::new(&source);
+                            let source = baram_bsd::app::load_app_source(&app_name);
+                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
                             engine.update(380, 410);
                             warp_engines.push((new_id, engine));
                             tb_add_progress = 0.0;
@@ -528,10 +521,10 @@ fn main() -> Status {
                                         scene_dirty = true;
 
                                         if let Some(cmd) = engine.last_command.take() {
-                                            crate::bsd::uri::execute(&cmd, &mut display_state);
-                                            if let Some(parsed) = crate::bsd::uri::parse(&cmd) {
+                                            baram_bsd::uri::execute(&cmd, &mut display_state);
+                                            if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
                                                 if parsed.action == "wallpaper" {
-                                                    if crate::bsd::uri::get_param(&parsed, "color").is_some() {
+                                                    if baram_bsd::uri::get_param(&parsed, "color").is_some() {
                                                         if let Some(color) = display_state.wallpaper_color {
                                                             cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
                                                         }
@@ -539,7 +532,7 @@ fn main() -> Status {
                                                         if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
                                                             cached_wallpaper = decode_wallpaper(bytes, screen.width(), screen.height());
                                                         } else {
-                                                            crate::iokit::mouse::log_line_str("NO WALLPAPER BYTES");
+                                                            log_line_str("NO WALLPAPER BYTES");
                                                         }
                                                     }
                                                     cached_taskbar = None;
@@ -622,8 +615,8 @@ fn main() -> Status {
                     let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                     let new_id = wm.add(&app_title, nx, ny, 400, 450);
                     wm.set_icon(new_id, &app_icon);
-                    let source = crate::bsd::app::load_app_source(&app_name);
-                    let mut engine = crate::windowserver::warp::WarpEngine::new(&source);
+                    let source = baram_bsd::app::load_app_source(&app_name);
+                    let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
                     engine.update(380, 410);
                     warp_engines.push((new_id, engine));
                     tb_add_progress = 0.0;
@@ -691,10 +684,10 @@ fn main() -> Status {
                                 scene_dirty = true;
 
                                 if let Some(cmd) = engine.last_command.take() {
-                                    crate::bsd::uri::execute(&cmd, &mut display_state);
-                                    if let Some(parsed) = crate::bsd::uri::parse(&cmd) {
+                                    baram_bsd::uri::execute(&cmd, &mut display_state);
+                                    if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
                                         if parsed.action == "wallpaper" {
-                                            if crate::bsd::uri::get_param(&parsed, "color").is_some() {
+                                            if baram_bsd::uri::get_param(&parsed, "color").is_some() {
                                                 if let Some(color) = display_state.wallpaper_color {
                                                     cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
                                                 }
@@ -880,13 +873,13 @@ fn main() -> Status {
 
                 cached_scene.copy_from_slice(layer.buf_ref());
                 scene_dirty = false;
-                crate::windowserver::cursor::draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
+                cursor::draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
 
                 let pad = 32i32;
-                let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
-                let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
-                let prev_w = if prev_is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
-                let prev_h = if prev_is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
+                let cur_w = if is_resizing { cursor::CURSOR_BOX_SIZE_W } else { cursor::CURSOR_BOX_W };
+                let cur_h = if is_resizing { cursor::CURSOR_BOX_SIZE_H } else { cursor::CURSOR_BOX_H };
+                let prev_w = if prev_is_resizing { cursor::CURSOR_BOX_SIZE_W } else { cursor::CURSOR_BOX_W };
+                let prev_h = if prev_is_resizing { cursor::CURSOR_BOX_SIZE_H } else { cursor::CURSOR_BOX_H };
                 let cx0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
                 let cy0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
                 let cx1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad).min(w as i32) as usize;
@@ -913,10 +906,10 @@ fn main() -> Status {
                 let w = screen.width();
                 let h = screen.height();
                 let pad = 32i32;
-                let cur_w = if is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
-                let cur_h = if is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
-                let prev_w = if prev_is_resizing { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
-                let prev_h = if prev_is_resizing { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
+                let cur_w = if is_resizing { cursor::CURSOR_BOX_SIZE_W } else { cursor::CURSOR_BOX_W };
+                let cur_h = if is_resizing { cursor::CURSOR_BOX_SIZE_H } else { cursor::CURSOR_BOX_H };
+                let prev_w = if prev_is_resizing { cursor::CURSOR_BOX_SIZE_W } else { cursor::CURSOR_BOX_W };
+                let prev_h = if prev_is_resizing { cursor::CURSOR_BOX_SIZE_H } else { cursor::CURSOR_BOX_H };
                 let x0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
                 let y0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
                 let x1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad).min(w as i32) as usize;
@@ -943,7 +936,7 @@ fn main() -> Status {
                     }
                 }
 
-                crate::windowserver::cursor::draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
+                cursor::draw_cursor_into_layer(&mut layer, cursor_x, cursor_y, is_resizing, display_state.pointer_size);
                 layer.flush_rect(&mut screen, x0, y0, x1, y1);
 
                 prev_cursor_x = cursor_x;

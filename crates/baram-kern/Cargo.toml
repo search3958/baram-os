@@ -1,0 +1,10 @@
+[package]
+name = "baram-kern"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+baram-core = { path = "../baram-core" }
+baram-font = { path = "../baram-font" }
+uefi = { workspace = true }
+libm = { workspace = true }
