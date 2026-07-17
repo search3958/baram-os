@@ -6,8 +6,8 @@
 
 use alloc::vec::Vec;
 use alloc::string::String;
-use crate::gop::Color;
-use crate::window::LayerSystem;
+use crate::pexpert::gop::Color;
+use crate::windowserver::layer::LayerSystem;
 
 #[derive(Clone, Debug)]
 pub enum Command {

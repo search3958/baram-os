@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use crate::gop::Color;
+use crate::pexpert::gop::Color;
 
 const FIXED_SHIFT: i32 = 10;
 const FIXED_ONE: i32 = 1 << FIXED_SHIFT;

@@ -9,7 +9,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::vfs;
+use crate::bsd::vfs;
 
 const SETTINGS_PATH: &str = "apps/.display_settings";
 
@@ -128,7 +128,7 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
                         u8::from_str_radix(&hex[2..4], 16),
                         u8::from_str_radix(&hex[4..6], 16),
                     ) {
-                        state.wallpaper_color = Some(crate::gop::Color::rgb(r, g, b).0);
+                        state.wallpaper_color = Some(crate::pexpert::gop::Color::rgb(r, g, b).0);
                         state.wallpaper_index = 0;
                         return true;
                     }

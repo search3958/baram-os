@@ -29,8 +29,8 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::gop::Color;
-use crate::window::LayerSystem;
+use crate::pexpert::gop::Color;
+use crate::windowserver::layer::LayerSystem;
 
 use kurbo::{
     Affine, BezPath, Cap, Circle, Ellipse, Join, Line, Point, Rect, RoundedRect, Shape, Stroke,

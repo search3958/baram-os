@@ -1,5 +1,5 @@
 use core::fmt::Write;
-use crate::gop::Screen;
+use crate::pexpert::gop::Screen;
 
 const MAX_LINES: usize = 64;
 const MAX_MSG_LEN: usize = 120;
@@ -138,7 +138,7 @@ unsafe fn draw_last_line(idx: usize) {
 }
 
 fn draw_text_bitmap(mut x: usize, y: usize, s: &str) {
-    use crate::font::{self, GLYPH_H, GLYPH_W};
+    use crate::libkern::font::{self, GLYPH_H, GLYPH_W};
     let fg = 0x00FFFFFFu32; // white in BGRA
     for &b in s.as_bytes() {
         if x + GLYPH_W > unsafe { FB_W } { break; }

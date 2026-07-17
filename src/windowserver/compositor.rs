@@ -1,148 +1,20 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use crate::gop::{Color, Screen};
-use crate::svg;
-use crate::ui::FmtBuf;
-use crate::window::{WindowManager, LayerSystem, WinId};
-use crate::warp::WarpEngine;
-use crate::uiscript;
-use crate::blur;
+use crate::pexpert::gop::Color;
+use crate::graphics::svg;
+use crate::graphics::ui::FmtBuf;
+use crate::windowserver::window::{WindowManager, WinId};
+use crate::windowserver::layer::LayerSystem;
+use crate::windowserver::warp::WarpEngine;
+use crate::graphics::uiscript;
+use crate::libkern::blur;
 use uefi::runtime;
+use super::cursor::{self, CURSOR_BOX_W, CURSOR_BOX_H, CURSOR_BOX_SIZE_W, CURSOR_BOX_SIZE_H};
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 
-pub const CURSOR_SVG: &str = include_str!("data/mouse.svg");
-pub const CURSOR_SVG_SIZE: &str = include_str!("data/mouse_size.svg");
-pub const APPS_SVG: &str = include_str!("data/apps.svg");
-pub const CURSOR_BOX_W: usize = 15;
-pub const CURSOR_BOX_H: usize = 19;
-pub const CURSOR_BOX_SIZE_W: usize = 19;
-pub const CURSOR_BOX_SIZE_H: usize = 19;
-
-pub struct CursorBitmap {
-    pub pixels: Vec<u8>,
-    pub shadow: Vec<u8>,
-    pub w: usize,
-    pub h: usize,
-    pub shadow_w: usize,
-    pub shadow_h: usize,
-}
-
-pub static mut CURSOR_NORMAL: Option<CursorBitmap> = None;
-pub static mut CURSOR_RESIZE: Option<CursorBitmap> = None;
-pub static mut CURSOR_SIZE_CACHE: [(Option<CursorBitmap>, Option<CursorBitmap>); 51] = [
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None), (None, None), (None, None), (None, None), (None, None),
-    (None, None),
-];
-
-pub fn get_or_prerender_cursor(svg: &str, size: f32, blur_r: i32, is_resize: bool) -> &'static CursorBitmap {
-    let idx = ((size * 10.0) as usize).min(50);
-    unsafe {
-        let cache = &mut CURSOR_SIZE_CACHE[idx];
-        let slot = if is_resize { &mut cache.1 } else { &mut cache.0 };
-        if slot.is_none() {
-            let base_w = if is_resize { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
-            let base_h = if is_resize { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
-            let s10 = (size * 10.0) as i32;
-            let w = (base_w as i32 * s10 / 10) as usize;
-            let h = (base_h as i32 * s10 / 10) as usize;
-            *slot = Some(prerender_cursor(svg, w, h, blur_r));
-        }
-        slot.as_ref().unwrap()
-    }
-}
-
-pub fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBitmap {
-    let svg_buf = svg::rasterize_svg_to_buffer(svg, w, h);
-
-    let mut silhouette: Vec<f32> = alloc::vec![0.0; w * h];
-    for i in 0..w * h {
-        if svg_buf[i * 4 + 3] > 0 {
-            silhouette[i] = 1.0;
-        }
-    }
-
-    let pad = blur_r as usize;
-    let pw = w + pad * 2;
-    let ph = h + pad * 2;
-    let mut padded: Vec<f32> = alloc::vec![0.0; pw * ph];
-    for y in 0..h {
-        for x in 0..w {
-            padded[(y + pad) * pw + (x + pad)] = silhouette[y * w + x];
-        }
-    }
-
-    let sigma = blur_r as f32 / 3.0;
-    let mut kernel: Vec<f32> = alloc::vec![0.0; (blur_r * 2 + 1) as usize];
-    let mut k_sum = 0.0f32;
-    for i in 0..=blur_r * 2 {
-        let x = (i - blur_r) as f32;
-        let w = libm::expf(-x * x / (2.0 * sigma * sigma));
-        kernel[i as usize] = w;
-        k_sum += w;
-    }
-    for k in kernel.iter_mut() {
-        *k /= k_sum;
-    }
-
-    let mut tmp: Vec<f32> = alloc::vec![0.0; pw * ph];
-    for y in 0..ph {
-        for x in 0..pw {
-            let mut sum = 0.0f32;
-            for dx in -blur_r..=blur_r {
-                let sx = x as i32 + dx;
-                if sx >= 0 && sx < pw as i32 {
-                    sum += padded[y * pw + sx as usize] * kernel[(dx + blur_r) as usize];
-                }
-            }
-            tmp[y * pw + x] = sum;
-        }
-    }
-    let mut result: Vec<f32> = alloc::vec![0.0; pw * ph];
-    for y in 0..ph {
-        for x in 0..pw {
-            let mut sum = 0.0f32;
-            for dy in -blur_r..=blur_r {
-                let sy = y as i32 + dy;
-                if sy >= 0 && sy < ph as i32 {
-                    sum += tmp[sy as usize * pw + x] * kernel[(dy + blur_r) as usize];
-                }
-            }
-            result[y * pw + x] = sum;
-        }
-    }
-
-    let mut shadow: Vec<u8> = alloc::vec![0u8; pw * ph * 4];
-    for i in 0..pw * ph {
-        let a = (result[i] * 120.0).min(255.0) as u8;
-        shadow[i * 4] = 0;
-        shadow[i * 4 + 1] = 0;
-        shadow[i * 4 + 2] = 0;
-        shadow[i * 4 + 3] = a;
-    }
-
-    CursorBitmap {
-        pixels: svg_buf,
-        shadow,
-        w, h,
-        shadow_w: pw, shadow_h: ph,
-    }
-}
-
-pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("data/wallpaper/baram.png");
-pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("data/wallpaper/hanul.png");
-pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("data/wallpaper/reflect.png");
-pub const WALLPAPERS: &[&[u8]] = &[WALLPAPER_baram_PNG, WALLPAPER_HANUL_PNG, WALLPAPER_REFLECT_PNG];
+pub const APPS_SVG: &str = include_str!("../data/apps.svg");
 
 pub struct IconBitmap {
     pub pixels: Vec<[u8; 4]>,
@@ -251,23 +123,16 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
         }
     }
     if in_apps && !current_name.is_empty() {
-        let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+        let title = if current_title.is_empty() { current_name.clone() } else { current_name.clone() };
         apps.push(AppEntry { name: current_name, app_type: current_type, title, icon: current_icon });
     }
     (autostart, apps)
 }
 
-pub fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: f32) {
-    let blur_r = 12i32;
-    let pad = blur_r as i32;
-    let bitmap = get_or_prerender_cursor(
-        if resizing { CURSOR_SVG_SIZE } else { CURSOR_SVG },
-        pointer_size, blur_r, resizing,
-    );
-    svg::blit_shadow(layer, &bitmap.shadow, bitmap.shadow_w, bitmap.shadow_h,
-        cx + 3 - pad, cy + 4 - pad);
-    svg::blit_cached(layer, &bitmap.pixels, bitmap.w, bitmap.h, cx, cy);
-}
+pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../data/wallpaper/baram.png");
+pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../data/wallpaper/hanul.png");
+pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../data/wallpaper/reflect.png");
+pub const WALLPAPERS: &[&[u8]] = &[WALLPAPER_baram_PNG, WALLPAPER_HANUL_PNG, WALLPAPER_REFLECT_PNG];
 
 pub fn decode_wallpaper(bytes: &[u8], screen_w: usize, screen_h: usize) -> Option<Vec<u32>> {
     let (header, pixels) = png_decoder::decode(bytes).ok()?;
@@ -417,7 +282,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
         warp_engines);
 
-        if !taskbar_dirty {
+    if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
             layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
         }
@@ -479,7 +344,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
         {
             let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-            let icon_data = crate::vfs::read_file(&icon_path);
+            let icon_data = crate::bsd::vfs::read_file(&icon_path);
             if !icon_data.is_empty() {
                 if let Some(icon) = decode_icon(&icon_data, 40) {
                     let icon_draw = (btn_d as f32 * scale) as usize;
@@ -551,8 +416,8 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         let hud_text1 = "Baram OS (b2)";
         let mut hw1 = 0usize;
         for ch in hud_text1.chars() {
-            if crate::ttf_font_hud::is_available() {
-                let g = crate::ttf_font_hud::glyph(ch);
+            if crate::libkern::ttf_font_hud::is_available() {
+                let g = crate::libkern::ttf_font_hud::glyph(ch);
                 hw1 += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
             } else {
                 hw1 += 8;
@@ -563,8 +428,8 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
         let s2 = fb.as_str();
         let mut hw2 = 0usize;
         for ch in s2.chars() {
-            if crate::ttf_font_hud::is_available() {
-                let g = crate::ttf_font_hud::glyph(ch);
+            if crate::libkern::ttf_font_hud::is_available() {
+                let g = crate::libkern::ttf_font_hud::glyph(ch);
                 hw2 += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
             } else {
                 hw2 += 8;
@@ -628,7 +493,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 let resolved_icon = if icon_name.is_empty() || icon_name == "null" { "noname.png" } else { icon_name };
                 {
                     let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                    let icon_data = crate::vfs::read_file(&icon_path);
+                    let icon_data = crate::bsd::vfs::read_file(&icon_path);
                     if !icon_data.is_empty() {
                         if let Some(icon) = decode_icon(&icon_data, icon_size) {
                             let pad = (icon_size - icon.w) / 2;
@@ -669,8 +534,8 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 };
                 let mut tw = 0usize;
                 for ch in display_name.chars() {
-                    if crate::ttf_font::is_available() {
-                        let g = crate::ttf_font::glyph(ch);
+                    if crate::libkern::ttf_font::is_available() {
+                        let g = crate::libkern::ttf_font::glyph(ch);
                         if g.w > 0 {
                             tw += g.advance.max(0) as usize;
                         } else {
@@ -713,7 +578,7 @@ pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
                  bg_cache, bg_cache_valid,
                  show_app_launcher, app_list, app_icon_list, hover_apps_icon);
     let is_resizing = wm.is_any_resizing();
-    draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
+    cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
 }
 
 pub fn time_diff_ns(a: &runtime::Time, b: &runtime::Time) -> u64 {

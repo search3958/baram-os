@@ -1,7 +1,7 @@
 use core::fmt::Write;
 use core::ptr;
 
-use crate::gop::Color;
+use crate::pexpert::gop::Color;
 
 static mut FB_BASE: usize = 0;
 static mut FB_W: usize = 0;
@@ -9,7 +9,7 @@ static mut FB_H: usize = 0;
 static mut FB_STRIDE: usize = 0;
 static mut FB_PF_RGB: bool = true;
 
-pub unsafe fn init_from_screen(screen: &crate::gop::Screen) {
+pub unsafe fn init_from_screen(screen: &crate::pexpert::gop::Screen) {
     let info = screen.info();
     FB_BASE = info.base;
     FB_W = info.width;
@@ -81,18 +81,18 @@ fn blend_pixel(x: usize, y: usize, fg: Color, alpha: u8) {
 }
 
 fn draw_ttf_scaled(mut x: usize, y: usize, s: &str, fg: Color, pixel_size: f32) {
-    if !crate::ttf_font::is_available() {
+    if !crate::libkern::ttf_font::is_available() {
         for &b in s.as_bytes() {
             if b >= 0x20 && b <= 0x7E {
                 draw_bitmap_char(x, y, b, fg);
             }
-            x += crate::font::GLYPH_W;
+            x += crate::libkern::font::GLYPH_W;
         }
         return;
     }
-    let asc = crate::ttf_font::ascent_at_size(pixel_size);
+    let asc = crate::libkern::ttf_font::ascent_at_size(pixel_size);
     for ch in s.chars() {
-        let g = crate::ttf_font::glyph_at_size(ch, pixel_size);
+        let g = crate::libkern::ttf_font::glyph_at_size(ch, pixel_size);
         if g.w > 0 && g.h > 0 {
             let baseline = y as i32 + asc;
             for row in 0..g.h {
@@ -111,13 +111,13 @@ fn draw_ttf_scaled(mut x: usize, y: usize, s: &str, fg: Color, pixel_size: f32) 
             }
             x += g.advance.max(0) as usize;
         } else {
-            x += crate::font::GLYPH_W;
+            x += crate::libkern::font::GLYPH_W;
         }
     }
 }
 
 fn draw_bitmap_char(x: usize, y: usize, c: u8, fg: Color) {
-    use crate::font::{self, GLYPH_H, GLYPH_W};
+    use crate::libkern::font::{self, GLYPH_H, GLYPH_W};
     let glyph = font::glyph(c);
     for row in 0..GLYPH_H {
         let bits = glyph[row];

@@ -95,12 +95,12 @@ pub struct Keyboard {
 const SHIFT_KEY_PATH: &str = "apps/.shift_key";
 
 pub fn load_shift_key() -> u8 {
-    let data = crate::vfs::read_file(SHIFT_KEY_PATH);
+    let data = crate::bsd::vfs::read_file(SHIFT_KEY_PATH);
     if data.len() >= 1 { data[0] } else { 0 }
 }
 
 pub fn save_shift_key(code: u8) {
-    crate::vfs::write_file(SHIFT_KEY_PATH, &[code]);
+    crate::bsd::vfs::write_file(SHIFT_KEY_PATH, &[code]);
 }
 
 impl Keyboard {
@@ -176,7 +176,7 @@ impl Keyboard {
 
         if is_keyboard {
             if let Some(ep) = intr_ep {
-                crate::mouse::log_line_str(&format!("  KBD USB IO: iface={} ep=0x{:02x}", current_iface, ep));
+                crate::iokit::mouse::log_line_str(&format!("  KBD USB IO: iface={} ep=0x{:02x}", current_iface, ep));
                 return Some((ep, intr_mps));
             }
         }
@@ -225,7 +225,7 @@ impl Keyboard {
                         let _ = usb_obj.control_transfer(0x21, 0x0B, 1, iface_num as u16, ControlTransfer::None, 5000);
 
                         let report_buf = vec![0u8; mps as usize];
-                        crate::mouse::log_line_str("KBD: using USB IO (direct HID boot protocol)");
+                        crate::iokit::mouse::log_line_str("KBD: using USB IO (direct HID boot protocol)");
                         return Keyboard {
                             usb_io: Some((usb_obj, ep, report_buf)),
                             report_buf: vec![0u8; 8],
@@ -239,7 +239,7 @@ impl Keyboard {
                 }
             }
         }
-        crate::mouse::log_line_str("KBD: using UEFI protocol");
+        crate::iokit::mouse::log_line_str("KBD: using UEFI protocol");
         Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6], prev_modifiers: 0, cur_modifiers: 0, cur_keys: [0u8; 6], shift_key: load_shift_key() }
     }
 
@@ -320,7 +320,7 @@ impl Keyboard {
                 }
                 Ok(None) => None,
                 Err(e) => {
-                    crate::mouse::log_line_str(&format!("KBD: read_key error: {:?}", e));
+                    crate::iokit::mouse::log_line_str(&format!("KBD: read_key error: {:?}", e));
                     None
                 }
             }

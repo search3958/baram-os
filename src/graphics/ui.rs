@@ -3,16 +3,16 @@
 //! Everything here draws into a `Screen` using the 8x16 bitmap font and the
 //! palette defined in `gop::Color`.  No external dependencies.
 
-use crate::font::{self, GLYPH_H, GLYPH_W};
-use crate::gop::{Color, Screen};
+use crate::libkern::font::{self, GLYPH_H, GLYPH_W};
+use crate::pexpert::gop::{Color, Screen};
 
 
 
 pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: Color) {
-    if crate::ttf_font::is_available() && c >= 0x20 {
-        let glyph = crate::ttf_font::glyph(c as char);
+    if crate::libkern::ttf_font::is_available() && c >= 0x20 {
+        let glyph = crate::libkern::ttf_font::glyph(c as char);
         if glyph.w > 0 && glyph.h > 0 {
-            let baseline = y as i32 + crate::ttf_font::ascent();
+            let baseline = y as i32 + crate::libkern::ttf_font::ascent();
             for row in 0..glyph.h {
                 let py = baseline + glyph.y_off + row;
                 if py < 0 { continue; }
@@ -43,9 +43,9 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
 
 
 pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, bg: Color) {
-    if crate::ttf_font::is_available() {
+    if crate::libkern::ttf_font::is_available() {
         for ch in s.chars() {
-            let glyph = crate::ttf_font::glyph(ch);
+            let glyph = crate::libkern::ttf_font::glyph(ch);
             if glyph.w > 0 && glyph.h > 0 {
                 let c = if ch as u32 <= 0x7E { ch as u8 } else { b'?' };
                 put_char(screen, x, y, c, fg, bg);

@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use uefi::boot;
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::proto::console::pointer::Pointer;
-use crate::absolute_pointer::AbsolutePointer;
+use crate::iokit::absolute_pointer::AbsolutePointer;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MouseEvent {
@@ -463,5 +463,5 @@ pub fn log_line_str(s: &str) {
         let _ = stdout.output_string(uefi::cstr16!("\r\n"));
     });
     // Also draw on screen
-    crate::debug_log::log(s);
+    crate::iokit::debug_log::log(s);
 }

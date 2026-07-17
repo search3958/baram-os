@@ -3,9 +3,9 @@ extern crate alloc;
 use alloc::format;
 use alloc::vec::Vec;
 use alloc::string::{String, ToString};
-use crate::gop::Color;
-use crate::window::LayerSystem;
-use crate::ttf_font;
+use crate::pexpert::gop::Color;
+use crate::windowserver::layer::LayerSystem;
+use crate::libkern::ttf_font;
 
 const MAX_VARS: usize = 256;
 const MAX_SCREENS: usize = 64;

@@ -2,7 +2,7 @@ use uefi::proto::media::file::{File, FileAttribute, FileMode};
 use uefi::boot;
 use uefi::CStr16;
 
-use crate::mouse::log_line_str;
+use crate::iokit::mouse::log_line_str;
 use alloc::format;
 
 pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {

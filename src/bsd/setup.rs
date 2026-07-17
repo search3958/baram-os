@@ -1,12 +1,12 @@
-use crate::gop::{Color, Screen};
-use crate::ttf_font;
-use crate::ttf_font_hud;
-use crate::font::{self, GLYPH_H, GLYPH_W};
-use crate::vfs;
-use crate::blur;
+use crate::pexpert::gop::{Color, Screen};
+use crate::libkern::ttf_font;
+use crate::libkern::ttf_font_hud;
+use crate::libkern::font::{self, GLYPH_H, GLYPH_W};
+use crate::bsd::vfs;
+use crate::libkern::blur;
 
 const SETUP_DONE_PATH: &str = "apps/.setup_done";
-const WALLPAPER_BYTES: &[u8] = include_bytes!("data/wallpaper/baram.png");
+const WALLPAPER_BYTES: &[u8] = include_bytes!("../data/wallpaper/baram.png");
 const CARD_H: usize = 320;
 const BLUR_RADIUS: i32 = 60;
 
@@ -80,7 +80,7 @@ impl SetupWizard {
                     if label == "続行" {
                         self.screen = SetupScreen::Keyboard;
                     } else if label == "スキップ" {
-                        crate::keyboard::save_shift_key(0);
+                        crate::iokit::keyboard::save_shift_key(0);
                         mark_setup_done();
                         self.skipped = true;
                         self.screen = SetupScreen::Done;
@@ -88,12 +88,12 @@ impl SetupWizard {
                 }
                 SetupScreen::Keyboard => {
                     if label == "完了" && self.key_detected {
-                        crate::keyboard::save_shift_key(self.detected_raw_key);
+                        crate::iokit::keyboard::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;
                         mark_setup_done();
                     }
                     if label == "スキップ" {
-                        crate::keyboard::save_shift_key(0);
+                        crate::iokit::keyboard::save_shift_key(0);
                         mark_setup_done();
                         self.skipped = true;
                         self.screen = SetupScreen::Done;
@@ -108,10 +108,10 @@ impl SetupWizard {
         self.hover_btn = self.hit_test(mx, my);
     }
 
-    pub fn on_key(&mut self, ev: &crate::keyboard::KeyEvent) {
+    pub fn on_key(&mut self, ev: &crate::iokit::keyboard::KeyEvent) {
         let is_esc = ev.raw_key == 0x29 || ev.scancode == 0x17;
         if is_esc && self.screen != SetupScreen::Done {
-            crate::keyboard::save_shift_key(0);
+            crate::iokit::keyboard::save_shift_key(0);
             mark_setup_done();
             self.skipped = true;
             self.screen = SetupScreen::Done;
@@ -127,7 +127,7 @@ impl SetupWizard {
             SetupScreen::Keyboard => {
                 if is_enter {
                     if self.key_detected {
-                        crate::keyboard::save_shift_key(self.detected_raw_key);
+                        crate::iokit::keyboard::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;
                         mark_setup_done();
                     }
