@@ -316,3 +316,81 @@ pub enum LoadError {
     SectionLoadFailed,
     RelocationFailed,
 }
+
+pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
+    use alloc::format;
+    use alloc::vec;
+
+    let mut data = vec![0u8; 4096];
+    let mut offset = 0;
+
+    loop {
+        let bytes_read = crate::loader::read_file_chunk(path, offset, &mut data[offset..]);
+        if bytes_read == 0 {
+            break;
+        }
+        offset += bytes_read;
+        if offset >= data.len() {
+            data.resize(data.len() * 2, 0);
+        }
+    }
+
+    if offset == 0 {
+        None
+    } else {
+        data.truncate(offset);
+        Some(data)
+    }
+}
+
+fn read_file_chunk(path: &str, offset: usize, buf: &mut [u8]) -> usize {
+    use uefi::boot;
+    use uefi::proto::media::file::{File, FileAttribute, FileMode};
+    use uefi::CStr16;
+
+    let ih = uefi::boot::image_handle();
+    let mut fs = match uefi::boot::get_image_file_system(ih) {
+        Ok(fs) => fs,
+        Err(_) => return 0,
+    };
+
+    let mut root = match fs.open_volume() {
+        Ok(root) => root,
+        Err(_) => return 0,
+    };
+
+    let mut path_buf = [0u16; 256];
+    let mut i = 0;
+    for ch in path.bytes() {
+        let c = if ch == b'/' { b'\\' } else { ch } as u16;
+        if i + 1 < path_buf.len() {
+            path_buf[i] = c;
+            i += 1;
+        }
+    }
+    path_buf[i] = 0;
+
+    let cpath = match CStr16::from_u16_with_nul(&path_buf[..=i]) {
+        Ok(p) => p,
+        Err(_) => return 0,
+    };
+
+    let handle = match root.open(cpath, FileMode::Read, FileAttribute::empty()) {
+        Ok(h) => h,
+        Err(_) => return 0,
+    };
+
+    let mut file = match handle.into_regular_file() {
+        Some(f) => f,
+        None => return 0,
+    };
+
+    if offset > 0 {
+        let _ = file.set_position(offset as u64);
+    }
+
+    match file.read(buf) {
+        Ok(n) => n,
+        Err(_) => 0,
+    }
+}

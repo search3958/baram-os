@@ -10,3 +10,8 @@ pub mod scheduler;
 pub mod vmm;
 pub mod context_switch;
 pub mod syscall;
+pub mod elf;
+pub mod dyld;
+pub mod proc_loader;
+pub mod ipc;
+pub mod init;
