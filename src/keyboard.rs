@@ -11,6 +11,7 @@ pub struct KeyEvent {
     pub printable: Option<u8>,
     pub scancode: u16,
     pub modifiers: u8,
+    pub raw_key: u8,
 }
 
 impl KeyEvent {
@@ -75,7 +76,7 @@ const BOOT_KEYMAP: [u8; 128] = {
     map[0x1E] = b'1'; map[0x1F] = b'2'; map[0x20] = b'3'; map[0x21] = b'4';
     map[0x22] = b'5'; map[0x23] = b'6'; map[0x24] = b'7'; map[0x25] = b'8';
     map[0x26] = b'9'; map[0x27] = b'0';
-    map[0x28] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
+    map[0x28] = b'\n'; map[0x58] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
     map[0x2F] = b'['; map[0x30] = b']'; map[0x33] = b';'; map[0x34] = b'\'';
     map[0x36] = b','; map[0x37] = b'.'; map[0x38] = b'/';
     map
@@ -85,8 +86,21 @@ pub struct Keyboard {
     usb_io: Option<(boot::ScopedProtocol<UsbIo>, u8, Vec<u8>)>,
     report_buf: Vec<u8>,
     prev_keys: [u8; 6],
+    prev_modifiers: u8,
     pub cur_modifiers: u8,
     pub cur_keys: [u8; 6],
+    pub shift_key: u8,
+}
+
+const SHIFT_KEY_PATH: &str = "apps/.shift_key";
+
+pub fn load_shift_key() -> u8 {
+    let data = crate::vfs::read_file(SHIFT_KEY_PATH);
+    if data.len() >= 1 { data[0] } else { 0 }
+}
+
+pub fn save_shift_key(code: u8) {
+    crate::vfs::write_file(SHIFT_KEY_PATH, &[code]);
 }
 
 impl Keyboard {
@@ -216,15 +230,17 @@ impl Keyboard {
                             usb_io: Some((usb_obj, ep, report_buf)),
                             report_buf: vec![0u8; 8],
                             prev_keys: [0u8; 6],
+                            prev_modifiers: 0,
                             cur_modifiers: 0,
                             cur_keys: [0u8; 6],
+                            shift_key: load_shift_key(),
                         };
                     }
                 }
             }
         }
         crate::mouse::log_line_str("KBD: using UEFI protocol");
-        Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6], cur_modifiers: 0, cur_keys: [0u8; 6] }
+        Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6], prev_modifiers: 0, cur_modifiers: 0, cur_keys: [0u8; 6], shift_key: load_shift_key() }
     }
 
     pub fn stdin_event() -> Option<uefi::Event> {
@@ -251,6 +267,7 @@ impl Keyboard {
                     self.cur_modifiers = r[0];
                     if n >= 8 {
                         let keys = [r[2], r[3], r[4], r[5], r[6], r[7]];
+                        self.cur_keys = keys;
 
                         // Find newly pressed keys
                         for &key in &keys {
@@ -265,14 +282,27 @@ impl Keyboard {
                                 };
                                 let printable = if ascii != 0 { Some(ascii) } else { None };
 
-                                return Some(KeyEvent { printable, scancode: 0, modifiers: self.cur_modifiers });
+                                return Some(KeyEvent { printable, scancode: 0, modifiers: self.cur_modifiers, raw_key: key });
                             }
                         }
+
+                        // Detect modifier-only press (no key slot change)
+                        let prev_mod = self.prev_modifiers;
+                        self.prev_modifiers = self.cur_modifiers;
+                        let newly_pressed = self.cur_modifiers & !prev_mod;
+                        if newly_pressed != 0 {
+                            let bit = newly_pressed.trailing_zeros() as u8;
+                            return Some(KeyEvent { printable: None, scancode: 0, modifiers: self.cur_modifiers, raw_key: 0x80 | bit });
+                        }
+
                         self.prev_keys = keys;
+                    } else {
+                        self.cur_keys = [0u8; 6];
                     }
                     return None;
                 }
             }
+            // USB returned 0 bytes or error — fall through to UEFI
         }
 
         // Fallback: UEFI protocol
@@ -281,10 +311,12 @@ impl Keyboard {
                 Ok(Some(Key::Printable(ch))) => {
                     let v: u16 = ch.into();
                     let printable = if v < 0x80 { Some(v as u8) } else { None };
-                    Some(KeyEvent { printable, scancode: 0, modifiers: 0 })
+                    let raw = if v > 0 && v < 256 { v as u8 } else { 0 };
+                    Some(KeyEvent { printable, scancode: 0, modifiers: 0, raw_key: raw })
                 }
                 Ok(Some(Key::Special(sc))) => {
-                    Some(KeyEvent { printable: None, scancode: sc.0, modifiers: 0 })
+                    let raw = if sc.0 > 0 && sc.0 < 256 { sc.0 as u8 } else { 0 };
+                    Some(KeyEvent { printable: None, scancode: sc.0, modifiers: 0, raw_key: raw })
                 }
                 Ok(None) => None,
                 Err(e) => {
@@ -304,6 +336,24 @@ impl Keyboard {
     }
 
     pub fn shift_held(&self) -> bool {
-        self.cur_modifiers & 0x22 != 0
+        if self.cur_modifiers & 0x22 != 0 {
+            return true;
+        }
+        if self.shift_key != 0 {
+            if self.shift_key & 0x80 != 0 {
+                // Modifier key: check the corresponding bit in cur_modifiers
+                let bit = self.shift_key & 0x7F;
+                let mask = 1u8 << bit;
+                if self.cur_modifiers & mask != 0 {
+                    return true;
+                }
+            } else {
+                // Regular key: check cur_keys
+                if self.cur_keys.contains(&self.shift_key) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
