@@ -11,7 +11,8 @@ use uefi::runtime;
 use baram_core::{Color, Screen, LayerSystem};
 use baram_core::subsystem::{SubsystemContext, KeyEventData, MouseEventData, FramebufferInfo};
 use baram_kern::subsystem::SubsystemManager;
-use baram_kern::process::ProcessManager;
+use baram_kern::scheduler::Scheduler;
+use baram_kern::vmm::VirtualMemoryManager;
 use baram_kern::loader;
 use baram_iokit::keyboard::Keyboard;
 use baram_iokit::mouse::Mouse;
@@ -76,7 +77,7 @@ fn kernel_main() -> Status {
     log("BaramOS: loading subsystems...");
 
     let mut sub_mgr = SubsystemManager::new();
-    let mut proc_mgr = ProcessManager::new();
+    let mut scheduler = Scheduler::new();
 
     let subsystem_paths = [
         "EFI/BOOT/bin/windowserver.efi",
@@ -102,8 +103,7 @@ fn kernel_main() -> Status {
                         );
                         if result == 0 {
                             log(&alloc::format!("BaramOS: subsystem {} initialized", path));
-                            let proc_id = proc_mgr.create_process(path, idx);
-                            proc_mgr.start_process(proc_id);
+                            let proc_id = scheduler.create_process(path, baram_kern::process::ProcessPriority::Normal);
                             loaded_indices.push(idx);
                         } else {
                             log(&alloc::format!("BaramOS: subsystem {} init failed: {}", path, result));
@@ -152,7 +152,7 @@ fn kernel_main() -> Status {
             };
 
             for &idx in &loaded_indices {
-                if proc_mgr.get_process_by_subsystem(idx)
+                if scheduler.get_process(0)
                     .map(|p| p.state == baram_kern::process::ProcessState::Running)
                     .unwrap_or(false)
                 {
@@ -182,7 +182,7 @@ fn kernel_main() -> Status {
                 };
 
                 for &idx in &loaded_indices {
-                    if proc_mgr.get_process_by_subsystem(idx)
+                    if scheduler.get_process(0)
                         .map(|p| p.state == baram_kern::process::ProcessState::Running)
                         .unwrap_or(false)
                     {
@@ -214,7 +214,7 @@ fn kernel_main() -> Status {
         }
 
         for &idx in &loaded_indices {
-            if proc_mgr.get_process_by_subsystem(idx)
+            if scheduler.get_process(0)
                 .map(|p| p.state == baram_kern::process::ProcessState::Running)
                 .unwrap_or(false)
             {
