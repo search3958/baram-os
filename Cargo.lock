@@ -112,6 +112,7 @@ dependencies = [
  "baram-font",
  "libm",
  "uefi",
+ "uefi-raw",
 ]
 
 [[package]]

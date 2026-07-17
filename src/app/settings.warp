@@ -81,6 +81,7 @@ screen{
         },
 
         button{
+            text: ("削除して再起動")
             oneClick: (runCommand = "os://system/reset?option=all")
         }
     }

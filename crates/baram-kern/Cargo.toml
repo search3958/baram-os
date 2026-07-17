@@ -7,4 +7,5 @@ edition = "2021"
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font" }
 uefi = { workspace = true }
+uefi-raw = { workspace = true }
 libm = { workspace = true }

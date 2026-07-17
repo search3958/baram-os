@@ -97,14 +97,29 @@ if ! rustup target list --installed 2>/dev/null | grep -q '^aarch64-unknown-uefi
 fi
 
 # ---------- step 2: build the EFI app ----------
+SUBSYSTEM_NAMES=("windowserver" "font" "graphics" "iokit" "bsd")
+
 build_efi() {
     log "Building $EFI_NAME ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi
+    cargo +nightly build --release --target aarch64-unknown-uefi --bin bootaa64
     if [ -f "$TARGET_DIR/bootaa64" ] && [ ! -f "$TARGET_DIR/$EFI_NAME" ]; then
         cp "$TARGET_DIR/bootaa64" "$TARGET_DIR/$EFI_NAME"
     fi
     test -f "$TARGET_DIR/$EFI_NAME" || die "Build did not produce $EFI_NAME"
     log "  -> $TARGET_DIR/$EFI_NAME ($(stat -c %s "$TARGET_DIR/$EFI_NAME" 2>/dev/null || stat -f %z "$TARGET_DIR/$EFI_NAME") bytes)"
+
+    log "Building subsystem binaries..."
+    for name in "${SUBSYSTEM_NAMES[@]}"; do
+        cargo +nightly build --release --target aarch64-unknown-uefi --bin "$name"
+        local src="$TARGET_DIR/$name"
+        local dst="$TARGET_DIR/$name.efi"
+        if [ -f "$src" ] && [ ! -f "$dst" ]; then
+            cp "$src" "$dst"
+        fi
+        if [ -f "$dst" ]; then
+            log "  -> $dst ($(stat -c %s "$dst" 2>/dev/null || stat -f %z "$dst") bytes)"
+        fi
+    done
 }
 
 # ---------- step 3: FAT image creation ----------
@@ -128,6 +143,16 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        # Create bin directory for subsystems
+        mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
+        # Copy subsystem binaries
+        for name in "${SUBSYSTEM_NAMES[@]}"; do
+            local sub_bin="$TARGET_DIR/$name.efi"
+            if [ -f "$sub_bin" ]; then
+                mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
+                log "  copied $name.efi to /EFI/BOOT/bin/"
+            fi
+        done
         # Auto-boot script: tells the UEFI shell to run our EFI binary
         # without waiting for the 5-second startup.nsh countdown.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
@@ -162,6 +187,16 @@ make_fat_image() {
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+        # Create bin directory for subsystems
+        mkdir -p "$tmp_mount/EFI/BOOT/bin"
+        # Copy subsystem binaries
+        for name in "${SUBSYSTEM_NAMES[@]}"; do
+            local sub_bin="$TARGET_DIR/$name.efi"
+            if [ -f "$sub_bin" ]; then
+                cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
+                log "  copied $name.efi to /EFI/BOOT/bin/"
+            fi
+        done
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
         # Copy app files
@@ -192,6 +227,16 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        # Create bin directory for subsystems
+        mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
+        # Copy subsystem binaries
+        for name in "${SUBSYSTEM_NAMES[@]}"; do
+            local sub_bin="$TARGET_DIR/$name.efi"
+            if [ -f "$sub_bin" ]; then
+                mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
+                log "  copied $name.efi to /EFI/BOOT/bin/"
+            fi
+        done
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
@@ -213,6 +258,16 @@ make_fat_image() {
             }
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+        # Create bin directory for subsystems
+        mkdir -p "$tmp_mount/EFI/BOOT/bin"
+        # Copy subsystem binaries
+        for name in "${SUBSYSTEM_NAMES[@]}"; do
+            local sub_bin="$TARGET_DIR/$name.efi"
+            if [ -f "$sub_bin" ]; then
+                cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
+                log "  copied $name.efi to /EFI/BOOT/bin/"
+            fi
+        done
         sync
         sudo umount "$tmp_mount" 2>/dev/null || umount "$tmp_mount" 2>/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true

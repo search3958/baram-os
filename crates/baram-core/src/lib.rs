@@ -6,6 +6,7 @@ pub mod color;
 pub mod screen;
 pub mod layer;
 pub mod key_event;
+pub mod subsystem;
 
 pub use color::Color;
 pub use screen::{Screen, FramebufferInfo};
