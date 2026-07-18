@@ -27,4 +27,13 @@ impl Color {
     pub const CARD_BG: Color = Color::rgb(0xF5, 0xF5, 0xF5);
     pub const SHADOW:  Color = Color::rgb(0xA0, 0xA0, 0xA0);
     pub const TRANSPARENT: Color = Color(0x0000_0000);
+
+    pub const BTN_BG: Color = Color::rgb(216, 216, 216);
+    pub const BTN_PRIMARY: Color = Color::rgb(0x0A, 0x60, 0xFF);
+    pub const BTN_PRIMARY_HOVER: Color = Color::rgb(0x08, 0x50, 0xDD);
+    pub const BTN_TONAL: Color = Color::rgb(230, 230, 230);
+    pub const BTN_TONAL_HOVER: Color = Color::rgb(210, 210, 210);
+    pub const BTN_TEXT: Color = Color::rgb(0xFF, 0xFF, 0xFF);
+    pub const SWITCH_ON: Color = Color::rgb(0x0A, 0x60, 0xFF);
+    pub const SWITCH_OFF: Color = Color::rgb(0xDD, 0xDD, 0xDD);
 }

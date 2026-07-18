@@ -16,12 +16,17 @@ use baram_windowserver::window::{WindowManager, WinId};
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_bsd::shift_key;
+use baram_bsd::config;
 
 #[entry]
 fn main() -> Status {
     log_line_str("BaramOS: starting...");
     let _ = uefi::helpers::init();
     log_line_str("BaramOS: UEFI helpers initialized");
+
+    config::init_config();
+    log_line_str("BaramOS: config loaded");
+
     baram_font::ttf_font::init();
     baram_font::ttf_font_hud::init();
     log_line_str("BaramOS: fonts initialized");
@@ -262,8 +267,8 @@ fn main() -> Status {
             last_keys.push(ev.label());
 
             match ev.scancode {
-                0x01 => wm.scroll_focused(-baram_windowserver::window::SCROLL_SPEED),
-                0x02 => wm.scroll_focused(baram_windowserver::window::SCROLL_SPEED),
+                0x01 => wm.scroll_focused(-baram_windowserver::window::scroll_speed()),
+                0x02 => wm.scroll_focused(baram_windowserver::window::scroll_speed()),
                 _ => {}
             }
 
@@ -400,7 +405,7 @@ fn main() -> Status {
                 );
 
                 if ev.scroll != 0 {
-                    let scroll_delta = -ev.scroll * baram_windowserver::window::SCROLL_SPEED;
+                    let scroll_delta = -ev.scroll * baram_windowserver::window::scroll_speed();
                     if let Some(id) = wm.window_at(cx, cy) {
                         wm.scroll_window(id, scroll_delta);
                         scene_dirty = true;

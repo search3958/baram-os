@@ -16,12 +16,16 @@ use baram_kern::vmm::VirtualMemoryManager;
 use baram_kern::loader;
 use baram_iokit::keyboard::Keyboard;
 use baram_iokit::mouse::Mouse;
+use baram_bsd::config;
 
 #[entry]
 fn kernel_main() -> Status {
     log("BaramOS: starting kernel...");
     let _ = uefi::helpers::init();
     log("BaramOS: UEFI helpers initialized");
+
+    config::init_config();
+    log("BaramOS: config loaded");
 
     baram_font::ttf_font::init();
     baram_font::ttf_font_hud::init();
