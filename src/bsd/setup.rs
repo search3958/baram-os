@@ -1,4 +1,5 @@
 use crate::pexpert::gop::{Color, Screen};
+use crate::windowserver::layer::LayerSystem;
 use crate::libkern::ttf_font;
 use crate::libkern::ttf_font_hud;
 use crate::libkern::font::{self, GLYPH_H, GLYPH_W};
@@ -637,38 +638,9 @@ fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: us
             continue;
         }
         for px in x0..x1 {
-            let in_corner = (px < x + r && corner_top)
-                || (px >= x + w.saturating_sub(r) && corner_top)
-                || (px < x + r && corner_bot)
-                || (px >= x + w.saturating_sub(r) && corner_bot);
-            if !in_corner {
-                buf[row + px] = color.0;
-                continue;
-            }
-
-            let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
-            let cy_f = if corner_top { y + r } else { y + h - r } as f32;
-            let dx = px as f32 + 0.5 - cx_f;
-            let dy = py as f32 + 0.5 - cy_f;
-            let dist_sq = dx * dx + dy * dy;
-            let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
-                1.0
-            } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
-                0.0
-            } else {
-                let dist = libm::sqrtf(dist_sq);
-                (rf + 0.5 - dist).clamp(0.0, 1.0)
-            };
-
-            if alpha >= 1.0 {
-                buf[row + px] = color.0;
-            } else if alpha > 0.0 {
-                let bg_pixel = Color(buf[row + px]);
-                let cr = (color.r() as f32 * alpha + bg_pixel.r() as f32 * (1.0 - alpha)) as u32;
-                let cg = (color.g() as f32 * alpha + bg_pixel.g() as f32 * (1.0 - alpha)) as u32;
-                let cb = (color.b() as f32 * alpha + bg_pixel.b() as f32 * (1.0 - alpha)) as u32;
-                buf[row + px] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
-            }
+            let alpha = LayerSystem::corner_sdf_alpha(px, py, x, y, w, h, rf);
+            if alpha <= 0.0 { continue; }
+            buf[row + px] = LayerSystem::blend_alpha(buf[row + px], color.0, alpha);
         }
     }
 }
