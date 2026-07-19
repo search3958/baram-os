@@ -126,71 +126,300 @@ impl LayerSystem {
         }
     }
 
+    fn cubic_bezier(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+        let t2 = t * t;
+        let t3 = t2 * t;
+        let mt = 1.0 - t;
+        let mt2 = mt * mt;
+        let mt3 = mt2 * mt;
+        mt3 * p0 + 3.0 * mt2 * t * p1 + 3.0 * mt * t2 * p2 + t3 * p3
+    }
+
+    pub fn squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
+        let r = r.min(w / 2.0).min(h / 2.0);
+        let lx = libm::fminf(w / 2.0, 1.528665 * r);
+        let ly = libm::fminf(h / 2.0, 1.528665 * r);
+
+        let cx3 = 0.63148 * r;
+        let cx4 = 0.37282 * r;
+        let cx5 = 0.16905 * r;
+        let cx6 = 0.07491 * r;
+        let cy3 = cx3;
+        let cy4 = cx4;
+        let cy5 = cx5;
+        let cy6 = cx6;
+
+        let d1x = 0.04 * r + 0.75697 * (lx - r);
+        let d2x = 0.18 * r + 0.90847 * (lx - r);
+        let d1y = 0.04 * r + 0.75697 * (ly - r);
+        let d2y = 0.18 * r + 0.90847 * (ly - r);
+
+        let mut pts = alloc::vec::Vec::new();
+        let segs = 4;
+
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w, w, w, w - cx6, t),
+                       Self::cubic_bezier(h / 2.0, h - ly + d1y, h - ly + d2y, h - cy3, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w - cx6, w - cx5, w - cx4, w - cx3, t),
+                       Self::cubic_bezier(h - cy3, h - cy4, h - cy5, h - cy6, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w - cx3, w - lx + d2x, w - lx + d1x, w - lx, t),
+                       Self::cubic_bezier(h - cy6, h, h, h, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w - lx, lx, lx, lx, t), h));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(lx, lx - d1x, lx - d2x, cx3, t),
+                       Self::cubic_bezier(h, h, h, h - cy6, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(cx3, cx4, cx5, cx6, t),
+                       Self::cubic_bezier(h - cy6, h - cy5, h - cy4, h - cy3, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(cx6, 0.0, 0.0, 0.0, t),
+                       Self::cubic_bezier(h - cy3, h - ly + d2y, h - ly + d1y, h - ly, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((0.0, Self::cubic_bezier(h - ly, ly, ly, ly, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(0.0, 0.0, 0.0, cx6, t),
+                       Self::cubic_bezier(ly, ly - d1y, ly - d2y, cy3, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(cx6, cx5, cx4, cx3, t),
+                       Self::cubic_bezier(cy3, cy4, cy5, cy6, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(cx3, lx - d2x, lx - d1x, lx, t),
+                       Self::cubic_bezier(cy6, 0.0, 0.0, 0.0, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(lx, w - lx, w - lx, w - lx, t), 0.0));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w - lx, w - lx + d1x, w - lx + d2x, w - cx3, t),
+                       Self::cubic_bezier(0.0, 0.0, 0.0, cy6, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w - cx3, w - cx4, w - cx5, w - cx6, t),
+                       Self::cubic_bezier(cy6, cy5, cy4, cy3, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((Self::cubic_bezier(w - cx6, w, w, w, t),
+                       Self::cubic_bezier(cy3, ly - d2y, ly - d1y, ly, t)));
+        }
+        for i in 0..segs {
+            let t = i as f32 / segs as f32;
+            pts.push((w, Self::cubic_bezier(ly, h - ly, h - ly, h - ly, t)));
+        }
+        pts
+    }
+
+    pub fn point_in_polygon(px: f32, py: f32, poly: &[(f32, f32)]) -> bool {
+        let n = poly.len();
+        if n < 3 { return false; }
+        let mut inside = false;
+        let mut j = n - 1;
+        for i in 0..n {
+            let (xi, yi) = poly[i];
+            let (xj, yj) = poly[j];
+            if ((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+                inside = !inside;
+            }
+            j = i;
+        }
+        inside
+    }
+
+    pub fn blend_alpha(bg: u32, fg: u32, alpha: f32) -> u32 {
+        if alpha >= 1.0 { return fg; }
+        let cr = ((fg >> 16) & 0xFF) as f32;
+        let cg = ((fg >> 8) & 0xFF) as f32;
+        let cb = (fg & 0xFF) as f32;
+        let br = ((bg >> 16) & 0xFF) as f32;
+        let bg2 = ((bg >> 8) & 0xFF) as f32;
+        let bb = (bg & 0xFF) as f32;
+        let r = (cr * alpha + br * (1.0 - alpha)) as u32;
+        let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
+        let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
+        Color::rgb(r as u8, g as u8, b as u8).0
+    }
+
     pub fn fill_rounded_rect(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
-        let rf = r as f32;
-        let cr = c.r() as f32;
-        let cg = c.g() as f32;
-        let cb = c.b() as f32;
+        let v = c.0;
         let y0 = y.min(self.height);
         let y1 = (y + h).min(self.height);
         let x0 = x.min(self.width);
         let x1 = (x + w).min(self.width);
-        let v = c.0;
         let stride = self.width;
+
+        if r == 0 {
+            for py in y0..y1 {
+                self.buf[py * stride + x0..py * stride + x1].fill(v);
+            }
+            return;
+        }
+
+        let rf = r as f32;
+        let poly = Self::squircle_polygon(w as f32, h as f32, rf);
+        let x0f = x as f32;
+        let y0f = y as f32;
+        let r_f = r as f32;
+        let w_f = w as f32;
+        let h_f = h as f32;
+        let lx = libm::fminf(w_f / 2.0, 1.528665 * rf);
+        let ly = libm::fminf(h_f / 2.0, 1.528665 * rf);
+        let mx = (lx * 0.7) as usize;
+        let my = (ly * 0.7) as usize;
+        let off = [0.25f32, 0.75f32];
 
         for py in y0..y1 {
             let row = py * stride;
-            if r == 0 {
+            let base_y = py as f32 - y0f;
+
+            let in_corner_row = base_y < r_f || base_y >= h_f - r_f;
+
+            if !in_corner_row {
                 self.buf[row + x0..row + x1].fill(v);
                 continue;
             }
-            let corner_top = py < y + r;
-            let corner_bot = py >= y + h.saturating_sub(r);
-            if !corner_top && !corner_bot {
-                self.buf[row + x0..row + x1].fill(v);
-                continue;
+
+            let corner_x_end = (x + r).min(x1);
+            let mid_x_start = (x + r).max(x0);
+            let mid_x_end = (x + w - r).min(x1);
+            let corner_x_start = (x + w - r).max(x0);
+
+            if mid_x_end > mid_x_start {
+                self.buf[row + mid_x_start..row + mid_x_end].fill(v);
             }
-            for px in x0..x1 {
-                let in_corner = (px < x + r && corner_top)
-                    || (px >= x + w.saturating_sub(r) && corner_top)
-                    || (px < x + r && corner_bot)
-                    || (px >= x + w.saturating_sub(r) && corner_bot);
-                if !in_corner {
-                    self.buf[row + px] = v;
-                    continue;
+
+            if corner_x_end > x0 {
+                let safe_l = (x + mx).min(corner_x_end).max(x0);
+                if safe_l > x0 {
+                    for px in x0..safe_l {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
+                    }
                 }
-
-                let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
-                let cy_f = if corner_top { y + r } else { y + h - r } as f32;
-                let dx = px as f32 + 0.5 - cx_f;
-                let dy = py as f32 + 0.5 - cy_f;
-                let dist_sq = dx * dx + dy * dy;
-                let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
-                    1.0
-                } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
-                    0.0
-                } else {
-                    let dist = libm::sqrtf(dist_sq);
-                    (rf + 0.5 - dist).clamp(0.0, 1.0)
-                };
-
-                if alpha > 0.0 {
-                    if alpha >= 1.0 {
-                        self.buf[row + px] = v;
-                    } else {
-                        let bg = self.buf[row + px];
-                        let br = ((bg >> 16) & 0xFF) as f32;
-                        let bg2 = ((bg >> 8) & 0xFF) as f32;
-                        let bb = (bg & 0xFF) as f32;
-                        let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
-                        let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
-                        let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
-                        self.buf[row + px] = Color::rgb(r2 as u8, g as u8, b as u8).0;
+                let inner_l_end = (x + r - mx).max(x + mx).min(corner_x_end);
+                if inner_l_end > safe_l {
+                    self.buf[row + safe_l..row + inner_l_end].fill(v);
+                }
+                if corner_x_end > inner_l_end {
+                    for px in inner_l_end..corner_x_end {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
                     }
                 }
             }
+
+            if corner_x_start > corner_x_end {
+                let safe_r_start = (x + w - r + mx).max(corner_x_start).min(x1);
+                if safe_r_start > corner_x_start {
+                    for px in corner_x_start..safe_r_start {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
+                    }
+                }
+                let inner_r_end = (x + w - mx).min(x1).max(safe_r_start);
+                if inner_r_end > safe_r_start {
+                    self.buf[row + safe_r_start..row + inner_r_end].fill(v);
+                }
+                if x1 > inner_r_end {
+                    for px in inner_r_end..x1 {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
+                    }
+                }
+            }
+        }
+    }
+
+    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], off: &[f32; 2]) {
+        let mut hits = 0u32;
+        for sy in 0..2 {
+            for sx in 0..2 {
+                if Self::point_in_polygon(px + off[sx], py + off[sy], poly) {
+                    hits += 1;
+                }
+            }
+        }
+        if hits > 0 {
+            *dst = Self::blend_alpha(*dst, fg, hits as f32 * 0.25);
+        }
+    }
+
+    fn pixel_aa_batch(dst: &mut [u32], fg: u32, px: [f32; 4], py: f32, poly: &[(f32, f32)], off: &[f32; 2], count: usize) {
+        if count < 4 {
+            for i in 0..count {
+                Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
+            }
+            return;
+        }
+
+        let n = poly.len();
+        if n < 3 { return; }
+
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            use core::arch::x86_64::*;
+
+            let o0 = _mm_set1_ps(off[0]);
+            let o1 = _mm_set1_ps(off[1]);
+            let pxv = _mm_set_ps(px[3], px[2], px[1], px[0]);
+            let sample_x0 = _mm_add_ps(pxv, o0);
+            let sample_x1 = _mm_add_ps(pxv, o1);
+
+            let mut inside = _mm_setzero_si128();
+            let mut j = n - 1;
+            for i in 0..n {
+                let (ax, ay) = poly[i];
+                let (bx, by) = poly[j];
+                if ((ay > py) != (by > py)) {
+                    let ey = by - ay;
+                    let inv_ey = if ey.abs() > 1e-10 { 1.0 / ey } else { 0.0 };
+                    let x_int = _mm_set1_ps(ax + (py - ay) * (bx - ax) * inv_ey);
+                    let cmp0 = _mm_castps_si128(_mm_cmplt_ps(sample_x0, x_int));
+                    let cmp1 = _mm_castps_si128(_mm_cmplt_ps(sample_x1, x_int));
+                    let bits = _mm_and_si128(_mm_or_si128(cmp0, cmp1), _mm_set1_epi32(1));
+                    inside = _mm_xor_si128(inside, bits);
+                }
+                j = i;
+            }
+
+            let mut inside_arr = [0u32; 4];
+            _mm_storeu_si128(inside_arr.as_mut_ptr() as *mut __m128i, inside);
+
+            for p in 0..4 {
+                if inside_arr[p] != 0 {
+                    dst[p] = Self::blend_alpha(dst[p], fg, 0.25);
+                }
+            }
+            return;
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        for i in 0..count {
+            Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
         }
     }
 
@@ -238,9 +467,7 @@ impl LayerSystem {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
         let rf = r as f32;
-        let cr = c.r() as f32;
-        let cg = c.g() as f32;
-        let cb = c.b() as f32;
+        let v = c.0;
         let y0 = y.min(self.height);
         let y1 = (y + h).min(self.height);
         let x0 = x.min(self.width);
@@ -290,13 +517,7 @@ impl LayerSystem {
 
                 if alpha > 0.0 {
                     let bg = self.buf[py * self.width + px];
-                    let br = ((bg >> 16) & 0xFF) as f32;
-                    let bg2 = ((bg >> 8) & 0xFF) as f32;
-                    let bb = (bg & 0xFF) as f32;
-                    let r2 = (cr * alpha + br * (1.0 - alpha)) as u32;
-                    let g = (cg * alpha + bg2 * (1.0 - alpha)) as u32;
-                    let b = (cb * alpha + bb * (1.0 - alpha)) as u32;
-                    self.put_pixel(px, py, Color::rgb(r2 as u8, g as u8, b as u8));
+                    self.put_pixel(px, py, Color(Self::blend_alpha(bg, v, alpha)));
                 }
             }
         }
@@ -429,51 +650,73 @@ impl LayerSystem {
             }
 
             let end_x = w.min(sw - sx).min(dw - dx);
-            for px in 0..end_x {
-                let src_pixel = Color(src.buf[src_row + px]);
+            let poly = Self::squircle_polygon(w as f32, h as f32, rf);
+            let off = [0.25f32, 0.75f32];
+            let base_y = py as f32;
+            let lx = libm::fminf(w as f32 / 2.0, 1.528665 * rf);
+            let ly = libm::fminf(h as f32 / 2.0, 1.528665 * rf);
+            let mx = (lx * 0.7) as usize;
+            let my = (ly * 0.7) as usize;
 
-                let alpha = {
-                    let in_corner = (px < r && py < r)
-                        || (px >= w.saturating_sub(r) && py < r)
-                        || (px < r && py >= h.saturating_sub(r))
-                        || (px >= w.saturating_sub(r) && py >= h.saturating_sub(r));
-                    if !in_corner {
-                        1.0
-                    } else {
-                        let cx_f = if px < r { r } else { w - r } as f32;
-                        let cy_f = if py < r { r } else { h - r } as f32;
-                        let dx_f = px as f32 + 0.5 - cx_f;
-                        let dy_f = py as f32 + 0.5 - cy_f;
-                        let dist_sq = dx_f * dx_f + dy_f * dy_f;
-                        if dist_sq < (rf - 0.5) * (rf - 0.5) {
-                            1.0
-                        } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
-                            0.0
-                        } else {
-                            let dist = libm::sqrtf(dist_sq);
-                            (rf + 0.5 - dist).clamp(0.0, 1.0)
+            let left_end = r.min(end_x);
+            let right_start = (w - r).min(end_x);
+
+            let safe_l = mx.min(left_end);
+            if safe_l > 0 {
+                for px in 0..safe_l {
+                    let sp = src.buf[src_row + px];
+                    if sp == Color::TRANSPARENT.0 { continue; }
+                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                }
+            }
+            let inner_l_end = (r - mx).max(mx).min(left_end);
+            if inner_l_end > safe_l {
+                for px in safe_l..inner_l_end {
+                    let sp = src.buf[src_row + px];
+                    if sp != Color::TRANSPARENT.0 {
+                        self.buf[dst_row + px] = sp;
+                    }
+                }
+            }
+            if left_end > inner_l_end {
+                for px in inner_l_end..left_end {
+                    let sp = src.buf[src_row + px];
+                    if sp == Color::TRANSPARENT.0 { continue; }
+                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                }
+            }
+
+            for px in left_end..right_start {
+                let sp = src.buf[src_row + px];
+                if sp != Color::TRANSPARENT.0 {
+                    self.buf[dst_row + px] = sp;
+                }
+            }
+
+            if end_x > right_start {
+                let safe_r = (right_start + mx).min(end_x);
+                if safe_r > right_start {
+                    for px in right_start..safe_r {
+                        let sp = src.buf[src_row + px];
+                        if sp == Color::TRANSPARENT.0 { continue; }
+                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                    }
+                }
+                let inner_r_end = (w - mx).min(end_x).max(safe_r);
+                if inner_r_end > safe_r {
+                    for px in safe_r..inner_r_end {
+                        let sp = src.buf[src_row + px];
+                        if sp != Color::TRANSPARENT.0 {
+                            self.buf[dst_row + px] = sp;
                         }
                     }
-                };
-
-                if alpha <= 0.0 { continue; }
-                if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
-
-                if alpha >= 1.0 {
-                    self.buf[dst_row + px] = src_pixel.0;
-                } else {
-                    let dst_idx = dst_row + px;
-                    let dst_pixel = Color(self.buf[dst_idx]);
-                    let sr = src_pixel.r() as f32;
-                    let sg = src_pixel.g() as f32;
-                    let sb = src_pixel.b() as f32;
-                    let dr = dst_pixel.r() as f32;
-                    let dg = dst_pixel.g() as f32;
-                    let db = dst_pixel.b() as f32;
-                    let out_r = (sr * alpha + dr * (1.0 - alpha)) as u32;
-                    let out_g = (sg * alpha + dg * (1.0 - alpha)) as u32;
-                    let out_b = (sb * alpha + db * (1.0 - alpha)) as u32;
-                    self.buf[dst_idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
+                }
+                if end_x > inner_r_end {
+                    for px in inner_r_end..end_x {
+                        let sp = src.buf[src_row + px];
+                        if sp == Color::TRANSPARENT.0 { continue; }
+                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                    }
                 }
             }
         }

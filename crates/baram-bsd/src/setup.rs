@@ -1,4 +1,4 @@
-use baram_core::{Color, Screen};
+use baram_core::{Color, LayerSystem, Screen};
 use baram_font::ttf_font;
 use baram_font::ttf_font_hud;
 use baram_font::font::{self, GLYPH_H, GLYPH_W};
@@ -9,7 +9,7 @@ use baram_graphics::blur;
 const SETUP_DONE_PATH: &str = "apps/.setup_done";
 const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
 const CARD_H: usize = 320;
-const BLUR_RADIUS: i32 = 60;
+const BLUR_RADIUS: i32 = 30;
 
 static mut CACHED_BLURRED: Option<alloc::vec::Vec<u32>> = None;
 static mut CACHED_W: usize = 0;
@@ -47,6 +47,10 @@ pub struct SetupWizard {
     pub skipped: bool,
     pub buttons: alloc::vec::Vec<Button>,
     pub hover_btn: Option<usize>,
+    dirty: bool,
+    cached_frame: Option<alloc::vec::Vec<u32>>,
+    cached_w: usize,
+    cached_h: usize,
 }
 
 impl SetupWizard {
@@ -59,6 +63,10 @@ impl SetupWizard {
             skipped: false,
             buttons: alloc::vec::Vec::new(),
             hover_btn: None,
+            dirty: true,
+            cached_frame: None,
+            cached_w: 0,
+            cached_h: 0,
         }
     }
 
@@ -80,11 +88,13 @@ impl SetupWizard {
                 SetupScreen::Welcome => {
                     if label == "続行" {
                         self.screen = SetupScreen::Keyboard;
+                        self.dirty = true;
                     } else if label == "スキップ" {
                         crate::shift_key::save_shift_key(0);
                         mark_setup_done();
                         self.skipped = true;
                         self.screen = SetupScreen::Done;
+                        self.dirty = true;
                     }
                 }
                 SetupScreen::Keyboard => {
@@ -92,12 +102,14 @@ impl SetupWizard {
                         crate::shift_key::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;
                         mark_setup_done();
+                        self.dirty = true;
                     }
                     if label == "スキップ" {
                         crate::shift_key::save_shift_key(0);
                         mark_setup_done();
                         self.skipped = true;
                         self.screen = SetupScreen::Done;
+                        self.dirty = true;
                     }
                 }
                 SetupScreen::Done => {}
@@ -106,7 +118,11 @@ impl SetupWizard {
     }
 
     pub fn on_hover(&mut self, mx: i32, my: i32) {
-        self.hover_btn = self.hit_test(mx, my);
+        let new_hover = self.hit_test(mx, my);
+        if new_hover != self.hover_btn {
+            self.hover_btn = new_hover;
+            self.dirty = true;
+        }
     }
 
     pub fn on_key(&mut self, ev: &baram_core::KeyEvent) {
@@ -116,6 +132,7 @@ impl SetupWizard {
             mark_setup_done();
             self.skipped = true;
             self.screen = SetupScreen::Done;
+            self.dirty = true;
             return;
         }
         let is_enter = ev.printable == Some(b'\n') || ev.raw_key == 0x28 || ev.raw_key == 0x58 || ev.scancode == 0x1C;
@@ -123,6 +140,7 @@ impl SetupWizard {
             SetupScreen::Welcome => {
                 if is_enter {
                     self.screen = SetupScreen::Keyboard;
+                    self.dirty = true;
                 }
             }
             SetupScreen::Keyboard => {
@@ -131,10 +149,12 @@ impl SetupWizard {
                         crate::shift_key::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;
                         mark_setup_done();
+                        self.dirty = true;
                     }
                 } else if ev.raw_key != 0 {
                     self.detected_raw_key = ev.raw_key;
                     self.key_detected = true;
+                    self.dirty = true;
                 }
             }
             SetupScreen::Done => {}
@@ -143,6 +163,14 @@ impl SetupWizard {
     }
 
     pub fn render(&mut self, buf: &mut [u32], w: usize, h: usize) {
+        if !self.dirty {
+            if let Some(ref cached) = self.cached_frame {
+                if self.cached_w == w && self.cached_h == h && cached.len() == w * h {
+                    buf.copy_from_slice(cached);
+                    return;
+                }
+            }
+        }
         self.buttons.clear();
         draw_wallpaper(buf, w, h);
 
@@ -151,6 +179,16 @@ impl SetupWizard {
             SetupScreen::Keyboard => self.render_keyboard(buf, w, h),
             SetupScreen::Done => self.render_done(buf, w, h),
         }
+
+        if self.cached_w != w || self.cached_h != h || self.cached_frame.as_ref().map_or(true, |f| f.len() != w * h) {
+            self.cached_frame = Some(alloc::vec![0u32; w * h]);
+            self.cached_w = w;
+            self.cached_h = h;
+        }
+        if let Some(ref mut cached) = self.cached_frame {
+            cached.copy_from_slice(buf);
+        }
+        self.dirty = false;
     }
 
     fn render_welcome(&mut self, buf: &mut [u32], w: usize, h: usize) {
@@ -162,9 +200,9 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_hud_left(buf, w, tx, card_y + 60, "Baram OS", Color::TEXT, 2.0);
-        draw_str_left(buf, w, tx, card_y + 120, "ようこそ。", Color::MUTED, 1.0);
-        draw_str_left(buf, w, tx, card_y + 160, "Enterキーで開始します。", Color::MUTED, 0.8);
+        draw_str_hud_left(buf, w, tx, card_y + 60, "Hello", Color::TEXT, 2.0);
+        draw_str_left(buf, w, tx, card_y + 120, "Baram OSへようこそ。", Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 140, "Enterキーで開始します。", Color::MUTED, 01.0);
 
         let btn_y = card_y + card_h - 70;
         let continue_btn_w = 140;
@@ -625,7 +663,6 @@ fn draw_button(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h
 
 fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, radius: usize, color: Color) {
     let r = radius.min(w / 2).min(h / 2);
-    let rf = r as f32;
     let screen_h = buf.len() / screen_w;
 
     let x0 = x.min(screen_w);
@@ -633,50 +670,69 @@ fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: us
     let x1 = (x + w).min(screen_w);
     let y1 = (y + h).min(screen_h);
 
+    if r == 0 {
+        for py in y0..y1 {
+            buf[py * screen_w + x0..py * screen_w + x1].fill(color.0);
+        }
+        return;
+    }
+
+    let rf = r as f32;
+    let poly = LayerSystem::squircle_polygon(w as f32, h as f32, rf);
+    let x0f = x as f32;
+    let y0f = y as f32;
+    let off = [0.25f32, 0.75f32];
+    let r_f = r as f32;
+    let h_f = h as f32;
+
     for py in y0..y1 {
         let row = py * screen_w;
-        if r == 0 {
+        let base_y = py as f32 - y0f;
+        let in_corner_row = base_y < r_f || base_y >= h_f - r_f;
+
+        if !in_corner_row {
             buf[row + x0..row + x1].fill(color.0);
             continue;
         }
-        let corner_top = py < y + r;
-        let corner_bot = py >= y + h.saturating_sub(r);
-        if !corner_top && !corner_bot {
-            buf[row + x0..row + x1].fill(color.0);
-            continue;
+
+        let corner_x_end = (x + r).min(x1);
+        let mid_x_start = (x + r).max(x0);
+        let mid_x_end = (x + w - r).min(x1);
+        let corner_x_start = (x + w - r).max(x0);
+
+        if mid_x_end > mid_x_start {
+            buf[row + mid_x_start..row + mid_x_end].fill(color.0);
         }
-        for px in x0..x1 {
-            let in_corner = (px < x + r && corner_top)
-                || (px >= x + w.saturating_sub(r) && corner_top)
-                || (px < x + r && corner_bot)
-                || (px >= x + w.saturating_sub(r) && corner_bot);
-            if !in_corner {
-                buf[row + px] = color.0;
-                continue;
+
+        for px in x0..corner_x_end {
+            let base_x = px as f32 - x0f;
+            let mut hits = 0u32;
+            for sy in 0..2 {
+                for sx in 0..2 {
+                    if LayerSystem::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
+                        hits += 1;
+                    }
+                }
             }
+            if hits > 0 {
+                buf[row + px] = LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * 0.25);
+            }
+        }
 
-            let cx_f = if px < x + r { x + r } else { x + w - r } as f32;
-            let cy_f = if corner_top { y + r } else { y + h - r } as f32;
-            let dx = px as f32 + 0.5 - cx_f;
-            let dy = py as f32 + 0.5 - cy_f;
-            let dist_sq = dx * dx + dy * dy;
-            let alpha = if dist_sq < (rf - 0.5) * (rf - 0.5) {
-                1.0
-            } else if dist_sq > (rf + 0.5) * (rf + 0.5) {
-                0.0
-            } else {
-                let dist = libm::sqrtf(dist_sq);
-                (rf + 0.5 - dist).clamp(0.0, 1.0)
-            };
-
-            if alpha >= 1.0 {
-                buf[row + px] = color.0;
-            } else if alpha > 0.0 {
-                let bg_pixel = Color(buf[row + px]);
-                let cr = (color.r() as f32 * alpha + bg_pixel.r() as f32 * (1.0 - alpha)) as u32;
-                let cg = (color.g() as f32 * alpha + bg_pixel.g() as f32 * (1.0 - alpha)) as u32;
-                let cb = (color.b() as f32 * alpha + bg_pixel.b() as f32 * (1.0 - alpha)) as u32;
-                buf[row + px] = Color::rgb(cr as u8, cg as u8, cb as u8).0;
+        if corner_x_start > corner_x_end {
+            for px in corner_x_start..x1 {
+                let base_x = px as f32 - x0f;
+                let mut hits = 0u32;
+                for sy in 0..2 {
+                    for sx in 0..2 {
+                        if LayerSystem::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
+                            hits += 1;
+                        }
+                    }
+                }
+                if hits > 0 {
+                    buf[row + px] = LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * 0.25);
+                }
             }
         }
     }
