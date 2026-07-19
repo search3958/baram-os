@@ -101,7 +101,7 @@ make_image() {
         mcopy -i "$img" "$pftf_dir/RPI_EFI.fd"            ::/
         mcopy -i "$img" "$pftf_dir/start4.elf"            ::/
         mcopy -i "$img" "$pftf_dir/fixup4.dat"            ::/
-        mcopy -i "$img" "$pftf_dir/config.txt"            ::/
+        mcopy -i "$img" "$pftf_dir/config.xml"            ::/
         mcopy -i "$img" "$pftf_dir/bcm2711-rpi-4-b.dtb"   ::/
         mcopy -i "$img" "$pftf_dir/bcm2711-rpi-400.dtb"   ::/
         mcopy -i "$img" "$pftf_dir/bcm2711-rpi-cm4.dtb"   ::/
@@ -150,7 +150,7 @@ make_image() {
         cp "$pftf_dir/RPI_EFI.fd"           "$tmp_mount/"
         cp "$pftf_dir/start4.elf"           "$tmp_mount/"
         cp "$pftf_dir/fixup4.dat"           "$tmp_mount/"
-        cp "$pftf_dir/config.txt"           "$tmp_mount/"
+        cp "$pftf_dir/config.xml"           "$tmp_mount/"
         cp "$pftf_dir/bcm2711-rpi-4-b.dtb"  "$tmp_mount/"
         cp "$pftf_dir/bcm2711-rpi-400.dtb"  "$tmp_mount/"
         cp "$pftf_dir/bcm2711-rpi-cm4.dtb"  "$tmp_mount/"

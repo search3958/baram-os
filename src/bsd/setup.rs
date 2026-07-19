@@ -617,7 +617,6 @@ fn draw_button(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h
 
 fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, radius: usize, color: Color) {
     let r = radius.min(w / 2).min(h / 2);
-    let rf = r as f32;
     let screen_h = buf.len() / screen_w;
 
     let x0 = x.min(screen_w);
@@ -625,21 +624,36 @@ fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: us
     let x1 = (x + w).min(screen_w);
     let y1 = (y + h).min(screen_h);
 
+    if r == 0 {
+        for py in y0..y1 {
+            buf[py * screen_w + x0..py * screen_w + x1].fill(color.0);
+        }
+        return;
+    }
+
+    let rf = r as f32;
+    let poly = LayerSystem::squircle_polygon(w as f32, h as f32, rf);
+    let x0f = x as f32;
+    let y0f = y as f32;
+    let off = [0.25f32, 0.75f32];
+
     for py in y0..y1 {
         let row = py * screen_w;
-        if r == 0 {
-            buf[row + x0..row + x1].fill(color.0);
-            continue;
-        }
-        let corner_top = py < y + r;
-        let corner_bot = py >= y + h.saturating_sub(r);
-        if !corner_top && !corner_bot {
-            buf[row + x0..row + x1].fill(color.0);
-            continue;
-        }
+        let base_y = py as f32 - y0f;
         for px in x0..x1 {
-            let alpha = LayerSystem::corner_sdf_alpha(px, py, x, y, w, h, rf);
-            if alpha <= 0.0 { continue; }
+            let base_x = px as f32 - x0f;
+            let mut hits = 0u32;
+            for sy in 0..2 {
+                for sx in 0..2 {
+                    let lx = base_x + off[sx];
+                    let ly = base_y + off[sy];
+                    if LayerSystem::point_in_polygon(lx, ly, &poly) {
+                        hits += 1;
+                    }
+                }
+            }
+            if hits == 0 { continue; }
+            let alpha = hits as f32 * 0.25;
             buf[row + px] = LayerSystem::blend_alpha(buf[row + px], color.0, alpha);
         }
     }
