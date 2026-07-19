@@ -1,0 +1,10 @@
+[package]
+name = "baram-graphics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+baram-core = { path = "../baram-core" }
+baram-font = { path = "../baram-font" }
+libm = { workspace = true }
+kurbo = { workspace = true }

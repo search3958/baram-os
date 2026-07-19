@@ -1,0 +1,9 @@
+[package]
+name = "baram-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uefi = { workspace = true }
+uefi-raw = { workspace = true }
+libm = { workspace = true }
