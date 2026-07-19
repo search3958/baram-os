@@ -103,4 +103,9 @@
             <h>48</h>
         </input>
     </ui-theme>
+    <system>
+        <reset>
+            <option/>
+        </reset>
+    </system>
 </baram-os-config>

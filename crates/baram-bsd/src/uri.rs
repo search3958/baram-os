@@ -1,11 +1,15 @@
 //! URI command parser and executor for BaramOS.
 //!
 //! Supports `os://` scheme for controlling system settings.
+//! The URI path maps directly to the XML config structure.
+//! Query parameters set child values under that path.
+//!
 //! Example URIs:
-//!   os://display/pointer?size=1
-//!   os://display/hud?enabled=1
-//!   os://display/wallpaper?file=baram.png
-//!   os://display/wallpaper?color=#990000
+//!   os://display/pointer/size?10
+//!   os://display/hud/enabled?1
+//!   os://display/wallpaper/color?#990000
+//!   os://display/wallpaper/file?baram.png
+//!   os://ui-theme/color?btn_primary=BB0000
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -13,8 +17,7 @@ use crate::vfs;
 use crate::config;
 
 pub struct UriCommand {
-    pub category: String,
-    pub action: String,
+    pub path: String,
     pub params: Vec<(String, String)>,
 }
 
@@ -27,13 +30,7 @@ pub fn parse(uri: &str) -> Option<UriCommand> {
         None => (uri, ""),
     };
 
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let category = String::from(parts[0]);
-    let action = String::from(parts[1]);
+    let path = path.trim_end_matches('/');
 
     let mut params = Vec::new();
     if !query.is_empty() {
@@ -44,7 +41,7 @@ pub fn parse(uri: &str) -> Option<UriCommand> {
         }
     }
 
-    Some(UriCommand { category, action, params })
+    Some(UriCommand { path: String::from(path), params })
 }
 
 pub struct DisplayState {
@@ -77,112 +74,46 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
         None => return false,
     };
 
-    match cmd.category.as_str() {
-        "display" => execute_display(&cmd, state),
-        "system" => execute_system(&cmd, state),
-        _ => false,
+    let cfg = config::get_config_mut();
+    for (key, value) in &cmd.params {
+        let full_path = if cmd.path.is_empty() {
+            String::from(key)
+        } else {
+            alloc::format!("{}/{}", cmd.path, key)
+        };
+        cfg.set(&full_path, value);
     }
+
+    config::save_config();
+    load_settings_from_config(state);
+    true
+}
+
+pub enum SystemCommand {
+    None,
+    ResetAll,
+}
+
+pub fn check_system_commands(state: &mut DisplayState) -> SystemCommand {
+    let cfg = config::get_config();
+    let result = match cfg.get("system/reset/option") {
+        Some("all") => SystemCommand::ResetAll,
+        _ => SystemCommand::None,
+    };
+
+    if let SystemCommand::ResetAll = &result {
+        let cfg = config::get_config_mut();
+        cfg.set("system/reset/option", "");
+        config::save_config();
+        *state = DisplayState::new();
+        vfs::remove_file("apps/.setup_done");
+    }
+
+    result
 }
 
 pub fn wallpaper_changed(state: &DisplayState) -> bool {
     state.wallpaper_color.is_some() || state.wallpaper_index != 0
-}
-
-fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
-    let cfg = config::get_config_mut();
-    match cmd.action.as_str() {
-        "pointer" => {
-            if let Some(size_str) = get_param(cmd, "size") {
-                if let Ok(v) = size_str.parse::<i32>() {
-                    let size = v as f32 / 10.0;
-                    if size >= 0.5 && size <= 5.0 {
-                        state.pointer_size = size;
-                        cfg.set("display/pointer/size", &alloc::format!("{}", v));
-                        config::save_config();
-                        return true;
-                    }
-                }
-            }
-            false
-        }
-        "hud" => {
-            if let Some(enabled_str) = get_param(cmd, "enabled") {
-                match enabled_str {
-                    "1" | "true" | "on" => {
-                        state.hud_enabled = true;
-                        cfg.set("display/hud/enabled", "1");
-                        config::save_config();
-                        return true;
-                    }
-                    "0" | "false" | "off" => {
-                        state.hud_enabled = false;
-                        cfg.set("display/hud/enabled", "0");
-                        config::save_config();
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-            false
-        }
-        "wallpaper" => {
-            if let Some(color_str) = get_param(cmd, "color") {
-                let hex = color_str.trim_start_matches('#');
-                if hex.len() == 6 {
-                    if let (Ok(r), Ok(g), Ok(b)) = (
-                        u8::from_str_radix(&hex[0..2], 16),
-                        u8::from_str_radix(&hex[2..4], 16),
-                        u8::from_str_radix(&hex[4..6], 16),
-                    ) {
-                        state.wallpaper_color = Some(baram_core::Color::rgb(r, g, b).0);
-                        state.wallpaper_index = 0;
-                        cfg.set("display/wallpaper/file", "");
-                        cfg.set("display/wallpaper/color", color_str);
-                        config::save_config();
-                        return true;
-                    }
-                }
-            }
-            if let Some(file_str) = get_param(cmd, "file") {
-                let idx = match file_str {
-                    "baram.png" | "baram" => Some(0),
-                    "hanul.png" | "hanul" => Some(1),
-                    "reflect.png" | "reflect" => Some(2),
-                    _ => None,
-                };
-                if let Some(i) = idx {
-                    state.wallpaper_color = None;
-                    state.wallpaper_index = i;
-                    cfg.set("display/wallpaper/file", file_str);
-                    cfg.set("display/wallpaper/color", "");
-                    config::save_config();
-                    return true;
-                }
-            }
-            false
-        }
-        _ => false,
-    }
-}
-
-fn execute_system(cmd: &UriCommand, state: &mut DisplayState) -> bool {
-    match cmd.action.as_str() {
-        "reset" => {
-            if let Some(option) = get_param(cmd, "option") {
-                if option == "all" {
-                    *state = DisplayState::new();
-                    vfs::remove_file("apps/.setup_done");
-                    uefi::runtime::reset(
-                        uefi_raw::table::runtime::ResetType::COLD,
-                        uefi::Status::SUCCESS,
-                        None,
-                    );
-                }
-            }
-            false
-        }
-        _ => false,
-    }
 }
 
 pub fn load_settings_from_config(state: &mut DisplayState) {

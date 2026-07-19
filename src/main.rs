@@ -312,6 +312,17 @@ fn main() -> Status {
             let _ = uefi::boot::wait_for_event(&mut events);
         }
 
+        match baram_bsd::uri::check_system_commands(&mut display_state) {
+            baram_bsd::uri::SystemCommand::ResetAll => {
+                uefi::runtime::reset(
+                    uefi_raw::table::runtime::ResetType::COLD,
+                    uefi::Status::SUCCESS,
+                    None,
+                );
+            }
+            baram_bsd::uri::SystemCommand::None => {}
+        }
+
         while let Some(ev) = keyboard.poll() {
             key_ev_count = key_ev_count.wrapping_add(1);
             if last_keys.len() >= 6 { last_keys.remove(0); }
@@ -579,8 +590,8 @@ fn main() -> Status {
                                         if let Some(cmd) = engine.last_command.take() {
                                             baram_bsd::uri::execute(&cmd, &mut display_state);
                                             if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                                if parsed.action == "wallpaper" {
-                                                    if baram_bsd::uri::get_param(&parsed, "color").is_some() {
+                                                if parsed.path.starts_with("display/wallpaper") {
+                                                    if parsed.path == "display/wallpaper" && baram_bsd::uri::get_param(&parsed, "color").is_some() {
                                                         if let Some(color) = display_state.wallpaper_color {
                                                             cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
                                                         }
@@ -597,7 +608,7 @@ fn main() -> Status {
                                                     bg_cache = None;
                                                     prev_wallpaper_idx = display_state.wallpaper_index;
                                                     scene_dirty = true;
-                                                } else if parsed.action == "pointer" || parsed.action == "hud" {
+                                                } else if parsed.path.starts_with("display/pointer") || parsed.path.starts_with("display/hud") {
                                                     scene_dirty = true;
                                                 }
                                             }
@@ -742,8 +753,8 @@ fn main() -> Status {
                                 if let Some(cmd) = engine.last_command.take() {
                                     baram_bsd::uri::execute(&cmd, &mut display_state);
                                     if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                        if parsed.action == "wallpaper" {
-                                            if baram_bsd::uri::get_param(&parsed, "color").is_some() {
+                                        if parsed.path.starts_with("display/wallpaper") {
+                                            if parsed.path == "display/wallpaper" && baram_bsd::uri::get_param(&parsed, "color").is_some() {
                                                 if let Some(color) = display_state.wallpaper_color {
                                                     cached_wallpaper = Some(make_solid_wallpaper(color, screen.width(), screen.height()));
                                                 }
@@ -758,7 +769,7 @@ fn main() -> Status {
                                             bg_cache = None;
                                             prev_wallpaper_idx = display_state.wallpaper_index;
                                             scene_dirty = true;
-                                        } else if parsed.action == "pointer" || parsed.action == "hud" {
+                                        } else if parsed.path.starts_with("display/pointer") || parsed.path.starts_with("display/hud") {
                                             scene_dirty = true;
                                         }
                                     }
