@@ -11,10 +11,10 @@
 //!   os://display/wallpaper/file?baram.png
 //!   os://ui-theme/color?btn_primary=BB0000
 
+use crate::config;
+use crate::vfs;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::vfs;
-use crate::config;
 
 pub struct UriCommand {
     pub path: String,
@@ -37,11 +37,16 @@ pub fn parse(uri: &str) -> Option<UriCommand> {
         for pair in query.split('&') {
             if let Some((k, v)) = pair.split_once('=') {
                 params.push((String::from(k), String::from(v)));
+            } else if !pair.is_empty() {
+                params.push((String::new(), String::from(pair)));
             }
         }
     }
 
-    Some(UriCommand { path: String::from(path), params })
+    Some(UriCommand {
+        path: String::from(path),
+        params,
+    })
 }
 
 pub struct DisplayState {
@@ -63,7 +68,8 @@ impl DisplayState {
 }
 
 pub fn get_param<'a>(cmd: &'a UriCommand, key: &str) -> Option<&'a str> {
-    cmd.params.iter()
+    cmd.params
+        .iter()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.as_str())
 }
@@ -74,14 +80,18 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
         None => return false,
     };
 
-    let cfg = config::get_config_mut();
-    for (key, value) in &cmd.params {
-        let full_path = if cmd.path.is_empty() {
-            String::from(key)
-        } else {
-            alloc::format!("{}/{}", cmd.path, key)
-        };
-        cfg.set(&full_path, value);
+    {
+        let cfg = config::get_config_mut();
+        for (key, value) in &cmd.params {
+            let full_path = if key.is_empty() {
+                cmd.path.clone()
+            } else if cmd.path.is_empty() {
+                String::from(key)
+            } else {
+                alloc::format!("{}/{}", cmd.path, key)
+            };
+            cfg.set(&full_path, value);
+        }
     }
 
     config::save_config();
@@ -95,15 +105,19 @@ pub enum SystemCommand {
 }
 
 pub fn check_system_commands(state: &mut DisplayState) -> SystemCommand {
-    let cfg = config::get_config();
-    let result = match cfg.get("system/reset/option") {
-        Some("all") => SystemCommand::ResetAll,
-        _ => SystemCommand::None,
+    let result = {
+        let cfg = config::get_config();
+        match cfg.get("system/reset/option") {
+            Some("all") => SystemCommand::ResetAll,
+            _ => SystemCommand::None,
+        }
     };
 
     if let SystemCommand::ResetAll = &result {
-        let cfg = config::get_config_mut();
-        cfg.set("system/reset/option", "");
+        {
+            let cfg = config::get_config_mut();
+            cfg.set("system/reset/option", "");
+        }
         config::save_config();
         *state = DisplayState::new();
         vfs::remove_file("apps/.setup_done");

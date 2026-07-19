@@ -27,23 +27,23 @@ screen{
         hStack{
             button{
                 text: ("Baram"),
-                oneClick: (runCommand = "os://display/wallpaper/file?baram")
+                oneClick: (runCommand = "os://display/wallpaper?file=baram")
             },
 
             button{
                 text: ("Hanul"),
-                oneClick: (runCommand = "os://display/wallpaper/file?hanul")
+                oneClick: (runCommand = "os://display/wallpaper?file=hanul")
             },
 
             button{
                 text: ("Reflect"),
-                oneClick: (runCommand = "os://display/wallpaper/file?reflect")
+                oneClick: (runCommand = "os://display/wallpaper?file=reflect")
             },
         },
 
         button{
             text: ("Solid Red"),
-            oneClick: (runCommand = "os://display/wallpaper/color?#990000")
+            oneClick: (runCommand = "os://display/wallpaper?color=#990000")
         },
     },
 
@@ -57,17 +57,17 @@ screen{
         hStack{
             button{
                 text: ("Small"),
-                oneClick: (--pointerSize = "10", runCommand = "os://display/pointer/size?10")
+                oneClick: (--pointerSize = "10", runCommand = "os://display/pointer?size=10")
             },
 
             button{
                 text: ("Medium"),
-                oneClick: (--pointerSize = "15", runCommand = "os://display/pointer/size?15")
+                oneClick: (--pointerSize = "15", runCommand = "os://display/pointer?size=15")
             },
 
             button{
                 text: ("Large"),
-                oneClick: (--pointerSize = "20", runCommand = "os://display/pointer/size?20")
+                oneClick: (--pointerSize = "20", runCommand = "os://display/pointer?size=20")
             },
         },
     },
@@ -81,7 +81,8 @@ screen{
 
         switch{
             --hudEnabled: ("true"),
-            output: (--hudEnabled)
+            output: (--hudEnabled),
+            oneClick: (runCommand = "os://display/hud?enabled=" + --hudEnabled)
         },
     },
 

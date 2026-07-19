@@ -129,7 +129,12 @@ make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
     mkdir -p "$RUNTIME_DIR"
-    rm -f "$out"
+
+    if [ -f "$out" ]; then
+        log "Disk image already exists at $out — skipping creation."
+        log "  (use './build.sh clean' to recreate from scratch)"
+        return 0
+    fi
 
     log "Creating FAT disk image ($IMAGE_SIZE_MB MiB) at $out ..."
 
@@ -449,7 +454,7 @@ Install QEMU:
         -cpu "$QEMU_CPU" \
         -m "$QEMU_RAM" \
         "${fw_args[@]}" \
-        -drive "if=none,file=$img,format=raw,id=hd0" \
+        -drive "if=none,file=$img,format=raw,id=hd0,cache=none" \
         -device "virtio-blk-device,drive=hd0" \
         -device "ramfb" \
         -device "qemu-xhci" \

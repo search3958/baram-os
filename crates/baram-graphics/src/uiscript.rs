@@ -4,11 +4,11 @@
 //! inside a window's content area using the LayerSystem.
 //! Uses clip_rect for pixel-level clipping.
 
-use baram_font::LayerFontExt;
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 use baram_core::Color;
 use baram_core::LayerSystem;
+use baram_font::LayerFontExt;
 
 #[derive(Clone, Debug)]
 pub enum Command {
@@ -18,16 +18,32 @@ pub enum Command {
     H2(String),
     H3(String),
     Text(String),
-    Button { url: String, text: String, btn_type: String },
-    Card { title: String, text: String, button: String },
-    List { title: String, text: String, button: String },
+    Button {
+        url: String,
+        text: String,
+        btn_type: String,
+    },
+    Card {
+        title: String,
+        text: String,
+        button: String,
+    },
+    List {
+        title: String,
+        text: String,
+        button: String,
+    },
     Hr,
     Br,
 }
 
 #[derive(Clone, Debug)]
 enum InlineElement {
-    Text { text: String, bold: bool, color: Option<String> },
+    Text {
+        text: String,
+        bold: bool,
+        color: Option<String>,
+    },
 }
 
 fn parse_inline(text: &str) -> Vec<InlineElement> {
@@ -84,7 +100,9 @@ fn parse_inline(text: &str) -> Vec<InlineElement> {
                             '{' => depth += 1,
                             '}' => {
                                 depth -= 1;
-                                if depth == 0 { break; }
+                                if depth == 0 {
+                                    break;
+                                }
                                 inner.push(c);
                             }
                             _ => inner.push(c),
@@ -139,21 +157,30 @@ fn hex_to_color(hex: &str) -> Color {
 }
 
 pub fn parse(source: &str) -> Vec<Command> {
-    let valid_keys = ["font", "color", "head", "h2", "h3", "text", "button", "card", "list", "br"];
+    let valid_keys = [
+        "font", "color", "head", "h2", "h3", "text", "button", "card", "list", "br",
+    ];
     let mut commands = Vec::new();
 
     for line in source.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("<ui-script") || trimmed.starts_with("</ui-script") {
+        if trimmed.is_empty()
+            || trimmed.starts_with("<ui-script")
+            || trimmed.starts_with("</ui-script")
+        {
             continue;
         }
 
         for part in trimmed.split(';') {
             let part = part.trim();
-            if part.is_empty() { continue; }
+            if part.is_empty() {
+                continue;
+            }
 
             let first_token = part.split(':').next().unwrap_or("").trim();
-            if !valid_keys.contains(&first_token) { continue; }
+            if !valid_keys.contains(&first_token) {
+                continue;
+            }
 
             let parts: Vec<&str> = part.split(':').collect();
             let key = parts[0].trim();
@@ -203,7 +230,11 @@ pub fn parse(source: &str) -> Vec<Command> {
                             btn_type = String::from(rest.trim_end_matches('"'));
                         }
                     }
-                    commands.push(Command::Button { url, text, btn_type });
+                    commands.push(Command::Button {
+                        url,
+                        text,
+                        btn_type,
+                    });
                 }
                 "card" => {
                     let mut title = String::new();
@@ -219,7 +250,11 @@ pub fn parse(source: &str) -> Vec<Command> {
                             button = String::from(rest.trim_end_matches('"'));
                         }
                     }
-                    commands.push(Command::Card { title, text, button });
+                    commands.push(Command::Card {
+                        title,
+                        text,
+                        button,
+                    });
                 }
                 "list" => {
                     let mut title = String::new();
@@ -235,7 +270,11 @@ pub fn parse(source: &str) -> Vec<Command> {
                             button = String::from(rest.trim_end_matches('"'));
                         }
                     }
-                    commands.push(Command::List { title, text, button });
+                    commands.push(Command::List {
+                        title,
+                        text,
+                        button,
+                    });
                 }
                 "br" => {
                     let joined = parts[1..].join(":");
@@ -262,7 +301,9 @@ fn strip_icons(text: &str) -> String {
             if let Some('{') = chars.clone().next() {
                 chars.next();
                 for c in chars.by_ref() {
-                    if c == '}' { break; }
+                    if c == '}' {
+                        break;
+                    }
                 }
             } else {
                 result.push(ch);
@@ -274,8 +315,6 @@ fn strip_icons(text: &str) -> String {
     result
 }
 
-
-
 pub fn render(
     layer: &mut LayerSystem,
     commands: &[Command],
@@ -286,9 +325,16 @@ pub fn render(
     title_bar_h: usize,
     scroll_y: i32,
 ) {
-    let accent = commands.iter().find_map(|c| {
-        if let Command::Color(hex) = c { Some(hex_to_color(hex)) } else { None }
-    }).unwrap_or(Color::ACCENT);
+    let accent = commands
+        .iter()
+        .find_map(|c| {
+            if let Command::Color(hex) = c {
+                Some(hex_to_color(hex))
+            } else {
+                None
+            }
+        })
+        .unwrap_or(Color::PANEL);
 
     let text_color = Color::TEXT;
     let muted = Color::MUTED;
@@ -309,7 +355,11 @@ pub fn render(
                 let mut x = content_x as usize;
                 for elem in &elements {
                     match elem {
-                        InlineElement::Text { text, bold, color: c } => {
+                        InlineElement::Text {
+                            text,
+                            bold,
+                            color: c,
+                        } => {
                             let fg = c.as_ref().map(|h| hex_to_color(h)).unwrap_or(text_color);
                             if *bold {
                                 layer.put_str(x + 1, sy as usize, text, fg);
@@ -328,9 +378,15 @@ pub fn render(
                 let elements = parse_inline(&plain);
                 let mut x = content_x as usize;
                 for elem in &elements {
-                    if x as i32 >= max_x { break; }
+                    if x as i32 >= max_x {
+                        break;
+                    }
                     match elem {
-                        InlineElement::Text { text, bold, color: c } => {
+                        InlineElement::Text {
+                            text,
+                            bold,
+                            color: c,
+                        } => {
                             let fg = c.as_ref().map(|h| hex_to_color(h)).unwrap_or(text_color);
                             if *bold {
                                 layer.put_str(x + 1, sy as usize, text, fg);
@@ -367,7 +423,11 @@ pub fn render(
                 }
                 ly += 32;
             }
-            Command::Card { title, text, button } => {
+            Command::Card {
+                title,
+                text,
+                button,
+            } => {
                 let card_w = win_w.saturating_sub(20);
                 let card_h = 80usize;
                 let bx = content_x as usize;
@@ -385,7 +445,11 @@ pub fn render(
                 }
                 ly += card_h as i32 + 8;
             }
-            Command::List { title, text, button } => {
+            Command::List {
+                title,
+                text,
+                button,
+            } => {
                 let list_w = win_w.saturating_sub(20);
                 let list_h = 80usize;
                 let bx = content_x as usize;
@@ -404,7 +468,13 @@ pub fn render(
                 ly += list_h as i32 + 8;
             }
             Command::Hr => {
-                layer.fill_rect(content_x as usize, sy as usize, win_w.saturating_sub(20), 1, Color::BORDER);
+                layer.fill_rect(
+                    content_x as usize,
+                    sy as usize,
+                    win_w.saturating_sub(20),
+                    1,
+                    Color::BORDER,
+                );
                 ly += 12;
             }
             Command::Br => {
