@@ -15,8 +15,8 @@ uefi = { version = "0.38", features = ["alloc", "logger", "global_allocator"] }
 uefi-raw = "0.15"
 libm = "0.2"
 kurbo = { version = "0.13", default-features = false, features = ["libm"] }
-stb_truetype_rust = { path = "src/stb_truetype_rust" }
-png-decoder = { path = "src/png-decoder" }
+stb_truetype_rust = { path = "crates/stb_truetype_rust" }
+png-decoder = { path = "crates/png-decoder" }
 
 [package]
 name = "baramos"
@@ -61,7 +61,7 @@ baram-iokit = { path = "crates/baram-iokit" }
 baram-bsd = { path = "crates/baram-bsd" }
 baram-windowserver = { path = "crates/baram-windowserver" }
 baram-kern = { path = "crates/baram-kern" }
-png-decoder = { path = "src/png-decoder" }
+png-decoder = { path = "crates/png-decoder" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 libm = { workspace = true }

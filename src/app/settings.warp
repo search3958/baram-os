@@ -6,6 +6,18 @@ screen{
     },
 
     card{
+        text: ("color"),
+
+        hStack{
+            button{
+                text: ("red"),
+                oneClick: (runCommand = "os://ui-theme/color?btn_primary=BB0000")
+            },
+
+        },
+    },
+
+    card{
         text: ("Wallpaper"),
 
         text{

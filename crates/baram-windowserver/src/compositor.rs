@@ -415,7 +415,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
     fb.push_str("FPS");
 
     if hud_enabled {
-        let hud_text1 = "Baram OS (b2)";
+        let hud_text1 = "Baram OS (1.1.0)";
         let mut hw1 = 0usize;
         for ch in hud_text1.chars() {
             if baram_font::ttf_font_hud::is_available() {
