@@ -7,6 +7,8 @@
 #    ./build64.sh           # build + run in QEMU
 #    ./build64.sh build     # only build (no QEMU launch)
 #    ./build64.sh image     # only build + create the FAT image
+#    ./build64.sh write           # build + write to USB (auto-detect)
+#    ./build64.sh write /dev/sdX  # build + write to specific disk
 #    ./build64.sh run       # only run (assumes image + firmware already exist)
 #    ./build64.sh clean     # cargo clean
 #    ./build64.sh help
@@ -93,6 +95,24 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mmd -i "$out" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd -i "$out" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
@@ -107,6 +127,22 @@ make_fat_image() {
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTX64.EFI"
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mkdir -p "$tmp_mount/apps"
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
+            done
+            if [ -d "$app_src/icon" ]; then
+                mkdir -p "$tmp_mount/apps/icon"
+                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
+            fi
+            log "  copied app files to /apps/"
+        fi
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' > "$tmp_mount/startup.nsh"
         sync
         hdiutil detach "$tmp_mount" >/dev/null || true
@@ -122,6 +158,24 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mmd -i "$out" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd -i "$out" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
@@ -227,6 +281,109 @@ Install QEMU:
         -monitor "$QEMU_MONITOR"
 }
 
+find_usb() {
+    if [ "$(uname -s)" = "Darwin" ]; then
+        local candidates=()
+        while IFS= read -r line; do
+            local dev
+            dev="$(echo "$line" | xargs)"
+            if [ -n "$dev" ] && [ -b "$dev" ]; then
+                candidates+=("$dev")
+            fi
+        done < <(diskutil list external 2>/dev/null | grep "\/dev\/disk[0-9]" | awk '{print $1}' | sort -u)
+
+        if [ ${#candidates[@]} -eq 0 ]; then
+            die "No external USB drives found. Connect a USB drive and try again."
+        fi
+
+        if [ ${#candidates[@]} -eq 1 ]; then
+            echo "${candidates[0]}"
+            return 0
+        fi
+
+        warn "Multiple external drives found:"
+        for i in "${!candidates[@]}"; do
+            local size
+            size="$(diskutil info "${candidates[$i]}" 2>/dev/null | grep "Disk Size" | awk '{print $3, $4}' || echo "?")"
+            printf "  [%d] %s (%s)\n" "$((i+1))" "${candidates[$i]}" "$size" >&2
+        done
+        read -rp "Select disk number [1-${#candidates[@]}]: " choice
+        local idx=$((choice - 1))
+        [ "$idx" -ge 0 ] && [ "$idx" -lt "${#candidates[@]}" ] || die "Invalid selection"
+        echo "${candidates[$idx]}"
+        return 0
+    fi
+
+    if [ "$(uname -s)" = "Linux" ]; then
+        local candidates=()
+        while IFS= read -r dev; do
+            [ -b "$dev" ] && candidates+=("$dev")
+        done < <(lsblk -dpno NAME,TYPE 2>/dev/null | awk '$2 == "disk" {print $1}')
+
+        if [ ${#candidates[@]} -eq 0 ]; then
+            die "No block devices found. Connect a USB drive and try again."
+        fi
+
+        if [ ${#candidates[@]} -eq 1 ]; then
+            echo "${candidates[0]}"
+            return 0
+        fi
+
+        warn "Multiple block devices found:"
+        for i in "${!candidates[@]}"; do
+            local size
+            size="$(lsblk -dno SIZE "${candidates[$i]}" 2>/dev/null | xargs || echo "?")"
+            printf "  [%d] %s (%s)\n" "$((i+1))" "${candidates[$i]}" "$size" >&2
+        done
+        read -rp "Select disk number [1-${#candidates[@]}]: " choice
+        local idx=$((choice - 1))
+        [ "$idx" -ge 0 ] && [ "$idx" -lt "${#candidates[@]}" ] || die "Invalid selection"
+        echo "${candidates[$idx]}"
+        return 0
+    fi
+
+    die "USB auto-detect is only supported on macOS/Linux. Specify the disk manually."
+}
+
+write_to_usb() {
+    local target="${1:-}"
+    local img="$RUNTIME_DIR/$IMAGE_NAME"
+
+    [ -f "$img" ] || die "Image not found. Run './build64.sh image' first."
+
+    if [ -z "$target" ]; then
+        log "Auto-detecting USB drive ..."
+        target="$(find_usb)"
+    fi
+
+    [ -b "$target" ] || die "Disk '$target' not found or not a block device."
+
+    local size
+    if [ "$(uname -s)" = "Darwin" ]; then
+        size="$(diskutil info "$target" 2>/dev/null | grep "Disk Size" | awk '{print $3, $4}' || echo "?")"
+    else
+        size="$(lsblk -dno SIZE "$target" 2>/dev/null | xargs || echo "?")"
+    fi
+    log "Target: $target ($size)"
+    log "Image:  $img"
+
+    warn "WARNING: This will ERASE all data on $target!"
+    read -rp "Continue? [y/N] " confirm
+    [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || die "Aborted."
+
+    log "Writing $img to $target ..."
+    if [ "$(uname -s)" = "Darwin" ]; then
+        sudo diskutil unmountDisk "$target" 2>/dev/null || true
+    else
+        sudo umount "${target}"* 2>/dev/null || true
+    fi
+    sudo dd if="$img" of="$target" bs=4M status=progress oflag=sync
+    sync
+
+    log "Done! Remove $target and plug it into your x86_64 PC."
+    log "Boot from USB (press F12/F2/Del during POST to select boot device)."
+}
+
 case "${1:-build-run}" in
     build)
         build_efi
@@ -234,6 +391,12 @@ case "${1:-build-run}" in
     image)
         build_efi
         make_fat_image
+        ;;
+    write)
+        build_efi
+        make_fat_image
+        ensure_firmware
+        write_to_usb "${2:-}"
         ;;
     firmware)
         ensure_firmware
@@ -258,7 +421,7 @@ case "${1:-build-run}" in
         ;;
     *)
         err "Unknown command: $1"
-        echo "Usage: $0 [build|image|run|firmware|clean|help]"
+        echo "Usage: $0 [build|image|write|run|firmware|clean|help]"
         exit 1
         ;;
 esac

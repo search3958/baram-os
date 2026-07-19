@@ -35,7 +35,7 @@ pub struct Mouse {
 
 impl Mouse {
     pub fn get_wait_event() -> Option<uefi::Event> {
-        // Try AbsolutePointer
+        // Try AbsolutePointer first
         if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
             let params = boot::OpenProtocolParams {
                 handle: h,
@@ -46,12 +46,30 @@ impl Mouse {
                 boot::open_protocol::<AbsolutePointer>(params, boot::OpenProtocolAttributes::GetProtocol)
             } {
                 let evt = ptr.wait_for_input_event();
-                // Event wraps a raw pointer, we can copy the raw pointer
                 let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&evt) };
-                core::mem::forget(ptr); // prevent drop so the event stays valid
+                core::mem::forget(ptr);
                 return Some(unsafe { core::mem::transmute_copy::<usize, uefi::Event>(&raw) });
             }
         }
+
+        // Fallback: try SimplePointer
+        if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
+            let params = boot::OpenProtocolParams {
+                handle: h,
+                agent: boot::image_handle(),
+                controller: None,
+            };
+            if let Ok(ptr) = unsafe {
+                boot::open_protocol::<Pointer>(params, boot::OpenProtocolAttributes::GetProtocol)
+            } {
+                if let Ok(evt) = ptr.wait_for_input_event() {
+                    let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&evt) };
+                    core::mem::forget(ptr);
+                    return Some(unsafe { core::mem::transmute_copy::<usize, uefi::Event>(&raw) });
+                }
+            }
+        }
+
         None
     }
     pub fn open() -> Result<Mouse, &'static str> {

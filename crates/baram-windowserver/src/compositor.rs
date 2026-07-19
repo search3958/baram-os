@@ -10,7 +10,8 @@ use crate::warp::WarpEngine;
 use baram_graphics::uiscript;
 use baram_graphics::blur;
 use uefi::runtime;
-use super::cursor::{self, CURSOR_BOX_W, CURSOR_BOX_H, CURSOR_BOX_SIZE_W, CURSOR_BOX_SIZE_H};
+use super::cursor::{self};
+use baram_bsd::config;
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
@@ -548,7 +549,8 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 }
                 let tx = cx + (icon_size.saturating_sub(tw)) / 2;
                 let ty = cy + icon_size + 4;
-                lsys.put_str(tx, ty, &display_name, Color::rgb(230, 230, 230));
+                let label_color = config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL);
+                lsys.put_str(tx, ty, &display_name, label_color);
             }
             *cached_launcher_layer = Some(lsys.buf_ref().to_vec());
         }

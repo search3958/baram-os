@@ -345,18 +345,27 @@ impl VirtualMemoryManager {
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
     fn flush_tlb_entry(&self, _addr: usize) {
         unsafe {
             core::arch::asm!("dsb sy; isb");
         }
     }
 
+    #[cfg(not(target_arch = "aarch64"))]
+    fn flush_tlb_entry(&self, _addr: usize) {}
+
+    #[cfg(target_arch = "aarch64")]
     fn flush_tlb_range(&self, _addr: usize, _size: usize) {
         unsafe {
             core::arch::asm!("dsb sy; isb");
         }
     }
 
+    #[cfg(not(target_arch = "aarch64"))]
+    fn flush_tlb_range(&self, _addr: usize, _size: usize) {}
+
+    #[cfg(target_arch = "aarch64")]
     pub fn switch_address_space(&self, ttbr: usize, asid: u8) {
         unsafe {
             let tcr = self.get_tcr();
@@ -376,6 +385,7 @@ impl VirtualMemoryManager {
         TCR_T0SZ | TCR_T1SZ | TCR_TG0_4K | TCR_TG1_4K | TCR_IPS_48BIT | TCR_SH_INNER | TCR_IRGN_WB | TCR_ORGN_WB
     }
 
+    #[cfg(target_arch = "aarch64")]
     pub fn init_mmu(&self) {
         unsafe {
             let mair = (MAIR_NORMAL << 0) | (MAIR_DEVICE << 8);

@@ -7,3 +7,4 @@ pub mod uri;
 pub mod setup;
 pub mod app;
 pub mod shift_key;
+pub mod config;

@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub mod color;
+pub mod config;
 pub mod screen;
 pub mod layer;
 pub mod key_event;

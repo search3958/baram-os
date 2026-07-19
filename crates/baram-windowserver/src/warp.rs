@@ -7,6 +7,7 @@ use alloc::string::{String, ToString};
 use baram_core::Color;
 use baram_core::LayerSystem;
 use baram_font::ttf_font;
+use baram_bsd::config;
 
 const MAX_VARS: usize = 256;
 const MAX_SCREENS: usize = 64;
@@ -688,32 +689,42 @@ impl WarpEngine {
 
             match tag {
                 "card" => {
-                    layer.fill_rounded_rect(x, y, w, h, 12, Color::rgb(0xf5, 0xf5, 0xf6));
+                    let card_bg = config::get_color("ui-theme/color/card_bg", Color::CARD_BG);
+                    layer.fill_rounded_rect(x, y, w, h, 12, card_bg);
                 }
                 "button" => {
                     let c = if self.hover_idx == Some(idx) {
-                        Color::rgb(0x08, 0x50, 0xDD)
+                        config::get_color("ui-theme/color/btn_primary_hover", Color::BTN_PRIMARY_HOVER)
                     } else {
-                        Color::rgb(0x0A, 0x60, 0xFF)
+                        config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
                     };
-                    layer.fill_rounded_rect(x, y, w, h, 20, c);
+                    let radius = config::get_usize("ui-theme/button/corner", 20);
+                    layer.fill_rounded_rect(x, y, w, h, radius, c);
                 }
                 "tonalButton" => {
                     let c = if self.hover_idx == Some(idx) {
-                        Color::rgb(210, 210, 210)
+                        config::get_color("ui-theme/color/btn_tonal_hover", Color::BTN_TONAL_HOVER)
                     } else {
-                        Color::rgb(230, 230, 230)
+                        config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL)
                     };
-                    layer.fill_rounded_rect(x, y, w, h, 20, c);
+                    let radius = config::get_usize("ui-theme/button/corner", 20);
+                    layer.fill_rounded_rect(x, y, w, h, radius, c);
                 }
                 "switch" => {
                     let out_var = self.parse_out_var(idx);
                     let val = self.get_state(&out_var);
                     let on = val.contains("true");
-                    let bg = if on { Color::rgb(0x0A, 0x60, 0xFF) } else { Color::rgb(0xdd, 0xdd, 0xdd) };
-                    let sx = (n.x + ox + (n.w - 44) / 2) as usize;
-                    let sy = (n.y + oy + (n.h - 44) / 2) as usize;
-                    layer.fill_rounded_rect(sx, sy, 44, 44, 22, bg);
+                    let bg = if on {
+                        config::get_color("ui-theme/color/switch_on", Color::SWITCH_ON)
+                    } else {
+                        config::get_color("ui-theme/color/switch_off", Color::SWITCH_OFF)
+                    };
+                    let sw = config::get_usize("ui-theme/switch/w", 44);
+                    let sh = config::get_usize("ui-theme/switch/h", 44);
+                    let sr = config::get_usize("ui-theme/switch/radius", 22);
+                    let sx = (n.x + ox + (n.w - sw as i32) / 2) as usize;
+                    let sy = (n.y + oy + (n.h - sh as i32) / 2) as usize;
+                    layer.fill_rounded_rect(sx, sy, sw, sh, sr, bg);
                 }
                 "input" => {
                     layer.fill_rounded_rect(x, y, w, h, 8, Color::WIN_BG);

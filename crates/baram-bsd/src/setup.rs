@@ -3,6 +3,7 @@ use baram_font::ttf_font;
 use baram_font::ttf_font_hud;
 use baram_font::font::{self, GLYPH_H, GLYPH_W};
 use crate::vfs;
+use crate::config;
 use baram_graphics::blur;
 
 const SETUP_DONE_PATH: &str = "apps/.setup_done";
@@ -600,17 +601,25 @@ fn draw_card_body(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y
 }
 
 fn draw_button(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, label: &str, primary: bool, hover: bool) {
-    let radius = 20usize;
+    let radius = config::get_usize("ui-theme/button/corner", 20);
     let bg = if primary {
-        if hover { Color::rgb(0x08, 0x50, 0xDD) } else { Color::rgb(0x0A, 0x60, 0xFF) }
+        if hover {
+            config::get_color("ui-theme/color/btn_primary_hover", Color::BTN_PRIMARY_HOVER)
+        } else {
+            config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
+        }
     } else {
-        if hover { Color::rgb(210, 210, 210) } else { Color::rgb(230, 230, 230) }
+        if hover {
+            config::get_color("ui-theme/color/btn_tonal_hover", Color::BTN_TONAL_HOVER)
+        } else {
+            config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL)
+        }
     };
-    let text_color = if primary { Color::rgb(0xFF, 0xFF, 0xFF) } else { Color::TEXT };
+    let text_color = if primary { config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT) } else { Color::TEXT };
 
     draw_rounded_rect(buf, screen_w, x, y, w, h, radius, bg);
 
-    let text_color = if primary { Color::rgb(0xFF, 0xFF, 0xFF) } else { Color::TEXT };
+    let text_color = if primary { config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT) } else { Color::TEXT };
     draw_str_centered(buf, screen_w, x + w / 2, y + h / 2 - 8, label, text_color, 0.9);
 }
 

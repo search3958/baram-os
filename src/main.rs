@@ -16,12 +16,20 @@ use baram_windowserver::window::{WindowManager, WinId};
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_bsd::shift_key;
+use baram_bsd::config;
 
 #[entry]
 fn main() -> Status {
     log_line_str("BaramOS: starting...");
     let _ = uefi::helpers::init();
     log_line_str("BaramOS: UEFI helpers initialized");
+
+    let _ = uefi::boot::set_watchdog_timer(0, 0, None);
+    log_line_str("BaramOS: watchdog timer disabled");
+
+    config::init_config();
+    log_line_str("BaramOS: config loaded");
+
     baram_font::ttf_font::init();
     baram_font::ttf_font_hud::init();
     log_line_str("BaramOS: fonts initialized");
@@ -77,6 +85,30 @@ fn main() -> Status {
 
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
+        {
+            const LOGO_PNG: &[u8] = include_bytes!("data/logo.png");
+            if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
+                let img_w = header.width as usize;
+                let img_h = header.height as usize;
+                let sw = screen.width();
+                let sh = screen.height();
+                let mut logo_layer = LayerSystem::new(sw, sh);
+                logo_layer.clear(Color::BLACK);
+                let ox = (sw.saturating_sub(img_w)) / 2;
+                let oy = (sh.saturating_sub(img_h)) / 2;
+                let buf = logo_layer.buf_mut();
+                for y in 0..img_h {
+                    let dst_row = (oy + y) * sw + ox;
+                    let src_row = y * img_w;
+                    for x in 0..img_w {
+                        let px = pixels[src_row + x];
+                        buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
+                    }
+                }
+                logo_layer.flush(&mut screen);
+                uefi::boot::stall(core::time::Duration::from_secs(2));
+            }
+        }
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let mut setup_layer = LayerSystem::new(screen.width(), screen.height());
         let mut setup_buf: alloc::vec::Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
@@ -138,6 +170,30 @@ fn main() -> Status {
     log_line_str("BaramOS: loading index.yaml...");
     let index_yaml = baram_bsd::app::read_index_yaml();
     log_line_str(&alloc::format!("BaramOS: index.yaml {} bytes", index_yaml.len()));
+    {
+        const LOGO_PNG: &[u8] = include_bytes!("data/logo.png");
+        if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
+            let img_w = header.width as usize;
+            let img_h = header.height as usize;
+            let sw = screen.width();
+            let sh = screen.height();
+            let mut logo_layer = LayerSystem::new(sw, sh);
+            logo_layer.clear(Color::BLACK);
+            let ox = (sw.saturating_sub(img_w)) / 2;
+            let oy = (sh.saturating_sub(img_h)) / 2;
+            let buf = logo_layer.buf_mut();
+            for y in 0..img_h {
+                let dst_row = (oy + y) * sw + ox;
+                let src_row = y * img_w;
+                for x in 0..img_w {
+                    let px = pixels[src_row + x];
+                    buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
+                }
+            }
+            logo_layer.flush(&mut screen);
+            uefi::boot::stall(core::time::Duration::from_secs(2));
+        }
+    }
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)> = alloc::vec::Vec::new();
     let mut ui_win_id: Option<WinId> = None;
@@ -192,7 +248,7 @@ fn main() -> Status {
     };
 
     let mut display_state = baram_bsd::uri::DisplayState::new();
-    baram_bsd::uri::load_settings(&mut display_state);
+    baram_bsd::uri::load_settings_from_config(&mut display_state);
 
     let mut cached_wallpaper: Option<Vec<u32>> = None;
     if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {
@@ -262,8 +318,8 @@ fn main() -> Status {
             last_keys.push(ev.label());
 
             match ev.scancode {
-                0x01 => wm.scroll_focused(-baram_windowserver::window::SCROLL_SPEED),
-                0x02 => wm.scroll_focused(baram_windowserver::window::SCROLL_SPEED),
+                0x01 => wm.scroll_focused(-baram_windowserver::window::scroll_speed()),
+                0x02 => wm.scroll_focused(baram_windowserver::window::scroll_speed()),
                 _ => {}
             }
 
@@ -400,7 +456,7 @@ fn main() -> Status {
                 );
 
                 if ev.scroll != 0 {
-                    let scroll_delta = -ev.scroll * baram_windowserver::window::SCROLL_SPEED;
+                    let scroll_delta = -ev.scroll * baram_windowserver::window::scroll_speed();
                     if let Some(id) = wm.window_at(cx, cy) {
                         wm.scroll_window(id, scroll_delta);
                         scene_dirty = true;

@@ -153,6 +153,11 @@ make_fat_image() {
                 log "  copied $name.efi to /EFI/BOOT/bin/"
             fi
         done
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
         # Auto-boot script: tells the UEFI shell to run our EFI binary
         # without waiting for the 5-second startup.nsh countdown.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh

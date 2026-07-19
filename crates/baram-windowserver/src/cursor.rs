@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use baram_graphics::svg;
 use baram_core::LayerSystem;
+use baram_bsd::config;
 
 pub const CURSOR_SVG: &str = include_str!("../../../src/data/mouse.svg");
 pub const CURSOR_SVG_SIZE: &str = include_str!("../../../src/data/mouse_size.svg");
@@ -40,8 +41,16 @@ pub fn get_or_prerender_cursor(svg: &str, size: f32, blur_r: i32, is_resize: boo
         let cache = &mut CURSOR_SIZE_CACHE[idx];
         let slot = if is_resize { &mut cache.1 } else { &mut cache.0 };
         if slot.is_none() {
-            let base_w = if is_resize { CURSOR_BOX_SIZE_W } else { CURSOR_BOX_W };
-            let base_h = if is_resize { CURSOR_BOX_SIZE_H } else { CURSOR_BOX_H };
+            let base_w = if is_resize {
+                config::get_usize("ui-theme/cursor/size_w", 19)
+            } else {
+                config::get_usize("ui-theme/cursor/w", 15)
+            };
+            let base_h = if is_resize {
+                config::get_usize("ui-theme/cursor/size_h", 19)
+            } else {
+                config::get_usize("ui-theme/cursor/h", 19)
+            };
             let s10 = (size * 10.0) as i32;
             let w = (base_w as i32 * s10 / 10) as usize;
             let h = (base_h as i32 * s10 / 10) as usize;
@@ -129,13 +138,15 @@ pub fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBit
 }
 
 pub fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: f32) {
-    let blur_r = 12i32;
+    let blur_r = config::get_i32("ui-theme/cursor/shadow_blur", 12);
+    let shadow_x = config::get_i32("ui-theme/cursor/shadow_x", 3);
+    let shadow_y = config::get_i32("ui-theme/cursor/shadow_y", 4);
     let pad = blur_r as i32;
     let bitmap = get_or_prerender_cursor(
         if resizing { CURSOR_SVG_SIZE } else { CURSOR_SVG },
         pointer_size, blur_r, resizing,
     );
     svg::blit_shadow(layer, &bitmap.shadow, bitmap.shadow_w, bitmap.shadow_h,
-        cx + 3 - pad, cy + 4 - pad);
+        cx + shadow_x - pad, cy + shadow_y - pad);
     svg::blit_cached(layer, &bitmap.pixels, bitmap.w, bitmap.h, cx, cy);
 }

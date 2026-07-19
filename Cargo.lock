@@ -140,6 +140,7 @@ dependencies = [
  "baram-kern",
  "baram-windowserver",
  "libm",
+ "png-decoder",
  "uefi",
  "uefi-raw",
 ]
