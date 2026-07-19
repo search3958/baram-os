@@ -95,17 +95,26 @@ impl Screen {
         let pf = self.info.pixel_format;
         let stride = self.info.stride;
         let base = self.fb_ptr;
+        let n = x1.saturating_sub(x0);
+        if n == 0 { return; }
         let v = match pf {
             PixelFormat::Rgb => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
             PixelFormat::Bgr => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
             PixelFormat::Bitmask => c.0,
             _ => c.0,
         };
-        for x in x0..x1 {
-            let off = (y * stride + x) * 4;
+        let off = (y * stride + x0) * 4;
+        const CHUNK: usize = 64;
+        let mut remaining = n;
+        let mut offset = 0usize;
+        while remaining > 0 {
+            let chunk = remaining.min(CHUNK);
+            let tmp = [v; CHUNK];
             unsafe {
-                ptr::write_volatile(base.add(off) as *mut u32, v);
+                ptr::copy_nonoverlapping(tmp.as_ptr(), base.add(off + offset * 4) as *mut u32, chunk);
             }
+            offset += chunk;
+            remaining -= chunk;
         }
     }
 
@@ -153,17 +162,26 @@ impl Screen {
         let stride = self.info.stride;
         let base = self.fb_ptr;
         let n = row.len().min(self.info.width);
-        for x in 0..n {
-            let c = Color(row[x]);
-            let v = match pf {
-                PixelFormat::Rgb => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
-                PixelFormat::Bgr => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
-                PixelFormat::Bitmask => c.0,
-                _ => c.0,
-            };
-            let off = (y * stride + x) * 4;
-            unsafe {
-                ptr::write_volatile(base.add(off) as *mut u32, v);
+        let off = (y * stride) * 4;
+        match pf {
+            PixelFormat::Bgr => {
+                unsafe {
+                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off) as *mut u32, n);
+                }
+            }
+            PixelFormat::Rgb => {
+                for x in 0..n {
+                    let c = Color(row[x]);
+                    let v = ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32);
+                    unsafe {
+                        ptr::write_volatile(base.add(off + x * 4) as *mut u32, v);
+                    }
+                }
+            }
+            _ => {
+                unsafe {
+                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off) as *mut u32, n);
+                }
             }
         }
     }
@@ -176,14 +194,6 @@ impl Screen {
         let n = row.len().min(self.info.width.saturating_sub(x_offset));
         let off_base = (y * stride + x_offset) * 4;
         match pf {
-            PixelFormat::Bgr => {
-                for x in 0..n {
-                    let v = row[x];
-                    unsafe {
-                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
-                    }
-                }
-            }
             PixelFormat::Rgb => {
                 for x in 0..n {
                     let c = Color(row[x]);
@@ -194,11 +204,8 @@ impl Screen {
                 }
             }
             _ => {
-                for x in 0..n {
-                    let v = row[x];
-                    unsafe {
-                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
-                    }
+                unsafe {
+                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
                 }
             }
         }

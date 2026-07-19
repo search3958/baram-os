@@ -1,5 +1,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ptr;
 use crate::color::Color;
 use crate::screen::Screen;
 
@@ -354,10 +355,29 @@ impl LayerSystem {
                 let src_row_start = src_y * sw + sx;
                 let dst_row_start = dst_y * dw + dx;
                 let copy_w = w.min(sw - sx).min(dw - dx);
+
+                let mut all_opaque = true;
                 for px in 0..copy_w {
-                    let sp = src.buf[src_row_start + px];
-                    if sp != Color::TRANSPARENT.0 {
-                        self.buf[dst_row_start + px] = sp;
+                    if src.buf[src_row_start + px] == Color::TRANSPARENT.0 {
+                        all_opaque = false;
+                        break;
+                    }
+                }
+
+                if all_opaque {
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            src.buf.as_ptr().add(src_row_start),
+                            self.buf.as_mut_ptr().add(dst_row_start),
+                            copy_w,
+                        );
+                    }
+                } else {
+                    for px in 0..copy_w {
+                        let sp = src.buf[src_row_start + px];
+                        if sp != Color::TRANSPARENT.0 {
+                            self.buf[dst_row_start + px] = sp;
+                        }
                     }
                 }
             }
@@ -380,10 +400,29 @@ impl LayerSystem {
 
             if !in_top_corner && !in_bot_corner {
                 let copy_w = w.min(sw - sx).min(dw - dx);
+
+                let mut all_opaque = true;
                 for px in 0..copy_w {
-                    let sp = src.buf[src_row + px];
-                    if sp != Color::TRANSPARENT.0 {
-                        self.buf[dst_row + px] = sp;
+                    if src.buf[src_row + px] == Color::TRANSPARENT.0 {
+                        all_opaque = false;
+                        break;
+                    }
+                }
+
+                if all_opaque {
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            src.buf.as_ptr().add(src_row),
+                            self.buf.as_mut_ptr().add(dst_row),
+                            copy_w,
+                        );
+                    }
+                } else {
+                    for px in 0..copy_w {
+                        let sp = src.buf[src_row + px];
+                        if sp != Color::TRANSPARENT.0 {
+                            self.buf[dst_row + px] = sp;
+                        }
                     }
                 }
                 continue;
@@ -497,20 +536,40 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
+        let copy_w = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
+        if copy_w == 0 { return; }
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
             if src_y >= sh || dst_y >= dh { continue; }
 
-            for px in 0..w {
-                let src_x = sx + px;
-                let dst_x = dx + px;
-                if src_x >= sw || dst_x >= dw { continue; }
+            let src_row_start = src_y * sw + sx;
+            let dst_row_start = dst_y * dw + dx;
 
-                let src_pixel = Color(src.buf[src_y * sw + src_x]);
-                if src_pixel.0 == Color::TRANSPARENT.0 { continue; }
+            let mut all_opaque = true;
+            for px in 0..copy_w {
+                if src.buf[src_row_start + px] == Color::TRANSPARENT.0 {
+                    all_opaque = false;
+                    break;
+                }
+            }
 
-                self.buf[dst_y * dw + dst_x] = src_pixel.0;
+            if all_opaque {
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        src.buf.as_ptr().add(src_row_start),
+                        self.buf.as_mut_ptr().add(dst_row_start),
+                        copy_w,
+                    );
+                }
+            } else {
+                for px in 0..copy_w {
+                    let sp = src.buf[src_row_start + px];
+                    if sp != Color::TRANSPARENT.0 {
+                        self.buf[dst_row_start + px] = sp;
+                    }
+                }
             }
         }
     }
