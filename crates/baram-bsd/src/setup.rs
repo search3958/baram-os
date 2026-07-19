@@ -601,25 +601,25 @@ fn draw_card_body(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y
 }
 
 fn draw_button(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, label: &str, primary: bool, hover: bool) {
-    let radius = config::get_usize("button", "corner", 20);
+    let radius = config::get_usize("ui-theme/button/corner", 20);
     let bg = if primary {
         if hover {
-            config::get_color("color", "btn_primary_hover", Color::BTN_PRIMARY_HOVER)
+            config::get_color("ui-theme/color/btn_primary_hover", Color::BTN_PRIMARY_HOVER)
         } else {
-            config::get_color("color", "btn_primary", Color::BTN_PRIMARY)
+            config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
         }
     } else {
         if hover {
-            config::get_color("color", "btn_tonal_hover", Color::BTN_TONAL_HOVER)
+            config::get_color("ui-theme/color/btn_tonal_hover", Color::BTN_TONAL_HOVER)
         } else {
-            config::get_color("color", "btn_tonal", Color::BTN_TONAL)
+            config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL)
         }
     };
-    let text_color = if primary { config::get_color("color", "btn_text", Color::BTN_TEXT) } else { Color::TEXT };
+    let text_color = if primary { config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT) } else { Color::TEXT };
 
     draw_rounded_rect(buf, screen_w, x, y, w, h, radius, bg);
 
-    let text_color = if primary { config::get_color("color", "btn_text", Color::BTN_TEXT) } else { Color::TEXT };
+    let text_color = if primary { config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT) } else { Color::TEXT };
     draw_str_centered(buf, screen_w, x + w / 2, y + h / 2 - 8, label, text_color, 0.9);
 }
 

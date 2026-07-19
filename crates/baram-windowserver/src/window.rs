@@ -7,23 +7,23 @@ use baram_core::LayerSystem;
 use baram_bsd::config;
 
 pub fn scroll_speed() -> i32 {
-    config::get_i32("window", "scroll_speed", 30)
+    config::get_i32("ui-theme/window/scroll_speed", 30)
 }
 
 pub fn title_bar_h() -> usize {
-    config::get_usize("window", "title_bar_h", 30)
+    config::get_usize("ui-theme/window/title_bar_h", 30)
 }
 
 pub fn min_win_w() -> usize {
-    config::get_usize("window", "min_win_w", 120)
+    config::get_usize("ui-theme/window/min_win_w", 120)
 }
 
 pub fn min_win_h() -> usize {
-    config::get_usize("window", "min_win_h", 60)
+    config::get_usize("ui-theme/window/min_win_h", 60)
 }
 
 pub fn btn_size() -> usize {
-    config::get_usize("button", "size", 20)
+    config::get_usize("ui-theme/button/size", 20)
 }
 
 pub fn btn_area_w() -> usize {
@@ -31,23 +31,23 @@ pub fn btn_area_w() -> usize {
 }
 
 pub fn win_radius() -> usize {
-    config::get_usize("window", "win_radius", 16)
+    config::get_usize("ui-theme/window/win_radius", 16)
 }
 
 pub fn taskbar_h() -> usize {
-    config::get_usize("taskbar", "h", 48)
+    config::get_usize("ui-theme/taskbar/h", 48)
 }
 
 pub fn shadow_pad() -> i32 {
-    config::get_i32("window", "shadow_pad", 30)
+    config::get_i32("ui-theme/window/shadow_pad", 30)
 }
 
 pub fn btn_bg_radius() -> usize {
-    config::get_usize("button", "radius", 8)
+    config::get_usize("ui-theme/button/radius", 8)
 }
 
 pub fn btn_bg_color() -> Color {
-    config::get_color("color", "btn_bg", Color::BTN_BG)
+    config::get_color("ui-theme/color/btn_bg", Color::BTN_BG)
 }
 
 const MAX_ICON_SVG: &str = include_str!("../../../src/data/max.svg");

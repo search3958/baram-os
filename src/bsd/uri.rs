@@ -97,7 +97,7 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
                     let size = v as f32 / 10.0;
                     if size >= 0.5 && size <= 5.0 {
                         state.pointer_size = size;
-                        cfg.set("display", "pointer.size", &alloc::format!("{}", v));
+                        cfg.set("display/pointer/size", &alloc::format!("{}", v));
                         config::save_config();
                         return true;
                     }
@@ -110,13 +110,13 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
                 match enabled_str {
                     "1" | "true" | "on" => {
                         state.hud_enabled = true;
-                        cfg.set("display", "hud.enabled", "1");
+                        cfg.set("display/hud/enabled", "1");
                         config::save_config();
                         return true;
                     }
                     "0" | "false" | "off" => {
                         state.hud_enabled = false;
-                        cfg.set("display", "hud.enabled", "0");
+                        cfg.set("display/hud/enabled", "0");
                         config::save_config();
                         return true;
                     }
@@ -136,8 +136,8 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
                     ) {
                         state.wallpaper_color = Some(crate::pexpert::gop::Color::rgb(r, g, b).0);
                         state.wallpaper_index = 0;
-                        cfg.set("display", "wallpaper.file", "");
-                        cfg.set("display", "wallpaper.color", color_str);
+                        cfg.set("display/wallpaper/file", "");
+                        cfg.set("display/wallpaper/color", color_str);
                         config::save_config();
                         return true;
                     }
@@ -153,8 +153,8 @@ fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
                 if let Some(i) = idx {
                     state.wallpaper_color = None;
                     state.wallpaper_index = i;
-                    cfg.set("display", "wallpaper.file", file_str);
-                    cfg.set("display", "wallpaper.color", "");
+                    cfg.set("display/wallpaper/file", file_str);
+                    cfg.set("display/wallpaper/color", "");
                     config::save_config();
                     return true;
                 }
@@ -187,15 +187,15 @@ fn execute_system(cmd: &UriCommand, state: &mut DisplayState) -> bool {
 
 pub fn load_settings_from_config(state: &mut DisplayState) {
     let cfg = config::get_config();
-    if let Some(v) = cfg.get("display", "pointer.size") {
+    if let Some(v) = cfg.get("display/pointer/size") {
         if let Ok(size) = v.parse::<i32>() {
             state.pointer_size = size as f32 / 10.0;
         }
     }
-    if let Some(v) = cfg.get("display", "hud.enabled") {
+    if let Some(v) = cfg.get("display/hud/enabled") {
         state.hud_enabled = v == "1" || v == "true" || v == "on";
     }
-    if let Some(v) = cfg.get("display", "wallpaper.color") {
+    if let Some(v) = cfg.get("display/wallpaper/color") {
         if !v.is_empty() {
             let hex = v.trim_start_matches('#');
             if hex.len() == 6 {
@@ -210,7 +210,7 @@ pub fn load_settings_from_config(state: &mut DisplayState) {
             }
         }
     }
-    if let Some(v) = cfg.get("display", "wallpaper.file") {
+    if let Some(v) = cfg.get("display/wallpaper/file") {
         if !v.is_empty() {
             state.wallpaper_color = None;
             state.wallpaper_index = match v {

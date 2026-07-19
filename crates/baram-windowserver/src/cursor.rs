@@ -42,14 +42,14 @@ pub fn get_or_prerender_cursor(svg: &str, size: f32, blur_r: i32, is_resize: boo
         let slot = if is_resize { &mut cache.1 } else { &mut cache.0 };
         if slot.is_none() {
             let base_w = if is_resize {
-                config::get_usize("cursor", "size_w", 19)
+                config::get_usize("ui-theme/cursor/size_w", 19)
             } else {
-                config::get_usize("cursor", "w", 15)
+                config::get_usize("ui-theme/cursor/w", 15)
             };
             let base_h = if is_resize {
-                config::get_usize("cursor", "size_h", 19)
+                config::get_usize("ui-theme/cursor/size_h", 19)
             } else {
-                config::get_usize("cursor", "h", 19)
+                config::get_usize("ui-theme/cursor/h", 19)
             };
             let s10 = (size * 10.0) as i32;
             let w = (base_w as i32 * s10 / 10) as usize;
@@ -138,9 +138,9 @@ pub fn prerender_cursor(svg: &str, w: usize, h: usize, blur_r: i32) -> CursorBit
 }
 
 pub fn draw_cursor_into_layer(layer: &mut LayerSystem, cx: i32, cy: i32, resizing: bool, pointer_size: f32) {
-    let blur_r = config::get_i32("cursor", "shadow_blur", 12);
-    let shadow_x = config::get_i32("cursor", "shadow_x", 3);
-    let shadow_y = config::get_i32("cursor", "shadow_y", 4);
+    let blur_r = config::get_i32("ui-theme/cursor/shadow_blur", 12);
+    let shadow_x = config::get_i32("ui-theme/cursor/shadow_x", 3);
+    let shadow_y = config::get_i32("ui-theme/cursor/shadow_y", 4);
     let pad = blur_r as i32;
     let bitmap = get_or_prerender_cursor(
         if resizing { CURSOR_SVG_SIZE } else { CURSOR_SVG },

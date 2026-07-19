@@ -689,25 +689,25 @@ impl WarpEngine {
 
             match tag {
                 "card" => {
-                    let card_bg = config::get_color("color", "card_bg", Color::CARD_BG);
+                    let card_bg = config::get_color("ui-theme/color/card_bg", Color::CARD_BG);
                     layer.fill_rounded_rect(x, y, w, h, 12, card_bg);
                 }
                 "button" => {
                     let c = if self.hover_idx == Some(idx) {
-                        config::get_color("color", "btn_primary_hover", Color::BTN_PRIMARY_HOVER)
+                        config::get_color("ui-theme/color/btn_primary_hover", Color::BTN_PRIMARY_HOVER)
                     } else {
-                        config::get_color("color", "btn_primary", Color::BTN_PRIMARY)
+                        config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
                     };
-                    let radius = config::get_usize("button", "corner", 20);
+                    let radius = config::get_usize("ui-theme/button/corner", 20);
                     layer.fill_rounded_rect(x, y, w, h, radius, c);
                 }
                 "tonalButton" => {
                     let c = if self.hover_idx == Some(idx) {
-                        config::get_color("color", "btn_tonal_hover", Color::BTN_TONAL_HOVER)
+                        config::get_color("ui-theme/color/btn_tonal_hover", Color::BTN_TONAL_HOVER)
                     } else {
-                        config::get_color("color", "btn_tonal", Color::BTN_TONAL)
+                        config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL)
                     };
-                    let radius = config::get_usize("button", "corner", 20);
+                    let radius = config::get_usize("ui-theme/button/corner", 20);
                     layer.fill_rounded_rect(x, y, w, h, radius, c);
                 }
                 "switch" => {
@@ -715,13 +715,13 @@ impl WarpEngine {
                     let val = self.get_state(&out_var);
                     let on = val.contains("true");
                     let bg = if on {
-                        config::get_color("color", "switch_on", Color::SWITCH_ON)
+                        config::get_color("ui-theme/color/switch_on", Color::SWITCH_ON)
                     } else {
-                        config::get_color("color", "switch_off", Color::SWITCH_OFF)
+                        config::get_color("ui-theme/color/switch_off", Color::SWITCH_OFF)
                     };
-                    let sw = config::get_usize("switch", "w", 44);
-                    let sh = config::get_usize("switch", "h", 44);
-                    let sr = config::get_usize("switch", "radius", 22);
+                    let sw = config::get_usize("ui-theme/switch/w", 44);
+                    let sh = config::get_usize("ui-theme/switch/h", 44);
+                    let sr = config::get_usize("ui-theme/switch/radius", 22);
                     let sx = (n.x + ox + (n.w - sw as i32) / 2) as usize;
                     let sy = (n.y + oy + (n.h - sh as i32) / 2) as usize;
                     layer.fill_rounded_rect(sx, sy, sw, sh, sr, bg);

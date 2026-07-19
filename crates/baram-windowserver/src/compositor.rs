@@ -549,7 +549,7 @@ pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
                 }
                 let tx = cx + (icon_size.saturating_sub(tw)) / 2;
                 let ty = cy + icon_size + 4;
-                let label_color = config::get_color("color", "btn_tonal", Color::BTN_TONAL);
+                let label_color = config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL);
                 lsys.put_str(tx, ty, &display_name, label_color);
             }
             *cached_launcher_layer = Some(lsys.buf_ref().to_vec());

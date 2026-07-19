@@ -95,9 +95,9 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
-        if [ -f "$SCRIPT_DIR/config.txt" ]; then
-            mcopy -i "$out" "$SCRIPT_DIR/config.txt" ::/EFI/BOOT/config.txt
-            log "  copied config.txt to /EFI/BOOT/"
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
         fi
         local app_src="$SCRIPT_DIR/src/app"
         if [ -d "$app_src" ]; then
@@ -127,9 +127,9 @@ make_fat_image() {
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTX64.EFI"
-        if [ -f "$SCRIPT_DIR/config.txt" ]; then
-            cp "$SCRIPT_DIR/config.txt" "$tmp_mount/EFI/BOOT/config.txt"
-            log "  copied config.txt to /EFI/BOOT/"
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
         fi
         local app_src="$SCRIPT_DIR/src/app"
         if [ -d "$app_src" ]; then
@@ -158,9 +158,9 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
-        if [ -f "$SCRIPT_DIR/config.txt" ]; then
-            mcopy -i "$out" "$SCRIPT_DIR/config.txt" ::/EFI/BOOT/config.txt
-            log "  copied config.txt to /EFI/BOOT/"
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
         fi
         local app_src="$SCRIPT_DIR/src/app"
         if [ -d "$app_src" ]; then
