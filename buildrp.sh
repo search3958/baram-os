@@ -43,12 +43,27 @@ require_cmd() {
 }
 
 # ---------- step 1: build BaramOS ----------
+SUBSYSTEM_NAMES=("windowserver" "font" "graphics" "iokit" "bsd")
+
 build_efi() {
     log "Building BaramOS (aarch64-unknown-uefi) ..."
     cargo +nightly build --release --target aarch64-unknown-uefi
     local efi="$TARGET_DIR/bootaa64.efi"
     [ -f "$efi" ] || die "Build did not produce $efi"
     log "  -> $efi ($(stat -f %z "$efi") bytes)"
+
+    log "Building subsystem binaries..."
+    for name in "${SUBSYSTEM_NAMES[@]}"; do
+        cargo +nightly build --release --target aarch64-unknown-uefi --bin "$name"
+        local src="$TARGET_DIR/$name"
+        local dst="$TARGET_DIR/$name.efi"
+        if [ -f "$src" ] && [ ! -f "$dst" ]; then
+            cp "$src" "$dst"
+        fi
+        if [ -f "$dst" ]; then
+            log "  -> $dst ($(stat -f %z "$dst") bytes)"
+        fi
+    done
 }
 
 # ---------- step 2: download pftf ----------
@@ -101,7 +116,7 @@ make_image() {
         mcopy -i "$img" "$pftf_dir/RPI_EFI.fd"            ::/
         mcopy -i "$img" "$pftf_dir/start4.elf"            ::/
         mcopy -i "$img" "$pftf_dir/fixup4.dat"            ::/
-        mcopy -i "$img" "$pftf_dir/config.xml"            ::/
+        mcopy -i "$img" "$pftf_dir/config.txt"            ::/
         mcopy -i "$img" "$pftf_dir/bcm2711-rpi-4-b.dtb"   ::/
         mcopy -i "$img" "$pftf_dir/bcm2711-rpi-400.dtb"   ::/
         mcopy -i "$img" "$pftf_dir/bcm2711-rpi-cm4.dtb"   ::/
@@ -111,6 +126,22 @@ make_image() {
         mmd   -i "$img" ::/EFI
         mmd   -i "$img" ::/EFI/BOOT
         mcopy -i "$img" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+
+        # Subsystem binaries
+        mmd   -i "$img" ::/EFI/BOOT/bin 2>/dev/null || true
+        for name in "${SUBSYSTEM_NAMES[@]}"; do
+            local sub_bin="$TARGET_DIR/$name.efi"
+            if [ -f "$sub_bin" ]; then
+                mcopy -i "$img" "$sub_bin" ::/EFI/BOOT/bin/
+                log "  copied $name.efi to /EFI/BOOT/bin/"
+            fi
+        done
+
+        # BaramOS config
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$img" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
 
         # App files
         local app_src="$SCRIPT_DIR/src/app"
@@ -150,7 +181,7 @@ make_image() {
         cp "$pftf_dir/RPI_EFI.fd"           "$tmp_mount/"
         cp "$pftf_dir/start4.elf"           "$tmp_mount/"
         cp "$pftf_dir/fixup4.dat"           "$tmp_mount/"
-        cp "$pftf_dir/config.xml"           "$tmp_mount/"
+        cp "$pftf_dir/config.txt"           "$tmp_mount/"
         cp "$pftf_dir/bcm2711-rpi-4-b.dtb"  "$tmp_mount/"
         cp "$pftf_dir/bcm2711-rpi-400.dtb"  "$tmp_mount/"
         cp "$pftf_dir/bcm2711-rpi-cm4.dtb"  "$tmp_mount/"
@@ -159,6 +190,22 @@ make_image() {
         # BaramOS EFI
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+
+        # Subsystem binaries
+        mkdir -p "$tmp_mount/EFI/BOOT/bin"
+        for name in "${SUBSYSTEM_NAMES[@]}"; do
+            local sub_bin="$TARGET_DIR/$name.efi"
+            if [ -f "$sub_bin" ]; then
+                cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
+                log "  copied $name.efi to /EFI/BOOT/bin/"
+            fi
+        done
+
+        # BaramOS config
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
 
         # App files
         local app_src="$SCRIPT_DIR/src/app"
