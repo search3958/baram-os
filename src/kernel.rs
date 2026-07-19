@@ -24,6 +24,9 @@ fn kernel_main() -> Status {
     let _ = uefi::helpers::init();
     log("BaramOS: UEFI helpers initialized");
 
+    let _ = uefi::boot::set_watchdog_timer(0, 0, None);
+    log("BaramOS: watchdog timer disabled");
+
     config::init_config();
     log("BaramOS: config loaded");
 
