@@ -155,7 +155,7 @@ impl LayerSystem {
         let d2y = 0.18 * r + 0.90847 * (ly - r);
 
         let mut pts = alloc::vec::Vec::new();
-        let segs = 64;
+        let segs = 4;
 
         for i in 0..segs {
             let t = i as f32 / segs as f32;
