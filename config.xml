@@ -8,7 +8,7 @@
             <color/>
         </wallpaper>
         <hud>
-            <enabled>1</enabled>
+            <enabled>0</enabled>
         </hud>
     </display>
     <ui-theme>
