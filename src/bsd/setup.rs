@@ -162,9 +162,9 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_hud_left(buf, w, tx, card_y + 60, "Baram OS", Color::TEXT, 2.0);
-        draw_str_left(buf, w, tx, card_y + 120, "ようこそ。", Color::MUTED, 1.0);
-        draw_str_left(buf, w, tx, card_y + 160, "Enterキーで開始します。", Color::MUTED, 0.8);
+        draw_str_hud_left(buf, w, tx, card_y + 60, "Hello", Color::TEXT, 2.0);
+        draw_str_left(buf, w, tx, card_y + 120, "Baram OSへようこそ。", Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 140, "Enterキーで開始します。", Color::MUTED, 01.0);
 
         let btn_y = card_y + card_h - 70;
         let continue_btn_w = 140;

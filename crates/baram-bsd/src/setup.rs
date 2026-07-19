@@ -9,7 +9,7 @@ use baram_graphics::blur;
 const SETUP_DONE_PATH: &str = "apps/.setup_done";
 const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
 const CARD_H: usize = 320;
-const BLUR_RADIUS: i32 = 60;
+const BLUR_RADIUS: i32 = 30;
 
 static mut CACHED_BLURRED: Option<alloc::vec::Vec<u32>> = None;
 static mut CACHED_W: usize = 0;
@@ -47,6 +47,10 @@ pub struct SetupWizard {
     pub skipped: bool,
     pub buttons: alloc::vec::Vec<Button>,
     pub hover_btn: Option<usize>,
+    dirty: bool,
+    cached_frame: Option<alloc::vec::Vec<u32>>,
+    cached_w: usize,
+    cached_h: usize,
 }
 
 impl SetupWizard {
@@ -59,6 +63,10 @@ impl SetupWizard {
             skipped: false,
             buttons: alloc::vec::Vec::new(),
             hover_btn: None,
+            dirty: true,
+            cached_frame: None,
+            cached_w: 0,
+            cached_h: 0,
         }
     }
 
@@ -80,11 +88,13 @@ impl SetupWizard {
                 SetupScreen::Welcome => {
                     if label == "続行" {
                         self.screen = SetupScreen::Keyboard;
+                        self.dirty = true;
                     } else if label == "スキップ" {
                         crate::shift_key::save_shift_key(0);
                         mark_setup_done();
                         self.skipped = true;
                         self.screen = SetupScreen::Done;
+                        self.dirty = true;
                     }
                 }
                 SetupScreen::Keyboard => {
@@ -92,12 +102,14 @@ impl SetupWizard {
                         crate::shift_key::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;
                         mark_setup_done();
+                        self.dirty = true;
                     }
                     if label == "スキップ" {
                         crate::shift_key::save_shift_key(0);
                         mark_setup_done();
                         self.skipped = true;
                         self.screen = SetupScreen::Done;
+                        self.dirty = true;
                     }
                 }
                 SetupScreen::Done => {}
@@ -106,7 +118,11 @@ impl SetupWizard {
     }
 
     pub fn on_hover(&mut self, mx: i32, my: i32) {
-        self.hover_btn = self.hit_test(mx, my);
+        let new_hover = self.hit_test(mx, my);
+        if new_hover != self.hover_btn {
+            self.hover_btn = new_hover;
+            self.dirty = true;
+        }
     }
 
     pub fn on_key(&mut self, ev: &baram_core::KeyEvent) {
@@ -116,6 +132,7 @@ impl SetupWizard {
             mark_setup_done();
             self.skipped = true;
             self.screen = SetupScreen::Done;
+            self.dirty = true;
             return;
         }
         let is_enter = ev.printable == Some(b'\n') || ev.raw_key == 0x28 || ev.raw_key == 0x58 || ev.scancode == 0x1C;
@@ -123,6 +140,7 @@ impl SetupWizard {
             SetupScreen::Welcome => {
                 if is_enter {
                     self.screen = SetupScreen::Keyboard;
+                    self.dirty = true;
                 }
             }
             SetupScreen::Keyboard => {
@@ -131,10 +149,12 @@ impl SetupWizard {
                         crate::shift_key::save_shift_key(self.detected_raw_key);
                         self.screen = SetupScreen::Done;
                         mark_setup_done();
+                        self.dirty = true;
                     }
                 } else if ev.raw_key != 0 {
                     self.detected_raw_key = ev.raw_key;
                     self.key_detected = true;
+                    self.dirty = true;
                 }
             }
             SetupScreen::Done => {}
@@ -143,6 +163,14 @@ impl SetupWizard {
     }
 
     pub fn render(&mut self, buf: &mut [u32], w: usize, h: usize) {
+        if !self.dirty {
+            if let Some(ref cached) = self.cached_frame {
+                if self.cached_w == w && self.cached_h == h && cached.len() == w * h {
+                    buf.copy_from_slice(cached);
+                    return;
+                }
+            }
+        }
         self.buttons.clear();
         draw_wallpaper(buf, w, h);
 
@@ -151,6 +179,16 @@ impl SetupWizard {
             SetupScreen::Keyboard => self.render_keyboard(buf, w, h),
             SetupScreen::Done => self.render_done(buf, w, h),
         }
+
+        if self.cached_w != w || self.cached_h != h || self.cached_frame.as_ref().map_or(true, |f| f.len() != w * h) {
+            self.cached_frame = Some(alloc::vec![0u32; w * h]);
+            self.cached_w = w;
+            self.cached_h = h;
+        }
+        if let Some(ref mut cached) = self.cached_frame {
+            cached.copy_from_slice(buf);
+        }
+        self.dirty = false;
     }
 
     fn render_welcome(&mut self, buf: &mut [u32], w: usize, h: usize) {
@@ -162,9 +200,9 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_hud_left(buf, w, tx, card_y + 60, "Baram OS", Color::TEXT, 2.0);
-        draw_str_left(buf, w, tx, card_y + 120, "ようこそ。", Color::MUTED, 1.0);
-        draw_str_left(buf, w, tx, card_y + 160, "Enterキーで開始します。", Color::MUTED, 0.8);
+        draw_str_hud_left(buf, w, tx, card_y + 60, "Hello", Color::TEXT, 2.0);
+        draw_str_left(buf, w, tx, card_y + 120, "Baram OSへようこそ。", Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 140, "Enterキーで開始します。", Color::MUTED, 01.0);
 
         let btn_y = card_y + card_h - 70;
         let continue_btn_w = 140;
