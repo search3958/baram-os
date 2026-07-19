@@ -287,10 +287,14 @@ impl LayerSystem {
         let poly = Self::squircle_polygon(w as f32, h as f32, rf);
         let x0f = x as f32;
         let y0f = y as f32;
-        let off = [0.25f32, 0.75f32];
         let r_f = r as f32;
         let w_f = w as f32;
         let h_f = h as f32;
+        let lx = libm::fminf(w_f / 2.0, 1.528665 * rf);
+        let ly = libm::fminf(h_f / 2.0, 1.528665 * rf);
+        let mx = (lx * 0.7) as usize;
+        let my = (ly * 0.7) as usize;
+        let off = [0.25f32, 0.75f32];
 
         for py in y0..y1 {
             let row = py * stride;
@@ -312,37 +316,110 @@ impl LayerSystem {
                 self.buf[row + mid_x_start..row + mid_x_end].fill(v);
             }
 
-            for px in x0..corner_x_end {
-                let base_x = px as f32 - x0f;
-                let mut hits = 0u32;
-                for sy in 0..2 {
-                    for sx in 0..2 {
-                        if Self::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
-                            hits += 1;
-                        }
+            if corner_x_end > x0 {
+                let safe_l = (x + mx).min(corner_x_end).max(x0);
+                if safe_l > x0 {
+                    for px in x0..safe_l {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
                     }
                 }
-                if hits > 0 {
-                    self.buf[row + px] = Self::blend_alpha(self.buf[row + px], v, hits as f32 * 0.25);
+                let inner_l_end = (x + r - mx).max(x + mx).min(corner_x_end);
+                if inner_l_end > safe_l {
+                    self.buf[row + safe_l..row + inner_l_end].fill(v);
+                }
+                if corner_x_end > inner_l_end {
+                    for px in inner_l_end..corner_x_end {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
+                    }
                 }
             }
 
             if corner_x_start > corner_x_end {
-                for px in corner_x_start..x1 {
-                    let base_x = px as f32 - x0f;
-                    let mut hits = 0u32;
-                    for sy in 0..2 {
-                        for sx in 0..2 {
-                            if Self::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
-                                hits += 1;
-                            }
-                        }
+                let safe_r_start = (x + w - r + mx).max(corner_x_start).min(x1);
+                if safe_r_start > corner_x_start {
+                    for px in corner_x_start..safe_r_start {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
                     }
-                    if hits > 0 {
-                        self.buf[row + px] = Self::blend_alpha(self.buf[row + px], v, hits as f32 * 0.25);
+                }
+                let inner_r_end = (x + w - mx).min(x1).max(safe_r_start);
+                if inner_r_end > safe_r_start {
+                    self.buf[row + safe_r_start..row + inner_r_end].fill(v);
+                }
+                if x1 > inner_r_end {
+                    for px in inner_r_end..x1 {
+                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
                     }
                 }
             }
+        }
+    }
+
+    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], off: &[f32; 2]) {
+        let mut hits = 0u32;
+        for sy in 0..2 {
+            for sx in 0..2 {
+                if Self::point_in_polygon(px + off[sx], py + off[sy], poly) {
+                    hits += 1;
+                }
+            }
+        }
+        if hits > 0 {
+            *dst = Self::blend_alpha(*dst, fg, hits as f32 * 0.25);
+        }
+    }
+
+    fn pixel_aa_batch(dst: &mut [u32], fg: u32, px: [f32; 4], py: f32, poly: &[(f32, f32)], off: &[f32; 2], count: usize) {
+        if count < 4 {
+            for i in 0..count {
+                Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
+            }
+            return;
+        }
+
+        let n = poly.len();
+        if n < 3 { return; }
+
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            use core::arch::x86_64::*;
+
+            let o0 = _mm_set1_ps(off[0]);
+            let o1 = _mm_set1_ps(off[1]);
+            let pxv = _mm_set_ps(px[3], px[2], px[1], px[0]);
+            let sample_x0 = _mm_add_ps(pxv, o0);
+            let sample_x1 = _mm_add_ps(pxv, o1);
+
+            let mut inside = _mm_setzero_si128();
+            let mut j = n - 1;
+            for i in 0..n {
+                let (ax, ay) = poly[i];
+                let (bx, by) = poly[j];
+                if ((ay > py) != (by > py)) {
+                    let ey = by - ay;
+                    let inv_ey = if ey.abs() > 1e-10 { 1.0 / ey } else { 0.0 };
+                    let x_int = _mm_set1_ps(ax + (py - ay) * (bx - ax) * inv_ey);
+                    let cmp0 = _mm_castps_si128(_mm_cmplt_ps(sample_x0, x_int));
+                    let cmp1 = _mm_castps_si128(_mm_cmplt_ps(sample_x1, x_int));
+                    let bits = _mm_and_si128(_mm_or_si128(cmp0, cmp1), _mm_set1_epi32(1));
+                    inside = _mm_xor_si128(inside, bits);
+                }
+                j = i;
+            }
+
+            let mut inside_arr = [0u32; 4];
+            _mm_storeu_si128(inside_arr.as_mut_ptr() as *mut __m128i, inside);
+
+            for p in 0..4 {
+                if inside_arr[p] != 0 {
+                    dst[p] = Self::blend_alpha(dst[p], fg, 0.25);
+                }
+            }
+            return;
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        for i in 0..count {
+            Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
         }
     }
 
@@ -665,48 +742,70 @@ impl LayerSystem {
             let poly = Self::squircle_polygon(w as f32, h as f32, rf);
             let off = [0.25f32, 0.75f32];
             let base_y = py as f32;
+            let lx = libm::fminf(w as f32 / 2.0, 1.528665 * rf);
+            let ly = libm::fminf(h as f32 / 2.0, 1.528665 * rf);
+            let mx = (lx * 0.7) as usize;
+            let my = (ly * 0.7) as usize;
 
-            let mid_start = r.min(end_x);
-            let mid_end = (w - r).min(end_x);
+            let left_end = r.min(end_x);
+            let right_start = (w - r).min(end_x);
 
-            for px in 0..mid_start {
-                let sp = src.buf[src_row + px];
-                if sp == Color::TRANSPARENT.0 { continue; }
-                let base_x = px as f32;
-                let mut hits = 0u32;
-                for sy in 0..2 {
-                    for sx2 in 0..2 {
-                        if Self::point_in_polygon(base_x + off[sx2], base_y + off[sy], &poly) {
-                            hits += 1;
-                        }
+            let safe_l = mx.min(left_end);
+            if safe_l > 0 {
+                for px in 0..safe_l {
+                    let sp = src.buf[src_row + px];
+                    if sp == Color::TRANSPARENT.0 { continue; }
+                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                }
+            }
+            let inner_l_end = (r - mx).max(mx).min(left_end);
+            if inner_l_end > safe_l {
+                for px in safe_l..inner_l_end {
+                    let sp = src.buf[src_row + px];
+                    if sp != Color::TRANSPARENT.0 {
+                        self.buf[dst_row + px] = sp;
                     }
                 }
-                if hits > 0 {
-                    self.buf[dst_row + px] = Self::blend_alpha(self.buf[dst_row + px], sp, hits as f32 * 0.25);
+            }
+            if left_end > inner_l_end {
+                for px in inner_l_end..left_end {
+                    let sp = src.buf[src_row + px];
+                    if sp == Color::TRANSPARENT.0 { continue; }
+                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
                 }
             }
 
-            for px in mid_start..mid_end {
+            for px in left_end..right_start {
                 let sp = src.buf[src_row + px];
                 if sp != Color::TRANSPARENT.0 {
                     self.buf[dst_row + px] = sp;
                 }
             }
 
-            for px in mid_end..end_x {
-                let sp = src.buf[src_row + px];
-                if sp == Color::TRANSPARENT.0 { continue; }
-                let base_x = px as f32;
-                let mut hits = 0u32;
-                for sy in 0..2 {
-                    for sx2 in 0..2 {
-                        if Self::point_in_polygon(base_x + off[sx2], base_y + off[sy], &poly) {
-                            hits += 1;
+            if end_x > right_start {
+                let safe_r = (right_start + mx).min(end_x);
+                if safe_r > right_start {
+                    for px in right_start..safe_r {
+                        let sp = src.buf[src_row + px];
+                        if sp == Color::TRANSPARENT.0 { continue; }
+                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                    }
+                }
+                let inner_r_end = (w - mx).min(end_x).max(safe_r);
+                if inner_r_end > safe_r {
+                    for px in safe_r..inner_r_end {
+                        let sp = src.buf[src_row + px];
+                        if sp != Color::TRANSPARENT.0 {
+                            self.buf[dst_row + px] = sp;
                         }
                     }
                 }
-                if hits > 0 {
-                    self.buf[dst_row + px] = Self::blend_alpha(self.buf[dst_row + px], sp, hits as f32 * 0.25);
+                if end_x > inner_r_end {
+                    for px in inner_r_end..end_x {
+                        let sp = src.buf[src_row + px];
+                        if sp == Color::TRANSPARENT.0 { continue; }
+                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                    }
                 }
             }
         }
