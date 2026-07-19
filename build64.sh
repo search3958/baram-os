@@ -93,6 +93,24 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
+        if [ -f "$SCRIPT_DIR/config.txt" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.txt" ::/EFI/BOOT/config.txt
+            log "  copied config.txt to /EFI/BOOT/"
+        fi
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mmd -i "$out" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd -i "$out" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
@@ -107,6 +125,22 @@ make_fat_image() {
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTX64.EFI"
+        if [ -f "$SCRIPT_DIR/config.txt" ]; then
+            cp "$SCRIPT_DIR/config.txt" "$tmp_mount/EFI/BOOT/config.txt"
+            log "  copied config.txt to /EFI/BOOT/"
+        fi
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mkdir -p "$tmp_mount/apps"
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
+            done
+            if [ -d "$app_src/icon" ]; then
+                mkdir -p "$tmp_mount/apps/icon"
+                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
+            fi
+            log "  copied app files to /apps/"
+        fi
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' > "$tmp_mount/startup.nsh"
         sync
         hdiutil detach "$tmp_mount" >/dev/null || true
@@ -122,6 +156,24 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
+        if [ -f "$SCRIPT_DIR/config.txt" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.txt" ::/EFI/BOOT/config.txt
+            log "  copied config.txt to /EFI/BOOT/"
+        fi
+        local app_src="$SCRIPT_DIR/src/app"
+        if [ -d "$app_src" ]; then
+            mmd -i "$out" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd -i "$out" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
