@@ -288,25 +288,60 @@ impl LayerSystem {
         let x0f = x as f32;
         let y0f = y as f32;
         let off = [0.25f32, 0.75f32];
+        let r_f = r as f32;
+        let w_f = w as f32;
+        let h_f = h as f32;
 
         for py in y0..y1 {
             let row = py * stride;
             let base_y = py as f32 - y0f;
-            for px in x0..x1 {
+
+            let in_corner_row = base_y < r_f || base_y >= h_f - r_f;
+
+            if !in_corner_row {
+                self.buf[row + x0..row + x1].fill(v);
+                continue;
+            }
+
+            let corner_x_end = (x + r).min(x1);
+            let mid_x_start = (x + r).max(x0);
+            let mid_x_end = (x + w - r).min(x1);
+            let corner_x_start = (x + w - r).max(x0);
+
+            if mid_x_end > mid_x_start {
+                self.buf[row + mid_x_start..row + mid_x_end].fill(v);
+            }
+
+            for px in x0..corner_x_end {
                 let base_x = px as f32 - x0f;
                 let mut hits = 0u32;
                 for sy in 0..2 {
                     for sx in 0..2 {
-                        let lx = base_x + off[sx];
-                        let ly = base_y + off[sy];
-                        if Self::point_in_polygon(lx, ly, &poly) {
+                        if Self::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
                             hits += 1;
                         }
                     }
                 }
-                if hits == 0 { continue; }
-                let alpha = hits as f32 * 0.25;
-                self.buf[row + px] = Self::blend_alpha(self.buf[row + px], v, alpha);
+                if hits > 0 {
+                    self.buf[row + px] = Self::blend_alpha(self.buf[row + px], v, hits as f32 * 0.25);
+                }
+            }
+
+            if corner_x_start > corner_x_end {
+                for px in corner_x_start..x1 {
+                    let base_x = px as f32 - x0f;
+                    let mut hits = 0u32;
+                    for sy in 0..2 {
+                        for sx in 0..2 {
+                            if Self::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
+                                hits += 1;
+                            }
+                        }
+                    }
+                    if hits > 0 {
+                        self.buf[row + px] = Self::blend_alpha(self.buf[row + px], v, hits as f32 * 0.25);
+                    }
+                }
             }
         }
     }
@@ -631,24 +666,48 @@ impl LayerSystem {
             let off = [0.25f32, 0.75f32];
             let base_y = py as f32;
 
-            for px in 0..end_x {
+            let mid_start = r.min(end_x);
+            let mid_end = (w - r).min(end_x);
+
+            for px in 0..mid_start {
                 let sp = src.buf[src_row + px];
                 if sp == Color::TRANSPARENT.0 { continue; }
-
                 let base_x = px as f32;
                 let mut hits = 0u32;
                 for sy in 0..2 {
                     for sx2 in 0..2 {
-                        let lx = base_x + off[sx2];
-                        let ly = base_y + off[sy];
-                        if Self::point_in_polygon(lx, ly, &poly) {
+                        if Self::point_in_polygon(base_x + off[sx2], base_y + off[sy], &poly) {
                             hits += 1;
                         }
                     }
                 }
-                if hits == 0 { continue; }
-                let alpha = hits as f32 * 0.25;
-                self.buf[dst_row + px] = Self::blend_alpha(self.buf[dst_row + px], sp, alpha);
+                if hits > 0 {
+                    self.buf[dst_row + px] = Self::blend_alpha(self.buf[dst_row + px], sp, hits as f32 * 0.25);
+                }
+            }
+
+            for px in mid_start..mid_end {
+                let sp = src.buf[src_row + px];
+                if sp != Color::TRANSPARENT.0 {
+                    self.buf[dst_row + px] = sp;
+                }
+            }
+
+            for px in mid_end..end_x {
+                let sp = src.buf[src_row + px];
+                if sp == Color::TRANSPARENT.0 { continue; }
+                let base_x = px as f32;
+                let mut hits = 0u32;
+                for sy in 0..2 {
+                    for sx2 in 0..2 {
+                        if Self::point_in_polygon(base_x + off[sx2], base_y + off[sy], &poly) {
+                            hits += 1;
+                        }
+                    }
+                }
+                if hits > 0 {
+                    self.buf[dst_row + px] = Self::blend_alpha(self.buf[dst_row + px], sp, hits as f32 * 0.25);
+                }
             }
         }
     }
