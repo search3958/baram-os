@@ -88,7 +88,7 @@ impl Config {
 
     pub fn save_to_vfs(&self, path: &str) {
         let mut buf = String::new();
-        buf.push_str("# BaramOS UI Configuration\n");
+        buf.push_str("# BaramOS Configuration\n");
         buf.push_str("# Format: section.key = value\n\n");
 
         for (section, keys) in &self.sections {
@@ -114,6 +114,14 @@ pub fn init_config() {
 
 pub fn get_config() -> &'static Config {
     unsafe { GLOBAL_CONFIG.as_ref().expect("Config not initialized") }
+}
+
+pub fn get_config_mut() -> &'static mut Config {
+    unsafe { GLOBAL_CONFIG.as_mut().expect("Config not initialized") }
+}
+
+pub fn save_config() {
+    get_config().save_to_vfs("EFI/BOOT/config.txt");
 }
 
 pub fn get_usize(section: &str, key: &str, default: usize) -> usize {

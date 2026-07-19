@@ -1,5 +1,11 @@
-# BaramOS UI Configuration
+# BaramOS Configuration
 # Format: section.key = value
+
+[display]
+pointer.size = 10
+wallpaper.file = baram.png
+wallpaper.color =
+hud.enabled = 1
 
 [color]
 bg = F0F0F0
