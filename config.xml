@@ -103,7 +103,12 @@
             <h>48</h>
         </input>
     </ui-theme>
+
+    <keyboard>
+        <shift_key>0</shift_key>
+    </keyboard>
     <system>
+        <done>0</done>
         <reset>
             <option/>
         </reset>

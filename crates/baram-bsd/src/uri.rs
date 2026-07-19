@@ -114,13 +114,8 @@ pub fn check_system_commands(state: &mut DisplayState) -> SystemCommand {
     };
 
     if let SystemCommand::ResetAll = &result {
-        {
-            let cfg = config::get_config_mut();
-            cfg.set("system/reset/option", "");
-        }
-        config::save_config();
+        config::reset_to_default();
         *state = DisplayState::new();
-        vfs::remove_file("apps/.setup_done");
     }
 
     result

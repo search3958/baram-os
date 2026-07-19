@@ -6,7 +6,6 @@ use baram_font::ttf_font;
 use baram_font::ttf_font_hud;
 use baram_graphics::blur;
 
-const SETUP_DONE_PATH: &str = "apps/.setup_done";
 const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
 const CARD_H: usize = 320;
 const BLUR_RADIUS: i32 = 30;
@@ -16,11 +15,14 @@ static mut CACHED_W: usize = 0;
 static mut CACHED_H: usize = 0;
 
 pub fn is_setup_done() -> bool {
-    !vfs::read_file(SETUP_DONE_PATH).is_empty()
+    config::get_config()
+        .get("system/done")
+        .map_or(false, |s| s == "1")
 }
 
 pub fn mark_setup_done() {
-    vfs::write_file(SETUP_DONE_PATH, b"done");
+    config::get_config_mut().set("system/done", "1");
+    config::save_config();
 }
 
 #[derive(Clone, Copy, PartialEq)]

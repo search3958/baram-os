@@ -1,6 +1,8 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+const DEFAULT_CONFIG_XML: &[u8] = include_bytes!("../../../config.xml");
+
 #[derive(Clone)]
 pub enum XmlNode {
     Element { tag: String, children: Vec<XmlNode> },
@@ -72,6 +74,15 @@ impl Config {
         if data.is_empty() {
             return config;
         }
+        let text = String::from_utf8(data.to_vec()).unwrap_or_default();
+        if let Some(node) = parse_xml(&text) {
+            config.root = node;
+        }
+        config
+    }
+
+    pub fn load_from_bytes(data: &[u8]) -> Self {
+        let mut config = Self::new();
         let text = String::from_utf8(data.to_vec()).unwrap_or_default();
         if let Some(node) = parse_xml(&text) {
             config.root = node;
@@ -382,6 +393,14 @@ pub fn init_config() {
     unsafe {
         GLOBAL_CONFIG = Some(config);
     }
+}
+
+pub fn reset_to_default() {
+    let default_config = Config::load_from_bytes(DEFAULT_CONFIG_XML);
+    unsafe {
+        GLOBAL_CONFIG = Some(default_config);
+    }
+    save_config();
 }
 
 pub fn get_config() -> &'static Config {
