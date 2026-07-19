@@ -82,6 +82,30 @@ fn main() -> Status {
 
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
+        {
+            const LOGO_PNG: &[u8] = include_bytes!("data/logo.png");
+            if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
+                let img_w = header.width as usize;
+                let img_h = header.height as usize;
+                let sw = screen.width();
+                let sh = screen.height();
+                let mut logo_layer = LayerSystem::new(sw, sh);
+                logo_layer.clear(Color::BLACK);
+                let ox = (sw.saturating_sub(img_w)) / 2;
+                let oy = (sh.saturating_sub(img_h)) / 2;
+                let buf = logo_layer.buf_mut();
+                for y in 0..img_h {
+                    let dst_row = (oy + y) * sw + ox;
+                    let src_row = y * img_w;
+                    for x in 0..img_w {
+                        let px = pixels[src_row + x];
+                        buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
+                    }
+                }
+                logo_layer.flush(&mut screen);
+                uefi::boot::stall(core::time::Duration::from_secs(2));
+            }
+        }
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let mut setup_layer = LayerSystem::new(screen.width(), screen.height());
         let mut setup_buf: alloc::vec::Vec<u32> = alloc::vec![0u32; screen.width() * screen.height()];
@@ -143,6 +167,30 @@ fn main() -> Status {
     log_line_str("BaramOS: loading index.yaml...");
     let index_yaml = baram_bsd::app::read_index_yaml();
     log_line_str(&alloc::format!("BaramOS: index.yaml {} bytes", index_yaml.len()));
+    {
+        const LOGO_PNG: &[u8] = include_bytes!("data/logo.png");
+        if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
+            let img_w = header.width as usize;
+            let img_h = header.height as usize;
+            let sw = screen.width();
+            let sh = screen.height();
+            let mut logo_layer = LayerSystem::new(sw, sh);
+            logo_layer.clear(Color::BLACK);
+            let ox = (sw.saturating_sub(img_w)) / 2;
+            let oy = (sh.saturating_sub(img_h)) / 2;
+            let buf = logo_layer.buf_mut();
+            for y in 0..img_h {
+                let dst_row = (oy + y) * sw + ox;
+                let src_row = y * img_w;
+                for x in 0..img_w {
+                    let px = pixels[src_row + x];
+                    buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
+                }
+            }
+            logo_layer.flush(&mut screen);
+            uefi::boot::stall(core::time::Duration::from_secs(2));
+        }
+    }
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)> = alloc::vec::Vec::new();
     let mut ui_win_id: Option<WinId> = None;

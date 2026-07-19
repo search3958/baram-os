@@ -61,6 +61,7 @@ baram-iokit = { path = "crates/baram-iokit" }
 baram-bsd = { path = "crates/baram-bsd" }
 baram-windowserver = { path = "crates/baram-windowserver" }
 baram-kern = { path = "crates/baram-kern" }
+png-decoder = { path = "src/png-decoder" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 libm = { workspace = true }
