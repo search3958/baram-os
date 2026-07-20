@@ -5,11 +5,10 @@
         </pointer>
         <wallpaper>
             <file>baram.png</file>
-            <color></color>
-            <mode>file</mode>
+            <color/>
         </wallpaper>
         <hud>
-            <enabled>1</enabled>
+            <enabled>0</enabled>
         </hud>
     </display>
     <ui-theme>
@@ -46,14 +45,14 @@
             <size>20</size>
             <radius>8</radius>
             <h>40</h>
-            <min_w>50</min_w>
+            <min_w>70</min_w>
             <gap>16</gap>
             <corner>20</corner>
         </button>
         <card>
             <w>480</w>
             <h>320</h>
-            <radius>40</radius>
+            <radius>20</radius>
             <padding>4</padding>
             <title_h>36</title_h>
             <child_gap>4</child_gap>
@@ -96,22 +95,12 @@
             <radius>60</radius>
         </blur>
         <switch>
-            <w>22</w>
-            <h>22</h>
-            <radius>8</radius>
+            <w>44</w>
+            <h>44</h>
+            <radius>22</radius>
         </switch>
         <input>
             <h>48</h>
         </input>
     </ui-theme>
-
-    <keyboard>
-        <shift_key>0</shift_key>
-    </keyboard>
-    <system>
-        <done>0</done>
-        <reset>
-            <option/>
-        </reset>
-    </system>
 </baram-os-config>

@@ -1,63 +1,22 @@
-use super::cursor::{self};
-use crate::warp::WarpEngine;
-use crate::window::{WinId, WindowManager};
+use baram_font::LayerFontExt;
 use alloc::vec;
 use alloc::vec::Vec;
-use baram_bsd::config;
 use baram_core::Color;
-use baram_core::LayerSystem;
-use baram_font::LayerFontExt;
-use baram_graphics::blur;
 use baram_graphics::svg;
 use baram_graphics::ui::FmtBuf;
+use crate::window::{WindowManager, WinId};
+use baram_core::LayerSystem;
+use crate::warp::WarpEngine;
 use baram_graphics::uiscript;
+use baram_graphics::blur;
 use uefi::runtime;
+use super::cursor::{self};
+use baram_bsd::config;
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 
-const ICON_CACHE_CAP: usize = 32;
-static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-];
-
-fn get_or_decode_icon(icon_path: &str, size: usize) -> Option<&'static IconBitmap> {
-    unsafe {
-        for entry in ICON_CACHE.iter() {
-            if let Some((ref name, cached_size, ref bitmap)) = entry {
-                if name == icon_path && *cached_size == size {
-                    return Some(bitmap);
-                }
-            }
-        }
-        let icon_data = baram_bsd::vfs::read_file(icon_path);
-        if icon_data.is_empty() {
-            return None;
-        }
-        let bitmap = decode_icon(&icon_data, size)?;
-        for entry in ICON_CACHE.iter_mut() {
-            if entry.is_none() {
-                *entry = Some((alloc::string::String::from(icon_path), size, bitmap));
-                return ICON_CACHE.iter().find_map(|e| {
-                    if let Some((ref n, s, ref b)) = e {
-                        if n == icon_path && *s == size { Some(b) } else { None }
-                    } else { None }
-                });
-            }
-        }
-        ICON_CACHE[0] = Some((alloc::string::String::from(icon_path), size, bitmap));
-        ICON_CACHE.iter().find_map(|e| {
-            if let Some((ref n, s, ref b)) = e {
-                if n == icon_path && *s == size { Some(b) } else { None }
-            } else { None }
-        })
-    }
-}
-
-pub const APPS_SVG: &str = include_str!("../../../data/apps.svg");
+pub const APPS_SVG: &str = include_str!("../../../src/data/apps.svg");
 
 pub struct IconBitmap {
     pub pixels: Vec<[u8; 4]>,
@@ -77,11 +36,7 @@ pub fn decode_icon(bytes: &[u8], size: usize) -> Option<IconBitmap> {
             buf[y * size + x] = pixels[sy * src_w + sx];
         }
     }
-    Some(IconBitmap {
-        pixels: buf,
-        w: size,
-        h: size,
-    })
+    Some(IconBitmap { pixels: buf, w: size, h: size })
 }
 
 pub struct AppEntry {
@@ -114,17 +69,8 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
             in_apps = true;
             in_autostart = false;
             if !current_name.is_empty() {
-                let title = if current_title.is_empty() {
-                    current_name.clone()
-                } else {
-                    current_title.clone()
-                };
-                apps.push(AppEntry {
-                    name: current_name.clone(),
-                    app_type: current_type.clone(),
-                    title,
-                    icon: current_icon.clone(),
-                });
+                let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+                apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title, icon: current_icon.clone() });
                 current_name.clear();
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
@@ -145,17 +91,8 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
         if in_apps {
             if !line.starts_with(' ') && !line.starts_with('\t') {
                 if !current_name.is_empty() {
-                    let title = if current_title.is_empty() {
-                        current_name.clone()
-                    } else {
-                        current_title.clone()
-                    };
-                    apps.push(AppEntry {
-                        name: current_name.clone(),
-                        app_type: current_type.clone(),
-                        title,
-                        icon: current_icon.clone(),
-                    });
+                    let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title, icon: current_icon.clone() });
                     current_name.clear();
                     current_type = alloc::string::String::from("warp-2");
                     current_title.clear();
@@ -164,23 +101,10 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                 in_apps = false;
                 continue;
             }
-            if trimmed.ends_with(':')
-                && !trimmed.contains("icon")
-                && !trimmed.contains("type")
-                && !trimmed.contains("title")
-            {
+            if trimmed.ends_with(':') && !trimmed.contains("icon") && !trimmed.contains("type") && !trimmed.contains("title") {
                 if !current_name.is_empty() {
-                    let title = if current_title.is_empty() {
-                        current_name.clone()
-                    } else {
-                        current_title.clone()
-                    };
-                    apps.push(AppEntry {
-                        name: current_name.clone(),
-                        app_type: current_type.clone(),
-                        title,
-                        icon: current_icon.clone(),
-                    });
+                    let title = if current_title.is_empty() { current_name.clone() } else { current_title.clone() };
+                    apps.push(AppEntry { name: current_name.clone(), app_type: current_type.clone(), title, icon: current_icon.clone() });
                 }
                 current_name = alloc::string::String::from(trimmed.trim_end_matches(':'));
                 current_type = alloc::string::String::from("warp-2");
@@ -201,29 +125,16 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
         }
     }
     if in_apps && !current_name.is_empty() {
-        let title = if current_title.is_empty() {
-            current_name.clone()
-        } else {
-            current_name.clone()
-        };
-        apps.push(AppEntry {
-            name: current_name,
-            app_type: current_type,
-            title,
-            icon: current_icon,
-        });
+        let title = if current_title.is_empty() { current_name.clone() } else { current_name.clone() };
+        apps.push(AppEntry { name: current_name, app_type: current_type, title, icon: current_icon });
     }
     (autostart, apps)
 }
 
-pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../data/wallpaper/baram.png");
-pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../data/wallpaper/hanul.png");
-pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../../../data/wallpaper/reflect.png");
-pub const WALLPAPERS: &[&[u8]] = &[
-    WALLPAPER_baram_PNG,
-    WALLPAPER_HANUL_PNG,
-    WALLPAPER_REFLECT_PNG,
-];
+pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
+pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../src/data/wallpaper/hanul.png");
+pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../../../src/data/wallpaper/reflect.png");
+pub const WALLPAPERS: &[&[u8]] = &[WALLPAPER_baram_PNG, WALLPAPER_HANUL_PNG, WALLPAPER_REFLECT_PNG];
 
 pub fn decode_wallpaper(bytes: &[u8], screen_w: usize, screen_h: usize) -> Option<Vec<u32>> {
     let (header, pixels) = png_decoder::decode(bytes).ok()?;
@@ -286,9 +197,7 @@ fn get_or_render_tb_btn(size: usize, ca: u32) -> &'static [u32] {
                     let dist = libm::sqrtf(dist_sq);
                     (r_f + 0.5 - dist).clamp(0.0, 1.0)
                 };
-                if alpha <= 0.0 {
-                    continue;
-                }
+                if alpha <= 0.0 { continue; }
                 let a = (alpha * ca as f32) as u32;
                 pixels[py * size + px] = (a << 24) | 0x00FF_FFFF;
             }
@@ -305,179 +214,144 @@ pub fn ease_out_back(t: f32) -> f32 {
     1.0 + c3 * libm::powf(t - 1.0, 3.0) + c1 * libm::powf(t - 1.0, 2.0)
 }
 
-pub fn render_scene(
-    layer: &mut LayerSystem,
-    wm: &mut WindowManager,
-    _mouse_ev: u32,
-    key_ev: u32,
-    fps: u32,
-    _mouse_mode: &str,
-    ui_commands: &[uiscript::Command],
-    ui_win_id: Option<WinId>,
-    warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
-    wallpaper: Option<&[u32]>,
-    cached_taskbar: &mut Option<Vec<u32>>,
-    cached_taskbar_strip: &mut Option<Vec<u32>>,
-    cached_launcher_layer: &mut Option<Vec<u32>>,
-    taskbar_dirty: bool,
-    add_progress: f32,
-    remove_progress: f32,
-    shift_x: f32,
-    hud_enabled: bool,
-    bg_cache: &mut Option<Vec<u32>>,
-    bg_cache_valid: bool,
-    show_app_launcher: bool,
-    app_list: &[alloc::string::String],
-    app_icon_list: &[alloc::string::String],
-    hover_apps_icon: bool,
-    taskbar_only: bool,
-    scene_before_strip: &mut Option<Vec<u32>>,
-) {
+pub fn render_scene(layer: &mut LayerSystem, wm: &mut WindowManager,
+                _mouse_ev: u32, key_ev: u32,
+                fps: u32, _mouse_mode: &str,
+                ui_commands: &[uiscript::Command], ui_win_id: Option<WinId>,
+                warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
+                wallpaper: Option<&[u32]>,
+                cached_taskbar: &mut Option<Vec<u32>>,
+                cached_taskbar_strip: &mut Option<Vec<u32>>,
+                cached_launcher_layer: &mut Option<Vec<u32>>,
+                taskbar_dirty: bool,
+                add_progress: f32,
+                remove_progress: f32,
+                shift_x: f32,
+                hud_enabled: bool,
+                bg_cache: &mut Option<Vec<u32>>,
+                bg_cache_valid: bool,
+                show_app_launcher: bool,
+                app_list: &[alloc::string::String],
+                app_icon_list: &[alloc::string::String],
+                hover_apps_icon: bool) {
     let w = layer.width();
     let h = layer.height();
+
+    if bg_cache_valid {
+        if let Some(ref cached) = bg_cache {
+            layer.buf_mut()[..w * h].copy_from_slice(cached);
+        }
+    } else if let Some(pixels) = wallpaper {
+        layer.buf_mut()[..w * h].copy_from_slice(pixels);
+    } else {
+        layer.clear(Color::BG);
+    }
+
     let tb_y = h.saturating_sub(TASKBAR_H);
 
-    if taskbar_only {
-        if let Some(ref cached) = scene_before_strip {
-            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
-        }
+    if bg_cache_valid {
+    } else if let Some(ref cached) = cached_taskbar {
+        layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
     } else {
-        layer.mark_all_dirty();
-        if bg_cache_valid {
-            if let Some(ref cached) = bg_cache {
-                layer.buf_mut()[..w * h].copy_from_slice(cached);
+        let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
+        blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
+        let tb_alpha = 170u32;
+        let tb_inv = 255 - tb_alpha;
+        let tb_color = Color::TASKBAR;
+        for y in 0..TASKBAR_H {
+            let row_start = y * w;
+            for x in 0..w {
+                let idx = row_start + x;
+                let bg = Color(blurred[idx]);
+                let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
+                let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
+                let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
+                layer.buf_mut()[(tb_y + y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
-        } else if let Some(pixels) = wallpaper {
-            layer.buf_mut()[..w * h].copy_from_slice(pixels);
-        } else {
-            layer.clear(config::get_color("ui-theme/color/bg", Color::BG));
         }
 
-        if bg_cache_valid {
-        } else if let Some(ref cached) = cached_taskbar {
-            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
-        } else {
-            let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
-            blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
-            let tb_alpha = 170u32;
-            let tb_inv = 255 - tb_alpha;
-            let tb_color = config::get_color("ui-theme/color/taskbar", Color::TASKBAR);
-            for y in 0..TASKBAR_H {
-                let row_start = y * w;
-                for x in 0..w {
-                    let idx = row_start + x;
-                    let bg = Color(blurred[idx]);
-                    let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
-                    let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
-                    let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
-                    layer.buf_mut()[(tb_y + y) * w + x] =
-                        Color::rgb(r as u8, g as u8, b as u8).0;
-                }
-            }
-
-            let mut bar = alloc::vec![0u32; w * TASKBAR_H];
-            bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-            *cached_taskbar = Some(bar);
-        }
-
-        if !bg_cache_valid {
-            let mut bg = alloc::vec![0u32; w * h];
-            bg.copy_from_slice(layer.buf_ref());
-            *bg_cache = Some(bg);
-        }
-
-        wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)), warp_engines);
-
-        let mut strip_pre = alloc::vec![0u32; w * TASKBAR_H];
-        strip_pre.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-        *scene_before_strip = Some(strip_pre);
+        let mut bar = alloc::vec![0u32; w * TASKBAR_H];
+        bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+        *cached_taskbar = Some(bar);
     }
+
+    if !bg_cache_valid {
+        let mut bg = alloc::vec![0u32; w * h];
+        bg.copy_from_slice(layer.buf_ref());
+        *bg_cache = Some(bg);
+    }
+
+    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)),
+        warp_engines);
 
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
             layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
         }
     } else {
-        let ids = wm.insertion_ids();
-        let count = ids.len();
-        let btn_d = 40usize;
-        let btn_gap = 12i32;
-        let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
-        let base_bx = ((w as i32 - total_w) / 2).max(0);
-        let btn_y = tb_y + (TASKBAR_H - btn_d) / 2;
 
-        let add_scale = if add_progress >= 0.0 {
-            ease_out_back(add_progress)
+    let ids = wm.insertion_ids();
+    let count = ids.len();
+    let btn_d = 40usize;
+    let btn_gap = 12i32;
+    let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
+    let base_bx = ((w as i32 - total_w) / 2).max(0);
+    let btn_y = tb_y + (TASKBAR_H - btn_d) / 2;
+
+    let add_scale = if add_progress >= 0.0 {
+        ease_out_back(add_progress)
+    } else {
+        1.0
+    };
+
+    for (i, id) in ids.iter().enumerate() {
+        let title = wm.get_title(*id).unwrap_or("???");
+        let icon_name = wm.get_icon_name(*id);
+        let is_focused = wm.focused_id == Some(*id);
+        let is_minimized = wm.is_minimized(*id);
+
+        let scale = if add_progress >= 0.0 && i == count - 1 {
+            add_scale
         } else {
             1.0
         };
 
-        for (i, id) in ids.iter().enumerate() {
-            let title = wm.get_title(*id).unwrap_or("???");
-            let icon_name = wm.get_icon_name(*id);
-            let is_focused = wm.focused_id == Some(*id);
-            let is_minimized = wm.is_minimized(*id);
-
-            let scale = if add_progress >= 0.0 && i == count - 1 {
-                add_scale
-            } else {
-                1.0
-            };
-
-            let ca = if is_focused { 255u32 } else { 100u32 };
-            let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
-            let scaled_d = (btn_d as f32 * scale) as usize;
-            if scaled_d == 0 {
-                continue;
+        let ca = if is_focused { 255u32 } else { 100u32 };
+        let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
+        let scaled_d = (btn_d as f32 * scale) as usize;
+        if scaled_d == 0 { continue; }
+        let offset = if scaled_d > btn_d { 0 } else { (btn_d - scaled_d) / 2 };
+        let cached_btn = get_or_render_tb_btn(scaled_d, ca);
+        for py in 0..scaled_d {
+            let src_row = py * scaled_d;
+            let dst_y = btn_y + offset + py;
+            if dst_y >= h { continue; }
+            let dst_row = dst_y * w;
+            for px in 0..scaled_d {
+                let sp = cached_btn[src_row + px];
+                let pre_a = (sp >> 24) & 0xFF;
+                if pre_a == 0 { continue; }
+                let sx = bx as usize + offset + px;
+                if sx >= w { continue; }
+                let idx = dst_row + sx;
+                let inv = 255 - pre_a;
+                let bg = Color(layer.buf_ref()[idx]);
+                let r = (255 * pre_a + bg.r() as u32 * inv) / 255;
+                let g = (255 * pre_a + bg.g() as u32 * inv) / 255;
+                let b = (255 * pre_a + bg.b() as u32 * inv) / 255;
+                layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
             }
-            let offset = if scaled_d > btn_d {
-                0
-            } else {
-                (btn_d - scaled_d) / 2
-            };
-            let cached_btn = get_or_render_tb_btn(scaled_d, ca);
-            for py in 0..scaled_d {
-                let src_row = py * scaled_d;
-                let dst_y = btn_y + offset + py;
-                if dst_y >= h {
-                    continue;
-                }
-                let dst_row = dst_y * w;
-                for px in 0..scaled_d {
-                    let sp = cached_btn[src_row + px];
-                    let pre_a = (sp >> 24) & 0xFF;
-                    if pre_a == 0 {
-                        continue;
-                    }
-                    let sx = bx as usize + offset + px;
-                    if sx >= w {
-                        continue;
-                    }
-                    let idx = dst_row + sx;
-                    let inv = 255 - pre_a;
-                    let bg = Color(layer.buf_ref()[idx]);
-                    let r = (255 * pre_a + bg.r() as u32 * inv) / 255;
-                    let g = (255 * pre_a + bg.g() as u32 * inv) / 255;
-                    let b = (255 * pre_a + bg.b() as u32 * inv) / 255;
-                    layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
-                }
-            }
+        }
 
-            let resolved_icon = if icon_name.is_empty() {
-                "noname.png"
-            } else {
-                icon_name
-            };
-            {
-                let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                if let Some(icon) = get_or_decode_icon(&icon_path, 40) {
+        let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
+        {
+            let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
+            let icon_data = baram_bsd::vfs::read_file(&icon_path);
+            if !icon_data.is_empty() {
+                if let Some(icon) = decode_icon(&icon_data, 40) {
                     let icon_draw = (btn_d as f32 * scale) as usize;
                     if icon_draw > 0 {
-                        let icon_offset = if icon_draw > btn_d {
-                            0
-                        } else {
-                            (btn_d - icon_draw) / 2
-                        };
+                        let icon_offset = if icon_draw > btn_d { 0 } else { (btn_d - icon_draw) / 2 };
                         let ix = bx as usize + icon_offset;
                         let iy = btn_y + icon_offset;
                         let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
@@ -504,99 +378,71 @@ pub fn render_scene(
                                 let p01 = &icon.pixels[sy1 * icon.w + sx0];
                                 let p11 = &icon.pixels[sy1 * icon.w + sx1];
                                 let r = ((p00[0] as f32 * fx_inv + p10[0] as f32 * fx) * fy_inv
-                                    + (p01[0] as f32 * fx_inv + p11[0] as f32 * fx) * fy)
-                                    as u32;
+                                    + (p01[0] as f32 * fx_inv + p11[0] as f32 * fx) * fy) as u32;
                                 let g = ((p00[1] as f32 * fx_inv + p10[1] as f32 * fx) * fy_inv
-                                    + (p01[1] as f32 * fx_inv + p11[1] as f32 * fx) * fy)
-                                    as u32;
+                                    + (p01[1] as f32 * fx_inv + p11[1] as f32 * fx) * fy) as u32;
                                 let b = ((p00[2] as f32 * fx_inv + p10[2] as f32 * fx) * fy_inv
-                                    + (p01[2] as f32 * fx_inv + p11[2] as f32 * fx) * fy)
-                                    as u32;
-                                let a = (((p00[3] as f32 * fx_inv + p10[3] as f32 * fx)
-                                    * fy_inv
-                                    + (p01[3] as f32 * fx_inv + p11[3] as f32 * fx) * fy)
-                                    as u32
-                                    * icon_alpha
-                                    / 255) as u32;
-                                if a == 0 {
-                                    continue;
-                                }
+                                    + (p01[2] as f32 * fx_inv + p11[2] as f32 * fx) * fy) as u32;
+                                let a = (((p00[3] as f32 * fx_inv + p10[3] as f32 * fx) * fy_inv
+                                    + (p01[3] as f32 * fx_inv + p11[3] as f32 * fx) * fy) as u32
+                                    * icon_alpha / 255) as u32;
+                                if a == 0 { continue; }
                                 let sx = ix + px;
                                 let sy = iy + py;
-                                if sx >= w || sy >= h {
-                                    continue;
-                                }
+                                if sx >= w || sy >= h { continue; }
                                 let idx = sy * w + sx;
                                 let bg = Color(layer.buf_ref()[idx]);
                                 let inv = 255 - a;
                                 let out_r = (r * a + bg.r() as u32 * inv) / 255;
                                 let out_g = (g * a + bg.g() as u32 * inv) / 255;
                                 let out_b = (b * a + bg.b() as u32 * inv) / 255;
-                                layer.buf_mut()[idx] =
-                                    Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
+                                layer.buf_mut()[idx] = Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
                             }
                         }
                     }
                 }
             }
         }
+    }
 
-        let mut fb = FmtBuf::new();
-        fb.push_str("Key:");
-        fb.push_u32(key_ev);
-        fb.push_str(" Window:");
-        fb.push_u32(wm.count() as u32);
-        fb.push_str(" ");
-        fb.push_u32(fps);
-        fb.push_str("FPS");
+    let mut fb = FmtBuf::new();
+    fb.push_str("Key:");
+    fb.push_u32(key_ev);
+    fb.push_str(" Window:");
+    fb.push_u32(wm.count() as u32);
+    fb.push_str(" ");
+    fb.push_u32(fps);
+    fb.push_str("FPS");
 
-        if hud_enabled {
-            let hud_text1 = "Baram OS (1.1.0)";
-            let mut hw1 = 0usize;
-            for ch in hud_text1.chars() {
-                if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph(ch);
-                    hw1 += if g.w > 0 {
-                        g.advance.max(0) as usize
-                    } else {
-                        8
-                    };
-                } else {
-                    hw1 += 8;
-                }
+    if hud_enabled {
+        let hud_text1 = "Baram OS (b2)";
+        let mut hw1 = 0usize;
+        for ch in hud_text1.chars() {
+            if baram_font::ttf_font_hud::is_available() {
+                let g = baram_font::ttf_font_hud::glyph(ch);
+                hw1 += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
+            } else {
+                hw1 += 8;
             }
-            layer.put_str_hud(
-                w - hw1 - 16,
-                tb_y + 6,
-                hud_text1,
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-            );
-
-            let s2 = fb.as_str();
-            let mut hw2 = 0usize;
-            for ch in s2.chars() {
-                if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph(ch);
-                    hw2 += if g.w > 0 {
-                        g.advance.max(0) as usize
-                    } else {
-                        8
-                    };
-                } else {
-                    hw2 += 8;
-                }
-            }
-            layer.put_str_hud(
-                w - hw2 - 16,
-                tb_y + 26,
-                s2,
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-            );
         }
+        layer.put_str_hud(w - hw1 - 16, tb_y + 6, hud_text1, Color::MUTED);
 
-        let mut strip = alloc::vec![0u32; w * TASKBAR_H];
-        strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-        *cached_taskbar_strip = Some(strip);
+        let s2 = fb.as_str();
+        let mut hw2 = 0usize;
+        for ch in s2.chars() {
+            if baram_font::ttf_font_hud::is_available() {
+                let g = baram_font::ttf_font_hud::glyph(ch);
+                hw2 += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
+            } else {
+                hw2 += 8;
+            }
+        }
+        layer.put_str_hud(w - hw2 - 16, tb_y + 26, s2, Color::MUTED);
+    }
+
+    let mut strip = alloc::vec![0u32; w * TASKBAR_H];
+    strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+    *cached_taskbar_strip = Some(strip);
     }
 
     {
@@ -604,15 +450,10 @@ pub fn render_scene(
         let apps_icon_x = 16usize;
         let apps_icon_y = tb_y + (TASKBAR_H - apps_icon_size) / 2;
         let apps_icon_alpha = if hover_apps_icon { 153u32 } else { 255u32 };
-        svg::draw_svg_into_alpha(
-            layer,
-            APPS_SVG,
-            apps_icon_x as i32,
-            apps_icon_y as i32,
-            apps_icon_size as f32,
-            apps_icon_size as f32,
-            apps_icon_alpha,
-        );
+        svg::draw_svg_into_alpha(layer, APPS_SVG,
+            apps_icon_x as i32, apps_icon_y as i32,
+            apps_icon_size as f32, apps_icon_size as f32,
+            apps_icon_alpha);
     }
 
     if show_app_launcher {
@@ -648,42 +489,32 @@ pub fn render_scene(
                 let cx = grid_x + col * cell_w + icon_gap / 2;
                 let cy = grid_y + row * cell_h;
 
-                lsys.fill_circle(
-                    cx + icon_size / 2,
-                    cy + icon_size / 2,
-                    icon_size / 2,
-                    config::get_color("ui-theme/color/panel", Color::PANEL),
-                );
+                lsys.fill_circle(cx + icon_size / 2, cy + icon_size / 2, icon_size / 2, Color::PANEL);
 
                 let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
-                let resolved_icon = if icon_name.is_empty() || icon_name == "null" {
-                    "noname.png"
-                } else {
-                    icon_name
-                };
+                let resolved_icon = if icon_name.is_empty() || icon_name == "null" { "noname.png" } else { icon_name };
                 {
                     let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                    if let Some(icon) = get_or_decode_icon(&icon_path, icon_size) {
-                        let pad = (icon_size - icon.w) / 2;
-                        for py in 0..icon.h {
-                            for px in 0..icon.w {
-                                let src_px = icon.pixels[py * icon.w + px];
-                                let a = src_px[3] as u32;
-                                if a == 0 {
-                                    continue;
+                    let icon_data = baram_bsd::vfs::read_file(&icon_path);
+                    if !icon_data.is_empty() {
+                        if let Some(icon) = decode_icon(&icon_data, icon_size) {
+                            let pad = (icon_size - icon.w) / 2;
+                            for py in 0..icon.h {
+                                for px in 0..icon.w {
+                                    let src_px = icon.pixels[py * icon.w + px];
+                                    let a = src_px[3] as u32;
+                                    if a == 0 { continue; }
+                                    let sx = cx + pad + px;
+                                    let sy = cy + pad + py;
+                                    if sx >= w || sy >= tb_y { continue; }
+                                    let idx = sy * w + sx;
+                                    let bg = Color(lsys.buf_ref()[idx]);
+                                    let inv = 255 - a;
+                                    let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                                    let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                                    let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                                    lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
                                 }
-                                let sx = cx + pad + px;
-                                let sy = cy + pad + py;
-                                if sx >= w || sy >= tb_y {
-                                    continue;
-                                }
-                                let idx = sy * w + sx;
-                                let bg = Color(lsys.buf_ref()[idx]);
-                                let inv = 255 - a;
-                                let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
-                                let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
-                                let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                                lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
                             }
                         }
                     }
@@ -726,66 +557,29 @@ pub fn render_scene(
     }
 }
 
-pub fn render_frame(
-    layer: &mut LayerSystem,
-    wm: &mut WindowManager,
-    _last_keys: &[&'static str],
-    _mouse_ev: u32,
-    key_ev: u32,
-    fps: u32,
-    mouse_mode: &str,
-    cursor_x: i32,
-    cursor_y: i32,
-    ui_commands: &[uiscript::Command],
-    ui_win_id: Option<WinId>,
-    warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
-    wallpaper: Option<&[u32]>,
-    cached_taskbar: &mut Option<Vec<u32>>,
-    cached_taskbar_strip: &mut Option<Vec<u32>>,
-    cached_launcher_layer: &mut Option<Vec<u32>>,
-    taskbar_dirty: bool,
-    add_progress: f32,
-    remove_progress: f32,
-    shift_x: f32,
-    pointer_size: f32,
-    hud_enabled: bool,
-    bg_cache: &mut Option<Vec<u32>>,
-    bg_cache_valid: bool,
-    show_app_launcher: bool,
-    app_list: &[alloc::string::String],
-    app_icon_list: &[alloc::string::String],
-    hover_apps_icon: bool,
-    taskbar_only: bool,
-    scene_before_strip: &mut Option<Vec<u32>>,
-) {
-    render_scene(
-        layer,
-        wm,
-        _mouse_ev,
-        key_ev,
-        fps,
-        mouse_mode,
-        ui_commands,
-        ui_win_id,
-        warp_engines,
-        wallpaper,
-        cached_taskbar,
-        cached_taskbar_strip,
-        cached_launcher_layer,
-        taskbar_dirty,
-        add_progress,
-        remove_progress,
-        shift_x,
-        hud_enabled,
-        bg_cache,
-        bg_cache_valid,
-        show_app_launcher,
-        app_list,
-        app_icon_list,
-        hover_apps_icon,
-        taskbar_only,
-        scene_before_strip,
-    );
+pub fn render_frame(layer: &mut LayerSystem, wm: &mut WindowManager,
+                _last_keys: &[&'static str], _mouse_ev: u32, key_ev: u32,
+                fps: u32, mouse_mode: &str, cursor_x: i32, cursor_y: i32,
+                ui_commands: &[uiscript::Command], ui_win_id: Option<WinId>,
+                warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
+                wallpaper: Option<&[u32]>,
+                cached_taskbar: &mut Option<Vec<u32>>,
+                cached_taskbar_strip: &mut Option<Vec<u32>>,
+                cached_launcher_layer: &mut Option<Vec<u32>>,
+                taskbar_dirty: bool,
+                add_progress: f32, remove_progress: f32,
+                shift_x: f32, pointer_size: f32, hud_enabled: bool,
+                bg_cache: &mut Option<Vec<u32>>, bg_cache_valid: bool,
+                show_app_launcher: bool,
+                app_list: &[alloc::string::String],
+                app_icon_list: &[alloc::string::String],
+                hover_apps_icon: bool) {
+    render_scene(layer, wm, _mouse_ev, key_ev, fps, mouse_mode,
+                 ui_commands, ui_win_id, warp_engines, wallpaper, cached_taskbar,
+                 cached_taskbar_strip, cached_launcher_layer, taskbar_dirty,
+                 add_progress, remove_progress, shift_x, hud_enabled,
+                 bg_cache, bg_cache_valid,
+                 show_app_launcher, app_list, app_icon_list, hover_apps_icon);
     let is_resizing = wm.is_any_resizing();
     cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
 }

@@ -6,18 +6,6 @@ screen{
     },
 
     card{
-        text: ("color"),
-
-        hStack{
-            button{
-                text: ("red"),
-                oneClick: (runCommand = "os://ui-theme/color?btn_primary=BB0000")
-            },
-
-        },
-    },
-
-    card{
         text: ("Wallpaper"),
 
         text{
@@ -27,23 +15,23 @@ screen{
         hStack{
             button{
                 text: ("Baram"),
-                oneClick: (runCommand = "os://display/wallpaper?file=baram&mode=file")
+                oneClick: (runCommand = "os://display/wallpaper?file=baram")
             },
 
             button{
                 text: ("Hanul"),
-                oneClick: (runCommand = "os://display/wallpaper?file=hanul&mode=file")
+                oneClick: (runCommand = "os://display/wallpaper?file=hanul")
             },
 
             button{
                 text: ("Reflect"),
-                oneClick: (runCommand = "os://display/wallpaper?file=reflect&mode=file")
+                oneClick: (runCommand = "os://display/wallpaper?file=reflect")
             },
         },
 
         button{
             text: ("Solid Red"),
-            oneClick: (runCommand = "os://display/wallpaper?color=#990000&mode=color")
+            oneClick: (runCommand = "os://display/wallpaper?color=#990000")
         },
     },
 
@@ -81,8 +69,7 @@ screen{
 
         switch{
             --hudEnabled: ("true"),
-            output: (--hudEnabled),
-            oneClick: (runCommand = "os://display/hud?enabled=" + --hudEnabled)
+            output: (--hudEnabled)
         },
     },
 

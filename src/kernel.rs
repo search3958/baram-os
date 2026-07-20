@@ -246,6 +246,8 @@ fn kernel_main() -> Status {
         } else if frames_since_tick % 16 == 0 {
             layer.flush(&mut screen);
         }
+
+        uefi::boot::stall(core::time::Duration::from_micros(8_000));
     }
 }
 
