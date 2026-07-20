@@ -1068,12 +1068,15 @@ fn main() -> Status {
                     && tb_remove_progress < 0.0
                     && tb_shift_x.abs() <= 0.5;
 
+                let launcher_changed = show_app_launcher != prev_show_app_launcher;
+
                 let taskbar_only = taskbar_dirty
                     && scene_before_strip.is_some()
                     && wm.count() == prev_window_count
                     && wm.focused_id == prev_focused_id
                     && prev_wallpaper_idx == display_state.wallpaper_index
-                    && !show_app_launcher;
+                    && !show_app_launcher
+                    && !launcher_changed;
 
                 render_scene(
                     &mut layer,
@@ -1113,6 +1116,9 @@ fn main() -> Status {
                         buf[..tby * ww].copy_from_slice(&ll[..tby * ww]);
                     }
                 }
+                if launcher_changed {
+                    layer.mark_all_dirty();
+                }
 
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
@@ -1135,16 +1141,6 @@ fn main() -> Status {
                 let tb_y = h.saturating_sub(TASKBAR_H);
                 let ry1 = ry1.max(h);
                 let ry0 = ry0.min(tb_y);
-
-                cached_scene.copy_from_slice(layer.buf_ref());
-                scene_dirty = false;
-                cursor::draw_cursor_into_layer(
-                    &mut layer,
-                    cursor_x,
-                    cursor_y,
-                    is_resizing,
-                    display_state.pointer_size,
-                );
 
                 let pad = 32i32;
                 let cur_w = if is_resizing {
@@ -1173,11 +1169,22 @@ fn main() -> Status {
                     .min(w as i32) as usize;
                 let cy1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad)
                     .min(h as i32) as usize;
+
+                cached_scene.copy_from_slice(layer.buf_ref());
+                scene_dirty = false;
+
+                cursor::draw_cursor_into_layer(
+                    &mut layer,
+                    cursor_x,
+                    cursor_y,
+                    is_resizing,
+                    display_state.pointer_size,
+                );
+
                 let fx0 = rx0.min(cx0);
                 let fy0 = ry0.min(cy0);
                 let fx1 = rx1.max(cx1);
                 let fy1 = ry1.max(cy1);
-                let launcher_changed = show_app_launcher != prev_show_app_launcher;
                 prev_show_app_launcher = show_app_launcher;
                 let fw = fx1 - fx0;
                 let fh = fy1 - fy0;
@@ -1234,10 +1241,12 @@ fn main() -> Status {
                 if show_app_launcher {
                     if let Some(ref ll) = cached_launcher_layer {
                         let buf = layer.buf_mut();
-                        let tby = h.saturating_sub(TASKBAR_H);
+                        let ww = screen.width();
+                        let hh = screen.height();
+                        let tby = hh.saturating_sub(TASKBAR_H);
                         for y in 0..tby {
-                            let s = y * w;
-                            let e = s + w;
+                            let s = y * ww;
+                            let e = s + ww;
                             buf[s..e].copy_from_slice(&ll[s..e]);
                         }
                     }

@@ -4,6 +4,16 @@ use core::ptr;
 use crate::color::Color;
 use crate::screen::Screen;
 
+#[inline(always)]
+fn blend_u32(bg: u32, fg: u32, a: u32) -> u32 {
+    if a >= 255 { return fg; }
+    let inv = 255 - a;
+    let r = (((fg >> 16) & 0xFF) * a + ((bg >> 16) & 0xFF) * inv) / 255;
+    let g = (((fg >> 8) & 0xFF) * a + ((bg >> 8) & 0xFF) * inv) / 255;
+    let b = ((fg & 0xFF) * a + (bg & 0xFF) * inv) / 255;
+    0xFF00_0000 | (r << 16) | (g << 8) | b
+}
+
 pub struct LayerSystem {
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -11,6 +21,11 @@ pub struct LayerSystem {
     frame_count: u64,
     clip_stack: Vec<(usize, usize, usize, usize)>,
     clip: Option<(usize, usize, usize, usize)>,
+    dirty: bool,
+    dirty_x0: usize,
+    dirty_y0: usize,
+    dirty_x1: usize,
+    dirty_y1: usize,
 }
 
 impl LayerSystem {
@@ -22,6 +37,11 @@ impl LayerSystem {
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,
+            dirty: true,
+            dirty_x0: 0,
+            dirty_y0: 0,
+            dirty_x1: w,
+            dirty_y1: h,
         }
     }
 
@@ -33,6 +53,11 @@ impl LayerSystem {
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,
+            dirty: true,
+            dirty_x0: 0,
+            dirty_y0: 0,
+            dirty_x1: w,
+            dirty_y1: h,
         }
     }
 
@@ -64,6 +89,44 @@ impl LayerSystem {
     }
 
     #[inline]
+    fn mark_dirty_rect(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
+        if !self.dirty {
+            self.dirty = true;
+            self.dirty_x0 = x0;
+            self.dirty_y0 = y0;
+            self.dirty_x1 = x1;
+            self.dirty_y1 = y1;
+        } else {
+            if x0 < self.dirty_x0 { self.dirty_x0 = x0; }
+            if y0 < self.dirty_y0 { self.dirty_y0 = y0; }
+            if x1 > self.dirty_x1 { self.dirty_x1 = x1; }
+            if y1 > self.dirty_y1 { self.dirty_y1 = y1; }
+        }
+    }
+
+    pub fn mark_all_dirty(&mut self) {
+        self.dirty = true;
+        self.dirty_x0 = 0;
+        self.dirty_y0 = 0;
+        self.dirty_x1 = self.width;
+        self.dirty_y1 = self.height;
+    }
+
+    pub fn take_dirty(&mut self) -> Option<(usize, usize, usize, usize)> {
+        if self.dirty {
+            let r = (self.dirty_x0, self.dirty_y0, self.dirty_x1, self.dirty_y1);
+            self.dirty = false;
+            self.dirty_x0 = self.width;
+            self.dirty_y0 = self.height;
+            self.dirty_x1 = 0;
+            self.dirty_y1 = 0;
+            Some(r)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     fn clip_test(&self, x: usize, y: usize) -> bool {
         if let Some((cx0, cy0, cx1, cy1)) = self.clip {
             x >= cx0 && x < cx1 && y >= cy0 && y < cy1
@@ -74,6 +137,7 @@ impl LayerSystem {
 
     pub fn clear(&mut self, c: Color) {
         self.buf.fill(c.0);
+        self.mark_all_dirty();
     }
 
     #[inline]
@@ -111,6 +175,7 @@ impl LayerSystem {
             let x1 = (x + w).min(cx1).min(stride);
             let y1 = (y + h).min(cy1).min(self.height);
             if x0 >= x1 || y0 >= y1 { return; }
+            self.mark_dirty_rect(x0, y0, x1, y1);
             for yy in y0..y1 {
                 self.buf[yy * stride + x0..yy * stride + x1].fill(v);
             }
@@ -120,6 +185,7 @@ impl LayerSystem {
             let x1 = (x + w).min(stride);
             let y1 = (y + h).min(self.height);
             if x0 >= x1 || y0 >= y1 { return; }
+            self.mark_dirty_rect(x0, y0, x1, y1);
             for yy in y0..y1 {
                 self.buf[yy * stride + x0..yy * stride + x1].fill(v);
             }
@@ -135,7 +201,7 @@ impl LayerSystem {
         mt3 * p0 + 3.0 * mt2 * t * p1 + 3.0 * mt * t2 * p2 + t3 * p3
     }
 
-    pub fn squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
+    fn compute_squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
         let r = r.min(w / 2.0).min(h / 2.0);
         let lx = libm::fminf(w / 2.0, 1.528665 * r);
         let ly = libm::fminf(h / 2.0, 1.528665 * r);
@@ -236,6 +302,41 @@ impl LayerSystem {
         pts
     }
 
+    pub fn squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
+        Self::compute_squircle_polygon(w, h, r)
+    }
+
+    fn cached_squircle(w: f32, h: f32, r: f32) -> &'static alloc::vec::Vec<(f32, f32)> {
+        use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+        static CACHED: AtomicBool = AtomicBool::new(false);
+        static CW: AtomicU32 = AtomicU32::new(0);
+        static CH: AtomicU32 = AtomicU32::new(0);
+        static CR: AtomicU32 = AtomicU32::new(0);
+        static mut POLY: alloc::vec::Vec<(f32, f32)> = alloc::vec::Vec::new();
+
+        let wi = (w * 100.0) as u32;
+        let hi = (h * 100.0) as u32;
+        let ri = (r * 100.0) as u32;
+
+        if CACHED.load(Ordering::Relaxed)
+            && CW.load(Ordering::Relaxed) == wi
+            && CH.load(Ordering::Relaxed) == hi
+            && CR.load(Ordering::Relaxed) == ri
+        {
+            unsafe { return &POLY; }
+        }
+
+        let poly = Self::compute_squircle_polygon(w, h, r);
+        unsafe {
+            POLY = poly;
+        }
+        CW.store(wi, Ordering::Relaxed);
+        CH.store(hi, Ordering::Relaxed);
+        CR.store(ri, Ordering::Relaxed);
+        CACHED.store(true, Ordering::Relaxed);
+        unsafe { &POLY }
+    }
+
     pub fn point_in_polygon(px: f32, py: f32, poly: &[(f32, f32)]) -> bool {
         let n = poly.len();
         if n < 3 { return false; }
@@ -277,14 +378,17 @@ impl LayerSystem {
         let stride = self.width;
 
         if r == 0 {
+            self.mark_dirty_rect(x0, y0, x1, y1);
             for py in y0..y1 {
                 self.buf[py * stride + x0..py * stride + x1].fill(v);
             }
             return;
         }
 
+        self.mark_dirty_rect(x0, y0, x1, y1);
+
         let rf = r as f32;
-        let poly = Self::squircle_polygon(w as f32, h as f32, rf);
+        let poly = Self::cached_squircle(w as f32, h as f32, rf);
         let x0f = x as f32;
         let y0f = y as f32;
         let r_f = r as f32;
@@ -433,6 +537,7 @@ impl LayerSystem {
         let y0 = cy.saturating_sub(r).min(self.height);
         let x1 = (cx + r + 1).min(self.width);
         let y1 = (cy + r + 1).min(self.height);
+        self.mark_dirty_rect(x0, y0, x1, y1);
         for py in y0..y1 {
             let row = py * self.width;
             for px in x0..x1 {
@@ -534,9 +639,22 @@ impl LayerSystem {
     pub fn flush(&mut self, screen: &mut Screen) {
         let w = self.width;
         let h = self.height;
-        for y in 0..h {
-            let row = &self.buf[y * w..(y + 1) * w];
-            screen.flush_layer_row(y, row);
+        if let Some((x0, y0, x1, y1)) = self.take_dirty() {
+            let x0 = x0.min(w);
+            let y0 = y0.min(h);
+            let x1 = x1.min(w);
+            let y1 = y1.min(h);
+            if x1 > x0 && y1 > y0 {
+                for y in y0..y1 {
+                    let row = &self.buf[y * w + x0..y * w + x1];
+                    screen.flush_layer_row_range(y, x0, row);
+                }
+            }
+        } else {
+            for y in 0..h {
+                let row = &self.buf[y * w..(y + 1) * w];
+                screen.flush_layer_row(y, row);
+            }
         }
         self.frame_count += 1;
     }
@@ -567,6 +685,12 @@ impl LayerSystem {
         let sh = src.height;
         let dw = self.width;
         let dh = self.height;
+
+        let x0 = dx;
+        let y0 = dy;
+        let x1 = (dx + w).min(dw);
+        let y1 = (dy + h).min(dh);
+        self.mark_dirty_rect(x0, y0, x1, y1);
 
         if r == 0 {
             for py in 0..h {
@@ -650,7 +774,7 @@ impl LayerSystem {
             }
 
             let end_x = w.min(sw - sx).min(dw - dx);
-            let poly = Self::squircle_polygon(w as f32, h as f32, rf);
+            let poly = Self::cached_squircle(w as f32, h as f32, rf);
             let off = [0.25f32, 0.75f32];
             let base_y = py as f32;
             let lx = libm::fminf(w as f32 / 2.0, 1.528665 * rf);
@@ -737,6 +861,12 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
+        let x0 = dx;
+        let y0 = dy;
+        let x1 = (dx + w).min(dw);
+        let y1 = (dy + h).min(dh);
+        self.mark_dirty_rect(x0, y0, x1, y1);
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
@@ -781,6 +911,12 @@ impl LayerSystem {
 
         let copy_w = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
         if copy_w == 0 { return; }
+
+        let x0 = dx;
+        let y0 = dy;
+        let x1 = (dx + copy_w).min(dw);
+        let y1 = (dy + h).min(dh);
+        self.mark_dirty_rect(x0, y0, x1, y1);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -829,34 +965,97 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
+        let x0 = dx;
+        let y0 = dy;
+        let x1 = (dx + w).min(dw);
+        let y1 = (dy + h).min(dh);
+        self.mark_dirty_rect(x0, y0, x1, y1);
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
             if src_y >= sh || dst_y >= dh { continue; }
 
-            for px in 0..w {
-                let src_x = sx + px;
-                let dst_x = dx + px;
-                if src_x >= sw || dst_x >= dw { continue; }
+            let src_row = src_y * sw + sx;
+            let dst_row = dst_y * dw + dx;
+            let max_px = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
 
-                let sp = src.buf[src_y * sw + src_x];
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                use core::arch::aarch64::*;
+                let mut px = 0usize;
+                while px + 4 <= max_px {
+                    let sp0 = src.buf[src_row + px];
+                    let sp1 = src.buf[src_row + px + 1];
+                    let sp2 = src.buf[src_row + px + 2];
+                    let sp3 = src.buf[src_row + px + 3];
+
+                    let a0 = ((sp0 >> 24) & 0xFF) as i32;
+                    let a1 = ((sp1 >> 24) & 0xFF) as i32;
+                    let a2 = ((sp2 >> 24) & 0xFF) as i32;
+                    let a3 = ((sp3 >> 24) & 0xFF) as i32;
+
+                    if a0 == 255 && a1 == 255 && a2 == 255 && a3 == 255 {
+                        *self.buf.as_mut_ptr().add(dst_row + px) = sp0;
+                        *self.buf.as_mut_ptr().add(dst_row + px + 1) = sp1;
+                        *self.buf.as_mut_ptr().add(dst_row + px + 2) = sp2;
+                        *self.buf.as_mut_ptr().add(dst_row + px + 3) = sp3;
+                    } else if a0 > 0 || a1 > 0 || a2 > 0 || a3 > 0 {
+                        let dp0 = self.buf[dst_row + px];
+                        let dp1 = self.buf[dst_row + px + 1];
+                        let dp2 = self.buf[dst_row + px + 2];
+                        let dp3 = self.buf[dst_row + px + 3];
+
+                        self.buf[dst_row + px] = blend_u32(dp0, sp0, a0 as u32);
+                        self.buf[dst_row + px + 1] = blend_u32(dp1, sp1, a1 as u32);
+                        self.buf[dst_row + px + 2] = blend_u32(dp2, sp2, a2 as u32);
+                        self.buf[dst_row + px + 3] = blend_u32(dp3, sp3, a3 as u32);
+                    }
+                    px += 4;
+                }
+                for px in px..max_px {
+                    let sp = src.buf[src_row + px];
+                    let src_a = ((sp >> 24) & 0xFF) as u32;
+                    if src_a == 0 { continue; }
+                    if src_a >= 255 {
+                        self.buf[dst_row + px] = sp;
+                    } else {
+                        let inv = 255 - src_a;
+                        let sr = (sp >> 16) & 0xFF;
+                        let sg = (sp >> 8) & 0xFF;
+                        let sb = sp & 0xFF;
+                        let dp = self.buf[dst_row + px];
+                        let dr = (dp >> 16) & 0xFF;
+                        let dg = (dp >> 8) & 0xFF;
+                        let db = dp & 0xFF;
+                        let r = (sr * src_a + dr * inv) / 255;
+                        let g = (sg * src_a + dg * inv) / 255;
+                        let b = (sb * src_a + db * inv) / 255;
+                        self.buf[dst_row + px] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "aarch64"))]
+            for px in 0..max_px {
+                let sp = src.buf[src_row + px];
                 let src_a = ((sp >> 24) & 0xFF) as u32;
                 if src_a == 0 { continue; }
                 if src_a >= 255 {
-                    self.buf[dst_y * dw + dst_x] = sp;
+                    self.buf[dst_row + px] = sp;
                 } else {
                     let inv = 255 - src_a;
                     let sr = (sp >> 16) & 0xFF;
                     let sg = (sp >> 8) & 0xFF;
                     let sb = sp & 0xFF;
-                    let dp = self.buf[dst_y * dw + dst_x];
+                    let dp = self.buf[dst_row + px];
                     let dr = (dp >> 16) & 0xFF;
                     let dg = (dp >> 8) & 0xFF;
                     let db = dp & 0xFF;
                     let r = (sr * src_a + dr * inv) / 255;
                     let g = (sg * src_a + dg * inv) / 255;
                     let b = (sb * src_a + db * inv) / 255;
-                    self.buf[dst_y * dw + dst_x] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+                    self.buf[dst_row + px] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
                 }
             }
         }

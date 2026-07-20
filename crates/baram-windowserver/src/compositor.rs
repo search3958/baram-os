@@ -16,6 +16,47 @@ use uefi::runtime;
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 
+const ICON_CACHE_CAP: usize = 32;
+static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
+    None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None,
+];
+
+fn get_or_decode_icon(icon_path: &str, size: usize) -> Option<&'static IconBitmap> {
+    unsafe {
+        for entry in ICON_CACHE.iter() {
+            if let Some((ref name, cached_size, ref bitmap)) = entry {
+                if name == icon_path && *cached_size == size {
+                    return Some(bitmap);
+                }
+            }
+        }
+        let icon_data = baram_bsd::vfs::read_file(icon_path);
+        if icon_data.is_empty() {
+            return None;
+        }
+        let bitmap = decode_icon(&icon_data, size)?;
+        for entry in ICON_CACHE.iter_mut() {
+            if entry.is_none() {
+                *entry = Some((alloc::string::String::from(icon_path), size, bitmap));
+                return ICON_CACHE.iter().find_map(|e| {
+                    if let Some((ref n, s, ref b)) = e {
+                        if n == icon_path && *s == size { Some(b) } else { None }
+                    } else { None }
+                });
+            }
+        }
+        ICON_CACHE[0] = Some((alloc::string::String::from(icon_path), size, bitmap));
+        ICON_CACHE.iter().find_map(|e| {
+            if let Some((ref n, s, ref b)) = e {
+                if n == icon_path && *s == size { Some(b) } else { None }
+            } else { None }
+        })
+    }
+}
+
 pub const APPS_SVG: &str = include_str!("../../../data/apps.svg");
 
 pub struct IconBitmap {
@@ -301,6 +342,7 @@ pub fn render_scene(
             layer.buf_mut()[..w * h].copy_from_slice(cached);
         }
     } else {
+        layer.mark_all_dirty();
         if bg_cache_valid {
             if let Some(ref cached) = bg_cache {
                 layer.buf_mut()[..w * h].copy_from_slice(cached);
@@ -428,73 +470,70 @@ pub fn render_scene(
             };
             {
                 let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                let icon_data = baram_bsd::vfs::read_file(&icon_path);
-                if !icon_data.is_empty() {
-                    if let Some(icon) = decode_icon(&icon_data, 40) {
-                        let icon_draw = (btn_d as f32 * scale) as usize;
-                        if icon_draw > 0 {
-                            let icon_offset = if icon_draw > btn_d {
-                                0
-                            } else {
-                                (btn_d - icon_draw) / 2
-                            };
-                            let ix = bx as usize + icon_offset;
-                            let iy = btn_y + icon_offset;
-                            let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
-                            let src_w = icon.w as f32;
-                            let src_h = icon.h as f32;
-                            let dst_w = icon_draw as f32;
-                            let dst_h = icon_draw as f32;
-                            for py in 0..icon_draw {
-                                let sy_f = (py as f32 + 0.5) * src_h / dst_h - 0.5;
-                                let sy_floor = libm::floorf(sy_f);
-                                let sy0 = sy_floor.max(0.0) as usize;
-                                let sy1 = (sy0 + 1).min(icon.h - 1);
-                                let fy = sy_f - sy_floor;
-                                let fy_inv = 1.0 - fy;
-                                for px in 0..icon_draw {
-                                    let sx_f = (px as f32 + 0.5) * src_w / dst_w - 0.5;
-                                    let sx_floor = libm::floorf(sx_f);
-                                    let sx0 = sx_floor.max(0.0) as usize;
-                                    let sx1 = (sx0 + 1).min(icon.w - 1);
-                                    let fx = sx_f - sx_floor;
-                                    let fx_inv = 1.0 - fx;
-                                    let p00 = &icon.pixels[sy0 * icon.w + sx0];
-                                    let p10 = &icon.pixels[sy0 * icon.w + sx1];
-                                    let p01 = &icon.pixels[sy1 * icon.w + sx0];
-                                    let p11 = &icon.pixels[sy1 * icon.w + sx1];
-                                    let r = ((p00[0] as f32 * fx_inv + p10[0] as f32 * fx) * fy_inv
-                                        + (p01[0] as f32 * fx_inv + p11[0] as f32 * fx) * fy)
-                                        as u32;
-                                    let g = ((p00[1] as f32 * fx_inv + p10[1] as f32 * fx) * fy_inv
-                                        + (p01[1] as f32 * fx_inv + p11[1] as f32 * fx) * fy)
-                                        as u32;
-                                    let b = ((p00[2] as f32 * fx_inv + p10[2] as f32 * fx) * fy_inv
-                                        + (p01[2] as f32 * fx_inv + p11[2] as f32 * fx) * fy)
-                                        as u32;
-                                    let a = (((p00[3] as f32 * fx_inv + p10[3] as f32 * fx)
-                                        * fy_inv
-                                        + (p01[3] as f32 * fx_inv + p11[3] as f32 * fx) * fy)
-                                        as u32
-                                        * icon_alpha
-                                        / 255) as u32;
-                                    if a == 0 {
-                                        continue;
-                                    }
-                                    let sx = ix + px;
-                                    let sy = iy + py;
-                                    if sx >= w || sy >= h {
-                                        continue;
-                                    }
-                                    let idx = sy * w + sx;
-                                    let bg = Color(layer.buf_ref()[idx]);
-                                    let inv = 255 - a;
-                                    let out_r = (r * a + bg.r() as u32 * inv) / 255;
-                                    let out_g = (g * a + bg.g() as u32 * inv) / 255;
-                                    let out_b = (b * a + bg.b() as u32 * inv) / 255;
-                                    layer.buf_mut()[idx] =
-                                        Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
+                if let Some(icon) = get_or_decode_icon(&icon_path, 40) {
+                    let icon_draw = (btn_d as f32 * scale) as usize;
+                    if icon_draw > 0 {
+                        let icon_offset = if icon_draw > btn_d {
+                            0
+                        } else {
+                            (btn_d - icon_draw) / 2
+                        };
+                        let ix = bx as usize + icon_offset;
+                        let iy = btn_y + icon_offset;
+                        let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
+                        let src_w = icon.w as f32;
+                        let src_h = icon.h as f32;
+                        let dst_w = icon_draw as f32;
+                        let dst_h = icon_draw as f32;
+                        for py in 0..icon_draw {
+                            let sy_f = (py as f32 + 0.5) * src_h / dst_h - 0.5;
+                            let sy_floor = libm::floorf(sy_f);
+                            let sy0 = sy_floor.max(0.0) as usize;
+                            let sy1 = (sy0 + 1).min(icon.h - 1);
+                            let fy = sy_f - sy_floor;
+                            let fy_inv = 1.0 - fy;
+                            for px in 0..icon_draw {
+                                let sx_f = (px as f32 + 0.5) * src_w / dst_w - 0.5;
+                                let sx_floor = libm::floorf(sx_f);
+                                let sx0 = sx_floor.max(0.0) as usize;
+                                let sx1 = (sx0 + 1).min(icon.w - 1);
+                                let fx = sx_f - sx_floor;
+                                let fx_inv = 1.0 - fx;
+                                let p00 = &icon.pixels[sy0 * icon.w + sx0];
+                                let p10 = &icon.pixels[sy0 * icon.w + sx1];
+                                let p01 = &icon.pixels[sy1 * icon.w + sx0];
+                                let p11 = &icon.pixels[sy1 * icon.w + sx1];
+                                let r = ((p00[0] as f32 * fx_inv + p10[0] as f32 * fx) * fy_inv
+                                    + (p01[0] as f32 * fx_inv + p11[0] as f32 * fx) * fy)
+                                    as u32;
+                                let g = ((p00[1] as f32 * fx_inv + p10[1] as f32 * fx) * fy_inv
+                                    + (p01[1] as f32 * fx_inv + p11[1] as f32 * fx) * fy)
+                                    as u32;
+                                let b = ((p00[2] as f32 * fx_inv + p10[2] as f32 * fx) * fy_inv
+                                    + (p01[2] as f32 * fx_inv + p11[2] as f32 * fx) * fy)
+                                    as u32;
+                                let a = (((p00[3] as f32 * fx_inv + p10[3] as f32 * fx)
+                                    * fy_inv
+                                    + (p01[3] as f32 * fx_inv + p11[3] as f32 * fx) * fy)
+                                    as u32
+                                    * icon_alpha
+                                    / 255) as u32;
+                                if a == 0 {
+                                    continue;
                                 }
+                                let sx = ix + px;
+                                let sy = iy + py;
+                                if sx >= w || sy >= h {
+                                    continue;
+                                }
+                                let idx = sy * w + sx;
+                                let bg = Color(layer.buf_ref()[idx]);
+                                let inv = 255 - a;
+                                let out_r = (r * a + bg.r() as u32 * inv) / 255;
+                                let out_g = (g * a + bg.g() as u32 * inv) / 255;
+                                let out_b = (b * a + bg.b() as u32 * inv) / 255;
+                                layer.buf_mut()[idx] =
+                                    Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
                             }
                         }
                     }
@@ -624,30 +663,27 @@ pub fn render_scene(
                 };
                 {
                     let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                    let icon_data = baram_bsd::vfs::read_file(&icon_path);
-                    if !icon_data.is_empty() {
-                        if let Some(icon) = decode_icon(&icon_data, icon_size) {
-                            let pad = (icon_size - icon.w) / 2;
-                            for py in 0..icon.h {
-                                for px in 0..icon.w {
-                                    let src_px = icon.pixels[py * icon.w + px];
-                                    let a = src_px[3] as u32;
-                                    if a == 0 {
-                                        continue;
-                                    }
-                                    let sx = cx + pad + px;
-                                    let sy = cy + pad + py;
-                                    if sx >= w || sy >= tb_y {
-                                        continue;
-                                    }
-                                    let idx = sy * w + sx;
-                                    let bg = Color(lsys.buf_ref()[idx]);
-                                    let inv = 255 - a;
-                                    let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
-                                    let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
-                                    let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                                    lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                    if let Some(icon) = get_or_decode_icon(&icon_path, icon_size) {
+                        let pad = (icon_size - icon.w) / 2;
+                        for py in 0..icon.h {
+                            for px in 0..icon.w {
+                                let src_px = icon.pixels[py * icon.w + px];
+                                let a = src_px[3] as u32;
+                                if a == 0 {
+                                    continue;
                                 }
+                                let sx = cx + pad + px;
+                                let sy = cy + pad + py;
+                                if sx >= w || sy >= tb_y {
+                                    continue;
+                                }
+                                let idx = sy * w + sx;
+                                let bg = Color(lsys.buf_ref()[idx]);
+                                let inv = 255 - a;
+                                let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
+                                let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
+                                let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
+                                lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
                             }
                         }
                     }
