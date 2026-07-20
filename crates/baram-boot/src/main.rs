@@ -421,18 +421,6 @@ fn main() -> Status {
                 }
                 if !handled {
                     match c {
-                        b'n' | b'N' => {
-                            let x = 60 + ((new_window_idx as i32 * 37) % 300);
-                            let y = 80 + ((new_window_idx as i32 * 23) % 200);
-                            let new_id = wm.add("New App", x, y, 400, 450);
-                            let source = baram_bsd::app::load_app_source("blank.warp");
-                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                            engine.update(380, 410);
-                            warp_engines.push((new_id, engine));
-                            tb_add_progress = 0.0;
-                            tb_shift_x = 26.0;
-                            new_window_idx = new_window_idx.wrapping_add(1);
-                        }
                         _ => {}
                     }
                 }
