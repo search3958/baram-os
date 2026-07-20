@@ -1,11 +1,12 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-const DEFAULT_CONFIG_XML: &[u8] = include_bytes!("../../../config.xml");
-
 #[derive(Clone)]
 pub enum XmlNode {
-    Element { tag: String, children: Vec<XmlNode> },
+    Element {
+        tag: String,
+        children: Vec<XmlNode>,
+    },
     Text(String),
 }
 
@@ -81,15 +82,6 @@ impl Config {
         config
     }
 
-    pub fn load_from_bytes(data: &[u8]) -> Self {
-        let mut config = Self::new();
-        let text = String::from_utf8(data.to_vec()).unwrap_or_default();
-        if let Some(node) = parse_xml(&text) {
-            config.root = node;
-        }
-        config
-    }
-
     pub fn get(&self, path: &str) -> Option<&str> {
         let normalized = path.replace('.', "/");
         let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
@@ -130,10 +122,7 @@ impl Config {
             return;
         }
         let node = self.find_or_create_node(&parts);
-        if let XmlNode::Element { children, .. } = node {
-            children.clear();
-            children.push(XmlNode::text(value));
-        }
+        *node = XmlNode::text(value);
     }
 
     pub fn remove(&mut self, path: &str) -> bool {
@@ -318,10 +307,7 @@ fn parse_element(bytes: &[u8], start: usize) -> Option<(XmlNode, usize)> {
 
         if bytes[pos] == b'<' {
             if pos + 1 < bytes.len() && bytes[pos + 1] == b'/' {
-                let close_tag = read_tag_name(bytes, &mut {
-                    pos += 2;
-                    pos
-                })?;
+                let close_tag = read_tag_name(bytes, &mut { pos += 2; pos })?;
                 skip_whitespace(bytes, &mut pos);
                 if pos < bytes.len() && bytes[pos] == b'>' {
                     pos += 1;
@@ -363,25 +349,18 @@ fn read_tag_name(bytes: &[u8], pos: &mut usize) -> Option<String> {
         && bytes[*pos] != b'\n'
         && bytes[*pos] != b'\r'
         && bytes[*pos] != b'>'
-        && bytes[*pos] != b'/'
+        && bytes[*pos] != b'/' 
     {
         *pos += 1;
     }
     if *pos == start {
         return None;
     }
-    core::str::from_utf8(&bytes[start..*pos])
-        .ok()
-        .map(|s| s.to_string())
+    core::str::from_utf8(&bytes[start..*pos]).ok().map(|s| s.to_string())
 }
 
 fn skip_whitespace(bytes: &[u8], pos: &mut usize) {
-    while *pos < bytes.len()
-        && (bytes[*pos] == b' '
-            || bytes[*pos] == b'\t'
-            || bytes[*pos] == b'\n'
-            || bytes[*pos] == b'\r')
-    {
+    while *pos < bytes.len() && (bytes[*pos] == b' ' || bytes[*pos] == b'\t' || bytes[*pos] == b'\n' || bytes[*pos] == b'\r') {
         *pos += 1;
     }
 }
@@ -395,14 +374,6 @@ pub fn init_config() {
     }
 }
 
-pub fn reset_to_default() {
-    let default_config = Config::load_from_bytes(DEFAULT_CONFIG_XML);
-    unsafe {
-        GLOBAL_CONFIG = Some(default_config);
-    }
-    save_config();
-}
-
 pub fn get_config() -> &'static Config {
     unsafe { GLOBAL_CONFIG.as_ref().expect("Config not initialized") }
 }
@@ -412,8 +383,7 @@ pub fn get_config_mut() -> &'static mut Config {
 }
 
 pub fn save_config() {
-    let xml = get_config().to_xml();
-    super::vfs::write_file("EFI/BOOT/config.xml", xml.as_bytes());
+    get_config().save_to_vfs("EFI/BOOT/config.xml");
 }
 
 pub fn get_usize(path: &str, default: usize) -> usize {

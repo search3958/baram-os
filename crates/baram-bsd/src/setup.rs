@@ -1,12 +1,13 @@
-use crate::config;
-use crate::vfs;
 use baram_core::{Color, LayerSystem, Screen};
-use baram_font::font::{self, GLYPH_H, GLYPH_W};
 use baram_font::ttf_font;
 use baram_font::ttf_font_hud;
+use baram_font::font::{self, GLYPH_H, GLYPH_W};
+use crate::vfs;
+use crate::config;
 use baram_graphics::blur;
 
-const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../data/wallpaper/baram.png");
+const SETUP_DONE_PATH: &str = "apps/.setup_done";
+const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
 const CARD_H: usize = 320;
 const BLUR_RADIUS: i32 = 30;
 
@@ -15,14 +16,11 @@ static mut CACHED_W: usize = 0;
 static mut CACHED_H: usize = 0;
 
 pub fn is_setup_done() -> bool {
-    config::get_config()
-        .get("system/done")
-        .map_or(false, |s| s == "1")
+    !vfs::read_file(SETUP_DONE_PATH).is_empty()
 }
 
 pub fn mark_setup_done() {
-    config::get_config_mut().set("system/done", "1");
-    config::save_config();
+    vfs::write_file(SETUP_DONE_PATH, b"done");
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -74,10 +72,8 @@ impl SetupWizard {
 
     pub fn hit_test(&self, mx: i32, my: i32) -> Option<usize> {
         for (i, btn) in self.buttons.iter().enumerate() {
-            if mx >= btn.x as i32
-                && mx < (btn.x + btn.w) as i32
-                && my >= btn.y as i32
-                && my < (btn.y + btn.h) as i32
+            if mx >= btn.x as i32 && mx < (btn.x + btn.w) as i32
+                && my >= btn.y as i32 && my < (btn.y + btn.h) as i32
             {
                 return Some(i);
             }
@@ -139,10 +135,7 @@ impl SetupWizard {
             self.dirty = true;
             return;
         }
-        let is_enter = ev.printable == Some(b'\n')
-            || ev.raw_key == 0x28
-            || ev.raw_key == 0x58
-            || ev.scancode == 0x1C;
+        let is_enter = ev.printable == Some(b'\n') || ev.raw_key == 0x28 || ev.raw_key == 0x58 || ev.scancode == 0x1C;
         match self.screen {
             SetupScreen::Welcome => {
                 if is_enter {
@@ -187,13 +180,7 @@ impl SetupWizard {
             SetupScreen::Done => self.render_done(buf, w, h),
         }
 
-        if self.cached_w != w
-            || self.cached_h != h
-            || self
-                .cached_frame
-                .as_ref()
-                .map_or(true, |f| f.len() != w * h)
-        {
+        if self.cached_w != w || self.cached_h != h || self.cached_frame.as_ref().map_or(true, |f| f.len() != w * h) {
             self.cached_frame = Some(alloc::vec![0u32; w * h]);
             self.cached_w = w;
             self.cached_h = h;
@@ -213,33 +200,9 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_hud_left(
-            buf,
-            w,
-            tx,
-            card_y + 60,
-            "Hello",
-            config::get_color("ui-theme/color/text", Color::TEXT),
-            2.0,
-        );
-        draw_str_left(
-            buf,
-            w,
-            tx,
-            card_y + 120,
-            "Baram OSへようこそ。",
-            config::get_color("ui-theme/color/muted", Color::MUTED),
-            1.0,
-        );
-        draw_str_left(
-            buf,
-            w,
-            tx,
-            card_y + 140,
-            "Enterキーで開始します。",
-            config::get_color("ui-theme/color/muted", Color::MUTED),
-            01.0,
-        );
+        draw_str_hud_left(buf, w, tx, card_y + 60, "Hello", Color::TEXT, 2.0);
+        draw_str_left(buf, w, tx, card_y + 120, "Baram OSへようこそ。", Color::MUTED, 1.0);
+        draw_str_left(buf, w, tx, card_y + 140, "Enterキーで開始します。", Color::MUTED, 01.0);
 
         let btn_y = card_y + card_h - 70;
         let continue_btn_w = 140;
@@ -248,45 +211,11 @@ impl SetupWizard {
         let continue_x = card_x + card_w - continue_btn_w - 32;
         let skip_x = continue_x - skip_btn_w - gap;
 
-        self.buttons.push(Button {
-            x: skip_x,
-            y: btn_y,
-            w: skip_btn_w,
-            h: 40,
-            label: "スキップ",
-            primary: false,
-        });
-        self.buttons.push(Button {
-            x: continue_x,
-            y: btn_y,
-            w: continue_btn_w,
-            h: 40,
-            label: "続行",
-            primary: true,
-        });
+        self.buttons.push(Button { x: skip_x, y: btn_y, w: skip_btn_w, h: 40, label: "スキップ", primary: false });
+        self.buttons.push(Button { x: continue_x, y: btn_y, w: continue_btn_w, h: 40, label: "続行", primary: true });
 
-        draw_button(
-            buf,
-            w,
-            skip_x,
-            btn_y,
-            skip_btn_w,
-            40,
-            "スキップ",
-            false,
-            self.hover_btn == Some(0),
-        );
-        draw_button(
-            buf,
-            w,
-            continue_x,
-            btn_y,
-            continue_btn_w,
-            40,
-            "続行",
-            true,
-            self.hover_btn == Some(1),
-        );
+        draw_button(buf, w, skip_x, btn_y, skip_btn_w, 40, "スキップ", false, self.hover_btn == Some(0));
+        draw_button(buf, w, continue_x, btn_y, continue_btn_w, 40, "続行", true, self.hover_btn == Some(1));
     }
 
     fn render_keyboard(&mut self, buf: &mut [u32], w: usize, h: usize) {
@@ -306,93 +235,19 @@ impl SetupWizard {
         let continue_x = skip_x - continue_btn_w - gap;
 
         if self.key_detected {
-            draw_str_left(
-                buf,
-                w,
-                tx,
-                card_y + 100,
-                "完了",
-                config::get_color("ui-theme/color/text", Color::TEXT),
-                1.5,
-            );
-            draw_str_left(
-                buf,
-                w,
-                tx,
-                card_y + 160,
-                "EnterキーかEscでセットアップを終了します",
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-                1.0,
-            );
+            draw_str_left(buf, w, tx, card_y + 100, "完了", Color::TEXT, 1.5);
+            draw_str_left(buf, w, tx, card_y + 160, "EnterキーかEscでセットアップを終了します", Color::MUTED, 1.0);
 
             let btn_x = card_x + card_w - continue_btn_w - 32;
-            self.buttons.push(Button {
-                x: btn_x,
-                y: btn_y,
-                w: continue_btn_w,
-                h: 40,
-                label: "完了",
-                primary: true,
-            });
-            draw_button(
-                buf,
-                w,
-                btn_x,
-                btn_y,
-                continue_btn_w,
-                40,
-                "完了",
-                true,
-                self.hover_btn == Some(0),
-            );
+            self.buttons.push(Button { x: btn_x, y: btn_y, w: continue_btn_w, h: 40, label: "完了", primary: true });
+            draw_button(buf, w, btn_x, btn_y, continue_btn_w, 40, "完了", true, self.hover_btn == Some(0));
         } else {
-            draw_str_left(
-                buf,
-                w,
-                tx,
-                card_y + 100,
-                "キーボード設定",
-                config::get_color("ui-theme/color/text", Color::TEXT),
-                1.5,
-            );
-            draw_str_left(
-                buf,
-                w,
-                tx,
-                card_y + 160,
-                "Shift にしたいキーを押してください",
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-                1.0,
-            );
-            draw_str_left(
-                buf,
-                w,
-                tx,
-                card_y + 220,
-                "待機中...",
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-                1.0,
-            );
+            draw_str_left(buf, w, tx, card_y + 100, "キーボード設定", Color::TEXT, 1.5);
+            draw_str_left(buf, w, tx, card_y + 160, "Shift にしたいキーを押してください", Color::MUTED, 1.0);
+            draw_str_left(buf, w, tx, card_y + 220, "待機中...", Color::MUTED, 1.0);
 
-            self.buttons.push(Button {
-                x: skip_x,
-                y: btn_y,
-                w: skip_btn_w,
-                h: 40,
-                label: "スキップ",
-                primary: false,
-            });
-            draw_button(
-                buf,
-                w,
-                skip_x,
-                btn_y,
-                skip_btn_w,
-                40,
-                "スキップ",
-                false,
-                self.hover_btn == Some(0),
-            );
+            self.buttons.push(Button { x: skip_x, y: btn_y, w: skip_btn_w, h: 40, label: "スキップ", primary: false });
+            draw_button(buf, w, skip_x, btn_y, skip_btn_w, 40, "スキップ", false, self.hover_btn == Some(0));
         }
     }
 
@@ -405,58 +260,28 @@ impl SetupWizard {
 
         let tx = card_x + 32;
 
-        draw_str_left(
-            buf,
-            w,
-            tx,
-            card_y + 100,
-            "セットアップ完了",
-            config::get_color("ui-theme/color/text", Color::TEXT),
-            1.5,
-        );
-        draw_str_left(
-            buf,
-            w,
-            tx,
-            card_y + 160,
-            "Baram OS を使い始めましょう",
-            config::get_color("ui-theme/color/muted", Color::MUTED),
-            1.0,
-        );
+        draw_str_left(buf, w, tx, card_y + 100, "セットアップ完了", Color::TEXT, 1.5);
+        draw_str_left(buf, w, tx, card_y + 160, "Baram OS を使い始めましょう", Color::MUTED, 1.0);
     }
 }
 
-fn draw_str_centered(
-    buf: &mut [u32],
-    screen_w: usize,
-    cx: usize,
-    cy: usize,
-    text: &str,
-    color: Color,
-    scale: f32,
-) {
+fn draw_str_centered(buf: &mut [u32], screen_w: usize, cx: usize, cy: usize, text: &str, color: Color, scale: f32) {
     let screen_h = buf.len() / screen_w;
 
     if !ttf_font::is_available() {
         let mut x = cx.saturating_sub(text.len() * 4);
         for &b in text.as_bytes() {
-            if b >= 0x80 {
-                break;
-            }
+            if b >= 0x80 { break; }
             let glyph = font::glyph(b);
             let gw = (GLYPH_W as f32 * scale) as usize;
             let gh = (GLYPH_H as f32 * scale) as usize;
             for row in 0..gh {
                 let src_row = (row as f32 / scale) as usize;
-                if src_row >= GLYPH_H {
-                    continue;
-                }
+                if src_row >= GLYPH_H { continue; }
                 let bits = glyph[src_row];
                 for col in 0..gw {
                     let src_col = (col as f32 / scale) as usize;
-                    if src_col >= GLYPH_W {
-                        continue;
-                    }
+                    if src_col >= GLYPH_W { continue; }
                     if (bits >> (7 - src_col)) & 1 == 1 {
                         let px = x + col;
                         let py = cy + row;
@@ -476,11 +301,7 @@ fn draw_str_centered(
     let mut total_w = 0i32;
     for ch in text.chars() {
         let g = ttf_font::glyph_at_size(ch, 14.0 * scale);
-        total_w += if g.w > 0 {
-            g.advance
-        } else {
-            (8.0 * scale) as i32
-        };
+        total_w += if g.w > 0 { g.advance } else { (8.0 * scale) as i32 };
     }
 
     let mut x = cx as i32 - total_w / 2;
@@ -495,18 +316,12 @@ fn draw_str_centered(
         let adv = g.advance;
         for row in 0..g.h {
             let py = baseline + g.y_off + row;
-            if py < 0 || py >= screen_h as i32 {
-                continue;
-            }
+            if py < 0 || py >= screen_h as i32 { continue; }
             for col in 0..g.w {
                 let alpha = g.data[(row * g.w + col) as usize];
-                if alpha == 0 {
-                    continue;
-                }
+                if alpha == 0 { continue; }
                 let px = x + col;
-                if px < 0 || px >= screen_w as i32 {
-                    continue;
-                }
+                if px < 0 || px >= screen_w as i32 { continue; }
                 let idx = py as usize * screen_w + px as usize;
                 if idx < buf.len() {
                     let a = alpha as u32;
@@ -522,37 +337,23 @@ fn draw_str_centered(
     }
 }
 
-fn draw_str_left(
-    buf: &mut [u32],
-    screen_w: usize,
-    x0: usize,
-    cy: usize,
-    text: &str,
-    color: Color,
-    scale: f32,
-) {
+fn draw_str_left(buf: &mut [u32], screen_w: usize, x0: usize, cy: usize, text: &str, color: Color, scale: f32) {
     let screen_h = buf.len() / screen_w;
 
     if !ttf_font::is_available() {
         let mut x = x0;
         for &b in text.as_bytes() {
-            if b >= 0x80 {
-                break;
-            }
+            if b >= 0x80 { break; }
             let glyph = font::glyph(b);
             let gw = (GLYPH_W as f32 * scale) as usize;
             let gh = (GLYPH_H as f32 * scale) as usize;
             for row in 0..gh {
                 let src_row = (row as f32 / scale) as usize;
-                if src_row >= GLYPH_H {
-                    continue;
-                }
+                if src_row >= GLYPH_H { continue; }
                 let bits = glyph[src_row];
                 for col in 0..gw {
                     let src_col = (col as f32 / scale) as usize;
-                    if src_col >= GLYPH_W {
-                        continue;
-                    }
+                    if src_col >= GLYPH_W { continue; }
                     if (bits >> (7 - src_col)) & 1 == 1 {
                         let px = x + col;
                         let py = cy + row;
@@ -580,18 +381,12 @@ fn draw_str_left(
         let adv = g.advance;
         for row in 0..g.h {
             let py = baseline + g.y_off + row;
-            if py < 0 || py >= screen_h as i32 {
-                continue;
-            }
+            if py < 0 || py >= screen_h as i32 { continue; }
             for col in 0..g.w {
                 let alpha = g.data[(row * g.w + col) as usize];
-                if alpha == 0 {
-                    continue;
-                }
+                if alpha == 0 { continue; }
                 let px = x + col;
-                if px < 0 || px >= screen_w as i32 {
-                    continue;
-                }
+                if px < 0 || px >= screen_w as i32 { continue; }
                 let idx = py as usize * screen_w + px as usize;
                 if idx < buf.len() {
                     let a = alpha as u32;
@@ -607,15 +402,7 @@ fn draw_str_left(
     }
 }
 
-fn draw_str_hud_left(
-    buf: &mut [u32],
-    screen_w: usize,
-    x0: usize,
-    cy: usize,
-    text: &str,
-    color: Color,
-    scale: f32,
-) {
+fn draw_str_hud_left(buf: &mut [u32], screen_w: usize, x0: usize, cy: usize, text: &str, color: Color, scale: f32) {
     let screen_h = buf.len() / screen_w;
 
     if !ttf_font_hud::is_available() {
@@ -637,18 +424,12 @@ fn draw_str_hud_left(
         let adv = g.advance;
         for row in 0..g.h {
             let py = baseline + g.y_off + row;
-            if py < 0 || py >= screen_h as i32 {
-                continue;
-            }
+            if py < 0 || py >= screen_h as i32 { continue; }
             for col in 0..g.w {
                 let alpha = g.data[(row * g.w + col) as usize];
-                if alpha == 0 {
-                    continue;
-                }
+                if alpha == 0 { continue; }
                 let px = x + col;
-                if px < 0 || px >= screen_w as i32 {
-                    continue;
-                }
+                if px < 0 || px >= screen_w as i32 { continue; }
                 let idx = py as usize * screen_w + px as usize;
                 if idx < buf.len() {
                     let a = alpha as u32;
@@ -664,15 +445,7 @@ fn draw_str_hud_left(
     }
 }
 
-fn fill_circle(
-    buf: &mut [u32],
-    screen_w: usize,
-    screen_h: usize,
-    cx: i32,
-    cy: i32,
-    r: i32,
-    color: u32,
-) {
+fn fill_circle(buf: &mut [u32], screen_w: usize, screen_h: usize, cx: i32, cy: i32, r: i32, color: u32) {
     let r2 = r * r;
     for dy in -r..=r {
         for dx in -r..=r {
@@ -722,7 +495,7 @@ fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
         }
     } else {
         for pixel in raw.iter_mut() {
-            *pixel = config::get_color("ui-theme/color/bg", Color::BG).0;
+            *pixel = Color::BG.0;
         }
     }
 
@@ -735,29 +508,12 @@ fn draw_wallpaper(buf: &mut [u32], screen_w: usize, screen_h: usize) {
     }
 }
 
-fn draw_card(
-    buf: &mut [u32],
-    screen_w: usize,
-    screen_h: usize,
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-) {
+fn draw_card(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y: usize, w: usize, h: usize) {
     draw_shadow(buf, screen_w, screen_h, x, y, w, h, 20);
     draw_card_body(buf, screen_w, screen_h, x, y, w, h);
 }
 
-fn draw_shadow(
-    buf: &mut [u32],
-    screen_w: usize,
-    screen_h: usize,
-    win_x: usize,
-    win_y: usize,
-    win_w: usize,
-    win_h: usize,
-    radius: usize,
-) {
+fn draw_shadow(buf: &mut [u32], screen_w: usize, screen_h: usize, win_x: usize, win_y: usize, win_w: usize, win_h: usize, radius: usize) {
     let blur_r: i32 = 30;
     let r = radius as f32;
     let ww = win_w as i32;
@@ -767,9 +523,7 @@ fn draw_shadow(
     let sy = (win_y as i32 - blur_r).max(0).min(screen_h as i32) as usize;
     let ex = (win_x as i32 + ww + blur_r).max(0).min(screen_w as i32) as usize;
     let ey = (win_y as i32 + wh + blur_r).max(0).min(screen_h as i32) as usize;
-    if ex <= sx || ey <= sy {
-        return;
-    }
+    if ex <= sx || ey <= sy { return; }
 
     let blur_r_f = blur_r as f32;
     let hww = ww as f32 / 2.0;
@@ -806,9 +560,7 @@ fn draw_shadow(
             let t = (blur_r_f - edge_dist) / blur_r_f;
             let alpha_f = t * t * 0.175;
             let a = (alpha_f * 255.0) as u32;
-            if a == 0 {
-                continue;
-            }
+            if a == 0 { continue; }
 
             let inv = 255 - a;
             let idx = row_start + px;
@@ -821,16 +573,7 @@ fn draw_shadow(
     }
 }
 
-fn draw_card_body(
-    buf: &mut [u32],
-    screen_w: usize,
-    screen_h: usize,
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-) {
-    let panel = config::get_color("ui-theme/color/panel", Color::PANEL);
+fn draw_card_body(buf: &mut [u32], screen_w: usize, screen_h: usize, x: usize, y: usize, w: usize, h: usize) {
     let radius = 20usize;
     let r = radius.min(w / 2).min(h / 2);
     let rf = r as f32;
@@ -843,13 +586,13 @@ fn draw_card_body(
     for py in y0..y1 {
         let row = py * screen_w;
         if r == 0 {
-            buf[row + x0..row + x1].fill(panel.0);
+            buf[row + x0..row + x1].fill(Color::PANEL.0);
             continue;
         }
         let corner_top = py < y + r;
         let corner_bot = py >= y + h.saturating_sub(r);
         if !corner_top && !corner_bot {
-            buf[row + x0..row + x1].fill(panel.0);
+            buf[row + x0..row + x1].fill(Color::PANEL.0);
             continue;
         }
         for px in x0..x1 {
@@ -858,7 +601,7 @@ fn draw_card_body(
                 || (px < x + r && corner_bot)
                 || (px >= x + w.saturating_sub(r) && corner_bot);
             if !in_corner {
-                buf[row + px] = panel.0;
+                buf[row + px] = Color::PANEL.0;
                 continue;
             }
 
@@ -877,15 +620,15 @@ fn draw_card_body(
             };
 
             if alpha >= 1.0 {
-                buf[row + px] = panel.0;
+                buf[row + px] = Color::PANEL.0;
             } else if alpha > 0.0 {
                 let bg = buf[row + px];
                 let br = ((bg >> 16) & 0xFF) as f32;
                 let bg2 = ((bg >> 8) & 0xFF) as f32;
                 let bb = (bg & 0xFF) as f32;
-                let panel_r = panel.r() as f32;
-                let panel_g = panel.g() as f32;
-                let panel_b = panel.b() as f32;
+                let panel_r = Color::PANEL.r() as f32;
+                let panel_g = Color::PANEL.g() as f32;
+                let panel_b = Color::PANEL.b() as f32;
                 let r2 = (panel_r * alpha + br * (1.0 - alpha)) as u32;
                 let g = (panel_g * alpha + bg2 * (1.0 - alpha)) as u32;
                 let b = (panel_b * alpha + bb * (1.0 - alpha)) as u32;
@@ -895,17 +638,7 @@ fn draw_card_body(
     }
 }
 
-fn draw_button(
-    buf: &mut [u32],
-    screen_w: usize,
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-    label: &str,
-    primary: bool,
-    hover: bool,
-) {
+fn draw_button(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, label: &str, primary: bool, hover: bool) {
     let radius = config::get_usize("ui-theme/button/corner", 20);
     let bg = if primary {
         if hover {
@@ -920,40 +653,15 @@ fn draw_button(
             config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL)
         }
     };
-    let text_color = if primary {
-        config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT)
-    } else {
-        config::get_color("ui-theme/color/text", Color::TEXT)
-    };
+    let text_color = if primary { config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT) } else { Color::TEXT };
 
     draw_rounded_rect(buf, screen_w, x, y, w, h, radius, bg);
 
-    let text_color = if primary {
-        config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT)
-    } else {
-        config::get_color("ui-theme/color/text", Color::TEXT)
-    };
-    draw_str_centered(
-        buf,
-        screen_w,
-        x + w / 2,
-        y + h / 2 - 8,
-        label,
-        text_color,
-        0.9,
-    );
+    let text_color = if primary { config::get_color("ui-theme/color/btn_text", Color::BTN_TEXT) } else { Color::TEXT };
+    draw_str_centered(buf, screen_w, x + w / 2, y + h / 2 - 8, label, text_color, 0.9);
 }
 
-fn draw_rounded_rect(
-    buf: &mut [u32],
-    screen_w: usize,
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-    radius: usize,
-    color: Color,
-) {
+fn draw_rounded_rect(buf: &mut [u32], screen_w: usize, x: usize, y: usize, w: usize, h: usize, radius: usize, color: Color) {
     let r = radius.min(w / 2).min(h / 2);
     let screen_h = buf.len() / screen_w;
 
@@ -999,18 +707,15 @@ fn draw_rounded_rect(
         for px in x0..corner_x_end {
             let base_x = px as f32 - x0f;
             let mut hits = 0u32;
-            for sy in 0..4 {
-                for sx in 0..4 {
-                    let sample_x = base_x + (sx as f32 + 0.5) * 0.25;
-                    let sample_y = base_y + (sy as f32 + 0.5) * 0.25;
-                    if LayerSystem::point_in_polygon(sample_x, sample_y, &poly) {
+            for sy in 0..2 {
+                for sx in 0..2 {
+                    if LayerSystem::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
                         hits += 1;
                     }
                 }
             }
             if hits > 0 {
-                buf[row + px] =
-                    LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * (1.0 / 16.0));
+                buf[row + px] = LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * 0.25);
             }
         }
 
@@ -1018,18 +723,15 @@ fn draw_rounded_rect(
             for px in corner_x_start..x1 {
                 let base_x = px as f32 - x0f;
                 let mut hits = 0u32;
-                for sy in 0..4 {
-                    for sx in 0..4 {
-                        let sample_x = base_x + (sx as f32 + 0.5) * 0.25;
-                        let sample_y = base_y + (sy as f32 + 0.5) * 0.25;
-                        if LayerSystem::point_in_polygon(sample_x, sample_y, &poly) {
+                for sy in 0..2 {
+                    for sx in 0..2 {
+                        if LayerSystem::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
                             hits += 1;
                         }
                     }
                 }
                 if hits > 0 {
-                    buf[row + px] =
-                        LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * (1.0 / 16.0));
+                    buf[row + px] = LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * 0.25);
                 }
             }
         }

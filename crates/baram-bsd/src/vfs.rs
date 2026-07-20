@@ -1,9 +1,9 @@
-use uefi::boot;
 use uefi::proto::media::file::{File, FileAttribute, FileMode};
+use uefi::boot;
 use uefi::CStr16;
 
-use alloc::format;
 use baram_font::log_line_str;
+use alloc::format;
 
 pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
     // Strategy 1: try image handle's filesystem (works on QEMU)
@@ -72,9 +72,7 @@ fn list_dir(root: &mut uefi::proto::media::file::Directory, prefix: &str, fs_idx
                 let mut name = alloc::string::String::new();
                 for &ch in name_utf16 {
                     let c: char = ch.into();
-                    if c == '\0' {
-                        break;
-                    }
+                    if c == '\0' { break; }
                     name.push(c);
                 }
                 let full = if prefix.is_empty() {
@@ -108,9 +106,7 @@ fn read_from_fs(
     buf[i] = 0;
     let cpath = CStr16::from_u16_with_nul(&buf[..=i]).ok()?;
 
-    let handle = root
-        .open(cpath, FileMode::Read, FileAttribute::empty())
-        .ok()?;
+    let handle = root.open(cpath, FileMode::Read, FileAttribute::empty()).ok()?;
     let mut file = handle.into_regular_file()?;
     let mut info_buf = [0u8; 512];
     let file_size = match file.get_info::<uefi::proto::media::file::FileInfo>(&mut info_buf) {
@@ -119,9 +115,7 @@ fn read_from_fs(
     };
     let mut contents = alloc::vec![0u8; file_size];
     match file.read(&mut contents) {
-        Ok(n) => {
-            contents.truncate(n);
-        }
+        Ok(n) => { contents.truncate(n); }
         Err(_) => {}
     }
     Some(contents)
@@ -151,7 +145,6 @@ pub fn write_file(path: &str, data: &[u8]) {
                     Ok(handle) => {
                         if let Some(mut file) = handle.into_regular_file() {
                             let _ = file.write(data);
-                            let _ = file.flush();
                         }
                     }
                     Err(e) => {

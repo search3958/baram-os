@@ -1,6 +1,6 @@
 use super::vfs;
 
-pub const FALLBACK_INDEX: &str = include_str!("../../../app/index.yaml");
+pub const FALLBACK_INDEX: &str = include_str!("../../../src/app/index.yaml");
 
 pub fn read_index_yaml() -> alloc::string::String {
     let content = vfs::read_file_str("apps/index.yaml");

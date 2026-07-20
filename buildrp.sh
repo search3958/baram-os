@@ -144,7 +144,7 @@ make_image() {
         fi
 
         # App files
-        local app_src="$SCRIPT_DIR/app"
+        local app_src="$SCRIPT_DIR/src/app"
         if [ -d "$app_src" ]; then
             mmd   -i "$img" ::/apps 2>/dev/null || true
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
@@ -208,7 +208,7 @@ make_image() {
         fi
 
         # App files
-        local app_src="$SCRIPT_DIR/app"
+        local app_src="$SCRIPT_DIR/src/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
