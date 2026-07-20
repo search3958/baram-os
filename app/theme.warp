@@ -1,0 +1,246 @@
+screen{
+    id: (main),
+
+    Header{
+        text: ("カスタマイズ"),
+    },
+
+
+    card{
+        text: ("Baram OS"),
+
+        hStack{
+            button{
+                text: ("ブルー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=1A73E8&btn_primary_hover=1565C0&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("グリーン"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=1E8E3E&btn_primary_hover=187032&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("パープル"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=7C3AED&btn_primary_hover=6D28D9&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("レッド"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=D93025&btn_primary_hover=B71C1C&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("オレンジ"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=E8710A&btn_primary_hover=D56508&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("イエロー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=CA8A04&btn_primary_hover=A16207&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("ブルー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E3F2FD&panel=FFFFFF&text=1A1A1A&muted=666666&border=BBDEFB&btn_primary=1565C0&btn_primary_hover=0D47A1&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("グリーン"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E8F5E9&panel=FFFFFF&text=1A1A1A&muted=666666&border=C8E6C9&btn_primary=2E7D32&btn_primary_hover=1B5E20&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("レッド"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=FFEBEE&panel=FFFFFF&text=1A1A1A&muted=666666&border=FFCDD2&btn_primary=C62828&btn_primary_hover=B71C1C&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+        },
+    },
+
+
+    card{
+        text: ("Material 3 - ライト"),
+
+        hStack{
+            button{
+                text: ("デフォルト"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=007AFF&btn_primary_hover=0066D6&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("グレー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E8E8EA&panel=FFFFFF&text=1A1A1A&muted=666666&border=C8C8CC&btn_primary=007AFF&btn_primary_hover=0066D6&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("ブルー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E3F2FD&panel=FFFFFF&text=1A1A1A&muted=666666&border=BBDEFB&btn_primary=2196F3&btn_primary_hover=1E88E5&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("グリーン"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E8F5E9&panel=FFFFFF&text=1A1A1A&muted=666666&border=C8E6C9&btn_primary=4CAF50&btn_primary_hover=43A047&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("オレンジ"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=FFF3E0&panel=FFFFFF&text=1A1A1A&muted=666666&border=FFE0B2&btn_primary=FF9800&btn_primary_hover=FB8C00&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+            button{
+                text: ("レッド"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=FFEBEE&panel=FFFFFF&text=1A1A1A&muted=666666&border=FFCDD2&btn_primary=F44336&btn_primary_hover=E53935&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
+            },
+        },
+    },
+
+    card{
+        text: ("Material 3 - ダーク"),
+
+        hStack{
+            button{
+                text: ("ダーク"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=000000&panel=1C1C1E&text=F2F2F7&muted=8E8E93&border=38383A&btn_primary=0A84FF&btn_primary_hover=409CFF&btn_tonal=2C2C2E&btn_tonal_hover=3A3A3C&card_bg=2C2C2E")
+            },
+            button{
+                text: ("グレー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=1C1C1E&panel=2C2C2E&text=F2F2F7&muted=8E8E93&border=38383A&btn_primary=0A84FF&btn_primary_hover=409CFF&btn_tonal=3A3A3C&btn_tonal_hover=48484A&card_bg=3A3A3C")
+            },
+            button{
+                text: ("ブルー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=0D1B2A&panel=1C2838&text=F2F2F7&muted=8E8E93&border=2A3F5F&btn_primary=64B5F6&btn_primary_hover=90CAF9&btn_tonal=2C3E5A&btn_tonal_hover=3C4E6A&card_bg=2C3E5A")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("グリーン"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=0D1F0D&panel=1C2E1C&text=F2F2F7&muted=8E8E93&border=2A4A2A&btn_primary=66BB6A&btn_primary_hover=81C784&btn_tonal=2E3E2E&btn_tonal_hover=3E4E3E&card_bg=2E3E2E")
+            },
+            button{
+                text: ("パープル"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=1A0D2E&panel=2A1C3E&text=F2F2F7&muted=8E8E93&border=4A2A6A&btn_primary=BA68C8&btn_primary_hover=CE93D8&btn_tonal=3A2A5A&btn_tonal_hover=4A3A6A&card_bg=3A2A5A")
+            },
+            button{
+                text: ("レッド"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=2E0D0D&panel=3E1C1C&text=F2F2F7&muted=8E8E93&border=6A2A2A&btn_primary=EF5350&btn_primary_hover=EF9A9A&btn_tonal=4A2A2A&btn_tonal_hover=5A3A3A&card_bg=4A2A2A")
+            },
+        },
+    },
+
+    card{
+        text: ("角丸 - ウィンドウ"),
+
+        text{
+            text: ("現在: " + --winRadius)
+        },
+
+        hStack{
+            button{
+                text: ("0"),
+                oneClick: (--winRadius = "0", runCommand = "os://ui-theme/window?win_radius=0")
+            },
+            button{
+                text: ("8"),
+                oneClick: (--winRadius = "8", runCommand = "os://ui-theme/window?win_radius=8")
+            },
+            button{
+                text: ("16"),
+                oneClick: (--winRadius = "16", runCommand = "os://ui-theme/window?win_radius=16")
+            },
+            button{
+                text: ("24"),
+                oneClick: (--winRadius = "24", runCommand = "os://ui-theme/window?win_radius=24")
+            },
+            button{
+                text: ("32"),
+                oneClick: (--winRadius = "32", runCommand = "os://ui-theme/window?win_radius=32")
+            },
+        },
+    },
+
+    card{
+        text: ("角丸 - カード"),
+
+        text{
+            text: ("現在: " + --cardRadius)
+        },
+
+        hStack{
+            button{
+                text: ("0"),
+                oneClick: (--cardRadius = "0", runCommand = "os://ui-theme/card?radius=0")
+            },
+            button{
+                text: ("16"),
+                oneClick: (--cardRadius = "16", runCommand = "os://ui-theme/card?radius=16")
+            },
+            button{
+                text: ("32"),
+                oneClick: (--cardRadius = "32", runCommand = "os://ui-theme/card?radius=32")
+            },
+            button{
+                text: ("48"),
+                oneClick: (--cardRadius = "48", runCommand = "os://ui-theme/card?radius=48")
+            },
+            button{
+                text: ("64"),
+                oneClick: (--cardRadius = "64", runCommand = "os://ui-theme/card?radius=64")
+            },
+        },
+    },
+
+    card{
+        text: ("角丸 - ボタン"),
+
+        text{
+            text: ("現在: " + --btnRadius)
+        },
+
+        hStack{
+            button{
+                text: ("0"),
+                oneClick: (--btnRadius = "0", runCommand = "os://ui-theme/button?corner=0")
+            },
+            button{
+                text: ("4"),
+                oneClick: (--btnRadius = "4", runCommand = "os://ui-theme/button?corner=4")
+            },
+            button{
+                text: ("8"),
+                oneClick: (--btnRadius = "8", runCommand = "os://ui-theme/button?corner=8")
+            },
+            button{
+                text: ("12"),
+                oneClick: (--btnRadius = "12", runCommand = "os://ui-theme/button?corner=12")
+            },
+            button{
+                text: ("丸型"),
+                oneClick: (--btnRadius = "999", runCommand = "os://ui-theme/button?corner=999")
+            },
+        },
+    },
+
+    card{
+        text: ("角丸 - スイッチ"),
+
+        text{
+            text: ("現在: " + --switchRadius)
+        },
+
+        hStack{
+            button{
+                text: ("0"),
+                oneClick: (--switchRadius = "0", runCommand = "os://ui-theme/switch?radius=0")
+            },
+            button{
+                text: ("8"),
+                oneClick: (--switchRadius = "8", runCommand = "os://ui-theme/switch?radius=8")
+            },
+            button{
+                text: ("12"),
+                oneClick: (--switchRadius = "12", runCommand = "os://ui-theme/switch?radius=12")
+            },
+            button{
+                text: ("丸型"),
+                oneClick: (--switchRadius = "999", runCommand = "os://ui-theme/switch?radius=999")
+            },
+        },
+    },
+}

@@ -8,6 +8,10 @@ apps:
     icon: settings.png
     type: warp-2
     title: 設定
+  theme.warp:
+    icon: theme.png
+    type: warp-2
+    title: カスタマイズ
   demo.u1:
     icon: null
     type: uiscript-1
