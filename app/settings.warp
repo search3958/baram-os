@@ -58,9 +58,6 @@ screen{
                 text: ("ブルー"),
                 oneClick: (runCommand = "os://ui-theme/color?bg=E8F0FE&panel=FFFFFF&text=1A1A1A&muted=666666&border=C0D0E0&btn_primary=1A73E8&btn_primary_hover=1565C0&btn_tonal=D2E3FC&btn_tonal_hover=BDD8FC&card_bg=F0F4FF")
             },
-        },
-
-        hStack{
             button{
                 text: ("グリーン"),
                 oneClick: (runCommand = "os://ui-theme/color?bg=E6F4EA&panel=FFFFFF&text=1A1A1A&muted=666666&border=C0E0C0&btn_primary=1E8E3E&btn_primary_hover=187032&btn_tonal=CEEAD6&btn_tonal_hover=B8E0C8&card_bg=F0FAF0")
@@ -73,9 +70,6 @@ screen{
                 text: ("パープル"),
                 oneClick: (runCommand = "os://ui-theme/color?bg=F3E8FD&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0C0E0&btn_primary=A142F4&btn_primary_hover=8C35E0&btn_tonal=E8D0F8&btn_tonal_hover=DCBEF5&card_bg=F8F0FF")
             },
-        },
-
-        hStack{
             button{
                 text: ("オレンジ"),
                 oneClick: (runCommand = "os://ui-theme/color?bg=FDF0E0&panel=FFFFFF&text=1A1A1A&muted=666666&border=E0D0B0&btn_primary=E8710A&btn_primary_hover=D56508&btn_tonal=FDEBC8&btn_tonal_hover=FCD8A8&card_bg=FFF8F0")
@@ -130,9 +124,6 @@ screen{
                 text: ("グレー"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#808080&mode=color")
             },
-        },
-
-        hStack{
             button{
                 text: ("赤"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#FF0000&mode=color")
@@ -145,9 +136,6 @@ screen{
                 text: ("緑"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#00AA00&mode=color")
             },
-        },
-
-        hStack{
             button{
                 text: ("黄"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#FFCC00&mode=color")
@@ -160,9 +148,6 @@ screen{
                 text: ("紫"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#8800AA&mode=color")
             },
-        },
-
-        hStack{
             button{
                 text: ("ピンク"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#FF66AA&mode=color")
@@ -175,9 +160,6 @@ screen{
                 text: ("ネイビー"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#003366&mode=color")
             },
-        },
-
-        hStack{
             button{
                 text: ("ベージュ"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#F5F5DC&mode=color")
@@ -190,9 +172,6 @@ screen{
                 text: ("ティール"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#008080&mode=color")
             },
-        },
-
-        hStack{
             button{
                 text: ("コーラル"),
                 oneClick: (runCommand = "os://display/wallpaper?color=#FF7F50&mode=color")
