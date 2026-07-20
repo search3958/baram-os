@@ -4,14 +4,17 @@ use alloc::vec::Vec;
 use uefi::boot;
 use uefi::proto::console::pointer::Pointer;
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
+use uefi::Handle;
 
 use crate::absolute_pointer::AbsolutePointer;
-use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidParsedEvent, HidReportLayout};
+use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidReportLayout};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MouseEvent {
     pub abs_x: u64,
     pub abs_y: u64,
+    pub abs_max_x: u64,
+    pub abs_max_y: u64,
     pub rel_dx: i32,
     pub rel_dy: i32,
     pub is_absolute: bool,
@@ -21,54 +24,167 @@ pub struct MouseEvent {
     pub scroll: i32,
 }
 
-pub struct Mouse {
-    // Native UEFI pointer protocols are deliberately preferred.  Firmware has
-    // already converted PS/2, I2C-HID and vendor-specific trackpads into these
-    // protocols, which is much safer than reconfiguring their USB interface.
-    abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64, u64, u64)>,
-    simple: Option<boot::ScopedProtocol<Pointer>>,
+struct AbsoluteDevice {
+    pointer: boot::ScopedProtocol<AbsolutePointer>,
+    range_x: u64,
+    range_y: u64,
+    min_x: u64,
+    min_y: u64,
+    buttons: u8,
+}
 
-    // Direct USB HID is the fallback for firmware that exposes no pointer
-    // protocol (and is also useful for hot-plugged USB mice).
-    usb_io: Option<boot::ScopedProtocol<UsbIo>>,
-    ep_addr: u8,
-    iface: u8,
+struct SimpleDevice {
+    pointer: boot::ScopedProtocol<Pointer>,
+    buttons: u8,
+}
+
+struct UsbPointer {
+    io: boot::ScopedProtocol<UsbIo>,
+    endpoint: u8,
+    interface: u8,
     report_buf: Vec<u8>,
     last_report: Vec<u8>,
-    hid_layouts: Vec<HidReportLayout>,
-    usb_boot_mouse: bool,
-
-    // Absolute HID touchpads need relative finger tracking.  Mapping their
-    // surface coordinates straight onto the display makes the cursor jump at
-    // the beginning of every gesture.
+    layouts: Vec<HidReportLayout>,
+    boot_mouse: bool,
     last_touch: Option<(i32, i32)>,
     touch_acc_x: f32,
     touch_acc_y: f32,
+    buttons: u8,
+}
+
+impl UsbPointer {
+    fn layout_for_report(&self, report: &[u8]) -> Option<HidReportLayout> {
+        self.layouts
+            .iter()
+            .find(|layout| layout.report_id == 0 || report.first() == Some(&layout.report_id))
+            .copied()
+    }
+
+    fn poll(&mut self) -> Option<MouseEvent> {
+        match self
+            .io
+            .sync_interrupt_receive(self.endpoint, &mut self.report_buf, 1)
+        {
+            Ok(length) if length != 0 => {
+                let report = self.report_buf[..length].to_vec();
+                self.decode_report(&report)
+            }
+            Ok(_) => None,
+            Err(_) => {
+                // Some firmware implements UsbIo but not interrupt receive.
+                // GET_REPORT provides a useful fallback for those machines.
+                let report_id = self.layouts.first().map(|l| l.report_id).unwrap_or(0);
+                if self
+                    .io
+                    .control_transfer(
+                        0xa1,
+                        0x01,
+                        0x0100 | report_id as u16,
+                        self.interface as u16,
+                        ControlTransfer::DataIn(&mut self.report_buf),
+                        1,
+                    )
+                    .is_err()
+                {
+                    return None;
+                }
+                let expected = self
+                    .layout_for_report(&self.report_buf)
+                    .map(|layout| layout.report_size_bytes as usize)
+                    .unwrap_or(if self.boot_mouse { 4 } else { 0 })
+                    .min(self.report_buf.len());
+                if expected == 0 || self.last_report.as_slice() == &self.report_buf[..expected] {
+                    return None;
+                }
+                let report = self.report_buf[..expected].to_vec();
+                self.last_report.clear();
+                self.last_report.extend_from_slice(&report);
+                self.decode_report(&report)
+            }
+        }
+    }
+
+    fn decode_report(&mut self, report: &[u8]) -> Option<MouseEvent> {
+        if self.boot_mouse {
+            if report.len() < 3 {
+                return None;
+            }
+            self.buttons = report[0] & 0x07;
+            return Some(MouseEvent {
+                rel_dx: report[1] as i8 as i32,
+                rel_dy: report[2] as i8 as i32,
+                scroll: report.get(3).copied().unwrap_or(0) as i8 as i32,
+                ..event_with_buttons(self.buttons)
+            });
+        }
+
+        let layout = self.layout_for_report(report)?;
+        let parsed = parse_input_report(&layout, report)?;
+        self.buttons = parsed.buttons & 0x07;
+        let mut event = event_with_buttons(self.buttons);
+        event.scroll = parsed.wheel;
+
+        let is_touchpad = layout.application_usage_page == 0x0d && layout.application_usage == 0x05;
+        if layout.is_absolute && is_touchpad {
+            // A trackpad reports finger coordinates, but the desktop pointer
+            // must move by the delta within a gesture.  A new contact starts a
+            // fresh gesture and therefore must not teleport the cursor.
+            if layout.has_tip && !parsed.touching {
+                self.last_touch = None;
+                self.touch_acc_x = 0.0;
+                self.touch_acc_y = 0.0;
+                return Some(event);
+            }
+            if let Some((last_x, last_y)) = self.last_touch {
+                const TRACKPAD_SCALE: f32 = 0.35;
+                let dx = (parsed.x - last_x) as f32 * TRACKPAD_SCALE + self.touch_acc_x;
+                let dy = (parsed.y - last_y) as f32 * TRACKPAD_SCALE + self.touch_acc_y;
+                event.rel_dx = dx as i32;
+                event.rel_dy = dy as i32;
+                self.touch_acc_x = dx - event.rel_dx as f32;
+                self.touch_acc_y = dy - event.rel_dy as f32;
+            }
+            self.last_touch = Some((parsed.x, parsed.y));
+        } else if layout.is_absolute {
+            event.is_absolute = true;
+            event.abs_x = parsed.x.saturating_sub(parsed.x_min) as u64;
+            event.abs_y = parsed.y.saturating_sub(parsed.y_min) as u64;
+            event.abs_max_x = parsed.x_max.saturating_sub(parsed.x_min).max(1) as u64;
+            event.abs_max_y = parsed.y_max.saturating_sub(parsed.y_min).max(1) as u64;
+        } else {
+            event.rel_dx = parsed.x;
+            event.rel_dy = parsed.y;
+        }
+        Some(event)
+    }
+}
+
+pub struct Mouse {
+    absolute: Vec<AbsoluteDevice>,
+    simple: Vec<SimpleDevice>,
+    usb: Vec<UsbPointer>,
+    // A UEFI USB mouse commonly installs UsbIo and SimplePointer on the same
+    // handle.  Remember claimed handles so it is not read twice.
+    claimed_handles: Vec<Handle>,
+    scanned_usb_handles: Vec<Handle>,
     poll_count: u32,
-    usb_error_count: u32,
 }
 
 impl Mouse {
     fn empty() -> Self {
         Self {
-            abs: None,
-            simple: None,
-            usb_io: None,
-            ep_addr: 0,
-            iface: 0,
-            report_buf: vec![0; 8],
-            last_report: Vec::new(),
-            hid_layouts: Vec::new(),
-            usb_boot_mouse: false,
-            last_touch: None,
-            touch_acc_x: 0.0,
-            touch_acc_y: 0.0,
+            absolute: Vec::new(),
+            simple: Vec::new(),
+            usb: Vec::new(),
+            claimed_handles: Vec::new(),
+            scanned_usb_handles: Vec::new(),
             poll_count: 0,
-            usb_error_count: 0,
         }
     }
 
     pub fn get_wait_event() -> Option<uefi::Event> {
+        // The main loop also has a 1 ms timer, so one pointer event is enough
+        // to reduce latency; every device is still polled on each wakeup.
         if let Some(handle) = boot::find_handles::<AbsolutePointer>()
             .ok()
             .and_then(|handles| handles.into_iter().next())
@@ -90,7 +206,6 @@ impl Mouse {
                 return Some(unsafe { core::mem::transmute_copy::<usize, uefi::Event>(&raw) });
             }
         }
-
         if let Some(handle) = boot::find_handles::<Pointer>()
             .ok()
             .and_then(|handles| handles.into_iter().next())
@@ -122,30 +237,43 @@ impl Mouse {
             .map(|h| h.len())
             .unwrap_or(0);
         log_line_str(&format!(
-            "Mouse: devices USB={} Abs={} Simple={}",
+            "Mouse: handles USB={} Absolute={} Simple={}",
             usb_count, abs_count, simple_count
         ));
 
         let mut mouse = Self::empty();
-        if mouse.try_open_uefi() || mouse.try_open_usb() {
-            return Ok(mouse);
+        mouse.scan_uefi();
+        mouse.scan_usb();
+        if mouse.device_count() == 0 {
+            log_line_str("Mouse: no device yet; hotplug scan remains active");
+        } else {
+            mouse.log_active_devices();
         }
-
-        // Keep a live object so a mouse connected after boot can be found by
-        // the periodic rescan in poll().
-        log_line_str("Mouse: no device yet; hotplug scan remains active");
+        // Always retain the object so hot-plugged mice can be discovered.
         Ok(mouse)
     }
 
-    fn try_open_uefi(&mut self) -> bool {
-        if self.abs.is_some() || self.simple.is_some() {
-            return true;
-        }
+    fn device_count(&self) -> usize {
+        self.absolute.len() + self.simple.len() + self.usb.len()
+    }
 
-        // AbsolutePointer is preferred for tablets/touchscreens and for QEMU's
-        // usb-tablet.  Preserve the mode's non-zero coordinate origin.
+    fn log_active_devices(&self) {
+        log_line_str(&format!(
+            "Mouse: active Absolute={} Simple={} USB-HID={}",
+            self.absolute.len(),
+            self.simple.len(),
+            self.usb.len()
+        ));
+    }
+
+    fn scan_uefi(&mut self) -> bool {
+        let before = self.device_count();
+
         if let Ok(handles) = boot::find_handles::<AbsolutePointer>() {
             for handle in handles {
+                if self.claimed_handles.contains(&handle) {
+                    continue;
+                }
                 let params = boot::OpenProtocolParams {
                     handle,
                     agent: boot::image_handle(),
@@ -159,27 +287,38 @@ impl Mouse {
                 }) else {
                     continue;
                 };
-                // Extended verification is slow and is not required for normal
-                // operation.  A failed reset does not make GetState unusable.
                 let _ = pointer.reset(false);
                 let mode = pointer.mode();
                 let min_x = mode.absolute_min_x;
                 let min_y = mode.absolute_min_y;
                 let range_x = mode.absolute_max_x.saturating_sub(min_x).max(1);
                 let range_y = mode.absolute_max_y.saturating_sub(min_y).max(1);
+                self.absolute.push(AbsoluteDevice {
+                    pointer,
+                    range_x,
+                    range_y,
+                    min_x,
+                    min_y,
+                    buttons: 0,
+                });
+                self.claimed_handles.push(handle);
                 log_line_str(&format!(
-                    "Mouse: using UEFI AbsolutePointer range=({},{})",
-                    range_x, range_y
+                    "Mouse: opened AbsolutePointer #{} range=({},{})",
+                    self.absolute.len(),
+                    range_x,
+                    range_y
                 ));
-                self.abs = Some((pointer, range_x, range_y, min_x, min_y));
-                return true;
             }
         }
 
-        // SimplePointer is the normal firmware abstraction for laptop
-        // trackpads, PS/2 mice and many USB mice.
+        // Do not return after finding an AbsolutePointer.  Convertible laptops
+        // commonly expose the touchscreen as AbsolutePointer and the trackpad
+        // (plus USB mice) as separate SimplePointer handles.
         if let Ok(handles) = boot::find_handles::<Pointer>() {
             for handle in handles {
+                if self.claimed_handles.contains(&handle) {
+                    continue;
+                }
                 let params = boot::OpenProtocolParams {
                     handle,
                     agent: boot::image_handle(),
@@ -194,333 +333,261 @@ impl Mouse {
                     continue;
                 };
                 let _ = pointer.reset(false);
-                log_line_str("Mouse: using UEFI SimplePointer");
-                self.simple = Some(pointer);
-                return true;
+                self.simple.push(SimpleDevice {
+                    pointer,
+                    buttons: 0,
+                });
+                self.claimed_handles.push(handle);
+                log_line_str(&format!(
+                    "Mouse: opened SimplePointer #{}",
+                    self.simple.len()
+                ));
             }
         }
-        false
+        self.device_count() != before
     }
 
-    fn try_open_usb(&mut self) -> bool {
-        if self.usb_io.is_some() {
-            return true;
-        }
+    fn scan_usb(&mut self) -> bool {
+        let before = self.device_count();
         let Ok(handles) = boot::find_handles::<UsbIo>() else {
             return false;
         };
-
         for handle in handles {
-            let params = boot::OpenProtocolParams {
-                handle,
-                agent: boot::image_handle(),
-                controller: None,
-            };
-            let Ok(mut usb) = (unsafe {
-                boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol)
-            }) else {
-                continue;
-            };
-
-            let Ok(interface) = usb.interface_descriptor() else {
-                continue;
-            };
-            if interface.interface_class != 3 {
+            if self.claimed_handles.contains(&handle) || self.scanned_usb_handles.contains(&handle)
+            {
                 continue;
             }
+            self.scanned_usb_handles.push(handle);
+            if let Some(device) = Self::open_usb_handle(handle) {
+                self.usb.push(device);
+                self.claimed_handles.push(handle);
+            }
+        }
+        self.device_count() != before
+    }
 
-            let mut endpoint = None;
-            let mut max_packet = 0usize;
-            for index in 0..interface.num_endpoints {
-                if let Ok(descriptor) = usb.endpoint_descriptor(index) {
-                    if descriptor.endpoint_address & 0x80 != 0 && descriptor.attributes & 0x03 == 3
-                    {
-                        endpoint = Some(descriptor.endpoint_address);
-                        max_packet = descriptor.max_packet_size as usize;
-                        break;
-                    }
+    fn open_usb_handle(handle: Handle) -> Option<UsbPointer> {
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let mut io = unsafe {
+            boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
+        };
+        let interface = io.interface_descriptor().ok()?;
+        if interface.interface_class != 3 {
+            return None;
+        }
+
+        let mut endpoint = None;
+        let mut max_packet = 0usize;
+        for index in 0..interface.num_endpoints {
+            if let Ok(descriptor) = io.endpoint_descriptor(index) {
+                if descriptor.endpoint_address & 0x80 != 0 && descriptor.attributes & 0x03 == 3 {
+                    endpoint = Some(descriptor.endpoint_address);
+                    max_packet = descriptor.max_packet_size as usize;
+                    break;
                 }
             }
-            let Some(endpoint) = endpoint else { continue };
+        }
+        let endpoint = endpoint?;
 
-            // Asking for a larger descriptor is valid: the device terminates
-            // the control transfer at its real descriptor length.
-            let mut descriptor = vec![0u8; 1024];
-            let layouts = if usb
-                .control_transfer(
-                    0x81,
-                    0x06,
-                    0x2200,
-                    interface.interface_number as u16,
-                    ControlTransfer::DataIn(&mut descriptor),
-                    500,
-                )
-                .is_ok()
-            {
-                parse_hid_report_descs(&descriptor)
-            } else {
-                Vec::new()
-            };
+        let mut descriptor = vec![0u8; 1024];
+        let layouts = if io
+            .control_transfer(
+                0x81,
+                0x06,
+                0x2200,
+                interface.interface_number as u16,
+                ControlTransfer::DataIn(&mut descriptor),
+                500,
+            )
+            .is_ok()
+        {
+            parse_hid_report_descs(&descriptor)
+        } else {
+            Vec::new()
+        };
+        let boot_mouse = interface.interface_subclass == 1
+            && interface.interface_protocol == 2
+            && layouts.is_empty();
+        if layouts.is_empty() && !boot_mouse {
+            return None;
+        }
 
-            let boot_mouse = interface.interface_subclass == 1
-                && interface.interface_protocol == 2
-                && layouts.is_empty();
-            if layouts.is_empty() && !boot_mouse {
-                continue;
-            }
-
-            // Do not issue SET_CONFIGURATION here: the UEFI USB bus driver has
-            // already configured the interface.  Reissuing it resets endpoint
-            // state on real machines.  Only force boot protocol if descriptor
-            // parsing failed and this is explicitly a boot-mouse interface.
-            let _ = usb.control_transfer(
+        // The UEFI USB bus driver has already selected a configuration.
+        // Reissuing SET_CONFIGURATION here would reset live endpoints.
+        let _ = io.control_transfer(
+            0x21,
+            0x0a,
+            0,
+            interface.interface_number as u16,
+            ControlTransfer::None,
+            100,
+        );
+        if boot_mouse {
+            let _ = io.control_transfer(
                 0x21,
-                0x0a,
+                0x0b,
                 0,
                 interface.interface_number as u16,
                 ControlTransfer::None,
                 100,
             );
-            if boot_mouse {
-                let _ = usb.control_transfer(
-                    0x21,
-                    0x0b,
-                    0,
-                    interface.interface_number as u16,
-                    ControlTransfer::None,
-                    100,
-                );
-            }
-
-            let report_len = layouts
-                .iter()
-                .map(|layout| layout.report_size_bytes as usize)
-                .max()
-                .unwrap_or(4)
-                .max(max_packet)
-                .clamp(4, 1024);
-            log_line_str(&format!(
-                "Mouse: using USB HID iface={} ep=0x{:02x} reports={}{}",
-                interface.interface_number,
-                endpoint,
-                layouts.len(),
-                if boot_mouse { " boot" } else { "" }
-            ));
-            self.usb_io = Some(usb);
-            self.ep_addr = endpoint;
-            self.iface = interface.interface_number;
-            self.report_buf = vec![0; report_len];
-            self.last_report.clear();
-            self.hid_layouts = layouts;
-            self.usb_boot_mouse = boot_mouse;
-            return true;
         }
-        false
+
+        let report_len = layouts
+            .iter()
+            .map(|layout| layout.report_size_bytes as usize)
+            .max()
+            .unwrap_or(4)
+            .max(max_packet)
+            .clamp(4, 1024);
+        log_line_str(&format!(
+            "Mouse: opened USB HID iface={} ep=0x{:02x} reports={}{}",
+            interface.interface_number,
+            endpoint,
+            layouts.len(),
+            if boot_mouse { " boot" } else { "" }
+        ));
+        Some(UsbPointer {
+            io,
+            endpoint,
+            interface: interface.interface_number,
+            report_buf: vec![0; report_len],
+            last_report: Vec::new(),
+            layouts,
+            boot_mouse,
+            last_touch: None,
+            touch_acc_x: 0.0,
+            touch_acc_y: 0.0,
+            buttons: 0,
+        })
     }
 
     pub fn is_absolute(&self) -> bool {
-        self.abs.is_some()
-            || self.hid_layouts.iter().any(|layout| {
-                layout.is_absolute
-                    && !(layout.application_usage_page == 0x0d && layout.application_usage == 0x05)
+        !self.absolute.is_empty()
+            || self.usb.iter().any(|device| {
+                device.layouts.iter().any(|layout| {
+                    layout.is_absolute
+                        && !(layout.application_usage_page == 0x0d
+                            && layout.application_usage == 0x05)
+                })
             })
     }
 
+    /// Compatibility fallback.  Each new absolute event also carries its own
+    /// range, which is required when several absolute devices differ.
     pub fn abs_max(&self) -> (u64, u64) {
-        if let Some((_, range_x, range_y, _, _)) = &self.abs {
-            return (*range_x, *range_y);
-        }
-        self.hid_layouts
-            .iter()
-            .filter(|layout| layout.is_absolute)
-            .map(|layout| {
-                (
-                    layout.x_max.saturating_sub(layout.x_min).max(1) as u64,
-                    layout.y_max.saturating_sub(layout.y_min).max(1) as u64,
-                )
-            })
-            .next()
+        self.absolute
+            .first()
+            .map(|device| (device.range_x, device.range_y))
             .unwrap_or((1, 1))
     }
 
     pub fn poll(&mut self) -> Option<MouseEvent> {
         self.poll_count = self.poll_count.wrapping_add(1);
-        if self.abs.is_none()
-            && self.simple.is_none()
-            && self.usb_io.is_none()
-            && self.poll_count % 1000 == 0
-        {
-            if self.try_open_uefi() || self.try_open_usb() {
-                log_line_str("Mouse: hotplug device recognized");
+        if self.poll_count % 1000 == 0 {
+            let changed = self.scan_uefi() | self.scan_usb();
+            if changed {
+                self.log_active_devices();
             }
         }
 
-        if self.usb_io.is_some() {
-            if let Some(event) = self.poll_usb() {
-                return Some(event);
+        for index in 0..self.usb.len() {
+            let event = self.usb[index].poll();
+            if let Some(event) = event {
+                return Some(self.with_global_buttons(event));
             }
         }
 
-        if let Some((pointer, _range_x, _range_y, min_x, min_y)) = &mut self.abs {
-            let mut latest = None;
-            // Drain queued states and use the newest position.
-            for _ in 0..32 {
-                match pointer.get_state() {
-                    Ok(Some(state)) => latest = Some(state),
-                    Ok(None) => break,
-                    Err(_) => break,
-                }
-            }
-            if let Some(state) = latest {
-                return Some(MouseEvent {
-                    abs_x: state.current_x.saturating_sub(*min_x),
-                    abs_y: state.current_y.saturating_sub(*min_y),
-                    is_absolute: true,
-                    left: state.active_buttons & 1 != 0,
-                    right: state.active_buttons & 2 != 0,
-                    ..MouseEvent::default()
-                });
-            }
-        }
-
-        if let Some(pointer) = &mut self.simple {
-            let mut event = MouseEvent::default();
-            let mut received = false;
-            loop {
-                match pointer.read_state() {
-                    Ok(Some(state)) => {
-                        event.rel_dx = event.rel_dx.saturating_add(state.relative_movement[0]);
-                        event.rel_dy = event.rel_dy.saturating_add(state.relative_movement[1]);
-                        event.left |= state.button[0];
-                        event.right |= state.button[1];
-                        received = true;
+        for index in 0..self.absolute.len() {
+            let event = {
+                let device = &mut self.absolute[index];
+                let mut latest = None;
+                for _ in 0..32 {
+                    match device.pointer.get_state() {
+                        Ok(Some(state)) => latest = Some(state),
+                        Ok(None) => break,
+                        Err(_) => break,
                     }
-                    _ => break,
                 }
+                latest.map(|state| {
+                    device.buttons = (state.active_buttons & 0x03) as u8;
+                    MouseEvent {
+                        abs_x: state.current_x.saturating_sub(device.min_x),
+                        abs_y: state.current_y.saturating_sub(device.min_y),
+                        abs_max_x: device.range_x,
+                        abs_max_y: device.range_y,
+                        is_absolute: true,
+                        ..event_with_buttons(device.buttons)
+                    }
+                })
+            };
+            if let Some(event) = event {
+                return Some(self.with_global_buttons(event));
             }
-            if received {
-                return Some(event);
+        }
+
+        for index in 0..self.simple.len() {
+            let event = {
+                let device = &mut self.simple[index];
+                let mut event = MouseEvent::default();
+                let mut received = false;
+                loop {
+                    match device.pointer.read_state() {
+                        Ok(Some(state)) => {
+                            event.rel_dx = event.rel_dx.saturating_add(state.relative_movement[0]);
+                            event.rel_dy = event.rel_dy.saturating_add(state.relative_movement[1]);
+                            // The last state determines whether the button was
+                            // released; OR-ing states can leave clicks stuck.
+                            device.buttons =
+                                (state.button[0] as u8) | ((state.button[1] as u8) << 1);
+                            received = true;
+                        }
+                        _ => break,
+                    }
+                }
+                if received {
+                    let buttons = device.buttons;
+                    event.left = buttons & 1 != 0;
+                    event.right = buttons & 2 != 0;
+                    Some(event)
+                } else {
+                    None
+                }
+            };
+            if let Some(event) = event {
+                return Some(self.with_global_buttons(event));
             }
         }
         None
     }
 
-    fn poll_usb(&mut self) -> Option<MouseEvent> {
-        let transfer = {
-            let usb = self.usb_io.as_mut()?;
-            usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 1)
-        };
-
-        match transfer {
-            Ok(length) if length != 0 => {
-                self.usb_error_count = 0;
-                let report = self.report_buf[..length].to_vec();
-                self.decode_usb_report(&report)
-            }
-            Ok(_) => None,
-            Err(_) => {
-                self.usb_error_count = self.usb_error_count.saturating_add(1);
-                // Some firmware implements UsbIo but not synchronous interrupt
-                // receive.  GET_REPORT is a useful last-resort path.  Avoid
-                // returning the same held-state report on every timer tick.
-                let report_id = self.hid_layouts.first().map(|l| l.report_id).unwrap_or(0);
-                let request_ok = {
-                    let usb = self.usb_io.as_mut()?;
-                    usb.control_transfer(
-                        0xa1,
-                        0x01,
-                        0x0100 | report_id as u16,
-                        self.iface as u16,
-                        ControlTransfer::DataIn(&mut self.report_buf),
-                        1,
-                    )
-                    .is_ok()
-                };
-                if !request_ok {
-                    return None;
-                }
-                let expected = self
-                    .layout_for_report(&self.report_buf)
-                    .map(|layout| layout.report_size_bytes as usize)
-                    .unwrap_or(if self.usb_boot_mouse { 4 } else { 0 })
-                    .min(self.report_buf.len());
-                if expected == 0 || self.last_report.as_slice() == &self.report_buf[..expected] {
-                    return None;
-                }
-                let report = self.report_buf[..expected].to_vec();
-                self.last_report.clear();
-                self.last_report.extend_from_slice(&report);
-                self.decode_usb_report(&report)
-            }
+    fn with_global_buttons(&self, mut event: MouseEvent) -> MouseEvent {
+        let mut buttons = 0u8;
+        for device in &self.absolute {
+            buttons |= device.buttons;
         }
-    }
-
-    fn layout_for_report(&self, report: &[u8]) -> Option<HidReportLayout> {
-        self.hid_layouts
-            .iter()
-            .find(|layout| layout.report_id == 0 || report.first() == Some(&layout.report_id))
-            .copied()
-    }
-
-    fn decode_usb_report(&mut self, report: &[u8]) -> Option<MouseEvent> {
-        if self.usb_boot_mouse {
-            if report.len() < 3 {
-                return None;
-            }
-            return Some(MouseEvent {
-                rel_dx: report[1] as i8 as i32,
-                rel_dy: report[2] as i8 as i32,
-                scroll: report.get(3).copied().unwrap_or(0) as i8 as i32,
-                left: report[0] & 1 != 0,
-                right: report[0] & 2 != 0,
-                middle: report[0] & 4 != 0,
-                ..MouseEvent::default()
-            });
+        for device in &self.simple {
+            buttons |= device.buttons;
         }
-
-        let layout = self.layout_for_report(report)?;
-        let parsed = parse_input_report(&layout, report)?;
-        let mut event = buttons_and_wheel(&parsed);
-
-        let is_touchpad = layout.application_usage_page == 0x0d && layout.application_usage == 0x05;
-        if layout.is_absolute && is_touchpad {
-            if layout.has_tip && !parsed.touching {
-                self.last_touch = None;
-                self.touch_acc_x = 0.0;
-                self.touch_acc_y = 0.0;
-                return Some(event);
-            }
-            if let Some((last_x, last_y)) = self.last_touch {
-                // Typical precision touchpads report roughly 3000-6000 units
-                // across their surface.  This scale gives useful desktop
-                // motion while retaining fractional movement.
-                const TRACKPAD_SCALE: f32 = 0.35;
-                let dx = (parsed.x - last_x) as f32 * TRACKPAD_SCALE + self.touch_acc_x;
-                let dy = (parsed.y - last_y) as f32 * TRACKPAD_SCALE + self.touch_acc_y;
-                event.rel_dx = dx as i32;
-                event.rel_dy = dy as i32;
-                self.touch_acc_x = dx - event.rel_dx as f32;
-                self.touch_acc_y = dy - event.rel_dy as f32;
-            }
-            self.last_touch = Some((parsed.x, parsed.y));
-        } else if layout.is_absolute {
-            event.is_absolute = true;
-            event.abs_x = parsed.x.saturating_sub(parsed.x_min) as u64;
-            event.abs_y = parsed.y.saturating_sub(parsed.y_min) as u64;
-        } else {
-            event.rel_dx = parsed.x;
-            event.rel_dy = parsed.y;
+        for device in &self.usb {
+            buttons |= device.buttons;
         }
-        Some(event)
+        event.left = buttons & 1 != 0;
+        event.right = buttons & 2 != 0;
+        event.middle = buttons & 4 != 0;
+        event
     }
 }
 
-fn buttons_and_wheel(parsed: &HidParsedEvent) -> MouseEvent {
+fn event_with_buttons(buttons: u8) -> MouseEvent {
     MouseEvent {
-        left: parsed.buttons & 1 != 0,
-        right: parsed.buttons & 2 != 0,
-        middle: parsed.buttons & 4 != 0,
-        scroll: parsed.wheel,
+        left: buttons & 1 != 0,
+        right: buttons & 2 != 0,
+        middle: buttons & 4 != 0,
         ..MouseEvent::default()
     }
 }
@@ -531,12 +598,21 @@ pub fn apply_mouse_event(
     event: &MouseEvent,
     screen_w: usize,
     screen_h: usize,
-    abs_max: (u64, u64),
+    fallback_abs_max: (u64, u64),
 ) -> (i32, i32) {
     if screen_w == 0 || screen_h == 0 {
         return (*cx, *cy);
     }
-    let (abs_max_x, abs_max_y) = abs_max;
+    let abs_max_x = if event.abs_max_x != 0 {
+        event.abs_max_x
+    } else {
+        fallback_abs_max.0
+    };
+    let abs_max_y = if event.abs_max_y != 0 {
+        event.abs_max_y
+    } else {
+        fallback_abs_max.1
+    };
     if event.is_absolute && abs_max_x != 0 && abs_max_y != 0 {
         *cx = ((event.abs_x as u128 * (screen_w - 1) as u128) / abs_max_x as u128)
             .min((screen_w - 1) as u128) as i32;
