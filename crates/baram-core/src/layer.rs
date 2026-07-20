@@ -353,6 +353,35 @@ impl LayerSystem {
         inside
     }
 
+    #[inline]
+    fn squircle_row_bounds(poly: &[(f32, f32)], py: f32) -> Option<(f32, f32)> {
+        let n = poly.len();
+        if n < 3 { return None; }
+        let mut min_x = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut hits = 0usize;
+        let mut j = n - 1;
+        for i in 0..n {
+            let (x0, y0) = poly[j];
+            let (x1, y1) = poly[i];
+            if (y0 > py) != (y1 > py) {
+                let x = x0 + (py - y0) * (x1 - x0) / (y1 - y0);
+                if x < min_x { min_x = x; }
+                if x > max_x { max_x = x; }
+                hits += 1;
+            }
+            j = i;
+        }
+        if hits >= 2 { Some((min_x, max_x)) } else { None }
+    }
+
+    #[inline]
+    fn pixel_span_from_bounds(left: f32, right: f32, max_w: usize) -> (usize, usize) {
+        let start = libm::ceilf(left - 0.5).max(0.0) as usize;
+        let end = (libm::floorf(right - 0.5) as i32 + 1).max(0) as usize;
+        (start.min(max_w), end.min(max_w))
+    }
+
     pub fn blend_alpha(bg: u32, fg: u32, alpha: f32) -> u32 {
         if alpha >= 1.0 { return fg; }
         let cr = ((fg >> 16) & 0xFF) as f32;
@@ -394,10 +423,6 @@ impl LayerSystem {
         let r_f = r as f32;
         let w_f = w as f32;
         let h_f = h as f32;
-        let lx = libm::fminf(w_f / 2.0, 1.528665 * rf);
-        let ly = libm::fminf(h_f / 2.0, 1.528665 * rf);
-        let mx = (lx * 0.7) as usize;
-        let my = (ly * 0.7) as usize;
         let off = [0.25f32, 0.75f32];
 
         for py in y0..y1 {
@@ -411,48 +436,21 @@ impl LayerSystem {
                 continue;
             }
 
-            let corner_x_end = (x + r).min(x1);
-            let mid_x_start = (x + r).max(x0);
-            let mid_x_end = (x + w - r).min(x1);
-            let corner_x_start = (x + w - r).max(x0);
+            if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
+                let (span_l, span_r) = Self::pixel_span_from_bounds(left, right, w);
+                let fill_l = (x + span_l).max(x0).min(x1);
+                let fill_r = (x + span_r).max(x0).min(x1);
+                if fill_r > fill_l {
+                    self.buf[row + fill_l..row + fill_r].fill(v);
+                }
 
-            if mid_x_end > mid_x_start {
-                self.buf[row + mid_x_start..row + mid_x_end].fill(v);
-            }
-
-            if corner_x_end > x0 {
-                let safe_l = (x + mx).min(corner_x_end).max(x0);
-                if safe_l > x0 {
-                    for px in x0..safe_l {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
+                let edge_l = x + span_l.saturating_sub(1);
+                if edge_l >= x0 && edge_l < x1 {
+                    Self::pixel_aa(&mut self.buf[row + edge_l], v, edge_l as f32 - x0f, base_y, poly, &off);
                 }
-                let inner_l_end = (x + r - mx).max(x + mx).min(corner_x_end);
-                if inner_l_end > safe_l {
-                    self.buf[row + safe_l..row + inner_l_end].fill(v);
-                }
-                if corner_x_end > inner_l_end {
-                    for px in inner_l_end..corner_x_end {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
-                }
-            }
-
-            if corner_x_start > corner_x_end {
-                let safe_r_start = (x + w - r + mx).max(corner_x_start).min(x1);
-                if safe_r_start > corner_x_start {
-                    for px in corner_x_start..safe_r_start {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
-                }
-                let inner_r_end = (x + w - mx).min(x1).max(safe_r_start);
-                if inner_r_end > safe_r_start {
-                    self.buf[row + safe_r_start..row + inner_r_end].fill(v);
-                }
-                if x1 > inner_r_end {
-                    for px in inner_r_end..x1 {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
+                let edge_r = x + span_r;
+                if edge_r >= x0 && edge_r < x1 {
+                    Self::pixel_aa(&mut self.buf[row + edge_r], v, edge_r as f32 - x0f, base_y, poly, &off);
                 }
             }
         }
@@ -777,69 +775,31 @@ impl LayerSystem {
             let poly = Self::cached_squircle(w as f32, h as f32, rf);
             let off = [0.25f32, 0.75f32];
             let base_y = py as f32;
-            let lx = libm::fminf(w as f32 / 2.0, 1.528665 * rf);
-            let ly = libm::fminf(h as f32 / 2.0, 1.528665 * rf);
-            let mx = (lx * 0.7) as usize;
-            let my = (ly * 0.7) as usize;
+            if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
+                let (span_l, span_r) = Self::pixel_span_from_bounds(left, right, end_x);
 
-            let left_end = r.min(end_x);
-            let right_start = (w - r).min(end_x);
-
-            let safe_l = mx.min(left_end);
-            if safe_l > 0 {
-                for px in 0..safe_l {
-                    let sp = src.buf[src_row + px];
-                    if sp == Color::TRANSPARENT.0 { continue; }
-                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                if span_r > span_l {
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            src.buf.as_ptr().add(src_row + span_l),
+                            self.buf.as_mut_ptr().add(dst_row + span_l),
+                            span_r - span_l,
+                        );
+                    }
                 }
-            }
-            let inner_l_end = (r - mx).max(mx).min(left_end);
-            if inner_l_end > safe_l {
-                for px in safe_l..inner_l_end {
-                    let sp = src.buf[src_row + px];
+
+                let edge_l = span_l.saturating_sub(1);
+                if edge_l < end_x {
+                    let sp = src.buf[src_row + edge_l];
                     if sp != Color::TRANSPARENT.0 {
-                        self.buf[dst_row + px] = sp;
+                        Self::pixel_aa(&mut self.buf[dst_row + edge_l], sp, edge_l as f32, base_y, poly, &off);
                     }
                 }
-            }
-            if left_end > inner_l_end {
-                for px in inner_l_end..left_end {
-                    let sp = src.buf[src_row + px];
-                    if sp == Color::TRANSPARENT.0 { continue; }
-                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
-                }
-            }
-
-            for px in left_end..right_start {
-                let sp = src.buf[src_row + px];
-                if sp != Color::TRANSPARENT.0 {
-                    self.buf[dst_row + px] = sp;
-                }
-            }
-
-            if end_x > right_start {
-                let safe_r = (right_start + mx).min(end_x);
-                if safe_r > right_start {
-                    for px in right_start..safe_r {
-                        let sp = src.buf[src_row + px];
-                        if sp == Color::TRANSPARENT.0 { continue; }
-                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
-                    }
-                }
-                let inner_r_end = (w - mx).min(end_x).max(safe_r);
-                if inner_r_end > safe_r {
-                    for px in safe_r..inner_r_end {
-                        let sp = src.buf[src_row + px];
-                        if sp != Color::TRANSPARENT.0 {
-                            self.buf[dst_row + px] = sp;
-                        }
-                    }
-                }
-                if end_x > inner_r_end {
-                    for px in inner_r_end..end_x {
-                        let sp = src.buf[src_row + px];
-                        if sp == Color::TRANSPARENT.0 { continue; }
-                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                let edge_r = span_r;
+                if edge_r < end_x {
+                    let sp = src.buf[src_row + edge_r];
+                    if sp != Color::TRANSPARENT.0 {
+                        Self::pixel_aa(&mut self.buf[dst_row + edge_r], sp, edge_r as f32, base_y, poly, &off);
                     }
                 }
             }
