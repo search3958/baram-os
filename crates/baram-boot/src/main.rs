@@ -72,6 +72,7 @@ fn main() -> Status {
         Ok(m) => Some(m),
         Err(_) => None,
     };
+    let mouse_wait = Mouse::get_wait_event();
     log_line_str("BaramOS: opening keyboard...");
     let mut keyboard = Keyboard::open();
 
@@ -348,8 +349,13 @@ fn main() -> Status {
         let prev_dirty = wm.dirty_bbox(shadow_pad);
 
         if let Some(ref timer) = timer_event {
-            let mut events = [unsafe { core::ptr::read(timer) }];
-            let _ = uefi::boot::wait_for_event(&mut events);
+            let mut events: [uefi::Event; 2] = [unsafe { core::ptr::read(timer) }, unsafe { core::ptr::read(timer) }];
+            let mut n = 1;
+            if let Some(mevt) = &mouse_wait {
+                events[1] = unsafe { core::ptr::read(mevt) };
+                n = 2;
+            }
+            let _ = uefi::boot::wait_for_event(&mut events[..n]);
         }
 
         match baram_bsd::uri::check_system_commands(&mut display_state) {
