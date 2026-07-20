@@ -1167,7 +1167,7 @@ fn main() -> Status {
                 let fw = fx1 - fx0;
                 let fh = fy1 - fy0;
                 let full_area = w * h;
-                if launcher_changed || fw * fh >= full_area * 3 / 4 {
+                if launcher_changed || !bg_valid || fw * fh >= full_area * 3 / 4 {
                     layer.flush(&mut screen);
                 } else {
                     layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
