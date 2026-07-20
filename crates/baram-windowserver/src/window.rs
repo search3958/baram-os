@@ -94,6 +94,10 @@ pub struct Window {
     pub shadow_dirty: bool,
     pub open_progress: f32,
     pub open_animating: bool,
+    pending_unmaximize: bool,
+    pending_unmax_ratio: f64,
+    pending_unmax_mx: i32,
+    pending_unmax_my: i32,
 }
 
 impl Window {
@@ -141,6 +145,10 @@ impl Window {
             shadow_dirty: true,
             open_progress: 0.0,
             open_animating: true,
+            pending_unmaximize: false,
+            pending_unmax_ratio: 0.0,
+            pending_unmax_mx: 0,
+            pending_unmax_my: 0,
         }
     }
 
@@ -253,18 +261,22 @@ impl Window {
 
     pub fn start_drag(&mut self, px: i32, py: i32) {
         if self.maximized {
-            let ratio = px as f64 / self.w as f64;
-            self.w = self.save_w;
-            self.h = self.save_h;
-            self.x = px - (self.w as f64 * ratio) as i32;
-            self.y = py - 10;
-            self.maximized = false;
-            self.content_dirty = true;
-            self.shadow_dirty = true;
+            self.pending_unmaximize = true;
+            self.pending_unmax_ratio = px as f64 / self.w as f64;
+            self.pending_unmax_mx = px;
+            self.pending_unmax_my = py;
         }
         self.dragging = true;
         self.drag_ox = px - self.x;
         self.drag_oy = py - self.y;
+    }
+
+    pub fn clamp_scroll(&mut self, content_h: i32, visible_h: i32) {
+        let max = (content_h - visible_h).max(0);
+        if self.scroll_y > max {
+            self.scroll_y = max;
+            self.content_dirty = true;
+        }
     }
 }
 
@@ -378,6 +390,14 @@ impl WindowManager {
         }
     }
 
+    pub fn clamp_window_scroll(&mut self, id: WinId, content_h: i32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            let tb_h = title_bar_h() as i32;
+            let visible_h = w.h as i32 - tb_h;
+            w.clamp_scroll(content_h, visible_h);
+        }
+    }
+
     pub fn window_at(&self, px: i32, py: i32) -> Option<WinId> {
         let mut best: Option<(&Window, i32)> = None;
         for w in &self.windows {
@@ -465,12 +485,30 @@ impl WindowManager {
         for w in &mut self.windows {
             w.dragging = false;
             w.resizing = false;
+            w.pending_unmaximize = false;
         }
     }
 
     pub fn on_mouse_drag(&mut self, px: i32, py: i32) {
         for w in &mut self.windows {
             if w.dragging {
+                if w.pending_unmaximize {
+                    let dx = (px - w.pending_unmax_mx).abs();
+                    let dy = (py - w.pending_unmax_my).abs();
+                    if dx > 2 || dy > 2 {
+                        let ratio = w.pending_unmax_ratio;
+                        w.w = w.save_w;
+                        w.h = w.save_h;
+                        w.x = px - (w.w as f64 * ratio) as i32;
+                        w.y = py - 10;
+                        w.maximized = false;
+                        w.content_dirty = true;
+                        w.shadow_dirty = true;
+                        w.pending_unmaximize = false;
+                        w.drag_ox = px - w.x;
+                        w.drag_oy = py - w.y;
+                    }
+                }
                 let old_x = w.x;
                 let old_y = w.y;
                 w.x = px - w.drag_ox;
@@ -670,6 +708,7 @@ impl WindowManager {
                     if let Some((uid, cmds)) = ui_win {
                         if win_id == uid {
                             (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            let card_radius = config::get_usize("ui-theme/card/radius", 12);
                             baram_graphics::uiscript::render(
                                 &mut *layer_ptr,
                                 cmds,
@@ -679,6 +718,7 @@ impl WindowManager {
                                 wh,
                                 title_bar_h(),
                                 scroll_y,
+                                card_radius,
                             );
                             (*layer_ptr).pop_clip();
                         }

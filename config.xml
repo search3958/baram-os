@@ -53,7 +53,7 @@
         <card>
             <w>480</w>
             <h>320</h>
-            <radius>40</radius>
+            <radius>20</radius>
             <padding>4</padding>
             <title_h>36</title_h>
             <child_gap>4</child_gap>

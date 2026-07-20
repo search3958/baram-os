@@ -303,10 +303,12 @@ fn main() -> Status {
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_name_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+    let mut app_type_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for entry in &app_entries {
         app_list.push(entry.title.clone());
         app_name_list.push(entry.name.clone());
         app_icon_list.push(entry.icon.clone());
+        app_type_list.push(entry.app_type.clone());
     }
     let mut hover_apps_icon: bool = false;
     let mut prev_hover_apps_icon: bool = false;
@@ -398,20 +400,29 @@ fn main() -> Status {
                     }
                 }
             } else if let Some(c) = ev.printable {
-                match c {
-                    b'n' | b'N' => {
-                        let x = 60 + ((new_window_idx as i32 * 37) % 300);
-                        let y = 80 + ((new_window_idx as i32 * 23) % 200);
-                        let new_id = wm.add("New App", x, y, 400, 450);
-                        let source = baram_bsd::app::load_app_source("blank.warp");
-                        let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                        engine.update(380, 410);
-                        warp_engines.push((new_id, engine));
-                        tb_add_progress = 0.0;
-                        tb_shift_x = 26.0;
-                        new_window_idx = new_window_idx.wrapping_add(1);
+                let mut handled = false;
+                if let Some(focused_win) = wm.focused_id {
+                    for (wid, engine) in warp_engines.iter_mut() {
+                        if *wid == focused_win && !engine.focused_input_var.is_empty() {
+                            engine.handle_key(c);
+                            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+                                let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                let content_h = (wh as i32).saturating_sub(tb_h);
+                                engine.update(ww as i32, content_h);
+                                wm.clamp_window_scroll(*wid, engine.content_height);
+                                wm.set_content_dirty(*wid);
+                            }
+                            handled = true;
+                            dirty = true;
+                            scene_dirty = true;
+                            break;
+                        }
                     }
-                    _ => {}
+                }
+                if !handled {
+                    match c {
+                        _ => {}
+                    }
                 }
             }
             dirty = true;
@@ -595,14 +606,21 @@ fn main() -> Status {
                             let app_title = app_list[idx].clone();
                             let app_name = app_name_list[idx].clone();
                             let app_icon = app_icon_list[idx].clone();
+                            let app_type = app_type_list[idx].clone();
                             let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                             let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                             let new_id = wm.add(&app_title, nx, ny, 400, 450);
                             wm.set_icon(new_id, &app_icon);
                             let source = baram_bsd::app::load_app_source(&app_name);
-                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                            engine.update(380, 410);
-                            warp_engines.push((new_id, engine));
+                            if app_type.starts_with("uiscript") {
+                                ui_commands = baram_graphics::uiscript::parse(&source);
+                                ui_win_id = Some(new_id);
+                            } else {
+                                let mut engine =
+                                    baram_windowserver::warp::WarpEngine::new(&source);
+                                engine.update(380, 410);
+                                warp_engines.push((new_id, engine));
+                            }
                             tb_add_progress = 0.0;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
@@ -808,14 +826,21 @@ fn main() -> Status {
                     let app_title = app_list[idx].clone();
                     let app_name = app_name_list[idx].clone();
                     let app_icon = app_icon_list[idx].clone();
+                    let app_type = app_type_list[idx].clone();
                     let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                     let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                     let new_id = wm.add(&app_title, nx, ny, 400, 450);
                     wm.set_icon(new_id, &app_icon);
                     let source = baram_bsd::app::load_app_source(&app_name);
-                    let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                    engine.update(380, 410);
-                    warp_engines.push((new_id, engine));
+                    if app_type.starts_with("uiscript") {
+                        ui_commands = baram_graphics::uiscript::parse(&source);
+                        ui_win_id = Some(new_id);
+                    } else {
+                        let mut engine =
+                            baram_windowserver::warp::WarpEngine::new(&source);
+                        engine.update(380, 410);
+                        warp_engines.push((new_id, engine));
+                    }
                     tb_add_progress = 0.0;
                     tb_shift_x = 26.0;
                     new_window_idx = new_window_idx.wrapping_add(1);
@@ -1022,6 +1047,7 @@ fn main() -> Status {
             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                 let content_h = wh.saturating_sub(30);
                 engine.update(ww as i32, content_h as i32);
+                wm.clamp_window_scroll(*wid, engine.content_height);
             }
         }
 

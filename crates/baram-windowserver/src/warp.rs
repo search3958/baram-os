@@ -107,6 +107,9 @@ pub struct WarpEngine {
     pub dirty: bool,
     pub hover_idx: Option<usize>,
     pub last_command: Option<String>,
+    pub focused_input: Option<usize>,
+    pub focused_input_var: alloc::string::String,
+    pub content_height: i32,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -140,9 +143,12 @@ impl WarpEngine {
             tokens: Vec::new(),
             token_pos: 0,
             texts: Vec::new(),
-            dirty: true,
+            dirty: false,
             hover_idx: None,
             last_command: None,
+            focused_input: None,
+            focused_input_var: alloc::string::String::new(),
+            content_height: 0,
         };
         loop {
             let tk = ctx.next_token();
@@ -228,7 +234,7 @@ impl WarpEngine {
                 total_h = h;
             }
         }
-        let _ = total_h;
+        self.content_height = total_h;
         self.dirty = true;
     }
 
@@ -254,6 +260,12 @@ impl WarpEngine {
     fn get_state(&self, key: &str) -> String {
         if key.eq_ignore_ascii_case("_currentScreen") {
             return self.current_screen.clone();
+        }
+        if let Some(cfg_path) = key.strip_prefix("--os://") {
+            if let Some(val) = config::get_config().get(cfg_path) {
+                return val.to_string();
+            }
+            return String::new();
         }
         for s in &self.state {
             if s.0.eq_ignore_ascii_case(key) {
@@ -377,7 +389,7 @@ impl WarpEngine {
         }
         let mut res = Self::strtol(&chars[i..].iter().collect::<String>());
         while i < chars.len()
-            && (chars[i] == ' ' || chars[i] == '\t' || chars[i] == '-' || chars[i].is_ascii_digit())
+            && (chars[i] == ' ' || chars[i] == '\t' || chars[i].is_ascii_digit())
         {
             i += 1;
         }
@@ -408,7 +420,6 @@ impl WarpEngine {
             while i < chars.len()
                 && (chars[i] == ' '
                     || chars[i] == '\t'
-                    || chars[i] == '-'
                     || chars[i].is_ascii_digit())
             {
                 i += 1;
@@ -850,45 +861,129 @@ impl WarpEngine {
             if val.is_empty() {
                 val = placeholder;
             }
+            let out_var_name = self.parse_out_var(idx);
+            if self.focused_input_var == out_var_name {
+                val.push('|');
+            }
+            let char_w = 8i32;
+            let max_chars = ((limit_w - 24) / char_w).max(1) as usize;
+            let chars: alloc::vec::Vec<char> = val.chars().collect();
+            let mut display_lines: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+            let mut start = 0;
+            while start < chars.len() {
+                let mut end = (start + max_chars).min(chars.len());
+                if end < chars.len() {
+                    let mut break_at = end;
+                    while break_at > start {
+                        let c = chars[break_at - 1];
+                        if c == ' ' || c == ',' || c == '.' {
+                            break_at -= 1;
+                            break;
+                        }
+                        break_at -= 1;
+                    }
+                    if break_at <= start {
+                        break_at = end;
+                    }
+                    let line: alloc::string::String = chars[start..break_at].iter().collect();
+                    display_lines.push(line);
+                    start = break_at;
+                    if start < chars.len() && chars[start] == ' ' {
+                        start += 1;
+                    }
+                } else {
+                    let line: alloc::string::String = chars[start..].iter().collect();
+                    display_lines.push(line);
+                    start = chars.len();
+                }
+            }
+            let display_text = display_lines.join("\n");
             if self.texts.len() < MAX_TEXTS {
                 self.texts.push(TextElem {
                     x: self.nodes[idx].x + 12,
                     y: self.nodes[idx].y + 16,
-                    text: val,
+                    text: display_text,
                     size: 16.0,
                     color: config::get_color("ui-theme/color/text", Color::TEXT),
                 });
             }
         } else if tag == "text" {
             let text = self.get_attr(idx, "text");
+            let char_w = 8i32;
+            let max_chars = (limit_w / char_w).max(1) as usize;
+            let mut lines: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+            for raw_line in text.split('\n') {
+                if raw_line.is_empty() {
+                    lines.push(alloc::string::String::new());
+                    continue;
+                }
+                let chars: alloc::vec::Vec<char> = raw_line.chars().collect();
+                let mut start = 0;
+                while start < chars.len() {
+                    let mut end = (start + max_chars).min(chars.len());
+                    if end < chars.len() {
+                        let mut break_at = end;
+                        while break_at > start {
+                            let c = chars[break_at - 1];
+                            if c == ' ' || c == ',' || c == '.' {
+                                break_at -= 1;
+                                break;
+                            }
+                            break_at -= 1;
+                        }
+                        if break_at <= start {
+                            break_at = end;
+                        }
+                        let line: alloc::string::String = chars[start..break_at].iter().collect();
+                        lines.push(line);
+                        start = break_at;
+                        if start < chars.len() && chars[start] == ' ' {
+                            start += 1;
+                        }
+                    } else {
+                        let line: alloc::string::String = chars[start..].iter().collect();
+                        lines.push(line);
+                        start = chars.len();
+                    }
+                }
+            }
+            let wrapped = lines.join("\n");
             if self.texts.len() < MAX_TEXTS {
                 self.texts.push(TextElem {
                     x: px,
                     y: py,
-                    text: text.clone(),
+                    text: wrapped.clone(),
                     size: 16.0,
                     color: config::get_color("ui-theme/color/text", Color::TEXT),
                 });
             }
-            let lines = text.matches('\n').count() as i32 + 1;
-            self.nodes[idx].h = lines * 22;
+            let line_count = lines.len() as i32;
+            self.nodes[idx].h = line_count * 22;
         } else if tag == "hStack" {
             let mut cx = px;
-            let mut max_h = 0;
-            let div = if self.nodes[idx].children.is_empty() {
-                1
-            } else {
-                self.nodes[idx].children.len() as i32
-            };
+            let mut row_h = 0i32;
+            let mut max_h = 0i32;
+            let mut row_start_y = py;
             let children = self.nodes[idx].children.clone();
             for ci in children {
-                let h = self.layout_node(ci, cx, py, limit_w / div);
-                if h > max_h {
-                    max_h = h;
+                let h = self.layout_node(ci, cx, row_start_y, limit_w);
+                let w = self.nodes[ci].w;
+                if cx + w > px + limit_w && cx > px {
+                    cx = px;
+                    row_start_y += row_h + 8;
+                    row_h = 0;
+                    self.layout_node(ci, cx, row_start_y, limit_w);
                 }
-                cx += self.nodes[ci].w + 8;
+                cx += w + 8;
+                if row_h < h {
+                    row_h = h;
+                }
+                let bottom = row_start_y + h;
+                if bottom > max_h {
+                    max_h = bottom;
+                }
             }
-            self.nodes[idx].h = max_h;
+            self.nodes[idx].h = max_h - py;
         } else if tag == "vStack" {
             let children = self.nodes[idx].children.clone();
             for ci in children {
@@ -982,7 +1077,8 @@ impl WarpEngine {
             match tag {
                 "card" => {
                     let card_bg = config::get_color("ui-theme/color/card_bg", Color::CARD_BG);
-                    layer.fill_rounded_rect(x, y, w, h, 12, card_bg);
+                    let radius = config::get_usize("ui-theme/card/radius", 12);
+                    layer.fill_rounded_rect(x, y, w, h, radius, card_bg);
                 }
                 "button" => {
                     let c = if self.hover_idx == Some(idx) {
@@ -1030,14 +1126,14 @@ impl WarpEngine {
                         8,
                         config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
                     );
-                    layer.rounded_rect_outline(
-                        x,
-                        y,
-                        w,
-                        h,
-                        8,
-                        config::get_color("ui-theme/color/border", Color::BORDER),
-                    );
+                    let out_var_name = self.get_attr(idx, "output");
+                    let border_color = if self.focused_input_var == out_var_name {
+                        config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
+                    } else {
+                        config::get_color("ui-theme/color/border", Color::BORDER)
+                    };
+                    let bg = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
+                    layer.rounded_rect_outline(x, y, w, h, 8, border_color, bg);
                 }
                 _ => {}
             }
@@ -1048,18 +1144,26 @@ impl WarpEngine {
         let layer_w = layer.width() as i32;
         let layer_h = layer.height() as i32;
         for t in &self.texts {
-            let x = t.x + ox;
-            let y = t.y + oy;
-            if t.text.is_empty() || x >= layer_w || y >= layer_h {
+            if t.text.is_empty() {
                 continue;
             }
-            let est_w = t.text.len() as i32 * 8;
-            if x + est_w <= 0 {
+            let base_x = t.x + ox;
+            let base_y = t.y + oy;
+            if base_y >= layer_h {
                 continue;
             }
-            let draw_x = x.max(0) as usize;
-            let draw_y = y.max(0) as usize;
-            layer.put_str(draw_x, draw_y, &t.text, t.color);
+            for (i, line) in t.text.split('\n').enumerate() {
+                if line.is_empty() {
+                    continue;
+                }
+                let y = base_y + (i as i32) * 22;
+                if base_x >= layer_w || y >= layer_h || y < 0 {
+                    continue;
+                }
+                let draw_x = base_x.max(0) as usize;
+                let draw_y = y.max(0) as usize;
+                layer.put_str(draw_x, draw_y, line, t.color);
+            }
         }
     }
 
@@ -1097,6 +1201,14 @@ impl WarpEngine {
                     if !ev.is_empty() {
                         self.execute_action(&ev);
                     }
+                    self.focused_input = None;
+                    self.focused_input_var.clear();
+                    break;
+                }
+                if tag == "input" {
+                    self.focused_input = Some(i);
+                    self.focused_input_var = self.parse_out_var(i);
+                    self.dirty = true;
                     break;
                 }
                 let ev = self.nodes[i].event_oneclick.clone();
@@ -1106,6 +1218,24 @@ impl WarpEngine {
                 }
             }
         }
+        self.dirty = true;
+    }
+
+    pub fn handle_key(&mut self, c: u8) {
+        if self.focused_input_var.is_empty() {
+            self.focused_input = None;
+            return;
+        }
+        let out_var = self.focused_input_var.clone();
+        let mut val = self.get_state(&out_var);
+        if c == 0x08 || c == 0x7F {
+            val.pop();
+        } else if c >= 0x20 && c < 0x7F {
+            val.push(c as char);
+        } else {
+            return;
+        }
+        self.set_state(&out_var, &val);
         self.dirty = true;
     }
 

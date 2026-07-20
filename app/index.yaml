@@ -7,7 +7,11 @@ apps:
   settings.warp:
     icon: settings.png
     type: warp-2
-    title: Settings
+    title: 設定
+  theme.warp:
+    icon: theme.png
+    type: warp-2
+    title: カスタマイズ
   demo.u1:
     icon: null
     type: uiscript-1
@@ -28,3 +32,7 @@ apps:
     icon: manager.png
     type: warp-2
     title: タスクマネージャー
+  calc.warp:
+    icon: calc.png
+    type: warp-2
+    title: 計算機
