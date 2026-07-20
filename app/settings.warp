@@ -204,23 +204,23 @@ screen{
         text: ("マウスポインター"),
 
         text{
-            text: ("現在: " + --pointerSize)
+            text: ("現在: " + --os://display/pointer/size)
         },
 
         hStack{
             button{
                 text: ("Small"),
-                oneClick: (--pointerSize = "10", runCommand = "os://display/pointer?size=10")
+                oneClick: (runCommand = "os://display/pointer?size=10")
             },
 
             button{
                 text: ("Medium"),
-                oneClick: (--pointerSize = "15", runCommand = "os://display/pointer?size=15")
+                oneClick: (runCommand = "os://display/pointer?size=15")
             },
 
             button{
                 text: ("Large"),
-                oneClick: (--pointerSize = "20", runCommand = "os://display/pointer?size=20")
+                oneClick: (runCommand = "os://display/pointer?size=20")
             },
         },
     },

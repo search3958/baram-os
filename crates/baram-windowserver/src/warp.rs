@@ -255,6 +255,12 @@ impl WarpEngine {
         if key.eq_ignore_ascii_case("_currentScreen") {
             return self.current_screen.clone();
         }
+        if let Some(cfg_path) = key.strip_prefix("--os://") {
+            if let Some(val) = config::get_config().get(cfg_path) {
+                return val.to_string();
+            }
+            return String::new();
+        }
         for s in &self.state {
             if s.0.eq_ignore_ascii_case(key) {
                 return s.1.clone();
