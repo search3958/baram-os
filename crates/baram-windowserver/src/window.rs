@@ -614,19 +614,29 @@ impl WindowManager {
                 if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id) {
                     if entry.1.is_some() {
                         let shadow_ref = self.windows[idx].shadow_layer.as_ref().unwrap();
-                        let src_x = (shadow_pad() - wx).max(0) as usize;
-                        let src_y = (shadow_pad() - wy).max(0) as usize;
-                        let dst_x = (wx - shadow_pad()).max(0) as usize;
-                        let dst_y = (wy - shadow_pad()).max(0) as usize;
-                        layer.composit_shadow_alpha(
-                            shadow_ref,
-                            dst_x,
-                            dst_y,
-                            src_x,
-                            src_y,
-                            ww + shadow_pad() as usize * 2,
-                            wh + shadow_pad() as usize * 2,
-                        );
+                        let shadow_size = ww + shadow_pad() as usize * 2;
+                        let shadow_h = wh + shadow_pad() as usize * 2;
+                        let shadow_x = wx - shadow_pad() as i32;
+                        let shadow_y = wy - shadow_pad() as i32;
+
+                        let src_x = if shadow_x < 0 { (-shadow_x) as usize } else { 0 };
+                        let src_y = if shadow_y < 0 { (-shadow_y) as usize } else { 0 };
+                        let dst_x = shadow_x.max(0) as usize;
+                        let dst_y = shadow_y.max(0) as usize;
+                        let draw_w = (shadow_size as i32 - src_x as i32).max(0) as usize;
+                        let draw_h = (shadow_h as i32 - src_y as i32).max(0) as usize;
+
+                        if draw_w > 0 && draw_h > 0 {
+                            layer.composit_shadow_alpha(
+                                shadow_ref,
+                                dst_x,
+                                dst_y,
+                                src_x,
+                                src_y,
+                                draw_w,
+                                draw_h,
+                            );
+                        }
                     }
                 }
             }
@@ -637,14 +647,12 @@ impl WindowManager {
                 unsafe {
                     let lw = (*layer_ptr).width();
                     let lh = (*layer_ptr).height();
-                    let old_x = (*w_ptr).prev_x.max(0) as usize;
-                    let old_y = (*w_ptr).prev_y.max(0) as usize;
-                    let new_x = wx.max(0) as usize;
-                    let new_y = wy.max(0) as usize;
-                    let cx0 = old_x.min(new_x);
-                    let cy0 = old_y.min(new_y);
-                    let cx1 = (old_x + ww).max(new_x + ww).min(lw);
-                    let cy1 = (old_y + wh).max(new_y + wh).min(lh);
+                    let old_x = (*w_ptr).prev_x;
+                    let old_y = (*w_ptr).prev_y;
+                    let cx0 = old_x.min(wx).max(0) as usize;
+                    let cy0 = old_y.min(wy).max(0) as usize;
+                    let cx1 = (old_x + ww as i32).max(wx + ww as i32).min(lw as i32).max(0) as usize;
+                    let cy1 = (old_y + wh as i32).max(wy + wh as i32).min(lh as i32).max(0) as usize;
                     if cx1 > cx0 && cy1 > cy0 {
                         for row in cy0..cy1 {
                             let start = row * lw + cx0;
@@ -693,20 +701,32 @@ impl WindowManager {
             }
 
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
+            let screen_w = layer.width() as i32;
+            let screen_h = layer.height() as i32;
+
+            let src_x = if wx < 0 { (-wx) as usize } else { 0 };
+            let src_y = if wy < 0 { (-wy) as usize } else { 0 };
+            let dst_x = wx.max(0) as usize;
+            let dst_y = wy.max(0) as usize;
+            let draw_w = (ww as i32 - src_x as i32).max(0) as usize;
+            let draw_h = (wh as i32 - src_y as i32).max(0) as usize;
+
+            if draw_w == 0 || draw_h == 0 {
+                continue;
+            }
+
             if is_max {
                 layer.composit_rect(
                     win_layer,
-                    wx.max(0) as usize,
-                    wy.max(0) as usize,
-                    0,
-                    0,
-                    ww,
-                    wh,
+                    dst_x,
+                    dst_y,
+                    src_x,
+                    src_y,
+                    draw_w,
+                    draw_h,
                 );
             } else {
-                let wx_usize = wx.max(0) as usize;
-                let wy_usize = wy.max(0) as usize;
-                layer.composit_rounded(win_layer, wx_usize, wy_usize, 0, 0, ww, wh, win_radius());
+                layer.composit_rounded(win_layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h, win_radius());
                 draw_window_border(layer, &self.windows[idx]);
             }
         }
