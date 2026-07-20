@@ -303,10 +303,12 @@ fn main() -> Status {
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_name_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+    let mut app_type_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for entry in &app_entries {
         app_list.push(entry.title.clone());
         app_name_list.push(entry.name.clone());
         app_icon_list.push(entry.icon.clone());
+        app_type_list.push(entry.app_type.clone());
     }
     let mut hover_apps_icon: bool = false;
     let mut prev_hover_apps_icon: bool = false;
@@ -595,14 +597,21 @@ fn main() -> Status {
                             let app_title = app_list[idx].clone();
                             let app_name = app_name_list[idx].clone();
                             let app_icon = app_icon_list[idx].clone();
+                            let app_type = app_type_list[idx].clone();
                             let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                             let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                             let new_id = wm.add(&app_title, nx, ny, 400, 450);
                             wm.set_icon(new_id, &app_icon);
                             let source = baram_bsd::app::load_app_source(&app_name);
-                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                            engine.update(380, 410);
-                            warp_engines.push((new_id, engine));
+                            if app_type.starts_with("uiscript") {
+                                ui_commands = baram_graphics::uiscript::parse(&source);
+                                ui_win_id = Some(new_id);
+                            } else {
+                                let mut engine =
+                                    baram_windowserver::warp::WarpEngine::new(&source);
+                                engine.update(380, 410);
+                                warp_engines.push((new_id, engine));
+                            }
                             tb_add_progress = 0.0;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
@@ -808,14 +817,21 @@ fn main() -> Status {
                     let app_title = app_list[idx].clone();
                     let app_name = app_name_list[idx].clone();
                     let app_icon = app_icon_list[idx].clone();
+                    let app_type = app_type_list[idx].clone();
                     let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                     let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                     let new_id = wm.add(&app_title, nx, ny, 400, 450);
                     wm.set_icon(new_id, &app_icon);
                     let source = baram_bsd::app::load_app_source(&app_name);
-                    let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                    engine.update(380, 410);
-                    warp_engines.push((new_id, engine));
+                    if app_type.starts_with("uiscript") {
+                        ui_commands = baram_graphics::uiscript::parse(&source);
+                        ui_win_id = Some(new_id);
+                    } else {
+                        let mut engine =
+                            baram_windowserver::warp::WarpEngine::new(&source);
+                        engine.update(380, 410);
+                        warp_engines.push((new_id, engine));
+                    }
                     tb_add_progress = 0.0;
                     tb_shift_x = 26.0;
                     new_window_idx = new_window_idx.wrapping_add(1);

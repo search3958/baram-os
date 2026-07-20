@@ -377,7 +377,7 @@ impl WarpEngine {
         }
         let mut res = Self::strtol(&chars[i..].iter().collect::<String>());
         while i < chars.len()
-            && (chars[i] == ' ' || chars[i] == '\t' || chars[i] == '-' || chars[i].is_ascii_digit())
+            && (chars[i] == ' ' || chars[i] == '\t' || chars[i].is_ascii_digit())
         {
             i += 1;
         }
@@ -408,7 +408,6 @@ impl WarpEngine {
             while i < chars.len()
                 && (chars[i] == ' '
                     || chars[i] == '\t'
-                    || chars[i] == '-'
                     || chars[i].is_ascii_digit())
             {
                 i += 1;
@@ -982,7 +981,8 @@ impl WarpEngine {
             match tag {
                 "card" => {
                     let card_bg = config::get_color("ui-theme/color/card_bg", Color::CARD_BG);
-                    layer.fill_rounded_rect(x, y, w, h, 12, card_bg);
+                    let radius = config::get_usize("ui-theme/card/radius", 12);
+                    layer.fill_rounded_rect(x, y, w, h, radius, card_bg);
                 }
                 "button" => {
                     let c = if self.hover_idx == Some(idx) {

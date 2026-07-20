@@ -670,6 +670,7 @@ impl WindowManager {
                     if let Some((uid, cmds)) = ui_win {
                         if win_id == uid {
                             (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            let card_radius = config::get_usize("ui-theme/card/radius", 12);
                             baram_graphics::uiscript::render(
                                 &mut *layer_ptr,
                                 cmds,
@@ -679,6 +680,7 @@ impl WindowManager {
                                 wh,
                                 title_bar_h(),
                                 scroll_y,
+                                card_radius,
                             );
                             (*layer_ptr).pop_clip();
                         }

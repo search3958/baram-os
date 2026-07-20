@@ -324,6 +324,7 @@ pub fn render(
     win_h: usize,
     title_bar_h: usize,
     scroll_y: i32,
+    card_radius: usize,
 ) {
     let accent = commands
         .iter()
@@ -432,7 +433,7 @@ pub fn render(
                 let card_h = 80usize;
                 let bx = content_x as usize;
                 let by = sy as usize;
-                let radius = 8;
+                let radius = card_radius;
 
                 layer.fill_rounded_rect(bx, by, card_w, card_h, radius, Color::CARD_BG);
                 layer.rounded_rect_outline(bx, by, card_w, card_h, radius, Color::BORDER);
@@ -454,7 +455,7 @@ pub fn render(
                 let list_h = 80usize;
                 let bx = content_x as usize;
                 let by = sy as usize;
-                let radius = 8;
+                let radius = card_radius;
 
                 layer.fill_rounded_rect(bx, by, list_w, list_h, radius, Color::WIN_BG);
                 layer.rounded_rect_outline(bx, by, list_w, list_h, radius, Color::BORDER);
