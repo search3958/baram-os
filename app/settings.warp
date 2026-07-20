@@ -27,23 +27,23 @@ screen{
         hStack{
             button{
                 text: ("Baram"),
-                oneClick: (runCommand = "os://display/wallpaper?file=baram")
+                oneClick: (runCommand = "os://display/wallpaper?file=baram&mode=file")
             },
 
             button{
                 text: ("Hanul"),
-                oneClick: (runCommand = "os://display/wallpaper?file=hanul")
+                oneClick: (runCommand = "os://display/wallpaper?file=hanul&mode=file")
             },
 
             button{
                 text: ("Reflect"),
-                oneClick: (runCommand = "os://display/wallpaper?file=reflect")
+                oneClick: (runCommand = "os://display/wallpaper?file=reflect&mode=file")
             },
         },
 
         button{
             text: ("Solid Red"),
-            oneClick: (runCommand = "os://display/wallpaper?color=#990000")
+            oneClick: (runCommand = "os://display/wallpaper?color=#990000&mode=color")
         },
     },
 

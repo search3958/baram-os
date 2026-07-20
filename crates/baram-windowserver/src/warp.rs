@@ -919,6 +919,14 @@ impl WarpEngine {
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
         self.parse_current_screen();
+        let tb_h = crate::window::title_bar_h() as i32;
+        if y < tb_h {
+            if self.hover_idx.is_some() {
+                self.hover_idx = None;
+                self.dirty = true;
+            }
+            return;
+        }
         let mut found = None;
         for i in (0..self.nodes.len()).rev() {
             if !self.nodes[i].visible {
@@ -948,16 +956,28 @@ impl WarpEngine {
     }
 
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+        let layer_w = layer.width() as i32;
+        let layer_h = layer.height() as i32;
         for idx in 0..self.nodes.len() {
             if !self.nodes[idx].visible {
                 continue;
             }
             let tag = self.nodes[idx].tag.as_str();
             let n = &self.nodes[idx];
-            let x = (n.x + ox) as usize;
-            let y = (n.y + oy) as usize;
-            let w = n.w as usize;
-            let h = n.h as usize;
+            let nx = n.x + ox;
+            let ny = n.y + oy;
+            let nw = n.w;
+            let nh = n.h;
+
+            if nx + nw <= 0 || ny + nh <= 0 || nx >= layer_w || ny >= layer_h {
+                continue;
+            }
+
+            let (x, y, w, h) = if ny < 0 {
+                (nx.max(0) as usize, 0usize, nw as usize, (nh + ny) as usize)
+            } else {
+                (nx.max(0) as usize, ny as usize, nw as usize, nh as usize)
+            };
 
             match tag {
                 "card" => {
@@ -997,8 +1017,8 @@ impl WarpEngine {
                     let sw = config::get_usize("ui-theme/switch/w", 44);
                     let sh = config::get_usize("ui-theme/switch/h", 44);
                     let sr = config::get_usize("ui-theme/switch/radius", 22);
-                    let sx = (n.x + ox + (n.w - sw as i32) / 2) as usize;
-                    let sy = (n.y + oy + (n.h - sh as i32) / 2) as usize;
+                    let sx = (nx + (nw - sw as i32) / 2).max(0) as usize;
+                    let sy = (ny + (nh - sh as i32) / 2).max(0) as usize;
                     layer.fill_rounded_rect(sx, sy, sw, sh, sr, bg);
                 }
                 "input" => {
@@ -1025,18 +1045,31 @@ impl WarpEngine {
     }
 
     pub fn draw_texts(&self, layer: &mut LayerSystem, ox: i32, oy: i32, _scale: f32) {
+        let layer_w = layer.width() as i32;
+        let layer_h = layer.height() as i32;
         for t in &self.texts {
             let x = t.x + ox;
             let y = t.y + oy;
-            if t.text.is_empty() {
+            if t.text.is_empty() || x >= layer_w || y >= layer_h {
                 continue;
             }
-            layer.put_str(x as usize, y as usize, &t.text, t.color);
+            let est_w = t.text.len() as i32 * 8;
+            if x + est_w <= 0 {
+                continue;
+            }
+            let draw_x = x.max(0) as usize;
+            let draw_y = y.max(0) as usize;
+            layer.put_str(draw_x, draw_y, &t.text, t.color);
         }
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
         self.parse_current_screen();
+        let tb_h = crate::window::title_bar_h() as i32;
+        if y < tb_h {
+            self.dirty = true;
+            return;
+        }
         for i in (0..self.nodes.len()).rev() {
             if !self.nodes[i].visible {
                 continue;

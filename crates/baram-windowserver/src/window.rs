@@ -50,10 +50,10 @@ pub fn btn_bg_color() -> Color {
     config::get_color("ui-theme/color/btn_bg", Color::BTN_BG)
 }
 
-const MAX_ICON_SVG: &str = include_str!("../../../src/data/max.svg");
-const MINI_ICON_SVG: &str = include_str!("../../../src/data/mini.svg");
-const CLOSE_ICON_SVG: &str = include_str!("../../../src/data/close.svg");
-const MIN_ICON_SVG: &str = include_str!("../../../src/data/min.svg");
+const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
+const MINI_ICON_SVG: &str = include_str!("../../../data/mini.svg");
+const CLOSE_ICON_SVG: &str = include_str!("../../../data/close.svg");
+const MIN_ICON_SVG: &str = include_str!("../../../data/min.svg");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WinId(pub u32);
@@ -614,19 +614,29 @@ impl WindowManager {
                 if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id) {
                     if entry.1.is_some() {
                         let shadow_ref = self.windows[idx].shadow_layer.as_ref().unwrap();
-                        let src_x = (shadow_pad() - wx).max(0) as usize;
-                        let src_y = (shadow_pad() - wy).max(0) as usize;
-                        let dst_x = (wx - shadow_pad()).max(0) as usize;
-                        let dst_y = (wy - shadow_pad()).max(0) as usize;
-                        layer.composit_shadow_alpha(
-                            shadow_ref,
-                            dst_x,
-                            dst_y,
-                            src_x,
-                            src_y,
-                            ww + shadow_pad() as usize * 2,
-                            wh + shadow_pad() as usize * 2,
-                        );
+                        let shadow_size = ww + shadow_pad() as usize * 2;
+                        let shadow_h = wh + shadow_pad() as usize * 2;
+                        let shadow_x = wx - shadow_pad() as i32;
+                        let shadow_y = wy - shadow_pad() as i32;
+
+                        let src_x = if shadow_x < 0 { (-shadow_x) as usize } else { 0 };
+                        let src_y = if shadow_y < 0 { (-shadow_y) as usize } else { 0 };
+                        let dst_x = shadow_x.max(0) as usize;
+                        let dst_y = shadow_y.max(0) as usize;
+                        let draw_w = (shadow_size as i32 - src_x as i32).max(0) as usize;
+                        let draw_h = (shadow_h as i32 - src_y as i32).max(0) as usize;
+
+                        if draw_w > 0 && draw_h > 0 {
+                            layer.composit_shadow_alpha(
+                                shadow_ref,
+                                dst_x,
+                                dst_y,
+                                src_x,
+                                src_y,
+                                draw_w,
+                                draw_h,
+                            );
+                        }
                     }
                 }
             }
@@ -637,14 +647,12 @@ impl WindowManager {
                 unsafe {
                     let lw = (*layer_ptr).width();
                     let lh = (*layer_ptr).height();
-                    let old_x = (*w_ptr).prev_x.max(0) as usize;
-                    let old_y = (*w_ptr).prev_y.max(0) as usize;
-                    let new_x = wx.max(0) as usize;
-                    let new_y = wy.max(0) as usize;
-                    let cx0 = old_x.min(new_x);
-                    let cy0 = old_y.min(new_y);
-                    let cx1 = (old_x + ww).max(new_x + ww).min(lw);
-                    let cy1 = (old_y + wh).max(new_y + wh).min(lh);
+                    let old_x = (*w_ptr).prev_x;
+                    let old_y = (*w_ptr).prev_y;
+                    let cx0 = old_x.min(wx).max(0) as usize;
+                    let cy0 = old_y.min(wy).max(0) as usize;
+                    let cx1 = (old_x + ww as i32).max(wx + ww as i32).min(lw as i32).max(0) as usize;
+                    let cy1 = (old_y + wh as i32).max(wy + wh as i32).min(lh as i32).max(0) as usize;
                     if cx1 > cx0 && cy1 > cy0 {
                         for row in cy0..cy1 {
                             let start = row * lw + cx0;
@@ -685,6 +693,7 @@ impl WindowManager {
                             break;
                         }
                     }
+                    draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
@@ -692,20 +701,32 @@ impl WindowManager {
             }
 
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
+            let screen_w = layer.width() as i32;
+            let screen_h = layer.height() as i32;
+
+            let src_x = if wx < 0 { (-wx) as usize } else { 0 };
+            let src_y = if wy < 0 { (-wy) as usize } else { 0 };
+            let dst_x = wx.max(0) as usize;
+            let dst_y = wy.max(0) as usize;
+            let draw_w = (ww as i32 - src_x as i32).max(0) as usize;
+            let draw_h = (wh as i32 - src_y as i32).max(0) as usize;
+
+            if draw_w == 0 || draw_h == 0 {
+                continue;
+            }
+
             if is_max {
                 layer.composit_rect(
                     win_layer,
-                    wx.max(0) as usize,
-                    wy.max(0) as usize,
-                    0,
-                    0,
-                    ww,
-                    wh,
+                    dst_x,
+                    dst_y,
+                    src_x,
+                    src_y,
+                    draw_w,
+                    draw_h,
                 );
             } else {
-                let wx_usize = wx.max(0) as usize;
-                let wy_usize = wy.max(0) as usize;
-                layer.composit_rounded(win_layer, wx_usize, wy_usize, 0, 0, ww, wh, win_radius());
+                layer.composit_rounded(win_layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h, win_radius());
                 draw_window_border(layer, &self.windows[idx]);
             }
         }
@@ -937,6 +958,135 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
         w: sw,
         h: sh,
     })
+}
+
+fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
+    let x = ox.max(0) as usize;
+    let y = oy.max(0) as usize;
+    let sw = layer.width();
+    let sh = layer.height();
+    if x >= sw || y >= sh {
+        return;
+    }
+    let x1 = (x + w.w).min(sw);
+    let y1 = (y + w.h).min(sh);
+    let w_draw = x1.saturating_sub(x);
+    let h_draw = y1.saturating_sub(y);
+    if w_draw == 0 || h_draw == 0 {
+        return;
+    }
+
+    let (title_bg, _) = if w.focused {
+        (
+            config::get_color("ui-theme/color/panel", Color::PANEL),
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        )
+    } else {
+        (
+            config::get_color("ui-theme/color/win_inactive", Color::WIN_INACTIVE),
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        )
+    };
+
+    let tb_h = title_bar_h().min(h_draw);
+    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
+
+    let base_x = x as i32 + 6;
+    let btn_y = y as i32 + 5;
+    let bs = btn_size() as i32;
+    let btn_center_x = base_x + bs / 2;
+    let btn_center_y = btn_y + bs / 2;
+
+    if btn_center_x + btn_bg_radius() as i32 <= sw as i32
+        && btn_center_y + btn_bg_radius() as i32 <= sh as i32
+    {
+        layer.fill_circle(
+            btn_center_x as usize,
+            btn_center_y as usize,
+            btn_bg_radius(),
+            btn_bg_color(),
+        );
+    }
+
+    let mini_x = base_x + bs + 5;
+    let mini_center_x = mini_x + bs / 2;
+
+    if mini_center_x + btn_bg_radius() as i32 <= sw as i32
+        && btn_center_y + btn_bg_radius() as i32 <= sh as i32
+    {
+        layer.fill_circle(
+            mini_center_x as usize,
+            btn_center_y as usize,
+            btn_bg_radius(),
+            btn_bg_color(),
+        );
+    }
+
+    let max_x = base_x + bs * 2 + 10;
+    let max_center_x = max_x + bs / 2;
+
+    if max_center_x + btn_bg_radius() as i32 <= sw as i32
+        && btn_center_y + btn_bg_radius() as i32 <= sh as i32
+    {
+        layer.fill_circle(
+            max_center_x as usize,
+            btn_center_y as usize,
+            btn_bg_radius(),
+            btn_bg_color(),
+        );
+    }
+
+    if w.focused {
+        if base_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(
+                layer,
+                CLOSE_ICON_SVG,
+                base_x + 4,
+                btn_y + 4,
+                (btn_size() - 8) as f32,
+                (btn_size() - 8) as f32,
+                77u32,
+            );
+        }
+
+        if mini_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(
+                layer,
+                MIN_ICON_SVG,
+                mini_x + 4,
+                btn_y + 4,
+                (btn_size() - 8) as f32,
+                (btn_size() - 8) as f32,
+                77u32,
+            );
+        }
+
+        if max_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            let icon = if w.maximized {
+                MINI_ICON_SVG
+            } else {
+                MAX_ICON_SVG
+            };
+            svg::draw_svg_into_alpha(
+                layer,
+                icon,
+                max_x + 4,
+                btn_y + 4,
+                (btn_size() - 8) as f32,
+                (btn_size() - 8) as f32,
+                77u32,
+            );
+        }
+
+        let title = w.title_str();
+        if !title.is_empty() {
+            let title_x = (base_x + bs * 3 + 20) as usize;
+            let title_y = (y as i32 + 8) as usize;
+            if title_x < sw && title_y < sh {
+                layer.put_str(title_x, title_y, title, Color::TEXT);
+            }
+        }
+    }
 }
 
 fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32, oy: i32) {

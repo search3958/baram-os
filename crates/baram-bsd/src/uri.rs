@@ -7,8 +7,8 @@
 //! Example URIs:
 //!   os://display/pointer/size?10
 //!   os://display/hud/enabled?1
-//!   os://display/wallpaper/color?#990000
-//!   os://display/wallpaper/file?baram.png
+//!   os://display/wallpaper?file=baram&mode=file
+//!   os://display/wallpaper?color=#990000&mode=color
 //!   os://ui-theme/color?btn_primary=BB0000
 
 use crate::config;
@@ -54,6 +54,13 @@ pub struct DisplayState {
     pub hud_enabled: bool,
     pub wallpaper_color: Option<u32>,
     pub wallpaper_index: usize,
+    pub wallpaper_mode: WallpaperMode,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum WallpaperMode {
+    File,
+    Color,
 }
 
 impl DisplayState {
@@ -63,6 +70,7 @@ impl DisplayState {
             hud_enabled: true,
             wallpaper_color: None,
             wallpaper_index: 0,
+            wallpaper_mode: WallpaperMode::File,
         }
     }
 }
@@ -122,7 +130,8 @@ pub fn check_system_commands(state: &mut DisplayState) -> SystemCommand {
 }
 
 pub fn wallpaper_changed(state: &DisplayState) -> bool {
-    state.wallpaper_color.is_some() || state.wallpaper_index != 0
+    state.wallpaper_mode == WallpaperMode::Color && state.wallpaper_color.is_some()
+        || state.wallpaper_mode == WallpaperMode::File
 }
 
 pub fn load_settings_from_config(state: &mut DisplayState) {
@@ -135,6 +144,12 @@ pub fn load_settings_from_config(state: &mut DisplayState) {
     if let Some(v) = cfg.get("display/hud/enabled") {
         state.hud_enabled = v == "1" || v == "true" || v == "on";
     }
+    if let Some(v) = cfg.get("display/wallpaper/mode") {
+        state.wallpaper_mode = match v {
+            "color" => WallpaperMode::Color,
+            _ => WallpaperMode::File,
+        };
+    }
     if let Some(v) = cfg.get("display/wallpaper/color") {
         if !v.is_empty() {
             let hex = v.trim_start_matches('#');
@@ -145,14 +160,12 @@ pub fn load_settings_from_config(state: &mut DisplayState) {
                     u8::from_str_radix(&hex[4..6], 16),
                 ) {
                     state.wallpaper_color = Some(baram_core::Color::rgb(r, g, b).0);
-                    state.wallpaper_index = 0;
                 }
             }
         }
     }
     if let Some(v) = cfg.get("display/wallpaper/file") {
         if !v.is_empty() {
-            state.wallpaper_color = None;
             state.wallpaper_index = match v {
                 "baram.png" | "baram" => 0,
                 "hanul.png" | "hanul" => 1,
