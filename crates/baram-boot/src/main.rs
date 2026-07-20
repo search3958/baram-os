@@ -1052,6 +1052,7 @@ fn main() -> Status {
             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                 let content_h = wh.saturating_sub(30);
                 engine.update(ww as i32, content_h as i32);
+                wm.clamp_window_scroll(*wid, engine.content_height);
             }
         }
 

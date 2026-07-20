@@ -108,6 +108,7 @@ pub struct WarpEngine {
     pub hover_idx: Option<usize>,
     pub last_command: Option<String>,
     pub focused_input: Option<usize>,
+    pub content_height: i32,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -145,6 +146,7 @@ impl WarpEngine {
             hover_idx: None,
             last_command: None,
             focused_input: None,
+            content_height: 0,
         };
         loop {
             let tk = ctx.next_token();
@@ -230,7 +232,7 @@ impl WarpEngine {
                 total_h = h;
             }
         }
-        let _ = total_h;
+        self.content_height = total_h;
         self.dirty = true;
     }
 
