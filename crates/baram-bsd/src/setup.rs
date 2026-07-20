@@ -49,6 +49,7 @@ pub struct SetupWizard {
     pub skipped: bool,
     pub buttons: alloc::vec::Vec<Button>,
     pub hover_btn: Option<usize>,
+    pub focused_btn: usize,
     dirty: bool,
     cached_frame: Option<alloc::vec::Vec<u32>>,
     cached_w: usize,
@@ -65,6 +66,7 @@ impl SetupWizard {
             skipped: false,
             buttons: alloc::vec::Vec::new(),
             hover_btn: None,
+            focused_btn: 0,
             dirty: true,
             cached_frame: None,
             cached_w: 0,
@@ -143,10 +145,39 @@ impl SetupWizard {
             || ev.raw_key == 0x28
             || ev.raw_key == 0x58
             || ev.scancode == 0x1C;
+        let is_tab = ev.raw_key == 0x2B || ev.scancode == 0x2C;
+        let is_shift = ev.raw_key == 0xE1 || ev.raw_key == 0xE5;
+        let is_back_tab = is_tab && (ev.modifiers & 0x02) != 0;
+
         match self.screen {
             SetupScreen::Welcome => {
                 if is_enter {
-                    self.screen = SetupScreen::Keyboard;
+                    if !self.buttons.is_empty() {
+                        let idx = self.focused_btn.min(self.buttons.len() - 1);
+                        let label = self.buttons[idx].label;
+                        if label == "続行" {
+                            self.screen = SetupScreen::Keyboard;
+                            self.focused_btn = 0;
+                            self.dirty = true;
+                        } else if label == "スキップ" {
+                            crate::shift_key::save_shift_key(0);
+                            mark_setup_done();
+                            self.skipped = true;
+                            self.screen = SetupScreen::Done;
+                            self.dirty = true;
+                        }
+                    }
+                } else if is_back_tab {
+                    if self.focused_btn > 0 {
+                        self.focused_btn -= 1;
+                    } else if !self.buttons.is_empty() {
+                        self.focused_btn = self.buttons.len() - 1;
+                    }
+                    self.dirty = true;
+                } else if is_tab && !is_shift {
+                    if !self.buttons.is_empty() {
+                        self.focused_btn = (self.focused_btn + 1) % self.buttons.len();
+                    }
                     self.dirty = true;
                 }
             }
@@ -158,7 +189,7 @@ impl SetupWizard {
                         mark_setup_done();
                         self.dirty = true;
                     }
-                } else if ev.raw_key != 0 {
+                } else if ev.raw_key != 0 && !is_tab && !is_shift {
                     self.detected_raw_key = ev.raw_key;
                     self.key_detected = true;
                     self.dirty = true;
@@ -274,7 +305,7 @@ impl SetupWizard {
             40,
             "スキップ",
             false,
-            self.hover_btn == Some(0),
+            self.hover_btn == Some(0) || self.focused_btn == 0,
         );
         draw_button(
             buf,
@@ -285,7 +316,7 @@ impl SetupWizard {
             40,
             "続行",
             true,
-            self.hover_btn == Some(1),
+            self.hover_btn == Some(1) || self.focused_btn == 1,
         );
     }
 
@@ -343,7 +374,7 @@ impl SetupWizard {
                 40,
                 "完了",
                 true,
-                self.hover_btn == Some(0),
+                self.hover_btn == Some(0) || self.focused_btn == 0,
             );
         } else {
             draw_str_left(
@@ -391,7 +422,7 @@ impl SetupWizard {
                 40,
                 "スキップ",
                 false,
-                self.hover_btn == Some(0),
+                self.hover_btn == Some(0) || self.focused_btn == 0,
             );
         }
     }

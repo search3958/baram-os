@@ -130,21 +130,9 @@ fn main() -> Status {
         let mut setup_buf: alloc::vec::Vec<u32> =
             alloc::vec![0u32; screen.width() * screen.height()];
 
-        let kbd_event = Keyboard::stdin_event();
-        let mouse_wait_event = Mouse::get_wait_event();
-
         loop {
-            let mut events: alloc::vec::Vec<uefi::Event> = alloc::vec::Vec::new();
             if let Some(ref timer) = timer_event {
-                events.push(unsafe { core::ptr::read(timer) });
-            }
-            if let Some(ref ke) = kbd_event {
-                events.push(unsafe { core::ptr::read(ke) });
-            }
-            if let Some(ref me) = mouse_wait_event {
-                events.push(unsafe { core::ptr::read(me) });
-            }
-            if !events.is_empty() {
+                let mut events = [unsafe { core::ptr::read(timer) }];
                 let _ = uefi::boot::wait_for_event(&mut events);
             }
 
