@@ -167,7 +167,7 @@ make_fat_image() {
         # without waiting for the 5-second startup.nsh countdown.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         # Copy app files to /apps/ directory
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd -i "$out" ::/apps 2>/dev/null || true
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
@@ -210,7 +210,7 @@ make_fat_image() {
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
         # Copy app files
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do

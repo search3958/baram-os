@@ -6,7 +6,7 @@ use baram_font::ttf_font;
 use baram_font::ttf_font_hud;
 use baram_graphics::blur;
 
-const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
+const WALLPAPER_BYTES: &[u8] = include_bytes!("../../../data/wallpaper/baram.png");
 const CARD_H: usize = 320;
 const BLUR_RADIUS: i32 = 30;
 

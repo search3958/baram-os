@@ -16,7 +16,7 @@ use uefi::runtime;
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 
-pub const APPS_SVG: &str = include_str!("../../../src/data/apps.svg");
+pub const APPS_SVG: &str = include_str!("../../../data/apps.svg");
 
 pub struct IconBitmap {
     pub pixels: Vec<[u8; 4]>,
@@ -175,9 +175,9 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
     (autostart, apps)
 }
 
-pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../src/data/wallpaper/baram.png");
-pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../src/data/wallpaper/hanul.png");
-pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../../../src/data/wallpaper/reflect.png");
+pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../data/wallpaper/baram.png");
+pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../data/wallpaper/hanul.png");
+pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../../../data/wallpaper/reflect.png");
 pub const WALLPAPERS: &[&[u8]] = &[
     WALLPAPER_baram_PNG,
     WALLPAPER_HANUL_PNG,

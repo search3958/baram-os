@@ -50,10 +50,10 @@ pub fn btn_bg_color() -> Color {
     config::get_color("ui-theme/color/btn_bg", Color::BTN_BG)
 }
 
-const MAX_ICON_SVG: &str = include_str!("../../../src/data/max.svg");
-const MINI_ICON_SVG: &str = include_str!("../../../src/data/mini.svg");
-const CLOSE_ICON_SVG: &str = include_str!("../../../src/data/close.svg");
-const MIN_ICON_SVG: &str = include_str!("../../../src/data/min.svg");
+const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
+const MINI_ICON_SVG: &str = include_str!("../../../data/mini.svg");
+const CLOSE_ICON_SVG: &str = include_str!("../../../data/close.svg");
+const MIN_ICON_SVG: &str = include_str!("../../../data/min.svg");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WinId(pub u32);

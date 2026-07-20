@@ -3,8 +3,8 @@ use baram_graphics::svg;
 use baram_core::LayerSystem;
 use baram_bsd::config;
 
-pub const CURSOR_SVG: &str = include_str!("../../../src/data/mouse.svg");
-pub const CURSOR_SVG_SIZE: &str = include_str!("../../../src/data/mouse_size.svg");
+pub const CURSOR_SVG: &str = include_str!("../../../data/mouse.svg");
+pub const CURSOR_SVG_SIZE: &str = include_str!("../../../data/mouse_size.svg");
 pub const CURSOR_BOX_W: usize = 15;
 pub const CURSOR_BOX_H: usize = 19;
 pub const CURSOR_BOX_SIZE_W: usize = 19;

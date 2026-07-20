@@ -103,7 +103,7 @@ fn main() -> Status {
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
         {
-            const LOGO_PNG: &[u8] = include_bytes!("data/logo.png");
+            const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
             if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
                 let img_w = header.width as usize;
                 let img_h = header.height as usize;
@@ -196,7 +196,7 @@ fn main() -> Status {
         index_yaml.len()
     ));
     {
-        const LOGO_PNG: &[u8] = include_bytes!("data/logo.png");
+        const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
         if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
             let img_w = header.width as usize;
             let img_h = header.height as usize;
