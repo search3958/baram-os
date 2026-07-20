@@ -999,16 +999,18 @@ fn draw_rounded_rect(
         for px in x0..corner_x_end {
             let base_x = px as f32 - x0f;
             let mut hits = 0u32;
-            for sy in 0..2 {
-                for sx in 0..2 {
-                    if LayerSystem::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly) {
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let sample_x = base_x + (sx as f32 + 0.5) * 0.25;
+                    let sample_y = base_y + (sy as f32 + 0.5) * 0.25;
+                    if LayerSystem::point_in_polygon(sample_x, sample_y, &poly) {
                         hits += 1;
                     }
                 }
             }
             if hits > 0 {
                 buf[row + px] =
-                    LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * 0.25);
+                    LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * (1.0 / 16.0));
             }
         }
 
@@ -1016,17 +1018,18 @@ fn draw_rounded_rect(
             for px in corner_x_start..x1 {
                 let base_x = px as f32 - x0f;
                 let mut hits = 0u32;
-                for sy in 0..2 {
-                    for sx in 0..2 {
-                        if LayerSystem::point_in_polygon(base_x + off[sx], base_y + off[sy], &poly)
-                        {
+                for sy in 0..4 {
+                    for sx in 0..4 {
+                        let sample_x = base_x + (sx as f32 + 0.5) * 0.25;
+                        let sample_y = base_y + (sy as f32 + 0.5) * 0.25;
+                        if LayerSystem::point_in_polygon(sample_x, sample_y, &poly) {
                             hits += 1;
                         }
                     }
                 }
                 if hits > 0 {
                     buf[row + px] =
-                        LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * 0.25);
+                        LayerSystem::blend_alpha(buf[row + px], color.0, hits as f32 * (1.0 / 16.0));
                 }
             }
         }

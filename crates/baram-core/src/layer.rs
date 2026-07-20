@@ -458,15 +458,17 @@ impl LayerSystem {
 
     fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], off: &[f32; 2]) {
         let mut hits = 0u32;
-        for sy in 0..2 {
-            for sx in 0..2 {
-                if Self::point_in_polygon(px + off[sx], py + off[sy], poly) {
+        for sy in 0..4 {
+            for sx in 0..4 {
+                let sample_x = px + (sx as f32 + 0.5) * 0.25;
+                let sample_y = py + (sy as f32 + 0.5) * 0.25;
+                if Self::point_in_polygon(sample_x, sample_y, poly) {
                     hits += 1;
                 }
             }
         }
         if hits > 0 {
-            *dst = Self::blend_alpha(*dst, fg, hits as f32 * 0.25);
+            *dst = Self::blend_alpha(*dst, fg, hits as f32 * (1.0 / 16.0));
         }
     }
 
