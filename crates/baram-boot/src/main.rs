@@ -123,7 +123,6 @@ fn main() -> Status {
                     }
                 }
                 logo_layer.flush(&mut screen);
-                uefi::boot::stall(core::time::Duration::from_secs(2));
             }
         }
         let mut wizard = baram_bsd::setup::SetupWizard::new();
@@ -216,7 +215,6 @@ fn main() -> Status {
                 }
             }
             logo_layer.flush(&mut screen);
-            uefi::boot::stall(core::time::Duration::from_secs(2));
         }
     }
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
@@ -1246,7 +1244,5 @@ fn main() -> Status {
                 prev_is_resizing = is_resizing;
             }
         }
-
-        uefi::boot::stall(core::time::Duration::from_micros(8_000));
     }
 }
