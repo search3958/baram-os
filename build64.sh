@@ -99,7 +99,7 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd -i "$out" ::/apps 2>/dev/null || true
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
@@ -131,7 +131,7 @@ make_fat_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
@@ -162,7 +162,7 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd -i "$out" ::/apps 2>/dev/null || true
             for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do

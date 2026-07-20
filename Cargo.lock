@@ -53,6 +53,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "baram-boot"
+version = "0.1.0"
+dependencies = [
+ "baram-bsd",
+ "baram-core",
+ "baram-font",
+ "baram-graphics",
+ "baram-iokit",
+ "baram-kern",
+ "baram-windowserver",
+ "libm",
+ "png-decoder",
+ "uefi",
+ "uefi-raw",
+]
+
+[[package]]
 name = "baram-bsd"
 version = "0.1.0"
 dependencies = [
@@ -126,23 +143,6 @@ dependencies = [
  "libm",
  "png-decoder",
  "uefi",
-]
-
-[[package]]
-name = "baramos"
-version = "0.1.0"
-dependencies = [
- "baram-bsd",
- "baram-core",
- "baram-font",
- "baram-graphics",
- "baram-iokit",
- "baram-kern",
- "baram-windowserver",
- "libm",
- "png-decoder",
- "uefi",
- "uefi-raw",
 ]
 
 [[package]]

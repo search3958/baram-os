@@ -24,7 +24,7 @@ struct GlyphEntry {
 }
 
 pub fn init() {
-    let data = include_bytes!("../../../src/data/HarmonyOS_Sans_SC_Regular.ttf");
+    let data = include_bytes!("../../../data/HarmonyOS_Sans_SC_Regular.ttf");
     unsafe {
         FONT_DATA = Some(Vec::from(&data[..]));
         let mut info = stbtt_fontinfo::default();
