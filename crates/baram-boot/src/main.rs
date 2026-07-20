@@ -400,20 +400,34 @@ fn main() -> Status {
                     }
                 }
             } else if let Some(c) = ev.printable {
-                match c {
-                    b'n' | b'N' => {
-                        let x = 60 + ((new_window_idx as i32 * 37) % 300);
-                        let y = 80 + ((new_window_idx as i32 * 23) % 200);
-                        let new_id = wm.add("New App", x, y, 400, 450);
-                        let source = baram_bsd::app::load_app_source("blank.warp");
-                        let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                        engine.update(380, 410);
-                        warp_engines.push((new_id, engine));
-                        tb_add_progress = 0.0;
-                        tb_shift_x = 26.0;
-                        new_window_idx = new_window_idx.wrapping_add(1);
+                let mut handled = false;
+                if let Some(focused_win) = wm.focused_id {
+                    for (wid, engine) in warp_engines.iter_mut() {
+                        if *wid == focused_win && engine.focused_input.is_some() {
+                            engine.handle_key(c);
+                            handled = true;
+                            dirty = true;
+                            scene_dirty = true;
+                            break;
+                        }
                     }
-                    _ => {}
+                }
+                if !handled {
+                    match c {
+                        b'n' | b'N' => {
+                            let x = 60 + ((new_window_idx as i32 * 37) % 300);
+                            let y = 80 + ((new_window_idx as i32 * 23) % 200);
+                            let new_id = wm.add("New App", x, y, 400, 450);
+                            let source = baram_bsd::app::load_app_source("blank.warp");
+                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
+                            engine.update(380, 410);
+                            warp_engines.push((new_id, engine));
+                            tb_add_progress = 0.0;
+                            tb_shift_x = 26.0;
+                            new_window_idx = new_window_idx.wrapping_add(1);
+                        }
+                        _ => {}
+                    }
                 }
             }
             dirty = true;

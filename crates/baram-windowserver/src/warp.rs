@@ -107,6 +107,7 @@ pub struct WarpEngine {
     pub dirty: bool,
     pub hover_idx: Option<usize>,
     pub last_command: Option<String>,
+    pub focused_input: Option<usize>,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -140,9 +141,10 @@ impl WarpEngine {
             tokens: Vec::new(),
             token_pos: 0,
             texts: Vec::new(),
-            dirty: true,
+            dirty: false,
             hover_idx: None,
             last_command: None,
+            focused_input: None,
         };
         loop {
             let tk = ctx.next_token();
@@ -855,6 +857,9 @@ impl WarpEngine {
             if val.is_empty() {
                 val = placeholder;
             }
+            if self.focused_input == Some(idx) {
+                val.push('|');
+            }
             if self.texts.len() < MAX_TEXTS {
                 self.texts.push(TextElem {
                     x: self.nodes[idx].x + 12,
@@ -1083,14 +1088,12 @@ impl WarpEngine {
                         8,
                         config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
                     );
-                    layer.rounded_rect_outline(
-                        x,
-                        y,
-                        w,
-                        h,
-                        8,
-                        config::get_color("ui-theme/color/border", Color::BORDER),
-                    );
+                    let border_color = if self.focused_input == Some(idx) {
+                        config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
+                    } else {
+                        config::get_color("ui-theme/color/border", Color::BORDER)
+                    };
+                    layer.rounded_rect_outline(x, y, w, h, 8, border_color);
                 }
                 _ => {}
             }
@@ -1158,6 +1161,12 @@ impl WarpEngine {
                     if !ev.is_empty() {
                         self.execute_action(&ev);
                     }
+                    self.focused_input = None;
+                    break;
+                }
+                if tag == "input" {
+                    self.focused_input = Some(i);
+                    self.dirty = true;
                     break;
                 }
                 let ev = self.nodes[i].event_oneclick.clone();
@@ -1168,6 +1177,29 @@ impl WarpEngine {
             }
         }
         self.dirty = true;
+    }
+
+    pub fn handle_key(&mut self, c: u8) {
+        if let Some(idx) = self.focused_input {
+            if idx >= self.nodes.len() {
+                self.focused_input = None;
+                return;
+            }
+            let out_var = self.parse_out_var(idx);
+            if out_var.is_empty() {
+                return;
+            }
+            let mut val = self.get_state(&out_var);
+            if c == 0x08 || c == 0x7F {
+                val.pop();
+            } else if c >= 0x20 && c < 0x7F {
+                val.push(c as char);
+            } else {
+                return;
+            }
+            self.set_state(&out_var, &val);
+            self.dirty = true;
+        }
     }
 
     fn execute_script(&mut self, name: &str) {
