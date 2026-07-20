@@ -698,13 +698,7 @@ fn main() -> Status {
                                             }
                                             if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
                                                 if parsed.path.starts_with("display/wallpaper") {
-                                                    if (parsed.path == "display/wallpaper"
-                                                        && baram_bsd::uri::get_param(
-                                                            &parsed, "color",
-                                                        )
-                                                        .is_some())
-                                                        || parsed.path == "display/wallpaper/color"
-                                                    {
+                                                    if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
                                                         if let Some(color) =
                                                             display_state.wallpaper_color
                                                         {
@@ -901,11 +895,7 @@ fn main() -> Status {
                                     }
                                     if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
                                         if parsed.path.starts_with("display/wallpaper") {
-                                            if (parsed.path == "display/wallpaper"
-                                                && baram_bsd::uri::get_param(&parsed, "color")
-                                                    .is_some())
-                                                || parsed.path == "display/wallpaper/color"
-                                            {
+                                            if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
                                                 if let Some(color) = display_state.wallpaper_color {
                                                     cached_wallpaper = Some(make_solid_wallpaper(
                                                         color,

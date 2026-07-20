@@ -131,9 +131,8 @@ make_fat_image() {
     mkdir -p "$RUNTIME_DIR"
 
     if [ -f "$out" ]; then
-        log "Disk image already exists at $out — skipping creation."
-        log "  (use './build.sh clean' to recreate from scratch)"
-        return 0
+        log "Removing existing disk image $out ..."
+        rm -f "$out"
     fi
 
     log "Creating FAT disk image ($IMAGE_SIZE_MB MiB) at $out ..."
@@ -209,6 +208,11 @@ make_fat_image() {
         done
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
         # Copy app files
         local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
@@ -249,6 +253,26 @@ make_fat_image() {
         done
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        # Copy app files to /apps/ directory
+        local app_src="$SCRIPT_DIR/app"
+        if [ -d "$app_src" ]; then
+            mmd -i "$out" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd -i "$out" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
         log "  -> $out"
         return 0
     fi
@@ -278,6 +302,24 @@ make_fat_image() {
                 log "  copied $name.efi to /EFI/BOOT/bin/"
             fi
         done
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        # Copy app files
+        local app_src="$SCRIPT_DIR/app"
+        if [ -d "$app_src" ]; then
+            mkdir -p "$tmp_mount/apps"
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
+            done
+            if [ -d "$app_src/icon" ]; then
+                mkdir -p "$tmp_mount/apps/icon"
+                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
+            fi
+            log "  copied app files to /apps/"
+        fi
         sync
         sudo umount "$tmp_mount" 2>/dev/null || umount "$tmp_mount" 2>/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
