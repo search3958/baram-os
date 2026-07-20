@@ -339,7 +339,7 @@ pub fn render_scene(
 
     if taskbar_only {
         if let Some(ref cached) = scene_before_strip {
-            layer.buf_mut()[..w * h].copy_from_slice(cached);
+            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
         }
     } else {
         layer.mark_all_dirty();
@@ -388,8 +388,8 @@ pub fn render_scene(
 
         wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)), warp_engines);
 
-        let mut strip_pre = alloc::vec![0u32; w * h];
-        strip_pre.copy_from_slice(layer.buf_ref());
+        let mut strip_pre = alloc::vec![0u32; w * TASKBAR_H];
+        strip_pre.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
         *scene_before_strip = Some(strip_pre);
     }
 

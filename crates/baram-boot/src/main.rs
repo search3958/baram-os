@@ -1078,6 +1078,32 @@ fn main() -> Status {
                     && !show_app_launcher
                     && !launcher_changed;
 
+                if taskbar_only {
+                    let w = screen.width();
+                    let h = screen.height();
+                    let pad = 32i32;
+                    let prev_w = if prev_is_resizing {
+                        cursor::CURSOR_BOX_SIZE_W
+                    } else {
+                        cursor::CURSOR_BOX_W
+                    };
+                    let prev_h = if prev_is_resizing {
+                        cursor::CURSOR_BOX_SIZE_H
+                    } else {
+                        cursor::CURSOR_BOX_H
+                    };
+                    let x0 = (prev_cursor_x - pad).max(0) as usize;
+                    let y0 = (prev_cursor_y - pad).max(0) as usize;
+                    let x1 = (prev_cursor_x + prev_w as i32 + pad).min(w as i32) as usize;
+                    let y1 = (prev_cursor_y + prev_h as i32 + pad).min(h as i32) as usize;
+                    let buf = layer.buf_mut();
+                    for y in y0..y1 {
+                        let s = y * w + x0;
+                        let e = y * w + x1;
+                        buf[s..e].copy_from_slice(&cached_scene[s..e]);
+                    }
+                }
+
                 render_scene(
                     &mut layer,
                     &mut wm,
@@ -1170,7 +1196,15 @@ fn main() -> Status {
                 let cy1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad)
                     .min(h as i32) as usize;
 
-                cached_scene.copy_from_slice(layer.buf_ref());
+                let fx0 = rx0.min(cx0);
+                let fy0 = ry0.min(cy0);
+                let fx1 = rx1.max(cx1);
+                let fy1 = ry1.max(cy1);
+                for y in fy0..fy1 {
+                    let s = y * w + fx0;
+                    let e = y * w + fx1;
+                    cached_scene[s..e].copy_from_slice(&layer.buf_ref()[s..e]);
+                }
                 scene_dirty = false;
 
                 cursor::draw_cursor_into_layer(
@@ -1180,11 +1214,6 @@ fn main() -> Status {
                     is_resizing,
                     display_state.pointer_size,
                 );
-
-                let fx0 = rx0.min(cx0);
-                let fy0 = ry0.min(cy0);
-                let fx1 = rx1.max(cx1);
-                let fy1 = ry1.max(cy1);
                 prev_show_app_launcher = show_app_launcher;
                 let fw = fx1 - fx0;
                 let fh = fy1 - fy0;

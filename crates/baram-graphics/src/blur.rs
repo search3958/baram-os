@@ -318,16 +318,16 @@ pub fn blur_region_to(src: &[u32], dst: &mut [u32], w: usize, y_start: usize, y_
         return;
     }
     let mut tmp = alloc::vec![0u32; w * region_h];
-    let region: Vec<u32> = src[y_start * w..y_end * w].to_vec();
+    let region = &src[y_start * w..y_end * w];
 
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        neon::blur_h_neon(&region, &mut tmp, w, region_h, &kernel, blur_r);
+        neon::blur_h_neon(region, &mut tmp, w, region_h, &kernel, blur_r);
         neon::blur_v_neon(&tmp, dst, w, region_h, &kernel, blur_r);
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        blur_h_scalar(&region, &mut tmp, w, region_h, &kernel, blur_r);
+        blur_h_scalar(region, &mut tmp, w, region_h, &kernel, blur_r);
         blur_v_scalar(&tmp, dst, w, region_h, &kernel, blur_r);
     }
 }
@@ -339,16 +339,16 @@ pub fn blur_region_darkened_to(src: &[u32], dst: &mut [u32], w: usize, y_start: 
         return;
     }
     let mut tmp = alloc::vec![0u32; w * region_h];
-    let region: Vec<u32> = src[y_start * w..y_end * w].to_vec();
+    let region = &src[y_start * w..y_end * w];
 
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        neon::blur_h_neon(&region, &mut tmp, w, region_h, &kernel, blur_r);
+        neon::blur_h_neon(region, &mut tmp, w, region_h, &kernel, blur_r);
         neon::blur_v_neon(&mut tmp, dst, w, region_h, &kernel, blur_r);
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        blur_h_scalar(&region, &mut tmp, w, region_h, &kernel, blur_r);
+        blur_h_scalar(region, &mut tmp, w, region_h, &kernel, blur_r);
         blur_v_scalar(&mut tmp, dst, w, region_h, &kernel, blur_r);
     }
 
