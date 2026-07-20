@@ -680,68 +680,72 @@ fn main() -> Status {
                                         wm.get_window_rect(clicked_id)
                                     {
                                         let rel_x = cx - wx;
-                                        let rel_y = cy - wy + scroll;
-                                        engine.click(rel_x, rel_y);
-                                        let content_h = wh.saturating_sub(30);
-                                        engine.update(ww as i32, content_h as i32);
-                                        wm.set_content_dirty(clicked_id);
-                                        scene_dirty = true;
+                                        let rel_y = cy - wy;
+                                        let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                        if rel_y >= tb_h {
+                                            let warp_y = rel_y + scroll;
+                                            engine.click(rel_x, warp_y);
+                                            let content_h = wh.saturating_sub(tb_h as usize);
+                                            engine.update(ww as i32, content_h as i32);
+                                            wm.set_content_dirty(clicked_id);
+                                            scene_dirty = true;
 
-                                        if let Some(cmd) = engine.last_command.take() {
-                                            if baram_bsd::uri::execute(&cmd, &mut display_state) {
-                                                wm.set_all_dirty();
-                                                cached_taskbar = None;
-                                                cached_taskbar_strip = None;
-                                                cached_launcher_layer = None;
-                                                bg_cache = None;
-                                                scene_dirty = true;
-                                            }
-                                            if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                                if parsed.path.starts_with("display/wallpaper") {
-                                                    if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
-                                                        if let Some(color) =
-                                                            display_state.wallpaper_color
-                                                        {
-                                                            cached_wallpaper =
-                                                                Some(make_solid_wallpaper(
-                                                                    color,
-                                                                    screen.width(),
-                                                                    screen.height(),
-                                                                ));
-                                                        }
-                                                    } else {
-                                                        if let Some(bytes) = WALLPAPERS
-                                                            .get(display_state.wallpaper_index)
-                                                        {
-                                                            cached_wallpaper = decode_wallpaper(
-                                                                bytes,
-                                                                screen.width(),
-                                                                screen.height(),
-                                                            );
-                                                        } else {
-                                                            log_line_str("NO WALLPAPER BYTES");
-                                                        }
-                                                    }
-                                                    prev_wallpaper_idx =
-                                                        display_state.wallpaper_index;
-                                                    scene_dirty = true;
-                                                } else if parsed.path.starts_with("display/pointer")
-                                                    || parsed.path.starts_with("display/hud")
-                                                {
-                                                    scene_dirty = true;
-                                                } else {
+                                            if let Some(cmd) = engine.last_command.take() {
+                                                if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                                    wm.set_all_dirty();
+                                                    cached_taskbar = None;
+                                                    cached_taskbar_strip = None;
+                                                    cached_launcher_layer = None;
+                                                    bg_cache = None;
                                                     scene_dirty = true;
                                                 }
+                                                if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
+                                                    if parsed.path.starts_with("display/wallpaper") {
+                                                        if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
+                                                            if let Some(color) =
+                                                                display_state.wallpaper_color
+                                                            {
+                                                                cached_wallpaper =
+                                                                    Some(make_solid_wallpaper(
+                                                                        color,
+                                                                        screen.width(),
+                                                                        screen.height(),
+                                                                    ));
+                                                            }
+                                                        } else {
+                                                            if let Some(bytes) = WALLPAPERS
+                                                                .get(display_state.wallpaper_index)
+                                                            {
+                                                                cached_wallpaper = decode_wallpaper(
+                                                                    bytes,
+                                                                    screen.width(),
+                                                                    screen.height(),
+                                                                );
+                                                            } else {
+                                                                log_line_str("NO WALLPAPER BYTES");
+                                                            }
+                                                        }
+                                                        prev_wallpaper_idx =
+                                                            display_state.wallpaper_index;
+                                                        scene_dirty = true;
+                                                    } else if parsed.path.starts_with("display/pointer")
+                                                        || parsed.path.starts_with("display/hud")
+                                                    {
+                                                        scene_dirty = true;
+                                                    } else {
+                                                        scene_dirty = true;
+                                                    }
+                                                }
                                             }
-                                        }
 
-                                        if let Some(enabled_str) =
-                                            engine.get_state_value("--hudEnabled")
-                                        {
-                                            let new_enabled = enabled_str == "true";
-                                            if display_state.hud_enabled != new_enabled {
-                                                display_state.hud_enabled = new_enabled;
-                                                scene_dirty = true;
+                                            if let Some(enabled_str) =
+                                                engine.get_state_value("--hudEnabled")
+                                            {
+                                                let new_enabled = enabled_str == "true";
+                                                if display_state.hud_enabled != new_enabled {
+                                                    display_state.hud_enabled = new_enabled;
+                                                    scene_dirty = true;
+                                                }
                                             }
                                         }
                                     }
@@ -877,60 +881,64 @@ fn main() -> Status {
                         if clicked_id == *wid {
                             if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
                                 let rel_x = cx - wx;
-                                let rel_y = cy - wy + scroll;
-                                engine.click(rel_x, rel_y);
-                                let content_h = wh.saturating_sub(30);
-                                engine.update(ww as i32, content_h as i32);
-                                wm.set_content_dirty(clicked_id);
-                                scene_dirty = true;
+                                let rel_y = cy - wy;
+                                let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                if rel_y >= tb_h {
+                                    let warp_y = rel_y + scroll;
+                                    engine.click(rel_x, warp_y);
+                                    let content_h = wh.saturating_sub(tb_h as usize);
+                                    engine.update(ww as i32, content_h as i32);
+                                    wm.set_content_dirty(clicked_id);
+                                    scene_dirty = true;
 
-                                if let Some(cmd) = engine.last_command.take() {
-                                    if baram_bsd::uri::execute(&cmd, &mut display_state) {
-                                        wm.set_all_dirty();
-                                        cached_taskbar = None;
-                                        cached_taskbar_strip = None;
-                                        cached_launcher_layer = None;
-                                        bg_cache = None;
-                                        scene_dirty = true;
-                                    }
-                                    if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                        if parsed.path.starts_with("display/wallpaper") {
-                                            if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
-                                                if let Some(color) = display_state.wallpaper_color {
-                                                    cached_wallpaper = Some(make_solid_wallpaper(
-                                                        color,
-                                                        screen.width(),
-                                                        screen.height(),
-                                                    ));
-                                                }
-                                            } else {
-                                                if let Some(bytes) =
-                                                    WALLPAPERS.get(display_state.wallpaper_index)
-                                                {
-                                                    cached_wallpaper = decode_wallpaper(
-                                                        bytes,
-                                                        screen.width(),
-                                                        screen.height(),
-                                                    );
-                                                }
-                                            }
-                                            prev_wallpaper_idx = display_state.wallpaper_index;
-                                            scene_dirty = true;
-                                        } else if parsed.path.starts_with("display/pointer")
-                                            || parsed.path.starts_with("display/hud")
-                                        {
-                                            scene_dirty = true;
-                                        } else {
+                                    if let Some(cmd) = engine.last_command.take() {
+                                        if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                            wm.set_all_dirty();
+                                            cached_taskbar = None;
+                                            cached_taskbar_strip = None;
+                                            cached_launcher_layer = None;
+                                            bg_cache = None;
                                             scene_dirty = true;
                                         }
+                                        if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
+                                            if parsed.path.starts_with("display/wallpaper") {
+                                                if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
+                                                    if let Some(color) = display_state.wallpaper_color {
+                                                        cached_wallpaper = Some(make_solid_wallpaper(
+                                                            color,
+                                                            screen.width(),
+                                                            screen.height(),
+                                                        ));
+                                                    }
+                                                } else {
+                                                    if let Some(bytes) =
+                                                        WALLPAPERS.get(display_state.wallpaper_index)
+                                                    {
+                                                        cached_wallpaper = decode_wallpaper(
+                                                            bytes,
+                                                            screen.width(),
+                                                            screen.height(),
+                                                        );
+                                                    }
+                                                }
+                                                prev_wallpaper_idx = display_state.wallpaper_index;
+                                                scene_dirty = true;
+                                            } else if parsed.path.starts_with("display/pointer")
+                                                || parsed.path.starts_with("display/hud")
+                                            {
+                                                scene_dirty = true;
+                                            } else {
+                                                scene_dirty = true;
+                                            }
+                                        }
                                     }
-                                }
 
-                                if let Some(enabled_str) = engine.get_state_value("--hudEnabled") {
-                                    let new_enabled = enabled_str == "true";
-                                    if display_state.hud_enabled != new_enabled {
-                                        display_state.hud_enabled = new_enabled;
-                                        scene_dirty = true;
+                                    if let Some(enabled_str) = engine.get_state_value("--hudEnabled") {
+                                        let new_enabled = enabled_str == "true";
+                                        if display_state.hud_enabled != new_enabled {
+                                            display_state.hud_enabled = new_enabled;
+                                            scene_dirty = true;
+                                        }
                                     }
                                 }
                             }
@@ -965,9 +973,15 @@ fn main() -> Status {
                     if hover_id == *wid {
                         if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
                             let rel_x = cursor_x - wx;
-                            let rel_y = cursor_y - wy + scroll;
+                            let rel_y = cursor_y - wy;
+                            let tb_h = baram_windowserver::window::title_bar_h() as i32;
                             let prev_hover = engine.hover_idx;
-                            engine.set_hover(rel_x, rel_y);
+                            if rel_y >= tb_h {
+                                let warp_y = rel_y + scroll;
+                                engine.set_hover(rel_x, warp_y);
+                            } else {
+                                engine.set_hover(rel_x, -1);
+                            }
                             if engine.hover_idx != prev_hover {
                                 wm.set_content_dirty(hover_id);
                                 scene_dirty = true;

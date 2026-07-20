@@ -919,6 +919,14 @@ impl WarpEngine {
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
         self.parse_current_screen();
+        let tb_h = crate::window::title_bar_h() as i32;
+        if y < tb_h {
+            if self.hover_idx.is_some() {
+                self.hover_idx = None;
+                self.dirty = true;
+            }
+            return;
+        }
         let mut found = None;
         for i in (0..self.nodes.len()).rev() {
             if !self.nodes[i].visible {
@@ -1037,6 +1045,11 @@ impl WarpEngine {
 
     pub fn click(&mut self, x: i32, y: i32) {
         self.parse_current_screen();
+        let tb_h = crate::window::title_bar_h() as i32;
+        if y < tb_h {
+            self.dirty = true;
+            return;
+        }
         for i in (0..self.nodes.len()).rev() {
             if !self.nodes[i].visible {
                 continue;

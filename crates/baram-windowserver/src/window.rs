@@ -685,6 +685,7 @@ impl WindowManager {
                             break;
                         }
                     }
+                    draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
@@ -937,6 +938,135 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
         w: sw,
         h: sh,
     })
+}
+
+fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
+    let x = ox.max(0) as usize;
+    let y = oy.max(0) as usize;
+    let sw = layer.width();
+    let sh = layer.height();
+    if x >= sw || y >= sh {
+        return;
+    }
+    let x1 = (x + w.w).min(sw);
+    let y1 = (y + w.h).min(sh);
+    let w_draw = x1.saturating_sub(x);
+    let h_draw = y1.saturating_sub(y);
+    if w_draw == 0 || h_draw == 0 {
+        return;
+    }
+
+    let (title_bg, _) = if w.focused {
+        (
+            config::get_color("ui-theme/color/panel", Color::PANEL),
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        )
+    } else {
+        (
+            config::get_color("ui-theme/color/win_inactive", Color::WIN_INACTIVE),
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        )
+    };
+
+    let tb_h = title_bar_h().min(h_draw);
+    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
+
+    let base_x = x as i32 + 6;
+    let btn_y = y as i32 + 5;
+    let bs = btn_size() as i32;
+    let btn_center_x = base_x + bs / 2;
+    let btn_center_y = btn_y + bs / 2;
+
+    if btn_center_x + btn_bg_radius() as i32 <= sw as i32
+        && btn_center_y + btn_bg_radius() as i32 <= sh as i32
+    {
+        layer.fill_circle(
+            btn_center_x as usize,
+            btn_center_y as usize,
+            btn_bg_radius(),
+            btn_bg_color(),
+        );
+    }
+
+    let mini_x = base_x + bs + 5;
+    let mini_center_x = mini_x + bs / 2;
+
+    if mini_center_x + btn_bg_radius() as i32 <= sw as i32
+        && btn_center_y + btn_bg_radius() as i32 <= sh as i32
+    {
+        layer.fill_circle(
+            mini_center_x as usize,
+            btn_center_y as usize,
+            btn_bg_radius(),
+            btn_bg_color(),
+        );
+    }
+
+    let max_x = base_x + bs * 2 + 10;
+    let max_center_x = max_x + bs / 2;
+
+    if max_center_x + btn_bg_radius() as i32 <= sw as i32
+        && btn_center_y + btn_bg_radius() as i32 <= sh as i32
+    {
+        layer.fill_circle(
+            max_center_x as usize,
+            btn_center_y as usize,
+            btn_bg_radius(),
+            btn_bg_color(),
+        );
+    }
+
+    if w.focused {
+        if base_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(
+                layer,
+                CLOSE_ICON_SVG,
+                base_x + 4,
+                btn_y + 4,
+                (btn_size() - 8) as f32,
+                (btn_size() - 8) as f32,
+                77u32,
+            );
+        }
+
+        if mini_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            svg::draw_svg_into_alpha(
+                layer,
+                MIN_ICON_SVG,
+                mini_x + 4,
+                btn_y + 4,
+                (btn_size() - 8) as f32,
+                (btn_size() - 8) as f32,
+                77u32,
+            );
+        }
+
+        if max_x + bs <= sw as i32 && btn_y + bs <= sh as i32 {
+            let icon = if w.maximized {
+                MINI_ICON_SVG
+            } else {
+                MAX_ICON_SVG
+            };
+            svg::draw_svg_into_alpha(
+                layer,
+                icon,
+                max_x + 4,
+                btn_y + 4,
+                (btn_size() - 8) as f32,
+                (btn_size() - 8) as f32,
+                77u32,
+            );
+        }
+
+        let title = w.title_str();
+        if !title.is_empty() {
+            let title_x = (base_x + bs * 3 + 20) as usize;
+            let title_y = (y as i32 + 8) as usize;
+            if title_x < sw && title_y < sh {
+                layer.put_str(title_x, title_y, title, Color::TEXT);
+            }
+        }
+    }
 }
 
 fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32, oy: i32) {
