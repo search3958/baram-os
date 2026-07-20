@@ -411,7 +411,7 @@ pub fn render(
 
                 match btn_type.as_str() {
                     "outline" => {
-                        layer.rounded_rect_outline(bx, by, w, h, radius, accent);
+                        layer.rounded_rect_outline(bx, by, w, h, radius, accent, Color::PANEL);
                         layer.put_str(bx + 10, by + 5, &plain, accent);
                     }
                     "text" => {
@@ -436,7 +436,7 @@ pub fn render(
                 let radius = card_radius;
 
                 layer.fill_rounded_rect(bx, by, card_w, card_h, radius, Color::CARD_BG);
-                layer.rounded_rect_outline(bx, by, card_w, card_h, radius, Color::BORDER);
+                layer.rounded_rect_outline(bx, by, card_w, card_h, radius, Color::BORDER, Color::CARD_BG);
                 layer.put_str(bx + 8, by + 8, title, text_color);
                 layer.put_str(bx + 8, by + 28, text, muted);
                 if !button.is_empty() {
@@ -458,7 +458,7 @@ pub fn render(
                 let radius = card_radius;
 
                 layer.fill_rounded_rect(bx, by, list_w, list_h, radius, Color::WIN_BG);
-                layer.rounded_rect_outline(bx, by, list_w, list_h, radius, Color::BORDER);
+                layer.rounded_rect_outline(bx, by, list_w, list_h, radius, Color::BORDER, Color::WIN_BG);
                 layer.put_str(bx + 8, by + 8, title, text_color);
                 layer.put_str(bx + 8, by + 28, text, muted);
                 if !button.is_empty() {

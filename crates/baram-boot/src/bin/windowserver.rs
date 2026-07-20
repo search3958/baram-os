@@ -93,11 +93,11 @@ extern "C" fn ws_render(ctx: *mut SubsystemContext) -> i32 {
 
                 if w > 100 && h > 100 {
                     layer.fill_rounded_rect(50, 50, w - 100, h - 100, 12, Color::WIN_BG);
-                    layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER);
+                    layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
 
                     let title_h = 32;
                     layer.fill_rect(50, 50, w - 100, title_h, Color::PANEL);
-                    layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER);
+                    layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
                     layer.fill_rect(51, 50 + title_h - 1, w - 102, 1, Color::BORDER);
                 }
 

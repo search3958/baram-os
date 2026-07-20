@@ -568,64 +568,12 @@ impl LayerSystem {
         }
     }
 
-    pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
+    pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color, fill: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
-        let rf = r as f32;
-        let v = c.0;
-        let y0 = y.min(self.height);
-        let y1 = (y + h).min(self.height);
-        let x0 = x.min(self.width);
-        let x1 = (x + w).min(self.width);
-
-        for py in y0..y1 {
-            for px in x0..x1 {
-                let on_edge = px == x || px == x + w - 1 || py == y || py == y + h - 1;
-                if !on_edge { continue; }
-
-                let dist_to_edge = if px < x + r && py < y + r {
-                    let cx_f = (x + r) as f32;
-                    let cy_f = (y + r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
-                    let cx_f = (x + w - r) as f32;
-                    let cy_f = (y + r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
-                    let cx_f = (x + r) as f32;
-                    let cy_f = (y + h - r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
-                    let cx_f = (x + w - r) as f32;
-                    let cy_f = (y + h - r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else {
-                    self.put_pixel(px, py, c);
-                    continue;
-                };
-
-                let alpha = if dist_to_edge < -0.5 {
-                    0.0
-                } else if dist_to_edge > 0.5 {
-                    0.0
-                } else {
-                    (0.5 - dist_to_edge.abs()).clamp(0.0, 1.0)
-                };
-
-                if alpha > 0.0 {
-                    let bg = self.buf[py * self.width + px];
-                    self.put_pixel(px, py, Color(Self::blend_alpha(bg, v, alpha)));
-                }
-            }
-        }
+        self.fill_rounded_rect(x, y, w, h, r, c);
+        let inner_r = if r > 2 { r - 2 } else { 0 };
+        self.fill_rounded_rect(x + 2, y + 2, w.saturating_sub(4), h.saturating_sub(4), inner_r, fill);
     }
 
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {

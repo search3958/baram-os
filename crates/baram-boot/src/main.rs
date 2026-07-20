@@ -403,8 +403,15 @@ fn main() -> Status {
                 let mut handled = false;
                 if let Some(focused_win) = wm.focused_id {
                     for (wid, engine) in warp_engines.iter_mut() {
-                        if *wid == focused_win && engine.focused_input.is_some() {
+                        if *wid == focused_win && !engine.focused_input_var.is_empty() {
                             engine.handle_key(c);
+                            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+                                let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                let content_h = (wh as i32).saturating_sub(tb_h);
+                                engine.update(ww as i32, content_h);
+                                wm.clamp_window_scroll(*wid, engine.content_height);
+                                wm.set_content_dirty(*wid);
+                            }
                             handled = true;
                             dirty = true;
                             scene_dirty = true;

@@ -108,6 +108,7 @@ pub struct WarpEngine {
     pub hover_idx: Option<usize>,
     pub last_command: Option<String>,
     pub focused_input: Option<usize>,
+    pub focused_input_var: alloc::string::String,
     pub content_height: i32,
 }
 
@@ -146,6 +147,7 @@ impl WarpEngine {
             hover_idx: None,
             last_command: None,
             focused_input: None,
+            focused_input_var: alloc::string::String::new(),
             content_height: 0,
         };
         loop {
@@ -859,14 +861,48 @@ impl WarpEngine {
             if val.is_empty() {
                 val = placeholder;
             }
-            if self.focused_input == Some(idx) {
+            let out_var_name = self.parse_out_var(idx);
+            if self.focused_input_var == out_var_name {
                 val.push('|');
             }
+            let char_w = 8i32;
+            let max_chars = ((limit_w - 24) / char_w).max(1) as usize;
+            let chars: alloc::vec::Vec<char> = val.chars().collect();
+            let mut display_lines: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
+            let mut start = 0;
+            while start < chars.len() {
+                let mut end = (start + max_chars).min(chars.len());
+                if end < chars.len() {
+                    let mut break_at = end;
+                    while break_at > start {
+                        let c = chars[break_at - 1];
+                        if c == ' ' || c == ',' || c == '.' {
+                            break_at -= 1;
+                            break;
+                        }
+                        break_at -= 1;
+                    }
+                    if break_at <= start {
+                        break_at = end;
+                    }
+                    let line: alloc::string::String = chars[start..break_at].iter().collect();
+                    display_lines.push(line);
+                    start = break_at;
+                    if start < chars.len() && chars[start] == ' ' {
+                        start += 1;
+                    }
+                } else {
+                    let line: alloc::string::String = chars[start..].iter().collect();
+                    display_lines.push(line);
+                    start = chars.len();
+                }
+            }
+            let display_text = display_lines.join("\n");
             if self.texts.len() < MAX_TEXTS {
                 self.texts.push(TextElem {
                     x: self.nodes[idx].x + 12,
                     y: self.nodes[idx].y + 16,
-                    text: val,
+                    text: display_text,
                     size: 16.0,
                     color: config::get_color("ui-theme/color/text", Color::TEXT),
                 });
@@ -1090,12 +1126,14 @@ impl WarpEngine {
                         8,
                         config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
                     );
-                    let border_color = if self.focused_input == Some(idx) {
+                    let out_var_name = self.get_attr(idx, "output");
+                    let border_color = if self.focused_input_var == out_var_name {
                         config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY)
                     } else {
                         config::get_color("ui-theme/color/border", Color::BORDER)
                     };
-                    layer.rounded_rect_outline(x, y, w, h, 8, border_color);
+                    let bg = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
+                    layer.rounded_rect_outline(x, y, w, h, 8, border_color, bg);
                 }
                 _ => {}
             }
@@ -1164,10 +1202,12 @@ impl WarpEngine {
                         self.execute_action(&ev);
                     }
                     self.focused_input = None;
+                    self.focused_input_var.clear();
                     break;
                 }
                 if tag == "input" {
                     self.focused_input = Some(i);
+                    self.focused_input_var = self.parse_out_var(i);
                     self.dirty = true;
                     break;
                 }
@@ -1182,26 +1222,21 @@ impl WarpEngine {
     }
 
     pub fn handle_key(&mut self, c: u8) {
-        if let Some(idx) = self.focused_input {
-            if idx >= self.nodes.len() {
-                self.focused_input = None;
-                return;
-            }
-            let out_var = self.parse_out_var(idx);
-            if out_var.is_empty() {
-                return;
-            }
-            let mut val = self.get_state(&out_var);
-            if c == 0x08 || c == 0x7F {
-                val.pop();
-            } else if c >= 0x20 && c < 0x7F {
-                val.push(c as char);
-            } else {
-                return;
-            }
-            self.set_state(&out_var, &val);
-            self.dirty = true;
+        if self.focused_input_var.is_empty() {
+            self.focused_input = None;
+            return;
         }
+        let out_var = self.focused_input_var.clone();
+        let mut val = self.get_state(&out_var);
+        if c == 0x08 || c == 0x7F {
+            val.pop();
+        } else if c >= 0x20 && c < 0x7F {
+            val.push(c as char);
+        } else {
+            return;
+        }
+        self.set_state(&out_var, &val);
+        self.dirty = true;
     }
 
     fn execute_script(&mut self, name: &str) {
