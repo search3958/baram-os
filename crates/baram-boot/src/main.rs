@@ -1075,6 +1075,7 @@ fn main() -> Status {
                     && wm.count() == prev_window_count
                     && wm.focused_id == prev_focused_id
                     && prev_wallpaper_idx == display_state.wallpaper_index
+                    && bg_cache.is_some()
                     && !show_app_launcher
                     && !launcher_changed;
 
@@ -1196,10 +1197,21 @@ fn main() -> Status {
                 let cy1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad)
                     .min(h as i32) as usize;
 
-                let fx0 = rx0.min(cx0);
-                let fy0 = ry0.min(cy0);
-                let fx1 = rx1.max(cx1);
-                let fy1 = ry1.max(cy1);
+                let fx0;
+                let fy0;
+                let fx1;
+                let fy1;
+                if !bg_valid {
+                    fx0 = 0;
+                    fy0 = 0;
+                    fx1 = w;
+                    fy1 = h;
+                } else {
+                    fx0 = rx0.min(cx0);
+                    fy0 = ry0.min(cy0);
+                    fx1 = rx1.max(cx1);
+                    fy1 = ry1.max(cy1);
+                }
                 for y in fy0..fy1 {
                     let s = y * w + fx0;
                     let e = y * w + fx1;
