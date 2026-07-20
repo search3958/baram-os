@@ -289,55 +289,67 @@ pub fn render_scene(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    taskbar_only: bool,
+    scene_before_strip: &mut Option<Vec<u32>>,
 ) {
     let w = layer.width();
     let h = layer.height();
-
-    if bg_cache_valid {
-        if let Some(ref cached) = bg_cache {
-            layer.buf_mut()[..w * h].copy_from_slice(cached);
-        }
-    } else if let Some(pixels) = wallpaper {
-        layer.buf_mut()[..w * h].copy_from_slice(pixels);
-    } else {
-        layer.clear(config::get_color("ui-theme/color/bg", Color::BG));
-    }
-
     let tb_y = h.saturating_sub(TASKBAR_H);
 
-    if bg_cache_valid {
-    } else if let Some(ref cached) = cached_taskbar {
-        layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
+    if taskbar_only {
+        if let Some(ref cached) = scene_before_strip {
+            layer.buf_mut()[..w * h].copy_from_slice(cached);
+        }
     } else {
-        let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
-        blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
-        let tb_alpha = 170u32;
-        let tb_inv = 255 - tb_alpha;
-        let tb_color = config::get_color("ui-theme/color/taskbar", Color::TASKBAR);
-        for y in 0..TASKBAR_H {
-            let row_start = y * w;
-            for x in 0..w {
-                let idx = row_start + x;
-                let bg = Color(blurred[idx]);
-                let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
-                let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
-                let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
-                layer.buf_mut()[(tb_y + y) * w + x] = Color::rgb(r as u8, g as u8, b as u8).0;
+        if bg_cache_valid {
+            if let Some(ref cached) = bg_cache {
+                layer.buf_mut()[..w * h].copy_from_slice(cached);
             }
+        } else if let Some(pixels) = wallpaper {
+            layer.buf_mut()[..w * h].copy_from_slice(pixels);
+        } else {
+            layer.clear(config::get_color("ui-theme/color/bg", Color::BG));
         }
 
-        let mut bar = alloc::vec![0u32; w * TASKBAR_H];
-        bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-        *cached_taskbar = Some(bar);
-    }
+        if bg_cache_valid {
+        } else if let Some(ref cached) = cached_taskbar {
+            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
+        } else {
+            let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
+            blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
+            let tb_alpha = 170u32;
+            let tb_inv = 255 - tb_alpha;
+            let tb_color = config::get_color("ui-theme/color/taskbar", Color::TASKBAR);
+            for y in 0..TASKBAR_H {
+                let row_start = y * w;
+                for x in 0..w {
+                    let idx = row_start + x;
+                    let bg = Color(blurred[idx]);
+                    let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
+                    let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
+                    let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
+                    layer.buf_mut()[(tb_y + y) * w + x] =
+                        Color::rgb(r as u8, g as u8, b as u8).0;
+                }
+            }
 
-    if !bg_cache_valid {
-        let mut bg = alloc::vec![0u32; w * h];
-        bg.copy_from_slice(layer.buf_ref());
-        *bg_cache = Some(bg);
-    }
+            let mut bar = alloc::vec![0u32; w * TASKBAR_H];
+            bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
+            *cached_taskbar = Some(bar);
+        }
 
-    wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)), warp_engines);
+        if !bg_cache_valid {
+            let mut bg = alloc::vec![0u32; w * h];
+            bg.copy_from_slice(layer.buf_ref());
+            *bg_cache = Some(bg);
+        }
+
+        wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)), warp_engines);
+
+        let mut strip_pre = alloc::vec![0u32; w * h];
+        strip_pre.copy_from_slice(layer.buf_ref());
+        *scene_before_strip = Some(strip_pre);
+    }
 
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
@@ -707,6 +719,8 @@ pub fn render_frame(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    taskbar_only: bool,
+    scene_before_strip: &mut Option<Vec<u32>>,
 ) {
     render_scene(
         layer,
@@ -733,6 +747,8 @@ pub fn render_frame(
         app_list,
         app_icon_list,
         hover_apps_icon,
+        taskbar_only,
+        scene_before_strip,
     );
     let is_resizing = wm.is_any_resizing();
     cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);

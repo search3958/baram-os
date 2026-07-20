@@ -290,6 +290,7 @@ fn main() -> Status {
     let mut cached_taskbar: Option<Vec<u32>> = None;
     let mut cached_taskbar_strip: Option<Vec<u32>> = None;
     let mut cached_launcher_layer: Option<Vec<u32>> = None;
+    let mut scene_before_strip: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
@@ -336,6 +337,8 @@ fn main() -> Status {
         &app_list,
         &app_icon_list,
         hover_apps_icon,
+        false,
+        &mut scene_before_strip,
     );
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -1064,6 +1067,14 @@ fn main() -> Status {
                     && tb_add_progress < 0.0
                     && tb_remove_progress < 0.0
                     && tb_shift_x.abs() <= 0.5;
+
+                let taskbar_only = taskbar_dirty
+                    && scene_before_strip.is_some()
+                    && wm.count() == prev_window_count
+                    && wm.focused_id == prev_focused_id
+                    && prev_wallpaper_idx == display_state.wallpaper_index
+                    && !show_app_launcher;
+
                 render_scene(
                     &mut layer,
                     &mut wm,
@@ -1089,6 +1100,8 @@ fn main() -> Status {
                     &app_list,
                     &app_icon_list,
                     hover_apps_icon,
+                    taskbar_only,
+                    &mut scene_before_strip,
                 );
 
                 if show_app_launcher {
