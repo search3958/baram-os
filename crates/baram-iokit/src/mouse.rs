@@ -1,14 +1,12 @@
-
-
-
 use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 use uefi::boot;
-use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::proto::console::pointer::Pointer;
+use uefi::proto::usb::io::{ControlTransfer, UsbIo};
+
 use crate::absolute_pointer::AbsolutePointer;
-use crate::usb_hid::{HidReportLayout, parse_hid_report_desc, parse_input_report};
+use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidParsedEvent, HidReportLayout};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MouseEvent {
@@ -24,152 +22,193 @@ pub struct MouseEvent {
 }
 
 pub struct Mouse {
+    // Native UEFI pointer protocols are deliberately preferred.  Firmware has
+    // already converted PS/2, I2C-HID and vendor-specific trackpads into these
+    // protocols, which is much safer than reconfiguring their USB interface.
+    abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64, u64, u64)>,
+    simple: Option<boot::ScopedProtocol<Pointer>>,
+
+    // Direct USB HID is the fallback for firmware that exposes no pointer
+    // protocol (and is also useful for hot-plugged USB mice).
     usb_io: Option<boot::ScopedProtocol<UsbIo>>,
     ep_addr: u8,
     iface: u8,
     report_buf: Vec<u8>,
+    last_report: Vec<u8>,
+    hid_layouts: Vec<HidReportLayout>,
+    usb_boot_mouse: bool,
 
-    // Generic HID report layout (used for trackpads / touch panels / non-boot mice)
-    hid_layout: Option<HidReportLayout>,
-
-    abs: Option<(boot::ScopedProtocol<AbsolutePointer>, u64, u64, u64, u64)>,
-    simple: Option<(boot::ScopedProtocol<Pointer>, u64, u64)>,
-
-    // SimplePointer auto-calibration: pixels-per-count derived from device
-    // resolution (counts/mm). 0 means "unknown", use a sensible default.
-    simple_scale: f32,
-
-    // Last absolute position reported by the device (None until first sample)
-    last_abs_x: Option<u64>,
-    last_abs_y: Option<u64>,
-
-    // Sub-pixel accumulator for relative (SimplePointer) movement.
-    simple_acc_x: f32,
-    simple_acc_y: f32,
-
-    // Auto-calibrated sensitivity (pixels per reported count) for the
-    // SimplePointer, derived from its resolution (counts/mm).
-    calibrated: bool,
+    // Absolute HID touchpads need relative finger tracking.  Mapping their
+    // surface coordinates straight onto the display makes the cursor jump at
+    // the beginning of every gesture.
+    last_touch: Option<(i32, i32)>,
+    touch_acc_x: f32,
+    touch_acc_y: f32,
+    poll_count: u32,
+    usb_error_count: u32,
 }
 
 impl Mouse {
+    fn empty() -> Self {
+        Self {
+            abs: None,
+            simple: None,
+            usb_io: None,
+            ep_addr: 0,
+            iface: 0,
+            report_buf: vec![0; 8],
+            last_report: Vec::new(),
+            hid_layouts: Vec::new(),
+            usb_boot_mouse: false,
+            last_touch: None,
+            touch_acc_x: 0.0,
+            touch_acc_y: 0.0,
+            poll_count: 0,
+            usb_error_count: 0,
+        }
+    }
+
     pub fn get_wait_event() -> Option<uefi::Event> {
-        // Try AbsolutePointer first
-        if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
+        if let Some(handle) = boot::find_handles::<AbsolutePointer>()
+            .ok()
+            .and_then(|handles| handles.into_iter().next())
+        {
             let params = boot::OpenProtocolParams {
-                handle: h,
+                handle,
                 agent: boot::image_handle(),
                 controller: None,
             };
-            if let Ok(ptr) = unsafe {
-                boot::open_protocol::<AbsolutePointer>(params, boot::OpenProtocolAttributes::GetProtocol)
+            if let Ok(pointer) = unsafe {
+                boot::open_protocol::<AbsolutePointer>(
+                    params,
+                    boot::OpenProtocolAttributes::GetProtocol,
+                )
             } {
-                let evt = ptr.wait_for_input_event();
-                let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&evt) };
-                core::mem::forget(ptr);
+                let event = pointer.wait_for_input_event();
+                let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&event) };
+                core::mem::forget(pointer);
                 return Some(unsafe { core::mem::transmute_copy::<usize, uefi::Event>(&raw) });
             }
         }
 
-        // Fallback: try SimplePointer
-        if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
+        if let Some(handle) = boot::find_handles::<Pointer>()
+            .ok()
+            .and_then(|handles| handles.into_iter().next())
+        {
             let params = boot::OpenProtocolParams {
-                handle: h,
+                handle,
                 agent: boot::image_handle(),
                 controller: None,
             };
-            if let Ok(ptr) = unsafe {
+            if let Ok(pointer) = unsafe {
                 boot::open_protocol::<Pointer>(params, boot::OpenProtocolAttributes::GetProtocol)
             } {
-                if let Ok(evt) = ptr.wait_for_input_event() {
-                    let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&evt) };
-                    core::mem::forget(ptr);
+                if let Ok(event) = pointer.wait_for_input_event() {
+                    let raw = unsafe { core::mem::transmute_copy::<uefi::Event, usize>(&event) };
+                    core::mem::forget(pointer);
                     return Some(unsafe { core::mem::transmute_copy::<usize, uefi::Event>(&raw) });
                 }
             }
         }
-
         None
     }
-    pub fn open() -> Result<Mouse, &'static str> {
+
+    pub fn open() -> Result<Self, &'static str> {
         let usb_count = boot::find_handles::<UsbIo>().map(|h| h.len()).unwrap_or(0);
-        let abs_count = boot::find_handles::<AbsolutePointer>().map(|h| h.len()).unwrap_or(0);
-        let simple_count = boot::find_handles::<Pointer>().map(|h| h.len()).unwrap_or(0);
+        let abs_count = boot::find_handles::<AbsolutePointer>()
+            .map(|h| h.len())
+            .unwrap_or(0);
+        let simple_count = boot::find_handles::<Pointer>()
+            .map(|h| h.len())
+            .unwrap_or(0);
         log_line_str(&format!(
             "Mouse: devices USB={} Abs={} Simple={}",
             usb_count, abs_count, simple_count
         ));
 
-        // Try USB HID first; fall back to UEFI pointer protocols.
-        let mut mouse = Mouse {
-            usb_io: None, ep_addr: 0, iface: 0, report_buf: vec![0u8; 8],
-            hid_layout: None, abs: None, simple: None,
-            simple_scale: 0.0, simple_acc_x: 0.0, simple_acc_y: 0.0, calibrated: false,
-            last_abs_x: None, last_abs_y: None,
-        };
-        if mouse.try_open() {
-            log_line_str("Mouse: initialized");
+        let mut mouse = Self::empty();
+        if mouse.try_open_uefi() || mouse.try_open_usb() {
             return Ok(mouse);
         }
 
-        log_line_str("Mouse: no device found via any protocol");
-        Err("no mouse device found")
+        // Keep a live object so a mouse connected after boot can be found by
+        // the periodic rescan in poll().
+        log_line_str("Mouse: no device yet; hotplug scan remains active");
+        Ok(mouse)
     }
 
-    /// Open any available input device.  Safe to call repeatedly (e.g. on
-    /// hotplug): only fills in the slots that are still empty.
-    /// Returns true if at least one device is now active.
-    pub fn try_open(&mut self) -> bool {
-        if self.usb_io.is_none() && self.abs.is_none() && self.simple.is_none() {
-            if let Some(m) = Self::try_usb_io() {
-                *self = m;
+    fn try_open_uefi(&mut self) -> bool {
+        if self.abs.is_some() || self.simple.is_some() {
+            return true;
+        }
+
+        // AbsolutePointer is preferred for tablets/touchscreens and for QEMU's
+        // usb-tablet.  Preserve the mode's non-zero coordinate origin.
+        if let Ok(handles) = boot::find_handles::<AbsolutePointer>() {
+            for handle in handles {
+                let params = boot::OpenProtocolParams {
+                    handle,
+                    agent: boot::image_handle(),
+                    controller: None,
+                };
+                let Ok(mut pointer) = (unsafe {
+                    boot::open_protocol::<AbsolutePointer>(
+                        params,
+                        boot::OpenProtocolAttributes::GetProtocol,
+                    )
+                }) else {
+                    continue;
+                };
+                // Extended verification is slow and is not required for normal
+                // operation.  A failed reset does not make GetState unusable.
+                let _ = pointer.reset(false);
+                let mode = pointer.mode();
+                let min_x = mode.absolute_min_x;
+                let min_y = mode.absolute_min_y;
+                let range_x = mode.absolute_max_x.saturating_sub(min_x).max(1);
+                let range_y = mode.absolute_max_y.saturating_sub(min_y).max(1);
+                log_line_str(&format!(
+                    "Mouse: using UEFI AbsolutePointer range=({},{})",
+                    range_x, range_y
+                ));
+                self.abs = Some((pointer, range_x, range_y, min_x, min_y));
                 return true;
             }
         }
-        if self.abs.is_none() {
-            if let Some(h) = boot::find_handles::<AbsolutePointer>().ok().and_then(|h| h.into_iter().next()) {
-                let params = boot::OpenProtocolParams { handle: h, agent: boot::image_handle(), controller: None };
-                if let Ok(mut ptr) = unsafe { boot::open_protocol::<AbsolutePointer>(params, boot::OpenProtocolAttributes::GetProtocol) } {
-                    let _ = ptr.reset(true);
-                    let mode = ptr.mode();
-                    let min_x = mode.absolute_min_x.max(0);
-                    let min_y = mode.absolute_min_y.max(0);
-                    let mx = (mode.absolute_max_x.max(min_x + 1) - min_x).max(1);
-                    let my = (mode.absolute_max_y.max(min_y + 1) - min_y).max(1);
-                    self.abs = Some((ptr, mx, my, min_x, min_y));
-                }
+
+        // SimplePointer is the normal firmware abstraction for laptop
+        // trackpads, PS/2 mice and many USB mice.
+        if let Ok(handles) = boot::find_handles::<Pointer>() {
+            for handle in handles {
+                let params = boot::OpenProtocolParams {
+                    handle,
+                    agent: boot::image_handle(),
+                    controller: None,
+                };
+                let Ok(mut pointer) = (unsafe {
+                    boot::open_protocol::<Pointer>(
+                        params,
+                        boot::OpenProtocolAttributes::GetProtocol,
+                    )
+                }) else {
+                    continue;
+                };
+                let _ = pointer.reset(false);
+                log_line_str("Mouse: using UEFI SimplePointer");
+                self.simple = Some(pointer);
+                return true;
             }
         }
-        if self.simple.is_none() {
-            if let Some(h) = boot::find_handles::<Pointer>().ok().and_then(|h| h.into_iter().next()) {
-                let params = boot::OpenProtocolParams { handle: h, agent: boot::image_handle(), controller: None };
-                if let Ok(mut ptr) = unsafe { boot::open_protocol::<Pointer>(params, boot::OpenProtocolAttributes::GetProtocol) } {
-                    let _ = ptr.reset(true);
-                    let mode = ptr.mode();
-                    let res_x = mode.resolution[0].max(1);
-                    let res_y = mode.resolution[1].max(1);
-                    self.simple = Some((ptr, res_x, res_y));
-                }
-            }
-        }
-        self.usb_io.is_some() || self.abs.is_some() || self.simple.is_some()
+        false
     }
 
-    /// Re-scan for devices that were plugged in after boot.
-    pub fn rescan(&mut self) -> bool {
-        if self.usb_io.is_some() || self.abs.is_some() || self.simple.is_some() {
+    fn try_open_usb(&mut self) -> bool {
+        if self.usb_io.is_some() {
+            return true;
+        }
+        let Ok(handles) = boot::find_handles::<UsbIo>() else {
             return false;
-        }
-        let had = false;
-        let now = self.try_open();
-        if now && !had {
-            log_line_str("Mouse: hotplug device recognized");
-        }
-        now
-    }
-
-    fn try_usb_io() -> Option<Mouse> {
-        let handles = boot::find_handles::<UsbIo>().ok()?;
+        };
 
         for handle in handles {
             let params = boot::OpenProtocolParams {
@@ -177,464 +216,358 @@ impl Mouse {
                 agent: boot::image_handle(),
                 controller: None,
             };
-            let mut usb = unsafe {
-                boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
+            let Ok(mut usb) = (unsafe {
+                boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol)
+            }) else {
+                continue;
             };
 
-            // GET_DESCRIPTOR (device)
-            let mut dev_buf = vec![0u8; 18];
-            let _ = usb.control_transfer(0x80, 6, 0x0100, 0, ControlTransfer::DataIn(&mut dev_buf), 5000);
-
-            let vid = u16::from_le_bytes([dev_buf[8], dev_buf[9]]);
-            let pid = u16::from_le_bytes([dev_buf[10], dev_buf[11]]);
-
-            // GET_DESCRIPTOR (configuration)
-            let mut cfg_buf = vec![0u8; 512];
-            let _ = usb.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
-
-            // Parse configuration descriptor to find HID interfaces that report X/Y
-            let mut off = 0;
-            let mut current_iface: u8 = 0;
-            let mut intr_ep: Option<u8> = None;
-            let mut intr_mps: u16 = 0;
-            let mut is_pointing = false;
-            let mut hid_desc_len: usize = 0;
-
-            while off + 2 < cfg_buf.len() {
-                let b_len = cfg_buf[off] as usize;
-                let b_type = cfg_buf[off + 1];
-                if b_len < 2 || off + b_len > cfg_buf.len() { break; }
-
-                match b_type {
-                    4 => {
-                        // Interface descriptor
-                        current_iface = cfg_buf[off + 2];
-                        let class = cfg_buf[off + 5];
-                        let subclass = cfg_buf[off + 6];
-                        intr_ep = None;
-                        is_pointing = false;
-
-                        // HID class = 3, boot subclass = 1
-                        if class == 3 && subclass == 1 {
-                            let protocol = cfg_buf[off + 7];
-                            if protocol == 2 {
-                                // Boot mouse
-                                is_pointing = true;
-                                log_line_str(&format!("    iface {} protocol=Mouse(boot)", current_iface));
-                            } else {
-                                // Non-boot HID (trackpad / touch panel / etc.)
-                                // Decide based on the report descriptor below.
-                                log_line_str(&format!("    iface {} protocol={} (HID)", current_iface, protocol));
-                            }
-                        }
-                    }
-                    5 => {
-                        // Endpoint descriptor
-                        if b_len >= 7 && intr_ep.is_none() {
-                            let ea = cfg_buf[off + 2];
-                            let attrs = cfg_buf[off + 3];
-                            if ea & 0x80 != 0 && attrs & 0x03 == 3 {
-                                intr_ep = Some(ea);
-                                intr_mps = u16::from_le_bytes([cfg_buf[off + 4], cfg_buf[off + 5]]);
-                            }
-                        }
-                    }
-                    0x21 => {
-                        // HID descriptor (class-specific, type 0x21)
-                        if b_len >= 6 {
-                            // Descriptor list starts after wCountryCode (offset 6)
-                            let mut d = off + 6;
-                            while d + 2 < cfg_buf.len() && d + 2 < off + b_len {
-                                let desc_type = cfg_buf[d];
-                                let desc_len = cfg_buf[d + 1] as usize;
-                                if desc_type == 0x22 {
-                                    // HID Report Descriptor
-                                    hid_desc_len = (cfg_buf[d + 2] as usize)
-                                        | ((cfg_buf[d + 3] as usize) << 8);
-                                }
-                                if desc_len < 3 { break; }
-                                d += desc_len;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-                off += b_len;
-            }
-
-            let ep = match intr_ep {
-                Some(e) => e,
-                None => continue,
+            let Ok(interface) = usb.interface_descriptor() else {
+                continue;
             };
-
-            // Get bConfigurationValue from the configuration descriptor (offset 5 of the first 9-byte desc)
-            let config_value = cfg_buf[5];
-
-            // 1. SET_CONFIGURATION — required before any endpoint transfers
-            let _ = usb.control_transfer(0x00, 0x09, config_value as u16, 0, ControlTransfer::None, 5000);
-
-            // Fetch the HID report descriptor to determine the exact report layout.
-            // This lets us support trackpads, touch panels, and other HID pointing
-            // devices that are NOT boot-protocol mice.
-            let mut hid_layout: Option<HidReportLayout> = None;
-            if hid_desc_len > 0 {
-                let mut rep_buf = vec![0u8; hid_desc_len.min(1024)];
-                if usb.control_transfer(
-                    0x81, 0x06, 0x2200, current_iface as u16,
-                    ControlTransfer::DataIn(&mut rep_buf), 5000,
-                ).is_ok()
-                {
-                    let layout = parse_hid_report_desc(&rep_buf[..hid_desc_len.min(rep_buf.len())]);
-                    // Accept any HID device that reports an absolute or relative X/Y.
-                    if layout.x_size_bits > 0 && layout.y_size_bits > 0 {
-                        is_pointing = true;
-                        hid_layout = Some(layout);
-                    }
-                }
-            }
-
-            if !is_pointing {
+            if interface.interface_class != 3 {
                 continue;
             }
 
-            // 2. SET_IDLE (bRequest=0x0A) — required for the device to start sending reports
-            let _ = usb.control_transfer(0x21, 0x0A, 0, current_iface as u16, ControlTransfer::None, 5000);
-
-            // 3. SET_PROTOCOL (bRequest=0x0B, wValue=0 for boot protocol)
-            let _ = usb.control_transfer(0x21, 0x0B, 0, current_iface as u16, ControlTransfer::None, 5000);
-
-            let report_buf = vec![0u8; intr_mps as usize];
-
-            log_line_str("Mouse: using USB HID");
-
-            return Some(Mouse {
-                usb_io: Some(usb),
-                ep_addr: ep,
-                iface: current_iface,
-                report_buf,
-                hid_layout,
-                abs: None,
-                simple: None,
-                simple_scale: 0.0,
-                simple_acc_x: 0.0,
-                simple_acc_y: 0.0,
-                calibrated: false,
-                last_abs_x: None,
-                last_abs_y: None,
-            });
-        }
-        None
-    }
-
-    pub fn is_absolute(&self) -> bool {
-        self.hid_layout.as_ref().map(|l| l.is_absolute).unwrap_or(false)
-            || self.abs.is_some()
-    }
-
-    pub fn abs_max(&self) -> (u64, u64) {
-        if let Some(l) = &self.hid_layout {
-            if l.is_absolute && l.x_max > 0 && l.y_max > 0 {
-                return (l.x_max as u64, l.y_max as u64);
-            }
-        }
-        match &self.abs {
-            Some((_, mx, my, _, _)) => (*mx, *my),
-            None => (32767, 32767),
-        }
-    }
-
-    pub fn poll(&mut self) -> Option<MouseEvent> {
-        // Periodically re-scan for hotplugged devices (~1 Hz at 1 kHz poll).
-        static mut RESCAN_CTR: u32 = 0;
-        unsafe {
-            RESCAN_CTR = RESCAN_CTR.wrapping_add(1);
-            if RESCAN_CTR % 1000 == 0 {
-                self.rescan();
-            }
-        }
-        // Try USB IO first
-        if let Some(usb) = &mut self.usb_io {
-            if self.ep_addr != 0 {
-                match usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 1) {
-                    Ok(n) => {
-                        if n == 0 { return None; }
-                        let r = &self.report_buf[..n];
-
-                        // If we have a parsed HID layout (trackpad / touch panel / generic
-                        // HID pointing device), decode the report according to it.
-                        if let Some(layout) = &self.hid_layout {
-                            if let Some(ev) = decode_hid_report(layout, r) {
-                                return Some(ev);
-                            }
-                            return None;
-                        }
-
-                        let mut ev = MouseEvent::default();
-
-                        if n >= 5 {
-                            ev.left = r[0] & 0x01 != 0;
-                            ev.right = r[0] & 0x02 != 0;
-                            ev.middle = r[0] & 0x04 != 0;
-                            ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
-                            ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
-                            ev.is_absolute = true;
-                        } else if n >= 4 {
-                            ev.left = r[0] & 0x01 != 0;
-                            ev.right = r[0] & 0x02 != 0;
-                            ev.middle = r[0] & 0x04 != 0;
-                            ev.rel_dx = r[1] as i8 as i32;
-                            ev.rel_dy = r[2] as i8 as i32;
-                            ev.scroll = r[3] as i8 as i32;
-                            ev.is_absolute = false;
-                        } else if n >= 3 {
-                            ev.left = r[0] & 0x01 != 0;
-                            ev.right = r[0] & 0x02 != 0;
-                            ev.middle = r[0] & 0x04 != 0;
-                            ev.rel_dx = r[1] as i8 as i32;
-                            ev.rel_dy = r[2] as i8 as i32;
-                            ev.is_absolute = false;
-                        }
-
-                        return Some(ev);
-                    }
-                    Err(e) => {
-                        static mut ERR_COUNT: u32 = 0;
-                        unsafe {
-                            ERR_COUNT += 1;
-                            if ERR_COUNT <= 3 {
-                                log_line_str(&format!("Mouse USB IO: sync_interrupt error {:?} (count={})", e, ERR_COUNT));
-                            }
-                        }
-                        // Fallback to GET_REPORT if interrupt transfer fails
-                        if usb.control_transfer(0xA1, 0x01, 0x0100, self.iface as u16, ControlTransfer::DataIn(&mut self.report_buf), 1).is_ok() {
-                            let n = self.report_buf.len();
-                            if n > 0 {
-                                let r = &self.report_buf[..n];
-                                static mut LAST_REPORT: [u8; 8] = [0; 8];
-                                let mut changed = false;
-                                for i in 0..n.min(8) {
-                                    if unsafe { LAST_REPORT[i] } != r[i] {
-                                        changed = true;
-                                        break;
-                                    }
-                                }
-                                if changed {
-                                    for i in 0..n.min(8) {
-                                        unsafe { LAST_REPORT[i] = r[i]; }
-                                    }
-                                    if let Some(layout) = &self.hid_layout {
-                                        if let Some(ev) = decode_hid_report(layout, r) {
-                                            return Some(ev);
-                                        }
-                                        return None;
-                                    }
-                                    let mut ev = MouseEvent::default();
-                                    if n >= 5 {
-                                        ev.left = r[0] & 0x01 != 0;
-                                        ev.right = r[0] & 0x02 != 0;
-                                        ev.middle = r[0] & 0x04 != 0;
-                                        ev.abs_x = u16::from_le_bytes([r[1], r[2]]) as u64;
-                                        ev.abs_y = u16::from_le_bytes([r[3], r[4]]) as u64;
-                                        ev.is_absolute = true;
-                                        return Some(ev);
-                                    } else if n >= 4 {
-                                        ev.left = r[0] & 0x01 != 0;
-                                        ev.right = r[0] & 0x02 != 0;
-                                        ev.middle = r[0] & 0x04 != 0;
-                                        ev.rel_dx = r[1] as i8 as i32;
-                                        ev.rel_dy = r[2] as i8 as i32;
-                                        ev.scroll = r[3] as i8 as i32;
-                                        ev.is_absolute = false;
-                                        return Some(ev);
-                                    } else if n >= 3 {
-                                        ev.left = r[0] & 0x01 != 0;
-                                        ev.right = r[0] & 0x02 != 0;
-                                        ev.middle = r[0] & 0x04 != 0;
-                                        ev.rel_dx = r[1] as i8 as i32;
-                                        ev.rel_dy = r[2] as i8 as i32;
-                                        ev.is_absolute = false;
-                                        return Some(ev);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Merge Absolute Pointer and Simple Pointer input into one event.
-        // We prefer an absolute position when available; otherwise we fall
-        // back to the relative deltas reported by the simple pointer.  Both
-        // protocols may be active at once on real hardware (a trackpad often
-        // shows up as one or the other, sometimes both).
-        let mut acc = MouseEvent::default();
-        let mut got_abs = false;
-        let mut got_rel = false;
-
-        if let Some((ptr, mx, my, min_x, min_y)) = &mut self.abs {
-            let mut last_x = self.last_abs_x.unwrap_or(0);
-            let mut last_y = self.last_abs_y.unwrap_or(0);
-
-            for _ in 0..20 {
-                match ptr.get_state() {
-                    Ok(Some(state)) => {
-                        // Normalize into 0..range using the device's min origin.
-                        let nx = state.current_x.saturating_sub(*min_x);
-                        let ny = state.current_y.saturating_sub(*min_y);
-                        acc.abs_x = nx;
-                        acc.abs_y = ny;
-                        last_x = nx;
-                        last_y = ny;
-                        if state.active_buttons & 0x1 != 0 { acc.left = true; }
-                        if state.active_buttons & 0x2 != 0 { acc.right = true; }
-                        got_abs = true;
-                    }
-                    Ok(None) => { /* NOT_READY */ }
-                    Err(e) => {
-                        log_line_str(&format!("AbsPtr: get_state error: {:?}", e));
+            let mut endpoint = None;
+            let mut max_packet = 0usize;
+            for index in 0..interface.num_endpoints {
+                if let Ok(descriptor) = usb.endpoint_descriptor(index) {
+                    if descriptor.endpoint_address & 0x80 != 0 && descriptor.attributes & 0x03 == 3
+                    {
+                        endpoint = Some(descriptor.endpoint_address);
+                        max_packet = descriptor.max_packet_size as usize;
                         break;
                     }
                 }
             }
-            if got_abs {
-                self.last_abs_x = Some(last_x);
-                self.last_abs_y = Some(last_y);
-                acc.is_absolute = true;
+            let Some(endpoint) = endpoint else { continue };
+
+            // Asking for a larger descriptor is valid: the device terminates
+            // the control transfer at its real descriptor length.
+            let mut descriptor = vec![0u8; 1024];
+            let layouts = if usb
+                .control_transfer(
+                    0x81,
+                    0x06,
+                    0x2200,
+                    interface.interface_number as u16,
+                    ControlTransfer::DataIn(&mut descriptor),
+                    500,
+                )
+                .is_ok()
+            {
+                parse_hid_report_descs(&descriptor)
             } else {
-                // Re-emit the last known absolute position so the cursor stays
-                // responsive even when the firmware only updates on contact.
-                if self.last_abs_x.is_some() {
-                    acc.abs_x = last_x;
-                    acc.abs_y = last_y;
-                    acc.is_absolute = true;
-                    got_abs = true;
-                }
+                Vec::new()
+            };
+
+            let boot_mouse = interface.interface_subclass == 1
+                && interface.interface_protocol == 2
+                && layouts.is_empty();
+            if layouts.is_empty() && !boot_mouse {
+                continue;
+            }
+
+            // Do not issue SET_CONFIGURATION here: the UEFI USB bus driver has
+            // already configured the interface.  Reissuing it resets endpoint
+            // state on real machines.  Only force boot protocol if descriptor
+            // parsing failed and this is explicitly a boot-mouse interface.
+            let _ = usb.control_transfer(
+                0x21,
+                0x0a,
+                0,
+                interface.interface_number as u16,
+                ControlTransfer::None,
+                100,
+            );
+            if boot_mouse {
+                let _ = usb.control_transfer(
+                    0x21,
+                    0x0b,
+                    0,
+                    interface.interface_number as u16,
+                    ControlTransfer::None,
+                    100,
+                );
+            }
+
+            let report_len = layouts
+                .iter()
+                .map(|layout| layout.report_size_bytes as usize)
+                .max()
+                .unwrap_or(4)
+                .max(max_packet)
+                .clamp(4, 1024);
+            log_line_str(&format!(
+                "Mouse: using USB HID iface={} ep=0x{:02x} reports={}{}",
+                interface.interface_number,
+                endpoint,
+                layouts.len(),
+                if boot_mouse { " boot" } else { "" }
+            ));
+            self.usb_io = Some(usb);
+            self.ep_addr = endpoint;
+            self.iface = interface.interface_number;
+            self.report_buf = vec![0; report_len];
+            self.last_report.clear();
+            self.hid_layouts = layouts;
+            self.usb_boot_mouse = boot_mouse;
+            return true;
+        }
+        false
+    }
+
+    pub fn is_absolute(&self) -> bool {
+        self.abs.is_some()
+            || self.hid_layouts.iter().any(|layout| {
+                layout.is_absolute
+                    && !(layout.application_usage_page == 0x0d && layout.application_usage == 0x05)
+            })
+    }
+
+    pub fn abs_max(&self) -> (u64, u64) {
+        if let Some((_, range_x, range_y, _, _)) = &self.abs {
+            return (*range_x, *range_y);
+        }
+        self.hid_layouts
+            .iter()
+            .filter(|layout| layout.is_absolute)
+            .map(|layout| {
+                (
+                    layout.x_max.saturating_sub(layout.x_min).max(1) as u64,
+                    layout.y_max.saturating_sub(layout.y_min).max(1) as u64,
+                )
+            })
+            .next()
+            .unwrap_or((1, 1))
+    }
+
+    pub fn poll(&mut self) -> Option<MouseEvent> {
+        self.poll_count = self.poll_count.wrapping_add(1);
+        if self.abs.is_none()
+            && self.simple.is_none()
+            && self.usb_io.is_none()
+            && self.poll_count % 1000 == 0
+        {
+            if self.try_open_uefi() || self.try_open_usb() {
+                log_line_str("Mouse: hotplug device recognized");
             }
         }
 
-        if let Some((ptr, res_x, res_y)) = &mut self.simple {
-            let mut raw_dx: i32 = 0;
-            let mut raw_dy: i32 = 0;
+        if self.usb_io.is_some() {
+            if let Some(event) = self.poll_usb() {
+                return Some(event);
+            }
+        }
+
+        if let Some((pointer, _range_x, _range_y, min_x, min_y)) = &mut self.abs {
+            let mut latest = None;
+            // Drain queued states and use the newest position.
+            for _ in 0..32 {
+                match pointer.get_state() {
+                    Ok(Some(state)) => latest = Some(state),
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+            if let Some(state) = latest {
+                return Some(MouseEvent {
+                    abs_x: state.current_x.saturating_sub(*min_x),
+                    abs_y: state.current_y.saturating_sub(*min_y),
+                    is_absolute: true,
+                    left: state.active_buttons & 1 != 0,
+                    right: state.active_buttons & 2 != 0,
+                    ..MouseEvent::default()
+                });
+            }
+        }
+
+        if let Some(pointer) = &mut self.simple {
+            let mut event = MouseEvent::default();
+            let mut received = false;
             loop {
-                match ptr.read_state() {
+                match pointer.read_state() {
                     Ok(Some(state)) => {
-                        raw_dx += state.relative_movement[0];
-                        raw_dy += state.relative_movement[1];
-                        if state.button[0] { acc.left = true; }
-                        if state.button[1] { acc.right = true; }
-                        got_rel = true;
+                        event.rel_dx = event.rel_dx.saturating_add(state.relative_movement[0]);
+                        event.rel_dy = event.rel_dy.saturating_add(state.relative_movement[1]);
+                        event.left |= state.button[0];
+                        event.right |= state.button[1];
+                        received = true;
                     }
                     _ => break,
                 }
             }
-            // Auto-calibrate pixels-per-count from the device resolution
-            // (counts/mm). SENSITIVITY scales the whole thing down so a
-            // small physical move does not jump across the screen.
-            if !self.calibrated {
-                let rx = (*res_x).max(1) as f32;
-                const SENSITIVITY: f32 = 0.03;
-                self.simple_scale = (3.78 / rx) * SENSITIVITY;
-                self.calibrated = true;
+            if received {
+                return Some(event);
             }
-            // Accumulate fractional pixels so sub-pixel deltas still move.
-            let dx = raw_dx as f32 * self.simple_scale + self.simple_acc_x;
-            let dy = raw_dy as f32 * self.simple_scale + self.simple_acc_y;
-            acc.rel_dx += dx as i32;
-            acc.rel_dy += dy as i32;
-            self.simple_acc_x = dx - acc.rel_dx as f32;
-            self.simple_acc_y = dy - acc.rel_dy as f32;
         }
-
-        // Merge both devices into a single relative event so that, on machines
-        // where the trackpad is exposed as BOTH AbsolutePointer and
-        // SimplePointer, both inputs are received.  Absolute movement is
-        // converted into a relative delta against the last reported position.
-        if got_abs {
-            let (nx, ny) = (acc.abs_x, acc.abs_y);
-            if let (Some(px), Some(py)) = (self.last_abs_x, self.last_abs_y) {
-                acc.rel_dx += (nx as i64 - px as i64) as i32;
-                acc.rel_dy += (ny as i64 - py as i64) as i32;
-            }
-            self.last_abs_x = Some(nx);
-            self.last_abs_y = Some(ny);
-        }
-        if got_rel || got_abs {
-            acc.is_absolute = false;
-            return Some(acc);
-        }
-
         None
     }
-}
 
-fn decode_hid_report(layout: &HidReportLayout, report: &[u8]) -> Option<MouseEvent> {
-    let parsed = parse_input_report(layout, report);
-    if layout.x_size_bits == 0 || layout.y_size_bits == 0 {
-        return None;
+    fn poll_usb(&mut self) -> Option<MouseEvent> {
+        let transfer = {
+            let usb = self.usb_io.as_mut()?;
+            usb.sync_interrupt_receive(self.ep_addr, &mut self.report_buf, 1)
+        };
+
+        match transfer {
+            Ok(length) if length != 0 => {
+                self.usb_error_count = 0;
+                let report = self.report_buf[..length].to_vec();
+                self.decode_usb_report(&report)
+            }
+            Ok(_) => None,
+            Err(_) => {
+                self.usb_error_count = self.usb_error_count.saturating_add(1);
+                // Some firmware implements UsbIo but not synchronous interrupt
+                // receive.  GET_REPORT is a useful last-resort path.  Avoid
+                // returning the same held-state report on every timer tick.
+                let report_id = self.hid_layouts.first().map(|l| l.report_id).unwrap_or(0);
+                let request_ok = {
+                    let usb = self.usb_io.as_mut()?;
+                    usb.control_transfer(
+                        0xa1,
+                        0x01,
+                        0x0100 | report_id as u16,
+                        self.iface as u16,
+                        ControlTransfer::DataIn(&mut self.report_buf),
+                        1,
+                    )
+                    .is_ok()
+                };
+                if !request_ok {
+                    return None;
+                }
+                let expected = self
+                    .layout_for_report(&self.report_buf)
+                    .map(|layout| layout.report_size_bytes as usize)
+                    .unwrap_or(if self.usb_boot_mouse { 4 } else { 0 })
+                    .min(self.report_buf.len());
+                if expected == 0 || self.last_report.as_slice() == &self.report_buf[..expected] {
+                    return None;
+                }
+                let report = self.report_buf[..expected].to_vec();
+                self.last_report.clear();
+                self.last_report.extend_from_slice(&report);
+                self.decode_usb_report(&report)
+            }
+        }
     }
 
-    let mut ev = MouseEvent::default();
-    ev.left = parsed.buttons & 0x01 != 0;
-    ev.right = parsed.buttons & 0x02 != 0;
-    ev.middle = parsed.buttons & 0x04 != 0;
-
-    // Trackpads / touch panels often report absolute coordinates over a
-    // device-specific range.  Some devices, however, report relative
-    // deltas through the same layout.  Respect the descriptor flag.
-    if layout.is_absolute && parsed.x_max > 0 && parsed.y_max > 0 {
-        ev.is_absolute = true;
-        ev.abs_x = parsed.x as u64;
-        ev.abs_y = parsed.y as u64;
-    } else {
-        // Treat the decoded fields as relative deltas (sign-extended).
-        ev.is_absolute = false;
-        ev.rel_dx = sign_extend(parsed.x, layout.x_size_bits);
-        ev.rel_dy = sign_extend(parsed.y, layout.y_size_bits);
+    fn layout_for_report(&self, report: &[u8]) -> Option<HidReportLayout> {
+        self.hid_layouts
+            .iter()
+            .find(|layout| layout.report_id == 0 || report.first() == Some(&layout.report_id))
+            .copied()
     }
 
-    Some(ev)
-}
+    fn decode_usb_report(&mut self, report: &[u8]) -> Option<MouseEvent> {
+        if self.usb_boot_mouse {
+            if report.len() < 3 {
+                return None;
+            }
+            return Some(MouseEvent {
+                rel_dx: report[1] as i8 as i32,
+                rel_dy: report[2] as i8 as i32,
+                scroll: report.get(3).copied().unwrap_or(0) as i8 as i32,
+                left: report[0] & 1 != 0,
+                right: report[0] & 2 != 0,
+                middle: report[0] & 4 != 0,
+                ..MouseEvent::default()
+            });
+        }
 
-fn sign_extend(value: i32, bits: u8) -> i32 {
-    if bits == 0 {
-        return 0;
+        let layout = self.layout_for_report(report)?;
+        let parsed = parse_input_report(&layout, report)?;
+        let mut event = buttons_and_wheel(&parsed);
+
+        let is_touchpad = layout.application_usage_page == 0x0d && layout.application_usage == 0x05;
+        if layout.is_absolute && is_touchpad {
+            if layout.has_tip && !parsed.touching {
+                self.last_touch = None;
+                self.touch_acc_x = 0.0;
+                self.touch_acc_y = 0.0;
+                return Some(event);
+            }
+            if let Some((last_x, last_y)) = self.last_touch {
+                // Typical precision touchpads report roughly 3000-6000 units
+                // across their surface.  This scale gives useful desktop
+                // motion while retaining fractional movement.
+                const TRACKPAD_SCALE: f32 = 0.35;
+                let dx = (parsed.x - last_x) as f32 * TRACKPAD_SCALE + self.touch_acc_x;
+                let dy = (parsed.y - last_y) as f32 * TRACKPAD_SCALE + self.touch_acc_y;
+                event.rel_dx = dx as i32;
+                event.rel_dy = dy as i32;
+                self.touch_acc_x = dx - event.rel_dx as f32;
+                self.touch_acc_y = dy - event.rel_dy as f32;
+            }
+            self.last_touch = Some((parsed.x, parsed.y));
+        } else if layout.is_absolute {
+            event.is_absolute = true;
+            event.abs_x = parsed.x.saturating_sub(parsed.x_min) as u64;
+            event.abs_y = parsed.y.saturating_sub(parsed.y_min) as u64;
+        } else {
+            event.rel_dx = parsed.x;
+            event.rel_dy = parsed.y;
+        }
+        Some(event)
     }
-    let shift = 32 - bits as i32;
-    (value << shift) >> shift
 }
 
-pub fn apply_mouse_event(cx: &mut i32, cy: &mut i32, ev: &MouseEvent,
-                     screen_w: usize, screen_h: usize,
-                     abs_max: (u64, u64)) -> (i32, i32) {
+fn buttons_and_wheel(parsed: &HidParsedEvent) -> MouseEvent {
+    MouseEvent {
+        left: parsed.buttons & 1 != 0,
+        right: parsed.buttons & 2 != 0,
+        middle: parsed.buttons & 4 != 0,
+        scroll: parsed.wheel,
+        ..MouseEvent::default()
+    }
+}
+
+pub fn apply_mouse_event(
+    cx: &mut i32,
+    cy: &mut i32,
+    event: &MouseEvent,
+    screen_w: usize,
+    screen_h: usize,
+    abs_max: (u64, u64),
+) -> (i32, i32) {
+    if screen_w == 0 || screen_h == 0 {
+        return (*cx, *cy);
+    }
     let (abs_max_x, abs_max_y) = abs_max;
-    if ev.is_absolute && abs_max_x > 0 && abs_max_y > 0 {
-        let new_x = ((ev.abs_x as u128 * screen_w as u128) / abs_max_x as u128) as i32;
-        let new_y = ((ev.abs_y as u128 * screen_h as u128) / abs_max_y as u128) as i32;
-        *cx = new_x.max(0).min(screen_w as i32 - 1);
-        *cy = new_y.max(0).min(screen_h as i32 - 1);
+    if event.is_absolute && abs_max_x != 0 && abs_max_y != 0 {
+        *cx = ((event.abs_x as u128 * (screen_w - 1) as u128) / abs_max_x as u128)
+            .min((screen_w - 1) as u128) as i32;
+        *cy = ((event.abs_y as u128 * (screen_h - 1) as u128) / abs_max_y as u128)
+            .min((screen_h - 1) as u128) as i32;
     } else {
-        *cx = (*cx + ev.rel_dx).clamp(0, screen_w as i32 - 1);
-        *cy = (*cy + ev.rel_dy).clamp(0, screen_h as i32 - 1);
+        *cx = cx
+            .saturating_add(event.rel_dx)
+            .clamp(0, screen_w as i32 - 1);
+        *cy = cy
+            .saturating_add(event.rel_dy)
+            .clamp(0, screen_h as i32 - 1);
     }
     (*cx, *cy)
 }
 
 pub fn log_line_str(s: &str) {
-    // Print to UEFI console
     uefi::system::with_stdout(|stdout| {
         let _ = stdout.output_string(uefi::cstr16!("BaramOS: "));
-        let mut buf = Vec::<u16>::with_capacity(s.len() + 1);
-        for &b in s.as_bytes() {
-            if b >= 0x80 { break; }
-            buf.push(b as u16);
+        let mut buffer = Vec::<u16>::with_capacity(s.len() + 1);
+        for &byte in s.as_bytes() {
+            if byte >= 0x80 {
+                break;
+            }
+            buffer.push(byte as u16);
         }
-        buf.push(0);
-        if let Ok(cs) = uefi::CStr16::from_u16_with_nul(&buf) {
-            let _ = stdout.output_string(cs);
+        buffer.push(0);
+        if let Ok(text) = uefi::CStr16::from_u16_with_nul(&buffer) {
+            let _ = stdout.output_string(text);
         }
         let _ = stdout.output_string(uefi::cstr16!("\r\n"));
     });
-    // Also draw on screen
     crate::debug_log::log(s);
 }
