@@ -5,23 +5,97 @@ screen{
         text: ("Settings"),
     },
 
+    button{
+        text: ("テーマ"),
+        oneClick: (setScreen{theme})
+    },
+
+    button{
+        text: ("マウスポインター"),
+        oneClick: (setScreen{pointer})
+    },
+
+    button{
+        text: ("HUD"),
+        oneClick: (setScreen{hud})
+    },
+
+    button{
+        text: ("システム"),
+        oneClick: (setScreen{system})
+    },
+}
+
+screen{
+    id: (theme),
+
+    Header{
+        text: ("テーマ設定"),
+    },
+
+    tonalButton{
+        text: ("戻る"),
+        oneClick: (setScreen{main})
+    },
+
     card{
-        text: ("color"),
+        text: ("カラーテーマ"),
+
+        text{
+            text: ("プリセットから選択")
+        },
 
         hStack{
             button{
-                text: ("red"),
-                oneClick: (runCommand = "os://ui-theme/color?btn_primary=BB0000")
+                text: ("ライト"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F0F0F0&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0D0D0&btn_primary=0A60FF&btn_primary_hover=0850DD&btn_tonal=E6E6E6&btn_tonal_hover=D2D2D2&card_bg=F5F5F5")
             },
+            button{
+                text: ("ダーク"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=1A1A1A&panel=2A2A2A&text=E0E0E0&muted=999999&border=3A3A3A&btn_primary=4A9EFF&btn_primary_hover=3A8EEF&btn_tonal=3A3A3A&btn_tonal_hover=4A4A4A&card_bg=252525")
+            },
+            button{
+                text: ("ブルー"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E8F0FE&panel=FFFFFF&text=1A1A1A&muted=666666&border=C0D0E0&btn_primary=1A73E8&btn_primary_hover=1565C0&btn_tonal=D2E3FC&btn_tonal_hover=BDD8FC&card_bg=F0F4FF")
+            },
+        },
 
+        hStack{
+            button{
+                text: ("グリーン"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E6F4EA&panel=FFFFFF&text=1A1A1A&muted=666666&border=C0E0C0&btn_primary=1E8E3E&btn_primary_hover=187032&btn_tonal=CEEAD6&btn_tonal_hover=B8E0C8&card_bg=F0FAF0")
+            },
+            button{
+                text: ("レッド"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=FCE8E6&panel=FFFFFF&text=1A1A1A&muted=666666&border=E0C0C0&btn_primary=D93025&btn_primary_hover=B71C1C&btn_tonal=FADBD8&btn_tonal_hover=F5C6C2&card_bg=FFF0F0")
+            },
+            button{
+                text: ("パープル"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=F3E8FD&panel=FFFFFF&text=1A1A1A&muted=666666&border=D0C0E0&btn_primary=A142F4&btn_primary_hover=8C35E0&btn_tonal=E8D0F8&btn_tonal_hover=DCBEF5&card_bg=F8F0FF")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("オレンジ"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=FDF0E0&panel=FFFFFF&text=1A1A1A&muted=666666&border=E0D0B0&btn_primary=E8710A&btn_primary_hover=D56508&btn_tonal=FDEBC8&btn_tonal_hover=FCD8A8&card_bg=FFF8F0")
+            },
+            button{
+                text: ("シアン"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=E0F8F8&panel=FFFFFF&text=1A1A1A&muted=666666&border=B0E0E0&btn_primary=00ACC1&btn_primary_hover=0097A7&btn_tonal=CCF5F5&btn_tonal_hover=B0EDED&card_bg=F0FFFF")
+            },
+            button{
+                text: ("ピンク"),
+                oneClick: (runCommand = "os://ui-theme/color?bg=FDE7F3&panel=FFFFFF&text=1A1A1A&muted=666666&border=E0C0D8&btn_primary=D81B60&btn_primary_hover=C2185B&btn_tonal=F8D0E8&btn_tonal_hover=F5B8DA&card_bg=FFF0F8")
+            },
         },
     },
 
     card{
-        text: ("Wallpaper"),
+        text: ("壁紙"),
 
         text{
-            text: ("Select a wallpaper theme")
+            text: ("画像から選択")
         },
 
         hStack{
@@ -29,29 +103,129 @@ screen{
                 text: ("Baram"),
                 oneClick: (runCommand = "os://display/wallpaper?file=baram&mode=file")
             },
-
             button{
                 text: ("Hanul"),
                 oneClick: (runCommand = "os://display/wallpaper?file=hanul&mode=file")
             },
-
             button{
                 text: ("Reflect"),
                 oneClick: (runCommand = "os://display/wallpaper?file=reflect&mode=file")
             },
         },
 
-        button{
-            text: ("Solid Red"),
-            oneClick: (runCommand = "os://display/wallpaper?color=#990000&mode=color")
+        text{
+            text: ("塗りつぶし颜色")
         },
+
+        hStack{
+            button{
+                text: ("白"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FFFFFF&mode=color")
+            },
+            button{
+                text: ("黒"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#000000&mode=color")
+            },
+            button{
+                text: ("グレー"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#808080&mode=color")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("赤"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FF0000&mode=color")
+            },
+            button{
+                text: ("青"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#0066FF&mode=color")
+            },
+            button{
+                text: ("緑"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#00AA00&mode=color")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("黄"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FFCC00&mode=color")
+            },
+            button{
+                text: ("オレンジ"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FF8800&mode=color")
+            },
+            button{
+                text: ("紫"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#8800AA&mode=color")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("ピンク"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FF66AA&mode=color")
+            },
+            button{
+                text: ("シアン"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#00CCCC&mode=color")
+            },
+            button{
+                text: ("ネイビー"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#003366&mode=color")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("ベージュ"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#F5F5DC&mode=color")
+            },
+            button{
+                text: ("オリーブ"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#808000&mode=color")
+            },
+            button{
+                text: ("ティール"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#008080&mode=color")
+            },
+        },
+
+        hStack{
+            button{
+                text: ("コーラル"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FF7F50&mode=color")
+            },
+            button{
+                text: ("インディゴ"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#4B0082&mode=color")
+            },
+            button{
+                text: ("サーモン"),
+                oneClick: (runCommand = "os://display/wallpaper?color=#FA8072&mode=color")
+            },
+        },
+    },
+}
+
+screen{
+    id: (pointer),
+
+    Header{
+        text: ("マウスポインター設定"),
+    },
+
+    tonalButton{
+        text: ("戻る"),
+        oneClick: (setScreen{main})
     },
 
     card{
-        text: ("Pointer"),
+        text: ("マウスポインター"),
 
         text{
-            text: ("Pointer size: " + --pointerSize)
+            text: ("現在: " + --pointerSize)
         },
 
         hStack{
@@ -71,12 +245,25 @@ screen{
             },
         },
     },
+}
+
+screen{
+    id: (hud),
+
+    Header{
+        text: ("HUD設定"),
+    },
+
+    tonalButton{
+        text: ("戻る"),
+        oneClick: (setScreen{main})
+    },
 
     card{
         text: ("HUD"),
 
         text{
-            text: ("Status bar display")
+            text: ("ステータスバーに表示されます")
         },
 
         switch{
@@ -85,17 +272,26 @@ screen{
             oneClick: (runCommand = "os://display/hud?enabled=" + --hudEnabled)
         },
     },
+}
+
+screen{
+    id: (system),
+
+    Header{
+        text: ("システム設定"),
+    },
+
+    tonalButton{
+        text: ("戻る"),
+        oneClick: (setScreen{main})
+    },
 
     card{
-        text: ("System"),
-
-        text{
-            text: ("リセット等")
-        },
+        text: ("システム"),
 
         button{
-            text: ("削除して再起動")
+            text: ("再起動してリセット")
             oneClick: (runCommand = "os://system/reset?option=all")
         }
-    }
+    },
 }

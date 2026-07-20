@@ -7,7 +7,7 @@ apps:
   settings.warp:
     icon: settings.png
     type: warp-2
-    title: Settings
+    title: 設定
   demo.u1:
     icon: null
     type: uiscript-1
