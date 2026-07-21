@@ -110,15 +110,22 @@
     </keyboard>
     <mouse>
         <speed>1.0</speed>
-        <acceleration>1.0</acceleration>
-        <precision_gain>0.55</precision_gain>
-        <precision_knee>2.0</precision_knee>
-        <acceleration_knee>14.0</acceleration_knee>
-        <max_gain>3.4</max_gain>
-        <click_guard_distance>2.25</click_guard_distance>
-        <click_guard_reports>2</click_guard_reports>
-        <smoothing>0.20</smoothing>
+        <base_gain>0.12</base_gain>
+        <quadratic_gain>0.004</quadratic_gain>
+        <max_gain>4.0</max_gain>
+        <click_guard_distance>3.0</click_guard_distance>
+        <click_guard_reports>3</click_guard_reports>
+        <smoothing>0.10</smoothing>
     </mouse>
+    <trackpad>
+        <speed>6.0</speed>
+        <base_gain>0.1</base_gain>
+        <quadratic_gain>0.006</quadratic_gain>
+        <max_gain>7.0</max_gain>
+        <click_guard_distance>8.0</click_guard_distance>
+        <click_guard_reports>3</click_guard_reports>
+        <smoothing>0.10</smoothing>
+    </trackpad>
     <system>
         <done>0</done>
         <reset>

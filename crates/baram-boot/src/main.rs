@@ -705,6 +705,7 @@ fn main() -> Status {
 
                                             if let Some(cmd) = engine.last_command.take() {
                                                 if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                                    engine.update(ww as i32, content_h as i32);
                                                     wm.set_all_dirty();
                                                     cached_taskbar = None;
                                                     cached_taskbar_strip = None;
@@ -913,6 +914,7 @@ fn main() -> Status {
 
                                     if let Some(cmd) = engine.last_command.take() {
                                         if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                            engine.update(ww as i32, content_h as i32);
                                             wm.set_all_dirty();
                                             cached_taskbar = None;
                                             cached_taskbar_strip = None;

@@ -7,20 +7,17 @@ use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::Handle;
 
 use crate::absolute_pointer::AbsolutePointer;
-use crate::pointer_accel::{MotionFilter, MotionSettings};
+use crate::pointer_accel::{
+    MotionFilter, MotionSettings, TrackpadFilter, TrackpadInterpolator, TrackpadSettings,
+};
 use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidReportLayout};
 
 fn load_motion_settings() -> MotionSettings {
     let defaults = MotionSettings::default();
     MotionSettings {
         speed: baram_bsd::config::get_f32("mouse/speed", defaults.speed),
-        acceleration: baram_bsd::config::get_f32("mouse/acceleration", defaults.acceleration),
-        precision_gain: baram_bsd::config::get_f32("mouse/precision_gain", defaults.precision_gain),
-        precision_knee: baram_bsd::config::get_f32("mouse/precision_knee", defaults.precision_knee),
-        acceleration_knee: baram_bsd::config::get_f32(
-            "mouse/acceleration_knee",
-            defaults.acceleration_knee,
-        ),
+        base_gain: baram_bsd::config::get_f32("mouse/base_gain", defaults.base_gain),
+        quadratic_gain: baram_bsd::config::get_f32("mouse/quadratic_gain", defaults.quadratic_gain),
         max_gain: baram_bsd::config::get_f32("mouse/max_gain", defaults.max_gain),
         click_guard_distance: baram_bsd::config::get_f32(
             "mouse/click_guard_distance",
@@ -36,6 +33,30 @@ fn load_motion_settings() -> MotionSettings {
     .sanitized()
 }
 
+fn load_trackpad_settings() -> TrackpadSettings {
+    let defaults = TrackpadSettings::default();
+    TrackpadSettings {
+        speed: baram_bsd::config::get_f32("trackpad/speed", defaults.speed),
+        base_gain: baram_bsd::config::get_f32("trackpad/base_gain", defaults.base_gain),
+        quadratic_gain: baram_bsd::config::get_f32(
+            "trackpad/quadratic_gain",
+            defaults.quadratic_gain,
+        ),
+        max_gain: baram_bsd::config::get_f32("trackpad/max_gain", defaults.max_gain),
+        click_guard_distance: baram_bsd::config::get_f32(
+            "trackpad/click_guard_distance",
+            defaults.click_guard_distance,
+        ),
+        click_guard_reports: baram_bsd::config::get_usize(
+            "trackpad/click_guard_reports",
+            defaults.click_guard_reports as usize,
+        )
+        .min(u8::MAX as usize) as u8,
+        smoothing: baram_bsd::config::get_f32("trackpad/smoothing", defaults.smoothing),
+    }
+    .sanitized()
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MouseEvent {
     pub abs_x: u64,
@@ -44,7 +65,10 @@ pub struct MouseEvent {
     pub abs_max_y: u64,
     pub rel_dx: i32,
     pub rel_dy: i32,
+    pub trackpad_dx: i32,
+    pub trackpad_dy: i32,
     pub is_absolute: bool,
+    pub is_trackpad: bool,
     pub left: bool,
     pub right: bool,
     pub middle: bool,
@@ -74,8 +98,6 @@ struct UsbPointer {
     layouts: Vec<HidReportLayout>,
     boot_mouse: bool,
     last_touch: Option<(i32, i32)>,
-    touch_acc_x: f32,
-    touch_acc_y: f32,
     buttons: u8,
 }
 
@@ -158,18 +180,12 @@ impl UsbPointer {
             // fresh gesture and therefore must not teleport the cursor.
             if layout.has_tip && !parsed.touching {
                 self.last_touch = None;
-                self.touch_acc_x = 0.0;
-                self.touch_acc_y = 0.0;
                 return Some(event);
             }
             if let Some((last_x, last_y)) = self.last_touch {
-                const TRACKPAD_SCALE: f32 = 0.35;
-                let dx = (parsed.x - last_x) as f32 * TRACKPAD_SCALE + self.touch_acc_x;
-                let dy = (parsed.y - last_y) as f32 * TRACKPAD_SCALE + self.touch_acc_y;
-                event.rel_dx = dx as i32;
-                event.rel_dy = dy as i32;
-                self.touch_acc_x = dx - event.rel_dx as f32;
-                self.touch_acc_y = dy - event.rel_dy as f32;
+                event.is_trackpad = true;
+                event.trackpad_dx = parsed.x - last_x;
+                event.trackpad_dy = parsed.y - last_y;
             }
             self.last_touch = Some((parsed.x, parsed.y));
         } else if layout.is_absolute {
@@ -196,6 +212,10 @@ pub struct Mouse {
     scanned_usb_handles: Vec<Handle>,
     motion_filter: MotionFilter,
     motion_settings: MotionSettings,
+    trackpad_filter: TrackpadFilter,
+    trackpad_settings: TrackpadSettings,
+    config_revision: usize,
+    trackpad_interpolator: TrackpadInterpolator,
     poll_count: u32,
 }
 
@@ -209,6 +229,10 @@ impl Mouse {
             scanned_usb_handles: Vec::new(),
             motion_filter: MotionFilter::default(),
             motion_settings: load_motion_settings(),
+            trackpad_filter: TrackpadFilter::default(),
+            trackpad_settings: load_trackpad_settings(),
+            config_revision: baram_bsd::config::revision(),
+            trackpad_interpolator: TrackpadInterpolator::default(),
             poll_count: 0,
         }
     }
@@ -491,8 +515,6 @@ impl Mouse {
             layouts,
             boot_mouse,
             last_touch: None,
-            touch_acc_x: 0.0,
-            touch_acc_y: 0.0,
             buttons: 0,
         })
     }
@@ -518,6 +540,7 @@ impl Mouse {
     }
 
     pub fn poll(&mut self) -> Option<MouseEvent> {
+        self.refresh_settings_if_needed();
         self.poll_count = self.poll_count.wrapping_add(1);
         if self.poll_count % 1000 == 0 {
             let changed = self.scan_uefi() | self.scan_usb();
@@ -531,6 +554,13 @@ impl Mouse {
             if let Some(event) = event {
                 return Some(self.finish_event(event));
             }
+        }
+
+        // HID trackpads usually report at a much lower cadence than USB
+        // mice. Spread each transformed delta over four 1 ms timer ticks so
+        // cursor rendering stays continuous without delaying USB mouse data.
+        if let Some(event) = self.take_pending_trackpad_event() {
+            return Some(event);
         }
 
         for index in 0..self.absolute.len() {
@@ -613,18 +643,58 @@ impl Mouse {
         event
     }
 
+    fn refresh_settings_if_needed(&mut self) {
+        let revision = baram_bsd::config::revision();
+        if revision != self.config_revision {
+            self.motion_settings = load_motion_settings();
+            self.trackpad_settings = load_trackpad_settings();
+            self.config_revision = revision;
+        }
+    }
+
+    fn take_pending_trackpad_event(&mut self) -> Option<MouseEvent> {
+        let (dx, dy) = self.trackpad_interpolator.take()?;
+        Some(self.with_global_buttons(MouseEvent {
+            rel_dx: dx,
+            rel_dy: dy,
+            is_trackpad: true,
+            ..MouseEvent::default()
+        }))
+    }
+
     fn finish_event(&mut self, event: MouseEvent) -> MouseEvent {
         let mut event = self.with_global_buttons(event);
         let buttons = (event.left as u8) | ((event.right as u8) << 1) | ((event.middle as u8) << 2);
-        let (dx, dy) = self.motion_filter.apply(
-            if event.is_absolute { 0 } else { event.rel_dx },
-            if event.is_absolute { 0 } else { event.rel_dy },
-            buttons,
-            &self.motion_settings,
-        );
-        if !event.is_absolute {
-            event.rel_dx = dx;
-            event.rel_dy = dy;
+        if event.is_trackpad {
+            let (dx, dy) = self.trackpad_filter.apply(
+                event.trackpad_dx,
+                event.trackpad_dy,
+                buttons,
+                &self.trackpad_settings,
+            );
+            self.trackpad_interpolator.enqueue(dx, dy);
+            if let Some(portion) = self.take_pending_trackpad_event() {
+                event.rel_dx = portion.rel_dx;
+                event.rel_dy = portion.rel_dy;
+            } else {
+                event.rel_dx = 0;
+                event.rel_dy = 0;
+            }
+            // Keep click state synchronized when switching pointer devices.
+            let _ = self
+                .motion_filter
+                .apply(0, 0, buttons, &self.motion_settings);
+        } else {
+            let (dx, dy) = self.motion_filter.apply(
+                if event.is_absolute { 0 } else { event.rel_dx },
+                if event.is_absolute { 0 } else { event.rel_dy },
+                buttons,
+                &self.motion_settings,
+            );
+            if !event.is_absolute {
+                event.rel_dx = dx;
+                event.rel_dy = dy;
+            }
         }
         event
     }

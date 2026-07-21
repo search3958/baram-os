@@ -224,6 +224,68 @@ screen{
             },
         },
     },
+
+    card{
+        text: ("トラックパッドの速度"),
+
+        text{
+            text: ("現在: " + --os://trackpad/speed + " 倍")
+        },
+
+        text{
+            text: ("小さな動きは吸収し、素早く動かした時だけ二乗的に加速します")
+        },
+
+        hStack{
+            tonalButton{
+                text: ("1倍"),
+                oneClick: (runCommand = "os://trackpad?speed=1.0")
+            },
+            tonalButton{
+                text: ("3倍"),
+                oneClick: (runCommand = "os://trackpad?speed=3.0")
+            },
+            button{
+                text: ("5倍（推奨）"),
+                oneClick: (runCommand = "os://trackpad?speed=5.0")
+            },
+            tonalButton{
+                text: ("6倍"),
+                oneClick: (runCommand = "os://trackpad?speed=6.0")
+            },
+            tonalButton{
+                text: ("8倍"),
+                oneClick: (runCommand = "os://trackpad?speed=8.0")
+            },
+        },
+    },
+
+    card{
+        text: ("USBマウスの速度"),
+
+        text{
+            text: ("現在: " + --os://mouse/speed + " 倍")
+        },
+
+        hStack{
+            tonalButton{
+                text: ("0.5倍"),
+                oneClick: (runCommand = "os://mouse?speed=0.5")
+            },
+            button{
+                text: ("1倍（標準）"),
+                oneClick: (runCommand = "os://mouse?speed=1.0")
+            },
+            tonalButton{
+                text: ("2倍"),
+                oneClick: (runCommand = "os://mouse?speed=2.0")
+            },
+            tonalButton{
+                text: ("4倍"),
+                oneClick: (runCommand = "os://mouse?speed=4.0")
+            },
+        },
+    },
 }
 
 screen{
