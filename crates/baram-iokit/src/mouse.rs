@@ -7,7 +7,34 @@ use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::Handle;
 
 use crate::absolute_pointer::AbsolutePointer;
+use crate::pointer_accel::{MotionFilter, MotionSettings};
 use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidReportLayout};
+
+fn load_motion_settings() -> MotionSettings {
+    let defaults = MotionSettings::default();
+    MotionSettings {
+        speed: baram_bsd::config::get_f32("mouse/speed", defaults.speed),
+        acceleration: baram_bsd::config::get_f32("mouse/acceleration", defaults.acceleration),
+        precision_gain: baram_bsd::config::get_f32("mouse/precision_gain", defaults.precision_gain),
+        precision_knee: baram_bsd::config::get_f32("mouse/precision_knee", defaults.precision_knee),
+        acceleration_knee: baram_bsd::config::get_f32(
+            "mouse/acceleration_knee",
+            defaults.acceleration_knee,
+        ),
+        max_gain: baram_bsd::config::get_f32("mouse/max_gain", defaults.max_gain),
+        click_guard_distance: baram_bsd::config::get_f32(
+            "mouse/click_guard_distance",
+            defaults.click_guard_distance,
+        ),
+        click_guard_reports: baram_bsd::config::get_usize(
+            "mouse/click_guard_reports",
+            defaults.click_guard_reports as usize,
+        )
+        .min(u8::MAX as usize) as u8,
+        smoothing: baram_bsd::config::get_f32("mouse/smoothing", defaults.smoothing),
+    }
+    .sanitized()
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MouseEvent {
@@ -167,6 +194,8 @@ pub struct Mouse {
     // handle.  Remember claimed handles so it is not read twice.
     claimed_handles: Vec<Handle>,
     scanned_usb_handles: Vec<Handle>,
+    motion_filter: MotionFilter,
+    motion_settings: MotionSettings,
     poll_count: u32,
 }
 
@@ -178,6 +207,8 @@ impl Mouse {
             usb: Vec::new(),
             claimed_handles: Vec::new(),
             scanned_usb_handles: Vec::new(),
+            motion_filter: MotionFilter::default(),
+            motion_settings: load_motion_settings(),
             poll_count: 0,
         }
     }
@@ -498,7 +529,7 @@ impl Mouse {
         for index in 0..self.usb.len() {
             let event = self.usb[index].poll();
             if let Some(event) = event {
-                return Some(self.with_global_buttons(event));
+                return Some(self.finish_event(event));
             }
         }
 
@@ -526,7 +557,7 @@ impl Mouse {
                 })
             };
             if let Some(event) = event {
-                return Some(self.with_global_buttons(event));
+                return Some(self.finish_event(event));
             }
         }
 
@@ -559,7 +590,7 @@ impl Mouse {
                 }
             };
             if let Some(event) = event {
-                return Some(self.with_global_buttons(event));
+                return Some(self.finish_event(event));
             }
         }
         None
@@ -579,6 +610,22 @@ impl Mouse {
         event.left = buttons & 1 != 0;
         event.right = buttons & 2 != 0;
         event.middle = buttons & 4 != 0;
+        event
+    }
+
+    fn finish_event(&mut self, event: MouseEvent) -> MouseEvent {
+        let mut event = self.with_global_buttons(event);
+        let buttons = (event.left as u8) | ((event.right as u8) << 1) | ((event.middle as u8) << 2);
+        let (dx, dy) = self.motion_filter.apply(
+            if event.is_absolute { 0 } else { event.rel_dx },
+            if event.is_absolute { 0 } else { event.rel_dy },
+            buttons,
+            &self.motion_settings,
+        );
+        if !event.is_absolute {
+            event.rel_dx = dx;
+            event.rel_dy = dy;
+        }
         event
     }
 }

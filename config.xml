@@ -108,6 +108,17 @@
     <keyboard>
         <shift_key>0</shift_key>
     </keyboard>
+    <mouse>
+        <speed>1.0</speed>
+        <acceleration>1.0</acceleration>
+        <precision_gain>0.55</precision_gain>
+        <precision_knee>2.0</precision_knee>
+        <acceleration_knee>14.0</acceleration_knee>
+        <max_gain>3.4</max_gain>
+        <click_guard_distance>2.25</click_guard_distance>
+        <click_guard_reports>2</click_guard_reports>
+        <smoothing>0.20</smoothing>
+    </mouse>
     <system>
         <done>0</done>
         <reset>
