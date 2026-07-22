@@ -578,7 +578,7 @@ pub fn render_scene(
 
             let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
 
-            let size = 20.0f32;
+            let size = 32.0f32;
 
             let mut time_w = 0usize;
             for ch in time_buf.chars() {
@@ -607,7 +607,7 @@ pub fn render_scene(
             } else {
                 14
             };
-            let status_y = tb_y as i32 + (TASKBAR_H as i32 - ascent) / 2;
+            let status_y = tb_y as i32 + TASKBAR_H as i32 - ascent + 9;
 
             let mut cx = status_x;
             for ch in time_buf.chars() {
