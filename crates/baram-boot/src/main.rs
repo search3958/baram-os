@@ -303,6 +303,24 @@ fn main() -> Status {
     let mut prev_hover_apps_icon: bool = false;
     let mut prev_show_app_launcher: bool = false;
 
+    let timezone_offset: i32 = config::get_config()
+        .get_i32("system/timezone")
+        .unwrap_or(9);
+
+    let mut battery_info = baram_iokit::battery::read_battery_or_default();
+
+    let (mut clock_hh, mut clock_mm) = {
+        let tz = timezone_offset;
+        match runtime::get_time() {
+            Ok(t) => {
+                let total_min = (t.hour() as i32) * 60 + (t.minute() as i32) + tz * 60;
+                let day_min = total_min.rem_euclid(24 * 60);
+                ((day_min / 60) as u8, (day_min % 60) as u8)
+            }
+            Err(_) => (0u8, 0u8),
+        }
+    };
+
     render_scene(
         &mut layer,
         &mut wm,
@@ -330,6 +348,9 @@ fn main() -> Status {
         hover_apps_icon,
         false,
         &mut scene_before_strip,
+        clock_hh,
+        clock_mm,
+        battery_info.percentage,
     );
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -1034,7 +1055,19 @@ fn main() -> Status {
                 fps = frames_since_tick;
                 frames_since_tick = 0;
                 start_time = now;
+
+                let total_min = (now.hour() as i32) * 60
+                    + (now.minute() as i32)
+                    + timezone_offset * 60;
+                let day_min = total_min.rem_euclid(24 * 60);
+                clock_hh = (day_min / 60) as u8;
+                clock_mm = (day_min % 60) as u8;
+
+                battery_info = baram_iokit::battery::read_battery_or_default();
+                cached_taskbar_strip = None;
+
                 dirty = true;
+                scene_dirty = true;
             }
         }
 
@@ -1158,6 +1191,9 @@ fn main() -> Status {
                     hover_apps_icon,
                     taskbar_only,
                     &mut scene_before_strip,
+                    clock_hh,
+                    clock_mm,
+                    battery_info.percentage,
                 );
 
                 if show_app_launcher {

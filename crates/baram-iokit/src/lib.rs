@@ -8,3 +8,4 @@ pub mod mouse;
 pub mod pointer_accel;
 pub mod absolute_pointer;
 pub mod debug_log;
+pub mod battery;
