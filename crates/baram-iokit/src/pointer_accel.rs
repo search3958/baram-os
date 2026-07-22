@@ -229,13 +229,23 @@ pub struct TrackpadInterpolator {
     steps: u8,
 }
 
+// The boot loop ticks every 1 ms. Four slices are enough to hide the larger
+// steps of an absolute-coordinate trackpad while keeping input-to-cursor lag
+// below one display frame. A longer window builds a visible motion backlog
+// when reports keep arriving.
+const TRACKPAD_INTERPOLATION_STEPS: u8 = 4;
+
 impl TrackpadInterpolator {
     pub fn enqueue(&mut self, dx: i32, dy: i32) {
         self.pending_x = self.pending_x.saturating_add(dx);
         self.pending_y = self.pending_y.saturating_add(dy);
         if self.pending_x != 0 || self.pending_y != 0 {
-            self.steps = 4;
+            self.steps = TRACKPAD_INTERPOLATION_STEPS;
         }
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.steps != 0 && (self.pending_x != 0 || self.pending_y != 0)
     }
 
     pub fn take(&mut self) -> Option<(i32, i32)> {
@@ -336,7 +346,24 @@ mod tests {
             total.1 += dy;
             frames += 1;
         }
-        assert_eq!(frames, 4);
+        assert_eq!(frames, TRACKPAD_INTERPOLATION_STEPS);
         assert_eq!(total, (15, -7));
+    }
+
+    #[test]
+    fn continuous_trackpad_reports_do_not_build_a_long_backlog() {
+        let mut interpolation = TrackpadInterpolator::default();
+        interpolation.enqueue(40, 20);
+        assert!(interpolation.take().is_some());
+
+        // A new report may arrive before the previous four slices finish.
+        // All outstanding distance must still catch up within four ticks.
+        interpolation.enqueue(24, 12);
+        let mut ticks = 0;
+        while interpolation.take().is_some() {
+            ticks += 1;
+        }
+        assert!(ticks <= TRACKPAD_INTERPOLATION_STEPS as usize);
+        assert!(!interpolation.has_pending());
     }
 }

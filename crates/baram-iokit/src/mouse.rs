@@ -216,6 +216,10 @@ pub struct Mouse {
     trackpad_settings: TrackpadSettings,
     config_revision: usize,
     trackpad_interpolator: TrackpadInterpolator,
+    // The boot loop drains poll() until it returns None. Yield once after a
+    // trackpad slice so interpolation is presented on the next timer tick
+    // instead of all slices being consumed in one loop iteration.
+    trackpad_wait_for_tick: bool,
     poll_count: u32,
 }
 
@@ -233,6 +237,7 @@ impl Mouse {
             trackpad_settings: load_trackpad_settings(),
             config_revision: baram_bsd::config::revision(),
             trackpad_interpolator: TrackpadInterpolator::default(),
+            trackpad_wait_for_tick: false,
             poll_count: 0,
         }
     }
@@ -542,6 +547,10 @@ impl Mouse {
     pub fn poll(&mut self) -> Option<MouseEvent> {
         self.refresh_settings_if_needed();
         self.poll_count = self.poll_count.wrapping_add(1);
+        if self.trackpad_wait_for_tick {
+            self.trackpad_wait_for_tick = false;
+            return None;
+        }
         if self.poll_count % 1000 == 0 {
             let changed = self.scan_uefi() | self.scan_usb();
             if changed {
@@ -557,9 +566,11 @@ impl Mouse {
         }
 
         // HID trackpads usually report at a much lower cadence than USB
-        // mice. Spread each transformed delta over four 1 ms timer ticks so
-        // cursor rendering stays continuous without delaying USB mouse data.
+        // mice. Spread each transformed delta over a short series of timer
+        // ticks so cursor rendering stays continuous without adding a long
+        // input backlog or delaying USB mouse data.
         if let Some(event) = self.take_pending_trackpad_event() {
+            self.trackpad_wait_for_tick = self.trackpad_interpolator.has_pending();
             return Some(event);
         }
 
@@ -676,6 +687,7 @@ impl Mouse {
             if let Some(portion) = self.take_pending_trackpad_event() {
                 event.rel_dx = portion.rel_dx;
                 event.rel_dy = portion.rel_dy;
+                self.trackpad_wait_for_tick = self.trackpad_interpolator.has_pending();
             } else {
                 event.rel_dx = 0;
                 event.rel_dy = 0;
