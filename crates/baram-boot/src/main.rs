@@ -558,9 +558,13 @@ fn main() -> Status {
                 );
 
                 if ev.scroll != 0 {
-                    let scroll_delta = -ev.scroll * baram_windowserver::window::scroll_speed();
+                    let scroll_delta = ev
+                        .scroll
+                        .saturating_neg()
+                        .saturating_mul(baram_windowserver::window::scroll_speed());
                     if let Some(id) = wm.window_at(cx, cy) {
                         wm.scroll_window(id, scroll_delta);
+                        dirty = true;
                         scene_dirty = true;
                     }
                 }

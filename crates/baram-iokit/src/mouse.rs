@@ -10,7 +10,7 @@ use crate::absolute_pointer::AbsolutePointer;
 use crate::pointer_accel::{
     MotionFilter, MotionSettings, TrackpadFilter, TrackpadInterpolator, TrackpadSettings,
 };
-use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidReportLayout};
+use crate::usb_hid::{parse_hid_report_descs, parse_input_report, HidReportLayout, TrackpadScroll};
 
 fn load_motion_settings() -> MotionSettings {
     let defaults = MotionSettings::default();
@@ -98,6 +98,7 @@ struct UsbPointer {
     layouts: Vec<HidReportLayout>,
     boot_mouse: bool,
     last_touch: Option<(i32, i32)>,
+    trackpad_scroll: TrackpadScroll,
     buttons: u8,
 }
 
@@ -175,6 +176,14 @@ impl UsbPointer {
 
         let is_touchpad = layout.application_usage_page == 0x0d && layout.application_usage == 0x05;
         if layout.is_absolute && is_touchpad {
+            let scroll = self.trackpad_scroll.update(&layout, &parsed);
+            if scroll.active {
+                event.scroll = scroll.ticks;
+                // Never turn a multi-contact or incomplete hybrid frame into
+                // cursor motion.
+                self.last_touch = None;
+                return Some(event);
+            }
             // A trackpad reports finger coordinates, but the desktop pointer
             // must move by the delta within a gesture.  A new contact starts a
             // fresh gesture and therefore must not teleport the cursor.
@@ -520,6 +529,7 @@ impl Mouse {
             layouts,
             boot_mouse,
             last_touch: None,
+            trackpad_scroll: TrackpadScroll::default(),
             buttons: 0,
         })
     }
@@ -612,6 +622,7 @@ impl Mouse {
                         Ok(Some(state)) => {
                             event.rel_dx = event.rel_dx.saturating_add(state.relative_movement[0]);
                             event.rel_dy = event.rel_dy.saturating_add(state.relative_movement[1]);
+                            event.scroll = event.scroll.saturating_add(state.relative_movement[2]);
                             // The last state determines whether the button was
                             // released; OR-ing states can leave clicks stuck.
                             device.buttons =

@@ -19,6 +19,12 @@ pub struct HidReportLayout {
     pub button_bits: u8,
     pub tip_offset_bits: u16,
     pub has_tip: bool,
+    pub second_tip_offset_bits: u16,
+    pub has_second_tip: bool,
+    pub contact_id_offset_bits: u16,
+    pub contact_id_size_bits: u8,
+    pub second_contact_id_offset_bits: u16,
+    pub second_contact_id_size_bits: u8,
     pub x_offset_bits: u16,
     pub x_size_bits: u8,
     pub x_min: i32,
@@ -27,6 +33,14 @@ pub struct HidReportLayout {
     pub y_size_bits: u8,
     pub y_min: i32,
     pub y_max: i32,
+    pub second_x_offset_bits: u16,
+    pub second_x_size_bits: u8,
+    pub second_y_offset_bits: u16,
+    pub second_y_size_bits: u8,
+    pub contact_count_offset_bits: u16,
+    pub contact_count_size_bits: u8,
+    pub scan_time_offset_bits: u16,
+    pub scan_time_size_bits: u8,
     pub wheel_offset_bits: u16,
     pub wheel_size_bits: u8,
     pub wheel_min: i32,
@@ -186,8 +200,30 @@ pub fn parse_hid_report_descs(desc: &[u8]) -> Vec<HidReportLayout> {
                                         layout.button_bits.saturating_add(1).min(8);
                                 }
                                 (0x0d, 0x42) => {
-                                    layout.tip_offset_bits = offset;
-                                    layout.has_tip = true;
+                                    if layout.has_tip {
+                                        layout.second_tip_offset_bits = offset;
+                                        layout.has_second_tip = true;
+                                    } else {
+                                        layout.tip_offset_bits = offset;
+                                        layout.has_tip = true;
+                                    }
+                                }
+                                (0x0d, 0x51) => {
+                                    if layout.contact_id_size_bits == 0 {
+                                        layout.contact_id_offset_bits = offset;
+                                        layout.contact_id_size_bits = global.report_size;
+                                    } else if layout.second_contact_id_size_bits == 0 {
+                                        layout.second_contact_id_offset_bits = offset;
+                                        layout.second_contact_id_size_bits = global.report_size;
+                                    }
+                                }
+                                (0x0d, 0x54) if layout.contact_count_size_bits == 0 => {
+                                    layout.contact_count_offset_bits = offset;
+                                    layout.contact_count_size_bits = global.report_size;
+                                }
+                                (0x0d, 0x56) if layout.scan_time_size_bits == 0 => {
+                                    layout.scan_time_offset_bits = offset;
+                                    layout.scan_time_size_bits = global.report_size;
                                 }
                                 (0x01, 0x30) if layout.x_size_bits == 0 => {
                                     layout.x_offset_bits = offset;
@@ -196,12 +232,20 @@ pub fn parse_hid_report_descs(desc: &[u8]) -> Vec<HidReportLayout> {
                                     layout.x_max = global.logical_max;
                                     layout.is_absolute = !is_relative;
                                 }
+                                (0x01, 0x30) if layout.second_x_size_bits == 0 => {
+                                    layout.second_x_offset_bits = offset;
+                                    layout.second_x_size_bits = global.report_size;
+                                }
                                 (0x01, 0x31) if layout.y_size_bits == 0 => {
                                     layout.y_offset_bits = offset;
                                     layout.y_size_bits = global.report_size;
                                     layout.y_min = global.logical_min;
                                     layout.y_max = global.logical_max;
                                     layout.is_absolute = !is_relative;
+                                }
+                                (0x01, 0x31) if layout.second_y_size_bits == 0 => {
+                                    layout.second_y_offset_bits = offset;
+                                    layout.second_y_size_bits = global.report_size;
                                 }
                                 (0x01, 0x38) if layout.wheel_size_bits == 0 => {
                                     layout.wheel_offset_bits = offset;
@@ -282,12 +326,154 @@ pub struct HidParsedEvent {
     pub y: i32,
     pub buttons: u8,
     pub touching: bool,
+    pub second_x: i32,
+    pub second_y: i32,
+    pub second_touching: bool,
+    pub contact_id: u32,
+    pub has_contact_id: bool,
+    pub second_contact_id: u32,
+    pub has_second_contact_id: bool,
+    pub contact_count: u8,
+    pub scan_time: u32,
     pub wheel: i32,
     pub is_absolute: bool,
     pub x_min: i32,
     pub x_max: i32,
     pub y_min: i32,
     pub y_max: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TrackpadScrollUpdate {
+    /// True while a multi-contact frame is being assembled or scrolled. The
+    /// caller must suppress normal one-finger pointer movement in this state.
+    pub active: bool,
+    pub ticks: i32,
+}
+
+/// Stateful decoder for parallel and hybrid multi-contact touchpad reports.
+///
+/// In hybrid mode the first report carries a non-zero Contact Count and later
+/// reports from the same scan carry zero. Contact Identifier is used to merge
+/// those reports before calculating the two-finger midpoint.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TrackpadScroll {
+    contacts: [Option<(u32, i32, i32)>; 5],
+    expected: u8,
+    last_y: Option<i32>,
+    remainder: i32,
+}
+
+impl TrackpadScroll {
+    pub fn update(
+        &mut self,
+        layout: &HidReportLayout,
+        event: &HidParsedEvent,
+    ) -> TrackpadScrollUpdate {
+        let inferred = (event.touching as u8).saturating_add(event.second_touching as u8);
+        let contact_count = event.contact_count.max(inferred);
+        let has_contact_count = layout.contact_count_size_bits != 0;
+
+        if has_contact_count && event.contact_count > 0 {
+            self.contacts = [None; 5];
+            self.expected = event.contact_count.min(5);
+        } else if !has_contact_count && inferred >= 2 {
+            // Older parallel-report touchpads may omit both Contact Count and
+            // Contact Identifier. Each packet is then a complete frame.
+            self.contacts = [None; 5];
+        }
+
+        if contact_count >= 2 || self.expected >= 2 {
+            if event.touching || !layout.has_tip {
+                self.record(
+                    event.has_contact_id.then_some(event.contact_id),
+                    event.x,
+                    event.y,
+                );
+            }
+            if event.second_touching {
+                self.record(
+                    event
+                        .has_second_contact_id
+                        .then_some(event.second_contact_id),
+                    event.second_x,
+                    event.second_y,
+                );
+            }
+
+            let mut ticks = 0;
+            if let Some(current_y) = self.midpoint_y() {
+                if let Some(last_y) = self.last_y {
+                    ticks = trackpad_scroll_ticks(
+                        current_y.saturating_sub(last_y),
+                        event.y_max.saturating_sub(event.y_min),
+                        &mut self.remainder,
+                    );
+                }
+                self.last_y = Some(current_y);
+                if self.expected != 0 && self.contact_len() >= self.expected as usize {
+                    self.expected = 0;
+                }
+            }
+            return TrackpadScrollUpdate {
+                active: true,
+                ticks,
+            };
+        }
+
+        self.contacts = [None; 5];
+        self.expected = 0;
+        self.last_y = None;
+        self.remainder = 0;
+        TrackpadScrollUpdate::default()
+    }
+
+    fn record(&mut self, id: Option<u32>, x: i32, y: i32) {
+        if let Some(id) = id {
+            if let Some(slot) = self
+                .contacts
+                .iter_mut()
+                .find(|slot| slot.map(|contact| contact.0) == Some(id))
+            {
+                *slot = Some((id, x, y));
+                return;
+            }
+        }
+        if let Some((index, slot)) = self
+            .contacts
+            .iter_mut()
+            .enumerate()
+            .find(|(_, slot)| slot.is_none())
+        {
+            // IDs above the HID range are local synthetic IDs for descriptors
+            // that omit Contact Identifier.
+            *slot = Some((id.unwrap_or(0x1_0000 + index as u32), x, y));
+        }
+    }
+
+    fn midpoint_y(&self) -> Option<i32> {
+        let mut contacts = self.contacts.iter().flatten();
+        let first = contacts.next()?;
+        let second = contacts.next()?;
+        Some(first.2.saturating_add(second.2) / 2)
+    }
+
+    fn contact_len(&self) -> usize {
+        self.contacts
+            .iter()
+            .filter(|contact| contact.is_some())
+            .count()
+    }
+}
+
+fn trackpad_scroll_ticks(delta_y: i32, y_range: i32, remainder: &mut i32) -> i32 {
+    let range = y_range.max(1);
+    let threshold = range.saturating_div(200).max(1);
+    let spike_limit = (range / 8).max(1);
+    let accumulated = remainder.saturating_add(delta_y.clamp(-spike_limit, spike_limit));
+    let ticks = accumulated / threshold;
+    *remainder = accumulated % threshold;
+    ticks.clamp(-8, 8)
 }
 
 fn extract_unsigned(report: &[u8], bit_offset: u16, bit_size: u8) -> u32 {
@@ -353,6 +539,47 @@ pub fn parse_input_report(layout: &HidReportLayout, report: &[u8]) -> Option<Hid
     };
 
     event.touching = layout.has_tip && extract_unsigned(payload, layout.tip_offset_bits, 1) != 0;
+    event.second_touching =
+        layout.has_second_tip && extract_unsigned(payload, layout.second_tip_offset_bits, 1) != 0;
+    event.has_contact_id = layout.contact_id_size_bits != 0;
+    event.contact_id = extract_unsigned(
+        payload,
+        layout.contact_id_offset_bits,
+        layout.contact_id_size_bits,
+    );
+    event.has_second_contact_id = layout.second_contact_id_size_bits != 0;
+    event.second_contact_id = extract_unsigned(
+        payload,
+        layout.second_contact_id_offset_bits,
+        layout.second_contact_id_size_bits,
+    );
+    if layout.second_x_size_bits != 0 {
+        event.second_x = extract_value(
+            payload,
+            layout.second_x_offset_bits,
+            layout.second_x_size_bits,
+            layout.x_min,
+        );
+    }
+    if layout.second_y_size_bits != 0 {
+        event.second_y = extract_value(
+            payload,
+            layout.second_y_offset_bits,
+            layout.second_y_size_bits,
+            layout.y_min,
+        );
+    }
+    event.contact_count = extract_unsigned(
+        payload,
+        layout.contact_count_offset_bits,
+        layout.contact_count_size_bits,
+    )
+    .min(u8::MAX as u32) as u8;
+    event.scan_time = extract_unsigned(
+        payload,
+        layout.scan_time_offset_bits,
+        layout.scan_time_size_bits,
+    );
 
     for index in 0..layout.button_bits.min(8) {
         if extract_unsigned(payload, layout.button_offset_bits + index as u16, 1) != 0 {
@@ -408,5 +635,80 @@ mod tests {
             (0x0d, 0x05)
         );
         assert!(event.is_absolute);
+    }
+
+    #[test]
+    fn parses_two_touchpad_contacts_and_contact_count() {
+        // A compact precision-touchpad style report with two parallel
+        // contacts followed by the Digitizers Contact Count field.
+        let descriptor = [
+            0x05, 0x0d, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x09, 0x09, 0x42, 0x15, 0x00, 0x25, 0x01,
+            0x75, 0x01, 0x95, 0x01, 0x81, 0x02, 0x75, 0x07, 0x95, 0x01, 0x81, 0x03, 0x05, 0x01,
+            0x09, 0x30, 0x09, 0x31, 0x15, 0x00, 0x26, 0xff, 0x0f, 0x75, 0x10, 0x95, 0x02, 0x81,
+            0x02, 0x05, 0x0d, 0x09, 0x42, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x01, 0x81,
+            0x02, 0x75, 0x07, 0x95, 0x01, 0x81, 0x03, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15,
+            0x00, 0x26, 0xff, 0x0f, 0x75, 0x10, 0x95, 0x02, 0x81, 0x02, 0x05, 0x0d, 0x09, 0x54,
+            0x15, 0x00, 0x25, 0x02, 0x75, 0x08, 0x95, 0x01, 0x81, 0x02, 0xc0,
+        ];
+        let layouts = parse_hid_report_descs(&descriptor);
+        assert_eq!(layouts.len(), 1);
+        let report = [9, 1, 0x00, 0x01, 0x00, 0x02, 1, 0x00, 0x03, 0x00, 0x04, 2];
+        let event = parse_input_report(&layouts[0], &report).unwrap();
+        assert_eq!((event.x, event.y), (0x100, 0x200));
+        assert_eq!((event.second_x, event.second_y), (0x300, 0x400));
+        assert!(event.touching && event.second_touching);
+        assert_eq!(event.contact_count, 2);
+    }
+
+    #[test]
+    fn assembles_hybrid_reports_before_scrolling() {
+        let layout = HidReportLayout {
+            has_tip: true,
+            contact_count_size_bits: 8,
+            ..HidReportLayout::default()
+        };
+        let contact = |id, y, count| HidParsedEvent {
+            x: 100,
+            y,
+            touching: true,
+            contact_id: id,
+            has_contact_id: true,
+            contact_count: count,
+            y_max: 4000,
+            ..HidParsedEvent::default()
+        };
+        let mut scroll = TrackpadScroll::default();
+
+        assert_eq!(
+            scroll.update(&layout, &contact(1, 1000, 2)),
+            TrackpadScrollUpdate {
+                active: true,
+                ticks: 0
+            }
+        );
+        assert_eq!(scroll.update(&layout, &contact(2, 1200, 0)).ticks, 0);
+        assert_eq!(scroll.update(&layout, &contact(1, 1040, 2)).ticks, 0);
+        assert_eq!(scroll.update(&layout, &contact(2, 1240, 0)).ticks, 2);
+    }
+
+    #[test]
+    fn scrolls_parallel_reports_without_contact_ids() {
+        let layout = HidReportLayout {
+            has_tip: true,
+            has_second_tip: true,
+            y_max: 4000,
+            ..HidReportLayout::default()
+        };
+        let frame = |first_y, second_y| HidParsedEvent {
+            y: first_y,
+            second_y,
+            touching: true,
+            second_touching: true,
+            y_max: 4000,
+            ..HidParsedEvent::default()
+        };
+        let mut scroll = TrackpadScroll::default();
+        assert_eq!(scroll.update(&layout, &frame(1000, 1200)).ticks, 0);
+        assert_eq!(scroll.update(&layout, &frame(1040, 1240)).ticks, 2);
     }
 }
