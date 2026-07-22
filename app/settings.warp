@@ -226,7 +226,7 @@ screen{
     },
 
     card{
-        text: ("トラックパッドの速度"),
+        text: ("トラックパッドの速度（共通）"),
 
         text{
             text: ("現在: " + --os://trackpad/speed + " 倍")
@@ -261,7 +261,7 @@ screen{
     },
 
     card{
-        text: ("USBマウスの速度"),
+        text: ("USBマウスの速度（共通）"),
 
         text{
             text: ("現在: " + --os://mouse/speed + " 倍")

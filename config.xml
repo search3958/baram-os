@@ -109,7 +109,7 @@
         <shift_key>0</shift_key>
     </keyboard>
     <mouse>
-        <speed>1.0</speed>
+        <speed>6.0</speed>
         <base_gain>0.12</base_gain>
         <quadratic_gain>0.004</quadratic_gain>
         <max_gain>4.0</max_gain>
@@ -118,10 +118,10 @@
         <smoothing>0.10</smoothing>
     </mouse>
     <trackpad>
-        <speed>6.0</speed>
-        <base_gain>0.1</base_gain>
-        <quadratic_gain>0.006</quadratic_gain>
-        <max_gain>7.0</max_gain>
+        <speed>3.0</speed>
+        <base_gain>0.01</base_gain>
+        <quadratic_gain>0.5</quadratic_gain>
+        <max_gain>40.0</max_gain>
         <click_guard_distance>8.0</click_guard_distance>
         <click_guard_reports>3</click_guard_reports>
         <smoothing>0.10</smoothing>
