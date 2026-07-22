@@ -687,6 +687,18 @@ pub fn render_scene(
     }
 
     if hud_enabled {
+        if let Some(ref bg) = bg_cache {
+            let hud_y0 = (tb_y as i32 - 44).max(0) as usize;
+            let hud_y1 = tb_y;
+            for y in hud_y0..hud_y1 {
+                let s = y * w;
+                let e = s + w;
+                if e <= bg.len() {
+                    layer.buf_mut()[s..e].copy_from_slice(&bg[s..e]);
+                }
+            }
+        }
+
         let hud_text1 = "Baram OS (1.1.0)";
         let mut hw1 = 0usize;
         for ch in hud_text1.chars() {
