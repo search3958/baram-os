@@ -88,6 +88,7 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
         None => return false,
     };
 
+    let mut shared_pointer_speed = None;
     {
         let cfg = config::get_config_mut();
         for (key, value) in &cmd.params {
@@ -99,6 +100,16 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
                 alloc::format!("{}/{}", cmd.path, key)
             };
             cfg.set(&full_path, value);
+            if key == "speed" && (cmd.path == "mouse" || cmd.path == "trackpad") {
+                shared_pointer_speed = Some(String::from(value.as_str()));
+            }
+        }
+        // UEFI SimplePointer does not identify an integrated trackpad as a
+        // trackpad. Keep the speed value shared so that either input path
+        // receives the setting even when hardware identification is absent.
+        if let Some(speed) = &shared_pointer_speed {
+            cfg.set("mouse/speed", speed);
+            cfg.set("trackpad/speed", speed);
         }
     }
 

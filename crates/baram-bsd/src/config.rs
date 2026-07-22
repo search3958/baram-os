@@ -1,5 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 const DEFAULT_CONFIG_XML: &[u8] = include_bytes!("../../../config.xml");
 
@@ -69,16 +70,17 @@ impl Config {
     }
 
     pub fn load_from_vfs(path: &str) -> Self {
-        let mut config = Self::new();
         let data = super::vfs::read_file(path);
         if data.is_empty() {
-            return config;
+            return Self::load_from_bytes(DEFAULT_CONFIG_XML);
         }
         let text = String::from_utf8(data.to_vec()).unwrap_or_default();
         if let Some(node) = parse_xml(&text) {
-            config.root = node;
+            return Self { root: node };
         }
-        config
+        // A hand-edited or previously corrupted file must not leave every
+        // setting absent. Use the embedded known-good document for this boot.
+        Self::load_from_bytes(DEFAULT_CONFIG_XML)
     }
 
     pub fn load_from_bytes(data: &[u8]) -> Self {
@@ -224,7 +226,7 @@ fn serialize_node(node: &XmlNode, buf: &mut String, indent: usize) {
     match node {
         XmlNode::Text(s) => {
             buf.push_str(&pad);
-            buf.push_str(s);
+            push_escaped_text(buf, s);
             buf.push('\n');
         }
         XmlNode::Element { tag, children } => {
@@ -239,7 +241,7 @@ fn serialize_node(node: &XmlNode, buf: &mut String, indent: usize) {
                     buf.push('<');
                     buf.push_str(tag);
                     buf.push('>');
-                    buf.push_str(s);
+                    push_escaped_text(buf, s);
                     buf.push_str("</");
                     buf.push_str(tag);
                     buf.push_str(">\n");
@@ -273,18 +275,38 @@ fn serialize_node(node: &XmlNode, buf: &mut String, indent: usize) {
     }
 }
 
+fn push_escaped_text(buf: &mut String, text: &str) {
+    for ch in text.chars() {
+        match ch {
+            '&' => buf.push_str("&amp;"),
+            '<' => buf.push_str("&lt;"),
+            '>' => buf.push_str("&gt;"),
+            '"' => buf.push_str("&quot;"),
+            '\'' => buf.push_str("&apos;"),
+            _ => buf.push(ch),
+        }
+    }
+}
+
+fn decode_text(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
 fn parse_xml(text: &str) -> Option<XmlNode> {
     let bytes = text.as_bytes();
     let mut pos = 0;
-
-    while pos < bytes.len() {
-        if bytes[pos] == b'<' {
-            let (node, _new_pos) = parse_element(bytes, pos)?;
-            return Some(node);
-        }
-        pos += 1;
+    if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        pos = 3;
     }
-    None
+    skip_xml_misc(bytes, &mut pos)?;
+    let (node, new_pos) = parse_element(bytes, pos)?;
+    pos = new_pos;
+    skip_xml_misc(bytes, &mut pos)?;
+    (pos == bytes.len()).then_some(node)
 }
 
 fn parse_element(bytes: &[u8], start: usize) -> Option<(XmlNode, usize)> {
@@ -313,31 +335,30 @@ fn parse_element(bytes: &[u8], start: usize) -> Option<(XmlNode, usize)> {
         skip_whitespace(bytes, &mut pos);
 
         if pos >= bytes.len() {
-            break;
+            return None;
         }
 
         if bytes[pos] == b'<' {
-            if pos + 1 < bytes.len() && bytes[pos + 1] == b'/' {
-                let close_tag = read_tag_name(bytes, &mut {
-                    pos += 2;
-                    pos
-                })?;
-                skip_whitespace(bytes, &mut pos);
-                if pos < bytes.len() && bytes[pos] == b'>' {
-                    pos += 1;
-                }
-                if close_tag == tag {
-                    break;
-                }
-                children.push(XmlNode::element(&close_tag));
+            if bytes[pos..].starts_with(b"<!--") {
+                skip_xml_comment(bytes, &mut pos)?;
                 continue;
             }
-            if let Some((child, new_pos)) = parse_element(bytes, pos) {
-                children.push(child);
-                pos = new_pos;
-            } else {
+            if pos + 1 < bytes.len() && bytes[pos + 1] == b'/' {
+                pos += 2;
+                let close_tag = read_tag_name(bytes, &mut pos)?;
+                skip_whitespace(bytes, &mut pos);
+                if pos >= bytes.len() || bytes[pos] != b'>' {
+                    return None;
+                }
+                pos += 1;
+                if close_tag != tag {
+                    return None;
+                }
                 break;
             }
+            let (child, new_pos) = parse_element(bytes, pos)?;
+            children.push(child);
+            pos = new_pos;
         } else {
             let text_start = pos;
             while pos < bytes.len() && bytes[pos] != b'<' {
@@ -347,7 +368,7 @@ fn parse_element(bytes: &[u8], start: usize) -> Option<(XmlNode, usize)> {
                 .unwrap_or("")
                 .trim();
             if !text_content.is_empty() {
-                children.push(XmlNode::text(text_content));
+                children.push(XmlNode::text(&decode_text(text_content)));
             }
         }
     }
@@ -370,9 +391,15 @@ fn read_tag_name(bytes: &[u8], pos: &mut usize) -> Option<String> {
     if *pos == start {
         return None;
     }
-    core::str::from_utf8(&bytes[start..*pos])
-        .ok()
-        .map(|s| s.to_string())
+    let name = core::str::from_utf8(&bytes[start..*pos]).ok()?;
+    let mut chars = name.chars();
+    let first = chars.next()?;
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || chars.any(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+    {
+        return None;
+    }
+    Some(name.to_string())
 }
 
 fn skip_whitespace(bytes: &[u8], pos: &mut usize) {
@@ -386,13 +413,55 @@ fn skip_whitespace(bytes: &[u8], pos: &mut usize) {
     }
 }
 
+fn skip_xml_comment(bytes: &[u8], pos: &mut usize) -> Option<()> {
+    if !bytes[*pos..].starts_with(b"<!--") {
+        return None;
+    }
+    *pos += 4;
+    while *pos + 2 < bytes.len() {
+        if bytes[*pos..].starts_with(b"-->") {
+            *pos += 3;
+            return Some(());
+        }
+        *pos += 1;
+    }
+    None
+}
+
+fn skip_xml_misc(bytes: &[u8], pos: &mut usize) -> Option<()> {
+    loop {
+        skip_whitespace(bytes, pos);
+        if *pos >= bytes.len() {
+            return Some(());
+        }
+        if bytes[*pos..].starts_with(b"<!--") {
+            skip_xml_comment(bytes, pos)?;
+            continue;
+        }
+        if bytes[*pos..].starts_with(b"<?xml") {
+            *pos += 5;
+            while *pos + 1 < bytes.len() && !bytes[*pos..].starts_with(b"?>") {
+                *pos += 1;
+            }
+            if *pos + 1 >= bytes.len() {
+                return None;
+            }
+            *pos += 2;
+            continue;
+        }
+        return Some(());
+    }
+}
+
 pub static mut GLOBAL_CONFIG: Option<Config> = None;
+static CONFIG_REVISION: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init_config() {
     let config = Config::load_from_vfs("EFI/BOOT/config.xml");
     unsafe {
         GLOBAL_CONFIG = Some(config);
     }
+    CONFIG_REVISION.fetch_add(1, Ordering::Release);
 }
 
 pub fn reset_to_default() {
@@ -414,6 +483,13 @@ pub fn get_config_mut() -> &'static mut Config {
 pub fn save_config() {
     let xml = get_config().to_xml();
     super::vfs::write_file("EFI/BOOT/config.xml", xml.as_bytes());
+    CONFIG_REVISION.fetch_add(1, Ordering::Release);
+}
+
+/// Changes whenever settings are loaded or saved. Long-lived device drivers
+/// use this to refresh cached values without parsing the config every report.
+pub fn revision() -> usize {
+    CONFIG_REVISION.load(Ordering::Acquire)
 }
 
 pub fn get_usize(path: &str, default: usize) -> usize {
@@ -430,4 +506,57 @@ pub fn get_f32(path: &str, default: f32) -> f32 {
 
 pub fn get_color(path: &str, default: baram_core::Color) -> baram_core::Color {
     get_config().get_color(path).unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_closing_tags_round_trip_without_becoming_text() {
+        let source = "<baram-os-config><system><done>1</done><reset><option/></reset></system></baram-os-config>";
+        let config = Config::load_from_bytes(source.as_bytes());
+
+        assert_eq!(config.get("system/done"), Some("1"));
+        assert_eq!(config.get("system/reset/option"), Some(""));
+        assert_eq!(
+            config.to_xml(),
+            "<baram-os-config>\n    <system>\n        <done>1</done>\n        <reset>\n            <option/>\n        </reset>\n    </system>\n</baram-os-config>\n"
+        );
+    }
+
+    #[test]
+    fn mismatched_closing_tag_is_rejected() {
+        assert!(parse_xml("<system><done>1</reset></system>").is_none());
+    }
+
+    #[test]
+    fn comments_declaration_entities_and_edits_round_trip() {
+        let source = "<?xml version=\"1.0\"?><!-- settings --><baram-os-config><trackpad><speed>5.0</speed><!-- curve --></trackpad><label>A &amp; B</label></baram-os-config>";
+        let mut config = Config::load_from_bytes(source.as_bytes());
+        assert_eq!(config.get("trackpad/speed"), Some("5.0"));
+        assert_eq!(config.get("label"), Some("A & B"));
+
+        config.set("trackpad/speed", "6.0");
+        let saved = config.to_xml();
+        assert!(saved.contains("<speed>6.0</speed>"));
+        assert!(saved.contains("<label>A &amp; B</label>"));
+        let loaded_again = Config::load_from_bytes(saved.as_bytes());
+        assert_eq!(loaded_again.get("trackpad/speed"), Some("6.0"));
+        assert_eq!(loaded_again.get("label"), Some("A & B"));
+    }
+
+    #[test]
+    fn incomplete_or_trailing_xml_is_rejected() {
+        assert!(parse_xml("<system><done>1</done>").is_none());
+        assert!(parse_xml("<system></system>garbage").is_none());
+        assert!(parse_xml("<!-- unterminated").is_none());
+    }
+
+    #[test]
+    fn missing_config_uses_embedded_defaults() {
+        let config = Config::load_from_vfs("missing.xml");
+        assert_eq!(config.get("system/done"), Some("0"));
+        assert!(config.get("trackpad/speed").is_some());
+    }
 }

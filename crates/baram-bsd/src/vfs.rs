@@ -147,11 +147,25 @@ pub fn write_file(path: &str, data: &[u8]) {
             }
             buf[i] = 0;
             if let Ok(cpath) = CStr16::from_u16_with_nul(&buf[..=i]) {
+                // CreateReadWrite does not truncate an existing UEFI file.
+                // Remove it first so a shorter XML serialization cannot leave
+                // an old tail behind and invalidate the document.
+                if let Ok(handle) = root.open(cpath, FileMode::ReadWrite, FileAttribute::empty()) {
+                    let _ = handle.delete();
+                }
                 match root.open(cpath, FileMode::CreateReadWrite, FileAttribute::empty()) {
                     Ok(handle) => {
                         if let Some(mut file) = handle.into_regular_file() {
-                            let _ = file.write(data);
-                            let _ = file.flush();
+                            if let Err(error) = file.write(data) {
+                                log_line_str(&format!(
+                                    "VFS: write_file '{}' incomplete: {}/{}",
+                                    path,
+                                    error.data(),
+                                    data.len()
+                                ));
+                            } else {
+                                let _ = file.flush();
+                            }
                         }
                     }
                     Err(e) => {
