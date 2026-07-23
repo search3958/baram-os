@@ -537,6 +537,7 @@ impl WindowManager {
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[baram_graphics::uiscript::Command])>,
         warp_engines: &mut alloc::vec::Vec<(WinId, super::warp::WarpEngine)>,
+        html_engines: &mut alloc::vec::Vec<(WinId, super::html::HtmlEngine)>,
     ) {
         if self.windows.is_empty() {
             return;
@@ -729,6 +730,15 @@ impl WindowManager {
                             (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
+                            (*layer_ptr).pop_clip();
+                            break;
+                        }
+                    }
+                    for i in 0..html_engines.len() {
+                        if win_id == html_engines[i].0 {
+                            let engine = &html_engines[i].1;
+                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             (*layer_ptr).pop_clip();
                             break;
                         }

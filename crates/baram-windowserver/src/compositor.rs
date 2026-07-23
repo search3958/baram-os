@@ -1,5 +1,6 @@
 use super::cursor::{self};
 use crate::warp::WarpEngine;
+use crate::html::HtmlEngine;
 use crate::window::{WinId, WindowManager};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -204,7 +205,7 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
         let title = if current_title.is_empty() {
             current_name.clone()
         } else {
-            current_name.clone()
+            current_title
         };
         apps.push(AppEntry {
             name: current_name,
@@ -315,6 +316,7 @@ pub fn render_scene(
     ui_commands: &[uiscript::Command],
     ui_win_id: Option<WinId>,
     warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
+    html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_taskbar: &mut Option<Vec<u32>>,
     cached_taskbar_strip: &mut Option<Vec<u32>>,
@@ -389,7 +391,12 @@ pub fn render_scene(
             *bg_cache = Some(bg);
         }
 
-        wm.draw_all(layer, ui_win_id.map(|id| (id, ui_commands)), warp_engines);
+        wm.draw_all(
+            layer,
+            ui_win_id.map(|id| (id, ui_commands)),
+            warp_engines,
+            html_engines,
+        );
 
         let mut strip_pre = alloc::vec![0u32; w * TASKBAR_H];
         strip_pre.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
@@ -882,6 +889,7 @@ pub fn render_frame(
     ui_commands: &[uiscript::Command],
     ui_win_id: Option<WinId>,
     warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
+    html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_taskbar: &mut Option<Vec<u32>>,
     cached_taskbar_strip: &mut Option<Vec<u32>>,
@@ -914,6 +922,7 @@ pub fn render_frame(
         ui_commands,
         ui_win_id,
         warp_engines,
+        html_engines,
         wallpaper,
         cached_taskbar,
         cached_taskbar_strip,

@@ -36,3 +36,7 @@ apps:
     icon: calc.png
     type: warp-2
     title: 計算機
+  webdemo.html:
+    icon: noname.png
+    type: html-1
+    title: HTMLデモ

@@ -209,6 +209,8 @@ fn main() -> Status {
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)> =
         alloc::vec::Vec::new();
+    let mut html_engines: alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)> =
+        alloc::vec::Vec::new();
     let mut ui_win_id: Option<WinId> = None;
     let mut ui_commands: alloc::vec::Vec<baram_graphics::uiscript::Command> =
         alloc::vec::Vec::new();
@@ -220,19 +222,23 @@ fn main() -> Status {
             let y = 60 + (auto_idx * 80) % 400;
             let w = 400;
             let h = 450;
-            let win_id = wm.add(&entry.title, x, y, w, h);
-            wm.set_icon(win_id, &entry.icon);
-            if entry.app_type.starts_with("warp") {
-                let source = baram_bsd::app::load_app_source(&entry.name);
-                let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
-                engine.update((w as i32) - 20, (h as i32) - 50);
-                warp_engines.push((win_id, engine));
-            } else if entry.app_type.starts_with("uiscript") {
-                let source = baram_bsd::app::load_app_source(&entry.name);
-                ui_commands = baram_graphics::uiscript::parse(&source);
-                ui_win_id = Some(win_id);
+            if open_app(
+                &entry.name,
+                &app_entries,
+                &mut wm,
+                &mut warp_engines,
+                &mut html_engines,
+                &mut ui_commands,
+                &mut ui_win_id,
+                x,
+                y,
+                w,
+                h,
+            )
+            .is_some()
+            {
+                auto_idx += 1;
             }
-            auto_idx += 1;
         }
     }
 
@@ -292,12 +298,10 @@ fn main() -> Status {
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_name_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
-    let mut app_type_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     for entry in &app_entries {
         app_list.push(entry.title.clone());
         app_name_list.push(entry.name.clone());
         app_icon_list.push(entry.icon.clone());
-        app_type_list.push(entry.app_type.clone());
     }
     let mut hover_apps_icon: bool = false;
     let mut prev_hover_apps_icon: bool = false;
@@ -331,6 +335,7 @@ fn main() -> Status {
         &ui_commands,
         ui_win_id,
         &mut warp_engines,
+        &mut html_engines,
         cached_wallpaper.as_deref(),
         &mut cached_taskbar,
         &mut cached_taskbar_strip,
@@ -622,24 +627,22 @@ fn main() -> Status {
                             }
                         }
                         if let Some(idx) = clicked_app {
-                            let app_title = app_list[idx].clone();
                             let app_name = app_name_list[idx].clone();
-                            let app_icon = app_icon_list[idx].clone();
-                            let app_type = app_type_list[idx].clone();
                             let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                             let ny = 60 + ((new_window_idx as i32 * 23) % 200);
-                            let new_id = wm.add(&app_title, nx, ny, 400, 450);
-                            wm.set_icon(new_id, &app_icon);
-                            let source = baram_bsd::app::load_app_source(&app_name);
-                            if app_type.starts_with("uiscript") {
-                                ui_commands = baram_graphics::uiscript::parse(&source);
-                                ui_win_id = Some(new_id);
-                            } else {
-                                let mut engine =
-                                    baram_windowserver::warp::WarpEngine::new(&source);
-                                engine.update(380, 410);
-                                warp_engines.push((new_id, engine));
-                            }
+                            open_app(
+                                &app_name,
+                                &app_entries,
+                                &mut wm,
+                                &mut warp_engines,
+                                &mut html_engines,
+                                &mut ui_commands,
+                                &mut ui_win_id,
+                                nx,
+                                ny,
+                                400,
+                                450,
+                            );
                             tb_add_progress = 0.0;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
@@ -693,6 +696,8 @@ fn main() -> Status {
                             match btn {
                                 'c' => {
                                     wm.remove(id);
+                                    warp_engines.retain(|(wid, _)| *wid != id);
+                                    html_engines.retain(|(wid, _)| *wid != id);
                                 }
                                 'm' => {
                                     wm.toggle_maximize_at(id);
@@ -791,6 +796,69 @@ fn main() -> Status {
                                     break;
                                 }
                             }
+                            let mut html_command = None;
+                            for (wid, engine) in html_engines.iter_mut() {
+                                if clicked_id != *wid {
+                                    continue;
+                                }
+                                if let Some((wx, wy, ww, wh, scroll)) =
+                                    wm.get_window_rect(clicked_id)
+                                {
+                                    let rel_x = cx - wx;
+                                    let rel_y = cy - wy;
+                                    let tb_h =
+                                        baram_windowserver::window::title_bar_h() as i32;
+                                    if rel_y >= tb_h {
+                                        engine.click(rel_x, rel_y + scroll);
+                                        engine.update(
+                                            ww as i32,
+                                            wh.saturating_sub(tb_h as usize) as i32,
+                                        );
+                                        html_command = engine.last_command.take();
+                                        wm.set_content_dirty(clicked_id);
+                                        scene_dirty = true;
+                                    }
+                                }
+                                break;
+                            }
+                            if let Some(cmd) = html_command {
+                                let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                                let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                                match handle_navigation(
+                                    &cmd,
+                                    &app_entries,
+                                    &mut wm,
+                                    &mut warp_engines,
+                                    &mut html_engines,
+                                    &mut ui_commands,
+                                    &mut ui_win_id,
+                                    &mut display_state,
+                                    nx,
+                                    ny,
+                                ) {
+                                    NavigationEffect::AppOpened => {
+                                        new_window_idx = new_window_idx.wrapping_add(1);
+                                        tb_add_progress = 0.0;
+                                        tb_shift_x = 26.0;
+                                    }
+                                    NavigationEffect::SystemChanged => {
+                                        cached_taskbar = None;
+                                        cached_taskbar_strip = None;
+                                        cached_launcher_layer = None;
+                                        bg_cache = None;
+                                        cached_wallpaper =
+                                            wallpaper_for_state(
+                                                &display_state,
+                                                screen.width(),
+                                                screen.height(),
+                                            );
+                                        prev_wallpaper_idx =
+                                            display_state.wallpaper_index;
+                                    }
+                                    NavigationEffect::None => {}
+                                }
+                                scene_dirty = true;
+                            }
                         }
                     }
                     scene_dirty = true;
@@ -843,24 +911,22 @@ fn main() -> Status {
                     }
                 }
                 if let Some(idx) = clicked_app {
-                    let app_title = app_list[idx].clone();
                     let app_name = app_name_list[idx].clone();
-                    let app_icon = app_icon_list[idx].clone();
-                    let app_type = app_type_list[idx].clone();
                     let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                     let ny = 60 + ((new_window_idx as i32 * 23) % 200);
-                    let new_id = wm.add(&app_title, nx, ny, 400, 450);
-                    wm.set_icon(new_id, &app_icon);
-                    let source = baram_bsd::app::load_app_source(&app_name);
-                    if app_type.starts_with("uiscript") {
-                        ui_commands = baram_graphics::uiscript::parse(&source);
-                        ui_win_id = Some(new_id);
-                    } else {
-                        let mut engine =
-                            baram_windowserver::warp::WarpEngine::new(&source);
-                        engine.update(380, 410);
-                        warp_engines.push((new_id, engine));
-                    }
+                    open_app(
+                        &app_name,
+                        &app_entries,
+                        &mut wm,
+                        &mut warp_engines,
+                        &mut html_engines,
+                        &mut ui_commands,
+                        &mut ui_win_id,
+                        nx,
+                        ny,
+                        400,
+                        450,
+                    );
                     tb_add_progress = 0.0;
                     tb_shift_x = 26.0;
                     new_window_idx = new_window_idx.wrapping_add(1);
@@ -912,6 +978,8 @@ fn main() -> Status {
                     match btn {
                         'c' => {
                             wm.remove(id);
+                            warp_engines.retain(|(wid, _)| *wid != id);
+                            html_engines.retain(|(wid, _)| *wid != id);
                         }
                         'm' => {
                             wm.toggle_maximize_at(id);
@@ -992,6 +1060,64 @@ fn main() -> Status {
                             break;
                         }
                     }
+                    let mut html_command = None;
+                    for (wid, engine) in html_engines.iter_mut() {
+                        if clicked_id != *wid {
+                            continue;
+                        }
+                        if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
+                            let rel_x = cx - wx;
+                            let rel_y = cy - wy;
+                            let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                            if rel_y >= tb_h {
+                                engine.click(rel_x, rel_y + scroll);
+                                engine.update(
+                                    ww as i32,
+                                    wh.saturating_sub(tb_h as usize) as i32,
+                                );
+                                html_command = engine.last_command.take();
+                                wm.set_content_dirty(clicked_id);
+                                scene_dirty = true;
+                            }
+                        }
+                        break;
+                    }
+                    if let Some(cmd) = html_command {
+                        let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                        let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                        match handle_navigation(
+                            &cmd,
+                            &app_entries,
+                            &mut wm,
+                            &mut warp_engines,
+                            &mut html_engines,
+                            &mut ui_commands,
+                            &mut ui_win_id,
+                            &mut display_state,
+                            nx,
+                            ny,
+                        ) {
+                            NavigationEffect::AppOpened => {
+                                new_window_idx = new_window_idx.wrapping_add(1);
+                                tb_add_progress = 0.0;
+                                tb_shift_x = 26.0;
+                            }
+                            NavigationEffect::SystemChanged => {
+                                cached_taskbar = None;
+                                cached_taskbar_strip = None;
+                                cached_launcher_layer = None;
+                                bg_cache = None;
+                                cached_wallpaper = wallpaper_for_state(
+                                    &display_state,
+                                    screen.width(),
+                                    screen.height(),
+                                );
+                                prev_wallpaper_idx = display_state.wallpaper_index;
+                            }
+                            NavigationEffect::None => {}
+                        }
+                        scene_dirty = true;
+                    }
                 }
             }
             dirty = true;
@@ -1039,9 +1165,34 @@ fn main() -> Status {
                         break;
                     }
                 }
+                for (wid, engine) in html_engines.iter_mut() {
+                    if hover_id == *wid {
+                        if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
+                            let rel_x = cursor_x - wx;
+                            let rel_y = cursor_y - wy;
+                            let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                            let previous = engine.hovered_node();
+                            if rel_y >= tb_h {
+                                engine.set_hover(rel_x, rel_y + scroll);
+                            } else {
+                                engine.clear_hover();
+                            }
+                            if engine.hovered_node() != previous {
+                                wm.set_content_dirty(hover_id);
+                                scene_dirty = true;
+                                dirty = true;
+                            }
+                            hovered_any = true;
+                        }
+                        break;
+                    }
+                }
             }
             if !hovered_any {
                 for (_, engine) in warp_engines.iter_mut() {
+                    engine.clear_hover();
+                }
+                for (_, engine) in html_engines.iter_mut() {
                     engine.clear_hover();
                 }
             }
@@ -1079,6 +1230,14 @@ fn main() -> Status {
         for (wid, engine) in warp_engines.iter_mut() {
             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                 let content_h = wh.saturating_sub(30);
+                engine.update(ww as i32, content_h as i32);
+                wm.clamp_window_scroll(*wid, engine.content_height);
+            }
+        }
+        for (wid, engine) in html_engines.iter_mut() {
+            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+                let content_h =
+                    wh.saturating_sub(baram_windowserver::window::title_bar_h());
                 engine.update(ww as i32, content_h as i32);
                 wm.clamp_window_scroll(*wid, engine.content_height);
             }
@@ -1174,6 +1333,7 @@ fn main() -> Status {
                     &ui_commands,
                     ui_win_id,
                     &mut warp_engines,
+                    &mut html_engines,
                     cached_wallpaper.as_deref(),
                     &mut cached_taskbar,
                     &mut cached_taskbar_strip,
@@ -1369,5 +1529,108 @@ fn main() -> Status {
                 prev_is_resizing = is_resizing;
             }
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum NavigationEffect {
+    None,
+    SystemChanged,
+    AppOpened,
+}
+
+fn open_app(
+    name: &str,
+    app_entries: &[AppEntry],
+    wm: &mut WindowManager,
+    warp_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    ui_commands: &mut alloc::vec::Vec<baram_graphics::uiscript::Command>,
+    ui_win_id: &mut Option<WinId>,
+    x: i32,
+    y: i32,
+    w: usize,
+    h: usize,
+) -> Option<WinId> {
+    let entry = app_entries.iter().find(|entry| entry.name == name)?;
+    let win_id = wm.add(&entry.title, x, y, w, h);
+    wm.set_icon(win_id, &entry.icon);
+    let content_h = h.saturating_sub(baram_windowserver::window::title_bar_h());
+
+    if entry.app_type.starts_with("html") {
+        let (html, css) = baram_bsd::app::load_html_document(&entry.name);
+        let mut engine = baram_windowserver::html::HtmlEngine::new(&html, &css);
+        engine.update(w as i32, content_h as i32);
+        html_engines.push((win_id, engine));
+    } else if entry.app_type.starts_with("uiscript") {
+        let source = baram_bsd::app::load_app_source(&entry.name);
+        *ui_commands = baram_graphics::uiscript::parse(&source);
+        *ui_win_id = Some(win_id);
+    } else {
+        let source = baram_bsd::app::load_app_source(&entry.name);
+        let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
+        engine.update(w as i32, content_h as i32);
+        warp_engines.push((win_id, engine));
+    }
+    Some(win_id)
+}
+
+fn handle_navigation(
+    command: &str,
+    app_entries: &[AppEntry],
+    wm: &mut WindowManager,
+    warp_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    ui_commands: &mut alloc::vec::Vec<baram_graphics::uiscript::Command>,
+    ui_win_id: &mut Option<WinId>,
+    display_state: &mut baram_bsd::uri::DisplayState,
+    x: i32,
+    y: i32,
+) -> NavigationEffect {
+    if let Some(name) = baram_bsd::app::parse_app_uri(command) {
+        if open_app(
+            name,
+            app_entries,
+            wm,
+            warp_engines,
+            html_engines,
+            ui_commands,
+            ui_win_id,
+            x,
+            y,
+            400,
+            450,
+        )
+        .is_some()
+        {
+            return NavigationEffect::AppOpened;
+        }
+        return NavigationEffect::None;
+    }
+
+    if baram_bsd::uri::execute(command, display_state) {
+        for (_, engine) in html_engines.iter_mut() {
+            engine.refresh_config();
+        }
+        wm.set_all_dirty();
+        NavigationEffect::SystemChanged
+    } else {
+        NavigationEffect::None
+    }
+}
+
+fn wallpaper_for_state(
+    state: &baram_bsd::uri::DisplayState,
+    screen_w: usize,
+    screen_h: usize,
+) -> Option<Vec<u32>> {
+    if state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
+        state
+            .wallpaper_color
+            .map(|color| make_solid_wallpaper(color, screen_w, screen_h))
+    } else {
+        WALLPAPERS
+            .get(state.wallpaper_index)
+            .and_then(|bytes| decode_wallpaper(bytes, screen_w, screen_h))
     }
 }
