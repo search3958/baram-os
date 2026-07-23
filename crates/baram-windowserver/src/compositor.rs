@@ -332,6 +332,9 @@ pub fn render_scene(
     hover_apps_icon: bool,
     taskbar_only: bool,
     scene_before_strip: &mut Option<Vec<u32>>,
+    clock_hh: u8,
+    clock_mm: u8,
+    battery_pct: u8,
 ) {
     let w = layer.width();
     let h = layer.height();
@@ -392,6 +395,15 @@ pub fn render_scene(
         strip_pre.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
         *scene_before_strip = Some(strip_pre);
     }
+
+    let mut fb = FmtBuf::new();
+    fb.push_str("Key:");
+    fb.push_u32(key_ev);
+    fb.push_str(" Window:");
+    fb.push_u32(wm.count() as u32);
+    fb.push_str(" ");
+    fb.push_u32(fps);
+    fb.push_str("FPS");
 
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
@@ -541,62 +553,193 @@ pub fn render_scene(
             }
         }
 
-        let mut fb = FmtBuf::new();
-        fb.push_str("Key:");
-        fb.push_u32(key_ev);
-        fb.push_str(" Window:");
-        fb.push_u32(wm.count() as u32);
-        fb.push_str(" ");
-        fb.push_u32(fps);
-        fb.push_str("FPS");
+        {
+            let mut time_buf = alloc::string::String::with_capacity(16);
+            let h1 = clock_hh / 10;
+            let h2 = clock_hh % 10;
+            let m1 = clock_mm / 10;
+            let m2 = clock_mm % 10;
+            time_buf.push((b'0' + h1) as char);
+            time_buf.push((b'0' + h2) as char);
+            time_buf.push(':');
+            time_buf.push((b'0' + m1) as char);
+            time_buf.push((b'0' + m2) as char);
 
-        if hud_enabled {
-            let hud_text1 = "Baram OS (1.1.0)";
-            let mut hw1 = 0usize;
-            for ch in hud_text1.chars() {
+            let mut bat_buf = alloc::string::String::with_capacity(8);
+            let b1 = battery_pct / 100;
+            let b2 = (battery_pct / 10) % 10;
+            let b3 = battery_pct % 10;
+            if b1 > 0 {
+                bat_buf.push((b'0' + b1) as char);
+            }
+            bat_buf.push((b'0' + b2) as char);
+            bat_buf.push((b'0' + b3) as char);
+            bat_buf.push('%');
+
+            let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
+
+            let size = 32.0f32;
+
+            let mut time_w = 0usize;
+            for ch in time_buf.chars() {
                 if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph(ch);
-                    hw1 += if g.w > 0 {
-                        g.advance.max(0) as usize
-                    } else {
-                        8
-                    };
+                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+                    time_w += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
                 } else {
-                    hw1 += 8;
+                    time_w += 8;
                 }
             }
-            layer.put_str_hud(
-                w - hw1 - 16,
-                tb_y + 6,
-                hud_text1,
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-            );
-
-            let s2 = fb.as_str();
-            let mut hw2 = 0usize;
-            for ch in s2.chars() {
+            let mut bat_w = 0usize;
+            for ch in bat_buf.chars() {
                 if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph(ch);
-                    hw2 += if g.w > 0 {
-                        g.advance.max(0) as usize
-                    } else {
-                        8
-                    };
+                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+                    bat_w += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
                 } else {
-                    hw2 += 8;
+                    bat_w += 8;
                 }
             }
-            layer.put_str_hud(
-                w - hw2 - 16,
-                tb_y + 26,
-                s2,
-                config::get_color("ui-theme/color/muted", Color::MUTED),
-            );
+
+            let gap = 12usize;
+            let total_status_w = time_w + gap + bat_w;
+            let status_x = w.saturating_sub(total_status_w + 16);
+            let ascent = if baram_font::ttf_font_hud::is_available() {
+                baram_font::ttf_font_hud::ascent_at_size(size)
+            } else {
+                14
+            };
+            let status_y = tb_y as i32 + TASKBAR_H as i32 - ascent + 9;
+
+            let mut cx = status_x;
+            for ch in time_buf.chars() {
+                if baram_font::ttf_font_hud::is_available() {
+                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+                    if g.w > 0 && g.h > 0 {
+                        let baseline = status_y + g.y_off;
+                        let buf = layer.buf_mut();
+                        for row in 0..g.h {
+                            let py = baseline + row;
+                            if py < 0 || py >= h as i32 { continue; }
+                            for col in 0..g.w {
+                                let px = cx as i32 + col;
+                                if px < 0 || px >= w as i32 { continue; }
+                                let alpha = g.data[(row * g.w + col) as usize];
+                                if alpha > 0 {
+                                    let a = alpha as u32;
+                                    let idx = py as usize * w + px as usize;
+                                    let bg = Color(buf[idx]);
+                                    let br = (bg.0 >> 16) & 0xFF;
+                                    let bg2 = (bg.0 >> 8) & 0xFF;
+                                    let bb = bg.0 & 0xFF;
+                                    let fr = (status_color.0 >> 16) & 0xFF;
+                                    let fg2 = (status_color.0 >> 8) & 0xFF;
+                                    let fb_c = status_color.0 & 0xFF;
+                                    let r = (fr * a + br * (255 - a)) / 255;
+                                    let g2 = (fg2 * a + bg2 * (255 - a)) / 255;
+                                    let b = (fb_c * a + bb * (255 - a)) / 255;
+                                    buf[idx] = (r << 16) | (g2 << 8) | b;
+                                }
+                            }
+                        }
+                        cx += g.advance.max(0) as usize;
+                    }
+                }
+            }
+            cx += gap;
+            for ch in bat_buf.chars() {
+                if baram_font::ttf_font_hud::is_available() {
+                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+                    if g.w > 0 && g.h > 0 {
+                        let baseline = status_y + g.y_off;
+                        let buf = layer.buf_mut();
+                        for row in 0..g.h {
+                            let py = baseline + row;
+                            if py < 0 || py >= h as i32 { continue; }
+                            for col in 0..g.w {
+                                let px = cx as i32 + col;
+                                if px < 0 || px >= w as i32 { continue; }
+                                let alpha = g.data[(row * g.w + col) as usize];
+                                if alpha > 0 {
+                                    let a = alpha as u32;
+                                    let idx = py as usize * w + px as usize;
+                                    let bg = Color(buf[idx]);
+                                    let br = (bg.0 >> 16) & 0xFF;
+                                    let bg2 = (bg.0 >> 8) & 0xFF;
+                                    let bb = bg.0 & 0xFF;
+                                    let fr = (status_color.0 >> 16) & 0xFF;
+                                    let fg2 = (status_color.0 >> 8) & 0xFF;
+                                    let fb_c = status_color.0 & 0xFF;
+                                    let r = (fr * a + br * (255 - a)) / 255;
+                                    let g2 = (fg2 * a + bg2 * (255 - a)) / 255;
+                                    let b = (fb_c * a + bb * (255 - a)) / 255;
+                                    buf[idx] = (r << 16) | (g2 << 8) | b;
+                                }
+                            }
+                        }
+                        cx += g.advance.max(0) as usize;
+                    }
+                }
+            }
         }
 
         let mut strip = alloc::vec![0u32; w * TASKBAR_H];
         strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
         *cached_taskbar_strip = Some(strip);
+    }
+
+    if hud_enabled {
+        if let Some(ref bg) = bg_cache {
+            let hud_y0 = (tb_y as i32 - 44).max(0) as usize;
+            let hud_y1 = tb_y;
+            for y in hud_y0..hud_y1 {
+                let s = y * w;
+                let e = s + w;
+                if e <= bg.len() {
+                    layer.buf_mut()[s..e].copy_from_slice(&bg[s..e]);
+                }
+            }
+        }
+
+        let hud_text1 = "Baram OS (1.1.0)";
+        let mut hw1 = 0usize;
+        for ch in hud_text1.chars() {
+            if baram_font::ttf_font_hud::is_available() {
+                let g = baram_font::ttf_font_hud::glyph(ch);
+                hw1 += if g.w > 0 {
+                    g.advance.max(0) as usize
+                } else {
+                    8
+                };
+            } else {
+                hw1 += 8;
+            }
+        }
+        layer.put_str_hud(
+            w - hw1 - 16,
+            tb_y - 28,
+            hud_text1,
+            config::get_color("ui-theme/color/muted", Color::MUTED),
+        );
+
+        let s2 = fb.as_str();
+        let mut hw2 = 0usize;
+        for ch in s2.chars() {
+            if baram_font::ttf_font_hud::is_available() {
+                let g = baram_font::ttf_font_hud::glyph(ch);
+                hw2 += if g.w > 0 {
+                    g.advance.max(0) as usize
+                } else {
+                    8
+                };
+            } else {
+                hw2 += 8;
+            }
+        }
+        layer.put_str_hud(
+            w - hw2 - 16,
+            tb_y - 12,
+            s2,
+            config::get_color("ui-theme/color/muted", Color::MUTED),
+        );
     }
 
     {
@@ -757,6 +900,9 @@ pub fn render_frame(
     hover_apps_icon: bool,
     taskbar_only: bool,
     scene_before_strip: &mut Option<Vec<u32>>,
+    clock_hh: u8,
+    clock_mm: u8,
+    battery_pct: u8,
 ) {
     render_scene(
         layer,
@@ -785,6 +931,9 @@ pub fn render_frame(
         hover_apps_icon,
         taskbar_only,
         scene_before_strip,
+        clock_hh,
+        clock_mm,
+        battery_pct,
     );
     let is_resizing = wm.is_any_resizing();
     cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
