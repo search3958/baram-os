@@ -445,6 +445,11 @@ impl WindowManager {
         self.windows.iter().map(|w| w.id).collect()
     }
 
+    #[inline]
+    pub fn insertion_id_at(&self, index: usize) -> Option<WinId> {
+        self.windows.get(index).map(|w| w.id)
+    }
+
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
         if let Some(id) = self.window_at(px, py) {
             self.focus(id);

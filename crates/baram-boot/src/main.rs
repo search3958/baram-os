@@ -282,10 +282,8 @@ fn main() -> Status {
     let mut prev_is_resizing = false;
     let shadow_pad = 35i32;
 
-    let mut cached_taskbar: Option<Vec<u32>> = None;
-    let mut cached_taskbar_strip: Option<Vec<u32>> = None;
+    let mut taskbar_surface = TaskbarSurface::new(screen.width());
     let mut cached_launcher_layer: Option<Vec<u32>> = None;
-    let mut scene_before_strip: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
@@ -327,6 +325,7 @@ fn main() -> Status {
 
     render_scene(
         &mut layer,
+        &mut taskbar_surface,
         &mut wm,
         mouse_ev_count,
         key_ev_count,
@@ -337,8 +336,6 @@ fn main() -> Status {
         &mut warp_engines,
         &mut html_engines,
         cached_wallpaper.as_deref(),
-        &mut cached_taskbar,
-        &mut cached_taskbar_strip,
         &mut cached_launcher_layer,
         true,
         -1.0,
@@ -352,7 +349,6 @@ fn main() -> Status {
         &app_icon_list,
         hover_apps_icon,
         false,
-        &mut scene_before_strip,
         clock_hh,
         clock_mm,
         battery_info.percentage,
@@ -735,8 +731,7 @@ fn main() -> Status {
                                                 if baram_bsd::uri::execute(&cmd, &mut display_state) {
                                                     engine.update(ww as i32, content_h as i32);
                                                     wm.set_all_dirty();
-                                                    cached_taskbar = None;
-                                                    cached_taskbar_strip = None;
+                                                    taskbar_surface.invalidate();
                                                     cached_launcher_layer = None;
                                                     bg_cache = None;
                                                     scene_dirty = true;
@@ -840,8 +835,7 @@ fn main() -> Status {
                                         tb_shift_x = 26.0;
                                     }
                                     NavigationEffect::SystemChanged => {
-                                        cached_taskbar = None;
-                                        cached_taskbar_strip = None;
+                                        taskbar_surface.invalidate();
                                         cached_launcher_layer = None;
                                         bg_cache = None;
                                         cached_wallpaper =
@@ -1007,8 +1001,7 @@ fn main() -> Status {
                                         if baram_bsd::uri::execute(&cmd, &mut display_state) {
                                             engine.update(ww as i32, content_h as i32);
                                             wm.set_all_dirty();
-                                            cached_taskbar = None;
-                                            cached_taskbar_strip = None;
+                                            taskbar_surface.invalidate();
                                             cached_launcher_layer = None;
                                             bg_cache = None;
                                             scene_dirty = true;
@@ -1101,8 +1094,7 @@ fn main() -> Status {
                                 tb_shift_x = 26.0;
                             }
                             NavigationEffect::SystemChanged => {
-                                cached_taskbar = None;
-                                cached_taskbar_strip = None;
+                                taskbar_surface.invalidate();
                                 cached_launcher_layer = None;
                                 bg_cache = None;
                                 cached_wallpaper = wallpaper_for_state(
@@ -1133,6 +1125,7 @@ fn main() -> Status {
             if hover_apps_icon != prev_hover_apps_icon {
                 dirty = true;
                 scene_dirty = true;
+                taskbar_surface.invalidate();
                 prev_hover_apps_icon = hover_apps_icon;
             }
         }
@@ -1213,7 +1206,7 @@ fn main() -> Status {
                 clock_mm = (day_min % 60) as u8;
 
                 battery_info = baram_iokit::battery::read_battery_or_default();
-                cached_taskbar_strip = None;
+                taskbar_surface.invalidate();
 
                 dirty = true;
                 scene_dirty = true;
@@ -1271,23 +1264,25 @@ fn main() -> Status {
             if scene_dirty {
                 let (bx0, by0, bx1, by1) = wm.dirty_bbox(shadow_pad);
 
-                let taskbar_dirty = cached_taskbar_strip.is_none()
+                let bg_valid = bg_cache.is_some()
+                    && prev_wallpaper_idx == display_state.wallpaper_index;
+
+                let taskbar_dirty = !taskbar_surface.is_valid()
                     || tb_add_progress >= 0.0
                     || tb_remove_progress >= 0.0
                     || tb_shift_x.abs() > 0.5
                     || wm.count() != prev_window_count
-                    || wm.focused_id != prev_focused_id;
-
-                let bg_valid = bg_cache.is_some()
-                    && prev_wallpaper_idx == display_state.wallpaper_index
-                    && tb_add_progress < 0.0
-                    && tb_remove_progress < 0.0
-                    && tb_shift_x.abs() <= 0.5;
+                    || wm.focused_id != prev_focused_id
+                    || by1 > screen.height().saturating_sub(TASKBAR_H)
+                    || !bg_valid;
 
                 let launcher_changed = show_app_launcher != prev_show_app_launcher;
+                let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
                 let taskbar_only = taskbar_dirty
-                    && scene_before_strip.is_some()
+                    && taskbar_surface.has_backdrop()
+                    && bx1 <= bx0
+                    && !hud_dirty
                     && wm.count() == prev_window_count
                     && wm.focused_id == prev_focused_id
                     && prev_wallpaper_idx == display_state.wallpaper_index
@@ -1363,6 +1358,11 @@ fn main() -> Status {
                     fx1 = w;
                     fy1 = h;
                 }
+                if hud_dirty {
+                    fx0 = 0;
+                    fy0 = fy0.min(tb_y.saturating_sub(44));
+                    fx1 = w;
+                }
                 if launcher_changed || !bg_valid {
                     fx0 = 0;
                     fy0 = 0;
@@ -1373,6 +1373,7 @@ fn main() -> Status {
 
                 render_scene(
                     &mut layer,
+                    &mut taskbar_surface,
                     &mut wm,
                     mouse_ev_count,
                     key_ev_count,
@@ -1383,8 +1384,6 @@ fn main() -> Status {
                     &mut warp_engines,
                     &mut html_engines,
                     cached_wallpaper.as_deref(),
-                    &mut cached_taskbar,
-                    &mut cached_taskbar_strip,
                     &mut cached_launcher_layer,
                     taskbar_dirty,
                     tb_add_progress,
@@ -1398,26 +1397,12 @@ fn main() -> Status {
                     &app_icon_list,
                     hover_apps_icon,
                     taskbar_only,
-                    &mut scene_before_strip,
                     clock_hh,
                     clock_mm,
                     battery_info.percentage,
                 );
                 layer.pop_clip();
 
-                if show_app_launcher {
-                    if let Some(ref ll) = cached_launcher_layer {
-                        let buf = layer.buf_mut();
-                        let ww = screen.width();
-                        let hh = screen.height();
-                        let tby = hh.saturating_sub(TASKBAR_H);
-                        for y in fy0..fy1.min(tby) {
-                            let s = y * ww + fx0;
-                            let e = y * ww + fx1;
-                            buf[s..e].copy_from_slice(&ll[s..e]);
-                        }
-                    }
-                }
                 if launcher_changed {
                     layer.mark_all_dirty();
                 }
@@ -1500,20 +1485,6 @@ fn main() -> Status {
                         let s = y * w + x0;
                         let e = y * w + x1;
                         buf[s..e].copy_from_slice(&cached_scene[s..e]);
-                    }
-                }
-
-                if show_app_launcher {
-                    if let Some(ref ll) = cached_launcher_layer {
-                        let buf = layer.buf_mut();
-                        let ww = screen.width();
-                        let hh = screen.height();
-                        let tby = hh.saturating_sub(TASKBAR_H);
-                        for y in y0..y1.min(tby) {
-                            let s = y * ww + x0;
-                            let e = y * ww + x1;
-                            buf[s..e].copy_from_slice(&ll[s..e]);
-                        }
                     }
                 }
 

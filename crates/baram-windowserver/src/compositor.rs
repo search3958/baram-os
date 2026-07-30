@@ -17,6 +17,148 @@ use uefi::runtime;
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 
+pub struct TaskbarSurface {
+    layer: LayerSystem,
+    backdrop: Vec<u32>,
+    blurred: Vec<u32>,
+    blur_scratch: Vec<u32>,
+    backdrop_valid: bool,
+    valid: bool,
+}
+
+impl TaskbarSurface {
+    pub fn new(width: usize) -> Self {
+        let sample_h = TASKBAR_H + TASKBAR_BLUR_R.max(0) as usize;
+        Self {
+            layer: LayerSystem::new_transparent(width, TASKBAR_H),
+            backdrop: alloc::vec![0; width * sample_h],
+            blurred: alloc::vec![0; width * sample_h],
+            blur_scratch: alloc::vec![0; width * sample_h],
+            backdrop_valid: false,
+            valid: false,
+        }
+    }
+
+    #[inline]
+    pub fn invalidate(&mut self) {
+        self.valid = false;
+    }
+
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        self.valid
+    }
+
+    #[inline]
+    pub fn has_backdrop(&self) -> bool {
+        self.backdrop_valid
+    }
+
+    fn capture_backdrop(&mut self, scene: &LayerSystem, y: usize) {
+        let width = self.layer.width();
+        let pad = TASKBAR_BLUR_R.max(0) as usize;
+        let start_y = y.saturating_sub(pad);
+        let sample_h = TASKBAR_H + pad;
+        if scene.width() != width || scene.height() < start_y.saturating_add(sample_h) {
+            return;
+        }
+        self.backdrop.copy_from_slice(
+            &scene.buf_ref()[start_y * width..(start_y + sample_h) * width],
+        );
+        self.backdrop_valid = true;
+    }
+
+    fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
+        scene.composit_rect(
+            &self.layer,
+            0,
+            y,
+            0,
+            0,
+            self.layer.width(),
+            TASKBAR_H,
+        );
+    }
+}
+
+#[inline]
+fn tint_taskbar_scalar(pixels: &mut [u32], color: u32, alpha: u16) {
+    let inv = 255u32 - alpha as u32;
+    let tr = (color >> 16) & 0xff;
+    let tg = (color >> 8) & 0xff;
+    let tb = color & 0xff;
+    for px in pixels {
+        let r = (tr * alpha as u32 + ((*px >> 16) & 0xff) * inv) / 255;
+        let g = (tg * alpha as u32 + ((*px >> 8) & 0xff) * inv) / 255;
+        let b = (tb * alpha as u32 + (*px & 0xff) * inv) / 255;
+        *px = (r << 16) | (g << 8) | b;
+    }
+}
+
+fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u16) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        use core::arch::x86_64::*;
+        let zero = _mm_setzero_si128();
+        let va = _mm_set1_epi16(alpha as i16);
+        let vi = _mm_set1_epi16((255 - alpha) as i16);
+        let bias = _mm_set1_epi16(128);
+        let vc = _mm_set1_epi32((color & 0x00ff_ffff) as i32);
+        let clo = _mm_unpacklo_epi8(vc, zero);
+        let chi = _mm_unpackhi_epi8(vc, zero);
+        let mut i = 0usize;
+        while i + 4 <= pixels.len() {
+            let p = _mm_loadu_si128(pixels.as_ptr().add(i) as *const __m128i);
+            let plo = _mm_unpacklo_epi8(p, zero);
+            let phi = _mm_unpackhi_epi8(p, zero);
+            let lo_sum = _mm_add_epi16(_mm_mullo_epi16(plo, vi), _mm_mullo_epi16(clo, va));
+            let hi_sum = _mm_add_epi16(_mm_mullo_epi16(phi, vi), _mm_mullo_epi16(chi, va));
+            let lo_t = _mm_add_epi16(lo_sum, bias);
+            let hi_t = _mm_add_epi16(hi_sum, bias);
+            let lo = _mm_srli_epi16(_mm_add_epi16(lo_t, _mm_srli_epi16(lo_t, 8)), 8);
+            let hi = _mm_srli_epi16(_mm_add_epi16(hi_t, _mm_srli_epi16(hi_t, 8)), 8);
+            let out = _mm_packus_epi16(lo, hi);
+            _mm_storeu_si128(pixels.as_mut_ptr().add(i) as *mut __m128i, out);
+            i += 4;
+        }
+        tint_taskbar_scalar(&mut pixels[i..], color, alpha);
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        use core::arch::aarch64::*;
+        let color_bytes = vreinterpretq_u8_u32(vdupq_n_u32(color & 0x00ff_ffff));
+        let clo = vmovl_u8(vget_low_u8(color_bytes));
+        let chi = vmovl_u8(vget_high_u8(color_bytes));
+        let va = vdupq_n_u16(alpha);
+        let vi = vdupq_n_u16(255 - alpha);
+        let bias = vdupq_n_u16(128);
+        let mut i = 0usize;
+        while i + 4 <= pixels.len() {
+            let p = vreinterpretq_u8_u32(vld1q_u32(pixels.as_ptr().add(i)));
+            let plo = vmovl_u8(vget_low_u8(p));
+            let phi = vmovl_u8(vget_high_u8(p));
+            let lo_sum = vaddq_u16(vmulq_u16(plo, vi), vmulq_u16(clo, va));
+            let hi_sum = vaddq_u16(vmulq_u16(phi, vi), vmulq_u16(chi, va));
+            let lo_t = vaddq_u16(lo_sum, bias);
+            let hi_t = vaddq_u16(hi_sum, bias);
+            let lo = vshrq_n_u16(vaddq_u16(lo_t, vshrq_n_u16(lo_t, 8)), 8);
+            let hi = vshrq_n_u16(vaddq_u16(hi_t, vshrq_n_u16(hi_t, 8)), 8);
+            vst1q_u32(
+                pixels.as_mut_ptr().add(i),
+                vreinterpretq_u32_u8(vcombine_u8(vqmovn_u16(lo), vqmovn_u16(hi))),
+            );
+            i += 4;
+        }
+        tint_taskbar_scalar(&mut pixels[i..], color, alpha);
+        return;
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    tint_taskbar_scalar(pixels, color, alpha);
+}
+
 const ICON_CACHE_CAP: usize = 32;
 static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
     None, None, None, None, None, None, None, None,
@@ -25,34 +167,35 @@ static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON
     None, None, None, None, None, None, None, None,
 ];
 
-fn get_or_decode_icon(icon_path: &str, size: usize) -> Option<&'static IconBitmap> {
+fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitmap> {
     unsafe {
         for entry in ICON_CACHE.iter() {
             if let Some((ref name, cached_size, ref bitmap)) = entry {
-                if name == icon_path && *cached_size == size {
+                if name == icon_name && *cached_size == size {
                     return Some(bitmap);
                 }
             }
         }
-        let icon_data = baram_bsd::vfs::read_file(icon_path);
+        let icon_path = alloc::format!("apps/icon/{}", icon_name);
+        let icon_data = baram_bsd::vfs::read_file(&icon_path);
         if icon_data.is_empty() {
             return None;
         }
         let bitmap = decode_icon(&icon_data, size)?;
         for entry in ICON_CACHE.iter_mut() {
             if entry.is_none() {
-                *entry = Some((alloc::string::String::from(icon_path), size, bitmap));
+                *entry = Some((alloc::string::String::from(icon_name), size, bitmap));
                 return ICON_CACHE.iter().find_map(|e| {
                     if let Some((ref n, s, ref b)) = e {
-                        if n == icon_path && *s == size { Some(b) } else { None }
+                        if n == icon_name && *s == size { Some(b) } else { None }
                     } else { None }
                 });
             }
         }
-        ICON_CACHE[0] = Some((alloc::string::String::from(icon_path), size, bitmap));
+        ICON_CACHE[0] = Some((alloc::string::String::from(icon_name), size, bitmap));
         ICON_CACHE.iter().find_map(|e| {
             if let Some((ref n, s, ref b)) = e {
-                if n == icon_path && *s == size { Some(b) } else { None }
+                if n == icon_name && *s == size { Some(b) } else { None }
             } else { None }
         })
     }
@@ -306,8 +449,237 @@ pub fn ease_out_back(t: f32) -> f32 {
     1.0 + c3 * libm::powf(t - 1.0, 3.0) + c1 * libm::powf(t - 1.0, 2.0)
 }
 
+fn draw_taskbar_text(
+    layer: &mut LayerSystem,
+    text: &str,
+    mut x: usize,
+    baseline_y: i32,
+    color: Color,
+    size: f32,
+) {
+    let w = layer.width();
+    let h = layer.height();
+    for ch in text.chars() {
+        let glyph = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+        if glyph.w == 0 || glyph.h == 0 {
+            x += 8;
+            continue;
+        }
+        let top = baseline_y + glyph.y_off;
+        let buf = layer.buf_mut();
+        for row in 0..glyph.h {
+            let py = top + row;
+            if py < 0 || py >= h as i32 {
+                continue;
+            }
+            for col in 0..glyph.w {
+                let px = x + col as usize;
+                if px >= w {
+                    continue;
+                }
+                let a = glyph.data[(row * glyph.w + col) as usize] as u32;
+                if a == 0 {
+                    continue;
+                }
+                let idx = py as usize * w + px;
+                let bg = buf[idx];
+                let inv = 255 - a;
+                let r = (((color.0 >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
+                let g = (((color.0 >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
+                let b = ((color.0 & 0xff) * a + (bg & 0xff) * inv) / 255;
+                buf[idx] = (r << 16) | (g << 8) | b;
+            }
+        }
+        x += glyph.advance.max(0) as usize;
+    }
+}
+
+fn redraw_taskbar(
+    surface: &mut TaskbarSurface,
+    wm: &WindowManager,
+    add_progress: f32,
+    shift_x: f32,
+    hover_apps_icon: bool,
+    clock_hh: u8,
+    clock_mm: u8,
+    battery_pct: u8,
+) {
+    let layer = &mut surface.layer;
+    let w = layer.width();
+    let pad = TASKBAR_BLUR_R.max(0) as usize;
+    let sample_h = TASKBAR_H + pad;
+    blur::blur_region_to_with_scratch(
+        &surface.backdrop,
+        &mut surface.blurred,
+        &mut surface.blur_scratch,
+        w,
+        0,
+        sample_h,
+        TASKBAR_BLUR_R,
+    );
+    layer.buf_mut().copy_from_slice(
+        &surface.blurred[pad * w..(pad + TASKBAR_H) * w],
+    );
+    tint_taskbar(
+        layer.buf_mut(),
+        config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
+        170,
+    );
+
+    let count = wm.count();
+    let btn_d = 40usize;
+    let btn_gap = 12i32;
+    let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
+    let base_bx = ((w as i32 - total_w) / 2).max(0);
+    let btn_y = (TASKBAR_H - btn_d) / 2;
+    let add_scale = if add_progress >= 0.0 {
+        ease_out_back(add_progress)
+    } else {
+        1.0
+    };
+
+    for i in 0..count {
+        let Some(id) = wm.insertion_id_at(i) else { continue };
+        let icon_name = wm.get_icon_name(id);
+        let is_focused = wm.focused_id == Some(id);
+        let is_minimized = wm.is_minimized(id);
+        let scale = if add_progress >= 0.0 && i == count - 1 {
+            add_scale
+        } else {
+            1.0
+        };
+        let scaled_d = (btn_d as f32 * scale) as usize;
+        if scaled_d == 0 {
+            continue;
+        }
+        let offset = btn_d.saturating_sub(scaled_d) / 2;
+        let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
+        let cached_btn = get_or_render_tb_btn(scaled_d, if is_focused { 255 } else { 100 });
+        for py in 0..scaled_d {
+            let dst_y = btn_y + offset + py;
+            if dst_y >= TASKBAR_H {
+                continue;
+            }
+            for px in 0..scaled_d {
+                let a = (cached_btn[py * scaled_d + px] >> 24) & 0xff;
+                if a == 0 {
+                    continue;
+                }
+                let dst_x = bx + (offset + px) as i32;
+                if dst_x < 0 || dst_x >= w as i32 {
+                    continue;
+                }
+                let idx = dst_y * w + dst_x as usize;
+                let bg = layer.buf_ref()[idx];
+                let inv = 255 - a;
+                let r = (255 * a + ((bg >> 16) & 0xff) * inv) / 255;
+                let g = (255 * a + ((bg >> 8) & 0xff) * inv) / 255;
+                let b = (255 * a + (bg & 0xff) * inv) / 255;
+                layer.buf_mut()[idx] = (r << 16) | (g << 8) | b;
+            }
+        }
+
+        let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
+        if let Some(icon) = get_or_decode_icon(resolved_icon, 40) {
+            let icon_draw = scaled_d;
+            let icon_offset = btn_d.saturating_sub(icon_draw) / 2;
+            for py in 0..icon_draw {
+                let sy = py * icon.h / icon_draw;
+                let dst_y = btn_y + icon_offset + py;
+                if dst_y >= TASKBAR_H {
+                    continue;
+                }
+                for px in 0..icon_draw {
+                    let sx = px * icon.w / icon_draw;
+                    let src = icon.pixels[sy * icon.w + sx];
+                    let a = src[3] as u32 * if is_minimized { 128 } else { 255 } / 255;
+                    if a == 0 {
+                        continue;
+                    }
+                    let dst_x = bx + (icon_offset + px) as i32;
+                    if dst_x < 0 || dst_x >= w as i32 {
+                        continue;
+                    }
+                    let idx = dst_y * w + dst_x as usize;
+                    let bg = layer.buf_ref()[idx];
+                    let inv = 255 - a;
+                    let r = (src[0] as u32 * a + ((bg >> 16) & 0xff) * inv) / 255;
+                    let g = (src[1] as u32 * a + ((bg >> 8) & 0xff) * inv) / 255;
+                    let b = (src[2] as u32 * a + (bg & 0xff) * inv) / 255;
+                    layer.buf_mut()[idx] = (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+    }
+
+    let time_bytes = [
+        b'0' + clock_hh / 10,
+        b'0' + clock_hh % 10,
+        b':',
+        b'0' + clock_mm / 10,
+        b'0' + clock_mm % 10,
+    ];
+    let time = unsafe { core::str::from_utf8_unchecked(&time_bytes) };
+    let mut battery_bytes = [0u8; 4];
+    let battery_len;
+    if battery_pct >= 100 {
+        battery_bytes.copy_from_slice(b"100%");
+        battery_len = 4;
+    } else if battery_pct >= 10 {
+        battery_bytes[0] = b'0' + battery_pct / 10;
+        battery_bytes[1] = b'0' + battery_pct % 10;
+        battery_bytes[2] = b'%';
+        battery_len = 3;
+    } else {
+        battery_bytes[0] = b'0' + battery_pct % 10;
+        battery_bytes[1] = b'%';
+        battery_len = 2;
+    }
+    let battery = unsafe {
+        core::str::from_utf8_unchecked(&battery_bytes[..battery_len])
+    };
+
+    let size = 32.0;
+    let measure = |text: &str| -> usize {
+        text.chars()
+            .map(|ch| {
+                let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+                if g.w > 0 { g.advance.max(0) as usize } else { 8 }
+            })
+            .sum()
+    };
+    let gap = 12usize;
+    let status_x = w.saturating_sub(measure(time) + gap + measure(battery) + 16);
+    let baseline = TASKBAR_H as i32
+        - baram_font::ttf_font_hud::ascent_at_size(size)
+        + 9;
+    let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
+    draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
+    draw_taskbar_text(
+        layer,
+        battery,
+        status_x + measure(time) + gap,
+        baseline,
+        status_color,
+        size,
+    );
+
+    svg::draw_svg_into_alpha(
+        layer,
+        APPS_SVG,
+        16,
+        ((TASKBAR_H - 24) / 2) as i32,
+        24.0,
+        24.0,
+        if hover_apps_icon { 153 } else { 255 },
+    );
+    layer.mark_all_dirty();
+    surface.valid = true;
+}
+
 pub fn render_scene(
     layer: &mut LayerSystem,
+    taskbar: &mut TaskbarSurface,
     wm: &mut WindowManager,
     _mouse_ev: u32,
     key_ev: u32,
@@ -318,8 +690,6 @@ pub fn render_scene(
     warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
-    cached_taskbar: &mut Option<Vec<u32>>,
-    cached_taskbar_strip: &mut Option<Vec<u32>>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
@@ -333,7 +703,6 @@ pub fn render_scene(
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
     taskbar_only: bool,
-    scene_before_strip: &mut Option<Vec<u32>>,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: u8,
@@ -342,11 +711,7 @@ pub fn render_scene(
     let h = layer.height();
     let tb_y = h.saturating_sub(TASKBAR_H);
 
-    if taskbar_only {
-        if let Some(ref cached) = scene_before_strip {
-            layer.copy_rect_buffer(cached, w, TASKBAR_H, 0, tb_y);
-        }
-    } else {
+    if !taskbar_only {
         if bg_cache_valid {
             if let Some(ref cached) = bg_cache {
                 layer.copy_from_screen_buffer(cached);
@@ -357,55 +722,10 @@ pub fn render_scene(
             layer.clear(config::get_color("ui-theme/color/bg", Color::BG));
         }
 
-        if bg_cache_valid {
-        } else if let Some(ref cached) = cached_taskbar {
-            layer.copy_rect_buffer(cached, w, TASKBAR_H, 0, tb_y);
-        } else {
-            let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
-            blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
-            let tb_alpha = 170u32;
-            let tb_inv = 255 - tb_alpha;
-            let tb_color = config::get_color("ui-theme/color/taskbar", Color::TASKBAR);
-            for y in 0..TASKBAR_H {
-                let row_start = y * w;
-                for x in 0..w {
-                    let idx = row_start + x;
-                    let bg = Color(blurred[idx]);
-                    let r = (tb_color.r() as u32 * tb_alpha + bg.r() as u32 * tb_inv) / 255;
-                    let g = (tb_color.g() as u32 * tb_alpha + bg.g() as u32 * tb_inv) / 255;
-                    let b = (tb_color.b() as u32 * tb_alpha + bg.b() as u32 * tb_inv) / 255;
-                    layer.buf_mut()[(tb_y + y) * w + x] =
-                        Color::rgb(r as u8, g as u8, b as u8).0;
-                }
-            }
-
-            let mut bar = alloc::vec![0u32; w * TASKBAR_H];
-            bar.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-            *cached_taskbar = Some(bar);
-        }
-
         if !bg_cache_valid {
             let mut bg = alloc::vec![0u32; w * h];
             bg.copy_from_slice(layer.buf_ref());
             *bg_cache = Some(bg);
-        }
-
-        wm.draw_all(
-            layer,
-            ui_win_id.map(|id| (id, ui_commands)),
-            warp_engines,
-            html_engines,
-        );
-
-        let source = &layer.buf_ref()[tb_y * w..h * w];
-        if let Some(strip_pre) = scene_before_strip.as_mut() {
-            if strip_pre.len() == source.len() {
-                strip_pre.copy_from_slice(source);
-            } else {
-                *strip_pre = source.to_vec();
-            }
-        } else {
-            *scene_before_strip = Some(source.to_vec());
         }
     }
 
@@ -418,295 +738,7 @@ pub fn render_scene(
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    if !taskbar_dirty {
-        if let Some(ref strip) = cached_taskbar_strip {
-            layer.copy_rect_buffer(strip, w, TASKBAR_H, 0, tb_y);
-        }
-    } else {
-        let ids = wm.insertion_ids();
-        let count = ids.len();
-        let btn_d = 40usize;
-        let btn_gap = 12i32;
-        let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
-        let base_bx = ((w as i32 - total_w) / 2).max(0);
-        let btn_y = tb_y + (TASKBAR_H - btn_d) / 2;
-
-        let add_scale = if add_progress >= 0.0 {
-            ease_out_back(add_progress)
-        } else {
-            1.0
-        };
-
-        for (i, id) in ids.iter().enumerate() {
-            let title = wm.get_title(*id).unwrap_or("???");
-            let icon_name = wm.get_icon_name(*id);
-            let is_focused = wm.focused_id == Some(*id);
-            let is_minimized = wm.is_minimized(*id);
-
-            let scale = if add_progress >= 0.0 && i == count - 1 {
-                add_scale
-            } else {
-                1.0
-            };
-
-            let ca = if is_focused { 255u32 } else { 100u32 };
-            let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
-            let scaled_d = (btn_d as f32 * scale) as usize;
-            if scaled_d == 0 {
-                continue;
-            }
-            let offset = if scaled_d > btn_d {
-                0
-            } else {
-                (btn_d - scaled_d) / 2
-            };
-            let cached_btn = get_or_render_tb_btn(scaled_d, ca);
-            for py in 0..scaled_d {
-                let src_row = py * scaled_d;
-                let dst_y = btn_y + offset + py;
-                if dst_y >= h {
-                    continue;
-                }
-                let dst_row = dst_y * w;
-                for px in 0..scaled_d {
-                    let sp = cached_btn[src_row + px];
-                    let pre_a = (sp >> 24) & 0xFF;
-                    if pre_a == 0 {
-                        continue;
-                    }
-                    let sx = bx as usize + offset + px;
-                    if sx >= w {
-                        continue;
-                    }
-                    let idx = dst_row + sx;
-                    let inv = 255 - pre_a;
-                    let bg = Color(layer.buf_ref()[idx]);
-                    let r = (255 * pre_a + bg.r() as u32 * inv) / 255;
-                    let g = (255 * pre_a + bg.g() as u32 * inv) / 255;
-                    let b = (255 * pre_a + bg.b() as u32 * inv) / 255;
-                    layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
-                }
-            }
-
-            let resolved_icon = if icon_name.is_empty() {
-                "noname.png"
-            } else {
-                icon_name
-            };
-            {
-                let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                if let Some(icon) = get_or_decode_icon(&icon_path, 40) {
-                    let icon_draw = (btn_d as f32 * scale) as usize;
-                    if icon_draw > 0 {
-                        let icon_offset = if icon_draw > btn_d {
-                            0
-                        } else {
-                            (btn_d - icon_draw) / 2
-                        };
-                        let ix = bx as usize + icon_offset;
-                        let iy = btn_y + icon_offset;
-                        let icon_alpha = if is_minimized { 128u32 } else { 255u32 };
-                        let src_w = icon.w as f32;
-                        let src_h = icon.h as f32;
-                        let dst_w = icon_draw as f32;
-                        let dst_h = icon_draw as f32;
-                        for py in 0..icon_draw {
-                            let sy_f = (py as f32 + 0.5) * src_h / dst_h - 0.5;
-                            let sy_floor = libm::floorf(sy_f);
-                            let sy0 = sy_floor.max(0.0) as usize;
-                            let sy1 = (sy0 + 1).min(icon.h - 1);
-                            let fy = sy_f - sy_floor;
-                            let fy_inv = 1.0 - fy;
-                            for px in 0..icon_draw {
-                                let sx_f = (px as f32 + 0.5) * src_w / dst_w - 0.5;
-                                let sx_floor = libm::floorf(sx_f);
-                                let sx0 = sx_floor.max(0.0) as usize;
-                                let sx1 = (sx0 + 1).min(icon.w - 1);
-                                let fx = sx_f - sx_floor;
-                                let fx_inv = 1.0 - fx;
-                                let p00 = &icon.pixels[sy0 * icon.w + sx0];
-                                let p10 = &icon.pixels[sy0 * icon.w + sx1];
-                                let p01 = &icon.pixels[sy1 * icon.w + sx0];
-                                let p11 = &icon.pixels[sy1 * icon.w + sx1];
-                                let r = ((p00[0] as f32 * fx_inv + p10[0] as f32 * fx) * fy_inv
-                                    + (p01[0] as f32 * fx_inv + p11[0] as f32 * fx) * fy)
-                                    as u32;
-                                let g = ((p00[1] as f32 * fx_inv + p10[1] as f32 * fx) * fy_inv
-                                    + (p01[1] as f32 * fx_inv + p11[1] as f32 * fx) * fy)
-                                    as u32;
-                                let b = ((p00[2] as f32 * fx_inv + p10[2] as f32 * fx) * fy_inv
-                                    + (p01[2] as f32 * fx_inv + p11[2] as f32 * fx) * fy)
-                                    as u32;
-                                let a = (((p00[3] as f32 * fx_inv + p10[3] as f32 * fx)
-                                    * fy_inv
-                                    + (p01[3] as f32 * fx_inv + p11[3] as f32 * fx) * fy)
-                                    as u32
-                                    * icon_alpha
-                                    / 255) as u32;
-                                if a == 0 {
-                                    continue;
-                                }
-                                let sx = ix + px;
-                                let sy = iy + py;
-                                if sx >= w || sy >= h {
-                                    continue;
-                                }
-                                let idx = sy * w + sx;
-                                let bg = Color(layer.buf_ref()[idx]);
-                                let inv = 255 - a;
-                                let out_r = (r * a + bg.r() as u32 * inv) / 255;
-                                let out_g = (g * a + bg.g() as u32 * inv) / 255;
-                                let out_b = (b * a + bg.b() as u32 * inv) / 255;
-                                layer.buf_mut()[idx] =
-                                    Color::rgb(out_r as u8, out_g as u8, out_b as u8).0;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        {
-            let mut time_buf = alloc::string::String::with_capacity(16);
-            let h1 = clock_hh / 10;
-            let h2 = clock_hh % 10;
-            let m1 = clock_mm / 10;
-            let m2 = clock_mm % 10;
-            time_buf.push((b'0' + h1) as char);
-            time_buf.push((b'0' + h2) as char);
-            time_buf.push(':');
-            time_buf.push((b'0' + m1) as char);
-            time_buf.push((b'0' + m2) as char);
-
-            let mut bat_buf = alloc::string::String::with_capacity(8);
-            let b1 = battery_pct / 100;
-            let b2 = (battery_pct / 10) % 10;
-            let b3 = battery_pct % 10;
-            if b1 > 0 {
-                bat_buf.push((b'0' + b1) as char);
-            }
-            bat_buf.push((b'0' + b2) as char);
-            bat_buf.push((b'0' + b3) as char);
-            bat_buf.push('%');
-
-            let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
-
-            let size = 32.0f32;
-
-            let mut time_w = 0usize;
-            for ch in time_buf.chars() {
-                if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                    time_w += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
-                } else {
-                    time_w += 8;
-                }
-            }
-            let mut bat_w = 0usize;
-            for ch in bat_buf.chars() {
-                if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                    bat_w += if g.w > 0 { g.advance.max(0) as usize } else { 8 };
-                } else {
-                    bat_w += 8;
-                }
-            }
-
-            let gap = 12usize;
-            let total_status_w = time_w + gap + bat_w;
-            let status_x = w.saturating_sub(total_status_w + 16);
-            let ascent = if baram_font::ttf_font_hud::is_available() {
-                baram_font::ttf_font_hud::ascent_at_size(size)
-            } else {
-                14
-            };
-            let status_y = tb_y as i32 + TASKBAR_H as i32 - ascent + 9;
-
-            let mut cx = status_x;
-            for ch in time_buf.chars() {
-                if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                    if g.w > 0 && g.h > 0 {
-                        let baseline = status_y + g.y_off;
-                        let buf = layer.buf_mut();
-                        for row in 0..g.h {
-                            let py = baseline + row;
-                            if py < 0 || py >= h as i32 { continue; }
-                            for col in 0..g.w {
-                                let px = cx as i32 + col;
-                                if px < 0 || px >= w as i32 { continue; }
-                                let alpha = g.data[(row * g.w + col) as usize];
-                                if alpha > 0 {
-                                    let a = alpha as u32;
-                                    let idx = py as usize * w + px as usize;
-                                    let bg = Color(buf[idx]);
-                                    let br = (bg.0 >> 16) & 0xFF;
-                                    let bg2 = (bg.0 >> 8) & 0xFF;
-                                    let bb = bg.0 & 0xFF;
-                                    let fr = (status_color.0 >> 16) & 0xFF;
-                                    let fg2 = (status_color.0 >> 8) & 0xFF;
-                                    let fb_c = status_color.0 & 0xFF;
-                                    let r = (fr * a + br * (255 - a)) / 255;
-                                    let g2 = (fg2 * a + bg2 * (255 - a)) / 255;
-                                    let b = (fb_c * a + bb * (255 - a)) / 255;
-                                    buf[idx] = (r << 16) | (g2 << 8) | b;
-                                }
-                            }
-                        }
-                        cx += g.advance.max(0) as usize;
-                    }
-                }
-            }
-            cx += gap;
-            for ch in bat_buf.chars() {
-                if baram_font::ttf_font_hud::is_available() {
-                    let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                    if g.w > 0 && g.h > 0 {
-                        let baseline = status_y + g.y_off;
-                        let buf = layer.buf_mut();
-                        for row in 0..g.h {
-                            let py = baseline + row;
-                            if py < 0 || py >= h as i32 { continue; }
-                            for col in 0..g.w {
-                                let px = cx as i32 + col;
-                                if px < 0 || px >= w as i32 { continue; }
-                                let alpha = g.data[(row * g.w + col) as usize];
-                                if alpha > 0 {
-                                    let a = alpha as u32;
-                                    let idx = py as usize * w + px as usize;
-                                    let bg = Color(buf[idx]);
-                                    let br = (bg.0 >> 16) & 0xFF;
-                                    let bg2 = (bg.0 >> 8) & 0xFF;
-                                    let bb = bg.0 & 0xFF;
-                                    let fr = (status_color.0 >> 16) & 0xFF;
-                                    let fg2 = (status_color.0 >> 8) & 0xFF;
-                                    let fb_c = status_color.0 & 0xFF;
-                                    let r = (fr * a + br * (255 - a)) / 255;
-                                    let g2 = (fg2 * a + bg2 * (255 - a)) / 255;
-                                    let b = (fb_c * a + bb * (255 - a)) / 255;
-                                    buf[idx] = (r << 16) | (g2 << 8) | b;
-                                }
-                            }
-                        }
-                        cx += g.advance.max(0) as usize;
-                    }
-                }
-            }
-        }
-
-        let source = &layer.buf_ref()[tb_y * w..h * w];
-        if let Some(strip) = cached_taskbar_strip.as_mut() {
-            if strip.len() == source.len() {
-                strip.copy_from_slice(source);
-            } else {
-                *strip = source.to_vec();
-            }
-        } else {
-            *cached_taskbar_strip = Some(source.to_vec());
-        }
-    }
-
-    if hud_enabled {
+    if hud_enabled && !taskbar_only {
         if let Some(ref bg) = bg_cache {
             let hud_y0 = (tb_y as i32 - 44).max(0) as usize;
             let hud_y1 = tb_y;
@@ -762,19 +794,13 @@ pub fn render_scene(
         );
     }
 
-    {
-        let apps_icon_size = 24usize;
-        let apps_icon_x = 16usize;
-        let apps_icon_y = tb_y + (TASKBAR_H - apps_icon_size) / 2;
-        let apps_icon_alpha = if hover_apps_icon { 153u32 } else { 255u32 };
-        svg::draw_svg_into_alpha(
+    // Stable z-order: background -> HUD -> windows/launcher -> taskbar.
+    if !taskbar_only {
+        wm.draw_all(
             layer,
-            APPS_SVG,
-            apps_icon_x as i32,
-            apps_icon_y as i32,
-            apps_icon_size as f32,
-            apps_icon_size as f32,
-            apps_icon_alpha,
+            ui_win_id.map(|id| (id, ui_commands)),
+            warp_engines,
+            html_engines,
         );
     }
 
@@ -825,8 +851,7 @@ pub fn render_scene(
                     icon_name
                 };
                 {
-                    let icon_path = alloc::format!("apps/icon/{}", resolved_icon);
-                    if let Some(icon) = get_or_decode_icon(&icon_path, icon_size) {
+                    if let Some(icon) = get_or_decode_icon(resolved_icon, icon_size) {
                         let pad = (icon_size - icon.w) / 2;
                         for py in 0..icon.h {
                             for px in 0..icon.w {
@@ -886,11 +911,32 @@ pub fn render_scene(
             }
             *cached_launcher_layer = Some(lsys.buf_ref().to_vec());
         }
+        if let Some(launcher) = cached_launcher_layer.as_ref() {
+            layer.copy_rect_buffer(launcher, w, tb_y, 0, 0);
+        }
     }
+
+    if !taskbar_only && taskbar_dirty {
+        taskbar.capture_backdrop(layer, tb_y);
+    }
+    if taskbar_dirty || !taskbar.is_valid() {
+        redraw_taskbar(
+            taskbar,
+            wm,
+            add_progress,
+            shift_x,
+            hover_apps_icon,
+            clock_hh,
+            clock_mm,
+            battery_pct,
+        );
+    }
+    taskbar.composite_onto(layer, tb_y);
 }
 
 pub fn render_frame(
     layer: &mut LayerSystem,
+    taskbar: &mut TaskbarSurface,
     wm: &mut WindowManager,
     _last_keys: &[&'static str],
     _mouse_ev: u32,
@@ -904,8 +950,6 @@ pub fn render_frame(
     warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
-    cached_taskbar: &mut Option<Vec<u32>>,
-    cached_taskbar_strip: &mut Option<Vec<u32>>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
@@ -920,13 +964,13 @@ pub fn render_frame(
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
     taskbar_only: bool,
-    scene_before_strip: &mut Option<Vec<u32>>,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: u8,
 ) {
     render_scene(
         layer,
+        taskbar,
         wm,
         _mouse_ev,
         key_ev,
@@ -937,8 +981,6 @@ pub fn render_frame(
         warp_engines,
         html_engines,
         wallpaper,
-        cached_taskbar,
-        cached_taskbar_strip,
         cached_launcher_layer,
         taskbar_dirty,
         add_progress,
@@ -952,7 +994,6 @@ pub fn render_frame(
         app_icon_list,
         hover_apps_icon,
         taskbar_only,
-        scene_before_strip,
         clock_hh,
         clock_mm,
         battery_pct,

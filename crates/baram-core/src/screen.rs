@@ -4,6 +4,73 @@ use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::Status;
 use crate::color::Color;
 
+#[inline]
+unsafe fn copy_swap_rb(src: *const u32, dst: *mut u32, len: usize) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use core::arch::x86_64::*;
+        let keep = _mm_set1_epi32(0xff00_ff00u32 as i32);
+        let red = _mm_set1_epi32(0x00ff_0000);
+        let blue = _mm_set1_epi32(0x0000_00ff);
+        let mut i = 0usize;
+        while i + 4 <= len {
+            let p = _mm_loadu_si128(src.add(i) as *const __m128i);
+            let out = _mm_or_si128(
+                _mm_and_si128(p, keep),
+                _mm_or_si128(
+                    _mm_srli_epi32(_mm_and_si128(p, red), 16),
+                    _mm_slli_epi32(_mm_and_si128(p, blue), 16),
+                ),
+            );
+            _mm_storeu_si128(dst.add(i) as *mut __m128i, out);
+            i += 4;
+        }
+        for i in i..len {
+            let p = *src.add(i);
+            *dst.add(i) = (p & 0xff00_ff00)
+                | ((p & 0x00ff_0000) >> 16)
+                | ((p & 0x0000_00ff) << 16);
+        }
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        use core::arch::aarch64::*;
+        let keep = vdupq_n_u32(0xff00_ff00);
+        let red = vdupq_n_u32(0x00ff_0000);
+        let blue = vdupq_n_u32(0x0000_00ff);
+        let mut i = 0usize;
+        while i + 4 <= len {
+            let p = vld1q_u32(src.add(i));
+            let out = vorrq_u32(
+                vandq_u32(p, keep),
+                vorrq_u32(
+                    vshrq_n_u32(vandq_u32(p, red), 16),
+                    vshlq_n_u32(vandq_u32(p, blue), 16),
+                ),
+            );
+            vst1q_u32(dst.add(i), out);
+            i += 4;
+        }
+        for i in i..len {
+            let p = *src.add(i);
+            *dst.add(i) = (p & 0xff00_ff00)
+                | ((p & 0x00ff_0000) >> 16)
+                | ((p & 0x0000_00ff) << 16);
+        }
+        return;
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    for i in 0..len {
+        let p = *src.add(i);
+        *dst.add(i) = (p & 0xff00_ff00)
+            | ((p & 0x00ff_0000) >> 16)
+            | ((p & 0x0000_00ff) << 16);
+    }
+}
+
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct FramebufferInfo {
@@ -186,28 +253,12 @@ impl Screen {
         let off_base = (y * stride + x_offset) * 4;
         match pf {
             PixelFormat::Rgb => {
-                // Convert in cache-sized batches, then issue a bulk write to the
-                // (usually uncached) framebuffer instead of one volatile store
-                // per pixel.
-                const CHUNK: usize = 128;
-                let mut converted = [0u32; CHUNK];
-                let mut x = 0usize;
-                while x < n {
-                    let count = (n - x).min(CHUNK);
-                    for i in 0..count {
-                        let p = row[x + i];
-                        converted[i] = (p & 0xFF00_FF00)
-                            | ((p & 0x00FF_0000) >> 16)
-                            | ((p & 0x0000_00FF) << 16);
-                    }
-                    unsafe {
-                        ptr::copy_nonoverlapping(
-                            converted.as_ptr(),
-                            base.add(off_base + x * 4) as *mut u32,
-                            count,
-                        );
-                    }
-                    x += count;
+                unsafe {
+                    copy_swap_rb(
+                        row.as_ptr(),
+                        base.add(off_base) as *mut u32,
+                        n,
+                    );
                 }
             }
             _ => {
