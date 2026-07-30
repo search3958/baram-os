@@ -7,12 +7,9 @@ extern crate alloc;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::{config, vfs};
+use baram_bsd::{app::Warp3Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::LayerFontExt;
-
-const MAX_NODES: usize = 2048;
-const MAX_ACTION_DEPTH: usize = 24;
 
 #[derive(Clone, Default)]
 struct Node {
@@ -96,9 +93,6 @@ impl Parser {
                 continue;
             }
             self.pos += 1;
-            if self.nodes.len() >= MAX_NODES {
-                break;
-            }
             let idx = self.nodes.len();
             self.nodes.push(Node {
                 tags,
@@ -239,7 +233,7 @@ impl Parser {
 }
 
 pub struct Warp3Engine {
-    config_name: String,
+    archive: Warp3Archive,
     screen: String,
     app_title: String,
     nodes: Vec<Node>,
@@ -257,12 +251,13 @@ pub struct Warp3Engine {
 }
 
 impl Warp3Engine {
-    pub fn new(config_name: &str) -> Self {
-        let config_source = vfs::read_file_str(&alloc::format!("apps/{config_name}"));
+    pub fn new(app_name: &str) -> Self {
+        let archive = Warp3Archive::open(app_name);
+        let config_source = archive.read_text("config.ini");
         let screen = ini_value(&config_source, "screen").unwrap_or_else(|| "main".to_string());
         let title = ini_value(&config_source, "name").unwrap_or_else(|| "Warp 3".to_string());
         let mut engine = Self {
-            config_name: config_name.to_string(),
+            archive,
             screen,
             app_title: title,
             nodes: Vec::new(),
@@ -425,13 +420,8 @@ impl Warp3Engine {
     }
 
     fn load_screen(&mut self) {
-        let base = config_base(&self.config_name);
-        let ui_path = if base.is_empty() {
-            alloc::format!("apps/{}.w3u", self.screen)
-        } else {
-            alloc::format!("apps/{base}/{}.w3u", self.screen)
-        };
-        let source = vfs::read_file_str(&ui_path);
+        let ui_path = alloc::format!("{}.w3u", self.screen);
+        let source = self.archive.read_text(&ui_path);
         self.nodes = Parser::new(&source).parse();
         self.roots = root_indices(&self.nodes);
         self.scripts.clear();
@@ -448,13 +438,8 @@ impl Warp3Engine {
             }
         }
         for name in script_names {
-            let path = if base.is_empty() {
-                alloc::format!("apps/{name}")
-            } else {
-                alloc::format!("apps/{base}/{name}")
-            };
             self.scripts
-                .extend(parse_script(&vfs::read_file_str(&path)));
+                .extend(parse_script(&self.archive.read_text(&name)));
         }
         self.hovered = None;
         self.focused_input = None;
@@ -690,17 +675,30 @@ impl Warp3Engine {
             let sections = self.scripts.clone();
             for section in sections {
                 if section.kind == SectionKind::Click && section.name == class {
-                    self.execute(section.actions, 0);
+                    self.execute(section.actions);
                 }
             }
         }
     }
 
-    fn execute(&mut self, actions: Vec<(String, String)>, depth: usize) {
-        if depth >= MAX_ACTION_DEPTH {
-            return;
-        }
-        for (left, right) in actions {
+    fn execute(&mut self, actions: Vec<(String, String)>) {
+        let mut frames: Vec<(Vec<(String, String)>, usize, Option<String>)> =
+            alloc::vec![(actions, 0, None)];
+        while !frames.is_empty() {
+            let finished = {
+                let frame = frames.last().unwrap();
+                frame.1 >= frame.0.len()
+            };
+            if finished {
+                frames.pop();
+                continue;
+            }
+            let (left, right) = {
+                let frame = frames.last_mut().unwrap();
+                let action = frame.0[frame.1].clone();
+                frame.1 += 1;
+                action
+            };
             match left.as_str() {
                 "screen" => {
                     self.screen = unquote(&right);
@@ -710,11 +708,16 @@ impl Warp3Engine {
                 "print" | "wait" => {}
                 "fun" => {
                     let name = unquote(&right);
-                    let sections = self.scripts.clone();
-                    for section in sections {
-                        if section.kind == SectionKind::Function && section.name == name {
-                            self.execute(section.actions, depth + 1);
-                        }
+                    if frames
+                        .iter()
+                        .any(|(_, _, active)| active.as_ref() == Some(&name))
+                    {
+                        continue;
+                    }
+                    if let Some(section) = self.scripts.iter().find(|section| {
+                        section.kind == SectionKind::Function && section.name == name
+                    }) {
+                        frames.push((section.actions.clone(), 0, Some(name)));
                     }
                 }
                 command if command.starts_with("setText ") => {
@@ -856,10 +859,6 @@ fn ini_value(source: &str, key: &str) -> Option<String> {
         let (left, right) = line.trim().split_once('=')?;
         (left.trim() == key).then(|| right.trim().to_string())
     })
-}
-
-fn config_base(name: &str) -> &str {
-    name.rsplit_once('/').map(|(base, _)| base).unwrap_or("")
 }
 
 fn root_indices(nodes: &[Node]) -> Vec<usize> {

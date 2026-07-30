@@ -40,7 +40,7 @@ apps:
     icon: html5.png
     type: html-1
     title: HTMLデモ
-  config.ini:
+  warp3demo.w3a:
     icon: noname.png
     type: warp-3
     title: Warp 3 デモ

@@ -93,6 +93,8 @@ ensure_pftf() {
 # ---------- step 3: create FAT image ----------
 make_image() {
     local img="$RUNTIME_DIR/$IMAGE_NAME"
+    local w3a_dir="$RUNTIME_DIR/w3a"
+    "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
     local efi="$TARGET_DIR/bootaa64.efi"
     local pftf_dir="$CACHE_DIR"
 
@@ -147,7 +149,7 @@ make_image() {
         local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd   -i "$img" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/*.ini "$app_src"/*.w3u "$app_src"/*.w3s "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
                 [ -f "$f" ] && mcopy -i "$img" "$f" ::/apps/
             done
             if [ -d "$app_src/icon" ]; then
@@ -211,7 +213,7 @@ make_image() {
         local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/*.ini "$app_src"/*.w3u "$app_src"/*.w3s "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
                 [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
             done
             if [ -d "$app_src/icon" ]; then

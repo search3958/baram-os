@@ -16,6 +16,105 @@ pub fn load_app_source(name: &str) -> alloc::string::String {
     vfs::read_file_str(&path)
 }
 
+/// An in-memory Warp 3 application archive.
+///
+/// Every archive is loaded through its registered `.w3a` application name,
+/// so common members such as `config.ini` and `main.w3u` never enter the
+/// global VFS namespace.
+pub struct Warp3Archive {
+    app_name: alloc::string::String,
+    data: alloc::vec::Vec<u8>,
+}
+
+impl Warp3Archive {
+    pub fn open(app_name: &str) -> Self {
+        let path = alloc::format!("apps/{app_name}");
+        Self {
+            app_name: alloc::string::String::from(app_name),
+            data: vfs::read_file(&path),
+        }
+    }
+
+    pub fn app_name(&self) -> &str {
+        &self.app_name
+    }
+
+    pub fn read_text(&self, member_name: &str) -> alloc::string::String {
+        let Some(bytes) = self.read(member_name) else {
+            return alloc::string::String::new();
+        };
+        alloc::string::String::from_utf8(bytes.to_vec()).unwrap_or_default()
+    }
+
+    fn read(&self, member_name: &str) -> Option<&[u8]> {
+        if !is_safe_archive_member(member_name) {
+            return None;
+        }
+        let wanted = member_name.trim_start_matches("./");
+        let mut offset = 0usize;
+        while offset.checked_add(512)? <= self.data.len() {
+            let header = &self.data[offset..offset + 512];
+            if header.iter().all(|byte| *byte == 0) {
+                return None;
+            }
+            let name = tar_string(&header[0..100]);
+            let prefix = tar_string(&header[345..500]);
+            let full_name = if prefix.is_empty() {
+                name
+            } else {
+                alloc::format!("{prefix}/{name}")
+            };
+            let size = tar_octal(&header[124..136])?;
+            let data_start = offset + 512;
+            let data_end = data_start.checked_add(size)?;
+            if data_end > self.data.len() {
+                return None;
+            }
+            if full_name.trim_start_matches("./") == wanted {
+                return Some(&self.data[data_start..data_end]);
+            }
+            let padded = size.checked_add(511)? / 512 * 512;
+            offset = data_start.checked_add(padded)?;
+        }
+        None
+    }
+}
+
+fn is_safe_archive_member(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('/')
+        && !name.split('/').any(|part| part == "..")
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'/'))
+}
+
+fn tar_string(bytes: &[u8]) -> alloc::string::String {
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    alloc::string::String::from_utf8_lossy(&bytes[..end])
+        .trim()
+        .into()
+}
+
+fn tar_octal(bytes: &[u8]) -> Option<usize> {
+    let mut value = 0usize;
+    let mut found = false;
+    for byte in bytes {
+        match byte {
+            b'0'..=b'7' => {
+                value = value.checked_mul(8)?.checked_add((byte - b'0') as usize)?;
+                found = true;
+            }
+            0 | b' ' => {}
+            _ => return None,
+        }
+    }
+    found.then_some(value)
+}
+
 /// Load an HTML application and any local stylesheets referenced with
 /// `<link rel="stylesheet" href="...">`.
 ///
@@ -58,7 +157,7 @@ pub fn parse_app_uri(uri: &str) -> Option<&str> {
         && (name.ends_with(".warp")
             || name.ends_with(".html")
             || name.ends_with(".htm")
-            || name.ends_with(".ini")
+            || name.ends_with(".w3a")
             || name.ends_with(".u1"))
     {
         Some(name)
@@ -123,6 +222,8 @@ mod tests {
             parse_app_uri("app://web-demo.html#top"),
             Some("web-demo.html")
         );
+        assert_eq!(parse_app_uri("app://warp3demo.w3a"), Some("warp3demo.w3a"));
+        assert_eq!(parse_app_uri("app://config.ini"), None);
         assert_eq!(parse_app_uri("app://../config.xml"), None);
         assert_eq!(parse_app_uri("app://folder/demo.warp"), None);
     }

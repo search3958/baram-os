@@ -35,15 +35,15 @@ BaramOS固有の連携は次の通りです。
 <span config="os://display/hud/enabled">値がない場合の表示</span>
 ```
 
-`app://` は安全のため、パスを含まない登録済みファイル名（`.warp`、`.html`、`.htm`、`.u1`、`.ini`）だけを受け付けます。実装例は `app/webdemo.html` と `app/webdemo.css` にあります。
+`app://` は安全のため、パスを含まない登録済みファイル名（`.warp`、`.html`、`.htm`、`.u1`、`.w3a`）だけを受け付けます。実装例は `app/webdemo.html` と `app/webdemo.css` にあります。
 
 ## Warp 3アプリ
 
-Warp 3はブラウザやJavaScriptを介さず、WindowServerでネイティブ描画されます。HTML版コンパイラと同じ`config.ini`、画面ごとの`<screen>.w3u`、`script("...")`で参照する`.w3s`を`app/`へ置き、`app/index.yaml`へ次のように登録します。
+Warp 3はブラウザやJavaScriptを介さず、WindowServerでネイティブ描画されます。HTML版コンパイラと同じ`config.ini`、画面ごとの`<screen>.w3u`、`script("...")`で参照する`.w3s`を`app/<アプリ名>.w3a/`へまとめ、`app/index.yaml`へ次のように登録します。ビルド時に同名の単一アーカイブへ変換され、OSではアプリ名を名前空間として内部ファイルを読み出します。
 
 ```yaml
 apps:
-  config.ini:
+  example.w3a:
     icon: noname.png
     type: warp-3
     title: Warp 3アプリ
