@@ -14,6 +14,8 @@ use baram_font::LayerFontExt;
 
 const HOVER_STEPS: u8 = 7;
 const SWITCH_STEPS: u8 = 10;
+const HOVER_DURATION_NS: u64 = 100_000_000;
+const SWITCH_DURATION_NS: u64 = 150_000_000;
 
 struct ShadowMask {
     w: usize,
@@ -351,7 +353,8 @@ pub struct Warp3Engine {
     full_window_redraw: bool,
     hover_transition: Option<(Option<usize>, Option<usize>, u8)>,
     switch_transition: Option<(usize, bool, u8)>,
-    transition_tick: u8,
+    hover_started_ns: Option<u64>,
+    switch_started_ns: Option<u64>,
     shadows: Vec<ShadowMask>,
 }
 
@@ -388,7 +391,8 @@ impl Warp3Engine {
             full_window_redraw: false,
             hover_transition: None,
             switch_transition: None,
-            transition_tick: 0,
+            hover_started_ns: None,
+            switch_started_ns: None,
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -476,7 +480,7 @@ impl Warp3Engine {
         if self.hovered != next {
             let old = self.hovered;
             self.hover_transition = Some((old, next, 0));
-            self.transition_tick = 0;
+            self.hover_started_ns = None;
             self.invalidate_nodes(old, next);
             self.hovered = next;
         }
@@ -485,7 +489,7 @@ impl Warp3Engine {
     pub fn clear_hover(&mut self) {
         if let Some(old) = self.hovered.take() {
             self.hover_transition = Some((Some(old), None, 0));
-            self.transition_tick = 0;
+            self.hover_started_ns = None;
             self.invalidate_nodes(Some(old), None);
         }
     }
@@ -508,7 +512,7 @@ impl Warp3Engine {
                 if next { "true" } else { "false" },
             );
             self.switch_transition = Some((idx, next, 0));
-            self.transition_tick = 0;
+            self.switch_started_ns = None;
             self.run_click(idx);
         } else if self.nodes[idx].is("content") {
             if let Some(parent) = self.find_parent(idx) {
@@ -540,33 +544,37 @@ impl Warp3Engine {
 
     /// Advance 90 ms control transitions in 1 ms timer ticks.  No layout is
     /// involved; only the old/new control damage rectangle is requested.
-    pub fn tick(&mut self) -> bool {
+    pub fn tick(&mut self, now_ns: u64) -> bool {
         if self.hover_transition.is_none() && self.switch_transition.is_none() {
-            return false;
-        }
-        self.transition_tick = self.transition_tick.wrapping_add(1);
-        // Match the reference CSS (.1s buttons, .15s switches) while keeping
-        // every animation frame a tiny 15 ms damage patch.
-        if self.transition_tick % 15 != 0 {
             return false;
         }
         let mut changed = false;
         if let Some((old, new, frame)) = self.hover_transition {
-            if frame < HOVER_STEPS {
-                self.hover_transition = Some((old, new, frame + 1));
+            let started = self.hover_started_ns.get_or_insert(now_ns);
+            let next = (((now_ns.saturating_sub(*started) * HOVER_STEPS as u64) / HOVER_DURATION_NS)
+                .min(HOVER_STEPS as u64)) as u8;
+            if next != frame {
+                self.hover_transition = Some((old, new, next));
                 self.invalidate_nodes(old, new);
                 changed = true;
-            } else {
+            }
+            if next >= HOVER_STEPS {
                 self.hover_transition = None;
+                self.hover_started_ns = None;
             }
         }
         if let Some((idx, on, frame)) = self.switch_transition {
-            if frame < SWITCH_STEPS {
-                self.switch_transition = Some((idx, on, frame + 1));
+            let started = self.switch_started_ns.get_or_insert(now_ns);
+            let next = (((now_ns.saturating_sub(*started) * SWITCH_STEPS as u64) / SWITCH_DURATION_NS)
+                .min(SWITCH_STEPS as u64)) as u8;
+            if next != frame {
+                self.switch_transition = Some((idx, on, next));
                 self.invalidate_nodes(Some(idx), None);
                 changed = true;
-            } else {
+            }
+            if next >= SWITCH_STEPS {
                 self.switch_transition = None;
+                self.switch_started_ns = None;
             }
         }
         changed

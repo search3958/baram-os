@@ -419,6 +419,9 @@ fn main() -> Status {
     let mut bg_cache: Option<Vec<u32>> = None;
     let mut prev_wallpaper_idx: usize = display_state.wallpaper_index;
     let mut hud_damage_pending = false;
+    // Monotonic UI clock driven by the already-configured 1 ms timer event.
+    // Do not query the slow, wall-clock UEFI runtime service per frame.
+    let mut ui_time_ms: u64 = 0;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
@@ -499,6 +502,7 @@ fn main() -> Status {
 
     loop {
         let mut dirty = false;
+        let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
             let mut events: [uefi::Event; 2] = [unsafe { core::ptr::read(timer) }, unsafe { core::ptr::read(timer) }];
@@ -507,7 +511,10 @@ fn main() -> Status {
                 events[1] = unsafe { core::ptr::read(mevt) };
                 n = 2;
             }
-            let _ = uefi::boot::wait_for_event(&mut events[..n]);
+            ui_timer_fired = matches!(uefi::boot::wait_for_event(&mut events[..n]), Ok(0));
+        }
+        if ui_timer_fired {
+            ui_time_ms = ui_time_ms.wrapping_add(1);
         }
 
         match baram_bsd::uri::check_system_commands(&mut display_state) {
@@ -1378,10 +1385,11 @@ fn main() -> Status {
             }
         }
 
-        // Warp3 transitions are timer-driven and report only their control
-        // damage; do not promote these frames to a full-window repaint.
+        // Absolute monotonic UI time: transitions derive their progress from
+        // this clock, without a runtime-service call in the render hot path.
+        let transition_now_ns = ui_time_ms * 1_000_000;
         for (wid, engine) in html_engines.iter_mut() {
-            if engine.tick() {
+            if engine.tick(transition_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {
                     wm.set_content_damage(*wid, x0, y0, x1, y1);
                 } else {

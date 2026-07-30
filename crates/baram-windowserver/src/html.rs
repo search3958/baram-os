@@ -403,8 +403,8 @@ impl HtmlEngine {
         self.warp3.as_ref().and_then(|engine| engine.window_damage())
     }
 
-    pub fn tick(&mut self) -> bool {
-        self.warp3.as_mut().map_or(false, |engine| engine.tick())
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        self.warp3.as_mut().map_or(false, |engine| engine.tick(now_ns))
     }
 
     pub fn has_focused_input(&self) -> bool {
