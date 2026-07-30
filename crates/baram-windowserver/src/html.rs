@@ -200,6 +200,7 @@ struct HitArea {
 }
 
 pub struct HtmlEngine {
+    warp3: Option<crate::warp3::Warp3Engine>,
     nodes: Vec<Node>,
     rules: Vec<CssRule>,
     root: usize,
@@ -222,6 +223,7 @@ impl HtmlEngine {
             css.push_str(external_css);
         }
         Self {
+            warp3: None,
             nodes,
             rules: parse_css(&css),
             root,
@@ -236,7 +238,30 @@ impl HtmlEngine {
         }
     }
 
+    pub fn new_warp3(config_name: &str) -> Self {
+        let warp3 = crate::warp3::Warp3Engine::new(config_name);
+        Self {
+            warp3: Some(warp3),
+            nodes: Vec::new(),
+            rules: Vec::new(),
+            root: 0,
+            items: Vec::new(),
+            hits: Vec::new(),
+            hovered_node: None,
+            width: 0,
+            height: 0,
+            layout_dirty: true,
+            content_height: 0,
+            last_command: None,
+        }
+    }
+
     pub fn update(&mut self, width: i32, height: i32) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.update(width, height);
+            self.content_height = engine.content_height;
+            return;
+        }
         if !self.layout_dirty && self.width == width && self.height == height {
             return;
         }
@@ -254,10 +279,17 @@ impl HtmlEngine {
     }
 
     pub fn refresh_config(&mut self) {
+        if self.warp3.is_some() {
+            return;
+        }
         self.layout_dirty = true;
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.click(x, y);
+            return;
+        }
         for hit in self.hits.iter().rev() {
             if point_in(x, y, hit.x, hit.y, hit.w, hit.h) {
                 if hit.href.starts_with("os://") || hit.href.starts_with("app://") {
@@ -269,6 +301,10 @@ impl HtmlEngine {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.set_hover(x, y);
+            return;
+        }
         let hovered = self
             .hits
             .iter()
@@ -282,16 +318,27 @@ impl HtmlEngine {
     }
 
     pub fn clear_hover(&mut self) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.clear_hover();
+            return;
+        }
         if self.hovered_node.take().is_some() {
             self.layout_dirty = true;
         }
     }
 
     pub fn hovered_node(&self) -> Option<usize> {
+        if let Some(engine) = self.warp3.as_ref() {
+            return engine.hovered_node();
+        }
         self.hovered_node
     }
 
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+        if let Some(engine) = self.warp3.as_ref() {
+            engine.draw_to_layer(layer, ox, oy);
+            return;
+        }
         for item in &self.items {
             let x = item.x + ox;
             let y = item.y + oy;
@@ -339,6 +386,28 @@ impl HtmlEngine {
                     }
                 }
             }
+        }
+    }
+
+    pub fn set_scroll(&mut self, scroll: i32) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.set_scroll(scroll);
+        }
+    }
+
+    pub fn take_scroll_request(&mut self) -> Option<i32> {
+        self.warp3.as_mut().and_then(|engine| engine.take_scroll_request())
+    }
+
+    pub fn has_focused_input(&self) -> bool {
+        self.warp3
+            .as_ref()
+            .map_or(false, |engine| engine.has_focused_input())
+    }
+
+    pub fn handle_key(&mut self, key: u8) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.handle_key(key);
         }
     }
 

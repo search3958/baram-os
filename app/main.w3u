@@ -1,0 +1,485 @@
+config {
+    title("UIデモ")
+    script("nav.w3s")
+}
+
+// config,scroll-pointは表示されない
+// topbar要素は画面下部に固定で表示される。標準の横幅はfit-contentたがspaceが含まれている限り最大になる
+
+toolbar{
+    button.top-btn{
+        text("上部へ")
+    }
+    space{}
+    button.back-btn{
+        text("戻る")
+    }
+    button.next-btn{
+        text("次へ")
+    }
+}
+
+scroll-point.top-point{
+    text("要素一覧")
+}
+
+button.vardemo{
+    text("変数デモ")
+}
+
+list-box{
+    text("要素一覧")
+
+    list{
+        text("テキスト")
+        detail{
+            text("text")
+        }
+    }
+    list{
+        text("説明")
+        detail{
+            text("detail")
+        }
+    }
+    list{
+        text("見出し")
+        detail{
+            text("head")
+        }
+    }
+    list{
+        text("ボタン")
+        detail{
+            text("button")
+        }
+    }
+    list{
+        text("カード")
+        detail{
+            text("card")
+        }
+    }
+    list{
+        text("横並び")
+        detail{
+            text("flex")
+        }
+    }
+    list{
+        text("短文入力")
+        detail{
+            text("input")
+        }
+    }
+    list{
+        text("長文入力")
+        detail{
+            text("textarea")
+        }
+    }
+    list{
+        text("タブ")
+        detail{
+            text("tab")
+        }
+    }
+    list{
+        text("スイッチ")
+        detail{
+            text("switch")
+        }
+    }
+    list{
+        text("ツールバー")
+        detail{
+            text("toolbar")
+        }
+    }
+    list{
+        text("リスト")
+        detail{
+            text("list-box,list")
+        }
+    }
+    list{
+        text("コードブロック")
+        detail{
+            text("code")
+        }
+    }
+    list{
+        text("空白")
+        detail{
+            text("space")
+        }
+    }
+    list{
+        text("スクロールポイント")
+        detail{
+            text("scroll-point")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("テキスト")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        text{
+            text("Hello, World.")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("text{\ntext(\"テキスト\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("見出し")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        head{
+            text("見出し")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("head{\ntext(\"テキスト\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("説明")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        text{
+            text("通常テキスト")
+        }
+        detail{
+            text("説明テキスト")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("detail{\ntext(\"テキスト\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("ボタン")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        button{
+            text("ボタン")
+        }
+        button{
+            text("Primaryボタン")
+            type("primary")
+        }
+        button{
+            text("Textボタン")
+            type("text")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("button{\ntext(\"テキスト\")\ntype(\"primary\")\n}")
+        }
+    }
+    content{
+        text("詳細")
+        
+        text{
+            text("type未指定状態では通常(nomal)ボタンとなります。\ntypeにはnomal,primary,textを指定できます。")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("カード")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        card{
+            text("カード名")
+            detail{
+                text("カード内容")
+            }
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("card{\ntext(\"テキスト\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("横並び")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        flex{
+            button{
+                text("内容")
+            }
+            button{
+                text("内容")
+            }
+            button{
+                text("内容")
+            }
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("flex{\nbutton{\ntext(\"テキスト\")\n}\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("短文入力")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        input{
+            text("test")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("input{\ntext(\"デフォルト入力値\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("長文入力")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        textarea{
+            text("Hello,\nWorld.")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("textarea{\ntext(\"デフォルト入力値\")\n}")
+        }
+    }
+}
+
+
+
+head,scroll-point{
+    text("タブ")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        tab{
+            control("left")
+            content{
+                text("Tab 1")
+                text{
+                    text("1ページ目")
+                }
+            }
+            content{
+                text("Tab 2")
+                text{
+                    text("2ページ目")
+                }
+            }
+            content{
+                text("Tab 3")
+                text{
+                    text("3ページ目")
+                }
+            }
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("tab{\ncontent{\n}\n}")
+        }
+    }
+    content{
+        text("詳細")
+        
+        text{
+            text("controlを指定してコントロールの位置を指定可能です。\ntop,bottom,right,leftから選択可能です")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("スイッチ")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        switch{
+            default("true")
+        }
+        switch{
+            default("false")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("switch{\ndefault(\"true\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("リスト")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        list-box{
+            list{
+                text("内容1")
+            }
+            list{
+                text("内容2")
+            }
+            list{
+                text("内容3")
+            }
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("list-box{\nlist{\ntext(\"テキスト\")\n}\n}")
+        }
+    }
+}
+
+
+
+head,scroll-point{
+    text("コードブロック")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        code{
+            text("Hello, World.")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("code{\ntext(\"テキスト\")\n}")
+        }
+    }
+}
+
+
+
+
+head,scroll-point{
+    text("スクロールポイント")
+}
+
+tab{
+    control("top")
+    content{
+        text("詳細")
+        
+        text{
+            text("text,head要素には直接scroll-pointも指定することができます。")
+        }
+    }
+}
+

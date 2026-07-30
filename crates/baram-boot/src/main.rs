@@ -566,6 +566,28 @@ fn main() -> Status {
                     }
                 }
                 if !handled {
+                    if let Some(focused_win) = wm.focused_id {
+                        for (wid, engine) in html_engines.iter_mut() {
+                            if *wid == focused_win && engine.has_focused_input() {
+                                engine.handle_key(c);
+                                if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
+                                    let content_h = wh.saturating_sub(
+                                        baram_windowserver::window::title_bar_h(),
+                                    );
+                                    engine.set_scroll(scroll);
+                                    engine.update(ww as i32, content_h as i32);
+                                    wm.clamp_window_scroll(*wid, engine.content_height);
+                                    wm.set_content_dirty(*wid);
+                                }
+                                handled = true;
+                                dirty = true;
+                                scene_dirty = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if !handled {
                     match c {
                         _ => {}
                     }
@@ -945,11 +967,15 @@ fn main() -> Status {
                                     let tb_h =
                                         baram_windowserver::window::title_bar_h() as i32;
                                     if rel_y >= tb_h {
+                                        engine.set_scroll(scroll);
                                         engine.click(rel_x, rel_y + scroll);
                                         engine.update(
                                             ww as i32,
                                             wh.saturating_sub(tb_h as usize) as i32,
                                         );
+                                        if let Some(target) = engine.take_scroll_request() {
+                                            wm.set_window_scroll(clicked_id, target);
+                                        }
                                         html_command = engine.last_command.take();
                                         wm.set_content_dirty(clicked_id);
                                         scene_dirty = true;
@@ -1215,11 +1241,15 @@ fn main() -> Status {
                             let rel_y = cy - wy;
                             let tb_h = baram_windowserver::window::title_bar_h() as i32;
                             if rel_y >= tb_h {
+                                engine.set_scroll(scroll);
                                 engine.click(rel_x, rel_y + scroll);
                                 engine.update(
                                     ww as i32,
                                     wh.saturating_sub(tb_h as usize) as i32,
                                 );
+                                if let Some(target) = engine.take_scroll_request() {
+                                    wm.set_window_scroll(clicked_id, target);
+                                }
                                 html_command = engine.last_command.take();
                                 wm.set_content_dirty(clicked_id);
                                 scene_dirty = true;
@@ -1318,6 +1348,7 @@ fn main() -> Status {
                             let tb_h = baram_windowserver::window::title_bar_h() as i32;
                             let previous = engine.hovered_node();
                             if rel_y >= tb_h {
+                                engine.set_scroll(scroll);
                                 engine.set_hover(rel_x, rel_y + scroll);
                             } else {
                                 engine.clear_hover();
@@ -1393,9 +1424,10 @@ fn main() -> Status {
             }
         }
         for (wid, engine) in html_engines.iter_mut() {
-            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+            if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
                 let content_h =
                     wh.saturating_sub(baram_windowserver::window::title_bar_h());
+                engine.set_scroll(scroll);
                 engine.update(ww as i32, content_h as i32);
                 wm.clamp_window_scroll(*wid, engine.content_height);
             }
@@ -1746,7 +1778,11 @@ fn open_app(
     wm.set_icon(win_id, &entry.icon);
     let content_h = h.saturating_sub(baram_windowserver::window::title_bar_h());
 
-    if entry.app_type.starts_with("html") {
+    if entry.app_type.starts_with("warp-3") {
+        let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(&entry.name);
+        engine.update(w as i32, content_h as i32);
+        html_engines.push((win_id, engine));
+    } else if entry.app_type.starts_with("html") {
         let (html, css) = baram_bsd::app::load_html_document(&entry.name);
         let mut engine = baram_windowserver::html::HtmlEngine::new(&html, &css);
         engine.update(w as i32, content_h as i32);

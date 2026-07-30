@@ -859,6 +859,13 @@ impl WindowManager {
         }
     }
 
+    pub fn set_window_scroll(&mut self, id: WinId, scroll: i32) {
+        if let Some(window) = self.windows.iter_mut().find(|window| window.id == id) {
+            window.scroll_y = scroll.max(0);
+            window.content_dirty = true;
+        }
+    }
+
     pub fn set_all_dirty(&mut self) {
         for w in &mut self.windows {
             w.content_dirty = true;

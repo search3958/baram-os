@@ -58,6 +58,7 @@ pub fn parse_app_uri(uri: &str) -> Option<&str> {
         && (name.ends_with(".warp")
             || name.ends_with(".html")
             || name.ends_with(".htm")
+            || name.ends_with(".ini")
             || name.ends_with(".u1"))
     {
         Some(name)
