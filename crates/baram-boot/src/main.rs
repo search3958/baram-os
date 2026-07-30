@@ -1378,6 +1378,20 @@ fn main() -> Status {
             }
         }
 
+        // Warp3 transitions are timer-driven and report only their control
+        // damage; do not promote these frames to a full-window repaint.
+        for (wid, engine) in html_engines.iter_mut() {
+            if engine.tick() {
+                if let Some((x0, y0, x1, y1)) = engine.window_damage() {
+                    wm.set_content_damage(*wid, x0, y0, x1, y1);
+                } else {
+                    wm.set_content_dirty(*wid);
+                }
+                scene_dirty = true;
+                dirty = true;
+            }
+        }
+
         frames = frames.wrapping_add(1);
         frames_since_tick = frames_since_tick.wrapping_add(1);
         if let Ok(now) = runtime::get_time() {

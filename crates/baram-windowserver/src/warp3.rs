@@ -12,6 +12,9 @@ use baram_core::{Color, LayerSystem};
 use baram_font::ttf_font;
 use baram_font::LayerFontExt;
 
+const HOVER_STEPS: u8 = 7;
+const SWITCH_STEPS: u8 = 10;
+
 struct ShadowMask {
     w: usize,
     h: usize,
@@ -346,6 +349,9 @@ pub struct Warp3Engine {
     toolbar_paint: Vec<usize>,
     window_damage: Option<(i32, i32, i32, i32)>,
     full_window_redraw: bool,
+    hover_transition: Option<(Option<usize>, Option<usize>, u8)>,
+    switch_transition: Option<(usize, bool, u8)>,
+    transition_tick: u8,
     shadows: Vec<ShadowMask>,
 }
 
@@ -380,6 +386,9 @@ impl Warp3Engine {
             toolbar_paint: Vec::new(),
             window_damage: None,
             full_window_redraw: false,
+            hover_transition: None,
+            switch_transition: None,
+            transition_tick: 0,
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -465,13 +474,18 @@ impl Warp3Engine {
     pub fn set_hover(&mut self, x: i32, y: i32) {
         let next = self.hit_test(x, y);
         if self.hovered != next {
-            self.invalidate_nodes(self.hovered, next);
+            let old = self.hovered;
+            self.hover_transition = Some((old, next, 0));
+            self.transition_tick = 0;
+            self.invalidate_nodes(old, next);
             self.hovered = next;
         }
     }
 
     pub fn clear_hover(&mut self) {
         if let Some(old) = self.hovered.take() {
+            self.hover_transition = Some((Some(old), None, 0));
+            self.transition_tick = 0;
             self.invalidate_nodes(Some(old), None);
         }
     }
@@ -487,11 +501,14 @@ impl Warp3Engine {
             self.focused_input = Some(idx);
         } else if self.nodes[idx].is("switch") {
             let current = self.nodes[idx].prop("default") == "true";
+            let next = !current;
             set_prop(
                 &mut self.nodes[idx],
                 "default",
-                if current { "false" } else { "true" },
+                if next { "true" } else { "false" },
             );
+            self.switch_transition = Some((idx, next, 0));
+            self.transition_tick = 0;
             self.run_click(idx);
         } else if self.nodes[idx].is("content") {
             if let Some(parent) = self.find_parent(idx) {
@@ -519,6 +536,40 @@ impl Warp3Engine {
         }
         set_prop(&mut self.nodes[idx], "text", &value);
         self.invalidate_from(self.nodes[idx].y);
+    }
+
+    /// Advance 90 ms control transitions in 1 ms timer ticks.  No layout is
+    /// involved; only the old/new control damage rectangle is requested.
+    pub fn tick(&mut self) -> bool {
+        if self.hover_transition.is_none() && self.switch_transition.is_none() {
+            return false;
+        }
+        self.transition_tick = self.transition_tick.wrapping_add(1);
+        // Match the reference CSS (.1s buttons, .15s switches) while keeping
+        // every animation frame a tiny 15 ms damage patch.
+        if self.transition_tick % 15 != 0 {
+            return false;
+        }
+        let mut changed = false;
+        if let Some((old, new, frame)) = self.hover_transition {
+            if frame < HOVER_STEPS {
+                self.hover_transition = Some((old, new, frame + 1));
+                self.invalidate_nodes(old, new);
+                changed = true;
+            } else {
+                self.hover_transition = None;
+            }
+        }
+        if let Some((idx, on, frame)) = self.switch_transition {
+            if frame < SWITCH_STEPS {
+                self.switch_transition = Some((idx, on, frame + 1));
+                self.invalidate_nodes(Some(idx), None);
+                changed = true;
+            } else {
+                self.switch_transition = None;
+            }
+        }
+        changed
     }
 
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, _oy: i32) {
@@ -992,10 +1043,11 @@ impl Warp3Engine {
             let primary = node.prop("type") == "primary";
             let text_only = node.prop("type") == "text";
             let active_tab = node.is("content") && self.is_active_tab(idx);
-            let color = if primary && self.hovered == Some(idx) {
-                html_accent_hover()
-            } else if self.hovered == Some(idx) {
-                Color::rgb(255, 255, 255)
+            let hover = self.hover_amount(idx);
+            let color = if primary {
+                blend_color(accent, html_accent_hover(), hover)
+            } else if hover > 0.0 {
+                blend_color(solid, Color::rgb(255, 255, 255), hover)
             } else if primary {
                 accent
             } else if active_tab {
@@ -1005,7 +1057,7 @@ impl Warp3Engine {
             } else {
                 solid
             };
-            if !text_only && (!node.is("content") || active_tab || self.hovered == Some(idx)) {
+            if !text_only && (!node.is("content") || active_tab || hover > 0.0) {
                 rounded_box(layer, x, y, wu, hu, 4, border, color);
             }
         } else if node.is("input") || node.is("textarea") {
@@ -1026,7 +1078,8 @@ impl Warp3Engine {
             layer.fill_rounded_rect(xu, yu, wu, hu, 6, Color::rgb(32, 32, 32));
         } else if node.is("switch") {
             let on = node.prop("default") == "true";
-            let switch_bg = if on { accent } else { bg };
+            let progress = self.switch_amount(idx, on);
+            let switch_bg = blend_color(bg, accent, progress);
             rounded_box(
                 layer,
                 x,
@@ -1034,14 +1087,10 @@ impl Warp3Engine {
                 wu,
                 hu,
                 10,
-                if on {
-                    accent
-                } else {
-                    Color::rgb(119, 119, 119)
-                },
+                blend_color(Color::rgb(119, 119, 119), accent, progress),
                 switch_bg,
             );
-            let knob_x = if on { x + node.w - 18 } else { x + 3 };
+            let knob_x = x + 3 + ((node.w - 21).max(0) as f32 * progress) as i32;
             layer.fill_circle(
                 knob_x.max(0) as usize + 7,
                 yu + 10,
@@ -1106,6 +1155,25 @@ impl Warp3Engine {
         self.nodes
             .iter()
             .any(|node| node.is("tab") && node.children.get(node.tab).copied() == Some(content_idx))
+    }
+
+    fn hover_amount(&self, idx: usize) -> f32 {
+        if let Some((old, new, frame)) = self.hover_transition {
+            let t = frame as f32 / HOVER_STEPS as f32;
+            if new == Some(idx) { return t; }
+            if old == Some(idx) { return 1.0 - t; }
+        }
+        (self.hovered == Some(idx)) as u8 as f32
+    }
+
+    fn switch_amount(&self, idx: usize, on: bool) -> f32 {
+        if let Some((animated, target_on, frame)) = self.switch_transition {
+            if animated == idx {
+                let t = ease_out(frame as f32 / SWITCH_STEPS as f32);
+                return if target_on { t } else { 1.0 - t };
+            }
+        }
+        on as u8 as f32
     }
 
     fn is_toolbar_tree(&self, idx: usize) -> bool {
@@ -1500,6 +1568,17 @@ fn html_accent() -> Color {
 
 fn html_accent_hover() -> Color {
     Color::rgb(25, 117, 197)
+}
+
+fn blend_color(from: Color, to: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t) as u8;
+    Color::rgb(mix(from.r(), to.r()), mix(from.g(), to.g()), mix(from.b(), to.b()))
+}
+
+fn ease_out(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t) * (1.0 - t)
 }
 
 fn rounded_box(
