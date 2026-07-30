@@ -31,13 +31,30 @@ impl Screen {
         let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle)
             .map_err(|_| Status::UNSUPPORTED)?;
 
-        let mut best_area: usize = 0;
+        // The compositor is tuned for a 720p working set.  Picking the
+        // firmware's largest mode (often 4K) multiplies every software blend
+        // and framebuffer write by up to 9x with no UI benefit.
+        const TARGET_W: usize = 1280;
+        const TARGET_H: usize = 720;
+        let mut best_score = usize::MAX;
         let mut best_mode: Option<uefi::proto::console::gop::Mode> = None;
         for mode in gop.modes() {
             let (w, h) = mode.info().resolution();
-            let area = w * h;
-            if area > best_area {
-                best_area = area;
+            let area_delta = w.abs_diff(TARGET_W)
+                .saturating_mul(TARGET_H)
+                .saturating_add(h.abs_diff(TARGET_H).saturating_mul(TARGET_W));
+            let aspect_delta = w.saturating_mul(TARGET_H)
+                .abs_diff(h.saturating_mul(TARGET_W));
+            let undersized_penalty = if w < TARGET_W || h < TARGET_H {
+                usize::MAX / 4
+            } else {
+                0
+            };
+            let score = undersized_penalty
+                .saturating_add(area_delta)
+                .saturating_add(aspect_delta.saturating_mul(4));
+            if score < best_score {
+                best_score = score;
                 best_mode = Some(mode);
             }
         }
@@ -157,37 +174,11 @@ impl Screen {
     }
 
     pub fn flush_layer_row(&mut self, y: usize, row: &[u32]) {
-        if y >= self.info.height { return; }
-        let pf = self.info.pixel_format;
-        let stride = self.info.stride;
-        let base = self.fb_ptr;
-        let n = row.len().min(self.info.width);
-        let off = (y * stride) * 4;
-        match pf {
-            PixelFormat::Bgr => {
-                unsafe {
-                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off) as *mut u32, n);
-                }
-            }
-            PixelFormat::Rgb => {
-                for x in 0..n {
-                    let c = Color(row[x]);
-                    let v = ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32);
-                    unsafe {
-                        ptr::write_volatile(base.add(off + x * 4) as *mut u32, v);
-                    }
-                }
-            }
-            _ => {
-                unsafe {
-                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off) as *mut u32, n);
-                }
-            }
-        }
+        self.flush_layer_row_range(y, 0, row);
     }
 
     pub fn flush_layer_row_range(&mut self, y: usize, x_offset: usize, row: &[u32]) {
-        if y >= self.info.height { return; }
+        if y >= self.info.height || x_offset >= self.info.width { return; }
         let pf = self.info.pixel_format;
         let stride = self.info.stride;
         let base = self.fb_ptr;
@@ -195,12 +186,28 @@ impl Screen {
         let off_base = (y * stride + x_offset) * 4;
         match pf {
             PixelFormat::Rgb => {
-                for x in 0..n {
-                    let c = Color(row[x]);
-                    let v = ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32);
-                    unsafe {
-                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
+                // Convert in cache-sized batches, then issue a bulk write to the
+                // (usually uncached) framebuffer instead of one volatile store
+                // per pixel.
+                const CHUNK: usize = 128;
+                let mut converted = [0u32; CHUNK];
+                let mut x = 0usize;
+                while x < n {
+                    let count = (n - x).min(CHUNK);
+                    for i in 0..count {
+                        let p = row[x + i];
+                        converted[i] = (p & 0xFF00_FF00)
+                            | ((p & 0x00FF_0000) >> 16)
+                            | ((p & 0x0000_00FF) << 16);
                     }
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            converted.as_ptr(),
+                            base.add(off_base + x * 4) as *mut u32,
+                            count,
+                        );
+                    }
+                    x += count;
                 }
             }
             _ => {

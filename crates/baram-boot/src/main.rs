@@ -372,8 +372,6 @@ fn main() -> Status {
     loop {
         let mut dirty = false;
 
-        let prev_dirty = wm.dirty_bbox(shadow_pad);
-
         if let Some(ref timer) = timer_event {
             let mut events: [uefi::Event; 2] = [unsafe { core::ptr::read(timer) }, unsafe { core::ptr::read(timer) }];
             let mut n = 1;
@@ -1271,7 +1269,7 @@ fn main() -> Status {
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
             if scene_dirty {
-                let (bx0, by0, bx1, by1) = prev_dirty;
+                let (bx0, by0, bx1, by1) = wm.dirty_bbox(shadow_pad);
 
                 let taskbar_dirty = cached_taskbar_strip.is_none()
                     || tb_add_progress >= 0.0
@@ -1323,6 +1321,56 @@ fn main() -> Status {
                     }
                 }
 
+                let w = screen.width();
+                let h = screen.height();
+                let tb_y = h.saturating_sub(TASKBAR_H);
+                let pad = 32i32;
+                let cur_w = if is_resizing {
+                    cursor::CURSOR_BOX_SIZE_W
+                } else {
+                    cursor::CURSOR_BOX_W
+                };
+                let cur_h = if is_resizing {
+                    cursor::CURSOR_BOX_SIZE_H
+                } else {
+                    cursor::CURSOR_BOX_H
+                };
+                let prev_w = if prev_is_resizing {
+                    cursor::CURSOR_BOX_SIZE_W
+                } else {
+                    cursor::CURSOR_BOX_W
+                };
+                let prev_h = if prev_is_resizing {
+                    cursor::CURSOR_BOX_SIZE_H
+                } else {
+                    cursor::CURSOR_BOX_H
+                };
+                let cx0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
+                let cy0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
+                let cx1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad)
+                    .min(w as i32) as usize;
+                let cy1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad)
+                    .min(h as i32) as usize;
+
+                let (mut fx0, mut fy0, mut fx1, mut fy1) = if taskbar_only {
+                    (0, tb_y, w, h)
+                } else {
+                    (bx0.min(cx0), by0.min(cy0), bx1.max(cx1), by1.max(cy1))
+                };
+                if taskbar_dirty && !taskbar_only {
+                    fx0 = 0;
+                    fy0 = fy0.min(tb_y);
+                    fx1 = w;
+                    fy1 = h;
+                }
+                if launcher_changed || !bg_valid {
+                    fx0 = 0;
+                    fy0 = 0;
+                    fx1 = w;
+                    fy1 = h;
+                }
+                layer.push_clip(fx0, fy0, fx1, fy1);
+
                 render_scene(
                     &mut layer,
                     &mut wm,
@@ -1355,6 +1403,7 @@ fn main() -> Status {
                     clock_mm,
                     battery_info.percentage,
                 );
+                layer.pop_clip();
 
                 if show_app_launcher {
                     if let Some(ref ll) = cached_launcher_layer {
@@ -1362,7 +1411,11 @@ fn main() -> Status {
                         let ww = screen.width();
                         let hh = screen.height();
                         let tby = hh.saturating_sub(TASKBAR_H);
-                        buf[..tby * ww].copy_from_slice(&ll[..tby * ww]);
+                        for y in fy0..fy1.min(tby) {
+                            let s = y * ww + fx0;
+                            let e = y * ww + fx1;
+                            buf[s..e].copy_from_slice(&ll[s..e]);
+                        }
                     }
                 }
                 if launcher_changed {
@@ -1379,67 +1432,13 @@ fn main() -> Status {
                     tb_remove_progress = -1.0;
                 }
 
-                let (ax0, ay0, ax1, ay1) = wm.dirty_bbox(shadow_pad);
-                let rx0 = bx0.min(ax0);
-                let ry0 = by0.min(ay0);
-                let rx1 = bx1.max(ax1);
-                let ry1 = by1.max(ay1);
-
-                let w = screen.width();
-                let h = screen.height();
-                let tb_y = h.saturating_sub(TASKBAR_H);
-                let ry1 = ry1.max(h);
-                let ry0 = ry0.min(tb_y);
-
-                let pad = 32i32;
-                let cur_w = if is_resizing {
-                    cursor::CURSOR_BOX_SIZE_W
-                } else {
-                    cursor::CURSOR_BOX_W
-                };
-                let cur_h = if is_resizing {
-                    cursor::CURSOR_BOX_SIZE_H
-                } else {
-                    cursor::CURSOR_BOX_H
-                };
-                let prev_w = if prev_is_resizing {
-                    cursor::CURSOR_BOX_SIZE_W
-                } else {
-                    cursor::CURSOR_BOX_W
-                };
-                let prev_h = if prev_is_resizing {
-                    cursor::CURSOR_BOX_SIZE_H
-                } else {
-                    cursor::CURSOR_BOX_H
-                };
-                let cx0 = (prev_cursor_x.min(cursor_x) - pad).max(0) as usize;
-                let cy0 = (prev_cursor_y.min(cursor_y) - pad).max(0) as usize;
-                let cx1 = (prev_cursor_x.max(cursor_x) + cur_w.max(prev_w) as i32 + pad)
-                    .min(w as i32) as usize;
-                let cy1 = (prev_cursor_y.max(cursor_y) + cur_h.max(prev_h) as i32 + pad)
-                    .min(h as i32) as usize;
-
-                let fx0;
-                let fy0;
-                let fx1;
-                let fy1;
-                if !bg_valid {
-                    fx0 = 0;
-                    fy0 = 0;
-                    fx1 = w;
-                    fy1 = h;
-                } else {
-                    fx0 = rx0.min(cx0);
-                    fy0 = ry0.min(cy0);
-                    fx1 = rx1.max(cx1);
-                    fy1 = ry1.max(cy1);
-                }
                 for y in fy0..fy1 {
                     let s = y * w + fx0;
                     let e = y * w + fx1;
                     cached_scene[s..e].copy_from_slice(&layer.buf_ref()[s..e]);
                 }
                 scene_dirty = false;
+                wm.clear_pending_damage();
 
                 cursor::draw_cursor_into_layer(
                     &mut layer,
@@ -1452,7 +1451,10 @@ fn main() -> Status {
                 let fw = fx1 - fx0;
                 let fh = fy1 - fy0;
                 let full_area = w * h;
-                if launcher_changed || !bg_valid || fw * fh >= full_area * 3 / 4 {
+                if taskbar_only {
+                    layer.flush_rect(&mut screen, 0, tb_y, w, h);
+                    layer.flush_rect(&mut screen, cx0, cy0, cx1, cy1);
+                } else if launcher_changed || !bg_valid || fw * fh >= full_area * 3 / 4 {
                     layer.flush(&mut screen);
                 } else {
                     layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
@@ -1507,9 +1509,9 @@ fn main() -> Status {
                         let ww = screen.width();
                         let hh = screen.height();
                         let tby = hh.saturating_sub(TASKBAR_H);
-                        for y in 0..tby {
-                            let s = y * ww;
-                            let e = s + ww;
+                        for y in y0..y1.min(tby) {
+                            let s = y * ww + x0;
+                            let e = y * ww + x1;
                             buf[s..e].copy_from_slice(&ll[s..e]);
                         }
                     }

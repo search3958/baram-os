@@ -76,6 +76,8 @@ pub struct Window {
     pub scroll_y: i32,
     prev_x: i32,
     prev_y: i32,
+    prev_w: usize,
+    prev_h: usize,
     save_x: i32,
     save_y: i32,
     save_w: usize,
@@ -124,6 +126,8 @@ impl Window {
             scroll_y: 0,
             prev_x: x,
             prev_y: y,
+            prev_w: w,
+            prev_h: h,
             save_x: x,
             save_y: y,
             save_w: w,
@@ -302,6 +306,7 @@ pub struct WindowManager {
     shadow_cache: Vec<(WinId, Option<CachedShadow>)>,
     temp_layer: Option<LayerSystem>,
     order_changed: bool,
+    pending_damage: Option<(usize, usize, usize, usize)>,
 }
 
 impl WindowManager {
@@ -316,6 +321,7 @@ impl WindowManager {
             shadow_cache: Vec::new(),
             temp_layer: None,
             order_changed: false,
+            pending_damage: None,
         }
     }
 
@@ -347,6 +353,23 @@ impl WindowManager {
 
     pub fn remove(&mut self, id: WinId) {
         if let Some(pos) = self.windows.iter().position(|w| w.id == id) {
+            let w = &self.windows[pos];
+            let pad = shadow_pad();
+            let rect = (
+                (w.x - pad).max(0) as usize,
+                (w.y - pad).max(0) as usize,
+                (w.x + w.w as i32 + pad).min(self.screen_w).max(0) as usize,
+                (w.y + w.h as i32 + pad).min(self.screen_h).max(0) as usize,
+            );
+            self.pending_damage = Some(match self.pending_damage {
+                Some(old) => (
+                    old.0.min(rect.0),
+                    old.1.min(rect.1),
+                    old.2.max(rect.2),
+                    old.3.max(rect.3),
+                ),
+                None => rect,
+            });
             self.windows.remove(pos);
             if let Some(pos) = self.shadow_cache.iter().position(|(wid, _)| *wid == id) {
                 self.shadow_cache.remove(pos);
@@ -779,6 +802,10 @@ impl WindowManager {
                 layer.composit_rounded(win_layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h, win_radius());
                 draw_window_border(layer, &self.windows[idx]);
             }
+            self.windows[idx].prev_x = self.windows[idx].x;
+            self.windows[idx].prev_y = self.windows[idx].y;
+            self.windows[idx].prev_w = self.windows[idx].w;
+            self.windows[idx].prev_h = self.windows[idx].h;
         }
     }
 
@@ -911,21 +938,26 @@ impl WindowManager {
     pub fn dirty_bbox(&self, shadow_pad: i32) -> (usize, usize, usize, usize) {
         let sw = self.screen_w as usize;
         let sh = self.screen_h as usize;
-        if self.windows.is_empty() {
-            return (0, 0, sw, sh);
-        }
-        let mut min_x = sw;
-        let mut min_y = sh;
-        let mut max_x = 0usize;
-        let mut max_y = 0usize;
+        let (mut min_x, mut min_y, mut max_x, mut max_y) =
+            self.pending_damage.unwrap_or((sw, sh, 0, 0));
         for w in &self.windows {
-            if !w.visible {
+            if !w.visible
+                || !(w.content_dirty
+                    || w.shadow_dirty
+                    || w.open_animating
+                    || w.x != w.prev_x
+                    || w.y != w.prev_y)
+            {
                 continue;
             }
-            let x0 = (w.x - shadow_pad).max(0) as usize;
-            let y0 = (w.y - shadow_pad).max(0) as usize;
-            let x1 = (w.x + w.w as i32 + shadow_pad).min(sw as i32) as usize;
-            let y1 = (w.y + w.h as i32 + shadow_pad).min(sh as i32) as usize;
+            let x0 = (w.x.min(w.prev_x) - shadow_pad).max(0) as usize;
+            let y0 = (w.y.min(w.prev_y) - shadow_pad).max(0) as usize;
+            let x1 = (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
+                .min(sw as i32)
+                .max(0) as usize;
+            let y1 = (w.y.max(w.prev_y) + w.h.max(w.prev_h) as i32 + shadow_pad)
+                .min(sh as i32)
+                .max(0) as usize;
             if x0 < min_x {
                 min_x = x0;
             }
@@ -940,9 +972,13 @@ impl WindowManager {
             }
         }
         if max_x <= min_x || max_y <= min_y {
-            return (0, 0, sw, sh);
+            return (0, 0, 0, 0);
         }
         (min_x, min_y, max_x, max_y)
+    }
+
+    pub fn clear_pending_damage(&mut self) {
+        self.pending_damage = None;
     }
 }
 

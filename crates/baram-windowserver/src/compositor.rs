@@ -344,23 +344,22 @@ pub fn render_scene(
 
     if taskbar_only {
         if let Some(ref cached) = scene_before_strip {
-            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
+            layer.copy_rect_buffer(cached, w, TASKBAR_H, 0, tb_y);
         }
     } else {
-        layer.mark_all_dirty();
         if bg_cache_valid {
             if let Some(ref cached) = bg_cache {
-                layer.buf_mut()[..w * h].copy_from_slice(cached);
+                layer.copy_from_screen_buffer(cached);
             }
         } else if let Some(pixels) = wallpaper {
-            layer.buf_mut()[..w * h].copy_from_slice(pixels);
+            layer.copy_from_screen_buffer(pixels);
         } else {
             layer.clear(config::get_color("ui-theme/color/bg", Color::BG));
         }
 
         if bg_cache_valid {
         } else if let Some(ref cached) = cached_taskbar {
-            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(cached);
+            layer.copy_rect_buffer(cached, w, TASKBAR_H, 0, tb_y);
         } else {
             let mut blurred = alloc::vec![0u32; w * TASKBAR_H];
             blur::blur_region_to(layer.buf_ref(), &mut blurred, w, tb_y, h, TASKBAR_BLUR_R);
@@ -398,9 +397,16 @@ pub fn render_scene(
             html_engines,
         );
 
-        let mut strip_pre = alloc::vec![0u32; w * TASKBAR_H];
-        strip_pre.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-        *scene_before_strip = Some(strip_pre);
+        let source = &layer.buf_ref()[tb_y * w..h * w];
+        if let Some(strip_pre) = scene_before_strip.as_mut() {
+            if strip_pre.len() == source.len() {
+                strip_pre.copy_from_slice(source);
+            } else {
+                *strip_pre = source.to_vec();
+            }
+        } else {
+            *scene_before_strip = Some(source.to_vec());
+        }
     }
 
     let mut fb = FmtBuf::new();
@@ -414,7 +420,7 @@ pub fn render_scene(
 
     if !taskbar_dirty {
         if let Some(ref strip) = cached_taskbar_strip {
-            layer.buf_mut()[tb_y * w..h * w].copy_from_slice(strip);
+            layer.copy_rect_buffer(strip, w, TASKBAR_H, 0, tb_y);
         }
     } else {
         let ids = wm.insertion_ids();
@@ -688,9 +694,16 @@ pub fn render_scene(
             }
         }
 
-        let mut strip = alloc::vec![0u32; w * TASKBAR_H];
-        strip.copy_from_slice(&layer.buf_ref()[tb_y * w..h * w]);
-        *cached_taskbar_strip = Some(strip);
+        let source = &layer.buf_ref()[tb_y * w..h * w];
+        if let Some(strip) = cached_taskbar_strip.as_mut() {
+            if strip.len() == source.len() {
+                strip.copy_from_slice(source);
+            } else {
+                *strip = source.to_vec();
+            }
+        } else {
+            *cached_taskbar_strip = Some(source.to_vec());
+        }
     }
 
     if hud_enabled {

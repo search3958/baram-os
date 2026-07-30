@@ -135,6 +135,114 @@ impl LayerSystem {
         }
     }
 
+    #[inline]
+    fn clipped_rect(
+        &self,
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+    ) -> Option<(usize, usize, usize, usize)> {
+        let mut r = (
+            x0.min(self.width),
+            y0.min(self.height),
+            x1.min(self.width),
+            y1.min(self.height),
+        );
+        if let Some((cx0, cy0, cx1, cy1)) = self.clip {
+            r.0 = r.0.max(cx0);
+            r.1 = r.1.max(cy0);
+            r.2 = r.2.min(cx1);
+            r.3 = r.3.min(cy1);
+        }
+        if r.0 < r.2 && r.1 < r.3 { Some(r) } else { None }
+    }
+
+    #[inline]
+    fn clipped_blit(
+        &self,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
+        src_w: usize,
+        src_h: usize,
+    ) -> Option<(usize, usize, usize, usize, usize, usize)> {
+        let (x0, y0, mut x1, mut y1) = self.clipped_rect(
+            dx,
+            dy,
+            dx.saturating_add(w),
+            dy.saturating_add(h),
+        )?;
+        let nsx = sx.saturating_add(x0 - dx);
+        let nsy = sy.saturating_add(y0 - dy);
+        if nsx >= src_w || nsy >= src_h {
+            return None;
+        }
+        x1 = x1.min(x0.saturating_add(src_w - nsx));
+        y1 = y1.min(y0.saturating_add(src_h - nsy));
+        if x0 >= x1 || y0 >= y1 {
+            None
+        } else {
+            Some((x0, y0, nsx, nsy, x1 - x0, y1 - y0))
+        }
+    }
+
+    /// Copy a screen-sized backing buffer, honoring the active damage clip.
+    pub fn copy_from_screen_buffer(&mut self, src: &[u32]) {
+        if src.len() < self.width * self.height {
+            return;
+        }
+        let (x0, y0, x1, y1) = self.clip
+            .unwrap_or((0, 0, self.width, self.height));
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        self.mark_dirty_rect(x0, y0, x1, y1);
+        if x0 == 0 && x1 == self.width {
+            self.buf[y0 * self.width..y1 * self.width]
+                .copy_from_slice(&src[y0 * self.width..y1 * self.width]);
+        } else {
+            for y in y0..y1 {
+                let start = y * self.width + x0;
+                let end = y * self.width + x1;
+                self.buf[start..end].copy_from_slice(&src[start..end]);
+            }
+        }
+    }
+
+    /// Copy a rectangular source buffer at `(dx, dy)`, intersecting it with
+    /// the current clip so unchanged rows never cross the memory bus.
+    pub fn copy_rect_buffer(
+        &mut self,
+        src: &[u32],
+        src_width: usize,
+        src_height: usize,
+        dx: usize,
+        dy: usize,
+    ) {
+        if src_width == 0 || src_height == 0 || src.len() < src_width * src_height {
+            return;
+        }
+        let Some((x0, y0, x1, y1)) =
+            self.clipped_rect(dx, dy, dx.saturating_add(src_width), dy.saturating_add(src_height))
+        else {
+            return;
+        };
+        self.mark_dirty_rect(x0, y0, x1, y1);
+        let sx0 = x0 - dx;
+        for y in y0..y1 {
+            let sy = y - dy;
+            let src_start = sy * src_width + sx0;
+            let len = x1 - x0;
+            let dst_start = y * self.width + x0;
+            self.buf[dst_start..dst_start + len]
+                .copy_from_slice(&src[src_start..src_start + len]);
+        }
+    }
+
     pub fn clear(&mut self, c: Color) {
         self.buf.fill(c.0);
         self.mark_all_dirty();
@@ -598,16 +706,11 @@ impl LayerSystem {
                     screen.flush_layer_row_range(y, x0, row);
                 }
             }
-        } else {
-            for y in 0..h {
-                let row = &self.buf[y * w..(y + 1) * w];
-                screen.flush_layer_row(y, row);
-            }
         }
         self.frame_count += 1;
     }
 
-    pub fn flush_rect(&self, screen: &mut Screen, x0: usize, y0: usize, x1: usize, y1: usize) {
+    pub fn flush_rect(&mut self, screen: &mut Screen, x0: usize, y0: usize, x1: usize, y1: usize) {
         let w = self.width;
         let y0 = y0.min(self.height);
         let y1 = y1.min(self.height);
@@ -617,6 +720,8 @@ impl LayerSystem {
             let row = &self.buf[y * w + x0..y * w + x1];
             screen.flush_layer_row_range(y, x0, row);
         }
+        let _ = self.take_dirty();
+        self.frame_count += 1;
     }
 
     pub fn composit_rounded(
@@ -627,18 +732,24 @@ impl LayerSystem {
         w: usize, h: usize,
         r: usize,
     ) {
-        let r = r.min(w / 2).min(h / 2);
+        let shape_w = w;
+        let shape_h = h;
+        let original_dx = dx;
+        let original_dy = dy;
+        let r = r.min(shape_w / 2).min(shape_h / 2);
         let rf = r as f32;
         let sw = src.width;
         let sh = src.height;
         let dw = self.width;
         let dh = self.height;
-
-        let x0 = dx;
-        let y0 = dy;
-        let x1 = (dx + w).min(dw);
-        let y1 = (dy + h).min(dh);
-        self.mark_dirty_rect(x0, y0, x1, y1);
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        let shape_x = dx - original_dx;
+        let shape_y = dy - original_dy;
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
 
         if r == 0 {
             for py in 0..h {
@@ -678,7 +789,7 @@ impl LayerSystem {
         }
 
         let corner_end = r;
-        let corner_row_start = h.saturating_sub(r);
+        let corner_row_start = shape_h.saturating_sub(r);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -688,8 +799,9 @@ impl LayerSystem {
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
 
-            let in_top_corner = py < corner_end;
-            let in_bot_corner = py >= corner_row_start;
+            let shape_py = shape_y + py;
+            let in_top_corner = shape_py < corner_end;
+            let in_bot_corner = shape_py >= corner_row_start;
 
             if !in_top_corner && !in_bot_corner {
                 let copy_w = w.min(sw - sx).min(dw - dx);
@@ -721,12 +833,15 @@ impl LayerSystem {
                 continue;
             }
 
-            let end_x = w.min(sw - sx).min(dw - dx);
-            let poly = Self::cached_squircle(w as f32, h as f32, rf);
+            let end_x = w;
+            let poly = Self::cached_squircle(shape_w as f32, shape_h as f32, rf);
             let off = [0.25f32, 0.75f32];
-            let base_y = py as f32;
+            let base_y = shape_py as f32;
             if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
-                let (span_l, span_r) = Self::pixel_span_from_bounds(left, right, end_x);
+                let (shape_l, shape_r) =
+                    Self::pixel_span_from_bounds(left, right, shape_w);
+                let span_l = shape_l.saturating_sub(shape_x).min(end_x);
+                let span_r = shape_r.saturating_sub(shape_x).min(end_x);
 
                 if span_r > span_l {
                     unsafe {
@@ -739,17 +854,31 @@ impl LayerSystem {
                 }
 
                 let edge_l = span_l.saturating_sub(1);
-                if edge_l < end_x {
+                if shape_l >= shape_x && edge_l < end_x {
                     let sp = src.buf[src_row + edge_l];
                     if sp != Color::TRANSPARENT.0 {
-                        Self::pixel_aa(&mut self.buf[dst_row + edge_l], sp, edge_l as f32, base_y, poly, &off);
+                        Self::pixel_aa(
+                            &mut self.buf[dst_row + edge_l],
+                            sp,
+                            (shape_x + edge_l) as f32,
+                            base_y,
+                            poly,
+                            &off,
+                        );
                     }
                 }
                 let edge_r = span_r;
                 if edge_r < end_x {
                     let sp = src.buf[src_row + edge_r];
                     if sp != Color::TRANSPARENT.0 {
-                        Self::pixel_aa(&mut self.buf[dst_row + edge_r], sp, edge_r as f32, base_y, poly, &off);
+                        Self::pixel_aa(
+                            &mut self.buf[dst_row + edge_r],
+                            sp,
+                            (shape_x + edge_r) as f32,
+                            base_y,
+                            poly,
+                            &off,
+                        );
                     }
                 }
             }
@@ -771,11 +900,12 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
-        let x0 = dx;
-        let y0 = dy;
-        let x1 = (dx + w).min(dw);
-        let y1 = (dy + h).min(dh);
-        self.mark_dirty_rect(x0, y0, x1, y1);
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -786,7 +916,7 @@ impl LayerSystem {
 
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
-            let max_px = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
+            let max_px = w;
 
             for px in 0..max_px {
                 let a = src.buf[src_row + px] & 0xFF;
@@ -819,14 +949,12 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
-        let copy_w = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
-        if copy_w == 0 { return; }
-
-        let x0 = dx;
-        let y0 = dy;
-        let x1 = (dx + copy_w).min(dw);
-        let y1 = (dy + h).min(dh);
-        self.mark_dirty_rect(x0, y0, x1, y1);
+        let Some((dx, dy, sx, sy, copy_w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        self.mark_dirty_rect(dx, dy, dx + copy_w, dy + h);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -875,11 +1003,12 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
-        let x0 = dx;
-        let y0 = dy;
-        let x1 = (dx + w).min(dw);
-        let y1 = (dy + h).min(dh);
-        self.mark_dirty_rect(x0, y0, x1, y1);
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -888,7 +1017,7 @@ impl LayerSystem {
 
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
-            let max_px = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
+            let max_px = w;
 
             #[cfg(target_arch = "aarch64")]
             unsafe {
