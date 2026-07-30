@@ -779,6 +779,18 @@ impl WindowManager {
                         } else {
                             draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
                         }
+                    } else if cy1 > title_bar_h() {
+                        // The patch is body-only.  Restore an opaque base
+                        // before compositing Warp3; transparent pixels must
+                        // never reveal the desktop through the window layer.
+                        let body_y = cy0.max(title_bar_h());
+                        (*layer_ptr).fill_rect(
+                            cx0,
+                            body_y,
+                            cx1.saturating_sub(cx0),
+                            cy1.saturating_sub(body_y),
+                            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+                        );
                     }
 
                     if let Some((uid, cmds)) = ui_win {

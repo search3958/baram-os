@@ -345,6 +345,7 @@ pub struct Warp3Engine {
     document_paint: Vec<usize>,
     toolbar_paint: Vec<usize>,
     window_damage: Option<(i32, i32, i32, i32)>,
+    full_window_redraw: bool,
     shadows: Vec<ShadowMask>,
 }
 
@@ -378,6 +379,7 @@ impl Warp3Engine {
             document_paint: Vec::new(),
             toolbar_paint: Vec::new(),
             window_damage: None,
+            full_window_redraw: false,
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -453,7 +455,7 @@ impl Warp3Engine {
     }
 
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
-        self.window_damage
+        (!self.full_window_redraw).then_some(self.window_damage).flatten()
     }
 
     pub fn take_scroll_request(&mut self) -> Option<i32> {
@@ -565,6 +567,9 @@ impl Warp3Engine {
             }
         }
         self.window_damage = None;
+        // This draw is reached only after WindowManager selected the full
+        // content path while `full_window_redraw` was set.
+        self.full_window_redraw = false;
     }
 
     fn load_screen(&mut self) {
@@ -610,7 +615,11 @@ impl Warp3Engine {
         self.toolbar_dirty = true;
         self.document_paint.clear();
         self.toolbar_paint.clear();
+        // Loading a screen invalidates every cached document pixel.  The
+        // caller's normal `set_content_dirty` path therefore performs a full
+        // window redraw, never a hover-sized patch.
         self.window_damage = None;
+        self.full_window_redraw = true;
     }
 
     fn layout(&mut self, idx: usize, x: i32, y: i32, width: i32) -> i32 {
@@ -797,7 +806,14 @@ impl Warp3Engine {
         for idx in [old, new].into_iter().flatten() {
             let node = &self.nodes[idx];
             let screen_y = if node.overlay { node.y } else { node.y - self.scroll };
-            let next = (node.x - 14, screen_y - 14, node.x + node.w + 14, screen_y + node.h + 14);
+            // Document patches may never clear title-bar pixels.  Those are
+            // outside Warp3's ownership and would otherwise expose wallpaper.
+            let y0 = if node.overlay {
+                screen_y - 14
+            } else {
+                (screen_y - 14).max(crate::window::title_bar_h() as i32)
+            };
+            let next = (node.x - 14, y0, node.x + node.w + 14, screen_y + node.h + 14);
             self.window_damage = Some(match self.window_damage {
                 Some(old) => (old.0.min(next.0), old.1.min(next.1), old.2.max(next.2), old.3.max(next.3)),
                 None => next,
