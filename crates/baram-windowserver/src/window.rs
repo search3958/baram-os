@@ -42,6 +42,45 @@ pub fn shadow_pad() -> i32 {
     config::get_i32("ui-theme/window/shadow_pad", 30)
 }
 
+pub struct RoundedShadow {
+    layer: LayerSystem,
+    pad: i32,
+}
+
+impl RoundedShadow {
+    pub fn new(w: usize, h: usize, radius: usize) -> Option<Self> {
+        let pad = shadow_pad().max(0);
+        let (alpha, sw, sh) = compute_rounded_shadow_alpha(w, h, radius, pad)?;
+        let mut layer = LayerSystem::new_transparent(sw, sh);
+        for (dst, a) in layer.buf_mut().iter_mut().zip(alpha.iter()) {
+            *dst = *a as u32;
+        }
+        Some(Self { layer, pad })
+    }
+
+    pub fn composite_onto(&self, dst: &mut LayerSystem, x: i32, y: i32) {
+        let shadow_x = x - self.pad;
+        let shadow_y = y - self.pad;
+        let src_x = (-shadow_x).max(0) as usize;
+        let src_y = (-shadow_y).max(0) as usize;
+        let dst_x = shadow_x.max(0) as usize;
+        let dst_y = shadow_y.max(0) as usize;
+        let draw_w = self.layer.width().saturating_sub(src_x);
+        let draw_h = self.layer.height().saturating_sub(src_y);
+        if draw_w > 0 && draw_h > 0 {
+            dst.composit_shadow_alpha(
+                &self.layer,
+                dst_x,
+                dst_y,
+                src_x,
+                src_y,
+                draw_w,
+                draw_h,
+            );
+        }
+    }
+}
+
 pub fn btn_bg_radius() -> usize {
     config::get_usize("ui-theme/button/radius", 8)
 }
@@ -988,13 +1027,34 @@ impl WindowManager {
 }
 
 fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<CachedShadow> {
-    let blur_r: i32 = 30;
-    let r = win_radius() as f32;
-    let ww = w.w as i32;
-    let wh = w.h as i32;
-    let pad = blur_r as usize;
-    let sw = (ww + blur_r * 2) as usize;
-    let sh = (wh + blur_r * 2) as usize;
+    let pad = shadow_pad().max(0);
+    let (alpha, sw, sh) = compute_rounded_shadow_alpha(w.w, w.h, win_radius(), pad)?;
+
+    Some(CachedShadow {
+        win_x: w.x,
+        win_y: w.y,
+        win_w: w.w,
+        win_h: w.h,
+        alpha,
+        x0: pad as usize,
+        y0: pad as usize,
+        w: sw,
+        h: sh,
+    })
+}
+
+fn compute_rounded_shadow_alpha(
+    width: usize,
+    height: usize,
+    radius: usize,
+    pad: i32,
+) -> Option<(Vec<u8>, usize, usize)> {
+    let blur_r = pad;
+    let r = radius as f32;
+    let ww = width as i32;
+    let wh = height as i32;
+    let sw = (ww + blur_r * 2).max(0) as usize;
+    let sh = (wh + blur_r * 2).max(0) as usize;
     if sw == 0 || sh == 0 {
         return None;
     }
@@ -1038,17 +1098,7 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
         }
     }
 
-    Some(CachedShadow {
-        win_x: w.x,
-        win_y: w.y,
-        win_w: w.w,
-        win_h: w.h,
-        alpha,
-        x0: pad,
-        y0: pad,
-        w: sw,
-        h: sh,
-    })
+    Some((alpha, sw, sh))
 }
 
 fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {

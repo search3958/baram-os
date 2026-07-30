@@ -14,6 +14,8 @@ const MAX_SCREENS: usize = 64;
 const MAX_SCRIPTS: usize = 64;
 const MAX_TEXTS: usize = 1024;
 
+pub const SETUP_WARP_SOURCE: &str = include_str!("setup.warp");
+
 #[derive(Clone, Default)]
 struct Attr {
     key: String,
@@ -236,6 +238,21 @@ impl WarpEngine {
         }
         self.content_height = total_h;
         self.dirty = true;
+    }
+
+    pub fn set_screen(&mut self, screen: &str) {
+        if self.current_screen != screen {
+            self.current_screen = screen.chars().take(63).collect();
+            self.parse_current_screen();
+            self.dirty = true;
+        }
+    }
+
+    pub fn node_bounds(&self, id: &str) -> Option<(i32, i32, i32, i32)> {
+        self.find_node_by_id(id).map(|idx| {
+            let node = &self.nodes[idx];
+            (node.x, node.y, node.w, node.h)
+        })
     }
 
     fn set_state(&mut self, key: &str, val: &str) {
@@ -820,6 +837,9 @@ impl WarpEngine {
                 cy += h + 8;
             }
             self.nodes[idx].h = cy - py + 12;
+            if let Ok(min_h) = self.get_attr(idx, "height").parse::<i32>() {
+                self.nodes[idx].h = self.nodes[idx].h.max(min_h.max(0));
+            }
         } else if tag == "button" || tag == "tonalButton" {
             self.nodes[idx].h = 40;
             let text = self.get_attr(idx, "text");
@@ -959,6 +979,12 @@ impl WarpEngine {
             }
             let line_count = lines.len() as i32;
             self.nodes[idx].h = line_count * 22;
+        } else if tag == "spacer" {
+            self.nodes[idx].h = self
+                .get_attr(idx, "height")
+                .parse::<i32>()
+                .unwrap_or(0)
+                .max(0);
         } else if tag == "hStack" {
             let mut cx = px;
             let mut row_h = 0i32;

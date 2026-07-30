@@ -100,6 +100,8 @@ fn main() -> Status {
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
+    let mut display_state = baram_bsd::uri::DisplayState::new();
+    baram_bsd::uri::load_settings_from_config(&mut display_state);
 
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
@@ -127,9 +129,52 @@ fn main() -> Status {
             }
         }
         let mut wizard = baram_bsd::setup::SetupWizard::new();
-        let mut setup_layer = LayerSystem::new(screen.width(), screen.height());
-        let mut setup_buf: alloc::vec::Vec<u32> =
-            alloc::vec![0u32; screen.width() * screen.height()];
+        let setup_w = screen.width();
+        let setup_h = screen.height();
+        let mut setup_engine = baram_windowserver::warp::WarpEngine::new(
+            baram_windowserver::warp::SETUP_WARP_SOURCE,
+        );
+        let setup_wallpaper = wallpaper_for_state(&display_state, setup_w, setup_h);
+        let setup_background = setup_wallpaper.as_ref().map(|wallpaper| {
+            let mut blurred = alloc::vec![0u32; setup_w * setup_h];
+            let mut scratch = alloc::vec![0u32; setup_w * setup_h];
+            baram_graphics::blur::blur_region_to_with_scratch(
+                wallpaper,
+                &mut blurred,
+                &mut scratch,
+                setup_w,
+                0,
+                setup_h,
+                30,
+            );
+            blurred
+        });
+        let mut setup_scene = LayerSystem::new(setup_w, setup_h);
+        let mut setup_present = LayerSystem::new(setup_w, setup_h);
+        let mut setup_origin = (0i32, 0i32);
+        let mut setup_card = (0i32, 0i32, 0usize, 0usize);
+        let mut setup_scene_dirty = true;
+        let mut setup_prev_cursor = (cursor_x, cursor_y);
+        setup_engine.set_screen(wizard.warp_screen());
+        setup_engine.update(528, 320);
+        if let Some((x, y, w, h)) = setup_engine.node_bounds("setupCard") {
+            setup_origin = (
+                (setup_w as i32 - w) / 2 - x,
+                (setup_h as i32 - h) / 2 - y,
+            );
+            setup_card = (
+                x + setup_origin.0,
+                y + setup_origin.1,
+                w.max(0) as usize,
+                h.max(0) as usize,
+            );
+        }
+        let card_radius = config::get_usize("ui-theme/card/radius", 12);
+        let mut setup_shadow = baram_windowserver::window::RoundedShadow::new(
+            setup_card.2,
+            setup_card.3,
+            card_radius,
+        );
 
         loop {
             if let Some(ref timer) = timer_event {
@@ -151,9 +196,18 @@ fn main() -> Status {
                         screen.height(),
                         mouse.abs_max(),
                     );
-                    wizard.on_hover(cursor_x, cursor_y);
+                    setup_engine.set_hover(
+                        cursor_x - setup_origin.0,
+                        cursor_y - setup_origin.1,
+                    );
                     if ev.left {
-                        wizard.on_click(cursor_x, cursor_y);
+                        setup_engine.click(
+                            cursor_x - setup_origin.0,
+                            cursor_y - setup_origin.1,
+                        );
+                        if let Some(command) = setup_engine.last_command.take() {
+                            wizard.on_command(&command);
+                        }
                     }
                 }
             }
@@ -162,13 +216,92 @@ fn main() -> Status {
                 break;
             }
 
-            wizard.render(&mut setup_buf, screen.width(), screen.height());
-            setup_layer.buf_mut()[..screen.width() * screen.height()].copy_from_slice(&setup_buf);
-
             cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
-            cursor::draw_cursor_into_layer(&mut setup_layer, cursor_x, cursor_y, false, 1.0);
-            setup_layer.flush(&mut screen);
+            if wizard.take_dirty() {
+                setup_engine.set_screen(wizard.warp_screen());
+                setup_engine.update(528, 320);
+                if let Some((x, y, w, h)) = setup_engine.node_bounds("setupCard") {
+                    setup_origin = (
+                        (setup_w as i32 - w) / 2 - x,
+                        (setup_h as i32 - h) / 2 - y,
+                    );
+                    let new_card = (
+                        x + setup_origin.0,
+                        y + setup_origin.1,
+                        w.max(0) as usize,
+                        h.max(0) as usize,
+                    );
+                    if new_card.2 != setup_card.2 || new_card.3 != setup_card.3 {
+                        setup_shadow = baram_windowserver::window::RoundedShadow::new(
+                            new_card.2,
+                            new_card.3,
+                            card_radius,
+                        );
+                    }
+                    setup_card = new_card;
+                }
+                setup_scene_dirty = true;
+            }
+            if setup_engine.dirty {
+                setup_scene_dirty = true;
+            }
+
+            if setup_scene_dirty {
+                if let Some(ref background) = setup_background {
+                    setup_scene.copy_from_screen_buffer(background);
+                } else {
+                    setup_scene.clear(config::get_color("ui-theme/color/bg", Color::BG));
+                }
+                if let Some(ref shadow) = setup_shadow {
+                    shadow.composite_onto(&mut setup_scene, setup_card.0, setup_card.1);
+                }
+                setup_engine.draw_to_layer(&mut setup_scene, setup_origin.0, setup_origin.1);
+                setup_engine.draw_texts(&mut setup_scene, setup_origin.0, setup_origin.1, 1.0);
+                setup_engine.dirty = false;
+                setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
+            } else {
+                let pad = 32i32;
+                let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
+                let y0 = (setup_prev_cursor.1.min(cursor_y) - pad).max(0) as usize;
+                let x1 = (setup_prev_cursor.0.max(cursor_x)
+                    + cursor::CURSOR_BOX_W as i32
+                    + pad)
+                    .min(setup_w as i32) as usize;
+                let y1 = (setup_prev_cursor.1.max(cursor_y)
+                    + cursor::CURSOR_BOX_H as i32
+                    + pad)
+                    .min(setup_h as i32) as usize;
+                setup_present.push_clip(x0, y0, x1, y1);
+                setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
+                setup_present.pop_clip();
+            }
+
+            cursor::draw_cursor_into_layer(
+                &mut setup_present,
+                cursor_x,
+                cursor_y,
+                false,
+                display_state.pointer_size,
+            );
+            if setup_scene_dirty {
+                setup_present.flush(&mut screen);
+            } else {
+                let pad = 32i32;
+                let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
+                let y0 = (setup_prev_cursor.1.min(cursor_y) - pad).max(0) as usize;
+                let x1 = (setup_prev_cursor.0.max(cursor_x)
+                    + cursor::CURSOR_BOX_W as i32
+                    + pad)
+                    .min(setup_w as i32) as usize;
+                let y1 = (setup_prev_cursor.1.max(cursor_y)
+                    + cursor::CURSOR_BOX_H as i32
+                    + pad)
+                    .min(setup_h as i32) as usize;
+                setup_present.flush_rect(&mut screen, x0, y0, x1, y1);
+            }
+            setup_scene_dirty = false;
+            setup_prev_cursor = (cursor_x, cursor_y);
         }
         log_line_str("BaramOS: setup wizard completed");
         keyboard.shift_key = shift_key::load_shift_key();
@@ -266,9 +399,6 @@ fn main() -> Status {
         Some(_) => "Simple Ptr",
         None => "None",
     };
-
-    let mut display_state = baram_bsd::uri::DisplayState::new();
-    baram_bsd::uri::load_settings_from_config(&mut display_state);
 
     let mut cached_wallpaper: Option<Vec<u32>> = None;
     if let Some(bytes) = WALLPAPERS.get(display_state.wallpaper_index) {

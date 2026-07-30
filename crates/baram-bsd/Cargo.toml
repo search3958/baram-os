@@ -6,8 +6,5 @@ edition = "2021"
 [dependencies]
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font" }
-baram-graphics = { path = "../baram-graphics" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
-libm = { workspace = true }
-png-decoder = { workspace = true }
