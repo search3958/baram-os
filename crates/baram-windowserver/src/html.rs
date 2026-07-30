@@ -334,8 +334,8 @@ impl HtmlEngine {
         self.hovered_node
     }
 
-    pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
-        if let Some(engine) = self.warp3.as_ref() {
+    pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+        if let Some(engine) = self.warp3.as_mut() {
             engine.draw_to_layer(layer, ox, oy);
             return;
         }

@@ -454,9 +454,10 @@ impl WindowManager {
 
     pub fn clamp_window_scroll(&mut self, id: WinId, content_h: i32) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
-            let tb_h = title_bar_h() as i32;
-            let visible_h = w.h as i32 - tb_h;
-            w.clamp_scroll(content_h, visible_h);
+            // Document coordinates include the title-bar offset, while the
+            // viewport is clipped below it.  Using the full window height here
+            // makes the final document row reachable without scrolling past it.
+            w.clamp_scroll(content_h, w.h as i32);
         }
     }
 
@@ -803,7 +804,7 @@ impl WindowManager {
                     }
                     for i in 0..html_engines.len() {
                         if win_id == html_engines[i].0 {
-                            let engine = &html_engines[i].1;
+                            let engine = &mut html_engines[i].1;
                             (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             (*layer_ptr).pop_clip();

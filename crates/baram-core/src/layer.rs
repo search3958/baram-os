@@ -508,10 +508,9 @@ impl LayerSystem {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
         let v = c.0;
-        let y0 = y.min(self.height);
-        let y1 = (y + h).min(self.height);
-        let x0 = x.min(self.width);
-        let x1 = (x + w).min(self.width);
+        let Some((x0, y0, x1, y1)) = self.clipped_rect(
+            x, y, x.saturating_add(w), y.saturating_add(h),
+        ) else { return; };
         let stride = self.width;
 
         if r == 0 {
@@ -641,10 +640,9 @@ impl LayerSystem {
         let cr = c.r() as f32;
         let cg = c.g() as f32;
         let cb = c.b() as f32;
-        let x0 = cx.saturating_sub(r).min(self.width);
-        let y0 = cy.saturating_sub(r).min(self.height);
-        let x1 = (cx + r + 1).min(self.width);
-        let y1 = (cy + r + 1).min(self.height);
+        let Some((x0, y0, x1, y1)) = self.clipped_rect(
+            cx.saturating_sub(r), cy.saturating_sub(r), cx.saturating_add(r + 1), cy.saturating_add(r + 1),
+        ) else { return; };
         self.mark_dirty_rect(x0, y0, x1, y1);
         for py in y0..y1 {
             let row = py * self.width;

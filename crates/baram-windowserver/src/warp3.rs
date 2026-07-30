@@ -70,6 +70,25 @@ impl ShadowMask {
             target.composit_shadow_alpha(&self.layer, dst_x, dst_y, src_x, src_y, width, height);
         }
     }
+
+    /// Store a black shadow as straight alpha in a transparent overlay.  It
+    /// must not be blended against transparent black first, otherwise it later
+    /// becomes an opaque dark rectangle when the toolbar layer is composited.
+    fn composite_transparent(&self, target: &mut LayerSystem, x: i32, y: i32) {
+        for sy in 0..self.layer.height() {
+            let dy = y - self.pad + sy as i32;
+            if dy < 0 || dy >= target.height() as i32 { continue; }
+            for sx in 0..self.layer.width() {
+                let dx = x - self.pad + sx as i32;
+                if dx < 0 || dx >= target.width() as i32 { continue; }
+                let alpha = self.layer.buf_ref()[sy * self.layer.width() + sx] & 0xff;
+                if alpha == 0 { continue; }
+                let dst = dy as usize * target.width() + dx as usize;
+                let old = (target.buf_ref()[dst] >> 24) & 0xff;
+                target.buf_mut()[dst] = old.max(alpha) << 24;
+            }
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -310,6 +329,13 @@ pub struct Warp3Engine {
     pub content_height: i32,
     scroll_request: Option<i32>,
     dirty: bool,
+    /// First document y that must be repainted after a reflow.  Keeping the
+    /// already-valid prefix is important for long Warp 3 pages.
+    repaint_from: i32,
+    repaint_to: i32,
+    document_layer: Option<LayerSystem>,
+    toolbar_layer: Option<LayerSystem>,
+    toolbar_dirty: bool,
     shadows: Vec<ShadowMask>,
 }
 
@@ -335,6 +361,11 @@ impl Warp3Engine {
             content_height: 0,
             scroll_request: None,
             dirty: true,
+            repaint_from: 0,
+            repaint_to: i32::MAX,
+            document_layer: None,
+            toolbar_layer: None,
+            toolbar_dirty: true,
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -347,7 +378,15 @@ impl Warp3Engine {
 
     pub fn update(&mut self, width: i32, height: i32) {
         if !self.dirty && self.width == width && self.height == height {
+            // Hover changes do not affect geometry.  Repaint only the cached
+            // damage rectangle and skip the document layout walk.
+            if self.repaint_from < self.content_height || self.toolbar_dirty {
+                self.paint_cached_layers();
+            }
             return;
+        }
+        if self.width != width || self.height != height {
+            self.toolbar_dirty = true;
         }
         self.width = width.max(1);
         self.height = height.max(1);
@@ -368,7 +407,9 @@ impl Warp3Engine {
         self.content_height = (y + 96).max(title_bar + self.height);
         let toolbar_width = (self.width - 32).min(900);
         let toolbar_x = (self.width - toolbar_width) / 2;
-        let toolbar_y = self.scroll + title_bar + self.height - 18 - 54;
+        // Toolbars live in viewport coordinates.  They are deliberately not
+        // part of the document, so scrolling never moves or reflows them.
+        let toolbar_y = title_bar + self.height - 18 - 54;
         let toolbars: Vec<usize> = self
             .roots
             .iter()
@@ -379,13 +420,13 @@ impl Warp3Engine {
             self.layout(idx, toolbar_x, toolbar_y, toolbar_width);
         }
         self.prepare_shadows();
+        self.paint_cached_layers();
         self.dirty = false;
     }
 
     pub fn set_scroll(&mut self, scroll: i32) {
         if self.scroll != scroll {
             self.scroll = scroll.max(0);
-            self.dirty = true;
         }
     }
 
@@ -404,14 +445,14 @@ impl Warp3Engine {
     pub fn set_hover(&mut self, x: i32, y: i32) {
         let next = self.hit_test(x, y);
         if self.hovered != next {
+            self.invalidate_nodes(self.hovered, next);
             self.hovered = next;
-            self.dirty = true;
         }
     }
 
     pub fn clear_hover(&mut self) {
-        if self.hovered.take().is_some() {
-            self.dirty = true;
+        if let Some(old) = self.hovered.take() {
+            self.invalidate_nodes(Some(old), None);
         }
     }
 
@@ -419,7 +460,7 @@ impl Warp3Engine {
         let hit = self.hit_test(x, y);
         let Some(idx) = hit else {
             self.focused_input = None;
-            self.dirty = true;
+            self.invalidate_from(0);
             return;
         };
         if self.nodes[idx].is("input") || self.nodes[idx].is("textarea") {
@@ -443,7 +484,7 @@ impl Warp3Engine {
             self.focused_input = None;
             self.run_click(idx);
         }
-        self.dirty = true;
+        self.invalidate_from(self.nodes[idx].y);
     }
 
     pub fn handle_key(&mut self, key: u8) {
@@ -457,10 +498,15 @@ impl Warp3Engine {
             value.push(key as char);
         }
         set_prop(&mut self.nodes[idx], "text", &value);
-        self.dirty = true;
+        self.invalidate_from(self.nodes[idx].y);
     }
 
-    pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+    pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, _oy: i32) {
+        // The window may be drawn before its next regular update tick.  Apply
+        // hover-only damage here as well, without paying for a layout pass.
+        if !self.dirty && (self.repaint_from < self.content_height || self.toolbar_dirty) {
+            self.paint_cached_layers();
+        }
         let title_bar = crate::window::title_bar_h();
         layer.fill_rect(
             0,
@@ -469,31 +515,30 @@ impl Warp3Engine {
             layer.height().saturating_sub(title_bar),
             html_bg(),
         );
-        for toolbar_pass in [false, true] {
-            for (idx, node) in self.nodes.iter().enumerate() {
-                if self.is_toolbar_tree(idx) != toolbar_pass {
-                    continue;
-                }
-                if node.is("config")
-                    || node.is("space")
-                    || (node.is("scroll-point") && node.tags.len() == 1)
-                {
-                    continue;
-                }
-                if self.hidden_by_tab(idx) {
-                    continue;
-                }
-                let x = node.x + ox;
-                let y = node.y + oy;
-                if x + node.w <= 0
-                    || y + node.h <= crate::window::title_bar_h() as i32
-                    || x >= layer.width() as i32
-                    || y >= layer.height() as i32
-                {
-                    continue;
-                }
-                self.draw_node(layer, idx, x, y);
+        if let Some(document) = &self.document_layer {
+            let source_y = (self.scroll + title_bar as i32).max(0) as usize;
+            let target_y = title_bar;
+            let visible_h = layer.height().saturating_sub(target_y);
+            if source_y < document.height() && visible_h > 0 {
+                layer.composit_rect(document, ox.max(0) as usize, target_y, 0, source_y,
+                    document.width(), visible_h.min(document.height() - source_y));
             }
+        }
+        // This is a separate transparent layer, composited after the scrolling
+        // document.  It keeps both its pixels and its hit targets fixed.
+        if let Some(toolbar) = &self.toolbar_layer {
+            layer.composit_rect_alpha(toolbar, ox.max(0) as usize, 0, 0, 0,
+                toolbar.width(), toolbar.height());
+        }
+        // Paint the fixed controls over the already-composited document. This
+        // gives text and rounded corners their final-background antialiasing;
+        // only the shadow itself needs transparent alpha storage.
+        for idx in 0..self.nodes.len() {
+            let node = &self.nodes[idx];
+            if !self.is_toolbar_tree(idx) || node.is("space") || self.hidden_by_tab(idx) {
+                continue;
+            }
+            self.draw_node(layer, idx, node.x + ox, node.y);
         }
     }
 
@@ -533,6 +578,11 @@ impl Warp3Engine {
         self.scroll = 0;
         self.scroll_request = Some(0);
         self.dirty = true;
+        self.repaint_from = 0;
+        self.repaint_to = i32::MAX;
+        self.document_layer = None;
+        self.toolbar_layer = None;
+        self.toolbar_dirty = true;
     }
 
     fn layout(&mut self, idx: usize, x: i32, y: i32, width: i32) -> i32 {
@@ -542,7 +592,11 @@ impl Warp3Engine {
         let tag = self.nodes[idx].tags.first().cloned().unwrap_or_default();
         match tag.as_str() {
             "text" | "detail" | "head" | "code" | "scroll-point" => {
-                let lines = self.nodes[idx].prop("text").split('\n').count().max(1) as i32;
+                let lines = if tag == "code" {
+                    self.nodes[idx].prop("text").split('\n').count().max(1)
+                } else {
+                    wrap_lines(self.nodes[idx].prop("text"), width).len().max(1)
+                } as i32;
                 self.nodes[idx].h = if tag == "head" {
                     38
                 } else {
@@ -672,16 +726,24 @@ impl Warp3Engine {
                 self.nodes[idx].h = cy - y;
             }
             "list" => {
+                let detail_width = self.nodes[idx]
+                    .children
+                    .iter()
+                    .find(|child| self.nodes[**child].is("detail"))
+                    .map(|child| (measure(self.nodes[*child].prop("text")) + 8).min(width / 2))
+                    .unwrap_or(0);
+                let mut max_h = 22;
                 for child in self.nodes[idx].children.clone() {
                     if self.nodes[child].is("detail") {
-                        let detail_width =
-                            (measure(self.nodes[child].prop("text")) + 8).min(width / 2);
-                        self.layout(child, x + width - detail_width - 8, y + 12, detail_width);
+                        let h = self.layout(child, x + width - detail_width - 8, y + 12, detail_width);
+                        max_h = max_h.max(h);
                     } else {
-                        self.layout(child, x + 8, y + 12, width - 16);
+                        let text_width = (width - detail_width - if detail_width > 0 { 24 } else { 16 }).max(24);
+                        let h = self.layout(child, x + 8, y + 12, text_width);
+                        max_h = max_h.max(h);
                     }
                 }
-                self.nodes[idx].h = 46;
+                self.nodes[idx].h = (max_h + 24).max(46);
             }
             _ => {
                 let mut cy = y;
@@ -693,6 +755,80 @@ impl Warp3Engine {
             }
         }
         self.nodes[idx].h
+    }
+
+    fn invalidate_from(&mut self, y: i32) {
+        self.repaint_from = self.repaint_from.min(y.max(0));
+        self.repaint_to = i32::MAX;
+        self.dirty = true;
+    }
+
+    fn invalidate_nodes(&mut self, old: Option<usize>, new: Option<usize>) {
+        let mut document_y = None;
+        let mut document_bottom = None;
+        for idx in [old, new].into_iter().flatten() {
+            if self.is_toolbar_tree(idx) {
+                // Fixed controls are painted directly over the final document;
+                // their hover state therefore needs no cached-layer rebuild.
+            } else {
+                document_y = Some(document_y.map_or(self.nodes[idx].y, |y: i32| y.min(self.nodes[idx].y)));
+                document_bottom = Some(document_bottom.map_or(
+                    self.nodes[idx].y + self.nodes[idx].h,
+                    |bottom: i32| bottom.max(self.nodes[idx].y + self.nodes[idx].h),
+                ));
+            }
+        }
+        if let Some(y) = document_y {
+            // Shadows extend outside the node; repaint their full footprint.
+            self.repaint_from = self.repaint_from.min((y - 12).max(0));
+            self.repaint_to = self.repaint_to.max(document_bottom.unwrap_or(y) + 12);
+        }
+    }
+
+    fn paint_cached_layers(&mut self) {
+        let width = self.width.max(1) as usize;
+        let document_h = self.content_height.max(self.height).max(1) as usize;
+        let recreate_document = !matches!(&self.document_layer, Some(layer) if layer.width() == width && layer.height() == document_h);
+        if recreate_document {
+            self.document_layer = Some(LayerSystem::new_transparent(width, document_h));
+            self.repaint_from = 0;
+            self.repaint_to = i32::MAX;
+        }
+        let from = self.repaint_from.max(0) as usize;
+        let to = self.repaint_to.min(document_h as i32).max(from as i32) as usize;
+        if let Some(mut layer) = self.document_layer.take() {
+            layer.fill_rect(0, from, width, to.saturating_sub(from), html_bg());
+            layer.push_clip(0, from, width, to);
+            for idx in 0..self.nodes.len() {
+                let node = &self.nodes[idx];
+                if self.is_toolbar_tree(idx) || node.is("config") || node.is("space")
+                    || (node.is("scroll-point") && node.tags.len() == 1) || self.hidden_by_tab(idx)
+                    || node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 { continue; }
+                self.draw_node(&mut layer, idx, node.x, node.y);
+            }
+            layer.pop_clip();
+            self.document_layer = Some(layer);
+        }
+        self.repaint_from = self.content_height;
+        self.repaint_to = self.content_height;
+
+        let toolbar_h = (self.height + crate::window::title_bar_h() as i32).max(1) as usize;
+        let recreate_toolbar = !matches!(&self.toolbar_layer, Some(layer) if layer.width() == width && layer.height() == toolbar_h);
+        if recreate_toolbar { self.toolbar_layer = Some(LayerSystem::new_transparent(width, toolbar_h)); }
+        if self.toolbar_dirty || recreate_toolbar {
+            if let Some(mut layer) = self.toolbar_layer.take() {
+                layer.clear(Color::TRANSPARENT);
+                for idx in 0..self.nodes.len() {
+                    let node = &self.nodes[idx];
+                    if !node.is("toolbar") || self.hidden_by_tab(idx) { continue; }
+                    if node.is("toolbar") {
+                        self.composite_shadow_transparent(&mut layer, idx);
+                    }
+                }
+                self.toolbar_layer = Some(layer);
+            }
+            self.toolbar_dirty = false;
+        }
     }
 
     fn prepare_shadows(&mut self) {
@@ -747,6 +883,15 @@ impl Warp3Engine {
         }
     }
 
+    fn composite_shadow_transparent(&self, layer: &mut LayerSystem, idx: usize) {
+        let node = &self.nodes[idx];
+        if let Some(mask) = self.shadows.iter().find(|mask| {
+            mask.w == node.w.max(1) as usize && mask.h == node.h.max(1) as usize && mask.radius == 8
+        }) {
+            mask.composite_transparent(layer, node.x, node.y);
+        }
+    }
+
     fn draw_node(&self, layer: &mut LayerSystem, idx: usize, x: i32, y: i32) {
         let node = &self.nodes[idx];
         let text = node.prop("text");
@@ -769,7 +914,9 @@ impl Warp3Engine {
             self.composite_shadow(layer, x, box_y, wu, box_h, 8);
             rounded_box(layer, x, box_y, wu, box_h, 8, border, panel);
         } else if node.is("toolbar") || node.is("card") || node.is("tab") {
-            self.composite_shadow(layer, x, y, wu, hu, 8);
+            if !node.is("toolbar") {
+                self.composite_shadow(layer, x, y, wu, hu, 8);
+            }
             rounded_box(layer, x, y, wu, hu, 8, border, panel);
             if node.is("tab") {
                 match node.prop("control") {
@@ -888,7 +1035,12 @@ impl Warp3Engine {
                 if node.is("detail") { muted } else { fg },
             )
         };
-        for (line, value) in text.split('\n').enumerate() {
+        let lines = if node.is("code") {
+            text.split('\n').map(ToString::to_string).collect()
+        } else {
+            wrap_lines(text, node.w)
+        };
+        for (line, value) in lines.iter().enumerate() {
             if ty + line as i32 * 22 >= 0 {
                 let line_y = ty + line as i32 * 22;
                 if node.is("head") {
@@ -918,7 +1070,11 @@ impl Warp3Engine {
                 self.is_toolbar_tree(*idx) == toolbar_pass
                     && interactive(&self.nodes[*idx])
                     && !self.hidden_by_tab(*idx)
-                    && contains(&self.nodes[*idx], x, y)
+                    && contains(
+                        &self.nodes[*idx],
+                        x,
+                        if self.is_toolbar_tree(*idx) { y - self.scroll } else { y },
+                    )
             }) {
                 return Some(idx);
             }
@@ -1089,13 +1245,14 @@ impl Warp3Engine {
     }
 
     fn set_element_text(&mut self, class: &str, value: &str) {
-        if let Some(node) = self
+        if let Some(idx) = self
             .nodes
             .iter_mut()
-            .find(|node| node.classes.iter().any(|item| item == class))
+            .position(|node| node.classes.iter().any(|item| item == class))
         {
-            set_prop(node, "text", value);
-            self.dirty = true;
+            let y = self.nodes[idx].y;
+            set_prop(&mut self.nodes[idx], "text", value);
+            self.invalidate_from(y);
         }
     }
 }
@@ -1181,6 +1338,25 @@ fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
 
 fn measure(text: &str) -> i32 {
     text.chars().count() as i32 * 9
+}
+
+/// The built-in bitmap font is close to 9 px per character.  Keep wrapping in
+/// layout and painting on the same rule so a changed label reflows every node
+/// that follows it instead of overlapping it.
+fn wrap_lines(text: &str, width: i32) -> Vec<String> {
+    let limit = (width.max(9) / 9).max(1) as usize;
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        let chars: Vec<char> = paragraph.chars().collect();
+        if chars.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        for chunk in chars.chunks(limit) {
+            lines.push(chunk.iter().collect());
+        }
+    }
+    lines
 }
 
 fn unquote(value: &str) -> String {
