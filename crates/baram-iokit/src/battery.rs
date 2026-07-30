@@ -21,6 +21,19 @@ impl Default for BatteryInfo {
     }
 }
 
+impl BatteryInfo {
+    pub fn valid_percentage(&self) -> Option<u8> {
+        match self.status {
+            BatteryStatus::Discharging | BatteryStatus::Charging | BatteryStatus::Full
+                if self.percentage <= 100 =>
+            {
+                Some(self.percentage)
+            }
+            _ => None,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct AcpiTableHeader {
@@ -172,20 +185,9 @@ pub fn read_battery() -> BatteryInfo {
         return info;
     }
 
-    info.status = BatteryStatus::Discharging;
-    info.percentage = 50;
-
+    // A DSDT battery/EC signature only indicates that a battery may exist.
+    // Its remaining capacity requires evaluating the ACPI control methods
+    // (_BIX/_BIF and _BST). Until that data is available, do not fabricate a
+    // percentage.
     info
-}
-
-pub fn read_battery_or_default() -> BatteryInfo {
-    let info = read_battery();
-    if info.status == BatteryStatus::Unknown {
-        BatteryInfo {
-            percentage: 100,
-            status: BatteryStatus::Full,
-        }
-    } else {
-        info
-    }
 }

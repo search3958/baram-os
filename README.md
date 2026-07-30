@@ -4,11 +4,46 @@ ARM64とx86_64向けOSです。
 Raspberry Pi 4B(マウスが動作しない)と一般的なx86_64ラップトップでの動作が確認できています。
 滑らかな角丸，美しいブラー効果があるリッチなGUIのOSです。OSとして基礎的な機能は備えていますが，標準アプリはそこまでの数を用意できていません。
 
+## HTMLアプリ
+
+`app/index.yaml` に `type: html-1` として登録した `.html` ファイルを、通常のBaramOSアプリとして表示できます。HTMLアプリと同じ `app/` ディレクトリに置いたCSSは、次のように読み込めます。
+
+```yaml
+apps:
+  example.html:
+    icon: noname.png
+    type: html-1
+    title: HTMLアプリ
+```
+
+```html
+<link rel="stylesheet" href="example.css">
+```
+
+現在はネットワークブラウザではなく、UEFI上で安定して動作するアプリUI向けのHTML/CSSサブセットです。見出し、段落、リスト、`div`、`section`、`span`、リンクなどの構造と、色、背景、余白、枠線、角丸、幅・高さ、文字揃え、Flexの行／列レイアウトなどに対応しています。インラインの`<style>`と`style=""`も使用できます。JavaScript、HTTP通信、iframeは実行しません。
+
+BaramOS固有の連携は次の通りです。
+
+```html
+<!-- OS設定を変更する -->
+<a href="os://display/hud?enabled=0">HUDを隠す</a>
+
+<!-- index.yamlに登録済みのアプリを開く -->
+<a href="app://calc.warp">計算機を開く</a>
+
+<!-- OS設定値を表示する。os://リンク実行後は再取得される -->
+<span config="os://display/hud/enabled">値がない場合の表示</span>
+```
+
+`app://` は安全のため、パスを含まない登録済みファイル名（`.warp`、`.html`、`.htm`、`.u1`）だけを受け付けます。実装例は `app/webdemo.html` と `app/webdemo.css` にあります。
+
 ## ライセンス
 基本的に自由に使っていただいて構いません。自分でOSを作りたい時にコードを持っていったりしてもいいです。
 しかし，[Apache License 2.0](LICENSE) の下で提供されています。ですので商用利用は可能ですが、使用・再配布の際はクレジット表記（Copyright notice）をお願いしております。
 
 ## オープンソース利用ライブラリ
+
+HTML/CSSアプリ表示機能には追加の外部ライブラリを使用していません。以下はプロジェクト全体で利用しているライブラリです。
 
 ### uefi-rs
 - **ライセンス**：MIT ライセンス または Apache-2.0 ライセンス

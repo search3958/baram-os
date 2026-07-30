@@ -1,0 +1,59 @@
+body {
+    background-color: #f4f7fb;
+    color: #172033;
+    padding: 20px;
+    gap: 14px;
+}
+
+.hero {
+    background-color: #dce9ff;
+    border: 1px solid #b7cff9;
+    border-radius: 20px;
+    padding: 18px;
+    margin-bottom: 14px;
+}
+
+.eyebrow {
+    color: #0a60ff;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.card {
+    background-color: #ffffff;
+    border: 1px solid #d7dfec;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.button {
+    padding: 11px 16px;
+    border-radius: 12px;
+    text-align: center;
+    text-decoration: none;
+}
+
+.button.primary {
+    color: #ffffff;
+    background-color: #0a60ff;
+}
+
+.button.primary:hover {
+    background-color: #084dcc;
+}
+
+.button.tonal {
+    color: #172033;
+    background-color: #e5ebf5;
+}
+
+.button.tonal:hover {
+    background-color: #d2dbea;
+}

@@ -102,7 +102,7 @@ make_fat_image() {
         local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd -i "$out" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml; do
                 [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
             done
             if [ -d "$app_src/icon" ]; then
@@ -134,7 +134,7 @@ make_fat_image() {
         local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml; do
                 [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
             done
             if [ -d "$app_src/icon" ]; then
@@ -165,7 +165,7 @@ make_fat_image() {
         local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd -i "$out" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml; do
                 [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
             done
             if [ -d "$app_src/icon" ]; then

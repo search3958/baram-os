@@ -42,6 +42,45 @@ pub fn shadow_pad() -> i32 {
     config::get_i32("ui-theme/window/shadow_pad", 30)
 }
 
+pub struct RoundedShadow {
+    layer: LayerSystem,
+    pad: i32,
+}
+
+impl RoundedShadow {
+    pub fn new(w: usize, h: usize, radius: usize) -> Option<Self> {
+        let pad = shadow_pad().max(0);
+        let (alpha, sw, sh) = compute_rounded_shadow_alpha(w, h, radius, pad)?;
+        let mut layer = LayerSystem::new_transparent(sw, sh);
+        for (dst, a) in layer.buf_mut().iter_mut().zip(alpha.iter()) {
+            *dst = *a as u32;
+        }
+        Some(Self { layer, pad })
+    }
+
+    pub fn composite_onto(&self, dst: &mut LayerSystem, x: i32, y: i32) {
+        let shadow_x = x - self.pad;
+        let shadow_y = y - self.pad;
+        let src_x = (-shadow_x).max(0) as usize;
+        let src_y = (-shadow_y).max(0) as usize;
+        let dst_x = shadow_x.max(0) as usize;
+        let dst_y = shadow_y.max(0) as usize;
+        let draw_w = self.layer.width().saturating_sub(src_x);
+        let draw_h = self.layer.height().saturating_sub(src_y);
+        if draw_w > 0 && draw_h > 0 {
+            dst.composit_shadow_alpha(
+                &self.layer,
+                dst_x,
+                dst_y,
+                src_x,
+                src_y,
+                draw_w,
+                draw_h,
+            );
+        }
+    }
+}
+
 pub fn btn_bg_radius() -> usize {
     config::get_usize("ui-theme/button/radius", 8)
 }
@@ -76,6 +115,8 @@ pub struct Window {
     pub scroll_y: i32,
     prev_x: i32,
     prev_y: i32,
+    prev_w: usize,
+    prev_h: usize,
     save_x: i32,
     save_y: i32,
     save_w: usize,
@@ -124,6 +165,8 @@ impl Window {
             scroll_y: 0,
             prev_x: x,
             prev_y: y,
+            prev_w: w,
+            prev_h: h,
             save_x: x,
             save_y: y,
             save_w: w,
@@ -302,6 +345,7 @@ pub struct WindowManager {
     shadow_cache: Vec<(WinId, Option<CachedShadow>)>,
     temp_layer: Option<LayerSystem>,
     order_changed: bool,
+    pending_damage: Option<(usize, usize, usize, usize)>,
 }
 
 impl WindowManager {
@@ -316,6 +360,7 @@ impl WindowManager {
             shadow_cache: Vec::new(),
             temp_layer: None,
             order_changed: false,
+            pending_damage: None,
         }
     }
 
@@ -347,6 +392,23 @@ impl WindowManager {
 
     pub fn remove(&mut self, id: WinId) {
         if let Some(pos) = self.windows.iter().position(|w| w.id == id) {
+            let w = &self.windows[pos];
+            let pad = shadow_pad();
+            let rect = (
+                (w.x - pad).max(0) as usize,
+                (w.y - pad).max(0) as usize,
+                (w.x + w.w as i32 + pad).min(self.screen_w).max(0) as usize,
+                (w.y + w.h as i32 + pad).min(self.screen_h).max(0) as usize,
+            );
+            self.pending_damage = Some(match self.pending_damage {
+                Some(old) => (
+                    old.0.min(rect.0),
+                    old.1.min(rect.1),
+                    old.2.max(rect.2),
+                    old.3.max(rect.3),
+                ),
+                None => rect,
+            });
             self.windows.remove(pos);
             if let Some(pos) = self.shadow_cache.iter().position(|(wid, _)| *wid == id) {
                 self.shadow_cache.remove(pos);
@@ -420,6 +482,11 @@ impl WindowManager {
 
     pub fn insertion_ids(&self) -> Vec<WinId> {
         self.windows.iter().map(|w| w.id).collect()
+    }
+
+    #[inline]
+    pub fn insertion_id_at(&self, index: usize) -> Option<WinId> {
+        self.windows.get(index).map(|w| w.id)
     }
 
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
@@ -537,6 +604,7 @@ impl WindowManager {
         layer: &mut LayerSystem,
         ui_win: Option<(WinId, &[baram_graphics::uiscript::Command])>,
         warp_engines: &mut alloc::vec::Vec<(WinId, super::warp::WarpEngine)>,
+        html_engines: &mut alloc::vec::Vec<(WinId, super::html::HtmlEngine)>,
     ) {
         if self.windows.is_empty() {
             return;
@@ -733,6 +801,15 @@ impl WindowManager {
                             break;
                         }
                     }
+                    for i in 0..html_engines.len() {
+                        if win_id == html_engines[i].0 {
+                            let engine = &html_engines[i].1;
+                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
+                            (*layer_ptr).pop_clip();
+                            break;
+                        }
+                    }
                     draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
@@ -769,6 +846,10 @@ impl WindowManager {
                 layer.composit_rounded(win_layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h, win_radius());
                 draw_window_border(layer, &self.windows[idx]);
             }
+            self.windows[idx].prev_x = self.windows[idx].x;
+            self.windows[idx].prev_y = self.windows[idx].y;
+            self.windows[idx].prev_w = self.windows[idx].w;
+            self.windows[idx].prev_h = self.windows[idx].h;
         }
     }
 
@@ -901,21 +982,26 @@ impl WindowManager {
     pub fn dirty_bbox(&self, shadow_pad: i32) -> (usize, usize, usize, usize) {
         let sw = self.screen_w as usize;
         let sh = self.screen_h as usize;
-        if self.windows.is_empty() {
-            return (0, 0, sw, sh);
-        }
-        let mut min_x = sw;
-        let mut min_y = sh;
-        let mut max_x = 0usize;
-        let mut max_y = 0usize;
+        let (mut min_x, mut min_y, mut max_x, mut max_y) =
+            self.pending_damage.unwrap_or((sw, sh, 0, 0));
         for w in &self.windows {
-            if !w.visible {
+            if !w.visible
+                || !(w.content_dirty
+                    || w.shadow_dirty
+                    || w.open_animating
+                    || w.x != w.prev_x
+                    || w.y != w.prev_y)
+            {
                 continue;
             }
-            let x0 = (w.x - shadow_pad).max(0) as usize;
-            let y0 = (w.y - shadow_pad).max(0) as usize;
-            let x1 = (w.x + w.w as i32 + shadow_pad).min(sw as i32) as usize;
-            let y1 = (w.y + w.h as i32 + shadow_pad).min(sh as i32) as usize;
+            let x0 = (w.x.min(w.prev_x) - shadow_pad).max(0) as usize;
+            let y0 = (w.y.min(w.prev_y) - shadow_pad).max(0) as usize;
+            let x1 = (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
+                .min(sw as i32)
+                .max(0) as usize;
+            let y1 = (w.y.max(w.prev_y) + w.h.max(w.prev_h) as i32 + shadow_pad)
+                .min(sh as i32)
+                .max(0) as usize;
             if x0 < min_x {
                 min_x = x0;
             }
@@ -930,20 +1016,45 @@ impl WindowManager {
             }
         }
         if max_x <= min_x || max_y <= min_y {
-            return (0, 0, sw, sh);
+            return (0, 0, 0, 0);
         }
         (min_x, min_y, max_x, max_y)
+    }
+
+    pub fn clear_pending_damage(&mut self) {
+        self.pending_damage = None;
     }
 }
 
 fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<CachedShadow> {
-    let blur_r: i32 = 30;
-    let r = win_radius() as f32;
-    let ww = w.w as i32;
-    let wh = w.h as i32;
-    let pad = blur_r as usize;
-    let sw = (ww + blur_r * 2) as usize;
-    let sh = (wh + blur_r * 2) as usize;
+    let pad = shadow_pad().max(0);
+    let (alpha, sw, sh) = compute_rounded_shadow_alpha(w.w, w.h, win_radius(), pad)?;
+
+    Some(CachedShadow {
+        win_x: w.x,
+        win_y: w.y,
+        win_w: w.w,
+        win_h: w.h,
+        alpha,
+        x0: pad as usize,
+        y0: pad as usize,
+        w: sw,
+        h: sh,
+    })
+}
+
+fn compute_rounded_shadow_alpha(
+    width: usize,
+    height: usize,
+    radius: usize,
+    pad: i32,
+) -> Option<(Vec<u8>, usize, usize)> {
+    let blur_r = pad;
+    let r = radius as f32;
+    let ww = width as i32;
+    let wh = height as i32;
+    let sw = (ww + blur_r * 2).max(0) as usize;
+    let sh = (wh + blur_r * 2).max(0) as usize;
     if sw == 0 || sh == 0 {
         return None;
     }
@@ -987,17 +1098,7 @@ fn compute_shadow_alpha(w: &Window, _screen_w: i32, _screen_h: i32) -> Option<Ca
         }
     }
 
-    Some(CachedShadow {
-        win_x: w.x,
-        win_y: w.y,
-        win_w: w.w,
-        win_h: w.h,
-        alpha,
-        x0: pad,
-        y0: pad,
-        w: sw,
-        h: sh,
-    })
+    Some((alpha, sw, sh))
 }
 
 fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {

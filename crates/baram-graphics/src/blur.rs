@@ -207,8 +207,14 @@ unsafe fn box_blur_h_single_row(src: *const u32, dst: *mut u32, w: usize, r: i32
     }
 }
 
-fn box_blur_3pass_scalar(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i32) {
-    let mut tmp = alloc::vec![0u32; w * h];
+fn box_blur_3pass_scalar(
+    src: &[u32],
+    dst: &mut [u32],
+    tmp: &mut [u32],
+    w: usize,
+    h: usize,
+    r: i32,
+) {
     unsafe {
         box_blur_h(src.as_ptr(), tmp.as_mut_ptr(), w, h, r);
         box_blur_v(tmp.as_ptr(), dst.as_mut_ptr(), w, h, r);
@@ -219,24 +225,35 @@ fn box_blur_3pass_scalar(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i3
     }
 }
 
-fn box_blur_3pass(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
+fn box_blur_3pass_with_scratch(
+    src: &[u32],
+    dst: &mut [u32],
+    tmp: &mut [u32],
+    w: usize,
+    h: usize,
+    blur_r: i32,
+) {
     let r = (blur_r / 3).max(1);
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
-        let mut tmp = alloc::vec![0u32; w * h];
         unsafe {
-            box_avx2::box_blur_h_simd8(src, &mut tmp, w, h, r);
-            box_avx2::box_blur_v_simd8(&tmp, dst, w, h, r);
-            box_avx2::box_blur_h_simd8(dst, &mut tmp, w, h, r);
-            box_avx2::box_blur_v_simd8(&tmp, dst, w, h, r);
-            box_avx2::box_blur_h_simd8(dst, &mut tmp, w, h, r);
-            box_avx2::box_blur_v_simd8(&tmp, dst, w, h, r);
+            box_avx2::box_blur_h_simd8(src, tmp, w, h, r);
+            box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
+            box_avx2::box_blur_h_simd8(dst, tmp, w, h, r);
+            box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
+            box_avx2::box_blur_h_simd8(dst, tmp, w, h, r);
+            box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
         }
     }
     #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
     {
-        box_blur_3pass_scalar(src, dst, w, h, r);
+        box_blur_3pass_scalar(src, dst, tmp, w, h, r);
     }
+}
+
+fn box_blur_3pass(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
+    let mut tmp = alloc::vec![0u32; w * h];
+    box_blur_3pass_with_scratch(src, dst, &mut tmp, w, h, blur_r);
 }
 
 // ----------------------------------------------------------------------------
@@ -664,6 +681,37 @@ pub fn blur_region_to(src: &[u32], dst: &mut [u32], w: usize, y_start: usize, y_
         box_blur_3pass(region, dst, w, region_h, blur_r);
     } else {
         gaussian_convolution(region, dst, w, region_h, blur_r);
+    }
+}
+
+pub fn blur_region_to_with_scratch(
+    src: &[u32],
+    dst: &mut [u32],
+    scratch: &mut [u32],
+    w: usize,
+    y_start: usize,
+    y_end: usize,
+    blur_r: i32,
+) {
+    let region_h = y_end.saturating_sub(y_start);
+    let len = w.saturating_mul(region_h);
+    if len == 0 || src.len() < y_end.saturating_mul(w)
+        || dst.len() < len || scratch.len() < len
+    {
+        return;
+    }
+    let region = &src[y_start * w..y_end * w];
+    if blur_r >= 10 {
+        box_blur_3pass_with_scratch(
+            region,
+            &mut dst[..len],
+            &mut scratch[..len],
+            w,
+            region_h,
+            blur_r,
+        );
+    } else {
+        gaussian_convolution(region, &mut dst[..len], w, region_h, blur_r);
     }
 }
 

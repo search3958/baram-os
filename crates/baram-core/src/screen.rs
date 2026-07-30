@@ -4,6 +4,73 @@ use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::Status;
 use crate::color::Color;
 
+#[inline]
+unsafe fn copy_swap_rb(src: *const u32, dst: *mut u32, len: usize) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use core::arch::x86_64::*;
+        let keep = _mm_set1_epi32(0xff00_ff00u32 as i32);
+        let red = _mm_set1_epi32(0x00ff_0000);
+        let blue = _mm_set1_epi32(0x0000_00ff);
+        let mut i = 0usize;
+        while i + 4 <= len {
+            let p = _mm_loadu_si128(src.add(i) as *const __m128i);
+            let out = _mm_or_si128(
+                _mm_and_si128(p, keep),
+                _mm_or_si128(
+                    _mm_srli_epi32(_mm_and_si128(p, red), 16),
+                    _mm_slli_epi32(_mm_and_si128(p, blue), 16),
+                ),
+            );
+            _mm_storeu_si128(dst.add(i) as *mut __m128i, out);
+            i += 4;
+        }
+        for i in i..len {
+            let p = *src.add(i);
+            *dst.add(i) = (p & 0xff00_ff00)
+                | ((p & 0x00ff_0000) >> 16)
+                | ((p & 0x0000_00ff) << 16);
+        }
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        use core::arch::aarch64::*;
+        let keep = vdupq_n_u32(0xff00_ff00);
+        let red = vdupq_n_u32(0x00ff_0000);
+        let blue = vdupq_n_u32(0x0000_00ff);
+        let mut i = 0usize;
+        while i + 4 <= len {
+            let p = vld1q_u32(src.add(i));
+            let out = vorrq_u32(
+                vandq_u32(p, keep),
+                vorrq_u32(
+                    vshrq_n_u32(vandq_u32(p, red), 16),
+                    vshlq_n_u32(vandq_u32(p, blue), 16),
+                ),
+            );
+            vst1q_u32(dst.add(i), out);
+            i += 4;
+        }
+        for i in i..len {
+            let p = *src.add(i);
+            *dst.add(i) = (p & 0xff00_ff00)
+                | ((p & 0x00ff_0000) >> 16)
+                | ((p & 0x0000_00ff) << 16);
+        }
+        return;
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    for i in 0..len {
+        let p = *src.add(i);
+        *dst.add(i) = (p & 0xff00_ff00)
+            | ((p & 0x00ff_0000) >> 16)
+            | ((p & 0x0000_00ff) << 16);
+    }
+}
+
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 pub struct FramebufferInfo {
@@ -31,13 +98,30 @@ impl Screen {
         let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle)
             .map_err(|_| Status::UNSUPPORTED)?;
 
-        let mut best_area: usize = 0;
+        // The compositor is tuned for a 720p working set.  Picking the
+        // firmware's largest mode (often 4K) multiplies every software blend
+        // and framebuffer write by up to 9x with no UI benefit.
+        const TARGET_W: usize = 1280;
+        const TARGET_H: usize = 720;
+        let mut best_score = usize::MAX;
         let mut best_mode: Option<uefi::proto::console::gop::Mode> = None;
         for mode in gop.modes() {
             let (w, h) = mode.info().resolution();
-            let area = w * h;
-            if area > best_area {
-                best_area = area;
+            let area_delta = w.abs_diff(TARGET_W)
+                .saturating_mul(TARGET_H)
+                .saturating_add(h.abs_diff(TARGET_H).saturating_mul(TARGET_W));
+            let aspect_delta = w.saturating_mul(TARGET_H)
+                .abs_diff(h.saturating_mul(TARGET_W));
+            let undersized_penalty = if w < TARGET_W || h < TARGET_H {
+                usize::MAX / 4
+            } else {
+                0
+            };
+            let score = undersized_penalty
+                .saturating_add(area_delta)
+                .saturating_add(aspect_delta.saturating_mul(4));
+            if score < best_score {
+                best_score = score;
                 best_mode = Some(mode);
             }
         }
@@ -157,37 +241,11 @@ impl Screen {
     }
 
     pub fn flush_layer_row(&mut self, y: usize, row: &[u32]) {
-        if y >= self.info.height { return; }
-        let pf = self.info.pixel_format;
-        let stride = self.info.stride;
-        let base = self.fb_ptr;
-        let n = row.len().min(self.info.width);
-        let off = (y * stride) * 4;
-        match pf {
-            PixelFormat::Bgr => {
-                unsafe {
-                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off) as *mut u32, n);
-                }
-            }
-            PixelFormat::Rgb => {
-                for x in 0..n {
-                    let c = Color(row[x]);
-                    let v = ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32);
-                    unsafe {
-                        ptr::write_volatile(base.add(off + x * 4) as *mut u32, v);
-                    }
-                }
-            }
-            _ => {
-                unsafe {
-                    ptr::copy_nonoverlapping(row.as_ptr(), base.add(off) as *mut u32, n);
-                }
-            }
-        }
+        self.flush_layer_row_range(y, 0, row);
     }
 
     pub fn flush_layer_row_range(&mut self, y: usize, x_offset: usize, row: &[u32]) {
-        if y >= self.info.height { return; }
+        if y >= self.info.height || x_offset >= self.info.width { return; }
         let pf = self.info.pixel_format;
         let stride = self.info.stride;
         let base = self.fb_ptr;
@@ -195,12 +253,12 @@ impl Screen {
         let off_base = (y * stride + x_offset) * 4;
         match pf {
             PixelFormat::Rgb => {
-                for x in 0..n {
-                    let c = Color(row[x]);
-                    let v = ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32);
-                    unsafe {
-                        ptr::write_volatile(base.add(off_base + x * 4) as *mut u32, v);
-                    }
+                unsafe {
+                    copy_swap_rb(
+                        row.as_ptr(),
+                        base.add(off_base) as *mut u32,
+                        n,
+                    );
                 }
             }
             _ => {
