@@ -27,26 +27,31 @@ impl ShadowMask {
         let sw = w + pad as usize * 2;
         let sh = h + pad as usize * 2;
         let mut layer = LayerSystem::new_transparent(sw, sh);
-        let half_w = w as f32 / 2.0;
-        let half_h = h as f32 / 2.0;
-        let radius_f = radius as f32;
-        for py in 0..sh {
-            for px in 0..sw {
-                let local_x = px as f32 - pad as f32 + 0.5;
-                let local_y = py as f32 - pad as f32 - shadow_offset_y as f32 + 0.5;
-                let qx = (local_x - half_w).abs() - (half_w - radius_f);
-                let qy = (local_y - half_h).abs() - (half_h - radius_f);
-                let outside_x = qx.max(0.0);
-                let outside_y = qy.max(0.0);
-                let distance = libm::sqrtf(outside_x * outside_x + outside_y * outside_y)
-                    + qx.max(qy).min(0.0)
-                    - radius_f;
-                if distance > 0.0 && distance < pad as f32 {
-                    let falloff = 1.0 - distance / pad as f32;
-                    let alpha = (falloff * falloff * 34.0) as u32;
-                    layer.buf_mut()[py * sw + px] = alpha.min(34);
+        // Rasterize a cheap integer rounded-rectangle mask, then approximate a
+        // Gaussian with three box blurs.  This replaces per-pixel sqrt work at
+        // application startup with linear, cache-friendly scanline passes.
+        let mut alpha = alloc::vec![0u8; sw * sh];
+        let left = pad as usize;
+        let top = (pad + shadow_offset_y) as usize;
+        let right = left + w;
+        let bottom = top + h;
+        let r = radius.min(w / 2).min(h / 2) as i32;
+        for py in top..bottom {
+            for px in left..right {
+                let dx = if px < left + r as usize { left as i32 + r - px as i32 }
+                    else if px >= right - r as usize { px as i32 - (right as i32 - r - 1) } else { 0 };
+                let dy = if py < top + r as usize { top as i32 + r - py as i32 }
+                    else if py >= bottom - r as usize { py as i32 - (bottom as i32 - r - 1) } else { 0 };
+                if dx == 0 || dy == 0 || dx * dx + dy * dy <= r * r {
+                    alpha[py * sw + px] = 34;
                 }
             }
+        }
+        for _ in 0..3 {
+            box_blur_alpha(&mut alpha, sw, sh, 4);
+        }
+        for (dst, value) in layer.buf_mut().iter_mut().zip(alpha) {
+            *dst = value as u32;
         }
         Self {
             w,
@@ -339,6 +344,7 @@ pub struct Warp3Engine {
     toolbar_dirty: bool,
     document_paint: Vec<usize>,
     toolbar_paint: Vec<usize>,
+    window_damage: Option<(i32, i32, i32, i32)>,
     shadows: Vec<ShadowMask>,
 }
 
@@ -371,6 +377,7 @@ impl Warp3Engine {
             toolbar_dirty: true,
             document_paint: Vec::new(),
             toolbar_paint: Vec::new(),
+            window_damage: None,
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -443,6 +450,10 @@ impl Warp3Engine {
 
     pub fn has_focused_input(&self) -> bool {
         self.focused_input.is_some()
+    }
+
+    pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
+        self.window_damage
     }
 
     pub fn take_scroll_request(&mut self) -> Option<i32> {
@@ -537,13 +548,23 @@ impl Warp3Engine {
             layer.composit_rect_alpha(toolbar, ox.max(0) as usize, 0, 0, 0,
                 toolbar.width(), toolbar.height());
         }
+        // Paint fixed controls only for a full frame or a toolbar-local hover.
+        // Repainting TTF text outside the local damage would blend its edge
+        // pixels again even though the document did not change.
+        let paint_toolbar = self.window_damage.map_or(true, |(_, y0, _, y1)| {
+            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 18 - 54 - 14;
+            y1 >= toolbar_top && y0 < self.height + crate::window::title_bar_h() as i32
+        });
         // Paint the fixed controls over the already-composited document. This
         // gives text and rounded corners their final-background antialiasing;
         // only the shadow itself needs transparent alpha storage.
-        for idx in self.toolbar_paint.clone() {
-            let node = &self.nodes[idx];
-            self.draw_node(layer, idx, node.x + ox, node.y);
+        if paint_toolbar {
+            for idx in self.toolbar_paint.clone() {
+                let node = &self.nodes[idx];
+                self.draw_node(layer, idx, node.x + ox, node.y);
+            }
         }
+        self.window_damage = None;
     }
 
     fn load_screen(&mut self) {
@@ -589,6 +610,7 @@ impl Warp3Engine {
         self.toolbar_dirty = true;
         self.document_paint.clear();
         self.toolbar_paint.clear();
+        self.window_damage = None;
     }
 
     fn layout(&mut self, idx: usize, x: i32, y: i32, width: i32) -> i32 {
@@ -773,6 +795,13 @@ impl Warp3Engine {
         let mut document_y = None;
         let mut document_bottom = None;
         for idx in [old, new].into_iter().flatten() {
+            let node = &self.nodes[idx];
+            let screen_y = if node.overlay { node.y } else { node.y - self.scroll };
+            let next = (node.x - 14, screen_y - 14, node.x + node.w + 14, screen_y + node.h + 14);
+            self.window_damage = Some(match self.window_damage {
+                Some(old) => (old.0.min(next.0), old.1.min(next.1), old.2.max(next.2), old.3.max(next.3)),
+                None => next,
+            });
             if self.is_toolbar_tree(idx) {
                 // Fixed controls are painted directly over the final document;
                 // their hover state therefore needs no cached-layer rebuild.
@@ -1363,6 +1392,31 @@ fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
     let children = nodes[idx].children.clone();
     for child in children {
         mark_overlay_tree(nodes, child);
+    }
+}
+
+/// One separable box blur.  Three invocations are a fast Gaussian
+/// approximation and need only integer additions/subtractions per pixel.
+fn box_blur_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+    if width == 0 || height == 0 { return; }
+    let mut tmp = alloc::vec![0u8; alpha.len()];
+    let diameter = radius * 2 + 1;
+    for y in 0..height {
+        let row = y * width;
+        let mut sum = 0u32;
+        for x in 0..width + radius {
+            if x < width { sum += alpha[row + x] as u32; }
+            if x > diameter && x - diameter - 1 < width { sum -= alpha[row + x - diameter - 1] as u32; }
+            if x >= radius && x - radius < width { tmp[row + x - radius] = (sum / diameter as u32) as u8; }
+        }
+    }
+    for x in 0..width {
+        let mut sum = 0u32;
+        for y in 0..height + radius {
+            if y < height { sum += tmp[y * width + x] as u32; }
+            if y > diameter && y - diameter - 1 < height { sum -= tmp[(y - diameter - 1) * width + x] as u32; }
+            if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
+        }
     }
 }
 

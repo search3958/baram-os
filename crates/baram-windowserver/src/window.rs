@@ -132,6 +132,8 @@ pub struct Window {
     pub layer: Option<LayerSystem>,
     pub shadow_layer: Option<LayerSystem>,
     pub content_dirty: bool,
+    /// Local window coordinates. `None` means the entire layer must be rebuilt.
+    pub content_damage: Option<(usize, usize, usize, usize)>,
     pub shadow_dirty: bool,
     pub open_progress: f32,
     pub open_animating: bool,
@@ -185,6 +187,7 @@ impl Window {
                 h + shadow_pad() as usize * 2,
             )),
             content_dirty: true,
+            content_damage: None,
             shadow_dirty: true,
             open_progress: 0.0,
             open_animating: true,
@@ -751,15 +754,11 @@ impl WindowManager {
             if content_dirty {
                 let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
                 let w_ptr = &self.windows[idx] as *const Window;
+                let damage = self.windows[idx].content_damage.take();
                 unsafe {
                     let lw = (*layer_ptr).width();
                     let lh = (*layer_ptr).height();
-                    let old_x = (*w_ptr).prev_x;
-                    let old_y = (*w_ptr).prev_y;
-                    let cx0 = old_x.min(wx).max(0) as usize;
-                    let cy0 = old_y.min(wy).max(0) as usize;
-                    let cx1 = (old_x + ww as i32).max(wx + ww as i32).min(lw as i32).max(0) as usize;
-                    let cy1 = (old_y + wh as i32).max(wy + wh as i32).min(lh as i32).max(0) as usize;
+                    let (cx0, cy0, cx1, cy1) = damage.unwrap_or((0, 0, lw, lh));
                     if cx1 > cx0 && cy1 > cy0 {
                         for row in cy0..cy1 {
                             let start = row * lw + cx0;
@@ -768,10 +767,18 @@ impl WindowManager {
                         }
                     }
 
-                    if is_max {
-                        draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
-                    } else {
-                        draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
+                    (*layer_ptr).push_clip(cx0, cy0, cx1, cy1);
+
+                    // A Warp3 hover patch owns every pixel in its damage rect.
+                    // Do not enter generic window chrome/body rendering here:
+                    // some SVG/font paths are not damage-clip aware and would
+                    // touch title-bar pixels outside the hovered control.
+                    if damage.is_none() {
+                        if is_max {
+                            draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
+                        } else {
+                            draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
+                        }
                     }
 
                     if let Some((uid, cmds)) = ui_win {
@@ -811,7 +818,13 @@ impl WindowManager {
                             break;
                         }
                     }
-                    draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
+                    // Font glyph antialiasing is blended into the destination.
+                    // Never redraw the title during a body-only hover patch:
+                    // its glyph writer is intentionally not in the body clip.
+                    if damage.is_none() {
+                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
+                    }
+                    (*layer_ptr).pop_clip();
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
@@ -856,6 +869,24 @@ impl WindowManager {
 
     pub fn set_content_dirty(&mut self, id: WinId) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.content_dirty = true;
+            w.content_damage = None;
+        }
+    }
+
+    pub fn set_content_damage(&mut self, id: WinId, x0: i32, y0: i32, x1: i32, y1: i32) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            let next = (
+                x0.max(0).min(w.w as i32) as usize,
+                y0.max(0).min(w.h as i32) as usize,
+                x1.max(0).min(w.w as i32) as usize,
+                y1.max(0).min(w.h as i32) as usize,
+            );
+            if next.0 >= next.2 || next.1 >= next.3 { return; }
+            w.content_damage = Some(match w.content_damage {
+                Some(old) => (old.0.min(next.0), old.1.min(next.1), old.2.max(next.2), old.3.max(next.3)),
+                None => next,
+            });
             w.content_dirty = true;
         }
     }
@@ -1002,14 +1033,29 @@ impl WindowManager {
             {
                 continue;
             }
-            let x0 = (w.x.min(w.prev_x) - shadow_pad).max(0) as usize;
-            let y0 = (w.y.min(w.prev_y) - shadow_pad).max(0) as usize;
-            let x1 = (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
-                .min(sw as i32)
-                .max(0) as usize;
-            let y1 = (w.y.max(w.prev_y) + w.h.max(w.prev_h) as i32 + shadow_pad)
-                .min(sh as i32)
-                .max(0) as usize;
+            let local_damage = w.content_damage.filter(|_| {
+                w.content_dirty && !w.shadow_dirty && !w.open_animating
+                    && w.x == w.prev_x && w.y == w.prev_y
+            });
+            let (x0, y0, x1, y1) = if let Some((dx0, dy0, dx1, dy1)) = local_damage {
+                // Hover-only changes must not force the compositor to redraw
+                // the whole window (or its shadow) on the display surface.
+                (
+                    (w.x + dx0 as i32).max(0) as usize,
+                    (w.y + dy0 as i32).max(0) as usize,
+                    (w.x + dx1 as i32).min(sw as i32).max(0) as usize,
+                    (w.y + dy1 as i32).min(sh as i32).max(0) as usize,
+                )
+            } else {
+                (
+                    (w.x.min(w.prev_x) - shadow_pad).max(0) as usize,
+                    (w.y.min(w.prev_y) - shadow_pad).max(0) as usize,
+                    (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
+                        .min(sw as i32).max(0) as usize,
+                    (w.y.max(w.prev_y) + w.h.max(w.prev_h) as i32 + shadow_pad)
+                        .min(sh as i32).max(0) as usize,
+                )
+            };
             if x0 < min_x {
                 min_x = x0;
             }
@@ -1058,7 +1104,7 @@ fn compute_rounded_shadow_alpha(
     pad: i32,
 ) -> Option<(Vec<u8>, usize, usize)> {
     let blur_r = pad;
-    let r = radius as f32;
+    let r = radius.min(width / 2).min(height / 2) as i32;
     let ww = width as i32;
     let wh = height as i32;
     let sw = (ww + blur_r * 2).max(0) as usize;
@@ -1067,46 +1113,50 @@ fn compute_rounded_shadow_alpha(
         return None;
     }
 
-    let blur_r_f = blur_r as f32;
-    let mut alpha = Vec::with_capacity(sw * sh);
-
-    let hww = ww as f32 / 2.0;
-    let hwh = wh as f32 / 2.0;
-    let center_x = hww;
-    let center_y = hwh;
-    let box_w = hww - r;
-    let box_h = hwh - r;
-
-    for py_i in 0..sh as i32 {
-        let py_f = (py_i - blur_r) as f32 + 0.5;
-        for px_i in 0..sw as i32 {
-            let px_f = (px_i - blur_r) as f32 + 0.5;
-
-            let qx = (px_f - center_x).abs();
-            let qy = (py_f - center_y).abs();
-
-            let dx = qx - box_w;
-            let dy = qy - box_h;
-
-            let dist = if dx > 0.0 && dy > 0.0 {
-                libm::sqrtf(dx * dx + dy * dy)
-            } else {
-                dx.max(dy)
-            };
-
-            let edge_dist = dist - r;
-
-            if edge_dist <= 0.0 || edge_dist >= blur_r_f {
-                alpha.push(0u8);
-            } else {
-                let t = (blur_r_f - edge_dist) / blur_r_f;
-                let alpha_f = t * t * 0.175;
-                alpha.push((alpha_f * 255.0) as u8);
+    let mut alpha = alloc::vec![0u8; sw * sh];
+    let left = blur_r.max(0) as usize;
+    let top = blur_r.max(0) as usize;
+    let right = left + width;
+    let bottom = top + height;
+    let radius = r as usize;
+    for py in top..bottom {
+        for px in left..right {
+            let dx = if px < left + radius { left as i32 + r - px as i32 }
+                else if px >= right - radius { px as i32 - (right as i32 - r - 1) } else { 0 };
+            let dy = if py < top + radius { top as i32 + r - py as i32 }
+                else if py >= bottom - radius { py as i32 - (bottom as i32 - r - 1) } else { 0 };
+            if dx == 0 || dy == 0 || dx * dx + dy * dy <= r * r {
+                alpha[py * sw + px] = 45;
             }
         }
     }
+    let box_radius = (blur_r.max(1) as usize / 3).max(1);
+    for _ in 0..3 {
+        box_blur_shadow(&mut alpha, sw, sh, box_radius);
+    }
 
     Some((alpha, sw, sh))
+}
+
+fn box_blur_shadow(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+    let mut tmp = alloc::vec![0u8; alpha.len()];
+    let diameter = radius * 2 + 1;
+    for y in 0..height {
+        let mut sum = 0u32;
+        for x in 0..width + radius {
+            if x < width { sum += alpha[y * width + x] as u32; }
+            if x > diameter && x - diameter - 1 < width { sum -= alpha[y * width + x - diameter - 1] as u32; }
+            if x >= radius && x - radius < width { tmp[y * width + x - radius] = (sum / diameter as u32) as u8; }
+        }
+    }
+    for x in 0..width {
+        let mut sum = 0u32;
+        for y in 0..height + radius {
+            if y < height { sum += tmp[y * width + x] as u32; }
+            if y > diameter && y - diameter - 1 < height { sum -= tmp[(y - diameter - 1) * width + x] as u32; }
+            if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
+        }
+    }
 }
 
 fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {

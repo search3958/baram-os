@@ -1354,7 +1354,11 @@ fn main() -> Status {
                                 engine.clear_hover();
                             }
                             if engine.hovered_node() != previous {
-                                wm.set_content_dirty(hover_id);
+                                if let Some((x0, y0, x1, y1)) = engine.window_damage() {
+                                    wm.set_content_damage(hover_id, x0, y0, x1, y1);
+                                } else {
+                                    wm.set_content_dirty(hover_id);
+                                }
                                 scene_dirty = true;
                                 dirty = true;
                             }

@@ -399,6 +399,10 @@ impl HtmlEngine {
         self.warp3.as_mut().and_then(|engine| engine.take_scroll_request())
     }
 
+    pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
+        self.warp3.as_ref().and_then(|engine| engine.window_damage())
+    }
+
     pub fn has_focused_input(&self) -> bool {
         self.warp3
             .as_ref()
