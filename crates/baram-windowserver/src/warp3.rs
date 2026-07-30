@@ -7,9 +7,70 @@ extern crate alloc;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::{app::Warp3Archive, config};
+use baram_bsd::app::Warp3Archive;
 use baram_core::{Color, LayerSystem};
+use baram_font::ttf_font;
 use baram_font::LayerFontExt;
+
+struct ShadowMask {
+    w: usize,
+    h: usize,
+    radius: usize,
+    pad: i32,
+    layer: LayerSystem,
+}
+
+impl ShadowMask {
+    fn new(w: usize, h: usize, radius: usize) -> Self {
+        let pad = 12i32;
+        let shadow_offset_y = 2i32;
+        let sw = w + pad as usize * 2;
+        let sh = h + pad as usize * 2;
+        let mut layer = LayerSystem::new_transparent(sw, sh);
+        let half_w = w as f32 / 2.0;
+        let half_h = h as f32 / 2.0;
+        let radius_f = radius as f32;
+        for py in 0..sh {
+            for px in 0..sw {
+                let local_x = px as f32 - pad as f32 + 0.5;
+                let local_y = py as f32 - pad as f32 - shadow_offset_y as f32 + 0.5;
+                let qx = (local_x - half_w).abs() - (half_w - radius_f);
+                let qy = (local_y - half_h).abs() - (half_h - radius_f);
+                let outside_x = qx.max(0.0);
+                let outside_y = qy.max(0.0);
+                let distance = libm::sqrtf(outside_x * outside_x + outside_y * outside_y)
+                    + qx.max(qy).min(0.0)
+                    - radius_f;
+                if distance > 0.0 && distance < pad as f32 {
+                    let falloff = 1.0 - distance / pad as f32;
+                    let alpha = (falloff * falloff * 34.0) as u32;
+                    layer.buf_mut()[py * sw + px] = alpha.min(34);
+                }
+            }
+        }
+        Self {
+            w,
+            h,
+            radius,
+            pad,
+            layer,
+        }
+    }
+
+    fn composite(&self, target: &mut LayerSystem, x: i32, y: i32) {
+        let shadow_x = x - self.pad;
+        let shadow_y = y - self.pad;
+        let src_x = (-shadow_x).max(0) as usize;
+        let src_y = (-shadow_y).max(0) as usize;
+        let dst_x = shadow_x.max(0) as usize;
+        let dst_y = shadow_y.max(0) as usize;
+        let width = self.layer.width().saturating_sub(src_x);
+        let height = self.layer.height().saturating_sub(src_y);
+        if width > 0 && height > 0 {
+            target.composit_shadow_alpha(&self.layer, dst_x, dst_y, src_x, src_y, width, height);
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 struct Node {
@@ -22,6 +83,7 @@ struct Node {
     w: i32,
     h: i32,
     tab: usize,
+    overlay: bool,
 }
 
 impl Node {
@@ -248,6 +310,7 @@ pub struct Warp3Engine {
     pub content_height: i32,
     scroll_request: Option<i32>,
     dirty: bool,
+    shadows: Vec<ShadowMask>,
 }
 
 impl Warp3Engine {
@@ -272,6 +335,7 @@ impl Warp3Engine {
             content_height: 0,
             scroll_request: None,
             dirty: true,
+            shadows: Vec::new(),
         };
         engine.load_screen();
         engine
@@ -287,17 +351,24 @@ impl Warp3Engine {
         }
         self.width = width.max(1);
         self.height = height.max(1);
-        let mut y = crate::window::title_bar_h() as i32 + 20;
+        let title_bar = crate::window::title_bar_h() as i32;
+        let document_width = self.width.min(960);
+        let document_x = (self.width - document_width) / 2;
+        let content_x = document_x + 28;
+        let content_width = document_width - 56;
+        let mut y = title_bar + 32;
         let roots = self.roots.clone();
         for idx in roots {
             if self.nodes[idx].is("config") || self.nodes[idx].is("toolbar") {
                 continue;
             }
-            let h = self.layout(idx, 24, y, self.width - 48);
-            y += h + 10;
+            let h = self.layout(idx, content_x, y, content_width);
+            y += h + 12;
         }
-        self.content_height = (y + 80).max(self.height);
-        let toolbar_y = self.scroll + self.height - 58;
+        self.content_height = (y + 96).max(title_bar + self.height);
+        let toolbar_width = (self.width - 32).min(900);
+        let toolbar_x = (self.width - toolbar_width) / 2;
+        let toolbar_y = self.scroll + title_bar + self.height - 18 - 54;
         let toolbars: Vec<usize> = self
             .roots
             .iter()
@@ -305,8 +376,9 @@ impl Warp3Engine {
             .filter(|idx| self.nodes[*idx].is("toolbar"))
             .collect();
         for idx in toolbars {
-            self.layout(idx, 16, toolbar_y, self.width - 32);
+            self.layout(idx, toolbar_x, toolbar_y, toolbar_width);
         }
+        self.prepare_shadows();
         self.dirty = false;
     }
 
@@ -330,10 +402,7 @@ impl Warp3Engine {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
-        let next = (0..self.nodes.len()).rev().find(|idx| {
-            let node = &self.nodes[*idx];
-            interactive(node) && !self.hidden_by_tab(*idx) && contains(node, x, y)
-        });
+        let next = self.hit_test(x, y);
         if self.hovered != next {
             self.hovered = next;
             self.dirty = true;
@@ -347,11 +416,7 @@ impl Warp3Engine {
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
-        let hit = (0..self.nodes.len()).rev().find(|idx| {
-            interactive(&self.nodes[*idx])
-                && !self.hidden_by_tab(*idx)
-                && contains(&self.nodes[*idx], x, y)
-        });
+        let hit = self.hit_test(x, y);
         let Some(idx) = hit else {
             self.focused_input = None;
             self.dirty = true;
@@ -396,26 +461,39 @@ impl Warp3Engine {
     }
 
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
-        for (idx, node) in self.nodes.iter().enumerate() {
-            if node.is("config")
-                || node.is("space")
-                || (node.is("scroll-point") && node.tags.len() == 1)
-            {
-                continue;
+        let title_bar = crate::window::title_bar_h();
+        layer.fill_rect(
+            0,
+            title_bar,
+            layer.width(),
+            layer.height().saturating_sub(title_bar),
+            html_bg(),
+        );
+        for toolbar_pass in [false, true] {
+            for (idx, node) in self.nodes.iter().enumerate() {
+                if self.is_toolbar_tree(idx) != toolbar_pass {
+                    continue;
+                }
+                if node.is("config")
+                    || node.is("space")
+                    || (node.is("scroll-point") && node.tags.len() == 1)
+                {
+                    continue;
+                }
+                if self.hidden_by_tab(idx) {
+                    continue;
+                }
+                let x = node.x + ox;
+                let y = node.y + oy;
+                if x + node.w <= 0
+                    || y + node.h <= crate::window::title_bar_h() as i32
+                    || x >= layer.width() as i32
+                    || y >= layer.height() as i32
+                {
+                    continue;
+                }
+                self.draw_node(layer, idx, x, y);
             }
-            if self.hidden_by_tab(idx) {
-                continue;
-            }
-            let x = node.x + ox;
-            let y = node.y + oy;
-            if x + node.w <= 0
-                || y + node.h <= crate::window::title_bar_h() as i32
-                || x >= layer.width() as i32
-                || y >= layer.height() as i32
-            {
-                continue;
-            }
-            self.draw_node(layer, idx, x, y);
         }
     }
 
@@ -424,6 +502,15 @@ impl Warp3Engine {
         let source = self.archive.read_text(&ui_path);
         self.nodes = Parser::new(&source).parse();
         self.roots = root_indices(&self.nodes);
+        let toolbar_roots: Vec<usize> = self
+            .roots
+            .iter()
+            .copied()
+            .filter(|idx| self.nodes[*idx].is("toolbar"))
+            .collect();
+        for root in toolbar_roots {
+            mark_overlay_tree(&mut self.nodes, root);
+        }
         self.scripts.clear();
         let mut script_names = Vec::new();
         for node in &self.nodes {
@@ -463,14 +550,20 @@ impl Warp3Engine {
                 };
             }
             "button" => {
-                self.nodes[idx].w = (measure(self.nodes[idx].prop("text")) + 30).clamp(70, width);
-                self.nodes[idx].h = 36;
+                self.nodes[idx].w = (measure(self.nodes[idx].prop("text")) + 28).clamp(44, width);
+                self.nodes[idx].h = 34;
             }
-            "input" => self.nodes[idx].h = 38,
-            "textarea" => self.nodes[idx].h = 104,
+            "input" => {
+                self.nodes[idx].w = width.min(420);
+                self.nodes[idx].h = 34;
+            }
+            "textarea" => {
+                self.nodes[idx].w = width.min(420);
+                self.nodes[idx].h = 100;
+            }
             "switch" => {
-                self.nodes[idx].w = 42;
-                self.nodes[idx].h = 24;
+                self.nodes[idx].w = 40;
+                self.nodes[idx].h = 20;
             }
             "space" => {
                 self.nodes[idx].h = 1;
@@ -479,12 +572,12 @@ impl Warp3Engine {
             "flex" | "toolbar" => {
                 let children = self.nodes[idx].children.clone();
                 let mut cx = x + if tag == "toolbar" { 10 } else { 0 };
-                let mut max_h = 36;
+                let mut max_h = 34;
                 let available = width - if tag == "toolbar" { 20 } else { 0 };
                 let fixed: i32 = children
                     .iter()
                     .filter(|child| !self.nodes[**child].is("space"))
-                    .map(|child| (measure(self.nodes[*child].prop("text")) + 38).max(70))
+                    .map(|child| (measure(self.nodes[*child].prop("text")) + 36).max(44))
                     .sum();
                 let gaps = (children.len().saturating_sub(1) as i32) * 8;
                 let spaces = children
@@ -511,28 +604,50 @@ impl Warp3Engine {
             }
             "tab" => {
                 let children = self.nodes[idx].children.clone();
-                let mut control_x = x + 10;
+                let control = self.nodes[idx].prop("control").to_string();
+                let vertical = control == "left" || control == "right";
+                let controls_w = if vertical { 104 } else { width };
+                let mut control_x = if control == "right" {
+                    x + width - controls_w + 8
+                } else {
+                    x + 8
+                };
+                let mut control_y = y + 8;
                 let mut page_h = 0;
                 for (tab, child) in children.iter().copied().enumerate() {
                     let label_w = (measure(self.nodes[child].prop("text")) + 24).max(64);
                     self.nodes[child].x = control_x;
-                    self.nodes[child].y = y + 8;
-                    self.nodes[child].w = label_w;
+                    self.nodes[child].y = control_y;
+                    self.nodes[child].w = if vertical { controls_w - 16 } else { label_w };
                     self.nodes[child].h = 34;
-                    control_x += label_w + 4;
+                    if vertical {
+                        control_y += 37;
+                    } else {
+                        control_x += label_w + 4;
+                    }
                     if tab == self.nodes[idx].tab {
-                        let mut cy = y + 56;
+                        let page_x = if control == "left" {
+                            x + controls_w + 18
+                        } else {
+                            x + 18
+                        };
+                        let page_width = if vertical {
+                            width - controls_w - 36
+                        } else {
+                            width - 36
+                        };
+                        let mut cy = if vertical { y + 18 } else { y + 56 };
                         for grandchild in self.nodes[child].children.clone() {
-                            let h = self.layout(grandchild, x + 18, cy, width - 36);
+                            let h = self.layout(grandchild, page_x, cy, page_width);
                             cy += h + 8;
                         }
                         page_h = cy - y + 10;
                     }
                 }
-                self.nodes[idx].h = page_h.max(100);
+                self.nodes[idx].h = page_h.max(if vertical { control_y - y + 8 } else { 100 });
             }
             "content" => {}
-            "card" | "list-box" => {
+            "card" => {
                 let mut cy = y + 18;
                 if !self.nodes[idx].prop("text").is_empty() {
                     cy += 30;
@@ -543,13 +658,30 @@ impl Warp3Engine {
                 }
                 self.nodes[idx].h = cy - y + 10;
             }
-            "list" => {
-                let mut cy = y + 12;
+            "list-box" => {
+                let title_height = if self.nodes[idx].prop("text").is_empty() {
+                    0
+                } else {
+                    36
+                };
+                let mut cy = y + title_height;
                 for child in self.nodes[idx].children.clone() {
-                    let h = self.layout(child, x + 8, cy + 20, width - 16);
+                    let h = self.layout(child, x, cy, width);
                     cy += h;
                 }
-                self.nodes[idx].h = (cy - y + 10).max(46);
+                self.nodes[idx].h = cy - y;
+            }
+            "list" => {
+                for child in self.nodes[idx].children.clone() {
+                    if self.nodes[child].is("detail") {
+                        let detail_width =
+                            (measure(self.nodes[child].prop("text")) + 8).min(width / 2);
+                        self.layout(child, x + width - detail_width - 8, y + 12, detail_width);
+                    } else {
+                        self.layout(child, x + 8, y + 12, width - 16);
+                    }
+                }
+                self.nodes[idx].h = 46;
             }
             _ => {
                 let mut cy = y;
@@ -563,69 +695,188 @@ impl Warp3Engine {
         self.nodes[idx].h
     }
 
+    fn prepare_shadows(&mut self) {
+        let mut wanted: Vec<(usize, usize, usize)> = Vec::new();
+        for node in &self.nodes {
+            let dimensions = if node.is("list-box") {
+                let title_height = if node.prop("text").is_empty() { 0 } else { 36 };
+                Some((
+                    node.w.max(1) as usize,
+                    (node.h - title_height).max(1) as usize,
+                    8,
+                ))
+            } else if node.is("toolbar") || node.is("card") || node.is("tab") {
+                Some((node.w.max(1) as usize, node.h.max(1) as usize, 8))
+            } else {
+                None
+            };
+            if let Some(key) = dimensions {
+                if !wanted.contains(&key) {
+                    wanted.push(key);
+                }
+            }
+        }
+        self.shadows
+            .retain(|mask| wanted.contains(&(mask.w, mask.h, mask.radius)));
+        for (w, h, radius) in wanted {
+            if !self
+                .shadows
+                .iter()
+                .any(|mask| mask.w == w && mask.h == h && mask.radius == radius)
+            {
+                self.shadows.push(ShadowMask::new(w, h, radius));
+            }
+        }
+    }
+
+    fn composite_shadow(
+        &self,
+        layer: &mut LayerSystem,
+        x: i32,
+        y: i32,
+        w: usize,
+        h: usize,
+        radius: usize,
+    ) {
+        if let Some(mask) = self
+            .shadows
+            .iter()
+            .find(|mask| mask.w == w && mask.h == h && mask.radius == radius)
+        {
+            mask.composite(layer, x, y);
+        }
+    }
+
     fn draw_node(&self, layer: &mut LayerSystem, idx: usize, x: i32, y: i32) {
         let node = &self.nodes[idx];
         let text = node.prop("text");
-        let bg = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
-        let panel = config::get_color("ui-theme/color/panel", Color::PANEL);
-        let border = config::get_color("ui-theme/color/border", Color::BORDER);
-        let fg = config::get_color("ui-theme/color/text", Color::TEXT);
-        let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
-        let accent = config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY);
-        let hover = config::get_color("ui-theme/color/btn_tonal_hover", Color::BTN_TONAL_HOVER);
+        let bg = html_bg();
+        let panel = html_layer();
+        let solid = html_layer_solid();
+        let border = html_border();
+        let fg = html_text();
+        let muted = html_muted();
+        let accent = html_accent();
         let xu = x.max(0) as usize;
         let yu = y.max(0) as usize;
         let wu = node.w.max(1) as usize;
         let hu = node.h.max(1) as usize;
 
-        if node.is("toolbar") || node.is("card") || node.is("tab") || node.is("list-box") {
-            layer.fill_rounded_rect(xu, yu, wu, hu, 9, panel);
-            layer.rounded_rect_outline(xu, yu, wu, hu, 9, border, panel);
+        if node.is("list-box") {
+            let title_height = if text.is_empty() { 0 } else { 36 };
+            let box_y = y + title_height;
+            let box_h = (node.h - title_height).max(1) as usize;
+            self.composite_shadow(layer, x, box_y, wu, box_h, 8);
+            rounded_box(layer, x, box_y, wu, box_h, 8, border, panel);
+        } else if node.is("toolbar") || node.is("card") || node.is("tab") {
+            self.composite_shadow(layer, x, y, wu, hu, 8);
+            rounded_box(layer, x, y, wu, hu, 8, border, panel);
+            if node.is("tab") {
+                match node.prop("control") {
+                    "left" => layer.fill_rect(xu + 103, yu + 1, 1, hu.saturating_sub(2), border),
+                    "right" => layer.fill_rect(
+                        xu + wu.saturating_sub(104),
+                        yu + 1,
+                        1,
+                        hu.saturating_sub(2),
+                        border,
+                    ),
+                    "bottom" => layer.fill_rect(
+                        xu + 1,
+                        yu + hu.saturating_sub(51),
+                        wu.saturating_sub(2),
+                        1,
+                        border,
+                    ),
+                    _ => layer.fill_rect(xu + 1, yu + 50, wu.saturating_sub(2), 1, border),
+                }
+            }
         } else if node.is("list") {
             layer.fill_rect(xu, (y + node.h - 1).max(0) as usize, wu, 1, border);
         } else if node.is("button") || node.is("content") {
             let primary = node.prop("type") == "primary";
             let text_only = node.prop("type") == "text";
-            let color = if self.hovered == Some(idx) {
-                hover
+            let active_tab = node.is("content") && self.is_active_tab(idx);
+            let color = if primary && self.hovered == Some(idx) {
+                html_accent_hover()
+            } else if self.hovered == Some(idx) {
+                Color::rgb(255, 255, 255)
             } else if primary {
                 accent
+            } else if active_tab {
+                solid
             } else if text_only {
                 bg
             } else {
-                panel
+                solid
             };
-            layer.fill_rounded_rect(xu, yu, wu, hu, 5, color);
-            if !text_only {
-                layer.rounded_rect_outline(xu, yu, wu, hu, 5, border, color);
+            if !text_only && (!node.is("content") || active_tab || self.hovered == Some(idx)) {
+                rounded_box(layer, x, y, wu, hu, 4, border, color);
             }
         } else if node.is("input") || node.is("textarea") {
-            layer.fill_rounded_rect(xu, yu, wu, hu, 5, bg);
-            let focus = if self.focused_input == Some(idx) {
+            rounded_box(layer, x, y, wu, hu, 4, border, solid);
+            let bottom = if self.focused_input == Some(idx) {
                 accent
             } else {
-                border
+                Color::rgb(119, 119, 119)
             };
-            layer.rounded_rect_outline(xu, yu, wu, hu, 5, focus, bg);
+            layer.fill_rect(
+                xu + 4,
+                yu + hu.saturating_sub(2),
+                wu.saturating_sub(8),
+                2,
+                bottom,
+            );
         } else if node.is("code") {
             layer.fill_rounded_rect(xu, yu, wu, hu, 6, Color::rgb(32, 32, 32));
         } else if node.is("switch") {
             let on = node.prop("default") == "true";
-            let switch_bg = if on { accent } else { border };
-            layer.fill_rounded_rect(xu, yu, wu, hu, 12, switch_bg);
-            let knob_x = if on { x + node.w - 20 } else { x + 4 };
-            layer.fill_circle(knob_x.max(0) as usize + 8, yu + 12, 8, bg);
+            let switch_bg = if on { accent } else { bg };
+            rounded_box(
+                layer,
+                x,
+                y,
+                wu,
+                hu,
+                10,
+                if on {
+                    accent
+                } else {
+                    Color::rgb(119, 119, 119)
+                },
+                switch_bg,
+            );
+            let knob_x = if on { x + node.w - 18 } else { x + 3 };
+            layer.fill_circle(
+                knob_x.max(0) as usize + 7,
+                yu + 10,
+                7,
+                if on {
+                    Color::rgb(255, 255, 255)
+                } else {
+                    Color::rgb(102, 102, 102)
+                },
+            );
         }
 
         if text.is_empty() {
             return;
         }
         let (tx, ty, color) = if node.is("button") || node.is("content") {
-            (x + 12, y + 9, fg)
+            let color = if node.prop("type") == "primary" {
+                Color::rgb(255, 255, 255)
+            } else if node.is("content") && self.is_active_tab(idx) {
+                accent
+            } else {
+                fg
+            };
+            (x + 14, y + 8, color)
         } else if node.is("input") || node.is("textarea") {
-            (x + 10, y + 10, fg)
-        } else if node.is("card") || node.is("list-box") {
+            (x + 10, y + 8, fg)
+        } else if node.is("card") {
             (x + 16, y + 14, fg)
+        } else if node.is("list-box") {
+            (x, y + 8, fg)
         } else if node.is("list") {
             (x + 8, y + 13, fg)
         } else if node.is("code") {
@@ -639,14 +890,40 @@ impl Warp3Engine {
         };
         for (line, value) in text.split('\n').enumerate() {
             if ty + line as i32 * 22 >= 0 {
-                layer.put_str(
-                    tx.max(0) as usize,
-                    (ty + line as i32 * 22) as usize,
-                    value,
-                    color,
-                );
+                let line_y = ty + line as i32 * 22;
+                if node.is("head") {
+                    put_str_size(layer, tx, line_y - 5, value, color, 28.0);
+                } else if node.is("list-box") {
+                    put_str_size(layer, tx, line_y - 3, value, color, 20.0);
+                } else {
+                    layer.put_str(tx.max(0) as usize, line_y as usize, value, color);
+                }
             }
         }
+    }
+
+    fn is_active_tab(&self, content_idx: usize) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| node.is("tab") && node.children.get(node.tab).copied() == Some(content_idx))
+    }
+
+    fn is_toolbar_tree(&self, idx: usize) -> bool {
+        self.nodes.get(idx).map_or(false, |node| node.overlay)
+    }
+
+    fn hit_test(&self, x: i32, y: i32) -> Option<usize> {
+        for toolbar_pass in [true, false] {
+            if let Some(idx) = (0..self.nodes.len()).rev().find(|idx| {
+                self.is_toolbar_tree(*idx) == toolbar_pass
+                    && interactive(&self.nodes[*idx])
+                    && !self.hidden_by_tab(*idx)
+                    && contains(&self.nodes[*idx], x, y)
+            }) {
+                return Some(idx);
+            }
+        }
+        None
     }
 
     fn hidden_by_tab(&self, idx: usize) -> bool {
@@ -894,6 +1171,14 @@ fn descendant(nodes: &[Node], parent: usize, wanted: usize) -> bool {
         .any(|child| *child == wanted || descendant(nodes, *child, wanted))
 }
 
+fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
+    nodes[idx].overlay = true;
+    let children = nodes[idx].children.clone();
+    for child in children {
+        mark_overlay_tree(nodes, child);
+    }
+}
+
 fn measure(text: &str) -> i32 {
     text.chars().count() as i32 * 9
 }
@@ -902,13 +1187,114 @@ fn unquote(value: &str) -> String {
     value.trim().trim_matches('"').to_string()
 }
 
+fn html_bg() -> Color {
+    Color::rgb(243, 243, 243)
+}
+
+fn html_layer() -> Color {
+    Color::rgb(249, 249, 249)
+}
+
+fn html_layer_solid() -> Color {
+    Color::rgb(251, 251, 251)
+}
+
+fn html_text() -> Color {
+    Color::rgb(26, 26, 26)
+}
+
+fn html_muted() -> Color {
+    Color::rgb(93, 93, 93)
+}
+
+fn html_border() -> Color {
+    Color::rgb(211, 211, 211)
+}
+
+fn html_accent() -> Color {
+    Color::rgb(0, 103, 192)
+}
+
+fn html_accent_hover() -> Color {
+    Color::rgb(25, 117, 197)
+}
+
+fn rounded_box(
+    layer: &mut LayerSystem,
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
+    radius: usize,
+    border: Color,
+    fill: Color,
+) {
+    if x < 0 || y < 0 || width == 0 || height == 0 {
+        return;
+    }
+    let x = x as usize;
+    let y = y as usize;
+    layer.fill_rounded_rect(x, y, width, height, radius, border);
+    if width > 2 && height > 2 {
+        layer.fill_rounded_rect(
+            x + 1,
+            y + 1,
+            width - 2,
+            height - 2,
+            radius.saturating_sub(1),
+            fill,
+        );
+    }
+}
+
+fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
+    if !ttf_font::is_available() {
+        if x >= 0 && y >= 0 {
+            layer.put_str(x as usize, y as usize, text, color);
+        }
+        return;
+    }
+    let baseline = y + ttf_font::ascent_at_size(size);
+    let layer_w = layer.width();
+    let layer_h = layer.height();
+    for ch in text.chars() {
+        let glyph = ttf_font::glyph_at_size(ch, size);
+        if glyph.w <= 0 || glyph.h <= 0 {
+            x += glyph.advance.max(8);
+            continue;
+        }
+        let top = baseline + glyph.y_off;
+        let glyph_w = glyph.w as usize;
+        for row in 0..glyph.h {
+            let py = top + row;
+            if py < crate::window::title_bar_h() as i32 || py >= layer_h as i32 {
+                continue;
+            }
+            for col in 0..glyph.w {
+                let px = x + col;
+                if px < 0 || px >= layer_w as i32 {
+                    continue;
+                }
+                let alpha = glyph.data[row as usize * glyph_w + col as usize] as f32 / 255.0;
+                if alpha <= 0.0 {
+                    continue;
+                }
+                let index = py as usize * layer_w + px as usize;
+                let background = layer.buf_ref()[index];
+                layer.buf_mut()[index] = LayerSystem::blend_alpha(background, color.0, alpha);
+            }
+        }
+        x += glyph.advance.max(0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn parses_the_reference_ui_without_preprocessing() {
-        let nodes = Parser::new(include_str!("../../../app/main.w3u")).parse();
+        let nodes = Parser::new(include_str!("../../../app/warp3demo.w3a/main.w3u")).parse();
         assert!(nodes.len() > 100);
         assert!(nodes.iter().any(|node| node.is("toolbar")));
         assert!(nodes.iter().any(|node| node.is("tab")));
@@ -921,8 +1307,8 @@ mod tests {
 
     #[test]
     fn parses_reference_script_commands_and_functions() {
-        let nav = parse_script(include_str!("../../../app/nav.w3s"));
-        let variables = parse_script(include_str!("../../../app/var-demo.w3s"));
+        let nav = parse_script(include_str!("../../../app/warp3demo.w3a/nav.w3s"));
+        let variables = parse_script(include_str!("../../../app/warp3demo.w3a/var-demo.w3s"));
         assert!(nav.iter().any(|section| {
             section.kind == SectionKind::Click
                 && section.name == "vardemo"
