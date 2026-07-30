@@ -5,7 +5,6 @@ use baram_core::LayerSystem;
 use baram_core::{Color, Screen};
 use baram_font::LayerFontExt;
 use baram_graphics::svg;
-use super::x11::X11Surface;
 
 pub fn scroll_speed() -> i32 {
     config::get_i32("ui-theme/window/scroll_speed", 30)
@@ -725,32 +724,25 @@ impl WindowManager {
                             (*layer_ptr).pop_clip();
                         }
                     }
-                    // Warp and HTML are X11 clients in the native server: render
-                    // into a client pixmap first, then present it to the window.
-                    let mut x11_surface = X11Surface::new(ww, wh);
-                    x11_surface.clear();
                     for i in 0..warp_engines.len() {
                         if win_id == warp_engines[i].0 {
                             let engine = &mut warp_engines[i].1;
-                            let client = x11_surface.layer();
-                            client.push_clip(0, title_bar_h(), ww, wh);
-                            engine.draw_to_layer(client, 0, -scroll_y);
-                            engine.draw_texts(client, 0, -scroll_y, 1.0);
-                            client.pop_clip();
+                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
+                            engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
+                            (*layer_ptr).pop_clip();
                             break;
                         }
                     }
                     for i in 0..html_engines.len() {
                         if win_id == html_engines[i].0 {
                             let engine = &html_engines[i].1;
-                            let client = x11_surface.layer();
-                            client.push_clip(0, title_bar_h(), ww, wh);
-                            engine.draw_to_layer(client, 0, -scroll_y);
-                            client.pop_clip();
+                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
+                            (*layer_ptr).pop_clip();
                             break;
                         }
                     }
-                    x11_surface.present_into(&mut *layer_ptr);
                     draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;

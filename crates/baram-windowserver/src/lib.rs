@@ -8,4 +8,3 @@ pub mod compositor;
 pub mod cursor;
 pub mod warp;
 pub mod html;
-pub mod x11;
