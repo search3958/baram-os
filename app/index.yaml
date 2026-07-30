@@ -37,6 +37,6 @@ apps:
     type: warp-2
     title: 計算機
   webdemo.html:
-    icon: noname.png
+    icon: html5.png
     type: html-1
     title: HTMLデモ
