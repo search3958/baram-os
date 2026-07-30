@@ -418,6 +418,7 @@ fn main() -> Status {
     let mut prev_focused_id: Option<WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
     let mut prev_wallpaper_idx: usize = display_state.wallpaper_index;
+    let mut hud_damage_pending = false;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_remove_progress: f32 = -1.0f32;
@@ -439,7 +440,8 @@ fn main() -> Status {
         .get_i32("system/timezone")
         .unwrap_or(9);
 
-    let mut battery_info = baram_iokit::battery::read_battery_or_default();
+    let mut battery_info = baram_iokit::battery::read_battery();
+    let mut battery_poll_seconds: u8 = 0;
 
     let (mut clock_hh, mut clock_mm) = {
         let tz = timezone_offset;
@@ -481,7 +483,7 @@ fn main() -> Status {
         false,
         clock_hh,
         clock_mm,
-        battery_info.percentage,
+        battery_info.valid_percentage(),
     );
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -858,12 +860,22 @@ fn main() -> Status {
                                             scene_dirty = true;
 
                                             if let Some(cmd) = engine.last_command.take() {
+                                                let is_hud_command =
+                                                    baram_bsd::uri::parse(&cmd).map_or(false, |p| {
+                                                        p.path.starts_with("display/hud")
+                                                    });
+                                                let previous_hud = display_state.hud_enabled;
                                                 if baram_bsd::uri::execute(&cmd, &mut display_state) {
                                                     engine.update(ww as i32, content_h as i32);
-                                                    wm.set_all_dirty();
-                                                    taskbar_surface.invalidate();
-                                                    cached_launcher_layer = None;
-                                                    bg_cache = None;
+                                                    if is_hud_command {
+                                                        hud_damage_pending |= previous_hud
+                                                            != display_state.hud_enabled;
+                                                    } else {
+                                                        wm.set_all_dirty();
+                                                        taskbar_surface.invalidate();
+                                                        cached_launcher_layer = None;
+                                                        bg_cache = None;
+                                                    }
                                                     scene_dirty = true;
                                                 }
                                                 if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
@@ -911,6 +923,7 @@ fn main() -> Status {
                                                 let new_enabled = enabled_str == "true";
                                                 if display_state.hud_enabled != new_enabled {
                                                     display_state.hud_enabled = new_enabled;
+                                                    hud_damage_pending = true;
                                                     scene_dirty = true;
                                                 }
                                             }
@@ -1128,12 +1141,22 @@ fn main() -> Status {
                                     scene_dirty = true;
 
                                     if let Some(cmd) = engine.last_command.take() {
+                                        let is_hud_command =
+                                            baram_bsd::uri::parse(&cmd).map_or(false, |p| {
+                                                p.path.starts_with("display/hud")
+                                            });
+                                        let previous_hud = display_state.hud_enabled;
                                         if baram_bsd::uri::execute(&cmd, &mut display_state) {
                                             engine.update(ww as i32, content_h as i32);
-                                            wm.set_all_dirty();
-                                            taskbar_surface.invalidate();
-                                            cached_launcher_layer = None;
-                                            bg_cache = None;
+                                            if is_hud_command {
+                                                hud_damage_pending |=
+                                                    previous_hud != display_state.hud_enabled;
+                                            } else {
+                                                wm.set_all_dirty();
+                                                taskbar_surface.invalidate();
+                                                cached_launcher_layer = None;
+                                                bg_cache = None;
+                                            }
                                             scene_dirty = true;
                                         }
                                         if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
@@ -1173,6 +1196,7 @@ fn main() -> Status {
                                         let new_enabled = enabled_str == "true";
                                         if display_state.hud_enabled != new_enabled {
                                             display_state.hud_enabled = new_enabled;
+                                            hud_damage_pending = true;
                                             scene_dirty = true;
                                         }
                                     }
@@ -1332,11 +1356,24 @@ fn main() -> Status {
                     + (now.minute() as i32)
                     + timezone_offset * 60;
                 let day_min = total_min.rem_euclid(24 * 60);
-                clock_hh = (day_min / 60) as u8;
-                clock_mm = (day_min % 60) as u8;
+                let next_hh = (day_min / 60) as u8;
+                let next_mm = (day_min % 60) as u8;
+                let clock_changed = next_hh != clock_hh || next_mm != clock_mm;
+                clock_hh = next_hh;
+                clock_mm = next_mm;
 
-                battery_info = baram_iokit::battery::read_battery_or_default();
-                taskbar_surface.invalidate();
+                battery_poll_seconds = battery_poll_seconds.saturating_add(1);
+                let mut battery_changed = false;
+                if battery_poll_seconds >= 60 {
+                    battery_poll_seconds = 0;
+                    let next_battery = baram_iokit::battery::read_battery();
+                    battery_changed =
+                        next_battery.valid_percentage() != battery_info.valid_percentage();
+                    battery_info = next_battery;
+                }
+                if clock_changed || battery_changed {
+                    taskbar_surface.invalidate();
+                }
 
                 dirty = true;
                 scene_dirty = true;
@@ -1449,6 +1486,7 @@ fn main() -> Status {
                 let w = screen.width();
                 let h = screen.height();
                 let tb_y = h.saturating_sub(TASKBAR_H);
+                let hud_y0 = tb_y.saturating_sub(44);
                 let pad = 32i32;
                 let cur_w = if is_resizing {
                     cursor::CURSOR_BOX_SIZE_W
@@ -1529,9 +1567,46 @@ fn main() -> Status {
                     taskbar_only,
                     clock_hh,
                     clock_mm,
-                    battery_info.percentage,
+                    battery_info.valid_percentage(),
                 );
                 layer.pop_clip();
+
+                let hud_redraw_separate = hud_damage_pending
+                    && !(fx0 == 0 && fy0 <= hud_y0 && fx1 == w && fy1 >= tb_y);
+                if hud_redraw_separate {
+                    layer.push_clip(0, hud_y0, w, tb_y);
+                    render_scene(
+                        &mut layer,
+                        &mut taskbar_surface,
+                        &mut wm,
+                        mouse_ev_count,
+                        key_ev_count,
+                        fps,
+                        mouse_mode_label,
+                        &ui_commands,
+                        ui_win_id,
+                        &mut warp_engines,
+                        &mut html_engines,
+                        cached_wallpaper.as_deref(),
+                        &mut cached_launcher_layer,
+                        false,
+                        tb_add_progress,
+                        tb_remove_progress,
+                        tb_shift_x,
+                        display_state.hud_enabled,
+                        &mut bg_cache,
+                        true,
+                        show_app_launcher,
+                        &app_list,
+                        &app_icon_list,
+                        hover_apps_icon,
+                        false,
+                        clock_hh,
+                        clock_mm,
+                        battery_info.valid_percentage(),
+                    );
+                    layer.pop_clip();
+                }
 
                 if launcher_changed {
                     layer.mark_all_dirty();
@@ -1552,6 +1627,14 @@ fn main() -> Status {
                     let e = y * w + fx1;
                     cached_scene[s..e].copy_from_slice(&layer.buf_ref()[s..e]);
                 }
+                if hud_redraw_separate {
+                    for y in hud_y0..tb_y {
+                        let s = y * w;
+                        let e = s + w;
+                        cached_scene[s..e].copy_from_slice(&layer.buf_ref()[s..e]);
+                    }
+                }
+                hud_damage_pending = false;
                 scene_dirty = false;
                 wm.clear_pending_damage();
 
@@ -1573,6 +1656,9 @@ fn main() -> Status {
                     layer.flush(&mut screen);
                 } else {
                     layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
+                    if hud_redraw_separate {
+                        layer.flush_rect(&mut screen, 0, hud_y0, w, tb_y);
+                    }
                 }
 
                 prev_cursor_x = cursor_x;

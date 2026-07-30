@@ -502,7 +502,7 @@ fn redraw_taskbar(
     hover_apps_icon: bool,
     clock_hh: u8,
     clock_mm: u8,
-    battery_pct: u8,
+    battery_pct: Option<u8>,
 ) {
     let layer = &mut surface.layer;
     let w = layer.width();
@@ -621,23 +621,23 @@ fn redraw_taskbar(
     ];
     let time = unsafe { core::str::from_utf8_unchecked(&time_bytes) };
     let mut battery_bytes = [0u8; 4];
-    let battery_len;
-    if battery_pct >= 100 {
-        battery_bytes.copy_from_slice(b"100%");
-        battery_len = 4;
-    } else if battery_pct >= 10 {
-        battery_bytes[0] = b'0' + battery_pct / 10;
-        battery_bytes[1] = b'0' + battery_pct % 10;
-        battery_bytes[2] = b'%';
-        battery_len = 3;
-    } else {
-        battery_bytes[0] = b'0' + battery_pct % 10;
-        battery_bytes[1] = b'%';
-        battery_len = 2;
-    }
-    let battery = unsafe {
-        core::str::from_utf8_unchecked(&battery_bytes[..battery_len])
-    };
+    let battery = battery_pct.map(|pct| {
+        let len;
+        if pct >= 100 {
+            battery_bytes.copy_from_slice(b"100%");
+            len = 4;
+        } else if pct >= 10 {
+            battery_bytes[0] = b'0' + pct / 10;
+            battery_bytes[1] = b'0' + pct % 10;
+            battery_bytes[2] = b'%';
+            len = 3;
+        } else {
+            battery_bytes[0] = b'0' + pct % 10;
+            battery_bytes[1] = b'%';
+            len = 2;
+        }
+        unsafe { core::str::from_utf8_unchecked(&battery_bytes[..len]) }
+    });
 
     let size = 32.0;
     let measure = |text: &str| -> usize {
@@ -649,20 +649,23 @@ fn redraw_taskbar(
             .sum()
     };
     let gap = 12usize;
-    let status_x = w.saturating_sub(measure(time) + gap + measure(battery) + 16);
+    let battery_width = battery.map_or(0, |text| gap + measure(text));
+    let status_x = w.saturating_sub(measure(time) + battery_width + 16);
     let baseline = TASKBAR_H as i32
         - baram_font::ttf_font_hud::ascent_at_size(size)
         + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
-    draw_taskbar_text(
-        layer,
-        battery,
-        status_x + measure(time) + gap,
-        baseline,
-        status_color,
-        size,
-    );
+    if let Some(battery) = battery {
+        draw_taskbar_text(
+            layer,
+            battery,
+            status_x + measure(time) + gap,
+            baseline,
+            status_color,
+            size,
+        );
+    }
 
     svg::draw_svg_into_alpha(
         layer,
@@ -705,7 +708,7 @@ pub fn render_scene(
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
-    battery_pct: u8,
+    battery_pct: Option<u8>,
 ) {
     let w = layer.width();
     let h = layer.height();
@@ -966,7 +969,7 @@ pub fn render_frame(
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
-    battery_pct: u8,
+    battery_pct: Option<u8>,
 ) {
     render_scene(
         layer,
