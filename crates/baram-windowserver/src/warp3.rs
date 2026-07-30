@@ -103,6 +103,7 @@ struct Node {
     h: i32,
     tab: usize,
     overlay: bool,
+    hidden: bool,
 }
 
 impl Node {
@@ -336,6 +337,8 @@ pub struct Warp3Engine {
     document_layer: Option<LayerSystem>,
     toolbar_layer: Option<LayerSystem>,
     toolbar_dirty: bool,
+    document_paint: Vec<usize>,
+    toolbar_paint: Vec<usize>,
     shadows: Vec<ShadowMask>,
 }
 
@@ -366,6 +369,8 @@ impl Warp3Engine {
             document_layer: None,
             toolbar_layer: None,
             toolbar_dirty: true,
+            document_paint: Vec::new(),
+            toolbar_paint: Vec::new(),
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -419,6 +424,8 @@ impl Warp3Engine {
         for idx in toolbars {
             self.layout(idx, toolbar_x, toolbar_y, toolbar_width);
         }
+        self.refresh_visibility();
+        self.rebuild_paint_lists();
         self.prepare_shadows();
         self.paint_cached_layers();
         self.dirty = false;
@@ -520,7 +527,7 @@ impl Warp3Engine {
             let target_y = title_bar;
             let visible_h = layer.height().saturating_sub(target_y);
             if source_y < document.height() && visible_h > 0 {
-                layer.composit_rect(document, ox.max(0) as usize, target_y, 0, source_y,
+                layer.composit_rect_opaque(document, ox.max(0) as usize, target_y, 0, source_y,
                     document.width(), visible_h.min(document.height() - source_y));
             }
         }
@@ -533,11 +540,8 @@ impl Warp3Engine {
         // Paint the fixed controls over the already-composited document. This
         // gives text and rounded corners their final-background antialiasing;
         // only the shadow itself needs transparent alpha storage.
-        for idx in 0..self.nodes.len() {
+        for idx in self.toolbar_paint.clone() {
             let node = &self.nodes[idx];
-            if !self.is_toolbar_tree(idx) || node.is("space") || self.hidden_by_tab(idx) {
-                continue;
-            }
             self.draw_node(layer, idx, node.x + ox, node.y);
         }
     }
@@ -583,6 +587,8 @@ impl Warp3Engine {
         self.document_layer = None;
         self.toolbar_layer = None;
         self.toolbar_dirty = true;
+        self.document_paint.clear();
+        self.toolbar_paint.clear();
     }
 
     fn layout(&mut self, idx: usize, x: i32, y: i32, width: i32) -> i32 {
@@ -799,11 +805,9 @@ impl Warp3Engine {
         if let Some(mut layer) = self.document_layer.take() {
             layer.fill_rect(0, from, width, to.saturating_sub(from), html_bg());
             layer.push_clip(0, from, width, to);
-            for idx in 0..self.nodes.len() {
+            for idx in self.document_paint.clone() {
                 let node = &self.nodes[idx];
-                if self.is_toolbar_tree(idx) || node.is("config") || node.is("space")
-                    || (node.is("scroll-point") && node.tags.len() == 1) || self.hidden_by_tab(idx)
-                    || node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 { continue; }
+                if node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 { continue; }
                 self.draw_node(&mut layer, idx, node.x, node.y);
             }
             layer.pop_clip();
@@ -818,9 +822,8 @@ impl Warp3Engine {
         if self.toolbar_dirty || recreate_toolbar {
             if let Some(mut layer) = self.toolbar_layer.take() {
                 layer.clear(Color::TRANSPARENT);
-                for idx in 0..self.nodes.len() {
+                for idx in self.toolbar_paint.clone() {
                     let node = &self.nodes[idx];
-                    if !node.is("toolbar") || self.hidden_by_tab(idx) { continue; }
                     if node.is("toolbar") {
                         self.composite_shadow_transparent(&mut layer, idx);
                     }
@@ -1064,12 +1067,60 @@ impl Warp3Engine {
         self.nodes.get(idx).map_or(false, |node| node.overlay)
     }
 
+    fn refresh_visibility(&mut self) {
+        for node in &mut self.nodes {
+            node.hidden = false;
+        }
+        let tabs: Vec<(usize, usize, Vec<usize>)> = self.nodes.iter().enumerate()
+            .filter(|(_, node)| node.is("tab"))
+            .map(|(idx, node)| (idx, node.tab, node.children.clone()))
+            .collect();
+        for (_idx, active, children) in tabs {
+            for (tab, child) in children.into_iter().enumerate() {
+                if tab != active {
+                    // `content` itself is the tab control.  Keep every
+                    // control visible and hide only its inactive page body.
+                    let page_children = self.nodes[child].children.clone();
+                    for page_child in page_children {
+                        self.mark_hidden_tree(page_child);
+                    }
+                }
+            }
+        }
+    }
+
+    fn mark_hidden_tree(&mut self, idx: usize) {
+        self.nodes[idx].hidden = true;
+        let children = self.nodes[idx].children.clone();
+        for child in children {
+            self.mark_hidden_tree(child);
+        }
+    }
+
+    /// Built only when layout/tab state changes.  Scroll and hover never walk
+    /// the tree: they use these already-resolved paint lists.
+    fn rebuild_paint_lists(&mut self) {
+        self.document_paint.clear();
+        self.toolbar_paint.clear();
+        for (idx, node) in self.nodes.iter().enumerate() {
+            if node.hidden || node.is("config") || node.is("space")
+                || (node.is("scroll-point") && node.tags.len() == 1) {
+                continue;
+            }
+            if node.overlay {
+                self.toolbar_paint.push(idx);
+            } else {
+                self.document_paint.push(idx);
+            }
+        }
+    }
+
     fn hit_test(&self, x: i32, y: i32) -> Option<usize> {
         for toolbar_pass in [true, false] {
             if let Some(idx) = (0..self.nodes.len()).rev().find(|idx| {
                 self.is_toolbar_tree(*idx) == toolbar_pass
                     && interactive(&self.nodes[*idx])
-                    && !self.hidden_by_tab(*idx)
+                    && !self.nodes[*idx].hidden
                     && contains(
                         &self.nodes[*idx],
                         x,
@@ -1080,20 +1131,6 @@ impl Warp3Engine {
             }
         }
         None
-    }
-
-    fn hidden_by_tab(&self, idx: usize) -> bool {
-        for node in &self.nodes {
-            if !node.is("tab") {
-                continue;
-            }
-            for (tab, child) in node.children.iter().copied().enumerate() {
-                if tab != node.tab && descendant(&self.nodes, child, idx) {
-                    return true;
-                }
-            }
-        }
-        false
     }
 
     fn find_parent(&self, child: usize) -> Option<usize> {
@@ -1321,13 +1358,6 @@ fn contains(node: &Node, x: i32, y: i32) -> bool {
     x >= node.x && x < node.x + node.w && y >= node.y && y < node.y + node.h
 }
 
-fn descendant(nodes: &[Node], parent: usize, wanted: usize) -> bool {
-    nodes[parent]
-        .children
-        .iter()
-        .any(|child| *child == wanted || descendant(nodes, *child, wanted))
-}
-
 fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
     nodes[idx].overlay = true;
     let children = nodes[idx].children.clone();
@@ -1337,24 +1367,31 @@ fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
 }
 
 fn measure(text: &str) -> i32 {
-    text.chars().count() as i32 * 9
+    text.chars().map(ttf_font::advance).sum()
 }
 
-/// The built-in bitmap font is close to 9 px per character.  Keep wrapping in
-/// layout and painting on the same rule so a changed label reflows every node
-/// that follows it instead of overlapping it.
+/// Keep wrapping and layout on the exact same glyph advances.  A character
+/// count approximation breaks mixed CJK/Latin labels and shifts every sibling.
 fn wrap_lines(text: &str, width: i32) -> Vec<String> {
-    let limit = (width.max(9) / 9).max(1) as usize;
     let mut lines = Vec::new();
     for paragraph in text.split('\n') {
-        let chars: Vec<char> = paragraph.chars().collect();
-        if chars.is_empty() {
+        if paragraph.is_empty() {
             lines.push(String::new());
             continue;
         }
-        for chunk in chars.chunks(limit) {
-            lines.push(chunk.iter().collect());
+        let mut line = String::new();
+        let mut line_width = 0;
+        for ch in paragraph.chars() {
+            let advance = ttf_font::advance(ch);
+            if !line.is_empty() && line_width + advance > width.max(1) {
+                lines.push(line);
+                line = String::new();
+                line_width = 0;
+            }
+            line.push(ch);
+            line_width += advance;
         }
+        lines.push(line);
     }
     lines
 }

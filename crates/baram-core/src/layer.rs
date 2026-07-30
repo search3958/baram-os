@@ -989,6 +989,31 @@ impl LayerSystem {
         }
     }
 
+    /// Fast path for a known-opaque source.  This deliberately skips the
+    /// per-pixel transparency probe in `composit_rect`; the platform memcpy
+    /// implementation can use its vector/SIMD copy path for every scanline.
+    pub fn composit_rect_opaque(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+    ) {
+        let Some((dx, dy, sx, sy, copy_w, copy_h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, src.width, src.height)
+        else { return; };
+        self.mark_dirty_rect(dx, dy, dx + copy_w, dy + copy_h);
+        for row in 0..copy_h {
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    src.buf.as_ptr().add((sy + row) * src.width + sx),
+                    self.buf.as_mut_ptr().add((dy + row) * self.width + dx),
+                    copy_w,
+                );
+            }
+        }
+    }
+
     pub fn composit_rect_alpha(
         &mut self,
         src: &LayerSystem,

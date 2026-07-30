@@ -190,3 +190,39 @@ pub fn glyph(ch: char) -> GlyphBitmap {
         GlyphBitmap { data: bitmap, w: gw, h: gh, advance: scaled_advance, y_off: y0 }
     }
 }
+
+/// Return the real advance width without cloning the cached glyph bitmap.
+/// Layout uses this hot path far more often than it needs raster data.
+pub fn advance(ch: char) -> i32 {
+    unsafe {
+        if FONT_INFO.is_none() {
+            return 8;
+        }
+        if let Some(entry) = CACHE.iter().find(|entry| entry.ch == ch) {
+            return entry.advance;
+        }
+    }
+    glyph(ch).advance.max(1)
+}
+
+/// Borrow a cached raster glyph for immediate painting.  Unlike `glyph`, this
+/// does not clone the bitmap on every character, which is critical for small
+/// hover/toolbar redraws.
+pub fn with_glyph<R>(ch: char, paint: impl FnOnce(&[u8], i32, i32, i32, i32) -> R) -> R {
+    unsafe {
+        if FONT_INFO.is_none() {
+            return paint(&[], 0, 0, 0, 0);
+        }
+        if let Some(entry) = CACHE.iter().find(|entry| entry.ch == ch) {
+            return paint(&entry.bitmap, entry.w, entry.h, entry.advance, entry.y_off);
+        }
+    }
+    let _ = glyph(ch);
+    unsafe {
+        if let Some(entry) = CACHE.iter().find(|entry| entry.ch == ch) {
+            paint(&entry.bitmap, entry.w, entry.h, entry.advance, entry.y_off)
+        } else {
+            paint(&[], 0, 0, 0, 0)
+        }
+    }
+}
