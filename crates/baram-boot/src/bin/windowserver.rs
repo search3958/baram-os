@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
 use uefi::prelude::*;
 use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
 use baram_core::Color;
@@ -49,7 +48,7 @@ extern "C" fn ws_init(ctx: *mut SubsystemContext) -> i32 {
             height: ctx.screen_h,
             mouse_x: 0,
             mouse_y: 0,
-            initialized: true,
+            initialized: false,
         });
     }
 
@@ -63,7 +62,7 @@ extern "C" fn ws_handle_key(ctx: *mut SubsystemContext, event: *const KeyEventDa
 }
 
 extern "C" fn ws_handle_mouse(ctx: *mut SubsystemContext, event: *const MouseEventData) -> i32 {
-    let event = unsafe { &*event };
+    let _event = unsafe { &*event };
     let ctx = unsafe { &mut *ctx };
 
     unsafe {
@@ -76,7 +75,7 @@ extern "C" fn ws_handle_mouse(ctx: *mut SubsystemContext, event: *const MouseEve
     0
 }
 
-extern "C" fn ws_tick(ctx: *mut SubsystemContext) -> i32 {
+extern "C" fn ws_tick(_ctx: *mut SubsystemContext) -> i32 {
     0
 }
 
@@ -89,16 +88,19 @@ extern "C" fn ws_render(ctx: *mut SubsystemContext) -> i32 {
                 let w = state.width as usize;
                 let h = state.height as usize;
 
-                layer.fill_rect(0, 0, w, h, Color::BG);
+                if !state.initialized {
+                    layer.fill_rect(0, 0, w, h, Color::BG);
 
-                if w > 100 && h > 100 {
-                    layer.fill_rounded_rect(50, 50, w - 100, h - 100, 12, Color::WIN_BG);
-                    layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
+                    if w > 100 && h > 100 {
+                        layer.fill_rounded_rect(50, 50, w - 100, h - 100, 12, Color::WIN_BG);
+                        layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
 
-                    let title_h = 32;
-                    layer.fill_rect(50, 50, w - 100, title_h, Color::PANEL);
-                    layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
-                    layer.fill_rect(51, 50 + title_h - 1, w - 102, 1, Color::BORDER);
+                        let title_h = 32;
+                        layer.fill_rect(50, 50, w - 100, title_h, Color::PANEL);
+                        layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
+                        layer.fill_rect(51, 50 + title_h - 1, w - 102, 1, Color::BORDER);
+                    }
+                    state.initialized = true;
                 }
 
                 if ctx.fb.base != core::ptr::null_mut() {
@@ -108,7 +110,17 @@ extern "C" fn ws_render(ctx: *mut SubsystemContext) -> i32 {
                             (ctx.fb.width * ctx.fb.height) as usize,
                         )
                     };
-                    fb_slice[..w * h].copy_from_slice(layer.buf_ref());
+                    if let Some((x0, y0, x1, y1)) = layer.take_dirty() {
+                        let x0 = x0.min(w);
+                        let x1 = x1.min(w);
+                        let y0 = y0.min(h);
+                        let y1 = y1.min(h);
+                        for y in y0..y1 {
+                            let start = y * w + x0;
+                            let end = y * w + x1;
+                            fb_slice[start..end].copy_from_slice(&layer.buf_ref()[start..end]);
+                        }
+                    }
                 }
             }
         }

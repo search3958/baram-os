@@ -6,12 +6,91 @@ use crate::screen::Screen;
 
 #[inline(always)]
 fn blend_u32(bg: u32, fg: u32, a: u32) -> u32 {
+    if a == 0 { return bg; }
     if a >= 255 { return fg; }
     let inv = 255 - a;
     let r = (((fg >> 16) & 0xFF) * a + ((bg >> 16) & 0xFF) * inv) / 255;
     let g = (((fg >> 8) & 0xFF) * a + ((bg >> 8) & 0xFF) * inv) / 255;
     let b = ((fg & 0xFF) * a + (bg & 0xFF) * inv) / 255;
     0xFF00_0000 | (r << 16) | (g << 8) | b
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn avx2_available() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    // CPU/OS AVX state does not change while this UEFI image is running.
+    static AVAILABLE: AtomicU8 = AtomicU8::new(0); // 0 unknown, 1 no, 2 yes
+    match AVAILABLE.load(Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+
+    let available = unsafe {
+        let leaf1 = __cpuid(1);
+        const AVX: u32 = 1 << 28;
+        const OSXSAVE: u32 = 1 << 27;
+        if leaf1.ecx & (AVX | OSXSAVE) != (AVX | OSXSAVE) || (_xgetbv(0) & 0x6) != 0x6 {
+            false
+        } else {
+            (__cpuid_count(7, 0).ebx & (1 << 5)) != 0
+        }
+    };
+    AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+    available
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn blend_alpha_avx2(src: *const u32, dst: *mut u32, len: usize) {
+    use core::arch::x86_64::*;
+
+    let zero = _mm256_setzero_si256();
+    let full_alpha = _mm256_set1_epi32(255);
+    let mut px = 0usize;
+
+    while px + 8 <= len {
+        let sp = _mm256_loadu_si256(src.add(px) as *const __m256i);
+        let a = _mm256_srli_epi32(sp, 24);
+        let zero_alpha = _mm256_cmpeq_epi32(a, zero);
+        if _mm256_movemask_epi8(zero_alpha) == -1 {
+            px += 8;
+            continue;
+        }
+
+        let opaque_alpha = _mm256_cmpeq_epi32(a, full_alpha);
+        if _mm256_movemask_epi8(opaque_alpha) == -1 {
+            _mm256_storeu_si256(dst.add(px) as *mut __m256i, sp);
+            px += 8;
+            continue;
+        }
+
+        // Mixed-alpha blocks are relatively rare in the compositor. Keep the
+        // exact scalar blend here: LLVM's x86 UEFI legalizer crashes on the
+        // AVX2 32-bit multiply sequence during fat LTO. Fully transparent and
+        // fully opaque blocks still take the 8-pixel AVX2 fast paths above.
+        for lane in 0..8 {
+            let pixel = *src.add(px + lane);
+            let alpha = pixel >> 24;
+            if alpha != 0 {
+                let old = *dst.add(px + lane);
+                *dst.add(px + lane) = blend_u32(old, pixel, alpha);
+            }
+        }
+        px += 8;
+    }
+
+    for i in px..len {
+        let sp = *src.add(i);
+        let a = sp >> 24;
+        if a != 0 {
+            let old = *dst.add(i);
+            *dst.add(i) = blend_u32(old, sp, a);
+        }
+    }
 }
 
 pub struct LayerSystem {
@@ -1033,6 +1112,20 @@ impl LayerSystem {
         };
         self.mark_dirty_rect(dx, dy, dx + w, dy + h);
 
+        #[cfg(target_arch = "x86_64")]
+        if avx2_available() {
+            for py in 0..h {
+                unsafe {
+                    blend_alpha_avx2(
+                        src.buf.as_ptr().add((sy + py) * sw + sx),
+                        self.buf.as_mut_ptr().add((dy + py) * dw + dx),
+                        w,
+                    );
+                }
+            }
+            return;
+        }
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
@@ -1047,32 +1140,45 @@ impl LayerSystem {
                 use core::arch::aarch64::*;
                 let mut px = 0usize;
                 while px + 4 <= max_px {
-                    let sp0 = src.buf[src_row + px];
-                    let sp1 = src.buf[src_row + px + 1];
-                    let sp2 = src.buf[src_row + px + 2];
-                    let sp3 = src.buf[src_row + px + 3];
-
-                    let a0 = ((sp0 >> 24) & 0xFF) as i32;
-                    let a1 = ((sp1 >> 24) & 0xFF) as i32;
-                    let a2 = ((sp2 >> 24) & 0xFF) as i32;
-                    let a3 = ((sp3 >> 24) & 0xFF) as i32;
-
-                    if a0 == 255 && a1 == 255 && a2 == 255 && a3 == 255 {
-                        *self.buf.as_mut_ptr().add(dst_row + px) = sp0;
-                        *self.buf.as_mut_ptr().add(dst_row + px + 1) = sp1;
-                        *self.buf.as_mut_ptr().add(dst_row + px + 2) = sp2;
-                        *self.buf.as_mut_ptr().add(dst_row + px + 3) = sp3;
-                    } else if a0 > 0 || a1 > 0 || a2 > 0 || a3 > 0 {
-                        let dp0 = self.buf[dst_row + px];
-                        let dp1 = self.buf[dst_row + px + 1];
-                        let dp2 = self.buf[dst_row + px + 2];
-                        let dp3 = self.buf[dst_row + px + 3];
-
-                        self.buf[dst_row + px] = blend_u32(dp0, sp0, a0 as u32);
-                        self.buf[dst_row + px + 1] = blend_u32(dp1, sp1, a1 as u32);
-                        self.buf[dst_row + px + 2] = blend_u32(dp2, sp2, a2 as u32);
-                        self.buf[dst_row + px + 3] = blend_u32(dp3, sp3, a3 as u32);
+                    let sp = vld1q_u32(src.buf.as_ptr().add(src_row + px));
+                    let a = vshrq_n_u32(sp, 24);
+                    let a0 = vgetq_lane_u32(a, 0);
+                    let a1 = vgetq_lane_u32(a, 1);
+                    let a2 = vgetq_lane_u32(a, 2);
+                    let a3 = vgetq_lane_u32(a, 3);
+                    if a0 == 0 && a1 == 0 && a2 == 0 && a3 == 0 {
+                        px += 4;
+                        continue;
                     }
+                    if a0 == 255 && a1 == 255 && a2 == 255 && a3 == 255 {
+                        vst1q_u32(self.buf.as_mut_ptr().add(dst_row + px), sp);
+                        px += 4;
+                        continue;
+                    }
+
+                    let dp = vld1q_u32(self.buf.as_ptr().add(dst_row + px));
+                    let inv = vsubq_u32(vdupq_n_u32(255), a);
+                    let mask = vdupq_n_u32(0xff);
+                    let sr = vandq_u32(vshrq_n_u32(sp, 16), mask);
+                    let sg = vandq_u32(vshrq_n_u32(sp, 8), mask);
+                    let sb = vandq_u32(sp, mask);
+                    let dr = vandq_u32(vshrq_n_u32(dp, 16), mask);
+                    let dg = vandq_u32(vshrq_n_u32(dp, 8), mask);
+                    let db = vandq_u32(dp, mask);
+
+                    #[inline(always)]
+                    unsafe fn div255(v: uint32x4_t) -> uint32x4_t {
+                        vshrq_n_u32(vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)), 8)
+                    }
+                    let r = div255(vaddq_u32(vmulq_u32(sr, a), vmulq_u32(dr, inv)));
+                    let g = div255(vaddq_u32(vmulq_u32(sg, a), vmulq_u32(dg, inv)));
+                    let b = div255(vaddq_u32(vmulq_u32(sb, a), vmulq_u32(db, inv)));
+                    let blended = vorrq_u32(
+                        vdupq_n_u32(0xff00_0000),
+                        vorrq_u32(vshlq_n_u32(r, 16), vorrq_u32(vshlq_n_u32(g, 8), b)),
+                    );
+                    let out = vbslq_u32(vceqq_u32(a, vdupq_n_u32(0)), dp, blended);
+                    vst1q_u32(self.buf.as_mut_ptr().add(dst_row + px), out);
                     px += 4;
                 }
                 for px in px..max_px {
