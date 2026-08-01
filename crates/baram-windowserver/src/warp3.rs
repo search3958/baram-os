@@ -16,6 +16,7 @@ const HOVER_STEPS: u8 = 7;
 const SWITCH_STEPS: u8 = 10;
 const HOVER_DURATION_NS: u64 = 100_000_000;
 const SWITCH_DURATION_NS: u64 = 150_000_000;
+const HOVER_DAMAGE_PAD: i32 = 14;
 
 struct ShadowMask {
     w: usize,
@@ -111,6 +112,9 @@ struct Node {
     y: i32,
     w: i32,
     h: i32,
+    /// Resolved at layout time so dense lists do not repeatedly wrap their
+    /// labels during every paint.
+    text_lines: Vec<String>,
     tab: usize,
     overlay: bool,
     hidden: bool,
@@ -340,7 +344,7 @@ pub struct Warp3Engine {
     pub content_height: i32,
     scroll_request: Option<i32>,
     dirty: bool,
-    /// First document y that must be repainted after a reflow.  Keeping the
+    /// First document y that must be repainted after a reflow. Keeping the
     /// already-valid prefix is important for long Warp 3 pages.
     repaint_from: i32,
     repaint_to: i32,
@@ -447,6 +451,7 @@ impl Warp3Engine {
             self.layout(idx, toolbar_x, toolbar_y, toolbar_width);
         }
         self.refresh_visibility();
+        self.refresh_text_lines();
         self.rebuild_paint_lists();
         self.prepare_shadows();
         self.paint_cached_layers();
@@ -479,6 +484,12 @@ impl Warp3Engine {
         let next = self.hit_test(x, y);
         if self.hovered != next {
             let old = self.hovered;
+            // A rapid A -> B -> C move can replace a transition before A has
+            // returned to its base pixels. Keep the superseded pair dirty so
+            // the next paint restores both nodes before drawing B -> C.
+            if let Some((previous_old, previous_new, _)) = self.hover_transition {
+                self.invalidate_nodes(previous_old, previous_new);
+            }
             self.hover_transition = Some((old, next, 0));
             self.hover_started_ns = None;
             self.invalidate_nodes(old, next);
@@ -488,6 +499,9 @@ impl Warp3Engine {
 
     pub fn clear_hover(&mut self) {
         if let Some(old) = self.hovered.take() {
+            if let Some((previous_old, previous_new, _)) = self.hover_transition {
+                self.invalidate_nodes(previous_old, previous_new);
+            }
             self.hover_transition = Some((Some(old), None, 0));
             self.hover_started_ns = None;
             self.invalidate_nodes(Some(old), None);
@@ -850,6 +864,14 @@ impl Warp3Engine {
                 self.nodes[idx].h = (cy - y).max(1);
             }
         }
+        let text = self.nodes[idx].prop("text").to_string();
+        self.nodes[idx].text_lines = if text.is_empty() {
+            Vec::new()
+        } else if self.nodes[idx].is("code") {
+            text.split('\n').map(ToString::to_string).collect()
+        } else {
+            wrap_lines(&text, self.nodes[idx].w)
+        };
         self.nodes[idx].h
     }
 
@@ -857,6 +879,16 @@ impl Warp3Engine {
         self.repaint_from = self.repaint_from.min(y.max(0));
         self.repaint_to = i32::MAX;
         self.dirty = true;
+    }
+
+    fn invalidate_range(&mut self, from: i32, to: i32) {
+        if self.repaint_to <= self.repaint_from {
+            self.repaint_from = from;
+            self.repaint_to = to;
+        } else {
+            self.repaint_from = self.repaint_from.min(from);
+            self.repaint_to = self.repaint_to.max(to);
+        }
     }
 
     fn invalidate_nodes(&mut self, old: Option<usize>, new: Option<usize>) {
@@ -868,11 +900,12 @@ impl Warp3Engine {
             // Document patches may never clear title-bar pixels.  Those are
             // outside Warp3's ownership and would otherwise expose wallpaper.
             let y0 = if node.overlay {
-                screen_y - 14
+                screen_y - HOVER_DAMAGE_PAD
             } else {
-                (screen_y - 14).max(crate::window::title_bar_h() as i32)
+                (screen_y - HOVER_DAMAGE_PAD).max(crate::window::title_bar_h() as i32)
             };
-            let next = (node.x - 14, y0, node.x + node.w + 14, screen_y + node.h + 14);
+            let next = (node.x - HOVER_DAMAGE_PAD, y0,
+                node.x + node.w + HOVER_DAMAGE_PAD, screen_y + node.h + HOVER_DAMAGE_PAD);
             self.window_damage = Some(match self.window_damage {
                 Some(old) => (old.0.min(next.0), old.1.min(next.1), old.2.max(next.2), old.3.max(next.3)),
                 None => next,
@@ -890,8 +923,8 @@ impl Warp3Engine {
         }
         if let Some(y) = document_y {
             // Shadows extend outside the node; repaint their full footprint.
-            self.repaint_from = self.repaint_from.min((y - 12).max(0));
-            self.repaint_to = self.repaint_to.max(document_bottom.unwrap_or(y) + 12);
+            self.invalidate_range((y - HOVER_DAMAGE_PAD).max(0),
+                document_bottom.unwrap_or(y) + HOVER_DAMAGE_PAD);
         }
     }
 
@@ -914,6 +947,7 @@ impl Warp3Engine {
                 if node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 { continue; }
                 self.draw_node(&mut layer, idx, node.x, node.y);
             }
+            self.draw_list_dividers(&mut layer, from as i32, to as i32, 0);
             layer.pop_clip();
             self.document_layer = Some(layer);
         }
@@ -1025,8 +1059,6 @@ impl Warp3Engine {
                 self.composite_shadow(layer, x, y, wu, hu, 8);
             }
             rounded_fill(layer, x, y, wu, hu, 8, panel);
-        } else if node.is("list") {
-            layer.fill_rect(xu, (y + node.h - 1).max(0) as usize, wu, 1, border);
         } else if node.is("button") || node.is("content") {
             let primary = node.prop("type") == "primary";
             let text_only = node.prop("type") == "text";
@@ -1120,14 +1152,9 @@ impl Warp3Engine {
                 if node.is("detail") { muted } else { fg },
             )
         };
-        let lines = if node.is("code") {
-            text.split('\n').map(ToString::to_string).collect()
-        } else {
-            wrap_lines(text, node.w)
-        };
-        for (line, value) in lines.iter().enumerate() {
-            if ty + line as i32 * 22 >= 0 {
-                let line_y = ty + line as i32 * 22;
+        for (line, value) in node.text_lines.iter().enumerate() {
+            let line_y = ty + line as i32 * 22;
+            if line_y >= 0 && line_y < layer.height() as i32 {
                 if node.is("head") {
                     put_str_size(layer, tx, line_y - 5, value, color, 28.0);
                 } else if node.is("list-box") {
@@ -1190,6 +1217,20 @@ impl Warp3Engine {
         }
     }
 
+    fn refresh_text_lines(&mut self) {
+        for node in &mut self.nodes {
+            if !node.is("content") { continue; }
+            let text = node.prop("text").to_string();
+            node.text_lines = if text.is_empty() {
+                Vec::new()
+            } else if node.is("code") {
+                text.split('\n').map(ToString::to_string).collect()
+            } else {
+                wrap_lines(&text, node.w)
+            };
+        }
+    }
+
     fn mark_hidden_tree(&mut self, idx: usize) {
         self.nodes[idx].hidden = true;
         let children = self.nodes[idx].children.clone();
@@ -1212,6 +1253,27 @@ impl Warp3Engine {
                 self.toolbar_paint.push(idx);
             } else {
                 self.document_paint.push(idx);
+            }
+        }
+    }
+
+    /// List rows are the dense UI case. Their text is painted normally, but
+    /// all separators are emitted as one tight buffer pass instead of making
+    /// a LayerSystem draw call per row.
+    fn draw_list_dividers(&self, layer: &mut LayerSystem, from: i32, to: i32, origin: i32) {
+        let width = layer.width();
+        let height = layer.height() as i32;
+        let border = html_border().0;
+        let buffer = layer.buf_mut();
+        for idx in &self.document_paint {
+            let node = &self.nodes[*idx];
+            if !node.is("list") || node.y + node.h <= from || node.y >= to { continue; }
+            let y = node.y + node.h - 1 - origin;
+            if y < 0 || y >= height { continue; }
+            let x0 = node.x.max(0) as usize;
+            let x1 = (node.x + node.w).max(0).min(width as i32) as usize;
+            if x1 > x0 {
+                buffer[y as usize * width + x0..y as usize * width + x1].fill(border);
             }
         }
     }
