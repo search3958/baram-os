@@ -1,0 +1,131 @@
+config {
+    title("Warp 3 UI要素")
+    script("nav.w3s")
+    script("components.w3s")
+}
+
+toolbar{
+    button.home-btn{
+        text("ホーム")
+    }
+    button.previous-btn{
+        text("前へ")
+    }
+    space{}
+    button.next-btn{
+        text("次へ")
+    }
+    button.variables-btn{
+        text("変数・wait")
+    }
+}
+
+scroll-point.top-point{
+    text("基本要素")
+}
+head{
+    text("基本要素")
+}
+text{
+    text("text、detail、head、codeを同じ画面で比較できます。")
+}
+detail{
+    text("detailは補足情報向けです")
+}
+code{
+    text("head{ text(\"見出し\") }\ntext{ text(\"本文\") }")
+}
+
+scroll-point.controls-point{
+    text("入力と操作")
+}
+head{
+    text("入力と操作")
+}
+input.demo-input{
+    text("編集できる短文")
+}
+textarea{
+    text("複数行の入力欄です。\nクリックして文字を入力できます。")
+}
+switch.demo-switch{
+    text("スイッチ")
+    default("false")
+}
+text.switch-status{
+    text("スイッチ操作前")
+}
+button.demo-button{
+    text("ボタンを実行")
+}
+text.button-status{
+    text("未実行")
+}
+
+scroll-point.layout-point{
+    text("レイアウト")
+}
+head{
+    text("カードと横並び")
+}
+card{
+    text("カード")
+    detail{
+        text("影付きの情報グループ")
+    }
+    flex{
+        button.demo-button{
+            text("アクション")
+        }
+        button.top-btn{
+            text("先頭へ")
+        }
+    }
+}
+
+head{
+    text("リスト")
+}
+list-box{
+    text("サンプルリスト")
+    list{
+        text("最初の項目")
+        detail{
+            text("補足テキスト")
+        }
+    }
+    list{
+        text("2番目の項目")
+        detail{
+            text("密度の高い情報表示")
+        }
+    }
+    list{
+        text("3番目の項目")
+        detail{
+            text("区切り線は一括描画")
+        }
+    }
+}
+
+scroll-point.tabs-point{
+    text("タブ")
+}
+head{
+    text("タブ")
+}
+tab{
+    control("top")
+    content{
+        text("説明")
+        text{
+            text("タブ内容は選択中のものだけ描画されます。")
+        }
+    }
+    content{
+        text("コード")
+        code{
+            text("tab{\n  content{ text(\"説明\") }\n  content{ text(\"コード\") }\n}")
+        }
+    }
+}

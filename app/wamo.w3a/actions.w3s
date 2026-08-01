@@ -1,0 +1,41 @@
+[fun = refreshHud]
+setText hud-value = os://display/hud/enabled
+
+[fun = refreshPointer]
+setText pointer-value = os://display/pointer/size
+
+[onClick = refresh-hud]
+fun = refreshHud
+
+[onClick = hud-on]
+run = os://display/hud?enabled=1
+fun = refreshHud
+
+[onClick = hud-off]
+run = os://display/hud?enabled=0
+fun = refreshHud
+
+[onClick = refresh-pointer]
+fun = refreshPointer
+
+[onClick = pointer-small]
+run = os://display/pointer?size=10
+fun = refreshPointer
+
+[onClick = pointer-large]
+run = os://display/pointer?size=15
+fun = refreshPointer
+
+[onClick = open-calc]
+run = app://calc.warp
+
+[onClick = open-note]
+run = app://note.warp
+
+[onClick = open-settings]
+run = app://settings.warp
+
+[onClick = wait-action]
+setText wait-result = "待機中…"
+wait = 50ms
+setText wait-result = "50ms後に再開しました"
