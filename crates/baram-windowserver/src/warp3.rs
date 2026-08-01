@@ -1019,32 +1019,12 @@ impl Warp3Engine {
             let box_y = y + title_height;
             let box_h = (node.h - title_height).max(1) as usize;
             self.composite_shadow(layer, x, box_y, wu, box_h, 8);
-            rounded_box(layer, x, box_y, wu, box_h, 8, border, panel);
+            rounded_fill(layer, x, box_y, wu, box_h, 8, panel);
         } else if node.is("toolbar") || node.is("card") || node.is("tab") {
             if !node.is("toolbar") {
                 self.composite_shadow(layer, x, y, wu, hu, 8);
             }
-            rounded_box(layer, x, y, wu, hu, 8, border, panel);
-            if node.is("tab") {
-                match node.prop("control") {
-                    "left" => layer.fill_rect(xu + 103, yu + 1, 1, hu.saturating_sub(2), border),
-                    "right" => layer.fill_rect(
-                        xu + wu.saturating_sub(104),
-                        yu + 1,
-                        1,
-                        hu.saturating_sub(2),
-                        border,
-                    ),
-                    "bottom" => layer.fill_rect(
-                        xu + 1,
-                        yu + hu.saturating_sub(51),
-                        wu.saturating_sub(2),
-                        1,
-                        border,
-                    ),
-                    _ => layer.fill_rect(xu + 1, yu + 50, wu.saturating_sub(2), 1, border),
-                }
-            }
+            rounded_fill(layer, x, y, wu, hu, 8, panel);
         } else if node.is("list") {
             layer.fill_rect(xu, (y + node.h - 1).max(0) as usize, wu, 1, border);
         } else if node.is("button") || node.is("content") {
@@ -1617,6 +1597,12 @@ fn rounded_box(
     }
 }
 
+fn rounded_fill(layer: &mut LayerSystem, x: i32, y: i32, width: usize, height: usize, radius: usize, fill: Color) {
+    if x >= 0 && y >= 0 && width > 0 && height > 0 {
+        layer.fill_rounded_rect(x as usize, y as usize, width, height, radius, fill);
+    }
+}
+
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
     if !ttf_font::is_available() {
         if x >= 0 && y >= 0 {
@@ -1628,33 +1614,25 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
     let layer_w = layer.width();
     let layer_h = layer.height();
     for ch in text.chars() {
-        let glyph = ttf_font::glyph_at_size(ch, size);
-        if glyph.w <= 0 || glyph.h <= 0 {
-            x += glyph.advance.max(8);
-            continue;
-        }
-        let top = baseline + glyph.y_off;
-        let glyph_w = glyph.w as usize;
-        for row in 0..glyph.h {
-            let py = top + row;
-            if py < crate::window::title_bar_h() as i32 || py >= layer_h as i32 {
-                continue;
-            }
-            for col in 0..glyph.w {
-                let px = x + col;
-                if px < 0 || px >= layer_w as i32 {
-                    continue;
+        let mut advance = 0;
+        ttf_font::with_glyph_at_size(ch, size, |data, w, h, glyph_advance, y_off| {
+            advance = glyph_advance;
+            let top = baseline + y_off;
+            for row in 0..h {
+                let py = top + row;
+                if py < crate::window::title_bar_h() as i32 || py >= layer_h as i32 { continue; }
+                for col in 0..w {
+                    let px = x + col;
+                    if px < 0 || px >= layer_w as i32 { continue; }
+                    let alpha = data[row as usize * w as usize + col as usize] as f32 / 255.0;
+                    if alpha <= 0.0 { continue; }
+                    let index = py as usize * layer_w + px as usize;
+                    let background = layer.buf_ref()[index];
+                    layer.buf_mut()[index] = LayerSystem::blend_alpha(background, color.0, alpha);
                 }
-                let alpha = glyph.data[row as usize * glyph_w + col as usize] as f32 / 255.0;
-                if alpha <= 0.0 {
-                    continue;
-                }
-                let index = py as usize * layer_w + px as usize;
-                let background = layer.buf_ref()[index];
-                layer.buf_mut()[index] = LayerSystem::blend_alpha(background, color.0, alpha);
             }
-        }
-        x += glyph.advance.max(0);
+        });
+        x += advance.max(8);
     }
 }
 

@@ -69,10 +69,14 @@ impl LayerFontExt for LayerSystem {
     fn put_str(&mut self, mut x: usize, y: usize, s: &str, fg: Color) {
         if ttf_font::is_available() {
             for ch in s.chars() {
-                let glyph = ttf_font::glyph(ch);
-                if glyph.w > 0 && glyph.h > 0 {
+                let mut advance = 0;
+                let drawn = ttf_font::with_glyph(ch, |_data, w, h, glyph_advance, _y_off| {
+                    advance = glyph_advance;
+                    w > 0 && h > 0
+                });
+                if drawn {
                     self.put_char(x, y, ch, fg);
-                    x += glyph.advance.max(0) as usize;
+                    x += advance.max(0) as usize;
                 } else if (ch as u32) < 0x80 {
                     self.put_char(x, y, ch, fg);
                     x += font::GLYPH_W;

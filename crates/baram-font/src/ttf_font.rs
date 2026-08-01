@@ -12,6 +12,7 @@ static mut FONT_INFO: Option<stbtt_fontinfo> = None;
 static mut FONT_SCALE: f32 = 0.0;
 static mut ASCENT: i32 = 0;
 static mut CACHE: Vec<GlyphEntry> = Vec::new();
+static mut SIZED_CACHE: Vec<SizedGlyphEntry> = Vec::new();
 
 #[derive(Clone)]
 struct GlyphEntry {
@@ -21,6 +22,11 @@ struct GlyphEntry {
     h: i32,
     advance: i32,
     y_off: i32,
+}
+
+struct SizedGlyphEntry {
+    size_bits: u32,
+    glyph: GlyphEntry,
 }
 
 pub fn init() {
@@ -42,6 +48,7 @@ pub fn init() {
         ASCENT = (ascent as f32 * FONT_SCALE + 0.5) as i32;
         FONT_INFO = Some(info);
         CACHE = Vec::with_capacity(CACHE_INIT_CAP);
+        SIZED_CACHE = Vec::with_capacity(CACHE_INIT_CAP);
     }
 }
 
@@ -96,6 +103,34 @@ pub fn glyph_at_size(ch: char, pixel_size: f32) -> GlyphBitmap {
         stbtt_MakeGlyphBitmap(info, bitmap.as_mut_ptr(), gw, gh, gw, scale, scale, glyph_id);
 
         GlyphBitmap { data: bitmap, w: gw, h: gh, advance: scaled_advance, y_off: y0 }
+    }
+}
+
+/// Borrow a size-specific cached glyph.  Large Warp3 labels otherwise invoke
+/// the TTF rasterizer and allocate a bitmap on every paint.
+pub fn with_glyph_at_size<R>(ch: char, pixel_size: f32, paint: impl FnOnce(&[u8], i32, i32, i32, i32) -> R) -> R {
+    let size_bits = pixel_size.to_bits();
+    unsafe {
+        if FONT_INFO.is_none() { return paint(&[], 0, 0, 0, 0); }
+        if let Some(entry) = SIZED_CACHE.iter().find(|entry| entry.size_bits == size_bits && entry.glyph.ch == ch) {
+            let glyph = &entry.glyph;
+            return paint(&glyph.bitmap, glyph.w, glyph.h, glyph.advance, glyph.y_off);
+        }
+        let info = FONT_INFO.as_mut().unwrap();
+        let scale = stbtt_ScaleForPixelHeight(info, pixel_size);
+        let glyph_id = stbtt_FindGlyphIndex(info, ch as i32);
+        let mut advance = 0;
+        let mut lsb = 0;
+        if glyph_id != 0 || ch == '\0' { stbtt_GetGlyphHMetrics(info, glyph_id, &mut advance, &mut lsb); }
+        let scaled_advance = (advance as f32 * scale + 0.5) as i32;
+        let mut x0 = 0; let mut y0 = 0; let mut x1 = 0; let mut y1 = 0;
+        if glyph_id != 0 || ch == '\0' { stbtt_GetGlyphBitmapBox(info, glyph_id, scale, scale, &mut x0, &mut y0, &mut x1, &mut y1); }
+        let w = x1 - x0; let h = y1 - y0;
+        let mut bitmap = if w > 0 && h > 0 { vec![0u8; (w * h) as usize] } else { Vec::new() };
+        if !bitmap.is_empty() { stbtt_MakeGlyphBitmap(info, bitmap.as_mut_ptr(), w, h, w, scale, scale, glyph_id); }
+        SIZED_CACHE.push(SizedGlyphEntry { size_bits, glyph: GlyphEntry { ch, bitmap, w: w.max(0), h: h.max(0), advance: scaled_advance, y_off: if h > 0 { y0 } else { 0 } } });
+        let glyph = &SIZED_CACHE.last().unwrap().glyph;
+        paint(&glyph.bitmap, glyph.w, glyph.h, glyph.advance, glyph.y_off)
     }
 }
 
