@@ -12,10 +12,10 @@ use baram_core::{Color, LayerSystem};
 use baram_font::ttf_font;
 use baram_font::LayerFontExt;
 
-const HOVER_STEPS: u8 = 7;
-const SWITCH_STEPS: u8 = 10;
-const HOVER_DURATION_NS: u64 = 100_000_000;
-const SWITCH_DURATION_NS: u64 = 150_000_000;
+// Progress is derived directly from monotonic time. There are deliberately no
+// animation steps: the compositor samples the exact state whenever it draws.
+const HOVER_DURATION_NS: u64 = 13_000_000;
+const SWITCH_DURATION_NS: u64 = 18_000_000;
 const HOVER_DAMAGE_PAD: i32 = 14;
 
 struct ShadowMask {
@@ -355,10 +355,11 @@ pub struct Warp3Engine {
     toolbar_paint: Vec<usize>,
     window_damage: Option<(i32, i32, i32, i32)>,
     full_window_redraw: bool,
-    hover_transition: Option<(Option<usize>, Option<usize>, u8)>,
-    switch_transition: Option<(usize, bool, u8)>,
+    hover_transition: Option<(Option<usize>, Option<usize>)>,
+    switch_transition: Option<(usize, bool)>,
     hover_started_ns: Option<u64>,
     switch_started_ns: Option<u64>,
+    animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
 }
 
@@ -397,6 +398,7 @@ impl Warp3Engine {
             switch_transition: None,
             hover_started_ns: None,
             switch_started_ns: None,
+            animation_now_ns: 0,
             shadows: Vec::new(),
         };
         engine.load_screen();
@@ -487,10 +489,10 @@ impl Warp3Engine {
             // A rapid A -> B -> C move can replace a transition before A has
             // returned to its base pixels. Keep the superseded pair dirty so
             // the next paint restores both nodes before drawing B -> C.
-            if let Some((previous_old, previous_new, _)) = self.hover_transition {
+            if let Some((previous_old, previous_new)) = self.hover_transition {
                 self.invalidate_nodes(previous_old, previous_new);
             }
-            self.hover_transition = Some((old, next, 0));
+            self.hover_transition = Some((old, next));
             self.hover_started_ns = None;
             self.invalidate_nodes(old, next);
             self.hovered = next;
@@ -499,10 +501,10 @@ impl Warp3Engine {
 
     pub fn clear_hover(&mut self) {
         if let Some(old) = self.hovered.take() {
-            if let Some((previous_old, previous_new, _)) = self.hover_transition {
+            if let Some((previous_old, previous_new)) = self.hover_transition {
                 self.invalidate_nodes(previous_old, previous_new);
             }
-            self.hover_transition = Some((Some(old), None, 0));
+            self.hover_transition = Some((Some(old), None));
             self.hover_started_ns = None;
             self.invalidate_nodes(Some(old), None);
         }
@@ -525,7 +527,7 @@ impl Warp3Engine {
                 "default",
                 if next { "true" } else { "false" },
             );
-            self.switch_transition = Some((idx, next, 0));
+            self.switch_transition = Some((idx, next));
             self.switch_started_ns = None;
             self.run_click(idx);
         } else if self.nodes[idx].is("content") {
@@ -556,37 +558,33 @@ impl Warp3Engine {
         self.invalidate_from(self.nodes[idx].y);
     }
 
-    /// Advance 90 ms control transitions in 1 ms timer ticks.  No layout is
+    /// Sample control transitions from absolute monotonic time. No layout is
     /// involved; only the old/new control damage rectangle is requested.
     pub fn tick(&mut self, now_ns: u64) -> bool {
         if self.hover_transition.is_none() && self.switch_transition.is_none() {
             return false;
         }
+        if self.animation_now_ns == now_ns {
+            return false;
+        }
+        self.animation_now_ns = now_ns;
         let mut changed = false;
-        if let Some((old, new, frame)) = self.hover_transition {
+        if let Some((old, new)) = self.hover_transition {
             let started = self.hover_started_ns.get_or_insert(now_ns);
-            let next = (((now_ns.saturating_sub(*started) * HOVER_STEPS as u64) / HOVER_DURATION_NS)
-                .min(HOVER_STEPS as u64)) as u8;
-            if next != frame {
-                self.hover_transition = Some((old, new, next));
-                self.invalidate_nodes(old, new);
-                changed = true;
-            }
-            if next >= HOVER_STEPS {
+            let complete = now_ns.saturating_sub(*started) >= HOVER_DURATION_NS;
+            self.invalidate_nodes(old, new);
+            changed = true;
+            if complete {
                 self.hover_transition = None;
                 self.hover_started_ns = None;
             }
         }
-        if let Some((idx, on, frame)) = self.switch_transition {
+        if let Some((idx, _on)) = self.switch_transition {
             let started = self.switch_started_ns.get_or_insert(now_ns);
-            let next = (((now_ns.saturating_sub(*started) * SWITCH_STEPS as u64) / SWITCH_DURATION_NS)
-                .min(SWITCH_STEPS as u64)) as u8;
-            if next != frame {
-                self.switch_transition = Some((idx, on, next));
-                self.invalidate_nodes(Some(idx), None);
-                changed = true;
-            }
-            if next >= SWITCH_STEPS {
+            let complete = now_ns.saturating_sub(*started) >= SWITCH_DURATION_NS;
+            self.invalidate_nodes(Some(idx), None);
+            changed = true;
+            if complete {
                 self.switch_transition = None;
                 self.switch_started_ns = None;
             }
@@ -1077,8 +1075,13 @@ impl Warp3Engine {
             } else {
                 solid
             };
+            let animated_border = if primary {
+                blend_color(border, Color::rgb(0, 78, 150), hover)
+            } else {
+                blend_color(border, Color::rgb(158, 158, 158), hover)
+            };
             if !text_only && (!node.is("content") || active_tab || hover > 0.0) {
-                rounded_box(layer, x, y, wu, hu, 4, border, color);
+                rounded_box(layer, x, y, wu, hu, 4, animated_border, color);
             }
         } else if node.is("input") || node.is("textarea") {
             rounded_box(layer, x, y, wu, hu, 4, border, solid);
@@ -1115,11 +1118,7 @@ impl Warp3Engine {
                 knob_x.max(0) as usize + 7,
                 yu + 10,
                 7,
-                if on {
-                    Color::rgb(255, 255, 255)
-                } else {
-                    Color::rgb(102, 102, 102)
-                },
+                blend_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), progress),
             );
         }
 
@@ -1173,8 +1172,10 @@ impl Warp3Engine {
     }
 
     fn hover_amount(&self, idx: usize) -> f32 {
-        if let Some((old, new, frame)) = self.hover_transition {
-            let t = frame as f32 / HOVER_STEPS as f32;
+        if let Some((old, new)) = self.hover_transition {
+            let started = self.hover_started_ns.unwrap_or(self.animation_now_ns);
+            let elapsed = self.animation_now_ns.saturating_sub(started);
+            let t = smoothstep(elapsed as f32 / HOVER_DURATION_NS as f32);
             if new == Some(idx) { return t; }
             if old == Some(idx) { return 1.0 - t; }
         }
@@ -1182,9 +1183,11 @@ impl Warp3Engine {
     }
 
     fn switch_amount(&self, idx: usize, on: bool) -> f32 {
-        if let Some((animated, target_on, frame)) = self.switch_transition {
+        if let Some((animated, target_on)) = self.switch_transition {
             if animated == idx {
-                let t = ease_out(frame as f32 / SWITCH_STEPS as f32);
+                let started = self.switch_started_ns.unwrap_or(self.animation_now_ns);
+                let elapsed = self.animation_now_ns.saturating_sub(started);
+                let t = ease_out(elapsed as f32 / SWITCH_DURATION_NS as f32);
                 return if target_on { t } else { 1.0 - t };
             }
         }
@@ -1629,6 +1632,11 @@ fn blend_color(from: Color, to: Color, t: f32) -> Color {
 fn ease_out(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     1.0 - (1.0 - t) * (1.0 - t)
+}
+
+fn smoothstep(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 fn rounded_box(

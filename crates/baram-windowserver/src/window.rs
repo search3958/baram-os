@@ -308,8 +308,14 @@ impl Window {
     }
 
     pub fn scroll(&mut self, delta: i32) {
-        self.scroll_y = self.scroll_y.saturating_add(delta).max(0);
-        self.content_dirty = true;
+        let next = self.scroll_y.saturating_add(delta).max(0);
+        if self.scroll_y != next {
+            self.scroll_y = next;
+            self.content_dirty = true;
+            // A pending hover patch uses coordinates from the old scroll
+            // position. Scrolling must redraw the complete viewport.
+            self.content_damage = None;
+        }
     }
 
     pub fn toggle_maximize(&mut self, screen_w: i32, screen_h: i32) {
@@ -360,6 +366,7 @@ impl Window {
         if self.scroll_y > max {
             self.scroll_y = max;
             self.content_dirty = true;
+            self.content_damage = None;
         }
     }
 }
@@ -968,8 +975,12 @@ impl WindowManager {
 
     pub fn set_window_scroll(&mut self, id: WinId, scroll: i32) {
         if let Some(window) = self.windows.iter_mut().find(|window| window.id == id) {
-            window.scroll_y = scroll.max(0);
-            window.content_dirty = true;
+            let next = scroll.max(0);
+            if window.scroll_y != next {
+                window.scroll_y = next;
+                window.content_dirty = true;
+                window.content_damage = None;
+            }
         }
     }
 
