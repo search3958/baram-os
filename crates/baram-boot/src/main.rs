@@ -1324,11 +1324,26 @@ fn main() -> Status {
             }
         }
 
+        // Scroll positions are sampled from absolute time. The backing
+        // document is already rasterized; each sample only changes the source
+        // offset used for the viewport copy.
+        let transition_now_ns = ui_time_ms * 1_000_000;
+        if wm.tick_scroll_animations(transition_now_ns) {
+            scene_dirty = true;
+            dirty = true;
+        }
+
         {
             let mut hovered_any = false;
             if let Some(hover_id) = wm.window_at(cursor_x, cursor_y) {
+                let scrolling = wm.is_scroll_animating(hover_id);
                 for (wid, engine) in warp_engines.iter_mut() {
                     if hover_id == *wid {
+                        if scrolling {
+                            engine.clear_hover();
+                            hovered_any = true;
+                            break;
+                        }
                         if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
                             let rel_x = cursor_x - wx;
                             let rel_y = cursor_y - wy;
@@ -1352,6 +1367,11 @@ fn main() -> Status {
                 }
                 for (wid, engine) in html_engines.iter_mut() {
                     if hover_id == *wid {
+                        if scrolling {
+                            engine.cancel_hover();
+                            hovered_any = true;
+                            break;
+                        }
                         if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
                             let rel_x = cursor_x - wx;
                             let rel_y = cursor_y - wy;
@@ -1390,7 +1410,6 @@ fn main() -> Status {
 
         // Absolute monotonic UI time: transitions derive their progress from
         // this clock, without a runtime-service call in the render hot path.
-        let transition_now_ns = ui_time_ms * 1_000_000;
         for (wid, engine) in html_engines.iter_mut() {
             if engine.tick(transition_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {

@@ -3,6 +3,8 @@ use alloc::vec::Vec;
 use baram_bsd::config;
 use baram_core::LayerSystem;
 use baram_core::{Color, Screen};
+
+const SCROLL_ANIMATION_NS: u64 = 10_000_000;
 use baram_font::LayerFontExt;
 use baram_graphics::svg;
 
@@ -151,6 +153,9 @@ pub struct Window {
     pub maximized: bool,
     pub minimized: bool,
     pub scroll_y: i32,
+    scroll_start_y: i32,
+    scroll_target_y: i32,
+    scroll_started_ns: Option<u64>,
     prev_x: i32,
     prev_y: i32,
     prev_w: usize,
@@ -203,6 +208,9 @@ impl Window {
             maximized: false,
             minimized: false,
             scroll_y: 0,
+            scroll_start_y: 0,
+            scroll_target_y: 0,
+            scroll_started_ns: None,
             prev_x: x,
             prev_y: y,
             prev_w: w,
@@ -308,14 +316,39 @@ impl Window {
     }
 
     pub fn scroll(&mut self, delta: i32) {
-        let next = self.scroll_y.saturating_add(delta).max(0);
-        if self.scroll_y != next {
-            self.scroll_y = next;
-            self.content_dirty = true;
-            // A pending hover patch uses coordinates from the old scroll
-            // position. Scrolling must redraw the complete viewport.
-            self.content_damage = None;
+        let next = self.scroll_target_y.saturating_add(delta).max(0);
+        if self.scroll_target_y != next {
+            self.scroll_start_y = self.scroll_y;
+            self.scroll_target_y = next;
+            self.scroll_started_ns = None;
         }
+    }
+
+    fn tick_scroll(&mut self, now_ns: u64) -> bool {
+        if self.scroll_y == self.scroll_target_y {
+            self.scroll_started_ns = None;
+            return false;
+        }
+        let started = *self.scroll_started_ns.get_or_insert(now_ns);
+        let elapsed = now_ns.saturating_sub(started);
+        let t = (elapsed as f32 / SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
+        let eased = decelerate_scroll(t);
+        let distance = self.scroll_target_y - self.scroll_start_y;
+        let next = if t >= 1.0 {
+            self.scroll_target_y
+        } else {
+            self.scroll_start_y + (distance as f32 * eased) as i32
+        };
+        if next == self.scroll_y {
+            return false;
+        }
+        self.scroll_y = next;
+        self.content_dirty = true;
+        self.content_damage = None;
+        if t >= 1.0 {
+            self.scroll_started_ns = None;
+        }
+        true
     }
 
     pub fn toggle_maximize(&mut self, screen_w: i32, screen_h: i32) {
@@ -363,12 +396,30 @@ impl Window {
 
     pub fn clamp_scroll(&mut self, content_h: i32, visible_h: i32) {
         let max = (content_h - visible_h).max(0);
+        self.scroll_target_y = self.scroll_target_y.min(max);
         if self.scroll_y > max {
             self.scroll_y = max;
+            self.scroll_start_y = max;
+            self.scroll_started_ns = None;
             self.content_dirty = true;
             self.content_damage = None;
         }
     }
+}
+
+/// CSS `cubic-bezier(0, 0, 0, 1)`. Since both x control points are zero,
+/// x(s) = s^3; a short binary solve is sufficient for the 1 ms UI clock.
+fn decelerate_scroll(t: f32) -> f32 {
+    if t <= 0.0 { return 0.0; }
+    if t >= 1.0 { return 1.0; }
+    let mut low = 0.0f32;
+    let mut high = 1.0f32;
+    for _ in 0..10 {
+        let s = (low + high) * 0.5;
+        if s * s * s < t { low = s; } else { high = s; }
+    }
+    let s = (low + high) * 0.5;
+    s * s * (3.0 - 2.0 * s)
 }
 
 struct CachedShadow {
@@ -507,6 +558,19 @@ impl WindowManager {
             // makes the final document row reachable without scrolling past it.
             w.clamp_scroll(content_h, w.h as i32);
         }
+    }
+
+    pub fn tick_scroll_animations(&mut self, now_ns: u64) -> bool {
+        let mut changed = false;
+        for window in &mut self.windows {
+            changed |= window.tick_scroll(now_ns);
+        }
+        changed
+    }
+
+    pub fn is_scroll_animating(&self, id: WinId) -> bool {
+        self.windows.iter().find(|window| window.id == id)
+            .map_or(false, |window| window.scroll_y != window.scroll_target_y)
     }
 
     pub fn window_at(&self, px: i32, py: i32) -> Option<WinId> {
@@ -982,10 +1046,10 @@ impl WindowManager {
     pub fn set_window_scroll(&mut self, id: WinId, scroll: i32) {
         if let Some(window) = self.windows.iter_mut().find(|window| window.id == id) {
             let next = scroll.max(0);
-            if window.scroll_y != next {
-                window.scroll_y = next;
-                window.content_dirty = true;
-                window.content_damage = None;
+            if window.scroll_target_y != next {
+                window.scroll_start_y = window.scroll_y;
+                window.scroll_target_y = next;
+                window.scroll_started_ns = None;
             }
         }
     }

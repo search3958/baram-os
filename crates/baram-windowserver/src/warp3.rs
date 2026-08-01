@@ -510,6 +510,16 @@ impl Warp3Engine {
         }
     }
 
+    pub fn cancel_hover(&mut self) {
+        if let Some((old, new)) = self.hover_transition.take() {
+            self.invalidate_nodes(old, new);
+        }
+        if let Some(old) = self.hovered.take() {
+            self.invalidate_nodes(Some(old), None);
+        }
+        self.hover_started_ns = None;
+    }
+
     pub fn click(&mut self, x: i32, y: i32) {
         let hit = self.hit_test(x, y);
         let Some(idx) = hit else {

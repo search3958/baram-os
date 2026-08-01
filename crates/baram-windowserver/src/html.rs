@@ -327,6 +327,16 @@ impl HtmlEngine {
         }
     }
 
+    pub fn cancel_hover(&mut self) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.cancel_hover();
+            return;
+        }
+        if self.hovered_node.take().is_some() {
+            self.layout_dirty = true;
+        }
+    }
+
     pub fn hovered_node(&self) -> Option<usize> {
         if let Some(engine) = self.warp3.as_ref() {
             return engine.hovered_node();
