@@ -89,6 +89,44 @@ pub fn btn_bg_color() -> Color {
     config::get_color("ui-theme/color/btn_bg", Color::BTN_BG)
 }
 
+struct WindowBaseRedraw {
+    layer: *mut LayerSystem,
+    width: usize,
+    height: usize,
+    damage: Option<(usize, usize, usize, usize)>,
+    maximized: bool,
+    body_bg: Color,
+    title_height: usize,
+    radius: usize,
+    polygon: *const (f32, f32),
+    polygon_len: usize,
+}
+
+unsafe impl Sync for WindowBaseRedraw {}
+
+fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
+    let job = &jobs[index];
+    let layer = unsafe { &mut *job.layer };
+    let (x0, y0, x1, y1) = job.damage.unwrap_or((0, 0, job.width, job.height));
+    if x1 <= x0 || y1 <= y0 { return; }
+    for row in y0..y1 {
+        let start = row * job.width + x0;
+        let end = row * job.width + x1;
+        layer.buf_mut()[start..end].fill(Color::TRANSPARENT.0);
+    }
+    if job.damage.is_some() {
+        let body_y = y0.max(job.title_height);
+        if y1 > body_y {
+            layer.fill_rect(x0, body_y, x1 - x0, y1 - body_y, job.body_bg);
+        }
+    } else if job.maximized {
+        layer.fill_rect(0, 0, job.width, job.height, job.body_bg);
+    } else {
+        let polygon = unsafe { core::slice::from_raw_parts(job.polygon, job.polygon_len) };
+        layer.fill_rounded_rect_with_polygon(0, 0, job.width, job.height, job.radius, job.body_bg, polygon);
+    }
+}
+
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("../../../data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("../../../data/close.svg");
@@ -654,6 +692,56 @@ impl WindowManager {
             }
         }
 
+        // Allocate on the BSP; AP jobs below only touch disjoint window layers.
+        for i in 0..sort_n {
+            let idx = indices[i];
+            if self.windows[idx].visible && !self.windows[idx].minimized {
+                self.windows[idx].ensure_layer(screen_w, screen_h);
+            }
+        }
+        let body_bg = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
+        let radius = win_radius();
+        let title_height = title_bar_h();
+        let mut redraw_polygons: Vec<Vec<(f32, f32)>> = Vec::new();
+        for i in 0..sort_n {
+            let w = &self.windows[indices[i]];
+            if w.visible && !w.minimized && w.content_dirty
+                && w.content_damage.is_none() && !w.maximized
+            {
+                redraw_polygons.push(LayerSystem::squircle_polygon(
+                    w.w as f32,
+                    w.h as f32,
+                    radius.min(w.w / 2).min(w.h / 2) as f32,
+                ));
+            }
+        }
+        let mut polygon_index = 0usize;
+        let mut redraw_jobs: Vec<WindowBaseRedraw> = Vec::new();
+        for i in 0..sort_n {
+            let w = &mut self.windows[indices[i]];
+            if !w.visible || w.minimized || !w.content_dirty { continue; }
+            let (polygon, polygon_len) = if w.content_damage.is_none() && !w.maximized {
+                let poly = &redraw_polygons[polygon_index];
+                polygon_index += 1;
+                (poly.as_ptr(), poly.len())
+            } else {
+                (core::ptr::null(), 0)
+            };
+            redraw_jobs.push(WindowBaseRedraw {
+                layer: w.layer.as_mut().unwrap() as *mut LayerSystem,
+                width: w.w,
+                height: w.h,
+                damage: w.content_damage,
+                maximized: w.maximized,
+                body_bg,
+                title_height,
+                radius,
+                polygon,
+                polygon_len,
+            });
+        }
+        baram_core::parallel::for_each(redraw_jobs.len(), &redraw_jobs, redraw_window_base);
+
         for i in 0..sort_n {
             let idx = indices[i];
             if !self.windows[idx].visible || self.windows[idx].minimized {
@@ -759,39 +847,14 @@ impl WindowManager {
                     let lw = (*layer_ptr).width();
                     let lh = (*layer_ptr).height();
                     let (cx0, cy0, cx1, cy1) = damage.unwrap_or((0, 0, lw, lh));
-                    if cx1 > cx0 && cy1 > cy0 {
-                        for row in cy0..cy1 {
-                            let start = row * lw + cx0;
-                            let end = row * lw + cx1;
-                            (*layer_ptr).buf_mut()[start..end].fill(Color::TRANSPARENT.0);
-                        }
-                    }
-
                     (*layer_ptr).push_clip(cx0, cy0, cx1, cy1);
 
                     // A Warp3 hover patch owns every pixel in its damage rect.
                     // Do not enter generic window chrome/body rendering here:
                     // some SVG/font paths are not damage-clip aware and would
                     // touch title-bar pixels outside the hovered control.
-                    if damage.is_none() {
-                        if is_max {
-                            draw_window(&mut *layer_ptr, &*w_ptr, 0, 0);
-                        } else {
-                            draw_window_body(&mut *layer_ptr, &*w_ptr, true, 0, 0);
-                        }
-                    } else if cy1 > title_bar_h() {
-                        // The patch is body-only.  Restore an opaque base
-                        // before compositing Warp3; transparent pixels must
-                        // never reveal the desktop through the window layer.
-                        let body_y = cy0.max(title_bar_h());
-                        (*layer_ptr).fill_rect(
-                            cx0,
-                            body_y,
-                            cx1.saturating_sub(cx0),
-                            cy1.saturating_sub(body_y),
-                            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-                        );
-                    }
+                    // Base clearing/fill ran in parallel. SVG, font and engine
+                    // caches remain on the BSP because they can allocate.
 
                     if let Some((uid, cmds)) = ui_win {
                         if win_id == uid {
@@ -1131,17 +1194,8 @@ fn compute_rounded_shadow_alpha(
     let right = left + width;
     let bottom = top + height;
     let radius = r as usize;
-    for py in top..bottom {
-        for px in left..right {
-            let dx = if px < left + radius { left as i32 + r - px as i32 }
-                else if px >= right - radius { px as i32 - (right as i32 - r - 1) } else { 0 };
-            let dy = if py < top + radius { top as i32 + r - py as i32 }
-                else if py >= bottom - radius { py as i32 - (bottom as i32 - r - 1) } else { 0 };
-            if dx == 0 || dy == 0 || dx * dx + dy * dy <= r * r {
-                alpha[py * sw + px] = 45;
-            }
-        }
-    }
+    let mask = ShadowMaskPass { alpha: alpha.as_mut_ptr(), stride: sw, left, right, top, bottom, radius };
+    baram_core::parallel::for_each(height, &mask, fill_shadow_mask_row);
     let box_radius = (blur_r.max(1) as usize / 3).max(1);
     for _ in 0..3 {
         box_blur_shadow(&mut alpha, sw, sh, box_radius);
@@ -1150,25 +1204,77 @@ fn compute_rounded_shadow_alpha(
     Some((alpha, sw, sh))
 }
 
+struct ShadowMaskPass {
+    alpha: *mut u8,
+    stride: usize,
+    left: usize,
+    right: usize,
+    top: usize,
+    bottom: usize,
+    radius: usize,
+}
+
+unsafe impl Sync for ShadowMaskPass {}
+
+fn fill_shadow_mask_row(pass: &ShadowMaskPass, local_y: usize) {
+    let py = pass.top + local_y;
+    if py >= pass.bottom { return; }
+    let r = pass.radius as i32;
+    for px in pass.left..pass.right {
+        let dx = if px < pass.left + pass.radius { pass.left as i32 + r - px as i32 }
+            else if px >= pass.right - pass.radius { px as i32 - (pass.right as i32 - r - 1) } else { 0 };
+        let dy = if py < pass.top + pass.radius { pass.top as i32 + r - py as i32 }
+            else if py >= pass.bottom - pass.radius { py as i32 - (pass.bottom as i32 - r - 1) } else { 0 };
+        if dx == 0 || dy == 0 || dx * dx + dy * dy <= r * r {
+            unsafe { *pass.alpha.add(py * pass.stride + px) = 45; }
+        }
+    }
+}
+
+struct ShadowHorizontalPass { src: *const u8, dst: *mut u8, width: usize, radius: usize }
+unsafe impl Sync for ShadowHorizontalPass {}
+
+fn blur_shadow_row(pass: &ShadowHorizontalPass, y: usize) {
+    let diameter = pass.radius * 2 + 1;
+    let mut sum = 0u32;
+    for x in 0..pass.width + pass.radius {
+        unsafe {
+            if x < pass.width { sum += *pass.src.add(y * pass.width + x) as u32; }
+            if x > diameter && x - diameter - 1 < pass.width {
+                sum -= *pass.src.add(y * pass.width + x - diameter - 1) as u32;
+            }
+            if x >= pass.radius && x - pass.radius < pass.width {
+                *pass.dst.add(y * pass.width + x - pass.radius) = (sum / diameter as u32) as u8;
+            }
+        }
+    }
+}
+
+struct ShadowVerticalPass { src: *const u8, dst: *mut u8, width: usize, height: usize, radius: usize }
+unsafe impl Sync for ShadowVerticalPass {}
+
+fn blur_shadow_column(pass: &ShadowVerticalPass, x: usize) {
+    let diameter = pass.radius * 2 + 1;
+    let mut sum = 0u32;
+    for y in 0..pass.height + pass.radius {
+        unsafe {
+            if y < pass.height { sum += *pass.src.add(y * pass.width + x) as u32; }
+            if y > diameter && y - diameter - 1 < pass.height {
+                sum -= *pass.src.add((y - diameter - 1) * pass.width + x) as u32;
+            }
+            if y >= pass.radius && y - pass.radius < pass.height {
+                *pass.dst.add((y - pass.radius) * pass.width + x) = (sum / diameter as u32) as u8;
+            }
+        }
+    }
+}
+
 fn box_blur_shadow(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     let mut tmp = alloc::vec![0u8; alpha.len()];
-    let diameter = radius * 2 + 1;
-    for y in 0..height {
-        let mut sum = 0u32;
-        for x in 0..width + radius {
-            if x < width { sum += alpha[y * width + x] as u32; }
-            if x > diameter && x - diameter - 1 < width { sum -= alpha[y * width + x - diameter - 1] as u32; }
-            if x >= radius && x - radius < width { tmp[y * width + x - radius] = (sum / diameter as u32) as u8; }
-        }
-    }
-    for x in 0..width {
-        let mut sum = 0u32;
-        for y in 0..height + radius {
-            if y < height { sum += tmp[y * width + x] as u32; }
-            if y > diameter && y - diameter - 1 < height { sum -= tmp[(y - diameter - 1) * width + x] as u32; }
-            if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
-        }
-    }
+    let horizontal = ShadowHorizontalPass { src: alpha.as_ptr(), dst: tmp.as_mut_ptr(), width, radius };
+    baram_core::parallel::for_each(height, &horizontal, blur_shadow_row);
+    let vertical = ShadowVerticalPass { src: tmp.as_ptr(), dst: alpha.as_mut_ptr(), width, height, radius };
+    baram_core::parallel::for_each(width, &vertical, blur_shadow_column);
 }
 
 fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {

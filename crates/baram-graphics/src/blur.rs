@@ -207,6 +207,58 @@ unsafe fn box_blur_h_single_row(src: *const u32, dst: *mut u32, w: usize, r: i32
     }
 }
 
+struct HorizontalBoxPass {
+    src: *const u32,
+    dst: *mut u32,
+    width: usize,
+    radius: i32,
+}
+
+unsafe impl Sync for HorizontalBoxPass {}
+
+fn run_horizontal_box_pass(pass: &HorizontalBoxPass, row: usize) {
+    unsafe {
+        box_blur_h_single_row(
+            pass.src.add(row * pass.width),
+            pass.dst.add(row * pass.width),
+            pass.width,
+            pass.radius,
+        );
+    }
+}
+
+struct VerticalBoxPass {
+    src: *const u32,
+    dst: *mut u32,
+    width: usize,
+    height: usize,
+    radius: i32,
+}
+
+unsafe impl Sync for VerticalBoxPass {}
+
+fn run_vertical_box_pass(pass: &VerticalBoxPass, column: usize) {
+    unsafe {
+        box_blur_v_single_col(pass.src, pass.dst, pass.width, pass.height, column, pass.radius);
+    }
+}
+
+fn parallel_box_blur_h(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i32) {
+    let pass = HorizontalBoxPass { src: src.as_ptr(), dst: dst.as_mut_ptr(), width: w, radius: r };
+    baram_core::parallel::for_each(h, &pass, run_horizontal_box_pass);
+}
+
+fn parallel_box_blur_v(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i32) {
+    let pass = VerticalBoxPass {
+        src: src.as_ptr(),
+        dst: dst.as_mut_ptr(),
+        width: w,
+        height: h,
+        radius: r,
+    };
+    baram_core::parallel::for_each(w, &pass, run_vertical_box_pass);
+}
+
 fn box_blur_3pass_scalar(
     src: &[u32],
     dst: &mut [u32],
@@ -215,14 +267,12 @@ fn box_blur_3pass_scalar(
     h: usize,
     r: i32,
 ) {
-    unsafe {
-        box_blur_h(src.as_ptr(), tmp.as_mut_ptr(), w, h, r);
-        box_blur_v(tmp.as_ptr(), dst.as_mut_ptr(), w, h, r);
-        box_blur_h(dst.as_ptr(), tmp.as_mut_ptr(), w, h, r);
-        box_blur_v(tmp.as_ptr(), dst.as_mut_ptr(), w, h, r);
-        box_blur_h(dst.as_ptr(), tmp.as_mut_ptr(), w, h, r);
-        box_blur_v(tmp.as_ptr(), dst.as_mut_ptr(), w, h, r);
-    }
+    parallel_box_blur_h(src, tmp, w, h, r);
+    parallel_box_blur_v(tmp, dst, w, h, r);
+    parallel_box_blur_h(dst, tmp, w, h, r);
+    parallel_box_blur_v(tmp, dst, w, h, r);
+    parallel_box_blur_h(dst, tmp, w, h, r);
+    parallel_box_blur_v(tmp, dst, w, h, r);
 }
 
 fn box_blur_3pass_with_scratch(

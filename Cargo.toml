@@ -23,10 +23,10 @@ png-decoder = { path = "crates/png-decoder" }
 panic = "abort"
 
 [profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
+opt-level = 2
+lto = "thin"
+codegen-units = 8
 panic = "abort"
 strip = false
 overflow-checks = false
-incremental = false
+incremental = true

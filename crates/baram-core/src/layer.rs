@@ -586,28 +586,42 @@ impl LayerSystem {
     pub fn fill_rounded_rect(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
+        if r == 0 {
+            self.fill_rect(x, y, w, h, c);
+            return;
+        }
+        let poly = Self::cached_squircle(w as f32, h as f32, r as f32);
+        self.fill_rounded_rect_with_polygon(x, y, w, h, r, c, poly);
+    }
+
+    /// Fill a rounded rectangle using caller-owned geometry. This variant is
+    /// allocation-free and can be used by independent AP rendering jobs.
+    pub fn fill_rounded_rect_with_polygon(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        r: usize,
+        c: Color,
+        poly: &[(f32, f32)],
+    ) {
+        if w == 0 || h == 0 { return; }
+        let r = r.min(w / 2).min(h / 2);
+        if r == 0 {
+            self.fill_rect(x, y, w, h, c);
+            return;
+        }
         let v = c.0;
         let Some((x0, y0, x1, y1)) = self.clipped_rect(
             x, y, x.saturating_add(w), y.saturating_add(h),
         ) else { return; };
         let stride = self.width;
 
-        if r == 0 {
-            self.mark_dirty_rect(x0, y0, x1, y1);
-            for py in y0..y1 {
-                self.buf[py * stride + x0..py * stride + x1].fill(v);
-            }
-            return;
-        }
-
         self.mark_dirty_rect(x0, y0, x1, y1);
-
-        let rf = r as f32;
-        let poly = Self::cached_squircle(w as f32, h as f32, rf);
         let x0f = x as f32;
         let y0f = y as f32;
         let r_f = r as f32;
-        let w_f = w as f32;
         let h_f = h as f32;
         let off = [0.25f32, 0.75f32];
 

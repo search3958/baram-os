@@ -24,6 +24,9 @@ fn main() -> Status {
     let _ = uefi::helpers::init();
     log_line_str("BaramOS: UEFI helpers initialized");
 
+    let compute_workers = baram_core::parallel::init();
+    log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
+
     let _ = uefi::boot::set_watchdog_timer(0, 0, None);
     log_line_str("BaramOS: watchdog timer disabled");
 
