@@ -1,0 +1,69 @@
+config {
+    title("UIデモ")
+    script("nav.w3s")
+}
+
+scroll-point.top-point{
+    text("要素一覧")
+}
+
+button.vardemo{
+    text("変数デモ")
+}
+
+
+head,scroll-point{
+    text("テキスト")
+}
+
+
+    button.top-btn{
+        text("上部へ")
+    }
+    space{}
+    button.back-btn{
+        text("戻る")
+    }
+    button.next-btn{
+        text("次へ")
+    }
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        text{
+            text("Hello, World.")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("text{\ntext(\"テキスト\")\n}")
+        }
+    }
+}
+
+
+head,scroll-point{
+    text("見出し")
+}
+
+tab{
+    control("top")
+    content{
+        text("サンプル")
+        
+        head{
+            text("見出し")
+        }
+    }
+    content{
+        text("コード")
+        
+        code{
+            text("head{\ntext(\"テキスト\")\n}")
+        }
+    }
+}

@@ -44,3 +44,7 @@ apps:
     icon: noname.png
     type: warp-3
     title: Warp 3 デモ
+  wamo.w3a:
+    icon: noname.png
+    type: warp-3
+    title: aaaaa

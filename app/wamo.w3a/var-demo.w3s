@@ -1,0 +1,33 @@
+[fun = updateDisplay]
+setText display = myVar
+print = "更新済み"
+
+[fun = boostAnm]
+myVar = +1
+wait = 50ms
+fun = updateDisplay
+
+[onClick = count]
+myVar = +1
+fun = updateDisplay
+
+[onClick = boost]
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+fun = boostAnm
+
+[onClick = reset]
+myVar = "0"
+fun = updateDisplay
+
+[onClick = set-btn]
+getText myVar = set-input
+setText set-input = ""
+fun = updateDisplay

@@ -1,0 +1,21 @@
+[onClick = top-btn]
+scroll = "top-point"
+print = "トップにスクロールしました"
+
+[onClick = back-btn]
+scroll = -1
+print = "前にスクロールしました"
+run = app://calc.warp
+
+[onClick = next-btn]
+scroll = +1
+print = "次にスクロールしました"
+run = os://display/hud?enabled=0
+
+[onClick = home-btn]
+screen = main
+print = "ホームに戻りました"
+
+[onClick = vardemo]
+screen = var
+print = "変数でもに移動しました"

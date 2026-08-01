@@ -288,6 +288,9 @@ impl HtmlEngine {
     pub fn click(&mut self, x: i32, y: i32) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.click(x, y);
+            if self.last_command.is_none() {
+                self.last_command = engine.take_command();
+            }
             return;
         }
         for hit in self.hits.iter().rev() {
@@ -414,7 +417,14 @@ impl HtmlEngine {
     }
 
     pub fn tick(&mut self, now_ns: u64) -> bool {
-        self.warp3.as_mut().map_or(false, |engine| engine.tick(now_ns))
+        let Some(engine) = self.warp3.as_mut() else {
+            return false;
+        };
+        let changed = engine.tick(now_ns);
+        if self.last_command.is_none() {
+            self.last_command = engine.take_command();
+        }
+        changed
     }
 
     pub fn has_focused_input(&self) -> bool {

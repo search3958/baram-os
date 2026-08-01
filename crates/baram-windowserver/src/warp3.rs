@@ -335,6 +335,9 @@ pub struct Warp3Engine {
     nodes: Vec<Node>,
     roots: Vec<usize>,
     scripts: Vec<ScriptSection>,
+    script_frames: Vec<(Vec<(String, String)>, usize, Option<String>)>,
+    script_wait_until_ns: Option<u64>,
+    command_queue: Vec<String>,
     state: Vec<(String, String)>,
     hovered: Option<usize>,
     focused_input: Option<usize>,
@@ -376,6 +379,9 @@ impl Warp3Engine {
             nodes: Vec::new(),
             roots: Vec::new(),
             scripts: Vec::new(),
+            script_frames: Vec::new(),
+            script_wait_until_ns: None,
+            command_queue: Vec::new(),
             state: Vec::new(),
             hovered: None,
             focused_input: None,
@@ -482,6 +488,14 @@ impl Warp3Engine {
         self.scroll_request.take()
     }
 
+    pub fn take_command(&mut self) -> Option<String> {
+        if self.command_queue.is_empty() {
+            None
+        } else {
+            Some(self.command_queue.remove(0))
+        }
+    }
+
     pub fn set_hover(&mut self, x: i32, y: i32) {
         let next = self.hit_test(x, y);
         if self.hovered != next {
@@ -571,14 +585,19 @@ impl Warp3Engine {
     /// Sample control transitions from absolute monotonic time. No layout is
     /// involved; only the old/new control damage rectangle is requested.
     pub fn tick(&mut self, now_ns: u64) -> bool {
-        if self.hover_transition.is_none() && self.switch_transition.is_none() {
-            return false;
-        }
         if self.animation_now_ns == now_ns {
             return false;
         }
         self.animation_now_ns = now_ns;
         let mut changed = false;
+        if self
+            .script_wait_until_ns
+            .is_some_and(|deadline| now_ns >= deadline)
+        {
+            self.script_wait_until_ns = None;
+            self.resume_script();
+            changed = true;
+        }
         if let Some((old, new)) = self.hover_transition {
             let started = self.hover_started_ns.get_or_insert(now_ns);
             let complete = now_ns.saturating_sub(*started) >= HOVER_DURATION_NS;
@@ -668,6 +687,9 @@ impl Warp3Engine {
             mark_overlay_tree(&mut self.nodes, root);
         }
         self.scripts.clear();
+        self.script_frames.clear();
+        self.script_wait_until_ns = None;
+        self.command_queue.clear();
         let mut script_names = Vec::new();
         for node in &self.nodes {
             if node.is("config") {
@@ -1328,19 +1350,24 @@ impl Warp3Engine {
     }
 
     fn execute(&mut self, actions: Vec<(String, String)>) {
-        let mut frames: Vec<(Vec<(String, String)>, usize, Option<String>)> =
-            alloc::vec![(actions, 0, None)];
-        while !frames.is_empty() {
+        self.script_frames.push((actions, 0, None));
+        if self.script_wait_until_ns.is_none() {
+            self.resume_script();
+        }
+    }
+
+    fn resume_script(&mut self) {
+        while !self.script_frames.is_empty() {
             let finished = {
-                let frame = frames.last().unwrap();
+                let frame = self.script_frames.last().unwrap();
                 frame.1 >= frame.0.len()
             };
             if finished {
-                frames.pop();
+                self.script_frames.pop();
                 continue;
             }
             let (left, right) = {
-                let frame = frames.last_mut().unwrap();
+                let frame = self.script_frames.last_mut().unwrap();
                 let action = frame.0[frame.1].clone();
                 frame.1 += 1;
                 action
@@ -1351,10 +1378,29 @@ impl Warp3Engine {
                     self.load_screen();
                 }
                 "scroll" => self.request_scroll(&right),
-                "print" | "wait" => {}
+                "print" => {}
+                "wait" => {
+                    let duration_ns = parse_wait_ns(&self.value(&right));
+                    if duration_ns > 0 {
+                        self.script_wait_until_ns =
+                            Some(self.animation_now_ns.saturating_add(duration_ns));
+                        return;
+                    }
+                }
+                "run" => {
+                    let command = unquote(&right);
+                    if command.starts_with("os://") || command.starts_with("app://") {
+                        self.command_queue.push(command);
+                        // Yield once so the window server can execute the URI
+                        // before a following action reads the changed value.
+                        self.script_wait_until_ns =
+                            Some(self.animation_now_ns.saturating_add(1));
+                        return;
+                    }
+                }
                 "fun" => {
                     let name = unquote(&right);
-                    if frames
+                    if self.script_frames
                         .iter()
                         .any(|(_, _, active)| active.as_ref() == Some(&name))
                     {
@@ -1363,7 +1409,8 @@ impl Warp3Engine {
                     if let Some(section) = self.scripts.iter().find(|section| {
                         section.kind == SectionKind::Function && section.name == name
                     }) {
-                        frames.push((section.actions.clone(), 0, Some(name)));
+                        self.script_frames
+                            .push((section.actions.clone(), 0, Some(name)));
                     }
                 }
                 command if command.starts_with("setText ") => {
@@ -1423,6 +1470,11 @@ impl Warp3Engine {
         let trimmed = raw.trim();
         if trimmed.starts_with('"') {
             unquote(trimmed)
+        } else if let Some(path) = trimmed.strip_prefix("os://") {
+            baram_bsd::config::get_config()
+                .get(path.trim_end_matches('/'))
+                .unwrap_or("")
+                .to_string()
         } else {
             let state = self.state(trimmed);
             if state.is_empty() {
@@ -1601,6 +1653,24 @@ fn unquote(value: &str) -> String {
     value.trim().trim_matches('"').to_string()
 }
 
+fn parse_wait_ns(value: &str) -> u64 {
+    let value = value.trim();
+    if let Some(ms) = value.strip_suffix("ms") {
+        return ms.trim().parse::<u64>().unwrap_or(0).saturating_mul(1_000_000);
+    }
+    if let Some(seconds) = value.strip_suffix('s') {
+        return seconds
+            .trim()
+            .parse::<u64>()
+            .unwrap_or(0)
+            .saturating_mul(1_000_000_000);
+    }
+    value
+        .parse::<u64>()
+        .unwrap_or(0)
+        .saturating_mul(1_000_000)
+}
+
 fn html_bg() -> Color {
     Color::rgb(243, 243, 243)
 }
@@ -1757,5 +1827,24 @@ mod tests {
                     .iter()
                     .any(|(left, right)| left == "getText myVar" && right == "set-input")
         }));
+    }
+
+    #[test]
+    fn parses_wait_durations_as_absolute_nanoseconds() {
+        assert_eq!(parse_wait_ns("50ms"), 50_000_000);
+        assert_eq!(parse_wait_ns("2s"), 2_000_000_000);
+        assert_eq!(parse_wait_ns("25"), 25_000_000);
+        assert_eq!(parse_wait_ns("invalid"), 0);
+    }
+
+    #[test]
+    fn parses_wait_run_and_config_text_actions() {
+        let sections = parse_script(
+            "[onClick = demo]\nwait = 50ms\nrun = os://display/hud?enabled=0\nsetText display = os://display/hud/enabled\n",
+        );
+        let actions = &sections[0].actions;
+        assert_eq!(actions[0], ("wait".to_string(), "50ms".to_string()));
+        assert_eq!(actions[1].0, "run");
+        assert_eq!(actions[2].0, "setText display");
     }
 }

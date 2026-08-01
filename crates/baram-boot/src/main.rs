@@ -1423,6 +1423,7 @@ fn main() -> Status {
 
         // Absolute monotonic UI time: transitions derive their progress from
         // this clock, without a runtime-service call in the render hot path.
+        let mut deferred_html_commands = alloc::vec::Vec::new();
         for (wid, engine) in html_engines.iter_mut() {
             if engine.tick(transition_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {
@@ -1433,6 +1434,48 @@ fn main() -> Status {
                 scene_dirty = true;
                 dirty = true;
             }
+            if let Some(command) = engine.last_command.take() {
+                deferred_html_commands.push(command);
+            }
+        }
+        for command in deferred_html_commands {
+            let previous_hud = display_state.hud_enabled;
+            let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+            let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+            match handle_navigation(
+                &command,
+                &app_entries,
+                &mut wm,
+                &mut warp_engines,
+                &mut html_engines,
+                &mut ui_commands,
+                &mut ui_win_id,
+                &mut display_state,
+                nx,
+                ny,
+            ) {
+                NavigationEffect::AppOpened => {
+                    new_window_idx = new_window_idx.wrapping_add(1);
+                    tb_add_progress = 0.0;
+                    tb_add_started_ms = None;
+                    tb_shift_x = 26.0;
+                }
+                NavigationEffect::SystemChanged => {
+                    hud_damage_pending |= previous_hud != display_state.hud_enabled;
+                    taskbar_surface.invalidate();
+                    cached_launcher_layer = None;
+                    bg_cache = None;
+                    cached_wallpaper = wallpaper_for_state(
+                        &display_state,
+                        screen.width(),
+                        screen.height(),
+                    );
+                    prev_wallpaper_idx = display_state.wallpaper_index;
+                }
+                NavigationEffect::None => {}
+            }
+            scene_dirty = true;
+            dirty = true;
         }
 
         frames = frames.wrapping_add(1);
