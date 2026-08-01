@@ -1329,8 +1329,8 @@ fn blur_shadow_row(pass: &ShadowHorizontalPass, y: usize) {
     for x in 0..pass.width + pass.radius {
         unsafe {
             if x < pass.width { sum += *pass.src.add(y * pass.width + x) as u32; }
-            if x > diameter && x - diameter - 1 < pass.width {
-                sum -= *pass.src.add(y * pass.width + x - diameter - 1) as u32;
+            if x >= diameter && x - diameter < pass.width {
+                sum -= *pass.src.add(y * pass.width + x - diameter) as u32;
             }
             if x >= pass.radius && x - pass.radius < pass.width {
                 *pass.dst.add(y * pass.width + x - pass.radius) = (sum / diameter as u32) as u8;
@@ -1348,8 +1348,8 @@ fn blur_shadow_column(pass: &ShadowVerticalPass, x: usize) {
     for y in 0..pass.height + pass.radius {
         unsafe {
             if y < pass.height { sum += *pass.src.add(y * pass.width + x) as u32; }
-            if y > diameter && y - diameter - 1 < pass.height {
-                sum -= *pass.src.add((y - diameter - 1) * pass.width + x) as u32;
+            if y >= diameter && y - diameter < pass.height {
+                sum -= *pass.src.add((y - diameter) * pass.width + x) as u32;
             }
             if y >= pass.radius && y - pass.radius < pass.height {
                 *pass.dst.add((y - pass.radius) * pass.width + x) = (sum / diameter as u32) as u8;

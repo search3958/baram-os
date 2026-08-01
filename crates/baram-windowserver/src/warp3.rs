@@ -541,6 +541,8 @@ impl Warp3Engine {
             self.invalidate_from(0);
             return;
         };
+        let hit_y = self.nodes[idx].y;
+        let mut tab_changed = false;
         if self.nodes[idx].is("input") || self.nodes[idx].is("textarea") {
             self.focused_input = Some(idx);
         } else if self.nodes[idx].is("switch") {
@@ -558,14 +560,23 @@ impl Warp3Engine {
             if let Some(parent) = self.find_parent(idx) {
                 let siblings = self.nodes[parent].children.clone();
                 if let Some(tab) = siblings.iter().position(|item| *item == idx) {
-                    self.nodes[parent].tab = tab;
+                    if self.nodes[parent].tab != tab {
+                        self.nodes[parent].tab = tab;
+                        tab_changed = true;
+                    }
                 }
             }
         } else {
             self.focused_input = None;
             self.run_click(idx);
         }
-        self.invalidate_from(self.nodes[idx].y);
+        if tab_changed || self.full_window_redraw {
+            self.invalidate_all();
+        } else {
+            // A script may have replaced the complete node tree, so never
+            // index self.nodes with the old hit after run_click.
+            self.invalidate_from(hit_y);
+        }
     }
 
     pub fn handle_key(&mut self, key: u8) {
@@ -909,6 +920,15 @@ impl Warp3Engine {
         self.repaint_from = self.repaint_from.min(y.max(0));
         self.repaint_to = i32::MAX;
         self.dirty = true;
+    }
+
+    fn invalidate_all(&mut self) {
+        self.repaint_from = 0;
+        self.repaint_to = i32::MAX;
+        self.dirty = true;
+        self.toolbar_dirty = true;
+        self.window_damage = None;
+        self.full_window_redraw = true;
     }
 
     fn invalidate_range(&mut self, from: i32, to: i32) {
@@ -1605,7 +1625,7 @@ fn box_blur_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) 
         let mut sum = 0u32;
         for x in 0..width + radius {
             if x < width { sum += alpha[row + x] as u32; }
-            if x > diameter && x - diameter - 1 < width { sum -= alpha[row + x - diameter - 1] as u32; }
+            if x >= diameter && x - diameter < width { sum -= alpha[row + x - diameter] as u32; }
             if x >= radius && x - radius < width { tmp[row + x - radius] = (sum / diameter as u32) as u8; }
         }
     }
@@ -1613,7 +1633,7 @@ fn box_blur_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) 
         let mut sum = 0u32;
         for y in 0..height + radius {
             if y < height { sum += tmp[y * width + x] as u32; }
-            if y > diameter && y - diameter - 1 < height { sum -= tmp[(y - diameter - 1) * width + x] as u32; }
+            if y >= diameter && y - diameter < height { sum -= tmp[(y - diameter) * width + x] as u32; }
             if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
         }
     }
