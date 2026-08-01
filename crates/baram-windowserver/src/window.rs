@@ -318,9 +318,13 @@ impl Window {
     pub fn scroll(&mut self, delta: i32) {
         let next = self.scroll_target_y.saturating_add(delta).max(0);
         if self.scroll_target_y != next {
-            self.scroll_start_y = self.scroll_y;
+            // Continuous trackpad input extends the active destination. Do
+            // not restart its clock for every event or motion can starve.
+            if self.scroll_y == self.scroll_target_y {
+                self.scroll_start_y = self.scroll_y;
+                self.scroll_started_ns = None;
+            }
             self.scroll_target_y = next;
-            self.scroll_started_ns = None;
         }
     }
 
@@ -329,7 +333,9 @@ impl Window {
             self.scroll_started_ns = None;
             return false;
         }
-        let started = *self.scroll_started_ns.get_or_insert(now_ns);
+        // Give a newly queued scroll its first 1 ms sample immediately. This
+        // avoids a visually stationary first frame under bursty input.
+        let started = *self.scroll_started_ns.get_or_insert(now_ns.saturating_sub(1_000_000));
         let elapsed = now_ns.saturating_sub(started);
         let t = (elapsed as f32 / SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
         let eased = decelerate_scroll(t);
@@ -1047,9 +1053,11 @@ impl WindowManager {
         if let Some(window) = self.windows.iter_mut().find(|window| window.id == id) {
             let next = scroll.max(0);
             if window.scroll_target_y != next {
-                window.scroll_start_y = window.scroll_y;
+                if window.scroll_y == window.scroll_target_y {
+                    window.scroll_start_y = window.scroll_y;
+                    window.scroll_started_ns = None;
+                }
                 window.scroll_target_y = next;
-                window.scroll_started_ns = None;
             }
         }
     }
