@@ -14,7 +14,7 @@ use baram_font::LayerFontExt;
 
 // Progress is derived directly from monotonic time. There are deliberately no
 // animation steps: the compositor samples the exact state whenever it draws.
-const HOVER_DURATION_NS: u64 = 13_000_000;
+const HOVER_DURATION_NS: u64 = 6_500_000;
 const SWITCH_DURATION_NS: u64 = 18_000_000;
 const HOVER_DAMAGE_PAD: i32 = 14;
 
@@ -1683,6 +1683,7 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
     let baseline = y + ttf_font::ascent_at_size(size);
     let layer_w = layer.width();
     let layer_h = layer.height();
+    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
     for ch in text.chars() {
         let mut advance = 0;
         ttf_font::with_glyph_at_size(ch, size, |data, w, h, glyph_advance, y_off| {
@@ -1690,10 +1691,11 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
             let top = baseline + y_off;
             for row in 0..h {
                 let py = top + row;
-                if py < crate::window::title_bar_h() as i32 || py >= layer_h as i32 { continue; }
+                if py < crate::window::title_bar_h() as i32
+                    || py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 { continue; }
                 for col in 0..w {
                     let px = x + col;
-                    if px < 0 || px >= layer_w as i32 { continue; }
+                    if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 { continue; }
                     let alpha = data[row as usize * w as usize + col as usize] as f32 / 255.0;
                     if alpha <= 0.0 { continue; }
                     let index = py as usize * layer_w + px as usize;

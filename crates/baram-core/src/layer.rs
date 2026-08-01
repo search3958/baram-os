@@ -167,6 +167,12 @@ impl LayerSystem {
         }
     }
 
+    /// Current drawable bounds, or the complete layer when no clip is active.
+    /// Direct pixel writers such as font rasterizers must honor this too.
+    pub fn clip_bounds(&self) -> (usize, usize, usize, usize) {
+        self.clip.unwrap_or((0, 0, self.width, self.height))
+    }
+
     #[inline]
     fn mark_dirty_rect(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
         if !self.dirty {

@@ -958,6 +958,12 @@ impl WindowManager {
 
     pub fn set_content_damage(&mut self, id: WinId, x0: i32, y0: i32, x1: i32, y1: i32) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            // `content_dirty && content_damage.is_none()` means a full content
+            // redraw is already pending (for example after scrolling). Never
+            // downgrade it to a hover-sized patch later in the same frame.
+            if w.content_dirty && w.content_damage.is_none() {
+                return;
+            }
             let next = (
                 x0.max(0).min(w.w as i32) as usize,
                 y0.max(0).min(w.h as i32) as usize,

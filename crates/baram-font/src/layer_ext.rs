@@ -14,15 +14,16 @@ impl LayerFontExt for LayerSystem {
         if ttf_font::is_available() && ch as u32 >= 0x20 {
             let baseline = y as i32 + ttf_font::ascent();
             let w = self.width();
+            let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
             let buf = self.buf_mut();
             let drawn = ttf_font::with_glyph(ch, |data, gw, gh, _advance, y_off| {
                 if gw <= 0 || gh <= 0 { return false; }
                 for row in 0..gh {
                     let py = baseline + y_off + row;
-                    if py < 0 || py >= buf.len() as i32 / w as i32 { continue; }
+                    if py < clip_y0 as i32 || py >= clip_y1 as i32 { continue; }
                     for col in 0..gw {
                         let px = x as i32 + col;
-                        if px < 0 || px >= w as i32 { continue; }
+                        if px < clip_x0 as i32 || px >= clip_x1 as i32 { continue; }
                         let alpha = data[(row * gw + col) as usize];
                         if alpha > 0 {
                             let a = alpha as u32;
@@ -50,15 +51,17 @@ impl LayerFontExt for LayerSystem {
         if (ch as u32) < 0x20 || (ch as u32) > 0x7E { return; }
         let glyph = font::glyph(ch as u8);
         let w = self.width();
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
         let buf = self.buf_mut();
         for row in 0..font::GLYPH_H {
             let bits = glyph[row];
             let py = y + row;
-            if py >= buf.len() / w { break; }
+            if py >= clip_y1 { break; }
+            if py < clip_y0 { continue; }
             for col in 0..font::GLYPH_W {
                 if (bits >> (7 - col)) & 1 == 1 {
                     let px = x + col;
-                    if px < w {
+                    if px >= clip_x0 && px < clip_x1 {
                         buf[py * w + px] = fg.0;
                     }
                 }
