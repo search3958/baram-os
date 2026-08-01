@@ -737,9 +737,10 @@ impl Warp3Engine {
     }
 
     fn layout(&mut self, idx: usize, x: i32, y: i32, width: i32) -> i32 {
+        let width = width.max(1);
         self.nodes[idx].x = x;
         self.nodes[idx].y = y;
-        self.nodes[idx].w = width.max(1);
+        self.nodes[idx].w = width;
         let tag = self.nodes[idx].tags.first().cloned().unwrap_or_default();
         match tag.as_str() {
             "text" | "detail" | "head" | "code" | "scroll-point" => {
@@ -755,7 +756,13 @@ impl Warp3Engine {
                 };
             }
             "button" => {
-                self.nodes[idx].w = (measure(self.nodes[idx].prop("text")) + 28).clamp(44, width);
+                // `i32::clamp` panics when the window is narrower than the
+                // button's normal 44 px minimum because min > max.  A tiny
+                // window must shrink the control instead of crashing.
+                self.nodes[idx].w = fit_button_width(
+                    measure(self.nodes[idx].prop("text")) + 28,
+                    width,
+                );
                 self.nodes[idx].h = 34;
             }
             "input" => {
@@ -1643,6 +1650,10 @@ fn measure(text: &str) -> i32 {
     text.chars().map(ttf_font::advance).sum()
 }
 
+fn fit_button_width(desired: i32, available: i32) -> i32 {
+    desired.max(44).min(available.max(1))
+}
+
 /// Keep wrapping and layout on the exact same glyph advances.  A character
 /// count approximation breaks mixed CJK/Latin labels and shifts every sibling.
 fn wrap_lines(text: &str, width: i32) -> Vec<String> {
@@ -1855,6 +1866,13 @@ mod tests {
         assert_eq!(parse_wait_ns("2s"), 2_000_000_000);
         assert_eq!(parse_wait_ns("25"), 25_000_000);
         assert_eq!(parse_wait_ns("invalid"), 0);
+    }
+
+    #[test]
+    fn button_layout_accepts_widths_below_its_normal_minimum() {
+        assert_eq!(fit_button_width(120, 20), 20);
+        assert_eq!(fit_button_width(120, 0), 1);
+        assert_eq!(fit_button_width(30, 100), 44);
     }
 
     #[test]

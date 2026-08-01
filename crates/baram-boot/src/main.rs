@@ -1578,7 +1578,6 @@ fn main() -> Status {
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
                 let taskbar_only = taskbar_dirty
-                    && taskbar_surface.has_backdrop()
                     && bx1 <= bx0
                     && !hud_dirty
                     && wm.count() == prev_window_count
