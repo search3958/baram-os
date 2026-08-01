@@ -427,6 +427,7 @@ fn main() -> Status {
     let mut ui_time_ms: u64 = 0;
 
     let mut tb_add_progress: f32 = -1.0f32;
+    let mut tb_add_started_ms: Option<u64> = None;
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
     let mut show_app_launcher: bool = false;
@@ -514,7 +515,14 @@ fn main() -> Status {
                 events[1] = unsafe { core::ptr::read(mevt) };
                 n = 2;
             }
-            ui_timer_fired = matches!(uefi::boot::wait_for_event(&mut events[..n]), Ok(0));
+            ui_timer_fired = match uefi::boot::wait_for_event(&mut events[..n]) {
+                Ok(0) => true,
+                // Mouse input can stay signalled continuously. Consume the
+                // periodic tick too, otherwise absolute-time UI animations
+                // stop until pointer input becomes idle.
+                Ok(_) => uefi::boot::check_event(timer).unwrap_or(false),
+                Err(_) => false,
+            };
         }
         if ui_timer_fired {
             ui_time_ms = ui_time_ms.wrapping_add(1);
@@ -642,6 +650,7 @@ fn main() -> Status {
                             warp_engines.push((win_id, engine));
                             mousekey_win_id = Some(win_id);
                             tb_add_progress = 0.0;
+                            tb_add_started_ms = None;
                             tb_shift_x = 26.0;
                             dirty = true;
                             scene_dirty = true;
@@ -802,6 +811,7 @@ fn main() -> Status {
                                 450,
                             );
                             tb_add_progress = 0.0;
+                            tb_add_started_ms = None;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
                         }
@@ -1011,6 +1021,7 @@ fn main() -> Status {
                                     NavigationEffect::AppOpened => {
                                         new_window_idx = new_window_idx.wrapping_add(1);
                                         tb_add_progress = 0.0;
+                                        tb_add_started_ms = None;
                                         tb_shift_x = 26.0;
                                     }
                                     NavigationEffect::SystemChanged => {
@@ -1099,6 +1110,7 @@ fn main() -> Status {
                         450,
                     );
                     tb_add_progress = 0.0;
+                    tb_add_started_ms = None;
                     tb_shift_x = 26.0;
                     new_window_idx = new_window_idx.wrapping_add(1);
                 }
@@ -1285,6 +1297,7 @@ fn main() -> Status {
                             NavigationEffect::AppOpened => {
                                 new_window_idx = new_window_idx.wrapping_add(1);
                                 tb_add_progress = 0.0;
+                                tb_add_started_ms = None;
                                 tb_shift_x = 26.0;
                             }
                             NavigationEffect::SystemChanged => {
@@ -1481,28 +1494,23 @@ fn main() -> Status {
             }
         }
 
-        let anim_speed = 10.0f32;
-        let dt = 0.008f32;
-
         if tb_add_progress >= 0.0 {
-            tb_add_progress = (tb_add_progress + anim_speed * dt).min(1.0);
+            if tb_add_started_ms.is_none() {
+                tb_add_started_ms = Some(ui_time_ms);
+            }
+            let started = tb_add_started_ms.unwrap_or(ui_time_ms);
+            tb_add_progress = (ui_time_ms.saturating_sub(started) as f32 / 12.0).min(1.0);
+            let remaining = 1.0 - tb_add_progress;
+            let eased = 1.0 - remaining * remaining * remaining;
+            tb_shift_x = 26.0 * (1.0 - eased);
             dirty = true;
             scene_dirty = true;
         }
 
         if tb_remove_progress >= 0.0 {
-            tb_remove_progress = (tb_remove_progress + anim_speed * dt).min(1.0);
+            tb_remove_progress = (tb_remove_progress + 0.2).min(1.0);
             dirty = true;
             scene_dirty = true;
-        }
-
-        if tb_shift_x.abs() > 0.5 {
-            tb_shift_x *= 0.8;
-            dirty = true;
-            scene_dirty = true;
-            if tb_shift_x.abs() < 0.5 {
-                tb_shift_x = 0.0;
-            }
         }
 
         if dirty {
@@ -1697,6 +1705,8 @@ fn main() -> Status {
 
                 if tb_add_progress >= 1.0 {
                     tb_add_progress = -1.0;
+                    tb_add_started_ms = None;
+                    tb_shift_x = 0.0;
                 }
                 if tb_remove_progress >= 1.0 {
                     tb_remove_progress = -1.0;

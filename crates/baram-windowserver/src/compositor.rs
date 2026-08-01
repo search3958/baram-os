@@ -22,7 +22,9 @@ pub struct TaskbarSurface {
     backdrop: Vec<u32>,
     blurred: Vec<u32>,
     blur_scratch: Vec<u32>,
+    base: Vec<u32>,
     backdrop_valid: bool,
+    base_valid: bool,
     valid: bool,
 }
 
@@ -34,7 +36,9 @@ impl TaskbarSurface {
             backdrop: alloc::vec![0; width * sample_h],
             blurred: alloc::vec![0; width * sample_h],
             blur_scratch: alloc::vec![0; width * sample_h],
+            base: alloc::vec![0; width * TASKBAR_H],
             backdrop_valid: false,
+            base_valid: false,
             valid: false,
         }
     }
@@ -66,6 +70,7 @@ impl TaskbarSurface {
             &scene.buf_ref()[start_y * width..(start_y + sample_h) * width],
         );
         self.backdrop_valid = true;
+        self.base_valid = false;
     }
 
     fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
@@ -442,11 +447,9 @@ fn get_or_render_tb_btn(size: usize, ca: u32) -> &'static [u32] {
     }
 }
 
-pub fn ease_out_back(t: f32) -> f32 {
-    let c1 = 1.70158f32;
-    let c3 = c1 + 1.0;
-    let t = t.min(1.0);
-    1.0 + c3 * libm::powf(t - 1.0, 3.0) + c1 * libm::powf(t - 1.0, 2.0)
+fn ease_out_cubic(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
 }
 
 fn draw_taskbar_text(
@@ -508,23 +511,27 @@ fn redraw_taskbar(
     let w = layer.width();
     let pad = TASKBAR_BLUR_R.max(0) as usize;
     let sample_h = TASKBAR_H + pad;
-    blur::blur_region_to_with_scratch(
-        &surface.backdrop,
-        &mut surface.blurred,
-        &mut surface.blur_scratch,
-        w,
-        0,
-        sample_h,
-        TASKBAR_BLUR_R,
-    );
-    layer.buf_mut().copy_from_slice(
-        &surface.blurred[pad * w..(pad + TASKBAR_H) * w],
-    );
-    tint_taskbar(
-        layer.buf_mut(),
-        config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
-        170,
-    );
+    if !surface.base_valid {
+        blur::blur_region_to_with_scratch(
+            &surface.backdrop,
+            &mut surface.blurred,
+            &mut surface.blur_scratch,
+            w,
+            0,
+            sample_h,
+            TASKBAR_BLUR_R,
+        );
+        surface.base.copy_from_slice(
+            &surface.blurred[pad * w..(pad + TASKBAR_H) * w],
+        );
+        tint_taskbar(
+            &mut surface.base,
+            config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
+            170,
+        );
+        surface.base_valid = true;
+    }
+    layer.buf_mut().copy_from_slice(&surface.base);
 
     let count = wm.count();
     let btn_d = 40usize;
@@ -532,10 +539,10 @@ fn redraw_taskbar(
     let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
     let base_bx = ((w as i32 - total_w) / 2).max(0);
     let btn_y = (TASKBAR_H - btn_d) / 2;
-    let add_scale = if add_progress >= 0.0 {
-        ease_out_back(add_progress)
+    let add_offset_y = if add_progress >= 0.0 {
+        ((1.0 - ease_out_cubic(add_progress)) * (TASKBAR_H + 8) as f32) as usize
     } else {
-        1.0
+        0
     };
 
     for i in 0..count {
@@ -543,16 +550,12 @@ fn redraw_taskbar(
         let icon_name = wm.get_icon_name(id);
         let is_focused = wm.focused_id == Some(id);
         let is_minimized = wm.is_minimized(id);
-        let scale = if add_progress >= 0.0 && i == count - 1 {
-            add_scale
+        let scaled_d = btn_d;
+        let offset = if add_progress >= 0.0 && i == count - 1 {
+            add_offset_y
         } else {
-            1.0
+            0
         };
-        let scaled_d = (btn_d as f32 * scale) as usize;
-        if scaled_d == 0 {
-            continue;
-        }
-        let offset = btn_d.saturating_sub(scaled_d) / 2;
         let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
         let cached_btn = get_or_render_tb_btn(scaled_d, if is_focused { 255 } else { 100 });
         for py in 0..scaled_d {
@@ -565,7 +568,7 @@ fn redraw_taskbar(
                 if a == 0 {
                     continue;
                 }
-                let dst_x = bx + (offset + px) as i32;
+                let dst_x = bx + px as i32;
                 if dst_x < 0 || dst_x >= w as i32 {
                     continue;
                 }
@@ -582,7 +585,7 @@ fn redraw_taskbar(
         let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
         if let Some(icon) = get_or_decode_icon(resolved_icon, 40) {
             let icon_draw = scaled_d;
-            let icon_offset = btn_d.saturating_sub(icon_draw) / 2;
+            let icon_offset = offset;
             for py in 0..icon_draw {
                 let sy = py * icon.h / icon_draw;
                 let dst_y = btn_y + icon_offset + py;
@@ -596,7 +599,7 @@ fn redraw_taskbar(
                     if a == 0 {
                         continue;
                     }
-                    let dst_x = bx + (icon_offset + px) as i32;
+                    let dst_x = bx + px as i32;
                     if dst_x < 0 || dst_x >= w as i32 {
                         continue;
                     }
