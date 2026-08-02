@@ -11,12 +11,21 @@ use baram_bsd::app::Warp3Archive;
 use baram_core::{Color, LayerSystem};
 use baram_font::ttf_font;
 use baram_font::LayerFontExt;
+use uefi::runtime;
 
 // Progress is derived directly from monotonic time. There are deliberately no
 // animation steps: the compositor samples the exact state whenever it draws.
 const HOVER_DURATION_NS: u64 = 6_500_000;
 const SWITCH_DURATION_NS: u64 = 18_000_000;
 const HOVER_DAMAGE_PAD: i32 = 14;
+
+#[derive(Clone, Copy, Default)]
+struct NowValues {
+    fps: u32,
+    windows: usize,
+    keys: u32,
+    mouse: u32,
+}
 
 struct ShadowMask {
     w: usize,
@@ -364,6 +373,7 @@ pub struct Warp3Engine {
     switch_started_ns: Option<u64>,
     animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
+    now: NowValues,
 }
 
 impl Warp3Engine {
@@ -406,6 +416,7 @@ impl Warp3Engine {
             switch_started_ns: None,
             animation_now_ns: 0,
             shadows: Vec::new(),
+            now: NowValues::default(),
         };
         engine.load_screen();
         engine
@@ -494,6 +505,15 @@ impl Warp3Engine {
         } else {
             Some(self.command_queue.remove(0))
         }
+    }
+
+    pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
+        self.now = NowValues {
+            fps,
+            windows,
+            keys,
+            mouse,
+        };
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
@@ -1497,6 +1517,8 @@ impl Warp3Engine {
         let trimmed = raw.trim();
         if trimmed.starts_with('"') {
             unquote(trimmed)
+        } else if let Some(path) = trimmed.strip_prefix("now://") {
+            self.now_value(path).unwrap_or_default()
         } else if let Some(path) = trimmed.strip_prefix("os://") {
             baram_bsd::config::get_config()
                 .get(path.trim_end_matches('/'))
@@ -1510,6 +1532,21 @@ impl Warp3Engine {
                 state
             }
         }
+    }
+
+    fn now_value(&self, path: &str) -> Option<String> {
+        let time = runtime::get_time().ok()?;
+        let timezone = baram_bsd::config::get_config()
+            .get_i32("system/timezone")
+            .unwrap_or(9);
+        let utc_seconds = time.hour() as i32 * 3600
+            + time.minute() as i32 * 60
+            + time.second() as i32;
+        let local_seconds = (utc_seconds + timezone * 3600).rem_euclid(24 * 3600);
+        let hour = (local_seconds / 3600) as u8;
+        let minute = ((local_seconds / 60) % 60) as u8;
+        let second = (local_seconds % 60) as u8;
+        format_now_value(path, self.now, hour, minute, second)
     }
 
     fn state(&self, name: &str) -> String {
@@ -1547,6 +1584,31 @@ impl Warp3Engine {
             self.invalidate_from(y);
         }
     }
+}
+
+fn format_now_value(
+    path: &str,
+    now: NowValues,
+    hour: u8,
+    minute: u8,
+    second: u8,
+) -> Option<String> {
+    let value = match path.trim_matches('/') {
+        "fps" => now.fps.to_string(),
+        "window" | "windows" => now.windows.to_string(),
+        "key" | "keys" => now.keys.to_string(),
+        "mouse" => now.mouse.to_string(),
+        "h" => hour.to_string(),
+        "m" => minute.to_string(),
+        "s" => second.to_string(),
+        "hh" => alloc::format!("{hour:02}"),
+        "mm" => alloc::format!("{minute:02}"),
+        "ss" => alloc::format!("{second:02}"),
+        "hhmm" => alloc::format!("{hour:02}:{minute:02}"),
+        "hhmmss" => alloc::format!("{hour:02}:{minute:02}:{second:02}"),
+        _ => return None,
+    };
+    Some(value)
 }
 
 fn parse_script(source: &str) -> Vec<ScriptSection> {
@@ -1834,6 +1896,36 @@ mod tests {
         assert!(nodes.iter().any(|node| {
             node.is("button") && node.classes.iter().any(|class| class == "vardemo")
         }));
+    }
+
+    #[test]
+    fn parses_the_task_manager_w3a_ui() {
+        let nodes = Parser::new(include_str!("../../../app/task.w3a/main.w3u")).parse();
+        assert!(nodes.iter().any(|node| {
+            node.is("button") && node.classes.iter().any(|class| class == "refresh-values")
+        }));
+        assert!(nodes.iter().any(|node| {
+            node.is("detail") && node.classes.iter().any(|class| class == "hhmmss-value")
+        }));
+    }
+
+    #[test]
+    fn formats_now_runtime_values_and_time_tokens() {
+        let now = NowValues {
+            fps: 60,
+            windows: 3,
+            keys: 12,
+            mouse: 34,
+        };
+        assert_eq!(format_now_value("fps", now, 4, 5, 6).as_deref(), Some("60"));
+        assert_eq!(format_now_value("window", now, 4, 5, 6).as_deref(), Some("3"));
+        assert_eq!(format_now_value("key", now, 4, 5, 6).as_deref(), Some("12"));
+        assert_eq!(format_now_value("mouse", now, 4, 5, 6).as_deref(), Some("34"));
+        assert_eq!(format_now_value("h", now, 4, 5, 6).as_deref(), Some("4"));
+        assert_eq!(format_now_value("hh", now, 4, 5, 6).as_deref(), Some("04"));
+        assert_eq!(format_now_value("hhmm", now, 4, 5, 6).as_deref(), Some("04:05"));
+        assert_eq!(format_now_value("hhmmss", now, 4, 5, 6).as_deref(), Some("04:05:06"));
+        assert!(format_now_value("unknown", now, 4, 5, 6).is_none());
     }
 
     #[test]

@@ -28,9 +28,9 @@ apps:
     icon: note.png
     type: warp-2
     title: ノート
-  task.warp:
+  task.w3a:
     icon: manager.png
-    type: warp-2
+    type: warp-3
     title: タスクマネージャー
   calc.warp:
     icon: calc.png

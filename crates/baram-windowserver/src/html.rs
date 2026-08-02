@@ -408,6 +408,12 @@ impl HtmlEngine {
         }
     }
 
+    pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.set_runtime_metrics(fps, windows, keys, mouse);
+        }
+    }
+
     pub fn take_scroll_request(&mut self) -> Option<i32> {
         self.warp3.as_mut().and_then(|engine| engine.take_scroll_request())
     }

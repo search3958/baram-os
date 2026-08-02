@@ -988,6 +988,12 @@ fn main() -> Status {
                                         baram_windowserver::window::title_bar_h() as i32;
                                     if rel_y >= tb_h {
                                         engine.set_scroll(scroll);
+                                        engine.set_runtime_metrics(
+                                            fps,
+                                            wm.count(),
+                                            key_ev_count,
+                                            mouse_ev_count,
+                                        );
                                         engine.click(rel_x, rel_y + scroll);
                                         engine.update(
                                             ww as i32,
@@ -1264,6 +1270,12 @@ fn main() -> Status {
                             let tb_h = baram_windowserver::window::title_bar_h() as i32;
                             if rel_y >= tb_h {
                                 engine.set_scroll(scroll);
+                                engine.set_runtime_metrics(
+                                    fps,
+                                    wm.count(),
+                                    key_ev_count,
+                                    mouse_ev_count,
+                                );
                                 engine.click(rel_x, rel_y + scroll);
                                 engine.update(
                                     ww as i32,
@@ -1424,7 +1436,14 @@ fn main() -> Status {
         // Absolute monotonic UI time: transitions derive their progress from
         // this clock, without a runtime-service call in the render hot path.
         let mut deferred_html_commands = alloc::vec::Vec::new();
+        let runtime_window_count = wm.count();
         for (wid, engine) in html_engines.iter_mut() {
+            engine.set_runtime_metrics(
+                fps,
+                runtime_window_count,
+                key_ev_count,
+                mouse_ev_count,
+            );
             if engine.tick(transition_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {
                     wm.set_content_damage(*wid, x0, y0, x1, y1);
