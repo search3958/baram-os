@@ -58,6 +58,7 @@ impl XmlNode {
     }
 }
 
+#[derive(Clone)]
 pub struct Config {
     root: XmlNode,
 }
@@ -480,10 +481,29 @@ pub fn get_config_mut() -> &'static mut Config {
     unsafe { GLOBAL_CONFIG.as_mut().expect("Config not initialized") }
 }
 
-pub fn save_config() {
+pub fn save_config() -> bool {
     let xml = get_config().to_xml();
-    super::vfs::write_file("EFI/BOOT/config.xml", xml.as_bytes());
-    CONFIG_REVISION.fetch_add(1, Ordering::Release);
+    let saved = super::vfs::write_file("EFI/BOOT/config.xml", xml.as_bytes());
+    if saved {
+        CONFIG_REVISION.fetch_add(1, Ordering::Release);
+    }
+    saved
+}
+
+/// Apply a configuration mutation and keep it in memory only when the FAT
+/// write is durable. This prevents a failed real-hardware write from making
+/// the running OS believe a setting was saved successfully.
+pub fn update_and_save(update: impl FnOnce(&mut Config)) -> bool {
+    let backup = get_config().clone();
+    update(get_config_mut());
+    if save_config() {
+        true
+    } else {
+        unsafe {
+            GLOBAL_CONFIG = Some(backup);
+        }
+        false
+    }
 }
 
 /// Changes whenever settings are loaded or saved. Long-lived device drivers

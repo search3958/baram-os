@@ -8,6 +8,6 @@ pub fn load_shift_key() -> u8 {
 }
 
 pub fn save_shift_key(code: u8) {
-    crate::config::get_config_mut().set("keyboard/shift_key", &code.to_string());
-    crate::config::save_config();
+    let value = code.to_string();
+    crate::config::update_and_save(|config| config.set("keyboard/shift_key", &value));
 }

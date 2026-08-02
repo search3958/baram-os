@@ -621,6 +621,8 @@ impl Warp3Engine {
         let mut value = self.nodes[idx].prop("text").to_string();
         if key == 0x08 || key == 0x7f {
             value.pop();
+        } else if (key == b'\n' || key == b'\r') && self.nodes[idx].is("textarea") {
+            value.push('\n');
         } else if (0x20..0x7f).contains(&key) {
             value.push(key as char);
         }

@@ -41,8 +41,7 @@ pub fn allow_always(hash: &str) {
     } else {
         alloc::format!("{current},{hash}")
     };
-    config::get_config_mut().set(ALLOWED_HASHES_PATH, &updated);
-    config::save_config();
+    config::update_and_save(|settings| settings.set(ALLOWED_HASHES_PATH, &updated));
 }
 
 fn is_blake3_hex(value: &str) -> bool {

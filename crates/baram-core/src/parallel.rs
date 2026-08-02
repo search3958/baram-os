@@ -26,6 +26,15 @@ static DISPATCHING: AtomicBool = AtomicBool::new(false);
 /// Detect enabled processors and retain access to the firmware MP dispatcher.
 /// Returns the number of AP workers available to compute jobs.
 pub fn init() -> usize {
+    // Raspberry Pi UEFI implementations commonly expose MP Services while
+    // StartupAllAPs never completes. The first full-screen blur then appears
+    // to freeze immediately after the boot logo. Keep pre-boot rendering on
+    // the BSP on AArch64; it is deterministic and avoids a firmware deadlock.
+    #[cfg(target_arch = "aarch64")]
+    return 0;
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
     let Ok(handle) = boot::get_handle_for_protocol::<MpServices>() else {
         return 0;
     };
@@ -54,6 +63,7 @@ pub fn init() -> usize {
     MP_SERVICES.store(protocol, Ordering::Release);
     WORKER_COUNT.store(workers, Ordering::Release);
     workers
+    }
 }
 
 pub fn worker_count() -> usize {
