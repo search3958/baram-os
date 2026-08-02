@@ -641,13 +641,14 @@ fn main() -> Status {
                         shift_press_idx = 0;
 
                         if mousekey_mode {
-                            let source = baram_bsd::app::load_app_source("mousekeydialog.warp");
                             let nx = (screen.width() as i32 - 400) / 2;
                             let ny = (screen.height() as i32 - 300) / 2;
                             let win_id = wm.add("マウスキー", nx, ny, 400, 300);
-                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
+                            let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(
+                                "mousekeydialog.w3a",
+                            );
                             engine.update(380, 260);
-                            warp_engines.push((win_id, engine));
+                            html_engines.push((win_id, engine));
                             mousekey_win_id = Some(win_id);
                             tb_add_progress = 0.0;
                             tb_add_started_ms = None;
@@ -658,6 +659,7 @@ fn main() -> Status {
                             if let Some(wid) = mousekey_win_id.take() {
                                 wm.remove(wid);
                                 warp_engines.retain(|(id, _)| *id != wid);
+                                html_engines.retain(|(id, _)| *id != wid);
                                 dirty = true;
                                 scene_dirty = true;
                             }

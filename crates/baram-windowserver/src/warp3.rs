@@ -1445,6 +1445,17 @@ impl Warp3Engine {
                         return;
                     }
                 }
+                command if command.starts_with("runSwitch ") => {
+                    let class = command.trim_start_matches("runSwitch ").trim();
+                    let enabled = self.nodes.iter().find(|node| {
+                        node.is("switch") && node.classes.iter().any(|item| item == class)
+                    }).map_or(false, |node| node.prop("default") == "true");
+                    let uri = alloc::format!("{}{}", unquote(&right), enabled);
+                    self.command_queue.push(uri);
+                    self.script_wait_until_ns =
+                        Some(self.animation_now_ns.saturating_add(1));
+                    return;
+                }
                 "fun" => {
                     let name = unquote(&right);
                     if self.script_frames
@@ -1471,7 +1482,13 @@ impl Warp3Engine {
                     self.set_state(variable, &value);
                 }
                 variable => {
-                    let value = if right.trim() == "+1" || right.trim() == "-1" {
+                    let value = if let Some(raw) = right.trim().strip_prefix("append ") {
+                        let mut value = self.state(variable);
+                        value.push_str(&self.value(raw));
+                        value
+                    } else if let Some(raw) = right.trim().strip_prefix("calculate ") {
+                        eval_math(&self.value(raw)).to_string()
+                    } else if right.trim() == "+1" || right.trim() == "-1" {
                         let delta = if right.trim().starts_with('-') { -1 } else { 1 };
                         (self.state(variable).parse::<i32>().unwrap_or(0) + delta).to_string()
                     } else {
@@ -1584,6 +1601,49 @@ impl Warp3Engine {
             self.invalidate_from(y);
         }
     }
+}
+
+fn eval_math(expression: &str) -> i64 {
+    let chars: Vec<char> = expression.chars().collect();
+    let mut index = 0usize;
+    let mut result = parse_math_integer(&chars, &mut index);
+    while index < chars.len() {
+        while index < chars.len() && chars[index].is_whitespace() {
+            index += 1;
+        }
+        if index >= chars.len() {
+            break;
+        }
+        let operator = chars[index];
+        index += 1;
+        let value = parse_math_integer(&chars, &mut index);
+        match operator {
+            '+' => result = result.saturating_add(value),
+            '-' => result = result.saturating_sub(value),
+            '*' => result = result.saturating_mul(value),
+            '/' if value != 0 => result /= value,
+            _ => {}
+        }
+    }
+    result
+}
+
+fn parse_math_integer(chars: &[char], index: &mut usize) -> i64 {
+    while *index < chars.len() && chars[*index].is_whitespace() {
+        *index += 1;
+    }
+    let negative = chars.get(*index) == Some(&'-');
+    if negative {
+        *index += 1;
+    }
+    let mut value = 0i64;
+    while *index < chars.len() && chars[*index].is_ascii_digit() {
+        value = value
+            .saturating_mul(10)
+            .saturating_add(chars[*index].to_digit(10).unwrap_or(0) as i64);
+        *index += 1;
+    }
+    if negative { -value } else { value }
 }
 
 fn format_now_value(
@@ -1907,6 +1967,33 @@ mod tests {
         assert!(nodes.iter().any(|node| {
             node.is("detail") && node.classes.iter().any(|class| class == "hhmmss-value")
         }));
+    }
+
+    #[test]
+    fn parses_the_converted_warp3_apps() {
+        for source in [
+            include_str!("../../../app/calc.w3a/main.w3u"),
+            include_str!("../../../app/mousekeydialog.w3a/main.w3u"),
+            include_str!("../../../app/settings.w3a/main.w3u"),
+            include_str!("../../../app/settings.w3a/theme.w3u"),
+            include_str!("../../../app/settings.w3a/pointer.w3u"),
+            include_str!("../../../app/settings.w3a/hud.w3u"),
+            include_str!("../../../app/settings.w3a/system.w3u"),
+            include_str!("../../../app/theme.w3a/main.w3u"),
+        ] {
+            assert!(!Parser::new(source).parse().is_empty());
+        }
+        assert!(!parse_script(include_str!("../../../app/calc.w3a/calc.w3s")).is_empty());
+        assert!(!parse_script(include_str!("../../../app/settings.w3a/settings.w3s")).is_empty());
+        assert!(!parse_script(include_str!("../../../app/theme.w3a/theme.w3s")).is_empty());
+    }
+
+    #[test]
+    fn evaluates_calculator_expressions_like_warp2() {
+        assert_eq!(eval_math("12+3"), 15);
+        assert_eq!(eval_math("7+3*2"), 20);
+        assert_eq!(eval_math("20/4-2"), 3);
+        assert_eq!(eval_math("9/0"), 9);
     }
 
     #[test]

@@ -1,16 +1,16 @@
 # 自動起動する対象リスト
 autostart:
-  - settings.warp
+  - settings.w3a
 
 # 各アプリの詳細設定
 apps:
-  settings.warp:
+  settings.w3a:
     icon: settings.png
-    type: warp-2
+    type: warp-3
     title: 設定
-  theme.warp:
+  theme.w3a:
     icon: theme.png
-    type: warp-2
+    type: warp-3
     title: カスタマイズ
   demo.u1:
     icon: null
@@ -32,9 +32,9 @@ apps:
     icon: manager.png
     type: warp-3
     title: タスクマネージャー
-  calc.warp:
+  calc.w3a:
     icon: calc.png
-    type: warp-2
+    type: warp-3
     title: 計算機
   webdemo.html:
     icon: html5.png

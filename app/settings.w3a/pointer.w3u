@@ -1,0 +1,35 @@
+config { title("マウスポインター設定") script("settings.w3s") }
+head { text("マウスポインター設定") }
+button.back { text("戻る") type("tonal") }
+
+card {
+    text("マウスポインター")
+    text.pointer-current { text("現在: -") }
+    flex {
+        button.pointer-small { text("Small") }
+        button.pointer-medium { text("Medium") }
+        button.pointer-large { text("Large") }
+    }
+}
+card {
+    text("トラックパッドの速度（共通）")
+    text.trackpad-current { text("現在: - 倍") }
+    text { text("小さな動きは吸収し、素早く動かした時だけ二乗的に加速します") }
+    flex {
+        button.trackpad-1 { text("1倍") type("tonal") }
+        button.trackpad-3 { text("3倍") type("tonal") }
+        button.trackpad-5 { text("5倍（推奨）") }
+        button.trackpad-6 { text("6倍") type("tonal") }
+        button.trackpad-8 { text("8倍") type("tonal") }
+    }
+}
+card {
+    text("USBマウスの速度（共通）")
+    text.mouse-current { text("現在: - 倍") }
+    flex {
+        button.mouse-05 { text("0.5倍") type("tonal") }
+        button.mouse-1 { text("1倍（標準）") }
+        button.mouse-2 { text("2倍") type("tonal") }
+        button.mouse-4 { text("4倍") type("tonal") }
+    }
+}

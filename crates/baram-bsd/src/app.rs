@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn app_uri_accepts_only_local_app_filenames() {
-        assert_eq!(parse_app_uri("app://settings.warp"), Some("settings.warp"));
+        assert_eq!(parse_app_uri("app://settings.w3a"), Some("settings.w3a"));
         assert_eq!(
             parse_app_uri("app://web-demo.html#top"),
             Some("web-demo.html")
