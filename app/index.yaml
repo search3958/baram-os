@@ -20,10 +20,6 @@ apps:
     icon: null
     type: warp-2
     title: Warp Demo
-  files.warp:
-    icon: files.png
-    type: warp-2
-    title: ファイル
   note.warp:
     icon: note.png
     type: warp-2
@@ -45,6 +41,6 @@ apps:
     type: warp-3
     title: Warp 3 デモ
   wamo.w3a:
-    icon: noname.png
+    icon: files.png
     type: warp-3
     title: Warp 3 機能ラボ
