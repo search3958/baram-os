@@ -451,6 +451,7 @@ pub struct WindowManager {
     temp_layer: Option<LayerSystem>,
     order_changed: bool,
     pending_damage: Option<(usize, usize, usize, usize)>,
+    interaction_blocked: Option<WinId>,
 }
 
 impl WindowManager {
@@ -466,6 +467,7 @@ impl WindowManager {
             temp_layer: None,
             order_changed: false,
             pending_damage: None,
+            interaction_blocked: None,
         }
     }
 
@@ -485,6 +487,28 @@ impl WindowManager {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.set_icon(icon_name);
         }
+    }
+
+    pub fn set_interaction_blocked(&mut self, id: Option<WinId>) {
+        if self.interaction_blocked == id {
+            return;
+        }
+        let old_blocked = self.interaction_blocked;
+        if let Some(old_id) = old_blocked {
+            self.set_content_dirty(old_id);
+        }
+        self.interaction_blocked = id;
+        if let Some(new_id) = id {
+            self.set_content_dirty(new_id);
+        } else if let Some(old_id) = old_blocked {
+            if self.focused_id == Some(old_id) {
+                self.focus(old_id);
+            }
+        }
+    }
+
+    pub fn is_interaction_blocked(&self, id: WinId) -> bool {
+        self.interaction_blocked == Some(id)
     }
 
     pub fn get_icon_name(&self, id: WinId) -> &str {
@@ -526,9 +550,15 @@ impl WindowManager {
                 self.focus(fid);
             }
         }
+        if self.interaction_blocked == Some(id) {
+            self.interaction_blocked = None;
+        }
     }
 
     pub fn focus(&mut self, id: WinId) {
+        if self.interaction_blocked == Some(id) {
+            return;
+        }
         for w in &mut self.windows {
             if w.focused != (w.id == id) {
                 w.content_dirty = true;
@@ -545,6 +575,9 @@ impl WindowManager {
 
     pub fn scroll_focused(&mut self, delta: i32) {
         if let Some(id) = self.focused_id {
+            if self.interaction_blocked == Some(id) {
+                return;
+            }
             if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
                 w.scroll(delta);
             }
@@ -552,6 +585,9 @@ impl WindowManager {
     }
 
     pub fn scroll_window(&mut self, id: WinId, delta: i32) {
+        if self.interaction_blocked == Some(id) {
+            return;
+        }
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.scroll(delta);
         }
@@ -970,6 +1006,9 @@ impl WindowManager {
                             break;
                         }
                     }
+                    if self.interaction_blocked == Some(win_id) {
+                        draw_settings_permission_overlay(&mut *layer_ptr, ww, wh);
+                    }
                     // Font glyph antialiasing is blended into the destination.
                     // Never redraw the title during a body-only hover patch:
                     // its glyph writer is intentionally not in the body clip.
@@ -1028,6 +1067,11 @@ impl WindowManager {
 
     pub fn set_content_damage(&mut self, id: WinId, x0: i32, y0: i32, x1: i32, y1: i32) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            if self.interaction_blocked == Some(id) {
+                w.content_dirty = true;
+                w.content_damage = None;
+                return;
+            }
             // `content_dirty && content_damage.is_none()` means a full content
             // redraw is already pending (for example after scrolling). Never
             // downgrade it to a hover-sized patch later in the same frame.
@@ -1125,6 +1169,9 @@ impl WindowManager {
     }
 
     pub fn toggle_maximize_at(&mut self, id: WinId) {
+        if self.interaction_blocked == Some(id) {
+            return;
+        }
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             let sw = self.screen_w;
             let sh = self.screen_h;
@@ -1133,6 +1180,9 @@ impl WindowManager {
     }
 
     pub fn toggle_minimize_at(&mut self, id: WinId) {
+        if self.interaction_blocked == Some(id) {
+            return;
+        }
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.toggle_minimize();
         }
@@ -1159,6 +1209,9 @@ impl WindowManager {
     }
 
     pub fn start_resize_at(&mut self, id: WinId, px: i32, py: i32) {
+        if self.interaction_blocked == Some(id) {
+            return;
+        }
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.resizing = true;
             w.resize_sx = px;
@@ -1169,6 +1222,9 @@ impl WindowManager {
     }
 
     pub fn start_drag_at(&mut self, id: WinId, px: i32, py: i32) {
+        if self.interaction_blocked == Some(id) {
+            return;
+        }
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.start_drag(px, py);
         }
@@ -1492,6 +1548,59 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
                 layer.put_str(title_x, title_y, title, Color::TEXT);
             }
         }
+    }
+}
+
+fn draw_settings_permission_overlay(layer: &mut LayerSystem, width: usize, height: usize) {
+    let content_top = title_bar_h().min(height);
+    let buffer_width = layer.width();
+    let buffer_height = layer.height();
+    let buffer = layer.buf_mut();
+    for y in content_top..height.min(buffer_height) {
+        let row = y * buffer_width;
+        for x in 0..width.min(buffer_width) {
+            let index = row + x;
+            let color = Color(buffer[index]);
+            let blend = |channel: u8| {
+                ((channel as u32 * 70 + 255 * 185) / 255) as u8
+            };
+            buffer[index] = Color::rgb(
+                blend(color.r()),
+                blend(color.g()),
+                blend(color.b()),
+            )
+            .0;
+        }
+    }
+
+    let lines = [
+        "操作体系の設定変更を要求しています",
+        "確認ウィンドウでアクションを選択してください",
+    ];
+    let line_height = 24usize;
+    let block_height = line_height * lines.len();
+    let content_height = height.saturating_sub(content_top);
+    let start_y = content_top + content_height.saturating_sub(block_height) / 2;
+    for (line_index, text) in lines.iter().enumerate() {
+        let text_width = text.chars().map(|ch| {
+            if baram_font::ttf_font::is_available() {
+                let glyph = baram_font::ttf_font::glyph(ch);
+                if glyph.w > 0 {
+                    glyph.advance.max(0) as usize
+                } else {
+                    8
+                }
+            } else {
+                8
+            }
+        }).sum::<usize>();
+        let x = width.saturating_sub(text_width) / 2;
+        layer.put_str(
+            x,
+            start_y + line_index * line_height,
+            text,
+            Color::rgb(40, 40, 40),
+        );
     }
 }
 

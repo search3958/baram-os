@@ -569,7 +569,10 @@ fn main() -> Status {
                 let mut handled = false;
                 if let Some(focused_win) = wm.focused_id {
                     for (wid, engine) in warp_engines.iter_mut() {
-                        if *wid == focused_win && !engine.focused_input_var.is_empty() {
+                        if *wid == focused_win
+                            && !wm.is_interaction_blocked(focused_win)
+                            && !engine.focused_input_var.is_empty()
+                        {
                             engine.handle_key(c);
                             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                                 let tb_h = baram_windowserver::window::title_bar_h() as i32;
@@ -588,7 +591,10 @@ fn main() -> Status {
                 if !handled {
                     if let Some(focused_win) = wm.focused_id {
                         for (wid, engine) in html_engines.iter_mut() {
-                            if *wid == focused_win && engine.has_focused_input() {
+                            if *wid == focused_win
+                                && !wm.is_interaction_blocked(focused_win)
+                                && engine.has_focused_input()
+                            {
                                 engine.handle_key(c);
                                 if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
                                     let content_h = wh.saturating_sub(
@@ -896,7 +902,7 @@ fn main() -> Status {
                         }
                         if let Some(clicked_id) = wm.window_at(cx, cy) {
                             for (wid, engine) in warp_engines.iter_mut() {
-                                if clicked_id == *wid {
+                                if clicked_id == *wid && !wm.is_interaction_blocked(clicked_id) {
                                     if let Some((wx, wy, ww, wh, scroll)) =
                                         wm.get_window_rect(clicked_id)
                                     {
@@ -923,7 +929,7 @@ fn main() -> Status {
                                                     &mut wm,
                                                     &mut html_engines,
                                                     &mut pending_os_permission,
-                                                    None,
+                                                    Some(clicked_id),
                                                     120,
                                                     80,
                                                 ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
@@ -995,7 +1001,7 @@ fn main() -> Status {
                             }
                             let mut html_command = None;
                             for (wid, engine) in html_engines.iter_mut() {
-                                if clicked_id != *wid {
+                                if clicked_id != *wid || wm.is_interaction_blocked(clicked_id) {
                                     continue;
                                 }
                                 if let Some((wx, wy, ww, wh, scroll)) =
@@ -1211,7 +1217,7 @@ fn main() -> Status {
                 }
                 if let Some(clicked_id) = wm.window_at(cx, cy) {
                     for (wid, engine) in warp_engines.iter_mut() {
-                        if clicked_id == *wid {
+                        if clicked_id == *wid && !wm.is_interaction_blocked(clicked_id) {
                             if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
                                 let rel_x = cx - wx;
                                 let rel_y = cy - wy;
@@ -1236,7 +1242,7 @@ fn main() -> Status {
                                             &mut wm,
                                             &mut html_engines,
                                             &mut pending_os_permission,
-                                            None,
+                                            Some(clicked_id),
                                             120,
                                             80,
                                         ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
@@ -1300,7 +1306,7 @@ fn main() -> Status {
                     }
                     let mut html_command = None;
                     for (wid, engine) in html_engines.iter_mut() {
-                        if clicked_id != *wid {
+                        if clicked_id != *wid || wm.is_interaction_blocked(clicked_id) {
                             continue;
                         }
                         if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
@@ -2000,6 +2006,7 @@ fn handle_navigation(
         }
         wm.remove(pending.dialog_win_id);
         html_engines.retain(|(wid, _)| *wid != pending.dialog_win_id);
+        wm.set_interaction_blocked(None);
         if decision == "always" {
             baram_bsd::security::allow_always(&pending.app_hash);
         }
@@ -2103,7 +2110,8 @@ fn authorize_os_setting(
         return false;
     }
 
-    let dialog_win_id = wm.add("OS設定の変更", x, y, 520, 330);
+    let dialog_win_id = wm.add("操作体系設定の変更", x, y, 520, 360);
+    wm.set_icon(dialog_win_id, "redstar.png");
     let mut dialog =
         baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
     dialog.set_warp3_text("app-name", &alloc::format!("アプリ: {origin}"));
@@ -2114,6 +2122,7 @@ fn authorize_os_setting(
     );
     html_engines.push((dialog_win_id, dialog));
     if let Some(source_win_id) = source_win_id {
+        wm.set_interaction_blocked(Some(source_win_id));
         if let Some((_, engine)) = html_engines
             .iter_mut()
             .find(|(wid, _)| *wid == source_win_id)
@@ -2150,6 +2159,7 @@ fn cancel_permission_for_closed_window(
         wm.remove(pending.dialog_win_id);
         html_engines.retain(|(wid, _)| *wid != pending.dialog_win_id);
     }
+    wm.set_interaction_blocked(None);
     if let Some(source_win_id) = pending.source_win_id {
         if source_win_id != closed_win_id {
             if let Some((_, engine)) = html_engines

@@ -25,7 +25,7 @@ text{
 }
 
 head{
-    text("OS設定の読み書き")
+    text("操作体系設定の読み書き")
 }
 card{
     text("HUDの現在値")
