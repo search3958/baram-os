@@ -4,7 +4,9 @@ use alloc::vec::Vec;
 use uefi::boot;
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::proto::console::text::{Input, InputEx, Key};
-use uefi_raw::protocol::console::{KeyShiftState, KeyToggleState};
+use uefi_raw::protocol::console::KeyShiftState;
+#[cfg(not(target_arch = "aarch64"))]
+use uefi_raw::protocol::console::KeyToggleState;
 use uefi::system::with_stdin;
 use baram_bsd::shift_key::load_shift_key;
 use baram_core::KeyEvent;
@@ -178,9 +180,19 @@ impl Keyboard {
             agent: boot::image_handle(),
             controller: None,
         };
+        #[cfg(not(target_arch = "aarch64"))]
         let mut input = unsafe {
             boot::open_protocol::<InputEx>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
         };
+        #[cfg(target_arch = "aarch64")]
+        let input = unsafe {
+            boot::open_protocol::<InputEx>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
+        };
+        // Raspberry Pi's UEFI exposes InputEx but can hang indefinitely in
+        // SetState(EXPOSED). Direct USB HID still supplies modifier-only
+        // reports there, while ordinary InputEx key reads remain available as
+        // a fallback.
+        #[cfg(not(target_arch = "aarch64"))]
         let _ = input.set_state(KeyToggleState::VALID | KeyToggleState::EXPOSED);
         Some(input)
     }

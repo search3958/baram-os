@@ -25,11 +25,34 @@ fn main() -> Status {
     let _ = uefi::helpers::init();
     log_line_str("BaramOS: UEFI helpers initialized");
 
-    let compute_workers = baram_core::parallel::init();
-    log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
-
     let _ = uefi::boot::set_watchdog_timer(0, 0, None);
     log_line_str("BaramOS: watchdog timer disabled");
+
+    let mut screen = match Screen::take() {
+        Ok(s) => {
+            log_line_str(&alloc::format!(
+                "BaramOS: screen {}x{}",
+                s.width(),
+                s.height()
+            ));
+            unsafe { baram_font::log::init_screen(&s) };
+            s
+        }
+        Err(_s) => {
+            log_line_str("BaramOS: screen init failed");
+            return Status::UNSUPPORTED;
+        }
+    };
+
+    unsafe { baram_kern::panic::init_from_screen(&screen) };
+
+    // Make the first visible application action our own framebuffer output.
+    // This must precede config, font, AP and optional input initialization so
+    // a physical-machine stall cannot leave the UEFI prompt on screen.
+    draw_boot_logo(&mut screen);
+
+    let compute_workers = baram_core::parallel::init();
+    log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
 
     config::init_config();
     log_line_str("BaramOS: config loaded");
@@ -52,24 +75,6 @@ fn main() -> Status {
             8,
         ));
     }
-
-    let mut screen = match Screen::take() {
-        Ok(s) => {
-            log_line_str(&alloc::format!(
-                "BaramOS: screen {}x{}",
-                s.width(),
-                s.height()
-            ));
-            unsafe { baram_font::log::init_screen(&s) };
-            s
-        }
-        Err(_s) => {
-            log_line_str("BaramOS: screen init failed");
-            return Status::UNSUPPORTED;
-        }
-    };
-
-    unsafe { baram_kern::panic::init_from_screen(&screen) };
 
     log_line_str("BaramOS: opening mouse...");
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
@@ -109,29 +114,6 @@ fn main() -> Status {
 
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
-        {
-            const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
-            if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
-                let img_w = header.width as usize;
-                let img_h = header.height as usize;
-                let sw = screen.width();
-                let sh = screen.height();
-                let mut logo_layer = LayerSystem::new(sw, sh);
-                logo_layer.clear(Color::BLACK);
-                let ox = (sw.saturating_sub(img_w)) / 2;
-                let oy = (sh.saturating_sub(img_h)) / 2;
-                let buf = logo_layer.buf_mut();
-                for y in 0..img_h {
-                    let dst_row = (oy + y) * sw + ox;
-                    let src_row = y * img_w;
-                    for x in 0..img_w {
-                        let px = pixels[src_row + x];
-                        buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
-                    }
-                }
-                logo_layer.flush(&mut screen);
-            }
-        }
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let setup_w = screen.width();
         let setup_h = screen.height();
@@ -320,29 +302,6 @@ fn main() -> Status {
         "BaramOS: index.yaml {} bytes",
         index_yaml.len()
     ));
-    {
-        const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
-        if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
-            let img_w = header.width as usize;
-            let img_h = header.height as usize;
-            let sw = screen.width();
-            let sh = screen.height();
-            let mut logo_layer = LayerSystem::new(sw, sh);
-            logo_layer.clear(Color::BLACK);
-            let ox = (sw.saturating_sub(img_w)) / 2;
-            let oy = (sh.saturating_sub(img_h)) / 2;
-            let buf = logo_layer.buf_mut();
-            for y in 0..img_h {
-                let dst_row = (oy + y) * sw + ox;
-                let src_row = y * img_w;
-                for x in 0..img_w {
-                    let px = pixels[src_row + x];
-                    buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
-                }
-            }
-            logo_layer.flush(&mut screen);
-        }
-    }
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)> =
         alloc::vec::Vec::new();
@@ -1923,6 +1882,36 @@ fn main() -> Status {
             }
         }
     }
+}
+
+fn draw_boot_logo(screen: &mut Screen) {
+    const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
+    let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) else {
+        screen.clear(Color::BLACK);
+        return;
+    };
+    let img_w = header.width as usize;
+    let img_h = header.height as usize;
+    let screen_w = screen.width();
+    let screen_h = screen.height();
+    let mut logo_layer = LayerSystem::new(screen_w, screen_h);
+    logo_layer.clear(Color::BLACK);
+    let origin_x = screen_w.saturating_sub(img_w) / 2;
+    let origin_y = screen_h.saturating_sub(img_h) / 2;
+    let draw_w = img_w.min(screen_w);
+    let draw_h = img_h.min(screen_h);
+    let source_x = img_w.saturating_sub(screen_w) / 2;
+    let source_y = img_h.saturating_sub(screen_h) / 2;
+    let buffer = logo_layer.buf_mut();
+    for y in 0..draw_h {
+        let dst_row = (origin_y + y) * screen_w + origin_x;
+        let src_row = (source_y + y) * img_w + source_x;
+        for x in 0..draw_w {
+            let pixel = pixels[src_row + x];
+            buffer[dst_row + x] = Color::rgb(pixel[0], pixel[1], pixel[2]).0;
+        }
+    }
+    logo_layer.flush(screen);
 }
 
 #[derive(Clone, Copy, PartialEq)]
