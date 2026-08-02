@@ -426,6 +426,21 @@ impl Warp3Engine {
         &self.app_title
     }
 
+    pub fn set_text(&mut self, class: &str, value: &str) {
+        self.set_element_text(class, value);
+    }
+
+    pub fn hold_command(&mut self) {
+        self.script_wait_until_ns = Some(u64::MAX);
+    }
+
+    pub fn complete_command(&mut self) {
+        if self.script_wait_until_ns == Some(u64::MAX) {
+            self.script_wait_until_ns = None;
+            self.resume_script();
+        }
+    }
+
     pub fn update(&mut self, width: i32, height: i32) {
         if !self.dirty && self.width == width && self.height == height {
             // Hover changes do not affect geometry.  Repaint only the cached
@@ -1436,7 +1451,10 @@ impl Warp3Engine {
                 }
                 "run" => {
                     let command = unquote(&right);
-                    if command.starts_with("os://") || command.starts_with("app://") {
+                    if command.starts_with("os://")
+                        || command.starts_with("app://")
+                        || command.starts_with("security://")
+                    {
                         self.command_queue.push(command);
                         // Yield once so the window server can execute the URI
                         // before a following action reads the changed value.
@@ -1980,12 +1998,22 @@ mod tests {
             include_str!("../../../app/settings.w3a/hud.w3u"),
             include_str!("../../../app/settings.w3a/system.w3u"),
             include_str!("../../../app/theme.w3a/main.w3u"),
+            include_str!("../../../app/ospermission.w3a/main.w3u"),
         ] {
             assert!(!Parser::new(source).parse().is_empty());
         }
         assert!(!parse_script(include_str!("../../../app/calc.w3a/calc.w3s")).is_empty());
         assert!(!parse_script(include_str!("../../../app/settings.w3a/settings.w3s")).is_empty());
         assert!(!parse_script(include_str!("../../../app/theme.w3a/theme.w3s")).is_empty());
+        let permission = parse_script(include_str!(
+            "../../../app/ospermission.w3a/permission.w3s"
+        ));
+        assert!(permission.iter().any(|section| {
+            section.name == "permission-always"
+                && section.actions.iter().any(|(left, right)| {
+                    left == "run" && right == "security://always"
+                })
+        }));
     }
 
     #[test]

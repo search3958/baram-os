@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use uefi::prelude::*;
@@ -396,6 +397,7 @@ fn main() -> Status {
     let mut shift_press_idx: usize = 0;
     let mut prev_shift_held: bool = false;
     let mut mousekey_win_id: Option<WinId> = None;
+    let mut pending_os_permission: Option<PendingOsPermission> = None;
 
     let mouse_mode_label = match &mouse_opt {
         Some(m) if m.is_absolute() => "Absolute",
@@ -868,6 +870,12 @@ fn main() -> Status {
                                     wm.remove(id);
                                     warp_engines.retain(|(wid, _)| *wid != id);
                                     html_engines.retain(|(wid, _)| *wid != id);
+                                    cancel_permission_for_closed_window(
+                                        id,
+                                        &mut wm,
+                                        &mut html_engines,
+                                        &mut pending_os_permission,
+                                    );
                                 }
                                 'm' => {
                                     wm.toggle_maximize_at(id);
@@ -909,7 +917,16 @@ fn main() -> Status {
                                                         p.path.starts_with("display/hud")
                                                     });
                                                 let previous_hud = display_state.hud_enabled;
-                                                if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                                if authorize_os_setting(
+                                                    &cmd,
+                                                    engine.origin(),
+                                                    &mut wm,
+                                                    &mut html_engines,
+                                                    &mut pending_os_permission,
+                                                    None,
+                                                    120,
+                                                    80,
+                                                ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
                                                     engine.update(ww as i32, content_h as i32);
                                                     if is_hud_command {
                                                         hud_damage_pending |= previous_hud
@@ -1004,14 +1021,16 @@ fn main() -> Status {
                                         if let Some(target) = engine.take_scroll_request() {
                                             wm.set_window_scroll(clicked_id, target);
                                         }
-                                        html_command = engine.last_command.take();
+                                        html_command = engine.last_command.take().map(|command| {
+                                            (command, engine.origin().to_string(), *wid)
+                                        });
                                         wm.set_content_dirty(clicked_id);
                                         scene_dirty = true;
                                     }
                                 }
                                 break;
                             }
-                            if let Some(cmd) = html_command {
+                            if let Some((cmd, origin, source_win_id)) = html_command {
                                 let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                                 let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                                 match handle_navigation(
@@ -1023,6 +1042,9 @@ fn main() -> Status {
                                     &mut ui_commands,
                                     &mut ui_win_id,
                                     &mut display_state,
+                                    &origin,
+                                    source_win_id,
+                                    &mut pending_os_permission,
                                     nx,
                                     ny,
                                 ) {
@@ -1171,6 +1193,12 @@ fn main() -> Status {
                             wm.remove(id);
                             warp_engines.retain(|(wid, _)| *wid != id);
                             html_engines.retain(|(wid, _)| *wid != id);
+                            cancel_permission_for_closed_window(
+                                id,
+                                &mut wm,
+                                &mut html_engines,
+                                &mut pending_os_permission,
+                            );
                         }
                         'm' => {
                             wm.toggle_maximize_at(id);
@@ -1202,7 +1230,16 @@ fn main() -> Status {
                                                 p.path.starts_with("display/hud")
                                             });
                                         let previous_hud = display_state.hud_enabled;
-                                        if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                        if authorize_os_setting(
+                                            &cmd,
+                                            engine.origin(),
+                                            &mut wm,
+                                            &mut html_engines,
+                                            &mut pending_os_permission,
+                                            None,
+                                            120,
+                                            80,
+                                        ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
                                             engine.update(ww as i32, content_h as i32);
                                             if is_hud_command {
                                                 hud_damage_pending |=
@@ -1286,14 +1323,16 @@ fn main() -> Status {
                                 if let Some(target) = engine.take_scroll_request() {
                                     wm.set_window_scroll(clicked_id, target);
                                 }
-                                html_command = engine.last_command.take();
+                                html_command = engine.last_command.take().map(|command| {
+                                    (command, engine.origin().to_string(), *wid)
+                                });
                                 wm.set_content_dirty(clicked_id);
                                 scene_dirty = true;
                             }
                         }
                         break;
                     }
-                    if let Some(cmd) = html_command {
+                    if let Some((cmd, origin, source_win_id)) = html_command {
                         let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                         let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                         match handle_navigation(
@@ -1305,6 +1344,9 @@ fn main() -> Status {
                             &mut ui_commands,
                             &mut ui_win_id,
                             &mut display_state,
+                            &origin,
+                            source_win_id,
+                            &mut pending_os_permission,
                             nx,
                             ny,
                         ) {
@@ -1456,10 +1498,10 @@ fn main() -> Status {
                 dirty = true;
             }
             if let Some(command) = engine.last_command.take() {
-                deferred_html_commands.push(command);
+                deferred_html_commands.push((command, engine.origin().to_string(), *wid));
             }
         }
-        for command in deferred_html_commands {
+        for (command, origin, source_win_id) in deferred_html_commands {
             let previous_hud = display_state.hud_enabled;
             let nx = 100 + ((new_window_idx as i32 * 37) % 300);
             let ny = 60 + ((new_window_idx as i32 * 23) % 200);
@@ -1472,6 +1514,9 @@ fn main() -> Status {
                 &mut ui_commands,
                 &mut ui_win_id,
                 &mut display_state,
+                &origin,
+                source_win_id,
+                &mut pending_os_permission,
                 nx,
                 ny,
             ) {
@@ -1881,6 +1926,13 @@ enum NavigationEffect {
     AppOpened,
 }
 
+struct PendingOsPermission {
+    command: alloc::string::String,
+    app_hash: alloc::string::String,
+    dialog_win_id: WinId,
+    source_win_id: Option<WinId>,
+}
+
 fn open_app(
     name: &str,
     app_entries: &[AppEntry],
@@ -1906,6 +1958,7 @@ fn open_app(
     } else if entry.app_type.starts_with("html") {
         let (html, css) = baram_bsd::app::load_html_document(&entry.name);
         let mut engine = baram_windowserver::html::HtmlEngine::new(&html, &css);
+        engine.set_origin(&entry.name);
         engine.update(w as i32, content_h as i32);
         html_engines.push((win_id, engine));
     } else if entry.app_type.starts_with("uiscript") {
@@ -1915,6 +1968,7 @@ fn open_app(
     } else {
         let source = baram_bsd::app::load_app_source(&entry.name);
         let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
+        engine.set_origin(&entry.name);
         engine.update(w as i32, content_h as i32);
         warp_engines.push((win_id, engine));
     }
@@ -1930,9 +1984,41 @@ fn handle_navigation(
     ui_commands: &mut alloc::vec::Vec<baram_graphics::uiscript::Command>,
     ui_win_id: &mut Option<WinId>,
     display_state: &mut baram_bsd::uri::DisplayState,
+    origin: &str,
+    source_win_id: WinId,
+    pending_permission: &mut Option<PendingOsPermission>,
     x: i32,
     y: i32,
 ) -> NavigationEffect {
+    if let Some(decision) = command.strip_prefix("security://") {
+        let Some(pending) = pending_permission.take() else {
+            return NavigationEffect::None;
+        };
+        if source_win_id != pending.dialog_win_id || origin != "ospermission.w3a" {
+            *pending_permission = Some(pending);
+            return NavigationEffect::None;
+        }
+        wm.remove(pending.dialog_win_id);
+        html_engines.retain(|(wid, _)| *wid != pending.dialog_win_id);
+        if decision == "always" {
+            baram_bsd::security::allow_always(&pending.app_hash);
+        }
+        let effect = if decision == "once" || decision == "always" {
+            execute_os_setting(&pending.command, wm, html_engines, display_state)
+        } else {
+            NavigationEffect::None
+        };
+        if let Some(source_win_id) = pending.source_win_id {
+            if let Some((_, engine)) = html_engines
+                .iter_mut()
+                .find(|(wid, _)| *wid == source_win_id)
+            {
+                engine.complete_warp3_command();
+            }
+        }
+        return effect;
+    }
+
     if let Some(name) = baram_bsd::app::parse_app_uri(command) {
         if open_app(
             name,
@@ -1954,14 +2040,125 @@ fn handle_navigation(
         return NavigationEffect::None;
     }
 
-    if baram_bsd::uri::execute(command, display_state) {
-        for (_, engine) in html_engines.iter_mut() {
-            engine.refresh_config();
+    if baram_bsd::security::is_settings_write(command) {
+        let had_pending = pending_permission.is_some();
+        if authorize_os_setting(
+            command,
+            origin,
+            wm,
+            html_engines,
+            pending_permission,
+            Some(source_win_id),
+            x,
+            y,
+        ) {
+            return execute_os_setting(command, wm, html_engines, display_state);
         }
-        wm.set_all_dirty();
-        NavigationEffect::SystemChanged
-    } else {
-        NavigationEffect::None
+        return if !had_pending && pending_permission.is_some() {
+            NavigationEffect::AppOpened
+        } else {
+            NavigationEffect::None
+        };
+    }
+
+    NavigationEffect::None
+}
+
+fn execute_os_setting(
+    command: &str,
+    wm: &mut WindowManager,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    display_state: &mut baram_bsd::uri::DisplayState,
+) -> NavigationEffect {
+    if !baram_bsd::uri::execute(command, display_state) {
+        return NavigationEffect::None;
+    }
+    for (_, engine) in html_engines.iter_mut() {
+        engine.refresh_config();
+    }
+    wm.set_all_dirty();
+    NavigationEffect::SystemChanged
+}
+
+fn authorize_os_setting(
+    command: &str,
+    origin: &str,
+    wm: &mut WindowManager,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    pending_permission: &mut Option<PendingOsPermission>,
+    source_win_id: Option<WinId>,
+    x: i32,
+    y: i32,
+) -> bool {
+    if !baram_bsd::security::is_settings_write(command) {
+        return false;
+    }
+    let Some(hash) = baram_bsd::security::app_hash(origin) else {
+        return false;
+    };
+    if baram_bsd::security::is_always_allowed(&hash) {
+        return true;
+    }
+    if pending_permission.is_some() {
+        return false;
+    }
+
+    let dialog_win_id = wm.add("OS設定の変更", x, y, 520, 330);
+    let mut dialog =
+        baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
+    dialog.set_warp3_text("app-name", &alloc::format!("アプリ: {origin}"));
+    dialog.set_warp3_text("request-path", command);
+    dialog.update(
+        520,
+        330usize.saturating_sub(baram_windowserver::window::title_bar_h()) as i32,
+    );
+    html_engines.push((dialog_win_id, dialog));
+    if let Some(source_win_id) = source_win_id {
+        if let Some((_, engine)) = html_engines
+            .iter_mut()
+            .find(|(wid, _)| *wid == source_win_id)
+        {
+            engine.hold_warp3_command();
+        }
+    }
+    *pending_permission = Some(PendingOsPermission {
+        command: command.into(),
+        app_hash: hash,
+        dialog_win_id,
+        source_win_id,
+    });
+    false
+}
+
+fn cancel_permission_for_closed_window(
+    closed_win_id: WinId,
+    wm: &mut WindowManager,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    pending_permission: &mut Option<PendingOsPermission>,
+) {
+    let should_cancel = pending_permission.as_ref().is_some_and(|pending| {
+        pending.dialog_win_id == closed_win_id
+            || pending.source_win_id == Some(closed_win_id)
+    });
+    if !should_cancel {
+        return;
+    }
+    let Some(pending) = pending_permission.take() else {
+        return;
+    };
+    if pending.dialog_win_id != closed_win_id {
+        wm.remove(pending.dialog_win_id);
+        html_engines.retain(|(wid, _)| *wid != pending.dialog_win_id);
+    }
+    if let Some(source_win_id) = pending.source_win_id {
+        if source_win_id != closed_win_id {
+            if let Some((_, engine)) = html_engines
+                .iter_mut()
+                .find(|(wid, _)| *wid == source_win_id)
+            {
+                engine.complete_warp3_command();
+            }
+        }
     }
 }
 

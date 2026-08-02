@@ -94,6 +94,7 @@ struct ScreenInfo {
 }
 
 pub struct WarpEngine {
+    origin: String,
     state: Vec<(String, String)>,
     current_screen: String,
     parsed_screen_id: String,
@@ -133,6 +134,7 @@ fn measure_text_width(text: &str, _size: f32) -> i32 {
 impl WarpEngine {
     pub fn new(code: &str) -> Self {
         let mut ctx = Self {
+            origin: String::new(),
             state: Vec::new(),
             current_screen: String::new(),
             parsed_screen_id: String::new(),
@@ -223,6 +225,14 @@ impl WarpEngine {
             ctx.current_screen = String::from("main");
         }
         ctx
+    }
+
+    pub fn set_origin(&mut self, app_name: &str) {
+        self.origin = String::from(app_name);
+    }
+
+    pub fn origin(&self) -> &str {
+        &self.origin
     }
 
     pub fn update(&mut self, width: i32, height: i32) {

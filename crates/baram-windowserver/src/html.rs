@@ -201,6 +201,7 @@ struct HitArea {
 
 pub struct HtmlEngine {
     warp3: Option<crate::warp3::Warp3Engine>,
+    origin: String,
     nodes: Vec<Node>,
     rules: Vec<CssRule>,
     root: usize,
@@ -224,6 +225,7 @@ impl HtmlEngine {
         }
         Self {
             warp3: None,
+            origin: String::new(),
             nodes,
             rules: parse_css(&css),
             root,
@@ -242,6 +244,7 @@ impl HtmlEngine {
         let warp3 = crate::warp3::Warp3Engine::new(config_name);
         Self {
             warp3: Some(warp3),
+            origin: String::from(config_name),
             nodes: Vec::new(),
             rules: Vec::new(),
             root: 0,
@@ -253,6 +256,35 @@ impl HtmlEngine {
             layout_dirty: true,
             content_height: 0,
             last_command: None,
+        }
+    }
+
+    pub fn set_origin(&mut self, app_name: &str) {
+        self.origin = String::from(app_name);
+    }
+
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+
+    pub fn set_warp3_text(&mut self, class: &str, value: &str) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.set_text(class, value);
+        }
+    }
+
+    pub fn hold_warp3_command(&mut self) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.hold_command();
+        }
+    }
+
+    pub fn complete_warp3_command(&mut self) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.complete_command();
+            if self.last_command.is_none() {
+                self.last_command = engine.take_command();
+            }
         }
     }
 
