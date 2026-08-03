@@ -88,9 +88,8 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
         None => return false,
     };
 
-    let mut shared_pointer_speed = None;
-    {
-        let cfg = config::get_config_mut();
+    let saved = config::update_and_save(|cfg| {
+        let mut shared_pointer_speed = None;
         for (key, value) in &cmd.params {
             let full_path = if key.is_empty() {
                 cmd.path.clone()
@@ -111,9 +110,10 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
             cfg.set("mouse/speed", speed);
             cfg.set("trackpad/speed", speed);
         }
+    });
+    if !saved {
+        return false;
     }
-
-    config::save_config();
     load_settings_from_config(state);
     true
 }

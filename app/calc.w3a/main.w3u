@@ -1,0 +1,36 @@
+config {
+    title("計算機")
+    script("calc.w3s")
+}
+
+head { text("計算機") }
+
+card {
+    text.expression-display { text("") }
+    head.result-display { text("0") }
+}
+
+flex {
+    button.digit-7 { text("7") type("tonal") }
+    button.digit-8 { text("8") type("tonal") }
+    button.digit-9 { text("9") type("tonal") }
+    button.op-div { text("÷") }
+}
+flex {
+    button.digit-4 { text("4") type("tonal") }
+    button.digit-5 { text("5") type("tonal") }
+    button.digit-6 { text("6") type("tonal") }
+    button.op-mul { text("×") }
+}
+flex {
+    button.digit-1 { text("1") type("tonal") }
+    button.digit-2 { text("2") type("tonal") }
+    button.digit-3 { text("3") type("tonal") }
+    button.op-sub { text("−") }
+}
+flex {
+    button.digit-0 { text("0") type("tonal") }
+    button.equals { text("=") }
+    button.op-add { text("+") }
+    button.clear { text("C") type("danger") }
+}

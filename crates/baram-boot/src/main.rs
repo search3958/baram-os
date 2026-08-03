@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use uefi::prelude::*;
@@ -11,7 +12,7 @@ use uefi::runtime;
 use baram_bsd::config;
 use baram_bsd::shift_key;
 use baram_core::{Color, LayerSystem, Screen};
-use baram_font::{log_line_str, LayerFontExt};
+use baram_font::log_line_str;
 use baram_iokit::keyboard::Keyboard;
 use baram_iokit::mouse::Mouse;
 use baram_windowserver::compositor::*;
@@ -26,6 +27,32 @@ fn main() -> Status {
 
     let _ = uefi::boot::set_watchdog_timer(0, 0, None);
     log_line_str("BaramOS: watchdog timer disabled");
+
+    let mut screen = match Screen::take() {
+        Ok(s) => {
+            log_line_str(&alloc::format!(
+                "BaramOS: screen {}x{}",
+                s.width(),
+                s.height()
+            ));
+            unsafe { baram_font::log::init_screen(&s) };
+            s
+        }
+        Err(_s) => {
+            log_line_str("BaramOS: screen init failed");
+            return Status::UNSUPPORTED;
+        }
+    };
+
+    unsafe { baram_kern::panic::init_from_screen(&screen) };
+
+    // Make the first visible application action our own framebuffer output.
+    // This must precede config, font, AP and optional input initialization so
+    // a physical-machine stall cannot leave the UEFI prompt on screen.
+    draw_boot_logo(&mut screen);
+
+    let compute_workers = baram_core::parallel::init();
+    log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
 
     config::init_config();
     log_line_str("BaramOS: config loaded");
@@ -48,24 +75,6 @@ fn main() -> Status {
             8,
         ));
     }
-
-    let mut screen = match Screen::take() {
-        Ok(s) => {
-            log_line_str(&alloc::format!(
-                "BaramOS: screen {}x{}",
-                s.width(),
-                s.height()
-            ));
-            unsafe { baram_font::log::init_screen(&s) };
-            s
-        }
-        Err(_s) => {
-            log_line_str("BaramOS: screen init failed");
-            return Status::UNSUPPORTED;
-        }
-    };
-
-    unsafe { baram_kern::panic::init_from_screen(&screen) };
 
     log_line_str("BaramOS: opening mouse...");
     let mut mouse_opt: Option<Mouse> = match Mouse::open() {
@@ -105,35 +114,15 @@ fn main() -> Status {
 
     if !baram_bsd::setup::is_setup_done() {
         log_line_str("BaramOS: first boot detected, starting setup wizard");
-        {
-            const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
-            if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
-                let img_w = header.width as usize;
-                let img_h = header.height as usize;
-                let sw = screen.width();
-                let sh = screen.height();
-                let mut logo_layer = LayerSystem::new(sw, sh);
-                logo_layer.clear(Color::BLACK);
-                let ox = (sw.saturating_sub(img_w)) / 2;
-                let oy = (sh.saturating_sub(img_h)) / 2;
-                let buf = logo_layer.buf_mut();
-                for y in 0..img_h {
-                    let dst_row = (oy + y) * sw + ox;
-                    let src_row = y * img_w;
-                    for x in 0..img_w {
-                        let px = pixels[src_row + x];
-                        buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
-                    }
-                }
-                logo_layer.flush(&mut screen);
-            }
-        }
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let setup_w = screen.width();
         let setup_h = screen.height();
-        let mut setup_engine = baram_windowserver::warp::WarpEngine::new(
-            baram_windowserver::warp::SETUP_WARP_SOURCE,
-        );
+        let mut setup_engine = baram_windowserver::html::HtmlEngine::new_warp3("setup.w3a");
+        let mut setup_scene = LayerSystem::new(setup_w, setup_h);
+        let mut setup_present = LayerSystem::new(setup_w, setup_h);
+        let mut setup_surface = LayerSystem::new(528, 320);
+        let setup_origin = ((setup_w as i32 - 528) / 2, (setup_h as i32 - 320) / 2);
+        let setup_card = (setup_origin.0, setup_origin.1, 528usize, 320usize);
         let setup_wallpaper = wallpaper_for_state(&display_state, setup_w, setup_h);
         let setup_background = setup_wallpaper.as_ref().map(|wallpaper| {
             let mut blurred = alloc::vec![0u32; setup_w * setup_h];
@@ -149,38 +138,24 @@ fn main() -> Status {
             );
             blurred
         });
-        let mut setup_scene = LayerSystem::new(setup_w, setup_h);
-        let mut setup_present = LayerSystem::new(setup_w, setup_h);
-        let mut setup_origin = (0i32, 0i32);
-        let mut setup_card = (0i32, 0i32, 0usize, 0usize);
-        let mut setup_scene_dirty = true;
-        let mut setup_prev_cursor = (cursor_x, cursor_y);
-        setup_engine.set_screen(wizard.warp_screen());
-        setup_engine.update(528, 320);
-        if let Some((x, y, w, h)) = setup_engine.node_bounds("setupCard") {
-            setup_origin = (
-                (setup_w as i32 - w) / 2 - x,
-                (setup_h as i32 - h) / 2 - y,
-            );
-            setup_card = (
-                x + setup_origin.0,
-                y + setup_origin.1,
-                w.max(0) as usize,
-                h.max(0) as usize,
-            );
-        }
         let card_radius = config::get_usize("ui-theme/card/radius", 12);
-        let mut setup_shadow = baram_windowserver::window::RoundedShadow::new(
+        let setup_shadow = baram_windowserver::window::RoundedShadow::new(
             setup_card.2,
             setup_card.3,
             card_radius,
         );
+        let mut setup_scene_dirty = true;
+        let mut setup_prev_cursor = (cursor_x, cursor_y);
+        let mut setup_now_ns = 0u64;
+        setup_engine.set_warp3_screen(wizard.warp3_screen());
+        setup_engine.update(528, 320);
 
         loop {
             if let Some(ref timer) = timer_event {
                 let mut events = [unsafe { core::ptr::read(timer) }];
                 let _ = uefi::boot::wait_for_event(&mut events);
             }
+            setup_now_ns = setup_now_ns.saturating_add(1_000_000);
 
             while let Some(ev) = keyboard.poll() {
                 wizard.on_key(&ev);
@@ -200,6 +175,7 @@ fn main() -> Status {
                         cursor_x - setup_origin.0,
                         cursor_y - setup_origin.1,
                     );
+                    setup_scene_dirty = true;
                     if ev.left {
                         setup_engine.click(
                             cursor_x - setup_origin.0,
@@ -219,31 +195,11 @@ fn main() -> Status {
             cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
             if wizard.take_dirty() {
-                setup_engine.set_screen(wizard.warp_screen());
+                setup_engine.set_warp3_screen(wizard.warp3_screen());
                 setup_engine.update(528, 320);
-                if let Some((x, y, w, h)) = setup_engine.node_bounds("setupCard") {
-                    setup_origin = (
-                        (setup_w as i32 - w) / 2 - x,
-                        (setup_h as i32 - h) / 2 - y,
-                    );
-                    let new_card = (
-                        x + setup_origin.0,
-                        y + setup_origin.1,
-                        w.max(0) as usize,
-                        h.max(0) as usize,
-                    );
-                    if new_card.2 != setup_card.2 || new_card.3 != setup_card.3 {
-                        setup_shadow = baram_windowserver::window::RoundedShadow::new(
-                            new_card.2,
-                            new_card.3,
-                            card_radius,
-                        );
-                    }
-                    setup_card = new_card;
-                }
                 setup_scene_dirty = true;
             }
-            if setup_engine.dirty {
+            if setup_engine.tick(setup_now_ns) {
                 setup_scene_dirty = true;
             }
 
@@ -256,9 +212,18 @@ fn main() -> Status {
                 if let Some(ref shadow) = setup_shadow {
                     shadow.composite_onto(&mut setup_scene, setup_card.0, setup_card.1);
                 }
-                setup_engine.draw_to_layer(&mut setup_scene, setup_origin.0, setup_origin.1);
-                setup_engine.draw_texts(&mut setup_scene, setup_origin.0, setup_origin.1, 1.0);
-                setup_engine.dirty = false;
+                setup_engine.update(528, 320);
+                setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
+                setup_scene.composit_rounded(
+                    &setup_surface,
+                    setup_origin.0.max(0) as usize,
+                    setup_origin.1.max(0) as usize,
+                    0,
+                    0,
+                    528,
+                    320,
+                    card_radius,
+                );
                 setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
             } else {
                 let pad = 32i32;
@@ -316,29 +281,6 @@ fn main() -> Status {
         "BaramOS: index.yaml {} bytes",
         index_yaml.len()
     ));
-    {
-        const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
-        if let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) {
-            let img_w = header.width as usize;
-            let img_h = header.height as usize;
-            let sw = screen.width();
-            let sh = screen.height();
-            let mut logo_layer = LayerSystem::new(sw, sh);
-            logo_layer.clear(Color::BLACK);
-            let ox = (sw.saturating_sub(img_w)) / 2;
-            let oy = (sh.saturating_sub(img_h)) / 2;
-            let buf = logo_layer.buf_mut();
-            for y in 0..img_h {
-                let dst_row = (oy + y) * sw + ox;
-                let src_row = y * img_w;
-                for x in 0..img_w {
-                    let px = pixels[src_row + x];
-                    buf[dst_row + x] = Color::rgb(px[0], px[1], px[2]).0;
-                }
-            }
-            logo_layer.flush(&mut screen);
-        }
-    }
     let (autostart_list, app_entries) = parse_index_yaml(&index_yaml);
     let mut warp_engines: alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)> =
         alloc::vec::Vec::new();
@@ -393,6 +335,7 @@ fn main() -> Status {
     let mut shift_press_idx: usize = 0;
     let mut prev_shift_held: bool = false;
     let mut mousekey_win_id: Option<WinId> = None;
+    let mut pending_os_permission: Option<PendingOsPermission> = None;
 
     let mouse_mode_label = match &mouse_opt {
         Some(m) if m.is_absolute() => "Absolute",
@@ -419,8 +362,12 @@ fn main() -> Status {
     let mut bg_cache: Option<Vec<u32>> = None;
     let mut prev_wallpaper_idx: usize = display_state.wallpaper_index;
     let mut hud_damage_pending = false;
+    // Monotonic UI clock driven by the already-configured 1 ms timer event.
+    // Do not query the slow, wall-clock UEFI runtime service per frame.
+    let mut ui_time_ms: u64 = 0;
 
     let mut tb_add_progress: f32 = -1.0f32;
+    let mut tb_add_started_ms: Option<u64> = None;
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
     let mut show_app_launcher: bool = false;
@@ -499,6 +446,7 @@ fn main() -> Status {
 
     loop {
         let mut dirty = false;
+        let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
             let mut events: [uefi::Event; 2] = [unsafe { core::ptr::read(timer) }, unsafe { core::ptr::read(timer) }];
@@ -507,7 +455,17 @@ fn main() -> Status {
                 events[1] = unsafe { core::ptr::read(mevt) };
                 n = 2;
             }
-            let _ = uefi::boot::wait_for_event(&mut events[..n]);
+            ui_timer_fired = match uefi::boot::wait_for_event(&mut events[..n]) {
+                Ok(0) => true,
+                // Mouse input can stay signalled continuously. Consume the
+                // periodic tick too, otherwise absolute-time UI animations
+                // stop until pointer input becomes idle.
+                Ok(_) => uefi::boot::check_event(timer).unwrap_or(false),
+                Err(_) => false,
+            };
+        }
+        if ui_timer_fired {
+            ui_time_ms = ui_time_ms.wrapping_add(1);
         }
 
         match baram_bsd::uri::check_system_commands(&mut display_state) {
@@ -549,7 +507,10 @@ fn main() -> Status {
                 let mut handled = false;
                 if let Some(focused_win) = wm.focused_id {
                     for (wid, engine) in warp_engines.iter_mut() {
-                        if *wid == focused_win && !engine.focused_input_var.is_empty() {
+                        if *wid == focused_win
+                            && !wm.is_interaction_blocked(focused_win)
+                            && !engine.focused_input_var.is_empty()
+                        {
                             engine.handle_key(c);
                             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                                 let tb_h = baram_windowserver::window::title_bar_h() as i32;
@@ -562,6 +523,31 @@ fn main() -> Status {
                             dirty = true;
                             scene_dirty = true;
                             break;
+                        }
+                    }
+                }
+                if !handled {
+                    if let Some(focused_win) = wm.focused_id {
+                        for (wid, engine) in html_engines.iter_mut() {
+                            if *wid == focused_win
+                                && !wm.is_interaction_blocked(focused_win)
+                                && engine.has_focused_input()
+                            {
+                                engine.handle_key(c);
+                                if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
+                                    let content_h = wh.saturating_sub(
+                                        baram_windowserver::window::title_bar_h(),
+                                    );
+                                    engine.set_scroll(scroll);
+                                    engine.update(ww as i32, content_h as i32);
+                                    wm.clamp_window_scroll(*wid, engine.content_height);
+                                    wm.set_content_dirty(*wid);
+                                }
+                                handled = true;
+                                dirty = true;
+                                scene_dirty = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -601,15 +587,17 @@ fn main() -> Status {
                         shift_press_idx = 0;
 
                         if mousekey_mode {
-                            let source = baram_bsd::app::load_app_source("mousekeydialog.warp");
                             let nx = (screen.width() as i32 - 400) / 2;
                             let ny = (screen.height() as i32 - 300) / 2;
                             let win_id = wm.add("マウスキー", nx, ny, 400, 300);
-                            let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
+                            let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(
+                                "mousekeydialog.w3a",
+                            );
                             engine.update(380, 260);
-                            warp_engines.push((win_id, engine));
+                            html_engines.push((win_id, engine));
                             mousekey_win_id = Some(win_id);
                             tb_add_progress = 0.0;
+                            tb_add_started_ms = None;
                             tb_shift_x = 26.0;
                             dirty = true;
                             scene_dirty = true;
@@ -617,6 +605,7 @@ fn main() -> Status {
                             if let Some(wid) = mousekey_win_id.take() {
                                 wm.remove(wid);
                                 warp_engines.retain(|(id, _)| *id != wid);
+                                html_engines.retain(|(id, _)| *id != wid);
                                 dirty = true;
                                 scene_dirty = true;
                             }
@@ -770,6 +759,7 @@ fn main() -> Status {
                                 450,
                             );
                             tb_add_progress = 0.0;
+                            tb_add_started_ms = None;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
                         }
@@ -824,6 +814,12 @@ fn main() -> Status {
                                     wm.remove(id);
                                     warp_engines.retain(|(wid, _)| *wid != id);
                                     html_engines.retain(|(wid, _)| *wid != id);
+                                    cancel_permission_for_closed_window(
+                                        id,
+                                        &mut wm,
+                                        &mut html_engines,
+                                        &mut pending_os_permission,
+                                    );
                                 }
                                 'm' => {
                                     wm.toggle_maximize_at(id);
@@ -844,7 +840,7 @@ fn main() -> Status {
                         }
                         if let Some(clicked_id) = wm.window_at(cx, cy) {
                             for (wid, engine) in warp_engines.iter_mut() {
-                                if clicked_id == *wid {
+                                if clicked_id == *wid && !wm.is_interaction_blocked(clicked_id) {
                                     if let Some((wx, wy, ww, wh, scroll)) =
                                         wm.get_window_rect(clicked_id)
                                     {
@@ -865,7 +861,16 @@ fn main() -> Status {
                                                         p.path.starts_with("display/hud")
                                                     });
                                                 let previous_hud = display_state.hud_enabled;
-                                                if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                                if authorize_os_setting(
+                                                    &cmd,
+                                                    engine.origin(),
+                                                    &mut wm,
+                                                    &mut html_engines,
+                                                    &mut pending_os_permission,
+                                                    Some(clicked_id),
+                                                    120,
+                                                    80,
+                                                ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
                                                     engine.update(ww as i32, content_h as i32);
                                                     if is_hud_command {
                                                         hud_damage_pending |= previous_hud
@@ -934,7 +939,7 @@ fn main() -> Status {
                             }
                             let mut html_command = None;
                             for (wid, engine) in html_engines.iter_mut() {
-                                if clicked_id != *wid {
+                                if clicked_id != *wid || wm.is_interaction_blocked(clicked_id) {
                                     continue;
                                 }
                                 if let Some((wx, wy, ww, wh, scroll)) =
@@ -945,19 +950,31 @@ fn main() -> Status {
                                     let tb_h =
                                         baram_windowserver::window::title_bar_h() as i32;
                                     if rel_y >= tb_h {
+                                        engine.set_scroll(scroll);
+                                        engine.set_runtime_metrics(
+                                            fps,
+                                            wm.count(),
+                                            key_ev_count,
+                                            mouse_ev_count,
+                                        );
                                         engine.click(rel_x, rel_y + scroll);
                                         engine.update(
                                             ww as i32,
                                             wh.saturating_sub(tb_h as usize) as i32,
                                         );
-                                        html_command = engine.last_command.take();
+                                        if let Some(target) = engine.take_scroll_request() {
+                                            wm.set_window_scroll(clicked_id, target);
+                                        }
+                                        html_command = engine.last_command.take().map(|command| {
+                                            (command, engine.origin().to_string(), *wid)
+                                        });
                                         wm.set_content_dirty(clicked_id);
                                         scene_dirty = true;
                                     }
                                 }
                                 break;
                             }
-                            if let Some(cmd) = html_command {
+                            if let Some((cmd, origin, source_win_id)) = html_command {
                                 let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                                 let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                                 match handle_navigation(
@@ -969,12 +986,16 @@ fn main() -> Status {
                                     &mut ui_commands,
                                     &mut ui_win_id,
                                     &mut display_state,
+                                    &origin,
+                                    source_win_id,
+                                    &mut pending_os_permission,
                                     nx,
                                     ny,
                                 ) {
                                     NavigationEffect::AppOpened => {
                                         new_window_idx = new_window_idx.wrapping_add(1);
                                         tb_add_progress = 0.0;
+                                        tb_add_started_ms = None;
                                         tb_shift_x = 26.0;
                                     }
                                     NavigationEffect::SystemChanged => {
@@ -1063,6 +1084,7 @@ fn main() -> Status {
                         450,
                     );
                     tb_add_progress = 0.0;
+                    tb_add_started_ms = None;
                     tb_shift_x = 26.0;
                     new_window_idx = new_window_idx.wrapping_add(1);
                 }
@@ -1115,6 +1137,12 @@ fn main() -> Status {
                             wm.remove(id);
                             warp_engines.retain(|(wid, _)| *wid != id);
                             html_engines.retain(|(wid, _)| *wid != id);
+                            cancel_permission_for_closed_window(
+                                id,
+                                &mut wm,
+                                &mut html_engines,
+                                &mut pending_os_permission,
+                            );
                         }
                         'm' => {
                             wm.toggle_maximize_at(id);
@@ -1127,7 +1155,7 @@ fn main() -> Status {
                 }
                 if let Some(clicked_id) = wm.window_at(cx, cy) {
                     for (wid, engine) in warp_engines.iter_mut() {
-                        if clicked_id == *wid {
+                        if clicked_id == *wid && !wm.is_interaction_blocked(clicked_id) {
                             if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
                                 let rel_x = cx - wx;
                                 let rel_y = cy - wy;
@@ -1146,7 +1174,16 @@ fn main() -> Status {
                                                 p.path.starts_with("display/hud")
                                             });
                                         let previous_hud = display_state.hud_enabled;
-                                        if baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                        if authorize_os_setting(
+                                            &cmd,
+                                            engine.origin(),
+                                            &mut wm,
+                                            &mut html_engines,
+                                            &mut pending_os_permission,
+                                            Some(clicked_id),
+                                            120,
+                                            80,
+                                        ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
                                             engine.update(ww as i32, content_h as i32);
                                             if is_hud_command {
                                                 hud_damage_pending |=
@@ -1207,7 +1244,7 @@ fn main() -> Status {
                     }
                     let mut html_command = None;
                     for (wid, engine) in html_engines.iter_mut() {
-                        if clicked_id != *wid {
+                        if clicked_id != *wid || wm.is_interaction_blocked(clicked_id) {
                             continue;
                         }
                         if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
@@ -1215,19 +1252,31 @@ fn main() -> Status {
                             let rel_y = cy - wy;
                             let tb_h = baram_windowserver::window::title_bar_h() as i32;
                             if rel_y >= tb_h {
+                                engine.set_scroll(scroll);
+                                engine.set_runtime_metrics(
+                                    fps,
+                                    wm.count(),
+                                    key_ev_count,
+                                    mouse_ev_count,
+                                );
                                 engine.click(rel_x, rel_y + scroll);
                                 engine.update(
                                     ww as i32,
                                     wh.saturating_sub(tb_h as usize) as i32,
                                 );
-                                html_command = engine.last_command.take();
+                                if let Some(target) = engine.take_scroll_request() {
+                                    wm.set_window_scroll(clicked_id, target);
+                                }
+                                html_command = engine.last_command.take().map(|command| {
+                                    (command, engine.origin().to_string(), *wid)
+                                });
                                 wm.set_content_dirty(clicked_id);
                                 scene_dirty = true;
                             }
                         }
                         break;
                     }
-                    if let Some(cmd) = html_command {
+                    if let Some((cmd, origin, source_win_id)) = html_command {
                         let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                         let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                         match handle_navigation(
@@ -1239,12 +1288,16 @@ fn main() -> Status {
                             &mut ui_commands,
                             &mut ui_win_id,
                             &mut display_state,
+                            &origin,
+                            source_win_id,
+                            &mut pending_os_permission,
                             nx,
                             ny,
                         ) {
                             NavigationEffect::AppOpened => {
                                 new_window_idx = new_window_idx.wrapping_add(1);
                                 tb_add_progress = 0.0;
+                                tb_add_started_ms = None;
                                 tb_shift_x = 26.0;
                             }
                             NavigationEffect::SystemChanged => {
@@ -1284,11 +1337,26 @@ fn main() -> Status {
             }
         }
 
+        // Scroll positions are sampled from absolute time. The backing
+        // document is already rasterized; each sample only changes the source
+        // offset used for the viewport copy.
+        let transition_now_ns = ui_time_ms * 1_000_000;
+        if wm.tick_scroll_animations(transition_now_ns) {
+            scene_dirty = true;
+            dirty = true;
+        }
+
         {
             let mut hovered_any = false;
             if let Some(hover_id) = wm.window_at(cursor_x, cursor_y) {
+                let scrolling = wm.is_scroll_animating(hover_id);
                 for (wid, engine) in warp_engines.iter_mut() {
                     if hover_id == *wid {
+                        if scrolling {
+                            engine.clear_hover();
+                            hovered_any = true;
+                            break;
+                        }
                         if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
                             let rel_x = cursor_x - wx;
                             let rel_y = cursor_y - wy;
@@ -1312,18 +1380,28 @@ fn main() -> Status {
                 }
                 for (wid, engine) in html_engines.iter_mut() {
                     if hover_id == *wid {
+                        if scrolling {
+                            engine.cancel_hover();
+                            hovered_any = true;
+                            break;
+                        }
                         if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
                             let rel_x = cursor_x - wx;
                             let rel_y = cursor_y - wy;
                             let tb_h = baram_windowserver::window::title_bar_h() as i32;
                             let previous = engine.hovered_node();
                             if rel_y >= tb_h {
+                                engine.set_scroll(scroll);
                                 engine.set_hover(rel_x, rel_y + scroll);
                             } else {
                                 engine.clear_hover();
                             }
                             if engine.hovered_node() != previous {
-                                wm.set_content_dirty(hover_id);
+                                if let Some((x0, y0, x1, y1)) = engine.window_damage() {
+                                    wm.set_content_damage(hover_id, x0, y0, x1, y1);
+                                } else {
+                                    wm.set_content_dirty(hover_id);
+                                }
                                 scene_dirty = true;
                                 dirty = true;
                             }
@@ -1341,6 +1419,73 @@ fn main() -> Status {
                     engine.clear_hover();
                 }
             }
+        }
+
+        // Absolute monotonic UI time: transitions derive their progress from
+        // this clock, without a runtime-service call in the render hot path.
+        let mut deferred_html_commands = alloc::vec::Vec::new();
+        let runtime_window_count = wm.count();
+        for (wid, engine) in html_engines.iter_mut() {
+            engine.set_runtime_metrics(
+                fps,
+                runtime_window_count,
+                key_ev_count,
+                mouse_ev_count,
+            );
+            if engine.tick(transition_now_ns) {
+                if let Some((x0, y0, x1, y1)) = engine.window_damage() {
+                    wm.set_content_damage(*wid, x0, y0, x1, y1);
+                } else {
+                    wm.set_content_dirty(*wid);
+                }
+                scene_dirty = true;
+                dirty = true;
+            }
+            if let Some(command) = engine.last_command.take() {
+                deferred_html_commands.push((command, engine.origin().to_string(), *wid));
+            }
+        }
+        for (command, origin, source_win_id) in deferred_html_commands {
+            let previous_hud = display_state.hud_enabled;
+            let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+            let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+            match handle_navigation(
+                &command,
+                &app_entries,
+                &mut wm,
+                &mut warp_engines,
+                &mut html_engines,
+                &mut ui_commands,
+                &mut ui_win_id,
+                &mut display_state,
+                &origin,
+                source_win_id,
+                &mut pending_os_permission,
+                nx,
+                ny,
+            ) {
+                NavigationEffect::AppOpened => {
+                    new_window_idx = new_window_idx.wrapping_add(1);
+                    tb_add_progress = 0.0;
+                    tb_add_started_ms = None;
+                    tb_shift_x = 26.0;
+                }
+                NavigationEffect::SystemChanged => {
+                    hud_damage_pending |= previous_hud != display_state.hud_enabled;
+                    taskbar_surface.invalidate();
+                    cached_launcher_layer = None;
+                    bg_cache = None;
+                    cached_wallpaper = wallpaper_for_state(
+                        &display_state,
+                        screen.width(),
+                        screen.height(),
+                    );
+                    prev_wallpaper_idx = display_state.wallpaper_index;
+                }
+                NavigationEffect::None => {}
+            }
+            scene_dirty = true;
+            dirty = true;
         }
 
         frames = frames.wrapping_add(1);
@@ -1393,36 +1538,32 @@ fn main() -> Status {
             }
         }
         for (wid, engine) in html_engines.iter_mut() {
-            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+            if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
                 let content_h =
                     wh.saturating_sub(baram_windowserver::window::title_bar_h());
+                engine.set_scroll(scroll);
                 engine.update(ww as i32, content_h as i32);
                 wm.clamp_window_scroll(*wid, engine.content_height);
             }
         }
 
-        let anim_speed = 10.0f32;
-        let dt = 0.008f32;
-
         if tb_add_progress >= 0.0 {
-            tb_add_progress = (tb_add_progress + anim_speed * dt).min(1.0);
+            if tb_add_started_ms.is_none() {
+                tb_add_started_ms = Some(ui_time_ms);
+            }
+            let started = tb_add_started_ms.unwrap_or(ui_time_ms);
+            tb_add_progress = (ui_time_ms.saturating_sub(started) as f32 / 12.0).min(1.0);
+            let remaining = 1.0 - tb_add_progress;
+            let eased = 1.0 - remaining * remaining * remaining;
+            tb_shift_x = 26.0 * (1.0 - eased);
             dirty = true;
             scene_dirty = true;
         }
 
         if tb_remove_progress >= 0.0 {
-            tb_remove_progress = (tb_remove_progress + anim_speed * dt).min(1.0);
+            tb_remove_progress = (tb_remove_progress + 0.2).min(1.0);
             dirty = true;
             scene_dirty = true;
-        }
-
-        if tb_shift_x.abs() > 0.5 {
-            tb_shift_x *= 0.8;
-            dirty = true;
-            scene_dirty = true;
-            if tb_shift_x.abs() < 0.5 {
-                tb_shift_x = 0.0;
-            }
         }
 
         if dirty {
@@ -1447,7 +1588,6 @@ fn main() -> Status {
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
                 let taskbar_only = taskbar_dirty
-                    && taskbar_surface.has_backdrop()
                     && bx1 <= bx0
                     && !hud_dirty
                     && wm.count() == prev_window_count
@@ -1617,6 +1757,8 @@ fn main() -> Status {
 
                 if tb_add_progress >= 1.0 {
                     tb_add_progress = -1.0;
+                    tb_add_started_ms = None;
+                    tb_shift_x = 0.0;
                 }
                 if tb_remove_progress >= 1.0 {
                     tb_remove_progress = -1.0;
@@ -1721,11 +1863,48 @@ fn main() -> Status {
     }
 }
 
+fn draw_boot_logo(screen: &mut Screen) {
+    const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
+    let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) else {
+        screen.clear(Color::BLACK);
+        return;
+    };
+    let img_w = header.width as usize;
+    let img_h = header.height as usize;
+    let screen_w = screen.width();
+    let screen_h = screen.height();
+    let mut logo_layer = LayerSystem::new(screen_w, screen_h);
+    logo_layer.clear(Color::BLACK);
+    let origin_x = screen_w.saturating_sub(img_w) / 2;
+    let origin_y = screen_h.saturating_sub(img_h) / 2;
+    let draw_w = img_w.min(screen_w);
+    let draw_h = img_h.min(screen_h);
+    let source_x = img_w.saturating_sub(screen_w) / 2;
+    let source_y = img_h.saturating_sub(screen_h) / 2;
+    let buffer = logo_layer.buf_mut();
+    for y in 0..draw_h {
+        let dst_row = (origin_y + y) * screen_w + origin_x;
+        let src_row = (source_y + y) * img_w + source_x;
+        for x in 0..draw_w {
+            let pixel = pixels[src_row + x];
+            buffer[dst_row + x] = Color::rgb(pixel[0], pixel[1], pixel[2]).0;
+        }
+    }
+    logo_layer.flush(screen);
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum NavigationEffect {
     None,
     SystemChanged,
     AppOpened,
+}
+
+struct PendingOsPermission {
+    command: alloc::string::String,
+    app_hash: alloc::string::String,
+    dialog_win_id: WinId,
+    source_win_id: Option<WinId>,
 }
 
 fn open_app(
@@ -1746,9 +1925,14 @@ fn open_app(
     wm.set_icon(win_id, &entry.icon);
     let content_h = h.saturating_sub(baram_windowserver::window::title_bar_h());
 
-    if entry.app_type.starts_with("html") {
+    if entry.app_type.starts_with("warp-3") {
+        let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(&entry.name);
+        engine.update(w as i32, content_h as i32);
+        html_engines.push((win_id, engine));
+    } else if entry.app_type.starts_with("html") {
         let (html, css) = baram_bsd::app::load_html_document(&entry.name);
         let mut engine = baram_windowserver::html::HtmlEngine::new(&html, &css);
+        engine.set_origin(&entry.name);
         engine.update(w as i32, content_h as i32);
         html_engines.push((win_id, engine));
     } else if entry.app_type.starts_with("uiscript") {
@@ -1758,6 +1942,7 @@ fn open_app(
     } else {
         let source = baram_bsd::app::load_app_source(&entry.name);
         let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
+        engine.set_origin(&entry.name);
         engine.update(w as i32, content_h as i32);
         warp_engines.push((win_id, engine));
     }
@@ -1773,9 +1958,42 @@ fn handle_navigation(
     ui_commands: &mut alloc::vec::Vec<baram_graphics::uiscript::Command>,
     ui_win_id: &mut Option<WinId>,
     display_state: &mut baram_bsd::uri::DisplayState,
+    origin: &str,
+    source_win_id: WinId,
+    pending_permission: &mut Option<PendingOsPermission>,
     x: i32,
     y: i32,
 ) -> NavigationEffect {
+    if let Some(decision) = command.strip_prefix("security://") {
+        let Some(pending) = pending_permission.take() else {
+            return NavigationEffect::None;
+        };
+        if source_win_id != pending.dialog_win_id || origin != "ospermission.w3a" {
+            *pending_permission = Some(pending);
+            return NavigationEffect::None;
+        }
+        wm.remove(pending.dialog_win_id);
+        html_engines.retain(|(wid, _)| *wid != pending.dialog_win_id);
+        wm.set_interaction_blocked(None);
+        if decision == "always" {
+            baram_bsd::security::allow_always(&pending.app_hash);
+        }
+        let effect = if decision == "once" || decision == "always" {
+            execute_os_setting(&pending.command, wm, html_engines, display_state)
+        } else {
+            NavigationEffect::None
+        };
+        if let Some(source_win_id) = pending.source_win_id {
+            if let Some((_, engine)) = html_engines
+                .iter_mut()
+                .find(|(wid, _)| *wid == source_win_id)
+            {
+                engine.complete_warp3_command();
+            }
+        }
+        return effect;
+    }
+
     if let Some(name) = baram_bsd::app::parse_app_uri(command) {
         if open_app(
             name,
@@ -1797,14 +2015,128 @@ fn handle_navigation(
         return NavigationEffect::None;
     }
 
-    if baram_bsd::uri::execute(command, display_state) {
-        for (_, engine) in html_engines.iter_mut() {
-            engine.refresh_config();
+    if baram_bsd::security::is_settings_write(command) {
+        let had_pending = pending_permission.is_some();
+        if authorize_os_setting(
+            command,
+            origin,
+            wm,
+            html_engines,
+            pending_permission,
+            Some(source_win_id),
+            x,
+            y,
+        ) {
+            return execute_os_setting(command, wm, html_engines, display_state);
         }
-        wm.set_all_dirty();
-        NavigationEffect::SystemChanged
-    } else {
-        NavigationEffect::None
+        return if !had_pending && pending_permission.is_some() {
+            NavigationEffect::AppOpened
+        } else {
+            NavigationEffect::None
+        };
+    }
+
+    NavigationEffect::None
+}
+
+fn execute_os_setting(
+    command: &str,
+    wm: &mut WindowManager,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    display_state: &mut baram_bsd::uri::DisplayState,
+) -> NavigationEffect {
+    if !baram_bsd::uri::execute(command, display_state) {
+        return NavigationEffect::None;
+    }
+    for (_, engine) in html_engines.iter_mut() {
+        engine.refresh_config();
+    }
+    wm.set_all_dirty();
+    NavigationEffect::SystemChanged
+}
+
+fn authorize_os_setting(
+    command: &str,
+    origin: &str,
+    wm: &mut WindowManager,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    pending_permission: &mut Option<PendingOsPermission>,
+    source_win_id: Option<WinId>,
+    x: i32,
+    y: i32,
+) -> bool {
+    if !baram_bsd::security::is_settings_write(command) {
+        return false;
+    }
+    let Some(hash) = baram_bsd::security::app_hash(origin) else {
+        return false;
+    };
+    if baram_bsd::security::is_always_allowed(&hash) {
+        return true;
+    }
+    if pending_permission.is_some() {
+        return false;
+    }
+
+    let dialog_win_id = wm.add("操作体系設定の変更", x, y, 520, 360);
+    wm.set_icon(dialog_win_id, "redstar.png");
+    let mut dialog =
+        baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
+    dialog.set_warp3_text("app-name", &alloc::format!("アプリ: {origin}"));
+    dialog.set_warp3_text("request-path", command);
+    dialog.update(
+        520,
+        330usize.saturating_sub(baram_windowserver::window::title_bar_h()) as i32,
+    );
+    html_engines.push((dialog_win_id, dialog));
+    if let Some(source_win_id) = source_win_id {
+        wm.set_interaction_blocked(Some(source_win_id));
+        if let Some((_, engine)) = html_engines
+            .iter_mut()
+            .find(|(wid, _)| *wid == source_win_id)
+        {
+            engine.hold_warp3_command();
+        }
+    }
+    *pending_permission = Some(PendingOsPermission {
+        command: command.into(),
+        app_hash: hash,
+        dialog_win_id,
+        source_win_id,
+    });
+    false
+}
+
+fn cancel_permission_for_closed_window(
+    closed_win_id: WinId,
+    wm: &mut WindowManager,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    pending_permission: &mut Option<PendingOsPermission>,
+) {
+    let should_cancel = pending_permission.as_ref().is_some_and(|pending| {
+        pending.dialog_win_id == closed_win_id
+            || pending.source_win_id == Some(closed_win_id)
+    });
+    if !should_cancel {
+        return;
+    }
+    let Some(pending) = pending_permission.take() else {
+        return;
+    };
+    if pending.dialog_win_id != closed_win_id {
+        wm.remove(pending.dialog_win_id);
+        html_engines.retain(|(wid, _)| *wid != pending.dialog_win_id);
+    }
+    wm.set_interaction_blocked(None);
+    if let Some(source_win_id) = pending.source_win_id {
+        if source_win_id != closed_win_id {
+            if let Some((_, engine)) = html_engines
+                .iter_mut()
+                .find(|(wid, _)| *wid == source_win_id)
+            {
+                engine.complete_warp3_command();
+            }
+        }
     }
 }
 

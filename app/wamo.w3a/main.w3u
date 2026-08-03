@@ -1,0 +1,115 @@
+config {
+    title("Warp 3 機能ラボ")
+    script("nav.w3s")
+    script("actions.w3s")
+}
+
+toolbar{
+    button.top-btn{
+        text("先頭")
+    }
+    space{}
+    button.variables-btn{
+        text("変数・wait")
+    }
+    button.components-btn{
+        text("UI要素")
+    }
+}
+
+scroll-point.top-point{
+    text("Warp 3 機能ラボ")
+}
+text{
+    text("スクリプト、OS連携、アプリ起動、状態表示を実際に操作できるデモです。")
+}
+
+head{
+    text("操作体系設定の読み書き")
+}
+card{
+    text("HUDの現在値")
+    head.hud-value{
+        text("更新ボタンで取得")
+    }
+    flex{
+        button.refresh-hud{
+            text("現在値を取得")
+        }
+        button.hud-on{
+            text("HUDを表示")
+        }
+        button.hud-off{
+            text("HUDを非表示")
+        }
+    }
+}
+
+card{
+    text("マウスポインター倍率")
+    text.pointer-value{
+        text("更新ボタンで取得")
+    }
+    flex{
+        button.pointer-small{
+            text("1.0倍")
+        }
+        button.pointer-large{
+            text("1.5倍")
+        }
+        button.refresh-pointer{
+            text("現在値を取得")
+        }
+    }
+}
+
+code{
+    text("run = os://display/hud?enabled=0\nsetText hud-value = os://display/hud/enabled")
+}
+
+head{
+    text("アプリを起動")
+}
+text{
+    text("run = app://... を既存のアプリ起動経路へ渡します。")
+}
+flex{
+    button.open-calc{
+        text("計算機")
+    }
+    button.open-note{
+        text("ノート")
+    }
+    button.open-settings{
+        text("設定")
+    }
+}
+
+head{
+    text("非同期wait")
+}
+text.wait-result{
+    text("まだ実行していません")
+}
+button.wait-action{
+    text("50ms待って表示を変更")
+}
+
+head{
+    text("別のデモ画面")
+}
+list-box{
+    text("機能一覧")
+    list.variables-btn{
+        text("変数・関数・入力・wait")
+        detail{
+            text("カウンターを50msごとに更新")
+        }
+    }
+    list.components-btn{
+        text("Warp 3 UI要素")
+        detail{
+            text("カード、リスト、タブ、スイッチなど")
+        }
+    }
+}

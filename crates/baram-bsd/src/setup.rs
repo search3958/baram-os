@@ -7,8 +7,7 @@ pub fn is_setup_done() -> bool {
 }
 
 pub fn mark_setup_done() {
-    config::get_config_mut().set("system/done", "1");
-    config::save_config();
+    config::update_and_save(|settings| settings.set("system/done", "1"));
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -38,7 +37,7 @@ impl SetupWizard {
         }
     }
 
-    pub fn warp_screen(&self) -> &'static str {
+    pub fn warp3_screen(&self) -> &'static str {
         match self.screen {
             SetupScreen::Welcome => "welcome",
             SetupScreen::Keyboard => "keyboard",
@@ -94,12 +93,21 @@ impl SetupWizard {
     }
 
     fn finish(&mut self, skipped: bool) {
-        crate::shift_key::save_shift_key(if skipped {
+        let shift_key = if skipped {
             0
         } else {
             self.detected_raw_key
+        };
+        let saved = config::update_and_save(|cfg| {
+            cfg.set("keyboard/shift_key", &alloc::format!("{shift_key}"));
+            cfg.set("system/done", "1");
         });
-        mark_setup_done();
+        if !saved {
+            // Keep the wizard active so the user can retry instead of showing
+            // a completed setup that was never persisted.
+            self.dirty = true;
+            return;
+        }
         self.skipped = skipped;
         self.screen = SetupScreen::Done;
         self.dirty = true;

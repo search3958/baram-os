@@ -3,7 +3,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 use uefi::boot;
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
-use uefi::proto::console::text::{Input, Key, ScanCode};
+use uefi::proto::console::text::{Input, InputEx, Key};
+use uefi_raw::protocol::console::KeyShiftState;
+#[cfg(not(target_arch = "aarch64"))]
+use uefi_raw::protocol::console::KeyToggleState;
 use uefi::system::with_stdin;
 use baram_bsd::shift_key::load_shift_key;
 use baram_core::KeyEvent;
@@ -21,15 +24,18 @@ const BOOT_KEYMAP: [u8; 128] = {
     map[0x1E] = b'1'; map[0x1F] = b'2'; map[0x20] = b'3'; map[0x21] = b'4';
     map[0x22] = b'5'; map[0x23] = b'6'; map[0x24] = b'7'; map[0x25] = b'8';
     map[0x26] = b'9'; map[0x27] = b'0';
-    map[0x28] = b'\n'; map[0x58] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
-    map[0x2F] = b'['; map[0x30] = b']'; map[0x33] = b';'; map[0x34] = b'\'';
+    map[0x28] = b'\n'; map[0x29] = 0x1b; map[0x2A] = 0x08; map[0x2B] = b'\t';
+    map[0x58] = b'\n'; map[0x2C] = b' '; map[0x2D] = b'-'; map[0x2E] = b'=';
+    map[0x2F] = b'['; map[0x30] = b']'; map[0x31] = b'\\'; map[0x33] = b';'; map[0x34] = b'\'';
+    map[0x35] = b'`';
     map[0x36] = b','; map[0x37] = b'.'; map[0x38] = b'/';
+    map[0x4C] = 0x7f;
     map
 };
 
 pub struct Keyboard {
     usb_io: Option<(boot::ScopedProtocol<UsbIo>, u8, Vec<u8>)>,
-    report_buf: Vec<u8>,
+    input_ex: Option<boot::ScopedProtocol<InputEx>>,
     prev_keys: [u8; 6],
     prev_modifiers: u8,
     pub cur_modifiers: u8,
@@ -54,7 +60,7 @@ impl Keyboard {
         false
     }
 
-    fn probe_usb_kbd(handle: uefi::Handle) -> Option<(u8, u16)> {
+    fn probe_usb_kbd(handle: uefi::Handle) -> Option<(u8, u8, u16)> {
         let params = boot::OpenProtocolParams {
             handle,
             agent: boot::image_handle(),
@@ -71,10 +77,7 @@ impl Keyboard {
         let _ = usb.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
 
         let mut off = 0;
-        let mut current_iface: u8 = 0;
-        let mut intr_ep: Option<u8> = None;
-        let mut intr_mps: u16 = 0;
-        let mut is_keyboard = false;
+        let mut keyboard_iface: Option<u8> = None;
 
         while off + 2 < cfg_buf.len() {
             let b_len = cfg_buf[off] as usize;
@@ -83,23 +86,34 @@ impl Keyboard {
 
             match b_type {
                 4 => {
-                    current_iface = cfg_buf[off + 2];
+                    if b_len < 9 {
+                        keyboard_iface = None;
+                        off += b_len;
+                        continue;
+                    }
                     let class = cfg_buf[off + 5];
                     let subclass = cfg_buf[off + 6];
                     let protocol = cfg_buf[off + 7];
-                    intr_ep = None;
-                    is_keyboard = false;
-                    if class == 3 && subclass == 1 && protocol == 1 {
-                        is_keyboard = true;
-                    }
+                    keyboard_iface = (class == 3 && subclass == 1 && protocol == 1)
+                        .then_some(cfg_buf[off + 2]);
                 }
                 5 => {
-                    if b_len >= 7 && intr_ep.is_none() {
+                    if b_len >= 7 {
                         let ea = cfg_buf[off + 2];
                         let attrs = cfg_buf[off + 3];
-                        if ea & 0x80 != 0 && attrs & 0x03 == 3 {
-                            intr_ep = Some(ea);
-                            intr_mps = u16::from_le_bytes([cfg_buf[off + 4], cfg_buf[off + 5]]);
+                        if let Some(iface) = keyboard_iface {
+                            if ea & 0x80 != 0 && attrs & 0x03 == 3 {
+                                let mps = u16::from_le_bytes([
+                                    cfg_buf[off + 4],
+                                    cfg_buf[off + 5],
+                                ]);
+                                baram_font::log_line_str(&format!(
+                                    "  KBD USB IO: iface={} ep=0x{:02x}",
+                                    iface,
+                                    ea,
+                                ));
+                                return Some((iface, ea, mps));
+                            }
                         }
                     }
                 }
@@ -108,12 +122,6 @@ impl Keyboard {
             off += b_len;
         }
 
-        if is_keyboard {
-            if let Some(ep) = intr_ep {
-                baram_font::log_line_str(&format!("  KBD USB IO: iface={} ep=0x{:02x}", current_iface, ep));
-                return Some((ep, intr_mps));
-            }
-        }
         None
     }
 
@@ -125,7 +133,7 @@ impl Keyboard {
         // Try direct USB IO for keyboard
         if let Ok(handles) = boot::find_handles::<UsbIo>() {
             for handle in handles {
-                if let Some((ep, mps)) = Self::probe_usb_kbd(handle) {
+                if let Some((iface_num, ep, mps)) = Self::probe_usb_kbd(handle) {
                     let params = boot::OpenProtocolParams {
                         handle,
                         agent: boot::image_handle(),
@@ -135,34 +143,17 @@ impl Keyboard {
                         boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol)
                     } {
                         let mut usb_obj = usb;
-                        // Find interface number from the probe
-                        let mut cfg_buf = vec![0u8; 512];
-                        let _ = usb_obj.control_transfer(0x80, 6, 0x0200, 0, ControlTransfer::DataIn(&mut cfg_buf), 5000);
-                        let mut off = 0;
-                        let mut iface_num: u8 = 0;
-                        while off + 2 < cfg_buf.len() {
-                            let b_len = cfg_buf[off] as usize;
-                            let b_type = cfg_buf[off + 1];
-                            if b_len < 2 || off + b_len > cfg_buf.len() { break; }
-                            if b_type == 4 {
-                                let class = cfg_buf[off + 5];
-                                let subclass = cfg_buf[off + 6];
-                                let protocol = cfg_buf[off + 7];
-                                if class == 3 && subclass == 1 && protocol == 1 {
-                                    iface_num = cfg_buf[off + 2];
-                                }
-                            }
-                            off += b_len;
-                        }
-
+                        // HID SetProtocol(0) selects the fixed 8-byte boot
+                        // report. Do not immediately switch back to report
+                        // protocol: many physical keyboards use a different
+                        // report layout there.
                         let _ = usb_obj.control_transfer(0x21, 0x0B, 0, iface_num as u16, ControlTransfer::None, 5000);
-                        let _ = usb_obj.control_transfer(0x21, 0x0B, 1, iface_num as u16, ControlTransfer::None, 5000);
 
-                        let report_buf = vec![0u8; mps as usize];
+                        let report_buf = vec![0u8; (mps as usize).max(8)];
                         baram_font::log_line_str("KBD: using USB IO (direct HID boot protocol)");
                         return Keyboard {
                             usb_io: Some((usb_obj, ep, report_buf)),
-                            report_buf: vec![0u8; 8],
+                            input_ex: None,
                             prev_keys: [0u8; 6],
                             prev_modifiers: 0,
                             cur_modifiers: 0,
@@ -173,8 +164,37 @@ impl Keyboard {
                 }
             }
         }
-        baram_font::log_line_str("KBD: using UEFI protocol");
-        Keyboard { usb_io: None, report_buf: vec![0u8; 8], prev_keys: [0u8; 6], prev_modifiers: 0, cur_modifiers: 0, cur_keys: [0u8; 6], shift_key: load_shift_key() }
+        let input_ex = Self::open_input_ex();
+        baram_font::log_line_str(if input_ex.is_some() {
+            "KBD: using UEFI extended input protocol"
+        } else {
+            "KBD: using UEFI basic input protocol"
+        });
+        Keyboard { usb_io: None, input_ex, prev_keys: [0u8; 6], prev_modifiers: 0, cur_modifiers: 0, cur_keys: [0u8; 6], shift_key: load_shift_key() }
+    }
+
+    fn open_input_ex() -> Option<boot::ScopedProtocol<InputEx>> {
+        let handle = boot::get_handle_for_protocol::<InputEx>().ok()?;
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        #[cfg(not(target_arch = "aarch64"))]
+        let mut input = unsafe {
+            boot::open_protocol::<InputEx>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
+        };
+        #[cfg(target_arch = "aarch64")]
+        let input = unsafe {
+            boot::open_protocol::<InputEx>(params, boot::OpenProtocolAttributes::GetProtocol).ok()?
+        };
+        // Raspberry Pi's UEFI exposes InputEx but can hang indefinitely in
+        // SetState(EXPOSED). Direct USB HID still supplies modifier-only
+        // reports there, while ordinary InputEx key reads remain available as
+        // a fallback.
+        #[cfg(not(target_arch = "aarch64"))]
+        let _ = input.set_state(KeyToggleState::VALID | KeyToggleState::EXPOSED);
+        Some(input)
     }
 
     pub fn stdin_event() -> Option<uefi::Event> {
@@ -202,6 +222,8 @@ impl Keyboard {
                     if n >= 8 {
                         let keys = [r[2], r[3], r[4], r[5], r[6], r[7]];
                         self.cur_keys = keys;
+                        let prev_mod = self.prev_modifiers;
+                        self.prev_modifiers = self.cur_modifiers;
 
                         // Find newly pressed keys
                         for &key in &keys {
@@ -209,11 +231,14 @@ impl Keyboard {
                             if !self.prev_keys.contains(&key) {
                                 self.prev_keys = keys;
 
-                                let ascii = if (key as usize) < BOOT_KEYMAP.len() {
+                                let mut ascii = if (key as usize) < BOOT_KEYMAP.len() {
                                     BOOT_KEYMAP[key as usize]
                                 } else {
                                     0
                                 };
+                                if self.cur_modifiers & 0x22 != 0 {
+                                    ascii = shifted_ascii(ascii);
+                                }
                                 let printable = if ascii != 0 { Some(ascii) } else { None };
 
                                 return Some(KeyEvent { printable, scancode: 0, modifiers: self.cur_modifiers, raw_key: key });
@@ -221,8 +246,6 @@ impl Keyboard {
                         }
 
                         // Detect modifier-only press (no key slot change)
-                        let prev_mod = self.prev_modifiers;
-                        self.prev_modifiers = self.cur_modifiers;
                         let newly_pressed = self.cur_modifiers & !prev_mod;
                         if newly_pressed != 0 {
                             let bit = newly_pressed.trailing_zeros() as u8;
@@ -239,18 +262,52 @@ impl Keyboard {
             // USB returned 0 bytes or error — fall through to UEFI
         }
 
+        if let Some(input) = self.input_ex.as_mut() {
+            return match input.read_key() {
+                Ok(Some(data)) => {
+                    self.cur_modifiers = uefi_modifiers(data.key_state.key_shift_state);
+                    let newly_pressed = self.cur_modifiers & !self.prev_modifiers;
+                    self.prev_modifiers = self.cur_modifiers;
+                    match data.key {
+                        Key::Printable(ch) => {
+                            let value: u16 = ch.into();
+                            if value == 0 {
+                                if newly_pressed == 0 {
+                                    None
+                                } else {
+                                    let bit = newly_pressed.trailing_zeros() as u8;
+                                    Some(KeyEvent { printable: None, scancode: 0, modifiers: self.cur_modifiers, raw_key: 0x80 | bit })
+                                }
+                            } else {
+                                Some(uefi_printable_event(value, self.cur_modifiers))
+                            }
+                        }
+                        Key::Special(sc) => {
+                            let printable = (sc.0 == 0x08).then_some(0x7f);
+                            let raw = if sc.0 < 256 { sc.0 as u8 } else { 0 };
+                            Some(KeyEvent { printable, scancode: sc.0, modifiers: self.cur_modifiers, raw_key: raw })
+                        }
+                    }
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    baram_font::log_line_str(&format!("KBD: extended read error: {:?}", error));
+                    None
+                }
+            };
+        }
+
         // Fallback: UEFI protocol
         with_stdin(|input| {
             match input.read_key() {
                 Ok(Some(Key::Printable(ch))) => {
                     let v: u16 = ch.into();
-                    let printable = if v < 0x80 { Some(v as u8) } else { None };
-                    let raw = if v > 0 && v < 256 { v as u8 } else { 0 };
-                    Some(KeyEvent { printable, scancode: 0, modifiers: 0, raw_key: raw })
+                    Some(uefi_printable_event(v, 0))
                 }
                 Ok(Some(Key::Special(sc))) => {
                     let raw = if sc.0 > 0 && sc.0 < 256 { sc.0 as u8 } else { 0 };
-                    Some(KeyEvent { printable: None, scancode: sc.0, modifiers: 0, raw_key: raw })
+                    let printable = (sc.0 == 0x08).then_some(0x7f);
+                    Some(KeyEvent { printable, scancode: sc.0, modifiers: 0, raw_key: raw })
                 }
                 Ok(None) => None,
                 Err(e) => {
@@ -289,5 +346,47 @@ impl Keyboard {
             }
         }
         false
+    }
+}
+
+fn uefi_modifiers(state: Option<KeyShiftState>) -> u8 {
+    let Some(state) = state else { return 0; };
+    let mut modifiers = 0u8;
+    if state.contains(KeyShiftState::LEFT_CONTROL) { modifiers |= 0x01; }
+    if state.contains(KeyShiftState::LEFT_SHIFT) { modifiers |= 0x02; }
+    if state.contains(KeyShiftState::LEFT_ALT) { modifiers |= 0x04; }
+    if state.contains(KeyShiftState::LEFT_LOGO) { modifiers |= 0x08; }
+    if state.contains(KeyShiftState::RIGHT_CONTROL) { modifiers |= 0x10; }
+    if state.contains(KeyShiftState::RIGHT_SHIFT) { modifiers |= 0x20; }
+    if state.contains(KeyShiftState::RIGHT_ALT) { modifiers |= 0x40; }
+    if state.contains(KeyShiftState::RIGHT_LOGO) { modifiers |= 0x80; }
+    modifiers
+}
+
+fn uefi_printable_event(value: u16, modifiers: u8) -> KeyEvent {
+    let printable = match value {
+        0x0d => Some(b'\n'),
+        0x08 => Some(0x08),
+        1..=0x7f => Some(value as u8),
+        _ => None,
+    };
+    let raw_key = match value {
+        0x0d | 0x0a => 0x28,
+        0x08 => 0x2a,
+        _ if value < 256 => value as u8,
+        _ => 0,
+    };
+    KeyEvent { printable, scancode: 0, modifiers, raw_key }
+}
+
+fn shifted_ascii(value: u8) -> u8 {
+    match value {
+        b'a'..=b'z' => value - b'a' + b'A',
+        b'1' => b'!', b'2' => b'@', b'3' => b'#', b'4' => b'$', b'5' => b'%',
+        b'6' => b'^', b'7' => b'&', b'8' => b'*', b'9' => b'(', b'0' => b')',
+        b'-' => b'_', b'=' => b'+', b'[' => b'{', b']' => b'}', b'\\' => b'|',
+        b';' => b':', b'\'' => b'"', b'`' => b'~', b',' => b'<', b'.' => b'>',
+        b'/' => b'?',
+        _ => value,
     }
 }

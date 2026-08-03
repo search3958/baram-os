@@ -1,0 +1,62 @@
+config {
+    title("変数と非同期処理")
+    script("nav.w3s")
+    script("var-demo.w3s")
+}
+
+toolbar{
+    button.home-btn{
+        text("ホーム")
+    }
+    space{}
+    button.components-btn{
+        text("UI要素")
+    }
+}
+
+head{
+    text("変数・関数・wait")
+}
+text{
+    text("スクリプトを停止させず、保存した実行位置から指定時間後に再開します。")
+}
+
+card{
+    text("現在のカウンター")
+    head.display{
+        text("0")
+    }
+}
+
+flex{
+    button.count{
+        text("+1")
+    }
+    button.boost{
+        text("50ms間隔で+10")
+    }
+    button.reset{
+        text("リセット")
+    }
+}
+
+text.wait-status{
+    text("待機していません")
+}
+button.wait-demo{
+    text("wait = 50ms を試す")
+}
+
+head{
+    text("入力値を変数へ代入")
+}
+input.set-input{
+    text("100")
+}
+button.set-btn{
+    text("getTextで値をセット")
+}
+
+code{
+    text("setText display = myVar\nwait = 50ms\nfun = updateDisplay\ngetText myVar = set-input")
+}

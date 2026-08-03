@@ -1,0 +1,31 @@
+config {
+    title("変数デモ")
+    script("nav.w3s")
+    script("var-demo.w3s")
+}
+
+toolbar{
+    button.home-btn{
+        text("戻る")
+    }
+}
+
+text.display{
+    text("0")
+}
+
+button.count{
+    text("カウント(+1)")
+}
+button.boost{
+    text("ブースト(+10)")
+}
+button.reset{
+    text("リセット")
+}
+input.set-input{
+    text("100")
+}
+button.set-btn{
+    text("値にセット")
+}

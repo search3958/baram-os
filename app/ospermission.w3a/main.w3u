@@ -1,0 +1,24 @@
+config { title("操作体系設定の変更") script("permission.w3s") }
+
+head { text("操作体系設定の変更を許可しますか？") }
+
+tab{
+    content{
+        text("アプリ名")
+        text.app-name { text("アプリ: 不明") }
+    }
+    content{
+        text("要求された操作")
+        text.request-path { text("不明") }
+    }
+}
+
+
+text { text("常に許可の場合，アプリはOSのリセットまで担当できるようになります。") }
+text { text("許可はこのアプリバージョンにのみ与えられます。") }
+
+flex {
+    button.permission-deny { text("許可しない") type("primary") }
+    button.permission-once { text("一度だけ許可") type("tonal") }
+    button.permission-always { text("常に許可") }
+}

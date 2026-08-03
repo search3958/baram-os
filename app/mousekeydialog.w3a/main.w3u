@@ -1,0 +1,11 @@
+config { title("マウスキー") }
+
+head { text("マウスキー") }
+text { text("マウスキーが有効になりました。") }
+text { text("無効化するには再度Shiftキーを3回クリックしてください。") }
+
+card {
+    text("使用方法")
+    text { text("W A S D キーで移動") }
+    text { text("Shift + スペース でクリック") }
+}

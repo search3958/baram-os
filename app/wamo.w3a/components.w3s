@@ -1,0 +1,5 @@
+[onClick = demo-button]
+setText button-status = "ボタンを実行しました"
+
+[onClick = demo-switch]
+setText switch-status = "スイッチを切り替えました"

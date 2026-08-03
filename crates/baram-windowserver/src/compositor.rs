@@ -2,7 +2,6 @@ use super::cursor::{self};
 use crate::warp::WarpEngine;
 use crate::html::HtmlEngine;
 use crate::window::{WinId, WindowManager};
-use alloc::vec;
 use alloc::vec::Vec;
 use baram_bsd::config;
 use baram_core::Color;
@@ -19,10 +18,10 @@ pub const TASKBAR_BLUR_R: i32 = 30;
 
 pub struct TaskbarSurface {
     layer: LayerSystem,
-    backdrop: Vec<u32>,
     blurred: Vec<u32>,
     blur_scratch: Vec<u32>,
-    backdrop_valid: bool,
+    base: Vec<u32>,
+    base_valid: bool,
     valid: bool,
 }
 
@@ -31,10 +30,10 @@ impl TaskbarSurface {
         let sample_h = TASKBAR_H + TASKBAR_BLUR_R.max(0) as usize;
         Self {
             layer: LayerSystem::new_transparent(width, TASKBAR_H),
-            backdrop: alloc::vec![0; width * sample_h],
             blurred: alloc::vec![0; width * sample_h],
             blur_scratch: alloc::vec![0; width * sample_h],
-            backdrop_valid: false,
+            base: alloc::vec![0; width * TASKBAR_H],
+            base_valid: false,
             valid: false,
         }
     }
@@ -49,23 +48,37 @@ impl TaskbarSurface {
         self.valid
     }
 
-    #[inline]
-    pub fn has_backdrop(&self) -> bool {
-        self.backdrop_valid
-    }
-
-    fn capture_backdrop(&mut self, scene: &LayerSystem, y: usize) {
+    /// Rebuild the cached taskbar background from the wallpaper layer.  This
+    /// is called only when the wallpaper cache is initially created or
+    /// invalidated, never for ordinary taskbar/window animation frames.
+    fn refresh_wallpaper_blur(&mut self, wallpaper: &LayerSystem, y: usize) {
         let width = self.layer.width();
         let pad = TASKBAR_BLUR_R.max(0) as usize;
         let start_y = y.saturating_sub(pad);
         let sample_h = TASKBAR_H + pad;
-        if scene.width() != width || scene.height() < start_y.saturating_add(sample_h) {
+        let end_y = start_y.saturating_add(sample_h);
+        if wallpaper.width() != width || wallpaper.height() < end_y {
             return;
         }
-        self.backdrop.copy_from_slice(
-            &scene.buf_ref()[start_y * width..(start_y + sample_h) * width],
+
+        blur::blur_region_to_with_scratch(
+            wallpaper.buf_ref(),
+            &mut self.blurred,
+            &mut self.blur_scratch,
+            width,
+            start_y,
+            end_y,
+            TASKBAR_BLUR_R,
         );
-        self.backdrop_valid = true;
+        self.base.copy_from_slice(
+            &self.blurred[pad * width..(pad + TASKBAR_H) * width],
+        );
+        tint_taskbar(
+            &mut self.base,
+            config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
+            170,
+        );
+        self.base_valid = true;
     }
 
     fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
@@ -81,82 +94,17 @@ impl TaskbarSurface {
     }
 }
 
-#[inline]
-fn tint_taskbar_scalar(pixels: &mut [u32], color: u32, alpha: u16) {
-    let inv = 255u32 - alpha as u32;
+fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
+    let inv = 255 - alpha;
     let tr = (color >> 16) & 0xff;
     let tg = (color >> 8) & 0xff;
     let tb = color & 0xff;
-    for px in pixels {
-        let r = (tr * alpha as u32 + ((*px >> 16) & 0xff) * inv) / 255;
-        let g = (tg * alpha as u32 + ((*px >> 8) & 0xff) * inv) / 255;
-        let b = (tb * alpha as u32 + (*px & 0xff) * inv) / 255;
-        *px = (r << 16) | (g << 8) | b;
+    for pixel in pixels {
+        let r = (tr * alpha + ((*pixel >> 16) & 0xff) * inv) / 255;
+        let g = (tg * alpha + ((*pixel >> 8) & 0xff) * inv) / 255;
+        let b = (tb * alpha + (*pixel & 0xff) * inv) / 255;
+        *pixel = (r << 16) | (g << 8) | b;
     }
-}
-
-fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u16) {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use core::arch::x86_64::*;
-        let zero = _mm_setzero_si128();
-        let va = _mm_set1_epi16(alpha as i16);
-        let vi = _mm_set1_epi16((255 - alpha) as i16);
-        let bias = _mm_set1_epi16(128);
-        let vc = _mm_set1_epi32((color & 0x00ff_ffff) as i32);
-        let clo = _mm_unpacklo_epi8(vc, zero);
-        let chi = _mm_unpackhi_epi8(vc, zero);
-        let mut i = 0usize;
-        while i + 4 <= pixels.len() {
-            let p = _mm_loadu_si128(pixels.as_ptr().add(i) as *const __m128i);
-            let plo = _mm_unpacklo_epi8(p, zero);
-            let phi = _mm_unpackhi_epi8(p, zero);
-            let lo_sum = _mm_add_epi16(_mm_mullo_epi16(plo, vi), _mm_mullo_epi16(clo, va));
-            let hi_sum = _mm_add_epi16(_mm_mullo_epi16(phi, vi), _mm_mullo_epi16(chi, va));
-            let lo_t = _mm_add_epi16(lo_sum, bias);
-            let hi_t = _mm_add_epi16(hi_sum, bias);
-            let lo = _mm_srli_epi16(_mm_add_epi16(lo_t, _mm_srli_epi16(lo_t, 8)), 8);
-            let hi = _mm_srli_epi16(_mm_add_epi16(hi_t, _mm_srli_epi16(hi_t, 8)), 8);
-            let out = _mm_packus_epi16(lo, hi);
-            _mm_storeu_si128(pixels.as_mut_ptr().add(i) as *mut __m128i, out);
-            i += 4;
-        }
-        tint_taskbar_scalar(&mut pixels[i..], color, alpha);
-        return;
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        use core::arch::aarch64::*;
-        let color_bytes = vreinterpretq_u8_u32(vdupq_n_u32(color & 0x00ff_ffff));
-        let clo = vmovl_u8(vget_low_u8(color_bytes));
-        let chi = vmovl_u8(vget_high_u8(color_bytes));
-        let va = vdupq_n_u16(alpha);
-        let vi = vdupq_n_u16(255 - alpha);
-        let bias = vdupq_n_u16(128);
-        let mut i = 0usize;
-        while i + 4 <= pixels.len() {
-            let p = vreinterpretq_u8_u32(vld1q_u32(pixels.as_ptr().add(i)));
-            let plo = vmovl_u8(vget_low_u8(p));
-            let phi = vmovl_u8(vget_high_u8(p));
-            let lo_sum = vaddq_u16(vmulq_u16(plo, vi), vmulq_u16(clo, va));
-            let hi_sum = vaddq_u16(vmulq_u16(phi, vi), vmulq_u16(chi, va));
-            let lo_t = vaddq_u16(lo_sum, bias);
-            let hi_t = vaddq_u16(hi_sum, bias);
-            let lo = vshrq_n_u16(vaddq_u16(lo_t, vshrq_n_u16(lo_t, 8)), 8);
-            let hi = vshrq_n_u16(vaddq_u16(hi_t, vshrq_n_u16(hi_t, 8)), 8);
-            vst1q_u32(
-                pixels.as_mut_ptr().add(i),
-                vreinterpretq_u32_u8(vcombine_u8(vqmovn_u16(lo), vqmovn_u16(hi))),
-            );
-            i += 4;
-        }
-        tint_taskbar_scalar(&mut pixels[i..], color, alpha);
-        return;
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    tint_taskbar_scalar(pixels, color, alpha);
 }
 
 const ICON_CACHE_CAP: usize = 32;
@@ -442,11 +390,9 @@ fn get_or_render_tb_btn(size: usize, ca: u32) -> &'static [u32] {
     }
 }
 
-pub fn ease_out_back(t: f32) -> f32 {
-    let c1 = 1.70158f32;
-    let c3 = c1 + 1.0;
-    let t = t.min(1.0);
-    1.0 + c3 * libm::powf(t - 1.0, 3.0) + c1 * libm::powf(t - 1.0, 2.0)
+fn ease_out_cubic(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
 }
 
 fn draw_taskbar_text(
@@ -506,25 +452,11 @@ fn redraw_taskbar(
 ) {
     let layer = &mut surface.layer;
     let w = layer.width();
-    let pad = TASKBAR_BLUR_R.max(0) as usize;
-    let sample_h = TASKBAR_H + pad;
-    blur::blur_region_to_with_scratch(
-        &surface.backdrop,
-        &mut surface.blurred,
-        &mut surface.blur_scratch,
-        w,
-        0,
-        sample_h,
-        TASKBAR_BLUR_R,
-    );
-    layer.buf_mut().copy_from_slice(
-        &surface.blurred[pad * w..(pad + TASKBAR_H) * w],
-    );
-    tint_taskbar(
-        layer.buf_mut(),
-        config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
-        170,
-    );
+    if surface.base_valid {
+        layer.buf_mut().copy_from_slice(&surface.base);
+    } else {
+        layer.clear(config::get_color("ui-theme/color/taskbar", Color::TASKBAR));
+    }
 
     let count = wm.count();
     let btn_d = 40usize;
@@ -532,10 +464,10 @@ fn redraw_taskbar(
     let total_w = count as i32 * (btn_d as i32 + btn_gap) - btn_gap;
     let base_bx = ((w as i32 - total_w) / 2).max(0);
     let btn_y = (TASKBAR_H - btn_d) / 2;
-    let add_scale = if add_progress >= 0.0 {
-        ease_out_back(add_progress)
+    let add_offset_y = if add_progress >= 0.0 {
+        ((1.0 - ease_out_cubic(add_progress)) * (TASKBAR_H + 8) as f32) as usize
     } else {
-        1.0
+        0
     };
 
     for i in 0..count {
@@ -543,16 +475,12 @@ fn redraw_taskbar(
         let icon_name = wm.get_icon_name(id);
         let is_focused = wm.focused_id == Some(id);
         let is_minimized = wm.is_minimized(id);
-        let scale = if add_progress >= 0.0 && i == count - 1 {
-            add_scale
+        let scaled_d = btn_d;
+        let offset = if add_progress >= 0.0 && i == count - 1 {
+            add_offset_y
         } else {
-            1.0
+            0
         };
-        let scaled_d = (btn_d as f32 * scale) as usize;
-        if scaled_d == 0 {
-            continue;
-        }
-        let offset = btn_d.saturating_sub(scaled_d) / 2;
         let bx = base_bx + shift_x as i32 + i as i32 * (btn_d as i32 + btn_gap);
         let cached_btn = get_or_render_tb_btn(scaled_d, if is_focused { 255 } else { 100 });
         for py in 0..scaled_d {
@@ -565,7 +493,7 @@ fn redraw_taskbar(
                 if a == 0 {
                     continue;
                 }
-                let dst_x = bx + (offset + px) as i32;
+                let dst_x = bx + px as i32;
                 if dst_x < 0 || dst_x >= w as i32 {
                     continue;
                 }
@@ -582,7 +510,7 @@ fn redraw_taskbar(
         let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
         if let Some(icon) = get_or_decode_icon(resolved_icon, 40) {
             let icon_draw = scaled_d;
-            let icon_offset = btn_d.saturating_sub(icon_draw) / 2;
+            let icon_offset = offset;
             for py in 0..icon_draw {
                 let sy = py * icon.h / icon_draw;
                 let dst_y = btn_y + icon_offset + py;
@@ -596,7 +524,7 @@ fn redraw_taskbar(
                     if a == 0 {
                         continue;
                     }
-                    let dst_x = bx + (icon_offset + px) as i32;
+                    let dst_x = bx + px as i32;
                     if dst_x < 0 || dst_x >= w as i32 {
                         continue;
                     }
@@ -729,6 +657,10 @@ pub fn render_scene(
             let mut bg = alloc::vec![0u32; w * h];
             bg.copy_from_slice(layer.buf_ref());
             *bg_cache = Some(bg);
+        }
+
+        if !bg_cache_valid || !taskbar.base_valid {
+            taskbar.refresh_wallpaper_blur(layer, tb_y);
         }
     }
 
@@ -919,9 +851,6 @@ pub fn render_scene(
         }
     }
 
-    if !taskbar_only && taskbar_dirty {
-        taskbar.capture_backdrop(layer, tb_y);
-    }
     if taskbar_dirty || !taskbar.is_valid() {
         redraw_taskbar(
             taskbar,
