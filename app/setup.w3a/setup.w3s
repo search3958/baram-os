@@ -1,0 +1,8 @@
+[onClick = continue]
+run = setup://continue
+
+[onClick = skip]
+run = setup://skip
+
+[onClick = finish]
+run = setup://finish

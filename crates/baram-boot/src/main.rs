@@ -12,7 +12,7 @@ use uefi::runtime;
 use baram_bsd::config;
 use baram_bsd::shift_key;
 use baram_core::{Color, LayerSystem, Screen};
-use baram_font::{log_line_str, LayerFontExt};
+use baram_font::log_line_str;
 use baram_iokit::keyboard::Keyboard;
 use baram_iokit::mouse::Mouse;
 use baram_windowserver::compositor::*;
@@ -117,9 +117,12 @@ fn main() -> Status {
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let setup_w = screen.width();
         let setup_h = screen.height();
-        let mut setup_engine = baram_windowserver::warp::WarpEngine::new(
-            baram_windowserver::warp::SETUP_WARP_SOURCE,
-        );
+        let mut setup_engine = baram_windowserver::html::HtmlEngine::new_warp3("setup.w3a");
+        let mut setup_scene = LayerSystem::new(setup_w, setup_h);
+        let mut setup_present = LayerSystem::new(setup_w, setup_h);
+        let mut setup_surface = LayerSystem::new(528, 320);
+        let setup_origin = ((setup_w as i32 - 528) / 2, (setup_h as i32 - 320) / 2);
+        let setup_card = (setup_origin.0, setup_origin.1, 528usize, 320usize);
         let setup_wallpaper = wallpaper_for_state(&display_state, setup_w, setup_h);
         let setup_background = setup_wallpaper.as_ref().map(|wallpaper| {
             let mut blurred = alloc::vec![0u32; setup_w * setup_h];
@@ -135,38 +138,24 @@ fn main() -> Status {
             );
             blurred
         });
-        let mut setup_scene = LayerSystem::new(setup_w, setup_h);
-        let mut setup_present = LayerSystem::new(setup_w, setup_h);
-        let mut setup_origin = (0i32, 0i32);
-        let mut setup_card = (0i32, 0i32, 0usize, 0usize);
-        let mut setup_scene_dirty = true;
-        let mut setup_prev_cursor = (cursor_x, cursor_y);
-        setup_engine.set_screen(wizard.warp_screen());
-        setup_engine.update(528, 320);
-        if let Some((x, y, w, h)) = setup_engine.node_bounds("setupCard") {
-            setup_origin = (
-                (setup_w as i32 - w) / 2 - x,
-                (setup_h as i32 - h) / 2 - y,
-            );
-            setup_card = (
-                x + setup_origin.0,
-                y + setup_origin.1,
-                w.max(0) as usize,
-                h.max(0) as usize,
-            );
-        }
         let card_radius = config::get_usize("ui-theme/card/radius", 12);
-        let mut setup_shadow = baram_windowserver::window::RoundedShadow::new(
+        let setup_shadow = baram_windowserver::window::RoundedShadow::new(
             setup_card.2,
             setup_card.3,
             card_radius,
         );
+        let mut setup_scene_dirty = true;
+        let mut setup_prev_cursor = (cursor_x, cursor_y);
+        let mut setup_now_ns = 0u64;
+        setup_engine.set_warp3_screen(wizard.warp3_screen());
+        setup_engine.update(528, 320);
 
         loop {
             if let Some(ref timer) = timer_event {
                 let mut events = [unsafe { core::ptr::read(timer) }];
                 let _ = uefi::boot::wait_for_event(&mut events);
             }
+            setup_now_ns = setup_now_ns.saturating_add(1_000_000);
 
             while let Some(ev) = keyboard.poll() {
                 wizard.on_key(&ev);
@@ -186,6 +175,7 @@ fn main() -> Status {
                         cursor_x - setup_origin.0,
                         cursor_y - setup_origin.1,
                     );
+                    setup_scene_dirty = true;
                     if ev.left {
                         setup_engine.click(
                             cursor_x - setup_origin.0,
@@ -205,31 +195,11 @@ fn main() -> Status {
             cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
             if wizard.take_dirty() {
-                setup_engine.set_screen(wizard.warp_screen());
+                setup_engine.set_warp3_screen(wizard.warp3_screen());
                 setup_engine.update(528, 320);
-                if let Some((x, y, w, h)) = setup_engine.node_bounds("setupCard") {
-                    setup_origin = (
-                        (setup_w as i32 - w) / 2 - x,
-                        (setup_h as i32 - h) / 2 - y,
-                    );
-                    let new_card = (
-                        x + setup_origin.0,
-                        y + setup_origin.1,
-                        w.max(0) as usize,
-                        h.max(0) as usize,
-                    );
-                    if new_card.2 != setup_card.2 || new_card.3 != setup_card.3 {
-                        setup_shadow = baram_windowserver::window::RoundedShadow::new(
-                            new_card.2,
-                            new_card.3,
-                            card_radius,
-                        );
-                    }
-                    setup_card = new_card;
-                }
                 setup_scene_dirty = true;
             }
-            if setup_engine.dirty {
+            if setup_engine.tick(setup_now_ns) {
                 setup_scene_dirty = true;
             }
 
@@ -242,9 +212,18 @@ fn main() -> Status {
                 if let Some(ref shadow) = setup_shadow {
                     shadow.composite_onto(&mut setup_scene, setup_card.0, setup_card.1);
                 }
-                setup_engine.draw_to_layer(&mut setup_scene, setup_origin.0, setup_origin.1);
-                setup_engine.draw_texts(&mut setup_scene, setup_origin.0, setup_origin.1, 1.0);
-                setup_engine.dirty = false;
+                setup_engine.update(528, 320);
+                setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
+                setup_scene.composit_rounded(
+                    &setup_surface,
+                    setup_origin.0.max(0) as usize,
+                    setup_origin.1.max(0) as usize,
+                    0,
+                    0,
+                    528,
+                    320,
+                    card_radius,
+                );
                 setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
             } else {
                 let pad = 32i32;

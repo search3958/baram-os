@@ -426,6 +426,13 @@ impl Warp3Engine {
         &self.app_title
     }
 
+    pub fn set_screen(&mut self, screen: &str) {
+        if self.screen != screen {
+            self.screen = screen.to_string();
+            self.load_screen();
+        }
+    }
+
     pub fn set_text(&mut self, class: &str, value: &str) {
         self.set_element_text(class, value);
     }
@@ -755,6 +762,8 @@ impl Warp3Engine {
                 .extend(parse_script(&self.archive.read_text(&name)));
         }
         self.hovered = None;
+        self.hover_transition = None;
+        self.hover_started_ns = None;
         self.focused_input = None;
         self.scroll = 0;
         self.scroll_request = Some(0);
@@ -989,6 +998,12 @@ impl Warp3Engine {
         let mut document_y = None;
         let mut document_bottom = None;
         for idx in [old, new].into_iter().flatten() {
+            // A screen replacement invalidates node IDs. `load_screen`
+            // clears transitions, but ignore a stale ID defensively so a
+            // future tree mutation cannot turn hover repaint into a panic.
+            if idx >= self.nodes.len() {
+                continue;
+            }
             let node = &self.nodes[idx];
             let screen_y = if node.overlay { node.y } else { node.y - self.scroll };
             // Document patches may never clear title-bar pixels.  Those are
@@ -1453,7 +1468,8 @@ impl Warp3Engine {
                 }
                 "run" => {
                     let command = unquote(&right);
-                    if command.starts_with("os://")
+                    if command.starts_with("setup://")
+                        || command.starts_with("os://")
                         || command.starts_with("app://")
                         || command.starts_with("security://")
                     {

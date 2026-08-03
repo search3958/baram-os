@@ -37,7 +37,7 @@ impl SetupWizard {
         }
     }
 
-    pub fn warp_screen(&self) -> &'static str {
+    pub fn warp3_screen(&self) -> &'static str {
         match self.screen {
             SetupScreen::Welcome => "welcome",
             SetupScreen::Keyboard => "keyboard",

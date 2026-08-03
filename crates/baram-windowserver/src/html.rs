@@ -273,6 +273,12 @@ impl HtmlEngine {
         }
     }
 
+    pub fn set_warp3_screen(&mut self, screen: &str) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.set_screen(screen);
+        }
+    }
+
     pub fn hold_warp3_command(&mut self) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.hold_command();

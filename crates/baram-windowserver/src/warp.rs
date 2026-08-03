@@ -14,8 +14,6 @@ const MAX_SCREENS: usize = 64;
 const MAX_SCRIPTS: usize = 64;
 const MAX_TEXTS: usize = 1024;
 
-pub const SETUP_WARP_SOURCE: &str = include_str!("setup.warp");
-
 #[derive(Clone, Default)]
 struct Attr {
     key: String,
