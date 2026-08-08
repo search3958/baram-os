@@ -1,23 +1,13 @@
 [workspace]
 resolver = "2"
-members = [
-    "crates/baram-core",
-    "crates/baram-font",
-    "crates/baram-graphics",
-    "crates/baram-iokit",
-    "crates/baram-bsd",
-    "crates/baram-windowserver",
-    "crates/baram-kern",
-    "crates/baram-boot",
-]
+members = ["crates/*"]
+exclude = ["crates/baram-linux-bridge"]
 
 [workspace.dependencies]
 uefi = { version = "0.38", features = ["alloc", "logger", "global_allocator"] }
 uefi-raw = "0.15"
 libm = "0.2"
 kurbo = { version = "0.13", default-features = false, features = ["libm"] }
-stb_truetype_rust = { path = "crates/stb_truetype_rust" }
-png-decoder = { path = "crates/png-decoder" }
 blake3 = { version = "1.8.5", default-features = false, features = ["pure"] }
 
 [profile.dev]

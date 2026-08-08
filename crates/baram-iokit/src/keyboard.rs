@@ -130,6 +130,12 @@ impl Keyboard {
     }
 
     pub fn open() -> Self {
+        Self::open_with_shift_key(load_shift_key())
+    }
+
+    /// Open the keyboard with an explicit modifier mapping, without reading
+    /// the BaramOS configuration. Nano System uses this before kernel config.
+    pub fn open_with_shift_key(shift_key: u8) -> Self {
         // Try direct USB IO for keyboard
         if let Ok(handles) = boot::find_handles::<UsbIo>() {
             for handle in handles {
@@ -158,19 +164,31 @@ impl Keyboard {
                             prev_modifiers: 0,
                             cur_modifiers: 0,
                             cur_keys: [0u8; 6],
-                            shift_key: load_shift_key(),
+                            shift_key,
                         };
                     }
                 }
             }
         }
+        Self::open_firmware_with_shift_key(shift_key)
+    }
+
+    /// Open only the keyboard protocols already initialized by UEFI.
+    /// This avoids re-probing USB controllers during early platform startup.
+    pub fn open_firmware_with_shift_key(shift_key: u8) -> Self {
+        #[cfg(not(target_arch = "aarch64"))]
         let input_ex = Self::open_input_ex();
+        // AAVMF may block while opening InputEx after pointer protocols have
+        // been claimed. `poll` uses the firmware's basic stdin when this is
+        // None, which is sufficient for Nano System's keyboard contract.
+        #[cfg(target_arch = "aarch64")]
+        let input_ex = None;
         baram_font::log_line_str(if input_ex.is_some() {
             "KBD: using UEFI extended input protocol"
         } else {
             "KBD: using UEFI basic input protocol"
         });
-        Keyboard { usb_io: None, input_ex, prev_keys: [0u8; 6], prev_modifiers: 0, cur_modifiers: 0, cur_keys: [0u8; 6], shift_key: load_shift_key() }
+        Keyboard { usb_io: None, input_ex, prev_keys: [0u8; 6], prev_modifiers: 0, cur_modifiers: 0, cur_keys: [0u8; 6], shift_key }
     }
 
     fn open_input_ex() -> Option<boot::ScopedProtocol<InputEx>> {

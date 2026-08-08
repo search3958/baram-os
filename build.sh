@@ -32,6 +32,7 @@ set -euo pipefail
 # ---------- script metadata ----------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/nano_targets.sh"
 
 PROJECT_NAME="baramos"
 EFI_NAME="bootaa64.efi"
@@ -97,13 +98,20 @@ if ! rustup target list --installed 2>/dev/null | grep -q '^aarch64-unknown-uefi
 fi
 
 # ---------- step 2: build the EFI app ----------
-SUBSYSTEM_NAMES=("windowserver" "font" "graphics" "iokit" "bsd")
+PRIMARY_BIN="$(nano_primary_bin)"
+SUBSYSTEM_NAMES=()
+while IFS= read -r name; do
+    [ -n "$name" ] && SUBSYSTEM_NAMES+=("$name")
+done < <(nano_app_bins)
 
 build_efi() {
     log "Building $EFI_NAME ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi --bin bootaa64
-    if [ -f "$TARGET_DIR/bootaa64" ] && [ ! -f "$TARGET_DIR/$EFI_NAME" ]; then
-        cp "$TARGET_DIR/bootaa64" "$TARGET_DIR/$EFI_NAME"
+    cargo +nightly build --release --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
+    if [ -f "$TARGET_DIR/$PRIMARY_BIN" ] && [ ! -f "$TARGET_DIR/$PRIMARY_BIN.efi" ]; then
+        cp "$TARGET_DIR/$PRIMARY_BIN" "$TARGET_DIR/$PRIMARY_BIN.efi"
+    fi
+    if [ "$PRIMARY_BIN.efi" != "$EFI_NAME" ]; then
+        cp "$TARGET_DIR/$PRIMARY_BIN.efi" "$TARGET_DIR/$EFI_NAME"
     fi
     test -f "$TARGET_DIR/$EFI_NAME" || die "Build did not produce $EFI_NAME"
     log "  -> $TARGET_DIR/$EFI_NAME ($(stat -c %s "$TARGET_DIR/$EFI_NAME" 2>/dev/null || stat -f %z "$TARGET_DIR/$EFI_NAME") bytes)"
@@ -129,8 +137,11 @@ make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
     local w3a_dir="$RUNTIME_DIR/w3a"
-    "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
     mkdir -p "$RUNTIME_DIR"
+    mkdir -p "$w3a_dir"
+    if [ -x "$SCRIPT_DIR/scripts/package_w3a.sh" ] && [ -d "$SCRIPT_DIR/app" ]; then
+        "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
+    fi
 
     if [ -f "$out" ]; then
         log "Removing existing disk image $out ..."

@@ -1,0 +1,12 @@
+[package]
+name = "nano-system"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nano-system"
+path = "src/main.rs"
+
+[dependencies]
+uefi = { workspace = true }
+uefi-raw = { workspace = true }

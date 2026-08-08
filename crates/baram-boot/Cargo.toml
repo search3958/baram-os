@@ -39,7 +39,8 @@ baram-iokit = { path = "../baram-iokit" }
 baram-bsd = { path = "../baram-bsd" }
 baram-windowserver = { path = "../baram-windowserver" }
 baram-kern = { path = "../baram-kern" }
-png-decoder = { workspace = true }
+nano-system = { path = "../nano-system" }
+png-decoder = { path = "../png-decoder" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 libm = { workspace = true }

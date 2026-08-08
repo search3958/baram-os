@@ -10,4 +10,4 @@ baram-graphics = { path = "../baram-graphics" }
 baram-bsd = { path = "../baram-bsd" }
 uefi = { workspace = true }
 libm = { workspace = true }
-png-decoder = { workspace = true }
+png-decoder = { path = "../png-decoder" }

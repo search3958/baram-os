@@ -19,6 +19,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/nano_targets.sh"
 
 PROJECT_NAME="baramos"
 EFI_NAME="bootx64.efi"
@@ -31,6 +32,11 @@ QEMU_RAM="${QEMU_RAM:-0.25G}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
 QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
 QEMU_MONITOR="${QEMU_MONITOR:-none}"
+
+NANO_APP_NAMES=()
+while IFS= read -r name; do
+    [ -n "$name" ] && NANO_APP_NAMES+=("$name")
+done < <(nano_app_bins)
 
 log()  { printf "\033[1;34m[build]\033[0m %s\n" "$*"; }
 warn() { printf "\033[1;33m[warn]\033[0m %s\n"  "$*" >&2; }
@@ -67,23 +73,32 @@ if ! rustup target list --installed 2>/dev/null | grep -q '^x86_64-unknown-uefi'
 fi
 
 build_efi() {
+    local primary_bin
+    primary_bin="$(nano_primary_bin)"
     log "Building $EFI_NAME ..."
     rm -f "$TARGET_DIR/$EFI_NAME"
-    cargo +nightly build --release --target x86_64-unknown-uefi
-    # The Cargo.toml names the binary "bootaa64"; copy to BOOTX64.EFI for x86_64.
-    if [ -f "$TARGET_DIR/bootaa64.efi" ]; then
-        cp "$TARGET_DIR/bootaa64.efi" "$TARGET_DIR/$EFI_NAME"
+    cargo +nightly build --release --target x86_64-unknown-uefi --bin "$primary_bin"
+    if [ -f "$TARGET_DIR/$primary_bin.efi" ]; then
+        cp "$TARGET_DIR/$primary_bin.efi" "$TARGET_DIR/$EFI_NAME"
     fi
     test -f "$TARGET_DIR/$EFI_NAME" || die "Build did not produce $EFI_NAME"
     log "  -> $TARGET_DIR/$EFI_NAME ($(stat -c %s "$TARGET_DIR/$EFI_NAME" 2>/dev/null || stat -f %z "$TARGET_DIR/$EFI_NAME") bytes)"
+
+    log "Building Nano System application binaries..."
+    for name in "${NANO_APP_NAMES[@]}"; do
+        cargo +nightly build --release --target x86_64-unknown-uefi --bin "$name"
+    done
 }
 
 make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
     local w3a_dir="$RUNTIME_DIR/w3a"
-    "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
     mkdir -p "$RUNTIME_DIR"
+    mkdir -p "$w3a_dir"
+    if [ -x "$SCRIPT_DIR/scripts/package_w3a.sh" ] && [ -d "$SCRIPT_DIR/app" ]; then
+        "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
+    fi
     rm -f "$out"
 
     log "Creating FAT disk image ($IMAGE_SIZE_MB MiB) at $out ..."
@@ -97,6 +112,11 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
+        mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
+        for name in "${NANO_APP_NAMES[@]}"; do
+            [ -f "$TARGET_DIR/$name.efi" ] && \
+                mcopy -i "$out" "$TARGET_DIR/$name.efi" ::/EFI/BOOT/bin/
+        done
         if [ -f "$SCRIPT_DIR/config.xml" ]; then
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"

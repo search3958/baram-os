@@ -3,8 +3,7 @@
 
 extern crate alloc;
 
-use uefi::prelude::*;
-use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
+use baram_core::subsystem::{KeyEventData, MouseEventData, SubsystemContext, SubsystemExports};
 use baram_core::Color;
 use baram_core::LayerSystem;
 
@@ -93,11 +92,27 @@ extern "C" fn ws_render(ctx: *mut SubsystemContext) -> i32 {
 
                     if w > 100 && h > 100 {
                         layer.fill_rounded_rect(50, 50, w - 100, h - 100, 12, Color::WIN_BG);
-                        layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
+                        layer.rounded_rect_outline(
+                            50,
+                            50,
+                            w - 100,
+                            h - 100,
+                            12,
+                            Color::BORDER,
+                            Color::WIN_BG,
+                        );
 
                         let title_h = 32;
                         layer.fill_rect(50, 50, w - 100, title_h, Color::PANEL);
-                        layer.rounded_rect_outline(50, 50, w - 100, h - 100, 12, Color::BORDER, Color::WIN_BG);
+                        layer.rounded_rect_outline(
+                            50,
+                            50,
+                            w - 100,
+                            h - 100,
+                            12,
+                            Color::BORDER,
+                            Color::WIN_BG,
+                        );
                         layer.fill_rect(51, 50 + title_h - 1, w - 102, 1, Color::BORDER);
                     }
                     state.initialized = true;
@@ -135,10 +150,11 @@ extern "C" fn ws_shutdown(_ctx: *mut SubsystemContext) {
     }
 }
 
-#[entry]
-fn main() -> uefi::Status {
+fn windowserver_app(_nano: nano_system::NanoSystem) -> uefi::Status {
     uefi::Status::SUCCESS
 }
+
+nano_system::nano_entry!(windowserver_app);
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

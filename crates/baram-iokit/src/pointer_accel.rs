@@ -56,7 +56,6 @@ pub struct MotionFilter {
     fraction_y: f32,
     filtered_speed: f32,
     buttons: u8,
-    click_guard_remaining: u8,
 }
 
 impl MotionFilter {
@@ -71,7 +70,6 @@ impl MotionFilter {
         let button_changed = buttons != self.buttons;
         self.buttons = buttons;
         if button_changed {
-            self.click_guard_remaining = settings.click_guard_reports;
             // Do not carry a half-pixel from positioning into the click.
             self.fraction_x = 0.0;
             self.fraction_y = 0.0;
@@ -89,13 +87,6 @@ impl MotionFilter {
         };
         let instant_speed = major + minor * 0.375;
 
-        if self.click_guard_remaining != 0 {
-            self.click_guard_remaining -= 1;
-            if instant_speed <= settings.click_guard_distance {
-                self.filtered_speed *= 0.5;
-                return (0, 0);
-            }
-        }
         if dx == 0 && dy == 0 {
             self.filtered_speed *= settings.smoothing;
             return (0, 0);
@@ -103,7 +94,11 @@ impl MotionFilter {
 
         self.filtered_speed =
             self.filtered_speed * settings.smoothing + instant_speed * (1.0 - settings.smoothing);
-        let gain = settings.gain(self.filtered_speed);
+        // Never turn a real hardware count into a zero-pixel report. Fractional
+        // accumulation made slow motion wait for several USB reports and felt
+        // exactly like input lag. Acceleration may increase motion, but the
+        // low end is always immediate and one-to-one.
+        let gain = settings.gain(self.filtered_speed).max(1.0);
         let scaled_x = raw_x * gain + self.fraction_x;
         let scaled_y = raw_y * gain + self.fraction_y;
         let output_x = scaled_x as i32;
@@ -280,40 +275,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mouse_curve_maps_sixteen_counts_to_about_three_pixels() {
+    fn mouse_curve_never_delays_slow_motion() {
         let settings = MotionSettings::default();
         let mut filter = MotionFilter::default();
         let slow = filter.apply(16, 0, 0, &settings).0;
-        assert!((2..=3).contains(&slow));
+        assert_eq!(slow, 16);
 
         let mut fast_filter = MotionFilter::default();
         let fast = fast_filter.apply(100, 0, 0, &settings).0;
-        assert!(fast >= 45);
-        assert!(fast > slow * 10);
+        assert!(fast >= 100);
+        assert!(fast > slow * 6);
         assert!(settings.gain(10_000.0) <= settings.max_gain + 0.01);
     }
 
     #[test]
-    fn alternating_noise_cancels_but_coherent_motion_accumulates() {
+    fn single_count_moves_immediately_in_both_directions() {
         let settings = MotionSettings::default();
         let mut filter = MotionFilter::default();
-        assert_eq!(filter.apply(1, 0, 0, &settings), (0, 0));
-        assert_eq!(filter.apply(-1, 0, 0, &settings), (0, 0));
-        assert_eq!(filter.apply(1, 0, 0, &settings), (0, 0));
-        let mut coherent_output = 0;
-        for _ in 0..10 {
-            coherent_output += filter.apply(1, 0, 0, &settings).0;
-        }
-        assert!(coherent_output >= 1);
+        assert_eq!(filter.apply(1, 0, 0, &settings), (1, 0));
+        assert_eq!(filter.apply(-1, 0, 0, &settings), (-1, 0));
     }
 
     #[test]
-    fn click_guard_suppresses_jitter_but_allows_a_fast_drag() {
+    fn button_transition_does_not_suppress_drag_motion() {
         let settings = MotionSettings::default();
         let mut filter = MotionFilter::default();
-        assert_eq!(filter.apply(1, 0, 1, &settings), (0, 0));
-        assert_eq!(filter.apply(-1, 0, 1, &settings), (0, 0));
-        assert!(filter.apply(32, 0, 1, &settings).0 >= 7);
+        assert_eq!(filter.apply(1, 0, 1, &settings), (1, 0));
+        assert_eq!(filter.apply(-1, 0, 1, &settings), (-1, 0));
+        assert!(filter.apply(32, 0, 1, &settings).0 >= 32);
     }
 
     #[test]
