@@ -130,6 +130,13 @@ pub struct NanoBasicPointerEvent {
 /// handoff to an application.
 pub struct NanoPointerTestDisplay {
     graphics: ScopedProtocol<GraphicsOutput>,
+    framebuffer: *mut u32,
+    width: usize,
+    height: usize,
+    stride: usize,
+    background_pixel: u32,
+    white_pixel: u32,
+    yellow_pixel: u32,
 }
 
 impl NanoPointerTestDisplay {
@@ -139,15 +146,32 @@ impl NanoPointerTestDisplay {
     }
 
     pub fn update(&mut self, old_x: usize, old_y: usize, x: usize, y: usize, yellow: bool) {
-        fill_rect(
-            &mut self.graphics,
+        fill_rect_raw(
+            self.framebuffer,
+            self.width,
+            self.height,
+            self.stride,
             old_x,
             old_y,
             16,
             16,
-            NanoColor::rgb(0x00, 0x00, 0x44),
+            self.background_pixel,
         );
-        fill_rect(&mut self.graphics, x, y, 16, 16, pointer_test_color(yellow));
+        fill_rect_raw(
+            self.framebuffer,
+            self.width,
+            self.height,
+            self.stride,
+            x,
+            y,
+            16,
+            16,
+            if yellow {
+                self.yellow_pixel
+            } else {
+                self.white_pixel
+            },
+        );
     }
 }
 
@@ -315,7 +339,17 @@ impl NanoSystem {
             }
         }
         for device in &mut self.absolute_pointers {
-            if let Some(state) = device.pointer.get_state() {
+            // Match the original Baram input path: old firmware samples must
+            // not form a visible queue behind the user's finger. Drain the
+            // protocol and publish only the newest absolute position.
+            let mut latest = None;
+            for _ in 0..32 {
+                match device.pointer.get_state() {
+                    Some(state) => latest = Some(state),
+                    _ => break,
+                }
+            }
+            if let Some(state) = latest {
                 let x = state
                     .current_x
                     .saturating_sub(device.min_x)
@@ -341,19 +375,39 @@ impl NanoSystem {
             }
         }
         for pointer in &mut self.simple_pointers {
-            if let Ok(Some(state)) = pointer.read_state() {
+            // SimplePointer is a queued relative protocol. Coalesce every
+            // pending sample exactly as the pre-Nano mouse owner did; a fixed
+            // per-frame event cap otherwise turns movement into input lag.
+            let mut raw_dx = 0i32;
+            let mut raw_dy = 0i32;
+            let mut scroll = 0i32;
+            let mut buttons = 0u8;
+            let mut received = false;
+            loop {
+                match pointer.read_state() {
+                    Ok(Some(state)) => {
+                        raw_dx = raw_dx.saturating_add(state.relative_movement[0]);
+                        raw_dy = raw_dy.saturating_add(state.relative_movement[1]);
+                        scroll = scroll.saturating_add(state.relative_movement[2]);
+                        buttons = (state.button[0] as u8) | ((state.button[1] as u8) << 1);
+                        received = true;
+                    }
+                    _ => break,
+                }
+            }
+            if received {
                 self.input_state.pointer_sequence =
                     self.input_state.pointer_sequence.wrapping_add(1);
-                self.input_state.pointer_dx = state.relative_movement[0];
-                self.input_state.pointer_dy = state.relative_movement[1];
-                self.input_state.scroll = state.relative_movement[2];
+                self.input_state.pointer_dx = raw_dx;
+                self.input_state.pointer_dy = raw_dy;
+                self.input_state.scroll = scroll;
                 self.input_state.pointer_is_absolute = false;
                 self.input_state.pointer_is_trackpad = false;
-                self.input_state.left = state.button[0];
-                self.input_state.right = state.button[1];
+                self.input_state.left = buttons & 1 != 0;
+                self.input_state.right = buttons & 2 != 0;
                 return Some(NanoBasicPointerEvent {
-                    dx: state.relative_movement[0],
-                    dy: state.relative_movement[1],
+                    dx: raw_dx,
+                    dy: raw_dy,
                     absolute: None,
                 });
             }
@@ -362,7 +416,25 @@ impl NanoSystem {
     }
 
     pub fn begin_pointer_test() -> Result<NanoPointerTestDisplay, Status> {
-        open_display().map(|graphics| NanoPointerTestDisplay { graphics })
+        let mut graphics = open_display()?;
+        let mode = graphics.current_mode_info();
+        let (width, height) = mode.resolution();
+        let stride = mode.stride();
+        let format = mode.pixel_format();
+        let background_pixel = encode_pixel(format, NanoColor::rgb(0x00, 0x00, 0x44));
+        let white_pixel = encode_pixel(format, NanoColor::rgb(0xff, 0xff, 0xff));
+        let yellow_pixel = encode_pixel(format, NanoColor::rgb(0xff, 0xff, 0x00));
+        let framebuffer = graphics.frame_buffer().as_mut_ptr() as *mut u32;
+        Ok(NanoPointerTestDisplay {
+            graphics,
+            framebuffer,
+            width,
+            height,
+            stride,
+            background_pixel,
+            white_pixel,
+            yellow_pixel,
+        })
     }
 
     pub fn pointer_abs_max(&self) -> (u64, u64) {
@@ -445,6 +517,14 @@ fn open_usb_pointers() -> Vec<BasicUsbPointer> {
         let Some(endpoint) = endpoint else {
             continue;
         };
+        let _ = io.control_transfer(
+            0x21,
+            0x0a,
+            0,
+            interface.interface_number as u16,
+            ControlTransfer::None,
+            100,
+        );
         let _ = io.control_transfer(
             0x21,
             0x0b,
@@ -556,6 +636,41 @@ fn pointer_test_color(yellow: bool) -> NanoColor {
         NanoColor::rgb(0xff, 0xff, 0x00)
     } else {
         NanoColor::rgb(0xff, 0xff, 0xff)
+    }
+}
+
+fn encode_pixel(format: PixelFormat, color: NanoColor) -> u32 {
+    match format {
+        PixelFormat::Rgb => {
+            ((color.blue() as u32) << 16) | ((color.green() as u32) << 8) | color.red() as u32
+        }
+        PixelFormat::Bgr => {
+            ((color.red() as u32) << 16) | ((color.green() as u32) << 8) | color.blue() as u32
+        }
+        _ => color.0,
+    }
+}
+
+fn fill_rect_raw(
+    framebuffer: *mut u32,
+    screen_width: usize,
+    screen_height: usize,
+    stride: usize,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    pixel: u32,
+) {
+    let row = [pixel; 16];
+    let copy_width = width.min(16).min(screen_width.saturating_sub(x));
+    if copy_width == 0 {
+        return;
+    }
+    for py in y..y.saturating_add(height).min(screen_height) {
+        unsafe {
+            ptr::copy_nonoverlapping(row.as_ptr(), framebuffer.add(py * stride + x), copy_width)
+        };
     }
 }
 

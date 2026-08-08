@@ -17,8 +17,6 @@ use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{WinId, WindowManager};
 
-const MAX_POINTER_EVENTS_PER_TICK: usize = 8;
-
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
         printable: event.printable,
@@ -82,6 +80,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     ));
 
     config::init_config();
+    let mut mouse_motion = baram_iokit::mouse::MouseMotionProcessor::new();
     log_line_str("BaramOS: config loaded");
 
     baram_font::ttf_font::init();
@@ -160,11 +159,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             }
 
             {
-                for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
-                    let Some(nano_event) = nano.poll_pointer() else {
-                        break;
-                    };
-                    let ev = kernel_pointer_event(nano_event, nano.input_state);
+                while let Some(nano_event) = nano.poll_pointer() {
+                    let ev =
+                        mouse_motion.process(kernel_pointer_event(nano_event, nano.input_state));
                     baram_iokit::mouse::apply_mouse_event(
                         &mut cursor_x,
                         &mut cursor_y,
@@ -671,11 +668,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         {
-            for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
-                let Some(nano_event) = nano.poll_pointer() else {
-                    break;
-                };
-                let ev = kernel_pointer_event(nano_event, nano.input_state);
+            while let Some(nano_event) = nano.poll_pointer() {
+                let ev = mouse_motion.process(kernel_pointer_event(nano_event, nano.input_state));
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
 
                 let (cx, cy) = baram_iokit::mouse::apply_mouse_event(

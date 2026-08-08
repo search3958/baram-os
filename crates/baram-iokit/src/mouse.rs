@@ -75,6 +75,45 @@ pub struct MouseEvent {
     pub scroll: i32,
 }
 
+/// Stateful BaramOS-side processing for raw pointer reports supplied by Nano.
+/// Nano deliberately performs no acceleration, smoothing or click filtering.
+pub struct MouseMotionProcessor {
+    filter: MotionFilter,
+    settings: MotionSettings,
+    config_revision: usize,
+}
+
+impl MouseMotionProcessor {
+    pub fn new() -> Self {
+        Self {
+            filter: MotionFilter::default(),
+            settings: load_motion_settings(),
+            config_revision: baram_bsd::config::revision(),
+        }
+    }
+
+    pub fn process(&mut self, mut event: MouseEvent) -> MouseEvent {
+        let revision = baram_bsd::config::revision();
+        if revision != self.config_revision {
+            self.settings = load_motion_settings();
+            self.config_revision = revision;
+        }
+        let buttons = (event.left as u8) | ((event.right as u8) << 1) | ((event.middle as u8) << 2);
+        if !event.is_absolute && !event.is_trackpad {
+            (event.rel_dx, event.rel_dy) =
+                self.filter
+                    .apply(event.rel_dx, event.rel_dy, buttons, &self.settings);
+        }
+        event
+    }
+}
+
+impl Default for MouseMotionProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct AbsoluteDevice {
     pointer: boot::ScopedProtocol<AbsolutePointer>,
     range_x: u64,

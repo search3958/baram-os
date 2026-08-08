@@ -5,7 +5,6 @@ use nano_system::NanoSystem;
 use uefi::Status;
 
 fn nano_idle(mut nano: NanoSystem) -> Status {
-    const MAX_POINTER_EVENTS_PER_TICK: usize = 8;
     const MAX_KEY_EVENTS_PER_TICK: usize = 16;
 
     let mut cursor_x = nano.display.width / 2;
@@ -39,10 +38,7 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
             yellow_until = tick.saturating_add(200);
             pending_redraw = true;
         }
-        for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
-            let Some(event) = nano.poll_pointer() else {
-                break;
-            };
+        while let Some(event) = nano.poll_pointer() {
             let old_x = cursor_x;
             let old_y = cursor_y;
             if let Some((x, y, max_x, max_y)) = event.absolute {
