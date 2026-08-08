@@ -17,6 +17,8 @@ use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{WinId, WindowManager};
 
+const MAX_POINTER_EVENTS_PER_TICK: usize = 8;
+
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
         printable: event.printable,
@@ -141,6 +143,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut setup_scene_dirty = true;
         let mut setup_prev_cursor = (cursor_x, cursor_y);
         let mut setup_now_ns = 0u64;
+        let mut setup_next_present_ms = 0u64;
         setup_engine.set_warp3_screen(wizard.warp3_screen());
         setup_engine.update(528, 320);
 
@@ -157,7 +160,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             }
 
             {
-                while let Some(nano_event) = nano.poll_pointer() {
+                for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
+                    let Some(nano_event) = nano.poll_pointer() else {
+                        break;
+                    };
                     let ev = kernel_pointer_event(nano_event, nano.input_state);
                     baram_iokit::mouse::apply_mouse_event(
                         &mut cursor_x,
@@ -192,6 +198,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             if setup_engine.tick(setup_now_ns) {
                 setup_scene_dirty = true;
             }
+
+            let setup_now_ms = setup_now_ns / 1_000_000;
+            let cursor_changed = setup_prev_cursor != (cursor_x, cursor_y);
+            if !setup_scene_dirty && !cursor_changed {
+                continue;
+            }
+            if setup_now_ms < setup_next_present_ms {
+                continue;
+            }
+            setup_next_present_ms = setup_now_ms.saturating_add(16);
 
             if setup_scene_dirty {
                 if let Some(ref background) = setup_background {
@@ -349,6 +365,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     // Monotonic UI clock driven by the already-configured 1 ms timer event.
     // Do not query the slow, wall-clock UEFI runtime service per frame.
     let mut ui_time_ms: u64 = 0;
+    let mut next_present_ms: u64 = 0;
+    let mut deferred_dirty = false;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_add_started_ms: Option<u64> = None;
@@ -427,7 +445,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     layer.flush(&mut screen);
 
     loop {
-        let mut dirty = false;
+        let mut dirty = deferred_dirty;
+        deferred_dirty = false;
         let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
@@ -652,7 +671,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         {
-            while let Some(nano_event) = nano.poll_pointer() {
+            for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
+                let Some(nano_event) = nano.poll_pointer() else {
+                    break;
+                };
                 let ev = kernel_pointer_event(nano_event, nano.input_state);
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
 
@@ -1532,7 +1554,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
         }
 
+        if dirty && ui_time_ms < next_present_ms {
+            deferred_dirty = true;
+            continue;
+        }
+
         if dirty {
+            next_present_ms = ui_time_ms.saturating_add(16);
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
             if scene_dirty {

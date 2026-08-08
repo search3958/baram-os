@@ -115,6 +115,7 @@ struct BasicUsbPointer {
     io: ScopedProtocol<UsbIo>,
     endpoint: u8,
     report: Vec<u8>,
+    buttons: u8,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -122,6 +123,32 @@ pub struct NanoBasicPointerEvent {
     pub dx: i32,
     pub dy: i32,
     pub absolute: Option<(u64, u64, u64, u64)>,
+}
+
+/// Retains GOP while the standalone Nano diagnostic is active. The kernel
+/// path never constructs this type, so no diagnostic rendering survives a
+/// handoff to an application.
+pub struct NanoPointerTestDisplay {
+    graphics: ScopedProtocol<GraphicsOutput>,
+}
+
+impl NanoPointerTestDisplay {
+    pub fn initialize(&mut self, x: usize, y: usize, yellow: bool) {
+        fill_display(&mut self.graphics, NanoColor::rgb(0x00, 0x00, 0x44));
+        fill_rect(&mut self.graphics, x, y, 16, 16, pointer_test_color(yellow));
+    }
+
+    pub fn update(&mut self, old_x: usize, old_y: usize, x: usize, y: usize, yellow: bool) {
+        fill_rect(
+            &mut self.graphics,
+            old_x,
+            old_y,
+            16,
+            16,
+            NanoColor::rgb(0x00, 0x00, 0x44),
+        );
+        fill_rect(&mut self.graphics, x, y, 16, 16, pointer_test_color(yellow));
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -264,12 +291,16 @@ impl NanoSystem {
                     let buttons = pointer.report[0];
                     let dx = pointer.report[1] as i8 as i32;
                     let dy = pointer.report[2] as i8 as i32;
+                    let scroll = pointer.report.get(3).copied().unwrap_or(0) as i8 as i32;
+                    if dx == 0 && dy == 0 && scroll == 0 && buttons == pointer.buttons {
+                        continue;
+                    }
+                    pointer.buttons = buttons;
                     self.input_state.pointer_sequence =
                         self.input_state.pointer_sequence.wrapping_add(1);
                     self.input_state.pointer_dx = dx;
                     self.input_state.pointer_dy = dy;
-                    self.input_state.scroll =
-                        pointer.report.get(3).copied().unwrap_or(0) as i8 as i32;
+                    self.input_state.scroll = scroll;
                     self.input_state.pointer_is_absolute = false;
                     self.input_state.pointer_is_trackpad = false;
                     self.input_state.left = buttons & 1 != 0;
@@ -330,16 +361,8 @@ impl NanoSystem {
         None
     }
 
-    pub fn draw_pointer_test_frame(x: usize, y: usize, yellow: bool) {
-        if let Ok(mut graphics) = open_display() {
-            fill_display(&mut graphics, NanoColor::rgb(0x00, 0x00, 0x44));
-            let color = if yellow {
-                NanoColor::rgb(0xff, 0xff, 0x00)
-            } else {
-                NanoColor::rgb(0xff, 0xff, 0xff)
-            };
-            fill_rect(&mut graphics, x, y, 16, 16, color);
-        }
+    pub fn begin_pointer_test() -> Result<NanoPointerTestDisplay, Status> {
+        open_display().map(|graphics| NanoPointerTestDisplay { graphics })
     }
 
     pub fn pointer_abs_max(&self) -> (u64, u64) {
@@ -434,6 +457,7 @@ fn open_usb_pointers() -> Vec<BasicUsbPointer> {
             io,
             endpoint,
             report: vec![0; packet_size.min(64)],
+            buttons: 0,
         });
     }
     pointers
@@ -524,6 +548,14 @@ fn fill_display(graphics: &mut GraphicsOutput, color: NanoColor) {
         for x in 0..width {
             unsafe { ptr::write_volatile(base.add(y * stride + x), pixel) };
         }
+    }
+}
+
+fn pointer_test_color(yellow: bool) -> NanoColor {
+    if yellow {
+        NanoColor::rgb(0xff, 0xff, 0x00)
+    } else {
+        NanoColor::rgb(0xff, 0xff, 0xff)
     }
 }
 

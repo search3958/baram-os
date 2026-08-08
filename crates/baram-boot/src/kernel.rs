@@ -17,6 +17,8 @@ use baram_kern::subsystem::SubsystemManager;
 use baram_kern::vmm::VirtualMemoryManager;
 use nano_system::NanoSystem;
 
+const MAX_POINTER_EVENTS_PER_TICK: usize = 8;
+
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
         printable: event.printable,
@@ -188,7 +190,10 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         {
-            while let Some(nano_event) = nano.poll_pointer() {
+            for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
+                let Some(nano_event) = nano.poll_pointer() else {
+                    break;
+                };
                 let ev = kernel_pointer_event(nano_event, nano.input_state);
                 let (cx, cy) = baram_iokit::mouse::apply_mouse_event(
                     &mut cursor_x,
@@ -264,12 +269,10 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
         cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
         cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
 
-        if cursor_x != prev_cursor_x || cursor_y != prev_cursor_y {
+        if frames_since_tick % 16 == 0 {
             layer.flush(&mut screen);
             prev_cursor_x = cursor_x;
             prev_cursor_y = cursor_y;
-        } else if frames_since_tick % 16 == 0 {
-            layer.flush(&mut screen);
         }
     }
 }

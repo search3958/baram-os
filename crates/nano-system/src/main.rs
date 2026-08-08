@@ -5,6 +5,9 @@ use nano_system::NanoSystem;
 use uefi::Status;
 
 fn nano_idle(mut nano: NanoSystem) -> Status {
+    const MAX_POINTER_EVENTS_PER_TICK: usize = 8;
+    const MAX_KEY_EVENTS_PER_TICK: usize = 16;
+
     let mut cursor_x = nano.display.width / 2;
     let mut cursor_y = nano.display.height / 2;
     let Some(timer) = nano.take_timer_event() else {
@@ -14,19 +17,34 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
     let mut tick = 0u64;
     let mut yellow_until = 0u64;
     let mut was_yellow = false;
-    NanoSystem::draw_pointer_test_frame(cursor_x, cursor_y, false);
+    let mut pending_redraw = false;
+    let mut next_frame_tick = 0u64;
+    let Ok(mut display) = NanoSystem::begin_pointer_test() else {
+        NanoSystem::paint_failure_screen();
+        return Status::UNSUPPORTED;
+    };
+    display.initialize(cursor_x, cursor_y, false);
+    let mut drawn_x = cursor_x;
+    let mut drawn_y = cursor_y;
 
     loop {
         let mut events = [unsafe { core::ptr::read(&timer) }];
         let _ = uefi::boot::wait_for_event(&mut events);
         tick = tick.wrapping_add(1);
-        let mut redraw = false;
 
-        while nano.poll_keyboard().is_some() {
+        for _ in 0..MAX_KEY_EVENTS_PER_TICK {
+            if nano.poll_keyboard().is_none() {
+                break;
+            }
             yellow_until = tick.saturating_add(200);
-            redraw = true;
+            pending_redraw = true;
         }
-        while let Some(event) = nano.poll_pointer() {
+        for _ in 0..MAX_POINTER_EVENTS_PER_TICK {
+            let Some(event) = nano.poll_pointer() else {
+                break;
+            };
+            let old_x = cursor_x;
+            let old_y = cursor_y;
             if let Some((x, y, max_x, max_y)) = event.absolute {
                 cursor_x = (x.saturating_mul(nano.display.width.saturating_sub(16) as u64) / max_x)
                     .min(nano.display.width.saturating_sub(16) as u64)
@@ -42,16 +60,20 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
                     .clamp(0, nano.display.height.saturating_sub(16) as i64)
                     as usize;
             }
-            redraw = true;
+            pending_redraw |= cursor_x != old_x || cursor_y != old_y;
         }
 
         let yellow = tick < yellow_until;
         if yellow != was_yellow {
-            redraw = true;
+            pending_redraw = true;
             was_yellow = yellow;
         }
-        if redraw {
-            NanoSystem::draw_pointer_test_frame(cursor_x, cursor_y, yellow);
+        if pending_redraw && tick >= next_frame_tick {
+            display.update(drawn_x, drawn_y, cursor_x, cursor_y, yellow);
+            drawn_x = cursor_x;
+            drawn_y = cursor_y;
+            pending_redraw = false;
+            next_frame_tick = tick.saturating_add(16);
         }
     }
 }
