@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use uefi::prelude::*;
 use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
 use baram_core::Color;
 use baram_core::LayerSystem;
@@ -135,10 +134,11 @@ extern "C" fn ws_shutdown(_ctx: *mut SubsystemContext) {
     }
 }
 
-#[entry]
-fn main() -> uefi::Status {
+fn windowserver_app(_nano: baram_nano_system::NanoSystem) -> uefi::Status {
     uefi::Status::SUCCESS
 }
+
+baram_nano_system::nano_entry!(windowserver_app);
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

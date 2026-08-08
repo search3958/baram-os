@@ -17,9 +17,9 @@ use baram_kern::loader;
 use baram_iokit::keyboard::Keyboard;
 use baram_iokit::mouse::Mouse;
 use baram_bsd::config;
+use baram_nano_system::NanoSystem;
 
-#[entry]
-fn kernel_main() -> Status {
+fn kernel_main(nano: NanoSystem) -> Status {
     log("BaramOS: starting kernel...");
     let _ = uefi::helpers::init();
     log("BaramOS: UEFI helpers initialized");
@@ -53,28 +53,19 @@ fn kernel_main() -> Status {
         Ok(m) => Some(m),
         Err(_) => None,
     };
+    #[cfg(not(target_arch = "aarch64"))]
     let mouse_wait = Mouse::get_wait_event();
+    #[cfg(target_arch = "aarch64")]
+    let mouse_wait = None;
     log("BaramOS: opening keyboard...");
+    #[cfg(not(target_arch = "aarch64"))]
     let mut keyboard = Keyboard::open();
+    #[cfg(target_arch = "aarch64")]
+    let mut keyboard = Keyboard::open_firmware_with_shift_key(
+        baram_bsd::shift_key::load_shift_key(),
+    );
 
-    let timer_event = unsafe {
-        match uefi::boot::create_event(
-            uefi_raw::table::boot::EventType::TIMER,
-            uefi_raw::table::boot::Tpl::APPLICATION,
-            None,
-            None,
-        ) {
-            Ok(evt) => {
-                let _ = uefi::boot::set_timer(&evt, uefi::boot::TimerTrigger::Periodic(core::time::Duration::from_millis(1)));
-                log("BaramOS: timer event created (1ms periodic)");
-                Some(evt)
-            }
-            Err(_) => {
-                log("BaramOS: failed to create timer event");
-                None
-            }
-        }
-    };
+    let timer_event = Some(nano.timer_event);
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -254,6 +245,8 @@ fn kernel_main() -> Status {
         }
     }
 }
+
+baram_nano_system::nano_entry!(kernel_main);
 
 fn log(s: &str) {
     uefi::system::with_stdout(|stdout| {

@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use uefi::prelude::*;
 use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
 
 #[no_mangle]
@@ -56,10 +55,11 @@ extern "C" fn font_shutdown(_ctx: *mut SubsystemContext) {
     }
 }
 
-#[entry]
-fn main() -> uefi::Status {
+fn font_app(_nano: baram_nano_system::NanoSystem) -> uefi::Status {
     uefi::Status::SUCCESS
 }
+
+baram_nano_system::nano_entry!(font_app);
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

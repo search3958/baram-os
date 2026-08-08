@@ -40,7 +40,7 @@ baram-bsd = { path = "../baram-bsd" }
 baram-windowserver = { path = "../baram-windowserver" }
 baram-kern = { path = "../baram-kern" }
 baram-nano-system = { path = "../baram-nano-system" }
-png-decoder = { workspace = true }
+png-decoder = { path = "../png-decoder" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 libm = { workspace = true }

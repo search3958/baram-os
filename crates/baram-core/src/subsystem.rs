@@ -88,9 +88,12 @@ macro_rules! subsystem_entry {
             shutdown: $shutdown,
         };
 
-        #[entry]
-        fn main(_handle: uefi::Handle, _st: &uefi::SystemTable) -> uefi::Status {
+        fn baram_subsystem_app(
+            _nano: baram_nano_system::NanoSystem,
+        ) -> uefi::Status {
             uefi::Status::SUCCESS
         }
+
+        baram_nano_system::nano_entry!(baram_subsystem_app);
     };
 }

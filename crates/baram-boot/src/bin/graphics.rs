@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use uefi::prelude::*;
 use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
 
 #[no_mangle]
@@ -56,10 +55,11 @@ extern "C" fn gfx_shutdown(_ctx: *mut SubsystemContext) {
     }
 }
 
-#[entry]
-fn main() -> uefi::Status {
+fn graphics_app(_nano: baram_nano_system::NanoSystem) -> uefi::Status {
     uefi::Status::SUCCESS
 }
+
+baram_nano_system::nano_entry!(graphics_app);
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

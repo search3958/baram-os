@@ -141,8 +141,6 @@ dependencies = [
 name = "baram-nano-system"
 version = "0.1.0"
 dependencies = [
- "baram-core",
- "baram-iokit",
  "uefi",
  "uefi-raw",
 ]

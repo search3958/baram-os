@@ -13,38 +13,22 @@ use baram_bsd::config;
 use baram_bsd::shift_key;
 use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
+use baram_iokit::keyboard::Keyboard;
+use baram_iokit::mouse::Mouse;
 use baram_nano_system::NanoSystem;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{WinId, WindowManager};
 
-#[entry]
-fn main() -> Status {
-    log_line_str("baram-nano-system: starting...");
-    let nano = match NanoSystem::start(Color::BLACK) {
-        Ok(nano) => nano,
+fn baram_kernel_main(nano: NanoSystem) -> Status {
+    let timer_event = Some(nano.timer_event);
+    let mut screen = match Screen::take() {
+        Ok(screen) => screen,
         Err(_) => {
-            log_line_str("baram-nano-system: display initialization failed");
+            NanoSystem::paint_failure_screen();
             return Status::UNSUPPORTED;
         }
     };
-    log_line_str(&alloc::format!(
-        "baram-nano-system: ready ({}x{})",
-        nano.screen.width(),
-        nano.screen.height()
-    ));
-    log_line_str("baram-nano-system: handing off to kernel");
-    baram_kernel_main(nano)
-}
-
-fn baram_kernel_main(nano: NanoSystem) -> Status {
-    let NanoSystem {
-        mut screen,
-        mut keyboard,
-        mouse: mut mouse_opt,
-        timer_event,
-        mouse_wait_event: mouse_wait,
-    } = nano;
 
     unsafe { baram_font::log::init_screen(&screen) };
     log_line_str("BaramOS kernel: starting...");
@@ -59,7 +43,6 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
     log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
 
     config::init_config();
-    keyboard.shift_key = shift_key::load_shift_key();
     log_line_str("BaramOS: config loaded");
 
     baram_font::ttf_font::init();
@@ -80,6 +63,18 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             8,
         ));
     }
+
+    log_line_str("BaramOS: opening mouse...");
+    let mut mouse_opt: Option<Mouse> = Mouse::open().ok();
+    #[cfg(not(target_arch = "aarch64"))]
+    let mouse_wait = Mouse::get_wait_event();
+    #[cfg(target_arch = "aarch64")]
+    let mouse_wait = None;
+    log_line_str("BaramOS: opening keyboard...");
+    #[cfg(not(target_arch = "aarch64"))]
+    let mut keyboard = Keyboard::open();
+    #[cfg(target_arch = "aarch64")]
+    let mut keyboard = Keyboard::open_firmware_with_shift_key(shift_key::load_shift_key());
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -1832,6 +1827,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
         }
     }
 }
+
+baram_nano_system::nano_entry!(baram_kernel_main);
 
 fn draw_boot_logo(screen: &mut Screen) {
     const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");

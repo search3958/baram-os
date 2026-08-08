@@ -3,8 +3,10 @@ name = "baram-nano-system"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "baram-nano-system"
+path = "src/main.rs"
+
 [dependencies]
-baram-core = { path = "../baram-core" }
-baram-iokit = { path = "../baram-iokit" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
