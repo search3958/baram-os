@@ -26,12 +26,6 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
         // Pointer acquisition is always first: a keyboard backlog must not
         // sit in front of cursor motion on the latency-critical path.
         let pointer_event = nano.poll_pointer();
-        for _ in 0..MAX_KEY_EVENTS_PER_POLL {
-            if nano.poll_keyboard().is_none() {
-                break;
-            }
-            yellow = true;
-        }
         if let Some(event) = pointer_event {
             let old_x = cursor_x;
             let old_y = cursor_y;
@@ -57,7 +51,17 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
                 was_yellow = yellow;
                 yellow = false;
             }
-        } else if yellow != was_yellow {
+        }
+
+        // Non-pointer work runs only after a pending cursor update has already
+        // reached the framebuffer.
+        for _ in 0..MAX_KEY_EVENTS_PER_POLL {
+            if nano.poll_keyboard().is_none() {
+                break;
+            }
+            yellow = true;
+        }
+        if yellow != was_yellow {
             display.update(drawn_x, drawn_y, cursor_x, cursor_y, yellow);
             was_yellow = yellow;
             yellow = false;

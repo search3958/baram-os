@@ -265,7 +265,7 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
         cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
         cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
 
-        if frames_since_tick % 16 == 0 {
+        if frames_since_tick % 16 == 0 || cursor_x != prev_cursor_x || cursor_y != prev_cursor_y {
             layer.flush(&mut screen);
             prev_cursor_x = cursor_x;
             prev_cursor_y = cursor_y;

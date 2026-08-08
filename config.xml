@@ -113,9 +113,9 @@
         <base_gain>0.12</base_gain>
         <quadratic_gain>0.004</quadratic_gain>
         <max_gain>4.0</max_gain>
-        <click_guard_distance>3.0</click_guard_distance>
-        <click_guard_reports>3</click_guard_reports>
-        <smoothing>0.10</smoothing>
+        <click_guard_distance>0.0</click_guard_distance>
+        <click_guard_reports>0</click_guard_reports>
+        <smoothing>0.0</smoothing>
     </mouse>
     <trackpad>
         <speed>3.0</speed>

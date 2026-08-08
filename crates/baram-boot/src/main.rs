@@ -201,7 +201,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             if !setup_scene_dirty && !cursor_changed {
                 continue;
             }
-            if setup_now_ms < setup_next_present_ms {
+            if setup_now_ms < setup_next_present_ms && !cursor_changed {
                 continue;
             }
             setup_next_present_ms = setup_now_ms.saturating_add(16);
@@ -444,6 +444,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     loop {
         let mut dirty = deferred_dirty;
         deferred_dirty = false;
+        let mut cursor_moved = false;
         let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
@@ -672,6 +673,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let ev = mouse_motion.process(kernel_pointer_event(nano_event, nano.input_state));
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
 
+                let old_cursor = (cursor_x, cursor_y);
                 let (cx, cy) = baram_iokit::mouse::apply_mouse_event(
                     &mut cursor_x,
                     &mut cursor_y,
@@ -680,6 +682,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     screen.height(),
                     nano.pointer_abs_max(),
                 );
+                cursor_moved |= (cx, cy) != old_cursor;
 
                 if ev.scroll != 0 {
                     let scroll_delta = ev
@@ -1548,7 +1551,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
         }
 
-        if dirty && ui_time_ms < next_present_ms {
+        // UI scene updates remain capped, but physical cursor motion never
+        // waits behind the 16 ms scene-present deadline.
+        if dirty && ui_time_ms < next_present_ms && !cursor_moved {
             deferred_dirty = true;
             continue;
         }

@@ -27,8 +27,8 @@ use uefi_raw::protocol::usb::io::UsbIoProtocol;
 use uefi_raw::protocol::usb::UsbTransferStatus;
 use uefi_raw::table::{boot::EventType, boot::Tpl, runtime::ResetType};
 
-const MAX_ABSOLUTE_SAMPLES_PER_POLL: usize = 4;
-const MAX_SIMPLE_SAMPLES_PER_POLL: usize = 8;
+const MAX_ABSOLUTE_SAMPLES_PER_POLL: usize = 2;
+const MAX_SIMPLE_SAMPLES_PER_POLL: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NanoColor(pub u32);
@@ -97,6 +97,7 @@ pub struct NanoSystem {
     simple_pointers: Vec<BasicSimpleDevice>,
     absolute_pointers: Vec<BasicAbsoluteDevice>,
     usb_pointers: Vec<BasicUsbPointer>,
+    prefer_simple_pointer: bool,
     shift_key: u8,
 }
 
@@ -318,6 +319,7 @@ impl NanoSystem {
             simple_pointers,
             absolute_pointers,
             usb_pointers,
+            prefer_simple_pointer: false,
             shift_key: 0,
         })
     }
@@ -380,6 +382,30 @@ impl NanoSystem {
     }
 
     pub fn poll_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
+        if let Some(event) = self.poll_usb_pointer() {
+            return Some(event);
+        }
+        if self.prefer_simple_pointer {
+            if let Some(event) = self.poll_simple_pointer() {
+                return Some(event);
+            }
+            if let Some(event) = self.poll_absolute_pointer() {
+                self.prefer_simple_pointer = false;
+                return Some(event);
+            }
+        } else {
+            if let Some(event) = self.poll_absolute_pointer() {
+                return Some(event);
+            }
+            if let Some(event) = self.poll_simple_pointer() {
+                self.prefer_simple_pointer = true;
+                return Some(event);
+            }
+        }
+        None
+    }
+
+    fn poll_usb_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for pointer in &mut self.usb_pointers {
             if let Some((dx, dy, scroll, buttons)) = pointer.state.take() {
                 if dx == 0 && dy == 0 && scroll == 0 && buttons == pointer.buttons {
@@ -403,9 +429,14 @@ impl NanoSystem {
                 });
             }
         }
+        None
+    }
+
+    fn poll_absolute_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for device in &mut self.absolute_pointers {
-            // A tiny bounded drain discards stale firmware samples without
-            // letting an always-ready implementation monopolize the CPU.
+            // Read once for the current sample and at most once more for an
+            // immediately newer one. Never let an always-ready implementation
+            // monopolize the CPU.
             let mut latest = None;
             for _ in 0..MAX_ABSOLUTE_SAMPLES_PER_POLL {
                 match device.pointer.get_state() {
@@ -443,10 +474,14 @@ impl NanoSystem {
                 });
             }
         }
+        None
+    }
+
+    fn poll_simple_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for device in &mut self.simple_pointers {
-            // Bound the drain so malformed firmware cannot hold Nano inside a
-            // protocol call forever. Eight reports still coalesce a short
-            // backlog into one cursor update.
+            // Read the current report and at most one immediately queued
+            // successor. Further draining costs more firmware calls and is
+            // handled by the next outer poll without delaying this update.
             let mut raw_dx = 0i32;
             let mut raw_dy = 0i32;
             let mut scroll = 0i32;
