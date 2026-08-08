@@ -10,25 +10,24 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
     if let Some(timer) = nano.take_timer_event() {
         let _ = uefi::boot::close_event(timer);
     }
+
     let mut cursor_x = nano.display.width / 2;
     let mut cursor_y = nano.display.height / 2;
-    let mut was_yellow = false;
-    let mut yellow = false;
+    let mut drawn_x = cursor_x;
+    let mut drawn_y = cursor_y;
+    let mut drawn_yellow = false;
+
     let Ok(mut display) = NanoSystem::begin_pointer_test() else {
         NanoSystem::paint_failure_screen();
         return Status::UNSUPPORTED;
     };
     display.initialize(cursor_x, cursor_y, false);
-    let mut drawn_x = cursor_x;
-    let mut drawn_y = cursor_y;
 
     loop {
         // Pointer acquisition is always first: a keyboard backlog must not
         // sit in front of cursor motion on the latency-critical path.
-        let pointer_event = nano.poll_pointer();
-        if let Some(event) = pointer_event {
-            let old_x = cursor_x;
-            let old_y = cursor_y;
+        let mut moved = false;
+        if let Some(event) = nano.poll_pointer() {
             if let Some((x, y, max_x, max_y)) = event.absolute {
                 cursor_x = (x.saturating_mul(nano.display.width.saturating_sub(16) as u64) / max_x)
                     .min(nano.display.width.saturating_sub(16) as u64)
@@ -44,27 +43,26 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
                     .clamp(0, nano.display.height.saturating_sub(16) as i64)
                     as usize;
             }
-            if cursor_x != old_x || cursor_y != old_y || yellow != was_yellow {
-                display.update(drawn_x, drawn_y, cursor_x, cursor_y, yellow);
-                drawn_x = cursor_x;
-                drawn_y = cursor_y;
-                was_yellow = yellow;
-                yellow = false;
-            }
+            moved = true;
         }
 
-        // Non-pointer work runs only after a pending cursor update has already
-        // reached the framebuffer.
+        // Non-pointer work runs only after cursor motion has been computed.
+        // A key event marks this frame "yellow" for one redraw.
+        let mut key_pressed = false;
         for _ in 0..MAX_KEY_EVENTS_PER_POLL {
             if nano.poll_keyboard().is_none() {
                 break;
             }
-            yellow = true;
+            key_pressed = true;
         }
-        if yellow != was_yellow {
+
+        // Single, coalesced redraw per loop iteration instead of up to two.
+        if moved || key_pressed != drawn_yellow {
+            let yellow = key_pressed;
             display.update(drawn_x, drawn_y, cursor_x, cursor_y, yellow);
-            was_yellow = yellow;
-            yellow = false;
+            drawn_x = cursor_x;
+            drawn_y = cursor_y;
+            drawn_yellow = yellow;
         }
     }
 }
