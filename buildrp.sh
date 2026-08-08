@@ -47,7 +47,7 @@ SUBSYSTEM_NAMES=("windowserver" "font" "graphics" "iokit" "bsd")
 
 build_efi() {
     log "Building BaramOS (aarch64-unknown-uefi) ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi
+    cargo +nightly build --release --target aarch64-unknown-uefi --bin bootaa64
     local efi="$TARGET_DIR/bootaa64.efi"
     [ -f "$efi" ] || die "Build did not produce $efi"
     log "  -> $efi ($(stat -f %z "$efi") bytes)"

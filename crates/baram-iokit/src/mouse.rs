@@ -233,7 +233,10 @@ pub struct Mouse {
 }
 
 impl Mouse {
-    fn empty() -> Self {
+    fn empty_with_settings(
+        motion_settings: MotionSettings,
+        trackpad_settings: TrackpadSettings,
+    ) -> Self {
         Self {
             absolute: Vec::new(),
             simple: Vec::new(),
@@ -241,9 +244,9 @@ impl Mouse {
             claimed_handles: Vec::new(),
             scanned_usb_handles: Vec::new(),
             motion_filter: MotionFilter::default(),
-            motion_settings: load_motion_settings(),
+            motion_settings,
             trackpad_filter: TrackpadFilter::default(),
-            trackpad_settings: load_trackpad_settings(),
+            trackpad_settings,
             config_revision: baram_bsd::config::revision(),
             trackpad_interpolator: TrackpadInterpolator::default(),
             trackpad_wait_for_tick: false,
@@ -298,6 +301,19 @@ impl Mouse {
     }
 
     pub fn open() -> Result<Self, &'static str> {
+        Self::open_with_settings(load_motion_settings(), load_trackpad_settings())
+    }
+
+    /// Open pointer devices without consulting the BaramOS configuration.
+    /// This is used by the nano system before the main kernel loads config.
+    pub fn open_with_defaults() -> Result<Self, &'static str> {
+        Self::open_with_settings(MotionSettings::default(), TrackpadSettings::default())
+    }
+
+    fn open_with_settings(
+        motion_settings: MotionSettings,
+        trackpad_settings: TrackpadSettings,
+    ) -> Result<Self, &'static str> {
         let usb_count = boot::find_handles::<UsbIo>().map(|h| h.len()).unwrap_or(0);
         let abs_count = boot::find_handles::<AbsolutePointer>()
             .map(|h| h.len())
@@ -310,7 +326,7 @@ impl Mouse {
             usb_count, abs_count, simple_count
         ));
 
-        let mut mouse = Self::empty();
+        let mut mouse = Self::empty_with_settings(motion_settings, trackpad_settings);
         mouse.scan_uefi();
         mouse.scan_usb();
         if mouse.device_count() == 0 {
@@ -356,6 +372,11 @@ impl Mouse {
                 }) else {
                     continue;
                 };
+                // AAVMF's ARM AbsolutePointer reset can wait forever for a
+                // USB report. The protocol is already initialized by the
+                // firmware, so consume its current state on AArch64. x86_64
+                // firmware resets reliably and keeps the explicit reset.
+                #[cfg(not(target_arch = "aarch64"))]
                 let _ = pointer.reset(false);
                 let mode = pointer.mode();
                 let min_x = mode.absolute_min_x;
@@ -401,6 +422,9 @@ impl Mouse {
                 }) else {
                     continue;
                 };
+                // See the AbsolutePointer note above. The same AAVMF USB
+                // driver backs SimplePointer and has the same reset hazard.
+                #[cfg(not(target_arch = "aarch64"))]
                 let _ = pointer.reset(false);
                 self.simple.push(SimpleDevice {
                     pointer,

@@ -8,6 +8,7 @@ members = [
     "crates/baram-bsd",
     "crates/baram-windowserver",
     "crates/baram-kern",
+    "crates/baram-nano-system",
     "crates/baram-boot",
 ]
 

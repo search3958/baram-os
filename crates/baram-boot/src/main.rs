@@ -13,48 +13,53 @@ use baram_bsd::config;
 use baram_bsd::shift_key;
 use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
-use baram_iokit::keyboard::Keyboard;
-use baram_iokit::mouse::Mouse;
+use baram_nano_system::NanoSystem;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{WinId, WindowManager};
 
 #[entry]
 fn main() -> Status {
-    log_line_str("BaramOS: starting...");
-    let _ = uefi::helpers::init();
-    log_line_str("BaramOS: UEFI helpers initialized");
-
-    let _ = uefi::boot::set_watchdog_timer(0, 0, None);
-    log_line_str("BaramOS: watchdog timer disabled");
-
-    let mut screen = match Screen::take() {
-        Ok(s) => {
-            log_line_str(&alloc::format!(
-                "BaramOS: screen {}x{}",
-                s.width(),
-                s.height()
-            ));
-            unsafe { baram_font::log::init_screen(&s) };
-            s
-        }
-        Err(_s) => {
-            log_line_str("BaramOS: screen init failed");
+    log_line_str("baram-nano-system: starting...");
+    let nano = match NanoSystem::start(Color::BLACK) {
+        Ok(nano) => nano,
+        Err(_) => {
+            log_line_str("baram-nano-system: display initialization failed");
             return Status::UNSUPPORTED;
         }
     };
+    log_line_str(&alloc::format!(
+        "baram-nano-system: ready ({}x{})",
+        nano.screen.width(),
+        nano.screen.height()
+    ));
+    log_line_str("baram-nano-system: handing off to kernel");
+    baram_kernel_main(nano)
+}
+
+fn baram_kernel_main(nano: NanoSystem) -> Status {
+    let NanoSystem {
+        mut screen,
+        mut keyboard,
+        mouse: mut mouse_opt,
+        timer_event,
+        mouse_wait_event: mouse_wait,
+    } = nano;
+
+    unsafe { baram_font::log::init_screen(&screen) };
+    log_line_str("BaramOS kernel: starting...");
 
     unsafe { baram_kern::panic::init_from_screen(&screen) };
 
-    // Make the first visible application action our own framebuffer output.
-    // This must precede config, font, AP and optional input initialization so
-    // a physical-machine stall cannot leave the UEFI prompt on screen.
+    // Nano System has already cleared the framebuffer before input probing;
+    // replace that minimal handoff screen with the kernel boot logo now.
     draw_boot_logo(&mut screen);
 
     let compute_workers = baram_core::parallel::init();
     log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
 
     config::init_config();
+    keyboard.shift_key = shift_key::load_shift_key();
     log_line_str("BaramOS: config loaded");
 
     baram_font::ttf_font::init();
@@ -75,37 +80,6 @@ fn main() -> Status {
             8,
         ));
     }
-
-    log_line_str("BaramOS: opening mouse...");
-    let mut mouse_opt: Option<Mouse> = match Mouse::open() {
-        Ok(m) => Some(m),
-        Err(_) => None,
-    };
-    let mouse_wait = Mouse::get_wait_event();
-    log_line_str("BaramOS: opening keyboard...");
-    let mut keyboard = Keyboard::open();
-
-    let timer_event = unsafe {
-        match uefi::boot::create_event(
-            uefi_raw::table::boot::EventType::TIMER,
-            uefi_raw::table::boot::Tpl::APPLICATION,
-            None,
-            None,
-        ) {
-            Ok(evt) => {
-                let _ = uefi::boot::set_timer(
-                    &evt,
-                    uefi::boot::TimerTrigger::Periodic(core::time::Duration::from_millis(1)),
-                );
-                log_line_str("BaramOS: timer event created (1ms periodic)");
-                Some(evt)
-            }
-            Err(_) => {
-                log_line_str("BaramOS: failed to create timer event");
-                None
-            }
-        }
-    };
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -470,11 +444,7 @@ fn main() -> Status {
 
         match baram_bsd::uri::check_system_commands(&mut display_state) {
             baram_bsd::uri::SystemCommand::ResetAll => {
-                uefi::runtime::reset(
-                    uefi_raw::table::runtime::ResetType::COLD,
-                    uefi::Status::SUCCESS,
-                    None,
-                );
+                NanoSystem::cold_reset();
             }
             baram_bsd::uri::SystemCommand::None => {}
         }

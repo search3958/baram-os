@@ -69,7 +69,7 @@ fi
 build_efi() {
     log "Building $EFI_NAME ..."
     rm -f "$TARGET_DIR/$EFI_NAME"
-    cargo +nightly build --release --target x86_64-unknown-uefi
+    cargo +nightly build --release --target x86_64-unknown-uefi --bin bootaa64
     # The Cargo.toml names the binary "bootaa64"; copy to BOOTX64.EFI for x86_64.
     if [ -f "$TARGET_DIR/bootaa64.efi" ]; then
         cp "$TARGET_DIR/bootaa64.efi" "$TARGET_DIR/$EFI_NAME"
