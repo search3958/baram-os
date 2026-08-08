@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 
 # Cargo metadata is the source of truth for Nano System executables. A target
-# is eligible when it belongs to baram-nano-system or its package declares a
-# direct dependency on baram-nano-system.
+# is eligible when it belongs to nano-system or its package declares a direct
+# dependency on nano-system.
 _nano_target_rows() {
     cargo metadata --no-deps --format-version 1 | python3 -c '
 import json, sys
 metadata = json.load(sys.stdin)
 for package in metadata["packages"]:
-    linked = package["name"] == "baram-nano-system" or any(
-        dependency["name"] == "baram-nano-system"
+    linked = package["name"] == "nano-system" or any(
+        dependency["name"] == "nano-system"
         for dependency in package.get("dependencies", [])
     )
     if not linked:
@@ -26,7 +26,7 @@ nano_primary_bin() {
     if printf '%s\n' "$rows" | cut -f1 | grep -qx 'bootaa64'; then
         printf '%s\n' 'bootaa64'
     else
-        printf '%s\n' "$rows" | cut -f1 | grep -m1 -x 'baram-nano-system'
+        printf '%s\n' "$rows" | cut -f1 | grep -m1 -x 'nano-system'
     fi
 }
 

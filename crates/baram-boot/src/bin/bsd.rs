@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
+use baram_core::subsystem::{KeyEventData, MouseEventData, SubsystemContext, SubsystemExports};
 
 #[no_mangle]
 pub static BARAM_SUBSYSTEM_EXPORTS: SubsystemExports = SubsystemExports {
@@ -26,9 +26,7 @@ static mut STATE: Option<BSDState> = None;
 
 extern "C" fn bsd_init(_ctx: *mut SubsystemContext) -> i32 {
     unsafe {
-        STATE = Some(BSDState {
-            initialized: true,
-        });
+        STATE = Some(BSDState { initialized: true });
     }
     0
 }
@@ -55,11 +53,11 @@ extern "C" fn bsd_shutdown(_ctx: *mut SubsystemContext) {
     }
 }
 
-fn bsd_app(_nano: baram_nano_system::NanoSystem) -> uefi::Status {
+fn bsd_app(_nano: nano_system::NanoSystem) -> uefi::Status {
     uefi::Status::SUCCESS
 }
 
-baram_nano_system::nano_entry!(bsd_app);
+nano_system::nano_entry!(bsd_app);
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

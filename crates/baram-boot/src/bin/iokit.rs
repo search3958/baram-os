@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
+use baram_core::subsystem::{KeyEventData, MouseEventData, SubsystemContext, SubsystemExports};
 
 #[no_mangle]
 pub static BARAM_SUBSYSTEM_EXPORTS: SubsystemExports = SubsystemExports {
@@ -26,9 +26,7 @@ static mut STATE: Option<IOKitState> = None;
 
 extern "C" fn iokit_init(_ctx: *mut SubsystemContext) -> i32 {
     unsafe {
-        STATE = Some(IOKitState {
-            initialized: true,
-        });
+        STATE = Some(IOKitState { initialized: true });
     }
     0
 }
@@ -37,7 +35,10 @@ extern "C" fn iokit_handle_key(_ctx: *mut SubsystemContext, _event: *const KeyEv
     0
 }
 
-extern "C" fn iokit_handle_mouse(_ctx: *mut SubsystemContext, _event: *const MouseEventData) -> i32 {
+extern "C" fn iokit_handle_mouse(
+    _ctx: *mut SubsystemContext,
+    _event: *const MouseEventData,
+) -> i32 {
     0
 }
 
@@ -55,11 +56,11 @@ extern "C" fn iokit_shutdown(_ctx: *mut SubsystemContext) {
     }
 }
 
-fn iokit_app(_nano: baram_nano_system::NanoSystem) -> uefi::Status {
+fn iokit_app(_nano: nano_system::NanoSystem) -> uefi::Status {
     uefi::Status::SUCCESS
 }
 
-baram_nano_system::nano_entry!(iokit_app);
+nano_system::nano_entry!(iokit_app);
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {

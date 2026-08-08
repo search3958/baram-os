@@ -13,15 +13,49 @@ use baram_bsd::config;
 use baram_bsd::shift_key;
 use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
-use baram_iokit::keyboard::Keyboard;
-use baram_iokit::mouse::Mouse;
-use baram_nano_system::NanoSystem;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{WinId, WindowManager};
 
-fn baram_kernel_main(nano: NanoSystem) -> Status {
-    let timer_event = Some(nano.timer_event);
+fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
+    baram_core::KeyEvent {
+        printable: event.printable,
+        scancode: event.scancode,
+        modifiers: event.modifiers,
+        raw_key: event.raw_key,
+    }
+}
+
+fn kernel_pointer_event(
+    event: nano_system::NanoBasicPointerEvent,
+    state: nano_system::NanoInputState,
+) -> baram_iokit::mouse::MouseEvent {
+    if let Some((x, y, max_x, max_y)) = event.absolute {
+        baram_iokit::mouse::MouseEvent {
+            abs_x: x,
+            abs_y: y,
+            abs_max_x: max_x,
+            abs_max_y: max_y,
+            is_absolute: true,
+            left: state.left,
+            right: state.right,
+            ..baram_iokit::mouse::MouseEvent::default()
+        }
+    } else {
+        baram_iokit::mouse::MouseEvent {
+            rel_dx: event.dx,
+            rel_dy: event.dy,
+            left: state.left,
+            right: state.right,
+            scroll: state.scroll,
+            ..baram_iokit::mouse::MouseEvent::default()
+        }
+    }
+}
+use nano_system::NanoSystem;
+
+fn baram_kernel_main(mut nano: NanoSystem) -> Status {
+    let timer_event = nano.take_timer_event();
     let mut screen = match Screen::take() {
         Ok(screen) => screen,
         Err(_) => {
@@ -40,7 +74,10 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
     draw_boot_logo(&mut screen);
 
     let compute_workers = baram_core::parallel::init();
-    log_line_str(&alloc::format!("BaramOS: {} compute APs enabled", compute_workers));
+    log_line_str(&alloc::format!(
+        "BaramOS: {} compute APs enabled",
+        compute_workers
+    ));
 
     config::init_config();
     log_line_str("BaramOS: config loaded");
@@ -64,17 +101,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
         ));
     }
 
-    log_line_str("BaramOS: opening mouse...");
-    let mut mouse_opt: Option<Mouse> = Mouse::open().ok();
-    #[cfg(not(target_arch = "aarch64"))]
-    let mouse_wait = Mouse::get_wait_event();
-    #[cfg(target_arch = "aarch64")]
-    let mouse_wait = None;
-    log_line_str("BaramOS: opening keyboard...");
-    #[cfg(not(target_arch = "aarch64"))]
-    let mut keyboard = Keyboard::open();
-    #[cfg(target_arch = "aarch64")]
-    let mut keyboard = Keyboard::open_firmware_with_shift_key(shift_key::load_shift_key());
+    log_line_str("BaramOS: input is owned by Nano System");
+    nano.set_shift_key(shift_key::load_shift_key());
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -108,11 +136,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             blurred
         });
         let card_radius = config::get_usize("ui-theme/card/radius", 12);
-        let setup_shadow = baram_windowserver::window::RoundedShadow::new(
-            setup_card.2,
-            setup_card.3,
-            card_radius,
-        );
+        let setup_shadow =
+            baram_windowserver::window::RoundedShadow::new(setup_card.2, setup_card.3, card_radius);
         let mut setup_scene_dirty = true;
         let mut setup_prev_cursor = (cursor_x, cursor_y);
         let mut setup_now_ns = 0u64;
@@ -126,30 +151,26 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             }
             setup_now_ns = setup_now_ns.saturating_add(1_000_000);
 
-            while let Some(ev) = keyboard.poll() {
+            while let Some(nano_event) = nano.poll_keyboard() {
+                let ev = kernel_key_event(nano_event);
                 wizard.on_key(&ev);
             }
 
-            if let Some(mouse) = mouse_opt.as_mut() {
-                while let Some(ev) = mouse.poll() {
+            {
+                while let Some(nano_event) = nano.poll_pointer() {
+                    let ev = kernel_pointer_event(nano_event, nano.input_state);
                     baram_iokit::mouse::apply_mouse_event(
                         &mut cursor_x,
                         &mut cursor_y,
                         &ev,
                         screen.width(),
                         screen.height(),
-                        mouse.abs_max(),
+                        nano.pointer_abs_max(),
                     );
-                    setup_engine.set_hover(
-                        cursor_x - setup_origin.0,
-                        cursor_y - setup_origin.1,
-                    );
+                    setup_engine.set_hover(cursor_x - setup_origin.0, cursor_y - setup_origin.1);
                     setup_scene_dirty = true;
                     if ev.left {
-                        setup_engine.click(
-                            cursor_x - setup_origin.0,
-                            cursor_y - setup_origin.1,
-                        );
+                        setup_engine.click(cursor_x - setup_origin.0, cursor_y - setup_origin.1);
                         if let Some(command) = setup_engine.last_command.take() {
                             wizard.on_command(&command);
                         }
@@ -198,13 +219,9 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                 let pad = 32i32;
                 let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
                 let y0 = (setup_prev_cursor.1.min(cursor_y) - pad).max(0) as usize;
-                let x1 = (setup_prev_cursor.0.max(cursor_x)
-                    + cursor::CURSOR_BOX_W as i32
-                    + pad)
+                let x1 = (setup_prev_cursor.0.max(cursor_x) + cursor::CURSOR_BOX_W as i32 + pad)
                     .min(setup_w as i32) as usize;
-                let y1 = (setup_prev_cursor.1.max(cursor_y)
-                    + cursor::CURSOR_BOX_H as i32
-                    + pad)
+                let y1 = (setup_prev_cursor.1.max(cursor_y) + cursor::CURSOR_BOX_H as i32 + pad)
                     .min(setup_h as i32) as usize;
                 setup_present.push_clip(x0, y0, x1, y1);
                 setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
@@ -224,13 +241,9 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                 let pad = 32i32;
                 let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
                 let y0 = (setup_prev_cursor.1.min(cursor_y) - pad).max(0) as usize;
-                let x1 = (setup_prev_cursor.0.max(cursor_x)
-                    + cursor::CURSOR_BOX_W as i32
-                    + pad)
+                let x1 = (setup_prev_cursor.0.max(cursor_x) + cursor::CURSOR_BOX_W as i32 + pad)
                     .min(setup_w as i32) as usize;
-                let y1 = (setup_prev_cursor.1.max(cursor_y)
-                    + cursor::CURSOR_BOX_H as i32
-                    + pad)
+                let y1 = (setup_prev_cursor.1.max(cursor_y) + cursor::CURSOR_BOX_H as i32 + pad)
                     .min(setup_h as i32) as usize;
                 setup_present.flush_rect(&mut screen, x0, y0, x1, y1);
             }
@@ -238,7 +251,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             setup_prev_cursor = (cursor_x, cursor_y);
         }
         log_line_str("BaramOS: setup wizard completed");
-        keyboard.shift_key = shift_key::load_shift_key();
+        nano.set_shift_key(shift_key::load_shift_key());
     }
 
     let mut wm = WindowManager::new(screen.width(), screen.height());
@@ -306,10 +319,12 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
     let mut mousekey_win_id: Option<WinId> = None;
     let mut pending_os_permission: Option<PendingOsPermission> = None;
 
-    let mouse_mode_label = match &mouse_opt {
-        Some(m) if m.is_absolute() => "Absolute",
-        Some(_) => "Simple Ptr",
-        None => "None",
+    let mouse_mode_label = if nano.input.absolute_pointer_available {
+        "Absolute"
+    } else if nano.input.pointer_available {
+        "Simple Ptr"
+    } else {
+        "None"
     };
 
     let mut cached_wallpaper: Option<Vec<u32>> = None;
@@ -352,9 +367,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
     let mut prev_hover_apps_icon: bool = false;
     let mut prev_show_app_launcher: bool = false;
 
-    let timezone_offset: i32 = config::get_config()
-        .get_i32("system/timezone")
-        .unwrap_or(9);
+    let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
 
     let mut battery_info = baram_iokit::battery::read_battery();
     let mut battery_poll_seconds: u8 = 0;
@@ -418,20 +431,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
         let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
-            let mut events: [uefi::Event; 2] = [unsafe { core::ptr::read(timer) }, unsafe { core::ptr::read(timer) }];
-            let mut n = 1;
-            if let Some(mevt) = &mouse_wait {
-                events[1] = unsafe { core::ptr::read(mevt) };
-                n = 2;
-            }
-            ui_timer_fired = match uefi::boot::wait_for_event(&mut events[..n]) {
-                Ok(0) => true,
-                // Mouse input can stay signalled continuously. Consume the
-                // periodic tick too, otherwise absolute-time UI animations
-                // stop until pointer input becomes idle.
-                Ok(_) => uefi::boot::check_event(timer).unwrap_or(false),
-                Err(_) => false,
-            };
+            let mut events = [unsafe { core::ptr::read(timer) }];
+            ui_timer_fired = uefi::boot::wait_for_event(&mut events).is_ok();
         }
         if ui_timer_fired {
             ui_time_ms = ui_time_ms.wrapping_add(1);
@@ -444,7 +445,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             baram_bsd::uri::SystemCommand::None => {}
         }
 
-        while let Some(ev) = keyboard.poll() {
+        while let Some(nano_event) = nano.poll_keyboard() {
+            let ev = kernel_key_event(nano_event);
             key_ev_count = key_ev_count.wrapping_add(1);
             if last_keys.len() >= 6 {
                 last_keys.remove(0);
@@ -457,7 +459,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                 _ => {}
             }
 
-            if ev.ctrl_or_cmd() || (mousekey_mode && keyboard.shift_held()) {
+            if ev.ctrl_or_cmd() || (mousekey_mode && nano.shift_held()) {
                 if let Some(c) = ev.printable {
                     match c {
                         b' ' => {
@@ -500,9 +502,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                             {
                                 engine.handle_key(c);
                                 if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
-                                    let content_h = wh.saturating_sub(
-                                        baram_windowserver::window::title_bar_h(),
-                                    );
+                                    let content_h = wh
+                                        .saturating_sub(baram_windowserver::window::title_bar_h());
                                     engine.set_scroll(scroll);
                                     engine.update(ww as i32, content_h as i32);
                                     wm.clamp_window_scroll(*wid, engine.content_height);
@@ -527,7 +528,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
         }
 
         {
-            let shift_held = keyboard.shift_held();
+            let shift_held = nano.shift_held();
             let shift_just_pressed = shift_held && !prev_shift_held;
             prev_shift_held = shift_held;
 
@@ -580,7 +581,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             }
         }
 
-        if keyboard.ctrl_or_cmd_held() || mousekey_mode {
+        if nano.ctrl_or_cmd_held() || mousekey_mode {
             let step = 8i32;
             let now_ns = runtime::get_time()
                 .map(|t| {
@@ -600,7 +601,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             ];
 
             for (usb_code, idx) in keys {
-                if keyboard.is_held(usb_code) {
+                if nano.key_is_held(usb_code) {
                     if wasd_first_press[idx] == 0 {
                         wasd_first_press[idx] = now_ns;
                         wasd_moved[idx] = true;
@@ -650,8 +651,9 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             }
         }
 
-        if let Some(mouse) = mouse_opt.as_mut() {
-            while let Some(ev) = mouse.poll() {
+        {
+            while let Some(nano_event) = nano.poll_pointer() {
+                let ev = kernel_pointer_event(nano_event, nano.input_state);
                 mouse_ev_count = mouse_ev_count.wrapping_add(1);
 
                 let (cx, cy) = baram_iokit::mouse::apply_mouse_event(
@@ -660,7 +662,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                     &ev,
                     screen.width(),
                     screen.height(),
-                    mouse.abs_max(),
+                    nano.pointer_abs_max(),
                 );
 
                 if ev.scroll != 0 {
@@ -821,8 +823,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                             scene_dirty = true;
 
                                             if let Some(cmd) = engine.last_command.take() {
-                                                let is_hud_command =
-                                                    baram_bsd::uri::parse(&cmd).map_or(false, |p| {
+                                                let is_hud_command = baram_bsd::uri::parse(&cmd)
+                                                    .map_or(false, |p| {
                                                         p.path.starts_with("display/hud")
                                                     });
                                                 let previous_hud = display_state.hud_enabled;
@@ -835,7 +837,10 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                                     Some(clicked_id),
                                                     120,
                                                     80,
-                                                ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                                ) && baram_bsd::uri::execute(
+                                                    &cmd,
+                                                    &mut display_state,
+                                                ) {
                                                     engine.update(ww as i32, content_h as i32);
                                                     if is_hud_command {
                                                         hud_damage_pending |= previous_hud
@@ -849,8 +854,11 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                                     scene_dirty = true;
                                                 }
                                                 if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                                    if parsed.path.starts_with("display/wallpaper") {
-                                                        if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
+                                                    if parsed.path.starts_with("display/wallpaper")
+                                                    {
+                                                        if display_state.wallpaper_mode
+                                                            == baram_bsd::uri::WallpaperMode::Color
+                                                        {
                                                             if let Some(color) =
                                                                 display_state.wallpaper_color
                                                             {
@@ -877,7 +885,9 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                                         prev_wallpaper_idx =
                                                             display_state.wallpaper_index;
                                                         scene_dirty = true;
-                                                    } else if parsed.path.starts_with("display/pointer")
+                                                    } else if parsed
+                                                        .path
+                                                        .starts_with("display/pointer")
                                                         || parsed.path.starts_with("display/hud")
                                                     {
                                                         scene_dirty = true;
@@ -912,8 +922,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                 {
                                     let rel_x = cx - wx;
                                     let rel_y = cy - wy;
-                                    let tb_h =
-                                        baram_windowserver::window::title_bar_h() as i32;
+                                    let tb_h = baram_windowserver::window::title_bar_h() as i32;
                                     if rel_y >= tb_h {
                                         engine.set_scroll(scroll);
                                         engine.set_runtime_metrics(
@@ -967,14 +976,12 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                         taskbar_surface.invalidate();
                                         cached_launcher_layer = None;
                                         bg_cache = None;
-                                        cached_wallpaper =
-                                            wallpaper_for_state(
-                                                &display_state,
-                                                screen.width(),
-                                                screen.height(),
-                                            );
-                                        prev_wallpaper_idx =
-                                            display_state.wallpaper_index;
+                                        cached_wallpaper = wallpaper_for_state(
+                                            &display_state,
+                                            screen.width(),
+                                            screen.height(),
+                                        );
+                                        prev_wallpaper_idx = display_state.wallpaper_index;
                                     }
                                     NavigationEffect::None => {}
                                 }
@@ -1134,10 +1141,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                     scene_dirty = true;
 
                                     if let Some(cmd) = engine.last_command.take() {
-                                        let is_hud_command =
-                                            baram_bsd::uri::parse(&cmd).map_or(false, |p| {
-                                                p.path.starts_with("display/hud")
-                                            });
+                                        let is_hud_command = baram_bsd::uri::parse(&cmd)
+                                            .map_or(false, |p| p.path.starts_with("display/hud"));
                                         let previous_hud = display_state.hud_enabled;
                                         if authorize_os_setting(
                                             &cmd,
@@ -1148,7 +1153,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                             Some(clicked_id),
                                             120,
                                             80,
-                                        ) && baram_bsd::uri::execute(&cmd, &mut display_state) {
+                                        ) && baram_bsd::uri::execute(&cmd, &mut display_state)
+                                        {
                                             engine.update(ww as i32, content_h as i32);
                                             if is_hud_command {
                                                 hud_damage_pending |=
@@ -1163,17 +1169,22 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                         }
                                         if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
                                             if parsed.path.starts_with("display/wallpaper") {
-                                                if display_state.wallpaper_mode == baram_bsd::uri::WallpaperMode::Color {
-                                                    if let Some(color) = display_state.wallpaper_color {
-                                                        cached_wallpaper = Some(make_solid_wallpaper(
-                                                            color,
-                                                            screen.width(),
-                                                            screen.height(),
-                                                        ));
+                                                if display_state.wallpaper_mode
+                                                    == baram_bsd::uri::WallpaperMode::Color
+                                                {
+                                                    if let Some(color) =
+                                                        display_state.wallpaper_color
+                                                    {
+                                                        cached_wallpaper =
+                                                            Some(make_solid_wallpaper(
+                                                                color,
+                                                                screen.width(),
+                                                                screen.height(),
+                                                            ));
                                                     }
                                                 } else {
-                                                    if let Some(bytes) =
-                                                        WALLPAPERS.get(display_state.wallpaper_index)
+                                                    if let Some(bytes) = WALLPAPERS
+                                                        .get(display_state.wallpaper_index)
                                                     {
                                                         cached_wallpaper = decode_wallpaper(
                                                             bytes,
@@ -1194,7 +1205,9 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                         }
                                     }
 
-                                    if let Some(enabled_str) = engine.get_state_value("--hudEnabled") {
+                                    if let Some(enabled_str) =
+                                        engine.get_state_value("--hudEnabled")
+                                    {
                                         let new_enabled = enabled_str == "true";
                                         if display_state.hud_enabled != new_enabled {
                                             display_state.hud_enabled = new_enabled;
@@ -1225,16 +1238,14 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                                     mouse_ev_count,
                                 );
                                 engine.click(rel_x, rel_y + scroll);
-                                engine.update(
-                                    ww as i32,
-                                    wh.saturating_sub(tb_h as usize) as i32,
-                                );
+                                engine.update(ww as i32, wh.saturating_sub(tb_h as usize) as i32);
                                 if let Some(target) = engine.take_scroll_request() {
                                     wm.set_window_scroll(clicked_id, target);
                                 }
-                                html_command = engine.last_command.take().map(|command| {
-                                    (command, engine.origin().to_string(), *wid)
-                                });
+                                html_command = engine
+                                    .last_command
+                                    .take()
+                                    .map(|command| (command, engine.origin().to_string(), *wid));
                                 wm.set_content_dirty(clicked_id);
                                 scene_dirty = true;
                             }
@@ -1391,12 +1402,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
         let mut deferred_html_commands = alloc::vec::Vec::new();
         let runtime_window_count = wm.count();
         for (wid, engine) in html_engines.iter_mut() {
-            engine.set_runtime_metrics(
-                fps,
-                runtime_window_count,
-                key_ev_count,
-                mouse_ev_count,
-            );
+            engine.set_runtime_metrics(fps, runtime_window_count, key_ev_count, mouse_ev_count);
             if engine.tick(transition_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {
                     wm.set_content_damage(*wid, x0, y0, x1, y1);
@@ -1440,11 +1446,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                     taskbar_surface.invalidate();
                     cached_launcher_layer = None;
                     bg_cache = None;
-                    cached_wallpaper = wallpaper_for_state(
-                        &display_state,
-                        screen.width(),
-                        screen.height(),
-                    );
+                    cached_wallpaper =
+                        wallpaper_for_state(&display_state, screen.width(), screen.height());
                     prev_wallpaper_idx = display_state.wallpaper_index;
                 }
                 NavigationEffect::None => {}
@@ -1462,9 +1465,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                 frames_since_tick = 0;
                 start_time = now;
 
-                let total_min = (now.hour() as i32) * 60
-                    + (now.minute() as i32)
-                    + timezone_offset * 60;
+                let total_min =
+                    (now.hour() as i32) * 60 + (now.minute() as i32) + timezone_offset * 60;
                 let day_min = total_min.rem_euclid(24 * 60);
                 let next_hh = (day_min / 60) as u8;
                 let next_mm = (day_min % 60) as u8;
@@ -1504,8 +1506,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
         }
         for (wid, engine) in html_engines.iter_mut() {
             if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
-                let content_h =
-                    wh.saturating_sub(baram_windowserver::window::title_bar_h());
+                let content_h = wh.saturating_sub(baram_windowserver::window::title_bar_h());
                 engine.set_scroll(scroll);
                 engine.update(ww as i32, content_h as i32);
                 wm.clamp_window_scroll(*wid, engine.content_height);
@@ -1537,8 +1538,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
             if scene_dirty {
                 let (bx0, by0, bx1, by1) = wm.dirty_bbox(shadow_pad);
 
-                let bg_valid = bg_cache.is_some()
-                    && prev_wallpaper_idx == display_state.wallpaper_index;
+                let bg_valid =
+                    bg_cache.is_some() && prev_wallpaper_idx == display_state.wallpaper_index;
 
                 let taskbar_dirty = !taskbar_surface.is_valid()
                     || tb_add_progress >= 0.0
@@ -1676,8 +1677,8 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
                 );
                 layer.pop_clip();
 
-                let hud_redraw_separate = hud_damage_pending
-                    && !(fx0 == 0 && fy0 <= hud_y0 && fx1 == w && fy1 >= tb_y);
+                let hud_redraw_separate =
+                    hud_damage_pending && !(fx0 == 0 && fy0 <= hud_y0 && fx1 == w && fy1 >= tb_y);
                 if hud_redraw_separate {
                     layer.push_clip(0, hud_y0, w, tb_y);
                     render_scene(
@@ -1828,7 +1829,7 @@ fn baram_kernel_main(nano: NanoSystem) -> Status {
     }
 }
 
-baram_nano_system::nano_entry!(baram_kernel_main);
+nano_system::nano_entry!(baram_kernel_main);
 
 fn draw_boot_logo(screen: &mut Screen) {
     const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
@@ -2047,8 +2048,7 @@ fn authorize_os_setting(
 
     let dialog_win_id = wm.add("操作体系設定の変更", x, y, 520, 360);
     wm.set_icon(dialog_win_id, "redstar.png");
-    let mut dialog =
-        baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
+    let mut dialog = baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
     dialog.set_warp3_text("app-name", &alloc::format!("アプリ: {origin}"));
     dialog.set_warp3_text("request-path", command);
     dialog.update(
@@ -2081,8 +2081,7 @@ fn cancel_permission_for_closed_window(
     pending_permission: &mut Option<PendingOsPermission>,
 ) {
     let should_cancel = pending_permission.as_ref().is_some_and(|pending| {
-        pending.dialog_win_id == closed_win_id
-            || pending.source_win_id == Some(closed_win_id)
+        pending.dialog_win_id == closed_win_id || pending.source_win_id == Some(closed_win_id)
     });
     if !should_cancel {
         return;

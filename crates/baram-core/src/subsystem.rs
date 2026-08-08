@@ -89,11 +89,11 @@ macro_rules! subsystem_entry {
         };
 
         fn baram_subsystem_app(
-            _nano: baram_nano_system::NanoSystem,
+            _nano: nano_system::NanoSystem,
         ) -> uefi::Status {
             uefi::Status::SUCCESS
         }
 
-        baram_nano_system::nano_entry!(baram_subsystem_app);
+        nano_system::nano_entry!(baram_subsystem_app);
     };
 }
