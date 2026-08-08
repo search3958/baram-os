@@ -8,9 +8,12 @@
 
 extern crate alloc;
 
-use alloc::{vec, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 
+use core::ffi::c_void;
+use core::mem::ManuallyDrop;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
 use core::time::Duration;
 use uefi::boot::{self, ScopedProtocol};
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
@@ -20,7 +23,12 @@ use uefi::proto::unsafe_protocol;
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::{boot::TimerTrigger, Status};
 use uefi_raw::protocol::console::AbsolutePointerProtocol;
+use uefi_raw::protocol::usb::io::UsbIoProtocol;
+use uefi_raw::protocol::usb::UsbTransferStatus;
 use uefi_raw::table::{boot::EventType, boot::Tpl, runtime::ResetType};
+
+const MAX_ABSOLUTE_SAMPLES_PER_POLL: usize = 4;
+const MAX_SIMPLE_SAMPLES_PER_POLL: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NanoColor(pub u32);
@@ -86,7 +94,7 @@ pub struct NanoSystem {
     pub input: NanoInputInfo,
     pub input_state: NanoInputState,
     pub timer_event: Option<uefi::Event>,
-    simple_pointers: Vec<ScopedProtocol<Pointer>>,
+    simple_pointers: Vec<BasicSimpleDevice>,
     absolute_pointers: Vec<BasicAbsoluteDevice>,
     usb_pointers: Vec<BasicUsbPointer>,
     shift_key: u8,
@@ -109,13 +117,80 @@ struct BasicAbsoluteDevice {
     min_y: u64,
     range_x: u64,
     range_y: u64,
+    last_state: Option<(u64, u64, u32)>,
+}
+
+struct BasicSimpleDevice {
+    pointer: ScopedProtocol<Pointer>,
+    buttons: u8,
 }
 
 struct BasicUsbPointer {
     io: ScopedProtocol<UsbIo>,
     endpoint: u8,
-    report: Vec<u8>,
+    report_len: usize,
+    state: ManuallyDrop<Box<AsyncUsbPointerState>>,
+    async_active: bool,
     buttons: u8,
+}
+
+struct AsyncUsbPointerState {
+    dx: AtomicI32,
+    dy: AtomicI32,
+    scroll: AtomicI32,
+    buttons: AtomicU8,
+    pending: AtomicBool,
+}
+
+impl AsyncUsbPointerState {
+    fn new() -> Self {
+        Self {
+            dx: AtomicI32::new(0),
+            dy: AtomicI32::new(0),
+            scroll: AtomicI32::new(0),
+            buttons: AtomicU8::new(0),
+            pending: AtomicBool::new(false),
+        }
+    }
+
+    fn take(&self) -> Option<(i32, i32, i32, u8)> {
+        if !self.pending.swap(false, Ordering::AcqRel) {
+            return None;
+        }
+        Some((
+            self.dx.swap(0, Ordering::AcqRel),
+            self.dy.swap(0, Ordering::AcqRel),
+            self.scroll.swap(0, Ordering::AcqRel),
+            self.buttons.load(Ordering::Acquire),
+        ))
+    }
+}
+
+impl Drop for BasicUsbPointer {
+    fn drop(&mut self) {
+        if self.async_active {
+            let protocol = (&mut *self.io as *mut UsbIo).cast::<UsbIoProtocol>();
+            let status = unsafe {
+                ((*protocol).async_interrupt_transfer)(
+                    protocol,
+                    self.endpoint,
+                    false.into(),
+                    0,
+                    self.report_len,
+                    usb_pointer_callback,
+                    (&mut **self.state as *mut AsyncUsbPointerState).cast(),
+                )
+            };
+            // A failed cancellation means firmware may still invoke the
+            // callback. Leak this tiny state block instead of leaving a
+            // dangling callback context.
+            if status.is_success() {
+                unsafe { ManuallyDrop::drop(&mut self.state) };
+            }
+        } else {
+            unsafe { ManuallyDrop::drop(&mut self.state) };
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -221,10 +296,10 @@ impl NanoSystem {
         let absolute_pointer_available = boot::get_handle_for_protocol::<AbsolutePointer>().is_ok();
         log_phase(uefi::cstr16!("nano: input capabilities ready"));
 
-        let Some(timer_event) = create_periodic_timer(Duration::from_millis(1)) else {
-            fill_display(&mut graphics, NanoColor::FAILURE_RED);
-            return Err(StartError::Timer);
-        };
+        // The timer is a compatibility service for the full OS. Input polling
+        // never waits for it, and a broken firmware timer must not prevent Nano
+        // from starting or make pointer latency depend on timer delivery.
+        let timer_event = create_periodic_timer(Duration::from_millis(1));
         log_phase(uefi::cstr16!("nano: handoff ready"));
 
         let simple_pointers = open_simple_pointers();
@@ -239,7 +314,7 @@ impl NanoSystem {
                 absolute_pointer_available,
             },
             input_state: NanoInputState::default(),
-            timer_event: Some(timer_event),
+            timer_event,
             simple_pointers,
             absolute_pointers,
             usb_pointers,
@@ -306,44 +381,33 @@ impl NanoSystem {
 
     pub fn poll_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
         for pointer in &mut self.usb_pointers {
-            if let Ok(length) =
-                pointer
-                    .io
-                    .sync_interrupt_receive(pointer.endpoint, &mut pointer.report, 1)
-            {
-                if length >= 3 {
-                    let buttons = pointer.report[0];
-                    let dx = pointer.report[1] as i8 as i32;
-                    let dy = pointer.report[2] as i8 as i32;
-                    let scroll = pointer.report.get(3).copied().unwrap_or(0) as i8 as i32;
-                    if dx == 0 && dy == 0 && scroll == 0 && buttons == pointer.buttons {
-                        continue;
-                    }
-                    pointer.buttons = buttons;
-                    self.input_state.pointer_sequence =
-                        self.input_state.pointer_sequence.wrapping_add(1);
-                    self.input_state.pointer_dx = dx;
-                    self.input_state.pointer_dy = dy;
-                    self.input_state.scroll = scroll;
-                    self.input_state.pointer_is_absolute = false;
-                    self.input_state.pointer_is_trackpad = false;
-                    self.input_state.left = buttons & 1 != 0;
-                    self.input_state.right = buttons & 2 != 0;
-                    self.input_state.middle = buttons & 4 != 0;
-                    return Some(NanoBasicPointerEvent {
-                        dx,
-                        dy,
-                        absolute: None,
-                    });
+            if let Some((dx, dy, scroll, buttons)) = pointer.state.take() {
+                if dx == 0 && dy == 0 && scroll == 0 && buttons == pointer.buttons {
+                    continue;
                 }
+                pointer.buttons = buttons;
+                self.input_state.pointer_sequence =
+                    self.input_state.pointer_sequence.wrapping_add(1);
+                self.input_state.pointer_dx = dx;
+                self.input_state.pointer_dy = dy;
+                self.input_state.scroll = scroll;
+                self.input_state.pointer_is_absolute = false;
+                self.input_state.pointer_is_trackpad = false;
+                self.input_state.left = buttons & 1 != 0;
+                self.input_state.right = buttons & 2 != 0;
+                self.input_state.middle = buttons & 4 != 0;
+                return Some(NanoBasicPointerEvent {
+                    dx,
+                    dy,
+                    absolute: None,
+                });
             }
         }
         for device in &mut self.absolute_pointers {
-            // Match the original Baram input path: old firmware samples must
-            // not form a visible queue behind the user's finger. Drain the
-            // protocol and publish only the newest absolute position.
+            // A tiny bounded drain discards stale firmware samples without
+            // letting an always-ready implementation monopolize the CPU.
             let mut latest = None;
-            for _ in 0..32 {
+            for _ in 0..MAX_ABSOLUTE_SAMPLES_PER_POLL {
                 match device.pointer.get_state() {
                     Some(state) => latest = Some(state),
                     _ => break,
@@ -358,6 +422,11 @@ impl NanoSystem {
                     .current_y
                     .saturating_sub(device.min_y)
                     .min(device.range_y);
+                let state_key = (x, y, state.active_buttons);
+                if device.last_state == Some(state_key) {
+                    continue;
+                }
+                device.last_state = Some(state_key);
                 self.input_state.pointer_sequence =
                     self.input_state.pointer_sequence.wrapping_add(1);
                 self.input_state.pointer_x = x;
@@ -374,17 +443,17 @@ impl NanoSystem {
                 });
             }
         }
-        for pointer in &mut self.simple_pointers {
-            // SimplePointer is a queued relative protocol. Coalesce every
-            // pending sample exactly as the pre-Nano mouse owner did; a fixed
-            // per-frame event cap otherwise turns movement into input lag.
+        for device in &mut self.simple_pointers {
+            // Bound the drain so malformed firmware cannot hold Nano inside a
+            // protocol call forever. Eight reports still coalesce a short
+            // backlog into one cursor update.
             let mut raw_dx = 0i32;
             let mut raw_dy = 0i32;
             let mut scroll = 0i32;
             let mut buttons = 0u8;
             let mut received = false;
-            loop {
-                match pointer.read_state() {
+            for _ in 0..MAX_SIMPLE_SAMPLES_PER_POLL {
+                match device.pointer.read_state() {
                     Ok(Some(state)) => {
                         raw_dx = raw_dx.saturating_add(state.relative_movement[0]);
                         raw_dy = raw_dy.saturating_add(state.relative_movement[1]);
@@ -396,6 +465,10 @@ impl NanoSystem {
                 }
             }
             if received {
+                if raw_dx == 0 && raw_dy == 0 && scroll == 0 && buttons == device.buttons {
+                    continue;
+                }
+                device.buttons = buttons;
                 self.input_state.pointer_sequence =
                     self.input_state.pointer_sequence.wrapping_add(1);
                 self.input_state.pointer_dx = raw_dx;
@@ -405,6 +478,7 @@ impl NanoSystem {
                 self.input_state.pointer_is_trackpad = false;
                 self.input_state.left = buttons & 1 != 0;
                 self.input_state.right = buttons & 2 != 0;
+                self.input_state.middle = false;
                 return Some(NanoBasicPointerEvent {
                     dx: raw_dx,
                     dy: raw_dy,
@@ -509,7 +583,7 @@ fn open_usb_pointers() -> Vec<BasicUsbPointer> {
             if let Ok(descriptor) = io.endpoint_descriptor(index) {
                 if descriptor.endpoint_address & 0x80 != 0 && descriptor.attributes & 0x03 == 3 {
                     endpoint = Some(descriptor.endpoint_address);
-                    packet_size = (descriptor.max_packet_size as usize).max(4);
+                    packet_size = (descriptor.max_packet_size as usize).clamp(4, 64);
                     break;
                 }
             }
@@ -533,22 +607,43 @@ fn open_usb_pointers() -> Vec<BasicUsbPointer> {
             ControlTransfer::None,
             100,
         );
-        pointers.push(BasicUsbPointer {
+        let mut pointer = BasicUsbPointer {
             io,
             endpoint,
-            report: vec![0; packet_size.min(64)],
+            report_len: packet_size,
+            state: ManuallyDrop::new(Box::new(AsyncUsbPointerState::new())),
+            async_active: false,
             buttons: 0,
-        });
+        };
+        let protocol = (&mut *pointer.io as *mut UsbIo).cast::<UsbIoProtocol>();
+        let status = unsafe {
+            ((*protocol).async_interrupt_transfer)(
+                protocol,
+                endpoint,
+                true.into(),
+                1,
+                packet_size,
+                usb_pointer_callback,
+                (&mut **pointer.state as *mut AsyncUsbPointerState).cast(),
+            )
+        };
+        if status.is_success() {
+            pointer.async_active = true;
+            pointers.push(pointer);
+        }
     }
     pointers
 }
 
-fn open_simple_pointers() -> Vec<ScopedProtocol<Pointer>> {
+fn open_simple_pointers() -> Vec<BasicSimpleDevice> {
     let mut pointers = Vec::new();
     if let Ok(handles) = boot::find_handles::<Pointer>() {
         for handle in handles {
             if let Ok(pointer) = boot::open_protocol_exclusive::<Pointer>(handle) {
-                pointers.push(pointer);
+                pointers.push(BasicSimpleDevice {
+                    pointer,
+                    buttons: 0,
+                });
             }
         }
     }
@@ -572,12 +667,40 @@ fn open_absolute_pointers() -> Vec<BasicAbsoluteDevice> {
                         .absolute_max_y
                         .saturating_sub(mode.absolute_min_y)
                         .max(1),
+                    last_state: None,
                     pointer,
                 });
             }
         }
     }
     pointers
+}
+
+unsafe extern "efiapi" fn usb_pointer_callback(
+    data: *mut c_void,
+    data_length: usize,
+    context: *mut c_void,
+    status: UsbTransferStatus,
+) -> Status {
+    if data.is_null() || context.is_null() || data_length < 3 || !status.is_empty() {
+        return Status::SUCCESS;
+    }
+    let report = data.cast::<u8>();
+    let state = unsafe { &*context.cast::<AsyncUsbPointerState>() };
+    let buttons = unsafe { *report };
+    let dx = unsafe { *report.add(1) } as i8 as i32;
+    let dy = unsafe { *report.add(2) } as i8 as i32;
+    let scroll = if data_length > 3 {
+        (unsafe { *report.add(3) }) as i8 as i32
+    } else {
+        0
+    };
+    state.dx.fetch_add(dx, Ordering::Relaxed);
+    state.dy.fetch_add(dy, Ordering::Relaxed);
+    state.scroll.fetch_add(scroll, Ordering::Relaxed);
+    state.buttons.store(buttons, Ordering::Relaxed);
+    state.pending.store(true, Ordering::Release);
+    Status::SUCCESS
 }
 
 fn choose_working_mode(graphics: &mut GraphicsOutput) {

@@ -5,19 +5,15 @@ use nano_system::NanoSystem;
 use uefi::Status;
 
 fn nano_idle(mut nano: NanoSystem) -> Status {
-    const MAX_KEY_EVENTS_PER_TICK: usize = 16;
+    const MAX_KEY_EVENTS_PER_POLL: usize = 16;
 
+    if let Some(timer) = nano.take_timer_event() {
+        let _ = uefi::boot::close_event(timer);
+    }
     let mut cursor_x = nano.display.width / 2;
     let mut cursor_y = nano.display.height / 2;
-    let Some(timer) = nano.take_timer_event() else {
-        NanoSystem::paint_failure_screen();
-        return Status::DEVICE_ERROR;
-    };
-    let mut tick = 0u64;
-    let mut yellow_until = 0u64;
     let mut was_yellow = false;
-    let mut pending_redraw = false;
-    let mut next_frame_tick = 0u64;
+    let mut yellow = false;
     let Ok(mut display) = NanoSystem::begin_pointer_test() else {
         NanoSystem::paint_failure_screen();
         return Status::UNSUPPORTED;
@@ -27,18 +23,16 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
     let mut drawn_y = cursor_y;
 
     loop {
-        let mut events = [unsafe { core::ptr::read(&timer) }];
-        let _ = uefi::boot::wait_for_event(&mut events);
-        tick = tick.wrapping_add(1);
-
-        for _ in 0..MAX_KEY_EVENTS_PER_TICK {
+        // Pointer acquisition is always first: a keyboard backlog must not
+        // sit in front of cursor motion on the latency-critical path.
+        let pointer_event = nano.poll_pointer();
+        for _ in 0..MAX_KEY_EVENTS_PER_POLL {
             if nano.poll_keyboard().is_none() {
                 break;
             }
-            yellow_until = tick.saturating_add(200);
-            pending_redraw = true;
+            yellow = true;
         }
-        while let Some(event) = nano.poll_pointer() {
+        if let Some(event) = pointer_event {
             let old_x = cursor_x;
             let old_y = cursor_y;
             if let Some((x, y, max_x, max_y)) = event.absolute {
@@ -56,20 +50,17 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
                     .clamp(0, nano.display.height.saturating_sub(16) as i64)
                     as usize;
             }
-            pending_redraw |= cursor_x != old_x || cursor_y != old_y;
-        }
-
-        let yellow = tick < yellow_until;
-        if yellow != was_yellow {
-            pending_redraw = true;
-            was_yellow = yellow;
-        }
-        if pending_redraw && tick >= next_frame_tick {
+            if cursor_x != old_x || cursor_y != old_y || yellow != was_yellow {
+                display.update(drawn_x, drawn_y, cursor_x, cursor_y, yellow);
+                drawn_x = cursor_x;
+                drawn_y = cursor_y;
+                was_yellow = yellow;
+                yellow = false;
+            }
+        } else if yellow != was_yellow {
             display.update(drawn_x, drawn_y, cursor_x, cursor_y, yellow);
-            drawn_x = cursor_x;
-            drawn_y = cursor_y;
-            pending_redraw = false;
-            next_frame_tick = tick.saturating_add(16);
+            was_yellow = yellow;
+            yellow = false;
         }
     }
 }
