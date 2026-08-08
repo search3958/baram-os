@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 use core::ptr;
 use core::time::Duration;
@@ -17,6 +17,7 @@ use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::proto::console::pointer::Pointer;
 use uefi::proto::console::text::{Input, Key};
 use uefi::proto::unsafe_protocol;
+use uefi::proto::usb::io::{ControlTransfer, UsbIo};
 use uefi::{boot::TimerTrigger, Status};
 use uefi_raw::protocol::console::AbsolutePointerProtocol;
 use uefi_raw::table::{boot::EventType, boot::Tpl, runtime::ResetType};
@@ -87,6 +88,7 @@ pub struct NanoSystem {
     pub timer_event: Option<uefi::Event>,
     simple_pointers: Vec<ScopedProtocol<Pointer>>,
     absolute_pointers: Vec<BasicAbsoluteDevice>,
+    usb_pointers: Vec<BasicUsbPointer>,
     shift_key: u8,
 }
 
@@ -107,6 +109,12 @@ struct BasicAbsoluteDevice {
     min_y: u64,
     range_x: u64,
     range_y: u64,
+}
+
+struct BasicUsbPointer {
+    io: ScopedProtocol<UsbIo>,
+    endpoint: u8,
+    report: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -170,6 +178,7 @@ impl NanoSystem {
 
         let simple_pointers = open_simple_pointers();
         let absolute_pointers = open_absolute_pointers();
+        let usb_pointers = open_usb_pointers();
 
         Ok(Self {
             display,
@@ -182,6 +191,7 @@ impl NanoSystem {
             timer_event: Some(timer_event),
             simple_pointers,
             absolute_pointers,
+            usb_pointers,
             shift_key: 0,
         })
     }
@@ -244,12 +254,49 @@ impl NanoSystem {
     }
 
     pub fn poll_pointer(&mut self) -> Option<NanoBasicPointerEvent> {
+        for pointer in &mut self.usb_pointers {
+            if let Ok(length) =
+                pointer
+                    .io
+                    .sync_interrupt_receive(pointer.endpoint, &mut pointer.report, 1)
+            {
+                if length >= 3 {
+                    let buttons = pointer.report[0];
+                    let dx = pointer.report[1] as i8 as i32;
+                    let dy = pointer.report[2] as i8 as i32;
+                    self.input_state.pointer_sequence =
+                        self.input_state.pointer_sequence.wrapping_add(1);
+                    self.input_state.pointer_dx = dx;
+                    self.input_state.pointer_dy = dy;
+                    self.input_state.scroll =
+                        pointer.report.get(3).copied().unwrap_or(0) as i8 as i32;
+                    self.input_state.pointer_is_absolute = false;
+                    self.input_state.pointer_is_trackpad = false;
+                    self.input_state.left = buttons & 1 != 0;
+                    self.input_state.right = buttons & 2 != 0;
+                    self.input_state.middle = buttons & 4 != 0;
+                    return Some(NanoBasicPointerEvent {
+                        dx,
+                        dy,
+                        absolute: None,
+                    });
+                }
+            }
+        }
         for device in &mut self.absolute_pointers {
             if let Some(state) = device.pointer.get_state() {
+                let x = state
+                    .current_x
+                    .saturating_sub(device.min_x)
+                    .min(device.range_x);
+                let y = state
+                    .current_y
+                    .saturating_sub(device.min_y)
+                    .min(device.range_y);
                 self.input_state.pointer_sequence =
                     self.input_state.pointer_sequence.wrapping_add(1);
-                self.input_state.pointer_x = state.current_x.saturating_sub(device.min_x);
-                self.input_state.pointer_y = state.current_y.saturating_sub(device.min_y);
+                self.input_state.pointer_x = x;
+                self.input_state.pointer_y = y;
                 self.input_state.pointer_max_x = device.range_x;
                 self.input_state.pointer_max_y = device.range_y;
                 self.input_state.pointer_is_absolute = true;
@@ -257,12 +304,7 @@ impl NanoSystem {
                 self.input_state.left = state.active_buttons & 1 != 0;
                 self.input_state.right = state.active_buttons & 2 != 0;
                 return Some(NanoBasicPointerEvent {
-                    absolute: Some((
-                        state.current_x.saturating_sub(device.min_x),
-                        state.current_y.saturating_sub(device.min_y),
-                        device.range_x,
-                        device.range_y,
-                    )),
+                    absolute: Some((x, y, device.range_x, device.range_y)),
                     ..NanoBasicPointerEvent::default()
                 });
             }
@@ -339,6 +381,62 @@ fn open_display() -> Result<ScopedProtocol<GraphicsOutput>, Status> {
     let handle =
         boot::get_handle_for_protocol::<GraphicsOutput>().map_err(|_| Status::UNSUPPORTED)?;
     boot::open_protocol_exclusive::<GraphicsOutput>(handle).map_err(|_| Status::ACCESS_DENIED)
+}
+
+fn open_usb_pointers() -> Vec<BasicUsbPointer> {
+    let mut pointers = Vec::new();
+    let Ok(handles) = boot::find_handles::<UsbIo>() else {
+        return pointers;
+    };
+    for handle in handles {
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mut io) = (unsafe {
+            boot::open_protocol::<UsbIo>(params, boot::OpenProtocolAttributes::GetProtocol)
+        }) else {
+            continue;
+        };
+        let Ok(interface) = io.interface_descriptor() else {
+            continue;
+        };
+        if interface.interface_class != 3
+            || interface.interface_subclass != 1
+            || interface.interface_protocol != 2
+        {
+            continue;
+        }
+        let mut endpoint = None;
+        let mut packet_size = 4usize;
+        for index in 0..interface.num_endpoints {
+            if let Ok(descriptor) = io.endpoint_descriptor(index) {
+                if descriptor.endpoint_address & 0x80 != 0 && descriptor.attributes & 0x03 == 3 {
+                    endpoint = Some(descriptor.endpoint_address);
+                    packet_size = (descriptor.max_packet_size as usize).max(4);
+                    break;
+                }
+            }
+        }
+        let Some(endpoint) = endpoint else {
+            continue;
+        };
+        let _ = io.control_transfer(
+            0x21,
+            0x0b,
+            0,
+            interface.interface_number as u16,
+            ControlTransfer::None,
+            100,
+        );
+        pointers.push(BasicUsbPointer {
+            io,
+            endpoint,
+            report: vec![0; packet_size.min(64)],
+        });
+    }
+    pointers
 }
 
 fn open_simple_pointers() -> Vec<ScopedProtocol<Pointer>> {

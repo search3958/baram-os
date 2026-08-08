@@ -29,8 +29,10 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
         while let Some(event) = nano.poll_pointer() {
             if let Some((x, y, max_x, max_y)) = event.absolute {
                 cursor_x = (x.saturating_mul(nano.display.width.saturating_sub(16) as u64) / max_x)
+                    .min(nano.display.width.saturating_sub(16) as u64)
                     as usize;
                 cursor_y = (y.saturating_mul(nano.display.height.saturating_sub(16) as u64) / max_y)
+                    .min(nano.display.height.saturating_sub(16) as u64)
                     as usize;
             } else {
                 cursor_x = (cursor_x as i64 + event.dx as i64)
