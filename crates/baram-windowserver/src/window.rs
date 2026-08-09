@@ -615,6 +615,11 @@ impl WindowManager {
             .map_or(false, |window| window.scroll_y != window.scroll_target_y)
     }
 
+    pub fn has_scroll_animation(&self) -> bool {
+        self.windows.iter()
+            .any(|window| window.scroll_y != window.scroll_target_y)
+    }
+
     pub fn window_at(&self, px: i32, py: i32) -> Option<WinId> {
         let mut best: Option<(&Window, i32)> = None;
         for w in &self.windows {

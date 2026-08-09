@@ -445,6 +445,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut dirty = deferred_dirty;
         deferred_dirty = false;
         let mut cursor_moved = false;
+        let mut scroll_input = false;
         let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
@@ -685,6 +686,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 cursor_moved |= (cx, cy) != old_cursor;
 
                 if ev.scroll != 0 {
+                    scroll_input = true;
                     let scroll_delta = ev
                         .scroll
                         .saturating_neg()
@@ -1551,15 +1553,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
         }
 
-        // UI scene updates remain capped, but physical cursor motion never
-        // waits behind the 16 ms scene-present deadline.
-        if dirty && ui_time_ms < next_present_ms && !cursor_moved {
+        let scroll_animating = wm.has_scroll_animation();
+        // New scroll input is presented immediately. During easing, use a
+        // short deadline instead of the normal 16 ms scene deadline.
+        if dirty && ui_time_ms < next_present_ms && !cursor_moved && !scroll_input {
             deferred_dirty = true;
             continue;
         }
 
         if dirty {
-            next_present_ms = ui_time_ms.saturating_add(16);
+            next_present_ms = ui_time_ms.saturating_add(if scroll_animating { 4 } else { 16 });
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
             if scene_dirty {
