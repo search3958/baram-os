@@ -98,6 +98,168 @@ fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
     }
 }
 
+fn blend_rounded_rect(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+    color: Color,
+    alpha: u32,
+) {
+    if width == 0 || height == 0 || alpha == 0 { return; }
+    let radius = radius.min(width / 2).min(height / 2);
+    let x1 = (x + width).min(layer.width());
+    let y1 = (y + height).min(layer.height());
+    for py in y..y1 {
+        for px in x..x1 {
+            let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
+            if coverage == 0 { continue; }
+            let idx = py * layer.width() + px;
+            let bg = layer.buf_ref()[idx];
+            let a = alpha.min(255) * coverage / 16;
+            let inv = 255 - a;
+            let r = (color.r() as u32 * a + ((bg >> 16) & 0xff) * inv) / 255;
+            let g = (color.g() as u32 * a + ((bg >> 8) & 0xff) * inv) / 255;
+            let b = (color.b() as u32 * a + (bg & 0xff) * inv) / 255;
+            layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+        }
+    }
+}
+
+fn copy_rounded_region(
+    layer: &mut LayerSystem,
+    source: &[u32],
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    if source.len() != layer.width() * layer.height() { return; }
+    let radius = radius.min(width / 2).min(height / 2);
+    let x1 = (x + width).min(layer.width());
+    let y1 = (y + height).min(layer.height());
+    for py in y..y1 {
+        for px in x..x1 {
+            let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
+            if coverage == 0 { continue; }
+            let idx = py * layer.width() + px;
+            if coverage == 16 {
+                layer.buf_mut()[idx] = source[idx];
+            } else {
+                let bg = layer.buf_ref()[idx];
+                let fg = source[idx];
+                let a = coverage * 255 / 16;
+                let inv = 255 - a;
+                let r = (((fg >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
+                let g = (((fg >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
+                let b = ((fg & 0xff) * a + (bg & 0xff) * inv) / 255;
+                layer.buf_mut()[idx] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+}
+
+fn rounded_rect_coverage(
+    px: usize,
+    py: usize,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+) -> u32 {
+    if radius == 0 { return 16; }
+    let left = x as f32;
+    let top = y as f32;
+    let right = (x + width) as f32;
+    let bottom = (y + height) as f32;
+    let r = radius as f32;
+    let mut inside = 0u32;
+    for sy in 0..4 {
+        for sx in 0..4 {
+            let sample_x = px as f32 + (sx as f32 + 0.5) * 0.25;
+            let sample_y = py as f32 + (sy as f32 + 0.5) * 0.25;
+            let corner_x = sample_x.clamp(left + r, right - r);
+            let corner_y = sample_y.clamp(top + r, bottom - r);
+            let dx = sample_x - corner_x;
+            let dy = sample_y - corner_y;
+            if dx * dx + dy * dy <= r * r { inside += 1; }
+        }
+    }
+    inside
+}
+
+fn box_blur_alpha_3x(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+    if width == 0 || height == 0 || radius == 0 { return; }
+    let diameter = radius * 2 + 1;
+    let mut scratch = alloc::vec![0u8; alpha.len()];
+    for _ in 0..3 {
+        for y in 0..height {
+            let mut sum = 0u32;
+            for x in 0..width + radius {
+                if x < width { sum += alpha[y * width + x] as u32; }
+                if x >= diameter && x - diameter < width { sum -= alpha[y * width + x - diameter] as u32; }
+                if x >= radius && x - radius < width { scratch[y * width + x - radius] = (sum / diameter as u32) as u8; }
+            }
+        }
+        for x in 0..width {
+            let mut sum = 0u32;
+            for y in 0..height + radius {
+                if y < height { sum += scratch[y * width + x] as u32; }
+                if y >= diameter && y - diameter < height { sum -= scratch[(y - diameter) * width + x] as u32; }
+                if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
+            }
+        }
+    }
+}
+
+fn draw_soft_box_shadow(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    const PAD: usize = 54;
+    let sw = width + PAD * 2;
+    let sh = height + PAD * 2;
+    let mut alpha = alloc::vec![0u8; sw * sh];
+    let r = radius.min(width / 2).min(height / 2);
+    for py in 0..height {
+        for px in 0..width {
+            let dx = if px < r { r - px } else if px >= width - r { px + r + 1 - width } else { 0 };
+            let dy = if py < r { r - py } else if py >= height - r { py + r + 1 - height } else { 0 };
+            if dx * dx + dy * dy <= r * r { alpha[(py + PAD) * sw + px + PAD] = 24; }
+        }
+    }
+    box_blur_alpha_3x(&mut alpha, sw, sh, 18);
+    let ox = x.saturating_sub(PAD);
+    let oy = y.saturating_sub(PAD);
+    let source_x = PAD.saturating_sub(x);
+    let source_y = PAD.saturating_sub(y);
+    for sy in source_y..sh {
+        let dy = oy + sy - source_y;
+        if dy >= layer.height() { continue; }
+        for sx in source_x..sw {
+            let dx = ox + sx - source_x;
+            if dx >= layer.width() { continue; }
+            let a = alpha[sy * sw + sx] as u32;
+            if a == 0 { continue; }
+            let idx = dy * layer.width() + dx;
+            let bg = layer.buf_ref()[idx];
+            let inv = 255 - a;
+            let rr = (((bg >> 16) & 0xff) * inv) / 255;
+            let gg = (((bg >> 8) & 0xff) * inv) / 255;
+            let bb = ((bg & 0xff) * inv) / 255;
+            layer.buf_mut()[idx] = (rr << 16) | (gg << 8) | bb;
+        }
+    }
+}
+
 const ICON_CACHE_CAP: usize = 32;
 static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
     None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
@@ -471,7 +633,7 @@ fn redraw_taskbar(
     wm: &WindowManager,
     add_progress: f32,
     shift_x: f32,
-    hover_apps_icon: bool,
+    _hover_apps_icon: bool,
     search_focused: bool,
     search_query: &str,
     clock_hh: u8,
@@ -635,21 +797,16 @@ fn redraw_taskbar(
     let search_y = (TASKBAR_H - 40) / 2;
     let search_w = 190usize;
     let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
-    let search_border = if search_focused {
-        config::get_color("ui-theme/color/accent", Color::ACCENT)
-    } else if hover_apps_icon {
-        config::get_color("ui-theme/color/text", Color::TEXT)
-    } else {
-        config::get_color("ui-theme/color/muted", Color::MUTED)
-    };
-    layer.rounded_rect_outline(
+    let search_alpha = if search_focused { 255 } else { 128 };
+    blend_rounded_rect(
+        layer,
         search_x,
         search_y,
         search_w,
         40,
-        12,
-        search_border,
+        20,
         search_bg,
+        search_alpha,
     );
     let text = if search_query.is_empty() {
         "アプリを検索"
@@ -807,11 +964,6 @@ pub fn render_scene(
     }
 
     if show_app_launcher {
-        // Build the launcher over the current scene so only the lower-left
-        // panel changes instead of dimming the entire desktop.
-        let mut lsys = LayerSystem::new(w, h);
-        lsys.copy_from_screen_buffer(layer.buf_ref());
-
             let cols = 4usize;
             let icon_size = 52usize;
             let icon_gap = 16usize;
@@ -819,26 +971,72 @@ pub fn render_scene(
             let cell_w = icon_size + icon_gap;
             let cell_h = icon_size + label_h + icon_gap;
             let grid_w = cols * cell_w;
-            let rows = (app_list.len() + cols - 1) / cols;
+            let rows = 3usize;
             let grid_h = rows * cell_h;
             let grid_x = 20usize;
             let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
             let panel_h = grid_h.max(40) + 16;
-            lsys.fill_rounded_rect(
-                12,
-                grid_y.saturating_sub(8),
-                grid_w + 16,
-                panel_h,
-                14,
-                config::get_color("ui-theme/color/panel", Color::PANEL),
-            );
+            let panel_x = 12usize;
+            let panel_y = grid_y.saturating_sub(8);
+            let panel_w = grid_w + 16;
+            let panel_radius = 26usize;
+
+            // Cache the complete glass-and-shadow base once per opening.
+            if cached_launcher_layer.is_none() {
+                let mut panel_base = LayerSystem::new(w, h);
+                panel_base.copy_from_screen_buffer(layer.buf_ref());
+                let mut blurred = alloc::vec![0u32; w * h];
+                blur::blur_region_to(layer.buf_ref(), &mut blurred, w, 0, h, 52);
+                draw_soft_box_shadow(
+                    &mut panel_base,
+                    panel_x,
+                    panel_y,
+                    panel_w,
+                    panel_h,
+                    panel_radius,
+                );
+                copy_rounded_region(
+                    &mut panel_base,
+                    &blurred,
+                    panel_x,
+                    panel_y,
+                    panel_w,
+                    panel_h,
+                    panel_radius,
+                );
+                blend_rounded_rect(
+                    &mut panel_base,
+                    panel_x,
+                    panel_y,
+                    panel_w,
+                    panel_h,
+                    panel_radius,
+                    Color::rgb(0xf5, 0xf5, 0xf5),
+                    150,
+                );
+                *cached_launcher_layer = Some(panel_base.buf_ref().to_vec());
+            }
+            let mut lsys = LayerSystem::new(w, h);
+            lsys.copy_from_screen_buffer(layer.buf_ref());
+            if let Some(panel_base) = cached_launcher_layer.as_deref() {
+                let pad = 54usize;
+                let x0 = panel_x.saturating_sub(pad);
+                let y0 = panel_y.saturating_sub(pad);
+                let x1 = (panel_x + panel_w + pad).min(w);
+                let y1 = (panel_y + panel_h + pad).min(tb_y);
+                for py in y0..y1 {
+                    let start = py * w + x0;
+                    let end = py * w + x1;
+                    lsys.buf_mut()[start..end].copy_from_slice(&panel_base[start..end]);
+                }
+            }
 
             if app_list.is_empty() {
                 lsys.put_str(
                     28,
                     grid_y + 8,
                     "該当するアプリはありません",
-                    config::get_color("ui-theme/color/muted", Color::MUTED),
+                    Color::BLACK,
                 );
             }
 
@@ -848,13 +1046,11 @@ pub fn render_scene(
                 let cx = grid_x + col * cell_w + icon_gap / 2;
                 let cy = grid_y + row * cell_h;
 
-                lsys.fill_rounded_rect(
-                    cx,
-                    cy,
-                    icon_size,
-                    icon_size,
-                    10,
-                    config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL),
+                lsys.fill_circle(
+                    cx + icon_size / 2,
+                    cy + icon_size / 2,
+                    icon_size / 2,
+                    Color::rgb(0xff, 0xff, 0xff),
                 );
 
                 let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
@@ -919,11 +1115,10 @@ pub fn render_scene(
                 }
                 let tx = cx + (icon_size.saturating_sub(tw)) / 2;
                 let ty = cy + icon_size + 4;
-                let label_color = config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL);
+                let label_color = Color::BLACK;
                 lsys.put_str(tx, ty, &display_name, label_color);
             }
         layer.copy_rect_buffer(lsys.buf_ref(), w, tb_y, 0, 0);
-        *cached_launcher_layer = None;
     }
 
     if taskbar_dirty || !taskbar.is_valid() {

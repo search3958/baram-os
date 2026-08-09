@@ -494,7 +494,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 );
                 show_app_launcher = true;
                 prev_show_app_launcher = false;
-                cached_launcher_layer = None;
                 taskbar_surface.invalidate();
                 dirty = true;
                 scene_dirty = true;
@@ -533,7 +532,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     // The launcher contents changed even if its visibility did not.
                     // Reuse the visibility damage path to redraw the full launcher.
                     prev_show_app_launcher = false;
-                    cached_launcher_layer = None;
                     taskbar_surface.invalidate();
                     handled = true;
                     dirty = true;
@@ -775,7 +773,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let cell_w = icon_size + icon_gap;
                         let cell_h = icon_size + label_h + icon_gap;
                         let grid_w = cols * cell_w;
-                        let rows = (app_list.len() + cols - 1) / cols;
+                        let rows = 3usize;
                         let grid_h = rows * cell_h;
                         let grid_x = 20usize;
                         let grid_y = screen.height().saturating_sub(TASKBAR_H + grid_h + 16);
@@ -833,6 +831,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 &mut app_icon_list,
                             );
                             taskbar_surface.invalidate();
+                            cached_launcher_layer = None;
                             show_app_launcher = false;
                         } else if on_launcher_panel {
                             app_search_focused = false;
@@ -1147,7 +1146,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let cell_w = icon_size + icon_gap;
                 let cell_h = icon_size + label_h + icon_gap;
                 let grid_w = cols * cell_w;
-                let rows = (app_list.len() + cols - 1) / cols;
+                let rows = 3usize;
                 let grid_h = rows * cell_h;
                 let grid_x = 20usize;
                 let grid_y = screen.height().saturating_sub(TASKBAR_H + grid_h + 16);
@@ -1200,6 +1199,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &mut app_icon_list,
                     );
                     show_app_launcher = false;
+                    cached_launcher_layer = None;
                 } else if on_launcher_panel {
                     app_search_focused = false;
                     show_app_launcher = true;
