@@ -4,6 +4,7 @@ extern crate alloc;
 
 pub mod vfs;
 pub mod uri;
+pub mod security;
 pub mod setup;
 pub mod app;
 pub mod shift_key;

@@ -1,0 +1,6 @@
+[onClick = permission-deny]
+run = security://deny
+[onClick = permission-once]
+run = security://once
+[onClick = permission-always]
+run = security://always

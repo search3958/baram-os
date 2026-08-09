@@ -240,6 +240,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
 
     loop {
-        uefi::boot::stall(core::time::Duration::from_secs(1));
+        uefi::boot::stall(core::time::Duration::from_millis(100));
     }
 }

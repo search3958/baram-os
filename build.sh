@@ -32,6 +32,7 @@ set -euo pipefail
 # ---------- script metadata ----------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/nano_targets.sh"
 
 PROJECT_NAME="baramos"
 EFI_NAME="bootaa64.efi"
@@ -97,13 +98,20 @@ if ! rustup target list --installed 2>/dev/null | grep -q '^aarch64-unknown-uefi
 fi
 
 # ---------- step 2: build the EFI app ----------
-SUBSYSTEM_NAMES=("windowserver" "font" "graphics" "iokit" "bsd")
+PRIMARY_BIN="$(nano_primary_bin)"
+SUBSYSTEM_NAMES=()
+while IFS= read -r name; do
+    [ -n "$name" ] && SUBSYSTEM_NAMES+=("$name")
+done < <(nano_app_bins)
 
 build_efi() {
     log "Building $EFI_NAME ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi --bin bootaa64
-    if [ -f "$TARGET_DIR/bootaa64" ] && [ ! -f "$TARGET_DIR/$EFI_NAME" ]; then
-        cp "$TARGET_DIR/bootaa64" "$TARGET_DIR/$EFI_NAME"
+    cargo +nightly build --release --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
+    if [ -f "$TARGET_DIR/$PRIMARY_BIN" ] && [ ! -f "$TARGET_DIR/$PRIMARY_BIN.efi" ]; then
+        cp "$TARGET_DIR/$PRIMARY_BIN" "$TARGET_DIR/$PRIMARY_BIN.efi"
+    fi
+    if [ "$PRIMARY_BIN.efi" != "$EFI_NAME" ]; then
+        cp "$TARGET_DIR/$PRIMARY_BIN.efi" "$TARGET_DIR/$EFI_NAME"
     fi
     test -f "$TARGET_DIR/$EFI_NAME" || die "Build did not produce $EFI_NAME"
     log "  -> $TARGET_DIR/$EFI_NAME ($(stat -c %s "$TARGET_DIR/$EFI_NAME" 2>/dev/null || stat -f %z "$TARGET_DIR/$EFI_NAME") bytes)"
@@ -128,8 +136,17 @@ build_efi() {
 make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
+    local w3a_dir="$RUNTIME_DIR/w3a"
     mkdir -p "$RUNTIME_DIR"
-    rm -f "$out"
+    mkdir -p "$w3a_dir"
+    if [ -x "$SCRIPT_DIR/scripts/package_w3a.sh" ] && [ -d "$SCRIPT_DIR/app" ]; then
+        "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
+    fi
+
+    if [ -f "$out" ]; then
+        log "Removing existing disk image $out ..."
+        rm -f "$out"
+    fi
 
     log "Creating FAT disk image ($IMAGE_SIZE_MB MiB) at $out ..."
 
@@ -162,10 +179,10 @@ make_fat_image() {
         # without waiting for the 5-second startup.nsh countdown.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         # Copy app files to /apps/ directory
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd -i "$out" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
                 [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
             done
             # Copy icon subdirectory
@@ -204,11 +221,16 @@ make_fat_image() {
         done
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
         # Copy app files
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
                 [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
             done
             if [ -d "$app_src/icon" ]; then
@@ -244,6 +266,26 @@ make_fat_image() {
         done
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        # Copy app files to /apps/ directory
+        local app_src="$SCRIPT_DIR/app"
+        if [ -d "$app_src" ]; then
+            mmd -i "$out" ::/apps 2>/dev/null || true
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
+                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
+            done
+            if [ -d "$app_src/icon" ]; then
+                mmd -i "$out" ::/apps/icon 2>/dev/null || true
+                for f in "$app_src/icon"/*.png; do
+                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
+                done
+            fi
+            log "  copied app files to /apps/"
+        fi
         log "  -> $out"
         return 0
     fi
@@ -273,6 +315,24 @@ make_fat_image() {
                 log "  copied $name.efi to /EFI/BOOT/bin/"
             fi
         done
+        # Copy config file
+        if [ -f "$SCRIPT_DIR/config.xml" ]; then
+            cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
+            log "  copied config.xml to /EFI/BOOT/"
+        fi
+        # Copy app files
+        local app_src="$SCRIPT_DIR/app"
+        if [ -d "$app_src" ]; then
+            mkdir -p "$tmp_mount/apps"
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
+                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
+            done
+            if [ -d "$app_src/icon" ]; then
+                mkdir -p "$tmp_mount/apps/icon"
+                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
+            fi
+            log "  copied app files to /apps/"
+        fi
         sync
         sudo umount "$tmp_mount" 2>/dev/null || umount "$tmp_mount" 2>/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
@@ -449,7 +509,7 @@ Install QEMU:
         -cpu "$QEMU_CPU" \
         -m "$QEMU_RAM" \
         "${fw_args[@]}" \
-        -drive "if=none,file=$img,format=raw,id=hd0" \
+        -drive "if=none,file=$img,format=raw,id=hd0,cache=none" \
         -device "virtio-blk-device,drive=hd0" \
         -device "ramfb" \
         -device "qemu-xhci" \

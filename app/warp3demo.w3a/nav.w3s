@@ -1,0 +1,19 @@
+[onClick = top-btn]
+scroll = "top-point"
+print = "トップにスクロールしました"
+
+[onClick = back-btn]
+scroll = -1
+print = "前にスクロールしました"
+
+[onClick = next-btn]
+scroll = +1
+print = "次にスクロールしました"
+
+[onClick = home-btn]
+screen = main
+print = "ホームに戻りました"
+
+[onClick = vardemo]
+screen = var
+print = "変数でもに移動しました"

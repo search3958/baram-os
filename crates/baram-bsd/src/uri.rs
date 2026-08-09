@@ -1,20 +1,23 @@
 //! URI command parser and executor for BaramOS.
 //!
 //! Supports `os://` scheme for controlling system settings.
+//! The URI path maps directly to the XML config structure.
+//! Query parameters set child values under that path.
+//!
 //! Example URIs:
-//!   os://display/pointer?size=1
-//!   os://display/hud?enabled=1
-//!   os://display/wallpaper?file=baram.png
-//!   os://display/wallpaper?color=#990000
+//!   os://display/pointer/size?10
+//!   os://display/hud/enabled?1
+//!   os://display/wallpaper?file=baram&mode=file
+//!   os://display/wallpaper?color=#990000&mode=color
+//!   os://ui-theme/color?btn_primary=BB0000
 
+use crate::config;
+use crate::vfs;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::vfs;
-use crate::config;
 
 pub struct UriCommand {
-    pub category: String,
-    pub action: String,
+    pub path: String,
     pub params: Vec<(String, String)>,
 }
 
@@ -27,24 +30,23 @@ pub fn parse(uri: &str) -> Option<UriCommand> {
         None => (uri, ""),
     };
 
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let category = String::from(parts[0]);
-    let action = String::from(parts[1]);
+    let path = path.trim_end_matches('/');
 
     let mut params = Vec::new();
     if !query.is_empty() {
         for pair in query.split('&') {
             if let Some((k, v)) = pair.split_once('=') {
                 params.push((String::from(k), String::from(v)));
+            } else if !pair.is_empty() {
+                params.push((String::new(), String::from(pair)));
             }
         }
     }
 
-    Some(UriCommand { category, action, params })
+    Some(UriCommand {
+        path: String::from(path),
+        params,
+    })
 }
 
 pub struct DisplayState {
@@ -52,6 +54,13 @@ pub struct DisplayState {
     pub hud_enabled: bool,
     pub wallpaper_color: Option<u32>,
     pub wallpaper_index: usize,
+    pub wallpaper_mode: WallpaperMode,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum WallpaperMode {
+    File,
+    Color,
 }
 
 impl DisplayState {
@@ -61,12 +70,14 @@ impl DisplayState {
             hud_enabled: true,
             wallpaper_color: None,
             wallpaper_index: 0,
+            wallpaper_mode: WallpaperMode::File,
         }
     }
 }
 
 pub fn get_param<'a>(cmd: &'a UriCommand, key: &str) -> Option<&'a str> {
-    cmd.params.iter()
+    cmd.params
+        .iter()
         .find(|(k, _)| k == key)
         .map(|(_, v)| v.as_str())
 }
@@ -77,112 +88,61 @@ pub fn execute(uri: &str, state: &mut DisplayState) -> bool {
         None => return false,
     };
 
-    match cmd.category.as_str() {
-        "display" => execute_display(&cmd, state),
-        "system" => execute_system(&cmd, state),
-        _ => false,
+    let saved = config::update_and_save(|cfg| {
+        let mut shared_pointer_speed = None;
+        for (key, value) in &cmd.params {
+            let full_path = if key.is_empty() {
+                cmd.path.clone()
+            } else if cmd.path.is_empty() {
+                String::from(key)
+            } else {
+                alloc::format!("{}/{}", cmd.path, key)
+            };
+            cfg.set(&full_path, value);
+            if key == "speed" && (cmd.path == "mouse" || cmd.path == "trackpad") {
+                shared_pointer_speed = Some(String::from(value.as_str()));
+            }
+        }
+        // UEFI SimplePointer does not identify an integrated trackpad as a
+        // trackpad. Keep the speed value shared so that either input path
+        // receives the setting even when hardware identification is absent.
+        if let Some(speed) = &shared_pointer_speed {
+            cfg.set("mouse/speed", speed);
+            cfg.set("trackpad/speed", speed);
+        }
+    });
+    if !saved {
+        return false;
     }
+    load_settings_from_config(state);
+    true
+}
+
+pub enum SystemCommand {
+    None,
+    ResetAll,
+}
+
+pub fn check_system_commands(state: &mut DisplayState) -> SystemCommand {
+    let result = {
+        let cfg = config::get_config();
+        match cfg.get("system/reset/option") {
+            Some("all") => SystemCommand::ResetAll,
+            _ => SystemCommand::None,
+        }
+    };
+
+    if let SystemCommand::ResetAll = &result {
+        config::reset_to_default();
+        *state = DisplayState::new();
+    }
+
+    result
 }
 
 pub fn wallpaper_changed(state: &DisplayState) -> bool {
-    state.wallpaper_color.is_some() || state.wallpaper_index != 0
-}
-
-fn execute_display(cmd: &UriCommand, state: &mut DisplayState) -> bool {
-    let cfg = config::get_config_mut();
-    match cmd.action.as_str() {
-        "pointer" => {
-            if let Some(size_str) = get_param(cmd, "size") {
-                if let Ok(v) = size_str.parse::<i32>() {
-                    let size = v as f32 / 10.0;
-                    if size >= 0.5 && size <= 5.0 {
-                        state.pointer_size = size;
-                        cfg.set("display/pointer/size", &alloc::format!("{}", v));
-                        config::save_config();
-                        return true;
-                    }
-                }
-            }
-            false
-        }
-        "hud" => {
-            if let Some(enabled_str) = get_param(cmd, "enabled") {
-                match enabled_str {
-                    "1" | "true" | "on" => {
-                        state.hud_enabled = true;
-                        cfg.set("display/hud/enabled", "1");
-                        config::save_config();
-                        return true;
-                    }
-                    "0" | "false" | "off" => {
-                        state.hud_enabled = false;
-                        cfg.set("display/hud/enabled", "0");
-                        config::save_config();
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-            false
-        }
-        "wallpaper" => {
-            if let Some(color_str) = get_param(cmd, "color") {
-                let hex = color_str.trim_start_matches('#');
-                if hex.len() == 6 {
-                    if let (Ok(r), Ok(g), Ok(b)) = (
-                        u8::from_str_radix(&hex[0..2], 16),
-                        u8::from_str_radix(&hex[2..4], 16),
-                        u8::from_str_radix(&hex[4..6], 16),
-                    ) {
-                        state.wallpaper_color = Some(baram_core::Color::rgb(r, g, b).0);
-                        state.wallpaper_index = 0;
-                        cfg.set("display/wallpaper/file", "");
-                        cfg.set("display/wallpaper/color", color_str);
-                        config::save_config();
-                        return true;
-                    }
-                }
-            }
-            if let Some(file_str) = get_param(cmd, "file") {
-                let idx = match file_str {
-                    "baram.png" | "baram" => Some(0),
-                    "hanul.png" | "hanul" => Some(1),
-                    "reflect.png" | "reflect" => Some(2),
-                    _ => None,
-                };
-                if let Some(i) = idx {
-                    state.wallpaper_color = None;
-                    state.wallpaper_index = i;
-                    cfg.set("display/wallpaper/file", file_str);
-                    cfg.set("display/wallpaper/color", "");
-                    config::save_config();
-                    return true;
-                }
-            }
-            false
-        }
-        _ => false,
-    }
-}
-
-fn execute_system(cmd: &UriCommand, state: &mut DisplayState) -> bool {
-    match cmd.action.as_str() {
-        "reset" => {
-            if let Some(option) = get_param(cmd, "option") {
-                if option == "all" {
-                    *state = DisplayState::new();
-                    vfs::remove_file("apps/.setup_done");
-                    uefi::runtime::reset(
-                        uefi_raw::table::runtime::ResetType::COLD,
-                        uefi::Status::SUCCESS,
-                        None,
-                    );
-                }
-            }
-            false
-        }
-        _ => false,
-    }
+    state.wallpaper_mode == WallpaperMode::Color && state.wallpaper_color.is_some()
+        || state.wallpaper_mode == WallpaperMode::File
 }
 
 pub fn load_settings_from_config(state: &mut DisplayState) {
@@ -195,6 +155,12 @@ pub fn load_settings_from_config(state: &mut DisplayState) {
     if let Some(v) = cfg.get("display/hud/enabled") {
         state.hud_enabled = v == "1" || v == "true" || v == "on";
     }
+    if let Some(v) = cfg.get("display/wallpaper/mode") {
+        state.wallpaper_mode = match v {
+            "color" => WallpaperMode::Color,
+            _ => WallpaperMode::File,
+        };
+    }
     if let Some(v) = cfg.get("display/wallpaper/color") {
         if !v.is_empty() {
             let hex = v.trim_start_matches('#');
@@ -205,14 +171,12 @@ pub fn load_settings_from_config(state: &mut DisplayState) {
                     u8::from_str_radix(&hex[4..6], 16),
                 ) {
                     state.wallpaper_color = Some(baram_core::Color::rgb(r, g, b).0);
-                    state.wallpaper_index = 0;
                 }
             }
         }
     }
     if let Some(v) = cfg.get("display/wallpaper/file") {
         if !v.is_empty() {
-            state.wallpaper_color = None;
             state.wallpaper_index = match v {
                 "baram.png" | "baram" => 0,
                 "hanul.png" | "hanul" => 1,

@@ -22,6 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/nano_targets.sh"
 
 # ---------- configuration ----------
 PFTF_VERSION="${PFTF_VERSION:-v1.52}"
@@ -43,12 +44,16 @@ require_cmd() {
 }
 
 # ---------- step 1: build BaramOS ----------
-SUBSYSTEM_NAMES=("windowserver" "font" "graphics" "iokit" "bsd")
+PRIMARY_BIN="$(nano_primary_bin)"
+SUBSYSTEM_NAMES=()
+while IFS= read -r name; do
+    [ -n "$name" ] && SUBSYSTEM_NAMES+=("$name")
+done < <(nano_app_bins)
 
 build_efi() {
     log "Building BaramOS (aarch64-unknown-uefi) ..."
-    cargo +nightly build --release --target aarch64-unknown-uefi
-    local efi="$TARGET_DIR/bootaa64.efi"
+    cargo +nightly build --release --target aarch64-unknown-uefi --bin "$PRIMARY_BIN"
+    local efi="$TARGET_DIR/$PRIMARY_BIN.efi"
     [ -f "$efi" ] || die "Build did not produce $efi"
     log "  -> $efi ($(stat -f %z "$efi") bytes)"
 
@@ -93,13 +98,18 @@ ensure_pftf() {
 # ---------- step 3: create FAT image ----------
 make_image() {
     local img="$RUNTIME_DIR/$IMAGE_NAME"
-    local efi="$TARGET_DIR/bootaa64.efi"
+    local w3a_dir="$RUNTIME_DIR/w3a"
+    local efi="$TARGET_DIR/$PRIMARY_BIN.efi"
     local pftf_dir="$CACHE_DIR"
 
     [ -f "$efi" ] || die "EFI binary not found. Run build first."
     [ -f "$pftf_dir/RPI_EFI.fd" ] || die "pftf not found. Run ensure_pftf first."
 
     mkdir -p "$RUNTIME_DIR"
+    mkdir -p "$w3a_dir"
+    if [ -x "$SCRIPT_DIR/scripts/package_w3a.sh" ] && [ -d "$SCRIPT_DIR/app" ]; then
+        "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
+    fi
     rm -f "$img"
 
     log "Creating RPi4 disk image ($IMAGE_SIZE_MB MiB) at $img ..."
@@ -144,10 +154,10 @@ make_image() {
         fi
 
         # App files
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mmd   -i "$img" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
                 [ -f "$f" ] && mcopy -i "$img" "$f" ::/apps/
             done
             if [ -d "$app_src/icon" ]; then
@@ -208,10 +218,10 @@ make_image() {
         fi
 
         # App files
-        local app_src="$SCRIPT_DIR/src/app"
+        local app_src="$SCRIPT_DIR/app"
         if [ -d "$app_src" ]; then
             mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/index.yaml; do
+            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a; do
                 [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
             done
             if [ -d "$app_src/icon" ]; then

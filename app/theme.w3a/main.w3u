@@ -1,0 +1,84 @@
+config { title("カスタマイズ") script("theme.w3s") }
+head { text("カスタマイズ") }
+
+card {
+    text("Baram OS")
+    flex {
+        button.baram-blue { text("ブルー") }
+        button.baram-green { text("グリーン") }
+        button.baram-purple { text("パープル") }
+        button.baram-red { text("レッド") }
+        button.baram-orange { text("オレンジ") }
+        button.baram-yellow { text("イエロー") }
+    }
+    flex {
+        button.baram-soft-blue { text("ブルー") }
+        button.baram-soft-green { text("グリーン") }
+        button.baram-soft-red { text("レッド") }
+    }
+}
+card {
+    text("Material 3 - ライト")
+    flex {
+        button.light-default { text("デフォルト") }
+        button.light-gray { text("グレー") }
+        button.light-blue { text("ブルー") }
+        button.light-green { text("グリーン") }
+        button.light-orange { text("オレンジ") }
+        button.light-red { text("レッド") }
+    }
+}
+card {
+    text("Material 3 - ダーク")
+    flex {
+        button.dark-default { text("ダーク") }
+        button.dark-gray { text("グレー") }
+        button.dark-blue { text("ブルー") }
+        button.dark-green { text("グリーン") }
+        button.dark-purple { text("パープル") }
+        button.dark-red { text("レッド") }
+    }
+}
+card {
+    text("角丸 - ウィンドウ")
+    text.win-current { text("現在: -") }
+    flex {
+        button.win-0 { text("0") }
+        button.win-8 { text("8") }
+        button.win-16 { text("16") }
+        button.win-24 { text("24") }
+        button.win-32 { text("32") }
+    }
+}
+card {
+    text("角丸 - カード")
+    text.card-current { text("現在: -") }
+    flex {
+        button.card-0 { text("0") }
+        button.card-16 { text("16") }
+        button.card-32 { text("32") }
+        button.card-48 { text("48") }
+        button.card-64 { text("64") }
+    }
+}
+card {
+    text("角丸 - ボタン")
+    text.button-current { text("現在: -") }
+    flex {
+        button.button-0 { text("0") }
+        button.button-4 { text("4") }
+        button.button-8 { text("8") }
+        button.button-12 { text("12") }
+        button.button-round { text("丸型") }
+    }
+}
+card {
+    text("角丸 - スイッチ")
+    text.switch-current { text("現在: -") }
+    flex {
+        button.switch-0 { text("0") }
+        button.switch-8 { text("8") }
+        button.switch-12 { text("12") }
+        button.switch-round { text("丸型") }
+    }
+}

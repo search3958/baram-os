@@ -1,0 +1,46 @@
+# 自動起動する対象リスト
+autostart:
+  - settings.w3a
+
+# 各アプリの詳細設定
+apps:
+  settings.w3a:
+    icon: settings.png
+    type: warp-3
+    title: 設定
+  theme.w3a:
+    icon: theme.png
+    type: warp-3
+    title: カスタマイズ
+  demo.u1:
+    icon: null
+    type: uiscript-1
+    title: UI Script Demo
+  warpdemo.warp:
+    icon: null
+    type: warp-2
+    title: Warp Demo
+  note.warp:
+    icon: note.png
+    type: warp-2
+    title: ノート
+  task.w3a:
+    icon: manager.png
+    type: warp-3
+    title: タスクマネージャー
+  calc.w3a:
+    icon: calc.png
+    type: warp-3
+    title: 計算機
+  webdemo.html:
+    icon: html5.png
+    type: html-1
+    title: HTMLデモ
+  warp3demo.w3a:
+    icon: noname.png
+    type: warp-3
+    title: Warp 3 デモ
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ

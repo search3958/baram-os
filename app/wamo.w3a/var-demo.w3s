@@ -1,0 +1,39 @@
+[fun = updateDisplay]
+setText display = myVar
+
+[fun = boostStep]
+myVar = +1
+wait = 50ms
+fun = updateDisplay
+
+[onClick = count]
+myVar = +1
+fun = updateDisplay
+
+[onClick = boost]
+setText wait-status = "実行中: 50ms間隔"
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+fun = boostStep
+setText wait-status = "完了"
+
+[onClick = reset]
+myVar = "0"
+fun = updateDisplay
+
+[onClick = set-btn]
+getText myVar = set-input
+setText set-input = ""
+fun = updateDisplay
+
+[onClick = wait-demo]
+setText wait-status = "50ms待機中…"
+wait = 50ms
+setText wait-status = "50ms経過しました"

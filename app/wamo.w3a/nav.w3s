@@ -1,0 +1,17 @@
+[onClick = home-btn]
+screen = main
+
+[onClick = variables-btn]
+screen = var
+
+[onClick = components-btn]
+screen = components
+
+[onClick = top-btn]
+scroll = "top-point"
+
+[onClick = previous-btn]
+scroll = -1
+
+[onClick = next-btn]
+scroll = +1

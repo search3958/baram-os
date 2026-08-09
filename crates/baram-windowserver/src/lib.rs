@@ -7,3 +7,5 @@ pub mod layer_ext;
 pub mod compositor;
 pub mod cursor;
 pub mod warp;
+pub mod html;
+pub mod warp3;

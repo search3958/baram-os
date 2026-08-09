@@ -4,6 +4,95 @@ use core::ptr;
 use crate::color::Color;
 use crate::screen::Screen;
 
+#[inline(always)]
+fn blend_u32(bg: u32, fg: u32, a: u32) -> u32 {
+    if a == 0 { return bg; }
+    if a >= 255 { return fg; }
+    let inv = 255 - a;
+    let r = (((fg >> 16) & 0xFF) * a + ((bg >> 16) & 0xFF) * inv) / 255;
+    let g = (((fg >> 8) & 0xFF) * a + ((bg >> 8) & 0xFF) * inv) / 255;
+    let b = ((fg & 0xFF) * a + (bg & 0xFF) * inv) / 255;
+    0xFF00_0000 | (r << 16) | (g << 8) | b
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn avx2_available() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    // CPU/OS AVX state does not change while this UEFI image is running.
+    static AVAILABLE: AtomicU8 = AtomicU8::new(0); // 0 unknown, 1 no, 2 yes
+    match AVAILABLE.load(Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+
+    let available = unsafe {
+        let leaf1 = __cpuid(1);
+        const AVX: u32 = 1 << 28;
+        const OSXSAVE: u32 = 1 << 27;
+        if leaf1.ecx & (AVX | OSXSAVE) != (AVX | OSXSAVE) || (_xgetbv(0) & 0x6) != 0x6 {
+            false
+        } else {
+            (__cpuid_count(7, 0).ebx & (1 << 5)) != 0
+        }
+    };
+    AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+    available
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn blend_alpha_avx2(src: *const u32, dst: *mut u32, len: usize) {
+    use core::arch::x86_64::*;
+
+    let zero = _mm256_setzero_si256();
+    let full_alpha = _mm256_set1_epi32(255);
+    let mut px = 0usize;
+
+    while px + 8 <= len {
+        let sp = _mm256_loadu_si256(src.add(px) as *const __m256i);
+        let a = _mm256_srli_epi32(sp, 24);
+        let zero_alpha = _mm256_cmpeq_epi32(a, zero);
+        if _mm256_movemask_epi8(zero_alpha) == -1 {
+            px += 8;
+            continue;
+        }
+
+        let opaque_alpha = _mm256_cmpeq_epi32(a, full_alpha);
+        if _mm256_movemask_epi8(opaque_alpha) == -1 {
+            _mm256_storeu_si256(dst.add(px) as *mut __m256i, sp);
+            px += 8;
+            continue;
+        }
+
+        // Mixed-alpha blocks are relatively rare in the compositor. Keep the
+        // exact scalar blend here: LLVM's x86 UEFI legalizer crashes on the
+        // AVX2 32-bit multiply sequence during fat LTO. Fully transparent and
+        // fully opaque blocks still take the 8-pixel AVX2 fast paths above.
+        for lane in 0..8 {
+            let pixel = *src.add(px + lane);
+            let alpha = pixel >> 24;
+            if alpha != 0 {
+                let old = *dst.add(px + lane);
+                *dst.add(px + lane) = blend_u32(old, pixel, alpha);
+            }
+        }
+        px += 8;
+    }
+
+    for i in px..len {
+        let sp = *src.add(i);
+        let a = sp >> 24;
+        if a != 0 {
+            let old = *dst.add(i);
+            *dst.add(i) = blend_u32(old, sp, a);
+        }
+    }
+}
+
 pub struct LayerSystem {
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -11,6 +100,11 @@ pub struct LayerSystem {
     frame_count: u64,
     clip_stack: Vec<(usize, usize, usize, usize)>,
     clip: Option<(usize, usize, usize, usize)>,
+    dirty: bool,
+    dirty_x0: usize,
+    dirty_y0: usize,
+    dirty_x1: usize,
+    dirty_y1: usize,
 }
 
 impl LayerSystem {
@@ -22,6 +116,11 @@ impl LayerSystem {
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,
+            dirty: true,
+            dirty_x0: 0,
+            dirty_y0: 0,
+            dirty_x1: w,
+            dirty_y1: h,
         }
     }
 
@@ -33,6 +132,11 @@ impl LayerSystem {
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,
+            dirty: true,
+            dirty_x0: 0,
+            dirty_y0: 0,
+            dirty_x1: w,
+            dirty_y1: h,
         }
     }
 
@@ -63,6 +167,50 @@ impl LayerSystem {
         }
     }
 
+    /// Current drawable bounds, or the complete layer when no clip is active.
+    /// Direct pixel writers such as font rasterizers must honor this too.
+    pub fn clip_bounds(&self) -> (usize, usize, usize, usize) {
+        self.clip.unwrap_or((0, 0, self.width, self.height))
+    }
+
+    #[inline]
+    fn mark_dirty_rect(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
+        if !self.dirty {
+            self.dirty = true;
+            self.dirty_x0 = x0;
+            self.dirty_y0 = y0;
+            self.dirty_x1 = x1;
+            self.dirty_y1 = y1;
+        } else {
+            if x0 < self.dirty_x0 { self.dirty_x0 = x0; }
+            if y0 < self.dirty_y0 { self.dirty_y0 = y0; }
+            if x1 > self.dirty_x1 { self.dirty_x1 = x1; }
+            if y1 > self.dirty_y1 { self.dirty_y1 = y1; }
+        }
+    }
+
+    pub fn mark_all_dirty(&mut self) {
+        self.dirty = true;
+        self.dirty_x0 = 0;
+        self.dirty_y0 = 0;
+        self.dirty_x1 = self.width;
+        self.dirty_y1 = self.height;
+    }
+
+    pub fn take_dirty(&mut self) -> Option<(usize, usize, usize, usize)> {
+        if self.dirty {
+            let r = (self.dirty_x0, self.dirty_y0, self.dirty_x1, self.dirty_y1);
+            self.dirty = false;
+            self.dirty_x0 = self.width;
+            self.dirty_y0 = self.height;
+            self.dirty_x1 = 0;
+            self.dirty_y1 = 0;
+            Some(r)
+        } else {
+            None
+        }
+    }
+
     #[inline]
     fn clip_test(&self, x: usize, y: usize) -> bool {
         if let Some((cx0, cy0, cx1, cy1)) = self.clip {
@@ -72,8 +220,117 @@ impl LayerSystem {
         }
     }
 
+    #[inline]
+    fn clipped_rect(
+        &self,
+        x0: usize,
+        y0: usize,
+        x1: usize,
+        y1: usize,
+    ) -> Option<(usize, usize, usize, usize)> {
+        let mut r = (
+            x0.min(self.width),
+            y0.min(self.height),
+            x1.min(self.width),
+            y1.min(self.height),
+        );
+        if let Some((cx0, cy0, cx1, cy1)) = self.clip {
+            r.0 = r.0.max(cx0);
+            r.1 = r.1.max(cy0);
+            r.2 = r.2.min(cx1);
+            r.3 = r.3.min(cy1);
+        }
+        if r.0 < r.2 && r.1 < r.3 { Some(r) } else { None }
+    }
+
+    #[inline]
+    fn clipped_blit(
+        &self,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
+        src_w: usize,
+        src_h: usize,
+    ) -> Option<(usize, usize, usize, usize, usize, usize)> {
+        let (x0, y0, mut x1, mut y1) = self.clipped_rect(
+            dx,
+            dy,
+            dx.saturating_add(w),
+            dy.saturating_add(h),
+        )?;
+        let nsx = sx.saturating_add(x0 - dx);
+        let nsy = sy.saturating_add(y0 - dy);
+        if nsx >= src_w || nsy >= src_h {
+            return None;
+        }
+        x1 = x1.min(x0.saturating_add(src_w - nsx));
+        y1 = y1.min(y0.saturating_add(src_h - nsy));
+        if x0 >= x1 || y0 >= y1 {
+            None
+        } else {
+            Some((x0, y0, nsx, nsy, x1 - x0, y1 - y0))
+        }
+    }
+
+    /// Copy a screen-sized backing buffer, honoring the active damage clip.
+    pub fn copy_from_screen_buffer(&mut self, src: &[u32]) {
+        if src.len() < self.width * self.height {
+            return;
+        }
+        let (x0, y0, x1, y1) = self.clip
+            .unwrap_or((0, 0, self.width, self.height));
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        self.mark_dirty_rect(x0, y0, x1, y1);
+        if x0 == 0 && x1 == self.width {
+            self.buf[y0 * self.width..y1 * self.width]
+                .copy_from_slice(&src[y0 * self.width..y1 * self.width]);
+        } else {
+            for y in y0..y1 {
+                let start = y * self.width + x0;
+                let end = y * self.width + x1;
+                self.buf[start..end].copy_from_slice(&src[start..end]);
+            }
+        }
+    }
+
+    /// Copy a rectangular source buffer at `(dx, dy)`, intersecting it with
+    /// the current clip so unchanged rows never cross the memory bus.
+    pub fn copy_rect_buffer(
+        &mut self,
+        src: &[u32],
+        src_width: usize,
+        src_height: usize,
+        dx: usize,
+        dy: usize,
+    ) {
+        if src_width == 0 || src_height == 0 || src.len() < src_width * src_height {
+            return;
+        }
+        let Some((x0, y0, x1, y1)) =
+            self.clipped_rect(dx, dy, dx.saturating_add(src_width), dy.saturating_add(src_height))
+        else {
+            return;
+        };
+        self.mark_dirty_rect(x0, y0, x1, y1);
+        let sx0 = x0 - dx;
+        for y in y0..y1 {
+            let sy = y - dy;
+            let src_start = sy * src_width + sx0;
+            let len = x1 - x0;
+            let dst_start = y * self.width + x0;
+            self.buf[dst_start..dst_start + len]
+                .copy_from_slice(&src[src_start..src_start + len]);
+        }
+    }
+
     pub fn clear(&mut self, c: Color) {
         self.buf.fill(c.0);
+        self.mark_all_dirty();
     }
 
     #[inline]
@@ -111,6 +368,7 @@ impl LayerSystem {
             let x1 = (x + w).min(cx1).min(stride);
             let y1 = (y + h).min(cy1).min(self.height);
             if x0 >= x1 || y0 >= y1 { return; }
+            self.mark_dirty_rect(x0, y0, x1, y1);
             for yy in y0..y1 {
                 self.buf[yy * stride + x0..yy * stride + x1].fill(v);
             }
@@ -120,6 +378,7 @@ impl LayerSystem {
             let x1 = (x + w).min(stride);
             let y1 = (y + h).min(self.height);
             if x0 >= x1 || y0 >= y1 { return; }
+            self.mark_dirty_rect(x0, y0, x1, y1);
             for yy in y0..y1 {
                 self.buf[yy * stride + x0..yy * stride + x1].fill(v);
             }
@@ -135,7 +394,7 @@ impl LayerSystem {
         mt3 * p0 + 3.0 * mt2 * t * p1 + 3.0 * mt * t2 * p2 + t3 * p3
     }
 
-    pub fn squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
+    fn compute_squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
         let r = r.min(w / 2.0).min(h / 2.0);
         let lx = libm::fminf(w / 2.0, 1.528665 * r);
         let ly = libm::fminf(h / 2.0, 1.528665 * r);
@@ -236,6 +495,41 @@ impl LayerSystem {
         pts
     }
 
+    pub fn squircle_polygon(w: f32, h: f32, r: f32) -> alloc::vec::Vec<(f32, f32)> {
+        Self::compute_squircle_polygon(w, h, r)
+    }
+
+    fn cached_squircle(w: f32, h: f32, r: f32) -> &'static alloc::vec::Vec<(f32, f32)> {
+        use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+        static CACHED: AtomicBool = AtomicBool::new(false);
+        static CW: AtomicU32 = AtomicU32::new(0);
+        static CH: AtomicU32 = AtomicU32::new(0);
+        static CR: AtomicU32 = AtomicU32::new(0);
+        static mut POLY: alloc::vec::Vec<(f32, f32)> = alloc::vec::Vec::new();
+
+        let wi = (w * 100.0) as u32;
+        let hi = (h * 100.0) as u32;
+        let ri = (r * 100.0) as u32;
+
+        if CACHED.load(Ordering::Relaxed)
+            && CW.load(Ordering::Relaxed) == wi
+            && CH.load(Ordering::Relaxed) == hi
+            && CR.load(Ordering::Relaxed) == ri
+        {
+            unsafe { return &POLY; }
+        }
+
+        let poly = Self::compute_squircle_polygon(w, h, r);
+        unsafe {
+            POLY = poly;
+        }
+        CW.store(wi, Ordering::Relaxed);
+        CH.store(hi, Ordering::Relaxed);
+        CR.store(ri, Ordering::Relaxed);
+        CACHED.store(true, Ordering::Relaxed);
+        unsafe { &POLY }
+    }
+
     pub fn point_in_polygon(px: f32, py: f32, poly: &[(f32, f32)]) -> bool {
         let n = poly.len();
         if n < 3 { return false; }
@@ -250,6 +544,35 @@ impl LayerSystem {
             j = i;
         }
         inside
+    }
+
+    #[inline]
+    fn squircle_row_bounds(poly: &[(f32, f32)], py: f32) -> Option<(f32, f32)> {
+        let n = poly.len();
+        if n < 3 { return None; }
+        let mut min_x = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut hits = 0usize;
+        let mut j = n - 1;
+        for i in 0..n {
+            let (x0, y0) = poly[j];
+            let (x1, y1) = poly[i];
+            if (y0 > py) != (y1 > py) {
+                let x = x0 + (py - y0) * (x1 - x0) / (y1 - y0);
+                if x < min_x { min_x = x; }
+                if x > max_x { max_x = x; }
+                hits += 1;
+            }
+            j = i;
+        }
+        if hits >= 2 { Some((min_x, max_x)) } else { None }
+    }
+
+    #[inline]
+    fn pixel_span_from_bounds(left: f32, right: f32, max_w: usize) -> (usize, usize) {
+        let start = libm::ceilf(left - 0.5).max(0.0) as usize;
+        let end = (libm::floorf(right - 0.5) as i32 + 1).max(0) as usize;
+        (start.min(max_w), end.min(max_w))
     }
 
     pub fn blend_alpha(bg: u32, fg: u32, alpha: f32) -> u32 {
@@ -269,31 +592,43 @@ impl LayerSystem {
     pub fn fill_rounded_rect(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
-        let v = c.0;
-        let y0 = y.min(self.height);
-        let y1 = (y + h).min(self.height);
-        let x0 = x.min(self.width);
-        let x1 = (x + w).min(self.width);
-        let stride = self.width;
-
         if r == 0 {
-            for py in y0..y1 {
-                self.buf[py * stride + x0..py * stride + x1].fill(v);
-            }
+            self.fill_rect(x, y, w, h, c);
             return;
         }
+        let poly = Self::cached_squircle(w as f32, h as f32, r as f32);
+        self.fill_rounded_rect_with_polygon(x, y, w, h, r, c, poly);
+    }
 
-        let rf = r as f32;
-        let poly = Self::squircle_polygon(w as f32, h as f32, rf);
+    /// Fill a rounded rectangle using caller-owned geometry. This variant is
+    /// allocation-free and can be used by independent AP rendering jobs.
+    pub fn fill_rounded_rect_with_polygon(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        r: usize,
+        c: Color,
+        poly: &[(f32, f32)],
+    ) {
+        if w == 0 || h == 0 { return; }
+        let r = r.min(w / 2).min(h / 2);
+        if r == 0 {
+            self.fill_rect(x, y, w, h, c);
+            return;
+        }
+        let v = c.0;
+        let Some((x0, y0, x1, y1)) = self.clipped_rect(
+            x, y, x.saturating_add(w), y.saturating_add(h),
+        ) else { return; };
+        let stride = self.width;
+
+        self.mark_dirty_rect(x0, y0, x1, y1);
         let x0f = x as f32;
         let y0f = y as f32;
         let r_f = r as f32;
-        let w_f = w as f32;
         let h_f = h as f32;
-        let lx = libm::fminf(w_f / 2.0, 1.528665 * rf);
-        let ly = libm::fminf(h_f / 2.0, 1.528665 * rf);
-        let mx = (lx * 0.7) as usize;
-        let my = (ly * 0.7) as usize;
         let off = [0.25f32, 0.75f32];
 
         for py in y0..y1 {
@@ -307,48 +642,21 @@ impl LayerSystem {
                 continue;
             }
 
-            let corner_x_end = (x + r).min(x1);
-            let mid_x_start = (x + r).max(x0);
-            let mid_x_end = (x + w - r).min(x1);
-            let corner_x_start = (x + w - r).max(x0);
+            if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
+                let (span_l, span_r) = Self::pixel_span_from_bounds(left, right, w);
+                let fill_l = (x + span_l).max(x0).min(x1);
+                let fill_r = (x + span_r).max(x0).min(x1);
+                if fill_r > fill_l {
+                    self.buf[row + fill_l..row + fill_r].fill(v);
+                }
 
-            if mid_x_end > mid_x_start {
-                self.buf[row + mid_x_start..row + mid_x_end].fill(v);
-            }
-
-            if corner_x_end > x0 {
-                let safe_l = (x + mx).min(corner_x_end).max(x0);
-                if safe_l > x0 {
-                    for px in x0..safe_l {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
+                let edge_l = x + span_l.saturating_sub(1);
+                if edge_l >= x0 && edge_l < x1 {
+                    Self::pixel_aa(&mut self.buf[row + edge_l], v, edge_l as f32 - x0f, base_y, poly, &off);
                 }
-                let inner_l_end = (x + r - mx).max(x + mx).min(corner_x_end);
-                if inner_l_end > safe_l {
-                    self.buf[row + safe_l..row + inner_l_end].fill(v);
-                }
-                if corner_x_end > inner_l_end {
-                    for px in inner_l_end..corner_x_end {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
-                }
-            }
-
-            if corner_x_start > corner_x_end {
-                let safe_r_start = (x + w - r + mx).max(corner_x_start).min(x1);
-                if safe_r_start > corner_x_start {
-                    for px in corner_x_start..safe_r_start {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
-                }
-                let inner_r_end = (x + w - mx).min(x1).max(safe_r_start);
-                if inner_r_end > safe_r_start {
-                    self.buf[row + safe_r_start..row + inner_r_end].fill(v);
-                }
-                if x1 > inner_r_end {
-                    for px in inner_r_end..x1 {
-                        Self::pixel_aa(&mut self.buf[row + px], v, px as f32 - x0f, base_y, &poly, &off);
-                    }
+                let edge_r = x + span_r;
+                if edge_r >= x0 && edge_r < x1 {
+                    Self::pixel_aa(&mut self.buf[row + edge_r], v, edge_r as f32 - x0f, base_y, poly, &off);
                 }
             }
         }
@@ -356,15 +664,17 @@ impl LayerSystem {
 
     fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], off: &[f32; 2]) {
         let mut hits = 0u32;
-        for sy in 0..2 {
-            for sx in 0..2 {
-                if Self::point_in_polygon(px + off[sx], py + off[sy], poly) {
+        for sy in 0..4 {
+            for sx in 0..4 {
+                let sample_x = px + (sx as f32 + 0.5) * 0.25;
+                let sample_y = py + (sy as f32 + 0.5) * 0.25;
+                if Self::point_in_polygon(sample_x, sample_y, poly) {
                     hits += 1;
                 }
             }
         }
         if hits > 0 {
-            *dst = Self::blend_alpha(*dst, fg, hits as f32 * 0.25);
+            *dst = Self::blend_alpha(*dst, fg, hits as f32 * (1.0 / 16.0));
         }
     }
 
@@ -429,10 +739,10 @@ impl LayerSystem {
         let cr = c.r() as f32;
         let cg = c.g() as f32;
         let cb = c.b() as f32;
-        let x0 = cx.saturating_sub(r).min(self.width);
-        let y0 = cy.saturating_sub(r).min(self.height);
-        let x1 = (cx + r + 1).min(self.width);
-        let y1 = (cy + r + 1).min(self.height);
+        let Some((x0, y0, x1, y1)) = self.clipped_rect(
+            cx.saturating_sub(r), cy.saturating_sub(r), cx.saturating_add(r + 1), cy.saturating_add(r + 1),
+        ) else { return; };
+        self.mark_dirty_rect(x0, y0, x1, y1);
         for py in y0..y1 {
             let row = py * self.width;
             for px in x0..x1 {
@@ -463,64 +773,12 @@ impl LayerSystem {
         }
     }
 
-    pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
+    pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color, fill: Color) {
         if w == 0 || h == 0 { return; }
         let r = r.min(w / 2).min(h / 2);
-        let rf = r as f32;
-        let v = c.0;
-        let y0 = y.min(self.height);
-        let y1 = (y + h).min(self.height);
-        let x0 = x.min(self.width);
-        let x1 = (x + w).min(self.width);
-
-        for py in y0..y1 {
-            for px in x0..x1 {
-                let on_edge = px == x || px == x + w - 1 || py == y || py == y + h - 1;
-                if !on_edge { continue; }
-
-                let dist_to_edge = if px < x + r && py < y + r {
-                    let cx_f = (x + r) as f32;
-                    let cy_f = (y + r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else if px >= x + w.saturating_sub(r) && py < y + r && r > 0 {
-                    let cx_f = (x + w - r) as f32;
-                    let cy_f = (y + r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else if px < x + r && py >= y + h.saturating_sub(r) && r > 0 {
-                    let cx_f = (x + r) as f32;
-                    let cy_f = (y + h - r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else if px >= x + w.saturating_sub(r) && py >= y + h.saturating_sub(r) && r > 0 {
-                    let cx_f = (x + w - r) as f32;
-                    let cy_f = (y + h - r) as f32;
-                    let dx = px as f32 + 0.5 - cx_f;
-                    let dy = py as f32 + 0.5 - cy_f;
-                    libm::sqrtf(dx * dx + dy * dy) - rf
-                } else {
-                    self.put_pixel(px, py, c);
-                    continue;
-                };
-
-                let alpha = if dist_to_edge < -0.5 {
-                    0.0
-                } else if dist_to_edge > 0.5 {
-                    0.0
-                } else {
-                    (0.5 - dist_to_edge.abs()).clamp(0.0, 1.0)
-                };
-
-                if alpha > 0.0 {
-                    let bg = self.buf[py * self.width + px];
-                    self.put_pixel(px, py, Color(Self::blend_alpha(bg, v, alpha)));
-                }
-            }
-        }
+        self.fill_rounded_rect(x, y, w, h, r, c);
+        let inner_r = if r > 2 { r - 2 } else { 0 };
+        self.fill_rounded_rect(x + 2, y + 2, w.saturating_sub(4), h.saturating_sub(4), inner_r, fill);
     }
 
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
@@ -534,14 +792,22 @@ impl LayerSystem {
     pub fn flush(&mut self, screen: &mut Screen) {
         let w = self.width;
         let h = self.height;
-        for y in 0..h {
-            let row = &self.buf[y * w..(y + 1) * w];
-            screen.flush_layer_row(y, row);
+        if let Some((x0, y0, x1, y1)) = self.take_dirty() {
+            let x0 = x0.min(w);
+            let y0 = y0.min(h);
+            let x1 = x1.min(w);
+            let y1 = y1.min(h);
+            if x1 > x0 && y1 > y0 {
+                for y in y0..y1 {
+                    let row = &self.buf[y * w + x0..y * w + x1];
+                    screen.flush_layer_row_range(y, x0, row);
+                }
+            }
         }
         self.frame_count += 1;
     }
 
-    pub fn flush_rect(&self, screen: &mut Screen, x0: usize, y0: usize, x1: usize, y1: usize) {
+    pub fn flush_rect(&mut self, screen: &mut Screen, x0: usize, y0: usize, x1: usize, y1: usize) {
         let w = self.width;
         let y0 = y0.min(self.height);
         let y1 = y1.min(self.height);
@@ -551,6 +817,8 @@ impl LayerSystem {
             let row = &self.buf[y * w + x0..y * w + x1];
             screen.flush_layer_row_range(y, x0, row);
         }
+        let _ = self.take_dirty();
+        self.frame_count += 1;
     }
 
     pub fn composit_rounded(
@@ -561,12 +829,24 @@ impl LayerSystem {
         w: usize, h: usize,
         r: usize,
     ) {
-        let r = r.min(w / 2).min(h / 2);
+        let shape_w = w;
+        let shape_h = h;
+        let original_dx = dx;
+        let original_dy = dy;
+        let r = r.min(shape_w / 2).min(shape_h / 2);
         let rf = r as f32;
         let sw = src.width;
         let sh = src.height;
         let dw = self.width;
         let dh = self.height;
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        let shape_x = dx - original_dx;
+        let shape_y = dy - original_dy;
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
 
         if r == 0 {
             for py in 0..h {
@@ -606,7 +886,7 @@ impl LayerSystem {
         }
 
         let corner_end = r;
-        let corner_row_start = h.saturating_sub(r);
+        let corner_row_start = shape_h.saturating_sub(r);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -616,8 +896,9 @@ impl LayerSystem {
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
 
-            let in_top_corner = py < corner_end;
-            let in_bot_corner = py >= corner_row_start;
+            let shape_py = shape_y + py;
+            let in_top_corner = shape_py < corner_end;
+            let in_bot_corner = shape_py >= corner_row_start;
 
             if !in_top_corner && !in_bot_corner {
                 let copy_w = w.min(sw - sx).min(dw - dx);
@@ -649,73 +930,52 @@ impl LayerSystem {
                 continue;
             }
 
-            let end_x = w.min(sw - sx).min(dw - dx);
-            let poly = Self::squircle_polygon(w as f32, h as f32, rf);
+            let end_x = w;
+            let poly = Self::cached_squircle(shape_w as f32, shape_h as f32, rf);
             let off = [0.25f32, 0.75f32];
-            let base_y = py as f32;
-            let lx = libm::fminf(w as f32 / 2.0, 1.528665 * rf);
-            let ly = libm::fminf(h as f32 / 2.0, 1.528665 * rf);
-            let mx = (lx * 0.7) as usize;
-            let my = (ly * 0.7) as usize;
+            let base_y = shape_py as f32;
+            if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
+                let (shape_l, shape_r) =
+                    Self::pixel_span_from_bounds(left, right, shape_w);
+                let span_l = shape_l.saturating_sub(shape_x).min(end_x);
+                let span_r = shape_r.saturating_sub(shape_x).min(end_x);
 
-            let left_end = r.min(end_x);
-            let right_start = (w - r).min(end_x);
-
-            let safe_l = mx.min(left_end);
-            if safe_l > 0 {
-                for px in 0..safe_l {
-                    let sp = src.buf[src_row + px];
-                    if sp == Color::TRANSPARENT.0 { continue; }
-                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                if span_r > span_l {
+                    unsafe {
+                        ptr::copy_nonoverlapping(
+                            src.buf.as_ptr().add(src_row + span_l),
+                            self.buf.as_mut_ptr().add(dst_row + span_l),
+                            span_r - span_l,
+                        );
+                    }
                 }
-            }
-            let inner_l_end = (r - mx).max(mx).min(left_end);
-            if inner_l_end > safe_l {
-                for px in safe_l..inner_l_end {
-                    let sp = src.buf[src_row + px];
+
+                let edge_l = span_l.saturating_sub(1);
+                if shape_l >= shape_x && edge_l < end_x {
+                    let sp = src.buf[src_row + edge_l];
                     if sp != Color::TRANSPARENT.0 {
-                        self.buf[dst_row + px] = sp;
+                        Self::pixel_aa(
+                            &mut self.buf[dst_row + edge_l],
+                            sp,
+                            (shape_x + edge_l) as f32,
+                            base_y,
+                            poly,
+                            &off,
+                        );
                     }
                 }
-            }
-            if left_end > inner_l_end {
-                for px in inner_l_end..left_end {
-                    let sp = src.buf[src_row + px];
-                    if sp == Color::TRANSPARENT.0 { continue; }
-                    Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
-                }
-            }
-
-            for px in left_end..right_start {
-                let sp = src.buf[src_row + px];
-                if sp != Color::TRANSPARENT.0 {
-                    self.buf[dst_row + px] = sp;
-                }
-            }
-
-            if end_x > right_start {
-                let safe_r = (right_start + mx).min(end_x);
-                if safe_r > right_start {
-                    for px in right_start..safe_r {
-                        let sp = src.buf[src_row + px];
-                        if sp == Color::TRANSPARENT.0 { continue; }
-                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
-                    }
-                }
-                let inner_r_end = (w - mx).min(end_x).max(safe_r);
-                if inner_r_end > safe_r {
-                    for px in safe_r..inner_r_end {
-                        let sp = src.buf[src_row + px];
-                        if sp != Color::TRANSPARENT.0 {
-                            self.buf[dst_row + px] = sp;
-                        }
-                    }
-                }
-                if end_x > inner_r_end {
-                    for px in inner_r_end..end_x {
-                        let sp = src.buf[src_row + px];
-                        if sp == Color::TRANSPARENT.0 { continue; }
-                        Self::pixel_aa(&mut self.buf[dst_row + px], sp, px as f32, base_y, &poly, &off);
+                let edge_r = span_r;
+                if edge_r < end_x {
+                    let sp = src.buf[src_row + edge_r];
+                    if sp != Color::TRANSPARENT.0 {
+                        Self::pixel_aa(
+                            &mut self.buf[dst_row + edge_r],
+                            sp,
+                            (shape_x + edge_r) as f32,
+                            base_y,
+                            poly,
+                            &off,
+                        );
                     }
                 }
             }
@@ -737,6 +997,13 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
@@ -746,7 +1013,7 @@ impl LayerSystem {
 
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
-            let max_px = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
+            let max_px = w;
 
             for px in 0..max_px {
                 let a = src.buf[src_row + px] & 0xFF;
@@ -779,8 +1046,12 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
-        let copy_w = w.min(sw.saturating_sub(sx)).min(dw.saturating_sub(dx));
-        if copy_w == 0 { return; }
+        let Some((dx, dy, sx, sy, copy_w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        self.mark_dirty_rect(dx, dy, dx + copy_w, dy + h);
 
         for py in 0..h {
             let src_y = sy + py;
@@ -817,6 +1088,31 @@ impl LayerSystem {
         }
     }
 
+    /// Fast path for a known-opaque source.  This deliberately skips the
+    /// per-pixel transparency probe in `composit_rect`; the platform memcpy
+    /// implementation can use its vector/SIMD copy path for every scanline.
+    pub fn composit_rect_opaque(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+    ) {
+        let Some((dx, dy, sx, sy, copy_w, copy_h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, src.width, src.height)
+        else { return; };
+        self.mark_dirty_rect(dx, dy, dx + copy_w, dy + copy_h);
+        for row in 0..copy_h {
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    src.buf.as_ptr().add((sy + row) * src.width + sx),
+                    self.buf.as_mut_ptr().add((dy + row) * self.width + dx),
+                    copy_w,
+                );
+            }
+        }
+    }
+
     pub fn composit_rect_alpha(
         &mut self,
         src: &LayerSystem,
@@ -829,34 +1125,125 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        else {
+            return;
+        };
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
+
+        #[cfg(target_arch = "x86_64")]
+        if avx2_available() {
+            for py in 0..h {
+                unsafe {
+                    blend_alpha_avx2(
+                        src.buf.as_ptr().add((sy + py) * sw + sx),
+                        self.buf.as_mut_ptr().add((dy + py) * dw + dx),
+                        w,
+                    );
+                }
+            }
+            return;
+        }
+
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
             if src_y >= sh || dst_y >= dh { continue; }
 
-            for px in 0..w {
-                let src_x = sx + px;
-                let dst_x = dx + px;
-                if src_x >= sw || dst_x >= dw { continue; }
+            let src_row = src_y * sw + sx;
+            let dst_row = dst_y * dw + dx;
+            let max_px = w;
 
-                let sp = src.buf[src_y * sw + src_x];
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                use core::arch::aarch64::*;
+                let mut px = 0usize;
+                while px + 4 <= max_px {
+                    let sp = vld1q_u32(src.buf.as_ptr().add(src_row + px));
+                    let a = vshrq_n_u32(sp, 24);
+                    let a0 = vgetq_lane_u32(a, 0);
+                    let a1 = vgetq_lane_u32(a, 1);
+                    let a2 = vgetq_lane_u32(a, 2);
+                    let a3 = vgetq_lane_u32(a, 3);
+                    if a0 == 0 && a1 == 0 && a2 == 0 && a3 == 0 {
+                        px += 4;
+                        continue;
+                    }
+                    if a0 == 255 && a1 == 255 && a2 == 255 && a3 == 255 {
+                        vst1q_u32(self.buf.as_mut_ptr().add(dst_row + px), sp);
+                        px += 4;
+                        continue;
+                    }
+
+                    let dp = vld1q_u32(self.buf.as_ptr().add(dst_row + px));
+                    let inv = vsubq_u32(vdupq_n_u32(255), a);
+                    let mask = vdupq_n_u32(0xff);
+                    let sr = vandq_u32(vshrq_n_u32(sp, 16), mask);
+                    let sg = vandq_u32(vshrq_n_u32(sp, 8), mask);
+                    let sb = vandq_u32(sp, mask);
+                    let dr = vandq_u32(vshrq_n_u32(dp, 16), mask);
+                    let dg = vandq_u32(vshrq_n_u32(dp, 8), mask);
+                    let db = vandq_u32(dp, mask);
+
+                    #[inline(always)]
+                    unsafe fn div255(v: uint32x4_t) -> uint32x4_t {
+                        vshrq_n_u32(vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)), 8)
+                    }
+                    let r = div255(vaddq_u32(vmulq_u32(sr, a), vmulq_u32(dr, inv)));
+                    let g = div255(vaddq_u32(vmulq_u32(sg, a), vmulq_u32(dg, inv)));
+                    let b = div255(vaddq_u32(vmulq_u32(sb, a), vmulq_u32(db, inv)));
+                    let blended = vorrq_u32(
+                        vdupq_n_u32(0xff00_0000),
+                        vorrq_u32(vshlq_n_u32(r, 16), vorrq_u32(vshlq_n_u32(g, 8), b)),
+                    );
+                    let out = vbslq_u32(vceqq_u32(a, vdupq_n_u32(0)), dp, blended);
+                    vst1q_u32(self.buf.as_mut_ptr().add(dst_row + px), out);
+                    px += 4;
+                }
+                for px in px..max_px {
+                    let sp = src.buf[src_row + px];
+                    let src_a = ((sp >> 24) & 0xFF) as u32;
+                    if src_a == 0 { continue; }
+                    if src_a >= 255 {
+                        self.buf[dst_row + px] = sp;
+                    } else {
+                        let inv = 255 - src_a;
+                        let sr = (sp >> 16) & 0xFF;
+                        let sg = (sp >> 8) & 0xFF;
+                        let sb = sp & 0xFF;
+                        let dp = self.buf[dst_row + px];
+                        let dr = (dp >> 16) & 0xFF;
+                        let dg = (dp >> 8) & 0xFF;
+                        let db = dp & 0xFF;
+                        let r = (sr * src_a + dr * inv) / 255;
+                        let g = (sg * src_a + dg * inv) / 255;
+                        let b = (sb * src_a + db * inv) / 255;
+                        self.buf[dst_row + px] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "aarch64"))]
+            for px in 0..max_px {
+                let sp = src.buf[src_row + px];
                 let src_a = ((sp >> 24) & 0xFF) as u32;
                 if src_a == 0 { continue; }
                 if src_a >= 255 {
-                    self.buf[dst_y * dw + dst_x] = sp;
+                    self.buf[dst_row + px] = sp;
                 } else {
                     let inv = 255 - src_a;
                     let sr = (sp >> 16) & 0xFF;
                     let sg = (sp >> 8) & 0xFF;
                     let sb = sp & 0xFF;
-                    let dp = self.buf[dst_y * dw + dst_x];
+                    let dp = self.buf[dst_row + px];
                     let dr = (dp >> 16) & 0xFF;
                     let dg = (dp >> 8) & 0xFF;
                     let db = dp & 0xFF;
                     let r = (sr * src_a + dr * inv) / 255;
                     let g = (sg * src_a + dg * inv) / 255;
                     let b = (sb * src_a + db * inv) / 255;
-                    self.buf[dst_y * dw + dst_x] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+                    self.buf[dst_row + px] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
                 }
             }
         }

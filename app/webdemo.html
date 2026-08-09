@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>HTML App Demo</title>
+    <link rel="stylesheet" href="webdemo.css">
+    <style>
+        .live-value {
+            color: #0a60ff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <header class="hero">
+        <p class="eyebrow">BARAM HTML APP</p>
+        <h1>HTMLとCSSで作るアプリ</h1>
+        <p>ネットワークを使わない、軽量なBaramOSネイティブHTMLビューです。</p>
+    </header>
+
+    <main>
+        <section class="card">
+            <h2>OS config連携</h2>
+            <p>
+                現在のHUD設定:
+                <span class="live-value" config="os://display/hud/enabled">不明</span>
+            </p>
+            <div class="actions">
+                <a class="button primary" href="os://display/hud?enabled=1">HUDを表示</a>
+                <a class="button tonal" href="os://display/hud?enabled=0">HUDを隠す</a>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>アプリを開く</h2>
+            <p><code>app://アプリ名</code> のリンクから登録済みアプリを起動できます。</p>
+            <div class="actions">
+                <a class="button primary" href="app://calc.w3a">計算機</a>
+                <a class="button tonal" href="app://note.warp">ノート</a>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>対応しているもの</h2>
+            <ul>
+                <li>見出し、段落、リスト、リンク、ボタン風UI</li>
+                <li>色、余白、枠線、角丸、Flexレイアウト</li>
+                <li>インラインCSSとローカル外部CSS</li>
+            </ul>
+        </section>
+    </main>
+</body>
+</html>
