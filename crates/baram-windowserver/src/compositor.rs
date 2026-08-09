@@ -1,6 +1,6 @@
 use super::cursor::{self};
-use crate::warp::WarpEngine;
 use crate::html::HtmlEngine;
+use crate::warp::WarpEngine;
 use crate::window::{WinId, WindowManager};
 use alloc::vec::Vec;
 use baram_bsd::config;
@@ -70,9 +70,8 @@ impl TaskbarSurface {
             end_y,
             TASKBAR_BLUR_R,
         );
-        self.base.copy_from_slice(
-            &self.blurred[pad * width..(pad + TASKBAR_H) * width],
-        );
+        self.base
+            .copy_from_slice(&self.blurred[pad * width..(pad + TASKBAR_H) * width]);
         tint_taskbar(
             &mut self.base,
             config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
@@ -82,15 +81,7 @@ impl TaskbarSurface {
     }
 
     fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
-        scene.composit_rect(
-            &self.layer,
-            0,
-            y,
-            0,
-            0,
-            self.layer.width(),
-            TASKBAR_H,
-        );
+        scene.composit_rect(&self.layer, 0, y, 0, 0, self.layer.width(), TASKBAR_H);
     }
 }
 
@@ -109,10 +100,8 @@ fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
 
 const ICON_CACHE_CAP: usize = 32;
 static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
 ];
 
 fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitmap> {
@@ -135,16 +124,28 @@ fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitma
                 *entry = Some((alloc::string::String::from(icon_name), size, bitmap));
                 return ICON_CACHE.iter().find_map(|e| {
                     if let Some((ref n, s, ref b)) = e {
-                        if n == icon_name && *s == size { Some(b) } else { None }
-                    } else { None }
+                        if n == icon_name && *s == size {
+                            Some(b)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 });
             }
         }
         ICON_CACHE[0] = Some((alloc::string::String::from(icon_name), size, bitmap));
         ICON_CACHE.iter().find_map(|e| {
             if let Some((ref n, s, ref b)) = e {
-                if n == icon_name && *s == size { Some(b) } else { None }
-            } else { None }
+                if n == icon_name && *s == size {
+                    Some(b)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         })
     }
 }
@@ -181,6 +182,7 @@ pub struct AppEntry {
     pub app_type: alloc::string::String,
     pub title: alloc::string::String,
     pub icon: alloc::string::String,
+    pub tags: Vec<alloc::string::String>,
 }
 
 pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
@@ -192,6 +194,8 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
     let mut current_type = alloc::string::String::from("warp-2");
     let mut current_title = alloc::string::String::new();
     let mut current_icon = alloc::string::String::new();
+    let mut current_tags: Vec<alloc::string::String> = Vec::new();
+    let mut in_tags = false;
     for line in yaml.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('#') || trimmed.is_empty() {
@@ -216,11 +220,13 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                     app_type: current_type.clone(),
                     title,
                     icon: current_icon.clone(),
+                    tags: current_tags.clone(),
                 });
                 current_name.clear();
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
                 current_icon.clear();
+                current_tags.clear();
             }
             continue;
         }
@@ -247,11 +253,13 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                         app_type: current_type.clone(),
                         title,
                         icon: current_icon.clone(),
+                        tags: current_tags.clone(),
                     });
                     current_name.clear();
                     current_type = alloc::string::String::from("warp-2");
                     current_title.clear();
                     current_icon.clear();
+                    current_tags.clear();
                 }
                 in_apps = false;
                 continue;
@@ -260,6 +268,7 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                 && !trimmed.contains("icon")
                 && !trimmed.contains("type")
                 && !trimmed.contains("title")
+                && !trimmed.starts_with("tag")
             {
                 if !current_name.is_empty() {
                     let title = if current_title.is_empty() {
@@ -272,12 +281,15 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                         app_type: current_type.clone(),
                         title,
                         icon: current_icon.clone(),
+                        tags: current_tags.clone(),
                     });
                 }
                 current_name = alloc::string::String::from(trimmed.trim_end_matches(':'));
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
                 current_icon.clear();
+                current_tags.clear();
+                in_tags = false;
             } else if let Some(v) = trimmed.strip_prefix("type:") {
                 current_type = alloc::string::String::from(v.trim().trim_matches('"'));
             } else if let Some(v) = trimmed.strip_prefix("title:") {
@@ -288,6 +300,19 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                     current_icon = alloc::string::String::from("noname.png");
                 } else {
                     current_icon = alloc::string::String::from(val);
+                }
+                in_tags = false;
+            } else if let Some(v) = trimmed.strip_prefix("tag:") {
+                current_tags.clear();
+                let val = v.trim().trim_matches('"').trim_matches('\'');
+                if !val.is_empty() {
+                    current_tags.push(alloc::string::String::from(val));
+                }
+                in_tags = true;
+            } else if in_tags && trimmed.starts_with("- ") {
+                let val = trimmed[2..].trim().trim_matches('"').trim_matches('\'');
+                if !val.is_empty() {
+                    current_tags.push(alloc::string::String::from(val));
                 }
             }
         }
@@ -303,6 +328,7 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
             app_type: current_type,
             title,
             icon: current_icon,
+            tags: current_tags,
         });
     }
     (autostart, apps)
@@ -446,6 +472,8 @@ fn redraw_taskbar(
     add_progress: f32,
     shift_x: f32,
     hover_apps_icon: bool,
+    search_focused: bool,
+    search_query: &str,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
@@ -471,7 +499,9 @@ fn redraw_taskbar(
     };
 
     for i in 0..count {
-        let Some(id) = wm.insertion_id_at(i) else { continue };
+        let Some(id) = wm.insertion_id_at(i) else {
+            continue;
+        };
         let icon_name = wm.get_icon_name(id);
         let is_focused = wm.focused_id == Some(id);
         let is_minimized = wm.is_minimized(id);
@@ -507,7 +537,11 @@ fn redraw_taskbar(
             }
         }
 
-        let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
+        let resolved_icon = if icon_name.is_empty() {
+            "noname.png"
+        } else {
+            icon_name
+        };
         if let Some(icon) = get_or_decode_icon(resolved_icon, 40) {
             let icon_draw = scaled_d;
             let icon_offset = offset;
@@ -572,16 +606,18 @@ fn redraw_taskbar(
         text.chars()
             .map(|ch| {
                 let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                if g.w > 0 { g.advance.max(0) as usize } else { 8 }
+                if g.w > 0 {
+                    g.advance.max(0) as usize
+                } else {
+                    8
+                }
             })
             .sum()
     };
     let gap = 12usize;
     let battery_width = battery.map_or(0, |text| gap + measure(text));
     let status_x = w.saturating_sub(measure(time) + battery_width + 16);
-    let baseline = TASKBAR_H as i32
-        - baram_font::ttf_font_hud::ascent_at_size(size)
-        + 9;
+    let baseline = TASKBAR_H as i32 - baram_font::ttf_font_hud::ascent_at_size(size) + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
     if let Some(battery) = battery {
@@ -595,14 +631,43 @@ fn redraw_taskbar(
         );
     }
 
-    svg::draw_svg_into_alpha(
+    let search_x = 12usize;
+    let search_y = (TASKBAR_H - 40) / 2;
+    let search_w = 190usize;
+    let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
+    let search_border = if search_focused {
+        config::get_color("ui-theme/color/accent", Color::ACCENT)
+    } else if hover_apps_icon {
+        config::get_color("ui-theme/color/text", Color::TEXT)
+    } else {
+        config::get_color("ui-theme/color/muted", Color::MUTED)
+    };
+    layer.rounded_rect_outline(
+        search_x,
+        search_y,
+        search_w,
+        40,
+        12,
+        search_border,
+        search_bg,
+    );
+    let text = if search_query.is_empty() {
+        "アプリを検索"
+    } else {
+        search_query
+    };
+    let text_color = if search_query.is_empty() {
+        config::get_color("ui-theme/color/muted", Color::MUTED)
+    } else {
+        config::get_color("ui-theme/color/text", Color::TEXT)
+    };
+    draw_taskbar_text(
         layer,
-        APPS_SVG,
-        16,
-        ((TASKBAR_H - 24) / 2) as i32,
-        24.0,
-        24.0,
-        if hover_apps_icon { 153 } else { 255 },
+        text,
+        search_x + 12,
+        search_y as i32 + 28,
+        text_color,
+        18.0,
     );
     layer.mark_all_dirty();
     surface.valid = true;
@@ -633,6 +698,8 @@ pub fn render_scene(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    search_focused: bool,
+    search_query: &str,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
@@ -740,31 +807,40 @@ pub fn render_scene(
     }
 
     if show_app_launcher {
-        if cached_launcher_layer.is_none() {
-            let mut lsys = LayerSystem::new(w, h);
-            lsys.clear(Color::TRANSPARENT);
-            let src: &[u32] = if let Some(ref cached) = bg_cache {
-                cached
-            } else if let Some(pixels) = wallpaper {
-                pixels
-            } else {
-                &[]
-            };
-            if !src.is_empty() {
-                blur::blur_region_darkened_to(src, lsys.buf_mut(), w, 0, tb_y, 60, 200);
-            }
+        // Build the launcher over the current scene so only the lower-left
+        // panel changes instead of dimming the entire desktop.
+        let mut lsys = LayerSystem::new(w, h);
+        lsys.copy_from_screen_buffer(layer.buf_ref());
 
-            let cols = 5usize;
-            let icon_size = 64usize;
-            let icon_gap = 24usize;
+            let cols = 4usize;
+            let icon_size = 52usize;
+            let icon_gap = 16usize;
             let label_h = 20usize;
             let cell_w = icon_size + icon_gap;
             let cell_h = icon_size + label_h + icon_gap;
             let grid_w = cols * cell_w;
             let rows = (app_list.len() + cols - 1) / cols;
             let grid_h = rows * cell_h;
-            let grid_x = (w.saturating_sub(grid_w)) / 2;
-            let grid_y = ((h - TASKBAR_H).saturating_sub(grid_h)) / 2;
+            let grid_x = 20usize;
+            let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+            let panel_h = grid_h.max(40) + 16;
+            lsys.fill_rounded_rect(
+                12,
+                grid_y.saturating_sub(8),
+                grid_w + 16,
+                panel_h,
+                14,
+                config::get_color("ui-theme/color/panel", Color::PANEL),
+            );
+
+            if app_list.is_empty() {
+                lsys.put_str(
+                    28,
+                    grid_y + 8,
+                    "該当するアプリはありません",
+                    config::get_color("ui-theme/color/muted", Color::MUTED),
+                );
+            }
 
             for (i, name) in app_list.iter().enumerate() {
                 let col = i % cols;
@@ -772,11 +848,13 @@ pub fn render_scene(
                 let cx = grid_x + col * cell_w + icon_gap / 2;
                 let cy = grid_y + row * cell_h;
 
-                lsys.fill_circle(
-                    cx + icon_size / 2,
-                    cy + icon_size / 2,
-                    icon_size / 2,
-                    config::get_color("ui-theme/color/panel", Color::PANEL),
+                lsys.fill_rounded_rect(
+                    cx,
+                    cy,
+                    icon_size,
+                    icon_size,
+                    10,
+                    config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL),
                 );
 
                 let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
@@ -844,11 +922,8 @@ pub fn render_scene(
                 let label_color = config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL);
                 lsys.put_str(tx, ty, &display_name, label_color);
             }
-            *cached_launcher_layer = Some(lsys.buf_ref().to_vec());
-        }
-        if let Some(launcher) = cached_launcher_layer.as_ref() {
-            layer.copy_rect_buffer(launcher, w, tb_y, 0, 0);
-        }
+        layer.copy_rect_buffer(lsys.buf_ref(), w, tb_y, 0, 0);
+        *cached_launcher_layer = None;
     }
 
     if taskbar_dirty || !taskbar.is_valid() {
@@ -858,6 +933,8 @@ pub fn render_scene(
             add_progress,
             shift_x,
             hover_apps_icon,
+            search_focused,
+            search_query,
             clock_hh,
             clock_mm,
             battery_pct,
@@ -895,6 +972,8 @@ pub fn render_frame(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    search_focused: bool,
+    search_query: &str,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
@@ -925,6 +1004,8 @@ pub fn render_frame(
         app_list,
         app_icon_list,
         hover_apps_icon,
+        search_focused,
+        search_query,
         taskbar_only,
         clock_hh,
         clock_mm,

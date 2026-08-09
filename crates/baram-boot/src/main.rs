@@ -370,6 +370,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut tb_remove_progress: f32 = -1.0f32;
     let mut tb_shift_x: f32 = 0.0f32;
     let mut show_app_launcher: bool = false;
+    let mut app_search_focused: bool = false;
+    let mut app_search_query = alloc::string::String::new();
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_name_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
@@ -424,6 +426,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &app_list,
         &app_icon_list,
         hover_apps_icon,
+        app_search_focused,
+        &app_search_query,
         false,
         clock_hh,
         clock_mm,
@@ -477,6 +481,26 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 _ => {}
             }
 
+            // Nano System reports UEFI Backspace as special scan code 0x08,
+            // so it does not always arrive through `printable`.
+            if app_search_focused && ev.scancode == 0x08 {
+                app_search_query.pop();
+                rebuild_filtered_apps(
+                    &app_entries,
+                    &app_search_query,
+                    &mut app_list,
+                    &mut app_name_list,
+                    &mut app_icon_list,
+                );
+                show_app_launcher = true;
+                prev_show_app_launcher = false;
+                cached_launcher_layer = None;
+                taskbar_surface.invalidate();
+                dirty = true;
+                scene_dirty = true;
+                continue;
+            }
+
             if ev.ctrl_or_cmd() || (mousekey_mode && nano.shift_held()) {
                 if let Some(c) = ev.printable {
                     match c {
@@ -490,8 +514,36 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 }
             } else if let Some(c) = ev.printable {
                 let mut handled = false;
+                if app_search_focused {
+                    match c {
+                        0x08 | 0x7f => {
+                            app_search_query.pop();
+                        }
+                        0x20..=0x7e => app_search_query.push(c as char),
+                        _ => {}
+                    }
+                    rebuild_filtered_apps(
+                        &app_entries,
+                        &app_search_query,
+                        &mut app_list,
+                        &mut app_name_list,
+                        &mut app_icon_list,
+                    );
+                    show_app_launcher = app_search_focused || !app_search_query.is_empty();
+                    // The launcher contents changed even if its visibility did not.
+                    // Reuse the visibility damage path to redraw the full launcher.
+                    prev_show_app_launcher = false;
+                    cached_launcher_layer = None;
+                    taskbar_surface.invalidate();
+                    handled = true;
+                    dirty = true;
+                    scene_dirty = true;
+                }
                 if let Some(focused_win) = wm.focused_id {
                     for (wid, engine) in warp_engines.iter_mut() {
+                        if handled {
+                            break;
+                        }
                         if *wid == focused_win
                             && !wm.is_interaction_blocked(focused_win)
                             && !engine.focused_input_var.is_empty()
@@ -703,17 +755,38 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     let sh = screen.height();
 
                     if show_app_launcher {
-                        let cols = 5usize;
-                        let icon_size = 64usize;
-                        let icon_gap = 24usize;
+                        let search_x = 12i32;
+                        let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
+                        if cx >= search_x
+                            && cx < search_x + 190
+                            && cy >= search_y
+                            && cy < search_y + 40
+                        {
+                            app_search_focused = true;
+                            taskbar_surface.invalidate();
+                            scene_dirty = true;
+                            dirty = true;
+                            continue;
+                        }
+                        let cols = 4usize;
+                        let icon_size = 52usize;
+                        let icon_gap = 16usize;
                         let label_h = 20usize;
                         let cell_w = icon_size + icon_gap;
                         let cell_h = icon_size + label_h + icon_gap;
                         let grid_w = cols * cell_w;
                         let rows = (app_list.len() + cols - 1) / cols;
                         let grid_h = rows * cell_h;
-                        let grid_x = (screen.width().saturating_sub(grid_w)) / 2;
-                        let grid_y = ((screen.height() - TASKBAR_H).saturating_sub(grid_h)) / 2;
+                        let grid_x = 20usize;
+                        let grid_y = screen.height().saturating_sub(TASKBAR_H + grid_h + 16);
+                        let panel_x = 12i32;
+                        let panel_y = grid_y.saturating_sub(8) as i32;
+                        let panel_w = (grid_w + 16) as i32;
+                        let panel_h = (grid_h.max(40) + 16) as i32;
+                        let on_launcher_panel = cx >= panel_x
+                            && cx < panel_x + panel_w
+                            && cy >= panel_y
+                            && cy < panel_y + panel_h;
                         let mut clicked_app = None;
                         for (i, _) in app_list.iter().enumerate() {
                             let col = i % cols;
@@ -750,21 +823,49 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             tb_add_started_ms = None;
                             tb_shift_x = 26.0;
                             new_window_idx = new_window_idx.wrapping_add(1);
+                            app_search_query.clear();
+                            app_search_focused = false;
+                            rebuild_filtered_apps(
+                                &app_entries,
+                                "",
+                                &mut app_list,
+                                &mut app_name_list,
+                                &mut app_icon_list,
+                            );
+                            taskbar_surface.invalidate();
+                            show_app_launcher = false;
+                        } else if on_launcher_panel {
+                            app_search_focused = false;
+                            taskbar_surface.invalidate();
+                            show_app_launcher = true;
+                        } else {
+                            app_search_query.clear();
+                            app_search_focused = false;
+                            rebuild_filtered_apps(
+                                &app_entries,
+                                "",
+                                &mut app_list,
+                                &mut app_name_list,
+                                &mut app_icon_list,
+                            );
+                            cached_launcher_layer = None;
+                            taskbar_surface.invalidate();
+                            show_app_launcher = false;
                         }
-                        show_app_launcher = false;
                         scene_dirty = true;
                     } else if cy >= sh as i32 - TASKBAR_H as i32 {
-                        let apps_icon_x = 16i32;
-                        let apps_icon_size = 24i32;
-                        let apps_icon_y = (sh as i32 - TASKBAR_H as i32
-                            + (TASKBAR_H as i32 - apps_icon_size) / 2)
-                            as i32;
+                        let apps_icon_x = 12i32;
+                        let apps_icon_size = 190i32;
+                        let apps_icon_y =
+                            sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
                         let on_apps_icon = cx >= apps_icon_x
                             && cx < apps_icon_x + apps_icon_size
                             && cy >= apps_icon_y
-                            && cy < apps_icon_y + apps_icon_size;
+                            && cy < apps_icon_y + 40;
                         if on_apps_icon {
-                            show_app_launcher = !show_app_launcher;
+                            app_search_focused = true;
+                            show_app_launcher = true;
+                            taskbar_surface.invalidate();
                             scene_dirty = true;
                         } else {
                             if show_app_launcher {
@@ -1031,19 +1132,29 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let cx = cursor_x;
             let cy = cursor_y;
             let sh = screen.height();
+            let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
+            let on_search = cx >= 12 && cx < 202 && cy >= search_y && cy < search_y + 40;
 
-            if show_app_launcher {
-                let cols = 5usize;
-                let icon_size = 64usize;
-                let icon_gap = 24usize;
+            if show_app_launcher && on_search {
+                app_search_focused = true;
+                taskbar_surface.invalidate();
+                scene_dirty = true;
+            } else if show_app_launcher {
+                let cols = 4usize;
+                let icon_size = 52usize;
+                let icon_gap = 16usize;
                 let label_h = 20usize;
                 let cell_w = icon_size + icon_gap;
                 let cell_h = icon_size + label_h + icon_gap;
                 let grid_w = cols * cell_w;
                 let rows = (app_list.len() + cols - 1) / cols;
                 let grid_h = rows * cell_h;
-                let grid_x = (screen.width().saturating_sub(grid_w)) / 2;
-                let grid_y = ((screen.height() - TASKBAR_H).saturating_sub(grid_h)) / 2;
+                let grid_x = 20usize;
+                let grid_y = screen.height().saturating_sub(TASKBAR_H + grid_h + 16);
+                let on_launcher_panel = cx >= 12
+                    && cx < (12 + grid_w + 16) as i32
+                    && cy >= grid_y.saturating_sub(8) as i32
+                    && cy < (grid_y.saturating_sub(8) + grid_h.max(40) + 16) as i32;
                 let mut clicked_app = None;
                 for (i, _) in app_list.iter().enumerate() {
                     let col = i % cols;
@@ -1080,20 +1191,45 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     tb_add_started_ms = None;
                     tb_shift_x = 26.0;
                     new_window_idx = new_window_idx.wrapping_add(1);
+                    app_search_query.clear();
+                    rebuild_filtered_apps(
+                        &app_entries,
+                        "",
+                        &mut app_list,
+                        &mut app_name_list,
+                        &mut app_icon_list,
+                    );
+                    show_app_launcher = false;
+                } else if on_launcher_panel {
+                    app_search_focused = false;
+                    show_app_launcher = true;
+                } else {
+                    app_search_query.clear();
+                    app_search_focused = false;
+                    rebuild_filtered_apps(
+                        &app_entries,
+                        "",
+                        &mut app_list,
+                        &mut app_name_list,
+                        &mut app_icon_list,
+                    );
+                    cached_launcher_layer = None;
+                    show_app_launcher = false;
                 }
-                show_app_launcher = false;
+                taskbar_surface.invalidate();
                 scene_dirty = true;
             } else if cy >= sh as i32 - TASKBAR_H as i32 {
-                let apps_icon_x = 16i32;
-                let apps_icon_size = 24i32;
-                let apps_icon_y =
-                    (sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2) as i32;
+                let apps_icon_x = 12i32;
+                let apps_icon_size = 190i32;
+                let apps_icon_y = search_y;
                 let on_apps_icon = cx >= apps_icon_x
                     && cx < apps_icon_x + apps_icon_size
                     && cy >= apps_icon_y
-                    && cy < apps_icon_y + apps_icon_size;
+                    && cy < apps_icon_y + 40;
                 if on_apps_icon {
-                    show_app_launcher = !show_app_launcher;
+                    app_search_focused = true;
+                    show_app_launcher = true;
+                    taskbar_surface.invalidate();
                     scene_dirty = true;
                 } else {
                     if show_app_launcher {
@@ -1319,13 +1455,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
         {
             let sh = screen.height() as i32;
-            let apps_icon_x = 16i32;
-            let apps_icon_size = 24i32;
-            let apps_icon_y = sh - TASKBAR_H as i32 + (TASKBAR_H as i32 - apps_icon_size) / 2;
+            let apps_icon_x = 12i32;
+            let apps_icon_size = 190i32;
+            let apps_icon_y = sh - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
             hover_apps_icon = cursor_x >= apps_icon_x
                 && cursor_x < apps_icon_x + apps_icon_size
                 && cursor_y >= apps_icon_y
-                && cursor_y < apps_icon_y + apps_icon_size;
+                && cursor_y < apps_icon_y + 40;
             if hover_apps_icon != prev_hover_apps_icon {
                 dirty = true;
                 scene_dirty = true;
@@ -1700,6 +1836,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &app_list,
                     &app_icon_list,
                     hover_apps_icon,
+                    app_search_focused,
+                    &app_search_query,
                     taskbar_only,
                     clock_hh,
                     clock_mm,
@@ -1736,6 +1874,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &app_list,
                         &app_icon_list,
                         hover_apps_icon,
+                        app_search_focused,
+                        &app_search_query,
                         false,
                         clock_hh,
                         clock_mm,
@@ -1903,6 +2043,33 @@ struct PendingOsPermission {
     app_hash: alloc::string::String,
     dialog_win_id: WinId,
     source_win_id: Option<WinId>,
+}
+
+fn rebuild_filtered_apps(
+    entries: &[AppEntry],
+    query: &str,
+    titles: &mut alloc::vec::Vec<alloc::string::String>,
+    names: &mut alloc::vec::Vec<alloc::string::String>,
+    icons: &mut alloc::vec::Vec<alloc::string::String>,
+) {
+    titles.clear();
+    names.clear();
+    icons.clear();
+    let needle = query.trim().to_ascii_lowercase();
+    for entry in entries {
+        let matches = needle.is_empty()
+            || entry.title.to_ascii_lowercase().contains(&needle)
+            || entry.name.to_ascii_lowercase().contains(&needle)
+            || entry
+                .tags
+                .iter()
+                .any(|tag| tag.to_ascii_lowercase().contains(&needle));
+        if matches {
+            titles.push(entry.title.clone());
+            names.push(entry.name.clone());
+            icons.push(entry.icon.clone());
+        }
+    }
 }
 
 fn open_app(
