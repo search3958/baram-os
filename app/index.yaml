@@ -32,7 +32,15 @@ apps:
     icon: calc.png
     type: warp-3
     title: 計算機
+  webdemo.html:
+    icon: html5.png
+    type: html-1
+    title: HTMLデモ
   warp3demo.w3a:
     icon: noname.png
     type: warp-3
     title: Warp 3 デモ
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ
