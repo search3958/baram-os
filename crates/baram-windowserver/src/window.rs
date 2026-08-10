@@ -1405,8 +1405,8 @@ fn compute_rounded_shadow_alpha(
     let radius = r as usize;
     let mask = ShadowMaskPass { alpha: alpha.as_mut_ptr(), stride: sw, left, right, top, bottom, radius };
     baram_core::parallel::for_each(height, &mask, fill_shadow_mask_row);
-    let box_radius = (blur_r.max(1) as usize / 3).max(1);
-    for _ in 0..3 {
+    let box_radius = (blur_r.max(1) as usize / 2).max(1);
+    for _ in 0..2 {
         box_blur_shadow(&mut alpha, sw, sh, box_radius);
     }
 

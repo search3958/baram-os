@@ -381,9 +381,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         app_name_list.push(entry.name.clone());
         app_icon_list.push(entry.icon.clone());
     }
-    let mut hover_apps_icon: bool = false;
-    let mut prev_hover_apps_icon: bool = false;
+    // The search box has no hover visual; keep this compatibility argument
+    // stable without making pointer movement schedule a redraw.
+    let hover_apps_icon = false;
     let mut prev_show_app_launcher: bool = false;
+    let mut launcher_content_dirty: bool = false;
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
 
@@ -496,7 +498,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 );
                 app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                 show_app_launcher = true;
-                prev_show_app_launcher = false;
+                launcher_content_dirty = true;
                 taskbar_surface.invalidate();
                 dirty = true;
                 scene_dirty = true;
@@ -533,9 +535,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     );
                     app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                     show_app_launcher = app_search_focused || !app_search_query.is_empty();
-                    // The launcher contents changed even if its visibility did not.
-                    // Reuse the visibility damage path to redraw the full launcher.
-                    prev_show_app_launcher = false;
+                    launcher_content_dirty = true;
                     taskbar_surface.invalidate();
                     handled = true;
                     dirty = true;
@@ -1481,23 +1481,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             dirty = true;
         }
 
-        {
-            let sh = screen.height() as i32;
-            let apps_icon_x = 12i32;
-            let apps_icon_size = 190i32;
-            let apps_icon_y = sh - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
-            hover_apps_icon = cursor_x >= apps_icon_x
-                && cursor_x < apps_icon_x + apps_icon_size
-                && cursor_y >= apps_icon_y
-                && cursor_y < apps_icon_y + 40;
-            if hover_apps_icon != prev_hover_apps_icon {
-                dirty = true;
-                scene_dirty = true;
-                taskbar_surface.invalidate();
-                prev_hover_apps_icon = hover_apps_icon;
-            }
-        }
-
         // Scroll positions are sampled from absolute time. The backing
         // document is already rasterized; each sample only changes the source
         // offset used for the viewport copy.
@@ -1507,7 +1490,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             dirty = true;
         }
         if app_launcher_scroll.tick(transition_now_ns) {
-            prev_show_app_launcher = false;
+            launcher_content_dirty = true;
             scene_dirty = true;
             dirty = true;
         }
@@ -1750,6 +1733,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     || !bg_valid;
 
                 let launcher_changed = show_app_launcher != prev_show_app_launcher;
+                let launcher_needs_redraw = launcher_changed || launcher_content_dirty;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
                 let taskbar_only = taskbar_dirty
@@ -1836,7 +1820,20 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fy0 = fy0.min(tb_y.saturating_sub(44));
                     fx1 = w;
                 }
-                if launcher_changed || !bg_valid {
+                if launcher_needs_redraw {
+                    let grid_h = 3 * 88usize;
+                    let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+                    let panel_x = 12usize;
+                    let panel_y = grid_y.saturating_sub(8);
+                    let panel_w = 4 * (52 + 16) + 16;
+                    let panel_h = grid_h + 16;
+                    let pad = 54usize;
+                    fx0 = fx0.min(panel_x.saturating_sub(pad));
+                    fy0 = fy0.min(panel_y.saturating_sub(pad));
+                    fx1 = fx1.max((panel_x + panel_w + pad).min(w));
+                    fy1 = fy1.max((panel_y + panel_h + pad).min(h));
+                }
+                if !bg_valid {
                     fx0 = 0;
                     fy0 = 0;
                     fx1 = w;
@@ -1919,10 +1916,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     layer.pop_clip();
                 }
 
-                if launcher_changed {
-                    layer.mark_all_dirty();
-                }
-
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
 
@@ -1949,6 +1942,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 }
                 hud_damage_pending = false;
                 scene_dirty = false;
+                launcher_content_dirty = false;
                 wm.clear_pending_damage();
 
                 cursor::draw_cursor_into_layer(
@@ -1965,7 +1959,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 if taskbar_only {
                     layer.flush_rect(&mut screen, 0, tb_y, w, h);
                     layer.flush_rect(&mut screen, cx0, cy0, cx1, cy1);
-                } else if launcher_changed || !bg_valid || fw * fh >= full_area * 3 / 4 {
+                } else if !bg_valid || fw * fh >= full_area * 3 / 4 {
                     layer.flush(&mut screen);
                 } else {
                     layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);

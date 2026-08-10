@@ -128,16 +128,28 @@ fn blend_rounded_rect(
     }
 }
 
-fn copy_rounded_region(
+/// Copy a rounded region from a cropped source image. The crop is retained
+/// only while building the launcher cache, avoiding a full-screen temporary.
+fn copy_rounded_region_from_crop(
     layer: &mut LayerSystem,
     source: &[u32],
+    source_w: usize,
+    source_x: usize,
+    source_y: usize,
     x: usize,
     y: usize,
     width: usize,
     height: usize,
     radius: usize,
 ) {
-    if source.len() != layer.width() * layer.height() { return; }
+    if source_w == 0 || source.len() % source_w != 0 { return; }
+    let source_h = source.len() / source_w;
+    if x < source_x || y < source_y
+        || x.saturating_add(width) > source_x.saturating_add(source_w)
+        || y.saturating_add(height) > source_y.saturating_add(source_h)
+    {
+        return;
+    }
     let radius = radius.min(width / 2).min(height / 2);
     let x1 = (x + width).min(layer.width());
     let y1 = (y + height).min(layer.height());
@@ -146,11 +158,11 @@ fn copy_rounded_region(
             let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
             if coverage == 0 { continue; }
             let idx = py * layer.width() + px;
+            let fg = source[(py - source_y) * source_w + px - source_x];
             if coverage == 16 {
-                layer.buf_mut()[idx] = source[idx];
+                layer.buf_mut()[idx] = fg;
             } else {
                 let bg = layer.buf_ref()[idx];
-                let fg = source[idx];
                 let a = coverage * 255 / 16;
                 let inv = 255 - a;
                 let r = (((fg >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
@@ -192,11 +204,11 @@ fn rounded_rect_coverage(
     inside
 }
 
-fn box_blur_alpha_3x(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+fn box_blur_alpha_2x(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     if width == 0 || height == 0 || radius == 0 { return; }
     let diameter = radius * 2 + 1;
     let mut scratch = alloc::vec![0u8; alpha.len()];
-    for _ in 0..3 {
+    for _ in 0..2 {
         for y in 0..height {
             let mut sum = 0u32;
             for x in 0..width + radius {
@@ -236,7 +248,7 @@ fn draw_soft_box_shadow(
             if dx * dx + dy * dy <= r * r { alpha[(py + PAD) * sw + px + PAD] = 24; }
         }
     }
-    box_blur_alpha_3x(&mut alpha, sw, sh, 18);
+    box_blur_alpha_2x(&mut alpha, sw, sh, 18);
     let ox = x.saturating_sub(PAD);
     let oy = y.saturating_sub(PAD);
     let source_x = PAD.saturating_sub(x);
@@ -274,7 +286,7 @@ fn draw_control_shadow(
     opacity: u8,
 ) {
     if width == 0 || height == 0 || opacity == 0 { return; }
-    let blur_radius = 3usize; // Three passes approximate an 8px CSS blur.
+    let blur_radius = 4usize; // Two passes approximate an 8px CSS blur.
     let pad = 24usize;
     let sw = width + pad * 2;
     let sh = height + pad * 2 + offset_y;
@@ -287,7 +299,7 @@ fn draw_control_shadow(
             if dx * dx + dy * dy <= r * r { alpha[(py + pad + offset_y) * sw + px + pad] = opacity; }
         }
     }
-    box_blur_alpha_3x(&mut alpha, sw, sh, blur_radius);
+    box_blur_alpha_2x(&mut alpha, sw, sh, blur_radius);
 
     let ox = x.saturating_sub(pad);
     let oy = y.saturating_sub(pad);
@@ -1056,31 +1068,63 @@ pub fn render_scene(
 
             // Cache the complete glass-and-shadow base once per opening.
             if cached_launcher_layer.is_none() {
-                let mut panel_base = LayerSystem::new(w, h);
-                panel_base.copy_from_screen_buffer(layer.buf_ref());
-                let mut blurred = alloc::vec![0u32; w * h];
-                blur::blur_region_to(layer.buf_ref(), &mut blurred, w, 0, h, 52);
+                const CACHE_PAD: usize = 54;
+                let cache_x = panel_x.saturating_sub(CACHE_PAD);
+                let cache_y = panel_y.saturating_sub(CACHE_PAD);
+                let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+                let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+                let cache_w = cache_x1.saturating_sub(cache_x);
+                let cache_h = cache_y1.saturating_sub(cache_y);
+                let mut panel_base = LayerSystem::new(cache_w, cache_h);
+                for py in 0..cache_h {
+                    let src_start = (cache_y + py) * w + cache_x;
+                    let dst_start = py * cache_w;
+                    panel_base.buf_mut()[dst_start..dst_start + cache_w]
+                        .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+                }
+                // Two box-blur passes with r=26 can read up to 52px beyond
+                // the result. Keep that margin around the panel, rather than
+                // filtering the entire screen.
+                const BLUR_RADIUS: usize = 52;
+                let blur_x0 = panel_x.saturating_sub(BLUR_RADIUS);
+                let blur_y0 = panel_y.saturating_sub(BLUR_RADIUS);
+                let blur_x1 = (panel_x + panel_w + BLUR_RADIUS).min(w);
+                let blur_y1 = (panel_y + panel_h + BLUR_RADIUS).min(h);
+                let blur_w = blur_x1.saturating_sub(blur_x0);
+                let blur_h = blur_y1.saturating_sub(blur_y0);
+                let mut blur_source = alloc::vec![0u32; blur_w * blur_h];
+                for py in 0..blur_h {
+                    let src_start = (blur_y0 + py) * w + blur_x0;
+                    let dst_start = py * blur_w;
+                    blur_source[dst_start..dst_start + blur_w]
+                        .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+                }
+                let mut blurred = alloc::vec![0u32; blur_source.len()];
+                blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 52);
                 draw_soft_box_shadow(
                     &mut panel_base,
-                    panel_x,
-                    panel_y,
+                    panel_x - cache_x,
+                    panel_y - cache_y,
                     panel_w,
                     panel_h,
                     panel_radius,
                 );
-                copy_rounded_region(
+                copy_rounded_region_from_crop(
                     &mut panel_base,
                     &blurred,
-                    panel_x,
-                    panel_y,
+                    blur_w,
+                    blur_x0 - cache_x,
+                    blur_y0 - cache_y,
+                    panel_x - cache_x,
+                    panel_y - cache_y,
                     panel_w,
                     panel_h,
                     panel_radius,
                 );
                 blend_rounded_rect(
                     &mut panel_base,
-                    panel_x,
-                    panel_y,
+                    panel_x - cache_x,
+                    panel_y - cache_y,
                     panel_w,
                     panel_h,
                     panel_radius,
@@ -1092,15 +1136,20 @@ pub fn render_scene(
             let mut lsys = LayerSystem::new(w, h);
             lsys.copy_from_screen_buffer(layer.buf_ref());
             if let Some(panel_base) = cached_launcher_layer.as_deref() {
-                let pad = 54usize;
-                let x0 = panel_x.saturating_sub(pad);
-                let y0 = panel_y.saturating_sub(pad);
-                let x1 = (panel_x + panel_w + pad).min(w);
-                let y1 = (panel_y + panel_h + pad).min(tb_y);
-                for py in y0..y1 {
-                    let start = py * w + x0;
-                    let end = py * w + x1;
-                    lsys.buf_mut()[start..end].copy_from_slice(&panel_base[start..end]);
+                const CACHE_PAD: usize = 54;
+                let cache_x = panel_x.saturating_sub(CACHE_PAD);
+                let cache_y = panel_y.saturating_sub(CACHE_PAD);
+                let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+                let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+                let cache_w = cache_x1.saturating_sub(cache_x);
+                let cache_h = cache_y1.saturating_sub(cache_y);
+                if panel_base.len() == cache_w * cache_h {
+                    for py in 0..cache_h {
+                        let src_start = py * cache_w;
+                        let dst_start = (cache_y + py) * w + cache_x;
+                        lsys.buf_mut()[dst_start..dst_start + cache_w]
+                            .copy_from_slice(&panel_base[src_start..src_start + cache_w]);
+                    }
                 }
             }
 
