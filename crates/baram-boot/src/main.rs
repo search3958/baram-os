@@ -15,7 +15,7 @@ use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
-use baram_windowserver::window::{WinId, WindowManager};
+use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
 
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
@@ -372,6 +372,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut show_app_launcher: bool = false;
     let mut app_search_focused: bool = false;
     let mut app_search_query = alloc::string::String::new();
+    let mut app_launcher_scroll = SmoothScroll::new();
     let mut app_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_name_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
     let mut app_icon_list: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
@@ -428,6 +429,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         hover_apps_icon,
         app_search_focused,
         &app_search_query,
+        app_launcher_scroll.position.max(0) as usize,
         false,
         clock_hh,
         clock_mm,
@@ -492,6 +494,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &mut app_name_list,
                     &mut app_icon_list,
                 );
+                app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                 show_app_launcher = true;
                 prev_show_app_launcher = false;
                 taskbar_surface.invalidate();
@@ -528,6 +531,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &mut app_name_list,
                         &mut app_icon_list,
                     );
+                    app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                     show_app_launcher = app_search_focused || !app_search_query.is_empty();
                     // The launcher contents changed even if its visibility did not.
                     // Reuse the visibility damage path to redraw the full launcher.
@@ -741,7 +745,18 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         .scroll
                         .saturating_neg()
                         .saturating_mul(baram_windowserver::window::scroll_speed());
-                    if let Some(id) = wm.window_at(cx, cy) {
+                    let panel_y = screen.height() as i32 - TASKBAR_H as i32 - (3 * 88 + 24) as i32;
+                    let on_launcher = show_app_launcher
+                        && cx >= 12
+                        && cx < 300
+                        && cy >= panel_y
+                        && cy < screen.height() as i32 - TASKBAR_H as i32;
+                    if on_launcher {
+                        app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
+                        app_launcher_scroll.scroll(scroll_delta);
+                        dirty = true;
+                        scene_dirty = true;
+                    } else if let Some(id) = wm.window_at(cx, cy) {
                         wm.scroll_window(id, scroll_delta);
                         dirty = true;
                         scene_dirty = true;
@@ -777,6 +792,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let grid_h = rows * cell_h;
                         let grid_x = 20usize;
                         let grid_y = screen.height().saturating_sub(TASKBAR_H + grid_h + 16);
+                        let content_y = grid_y + 4;
                         let panel_x = 12i32;
                         let panel_y = grid_y.saturating_sub(8) as i32;
                         let panel_w = (grid_w + 16) as i32;
@@ -790,11 +806,14 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             let col = i % cols;
                             let row = i / cols;
                             let ix = grid_x + col * cell_w + icon_gap / 2;
-                            let iy = grid_y + row * cell_h;
+                            let iy = content_y as i32 + row as i32 * cell_h as i32
+                                - app_launcher_scroll.position;
                             if cx >= ix as i32
                                 && cx < (ix + icon_size) as i32
-                                && cy >= iy as i32
-                                && cy < (iy + icon_size) as i32
+                                && cy >= content_y as i32
+                                && cy < (content_y + grid_h) as i32
+                                && cy >= iy
+                                && cy < iy + icon_size as i32
                             {
                                 clicked_app = Some(i);
                                 break;
@@ -862,6 +881,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && cy >= apps_icon_y
                             && cy < apps_icon_y + 40;
                         if on_apps_icon {
+                            app_launcher_scroll.reset();
+                            app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                             app_search_focused = true;
                             show_app_launcher = true;
                             taskbar_surface.invalidate();
@@ -969,7 +990,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                                     } else {
                                                         wm.set_all_dirty();
                                                         taskbar_surface.invalidate();
-                                                        cached_launcher_layer = None;
+                            cached_launcher_layer = None;
+                            app_launcher_scroll.reset();
                                                         bg_cache = None;
                                                     }
                                                     scene_dirty = true;
@@ -1150,6 +1172,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let grid_h = rows * cell_h;
                 let grid_x = 20usize;
                 let grid_y = screen.height().saturating_sub(TASKBAR_H + grid_h + 16);
+                let content_y = grid_y + 4;
                 let on_launcher_panel = cx >= 12
                     && cx < (12 + grid_w + 16) as i32
                     && cy >= grid_y.saturating_sub(8) as i32
@@ -1159,11 +1182,14 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     let col = i % cols;
                     let row = i / cols;
                     let ix = grid_x + col * cell_w + icon_gap / 2;
-                    let iy = grid_y + row * cell_h;
+                    let iy = content_y as i32 + row as i32 * cell_h as i32
+                        - app_launcher_scroll.position;
                     if cx >= ix as i32
                         && cx < (ix + icon_size) as i32
-                        && cy >= iy as i32
-                        && cy < (iy + icon_size) as i32
+                        && cy >= content_y as i32
+                        && cy < (content_y + grid_h) as i32
+                        && cy >= iy
+                        && cy < iy + icon_size as i32
                     {
                         clicked_app = Some(i);
                         break;
@@ -1227,6 +1253,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     && cy >= apps_icon_y
                     && cy < apps_icon_y + 40;
                 if on_apps_icon {
+                    app_launcher_scroll.reset();
+                    app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                     app_search_focused = true;
                     show_app_launcher = true;
                     taskbar_surface.invalidate();
@@ -1475,6 +1503,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // offset used for the viewport copy.
         let transition_now_ns = ui_time_ms * 1_000_000;
         if wm.tick_scroll_animations(transition_now_ns) {
+            scene_dirty = true;
+            dirty = true;
+        }
+        if app_launcher_scroll.tick(transition_now_ns) {
+            prev_show_app_launcher = false;
             scene_dirty = true;
             dirty = true;
         }
@@ -1838,6 +1871,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     hover_apps_icon,
                     app_search_focused,
                     &app_search_query,
+                    app_launcher_scroll.position.max(0) as usize,
                     taskbar_only,
                     clock_hh,
                     clock_mm,
@@ -1876,6 +1910,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         hover_apps_icon,
                         app_search_focused,
                         &app_search_query,
+                        app_launcher_scroll.position.max(0) as usize,
                         false,
                         clock_hh,
                         clock_mm,
@@ -2070,6 +2105,14 @@ fn rebuild_filtered_apps(
             icons.push(entry.icon.clone());
         }
     }
+}
+
+fn app_launcher_scroll_max(app_count: usize) -> i32 {
+    const COLS: usize = 4;
+    const VISIBLE_ROWS: usize = 3;
+    const CELL_H: usize = 88;
+    let rows = (app_count + COLS - 1) / COLS;
+    rows.saturating_sub(VISIBLE_ROWS).saturating_mul(CELL_H) as i32
 }
 
 fn open_app(

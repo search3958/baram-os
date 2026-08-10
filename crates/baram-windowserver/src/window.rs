@@ -12,6 +12,65 @@ pub fn scroll_speed() -> i32 {
     config::get_i32("ui-theme/window/scroll_speed", 30)
 }
 
+/// Shared smooth-scroll state for windows and non-window scroll viewports.
+pub struct SmoothScroll {
+    pub position: i32,
+    target: i32,
+    start: i32,
+    started_ns: Option<u64>,
+    max: i32,
+}
+
+impl SmoothScroll {
+    pub const fn new() -> Self {
+        Self { position: 0, target: 0, start: 0, started_ns: None, max: 0 }
+    }
+
+    pub fn reset(&mut self) {
+        self.position = 0;
+        self.target = 0;
+        self.start = 0;
+        self.started_ns = None;
+    }
+
+    pub fn set_max(&mut self, max: i32) {
+        self.max = max.max(0);
+        self.target = self.target.min(self.max);
+        self.position = self.position.min(self.max);
+        self.start = self.start.min(self.max);
+    }
+
+    pub fn scroll(&mut self, delta: i32) {
+        let next = self.target.saturating_add(delta).clamp(0, self.max);
+        if next != self.target {
+            if self.position == self.target {
+                self.start = self.position;
+                self.started_ns = None;
+            }
+            self.target = next;
+        }
+    }
+
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        if self.position == self.target {
+            self.started_ns = None;
+            return false;
+        }
+        let started = *self.started_ns.get_or_insert(now_ns.saturating_sub(1_000_000));
+        let elapsed = now_ns.saturating_sub(started);
+        let t = (elapsed as f32 / SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
+        let eased = decelerate_scroll(t);
+        let distance = self.target - self.start;
+        let next = if t >= 1.0 { self.target } else { self.start + (distance as f32 * eased) as i32 };
+        if next == self.position { return false; }
+        self.position = next;
+        if t >= 1.0 { self.started_ns = None; }
+        true
+    }
+
+    pub fn is_animating(&self) -> bool { self.position != self.target }
+}
+
 pub fn title_bar_h() -> usize {
     config::get_usize("ui-theme/window/title_bar_h", 30)
 }

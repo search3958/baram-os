@@ -260,6 +260,62 @@ fn draw_soft_box_shadow(
     }
 }
 
+/// Draw a compact, CSS-like black box shadow behind a rounded control.
+/// The rounded control itself is masked out so its fill never reveals the
+/// shadow when that fill is translucent.
+fn draw_control_shadow(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+    offset_y: usize,
+    opacity: u8,
+) {
+    if width == 0 || height == 0 || opacity == 0 { return; }
+    let blur_radius = 3usize; // Three passes approximate an 8px CSS blur.
+    let pad = 24usize;
+    let sw = width + pad * 2;
+    let sh = height + pad * 2 + offset_y;
+    let mut alpha = alloc::vec![0u8; sw * sh];
+    let r = radius.min(width / 2).min(height / 2);
+    for py in 0..height {
+        for px in 0..width {
+            let dx = if px < r { r - px } else if px >= width - r { px + r + 1 - width } else { 0 };
+            let dy = if py < r { r - py } else if py >= height - r { py + r + 1 - height } else { 0 };
+            if dx * dx + dy * dy <= r * r { alpha[(py + pad + offset_y) * sw + px + pad] = opacity; }
+        }
+    }
+    box_blur_alpha_3x(&mut alpha, sw, sh, blur_radius);
+
+    let ox = x.saturating_sub(pad);
+    let oy = y.saturating_sub(pad);
+    let source_x = pad.saturating_sub(x);
+    let source_y = pad.saturating_sub(y);
+    for sy in source_y..sh {
+        let dy = oy + sy - source_y;
+        if dy >= layer.height() { continue; }
+        for sx in source_x..sw {
+            let dx = ox + sx - source_x;
+            if dx >= layer.width() { continue; }
+            if rounded_rect_coverage(dx, dy, x, y, width, height, radius) != 0 {
+                continue;
+            }
+            let a = alpha[sy * sw + sx] as u32;
+            if a == 0 { continue; }
+            let idx = dy * layer.width() + dx;
+            let bg = layer.buf_ref()[idx];
+            let inv = 255 - a;
+            layer.buf_mut()[idx] = Color::rgb(
+                (((bg >> 16) & 0xff) * inv / 255) as u8,
+                (((bg >> 8) & 0xff) * inv / 255) as u8,
+                ((bg & 0xff) * inv / 255) as u8,
+            ).0;
+        }
+    }
+}
+
 const ICON_CACHE_CAP: usize = 32;
 static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
     None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
@@ -583,6 +639,37 @@ fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
 }
 
+fn draw_taskbar_glyph(
+    layer: &mut LayerSystem,
+    data: &[u8],
+    glyph_w: i32,
+    glyph_h: i32,
+    x: usize,
+    top: i32,
+    color: Color,
+) {
+    let w = layer.width();
+    let h = layer.height();
+    let buf = layer.buf_mut();
+    for row in 0..glyph_h {
+        let py = top + row;
+        if py < 0 || py >= h as i32 { continue; }
+        for col in 0..glyph_w {
+            let px = x + col as usize;
+            if px >= w { continue; }
+            let a = data[(row * glyph_w + col) as usize] as u32;
+            if a == 0 { continue; }
+            let idx = py as usize * w + px;
+            let bg = buf[idx];
+            let inv = 255 - a;
+            let r = (((color.0 >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
+            let g = (((color.0 >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
+            let b = ((color.0 & 0xff) * a + (bg & 0xff) * inv) / 255;
+            buf[idx] = (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
 fn draw_taskbar_text(
     layer: &mut LayerSystem,
     text: &str,
@@ -591,40 +678,22 @@ fn draw_taskbar_text(
     color: Color,
     size: f32,
 ) {
-    let w = layer.width();
-    let h = layer.height();
     for ch in text.chars() {
         let glyph = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-        if glyph.w == 0 || glyph.h == 0 {
-            x += 8;
+        if glyph.w > 0 && glyph.h > 0 {
+            draw_taskbar_glyph(layer, &glyph.data, glyph.w, glyph.h, x, baseline_y + glyph.y_off, color);
+            x += glyph.advance.max(0) as usize;
             continue;
         }
-        let top = baseline_y + glyph.y_off;
-        let buf = layer.buf_mut();
-        for row in 0..glyph.h {
-            let py = top + row;
-            if py < 0 || py >= h as i32 {
-                continue;
-            }
-            for col in 0..glyph.w {
-                let px = x + col as usize;
-                if px >= w {
-                    continue;
-                }
-                let a = glyph.data[(row * glyph.w + col) as usize] as u32;
-                if a == 0 {
-                    continue;
-                }
-                let idx = py as usize * w + px;
-                let bg = buf[idx];
-                let inv = 255 - a;
-                let r = (((color.0 >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
-                let g = (((color.0 >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
-                let b = ((color.0 & 0xff) * a + (bg & 0xff) * inv) / 255;
-                buf[idx] = (r << 16) | (g << 8) | b;
-            }
+        // Google Sans used by the taskbar has no Japanese glyphs. Fall back
+        // to the regular UI font so placeholder and typed Japanese stay visible.
+        let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
+        if fallback.w > 0 && fallback.h > 0 {
+            draw_taskbar_glyph(layer, &fallback.data, fallback.w, fallback.h, x, baseline_y + fallback.y_off, color);
+            x += fallback.advance.max(0) as usize;
+        } else {
+            x += 8;
         }
-        x += glyph.advance.max(0) as usize;
     }
 }
 
@@ -794,22 +863,24 @@ fn redraw_taskbar(
     }
 
     let search_x = 12usize;
-    let search_y = (TASKBAR_H - 40) / 2;
+    let search_h = 32usize;
+    let search_y = (TASKBAR_H - search_h) / 2;
     let search_w = 190usize;
     let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
     let search_alpha = if search_focused { 255 } else { 128 };
+    draw_control_shadow(layer, search_x, search_y, search_w, search_h, search_h / 2, 2, 0x33);
     blend_rounded_rect(
         layer,
         search_x,
         search_y,
         search_w,
-        40,
-        20,
+        search_h,
+        search_h / 2,
         search_bg,
         search_alpha,
     );
     let text = if search_query.is_empty() {
-        "アプリを検索"
+        "アプリを検索..."
     } else {
         search_query
     };
@@ -822,7 +893,7 @@ fn redraw_taskbar(
         layer,
         text,
         search_x + 12,
-        search_y as i32 + 28,
+        search_y as i32 + 22,
         text_color,
         18.0,
     );
@@ -857,6 +928,7 @@ pub fn render_scene(
     hover_apps_icon: bool,
     search_focused: bool,
     search_query: &str,
+    launcher_scroll_y: usize,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
@@ -971,10 +1043,11 @@ pub fn render_scene(
             let cell_w = icon_size + icon_gap;
             let cell_h = icon_size + label_h + icon_gap;
             let grid_w = cols * cell_w;
-            let rows = 3usize;
-            let grid_h = rows * cell_h;
+            let visible_rows = 3usize;
+            let grid_h = visible_rows * cell_h;
             let grid_x = 20usize;
             let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+            let content_y = grid_y + 4;
             let panel_h = grid_h.max(40) + 16;
             let panel_x = 12usize;
             let panel_y = grid_y.saturating_sub(8);
@@ -1034,19 +1107,32 @@ pub fn render_scene(
             if app_list.is_empty() {
                 lsys.put_str(
                     28,
-                    grid_y + 8,
+                    content_y + 8,
                     "該当するアプリはありません",
                     Color::BLACK,
                 );
             }
 
+            let content_rows = ((app_list.len() + cols - 1) / cols).max(visible_rows);
+            let content_h = content_rows * cell_h;
+            let scroll_y = launcher_scroll_y.min(content_h.saturating_sub(grid_h));
+            let mut content = LayerSystem::new_transparent(grid_w, content_h);
+            // Antialiased pixels must be blended against the actual panel
+            // background, not transparent black. Seed the visible viewport
+            // before rendering its icons and labels.
+            for py in 0..grid_h {
+                let src_start = (content_y + py) * w + grid_x;
+                let dst_start = (scroll_y + py) * grid_w;
+                content.buf_mut()[dst_start..dst_start + grid_w]
+                    .copy_from_slice(&lsys.buf_ref()[src_start..src_start + grid_w]);
+            }
             for (i, name) in app_list.iter().enumerate() {
                 let col = i % cols;
                 let row = i / cols;
-                let cx = grid_x + col * cell_w + icon_gap / 2;
-                let cy = grid_y + row * cell_h;
+                let cx = col * cell_w + icon_gap / 2;
+                let cy = row * cell_h;
 
-                lsys.fill_circle(
+                content.fill_circle(
                     cx + icon_size / 2,
                     cy + icon_size / 2,
                     icon_size / 2,
@@ -1071,16 +1157,16 @@ pub fn render_scene(
                                 }
                                 let sx = cx + pad + px;
                                 let sy = cy + pad + py;
-                                if sx >= w || sy >= tb_y {
+                                if sx >= grid_w || sy >= content_h {
                                     continue;
                                 }
-                                let idx = sy * w + sx;
-                                let bg = Color(lsys.buf_ref()[idx]);
+                                let idx = sy * grid_w + sx;
+                                let bg = Color(content.buf_ref()[idx]);
                                 let inv = 255 - a;
                                 let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
                                 let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
                                 let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                                lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                                content.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
                             }
                         }
                     }
@@ -1116,8 +1202,9 @@ pub fn render_scene(
                 let tx = cx + (icon_size.saturating_sub(tw)) / 2;
                 let ty = cy + icon_size + 4;
                 let label_color = Color::BLACK;
-                lsys.put_str(tx, ty, &display_name, label_color);
+                content.put_str(tx, ty, &display_name, label_color);
             }
+            lsys.composit_rect(&content, grid_x, content_y, 0, scroll_y, grid_w, grid_h);
         layer.copy_rect_buffer(lsys.buf_ref(), w, tb_y, 0, 0);
     }
 
@@ -1169,6 +1256,7 @@ pub fn render_frame(
     hover_apps_icon: bool,
     search_focused: bool,
     search_query: &str,
+    launcher_scroll_y: usize,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
@@ -1201,6 +1289,7 @@ pub fn render_frame(
         hover_apps_icon,
         search_focused,
         search_query,
+        launcher_scroll_y,
         taskbar_only,
         clock_hh,
         clock_mm,
