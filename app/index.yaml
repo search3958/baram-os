@@ -8,10 +8,17 @@ apps:
     icon: settings.png
     type: warp-3
     title: 設定
+    tag:
+      - settings
+      - control panel
   theme.w3a:
     icon: theme.png
     type: warp-3
     title: カスタマイズ
+    tag:
+      - theme
+      - customize
+      - color setting
   demo.u1:
     icon: null
     type: uiscript-1
@@ -24,15 +31,49 @@ apps:
     icon: note.png
     type: warp-2
     title: ノート
+    tag:
+      - note
+      - memo
+      - text edit
   task.w3a:
     icon: manager.png
     type: warp-3
     title: タスクマネージャー
+    tag: task manager
   calc.w3a:
     icon: calc.png
     type: warp-3
     title: 計算機
+    tag: calc
+  webdemo.html:
+    icon: html5.png
+    type: html-1
+    title: HTMLデモ
   warp3demo.w3a:
     icon: noname.png
     type: warp-3
     title: Warp 3 デモ
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ
+
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ
+
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ
+
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ
+
+  wamo.w3a:
+    icon: files.png
+    type: warp-3
+    title: Warp 3 機能ラボ

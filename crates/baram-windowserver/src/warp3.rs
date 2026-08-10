@@ -62,7 +62,7 @@ impl ShadowMask {
                 }
             }
         }
-        for _ in 0..3 {
+        for _ in 0..2 {
             box_blur_alpha(&mut alpha, sw, sh, 4);
         }
         for (dst, value) in layer.buf_mut().iter_mut().zip(alpha) {
@@ -1779,7 +1779,7 @@ fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
     }
 }
 
-/// One separable box blur.  Three invocations are a fast Gaussian
+/// One separable box blur. Two invocations provide a fast softening
 /// approximation and need only integer additions/subtractions per pixel.
 fn box_blur_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     if width == 0 || height == 0 { return; }

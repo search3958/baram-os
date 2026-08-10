@@ -259,7 +259,7 @@ fn parallel_box_blur_v(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i32)
     baram_core::parallel::for_each(w, &pass, run_vertical_box_pass);
 }
 
-fn box_blur_3pass_scalar(
+fn box_blur_2pass_scalar(
     src: &[u32],
     dst: &mut [u32],
     tmp: &mut [u32],
@@ -271,11 +271,9 @@ fn box_blur_3pass_scalar(
     parallel_box_blur_v(tmp, dst, w, h, r);
     parallel_box_blur_h(dst, tmp, w, h, r);
     parallel_box_blur_v(tmp, dst, w, h, r);
-    parallel_box_blur_h(dst, tmp, w, h, r);
-    parallel_box_blur_v(tmp, dst, w, h, r);
 }
 
-fn box_blur_3pass_with_scratch(
+fn box_blur_2pass_with_scratch(
     src: &[u32],
     dst: &mut [u32],
     tmp: &mut [u32],
@@ -283,7 +281,7 @@ fn box_blur_3pass_with_scratch(
     h: usize,
     blur_r: i32,
 ) {
-    let r = (blur_r / 3).max(1);
+    let r = (blur_r / 2).max(1);
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
         unsafe {
@@ -291,19 +289,17 @@ fn box_blur_3pass_with_scratch(
             box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
             box_avx2::box_blur_h_simd8(dst, tmp, w, h, r);
             box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
-            box_avx2::box_blur_h_simd8(dst, tmp, w, h, r);
-            box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
         }
     }
     #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
     {
-        box_blur_3pass_scalar(src, dst, tmp, w, h, r);
+        box_blur_2pass_scalar(src, dst, tmp, w, h, r);
     }
 }
 
-fn box_blur_3pass(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
+fn box_blur_2pass(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
     let mut tmp = alloc::vec![0u32; w * h];
-    box_blur_3pass_with_scratch(src, dst, &mut tmp, w, h, blur_r);
+    box_blur_2pass_with_scratch(src, dst, &mut tmp, w, h, blur_r);
 }
 
 // ----------------------------------------------------------------------------
@@ -728,7 +724,7 @@ pub fn blur_region_to(src: &[u32], dst: &mut [u32], w: usize, y_start: usize, y_
     let region = &src[y_start * w..y_end * w];
 
     if blur_r >= 10 {
-        box_blur_3pass(region, dst, w, region_h, blur_r);
+        box_blur_2pass(region, dst, w, region_h, blur_r);
     } else {
         gaussian_convolution(region, dst, w, region_h, blur_r);
     }
@@ -752,7 +748,7 @@ pub fn blur_region_to_with_scratch(
     }
     let region = &src[y_start * w..y_end * w];
     if blur_r >= 10 {
-        box_blur_3pass_with_scratch(
+        box_blur_2pass_with_scratch(
             region,
             &mut dst[..len],
             &mut scratch[..len],
@@ -771,7 +767,7 @@ pub fn blur_region_darkened_to(src: &[u32], dst: &mut [u32], w: usize, y_start: 
     let region = &src[y_start * w..y_end * w];
 
     if blur_r >= 10 {
-        box_blur_3pass(region, dst, w, region_h, blur_r);
+        box_blur_2pass(region, dst, w, region_h, blur_r);
     } else {
         gaussian_convolution(region, dst, w, region_h, blur_r);
     }
