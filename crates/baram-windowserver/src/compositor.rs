@@ -943,6 +943,7 @@ pub fn render_scene(
     launcher_scroll_y: usize,
     launcher_anim_phase: i8,
     launcher_anim_elapsed_ms: u32,
+    launcher_scroll_changed: bool,
     launcher_only_redraw: bool,
     taskbar_only: bool,
     clock_hh: u8,
@@ -1117,8 +1118,9 @@ pub fn render_scene(
             };
 
             let building_launcher_cache = cached_launcher_layer.is_none();
+            let rebuild_launcher_content = building_launcher_cache || launcher_scroll_changed;
             // Cache the complete glass-and-shadow base once per opening.
-            if building_launcher_cache {
+            if rebuild_launcher_content {
                 const CACHE_PAD: usize = 54;
                 let cache_x = panel_x.saturating_sub(CACHE_PAD);
                 let cache_y = panel_y.saturating_sub(CACHE_PAD);
@@ -1202,10 +1204,11 @@ pub fn render_scene(
                 let cache_w = cache_x1.saturating_sub(cache_x);
                 let cache_h = cache_y1.saturating_sub(cache_y);
                 if panel_base.len() == cache_w * cache_h * 4 {
+                    let panel_start = cache_w * cache_h;
                     for py in 0..cache_h {
                         let dst_y = cache_y + py;
                         if dst_y < clip_y0 || dst_y >= clip_y1 { continue; }
-                        let src_start = py * cache_w;
+                        let src_start = panel_start + py * cache_w;
                         let draw_x0 = cache_x.max(clip_x0);
                         let draw_x1 = cache_x1.min(clip_x1);
                         if draw_x0 >= draw_x1 { continue; }
@@ -1387,6 +1390,28 @@ pub fn render_scene(
                 let cache_h = cache_y1.saturating_sub(cache_y);
                 let cache_len = cache_w * cache_h;
                 if cache.len() == cache_len * 4 && launcher_alpha != 0 {
+                    if launcher_anim_phase == 0 {
+                        layer.copy_rect_buffer(
+                            &cache[..cache_len],
+                            cache_w,
+                            cache_h,
+                            cache_x,
+                            cache_y,
+                        );
+                        // No opacity or internal motion remains in steady and
+                        // scroll frames, so the finished cache is final.
+                    } else if launcher_anim_phase < 0 {
+                        // Closing has no internal translation. Feed the final
+                        // cached launcher straight into the SIMD alpha pass.
+                        layer.composit_rect_global_alpha(
+                            &cache[..cache_len],
+                            cache_w,
+                            cache_h,
+                            cache_x,
+                            cache_y,
+                            launcher_alpha as u8,
+                        );
+                    } else {
                     cache.copy_within(cache_len..cache_len * 2, cache_len * 3);
 
                     let content_x = grid_x - cache_x;
@@ -1412,6 +1437,7 @@ pub fn render_scene(
                         cache_y,
                         launcher_alpha as u8,
                     );
+                    }
                 }
             }
     }
@@ -1467,6 +1493,7 @@ pub fn render_frame(
     launcher_scroll_y: usize,
     launcher_anim_phase: i8,
     launcher_anim_elapsed_ms: u32,
+    launcher_scroll_changed: bool,
     launcher_only_redraw: bool,
     taskbar_only: bool,
     clock_hh: u8,
@@ -1503,6 +1530,7 @@ pub fn render_frame(
         launcher_scroll_y,
         launcher_anim_phase,
         launcher_anim_elapsed_ms,
+        launcher_scroll_changed,
         launcher_only_redraw,
         taskbar_only,
         clock_hh,

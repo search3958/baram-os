@@ -129,6 +129,7 @@ unsafe fn blend_global_alpha_avx2(src: *const u32, dst: *mut u32, len: usize, al
     }
 }
 
+
 pub struct LayerSystem {
     pub(crate) width: usize,
     pub(crate) height: usize,

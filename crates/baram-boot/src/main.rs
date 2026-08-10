@@ -54,6 +54,76 @@ fn kernel_pointer_event(
 }
 use nano_system::NanoSystem;
 
+struct UiMonotonicClock {
+    last: u64,
+    frequency_hz: u64,
+}
+
+impl UiMonotonicClock {
+    fn new() -> Option<Self> {
+        let frequency_hz = monotonic_counter_frequency()?;
+        Some(Self { last: monotonic_counter(), frequency_hz })
+    }
+
+    #[inline]
+    fn frame_delta_ms(&mut self) -> u64 {
+        let now = monotonic_counter();
+        let ticks = now.wrapping_sub(self.last);
+        self.last = now;
+        // Firmware and virtual CPUs occasionally expose an inaccurate TSC
+        // ratio or jump the counter. Never let one sample consume the entire
+        // animation, and always advance at least one timer quantum.
+        let measured = ((ticks as u128 * 1_000) / self.frequency_hz as u128) as u64;
+        measured.clamp(1, 16)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn monotonic_counter() -> u64 {
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn monotonic_counter_frequency() -> Option<u64> {
+    use core::arch::x86_64::{__cpuid, __cpuid_count};
+    unsafe {
+        let max_leaf = __cpuid(0).eax;
+        if max_leaf >= 0x15 {
+            let leaf = __cpuid_count(0x15, 0);
+            if leaf.eax != 0 && leaf.ebx != 0 && leaf.ecx != 0 {
+                return Some((leaf.ecx as u64).saturating_mul(leaf.ebx as u64) / leaf.eax as u64);
+            }
+        }
+        if max_leaf >= 0x16 {
+            let mhz = __cpuid(0x16).eax;
+            if mhz != 0 { return Some(mhz as u64 * 1_000_000); }
+        }
+        // Some virtual firmware hides leaves 0x15/0x16. Calibrate once at
+        // startup instead of falling back to coalesced timer-event counts.
+        let start = core::arch::x86_64::_rdtsc();
+        uefi::boot::stall(core::time::Duration::from_millis(10));
+        let elapsed = core::arch::x86_64::_rdtsc().wrapping_sub(start);
+        if elapsed != 0 { return Some(elapsed.saturating_mul(100)); }
+    }
+    None
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn monotonic_counter() -> u64 {
+    let value: u64;
+    unsafe { core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack, preserves_flags)); }
+    value
+}
+
+#[cfg(target_arch = "aarch64")]
+fn monotonic_counter_frequency() -> Option<u64> {
+    let value: u64;
+    unsafe { core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) value, options(nomem, nostack, preserves_flags)); }
+    if value == 0 { None } else { Some(value) }
+}
+
 fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let timer_event = nano.take_timer_event();
     let mut screen = match Screen::take() {
@@ -362,6 +432,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     // Monotonic UI clock driven by the already-configured 1 ms timer event.
     // Do not query the slow, wall-clock UEFI runtime service per frame.
     let mut ui_time_ms: u64 = 0;
+    let mut ui_clock = UiMonotonicClock::new();
     let mut next_present_ms: u64 = 0;
     let mut deferred_dirty = false;
 
@@ -441,6 +512,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         0,
         false,
         false,
+        false,
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
@@ -468,7 +540,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let mut events = [unsafe { core::ptr::read(timer) }];
             ui_timer_fired = uefi::boot::wait_for_event(&mut events).is_ok();
         }
-        if ui_timer_fired {
+        if let Some(ref mut clock) = ui_clock {
+            ui_time_ms = ui_time_ms.wrapping_add(clock.frame_delta_ms());
+        } else if ui_timer_fired {
             ui_time_ms = ui_time_ms.wrapping_add(1);
         }
 
@@ -1499,8 +1573,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
             dirty = true;
         }
-        if app_launcher_scroll.tick(transition_now_ns) {
-            cached_launcher_layer = None;
+        let launcher_scroll_changed = app_launcher_scroll.tick(transition_now_ns);
+        if launcher_scroll_changed {
             launcher_content_dirty = true;
             scene_dirty = true;
             dirty = true;
@@ -1512,7 +1586,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             launcher_anim_started_ms = ui_time_ms;
             launcher_anim_elapsed_ms = 0;
             launcher_render_visible = true;
-            launcher_content_dirty = true;
             scene_dirty = true;
             dirty = true;
         }
@@ -1742,15 +1815,23 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         let scroll_animating = wm.has_scroll_animation();
+        let continuous_motion = scroll_animating
+            || app_launcher_scroll.is_animating()
+            || launcher_anim_phase != 0;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
-        if dirty && ui_time_ms < next_present_ms && !cursor_moved && !scroll_input {
+        if dirty
+            && ui_time_ms < next_present_ms
+            && !cursor_moved
+            && !scroll_input
+            && !continuous_motion
+        {
             deferred_dirty = true;
             continue;
         }
 
         if dirty {
-            next_present_ms = ui_time_ms.saturating_add(if scroll_animating { 4 } else { 16 });
+            next_present_ms = ui_time_ms.saturating_add(if continuous_motion { 4 } else { 16 });
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
             if scene_dirty {
@@ -1769,7 +1850,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     || !bg_valid;
 
                 let launcher_changed = launcher_render_visible != prev_show_app_launcher;
-                let launcher_needs_redraw = launcher_changed || launcher_content_dirty;
+                let launcher_needs_redraw = launcher_changed
+                    || launcher_content_dirty
+                    || launcher_anim_phase != 0;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
                 let taskbar_only = taskbar_dirty
@@ -1782,14 +1865,20 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     && !launcher_render_visible
                     && !launcher_changed;
 
-                let launcher_only_redraw = launcher_anim_phase != 0
+                let launcher_only_redraw = (launcher_anim_phase != 0 || launcher_scroll_changed)
                     && launcher_needs_redraw
                     && cached_launcher_layer.is_some()
                     && bx1 <= bx0
                     && !taskbar_dirty
                     && !hud_dirty
-                    && bg_valid
-                    && !cursor_moved;
+                    && bg_valid;
+
+                let launcher_cursor_separate = cursor_moved
+                    && launcher_needs_redraw
+                    && bx1 <= bx0
+                    && !taskbar_dirty
+                    && !hud_dirty
+                    && bg_valid;
 
                 if taskbar_only {
                     let w = screen.width();
@@ -1851,8 +1940,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 let (mut fx0, mut fy0, mut fx1, mut fy1) = if taskbar_only {
                     (0, tb_y, w, h)
-                } else {
+                } else if cursor_moved && !launcher_cursor_separate {
                     (bx0.min(cx0), by0.min(cy0), bx1.max(cx1), by1.max(cy1))
+                } else {
+                    (bx0, by0, bx1, by1)
                 };
                 if taskbar_dirty && !taskbar_only {
                     fx0 = 0;
@@ -1916,6 +2007,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     app_launcher_scroll.position.max(0) as usize,
                     launcher_anim_phase,
                     launcher_anim_elapsed_ms,
+                    launcher_scroll_changed,
                     launcher_only_redraw,
                     taskbar_only,
                     clock_hh,
@@ -1958,6 +2050,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         app_launcher_scroll.position.max(0) as usize,
                         launcher_anim_phase,
                         launcher_anim_elapsed_ms,
+                        launcher_scroll_changed,
                         false,
                         false,
                         clock_hh,
@@ -1996,6 +2089,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 launcher_content_dirty = false;
                 wm.clear_pending_damage();
 
+                if launcher_cursor_separate {
+                    let buf = layer.buf_mut();
+                    for y in cy0..cy1 {
+                        let s = y * w + cx0;
+                        let e = y * w + cx1;
+                        buf[s..e].copy_from_slice(&cached_scene[s..e]);
+                    }
+                }
+
                 cursor::draw_cursor_into_layer(
                     &mut layer,
                     cursor_x,
@@ -2014,6 +2116,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     layer.flush(&mut screen);
                 } else {
                     layer.flush_rect(&mut screen, fx0, fy0, fx1, fy1);
+                    if launcher_cursor_separate {
+                        layer.flush_rect(&mut screen, cx0, cy0, cx1, cy1);
+                    }
                     if hud_redraw_separate {
                         layer.flush_rect(&mut screen, 0, hud_y0, w, tb_y);
                     }
