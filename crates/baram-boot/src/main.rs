@@ -871,9 +871,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         .scroll
                         .saturating_neg()
                         .saturating_mul(baram_windowserver::window::scroll_speed());
-                    let launcher_scroll_delta = ev
-                        .scroll
-                        .saturating_mul(baram_windowserver::window::scroll_speed());
                     let panel_y = screen.height() as i32 - TASKBAR_H as i32 - (3 * 88 + 24) as i32;
                     let on_launcher = show_app_launcher
                         && cx >= 12
@@ -883,20 +880,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     if on_launcher {
                         app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                         launcher_scroll_input_changed |=
-                            app_launcher_scroll.scroll_immediate(launcher_scroll_delta);
+                            app_launcher_scroll.scroll(window_scroll_delta);
                         launcher_content_dirty |= launcher_scroll_input_changed;
-                        if launcher_scroll_input_changed {
-                            // Rebuild the finished launcher once at the new
-                            // viewport. In-place content replacement can use
-                            // stale panel pixels and blank the item layer.
-                            cached_launcher_layer = None;
+                        dirty = true;
+                        scene_dirty = true;
+                    } else if !show_app_launcher {
+                        if let Some(id) = wm.window_at(cx, cy) {
+                            wm.scroll_window(id, window_scroll_delta);
+                            dirty = true;
+                            scene_dirty = true;
                         }
-                        dirty = true;
-                        scene_dirty = true;
-                    } else if let Some(id) = wm.window_at(cx, cy) {
-                        wm.scroll_window(id, window_scroll_delta);
-                        dirty = true;
-                        scene_dirty = true;
                     }
                 }
 

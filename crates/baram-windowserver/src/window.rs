@@ -40,24 +40,18 @@ impl SmoothScroll {
         self.start = self.start.min(self.max);
     }
 
-    pub fn scroll(&mut self, delta: i32) {
+    pub fn scroll(&mut self, delta: i32) -> bool {
         let next = self.target.saturating_add(delta).clamp(0, self.max);
-        if next != self.target {
-            if self.position == self.target {
-                self.start = self.position;
-                self.started_ns = None;
-            }
-            self.target = next;
+        if next == self.target {
+            return false;
         }
-    }
-
-    pub fn scroll_immediate(&mut self, delta: i32) -> bool {
-        let next = self.position.saturating_add(delta).clamp(0, self.max);
-        if next == self.position { return false; }
-        self.position = next;
+        // Match Window/Warp3 scrolling: extend the current target without
+        // restarting an active animation for every wheel event.
+        if self.position == self.target {
+            self.start = self.position;
+            self.started_ns = None;
+        }
         self.target = next;
-        self.start = next;
-        self.started_ns = None;
         true
     }
 

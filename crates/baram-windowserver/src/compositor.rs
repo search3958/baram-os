@@ -1142,7 +1142,7 @@ pub fn render_scene(
             let building_launcher_cache = cached_launcher_layer.is_none();
             let rebuild_launcher_content = building_launcher_cache || launcher_scroll_changed;
             // Cache the complete glass-and-shadow base once per opening.
-            if rebuild_launcher_content {
+            if building_launcher_cache {
                 const CACHE_PAD: usize = 54;
                 let cache_x = panel_x.saturating_sub(CACHE_PAD);
                 let cache_y = panel_y.saturating_sub(CACHE_PAD);
@@ -1216,7 +1216,7 @@ pub fn render_scene(
                 *cached_launcher_layer = Some(cache);
             }
             let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
-            if building_launcher_cache {
+            if rebuild_launcher_content {
             if let Some(panel_base) = cached_launcher_layer.as_deref() {
                 const CACHE_PAD: usize = 54;
                 let cache_x = panel_x.saturating_sub(CACHE_PAD);
