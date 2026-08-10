@@ -23,6 +23,7 @@ pub struct TaskbarSurface {
     base: Vec<u32>,
     base_valid: bool,
     valid: bool,
+    search_dirty: bool,
 }
 
 impl TaskbarSurface {
@@ -35,12 +36,24 @@ impl TaskbarSurface {
             base: alloc::vec![0; width * TASKBAR_H],
             base_valid: false,
             valid: false,
+            search_dirty: false,
         }
     }
 
     #[inline]
     pub fn invalidate(&mut self) {
         self.valid = false;
+        self.search_dirty = false;
+    }
+
+    #[inline]
+    pub fn invalidate_search(&mut self) {
+        if self.valid { self.search_dirty = true; }
+    }
+
+    #[inline]
+    pub fn is_search_dirty(&self) -> bool {
+        self.search_dirty
     }
 
     #[inline]
@@ -709,6 +722,48 @@ fn draw_taskbar_text(
     }
 }
 
+fn draw_taskbar_search(layer: &mut LayerSystem, search_focused: bool, search_query: &str) {
+    let search_x = 12usize;
+    let search_h = 32usize;
+    let search_y = (TASKBAR_H - search_h) / 2;
+    let search_w = 190usize;
+    let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
+    let search_alpha = if search_focused { 255 } else { 128 };
+    draw_control_shadow(layer, search_x, search_y, search_w, search_h, search_h / 2, 2, 0x33);
+    blend_rounded_rect(
+        layer,
+        search_x,
+        search_y,
+        search_w,
+        search_h,
+        search_h / 2,
+        search_bg,
+        search_alpha,
+    );
+    let text = if search_query.is_empty() { "アプリを検索..." } else { search_query };
+    let text_color = if search_query.is_empty() {
+        config::get_color("ui-theme/color/muted", Color::MUTED)
+    } else {
+        config::get_color("ui-theme/color/text", Color::TEXT)
+    };
+    draw_taskbar_text(layer, text, search_x + 12, search_y as i32 + 22, text_color, 18.0);
+}
+
+fn redraw_taskbar_search(surface: &mut TaskbarSurface, search_focused: bool, search_query: &str) {
+    const SEARCH_DAMAGE_W: usize = 226;
+    let w = surface.layer.width();
+    let copy_w = SEARCH_DAMAGE_W.min(w);
+    if surface.base_valid {
+        for y in 0..TASKBAR_H {
+            let start = y * w;
+            surface.layer.buf_mut()[start..start + copy_w]
+                .copy_from_slice(&surface.base[start..start + copy_w]);
+        }
+    }
+    draw_taskbar_search(&mut surface.layer, search_focused, search_query);
+    surface.search_dirty = false;
+}
+
 fn redraw_taskbar(
     surface: &mut TaskbarSurface,
     wm: &WindowManager,
@@ -874,43 +929,10 @@ fn redraw_taskbar(
         );
     }
 
-    let search_x = 12usize;
-    let search_h = 32usize;
-    let search_y = (TASKBAR_H - search_h) / 2;
-    let search_w = 190usize;
-    let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
-    let search_alpha = if search_focused { 255 } else { 128 };
-    draw_control_shadow(layer, search_x, search_y, search_w, search_h, search_h / 2, 2, 0x33);
-    blend_rounded_rect(
-        layer,
-        search_x,
-        search_y,
-        search_w,
-        search_h,
-        search_h / 2,
-        search_bg,
-        search_alpha,
-    );
-    let text = if search_query.is_empty() {
-        "アプリを検索..."
-    } else {
-        search_query
-    };
-    let text_color = if search_query.is_empty() {
-        config::get_color("ui-theme/color/muted", Color::MUTED)
-    } else {
-        config::get_color("ui-theme/color/text", Color::TEXT)
-    };
-    draw_taskbar_text(
-        layer,
-        text,
-        search_x + 12,
-        search_y as i32 + 22,
-        text_color,
-        18.0,
-    );
+    draw_taskbar_search(layer, search_focused, search_query);
     layer.mark_all_dirty();
     surface.valid = true;
+    surface.search_dirty = false;
 }
 
 pub fn render_scene(
@@ -1455,6 +1477,8 @@ pub fn render_scene(
             clock_mm,
             battery_pct,
         );
+    } else if taskbar.is_search_dirty() {
+        redraw_taskbar_search(taskbar, search_focused, search_query);
     }
     taskbar.composite_onto(layer, tb_y);
 }
