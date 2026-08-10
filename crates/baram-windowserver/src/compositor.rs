@@ -1157,10 +1157,10 @@ pub fn render_scene(
                     panel_base.buf_mut()[dst_start..dst_start + cache_w]
                         .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
                 }
-                // Two box-blur passes with r=26 can read up to 52px beyond
+                // Two box-blur passes with r=13 can read up to 26px beyond
                 // the result. Keep that margin around the panel, rather than
                 // filtering the entire screen.
-                const BLUR_RADIUS: usize = 52;
+                const BLUR_RADIUS: usize = 26;
                 let blur_x0 = panel_x.saturating_sub(BLUR_RADIUS);
                 let blur_y0 = panel_y.saturating_sub(BLUR_RADIUS);
                 let blur_x1 = (panel_x + panel_w + BLUR_RADIUS).min(w);
@@ -1175,7 +1175,7 @@ pub fn render_scene(
                         .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
                 }
                 let mut blurred = alloc::vec![0u32; blur_source.len()];
-                blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 52);
+                blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 26);
                 let underlay = panel_base.buf_ref().to_vec();
                 draw_soft_box_shadow(
                     &mut panel_base,

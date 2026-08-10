@@ -575,6 +575,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         deferred_dirty = false;
         let mut cursor_moved = false;
         let mut scroll_input = false;
+        let mut launcher_scroll_input_changed = false;
         let mut ui_timer_fired = timer_event.is_none();
 
         if let Some(ref timer) = timer_event {
@@ -866,9 +867,12 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 if ev.scroll != 0 {
                     scroll_input = true;
-                    let scroll_delta = ev
+                    let window_scroll_delta = ev
                         .scroll
                         .saturating_neg()
+                        .saturating_mul(baram_windowserver::window::scroll_speed());
+                    let launcher_scroll_delta = ev
+                        .scroll
                         .saturating_mul(baram_windowserver::window::scroll_speed());
                     let panel_y = screen.height() as i32 - TASKBAR_H as i32 - (3 * 88 + 24) as i32;
                     let on_launcher = show_app_launcher
@@ -878,11 +882,19 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         && cy < screen.height() as i32 - TASKBAR_H as i32;
                     if on_launcher {
                         app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
-                        app_launcher_scroll.scroll(scroll_delta);
+                        launcher_scroll_input_changed |=
+                            app_launcher_scroll.scroll_immediate(launcher_scroll_delta);
+                        launcher_content_dirty |= launcher_scroll_input_changed;
+                        if launcher_scroll_input_changed {
+                            // Rebuild the finished launcher once at the new
+                            // viewport. In-place content replacement can use
+                            // stale panel pixels and blank the item layer.
+                            cached_launcher_layer = None;
+                        }
                         dirty = true;
                         scene_dirty = true;
                     } else if let Some(id) = wm.window_at(cx, cy) {
-                        wm.scroll_window(id, scroll_delta);
+                        wm.scroll_window(id, window_scroll_delta);
                         dirty = true;
                         scene_dirty = true;
                     }
@@ -1614,7 +1626,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
             dirty = true;
         }
-        let launcher_scroll_changed = app_launcher_scroll.tick(transition_now_ns);
+        let launcher_scroll_changed = launcher_scroll_input_changed
+            || app_launcher_scroll.tick(transition_now_ns);
         if launcher_scroll_changed {
             launcher_content_dirty = true;
             scene_dirty = true;

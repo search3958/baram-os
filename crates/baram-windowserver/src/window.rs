@@ -51,6 +51,16 @@ impl SmoothScroll {
         }
     }
 
+    pub fn scroll_immediate(&mut self, delta: i32) -> bool {
+        let next = self.position.saturating_add(delta).clamp(0, self.max);
+        if next == self.position { return false; }
+        self.position = next;
+        self.target = next;
+        self.start = next;
+        self.started_ns = None;
+        true
+    }
+
     pub fn tick(&mut self, now_ns: u64) -> bool {
         if self.position == self.target {
             self.started_ns = None;
