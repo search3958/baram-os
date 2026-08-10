@@ -386,6 +386,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let hover_apps_icon = false;
     let mut prev_show_app_launcher: bool = false;
     let mut launcher_content_dirty: bool = false;
+    let mut launcher_render_visible = false;
+    let mut launcher_target_prev = false;
+    let mut launcher_anim_phase: i8 = 0; // 1 opening, -1 closing
+    let mut launcher_anim_started_ms = 0u64;
+    let mut launcher_anim_elapsed_ms = 0u32;
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
 
@@ -425,13 +430,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         display_state.hud_enabled,
         &mut bg_cache,
         false,
-        show_app_launcher,
+        launcher_render_visible,
         &app_list,
         &app_icon_list,
         hover_apps_icon,
         app_search_focused,
         &app_search_query,
         app_launcher_scroll.position.max(0) as usize,
+        0,
+        0,
+        false,
         false,
         clock_hh,
         clock_mm,
@@ -498,6 +506,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 );
                 app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                 show_app_launcher = true;
+                cached_launcher_layer = None;
                 launcher_content_dirty = true;
                 taskbar_surface.invalidate();
                 dirty = true;
@@ -535,6 +544,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     );
                     app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
                     show_app_launcher = app_search_focused || !app_search_query.is_empty();
+                    cached_launcher_layer = None;
                     launcher_content_dirty = true;
                     taskbar_surface.invalidate();
                     handled = true;
@@ -1490,6 +1500,32 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             dirty = true;
         }
         if app_launcher_scroll.tick(transition_now_ns) {
+            cached_launcher_layer = None;
+            launcher_content_dirty = true;
+            scene_dirty = true;
+            dirty = true;
+        }
+
+        if show_app_launcher != launcher_target_prev {
+            launcher_target_prev = show_app_launcher;
+            launcher_anim_phase = if show_app_launcher { 1 } else { -1 };
+            launcher_anim_started_ms = ui_time_ms;
+            launcher_anim_elapsed_ms = 0;
+            launcher_render_visible = true;
+            launcher_content_dirty = true;
+            scene_dirty = true;
+            dirty = true;
+        }
+        if launcher_anim_phase != 0 {
+            launcher_anim_elapsed_ms = ui_time_ms.saturating_sub(launcher_anim_started_ms).min(u32::MAX as u64) as u32;
+            let duration = 200;
+            if launcher_anim_elapsed_ms >= duration {
+                if launcher_anim_phase < 0 {
+                    launcher_render_visible = false;
+                    cached_launcher_layer = None;
+                }
+                launcher_anim_phase = 0;
+            }
             launcher_content_dirty = true;
             scene_dirty = true;
             dirty = true;
@@ -1732,7 +1768,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     || by1 > screen.height().saturating_sub(TASKBAR_H)
                     || !bg_valid;
 
-                let launcher_changed = show_app_launcher != prev_show_app_launcher;
+                let launcher_changed = launcher_render_visible != prev_show_app_launcher;
                 let launcher_needs_redraw = launcher_changed || launcher_content_dirty;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
@@ -1743,8 +1779,17 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     && wm.focused_id == prev_focused_id
                     && prev_wallpaper_idx == display_state.wallpaper_index
                     && bg_cache.is_some()
-                    && !show_app_launcher
+                    && !launcher_render_visible
                     && !launcher_changed;
+
+                let launcher_only_redraw = launcher_anim_phase != 0
+                    && launcher_needs_redraw
+                    && cached_launcher_layer.is_some()
+                    && bx1 <= bx0
+                    && !taskbar_dirty
+                    && !hud_dirty
+                    && bg_valid
+                    && !cursor_moved;
 
                 if taskbar_only {
                     let w = screen.width();
@@ -1862,13 +1907,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     display_state.hud_enabled,
                     &mut bg_cache,
                     bg_valid,
-                    show_app_launcher,
+                    launcher_render_visible,
                     &app_list,
                     &app_icon_list,
                     hover_apps_icon,
                     app_search_focused,
                     &app_search_query,
                     app_launcher_scroll.position.max(0) as usize,
+                    launcher_anim_phase,
+                    launcher_anim_elapsed_ms,
+                    launcher_only_redraw,
                     taskbar_only,
                     clock_hh,
                     clock_mm,
@@ -1901,13 +1949,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         display_state.hud_enabled,
                         &mut bg_cache,
                         true,
-                        show_app_launcher,
+                        launcher_render_visible,
                         &app_list,
                         &app_icon_list,
                         hover_apps_icon,
                         app_search_focused,
                         &app_search_query,
                         app_launcher_scroll.position.max(0) as usize,
+                        launcher_anim_phase,
+                        launcher_anim_elapsed_ms,
+                        false,
                         false,
                         clock_hh,
                         clock_mm,
@@ -1952,7 +2003,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     is_resizing,
                     display_state.pointer_size,
                 );
-                prev_show_app_launcher = show_app_launcher;
+                prev_show_app_launcher = launcher_render_visible;
                 let fw = fx1 - fx0;
                 let fh = fy1 - fy0;
                 let full_area = w * h;

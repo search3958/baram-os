@@ -941,6 +941,9 @@ pub fn render_scene(
     search_focused: bool,
     search_query: &str,
     launcher_scroll_y: usize,
+    launcher_anim_phase: i8,
+    launcher_anim_elapsed_ms: u32,
+    launcher_only_redraw: bool,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
@@ -950,7 +953,37 @@ pub fn render_scene(
     let h = layer.height();
     let tb_y = h.saturating_sub(TASKBAR_H);
 
-    if !taskbar_only {
+    // During launcher-only animation frames, restore the small captured
+    // underlay instead of rebuilding the wallpaper, HUD, and every window.
+    if launcher_only_redraw {
+        let grid_h = 3 * (52 + 20 + 16);
+        let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+        let panel_x = 12usize;
+        let panel_y = grid_y.saturating_sub(8);
+        let panel_w = 4 * (52 + 16) + 16;
+        let panel_h = grid_h + 16;
+        const CACHE_PAD: usize = 54;
+        let cache_x = panel_x.saturating_sub(CACHE_PAD);
+        let cache_y = panel_y.saturating_sub(CACHE_PAD);
+        let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+        let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+        let cache_w = cache_x1.saturating_sub(cache_x);
+        let cache_h = cache_y1.saturating_sub(cache_y);
+        let cache_len = cache_w * cache_h;
+        if let Some(cache) = cached_launcher_layer.as_deref() {
+            if cache.len() == cache_len * 4 {
+                layer.copy_rect_buffer(
+                    &cache[cache_len * 2..cache_len * 3],
+                    cache_w,
+                    cache_h,
+                    cache_x,
+                    cache_y,
+                );
+            }
+        }
+    }
+
+    if !taskbar_only && !launcher_only_redraw {
         if bg_cache_valid {
             if let Some(ref cached) = bg_cache {
                 layer.copy_from_screen_buffer(cached);
@@ -981,7 +1014,7 @@ pub fn render_scene(
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    if hud_enabled && !taskbar_only {
+    if hud_enabled && !taskbar_only && !launcher_only_redraw {
         if let Some(ref bg) = bg_cache {
             let hud_y0 = (tb_y as i32 - 44).max(0) as usize;
             let hud_y1 = tb_y;
@@ -1038,7 +1071,7 @@ pub fn render_scene(
     }
 
     // Stable z-order: background -> HUD -> windows/launcher -> taskbar.
-    if !taskbar_only {
+    if !taskbar_only && !launcher_only_redraw {
         wm.draw_all(
             layer,
             ui_win_id.map(|id| (id, ui_commands)),
@@ -1065,9 +1098,27 @@ pub fn render_scene(
             let panel_y = grid_y.saturating_sub(8);
             let panel_w = grid_w + 16;
             let panel_radius = 26usize;
+            let launcher_alpha = if launcher_anim_phase > 0 {
+                let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+                (ease_out_cubic(t) * 255.0) as u32
+            } else if launcher_anim_phase < 0 {
+                let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+                ((1.0 - t * t * t) * 255.0) as u32
+            } else {
+                255
+            };
+            // The complete launcher is cached as one layer. Animation only
+            // changes this layer's position and global opacity.
+            let launcher_offset_y = if launcher_anim_phase > 0 {
+                let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+                ((1.0 - ease_out_cubic(t)) * 16.0) as usize
+            } else {
+                0
+            };
 
+            let building_launcher_cache = cached_launcher_layer.is_none();
             // Cache the complete glass-and-shadow base once per opening.
-            if cached_launcher_layer.is_none() {
+            if building_launcher_cache {
                 const CACHE_PAD: usize = 54;
                 let cache_x = panel_x.saturating_sub(CACHE_PAD);
                 let cache_y = panel_y.saturating_sub(CACHE_PAD);
@@ -1101,6 +1152,7 @@ pub fn render_scene(
                 }
                 let mut blurred = alloc::vec![0u32; blur_source.len()];
                 blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 52);
+                let underlay = panel_base.buf_ref().to_vec();
                 draw_soft_box_shadow(
                     &mut panel_base,
                     panel_x - cache_x,
@@ -1131,10 +1183,16 @@ pub fn render_scene(
                     Color::rgb(0xf5, 0xf5, 0xf5),
                     150,
                 );
-                *cached_launcher_layer = Some(panel_base.buf_ref().to_vec());
+                let panel = panel_base.buf_ref();
+                let mut cache = Vec::with_capacity(panel.len() * 4);
+                cache.extend_from_slice(panel);     // fully composed launcher
+                cache.extend_from_slice(panel);     // fixed glass background
+                cache.extend_from_slice(&underlay); // captured screen below it
+                cache.extend_from_slice(panel);     // per-frame layer scratch
+                *cached_launcher_layer = Some(cache);
             }
-            let mut lsys = LayerSystem::new(w, h);
-            lsys.copy_from_screen_buffer(layer.buf_ref());
+            let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+            if building_launcher_cache {
             if let Some(panel_base) = cached_launcher_layer.as_deref() {
                 const CACHE_PAD: usize = 54;
                 let cache_x = panel_x.saturating_sub(CACHE_PAD);
@@ -1143,18 +1201,25 @@ pub fn render_scene(
                 let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
                 let cache_w = cache_x1.saturating_sub(cache_x);
                 let cache_h = cache_y1.saturating_sub(cache_y);
-                if panel_base.len() == cache_w * cache_h {
+                if panel_base.len() == cache_w * cache_h * 4 {
                     for py in 0..cache_h {
+                        let dst_y = cache_y + py;
+                        if dst_y < clip_y0 || dst_y >= clip_y1 { continue; }
                         let src_start = py * cache_w;
-                        let dst_start = (cache_y + py) * w + cache_x;
-                        lsys.buf_mut()[dst_start..dst_start + cache_w]
-                            .copy_from_slice(&panel_base[src_start..src_start + cache_w]);
+                        let draw_x0 = cache_x.max(clip_x0);
+                        let draw_x1 = cache_x1.min(clip_x1);
+                        if draw_x0 >= draw_x1 { continue; }
+                        let src_start = src_start + draw_x0 - cache_x;
+                        let dst_start = dst_y * w + draw_x0;
+                        let draw_w = draw_x1 - draw_x0;
+                        layer.buf_mut()[dst_start..dst_start + draw_w]
+                            .copy_from_slice(&panel_base[src_start..src_start + draw_w]);
                     }
                 }
             }
 
             if app_list.is_empty() {
-                lsys.put_str(
+                layer.put_str(
                     28,
                     content_y + 8,
                     "該当するアプリはありません",
@@ -1165,21 +1230,34 @@ pub fn render_scene(
             let content_rows = ((app_list.len() + cols - 1) / cols).max(visible_rows);
             let content_h = content_rows * cell_h;
             let scroll_y = launcher_scroll_y.min(content_h.saturating_sub(grid_h));
-            let mut content = LayerSystem::new_transparent(grid_w, content_h);
+            // Keep the scratch surface bounded to the viewport. The old code
+            // allocated and cleared a surface as tall as the complete app
+            // list for every animation frame.
+            let first_scratch_row = (scroll_y / cell_h).saturating_sub(1);
+            let scratch_y = first_scratch_row * cell_h;
+            let viewport_src_y = scroll_y - scratch_y;
+            let scratch_h = (grid_h + cell_h * 2).min(content_h.saturating_sub(scratch_y));
+            let mut content = LayerSystem::new_transparent(grid_w, scratch_h);
             // Antialiased pixels must be blended against the actual panel
             // background, not transparent black. Seed the visible viewport
             // before rendering its icons and labels.
-            for py in 0..grid_h {
-                let src_start = (content_y + py) * w + grid_x;
-                let dst_start = (scroll_y + py) * grid_w;
+            for py in 0..scratch_h {
+                let screen_y = content_y
+                    .saturating_add(py)
+                    .saturating_sub(viewport_src_y);
+                if screen_y >= h { continue; }
+                let src_start = screen_y * w + grid_x;
+                let dst_start = py * grid_w;
                 content.buf_mut()[dst_start..dst_start + grid_w]
-                    .copy_from_slice(&lsys.buf_ref()[src_start..src_start + grid_w]);
+                    .copy_from_slice(&layer.buf_ref()[src_start..src_start + grid_w]);
             }
             for (i, name) in app_list.iter().enumerate() {
                 let col = i % cols;
                 let row = i / cols;
                 let cx = col * cell_w + icon_gap / 2;
-                let cy = row * cell_h;
+                let item_y = row * cell_h;
+                if item_y + cell_h <= scratch_y || item_y >= scratch_y + scratch_h { continue; }
+                let cy = item_y - scratch_y;
 
                 content.fill_circle(
                     cx + icon_size / 2,
@@ -1206,7 +1284,7 @@ pub fn render_scene(
                                 }
                                 let sx = cx + pad + px;
                                 let sy = cy + pad + py;
-                                if sx >= grid_w || sy >= content_h {
+                                if sx >= grid_w || sy >= scratch_h {
                                     continue;
                                 }
                                 let idx = sy * grid_w + sx;
@@ -1253,8 +1331,89 @@ pub fn render_scene(
                 let label_color = Color::BLACK;
                 content.put_str(tx, ty, &display_name, label_color);
             }
-            lsys.composit_rect(&content, grid_x, content_y, 0, scroll_y, grid_w, grid_h);
-        layer.copy_rect_buffer(lsys.buf_ref(), w, tb_y, 0, 0);
+            layer.composit_rect_opaque(
+                &content,
+                grid_x,
+                content_y,
+                0,
+                viewport_src_y,
+                grid_w,
+                grid_h,
+            );
+
+            // Replace the first half with the fully composed launcher
+            // (glass, icons, and labels), then put the captured underlay back.
+            const CACHE_PAD: usize = 54;
+            let cache_x = panel_x.saturating_sub(CACHE_PAD);
+            let cache_y = panel_y.saturating_sub(CACHE_PAD);
+            let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+            let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+            let cache_w = cache_x1.saturating_sub(cache_x);
+            let cache_h = cache_y1.saturating_sub(cache_y);
+            let cache_len = cache_w * cache_h;
+            if let Some(cache) = cached_launcher_layer.as_mut() {
+                if cache.len() == cache_len * 4 {
+                    for py in 0..cache_h {
+                        let src_start = (cache_y + py) * w + cache_x;
+                        let dst_start = py * cache_w;
+                        cache[dst_start..dst_start + cache_w]
+                            .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+                    }
+                }
+            }
+            if let Some(cache) = cached_launcher_layer.as_deref() {
+                if cache.len() == cache_len * 4 {
+                    layer.copy_rect_buffer(
+                        &cache[cache_len * 2..cache_len * 3],
+                        cache_w,
+                        cache_h,
+                        cache_x,
+                        cache_y,
+                    );
+                }
+            }
+            }
+
+            // Build one launcher layer from a fixed glass background plus the
+            // cached app pixels shifted inside it. Then apply opacity once to
+            // that entire layer through the SIMD compositor.
+            if let Some(cache) = cached_launcher_layer.as_mut() {
+                const CACHE_PAD: usize = 54;
+                let cache_x = panel_x.saturating_sub(CACHE_PAD);
+                let cache_y = panel_y.saturating_sub(CACHE_PAD);
+                let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+                let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+                let cache_w = cache_x1.saturating_sub(cache_x);
+                let cache_h = cache_y1.saturating_sub(cache_y);
+                let cache_len = cache_w * cache_h;
+                if cache.len() == cache_len * 4 && launcher_alpha != 0 {
+                    cache.copy_within(cache_len..cache_len * 2, cache_len * 3);
+
+                    let content_x = grid_x - cache_x;
+                    let content_base_y = content_y - cache_y;
+                    for py in 0..grid_h {
+                        let dst_py = content_base_y + py + launcher_offset_y;
+                        if dst_py >= cache_h { continue; }
+                        let src_row = (content_base_y + py) * cache_w + content_x;
+                        let dst_row = dst_py * cache_w + content_x;
+                        for px in 0..grid_w {
+                            let src = src_row + px;
+                            if cache[src] != cache[cache_len + src] {
+                                cache[cache_len * 3 + dst_row + px] = cache[src];
+                            }
+                        }
+                    }
+
+                    layer.composit_rect_global_alpha(
+                        &cache[cache_len * 3..cache_len * 4],
+                        cache_w,
+                        cache_h,
+                        cache_x,
+                        cache_y,
+                        launcher_alpha as u8,
+                    );
+                }
+            }
     }
 
     if taskbar_dirty || !taskbar.is_valid() {
@@ -1306,6 +1465,9 @@ pub fn render_frame(
     search_focused: bool,
     search_query: &str,
     launcher_scroll_y: usize,
+    launcher_anim_phase: i8,
+    launcher_anim_elapsed_ms: u32,
+    launcher_only_redraw: bool,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
@@ -1339,6 +1501,9 @@ pub fn render_frame(
         search_focused,
         search_query,
         launcher_scroll_y,
+        launcher_anim_phase,
+        launcher_anim_elapsed_ms,
+        launcher_only_redraw,
         taskbar_only,
         clock_hh,
         clock_mm,
