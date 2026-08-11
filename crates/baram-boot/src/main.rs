@@ -54,6 +54,10 @@ fn kernel_pointer_event(
 }
 use nano_system::NanoSystem;
 
+// Keep this comfortably longer than the normal 16 ms present interval so
+// opening an app always has visible intermediate taskbar frames.
+const TASKBAR_ADD_ANIMATION_MS: u64 = 180;
+
 struct UiMonotonicClock {
     last: u64,
     frequency_hz: u64,
@@ -1850,7 +1854,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 tb_add_started_ms = Some(ui_time_ms);
             }
             let started = tb_add_started_ms.unwrap_or(ui_time_ms);
-            tb_add_progress = (ui_time_ms.saturating_sub(started) as f32 / 12.0).min(1.0);
+            tb_add_progress = (ui_time_ms.saturating_sub(started) as f32
+                / TASKBAR_ADD_ANIMATION_MS as f32)
+                .min(1.0);
             let remaining = 1.0 - tb_add_progress;
             let eased = 1.0 - remaining * remaining * remaining;
             tb_shift_x = 26.0 * (1.0 - eased);
@@ -1867,7 +1873,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let scroll_animating = wm.has_scroll_animation();
         let continuous_motion = scroll_animating
             || app_launcher_scroll.is_animating()
-            || launcher_anim_phase != 0;
+            || launcher_anim_phase != 0
+            || tb_add_progress >= 0.0
+            || tb_remove_progress >= 0.0;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
         if dirty
