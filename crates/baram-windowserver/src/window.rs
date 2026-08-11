@@ -194,9 +194,10 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     }
 }
 
-/// Blur the backdrop first, holding a 16px radius for the upper 12px and
-/// falling to 0px in one-pixel bands below it. The independent #F3F3F3
-/// transparency gradient is composited only after that backdrop pass.
+/// Blur the backdrop once at 16px, hold that result for the upper 12px, then
+/// smoothly return to the unblurred backdrop. This avoids visible blur-band
+/// seams and keeps the title-bar path to one blur pass. The #F3F3F3 alpha
+/// gradient is an independent overlay applied afterwards.
 fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
     if width == 0 || height == 0 {
         return;
@@ -213,29 +214,24 @@ fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width:
         backdrop[dst..dst + width].copy_from_slice(&layer.buf_ref()[src..src + width]);
     }
     let mut blurred = alloc::vec![0u32; backdrop.len()];
+    blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, BLUR_RADIUS as i32);
     let denominator = height.saturating_sub(1).max(1) as u32;
-    for radius in (1usize..=BLUR_RADIUS).rev() {
-        blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, radius as i32);
-        for row in 0..height {
-            let blur_radius = if row < FIXED_BLUR_HEIGHT {
-                BLUR_RADIUS
-            } else {
-                let fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1);
-                height.saturating_sub(1 + row) * BLUR_RADIUS / fade_height
-            };
-            if blur_radius != radius {
-                continue;
-            }
-            let blur_row = (y - sample_y0 + row) * width;
-            layer.composit_rect_global_alpha(
-                &blurred[blur_row..blur_row + width],
-                width,
-                1,
-                x,
-                y + row,
-                255,
-            );
-        }
+    let blur_fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1) as u32;
+    for row in 0..height {
+        let blur_alpha = if row < FIXED_BLUR_HEIGHT {
+            255
+        } else {
+            (height.saturating_sub(1 + row) as u32 * 255 / blur_fade_height) as u8
+        };
+        let blur_row = (y - sample_y0 + row) * width;
+        layer.composit_rect_global_alpha(
+            &blurred[blur_row..blur_row + width],
+            width,
+            1,
+            x,
+            y + row,
+            blur_alpha,
+        );
     }
 
     let color = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
