@@ -6,6 +6,7 @@ use baram_core::{Color, Screen};
 
 const SCROLL_ANIMATION_NS: u64 = 10_000_000;
 use baram_font::LayerFontExt;
+use baram_graphics::blur;
 use baram_graphics::svg;
 
 pub fn scroll_speed() -> i32 {
@@ -193,16 +194,47 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     }
 }
 
-/// Paint an #F3F3F3-like title-bar overlay that fades from opaque at the top
-/// to transparent at the bottom. The global-alpha compositor uses AVX2/NEON
-/// on supported targets, while the small solid row is allocated only once.
+/// Blur the backdrop first, with a 20px-to-0px vertical falloff, then place
+/// the independent #F3F3F3 transparency gradient above it. Two-pixel blur
+/// bands keep the falloff smooth while bounding redraw work.
 fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
     if width == 0 || height == 0 {
         return;
     }
+    const BLUR_RADIUS: usize = 20;
+    let sample_y0 = y.saturating_sub(BLUR_RADIUS);
+    let sample_y1 = (y + height + BLUR_RADIUS).min(layer.height());
+    let sample_h = sample_y1.saturating_sub(sample_y0);
+    let mut backdrop = alloc::vec![0u32; width * sample_h];
+    for row in 0..sample_h {
+        let src = (sample_y0 + row) * layer.width() + x;
+        let dst = row * width;
+        backdrop[dst..dst + width].copy_from_slice(&layer.buf_ref()[src..src + width]);
+    }
+    let mut blurred = alloc::vec![0u32; backdrop.len()];
+    let denominator = height.saturating_sub(1).max(1) as u32;
+    for radius in (2usize..=BLUR_RADIUS).rev().step_by(2) {
+        blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, radius as i32);
+        for row in 0..height {
+            let exact_radius = (height.saturating_sub(1 + row) * BLUR_RADIUS / denominator as usize) as usize;
+            let quantized_radius = ((exact_radius + 1) / 2 * 2).min(BLUR_RADIUS);
+            if quantized_radius != radius {
+                continue;
+            }
+            let blur_row = (y - sample_y0 + row) * width;
+            layer.composit_rect_global_alpha(
+                &blurred[blur_row..blur_row + width],
+                width,
+                1,
+                x,
+                y + row,
+                255,
+            );
+        }
+    }
+
     let color = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
     let solid_row = alloc::vec![color.0; width];
-    let denominator = height.saturating_sub(1).max(1) as u32;
     for row in 0..height {
         let alpha = 255 - (row as u32 * 255 / denominator) as u8;
         layer.composit_rect_global_alpha(&solid_row, width, 1, x, y + row, alpha);
