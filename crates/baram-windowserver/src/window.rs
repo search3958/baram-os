@@ -193,6 +193,22 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     }
 }
 
+/// Paint an #F3F3F3-like title-bar overlay that fades from opaque at the top
+/// to transparent at the bottom. The global-alpha compositor uses AVX2/NEON
+/// on supported targets, while the small solid row is allocated only once.
+fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    let color = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
+    let solid_row = alloc::vec![color.0; width];
+    let denominator = height.saturating_sub(1).max(1) as u32;
+    for row in 0..height {
+        let alpha = 255 - (row as u32 * 255 / denominator) as u8;
+        layer.composit_rect_global_alpha(&solid_row, width, 1, x, y + row, alpha);
+    }
+}
+
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("../../../data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("../../../data/close.svg");
@@ -1069,7 +1085,8 @@ impl WindowManager {
                     for i in 0..html_engines.len() {
                         if win_id == html_engines[i].0 {
                             let engine = &mut html_engines[i].1;
-                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            let content_top = if engine.is_warp3() { 0 } else { title_bar_h() };
+                            (*layer_ptr).push_clip(0, content_top, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             (*layer_ptr).pop_clip();
                             break;
@@ -1078,13 +1095,15 @@ impl WindowManager {
                     if self.interaction_blocked == Some(win_id) {
                         draw_settings_permission_overlay(&mut *layer_ptr, ww, wh);
                     }
-                    // Font glyph antialiasing is blended into the destination.
-                    // Never redraw the title during a body-only hover patch:
-                    // its glyph writer is intentionally not in the body clip.
-                    if damage.is_none() {
+                    // The Warp3 document reaches the top of the window and
+                    // therefore sits behind the title bar. Repaint the full
+                    // chrome only when this damage touches it; body-only
+                    // hover patches retain the cheap, clipped path.
+                    let repaint_title = damage.map_or(true, |(_, y0, _, _)| y0 < title_bar_h());
+                    (*layer_ptr).pop_clip();
+                    if repaint_title {
                         draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
                     }
-                    (*layer_ptr).pop_clip();
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
@@ -1507,20 +1526,8 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
         return;
     }
 
-    let (title_bg, _) = if w.focused {
-        (
-            config::get_color("ui-theme/color/panel", Color::PANEL),
-            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-        )
-    } else {
-        (
-            config::get_color("ui-theme/color/win_inactive", Color::WIN_INACTIVE),
-            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-        )
-    };
-
     let tb_h = title_bar_h().min(h_draw);
-    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h);
 
     let base_x = x as i32 + 10;
     let btn_y = y as i32 + 10;

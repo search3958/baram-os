@@ -7,7 +7,7 @@ extern crate alloc;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::app::Warp3Archive;
+use baram_bsd::{app::Warp3Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::ttf_font;
 use baram_font::LayerFontExt;
@@ -478,11 +478,13 @@ impl Warp3Engine {
         }
         self.width = width.max(1);
         self.height = height.max(1);
-        let title_bar = crate::window::title_bar_h() as i32;
         let document_width = self.width.min(960);
         let document_x = (self.width - document_width) / 2;
         let content_x = document_x + 14;
         let content_width = document_width - 28;
+        let title_bar = crate::window::title_bar_h() as i32;
+        // The background reaches the upper edge behind the transparent title
+        // bar, while document controls retain a clear title-bar-sized inset.
         let mut y = title_bar + 16;
         let roots = self.roots.clone();
         for idx in roots {
@@ -708,17 +710,16 @@ impl Warp3Engine {
         if !self.dirty && (self.repaint_from < self.content_height || self.toolbar_dirty) {
             self.paint_cached_layers();
         }
-        let title_bar = crate::window::title_bar_h();
         layer.fill_rect(
             0,
-            title_bar,
+            0,
             layer.width(),
-            layer.height().saturating_sub(title_bar),
+            layer.height(),
             html_bg(),
         );
         if let Some(document) = &self.document_layer {
-            let source_y = (self.scroll + title_bar as i32).max(0) as usize;
-            let target_y = title_bar;
+            let source_y = self.scroll.max(0) as usize;
+            let target_y = 0;
             let visible_h = layer.height().saturating_sub(target_y);
             if source_y < document.height() && visible_h > 0 {
                 layer.composit_rect_opaque(
@@ -1967,7 +1968,7 @@ fn parse_wait_ns(value: &str) -> u64 {
 }
 
 fn html_bg() -> Color {
-    Color::rgb(243, 243, 243)
+    config::get_color("ui-theme/color/win_bg", Color::rgb(243, 243, 243))
 }
 
 fn html_layer() -> Color {

@@ -20,7 +20,7 @@
             <muted>666666</muted>
             <border>D0D0D0</border>
             <taskbar>F5F5F5</taskbar>
-            <win_bg>FFFFFF</win_bg>
+            <win_bg>F3F3F3</win_bg>
             <win_inactive>E8E8E8</win_inactive>
             <card_bg>F5F5F5</card_bg>
             <shadow>A0A0A0</shadow>
