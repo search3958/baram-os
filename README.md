@@ -90,7 +90,7 @@ HTML/CSSアプリ表示機能には追加の外部ライブラリを使用して
 
 ### KCC-KP-CheonRiMa-Normal-KP-2011KPS
 - **ライセンス**：提供された TTF ファイル自体にライセンス通知が同梱されていないため、再配布条件は確認が必要です（OSS ライセンスとしては扱っていません）。
-- **用途**：HarmonyOS Sans にグリフがないハングル文字の描画フォールバックとして `data/KCC-KP-CheonRiMa-Normal-KP-2011KPS.ttf` を使用します。
+- **用途**：HarmonyOS Sans にグリフがないハングル文字の描画フォールバックとして `data/GothicA1-Medium.ttf` を使用します。
 
 ### blake3
 - **ライセンス**：CC0-1.0、Apache-2.0 または Apache-2.0 WITH LLVM-exception
