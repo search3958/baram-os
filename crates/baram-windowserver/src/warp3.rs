@@ -482,9 +482,9 @@ impl Warp3Engine {
         let document_x = (self.width - document_width) / 2;
         let content_x = document_x + 14;
         let content_width = document_width - 28;
-        // The document remains visible behind the title bar; this 16px inset
-        // is the intentional content margin for the newly exposed upper area.
-        let mut y = 16;
+        let title_bar = crate::window::title_bar_h() as i32;
+        // Keep the first document element clear of the title-bar overlay.
+        let mut y = title_bar + 16;
         let roots = self.roots.clone();
         for idx in roots {
             if self.nodes[idx].is("config") || self.nodes[idx].is("toolbar") {
@@ -493,8 +493,7 @@ impl Warp3Engine {
             let h = self.layout(idx, content_x, y, content_width);
             y += h + 12;
         }
-        self.content_height = (y + 48).max(self.height);
-        let title_bar = crate::window::title_bar_h() as i32;
+        self.content_height = (y + 48).max(title_bar + self.height);
         let toolbar_width = (self.width - 16).min(900);
         let toolbar_x = (self.width - toolbar_width) / 2;
         // Toolbars live in viewport coordinates.  They are deliberately not

@@ -2,6 +2,8 @@ use core::fmt::Write;
 use core::ptr;
 
 use baram_core::Color;
+use uefi::boot;
+use uefi::proto::console::serial::Serial;
 
 static mut FB_BASE: usize = 0;
 static mut FB_W: usize = 0;
@@ -184,6 +186,16 @@ struct FmtWriter {
     pos: usize,
 }
 
+fn serial_log(message: &str) {
+    let Ok(handle) = boot::get_handle_for_protocol::<Serial>() else {
+        return;
+    };
+    let Ok(mut serial) = boot::open_protocol_exclusive::<Serial>(handle) else {
+        return;
+    };
+    let _ = serial.write(message.as_bytes());
+}
+
 impl Write for FmtWriter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         for &b in s.as_bytes() {
@@ -198,6 +210,19 @@ impl Write for FmtWriter {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    let mut serial = FmtWriter {
+        buf: [0u8; 512],
+        pos: 0,
+    };
+    let _ = write!(serial, "BARAM PANIC: {}\r\n", info.message());
+    if let Some(location) = info.location() {
+        let _ = write!(serial, "at {}:{}\r\n", location.file(), location.line());
+    }
+    if serial.pos > 0 {
+        if let Ok(message) = core::str::from_utf8(&serial.buf[..serial.pos]) {
+            serial_log(message);
+        }
+    }
     unsafe {
         fill_screen(Color::rgb(0, 0, 0));
     }

@@ -194,19 +194,22 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     }
 }
 
-/// Blur the backdrop once at 16px, hold that result for the upper 12px, then
-/// smoothly return to the unblurred backdrop. This avoids visible blur-band
-/// seams and keeps the title-bar path to one blur pass. The #F3F3F3 alpha
-/// gradient is an independent overlay applied afterwards.
-fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+/// Build a separate progressive-blur layer from the title bar's top 40px.
+/// The upper 12px is a fixed 16px blur; below it, neighbouring integer blur
+/// radii are crossfaded so the 16px-to-0px falloff has no visible seams.
+fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
     if width == 0 || height == 0 {
         return;
     }
     const BLUR_RADIUS: usize = 16;
     const FIXED_BLUR_HEIGHT: usize = 12;
-    let sample_y0 = y.saturating_sub(BLUR_RADIUS);
-    let sample_y1 = (y + height + BLUR_RADIUS).min(layer.height());
+    const CAPTURE_HEIGHT: usize = 40;
+    let sample_y0 = y;
+    let sample_y1 = (y + CAPTURE_HEIGHT).min(layer.height());
     let sample_h = sample_y1.saturating_sub(sample_y0);
+    if sample_h == 0 {
+        return;
+    }
     let mut backdrop = alloc::vec![0u32; width * sample_h];
     for row in 0..sample_h {
         let src = (sample_y0 + row) * layer.width() + x;
@@ -214,32 +217,70 @@ fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width:
         backdrop[dst..dst + width].copy_from_slice(&layer.buf_ref()[src..src + width]);
     }
     let mut blurred = alloc::vec![0u32; backdrop.len()];
-    blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, BLUR_RADIUS as i32);
-    let denominator = height.saturating_sub(1).max(1) as u32;
-    let blur_fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1) as u32;
+    let mut blur_layer = LayerSystem::new(width, height);
     for row in 0..height {
-        let blur_alpha = if row < FIXED_BLUR_HEIGHT {
-            255
-        } else {
-            (height.saturating_sub(1 + row) as u32 * 255 / blur_fade_height) as u8
-        };
-        let blur_row = (y - sample_y0 + row) * width;
-        layer.composit_rect_global_alpha(
-            &blurred[blur_row..blur_row + width],
-            width,
-            1,
-            x,
-            y + row,
-            blur_alpha,
-        );
+        let target_row = row * width;
+        if row < sample_h {
+            let source_row = row * width;
+            blur_layer.buf_mut()[target_row..target_row + width]
+                .copy_from_slice(&backdrop[source_row..source_row + width]);
+        } else if y + row < layer.height() {
+            // The capture is deliberately limited to the top 40 px.  Keep
+            // the remainder of the title bar untouched instead of stretching
+            // the final captured row, which previously formed a bright seam.
+            let source_row = (y + row) * layer.width() + x;
+            blur_layer.buf_mut()[target_row..target_row + width]
+                .copy_from_slice(&layer.buf_ref()[source_row..source_row + width]);
+        }
     }
+    let fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1);
+    for radius in 1..=BLUR_RADIUS {
+        blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, radius as i32);
+        for row in 0..height {
+            let scaled_radius = if row < FIXED_BLUR_HEIGHT {
+                (BLUR_RADIUS * 256) as u32
+            } else {
+                (height.saturating_sub(1 + row) * BLUR_RADIUS * 256 / fade_height) as u32
+            };
+            let lower_radius = (scaled_radius / 256) as usize;
+            let upper_radius = ((scaled_radius + 255) / 256) as usize;
+            let upper_alpha = (scaled_radius & 0xff) as u8;
+            if row >= sample_h {
+                continue;
+            }
+            let source_row = row * width;
+            if radius == lower_radius && lower_radius != 0 {
+                blur_layer.composit_rect_global_alpha(
+                    &blurred[source_row..source_row + width], width, 1, 0, row, 255,
+                );
+            }
+            if radius == upper_radius && upper_radius != lower_radius {
+                blur_layer.composit_rect_global_alpha(
+                    &blurred[source_row..source_row + width], width, 1, 0, row, upper_alpha,
+                );
+            }
+        }
+    }
+    layer.composit_rect_global_alpha(blur_layer.buf_ref(), width, height, x, y, 255);
+}
 
+/// Overlay the white transparency gradient after the independent blur layer.
+fn draw_title_bar_overlay(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    if width == 0 || height == 0 {
+        return;
+    }
     let color = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
     let solid_row = alloc::vec![color.0; width];
+    let denominator = height.saturating_sub(1).max(1) as u32;
     for row in 0..height {
         let alpha = 255 - (row as u32 * 255 / denominator) as u8;
         layer.composit_rect_global_alpha(&solid_row, width, 1, x, y + row, alpha);
     }
+}
+
+fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    draw_title_bar_blur_layer(layer, x, y, width, height);
+    draw_title_bar_overlay(layer, x, y, width, height);
 }
 
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");

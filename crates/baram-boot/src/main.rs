@@ -603,38 +603,50 @@ fn monotonic_counter_frequency() -> Option<u64> {
 }
 
 fn baram_kernel_main(mut nano: NanoSystem) -> Status {
+    NanoSystem::serial_log("baram: kernel entry\r\n");
     let timer_event = nano.take_timer_event();
+    NanoSystem::serial_log("baram: acquiring screen\r\n");
     let mut screen = match Screen::take() {
         Ok(screen) => screen,
         Err(_) => {
+            NanoSystem::serial_log("baram: screen acquisition failed\r\n");
             NanoSystem::paint_failure_screen();
             return Status::UNSUPPORTED;
         }
     };
 
+    NanoSystem::serial_log("baram: screen ready\r\n");
     unsafe { baram_font::log::init_screen(&screen) };
     log_line_str("BaramOS kernel: starting...");
 
+    NanoSystem::serial_log("baram: panic reporter ready\r\n");
     unsafe { baram_kern::panic::init_from_screen(&screen) };
 
     // Nano System has already cleared the framebuffer before input probing;
     // replace that minimal handoff screen with the kernel boot logo now.
     draw_boot_logo(&mut screen);
+    NanoSystem::serial_log("baram: boot logo drawn\r\n");
 
     let compute_workers = baram_core::parallel::init();
+    NanoSystem::serial_log("baram: compute dispatcher ready\r\n");
     log_line_str(&alloc::format!(
         "BaramOS: {} compute APs enabled",
         compute_workers
     ));
 
     config::init_config();
+    NanoSystem::serial_log("baram: config ready\r\n");
     let mut mouse_motion = baram_iokit::mouse::MouseMotionProcessor::new();
     log_line_str("BaramOS: config loaded");
 
+    NanoSystem::serial_log("baram: initializing fonts\r\n");
     baram_font::ttf_font::init();
+    NanoSystem::serial_log("baram: primary font ready\r\n");
     baram_font::ttf_font_hud::init();
+    NanoSystem::serial_log("baram: HUD font ready\r\n");
     log_line_str("BaramOS: fonts initialized");
 
+    NanoSystem::serial_log("baram: prerendering cursors\r\n");
     unsafe {
         baram_windowserver::cursor::CURSOR_NORMAL = Some(cursor::prerender_cursor(
             cursor::CURSOR_SVG,
@@ -649,6 +661,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             8,
         ));
     }
+    NanoSystem::serial_log("baram: cursors ready\r\n");
 
     log_line_str("BaramOS: input is owned by Nano System");
     nano.set_shift_key(shift_key::load_shift_key());
@@ -671,6 +684,17 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let setup_card = (setup_origin.0, setup_origin.1, 528usize, 320usize);
         let setup_wallpaper = wallpaper_for_state(&display_state, setup_w, setup_h);
         let setup_background = setup_wallpaper.as_ref().map(|wallpaper| {
+            // QEMU's default x86_64 CPU exposes neither AVX2 nor additional
+            // APs. A full-screen four-pass blur here delays first boot long
+            // enough to look like a hang, so use the original wallpaper.
+            #[cfg(target_arch = "x86_64")]
+            {
+                NanoSystem::serial_log("baram: x86 setup uses unblurred wallpaper\r\n");
+                wallpaper.to_vec()
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                NanoSystem::serial_log("baram: blurring setup wallpaper\r\n");
             let mut blurred = alloc::vec![0u32; setup_w * setup_h];
             let mut scratch = alloc::vec![0u32; setup_w * setup_h];
             baram_graphics::blur::blur_region_to_with_scratch(
@@ -683,16 +707,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 30,
             );
             blurred
+            }
         });
+        NanoSystem::serial_log("baram: setup background ready\r\n");
         let card_radius = config::get_usize("ui-theme/card/radius", 12);
         let setup_shadow =
             baram_windowserver::window::RoundedShadow::new(setup_card.2, setup_card.3, card_radius);
+        NanoSystem::serial_log("baram: setup shadow ready\r\n");
         let mut setup_scene_dirty = true;
+        let mut setup_first_frame_logged = false;
         let mut setup_prev_cursor = (cursor_x, cursor_y);
         let mut setup_now_ns = 0u64;
         let mut setup_next_present_ms = 0u64;
         setup_engine.set_warp3_screen(wizard.warp3_screen());
         setup_engine.update(528, 320);
+        NanoSystem::serial_log("baram: setup layout ready\r\n");
 
         loop {
             if let Some(ref timer) = timer_event {
@@ -798,6 +827,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             );
             if setup_scene_dirty {
                 setup_present.flush(&mut screen);
+                if !setup_first_frame_logged {
+                    NanoSystem::serial_log("baram: setup first frame ready\r\n");
+                    setup_first_frame_logged = true;
+                }
             } else {
                 let pad = 32i32;
                 let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
