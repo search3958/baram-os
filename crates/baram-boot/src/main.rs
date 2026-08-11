@@ -2333,18 +2333,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // document is already rasterized; each sample only changes the source
         // offset used for the viewport copy.
         let transition_now_ns = ui_time_ms * 1_000_000;
-        if wm.tick_scroll_animations(transition_now_ns) {
+        // Do not use the UI scheduler's bounded frame delta for motion. It is
+        // intentionally capped under load and would stretch scroll/transition
+        // durations; the hardware monotonic counter is not.
+        let motion_now_ns = ui_clock
+            .as_ref()
+            .map(UiMonotonicClock::elapsed_ns)
+            .unwrap_or(transition_now_ns);
+        if wm.tick_scroll_animations(motion_now_ns) {
             scene_dirty = true;
             dirty = true;
         }
         // Window motion uses the un-clamped hardware monotonic counter. The
         // UI scheduler's 1–16ms frame delta intentionally smooths other UI
         // work, but must not stretch animation duration under load.
-        let window_motion_now_ns = ui_clock
-            .as_ref()
-            .map(UiMonotonicClock::elapsed_ns)
-            .unwrap_or(transition_now_ns);
-        if wm.tick_window_animations(window_motion_now_ns) {
+        if wm.tick_window_animations(motion_now_ns) {
             scene_dirty = true;
             dirty = true;
         }
@@ -2466,7 +2469,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let runtime_window_count = wm.count();
         for (wid, engine) in html_engines.iter_mut() {
             engine.set_runtime_metrics(fps, runtime_window_count, key_ev_count, mouse_ev_count);
-            if engine.tick(transition_now_ns) {
+            if engine.tick(motion_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {
                     wm.set_content_damage(*wid, x0, y0, x1, y1);
                 } else {

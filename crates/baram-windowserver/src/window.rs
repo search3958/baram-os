@@ -3,9 +3,9 @@ use baram_bsd::config;
 use baram_core::LayerSystem;
 use baram_core::Color;
 
-const SCROLL_ANIMATION_NS: u64 = 10_000_000;
-const WINDOW_OPEN_DURATION_NS: u64 = 500_000_000;
-const WINDOW_MOTION_OFFSET_Y: i32 = 50;
+const SCROLL_ANIMATION_NS: u64 = 180_000_000;
+const WINDOW_OPEN_DURATION_NS: u64 = 400_000_000;
+const WINDOW_MOTION_OFFSET_Y: i32 = 30;
 use baram_font::LayerFontExt;
 use baram_graphics::blur;
 use baram_graphics::svg;
@@ -288,8 +288,17 @@ fn draw_title_bar_overlay(layer: &mut LayerSystem, x: usize, y: usize, width: us
     }
 }
 
-fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
-    draw_title_bar_blur_layer(layer, x, y, width, height);
+fn draw_title_bar_background(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    skip_blur: bool,
+) {
+    if !skip_blur {
+        draw_title_bar_blur_layer(layer, x, y, width, height);
+    }
     draw_title_bar_overlay(layer, x, y, width, height);
 }
 
@@ -1170,6 +1179,11 @@ impl WindowManager {
             }
 
             if content_dirty {
+                let skip_title_blur = self.windows[idx].is_motion_animating()
+                    || self.is_scroll_animating(win_id)
+                    || html_engines
+                        .iter()
+                        .any(|(id, engine)| *id == win_id && engine.is_animating());
                 let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
                 let w_ptr = &self.windows[idx] as *const Window;
                 let damage = self.windows[idx].content_damage.take();
@@ -1234,7 +1248,7 @@ impl WindowManager {
                     let repaint_title = damage.map_or(true, |(_, y0, _, _)| y0 < title_bar_h());
                     (*layer_ptr).pop_clip();
                     if repaint_title {
-                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
+                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0, skip_title_blur);
                     }
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
@@ -1648,7 +1662,13 @@ fn box_blur_shadow(alpha: &mut [u8], width: usize, height: usize, radius: usize)
     baram_core::parallel::for_each(width, &vertical, blur_shadow_column);
 }
 
-fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
+fn draw_title_bar(
+    layer: &mut LayerSystem,
+    w: &Window,
+    ox: i32,
+    oy: i32,
+    skip_blur: bool,
+) {
     let x = ox.max(0) as usize;
     let y = oy.max(0) as usize;
     let sw = layer.width();
@@ -1665,7 +1685,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
     }
 
     let tb_h = title_bar_h().min(h_draw);
-    draw_title_bar_background(layer, x, y, w_draw, tb_h);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur);
 
     let base_x = x as i32 + 10;
     let btn_y = y as i32 + 10;

@@ -387,6 +387,9 @@ pub struct Warp3Engine {
     switch_transition: Option<(usize, bool)>,
     hover_started_ns: Option<u64>,
     switch_started_ns: Option<u64>,
+    screen_transition_active: bool,
+    screen_transition_started_ns: Option<u64>,
+    screen_transition_offset_y: i32,
     animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
     now: NowValues,
@@ -430,6 +433,9 @@ impl Warp3Engine {
             switch_transition: None,
             hover_started_ns: None,
             switch_started_ns: None,
+            screen_transition_active: false,
+            screen_transition_started_ns: None,
+            screen_transition_offset_y: 0,
             animation_now_ns: 0,
             shadows: Vec::new(),
             now: NowValues::default(),
@@ -445,8 +451,16 @@ impl Warp3Engine {
     pub fn set_screen(&mut self, screen: &str) {
         if self.screen != screen {
             self.screen = screen.to_string();
+            self.begin_screen_transition();
             self.load_screen();
         }
+    }
+
+    fn begin_screen_transition(&mut self) {
+        self.cancel_hover();
+        self.screen_transition_active = true;
+        self.screen_transition_started_ns = None;
+        self.screen_transition_offset_y = 15;
     }
 
     pub fn set_text(&mut self, class: &str, value: &str) {
@@ -530,6 +544,10 @@ impl Warp3Engine {
         self.focused_input.is_some()
     }
 
+    pub fn is_screen_transition_active(&self) -> bool {
+        self.screen_transition_active
+    }
+
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
         (!self.full_window_redraw)
             .then_some(self.window_damage)
@@ -558,6 +576,10 @@ impl Warp3Engine {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
+        if self.screen_transition_active {
+            self.cancel_hover();
+            return;
+        }
         let next = self.hit_test(x, y);
         if self.hovered != next {
             let old = self.hovered;
@@ -575,6 +597,10 @@ impl Warp3Engine {
     }
 
     pub fn clear_hover(&mut self) {
+        if self.screen_transition_active {
+            self.cancel_hover();
+            return;
+        }
         if let Some(old) = self.hovered.take() {
             if let Some((previous_old, previous_new)) = self.hover_transition {
                 self.invalidate_nodes(previous_old, previous_new);
@@ -700,6 +726,19 @@ impl Warp3Engine {
                 self.switch_started_ns = None;
             }
         }
+        if self.screen_transition_active {
+            let started = *self.screen_transition_started_ns.get_or_insert(now_ns);
+            let t = (now_ns.saturating_sub(started) as f32 / 250_000_000.0).min(1.0);
+            let remaining = 1.0 - t;
+            let next_offset = (50.0 * remaining * remaining * remaining) as i32;
+            changed |= self.screen_transition_offset_y != next_offset;
+            self.screen_transition_offset_y = next_offset;
+            if t >= 1.0 {
+                self.screen_transition_active = false;
+                self.screen_transition_offset_y = 0;
+                changed = true;
+            }
+        }
         changed
     }
 
@@ -716,9 +755,9 @@ impl Warp3Engine {
             layer.height(),
             html_bg(),
         );
+        let target_y = self.screen_transition_offset_y.max(0) as usize;
         if let Some(document) = &self.document_layer {
             let source_y = self.scroll.max(0) as usize;
-            let target_y = 0;
             let visible_h = layer.height().saturating_sub(target_y);
             if source_y < document.height() && visible_h > 0 {
                 layer.composit_rect_opaque(
@@ -738,7 +777,7 @@ impl Warp3Engine {
             layer.composit_rect_alpha(
                 toolbar,
                 ox.max(0) as usize,
-                0,
+                target_y,
                 0,
                 0,
                 toolbar.width(),
@@ -759,7 +798,7 @@ impl Warp3Engine {
             for paint_index in 0..self.toolbar_paint.len() {
                 let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
-                self.draw_node(layer, idx, node.x + ox, node.y);
+                self.draw_node(layer, idx, node.x + ox, node.y + self.screen_transition_offset_y);
             }
         }
         self.window_damage = None;
@@ -1542,6 +1581,7 @@ impl Warp3Engine {
             match left.as_str() {
                 "screen" => {
                     self.screen = unquote(&right);
+                    self.begin_screen_transition();
                     self.load_screen();
                 }
                 "scroll" => self.request_scroll(&right),
