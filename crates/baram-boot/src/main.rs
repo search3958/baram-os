@@ -948,6 +948,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut pinyin_ime = PinyinIme::new();
     let mut show_ime_menu = false;
     let mut prev_show_ime_menu = false;
+    let mut hover_ime_icon = false;
+    let mut ime_hover_dirty = false;
     let mut prev_ime_conversion_visible = false;
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
@@ -993,6 +995,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &app_list,
         &app_icon_list,
         hover_apps_icon,
+        false,
+        false,
         app_search_focused,
         &app_search_query,
         app_launcher_scroll.position.max(0) as usize,
@@ -1039,6 +1043,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &app_list,
         &app_icon_list,
         hover_apps_icon,
+        false,
+        false,
         app_search_focused,
         &app_search_query,
         app_launcher_scroll.position.max(0) as usize,
@@ -1558,7 +1564,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let (ime_x, ime_y, ime_w, ime_h) =
                             ime_button_bounds(screen.width(), battery_info.valid_percentage());
                         let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
-                        if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
+                        if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                             show_ime_menu = true;
                             scene_dirty = true;
                             dirty = true;
@@ -1840,6 +1846,22 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             }
         }
 
+        // Moving inside reuses the rendered SVG; crossing the edge repaints
+        // just this 20px icon, not the taskbar surface.
+        let (ime_x, ime_y, ime_w, ime_h) =
+            ime_button_bounds(screen.width(), battery_info.valid_percentage());
+        let ime_y = screen.height() as i32 - TASKBAR_H as i32 + ime_y;
+        let next_hover_ime_icon = cursor_x >= ime_x
+            && cursor_x < ime_x + ime_w + 10
+            && cursor_y >= ime_y
+            && cursor_y < ime_y + ime_h;
+        if next_hover_ime_icon != hover_ime_icon {
+            hover_ime_icon = next_hover_ime_icon;
+            ime_hover_dirty = true;
+            dirty = true;
+            scene_dirty = true;
+        }
+
         if keyboard_click {
             keyboard_click = false;
             let cx = cursor_x;
@@ -1957,7 +1979,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let (ime_x, ime_y, ime_w, ime_h) =
                     ime_button_bounds(screen.width(), battery_info.valid_percentage());
                 let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
-                if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
+                if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                     show_ime_menu = true;
                     scene_dirty = true;
                     dirty = true;
@@ -2704,6 +2726,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &app_list,
                     &app_icon_list,
                     hover_apps_icon,
+                    hover_ime_icon,
+                    ime_hover_dirty,
                     app_search_focused,
                     &app_search_query,
                     app_launcher_scroll.position.max(0) as usize,
@@ -2753,6 +2777,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &app_list,
                         &app_icon_list,
                         hover_apps_icon,
+                        hover_ime_icon,
+                        ime_hover_dirty,
                         app_search_focused,
                         &app_search_query,
                         app_launcher_scroll.position.max(0) as usize,
@@ -2777,6 +2803,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 prev_focused_id = wm.focused_id;
                 prev_show_ime_menu = show_ime_menu;
                 prev_ime_conversion_visible = ime_conversion_visible;
+                ime_hover_dirty = false;
 
                 if tb_add_progress >= 1.0 {
                     tb_add_progress = -1.0;

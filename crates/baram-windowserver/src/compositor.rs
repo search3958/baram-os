@@ -15,7 +15,10 @@ use uefi::runtime;
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
-pub const IME_BUTTON_W: usize = 32;
+// The hit box deliberately matches the bare SVG, keeping the click target and
+// popup anchor aligned with the visible input-source icon.
+pub const IME_BUTTON_W: usize = 20;
+const IME_STATUS_STRIP_W: usize = 160;
 const IME_MENU_W: usize = 210;
 const IME_MENU_H: usize = 264;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
@@ -37,7 +40,14 @@ fn ime_icon_svg(selection: usize) -> &'static str {
     }
 }
 
-fn draw_ime_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize, selection: usize) {
+fn draw_ime_icon(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    size: usize,
+    selection: usize,
+    alpha: u32,
+) {
     svg::draw_svg_into_alpha(
         layer,
         ime_icon_svg(selection),
@@ -45,8 +55,32 @@ fn draw_ime_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize, selec
         y as i32,
         size as f32,
         size as f32,
-        255,
+        alpha,
     );
+}
+
+fn taskbar_status_text_width(text: &str) -> usize {
+    text.chars()
+        .map(|ch| {
+            let g = baram_font::ttf_font_hud::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
+            if g.w > 0 {
+                g.advance.max(0) as usize
+            } else {
+                let fallback = baram_font::ttf_font::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
+                if fallback.w > 0 { fallback.advance.max(0) as usize } else { 8 }
+            }
+        })
+        .sum()
+}
+
+fn taskbar_status_x(width: usize, battery_pct: Option<u8>) -> usize {
+    let battery_width = match battery_pct {
+        Some(pct) if pct >= 100 => 12 + taskbar_status_text_width("100%"),
+        Some(pct) if pct >= 10 => 12 + taskbar_status_text_width("00%"),
+        Some(_) => 12 + taskbar_status_text_width("0%"),
+        None => 0,
+    };
+    width.saturating_sub(taskbar_status_text_width("00:00") + battery_width + 16)
 }
 
 pub struct TaskbarSurface {
@@ -57,6 +91,9 @@ pub struct TaskbarSurface {
     base_valid: bool,
     valid: bool,
     search_dirty: bool,
+    ime_status_strip: Vec<u32>,
+    ime_status_strip_x: usize,
+    ime_status_strip_w: usize,
 }
 
 impl TaskbarSurface {
@@ -70,6 +107,9 @@ impl TaskbarSurface {
             base_valid: false,
             valid: false,
             search_dirty: false,
+            ime_status_strip: Vec::new(),
+            ime_status_strip_x: usize::MAX,
+            ime_status_strip_w: 0,
         }
     }
 
@@ -131,6 +171,46 @@ impl TaskbarSurface {
     fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
         scene.composit_rect(&self.layer, 0, y, 0, 0, self.layer.width(), TASKBAR_H);
     }
+
+    /// Restores the cached right-hand status strip (clock/battery/IME area)
+    /// and paints only the new IME opacity. No generic taskbar background is
+    /// ever copied during this fast path.
+    fn redraw_ime_status_strip(
+        &mut self,
+        battery_pct: Option<u8>,
+        selection: usize,
+        hovered: bool,
+    ) -> bool {
+        if !self.valid || self.ime_status_strip_w == 0
+            || self.ime_status_strip.len() != self.ime_status_strip_w * TASKBAR_H
+        {
+            return false;
+        }
+        let (icon_x, icon_y, _, _) = ime_button_bounds(self.layer.width(), battery_pct);
+        let icon_x = icon_x.max(0) as usize;
+        if icon_x < self.ime_status_strip_x
+            || icon_x + IME_BUTTON_W > self.ime_status_strip_x + self.ime_status_strip_w
+        {
+            return false;
+        }
+        self.layer.copy_rect_buffer(
+            &self.ime_status_strip,
+            self.ime_status_strip_w,
+            TASKBAR_H,
+            self.ime_status_strip_x,
+            0,
+        );
+        draw_ime_icon(
+            &mut self.layer,
+            icon_x,
+            icon_y.max(0) as usize,
+            IME_BUTTON_W,
+            selection,
+            if hovered { 128 } else { 255 },
+        );
+        true
+    }
+
 }
 
 fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
@@ -917,6 +997,7 @@ fn redraw_taskbar(
     add_progress: f32,
     shift_x: f32,
     _hover_apps_icon: bool,
+    hover_ime_icon: bool,
     search_focused: bool,
     search_query: &str,
     clock_hh: u8,
@@ -1048,33 +1129,13 @@ fn redraw_taskbar(
     });
 
     let size = TASKBAR_STATUS_SIZE;
-    let measure = |text: &str| -> usize {
-        text.chars()
-            .map(|ch| {
-                let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                if g.w > 0 {
-                    g.advance.max(0) as usize
-                } else {
-                    let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
-                    if fallback.w > 0 {
-                        fallback.advance.max(0) as usize
-                    } else {
-                        8
-                    }
-                }
-            })
-            .sum()
-    };
+    let measure = taskbar_status_text_width;
     let gap = 12usize;
-    let battery_width = battery.map_or(0, |text| gap + measure(text));
-    let status_x = w.saturating_sub(measure(time) + battery_width + 16);
+    let status_x = taskbar_status_x(w, battery_pct);
     let baseline = TASKBAR_H as i32 - baram_font::ttf_font_hud::ascent_at_size(size) + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
     let ime_x = status_x.saturating_sub(IME_BUTTON_W + gap);
-    let ime_y = (TASKBAR_H - 20) / 2;
-    // Unlike a control button, the active input source is a bare status icon
-    // beside the clock: no pill background, shadow, or hover treatment.
-    draw_ime_icon(layer, ime_x + (IME_BUTTON_W - 20) / 2, ime_y, 20, ime_menu_selection);
+    let ime_y = (TASKBAR_H - IME_BUTTON_W) / 2;
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
     if let Some(battery) = battery {
         draw_taskbar_text(
@@ -1088,6 +1149,30 @@ fn redraw_taskbar(
     }
 
     draw_taskbar_search(layer, search_focused, search_query);
+    // Cache a small, exact status strip before painting the mutable IME SVG.
+    // Hover therefore restores the real clock/battery pixels, never a broad
+    // taskbar background approximation.
+    let strip_x = ime_x.saturating_sub(8);
+    let strip_w = (w - strip_x).min(IME_STATUS_STRIP_W);
+    surface.ime_status_strip.resize(strip_w * TASKBAR_H, 0);
+    for row in 0..TASKBAR_H {
+        let source = row * w + strip_x;
+        let target = row * strip_w;
+        surface.ime_status_strip[target..target + strip_w]
+            .copy_from_slice(&layer.buf_ref()[source..source + strip_w]);
+    }
+    surface.ime_status_strip_x = strip_x;
+    surface.ime_status_strip_w = strip_w;
+    // Unlike a control button, the active input source is a bare status icon
+    // beside the clock: no pill background or shadow.
+    draw_ime_icon(
+        layer,
+        ime_x,
+        ime_y,
+        IME_BUTTON_W,
+        ime_menu_selection,
+        if hover_ime_icon { 128 } else { 255 },
+    );
     layer.mark_all_dirty();
     surface.valid = true;
     surface.search_dirty = false;
@@ -1227,65 +1312,49 @@ fn draw_ime_menu(
             &mut glass, x - cache_x, y - cache_y, width, height, 18,
             Color::rgb(0xf5, 0xf5, 0xf5), 168,
         );
+        // The entire static list lives in the open-menu cache too. This keeps
+        // SVG blending and text layout out of pointer-move redraws.
+        let text = config::get_color("ui-theme/color/text", Color::TEXT);
+        let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
+        let menu_x = x - cache_x;
+        let menu_y = y - cache_y;
+        glass.put_str(menu_x + 14, menu_y + 9, "入力モード", muted);
+        for (row, label) in [
+            "英数",
+            "ひらがな",
+            "한국 두벌식",
+            "한컴 로마자",
+            "조선 두벌식",
+            "简体拼音",
+        ].iter().enumerate() {
+            let row_y = menu_y + 30 + row * 38;
+            if row == ime_menu_selection {
+                blend_rounded_rect(
+                    &mut glass,
+                    menu_x + 8,
+                    row_y,
+                    width - 16,
+                    34,
+                    9,
+                    Color::rgb(0xff, 0xff, 0xff),
+                    0x99,
+                );
+            }
+            draw_ime_icon(&mut glass, menu_x + 18, row_y + 9, 16, row, 255);
+            glass.put_str(menu_x + 46, row_y + 9, label, text);
+        }
         *cached_layer = Some(glass.buf_ref().to_vec());
     }
     if let Some(cache) = cached_layer.as_deref() {
         layer.copy_rect_buffer(cache, cache_w, cache_h, cache_x, cache_y);
     }
-
-    let text = config::get_color("ui-theme/color/text", Color::TEXT);
-    let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
-    layer.put_str(x + 14, y + 9, "入力モード", muted);
-    for (row, label) in [
-        "英数",
-        "ひらがな",
-        "한국 두벌식",
-        "한컴 로마자",
-        "조선 두벌식",
-        "简体拼音",
-    ].iter().enumerate() {
-        let row_y = y + 30 + row * 38;
-        if row == ime_menu_selection {
-            // Fixed CSS-style #fff9 highlight: white at 60% opacity, kept
-            // independent from the active theme's primary color.
-            blend_rounded_rect(layer, x + 8, row_y, width - 16, 34, 9, Color::rgb(0xff, 0xff, 0xff), 0x99);
-        }
-        draw_ime_icon(layer, x + 18, row_y + 9, 16, row);
-        layer.put_str(x + 46, row_y + 9, label, text);
-    }
 }
 
 /// Bounds of the taskbar IME toggle, kept in sync with the status layout.
 pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
-    let measure = |text: &str| -> usize {
-        text.chars()
-            .map(|ch| {
-                let g = baram_font::ttf_font_hud::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
-                if g.w > 0 {
-                    g.advance.max(0) as usize
-                } else {
-                    8
-                }
-            })
-            .sum()
-    };
-    let battery_len = battery_pct.map_or(0, |pct| {
-        if pct >= 100 {
-            4
-        } else if pct >= 10 {
-            3
-        } else {
-            2
-        }
-    });
-    let battery_width = if battery_len == 0 {
-        0
-    } else {
-        12 + measure(&"0000"[..battery_len])
-    };
-    let status_x = width.saturating_sub(measure("00:00") + battery_width + 16);
+    let status_x = taskbar_status_x(width, battery_pct);
     let x = status_x.saturating_sub(IME_BUTTON_W + 12) as i32;
-    (x, (TASKBAR_H as i32 - 34) / 2, IME_BUTTON_W as i32, 34)
+    (x, (TASKBAR_H as i32 - IME_BUTTON_W as i32) / 2, IME_BUTTON_W as i32, IME_BUTTON_W as i32)
 }
 
 pub fn render_scene(
@@ -1314,6 +1383,8 @@ pub fn render_scene(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    hover_ime_icon: bool,
+    ime_hover_dirty: bool,
     search_focused: bool,
     search_query: &str,
     launcher_scroll_y: usize,
@@ -1825,13 +1896,16 @@ pub fn render_scene(
         }
     }
 
-    if taskbar_dirty || !taskbar.is_valid() {
+    let taskbar_full_redraw = taskbar_dirty || !taskbar.is_valid();
+    let taskbar_search_redraw = !taskbar_full_redraw && taskbar.is_search_dirty();
+    if taskbar_full_redraw {
         redraw_taskbar(
             taskbar,
             wm,
             add_progress,
             shift_x,
             hover_apps_icon,
+            hover_ime_icon,
             search_focused,
             search_query,
             clock_hh,
@@ -1839,8 +1913,23 @@ pub fn render_scene(
             battery_pct,
             ime_menu_selection,
         );
-    } else if taskbar.is_search_dirty() {
+    } else if taskbar_search_redraw {
         redraw_taskbar_search(taskbar, search_focused, search_query);
+    }
+    let mut ime_status_partial = false;
+    if ime_hover_dirty && !taskbar_full_redraw && !taskbar_search_redraw {
+        ime_status_partial = taskbar.redraw_ime_status_strip(
+            battery_pct,
+            ime_menu_selection,
+            hover_ime_icon,
+        );
+        if !ime_status_partial {
+            redraw_taskbar(
+                taskbar, wm, add_progress, shift_x, hover_apps_icon, hover_ime_icon,
+                search_focused, search_query, clock_hh, clock_mm, battery_pct,
+                ime_menu_selection,
+            );
+        }
     }
     if ime_menu_open {
         draw_ime_menu(layer, cached_ime_menu_layer, battery_pct, ime_menu_selection);
@@ -1848,6 +1937,12 @@ pub fn render_scene(
     if let Some(reading) = ime_reading {
         draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
     }
+    // The scene damage pass restores its clip from the wallpaper before this
+    // point.  Even when only the IME pixels changed, the damaged clip can
+    // cover other taskbar pixels (for example while the cursor moves into the
+    // icon).  Re-composite the cached full taskbar so those pixels cannot be
+    // left as wallpaper. `LayerSystem` clips this copy to the actual damage;
+    // the IME surface itself was still updated only in its small status strip.
     taskbar.composite_onto(layer, tb_y);
 }
 
@@ -1881,6 +1976,8 @@ pub fn render_frame(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    hover_ime_icon: bool,
+    ime_hover_dirty: bool,
     search_focused: bool,
     search_query: &str,
     launcher_scroll_y: usize,
@@ -1924,6 +2021,8 @@ pub fn render_frame(
         app_list,
         app_icon_list,
         hover_apps_icon,
+        hover_ime_icon,
+        ime_hover_dirty,
         search_focused,
         search_query,
         launcher_scroll_y,
