@@ -85,7 +85,7 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
 
     log("BaramOS: input is owned by Nano System");
     nano.set_shift_key(baram_bsd::shift_key::load_shift_key());
-    let timer_event = nano.take_timer_event();
+    let mut timer_event = nano.take_timer_event();
 
     let mut cursor_x: i32 = (screen.width() / 2) as i32;
     let mut cursor_y: i32 = (screen.height() / 2) as i32;
@@ -161,9 +161,8 @@ fn kernel_main(mut nano: NanoSystem) -> Status {
     log("BaramOS: entering main loop");
 
     loop {
-        if let Some(ref timer) = timer_event {
-            let mut events = [unsafe { core::ptr::read(timer) }];
-            let _ = uefi::boot::wait_for_event(&mut events);
+        if let Some(ref mut timer) = timer_event {
+            let _ = uefi::boot::wait_for_event(core::slice::from_mut(timer));
         }
 
         while let Some(nano_event) = nano.poll_keyboard() {

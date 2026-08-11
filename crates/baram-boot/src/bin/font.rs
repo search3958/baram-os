@@ -60,6 +60,6 @@ fn font_app(_nano: nano_system::NanoSystem) -> uefi::Status {
 nano_system::nano_entry!(font_app);
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    nano_system::NanoSystem::panic_report(info)
 }

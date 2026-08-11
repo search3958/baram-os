@@ -7,7 +7,7 @@ extern crate alloc;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::app::Warp3Archive;
+use baram_bsd::{app::Warp3Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::ttf_font;
 use baram_font::LayerFontExt;
@@ -478,12 +478,13 @@ impl Warp3Engine {
         }
         self.width = width.max(1);
         self.height = height.max(1);
-        let title_bar = crate::window::title_bar_h() as i32;
         let document_width = self.width.min(960);
         let document_x = (self.width - document_width) / 2;
-        let content_x = document_x + 28;
-        let content_width = document_width - 56;
-        let mut y = title_bar + 32;
+        let content_x = document_x + 14;
+        let content_width = document_width - 28;
+        let title_bar = crate::window::title_bar_h() as i32;
+        // Keep the first document element clear of the title-bar overlay.
+        let mut y = title_bar + 16;
         let roots = self.roots.clone();
         for idx in roots {
             if self.nodes[idx].is("config") || self.nodes[idx].is("toolbar") {
@@ -492,12 +493,12 @@ impl Warp3Engine {
             let h = self.layout(idx, content_x, y, content_width);
             y += h + 12;
         }
-        self.content_height = (y + 96).max(title_bar + self.height);
-        let toolbar_width = (self.width - 32).min(900);
+        self.content_height = (y + 48).max(title_bar + self.height);
+        let toolbar_width = (self.width - 16).min(900);
         let toolbar_x = (self.width - toolbar_width) / 2;
         // Toolbars live in viewport coordinates.  They are deliberately not
         // part of the document, so scrolling never moves or reflows them.
-        let toolbar_y = title_bar + self.height - 18 - 54;
+        let toolbar_y = title_bar + self.height - 9 - 54;
         let toolbars: Vec<usize> = self
             .roots
             .iter()
@@ -708,17 +709,16 @@ impl Warp3Engine {
         if !self.dirty && (self.repaint_from < self.content_height || self.toolbar_dirty) {
             self.paint_cached_layers();
         }
-        let title_bar = crate::window::title_bar_h();
         layer.fill_rect(
             0,
-            title_bar,
+            0,
             layer.width(),
-            layer.height().saturating_sub(title_bar),
+            layer.height(),
             html_bg(),
         );
         if let Some(document) = &self.document_layer {
-            let source_y = (self.scroll + title_bar as i32).max(0) as usize;
-            let target_y = title_bar;
+            let source_y = self.scroll.max(0) as usize;
+            let target_y = 0;
             let visible_h = layer.height().saturating_sub(target_y);
             if source_y < document.height() && visible_h > 0 {
                 layer.composit_rect_opaque(
@@ -749,14 +749,15 @@ impl Warp3Engine {
         // Repainting TTF text outside the local damage would blend its edge
         // pixels again even though the document did not change.
         let paint_toolbar = self.window_damage.map_or(true, |(_, y0, _, y1)| {
-            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 18 - 54 - 14;
+            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 9 - 54 - 14;
             y1 >= toolbar_top && y0 < self.height + crate::window::title_bar_h() as i32
         });
         // Paint the fixed controls over the already-composited document. This
         // gives text and rounded corners their final-background antialiasing;
         // only the shadow itself needs transparent alpha storage.
         if paint_toolbar {
-            for idx in self.toolbar_paint.clone() {
+            for paint_index in 0..self.toolbar_paint.len() {
+                let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
                 self.draw_node(layer, idx, node.x + ox, node.y);
             }
@@ -1108,7 +1109,8 @@ impl Warp3Engine {
         if let Some(mut layer) = self.document_layer.take() {
             layer.fill_rect(0, from, width, to.saturating_sub(from), html_bg());
             layer.push_clip(0, from, width, to);
-            for idx in self.document_paint.clone() {
+            for paint_index in 0..self.document_paint.len() {
+                let idx = self.document_paint[paint_index];
                 let node = &self.nodes[idx];
                 if node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 {
                     continue;
@@ -1130,7 +1132,8 @@ impl Warp3Engine {
         if self.toolbar_dirty || recreate_toolbar {
             if let Some(mut layer) = self.toolbar_layer.take() {
                 layer.clear(Color::TRANSPARENT);
-                for idx in self.toolbar_paint.clone() {
+                for paint_index in 0..self.toolbar_paint.len() {
+                    let idx = self.toolbar_paint[paint_index];
                     let node = &self.nodes[idx];
                     if node.is("toolbar") {
                         self.composite_shadow_transparent(&mut layer, idx);
@@ -1967,7 +1970,7 @@ fn parse_wait_ns(value: &str) -> u64 {
 }
 
 fn html_bg() -> Color {
-    Color::rgb(243, 243, 243)
+    config::get_color("ui-theme/color/win_bg", Color::rgb(243, 243, 243))
 }
 
 fn html_layer() -> Color {

@@ -19,8 +19,8 @@
             <text>1A1A1A</text>
             <muted>666666</muted>
             <border>D0D0D0</border>
-            <taskbar>FFFFFF</taskbar>
-            <win_bg>FFFFFF</win_bg>
+            <taskbar>F5F5F5</taskbar>
+            <win_bg>F3F3F3</win_bg>
             <win_inactive>E8E8E8</win_inactive>
             <card_bg>F5F5F5</card_bg>
             <shadow>A0A0A0</shadow>
@@ -34,10 +34,10 @@
             <switch_off>DDDDDD</switch_off>
         </color>
         <window>
-            <title_bar_h>30</title_bar_h>
+            <title_bar_h>40</title_bar_h>
             <min_win_w>120</min_win_w>
             <min_win_h>60</min_win_h>
-            <win_radius>16</win_radius>
+            <win_radius>20</win_radius>
             <shadow_pad>30</shadow_pad>
             <shadow_blur>30</shadow_blur>
             <scroll_speed>15</scroll_speed>

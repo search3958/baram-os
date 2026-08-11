@@ -6,6 +6,7 @@ use baram_core::{Color, Screen};
 
 const SCROLL_ANIMATION_NS: u64 = 10_000_000;
 use baram_font::LayerFontExt;
+use baram_graphics::blur;
 use baram_graphics::svg;
 
 pub fn scroll_speed() -> i32 {
@@ -92,7 +93,8 @@ pub fn btn_size() -> usize {
 }
 
 pub fn btn_area_w() -> usize {
-    btn_size() * 3 + 23
+    // Keep the title clear of the window controls.
+    btn_size() * 3 + 27
 }
 
 pub fn win_radius() -> usize {
@@ -190,6 +192,104 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
         let polygon = unsafe { core::slice::from_raw_parts(job.polygon, job.polygon_len) };
         layer.fill_rounded_rect_with_polygon(0, 0, job.width, job.height, job.radius, job.body_bg, polygon);
     }
+}
+
+/// Build a separate progressive-blur layer from the title bar's top 40px.
+/// The upper 12px is a fixed 16px blur; below it, neighbouring integer blur
+/// radii are crossfaded so the 16px-to-0px falloff has no visible seams.
+fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    const BLUR_RADIUS: usize = 16;
+    const FIXED_BLUR_HEIGHT: usize = 12;
+    const CAPTURE_HEIGHT: usize = 40;
+    let sample_y0 = y;
+    let sample_y1 = (y + CAPTURE_HEIGHT).min(layer.height());
+    let sample_h = sample_y1.saturating_sub(sample_y0);
+    if sample_h == 0 {
+        return;
+    }
+    let mut backdrop = alloc::vec![0u32; width * sample_h];
+    for row in 0..sample_h {
+        let src = (sample_y0 + row) * layer.width() + x;
+        let dst = row * width;
+        backdrop[dst..dst + width].copy_from_slice(&layer.buf_ref()[src..src + width]);
+    }
+    let mut blurred = alloc::vec![0u32; backdrop.len()];
+    let mut blur_layer = LayerSystem::new(width, height);
+    for row in 0..height {
+        let target_row = row * width;
+        if row < sample_h {
+            let source_row = row * width;
+            blur_layer.buf_mut()[target_row..target_row + width]
+                .copy_from_slice(&backdrop[source_row..source_row + width]);
+        } else if y + row < layer.height() {
+            // The capture is deliberately limited to the top 40 px.  Keep
+            // the remainder of the title bar untouched instead of stretching
+            // the final captured row, which previously formed a bright seam.
+            let source_row = (y + row) * layer.width() + x;
+            blur_layer.buf_mut()[target_row..target_row + width]
+                .copy_from_slice(&layer.buf_ref()[source_row..source_row + width]);
+        }
+    }
+    let fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1);
+    for radius in 1..=BLUR_RADIUS {
+        // Preserve every radius step.  For the wider (box-blurred) steps the
+        // title bar uses one H→V sweep rather than the normal two sweeps.
+        blur::blur_region_to_single_box(
+            &backdrop,
+            &mut blurred,
+            width,
+            0,
+            sample_h,
+            radius as i32,
+        );
+        for row in 0..height {
+            let scaled_radius = if row < FIXED_BLUR_HEIGHT {
+                (BLUR_RADIUS * 256) as u32
+            } else {
+                (height.saturating_sub(1 + row) * BLUR_RADIUS * 256 / fade_height) as u32
+            };
+            let lower_radius = (scaled_radius / 256) as usize;
+            let upper_radius = ((scaled_radius + 255) / 256) as usize;
+            let upper_alpha = (scaled_radius & 0xff) as u8;
+            if row >= sample_h {
+                continue;
+            }
+            let source_row = row * width;
+            if radius == lower_radius && lower_radius != 0 {
+                blur_layer.composit_rect_global_alpha(
+                    &blurred[source_row..source_row + width], width, 1, 0, row, 255,
+                );
+            }
+            if radius == upper_radius && upper_radius != lower_radius {
+                blur_layer.composit_rect_global_alpha(
+                    &blurred[source_row..source_row + width], width, 1, 0, row, upper_alpha,
+                );
+            }
+        }
+    }
+    layer.composit_rect_global_alpha(blur_layer.buf_ref(), width, height, x, y, 255);
+}
+
+/// Overlay the white transparency gradient after the independent blur layer.
+fn draw_title_bar_overlay(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    let color = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
+    let solid_row = alloc::vec![color.0; width];
+    let denominator = height.saturating_sub(1).max(1) as u32;
+    for row in 0..height {
+        let alpha = 255 - (row as u32 * 255 / denominator) as u8;
+        layer.composit_rect_global_alpha(&solid_row, width, 1, x, y + row, alpha);
+    }
+}
+
+fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    draw_title_bar_blur_layer(layer, x, y, width, height);
+    draw_title_bar_overlay(layer, x, y, width, height);
 }
 
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
@@ -353,8 +453,8 @@ impl Window {
     }
 
     fn button_hit(&self, px: i32, py: i32) -> char {
-        let base_x = self.x + 6;
-        let btn_y = self.y + 5;
+        let base_x = self.x + 10;
+        let btn_y = self.y + 10;
         let bs = btn_size() as i32;
         if py >= btn_y && py < btn_y + bs {
             if px >= base_x && px < base_x + bs {
@@ -1068,7 +1168,8 @@ impl WindowManager {
                     for i in 0..html_engines.len() {
                         if win_id == html_engines[i].0 {
                             let engine = &mut html_engines[i].1;
-                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            let content_top = if engine.is_warp3() { 0 } else { title_bar_h() };
+                            (*layer_ptr).push_clip(0, content_top, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             (*layer_ptr).pop_clip();
                             break;
@@ -1077,13 +1178,15 @@ impl WindowManager {
                     if self.interaction_blocked == Some(win_id) {
                         draw_settings_permission_overlay(&mut *layer_ptr, ww, wh);
                     }
-                    // Font glyph antialiasing is blended into the destination.
-                    // Never redraw the title during a body-only hover patch:
-                    // its glyph writer is intentionally not in the body clip.
-                    if damage.is_none() {
+                    // The Warp3 document reaches the top of the window and
+                    // therefore sits behind the title bar. Repaint the full
+                    // chrome only when this damage touches it; body-only
+                    // hover patches retain the cheap, clipped path.
+                    let repaint_title = damage.map_or(true, |(_, y0, _, _)| y0 < title_bar_h());
+                    (*layer_ptr).pop_clip();
+                    if repaint_title {
                         draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
                     }
-                    (*layer_ptr).pop_clip();
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
@@ -1506,23 +1609,11 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
         return;
     }
 
-    let (title_bg, _) = if w.focused {
-        (
-            config::get_color("ui-theme/color/panel", Color::PANEL),
-            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-        )
-    } else {
-        (
-            config::get_color("ui-theme/color/win_inactive", Color::WIN_INACTIVE),
-            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-        )
-    };
-
     let tb_h = title_bar_h().min(h_draw);
-    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h);
 
-    let base_x = x as i32 + 6;
-    let btn_y = y as i32 + 5;
+    let base_x = x as i32 + 10;
+    let btn_y = y as i32 + 10;
     let bs = btn_size() as i32;
     let btn_center_x = base_x + bs / 2;
     let btn_center_y = btn_y + bs / 2;
@@ -1611,7 +1702,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
         let title = w.title_str();
         if !title.is_empty() {
             let title_x = (base_x + bs * 3 + 20) as usize;
-            let title_y = (y as i32 + 8) as usize;
+            let title_y = (y as i32 + 13) as usize;
             if title_x < sw && title_y < sh {
                 layer.put_str(title_x, title_y, title, Color::TEXT);
             }
@@ -1714,8 +1805,8 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
     let tb_h = title_bar_h().min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
 
-    let base_x = x as i32 + 6;
-    let btn_y = y as i32 + 5;
+    let base_x = x as i32 + 10;
+    let btn_y = y as i32 + 10;
     let bs = btn_size() as i32;
     let btn_center_x = base_x + bs / 2;
     let btn_center_y = btn_y + bs / 2;
@@ -1802,7 +1893,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
         }
     }
 
-    layer.put_str(x + btn_area_w(), y + 8, w.title_str(), title_color);
+    layer.put_str(x + btn_area_w(), y + 13, w.title_str(), title_color);
 }
 
 fn draw_window_border(_layer: &mut LayerSystem, _w: &Window) {}

@@ -481,6 +481,10 @@ impl HtmlEngine {
             .map_or(false, |engine| engine.has_focused_input())
     }
 
+    pub fn is_warp3(&self) -> bool {
+        self.warp3.is_some()
+    }
+
     pub fn handle_key(&mut self, key: u8) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.handle_key(key);
