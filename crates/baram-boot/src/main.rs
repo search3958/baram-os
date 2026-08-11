@@ -518,6 +518,7 @@ fn compose_hangul(jamo: &[char]) -> alloc::string::String {
 }
 
 struct UiMonotonicClock {
+    origin: u64,
     last: u64,
     frequency_hz: u64,
 }
@@ -525,8 +526,10 @@ struct UiMonotonicClock {
 impl UiMonotonicClock {
     fn new() -> Option<Self> {
         let frequency_hz = monotonic_counter_frequency()?;
+        let origin = monotonic_counter();
         Some(Self {
-            last: monotonic_counter(),
+            origin,
+            last: origin,
             frequency_hz,
         })
     }
@@ -541,6 +544,12 @@ impl UiMonotonicClock {
         // animation, and always advance at least one timer quantum.
         let measured = ((ticks as u128 * 1_000) / self.frequency_hz as u128) as u64;
         measured.clamp(1, 16)
+    }
+
+    #[inline]
+    fn elapsed_ns(&self) -> u64 {
+        let ticks = monotonic_counter().wrapping_sub(self.origin);
+        ((ticks as u128 * 1_000_000_000) / self.frequency_hz as u128) as u64
     }
 }
 
@@ -2328,6 +2337,17 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
             dirty = true;
         }
+        // Window motion uses the un-clamped hardware monotonic counter. The
+        // UI scheduler's 1–16ms frame delta intentionally smooths other UI
+        // work, but must not stretch animation duration under load.
+        let window_motion_now_ns = ui_clock
+            .as_ref()
+            .map(UiMonotonicClock::elapsed_ns)
+            .unwrap_or(transition_now_ns);
+        if wm.tick_window_animations(window_motion_now_ns) {
+            scene_dirty = true;
+            dirty = true;
+        }
         let launcher_scroll_changed =
             launcher_scroll_input_changed || app_launcher_scroll.tick(transition_now_ns);
         if launcher_scroll_changed {
@@ -2579,8 +2599,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
         let scroll_animating = wm.has_scroll_animation();
         let taskbar_animating = tb_add_progress >= 0.0 || tb_remove_progress >= 0.0;
-        let continuous_motion =
-            scroll_animating || app_launcher_scroll.is_animating() || launcher_anim_phase != 0;
+        let continuous_motion = scroll_animating
+            || wm.has_window_animation()
+            || app_launcher_scroll.is_animating()
+            || launcher_anim_phase != 0;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
         if dirty && ui_time_ms < next_present_ms && !cursor_moved && !scroll_input {

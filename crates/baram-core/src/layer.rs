@@ -1247,6 +1247,39 @@ impl LayerSystem {
         }
     }
 
+    /// Alpha-composite a layer while applying one additional opacity to every
+    /// source pixel. Intended for short UI transitions where correct source
+    /// alpha (including rounded corners) matters more than SIMD throughput.
+    pub fn composit_rect_alpha_global(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize, dy: usize,
+        sx: usize, sy: usize,
+        w: usize, h: usize,
+        opacity: u8,
+    ) {
+        if opacity == 0 { return; }
+        let Some((dx, dy, sx, sy, w, h)) =
+            self.clipped_blit(dx, dy, sx, sy, w, h, src.width, src.height)
+        else { return; };
+        self.mark_dirty_rect(dx, dy, dx + w, dy + h);
+        for py in 0..h {
+            let src_row = (sy + py) * src.width + sx;
+            let dst_row = (dy + py) * self.width + dx;
+            for px in 0..w {
+                let sp = src.buf[src_row + px];
+                let alpha = ((sp >> 24) & 0xff) * opacity as u32 / 255;
+                if alpha == 0 { continue; }
+                let dp = self.buf[dst_row + px];
+                let inv = 255 - alpha;
+                let r = (((sp >> 16) & 0xff) * alpha + ((dp >> 16) & 0xff) * inv) / 255;
+                let g = (((sp >> 8) & 0xff) * alpha + ((dp >> 8) & 0xff) * inv) / 255;
+                let b = ((sp & 0xff) * alpha + (dp & 0xff) * inv) / 255;
+                self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
     pub fn composit_rect_alpha(
         &mut self,
         src: &LayerSystem,
