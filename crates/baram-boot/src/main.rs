@@ -75,6 +75,7 @@ struct JapaneseIme {
 }
 
 struct JapaneseConversion {
+    kana: alloc::string::String,
     candidates: alloc::vec::Vec<alloc::string::String>,
     selected: usize,
 }
@@ -146,6 +147,7 @@ impl JapaneseIme {
         let replace = self.visible_chars;
         self.visible_chars = text.chars().count();
         self.conversion = Some(JapaneseConversion {
+            kana,
             candidates,
             selected: 0,
         });
@@ -167,6 +169,12 @@ impl JapaneseIme {
             return (alloc::string::String::new(), 0);
         }
         self.edit(key)
+    }
+
+    fn conversion_view(&self) -> Option<(&str, &[alloc::string::String], usize)> {
+        self.conversion
+            .as_ref()
+            .map(|conversion| (conversion.kana.as_str(), conversion.candidates.as_slice(), conversion.selected))
     }
 }
 
@@ -610,6 +618,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut launcher_cache_drop_after_close = false;
     let mut input_mode = InputMode::Latin;
     let mut japanese_ime = JapaneseIme::new();
+    let mut prev_ime_conversion_visible = false;
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
 
@@ -665,6 +674,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         input_mode == InputMode::Hiragana,
+        None,
+        &[],
+        0,
     );
     // Build the hidden launcher once while the boot scene is already hot.
     // With zero layer opacity this leaves the framebuffer unchanged, but the
@@ -706,6 +718,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         input_mode == InputMode::Hiragana,
+        None,
+        &[],
+        0,
     );
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -2236,6 +2251,18 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fx1 = w;
                     fy1 = h;
                 }
+                let ime_conversion_visible = japanese_ime.conversion.is_some();
+                if ime_conversion_visible || prev_ime_conversion_visible {
+                    fx0 = 0;
+                    fy0 = fy0.min(tb_y.saturating_sub(76));
+                    fx1 = w;
+                    fy1 = fy1.max(tb_y);
+                }
+                let (ime_reading, ime_candidates, ime_selected) = japanese_ime
+                    .conversion_view()
+                    .map_or((None, &[][..], 0), |(reading, candidates, selected)| {
+                        (Some(reading), candidates, selected)
+                    });
                 layer.push_clip(fx0, fy0, fx1, fy1);
 
                 render_scene(
@@ -2275,6 +2302,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_mm,
                     battery_info.valid_percentage(),
                     input_mode == InputMode::Hiragana,
+                    ime_reading,
+                    ime_candidates,
+                    ime_selected,
                 );
                 layer.pop_clip();
 
@@ -2319,12 +2349,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_mm,
                         battery_info.valid_percentage(),
                         input_mode == InputMode::Hiragana,
+                        ime_reading,
+                        ime_candidates,
+                        ime_selected,
                     );
                     layer.pop_clip();
                 }
 
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
+                prev_ime_conversion_visible = ime_conversion_visible;
 
                 if tb_add_progress >= 1.0 {
                     tb_add_progress = -1.0;

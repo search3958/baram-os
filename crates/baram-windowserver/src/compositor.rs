@@ -1075,6 +1075,56 @@ fn redraw_taskbar(
     surface.search_dirty = false;
 }
 
+fn draw_ime_candidates(
+    layer: &mut LayerSystem,
+    taskbar_y: usize,
+    reading: &str,
+    candidates: &[alloc::string::String],
+    selected: usize,
+) {
+    if candidates.is_empty() || taskbar_y < 76 {
+        return;
+    }
+    let x = 24usize;
+    let y = taskbar_y - 76;
+    let width = 440usize.min(layer.width().saturating_sub(x * 2));
+    let height = 64usize;
+    draw_control_shadow(layer, x, y, width, height, 12, 2, 0x36);
+    blend_rounded_rect(
+        layer,
+        x,
+        y,
+        width,
+        height,
+        12,
+        config::get_color("ui-theme/color/panel", Color::PANEL),
+        242,
+    );
+    let text_color = config::get_color("ui-theme/color/text", Color::TEXT);
+    let accent = config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY);
+    let mut heading = alloc::string::String::from("変換中: ");
+    heading.push_str(reading);
+    layer.put_str(x + 14, y + 8, &heading, text_color);
+
+    let mut cx = x + 14;
+    for (index, candidate) in candidates.iter().enumerate() {
+        let candidate_width = candidate.chars().count() * 16 + 18;
+        if cx + candidate_width > x + width - 10 {
+            break;
+        }
+        if index == selected {
+            blend_rounded_rect(layer, cx, y + 30, candidate_width, 25, 6, accent, 48);
+        }
+        layer.put_str(cx + 8, y + 34, candidate, text_color);
+        if index == selected {
+            // The underline marks the candidate currently composing in the
+            // target input. Enter commits this underlined candidate.
+            layer.fill_rect(cx + 7, y + 52, candidate_width.saturating_sub(14), 2, accent);
+        }
+        cx += candidate_width + 6;
+    }
+}
+
 /// Bounds of the taskbar IME toggle, kept in sync with the status layout.
 pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
     let measure = |text: &str| -> usize {
@@ -1145,6 +1195,9 @@ pub fn render_scene(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_hiragana: bool,
+    ime_reading: Option<&str>,
+    ime_candidates: &[alloc::string::String],
+    ime_selected: usize,
 ) {
     let w = layer.width();
     let h = layer.height();
@@ -1657,6 +1710,9 @@ pub fn render_scene(
     } else if taskbar.is_search_dirty() {
         redraw_taskbar_search(taskbar, search_focused, search_query);
     }
+    if let Some(reading) = ime_reading {
+        draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
+    }
     taskbar.composite_onto(layer, tb_y);
 }
 
@@ -1701,6 +1757,9 @@ pub fn render_frame(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_hiragana: bool,
+    ime_reading: Option<&str>,
+    ime_candidates: &[alloc::string::String],
+    ime_selected: usize,
 ) {
     render_scene(
         layer,
@@ -1739,6 +1798,9 @@ pub fn render_frame(
         clock_mm,
         battery_pct,
         ime_hiragana,
+        ime_reading,
+        ime_candidates,
+        ime_selected,
     );
     let is_resizing = wm.is_any_resizing();
     cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
