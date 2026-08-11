@@ -247,20 +247,16 @@ fn blend_rounded_rect(
     let x1 = (x + width).min(layer.width());
     let y1 = (y + height).min(layer.height());
     for py in y..y1 {
-        for px in x..x1 {
-            let coverage = squircle_coverage(px, py, x, y, &squircle);
-            if coverage == 0 {
-                continue;
-            }
-            let idx = py * layer.width() + px;
-            let bg = layer.buf_ref()[idx];
-            let a = alpha.min(255) * coverage / 16;
-            let inv = 255 - a;
-            let r = (color.r() as u32 * a + ((bg >> 16) & 0xff) * inv) / 255;
-            let g = (color.g() as u32 * a + ((bg >> 8) & 0xff) * inv) / 255;
-            let b = (color.b() as u32 * a + (bg & 0xff) * inv) / 255;
-            layer.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+        let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py - y, width) else {
+            continue;
+        };
+        let fill_l = (x + span_l).min(x1);
+        let fill_r = (x + span_r).min(x1);
+        if fill_l < fill_r {
+            blend_solid_span(layer, py, fill_l, fill_r, color, alpha.min(255));
         }
+        blend_squircle_edge(layer, x + span_l.saturating_sub(1), py, x, y, &squircle, color, alpha);
+        blend_squircle_edge(layer, x + span_r, py, x, y, &squircle, color, alpha);
     }
 }
 
@@ -294,25 +290,21 @@ fn copy_rounded_region_from_crop(
     let x1 = (x + width).min(layer.width());
     let y1 = (y + height).min(layer.height());
     for py in y..y1 {
-        for px in x..x1 {
-            let coverage = squircle_coverage(px, py, x, y, &squircle);
-            if coverage == 0 {
-                continue;
-            }
-            let idx = py * layer.width() + px;
-            let fg = source[(py - source_y) * source_w + px - source_x];
-            if coverage == 16 {
-                layer.buf_mut()[idx] = fg;
-            } else {
-                let bg = layer.buf_ref()[idx];
-                let a = coverage * 255 / 16;
-                let inv = 255 - a;
-                let r = (((fg >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
-                let g = (((fg >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
-                let b = ((fg & 0xff) * a + (bg & 0xff) * inv) / 255;
-                layer.buf_mut()[idx] = (r << 16) | (g << 8) | b;
-            }
+        let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py - y, width) else {
+            continue;
+        };
+        let fill_l = (x + span_l).min(x1);
+        let fill_r = (x + span_r).min(x1);
+        if fill_l < fill_r {
+            let dst = py * layer.width() + fill_l;
+            let src = (py - source_y) * source_w + fill_l - source_x;
+            layer.buf_mut()[dst..dst + fill_r - fill_l]
+                .copy_from_slice(&source[src..src + fill_r - fill_l]);
         }
+        copy_squircle_edge(layer, source, source_w, source_x, source_y,
+            x + span_l.saturating_sub(1), py, x, y, &squircle);
+        copy_squircle_edge(layer, source, source_w, source_x, source_y,
+            x + span_r, py, x, y, &squircle);
     }
 }
 
@@ -336,6 +328,105 @@ fn squircle_coverage(
         }
     }
     inside
+}
+
+#[inline]
+fn squircle_row_bounds(polygon: &[(f32, f32)], py: f32) -> Option<(f32, f32)> {
+    let mut left = f32::MAX;
+    let mut right = f32::MIN;
+    let mut hits = 0usize;
+    let mut prev = polygon.len().checked_sub(1)?;
+    for current in 0..polygon.len() {
+        let (x0, y0) = polygon[prev];
+        let (x1, y1) = polygon[current];
+        if (y0 > py) != (y1 > py) {
+            let edge_x = x0 + (py - y0) * (x1 - x0) / (y1 - y0);
+            left = left.min(edge_x);
+            right = right.max(edge_x);
+            hits += 1;
+        }
+        prev = current;
+    }
+    (hits >= 2).then_some((left, right))
+}
+
+/// Returns the fully covered pixel span for a scanline.  Only the two
+/// neighbouring pixels need expensive anti-alias coverage tests.
+#[inline]
+fn squircle_row_pixel_span(
+    polygon: &[(f32, f32)],
+    local_y: usize,
+    width: usize,
+) -> Option<(usize, usize)> {
+    let (left, right) = squircle_row_bounds(polygon, local_y as f32 + 0.5)?;
+    let span_l = ((left + 0.5) as usize).min(width);
+    let span_r = ((right + 0.5) as usize).min(width);
+    (span_l <= span_r).then_some((span_l, span_r))
+}
+
+#[inline]
+fn blend_solid_span(
+    layer: &mut LayerSystem,
+    py: usize,
+    left: usize,
+    right: usize,
+    color: Color,
+    alpha: u32,
+) {
+    let range = py * layer.width() + left..py * layer.width() + right;
+    if alpha == 255 {
+        layer.buf_mut()[range].fill(color.0);
+        return;
+    }
+    let inv = 255 - alpha;
+    for bg in &mut layer.buf_mut()[range] {
+        let r = (color.r() as u32 * alpha + ((*bg >> 16) & 0xff) * inv) / 255;
+        let g = (color.g() as u32 * alpha + ((*bg >> 8) & 0xff) * inv) / 255;
+        let b = (color.b() as u32 * alpha + (*bg & 0xff) * inv) / 255;
+        *bg = (r << 16) | (g << 8) | b;
+    }
+}
+
+#[inline]
+fn blend_squircle_edge(
+    layer: &mut LayerSystem, px: usize, py: usize, x: usize, y: usize,
+    polygon: &[(f32, f32)], color: Color, alpha: u32,
+) {
+    if px >= layer.width() || py >= layer.height() { return; }
+    let coverage = squircle_coverage(px, py, x, y, polygon);
+    if coverage == 0 { return; }
+    let a = alpha.min(255) * coverage / 16;
+    let idx = py * layer.width() + px;
+    let bg = layer.buf_ref()[idx];
+    let inv = 255 - a;
+    layer.buf_mut()[idx] = Color::rgb(
+        ((color.r() as u32 * a + ((bg >> 16) & 0xff) * inv) / 255) as u8,
+        ((color.g() as u32 * a + ((bg >> 8) & 0xff) * inv) / 255) as u8,
+        ((color.b() as u32 * a + (bg & 0xff) * inv) / 255) as u8,
+    ).0;
+}
+
+#[inline]
+fn copy_squircle_edge(
+    layer: &mut LayerSystem, source: &[u32], source_w: usize, source_x: usize, source_y: usize,
+    px: usize, py: usize, x: usize, y: usize, polygon: &[(f32, f32)],
+) {
+    if px >= layer.width() || py >= layer.height() { return; }
+    let coverage = squircle_coverage(px, py, x, y, polygon);
+    if coverage == 0 { return; }
+    let idx = py * layer.width() + px;
+    let fg = source[(py - source_y) * source_w + px - source_x];
+    if coverage == 16 {
+        layer.buf_mut()[idx] = fg;
+        return;
+    }
+    let bg = layer.buf_ref()[idx];
+    let a = coverage * 255 / 16;
+    let inv = 255 - a;
+    let r = (((fg >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
+    let g = (((fg >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
+    let b = ((fg & 0xff) * a + (bg & 0xff) * inv) / 255;
+    layer.buf_mut()[idx] = (r << 16) | (g << 8) | b;
 }
 
 fn box_blur_alpha_2x(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
@@ -391,11 +482,8 @@ fn draw_soft_box_shadow(
     let r = radius.min(width / 2).min(height / 2);
     let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, r as f32);
     for py in 0..height {
-        for px in 0..width {
-            let coverage = squircle_coverage(px, py, 0, 0, &squircle);
-            if coverage != 0 {
-                alpha[(py + PAD) * sw + px + PAD] = (24 * coverage / 16) as u8;
-            }
+        if let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py, width) {
+            alpha[(py + PAD) * sw + span_l + PAD..(py + PAD) * sw + span_r + PAD].fill(24);
         }
     }
     box_blur_alpha_2x(&mut alpha, sw, sh, 18);
@@ -452,12 +540,9 @@ fn draw_control_shadow(
     let r = radius.min(width / 2).min(height / 2);
     let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, r as f32);
     for py in 0..height {
-        for px in 0..width {
-            let coverage = squircle_coverage(px, py, 0, 0, &squircle);
-            if coverage != 0 {
-                alpha[(py + pad + offset_y) * sw + px + pad] =
-                    (opacity as u32 * coverage / 16) as u8;
-            }
+        if let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py, width) {
+            let row = (py + pad + offset_y) * sw + pad;
+            alpha[row + span_l..row + span_r].fill(opacity);
         }
     }
     box_blur_alpha_2x(&mut alpha, sw, sh, blur_radius);
@@ -471,13 +556,18 @@ fn draw_control_shadow(
         if dy >= layer.height() {
             continue;
         }
+        let inside_span = dy.checked_sub(y)
+            .filter(|local_y| *local_y < height)
+            .and_then(|local_y| squircle_row_pixel_span(&squircle, local_y, width));
         for sx in source_x..sw {
             let dx = ox + sx - source_x;
             if dx >= layer.width() {
                 continue;
             }
-            if squircle_coverage(dx, dy, x, y, &squircle) != 0 {
-                continue;
+            if let Some((span_l, span_r)) = inside_span {
+                if dx >= x + span_l.saturating_sub(1) && dx <= x + span_r {
+                    continue;
+                }
             }
             let a = alpha[sy * sw + sx] as u32;
             if a == 0 {
