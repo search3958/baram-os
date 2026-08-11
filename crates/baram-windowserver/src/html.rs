@@ -446,6 +446,13 @@ impl HtmlEngine {
         }
     }
 
+    pub fn content_height(&self) -> i32 {
+        self.warp3
+            .as_ref()
+            .map(|engine| engine.content_height)
+            .unwrap_or(0)
+    }
+
     pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.set_runtime_metrics(fps, windows, keys, mouse);

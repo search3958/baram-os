@@ -13,6 +13,7 @@ pub fn mark_setup_done() {
 #[derive(Clone, Copy, PartialEq)]
 pub enum SetupScreen {
     Welcome,
+    Timezone,
     Keyboard,
     KeyboardDetected,
     Done,
@@ -40,6 +41,7 @@ impl SetupWizard {
     pub fn warp3_screen(&self) -> &'static str {
         match self.screen {
             SetupScreen::Welcome => "welcome",
+            SetupScreen::Timezone => "timezone",
             SetupScreen::Keyboard => "keyboard",
             SetupScreen::KeyboardDetected => "keyboardDetected",
             SetupScreen::Done => "done",
@@ -53,8 +55,21 @@ impl SetupWizard {
     pub fn on_command(&mut self, command: &str) {
         match command {
             "setup://continue" if self.screen == SetupScreen::Welcome => {
-                self.screen = SetupScreen::Keyboard;
+                self.screen = SetupScreen::Timezone;
                 self.dirty = true;
+            }
+            command if self.screen == SetupScreen::Timezone => {
+                if let Some(offset) = command.strip_prefix("setup://timezone?") {
+                    if is_valid_timezone_offset(offset) {
+                        let saved = config::update_and_save(|cfg| {
+                            cfg.set("system/timezone", offset);
+                        });
+                        if saved {
+                            self.screen = SetupScreen::Keyboard;
+                            self.dirty = true;
+                        }
+                    }
+                }
             }
             "setup://finish" if self.key_detected => self.finish(false),
             "setup://skip" => self.finish(true),
@@ -78,6 +93,10 @@ impl SetupWizard {
 
         match self.screen {
             SetupScreen::Welcome if is_enter => {
+                self.screen = SetupScreen::Timezone;
+                self.dirty = true;
+            }
+            SetupScreen::Timezone if is_enter => {
                 self.screen = SetupScreen::Keyboard;
                 self.dirty = true;
             }
@@ -112,4 +131,22 @@ impl SetupWizard {
         self.screen = SetupScreen::Done;
         self.dirty = true;
     }
+}
+
+fn is_valid_timezone_offset(offset: &str) -> bool {
+    let bytes = offset.as_bytes();
+    if bytes.len() != 6 || !matches!(bytes[0], b'+' | b'-') || bytes[3] != b':' {
+        return false;
+    }
+    let parse_two = |digits: &[u8]| -> Option<i32> {
+        if digits.iter().all(u8::is_ascii_digit) {
+            Some(((digits[0] - b'0') * 10 + (digits[1] - b'0')) as i32)
+        } else {
+            None
+        }
+    };
+    let (Some(hours), Some(minutes)) = (parse_two(&bytes[1..3]), parse_two(&bytes[4..6])) else {
+        return false;
+    };
+    (hours <= 14 && minutes < 60) && (hours != 14 || minutes == 0)
 }

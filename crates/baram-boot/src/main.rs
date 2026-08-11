@@ -706,6 +706,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut setup_scene_dirty = true;
         let mut setup_first_frame_logged = false;
         let mut setup_prev_cursor = (cursor_x, cursor_y);
+        let mut setup_scroll = 0i32;
         let mut setup_now_ns = 0u64;
         let mut setup_next_present_ms = 0u64;
         setup_engine.set_warp3_screen(wizard.warp3_screen());
@@ -735,10 +736,25 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         screen.height(),
                         nano.pointer_abs_max(),
                     );
-                    setup_engine.set_hover(cursor_x - setup_origin.0, cursor_y - setup_origin.1);
+                    if ev.scroll != 0 {
+                        let max_scroll = setup_engine.content_height().saturating_sub(320).max(0);
+                        let delta = ev
+                            .scroll
+                            .saturating_neg()
+                            .saturating_mul(baram_windowserver::window::scroll_speed());
+                        setup_scroll = setup_scroll.saturating_add(delta).clamp(0, max_scroll);
+                        setup_engine.set_scroll(setup_scroll);
+                    }
+                    setup_engine.set_hover(
+                        cursor_x - setup_origin.0,
+                        cursor_y - setup_origin.1 + setup_scroll,
+                    );
                     setup_scene_dirty = true;
                     if ev.left {
-                        setup_engine.click(cursor_x - setup_origin.0, cursor_y - setup_origin.1);
+                        setup_engine.click(
+                            cursor_x - setup_origin.0,
+                            cursor_y - setup_origin.1 + setup_scroll,
+                        );
                         if let Some(command) = setup_engine.last_command.take() {
                             wizard.on_command(&command);
                         }
@@ -753,8 +769,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             cursor_x = cursor_x.max(0).min(screen.width() as i32 - 1);
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
             if wizard.take_dirty() {
+                setup_scroll = 0;
                 setup_engine.set_warp3_screen(wizard.warp3_screen());
                 setup_engine.update(528, 320);
+                setup_engine.set_scroll(setup_scroll);
                 setup_scene_dirty = true;
             }
             if setup_engine.tick(setup_now_ns) {
@@ -973,16 +991,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut ime_hover_dirty = false;
     let mut prev_ime_conversion_visible = false;
 
-    let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
+    let timezone_offset_minutes = config::timezone_offset_minutes();
 
     let mut battery_info = baram_iokit::battery::read_battery();
     let mut battery_poll_seconds: u8 = 0;
 
     let (mut clock_hh, mut clock_mm) = {
-        let tz = timezone_offset;
+        let tz = timezone_offset_minutes;
         match runtime::get_time() {
             Ok(t) => {
-                let total_min = (t.hour() as i32) * 60 + (t.minute() as i32) + tz * 60;
+                let total_min = (t.hour() as i32) * 60 + (t.minute() as i32) + tz;
                 let day_min = total_min.rem_euclid(24 * 60);
                 ((day_min / 60) as u8, (day_min % 60) as u8)
             }
@@ -2430,7 +2448,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 start_time = now;
 
                 let total_min =
-                    (now.hour() as i32) * 60 + (now.minute() as i32) + timezone_offset * 60;
+                    (now.hour() as i32) * 60 + (now.minute() as i32) + timezone_offset_minutes;
                 let day_min = total_min.rem_euclid(24 * 60);
                 let next_hh = (day_min / 60) as u8;
                 let next_mm = (day_min % 60) as u8;

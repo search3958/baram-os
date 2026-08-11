@@ -4,6 +4,34 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 const DEFAULT_CONFIG_XML: &[u8] = include_bytes!("../../../config.xml");
 
+/// Returns the configured UTC offset in minutes.
+///
+/// New settings use the unambiguous `+09:00` form.  Integer values such as
+/// `+9` are accepted for configurations created by older BaramOS versions.
+pub fn timezone_offset_minutes() -> i32 {
+    let value = get_config().get("system/timezone").unwrap_or("+09:00");
+    let value = value.trim();
+    if let Ok(hours) = value.parse::<i32>() {
+        return hours.clamp(-12, 14) * 60;
+    }
+
+    let (sign, value) = match value.as_bytes().first() {
+        Some(b'-') => (-1, &value[1..]),
+        Some(b'+') => (1, &value[1..]),
+        _ => return 9 * 60,
+    };
+    let Some((hours, minutes)) = value.split_once(':') else {
+        return 9 * 60;
+    };
+    let (Ok(hours), Ok(minutes)) = (hours.parse::<i32>(), minutes.parse::<i32>()) else {
+        return 9 * 60;
+    };
+    if !(0..=14).contains(&hours) || !(0..60).contains(&minutes) || (hours == 14 && minutes != 0) {
+        return 9 * 60;
+    }
+    sign * (hours * 60 + minutes)
+}
+
 #[derive(Clone)]
 pub enum XmlNode {
     Element { tag: String, children: Vec<XmlNode> },

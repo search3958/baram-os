@@ -1680,12 +1680,10 @@ impl Warp3Engine {
 
     fn now_value(&self, path: &str) -> Option<String> {
         let time = runtime::get_time().ok()?;
-        let timezone = baram_bsd::config::get_config()
-            .get_i32("system/timezone")
-            .unwrap_or(9);
+        let timezone_minutes = baram_bsd::config::timezone_offset_minutes();
         let utc_seconds =
             time.hour() as i32 * 3600 + time.minute() as i32 * 60 + time.second() as i32;
-        let local_seconds = (utc_seconds + timezone * 3600).rem_euclid(24 * 3600);
+        let local_seconds = (utc_seconds + timezone_minutes * 60).rem_euclid(24 * 3600);
         let hour = (local_seconds / 3600) as u8;
         let minute = ((local_seconds / 60) % 60) as u8;
         let second = (local_seconds % 60) as u8;

@@ -128,7 +128,7 @@
     </trackpad>
     <system>
         <done>0</done>
-        <timezone>+9</timezone>
+        <timezone>+09:00</timezone>
         <reset>
             <option/>
         </reset>
