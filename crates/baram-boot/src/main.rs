@@ -59,12 +59,88 @@ use nano_system::NanoSystem;
 // opening an app always has visible intermediate taskbar frames.
 const TASKBAR_ADD_ANIMATION_MS: u64 = 180;
 const MOZC_DICTIONARY: &str = include_str!("mozc_dictionary.tsv");
+// Generated from AOSP PinyinIME's Apache-2.0 raw dictionary. The source
+// spellings are joined so both `zhong guo` and `zhongguo` input resolve alike.
+const PINYIN_DICTIONARY: &str = include_str!("pinyin_dictionary.tsv");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
     Latin,
     Hiragana,
     Korean(KoreanLayout),
+    Pinyin,
+}
+
+struct PinyinIme {
+    raw: alloc::string::String,
+    visible_chars: usize,
+    conversion: Option<PinyinConversion>,
+}
+
+struct PinyinConversion {
+    pinyin: alloc::string::String,
+    candidates: alloc::vec::Vec<alloc::string::String>,
+    selected: usize,
+}
+
+impl PinyinIme {
+    fn new() -> Self {
+        Self { raw: alloc::string::String::new(), visible_chars: 0, conversion: None }
+    }
+    fn reset(&mut self) {
+        self.raw.clear();
+        self.visible_chars = 0;
+        self.conversion = None;
+    }
+    fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key != 0x08 && key != 0x7f && self.conversion.is_some() { self.reset(); }
+        if key == 0x08 || key == 0x7f {
+            if self.raw.pop().is_some() {
+                let replace = self.visible_chars;
+                self.visible_chars = self.raw.chars().count();
+                return (self.raw.clone(), replace);
+            }
+            return (alloc::string::String::new(), 1);
+        }
+        let ch = key as char;
+        if ch.is_ascii_alphabetic() || ch == '\'' {
+            self.raw.push(ch.to_ascii_lowercase());
+            let replace = self.visible_chars;
+            self.visible_chars = self.raw.chars().count();
+            return (self.raw.clone(), replace);
+        }
+        let mut text = self.raw.clone();
+        text.push(ch);
+        let replace = self.visible_chars;
+        self.reset();
+        (text, replace)
+    }
+    fn convert(&mut self) -> Option<(alloc::string::String, usize)> {
+        if let Some(conversion) = self.conversion.as_mut() {
+            conversion.selected = (conversion.selected + 1) % conversion.candidates.len();
+            let text = conversion.candidates[conversion.selected].clone();
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return Some((text, replace));
+        }
+        let key = self.raw.replace('\'', "");
+        let candidates = pinyin_candidates(&key)?;
+        let text = candidates[0].clone();
+        let replace = self.visible_chars;
+        self.visible_chars = text.chars().count();
+        self.conversion = Some(PinyinConversion { pinyin: self.raw.clone(), candidates, selected: 0 });
+        Some((text, replace))
+    }
+    fn edit_for_key(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key == b' ' { return self.convert().unwrap_or_else(|| self.edit(key)); }
+        if key == b'\n' || key == b'\r' { self.reset(); return (alloc::string::String::new(), 0); }
+        self.edit(key)
+    }
+    fn conversion_view(&self) -> Option<(&str, &[alloc::string::String], usize)> {
+        self.conversion.as_ref().map(|conversion| {
+            (conversion.pinyin.as_str(), conversion.candidates.as_slice(), conversion.selected)
+        })
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -195,6 +271,16 @@ fn mozc_candidates(kana: &str) -> Option<alloc::vec::Vec<alloc::string::String>>
         if key == kana {
             let candidates = fields.map(alloc::string::String::from).collect();
             return Some(candidates);
+        }
+    }
+    None
+}
+
+fn pinyin_candidates(pinyin: &str) -> Option<alloc::vec::Vec<alloc::string::String>> {
+    for line in PINYIN_DICTIONARY.lines().skip(1) {
+        let mut fields = line.split('\t');
+        if fields.next()? == pinyin {
+            return Some(fields.map(alloc::string::String::from).collect());
         }
     }
     None
@@ -342,6 +428,7 @@ fn ime_menu_selection(mode: InputMode) -> usize {
         InputMode::Korean(KoreanLayout::Dubeolsik) => 2,
         InputMode::Korean(KoreanLayout::HancomRoman) => 3,
         InputMode::Korean(KoreanLayout::ChosunDubeolsik) => 4,
+        InputMode::Pinyin => 5,
     }
 }
 
@@ -351,6 +438,7 @@ fn input_mode_for_menu_selection(selection: usize) -> InputMode {
         2 => InputMode::Korean(KoreanLayout::Dubeolsik),
         3 => InputMode::Korean(KoreanLayout::HancomRoman),
         4 => InputMode::Korean(KoreanLayout::ChosunDubeolsik),
+        5 => InputMode::Pinyin,
         _ => InputMode::Latin,
     }
 }
@@ -359,12 +447,14 @@ fn ime_edit_for_key(
     mode: InputMode,
     japanese: &mut JapaneseIme,
     hangul: &mut HangulIme,
+    pinyin: &mut PinyinIme,
     key: u8,
 ) -> Option<(alloc::string::String, usize)> {
     match mode {
         InputMode::Latin => None,
         InputMode::Hiragana => Some(japanese.edit_for_key(key)),
         InputMode::Korean(layout) => Some(hangul.edit_for_key(key, layout)),
+        InputMode::Pinyin => Some(pinyin.edit_for_key(key)),
     }
 }
 
@@ -855,6 +945,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut input_mode = InputMode::Latin;
     let mut japanese_ime = JapaneseIme::new();
     let mut hangul_ime = HangulIme::new();
+    let mut pinyin_ime = PinyinIme::new();
     let mut show_ime_menu = false;
     let mut prev_show_ime_menu = false;
     let mut prev_ime_conversion_visible = false;
@@ -1020,7 +1111,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // so it does not always arrive through `printable`.
             if app_search_focused && ev.scancode == 0x08 {
                 if let Some((text, replace_chars)) =
-                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, 0x08)
+                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, 0x08)
                 {
                     for _ in 0..replace_chars {
                         app_search_query.pop();
@@ -1061,7 +1152,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let mut handled = false;
                 if app_search_focused {
                     if let Some((text, replace_chars)) =
-                        ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, c)
+                        ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
                     {
                         for _ in 0..replace_chars {
                             app_search_query.pop();
@@ -1102,7 +1193,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && !engine.focused_input_var.is_empty()
                         {
                             if let Some((text, replace_chars)) =
-                                ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, c)
+                                ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
                             {
                                 engine.handle_text(&text, replace_chars);
                             } else {
@@ -1130,7 +1221,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 && engine.has_focused_input()
                             {
                                 if let Some((text, replace_chars)) =
-                                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, c)
+                                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
                                 {
                                     engine.handle_text(&text, replace_chars);
                                 } else {
@@ -1335,6 +1426,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     // Clicking a different input ends the previous composition.
                     japanese_ime.reset();
                     hangul_ime.reset();
+                    pinyin_ime.reset();
                     let sh = screen.height();
 
                     // The mode picker is modal: a click selects a row or
@@ -1349,6 +1441,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         ) {
                             input_mode = input_mode_for_menu_selection(selection);
                             hangul_ime.reset();
+                            pinyin_ime.reset();
                             taskbar_surface.invalidate();
                         }
                         show_ime_menu = false;
@@ -1766,6 +1859,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     input_mode = input_mode_for_menu_selection(selection);
                     japanese_ime.reset();
                     hangul_ime.reset();
+                    pinyin_ime.reset();
                     taskbar_surface.invalidate();
                 }
                 show_ime_menu = false;
@@ -2556,7 +2650,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fx1 = w;
                     fy1 = h;
                 }
-                let ime_conversion_visible = japanese_ime.conversion.is_some();
+                let ime_conversion_visible =
+                    japanese_ime.conversion.is_some() || pinyin_ime.conversion.is_some();
                 if ime_menu_changed || ime_menu_cache_dirty {
                     let (menu_x, menu_y, menu_w, menu_h) =
                         (ime_menu_x, ime_menu_y, ime_menu_w, ime_menu_h);
@@ -2572,11 +2667,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fx1 = w;
                     fy1 = fy1.max(tb_y);
                 }
-                let (ime_reading, ime_candidates, ime_selected) = japanese_ime
-                    .conversion_view()
-                    .map_or((None, &[][..], 0), |(reading, candidates, selected)| {
-                        (Some(reading), candidates, selected)
-                    });
+                let (ime_reading, ime_candidates, ime_selected) = if let Some((reading, candidates, selected)) =
+                    japanese_ime.conversion_view()
+                {
+                    (Some(reading), candidates, selected)
+                } else if let Some((reading, candidates, selected)) = pinyin_ime.conversion_view() {
+                    (Some(reading), candidates, selected)
+                } else {
+                    (None, &[][..], 0)
+                };
                 layer.push_clip(fx0, fy0, fx1, fy1);
 
                 render_scene(

@@ -17,13 +17,14 @@ pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 pub const IME_BUTTON_W: usize = 32;
 const IME_MENU_W: usize = 210;
-const IME_MENU_H: usize = 226;
+const IME_MENU_H: usize = 264;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
 const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
 const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
 const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
 const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
 const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
+const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../data/keyboard-pinyin.svg");
 
 fn ime_icon_svg(selection: usize) -> &'static str {
     match selection {
@@ -31,6 +32,7 @@ fn ime_icon_svg(selection: usize) -> &'static str {
         2 => KEYBOARD_KR2_SVG,
         3 => KEYBOARD_KRCOM_SVG,
         4 => KEYBOARD_KP2_SVG,
+        5 => KEYBOARD_PINYIN_SVG,
         _ => KEYBOARD_ENGLISH_SVG,
     }
 }
@@ -1163,10 +1165,10 @@ pub fn ime_menu_mode_at(
     if x < menu_x || x >= menu_x + menu_w || y < menu_y || y >= menu_y + menu_h {
         return None;
     }
-    // Header occupies the first 28px; five 38px rows follow it.
+    // Header occupies the first 28px; six 38px rows follow it.
     (y >= menu_y + 30)
         .then(|| ((y - menu_y - 30) / 38) as usize)
-        .filter(|row| *row < 5)
+        .filter(|row| *row < 6)
 }
 
 fn draw_ime_menu(
@@ -1240,6 +1242,7 @@ fn draw_ime_menu(
         "한국 두벌식",
         "한컴 로마자",
         "조선 두벌식",
+        "简体拼音",
     ].iter().enumerate() {
         let row_y = y + 30 + row * 38;
         if row == ime_menu_selection {

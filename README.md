@@ -79,6 +79,15 @@ HTML/CSSアプリ表示機能には追加の外部ライブラリを使用して
 - **ライセンス**：MIT ライセンス
 - **用途**：ローマ字からひらがなへの変換を行います。UEFI の `no_std` 環境向けに必要最小限の適合を加えたソースを `crates/wana-kana` に同梱しています。
 
+### AOSP PinyinIME dictionary
+- **ライセンス**：Apache-2.0
+- **用途**：簡体字拼音入力の変換候補です。Android Open Source Project の [PinyinIME](https://android.googlesource.com/platform/packages/inputmethods/PinyinIME/) にある `jni/data/rawdict_utf16_65105_freq.txt` を、GBK フラグが 0 の標準簡体字エントリに限定して、入力用の `crates/baram-boot/src/pinyin_dictionary.tsv` へ生成しています。生成元は commit `49aebad1c1cfbbcaa9288ffed5161e79e57c3679` です。手書きの候補表は使用していません。
+- **更新方法**：`tools/generate_pinyin_dictionary.rs` を使って、AOSP の同じ辞書ソースから再生成します。
+
+### 韓国語・朝鮮語入力
+- **ライセンス**：外部 IME エンジン／配列データは使用していません。
+- **用途**：`한국 두벌식`、`한컴 로마자`、`조선 두벌식` は `crates/baram-boot/src/main.rs` の自前合成器で実装しています。朝鮮2ボル式と Hancom ローマ字の配列は、このプロジェクトで指定された配列定義をコード化したものです。
+
 ### KCC-KP-CheonRiMa-Normal-KP-2011KPS
 - **ライセンス**：提供された TTF ファイル自体にライセンス通知が同梱されていないため、再配布条件は確認が必要です（OSS ライセンスとしては扱っていません）。
 - **用途**：HarmonyOS Sans にグリフがないハングル文字の描画フォールバックとして `data/KCC-KP-CheonRiMa-Normal-KP-2011KPS.ttf` を使用します。
