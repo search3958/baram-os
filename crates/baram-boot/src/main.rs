@@ -1871,25 +1871,27 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         let scroll_animating = wm.has_scroll_animation();
+        let taskbar_animating = tb_add_progress >= 0.0 || tb_remove_progress >= 0.0;
         let continuous_motion = scroll_animating
             || app_launcher_scroll.is_animating()
-            || launcher_anim_phase != 0
-            || tb_add_progress >= 0.0
-            || tb_remove_progress >= 0.0;
+            || launcher_anim_phase != 0;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
         if dirty
             && ui_time_ms < next_present_ms
             && !cursor_moved
             && !scroll_input
-            && !continuous_motion
         {
             deferred_dirty = true;
             continue;
         }
 
         if dirty {
-            next_present_ms = ui_time_ms.saturating_add(if continuous_motion { 4 } else { 16 });
+            // The taskbar has to rasterize and flush the whole bottom strip.
+            // Cap it at the normal 60 Hz cadence, while retaining the tighter
+            // interval for lightweight scrolling and launcher motion.
+            let present_interval_ms = if taskbar_animating { 16 } else if continuous_motion { 4 } else { 16 };
+            next_present_ms = ui_time_ms.saturating_add(present_interval_ms);
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
             if scene_dirty {
