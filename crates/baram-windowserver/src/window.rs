@@ -92,7 +92,8 @@ pub fn btn_size() -> usize {
 }
 
 pub fn btn_area_w() -> usize {
-    btn_size() * 3 + 23
+    // Keep the title clear of the window controls.
+    btn_size() * 3 + 27
 }
 
 pub fn win_radius() -> usize {
@@ -353,8 +354,8 @@ impl Window {
     }
 
     fn button_hit(&self, px: i32, py: i32) -> char {
-        let base_x = self.x + 6;
-        let btn_y = self.y + 5;
+        let base_x = self.x + 10;
+        let btn_y = self.y + 10;
         let bs = btn_size() as i32;
         if py >= btn_y && py < btn_y + bs {
             if px >= base_x && px < base_x + bs {
@@ -1521,8 +1522,8 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
     let tb_h = title_bar_h().min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
 
-    let base_x = x as i32 + 6;
-    let btn_y = y as i32 + 5;
+    let base_x = x as i32 + 10;
+    let btn_y = y as i32 + 10;
     let bs = btn_size() as i32;
     let btn_center_x = base_x + bs / 2;
     let btn_center_y = btn_y + bs / 2;
@@ -1611,7 +1612,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
         let title = w.title_str();
         if !title.is_empty() {
             let title_x = (base_x + bs * 3 + 20) as usize;
-            let title_y = (y as i32 + 8) as usize;
+            let title_y = (y as i32 + 13) as usize;
             if title_x < sw && title_y < sh {
                 layer.put_str(title_x, title_y, title, Color::TEXT);
             }
@@ -1714,8 +1715,8 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
     let tb_h = title_bar_h().min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
 
-    let base_x = x as i32 + 6;
-    let btn_y = y as i32 + 5;
+    let base_x = x as i32 + 10;
+    let btn_y = y as i32 + 10;
     let bs = btn_size() as i32;
     let btn_center_x = base_x + bs / 2;
     let btn_center_y = btn_y + bs / 2;
@@ -1802,7 +1803,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
         }
     }
 
-    layer.put_str(x + btn_area_w(), y + 8, w.title_str(), title_color);
+    layer.put_str(x + btn_area_w(), y + 13, w.title_str(), title_color);
 }
 
 fn draw_window_border(_layer: &mut LayerSystem, _w: &Window) {}

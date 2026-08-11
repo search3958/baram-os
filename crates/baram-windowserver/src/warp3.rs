@@ -481,9 +481,9 @@ impl Warp3Engine {
         let title_bar = crate::window::title_bar_h() as i32;
         let document_width = self.width.min(960);
         let document_x = (self.width - document_width) / 2;
-        let content_x = document_x + 28;
-        let content_width = document_width - 56;
-        let mut y = title_bar + 32;
+        let content_x = document_x + 14;
+        let content_width = document_width - 28;
+        let mut y = title_bar + 16;
         let roots = self.roots.clone();
         for idx in roots {
             if self.nodes[idx].is("config") || self.nodes[idx].is("toolbar") {
@@ -492,12 +492,12 @@ impl Warp3Engine {
             let h = self.layout(idx, content_x, y, content_width);
             y += h + 12;
         }
-        self.content_height = (y + 96).max(title_bar + self.height);
-        let toolbar_width = (self.width - 32).min(900);
+        self.content_height = (y + 48).max(title_bar + self.height);
+        let toolbar_width = (self.width - 16).min(900);
         let toolbar_x = (self.width - toolbar_width) / 2;
         // Toolbars live in viewport coordinates.  They are deliberately not
         // part of the document, so scrolling never moves or reflows them.
-        let toolbar_y = title_bar + self.height - 18 - 54;
+        let toolbar_y = title_bar + self.height - 9 - 54;
         let toolbars: Vec<usize> = self
             .roots
             .iter()
@@ -749,7 +749,7 @@ impl Warp3Engine {
         // Repainting TTF text outside the local damage would blend its edge
         // pixels again even though the document did not change.
         let paint_toolbar = self.window_damage.map_or(true, |(_, y0, _, y1)| {
-            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 18 - 54 - 14;
+            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 9 - 54 - 14;
             y1 >= toolbar_top && y0 < self.height + crate::window::title_bar_h() as i32
         });
         // Paint the fixed controls over the already-composited document. This
