@@ -1057,6 +1057,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut prev_show_app_launcher: bool = false;
     let mut launcher_content_dirty: bool = false;
     let mut launcher_render_visible = false;
+    let mut pending_launcher_app: Option<alloc::string::String> = None;
+    let mut launcher_app_open_at_ms: Option<u64> = None;
     let mut launcher_target_prev = false;
     let mut launcher_anim_phase: i8 = 0; // 1 opening, -1 closing
     let mut launcher_anim_started_ms = 0u64;
@@ -1635,25 +1637,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         }
                         if let Some(idx) = clicked_app {
                             let app_name = app_name_list[idx].clone();
-                            let nx = 100 + ((new_window_idx as i32 * 37) % 300);
-                            let ny = 60 + ((new_window_idx as i32 * 23) % 200);
-                            open_app(
-                                &app_name,
-                                &app_entries,
-                                &mut wm,
-                                &mut warp_engines,
-                                &mut html_engines,
-                                &mut ui_commands,
-                                &mut ui_win_id,
-                                nx,
-                                ny,
-                                400,
-                                450,
-                            );
-                            tb_add_progress = 0.0;
-                            tb_add_started_ms = None;
-                            tb_shift_x = 26.0;
-                            new_window_idx = new_window_idx.wrapping_add(1);
+                            pending_launcher_app = Some(app_name);
                             app_search_query.clear();
                             app_search_focused = false;
                             rebuild_filtered_apps(
@@ -2057,25 +2041,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 }
                 if let Some(idx) = clicked_app {
                     let app_name = app_name_list[idx].clone();
-                    let nx = 100 + ((new_window_idx as i32 * 37) % 300);
-                    let ny = 60 + ((new_window_idx as i32 * 23) % 200);
-                    open_app(
-                        &app_name,
-                        &app_entries,
-                        &mut wm,
-                        &mut warp_engines,
-                        &mut html_engines,
-                        &mut ui_commands,
-                        &mut ui_win_id,
-                        nx,
-                        ny,
-                        400,
-                        450,
-                    );
-                    tb_add_progress = 0.0;
-                    tb_add_started_ms = None;
-                    tb_shift_x = 26.0;
-                    new_window_idx = new_window_idx.wrapping_add(1);
+                    pending_launcher_app = Some(app_name);
                     app_search_query.clear();
                     rebuild_filtered_apps(
                         &app_entries,
@@ -2396,7 +2362,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             launcher_anim_elapsed_ms = ui_time_ms
                 .saturating_sub(launcher_anim_started_ms)
                 .min(u32::MAX as u64) as u32;
-            let duration = 200;
+            let duration = if launcher_anim_phase < 0 { 100 } else { 200 };
             if launcher_anim_elapsed_ms >= duration {
                 if launcher_anim_phase < 0 {
                     launcher_render_visible = false;
@@ -2404,12 +2370,47 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         cached_launcher_layer = None;
                         launcher_cache_drop_after_close = false;
                     }
+                    if pending_launcher_app.is_some() {
+                        // Present one launcher-free frame before creating the
+                        // new window, so close completion is visually clear.
+                        launcher_app_open_at_ms = Some(ui_time_ms.saturating_add(16));
+                    }
                 }
                 launcher_anim_phase = 0;
             }
             launcher_content_dirty = true;
             scene_dirty = true;
             dirty = true;
+        }
+
+        if launcher_app_open_at_ms.is_some_and(|ready| ui_time_ms >= ready) {
+            launcher_app_open_at_ms = None;
+            if let Some(app_name) = pending_launcher_app.take() {
+                let nx = 100 + ((new_window_idx as i32 * 37) % 300);
+                let ny = 60 + ((new_window_idx as i32 * 23) % 200);
+                if open_app(
+                    &app_name,
+                    &app_entries,
+                    &mut wm,
+                    &mut warp_engines,
+                    &mut html_engines,
+                    &mut ui_commands,
+                    &mut ui_win_id,
+                    nx,
+                    ny,
+                    400,
+                    450,
+                )
+                .is_some()
+                {
+                    tb_add_progress = 0.0;
+                    tb_add_started_ms = None;
+                    tb_shift_x = 26.0;
+                    new_window_idx = new_window_idx.wrapping_add(1);
+                    scene_dirty = true;
+                    dirty = true;
+                }
+            }
         }
 
         if ime_menu_closing {
