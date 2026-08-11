@@ -683,24 +683,36 @@ fn gaussian_convolution_scalar(src: &[u32], dst: &mut [u32], w: usize, h: usize,
     let mut kernel = alloc::vec![0i32; kernel_size];
     build_fixed_kernel_buffer(blur_r, &mut kernel);
     let mut tmp = alloc::vec![0u32; w * h];
-    let mut x = 0;
-    while x + 4 <= w {
-        unsafe { blur_h_pixel_scalar(src.as_ptr().add(x), tmp.as_mut_ptr().add(x), x, w, &kernel, blur_r); }
-        x += 4;
-    }
-    while x < w {
-        unsafe { blur_h_pixel_scalar(src.as_ptr().add(x), tmp.as_mut_ptr().add(x), x, w, &kernel, blur_r); }
-        x += 1;
+    for y in 0..h {
+        let row = y * w;
+        for x in 0..w {
+            unsafe {
+                blur_h_pixel_scalar(
+                    src.as_ptr().add(row),
+                    tmp.as_mut_ptr().add(row),
+                    x,
+                    w,
+                    &kernel,
+                    blur_r,
+                );
+            }
+        }
     }
     for y in 0..h {
-        let mut cx = 0;
-        while cx + 4 <= w {
-            unsafe { blur_v_pixel_scalar(tmp.as_ptr(), dst.as_mut_ptr().add(y * w + cx), cx, w, h, y, &kernel, blur_r); }
-            cx += 4;
-        }
-        while cx < w {
-            unsafe { blur_v_pixel_scalar(tmp.as_ptr(), dst.as_mut_ptr().add(y * w + cx), cx, w, h, y, &kernel, blur_r); }
-            cx += 1;
+        let row = y * w;
+        for x in 0..w {
+            unsafe {
+                blur_v_pixel_scalar(
+                    tmp.as_ptr(),
+                    dst.as_mut_ptr().add(row),
+                    x,
+                    w,
+                    h,
+                    y,
+                    &kernel,
+                    blur_r,
+                );
+            }
         }
     }
 }
@@ -790,5 +802,23 @@ pub fn blur_region_darkened_to(src: &[u32], dst: &mut [u32], w: usize, y_start: 
         let g = (((*px >> 8) & 0xFF) * b / 255) as u32;
         let bl = ((*px & 0xFF) * b / 255) as u32;
         *px = (r << 16) | (g << 8) | bl;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_gaussian_preserves_every_pixel_of_a_flat_image() {
+        let width = 7;
+        let height = 5;
+        let color = 0x0064_96c8;
+        let src = alloc::vec![color; width * height];
+        let mut dst = alloc::vec![0; src.len()];
+
+        gaussian_convolution_scalar(&src, &mut dst, width, height, 4);
+
+        assert!(dst.iter().all(|pixel| *pixel == color));
     }
 }

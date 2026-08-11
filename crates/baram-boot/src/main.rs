@@ -684,17 +684,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let setup_card = (setup_origin.0, setup_origin.1, 528usize, 320usize);
         let setup_wallpaper = wallpaper_for_state(&display_state, setup_w, setup_h);
         let setup_background = setup_wallpaper.as_ref().map(|wallpaper| {
-            // QEMU's default x86_64 CPU exposes neither AVX2 nor additional
-            // APs. A full-screen four-pass blur here delays first boot long
-            // enough to look like a hang, so use the original wallpaper.
-            #[cfg(target_arch = "x86_64")]
-            {
-                NanoSystem::serial_log("baram: x86 setup uses unblurred wallpaper\r\n");
-                wallpaper.to_vec()
-            }
-            #[cfg(not(target_arch = "x86_64"))]
-            {
-                NanoSystem::serial_log("baram: blurring setup wallpaper\r\n");
+            NanoSystem::serial_log("baram: blurring setup wallpaper\r\n");
             let mut blurred = alloc::vec![0u32; setup_w * setup_h];
             let mut scratch = alloc::vec![0u32; setup_w * setup_h];
             baram_graphics::blur::blur_region_to_with_scratch(
@@ -707,7 +697,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 30,
             );
             blurred
-            }
         });
         NanoSystem::serial_log("baram: setup background ready\r\n");
         let card_radius = config::get_usize("ui-theme/card/radius", 12);
