@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 #[derive(Debug, Default, Clone)]
 /// Options to set.
 pub struct Options {

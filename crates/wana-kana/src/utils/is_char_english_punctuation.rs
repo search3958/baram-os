@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 /// Tests a character. Returns true if the character is considered English punctuation.
 ///
 /// * `char` - character to test

@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::constants::KANA_SLASH_DOT;
 
 /// Tests if char is '・'

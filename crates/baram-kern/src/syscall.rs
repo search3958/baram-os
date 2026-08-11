@@ -2,8 +2,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use crate::process::{ProcessPriority, ProcessState};
 
 pub const SYS_EXIT: u64 = 0;
 pub const SYS_FORK: u64 = 1;

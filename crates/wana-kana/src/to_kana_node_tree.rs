@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 #[derive(Debug, Clone)]
 pub(crate) struct Node {
     pub transitions: Vec<(char, Node)>,

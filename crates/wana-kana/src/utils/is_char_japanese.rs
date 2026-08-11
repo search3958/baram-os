@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 // Tests a character. Returns true if the character is in any unicode range used by japanese.
 use crate::constants::JAPANESE_RANGES;
 use crate::utils::is_char_in_range::*;

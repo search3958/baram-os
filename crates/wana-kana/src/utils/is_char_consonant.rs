@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 /// Tests a character and an english consonant. Returns true if the char is a consonant.
 ///
 /// * `include_Y` include y as a consonant in test

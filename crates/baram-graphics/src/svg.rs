@@ -26,7 +26,6 @@ extern crate alloc;
 
 use alloc::format;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 
 use baram_core::Color;
@@ -401,9 +400,9 @@ pub fn blit_cached_alpha(layer: &mut LayerSystem, pixels: &[u8], w: usize, h: us
     #[cfg(target_arch = "aarch64")]
     unsafe {
         use core::arch::aarch64::*;
-        let v_alpha_scale = vdupq_n_s32(alpha_scale as i32);
-        let v_255 = vdupq_n_s32(255);
-        let v_255_inv = vdupq_n_s32(0);
+        let _v_alpha_scale = vdupq_n_s32(alpha_scale as i32);
+        let _v_255 = vdupq_n_s32(255);
+        let _v_255_inv = vdupq_n_s32(0);
 
         for sy in 0..h {
             let dst_y = oy as usize + sy;

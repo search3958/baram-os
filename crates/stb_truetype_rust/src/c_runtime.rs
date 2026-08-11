@@ -2,7 +2,6 @@ extern crate alloc;
 
 use core;
 use core::alloc::Layout;
-use core::mem;
 
 pub trait One {
     fn one() -> Self;
@@ -32,68 +31,68 @@ impl One for u16 {
     }
 }
 
-pub unsafe fn postInc<T: core::ops::AddAssign + One + Copy>(mut a: *mut T) -> T {
-    let mut result: T = *a;
+pub unsafe fn postInc<T: core::ops::AddAssign + One + Copy>(a: *mut T) -> T {
+    let result: T = *a;
     *a += One::one();
     return result;
 }
 
-pub unsafe fn preInc<T: core::ops::AddAssign + One + Copy>(mut a: *mut T) -> T {
+pub unsafe fn preInc<T: core::ops::AddAssign + One + Copy>(a: *mut T) -> T {
     *a += One::one();
     return *a;
 }
 
-pub unsafe fn postDec<T: core::ops::SubAssign + One + Copy>(mut a: *mut T) -> T {
-    let mut result: T = *a;
+pub unsafe fn postDec<T: core::ops::SubAssign + One + Copy>(a: *mut T) -> T {
+    let result: T = *a;
     *a -= One::one();
     return result;
 }
 
-pub unsafe fn preDec<T: core::ops::SubAssign + One + Copy>(mut a: *mut T) -> T {
+pub unsafe fn preDec<T: core::ops::SubAssign + One + Copy>(a: *mut T) -> T {
     *a -= One::one();
     return *a;
 }
 
-pub unsafe fn preIncPtr<T>(mut a: *mut *mut T) -> *mut T {
+pub unsafe fn preIncPtr<T>(a: *mut *mut T) -> *mut T {
     *a = (*a).offset(1);
     return *a;
 }
 
-pub unsafe fn preDecPtr<T>(mut a: *mut *mut T) -> *mut T {
+pub unsafe fn preDecPtr<T>(a: *mut *mut T) -> *mut T {
     *a = (*a).offset(-1);
     return *a;
 }
 
-pub unsafe fn postIncPtr<T>(mut a: *mut *mut T) -> *mut T {
-    let mut result: *mut T = *a;
+pub unsafe fn postIncPtr<T>(a: *mut *mut T) -> *mut T {
+    let result: *mut T = *a;
     *a = (*a).offset(1);
     return result;
 }
 
-pub unsafe fn postDecPtr<T>(mut a: *mut *mut T) -> *mut T {
-    let mut result: *mut T = *a;
+pub unsafe fn postDecPtr<T>(a: *mut *mut T) -> *mut T {
+    let result: *mut T = *a;
     *a = (*a).offset(-1);
     return result;
 }
 
-pub unsafe fn preIncConstPtr<T>(mut a: *mut *const T) -> *const T {
+pub unsafe fn preIncConstPtr<T>(a: *mut *const T) -> *const T {
     *a = (*a).offset(1);
     return *a;
 }
 
-pub unsafe fn preDecConstPtr<T>(mut a: *mut *const T) -> *const T {
+pub unsafe fn preDecConstPtr<T>(a: *mut *const T) -> *const T {
     *a = (*a).offset(-1);
     return *a;
 }
 
-pub unsafe fn postIncConstPtr<T>(mut a: *mut *const T) -> *const T {
-    let mut result: *const T = *a;
+pub unsafe fn postIncConstPtr<T>(a: *mut *const T) -> *const T {
+    let result: *const T = *a;
     *a = (*a).offset(1);
     return result;
 }
 
-pub unsafe fn postDecConstPtr<T>(mut a: *mut *const T) -> *const T {
-    let mut result: *const T = *a;
+pub unsafe fn postDecConstPtr<T>(a: *mut *const T) -> *const T {
+    let result: *const T = *a;
     *a = (*a).offset(-1);
     return result;
 }

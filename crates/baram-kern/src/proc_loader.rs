@@ -4,11 +4,10 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use alloc::string::{String, ToString};
-use alloc::boxed::Box;
-use crate::elf::{ElfFile, Elf64ProgramHeader, PT_LOAD, PT_INTERP, PT_DYNAMIC, PT_TLS};
-use crate::vmm::{VirtualMemoryManager, PAGE_SIZE, PageTableEntry};
-use crate::dyld::{DynamicLinker, LinkError};
-use crate::process::{Process, ProcessState, ProcessPriority, CpuContext, STACK_SIZE};
+use crate::elf::{ElfFile, PT_LOAD, PT_INTERP, PT_DYNAMIC, PT_TLS};
+use crate::vmm::{VirtualMemoryManager, PAGE_SIZE};
+use crate::dyld::DynamicLinker;
+use crate::process::{Process, ProcessState, ProcessPriority, CpuContext};
 
 pub const USER_SPACE_START: usize = 0x0000_0000_0001_0000;
 pub const USER_SPACE_END: usize = 0x0000_7FFF_FFFF_F000;
@@ -148,7 +147,7 @@ impl ProcessLoader {
         &mut self.dynamic_linker
     }
 
-    fn load_segments(&self, elf: &ElfFile, load_info: &mut LoadInfo, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<(), LoadError> {
+    fn load_segments(&self, elf: &ElfFile, _load_info: &mut LoadInfo, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<(), LoadError> {
         for ph in &elf.program_headers {
             if ph.p_type != PT_LOAD {
                 continue;
@@ -302,7 +301,7 @@ impl ProcessLoader {
     }
 
     fn allocate_physical_page(&self) -> usize {
-        use uefi::boot;
+        
 
         let layout = core::alloc::Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
         unsafe {

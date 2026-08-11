@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::utils::is_char_halfwidth_katakana::is_char_halfwidth_katakana;
 use crate::utils::is_char_katakana::*;
 

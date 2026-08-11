@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::constants::ZENKAKU_NUMBERS;
 use crate::utils::is_char_in_range::*;
 

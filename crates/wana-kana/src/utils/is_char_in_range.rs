@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 /// Takes a character and a unicode range. Returns true if the char is in the range.
 ///
 /// * `char` -  unicode character

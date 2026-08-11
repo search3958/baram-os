@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{string::String, vec};
 use crate::constants::{HIRAGANA_START, KATAKANA_START};
 use crate::utils::is_char_hiragana::*;
 use crate::utils::is_char_slash_dot::*;

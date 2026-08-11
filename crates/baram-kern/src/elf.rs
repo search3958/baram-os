@@ -3,7 +3,6 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use alloc::string::String;
 
 pub const ELF_MAGIC: [u8; 4] = [0x7F, b'E', b'L', b'F'];
 

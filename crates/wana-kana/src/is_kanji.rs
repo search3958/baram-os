@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::utils::is_char_kanji::*;
 
 /// Test if all chars of `input` are [Kanji](https://en.wikipedia.org/wiki/Kanji) ([Japanese CJK ideographs](https://en.wikipedia.org/wiki/CJK_Unified_Ideographs))

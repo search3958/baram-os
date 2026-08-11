@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::utils::is_char_kana::*;
 
 /// Test if all chars of `input` are [Kana](https://en.wikipedia.org/wiki/Kana) ([Katakana](https://en.wikipedia.org/wiki/Katakana) and/or [Hiragana](https://en.wikipedia.org/wiki/Hiragana))

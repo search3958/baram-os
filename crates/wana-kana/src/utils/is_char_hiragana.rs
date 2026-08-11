@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::constants::{HIRAGANA_END, HIRAGANA_START};
 use crate::utils::is_char_in_range::*;
 use crate::utils::is_prolonged_sound::is_prolonged_sound;

@@ -321,7 +321,7 @@ pub fn render(
     win_x: i32,
     win_y: i32,
     win_w: usize,
-    win_h: usize,
+    _win_h: usize,
     title_bar_h: usize,
     scroll_y: i32,
     card_radius: usize,

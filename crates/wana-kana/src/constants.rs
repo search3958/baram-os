@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{vec, vec::Vec};
 // CharCode References
 // <http://www.rikai.com/library/kanjitables/kanji_codes.unicode.shtml>
 // <http://unicode-table.com>

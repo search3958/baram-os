@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::utils::is_char_in_range::*;
 
 static KANJI_START: u32 = 0x4E00;

@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use crate::options::Options;
 use crate::to_kana_node_tree::{
     TO_KANA_NODE_TREE, TO_KANA_NODE_TREE_IMEMODE, TO_KANA_NODE_TREE_OBSOLETE,

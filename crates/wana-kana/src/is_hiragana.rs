@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::utils::is_char_hiragana::*;
 
 /// Test if all chars of `input` are [Hiragana](https://en.wikipedia.org/wiki/Hiragana)

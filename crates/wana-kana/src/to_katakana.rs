@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::string::String;
 use crate::is_katakana::is_mixed_halfwidth_katakana;
 use crate::is_mixed::*;
 use crate::is_romaji::*;

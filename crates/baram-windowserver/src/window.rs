@@ -1,8 +1,7 @@
-use alloc::vec;
 use alloc::vec::Vec;
 use baram_bsd::config;
 use baram_core::LayerSystem;
-use baram_core::{Color, Screen};
+use baram_core::Color;
 
 const SCROLL_ANIMATION_NS: u64 = 10_000_000;
 use baram_font::LayerFontExt;
@@ -1194,8 +1193,8 @@ impl WindowManager {
             }
 
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
-            let screen_w = layer.width() as i32;
-            let screen_h = layer.height() as i32;
+            let _screen_w = layer.width() as i32;
+            let _screen_h = layer.height() as i32;
 
             let src_x = if wx < 0 { (-wx) as usize } else { 0 };
             let src_y = if wy < 0 { (-wy) as usize } else { 0 };

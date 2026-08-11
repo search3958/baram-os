@@ -50,7 +50,7 @@ unsafe fn fill_screen(c: Color) {
     }
 }
 
-fn draw_ttf(mut x: usize, y: usize, s: &str, fg: Color) {
+fn draw_ttf(x: usize, y: usize, s: &str, fg: Color) {
     draw_ttf_scaled(x, y, s, fg, 14.0);
 }
 

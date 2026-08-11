@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::constants::{HALFWIDTH_PROLONGED_SOUND_MARK, PROLONGED_SOUND_MARK};
 
 /// Returns true if char is the prolonged sound mark (fullwidth 'ー' or halfwidth 'ｰ').

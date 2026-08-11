@@ -896,7 +896,7 @@ impl WarpEngine {
             let mut display_lines: alloc::vec::Vec<alloc::string::String> = alloc::vec::Vec::new();
             let mut start = 0;
             while start < chars.len() {
-                let mut end = (start + max_chars).min(chars.len());
+                let end = (start + max_chars).min(chars.len());
                 if end < chars.len() {
                     let mut break_at = end;
                     while break_at > start {
@@ -945,7 +945,7 @@ impl WarpEngine {
                 let chars: alloc::vec::Vec<char> = raw_line.chars().collect();
                 let mut start = 0;
                 while start < chars.len() {
-                    let mut end = (start + max_chars).min(chars.len());
+                    let end = (start + max_chars).min(chars.len());
                     if end < chars.len() {
                         let mut break_at = end;
                         while break_at > start {

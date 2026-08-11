@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::string::String;
 // The `wana_kana::ConvertJapanese` trait is implemented for `&str`, which allows
 // conversion between kana and romaji.
 //

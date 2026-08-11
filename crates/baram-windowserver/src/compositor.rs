@@ -1438,7 +1438,7 @@ pub fn render_scene(
     cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
-    remove_progress: f32,
+    _remove_progress: f32,
     shift_x: f32,
     hud_enabled: bool,
     bg_cache: &mut Option<Vec<u32>>,

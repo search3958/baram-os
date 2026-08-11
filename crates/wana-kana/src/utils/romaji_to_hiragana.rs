@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::string::String;
 use crate::options::Options;
 use crate::to_kana::*;
 

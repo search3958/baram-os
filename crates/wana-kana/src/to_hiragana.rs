@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::string::String;
 use crate::is_mixed::*;
 use crate::is_romaji::*;
 use crate::options::Options;

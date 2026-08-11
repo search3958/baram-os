@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 use crate::utils::is_char_hiragana::is_char_hiragana;
 use crate::utils::is_char_kanji::is_char_kanji;
 use crate::utils::is_char_katakana::is_char_katakana;

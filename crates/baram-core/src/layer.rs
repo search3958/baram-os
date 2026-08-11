@@ -699,7 +699,7 @@ impl LayerSystem {
         }
     }
 
-    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], off: &[f32; 2]) {
+    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], _off: &[f32; 2]) {
         let mut hits = 0u32;
         for sy in 0..4 {
             for sx in 0..4 {

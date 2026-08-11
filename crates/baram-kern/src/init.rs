@@ -4,8 +4,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use alloc::string::{String, ToString};
-use crate::process::{Process, ProcessState, ProcessPriority};
-use crate::proc_loader::{ProcessLoader, LoadError};
+use crate::process::{ProcessState, ProcessPriority};
+use crate::proc_loader::ProcessLoader;
 use crate::vmm::VirtualMemoryManager;
 use crate::scheduler::Scheduler;
 use crate::ipc::IpcManager;
@@ -66,7 +66,7 @@ impl InitProcess {
     pub fn start(&mut self, loader: &mut ProcessLoader, scheduler: &mut Scheduler, vmm: &mut VirtualMemoryManager) -> Result<(), InitError> {
         self.state = InitState::Loading;
 
-        let (process, load_info) = loader.load_executable(INIT_PATH, vmm)
+        let (process, _load_info) = loader.load_executable(INIT_PATH, vmm)
             .map_err(|_| InitError::LoadFailed)?;
 
         self.pid = process.pid;
@@ -134,7 +134,7 @@ impl InitProcess {
         }
     }
 
-    pub fn shutdown(&mut self, scheduler: &mut Scheduler) {
+    pub fn shutdown(&mut self, _scheduler: &mut Scheduler) {
         for service in self.services.iter_mut().rev() {
             if service.state == ServiceState::Running {
                 service.state = ServiceState::Stopping;
@@ -240,7 +240,7 @@ impl SystemInit {
     fn start_services(&mut self) -> Result<(), InitError> {
         for service in &mut self.init.services {
             if service.state == ServiceState::NotStarted {
-                let (process, load_info) = self.loader.load_executable(&service.path, &mut self.vmm)
+                let (process, _load_info) = self.loader.load_executable(&service.path, &mut self.vmm)
                     .map_err(|_| InitError::ServiceLoadFailed)?;
 
                 service.pid = Some(process.pid);

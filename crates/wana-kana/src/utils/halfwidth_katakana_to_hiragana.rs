@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{string::String, vec::Vec};
 // Convert [Half-width Katakana](https://en.wikipedia.org/wiki/Half-width_kana). to [Hiragana](https://en.wikipedia.org/wiki/Hiragana)
 //
 // Passes through any non-half-width katakana chars

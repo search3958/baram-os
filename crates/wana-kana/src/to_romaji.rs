@@ -1,4 +1,4 @@
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use crate::options::Options;
 pub(crate) use crate::to_romaji_node_tree::TO_ROMAJI_NODE_TREE;
 use crate::utils::is_char_katakana::is_char_katakana;

@@ -1,4 +1,3 @@
-use alloc::{string::String, vec, vec::Vec};
 /// Tests a character and an english vowel. Returns true if the char is a vowel.
 pub fn is_char_vowel(char: char) -> bool {
     is_char_vowel_opt(char, true)
