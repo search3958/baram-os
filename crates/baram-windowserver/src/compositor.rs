@@ -163,7 +163,7 @@ impl TaskbarSurface {
         tint_taskbar(
             &mut self.base,
             config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
-            170,
+            200,
         );
         self.base_valid = true;
     }
@@ -1370,7 +1370,7 @@ fn draw_ime_menu(
         );
         blend_rounded_rect(
             &mut glass, x - cache_x, y - cache_y, width, height, 18,
-            Color::rgb(0xf5, 0xf5, 0xf5), 168,
+            Color::rgb(0xf5, 0xf5, 0xf5), 200,
         );
         // The entire static list lives in the open-menu cache too. This keeps
         // SVG blending and text layout out of pointer-move redraws.
@@ -1610,7 +1610,7 @@ pub fn render_scene(
         let panel_x = 12usize;
         let panel_y = grid_y.saturating_sub(8);
         let panel_w = grid_w + 16;
-        let panel_radius = 26usize;
+        let panel_radius = 18usize;
         let launcher_alpha = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
             (ease_out_cubic(t) * 255.0) as u32
@@ -1695,7 +1695,7 @@ pub fn render_scene(
                 panel_h,
                 panel_radius,
                 Color::rgb(0xf5, 0xf5, 0xf5),
-                150,
+                200,
             );
             let panel = panel_base.buf_ref();
             let mut cache = Vec::with_capacity(panel.len() * 4);
