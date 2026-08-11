@@ -16,6 +16,7 @@ use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
+use wana_kana::ConvertJapanese;
 
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
@@ -57,6 +58,464 @@ use nano_system::NanoSystem;
 // Keep this comfortably longer than the normal 16 ms present interval so
 // opening an app always has visible intermediate taskbar frames.
 const TASKBAR_ADD_ANIMATION_MS: u64 = 180;
+const MOZC_DICTIONARY: &str = include_str!("mozc_dictionary.tsv");
+// Generated from AOSP PinyinIME's Apache-2.0 raw dictionary. The source
+// spellings are joined so both `zhong guo` and `zhongguo` input resolve alike.
+const PINYIN_DICTIONARY: &str = include_str!("pinyin_dictionary.tsv");
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    Latin,
+    Hiragana,
+    Korean(KoreanLayout),
+    Pinyin,
+}
+
+struct PinyinIme {
+    raw: alloc::string::String,
+    visible_chars: usize,
+    conversion: Option<PinyinConversion>,
+}
+
+struct PinyinConversion {
+    pinyin: alloc::string::String,
+    candidates: alloc::vec::Vec<alloc::string::String>,
+    selected: usize,
+}
+
+impl PinyinIme {
+    fn new() -> Self {
+        Self { raw: alloc::string::String::new(), visible_chars: 0, conversion: None }
+    }
+    fn reset(&mut self) {
+        self.raw.clear();
+        self.visible_chars = 0;
+        self.conversion = None;
+    }
+    fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key != 0x08 && key != 0x7f && self.conversion.is_some() { self.reset(); }
+        if key == 0x08 || key == 0x7f {
+            if self.raw.pop().is_some() {
+                let replace = self.visible_chars;
+                self.visible_chars = self.raw.chars().count();
+                return (self.raw.clone(), replace);
+            }
+            return (alloc::string::String::new(), 1);
+        }
+        let ch = key as char;
+        if ch.is_ascii_alphabetic() || ch == '\'' {
+            self.raw.push(ch.to_ascii_lowercase());
+            let replace = self.visible_chars;
+            self.visible_chars = self.raw.chars().count();
+            return (self.raw.clone(), replace);
+        }
+        let mut text = self.raw.clone();
+        text.push(ch);
+        let replace = self.visible_chars;
+        self.reset();
+        (text, replace)
+    }
+    fn convert(&mut self) -> Option<(alloc::string::String, usize)> {
+        if let Some(conversion) = self.conversion.as_mut() {
+            conversion.selected = (conversion.selected + 1) % conversion.candidates.len();
+            let text = conversion.candidates[conversion.selected].clone();
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return Some((text, replace));
+        }
+        let key = self.raw.replace('\'', "");
+        let candidates = pinyin_candidates(&key)?;
+        let text = candidates[0].clone();
+        let replace = self.visible_chars;
+        self.visible_chars = text.chars().count();
+        self.conversion = Some(PinyinConversion { pinyin: self.raw.clone(), candidates, selected: 0 });
+        Some((text, replace))
+    }
+    fn edit_for_key(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key == b' ' { return self.convert().unwrap_or_else(|| self.edit(key)); }
+        if key == b'\n' || key == b'\r' { self.reset(); return (alloc::string::String::new(), 0); }
+        self.edit(key)
+    }
+    fn conversion_view(&self) -> Option<(&str, &[alloc::string::String], usize)> {
+        self.conversion.as_ref().map(|conversion| {
+            (conversion.pinyin.as_str(), conversion.candidates.as_slice(), conversion.selected)
+        })
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KoreanLayout {
+    Dubeolsik,
+    HancomRoman,
+    ChosunDubeolsik,
+}
+
+/// Keeps the uncommitted romaji so each key can replace the visible
+/// composition with Wanakana's current hiragana conversion.
+struct JapaneseIme {
+    romaji: alloc::string::String,
+    visible_chars: usize,
+    conversion: Option<JapaneseConversion>,
+}
+
+struct JapaneseConversion {
+    kana: alloc::string::String,
+    candidates: alloc::vec::Vec<alloc::string::String>,
+    selected: usize,
+}
+
+impl JapaneseIme {
+    fn new() -> Self {
+        Self {
+            romaji: alloc::string::String::new(),
+            visible_chars: 0,
+            conversion: None,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.romaji.clear();
+        self.visible_chars = 0;
+        self.conversion = None;
+    }
+
+    fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
+        // Starting another romaji run commits the selected candidate already
+        // visible in the target field.
+        if key != 0x08 && key != 0x7f && self.conversion.is_some() {
+            self.conversion = None;
+            self.romaji.clear();
+            self.visible_chars = 0;
+        }
+        if key == 0x08 || key == 0x7f {
+            if self.romaji.pop().is_some() {
+                let text = self.romaji.as_str().to_hiragana();
+                let replace = self.visible_chars;
+                self.visible_chars = text.chars().count();
+                return (text, replace);
+            }
+            return (alloc::string::String::new(), 1);
+        }
+
+        let ch = key as char;
+        if ch.is_ascii_alphabetic() || ch == '\'' {
+            self.romaji.push(ch);
+            let text = self.romaji.as_str().to_hiragana();
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return (text, replace);
+        }
+
+        // A separator commits the romaji run and is inserted verbatim.
+        let mut text = self.romaji.as_str().to_hiragana();
+        text.push(ch);
+        let replace = self.visible_chars;
+        self.reset();
+        (text, replace)
+    }
+
+    /// Starts (or advances) kana-to-kanji conversion. The returned edit
+    /// replaces the currently visible composition in the focused input.
+    fn convert(&mut self) -> Option<(alloc::string::String, usize)> {
+        if let Some(conversion) = self.conversion.as_mut() {
+            conversion.selected = (conversion.selected + 1) % conversion.candidates.len();
+            let text = conversion.candidates[conversion.selected].clone();
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return Some((text, replace));
+        }
+
+        let kana = self.romaji.as_str().to_hiragana();
+        let candidates = mozc_candidates(&kana)?;
+        let text = candidates[0].clone();
+        let replace = self.visible_chars;
+        self.visible_chars = text.chars().count();
+        self.conversion = Some(JapaneseConversion {
+            kana,
+            candidates,
+            selected: 0,
+        });
+        Some((text, replace))
+    }
+
+    fn commit_conversion(&mut self) {
+        if self.conversion.is_some() {
+            self.reset();
+        }
+    }
+
+    fn edit_for_key(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key == b' ' {
+            return self.convert().unwrap_or_else(|| self.edit(key));
+        }
+        if key == b'\n' || key == b'\r' {
+            self.commit_conversion();
+            return (alloc::string::String::new(), 0);
+        }
+        self.edit(key)
+    }
+
+    fn conversion_view(&self) -> Option<(&str, &[alloc::string::String], usize)> {
+        self.conversion
+            .as_ref()
+            .map(|conversion| (conversion.kana.as_str(), conversion.candidates.as_slice(), conversion.selected))
+    }
+}
+
+/// Looks up the compact index generated directly from Mozc's OSS dictionary.
+/// Entries are sorted by reading and candidates preserve Mozc's cost ranking.
+fn mozc_candidates(kana: &str) -> Option<alloc::vec::Vec<alloc::string::String>> {
+    for line in MOZC_DICTIONARY.lines().skip(1) {
+        let mut fields = line.split('\t');
+        let key = fields.next()?;
+        if key == kana {
+            let candidates = fields.map(alloc::string::String::from).collect();
+            return Some(candidates);
+        }
+    }
+    None
+}
+
+fn pinyin_candidates(pinyin: &str) -> Option<alloc::vec::Vec<alloc::string::String>> {
+    for line in PINYIN_DICTIONARY.lines().skip(1) {
+        let mut fields = line.split('\t');
+        if fields.next()? == pinyin {
+            return Some(fields.map(alloc::string::String::from).collect());
+        }
+    }
+    None
+}
+
+/// Incremental modern Hangul composer shared by the three Korean layouts.
+/// Keeping the raw input lets the final consonant move to the following
+/// syllable when a vowel is typed, as users expect (ㄱㅏㄴㅏ -> 가나).
+struct HangulIme {
+    raw: alloc::string::String,
+    visible_chars: usize,
+}
+
+impl HangulIme {
+    fn new() -> Self {
+        Self { raw: alloc::string::String::new(), visible_chars: 0 }
+    }
+
+    fn reset(&mut self) {
+        self.raw.clear();
+        self.visible_chars = 0;
+    }
+
+    fn rendered(&self, layout: KoreanLayout) -> alloc::string::String {
+        let jamo = match layout {
+            KoreanLayout::HancomRoman => hancom_roman_jamo(&self.raw),
+            _ => self.raw.chars().collect(),
+        };
+        compose_hangul(&jamo)
+    }
+
+    fn edit_for_key(&mut self, key: u8, layout: KoreanLayout) -> (alloc::string::String, usize) {
+        if key == 0x08 || key == 0x7f {
+            if self.raw.pop().is_some() {
+                let text = self.rendered(layout);
+                let replace = self.visible_chars;
+                self.visible_chars = text.chars().count();
+                return (text, replace);
+            }
+            return (alloc::string::String::new(), 1);
+        }
+        if key == b'\n' || key == b'\r' {
+            self.reset();
+            return (alloc::string::String::new(), 0);
+        }
+
+        let input = key as char;
+        // Hancom Roman leaves V unassigned. Consume it without altering the
+        // pending syllable rather than leaking a Latin V into the target.
+        if layout == KoreanLayout::HancomRoman && matches!(input, 'v' | 'V') {
+            return (alloc::string::String::new(), 0);
+        }
+        let accepted = match layout {
+            KoreanLayout::Dubeolsik => dubeolsik_jamo(input),
+            KoreanLayout::ChosunDubeolsik => chosun_dubeolsik_jamo(input),
+            KoreanLayout::HancomRoman if input.is_ascii_alphabetic() => Some(input),
+            KoreanLayout::HancomRoman => None,
+        };
+        if let Some(jamo) = accepted {
+            self.raw.push(jamo);
+            let text = self.rendered(layout);
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return (text, replace);
+        }
+
+        let mut text = self.rendered(layout);
+        text.push(input);
+        let replace = self.visible_chars;
+        self.reset();
+        (text, replace)
+    }
+}
+
+fn dubeolsik_jamo(key: char) -> Option<char> {
+    Some(match key {
+        'q' => 'ㅂ', 'Q' => 'ㅃ', 'w' => 'ㅈ', 'W' => 'ㅉ', 'e' => 'ㄷ', 'E' => 'ㄸ',
+        'r' => 'ㄱ', 'R' => 'ㄲ', 't' => 'ㅅ', 'T' => 'ㅆ', 'y' => 'ㅛ', 'u' => 'ㅕ',
+        'i' => 'ㅑ', 'o' => 'ㅐ', 'O' => 'ㅒ', 'p' => 'ㅔ', 'P' => 'ㅖ', 'a' => 'ㅁ',
+        's' => 'ㄴ', 'd' => 'ㅇ', 'f' => 'ㄹ', 'g' => 'ㅎ', 'h' => 'ㅗ', 'j' => 'ㅓ',
+        'k' => 'ㅏ', 'l' => 'ㅣ', 'z' => 'ㅋ', 'x' => 'ㅌ', 'c' => 'ㅊ', 'v' => 'ㅍ',
+        'b' => 'ㅠ', 'n' => 'ㅜ', 'm' => 'ㅡ', _ => return None,
+    })
+}
+
+/// 조선 두벌식, exactly following the layout supplied in the request.
+fn chosun_dubeolsik_jamo(key: char) -> Option<char> {
+    Some(match key {
+        'q' => 'ㅂ', 'Q' => 'ㅃ', 'w' | 'W' => 'ㅁ', 'e' => 'ㄷ', 'E' => 'ㄸ',
+        'r' | 'R' => 'ㄹ', 't' | 'T' => 'ㄱ', 'y' | 'Y' => 'ㅕ', 'u' | 'U' => 'ㅜ',
+        'i' | 'I' => 'ㅓ', 'o' => 'ㅐ', 'O' => 'ㅒ', 'p' => 'ㅔ', 'P' => 'ㅖ',
+        'a' => 'ㅈ', 'A' => 'ㅉ', 's' => 'ㄱ', 'S' => 'ㄲ', 'd' | 'D' => 'ㅇ',
+        'f' | 'F' => 'ㄴ', 'g' => 'ㅅ', 'G' => 'ㅆ', 'h' | 'H' => 'ㅗ', 'j' | 'J' => 'ㅏ',
+        'k' | 'K' => 'ㅣ', 'l' | 'L' => 'ㅡ', 'z' | 'Z' => 'ㅋ', 'x' | 'X' => 'ㅌ',
+        'c' | 'C' => 'ㅊ', 'v' | 'V' => 'ㅍ', 'b' | 'B' => 'ㅠ', 'n' | 'N' => 'ㅛ',
+        'm' | 'M' => 'ㅑ', _ => return None,
+    })
+}
+
+fn hancom_roman_jamo(raw: &str) -> alloc::vec::Vec<char> {
+    let lower = raw.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut jamo = alloc::vec::Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let tail = &lower[i..];
+        let (len, ch) = if tail.starts_with("yei") || tail.starts_with("iei") { (3, 'ㅖ') }
+        else if tail.starts_with("yai") || tail.starts_with("iai") { (3, 'ㅒ') }
+        else if tail.starts_with("ya") || tail.starts_with("ia") { (2, 'ㅑ') }
+        else if tail.starts_with("yu") || tail.starts_with("iu") { (2, 'ㅠ') }
+        else if tail.starts_with("yo") || tail.starts_with("io") { (2, 'ㅛ') }
+        else if tail.starts_with("ye") || tail.starts_with("ie") { (2, 'ㅕ') }
+        else if tail.starts_with("ai") { (2, 'ㅐ') }
+        else if tail.starts_with("ei") { (2, 'ㅔ') }
+        else if tail.starts_with("oi") { (2, 'ㅚ') }
+        else if tail.starts_with("ui") { (2, 'ㅟ') }
+        else if tail.starts_with("wi") { (2, 'ㅢ') }
+        else {
+            let original = raw.as_bytes()[i] as char;
+            let ch = match original {
+                // Shift produces the five modern tense consonants.
+                'G' => 'ㄲ', 'D' => 'ㄸ', 'B' => 'ㅃ', 'S' => 'ㅆ', 'J' => 'ㅉ',
+                'a' | 'A' => 'ㅏ', 'e' | 'E' => 'ㅓ', 'i' | 'I' | 'y' | 'Y' => 'ㅣ',
+                'o' | 'O' => 'ㅗ', 'u' | 'U' => 'ㅜ', 'w' | 'W' => 'ㅡ',
+                'g' => 'ㄱ', 'n' | 'N' => 'ㄴ', 'd' => 'ㄷ', 'r' | 'l' | 'R' | 'L' => 'ㄹ',
+                'm' | 'M' => 'ㅁ', 'b' => 'ㅂ', 's' => 'ㅅ', 'j' => 'ㅈ', 'h' | 'H' => 'ㅎ',
+                'f' | 'F' | 'p' | 'P' => 'ㅍ', 't' | 'T' => 'ㅌ', 'k' | 'K' => 'ㅋ',
+                'c' | 'C' => 'ㅊ', 'x' | 'X' => 'ㅇ',
+                // V is intentionally unmapped in this layout.
+                'v' | 'V' => { i += 1; continue; }
+                _ => { i += 1; continue; }
+            };
+            (1, ch)
+        };
+        jamo.push(ch);
+        i += len;
+    }
+    jamo
+}
+
+fn ime_menu_selection(mode: InputMode) -> usize {
+    match mode {
+        InputMode::Latin => 0,
+        InputMode::Hiragana => 1,
+        InputMode::Korean(KoreanLayout::Dubeolsik) => 2,
+        InputMode::Korean(KoreanLayout::HancomRoman) => 3,
+        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => 4,
+        InputMode::Pinyin => 5,
+    }
+}
+
+fn input_mode_for_menu_selection(selection: usize) -> InputMode {
+    match selection {
+        1 => InputMode::Hiragana,
+        2 => InputMode::Korean(KoreanLayout::Dubeolsik),
+        3 => InputMode::Korean(KoreanLayout::HancomRoman),
+        4 => InputMode::Korean(KoreanLayout::ChosunDubeolsik),
+        5 => InputMode::Pinyin,
+        _ => InputMode::Latin,
+    }
+}
+
+fn ime_edit_for_key(
+    mode: InputMode,
+    japanese: &mut JapaneseIme,
+    hangul: &mut HangulIme,
+    pinyin: &mut PinyinIme,
+    key: u8,
+) -> Option<(alloc::string::String, usize)> {
+    match mode {
+        InputMode::Latin => None,
+        InputMode::Hiragana => Some(japanese.edit_for_key(key)),
+        InputMode::Korean(layout) => Some(hangul.edit_for_key(key, layout)),
+        InputMode::Pinyin => Some(pinyin.edit_for_key(key)),
+    }
+}
+
+fn initial_index(ch: char) -> Option<u32> {
+    "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ".chars().position(|c| c == ch).map(|i| i as u32)
+}
+fn vowel_index(ch: char) -> Option<u32> {
+    "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ".chars().position(|c| c == ch).map(|i| i as u32)
+}
+fn final_index(ch: char) -> Option<u32> {
+    "\0ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ".chars().position(|c| c == ch).map(|i| i as u32)
+}
+fn combined_vowel(a: char, b: char) -> Option<char> {
+    match (a, b) { ('ㅗ','ㅏ') => Some('ㅘ'), ('ㅗ','ㅐ') => Some('ㅙ'), ('ㅗ','ㅣ') => Some('ㅚ'),
+        ('ㅜ','ㅓ') => Some('ㅝ'), ('ㅜ','ㅔ') => Some('ㅞ'), ('ㅜ','ㅣ') => Some('ㅟ'),
+        ('ㅡ','ㅣ') => Some('ㅢ'), _ => None }
+}
+fn combined_final(a: char, b: char) -> Option<char> {
+    match (a, b) { ('ㄱ','ㅅ') => Some('ㄳ'), ('ㄴ','ㅈ') => Some('ㄵ'), ('ㄴ','ㅎ') => Some('ㄶ'),
+        ('ㄹ','ㄱ') => Some('ㄺ'), ('ㄹ','ㅁ') => Some('ㄻ'), ('ㄹ','ㅂ') => Some('ㄼ'),
+        ('ㄹ','ㅅ') => Some('ㄽ'), ('ㄹ','ㅌ') => Some('ㄾ'), ('ㄹ','ㅍ') => Some('ㄿ'),
+        ('ㄹ','ㅎ') => Some('ㅀ'), ('ㅂ','ㅅ') => Some('ㅄ'), _ => None }
+}
+fn compose_hangul(jamo: &[char]) -> alloc::string::String {
+    let mut out = alloc::string::String::new();
+    let mut i = 0;
+    while i < jamo.len() {
+        let Some(l) = initial_index(jamo[i]) else { out.push(jamo[i]); i += 1; continue; };
+        if i + 1 >= jamo.len() { out.push(jamo[i]); break; }
+        let Some(mut v) = vowel_index(jamo[i + 1]) else { out.push(jamo[i]); i += 1; continue; };
+        let vowel = jamo[i + 1];
+        i += 2;
+        if i < jamo.len() {
+            if let Some(next_v) = vowel_index(jamo[i]) {
+                if let Some(combined) = combined_vowel(vowel, jamo[i]) {
+                    v = vowel_index(combined).unwrap_or(next_v);
+                    i += 1;
+                }
+            }
+        }
+        let mut t = 0;
+        if i < jamo.len() && initial_index(jamo[i]).is_some() {
+            let c = jamo[i];
+            let followed_by_vowel = i + 1 < jamo.len() && vowel_index(jamo[i + 1]).is_some();
+            if !followed_by_vowel {
+                if i + 1 < jamo.len() && initial_index(jamo[i + 1]).is_some()
+                    && !(i + 2 < jamo.len() && vowel_index(jamo[i + 2]).is_some()) {
+                    if let Some(cluster) = combined_final(c, jamo[i + 1]) {
+                        t = final_index(cluster).unwrap_or(0);
+                        i += 2;
+                    }
+                }
+                if t == 0 {
+                    if let Some(final_jamo) = final_index(c) { t = final_jamo; i += 1; }
+                }
+            }
+        }
+        if let Some(syllable) = char::from_u32(0xac00 + (l * 21 + v) * 28 + t) { out.push(syllable); }
+    }
+    out
+}
 
 struct UiMonotonicClock {
     last: u64,
@@ -66,7 +525,10 @@ struct UiMonotonicClock {
 impl UiMonotonicClock {
     fn new() -> Option<Self> {
         let frequency_hz = monotonic_counter_frequency()?;
-        Some(Self { last: monotonic_counter(), frequency_hz })
+        Some(Self {
+            last: monotonic_counter(),
+            frequency_hz,
+        })
     }
 
     #[inline]
@@ -101,14 +563,18 @@ fn monotonic_counter_frequency() -> Option<u64> {
         }
         if max_leaf >= 0x16 {
             let mhz = __cpuid(0x16).eax;
-            if mhz != 0 { return Some(mhz as u64 * 1_000_000); }
+            if mhz != 0 {
+                return Some(mhz as u64 * 1_000_000);
+            }
         }
         // Some virtual firmware hides leaves 0x15/0x16. Calibrate once at
         // startup instead of falling back to coalesced timer-event counts.
         let start = core::arch::x86_64::_rdtsc();
         uefi::boot::stall(core::time::Duration::from_millis(10));
         let elapsed = core::arch::x86_64::_rdtsc().wrapping_sub(start);
-        if elapsed != 0 { return Some(elapsed.saturating_mul(100)); }
+        if elapsed != 0 {
+            return Some(elapsed.saturating_mul(100));
+        }
     }
     None
 }
@@ -117,15 +583,23 @@ fn monotonic_counter_frequency() -> Option<u64> {
 #[inline]
 fn monotonic_counter() -> u64 {
     let value: u64;
-    unsafe { core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack, preserves_flags)); }
+    unsafe {
+        core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack, preserves_flags));
+    }
     value
 }
 
 #[cfg(target_arch = "aarch64")]
 fn monotonic_counter_frequency() -> Option<u64> {
     let value: u64;
-    unsafe { core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) value, options(nomem, nostack, preserves_flags)); }
-    if value == 0 { None } else { Some(value) }
+    unsafe {
+        core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) value, options(nomem, nostack, preserves_flags));
+    }
+    if value == 0 {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn baram_kernel_main(mut nano: NanoSystem) -> Status {
@@ -428,6 +902,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
     let mut taskbar_surface = TaskbarSurface::new(screen.width());
     let mut cached_launcher_layer: Option<Vec<u32>> = None;
+    let mut cached_ime_menu_layer: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
@@ -467,6 +942,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut launcher_anim_started_ms = 0u64;
     let mut launcher_anim_elapsed_ms = 0u32;
     let mut launcher_cache_drop_after_close = false;
+    let mut input_mode = InputMode::Latin;
+    let mut japanese_ime = JapaneseIme::new();
+    let mut hangul_ime = HangulIme::new();
+    let mut pinyin_ime = PinyinIme::new();
+    let mut show_ime_menu = false;
+    let mut prev_show_ime_menu = false;
+    let mut prev_ime_conversion_visible = false;
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
 
@@ -499,6 +981,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &mut html_engines,
         cached_wallpaper.as_deref(),
         &mut cached_launcher_layer,
+        &mut cached_ime_menu_layer,
         true,
         -1.0,
         -1.0,
@@ -521,6 +1004,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
+        false,
+        ime_menu_selection(input_mode),
+        None,
+        &[],
+        0,
     );
     // Build the hidden launcher once while the boot scene is already hot.
     // With zero layer opacity this leaves the framebuffer unchanged, but the
@@ -539,6 +1027,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &mut html_engines,
         cached_wallpaper.as_deref(),
         &mut cached_launcher_layer,
+        &mut cached_ime_menu_layer,
         false,
         -1.0,
         -1.0,
@@ -561,6 +1050,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
+        false,
+        ime_menu_selection(input_mode),
+        None,
+        &[],
+        0,
     );
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -616,7 +1110,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // Nano System reports UEFI Backspace as special scan code 0x08,
             // so it does not always arrive through `printable`.
             if app_search_focused && ev.scancode == 0x08 {
-                app_search_query.pop();
+                if let Some((text, replace_chars)) =
+                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, 0x08)
+                {
+                    for _ in 0..replace_chars {
+                        app_search_query.pop();
+                    }
+                    app_search_query.push_str(&text);
+                } else {
+                    app_search_query.pop();
+                }
                 rebuild_filtered_apps(
                     &app_entries,
                     &app_search_query,
@@ -648,12 +1151,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             } else if let Some(c) = ev.printable {
                 let mut handled = false;
                 if app_search_focused {
-                    match c {
-                        0x08 | 0x7f => {
+                    if let Some((text, replace_chars)) =
+                        ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
+                    {
+                        for _ in 0..replace_chars {
                             app_search_query.pop();
                         }
-                        0x20..=0x7e => app_search_query.push(c as char),
-                        _ => {}
+                        app_search_query.push_str(&text);
+                    } else {
+                        match c {
+                            0x08 | 0x7f => {
+                                app_search_query.pop();
+                            }
+                            0x20..=0x7e => app_search_query.push(c as char),
+                            _ => {}
+                        }
                     }
                     rebuild_filtered_apps(
                         &app_entries,
@@ -680,7 +1192,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && !wm.is_interaction_blocked(focused_win)
                             && !engine.focused_input_var.is_empty()
                         {
-                            engine.handle_key(c);
+                            if let Some((text, replace_chars)) =
+                                ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
+                            {
+                                engine.handle_text(&text, replace_chars);
+                            } else {
+                                engine.handle_key(c);
+                            }
                             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                                 let tb_h = baram_windowserver::window::title_bar_h() as i32;
                                 let content_h = (wh as i32).saturating_sub(tb_h);
@@ -702,7 +1220,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 && !wm.is_interaction_blocked(focused_win)
                                 && engine.has_focused_input()
                             {
-                                engine.handle_key(c);
+                                if let Some((text, replace_chars)) =
+                                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
+                                {
+                                    engine.handle_text(&text, replace_chars);
+                                } else {
+                                    engine.handle_key(c);
+                                }
                                 if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
                                     let content_h = wh
                                         .saturating_sub(baram_windowserver::window::title_bar_h());
@@ -899,7 +1423,32 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 if ev.left && !mouse_down {
                     mouse_down = true;
+                    // Clicking a different input ends the previous composition.
+                    japanese_ime.reset();
+                    hangul_ime.reset();
+                    pinyin_ime.reset();
                     let sh = screen.height();
+
+                    // The mode picker is modal: a click selects a row or
+                    // dismisses it before reaching the window underneath.
+                    if show_ime_menu {
+                        if let Some(selection) = ime_menu_mode_at(
+                            cx,
+                            cy,
+                            screen.width(),
+                            screen.height(),
+                            battery_info.valid_percentage(),
+                        ) {
+                            input_mode = input_mode_for_menu_selection(selection);
+                            hangul_ime.reset();
+                            pinyin_ime.reset();
+                            taskbar_surface.invalidate();
+                        }
+                        show_ime_menu = false;
+                        scene_dirty = true;
+                        dirty = true;
+                        continue;
+                    }
 
                     if show_app_launcher {
                         let search_x = 12i32;
@@ -1006,6 +1555,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         }
                         scene_dirty = true;
                     } else if cy >= sh as i32 - TASKBAR_H as i32 {
+                        let (ime_x, ime_y, ime_w, ime_h) =
+                            ime_button_bounds(screen.width(), battery_info.valid_percentage());
+                        let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
+                        if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
+                            show_ime_menu = true;
+                            scene_dirty = true;
+                            dirty = true;
+                            continue;
+                        }
                         let apps_icon_x = 12i32;
                         let apps_icon_size = 190i32;
                         let apps_icon_y =
@@ -1124,8 +1682,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                                     } else {
                                                         wm.set_all_dirty();
                                                         taskbar_surface.invalidate();
-                            cached_launcher_layer = None;
-                            app_launcher_scroll.reset();
+                                                        cached_launcher_layer = None;
+                                                        app_launcher_scroll.reset();
                                                         bg_cache = None;
                                                     }
                                                     scene_dirty = true;
@@ -1290,7 +1848,24 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
             let on_search = cx >= 12 && cx < 202 && cy >= search_y && cy < search_y + 40;
 
-            if show_app_launcher && on_search {
+            if show_ime_menu {
+                if let Some(selection) = ime_menu_mode_at(
+                    cx,
+                    cy,
+                    screen.width(),
+                    screen.height(),
+                    battery_info.valid_percentage(),
+                ) {
+                    input_mode = input_mode_for_menu_selection(selection);
+                    japanese_ime.reset();
+                    hangul_ime.reset();
+                    pinyin_ime.reset();
+                    taskbar_surface.invalidate();
+                }
+                show_ime_menu = false;
+                scene_dirty = true;
+                dirty = true;
+            } else if show_app_launcher && on_search {
                 app_search_focused = true;
                 taskbar_surface.invalidate_search();
                 scene_dirty = true;
@@ -1379,6 +1954,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 taskbar_surface.invalidate();
                 scene_dirty = true;
             } else if cy >= sh as i32 - TASKBAR_H as i32 {
+                let (ime_x, ime_y, ime_w, ime_h) =
+                    ime_button_bounds(screen.width(), battery_info.valid_percentage());
+                let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
+                if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
+                    show_ime_menu = true;
+                    scene_dirty = true;
+                    dirty = true;
+                    continue;
+                }
                 let apps_icon_x = 12i32;
                 let apps_icon_size = 190i32;
                 let apps_icon_y = search_y;
@@ -1623,8 +2207,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
             dirty = true;
         }
-        let launcher_scroll_changed = launcher_scroll_input_changed
-            || app_launcher_scroll.tick(transition_now_ns);
+        let launcher_scroll_changed =
+            launcher_scroll_input_changed || app_launcher_scroll.tick(transition_now_ns);
         if launcher_scroll_changed {
             launcher_content_dirty = true;
             scene_dirty = true;
@@ -1641,7 +2225,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             dirty = true;
         }
         if launcher_anim_phase != 0 {
-            launcher_anim_elapsed_ms = ui_time_ms.saturating_sub(launcher_anim_started_ms).min(u32::MAX as u64) as u32;
+            launcher_anim_elapsed_ms = ui_time_ms
+                .saturating_sub(launcher_anim_started_ms)
+                .min(u32::MAX as u64) as u32;
             let duration = 200;
             if launcher_anim_elapsed_ms >= duration {
                 if launcher_anim_phase < 0 {
@@ -1872,16 +2458,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
         let scroll_animating = wm.has_scroll_animation();
         let taskbar_animating = tb_add_progress >= 0.0 || tb_remove_progress >= 0.0;
-        let continuous_motion = scroll_animating
-            || app_launcher_scroll.is_animating()
-            || launcher_anim_phase != 0;
+        let continuous_motion =
+            scroll_animating || app_launcher_scroll.is_animating() || launcher_anim_phase != 0;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
-        if dirty
-            && ui_time_ms < next_present_ms
-            && !cursor_moved
-            && !scroll_input
-        {
+        if dirty && ui_time_ms < next_present_ms && !cursor_moved && !scroll_input {
             deferred_dirty = true;
             continue;
         }
@@ -1890,7 +2471,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // The taskbar has to rasterize and flush the whole bottom strip.
             // Cap it at the normal 60 Hz cadence, while retaining the tighter
             // interval for lightweight scrolling and launcher motion.
-            let present_interval_ms = if taskbar_animating { 16 } else if continuous_motion { 4 } else { 16 };
+            let present_interval_ms = if taskbar_animating {
+                16
+            } else if continuous_motion {
+                4
+            } else {
+                16
+            };
             next_present_ms = ui_time_ms.saturating_add(present_interval_ms);
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
@@ -1915,10 +2502,26 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let taskbar_search_dirty = taskbar_surface.is_search_dirty();
 
                 let launcher_changed = launcher_render_visible != prev_show_app_launcher;
-                let launcher_needs_redraw = launcher_changed
-                    || launcher_content_dirty
-                    || launcher_anim_phase != 0;
+                let launcher_needs_redraw =
+                    launcher_changed || launcher_content_dirty || launcher_anim_phase != 0;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
+                let ime_menu_changed = show_ime_menu != prev_show_ime_menu;
+                let (ime_menu_x, ime_menu_y, ime_menu_w, ime_menu_h) = ime_menu_bounds(
+                    screen.width(),
+                    screen.height(),
+                    battery_info.valid_percentage(),
+                );
+                let ime_menu_cache_dirty = show_ime_menu
+                    && (ime_menu_changed
+                        || !bg_valid
+                        || (bx1 > bx0
+                            && bx0 < (ime_menu_x + ime_menu_w + 54).max(0) as usize
+                            && bx1 > (ime_menu_x - 54).max(0) as usize
+                            && by0 < (ime_menu_y + ime_menu_h + 54).max(0) as usize
+                            && by1 > (ime_menu_y - 54).max(0) as usize));
+                if ime_menu_changed || ime_menu_cache_dirty {
+                    cached_ime_menu_layer = None;
+                }
 
                 let taskbar_only = taskbar_dirty
                     && bx1 <= bx0
@@ -1928,7 +2531,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     && prev_wallpaper_idx == display_state.wallpaper_index
                     && bg_cache.is_some()
                     && !launcher_render_visible
-                    && !launcher_changed;
+                    && !launcher_changed
+                    && !ime_menu_changed;
 
                 let launcher_only_redraw = (launcher_anim_phase != 0 || launcher_scroll_changed)
                     && launcher_needs_redraw
@@ -2046,6 +2650,32 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fx1 = w;
                     fy1 = h;
                 }
+                let ime_conversion_visible =
+                    japanese_ime.conversion.is_some() || pinyin_ime.conversion.is_some();
+                if ime_menu_changed || ime_menu_cache_dirty {
+                    let (menu_x, menu_y, menu_w, menu_h) =
+                        (ime_menu_x, ime_menu_y, ime_menu_w, ime_menu_h);
+                    let pad = 28usize;
+                    fx0 = fx0.min((menu_x.max(0) as usize).saturating_sub(pad));
+                    fy0 = fy0.min((menu_y.max(0) as usize).saturating_sub(pad));
+                    fx1 = fx1.max((menu_x + menu_w).max(0) as usize + pad).min(w);
+                    fy1 = fy1.max((menu_y + menu_h).max(0) as usize + pad).min(h);
+                }
+                if ime_conversion_visible || prev_ime_conversion_visible {
+                    fx0 = 0;
+                    fy0 = fy0.min(tb_y.saturating_sub(76));
+                    fx1 = w;
+                    fy1 = fy1.max(tb_y);
+                }
+                let (ime_reading, ime_candidates, ime_selected) = if let Some((reading, candidates, selected)) =
+                    japanese_ime.conversion_view()
+                {
+                    (Some(reading), candidates, selected)
+                } else if let Some((reading, candidates, selected)) = pinyin_ime.conversion_view() {
+                    (Some(reading), candidates, selected)
+                } else {
+                    (None, &[][..], 0)
+                };
                 layer.push_clip(fx0, fy0, fx1, fy1);
 
                 render_scene(
@@ -2062,6 +2692,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &mut html_engines,
                     cached_wallpaper.as_deref(),
                     &mut cached_launcher_layer,
+                    &mut cached_ime_menu_layer,
                     taskbar_dirty,
                     tb_add_progress,
                     tb_remove_progress,
@@ -2084,6 +2715,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_hh,
                     clock_mm,
                     battery_info.valid_percentage(),
+                    show_ime_menu,
+                    ime_menu_selection(input_mode),
+                    ime_reading,
+                    ime_candidates,
+                    ime_selected,
                 );
                 layer.pop_clip();
 
@@ -2105,6 +2741,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &mut html_engines,
                         cached_wallpaper.as_deref(),
                         &mut cached_launcher_layer,
+                        &mut cached_ime_menu_layer,
                         false,
                         tb_add_progress,
                         tb_remove_progress,
@@ -2127,12 +2764,19 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_hh,
                         clock_mm,
                         battery_info.valid_percentage(),
+                        show_ime_menu,
+                        ime_menu_selection(input_mode),
+                        ime_reading,
+                        ime_candidates,
+                        ime_selected,
                     );
                     layer.pop_clip();
                 }
 
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
+                prev_show_ime_menu = show_ime_menu;
+                prev_ime_conversion_visible = ime_conversion_visible;
 
                 if tb_add_progress >= 1.0 {
                     tb_add_progress = -1.0;

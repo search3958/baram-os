@@ -413,8 +413,7 @@ impl WarpEngine {
             return 0;
         }
         let mut res = Self::strtol(&chars[i..].iter().collect::<String>());
-        while i < chars.len()
-            && (chars[i] == ' ' || chars[i] == '\t' || chars[i].is_ascii_digit())
+        while i < chars.len() && (chars[i] == ' ' || chars[i] == '\t' || chars[i].is_ascii_digit())
         {
             i += 1;
         }
@@ -443,9 +442,7 @@ impl WarpEngine {
                 _ => {}
             }
             while i < chars.len()
-                && (chars[i] == ' '
-                    || chars[i] == '\t'
-                    || chars[i].is_ascii_digit())
+                && (chars[i] == ' ' || chars[i] == '\t' || chars[i].is_ascii_digit())
             {
                 i += 1;
             }
@@ -1256,19 +1253,28 @@ impl WarpEngine {
     }
 
     pub fn handle_key(&mut self, c: u8) {
+        if c == 0x08 || c == 0x7F {
+            self.handle_text("", 1);
+        } else if c >= 0x20 && c < 0x7F {
+            let mut text = [0u8; 1];
+            text[0] = c;
+            let text = unsafe { core::str::from_utf8_unchecked(&text) };
+            self.handle_text(text, 0);
+        }
+    }
+
+    /// Replaces the active IME composition and accepts UTF-8 text.
+    pub fn handle_text(&mut self, text: &str, replace_chars: usize) {
         if self.focused_input_var.is_empty() {
             self.focused_input = None;
             return;
         }
         let out_var = self.focused_input_var.clone();
         let mut val = self.get_state(&out_var);
-        if c == 0x08 || c == 0x7F {
+        for _ in 0..replace_chars {
             val.pop();
-        } else if c >= 0x20 && c < 0x7F {
-            val.push(c as char);
-        } else {
-            return;
         }
+        val.push_str(text);
         self.set_state(&out_var, &val);
         self.dirty = true;
     }

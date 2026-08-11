@@ -15,6 +15,39 @@ use uefi::runtime;
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
+pub const IME_BUTTON_W: usize = 32;
+const IME_MENU_W: usize = 210;
+const IME_MENU_H: usize = 264;
+const TASKBAR_STATUS_SIZE: f32 = 32.0;
+const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
+const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
+const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
+const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
+const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
+const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../data/keyboard-pinyin.svg");
+
+fn ime_icon_svg(selection: usize) -> &'static str {
+    match selection {
+        1 => KEYBOARD_JAPANESE_SVG,
+        2 => KEYBOARD_KR2_SVG,
+        3 => KEYBOARD_KRCOM_SVG,
+        4 => KEYBOARD_KP2_SVG,
+        5 => KEYBOARD_PINYIN_SVG,
+        _ => KEYBOARD_ENGLISH_SVG,
+    }
+}
+
+fn draw_ime_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize, selection: usize) {
+    svg::draw_svg_into_alpha(
+        layer,
+        ime_icon_svg(selection),
+        x as i32,
+        y as i32,
+        size as f32,
+        size as f32,
+        255,
+    );
+}
 
 pub struct TaskbarSurface {
     layer: LayerSystem,
@@ -48,7 +81,9 @@ impl TaskbarSurface {
 
     #[inline]
     pub fn invalidate_search(&mut self) {
-        if self.valid { self.search_dirty = true; }
+        if self.valid {
+            self.search_dirty = true;
+        }
     }
 
     #[inline]
@@ -121,14 +156,18 @@ fn blend_rounded_rect(
     color: Color,
     alpha: u32,
 ) {
-    if width == 0 || height == 0 || alpha == 0 { return; }
+    if width == 0 || height == 0 || alpha == 0 {
+        return;
+    }
     let radius = radius.min(width / 2).min(height / 2);
     let x1 = (x + width).min(layer.width());
     let y1 = (y + height).min(layer.height());
     for py in y..y1 {
         for px in x..x1 {
             let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
-            if coverage == 0 { continue; }
+            if coverage == 0 {
+                continue;
+            }
             let idx = py * layer.width() + px;
             let bg = layer.buf_ref()[idx];
             let a = alpha.min(255) * coverage / 16;
@@ -155,9 +194,12 @@ fn copy_rounded_region_from_crop(
     height: usize,
     radius: usize,
 ) {
-    if source_w == 0 || source.len() % source_w != 0 { return; }
+    if source_w == 0 || source.len() % source_w != 0 {
+        return;
+    }
     let source_h = source.len() / source_w;
-    if x < source_x || y < source_y
+    if x < source_x
+        || y < source_y
         || x.saturating_add(width) > source_x.saturating_add(source_w)
         || y.saturating_add(height) > source_y.saturating_add(source_h)
     {
@@ -169,7 +211,9 @@ fn copy_rounded_region_from_crop(
     for py in y..y1 {
         for px in x..x1 {
             let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
-            if coverage == 0 { continue; }
+            if coverage == 0 {
+                continue;
+            }
             let idx = py * layer.width() + px;
             let fg = source[(py - source_y) * source_w + px - source_x];
             if coverage == 16 {
@@ -196,7 +240,9 @@ fn rounded_rect_coverage(
     height: usize,
     radius: usize,
 ) -> u32 {
-    if radius == 0 { return 16; }
+    if radius == 0 {
+        return 16;
+    }
     let left = x as f32;
     let top = y as f32;
     let right = (x + width) as f32;
@@ -211,31 +257,47 @@ fn rounded_rect_coverage(
             let corner_y = sample_y.clamp(top + r, bottom - r);
             let dx = sample_x - corner_x;
             let dy = sample_y - corner_y;
-            if dx * dx + dy * dy <= r * r { inside += 1; }
+            if dx * dx + dy * dy <= r * r {
+                inside += 1;
+            }
         }
     }
     inside
 }
 
 fn box_blur_alpha_2x(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
-    if width == 0 || height == 0 || radius == 0 { return; }
+    if width == 0 || height == 0 || radius == 0 {
+        return;
+    }
     let diameter = radius * 2 + 1;
     let mut scratch = alloc::vec![0u8; alpha.len()];
     for _ in 0..2 {
         for y in 0..height {
             let mut sum = 0u32;
             for x in 0..width + radius {
-                if x < width { sum += alpha[y * width + x] as u32; }
-                if x >= diameter && x - diameter < width { sum -= alpha[y * width + x - diameter] as u32; }
-                if x >= radius && x - radius < width { scratch[y * width + x - radius] = (sum / diameter as u32) as u8; }
+                if x < width {
+                    sum += alpha[y * width + x] as u32;
+                }
+                if x >= diameter && x - diameter < width {
+                    sum -= alpha[y * width + x - diameter] as u32;
+                }
+                if x >= radius && x - radius < width {
+                    scratch[y * width + x - radius] = (sum / diameter as u32) as u8;
+                }
             }
         }
         for x in 0..width {
             let mut sum = 0u32;
             for y in 0..height + radius {
-                if y < height { sum += scratch[y * width + x] as u32; }
-                if y >= diameter && y - diameter < height { sum -= scratch[(y - diameter) * width + x] as u32; }
-                if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
+                if y < height {
+                    sum += scratch[y * width + x] as u32;
+                }
+                if y >= diameter && y - diameter < height {
+                    sum -= scratch[(y - diameter) * width + x] as u32;
+                }
+                if y >= radius && y - radius < height {
+                    alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8;
+                }
             }
         }
     }
@@ -256,9 +318,23 @@ fn draw_soft_box_shadow(
     let r = radius.min(width / 2).min(height / 2);
     for py in 0..height {
         for px in 0..width {
-            let dx = if px < r { r - px } else if px >= width - r { px + r + 1 - width } else { 0 };
-            let dy = if py < r { r - py } else if py >= height - r { py + r + 1 - height } else { 0 };
-            if dx * dx + dy * dy <= r * r { alpha[(py + PAD) * sw + px + PAD] = 24; }
+            let dx = if px < r {
+                r - px
+            } else if px >= width - r {
+                px + r + 1 - width
+            } else {
+                0
+            };
+            let dy = if py < r {
+                r - py
+            } else if py >= height - r {
+                py + r + 1 - height
+            } else {
+                0
+            };
+            if dx * dx + dy * dy <= r * r {
+                alpha[(py + PAD) * sw + px + PAD] = 24;
+            }
         }
     }
     box_blur_alpha_2x(&mut alpha, sw, sh, 18);
@@ -268,12 +344,18 @@ fn draw_soft_box_shadow(
     let source_y = PAD.saturating_sub(y);
     for sy in source_y..sh {
         let dy = oy + sy - source_y;
-        if dy >= layer.height() { continue; }
+        if dy >= layer.height() {
+            continue;
+        }
         for sx in source_x..sw {
             let dx = ox + sx - source_x;
-            if dx >= layer.width() { continue; }
+            if dx >= layer.width() {
+                continue;
+            }
             let a = alpha[sy * sw + sx] as u32;
-            if a == 0 { continue; }
+            if a == 0 {
+                continue;
+            }
             let idx = dy * layer.width() + dx;
             let bg = layer.buf_ref()[idx];
             let inv = 255 - a;
@@ -298,7 +380,9 @@ fn draw_control_shadow(
     offset_y: usize,
     opacity: u8,
 ) {
-    if width == 0 || height == 0 || opacity == 0 { return; }
+    if width == 0 || height == 0 || opacity == 0 {
+        return;
+    }
     let blur_radius = 4usize; // Two passes approximate an 8px CSS blur.
     let pad = 24usize;
     let sw = width + pad * 2;
@@ -307,9 +391,23 @@ fn draw_control_shadow(
     let r = radius.min(width / 2).min(height / 2);
     for py in 0..height {
         for px in 0..width {
-            let dx = if px < r { r - px } else if px >= width - r { px + r + 1 - width } else { 0 };
-            let dy = if py < r { r - py } else if py >= height - r { py + r + 1 - height } else { 0 };
-            if dx * dx + dy * dy <= r * r { alpha[(py + pad + offset_y) * sw + px + pad] = opacity; }
+            let dx = if px < r {
+                r - px
+            } else if px >= width - r {
+                px + r + 1 - width
+            } else {
+                0
+            };
+            let dy = if py < r {
+                r - py
+            } else if py >= height - r {
+                py + r + 1 - height
+            } else {
+                0
+            };
+            if dx * dx + dy * dy <= r * r {
+                alpha[(py + pad + offset_y) * sw + px + pad] = opacity;
+            }
         }
     }
     box_blur_alpha_2x(&mut alpha, sw, sh, blur_radius);
@@ -320,15 +418,21 @@ fn draw_control_shadow(
     let source_y = pad.saturating_sub(y);
     for sy in source_y..sh {
         let dy = oy + sy - source_y;
-        if dy >= layer.height() { continue; }
+        if dy >= layer.height() {
+            continue;
+        }
         for sx in source_x..sw {
             let dx = ox + sx - source_x;
-            if dx >= layer.width() { continue; }
+            if dx >= layer.width() {
+                continue;
+            }
             if rounded_rect_coverage(dx, dy, x, y, width, height, radius) != 0 {
                 continue;
             }
             let a = alpha[sy * sw + sx] as u32;
-            if a == 0 { continue; }
+            if a == 0 {
+                continue;
+            }
             let idx = dy * layer.width() + dx;
             let bg = layer.buf_ref()[idx];
             let inv = 255 - a;
@@ -336,7 +440,8 @@ fn draw_control_shadow(
                 (((bg >> 16) & 0xff) * inv / 255) as u8,
                 (((bg >> 8) & 0xff) * inv / 255) as u8,
                 ((bg & 0xff) * inv / 255) as u8,
-            ).0;
+            )
+            .0;
         }
     }
 }
@@ -678,12 +783,18 @@ fn draw_taskbar_glyph(
     let buf = layer.buf_mut();
     for row in 0..glyph_h {
         let py = top + row;
-        if py < 0 || py >= h as i32 { continue; }
+        if py < 0 || py >= h as i32 {
+            continue;
+        }
         for col in 0..glyph_w {
             let px = x + col as usize;
-            if px >= w { continue; }
+            if px >= w {
+                continue;
+            }
             let a = data[(row * glyph_w + col) as usize] as u32;
-            if a == 0 { continue; }
+            if a == 0 {
+                continue;
+            }
             let idx = py as usize * w + px;
             let bg = buf[idx];
             let inv = 255 - a;
@@ -706,7 +817,15 @@ fn draw_taskbar_text(
     for ch in text.chars() {
         let glyph = baram_font::ttf_font_hud::glyph_at_size(ch, size);
         if glyph.w > 0 && glyph.h > 0 {
-            draw_taskbar_glyph(layer, &glyph.data, glyph.w, glyph.h, x, baseline_y + glyph.y_off, color);
+            draw_taskbar_glyph(
+                layer,
+                &glyph.data,
+                glyph.w,
+                glyph.h,
+                x,
+                baseline_y + glyph.y_off,
+                color,
+            );
             x += glyph.advance.max(0) as usize;
             continue;
         }
@@ -714,7 +833,15 @@ fn draw_taskbar_text(
         // to the regular UI font so placeholder and typed Japanese stay visible.
         let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
         if fallback.w > 0 && fallback.h > 0 {
-            draw_taskbar_glyph(layer, &fallback.data, fallback.w, fallback.h, x, baseline_y + fallback.y_off, color);
+            draw_taskbar_glyph(
+                layer,
+                &fallback.data,
+                fallback.w,
+                fallback.h,
+                x,
+                baseline_y + fallback.y_off,
+                color,
+            );
             x += fallback.advance.max(0) as usize;
         } else {
             x += 8;
@@ -729,7 +856,16 @@ fn draw_taskbar_search(layer: &mut LayerSystem, search_focused: bool, search_que
     let search_w = 190usize;
     let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
     let search_alpha = if search_focused { 255 } else { 128 };
-    draw_control_shadow(layer, search_x, search_y, search_w, search_h, search_h / 2, 2, 0x33);
+    draw_control_shadow(
+        layer,
+        search_x,
+        search_y,
+        search_w,
+        search_h,
+        search_h / 2,
+        2,
+        0x33,
+    );
     blend_rounded_rect(
         layer,
         search_x,
@@ -740,13 +876,24 @@ fn draw_taskbar_search(layer: &mut LayerSystem, search_focused: bool, search_que
         search_bg,
         search_alpha,
     );
-    let text = if search_query.is_empty() { "アプリを検索..." } else { search_query };
+    let text = if search_query.is_empty() {
+        "アプリを検索..."
+    } else {
+        search_query
+    };
     let text_color = if search_query.is_empty() {
         config::get_color("ui-theme/color/muted", Color::MUTED)
     } else {
         config::get_color("ui-theme/color/text", Color::TEXT)
     };
-    draw_taskbar_text(layer, text, search_x + 12, search_y as i32 + 22, text_color, 18.0);
+    draw_taskbar_text(
+        layer,
+        text,
+        search_x + 12,
+        search_y as i32 + 22,
+        text_color,
+        18.0,
+    );
 }
 
 fn redraw_taskbar_search(surface: &mut TaskbarSurface, search_focused: bool, search_query: &str) {
@@ -775,6 +922,7 @@ fn redraw_taskbar(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
+    ime_menu_selection: usize,
 ) {
     let layer = &mut surface.layer;
     let w = layer.width();
@@ -899,7 +1047,7 @@ fn redraw_taskbar(
         unsafe { core::str::from_utf8_unchecked(&battery_bytes[..len]) }
     });
 
-    let size = 32.0;
+    let size = TASKBAR_STATUS_SIZE;
     let measure = |text: &str| -> usize {
         text.chars()
             .map(|ch| {
@@ -907,7 +1055,12 @@ fn redraw_taskbar(
                 if g.w > 0 {
                     g.advance.max(0) as usize
                 } else {
-                    8
+                    let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
+                    if fallback.w > 0 {
+                        fallback.advance.max(0) as usize
+                    } else {
+                        8
+                    }
                 }
             })
             .sum()
@@ -917,6 +1070,11 @@ fn redraw_taskbar(
     let status_x = w.saturating_sub(measure(time) + battery_width + 16);
     let baseline = TASKBAR_H as i32 - baram_font::ttf_font_hud::ascent_at_size(size) + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
+    let ime_x = status_x.saturating_sub(IME_BUTTON_W + gap);
+    let ime_y = (TASKBAR_H - 20) / 2;
+    // Unlike a control button, the active input source is a bare status icon
+    // beside the clock: no pill background, shadow, or hover treatment.
+    draw_ime_icon(layer, ime_x + (IME_BUTTON_W - 20) / 2, ime_y, 20, ime_menu_selection);
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
     if let Some(battery) = battery {
         draw_taskbar_text(
@@ -935,6 +1093,201 @@ fn redraw_taskbar(
     surface.search_dirty = false;
 }
 
+fn draw_ime_candidates(
+    layer: &mut LayerSystem,
+    taskbar_y: usize,
+    reading: &str,
+    candidates: &[alloc::string::String],
+    selected: usize,
+) {
+    if candidates.is_empty() || taskbar_y < 76 {
+        return;
+    }
+    let x = 24usize;
+    let y = taskbar_y - 76;
+    let width = 440usize.min(layer.width().saturating_sub(x * 2));
+    let height = 64usize;
+    draw_control_shadow(layer, x, y, width, height, 12, 2, 0x36);
+    blend_rounded_rect(
+        layer,
+        x,
+        y,
+        width,
+        height,
+        12,
+        config::get_color("ui-theme/color/panel", Color::PANEL),
+        242,
+    );
+    let text_color = config::get_color("ui-theme/color/text", Color::TEXT);
+    let accent = config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY);
+    let mut heading = alloc::string::String::from("変換中: ");
+    heading.push_str(reading);
+    layer.put_str(x + 14, y + 8, &heading, text_color);
+
+    let mut cx = x + 14;
+    for (index, candidate) in candidates.iter().enumerate() {
+        let candidate_width = candidate.chars().count() * 16 + 18;
+        if cx + candidate_width > x + width - 10 {
+            break;
+        }
+        if index == selected {
+            blend_rounded_rect(layer, cx, y + 30, candidate_width, 25, 6, accent, 48);
+        }
+        layer.put_str(cx + 8, y + 34, candidate, text_color);
+        if index == selected {
+            // The underline marks the candidate currently composing in the
+            // target input. Enter commits this underlined candidate.
+            layer.fill_rect(cx + 7, y + 52, candidate_width.saturating_sub(14), 2, accent);
+        }
+        cx += candidate_width + 6;
+    }
+}
+
+/// Bounds of the IME mode menu in screen coordinates.
+pub fn ime_menu_bounds(width: usize, height: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
+    let (button_x, _, button_w, _) = ime_button_bounds(width, battery_pct);
+    let x = (button_x + button_w - IME_MENU_W as i32).max(12);
+    let y = height
+        .saturating_sub(TASKBAR_H + IME_MENU_H + 12)
+        .max(8) as i32;
+    (x, y, IME_MENU_W as i32, IME_MENU_H as i32)
+}
+
+/// Returns the mode row selected by a click in the IME menu.
+pub fn ime_menu_mode_at(
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
+    battery_pct: Option<u8>,
+) -> Option<usize> {
+    let (menu_x, menu_y, menu_w, menu_h) = ime_menu_bounds(width, height, battery_pct);
+    if x < menu_x || x >= menu_x + menu_w || y < menu_y || y >= menu_y + menu_h {
+        return None;
+    }
+    // Header occupies the first 28px; six 38px rows follow it.
+    (y >= menu_y + 30)
+        .then(|| ((y - menu_y - 30) / 38) as usize)
+        .filter(|row| *row < 6)
+}
+
+fn draw_ime_menu(
+    layer: &mut LayerSystem,
+    cached_layer: &mut Option<Vec<u32>>,
+    battery_pct: Option<u8>,
+    ime_menu_selection: usize,
+) {
+    let (x, y, width, height) = ime_menu_bounds(layer.width(), layer.height(), battery_pct);
+    let (x, y, width, height) = (x as usize, y as usize, width as usize, height as usize);
+    // The glass background is expensive only when it opens or the window
+    // below it changes. Cursor movement reuses this cached layer verbatim.
+    const CACHE_PAD: usize = 54;
+    let cache_x = x.saturating_sub(CACHE_PAD);
+    let cache_y = y.saturating_sub(CACHE_PAD);
+    let cache_x1 = (x + width + CACHE_PAD).min(layer.width());
+    let cache_y1 = (y + height + CACHE_PAD).min(layer.height());
+    let cache_w = cache_x1.saturating_sub(cache_x);
+    let cache_h = cache_y1.saturating_sub(cache_y);
+    if cache_w == 0 || cache_h == 0 { return; }
+    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+    if clip_x1 <= cache_x || clip_x0 >= cache_x1 || clip_y1 <= cache_y || clip_y0 >= cache_y1 {
+        return;
+    }
+    if cached_layer.as_ref().is_none_or(|cache| cache.len() != cache_w * cache_h) {
+        const BLUR_RADIUS: usize = 18;
+        let mut glass = LayerSystem::new(cache_w, cache_h);
+        for py in 0..cache_h {
+            let src_start = (cache_y + py) * layer.width() + cache_x;
+            let dst_start = py * cache_w;
+            glass.buf_mut()[dst_start..dst_start + cache_w]
+                .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+        }
+        let blur_x0 = x.saturating_sub(BLUR_RADIUS);
+        let blur_y0 = y.saturating_sub(BLUR_RADIUS);
+        let blur_x1 = (x + width + BLUR_RADIUS).min(layer.width());
+        let blur_y1 = (y + height + BLUR_RADIUS).min(layer.height());
+        let blur_w = blur_x1.saturating_sub(blur_x0);
+        let blur_h = blur_y1.saturating_sub(blur_y0);
+        if blur_w == 0 || blur_h == 0 { return; }
+        let mut source = alloc::vec![0u32; blur_w * blur_h];
+        for py in 0..blur_h {
+            let src_start = (blur_y0 + py) * layer.width() + blur_x0;
+            let dst_start = py * blur_w;
+            source[dst_start..dst_start + blur_w]
+                .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+        }
+        let mut blurred = alloc::vec![0u32; source.len()];
+        blur::blur_region_to(&source, &mut blurred, blur_w, 0, blur_h, BLUR_RADIUS as i32);
+        draw_soft_box_shadow(&mut glass, x - cache_x, y - cache_y, width, height, 18);
+        copy_rounded_region_from_crop(
+            &mut glass, &blurred, blur_w, blur_x0 - cache_x, blur_y0 - cache_y,
+            x - cache_x, y - cache_y, width, height, 18,
+        );
+        blend_rounded_rect(
+            &mut glass, x - cache_x, y - cache_y, width, height, 18,
+            Color::rgb(0xf5, 0xf5, 0xf5), 168,
+        );
+        *cached_layer = Some(glass.buf_ref().to_vec());
+    }
+    if let Some(cache) = cached_layer.as_deref() {
+        layer.copy_rect_buffer(cache, cache_w, cache_h, cache_x, cache_y);
+    }
+
+    let text = config::get_color("ui-theme/color/text", Color::TEXT);
+    let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
+    layer.put_str(x + 14, y + 9, "入力モード", muted);
+    for (row, label) in [
+        "英数",
+        "ひらがな",
+        "한국 두벌식",
+        "한컴 로마자",
+        "조선 두벌식",
+        "简体拼音",
+    ].iter().enumerate() {
+        let row_y = y + 30 + row * 38;
+        if row == ime_menu_selection {
+            // Fixed CSS-style #fff9 highlight: white at 60% opacity, kept
+            // independent from the active theme's primary color.
+            blend_rounded_rect(layer, x + 8, row_y, width - 16, 34, 9, Color::rgb(0xff, 0xff, 0xff), 0x99);
+        }
+        draw_ime_icon(layer, x + 18, row_y + 9, 16, row);
+        layer.put_str(x + 46, row_y + 9, label, text);
+    }
+}
+
+/// Bounds of the taskbar IME toggle, kept in sync with the status layout.
+pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
+    let measure = |text: &str| -> usize {
+        text.chars()
+            .map(|ch| {
+                let g = baram_font::ttf_font_hud::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
+                if g.w > 0 {
+                    g.advance.max(0) as usize
+                } else {
+                    8
+                }
+            })
+            .sum()
+    };
+    let battery_len = battery_pct.map_or(0, |pct| {
+        if pct >= 100 {
+            4
+        } else if pct >= 10 {
+            3
+        } else {
+            2
+        }
+    });
+    let battery_width = if battery_len == 0 {
+        0
+    } else {
+        12 + measure(&"0000"[..battery_len])
+    };
+    let status_x = width.saturating_sub(measure("00:00") + battery_width + 16);
+    let x = status_x.saturating_sub(IME_BUTTON_W + 12) as i32;
+    (x, (TASKBAR_H as i32 - 34) / 2, IME_BUTTON_W as i32, 34)
+}
+
 pub fn render_scene(
     layer: &mut LayerSystem,
     taskbar: &mut TaskbarSurface,
@@ -949,6 +1302,7 @@ pub fn render_scene(
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
+    cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
     remove_progress: f32,
@@ -971,6 +1325,11 @@ pub fn render_scene(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
+    ime_menu_open: bool,
+    ime_menu_selection: usize,
+    ime_reading: Option<&str>,
+    ime_candidates: &[alloc::string::String],
+    ime_selected: usize,
 ) {
     let w = layer.width();
     let h = layer.height();
@@ -1104,119 +1463,119 @@ pub fn render_scene(
     }
 
     if show_app_launcher {
-            let cols = 4usize;
-            let icon_size = 52usize;
-            let icon_gap = 16usize;
-            let label_h = 20usize;
-            let cell_w = icon_size + icon_gap;
-            let cell_h = icon_size + label_h + icon_gap;
-            let grid_w = cols * cell_w;
-            let visible_rows = 3usize;
-            let grid_h = visible_rows * cell_h;
-            let grid_x = 20usize;
-            let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
-            let content_y = grid_y + 4;
-            let panel_h = grid_h.max(40) + 16;
-            let panel_x = 12usize;
-            let panel_y = grid_y.saturating_sub(8);
-            let panel_w = grid_w + 16;
-            let panel_radius = 26usize;
-            let launcher_alpha = if launcher_anim_phase > 0 {
-                let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-                (ease_out_cubic(t) * 255.0) as u32
-            } else if launcher_anim_phase < 0 {
-                let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-                ((1.0 - t * t * t) * 255.0) as u32
-            } else {
-                255
-            };
-            // The complete launcher is cached as one layer. Animation only
-            // changes this layer's position and global opacity.
-            let launcher_offset_y = if launcher_anim_phase > 0 {
-                let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-                ((1.0 - ease_out_cubic(t)) * 16.0) as usize
-            } else {
-                0
-            };
+        let cols = 4usize;
+        let icon_size = 52usize;
+        let icon_gap = 16usize;
+        let label_h = 20usize;
+        let cell_w = icon_size + icon_gap;
+        let cell_h = icon_size + label_h + icon_gap;
+        let grid_w = cols * cell_w;
+        let visible_rows = 3usize;
+        let grid_h = visible_rows * cell_h;
+        let grid_x = 20usize;
+        let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+        let content_y = grid_y + 4;
+        let panel_h = grid_h.max(40) + 16;
+        let panel_x = 12usize;
+        let panel_y = grid_y.saturating_sub(8);
+        let panel_w = grid_w + 16;
+        let panel_radius = 26usize;
+        let launcher_alpha = if launcher_anim_phase > 0 {
+            let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+            (ease_out_cubic(t) * 255.0) as u32
+        } else if launcher_anim_phase < 0 {
+            let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+            ((1.0 - t * t * t) * 255.0) as u32
+        } else {
+            255
+        };
+        // The complete launcher is cached as one layer. Animation only
+        // changes this layer's position and global opacity.
+        let launcher_offset_y = if launcher_anim_phase > 0 {
+            let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+            ((1.0 - ease_out_cubic(t)) * 16.0) as usize
+        } else {
+            0
+        };
 
-            let building_launcher_cache = cached_launcher_layer.is_none();
-            let rebuild_launcher_content = building_launcher_cache || launcher_scroll_changed;
-            // Cache the complete glass-and-shadow base once per opening.
-            if building_launcher_cache {
-                const CACHE_PAD: usize = 54;
-                let cache_x = panel_x.saturating_sub(CACHE_PAD);
-                let cache_y = panel_y.saturating_sub(CACHE_PAD);
-                let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
-                let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
-                let cache_w = cache_x1.saturating_sub(cache_x);
-                let cache_h = cache_y1.saturating_sub(cache_y);
-                let mut panel_base = LayerSystem::new(cache_w, cache_h);
-                for py in 0..cache_h {
-                    let src_start = (cache_y + py) * w + cache_x;
-                    let dst_start = py * cache_w;
-                    panel_base.buf_mut()[dst_start..dst_start + cache_w]
-                        .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
-                }
-                // Two box-blur passes with r=13 can read up to 26px beyond
-                // the result. Keep that margin around the panel, rather than
-                // filtering the entire screen.
-                const BLUR_RADIUS: usize = 26;
-                let blur_x0 = panel_x.saturating_sub(BLUR_RADIUS);
-                let blur_y0 = panel_y.saturating_sub(BLUR_RADIUS);
-                let blur_x1 = (panel_x + panel_w + BLUR_RADIUS).min(w);
-                let blur_y1 = (panel_y + panel_h + BLUR_RADIUS).min(h);
-                let blur_w = blur_x1.saturating_sub(blur_x0);
-                let blur_h = blur_y1.saturating_sub(blur_y0);
-                let mut blur_source = alloc::vec![0u32; blur_w * blur_h];
-                for py in 0..blur_h {
-                    let src_start = (blur_y0 + py) * w + blur_x0;
-                    let dst_start = py * blur_w;
-                    blur_source[dst_start..dst_start + blur_w]
-                        .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
-                }
-                let mut blurred = alloc::vec![0u32; blur_source.len()];
-                blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 26);
-                let underlay = panel_base.buf_ref().to_vec();
-                draw_soft_box_shadow(
-                    &mut panel_base,
-                    panel_x - cache_x,
-                    panel_y - cache_y,
-                    panel_w,
-                    panel_h,
-                    panel_radius,
-                );
-                copy_rounded_region_from_crop(
-                    &mut panel_base,
-                    &blurred,
-                    blur_w,
-                    blur_x0 - cache_x,
-                    blur_y0 - cache_y,
-                    panel_x - cache_x,
-                    panel_y - cache_y,
-                    panel_w,
-                    panel_h,
-                    panel_radius,
-                );
-                blend_rounded_rect(
-                    &mut panel_base,
-                    panel_x - cache_x,
-                    panel_y - cache_y,
-                    panel_w,
-                    panel_h,
-                    panel_radius,
-                    Color::rgb(0xf5, 0xf5, 0xf5),
-                    150,
-                );
-                let panel = panel_base.buf_ref();
-                let mut cache = Vec::with_capacity(panel.len() * 4);
-                cache.extend_from_slice(panel);     // fully composed launcher
-                cache.extend_from_slice(panel);     // fixed glass background
-                cache.extend_from_slice(&underlay); // captured screen below it
-                cache.extend_from_slice(panel);     // per-frame layer scratch
-                *cached_launcher_layer = Some(cache);
+        let building_launcher_cache = cached_launcher_layer.is_none();
+        let rebuild_launcher_content = building_launcher_cache || launcher_scroll_changed;
+        // Cache the complete glass-and-shadow base once per opening.
+        if building_launcher_cache {
+            const CACHE_PAD: usize = 54;
+            let cache_x = panel_x.saturating_sub(CACHE_PAD);
+            let cache_y = panel_y.saturating_sub(CACHE_PAD);
+            let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+            let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+            let cache_w = cache_x1.saturating_sub(cache_x);
+            let cache_h = cache_y1.saturating_sub(cache_y);
+            let mut panel_base = LayerSystem::new(cache_w, cache_h);
+            for py in 0..cache_h {
+                let src_start = (cache_y + py) * w + cache_x;
+                let dst_start = py * cache_w;
+                panel_base.buf_mut()[dst_start..dst_start + cache_w]
+                    .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
             }
-            let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
-            if rebuild_launcher_content {
+            // Two box-blur passes with r=13 can read up to 26px beyond
+            // the result. Keep that margin around the panel, rather than
+            // filtering the entire screen.
+            const BLUR_RADIUS: usize = 26;
+            let blur_x0 = panel_x.saturating_sub(BLUR_RADIUS);
+            let blur_y0 = panel_y.saturating_sub(BLUR_RADIUS);
+            let blur_x1 = (panel_x + panel_w + BLUR_RADIUS).min(w);
+            let blur_y1 = (panel_y + panel_h + BLUR_RADIUS).min(h);
+            let blur_w = blur_x1.saturating_sub(blur_x0);
+            let blur_h = blur_y1.saturating_sub(blur_y0);
+            let mut blur_source = alloc::vec![0u32; blur_w * blur_h];
+            for py in 0..blur_h {
+                let src_start = (blur_y0 + py) * w + blur_x0;
+                let dst_start = py * blur_w;
+                blur_source[dst_start..dst_start + blur_w]
+                    .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+            }
+            let mut blurred = alloc::vec![0u32; blur_source.len()];
+            blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 26);
+            let underlay = panel_base.buf_ref().to_vec();
+            draw_soft_box_shadow(
+                &mut panel_base,
+                panel_x - cache_x,
+                panel_y - cache_y,
+                panel_w,
+                panel_h,
+                panel_radius,
+            );
+            copy_rounded_region_from_crop(
+                &mut panel_base,
+                &blurred,
+                blur_w,
+                blur_x0 - cache_x,
+                blur_y0 - cache_y,
+                panel_x - cache_x,
+                panel_y - cache_y,
+                panel_w,
+                panel_h,
+                panel_radius,
+            );
+            blend_rounded_rect(
+                &mut panel_base,
+                panel_x - cache_x,
+                panel_y - cache_y,
+                panel_w,
+                panel_h,
+                panel_radius,
+                Color::rgb(0xf5, 0xf5, 0xf5),
+                150,
+            );
+            let panel = panel_base.buf_ref();
+            let mut cache = Vec::with_capacity(panel.len() * 4);
+            cache.extend_from_slice(panel); // fully composed launcher
+            cache.extend_from_slice(panel); // fixed glass background
+            cache.extend_from_slice(&underlay); // captured screen below it
+            cache.extend_from_slice(panel); // per-frame layer scratch
+            *cached_launcher_layer = Some(cache);
+        }
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+        if rebuild_launcher_content {
             if let Some(panel_base) = cached_launcher_layer.as_deref() {
                 const CACHE_PAD: usize = 54;
                 let cache_x = panel_x.saturating_sub(CACHE_PAD);
@@ -1229,11 +1588,15 @@ pub fn render_scene(
                     let panel_start = cache_w * cache_h;
                     for py in 0..cache_h {
                         let dst_y = cache_y + py;
-                        if dst_y < clip_y0 || dst_y >= clip_y1 { continue; }
+                        if dst_y < clip_y0 || dst_y >= clip_y1 {
+                            continue;
+                        }
                         let src_start = panel_start + py * cache_w;
                         let draw_x0 = cache_x.max(clip_x0);
                         let draw_x1 = cache_x1.min(clip_x1);
-                        if draw_x0 >= draw_x1 { continue; }
+                        if draw_x0 >= draw_x1 {
+                            continue;
+                        }
                         let src_start = src_start + draw_x0 - cache_x;
                         let dst_start = dst_y * w + draw_x0;
                         let draw_w = draw_x1 - draw_x0;
@@ -1267,10 +1630,10 @@ pub fn render_scene(
             // background, not transparent black. Seed the visible viewport
             // before rendering its icons and labels.
             for py in 0..scratch_h {
-                let screen_y = content_y
-                    .saturating_add(py)
-                    .saturating_sub(viewport_src_y);
-                if screen_y >= h { continue; }
+                let screen_y = content_y.saturating_add(py).saturating_sub(viewport_src_y);
+                if screen_y >= h {
+                    continue;
+                }
                 let src_start = screen_y * w + grid_x;
                 let dst_start = py * grid_w;
                 content.buf_mut()[dst_start..dst_start + grid_w]
@@ -1281,7 +1644,9 @@ pub fn render_scene(
                 let row = i / cols;
                 let cx = col * cell_w + icon_gap / 2;
                 let item_y = row * cell_h;
-                if item_y + cell_h <= scratch_y || item_y >= scratch_y + scratch_h { continue; }
+                if item_y + cell_h <= scratch_y || item_y >= scratch_y + scratch_h {
+                    continue;
+                }
                 let cy = item_y - scratch_y;
 
                 content.fill_circle(
@@ -1397,50 +1762,46 @@ pub fn render_scene(
                     );
                 }
             }
-            }
+        }
 
-            // Build one launcher layer from a fixed glass background plus the
-            // cached app pixels shifted inside it. Then apply opacity once to
-            // that entire layer through the SIMD compositor.
-            if let Some(cache) = cached_launcher_layer.as_mut() {
-                const CACHE_PAD: usize = 54;
-                let cache_x = panel_x.saturating_sub(CACHE_PAD);
-                let cache_y = panel_y.saturating_sub(CACHE_PAD);
-                let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
-                let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
-                let cache_w = cache_x1.saturating_sub(cache_x);
-                let cache_h = cache_y1.saturating_sub(cache_y);
-                let cache_len = cache_w * cache_h;
-                if cache.len() == cache_len * 4 && launcher_alpha != 0 {
-                    if launcher_anim_phase == 0 {
-                        layer.copy_rect_buffer(
-                            &cache[..cache_len],
-                            cache_w,
-                            cache_h,
-                            cache_x,
-                            cache_y,
-                        );
-                        // No opacity or internal motion remains in steady and
-                        // scroll frames, so the finished cache is final.
-                    } else if launcher_anim_phase < 0 {
-                        // Closing has no internal translation. Feed the final
-                        // cached launcher straight into the SIMD alpha pass.
-                        layer.composit_rect_global_alpha(
-                            &cache[..cache_len],
-                            cache_w,
-                            cache_h,
-                            cache_x,
-                            cache_y,
-                            launcher_alpha as u8,
-                        );
-                    } else {
+        // Build one launcher layer from a fixed glass background plus the
+        // cached app pixels shifted inside it. Then apply opacity once to
+        // that entire layer through the SIMD compositor.
+        if let Some(cache) = cached_launcher_layer.as_mut() {
+            const CACHE_PAD: usize = 54;
+            let cache_x = panel_x.saturating_sub(CACHE_PAD);
+            let cache_y = panel_y.saturating_sub(CACHE_PAD);
+            let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+            let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+            let cache_w = cache_x1.saturating_sub(cache_x);
+            let cache_h = cache_y1.saturating_sub(cache_y);
+            let cache_len = cache_w * cache_h;
+            if cache.len() == cache_len * 4 && launcher_alpha != 0 {
+                if launcher_anim_phase == 0 {
+                    layer.copy_rect_buffer(&cache[..cache_len], cache_w, cache_h, cache_x, cache_y);
+                    // No opacity or internal motion remains in steady and
+                    // scroll frames, so the finished cache is final.
+                } else if launcher_anim_phase < 0 {
+                    // Closing has no internal translation. Feed the final
+                    // cached launcher straight into the SIMD alpha pass.
+                    layer.composit_rect_global_alpha(
+                        &cache[..cache_len],
+                        cache_w,
+                        cache_h,
+                        cache_x,
+                        cache_y,
+                        launcher_alpha as u8,
+                    );
+                } else {
                     cache.copy_within(cache_len..cache_len * 2, cache_len * 3);
 
                     let content_x = grid_x - cache_x;
                     let content_base_y = content_y - cache_y;
                     for py in 0..grid_h {
                         let dst_py = content_base_y + py + launcher_offset_y;
-                        if dst_py >= cache_h { continue; }
+                        if dst_py >= cache_h {
+                            continue;
+                        }
                         let src_row = (content_base_y + py) * cache_w + content_x;
                         let dst_row = dst_py * cache_w + content_x;
                         for px in 0..grid_w {
@@ -1459,9 +1820,9 @@ pub fn render_scene(
                         cache_y,
                         launcher_alpha as u8,
                     );
-                    }
                 }
             }
+        }
     }
 
     if taskbar_dirty || !taskbar.is_valid() {
@@ -1476,9 +1837,16 @@ pub fn render_scene(
             clock_hh,
             clock_mm,
             battery_pct,
+            ime_menu_selection,
         );
     } else if taskbar.is_search_dirty() {
         redraw_taskbar_search(taskbar, search_focused, search_query);
+    }
+    if ime_menu_open {
+        draw_ime_menu(layer, cached_ime_menu_layer, battery_pct, ime_menu_selection);
+    }
+    if let Some(reading) = ime_reading {
+        draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
     }
     taskbar.composite_onto(layer, tb_y);
 }
@@ -1500,6 +1868,7 @@ pub fn render_frame(
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
+    cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
     remove_progress: f32,
@@ -1523,6 +1892,11 @@ pub fn render_frame(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
+    ime_menu_open: bool,
+    ime_menu_selection: usize,
+    ime_reading: Option<&str>,
+    ime_candidates: &[alloc::string::String],
+    ime_selected: usize,
 ) {
     render_scene(
         layer,
@@ -1538,6 +1912,7 @@ pub fn render_frame(
         html_engines,
         wallpaper,
         cached_launcher_layer,
+        cached_ime_menu_layer,
         taskbar_dirty,
         add_progress,
         remove_progress,
@@ -1560,6 +1935,11 @@ pub fn render_frame(
         clock_hh,
         clock_mm,
         battery_pct,
+        ime_menu_open,
+        ime_menu_selection,
+        ime_reading,
+        ime_candidates,
+        ime_selected,
     );
     let is_resizing = wm.is_any_resizing();
     cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);
