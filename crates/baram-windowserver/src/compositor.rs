@@ -240,11 +240,15 @@ fn blend_rounded_rect(
         return;
     }
     let radius = radius.min(width / 2).min(height / 2);
+    // Keep compositor-owned translucent controls on the same smooth
+    // superellipse used by Warp windows.  `LayerSystem::fill_rounded_rect`
+    // already uses this geometry, but these controls need per-pixel alpha.
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, radius as f32);
     let x1 = (x + width).min(layer.width());
     let y1 = (y + height).min(layer.height());
     for py in y..y1 {
         for px in x..x1 {
-            let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
+            let coverage = squircle_coverage(px, py, x, y, &squircle);
             if coverage == 0 {
                 continue;
             }
@@ -286,11 +290,12 @@ fn copy_rounded_region_from_crop(
         return;
     }
     let radius = radius.min(width / 2).min(height / 2);
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, radius as f32);
     let x1 = (x + width).min(layer.width());
     let y1 = (y + height).min(layer.height());
     for py in y..y1 {
         for px in x..x1 {
-            let coverage = rounded_rect_coverage(px, py, x, y, width, height, radius);
+            let coverage = squircle_coverage(px, py, x, y, &squircle);
             if coverage == 0 {
                 continue;
             }
@@ -311,33 +316,21 @@ fn copy_rounded_region_from_crop(
     }
 }
 
-fn rounded_rect_coverage(
+/// Four-by-four anti-aliased coverage for the Warp squircle polygon.
+/// Coordinates are screen-relative while the geometry is local to the rect.
+fn squircle_coverage(
     px: usize,
     py: usize,
     x: usize,
     y: usize,
-    width: usize,
-    height: usize,
-    radius: usize,
+    polygon: &[(f32, f32)],
 ) -> u32 {
-    if radius == 0 {
-        return 16;
-    }
-    let left = x as f32;
-    let top = y as f32;
-    let right = (x + width) as f32;
-    let bottom = (y + height) as f32;
-    let r = radius as f32;
     let mut inside = 0u32;
     for sy in 0..4 {
         for sx in 0..4 {
-            let sample_x = px as f32 + (sx as f32 + 0.5) * 0.25;
-            let sample_y = py as f32 + (sy as f32 + 0.5) * 0.25;
-            let corner_x = sample_x.clamp(left + r, right - r);
-            let corner_y = sample_y.clamp(top + r, bottom - r);
-            let dx = sample_x - corner_x;
-            let dy = sample_y - corner_y;
-            if dx * dx + dy * dy <= r * r {
+            let sample_x = px as f32 - x as f32 + (sx as f32 + 0.5) * 0.25;
+            let sample_y = py as f32 - y as f32 + (sy as f32 + 0.5) * 0.25;
+            if LayerSystem::point_in_polygon(sample_x, sample_y, polygon) {
                 inside += 1;
             }
         }
@@ -396,24 +389,12 @@ fn draw_soft_box_shadow(
     let sh = height + PAD * 2;
     let mut alpha = alloc::vec![0u8; sw * sh];
     let r = radius.min(width / 2).min(height / 2);
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, r as f32);
     for py in 0..height {
         for px in 0..width {
-            let dx = if px < r {
-                r - px
-            } else if px >= width - r {
-                px + r + 1 - width
-            } else {
-                0
-            };
-            let dy = if py < r {
-                r - py
-            } else if py >= height - r {
-                py + r + 1 - height
-            } else {
-                0
-            };
-            if dx * dx + dy * dy <= r * r {
-                alpha[(py + PAD) * sw + px + PAD] = 24;
+            let coverage = squircle_coverage(px, py, 0, 0, &squircle);
+            if coverage != 0 {
+                alpha[(py + PAD) * sw + px + PAD] = (24 * coverage / 16) as u8;
             }
         }
     }
@@ -469,24 +450,13 @@ fn draw_control_shadow(
     let sh = height + pad * 2 + offset_y;
     let mut alpha = alloc::vec![0u8; sw * sh];
     let r = radius.min(width / 2).min(height / 2);
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, r as f32);
     for py in 0..height {
         for px in 0..width {
-            let dx = if px < r {
-                r - px
-            } else if px >= width - r {
-                px + r + 1 - width
-            } else {
-                0
-            };
-            let dy = if py < r {
-                r - py
-            } else if py >= height - r {
-                py + r + 1 - height
-            } else {
-                0
-            };
-            if dx * dx + dy * dy <= r * r {
-                alpha[(py + pad + offset_y) * sw + px + pad] = opacity;
+            let coverage = squircle_coverage(px, py, 0, 0, &squircle);
+            if coverage != 0 {
+                alpha[(py + pad + offset_y) * sw + px + pad] =
+                    (opacity as u32 * coverage / 16) as u8;
             }
         }
     }
@@ -506,7 +476,7 @@ fn draw_control_shadow(
             if dx >= layer.width() {
                 continue;
             }
-            if rounded_rect_coverage(dx, dy, x, y, width, height, radius) != 0 {
+            if squircle_coverage(dx, dy, x, y, &squircle) != 0 {
                 continue;
             }
             let a = alpha[sy * sw + sx] as u32;
