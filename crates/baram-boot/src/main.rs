@@ -58,6 +58,7 @@ use nano_system::NanoSystem;
 // Keep this comfortably longer than the normal 16 ms present interval so
 // opening an app always has visible intermediate taskbar frames.
 const TASKBAR_ADD_ANIMATION_MS: u64 = 180;
+const MOZC_DICTIONARY: &str = include_str!("mozc_dictionary.tsv");
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
@@ -70,6 +71,12 @@ enum InputMode {
 struct JapaneseIme {
     romaji: alloc::string::String,
     visible_chars: usize,
+    conversion: Option<JapaneseConversion>,
+}
+
+struct JapaneseConversion {
+    candidates: alloc::vec::Vec<alloc::string::String>,
+    selected: usize,
 }
 
 impl JapaneseIme {
@@ -77,15 +84,24 @@ impl JapaneseIme {
         Self {
             romaji: alloc::string::String::new(),
             visible_chars: 0,
+            conversion: None,
         }
     }
 
     fn reset(&mut self) {
         self.romaji.clear();
         self.visible_chars = 0;
+        self.conversion = None;
     }
 
     fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
+        // Starting another romaji run commits the selected candidate already
+        // visible in the target field.
+        if key != 0x08 && key != 0x7f && self.conversion.is_some() {
+            self.conversion = None;
+            self.romaji.clear();
+            self.visible_chars = 0;
+        }
         if key == 0x08 || key == 0x7f {
             if self.romaji.pop().is_some() {
                 let text = self.romaji.as_str().to_hiragana();
@@ -112,6 +128,60 @@ impl JapaneseIme {
         self.reset();
         (text, replace)
     }
+
+    /// Starts (or advances) kana-to-kanji conversion. The returned edit
+    /// replaces the currently visible composition in the focused input.
+    fn convert(&mut self) -> Option<(alloc::string::String, usize)> {
+        if let Some(conversion) = self.conversion.as_mut() {
+            conversion.selected = (conversion.selected + 1) % conversion.candidates.len();
+            let text = conversion.candidates[conversion.selected].clone();
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return Some((text, replace));
+        }
+
+        let kana = self.romaji.as_str().to_hiragana();
+        let candidates = mozc_candidates(&kana)?;
+        let text = candidates[0].clone();
+        let replace = self.visible_chars;
+        self.visible_chars = text.chars().count();
+        self.conversion = Some(JapaneseConversion {
+            candidates,
+            selected: 0,
+        });
+        Some((text, replace))
+    }
+
+    fn commit_conversion(&mut self) {
+        if self.conversion.is_some() {
+            self.reset();
+        }
+    }
+
+    fn edit_for_key(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key == b' ' {
+            return self.convert().unwrap_or_else(|| self.edit(key));
+        }
+        if key == b'\n' || key == b'\r' {
+            self.commit_conversion();
+            return (alloc::string::String::new(), 0);
+        }
+        self.edit(key)
+    }
+}
+
+/// Looks up the compact index generated directly from Mozc's OSS dictionary.
+/// Entries are sorted by reading and candidates preserve Mozc's cost ranking.
+fn mozc_candidates(kana: &str) -> Option<alloc::vec::Vec<alloc::string::String>> {
+    for line in MOZC_DICTIONARY.lines().skip(1) {
+        let mut fields = line.split('\t');
+        let key = fields.next()?;
+        if key == kana {
+            let candidates = fields.map(alloc::string::String::from).collect();
+            return Some(candidates);
+        }
+    }
+    None
 }
 
 struct UiMonotonicClock {
@@ -692,7 +762,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // so it does not always arrive through `printable`.
             if app_search_focused && ev.scancode == 0x08 {
                 if input_mode == InputMode::Hiragana {
-                    let (text, replace_chars) = japanese_ime.edit(0x08);
+                    let (text, replace_chars) = japanese_ime.edit_for_key(0x08);
                     for _ in 0..replace_chars {
                         app_search_query.pop();
                     }
@@ -732,7 +802,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let mut handled = false;
                 if app_search_focused {
                     if input_mode == InputMode::Hiragana {
-                        let (text, replace_chars) = japanese_ime.edit(c);
+                        let (text, replace_chars) = japanese_ime.edit_for_key(c);
                         for _ in 0..replace_chars {
                             app_search_query.pop();
                         }
@@ -772,7 +842,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && !engine.focused_input_var.is_empty()
                         {
                             if input_mode == InputMode::Hiragana {
-                                let (text, replace_chars) = japanese_ime.edit(c);
+                                let (text, replace_chars) = japanese_ime.edit_for_key(c);
                                 engine.handle_text(&text, replace_chars);
                             } else {
                                 engine.handle_key(c);
@@ -799,7 +869,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 && engine.has_focused_input()
                             {
                                 if input_mode == InputMode::Hiragana {
-                                    let (text, replace_chars) = japanese_ime.edit(c);
+                                    let (text, replace_chars) = japanese_ime.edit_for_key(c);
                                     engine.handle_text(&text, replace_chars);
                                 } else {
                                     engine.handle_key(c);
