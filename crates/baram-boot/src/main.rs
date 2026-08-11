@@ -604,7 +604,7 @@ fn monotonic_counter_frequency() -> Option<u64> {
 
 fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     NanoSystem::serial_log("baram: kernel entry\r\n");
-    let timer_event = nano.take_timer_event();
+    let mut timer_event = nano.take_timer_event();
     NanoSystem::serial_log("baram: acquiring screen\r\n");
     let mut screen = match Screen::take() {
         Ok(screen) => screen,
@@ -724,9 +724,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         NanoSystem::serial_log("baram: setup layout ready\r\n");
 
         loop {
-            if let Some(ref timer) = timer_event {
-                let mut events = [unsafe { core::ptr::read(timer) }];
-                let _ = uefi::boot::wait_for_event(&mut events);
+            if let Some(ref mut timer) = timer_event {
+                let _ = uefi::boot::wait_for_event(core::slice::from_mut(timer));
             }
             setup_now_ns = setup_now_ns.saturating_add(1_000_000);
 
@@ -1115,9 +1114,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut launcher_scroll_input_changed = false;
         let mut ui_timer_fired = timer_event.is_none();
 
-        if let Some(ref timer) = timer_event {
-            let mut events = [unsafe { core::ptr::read(timer) }];
-            ui_timer_fired = uefi::boot::wait_for_event(&mut events).is_ok();
+        if let Some(ref mut timer) = timer_event {
+            ui_timer_fired = uefi::boot::wait_for_event(core::slice::from_mut(timer)).is_ok();
         }
         if let Some(ref mut clock) = ui_clock {
             ui_time_ms = ui_time_ms.wrapping_add(clock.frame_delta_ms());

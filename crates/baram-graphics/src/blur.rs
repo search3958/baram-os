@@ -24,6 +24,11 @@ fn box_recip(count: i32) -> i32 {
 }
 
 #[inline(always)]
+fn box_average(sum: i32, recip: i32) -> i32 {
+    (sum * recip + (1 << (RECIP_SHIFT - 1))) >> RECIP_SHIFT
+}
+
+#[inline(always)]
 unsafe fn blur_h_pixel_scalar(src_row: *const u32, dst_row: *mut u32, x: usize, w: usize, kernel: &[i32], blur_r: i32) {
     let mut r_acc = 0; let mut g_acc = 0; let mut b_acc = 0;
     for k in 0..kernel.len() {
@@ -82,9 +87,9 @@ unsafe fn box_blur_h(src: *const u32, dst: *mut u32, w: usize, h: usize, r: i32)
             b_sum += pixel_b(px);
         }
         *dp = make_pixel(
-            clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+            clamp_u8(box_average(r_sum, recip)),
+            clamp_u8(box_average(g_sum, recip)),
+            clamp_u8(box_average(b_sum, recip)),
         );
 
         for x in 1..w {
@@ -95,9 +100,9 @@ unsafe fn box_blur_h(src: *const u32, dst: *mut u32, w: usize, h: usize, r: i32)
             b_sum += pixel_b(add) - pixel_b(rem);
 
             *dp.add(x) = make_pixel(
-                clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-                clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-                clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+                clamp_u8(box_average(r_sum, recip)),
+                clamp_u8(box_average(g_sum, recip)),
+                clamp_u8(box_average(b_sum, recip)),
             );
         }
     }
@@ -118,9 +123,9 @@ unsafe fn box_blur_v(src: *const u32, dst: *mut u32, w: usize, h: usize, r: i32)
             b_sum += pixel_b(px);
         }
         *dst.add(x) = make_pixel(
-            clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+            clamp_u8(box_average(r_sum, recip)),
+            clamp_u8(box_average(g_sum, recip)),
+            clamp_u8(box_average(b_sum, recip)),
         );
 
         for y in 1..h {
@@ -131,9 +136,9 @@ unsafe fn box_blur_v(src: *const u32, dst: *mut u32, w: usize, h: usize, r: i32)
             b_sum += pixel_b(add) - pixel_b(rem);
 
             *dst.add(y * w + x) = make_pixel(
-                clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-                clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-                clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+                clamp_u8(box_average(r_sum, recip)),
+                clamp_u8(box_average(g_sum, recip)),
+                clamp_u8(box_average(b_sum, recip)),
             );
         }
     }
@@ -153,9 +158,9 @@ unsafe fn box_blur_v_single_col(src: *const u32, dst: *mut u32, w: usize, h: usi
         b_sum += pixel_b(px);
     }
     *dst.add(x) = make_pixel(
-        clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-        clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-        clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+        clamp_u8(box_average(r_sum, recip)),
+        clamp_u8(box_average(g_sum, recip)),
+        clamp_u8(box_average(b_sum, recip)),
     );
 
     for y in 1..h {
@@ -166,9 +171,9 @@ unsafe fn box_blur_v_single_col(src: *const u32, dst: *mut u32, w: usize, h: usi
         b_sum += pixel_b(add) - pixel_b(rem);
 
         *dst.add(y * w + x) = make_pixel(
-            clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+            clamp_u8(box_average(r_sum, recip)),
+            clamp_u8(box_average(g_sum, recip)),
+            clamp_u8(box_average(b_sum, recip)),
         );
     }
 }
@@ -187,9 +192,9 @@ unsafe fn box_blur_h_single_row(src: *const u32, dst: *mut u32, w: usize, r: i32
         b_sum += pixel_b(px);
     }
     *dst = make_pixel(
-        clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-        clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-        clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+        clamp_u8(box_average(r_sum, recip)),
+        clamp_u8(box_average(g_sum, recip)),
+        clamp_u8(box_average(b_sum, recip)),
     );
 
     for x in 1..w {
@@ -200,9 +205,9 @@ unsafe fn box_blur_h_single_row(src: *const u32, dst: *mut u32, w: usize, r: i32
         b_sum += pixel_b(add) - pixel_b(rem);
 
         *dst.add(x) = make_pixel(
-            clamp_u8((r_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((g_sum * recip) >> RECIP_SHIFT),
-            clamp_u8((b_sum * recip) >> RECIP_SHIFT),
+            clamp_u8(box_average(r_sum, recip)),
+            clamp_u8(box_average(g_sum, recip)),
+            clamp_u8(box_average(b_sum, recip)),
         );
     }
 }
@@ -458,7 +463,10 @@ mod box_avx2 {
 
     #[inline(always)]
     unsafe fn finalize(sum: __m256i, recip: __m256i) -> __m256i {
-        let v = _mm256_srai_epi32(_mm256_mullo_epi32(sum, recip), RECIP_SHIFT);
+        let product = _mm256_mullo_epi32(sum, recip);
+        let rounded =
+            _mm256_add_epi32(product, _mm256_set1_epi32(1 << (RECIP_SHIFT - 1)));
+        let v = _mm256_srai_epi32(rounded, RECIP_SHIFT);
         _mm256_max_epi32(_mm256_min_epi32(v, _mm256_set1_epi32(255)), _mm256_setzero_si256())
     }
 
@@ -664,6 +672,10 @@ pub fn build_fixed_kernel_buffer(blur_r: i32, out_kernel: &mut [i32]) {
     for kw in out_kernel[0..=(blur_r * 2) as usize].iter_mut() {
         *kw = (*kw as f32 * scale / FIXED_ONE as f32) as i32;
     }
+    // Integer truncation must not reduce the total weight: a normalized blur
+    // keeps a flat-color image at exactly the same brightness on every pass.
+    let normalized_sum: i32 = out_kernel[0..=(blur_r * 2) as usize].iter().sum();
+    out_kernel[blur_r as usize] += FIXED_ONE - normalized_sum;
 }
 
 fn gaussian_convolution_scalar(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
