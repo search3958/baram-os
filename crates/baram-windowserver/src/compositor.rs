@@ -15,10 +15,37 @@ use uefi::runtime;
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
-pub const IME_BUTTON_W: usize = 40;
+pub const IME_BUTTON_W: usize = 32;
 const IME_MENU_W: usize = 210;
 const IME_MENU_H: usize = 226;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
+const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
+const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
+const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
+const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
+const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
+
+fn ime_icon_svg(selection: usize) -> &'static str {
+    match selection {
+        1 => KEYBOARD_JAPANESE_SVG,
+        2 => KEYBOARD_KR2_SVG,
+        3 => KEYBOARD_KRCOM_SVG,
+        4 => KEYBOARD_KP2_SVG,
+        _ => KEYBOARD_ENGLISH_SVG,
+    }
+}
+
+fn draw_ime_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize, selection: usize) {
+    svg::draw_svg_into_alpha(
+        layer,
+        ime_icon_svg(selection),
+        x as i32,
+        y as i32,
+        size as f32,
+        size as f32,
+        255,
+    );
+}
 
 pub struct TaskbarSurface {
     layer: LayerSystem,
@@ -893,7 +920,7 @@ fn redraw_taskbar(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
-    ime_label: &str,
+    ime_menu_selection: usize,
 ) {
     let layer = &mut surface.layer;
     let w = layer.width();
@@ -1042,27 +1069,10 @@ fn redraw_taskbar(
     let baseline = TASKBAR_H as i32 - baram_font::ttf_font_hud::ascent_at_size(size) + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
     let ime_x = status_x.saturating_sub(IME_BUTTON_W + gap);
-    let ime_y = (TASKBAR_H - 34) / 2;
-    draw_control_shadow(layer, ime_x, ime_y, IME_BUTTON_W, 34, 17, 1, 0x22);
-    blend_rounded_rect(
-        layer,
-        ime_x,
-        ime_y,
-        IME_BUTTON_W,
-        34,
-        17,
-        config::get_color("ui-theme/color/panel", Color::PANEL),
-        176,
-    );
-    let ime_width = measure(ime_label);
-    draw_taskbar_text(
-        layer,
-        ime_label,
-        ime_x + (IME_BUTTON_W.saturating_sub(ime_width)) / 2,
-        baseline,
-        status_color,
-        size,
-    );
+    let ime_y = (TASKBAR_H - 20) / 2;
+    // Unlike a control button, the active input source is a bare status icon
+    // beside the clock: no pill background, shadow, or hover treatment.
+    draw_ime_icon(layer, ime_x + (IME_BUTTON_W - 20) / 2, ime_y, 20, ime_menu_selection);
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
     if let Some(battery) = battery {
         draw_taskbar_text(
@@ -1161,47 +1171,75 @@ pub fn ime_menu_mode_at(
 
 fn draw_ime_menu(
     layer: &mut LayerSystem,
+    cached_layer: &mut Option<Vec<u32>>,
     battery_pct: Option<u8>,
     ime_menu_selection: usize,
 ) {
     let (x, y, width, height) = ime_menu_bounds(layer.width(), layer.height(), battery_pct);
     let (x, y, width, height) = (x as usize, y as usize, width as usize, height as usize);
-    const BLUR_RADIUS: usize = 18;
-    let blur_x0 = x.saturating_sub(BLUR_RADIUS);
-    let blur_y0 = y.saturating_sub(BLUR_RADIUS);
-    let blur_x1 = (x + width + BLUR_RADIUS).min(layer.width());
-    let blur_y1 = (y + height + BLUR_RADIUS).min(layer.height());
-    let blur_w = blur_x1.saturating_sub(blur_x0);
-    let blur_h = blur_y1.saturating_sub(blur_y0);
-    if blur_w == 0 || blur_h == 0 {
+    // The glass background is expensive only when it opens or the window
+    // below it changes. Cursor movement reuses this cached layer verbatim.
+    const CACHE_PAD: usize = 54;
+    let cache_x = x.saturating_sub(CACHE_PAD);
+    let cache_y = y.saturating_sub(CACHE_PAD);
+    let cache_x1 = (x + width + CACHE_PAD).min(layer.width());
+    let cache_y1 = (y + height + CACHE_PAD).min(layer.height());
+    let cache_w = cache_x1.saturating_sub(cache_x);
+    let cache_h = cache_y1.saturating_sub(cache_y);
+    if cache_w == 0 || cache_h == 0 { return; }
+    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+    if clip_x1 <= cache_x || clip_x0 >= cache_x1 || clip_y1 <= cache_y || clip_y0 >= cache_y1 {
         return;
     }
-    let mut source = alloc::vec![0u32; blur_w * blur_h];
-    for py in 0..blur_h {
-        let src_start = (blur_y0 + py) * layer.width() + blur_x0;
-        let dst_start = py * blur_w;
-        source[dst_start..dst_start + blur_w]
-            .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+    if cached_layer.as_ref().is_none_or(|cache| cache.len() != cache_w * cache_h) {
+        const BLUR_RADIUS: usize = 18;
+        let mut glass = LayerSystem::new(cache_w, cache_h);
+        for py in 0..cache_h {
+            let src_start = (cache_y + py) * layer.width() + cache_x;
+            let dst_start = py * cache_w;
+            glass.buf_mut()[dst_start..dst_start + cache_w]
+                .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+        }
+        let blur_x0 = x.saturating_sub(BLUR_RADIUS);
+        let blur_y0 = y.saturating_sub(BLUR_RADIUS);
+        let blur_x1 = (x + width + BLUR_RADIUS).min(layer.width());
+        let blur_y1 = (y + height + BLUR_RADIUS).min(layer.height());
+        let blur_w = blur_x1.saturating_sub(blur_x0);
+        let blur_h = blur_y1.saturating_sub(blur_y0);
+        if blur_w == 0 || blur_h == 0 { return; }
+        let mut source = alloc::vec![0u32; blur_w * blur_h];
+        for py in 0..blur_h {
+            let src_start = (blur_y0 + py) * layer.width() + blur_x0;
+            let dst_start = py * blur_w;
+            source[dst_start..dst_start + blur_w]
+                .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+        }
+        let mut blurred = alloc::vec![0u32; source.len()];
+        blur::blur_region_to(&source, &mut blurred, blur_w, 0, blur_h, BLUR_RADIUS as i32);
+        draw_soft_box_shadow(&mut glass, x - cache_x, y - cache_y, width, height, 18);
+        copy_rounded_region_from_crop(
+            &mut glass, &blurred, blur_w, blur_x0 - cache_x, blur_y0 - cache_y,
+            x - cache_x, y - cache_y, width, height, 18,
+        );
+        blend_rounded_rect(
+            &mut glass, x - cache_x, y - cache_y, width, height, 18,
+            Color::rgb(0xf5, 0xf5, 0xf5), 168,
+        );
+        *cached_layer = Some(glass.buf_ref().to_vec());
     }
-    let mut blurred = alloc::vec![0u32; source.len()];
-    blur::blur_region_to(&source, &mut blurred, blur_w, 0, blur_h, BLUR_RADIUS as i32);
-    draw_soft_box_shadow(layer, x, y, width, height, 18);
-    copy_rounded_region_from_crop(
-        layer, &blurred, blur_w, blur_x0, blur_y0, x, y, width, height, 18,
-    );
-    blend_rounded_rect(
-        layer, x, y, width, height, 18, Color::rgb(0xf5, 0xf5, 0xf5), 168,
-    );
+    if let Some(cache) = cached_layer.as_deref() {
+        layer.copy_rect_buffer(cache, cache_w, cache_h, cache_x, cache_y);
+    }
 
     let text = config::get_color("ui-theme/color/text", Color::TEXT);
     let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
     layer.put_str(x + 14, y + 9, "入力モード", muted);
     for (row, label) in [
-        "A  英数",
-        "あ  ひらがな",
-        "두  한국 두벌식",
-        "컴  한컴 로마자",
-        "조  조선 두벌식",
+        "英数",
+        "ひらがな",
+        "한국 두벌식",
+        "한컴 로마자",
+        "조선 두벌식",
     ].iter().enumerate() {
         let row_y = y + 30 + row * 38;
         if row == ime_menu_selection {
@@ -1209,7 +1247,8 @@ fn draw_ime_menu(
             // independent from the active theme's primary color.
             blend_rounded_rect(layer, x + 8, row_y, width - 16, 34, 9, Color::rgb(0xff, 0xff, 0xff), 0x99);
         }
-        layer.put_str(x + 18, row_y + 9, label, text);
+        draw_ime_icon(layer, x + 18, row_y + 9, 16, row);
+        layer.put_str(x + 46, row_y + 9, label, text);
     }
 }
 
@@ -1260,6 +1299,7 @@ pub fn render_scene(
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
+    cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
     remove_progress: f32,
@@ -1282,7 +1322,6 @@ pub fn render_scene(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
-    ime_label: &str,
     ime_menu_open: bool,
     ime_menu_selection: usize,
     ime_reading: Option<&str>,
@@ -1795,13 +1834,13 @@ pub fn render_scene(
             clock_hh,
             clock_mm,
             battery_pct,
-            ime_label,
+            ime_menu_selection,
         );
     } else if taskbar.is_search_dirty() {
         redraw_taskbar_search(taskbar, search_focused, search_query);
     }
     if ime_menu_open {
-        draw_ime_menu(layer, battery_pct, ime_menu_selection);
+        draw_ime_menu(layer, cached_ime_menu_layer, battery_pct, ime_menu_selection);
     }
     if let Some(reading) = ime_reading {
         draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
@@ -1826,6 +1865,7 @@ pub fn render_frame(
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
+    cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
     remove_progress: f32,
@@ -1849,7 +1889,6 @@ pub fn render_frame(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
-    ime_label: &str,
     ime_menu_open: bool,
     ime_menu_selection: usize,
     ime_reading: Option<&str>,
@@ -1870,6 +1909,7 @@ pub fn render_frame(
         html_engines,
         wallpaper,
         cached_launcher_layer,
+        cached_ime_menu_layer,
         taskbar_dirty,
         add_progress,
         remove_progress,
@@ -1892,7 +1932,6 @@ pub fn render_frame(
         clock_hh,
         clock_mm,
         battery_pct,
-        ime_label,
         ime_menu_open,
         ime_menu_selection,
         ime_reading,

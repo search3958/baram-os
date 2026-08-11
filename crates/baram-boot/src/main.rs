@@ -74,16 +74,6 @@ enum KoreanLayout {
     ChosunDubeolsik,
 }
 
-impl KoreanLayout {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Dubeolsik => "두",
-            Self::HancomRoman => "컴",
-            Self::ChosunDubeolsik => "조",
-        }
-    }
-}
-
 /// Keeps the uncommitted romaji so each key can replace the visible
 /// composition with Wanakana's current hiragana conversion.
 struct JapaneseIme {
@@ -322,17 +312,17 @@ fn hancom_roman_jamo(raw: &str) -> alloc::vec::Vec<char> {
         else if tail.starts_with("oi") { (2, 'ㅚ') }
         else if tail.starts_with("ui") { (2, 'ㅟ') }
         else if tail.starts_with("wi") { (2, 'ㅢ') }
-        else if tail.starts_with("ch") { (2, 'ㅊ') }
         else {
             let original = raw.as_bytes()[i] as char;
             let ch = match original {
                 // Shift produces the five modern tense consonants.
-                'G' | 'K' => 'ㄲ', 'D' | 'T' => 'ㄸ', 'B' => 'ㅃ', 'S' => 'ㅆ', 'J' => 'ㅉ',
+                'G' => 'ㄲ', 'D' => 'ㄸ', 'B' => 'ㅃ', 'S' => 'ㅆ', 'J' => 'ㅉ',
                 'a' | 'A' => 'ㅏ', 'e' | 'E' => 'ㅓ', 'i' | 'I' | 'y' | 'Y' => 'ㅣ',
                 'o' | 'O' => 'ㅗ', 'u' | 'U' => 'ㅜ', 'w' | 'W' => 'ㅡ',
-                'g' | 'k' => 'ㄱ', 'n' | 'N' => 'ㄴ', 'd' | 't' => 'ㄷ', 'r' | 'l' | 'R' | 'L' => 'ㄹ',
+                'g' => 'ㄱ', 'n' | 'N' => 'ㄴ', 'd' => 'ㄷ', 'r' | 'l' | 'R' | 'L' => 'ㄹ',
                 'm' | 'M' => 'ㅁ', 'b' => 'ㅂ', 's' => 'ㅅ', 'j' => 'ㅈ', 'h' | 'H' => 'ㅎ',
-                'p' | 'P' => 'ㅍ', 'c' | 'C' => 'ㅋ', 'x' | 'X' => 'ㅇ',
+                'f' | 'F' | 'p' | 'P' => 'ㅍ', 't' | 'T' => 'ㅌ', 'k' | 'K' => 'ㅋ',
+                'c' | 'C' => 'ㅊ', 'x' | 'X' => 'ㅇ',
                 // V is intentionally unmapped in this layout.
                 'v' | 'V' => { i += 1; continue; }
                 _ => { i += 1; continue; }
@@ -343,14 +333,6 @@ fn hancom_roman_jamo(raw: &str) -> alloc::vec::Vec<char> {
         i += len;
     }
     jamo
-}
-
-fn ime_mode_label(mode: InputMode) -> &'static str {
-    match mode {
-        InputMode::Latin => "A",
-        InputMode::Hiragana => "あ",
-        InputMode::Korean(layout) => layout.label(),
-    }
 }
 
 fn ime_menu_selection(mode: InputMode) -> usize {
@@ -830,6 +812,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
     let mut taskbar_surface = TaskbarSurface::new(screen.width());
     let mut cached_launcher_layer: Option<Vec<u32>> = None;
+    let mut cached_ime_menu_layer: Option<Vec<u32>> = None;
     let mut prev_window_count: usize = 0;
     let mut prev_focused_id: Option<WinId> = None;
     let mut bg_cache: Option<Vec<u32>> = None;
@@ -907,6 +890,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &mut html_engines,
         cached_wallpaper.as_deref(),
         &mut cached_launcher_layer,
+        &mut cached_ime_menu_layer,
         true,
         -1.0,
         -1.0,
@@ -929,7 +913,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
-        ime_mode_label(input_mode),
         false,
         ime_menu_selection(input_mode),
         None,
@@ -953,6 +936,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &mut html_engines,
         cached_wallpaper.as_deref(),
         &mut cached_launcher_layer,
+        &mut cached_ime_menu_layer,
         false,
         -1.0,
         -1.0,
@@ -975,7 +959,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
-        ime_mode_label(input_mode),
         false,
         ime_menu_selection(input_mode),
         None,
@@ -2429,6 +2412,22 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     launcher_changed || launcher_content_dirty || launcher_anim_phase != 0;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
                 let ime_menu_changed = show_ime_menu != prev_show_ime_menu;
+                let (ime_menu_x, ime_menu_y, ime_menu_w, ime_menu_h) = ime_menu_bounds(
+                    screen.width(),
+                    screen.height(),
+                    battery_info.valid_percentage(),
+                );
+                let ime_menu_cache_dirty = show_ime_menu
+                    && (ime_menu_changed
+                        || !bg_valid
+                        || (bx1 > bx0
+                            && bx0 < (ime_menu_x + ime_menu_w + 54).max(0) as usize
+                            && bx1 > (ime_menu_x - 54).max(0) as usize
+                            && by0 < (ime_menu_y + ime_menu_h + 54).max(0) as usize
+                            && by1 > (ime_menu_y - 54).max(0) as usize));
+                if ime_menu_changed || ime_menu_cache_dirty {
+                    cached_ime_menu_layer = None;
+                }
 
                 let taskbar_only = taskbar_dirty
                     && bx1 <= bx0
@@ -2558,12 +2557,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fy1 = h;
                 }
                 let ime_conversion_visible = japanese_ime.conversion.is_some();
-                if show_ime_menu || prev_show_ime_menu {
-                    let (menu_x, menu_y, menu_w, menu_h) = ime_menu_bounds(
-                        w,
-                        h,
-                        battery_info.valid_percentage(),
-                    );
+                if ime_menu_changed || ime_menu_cache_dirty {
+                    let (menu_x, menu_y, menu_w, menu_h) =
+                        (ime_menu_x, ime_menu_y, ime_menu_w, ime_menu_h);
                     let pad = 28usize;
                     fx0 = fx0.min((menu_x.max(0) as usize).saturating_sub(pad));
                     fy0 = fy0.min((menu_y.max(0) as usize).saturating_sub(pad));
@@ -2597,6 +2593,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &mut html_engines,
                     cached_wallpaper.as_deref(),
                     &mut cached_launcher_layer,
+                    &mut cached_ime_menu_layer,
                     taskbar_dirty,
                     tb_add_progress,
                     tb_remove_progress,
@@ -2619,7 +2616,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_hh,
                     clock_mm,
                     battery_info.valid_percentage(),
-                    ime_mode_label(input_mode),
                     show_ime_menu,
                     ime_menu_selection(input_mode),
                     ime_reading,
@@ -2646,6 +2642,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &mut html_engines,
                         cached_wallpaper.as_deref(),
                         &mut cached_launcher_layer,
+                        &mut cached_ime_menu_layer,
                         false,
                         tb_add_progress,
                         tb_remove_progress,
@@ -2668,7 +2665,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_hh,
                         clock_mm,
                         battery_info.valid_percentage(),
-                        ime_mode_label(input_mode),
                         show_ime_menu,
                         ime_menu_selection(input_mode),
                         ime_reading,
