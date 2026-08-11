@@ -913,6 +913,12 @@ fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
 }
 
+#[inline]
+fn ease_in_out(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 fn draw_taskbar_glyph(
     layer: &mut LayerSystem,
     data: &[u8],
@@ -1325,6 +1331,7 @@ fn draw_ime_menu(
     cached_layer: &mut Option<Vec<u32>>,
     battery_pct: Option<u8>,
     ime_menu_selection: usize,
+    opacity: u8,
 ) {
     let (x, y, width, height) = ime_menu_bounds(layer.width(), layer.height(), battery_pct);
     let (x, y, width, height) = (x as usize, y as usize, width as usize, height as usize);
@@ -1410,7 +1417,11 @@ fn draw_ime_menu(
         *cached_layer = Some(glass.buf_ref().to_vec());
     }
     if let Some(cache) = cached_layer.as_deref() {
-        layer.copy_rect_buffer(cache, cache_w, cache_h, cache_x, cache_y);
+        if opacity == 255 {
+            layer.copy_rect_buffer(cache, cache_w, cache_h, cache_x, cache_y);
+        } else {
+            layer.composit_rect_global_alpha(cache, cache_w, cache_h, cache_x, cache_y, opacity);
+        }
     }
 }
 
@@ -1461,6 +1472,7 @@ pub fn render_scene(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_menu_open: bool,
+    ime_menu_opacity: u8,
     ime_menu_selection: usize,
     ime_reading: Option<&str>,
     ime_candidates: &[alloc::string::String],
@@ -1617,10 +1629,10 @@ pub fn render_scene(
         let panel_radius = 18usize;
         let launcher_alpha = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            (ease_out_cubic(t) * 255.0) as u32
+            (ease_in_out(t) * 255.0) as u32
         } else if launcher_anim_phase < 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            ((1.0 - t * t * t) * 255.0) as u32
+            ((1.0 - ease_in_out(t)) * 255.0) as u32
         } else {
             255
         };
@@ -1628,7 +1640,7 @@ pub fn render_scene(
         // changes this layer's position and global opacity.
         let launcher_offset_y = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            ((1.0 - ease_out_cubic(t)) * 16.0) as usize
+            ((1.0 - ease_in_out(t)) * 16.0) as usize
         } else {
             0
         };
@@ -1996,7 +2008,13 @@ pub fn render_scene(
         }
     }
     if ime_menu_open {
-        draw_ime_menu(layer, cached_ime_menu_layer, battery_pct, ime_menu_selection);
+        draw_ime_menu(
+            layer,
+            cached_ime_menu_layer,
+            battery_pct,
+            ime_menu_selection,
+            ime_menu_opacity,
+        );
     }
     if let Some(reading) = ime_reading {
         draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
@@ -2054,6 +2072,7 @@ pub fn render_frame(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_menu_open: bool,
+    ime_menu_opacity: u8,
     ime_menu_selection: usize,
     ime_reading: Option<&str>,
     ime_candidates: &[alloc::string::String],
@@ -2099,6 +2118,7 @@ pub fn render_frame(
         clock_mm,
         battery_pct,
         ime_menu_open,
+        ime_menu_opacity,
         ime_menu_selection,
         ime_reading,
         ime_candidates,
