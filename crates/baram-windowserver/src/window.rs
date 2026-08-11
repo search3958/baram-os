@@ -194,14 +194,15 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     }
 }
 
-/// Blur the backdrop first, with a 20px-to-0px vertical falloff, then place
-/// the independent #F3F3F3 transparency gradient above it. Two-pixel blur
-/// bands keep the falloff smooth while bounding redraw work.
+/// Blur the backdrop first, holding a 16px radius for the upper 12px and
+/// falling to 0px in one-pixel bands below it. The independent #F3F3F3
+/// transparency gradient is composited only after that backdrop pass.
 fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
     if width == 0 || height == 0 {
         return;
     }
-    const BLUR_RADIUS: usize = 20;
+    const BLUR_RADIUS: usize = 16;
+    const FIXED_BLUR_HEIGHT: usize = 12;
     let sample_y0 = y.saturating_sub(BLUR_RADIUS);
     let sample_y1 = (y + height + BLUR_RADIUS).min(layer.height());
     let sample_h = sample_y1.saturating_sub(sample_y0);
@@ -213,12 +214,16 @@ fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width:
     }
     let mut blurred = alloc::vec![0u32; backdrop.len()];
     let denominator = height.saturating_sub(1).max(1) as u32;
-    for radius in (2usize..=BLUR_RADIUS).rev().step_by(2) {
+    for radius in (1usize..=BLUR_RADIUS).rev() {
         blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, radius as i32);
         for row in 0..height {
-            let exact_radius = (height.saturating_sub(1 + row) * BLUR_RADIUS / denominator as usize) as usize;
-            let quantized_radius = ((exact_radius + 1) / 2 * 2).min(BLUR_RADIUS);
-            if quantized_radius != radius {
+            let blur_radius = if row < FIXED_BLUR_HEIGHT {
+                BLUR_RADIUS
+            } else {
+                let fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1);
+                height.saturating_sub(1 + row) * BLUR_RADIUS / fade_height
+            };
+            if blur_radius != radius {
                 continue;
             }
             let blur_row = (y - sample_y0 + row) * width;
