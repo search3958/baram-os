@@ -16,6 +16,7 @@ use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
+use wana_kana::ConvertJapanese;
 
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
     baram_core::KeyEvent {
@@ -58,6 +59,61 @@ use nano_system::NanoSystem;
 // opening an app always has visible intermediate taskbar frames.
 const TASKBAR_ADD_ANIMATION_MS: u64 = 180;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    Latin,
+    Hiragana,
+}
+
+/// Keeps the uncommitted romaji so each key can replace the visible
+/// composition with Wanakana's current hiragana conversion.
+struct JapaneseIme {
+    romaji: alloc::string::String,
+    visible_chars: usize,
+}
+
+impl JapaneseIme {
+    fn new() -> Self {
+        Self {
+            romaji: alloc::string::String::new(),
+            visible_chars: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.romaji.clear();
+        self.visible_chars = 0;
+    }
+
+    fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
+        if key == 0x08 || key == 0x7f {
+            if self.romaji.pop().is_some() {
+                let text = self.romaji.as_str().to_hiragana();
+                let replace = self.visible_chars;
+                self.visible_chars = text.chars().count();
+                return (text, replace);
+            }
+            return (alloc::string::String::new(), 1);
+        }
+
+        let ch = key as char;
+        if ch.is_ascii_alphabetic() || ch == '\'' {
+            self.romaji.push(ch);
+            let text = self.romaji.as_str().to_hiragana();
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return (text, replace);
+        }
+
+        // A separator commits the romaji run and is inserted verbatim.
+        let mut text = self.romaji.as_str().to_hiragana();
+        text.push(ch);
+        let replace = self.visible_chars;
+        self.reset();
+        (text, replace)
+    }
+}
+
 struct UiMonotonicClock {
     last: u64,
     frequency_hz: u64,
@@ -66,7 +122,10 @@ struct UiMonotonicClock {
 impl UiMonotonicClock {
     fn new() -> Option<Self> {
         let frequency_hz = monotonic_counter_frequency()?;
-        Some(Self { last: monotonic_counter(), frequency_hz })
+        Some(Self {
+            last: monotonic_counter(),
+            frequency_hz,
+        })
     }
 
     #[inline]
@@ -101,14 +160,18 @@ fn monotonic_counter_frequency() -> Option<u64> {
         }
         if max_leaf >= 0x16 {
             let mhz = __cpuid(0x16).eax;
-            if mhz != 0 { return Some(mhz as u64 * 1_000_000); }
+            if mhz != 0 {
+                return Some(mhz as u64 * 1_000_000);
+            }
         }
         // Some virtual firmware hides leaves 0x15/0x16. Calibrate once at
         // startup instead of falling back to coalesced timer-event counts.
         let start = core::arch::x86_64::_rdtsc();
         uefi::boot::stall(core::time::Duration::from_millis(10));
         let elapsed = core::arch::x86_64::_rdtsc().wrapping_sub(start);
-        if elapsed != 0 { return Some(elapsed.saturating_mul(100)); }
+        if elapsed != 0 {
+            return Some(elapsed.saturating_mul(100));
+        }
     }
     None
 }
@@ -117,15 +180,23 @@ fn monotonic_counter_frequency() -> Option<u64> {
 #[inline]
 fn monotonic_counter() -> u64 {
     let value: u64;
-    unsafe { core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack, preserves_flags)); }
+    unsafe {
+        core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack, preserves_flags));
+    }
     value
 }
 
 #[cfg(target_arch = "aarch64")]
 fn monotonic_counter_frequency() -> Option<u64> {
     let value: u64;
-    unsafe { core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) value, options(nomem, nostack, preserves_flags)); }
-    if value == 0 { None } else { Some(value) }
+    unsafe {
+        core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) value, options(nomem, nostack, preserves_flags));
+    }
+    if value == 0 {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn baram_kernel_main(mut nano: NanoSystem) -> Status {
@@ -467,6 +538,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut launcher_anim_started_ms = 0u64;
     let mut launcher_anim_elapsed_ms = 0u32;
     let mut launcher_cache_drop_after_close = false;
+    let mut input_mode = InputMode::Latin;
+    let mut japanese_ime = JapaneseIme::new();
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
 
@@ -521,6 +594,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
+        input_mode == InputMode::Hiragana,
     );
     // Build the hidden launcher once while the boot scene is already hot.
     // With zero layer opacity this leaves the framebuffer unchanged, but the
@@ -561,6 +635,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
+        input_mode == InputMode::Hiragana,
     );
     prev_window_count = wm.count();
     prev_focused_id = wm.focused_id;
@@ -616,7 +691,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // Nano System reports UEFI Backspace as special scan code 0x08,
             // so it does not always arrive through `printable`.
             if app_search_focused && ev.scancode == 0x08 {
-                app_search_query.pop();
+                if input_mode == InputMode::Hiragana {
+                    let (text, replace_chars) = japanese_ime.edit(0x08);
+                    for _ in 0..replace_chars {
+                        app_search_query.pop();
+                    }
+                    app_search_query.push_str(&text);
+                } else {
+                    app_search_query.pop();
+                }
                 rebuild_filtered_apps(
                     &app_entries,
                     &app_search_query,
@@ -648,12 +731,20 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             } else if let Some(c) = ev.printable {
                 let mut handled = false;
                 if app_search_focused {
-                    match c {
-                        0x08 | 0x7f => {
+                    if input_mode == InputMode::Hiragana {
+                        let (text, replace_chars) = japanese_ime.edit(c);
+                        for _ in 0..replace_chars {
                             app_search_query.pop();
                         }
-                        0x20..=0x7e => app_search_query.push(c as char),
-                        _ => {}
+                        app_search_query.push_str(&text);
+                    } else {
+                        match c {
+                            0x08 | 0x7f => {
+                                app_search_query.pop();
+                            }
+                            0x20..=0x7e => app_search_query.push(c as char),
+                            _ => {}
+                        }
                     }
                     rebuild_filtered_apps(
                         &app_entries,
@@ -680,7 +771,12 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && !wm.is_interaction_blocked(focused_win)
                             && !engine.focused_input_var.is_empty()
                         {
-                            engine.handle_key(c);
+                            if input_mode == InputMode::Hiragana {
+                                let (text, replace_chars) = japanese_ime.edit(c);
+                                engine.handle_text(&text, replace_chars);
+                            } else {
+                                engine.handle_key(c);
+                            }
                             if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
                                 let tb_h = baram_windowserver::window::title_bar_h() as i32;
                                 let content_h = (wh as i32).saturating_sub(tb_h);
@@ -702,7 +798,12 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 && !wm.is_interaction_blocked(focused_win)
                                 && engine.has_focused_input()
                             {
-                                engine.handle_key(c);
+                                if input_mode == InputMode::Hiragana {
+                                    let (text, replace_chars) = japanese_ime.edit(c);
+                                    engine.handle_text(&text, replace_chars);
+                                } else {
+                                    engine.handle_key(c);
+                                }
                                 if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
                                     let content_h = wh
                                         .saturating_sub(baram_windowserver::window::title_bar_h());
@@ -899,6 +1000,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 if ev.left && !mouse_down {
                     mouse_down = true;
+                    // Clicking a different input ends the previous composition.
+                    japanese_ime.reset();
                     let sh = screen.height();
 
                     if show_app_launcher {
@@ -1006,6 +1109,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         }
                         scene_dirty = true;
                     } else if cy >= sh as i32 - TASKBAR_H as i32 {
+                        let (ime_x, ime_y, ime_w, ime_h) =
+                            ime_button_bounds(screen.width(), battery_info.valid_percentage());
+                        let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
+                        if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
+                            input_mode = if input_mode == InputMode::Latin {
+                                InputMode::Hiragana
+                            } else {
+                                InputMode::Latin
+                            };
+                            japanese_ime.reset();
+                            taskbar_surface.invalidate();
+                            scene_dirty = true;
+                            dirty = true;
+                            continue;
+                        }
                         let apps_icon_x = 12i32;
                         let apps_icon_size = 190i32;
                         let apps_icon_y =
@@ -1124,8 +1242,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                                     } else {
                                                         wm.set_all_dirty();
                                                         taskbar_surface.invalidate();
-                            cached_launcher_layer = None;
-                            app_launcher_scroll.reset();
+                                                        cached_launcher_layer = None;
+                                                        app_launcher_scroll.reset();
                                                         bg_cache = None;
                                                     }
                                                     scene_dirty = true;
@@ -1623,8 +1741,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             scene_dirty = true;
             dirty = true;
         }
-        let launcher_scroll_changed = launcher_scroll_input_changed
-            || app_launcher_scroll.tick(transition_now_ns);
+        let launcher_scroll_changed =
+            launcher_scroll_input_changed || app_launcher_scroll.tick(transition_now_ns);
         if launcher_scroll_changed {
             launcher_content_dirty = true;
             scene_dirty = true;
@@ -1641,7 +1759,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             dirty = true;
         }
         if launcher_anim_phase != 0 {
-            launcher_anim_elapsed_ms = ui_time_ms.saturating_sub(launcher_anim_started_ms).min(u32::MAX as u64) as u32;
+            launcher_anim_elapsed_ms = ui_time_ms
+                .saturating_sub(launcher_anim_started_ms)
+                .min(u32::MAX as u64) as u32;
             let duration = 200;
             if launcher_anim_elapsed_ms >= duration {
                 if launcher_anim_phase < 0 {
@@ -1872,16 +1992,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
         let scroll_animating = wm.has_scroll_animation();
         let taskbar_animating = tb_add_progress >= 0.0 || tb_remove_progress >= 0.0;
-        let continuous_motion = scroll_animating
-            || app_launcher_scroll.is_animating()
-            || launcher_anim_phase != 0;
+        let continuous_motion =
+            scroll_animating || app_launcher_scroll.is_animating() || launcher_anim_phase != 0;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
-        if dirty
-            && ui_time_ms < next_present_ms
-            && !cursor_moved
-            && !scroll_input
-        {
+        if dirty && ui_time_ms < next_present_ms && !cursor_moved && !scroll_input {
             deferred_dirty = true;
             continue;
         }
@@ -1890,7 +2005,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // The taskbar has to rasterize and flush the whole bottom strip.
             // Cap it at the normal 60 Hz cadence, while retaining the tighter
             // interval for lightweight scrolling and launcher motion.
-            let present_interval_ms = if taskbar_animating { 16 } else if continuous_motion { 4 } else { 16 };
+            let present_interval_ms = if taskbar_animating {
+                16
+            } else if continuous_motion {
+                4
+            } else {
+                16
+            };
             next_present_ms = ui_time_ms.saturating_add(present_interval_ms);
             let is_resizing = wm.is_any_resizing() || wm.is_over_resize_handle(cursor_x, cursor_y);
 
@@ -1915,9 +2036,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let taskbar_search_dirty = taskbar_surface.is_search_dirty();
 
                 let launcher_changed = launcher_render_visible != prev_show_app_launcher;
-                let launcher_needs_redraw = launcher_changed
-                    || launcher_content_dirty
-                    || launcher_anim_phase != 0;
+                let launcher_needs_redraw =
+                    launcher_changed || launcher_content_dirty || launcher_anim_phase != 0;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
 
                 let taskbar_only = taskbar_dirty
@@ -2084,6 +2204,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_hh,
                     clock_mm,
                     battery_info.valid_percentage(),
+                    input_mode == InputMode::Hiragana,
                 );
                 layer.pop_clip();
 
@@ -2127,6 +2248,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_hh,
                         clock_mm,
                         battery_info.valid_percentage(),
+                        input_mode == InputMode::Hiragana,
                     );
                     layer.pop_clip();
                 }

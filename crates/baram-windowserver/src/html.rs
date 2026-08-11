@@ -453,11 +453,15 @@ impl HtmlEngine {
     }
 
     pub fn take_scroll_request(&mut self) -> Option<i32> {
-        self.warp3.as_mut().and_then(|engine| engine.take_scroll_request())
+        self.warp3
+            .as_mut()
+            .and_then(|engine| engine.take_scroll_request())
     }
 
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
-        self.warp3.as_ref().and_then(|engine| engine.window_damage())
+        self.warp3
+            .as_ref()
+            .and_then(|engine| engine.window_damage())
     }
 
     pub fn tick(&mut self, now_ns: u64) -> bool {
@@ -480,6 +484,12 @@ impl HtmlEngine {
     pub fn handle_key(&mut self, key: u8) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.handle_key(key);
+        }
+    }
+
+    pub fn handle_text(&mut self, text: &str, replace_chars: usize) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.handle_text(text, replace_chars);
         }
     }
 
