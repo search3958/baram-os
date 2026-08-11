@@ -79,6 +79,10 @@ HTML/CSSアプリ表示機能には追加の外部ライブラリを使用して
 - **ライセンス**：MIT ライセンス
 - **用途**：ローマ字からひらがなへの変換を行います。UEFI の `no_std` 環境向けに必要最小限の適合を加えたソースを `crates/wana-kana` に同梱しています。
 
+### KCC-KP-CheonRiMa-Normal-KP-2011KPS
+- **ライセンス**：提供された TTF ファイル自体にライセンス通知が同梱されていないため、再配布条件は確認が必要です（OSS ライセンスとしては扱っていません）。
+- **用途**：HarmonyOS Sans にグリフがないハングル文字の描画フォールバックとして `data/KCC-KP-CheonRiMa-Normal-KP-2011KPS.ttf` を使用します。
+
 ### blake3
 - **ライセンス**：CC0-1.0、Apache-2.0 または Apache-2.0 WITH LLVM-exception
 - **用途**：設定・データのハッシュ計算を行います。

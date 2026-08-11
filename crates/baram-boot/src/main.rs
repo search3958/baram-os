@@ -64,6 +64,24 @@ const MOZC_DICTIONARY: &str = include_str!("mozc_dictionary.tsv");
 enum InputMode {
     Latin,
     Hiragana,
+    Korean(KoreanLayout),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KoreanLayout {
+    Dubeolsik,
+    HancomRoman,
+    ChosunDubeolsik,
+}
+
+impl KoreanLayout {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Dubeolsik => "두",
+            Self::HancomRoman => "컴",
+            Self::ChosunDubeolsik => "조",
+        }
+    }
 }
 
 /// Keeps the uncommitted romaji so each key can replace the visible
@@ -190,6 +208,241 @@ fn mozc_candidates(kana: &str) -> Option<alloc::vec::Vec<alloc::string::String>>
         }
     }
     None
+}
+
+/// Incremental modern Hangul composer shared by the three Korean layouts.
+/// Keeping the raw input lets the final consonant move to the following
+/// syllable when a vowel is typed, as users expect (ㄱㅏㄴㅏ -> 가나).
+struct HangulIme {
+    raw: alloc::string::String,
+    visible_chars: usize,
+}
+
+impl HangulIme {
+    fn new() -> Self {
+        Self { raw: alloc::string::String::new(), visible_chars: 0 }
+    }
+
+    fn reset(&mut self) {
+        self.raw.clear();
+        self.visible_chars = 0;
+    }
+
+    fn rendered(&self, layout: KoreanLayout) -> alloc::string::String {
+        let jamo = match layout {
+            KoreanLayout::HancomRoman => hancom_roman_jamo(&self.raw),
+            _ => self.raw.chars().collect(),
+        };
+        compose_hangul(&jamo)
+    }
+
+    fn edit_for_key(&mut self, key: u8, layout: KoreanLayout) -> (alloc::string::String, usize) {
+        if key == 0x08 || key == 0x7f {
+            if self.raw.pop().is_some() {
+                let text = self.rendered(layout);
+                let replace = self.visible_chars;
+                self.visible_chars = text.chars().count();
+                return (text, replace);
+            }
+            return (alloc::string::String::new(), 1);
+        }
+        if key == b'\n' || key == b'\r' {
+            self.reset();
+            return (alloc::string::String::new(), 0);
+        }
+
+        let input = key as char;
+        // Hancom Roman leaves V unassigned. Consume it without altering the
+        // pending syllable rather than leaking a Latin V into the target.
+        if layout == KoreanLayout::HancomRoman && matches!(input, 'v' | 'V') {
+            return (alloc::string::String::new(), 0);
+        }
+        let accepted = match layout {
+            KoreanLayout::Dubeolsik => dubeolsik_jamo(input),
+            KoreanLayout::ChosunDubeolsik => chosun_dubeolsik_jamo(input),
+            KoreanLayout::HancomRoman if input.is_ascii_alphabetic() => Some(input),
+            KoreanLayout::HancomRoman => None,
+        };
+        if let Some(jamo) = accepted {
+            self.raw.push(jamo);
+            let text = self.rendered(layout);
+            let replace = self.visible_chars;
+            self.visible_chars = text.chars().count();
+            return (text, replace);
+        }
+
+        let mut text = self.rendered(layout);
+        text.push(input);
+        let replace = self.visible_chars;
+        self.reset();
+        (text, replace)
+    }
+}
+
+fn dubeolsik_jamo(key: char) -> Option<char> {
+    Some(match key {
+        'q' => 'ㅂ', 'Q' => 'ㅃ', 'w' => 'ㅈ', 'W' => 'ㅉ', 'e' => 'ㄷ', 'E' => 'ㄸ',
+        'r' => 'ㄱ', 'R' => 'ㄲ', 't' => 'ㅅ', 'T' => 'ㅆ', 'y' => 'ㅛ', 'u' => 'ㅕ',
+        'i' => 'ㅑ', 'o' => 'ㅐ', 'O' => 'ㅒ', 'p' => 'ㅔ', 'P' => 'ㅖ', 'a' => 'ㅁ',
+        's' => 'ㄴ', 'd' => 'ㅇ', 'f' => 'ㄹ', 'g' => 'ㅎ', 'h' => 'ㅗ', 'j' => 'ㅓ',
+        'k' => 'ㅏ', 'l' => 'ㅣ', 'z' => 'ㅋ', 'x' => 'ㅌ', 'c' => 'ㅊ', 'v' => 'ㅍ',
+        'b' => 'ㅠ', 'n' => 'ㅜ', 'm' => 'ㅡ', _ => return None,
+    })
+}
+
+/// 조선 두벌식, exactly following the layout supplied in the request.
+fn chosun_dubeolsik_jamo(key: char) -> Option<char> {
+    Some(match key {
+        'q' => 'ㅂ', 'Q' => 'ㅃ', 'w' | 'W' => 'ㅁ', 'e' => 'ㄷ', 'E' => 'ㄸ',
+        'r' | 'R' => 'ㄹ', 't' | 'T' => 'ㄱ', 'y' | 'Y' => 'ㅕ', 'u' | 'U' => 'ㅜ',
+        'i' | 'I' => 'ㅓ', 'o' => 'ㅐ', 'O' => 'ㅒ', 'p' => 'ㅔ', 'P' => 'ㅖ',
+        'a' => 'ㅈ', 'A' => 'ㅉ', 's' => 'ㄱ', 'S' => 'ㄲ', 'd' | 'D' => 'ㅇ',
+        'f' | 'F' => 'ㄴ', 'g' => 'ㅅ', 'G' => 'ㅆ', 'h' | 'H' => 'ㅗ', 'j' | 'J' => 'ㅏ',
+        'k' | 'K' => 'ㅣ', 'l' | 'L' => 'ㅡ', 'z' | 'Z' => 'ㅋ', 'x' | 'X' => 'ㅌ',
+        'c' | 'C' => 'ㅊ', 'v' | 'V' => 'ㅍ', 'b' | 'B' => 'ㅠ', 'n' | 'N' => 'ㅛ',
+        'm' | 'M' => 'ㅑ', _ => return None,
+    })
+}
+
+fn hancom_roman_jamo(raw: &str) -> alloc::vec::Vec<char> {
+    let lower = raw.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut jamo = alloc::vec::Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let tail = &lower[i..];
+        let (len, ch) = if tail.starts_with("yei") || tail.starts_with("iei") { (3, 'ㅖ') }
+        else if tail.starts_with("yai") || tail.starts_with("iai") { (3, 'ㅒ') }
+        else if tail.starts_with("ya") || tail.starts_with("ia") { (2, 'ㅑ') }
+        else if tail.starts_with("yu") || tail.starts_with("iu") { (2, 'ㅠ') }
+        else if tail.starts_with("yo") || tail.starts_with("io") { (2, 'ㅛ') }
+        else if tail.starts_with("ye") || tail.starts_with("ie") { (2, 'ㅕ') }
+        else if tail.starts_with("ai") { (2, 'ㅐ') }
+        else if tail.starts_with("ei") { (2, 'ㅔ') }
+        else if tail.starts_with("oi") { (2, 'ㅚ') }
+        else if tail.starts_with("ui") { (2, 'ㅟ') }
+        else if tail.starts_with("wi") { (2, 'ㅢ') }
+        else if tail.starts_with("ch") { (2, 'ㅊ') }
+        else {
+            let original = raw.as_bytes()[i] as char;
+            let ch = match original {
+                // Shift produces the five modern tense consonants.
+                'G' | 'K' => 'ㄲ', 'D' | 'T' => 'ㄸ', 'B' => 'ㅃ', 'S' => 'ㅆ', 'J' => 'ㅉ',
+                'a' | 'A' => 'ㅏ', 'e' | 'E' => 'ㅓ', 'i' | 'I' | 'y' | 'Y' => 'ㅣ',
+                'o' | 'O' => 'ㅗ', 'u' | 'U' => 'ㅜ', 'w' | 'W' => 'ㅡ',
+                'g' | 'k' => 'ㄱ', 'n' | 'N' => 'ㄴ', 'd' | 't' => 'ㄷ', 'r' | 'l' | 'R' | 'L' => 'ㄹ',
+                'm' | 'M' => 'ㅁ', 'b' => 'ㅂ', 's' => 'ㅅ', 'j' => 'ㅈ', 'h' | 'H' => 'ㅎ',
+                'p' | 'P' => 'ㅍ', 'c' | 'C' => 'ㅋ', 'x' | 'X' => 'ㅇ',
+                // V is intentionally unmapped in this layout.
+                'v' | 'V' => { i += 1; continue; }
+                _ => { i += 1; continue; }
+            };
+            (1, ch)
+        };
+        jamo.push(ch);
+        i += len;
+    }
+    jamo
+}
+
+fn ime_mode_label(mode: InputMode) -> &'static str {
+    match mode {
+        InputMode::Latin => "A",
+        InputMode::Hiragana => "あ",
+        InputMode::Korean(layout) => layout.label(),
+    }
+}
+
+fn ime_menu_selection(mode: InputMode) -> usize {
+    match mode {
+        InputMode::Latin => 0,
+        InputMode::Hiragana => 1,
+        InputMode::Korean(KoreanLayout::Dubeolsik) => 2,
+        InputMode::Korean(KoreanLayout::HancomRoman) => 3,
+        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => 4,
+    }
+}
+
+fn input_mode_for_menu_selection(selection: usize) -> InputMode {
+    match selection {
+        1 => InputMode::Hiragana,
+        2 => InputMode::Korean(KoreanLayout::Dubeolsik),
+        3 => InputMode::Korean(KoreanLayout::HancomRoman),
+        4 => InputMode::Korean(KoreanLayout::ChosunDubeolsik),
+        _ => InputMode::Latin,
+    }
+}
+
+fn ime_edit_for_key(
+    mode: InputMode,
+    japanese: &mut JapaneseIme,
+    hangul: &mut HangulIme,
+    key: u8,
+) -> Option<(alloc::string::String, usize)> {
+    match mode {
+        InputMode::Latin => None,
+        InputMode::Hiragana => Some(japanese.edit_for_key(key)),
+        InputMode::Korean(layout) => Some(hangul.edit_for_key(key, layout)),
+    }
+}
+
+fn initial_index(ch: char) -> Option<u32> {
+    "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ".chars().position(|c| c == ch).map(|i| i as u32)
+}
+fn vowel_index(ch: char) -> Option<u32> {
+    "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ".chars().position(|c| c == ch).map(|i| i as u32)
+}
+fn final_index(ch: char) -> Option<u32> {
+    "\0ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ".chars().position(|c| c == ch).map(|i| i as u32)
+}
+fn combined_vowel(a: char, b: char) -> Option<char> {
+    match (a, b) { ('ㅗ','ㅏ') => Some('ㅘ'), ('ㅗ','ㅐ') => Some('ㅙ'), ('ㅗ','ㅣ') => Some('ㅚ'),
+        ('ㅜ','ㅓ') => Some('ㅝ'), ('ㅜ','ㅔ') => Some('ㅞ'), ('ㅜ','ㅣ') => Some('ㅟ'),
+        ('ㅡ','ㅣ') => Some('ㅢ'), _ => None }
+}
+fn combined_final(a: char, b: char) -> Option<char> {
+    match (a, b) { ('ㄱ','ㅅ') => Some('ㄳ'), ('ㄴ','ㅈ') => Some('ㄵ'), ('ㄴ','ㅎ') => Some('ㄶ'),
+        ('ㄹ','ㄱ') => Some('ㄺ'), ('ㄹ','ㅁ') => Some('ㄻ'), ('ㄹ','ㅂ') => Some('ㄼ'),
+        ('ㄹ','ㅅ') => Some('ㄽ'), ('ㄹ','ㅌ') => Some('ㄾ'), ('ㄹ','ㅍ') => Some('ㄿ'),
+        ('ㄹ','ㅎ') => Some('ㅀ'), ('ㅂ','ㅅ') => Some('ㅄ'), _ => None }
+}
+fn compose_hangul(jamo: &[char]) -> alloc::string::String {
+    let mut out = alloc::string::String::new();
+    let mut i = 0;
+    while i < jamo.len() {
+        let Some(l) = initial_index(jamo[i]) else { out.push(jamo[i]); i += 1; continue; };
+        if i + 1 >= jamo.len() { out.push(jamo[i]); break; }
+        let Some(mut v) = vowel_index(jamo[i + 1]) else { out.push(jamo[i]); i += 1; continue; };
+        let vowel = jamo[i + 1];
+        i += 2;
+        if i < jamo.len() {
+            if let Some(next_v) = vowel_index(jamo[i]) {
+                if let Some(combined) = combined_vowel(vowel, jamo[i]) {
+                    v = vowel_index(combined).unwrap_or(next_v);
+                    i += 1;
+                }
+            }
+        }
+        let mut t = 0;
+        if i < jamo.len() && initial_index(jamo[i]).is_some() {
+            let c = jamo[i];
+            let followed_by_vowel = i + 1 < jamo.len() && vowel_index(jamo[i + 1]).is_some();
+            if !followed_by_vowel {
+                if i + 1 < jamo.len() && initial_index(jamo[i + 1]).is_some()
+                    && !(i + 2 < jamo.len() && vowel_index(jamo[i + 2]).is_some()) {
+                    if let Some(cluster) = combined_final(c, jamo[i + 1]) {
+                        t = final_index(cluster).unwrap_or(0);
+                        i += 2;
+                    }
+                }
+                if t == 0 {
+                    if let Some(final_jamo) = final_index(c) { t = final_jamo; i += 1; }
+                }
+            }
+        }
+        if let Some(syllable) = char::from_u32(0xac00 + (l * 21 + v) * 28 + t) { out.push(syllable); }
+    }
+    out
 }
 
 struct UiMonotonicClock {
@@ -618,6 +871,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut launcher_cache_drop_after_close = false;
     let mut input_mode = InputMode::Latin;
     let mut japanese_ime = JapaneseIme::new();
+    let mut hangul_ime = HangulIme::new();
     let mut show_ime_menu = false;
     let mut prev_show_ime_menu = false;
     let mut prev_ime_conversion_visible = false;
@@ -675,8 +929,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
-        input_mode == InputMode::Hiragana,
+        ime_mode_label(input_mode),
         false,
+        ime_menu_selection(input_mode),
         None,
         &[],
         0,
@@ -720,8 +975,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
-        input_mode == InputMode::Hiragana,
+        ime_mode_label(input_mode),
         false,
+        ime_menu_selection(input_mode),
         None,
         &[],
         0,
@@ -780,8 +1036,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             // Nano System reports UEFI Backspace as special scan code 0x08,
             // so it does not always arrive through `printable`.
             if app_search_focused && ev.scancode == 0x08 {
-                if input_mode == InputMode::Hiragana {
-                    let (text, replace_chars) = japanese_ime.edit_for_key(0x08);
+                if let Some((text, replace_chars)) =
+                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, 0x08)
+                {
                     for _ in 0..replace_chars {
                         app_search_query.pop();
                     }
@@ -820,8 +1077,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             } else if let Some(c) = ev.printable {
                 let mut handled = false;
                 if app_search_focused {
-                    if input_mode == InputMode::Hiragana {
-                        let (text, replace_chars) = japanese_ime.edit_for_key(c);
+                    if let Some((text, replace_chars)) =
+                        ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, c)
+                    {
                         for _ in 0..replace_chars {
                             app_search_query.pop();
                         }
@@ -860,8 +1118,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && !wm.is_interaction_blocked(focused_win)
                             && !engine.focused_input_var.is_empty()
                         {
-                            if input_mode == InputMode::Hiragana {
-                                let (text, replace_chars) = japanese_ime.edit_for_key(c);
+                            if let Some((text, replace_chars)) =
+                                ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, c)
+                            {
                                 engine.handle_text(&text, replace_chars);
                             } else {
                                 engine.handle_key(c);
@@ -887,8 +1146,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 && !wm.is_interaction_blocked(focused_win)
                                 && engine.has_focused_input()
                             {
-                                if input_mode == InputMode::Hiragana {
-                                    let (text, replace_chars) = japanese_ime.edit_for_key(c);
+                                if let Some((text, replace_chars)) =
+                                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, c)
+                                {
                                     engine.handle_text(&text, replace_chars);
                                 } else {
                                     engine.handle_key(c);
@@ -1091,23 +1351,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     mouse_down = true;
                     // Clicking a different input ends the previous composition.
                     japanese_ime.reset();
+                    hangul_ime.reset();
                     let sh = screen.height();
 
                     // The mode picker is modal: a click selects a row or
                     // dismisses it before reaching the window underneath.
                     if show_ime_menu {
-                        if let Some(hiragana) = ime_menu_mode_at(
+                        if let Some(selection) = ime_menu_mode_at(
                             cx,
                             cy,
                             screen.width(),
                             screen.height(),
                             battery_info.valid_percentage(),
                         ) {
-                            input_mode = if hiragana {
-                                InputMode::Hiragana
-                            } else {
-                                InputMode::Latin
-                            };
+                            input_mode = input_mode_for_menu_selection(selection);
+                            hangul_ime.reset();
                             taskbar_surface.invalidate();
                         }
                         show_ime_menu = false;
@@ -1515,19 +1773,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let on_search = cx >= 12 && cx < 202 && cy >= search_y && cy < search_y + 40;
 
             if show_ime_menu {
-                if let Some(hiragana) = ime_menu_mode_at(
+                if let Some(selection) = ime_menu_mode_at(
                     cx,
                     cy,
                     screen.width(),
                     screen.height(),
                     battery_info.valid_percentage(),
                 ) {
-                    input_mode = if hiragana {
-                        InputMode::Hiragana
-                    } else {
-                        InputMode::Latin
-                    };
+                    input_mode = input_mode_for_menu_selection(selection);
                     japanese_ime.reset();
+                    hangul_ime.reset();
                     taskbar_surface.invalidate();
                 }
                 show_ime_menu = false;
@@ -2364,8 +2619,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_hh,
                     clock_mm,
                     battery_info.valid_percentage(),
-                    input_mode == InputMode::Hiragana,
+                    ime_mode_label(input_mode),
                     show_ime_menu,
+                    ime_menu_selection(input_mode),
                     ime_reading,
                     ime_candidates,
                     ime_selected,
@@ -2412,8 +2668,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_hh,
                         clock_mm,
                         battery_info.valid_percentage(),
-                        input_mode == InputMode::Hiragana,
+                        ime_mode_label(input_mode),
                         show_ime_menu,
+                        ime_menu_selection(input_mode),
                         ime_reading,
                         ime_candidates,
                         ime_selected,

@@ -17,7 +17,7 @@ pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 pub const IME_BUTTON_W: usize = 40;
 const IME_MENU_W: usize = 210;
-const IME_MENU_H: usize = 112;
+const IME_MENU_H: usize = 226;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
 
 pub struct TaskbarSurface {
@@ -893,7 +893,7 @@ fn redraw_taskbar(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
-    ime_hiragana: bool,
+    ime_label: &str,
 ) {
     let layer = &mut surface.layer;
     let w = layer.width();
@@ -1026,7 +1026,12 @@ fn redraw_taskbar(
                 if g.w > 0 {
                     g.advance.max(0) as usize
                 } else {
-                    8
+                    let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
+                    if fallback.w > 0 {
+                        fallback.advance.max(0) as usize
+                    } else {
+                        8
+                    }
                 }
             })
             .sum()
@@ -1049,7 +1054,6 @@ fn redraw_taskbar(
         config::get_color("ui-theme/color/panel", Color::PANEL),
         176,
     );
-    let ime_label = if ime_hiragana { "あ" } else { "A" };
     let ime_width = measure(ime_label);
     draw_taskbar_text(
         layer,
@@ -1137,29 +1141,29 @@ pub fn ime_menu_bounds(width: usize, height: usize, battery_pct: Option<u8>) -> 
     (x, y, IME_MENU_W as i32, IME_MENU_H as i32)
 }
 
-/// Returns the mode chosen by a click in the IME menu: false for Latin, true for Hiragana.
+/// Returns the mode row selected by a click in the IME menu.
 pub fn ime_menu_mode_at(
     x: i32,
     y: i32,
     width: usize,
     height: usize,
     battery_pct: Option<u8>,
-) -> Option<bool> {
+) -> Option<usize> {
     let (menu_x, menu_y, menu_w, menu_h) = ime_menu_bounds(width, height, battery_pct);
     if x < menu_x || x >= menu_x + menu_w || y < menu_y || y >= menu_y + menu_h {
         return None;
     }
-    // Header occupies the first 28px; each following 38px row is a mode.
-    if y >= menu_y + 30 && y < menu_y + 68 {
-        Some(false)
-    } else if y >= menu_y + 68 && y < menu_y + menu_h {
-        Some(true)
-    } else {
-        None
-    }
+    // Header occupies the first 28px; five 38px rows follow it.
+    (y >= menu_y + 30)
+        .then(|| ((y - menu_y - 30) / 38) as usize)
+        .filter(|row| *row < 5)
 }
 
-fn draw_ime_menu(layer: &mut LayerSystem, battery_pct: Option<u8>, ime_hiragana: bool) {
+fn draw_ime_menu(
+    layer: &mut LayerSystem,
+    battery_pct: Option<u8>,
+    ime_menu_selection: usize,
+) {
     let (x, y, width, height) = ime_menu_bounds(layer.width(), layer.height(), battery_pct);
     let (x, y, width, height) = (x as usize, y as usize, width as usize, height as usize);
     const BLUR_RADIUS: usize = 18;
@@ -1192,12 +1196,15 @@ fn draw_ime_menu(layer: &mut LayerSystem, battery_pct: Option<u8>, ime_hiragana:
     let text = config::get_color("ui-theme/color/text", Color::TEXT);
     let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
     layer.put_str(x + 14, y + 9, "入力モード", muted);
-    for (row, (label, active)) in [("A  英数", !ime_hiragana), ("あ  ひらがな", ime_hiragana)]
-        .iter()
-        .enumerate()
-    {
+    for (row, label) in [
+        "A  英数",
+        "あ  ひらがな",
+        "두  한국 두벌식",
+        "컴  한컴 로마자",
+        "조  조선 두벌식",
+    ].iter().enumerate() {
         let row_y = y + 30 + row * 38;
-        if *active {
+        if row == ime_menu_selection {
             // Fixed CSS-style #fff9 highlight: white at 60% opacity, kept
             // independent from the active theme's primary color.
             blend_rounded_rect(layer, x + 8, row_y, width - 16, 34, 9, Color::rgb(0xff, 0xff, 0xff), 0x99);
@@ -1275,8 +1282,9 @@ pub fn render_scene(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
-    ime_hiragana: bool,
+    ime_label: &str,
     ime_menu_open: bool,
+    ime_menu_selection: usize,
     ime_reading: Option<&str>,
     ime_candidates: &[alloc::string::String],
     ime_selected: usize,
@@ -1787,13 +1795,13 @@ pub fn render_scene(
             clock_hh,
             clock_mm,
             battery_pct,
-            ime_hiragana,
+            ime_label,
         );
     } else if taskbar.is_search_dirty() {
         redraw_taskbar_search(taskbar, search_focused, search_query);
     }
     if ime_menu_open {
-        draw_ime_menu(layer, battery_pct, ime_hiragana);
+        draw_ime_menu(layer, battery_pct, ime_menu_selection);
     }
     if let Some(reading) = ime_reading {
         draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
@@ -1841,8 +1849,9 @@ pub fn render_frame(
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
-    ime_hiragana: bool,
+    ime_label: &str,
     ime_menu_open: bool,
+    ime_menu_selection: usize,
     ime_reading: Option<&str>,
     ime_candidates: &[alloc::string::String],
     ime_selected: usize,
@@ -1883,8 +1892,9 @@ pub fn render_frame(
         clock_hh,
         clock_mm,
         battery_pct,
-        ime_hiragana,
+        ime_label,
         ime_menu_open,
+        ime_menu_selection,
         ime_reading,
         ime_candidates,
         ime_selected,
