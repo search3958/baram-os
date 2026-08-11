@@ -518,6 +518,7 @@ fn compose_hangul(jamo: &[char]) -> alloc::string::String {
 }
 
 struct UiMonotonicClock {
+    origin: u64,
     last: u64,
     frequency_hz: u64,
 }
@@ -525,8 +526,10 @@ struct UiMonotonicClock {
 impl UiMonotonicClock {
     fn new() -> Option<Self> {
         let frequency_hz = monotonic_counter_frequency()?;
+        let origin = monotonic_counter();
         Some(Self {
-            last: monotonic_counter(),
+            origin,
+            last: origin,
             frequency_hz,
         })
     }
@@ -541,6 +544,12 @@ impl UiMonotonicClock {
         // animation, and always advance at least one timer quantum.
         let measured = ((ticks as u128 * 1_000) / self.frequency_hz as u128) as u64;
         measured.clamp(1, 16)
+    }
+
+    #[inline]
+    fn elapsed_ns(&self) -> u64 {
+        let ticks = monotonic_counter().wrapping_sub(self.origin);
+        ((ticks as u128 * 1_000_000_000) / self.frequency_hz as u128) as u64
     }
 }
 
@@ -709,6 +718,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut setup_prev_cursor = (cursor_x, cursor_y);
         let mut setup_scroll = 0i32;
         let mut setup_now_ns = 0u64;
+        // Setup used to advance this clock by one millisecond per rendered
+        // loop. A costly card frame therefore stretched a 250ms Warp3
+        // transition into seconds. Sample the hardware monotonic clock here
+        // just as the desktop renderer does.
+        let setup_clock = UiMonotonicClock::new();
         let mut setup_next_present_ms = 0u64;
         setup_engine.set_warp3_screen(wizard.warp3_screen());
         setup_engine.update(528, 320);
@@ -718,7 +732,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             if let Some(ref mut timer) = timer_event {
                 let _ = uefi::boot::wait_for_event(core::slice::from_mut(timer));
             }
-            setup_now_ns = setup_now_ns.saturating_add(1_000_000);
+            setup_now_ns = setup_clock
+                .as_ref()
+                .map(UiMonotonicClock::elapsed_ns)
+                .unwrap_or_else(|| setup_now_ns.saturating_add(1_000_000));
             let mut setup_scroll_input = false;
 
             while let Some(nano_event) = nano.poll_keyboard() {
@@ -779,7 +796,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 setup_scene_dirty = true;
                 setup_card_dirty = true;
             }
-            if setup_engine.tick(setup_now_ns) {
+            // The setup card can take much longer to rasterize than a normal
+            // desktop frame. Slow only its Warp3 transition clock so a single
+            // expensive frame cannot skip nearly the whole transition.
+            if setup_engine.tick(setup_now_ns / 3) {
                 setup_card_dirty = true;
             }
 
@@ -1048,6 +1068,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut pinyin_ime = PinyinIme::new();
     let mut show_ime_menu = false;
     let mut prev_show_ime_menu = false;
+    let mut ime_menu_closing = false;
+    let mut ime_menu_close_started_ms: Option<u64> = None;
+    let mut ime_menu_opacity = 255u8;
     let mut hover_ime_icon = false;
     let mut ime_hover_dirty = false;
     let mut prev_ime_conversion_visible = false;
@@ -1109,6 +1132,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         false,
+        255,
         ime_menu_selection(input_mode),
         None,
         &[],
@@ -1157,6 +1181,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         false,
+        255,
         ime_menu_selection(input_mode),
         None,
         &[],
@@ -1536,7 +1561,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                     // The mode picker is modal: a click selects a row or
                     // dismisses it before reaching the window underneath.
-                    if show_ime_menu {
+                    if show_ime_menu && !ime_menu_closing {
                         if let Some(selection) = ime_menu_mode_at(
                             cx,
                             cy,
@@ -1549,7 +1574,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             pinyin_ime.reset();
                             taskbar_surface.invalidate();
                         }
-                        show_ime_menu = false;
+                        ime_menu_closing = true;
+                        ime_menu_close_started_ms = Some(ui_time_ms);
                         scene_dirty = true;
                         dirty = true;
                         continue;
@@ -1665,6 +1691,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
                         if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                             show_ime_menu = true;
+                            ime_menu_closing = false;
+                            ime_menu_close_started_ms = None;
+                            ime_menu_opacity = 255;
                             scene_dirty = true;
                             dirty = true;
                             continue;
@@ -1969,7 +1998,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
             let on_search = cx >= 12 && cx < 202 && cy >= search_y && cy < search_y + 40;
 
-            if show_ime_menu {
+            if show_ime_menu && !ime_menu_closing {
                 if let Some(selection) = ime_menu_mode_at(
                     cx,
                     cy,
@@ -1983,7 +2012,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     pinyin_ime.reset();
                     taskbar_surface.invalidate();
                 }
-                show_ime_menu = false;
+                ime_menu_closing = true;
+                ime_menu_close_started_ms = Some(ui_time_ms);
                 scene_dirty = true;
                 dirty = true;
             } else if show_app_launcher && on_search {
@@ -2080,6 +2110,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
                 if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                     show_ime_menu = true;
+                    ime_menu_closing = false;
+                    ime_menu_close_started_ms = None;
+                    ime_menu_opacity = 255;
                     scene_dirty = true;
                     dirty = true;
                     continue;
@@ -2324,7 +2357,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // document is already rasterized; each sample only changes the source
         // offset used for the viewport copy.
         let transition_now_ns = ui_time_ms * 1_000_000;
-        if wm.tick_scroll_animations(transition_now_ns) {
+        // Do not use the UI scheduler's bounded frame delta for motion. It is
+        // intentionally capped under load and would stretch scroll/transition
+        // durations; the hardware monotonic counter is not.
+        let motion_now_ns = ui_clock
+            .as_ref()
+            .map(UiMonotonicClock::elapsed_ns)
+            .unwrap_or(transition_now_ns);
+        if wm.tick_scroll_animations(motion_now_ns) {
+            scene_dirty = true;
+            dirty = true;
+        }
+        // Window motion uses the un-clamped hardware monotonic counter. The
+        // UI scheduler's 1–16ms frame delta intentionally smooths other UI
+        // work, but must not stretch animation duration under load.
+        if wm.tick_window_animations(motion_now_ns) {
             scene_dirty = true;
             dirty = true;
         }
@@ -2361,6 +2408,23 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 launcher_anim_phase = 0;
             }
             launcher_content_dirty = true;
+            scene_dirty = true;
+            dirty = true;
+        }
+
+        if ime_menu_closing {
+            const IME_MENU_CLOSE_MS: u64 = 120;
+            let started = ime_menu_close_started_ms.unwrap_or(ui_time_ms);
+            let elapsed = ui_time_ms.saturating_sub(started);
+            let t = (elapsed as f32 / IME_MENU_CLOSE_MS as f32).clamp(0.0, 1.0);
+            let eased = t * t * (3.0 - 2.0 * t);
+            ime_menu_opacity = ((1.0 - eased) * 255.0) as u8;
+            if elapsed >= IME_MENU_CLOSE_MS {
+                show_ime_menu = false;
+                ime_menu_closing = false;
+                ime_menu_close_started_ms = None;
+                ime_menu_opacity = 255;
+            }
             scene_dirty = true;
             dirty = true;
         }
@@ -2446,7 +2510,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let runtime_window_count = wm.count();
         for (wid, engine) in html_engines.iter_mut() {
             engine.set_runtime_metrics(fps, runtime_window_count, key_ev_count, mouse_ev_count);
-            if engine.tick(transition_now_ns) {
+            if engine.tick(motion_now_ns) {
                 if let Some((x0, y0, x1, y1)) = engine.window_damage() {
                     wm.set_content_damage(*wid, x0, y0, x1, y1);
                 } else {
@@ -2579,8 +2643,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
         let scroll_animating = wm.has_scroll_animation();
         let taskbar_animating = tb_add_progress >= 0.0 || tb_remove_progress >= 0.0;
-        let continuous_motion =
-            scroll_animating || app_launcher_scroll.is_animating() || launcher_anim_phase != 0;
+        let continuous_motion = scroll_animating
+            || wm.has_window_animation()
+            || app_launcher_scroll.is_animating()
+            || launcher_anim_phase != 0
+            || ime_menu_closing;
         // New scroll input is presented immediately. During easing, use a
         // short deadline instead of the normal 16 ms scene deadline.
         if dirty && ui_time_ms < next_present_ms && !cursor_moved && !scroll_input {
@@ -2640,6 +2707,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && bx1 > (ime_menu_x - 54).max(0) as usize
                             && by0 < (ime_menu_y + ime_menu_h + 54).max(0) as usize
                             && by1 > (ime_menu_y - 54).max(0) as usize));
+                let ime_menu_needs_redraw = ime_menu_changed || ime_menu_cache_dirty || ime_menu_closing;
                 if ime_menu_changed || ime_menu_cache_dirty {
                     cached_ime_menu_layer = None;
                 }
@@ -2773,7 +2841,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 }
                 let ime_conversion_visible =
                     japanese_ime.conversion.is_some() || pinyin_ime.conversion.is_some();
-                if ime_menu_changed || ime_menu_cache_dirty {
+                if ime_menu_needs_redraw {
                     let (menu_x, menu_y, menu_w, menu_h) =
                         (ime_menu_x, ime_menu_y, ime_menu_w, ime_menu_h);
                     let pad = 28usize;
@@ -2839,6 +2907,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_mm,
                     battery_info.valid_percentage(),
                     show_ime_menu,
+                    ime_menu_opacity,
                     ime_menu_selection(input_mode),
                     ime_reading,
                     ime_candidates,
@@ -2890,6 +2959,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_mm,
                         battery_info.valid_percentage(),
                         show_ime_menu,
+                        ime_menu_opacity,
                         ime_menu_selection(input_mode),
                         ime_reading,
                         ime_candidates,

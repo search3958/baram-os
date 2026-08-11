@@ -1150,6 +1150,72 @@ impl LayerSystem {
         }
     }
 
+    /// Composite an opaque layer with a fractional downward Y translation.
+    /// Only transition tails use this path; normal scrolling remains on the
+    /// memcpy fast path above.
+    pub fn composit_rect_opaque_subpixel_y(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
+        fraction_y: f32,
+    ) {
+        let fraction = fraction_y.clamp(0.0, 0.999);
+        if fraction <= 0.0 {
+            self.composit_rect_opaque(src, dx, dy, sx, sy, w, h);
+            return;
+        }
+        if dx >= self.width || dy >= self.height || sx >= src.width || sy >= src.height {
+            return;
+        }
+        let copy_w = w.min(src.width - sx).min(self.width - dx);
+        let copy_h = h.min(src.height - sy);
+        if copy_w == 0 || copy_h == 0 { return; }
+        let fraction_255 = (fraction * 255.0) as u32;
+        let inverse = 255 - fraction_255;
+        let out_h = (copy_h + 1).min(self.height - dy);
+        self.mark_dirty_rect(dx, dy, dx + copy_w, dy + out_h);
+        for out_y in 0..out_h {
+            let dst_row = (dy + out_y) * self.width + dx;
+            if out_y == 0 {
+                let src_row = sy * src.width + sx;
+                for px in 0..copy_w {
+                    let bg = self.buf[dst_row + px];
+                    let fg = src.buf[src_row + px];
+                    let r = (((fg >> 16) & 0xff) * inverse + ((bg >> 16) & 0xff) * fraction_255) / 255;
+                    let g = (((fg >> 8) & 0xff) * inverse + ((bg >> 8) & 0xff) * fraction_255) / 255;
+                    let b = ((fg & 0xff) * inverse + (bg & 0xff) * fraction_255) / 255;
+                    self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
+                }
+            } else if out_y < copy_h {
+                let previous = (sy + out_y - 1) * src.width + sx;
+                let current = (sy + out_y) * src.width + sx;
+                for px in 0..copy_w {
+                    let a = src.buf[previous + px];
+                    let b = src.buf[current + px];
+                    let r = (((a >> 16) & 0xff) * fraction_255 + ((b >> 16) & 0xff) * inverse) / 255;
+                    let g = (((a >> 8) & 0xff) * fraction_255 + ((b >> 8) & 0xff) * inverse) / 255;
+                    let blue = ((a & 0xff) * fraction_255 + (b & 0xff) * inverse) / 255;
+                    self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | blue;
+                }
+            } else {
+                let src_row = (sy + copy_h - 1) * src.width + sx;
+                for px in 0..copy_w {
+                    let bg = self.buf[dst_row + px];
+                    let fg = src.buf[src_row + px];
+                    let r = (((fg >> 16) & 0xff) * fraction_255 + ((bg >> 16) & 0xff) * inverse) / 255;
+                    let g = (((fg >> 8) & 0xff) * fraction_255 + ((bg >> 8) & 0xff) * inverse) / 255;
+                    let b = ((fg & 0xff) * fraction_255 + (bg & 0xff) * inverse) / 255;
+                    self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+    }
+
     /// Composite an opaque RGB source with one opacity for the whole layer.
     /// The hot x86 path processes eight pixels per AVX2 vector; AArch64 uses
     /// four-lane NEON channel arithmetic.

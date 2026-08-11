@@ -3,7 +3,9 @@ use baram_bsd::config;
 use baram_core::LayerSystem;
 use baram_core::Color;
 
-const SCROLL_ANIMATION_NS: u64 = 10_000_000;
+const SCROLL_ANIMATION_NS: u64 = 180_000_000;
+const WINDOW_OPEN_DURATION_NS: u64 = 400_000_000;
+const WINDOW_MOTION_OFFSET_Y: i32 = 30;
 use baram_font::LayerFontExt;
 use baram_graphics::blur;
 use baram_graphics::svg;
@@ -286,8 +288,17 @@ fn draw_title_bar_overlay(layer: &mut LayerSystem, x: usize, y: usize, width: us
     }
 }
 
-fn draw_title_bar_background(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
-    draw_title_bar_blur_layer(layer, x, y, width, height);
+fn draw_title_bar_background(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    skip_blur: bool,
+) {
+    if !skip_blur {
+        draw_title_bar_blur_layer(layer, x, y, width, height);
+    }
     draw_title_bar_overlay(layer, x, y, width, height);
 }
 
@@ -340,8 +351,10 @@ pub struct Window {
     /// Local window coordinates. `None` means the entire layer must be rebuilt.
     pub content_damage: Option<(usize, usize, usize, usize)>,
     pub shadow_dirty: bool,
-    pub open_progress: f32,
     pub open_animating: bool,
+    motion_started_ns: Option<u64>,
+    render_y_offset: i32,
+    prev_render_y_offset: i32,
     pending_unmaximize: bool,
     pending_unmax_ratio: f64,
     pending_unmax_mx: i32,
@@ -397,8 +410,10 @@ impl Window {
             content_dirty: true,
             content_damage: None,
             shadow_dirty: true,
-            open_progress: 0.0,
             open_animating: true,
+            motion_started_ns: None,
+            render_y_offset: WINDOW_MOTION_OFFSET_Y,
+            prev_render_y_offset: WINDOW_MOTION_OFFSET_Y,
             pending_unmaximize: false,
             pending_unmax_ratio: 0.0,
             pending_unmax_mx: 0,
@@ -544,10 +559,45 @@ impl Window {
     pub fn toggle_minimize(&mut self) {
         if self.minimized {
             self.minimized = false;
+            self.open_animating = true;
         } else {
             self.minimized = true;
+            self.open_animating = false;
+            self.render_y_offset = 0;
         }
+        self.motion_started_ns = None;
         self.content_dirty = true;
+    }
+
+    fn is_motion_animating(&self) -> bool {
+        self.open_animating
+    }
+
+    fn render_y(&self) -> i32 {
+        self.y + self.render_y_offset
+    }
+
+    fn prev_render_y(&self) -> i32 {
+        self.prev_y + self.prev_render_y_offset
+    }
+
+    fn tick_motion(&mut self, now_ns: u64) -> bool {
+        let was_animating = self.is_motion_animating();
+        if !was_animating {
+            return false;
+        }
+        let started = *self.motion_started_ns.get_or_insert(now_ns);
+        let t = (now_ns.saturating_sub(started) as f32 / WINDOW_OPEN_DURATION_NS as f32)
+            .clamp(0.0, 1.0);
+        let old_offset = self.render_y_offset;
+        // Ease out: opening starts briskly and settles into place.
+        let remaining = 1.0 - t;
+        self.render_y_offset =
+            (WINDOW_MOTION_OFFSET_Y as f32 * remaining * remaining * remaining) as i32;
+        if t >= 1.0 {
+            self.open_animating = false;
+        }
+        old_offset != self.render_y_offset || was_animating
     }
 
     pub fn start_drag(&mut self, px: i32, py: i32) {
@@ -772,6 +822,20 @@ impl WindowManager {
         changed
     }
 
+    /// Advance window opening and restoration motion from the shared monotonic
+    /// UI clock. Minimization itself is immediate.
+    pub fn tick_window_animations(&mut self, now_ns: u64) -> bool {
+        let mut changed = false;
+        for w in &mut self.windows {
+            changed |= w.tick_motion(now_ns);
+        }
+        changed
+    }
+
+    pub fn has_window_animation(&self) -> bool {
+        self.windows.iter().any(Window::is_motion_animating)
+    }
+
     pub fn is_scroll_animating(&self, id: WinId) -> bool {
         self.windows.iter().find(|window| window.id == id)
             .map_or(false, |window| window.scroll_y != window.scroll_target_y)
@@ -953,7 +1017,7 @@ impl WindowManager {
         for i in 0..sort_n {
             let idx = indices[i];
             let w = &self.windows[idx];
-            if !w.visible || w.minimized || w.maximized {
+            if !w.visible || (w.minimized && !w.is_motion_animating()) || w.maximized {
                 continue;
             }
             let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
@@ -975,7 +1039,9 @@ impl WindowManager {
         // Allocate on the BSP; AP jobs below only touch disjoint window layers.
         for i in 0..sort_n {
             let idx = indices[i];
-            if self.windows[idx].visible && !self.windows[idx].minimized {
+            if self.windows[idx].visible
+                && (!self.windows[idx].minimized || self.windows[idx].is_motion_animating())
+            {
                 self.windows[idx].ensure_layer(screen_w, screen_h);
             }
         }
@@ -985,7 +1051,7 @@ impl WindowManager {
         let mut redraw_polygons: Vec<Vec<(f32, f32)>> = Vec::new();
         for i in 0..sort_n {
             let w = &self.windows[indices[i]];
-            if w.visible && !w.minimized && w.content_dirty
+            if w.visible && (!w.minimized || w.is_motion_animating()) && w.content_dirty
                 && w.content_damage.is_none() && !w.maximized
             {
                 redraw_polygons.push(LayerSystem::squircle_polygon(
@@ -999,7 +1065,7 @@ impl WindowManager {
         let mut redraw_jobs: Vec<WindowBaseRedraw> = Vec::new();
         for i in 0..sort_n {
             let w = &mut self.windows[indices[i]];
-            if !w.visible || w.minimized || !w.content_dirty { continue; }
+            if !w.visible || (w.minimized && !w.is_motion_animating()) || !w.content_dirty { continue; }
             let (polygon, polygon_len) = if w.content_damage.is_none() && !w.maximized {
                 let poly = &redraw_polygons[polygon_index];
                 polygon_index += 1;
@@ -1024,13 +1090,15 @@ impl WindowManager {
 
         for i in 0..sort_n {
             let idx = indices[i];
-            if !self.windows[idx].visible || self.windows[idx].minimized {
+            if !self.windows[idx].visible
+                || (self.windows[idx].minimized && !self.windows[idx].is_motion_animating())
+            {
                 continue;
             }
             self.windows[idx].ensure_layer(screen_w, screen_h);
 
             let wx = self.windows[idx].x;
-            let wy = self.windows[idx].y;
+            let wy = self.windows[idx].render_y();
             let ww = self.windows[idx].w;
             let wh = self.windows[idx].h;
             let scroll_y = self.windows[idx].scroll_y;
@@ -1038,15 +1106,6 @@ impl WindowManager {
             let is_max = self.windows[idx].maximized;
             let shadow_dirty = self.windows[idx].shadow_dirty;
             let content_dirty = self.windows[idx].content_dirty;
-            let open_progress = self.windows[idx].open_progress;
-            let open_animating = self.windows[idx].open_animating;
-            if open_animating {
-                self.windows[idx].open_progress = (open_progress + 0.04).min(1.0);
-                if self.windows[idx].open_progress >= 1.0 {
-                    self.windows[idx].open_animating = false;
-                }
-            }
-
             if !is_max {
                 if shadow_dirty {
                     if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id)
@@ -1120,6 +1179,11 @@ impl WindowManager {
             }
 
             if content_dirty {
+                let skip_title_blur = self.windows[idx].is_motion_animating()
+                    || self.is_scroll_animating(win_id)
+                    || html_engines
+                        .iter()
+                        .any(|(id, engine)| *id == win_id && engine.is_animating());
                 let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
                 let w_ptr = &self.windows[idx] as *const Window;
                 let damage = self.windows[idx].content_damage.take();
@@ -1184,11 +1248,12 @@ impl WindowManager {
                     let repaint_title = damage.map_or(true, |(_, y0, _, _)| y0 < title_bar_h());
                     (*layer_ptr).pop_clip();
                     if repaint_title {
-                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
+                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0, skip_title_blur);
                     }
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
+                self.windows[idx].prev_render_y_offset = self.windows[idx].render_y_offset;
                 self.windows[idx].content_dirty = false;
             }
 
@@ -1223,6 +1288,7 @@ impl WindowManager {
             }
             self.windows[idx].prev_x = self.windows[idx].x;
             self.windows[idx].prev_y = self.windows[idx].y;
+            self.windows[idx].prev_render_y_offset = self.windows[idx].render_y_offset;
             self.windows[idx].prev_w = self.windows[idx].w;
             self.windows[idx].prev_h = self.windows[idx].h;
         }
@@ -1320,6 +1386,9 @@ impl WindowManager {
     pub fn restore_minimized(&mut self, id: WinId) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.minimized = false;
+            w.open_animating = true;
+            w.motion_started_ns = None;
+            w.content_dirty = true;
         }
     }
 
@@ -1417,15 +1486,16 @@ impl WindowManager {
             if !w.visible
                 || !(w.content_dirty
                     || w.shadow_dirty
-                    || w.open_animating
+                    || w.is_motion_animating()
+                    || w.render_y_offset != w.prev_render_y_offset
                     || w.x != w.prev_x
                     || w.y != w.prev_y)
             {
                 continue;
             }
             let local_damage = w.content_damage.filter(|_| {
-                w.content_dirty && !w.shadow_dirty && !w.open_animating
-                    && w.x == w.prev_x && w.y == w.prev_y
+                w.content_dirty && !w.shadow_dirty && !w.is_motion_animating()
+                    && w.x == w.prev_x && w.render_y() == w.prev_render_y()
             });
             let (x0, y0, x1, y1) = if let Some((dx0, dy0, dx1, dy1)) = local_damage {
                 // Hover-only changes must not force the compositor to redraw
@@ -1439,10 +1509,10 @@ impl WindowManager {
             } else {
                 (
                     (w.x.min(w.prev_x) - shadow_pad).max(0) as usize,
-                    (w.y.min(w.prev_y) - shadow_pad).max(0) as usize,
+                    (w.render_y().min(w.prev_render_y()) - shadow_pad).max(0) as usize,
                     (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
                         .min(sw as i32).max(0) as usize,
-                    (w.y.max(w.prev_y) + w.h.max(w.prev_h) as i32 + shadow_pad)
+                    (w.render_y().max(w.prev_render_y()) + w.h.max(w.prev_h) as i32 + shadow_pad)
                         .min(sh as i32).max(0) as usize,
                 )
             };
@@ -1592,7 +1662,13 @@ fn box_blur_shadow(alpha: &mut [u8], width: usize, height: usize, radius: usize)
     baram_core::parallel::for_each(width, &vertical, blur_shadow_column);
 }
 
-fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
+fn draw_title_bar(
+    layer: &mut LayerSystem,
+    w: &Window,
+    ox: i32,
+    oy: i32,
+    skip_blur: bool,
+) {
     let x = ox.max(0) as usize;
     let y = oy.max(0) as usize;
     let sw = layer.width();
@@ -1609,7 +1685,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
     }
 
     let tb_h = title_bar_h().min(h_draw);
-    draw_title_bar_background(layer, x, y, w_draw, tb_h);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur);
 
     let base_x = x as i32 + 10;
     let btn_y = y as i32 + 10;

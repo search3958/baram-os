@@ -492,6 +492,12 @@ impl HtmlEngine {
         self.warp3.is_some()
     }
 
+    pub fn is_animating(&self) -> bool {
+        self.warp3
+            .as_ref()
+            .is_some_and(crate::warp3::Warp3Engine::is_screen_transition_active)
+    }
+
     pub fn handle_key(&mut self, key: u8) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.handle_key(key);
