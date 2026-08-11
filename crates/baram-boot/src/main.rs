@@ -718,6 +718,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut setup_prev_cursor = (cursor_x, cursor_y);
         let mut setup_scroll = 0i32;
         let mut setup_now_ns = 0u64;
+        // Setup used to advance this clock by one millisecond per rendered
+        // loop. A costly card frame therefore stretched a 250ms Warp3
+        // transition into seconds. Sample the hardware monotonic clock here
+        // just as the desktop renderer does.
+        let setup_clock = UiMonotonicClock::new();
         let mut setup_next_present_ms = 0u64;
         setup_engine.set_warp3_screen(wizard.warp3_screen());
         setup_engine.update(528, 320);
@@ -727,7 +732,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             if let Some(ref mut timer) = timer_event {
                 let _ = uefi::boot::wait_for_event(core::slice::from_mut(timer));
             }
-            setup_now_ns = setup_now_ns.saturating_add(1_000_000);
+            setup_now_ns = setup_clock
+                .as_ref()
+                .map(UiMonotonicClock::elapsed_ns)
+                .unwrap_or_else(|| setup_now_ns.saturating_add(1_000_000));
             let mut setup_scroll_input = false;
 
             while let Some(nano_event) = nano.poll_keyboard() {
@@ -788,7 +796,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 setup_scene_dirty = true;
                 setup_card_dirty = true;
             }
-            if setup_engine.tick(setup_now_ns) {
+            // The setup card can take much longer to rasterize than a normal
+            // desktop frame. Slow only its Warp3 transition clock so a single
+            // expensive frame cannot skip nearly the whole transition.
+            if setup_engine.tick(setup_now_ns / 3) {
                 setup_card_dirty = true;
             }
 

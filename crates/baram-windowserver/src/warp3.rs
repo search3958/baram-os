@@ -389,7 +389,7 @@ pub struct Warp3Engine {
     switch_started_ns: Option<u64>,
     screen_transition_active: bool,
     screen_transition_started_ns: Option<u64>,
-    screen_transition_offset_y: i32,
+    screen_transition_offset_y: f32,
     animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
     now: NowValues,
@@ -435,7 +435,7 @@ impl Warp3Engine {
             switch_started_ns: None,
             screen_transition_active: false,
             screen_transition_started_ns: None,
-            screen_transition_offset_y: 0,
+            screen_transition_offset_y: 0.0,
             animation_now_ns: 0,
             shadows: Vec::new(),
             now: NowValues::default(),
@@ -460,7 +460,7 @@ impl Warp3Engine {
         self.cancel_hover();
         self.screen_transition_active = true;
         self.screen_transition_started_ns = None;
-        self.screen_transition_offset_y = 15;
+        self.screen_transition_offset_y = 15.0;
     }
 
     pub fn set_text(&mut self, class: &str, value: &str) {
@@ -730,12 +730,15 @@ impl Warp3Engine {
             let started = *self.screen_transition_started_ns.get_or_insert(now_ns);
             let t = (now_ns.saturating_sub(started) as f32 / 250_000_000.0).min(1.0);
             let remaining = 1.0 - t;
-            let next_offset = (50.0 * remaining * remaining * remaining) as i32;
+            let raw_offset = 15.0 * remaining * remaining * remaining;
+            // The first 90% stays on the integer-pixel fast path. During the
+            // final settle, retain the fractional position for smoother text.
+            let next_offset = if t < 0.9 { raw_offset as i32 as f32 } else { raw_offset };
             changed |= self.screen_transition_offset_y != next_offset;
             self.screen_transition_offset_y = next_offset;
             if t >= 1.0 {
                 self.screen_transition_active = false;
-                self.screen_transition_offset_y = 0;
+                self.screen_transition_offset_y = 0.0;
                 changed = true;
             }
         }
@@ -755,20 +758,35 @@ impl Warp3Engine {
             layer.height(),
             html_bg(),
         );
-        let target_y = self.screen_transition_offset_y.max(0) as usize;
+        let target_y = self.screen_transition_offset_y.max(0.0) as usize;
+        let subpixel_y = self.screen_transition_offset_y - target_y as f32;
         if let Some(document) = &self.document_layer {
             let source_y = self.scroll.max(0) as usize;
             let visible_h = layer.height().saturating_sub(target_y);
             if source_y < document.height() && visible_h > 0 {
-                layer.composit_rect_opaque(
-                    document,
-                    ox.max(0) as usize,
-                    target_y,
-                    0,
-                    source_y,
-                    document.width(),
-                    visible_h.min(document.height() - source_y),
-                );
+                let draw_h = visible_h.min(document.height() - source_y);
+                if subpixel_y > 0.0 {
+                    layer.composit_rect_opaque_subpixel_y(
+                        document,
+                        ox.max(0) as usize,
+                        target_y,
+                        0,
+                        source_y,
+                        document.width(),
+                        draw_h,
+                        subpixel_y,
+                    );
+                } else {
+                    layer.composit_rect_opaque(
+                        document,
+                        ox.max(0) as usize,
+                        target_y,
+                        0,
+                        source_y,
+                        document.width(),
+                        draw_h,
+                    );
+                }
             }
         }
         // This is a separate transparent layer, composited after the scrolling
@@ -798,7 +816,7 @@ impl Warp3Engine {
             for paint_index in 0..self.toolbar_paint.len() {
                 let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
-                self.draw_node(layer, idx, node.x + ox, node.y + self.screen_transition_offset_y);
+                self.draw_node(layer, idx, node.x + ox, node.y + target_y as i32);
             }
         }
         self.window_damage = None;
