@@ -840,6 +840,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 setup_present.push_clip(card_x0, card_y0, card_x1, card_y1);
                 setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
                 setup_present.pop_clip();
+                // The card-only path does not overwrite a cursor that was
+                // previously outside the card. Restore both cursor positions
+                // before drawing the new one to prevent pointer trails.
+                if cursor_changed {
+                    let pad = 32i32;
+                    let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
+                    let y0 = (setup_prev_cursor.1.min(cursor_y) - pad).max(0) as usize;
+                    let x1 = (setup_prev_cursor.0.max(cursor_x) + cursor::CURSOR_BOX_W as i32 + pad)
+                        .min(setup_w as i32) as usize;
+                    let y1 = (setup_prev_cursor.1.max(cursor_y) + cursor::CURSOR_BOX_H as i32 + pad)
+                        .min(setup_h as i32) as usize;
+                    setup_present.push_clip(x0, y0, x1, y1);
+                    setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
+                    setup_present.pop_clip();
+                }
             } else {
                 let pad = 32i32;
                 let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
