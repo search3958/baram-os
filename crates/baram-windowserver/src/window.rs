@@ -235,7 +235,16 @@ fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width:
     }
     let fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1);
     for radius in 1..=BLUR_RADIUS {
-        blur::blur_region_to(&backdrop, &mut blurred, width, 0, sample_h, radius as i32);
+        // Preserve every radius step.  For the wider (box-blurred) steps the
+        // title bar uses one H→V sweep rather than the normal two sweeps.
+        blur::blur_region_to_single_box(
+            &backdrop,
+            &mut blurred,
+            width,
+            0,
+            sample_h,
+            radius as i32,
+        );
         for row in 0..height {
             let scaled_radius = if row < FIXED_BLUR_HEIGHT {
                 (BLUR_RADIUS * 256) as u32

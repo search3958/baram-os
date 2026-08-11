@@ -278,6 +278,18 @@ fn box_blur_2pass_scalar(
     parallel_box_blur_v(tmp, dst, w, h, r);
 }
 
+fn box_blur_1pass_scalar(
+    src: &[u32],
+    dst: &mut [u32],
+    tmp: &mut [u32],
+    w: usize,
+    h: usize,
+    r: i32,
+) {
+    parallel_box_blur_h(src, tmp, w, h, r);
+    parallel_box_blur_v(tmp, dst, w, h, r);
+}
+
 fn box_blur_2pass_with_scratch(
     src: &[u32],
     dst: &mut [u32],
@@ -305,6 +317,40 @@ fn box_blur_2pass_with_scratch(
 fn box_blur_2pass(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
     let mut tmp = alloc::vec![0u32; w * h];
     box_blur_2pass_with_scratch(src, dst, &mut tmp, w, h, blur_r);
+}
+
+/// Blur a small region using the normal Gaussian path for low radii, but only
+/// one horizontal/vertical box-blur sweep for larger radii. This is intended
+/// for the title-bar's progressive blur steps; the regular region blur keeps
+/// its two box sweeps for wallpaper-quality output.
+pub fn blur_region_to_single_box(
+    src: &[u32],
+    dst: &mut [u32],
+    w: usize,
+    y_start: usize,
+    y_end: usize,
+    blur_r: i32,
+) {
+    let region_h = y_end.saturating_sub(y_start);
+    let len = w.saturating_mul(region_h);
+    if len == 0 || src.len() < y_end.saturating_mul(w) || dst.len() < len {
+        return;
+    }
+    let region = &src[y_start * w..y_end * w];
+    if blur_r < 10 {
+        gaussian_convolution(region, &mut dst[..len], w, region_h, blur_r);
+        return;
+    }
+
+    let mut scratch = alloc::vec![0u32; len];
+    let radius = (blur_r / 2).max(1);
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    unsafe {
+        box_avx2::box_blur_h_simd8(region, &mut scratch, w, region_h, radius);
+        box_avx2::box_blur_v_simd8(&scratch, &mut dst[..len], w, region_h, radius);
+    }
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    box_blur_1pass_scalar(region, &mut dst[..len], &mut scratch, w, region_h, radius);
 }
 
 // ----------------------------------------------------------------------------
