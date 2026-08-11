@@ -4,8 +4,7 @@ use baram_core::LayerSystem;
 use baram_core::Color;
 
 const SCROLL_ANIMATION_NS: u64 = 10_000_000;
-const WINDOW_OPEN_DURATION_NS: u64 = 250_000_000;
-const WINDOW_CLOSE_DURATION_NS: u64 = 100_000_000;
+const WINDOW_OPEN_DURATION_NS: u64 = 500_000_000;
 const WINDOW_MOTION_OFFSET_Y: i32 = 50;
 use baram_font::LayerFontExt;
 use baram_graphics::blur;
@@ -344,12 +343,9 @@ pub struct Window {
     pub content_damage: Option<(usize, usize, usize, usize)>,
     pub shadow_dirty: bool,
     pub open_animating: bool,
-    minimize_animating: bool,
     motion_started_ns: Option<u64>,
     render_y_offset: i32,
     prev_render_y_offset: i32,
-    render_alpha: u8,
-    prev_render_alpha: u8,
     pending_unmaximize: bool,
     pending_unmax_ratio: f64,
     pending_unmax_mx: i32,
@@ -406,12 +402,9 @@ impl Window {
             content_damage: None,
             shadow_dirty: true,
             open_animating: true,
-            minimize_animating: false,
             motion_started_ns: None,
             render_y_offset: WINDOW_MOTION_OFFSET_Y,
             prev_render_y_offset: WINDOW_MOTION_OFFSET_Y,
-            render_alpha: 0,
-            prev_render_alpha: 0,
             pending_unmaximize: false,
             pending_unmax_ratio: 0.0,
             pending_unmax_mx: 0,
@@ -558,18 +551,17 @@ impl Window {
         if self.minimized {
             self.minimized = false;
             self.open_animating = true;
-            self.minimize_animating = false;
         } else {
             self.minimized = true;
             self.open_animating = false;
-            self.minimize_animating = true;
+            self.render_y_offset = 0;
         }
         self.motion_started_ns = None;
         self.content_dirty = true;
     }
 
     fn is_motion_animating(&self) -> bool {
-        self.open_animating || self.minimize_animating
+        self.open_animating
     }
 
     fn render_y(&self) -> i32 {
@@ -586,32 +578,16 @@ impl Window {
             return false;
         }
         let started = *self.motion_started_ns.get_or_insert(now_ns);
-        let duration = if self.minimize_animating {
-            WINDOW_CLOSE_DURATION_NS
-        } else {
-            WINDOW_OPEN_DURATION_NS
-        };
-        let t = (now_ns.saturating_sub(started) as f32 / duration as f32).clamp(0.0, 1.0);
+        let t = (now_ns.saturating_sub(started) as f32 / WINDOW_OPEN_DURATION_NS as f32)
+            .clamp(0.0, 1.0);
         let old_offset = self.render_y_offset;
-        if self.minimize_animating {
-            // Ease in: the descent accelerates towards the end.
-            self.render_y_offset = (WINDOW_MOTION_OFFSET_Y as f32 * t * t * t) as i32;
-            self.render_alpha = ((1.0 - t) * 255.0) as u8;
-            if t >= 1.0 {
-                self.minimize_animating = false;
-            }
-        } else {
-            // Ease out: opening starts briskly and settles into place.
-            let remaining = 1.0 - t;
-            self.render_y_offset =
-                (WINDOW_MOTION_OFFSET_Y as f32 * remaining * remaining * remaining) as i32;
-            self.render_alpha = (t * 255.0) as u8;
-            if t >= 1.0 {
-                self.open_animating = false;
-            }
+        // Ease out: opening starts briskly and settles into place.
+        let remaining = 1.0 - t;
+        self.render_y_offset =
+            (WINDOW_MOTION_OFFSET_Y as f32 * remaining * remaining * remaining) as i32;
+        if t >= 1.0 {
+            self.open_animating = false;
         }
-        // A final frame is also damage: minimization stops drawing the window
-        // immediately after it reaches its 50px destination.
         old_offset != self.render_y_offset || was_animating
     }
 
@@ -837,33 +813,12 @@ impl WindowManager {
         changed
     }
 
-    /// Advance window opening, restoration, and minimization motion from the
-    /// shared monotonic UI clock.
+    /// Advance window opening and restoration motion from the shared monotonic
+    /// UI clock. Minimization itself is immediate.
     pub fn tick_window_animations(&mut self, now_ns: u64) -> bool {
         let mut changed = false;
         for w in &mut self.windows {
-            let was_animating = w.is_motion_animating();
             changed |= w.tick_motion(now_ns);
-            if was_animating && !w.is_motion_animating() && w.minimized {
-                // The final minimization frame is no longer drawn, so retain
-                // its old bounds long enough for the scene to erase it.
-                let pad = shadow_pad();
-                let rect = (
-                    (w.x - pad).max(0) as usize,
-                    (w.render_y() - pad).max(0) as usize,
-                    (w.x + w.w as i32 + pad).min(self.screen_w).max(0) as usize,
-                    (w.render_y() + w.h as i32 + pad)
-                        .min(self.screen_h)
-                        .max(0) as usize,
-                );
-                self.pending_damage = Some(match self.pending_damage {
-                    Some(old) => (
-                        old.0.min(rect.0), old.1.min(rect.1),
-                        old.2.max(rect.2), old.3.max(rect.3),
-                    ),
-                    None => rect,
-                });
-            }
         }
         changed
     }
@@ -1142,7 +1097,6 @@ impl WindowManager {
             let is_max = self.windows[idx].maximized;
             let shadow_dirty = self.windows[idx].shadow_dirty;
             let content_dirty = self.windows[idx].content_dirty;
-            let render_alpha = self.windows[idx].render_alpha;
             if !is_max {
                 if shadow_dirty {
                     if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id)
@@ -1286,7 +1240,6 @@ impl WindowManager {
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
                 self.windows[idx].prev_render_y_offset = self.windows[idx].render_y_offset;
-                self.windows[idx].prev_render_alpha = self.windows[idx].render_alpha;
                 self.windows[idx].content_dirty = false;
             }
 
@@ -1305,18 +1258,7 @@ impl WindowManager {
                 continue;
             }
 
-            if render_alpha < 255 {
-                layer.composit_rect_alpha_global(
-                    win_layer,
-                    dst_x,
-                    dst_y,
-                    src_x,
-                    src_y,
-                    draw_w,
-                    draw_h,
-                    render_alpha,
-                );
-            } else if is_max {
+            if is_max {
                 layer.composit_rect(
                     win_layer,
                     dst_x,
@@ -1333,7 +1275,6 @@ impl WindowManager {
             self.windows[idx].prev_x = self.windows[idx].x;
             self.windows[idx].prev_y = self.windows[idx].y;
             self.windows[idx].prev_render_y_offset = self.windows[idx].render_y_offset;
-            self.windows[idx].prev_render_alpha = self.windows[idx].render_alpha;
             self.windows[idx].prev_w = self.windows[idx].w;
             self.windows[idx].prev_h = self.windows[idx].h;
         }
@@ -1432,7 +1373,6 @@ impl WindowManager {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.minimized = false;
             w.open_animating = true;
-            w.minimize_animating = false;
             w.motion_started_ns = None;
             w.content_dirty = true;
         }
@@ -1534,7 +1474,6 @@ impl WindowManager {
                     || w.shadow_dirty
                     || w.is_motion_animating()
                     || w.render_y_offset != w.prev_render_y_offset
-                    || w.render_alpha != w.prev_render_alpha
                     || w.x != w.prev_x
                     || w.y != w.prev_y)
             {
@@ -1543,7 +1482,6 @@ impl WindowManager {
             let local_damage = w.content_damage.filter(|_| {
                 w.content_dirty && !w.shadow_dirty && !w.is_motion_animating()
                     && w.x == w.prev_x && w.render_y() == w.prev_render_y()
-                    && w.render_alpha == w.prev_render_alpha
             });
             let (x0, y0, x1, y1) = if let Some((dx0, dy0, dx1, dy1)) = local_damage {
                 // Hover-only changes must not force the compositor to redraw
