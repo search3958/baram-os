@@ -2,9 +2,8 @@ config { title("システム設定") script("settings.w3s") }
 head { text("システム設定") }
 button.back { text("戻る") type("tonal") }
 card {
-    text("システム")
     text("タイムゾーン")
-    detail { text("UTCとの差を選択します") }
+    detail { text("お客様の地域を選択してください") }
     button.timezone-minus12 { text("-12:00　ベーカー島") }
     button.timezone-minus11 { text("-11:00　パゴパゴ，ニウエ") }
     button.timezone-minus10 { text("-10:00　ホノルル，タヒチ") }
@@ -42,5 +41,8 @@ card {
     button.timezone-plus1245 { text("+12:45　チャタム諸島") }
     button.timezone-plus13 { text("+13:00　アピア，ヌクアロファ") }
     button.timezone-plus14 { text("+14:00　キリスィマス島") }
+}
+card {
+    text("リセット")
     button.system-reset { text("再起動してリセット") type("danger") }
 }

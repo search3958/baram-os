@@ -704,6 +704,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             baram_windowserver::window::RoundedShadow::new(setup_card.2, setup_card.3, card_radius);
         NanoSystem::serial_log("baram: setup shadow ready\r\n");
         let mut setup_scene_dirty = true;
+        let mut setup_card_dirty = true;
         let mut setup_first_frame_logged = false;
         let mut setup_prev_cursor = (cursor_x, cursor_y);
         let mut setup_scroll = 0i32;
@@ -718,6 +719,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let _ = uefi::boot::wait_for_event(core::slice::from_mut(timer));
             }
             setup_now_ns = setup_now_ns.saturating_add(1_000_000);
+            let mut setup_scroll_input = false;
 
             while let Some(nano_event) = nano.poll_keyboard() {
                 let ev = kernel_key_event(nano_event);
@@ -737,6 +739,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         nano.pointer_abs_max(),
                     );
                     if ev.scroll != 0 {
+                        setup_scroll_input = true;
                         let max_scroll = setup_engine.content_height().saturating_sub(320).max(0);
                         let delta = ev
                             .scroll
@@ -749,7 +752,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         cursor_x - setup_origin.0,
                         cursor_y - setup_origin.1 + setup_scroll,
                     );
-                    setup_scene_dirty = true;
+                    setup_card_dirty = true;
                     if ev.left {
                         setup_engine.click(
                             cursor_x - setup_origin.0,
@@ -774,17 +777,21 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 setup_engine.update(528, 320);
                 setup_engine.set_scroll(setup_scroll);
                 setup_scene_dirty = true;
+                setup_card_dirty = true;
             }
             if setup_engine.tick(setup_now_ns) {
-                setup_scene_dirty = true;
+                setup_card_dirty = true;
             }
 
             let setup_now_ms = setup_now_ns / 1_000_000;
             let cursor_changed = setup_prev_cursor != (cursor_x, cursor_y);
-            if !setup_scene_dirty && !cursor_changed {
+            if !setup_scene_dirty && !setup_card_dirty && !cursor_changed {
                 continue;
             }
-            if setup_now_ms < setup_next_present_ms && !cursor_changed {
+            // Mouse movement can present immediately; do the same for wheel
+            // and touchpad input so setup scrolling is not held for the next
+            // 16 ms frame slot.
+            if setup_now_ms < setup_next_present_ms && !cursor_changed && !setup_scroll_input {
                 continue;
             }
             setup_next_present_ms = setup_now_ms.saturating_add(16);
@@ -811,6 +818,28 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     card_radius,
                 );
                 setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
+            } else if setup_card_dirty {
+                // Scroll and hover changes only affect the setup card. Avoid
+                // rebuilding and copying the full blurred desktop per tick.
+                setup_engine.update(528, 320);
+                setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
+                setup_scene.composit_rounded(
+                    &setup_surface,
+                    setup_origin.0.max(0) as usize,
+                    setup_origin.1.max(0) as usize,
+                    0,
+                    0,
+                    528,
+                    320,
+                    card_radius,
+                );
+                let card_x0 = setup_origin.0.max(0) as usize;
+                let card_y0 = setup_origin.1.max(0) as usize;
+                let card_x1 = (setup_origin.0 + 528).min(setup_w as i32).max(0) as usize;
+                let card_y1 = (setup_origin.1 + 320).min(setup_h as i32).max(0) as usize;
+                setup_present.push_clip(card_x0, card_y0, card_x1, card_y1);
+                setup_present.copy_from_screen_buffer(setup_scene.buf_ref());
+                setup_present.pop_clip();
             } else {
                 let pad = 32i32;
                 let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
@@ -837,6 +866,22 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     NanoSystem::serial_log("baram: setup first frame ready\r\n");
                     setup_first_frame_logged = true;
                 }
+            } else if setup_card_dirty {
+                let card_x0 = setup_origin.0.max(0) as usize;
+                let card_y0 = setup_origin.1.max(0) as usize;
+                let card_x1 = (setup_origin.0 + 528).min(setup_w as i32).max(0) as usize;
+                let card_y1 = (setup_origin.1 + 320).min(setup_h as i32).max(0) as usize;
+                setup_present.flush_rect(&mut screen, card_x0, card_y0, card_x1, card_y1);
+                if cursor_changed {
+                    let pad = 32i32;
+                    let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
+                    let y0 = (setup_prev_cursor.1.min(cursor_y) - pad).max(0) as usize;
+                    let x1 = (setup_prev_cursor.0.max(cursor_x) + cursor::CURSOR_BOX_W as i32 + pad)
+                        .min(setup_w as i32) as usize;
+                    let y1 = (setup_prev_cursor.1.max(cursor_y) + cursor::CURSOR_BOX_H as i32 + pad)
+                        .min(setup_h as i32) as usize;
+                    setup_present.flush_rect(&mut screen, x0, y0, x1, y1);
+                }
             } else {
                 let pad = 32i32;
                 let x0 = (setup_prev_cursor.0.min(cursor_x) - pad).max(0) as usize;
@@ -848,6 +893,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 setup_present.flush_rect(&mut screen, x0, y0, x1, y1);
             }
             setup_scene_dirty = false;
+            setup_card_dirty = false;
             setup_prev_cursor = (cursor_x, cursor_y);
         }
         log_line_str("BaramOS: setup wizard completed");
