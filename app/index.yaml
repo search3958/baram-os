@@ -50,10 +50,10 @@ apps:
 #    type: html-1
 #    title: HTMLデモ
   warp3demo.w3a:
-    icon: noname.png
+    icon: warp.png
     type: warp-3
     title: Warp 3 デモ
   wamo.w3a:
-    icon: files.png
+    icon: warp.png
     type: warp-3
     title: Warp 3 機能ラボ
