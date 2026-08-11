@@ -618,6 +618,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut launcher_cache_drop_after_close = false;
     let mut input_mode = InputMode::Latin;
     let mut japanese_ime = JapaneseIme::new();
+    let mut show_ime_menu = false;
+    let mut prev_show_ime_menu = false;
     let mut prev_ime_conversion_visible = false;
 
     let timezone_offset: i32 = config::get_config().get_i32("system/timezone").unwrap_or(9);
@@ -674,6 +676,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         input_mode == InputMode::Hiragana,
+        false,
         None,
         &[],
         0,
@@ -718,6 +721,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         input_mode == InputMode::Hiragana,
+        false,
         None,
         &[],
         0,
@@ -1089,6 +1093,29 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     japanese_ime.reset();
                     let sh = screen.height();
 
+                    // The mode picker is modal: a click selects a row or
+                    // dismisses it before reaching the window underneath.
+                    if show_ime_menu {
+                        if let Some(hiragana) = ime_menu_mode_at(
+                            cx,
+                            cy,
+                            screen.width(),
+                            screen.height(),
+                            battery_info.valid_percentage(),
+                        ) {
+                            input_mode = if hiragana {
+                                InputMode::Hiragana
+                            } else {
+                                InputMode::Latin
+                            };
+                            taskbar_surface.invalidate();
+                        }
+                        show_ime_menu = false;
+                        scene_dirty = true;
+                        dirty = true;
+                        continue;
+                    }
+
                     if show_app_launcher {
                         let search_x = 12i32;
                         let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
@@ -1198,13 +1225,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             ime_button_bounds(screen.width(), battery_info.valid_percentage());
                         let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
                         if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
-                            input_mode = if input_mode == InputMode::Latin {
-                                InputMode::Hiragana
-                            } else {
-                                InputMode::Latin
-                            };
-                            japanese_ime.reset();
-                            taskbar_surface.invalidate();
+                            show_ime_menu = true;
                             scene_dirty = true;
                             dirty = true;
                             continue;
@@ -1493,7 +1514,26 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
             let on_search = cx >= 12 && cx < 202 && cy >= search_y && cy < search_y + 40;
 
-            if show_app_launcher && on_search {
+            if show_ime_menu {
+                if let Some(hiragana) = ime_menu_mode_at(
+                    cx,
+                    cy,
+                    screen.width(),
+                    screen.height(),
+                    battery_info.valid_percentage(),
+                ) {
+                    input_mode = if hiragana {
+                        InputMode::Hiragana
+                    } else {
+                        InputMode::Latin
+                    };
+                    japanese_ime.reset();
+                    taskbar_surface.invalidate();
+                }
+                show_ime_menu = false;
+                scene_dirty = true;
+                dirty = true;
+            } else if show_app_launcher && on_search {
                 app_search_focused = true;
                 taskbar_surface.invalidate_search();
                 scene_dirty = true;
@@ -1582,6 +1622,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 taskbar_surface.invalidate();
                 scene_dirty = true;
             } else if cy >= sh as i32 - TASKBAR_H as i32 {
+                let (ime_x, ime_y, ime_w, ime_h) =
+                    ime_button_bounds(screen.width(), battery_info.valid_percentage());
+                let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
+                if cx >= ime_x && cx < ime_x + ime_w && cy >= ime_y && cy < ime_y + ime_h {
+                    show_ime_menu = true;
+                    scene_dirty = true;
+                    dirty = true;
+                    continue;
+                }
                 let apps_icon_x = 12i32;
                 let apps_icon_size = 190i32;
                 let apps_icon_y = search_y;
@@ -2124,6 +2173,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let launcher_needs_redraw =
                     launcher_changed || launcher_content_dirty || launcher_anim_phase != 0;
                 let hud_dirty = display_state.hud_enabled && !taskbar_surface.is_valid();
+                let ime_menu_changed = show_ime_menu != prev_show_ime_menu;
 
                 let taskbar_only = taskbar_dirty
                     && bx1 <= bx0
@@ -2133,7 +2183,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     && prev_wallpaper_idx == display_state.wallpaper_index
                     && bg_cache.is_some()
                     && !launcher_render_visible
-                    && !launcher_changed;
+                    && !launcher_changed
+                    && !ime_menu_changed;
 
                 let launcher_only_redraw = (launcher_anim_phase != 0 || launcher_scroll_changed)
                     && launcher_needs_redraw
@@ -2252,6 +2303,18 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fy1 = h;
                 }
                 let ime_conversion_visible = japanese_ime.conversion.is_some();
+                if show_ime_menu || prev_show_ime_menu {
+                    let (menu_x, menu_y, menu_w, menu_h) = ime_menu_bounds(
+                        w,
+                        h,
+                        battery_info.valid_percentage(),
+                    );
+                    let pad = 28usize;
+                    fx0 = fx0.min((menu_x.max(0) as usize).saturating_sub(pad));
+                    fy0 = fy0.min((menu_y.max(0) as usize).saturating_sub(pad));
+                    fx1 = fx1.max((menu_x + menu_w).max(0) as usize + pad).min(w);
+                    fy1 = fy1.max((menu_y + menu_h).max(0) as usize + pad).min(h);
+                }
                 if ime_conversion_visible || prev_ime_conversion_visible {
                     fx0 = 0;
                     fy0 = fy0.min(tb_y.saturating_sub(76));
@@ -2302,6 +2365,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_mm,
                     battery_info.valid_percentage(),
                     input_mode == InputMode::Hiragana,
+                    show_ime_menu,
                     ime_reading,
                     ime_candidates,
                     ime_selected,
@@ -2349,6 +2413,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_mm,
                         battery_info.valid_percentage(),
                         input_mode == InputMode::Hiragana,
+                        show_ime_menu,
                         ime_reading,
                         ime_candidates,
                         ime_selected,
@@ -2358,6 +2423,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 prev_window_count = wm.count();
                 prev_focused_id = wm.focused_id;
+                prev_show_ime_menu = show_ime_menu;
                 prev_ime_conversion_visible = ime_conversion_visible;
 
                 if tb_add_progress >= 1.0 {

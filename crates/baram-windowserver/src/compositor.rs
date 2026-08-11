@@ -16,6 +16,8 @@ use uefi::runtime;
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
 pub const IME_BUTTON_W: usize = 40;
+const IME_MENU_W: usize = 210;
+const IME_MENU_H: usize = 112;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
 
 pub struct TaskbarSurface {
@@ -1125,6 +1127,85 @@ fn draw_ime_candidates(
     }
 }
 
+/// Bounds of the IME mode menu in screen coordinates.
+pub fn ime_menu_bounds(width: usize, height: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
+    let (button_x, _, button_w, _) = ime_button_bounds(width, battery_pct);
+    let x = (button_x + button_w - IME_MENU_W as i32).max(12);
+    let y = height
+        .saturating_sub(TASKBAR_H + IME_MENU_H + 12)
+        .max(8) as i32;
+    (x, y, IME_MENU_W as i32, IME_MENU_H as i32)
+}
+
+/// Returns the mode chosen by a click in the IME menu: false for Latin, true for Hiragana.
+pub fn ime_menu_mode_at(
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
+    battery_pct: Option<u8>,
+) -> Option<bool> {
+    let (menu_x, menu_y, menu_w, menu_h) = ime_menu_bounds(width, height, battery_pct);
+    if x < menu_x || x >= menu_x + menu_w || y < menu_y || y >= menu_y + menu_h {
+        return None;
+    }
+    // Header occupies the first 28px; each following 38px row is a mode.
+    if y >= menu_y + 30 && y < menu_y + 68 {
+        Some(false)
+    } else if y >= menu_y + 68 && y < menu_y + menu_h {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn draw_ime_menu(layer: &mut LayerSystem, battery_pct: Option<u8>, ime_hiragana: bool) {
+    let (x, y, width, height) = ime_menu_bounds(layer.width(), layer.height(), battery_pct);
+    let (x, y, width, height) = (x as usize, y as usize, width as usize, height as usize);
+    const BLUR_RADIUS: usize = 18;
+    let blur_x0 = x.saturating_sub(BLUR_RADIUS);
+    let blur_y0 = y.saturating_sub(BLUR_RADIUS);
+    let blur_x1 = (x + width + BLUR_RADIUS).min(layer.width());
+    let blur_y1 = (y + height + BLUR_RADIUS).min(layer.height());
+    let blur_w = blur_x1.saturating_sub(blur_x0);
+    let blur_h = blur_y1.saturating_sub(blur_y0);
+    if blur_w == 0 || blur_h == 0 {
+        return;
+    }
+    let mut source = alloc::vec![0u32; blur_w * blur_h];
+    for py in 0..blur_h {
+        let src_start = (blur_y0 + py) * layer.width() + blur_x0;
+        let dst_start = py * blur_w;
+        source[dst_start..dst_start + blur_w]
+            .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+    }
+    let mut blurred = alloc::vec![0u32; source.len()];
+    blur::blur_region_to(&source, &mut blurred, blur_w, 0, blur_h, BLUR_RADIUS as i32);
+    draw_soft_box_shadow(layer, x, y, width, height, 18);
+    copy_rounded_region_from_crop(
+        layer, &blurred, blur_w, blur_x0, blur_y0, x, y, width, height, 18,
+    );
+    blend_rounded_rect(
+        layer, x, y, width, height, 18, Color::rgb(0xf5, 0xf5, 0xf5), 168,
+    );
+
+    let text = config::get_color("ui-theme/color/text", Color::TEXT);
+    let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
+    layer.put_str(x + 14, y + 9, "入力モード", muted);
+    for (row, (label, active)) in [("A  英数", !ime_hiragana), ("あ  ひらがな", ime_hiragana)]
+        .iter()
+        .enumerate()
+    {
+        let row_y = y + 30 + row * 38;
+        if *active {
+            // Fixed CSS-style #fff9 highlight: white at 60% opacity, kept
+            // independent from the active theme's primary color.
+            blend_rounded_rect(layer, x + 8, row_y, width - 16, 34, 9, Color::rgb(0xff, 0xff, 0xff), 0x99);
+        }
+        layer.put_str(x + 18, row_y + 9, label, text);
+    }
+}
+
 /// Bounds of the taskbar IME toggle, kept in sync with the status layout.
 pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
     let measure = |text: &str| -> usize {
@@ -1195,6 +1276,7 @@ pub fn render_scene(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_hiragana: bool,
+    ime_menu_open: bool,
     ime_reading: Option<&str>,
     ime_candidates: &[alloc::string::String],
     ime_selected: usize,
@@ -1710,6 +1792,9 @@ pub fn render_scene(
     } else if taskbar.is_search_dirty() {
         redraw_taskbar_search(taskbar, search_focused, search_query);
     }
+    if ime_menu_open {
+        draw_ime_menu(layer, battery_pct, ime_hiragana);
+    }
     if let Some(reading) = ime_reading {
         draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
     }
@@ -1757,6 +1842,7 @@ pub fn render_frame(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_hiragana: bool,
+    ime_menu_open: bool,
     ime_reading: Option<&str>,
     ime_candidates: &[alloc::string::String],
     ime_selected: usize,
@@ -1798,6 +1884,7 @@ pub fn render_frame(
         clock_mm,
         battery_pct,
         ime_hiragana,
+        ime_menu_open,
         ime_reading,
         ime_candidates,
         ime_selected,
