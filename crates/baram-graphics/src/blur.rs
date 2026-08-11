@@ -2,6 +2,35 @@ const FIXED_SHIFT: i32 = 10;
 const FIXED_ONE: i32 = 1 << FIXED_SHIFT;
 const RECIP_SHIFT: i32 = 16;
 
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn avx2_available() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count, _xgetbv};
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    // 0 = unknown, 1 = unavailable, 2 = available. CPU and XCR0 state are
+    // invariant after boot, so avoid serializing CPUID on every UI blur.
+    static CACHED: AtomicU8 = AtomicU8::new(0);
+    match CACHED.load(Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+
+    let available = unsafe {
+        let leaf1 = __cpuid(1);
+        const OSXSAVE: u32 = 1 << 27;
+        const AVX: u32 = 1 << 28;
+        if leaf1.ecx & (AVX | OSXSAVE) != (AVX | OSXSAVE) || (_xgetbv(0) & 0x6) != 0x6 {
+            false
+        } else {
+            __cpuid_count(7, 0).ebx & (1 << 5) != 0
+        }
+    };
+    CACHED.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+    available
+}
+
 #[inline(always)]
 fn clamp_u8(v: i32) -> u8 {
     v.max(0).min(255) as u8
@@ -299,19 +328,17 @@ fn box_blur_2pass_with_scratch(
     blur_r: i32,
 ) {
     let r = (blur_r / 2).max(1);
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    {
+    #[cfg(target_arch = "x86_64")]
+    if avx2_available() {
+        parallel_box_blur_h(src, tmp, w, h, r);
         unsafe {
-            box_avx2::box_blur_h_simd8(src, tmp, w, h, r);
-            box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
-            box_avx2::box_blur_h_simd8(dst, tmp, w, h, r);
             box_avx2::box_blur_v_simd8(tmp, dst, w, h, r);
         }
+        parallel_box_blur_h(dst, tmp, w, h, r);
+        unsafe { box_avx2::box_blur_v_simd8(tmp, dst, w, h, r); }
+        return;
     }
-    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
-    {
-        box_blur_2pass_scalar(src, dst, tmp, w, h, r);
-    }
+    box_blur_2pass_scalar(src, dst, tmp, w, h, r);
 }
 
 fn box_blur_2pass(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
@@ -344,26 +371,29 @@ pub fn blur_region_to_single_box(
 
     let mut scratch = alloc::vec![0u32; len];
     let radius = (blur_r / 2).max(1);
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    unsafe {
-        box_avx2::box_blur_h_simd8(region, &mut scratch, w, region_h, radius);
-        box_avx2::box_blur_v_simd8(&scratch, &mut dst[..len], w, region_h, radius);
+    #[cfg(target_arch = "x86_64")]
+    if avx2_available() {
+        parallel_box_blur_h(region, &mut scratch, w, region_h, radius);
+        unsafe {
+            box_avx2::box_blur_v_simd8(&scratch, &mut dst[..len], w, region_h, radius);
+        }
+        return;
     }
-    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
     box_blur_1pass_scalar(region, &mut dst[..len], &mut scratch, w, region_h, radius);
 }
 
 // ----------------------------------------------------------------------------
 // x86_64 (AVX2 - ガウシアン畳み込み: 8画素同時 + キャッシュブロッキング)
 // ----------------------------------------------------------------------------
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[cfg(target_arch = "x86_64")]
 mod avx2 {
     use super::*;
     use core::arch::x86_64::*;
 
     const BLOCK_W: usize = 32;
 
-    #[inline(always)]
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn load8(ptr: *const u32) -> (__m256i, __m256i, __m256i) {
         let p = _mm256_loadu_si256(ptr as *const __m256i);
         let mask = _mm256_set1_epi32(0xFF);
@@ -372,7 +402,8 @@ mod avx2 {
          _mm256_and_si256(p, mask))
     }
 
-    #[inline(always)]
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn store8(ptr: *mut u32, r: __m256i, g: __m256i, b: __m256i) {
         let out = _mm256_or_si256(_mm256_or_si256(_mm256_slli_epi32(r, 16), _mm256_slli_epi32(g, 8)), b);
         _mm256_storeu_si256(ptr as *mut __m256i, out);
@@ -393,6 +424,7 @@ mod avx2 {
         _mm_storeu_si128(ptr as *mut __m128i, out);
     }
 
+    #[target_feature(enable = "avx2")]
     pub unsafe fn blur_h_simd(src: &[u32], dst: &mut [u32], w: usize, h: usize, kernel: &[i32], blur_r: i32) {
         let safe_start = (blur_r as usize).min(w);
         let safe_end = w.saturating_sub(blur_r as usize);
@@ -440,6 +472,7 @@ mod avx2 {
         }
     }
 
+    #[target_feature(enable = "avx2")]
     pub unsafe fn blur_v_simd(src: &[u32], dst: &mut [u32], w: usize, h: usize, kernel: &[i32], blur_r: i32) {
         for x_block in (0..w).step_by(BLOCK_W) {
             let x_end = (x_block + BLOCK_W).min(w);
@@ -489,12 +522,13 @@ mod avx2 {
 // ----------------------------------------------------------------------------
 // x86_64 (AVX2 - ボックスブラー専用: 水平パス=gather / 垂直パス=連続load)
 // ----------------------------------------------------------------------------
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[cfg(target_arch = "x86_64")]
 mod box_avx2 {
     use super::*;
     use core::arch::x86_64::*;
 
-    #[inline(always)]
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn extract_channels(p: __m256i) -> (__m256i, __m256i, __m256i) {
         let mask = _mm256_set1_epi32(0xFF);
         (_mm256_and_si256(_mm256_srli_epi32(p, 16), mask),
@@ -502,12 +536,14 @@ mod box_avx2 {
          _mm256_and_si256(p, mask))
     }
 
-    #[inline(always)]
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn pack_pixel(r: __m256i, g: __m256i, b: __m256i) -> __m256i {
         _mm256_or_si256(_mm256_or_si256(_mm256_slli_epi32(r, 16), _mm256_slli_epi32(g, 8)), b)
     }
 
-    #[inline(always)]
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn finalize(sum: __m256i, recip: __m256i) -> __m256i {
         let product = _mm256_mullo_epi32(sum, recip);
         let rounded =
@@ -516,71 +552,8 @@ mod box_avx2 {
         _mm256_max_epi32(_mm256_min_epi32(v, _mm256_set1_epi32(255)), _mm256_setzero_si256())
     }
 
-    // 8行を同時に処理（行方向はgatherでストライドアクセス）
-    pub unsafe fn box_blur_h_simd8(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i32) {
-        let count = 2 * r + 1;
-        let recip = _mm256_set1_epi32(box_recip(count));
-        let wi = w as i32;
-
-        let mut y = 0;
-        while y + 8 <= h {
-            let row_off = _mm256_setr_epi32(0, wi, 2*wi, 3*wi, 4*wi, 5*wi, 6*wi, 7*wi);
-            let mut row_off_arr = [0i32; 8];
-            _mm256_storeu_si256(row_off_arr.as_mut_ptr() as *mut __m256i, row_off);
-
-            let base = src.as_ptr().add(y * w);
-            let dbase = dst.as_mut_ptr().add(y * w);
-
-            let mut r_sum = _mm256_setzero_si256();
-            let mut g_sum = _mm256_setzero_si256();
-            let mut b_sum = _mm256_setzero_si256();
-            for i in -r..=r {
-                let sx = i.clamp(0, w as i32 - 1);
-                let idx = _mm256_add_epi32(row_off, _mm256_set1_epi32(sx));
-                let p = _mm256_i32gather_epi32(base as *const i32, idx, 4);
-                let (r8, g8, b8) = extract_channels(p);
-                r_sum = _mm256_add_epi32(r_sum, r8);
-                g_sum = _mm256_add_epi32(g_sum, g8);
-                b_sum = _mm256_add_epi32(b_sum, b8);
-            }
-            write_lanes(dbase, &row_off_arr, 0,
-                pack_pixel(finalize(r_sum, recip), finalize(g_sum, recip), finalize(b_sum, recip)));
-
-            for x in 1..w {
-                let rem_x = (x as i32 - r - 1).max(0);
-                let add_x = (x as i32 + r).min(wi - 1);
-                let rem_idx = _mm256_add_epi32(row_off, _mm256_set1_epi32(rem_x));
-                let add_idx = _mm256_add_epi32(row_off, _mm256_set1_epi32(add_x));
-                let rem_p = _mm256_i32gather_epi32(base as *const i32, rem_idx, 4);
-                let add_p = _mm256_i32gather_epi32(base as *const i32, add_idx, 4);
-                let (rr, rg, rb) = extract_channels(rem_p);
-                let (ar, ag, ab) = extract_channels(add_p);
-                r_sum = _mm256_add_epi32(_mm256_sub_epi32(r_sum, rr), ar);
-                g_sum = _mm256_add_epi32(_mm256_sub_epi32(g_sum, rg), ag);
-                b_sum = _mm256_add_epi32(_mm256_sub_epi32(b_sum, rb), ab);
-
-                write_lanes(dbase, &row_off_arr, x,
-                    pack_pixel(finalize(r_sum, recip), finalize(g_sum, recip), finalize(b_sum, recip)));
-            }
-            y += 8;
-        }
-        // 端数の行はスカラーで
-        while y < h {
-            box_blur_h_single_row(src.as_ptr().add(y * w), dst.as_mut_ptr().add(y * w), w, r);
-            y += 1;
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn write_lanes(dbase: *mut u32, row_off_arr: &[i32; 8], x: usize, packed: __m256i) {
-        let mut buf = [0i32; 8];
-        _mm256_storeu_si256(buf.as_mut_ptr() as *mut __m256i, packed);
-        for lane in 0..8 {
-            *dbase.add(row_off_arr[lane] as usize + x) = buf[lane] as u32;
-        }
-    }
-
     // 8列を同時に処理（列方向は連続メモリなので通常load/store）
+    #[target_feature(enable = "avx2")]
     pub unsafe fn box_blur_v_simd8(src: &[u32], dst: &mut [u32], w: usize, h: usize, r: i32) {
         let count = 2 * r + 1;
         let recip = _mm256_set1_epi32(box_recip(count));
@@ -724,11 +697,15 @@ pub fn build_fixed_kernel_buffer(blur_r: i32, out_kernel: &mut [i32]) {
     out_kernel[blur_r as usize] += FIXED_ONE - normalized_sum;
 }
 
-fn gaussian_convolution_scalar(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
-    let kernel_size = (blur_r * 2 + 1) as usize;
-    let mut kernel = alloc::vec![0i32; kernel_size];
-    build_fixed_kernel_buffer(blur_r, &mut kernel);
-    let mut tmp = alloc::vec![0u32; w * h];
+fn gaussian_convolution_scalar_with_buffers(
+    src: &[u32],
+    dst: &mut [u32],
+    tmp: &mut [u32],
+    w: usize,
+    h: usize,
+    kernel: &[i32],
+    blur_r: i32,
+) {
     for y in 0..h {
         let row = y * w;
         for x in 0..w {
@@ -763,29 +740,43 @@ fn gaussian_convolution_scalar(src: &[u32], dst: &mut [u32], w: usize, h: usize,
     }
 }
 
-fn gaussian_convolution(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
+fn gaussian_convolution_with_scratch(
+    src: &[u32],
+    dst: &mut [u32],
+    tmp: &mut [u32],
+    w: usize,
+    h: usize,
+    blur_r: i32,
+) {
     let kernel_size = (blur_r * 2 + 1) as usize;
     let mut kernel = alloc::vec![0i32; kernel_size];
     build_fixed_kernel_buffer(blur_r, &mut kernel);
-    let mut tmp = alloc::vec![0u32; w * h];
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    unsafe {
-        avx2::blur_h_simd(src, &mut tmp, w, h, &kernel, blur_r);
-        avx2::blur_v_simd(&tmp, dst, w, h, &kernel, blur_r);
+    #[cfg(target_arch = "x86_64")]
+    {
+        if avx2_available() {
+            unsafe {
+                avx2::blur_h_simd(src, tmp, w, h, &kernel, blur_r);
+                avx2::blur_v_simd(tmp, dst, w, h, &kernel, blur_r);
+            }
+        } else {
+            gaussian_convolution_scalar_with_buffers(src, dst, tmp, w, h, &kernel, blur_r);
+        }
+        return;
     }
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        neon::blur_h_simd(src, &mut tmp, w, h, &kernel, blur_r);
-        neon::blur_v_simd(&tmp, dst, w, h, &kernel, blur_r);
+        neon::blur_h_simd(src, tmp, w, h, &kernel, blur_r);
+        neon::blur_v_simd(tmp, dst, w, h, &kernel, blur_r);
+        return;
     }
-    #[cfg(not(any(
-        all(target_arch = "x86_64", target_feature = "avx2"),
-        target_arch = "aarch64"
-    )))]
-    {
-        gaussian_convolution_scalar(src, dst, w, h, blur_r);
-    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    gaussian_convolution_scalar_with_buffers(src, dst, tmp, w, h, &kernel, blur_r);
+}
+
+fn gaussian_convolution(src: &[u32], dst: &mut [u32], w: usize, h: usize, blur_r: i32) {
+    let mut tmp = alloc::vec![0u32; w * h];
+    gaussian_convolution_with_scratch(src, dst, &mut tmp, w, h, blur_r);
 }
 
 pub fn blur_region_to(src: &[u32], dst: &mut [u32], w: usize, y_start: usize, y_end: usize, blur_r: i32) {
@@ -827,7 +818,14 @@ pub fn blur_region_to_with_scratch(
             blur_r,
         );
     } else {
-        gaussian_convolution(region, &mut dst[..len], w, region_h, blur_r);
+        gaussian_convolution_with_scratch(
+            region,
+            &mut dst[..len],
+            &mut scratch[..len],
+            w,
+            region_h,
+            blur_r,
+        );
     }
 }
 
@@ -863,7 +861,18 @@ mod tests {
         let src = alloc::vec![color; width * height];
         let mut dst = alloc::vec![0; src.len()];
 
-        gaussian_convolution_scalar(&src, &mut dst, width, height, 4);
+        let mut scratch = alloc::vec![0; src.len()];
+        let mut kernel = alloc::vec![0; 9];
+        build_fixed_kernel_buffer(4, &mut kernel);
+        gaussian_convolution_scalar_with_buffers(
+            &src,
+            &mut dst,
+            &mut scratch,
+            width,
+            height,
+            &kernel,
+            4,
+        );
 
         assert!(dst.iter().all(|pixel| *pixel == color));
     }

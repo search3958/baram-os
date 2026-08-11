@@ -756,7 +756,8 @@ impl Warp3Engine {
         // gives text and rounded corners their final-background antialiasing;
         // only the shadow itself needs transparent alpha storage.
         if paint_toolbar {
-            for idx in self.toolbar_paint.clone() {
+            for paint_index in 0..self.toolbar_paint.len() {
+                let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
                 self.draw_node(layer, idx, node.x + ox, node.y);
             }
@@ -1108,7 +1109,8 @@ impl Warp3Engine {
         if let Some(mut layer) = self.document_layer.take() {
             layer.fill_rect(0, from, width, to.saturating_sub(from), html_bg());
             layer.push_clip(0, from, width, to);
-            for idx in self.document_paint.clone() {
+            for paint_index in 0..self.document_paint.len() {
+                let idx = self.document_paint[paint_index];
                 let node = &self.nodes[idx];
                 if node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 {
                     continue;
@@ -1130,7 +1132,8 @@ impl Warp3Engine {
         if self.toolbar_dirty || recreate_toolbar {
             if let Some(mut layer) = self.toolbar_layer.take() {
                 layer.clear(Color::TRANSPARENT);
-                for idx in self.toolbar_paint.clone() {
+                for paint_index in 0..self.toolbar_paint.len() {
+                    let idx = self.toolbar_paint[paint_index];
                     let node = &self.nodes[idx];
                     if node.is("toolbar") {
                         self.composite_shadow_transparent(&mut layer, idx);

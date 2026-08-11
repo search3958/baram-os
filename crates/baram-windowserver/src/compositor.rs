@@ -169,7 +169,11 @@ impl TaskbarSurface {
     }
 
     fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
-        scene.composit_rect(&self.layer, 0, y, 0, 0, self.layer.width(), TASKBAR_H);
+        // A valid taskbar always starts from a fully opaque base and all
+        // controls are blended into it. Skip composit_rect's per-row scan for
+        // transparent pixels; the active scene clip still limits the copy to
+        // the current damage rectangle.
+        scene.composit_rect_opaque(&self.layer, 0, y, 0, 0, self.layer.width(), TASKBAR_H);
     }
 
     /// Restores the cached right-hand status strip (clock/battery/IME area)
