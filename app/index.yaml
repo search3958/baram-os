@@ -1,8 +1,6 @@
-# 自動起動する対象リスト
 autostart:
   - settings.w3a
 
-# 各アプリの詳細設定
 apps:
   settings.w3a:
     icon: settings.png
@@ -19,10 +17,10 @@ apps:
       - theme
       - customize
       - color setting
-#  demo.u1:
-#    icon: null
-#    type: uiscript-1
-#    title: UI Script Demo
+  demo.u1:
+   icon: null
+   type: uiscript-1
+   title: UI Script Demo
   warpdemo.warp:
     icon: null
     type: warp-2
@@ -45,10 +43,10 @@ apps:
     type: warp-3
     title: 計算機
     tag: calc
-#  webdemo.html:
-#    icon: html5.png
-#    type: html-1
-#    title: HTMLデモ
+  webdemo.html:
+   icon: html5.png
+   type: html-1
+   title: HTMLデモ
   warp3demo.w3a:
     icon: warp.png
     type: warp-3

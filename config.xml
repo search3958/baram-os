@@ -9,7 +9,7 @@
             <mode>file</mode>
         </wallpaper>
         <hud>
-            <enabled>0</enabled>
+            <enabled>1</enabled>
         </hud>
     </display>
     <ui-theme>
