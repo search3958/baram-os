@@ -28,6 +28,7 @@ const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
 const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
 const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
 const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../data/keyboard-pinyin.svg");
+const KEYBOARD_ICON_SVG: &str = include_str!("../../../data/keyboard-icon.svg");
 
 fn ime_icon_svg(selection: usize) -> &'static str {
     match selection {
@@ -56,6 +57,18 @@ fn draw_ime_icon(
         size as f32,
         size as f32,
         alpha,
+    );
+}
+
+fn draw_keyboard_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize) {
+    svg::draw_svg_into_alpha(
+        layer,
+        KEYBOARD_ICON_SVG,
+        x as i32,
+        y as i32,
+        size as f32,
+        size as f32,
+        255,
     );
 }
 
@@ -192,7 +205,8 @@ impl TaskbarSurface {
         }
         let (icon_x, icon_y, _, _) = ime_button_bounds(self.layer.width(), battery_pct);
         let icon_x = icon_x.max(0) as usize;
-        if icon_x < self.ime_status_strip_x
+        let keyboard_x = icon_x.saturating_sub(IME_BUTTON_W + 12);
+        if keyboard_x < self.ime_status_strip_x
             || icon_x + IME_BUTTON_W > self.ime_status_strip_x + self.ime_status_strip_w
         {
             return false;
@@ -203,6 +217,12 @@ impl TaskbarSurface {
             TASKBAR_H,
             self.ime_status_strip_x,
             0,
+        );
+        draw_keyboard_icon(
+            &mut self.layer,
+            keyboard_x,
+            icon_y.max(0) as usize,
+            IME_BUTTON_W,
         );
         draw_ime_icon(
             &mut self.layer,
@@ -1205,6 +1225,7 @@ fn redraw_taskbar(
     let baseline = TASKBAR_H as i32 - baram_font::ttf_font_hud::ascent_at_size(size) + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
     let ime_x = status_x.saturating_sub(IME_BUTTON_W + gap);
+    let keyboard_x = ime_x.saturating_sub(IME_BUTTON_W + gap);
     let ime_y = (TASKBAR_H - IME_BUTTON_W) / 2;
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
     if let Some(battery) = battery {
@@ -1222,7 +1243,7 @@ fn redraw_taskbar(
     // Cache a small, exact status strip before painting the mutable IME SVG.
     // Hover therefore restores the real clock/battery pixels, never a broad
     // taskbar background approximation.
-    let strip_x = ime_x.saturating_sub(8);
+    let strip_x = keyboard_x.saturating_sub(8);
     let strip_w = (w - strip_x).min(IME_STATUS_STRIP_W);
     surface.ime_status_strip.resize(strip_w * TASKBAR_H, 0);
     for row in 0..TASKBAR_H {
@@ -1233,6 +1254,7 @@ fn redraw_taskbar(
     }
     surface.ime_status_strip_x = strip_x;
     surface.ime_status_strip_w = strip_w;
+    draw_keyboard_icon(layer, keyboard_x, ime_y, IME_BUTTON_W);
     // Unlike a control button, the active input source is a bare status icon
     // beside the clock: no pill background or shadow.
     draw_ime_icon(
