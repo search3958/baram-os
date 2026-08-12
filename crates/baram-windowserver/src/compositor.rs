@@ -49,9 +49,20 @@ fn draw_ime_icon(
     selection: usize,
     alpha: u32,
 ) {
+    draw_taskbar_svg_icon(layer, ime_icon_svg(selection), x, y, size, alpha);
+}
+
+fn draw_taskbar_svg_icon(
+    layer: &mut LayerSystem,
+    source: &str,
+    x: usize,
+    y: usize,
+    size: usize,
+    alpha: u32,
+) {
     svg::draw_svg_into_alpha(
         layer,
-        ime_icon_svg(selection),
+        source,
         x as i32,
         y as i32,
         size as f32,
@@ -60,16 +71,8 @@ fn draw_ime_icon(
     );
 }
 
-fn draw_keyboard_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize) {
-    svg::draw_svg_into_alpha(
-        layer,
-        KEYBOARD_ICON_SVG,
-        x as i32,
-        y as i32,
-        size as f32,
-        size as f32,
-        255,
-    );
+fn draw_keyboard_icon(layer: &mut LayerSystem, x: usize, y: usize, size: usize, alpha: u32) {
+    draw_taskbar_svg_icon(layer, KEYBOARD_ICON_SVG, x, y, size, alpha);
 }
 
 fn taskbar_status_text_width(text: &str) -> usize {
@@ -196,7 +199,8 @@ impl TaskbarSurface {
         &mut self,
         battery_pct: Option<u8>,
         selection: usize,
-        hovered: bool,
+        hovered_keyboard: bool,
+        hovered_ime: bool,
     ) -> bool {
         if !self.valid || self.ime_status_strip_w == 0
             || self.ime_status_strip.len() != self.ime_status_strip_w * TASKBAR_H
@@ -223,6 +227,7 @@ impl TaskbarSurface {
             keyboard_x,
             icon_y.max(0) as usize,
             IME_BUTTON_W,
+            if hovered_keyboard { 128 } else { 255 },
         );
         draw_ime_icon(
             &mut self.layer,
@@ -230,7 +235,7 @@ impl TaskbarSurface {
             icon_y.max(0) as usize,
             IME_BUTTON_W,
             selection,
-            if hovered { 128 } else { 255 },
+            if hovered_ime { 128 } else { 255 },
         );
         true
     }
@@ -1087,6 +1092,7 @@ fn redraw_taskbar(
     add_progress: f32,
     shift_x: f32,
     _hover_apps_icon: bool,
+    hover_keyboard_icon: bool,
     hover_ime_icon: bool,
     search_focused: bool,
     search_query: &str,
@@ -1254,7 +1260,13 @@ fn redraw_taskbar(
     }
     surface.ime_status_strip_x = strip_x;
     surface.ime_status_strip_w = strip_w;
-    draw_keyboard_icon(layer, keyboard_x, ime_y, IME_BUTTON_W);
+    draw_keyboard_icon(
+        layer,
+        keyboard_x,
+        ime_y,
+        IME_BUTTON_W,
+        if hover_keyboard_icon { 128 } else { 255 },
+    );
     // Unlike a control button, the active input source is a bare status icon
     // beside the clock: no pill background or shadow.
     draw_ime_icon(
@@ -1480,6 +1492,7 @@ pub fn render_scene(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    hover_keyboard_icon: bool,
     hover_ime_icon: bool,
     ime_hover_dirty: bool,
     search_focused: bool,
@@ -2003,6 +2016,7 @@ pub fn render_scene(
             add_progress,
             shift_x,
             hover_apps_icon,
+            hover_keyboard_icon,
             hover_ime_icon,
             search_focused,
             search_query,
@@ -2019,11 +2033,12 @@ pub fn render_scene(
         ime_status_partial = taskbar.redraw_ime_status_strip(
             battery_pct,
             ime_menu_selection,
+            hover_keyboard_icon,
             hover_ime_icon,
         );
         if !ime_status_partial {
             redraw_taskbar(
-                taskbar, wm, add_progress, shift_x, hover_apps_icon, hover_ime_icon,
+                taskbar, wm, add_progress, shift_x, hover_apps_icon, hover_keyboard_icon, hover_ime_icon,
                 search_focused, search_query, clock_hh, clock_mm, battery_pct,
                 ime_menu_selection,
             );
@@ -2080,6 +2095,7 @@ pub fn render_frame(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    hover_keyboard_icon: bool,
     hover_ime_icon: bool,
     ime_hover_dirty: bool,
     search_focused: bool,
@@ -2126,6 +2142,7 @@ pub fn render_frame(
         app_list,
         app_icon_list,
         hover_apps_icon,
+        hover_keyboard_icon,
         hover_ime_icon,
         ime_hover_dirty,
         search_focused,

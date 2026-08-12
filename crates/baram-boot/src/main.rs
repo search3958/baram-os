@@ -1074,6 +1074,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut ime_menu_close_started_ms: Option<u64> = None;
     let mut ime_menu_opacity = 255u8;
     let mut hover_ime_icon = false;
+    let mut hover_keyboard_icon = false;
     let mut ime_hover_dirty = false;
     let mut prev_ime_conversion_visible = false;
 
@@ -1120,6 +1121,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &app_list,
         &app_icon_list,
         hover_apps_icon,
+        false,
         false,
         false,
         app_search_focused,
@@ -1169,6 +1171,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         &app_list,
         &app_icon_list,
         hover_apps_icon,
+        false,
         false,
         false,
         app_search_focused,
@@ -1963,12 +1966,23 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let (ime_x, ime_y, ime_w, ime_h) =
             ime_button_bounds(screen.width(), battery_info.valid_percentage());
         let ime_y = screen.height() as i32 - TASKBAR_H as i32 + ime_y;
+        let keyboard_x = ime_x - ime_w - 12;
         let next_hover_ime_icon = cursor_x >= ime_x
             && cursor_x < ime_x + ime_w + 10
             && cursor_y >= ime_y
             && cursor_y < ime_y + ime_h;
+        let next_hover_keyboard_icon = cursor_x >= keyboard_x
+            && cursor_x < ime_x
+            && cursor_y >= ime_y
+            && cursor_y < ime_y + ime_h;
         if next_hover_ime_icon != hover_ime_icon {
             hover_ime_icon = next_hover_ime_icon;
+            ime_hover_dirty = true;
+            dirty = true;
+            scene_dirty = true;
+        }
+        if next_hover_keyboard_icon != hover_keyboard_icon {
+            hover_keyboard_icon = next_hover_keyboard_icon;
             ime_hover_dirty = true;
             dirty = true;
             scene_dirty = true;
@@ -2894,6 +2908,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &app_list,
                     &app_icon_list,
                     hover_apps_icon,
+                    hover_keyboard_icon,
                     hover_ime_icon,
                     ime_hover_dirty,
                     app_search_focused,
@@ -2946,6 +2961,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         &app_list,
                         &app_icon_list,
                         hover_apps_icon,
+                        hover_keyboard_icon,
                         hover_ime_icon,
                         ime_hover_dirty,
                         app_search_focused,
