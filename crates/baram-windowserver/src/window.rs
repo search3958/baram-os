@@ -1180,7 +1180,6 @@ impl WindowManager {
 
             if content_dirty {
                 let skip_title_blur = self.windows[idx].is_motion_animating()
-                    || self.is_scroll_animating(win_id)
                     || html_engines
                         .iter()
                         .any(|(id, engine)| *id == win_id && engine.is_animating());
