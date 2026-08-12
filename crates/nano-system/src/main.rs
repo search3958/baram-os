@@ -70,7 +70,6 @@ fn nano_idle(mut nano: NanoSystem) -> Status {
 nano_system::nano_entry!(nano_idle);
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    NanoSystem::paint_failure_screen();
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    NanoSystem::panic_report(info)
 }

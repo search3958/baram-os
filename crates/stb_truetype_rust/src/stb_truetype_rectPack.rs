@@ -117,130 +117,130 @@ impl core::default::Default for stbtt_pack_range {
 }
 
 pub unsafe fn stbrp_init_target(
-    mut con: *mut stbrp_context,
-    mut pw: i32,
-    mut ph: i32,
-    mut nodes: *mut stbrp_node,
-    mut num_nodes: i32,
+    con: *mut stbrp_context,
+    pw: i32,
+    ph: i32,
+    _nodes: *mut stbrp_node,
+    _num_nodes: i32,
 ) {
-    (*con).width = ((pw) as i32);
-    (*con).height = ((ph) as i32);
-    (*con).x = ((0) as i32);
-    (*con).y = ((0) as i32);
-    (*con).bottom_y = ((0) as i32);
+    (*con).width = (pw) as i32;
+    (*con).height = (ph) as i32;
+    (*con).x = (0) as i32;
+    (*con).y = (0) as i32;
+    (*con).bottom_y = (0) as i32;
 }
 
 pub unsafe fn stbrp_pack_rects(
-    mut con: *mut stbrp_context,
-    mut rects: *mut stbrp_rect,
-    mut num_rects: i32,
+    con: *mut stbrp_context,
+    rects: *mut stbrp_rect,
+    num_rects: i32,
 ) {
     let mut i: i32 = 0;
-    i = ((0) as i32);
-    while (i < num_rects) {
+    i = (0) as i32;
+    while i < num_rects {
         if (*con).x + (*rects.offset((i) as isize)).w > (*con).width {
-            (*con).x = ((0) as i32);
-            (*con).y = (((*con).bottom_y) as i32);
+            (*con).x = (0) as i32;
+            (*con).y = ((*con).bottom_y) as i32;
         }
         if (*con).y + (*rects.offset((i) as isize)).h > (*con).height {
             break;
         }
-        (*rects.offset((i) as isize)).x = (((*con).x) as i32);
-        (*rects.offset((i) as isize)).y = (((*con).y) as i32);
-        (*rects.offset((i) as isize)).was_packed = ((1) as i32);
-        (*con).x += (((*rects.offset((i) as isize)).w) as i32);
+        (*rects.offset((i) as isize)).x = ((*con).x) as i32;
+        (*rects.offset((i) as isize)).y = ((*con).y) as i32;
+        (*rects.offset((i) as isize)).was_packed = (1) as i32;
+        (*con).x += ((*rects.offset((i) as isize)).w) as i32;
         if (*con).y + (*rects.offset((i) as isize)).h > (*con).bottom_y {
-            (*con).bottom_y = (((*con).y + (*rects.offset((i) as isize)).h) as i32);
+            (*con).bottom_y = ((*con).y + (*rects.offset((i) as isize)).h) as i32;
         }
         c_runtime::preInc(&mut i);
     }
-    while (i < num_rects) {
-        (*rects.offset((i) as isize)).was_packed = ((0) as i32);
+    while i < num_rects {
+        (*rects.offset((i) as isize)).was_packed = (0) as i32;
         c_runtime::preInc(&mut i);
     }
 }
 
 pub unsafe fn stbtt_PackBegin(
-    mut spc: *mut stbtt_pack_context,
-    mut pixels: *mut u8,
-    mut pw: i32,
-    mut ph: i32,
-    mut stride_in_bytes: i32,
-    mut padding: i32,
-    mut alloc_context: *mut u8,
+    spc: *mut stbtt_pack_context,
+    pixels: *mut u8,
+    pw: i32,
+    ph: i32,
+    stride_in_bytes: i32,
+    padding: i32,
+    alloc_context: *mut u8,
 ) -> i32 {
-    let mut context: *mut stbrp_context =
-        ((c_runtime::malloc(core::mem::size_of::<stbrp_context>() as u64)) as *mut stbrp_context);
-    let mut num_nodes: i32 = pw - padding;
-    let mut nodes: *mut stbrp_node =
-        ((c_runtime::malloc(core::mem::size_of::<stbrp_node>() as u64 * ((num_nodes) as u64)))
-            as *mut stbrp_node);
+    let context: *mut stbrp_context =
+        (c_runtime::malloc(core::mem::size_of::<stbrp_context>() as u64)) as *mut stbrp_context;
+    let num_nodes: i32 = pw - padding;
+    let nodes: *mut stbrp_node =
+        (c_runtime::malloc(core::mem::size_of::<stbrp_node>() as u64 * ((num_nodes) as u64)))
+            as *mut stbrp_node;
     if context == core::ptr::null_mut() || nodes == core::ptr::null_mut() {
         if context != core::ptr::null_mut() {
-            c_runtime::free(((context) as *mut u8));
+            c_runtime::free((context) as *mut u8);
         }
         if nodes != core::ptr::null_mut() {
-            c_runtime::free(((nodes) as *mut u8));
+            c_runtime::free((nodes) as *mut u8);
         }
-        return ((0) as i32);
+        return (0) as i32;
     }
     (*spc).user_allocator_context = alloc_context;
-    (*spc).width = ((pw) as i32);
-    (*spc).height = ((ph) as i32);
+    (*spc).width = (pw) as i32;
+    (*spc).height = (ph) as i32;
     (*spc).pixels = pixels;
     (*spc).pack_info = context as *mut u8;
     (*spc).nodes = nodes as *mut u8;
-    (*spc).padding = ((padding) as i32);
-    (*spc).stride_in_bytes = ((if stride_in_bytes != 0 {
+    (*spc).padding = (padding) as i32;
+    (*spc).stride_in_bytes = (if stride_in_bytes != 0 {
         stride_in_bytes
     } else {
         pw
-    }) as i32);
-    (*spc).h_oversample = ((1) as u32);
-    (*spc).v_oversample = ((1) as u32);
-    (*spc).skip_missing = ((0) as i32);
+    }) as i32;
+    (*spc).h_oversample = (1) as u32;
+    (*spc).v_oversample = (1) as u32;
+    (*spc).skip_missing = (0) as i32;
     stbrp_init_target(context, pw - padding, ph - padding, nodes, num_nodes);
     if (pixels) != core::ptr::null_mut() {
-        c_runtime::memset(pixels, 0, ((pw * ph) as u64));
+        c_runtime::memset(pixels, 0, (pw * ph) as u64);
     }
-    return ((1) as i32);
+    return (1) as i32;
 }
 
-pub unsafe fn stbtt_PackEnd(mut spc: *mut stbtt_pack_context) {
+pub unsafe fn stbtt_PackEnd(spc: *mut stbtt_pack_context) {
     c_runtime::free((*spc).nodes);
     c_runtime::free((*spc).pack_info);
 }
 
 pub unsafe fn stbtt_PackFontRange(
-    mut spc: *mut stbtt_pack_context,
-    mut fontdata: *const u8,
-    mut font_index: i32,
-    mut font_size: f32,
-    mut first_unicode_codepoint_in_range: i32,
-    mut num_chars_in_range: i32,
-    mut chardata_for_range: *mut stbtt_packedchar,
+    spc: *mut stbtt_pack_context,
+    fontdata: *const u8,
+    font_index: i32,
+    font_size: f32,
+    first_unicode_codepoint_in_range: i32,
+    num_chars_in_range: i32,
+    chardata_for_range: *mut stbtt_packedchar,
 ) -> i32 {
     let mut range: stbtt_pack_range = stbtt_pack_range::default();
-    range.first_unicode_codepoint_in_range = ((first_unicode_codepoint_in_range) as i32);
+    range.first_unicode_codepoint_in_range = (first_unicode_codepoint_in_range) as i32;
     range.array_of_unicode_codepoints = core::ptr::null_mut();
-    range.num_chars = ((num_chars_in_range) as i32);
+    range.num_chars = (num_chars_in_range) as i32;
     range.chardata_for_range = chardata_for_range;
-    range.font_size = ((font_size) as f32);
-    return ((stbtt_PackFontRanges(
+    range.font_size = (font_size) as f32;
+    return (stbtt_PackFontRanges(
         spc,
         fontdata,
         font_index,
-        ((&mut range) as *mut stbtt_pack_range),
+        (&mut range) as *mut stbtt_pack_range,
         1,
-    )) as i32);
+    )) as i32;
 }
 
 pub unsafe fn stbtt_PackFontRanges(
-    mut spc: *mut stbtt_pack_context,
-    mut fontdata: *const u8,
-    mut font_index: i32,
-    mut ranges: *mut stbtt_pack_range,
-    mut num_ranges: i32,
+    spc: *mut stbtt_pack_context,
+    fontdata: *const u8,
+    font_index: i32,
+    ranges: *mut stbtt_pack_range,
+    num_ranges: i32,
 ) -> i32 {
     let mut info: stbtt_fontinfo = stbtt_fontinfo::default();
     let mut i: i32 = 0;
@@ -248,11 +248,11 @@ pub unsafe fn stbtt_PackFontRanges(
     let mut n: i32 = 0;
     let mut return_value: i32 = 1;
     let mut rects: *mut stbrp_rect = core::ptr::null_mut();
-    i = ((0) as i32);
-    while (i < num_ranges) {
-        j = ((0) as i32);
-        while (j < (*ranges.offset((i) as isize)).num_chars) {
-            let hebron_tmp3 = ((0) as u16);
+    i = (0) as i32;
+    while i < num_ranges {
+        j = (0) as i32;
+        while j < (*ranges.offset((i) as isize)).num_chars {
+            let hebron_tmp3 = (0) as u16;
             (*(*ranges.offset((i) as isize))
                 .chardata_for_range
                 .offset((j) as isize))
@@ -273,67 +273,67 @@ pub unsafe fn stbtt_PackFontRanges(
         }
         c_runtime::preInc(&mut i);
     }
-    n = ((0) as i32);
-    i = ((0) as i32);
-    while (i < num_ranges) {
-        n += (((*ranges.offset((i) as isize)).num_chars) as i32);
+    n = (0) as i32;
+    i = (0) as i32;
+    while i < num_ranges {
+        n += ((*ranges.offset((i) as isize)).num_chars) as i32;
         c_runtime::preInc(&mut i);
     }
-    rects = ((c_runtime::malloc(core::mem::size_of::<stbrp_rect>() as u64 * ((n) as u64)))
-        as *mut stbrp_rect);
+    rects = (c_runtime::malloc(core::mem::size_of::<stbrp_rect>() as u64 * ((n) as u64)))
+        as *mut stbrp_rect;
     if rects == core::ptr::null_mut() {
-        return ((0) as i32);
+        return (0) as i32;
     }
     info.userdata = (*spc).user_allocator_context;
     stbtt_InitFont(
-        ((&mut info) as *mut stbtt_fontinfo),
+        (&mut info) as *mut stbtt_fontinfo,
         fontdata,
-        ((stbtt_GetFontOffsetForIndex(fontdata, font_index)) as i32),
+        (stbtt_GetFontOffsetForIndex(fontdata, font_index)) as i32,
     );
-    n = ((stbtt_PackFontRangesGatherRects(
+    n = (stbtt_PackFontRangesGatherRects(
         spc,
-        ((&mut info) as *mut stbtt_fontinfo),
+        (&mut info) as *mut stbtt_fontinfo,
         ranges,
         num_ranges,
         rects,
-    )) as i32);
+    )) as i32;
     stbtt_PackFontRangesPackRects(spc, rects, n);
-    return_value = ((stbtt_PackFontRangesRenderIntoRects(
+    return_value = (stbtt_PackFontRangesRenderIntoRects(
         spc,
-        ((&mut info) as *mut stbtt_fontinfo),
+        (&mut info) as *mut stbtt_fontinfo,
         ranges,
         num_ranges,
         rects,
-    )) as i32);
-    c_runtime::free(((rects) as *mut u8));
-    return ((return_value) as i32);
+    )) as i32;
+    c_runtime::free((rects) as *mut u8);
+    return (return_value) as i32;
 }
 
 pub unsafe fn stbtt_PackFontRangesPackRects(
-    mut spc: *mut stbtt_pack_context,
-    mut rects: *mut stbrp_rect,
-    mut num_rects: i32,
+    spc: *mut stbtt_pack_context,
+    rects: *mut stbrp_rect,
+    num_rects: i32,
 ) {
     stbrp_pack_rects(
-        ((((*spc).pack_info) as *mut stbrp_context) as *mut stbrp_context),
+        (((*spc).pack_info) as *mut stbrp_context) as *mut stbrp_context,
         rects,
         num_rects,
     );
 }
 
 pub unsafe fn stbtt_PackSetOversampling(
-    mut spc: *mut stbtt_pack_context,
-    mut h_oversample: u32,
-    mut v_oversample: u32,
+    spc: *mut stbtt_pack_context,
+    h_oversample: u32,
+    v_oversample: u32,
 ) {
     if h_oversample <= ((8) as u32) {
-        (*spc).h_oversample = ((h_oversample) as u32);
+        (*spc).h_oversample = (h_oversample) as u32;
     }
     if v_oversample <= ((8) as u32) {
-        (*spc).v_oversample = ((v_oversample) as u32);
+        (*spc).v_oversample = (v_oversample) as u32;
     }
 }
 
-pub unsafe fn stbtt_PackSetSkipMissingCodepoints(mut spc: *mut stbtt_pack_context, mut skip: i32) {
-    (*spc).skip_missing = ((skip) as i32);
+pub unsafe fn stbtt_PackSetSkipMissingCodepoints(spc: *mut stbtt_pack_context, skip: i32) {
+    (*spc).skip_missing = (skip) as i32;
 }

@@ -1,6 +1,6 @@
 use super::cursor::{self};
-use crate::warp::WarpEngine;
 use crate::html::HtmlEngine;
+use crate::warp::WarpEngine;
 use crate::window::{WinId, WindowManager};
 use alloc::vec::Vec;
 use baram_bsd::config;
@@ -15,6 +15,73 @@ use uefi::runtime;
 
 pub const TASKBAR_H: usize = 48;
 pub const TASKBAR_BLUR_R: i32 = 30;
+// The hit box deliberately matches the bare SVG, keeping the click target and
+// popup anchor aligned with the visible input-source icon.
+pub const IME_BUTTON_W: usize = 20;
+const IME_STATUS_STRIP_W: usize = 160;
+const IME_MENU_W: usize = 210;
+const IME_MENU_H: usize = 264;
+const TASKBAR_STATUS_SIZE: f32 = 32.0;
+const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
+const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
+const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
+const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
+const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
+const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../data/keyboard-pinyin.svg");
+
+fn ime_icon_svg(selection: usize) -> &'static str {
+    match selection {
+        1 => KEYBOARD_JAPANESE_SVG,
+        2 => KEYBOARD_KR2_SVG,
+        3 => KEYBOARD_KRCOM_SVG,
+        4 => KEYBOARD_KP2_SVG,
+        5 => KEYBOARD_PINYIN_SVG,
+        _ => KEYBOARD_ENGLISH_SVG,
+    }
+}
+
+fn draw_ime_icon(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    size: usize,
+    selection: usize,
+    alpha: u32,
+) {
+    svg::draw_svg_into_alpha(
+        layer,
+        ime_icon_svg(selection),
+        x as i32,
+        y as i32,
+        size as f32,
+        size as f32,
+        alpha,
+    );
+}
+
+fn taskbar_status_text_width(text: &str) -> usize {
+    text.chars()
+        .map(|ch| {
+            let g = baram_font::ttf_font_hud::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
+            if g.w > 0 {
+                g.advance.max(0) as usize
+            } else {
+                let fallback = baram_font::ttf_font::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
+                if fallback.w > 0 { fallback.advance.max(0) as usize } else { 8 }
+            }
+        })
+        .sum()
+}
+
+fn taskbar_status_x(width: usize, battery_pct: Option<u8>) -> usize {
+    let battery_width = match battery_pct {
+        Some(pct) if pct >= 100 => 12 + taskbar_status_text_width("100%"),
+        Some(pct) if pct >= 10 => 12 + taskbar_status_text_width("00%"),
+        Some(_) => 12 + taskbar_status_text_width("0%"),
+        None => 0,
+    };
+    width.saturating_sub(taskbar_status_text_width("00:00") + battery_width + 16)
+}
 
 pub struct TaskbarSurface {
     layer: LayerSystem,
@@ -23,6 +90,10 @@ pub struct TaskbarSurface {
     base: Vec<u32>,
     base_valid: bool,
     valid: bool,
+    search_dirty: bool,
+    ime_status_strip: Vec<u32>,
+    ime_status_strip_x: usize,
+    ime_status_strip_w: usize,
 }
 
 impl TaskbarSurface {
@@ -35,12 +106,29 @@ impl TaskbarSurface {
             base: alloc::vec![0; width * TASKBAR_H],
             base_valid: false,
             valid: false,
+            search_dirty: false,
+            ime_status_strip: Vec::new(),
+            ime_status_strip_x: usize::MAX,
+            ime_status_strip_w: 0,
         }
     }
 
     #[inline]
     pub fn invalidate(&mut self) {
         self.valid = false;
+        self.search_dirty = false;
+    }
+
+    #[inline]
+    pub fn invalidate_search(&mut self) {
+        if self.valid {
+            self.search_dirty = true;
+        }
+    }
+
+    #[inline]
+    pub fn is_search_dirty(&self) -> bool {
+        self.search_dirty
     }
 
     #[inline]
@@ -70,28 +158,63 @@ impl TaskbarSurface {
             end_y,
             TASKBAR_BLUR_R,
         );
-        self.base.copy_from_slice(
-            &self.blurred[pad * width..(pad + TASKBAR_H) * width],
-        );
+        self.base
+            .copy_from_slice(&self.blurred[pad * width..(pad + TASKBAR_H) * width]);
         tint_taskbar(
             &mut self.base,
             config::get_color("ui-theme/color/taskbar", Color::TASKBAR).0,
-            170,
+            200,
         );
         self.base_valid = true;
     }
 
     fn composite_onto(&self, scene: &mut LayerSystem, y: usize) {
-        scene.composit_rect(
-            &self.layer,
-            0,
-            y,
-            0,
-            0,
-            self.layer.width(),
-            TASKBAR_H,
-        );
+        // A valid taskbar always starts from a fully opaque base and all
+        // controls are blended into it. Skip composit_rect's per-row scan for
+        // transparent pixels; the active scene clip still limits the copy to
+        // the current damage rectangle.
+        scene.composit_rect_opaque(&self.layer, 0, y, 0, 0, self.layer.width(), TASKBAR_H);
     }
+
+    /// Restores the cached right-hand status strip (clock/battery/IME area)
+    /// and paints only the new IME opacity. No generic taskbar background is
+    /// ever copied during this fast path.
+    fn redraw_ime_status_strip(
+        &mut self,
+        battery_pct: Option<u8>,
+        selection: usize,
+        hovered: bool,
+    ) -> bool {
+        if !self.valid || self.ime_status_strip_w == 0
+            || self.ime_status_strip.len() != self.ime_status_strip_w * TASKBAR_H
+        {
+            return false;
+        }
+        let (icon_x, icon_y, _, _) = ime_button_bounds(self.layer.width(), battery_pct);
+        let icon_x = icon_x.max(0) as usize;
+        if icon_x < self.ime_status_strip_x
+            || icon_x + IME_BUTTON_W > self.ime_status_strip_x + self.ime_status_strip_w
+        {
+            return false;
+        }
+        self.layer.copy_rect_buffer(
+            &self.ime_status_strip,
+            self.ime_status_strip_w,
+            TASKBAR_H,
+            self.ime_status_strip_x,
+            0,
+        );
+        draw_ime_icon(
+            &mut self.layer,
+            icon_x,
+            icon_y.max(0) as usize,
+            IME_BUTTON_W,
+            selection,
+            if hovered { 128 } else { 255 },
+        );
+        true
+    }
+
 }
 
 fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
@@ -107,12 +230,370 @@ fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
     }
 }
 
+fn blend_rounded_rect(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+    color: Color,
+    alpha: u32,
+) {
+    if width == 0 || height == 0 || alpha == 0 {
+        return;
+    }
+    let radius = radius.min(width / 2).min(height / 2);
+    // Keep compositor-owned translucent controls on the same smooth
+    // superellipse used by Warp windows.  `LayerSystem::fill_rounded_rect`
+    // already uses this geometry, but these controls need per-pixel alpha.
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, radius as f32);
+    let x1 = (x + width).min(layer.width());
+    let y1 = (y + height).min(layer.height());
+    for py in y..y1 {
+        let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py - y, width) else {
+            continue;
+        };
+        let fill_l = (x + span_l).min(x1);
+        let fill_r = (x + span_r).min(x1);
+        if fill_l < fill_r {
+            blend_solid_span(layer, py, fill_l, fill_r, color, alpha.min(255));
+        }
+        blend_squircle_edge(layer, x + span_l.saturating_sub(1), py, x, y, &squircle, color, alpha);
+        blend_squircle_edge(layer, x + span_r, py, x, y, &squircle, color, alpha);
+    }
+}
+
+/// Copy a rounded region from a cropped source image. The crop is retained
+/// only while building the launcher cache, avoiding a full-screen temporary.
+fn copy_rounded_region_from_crop(
+    layer: &mut LayerSystem,
+    source: &[u32],
+    source_w: usize,
+    source_x: usize,
+    source_y: usize,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    if source_w == 0 || source.len() % source_w != 0 {
+        return;
+    }
+    let source_h = source.len() / source_w;
+    if x < source_x
+        || y < source_y
+        || x.saturating_add(width) > source_x.saturating_add(source_w)
+        || y.saturating_add(height) > source_y.saturating_add(source_h)
+    {
+        return;
+    }
+    let radius = radius.min(width / 2).min(height / 2);
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, radius as f32);
+    let x1 = (x + width).min(layer.width());
+    let y1 = (y + height).min(layer.height());
+    for py in y..y1 {
+        let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py - y, width) else {
+            continue;
+        };
+        let fill_l = (x + span_l).min(x1);
+        let fill_r = (x + span_r).min(x1);
+        if fill_l < fill_r {
+            let dst = py * layer.width() + fill_l;
+            let src = (py - source_y) * source_w + fill_l - source_x;
+            layer.buf_mut()[dst..dst + fill_r - fill_l]
+                .copy_from_slice(&source[src..src + fill_r - fill_l]);
+        }
+        copy_squircle_edge(layer, source, source_w, source_x, source_y,
+            x + span_l.saturating_sub(1), py, x, y, &squircle);
+        copy_squircle_edge(layer, source, source_w, source_x, source_y,
+            x + span_r, py, x, y, &squircle);
+    }
+}
+
+/// Four-by-four anti-aliased coverage for the Warp squircle polygon.
+/// Coordinates are screen-relative while the geometry is local to the rect.
+fn squircle_coverage(
+    px: usize,
+    py: usize,
+    x: usize,
+    y: usize,
+    polygon: &[(f32, f32)],
+) -> u32 {
+    let mut inside = 0u32;
+    for sy in 0..4 {
+        for sx in 0..4 {
+            let sample_x = px as f32 - x as f32 + (sx as f32 + 0.5) * 0.25;
+            let sample_y = py as f32 - y as f32 + (sy as f32 + 0.5) * 0.25;
+            if LayerSystem::point_in_polygon(sample_x, sample_y, polygon) {
+                inside += 1;
+            }
+        }
+    }
+    inside
+}
+
+#[inline]
+fn squircle_row_bounds(polygon: &[(f32, f32)], py: f32) -> Option<(f32, f32)> {
+    let mut left = f32::MAX;
+    let mut right = f32::MIN;
+    let mut hits = 0usize;
+    let mut prev = polygon.len().checked_sub(1)?;
+    for current in 0..polygon.len() {
+        let (x0, y0) = polygon[prev];
+        let (x1, y1) = polygon[current];
+        if (y0 > py) != (y1 > py) {
+            let edge_x = x0 + (py - y0) * (x1 - x0) / (y1 - y0);
+            left = left.min(edge_x);
+            right = right.max(edge_x);
+            hits += 1;
+        }
+        prev = current;
+    }
+    (hits >= 2).then_some((left, right))
+}
+
+/// Returns the fully covered pixel span for a scanline.  Only the two
+/// neighbouring pixels need expensive anti-alias coverage tests.
+#[inline]
+fn squircle_row_pixel_span(
+    polygon: &[(f32, f32)],
+    local_y: usize,
+    width: usize,
+) -> Option<(usize, usize)> {
+    let (left, right) = squircle_row_bounds(polygon, local_y as f32 + 0.5)?;
+    let span_l = ((left + 0.5) as usize).min(width);
+    let span_r = ((right + 0.5) as usize).min(width);
+    (span_l <= span_r).then_some((span_l, span_r))
+}
+
+#[inline]
+fn blend_solid_span(
+    layer: &mut LayerSystem,
+    py: usize,
+    left: usize,
+    right: usize,
+    color: Color,
+    alpha: u32,
+) {
+    let range = py * layer.width() + left..py * layer.width() + right;
+    if alpha == 255 {
+        layer.buf_mut()[range].fill(color.0);
+        return;
+    }
+    let inv = 255 - alpha;
+    for bg in &mut layer.buf_mut()[range] {
+        let r = (color.r() as u32 * alpha + ((*bg >> 16) & 0xff) * inv) / 255;
+        let g = (color.g() as u32 * alpha + ((*bg >> 8) & 0xff) * inv) / 255;
+        let b = (color.b() as u32 * alpha + (*bg & 0xff) * inv) / 255;
+        *bg = (r << 16) | (g << 8) | b;
+    }
+}
+
+#[inline]
+fn blend_squircle_edge(
+    layer: &mut LayerSystem, px: usize, py: usize, x: usize, y: usize,
+    polygon: &[(f32, f32)], color: Color, alpha: u32,
+) {
+    if px >= layer.width() || py >= layer.height() { return; }
+    let coverage = squircle_coverage(px, py, x, y, polygon);
+    if coverage == 0 { return; }
+    let a = alpha.min(255) * coverage / 16;
+    let idx = py * layer.width() + px;
+    let bg = layer.buf_ref()[idx];
+    let inv = 255 - a;
+    layer.buf_mut()[idx] = Color::rgb(
+        ((color.r() as u32 * a + ((bg >> 16) & 0xff) * inv) / 255) as u8,
+        ((color.g() as u32 * a + ((bg >> 8) & 0xff) * inv) / 255) as u8,
+        ((color.b() as u32 * a + (bg & 0xff) * inv) / 255) as u8,
+    ).0;
+}
+
+#[inline]
+fn copy_squircle_edge(
+    layer: &mut LayerSystem, source: &[u32], source_w: usize, source_x: usize, source_y: usize,
+    px: usize, py: usize, x: usize, y: usize, polygon: &[(f32, f32)],
+) {
+    if px >= layer.width() || py >= layer.height() { return; }
+    let coverage = squircle_coverage(px, py, x, y, polygon);
+    if coverage == 0 { return; }
+    let idx = py * layer.width() + px;
+    let fg = source[(py - source_y) * source_w + px - source_x];
+    if coverage == 16 {
+        layer.buf_mut()[idx] = fg;
+        return;
+    }
+    let bg = layer.buf_ref()[idx];
+    let a = coverage * 255 / 16;
+    let inv = 255 - a;
+    let r = (((fg >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
+    let g = (((fg >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
+    let b = ((fg & 0xff) * a + (bg & 0xff) * inv) / 255;
+    layer.buf_mut()[idx] = (r << 16) | (g << 8) | b;
+}
+
+fn box_blur_alpha_2x(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+    if width == 0 || height == 0 || radius == 0 {
+        return;
+    }
+    let diameter = radius * 2 + 1;
+    let mut scratch = alloc::vec![0u8; alpha.len()];
+    for _ in 0..2 {
+        for y in 0..height {
+            let mut sum = 0u32;
+            for x in 0..width + radius {
+                if x < width {
+                    sum += alpha[y * width + x] as u32;
+                }
+                if x >= diameter && x - diameter < width {
+                    sum -= alpha[y * width + x - diameter] as u32;
+                }
+                if x >= radius && x - radius < width {
+                    scratch[y * width + x - radius] = (sum / diameter as u32) as u8;
+                }
+            }
+        }
+        for x in 0..width {
+            let mut sum = 0u32;
+            for y in 0..height + radius {
+                if y < height {
+                    sum += scratch[y * width + x] as u32;
+                }
+                if y >= diameter && y - diameter < height {
+                    sum -= scratch[(y - diameter) * width + x] as u32;
+                }
+                if y >= radius && y - radius < height {
+                    alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8;
+                }
+            }
+        }
+    }
+}
+
+fn draw_soft_box_shadow(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    const PAD: usize = 54;
+    let sw = width + PAD * 2;
+    let sh = height + PAD * 2;
+    let mut alpha = alloc::vec![0u8; sw * sh];
+    let r = radius.min(width / 2).min(height / 2);
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, r as f32);
+    for py in 0..height {
+        if let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py, width) {
+            alpha[(py + PAD) * sw + span_l + PAD..(py + PAD) * sw + span_r + PAD].fill(24);
+        }
+    }
+    box_blur_alpha_2x(&mut alpha, sw, sh, 18);
+    let ox = x.saturating_sub(PAD);
+    let oy = y.saturating_sub(PAD);
+    let source_x = PAD.saturating_sub(x);
+    let source_y = PAD.saturating_sub(y);
+    for sy in source_y..sh {
+        let dy = oy + sy - source_y;
+        if dy >= layer.height() {
+            continue;
+        }
+        for sx in source_x..sw {
+            let dx = ox + sx - source_x;
+            if dx >= layer.width() {
+                continue;
+            }
+            let a = alpha[sy * sw + sx] as u32;
+            if a == 0 {
+                continue;
+            }
+            let idx = dy * layer.width() + dx;
+            let bg = layer.buf_ref()[idx];
+            let inv = 255 - a;
+            let rr = (((bg >> 16) & 0xff) * inv) / 255;
+            let gg = (((bg >> 8) & 0xff) * inv) / 255;
+            let bb = ((bg & 0xff) * inv) / 255;
+            layer.buf_mut()[idx] = (rr << 16) | (gg << 8) | bb;
+        }
+    }
+}
+
+/// Draw a compact, CSS-like black box shadow behind a rounded control.
+/// The rounded control itself is masked out so its fill never reveals the
+/// shadow when that fill is translucent.
+fn draw_control_shadow(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+    offset_y: usize,
+    opacity: u8,
+) {
+    if width == 0 || height == 0 || opacity == 0 {
+        return;
+    }
+    let blur_radius = 4usize; // Two passes approximate an 8px CSS blur.
+    let pad = 24usize;
+    let sw = width + pad * 2;
+    let sh = height + pad * 2 + offset_y;
+    let mut alpha = alloc::vec![0u8; sw * sh];
+    let r = radius.min(width / 2).min(height / 2);
+    let squircle = LayerSystem::squircle_polygon(width as f32, height as f32, r as f32);
+    for py in 0..height {
+        if let Some((span_l, span_r)) = squircle_row_pixel_span(&squircle, py, width) {
+            let row = (py + pad + offset_y) * sw + pad;
+            alpha[row + span_l..row + span_r].fill(opacity);
+        }
+    }
+    box_blur_alpha_2x(&mut alpha, sw, sh, blur_radius);
+
+    let ox = x.saturating_sub(pad);
+    let oy = y.saturating_sub(pad);
+    let source_x = pad.saturating_sub(x);
+    let source_y = pad.saturating_sub(y);
+    for sy in source_y..sh {
+        let dy = oy + sy - source_y;
+        if dy >= layer.height() {
+            continue;
+        }
+        let inside_span = dy.checked_sub(y)
+            .filter(|local_y| *local_y < height)
+            .and_then(|local_y| squircle_row_pixel_span(&squircle, local_y, width));
+        for sx in source_x..sw {
+            let dx = ox + sx - source_x;
+            if dx >= layer.width() {
+                continue;
+            }
+            if let Some((span_l, span_r)) = inside_span {
+                if dx >= x + span_l.saturating_sub(1) && dx <= x + span_r {
+                    continue;
+                }
+            }
+            let a = alpha[sy * sw + sx] as u32;
+            if a == 0 {
+                continue;
+            }
+            let idx = dy * layer.width() + dx;
+            let bg = layer.buf_ref()[idx];
+            let inv = 255 - a;
+            layer.buf_mut()[idx] = Color::rgb(
+                (((bg >> 16) & 0xff) * inv / 255) as u8,
+                (((bg >> 8) & 0xff) * inv / 255) as u8,
+                ((bg & 0xff) * inv / 255) as u8,
+            )
+            .0;
+        }
+    }
+}
+
 const ICON_CACHE_CAP: usize = 32;
 static mut ICON_CACHE: [Option<(alloc::string::String, usize, IconBitmap)>; ICON_CACHE_CAP] = [
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+    None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
 ];
 
 fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitmap> {
@@ -135,16 +616,28 @@ fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitma
                 *entry = Some((alloc::string::String::from(icon_name), size, bitmap));
                 return ICON_CACHE.iter().find_map(|e| {
                     if let Some((ref n, s, ref b)) = e {
-                        if n == icon_name && *s == size { Some(b) } else { None }
-                    } else { None }
+                        if n == icon_name && *s == size {
+                            Some(b)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 });
             }
         }
         ICON_CACHE[0] = Some((alloc::string::String::from(icon_name), size, bitmap));
         ICON_CACHE.iter().find_map(|e| {
             if let Some((ref n, s, ref b)) = e {
-                if n == icon_name && *s == size { Some(b) } else { None }
-            } else { None }
+                if n == icon_name && *s == size {
+                    Some(b)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         })
     }
 }
@@ -181,6 +674,7 @@ pub struct AppEntry {
     pub app_type: alloc::string::String,
     pub title: alloc::string::String,
     pub icon: alloc::string::String,
+    pub tags: Vec<alloc::string::String>,
 }
 
 pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry>) {
@@ -192,6 +686,8 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
     let mut current_type = alloc::string::String::from("warp-2");
     let mut current_title = alloc::string::String::new();
     let mut current_icon = alloc::string::String::new();
+    let mut current_tags: Vec<alloc::string::String> = Vec::new();
+    let mut in_tags = false;
     for line in yaml.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('#') || trimmed.is_empty() {
@@ -216,11 +712,13 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                     app_type: current_type.clone(),
                     title,
                     icon: current_icon.clone(),
+                    tags: current_tags.clone(),
                 });
                 current_name.clear();
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
                 current_icon.clear();
+                current_tags.clear();
             }
             continue;
         }
@@ -247,11 +745,13 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                         app_type: current_type.clone(),
                         title,
                         icon: current_icon.clone(),
+                        tags: current_tags.clone(),
                     });
                     current_name.clear();
                     current_type = alloc::string::String::from("warp-2");
                     current_title.clear();
                     current_icon.clear();
+                    current_tags.clear();
                 }
                 in_apps = false;
                 continue;
@@ -260,6 +760,7 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                 && !trimmed.contains("icon")
                 && !trimmed.contains("type")
                 && !trimmed.contains("title")
+                && !trimmed.starts_with("tag")
             {
                 if !current_name.is_empty() {
                     let title = if current_title.is_empty() {
@@ -272,12 +773,15 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                         app_type: current_type.clone(),
                         title,
                         icon: current_icon.clone(),
+                        tags: current_tags.clone(),
                     });
                 }
                 current_name = alloc::string::String::from(trimmed.trim_end_matches(':'));
                 current_type = alloc::string::String::from("warp-2");
                 current_title.clear();
                 current_icon.clear();
+                current_tags.clear();
+                in_tags = false;
             } else if let Some(v) = trimmed.strip_prefix("type:") {
                 current_type = alloc::string::String::from(v.trim().trim_matches('"'));
             } else if let Some(v) = trimmed.strip_prefix("title:") {
@@ -288,6 +792,19 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
                     current_icon = alloc::string::String::from("noname.png");
                 } else {
                     current_icon = alloc::string::String::from(val);
+                }
+                in_tags = false;
+            } else if let Some(v) = trimmed.strip_prefix("tag:") {
+                current_tags.clear();
+                let val = v.trim().trim_matches('"').trim_matches('\'');
+                if !val.is_empty() {
+                    current_tags.push(alloc::string::String::from(val));
+                }
+                in_tags = true;
+            } else if in_tags && trimmed.starts_with("- ") {
+                let val = trimmed[2..].trim().trim_matches('"').trim_matches('\'');
+                if !val.is_empty() {
+                    current_tags.push(alloc::string::String::from(val));
                 }
             }
         }
@@ -303,6 +820,7 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
             app_type: current_type,
             title,
             icon: current_icon,
+            tags: current_tags,
         });
     }
     (autostart, apps)
@@ -395,6 +913,49 @@ fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t)
 }
 
+#[inline]
+fn ease_in_out(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn draw_taskbar_glyph(
+    layer: &mut LayerSystem,
+    data: &[u8],
+    glyph_w: i32,
+    glyph_h: i32,
+    x: usize,
+    top: i32,
+    color: Color,
+) {
+    let w = layer.width();
+    let h = layer.height();
+    let buf = layer.buf_mut();
+    for row in 0..glyph_h {
+        let py = top + row;
+        if py < 0 || py >= h as i32 {
+            continue;
+        }
+        for col in 0..glyph_w {
+            let px = x + col as usize;
+            if px >= w {
+                continue;
+            }
+            let a = data[(row * glyph_w + col) as usize] as u32;
+            if a == 0 {
+                continue;
+            }
+            let idx = py as usize * w + px;
+            let bg = buf[idx];
+            let inv = 255 - a;
+            let r = (((color.0 >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
+            let g = (((color.0 >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
+            let b = ((color.0 & 0xff) * a + (bg & 0xff) * inv) / 255;
+            buf[idx] = (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
 fn draw_taskbar_text(
     layer: &mut LayerSystem,
     text: &str,
@@ -403,41 +964,101 @@ fn draw_taskbar_text(
     color: Color,
     size: f32,
 ) {
-    let w = layer.width();
-    let h = layer.height();
     for ch in text.chars() {
         let glyph = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-        if glyph.w == 0 || glyph.h == 0 {
-            x += 8;
+        if glyph.w > 0 && glyph.h > 0 {
+            draw_taskbar_glyph(
+                layer,
+                &glyph.data,
+                glyph.w,
+                glyph.h,
+                x,
+                baseline_y + glyph.y_off,
+                color,
+            );
+            x += glyph.advance.max(0) as usize;
             continue;
         }
-        let top = baseline_y + glyph.y_off;
-        let buf = layer.buf_mut();
-        for row in 0..glyph.h {
-            let py = top + row;
-            if py < 0 || py >= h as i32 {
-                continue;
-            }
-            for col in 0..glyph.w {
-                let px = x + col as usize;
-                if px >= w {
-                    continue;
-                }
-                let a = glyph.data[(row * glyph.w + col) as usize] as u32;
-                if a == 0 {
-                    continue;
-                }
-                let idx = py as usize * w + px;
-                let bg = buf[idx];
-                let inv = 255 - a;
-                let r = (((color.0 >> 16) & 0xff) * a + ((bg >> 16) & 0xff) * inv) / 255;
-                let g = (((color.0 >> 8) & 0xff) * a + ((bg >> 8) & 0xff) * inv) / 255;
-                let b = ((color.0 & 0xff) * a + (bg & 0xff) * inv) / 255;
-                buf[idx] = (r << 16) | (g << 8) | b;
-            }
+        // Google Sans used by the taskbar has no Japanese glyphs. Fall back
+        // to the regular UI font so placeholder and typed Japanese stay visible.
+        let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
+        if fallback.w > 0 && fallback.h > 0 {
+            draw_taskbar_glyph(
+                layer,
+                &fallback.data,
+                fallback.w,
+                fallback.h,
+                x,
+                baseline_y + fallback.y_off,
+                color,
+            );
+            x += fallback.advance.max(0) as usize;
+        } else {
+            x += 8;
         }
-        x += glyph.advance.max(0) as usize;
     }
+}
+
+fn draw_taskbar_search(layer: &mut LayerSystem, search_focused: bool, search_query: &str) {
+    let search_x = 12usize;
+    let search_h = 32usize;
+    let search_y = (TASKBAR_H - search_h) / 2;
+    let search_w = 190usize;
+    let search_bg = config::get_color("ui-theme/color/panel", Color::PANEL);
+    let search_alpha = if search_focused { 255 } else { 128 };
+    draw_control_shadow(
+        layer,
+        search_x,
+        search_y,
+        search_w,
+        search_h,
+        search_h / 2,
+        2,
+        0x33,
+    );
+    blend_rounded_rect(
+        layer,
+        search_x,
+        search_y,
+        search_w,
+        search_h,
+        search_h / 2,
+        search_bg,
+        search_alpha,
+    );
+    let text = if search_query.is_empty() {
+        "アプリを検索..."
+    } else {
+        search_query
+    };
+    let text_color = if search_query.is_empty() {
+        config::get_color("ui-theme/color/muted", Color::MUTED)
+    } else {
+        config::get_color("ui-theme/color/text", Color::TEXT)
+    };
+    draw_taskbar_text(
+        layer,
+        text,
+        search_x + 12,
+        search_y as i32 + 22,
+        text_color,
+        18.0,
+    );
+}
+
+fn redraw_taskbar_search(surface: &mut TaskbarSurface, search_focused: bool, search_query: &str) {
+    const SEARCH_DAMAGE_W: usize = 226;
+    let w = surface.layer.width();
+    let copy_w = SEARCH_DAMAGE_W.min(w);
+    if surface.base_valid {
+        for y in 0..TASKBAR_H {
+            let start = y * w;
+            surface.layer.buf_mut()[start..start + copy_w]
+                .copy_from_slice(&surface.base[start..start + copy_w]);
+        }
+    }
+    draw_taskbar_search(&mut surface.layer, search_focused, search_query);
+    surface.search_dirty = false;
 }
 
 fn redraw_taskbar(
@@ -445,10 +1066,14 @@ fn redraw_taskbar(
     wm: &WindowManager,
     add_progress: f32,
     shift_x: f32,
-    hover_apps_icon: bool,
+    _hover_apps_icon: bool,
+    hover_ime_icon: bool,
+    search_focused: bool,
+    search_query: &str,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
+    ime_menu_selection: usize,
 ) {
     let layer = &mut surface.layer;
     let w = layer.width();
@@ -471,7 +1096,9 @@ fn redraw_taskbar(
     };
 
     for i in 0..count {
-        let Some(id) = wm.insertion_id_at(i) else { continue };
+        let Some(id) = wm.insertion_id_at(i) else {
+            continue;
+        };
         let icon_name = wm.get_icon_name(id);
         let is_focused = wm.focused_id == Some(id);
         let is_minimized = wm.is_minimized(id);
@@ -507,7 +1134,11 @@ fn redraw_taskbar(
             }
         }
 
-        let resolved_icon = if icon_name.is_empty() { "noname.png" } else { icon_name };
+        let resolved_icon = if icon_name.is_empty() {
+            "noname.png"
+        } else {
+            icon_name
+        };
         if let Some(icon) = get_or_decode_icon(resolved_icon, 40) {
             let icon_draw = scaled_d;
             let icon_offset = offset;
@@ -567,22 +1198,14 @@ fn redraw_taskbar(
         unsafe { core::str::from_utf8_unchecked(&battery_bytes[..len]) }
     });
 
-    let size = 32.0;
-    let measure = |text: &str| -> usize {
-        text.chars()
-            .map(|ch| {
-                let g = baram_font::ttf_font_hud::glyph_at_size(ch, size);
-                if g.w > 0 { g.advance.max(0) as usize } else { 8 }
-            })
-            .sum()
-    };
+    let size = TASKBAR_STATUS_SIZE;
+    let measure = taskbar_status_text_width;
     let gap = 12usize;
-    let battery_width = battery.map_or(0, |text| gap + measure(text));
-    let status_x = w.saturating_sub(measure(time) + battery_width + 16);
-    let baseline = TASKBAR_H as i32
-        - baram_font::ttf_font_hud::ascent_at_size(size)
-        + 9;
+    let status_x = taskbar_status_x(w, battery_pct);
+    let baseline = TASKBAR_H as i32 - baram_font::ttf_font_hud::ascent_at_size(size) + 9;
     let status_color = config::get_color("ui-theme/color/text", Color::TEXT);
+    let ime_x = status_x.saturating_sub(IME_BUTTON_W + gap);
+    let ime_y = (TASKBAR_H - IME_BUTTON_W) / 2;
     draw_taskbar_text(layer, time, status_x, baseline, status_color, size);
     if let Some(battery) = battery {
         draw_taskbar_text(
@@ -595,17 +1218,218 @@ fn redraw_taskbar(
         );
     }
 
-    svg::draw_svg_into_alpha(
+    draw_taskbar_search(layer, search_focused, search_query);
+    // Cache a small, exact status strip before painting the mutable IME SVG.
+    // Hover therefore restores the real clock/battery pixels, never a broad
+    // taskbar background approximation.
+    let strip_x = ime_x.saturating_sub(8);
+    let strip_w = (w - strip_x).min(IME_STATUS_STRIP_W);
+    surface.ime_status_strip.resize(strip_w * TASKBAR_H, 0);
+    for row in 0..TASKBAR_H {
+        let source = row * w + strip_x;
+        let target = row * strip_w;
+        surface.ime_status_strip[target..target + strip_w]
+            .copy_from_slice(&layer.buf_ref()[source..source + strip_w]);
+    }
+    surface.ime_status_strip_x = strip_x;
+    surface.ime_status_strip_w = strip_w;
+    // Unlike a control button, the active input source is a bare status icon
+    // beside the clock: no pill background or shadow.
+    draw_ime_icon(
         layer,
-        APPS_SVG,
-        16,
-        ((TASKBAR_H - 24) / 2) as i32,
-        24.0,
-        24.0,
-        if hover_apps_icon { 153 } else { 255 },
+        ime_x,
+        ime_y,
+        IME_BUTTON_W,
+        ime_menu_selection,
+        if hover_ime_icon { 128 } else { 255 },
     );
     layer.mark_all_dirty();
     surface.valid = true;
+    surface.search_dirty = false;
+}
+
+fn draw_ime_candidates(
+    layer: &mut LayerSystem,
+    taskbar_y: usize,
+    reading: &str,
+    candidates: &[alloc::string::String],
+    selected: usize,
+) {
+    if candidates.is_empty() || taskbar_y < 76 {
+        return;
+    }
+    let x = 24usize;
+    let y = taskbar_y - 76;
+    let width = 440usize.min(layer.width().saturating_sub(x * 2));
+    let height = 64usize;
+    draw_control_shadow(layer, x, y, width, height, 12, 2, 0x36);
+    blend_rounded_rect(
+        layer,
+        x,
+        y,
+        width,
+        height,
+        12,
+        config::get_color("ui-theme/color/panel", Color::PANEL),
+        242,
+    );
+    let text_color = config::get_color("ui-theme/color/text", Color::TEXT);
+    let accent = config::get_color("ui-theme/color/btn_primary", Color::BTN_PRIMARY);
+    let mut heading = alloc::string::String::from("変換中: ");
+    heading.push_str(reading);
+    layer.put_str(x + 14, y + 8, &heading, text_color);
+
+    let mut cx = x + 14;
+    for (index, candidate) in candidates.iter().enumerate() {
+        let candidate_width = candidate.chars().count() * 16 + 18;
+        if cx + candidate_width > x + width - 10 {
+            break;
+        }
+        if index == selected {
+            blend_rounded_rect(layer, cx, y + 30, candidate_width, 25, 6, accent, 48);
+        }
+        layer.put_str(cx + 8, y + 34, candidate, text_color);
+        if index == selected {
+            // The underline marks the candidate currently composing in the
+            // target input. Enter commits this underlined candidate.
+            layer.fill_rect(cx + 7, y + 52, candidate_width.saturating_sub(14), 2, accent);
+        }
+        cx += candidate_width + 6;
+    }
+}
+
+/// Bounds of the IME mode menu in screen coordinates.
+pub fn ime_menu_bounds(width: usize, height: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
+    let (button_x, _, button_w, _) = ime_button_bounds(width, battery_pct);
+    let x = (button_x + button_w - IME_MENU_W as i32).max(12);
+    let y = height
+        .saturating_sub(TASKBAR_H + IME_MENU_H + 12)
+        .max(8) as i32;
+    (x, y, IME_MENU_W as i32, IME_MENU_H as i32)
+}
+
+/// Returns the mode row selected by a click in the IME menu.
+pub fn ime_menu_mode_at(
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
+    battery_pct: Option<u8>,
+) -> Option<usize> {
+    let (menu_x, menu_y, menu_w, menu_h) = ime_menu_bounds(width, height, battery_pct);
+    if x < menu_x || x >= menu_x + menu_w || y < menu_y || y >= menu_y + menu_h {
+        return None;
+    }
+    // Header occupies the first 28px; six 38px rows follow it.
+    (y >= menu_y + 30)
+        .then(|| ((y - menu_y - 30) / 38) as usize)
+        .filter(|row| *row < 6)
+}
+
+fn draw_ime_menu(
+    layer: &mut LayerSystem,
+    cached_layer: &mut Option<Vec<u32>>,
+    battery_pct: Option<u8>,
+    ime_menu_selection: usize,
+    opacity: u8,
+) {
+    let (x, y, width, height) = ime_menu_bounds(layer.width(), layer.height(), battery_pct);
+    let (x, y, width, height) = (x as usize, y as usize, width as usize, height as usize);
+    // The glass background is expensive only when it opens or the window
+    // below it changes. Cursor movement reuses this cached layer verbatim.
+    const CACHE_PAD: usize = 54;
+    let cache_x = x.saturating_sub(CACHE_PAD);
+    let cache_y = y.saturating_sub(CACHE_PAD);
+    let cache_x1 = (x + width + CACHE_PAD).min(layer.width());
+    let cache_y1 = (y + height + CACHE_PAD).min(layer.height());
+    let cache_w = cache_x1.saturating_sub(cache_x);
+    let cache_h = cache_y1.saturating_sub(cache_y);
+    if cache_w == 0 || cache_h == 0 { return; }
+    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+    if clip_x1 <= cache_x || clip_x0 >= cache_x1 || clip_y1 <= cache_y || clip_y0 >= cache_y1 {
+        return;
+    }
+    if cached_layer.as_ref().is_none_or(|cache| cache.len() != cache_w * cache_h) {
+        const BLUR_RADIUS: usize = 18;
+        let mut glass = LayerSystem::new(cache_w, cache_h);
+        for py in 0..cache_h {
+            let src_start = (cache_y + py) * layer.width() + cache_x;
+            let dst_start = py * cache_w;
+            glass.buf_mut()[dst_start..dst_start + cache_w]
+                .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+        }
+        let blur_x0 = x.saturating_sub(BLUR_RADIUS);
+        let blur_y0 = y.saturating_sub(BLUR_RADIUS);
+        let blur_x1 = (x + width + BLUR_RADIUS).min(layer.width());
+        let blur_y1 = (y + height + BLUR_RADIUS).min(layer.height());
+        let blur_w = blur_x1.saturating_sub(blur_x0);
+        let blur_h = blur_y1.saturating_sub(blur_y0);
+        if blur_w == 0 || blur_h == 0 { return; }
+        let mut source = alloc::vec![0u32; blur_w * blur_h];
+        for py in 0..blur_h {
+            let src_start = (blur_y0 + py) * layer.width() + blur_x0;
+            let dst_start = py * blur_w;
+            source[dst_start..dst_start + blur_w]
+                .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+        }
+        let mut blurred = alloc::vec![0u32; source.len()];
+        blur::blur_region_to(&source, &mut blurred, blur_w, 0, blur_h, BLUR_RADIUS as i32);
+        draw_soft_box_shadow(&mut glass, x - cache_x, y - cache_y, width, height, 18);
+        copy_rounded_region_from_crop(
+            &mut glass, &blurred, blur_w, blur_x0 - cache_x, blur_y0 - cache_y,
+            x - cache_x, y - cache_y, width, height, 18,
+        );
+        blend_rounded_rect(
+            &mut glass, x - cache_x, y - cache_y, width, height, 18,
+            Color::rgb(0xf5, 0xf5, 0xf5), 200,
+        );
+        // The entire static list lives in the open-menu cache too. This keeps
+        // SVG blending and text layout out of pointer-move redraws.
+        let text = config::get_color("ui-theme/color/text", Color::TEXT);
+        let muted = config::get_color("ui-theme/color/muted", Color::MUTED);
+        let menu_x = x - cache_x;
+        let menu_y = y - cache_y;
+        glass.put_str(menu_x + 14, menu_y + 9, "入力モード", muted);
+        for (row, label) in [
+            "英数",
+            "ひらがな",
+            "한국 두벌식",
+            "한컴 로마자",
+            "조선 두벌식",
+            "简体拼音",
+        ].iter().enumerate() {
+            let row_y = menu_y + 30 + row * 38;
+            if row == ime_menu_selection {
+                blend_rounded_rect(
+                    &mut glass,
+                    menu_x + 8,
+                    row_y,
+                    width - 16,
+                    34,
+                    9,
+                    Color::rgb(0xff, 0xff, 0xff),
+                    0x99,
+                );
+            }
+            draw_ime_icon(&mut glass, menu_x + 18, row_y + 9, 16, row, 255);
+            glass.put_str(menu_x + 46, row_y + 9, label, text);
+        }
+        *cached_layer = Some(glass.buf_ref().to_vec());
+    }
+    if let Some(cache) = cached_layer.as_deref() {
+        if opacity == 255 {
+            layer.copy_rect_buffer(cache, cache_w, cache_h, cache_x, cache_y);
+        } else {
+            layer.composit_rect_global_alpha(cache, cache_w, cache_h, cache_x, cache_y, opacity);
+        }
+    }
+}
+
+/// Bounds of the taskbar IME toggle, kept in sync with the status layout.
+pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
+    let status_x = taskbar_status_x(width, battery_pct);
+    let x = status_x.saturating_sub(IME_BUTTON_W + 12) as i32;
+    (x, (TASKBAR_H as i32 - IME_BUTTON_W as i32) / 2, IME_BUTTON_W as i32, IME_BUTTON_W as i32)
 }
 
 pub fn render_scene(
@@ -622,9 +1446,10 @@ pub fn render_scene(
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
+    cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
-    remove_progress: f32,
+    _remove_progress: f32,
     shift_x: f32,
     hud_enabled: bool,
     bg_cache: &mut Option<Vec<u32>>,
@@ -633,16 +1458,61 @@ pub fn render_scene(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    hover_ime_icon: bool,
+    ime_hover_dirty: bool,
+    search_focused: bool,
+    search_query: &str,
+    launcher_scroll_y: usize,
+    launcher_anim_phase: i8,
+    launcher_anim_elapsed_ms: u32,
+    launcher_scroll_changed: bool,
+    launcher_only_redraw: bool,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
+    ime_menu_open: bool,
+    ime_menu_opacity: u8,
+    ime_menu_selection: usize,
+    ime_reading: Option<&str>,
+    ime_candidates: &[alloc::string::String],
+    ime_selected: usize,
 ) {
     let w = layer.width();
     let h = layer.height();
     let tb_y = h.saturating_sub(TASKBAR_H);
 
-    if !taskbar_only {
+    // During launcher-only animation frames, restore the small captured
+    // underlay instead of rebuilding the wallpaper, HUD, and every window.
+    if launcher_only_redraw {
+        let grid_h = 3 * (52 + 20 + 16);
+        let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+        let panel_x = 12usize;
+        let panel_y = grid_y.saturating_sub(8);
+        let panel_w = 4 * (52 + 16) + 16;
+        let panel_h = grid_h + 16;
+        const CACHE_PAD: usize = 54;
+        let cache_x = panel_x.saturating_sub(CACHE_PAD);
+        let cache_y = panel_y.saturating_sub(CACHE_PAD);
+        let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+        let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+        let cache_w = cache_x1.saturating_sub(cache_x);
+        let cache_h = cache_y1.saturating_sub(cache_y);
+        let cache_len = cache_w * cache_h;
+        if let Some(cache) = cached_launcher_layer.as_deref() {
+            if cache.len() == cache_len * 4 {
+                layer.copy_rect_buffer(
+                    &cache[cache_len * 2..cache_len * 3],
+                    cache_w,
+                    cache_h,
+                    cache_x,
+                    cache_y,
+                );
+            }
+        }
+    }
+
+    if !taskbar_only && !launcher_only_redraw {
         if bg_cache_valid {
             if let Some(ref cached) = bg_cache {
                 layer.copy_from_screen_buffer(cached);
@@ -673,7 +1543,7 @@ pub fn render_scene(
     fb.push_u32(fps);
     fb.push_str("FPS");
 
-    if hud_enabled && !taskbar_only {
+    if hud_enabled && !taskbar_only && !launcher_only_redraw {
         if let Some(ref bg) = bg_cache {
             let hud_y0 = (tb_y as i32 - 44).max(0) as usize;
             let hud_y1 = tb_y;
@@ -686,7 +1556,7 @@ pub fn render_scene(
             }
         }
 
-        let hud_text1 = "Baram OS (1.1.0)";
+        let hud_text1 = "Baram OS (1.2)";
         let mut hw1 = 0usize;
         for ch in hud_text1.chars() {
             if baram_font::ttf_font_hud::is_available() {
@@ -730,7 +1600,7 @@ pub fn render_scene(
     }
 
     // Stable z-order: background -> HUD -> windows/launcher -> taskbar.
-    if !taskbar_only {
+    if !taskbar_only && !launcher_only_redraw {
         wm.draw_all(
             layer,
             ui_win_id.map(|id| (id, ui_commands)),
@@ -740,43 +1610,197 @@ pub fn render_scene(
     }
 
     if show_app_launcher {
-        if cached_launcher_layer.is_none() {
-            let mut lsys = LayerSystem::new(w, h);
-            lsys.clear(Color::TRANSPARENT);
-            let src: &[u32] = if let Some(ref cached) = bg_cache {
-                cached
-            } else if let Some(pixels) = wallpaper {
-                pixels
-            } else {
-                &[]
-            };
-            if !src.is_empty() {
-                blur::blur_region_darkened_to(src, lsys.buf_mut(), w, 0, tb_y, 60, 200);
+        let cols = 4usize;
+        let icon_size = 52usize;
+        let icon_gap = 16usize;
+        let label_h = 20usize;
+        let cell_w = icon_size + icon_gap;
+        let cell_h = icon_size + label_h + icon_gap;
+        let grid_w = cols * cell_w;
+        let visible_rows = 3usize;
+        let grid_h = visible_rows * cell_h;
+        let grid_x = 20usize;
+        let grid_y = h.saturating_sub(TASKBAR_H + grid_h + 16);
+        let content_y = grid_y + 4;
+        let panel_h = grid_h.max(40) + 16;
+        let panel_x = 12usize;
+        let panel_y = grid_y.saturating_sub(8);
+        let panel_w = grid_w + 16;
+        let panel_radius = 18usize;
+        let launcher_alpha = if launcher_anim_phase > 0 {
+            let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+            (ease_in_out(t) * 255.0) as u32
+        } else if launcher_anim_phase < 0 {
+            let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+            ((1.0 - ease_in_out(t)) * 255.0) as u32
+        } else {
+            255
+        };
+        // The complete launcher is cached as one layer. Animation only
+        // changes this layer's position and global opacity.
+        let launcher_offset_y = if launcher_anim_phase > 0 {
+            let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
+            ((1.0 - ease_in_out(t)) * 16.0) as usize
+        } else {
+            0
+        };
+
+        let building_launcher_cache = cached_launcher_layer.is_none();
+        let rebuild_launcher_content = building_launcher_cache || launcher_scroll_changed;
+        // Cache the complete glass-and-shadow base once per opening.
+        if building_launcher_cache {
+            const CACHE_PAD: usize = 54;
+            let cache_x = panel_x.saturating_sub(CACHE_PAD);
+            let cache_y = panel_y.saturating_sub(CACHE_PAD);
+            let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+            let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+            let cache_w = cache_x1.saturating_sub(cache_x);
+            let cache_h = cache_y1.saturating_sub(cache_y);
+            let mut panel_base = LayerSystem::new(cache_w, cache_h);
+            for py in 0..cache_h {
+                let src_start = (cache_y + py) * w + cache_x;
+                let dst_start = py * cache_w;
+                panel_base.buf_mut()[dst_start..dst_start + cache_w]
+                    .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+            }
+            // Two box-blur passes with r=13 can read up to 26px beyond
+            // the result. Keep that margin around the panel, rather than
+            // filtering the entire screen.
+            const BLUR_RADIUS: usize = 26;
+            let blur_x0 = panel_x.saturating_sub(BLUR_RADIUS);
+            let blur_y0 = panel_y.saturating_sub(BLUR_RADIUS);
+            let blur_x1 = (panel_x + panel_w + BLUR_RADIUS).min(w);
+            let blur_y1 = (panel_y + panel_h + BLUR_RADIUS).min(h);
+            let blur_w = blur_x1.saturating_sub(blur_x0);
+            let blur_h = blur_y1.saturating_sub(blur_y0);
+            let mut blur_source = alloc::vec![0u32; blur_w * blur_h];
+            for py in 0..blur_h {
+                let src_start = (blur_y0 + py) * w + blur_x0;
+                let dst_start = py * blur_w;
+                blur_source[dst_start..dst_start + blur_w]
+                    .copy_from_slice(&layer.buf_ref()[src_start..src_start + blur_w]);
+            }
+            let mut blurred = alloc::vec![0u32; blur_source.len()];
+            blur::blur_region_to(&blur_source, &mut blurred, blur_w, 0, blur_h, 26);
+            let underlay = panel_base.buf_ref().to_vec();
+            draw_soft_box_shadow(
+                &mut panel_base,
+                panel_x - cache_x,
+                panel_y - cache_y,
+                panel_w,
+                panel_h,
+                panel_radius,
+            );
+            copy_rounded_region_from_crop(
+                &mut panel_base,
+                &blurred,
+                blur_w,
+                blur_x0 - cache_x,
+                blur_y0 - cache_y,
+                panel_x - cache_x,
+                panel_y - cache_y,
+                panel_w,
+                panel_h,
+                panel_radius,
+            );
+            blend_rounded_rect(
+                &mut panel_base,
+                panel_x - cache_x,
+                panel_y - cache_y,
+                panel_w,
+                panel_h,
+                panel_radius,
+                Color::rgb(0xf5, 0xf5, 0xf5),
+                200,
+            );
+            let panel = panel_base.buf_ref();
+            let mut cache = Vec::with_capacity(panel.len() * 4);
+            cache.extend_from_slice(panel); // fully composed launcher
+            cache.extend_from_slice(panel); // fixed glass background
+            cache.extend_from_slice(&underlay); // captured screen below it
+            cache.extend_from_slice(panel); // per-frame layer scratch
+            *cached_launcher_layer = Some(cache);
+        }
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+        if rebuild_launcher_content {
+            if let Some(panel_base) = cached_launcher_layer.as_deref() {
+                const CACHE_PAD: usize = 54;
+                let cache_x = panel_x.saturating_sub(CACHE_PAD);
+                let cache_y = panel_y.saturating_sub(CACHE_PAD);
+                let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+                let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+                let cache_w = cache_x1.saturating_sub(cache_x);
+                let cache_h = cache_y1.saturating_sub(cache_y);
+                if panel_base.len() == cache_w * cache_h * 4 {
+                    let panel_start = cache_w * cache_h;
+                    for py in 0..cache_h {
+                        let dst_y = cache_y + py;
+                        if dst_y < clip_y0 || dst_y >= clip_y1 {
+                            continue;
+                        }
+                        let src_start = panel_start + py * cache_w;
+                        let draw_x0 = cache_x.max(clip_x0);
+                        let draw_x1 = cache_x1.min(clip_x1);
+                        if draw_x0 >= draw_x1 {
+                            continue;
+                        }
+                        let src_start = src_start + draw_x0 - cache_x;
+                        let dst_start = dst_y * w + draw_x0;
+                        let draw_w = draw_x1 - draw_x0;
+                        layer.buf_mut()[dst_start..dst_start + draw_w]
+                            .copy_from_slice(&panel_base[src_start..src_start + draw_w]);
+                    }
+                }
             }
 
-            let cols = 5usize;
-            let icon_size = 64usize;
-            let icon_gap = 24usize;
-            let label_h = 20usize;
-            let cell_w = icon_size + icon_gap;
-            let cell_h = icon_size + label_h + icon_gap;
-            let grid_w = cols * cell_w;
-            let rows = (app_list.len() + cols - 1) / cols;
-            let grid_h = rows * cell_h;
-            let grid_x = (w.saturating_sub(grid_w)) / 2;
-            let grid_y = ((h - TASKBAR_H).saturating_sub(grid_h)) / 2;
+            if app_list.is_empty() {
+                layer.put_str(
+                    28,
+                    content_y + 8,
+                    "該当するアプリはありません",
+                    Color::BLACK,
+                );
+            }
 
+            let content_rows = ((app_list.len() + cols - 1) / cols).max(visible_rows);
+            let content_h = content_rows * cell_h;
+            let scroll_y = launcher_scroll_y.min(content_h.saturating_sub(grid_h));
+            // Keep the scratch surface bounded to the viewport. The old code
+            // allocated and cleared a surface as tall as the complete app
+            // list for every animation frame.
+            let first_scratch_row = (scroll_y / cell_h).saturating_sub(1);
+            let scratch_y = first_scratch_row * cell_h;
+            let viewport_src_y = scroll_y - scratch_y;
+            let scratch_h = (grid_h + cell_h * 2).min(content_h.saturating_sub(scratch_y));
+            let mut content = LayerSystem::new_transparent(grid_w, scratch_h);
+            // Antialiased pixels must be blended against the actual panel
+            // background, not transparent black. Seed the visible viewport
+            // before rendering its icons and labels.
+            for py in 0..scratch_h {
+                let screen_y = content_y.saturating_add(py).saturating_sub(viewport_src_y);
+                if screen_y >= h {
+                    continue;
+                }
+                let src_start = screen_y * w + grid_x;
+                let dst_start = py * grid_w;
+                content.buf_mut()[dst_start..dst_start + grid_w]
+                    .copy_from_slice(&layer.buf_ref()[src_start..src_start + grid_w]);
+            }
             for (i, name) in app_list.iter().enumerate() {
                 let col = i % cols;
                 let row = i / cols;
-                let cx = grid_x + col * cell_w + icon_gap / 2;
-                let cy = grid_y + row * cell_h;
+                let cx = col * cell_w + icon_gap / 2;
+                let item_y = row * cell_h;
+                if item_y + cell_h <= scratch_y || item_y >= scratch_y + scratch_h {
+                    continue;
+                }
+                let cy = item_y - scratch_y;
 
-                lsys.fill_circle(
+                content.fill_circle(
                     cx + icon_size / 2,
                     cy + icon_size / 2,
                     icon_size / 2,
-                    config::get_color("ui-theme/color/panel", Color::PANEL),
+                    Color::rgb(0xff, 0xff, 0xff),
                 );
 
                 let icon_name = app_icon_list.get(i).map(|s| s.as_str()).unwrap_or("");
@@ -797,16 +1821,16 @@ pub fn render_scene(
                                 }
                                 let sx = cx + pad + px;
                                 let sy = cy + pad + py;
-                                if sx >= w || sy >= tb_y {
+                                if sx >= grid_w || sy >= scratch_h {
                                     continue;
                                 }
-                                let idx = sy * w + sx;
-                                let bg = Color(lsys.buf_ref()[idx]);
+                                let idx = sy * grid_w + sx;
+                                let bg = Color(content.buf_ref()[idx]);
                                 let inv = 255 - a;
                                 let r = (src_px[0] as u32 * a + bg.r() as u32 * inv) / 255;
                                 let g = (src_px[1] as u32 * a + bg.g() as u32 * inv) / 255;
                                 let b = (src_px[2] as u32 * a + bg.b() as u32 * inv) / 255;
-                                lsys.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
+                                content.buf_mut()[idx] = Color::rgb(r as u8, g as u8, b as u8).0;
                             }
                         }
                     }
@@ -841,28 +1865,166 @@ pub fn render_scene(
                 }
                 let tx = cx + (icon_size.saturating_sub(tw)) / 2;
                 let ty = cy + icon_size + 4;
-                let label_color = config::get_color("ui-theme/color/btn_tonal", Color::BTN_TONAL);
-                lsys.put_str(tx, ty, &display_name, label_color);
+                let label_color = Color::BLACK;
+                content.put_str(tx, ty, &display_name, label_color);
             }
-            *cached_launcher_layer = Some(lsys.buf_ref().to_vec());
+            layer.composit_rect_opaque(
+                &content,
+                grid_x,
+                content_y,
+                0,
+                viewport_src_y,
+                grid_w,
+                grid_h,
+            );
+
+            // Replace the first half with the fully composed launcher
+            // (glass, icons, and labels), then put the captured underlay back.
+            const CACHE_PAD: usize = 54;
+            let cache_x = panel_x.saturating_sub(CACHE_PAD);
+            let cache_y = panel_y.saturating_sub(CACHE_PAD);
+            let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+            let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+            let cache_w = cache_x1.saturating_sub(cache_x);
+            let cache_h = cache_y1.saturating_sub(cache_y);
+            let cache_len = cache_w * cache_h;
+            if let Some(cache) = cached_launcher_layer.as_mut() {
+                if cache.len() == cache_len * 4 {
+                    for py in 0..cache_h {
+                        let src_start = (cache_y + py) * w + cache_x;
+                        let dst_start = py * cache_w;
+                        cache[dst_start..dst_start + cache_w]
+                            .copy_from_slice(&layer.buf_ref()[src_start..src_start + cache_w]);
+                    }
+                }
+            }
+            if let Some(cache) = cached_launcher_layer.as_deref() {
+                if cache.len() == cache_len * 4 {
+                    layer.copy_rect_buffer(
+                        &cache[cache_len * 2..cache_len * 3],
+                        cache_w,
+                        cache_h,
+                        cache_x,
+                        cache_y,
+                    );
+                }
+            }
         }
-        if let Some(launcher) = cached_launcher_layer.as_ref() {
-            layer.copy_rect_buffer(launcher, w, tb_y, 0, 0);
+
+        // Build one launcher layer from a fixed glass background plus the
+        // cached app pixels shifted inside it. Then apply opacity once to
+        // that entire layer through the SIMD compositor.
+        if let Some(cache) = cached_launcher_layer.as_mut() {
+            const CACHE_PAD: usize = 54;
+            let cache_x = panel_x.saturating_sub(CACHE_PAD);
+            let cache_y = panel_y.saturating_sub(CACHE_PAD);
+            let cache_x1 = (panel_x + panel_w + CACHE_PAD).min(w);
+            let cache_y1 = (panel_y + panel_h + CACHE_PAD).min(h);
+            let cache_w = cache_x1.saturating_sub(cache_x);
+            let cache_h = cache_y1.saturating_sub(cache_y);
+            let cache_len = cache_w * cache_h;
+            if cache.len() == cache_len * 4 && launcher_alpha != 0 {
+                if launcher_anim_phase == 0 {
+                    layer.copy_rect_buffer(&cache[..cache_len], cache_w, cache_h, cache_x, cache_y);
+                    // No opacity or internal motion remains in steady and
+                    // scroll frames, so the finished cache is final.
+                } else if launcher_anim_phase < 0 {
+                    // Closing has no internal translation. Feed the final
+                    // cached launcher straight into the SIMD alpha pass.
+                    layer.composit_rect_global_alpha(
+                        &cache[..cache_len],
+                        cache_w,
+                        cache_h,
+                        cache_x,
+                        cache_y,
+                        launcher_alpha as u8,
+                    );
+                } else {
+                    cache.copy_within(cache_len..cache_len * 2, cache_len * 3);
+
+                    let content_x = grid_x - cache_x;
+                    let content_base_y = content_y - cache_y;
+                    for py in 0..grid_h {
+                        let dst_py = content_base_y + py + launcher_offset_y;
+                        if dst_py >= cache_h {
+                            continue;
+                        }
+                        let src_row = (content_base_y + py) * cache_w + content_x;
+                        let dst_row = dst_py * cache_w + content_x;
+                        for px in 0..grid_w {
+                            let src = src_row + px;
+                            if cache[src] != cache[cache_len + src] {
+                                cache[cache_len * 3 + dst_row + px] = cache[src];
+                            }
+                        }
+                    }
+
+                    layer.composit_rect_global_alpha(
+                        &cache[cache_len * 3..cache_len * 4],
+                        cache_w,
+                        cache_h,
+                        cache_x,
+                        cache_y,
+                        launcher_alpha as u8,
+                    );
+                }
+            }
         }
     }
 
-    if taskbar_dirty || !taskbar.is_valid() {
+    let taskbar_full_redraw = taskbar_dirty || !taskbar.is_valid();
+    let taskbar_search_redraw = !taskbar_full_redraw && taskbar.is_search_dirty();
+    if taskbar_full_redraw {
         redraw_taskbar(
             taskbar,
             wm,
             add_progress,
             shift_x,
             hover_apps_icon,
+            hover_ime_icon,
+            search_focused,
+            search_query,
             clock_hh,
             clock_mm,
             battery_pct,
+            ime_menu_selection,
+        );
+    } else if taskbar_search_redraw {
+        redraw_taskbar_search(taskbar, search_focused, search_query);
+    }
+    let mut ime_status_partial = false;
+    if ime_hover_dirty && !taskbar_full_redraw && !taskbar_search_redraw {
+        ime_status_partial = taskbar.redraw_ime_status_strip(
+            battery_pct,
+            ime_menu_selection,
+            hover_ime_icon,
+        );
+        if !ime_status_partial {
+            redraw_taskbar(
+                taskbar, wm, add_progress, shift_x, hover_apps_icon, hover_ime_icon,
+                search_focused, search_query, clock_hh, clock_mm, battery_pct,
+                ime_menu_selection,
+            );
+        }
+    }
+    if ime_menu_open {
+        draw_ime_menu(
+            layer,
+            cached_ime_menu_layer,
+            battery_pct,
+            ime_menu_selection,
+            ime_menu_opacity,
         );
     }
+    if let Some(reading) = ime_reading {
+        draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
+    }
+    // The scene damage pass restores its clip from the wallpaper before this
+    // point.  Even when only the IME pixels changed, the damaged clip can
+    // cover other taskbar pixels (for example while the cursor moves into the
+    // icon).  Re-composite the cached full taskbar so those pixels cannot be
+    // left as wallpaper. `LayerSystem` clips this copy to the actual damage;
+    // the IME surface itself was still updated only in its small status strip.
     taskbar.composite_onto(layer, tb_y);
 }
 
@@ -883,6 +2045,7 @@ pub fn render_frame(
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
     cached_launcher_layer: &mut Option<Vec<u32>>,
+    cached_ime_menu_layer: &mut Option<Vec<u32>>,
     taskbar_dirty: bool,
     add_progress: f32,
     remove_progress: f32,
@@ -895,10 +2058,25 @@ pub fn render_frame(
     app_list: &[alloc::string::String],
     app_icon_list: &[alloc::string::String],
     hover_apps_icon: bool,
+    hover_ime_icon: bool,
+    ime_hover_dirty: bool,
+    search_focused: bool,
+    search_query: &str,
+    launcher_scroll_y: usize,
+    launcher_anim_phase: i8,
+    launcher_anim_elapsed_ms: u32,
+    launcher_scroll_changed: bool,
+    launcher_only_redraw: bool,
     taskbar_only: bool,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
+    ime_menu_open: bool,
+    ime_menu_opacity: u8,
+    ime_menu_selection: usize,
+    ime_reading: Option<&str>,
+    ime_candidates: &[alloc::string::String],
+    ime_selected: usize,
 ) {
     render_scene(
         layer,
@@ -914,6 +2092,7 @@ pub fn render_frame(
         html_engines,
         wallpaper,
         cached_launcher_layer,
+        cached_ime_menu_layer,
         taskbar_dirty,
         add_progress,
         remove_progress,
@@ -925,10 +2104,25 @@ pub fn render_frame(
         app_list,
         app_icon_list,
         hover_apps_icon,
+        hover_ime_icon,
+        ime_hover_dirty,
+        search_focused,
+        search_query,
+        launcher_scroll_y,
+        launcher_anim_phase,
+        launcher_anim_elapsed_ms,
+        launcher_scroll_changed,
+        launcher_only_redraw,
         taskbar_only,
         clock_hh,
         clock_mm,
         battery_pct,
+        ime_menu_open,
+        ime_menu_opacity,
+        ime_menu_selection,
+        ime_reading,
+        ime_candidates,
+        ime_selected,
     );
     let is_resizing = wm.is_any_resizing();
     cursor::draw_cursor_into_layer(layer, cursor_x, cursor_y, is_resizing, pointer_size);

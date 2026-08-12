@@ -2,6 +2,47 @@ config { title("システム設定") script("settings.w3s") }
 head { text("システム設定") }
 button.back { text("戻る") type("tonal") }
 card {
-    text("システム")
+    text("タイムゾーン")
+    detail { text("お客様の地域を選択してください") }
+    button.timezone-minus12 { text("-12:00　ベーカー島") }
+    button.timezone-minus11 { text("-11:00　パゴパゴ，ニウエ") }
+    button.timezone-minus10 { text("-10:00　ホノルル，タヒチ") }
+    button.timezone-minus9 { text("-09:00　アンカレッジ") }
+    button.timezone-minus8 { text("-08:00　ロサンゼルス，バンクーバー") }
+    button.timezone-minus7 { text("-07:00　デンバー，フェニックス") }
+    button.timezone-minus6 { text("-06:00　シカゴ，メキシコシティ") }
+    button.timezone-minus5 { text("-05:00　ニューヨーク，トロント") }
+    button.timezone-minus4 { text("-04:00　ハリファックス，カラカス") }
+    button.timezone-minus330 { text("-03:30　セントジョンズ") }
+    button.timezone-minus3 { text("-03:00　サンパウロ，ブエノスアイレス") }
+    button.timezone-minus2 { text("-02:00　サウスジョージア") }
+    button.timezone-minus1 { text("-01:00　アゾレス諸島") }
+    button.timezone-plus0 { text("+00:00　ロンドン，リスボン") }
+    button.timezone-plus1 { text("+01:00　パリ，ベルリン，ローマ") }
+    button.timezone-plus2 { text("+02:00　カイロ，アテネ，ヘルシンキ") }
+    button.timezone-plus3 { text("+03:00　モスクワ，イスタンブール") }
+    button.timezone-plus330 { text("+03:30　テヘラン") }
+    button.timezone-plus4 { text("+04:00　ドバイ，バクー") }
+    button.timezone-plus430 { text("+04:30　カブール") }
+    button.timezone-plus5 { text("+05:00　カラチ，タシュケント") }
+    button.timezone-plus530 { text("+05:30　ニューデリー，コロンボ") }
+    button.timezone-plus545 { text("+05:45　カトマンズ") }
+    button.timezone-plus6 { text("+06:00　ダッカ，アルマトイ") }
+    button.timezone-plus630 { text("+06:30　ヤンゴン，ココス諸島") }
+    button.timezone-plus7 { text("+07:00　バンコク，ジャカルタ") }
+    button.timezone-plus8 { text("+08:00　北京，香港，台北，シンガポール") }
+    button.timezone-plus845 { text("+08:45　ユークラ") }
+    button.timezone-plus9 { text("+09:00　日本，京城，平壌") type("primary") }
+    button.timezone-plus930 { text("+09:30　ダーウィン，アデレード") }
+    button.timezone-plus10 { text("+10:00　シドニー，グアム") }
+    button.timezone-plus1030 { text("+10:30　ロードハウ島") }
+    button.timezone-plus11 { text("+11:00　ヌメア，ソロモン諸島") }
+    button.timezone-plus12 { text("+12:00　フィジー，マジュロ") }
+    button.timezone-plus1245 { text("+12:45　チャタム諸島") }
+    button.timezone-plus13 { text("+13:00　アピア，ヌクアロファ") }
+    button.timezone-plus14 { text("+14:00　キリスィマス島") }
+}
+card {
+    text("リセット")
     button.system-reset { text("再起動してリセット") type("danger") }
 }

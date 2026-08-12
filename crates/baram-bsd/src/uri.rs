@@ -12,7 +12,6 @@
 //!   os://ui-theme/color?btn_primary=BB0000
 
 use crate::config;
-use crate::vfs;
 use alloc::string::String;
 use alloc::vec::Vec;
 

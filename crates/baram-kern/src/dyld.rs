@@ -5,17 +5,13 @@ extern crate alloc;
 use alloc::vec::Vec;
 use alloc::string::{String, ToString};
 use alloc::collections::BTreeMap;
-use alloc::boxed::Box;
 use crate::elf::{
-    ElfFile, Elf64Dynamic, Elf64Sym, Elf64Rela,
-    DT_NEEDED, DT_SYMTAB, DT_STRTAB, DT_JMPREL, DT_RELA, DT_RELASZ, DT_RELAENT,
-    DT_INIT, DT_FINI, DT_SONAME, DT_HASH,
-    R_AARCH64_ABS64, R_AARCH64_GLOB_DAT, R_AARCH64_JUMP_SLOT, R_AARCH64_RELATIVE,
-    STB_GLOBAL, STB_WEAK, STT_NOTYPE, STN_UNDEF,
-    SHN_UNDEF, SHN_ABS,
-    ET_DYN, ET_EXEC,
+    ElfFile,
+    DT_NEEDED,
+    DT_INIT, DT_FINI, DT_SONAME,
+    STB_GLOBAL, STB_WEAK,
 };
-use crate::vmm::{VirtualMemoryManager, PAGE_SIZE, PageTableEntry};
+use crate::vmm::{VirtualMemoryManager, PAGE_SIZE};
 
 pub const LIBRARY_SEARCH_PATHS: &[&str] = &[
     "/lib",
@@ -279,7 +275,7 @@ impl DynamicLinker {
     }
 
     fn read_file_from_fs(&self, path: &str) -> Option<Vec<u8>> {
-        use crate::loader;
+        
 
         let data = crate::loader::read_file(path)?;
         Some(data)
@@ -305,7 +301,7 @@ impl DynamicLinker {
         let mut bss_start = 0;
         let mut bss_end = 0;
 
-        for (i, segment) in segments.iter().enumerate() {
+        for (_i, segment) in segments.iter().enumerate() {
             let vaddr = segment.vaddr() + base;
             let mem_size = segment.mem_size();
             let file_size = segment.file_size();
@@ -463,7 +459,7 @@ impl DynamicLinker {
         }
     }
 
-    fn apply_rel_relocations(&self, library_id: usize, base: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    fn apply_rel_relocations(&self, library_id: usize, _base: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
         let library = &self.libraries[library_id];
         let base = library.base_addr;
 
@@ -481,7 +477,7 @@ impl DynamicLinker {
         Ok(())
     }
 
-    fn apply_rela_relocations(&self, library_id: usize, base: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    fn apply_rela_relocations(&self, library_id: usize, _base: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
         let library = &self.libraries[library_id];
 
         for sym in &library.symbols {
@@ -539,7 +535,7 @@ impl DynamicLinker {
     }
 
     fn allocate_physical_page(&self) -> usize {
-        use uefi::boot;
+        
 
         let layout = core::alloc::Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
         unsafe {

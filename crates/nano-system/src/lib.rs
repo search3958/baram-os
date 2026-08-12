@@ -11,6 +11,7 @@ extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
 
 use core::ffi::c_void;
+use core::fmt::Write;
 use core::mem::ManuallyDrop;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU8, Ordering};
@@ -18,6 +19,7 @@ use core::time::Duration;
 use uefi::boot::{self, ScopedProtocol};
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::proto::console::pointer::Pointer;
+use uefi::proto::console::serial::Serial;
 use uefi::proto::console::text::{Input, Key};
 use uefi::proto::unsafe_protocol;
 use uefi::proto::usb::io::{ControlTransfer, UsbIo};
@@ -326,15 +328,47 @@ impl NanoSystem {
 
     /// Common security/platform gate for every executable entry point.
     pub fn launch(application: fn(NanoSystem) -> Status) -> Status {
+        serial_log("nano: launch\r\n");
         match Self::start(NanoColor::BLACK) {
-            Ok(nano) => application(nano),
+            Ok(nano) => {
+                serial_log("nano: application entered\r\n");
+                application(nano)
+            }
             Err(error) => {
                 Self::paint_failure_screen();
                 match error {
-                    StartError::Display(status) => status,
-                    StartError::Timer => Status::DEVICE_ERROR,
+                    StartError::Display(status) => {
+                        serial_log("nano: display initialization failed\r\n");
+                        status
+                    }
+                    StartError::Timer => {
+                        serial_log("nano: timer initialization failed\r\n");
+                        Status::DEVICE_ERROR
+                    }
                 }
             }
+        }
+    }
+
+    /// Emit a diagnostics line to the UEFI Serial I/O protocol. QEMU maps
+    /// this device to `-serial stdio`, so it remains available even when GOP
+    /// rendering is unavailable or has already failed.
+    pub fn serial_log(message: &str) {
+        serial_log(message);
+    }
+
+    /// Shared panic endpoint for Nano System executables. Keep this free of
+    /// BaramOS dependencies so failures before the kernel handoff are visible.
+    pub fn panic_report(info: &core::panic::PanicInfo) -> ! {
+        let mut writer = PanicWriter::new();
+        let _ = write!(writer, "NANO PANIC: {}\r\n", info.message());
+        if let Some(location) = info.location() {
+            let _ = write!(writer, "at {}:{}\r\n", location.file(), location.line());
+        }
+        serial_log(writer.as_str());
+        Self::paint_failure_screen();
+        loop {
+            boot::stall(Duration::from_millis(100));
         }
     }
 
@@ -866,6 +900,41 @@ fn log_phase(message: &uefi::CStr16) {
         let _ = stdout.output_string(message);
         let _ = stdout.output_string(uefi::cstr16!("\r\n"));
     });
+}
+
+struct PanicWriter {
+    bytes: [u8; 384],
+    len: usize,
+}
+
+impl PanicWriter {
+    const fn new() -> Self {
+        Self { bytes: [0; 384], len: 0 }
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("NANO PANIC\r\n")
+    }
+}
+
+impl Write for PanicWriter {
+    fn write_str(&mut self, value: &str) -> core::fmt::Result {
+        let available = self.bytes.len().saturating_sub(self.len);
+        let count = value.len().min(available);
+        self.bytes[self.len..self.len + count].copy_from_slice(&value.as_bytes()[..count]);
+        self.len += count;
+        Ok(())
+    }
+}
+
+fn serial_log(message: &str) {
+    let Ok(handle) = boot::get_handle_for_protocol::<Serial>() else {
+        return;
+    };
+    let Ok(mut serial) = boot::open_protocol_exclusive::<Serial>(handle) else {
+        return;
+    };
+    let _ = serial.write(message.as_bytes());
 }
 
 fn create_periodic_timer(period: Duration) -> Option<uefi::Event> {

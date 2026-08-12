@@ -7,7 +7,7 @@ extern crate alloc;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::app::Warp3Archive;
+use baram_bsd::{app::Warp3Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::ttf_font;
 use baram_font::LayerFontExt;
@@ -53,16 +53,26 @@ impl ShadowMask {
         let r = radius.min(w / 2).min(h / 2) as i32;
         for py in top..bottom {
             for px in left..right {
-                let dx = if px < left + r as usize { left as i32 + r - px as i32 }
-                    else if px >= right - r as usize { px as i32 - (right as i32 - r - 1) } else { 0 };
-                let dy = if py < top + r as usize { top as i32 + r - py as i32 }
-                    else if py >= bottom - r as usize { py as i32 - (bottom as i32 - r - 1) } else { 0 };
+                let dx = if px < left + r as usize {
+                    left as i32 + r - px as i32
+                } else if px >= right - r as usize {
+                    px as i32 - (right as i32 - r - 1)
+                } else {
+                    0
+                };
+                let dy = if py < top + r as usize {
+                    top as i32 + r - py as i32
+                } else if py >= bottom - r as usize {
+                    py as i32 - (bottom as i32 - r - 1)
+                } else {
+                    0
+                };
                 if dx == 0 || dy == 0 || dx * dx + dy * dy <= r * r {
                     alpha[py * sw + px] = 34;
                 }
             }
         }
-        for _ in 0..3 {
+        for _ in 0..2 {
             box_blur_alpha(&mut alpha, sw, sh, 4);
         }
         for (dst, value) in layer.buf_mut().iter_mut().zip(alpha) {
@@ -97,12 +107,18 @@ impl ShadowMask {
     fn composite_transparent(&self, target: &mut LayerSystem, x: i32, y: i32) {
         for sy in 0..self.layer.height() {
             let dy = y - self.pad + sy as i32;
-            if dy < 0 || dy >= target.height() as i32 { continue; }
+            if dy < 0 || dy >= target.height() as i32 {
+                continue;
+            }
             for sx in 0..self.layer.width() {
                 let dx = x - self.pad + sx as i32;
-                if dx < 0 || dx >= target.width() as i32 { continue; }
+                if dx < 0 || dx >= target.width() as i32 {
+                    continue;
+                }
                 let alpha = self.layer.buf_ref()[sy * self.layer.width() + sx] & 0xff;
-                if alpha == 0 { continue; }
+                if alpha == 0 {
+                    continue;
+                }
                 let dst = dy as usize * target.width() + dx as usize;
                 let old = (target.buf_ref()[dst] >> 24) & 0xff;
                 target.buf_mut()[dst] = old.max(alpha) << 24;
@@ -371,6 +387,9 @@ pub struct Warp3Engine {
     switch_transition: Option<(usize, bool)>,
     hover_started_ns: Option<u64>,
     switch_started_ns: Option<u64>,
+    screen_transition_active: bool,
+    screen_transition_started_ns: Option<u64>,
+    screen_transition_offset_y: f32,
     animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
     now: NowValues,
@@ -414,6 +433,9 @@ impl Warp3Engine {
             switch_transition: None,
             hover_started_ns: None,
             switch_started_ns: None,
+            screen_transition_active: false,
+            screen_transition_started_ns: None,
+            screen_transition_offset_y: 0.0,
             animation_now_ns: 0,
             shadows: Vec::new(),
             now: NowValues::default(),
@@ -429,8 +451,16 @@ impl Warp3Engine {
     pub fn set_screen(&mut self, screen: &str) {
         if self.screen != screen {
             self.screen = screen.to_string();
+            self.begin_screen_transition();
             self.load_screen();
         }
+    }
+
+    fn begin_screen_transition(&mut self) {
+        self.cancel_hover();
+        self.screen_transition_active = true;
+        self.screen_transition_started_ns = None;
+        self.screen_transition_offset_y = 15.0;
     }
 
     pub fn set_text(&mut self, class: &str, value: &str) {
@@ -462,12 +492,13 @@ impl Warp3Engine {
         }
         self.width = width.max(1);
         self.height = height.max(1);
-        let title_bar = crate::window::title_bar_h() as i32;
         let document_width = self.width.min(960);
         let document_x = (self.width - document_width) / 2;
-        let content_x = document_x + 28;
-        let content_width = document_width - 56;
-        let mut y = title_bar + 32;
+        let content_x = document_x + 14;
+        let content_width = document_width - 28;
+        let title_bar = crate::window::title_bar_h() as i32;
+        // Keep the first document element clear of the title-bar overlay.
+        let mut y = title_bar + 16;
         let roots = self.roots.clone();
         for idx in roots {
             if self.nodes[idx].is("config") || self.nodes[idx].is("toolbar") {
@@ -476,12 +507,12 @@ impl Warp3Engine {
             let h = self.layout(idx, content_x, y, content_width);
             y += h + 12;
         }
-        self.content_height = (y + 96).max(title_bar + self.height);
-        let toolbar_width = (self.width - 32).min(900);
+        self.content_height = (y + 48).max(title_bar + self.height);
+        let toolbar_width = (self.width - 16).min(900);
         let toolbar_x = (self.width - toolbar_width) / 2;
         // Toolbars live in viewport coordinates.  They are deliberately not
         // part of the document, so scrolling never moves or reflows them.
-        let toolbar_y = title_bar + self.height - 18 - 54;
+        let toolbar_y = title_bar + self.height - 9 - 54;
         let toolbars: Vec<usize> = self
             .roots
             .iter()
@@ -513,8 +544,14 @@ impl Warp3Engine {
         self.focused_input.is_some()
     }
 
+    pub fn is_screen_transition_active(&self) -> bool {
+        self.screen_transition_active
+    }
+
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
-        (!self.full_window_redraw).then_some(self.window_damage).flatten()
+        (!self.full_window_redraw)
+            .then_some(self.window_damage)
+            .flatten()
     }
 
     pub fn take_scroll_request(&mut self) -> Option<i32> {
@@ -539,6 +576,10 @@ impl Warp3Engine {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
+        if self.screen_transition_active {
+            self.cancel_hover();
+            return;
+        }
         let next = self.hit_test(x, y);
         if self.hovered != next {
             let old = self.hovered;
@@ -556,6 +597,10 @@ impl Warp3Engine {
     }
 
     pub fn clear_hover(&mut self) {
+        if self.screen_transition_active {
+            self.cancel_hover();
+            return;
+        }
         if let Some(old) = self.hovered.take() {
             if let Some((previous_old, previous_new)) = self.hover_transition {
                 self.invalidate_nodes(previous_old, previous_new);
@@ -622,17 +667,25 @@ impl Warp3Engine {
     }
 
     pub fn handle_key(&mut self, key: u8) {
+        if key == 0x08 || key == 0x7f {
+            self.handle_text("", 1);
+        } else if (0x20..0x7f).contains(&key) {
+            let text = [key];
+            let text = unsafe { core::str::from_utf8_unchecked(&text) };
+            self.handle_text(text, 0);
+        }
+    }
+
+    /// Replaces the active IME composition and accepts UTF-8 text.
+    pub fn handle_text(&mut self, text: &str, replace_chars: usize) {
         let Some(idx) = self.focused_input else {
             return;
         };
         let mut value = self.nodes[idx].prop("text").to_string();
-        if key == 0x08 || key == 0x7f {
+        for _ in 0..replace_chars {
             value.pop();
-        } else if (key == b'\n' || key == b'\r') && self.nodes[idx].is("textarea") {
-            value.push('\n');
-        } else if (0x20..0x7f).contains(&key) {
-            value.push(key as char);
         }
+        value.push_str(text);
         set_prop(&mut self.nodes[idx], "text", &value);
         self.invalidate_from(self.nodes[idx].y);
     }
@@ -673,6 +726,22 @@ impl Warp3Engine {
                 self.switch_started_ns = None;
             }
         }
+        if self.screen_transition_active {
+            let started = *self.screen_transition_started_ns.get_or_insert(now_ns);
+            let t = (now_ns.saturating_sub(started) as f32 / 250_000_000.0).min(1.0);
+            let remaining = 1.0 - t;
+            let raw_offset = 15.0 * remaining * remaining * remaining;
+            // The first 90% stays on the integer-pixel fast path. During the
+            // final settle, retain the fractional position for smoother text.
+            let next_offset = if t < 0.9 { raw_offset as i32 as f32 } else { raw_offset };
+            changed |= self.screen_transition_offset_y != next_offset;
+            self.screen_transition_offset_y = next_offset;
+            if t >= 1.0 {
+                self.screen_transition_active = false;
+                self.screen_transition_offset_y = 0.0;
+                changed = true;
+            }
+        }
         changed
     }
 
@@ -682,43 +751,72 @@ impl Warp3Engine {
         if !self.dirty && (self.repaint_from < self.content_height || self.toolbar_dirty) {
             self.paint_cached_layers();
         }
-        let title_bar = crate::window::title_bar_h();
         layer.fill_rect(
             0,
-            title_bar,
+            0,
             layer.width(),
-            layer.height().saturating_sub(title_bar),
+            layer.height(),
             html_bg(),
         );
+        let target_y = self.screen_transition_offset_y.max(0.0) as usize;
+        let subpixel_y = self.screen_transition_offset_y - target_y as f32;
         if let Some(document) = &self.document_layer {
-            let source_y = (self.scroll + title_bar as i32).max(0) as usize;
-            let target_y = title_bar;
+            let source_y = self.scroll.max(0) as usize;
             let visible_h = layer.height().saturating_sub(target_y);
             if source_y < document.height() && visible_h > 0 {
-                layer.composit_rect_opaque(document, ox.max(0) as usize, target_y, 0, source_y,
-                    document.width(), visible_h.min(document.height() - source_y));
+                let draw_h = visible_h.min(document.height() - source_y);
+                if subpixel_y > 0.0 {
+                    layer.composit_rect_opaque_subpixel_y(
+                        document,
+                        ox.max(0) as usize,
+                        target_y,
+                        0,
+                        source_y,
+                        document.width(),
+                        draw_h,
+                        subpixel_y,
+                    );
+                } else {
+                    layer.composit_rect_opaque(
+                        document,
+                        ox.max(0) as usize,
+                        target_y,
+                        0,
+                        source_y,
+                        document.width(),
+                        draw_h,
+                    );
+                }
             }
         }
         // This is a separate transparent layer, composited after the scrolling
         // document.  It keeps both its pixels and its hit targets fixed.
         if let Some(toolbar) = &self.toolbar_layer {
-            layer.composit_rect_alpha(toolbar, ox.max(0) as usize, 0, 0, 0,
-                toolbar.width(), toolbar.height());
+            layer.composit_rect_alpha(
+                toolbar,
+                ox.max(0) as usize,
+                target_y,
+                0,
+                0,
+                toolbar.width(),
+                toolbar.height(),
+            );
         }
         // Paint fixed controls only for a full frame or a toolbar-local hover.
         // Repainting TTF text outside the local damage would blend its edge
         // pixels again even though the document did not change.
         let paint_toolbar = self.window_damage.map_or(true, |(_, y0, _, y1)| {
-            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 18 - 54 - 14;
+            let toolbar_top = crate::window::title_bar_h() as i32 + self.height - 9 - 54 - 14;
             y1 >= toolbar_top && y0 < self.height + crate::window::title_bar_h() as i32
         });
         // Paint the fixed controls over the already-composited document. This
         // gives text and rounded corners their final-background antialiasing;
         // only the shadow itself needs transparent alpha storage.
         if paint_toolbar {
-            for idx in self.toolbar_paint.clone() {
+            for paint_index in 0..self.toolbar_paint.len() {
+                let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
-                self.draw_node(layer, idx, node.x + ox, node.y);
+                self.draw_node(layer, idx, node.x + ox, node.y + target_y as i32);
             }
         }
         self.window_damage = None;
@@ -805,10 +903,8 @@ impl Warp3Engine {
                 // `i32::clamp` panics when the window is narrower than the
                 // button's normal 44 px minimum because min > max.  A tiny
                 // window must shrink the control instead of crashing.
-                self.nodes[idx].w = fit_button_width(
-                    measure(self.nodes[idx].prop("text")) + 28,
-                    width,
-                );
+                self.nodes[idx].w =
+                    fit_button_width(measure(self.nodes[idx].prop("text")) + 28, width);
                 self.nodes[idx].h = 34;
             }
             "input" => {
@@ -939,10 +1035,12 @@ impl Warp3Engine {
                 let mut max_h = 22;
                 for child in self.nodes[idx].children.clone() {
                     if self.nodes[child].is("detail") {
-                        let h = self.layout(child, x + width - detail_width - 8, y + 12, detail_width);
+                        let h =
+                            self.layout(child, x + width - detail_width - 8, y + 12, detail_width);
                         max_h = max_h.max(h);
                     } else {
-                        let text_width = (width - detail_width - if detail_width > 0 { 24 } else { 16 }).max(24);
+                        let text_width =
+                            (width - detail_width - if detail_width > 0 { 24 } else { 16 }).max(24);
                         let h = self.layout(child, x + 8, y + 12, text_width);
                         max_h = max_h.max(h);
                     }
@@ -1005,7 +1103,11 @@ impl Warp3Engine {
                 continue;
             }
             let node = &self.nodes[idx];
-            let screen_y = if node.overlay { node.y } else { node.y - self.scroll };
+            let screen_y = if node.overlay {
+                node.y
+            } else {
+                node.y - self.scroll
+            };
             // Document patches may never clear title-bar pixels.  Those are
             // outside Warp3's ownership and would otherwise expose wallpaper.
             let y0 = if node.overlay {
@@ -1013,27 +1115,40 @@ impl Warp3Engine {
             } else {
                 (screen_y - HOVER_DAMAGE_PAD).max(crate::window::title_bar_h() as i32)
             };
-            let next = (node.x - HOVER_DAMAGE_PAD, y0,
-                node.x + node.w + HOVER_DAMAGE_PAD, screen_y + node.h + HOVER_DAMAGE_PAD);
+            let next = (
+                node.x - HOVER_DAMAGE_PAD,
+                y0,
+                node.x + node.w + HOVER_DAMAGE_PAD,
+                screen_y + node.h + HOVER_DAMAGE_PAD,
+            );
             self.window_damage = Some(match self.window_damage {
-                Some(old) => (old.0.min(next.0), old.1.min(next.1), old.2.max(next.2), old.3.max(next.3)),
+                Some(old) => (
+                    old.0.min(next.0),
+                    old.1.min(next.1),
+                    old.2.max(next.2),
+                    old.3.max(next.3),
+                ),
                 None => next,
             });
             if self.is_toolbar_tree(idx) {
                 // Fixed controls are painted directly over the final document;
                 // their hover state therefore needs no cached-layer rebuild.
             } else {
-                document_y = Some(document_y.map_or(self.nodes[idx].y, |y: i32| y.min(self.nodes[idx].y)));
-                document_bottom = Some(document_bottom.map_or(
-                    self.nodes[idx].y + self.nodes[idx].h,
-                    |bottom: i32| bottom.max(self.nodes[idx].y + self.nodes[idx].h),
-                ));
+                document_y =
+                    Some(document_y.map_or(self.nodes[idx].y, |y: i32| y.min(self.nodes[idx].y)));
+                document_bottom = Some(
+                    document_bottom.map_or(self.nodes[idx].y + self.nodes[idx].h, |bottom: i32| {
+                        bottom.max(self.nodes[idx].y + self.nodes[idx].h)
+                    }),
+                );
             }
         }
         if let Some(y) = document_y {
             // Shadows extend outside the node; repaint their full footprint.
-            self.invalidate_range((y - HOVER_DAMAGE_PAD).max(0),
-                document_bottom.unwrap_or(y) + HOVER_DAMAGE_PAD);
+            self.invalidate_range(
+                (y - HOVER_DAMAGE_PAD).max(0),
+                document_bottom.unwrap_or(y) + HOVER_DAMAGE_PAD,
+            );
         }
     }
 
@@ -1051,9 +1166,12 @@ impl Warp3Engine {
         if let Some(mut layer) = self.document_layer.take() {
             layer.fill_rect(0, from, width, to.saturating_sub(from), html_bg());
             layer.push_clip(0, from, width, to);
-            for idx in self.document_paint.clone() {
+            for paint_index in 0..self.document_paint.len() {
+                let idx = self.document_paint[paint_index];
                 let node = &self.nodes[idx];
-                if node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 { continue; }
+                if node.y + node.h + 12 <= from as i32 || node.y - 12 >= to as i32 {
+                    continue;
+                }
                 self.draw_node(&mut layer, idx, node.x, node.y);
             }
             self.draw_list_dividers(&mut layer, from as i32, to as i32, 0);
@@ -1065,11 +1183,14 @@ impl Warp3Engine {
 
         let toolbar_h = (self.height + crate::window::title_bar_h() as i32).max(1) as usize;
         let recreate_toolbar = !matches!(&self.toolbar_layer, Some(layer) if layer.width() == width && layer.height() == toolbar_h);
-        if recreate_toolbar { self.toolbar_layer = Some(LayerSystem::new_transparent(width, toolbar_h)); }
+        if recreate_toolbar {
+            self.toolbar_layer = Some(LayerSystem::new_transparent(width, toolbar_h));
+        }
         if self.toolbar_dirty || recreate_toolbar {
             if let Some(mut layer) = self.toolbar_layer.take() {
                 layer.clear(Color::TRANSPARENT);
-                for idx in self.toolbar_paint.clone() {
+                for paint_index in 0..self.toolbar_paint.len() {
+                    let idx = self.toolbar_paint[paint_index];
                     let node = &self.nodes[idx];
                     if node.is("toolbar") {
                         self.composite_shadow_transparent(&mut layer, idx);
@@ -1229,7 +1350,11 @@ impl Warp3Engine {
                 knob_x.max(0) as usize + 7,
                 yu + 10,
                 7,
-                blend_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), progress),
+                blend_color(
+                    Color::rgb(102, 102, 102),
+                    Color::rgb(255, 255, 255),
+                    progress,
+                ),
             );
         }
 
@@ -1287,8 +1412,12 @@ impl Warp3Engine {
             let started = self.hover_started_ns.unwrap_or(self.animation_now_ns);
             let elapsed = self.animation_now_ns.saturating_sub(started);
             let t = smoothstep(elapsed as f32 / HOVER_DURATION_NS as f32);
-            if new == Some(idx) { return t; }
-            if old == Some(idx) { return 1.0 - t; }
+            if new == Some(idx) {
+                return t;
+            }
+            if old == Some(idx) {
+                return 1.0 - t;
+            }
         }
         (self.hovered == Some(idx)) as u8 as f32
     }
@@ -1313,7 +1442,10 @@ impl Warp3Engine {
         for node in &mut self.nodes {
             node.hidden = false;
         }
-        let tabs: Vec<(usize, usize, Vec<usize>)> = self.nodes.iter().enumerate()
+        let tabs: Vec<(usize, usize, Vec<usize>)> = self
+            .nodes
+            .iter()
+            .enumerate()
             .filter(|(_, node)| node.is("tab"))
             .map(|(idx, node)| (idx, node.tab, node.children.clone()))
             .collect();
@@ -1333,7 +1465,9 @@ impl Warp3Engine {
 
     fn refresh_text_lines(&mut self) {
         for node in &mut self.nodes {
-            if !node.is("content") { continue; }
+            if !node.is("content") {
+                continue;
+            }
             let text = node.prop("text").to_string();
             node.text_lines = if text.is_empty() {
                 Vec::new()
@@ -1359,8 +1493,11 @@ impl Warp3Engine {
         self.document_paint.clear();
         self.toolbar_paint.clear();
         for (idx, node) in self.nodes.iter().enumerate() {
-            if node.hidden || node.is("config") || node.is("space")
-                || (node.is("scroll-point") && node.tags.len() == 1) {
+            if node.hidden
+                || node.is("config")
+                || node.is("space")
+                || (node.is("scroll-point") && node.tags.len() == 1)
+            {
                 continue;
             }
             if node.overlay {
@@ -1381,9 +1518,13 @@ impl Warp3Engine {
         let buffer = layer.buf_mut();
         for idx in &self.document_paint {
             let node = &self.nodes[*idx];
-            if !node.is("list") || node.y + node.h <= from || node.y >= to { continue; }
+            if !node.is("list") || node.y + node.h <= from || node.y >= to {
+                continue;
+            }
             let y = node.y + node.h - 1 - origin;
-            if y < 0 || y >= height { continue; }
+            if y < 0 || y >= height {
+                continue;
+            }
             let x0 = node.x.max(0) as usize;
             let x1 = (node.x + node.w).max(0).min(width as i32) as usize;
             if x1 > x0 {
@@ -1401,7 +1542,11 @@ impl Warp3Engine {
                     && contains(
                         &self.nodes[*idx],
                         x,
-                        if self.is_toolbar_tree(*idx) { y - self.scroll } else { y },
+                        if self.is_toolbar_tree(*idx) {
+                            y - self.scroll
+                        } else {
+                            y
+                        },
                     )
             }) {
                 return Some(idx);
@@ -1454,6 +1599,7 @@ impl Warp3Engine {
             match left.as_str() {
                 "screen" => {
                     self.screen = unquote(&right);
+                    self.begin_screen_transition();
                     self.load_screen();
                 }
                 "scroll" => self.request_scroll(&right),
@@ -1476,25 +1622,28 @@ impl Warp3Engine {
                         self.command_queue.push(command);
                         // Yield once so the window server can execute the URI
                         // before a following action reads the changed value.
-                        self.script_wait_until_ns =
-                            Some(self.animation_now_ns.saturating_add(1));
+                        self.script_wait_until_ns = Some(self.animation_now_ns.saturating_add(1));
                         return;
                     }
                 }
                 command if command.starts_with("runSwitch ") => {
                     let class = command.trim_start_matches("runSwitch ").trim();
-                    let enabled = self.nodes.iter().find(|node| {
-                        node.is("switch") && node.classes.iter().any(|item| item == class)
-                    }).map_or(false, |node| node.prop("default") == "true");
+                    let enabled = self
+                        .nodes
+                        .iter()
+                        .find(|node| {
+                            node.is("switch") && node.classes.iter().any(|item| item == class)
+                        })
+                        .map_or(false, |node| node.prop("default") == "true");
                     let uri = alloc::format!("{}{}", unquote(&right), enabled);
                     self.command_queue.push(uri);
-                    self.script_wait_until_ns =
-                        Some(self.animation_now_ns.saturating_add(1));
+                    self.script_wait_until_ns = Some(self.animation_now_ns.saturating_add(1));
                     return;
                 }
                 "fun" => {
                     let name = unquote(&right);
-                    if self.script_frames
+                    if self
+                        .script_frames
                         .iter()
                         .any(|(_, _, active)| active.as_ref() == Some(&name))
                     {
@@ -1589,13 +1738,10 @@ impl Warp3Engine {
 
     fn now_value(&self, path: &str) -> Option<String> {
         let time = runtime::get_time().ok()?;
-        let timezone = baram_bsd::config::get_config()
-            .get_i32("system/timezone")
-            .unwrap_or(9);
-        let utc_seconds = time.hour() as i32 * 3600
-            + time.minute() as i32 * 60
-            + time.second() as i32;
-        let local_seconds = (utc_seconds + timezone * 3600).rem_euclid(24 * 3600);
+        let timezone_minutes = baram_bsd::config::timezone_offset_minutes();
+        let utc_seconds =
+            time.hour() as i32 * 3600 + time.minute() as i32 * 60 + time.second() as i32;
+        let local_seconds = (utc_seconds + timezone_minutes * 60).rem_euclid(24 * 3600);
         let hour = (local_seconds / 3600) as u8;
         let minute = ((local_seconds / 60) % 60) as u8;
         let second = (local_seconds % 60) as u8;
@@ -1679,7 +1825,11 @@ fn parse_math_integer(chars: &[char], index: &mut usize) -> i64 {
             .saturating_add(chars[*index].to_digit(10).unwrap_or(0) as i64);
         *index += 1;
     }
-    if negative { -value } else { value }
+    if negative {
+        -value
+    } else {
+        value
+    }
 }
 
 fn format_now_value(
@@ -1779,27 +1929,41 @@ fn mark_overlay_tree(nodes: &mut [Node], idx: usize) {
     }
 }
 
-/// One separable box blur.  Three invocations are a fast Gaussian
+/// One separable box blur. Two invocations provide a fast softening
 /// approximation and need only integer additions/subtractions per pixel.
 fn box_blur_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
-    if width == 0 || height == 0 { return; }
+    if width == 0 || height == 0 {
+        return;
+    }
     let mut tmp = alloc::vec![0u8; alpha.len()];
     let diameter = radius * 2 + 1;
     for y in 0..height {
         let row = y * width;
         let mut sum = 0u32;
         for x in 0..width + radius {
-            if x < width { sum += alpha[row + x] as u32; }
-            if x >= diameter && x - diameter < width { sum -= alpha[row + x - diameter] as u32; }
-            if x >= radius && x - radius < width { tmp[row + x - radius] = (sum / diameter as u32) as u8; }
+            if x < width {
+                sum += alpha[row + x] as u32;
+            }
+            if x >= diameter && x - diameter < width {
+                sum -= alpha[row + x - diameter] as u32;
+            }
+            if x >= radius && x - radius < width {
+                tmp[row + x - radius] = (sum / diameter as u32) as u8;
+            }
         }
     }
     for x in 0..width {
         let mut sum = 0u32;
         for y in 0..height + radius {
-            if y < height { sum += tmp[y * width + x] as u32; }
-            if y >= diameter && y - diameter < height { sum -= tmp[(y - diameter) * width + x] as u32; }
-            if y >= radius && y - radius < height { alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8; }
+            if y < height {
+                sum += tmp[y * width + x] as u32;
+            }
+            if y >= diameter && y - diameter < height {
+                sum -= tmp[(y - diameter) * width + x] as u32;
+            }
+            if y >= radius && y - radius < height {
+                alpha[(y - radius) * width + x] = (sum / diameter as u32) as u8;
+            }
         }
     }
 }
@@ -1845,7 +2009,11 @@ fn unquote(value: &str) -> String {
 fn parse_wait_ns(value: &str) -> u64 {
     let value = value.trim();
     if let Some(ms) = value.strip_suffix("ms") {
-        return ms.trim().parse::<u64>().unwrap_or(0).saturating_mul(1_000_000);
+        return ms
+            .trim()
+            .parse::<u64>()
+            .unwrap_or(0)
+            .saturating_mul(1_000_000);
     }
     if let Some(seconds) = value.strip_suffix('s') {
         return seconds
@@ -1854,14 +2022,11 @@ fn parse_wait_ns(value: &str) -> u64 {
             .unwrap_or(0)
             .saturating_mul(1_000_000_000);
     }
-    value
-        .parse::<u64>()
-        .unwrap_or(0)
-        .saturating_mul(1_000_000)
+    value.parse::<u64>().unwrap_or(0).saturating_mul(1_000_000)
 }
 
 fn html_bg() -> Color {
-    Color::rgb(243, 243, 243)
+    config::get_color("ui-theme/color/win_bg", Color::rgb(243, 243, 243))
 }
 
 fn html_layer() -> Color {
@@ -1895,7 +2060,11 @@ fn html_accent_hover() -> Color {
 fn blend_color(from: Color, to: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t) as u8;
-    Color::rgb(mix(from.r(), to.r()), mix(from.g(), to.g()), mix(from.b(), to.b()))
+    Color::rgb(
+        mix(from.r(), to.r()),
+        mix(from.g(), to.g()),
+        mix(from.b(), to.b()),
+    )
 }
 
 fn ease_out(t: f32) -> f32 {
@@ -1936,7 +2105,15 @@ fn rounded_box(
     }
 }
 
-fn rounded_fill(layer: &mut LayerSystem, x: i32, y: i32, width: usize, height: usize, radius: usize, fill: Color) {
+fn rounded_fill(
+    layer: &mut LayerSystem,
+    x: i32,
+    y: i32,
+    width: usize,
+    height: usize,
+    radius: usize,
+    fill: Color,
+) {
     if x >= 0 && y >= 0 && width > 0 && height > 0 {
         layer.fill_rounded_rect(x as usize, y as usize, width, height, radius, fill);
     }
@@ -1961,12 +2138,20 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
             for row in 0..h {
                 let py = top + row;
                 if py < crate::window::title_bar_h() as i32
-                    || py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 { continue; }
+                    || py < clip_y0 as i32
+                    || py >= clip_y1.min(layer_h) as i32
+                {
+                    continue;
+                }
                 for col in 0..w {
                     let px = x + col;
-                    if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 { continue; }
+                    if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
+                        continue;
+                    }
                     let alpha = data[row as usize * w as usize + col as usize] as f32 / 255.0;
-                    if alpha <= 0.0 { continue; }
+                    if alpha <= 0.0 {
+                        continue;
+                    }
                     let index = py as usize * layer_w + px as usize;
                     let background = layer.buf_ref()[index];
                     layer.buf_mut()[index] = LayerSystem::blend_alpha(background, color.0, alpha);
@@ -2023,14 +2208,13 @@ mod tests {
         assert!(!parse_script(include_str!("../../../app/calc.w3a/calc.w3s")).is_empty());
         assert!(!parse_script(include_str!("../../../app/settings.w3a/settings.w3s")).is_empty());
         assert!(!parse_script(include_str!("../../../app/theme.w3a/theme.w3s")).is_empty());
-        let permission = parse_script(include_str!(
-            "../../../app/ospermission.w3a/permission.w3s"
-        ));
+        let permission = parse_script(include_str!("../../../app/ospermission.w3a/permission.w3s"));
         assert!(permission.iter().any(|section| {
             section.name == "permission-always"
-                && section.actions.iter().any(|(left, right)| {
-                    left == "run" && right == "security://always"
-                })
+                && section
+                    .actions
+                    .iter()
+                    .any(|(left, right)| left == "run" && right == "security://always")
         }));
     }
 
@@ -2051,13 +2235,25 @@ mod tests {
             mouse: 34,
         };
         assert_eq!(format_now_value("fps", now, 4, 5, 6).as_deref(), Some("60"));
-        assert_eq!(format_now_value("window", now, 4, 5, 6).as_deref(), Some("3"));
+        assert_eq!(
+            format_now_value("window", now, 4, 5, 6).as_deref(),
+            Some("3")
+        );
         assert_eq!(format_now_value("key", now, 4, 5, 6).as_deref(), Some("12"));
-        assert_eq!(format_now_value("mouse", now, 4, 5, 6).as_deref(), Some("34"));
+        assert_eq!(
+            format_now_value("mouse", now, 4, 5, 6).as_deref(),
+            Some("34")
+        );
         assert_eq!(format_now_value("h", now, 4, 5, 6).as_deref(), Some("4"));
         assert_eq!(format_now_value("hh", now, 4, 5, 6).as_deref(), Some("04"));
-        assert_eq!(format_now_value("hhmm", now, 4, 5, 6).as_deref(), Some("04:05"));
-        assert_eq!(format_now_value("hhmmss", now, 4, 5, 6).as_deref(), Some("04:05:06"));
+        assert_eq!(
+            format_now_value("hhmm", now, 4, 5, 6).as_deref(),
+            Some("04:05")
+        );
+        assert_eq!(
+            format_now_value("hhmmss", now, 4, 5, 6).as_deref(),
+            Some("04:05:06")
+        );
         assert!(format_now_value("unknown", now, 4, 5, 6).is_none());
     }
 

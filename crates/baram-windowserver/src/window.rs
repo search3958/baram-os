@@ -1,15 +1,80 @@
-use alloc::vec;
 use alloc::vec::Vec;
 use baram_bsd::config;
 use baram_core::LayerSystem;
-use baram_core::{Color, Screen};
+use baram_core::Color;
 
-const SCROLL_ANIMATION_NS: u64 = 10_000_000;
+const SCROLL_ANIMATION_NS: u64 = 180_000_000;
+const WINDOW_OPEN_DURATION_NS: u64 = 400_000_000;
+const WINDOW_MOTION_OFFSET_Y: i32 = 30;
 use baram_font::LayerFontExt;
+use baram_graphics::blur;
 use baram_graphics::svg;
 
 pub fn scroll_speed() -> i32 {
     config::get_i32("ui-theme/window/scroll_speed", 30)
+}
+
+/// Shared smooth-scroll state for windows and non-window scroll viewports.
+pub struct SmoothScroll {
+    pub position: i32,
+    target: i32,
+    start: i32,
+    started_ns: Option<u64>,
+    max: i32,
+}
+
+impl SmoothScroll {
+    pub const fn new() -> Self {
+        Self { position: 0, target: 0, start: 0, started_ns: None, max: 0 }
+    }
+
+    pub fn reset(&mut self) {
+        self.position = 0;
+        self.target = 0;
+        self.start = 0;
+        self.started_ns = None;
+    }
+
+    pub fn set_max(&mut self, max: i32) {
+        self.max = max.max(0);
+        self.target = self.target.min(self.max);
+        self.position = self.position.min(self.max);
+        self.start = self.start.min(self.max);
+    }
+
+    pub fn scroll(&mut self, delta: i32) -> bool {
+        let next = self.target.saturating_add(delta).clamp(0, self.max);
+        if next == self.target {
+            return false;
+        }
+        // Match Window/Warp3 scrolling: extend the current target without
+        // restarting an active animation for every wheel event.
+        if self.position == self.target {
+            self.start = self.position;
+            self.started_ns = None;
+        }
+        self.target = next;
+        true
+    }
+
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        if self.position == self.target {
+            self.started_ns = None;
+            return false;
+        }
+        let started = *self.started_ns.get_or_insert(now_ns.saturating_sub(1_000_000));
+        let elapsed = now_ns.saturating_sub(started);
+        let t = (elapsed as f32 / SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
+        let eased = decelerate_scroll(t);
+        let distance = self.target - self.start;
+        let next = if t >= 1.0 { self.target } else { self.start + (distance as f32 * eased) as i32 };
+        if next == self.position { return false; }
+        self.position = next;
+        if t >= 1.0 { self.started_ns = None; }
+        true
+    }
+
+    pub fn is_animating(&self) -> bool { self.position != self.target }
 }
 
 pub fn title_bar_h() -> usize {
@@ -29,7 +94,8 @@ pub fn btn_size() -> usize {
 }
 
 pub fn btn_area_w() -> usize {
-    btn_size() * 3 + 23
+    // Keep the title clear of the window controls.
+    btn_size() * 3 + 27
 }
 
 pub fn win_radius() -> usize {
@@ -129,6 +195,113 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     }
 }
 
+/// Build a separate progressive-blur layer from the title bar's top 40px.
+/// The upper 12px is a fixed 16px blur; below it, neighbouring integer blur
+/// radii are crossfaded so the 16px-to-0px falloff has no visible seams.
+fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    const BLUR_RADIUS: usize = 16;
+    const FIXED_BLUR_HEIGHT: usize = 12;
+    const CAPTURE_HEIGHT: usize = 40;
+    let sample_y0 = y;
+    let sample_y1 = (y + CAPTURE_HEIGHT).min(layer.height());
+    let sample_h = sample_y1.saturating_sub(sample_y0);
+    if sample_h == 0 {
+        return;
+    }
+    let mut backdrop = alloc::vec![0u32; width * sample_h];
+    for row in 0..sample_h {
+        let src = (sample_y0 + row) * layer.width() + x;
+        let dst = row * width;
+        backdrop[dst..dst + width].copy_from_slice(&layer.buf_ref()[src..src + width]);
+    }
+    let mut blurred = alloc::vec![0u32; backdrop.len()];
+    let mut blur_layer = LayerSystem::new(width, height);
+    for row in 0..height {
+        let target_row = row * width;
+        if row < sample_h {
+            let source_row = row * width;
+            blur_layer.buf_mut()[target_row..target_row + width]
+                .copy_from_slice(&backdrop[source_row..source_row + width]);
+        } else if y + row < layer.height() {
+            // The capture is deliberately limited to the top 40 px.  Keep
+            // the remainder of the title bar untouched instead of stretching
+            // the final captured row, which previously formed a bright seam.
+            let source_row = (y + row) * layer.width() + x;
+            blur_layer.buf_mut()[target_row..target_row + width]
+                .copy_from_slice(&layer.buf_ref()[source_row..source_row + width]);
+        }
+    }
+    let fade_height = height.saturating_sub(FIXED_BLUR_HEIGHT + 1).max(1);
+    for radius in 1..=BLUR_RADIUS {
+        // Preserve every radius step.  For the wider (box-blurred) steps the
+        // title bar uses one H→V sweep rather than the normal two sweeps.
+        blur::blur_region_to_single_box(
+            &backdrop,
+            &mut blurred,
+            width,
+            0,
+            sample_h,
+            radius as i32,
+        );
+        for row in 0..height {
+            let scaled_radius = if row < FIXED_BLUR_HEIGHT {
+                (BLUR_RADIUS * 256) as u32
+            } else {
+                (height.saturating_sub(1 + row) * BLUR_RADIUS * 256 / fade_height) as u32
+            };
+            let lower_radius = (scaled_radius / 256) as usize;
+            let upper_radius = ((scaled_radius + 255) / 256) as usize;
+            let upper_alpha = (scaled_radius & 0xff) as u8;
+            if row >= sample_h {
+                continue;
+            }
+            let source_row = row * width;
+            if radius == lower_radius && lower_radius != 0 {
+                blur_layer.composit_rect_global_alpha(
+                    &blurred[source_row..source_row + width], width, 1, 0, row, 255,
+                );
+            }
+            if radius == upper_radius && upper_radius != lower_radius {
+                blur_layer.composit_rect_global_alpha(
+                    &blurred[source_row..source_row + width], width, 1, 0, row, upper_alpha,
+                );
+            }
+        }
+    }
+    layer.composit_rect_global_alpha(blur_layer.buf_ref(), width, height, x, y, 255);
+}
+
+/// Overlay the white transparency gradient after the independent blur layer.
+fn draw_title_bar_overlay(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    let color = config::get_color("ui-theme/color/win_bg", Color::WIN_BG);
+    let solid_row = alloc::vec![color.0; width];
+    let denominator = height.saturating_sub(1).max(1) as u32;
+    for row in 0..height {
+        let alpha = 255 - (row as u32 * 255 / denominator) as u8;
+        layer.composit_rect_global_alpha(&solid_row, width, 1, x, y + row, alpha);
+    }
+}
+
+fn draw_title_bar_background(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    skip_blur: bool,
+) {
+    if !skip_blur {
+        draw_title_bar_blur_layer(layer, x, y, width, height);
+    }
+    draw_title_bar_overlay(layer, x, y, width, height);
+}
+
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
 const MINI_ICON_SVG: &str = include_str!("../../../data/mini.svg");
 const CLOSE_ICON_SVG: &str = include_str!("../../../data/close.svg");
@@ -178,8 +351,10 @@ pub struct Window {
     /// Local window coordinates. `None` means the entire layer must be rebuilt.
     pub content_damage: Option<(usize, usize, usize, usize)>,
     pub shadow_dirty: bool,
-    pub open_progress: f32,
     pub open_animating: bool,
+    motion_started_ns: Option<u64>,
+    render_y_offset: i32,
+    prev_render_y_offset: i32,
     pending_unmaximize: bool,
     pending_unmax_ratio: f64,
     pending_unmax_mx: i32,
@@ -235,8 +410,10 @@ impl Window {
             content_dirty: true,
             content_damage: None,
             shadow_dirty: true,
-            open_progress: 0.0,
             open_animating: true,
+            motion_started_ns: None,
+            render_y_offset: WINDOW_MOTION_OFFSET_Y,
+            prev_render_y_offset: WINDOW_MOTION_OFFSET_Y,
             pending_unmaximize: false,
             pending_unmax_ratio: 0.0,
             pending_unmax_mx: 0,
@@ -290,8 +467,8 @@ impl Window {
     }
 
     fn button_hit(&self, px: i32, py: i32) -> char {
-        let base_x = self.x + 6;
-        let btn_y = self.y + 5;
+        let base_x = self.x + 10;
+        let btn_y = self.y + 10;
         let bs = btn_size() as i32;
         if py >= btn_y && py < btn_y + bs {
             if px >= base_x && px < base_x + bs {
@@ -382,10 +559,45 @@ impl Window {
     pub fn toggle_minimize(&mut self) {
         if self.minimized {
             self.minimized = false;
+            self.open_animating = true;
         } else {
             self.minimized = true;
+            self.open_animating = false;
+            self.render_y_offset = 0;
         }
+        self.motion_started_ns = None;
         self.content_dirty = true;
+    }
+
+    fn is_motion_animating(&self) -> bool {
+        self.open_animating
+    }
+
+    fn render_y(&self) -> i32 {
+        self.y + self.render_y_offset
+    }
+
+    fn prev_render_y(&self) -> i32 {
+        self.prev_y + self.prev_render_y_offset
+    }
+
+    fn tick_motion(&mut self, now_ns: u64) -> bool {
+        let was_animating = self.is_motion_animating();
+        if !was_animating {
+            return false;
+        }
+        let started = *self.motion_started_ns.get_or_insert(now_ns);
+        let t = (now_ns.saturating_sub(started) as f32 / WINDOW_OPEN_DURATION_NS as f32)
+            .clamp(0.0, 1.0);
+        let old_offset = self.render_y_offset;
+        // Ease out: opening starts briskly and settles into place.
+        let remaining = 1.0 - t;
+        self.render_y_offset =
+            (WINDOW_MOTION_OFFSET_Y as f32 * remaining * remaining * remaining) as i32;
+        if t >= 1.0 {
+            self.open_animating = false;
+        }
+        old_offset != self.render_y_offset || was_animating
     }
 
     pub fn start_drag(&mut self, px: i32, py: i32) {
@@ -610,6 +822,20 @@ impl WindowManager {
         changed
     }
 
+    /// Advance window opening and restoration motion from the shared monotonic
+    /// UI clock. Minimization itself is immediate.
+    pub fn tick_window_animations(&mut self, now_ns: u64) -> bool {
+        let mut changed = false;
+        for w in &mut self.windows {
+            changed |= w.tick_motion(now_ns);
+        }
+        changed
+    }
+
+    pub fn has_window_animation(&self) -> bool {
+        self.windows.iter().any(Window::is_motion_animating)
+    }
+
     pub fn is_scroll_animating(&self, id: WinId) -> bool {
         self.windows.iter().find(|window| window.id == id)
             .map_or(false, |window| window.scroll_y != window.scroll_target_y)
@@ -791,7 +1017,7 @@ impl WindowManager {
         for i in 0..sort_n {
             let idx = indices[i];
             let w = &self.windows[idx];
-            if !w.visible || w.minimized || w.maximized {
+            if !w.visible || (w.minimized && !w.is_motion_animating()) || w.maximized {
                 continue;
             }
             let entry = self.shadow_cache.iter_mut().find(|(wid2, _)| *wid2 == w.id);
@@ -813,7 +1039,9 @@ impl WindowManager {
         // Allocate on the BSP; AP jobs below only touch disjoint window layers.
         for i in 0..sort_n {
             let idx = indices[i];
-            if self.windows[idx].visible && !self.windows[idx].minimized {
+            if self.windows[idx].visible
+                && (!self.windows[idx].minimized || self.windows[idx].is_motion_animating())
+            {
                 self.windows[idx].ensure_layer(screen_w, screen_h);
             }
         }
@@ -823,7 +1051,7 @@ impl WindowManager {
         let mut redraw_polygons: Vec<Vec<(f32, f32)>> = Vec::new();
         for i in 0..sort_n {
             let w = &self.windows[indices[i]];
-            if w.visible && !w.minimized && w.content_dirty
+            if w.visible && (!w.minimized || w.is_motion_animating()) && w.content_dirty
                 && w.content_damage.is_none() && !w.maximized
             {
                 redraw_polygons.push(LayerSystem::squircle_polygon(
@@ -837,7 +1065,7 @@ impl WindowManager {
         let mut redraw_jobs: Vec<WindowBaseRedraw> = Vec::new();
         for i in 0..sort_n {
             let w = &mut self.windows[indices[i]];
-            if !w.visible || w.minimized || !w.content_dirty { continue; }
+            if !w.visible || (w.minimized && !w.is_motion_animating()) || !w.content_dirty { continue; }
             let (polygon, polygon_len) = if w.content_damage.is_none() && !w.maximized {
                 let poly = &redraw_polygons[polygon_index];
                 polygon_index += 1;
@@ -862,13 +1090,15 @@ impl WindowManager {
 
         for i in 0..sort_n {
             let idx = indices[i];
-            if !self.windows[idx].visible || self.windows[idx].minimized {
+            if !self.windows[idx].visible
+                || (self.windows[idx].minimized && !self.windows[idx].is_motion_animating())
+            {
                 continue;
             }
             self.windows[idx].ensure_layer(screen_w, screen_h);
 
             let wx = self.windows[idx].x;
-            let wy = self.windows[idx].y;
+            let wy = self.windows[idx].render_y();
             let ww = self.windows[idx].w;
             let wh = self.windows[idx].h;
             let scroll_y = self.windows[idx].scroll_y;
@@ -876,15 +1106,6 @@ impl WindowManager {
             let is_max = self.windows[idx].maximized;
             let shadow_dirty = self.windows[idx].shadow_dirty;
             let content_dirty = self.windows[idx].content_dirty;
-            let open_progress = self.windows[idx].open_progress;
-            let open_animating = self.windows[idx].open_animating;
-            if open_animating {
-                self.windows[idx].open_progress = (open_progress + 0.04).min(1.0);
-                if self.windows[idx].open_progress >= 1.0 {
-                    self.windows[idx].open_animating = false;
-                }
-            }
-
             if !is_max {
                 if shadow_dirty {
                     if let Some(entry) = self.shadow_cache.iter().find(|(wid2, _)| *wid2 == win_id)
@@ -958,6 +1179,11 @@ impl WindowManager {
             }
 
             if content_dirty {
+                let skip_title_blur = self.windows[idx].is_motion_animating()
+                    || self.is_scroll_animating(win_id)
+                    || html_engines
+                        .iter()
+                        .any(|(id, engine)| *id == win_id && engine.is_animating());
                 let layer_ptr = self.windows[idx].layer.as_mut().unwrap() as *mut LayerSystem;
                 let w_ptr = &self.windows[idx] as *const Window;
                 let damage = self.windows[idx].content_damage.take();
@@ -1005,7 +1231,8 @@ impl WindowManager {
                     for i in 0..html_engines.len() {
                         if win_id == html_engines[i].0 {
                             let engine = &mut html_engines[i].1;
-                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            let content_top = if engine.is_warp3() { 0 } else { title_bar_h() };
+                            (*layer_ptr).push_clip(0, content_top, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             (*layer_ptr).pop_clip();
                             break;
@@ -1014,22 +1241,25 @@ impl WindowManager {
                     if self.interaction_blocked == Some(win_id) {
                         draw_settings_permission_overlay(&mut *layer_ptr, ww, wh);
                     }
-                    // Font glyph antialiasing is blended into the destination.
-                    // Never redraw the title during a body-only hover patch:
-                    // its glyph writer is intentionally not in the body clip.
-                    if damage.is_none() {
-                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0);
-                    }
+                    // The Warp3 document reaches the top of the window and
+                    // therefore sits behind the title bar. Repaint the full
+                    // chrome only when this damage touches it; body-only
+                    // hover patches retain the cheap, clipped path.
+                    let repaint_title = damage.map_or(true, |(_, y0, _, _)| y0 < title_bar_h());
                     (*layer_ptr).pop_clip();
+                    if repaint_title {
+                        draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0, skip_title_blur);
+                    }
                 }
                 self.windows[idx].prev_x = self.windows[idx].x;
                 self.windows[idx].prev_y = self.windows[idx].y;
+                self.windows[idx].prev_render_y_offset = self.windows[idx].render_y_offset;
                 self.windows[idx].content_dirty = false;
             }
 
             let win_layer = self.windows[idx].layer.as_ref().unwrap();
-            let screen_w = layer.width() as i32;
-            let screen_h = layer.height() as i32;
+            let _screen_w = layer.width() as i32;
+            let _screen_h = layer.height() as i32;
 
             let src_x = if wx < 0 { (-wx) as usize } else { 0 };
             let src_y = if wy < 0 { (-wy) as usize } else { 0 };
@@ -1058,6 +1288,7 @@ impl WindowManager {
             }
             self.windows[idx].prev_x = self.windows[idx].x;
             self.windows[idx].prev_y = self.windows[idx].y;
+            self.windows[idx].prev_render_y_offset = self.windows[idx].render_y_offset;
             self.windows[idx].prev_w = self.windows[idx].w;
             self.windows[idx].prev_h = self.windows[idx].h;
         }
@@ -1155,6 +1386,9 @@ impl WindowManager {
     pub fn restore_minimized(&mut self, id: WinId) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.minimized = false;
+            w.open_animating = true;
+            w.motion_started_ns = None;
+            w.content_dirty = true;
         }
     }
 
@@ -1252,15 +1486,16 @@ impl WindowManager {
             if !w.visible
                 || !(w.content_dirty
                     || w.shadow_dirty
-                    || w.open_animating
+                    || w.is_motion_animating()
+                    || w.render_y_offset != w.prev_render_y_offset
                     || w.x != w.prev_x
                     || w.y != w.prev_y)
             {
                 continue;
             }
             let local_damage = w.content_damage.filter(|_| {
-                w.content_dirty && !w.shadow_dirty && !w.open_animating
-                    && w.x == w.prev_x && w.y == w.prev_y
+                w.content_dirty && !w.shadow_dirty && !w.is_motion_animating()
+                    && w.x == w.prev_x && w.render_y() == w.prev_render_y()
             });
             let (x0, y0, x1, y1) = if let Some((dx0, dy0, dx1, dy1)) = local_damage {
                 // Hover-only changes must not force the compositor to redraw
@@ -1274,10 +1509,10 @@ impl WindowManager {
             } else {
                 (
                     (w.x.min(w.prev_x) - shadow_pad).max(0) as usize,
-                    (w.y.min(w.prev_y) - shadow_pad).max(0) as usize,
+                    (w.render_y().min(w.prev_render_y()) - shadow_pad).max(0) as usize,
                     (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
                         .min(sw as i32).max(0) as usize,
-                    (w.y.max(w.prev_y) + w.h.max(w.prev_h) as i32 + shadow_pad)
+                    (w.render_y().max(w.prev_render_y()) + w.h.max(w.prev_h) as i32 + shadow_pad)
                         .min(sh as i32).max(0) as usize,
                 )
             };
@@ -1346,8 +1581,8 @@ fn compute_rounded_shadow_alpha(
     let radius = r as usize;
     let mask = ShadowMaskPass { alpha: alpha.as_mut_ptr(), stride: sw, left, right, top, bottom, radius };
     baram_core::parallel::for_each(height, &mask, fill_shadow_mask_row);
-    let box_radius = (blur_r.max(1) as usize / 3).max(1);
-    for _ in 0..3 {
+    let box_radius = (blur_r.max(1) as usize / 2).max(1);
+    for _ in 0..2 {
         box_blur_shadow(&mut alpha, sw, sh, box_radius);
     }
 
@@ -1427,7 +1662,13 @@ fn box_blur_shadow(alpha: &mut [u8], width: usize, height: usize, radius: usize)
     baram_core::parallel::for_each(width, &vertical, blur_shadow_column);
 }
 
-fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
+fn draw_title_bar(
+    layer: &mut LayerSystem,
+    w: &Window,
+    ox: i32,
+    oy: i32,
+    skip_blur: bool,
+) {
     let x = ox.max(0) as usize;
     let y = oy.max(0) as usize;
     let sw = layer.width();
@@ -1443,23 +1684,11 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
         return;
     }
 
-    let (title_bg, _) = if w.focused {
-        (
-            config::get_color("ui-theme/color/panel", Color::PANEL),
-            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-        )
-    } else {
-        (
-            config::get_color("ui-theme/color/win_inactive", Color::WIN_INACTIVE),
-            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
-        )
-    };
-
     let tb_h = title_bar_h().min(h_draw);
-    layer.fill_rect(x, y, w_draw, tb_h, title_bg);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur);
 
-    let base_x = x as i32 + 6;
-    let btn_y = y as i32 + 5;
+    let base_x = x as i32 + 10;
+    let btn_y = y as i32 + 10;
     let bs = btn_size() as i32;
     let btn_center_x = base_x + bs / 2;
     let btn_center_y = btn_y + bs / 2;
@@ -1548,7 +1777,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32) {
         let title = w.title_str();
         if !title.is_empty() {
             let title_x = (base_x + bs * 3 + 20) as usize;
-            let title_y = (y as i32 + 8) as usize;
+            let title_y = (y as i32 + 13) as usize;
             if title_x < sw && title_y < sh {
                 layer.put_str(title_x, title_y, title, Color::TEXT);
             }
@@ -1651,8 +1880,8 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
     let tb_h = title_bar_h().min(h_draw);
     layer.fill_rect(x, y, w_draw, tb_h, title_bg);
 
-    let base_x = x as i32 + 6;
-    let btn_y = y as i32 + 5;
+    let base_x = x as i32 + 10;
+    let btn_y = y as i32 + 10;
     let bs = btn_size() as i32;
     let btn_center_x = base_x + bs / 2;
     let btn_center_y = btn_y + bs / 2;
@@ -1739,7 +1968,7 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
         }
     }
 
-    layer.put_str(x + btn_area_w(), y + 8, w.title_str(), title_color);
+    layer.put_str(x + btn_area_w(), y + 13, w.title_str(), title_color);
 }
 
 fn draw_window_border(_layer: &mut LayerSystem, _w: &Window) {}

@@ -446,6 +446,13 @@ impl HtmlEngine {
         }
     }
 
+    pub fn content_height(&self) -> i32 {
+        self.warp3
+            .as_ref()
+            .map(|engine| engine.content_height)
+            .unwrap_or(0)
+    }
+
     pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.set_runtime_metrics(fps, windows, keys, mouse);
@@ -453,11 +460,15 @@ impl HtmlEngine {
     }
 
     pub fn take_scroll_request(&mut self) -> Option<i32> {
-        self.warp3.as_mut().and_then(|engine| engine.take_scroll_request())
+        self.warp3
+            .as_mut()
+            .and_then(|engine| engine.take_scroll_request())
     }
 
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
-        self.warp3.as_ref().and_then(|engine| engine.window_damage())
+        self.warp3
+            .as_ref()
+            .and_then(|engine| engine.window_damage())
     }
 
     pub fn tick(&mut self, now_ns: u64) -> bool {
@@ -477,9 +488,25 @@ impl HtmlEngine {
             .map_or(false, |engine| engine.has_focused_input())
     }
 
+    pub fn is_warp3(&self) -> bool {
+        self.warp3.is_some()
+    }
+
+    pub fn is_animating(&self) -> bool {
+        self.warp3
+            .as_ref()
+            .is_some_and(crate::warp3::Warp3Engine::is_screen_transition_active)
+    }
+
     pub fn handle_key(&mut self, key: u8) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.handle_key(key);
+        }
+    }
+
+    pub fn handle_text(&mut self, text: &str, replace_chars: usize) {
+        if let Some(engine) = self.warp3.as_mut() {
+            engine.handle_text(text, replace_chars);
         }
     }
 

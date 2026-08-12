@@ -2,8 +2,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use core::ffi::c_void;
 
 pub const PE_MZ: u16 = 0x5A4D;
 pub const PE_SIGNATURE: u32 = 0x00004550;
@@ -129,7 +127,7 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
     let opt_offset = coff_offset + core::mem::size_of::<CoffHeader>();
     let magic = unsafe { core::ptr::read_unaligned(data[opt_offset..].as_ptr() as *const u16) };
 
-    let (entry_rva, image_base, size_of_image, section_alignment, data_dirs_offset, num_data_dirs) = if magic == 0x20b {
+    let (entry_rva, image_base, size_of_image, _section_alignment, data_dirs_offset, num_data_dirs) = if magic == 0x20b {
         let opt = unsafe { &*(data[opt_offset..].as_ptr() as *const OptionalHeader64) };
         let dd_off = opt_offset + core::mem::size_of::<OptionalHeader64>();
         (opt.address_of_entry_point, opt.image_base, opt.size_of_image, opt.section_alignment, dd_off, opt.number_of_rva_and_sizes as usize)
@@ -246,7 +244,7 @@ pub fn find_exports(module: &LoadedModule) -> Option<*const super::subsystem::Su
     let dos_header = unsafe { &*(image as *const DosHeader) };
     let pe_offset = dos_header.e_lfanew as usize;
     let coff_offset = pe_offset + 4;
-    let coff = unsafe { &*(image.add(coff_offset) as *const CoffHeader) };
+    let _coff = unsafe { &*(image.add(coff_offset) as *const CoffHeader) };
     let opt_offset = coff_offset + core::mem::size_of::<CoffHeader>();
     let magic = unsafe { core::ptr::read_unaligned(image.add(opt_offset) as *const u16) };
 
@@ -318,7 +316,7 @@ pub enum LoadError {
 }
 
 pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
-    use alloc::format;
+    
     use alloc::vec;
 
     let mut data = vec![0u8; 4096];
@@ -344,7 +342,7 @@ pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_file_chunk(path: &str, offset: usize, buf: &mut [u8]) -> usize {
-    use uefi::boot;
+    
     use uefi::proto::media::file::{File, FileAttribute, FileMode};
     use uefi::CStr16;
 

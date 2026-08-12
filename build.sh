@@ -80,21 +80,14 @@ if ! command -v rustup >/dev/null 2>&1; then
     die "rustup not found. Install Rust via https://rustup.rs"
 fi
 
-# Ensure the UEFI target is installed.
-if ! rustup target list --installed 2>/dev/null | grep -q '^aarch64-unknown-uefi'; then
-    log "Installing Rust target aarch64-unknown-uefi ..."
-    rustup target add aarch64-unknown-uefi || die "Failed to add UEFI target"
-fi
-
 # Nightly is required for build-std (we need core/alloc for the UEFI target).
-if ! rustup toolchain list --installed 2>/dev/null | grep -q '^nightly'; then
+if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
     log "Installing Rust nightly toolchain (required for build-std) ..."
     rustup toolchain install nightly --component rust-src || die "Failed to install nightly"
 fi
-# Pin the override for this directory.
-rustup override set nightly >/dev/null 2>&1 || true
-if ! rustup target list --installed 2>/dev/null | grep -q '^aarch64-unknown-uefi'; then
-    rustup target add aarch64-unknown-uefi --toolchain nightly || true
+if ! rustup target list --toolchain nightly --installed 2>/dev/null | grep -q '^aarch64-unknown-uefi'; then
+    log "Installing Rust target aarch64-unknown-uefi for nightly ..."
+    rustup target add aarch64-unknown-uefi --toolchain nightly || die "Failed to add UEFI target"
 fi
 
 # ---------- step 2: build the EFI app ----------

@@ -44,3 +44,4 @@ png-decoder = { path = "../png-decoder" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 libm = { workspace = true }
+wana_kana = { path = "../wana-kana" }

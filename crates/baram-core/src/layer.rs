@@ -93,6 +93,43 @@ unsafe fn blend_alpha_avx2(src: *const u32, dst: *mut u32, len: usize) {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn blend_global_alpha_avx2(src: *const u32, dst: *mut u32, len: usize, alpha: u8) {
+    use core::arch::x86_64::*;
+
+    let zero = _mm256_setzero_si256();
+    let a = _mm256_set1_epi16(alpha as i16);
+    let inv = _mm256_set1_epi16((255 - alpha as u16) as i16);
+    let one = _mm256_set1_epi16(1);
+    let mut px = 0usize;
+    while px + 8 <= len {
+        let sp = _mm256_loadu_si256(src.add(px) as *const __m256i);
+        let dp = _mm256_loadu_si256(dst.add(px) as *const __m256i);
+        let sl = _mm256_unpacklo_epi8(sp, zero);
+        let sh = _mm256_unpackhi_epi8(sp, zero);
+        let dl = _mm256_unpacklo_epi8(dp, zero);
+        let dh = _mm256_unpackhi_epi8(dp, zero);
+        let sum_l = _mm256_add_epi16(_mm256_mullo_epi16(sl, a), _mm256_mullo_epi16(dl, inv));
+        let sum_h = _mm256_add_epi16(_mm256_mullo_epi16(sh, a), _mm256_mullo_epi16(dh, inv));
+        let div_l = _mm256_srli_epi16(
+            _mm256_add_epi16(_mm256_add_epi16(sum_l, one), _mm256_srli_epi16(sum_l, 8)),
+            8,
+        );
+        let div_h = _mm256_srli_epi16(
+            _mm256_add_epi16(_mm256_add_epi16(sum_h, one), _mm256_srli_epi16(sum_h, 8)),
+            8,
+        );
+        let packed = _mm256_packus_epi16(div_l, div_h);
+        _mm256_storeu_si256(dst.add(px) as *mut __m256i, packed);
+        px += 8;
+    }
+    for i in px..len {
+        *dst.add(i) = blend_u32(*dst.add(i), *src.add(i), alpha as u32);
+    }
+}
+
+
 pub struct LayerSystem {
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -662,7 +699,7 @@ impl LayerSystem {
         }
     }
 
-    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], off: &[f32; 2]) {
+    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], _off: &[f32; 2]) {
         let mut hits = 0u32;
         for sy in 0..4 {
             for sx in 0..4 {
@@ -1108,6 +1145,169 @@ impl LayerSystem {
                     src.buf.as_ptr().add((sy + row) * src.width + sx),
                     self.buf.as_mut_ptr().add((dy + row) * self.width + dx),
                     copy_w,
+                );
+            }
+        }
+    }
+
+    /// Composite an opaque layer with a fractional downward Y translation.
+    /// Only transition tails use this path; normal scrolling remains on the
+    /// memcpy fast path above.
+    pub fn composit_rect_opaque_subpixel_y(
+        &mut self,
+        src: &LayerSystem,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
+        fraction_y: f32,
+    ) {
+        let fraction = fraction_y.clamp(0.0, 0.999);
+        if fraction <= 0.0 {
+            self.composit_rect_opaque(src, dx, dy, sx, sy, w, h);
+            return;
+        }
+        if dx >= self.width || dy >= self.height || sx >= src.width || sy >= src.height {
+            return;
+        }
+        let copy_w = w.min(src.width - sx).min(self.width - dx);
+        let copy_h = h.min(src.height - sy);
+        if copy_w == 0 || copy_h == 0 { return; }
+        let fraction_255 = (fraction * 255.0) as u32;
+        let inverse = 255 - fraction_255;
+        let out_h = (copy_h + 1).min(self.height - dy);
+        self.mark_dirty_rect(dx, dy, dx + copy_w, dy + out_h);
+        for out_y in 0..out_h {
+            let dst_row = (dy + out_y) * self.width + dx;
+            if out_y == 0 {
+                let src_row = sy * src.width + sx;
+                for px in 0..copy_w {
+                    let bg = self.buf[dst_row + px];
+                    let fg = src.buf[src_row + px];
+                    let r = (((fg >> 16) & 0xff) * inverse + ((bg >> 16) & 0xff) * fraction_255) / 255;
+                    let g = (((fg >> 8) & 0xff) * inverse + ((bg >> 8) & 0xff) * fraction_255) / 255;
+                    let b = ((fg & 0xff) * inverse + (bg & 0xff) * fraction_255) / 255;
+                    self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
+                }
+            } else if out_y < copy_h {
+                let previous = (sy + out_y - 1) * src.width + sx;
+                let current = (sy + out_y) * src.width + sx;
+                for px in 0..copy_w {
+                    let a = src.buf[previous + px];
+                    let b = src.buf[current + px];
+                    let r = (((a >> 16) & 0xff) * fraction_255 + ((b >> 16) & 0xff) * inverse) / 255;
+                    let g = (((a >> 8) & 0xff) * fraction_255 + ((b >> 8) & 0xff) * inverse) / 255;
+                    let blue = ((a & 0xff) * fraction_255 + (b & 0xff) * inverse) / 255;
+                    self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | blue;
+                }
+            } else {
+                let src_row = (sy + copy_h - 1) * src.width + sx;
+                for px in 0..copy_w {
+                    let bg = self.buf[dst_row + px];
+                    let fg = src.buf[src_row + px];
+                    let r = (((fg >> 16) & 0xff) * fraction_255 + ((bg >> 16) & 0xff) * inverse) / 255;
+                    let g = (((fg >> 8) & 0xff) * fraction_255 + ((bg >> 8) & 0xff) * inverse) / 255;
+                    let b = ((fg & 0xff) * fraction_255 + (bg & 0xff) * inverse) / 255;
+                    self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+    }
+
+    /// Composite an opaque RGB source with one opacity for the whole layer.
+    /// The hot x86 path processes eight pixels per AVX2 vector; AArch64 uses
+    /// four-lane NEON channel arithmetic.
+    pub fn composit_rect_global_alpha(
+        &mut self,
+        src: &[u32],
+        src_width: usize,
+        src_height: usize,
+        dx: usize,
+        dy: usize,
+        alpha: u8,
+    ) {
+        if alpha == 0 || src.len() < src_width.saturating_mul(src_height) {
+            return;
+        }
+        let Some((x0, y0, x1, y1)) = self.clipped_rect(
+            dx,
+            dy,
+            dx.saturating_add(src_width),
+            dy.saturating_add(src_height),
+        ) else { return; };
+        self.mark_dirty_rect(x0, y0, x1, y1);
+        let sx = x0 - dx;
+        let copy_w = x1 - x0;
+        for y in y0..y1 {
+            let sy = y - dy;
+            let src_row = sy * src_width + sx;
+            let dst_row = y * self.width + x0;
+            if alpha == 255 {
+                self.buf[dst_row..dst_row + copy_w]
+                    .copy_from_slice(&src[src_row..src_row + copy_w]);
+                continue;
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            if avx2_available() {
+                unsafe {
+                    blend_global_alpha_avx2(
+                        src.as_ptr().add(src_row),
+                        self.buf.as_mut_ptr().add(dst_row),
+                        copy_w,
+                        alpha,
+                    );
+                }
+                continue;
+            }
+
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                use core::arch::aarch64::*;
+                let va = vdupq_n_u32(alpha as u32);
+                let vi = vdupq_n_u32(255 - alpha as u32);
+                let mask = vdupq_n_u32(0xff);
+                let mut px = 0usize;
+                while px + 4 <= copy_w {
+                    let sp = vld1q_u32(src.as_ptr().add(src_row + px));
+                    let dp = vld1q_u32(self.buf.as_ptr().add(dst_row + px));
+                    let sr = vandq_u32(vshrq_n_u32(sp, 16), mask);
+                    let sg = vandq_u32(vshrq_n_u32(sp, 8), mask);
+                    let sb = vandq_u32(sp, mask);
+                    let dr = vandq_u32(vshrq_n_u32(dp, 16), mask);
+                    let dg = vandq_u32(vshrq_n_u32(dp, 8), mask);
+                    let db = vandq_u32(dp, mask);
+                    #[inline(always)]
+                    unsafe fn div255(v: uint32x4_t) -> uint32x4_t {
+                        vshrq_n_u32(vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)), 8)
+                    }
+                    let r = div255(vaddq_u32(vmulq_u32(sr, va), vmulq_u32(dr, vi)));
+                    let g = div255(vaddq_u32(vmulq_u32(sg, va), vmulq_u32(dg, vi)));
+                    let b = div255(vaddq_u32(vmulq_u32(sb, va), vmulq_u32(db, vi)));
+                    vst1q_u32(
+                        self.buf.as_mut_ptr().add(dst_row + px),
+                        vorrq_u32(vdupq_n_u32(0xff00_0000), vorrq_u32(vshlq_n_u32(r, 16), vorrq_u32(vshlq_n_u32(g, 8), b))),
+                    );
+                    px += 4;
+                }
+                for px in px..copy_w {
+                    self.buf[dst_row + px] = blend_u32(
+                        self.buf[dst_row + px],
+                        src[src_row + px],
+                        alpha as u32,
+                    );
+                }
+                continue;
+            }
+
+            #[allow(unreachable_code)]
+            for px in 0..copy_w {
+                self.buf[dst_row + px] = blend_u32(
+                    self.buf[dst_row + px],
+                    src[src_row + px],
+                    alpha as u32,
                 );
             }
         }

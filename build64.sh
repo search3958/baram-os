@@ -58,18 +58,13 @@ if ! command -v rustup >/dev/null 2>&1; then
     die "rustup not found. Install Rust via https://rustup.rs"
 fi
 
-if ! rustup target list --installed 2>/dev/null | grep -q '^x86_64-unknown-uefi'; then
-    log "Installing Rust target x86_64-unknown-uefi ..."
-    rustup target add x86_64-unknown-uefi || die "Failed to add UEFI target"
-fi
-
-if ! rustup toolchain list --installed 2>/dev/null | grep -q '^nightly'; then
+if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
     log "Installing Rust nightly toolchain (required for build-std) ..."
     rustup toolchain install nightly --component rust-src || die "Failed to install nightly"
 fi
-rustup override set nightly >/dev/null 2>&1 || true
-if ! rustup target list --installed 2>/dev/null | grep -q '^x86_64-unknown-uefi'; then
-    rustup target add x86_64-unknown-uefi --toolchain nightly || true
+if ! rustup target list --toolchain nightly --installed 2>/dev/null | grep -q '^x86_64-unknown-uefi'; then
+    log "Installing Rust target x86_64-unknown-uefi for nightly ..."
+    rustup target add x86_64-unknown-uefi --toolchain nightly || die "Failed to add UEFI target"
 fi
 
 build_efi() {
