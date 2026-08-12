@@ -323,6 +323,9 @@ pub struct Window {
     pub z: i32,
     pub visible: bool,
     pub focused: bool,
+    pub chrome_visible: bool,
+    pub always_on_top: bool,
+    pub focusable: bool,
     pub maximized: bool,
     pub minimized: bool,
     pub scroll_y: i32,
@@ -380,6 +383,9 @@ impl Window {
             z,
             visible: true,
             focused: false,
+            chrome_visible: true,
+            always_on_top: false,
+            focusable: true,
             maximized: false,
             minimized: false,
             scroll_y: 0,
@@ -695,6 +701,27 @@ impl WindowManager {
         id
     }
 
+    pub fn configure_special(&mut self, id: WinId, chrome_visible: bool, always_on_top: bool, focusable: bool) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            w.chrome_visible = chrome_visible;
+            w.always_on_top = always_on_top;
+            w.focusable = focusable;
+            w.content_dirty = true;
+            w.shadow_dirty = true;
+        }
+        if !focusable && self.focused_id == Some(id) {
+            if let Some(next) = self.windows.iter()
+                .filter(|w| w.focusable && w.visible && !w.minimized && w.id != id)
+                .max_by_key(|w| w.z).map(|w| w.id) {
+                self.focus(next);
+            }
+        }
+        if always_on_top {
+            self.next_z += 1;
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) { w.z = self.next_z; }
+        }
+    }
+
     pub fn set_icon(&mut self, id: WinId, icon_name: &str) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.set_icon(icon_name);
@@ -721,6 +748,10 @@ impl WindowManager {
 
     pub fn is_interaction_blocked(&self, id: WinId) -> bool {
         self.interaction_blocked == Some(id)
+    }
+
+    pub fn is_focusable(&self, id: WinId) -> bool {
+        self.windows.iter().find(|w| w.id == id).map_or(true, |w| w.focusable)
     }
 
     pub fn get_icon_name(&self, id: WinId) -> &str {
@@ -768,6 +799,9 @@ impl WindowManager {
     }
 
     pub fn focus(&mut self, id: WinId) {
+        if self.windows.iter().find(|w| w.id == id).map_or(false, |w| !w.focusable) {
+            return;
+        }
         if self.interaction_blocked == Some(id) {
             return;
         }
@@ -877,7 +911,9 @@ impl WindowManager {
 
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
         if let Some(id) = self.window_at(px, py) {
-            self.focus(id);
+                    if self.windows.iter().find(|w| w.id == id).map_or(true, |w| w.focusable) {
+                        self.focus(id);
+                    }
             let btn = {
                 let win = self.windows.iter().find(|w| w.id == id).unwrap();
                 win.button_hit(px, py)
@@ -1001,6 +1037,10 @@ impl WindowManager {
         let screen_h = layer.height();
 
         const MAX_WINDOWS: usize = 16;
+        let top_z = self.windows.iter().map(|w| w.z).max().unwrap_or(0) + 1;
+        for w in &mut self.windows {
+            if w.always_on_top { w.z = top_z; }
+        }
         let sort_n = n.min(MAX_WINDOWS);
         let mut indices = [0usize; MAX_WINDOWS];
         for i in 0..sort_n {
@@ -1179,6 +1219,7 @@ impl WindowManager {
             }
 
             if content_dirty {
+                let chrome_h = if self.windows[idx].chrome_visible { title_bar_h() } else { 0 };
                 let skip_title_blur = self.windows[idx].is_motion_animating()
                     || html_engines
                         .iter()
@@ -1201,7 +1242,7 @@ impl WindowManager {
 
                     if let Some((uid, cmds)) = ui_win {
                         if win_id == uid {
-                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            (*layer_ptr).push_clip(0, chrome_h, ww, wh);
                             let card_radius = config::get_usize("ui-theme/card/radius", 12);
                             baram_graphics::uiscript::render(
                                 &mut *layer_ptr,
@@ -1210,7 +1251,7 @@ impl WindowManager {
                                 0,
                                 ww,
                                 wh,
-                                title_bar_h(),
+                                chrome_h,
                                 scroll_y,
                                 card_radius,
                             );
@@ -1220,7 +1261,7 @@ impl WindowManager {
                     for i in 0..warp_engines.len() {
                         if win_id == warp_engines[i].0 {
                             let engine = &mut warp_engines[i].1;
-                            (*layer_ptr).push_clip(0, title_bar_h(), ww, wh);
+                            (*layer_ptr).push_clip(0, chrome_h, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             engine.draw_texts(&mut *layer_ptr, 0, -scroll_y, 1.0);
                             (*layer_ptr).pop_clip();
@@ -1230,7 +1271,7 @@ impl WindowManager {
                     for i in 0..html_engines.len() {
                         if win_id == html_engines[i].0 {
                             let engine = &mut html_engines[i].1;
-                            let content_top = if engine.is_warp3() { 0 } else { title_bar_h() };
+                            let content_top = if engine.is_warp3() { 0 } else { chrome_h };
                             (*layer_ptr).push_clip(0, content_top, ww, wh);
                             engine.draw_to_layer(&mut *layer_ptr, 0, -scroll_y);
                             (*layer_ptr).pop_clip();
@@ -1244,7 +1285,8 @@ impl WindowManager {
                     // therefore sits behind the title bar. Repaint the full
                     // chrome only when this damage touches it; body-only
                     // hover patches retain the cheap, clipped path.
-                    let repaint_title = damage.map_or(true, |(_, y0, _, _)| y0 < title_bar_h());
+                    let repaint_title = self.windows[idx].chrome_visible
+                        && damage.map_or(true, |(_, y0, _, _)| y0 < chrome_h);
                     (*layer_ptr).pop_clip();
                     if repaint_title {
                         draw_title_bar(&mut *layer_ptr, &*w_ptr, 0, 0, skip_title_blur);
@@ -1682,6 +1724,10 @@ fn draw_title_bar(
     if w_draw == 0 || h_draw == 0 {
         return;
     }
+    if !w.chrome_visible {
+        layer.fill_rect(x, y, w_draw, h_draw, config::get_color("ui-theme/color/win_bg", Color::WIN_BG));
+        return;
+    }
 
     let tb_h = title_bar_h().min(h_draw);
     draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur);
@@ -1850,6 +1896,10 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
     let w_draw = x1.saturating_sub(x);
     let h_draw = y1.saturating_sub(y);
     if w_draw == 0 || h_draw == 0 {
+        return;
+    }
+    if !w.chrome_visible {
+        layer.fill_rect(x, y, w_draw, h_draw, config::get_color("ui-theme/color/win_bg", Color::WIN_BG));
         return;
     }
 

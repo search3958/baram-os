@@ -1069,6 +1069,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut hangul_ime = HangulIme::new();
     let mut pinyin_ime = PinyinIme::new();
     let mut show_ime_menu = false;
+    let mut soft_keyboard_open = false;
+    let mut soft_keyboard_win_id: Option<WinId> = None;
     let mut prev_show_ime_menu = false;
     let mut ime_menu_closing = false;
     let mut ime_menu_close_started_ms: Option<u64> = None;
@@ -1136,6 +1138,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         false,
+        false,
         255,
         ime_menu_selection(input_mode),
         None,
@@ -1185,6 +1188,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_hh,
         clock_mm,
         battery_info.valid_percentage(),
+        false,
         false,
         255,
         ime_menu_selection(input_mode),
@@ -1676,6 +1680,44 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let (ime_x, ime_y, ime_w, ime_h) =
                             ime_button_bounds(screen.width(), battery_info.valid_percentage());
                         let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
+                        let keyboard_x = ime_x - ime_w - 12;
+                        let (kbd_x, kbd_y, kbd_w, kbd_h) =
+                            soft_keyboard_bounds(screen.width(), screen.height());
+                        if soft_keyboard_open
+                            && cx >= kbd_x + kbd_w - 56
+                            && cx < kbd_x + kbd_w - 12
+                            && cy >= kbd_y + 4
+                            && cy < kbd_y + 44
+                        {
+                            soft_keyboard_open = false;
+                            scene_dirty = true;
+                            dirty = true;
+                            continue;
+                        }
+                        if cx >= keyboard_x
+                            && cx < keyboard_x + ime_w
+                            && cy >= ime_y
+                            && cy < ime_y + ime_h
+                        {
+                            if let Some(wid) = soft_keyboard_win_id.take() {
+                                wm.remove(wid);
+                                html_engines.retain(|(id, _)| *id != wid);
+                                soft_keyboard_open = false;
+                            } else {
+                                let w = 720usize;
+                                let h = 280usize;
+                                let wid = wm.add("Software Keyboard", (screen.width() as i32 - w as i32) / 2, screen.height() as i32 - h as i32 - 64, w, h);
+                                wm.configure_special(wid, false, true, false);
+                                let mut engine = baram_windowserver::html::HtmlEngine::new_warp3("softkeyboard.w3a");
+                                engine.update((w - 20) as i32, h as i32);
+                                html_engines.push((wid, engine));
+                                soft_keyboard_win_id = Some(wid);
+                                soft_keyboard_open = true;
+                            }
+                            scene_dirty = true;
+                            dirty = true;
+                            continue;
+                        }
                         if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                             show_ime_menu = true;
                             ime_menu_closing = false;
@@ -1720,7 +1762,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     if wm.is_minimized(*id) {
                                         wm.restore_minimized(*id);
                                     }
-                                    wm.focus(*id);
+                                    if wm.is_focusable(*id) { wm.focus(*id); }
                                     break;
                                 }
                                 bx += btn_d + btn_gap;
@@ -1729,7 +1771,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     } else {
                         let win_under = wm.window_at(cx, cy);
                         if let Some(id) = win_under {
-                            wm.focus(id);
+                            if wm.is_focusable(id) { wm.focus(id); }
                             let btn = wm.button_hit_at(id, cx, cy);
                             match btn {
                                 'c' => {
@@ -1768,7 +1810,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     {
                                         let rel_x = cx - wx;
                                         let rel_y = cy - wy;
-                                        let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                        let tb_h = if wm.is_focusable(clicked_id) {
+                                            baram_windowserver::window::title_bar_h() as i32
+                                        } else { 0 };
                                         if rel_y >= tb_h {
                                             let warp_y = rel_y + scroll;
                                             engine.click(rel_x, warp_y);
@@ -1878,7 +1922,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 {
                                     let rel_x = cx - wx;
                                     let rel_y = cy - wy;
-                                    let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                    let tb_h = if wm.is_focusable(clicked_id) {
+                                        baram_windowserver::window::title_bar_h() as i32
+                                    } else { 0 };
                                     if rel_y >= tb_h {
                                         engine.set_scroll(scroll);
                                         engine.set_runtime_metrics(
@@ -1905,6 +1951,47 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 break;
                             }
                             if let Some((cmd, origin, source_win_id)) = html_command {
+                                if cmd == "softkeyboard://close" && soft_keyboard_win_id == Some(source_win_id) {
+                                    soft_keyboard_win_id = None;
+                                    soft_keyboard_open = false;
+                                    wm.remove(source_win_id);
+                                    html_engines.retain(|(id, _)| *id != source_win_id);
+                                    scene_dirty = true;
+                                    dirty = true;
+                                    continue;
+                                }
+                                if let Some(key) = cmd.strip_prefix("softkeyboard://key/") {
+                                    let c = if key == "space" { b' ' } else { key.as_bytes().first().copied().unwrap_or(0) };
+                                    if c != 0 {
+                                        if app_search_focused {
+                                            app_search_query.push(c as char);
+                                            rebuild_filtered_apps(&app_entries, &app_search_query, &mut app_list, &mut app_name_list, &mut app_icon_list);
+                                            app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
+                                            show_app_launcher = true;
+                                            cached_launcher_layer = None;
+                                            launcher_content_dirty = true;
+                                            taskbar_surface.invalidate_search();
+                                        } else if let Some(focused) = wm.focused_id {
+                                            for (wid, engine) in warp_engines.iter_mut() {
+                                                if *wid == focused && !wm.is_interaction_blocked(focused) {
+                                                    engine.handle_key(c);
+                                                    wm.set_content_dirty(focused);
+                                                    break;
+                                                }
+                                            }
+                                            for (wid, engine) in html_engines.iter_mut() {
+                                                if *wid == focused && !wm.is_interaction_blocked(focused) && engine.has_focused_input() {
+                                                    engine.handle_key(c);
+                                                    wm.set_content_dirty(focused);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        scene_dirty = true;
+                                        dirty = true;
+                                    }
+                                    continue;
+                                }
                                 let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                                 let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                                 match handle_navigation(
@@ -2130,7 +2217,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             if wm.is_minimized(*id) {
                                 wm.restore_minimized(*id);
                             }
-                            wm.focus(*id);
+                            if wm.is_focusable(*id) { wm.focus(*id); }
                             break;
                         }
                         bx += btn_d + btn_gap;
@@ -2139,7 +2226,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             } else {
                 let win_under = wm.window_at(cx, cy);
                 if let Some(id) = win_under {
-                    wm.focus(id);
+                    if wm.is_focusable(id) { wm.focus(id); }
                     let btn = wm.button_hit_at(id, cx, cy);
                     match btn {
                         'c' => {
@@ -2923,6 +3010,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_mm,
                     battery_info.valid_percentage(),
                     show_ime_menu,
+                    soft_keyboard_open,
                     ime_menu_opacity,
                     ime_menu_selection(input_mode),
                     ime_reading,
@@ -2976,6 +3064,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_mm,
                         battery_info.valid_percentage(),
                         show_ime_menu,
+                        soft_keyboard_open,
                         ime_menu_opacity,
                         ime_menu_selection(input_mode),
                         ime_reading,

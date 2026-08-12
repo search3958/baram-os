@@ -21,6 +21,8 @@ pub const IME_BUTTON_W: usize = 20;
 const IME_STATUS_STRIP_W: usize = 160;
 const IME_MENU_W: usize = 210;
 const IME_MENU_H: usize = 264;
+pub const SOFT_KEYBOARD_W: usize = 720;
+pub const SOFT_KEYBOARD_H: usize = 250;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
 const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
 const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
@@ -1466,6 +1468,37 @@ pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i3
     (x, (TASKBAR_H as i32 - IME_BUTTON_W as i32) / 2, IME_BUTTON_W as i32, IME_BUTTON_W as i32)
 }
 
+pub fn soft_keyboard_bounds(width: usize, height: usize) -> (i32, i32, i32, i32) {
+    let w = SOFT_KEYBOARD_W.min(width.saturating_sub(24));
+    let x = ((width.saturating_sub(w)) / 2) as i32;
+    let y = height.saturating_sub(TASKBAR_H + SOFT_KEYBOARD_H + 16) as i32;
+    (x, y, w as i32, SOFT_KEYBOARD_H as i32)
+}
+
+fn draw_soft_keyboard(layer: &mut LayerSystem) {
+    let (x, y, w, h) = soft_keyboard_bounds(layer.width(), layer.height());
+    blend_rounded_rect(layer, x as usize, y as usize, w as usize, h as usize, 16, Color::rgb(0x24, 0x24, 0x28), 248);
+    let close_x = x + w - 42;
+    layer.put_str(close_x as usize, y as usize + 10, "×", Color::TEXT);
+    let rows = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+    for (row, text) in rows.iter().enumerate() {
+        let key_w = 54usize;
+        let gap = 6usize;
+        let row_w = text.len() * (key_w + gap) - gap;
+        let start_x = x as usize + (w as usize - row_w) / 2 + row * 18;
+        let ky = y as usize + 58 + row * 56;
+        for (col, ch) in text.chars().enumerate() {
+            let kx = start_x + col * (key_w + gap);
+            blend_rounded_rect(layer, kx, ky, key_w, 44, 8, Color::rgb(0x46, 0x46, 0x4c), 255);
+            let label = [ch as u8];
+            let label = unsafe { core::str::from_utf8_unchecked(&label) };
+            layer.put_str(kx + 21, ky + 12, label, Color::TEXT);
+        }
+    }
+    blend_rounded_rect(layer, x as usize + 180, y as usize + 218, 360, 24, 8, Color::rgb(0x46, 0x46, 0x4c), 255);
+    layer.put_str(x as usize + 352, y as usize + 222, "SPACE", Color::TEXT);
+}
+
 pub fn render_scene(
     layer: &mut LayerSystem,
     taskbar: &mut TaskbarSurface,
@@ -1507,6 +1540,7 @@ pub fn render_scene(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_menu_open: bool,
+    soft_keyboard_open: bool,
     ime_menu_opacity: u8,
     ime_menu_selection: usize,
     ime_reading: Option<&str>,
@@ -2110,6 +2144,7 @@ pub fn render_frame(
     clock_mm: u8,
     battery_pct: Option<u8>,
     ime_menu_open: bool,
+    soft_keyboard_open: bool,
     ime_menu_opacity: u8,
     ime_menu_selection: usize,
     ime_reading: Option<&str>,
@@ -2157,6 +2192,7 @@ pub fn render_frame(
         clock_mm,
         battery_pct,
         ime_menu_open,
+        soft_keyboard_open,
         ime_menu_opacity,
         ime_menu_selection,
         ime_reading,
