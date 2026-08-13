@@ -15,6 +15,7 @@ use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
+use baram_windowserver::soft_keyboard::{Key as SoftKey, SoftKeyboard};
 use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
 use wana_kana::ConvertJapanese;
 
@@ -1069,8 +1070,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut hangul_ime = HangulIme::new();
     let mut pinyin_ime = PinyinIme::new();
     let mut show_ime_menu = false;
-    let mut soft_keyboard_open = false;
-    let mut soft_keyboard_win_id: Option<WinId> = None;
+    let mut soft_keyboard = SoftKeyboard::new();
     let mut prev_show_ime_menu = false;
     let mut ime_menu_closing = false;
     let mut ime_menu_close_started_ms: Option<u64> = None;
@@ -1138,7 +1138,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         false,
-        false,
+        &mut soft_keyboard,
         255,
         ime_menu_selection(input_mode),
         None,
@@ -1189,7 +1189,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         clock_mm,
         battery_info.valid_percentage(),
         false,
-        false,
+        &mut soft_keyboard,
         255,
         ime_menu_selection(input_mode),
         None,
@@ -1246,31 +1246,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 _ => {}
             }
 
-            // Nano System reports UEFI Backspace as special scan code 0x08,
-            // so it does not always arrive through `printable`.
-            if app_search_focused && ev.scancode == 0x08 {
-                if let Some((text, replace_chars)) =
-                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, 0x08)
-                {
-                    for _ in 0..replace_chars {
-                        app_search_query.pop();
-                    }
-                    app_search_query.push_str(&text);
-                } else {
-                    app_search_query.pop();
-                }
-                rebuild_filtered_apps(
-                    &app_entries,
-                    &app_search_query,
-                    &mut app_list,
-                    &mut app_name_list,
-                    &mut app_icon_list,
-                );
-                app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
-                show_app_launcher = true;
-                cached_launcher_layer = None;
-                launcher_content_dirty = true;
-                taskbar_surface.invalidate_search();
+            // UEFI may report Backspace only as a scan code. It still enters
+            // the exact same OS text path as an on-screen Backspace key.
+            if ev.scancode == 0x08 && dispatch_text_input_key(
+                SoftKey::Backspace, input_mode, &mut japanese_ime, &mut hangul_ime,
+                &mut pinyin_ime, app_search_focused, &mut app_search_query, &app_entries,
+                &mut app_list, &mut app_name_list, &mut app_icon_list,
+                &mut app_launcher_scroll, &mut show_app_launcher,
+                &mut cached_launcher_layer, &mut launcher_content_dirty,
+                &mut taskbar_surface, &mut wm, &mut warp_engines, &mut html_engines,
+            ) {
                 dirty = true;
                 scene_dirty = true;
                 continue;
@@ -1288,105 +1273,14 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     }
                 }
             } else if let Some(c) = ev.printable {
-                let mut handled = false;
-                if app_search_focused {
-                    if let Some((text, replace_chars)) =
-                        ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
-                    {
-                        for _ in 0..replace_chars {
-                            app_search_query.pop();
-                        }
-                        app_search_query.push_str(&text);
-                    } else {
-                        match c {
-                            0x08 | 0x7f => {
-                                app_search_query.pop();
-                            }
-                            0x20..=0x7e => app_search_query.push(c as char),
-                            _ => {}
-                        }
-                    }
-                    rebuild_filtered_apps(
-                        &app_entries,
-                        &app_search_query,
-                        &mut app_list,
-                        &mut app_name_list,
-                        &mut app_icon_list,
-                    );
-                    app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
-                    show_app_launcher = app_search_focused || !app_search_query.is_empty();
-                    cached_launcher_layer = None;
-                    launcher_content_dirty = true;
-                    taskbar_surface.invalidate_search();
-                    handled = true;
-                    dirty = true;
-                    scene_dirty = true;
-                }
-                if let Some(focused_win) = wm.focused_id {
-                    for (wid, engine) in warp_engines.iter_mut() {
-                        if handled {
-                            break;
-                        }
-                        if *wid == focused_win
-                            && !wm.is_interaction_blocked(focused_win)
-                            && !engine.focused_input_var.is_empty()
-                        {
-                            if let Some((text, replace_chars)) =
-                                ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
-                            {
-                                engine.handle_text(&text, replace_chars);
-                            } else {
-                                engine.handle_key(c);
-                            }
-                            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
-                                let tb_h = baram_windowserver::window::title_bar_h() as i32;
-                                let content_h = (wh as i32).saturating_sub(tb_h);
-                                engine.update(ww as i32, content_h);
-                                wm.clamp_window_scroll(*wid, engine.content_height);
-                                wm.set_content_dirty(*wid);
-                            }
-                            handled = true;
-                            dirty = true;
-                            scene_dirty = true;
-                            break;
-                        }
-                    }
-                }
-                if !handled {
-                    if let Some(focused_win) = wm.focused_id {
-                        for (wid, engine) in html_engines.iter_mut() {
-                            if *wid == focused_win
-                                && !wm.is_interaction_blocked(focused_win)
-                                && engine.has_focused_input()
-                            {
-                                if let Some((text, replace_chars)) =
-                                    ime_edit_for_key(input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime, c)
-                                {
-                                    engine.handle_text(&text, replace_chars);
-                                } else {
-                                    engine.handle_key(c);
-                                }
-                                if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
-                                    let content_h = wh
-                                        .saturating_sub(baram_windowserver::window::title_bar_h());
-                                    engine.set_scroll(scroll);
-                                    engine.update(ww as i32, content_h as i32);
-                                    wm.clamp_window_scroll(*wid, engine.content_height);
-                                    wm.set_content_dirty(*wid);
-                                }
-                                handled = true;
-                                dirty = true;
-                                scene_dirty = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if !handled {
-                    match c {
-                        _ => {}
-                    }
-                }
+                dispatch_text_input_key(
+                    SoftKey::Character(c), input_mode, &mut japanese_ime, &mut hangul_ime,
+                    &mut pinyin_ime, app_search_focused, &mut app_search_query, &app_entries,
+                    &mut app_list, &mut app_name_list, &mut app_icon_list,
+                    &mut app_launcher_scroll, &mut show_app_launcher,
+                    &mut cached_launcher_layer, &mut launcher_content_dirty,
+                    &mut taskbar_surface, &mut wm, &mut warp_engines, &mut html_engines,
+                );
             }
             dirty = true;
             scene_dirty = true;
@@ -1562,6 +1456,53 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 if ev.left && !mouse_down {
                     mouse_down = true;
+                    // This OS overlay is above every compositor layer. Consume
+                    // its pointer event before launcher/window focus handling,
+                    // preserving the input target that opened the keyboard.
+                    if soft_keyboard.contains(cx, cy, screen.width(), screen.height()) {
+                        if let Some(key) = soft_keyboard.click(cx, cy, screen.width(), screen.height()) {
+                            if key == SoftKey::Close {
+                                soft_keyboard.close();
+                            } else {
+                                dispatch_text_input_key(
+                                    key,
+                                    input_mode,
+                                    &mut japanese_ime,
+                                    &mut hangul_ime,
+                                    &mut pinyin_ime,
+                                    app_search_focused,
+                                    &mut app_search_query,
+                                    &app_entries,
+                                    &mut app_list,
+                                    &mut app_name_list,
+                                    &mut app_icon_list,
+                                    &mut app_launcher_scroll,
+                                    &mut show_app_launcher,
+                                    &mut cached_launcher_layer,
+                                    &mut launcher_content_dirty,
+                                    &mut taskbar_surface,
+                                    &mut wm,
+                                    &mut warp_engines,
+                                    &mut html_engines,
+                                );
+                            }
+                        }
+                        scene_dirty = true;
+                        dirty = true;
+                        continue;
+                    }
+                    let (ime_x, ime_y_local, ime_w, ime_h) =
+                        ime_button_bounds(screen.width(), battery_info.valid_percentage());
+                    let ime_y = screen.height() as i32 - TASKBAR_H as i32 + ime_y_local;
+                    let keyboard_x = ime_x - ime_w - 12;
+                    if cx >= keyboard_x && cx < keyboard_x + ime_w
+                        && cy >= ime_y && cy < ime_y + ime_h
+                    {
+                        soft_keyboard.toggle();
+                        scene_dirty = true;
+                        dirty = true;
+                        continue;
+                    }
                     // Clicking a different input ends the previous composition.
                     japanese_ime.reset();
                     hangul_ime.reset();
@@ -1680,44 +1621,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let (ime_x, ime_y, ime_w, ime_h) =
                             ime_button_bounds(screen.width(), battery_info.valid_percentage());
                         let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
-                        let keyboard_x = ime_x - ime_w - 12;
-                        let (kbd_x, kbd_y, kbd_w, kbd_h) =
-                            soft_keyboard_bounds(screen.width(), screen.height());
-                        if soft_keyboard_open
-                            && cx >= kbd_x + kbd_w - 56
-                            && cx < kbd_x + kbd_w - 12
-                            && cy >= kbd_y + 4
-                            && cy < kbd_y + 44
-                        {
-                            soft_keyboard_open = false;
-                            scene_dirty = true;
-                            dirty = true;
-                            continue;
-                        }
-                        if cx >= keyboard_x
-                            && cx < keyboard_x + ime_w
-                            && cy >= ime_y
-                            && cy < ime_y + ime_h
-                        {
-                            if let Some(wid) = soft_keyboard_win_id.take() {
-                                wm.remove(wid);
-                                html_engines.retain(|(id, _)| *id != wid);
-                                soft_keyboard_open = false;
-                            } else {
-                                let w = 720usize;
-                                let h = 280usize;
-                                let wid = wm.add("Software Keyboard", (screen.width() as i32 - w as i32) / 2, screen.height() as i32 - h as i32 - 64, w, h);
-                                wm.configure_special(wid, false, true, false);
-                                let mut engine = baram_windowserver::html::HtmlEngine::new_warp3("softkeyboard.w3a");
-                                engine.update((w - 20) as i32, h as i32);
-                                html_engines.push((wid, engine));
-                                soft_keyboard_win_id = Some(wid);
-                                soft_keyboard_open = true;
-                            }
-                            scene_dirty = true;
-                            dirty = true;
-                            continue;
-                        }
                         if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                             show_ime_menu = true;
                             ime_menu_closing = false;
@@ -1951,47 +1854,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 break;
                             }
                             if let Some((cmd, origin, source_win_id)) = html_command {
-                                if cmd == "softkeyboard://close" && soft_keyboard_win_id == Some(source_win_id) {
-                                    soft_keyboard_win_id = None;
-                                    soft_keyboard_open = false;
-                                    wm.remove(source_win_id);
-                                    html_engines.retain(|(id, _)| *id != source_win_id);
-                                    scene_dirty = true;
-                                    dirty = true;
-                                    continue;
-                                }
-                                if let Some(key) = cmd.strip_prefix("softkeyboard://key/") {
-                                    let c = if key == "space" { b' ' } else { key.as_bytes().first().copied().unwrap_or(0) };
-                                    if c != 0 {
-                                        if app_search_focused {
-                                            app_search_query.push(c as char);
-                                            rebuild_filtered_apps(&app_entries, &app_search_query, &mut app_list, &mut app_name_list, &mut app_icon_list);
-                                            app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
-                                            show_app_launcher = true;
-                                            cached_launcher_layer = None;
-                                            launcher_content_dirty = true;
-                                            taskbar_surface.invalidate_search();
-                                        } else if let Some(focused) = wm.focused_id {
-                                            for (wid, engine) in warp_engines.iter_mut() {
-                                                if *wid == focused && !wm.is_interaction_blocked(focused) {
-                                                    engine.handle_key(c);
-                                                    wm.set_content_dirty(focused);
-                                                    break;
-                                                }
-                                            }
-                                            for (wid, engine) in html_engines.iter_mut() {
-                                                if *wid == focused && !wm.is_interaction_blocked(focused) && engine.has_focused_input() {
-                                                    engine.handle_key(c);
-                                                    wm.set_content_dirty(focused);
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        scene_dirty = true;
-                                        dirty = true;
-                                    }
-                                    continue;
-                                }
                                 let nx = 100 + ((new_window_idx as i32 * 37) % 300);
                                 let ny = 60 + ((new_window_idx as i32 * 23) % 200);
                                 match handle_navigation(
@@ -2083,7 +1945,23 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             let search_y = sh as i32 - TASKBAR_H as i32 + (TASKBAR_H as i32 - 40) / 2;
             let on_search = cx >= 12 && cx < 202 && cy >= search_y && cy < search_y + 40;
 
-            if show_ime_menu && !ime_menu_closing {
+            if soft_keyboard.contains(cx, cy, screen.width(), screen.height()) {
+                if let Some(key) = soft_keyboard.click(cx, cy, screen.width(), screen.height()) {
+                    if key == SoftKey::Close {
+                        soft_keyboard.close();
+                    } else {
+                        dispatch_text_input_key(
+                            key, input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime,
+                            app_search_focused, &mut app_search_query, &app_entries, &mut app_list,
+                            &mut app_name_list, &mut app_icon_list, &mut app_launcher_scroll,
+                            &mut show_app_launcher, &mut cached_launcher_layer,
+                            &mut launcher_content_dirty, &mut taskbar_surface, &mut wm,
+                            &mut warp_engines, &mut html_engines,
+                        );
+                    }
+                }
+                scene_dirty = true;
+            } else if show_ime_menu && !ime_menu_closing {
                 if let Some(selection) = ime_menu_mode_at(
                     cx,
                     cy,
@@ -2175,6 +2053,15 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 let (ime_x, ime_y, ime_w, ime_h) =
                     ime_button_bounds(screen.width(), battery_info.valid_percentage());
                 let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
+                let keyboard_x = ime_x - ime_w - 12;
+                if cx >= keyboard_x && cx < keyboard_x + ime_w
+                    && cy >= ime_y && cy < ime_y + ime_h
+                {
+                    soft_keyboard.toggle();
+                    scene_dirty = true;
+                    dirty = true;
+                    continue;
+                }
                 if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
                     show_ime_menu = true;
                     ime_menu_closing = false;
@@ -2532,10 +2419,25 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         {
-            let mut hovered_any = false;
-            if let Some(hover_id) = wm.window_at(cursor_x, cursor_y) {
-                let scrolling = wm.is_scroll_animating(hover_id);
-                for (wid, engine) in warp_engines.iter_mut() {
+            let mut hovered_any = soft_keyboard.contains(
+                cursor_x, cursor_y, screen.width(), screen.height(),
+            );
+            if soft_keyboard.set_hover(cursor_x, cursor_y, screen.width(), screen.height()) {
+                scene_dirty = true;
+                dirty = true;
+            }
+            if hovered_any {
+                for (_, engine) in warp_engines.iter_mut() {
+                    engine.clear_hover();
+                }
+                for (_, engine) in html_engines.iter_mut() {
+                    engine.clear_hover();
+                }
+            }
+            if !hovered_any {
+                if let Some(hover_id) = wm.window_at(cursor_x, cursor_y) {
+                    let scrolling = wm.is_scroll_animating(hover_id);
+                    for (wid, engine) in warp_engines.iter_mut() {
                     if hover_id == *wid {
                         if scrolling {
                             engine.clear_hover();
@@ -2562,8 +2464,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         }
                         break;
                     }
-                }
-                for (wid, engine) in html_engines.iter_mut() {
+                    }
+                    for (wid, engine) in html_engines.iter_mut() {
                     if hover_id == *wid {
                         if scrolling {
                             engine.cancel_hover();
@@ -2593,6 +2495,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             hovered_any = true;
                         }
                         break;
+                    }
                     }
                 }
             }
@@ -3010,7 +2913,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     clock_mm,
                     battery_info.valid_percentage(),
                     show_ime_menu,
-                    soft_keyboard_open,
+                    &mut soft_keyboard,
                     ime_menu_opacity,
                     ime_menu_selection(input_mode),
                     ime_reading,
@@ -3064,7 +2967,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         clock_mm,
                         battery_info.valid_percentage(),
                         show_ime_menu,
-                        soft_keyboard_open,
+                        &mut soft_keyboard,
                         ime_menu_opacity,
                         ime_menu_selection(input_mode),
                         ime_reading,
@@ -3272,6 +3175,106 @@ fn rebuild_filtered_apps(
             icons.push(entry.icon.clone());
         }
     }
+}
+
+/// Single OS-level text injection path shared by hardware and software keys.
+/// It owns target selection, IME composition, layout refresh, and damage.
+fn dispatch_text_input_key(
+    key: SoftKey,
+    input_mode: InputMode,
+    japanese_ime: &mut JapaneseIme,
+    hangul_ime: &mut HangulIme,
+    pinyin_ime: &mut PinyinIme,
+    app_search_focused: bool,
+    app_search_query: &mut alloc::string::String,
+    app_entries: &[AppEntry],
+    app_list: &mut alloc::vec::Vec<alloc::string::String>,
+    app_name_list: &mut alloc::vec::Vec<alloc::string::String>,
+    app_icon_list: &mut alloc::vec::Vec<alloc::string::String>,
+    app_launcher_scroll: &mut SmoothScroll,
+    show_app_launcher: &mut bool,
+    cached_launcher_layer: &mut Option<alloc::vec::Vec<u32>>,
+    launcher_content_dirty: &mut bool,
+    taskbar_surface: &mut TaskbarSurface,
+    wm: &mut WindowManager,
+    warp_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
+    html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+) -> bool {
+    let byte = match key {
+        SoftKey::Character(c) => c,
+        SoftKey::Backspace => 0x08,
+        SoftKey::Enter => b'\n',
+        SoftKey::Close => return false,
+    };
+
+    if app_search_focused {
+        if byte == b'\n' || byte == b'\r' {
+            return false;
+        }
+        if let Some((text, replace_chars)) =
+            ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
+        {
+            for _ in 0..replace_chars { app_search_query.pop(); }
+            app_search_query.push_str(&text);
+        } else if byte == 0x08 || byte == 0x7f {
+            app_search_query.pop();
+        } else if (0x20..=0x7e).contains(&byte) {
+            app_search_query.push(byte as char);
+        }
+        rebuild_filtered_apps(app_entries, app_search_query, app_list, app_name_list, app_icon_list);
+        app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
+        *show_app_launcher = true;
+        *cached_launcher_layer = None;
+        *launcher_content_dirty = true;
+        taskbar_surface.invalidate_search();
+        return true;
+    }
+
+    let Some(focused) = wm.focused_id else { return false; };
+    if wm.is_interaction_blocked(focused) { return false; }
+
+    for (wid, engine) in warp_engines.iter_mut() {
+        if *wid != focused || engine.focused_input_var.is_empty() { continue; }
+        if byte == b'\n' || byte == b'\r' {
+            engine.handle_text("\n", 0);
+        } else if let Some((text, replace_chars)) =
+            ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
+        {
+            engine.handle_text(&text, replace_chars);
+        } else {
+            engine.handle_key(byte);
+        }
+        if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+            let content_h = (wh as i32)
+                .saturating_sub(baram_windowserver::window::title_bar_h() as i32);
+            engine.update(ww as i32, content_h);
+            wm.clamp_window_scroll(*wid, engine.content_height);
+        }
+        wm.set_content_dirty(*wid);
+        return true;
+    }
+
+    for (wid, engine) in html_engines.iter_mut() {
+        if *wid != focused || !engine.has_focused_input() { continue; }
+        if byte == b'\n' || byte == b'\r' {
+            engine.handle_text("\n", 0);
+        } else if let Some((text, replace_chars)) =
+            ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
+        {
+            engine.handle_text(&text, replace_chars);
+        } else {
+            engine.handle_key(byte);
+        }
+        if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
+            let content_h = wh.saturating_sub(baram_windowserver::window::title_bar_h());
+            engine.set_scroll(scroll);
+            engine.update(ww as i32, content_h as i32);
+            wm.clamp_window_scroll(*wid, engine.content_height());
+        }
+        wm.set_content_dirty(*wid);
+        return true;
+    }
+    false
 }
 
 fn app_launcher_scroll_max(app_count: usize) -> i32 {
