@@ -1,5 +1,4 @@
 #![no_std]
-
 // # ワナカナ <--> WanaKana <--> わなかな
 //
 // Utility library for checking and converting between Japanese characters -
@@ -45,7 +44,6 @@
 // # Tokenize
 //
 // [`tokenize`] Splits input into array of strings separated by opinionated TokenType.
-
 #![doc(test(attr(allow(unused_variables), deny(warnings))))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]

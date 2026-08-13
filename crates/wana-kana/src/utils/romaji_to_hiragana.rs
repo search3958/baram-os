@@ -1,6 +1,6 @@
-use alloc::string::String;
 use crate::options::Options;
 use crate::to_kana::*;
+use alloc::string::String;
 
 /// Convert [Romaji](https://en.wikipedia.org/wiki/Romaji) to [Hiragana](https://en.wikipedia.org/wiki/Hiragana)
 ///

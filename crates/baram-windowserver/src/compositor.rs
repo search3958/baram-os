@@ -84,7 +84,11 @@ fn taskbar_status_text_width(text: &str) -> usize {
                 g.advance.max(0) as usize
             } else {
                 let fallback = baram_font::ttf_font::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
-                if fallback.w > 0 { fallback.advance.max(0) as usize } else { 8 }
+                if fallback.w > 0 {
+                    fallback.advance.max(0) as usize
+                } else {
+                    8
+                }
             }
         })
         .sum()
@@ -203,7 +207,8 @@ impl TaskbarSurface {
         hovered_keyboard: bool,
         hovered_ime: bool,
     ) -> bool {
-        if !self.valid || self.ime_status_strip_w == 0
+        if !self.valid
+            || self.ime_status_strip_w == 0
             || self.ime_status_strip.len() != self.ime_status_strip_w * TASKBAR_H
         {
             return false;
@@ -240,7 +245,6 @@ impl TaskbarSurface {
         );
         true
     }
-
 }
 
 fn tint_taskbar(pixels: &mut [u32], color: u32, alpha: u32) {
@@ -285,7 +289,16 @@ fn blend_rounded_rect(
         if fill_l < fill_r {
             blend_solid_span(layer, py, fill_l, fill_r, color, alpha.min(255));
         }
-        blend_squircle_edge(layer, x + span_l.saturating_sub(1), py, x, y, &squircle, color, alpha);
+        blend_squircle_edge(
+            layer,
+            x + span_l.saturating_sub(1),
+            py,
+            x,
+            y,
+            &squircle,
+            color,
+            alpha,
+        );
         blend_squircle_edge(layer, x + span_r, py, x, y, &squircle, color, alpha);
     }
 }
@@ -331,22 +344,36 @@ fn copy_rounded_region_from_crop(
             layer.buf_mut()[dst..dst + fill_r - fill_l]
                 .copy_from_slice(&source[src..src + fill_r - fill_l]);
         }
-        copy_squircle_edge(layer, source, source_w, source_x, source_y,
-            x + span_l.saturating_sub(1), py, x, y, &squircle);
-        copy_squircle_edge(layer, source, source_w, source_x, source_y,
-            x + span_r, py, x, y, &squircle);
+        copy_squircle_edge(
+            layer,
+            source,
+            source_w,
+            source_x,
+            source_y,
+            x + span_l.saturating_sub(1),
+            py,
+            x,
+            y,
+            &squircle,
+        );
+        copy_squircle_edge(
+            layer,
+            source,
+            source_w,
+            source_x,
+            source_y,
+            x + span_r,
+            py,
+            x,
+            y,
+            &squircle,
+        );
     }
 }
 
 /// Four-by-four anti-aliased coverage for the Warp squircle polygon.
 /// Coordinates are screen-relative while the geometry is local to the rect.
-fn squircle_coverage(
-    px: usize,
-    py: usize,
-    x: usize,
-    y: usize,
-    polygon: &[(f32, f32)],
-) -> u32 {
+fn squircle_coverage(px: usize, py: usize, x: usize, y: usize, polygon: &[(f32, f32)]) -> u32 {
     let mut inside = 0u32;
     for sy in 0..4 {
         for sx in 0..4 {
@@ -419,12 +446,22 @@ fn blend_solid_span(
 
 #[inline]
 fn blend_squircle_edge(
-    layer: &mut LayerSystem, px: usize, py: usize, x: usize, y: usize,
-    polygon: &[(f32, f32)], color: Color, alpha: u32,
+    layer: &mut LayerSystem,
+    px: usize,
+    py: usize,
+    x: usize,
+    y: usize,
+    polygon: &[(f32, f32)],
+    color: Color,
+    alpha: u32,
 ) {
-    if px >= layer.width() || py >= layer.height() { return; }
+    if px >= layer.width() || py >= layer.height() {
+        return;
+    }
     let coverage = squircle_coverage(px, py, x, y, polygon);
-    if coverage == 0 { return; }
+    if coverage == 0 {
+        return;
+    }
     let a = alpha.min(255) * coverage / 16;
     let idx = py * layer.width() + px;
     let bg = layer.buf_ref()[idx];
@@ -433,17 +470,30 @@ fn blend_squircle_edge(
         ((color.r() as u32 * a + ((bg >> 16) & 0xff) * inv) / 255) as u8,
         ((color.g() as u32 * a + ((bg >> 8) & 0xff) * inv) / 255) as u8,
         ((color.b() as u32 * a + (bg & 0xff) * inv) / 255) as u8,
-    ).0;
+    )
+    .0;
 }
 
 #[inline]
 fn copy_squircle_edge(
-    layer: &mut LayerSystem, source: &[u32], source_w: usize, source_x: usize, source_y: usize,
-    px: usize, py: usize, x: usize, y: usize, polygon: &[(f32, f32)],
+    layer: &mut LayerSystem,
+    source: &[u32],
+    source_w: usize,
+    source_x: usize,
+    source_y: usize,
+    px: usize,
+    py: usize,
+    x: usize,
+    y: usize,
+    polygon: &[(f32, f32)],
 ) {
-    if px >= layer.width() || py >= layer.height() { return; }
+    if px >= layer.width() || py >= layer.height() {
+        return;
+    }
     let coverage = squircle_coverage(px, py, x, y, polygon);
-    if coverage == 0 { return; }
+    if coverage == 0 {
+        return;
+    }
     let idx = py * layer.width() + px;
     let fg = source[(py - source_y) * source_w + px - source_x];
     if coverage == 16 {
@@ -586,7 +636,8 @@ fn draw_control_shadow(
         if dy >= layer.height() {
             continue;
         }
-        let inside_span = dy.checked_sub(y)
+        let inside_span = dy
+            .checked_sub(y)
             .filter(|local_y| *local_y < height)
             .and_then(|local_y| squircle_row_pixel_span(&squircle, local_y, width));
         for sx in source_x..sw {
@@ -1327,19 +1378,27 @@ fn draw_ime_candidates(
         if index == selected {
             // The underline marks the candidate currently composing in the
             // target input. Enter commits this underlined candidate.
-            layer.fill_rect(cx + 7, y + 52, candidate_width.saturating_sub(14), 2, accent);
+            layer.fill_rect(
+                cx + 7,
+                y + 52,
+                candidate_width.saturating_sub(14),
+                2,
+                accent,
+            );
         }
         cx += candidate_width + 6;
     }
 }
 
 /// Bounds of the IME mode menu in screen coordinates.
-pub fn ime_menu_bounds(width: usize, height: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
+pub fn ime_menu_bounds(
+    width: usize,
+    height: usize,
+    battery_pct: Option<u8>,
+) -> (i32, i32, i32, i32) {
     let (button_x, _, button_w, _) = ime_button_bounds(width, battery_pct);
     let x = (button_x + button_w - IME_MENU_W as i32).max(12);
-    let y = height
-        .saturating_sub(TASKBAR_H + IME_MENU_H + 12)
-        .max(8) as i32;
+    let y = height.saturating_sub(TASKBAR_H + IME_MENU_H + 12).max(8) as i32;
     (x, y, IME_MENU_W as i32, IME_MENU_H as i32)
 }
 
@@ -1379,12 +1438,17 @@ fn draw_ime_menu(
     let cache_y1 = (y + height + CACHE_PAD).min(layer.height());
     let cache_w = cache_x1.saturating_sub(cache_x);
     let cache_h = cache_y1.saturating_sub(cache_y);
-    if cache_w == 0 || cache_h == 0 { return; }
+    if cache_w == 0 || cache_h == 0 {
+        return;
+    }
     let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
     if clip_x1 <= cache_x || clip_x0 >= cache_x1 || clip_y1 <= cache_y || clip_y0 >= cache_y1 {
         return;
     }
-    if cached_layer.as_ref().is_none_or(|cache| cache.len() != cache_w * cache_h) {
+    if cached_layer
+        .as_ref()
+        .is_none_or(|cache| cache.len() != cache_w * cache_h)
+    {
         const BLUR_RADIUS: usize = 18;
         let mut glass = LayerSystem::new(cache_w, cache_h);
         for py in 0..cache_h {
@@ -1399,7 +1463,9 @@ fn draw_ime_menu(
         let blur_y1 = (y + height + BLUR_RADIUS).min(layer.height());
         let blur_w = blur_x1.saturating_sub(blur_x0);
         let blur_h = blur_y1.saturating_sub(blur_y0);
-        if blur_w == 0 || blur_h == 0 { return; }
+        if blur_w == 0 || blur_h == 0 {
+            return;
+        }
         let mut source = alloc::vec![0u32; blur_w * blur_h];
         for py in 0..blur_h {
             let src_start = (blur_y0 + py) * layer.width() + blur_x0;
@@ -1411,12 +1477,26 @@ fn draw_ime_menu(
         blur::blur_region_to(&source, &mut blurred, blur_w, 0, blur_h, BLUR_RADIUS as i32);
         draw_soft_box_shadow(&mut glass, x - cache_x, y - cache_y, width, height, 18);
         copy_rounded_region_from_crop(
-            &mut glass, &blurred, blur_w, blur_x0 - cache_x, blur_y0 - cache_y,
-            x - cache_x, y - cache_y, width, height, 18,
+            &mut glass,
+            &blurred,
+            blur_w,
+            blur_x0 - cache_x,
+            blur_y0 - cache_y,
+            x - cache_x,
+            y - cache_y,
+            width,
+            height,
+            18,
         );
         blend_rounded_rect(
-            &mut glass, x - cache_x, y - cache_y, width, height, 18,
-            Color::rgb(0xf5, 0xf5, 0xf5), 200,
+            &mut glass,
+            x - cache_x,
+            y - cache_y,
+            width,
+            height,
+            18,
+            Color::rgb(0xf5, 0xf5, 0xf5),
+            200,
         );
         // The entire static list lives in the open-menu cache too. This keeps
         // SVG blending and text layout out of pointer-move redraws.
@@ -1432,7 +1512,10 @@ fn draw_ime_menu(
             "한컴 로마자",
             "조선 두벌식",
             "简体拼音",
-        ].iter().enumerate() {
+        ]
+        .iter()
+        .enumerate()
+        {
             let row_y = menu_y + 30 + row * 38;
             if row == ime_menu_selection {
                 blend_rounded_rect(
@@ -1464,7 +1547,12 @@ fn draw_ime_menu(
 pub fn ime_button_bounds(width: usize, battery_pct: Option<u8>) -> (i32, i32, i32, i32) {
     let status_x = taskbar_status_x(width, battery_pct);
     let x = status_x.saturating_sub(IME_BUTTON_W + 12) as i32;
-    (x, (TASKBAR_H as i32 - IME_BUTTON_W as i32) / 2, IME_BUTTON_W as i32, IME_BUTTON_W as i32)
+    (
+        x,
+        (TASKBAR_H as i32 - IME_BUTTON_W as i32) / 2,
+        IME_BUTTON_W as i32,
+        IME_BUTTON_W as i32,
+    )
 }
 
 pub fn render_scene(
@@ -2040,8 +2128,18 @@ pub fn render_scene(
         );
         if !ime_status_partial {
             redraw_taskbar(
-                taskbar, wm, add_progress, shift_x, hover_apps_icon, hover_keyboard_icon, hover_ime_icon,
-                search_focused, search_query, clock_hh, clock_mm, battery_pct,
+                taskbar,
+                wm,
+                add_progress,
+                shift_x,
+                hover_apps_icon,
+                hover_keyboard_icon,
+                hover_ime_icon,
+                search_focused,
+                search_query,
+                clock_hh,
+                clock_mm,
+                battery_pct,
                 ime_menu_selection,
             );
         }

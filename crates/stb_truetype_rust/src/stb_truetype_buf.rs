@@ -1,5 +1,3 @@
-
-
 use crate::*;
 use c_runtime;
 
@@ -59,11 +57,7 @@ pub unsafe fn stbtt__buf_range(b: *mut stbtt__buf, o: i32, s: i32) -> stbtt__buf
 }
 
 pub unsafe fn stbtt__buf_seek(b: *mut stbtt__buf, o: i32) {
-    (*b).cursor = (if o > (*b).size || o < 0 {
-        (*b).size
-    } else {
-        o
-    }) as i32;
+    (*b).cursor = (if o > (*b).size || o < 0 { (*b).size } else { o }) as i32;
 }
 
 pub unsafe fn stbtt__buf_skip(b: *mut stbtt__buf, o: i32) {
@@ -152,12 +146,7 @@ pub unsafe fn stbtt__dict_get(b: *mut stbtt__buf, key: i32) -> stbtt__buf {
     return (stbtt__buf_range(b, 0, 0)) as stbtt__buf;
 }
 
-pub unsafe fn stbtt__dict_get_ints(
-    b: *mut stbtt__buf,
-    key: i32,
-    outcount: i32,
-    out: *mut u32,
-) {
+pub unsafe fn stbtt__dict_get_ints(b: *mut stbtt__buf, key: i32, outcount: i32, out: *mut u32) {
     let mut i: i32 = 0;
     let mut operands: stbtt__buf = stbtt__dict_get(b, key);
     i = (0) as i32;

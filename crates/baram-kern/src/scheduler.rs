@@ -2,8 +2,8 @@
 
 extern crate alloc;
 
+use crate::process::{Process, ProcessPriority, ProcessState, MAX_PROCESSES};
 use alloc::vec::Vec;
-use crate::process::{Process, ProcessState, ProcessPriority, MAX_PROCESSES};
 
 pub struct Scheduler {
     processes: Vec<Option<Process>>,
@@ -169,20 +169,27 @@ impl Scheduler {
     }
 
     pub fn get_running_count(&self) -> usize {
-        self.processes.iter()
+        self.processes
+            .iter()
             .filter(|p| p.as_ref().map_or(false, |proc| proc.is_runnable()))
             .count()
     }
 
     pub fn get_all_processes(&self) -> Vec<u32> {
-        self.processes.iter()
+        self.processes
+            .iter()
             .filter_map(|p| p.as_ref().map(|proc| proc.pid))
             .collect()
     }
 
     pub fn get_children(&self, ppid: u32) -> Vec<u32> {
-        self.processes.iter()
-            .filter_map(|p| p.as_ref().filter(|proc| proc.ppid == ppid).map(|proc| proc.pid))
+        self.processes
+            .iter()
+            .filter_map(|p| {
+                p.as_ref()
+                    .filter(|proc| proc.ppid == ppid)
+                    .map(|proc| proc.pid)
+            })
             .collect()
     }
 }

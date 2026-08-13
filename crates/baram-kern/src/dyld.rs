@@ -2,22 +2,13 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use alloc::string::{String, ToString};
-use alloc::collections::BTreeMap;
-use crate::elf::{
-    ElfFile,
-    DT_NEEDED,
-    DT_INIT, DT_FINI, DT_SONAME,
-    STB_GLOBAL, STB_WEAK,
-};
+use crate::elf::{ElfFile, DT_FINI, DT_INIT, DT_NEEDED, DT_SONAME, STB_GLOBAL, STB_WEAK};
 use crate::vmm::{VirtualMemoryManager, PAGE_SIZE};
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
-pub const LIBRARY_SEARCH_PATHS: &[&str] = &[
-    "/lib",
-    "/usr/lib",
-    "/system/lib",
-];
+pub const LIBRARY_SEARCH_PATHS: &[&str] = &["/lib", "/usr/lib", "/system/lib"];
 
 pub struct DynamicLinker {
     libraries: Vec<LoadedLibrary>,
@@ -86,7 +77,12 @@ impl DynamicLinker {
         }
     }
 
-    pub fn load_library(&mut self, name: &str, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<usize, LinkError> {
+    pub fn load_library(
+        &mut self,
+        name: &str,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<usize, LinkError> {
         if let Some(id) = self.find_library(name) {
             self.libraries[id].ref_count += 1;
             return Ok(id);
@@ -164,7 +160,12 @@ impl DynamicLinker {
         None
     }
 
-    pub fn apply_relocations(&mut self, library_id: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    pub fn apply_relocations(
+        &mut self,
+        library_id: usize,
+        vmm: &VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<(), LinkError> {
         if library_id >= self.libraries.len() {
             return Err(LinkError::LibraryNotFound);
         }
@@ -182,9 +183,8 @@ impl DynamicLinker {
         for library in &mut self.libraries {
             if library.is_loaded && !library.is_initialized {
                 if library.init_addr != 0 {
-                    let init_fn: extern "C" fn() = unsafe {
-                        core::mem::transmute(library.init_addr)
-                    };
+                    let init_fn: extern "C" fn() =
+                        unsafe { core::mem::transmute(library.init_addr) };
                     init_fn();
                 }
                 library.is_initialized = true;
@@ -198,9 +198,8 @@ impl DynamicLinker {
         for library in self.libraries.iter_mut().rev() {
             if library.is_initialized && library.ref_count == 0 {
                 if library.fini_addr != 0 {
-                    let fini_fn: extern "C" fn() = unsafe {
-                        core::mem::transmute(library.fini_addr)
-                    };
+                    let fini_fn: extern "C" fn() =
+                        unsafe { core::mem::transmute(library.fini_addr) };
                     fini_fn();
                 }
                 library.is_initialized = false;
@@ -223,9 +222,7 @@ impl DynamicLinker {
         if should_finalize {
             let library = &self.libraries[library_id];
             if library.is_initialized && library.fini_addr != 0 {
-                let fini_fn: extern "C" fn() = unsafe {
-                    core::mem::transmute(library.fini_addr)
-                };
+                let fini_fn: extern "C" fn() = unsafe { core::mem::transmute(library.fini_addr) };
                 fini_fn();
             }
         }
@@ -275,8 +272,6 @@ impl DynamicLinker {
     }
 
     fn read_file_from_fs(&self, path: &str) -> Option<Vec<u8>> {
-        
-
         let data = crate::loader::read_file(path)?;
         Some(data)
     }
@@ -288,7 +283,13 @@ impl DynamicLinker {
         addr
     }
 
-    fn load_segments(&mut self, elf: &ElfFile, library: &mut LoadedLibrary, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    fn load_segments(
+        &mut self,
+        elf: &ElfFile,
+        library: &mut LoadedLibrary,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<(), LinkError> {
         let segments = elf.get_load_segments();
         if segments.is_empty() {
             return Err(LinkError::InvalidSegments);
@@ -459,7 +460,13 @@ impl DynamicLinker {
         }
     }
 
-    fn apply_rel_relocations(&self, library_id: usize, _base: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    fn apply_rel_relocations(
+        &self,
+        library_id: usize,
+        _base: usize,
+        vmm: &VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<(), LinkError> {
         let library = &self.libraries[library_id];
         let base = library.base_addr;
 
@@ -477,7 +484,13 @@ impl DynamicLinker {
         Ok(())
     }
 
-    fn apply_rela_relocations(&self, library_id: usize, _base: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    fn apply_rela_relocations(
+        &self,
+        library_id: usize,
+        _base: usize,
+        vmm: &VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<(), LinkError> {
         let library = &self.libraries[library_id];
 
         for sym in &library.symbols {
@@ -512,7 +525,13 @@ impl DynamicLinker {
         Ok(())
     }
 
-    fn write_relocation(&self, addr: usize, value: usize, vmm: &VirtualMemoryManager, ttbr: usize) -> Result<(), LinkError> {
+    fn write_relocation(
+        &self,
+        addr: usize,
+        value: usize,
+        vmm: &VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<(), LinkError> {
         if let Some(phys_addr) = vmm.translate(ttbr, addr) {
             unsafe {
                 core::ptr::write_volatile(phys_addr as *mut usize, value);
@@ -524,7 +543,9 @@ impl DynamicLinker {
     }
 
     fn remove_global_symbols(&mut self, library_id: usize) {
-        let to_remove: Vec<String> = self.global_symbols.iter()
+        let to_remove: Vec<String> = self
+            .global_symbols
+            .iter()
             .filter(|(_, entry)| entry.library_id == library_id)
             .map(|(name, _)| name.clone())
             .collect();
@@ -535,8 +556,6 @@ impl DynamicLinker {
     }
 
     fn allocate_physical_page(&self) -> usize {
-        
-
         let layout = core::alloc::Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
         unsafe {
             let ptr = alloc::alloc::alloc_zeroed(layout);

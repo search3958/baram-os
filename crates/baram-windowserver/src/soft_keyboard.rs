@@ -1,122 +1,38 @@
-//! OS-owned software keyboard.
+//! OS-owned, topmost software keyboard rendered by Warp 3.
 //!
-//! The controls are rendered by Warp, but this surface is deliberately not a
-//! window or an application. It stays outside app discovery/navigation and
-//! reports typed keys directly to the OS input router.
+//! This is neither a window nor an application. Its embedded Warp 3 resources
+//! never enter app discovery or the VFS, while emitted keys go straight to the
+//! OS input router.
 
-use baram_core::{Color, LayerSystem};
+use baram_core::LayerSystem;
 
-use crate::warp::WarpEngine;
+use crate::warp3::Warp3Engine;
 
 pub const WIDTH: usize = 720;
-pub const HEIGHT: usize = 280;
+pub const HEIGHT: usize = 320;
+const RADIUS: usize = 18;
 
-const LETTERS_LOWER: &str = r#"
-screen { id: (main),
-  hStack {
-    tonalButton { id: (q), text: ("q"), width: (52) }
-    tonalButton { id: (w), text: ("w"), width: (52) }
-    tonalButton { id: (e), text: ("e"), width: (52) }
-    tonalButton { id: (r), text: ("r"), width: (52) }
-    tonalButton { id: (t), text: ("t"), width: (52) }
-    tonalButton { id: (y), text: ("y"), width: (52) }
-    tonalButton { id: (u), text: ("u"), width: (52) }
-    tonalButton { id: (i), text: ("i"), width: (52) }
-    tonalButton { id: (o), text: ("o"), width: (52) }
-    tonalButton { id: (p), text: ("p"), width: (52) }
-  }
-  hStack {
-    tonalButton { id: (a), text: ("a"), width: (52) }
-    tonalButton { id: (s), text: ("s"), width: (52) }
-    tonalButton { id: (d), text: ("d"), width: (52) }
-    tonalButton { id: (f), text: ("f"), width: (52) }
-    tonalButton { id: (g), text: ("g"), width: (52) }
-    tonalButton { id: (h), text: ("h"), width: (52) }
-    tonalButton { id: (j), text: ("j"), width: (52) }
-    tonalButton { id: (k), text: ("k"), width: (52) }
-    tonalButton { id: (l), text: ("l"), width: (52) }
-    button { id: (backspace), text: ("Back"), width: (64) }
-  }
-  hStack {
-    button { id: (shift), text: ("Shift"), width: (76) }
-    tonalButton { id: (z), text: ("z"), width: (52) }
-    tonalButton { id: (x), text: ("x"), width: (52) }
-    tonalButton { id: (c), text: ("c"), width: (52) }
-    tonalButton { id: (v), text: ("v"), width: (52) }
-    tonalButton { id: (b), text: ("b"), width: (52) }
-    tonalButton { id: (n), text: ("n"), width: (52) }
-    tonalButton { id: (m), text: ("m"), width: (52) }
-    button { id: (enter), text: ("Enter"), width: (82) }
-  }
-  hStack {
-    button { id: (symbols), text: ("123"), width: (76) }
-    tonalButton { id: (comma), text: (","), width: (52) }
-    tonalButton { id: (space), text: ("Space"), width: (300) }
-    tonalButton { id: (period), text: ("."), width: (52) }
-    button { id: (close), text: ("Close"), width: (92) }
-  }
-}
+const CONFIG: &str = "version = 3\nscreen = main\nname = Software Keyboard\n";
+const LOWER: &str = r#"
+config { title("Software Keyboard") }
+flex { button.q { text("q") type("tonal") } button.w { text("w") type("tonal") } button.e { text("e") type("tonal") } button.r { text("r") type("tonal") } button.t { text("t") type("tonal") } button.y { text("y") type("tonal") } button.u { text("u") type("tonal") } button.i { text("i") type("tonal") } button.o { text("o") type("tonal") } button.p { text("p") type("tonal") } }
+flex { button.a { text("a") type("tonal") } button.s { text("s") type("tonal") } button.d { text("d") type("tonal") } button.f { text("f") type("tonal") } button.g { text("g") type("tonal") } button.h { text("h") type("tonal") } button.j { text("j") type("tonal") } button.k { text("k") type("tonal") } button.l { text("l") type("tonal") } button.backspace { text("Back") type("primary") } }
+flex { button.shift { text("Shift") type("primary") } button.z { text("z") type("tonal") } button.x { text("x") type("tonal") } button.c { text("c") type("tonal") } button.v { text("v") type("tonal") } button.b { text("b") type("tonal") } button.n { text("n") type("tonal") } button.m { text("m") type("tonal") } button.enter { text("Enter") type("primary") } }
+flex { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("　　　　　　　　　Space　　　　　　　　　") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
 "#;
-
-const LETTERS_UPPER: &str = r#"
-screen { id: (main),
-  hStack {
-    tonalButton { id: (q), text: ("Q"), width: (52) } tonalButton { id: (w), text: ("W"), width: (52) }
-    tonalButton { id: (e), text: ("E"), width: (52) } tonalButton { id: (r), text: ("R"), width: (52) }
-    tonalButton { id: (t), text: ("T"), width: (52) } tonalButton { id: (y), text: ("Y"), width: (52) }
-    tonalButton { id: (u), text: ("U"), width: (52) } tonalButton { id: (i), text: ("I"), width: (52) }
-    tonalButton { id: (o), text: ("O"), width: (52) } tonalButton { id: (p), text: ("P"), width: (52) }
-  }
-  hStack {
-    tonalButton { id: (a), text: ("A"), width: (52) } tonalButton { id: (s), text: ("S"), width: (52) }
-    tonalButton { id: (d), text: ("D"), width: (52) } tonalButton { id: (f), text: ("F"), width: (52) }
-    tonalButton { id: (g), text: ("G"), width: (52) } tonalButton { id: (h), text: ("H"), width: (52) }
-    tonalButton { id: (j), text: ("J"), width: (52) } tonalButton { id: (k), text: ("K"), width: (52) }
-    tonalButton { id: (l), text: ("L"), width: (52) } button { id: (backspace), text: ("Back"), width: (64) }
-  }
-  hStack {
-    button { id: (shift), text: ("Shift"), width: (76) }
-    tonalButton { id: (z), text: ("Z"), width: (52) } tonalButton { id: (x), text: ("X"), width: (52) }
-    tonalButton { id: (c), text: ("C"), width: (52) } tonalButton { id: (v), text: ("V"), width: (52) }
-    tonalButton { id: (b), text: ("B"), width: (52) } tonalButton { id: (n), text: ("N"), width: (52) }
-    tonalButton { id: (m), text: ("M"), width: (52) } button { id: (enter), text: ("Enter"), width: (82) }
-  }
-  hStack {
-    button { id: (symbols), text: ("123"), width: (76) } tonalButton { id: (comma), text: (","), width: (52) }
-    tonalButton { id: (space), text: ("Space"), width: (300) } tonalButton { id: (period), text: ("."), width: (52) }
-    button { id: (close), text: ("Close"), width: (92) }
-  }
-}
+const UPPER: &str = r#"
+config { title("Software Keyboard") }
+flex { button.q { text("Q") type("tonal") } button.w { text("W") type("tonal") } button.e { text("E") type("tonal") } button.r { text("R") type("tonal") } button.t { text("T") type("tonal") } button.y { text("Y") type("tonal") } button.u { text("U") type("tonal") } button.i { text("I") type("tonal") } button.o { text("O") type("tonal") } button.p { text("P") type("tonal") } }
+flex { button.a { text("A") type("tonal") } button.s { text("S") type("tonal") } button.d { text("D") type("tonal") } button.f { text("F") type("tonal") } button.g { text("G") type("tonal") } button.h { text("H") type("tonal") } button.j { text("J") type("tonal") } button.k { text("K") type("tonal") } button.l { text("L") type("tonal") } button.backspace { text("Back") type("primary") } }
+flex { button.shift { text("Shift") type("primary") } button.z { text("Z") type("tonal") } button.x { text("X") type("tonal") } button.c { text("C") type("tonal") } button.v { text("V") type("tonal") } button.b { text("B") type("tonal") } button.n { text("N") type("tonal") } button.m { text("M") type("tonal") } button.enter { text("Enter") type("primary") } }
+flex { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("　　　　　　　　　Space　　　　　　　　　") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
 "#;
-
 const SYMBOLS: &str = r#"
-screen { id: (main),
-  hStack {
-    tonalButton { id: (1), text: ("1"), width: (52) } tonalButton { id: (2), text: ("2"), width: (52) }
-    tonalButton { id: (3), text: ("3"), width: (52) } tonalButton { id: (4), text: ("4"), width: (52) }
-    tonalButton { id: (5), text: ("5"), width: (52) } tonalButton { id: (6), text: ("6"), width: (52) }
-    tonalButton { id: (7), text: ("7"), width: (52) } tonalButton { id: (8), text: ("8"), width: (52) }
-    tonalButton { id: (9), text: ("9"), width: (52) } tonalButton { id: (0), text: ("0"), width: (52) }
-  }
-  hStack {
-    tonalButton { id: (minus), text: ("-"), width: (52) } tonalButton { id: (slash), text: ("/"), width: (52) }
-    tonalButton { id: (colon), text: (":"), width: (52) } tonalButton { id: (semicolon), text: (";"), width: (52) }
-    tonalButton { id: (lparen), text: ("("), width: (52) } tonalButton { id: (rparen), text: (")"), width: (52) }
-    tonalButton { id: (dollar), text: ("$"), width: (52) } tonalButton { id: (amp), text: ("&"), width: (52) }
-    tonalButton { id: (at), text: ("@"), width: (52) } button { id: (backspace), text: ("Back"), width: (64) }
-  }
-  hStack {
-    tonalButton { id: (quote), text: ("'"), width: (52) } tonalButton { id: (doublequote), text: ("”"), width: (52) }
-    tonalButton { id: (question), text: ("?"), width: (52) } tonalButton { id: (bang), text: ("!"), width: (52) }
-    tonalButton { id: (plus), text: ("+"), width: (52) } tonalButton { id: (equals), text: ("="), width: (52) }
-    tonalButton { id: (underscore), text: ("_"), width: (52) } button { id: (enter), text: ("Enter"), width: (82) }
-  }
-  hStack {
-    button { id: (letters), text: ("ABC"), width: (76) } tonalButton { id: (comma), text: (","), width: (52) }
-    tonalButton { id: (space), text: ("Space"), width: (300) } tonalButton { id: (period), text: ("."), width: (52) }
-    button { id: (close), text: ("Close"), width: (92) }
-  }
-}
+config { title("Software Keyboard") }
+flex { button.1 { text("1") type("tonal") } button.2 { text("2") type("tonal") } button.3 { text("3") type("tonal") } button.4 { text("4") type("tonal") } button.5 { text("5") type("tonal") } button.6 { text("6") type("tonal") } button.7 { text("7") type("tonal") } button.8 { text("8") type("tonal") } button.9 { text("9") type("tonal") } button.0 { text("0") type("tonal") } }
+flex { button.minus { text("-") type("tonal") } button.slash { text("/") type("tonal") } button.colon { text(":") type("tonal") } button.semicolon { text(";") type("tonal") } button.lparen { text("(") type("tonal") } button.rparen { text(")") type("tonal") } button.dollar { text("$") type("tonal") } button.amp { text("&") type("tonal") } button.at { text("@") type("tonal") } button.backspace { text("Back") type("primary") } }
+flex { button.quote { text("'") type("tonal") } button.doublequote { text("\"") type("tonal") } button.question { text("?") type("tonal") } button.bang { text("!") type("tonal") } button.plus { text("+") type("tonal") } button.equals { text("=") type("tonal") } button.underscore { text("_") type("tonal") } button.enter { text("Enter") type("primary") } }
+flex { button.letters { text("ABC") } button.comma { text(",") type("tonal") } button.space { text("　　　　　　　　　Space　　　　　　　　　") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
 "#;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,50 +44,113 @@ pub enum Key {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Page { Lower, Upper, Symbols }
+enum Page {
+    Lower,
+    Upper,
+    Symbols,
+}
 
 pub struct SoftKeyboard {
-    engine: WarpEngine,
+    engine: Warp3Engine,
+    surface: LayerSystem,
     page: Page,
     open: bool,
+    position: Option<(i32, i32)>,
+    dragging: bool,
+    drag_offset: (i32, i32),
+    surface_dirty: bool,
+    presented_bounds: Option<(i32, i32, i32, i32)>,
 }
 
 impl SoftKeyboard {
     pub fn new() -> Self {
-        let mut keyboard = Self { engine: WarpEngine::new(LETTERS_LOWER), page: Page::Lower, open: false };
-        keyboard.engine.update(WIDTH as i32, HEIGHT as i32);
+        let mut keyboard = Self {
+            engine: engine_for(LOWER),
+            surface: LayerSystem::new(WIDTH, HEIGHT),
+            page: Page::Lower,
+            open: false,
+            position: None,
+            dragging: false,
+            drag_offset: (0, 0),
+            surface_dirty: true,
+            presented_bounds: None,
+        };
+        keyboard.refresh_surface();
         keyboard
     }
 
-    pub fn is_open(&self) -> bool { self.open }
-    pub fn open(&mut self) { self.open = true; }
-    pub fn close(&mut self) { self.open = false; self.engine.clear_hover(); }
-    pub fn toggle(&mut self) { if self.open { self.close() } else { self.open() } }
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+    pub fn is_dragging(&self) -> bool {
+        self.dragging
+    }
+    pub fn open(&mut self) {
+        self.open = true;
+    }
+    pub fn close(&mut self) {
+        self.open = false;
+        self.dragging = false;
+        self.engine.clear_hover();
+    }
+    pub fn toggle(&mut self) {
+        if self.open {
+            self.close()
+        } else {
+            self.open()
+        }
+    }
 
     pub fn bounds(&self, screen_w: usize, screen_h: usize) -> (i32, i32, i32, i32) {
         let w = WIDTH.min(screen_w.saturating_sub(24));
-        let x = screen_w.saturating_sub(w) / 2;
-        let y = screen_h.saturating_sub(crate::compositor::TASKBAR_H + HEIGHT + 16);
-        (x as i32, y as i32, w as i32, HEIGHT as i32)
+        let max_x = screen_w.saturating_sub(w) as i32;
+        let max_y = screen_h.saturating_sub(crate::compositor::TASKBAR_H + HEIGHT) as i32;
+        let default = (
+            (screen_w.saturating_sub(w) / 2) as i32,
+            max_y.saturating_sub(16),
+        );
+        let (x, y) = self.position.unwrap_or(default);
+        (
+            x.clamp(0, max_x),
+            y.clamp(0, max_y),
+            w as i32,
+            HEIGHT as i32,
+        )
     }
 
-    pub fn contains(&self, x: i32, y: i32, screen_w: usize, screen_h: usize) -> bool {
-        if !self.open { return false; }
-        let (kx, ky, kw, kh) = self.bounds(screen_w, screen_h);
+    pub fn contains(&self, x: i32, y: i32, sw: usize, sh: usize) -> bool {
+        if !self.open {
+            return false;
+        }
+        let (kx, ky, kw, kh) = self.bounds(sw, sh);
         x >= kx && x < kx + kw && y >= ky && y < ky + kh
     }
 
-    fn select_page(&mut self, page: Page, width: i32) {
+    fn select_page(&mut self, page: Page) {
         self.page = page;
-        self.engine = WarpEngine::new(match page { Page::Lower => LETTERS_LOWER, Page::Upper => LETTERS_UPPER, Page::Symbols => SYMBOLS });
-        self.engine.update(width, HEIGHT as i32);
+        self.engine = engine_for(match page {
+            Page::Lower => LOWER,
+            Page::Upper => UPPER,
+            Page::Symbols => SYMBOLS,
+        });
+        self.surface_dirty = true;
     }
 
-    pub fn click(&mut self, x: i32, y: i32, screen_w: usize, screen_h: usize) -> Option<Key> {
-        if !self.contains(x, y, screen_w, screen_h) { return None; }
-        let (kx, ky, kw, _) = self.bounds(screen_w, screen_h);
-        self.engine.click(x - kx, y - ky);
-        let id = self.engine.take_clicked_id()?;
+    pub fn click(&mut self, x: i32, y: i32, sw: usize, sh: usize) -> Option<Key> {
+        if !self.contains(x, y, sw, sh) {
+            return None;
+        }
+        let (kx, ky, _, _) = self.bounds(sw, sh);
+        let local_x = x - kx;
+        let local_y = y - ky;
+        if local_y < crate::window::title_bar_h() as i32 {
+            self.dragging = true;
+            self.drag_offset = (local_x, local_y);
+            return None;
+        }
+        self.engine.click(local_x, local_y);
+        self.surface_dirty = true;
+        let id = self.engine.take_clicked_class()?;
         match id.as_str() {
             "close" => Some(Key::Close),
             "backspace" => Some(Key::Backspace),
@@ -179,86 +158,161 @@ impl SoftKeyboard {
             "space" => Some(Key::Character(b' ')),
             "comma" => Some(Key::Character(b',')),
             "period" => Some(Key::Character(b'.')),
-            "shift" => { let next = if self.page == Page::Upper { Page::Lower } else { Page::Upper }; self.select_page(next, kw); None }
-            "symbols" => { self.select_page(Page::Symbols, kw); None }
-            "letters" => { self.select_page(Page::Lower, kw); None }
+            "shift" => {
+                self.select_page(if self.page == Page::Upper {
+                    Page::Lower
+                } else {
+                    Page::Upper
+                });
+                None
+            }
+            "symbols" => {
+                self.select_page(Page::Symbols);
+                None
+            }
+            "letters" => {
+                self.select_page(Page::Lower);
+                None
+            }
             other => {
                 let c = symbol_for_id(other).or_else(|| other.as_bytes().first().copied())?;
-                let c = if self.page == Page::Upper { c.to_ascii_uppercase() } else { c };
-                if self.page == Page::Upper { self.select_page(Page::Lower, kw); }
+                let c = if self.page == Page::Upper {
+                    c.to_ascii_uppercase()
+                } else {
+                    c
+                };
+                if self.page == Page::Upper {
+                    self.select_page(Page::Lower);
+                }
                 Some(Key::Character(c))
             }
         }
     }
 
-    pub fn set_hover(&mut self, x: i32, y: i32, screen_w: usize, screen_h: usize) -> bool {
-        let previous = self.engine.hover_idx;
-        if self.contains(x, y, screen_w, screen_h) {
-            let (kx, ky, _, _) = self.bounds(screen_w, screen_h);
+    pub fn drag_to(&mut self, x: i32, y: i32, sw: usize, sh: usize) -> bool {
+        if !self.dragging {
+            return false;
+        }
+        let max_x = sw.saturating_sub(WIDTH.min(sw.saturating_sub(24))) as i32;
+        let max_y = sh.saturating_sub(crate::compositor::TASKBAR_H + HEIGHT) as i32;
+        let next = (
+            (x - self.drag_offset.0).clamp(0, max_x),
+            (y - self.drag_offset.1).clamp(0, max_y),
+        );
+        let changed = self.position != Some(next);
+        self.position = Some(next);
+        changed
+    }
+
+    pub fn end_drag(&mut self) {
+        self.dragging = false;
+    }
+
+    pub fn set_hover(&mut self, x: i32, y: i32, sw: usize, sh: usize) -> bool {
+        if self.dragging {
+            return false;
+        }
+        let previous = self.engine.hover_token();
+        if self.contains(x, y, sw, sh) {
+            let (kx, ky, _, _) = self.bounds(sw, sh);
             self.engine.set_hover(x - kx, y - ky);
         } else {
             self.engine.clear_hover();
         }
-        previous != self.engine.hover_idx
+        let changed = previous != self.engine.hover_token();
+        self.surface_dirty |= changed;
+        changed
+    }
+
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        let changed = self.engine.tick(now_ns);
+        self.surface_dirty |= changed;
+        changed
+    }
+
+    /// Returns the union of the old and new overlay bounds. This lets the
+    /// compositor restore the background when the cached surface is moved or
+    /// closed, instead of repainting the whole screen.
+    pub fn take_damage(&mut self, sw: usize, sh: usize) -> Option<(i32, i32, i32, i32)> {
+        let current = self.open.then(|| self.bounds(sw, sh));
+        let needs_repaint = self.surface_dirty || current != self.presented_bounds;
+        if !needs_repaint {
+            return None;
+        }
+        let damage = match (self.presented_bounds, current) {
+            (Some(a), Some(b)) => Some((
+                a.0.min(b.0),
+                a.1.min(b.1),
+                (a.0 + a.2).max(b.0 + b.2),
+                (a.1 + a.3).max(b.1 + b.3),
+            )),
+            (Some(a), None) | (None, Some(a)) => Some((a.0, a.1, a.0 + a.2, a.1 + a.3)),
+            (None, None) => None,
+        };
+        self.presented_bounds = current;
+        damage
+    }
+
+    fn refresh_surface(&mut self) {
+        if !self.surface_dirty {
+            return;
+        }
+        self.engine
+            .update(WIDTH as i32, (HEIGHT - crate::window::title_bar_h()) as i32);
+        self.engine.draw_to_layer(&mut self.surface, 0, 0);
+        self.surface_dirty = false;
     }
 
     pub fn draw(&mut self, layer: &mut LayerSystem) {
-        if !self.open { return; }
+        if !self.open {
+            return;
+        }
+        self.refresh_surface();
         let (x, y, w, h) = self.bounds(layer.width(), layer.height());
-        self.engine.update(w, h);
-        layer.fill_rounded_rect(x as usize, y as usize, w as usize, h as usize, 18, Color::rgb(0x24, 0x24, 0x28));
-        self.engine.draw_to_layer(layer, x, y);
-        self.engine.draw_texts(layer, x, y, 1.0);
+        layer.composit_rounded(
+            &self.surface,
+            x as usize,
+            y as usize,
+            0,
+            0,
+            w as usize,
+            h as usize,
+            RADIUS,
+        );
     }
+}
+
+fn engine_for(main: &'static str) -> Warp3Engine {
+    Warp3Engine::new_embedded(
+        "os-soft-keyboard",
+        &[("config.ini", CONFIG), ("main.w3u", main)],
+    )
 }
 
 fn symbol_for_id(id: &str) -> Option<u8> {
     Some(match id {
-        "minus" => b'-', "slash" => b'/', "colon" => b':', "semicolon" => b';',
-        "lparen" => b'(', "rparen" => b')', "dollar" => b'$', "amp" => b'&',
-        "at" => b'@', "quote" => b'\'', "doublequote" => b'"', "question" => b'?',
-        "bang" => b'!', "plus" => b'+', "equals" => b'=', "underscore" => b'_',
+        "minus" => b'-',
+        "slash" => b'/',
+        "colon" => b':',
+        "semicolon" => b';',
+        "lparen" => b'(',
+        "rparen" => b')',
+        "dollar" => b'$',
+        "amp" => b'&',
+        "at" => b'@',
+        "quote" => b'\'',
+        "doublequote" => b'"',
+        "question" => b'?',
+        "bang" => b'!',
+        "plus" => b'+',
+        "equals" => b'=',
+        "underscore" => b'_',
         _ => return None,
     })
 }
 
 impl Default for SoftKeyboard {
-    fn default() -> Self { Self::new() }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn screen_point(local_x: i32, local_y: i32) -> (i32, i32) {
-        let keyboard = SoftKeyboard::new();
-        let (x, y, _, _) = keyboard.bounds(1280, 720);
-        (x + local_x, y + local_y)
-    }
-
-    #[test]
-    fn emits_letters_and_one_shot_shift_without_commands() {
-        let mut keyboard = SoftKeyboard::new();
-        keyboard.open();
-        let (qx, qy) = screen_point(50, 66);
-        assert_eq!(keyboard.click(qx, qy, 1280, 720), Some(Key::Character(b'q')));
-
-        let (sx, sy) = screen_point(50, 170);
-        assert_eq!(keyboard.click(sx, sy, 1280, 720), None);
-        assert_eq!(keyboard.click(qx, qy, 1280, 720), Some(Key::Character(b'Q')));
-        assert_eq!(keyboard.click(qx, qy, 1280, 720), Some(Key::Character(b'q')));
-    }
-
-    #[test]
-    fn exposes_editing_and_symbol_keys_as_os_events() {
-        let mut keyboard = SoftKeyboard::new();
-        keyboard.open();
-        let (bx, by) = screen_point(596, 118);
-        assert_eq!(keyboard.click(bx, by, 1280, 720), Some(Key::Backspace));
-
-        let (symbols_x, symbols_y) = screen_point(50, 222);
-        assert_eq!(keyboard.click(symbols_x, symbols_y, 1280, 720), None);
-        let (one_x, one_y) = screen_point(50, 66);
-        assert_eq!(keyboard.click(one_x, one_y, 1280, 720), Some(Key::Character(b'1')));
+    fn default() -> Self {
+        Self::new()
     }
 }

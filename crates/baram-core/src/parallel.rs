@@ -35,34 +35,34 @@ pub fn init() -> usize {
 
     #[cfg(not(target_arch = "aarch64"))]
     {
-    let Ok(handle) = boot::get_handle_for_protocol::<MpServices>() else {
-        return 0;
-    };
-    let params = OpenProtocolParams {
-        handle,
-        agent: boot::image_handle(),
-        controller: None,
-    };
-    let Ok(mp) =
-        (unsafe { boot::open_protocol::<MpServices>(params, OpenProtocolAttributes::GetProtocol) })
-    else {
-        return 0;
-    };
-    let Ok(count) = mp.get_number_of_processors() else {
-        return 0;
-    };
-    let workers = count.enabled.saturating_sub(1);
-    if workers == 0 {
-        return 0;
-    }
+        let Ok(handle) = boot::get_handle_for_protocol::<MpServices>() else {
+            return 0;
+        };
+        let params = OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mp) = (unsafe {
+            boot::open_protocol::<MpServices>(params, OpenProtocolAttributes::GetProtocol)
+        }) else {
+            return 0;
+        };
+        let Ok(count) = mp.get_number_of_processors() else {
+            return 0;
+        };
+        let workers = count.enabled.saturating_sub(1);
+        if workers == 0 {
+            return 0;
+        }
 
-    let protocol = (&*mp as *const MpServices).cast_mut();
-    // MP Services remains installed throughout the UEFI boot-services phase.
-    // Keep the GET_PROTOCOL open so the raw interface cannot be uninstalled.
-    core::mem::forget(mp);
-    MP_SERVICES.store(protocol, Ordering::Release);
-    WORKER_COUNT.store(workers, Ordering::Release);
-    workers
+        let protocol = (&*mp as *const MpServices).cast_mut();
+        // MP Services remains installed throughout the UEFI boot-services phase.
+        // Keep the GET_PROTOCOL open so the raw interface cannot be uninstalled.
+        core::mem::forget(mp);
+        MP_SERVICES.store(protocol, Ordering::Release);
+        WORKER_COUNT.store(workers, Ordering::Release);
+        workers
     }
 }
 

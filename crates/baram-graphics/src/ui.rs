@@ -3,10 +3,8 @@
 //! Everything here draws into a `Screen` using the 8x16 bitmap font and the
 //! palette defined in `gop::Color`.  No external dependencies.
 
-use baram_font::font::{self, GLYPH_H, GLYPH_W};
 use baram_core::{Color, Screen};
-
-
+use baram_font::font::{self, GLYPH_H, GLYPH_W};
 
 pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: Color) {
     if baram_font::ttf_font::is_available() && c >= 0x20 {
@@ -15,10 +13,14 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
             let baseline = y as i32 + baram_font::ttf_font::ascent();
             for row in 0..glyph.h {
                 let py = baseline + glyph.y_off + row;
-                if py < 0 { continue; }
+                if py < 0 {
+                    continue;
+                }
                 for col in 0..glyph.w {
                     let px = x as i32 + col;
-                    if px < 0 { continue; }
+                    if px < 0 {
+                        continue;
+                    }
                     let alpha = glyph.data[(row * glyph.w + col) as usize];
                     if alpha > 0 {
                         screen.put_pixel(px as usize, py as usize, fg);
@@ -41,7 +43,6 @@ pub fn put_char(screen: &mut Screen, x: usize, y: usize, c: u8, fg: Color, bg: C
     }
 }
 
-
 pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, bg: Color) {
     if baram_font::ttf_font::is_available() {
         for ch in s.chars() {
@@ -58,16 +59,19 @@ pub fn put_str(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color, 
         return;
     }
     for &b in s.as_bytes() {
-        if b >= 0x80 { break; }
+        if b >= 0x80 {
+            break;
+        }
         put_char(screen, x, y, b, fg, bg);
         x += GLYPH_W;
     }
 }
 
-
 pub fn put_str_transparent(screen: &mut Screen, mut x: usize, y: usize, s: &str, fg: Color) {
     for &b in s.as_bytes() {
-        if b >= 0x80 { break; }
+        if b >= 0x80 {
+            break;
+        }
         let glyph = font::glyph(b);
         for row in 0..GLYPH_H {
             let bits = glyph[row];
@@ -81,7 +85,6 @@ pub fn put_str_transparent(screen: &mut Screen, mut x: usize, y: usize, s: &str,
     }
 }
 
-
 pub fn u32_to_str(mut n: u32, out: &mut [u8]) -> usize {
     if n == 0 {
         out[0] = b'0';
@@ -94,24 +97,26 @@ pub fn u32_to_str(mut n: u32, out: &mut [u8]) -> usize {
         len += 1;
         n /= 10;
     }
-    
+
     for i in 0..len {
         out[i] = tmp[len - 1 - i];
     }
     len
 }
 
-
 pub fn i32_to_str(n: i32, out: &mut [u8]) -> usize {
     if n < 0 {
         out[0] = b'-';
-        let m = if n == i32::MIN { 2147483648u32 } else { (-n) as u32 };
+        let m = if n == i32::MIN {
+            2147483648u32
+        } else {
+            (-n) as u32
+        };
         1 + u32_to_str(m, &mut out[1..])
     } else {
         u32_to_str(n as u32, out)
     }
 }
-
 
 #[allow(dead_code)]
 pub fn i32_to_str_padded(n: i32, width: usize, out: &mut [u8]) -> usize {
@@ -122,12 +127,13 @@ pub fn i32_to_str_padded(n: i32, width: usize, out: &mut [u8]) -> usize {
         len
     } else {
         let pad = width - len;
-        for i in 0..pad { out[i] = b' '; }
+        for i in 0..pad {
+            out[i] = b' ';
+        }
         out[pad..pad + len].copy_from_slice(&tmp[..len]);
         pad + len
     }
 }
-
 
 #[allow(dead_code)]
 pub fn u32_to_hex(value: u32, digits: usize, out: &mut [u8]) -> usize {
@@ -138,7 +144,6 @@ pub fn u32_to_hex(value: u32, digits: usize, out: &mut [u8]) -> usize {
     }
     digits
 }
-
 
 #[allow(dead_code)]
 pub fn bytes_human(bytes: u64, out: &mut [u8]) -> usize {
@@ -161,17 +166,22 @@ pub fn bytes_human(bytes: u64, out: &mut [u8]) -> usize {
     }
 }
 
-
-
 pub struct FmtBuf {
     pub buf: [u8; 64],
     pub len: usize,
 }
 
 impl FmtBuf {
-    pub fn new() -> Self { FmtBuf { buf: [0u8; 64], len: 0 } }
+    pub fn new() -> Self {
+        FmtBuf {
+            buf: [0u8; 64],
+            len: 0,
+        }
+    }
 
-    pub fn clear(&mut self) { self.len = 0; }
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
 
     pub fn push_str(&mut self, s: &str) {
         let bytes = s.as_bytes();
@@ -196,7 +206,6 @@ impl FmtBuf {
         self.len += n;
     }
 
-    
     pub fn as_str(&self) -> &str {
         core::str::from_utf8(&self.buf[..self.len]).unwrap_or("")
     }

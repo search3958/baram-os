@@ -393,11 +393,21 @@ pub struct Warp3Engine {
     animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
     now: NowValues,
+    last_clicked_class: Option<String>,
 }
 
 impl Warp3Engine {
     pub fn new(app_name: &str) -> Self {
-        let archive = Warp3Archive::open(app_name);
+        Self::from_archive(Warp3Archive::open(app_name))
+    }
+
+    /// Creates Warp 3 UI for an OS surface. The resources never enter app
+    /// discovery or the VFS, so this is not an independently launchable app.
+    pub fn new_embedded(name: &str, sources: &[(&str, &str)]) -> Self {
+        Self::from_archive(Warp3Archive::from_embedded(name, sources))
+    }
+
+    fn from_archive(archive: Warp3Archive) -> Self {
         let config_source = archive.read_text("config.ini");
         let screen = ini_value(&config_source, "screen").unwrap_or_else(|| "main".to_string());
         let title = ini_value(&config_source, "name").unwrap_or_else(|| "Warp 3".to_string());
@@ -439,6 +449,7 @@ impl Warp3Engine {
             animation_now_ns: 0,
             shadows: Vec::new(),
             now: NowValues::default(),
+            last_clicked_class: None,
         };
         engine.load_screen();
         engine
@@ -611,6 +622,10 @@ impl Warp3Engine {
         }
     }
 
+    pub fn hover_token(&self) -> Option<usize> {
+        self.hovered
+    }
+
     pub fn cancel_hover(&mut self) {
         if let Some((old, new)) = self.hover_transition.take() {
             self.invalidate_nodes(old, new);
@@ -622,6 +637,7 @@ impl Warp3Engine {
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
+        self.last_clicked_class = None;
         let hit = self.hit_test(x, y);
         let Some(idx) = hit else {
             self.focused_input = None;
@@ -655,6 +671,7 @@ impl Warp3Engine {
             }
         } else {
             self.focused_input = None;
+            self.last_clicked_class = self.nodes[idx].classes.first().cloned();
             self.run_click(idx);
         }
         if tab_changed || self.full_window_redraw {
@@ -664,6 +681,10 @@ impl Warp3Engine {
             // index self.nodes with the old hit after run_click.
             self.invalidate_from(hit_y);
         }
+    }
+
+    pub fn take_clicked_class(&mut self) -> Option<String> {
+        self.last_clicked_class.take()
     }
 
     pub fn handle_key(&mut self, key: u8) {
@@ -733,7 +754,11 @@ impl Warp3Engine {
             let raw_offset = 15.0 * remaining * remaining * remaining;
             // The first 90% stays on the integer-pixel fast path. During the
             // final settle, retain the fractional position for smoother text.
-            let next_offset = if t < 0.9 { raw_offset as i32 as f32 } else { raw_offset };
+            let next_offset = if t < 0.9 {
+                raw_offset as i32 as f32
+            } else {
+                raw_offset
+            };
             changed |= self.screen_transition_offset_y != next_offset;
             self.screen_transition_offset_y = next_offset;
             if t >= 1.0 {
@@ -751,13 +776,7 @@ impl Warp3Engine {
         if !self.dirty && (self.repaint_from < self.content_height || self.toolbar_dirty) {
             self.paint_cached_layers();
         }
-        layer.fill_rect(
-            0,
-            0,
-            layer.width(),
-            layer.height(),
-            html_bg(),
-        );
+        layer.fill_rect(0, 0, layer.width(), layer.height(), html_bg());
         let target_y = self.screen_transition_offset_y.max(0.0) as usize;
         let subpixel_y = self.screen_transition_offset_y - target_y as f32;
         if let Some(document) = &self.document_layer {

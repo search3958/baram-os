@@ -64,14 +64,26 @@ pub struct GlyphBitmap {
 pub fn glyph_at_size(ch: char, pixel_size: f32) -> GlyphBitmap {
     unsafe {
         if FONT_INFO.is_none() {
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0, y_off: 0 };
+            return GlyphBitmap {
+                data: Vec::new(),
+                w: 0,
+                h: 0,
+                advance: 0,
+                y_off: 0,
+            };
         }
 
         let info = FONT_INFO.as_mut().unwrap();
         let scale = stb_truetype_rust::stbtt_ScaleForPixelHeight(info, pixel_size);
         let glyph_id = stbtt_FindGlyphIndex(info, ch as i32);
         if glyph_id == 0 && ch != '\0' {
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0, y_off: 0 };
+            return GlyphBitmap {
+                data: Vec::new(),
+                w: 0,
+                h: 0,
+                advance: 0,
+                y_off: 0,
+            };
         }
 
         let mut advance = 0;
@@ -83,25 +95,50 @@ pub fn glyph_at_size(ch: char, pixel_size: f32) -> GlyphBitmap {
         let mut y0 = 0;
         let mut x1 = 0;
         let mut y1 = 0;
-        stbtt_GetGlyphBitmapBox(info, glyph_id, scale, scale, &mut x0, &mut y0, &mut x1, &mut y1);
+        stbtt_GetGlyphBitmapBox(
+            info, glyph_id, scale, scale, &mut x0, &mut y0, &mut x1, &mut y1,
+        );
 
         let gw = x1 - x0;
         let gh = y1 - y0;
 
         if gw <= 0 || gh <= 0 {
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: scaled_advance, y_off: 0 };
+            return GlyphBitmap {
+                data: Vec::new(),
+                w: 0,
+                h: 0,
+                advance: scaled_advance,
+                y_off: 0,
+            };
         }
 
         let mut bitmap = vec![0u8; (gw * gh) as usize];
-        stbtt_MakeGlyphBitmap(info, bitmap.as_mut_ptr(), gw, gh, gw, scale, scale, glyph_id);
+        stbtt_MakeGlyphBitmap(
+            info,
+            bitmap.as_mut_ptr(),
+            gw,
+            gh,
+            gw,
+            scale,
+            scale,
+            glyph_id,
+        );
 
-        GlyphBitmap { data: bitmap, w: gw, h: gh, advance: scaled_advance, y_off: y0 }
+        GlyphBitmap {
+            data: bitmap,
+            w: gw,
+            h: gh,
+            advance: scaled_advance,
+            y_off: y0,
+        }
     }
 }
 
 pub fn ascent_at_size(pixel_size: f32) -> i32 {
     unsafe {
-        if FONT_INFO.is_none() { return 0; }
+        if FONT_INFO.is_none() {
+            return 0;
+        }
         let info = FONT_INFO.as_mut().unwrap();
         let scale = stb_truetype_rust::stbtt_ScaleForPixelHeight(info, pixel_size);
         let mut ascent = 0;
@@ -115,7 +152,13 @@ pub fn ascent_at_size(pixel_size: f32) -> i32 {
 pub fn glyph(ch: char) -> GlyphBitmap {
     unsafe {
         if FONT_INFO.is_none() {
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0, y_off: 0 };
+            return GlyphBitmap {
+                data: Vec::new(),
+                w: 0,
+                h: 0,
+                advance: 0,
+                y_off: 0,
+            };
         }
 
         for entry in CACHE.iter() {
@@ -142,7 +185,13 @@ pub fn glyph(ch: char) -> GlyphBitmap {
                 y_off: 0,
             };
             CACHE.push(entry);
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: 0, y_off: 0 };
+            return GlyphBitmap {
+                data: Vec::new(),
+                w: 0,
+                h: 0,
+                advance: 0,
+                y_off: 0,
+            };
         }
 
         let mut advance = 0;
@@ -154,7 +203,9 @@ pub fn glyph(ch: char) -> GlyphBitmap {
         let mut y0 = 0;
         let mut x1 = 0;
         let mut y1 = 0;
-        stbtt_GetGlyphBitmapBox(info, glyph_id, FONT_SCALE, FONT_SCALE, &mut x0, &mut y0, &mut x1, &mut y1);
+        stbtt_GetGlyphBitmapBox(
+            info, glyph_id, FONT_SCALE, FONT_SCALE, &mut x0, &mut y0, &mut x1, &mut y1,
+        );
 
         let gw = x1 - x0;
         let gh = y1 - y0;
@@ -169,11 +220,26 @@ pub fn glyph(ch: char) -> GlyphBitmap {
                 y_off: 0,
             };
             CACHE.push(entry);
-            return GlyphBitmap { data: Vec::new(), w: 0, h: 0, advance: scaled_advance, y_off: 0 };
+            return GlyphBitmap {
+                data: Vec::new(),
+                w: 0,
+                h: 0,
+                advance: scaled_advance,
+                y_off: 0,
+            };
         }
 
         let mut bitmap = vec![0u8; (gw * gh) as usize];
-        stbtt_MakeGlyphBitmap(info, bitmap.as_mut_ptr(), gw, gh, gw, FONT_SCALE, FONT_SCALE, glyph_id);
+        stbtt_MakeGlyphBitmap(
+            info,
+            bitmap.as_mut_ptr(),
+            gw,
+            gh,
+            gw,
+            FONT_SCALE,
+            FONT_SCALE,
+            glyph_id,
+        );
 
         let entry = GlyphEntry {
             ch,
@@ -185,6 +251,12 @@ pub fn glyph(ch: char) -> GlyphBitmap {
         };
         CACHE.push(entry);
 
-        GlyphBitmap { data: bitmap, w: gw, h: gh, advance: scaled_advance, y_off: y0 }
+        GlyphBitmap {
+            data: bitmap,
+            w: gw,
+            h: gh,
+            advance: scaled_advance,
+            y_off: y0,
+        }
     }
 }

@@ -1,8 +1,8 @@
-use alloc::{string::String, vec};
 use crate::constants::{HIRAGANA_START, KATAKANA_START};
 use crate::utils::is_char_hiragana::*;
 use crate::utils::is_char_slash_dot::*;
 use crate::utils::is_prolonged_sound::*;
+use alloc::{string::String, vec};
 
 /// Convert [Hiragana](https://en.wikipedia.org/wiki/Hiragana) to [Katakana](https://en.wikipedia.org/wiki/Katakana)
 ///

@@ -2,9 +2,9 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 pub const MAX_IPC_PORTS: usize = 256;
 pub const MAX_IPC_MESSAGES: usize = 64;
@@ -188,12 +188,18 @@ impl IpcManager {
         self.port_names.get(&name).copied()
     }
 
-    pub fn send_message(&mut self, port_id: u32, message: IpcMessage, timeout: u64) -> Result<(), IpcError> {
+    pub fn send_message(
+        &mut self,
+        port_id: u32,
+        message: IpcMessage,
+        timeout: u64,
+    ) -> Result<(), IpcError> {
         if port_id as usize >= MAX_IPC_PORTS {
             return Err(IpcError::InvalidPort);
         }
 
-        let port = self.ports[port_id as usize].as_mut()
+        let port = self.ports[port_id as usize]
+            .as_mut()
             .ok_or(IpcError::InvalidPort)?;
 
         if !port.rights & IPC_PORT權利_WRITE != 0 && port.rights != IPC_PORT權利_ALL {
@@ -222,7 +228,8 @@ impl IpcManager {
             return Err(IpcError::InvalidPort);
         }
 
-        let port = self.ports[port_id as usize].as_mut()
+        let port = self.ports[port_id as usize]
+            .as_mut()
             .ok_or(IpcError::InvalidPort)?;
 
         if !port.rights & IPC_PORT權利_READ != 0 && port.rights != IPC_PORT權利_ALL {
@@ -242,7 +249,8 @@ impl IpcManager {
     }
 
     pub fn receive_for_pid(&mut self, pid: u32) -> Option<IpcMessage> {
-        self.pending_messages.iter()
+        self.pending_messages
+            .iter()
             .position(|(p, _)| *p == pid)
             .map(|i| self.pending_messages.remove(i).1)
     }
@@ -252,7 +260,8 @@ impl IpcManager {
             return Err(IpcError::InvalidPort);
         }
 
-        let src = self.ports[src_port as usize].as_ref()
+        let src = self.ports[src_port as usize]
+            .as_ref()
             .ok_or(IpcError::InvalidPort)?;
         let dst_rights = src.rights;
 
@@ -274,8 +283,13 @@ impl IpcManager {
     }
 
     pub fn get_ports_for_pid(&self, pid: u32) -> Vec<u32> {
-        self.ports.iter()
-            .filter_map(|p| p.as_ref().filter(|port| port.owner_pid == pid).map(|port| port.port_id))
+        self.ports
+            .iter()
+            .filter_map(|p| {
+                p.as_ref()
+                    .filter(|port| port.owner_pid == pid)
+                    .map(|port| port.port_id)
+            })
             .collect()
     }
 }

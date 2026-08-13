@@ -86,7 +86,11 @@ struct PinyinConversion {
 
 impl PinyinIme {
     fn new() -> Self {
-        Self { raw: alloc::string::String::new(), visible_chars: 0, conversion: None }
+        Self {
+            raw: alloc::string::String::new(),
+            visible_chars: 0,
+            conversion: None,
+        }
     }
     fn reset(&mut self) {
         self.raw.clear();
@@ -94,7 +98,9 @@ impl PinyinIme {
         self.conversion = None;
     }
     fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
-        if key != 0x08 && key != 0x7f && self.conversion.is_some() { self.reset(); }
+        if key != 0x08 && key != 0x7f && self.conversion.is_some() {
+            self.reset();
+        }
         if key == 0x08 || key == 0x7f {
             if self.raw.pop().is_some() {
                 let replace = self.visible_chars;
@@ -129,17 +135,30 @@ impl PinyinIme {
         let text = candidates[0].clone();
         let replace = self.visible_chars;
         self.visible_chars = text.chars().count();
-        self.conversion = Some(PinyinConversion { pinyin: self.raw.clone(), candidates, selected: 0 });
+        self.conversion = Some(PinyinConversion {
+            pinyin: self.raw.clone(),
+            candidates,
+            selected: 0,
+        });
         Some((text, replace))
     }
     fn edit_for_key(&mut self, key: u8) -> (alloc::string::String, usize) {
-        if key == b' ' { return self.convert().unwrap_or_else(|| self.edit(key)); }
-        if key == b'\n' || key == b'\r' { self.reset(); return (alloc::string::String::new(), 0); }
+        if key == b' ' {
+            return self.convert().unwrap_or_else(|| self.edit(key));
+        }
+        if key == b'\n' || key == b'\r' {
+            self.reset();
+            return (alloc::string::String::new(), 0);
+        }
         self.edit(key)
     }
     fn conversion_view(&self) -> Option<(&str, &[alloc::string::String], usize)> {
         self.conversion.as_ref().map(|conversion| {
-            (conversion.pinyin.as_str(), conversion.candidates.as_slice(), conversion.selected)
+            (
+                conversion.pinyin.as_str(),
+                conversion.candidates.as_slice(),
+                conversion.selected,
+            )
         })
     }
 }
@@ -257,9 +276,13 @@ impl JapaneseIme {
     }
 
     fn conversion_view(&self) -> Option<(&str, &[alloc::string::String], usize)> {
-        self.conversion
-            .as_ref()
-            .map(|conversion| (conversion.kana.as_str(), conversion.candidates.as_slice(), conversion.selected))
+        self.conversion.as_ref().map(|conversion| {
+            (
+                conversion.kana.as_str(),
+                conversion.candidates.as_slice(),
+                conversion.selected,
+            )
+        })
     }
 }
 
@@ -297,7 +320,10 @@ struct HangulIme {
 
 impl HangulIme {
     fn new() -> Self {
-        Self { raw: alloc::string::String::new(), visible_chars: 0 }
+        Self {
+            raw: alloc::string::String::new(),
+            visible_chars: 0,
+        }
     }
 
     fn reset(&mut self) {
@@ -358,26 +384,80 @@ impl HangulIme {
 
 fn dubeolsik_jamo(key: char) -> Option<char> {
     Some(match key {
-        'q' => 'ㅂ', 'Q' => 'ㅃ', 'w' => 'ㅈ', 'W' => 'ㅉ', 'e' => 'ㄷ', 'E' => 'ㄸ',
-        'r' => 'ㄱ', 'R' => 'ㄲ', 't' => 'ㅅ', 'T' => 'ㅆ', 'y' => 'ㅛ', 'u' => 'ㅕ',
-        'i' => 'ㅑ', 'o' => 'ㅐ', 'O' => 'ㅒ', 'p' => 'ㅔ', 'P' => 'ㅖ', 'a' => 'ㅁ',
-        's' => 'ㄴ', 'd' => 'ㅇ', 'f' => 'ㄹ', 'g' => 'ㅎ', 'h' => 'ㅗ', 'j' => 'ㅓ',
-        'k' => 'ㅏ', 'l' => 'ㅣ', 'z' => 'ㅋ', 'x' => 'ㅌ', 'c' => 'ㅊ', 'v' => 'ㅍ',
-        'b' => 'ㅠ', 'n' => 'ㅜ', 'm' => 'ㅡ', _ => return None,
+        'q' => 'ㅂ',
+        'Q' => 'ㅃ',
+        'w' => 'ㅈ',
+        'W' => 'ㅉ',
+        'e' => 'ㄷ',
+        'E' => 'ㄸ',
+        'r' => 'ㄱ',
+        'R' => 'ㄲ',
+        't' => 'ㅅ',
+        'T' => 'ㅆ',
+        'y' => 'ㅛ',
+        'u' => 'ㅕ',
+        'i' => 'ㅑ',
+        'o' => 'ㅐ',
+        'O' => 'ㅒ',
+        'p' => 'ㅔ',
+        'P' => 'ㅖ',
+        'a' => 'ㅁ',
+        's' => 'ㄴ',
+        'd' => 'ㅇ',
+        'f' => 'ㄹ',
+        'g' => 'ㅎ',
+        'h' => 'ㅗ',
+        'j' => 'ㅓ',
+        'k' => 'ㅏ',
+        'l' => 'ㅣ',
+        'z' => 'ㅋ',
+        'x' => 'ㅌ',
+        'c' => 'ㅊ',
+        'v' => 'ㅍ',
+        'b' => 'ㅠ',
+        'n' => 'ㅜ',
+        'm' => 'ㅡ',
+        _ => return None,
     })
 }
 
 /// 조선 두벌식, exactly following the layout supplied in the request.
 fn chosun_dubeolsik_jamo(key: char) -> Option<char> {
     Some(match key {
-        'q' => 'ㅂ', 'Q' => 'ㅃ', 'w' | 'W' => 'ㅁ', 'e' => 'ㄷ', 'E' => 'ㄸ',
-        'r' | 'R' => 'ㄹ', 't' | 'T' => 'ㄱ', 'y' | 'Y' => 'ㅕ', 'u' | 'U' => 'ㅜ',
-        'i' | 'I' => 'ㅓ', 'o' => 'ㅐ', 'O' => 'ㅒ', 'p' => 'ㅔ', 'P' => 'ㅖ',
-        'a' => 'ㅈ', 'A' => 'ㅉ', 's' => 'ㄱ', 'S' => 'ㄲ', 'd' | 'D' => 'ㅇ',
-        'f' | 'F' => 'ㄴ', 'g' => 'ㅅ', 'G' => 'ㅆ', 'h' | 'H' => 'ㅗ', 'j' | 'J' => 'ㅏ',
-        'k' | 'K' => 'ㅣ', 'l' | 'L' => 'ㅡ', 'z' | 'Z' => 'ㅋ', 'x' | 'X' => 'ㅌ',
-        'c' | 'C' => 'ㅊ', 'v' | 'V' => 'ㅍ', 'b' | 'B' => 'ㅠ', 'n' | 'N' => 'ㅛ',
-        'm' | 'M' => 'ㅑ', _ => return None,
+        'q' => 'ㅂ',
+        'Q' => 'ㅃ',
+        'w' | 'W' => 'ㅁ',
+        'e' => 'ㄷ',
+        'E' => 'ㄸ',
+        'r' | 'R' => 'ㄹ',
+        't' | 'T' => 'ㄱ',
+        'y' | 'Y' => 'ㅕ',
+        'u' | 'U' => 'ㅜ',
+        'i' | 'I' => 'ㅓ',
+        'o' => 'ㅐ',
+        'O' => 'ㅒ',
+        'p' => 'ㅔ',
+        'P' => 'ㅖ',
+        'a' => 'ㅈ',
+        'A' => 'ㅉ',
+        's' => 'ㄱ',
+        'S' => 'ㄲ',
+        'd' | 'D' => 'ㅇ',
+        'f' | 'F' => 'ㄴ',
+        'g' => 'ㅅ',
+        'G' => 'ㅆ',
+        'h' | 'H' => 'ㅗ',
+        'j' | 'J' => 'ㅏ',
+        'k' | 'K' => 'ㅣ',
+        'l' | 'L' => 'ㅡ',
+        'z' | 'Z' => 'ㅋ',
+        'x' | 'X' => 'ㅌ',
+        'c' | 'C' => 'ㅊ',
+        'v' | 'V' => 'ㅍ',
+        'b' | 'B' => 'ㅠ',
+        'n' | 'N' => 'ㅛ',
+        'm' | 'M' => 'ㅑ',
+        _ => return None,
     })
 }
 
@@ -388,31 +468,66 @@ fn hancom_roman_jamo(raw: &str) -> alloc::vec::Vec<char> {
     let mut i = 0;
     while i < bytes.len() {
         let tail = &lower[i..];
-        let (len, ch) = if tail.starts_with("yei") || tail.starts_with("iei") { (3, 'ㅖ') }
-        else if tail.starts_with("yai") || tail.starts_with("iai") { (3, 'ㅒ') }
-        else if tail.starts_with("ya") || tail.starts_with("ia") { (2, 'ㅑ') }
-        else if tail.starts_with("yu") || tail.starts_with("iu") { (2, 'ㅠ') }
-        else if tail.starts_with("yo") || tail.starts_with("io") { (2, 'ㅛ') }
-        else if tail.starts_with("ye") || tail.starts_with("ie") { (2, 'ㅕ') }
-        else if tail.starts_with("ai") { (2, 'ㅐ') }
-        else if tail.starts_with("ei") { (2, 'ㅔ') }
-        else if tail.starts_with("oi") { (2, 'ㅚ') }
-        else if tail.starts_with("ui") { (2, 'ㅟ') }
-        else if tail.starts_with("wi") { (2, 'ㅢ') }
-        else {
+        let (len, ch) = if tail.starts_with("yei") || tail.starts_with("iei") {
+            (3, 'ㅖ')
+        } else if tail.starts_with("yai") || tail.starts_with("iai") {
+            (3, 'ㅒ')
+        } else if tail.starts_with("ya") || tail.starts_with("ia") {
+            (2, 'ㅑ')
+        } else if tail.starts_with("yu") || tail.starts_with("iu") {
+            (2, 'ㅠ')
+        } else if tail.starts_with("yo") || tail.starts_with("io") {
+            (2, 'ㅛ')
+        } else if tail.starts_with("ye") || tail.starts_with("ie") {
+            (2, 'ㅕ')
+        } else if tail.starts_with("ai") {
+            (2, 'ㅐ')
+        } else if tail.starts_with("ei") {
+            (2, 'ㅔ')
+        } else if tail.starts_with("oi") {
+            (2, 'ㅚ')
+        } else if tail.starts_with("ui") {
+            (2, 'ㅟ')
+        } else if tail.starts_with("wi") {
+            (2, 'ㅢ')
+        } else {
             let original = raw.as_bytes()[i] as char;
             let ch = match original {
                 // Shift produces the five modern tense consonants.
-                'G' => 'ㄲ', 'D' => 'ㄸ', 'B' => 'ㅃ', 'S' => 'ㅆ', 'J' => 'ㅉ',
-                'a' | 'A' => 'ㅏ', 'e' | 'E' => 'ㅓ', 'i' | 'I' | 'y' | 'Y' => 'ㅣ',
-                'o' | 'O' => 'ㅗ', 'u' | 'U' => 'ㅜ', 'w' | 'W' => 'ㅡ',
-                'g' => 'ㄱ', 'n' | 'N' => 'ㄴ', 'd' => 'ㄷ', 'r' | 'l' | 'R' | 'L' => 'ㄹ',
-                'm' | 'M' => 'ㅁ', 'b' => 'ㅂ', 's' => 'ㅅ', 'j' => 'ㅈ', 'h' | 'H' => 'ㅎ',
-                'f' | 'F' | 'p' | 'P' => 'ㅍ', 't' | 'T' => 'ㅌ', 'k' | 'K' => 'ㅋ',
-                'c' | 'C' => 'ㅊ', 'x' | 'X' => 'ㅇ',
+                'G' => 'ㄲ',
+                'D' => 'ㄸ',
+                'B' => 'ㅃ',
+                'S' => 'ㅆ',
+                'J' => 'ㅉ',
+                'a' | 'A' => 'ㅏ',
+                'e' | 'E' => 'ㅓ',
+                'i' | 'I' | 'y' | 'Y' => 'ㅣ',
+                'o' | 'O' => 'ㅗ',
+                'u' | 'U' => 'ㅜ',
+                'w' | 'W' => 'ㅡ',
+                'g' => 'ㄱ',
+                'n' | 'N' => 'ㄴ',
+                'd' => 'ㄷ',
+                'r' | 'l' | 'R' | 'L' => 'ㄹ',
+                'm' | 'M' => 'ㅁ',
+                'b' => 'ㅂ',
+                's' => 'ㅅ',
+                'j' => 'ㅈ',
+                'h' | 'H' => 'ㅎ',
+                'f' | 'F' | 'p' | 'P' => 'ㅍ',
+                't' | 'T' => 'ㅌ',
+                'k' | 'K' => 'ㅋ',
+                'c' | 'C' => 'ㅊ',
+                'x' | 'X' => 'ㅇ',
                 // V is intentionally unmapped in this layout.
-                'v' | 'V' => { i += 1; continue; }
-                _ => { i += 1; continue; }
+                'v' | 'V' => {
+                    i += 1;
+                    continue;
+                }
+                _ => {
+                    i += 1;
+                    continue;
+                }
             };
             (1, ch)
         };
@@ -460,32 +575,69 @@ fn ime_edit_for_key(
 }
 
 fn initial_index(ch: char) -> Option<u32> {
-    "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ".chars().position(|c| c == ch).map(|i| i as u32)
+    "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+        .chars()
+        .position(|c| c == ch)
+        .map(|i| i as u32)
 }
 fn vowel_index(ch: char) -> Option<u32> {
-    "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ".chars().position(|c| c == ch).map(|i| i as u32)
+    "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+        .chars()
+        .position(|c| c == ch)
+        .map(|i| i as u32)
 }
 fn final_index(ch: char) -> Option<u32> {
-    "\0ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ".chars().position(|c| c == ch).map(|i| i as u32)
+    "\0ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ"
+        .chars()
+        .position(|c| c == ch)
+        .map(|i| i as u32)
 }
 fn combined_vowel(a: char, b: char) -> Option<char> {
-    match (a, b) { ('ㅗ','ㅏ') => Some('ㅘ'), ('ㅗ','ㅐ') => Some('ㅙ'), ('ㅗ','ㅣ') => Some('ㅚ'),
-        ('ㅜ','ㅓ') => Some('ㅝ'), ('ㅜ','ㅔ') => Some('ㅞ'), ('ㅜ','ㅣ') => Some('ㅟ'),
-        ('ㅡ','ㅣ') => Some('ㅢ'), _ => None }
+    match (a, b) {
+        ('ㅗ', 'ㅏ') => Some('ㅘ'),
+        ('ㅗ', 'ㅐ') => Some('ㅙ'),
+        ('ㅗ', 'ㅣ') => Some('ㅚ'),
+        ('ㅜ', 'ㅓ') => Some('ㅝ'),
+        ('ㅜ', 'ㅔ') => Some('ㅞ'),
+        ('ㅜ', 'ㅣ') => Some('ㅟ'),
+        ('ㅡ', 'ㅣ') => Some('ㅢ'),
+        _ => None,
+    }
 }
 fn combined_final(a: char, b: char) -> Option<char> {
-    match (a, b) { ('ㄱ','ㅅ') => Some('ㄳ'), ('ㄴ','ㅈ') => Some('ㄵ'), ('ㄴ','ㅎ') => Some('ㄶ'),
-        ('ㄹ','ㄱ') => Some('ㄺ'), ('ㄹ','ㅁ') => Some('ㄻ'), ('ㄹ','ㅂ') => Some('ㄼ'),
-        ('ㄹ','ㅅ') => Some('ㄽ'), ('ㄹ','ㅌ') => Some('ㄾ'), ('ㄹ','ㅍ') => Some('ㄿ'),
-        ('ㄹ','ㅎ') => Some('ㅀ'), ('ㅂ','ㅅ') => Some('ㅄ'), _ => None }
+    match (a, b) {
+        ('ㄱ', 'ㅅ') => Some('ㄳ'),
+        ('ㄴ', 'ㅈ') => Some('ㄵ'),
+        ('ㄴ', 'ㅎ') => Some('ㄶ'),
+        ('ㄹ', 'ㄱ') => Some('ㄺ'),
+        ('ㄹ', 'ㅁ') => Some('ㄻ'),
+        ('ㄹ', 'ㅂ') => Some('ㄼ'),
+        ('ㄹ', 'ㅅ') => Some('ㄽ'),
+        ('ㄹ', 'ㅌ') => Some('ㄾ'),
+        ('ㄹ', 'ㅍ') => Some('ㄿ'),
+        ('ㄹ', 'ㅎ') => Some('ㅀ'),
+        ('ㅂ', 'ㅅ') => Some('ㅄ'),
+        _ => None,
+    }
 }
 fn compose_hangul(jamo: &[char]) -> alloc::string::String {
     let mut out = alloc::string::String::new();
     let mut i = 0;
     while i < jamo.len() {
-        let Some(l) = initial_index(jamo[i]) else { out.push(jamo[i]); i += 1; continue; };
-        if i + 1 >= jamo.len() { out.push(jamo[i]); break; }
-        let Some(mut v) = vowel_index(jamo[i + 1]) else { out.push(jamo[i]); i += 1; continue; };
+        let Some(l) = initial_index(jamo[i]) else {
+            out.push(jamo[i]);
+            i += 1;
+            continue;
+        };
+        if i + 1 >= jamo.len() {
+            out.push(jamo[i]);
+            break;
+        }
+        let Some(mut v) = vowel_index(jamo[i + 1]) else {
+            out.push(jamo[i]);
+            i += 1;
+            continue;
+        };
         let vowel = jamo[i + 1];
         i += 2;
         if i < jamo.len() {
@@ -501,19 +653,26 @@ fn compose_hangul(jamo: &[char]) -> alloc::string::String {
             let c = jamo[i];
             let followed_by_vowel = i + 1 < jamo.len() && vowel_index(jamo[i + 1]).is_some();
             if !followed_by_vowel {
-                if i + 1 < jamo.len() && initial_index(jamo[i + 1]).is_some()
-                    && !(i + 2 < jamo.len() && vowel_index(jamo[i + 2]).is_some()) {
+                if i + 1 < jamo.len()
+                    && initial_index(jamo[i + 1]).is_some()
+                    && !(i + 2 < jamo.len() && vowel_index(jamo[i + 2]).is_some())
+                {
                     if let Some(cluster) = combined_final(c, jamo[i + 1]) {
                         t = final_index(cluster).unwrap_or(0);
                         i += 2;
                     }
                 }
                 if t == 0 {
-                    if let Some(final_jamo) = final_index(c) { t = final_jamo; i += 1; }
+                    if let Some(final_jamo) = final_index(c) {
+                        t = final_jamo;
+                        i += 1;
+                    }
                 }
             }
         }
-        if let Some(syllable) = char::from_u32(0xac00 + (l * 21 + v) * 28 + t) { out.push(syllable); }
+        if let Some(syllable) = char::from_u32(0xac00 + (l * 21 + v) * 28 + t) {
+            out.push(syllable);
+        }
     }
     out
 }
@@ -1248,14 +1407,29 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
             // UEFI may report Backspace only as a scan code. It still enters
             // the exact same OS text path as an on-screen Backspace key.
-            if ev.scancode == 0x08 && dispatch_text_input_key(
-                SoftKey::Backspace, input_mode, &mut japanese_ime, &mut hangul_ime,
-                &mut pinyin_ime, app_search_focused, &mut app_search_query, &app_entries,
-                &mut app_list, &mut app_name_list, &mut app_icon_list,
-                &mut app_launcher_scroll, &mut show_app_launcher,
-                &mut cached_launcher_layer, &mut launcher_content_dirty,
-                &mut taskbar_surface, &mut wm, &mut warp_engines, &mut html_engines,
-            ) {
+            if ev.scancode == 0x08
+                && dispatch_text_input_key(
+                    SoftKey::Backspace,
+                    input_mode,
+                    &mut japanese_ime,
+                    &mut hangul_ime,
+                    &mut pinyin_ime,
+                    app_search_focused,
+                    &mut app_search_query,
+                    &app_entries,
+                    &mut app_list,
+                    &mut app_name_list,
+                    &mut app_icon_list,
+                    &mut app_launcher_scroll,
+                    &mut show_app_launcher,
+                    &mut cached_launcher_layer,
+                    &mut launcher_content_dirty,
+                    &mut taskbar_surface,
+                    &mut wm,
+                    &mut warp_engines,
+                    &mut html_engines,
+                )
+            {
                 dirty = true;
                 scene_dirty = true;
                 continue;
@@ -1274,12 +1448,25 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 }
             } else if let Some(c) = ev.printable {
                 dispatch_text_input_key(
-                    SoftKey::Character(c), input_mode, &mut japanese_ime, &mut hangul_ime,
-                    &mut pinyin_ime, app_search_focused, &mut app_search_query, &app_entries,
-                    &mut app_list, &mut app_name_list, &mut app_icon_list,
-                    &mut app_launcher_scroll, &mut show_app_launcher,
-                    &mut cached_launcher_layer, &mut launcher_content_dirty,
-                    &mut taskbar_surface, &mut wm, &mut warp_engines, &mut html_engines,
+                    SoftKey::Character(c),
+                    input_mode,
+                    &mut japanese_ime,
+                    &mut hangul_ime,
+                    &mut pinyin_ime,
+                    app_search_focused,
+                    &mut app_search_query,
+                    &app_entries,
+                    &mut app_list,
+                    &mut app_name_list,
+                    &mut app_icon_list,
+                    &mut app_launcher_scroll,
+                    &mut show_app_launcher,
+                    &mut cached_launcher_layer,
+                    &mut launcher_content_dirty,
+                    &mut taskbar_surface,
+                    &mut wm,
+                    &mut warp_engines,
+                    &mut html_engines,
                 );
             }
             dirty = true;
@@ -1426,6 +1613,23 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 );
                 cursor_moved |= (cx, cy) != old_cursor;
 
+                // A keyboard drag is owned by the OS overlay and must never
+                // leak through to the launcher or a window beneath it.
+                if soft_keyboard.is_dragging() {
+                    if ev.left {
+                        if soft_keyboard.drag_to(cx, cy, screen.width(), screen.height()) {
+                            scene_dirty = true;
+                        }
+                    } else {
+                        soft_keyboard.end_drag();
+                        mouse_down = false;
+                        wm.on_mouse_up();
+                        scene_dirty = true;
+                    }
+                    dirty = true;
+                    continue;
+                }
+
                 if ev.scroll != 0 {
                     scroll_input = true;
                     let window_scroll_delta = ev
@@ -1460,7 +1664,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     // its pointer event before launcher/window focus handling,
                     // preserving the input target that opened the keyboard.
                     if soft_keyboard.contains(cx, cy, screen.width(), screen.height()) {
-                        if let Some(key) = soft_keyboard.click(cx, cy, screen.width(), screen.height()) {
+                        if let Some(key) =
+                            soft_keyboard.click(cx, cy, screen.width(), screen.height())
+                        {
                             if key == SoftKey::Close {
                                 soft_keyboard.close();
                             } else {
@@ -1495,8 +1701,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         ime_button_bounds(screen.width(), battery_info.valid_percentage());
                     let ime_y = screen.height() as i32 - TASKBAR_H as i32 + ime_y_local;
                     let keyboard_x = ime_x - ime_w - 12;
-                    if cx >= keyboard_x && cx < keyboard_x + ime_w
-                        && cy >= ime_y && cy < ime_y + ime_h
+                    if cx >= keyboard_x
+                        && cx < keyboard_x + ime_w
+                        && cy >= ime_y
+                        && cy < ime_y + ime_h
                     {
                         soft_keyboard.toggle();
                         scene_dirty = true;
@@ -1621,7 +1829,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         let (ime_x, ime_y, ime_w, ime_h) =
                             ime_button_bounds(screen.width(), battery_info.valid_percentage());
                         let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
-                        if cx >= ime_x && cx < ime_x + ime_w + 10 && cy >= ime_y && cy < ime_y + ime_h {
+                        if cx >= ime_x
+                            && cx < ime_x + ime_w + 10
+                            && cy >= ime_y
+                            && cy < ime_y + ime_h
+                        {
                             show_ime_menu = true;
                             ime_menu_closing = false;
                             ime_menu_close_started_ms = None;
@@ -1665,7 +1877,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     if wm.is_minimized(*id) {
                                         wm.restore_minimized(*id);
                                     }
-                                    if wm.is_focusable(*id) { wm.focus(*id); }
+                                    if wm.is_focusable(*id) {
+                                        wm.focus(*id);
+                                    }
                                     break;
                                 }
                                 bx += btn_d + btn_gap;
@@ -1674,7 +1888,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     } else {
                         let win_under = wm.window_at(cx, cy);
                         if let Some(id) = win_under {
-                            if wm.is_focusable(id) { wm.focus(id); }
+                            if wm.is_focusable(id) {
+                                wm.focus(id);
+                            }
                             let btn = wm.button_hit_at(id, cx, cy);
                             match btn {
                                 'c' => {
@@ -1715,7 +1931,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                         let rel_y = cy - wy;
                                         let tb_h = if wm.is_focusable(clicked_id) {
                                             baram_windowserver::window::title_bar_h() as i32
-                                        } else { 0 };
+                                        } else {
+                                            0
+                                        };
                                         if rel_y >= tb_h {
                                             let warp_y = rel_y + scroll;
                                             engine.click(rel_x, warp_y);
@@ -1827,7 +2045,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     let rel_y = cy - wy;
                                     let tb_h = if wm.is_focusable(clicked_id) {
                                         baram_windowserver::window::title_bar_h() as i32
-                                    } else { 0 };
+                                    } else {
+                                        0
+                                    };
                                     if rel_y >= tb_h {
                                         engine.set_scroll(scroll);
                                         engine.set_runtime_metrics(
@@ -1897,6 +2117,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     scene_dirty = true;
                 } else if !ev.left && mouse_down {
                     mouse_down = false;
+                    soft_keyboard.end_drag();
                     wm.on_mouse_up();
                     scene_dirty = true;
                 }
@@ -1951,12 +2172,25 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         soft_keyboard.close();
                     } else {
                         dispatch_text_input_key(
-                            key, input_mode, &mut japanese_ime, &mut hangul_ime, &mut pinyin_ime,
-                            app_search_focused, &mut app_search_query, &app_entries, &mut app_list,
-                            &mut app_name_list, &mut app_icon_list, &mut app_launcher_scroll,
-                            &mut show_app_launcher, &mut cached_launcher_layer,
-                            &mut launcher_content_dirty, &mut taskbar_surface, &mut wm,
-                            &mut warp_engines, &mut html_engines,
+                            key,
+                            input_mode,
+                            &mut japanese_ime,
+                            &mut hangul_ime,
+                            &mut pinyin_ime,
+                            app_search_focused,
+                            &mut app_search_query,
+                            &app_entries,
+                            &mut app_list,
+                            &mut app_name_list,
+                            &mut app_icon_list,
+                            &mut app_launcher_scroll,
+                            &mut show_app_launcher,
+                            &mut cached_launcher_layer,
+                            &mut launcher_content_dirty,
+                            &mut taskbar_surface,
+                            &mut wm,
+                            &mut warp_engines,
+                            &mut html_engines,
                         );
                     }
                 }
@@ -2054,8 +2288,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     ime_button_bounds(screen.width(), battery_info.valid_percentage());
                 let ime_y = sh as i32 - TASKBAR_H as i32 + ime_y;
                 let keyboard_x = ime_x - ime_w - 12;
-                if cx >= keyboard_x && cx < keyboard_x + ime_w
-                    && cy >= ime_y && cy < ime_y + ime_h
+                if cx >= keyboard_x && cx < keyboard_x + ime_w && cy >= ime_y && cy < ime_y + ime_h
                 {
                     soft_keyboard.toggle();
                     scene_dirty = true;
@@ -2104,7 +2337,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             if wm.is_minimized(*id) {
                                 wm.restore_minimized(*id);
                             }
-                            if wm.is_focusable(*id) { wm.focus(*id); }
+                            if wm.is_focusable(*id) {
+                                wm.focus(*id);
+                            }
                             break;
                         }
                         bx += btn_d + btn_gap;
@@ -2113,7 +2348,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             } else {
                 let win_under = wm.window_at(cx, cy);
                 if let Some(id) = win_under {
-                    if wm.is_focusable(id) { wm.focus(id); }
+                    if wm.is_focusable(id) {
+                        wm.focus(id);
+                    }
                     let btn = wm.button_hit_at(id, cx, cy);
                     match btn {
                         'c' => {
@@ -2419,9 +2656,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         {
-            let mut hovered_any = soft_keyboard.contains(
-                cursor_x, cursor_y, screen.width(), screen.height(),
-            );
+            let mut hovered_any =
+                soft_keyboard.contains(cursor_x, cursor_y, screen.width(), screen.height());
             if soft_keyboard.set_hover(cursor_x, cursor_y, screen.width(), screen.height()) {
                 scene_dirty = true;
                 dirty = true;
@@ -2438,64 +2674,64 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 if let Some(hover_id) = wm.window_at(cursor_x, cursor_y) {
                     let scrolling = wm.is_scroll_animating(hover_id);
                     for (wid, engine) in warp_engines.iter_mut() {
-                    if hover_id == *wid {
-                        if scrolling {
-                            engine.clear_hover();
-                            hovered_any = true;
+                        if hover_id == *wid {
+                            if scrolling {
+                                engine.clear_hover();
+                                hovered_any = true;
+                                break;
+                            }
+                            if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
+                                let rel_x = cursor_x - wx;
+                                let rel_y = cursor_y - wy;
+                                let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                let prev_hover = engine.hover_idx;
+                                if rel_y >= tb_h {
+                                    let warp_y = rel_y + scroll;
+                                    engine.set_hover(rel_x, warp_y);
+                                } else {
+                                    engine.set_hover(rel_x, -1);
+                                }
+                                if engine.hover_idx != prev_hover {
+                                    wm.set_content_dirty(hover_id);
+                                    scene_dirty = true;
+                                    dirty = true;
+                                }
+                                hovered_any = true;
+                            }
                             break;
                         }
-                        if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
-                            let rel_x = cursor_x - wx;
-                            let rel_y = cursor_y - wy;
-                            let tb_h = baram_windowserver::window::title_bar_h() as i32;
-                            let prev_hover = engine.hover_idx;
-                            if rel_y >= tb_h {
-                                let warp_y = rel_y + scroll;
-                                engine.set_hover(rel_x, warp_y);
-                            } else {
-                                engine.set_hover(rel_x, -1);
-                            }
-                            if engine.hover_idx != prev_hover {
-                                wm.set_content_dirty(hover_id);
-                                scene_dirty = true;
-                                dirty = true;
-                            }
-                            hovered_any = true;
-                        }
-                        break;
-                    }
                     }
                     for (wid, engine) in html_engines.iter_mut() {
-                    if hover_id == *wid {
-                        if scrolling {
-                            engine.cancel_hover();
-                            hovered_any = true;
+                        if hover_id == *wid {
+                            if scrolling {
+                                engine.cancel_hover();
+                                hovered_any = true;
+                                break;
+                            }
+                            if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
+                                let rel_x = cursor_x - wx;
+                                let rel_y = cursor_y - wy;
+                                let tb_h = baram_windowserver::window::title_bar_h() as i32;
+                                let previous = engine.hovered_node();
+                                if rel_y >= tb_h {
+                                    engine.set_scroll(scroll);
+                                    engine.set_hover(rel_x, rel_y + scroll);
+                                } else {
+                                    engine.clear_hover();
+                                }
+                                if engine.hovered_node() != previous {
+                                    if let Some((x0, y0, x1, y1)) = engine.window_damage() {
+                                        wm.set_content_damage(hover_id, x0, y0, x1, y1);
+                                    } else {
+                                        wm.set_content_dirty(hover_id);
+                                    }
+                                    scene_dirty = true;
+                                    dirty = true;
+                                }
+                                hovered_any = true;
+                            }
                             break;
                         }
-                        if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(hover_id) {
-                            let rel_x = cursor_x - wx;
-                            let rel_y = cursor_y - wy;
-                            let tb_h = baram_windowserver::window::title_bar_h() as i32;
-                            let previous = engine.hovered_node();
-                            if rel_y >= tb_h {
-                                engine.set_scroll(scroll);
-                                engine.set_hover(rel_x, rel_y + scroll);
-                            } else {
-                                engine.clear_hover();
-                            }
-                            if engine.hovered_node() != previous {
-                                if let Some((x0, y0, x1, y1)) = engine.window_damage() {
-                                    wm.set_content_damage(hover_id, x0, y0, x1, y1);
-                                } else {
-                                    wm.set_content_dirty(hover_id);
-                                }
-                                scene_dirty = true;
-                                dirty = true;
-                            }
-                            hovered_any = true;
-                        }
-                        break;
-                    }
                     }
                 }
             }
@@ -2513,6 +2749,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // this clock, without a runtime-service call in the render hot path.
         let mut deferred_html_commands = alloc::vec::Vec::new();
         let runtime_window_count = wm.count();
+        if soft_keyboard.tick(motion_now_ns) {
+            scene_dirty = true;
+            dirty = true;
+        }
         for (wid, engine) in html_engines.iter_mut() {
             engine.set_runtime_metrics(fps, runtime_window_count, key_ev_count, mouse_ev_count);
             if engine.tick(motion_now_ns) {
@@ -2712,7 +2952,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             && bx1 > (ime_menu_x - 54).max(0) as usize
                             && by0 < (ime_menu_y + ime_menu_h + 54).max(0) as usize
                             && by1 > (ime_menu_y - 54).max(0) as usize));
-                let ime_menu_needs_redraw = ime_menu_changed || ime_menu_cache_dirty || ime_menu_closing;
+                let ime_menu_needs_redraw =
+                    ime_menu_changed || ime_menu_cache_dirty || ime_menu_closing;
                 if ime_menu_changed || ime_menu_cache_dirty {
                     cached_ime_menu_layer = None;
                 }
@@ -2771,6 +3012,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
                 let w = screen.width();
                 let h = screen.height();
+                let keyboard_damage = soft_keyboard.take_damage(w, h);
                 let tb_y = h.saturating_sub(TASKBAR_H);
                 let hud_y0 = tb_y.saturating_sub(44);
                 let pad = 32i32;
@@ -2808,6 +3050,12 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 } else {
                     (bx0, by0, bx1, by1)
                 };
+                if let Some((x0, y0, x1, y1)) = keyboard_damage {
+                    fx0 = fx0.min(x0.max(0) as usize);
+                    fy0 = fy0.min(y0.max(0) as usize);
+                    fx1 = fx1.max(x1.max(0) as usize).min(w);
+                    fy1 = fy1.max(y1.max(0) as usize).min(h);
+                }
                 if taskbar_dirty && !taskbar_only {
                     fx0 = 0;
                     fy0 = fy0.min(tb_y);
@@ -2861,15 +3109,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     fx1 = w;
                     fy1 = fy1.max(tb_y);
                 }
-                let (ime_reading, ime_candidates, ime_selected) = if let Some((reading, candidates, selected)) =
-                    japanese_ime.conversion_view()
-                {
-                    (Some(reading), candidates, selected)
-                } else if let Some((reading, candidates, selected)) = pinyin_ime.conversion_view() {
-                    (Some(reading), candidates, selected)
-                } else {
-                    (None, &[][..], 0)
-                };
+                let (ime_reading, ime_candidates, ime_selected) =
+                    if let Some((reading, candidates, selected)) = japanese_ime.conversion_view() {
+                        (Some(reading), candidates, selected)
+                    } else if let Some((reading, candidates, selected)) =
+                        pinyin_ime.conversion_view()
+                    {
+                        (Some(reading), candidates, selected)
+                    } else {
+                        (None, &[][..], 0)
+                    };
                 layer.push_clip(fx0, fy0, fx1, fy1);
 
                 render_scene(
@@ -3214,14 +3463,22 @@ fn dispatch_text_input_key(
         if let Some((text, replace_chars)) =
             ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
         {
-            for _ in 0..replace_chars { app_search_query.pop(); }
+            for _ in 0..replace_chars {
+                app_search_query.pop();
+            }
             app_search_query.push_str(&text);
         } else if byte == 0x08 || byte == 0x7f {
             app_search_query.pop();
         } else if (0x20..=0x7e).contains(&byte) {
             app_search_query.push(byte as char);
         }
-        rebuild_filtered_apps(app_entries, app_search_query, app_list, app_name_list, app_icon_list);
+        rebuild_filtered_apps(
+            app_entries,
+            app_search_query,
+            app_list,
+            app_name_list,
+            app_icon_list,
+        );
         app_launcher_scroll.set_max(app_launcher_scroll_max(app_list.len()));
         *show_app_launcher = true;
         *cached_launcher_layer = None;
@@ -3230,11 +3487,17 @@ fn dispatch_text_input_key(
         return true;
     }
 
-    let Some(focused) = wm.focused_id else { return false; };
-    if wm.is_interaction_blocked(focused) { return false; }
+    let Some(focused) = wm.focused_id else {
+        return false;
+    };
+    if wm.is_interaction_blocked(focused) {
+        return false;
+    }
 
     for (wid, engine) in warp_engines.iter_mut() {
-        if *wid != focused || engine.focused_input_var.is_empty() { continue; }
+        if *wid != focused || engine.focused_input_var.is_empty() {
+            continue;
+        }
         if byte == b'\n' || byte == b'\r' {
             engine.handle_text("\n", 0);
         } else if let Some((text, replace_chars)) =
@@ -3245,8 +3508,8 @@ fn dispatch_text_input_key(
             engine.handle_key(byte);
         }
         if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
-            let content_h = (wh as i32)
-                .saturating_sub(baram_windowserver::window::title_bar_h() as i32);
+            let content_h =
+                (wh as i32).saturating_sub(baram_windowserver::window::title_bar_h() as i32);
             engine.update(ww as i32, content_h);
             wm.clamp_window_scroll(*wid, engine.content_height);
         }
@@ -3255,7 +3518,9 @@ fn dispatch_text_input_key(
     }
 
     for (wid, engine) in html_engines.iter_mut() {
-        if *wid != focused || !engine.has_focused_input() { continue; }
+        if *wid != focused || !engine.has_focused_input() {
+            continue;
+        }
         if byte == b'\n' || byte == b'\r' {
             engine.handle_text("\n", 0);
         } else if let Some((text, replace_chars)) =

@@ -1,5 +1,3 @@
-
-
 use crate::*;
 use c_runtime;
 
@@ -178,8 +176,7 @@ pub unsafe fn stbtt__get_svg(info: *mut stbtt_fontinfo) -> i32 {
     if (*info).svg < 0 {
         t = stbtt__find_table((*info).data, ((*info).fontstart) as u32, "SVG ");
         if (t) != 0 {
-            let offset: u32 =
-                ttULONG((((*info).data).offset((t) as isize)).offset((2) as isize));
+            let offset: u32 = ttULONG((((*info).data).offset((t) as isize)).offset((2) as isize));
             (*info).svg = (t + offset) as i32;
         } else {
             (*info).svg = (0) as i32;
@@ -449,8 +446,7 @@ pub unsafe fn stbtt__GetGlyphGPOSInfoAdvance(
                     class1Records = (table).offset((16) as isize);
                     class2Records = (class1Records)
                         .offset((2 * (glyph1class * ((class2Count) as i32))) as isize);
-                    xAdvance =
-                        (ttSHORT((class2Records).offset((2 * glyph2class) as isize))) as i16;
+                    xAdvance = (ttSHORT((class2Records).offset((2 * glyph2class) as isize))) as i16;
                     return (xAdvance) as i32;
                 } else {
                     return (0) as i32;
@@ -543,8 +539,7 @@ pub unsafe fn stbtt__GetGlyphShapeT2(
             ((count_ctx.num_vertices) as u64) * core::mem::size_of::<stbtt_vertex>() as u64,
         )) as *mut stbtt_vertex;
         output_ctx.pvertices = *pvertices;
-        if (stbtt__run_charstring(info, glyph_index, (&mut output_ctx) as *mut stbtt__csctx)) != 0
-        {
+        if (stbtt__run_charstring(info, glyph_index, (&mut output_ctx) as *mut stbtt__csctx)) != 0 {
             return (output_ctx.num_vertices) as i32;
         }
     }
@@ -938,10 +933,7 @@ pub unsafe fn stbtt__GetGlyphShapeTT(
     return (num_vertices) as i32;
 }
 
-pub unsafe fn stbtt_FindGlyphIndex(
-    info: *mut stbtt_fontinfo,
-    unicode_codepoint: i32,
-) -> i32 {
+pub unsafe fn stbtt_FindGlyphIndex(info: *mut stbtt_fontinfo, unicode_codepoint: i32) -> i32 {
     let data: *const u8 = (*info).data;
     let index_map: u32 = ((*info).index_map) as u32;
     let format: u16 = ttUSHORT(((data).offset((index_map) as isize)).offset((0) as isize));
@@ -1248,11 +1240,7 @@ pub unsafe fn stbtt_GetCodepointHMetrics(
     );
 }
 
-pub unsafe fn stbtt_GetCodepointKernAdvance(
-    info: *mut stbtt_fontinfo,
-    ch1: i32,
-    ch2: i32,
-) -> i32 {
+pub unsafe fn stbtt_GetCodepointKernAdvance(info: *mut stbtt_fontinfo, ch1: i32, ch2: i32) -> i32 {
     if (*info).kern == 0 && (*info).gpos == 0 {
         return (0) as i32;
     }
@@ -1320,14 +1308,10 @@ pub unsafe fn stbtt_GetFontBoundingBox(
     x1: *mut i32,
     y1: *mut i32,
 ) {
-    *x0 =
-        (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((36) as isize))) as i32;
-    *y0 =
-        (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((38) as isize))) as i32;
-    *x1 =
-        (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((40) as isize))) as i32;
-    *y1 =
-        (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((42) as isize))) as i32;
+    *x0 = (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((36) as isize))) as i32;
+    *y0 = (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((38) as isize))) as i32;
+    *x1 = (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((40) as isize))) as i32;
+    *y1 = (ttSHORT((((*info).data).offset(((*info).head) as isize)).offset((42) as isize))) as i32;
 }
 
 pub unsafe fn stbtt_GetFontNameString(
@@ -1375,16 +1359,16 @@ pub unsafe fn stbtt_GetFontVMetrics(
     lineGap: *mut i32,
 ) {
     if (ascent) != core::ptr::null_mut() {
-        *ascent = (ttSHORT((((*info).data).offset(((*info).hhea) as isize)).offset((4) as isize)))
-            as i32;
+        *ascent =
+            (ttSHORT((((*info).data).offset(((*info).hhea) as isize)).offset((4) as isize))) as i32;
     }
     if (descent) != core::ptr::null_mut() {
-        *descent = (ttSHORT((((*info).data).offset(((*info).hhea) as isize)).offset((6) as isize)))
-            as i32;
+        *descent =
+            (ttSHORT((((*info).data).offset(((*info).hhea) as isize)).offset((6) as isize))) as i32;
     }
     if (lineGap) != core::ptr::null_mut() {
-        *lineGap = (ttSHORT((((*info).data).offset(((*info).hhea) as isize)).offset((8) as isize)))
-            as i32;
+        *lineGap =
+            (ttSHORT((((*info).data).offset(((*info).hhea) as isize)).offset((8) as isize))) as i32;
     }
 }
 
@@ -1394,8 +1378,7 @@ pub unsafe fn stbtt_GetFontVMetricsOS2(
     typoDescent: *mut i32,
     typoLineGap: *mut i32,
 ) -> i32 {
-    let tab: i32 =
-        (stbtt__find_table((*info).data, ((*info).fontstart) as u32, "OS/2")) as i32;
+    let tab: i32 = (stbtt__find_table((*info).data, ((*info).fontstart) as u32, "OS/2")) as i32;
     if tab == 0 {
         return (0) as i32;
     }
@@ -1647,11 +1630,7 @@ pub unsafe fn stbtt_GetGlyphHMetrics(
     }
 }
 
-pub unsafe fn stbtt_GetGlyphKernAdvance(
-    info: *mut stbtt_fontinfo,
-    g1: i32,
-    g2: i32,
-) -> i32 {
+pub unsafe fn stbtt_GetGlyphKernAdvance(info: *mut stbtt_fontinfo, g1: i32, g2: i32) -> i32 {
     let mut xAdvance: i32 = 0;
     if ((*info).gpos) != 0 {
         xAdvance += (stbtt__GetGlyphGPOSInfoAdvance(info, g1, g2)) as i32;
@@ -1753,10 +1732,8 @@ pub unsafe fn stbtt_GetGlyphSDF(
                 if (((*verts.offset((i) as isize))._type_) as i32) == STBTT_vcurve {
                     let x2: f32 = ((((*verts.offset((j) as isize)).x) as i32) as f32) * scale_x;
                     let y2: f32 = ((((*verts.offset((j) as isize)).y) as i32) as f32) * scale_y;
-                    let x1: f32 =
-                        ((((*verts.offset((i) as isize)).cx) as i32) as f32) * scale_x;
-                    let y1: f32 =
-                        ((((*verts.offset((i) as isize)).cy) as i32) as f32) * scale_y;
+                    let x1: f32 = ((((*verts.offset((i) as isize)).cx) as i32) as f32) * scale_x;
+                    let y1: f32 = ((((*verts.offset((i) as isize)).cy) as i32) as f32) * scale_y;
                     let x0: f32 = ((((*verts.offset((i) as isize)).x) as i32) as f32) * scale_x;
                     let y0: f32 = ((((*verts.offset((i) as isize)).y) as i32) as f32) * scale_y;
                     let bx: f32 = x0 - ((2) as f32) * x1 + x2;
@@ -1783,8 +1760,7 @@ pub unsafe fn stbtt_GetGlyphSDF(
                 let sy: f32 = ((y) as f32) + 0.5f32;
                 let x_gspace: f32 = sx / scale_x;
                 let y_gspace: f32 = sy / scale_y;
-                let winding: i32 =
-                    stbtt__compute_crossings_x(x_gspace, y_gspace, num_verts, verts);
+                let winding: i32 = stbtt__compute_crossings_x(x_gspace, y_gspace, num_verts, verts);
                 i = (0) as i32;
                 while i < num_verts {
                     let x0: f32 = ((((*verts.offset((i) as isize)).x) as i32) as f32) * scale_x;
@@ -1826,29 +1802,41 @@ pub unsafe fn stbtt_GetGlyphSDF(
                                 ((((*verts.offset((i) as isize)).cx) as i32) as f32) * scale_x;
                             let y1: f32 =
                                 ((((*verts.offset((i) as isize)).cy) as i32) as f32) * scale_y;
-                            let box_x0: f32 = if (if (x0) < (x1) { x0 } else { x1 }) < (x2)
-                            {
-                                if (x0) < (x1) { x0 } else { x1 }
+                            let box_x0: f32 = if (if (x0) < (x1) { x0 } else { x1 }) < (x2) {
+                                if (x0) < (x1) {
+                                    x0
+                                } else {
+                                    x1
+                                }
                             } else {
                                 x2
                             };
-                            let box_y0: f32 = if (if (y0) < (y1) { y0 } else { y1 }) < (y2)
-                            {
-                                if (y0) < (y1) { y0 } else { y1 }
+                            let box_y0: f32 = if (if (y0) < (y1) { y0 } else { y1 }) < (y2) {
+                                if (y0) < (y1) {
+                                    y0
+                                } else {
+                                    y1
+                                }
                             } else {
                                 y2
                             };
-                            let box_x1: f32 = if (if (x0) < (x1) { x1 } else { x0 }) < (x2)
-                            {
+                            let box_x1: f32 = if (if (x0) < (x1) { x1 } else { x0 }) < (x2) {
                                 x2
                             } else {
-                                if (x0) < (x1) { x1 } else { x0 }
+                                if (x0) < (x1) {
+                                    x1
+                                } else {
+                                    x0
+                                }
                             };
-                            let box_y1: f32 = if (if (y0) < (y1) { y1 } else { y0 }) < (y2)
-                            {
+                            let box_y1: f32 = if (if (y0) < (y1) { y1 } else { y0 }) < (y2) {
                                 y2
                             } else {
-                                if (y0) < (y1) { y1 } else { y0 }
+                                if (y0) < (y1) {
+                                    y1
+                                } else {
+                                    y0
+                                }
                             };
                             if sx > box_x0 - min_dist
                                 && sx < box_x1 + min_dist
@@ -1916,8 +1904,7 @@ pub unsafe fn stbtt_GetGlyphSDF(
                                     it = (1.0f32 - t) as f32;
                                     px = it * it * x0 + ((2) as f32) * t * it * x1 + t * t * x2;
                                     py = it * it * y0 + ((2) as f32) * t * it * y1 + t * t * y2;
-                                    dist2 =
-                                        ((px - sx) * (px - sx) + (py - sy) * (py - sy)) as f32;
+                                    dist2 = ((px - sx) * (px - sx) + (py - sy) * (py - sy)) as f32;
                                     if dist2 < min_dist * min_dist {
                                         min_dist = (c_runtime::sqrt((dist2) as f32)) as f32;
                                     }
@@ -1930,8 +1917,7 @@ pub unsafe fn stbtt_GetGlyphSDF(
                                     it = (1.0f32 - t) as f32;
                                     px = it * it * x0 + ((2) as f32) * t * it * x1 + t * t * x2;
                                     py = it * it * y0 + ((2) as f32) * t * it * y1 + t * t * y2;
-                                    dist2 =
-                                        ((px - sx) * (px - sx) + (py - sy) * (py - sy)) as f32;
+                                    dist2 = ((px - sx) * (px - sx) + (py - sy) * (py - sy)) as f32;
                                     if dist2 < min_dist * min_dist {
                                         min_dist = (c_runtime::sqrt((dist2) as f32)) as f32;
                                     }
@@ -1944,8 +1930,7 @@ pub unsafe fn stbtt_GetGlyphSDF(
                                     it = (1.0f32 - t) as f32;
                                     px = it * it * x0 + ((2) as f32) * t * it * x1 + t * t * x2;
                                     py = it * it * y0 + ((2) as f32) * t * it * y1 + t * t * y2;
-                                    dist2 =
-                                        ((px - sx) * (px - sx) + (py - sy) * (py - sy)) as f32;
+                                    dist2 = ((px - sx) * (px - sx) + (py - sy) * (py - sy)) as f32;
                                     if dist2 < min_dist * min_dist {
                                         min_dist = (c_runtime::sqrt((dist2) as f32)) as f32;
                                     }
@@ -1989,11 +1974,7 @@ pub unsafe fn stbtt_GetGlyphShape(
     }
 }
 
-pub unsafe fn stbtt_GetGlyphSVG(
-    info: *mut stbtt_fontinfo,
-    gl: i32,
-    svg: *mut *mut i8,
-) -> i32 {
+pub unsafe fn stbtt_GetGlyphSVG(info: *mut stbtt_fontinfo, gl: i32, svg: *mut *mut i8) -> i32 {
     let data: *const u8 = (*info).data;
     let mut svg_doc: *const u8 = core::ptr::null_mut();
     if (*info).svg == 0 {
@@ -2057,11 +2038,7 @@ pub unsafe fn stbtt_GetKerningTableLength(info: *mut stbtt_fontinfo) -> i32 {
     return (ttUSHORT((data).offset((10) as isize))) as i32;
 }
 
-pub unsafe fn stbtt_InitFont(
-    info: *mut stbtt_fontinfo,
-    data: *const u8,
-    offset: i32,
-) -> i32 {
+pub unsafe fn stbtt_InitFont(info: *mut stbtt_fontinfo, data: *const u8, offset: i32) -> i32 {
     return (stbtt_InitFont_internal(info, data, offset)) as i32;
 }
 
@@ -2156,8 +2133,7 @@ pub unsafe fn stbtt_InitFont_internal(
                 return (0) as i32;
             }
             stbtt__buf_seek((&mut b) as *mut stbtt__buf, (fdarrayoff) as i32);
-            (*info).fontdicts =
-                (stbtt__cff_get_index((&mut b) as *mut stbtt__buf)) as stbtt__buf;
+            (*info).fontdicts = (stbtt__cff_get_index((&mut b) as *mut stbtt__buf)) as stbtt__buf;
             (*info).fdselect = (stbtt__buf_range(
                 (&mut b) as *mut stbtt__buf,
                 (fdselectoff) as i32,
@@ -2539,8 +2515,7 @@ pub unsafe fn stbtt_PackFontRangesRenderIntoRects(
                 let mut y0: i32 = 0;
                 let mut x1: i32 = 0;
                 let mut y1: i32 = 0;
-                let codepoint: i32 = if (*ranges.offset((i) as isize))
-                    .array_of_unicode_codepoints
+                let codepoint: i32 = if (*ranges.offset((i) as isize)).array_of_unicode_codepoints
                     == core::ptr::null_mut()
                 {
                     (*ranges.offset((i) as isize)).first_unicode_codepoint_in_range + j
@@ -2642,10 +2617,7 @@ pub unsafe fn stbtt_PackFontRangesRenderIntoRects(
     return (return_value) as i32;
 }
 
-pub unsafe fn stbtt_ScaleForMappingEmToPixels(
-    info: *mut stbtt_fontinfo,
-    pixels: f32,
-) -> f32 {
+pub unsafe fn stbtt_ScaleForMappingEmToPixels(info: *mut stbtt_fontinfo, pixels: f32) -> f32 {
     let unitsPerEm: i32 =
         (ttUSHORT((((*info).data).offset(((*info).head) as isize)).offset((18) as isize))) as i32;
     return pixels / ((unitsPerEm) as f32);

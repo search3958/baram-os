@@ -56,19 +56,27 @@ impl PageTableEntry {
     }
 
     pub const fn valid() -> Self {
-        Self { value: DESCRIPTOR_VALID }
+        Self {
+            value: DESCRIPTOR_VALID,
+        }
     }
 
     pub const fn table() -> Self {
-        Self { value: DESCRIPTOR_VALID | DESCRIPTOR_TABLE }
+        Self {
+            value: DESCRIPTOR_VALID | DESCRIPTOR_TABLE,
+        }
     }
 
     pub const fn block() -> Self {
-        Self { value: DESCRIPTOR_VALID | DESCRIPTOR_BLOCK }
+        Self {
+            value: DESCRIPTOR_VALID | DESCRIPTOR_BLOCK,
+        }
     }
 
     pub const fn page() -> Self {
-        Self { value: DESCRIPTOR_VALID | DESCRIPTOR_PAGE }
+        Self {
+            value: DESCRIPTOR_VALID | DESCRIPTOR_PAGE,
+        }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -176,7 +184,13 @@ impl VirtualMemoryManager {
         ttbr
     }
 
-    pub fn map_page(&mut self, ttbr: usize, virt_addr: usize, phys_addr: usize, attrs: u64) -> bool {
+    pub fn map_page(
+        &mut self,
+        ttbr: usize,
+        virt_addr: usize,
+        phys_addr: usize,
+        attrs: u64,
+    ) -> bool {
         let l0_index = (virt_addr >> 39) & 0x1FF;
         let l1_index = (virt_addr >> 30) & 0x1FF;
         let l2_index = (virt_addr >> 21) & 0x1FF;
@@ -184,15 +198,21 @@ impl VirtualMemoryManager {
 
         let l0 = unsafe { &mut *(ttbr as *mut PageTable) };
         let l1 = self.get_or_create_table(l0, l0_index);
-        if l1 == 0 { return false; }
+        if l1 == 0 {
+            return false;
+        }
 
         let l1_table = unsafe { &mut *(l1 as *mut PageTable) };
         let l2 = self.get_or_create_table(l1_table, l1_index);
-        if l2 == 0 { return false; }
+        if l2 == 0 {
+            return false;
+        }
 
         let l2_table = unsafe { &mut *(l2 as *mut PageTable) };
         let l3 = self.get_or_create_table(l2_table, l2_index);
-        if l3 == 0 { return false; }
+        if l3 == 0 {
+            return false;
+        }
 
         let l3_table = unsafe { &mut *(l3 as *mut PageTable) };
         let mut entry = PageTableEntry::page();
@@ -205,24 +225,38 @@ impl VirtualMemoryManager {
         true
     }
 
-    pub fn map_block(&mut self, ttbr: usize, virt_addr: usize, phys_addr: usize, size: usize, attrs: u64) -> bool {
+    pub fn map_block(
+        &mut self,
+        ttbr: usize,
+        virt_addr: usize,
+        phys_addr: usize,
+        size: usize,
+        attrs: u64,
+    ) -> bool {
         let mut offset = 0;
         while offset < size {
             let remaining = size - offset;
             let aligned_remaining = remaining & !0x1FF_FFFF;
 
-            if aligned_remaining >= PAGE_SIZE * 512 && ((virt_addr + offset) & 0x1FF_FFFF) == 0 && ((phys_addr + offset) & 0x1FF_FFFF) == 0 {
+            if aligned_remaining >= PAGE_SIZE * 512
+                && ((virt_addr + offset) & 0x1FF_FFFF) == 0
+                && ((phys_addr + offset) & 0x1FF_FFFF) == 0
+            {
                 let l0_index = ((virt_addr + offset) >> 39) & 0x1FF;
                 let l1_index = ((virt_addr + offset) >> 30) & 0x1FF;
                 let l2_index = ((virt_addr + offset) >> 21) & 0x1FF;
 
                 let l0 = unsafe { &mut *(ttbr as *mut PageTable) };
                 let l1 = self.get_or_create_table(l0, l0_index);
-                if l1 == 0 { return false; }
+                if l1 == 0 {
+                    return false;
+                }
 
                 let l1_table = unsafe { &mut *(l1 as *mut PageTable) };
                 let l2 = self.get_or_create_table(l1_table, l1_index);
-                if l2 == 0 { return false; }
+                if l2 == 0 {
+                    return false;
+                }
 
                 let l2_table = unsafe { &mut *(l2 as *mut PageTable) };
                 let mut entry = PageTableEntry::block();
@@ -284,12 +318,16 @@ impl VirtualMemoryManager {
 
         let l0 = unsafe { &*(ttbr as *const PageTable) };
         let l1_entry = l0.get_entry(l0_index);
-        if !l1_entry.is_valid() { return None; }
+        if !l1_entry.is_valid() {
+            return None;
+        }
 
         if l1_entry.is_table() {
             let l1 = unsafe { &*(l1_entry.next_table_addr() as *const PageTable) };
             let l2_entry = l1.get_entry(l1_index);
-            if !l2_entry.is_valid() { return None; }
+            if !l2_entry.is_valid() {
+                return None;
+            }
 
             if l2_entry.is_block() {
                 return Some(l2_entry.output_addr() + (virt_addr & 0x3FFF_FFFF));
@@ -297,7 +335,9 @@ impl VirtualMemoryManager {
 
             let l2 = unsafe { &*(l2_entry.next_table_addr() as *const PageTable) };
             let l3_entry = l2.get_entry(l2_index);
-            if !l3_entry.is_valid() { return None; }
+            if !l3_entry.is_valid() {
+                return None;
+            }
 
             if l3_entry.is_block() {
                 return Some(l3_entry.output_addr() + (virt_addr & 0x1F_FFFF));
@@ -305,7 +345,9 @@ impl VirtualMemoryManager {
 
             let l3 = unsafe { &*(l3_entry.next_table_addr() as *const PageTable) };
             let entry = l3.get_entry(l3_index);
-            if !entry.is_valid() { return None; }
+            if !entry.is_valid() {
+                return None;
+            }
 
             return Some(entry.output_addr() + page_offset);
         }
@@ -382,7 +424,14 @@ impl VirtualMemoryManager {
     }
 
     fn get_tcr(&self) -> u64 {
-        TCR_T0SZ | TCR_T1SZ | TCR_TG0_4K | TCR_TG1_4K | TCR_IPS_48BIT | TCR_SH_INNER | TCR_IRGN_WB | TCR_ORGN_WB
+        TCR_T0SZ
+            | TCR_T1SZ
+            | TCR_TG0_4K
+            | TCR_TG1_4K
+            | TCR_IPS_48BIT
+            | TCR_SH_INNER
+            | TCR_IRGN_WB
+            | TCR_ORGN_WB
     }
 
     #[cfg(target_arch = "aarch64")]

@@ -1,5 +1,3 @@
-
-
 use crate::*;
 use c_runtime;
 
@@ -130,11 +128,7 @@ pub unsafe fn stbrp_init_target(
     (*con).bottom_y = (0) as i32;
 }
 
-pub unsafe fn stbrp_pack_rects(
-    con: *mut stbrp_context,
-    rects: *mut stbrp_rect,
-    num_rects: i32,
-) {
+pub unsafe fn stbrp_pack_rects(con: *mut stbrp_context, rects: *mut stbrp_rect, num_rects: i32) {
     let mut i: i32 = 0;
     i = (0) as i32;
     while i < num_rects {

@@ -1,9 +1,9 @@
-use alloc::{string::String, vec::Vec};
 use crate::options::Options;
 use crate::to_kana_node_tree::{
     TO_KANA_NODE_TREE, TO_KANA_NODE_TREE_IMEMODE, TO_KANA_NODE_TREE_OBSOLETE,
 };
 use crate::utils::hiragana_to_katakana::*;
+use alloc::{string::String, vec::Vec};
 
 #[inline]
 /// Convert [Romaji](https://en.wikipedia.org/wiki/Romaji) to [Kana](https://en.wikipedia.org/wiki/Kana), lowercase text will result in [Hiragana](https://en.wikipedia.org/wiki/Hiragana) and uppercase text will result in [Katakana](https://en.wikipedia.org/wiki/Katakana).

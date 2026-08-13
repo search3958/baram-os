@@ -1,13 +1,17 @@
+use crate::color::Color;
+use crate::screen::Screen;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
-use crate::color::Color;
-use crate::screen::Screen;
 
 #[inline(always)]
 fn blend_u32(bg: u32, fg: u32, a: u32) -> u32 {
-    if a == 0 { return bg; }
-    if a >= 255 { return fg; }
+    if a == 0 {
+        return bg;
+    }
+    if a >= 255 {
+        return fg;
+    }
     let inv = 255 - a;
     let r = (((fg >> 16) & 0xFF) * a + ((bg >> 16) & 0xFF) * inv) / 255;
     let g = (((fg >> 8) & 0xFF) * a + ((bg >> 8) & 0xFF) * inv) / 255;
@@ -129,7 +133,6 @@ unsafe fn blend_global_alpha_avx2(src: *const u32, dst: *mut u32, len: usize, al
     }
 }
 
-
 pub struct LayerSystem {
     pub(crate) width: usize,
     pub(crate) height: usize,
@@ -185,12 +188,7 @@ impl LayerSystem {
 
         if let Some(cur) = self.clip {
             self.clip_stack.push(cur);
-            self.clip = Some((
-                x0.max(cur.0),
-                y0.max(cur.1),
-                x1.min(cur.2),
-                y1.min(cur.3),
-            ));
+            self.clip = Some((x0.max(cur.0), y0.max(cur.1), x1.min(cur.2), y1.min(cur.3)));
         } else {
             self.clip = Some((x0, y0, x1, y1));
         }
@@ -219,10 +217,18 @@ impl LayerSystem {
             self.dirty_x1 = x1;
             self.dirty_y1 = y1;
         } else {
-            if x0 < self.dirty_x0 { self.dirty_x0 = x0; }
-            if y0 < self.dirty_y0 { self.dirty_y0 = y0; }
-            if x1 > self.dirty_x1 { self.dirty_x1 = x1; }
-            if y1 > self.dirty_y1 { self.dirty_y1 = y1; }
+            if x0 < self.dirty_x0 {
+                self.dirty_x0 = x0;
+            }
+            if y0 < self.dirty_y0 {
+                self.dirty_y0 = y0;
+            }
+            if x1 > self.dirty_x1 {
+                self.dirty_x1 = x1;
+            }
+            if y1 > self.dirty_y1 {
+                self.dirty_y1 = y1;
+            }
         }
     }
 
@@ -277,7 +283,11 @@ impl LayerSystem {
             r.2 = r.2.min(cx1);
             r.3 = r.3.min(cy1);
         }
-        if r.0 < r.2 && r.1 < r.3 { Some(r) } else { None }
+        if r.0 < r.2 && r.1 < r.3 {
+            Some(r)
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -292,12 +302,8 @@ impl LayerSystem {
         src_w: usize,
         src_h: usize,
     ) -> Option<(usize, usize, usize, usize, usize, usize)> {
-        let (x0, y0, mut x1, mut y1) = self.clipped_rect(
-            dx,
-            dy,
-            dx.saturating_add(w),
-            dy.saturating_add(h),
-        )?;
+        let (x0, y0, mut x1, mut y1) =
+            self.clipped_rect(dx, dy, dx.saturating_add(w), dy.saturating_add(h))?;
         let nsx = sx.saturating_add(x0 - dx);
         let nsy = sy.saturating_add(y0 - dy);
         if nsx >= src_w || nsy >= src_h {
@@ -317,8 +323,7 @@ impl LayerSystem {
         if src.len() < self.width * self.height {
             return;
         }
-        let (x0, y0, x1, y1) = self.clip
-            .unwrap_or((0, 0, self.width, self.height));
+        let (x0, y0, x1, y1) = self.clip.unwrap_or((0, 0, self.width, self.height));
         if x0 >= x1 || y0 >= y1 {
             return;
         }
@@ -348,9 +353,12 @@ impl LayerSystem {
         if src_width == 0 || src_height == 0 || src.len() < src_width * src_height {
             return;
         }
-        let Some((x0, y0, x1, y1)) =
-            self.clipped_rect(dx, dy, dx.saturating_add(src_width), dy.saturating_add(src_height))
-        else {
+        let Some((x0, y0, x1, y1)) = self.clipped_rect(
+            dx,
+            dy,
+            dx.saturating_add(src_width),
+            dy.saturating_add(src_height),
+        ) else {
             return;
         };
         self.mark_dirty_rect(x0, y0, x1, y1);
@@ -360,8 +368,7 @@ impl LayerSystem {
             let src_start = sy * src_width + sx0;
             let len = x1 - x0;
             let dst_start = y * self.width + x0;
-            self.buf[dst_start..dst_start + len]
-                .copy_from_slice(&src[src_start..src_start + len]);
+            self.buf[dst_start..dst_start + len].copy_from_slice(&src[src_start..src_start + len]);
         }
     }
 
@@ -404,7 +411,9 @@ impl LayerSystem {
             let y0 = y.max(cy0).min(self.height);
             let x1 = (x + w).min(cx1).min(stride);
             let y1 = (y + h).min(cy1).min(self.height);
-            if x0 >= x1 || y0 >= y1 { return; }
+            if x0 >= x1 || y0 >= y1 {
+                return;
+            }
             self.mark_dirty_rect(x0, y0, x1, y1);
             for yy in y0..y1 {
                 self.buf[yy * stride + x0..yy * stride + x1].fill(v);
@@ -414,7 +423,9 @@ impl LayerSystem {
             let y0 = y.min(self.height);
             let x1 = (x + w).min(stride);
             let y1 = (y + h).min(self.height);
-            if x0 >= x1 || y0 >= y1 { return; }
+            if x0 >= x1 || y0 >= y1 {
+                return;
+            }
             self.mark_dirty_rect(x0, y0, x1, y1);
             for yy in y0..y1 {
                 self.buf[yy * stride + x0..yy * stride + x1].fill(v);
@@ -455,18 +466,24 @@ impl LayerSystem {
 
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(w, w, w, w - cx6, t),
-                       Self::cubic_bezier(h / 2.0, h - ly + d1y, h - ly + d2y, h - cy3, t)));
+            pts.push((
+                Self::cubic_bezier(w, w, w, w - cx6, t),
+                Self::cubic_bezier(h / 2.0, h - ly + d1y, h - ly + d2y, h - cy3, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(w - cx6, w - cx5, w - cx4, w - cx3, t),
-                       Self::cubic_bezier(h - cy3, h - cy4, h - cy5, h - cy6, t)));
+            pts.push((
+                Self::cubic_bezier(w - cx6, w - cx5, w - cx4, w - cx3, t),
+                Self::cubic_bezier(h - cy3, h - cy4, h - cy5, h - cy6, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(w - cx3, w - lx + d2x, w - lx + d1x, w - lx, t),
-                       Self::cubic_bezier(h - cy6, h, h, h, t)));
+            pts.push((
+                Self::cubic_bezier(w - cx3, w - lx + d2x, w - lx + d1x, w - lx, t),
+                Self::cubic_bezier(h - cy6, h, h, h, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
@@ -474,18 +491,24 @@ impl LayerSystem {
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(lx, lx - d1x, lx - d2x, cx3, t),
-                       Self::cubic_bezier(h, h, h, h - cy6, t)));
+            pts.push((
+                Self::cubic_bezier(lx, lx - d1x, lx - d2x, cx3, t),
+                Self::cubic_bezier(h, h, h, h - cy6, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(cx3, cx4, cx5, cx6, t),
-                       Self::cubic_bezier(h - cy6, h - cy5, h - cy4, h - cy3, t)));
+            pts.push((
+                Self::cubic_bezier(cx3, cx4, cx5, cx6, t),
+                Self::cubic_bezier(h - cy6, h - cy5, h - cy4, h - cy3, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(cx6, 0.0, 0.0, 0.0, t),
-                       Self::cubic_bezier(h - cy3, h - ly + d2y, h - ly + d1y, h - ly, t)));
+            pts.push((
+                Self::cubic_bezier(cx6, 0.0, 0.0, 0.0, t),
+                Self::cubic_bezier(h - cy3, h - ly + d2y, h - ly + d1y, h - ly, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
@@ -493,18 +516,24 @@ impl LayerSystem {
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(0.0, 0.0, 0.0, cx6, t),
-                       Self::cubic_bezier(ly, ly - d1y, ly - d2y, cy3, t)));
+            pts.push((
+                Self::cubic_bezier(0.0, 0.0, 0.0, cx6, t),
+                Self::cubic_bezier(ly, ly - d1y, ly - d2y, cy3, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(cx6, cx5, cx4, cx3, t),
-                       Self::cubic_bezier(cy3, cy4, cy5, cy6, t)));
+            pts.push((
+                Self::cubic_bezier(cx6, cx5, cx4, cx3, t),
+                Self::cubic_bezier(cy3, cy4, cy5, cy6, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(cx3, lx - d2x, lx - d1x, lx, t),
-                       Self::cubic_bezier(cy6, 0.0, 0.0, 0.0, t)));
+            pts.push((
+                Self::cubic_bezier(cx3, lx - d2x, lx - d1x, lx, t),
+                Self::cubic_bezier(cy6, 0.0, 0.0, 0.0, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
@@ -512,18 +541,24 @@ impl LayerSystem {
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(w - lx, w - lx + d1x, w - lx + d2x, w - cx3, t),
-                       Self::cubic_bezier(0.0, 0.0, 0.0, cy6, t)));
+            pts.push((
+                Self::cubic_bezier(w - lx, w - lx + d1x, w - lx + d2x, w - cx3, t),
+                Self::cubic_bezier(0.0, 0.0, 0.0, cy6, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(w - cx3, w - cx4, w - cx5, w - cx6, t),
-                       Self::cubic_bezier(cy6, cy5, cy4, cy3, t)));
+            pts.push((
+                Self::cubic_bezier(w - cx3, w - cx4, w - cx5, w - cx6, t),
+                Self::cubic_bezier(cy6, cy5, cy4, cy3, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
-            pts.push((Self::cubic_bezier(w - cx6, w, w, w, t),
-                       Self::cubic_bezier(cy3, ly - d2y, ly - d1y, ly, t)));
+            pts.push((
+                Self::cubic_bezier(w - cx6, w, w, w, t),
+                Self::cubic_bezier(cy3, ly - d2y, ly - d1y, ly, t),
+            ));
         }
         for i in 0..segs {
             let t = i as f32 / segs as f32;
@@ -553,7 +588,9 @@ impl LayerSystem {
             && CH.load(Ordering::Relaxed) == hi
             && CR.load(Ordering::Relaxed) == ri
         {
-            unsafe { return &POLY; }
+            unsafe {
+                return &POLY;
+            }
         }
 
         let poly = Self::compute_squircle_polygon(w, h, r);
@@ -569,7 +606,9 @@ impl LayerSystem {
 
     pub fn point_in_polygon(px: f32, py: f32, poly: &[(f32, f32)]) -> bool {
         let n = poly.len();
-        if n < 3 { return false; }
+        if n < 3 {
+            return false;
+        }
         let mut inside = false;
         let mut j = n - 1;
         for i in 0..n {
@@ -586,7 +625,9 @@ impl LayerSystem {
     #[inline]
     fn squircle_row_bounds(poly: &[(f32, f32)], py: f32) -> Option<(f32, f32)> {
         let n = poly.len();
-        if n < 3 { return None; }
+        if n < 3 {
+            return None;
+        }
         let mut min_x = f32::MAX;
         let mut max_x = f32::MIN;
         let mut hits = 0usize;
@@ -596,13 +637,21 @@ impl LayerSystem {
             let (x1, y1) = poly[i];
             if (y0 > py) != (y1 > py) {
                 let x = x0 + (py - y0) * (x1 - x0) / (y1 - y0);
-                if x < min_x { min_x = x; }
-                if x > max_x { max_x = x; }
+                if x < min_x {
+                    min_x = x;
+                }
+                if x > max_x {
+                    max_x = x;
+                }
                 hits += 1;
             }
             j = i;
         }
-        if hits >= 2 { Some((min_x, max_x)) } else { None }
+        if hits >= 2 {
+            Some((min_x, max_x))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -613,7 +662,9 @@ impl LayerSystem {
     }
 
     pub fn blend_alpha(bg: u32, fg: u32, alpha: f32) -> u32 {
-        if alpha >= 1.0 { return fg; }
+        if alpha >= 1.0 {
+            return fg;
+        }
         let cr = ((fg >> 16) & 0xFF) as f32;
         let cg = ((fg >> 8) & 0xFF) as f32;
         let cb = (fg & 0xFF) as f32;
@@ -626,8 +677,18 @@ impl LayerSystem {
         Color::rgb(r as u8, g as u8, b as u8).0
     }
 
-    pub fn fill_rounded_rect(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color) {
-        if w == 0 || h == 0 { return; }
+    pub fn fill_rounded_rect(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        r: usize,
+        c: Color,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
         let r = r.min(w / 2).min(h / 2);
         if r == 0 {
             self.fill_rect(x, y, w, h, c);
@@ -649,16 +710,20 @@ impl LayerSystem {
         c: Color,
         poly: &[(f32, f32)],
     ) {
-        if w == 0 || h == 0 { return; }
+        if w == 0 || h == 0 {
+            return;
+        }
         let r = r.min(w / 2).min(h / 2);
         if r == 0 {
             self.fill_rect(x, y, w, h, c);
             return;
         }
         let v = c.0;
-        let Some((x0, y0, x1, y1)) = self.clipped_rect(
-            x, y, x.saturating_add(w), y.saturating_add(h),
-        ) else { return; };
+        let Some((x0, y0, x1, y1)) =
+            self.clipped_rect(x, y, x.saturating_add(w), y.saturating_add(h))
+        else {
+            return;
+        };
         let stride = self.width;
 
         self.mark_dirty_rect(x0, y0, x1, y1);
@@ -689,11 +754,25 @@ impl LayerSystem {
 
                 let edge_l = x + span_l.saturating_sub(1);
                 if edge_l >= x0 && edge_l < x1 {
-                    Self::pixel_aa(&mut self.buf[row + edge_l], v, edge_l as f32 - x0f, base_y, poly, &off);
+                    Self::pixel_aa(
+                        &mut self.buf[row + edge_l],
+                        v,
+                        edge_l as f32 - x0f,
+                        base_y,
+                        poly,
+                        &off,
+                    );
                 }
                 let edge_r = x + span_r;
                 if edge_r >= x0 && edge_r < x1 {
-                    Self::pixel_aa(&mut self.buf[row + edge_r], v, edge_r as f32 - x0f, base_y, poly, &off);
+                    Self::pixel_aa(
+                        &mut self.buf[row + edge_r],
+                        v,
+                        edge_r as f32 - x0f,
+                        base_y,
+                        poly,
+                        &off,
+                    );
                 }
             }
         }
@@ -715,7 +794,15 @@ impl LayerSystem {
         }
     }
 
-    fn pixel_aa_batch(dst: &mut [u32], fg: u32, px: [f32; 4], py: f32, poly: &[(f32, f32)], off: &[f32; 2], count: usize) {
+    fn pixel_aa_batch(
+        dst: &mut [u32],
+        fg: u32,
+        px: [f32; 4],
+        py: f32,
+        poly: &[(f32, f32)],
+        off: &[f32; 2],
+        count: usize,
+    ) {
         if count < 4 {
             for i in 0..count {
                 Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
@@ -724,7 +811,9 @@ impl LayerSystem {
         }
 
         let n = poly.len();
-        if n < 3 { return; }
+        if n < 3 {
+            return;
+        }
 
         #[cfg(target_arch = "x86_64")]
         unsafe {
@@ -771,14 +860,21 @@ impl LayerSystem {
     }
 
     pub fn fill_circle(&mut self, cx: usize, cy: usize, r: usize, c: Color) {
-        if r == 0 { return; }
+        if r == 0 {
+            return;
+        }
         let rf = r as f32;
         let cr = c.r() as f32;
         let cg = c.g() as f32;
         let cb = c.b() as f32;
         let Some((x0, y0, x1, y1)) = self.clipped_rect(
-            cx.saturating_sub(r), cy.saturating_sub(r), cx.saturating_add(r + 1), cy.saturating_add(r + 1),
-        ) else { return; };
+            cx.saturating_sub(r),
+            cy.saturating_sub(r),
+            cx.saturating_add(r + 1),
+            cy.saturating_add(r + 1),
+        ) else {
+            return;
+        };
         self.mark_dirty_rect(x0, y0, x1, y1);
         for py in y0..y1 {
             let row = py * self.width;
@@ -810,16 +906,36 @@ impl LayerSystem {
         }
     }
 
-    pub fn rounded_rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, r: usize, c: Color, fill: Color) {
-        if w == 0 || h == 0 { return; }
+    pub fn rounded_rect_outline(
+        &mut self,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        r: usize,
+        c: Color,
+        fill: Color,
+    ) {
+        if w == 0 || h == 0 {
+            return;
+        }
         let r = r.min(w / 2).min(h / 2);
         self.fill_rounded_rect(x, y, w, h, r, c);
         let inner_r = if r > 2 { r - 2 } else { 0 };
-        self.fill_rounded_rect(x + 2, y + 2, w.saturating_sub(4), h.saturating_sub(4), inner_r, fill);
+        self.fill_rounded_rect(
+            x + 2,
+            y + 2,
+            w.saturating_sub(4),
+            h.saturating_sub(4),
+            inner_r,
+            fill,
+        );
     }
 
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
-        if w == 0 || h == 0 { return; }
+        if w == 0 || h == 0 {
+            return;
+        }
         self.fill_rect(x, y, w, 1, c);
         self.fill_rect(x, y + h - 1, w, 1, c);
         self.fill_rect(x, y, 1, h, c);
@@ -861,9 +977,12 @@ impl LayerSystem {
     pub fn composit_rounded(
         &mut self,
         src: &LayerSystem,
-        dx: usize, dy: usize,
-        sx: usize, sy: usize,
-        w: usize, h: usize,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
         r: usize,
     ) {
         let shape_w = w;
@@ -876,9 +995,7 @@ impl LayerSystem {
         let sh = src.height;
         let dw = self.width;
         let dh = self.height;
-        let Some((dx, dy, sx, sy, w, h)) =
-            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
-        else {
+        let Some((dx, dy, sx, sy, w, h)) = self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh) else {
             return;
         };
         let shape_x = dx - original_dx;
@@ -889,7 +1006,9 @@ impl LayerSystem {
             for py in 0..h {
                 let src_y = sy + py;
                 let dst_y = dy + py;
-                if src_y >= sh || dst_y >= dh { continue; }
+                if src_y >= sh || dst_y >= dh {
+                    continue;
+                }
                 let src_row_start = src_y * sw + sx;
                 let dst_row_start = dst_y * dw + dx;
                 let copy_w = w.min(sw - sx).min(dw - dx);
@@ -928,7 +1047,9 @@ impl LayerSystem {
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
-            if src_y >= sh || dst_y >= dh { continue; }
+            if src_y >= sh || dst_y >= dh {
+                continue;
+            }
 
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
@@ -972,8 +1093,7 @@ impl LayerSystem {
             let off = [0.25f32, 0.75f32];
             let base_y = shape_py as f32;
             if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
-                let (shape_l, shape_r) =
-                    Self::pixel_span_from_bounds(left, right, shape_w);
+                let (shape_l, shape_r) = Self::pixel_span_from_bounds(left, right, shape_w);
                 let span_l = shape_l.saturating_sub(shape_x).min(end_x);
                 let span_r = shape_r.saturating_sub(shape_x).min(end_x);
 
@@ -1034,9 +1154,7 @@ impl LayerSystem {
         let dw = self.width;
         let dh = self.height;
 
-        let Some((dx, dy, sx, sy, w, h)) =
-            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
-        else {
+        let Some((dx, dy, sx, sy, w, h)) = self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh) else {
             return;
         };
         self.mark_dirty_rect(dx, dy, dx + w, dy + h);
@@ -1074,17 +1192,19 @@ impl LayerSystem {
     pub fn composit_rect(
         &mut self,
         src: &LayerSystem,
-        dx: usize, dy: usize,
-        sx: usize, sy: usize,
-        w: usize, h: usize,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
     ) {
         let sw = src.width;
         let sh = src.height;
         let dw = self.width;
         let dh = self.height;
 
-        let Some((dx, dy, sx, sy, copy_w, h)) =
-            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
+        let Some((dx, dy, sx, sy, copy_w, h)) = self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
         else {
             return;
         };
@@ -1093,7 +1213,9 @@ impl LayerSystem {
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
-            if src_y >= sh || dst_y >= dh { continue; }
+            if src_y >= sh || dst_y >= dh {
+                continue;
+            }
 
             let src_row_start = src_y * sw + sx;
             let dst_row_start = dst_y * dw + dx;
@@ -1131,13 +1253,18 @@ impl LayerSystem {
     pub fn composit_rect_opaque(
         &mut self,
         src: &LayerSystem,
-        dx: usize, dy: usize,
-        sx: usize, sy: usize,
-        w: usize, h: usize,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
     ) {
         let Some((dx, dy, sx, sy, copy_w, copy_h)) =
             self.clipped_blit(dx, dy, sx, sy, w, h, src.width, src.height)
-        else { return; };
+        else {
+            return;
+        };
         self.mark_dirty_rect(dx, dy, dx + copy_w, dy + copy_h);
         for row in 0..copy_h {
             unsafe {
@@ -1174,7 +1301,9 @@ impl LayerSystem {
         }
         let copy_w = w.min(src.width - sx).min(self.width - dx);
         let copy_h = h.min(src.height - sy);
-        if copy_w == 0 || copy_h == 0 { return; }
+        if copy_w == 0 || copy_h == 0 {
+            return;
+        }
         let fraction_255 = (fraction * 255.0) as u32;
         let inverse = 255 - fraction_255;
         let out_h = (copy_h + 1).min(self.height - dy);
@@ -1186,8 +1315,10 @@ impl LayerSystem {
                 for px in 0..copy_w {
                     let bg = self.buf[dst_row + px];
                     let fg = src.buf[src_row + px];
-                    let r = (((fg >> 16) & 0xff) * inverse + ((bg >> 16) & 0xff) * fraction_255) / 255;
-                    let g = (((fg >> 8) & 0xff) * inverse + ((bg >> 8) & 0xff) * fraction_255) / 255;
+                    let r =
+                        (((fg >> 16) & 0xff) * inverse + ((bg >> 16) & 0xff) * fraction_255) / 255;
+                    let g =
+                        (((fg >> 8) & 0xff) * inverse + ((bg >> 8) & 0xff) * fraction_255) / 255;
                     let b = ((fg & 0xff) * inverse + (bg & 0xff) * fraction_255) / 255;
                     self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
                 }
@@ -1197,7 +1328,8 @@ impl LayerSystem {
                 for px in 0..copy_w {
                     let a = src.buf[previous + px];
                     let b = src.buf[current + px];
-                    let r = (((a >> 16) & 0xff) * fraction_255 + ((b >> 16) & 0xff) * inverse) / 255;
+                    let r =
+                        (((a >> 16) & 0xff) * fraction_255 + ((b >> 16) & 0xff) * inverse) / 255;
                     let g = (((a >> 8) & 0xff) * fraction_255 + ((b >> 8) & 0xff) * inverse) / 255;
                     let blue = ((a & 0xff) * fraction_255 + (b & 0xff) * inverse) / 255;
                     self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | blue;
@@ -1207,8 +1339,10 @@ impl LayerSystem {
                 for px in 0..copy_w {
                     let bg = self.buf[dst_row + px];
                     let fg = src.buf[src_row + px];
-                    let r = (((fg >> 16) & 0xff) * fraction_255 + ((bg >> 16) & 0xff) * inverse) / 255;
-                    let g = (((fg >> 8) & 0xff) * fraction_255 + ((bg >> 8) & 0xff) * inverse) / 255;
+                    let r =
+                        (((fg >> 16) & 0xff) * fraction_255 + ((bg >> 16) & 0xff) * inverse) / 255;
+                    let g =
+                        (((fg >> 8) & 0xff) * fraction_255 + ((bg >> 8) & 0xff) * inverse) / 255;
                     let b = ((fg & 0xff) * fraction_255 + (bg & 0xff) * inverse) / 255;
                     self.buf[dst_row + px] = 0xff00_0000 | (r << 16) | (g << 8) | b;
                 }
@@ -1236,7 +1370,9 @@ impl LayerSystem {
             dy,
             dx.saturating_add(src_width),
             dy.saturating_add(src_height),
-        ) else { return; };
+        ) else {
+            return;
+        };
         self.mark_dirty_rect(x0, y0, x1, y1);
         let sx = x0 - dx;
         let copy_w = x1 - x0;
@@ -1281,34 +1417,34 @@ impl LayerSystem {
                     let db = vandq_u32(dp, mask);
                     #[inline(always)]
                     unsafe fn div255(v: uint32x4_t) -> uint32x4_t {
-                        vshrq_n_u32(vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)), 8)
+                        vshrq_n_u32(
+                            vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)),
+                            8,
+                        )
                     }
                     let r = div255(vaddq_u32(vmulq_u32(sr, va), vmulq_u32(dr, vi)));
                     let g = div255(vaddq_u32(vmulq_u32(sg, va), vmulq_u32(dg, vi)));
                     let b = div255(vaddq_u32(vmulq_u32(sb, va), vmulq_u32(db, vi)));
                     vst1q_u32(
                         self.buf.as_mut_ptr().add(dst_row + px),
-                        vorrq_u32(vdupq_n_u32(0xff00_0000), vorrq_u32(vshlq_n_u32(r, 16), vorrq_u32(vshlq_n_u32(g, 8), b))),
+                        vorrq_u32(
+                            vdupq_n_u32(0xff00_0000),
+                            vorrq_u32(vshlq_n_u32(r, 16), vorrq_u32(vshlq_n_u32(g, 8), b)),
+                        ),
                     );
                     px += 4;
                 }
                 for px in px..copy_w {
-                    self.buf[dst_row + px] = blend_u32(
-                        self.buf[dst_row + px],
-                        src[src_row + px],
-                        alpha as u32,
-                    );
+                    self.buf[dst_row + px] =
+                        blend_u32(self.buf[dst_row + px], src[src_row + px], alpha as u32);
                 }
                 continue;
             }
 
             #[allow(unreachable_code)]
             for px in 0..copy_w {
-                self.buf[dst_row + px] = blend_u32(
-                    self.buf[dst_row + px],
-                    src[src_row + px],
-                    alpha as u32,
-                );
+                self.buf[dst_row + px] =
+                    blend_u32(self.buf[dst_row + px], src[src_row + px], alpha as u32);
             }
         }
     }
@@ -1316,18 +1452,19 @@ impl LayerSystem {
     pub fn composit_rect_alpha(
         &mut self,
         src: &LayerSystem,
-        dx: usize, dy: usize,
-        sx: usize, sy: usize,
-        w: usize, h: usize,
+        dx: usize,
+        dy: usize,
+        sx: usize,
+        sy: usize,
+        w: usize,
+        h: usize,
     ) {
         let sw = src.width;
         let sh = src.height;
         let dw = self.width;
         let dh = self.height;
 
-        let Some((dx, dy, sx, sy, w, h)) =
-            self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh)
-        else {
+        let Some((dx, dy, sx, sy, w, h)) = self.clipped_blit(dx, dy, sx, sy, w, h, sw, sh) else {
             return;
         };
         self.mark_dirty_rect(dx, dy, dx + w, dy + h);
@@ -1349,7 +1486,9 @@ impl LayerSystem {
         for py in 0..h {
             let src_y = sy + py;
             let dst_y = dy + py;
-            if src_y >= sh || dst_y >= dh { continue; }
+            if src_y >= sh || dst_y >= dh {
+                continue;
+            }
 
             let src_row = src_y * sw + sx;
             let dst_row = dst_y * dw + dx;
@@ -1388,7 +1527,10 @@ impl LayerSystem {
 
                     #[inline(always)]
                     unsafe fn div255(v: uint32x4_t) -> uint32x4_t {
-                        vshrq_n_u32(vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)), 8)
+                        vshrq_n_u32(
+                            vaddq_u32(vaddq_u32(v, vdupq_n_u32(1)), vshrq_n_u32(v, 8)),
+                            8,
+                        )
                     }
                     let r = div255(vaddq_u32(vmulq_u32(sr, a), vmulq_u32(dr, inv)));
                     let g = div255(vaddq_u32(vmulq_u32(sg, a), vmulq_u32(dg, inv)));
@@ -1404,7 +1546,9 @@ impl LayerSystem {
                 for px in px..max_px {
                     let sp = src.buf[src_row + px];
                     let src_a = ((sp >> 24) & 0xFF) as u32;
-                    if src_a == 0 { continue; }
+                    if src_a == 0 {
+                        continue;
+                    }
                     if src_a >= 255 {
                         self.buf[dst_row + px] = sp;
                     } else {
@@ -1428,7 +1572,9 @@ impl LayerSystem {
             for px in 0..max_px {
                 let sp = src.buf[src_row + px];
                 let src_a = ((sp >> 24) & 0xFF) as u32;
-                if src_a == 0 { continue; }
+                if src_a == 0 {
+                    continue;
+                }
                 if src_a >= 255 {
                     self.buf[dst_row + px] = sp;
                 } else {
@@ -1449,7 +1595,13 @@ impl LayerSystem {
         }
     }
 
-    pub fn frame_count(&self) -> u64 { self.frame_count }
-    pub fn width(&self) -> usize { self.width }
-    pub fn height(&self) -> usize { self.height }
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count
+    }
+    pub fn width(&self) -> usize {
+        self.width
+    }
+    pub fn height(&self) -> usize {
+        self.height
+    }
 }

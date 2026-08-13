@@ -2,12 +2,12 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use alloc::string::{String, ToString};
-use crate::elf::{ElfFile, PT_LOAD, PT_INTERP, PT_DYNAMIC, PT_TLS};
-use crate::vmm::{VirtualMemoryManager, PAGE_SIZE};
 use crate::dyld::DynamicLinker;
-use crate::process::{Process, ProcessState, ProcessPriority, CpuContext};
+use crate::elf::{ElfFile, PT_DYNAMIC, PT_INTERP, PT_LOAD, PT_TLS};
+use crate::process::{CpuContext, Process, ProcessPriority, ProcessState};
+use crate::vmm::{VirtualMemoryManager, PAGE_SIZE};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 pub const USER_SPACE_START: usize = 0x0000_0000_0001_0000;
 pub const USER_SPACE_END: usize = 0x0000_7FFF_FFFF_F000;
@@ -39,7 +39,11 @@ impl ProcessLoader {
         }
     }
 
-    pub fn load_executable(&mut self, path: &str, vmm: &mut VirtualMemoryManager) -> Result<(Process, LoadInfo), LoadError> {
+    pub fn load_executable(
+        &mut self,
+        path: &str,
+        vmm: &mut VirtualMemoryManager,
+    ) -> Result<(Process, LoadInfo), LoadError> {
         let data = self.read_file(path)?;
         let elf = ElfFile::parse(data).ok_or(LoadError::InvalidElf)?;
 
@@ -81,7 +85,8 @@ impl ProcessLoader {
         load_info.program_break = heap + USER_HEAP_SIZE;
 
         if load_info.entry_point == 0 && !load_info.interp_path.is_empty() {
-            load_info.entry_point = self.load_interp_executable(&load_info.interp_path, vmm, ttbr)?;
+            load_info.entry_point =
+                self.load_interp_executable(&load_info.interp_path, vmm, ttbr)?;
         }
 
         let mut process = Process::new(pid, path, ProcessPriority::Normal);
@@ -130,8 +135,14 @@ impl ProcessLoader {
         Ok((process, load_info))
     }
 
-    pub fn load_shared_library(&mut self, path: &str, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<usize, LoadError> {
-        self.dynamic_linker.load_library(path, vmm, ttbr)
+    pub fn load_shared_library(
+        &mut self,
+        path: &str,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<usize, LoadError> {
+        self.dynamic_linker
+            .load_library(path, vmm, ttbr)
             .map_err(|_| LoadError::LibraryLoadFailed)
     }
 
@@ -147,7 +158,13 @@ impl ProcessLoader {
         &mut self.dynamic_linker
     }
 
-    fn load_segments(&self, elf: &ElfFile, _load_info: &mut LoadInfo, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<(), LoadError> {
+    fn load_segments(
+        &self,
+        elf: &ElfFile,
+        _load_info: &mut LoadInfo,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<(), LoadError> {
         for ph in &elf.program_headers {
             if ph.p_type != PT_LOAD {
                 continue;
@@ -208,8 +225,8 @@ impl ProcessLoader {
                 let offset = ph.offset();
                 let size = ph.file_size();
                 if offset + size <= elf.data.len() {
-                    let interp = core::str::from_utf8(&elf.data[offset..offset + size])
-                        .unwrap_or("");
+                    let interp =
+                        core::str::from_utf8(&elf.data[offset..offset + size]).unwrap_or("");
                     load_info.interp_path = interp.trim_end_matches('\0').to_string();
                 }
                 break;
@@ -240,7 +257,11 @@ impl ProcessLoader {
         Ok(())
     }
 
-    fn create_user_stack(&self, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<usize, LoadError> {
+    fn create_user_stack(
+        &self,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<usize, LoadError> {
         let stack_addr = USER_SPACE_END - USER_STACK_SIZE;
 
         for i in 0..(USER_STACK_SIZE / PAGE_SIZE) {
@@ -256,7 +277,11 @@ impl ProcessLoader {
         Ok(stack_addr)
     }
 
-    fn create_user_heap(&self, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<usize, LoadError> {
+    fn create_user_heap(
+        &self,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<usize, LoadError> {
         let heap_addr = 0x0000_0040_0000_0000;
 
         for i in 0..(USER_HEAP_SIZE / PAGE_SIZE) {
@@ -272,7 +297,12 @@ impl ProcessLoader {
         Ok(heap_addr)
     }
 
-    fn load_interp_executable(&mut self, interp_path: &str, vmm: &mut VirtualMemoryManager, ttbr: usize) -> Result<usize, LoadError> {
+    fn load_interp_executable(
+        &mut self,
+        interp_path: &str,
+        vmm: &mut VirtualMemoryManager,
+        ttbr: usize,
+    ) -> Result<usize, LoadError> {
         let data = self.read_file(interp_path)?;
         let elf = ElfFile::parse(data).ok_or(LoadError::InvalidElf)?;
 
@@ -280,29 +310,31 @@ impl ProcessLoader {
             return Err(LoadError::InvalidElfType);
         }
 
-        self.load_segments(&elf, &mut LoadInfo {
-            entry_point: 0,
-            stack_pointer: 0,
-            program_break: 0,
-            tls_addr: 0,
-            tls_size: 0,
-            interp_path: String::new(),
-            dynamic_addr: 0,
-            dynamic_size: 0,
-        }, vmm, ttbr)?;
+        self.load_segments(
+            &elf,
+            &mut LoadInfo {
+                entry_point: 0,
+                stack_pointer: 0,
+                program_break: 0,
+                tls_addr: 0,
+                tls_size: 0,
+                interp_path: String::new(),
+                dynamic_addr: 0,
+                dynamic_size: 0,
+            },
+            vmm,
+            ttbr,
+        )?;
 
         Ok(elf.header.e_entry as usize)
     }
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>, LoadError> {
-        let data = crate::loader::read_file(path)
-            .ok_or(LoadError::FileNotFound)?;
+        let data = crate::loader::read_file(path).ok_or(LoadError::FileNotFound)?;
         Ok(data)
     }
 
     fn allocate_physical_page(&self) -> usize {
-        
-
         let layout = core::alloc::Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
         unsafe {
             let ptr = alloc::alloc::alloc_zeroed(layout);

@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use baram_bsd::config;
-use baram_core::LayerSystem;
 use baram_core::Color;
+use baram_core::LayerSystem;
 
 const SCROLL_ANIMATION_NS: u64 = 180_000_000;
 const WINDOW_OPEN_DURATION_NS: u64 = 400_000_000;
@@ -25,7 +25,13 @@ pub struct SmoothScroll {
 
 impl SmoothScroll {
     pub const fn new() -> Self {
-        Self { position: 0, target: 0, start: 0, started_ns: None, max: 0 }
+        Self {
+            position: 0,
+            target: 0,
+            start: 0,
+            started_ns: None,
+            max: 0,
+        }
     }
 
     pub fn reset(&mut self) {
@@ -62,19 +68,31 @@ impl SmoothScroll {
             self.started_ns = None;
             return false;
         }
-        let started = *self.started_ns.get_or_insert(now_ns.saturating_sub(1_000_000));
+        let started = *self
+            .started_ns
+            .get_or_insert(now_ns.saturating_sub(1_000_000));
         let elapsed = now_ns.saturating_sub(started);
         let t = (elapsed as f32 / SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
         let eased = decelerate_scroll(t);
         let distance = self.target - self.start;
-        let next = if t >= 1.0 { self.target } else { self.start + (distance as f32 * eased) as i32 };
-        if next == self.position { return false; }
+        let next = if t >= 1.0 {
+            self.target
+        } else {
+            self.start + (distance as f32 * eased) as i32
+        };
+        if next == self.position {
+            return false;
+        }
         self.position = next;
-        if t >= 1.0 { self.started_ns = None; }
+        if t >= 1.0 {
+            self.started_ns = None;
+        }
         true
     }
 
-    pub fn is_animating(&self) -> bool { self.position != self.target }
+    pub fn is_animating(&self) -> bool {
+        self.position != self.target
+    }
 }
 
 pub fn title_bar_h() -> usize {
@@ -136,15 +154,7 @@ impl RoundedShadow {
         let draw_w = self.layer.width().saturating_sub(src_x);
         let draw_h = self.layer.height().saturating_sub(src_y);
         if draw_w > 0 && draw_h > 0 {
-            dst.composit_shadow_alpha(
-                &self.layer,
-                dst_x,
-                dst_y,
-                src_x,
-                src_y,
-                draw_w,
-                draw_h,
-            );
+            dst.composit_shadow_alpha(&self.layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h);
         }
     }
 }
@@ -176,7 +186,9 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
     let job = &jobs[index];
     let layer = unsafe { &mut *job.layer };
     let (x0, y0, x1, y1) = job.damage.unwrap_or((0, 0, job.width, job.height));
-    if x1 <= x0 || y1 <= y0 { return; }
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
     for row in y0..y1 {
         let start = row * job.width + x0;
         let end = row * job.width + x1;
@@ -191,14 +203,28 @@ fn redraw_window_base(jobs: &Vec<WindowBaseRedraw>, index: usize) {
         layer.fill_rect(0, 0, job.width, job.height, job.body_bg);
     } else {
         let polygon = unsafe { core::slice::from_raw_parts(job.polygon, job.polygon_len) };
-        layer.fill_rounded_rect_with_polygon(0, 0, job.width, job.height, job.radius, job.body_bg, polygon);
+        layer.fill_rounded_rect_with_polygon(
+            0,
+            0,
+            job.width,
+            job.height,
+            job.radius,
+            job.body_bg,
+            polygon,
+        );
     }
 }
 
 /// Build a separate progressive-blur layer from the title bar's top 40px.
 /// The upper 12px is a fixed 16px blur; below it, neighbouring integer blur
 /// radii are crossfaded so the 16px-to-0px falloff has no visible seams.
-fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+fn draw_title_bar_blur_layer(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) {
     if width == 0 || height == 0 {
         return;
     }
@@ -238,14 +264,7 @@ fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width:
     for radius in 1..=BLUR_RADIUS {
         // Preserve every radius step.  For the wider (box-blurred) steps the
         // title bar uses one H→V sweep rather than the normal two sweeps.
-        blur::blur_region_to_single_box(
-            &backdrop,
-            &mut blurred,
-            width,
-            0,
-            sample_h,
-            radius as i32,
-        );
+        blur::blur_region_to_single_box(&backdrop, &mut blurred, width, 0, sample_h, radius as i32);
         for row in 0..height {
             let scaled_radius = if row < FIXED_BLUR_HEIGHT {
                 (BLUR_RADIUS * 256) as u32
@@ -261,12 +280,22 @@ fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width:
             let source_row = row * width;
             if radius == lower_radius && lower_radius != 0 {
                 blur_layer.composit_rect_global_alpha(
-                    &blurred[source_row..source_row + width], width, 1, 0, row, 255,
+                    &blurred[source_row..source_row + width],
+                    width,
+                    1,
+                    0,
+                    row,
+                    255,
                 );
             }
             if radius == upper_radius && upper_radius != lower_radius {
                 blur_layer.composit_rect_global_alpha(
-                    &blurred[source_row..source_row + width], width, 1, 0, row, upper_alpha,
+                    &blurred[source_row..source_row + width],
+                    width,
+                    1,
+                    0,
+                    row,
+                    upper_alpha,
                 );
             }
         }
@@ -275,7 +304,13 @@ fn draw_title_bar_blur_layer(layer: &mut LayerSystem, x: usize, y: usize, width:
 }
 
 /// Overlay the white transparency gradient after the independent blur layer.
-fn draw_title_bar_overlay(layer: &mut LayerSystem, x: usize, y: usize, width: usize, height: usize) {
+fn draw_title_bar_overlay(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+) {
     if width == 0 || height == 0 {
         return;
     }
@@ -518,7 +553,9 @@ impl Window {
         }
         // Give a newly queued scroll its first 1 ms sample immediately. This
         // avoids a visually stationary first frame under bursty input.
-        let started = *self.scroll_started_ns.get_or_insert(now_ns.saturating_sub(1_000_000));
+        let started = *self
+            .scroll_started_ns
+            .get_or_insert(now_ns.saturating_sub(1_000_000));
         let elapsed = now_ns.saturating_sub(started);
         let t = (elapsed as f32 / SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
         let eased = decelerate_scroll(t);
@@ -634,13 +671,21 @@ impl Window {
 /// CSS `cubic-bezier(0, 0, 0, 1)`. Since both x control points are zero,
 /// x(s) = s^3; a short binary solve is sufficient for the 1 ms UI clock.
 fn decelerate_scroll(t: f32) -> f32 {
-    if t <= 0.0 { return 0.0; }
-    if t >= 1.0 { return 1.0; }
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= 1.0 {
+        return 1.0;
+    }
     let mut low = 0.0f32;
     let mut high = 1.0f32;
     for _ in 0..10 {
         let s = (low + high) * 0.5;
-        if s * s * s < t { low = s; } else { high = s; }
+        if s * s * s < t {
+            low = s;
+        } else {
+            high = s;
+        }
     }
     let s = (low + high) * 0.5;
     s * s * (3.0 - 2.0 * s)
@@ -701,7 +746,13 @@ impl WindowManager {
         id
     }
 
-    pub fn configure_special(&mut self, id: WinId, chrome_visible: bool, always_on_top: bool, focusable: bool) {
+    pub fn configure_special(
+        &mut self,
+        id: WinId,
+        chrome_visible: bool,
+        always_on_top: bool,
+        focusable: bool,
+    ) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.chrome_visible = chrome_visible;
             w.always_on_top = always_on_top;
@@ -710,15 +761,21 @@ impl WindowManager {
             w.shadow_dirty = true;
         }
         if !focusable && self.focused_id == Some(id) {
-            if let Some(next) = self.windows.iter()
+            if let Some(next) = self
+                .windows
+                .iter()
                 .filter(|w| w.focusable && w.visible && !w.minimized && w.id != id)
-                .max_by_key(|w| w.z).map(|w| w.id) {
+                .max_by_key(|w| w.z)
+                .map(|w| w.id)
+            {
                 self.focus(next);
             }
         }
         if always_on_top {
             self.next_z += 1;
-            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) { w.z = self.next_z; }
+            if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                w.z = self.next_z;
+            }
         }
     }
 
@@ -751,7 +808,10 @@ impl WindowManager {
     }
 
     pub fn is_focusable(&self, id: WinId) -> bool {
-        self.windows.iter().find(|w| w.id == id).map_or(true, |w| w.focusable)
+        self.windows
+            .iter()
+            .find(|w| w.id == id)
+            .map_or(true, |w| w.focusable)
     }
 
     pub fn get_icon_name(&self, id: WinId) -> &str {
@@ -799,7 +859,12 @@ impl WindowManager {
     }
 
     pub fn focus(&mut self, id: WinId) {
-        if self.windows.iter().find(|w| w.id == id).map_or(false, |w| !w.focusable) {
+        if self
+            .windows
+            .iter()
+            .find(|w| w.id == id)
+            .map_or(false, |w| !w.focusable)
+        {
             return;
         }
         if self.interaction_blocked == Some(id) {
@@ -871,12 +936,15 @@ impl WindowManager {
     }
 
     pub fn is_scroll_animating(&self, id: WinId) -> bool {
-        self.windows.iter().find(|window| window.id == id)
+        self.windows
+            .iter()
+            .find(|window| window.id == id)
             .map_or(false, |window| window.scroll_y != window.scroll_target_y)
     }
 
     pub fn has_scroll_animation(&self) -> bool {
-        self.windows.iter()
+        self.windows
+            .iter()
             .any(|window| window.scroll_y != window.scroll_target_y)
     }
 
@@ -911,9 +979,14 @@ impl WindowManager {
 
     pub fn on_mouse_down(&mut self, px: i32, py: i32) -> Option<char> {
         if let Some(id) = self.window_at(px, py) {
-                    if self.windows.iter().find(|w| w.id == id).map_or(true, |w| w.focusable) {
-                        self.focus(id);
-                    }
+            if self
+                .windows
+                .iter()
+                .find(|w| w.id == id)
+                .map_or(true, |w| w.focusable)
+            {
+                self.focus(id);
+            }
             let btn = {
                 let win = self.windows.iter().find(|w| w.id == id).unwrap();
                 win.button_hit(px, py)
@@ -1039,7 +1112,9 @@ impl WindowManager {
         const MAX_WINDOWS: usize = 16;
         let top_z = self.windows.iter().map(|w| w.z).max().unwrap_or(0) + 1;
         for w in &mut self.windows {
-            if w.always_on_top { w.z = top_z; }
+            if w.always_on_top {
+                w.z = top_z;
+            }
         }
         let sort_n = n.min(MAX_WINDOWS);
         let mut indices = [0usize; MAX_WINDOWS];
@@ -1091,8 +1166,11 @@ impl WindowManager {
         let mut redraw_polygons: Vec<Vec<(f32, f32)>> = Vec::new();
         for i in 0..sort_n {
             let w = &self.windows[indices[i]];
-            if w.visible && (!w.minimized || w.is_motion_animating()) && w.content_dirty
-                && w.content_damage.is_none() && !w.maximized
+            if w.visible
+                && (!w.minimized || w.is_motion_animating())
+                && w.content_dirty
+                && w.content_damage.is_none()
+                && !w.maximized
             {
                 redraw_polygons.push(LayerSystem::squircle_polygon(
                     w.w as f32,
@@ -1105,7 +1183,9 @@ impl WindowManager {
         let mut redraw_jobs: Vec<WindowBaseRedraw> = Vec::new();
         for i in 0..sort_n {
             let w = &mut self.windows[indices[i]];
-            if !w.visible || (w.minimized && !w.is_motion_animating()) || !w.content_dirty { continue; }
+            if !w.visible || (w.minimized && !w.is_motion_animating()) || !w.content_dirty {
+                continue;
+            }
             let (polygon, polygon_len) = if w.content_damage.is_none() && !w.maximized {
                 let poly = &redraw_polygons[polygon_index];
                 polygon_index += 1;
@@ -1196,8 +1276,16 @@ impl WindowManager {
                         let shadow_x = wx - shadow_pad() as i32;
                         let shadow_y = wy - shadow_pad() as i32;
 
-                        let src_x = if shadow_x < 0 { (-shadow_x) as usize } else { 0 };
-                        let src_y = if shadow_y < 0 { (-shadow_y) as usize } else { 0 };
+                        let src_x = if shadow_x < 0 {
+                            (-shadow_x) as usize
+                        } else {
+                            0
+                        };
+                        let src_y = if shadow_y < 0 {
+                            (-shadow_y) as usize
+                        } else {
+                            0
+                        };
                         let dst_x = shadow_x.max(0) as usize;
                         let dst_y = shadow_y.max(0) as usize;
                         let draw_w = (shadow_size as i32 - src_x as i32).max(0) as usize;
@@ -1205,13 +1293,7 @@ impl WindowManager {
 
                         if draw_w > 0 && draw_h > 0 {
                             layer.composit_shadow_alpha(
-                                shadow_ref,
-                                dst_x,
-                                dst_y,
-                                src_x,
-                                src_y,
-                                draw_w,
-                                draw_h,
+                                shadow_ref, dst_x, dst_y, src_x, src_y, draw_w, draw_h,
                             );
                         }
                     }
@@ -1219,7 +1301,11 @@ impl WindowManager {
             }
 
             if content_dirty {
-                let chrome_h = if self.windows[idx].chrome_visible { title_bar_h() } else { 0 };
+                let chrome_h = if self.windows[idx].chrome_visible {
+                    title_bar_h()
+                } else {
+                    0
+                };
                 let skip_title_blur = self.windows[idx].is_motion_animating()
                     || html_engines
                         .iter()
@@ -1314,7 +1400,9 @@ impl WindowManager {
             }
 
             if is_max {
-                layer.composit_rect(
+                layer.composit_rect(win_layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h);
+            } else {
+                layer.composit_rounded(
                     win_layer,
                     dst_x,
                     dst_y,
@@ -1322,9 +1410,8 @@ impl WindowManager {
                     src_y,
                     draw_w,
                     draw_h,
+                    win_radius(),
                 );
-            } else {
-                layer.composit_rounded(win_layer, dst_x, dst_y, src_x, src_y, draw_w, draw_h, win_radius());
                 draw_window_border(layer, &self.windows[idx]);
             }
             self.windows[idx].prev_x = self.windows[idx].x;
@@ -1361,9 +1448,16 @@ impl WindowManager {
                 x1.max(0).min(w.w as i32) as usize,
                 y1.max(0).min(w.h as i32) as usize,
             );
-            if next.0 >= next.2 || next.1 >= next.3 { return; }
+            if next.0 >= next.2 || next.1 >= next.3 {
+                return;
+            }
             w.content_damage = Some(match w.content_damage {
-                Some(old) => (old.0.min(next.0), old.1.min(next.1), old.2.max(next.2), old.3.max(next.3)),
+                Some(old) => (
+                    old.0.min(next.0),
+                    old.1.min(next.1),
+                    old.2.max(next.2),
+                    old.3.max(next.3),
+                ),
                 None => next,
             });
             w.content_dirty = true;
@@ -1535,8 +1629,11 @@ impl WindowManager {
                 continue;
             }
             let local_damage = w.content_damage.filter(|_| {
-                w.content_dirty && !w.shadow_dirty && !w.is_motion_animating()
-                    && w.x == w.prev_x && w.render_y() == w.prev_render_y()
+                w.content_dirty
+                    && !w.shadow_dirty
+                    && !w.is_motion_animating()
+                    && w.x == w.prev_x
+                    && w.render_y() == w.prev_render_y()
             });
             let (x0, y0, x1, y1) = if let Some((dx0, dy0, dx1, dy1)) = local_damage {
                 // Hover-only changes must not force the compositor to redraw
@@ -1552,9 +1649,11 @@ impl WindowManager {
                     (w.x.min(w.prev_x) - shadow_pad).max(0) as usize,
                     (w.render_y().min(w.prev_render_y()) - shadow_pad).max(0) as usize,
                     (w.x.max(w.prev_x) + w.w.max(w.prev_w) as i32 + shadow_pad)
-                        .min(sw as i32).max(0) as usize,
+                        .min(sw as i32)
+                        .max(0) as usize,
                     (w.render_y().max(w.prev_render_y()) + w.h.max(w.prev_h) as i32 + shadow_pad)
-                        .min(sh as i32).max(0) as usize,
+                        .min(sh as i32)
+                        .max(0) as usize,
                 )
             };
             if x0 < min_x {
@@ -1620,7 +1719,15 @@ fn compute_rounded_shadow_alpha(
     let right = left + width;
     let bottom = top + height;
     let radius = r as usize;
-    let mask = ShadowMaskPass { alpha: alpha.as_mut_ptr(), stride: sw, left, right, top, bottom, radius };
+    let mask = ShadowMaskPass {
+        alpha: alpha.as_mut_ptr(),
+        stride: sw,
+        left,
+        right,
+        top,
+        bottom,
+        radius,
+    };
     baram_core::parallel::for_each(height, &mask, fill_shadow_mask_row);
     let box_radius = (blur_r.max(1) as usize / 2).max(1);
     for _ in 0..2 {
@@ -1644,20 +1751,39 @@ unsafe impl Sync for ShadowMaskPass {}
 
 fn fill_shadow_mask_row(pass: &ShadowMaskPass, local_y: usize) {
     let py = pass.top + local_y;
-    if py >= pass.bottom { return; }
+    if py >= pass.bottom {
+        return;
+    }
     let r = pass.radius as i32;
     for px in pass.left..pass.right {
-        let dx = if px < pass.left + pass.radius { pass.left as i32 + r - px as i32 }
-            else if px >= pass.right - pass.radius { px as i32 - (pass.right as i32 - r - 1) } else { 0 };
-        let dy = if py < pass.top + pass.radius { pass.top as i32 + r - py as i32 }
-            else if py >= pass.bottom - pass.radius { py as i32 - (pass.bottom as i32 - r - 1) } else { 0 };
+        let dx = if px < pass.left + pass.radius {
+            pass.left as i32 + r - px as i32
+        } else if px >= pass.right - pass.radius {
+            px as i32 - (pass.right as i32 - r - 1)
+        } else {
+            0
+        };
+        let dy = if py < pass.top + pass.radius {
+            pass.top as i32 + r - py as i32
+        } else if py >= pass.bottom - pass.radius {
+            py as i32 - (pass.bottom as i32 - r - 1)
+        } else {
+            0
+        };
         if dx == 0 || dy == 0 || dx * dx + dy * dy <= r * r {
-            unsafe { *pass.alpha.add(py * pass.stride + px) = 45; }
+            unsafe {
+                *pass.alpha.add(py * pass.stride + px) = 45;
+            }
         }
     }
 }
 
-struct ShadowHorizontalPass { src: *const u8, dst: *mut u8, width: usize, radius: usize }
+struct ShadowHorizontalPass {
+    src: *const u8,
+    dst: *mut u8,
+    width: usize,
+    radius: usize,
+}
 unsafe impl Sync for ShadowHorizontalPass {}
 
 fn blur_shadow_row(pass: &ShadowHorizontalPass, y: usize) {
@@ -1665,7 +1791,9 @@ fn blur_shadow_row(pass: &ShadowHorizontalPass, y: usize) {
     let mut sum = 0u32;
     for x in 0..pass.width + pass.radius {
         unsafe {
-            if x < pass.width { sum += *pass.src.add(y * pass.width + x) as u32; }
+            if x < pass.width {
+                sum += *pass.src.add(y * pass.width + x) as u32;
+            }
             if x >= diameter && x - diameter < pass.width {
                 sum -= *pass.src.add(y * pass.width + x - diameter) as u32;
             }
@@ -1676,7 +1804,13 @@ fn blur_shadow_row(pass: &ShadowHorizontalPass, y: usize) {
     }
 }
 
-struct ShadowVerticalPass { src: *const u8, dst: *mut u8, width: usize, height: usize, radius: usize }
+struct ShadowVerticalPass {
+    src: *const u8,
+    dst: *mut u8,
+    width: usize,
+    height: usize,
+    radius: usize,
+}
 unsafe impl Sync for ShadowVerticalPass {}
 
 fn blur_shadow_column(pass: &ShadowVerticalPass, x: usize) {
@@ -1684,7 +1818,9 @@ fn blur_shadow_column(pass: &ShadowVerticalPass, x: usize) {
     let mut sum = 0u32;
     for y in 0..pass.height + pass.radius {
         unsafe {
-            if y < pass.height { sum += *pass.src.add(y * pass.width + x) as u32; }
+            if y < pass.height {
+                sum += *pass.src.add(y * pass.width + x) as u32;
+            }
             if y >= diameter && y - diameter < pass.height {
                 sum -= *pass.src.add((y - diameter) * pass.width + x) as u32;
             }
@@ -1697,19 +1833,24 @@ fn blur_shadow_column(pass: &ShadowVerticalPass, x: usize) {
 
 fn box_blur_shadow(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     let mut tmp = alloc::vec![0u8; alpha.len()];
-    let horizontal = ShadowHorizontalPass { src: alpha.as_ptr(), dst: tmp.as_mut_ptr(), width, radius };
+    let horizontal = ShadowHorizontalPass {
+        src: alpha.as_ptr(),
+        dst: tmp.as_mut_ptr(),
+        width,
+        radius,
+    };
     baram_core::parallel::for_each(height, &horizontal, blur_shadow_row);
-    let vertical = ShadowVerticalPass { src: tmp.as_ptr(), dst: alpha.as_mut_ptr(), width, height, radius };
+    let vertical = ShadowVerticalPass {
+        src: tmp.as_ptr(),
+        dst: alpha.as_mut_ptr(),
+        width,
+        height,
+        radius,
+    };
     baram_core::parallel::for_each(width, &vertical, blur_shadow_column);
 }
 
-fn draw_title_bar(
-    layer: &mut LayerSystem,
-    w: &Window,
-    ox: i32,
-    oy: i32,
-    skip_blur: bool,
-) {
+fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32, skip_blur: bool) {
     let x = ox.max(0) as usize;
     let y = oy.max(0) as usize;
     let sw = layer.width();
@@ -1725,7 +1866,13 @@ fn draw_title_bar(
         return;
     }
     if !w.chrome_visible {
-        layer.fill_rect(x, y, w_draw, h_draw, config::get_color("ui-theme/color/win_bg", Color::WIN_BG));
+        layer.fill_rect(
+            x,
+            y,
+            w_draw,
+            h_draw,
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        );
         return;
     }
 
@@ -1840,15 +1987,8 @@ fn draw_settings_permission_overlay(layer: &mut LayerSystem, width: usize, heigh
         for x in 0..width.min(buffer_width) {
             let index = row + x;
             let color = Color(buffer[index]);
-            let blend = |channel: u8| {
-                ((channel as u32 * 70 + 255 * 185) / 255) as u8
-            };
-            buffer[index] = Color::rgb(
-                blend(color.r()),
-                blend(color.g()),
-                blend(color.b()),
-            )
-            .0;
+            let blend = |channel: u8| ((channel as u32 * 70 + 255 * 185) / 255) as u8;
+            buffer[index] = Color::rgb(blend(color.r()), blend(color.g()), blend(color.b())).0;
         }
     }
 
@@ -1861,18 +2001,21 @@ fn draw_settings_permission_overlay(layer: &mut LayerSystem, width: usize, heigh
     let content_height = height.saturating_sub(content_top);
     let start_y = content_top + content_height.saturating_sub(block_height) / 2;
     for (line_index, text) in lines.iter().enumerate() {
-        let text_width = text.chars().map(|ch| {
-            if baram_font::ttf_font::is_available() {
-                let glyph = baram_font::ttf_font::glyph(ch);
-                if glyph.w > 0 {
-                    glyph.advance.max(0) as usize
+        let text_width = text
+            .chars()
+            .map(|ch| {
+                if baram_font::ttf_font::is_available() {
+                    let glyph = baram_font::ttf_font::glyph(ch);
+                    if glyph.w > 0 {
+                        glyph.advance.max(0) as usize
+                    } else {
+                        8
+                    }
                 } else {
                     8
                 }
-            } else {
-                8
-            }
-        }).sum::<usize>();
+            })
+            .sum::<usize>();
         let x = width.saturating_sub(text_width) / 2;
         layer.put_str(
             x,
@@ -1899,7 +2042,13 @@ fn draw_window_body(layer: &mut LayerSystem, w: &Window, rounded: bool, ox: i32,
         return;
     }
     if !w.chrome_visible {
-        layer.fill_rect(x, y, w_draw, h_draw, config::get_color("ui-theme/color/win_bg", Color::WIN_BG));
+        layer.fill_rect(
+            x,
+            y,
+            w_draw,
+            h_draw,
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        );
         return;
     }
 

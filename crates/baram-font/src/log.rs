@@ -49,15 +49,13 @@ pub fn log_fmt(args: core::fmt::Arguments) {
 
 fn draw_log() {
     unsafe {
-        if !SCREEN_READY || FB_W == 0 || FB_H == 0 { return; }
+        if !SCREEN_READY || FB_W == 0 || FB_H == 0 {
+            return;
+        }
 
         let line_h = 14;
         let max_lines = (FB_H / line_h).min(LOG_COUNT);
-        let start_idx = if LOG_COUNT < MAX_LINES {
-            0
-        } else {
-            LOG_HEAD
-        };
+        let start_idx = if LOG_COUNT < MAX_LINES { 0 } else { LOG_HEAD };
 
         for i in 0..max_lines {
             let idx = (start_idx + i) % MAX_LINES;
@@ -74,7 +72,9 @@ fn draw_text(s: &str, x: usize, y: usize, color: u32) {
         let base = FB_BASE as *mut u32;
         for (i, &b) in s.as_bytes().iter().enumerate() {
             let px = x + i * 8;
-            if px + 8 > FB_W || y + 14 > FB_H { break; }
+            if px + 8 > FB_W || y + 14 > FB_H {
+                break;
+            }
 
             let glyph = crate::font::glyph(b);
             for row in 0..14 {

@@ -1,4 +1,3 @@
-use alloc::string::String;
 use crate::is_katakana::is_mixed_halfwidth_katakana;
 use crate::is_mixed::*;
 use crate::is_romaji::*;
@@ -6,6 +5,7 @@ use crate::options::Options;
 use crate::utils::halfwidth_katakana_to_hiragana::halfwidth_katakana_to_hiragana;
 use crate::utils::hiragana_to_katakana::*;
 use crate::utils::romaji_to_hiragana::*;
+use alloc::string::String;
 
 /// Convert input to [Katakana](https://en.wikipedia.org/wiki/Katakana)
 pub fn to_katakana(input: &str) -> String {

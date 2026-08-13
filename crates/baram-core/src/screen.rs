@@ -1,9 +1,9 @@
+use crate::color::Color;
 use core::ptr;
 use uefi::boot::{self, ScopedProtocol};
-use uefi::proto::unsafe_protocol;
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
+use uefi::proto::unsafe_protocol;
 use uefi::Status;
-use crate::color::Color;
 
 const EFI_MEMORY_WC: u64 = 0x2;
 
@@ -145,9 +145,7 @@ unsafe fn copy_swap_rb(
         }
         for i in i..len {
             let p = *src.add(i);
-            *dst.add(i) = (p & 0xff00_ff00)
-                | ((p & 0x00ff_0000) >> 16)
-                | ((p & 0x0000_00ff) << 16);
+            *dst.add(i) = (p & 0xff00_ff00) | ((p & 0x00ff_0000) >> 16) | ((p & 0x0000_00ff) << 16);
         }
         return;
     }
@@ -173,9 +171,7 @@ unsafe fn copy_swap_rb(
         }
         for i in i..len {
             let p = *src.add(i);
-            *dst.add(i) = (p & 0xff00_ff00)
-                | ((p & 0x00ff_0000) >> 16)
-                | ((p & 0x0000_00ff) << 16);
+            *dst.add(i) = (p & 0xff00_ff00) | ((p & 0x00ff_0000) >> 16) | ((p & 0x0000_00ff) << 16);
         }
         return;
     }
@@ -183,9 +179,7 @@ unsafe fn copy_swap_rb(
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     for i in 0..len {
         let p = *src.add(i);
-        *dst.add(i) = (p & 0xff00_ff00)
-            | ((p & 0x00ff_0000) >> 16)
-            | ((p & 0x0000_00ff) << 16);
+        *dst.add(i) = (p & 0xff00_ff00) | ((p & 0x00ff_0000) >> 16) | ((p & 0x0000_00ff) << 16);
     }
 }
 
@@ -213,8 +207,8 @@ unsafe impl Sync for Screen {}
 
 impl Screen {
     pub fn take() -> Result<Screen, Status> {
-        let handle = boot::get_handle_for_protocol::<GraphicsOutput>()
-            .map_err(|_| Status::UNSUPPORTED)?;
+        let handle =
+            boot::get_handle_for_protocol::<GraphicsOutput>().map_err(|_| Status::UNSUPPORTED)?;
         let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle)
             .map_err(|_| Status::UNSUPPORTED)?;
 
@@ -227,10 +221,12 @@ impl Screen {
         let mut best_mode: Option<uefi::proto::console::gop::Mode> = None;
         for mode in gop.modes() {
             let (w, h) = mode.info().resolution();
-            let area_delta = w.abs_diff(TARGET_W)
+            let area_delta = w
+                .abs_diff(TARGET_W)
                 .saturating_mul(TARGET_H)
                 .saturating_add(h.abs_diff(TARGET_H).saturating_mul(TARGET_W));
-            let aspect_delta = w.saturating_mul(TARGET_H)
+            let aspect_delta = w
+                .saturating_mul(TARGET_H)
                 .abs_diff(h.saturating_mul(TARGET_W));
             let undersized_penalty = if w < TARGET_W || h < TARGET_H {
                 usize::MAX / 4
@@ -280,10 +276,16 @@ impl Screen {
         })
     }
 
-    pub fn width(&self) -> usize { self.info.width }
-    pub fn height(&self) -> usize { self.info.height }
+    pub fn width(&self) -> usize {
+        self.info.width
+    }
+    pub fn height(&self) -> usize {
+        self.info.height
+    }
     #[allow(dead_code)]
-    pub fn info(&self) -> FramebufferInfo { self.info }
+    pub fn info(&self) -> FramebufferInfo {
+        self.info
+    }
 
     pub fn clear(&mut self, c: Color) {
         self.fill_rect(0, 0, self.info.width, self.info.height, c);
@@ -307,7 +309,9 @@ impl Screen {
         let stride = self.info.stride;
         let base = self.fb_ptr;
         let n = x1.saturating_sub(x0);
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         let v = match pf {
             PixelFormat::Rgb => ((c.b() as u32) << 16) | ((c.g() as u32) << 8) | (c.r() as u32),
             PixelFormat::Bgr => ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | (c.b() as u32),
@@ -322,7 +326,11 @@ impl Screen {
             let chunk = remaining.min(CHUNK);
             let tmp = [v; CHUNK];
             unsafe {
-                ptr::copy_nonoverlapping(tmp.as_ptr(), base.add(off + offset * 4) as *mut u32, chunk);
+                ptr::copy_nonoverlapping(
+                    tmp.as_ptr(),
+                    base.add(off + offset * 4) as *mut u32,
+                    chunk,
+                );
             }
             offset += chunk;
             remaining -= chunk;
@@ -338,12 +346,16 @@ impl Screen {
         let off = (y * stride + x) * 4;
         let v = unsafe { ptr::read_volatile(base.add(off) as *const u32) };
         match self.info.pixel_format {
-            PixelFormat::Rgb => Color::rgb((v & 0xFF) as u8,
-                                           ((v >>  8) & 0xFF) as u8,
-                                           ((v >> 16) & 0xFF) as u8),
-            PixelFormat::Bgr => Color::rgb(((v >> 16) & 0xFF) as u8,
-                                           ((v >>  8) & 0xFF) as u8,
-                                           (v & 0xFF) as u8),
+            PixelFormat::Rgb => Color::rgb(
+                (v & 0xFF) as u8,
+                ((v >> 8) & 0xFF) as u8,
+                ((v >> 16) & 0xFF) as u8,
+            ),
+            PixelFormat::Bgr => Color::rgb(
+                ((v >> 16) & 0xFF) as u8,
+                ((v >> 8) & 0xFF) as u8,
+                (v & 0xFF) as u8,
+            ),
             _ => Color(v),
         }
     }
@@ -372,46 +384,46 @@ impl Screen {
     }
 
     pub fn flush_layer_row_range(&mut self, y: usize, x_offset: usize, row: &[u32]) {
-        if y >= self.info.height || x_offset >= self.info.width { return; }
+        if y >= self.info.height || x_offset >= self.info.width {
+            return;
+        }
         let pf = self.info.pixel_format;
         let stride = self.info.stride;
         let base = self.fb_ptr;
         let n = row.len().min(self.info.width.saturating_sub(x_offset));
         let off_base = (y * stride + x_offset) * 4;
         match pf {
-            PixelFormat::Rgb => {
-                unsafe {
-                    copy_swap_rb(
+            PixelFormat::Rgb => unsafe {
+                copy_swap_rb(
+                    row.as_ptr(),
+                    base.add(off_base) as *mut u32,
+                    n,
+                    self.write_combining,
+                    self.avx2,
+                );
+            },
+            _ => unsafe {
+                #[cfg(target_arch = "x86_64")]
+                if self.avx2 {
+                    copy_pixels_avx2(
                         row.as_ptr(),
                         base.add(off_base) as *mut u32,
                         n,
                         self.write_combining,
-                        self.avx2,
                     );
-                }
-            }
-            _ => {
-                unsafe {
-                    #[cfg(target_arch = "x86_64")]
-                    if self.avx2 {
-                        copy_pixels_avx2(
-                            row.as_ptr(),
-                            base.add(off_base) as *mut u32,
-                            n,
-                            self.write_combining,
-                        );
-                    } else {
-                        ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
-                    }
-                    #[cfg(not(target_arch = "x86_64"))]
+                } else {
                     ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
                 }
-            }
+                #[cfg(not(target_arch = "x86_64"))]
+                ptr::copy_nonoverlapping(row.as_ptr(), base.add(off_base) as *mut u32, n);
+            },
         }
     }
 
     pub fn rect_outline(&mut self, x: usize, y: usize, w: usize, h: usize, c: Color) {
-        if w == 0 || h == 0 { return; }
+        if w == 0 || h == 0 {
+            return;
+        }
         self.fill_rect(x, y, w, 1, c);
         self.fill_rect(x, y + h - 1, w, 1, c);
         self.fill_rect(x, y, 1, h, c);

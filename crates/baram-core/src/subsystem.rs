@@ -76,21 +76,20 @@ unsafe impl Sync for SubsystemExports {}
 macro_rules! subsystem_entry {
     ($name:expr, $init:expr, $handle_key:expr, $handle_mouse:expr, $tick:expr, $render:expr, $shutdown:expr) => {
         #[no_mangle]
-        pub static BARAM_SUBSYSTEM_EXPORTS: $crate::subsystem::SubsystemExports = $crate::subsystem::SubsystemExports {
-            magic: $crate::subsystem::SUBSYSTEM_MAGIC,
-            version: $crate::subsystem::SUBSYSTEM_VERSION,
-            name: $name.as_ptr(),
-            init: $init,
-            handle_key: $handle_key,
-            handle_mouse: $handle_mouse,
-            tick: $tick,
-            render: $render,
-            shutdown: $shutdown,
-        };
+        pub static BARAM_SUBSYSTEM_EXPORTS: $crate::subsystem::SubsystemExports =
+            $crate::subsystem::SubsystemExports {
+                magic: $crate::subsystem::SUBSYSTEM_MAGIC,
+                version: $crate::subsystem::SUBSYSTEM_VERSION,
+                name: $name.as_ptr(),
+                init: $init,
+                handle_key: $handle_key,
+                handle_mouse: $handle_mouse,
+                tick: $tick,
+                render: $render,
+                shutdown: $shutdown,
+            };
 
-        fn baram_subsystem_app(
-            _nano: nano_system::NanoSystem,
-        ) -> uefi::Status {
+        fn baram_subsystem_app(_nano: nano_system::NanoSystem) -> uefi::Status {
             uefi::Status::SUCCESS
         }
 
