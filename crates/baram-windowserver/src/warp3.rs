@@ -6,6 +6,7 @@
 extern crate alloc;
 
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use baram_bsd::{app::Warp3Archive, config};
 use baram_core::{Color, LayerSystem};
@@ -143,6 +144,7 @@ struct Node {
     tab: usize,
     overlay: bool,
     hidden: bool,
+    manual_hidden: bool,
 }
 
 impl Node {
@@ -394,6 +396,7 @@ pub struct Warp3Engine {
     shadows: Vec<ShadowMask>,
     now: NowValues,
     last_clicked_class: Option<String>,
+    candidate_nodes: Vec<usize>,
 }
 
 impl Warp3Engine {
@@ -450,6 +453,7 @@ impl Warp3Engine {
             shadows: Vec::new(),
             now: NowValues::default(),
             last_clicked_class: None,
+            candidate_nodes: Vec::new(),
         };
         engine.load_screen();
         engine
@@ -478,6 +482,63 @@ impl Warp3Engine {
         self.set_element_text(class, value);
     }
 
+    pub fn set_visible(&mut self, class: &str, visible: bool) {
+        if let Some(idx) = self
+            .nodes
+            .iter()
+            .position(|node| node.classes.iter().any(|item| item == class))
+        {
+            if self.nodes[idx].manual_hidden == !visible {
+                return;
+            }
+            self.set_tree_visible(idx, visible);
+            self.invalidate_all();
+        }
+    }
+
+    /// Reuses a grow-only pool of candidate buttons so an OS surface can
+    /// present any number of suggestions without fixed empty placeholders.
+    pub fn set_candidate_items(&mut self, mode: &str, candidates: &[String]) {
+        self.set_element_text("candidate-mode", mode);
+        let Some(row) = self
+            .nodes
+            .iter()
+            .position(|node| node.is("candidate-row"))
+        else {
+            return;
+        };
+        while self.candidate_nodes.len() < candidates.len() {
+            let index = self.candidate_nodes.len();
+            let node = self.nodes.len();
+            self.nodes.push(Node {
+                tags: vec!["button".to_string()],
+                classes: vec![alloc::format!("candidate-{index}")],
+                props: vec![
+                    ("text".to_string(), String::new()),
+                    ("type".to_string(), "tonal".to_string()),
+                ],
+                ..Node::default()
+            });
+            self.candidate_nodes.push(node);
+        }
+        let mode_node = self.nodes[row].children.first().copied();
+        self.nodes[row].children.clear();
+        if let Some(mode_node) = mode_node {
+            self.nodes[row].children.push(mode_node);
+        }
+        for index in 0..self.candidate_nodes.len() {
+            let node = self.candidate_nodes[index];
+            let visible = index < candidates.len();
+            self.nodes[node].manual_hidden = !visible;
+            self.nodes[node].hidden = !visible;
+            if visible {
+                set_prop(&mut self.nodes[node], "text", &candidates[index]);
+                self.nodes[row].children.push(node);
+            }
+        }
+        self.invalidate_all();
+    }
+
     pub fn hold_command(&mut self) {
         self.script_wait_until_ns = Some(u64::MAX);
     }
@@ -501,6 +562,7 @@ impl Warp3Engine {
         if self.width != width || self.height != height {
             self.toolbar_dirty = true;
         }
+        self.refresh_visibility();
         self.width = width.max(1);
         self.height = height.max(1);
         let document_width = self.width.min(960);
@@ -533,7 +595,6 @@ impl Warp3Engine {
         for idx in toolbars {
             self.layout(idx, toolbar_x, toolbar_y, toolbar_width);
         }
-        self.refresh_visibility();
         self.refresh_text_lines();
         self.rebuild_paint_lists();
         self.prepare_shadows();
@@ -964,10 +1025,33 @@ impl Warp3Engine {
                 let grid_x = x + (width - grid_w) / 2;
                 let mut cy = y;
                 for child in children {
+                    if self.nodes[child].hidden {
+                        continue;
+                    }
                     let h = self.layout(child, grid_x, cy, grid_w);
                     cy += h + 6;
                 }
                 self.nodes[idx].h = (cy - y - 6).max(1);
+            }
+            "candidate-row" => {
+                let children = self.nodes[idx].children.clone();
+                let gap = 6i32;
+                let mut cx = x;
+                for child in children {
+                    if self.nodes[child].hidden {
+                        continue;
+                    }
+                    let item_w = fit_button_width(
+                        measure(self.nodes[child].prop("text")) + 28,
+                        width.saturating_sub(cx - x).max(1),
+                    );
+                    set_prop(&mut self.nodes[child], "key-width", &item_w.to_string());
+                    set_prop(&mut self.nodes[child], "key-center", "true");
+                    self.layout(child, cx, y, item_w);
+                    self.nodes[child].h = 30;
+                    cx += item_w + gap;
+                }
+                self.nodes[idx].h = 30;
             }
             "keyboard-row" => {
                 // This is a compact fit-content grid, not a generic toolbar.
@@ -1517,7 +1601,7 @@ impl Warp3Engine {
 
     fn refresh_visibility(&mut self) {
         for node in &mut self.nodes {
-            node.hidden = false;
+            node.hidden = node.manual_hidden;
         }
         let tabs: Vec<(usize, usize, Vec<usize>)> = self
             .nodes
@@ -1561,6 +1645,15 @@ impl Warp3Engine {
         let children = self.nodes[idx].children.clone();
         for child in children {
             self.mark_hidden_tree(child);
+        }
+    }
+
+    fn set_tree_visible(&mut self, idx: usize, visible: bool) {
+        self.nodes[idx].manual_hidden = !visible;
+        self.nodes[idx].hidden = !visible;
+        let children = self.nodes[idx].children.clone();
+        for child in children {
+            self.set_tree_visible(child, visible);
         }
     }
 
@@ -1990,7 +2083,7 @@ fn set_prop(node: &mut Node, key: &str, value: &str) {
 }
 
 fn interactive(node: &Node) -> bool {
-    node.is("button")
+    (node.is("button") && !node.classes.iter().any(|class| class == "candidate-mode"))
         || node.is("switch")
         || node.is("input")
         || node.is("textarea")

@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use baram_core::LayerSystem;
 use crate::window::RoundedShadow;
 
@@ -21,29 +22,32 @@ const OPEN_OFFSET_Y: i32 = 30;
 const CONFIG: &str = "version = 3\nscreen = main\nname = Software Keyboard\n";
 const LOWER: &str = r#"
 config { title("Software Keyboard") }
-keyboard { detail.ime-status { text("English") }
+keyboard {
+candidate-row { button.candidate-mode { text("English") type("primary") } }
 keyboard-row { button.q { text("q") type("tonal") } button.w { text("w") type("tonal") } button.e { text("e") type("tonal") } button.r { text("r") type("tonal") } button.t { text("t") type("tonal") } button.y { text("y") type("tonal") } button.u { text("u") type("tonal") } button.i { text("i") type("tonal") } button.o { text("o") type("tonal") } button.p { text("p") type("tonal") } }
 keyboard-row { button.a { text("a") type("tonal") } button.s { text("s") type("tonal") } button.d { text("d") type("tonal") } button.f { text("f") type("tonal") } button.g { text("g") type("tonal") } button.h { text("h") type("tonal") } button.j { text("j") type("tonal") } button.k { text("k") type("tonal") } button.l { text("l") type("tonal") } button.backspace { text("Back") type("primary") } }
 keyboard-row { button.shift { text("Shift") type("primary") } button.z { text("z") type("tonal") } button.x { text("x") type("tonal") } button.c { text("c") type("tonal") } button.v { text("v") type("tonal") } button.b { text("b") type("tonal") } button.n { text("n") type("tonal") } button.m { text("m") type("tonal") } button.enter { text("Enter") type("primary") } }
-keyboard-row { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
+keyboard-row { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("完了") } }
 }
 "#;
 const UPPER: &str = r#"
 config { title("Software Keyboard") }
-keyboard { detail.ime-status { text("English") }
+keyboard {
+candidate-row { button.candidate-mode { text("English") type("primary") } }
 keyboard-row { button.q { text("Q") type("tonal") } button.w { text("W") type("tonal") } button.e { text("E") type("tonal") } button.r { text("R") type("tonal") } button.t { text("T") type("tonal") } button.y { text("Y") type("tonal") } button.u { text("U") type("tonal") } button.i { text("I") type("tonal") } button.o { text("O") type("tonal") } button.p { text("P") type("tonal") } }
 keyboard-row { button.a { text("A") type("tonal") } button.s { text("S") type("tonal") } button.d { text("D") type("tonal") } button.f { text("F") type("tonal") } button.g { text("G") type("tonal") } button.h { text("H") type("tonal") } button.j { text("J") type("tonal") } button.k { text("K") type("tonal") } button.l { text("L") type("tonal") } button.backspace { text("Back") type("primary") } }
 keyboard-row { button.shift { text("Shift") type("primary") } button.z { text("Z") type("tonal") } button.x { text("X") type("tonal") } button.c { text("C") type("tonal") } button.v { text("V") type("tonal") } button.b { text("B") type("tonal") } button.n { text("N") type("tonal") } button.m { text("M") type("tonal") } button.enter { text("Enter") type("primary") } }
-keyboard-row { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
+keyboard-row { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("完了") } }
 }
 "#;
 const SYMBOLS: &str = r#"
 config { title("Software Keyboard") }
-keyboard { detail.ime-status { text("Symbols") }
+keyboard {
+candidate-row { button.candidate-mode { text("Symbols") type("primary") } }
 keyboard-row { button.1 { text("1") type("tonal") } button.2 { text("2") type("tonal") } button.3 { text("3") type("tonal") } button.4 { text("4") type("tonal") } button.5 { text("5") type("tonal") } button.6 { text("6") type("tonal") } button.7 { text("7") type("tonal") } button.8 { text("8") type("tonal") } button.9 { text("9") type("tonal") } button.0 { text("0") type("tonal") } }
 keyboard-row { button.minus { text("-") type("tonal") } button.slash { text("/") type("tonal") } button.colon { text(":") type("tonal") } button.semicolon { text(";") type("tonal") } button.lparen { text("(") type("tonal") } button.rparen { text(")") type("tonal") } button.dollar { text("$") type("tonal") } button.amp { text("&") type("tonal") } button.at { text("@") type("tonal") } button.backspace { text("Back") type("primary") } }
 keyboard-row { button.quote { text("'") type("tonal") } button.doublequote { text("\"") type("tonal") } button.question { text("?") type("tonal") } button.bang { text("!") type("tonal") } button.plus { text("+") type("tonal") } button.equals { text("=") type("tonal") } button.underscore { text("_") type("tonal") } button.enter { text("Enter") type("primary") } }
-keyboard-row { button.letters { text("ABC") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
+keyboard-row { button.letters { text("ABC") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("完了") } }
 }
 "#;
 
@@ -52,6 +56,7 @@ pub enum Key {
     Character(u8),
     Backspace,
     Enter,
+    Candidate(usize),
     Close,
 }
 
@@ -77,7 +82,7 @@ pub struct SoftKeyboard {
     surface: LayerSystem,
     page: Page,
     language: KeyboardLanguage,
-    ime_status: String,
+    candidates: Vec<String>,
     shadow: Option<RoundedShadow>,
     open: bool,
     position: Option<(i32, i32)>,
@@ -86,6 +91,8 @@ pub struct SoftKeyboard {
     open_animating: bool,
     open_started_ns: Option<u64>,
     render_y_offset: i32,
+    pressed: bool,
+    pressed_started_ns: Option<u64>,
     surface_dirty: bool,
     presented_bounds: Option<(i32, i32, i32, i32)>,
 }
@@ -97,7 +104,7 @@ impl SoftKeyboard {
             surface: LayerSystem::new(WIDTH, HEIGHT),
             page: Page::Lower,
             language: KeyboardLanguage::Latin,
-            ime_status: String::from("English"),
+            candidates: Vec::new(),
             shadow: RoundedShadow::new(WIDTH, HEIGHT, RADIUS),
             open: false,
             position: None,
@@ -106,6 +113,8 @@ impl SoftKeyboard {
             open_animating: false,
             open_started_ns: None,
             render_y_offset: 0,
+            pressed: false,
+            pressed_started_ns: None,
             surface_dirty: true,
             presented_bounds: None,
         };
@@ -131,6 +140,8 @@ impl SoftKeyboard {
         self.open_animating = false;
         self.open_started_ns = None;
         self.render_y_offset = 0;
+        self.pressed = false;
+        self.pressed_started_ns = None;
         self.engine.clear_hover();
     }
     pub fn toggle(&mut self) {
@@ -174,7 +185,7 @@ impl SoftKeyboard {
             Page::Symbols => SYMBOLS,
         });
         self.apply_language_labels();
-        self.engine.set_text("ime-status", &self.ime_status);
+        self.sync_candidate_shelf();
         self.surface_dirty = true;
     }
 
@@ -184,20 +195,19 @@ impl SoftKeyboard {
     pub fn set_input_context(
         &mut self,
         language: KeyboardLanguage,
-        reading: Option<&str>,
         candidates: &[String],
-        selected: usize,
     ) -> bool {
-        let status = ime_status(language, reading, candidates, selected);
         let mut changed = false;
         if self.language != language {
             self.language = language;
             self.apply_language_labels();
+            self.sync_candidate_shelf();
             changed = true;
         }
-        if self.ime_status != status {
-            self.ime_status = status;
-            self.engine.set_text("ime-status", &self.ime_status);
+        let next = candidates.to_vec();
+        if self.candidates != next {
+            self.candidates = next;
+            self.sync_candidate_shelf();
             changed = true;
         }
         self.surface_dirty |= changed;
@@ -214,6 +224,11 @@ impl SoftKeyboard {
         }
     }
 
+    fn sync_candidate_shelf(&mut self) {
+        self.engine
+            .set_candidate_items(keyboard_mode_name(self.language), &self.candidates);
+    }
+
     pub fn click(&mut self, x: i32, y: i32, sw: usize, sh: usize) -> Option<Key> {
         if !self.contains(x, y, sw, sh) {
             return None;
@@ -226,10 +241,16 @@ impl SoftKeyboard {
             self.drag_offset = (local_x, local_y);
             return None;
         }
+        // A software-keyboard press uses the same visual language as Warp3's
+        // hover, but only for this short pressed interval.
+        self.engine.set_hover(local_x, local_y);
+        self.pressed = true;
+        self.pressed_started_ns = None;
         self.engine.click(local_x, local_y);
         self.surface_dirty = true;
         let id = self.engine.take_clicked_class()?;
         match id.as_str() {
+            "candidate-mode" => None,
             "close" => Some(Key::Close),
             "backspace" => Some(Key::Backspace),
             "enter" => Some(Key::Enter),
@@ -252,6 +273,11 @@ impl SoftKeyboard {
                 self.select_page(Page::Lower);
                 None
             }
+            other if other.starts_with("candidate-") => other[10..]
+                .parse::<usize>()
+                .ok()
+                .filter(|index| *index < self.candidates.len())
+                .map(Key::Candidate),
             other => {
                 let c = symbol_for_id(other).or_else(|| other.as_bytes().first().copied())?;
                 let c = if self.page == Page::Upper {
@@ -287,16 +313,12 @@ impl SoftKeyboard {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32, sw: usize, sh: usize) -> bool {
-        if self.dragging {
+        if self.dragging || self.pressed {
             return false;
         }
         let previous = self.engine.hover_token();
-        if self.contains(x, y, sw, sh) {
-            let (kx, ky, _, _) = self.bounds(sw, sh);
-            self.engine.set_hover(x - kx, y - ky);
-        } else {
-            self.engine.clear_hover();
-        }
+        let _ = (x, y, sw, sh);
+        self.engine.clear_hover();
         let changed = previous != self.engine.hover_token();
         self.surface_dirty |= changed;
         changed
@@ -317,6 +339,15 @@ impl SoftKeyboard {
             if t >= 1.0 {
                 self.open_animating = false;
                 self.open_started_ns = None;
+            }
+        }
+        if self.pressed {
+            let started = *self.pressed_started_ns.get_or_insert(now_ns);
+            if now_ns.saturating_sub(started) >= 50_000_000 {
+                self.pressed = false;
+                self.pressed_started_ns = None;
+                self.engine.clear_hover();
+                changed = true;
             }
         }
         // Translation does not invalidate the cached Warp 3 surface; only
@@ -441,41 +472,15 @@ fn keyboard_labels(language: KeyboardLanguage, upper: bool) -> &'static [&'stati
     }
 }
 
-fn ime_status(
-    language: KeyboardLanguage,
-    reading: Option<&str>,
-    candidates: &[String],
-    selected: usize,
-) -> String {
-    let language = match language {
+fn keyboard_mode_name(language: KeyboardLanguage) -> &'static str {
+    match language {
         KeyboardLanguage::Latin => "English",
         KeyboardLanguage::Japanese => "日本語",
         KeyboardLanguage::KoreanDubeolsik => "한국어 · 두벌식",
         KeyboardLanguage::KoreanHancomRoman => "한국어 · 한컴 로마자",
         KeyboardLanguage::KoreanChosunDubeolsik => "조선말 · 두벌식",
         KeyboardLanguage::ChinesePinyin => "中文 · 拼音",
-    };
-    let Some(reading) = reading else {
-        return String::from(language);
-    };
-    if candidates.is_empty() {
-        return alloc::format!("{language} · {reading}");
     }
-    let mut status = alloc::format!("{language} · {reading}  ");
-    for (index, candidate) in candidates.iter().take(5).enumerate() {
-        let mut item = String::new();
-        if index == selected { item.push('［'); }
-        for ch in candidate.chars().take(6) { item.push(ch); }
-        if index == selected {
-            item.push('］');
-        }
-        if status.chars().count() + item.chars().count() + 1 > 30 {
-            break;
-        }
-        status.push_str(&item);
-        status.push(' ');
-    }
-    status
 }
 
 fn symbol_for_id(id: &str) -> Option<u8> {

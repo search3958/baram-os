@@ -2153,9 +2153,10 @@ pub fn render_scene(
             ime_menu_opacity,
         );
     }
-    if let Some(reading) = ime_reading {
-        draw_ime_candidates(layer, tb_y, reading, ime_candidates, ime_selected);
-    }
+    // Candidate presentation belongs to the OS software keyboard. Keeping it
+    // out of the taskbar prevents a desktop-style prediction popup while the
+    // keyboard is hidden.
+    let _ = (ime_reading, ime_candidates, ime_selected);
     // The scene damage pass restores its clip from the wallpaper before this
     // point.  Even when only the IME pixels changed, the damaged clip can
     // cover other taskbar pixels (for example while the cursor moves into the

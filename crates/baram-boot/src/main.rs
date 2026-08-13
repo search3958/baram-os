@@ -78,6 +78,7 @@ struct PinyinIme {
     raw: alloc::string::String,
     visible_chars: usize,
     conversion: Option<PinyinConversion>,
+    predictions: alloc::vec::Vec<alloc::string::String>,
 }
 
 struct PinyinConversion {
@@ -92,12 +93,14 @@ impl PinyinIme {
             raw: alloc::string::String::new(),
             visible_chars: 0,
             conversion: None,
+            predictions: alloc::vec::Vec::new(),
         }
     }
     fn reset(&mut self) {
         self.raw.clear();
         self.visible_chars = 0;
         self.conversion = None;
+        self.predictions.clear();
     }
     fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
         if key != 0x08 && key != 0x7f && self.conversion.is_some() {
@@ -114,6 +117,7 @@ impl PinyinIme {
         let ch = key as char;
         if ch.is_ascii_alphabetic() || ch == '\'' {
             self.raw.push(ch.to_ascii_lowercase());
+            self.predictions = pinyin_candidates(&self.raw.replace('\'', "")).unwrap_or_default();
             let replace = self.visible_chars;
             self.visible_chars = self.raw.chars().count();
             return (self.raw.clone(), replace);
@@ -163,6 +167,23 @@ impl PinyinIme {
             )
         })
     }
+
+    fn prediction_view(&self) -> Option<(&str, &[alloc::string::String])> {
+        (!self.raw.is_empty() && !self.predictions.is_empty())
+            .then_some((self.raw.as_str(), self.predictions.as_slice()))
+    }
+
+    fn commit_candidate(&mut self, index: usize) -> Option<(alloc::string::String, usize)> {
+        let text = self
+            .conversion
+            .as_ref()
+            .and_then(|conversion| conversion.candidates.get(index))
+            .or_else(|| self.predictions.get(index))?
+            .clone();
+        let replace = self.visible_chars;
+        self.reset();
+        Some((text, replace))
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -178,6 +199,7 @@ struct JapaneseIme {
     romaji: alloc::string::String,
     visible_chars: usize,
     conversion: Option<JapaneseConversion>,
+    predictions: alloc::vec::Vec<alloc::string::String>,
 }
 
 struct JapaneseConversion {
@@ -192,6 +214,7 @@ impl JapaneseIme {
             romaji: alloc::string::String::new(),
             visible_chars: 0,
             conversion: None,
+            predictions: alloc::vec::Vec::new(),
         }
     }
 
@@ -199,6 +222,7 @@ impl JapaneseIme {
         self.romaji.clear();
         self.visible_chars = 0;
         self.conversion = None;
+        self.predictions.clear();
     }
 
     fn edit(&mut self, key: u8) -> (alloc::string::String, usize) {
@@ -208,6 +232,7 @@ impl JapaneseIme {
             self.conversion = None;
             self.romaji.clear();
             self.visible_chars = 0;
+            self.predictions.clear();
         }
         if key == 0x08 || key == 0x7f {
             if self.romaji.pop().is_some() {
@@ -223,6 +248,7 @@ impl JapaneseIme {
         if ch.is_ascii_alphabetic() || ch == '\'' {
             self.romaji.push(ch);
             let text = self.romaji.as_str().to_hiragana();
+            self.predictions = mozc_candidates(&text).unwrap_or_default();
             let replace = self.visible_chars;
             self.visible_chars = text.chars().count();
             return (text, replace);
@@ -285,6 +311,24 @@ impl JapaneseIme {
                 conversion.selected,
             )
         })
+    }
+
+    fn prediction_view(&self) -> Option<(&str, &[alloc::string::String])> {
+        let kana = self.romaji.as_str().to_hiragana();
+        (!kana.is_empty() && !self.predictions.is_empty())
+            .then_some((self.romaji.as_str(), self.predictions.as_slice()))
+    }
+
+    fn commit_candidate(&mut self, index: usize) -> Option<(alloc::string::String, usize)> {
+        let text = self
+            .conversion
+            .as_ref()
+            .and_then(|conversion| conversion.candidates.get(index))
+            .or_else(|| self.predictions.get(index))?
+            .clone();
+        let replace = self.visible_chars;
+        self.reset();
+        Some((text, replace))
     }
 }
 
@@ -2764,24 +2808,34 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // this clock, without a runtime-service call in the render hot path.
         let mut deferred_html_commands = alloc::vec::Vec::new();
         let runtime_window_count = wm.count();
-        let keyboard_context_changed = if let Some((reading, candidates, selected)) =
+        let keyboard_context_changed = if let Some((_, candidates, _)) =
             japanese_ime.conversion_view()
         {
             soft_keyboard.set_input_context(
                 keyboard_language(input_mode),
-                Some(reading),
                 candidates,
-                selected,
             )
-        } else if let Some((reading, candidates, selected)) = pinyin_ime.conversion_view() {
+        } else if let Some((_, candidates, _)) = pinyin_ime.conversion_view() {
             soft_keyboard.set_input_context(
                 keyboard_language(input_mode),
-                Some(reading),
                 candidates,
-                selected,
             )
+        } else if soft_keyboard.is_open() {
+            if let Some((_, candidates)) = japanese_ime.prediction_view() {
+                soft_keyboard.set_input_context(
+                    keyboard_language(input_mode),
+                    candidates,
+                )
+            } else if let Some((_, candidates)) = pinyin_ime.prediction_view() {
+                soft_keyboard.set_input_context(
+                    keyboard_language(input_mode),
+                    candidates,
+                )
+            } else {
+                soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
+            }
         } else {
-            soft_keyboard.set_input_context(keyboard_language(input_mode), None, &[], 0)
+            soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
         };
         if keyboard_context_changed {
             scene_dirty = true;
@@ -3487,10 +3541,19 @@ fn dispatch_text_input_key(
     warp_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
 ) -> bool {
+    let candidate_edit = match key {
+        SoftKey::Candidate(index) => match input_mode {
+            InputMode::Hiragana => japanese_ime.commit_candidate(index),
+            InputMode::Pinyin => pinyin_ime.commit_candidate(index),
+            _ => None,
+        },
+        _ => None,
+    };
     let byte = match key {
         SoftKey::Character(c) => c,
         SoftKey::Backspace => 0x08,
         SoftKey::Enter => b'\n',
+        SoftKey::Candidate(_) => 0,
         SoftKey::Close => return false,
     };
 
@@ -3498,7 +3561,12 @@ fn dispatch_text_input_key(
         if byte == b'\n' || byte == b'\r' {
             return false;
         }
-        if let Some((text, replace_chars)) =
+        if let Some((text, replace_chars)) = candidate_edit.as_ref() {
+            for _ in 0..*replace_chars {
+                app_search_query.pop();
+            }
+            app_search_query.push_str(text);
+        } else if let Some((text, replace_chars)) =
             ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
         {
             for _ in 0..replace_chars {
@@ -3536,7 +3604,9 @@ fn dispatch_text_input_key(
         if *wid != focused || engine.focused_input_var.is_empty() {
             continue;
         }
-        if byte == b'\n' || byte == b'\r' {
+        if let Some((text, replace_chars)) = candidate_edit.as_ref() {
+            engine.handle_text(text, *replace_chars);
+        } else if byte == b'\n' || byte == b'\r' {
             engine.handle_text("\n", 0);
         } else if let Some((text, replace_chars)) =
             ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
@@ -3559,7 +3629,9 @@ fn dispatch_text_input_key(
         if *wid != focused || !engine.has_focused_input() {
             continue;
         }
-        if byte == b'\n' || byte == b'\r' {
+        if let Some((text, replace_chars)) = candidate_edit.as_ref() {
+            engine.handle_text(text, *replace_chars);
+        } else if byte == b'\n' || byte == b'\r' {
             engine.handle_text("\n", 0);
         } else if let Some((text, replace_chars)) =
             ime_edit_for_key(input_mode, japanese_ime, hangul_ime, pinyin_ime, byte)
