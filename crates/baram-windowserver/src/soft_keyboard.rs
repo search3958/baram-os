@@ -9,30 +9,32 @@ use baram_core::LayerSystem;
 use crate::warp3::Warp3Engine;
 
 pub const WIDTH: usize = 720;
-pub const HEIGHT: usize = 320;
+pub const HEIGHT: usize = 252;
 const RADIUS: usize = 18;
+const OPEN_DURATION_NS: u64 = 400_000_000;
+const OPEN_OFFSET_Y: i32 = 30;
 
 const CONFIG: &str = "version = 3\nscreen = main\nname = Software Keyboard\n";
 const LOWER: &str = r#"
 config { title("Software Keyboard") }
-flex { button.q { text("q") type("tonal") } button.w { text("w") type("tonal") } button.e { text("e") type("tonal") } button.r { text("r") type("tonal") } button.t { text("t") type("tonal") } button.y { text("y") type("tonal") } button.u { text("u") type("tonal") } button.i { text("i") type("tonal") } button.o { text("o") type("tonal") } button.p { text("p") type("tonal") } }
-flex { button.a { text("a") type("tonal") } button.s { text("s") type("tonal") } button.d { text("d") type("tonal") } button.f { text("f") type("tonal") } button.g { text("g") type("tonal") } button.h { text("h") type("tonal") } button.j { text("j") type("tonal") } button.k { text("k") type("tonal") } button.l { text("l") type("tonal") } button.backspace { text("Back") type("primary") } }
-flex { button.shift { text("Shift") type("primary") } button.z { text("z") type("tonal") } button.x { text("x") type("tonal") } button.c { text("c") type("tonal") } button.v { text("v") type("tonal") } button.b { text("b") type("tonal") } button.n { text("n") type("tonal") } button.m { text("m") type("tonal") } button.enter { text("Enter") type("primary") } }
-flex { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("　　　　　　　　　Space　　　　　　　　　") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
+keyboard-row { button.q { text("q") type("tonal") } button.w { text("w") type("tonal") } button.e { text("e") type("tonal") } button.r { text("r") type("tonal") } button.t { text("t") type("tonal") } button.y { text("y") type("tonal") } button.u { text("u") type("tonal") } button.i { text("i") type("tonal") } button.o { text("o") type("tonal") } button.p { text("p") type("tonal") } }
+keyboard-row { button.a { text("a") type("tonal") } button.s { text("s") type("tonal") } button.d { text("d") type("tonal") } button.f { text("f") type("tonal") } button.g { text("g") type("tonal") } button.h { text("h") type("tonal") } button.j { text("j") type("tonal") } button.k { text("k") type("tonal") } button.l { text("l") type("tonal") } button.backspace { text("Back") type("primary") } }
+keyboard-row { button.shift { text("Shift") type("primary") } button.z { text("z") type("tonal") } button.x { text("x") type("tonal") } button.c { text("c") type("tonal") } button.v { text("v") type("tonal") } button.b { text("b") type("tonal") } button.n { text("n") type("tonal") } button.m { text("m") type("tonal") } button.enter { text("Enter") type("primary") } }
+keyboard-row { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
 "#;
 const UPPER: &str = r#"
 config { title("Software Keyboard") }
-flex { button.q { text("Q") type("tonal") } button.w { text("W") type("tonal") } button.e { text("E") type("tonal") } button.r { text("R") type("tonal") } button.t { text("T") type("tonal") } button.y { text("Y") type("tonal") } button.u { text("U") type("tonal") } button.i { text("I") type("tonal") } button.o { text("O") type("tonal") } button.p { text("P") type("tonal") } }
-flex { button.a { text("A") type("tonal") } button.s { text("S") type("tonal") } button.d { text("D") type("tonal") } button.f { text("F") type("tonal") } button.g { text("G") type("tonal") } button.h { text("H") type("tonal") } button.j { text("J") type("tonal") } button.k { text("K") type("tonal") } button.l { text("L") type("tonal") } button.backspace { text("Back") type("primary") } }
-flex { button.shift { text("Shift") type("primary") } button.z { text("Z") type("tonal") } button.x { text("X") type("tonal") } button.c { text("C") type("tonal") } button.v { text("V") type("tonal") } button.b { text("B") type("tonal") } button.n { text("N") type("tonal") } button.m { text("M") type("tonal") } button.enter { text("Enter") type("primary") } }
-flex { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("　　　　　　　　　Space　　　　　　　　　") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
+keyboard-row { button.q { text("Q") type("tonal") } button.w { text("W") type("tonal") } button.e { text("E") type("tonal") } button.r { text("R") type("tonal") } button.t { text("T") type("tonal") } button.y { text("Y") type("tonal") } button.u { text("U") type("tonal") } button.i { text("I") type("tonal") } button.o { text("O") type("tonal") } button.p { text("P") type("tonal") } }
+keyboard-row { button.a { text("A") type("tonal") } button.s { text("S") type("tonal") } button.d { text("D") type("tonal") } button.f { text("F") type("tonal") } button.g { text("G") type("tonal") } button.h { text("H") type("tonal") } button.j { text("J") type("tonal") } button.k { text("K") type("tonal") } button.l { text("L") type("tonal") } button.backspace { text("Back") type("primary") } }
+keyboard-row { button.shift { text("Shift") type("primary") } button.z { text("Z") type("tonal") } button.x { text("X") type("tonal") } button.c { text("C") type("tonal") } button.v { text("V") type("tonal") } button.b { text("B") type("tonal") } button.n { text("N") type("tonal") } button.m { text("M") type("tonal") } button.enter { text("Enter") type("primary") } }
+keyboard-row { button.symbols { text("123") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
 "#;
 const SYMBOLS: &str = r#"
 config { title("Software Keyboard") }
-flex { button.1 { text("1") type("tonal") } button.2 { text("2") type("tonal") } button.3 { text("3") type("tonal") } button.4 { text("4") type("tonal") } button.5 { text("5") type("tonal") } button.6 { text("6") type("tonal") } button.7 { text("7") type("tonal") } button.8 { text("8") type("tonal") } button.9 { text("9") type("tonal") } button.0 { text("0") type("tonal") } }
-flex { button.minus { text("-") type("tonal") } button.slash { text("/") type("tonal") } button.colon { text(":") type("tonal") } button.semicolon { text(";") type("tonal") } button.lparen { text("(") type("tonal") } button.rparen { text(")") type("tonal") } button.dollar { text("$") type("tonal") } button.amp { text("&") type("tonal") } button.at { text("@") type("tonal") } button.backspace { text("Back") type("primary") } }
-flex { button.quote { text("'") type("tonal") } button.doublequote { text("\"") type("tonal") } button.question { text("?") type("tonal") } button.bang { text("!") type("tonal") } button.plus { text("+") type("tonal") } button.equals { text("=") type("tonal") } button.underscore { text("_") type("tonal") } button.enter { text("Enter") type("primary") } }
-flex { button.letters { text("ABC") } button.comma { text(",") type("tonal") } button.space { text("　　　　　　　　　Space　　　　　　　　　") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
+keyboard-row { button.1 { text("1") type("tonal") } button.2 { text("2") type("tonal") } button.3 { text("3") type("tonal") } button.4 { text("4") type("tonal") } button.5 { text("5") type("tonal") } button.6 { text("6") type("tonal") } button.7 { text("7") type("tonal") } button.8 { text("8") type("tonal") } button.9 { text("9") type("tonal") } button.0 { text("0") type("tonal") } }
+keyboard-row { button.minus { text("-") type("tonal") } button.slash { text("/") type("tonal") } button.colon { text(":") type("tonal") } button.semicolon { text(";") type("tonal") } button.lparen { text("(") type("tonal") } button.rparen { text(")") type("tonal") } button.dollar { text("$") type("tonal") } button.amp { text("&") type("tonal") } button.at { text("@") type("tonal") } button.backspace { text("Back") type("primary") } }
+keyboard-row { button.quote { text("'") type("tonal") } button.doublequote { text("\"") type("tonal") } button.question { text("?") type("tonal") } button.bang { text("!") type("tonal") } button.plus { text("+") type("tonal") } button.equals { text("=") type("tonal") } button.underscore { text("_") type("tonal") } button.enter { text("Enter") type("primary") } }
+keyboard-row { button.letters { text("ABC") } button.comma { text(",") type("tonal") } button.space { text("Space") type("tonal") } button.period { text(".") type("tonal") } button.close { text("Close") } }
 "#;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +60,9 @@ pub struct SoftKeyboard {
     position: Option<(i32, i32)>,
     dragging: bool,
     drag_offset: (i32, i32),
+    open_animating: bool,
+    open_started_ns: Option<u64>,
+    render_y_offset: i32,
     surface_dirty: bool,
     presented_bounds: Option<(i32, i32, i32, i32)>,
 }
@@ -72,6 +77,9 @@ impl SoftKeyboard {
             position: None,
             dragging: false,
             drag_offset: (0, 0),
+            open_animating: false,
+            open_started_ns: None,
+            render_y_offset: 0,
             surface_dirty: true,
             presented_bounds: None,
         };
@@ -86,11 +94,17 @@ impl SoftKeyboard {
         self.dragging
     }
     pub fn open(&mut self) {
+        self.open_animating = true;
+        self.open_started_ns = None;
+        self.render_y_offset = OPEN_OFFSET_Y;
         self.open = true;
     }
     pub fn close(&mut self) {
         self.open = false;
         self.dragging = false;
+        self.open_animating = false;
+        self.open_started_ns = None;
+        self.render_y_offset = 0;
         self.engine.clear_hover();
     }
     pub fn toggle(&mut self) {
@@ -107,12 +121,12 @@ impl SoftKeyboard {
         let max_y = screen_h.saturating_sub(crate::compositor::TASKBAR_H + HEIGHT) as i32;
         let default = (
             (screen_w.saturating_sub(w) / 2) as i32,
-            max_y.saturating_sub(16),
+            max_y.saturating_sub(OPEN_OFFSET_Y),
         );
         let (x, y) = self.position.unwrap_or(default);
         (
             x.clamp(0, max_x),
-            y.clamp(0, max_y),
+            (y.clamp(0, max_y) + self.render_y_offset).min(max_y),
             w as i32,
             HEIGHT as i32,
         )
@@ -225,8 +239,25 @@ impl SoftKeyboard {
     }
 
     pub fn tick(&mut self, now_ns: u64) -> bool {
-        let changed = self.engine.tick(now_ns);
-        self.surface_dirty |= changed;
+        let engine_changed = self.engine.tick(now_ns);
+        let mut changed = engine_changed;
+        if self.open_animating {
+            let started = *self.open_started_ns.get_or_insert(now_ns);
+            let t = (now_ns.saturating_sub(started) as f32 / OPEN_DURATION_NS as f32)
+                .clamp(0.0, 1.0);
+            let previous = self.render_y_offset;
+            let remaining = 1.0 - t;
+            self.render_y_offset =
+                (OPEN_OFFSET_Y as f32 * remaining * remaining * remaining) as i32;
+            changed |= previous != self.render_y_offset || self.open_animating;
+            if t >= 1.0 {
+                self.open_animating = false;
+                self.open_started_ns = None;
+            }
+        }
+        // Translation does not invalidate the cached Warp 3 surface; only
+        // Warp's own hover/control animation needs a repaint.
+        self.surface_dirty |= engine_changed;
         changed
     }
 

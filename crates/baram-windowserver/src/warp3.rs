@@ -922,8 +922,39 @@ impl Warp3Engine {
                 // `i32::clamp` panics when the window is narrower than the
                 // button's normal 44 px minimum because min > max.  A tiny
                 // window must shrink the control instead of crashing.
-                self.nodes[idx].w =
-                    fit_button_width(measure(self.nodes[idx].prop("text")) + 28, width);
+                let key_grid_width = {
+                    let node = &self.nodes[idx];
+                    if node.classes.iter().any(|class| class == "space") {
+                        Some(300)
+                    } else if node
+                        .classes
+                        .iter()
+                        .any(|class| class == "backspace" || class == "enter")
+                    {
+                        Some(112)
+                    } else if node.classes.iter().any(|class| class == "shift") {
+                        Some(92)
+                    } else if node
+                        .classes
+                        .iter()
+                        .any(|class| class == "symbols" || class == "letters")
+                    {
+                        Some(80)
+                    } else if node.classes.iter().any(|class| class == "close") {
+                        Some(100)
+                    } else {
+                        None
+                    }
+                };
+                self.nodes[idx].w = self.nodes[idx]
+                    .prop("key-width")
+                    .parse::<i32>()
+                    .ok()
+                    .or(key_grid_width)
+                    .map(|requested| requested.clamp(1, width))
+                    .unwrap_or_else(|| {
+                        fit_button_width(measure(self.nodes[idx].prop("text")) + 28, width)
+                    });
                 self.nodes[idx].h = 34;
             }
             "input" => {
@@ -941,6 +972,49 @@ impl Warp3Engine {
             "space" => {
                 self.nodes[idx].h = 1;
                 self.nodes[idx].w = width;
+            }
+            "keyboard-row" => {
+                // The software keyboard deliberately uses a fixed key grid.
+                // Generic `flex` sizes by label length, which is right for an
+                // app toolbar but wrong for keys such as `q`, `Back`, and
+                // `Space` that must align in columns.
+                let children = self.nodes[idx].children.clone();
+                let gap = 6i32;
+                let requested: Vec<i32> = children
+                    .iter()
+                    .map(|child| {
+                        let node = &self.nodes[*child];
+                        node.prop("key-width").parse::<i32>().unwrap_or_else(|_| {
+                            if node.classes.iter().any(|class| class == "space") {
+                                300
+                            } else if node.classes.iter().any(|class| {
+                                class == "backspace" || class == "enter"
+                            }) {
+                                112
+                            } else if node.classes.iter().any(|class| class == "shift") {
+                                92
+                            } else if node.classes.iter().any(|class| {
+                                class == "symbols" || class == "letters"
+                            }) {
+                                80
+                            } else if node.classes.iter().any(|class| class == "close") {
+                                100
+                            } else {
+                                58
+                            }
+                        }).max(1)
+                    })
+                    .collect();
+                let gaps = gap * children.len().saturating_sub(1) as i32;
+                let total = requested.iter().sum::<i32>() + gaps;
+                let mut cx = x + ((width - total).max(0) / 2);
+                let mut max_h = 34;
+                for (child, key_w) in children.into_iter().zip(requested) {
+                    let h = self.layout(child, cx, y, key_w);
+                    cx += self.nodes[child].w + gap;
+                    max_h = max_h.max(h);
+                }
+                self.nodes[idx].h = max_h;
             }
             "flex" | "toolbar" => {
                 let children = self.nodes[idx].children.clone();
