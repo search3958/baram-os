@@ -11,7 +11,6 @@ use baram_font::LayerFontExt;
 use baram_graphics::blur;
 use baram_graphics::svg;
 use baram_graphics::ui::FmtBuf;
-use baram_graphics::uiscript;
 use uefi::runtime;
 
 pub const TASKBAR_H: usize = 48;
@@ -1563,8 +1562,6 @@ pub fn render_scene(
     key_ev: u32,
     fps: u32,
     _mouse_mode: &str,
-    ui_commands: &[uiscript::Command],
-    ui_win_id: Option<WinId>,
     warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
@@ -1726,12 +1723,7 @@ pub fn render_scene(
 
     // Stable z-order: background -> HUD -> windows/launcher -> taskbar.
     if !taskbar_only && !launcher_only_redraw {
-        wm.draw_all(
-            layer,
-            ui_win_id.map(|id| (id, ui_commands)),
-            warp_engines,
-            html_engines,
-        );
+        wm.draw_all(layer, warp_engines, html_engines);
     }
 
     if show_app_launcher {
@@ -2181,8 +2173,6 @@ pub fn render_frame(
     mouse_mode: &str,
     cursor_x: i32,
     cursor_y: i32,
-    ui_commands: &[uiscript::Command],
-    ui_win_id: Option<WinId>,
     warp_engines: &mut alloc::vec::Vec<(WinId, WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, HtmlEngine)>,
     wallpaper: Option<&[u32]>,
@@ -2230,8 +2220,6 @@ pub fn render_frame(
         key_ev,
         fps,
         mouse_mode,
-        ui_commands,
-        ui_win_id,
         warp_engines,
         html_engines,
         wallpaper,

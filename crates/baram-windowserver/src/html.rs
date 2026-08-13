@@ -242,9 +242,18 @@ impl HtmlEngine {
 
     pub fn new_warp3(config_name: &str) -> Self {
         let warp3 = crate::warp3::Warp3Engine::new(config_name);
+        Self::from_warp3(warp3, config_name)
+    }
+
+    pub fn new_embedded_warp3(name: &str, sources: &[(&str, &str)]) -> Self {
+        let warp3 = crate::warp3::Warp3Engine::new_embedded(name, sources);
+        Self::from_warp3(warp3, name)
+    }
+
+    fn from_warp3(warp3: crate::warp3::Warp3Engine, name: &str) -> Self {
         Self {
             warp3: Some(warp3),
-            origin: String::from(config_name),
+            origin: String::from(name),
             nodes: Vec::new(),
             rules: Vec::new(),
             root: 0,

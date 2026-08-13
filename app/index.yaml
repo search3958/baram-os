@@ -17,10 +17,6 @@ apps:
       - theme
       - customize
       - color setting
-  demo.u1:
-   icon: null
-   type: uiscript-1
-   title: UI Script Demo
   warpdemo.warp:
     icon: null
     type: warp-2

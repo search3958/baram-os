@@ -1168,9 +1168,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         alloc::vec::Vec::new();
     let mut html_engines: alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)> =
         alloc::vec::Vec::new();
-    let mut ui_win_id: Option<WinId> = None;
-    let mut ui_commands: alloc::vec::Vec<baram_graphics::uiscript::Command> =
-        alloc::vec::Vec::new();
 
     let mut auto_idx = 0i32;
     for autostart_name in &autostart_list {
@@ -1185,8 +1182,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 &mut wm,
                 &mut warp_engines,
                 &mut html_engines,
-                &mut ui_commands,
-                &mut ui_win_id,
                 x,
                 y,
                 w,
@@ -1323,8 +1318,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         key_ev_count,
         fps,
         mouse_mode_label,
-        &ui_commands,
-        ui_win_id,
         &mut warp_engines,
         &mut html_engines,
         cached_wallpaper.as_deref(),
@@ -1374,8 +1367,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         key_ev_count,
         fps,
         mouse_mode_label,
-        &ui_commands,
-        ui_win_id,
         &mut warp_engines,
         &mut html_engines,
         cached_wallpaper.as_deref(),
@@ -2141,8 +2132,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     &mut wm,
                                     &mut warp_engines,
                                     &mut html_engines,
-                                    &mut ui_commands,
-                                    &mut ui_win_id,
                                     &mut display_state,
                                     &origin,
                                     source_win_id,
@@ -2568,8 +2557,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             &mut wm,
                             &mut warp_engines,
                             &mut html_engines,
-                            &mut ui_commands,
-                            &mut ui_win_id,
                             &mut display_state,
                             &origin,
                             source_win_id,
@@ -2678,8 +2665,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     &mut wm,
                     &mut warp_engines,
                     &mut html_engines,
-                    &mut ui_commands,
-                    &mut ui_win_id,
                     nx,
                     ny,
                     400,
@@ -2870,8 +2855,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 &mut wm,
                 &mut warp_engines,
                 &mut html_engines,
-                &mut ui_commands,
-                &mut ui_win_id,
                 &mut display_state,
                 &origin,
                 source_win_id,
@@ -3221,8 +3204,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     key_ev_count,
                     fps,
                     mouse_mode_label,
-                    &ui_commands,
-                    ui_win_id,
                     &mut warp_engines,
                     &mut html_engines,
                     cached_wallpaper.as_deref(),
@@ -3275,8 +3256,6 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         key_ev_count,
                         fps,
                         mouse_mode_label,
-                        &ui_commands,
-                        ui_win_id,
                         &mut warp_engines,
                         &mut html_engines,
                         cached_wallpaper.as_deref(),
@@ -3666,16 +3645,24 @@ fn open_app(
     wm: &mut WindowManager,
     warp_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
-    ui_commands: &mut alloc::vec::Vec<baram_graphics::uiscript::Command>,
-    ui_win_id: &mut Option<WinId>,
     x: i32,
     y: i32,
     w: usize,
     h: usize,
 ) -> Option<WinId> {
     let entry = app_entries.iter().find(|entry| entry.name == name)?;
-    let win_id = wm.add(&entry.title, x, y, w, h);
-    wm.set_icon(win_id, &entry.icon);
+    let is_unsupported_ui_script = entry.app_type.starts_with("uiscript");
+    let window_title = if is_unsupported_ui_script {
+        "UI Script（非対応）"
+    } else {
+        entry.title.as_str()
+    };
+    let win_id = wm.add(window_title, x, y, w, h);
+    if is_unsupported_ui_script {
+        wm.set_icon(win_id, "redstar.png");
+    } else {
+        wm.set_icon(win_id, &entry.icon);
+    }
     let content_h = h.saturating_sub(baram_windowserver::window::title_bar_h());
 
     if entry.app_type.starts_with("warp-3") {
@@ -3688,10 +3675,22 @@ fn open_app(
         engine.set_origin(&entry.name);
         engine.update(w as i32, content_h as i32);
         html_engines.push((win_id, engine));
-    } else if entry.app_type.starts_with("uiscript") {
-        let source = baram_bsd::app::load_app_source(&entry.name);
-        *ui_commands = baram_graphics::uiscript::parse(&source);
-        *ui_win_id = Some(win_id);
+    } else if is_unsupported_ui_script {
+        // Keep the file association so opening an existing .u1 file still
+        // reaches BaramOS, but do not parse or execute the legacy format.
+        // Showing this as a normal Warp 3 window also gives it the same
+        // close/focus behavior as the other application dialogs.
+        let config = "version = 3\nscreen = main\nname = UI Script（非対応）";
+        let main = alloc::format!(
+            "config {{ title(\"UI Script（非対応）\") }}\nhead {{ text(\"UI Scriptはサポートされていません\") }}\ntext {{ text(\"BaramOSではUI Scriptのサポートを終了しました。\") }}\ntext {{ text(\"このファイルは開けません: {}\") }}",
+            entry.name
+        );
+        let mut engine = baram_windowserver::html::HtmlEngine::new_embedded_warp3(
+            "unsupported-ui-script",
+            &[("config.ini", config), ("main.w3u", &main)],
+        );
+        engine.update(w as i32, content_h as i32);
+        html_engines.push((win_id, engine));
     } else {
         let source = baram_bsd::app::load_app_source(&entry.name);
         let mut engine = baram_windowserver::warp::WarpEngine::new(&source);
@@ -3708,8 +3707,6 @@ fn handle_navigation(
     wm: &mut WindowManager,
     warp_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
     html_engines: &mut alloc::vec::Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
-    ui_commands: &mut alloc::vec::Vec<baram_graphics::uiscript::Command>,
-    ui_win_id: &mut Option<WinId>,
     display_state: &mut baram_bsd::uri::DisplayState,
     origin: &str,
     source_win_id: WinId,
@@ -3754,8 +3751,6 @@ fn handle_navigation(
             wm,
             warp_engines,
             html_engines,
-            ui_commands,
-            ui_win_id,
             x,
             y,
             400,

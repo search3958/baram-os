@@ -1097,7 +1097,6 @@ impl WindowManager {
     pub fn draw_all(
         &mut self,
         layer: &mut LayerSystem,
-        ui_win: Option<(WinId, &[baram_graphics::uiscript::Command])>,
         warp_engines: &mut alloc::vec::Vec<(WinId, super::warp::WarpEngine)>,
         html_engines: &mut alloc::vec::Vec<(WinId, super::html::HtmlEngine)>,
     ) {
@@ -1326,24 +1325,6 @@ impl WindowManager {
                     // Base clearing/fill ran in parallel. SVG, font and engine
                     // caches remain on the BSP because they can allocate.
 
-                    if let Some((uid, cmds)) = ui_win {
-                        if win_id == uid {
-                            (*layer_ptr).push_clip(0, chrome_h, ww, wh);
-                            let card_radius = config::get_usize("ui-theme/card/radius", 12);
-                            baram_graphics::uiscript::render(
-                                &mut *layer_ptr,
-                                cmds,
-                                0,
-                                0,
-                                ww,
-                                wh,
-                                chrome_h,
-                                scroll_y,
-                                card_radius,
-                            );
-                            (*layer_ptr).pop_clip();
-                        }
-                    }
                     for i in 0..warp_engines.len() {
                         if win_id == warp_engines[i].0 {
                             let engine = &mut warp_engines[i].1;
