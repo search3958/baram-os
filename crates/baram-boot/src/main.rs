@@ -15,7 +15,9 @@ use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
-use baram_windowserver::soft_keyboard::{Key as SoftKey, SoftKeyboard};
+use baram_windowserver::soft_keyboard::{
+    Key as SoftKey, KeyboardLanguage, SoftKeyboard,
+};
 use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
 use wana_kana::ConvertJapanese;
 
@@ -556,6 +558,19 @@ fn input_mode_for_menu_selection(selection: usize) -> InputMode {
         4 => InputMode::Korean(KoreanLayout::ChosunDubeolsik),
         5 => InputMode::Pinyin,
         _ => InputMode::Latin,
+    }
+}
+
+fn keyboard_language(mode: InputMode) -> KeyboardLanguage {
+    match mode {
+        InputMode::Latin => KeyboardLanguage::Latin,
+        InputMode::Hiragana => KeyboardLanguage::Japanese,
+        InputMode::Korean(KoreanLayout::Dubeolsik) => KeyboardLanguage::KoreanDubeolsik,
+        InputMode::Korean(KoreanLayout::HancomRoman) => KeyboardLanguage::KoreanHancomRoman,
+        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => {
+            KeyboardLanguage::KoreanChosunDubeolsik
+        }
+        InputMode::Pinyin => KeyboardLanguage::ChinesePinyin,
     }
 }
 
@@ -2749,6 +2764,29 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // this clock, without a runtime-service call in the render hot path.
         let mut deferred_html_commands = alloc::vec::Vec::new();
         let runtime_window_count = wm.count();
+        let keyboard_context_changed = if let Some((reading, candidates, selected)) =
+            japanese_ime.conversion_view()
+        {
+            soft_keyboard.set_input_context(
+                keyboard_language(input_mode),
+                Some(reading),
+                candidates,
+                selected,
+            )
+        } else if let Some((reading, candidates, selected)) = pinyin_ime.conversion_view() {
+            soft_keyboard.set_input_context(
+                keyboard_language(input_mode),
+                Some(reading),
+                candidates,
+                selected,
+            )
+        } else {
+            soft_keyboard.set_input_context(keyboard_language(input_mode), None, &[], 0)
+        };
+        if keyboard_context_changed {
+            scene_dirty = true;
+            dirty = true;
+        }
         if soft_keyboard.tick(motion_now_ns) {
             scene_dirty = true;
             dirty = true;

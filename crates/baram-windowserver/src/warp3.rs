@@ -922,35 +922,10 @@ impl Warp3Engine {
                 // `i32::clamp` panics when the window is narrower than the
                 // button's normal 44 px minimum because min > max.  A tiny
                 // window must shrink the control instead of crashing.
-                let key_grid_width = {
-                    let node = &self.nodes[idx];
-                    if node.classes.iter().any(|class| class == "space") {
-                        Some(300)
-                    } else if node
-                        .classes
-                        .iter()
-                        .any(|class| class == "backspace" || class == "enter")
-                    {
-                        Some(112)
-                    } else if node.classes.iter().any(|class| class == "shift") {
-                        Some(92)
-                    } else if node
-                        .classes
-                        .iter()
-                        .any(|class| class == "symbols" || class == "letters")
-                    {
-                        Some(80)
-                    } else if node.classes.iter().any(|class| class == "close") {
-                        Some(100)
-                    } else {
-                        None
-                    }
-                };
                 self.nodes[idx].w = self.nodes[idx]
                     .prop("key-width")
                     .parse::<i32>()
                     .ok()
-                    .or(key_grid_width)
                     .map(|requested| requested.clamp(1, width))
                     .unwrap_or_else(|| {
                         fit_button_width(measure(self.nodes[idx].prop("text")) + 28, width)
@@ -973,48 +948,52 @@ impl Warp3Engine {
                 self.nodes[idx].h = 1;
                 self.nodes[idx].w = width;
             }
+            "keyboard" => {
+                let children = self.nodes[idx].children.clone();
+                let rows: Vec<usize> = children
+                    .iter()
+                    .copied()
+                    .filter(|child| self.nodes[*child].is("keyboard-row"))
+                    .collect();
+                let grid_w = rows
+                    .iter()
+                    .map(|row| keyboard_row_natural_width(&self.nodes, *row))
+                    .max()
+                    .unwrap_or(width)
+                    .min(width);
+                let grid_x = x + (width - grid_w) / 2;
+                let mut cy = y;
+                for child in children {
+                    let h = self.layout(child, grid_x, cy, grid_w);
+                    cy += h + 6;
+                }
+                self.nodes[idx].h = (cy - y - 6).max(1);
+            }
             "keyboard-row" => {
-                // The software keyboard deliberately uses a fixed key grid.
-                // Generic `flex` sizes by label length, which is right for an
-                // app toolbar but wrong for keys such as `q`, `Back`, and
-                // `Space` that must align in columns.
+                // This is a compact fit-content grid, not a generic toolbar.
+                // Each key starts at its measured minimum, action keys impose
+                // a sensible minimum, and the space key absorbs only the
+                // remainder. Every row is then centred on the same grid.
                 let children = self.nodes[idx].children.clone();
                 let gap = 6i32;
-                let requested: Vec<i32> = children
-                    .iter()
-                    .map(|child| {
-                        let node = &self.nodes[*child];
-                        node.prop("key-width").parse::<i32>().unwrap_or_else(|_| {
-                            if node.classes.iter().any(|class| class == "space") {
-                                300
-                            } else if node.classes.iter().any(|class| {
-                                class == "backspace" || class == "enter"
-                            }) {
-                                112
-                            } else if node.classes.iter().any(|class| class == "shift") {
-                                92
-                            } else if node.classes.iter().any(|class| {
-                                class == "symbols" || class == "letters"
-                            }) {
-                                80
-                            } else if node.classes.iter().any(|class| class == "close") {
-                                100
-                            } else {
-                                58
-                            }
-                        }).max(1)
-                    })
-                    .collect();
+                let requested: Vec<i32> = children.iter().map(|child| keyboard_key_width(&self.nodes[*child])).collect();
                 let gaps = gap * children.len().saturating_sub(1) as i32;
-                let total = requested.iter().sum::<i32>() + gaps;
+                let space_count = children.iter().filter(|child| self.nodes[**child].classes.iter().any(|class| class == "space")).count() as i32;
+                let fixed = children.iter().zip(requested.iter()).filter(|(child, _)| !self.nodes[**child].classes.iter().any(|class| class == "space")).map(|(_, key_w)| *key_w).sum::<i32>() + gaps;
+                let available_space = if space_count > 0 { ((width - fixed) / space_count).max(requested.iter().copied().min().unwrap_or(44)) } else { 0 };
+                let total = if space_count > 0 { fixed + available_space * space_count } else { fixed };
                 let mut cx = x + ((width - total).max(0) / 2);
-                let mut max_h = 34;
-                for (child, key_w) in children.into_iter().zip(requested) {
+                let mut max_h = 30;
+                for (child, mut key_w) in children.into_iter().zip(requested) {
+                    if self.nodes[child].classes.iter().any(|class| class == "space") { key_w = available_space; }
+                    set_prop(&mut self.nodes[child], "key-width", &key_w.to_string());
+                    set_prop(&mut self.nodes[child], "key-center", "true");
                     let h = self.layout(child, cx, y, key_w);
+                    self.nodes[child].h = 30;
                     cx += self.nodes[child].w + gap;
                     max_h = max_h.max(h);
                 }
-                self.nodes[idx].h = max_h;
+                self.nodes[idx].h = max_h.min(30);
             }
             "flex" | "toolbar" => {
                 let children = self.nodes[idx].children.clone();
@@ -1462,7 +1441,12 @@ impl Warp3Engine {
             } else {
                 fg
             };
-            (x + 14, y + 8, color)
+            let tx = if node.prop("key-center") == "true" {
+                x + ((node.w - measure(text)).max(0) / 2)
+            } else {
+                x + 14
+            };
+            (tx, y + if node.prop("key-center") == "true" { 6 } else { 8 }, color)
         } else if node.is("input") || node.is("textarea") {
             (x + 10, y + 8, fg)
         } else if node.is("card") {
@@ -1871,6 +1855,9 @@ impl Warp3Engine {
             .iter_mut()
             .position(|node| node.classes.iter().any(|item| item == class))
         {
+            if self.nodes[idx].prop("text") == value {
+                return;
+            }
             let y = self.nodes[idx].y;
             set_prop(&mut self.nodes[idx], "text", value);
             self.invalidate_from(y);
@@ -2210,6 +2197,27 @@ fn rounded_fill(
     if x >= 0 && y >= 0 && width > 0 && height > 0 {
         layer.fill_rounded_rect(x as usize, y as usize, width, height, radius, fill);
     }
+}
+
+fn keyboard_key_width(node: &Node) -> i32 {
+    let fit = fit_button_width(measure(node.prop("text")) + 28, i32::MAX);
+    if node.classes.iter().any(|class| class == "backspace" || class == "enter") {
+        fit.max(76)
+    } else if node.classes.iter().any(|class| class == "shift") {
+        fit.max(76)
+    } else if node.classes.iter().any(|class| class == "symbols" || class == "letters") {
+        fit.max(64)
+    } else if node.classes.iter().any(|class| class == "close") {
+        fit.max(68)
+    } else {
+        fit
+    }
+}
+
+fn keyboard_row_natural_width(nodes: &[Node], row: usize) -> i32 {
+    let children = &nodes[row].children;
+    let gap = 6 * children.len().saturating_sub(1) as i32;
+    children.iter().map(|child| keyboard_key_width(&nodes[*child])).sum::<i32>() + gap
 }
 
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
