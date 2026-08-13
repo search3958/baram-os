@@ -12,7 +12,6 @@ pub use self::stb_truetype_rectPack::*;
 
 pub mod c_runtime;
 
-
 mod stb_truetype_bitmap;
 mod stb_truetype_buf;
 mod stb_truetype_charString;

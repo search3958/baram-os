@@ -1,5 +1,3 @@
-
-
 use crate::*;
 use c_runtime;
 
@@ -355,12 +353,10 @@ pub unsafe fn stbtt__rasterize(
                 b = (k) as i32;
             }
 
-            (*e.offset((n) as isize)).x0 =
-                ((*p.offset((a) as isize)).x * scale_x + shift_x) as f32;
+            (*e.offset((n) as isize)).x0 = ((*p.offset((a) as isize)).x * scale_x + shift_x) as f32;
             (*e.offset((n) as isize)).y0 =
                 ((*p.offset((a) as isize)).y * y_scale_inv + shift_y) * ((vsubsample) as f32);
-            (*e.offset((n) as isize)).x1 =
-                ((*p.offset((b) as isize)).x * scale_x + shift_x) as f32;
+            (*e.offset((n) as isize)).x1 = ((*p.offset((b) as isize)).x * scale_x + shift_x) as f32;
             (*e.offset((n) as isize)).y1 =
                 ((*p.offset((b) as isize)).y * y_scale_inv + shift_y) * ((vsubsample) as f32);
             c_runtime::preInc(&mut n);

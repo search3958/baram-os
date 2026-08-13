@@ -15,17 +15,12 @@
 
 use alloc::vec::Vec;
 use uefi::boot;
-use uefi::prelude::*;  
+use uefi::prelude::*;
 use uefi::proto::unsafe_protocol;
+use uefi::{Event, Status};
 use uefi_raw::protocol::console::{
     AbsolutePointerMode, AbsolutePointerProtocol, AbsolutePointerState,
 };
-use uefi::{Event, Status};
-
-
-
-
-
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -33,13 +28,10 @@ use uefi::{Event, Status};
 pub struct AbsolutePointer(AbsolutePointerProtocol);
 
 impl AbsolutePointer {
-    
     pub fn reset(&mut self, extended_verification: bool) -> uefi::Result {
         unsafe { (self.0.reset)(&mut self.0, extended_verification.into()) }.to_result()
     }
 
-    
-    
     pub fn get_state(&mut self) -> uefi::Result<Option<AbsolutePointerState>> {
         let mut state = AbsolutePointerState::default();
         match unsafe { (self.0.get_state)(&self.0, &mut state) } {
@@ -48,30 +40,19 @@ impl AbsolutePointer {
         }
     }
 
-    
-    
     pub fn wait_for_input_event(&self) -> Event {
-        
-        
-        
-        
-        
         unsafe { Event::from_ptr(self.0.wait_for_input) }
             .expect("AbsolutePointer wait_for_input event was null")
     }
 
-    
     pub fn mode(&self) -> &AbsolutePointerMode {
-        
         unsafe { &*self.0.mode }
     }
 }
 
-
 pub fn absolute_pointer_present() -> bool {
     boot::get_handle_for_protocol::<AbsolutePointer>().is_ok()
 }
-
 
 pub fn find_absolute_pointer_handles() -> uefi::Result<Vec<uefi::Handle>> {
     boot::find_handles::<AbsolutePointer>()

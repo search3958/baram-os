@@ -108,6 +108,7 @@ pub struct WarpEngine {
     pub dirty: bool,
     pub hover_idx: Option<usize>,
     pub last_command: Option<String>,
+    last_clicked_id: Option<String>,
     pub focused_input: Option<usize>,
     pub focused_input_var: alloc::string::String,
     pub content_height: i32,
@@ -148,6 +149,7 @@ impl WarpEngine {
             dirty: false,
             hover_idx: None,
             last_command: None,
+            last_clicked_id: None,
             focused_input: None,
             focused_input_var: alloc::string::String::new(),
             content_height: 0,
@@ -856,6 +858,9 @@ impl WarpEngine {
             if self.nodes[idx].w > limit_w {
                 self.nodes[idx].w = limit_w;
             }
+            if let Ok(width) = self.get_attr(idx, "width").parse::<i32>() {
+                self.nodes[idx].w = width.clamp(1, limit_w.max(1));
+            }
             if self.texts.len() < MAX_TEXTS {
                 self.texts.push(TextElem {
                     x: self.nodes[idx].x + (self.nodes[idx].w - text_w) / 2,
@@ -1200,6 +1205,7 @@ impl WarpEngine {
 
     pub fn click(&mut self, x: i32, y: i32) {
         self.parse_current_screen();
+        self.last_clicked_id = None;
         let tb_h = crate::window::title_bar_h() as i32;
         if y < tb_h {
             self.dirty = true;
@@ -1228,6 +1234,10 @@ impl WarpEngine {
                     break;
                 }
                 if tag == "button" || tag == "tonalButton" {
+                    let id = self.nodes[i].get_id();
+                    if !id.is_empty() {
+                        self.last_clicked_id = Some(id.to_string());
+                    }
                     let ev = self.nodes[i].event_oneclick.clone();
                     if !ev.is_empty() {
                         self.execute_action(&ev);
@@ -1250,6 +1260,12 @@ impl WarpEngine {
             }
         }
         self.dirty = true;
+    }
+
+    /// Returns the last clicked control id without exposing an application
+    /// command or URI. OS-owned Warp surfaces use this as their input bridge.
+    pub fn take_clicked_id(&mut self) -> Option<String> {
+        self.last_clicked_id.take()
     }
 
     pub fn handle_key(&mut self, c: u8) {

@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-
 pub const PE_MZ: u16 = 0x5A4D;
 pub const PE_SIGNATURE: u32 = 0x00004550;
 pub const IMAGE_DIRECTORY_ENTRY_BASERELOC: usize = 5;
@@ -127,13 +126,21 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
     let opt_offset = coff_offset + core::mem::size_of::<CoffHeader>();
     let magic = unsafe { core::ptr::read_unaligned(data[opt_offset..].as_ptr() as *const u16) };
 
-    let (entry_rva, image_base, size_of_image, _section_alignment, data_dirs_offset, num_data_dirs) = if magic == 0x20b {
-        let opt = unsafe { &*(data[opt_offset..].as_ptr() as *const OptionalHeader64) };
-        let dd_off = opt_offset + core::mem::size_of::<OptionalHeader64>();
-        (opt.address_of_entry_point, opt.image_base, opt.size_of_image, opt.section_alignment, dd_off, opt.number_of_rva_and_sizes as usize)
-    } else {
-        return Err(LoadError::UnsupportedPEFormat);
-    };
+    let (entry_rva, image_base, size_of_image, _section_alignment, data_dirs_offset, num_data_dirs) =
+        if magic == 0x20b {
+            let opt = unsafe { &*(data[opt_offset..].as_ptr() as *const OptionalHeader64) };
+            let dd_off = opt_offset + core::mem::size_of::<OptionalHeader64>();
+            (
+                opt.address_of_entry_point,
+                opt.image_base,
+                opt.size_of_image,
+                opt.section_alignment,
+                dd_off,
+                opt.number_of_rva_and_sizes as usize,
+            )
+        } else {
+            return Err(LoadError::UnsupportedPEFormat);
+        };
 
     let sections_offset = opt_offset + coff.size_of_optional_header as usize;
 
@@ -156,7 +163,8 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
         }
     };
 
-    let headers_size = sections_offset + coff.number_of_sections as usize * core::mem::size_of::<SectionHeader>();
+    let headers_size =
+        sections_offset + coff.number_of_sections as usize * core::mem::size_of::<SectionHeader>();
     unsafe {
         core::ptr::copy_nonoverlapping(data.as_ptr(), image, headers_size.min(data.len()));
     }
@@ -189,7 +197,8 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
     }
 
     if num_data_dirs > IMAGE_DIRECTORY_ENTRY_BASERELOC {
-        let reloc_dir_off = data_dirs_offset + IMAGE_DIRECTORY_ENTRY_BASERELOC * core::mem::size_of::<DataDirectory>();
+        let reloc_dir_off = data_dirs_offset
+            + IMAGE_DIRECTORY_ENTRY_BASERELOC * core::mem::size_of::<DataDirectory>();
         let reloc_dir = unsafe { &*(data[reloc_dir_off..].as_ptr() as *const DataDirectory) };
 
         if reloc_dir.virtual_address != 0 && reloc_dir.size != 0 {
@@ -197,7 +206,9 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
             let mut block_offset = reloc_dir.virtual_address as usize;
 
             loop {
-                if block_offset + core::mem::size_of::<BaseRelocationBlock>() > size_of_image as usize {
+                if block_offset + core::mem::size_of::<BaseRelocationBlock>()
+                    > size_of_image as usize
+                {
                     break;
                 }
                 let block = unsafe { &*(image.add(block_offset) as *const BaseRelocationBlock) };
@@ -208,12 +219,15 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
                 let num_entries = (block.size_of_block as usize - 8) / 2;
                 for j in 0..num_entries {
                     let entry_off = block_offset + 8 + j * 2;
-                    let entry = unsafe { core::ptr::read_unaligned(image.add(entry_off) as *const u16) };
+                    let entry =
+                        unsafe { core::ptr::read_unaligned(image.add(entry_off) as *const u16) };
                     let rel_type = entry >> 12;
                     let rel_offset = (entry & 0x0FFF) as usize;
 
                     if rel_type == IMAGE_REL_BASED_DIR64 {
-                        let target = unsafe { image.add(block.virtual_address as usize + rel_offset) as *mut u64 };
+                        let target = unsafe {
+                            image.add(block.virtual_address as usize + rel_offset) as *mut u64
+                        };
                         unsafe {
                             let val = core::ptr::read_unaligned(target as *const u64);
                             core::ptr::write_unaligned(target, (val as isize + delta) as u64);
@@ -222,7 +236,9 @@ pub fn load_pe_from_memory(data: &[u8]) -> Result<LoadedModule, LoadError> {
                 }
 
                 let next = block_offset + block.size_of_block as usize;
-                if next == block_offset { break; }
+                if next == block_offset {
+                    break;
+                }
                 block_offset = next;
             }
         }
@@ -272,13 +288,16 @@ pub fn find_exports(module: &LoadedModule) -> Option<*const super::subsystem::Su
 
     let num_names = export_dir.number_of_names as usize;
     let names_ptr = unsafe { image.add(export_dir.address_of_names as usize) as *const u32 };
-    let ordinals_ptr = unsafe { image.add(export_dir.address_of_name_ordinals as usize) as *const u16 };
-    let functions_ptr = unsafe { image.add(export_dir.address_of_functions as usize) as *const u32 };
+    let ordinals_ptr =
+        unsafe { image.add(export_dir.address_of_name_ordinals as usize) as *const u16 };
+    let functions_ptr =
+        unsafe { image.add(export_dir.address_of_functions as usize) as *const u32 };
 
     for i in 0..num_names {
         let name_rva = unsafe { core::ptr::read_unaligned(names_ptr.add(i)) };
         let name_ptr = unsafe { image.add(name_rva as usize) as *const u8 };
-        let name = unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(name_ptr, 32)) };
+        let name =
+            unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(name_ptr, 32)) };
 
         if name.starts_with("BARAM_SUBSYSTEM_EXPORTS") {
             let ordinal = unsafe { *ordinals_ptr.add(i) };
@@ -316,7 +335,6 @@ pub enum LoadError {
 }
 
 pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
-    
     use alloc::vec;
 
     let mut data = vec![0u8; 4096];
@@ -342,7 +360,6 @@ pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 fn read_file_chunk(path: &str, offset: usize, buf: &mut [u8]) -> usize {
-    
     use uefi::proto::media::file::{File, FileAttribute, FileMode};
     use uefi::CStr16;
 

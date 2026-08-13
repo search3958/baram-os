@@ -109,7 +109,19 @@ pub fn restore_context(ctx: &CpuContext) {
 pub fn switch_context(_from: &mut CpuContext, to: &CpuContext) {
     unsafe {
         let frame = ContextSwitchFrame {
-            x19: 0, x20: 0, x21: 0, x22: 0, x23: 0, x24: 0, x25: 0, x26: 0, x27: 0, x28: 0, x29: 0, lr: 0, sp: 0,
+            x19: 0,
+            x20: 0,
+            x21: 0,
+            x22: 0,
+            x23: 0,
+            x24: 0,
+            x25: 0,
+            x26: 0,
+            x27: 0,
+            x28: 0,
+            x29: 0,
+            lr: 0,
+            sp: 0,
         };
         let frame_ptr = &frame as *const ContextSwitchFrame;
 

@@ -112,11 +112,7 @@ impl SetupWizard {
     }
 
     fn finish(&mut self, skipped: bool) {
-        let shift_key = if skipped {
-            0
-        } else {
-            self.detected_raw_key
-        };
+        let shift_key = if skipped { 0 } else { self.detected_raw_key };
         let saved = config::update_and_save(|cfg| {
             cfg.set("keyboard/shift_key", &alloc::format!("{shift_key}"));
             cfg.set("system/done", "1");

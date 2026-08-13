@@ -2,13 +2,13 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use alloc::string::{String, ToString};
-use crate::process::{ProcessState, ProcessPriority};
-use crate::proc_loader::ProcessLoader;
-use crate::vmm::VirtualMemoryManager;
-use crate::scheduler::Scheduler;
 use crate::ipc::IpcManager;
+use crate::proc_loader::ProcessLoader;
+use crate::process::{ProcessPriority, ProcessState};
+use crate::scheduler::Scheduler;
+use crate::vmm::VirtualMemoryManager;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 pub const INIT_PATH: &str = "/bin/init";
 pub const SYSTEM_SERVICES: &[&str] = &[
@@ -63,10 +63,16 @@ impl InitProcess {
         }
     }
 
-    pub fn start(&mut self, loader: &mut ProcessLoader, scheduler: &mut Scheduler, vmm: &mut VirtualMemoryManager) -> Result<(), InitError> {
+    pub fn start(
+        &mut self,
+        loader: &mut ProcessLoader,
+        scheduler: &mut Scheduler,
+        vmm: &mut VirtualMemoryManager,
+    ) -> Result<(), InitError> {
         self.state = InitState::Loading;
 
-        let (process, _load_info) = loader.load_executable(INIT_PATH, vmm)
+        let (process, _load_info) = loader
+            .load_executable(INIT_PATH, vmm)
             .map_err(|_| InitError::LoadFailed)?;
 
         self.pid = process.pid;
@@ -145,13 +151,22 @@ impl InitProcess {
     }
 
     fn setup_environment(&mut self) {
-        self.environment.push((String::from("PATH"), String::from("/bin:/usr/bin:/system/bin")));
-        self.environment.push((String::from("HOME"), String::from("/root")));
-        self.environment.push((String::from("USER"), String::from("root")));
-        self.environment.push((String::from("SHELL"), String::from("/bin/sh")));
-        self.environment.push((String::from("TERM"), String::from("xterm-256color")));
-        self.environment.push((String::from("LANG"), String::from("C")));
-        self.environment.push((String::from("TZ"), String::from("UTC")));
+        self.environment.push((
+            String::from("PATH"),
+            String::from("/bin:/usr/bin:/system/bin"),
+        ));
+        self.environment
+            .push((String::from("HOME"), String::from("/root")));
+        self.environment
+            .push((String::from("USER"), String::from("root")));
+        self.environment
+            .push((String::from("SHELL"), String::from("/bin/sh")));
+        self.environment
+            .push((String::from("TERM"), String::from("xterm-256color")));
+        self.environment
+            .push((String::from("LANG"), String::from("C")));
+        self.environment
+            .push((String::from("TZ"), String::from("UTC")));
     }
 
     fn add_service(&mut self, path: &str) {
@@ -182,7 +197,8 @@ impl InitProcess {
     }
 
     pub fn get_running_services(&self) -> Vec<&ServiceInfo> {
-        self.services.iter()
+        self.services
+            .iter()
             .filter(|s| s.state == ServiceState::Running)
             .collect()
     }
@@ -230,7 +246,8 @@ impl SystemInit {
     pub fn boot(&mut self) -> Result<(), InitError> {
         self.vmm.init(0, 0);
 
-        self.init.start(&mut self.loader, &mut self.scheduler, &mut self.vmm)?;
+        self.init
+            .start(&mut self.loader, &mut self.scheduler, &mut self.vmm)?;
 
         self.start_services()?;
 
@@ -240,13 +257,16 @@ impl SystemInit {
     fn start_services(&mut self) -> Result<(), InitError> {
         for service in &mut self.init.services {
             if service.state == ServiceState::NotStarted {
-                let (process, _load_info) = self.loader.load_executable(&service.path, &mut self.vmm)
+                let (process, _load_info) = self
+                    .loader
+                    .load_executable(&service.path, &mut self.vmm)
                     .map_err(|_| InitError::ServiceLoadFailed)?;
 
                 service.pid = Some(process.pid);
                 service.state = ServiceState::Starting;
 
-                self.scheduler.create_process(&service.path, ProcessPriority::Normal);
+                self.scheduler
+                    .create_process(&service.path, ProcessPriority::Normal);
             }
         }
 

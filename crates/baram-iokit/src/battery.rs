@@ -61,10 +61,7 @@ fn acpi_checksum(data: &[u8]) -> u8 {
 }
 
 fn find_rsdp_in_memory() -> Option<usize> {
-    let ranges: [(usize, usize); 2] = [
-        (0x000E_0000, 0x000F_FFFF),
-        (0x0010_0000, 0x001F_FFFF),
-    ];
+    let ranges: [(usize, usize); 2] = [(0x000E_0000, 0x000F_FFFF), (0x0010_0000, 0x001F_FFFF)];
 
     for &(start, end) in &ranges {
         let mut addr = start;

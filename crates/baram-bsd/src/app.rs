@@ -24,6 +24,7 @@ pub fn load_app_source(name: &str) -> alloc::string::String {
 pub struct Warp3Archive {
     app_name: alloc::string::String,
     data: alloc::vec::Vec<u8>,
+    embedded: Option<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>>,
 }
 
 impl Warp3Archive {
@@ -32,6 +33,27 @@ impl Warp3Archive {
         Self {
             app_name: alloc::string::String::from(app_name),
             data: vfs::read_file(&path),
+            embedded: None,
+        }
+    }
+
+    /// Builds an OS-owned Warp 3 resource set without registering an app or
+    /// placing files in the application VFS.
+    pub fn from_embedded(name: &str, sources: &[(&str, &str)]) -> Self {
+        Self {
+            app_name: alloc::string::String::from(name),
+            data: alloc::vec::Vec::new(),
+            embedded: Some(
+                sources
+                    .iter()
+                    .map(|(name, source)| {
+                        (
+                            alloc::string::String::from(*name),
+                            alloc::string::String::from(*source),
+                        )
+                    })
+                    .collect(),
+            ),
         }
     }
 
@@ -40,6 +62,17 @@ impl Warp3Archive {
     }
 
     pub fn read_text(&self, member_name: &str) -> alloc::string::String {
+        if !is_safe_archive_member(member_name) {
+            return alloc::string::String::new();
+        }
+        let wanted = member_name.trim_start_matches("./");
+        if let Some(sources) = &self.embedded {
+            return sources
+                .iter()
+                .find(|(name, _)| name.trim_start_matches("./") == wanted)
+                .map(|(_, source)| source.clone())
+                .unwrap_or_default();
+        }
         let Some(bytes) = self.read(member_name) else {
             return alloc::string::String::new();
         };

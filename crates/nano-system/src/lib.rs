@@ -909,7 +909,10 @@ struct PanicWriter {
 
 impl PanicWriter {
     const fn new() -> Self {
-        Self { bytes: [0; 384], len: 0 }
+        Self {
+            bytes: [0; 384],
+            len: 0,
+        }
     }
 
     fn as_str(&self) -> &str {

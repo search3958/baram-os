@@ -6,6 +6,7 @@
 extern crate alloc;
 
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use baram_bsd::{app::Warp3Archive, config};
 use baram_core::{Color, LayerSystem};
@@ -143,6 +144,7 @@ struct Node {
     tab: usize,
     overlay: bool,
     hidden: bool,
+    manual_hidden: bool,
 }
 
 impl Node {
@@ -393,11 +395,22 @@ pub struct Warp3Engine {
     animation_now_ns: u64,
     shadows: Vec<ShadowMask>,
     now: NowValues,
+    last_clicked_class: Option<String>,
+    candidate_nodes: Vec<usize>,
 }
 
 impl Warp3Engine {
     pub fn new(app_name: &str) -> Self {
-        let archive = Warp3Archive::open(app_name);
+        Self::from_archive(Warp3Archive::open(app_name))
+    }
+
+    /// Creates Warp 3 UI for an OS surface. The resources never enter app
+    /// discovery or the VFS, so this is not an independently launchable app.
+    pub fn new_embedded(name: &str, sources: &[(&str, &str)]) -> Self {
+        Self::from_archive(Warp3Archive::from_embedded(name, sources))
+    }
+
+    fn from_archive(archive: Warp3Archive) -> Self {
         let config_source = archive.read_text("config.ini");
         let screen = ini_value(&config_source, "screen").unwrap_or_else(|| "main".to_string());
         let title = ini_value(&config_source, "name").unwrap_or_else(|| "Warp 3".to_string());
@@ -439,6 +452,8 @@ impl Warp3Engine {
             animation_now_ns: 0,
             shadows: Vec::new(),
             now: NowValues::default(),
+            last_clicked_class: None,
+            candidate_nodes: Vec::new(),
         };
         engine.load_screen();
         engine
@@ -467,6 +482,63 @@ impl Warp3Engine {
         self.set_element_text(class, value);
     }
 
+    pub fn set_visible(&mut self, class: &str, visible: bool) {
+        if let Some(idx) = self
+            .nodes
+            .iter()
+            .position(|node| node.classes.iter().any(|item| item == class))
+        {
+            if self.nodes[idx].manual_hidden == !visible {
+                return;
+            }
+            self.set_tree_visible(idx, visible);
+            self.invalidate_all();
+        }
+    }
+
+    /// Reuses a grow-only pool of candidate buttons so an OS surface can
+    /// present any number of suggestions without fixed empty placeholders.
+    pub fn set_candidate_items(&mut self, mode: &str, candidates: &[String]) {
+        self.set_element_text("candidate-mode", mode);
+        let Some(row) = self
+            .nodes
+            .iter()
+            .position(|node| node.is("candidate-row"))
+        else {
+            return;
+        };
+        while self.candidate_nodes.len() < candidates.len() {
+            let index = self.candidate_nodes.len();
+            let node = self.nodes.len();
+            self.nodes.push(Node {
+                tags: vec!["button".to_string()],
+                classes: vec![alloc::format!("candidate-{index}")],
+                props: vec![
+                    ("text".to_string(), String::new()),
+                    ("type".to_string(), "tonal".to_string()),
+                ],
+                ..Node::default()
+            });
+            self.candidate_nodes.push(node);
+        }
+        let mode_node = self.nodes[row].children.first().copied();
+        self.nodes[row].children.clear();
+        if let Some(mode_node) = mode_node {
+            self.nodes[row].children.push(mode_node);
+        }
+        for index in 0..self.candidate_nodes.len() {
+            let node = self.candidate_nodes[index];
+            let visible = index < candidates.len();
+            self.nodes[node].manual_hidden = !visible;
+            self.nodes[node].hidden = !visible;
+            if visible {
+                set_prop(&mut self.nodes[node], "text", &candidates[index]);
+                self.nodes[row].children.push(node);
+            }
+        }
+        self.invalidate_all();
+    }
+
     pub fn hold_command(&mut self) {
         self.script_wait_until_ns = Some(u64::MAX);
     }
@@ -490,6 +562,7 @@ impl Warp3Engine {
         if self.width != width || self.height != height {
             self.toolbar_dirty = true;
         }
+        self.refresh_visibility();
         self.width = width.max(1);
         self.height = height.max(1);
         let document_width = self.width.min(960);
@@ -522,7 +595,6 @@ impl Warp3Engine {
         for idx in toolbars {
             self.layout(idx, toolbar_x, toolbar_y, toolbar_width);
         }
-        self.refresh_visibility();
         self.refresh_text_lines();
         self.rebuild_paint_lists();
         self.prepare_shadows();
@@ -611,6 +683,10 @@ impl Warp3Engine {
         }
     }
 
+    pub fn hover_token(&self) -> Option<usize> {
+        self.hovered
+    }
+
     pub fn cancel_hover(&mut self) {
         if let Some((old, new)) = self.hover_transition.take() {
             self.invalidate_nodes(old, new);
@@ -622,6 +698,7 @@ impl Warp3Engine {
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
+        self.last_clicked_class = None;
         let hit = self.hit_test(x, y);
         let Some(idx) = hit else {
             self.focused_input = None;
@@ -655,6 +732,7 @@ impl Warp3Engine {
             }
         } else {
             self.focused_input = None;
+            self.last_clicked_class = self.nodes[idx].classes.first().cloned();
             self.run_click(idx);
         }
         if tab_changed || self.full_window_redraw {
@@ -664,6 +742,10 @@ impl Warp3Engine {
             // index self.nodes with the old hit after run_click.
             self.invalidate_from(hit_y);
         }
+    }
+
+    pub fn take_clicked_class(&mut self) -> Option<String> {
+        self.last_clicked_class.take()
     }
 
     pub fn handle_key(&mut self, key: u8) {
@@ -733,7 +815,11 @@ impl Warp3Engine {
             let raw_offset = 15.0 * remaining * remaining * remaining;
             // The first 90% stays on the integer-pixel fast path. During the
             // final settle, retain the fractional position for smoother text.
-            let next_offset = if t < 0.9 { raw_offset as i32 as f32 } else { raw_offset };
+            let next_offset = if t < 0.9 {
+                raw_offset as i32 as f32
+            } else {
+                raw_offset
+            };
             changed |= self.screen_transition_offset_y != next_offset;
             self.screen_transition_offset_y = next_offset;
             if t >= 1.0 {
@@ -751,13 +837,7 @@ impl Warp3Engine {
         if !self.dirty && (self.repaint_from < self.content_height || self.toolbar_dirty) {
             self.paint_cached_layers();
         }
-        layer.fill_rect(
-            0,
-            0,
-            layer.width(),
-            layer.height(),
-            html_bg(),
-        );
+        layer.fill_rect(0, 0, layer.width(), layer.height(), html_bg());
         let target_y = self.screen_transition_offset_y.max(0.0) as usize;
         let subpixel_y = self.screen_transition_offset_y - target_y as f32;
         if let Some(document) = &self.document_layer {
@@ -903,8 +983,14 @@ impl Warp3Engine {
                 // `i32::clamp` panics when the window is narrower than the
                 // button's normal 44 px minimum because min > max.  A tiny
                 // window must shrink the control instead of crashing.
-                self.nodes[idx].w =
-                    fit_button_width(measure(self.nodes[idx].prop("text")) + 28, width);
+                self.nodes[idx].w = self.nodes[idx]
+                    .prop("key-width")
+                    .parse::<i32>()
+                    .ok()
+                    .map(|requested| requested.clamp(1, width))
+                    .unwrap_or_else(|| {
+                        fit_button_width(measure(self.nodes[idx].prop("text")) + 28, width)
+                    });
                 self.nodes[idx].h = 34;
             }
             "input" => {
@@ -922,6 +1008,76 @@ impl Warp3Engine {
             "space" => {
                 self.nodes[idx].h = 1;
                 self.nodes[idx].w = width;
+            }
+            "keyboard" => {
+                let children = self.nodes[idx].children.clone();
+                let rows: Vec<usize> = children
+                    .iter()
+                    .copied()
+                    .filter(|child| self.nodes[*child].is("keyboard-row"))
+                    .collect();
+                let grid_w = rows
+                    .iter()
+                    .map(|row| keyboard_row_natural_width(&self.nodes, *row))
+                    .max()
+                    .unwrap_or(width)
+                    .min(width);
+                let grid_x = x + (width - grid_w) / 2;
+                let mut cy = y;
+                for child in children {
+                    if self.nodes[child].hidden {
+                        continue;
+                    }
+                    let h = self.layout(child, grid_x, cy, grid_w);
+                    cy += h + 6;
+                }
+                self.nodes[idx].h = (cy - y - 6).max(1);
+            }
+            "candidate-row" => {
+                let children = self.nodes[idx].children.clone();
+                let gap = 6i32;
+                let mut cx = x;
+                for child in children {
+                    if self.nodes[child].hidden {
+                        continue;
+                    }
+                    let item_w = fit_button_width(
+                        measure(self.nodes[child].prop("text")) + 28,
+                        width.saturating_sub(cx - x).max(1),
+                    );
+                    set_prop(&mut self.nodes[child], "key-width", &item_w.to_string());
+                    set_prop(&mut self.nodes[child], "key-center", "true");
+                    self.layout(child, cx, y, item_w);
+                    self.nodes[child].h = 30;
+                    cx += item_w + gap;
+                }
+                self.nodes[idx].h = 30;
+            }
+            "keyboard-row" => {
+                // This is a compact fit-content grid, not a generic toolbar.
+                // Each key starts at its measured minimum, action keys impose
+                // a sensible minimum, and the space key absorbs only the
+                // remainder. Every row is then centred on the same grid.
+                let children = self.nodes[idx].children.clone();
+                let gap = 6i32;
+                let requested: Vec<i32> = children.iter().map(|child| keyboard_key_width(&self.nodes[*child])).collect();
+                let gaps = gap * children.len().saturating_sub(1) as i32;
+                let space_count = children.iter().filter(|child| self.nodes[**child].classes.iter().any(|class| class == "space")).count() as i32;
+                let fixed = children.iter().zip(requested.iter()).filter(|(child, _)| !self.nodes[**child].classes.iter().any(|class| class == "space")).map(|(_, key_w)| *key_w).sum::<i32>() + gaps;
+                let available_space = if space_count > 0 { ((width - fixed) / space_count).max(requested.iter().copied().min().unwrap_or(44)) } else { 0 };
+                let total = if space_count > 0 { fixed + available_space * space_count } else { fixed };
+                let mut cx = x + ((width - total).max(0) / 2);
+                let mut max_h = 30;
+                for (child, mut key_w) in children.into_iter().zip(requested) {
+                    if self.nodes[child].classes.iter().any(|class| class == "space") { key_w = available_space; }
+                    set_prop(&mut self.nodes[child], "key-width", &key_w.to_string());
+                    set_prop(&mut self.nodes[child], "key-center", "true");
+                    let h = self.layout(child, cx, y, key_w);
+                    self.nodes[child].h = 30;
+                    cx += self.nodes[child].w + gap;
+                    max_h = max_h.max(h);
+                }
+                self.nodes[idx].h = max_h.min(30);
             }
             "flex" | "toolbar" => {
                 let children = self.nodes[idx].children.clone();
@@ -1369,7 +1525,12 @@ impl Warp3Engine {
             } else {
                 fg
             };
-            (x + 14, y + 8, color)
+            let tx = if node.prop("key-center") == "true" {
+                x + ((node.w - measure(text)).max(0) / 2)
+            } else {
+                x + 14
+            };
+            (tx, y + if node.prop("key-center") == "true" { 6 } else { 8 }, color)
         } else if node.is("input") || node.is("textarea") {
             (x + 10, y + 8, fg)
         } else if node.is("card") {
@@ -1440,7 +1601,7 @@ impl Warp3Engine {
 
     fn refresh_visibility(&mut self) {
         for node in &mut self.nodes {
-            node.hidden = false;
+            node.hidden = node.manual_hidden;
         }
         let tabs: Vec<(usize, usize, Vec<usize>)> = self
             .nodes
@@ -1484,6 +1645,15 @@ impl Warp3Engine {
         let children = self.nodes[idx].children.clone();
         for child in children {
             self.mark_hidden_tree(child);
+        }
+    }
+
+    fn set_tree_visible(&mut self, idx: usize, visible: bool) {
+        self.nodes[idx].manual_hidden = !visible;
+        self.nodes[idx].hidden = !visible;
+        let children = self.nodes[idx].children.clone();
+        for child in children {
+            self.set_tree_visible(child, visible);
         }
     }
 
@@ -1778,6 +1948,9 @@ impl Warp3Engine {
             .iter_mut()
             .position(|node| node.classes.iter().any(|item| item == class))
         {
+            if self.nodes[idx].prop("text") == value {
+                return;
+            }
             let y = self.nodes[idx].y;
             set_prop(&mut self.nodes[idx], "text", value);
             self.invalidate_from(y);
@@ -1910,7 +2083,7 @@ fn set_prop(node: &mut Node, key: &str, value: &str) {
 }
 
 fn interactive(node: &Node) -> bool {
-    node.is("button")
+    (node.is("button") && !node.classes.iter().any(|class| class == "candidate-mode"))
         || node.is("switch")
         || node.is("input")
         || node.is("textarea")
@@ -2117,6 +2290,27 @@ fn rounded_fill(
     if x >= 0 && y >= 0 && width > 0 && height > 0 {
         layer.fill_rounded_rect(x as usize, y as usize, width, height, radius, fill);
     }
+}
+
+fn keyboard_key_width(node: &Node) -> i32 {
+    let fit = fit_button_width(measure(node.prop("text")) + 28, i32::MAX);
+    if node.classes.iter().any(|class| class == "backspace" || class == "enter") {
+        fit.max(76)
+    } else if node.classes.iter().any(|class| class == "shift") {
+        fit.max(76)
+    } else if node.classes.iter().any(|class| class == "symbols" || class == "letters") {
+        fit.max(64)
+    } else if node.classes.iter().any(|class| class == "close") {
+        fit.max(68)
+    } else {
+        fit
+    }
+}
+
+fn keyboard_row_natural_width(nodes: &[Node], row: usize) -> i32 {
+    let children = &nodes[row].children;
+    let gap = 6 * children.len().saturating_sub(1) as i32;
+    children.iter().map(|child| keyboard_key_width(&nodes[*child])).sum::<i32>() + gap
 }
 
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {

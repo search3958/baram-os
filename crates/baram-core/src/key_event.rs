@@ -11,17 +11,19 @@ impl KeyEvent {
         self.modifiers & 0x11 != 0
     }
 
-    pub fn is_special(&self) -> bool { self.scancode != 0 }
+    pub fn is_special(&self) -> bool {
+        self.scancode != 0
+    }
 
     pub fn label(&self) -> &'static str {
         if let Some(c) = self.printable {
             return match c {
-                b' '  => "SPC",
+                b' ' => "SPC",
                 b'\t' => "TAB",
                 b'\r' | b'\n' => "ENT",
-                0x1B  => "ESC",
-                0x7F  => "DEL",
-                _     => "ASCII",
+                0x1B => "ESC",
+                0x7F => "DEL",
+                _ => "ASCII",
             };
         }
         "SPEC"

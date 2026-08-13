@@ -1,7 +1,7 @@
-use baram_core::{Color, LayerSystem};
+use crate::font;
 use crate::ttf_font;
 use crate::ttf_font_hud;
-use crate::font;
+use baram_core::{Color, LayerSystem};
 
 pub trait LayerFontExt {
     fn put_char(&mut self, x: usize, y: usize, ch: char, fg: Color);
@@ -17,13 +17,19 @@ impl LayerFontExt for LayerSystem {
             let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
             let buf = self.buf_mut();
             let drawn = ttf_font::with_glyph(ch, |data, gw, gh, _advance, y_off| {
-                if gw <= 0 || gh <= 0 { return false; }
+                if gw <= 0 || gh <= 0 {
+                    return false;
+                }
                 for row in 0..gh {
                     let py = baseline + y_off + row;
-                    if py < clip_y0 as i32 || py >= clip_y1 as i32 { continue; }
+                    if py < clip_y0 as i32 || py >= clip_y1 as i32 {
+                        continue;
+                    }
                     for col in 0..gw {
                         let px = x as i32 + col;
-                        if px < clip_x0 as i32 || px >= clip_x1 as i32 { continue; }
+                        if px < clip_x0 as i32 || px >= clip_x1 as i32 {
+                            continue;
+                        }
                         let alpha = data[(row * gw + col) as usize];
                         if alpha > 0 {
                             let a = alpha as u32;
@@ -48,7 +54,9 @@ impl LayerFontExt for LayerSystem {
                 return;
             }
         }
-        if (ch as u32) < 0x20 || (ch as u32) > 0x7E { return; }
+        if (ch as u32) < 0x20 || (ch as u32) > 0x7E {
+            return;
+        }
         let glyph = font::glyph(ch as u8);
         let w = self.width();
         let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
@@ -56,8 +64,12 @@ impl LayerFontExt for LayerSystem {
         for row in 0..font::GLYPH_H {
             let bits = glyph[row];
             let py = y + row;
-            if py >= clip_y1 { break; }
-            if py < clip_y0 { continue; }
+            if py >= clip_y1 {
+                break;
+            }
+            if py < clip_y0 {
+                continue;
+            }
             for col in 0..font::GLYPH_W {
                 if (bits >> (7 - col)) & 1 == 1 {
                     let px = x + col;
@@ -88,7 +100,9 @@ impl LayerFontExt for LayerSystem {
             return;
         }
         for &b in s.as_bytes() {
-            if b >= 0x80 { break; }
+            if b >= 0x80 {
+                break;
+            }
             self.put_char(x, y, b as char, fg);
             x += font::GLYPH_W;
         }
@@ -104,10 +118,14 @@ impl LayerFontExt for LayerSystem {
                     let buf = self.buf_mut();
                     for row in 0..glyph.h {
                         let py = baseline + glyph.y_off + row;
-                        if py < 0 || py >= buf.len() as i32 / w as i32 { continue; }
+                        if py < 0 || py >= buf.len() as i32 / w as i32 {
+                            continue;
+                        }
                         for col in 0..glyph.w {
                             let px = x as i32 + col;
-                            if px < 0 || px >= w as i32 { continue; }
+                            if px < 0 || px >= w as i32 {
+                                continue;
+                            }
                             let alpha = glyph.data[(row * glyph.w + col) as usize];
                             if alpha > 0 {
                                 let a = alpha as u32;

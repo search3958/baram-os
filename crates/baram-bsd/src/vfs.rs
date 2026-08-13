@@ -162,7 +162,10 @@ pub fn write_file(path: &str, data: &[u8]) -> bool {
             }
         }
     }
-    log_line_str(&format!("VFS: write_file '{}' failed on every filesystem", path));
+    log_line_str(&format!(
+        "VFS: write_file '{}' failed on every filesystem",
+        path
+    ));
     false
 }
 
@@ -172,11 +175,15 @@ fn write_to_fs(
     data: &[u8],
     create_if_missing: bool,
 ) -> bool {
-    let Ok(mut root) = fs.open_volume() else { return false; };
+    let Ok(mut root) = fs.open_volume() else {
+        return false;
+    };
     let mut path_buf = [0u16; 256];
     let mut path_len = 0;
     for ch in path.bytes() {
-        if path_len + 1 >= path_buf.len() { return false; }
+        if path_len + 1 >= path_buf.len() {
+            return false;
+        }
         path_buf[path_len] = if ch == b'/' { b'\\' } else { ch } as u16;
         path_len += 1;
     }
@@ -187,20 +194,20 @@ fn write_to_fs(
 
     let handle = match root.open(cpath, FileMode::ReadWrite, FileAttribute::empty()) {
         Ok(handle) => handle,
-        Err(_) if create_if_missing => match root.open(
-            cpath,
-            FileMode::CreateReadWrite,
-            FileAttribute::empty(),
-        ) {
-            Ok(handle) => handle,
-            Err(error) => {
-                log_line_str(&format!("VFS: create '{}' failed: {:?}", path, error));
-                return false;
+        Err(_) if create_if_missing => {
+            match root.open(cpath, FileMode::CreateReadWrite, FileAttribute::empty()) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    log_line_str(&format!("VFS: create '{}' failed: {:?}", path, error));
+                    return false;
+                }
             }
-        },
+        }
         Err(_) => return false,
     };
-    let Some(mut file) = handle.into_regular_file() else { return false; };
+    let Some(mut file) = handle.into_regular_file() else {
+        return false;
+    };
 
     // Never delete the live config before its replacement is durable. Several
     // real UEFI FAT drivers become unusable after rapid delete/create cycles.

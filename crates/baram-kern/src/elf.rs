@@ -402,15 +402,15 @@ impl ElfFile {
         }
         let count = size / core::mem::size_of::<Elf64Dynamic>();
         Some(unsafe {
-            core::slice::from_raw_parts(
-                self.data[offset..].as_ptr() as *const Elf64Dynamic,
-                count,
-            )
+            core::slice::from_raw_parts(self.data[offset..].as_ptr() as *const Elf64Dynamic, count)
         })
     }
 
     pub fn get_symbols(&self, section_type: u32) -> Option<&[Elf64Sym]> {
-        let sh = self.section_headers.iter().find(|s| s.section_type() == section_type)?;
+        let sh = self
+            .section_headers
+            .iter()
+            .find(|s| s.section_type() == section_type)?;
         let offset = sh.offset();
         let size = sh.size();
         if offset + size > self.data.len() {
@@ -418,15 +418,15 @@ impl ElfFile {
         }
         let count = size / core::mem::size_of::<Elf64Sym>();
         Some(unsafe {
-            core::slice::from_raw_parts(
-                self.data[offset..].as_ptr() as *const Elf64Sym,
-                count,
-            )
+            core::slice::from_raw_parts(self.data[offset..].as_ptr() as *const Elf64Sym, count)
         })
     }
 
     pub fn get_relocations(&self) -> Option<&[Elf64Rela]> {
-        let sh = self.section_headers.iter().find(|s| s.section_type() == SHT_RELA)?;
+        let sh = self
+            .section_headers
+            .iter()
+            .find(|s| s.section_type() == SHT_RELA)?;
         let offset = sh.offset();
         let size = sh.size();
         if offset + size > self.data.len() {
@@ -434,15 +434,15 @@ impl ElfFile {
         }
         let count = size / core::mem::size_of::<Elf64Rela>();
         Some(unsafe {
-            core::slice::from_raw_parts(
-                self.data[offset..].as_ptr() as *const Elf64Rela,
-                count,
-            )
+            core::slice::from_raw_parts(self.data[offset..].as_ptr() as *const Elf64Rela, count)
         })
     }
 
     pub fn get_string_table(&self) -> Option<&[u8]> {
-        let sh = self.section_headers.iter().find(|s| s.section_type() == SHT_STRTAB)?;
+        let sh = self
+            .section_headers
+            .iter()
+            .find(|s| s.section_type() == SHT_STRTAB)?;
         let offset = sh.offset();
         let size = sh.size();
         if offset + size > self.data.len() {
@@ -476,7 +476,8 @@ impl ElfFile {
     }
 
     pub fn get_load_segments(&self) -> Vec<&Elf64ProgramHeader> {
-        self.program_headers.iter()
+        self.program_headers
+            .iter()
             .filter(|p| p.is_loadable())
             .collect()
     }

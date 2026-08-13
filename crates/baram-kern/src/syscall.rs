@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-
 pub const SYS_EXIT: u64 = 0;
 pub const SYS_FORK: u64 = 1;
 pub const SYS_EXEC: u64 = 2;
@@ -62,7 +61,10 @@ impl SyscallResult {
     }
 
     pub fn error(code: i32) -> Self {
-        Self { value: -1, error: code }
+        Self {
+            value: -1,
+            error: code,
+        }
     }
 }
 

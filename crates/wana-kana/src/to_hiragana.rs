@@ -1,10 +1,10 @@
-use alloc::string::String;
 use crate::is_mixed::*;
 use crate::is_romaji::*;
 use crate::options::Options;
 use crate::utils::is_char_english_punctuation::is_char_english_punctuation;
 use crate::utils::katakana_to_hiragana::*;
 use crate::utils::romaji_to_hiragana::romaji_to_hiragana;
+use alloc::string::String;
 
 #[inline]
 /// Convert input to [Hiragana](https://en.wikipedia.org/wiki/Hiragana)

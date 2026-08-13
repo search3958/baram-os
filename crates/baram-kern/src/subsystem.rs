@@ -2,9 +2,9 @@
 
 extern crate alloc;
 
+use crate::loader::{find_exports, load_pe_from_memory, LoadedModule};
 use alloc::vec::Vec;
-use crate::loader::{LoadedModule, load_pe_from_memory, find_exports};
-pub use baram_core::subsystem::{SubsystemExports, SubsystemContext, KeyEventData, MouseEventData};
+pub use baram_core::subsystem::{KeyEventData, MouseEventData, SubsystemContext, SubsystemExports};
 
 pub struct SubsystemManager {
     subsystems: Vec<LoadedSubsystem>,
@@ -29,8 +29,7 @@ impl SubsystemManager {
     pub fn load_subsystem(&mut self, data: &[u8]) -> Result<usize, crate::loader::LoadError> {
         let module = load_pe_from_memory(data)?;
 
-        let exports = find_exports(&module)
-            .ok_or(crate::loader::LoadError::InvalidFormat)?;
+        let exports = find_exports(&module).ok_or(crate::loader::LoadError::InvalidFormat)?;
 
         let context = SubsystemContext {
             magic: baram_core::subsystem::SUBSYSTEM_MAGIC,
@@ -91,7 +90,10 @@ impl SubsystemManager {
 
         let sub = &mut self.subsystems[idx];
         let exports = unsafe { &*sub.exports };
-        (exports.handle_key)(&mut sub.context as *mut SubsystemContext, event as *const KeyEventData)
+        (exports.handle_key)(
+            &mut sub.context as *mut SubsystemContext,
+            event as *const KeyEventData,
+        )
     }
 
     pub fn handle_mouse(&mut self, idx: usize, event: &MouseEventData) -> i32 {
@@ -101,7 +103,10 @@ impl SubsystemManager {
 
         let sub = &mut self.subsystems[idx];
         let exports = unsafe { &*sub.exports };
-        (exports.handle_mouse)(&mut sub.context as *mut SubsystemContext, event as *const MouseEventData)
+        (exports.handle_mouse)(
+            &mut sub.context as *mut SubsystemContext,
+            event as *const MouseEventData,
+        )
     }
 
     pub fn tick(&mut self, idx: usize) -> i32 {

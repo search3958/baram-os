@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-pub mod svg;
 pub mod blur;
+pub mod svg;
 pub mod ui;
 pub mod uiscript;

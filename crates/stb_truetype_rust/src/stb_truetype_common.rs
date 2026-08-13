@@ -1,5 +1,3 @@
-
-
 use crate::*;
 use c_runtime;
 
@@ -361,15 +359,27 @@ pub unsafe fn stbtt__compute_crossings_x(
             let ax: i32 = if (x0) < (if (x1) < (x2) { x1 } else { x2 }) {
                 x0
             } else {
-                if (x1) < (x2) { x1 } else { x2 }
+                if (x1) < (x2) {
+                    x1
+                } else {
+                    x2
+                }
             };
             let ay: i32 = if (y0) < (if (y1) < (y2) { y1 } else { y2 }) {
                 y0
             } else {
-                if (y1) < (y2) { y1 } else { y2 }
+                if (y1) < (y2) {
+                    y1
+                } else {
+                    y2
+                }
             };
             let by: i32 = if (y0) < (if (y1) < (y2) { y2 } else { y1 }) {
-                if (y1) < (y2) { y2 } else { y1 }
+                if (y1) < (y2) {
+                    y2
+                } else {
+                    y1
+                }
             } else {
                 y0
             };
@@ -384,14 +394,8 @@ pub unsafe fn stbtt__compute_crossings_x(
                 q1[(1) as usize] = (y1) as f32;
                 q2[(0) as usize] = (x2) as f32;
                 q2[(1) as usize] = (y2) as f32;
-                if (equal(
-                    (q0.as_mut_ptr()) as *mut f32,
-                    (q1.as_mut_ptr()) as *mut f32,
-                )) != 0
-                    || (equal(
-                        (q1.as_mut_ptr()) as *mut f32,
-                        (q2.as_mut_ptr()) as *mut f32,
-                    )) != 0
+                if (equal((q0.as_mut_ptr()) as *mut f32, (q1.as_mut_ptr()) as *mut f32)) != 0
+                    || (equal((q1.as_mut_ptr()) as *mut f32, (q2.as_mut_ptr()) as *mut f32)) != 0
                 {
                     x0 = ((*verts.offset((i - 1) as isize)).x) as i32;
                     y0 = ((*verts.offset((i - 1) as isize)).y) as i32;
@@ -409,8 +413,7 @@ pub unsafe fn stbtt__compute_crossings_x(
                         }
                     }
                 } else {
-                    let num_hits: i32 =
-                        stbtt__ray_intersect_bezier(orig, ray, q0, q1, q2, hits);
+                    let num_hits: i32 = stbtt__ray_intersect_bezier(orig, ray, q0, q1, q2, hits);
                     if num_hits >= 1 {
                         if hits[(0) as usize][(0) as usize] < ((0) as f32) {
                             winding += (if hits[(0) as usize][(1) as usize] < ((0) as f32) {
@@ -538,11 +541,7 @@ pub unsafe fn stbtt__h_prefilter(
     while j < h {
         let mut i: i32 = 0;
         let mut total: u32 = 0;
-        c_runtime::memset(
-            (buffer.as_mut_ptr()) as *mut u8,
-            0,
-            (kernel_width) as u64,
-        );
+        c_runtime::memset((buffer.as_mut_ptr()) as *mut u8, 0, (kernel_width) as u64);
         total = (0) as u32;
         if kernel_width == ((2) as u32) {
             i = (0) as i32;
@@ -644,12 +643,7 @@ pub unsafe fn stbtt__isfont(font: *const u8) -> i32 {
     return (0) as i32;
 }
 
-pub unsafe fn stbtt__matches(
-    fc: *mut u8,
-    offset: u32,
-    name: *mut u8,
-    flags: i32,
-) -> i32 {
+pub unsafe fn stbtt__matches(fc: *mut u8, offset: u32, name: *mut u8, flags: i32) -> i32 {
     let nlen: i32 = (c_runtime::strlen(name)) as i32;
     let mut nm: u32 = 0;
     let mut hd: u32 = 0;
@@ -768,10 +762,8 @@ pub unsafe fn stbtt__matchpair(
                                 if (stbtt_CompareUTF8toUTF16_bigendian_internal(
                                     (((name).offset((matchlen) as isize)) as *mut i8) as *mut i8,
                                     nlen - matchlen,
-                                    ((((fc).offset((stringOffset) as isize))
-                                        .offset((off) as isize))
-                                        as *mut i8)
-                                        as *mut i8,
+                                    ((((fc).offset((stringOffset) as isize)).offset((off) as isize))
+                                        as *mut i8) as *mut i8,
                                     slen,
                                 )) != 0
                                 {
@@ -817,12 +809,9 @@ pub unsafe fn stbtt__ray_intersect_bezier(
     q2: [f32; 2],
     mut hits: [[f32; 2]; 2],
 ) -> i32 {
-    let q0perp: f32 =
-        q0[(1) as usize] * ray[(0) as usize] - q0[(0) as usize] * ray[(1) as usize];
-    let q1perp: f32 =
-        q1[(1) as usize] * ray[(0) as usize] - q1[(0) as usize] * ray[(1) as usize];
-    let q2perp: f32 =
-        q2[(1) as usize] * ray[(0) as usize] - q2[(0) as usize] * ray[(1) as usize];
+    let q0perp: f32 = q0[(1) as usize] * ray[(0) as usize] - q0[(0) as usize] * ray[(1) as usize];
+    let q1perp: f32 = q1[(1) as usize] * ray[(0) as usize] - q1[(0) as usize] * ray[(1) as usize];
+    let q2perp: f32 = q2[(1) as usize] * ray[(0) as usize] - q2[(0) as usize] * ray[(1) as usize];
     let roperp: f32 =
         orig[(1) as usize] * ray[(0) as usize] - orig[(0) as usize] * ray[(1) as usize];
     let a: f32 = q0perp - ((2) as f32) * q1perp + q2perp;
@@ -882,11 +871,7 @@ pub unsafe fn stbtt__ray_intersect_bezier(
     }
 }
 
-pub unsafe fn stbtt__sized_trapezoid_area(
-    height: f32,
-    top_width: f32,
-    bottom_width: f32,
-) -> f32 {
+pub unsafe fn stbtt__sized_trapezoid_area(height: f32, top_width: f32, bottom_width: f32) -> f32 {
     return ((top_width + bottom_width) / 2.0f32 * height) as f32;
 }
 
@@ -1067,11 +1052,7 @@ pub unsafe fn stbtt__v_prefilter(
     while j < w {
         let mut i: i32 = 0;
         let mut total: u32 = 0;
-        c_runtime::memset(
-            (buffer.as_mut_ptr()) as *mut u8,
-            0,
-            (kernel_width) as u64,
-        );
+        c_runtime::memset((buffer.as_mut_ptr()) as *mut u8, 0, (kernel_width) as u64);
         total = (0) as u32;
         if kernel_width == ((2) as u32) {
             i = (0) as i32;
@@ -1275,11 +1256,7 @@ pub unsafe fn stbtt_CompareUTF8toUTF16_bigendian_internal(
     }) as i32;
 }
 
-pub unsafe fn stbtt_FindMatchingFont(
-    fontdata: *const u8,
-    name: *mut i8,
-    flags: i32,
-) -> i32 {
+pub unsafe fn stbtt_FindMatchingFont(fontdata: *const u8, name: *mut i8, flags: i32) -> i32 {
     return (stbtt_FindMatchingFont_internal(fontdata, name, flags)) as i32;
 }
 
@@ -1463,10 +1440,7 @@ pub unsafe fn stbtt_GetFontOffsetForIndex(data: *const u8, index: i32) -> i32 {
     return (stbtt_GetFontOffsetForIndex_internal(data, index)) as i32;
 }
 
-pub unsafe fn stbtt_GetFontOffsetForIndex_internal(
-    font_collection: *const u8,
-    index: i32,
-) -> i32 {
+pub unsafe fn stbtt_GetFontOffsetForIndex_internal(font_collection: *const u8, index: i32) -> i32 {
     if (stbtt__isfont(font_collection)) != 0 {
         return (if index == 0 { 0 } else { -1 }) as i32;
     }
@@ -1482,9 +1456,8 @@ pub unsafe fn stbtt_GetFontOffsetForIndex_internal(
             if index >= n {
                 return (-1) as i32;
             }
-            return (ttULONG(
-                ((font_collection).offset((12) as isize)).offset((index * 4) as isize),
-            )) as i32;
+            return (ttULONG(((font_collection).offset((12) as isize)).offset((index * 4) as isize)))
+                as i32;
         }
     }
     return (-1) as i32;
@@ -1526,10 +1499,8 @@ pub unsafe fn stbtt_GetPackedQuad(
     let iph: f32 = 1.0f32 / ((ph) as f32);
     let b: *mut stbtt_packedchar = (chardata).offset((char_index) as isize);
     if (align_to_integer) != 0 {
-        let x: f32 =
-            ((c_runtime::floor(((*xpos + (*b).xoff) + 0.5f32) as f32)) as i32) as f32;
-        let y: f32 =
-            ((c_runtime::floor(((*ypos + (*b).yoff) + 0.5f32) as f32)) as i32) as f32;
+        let x: f32 = ((c_runtime::floor(((*xpos + (*b).xoff) + 0.5f32) as f32)) as i32) as f32;
+        let y: f32 = ((c_runtime::floor(((*ypos + (*b).yoff) + 0.5f32) as f32)) as i32) as f32;
         (*q).x0 = (x) as f32;
         (*q).y0 = (y) as f32;
         (*q).x1 = (x + (*b).xoff2 - (*b).xoff) as f32;
@@ -1604,8 +1575,7 @@ pub unsafe fn ttLONG(p: *const u8) -> i32 {
 }
 
 pub unsafe fn ttSHORT(p: *const u8) -> i16 {
-    return (((*p.offset((0) as isize)) as i32) * 256 + ((*p.offset((1) as isize)) as i32))
-        as i16;
+    return (((*p.offset((0) as isize)) as i32) * 256 + ((*p.offset((1) as isize)) as i32)) as i16;
 }
 
 pub unsafe fn ttULONG(p: *const u8) -> u32 {
@@ -1616,6 +1586,5 @@ pub unsafe fn ttULONG(p: *const u8) -> u32 {
 }
 
 pub unsafe fn ttUSHORT(p: *const u8) -> u16 {
-    return (((*p.offset((0) as isize)) as i32) * 256 + ((*p.offset((1) as isize)) as i32))
-        as u16;
+    return (((*p.offset((0) as isize)) as i32) * 256 + ((*p.offset((1) as isize)) as i32)) as u16;
 }

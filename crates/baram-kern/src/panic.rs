@@ -17,7 +17,10 @@ pub unsafe fn init_from_screen(screen: &baram_core::Screen) {
     FB_W = info.width;
     FB_H = info.height;
     FB_STRIDE = info.stride;
-    FB_PF_RGB = matches!(info.pixel_format, uefi::proto::console::gop::PixelFormat::Rgb);
+    FB_PF_RGB = matches!(
+        info.pixel_format,
+        uefi::proto::console::gop::PixelFormat::Rgb
+    );
 }
 
 unsafe fn put_pixel(x: usize, y: usize, c: Color) {
@@ -59,7 +62,9 @@ fn blend_pixel(x: usize, y: usize, fg: Color, alpha: u8) {
         return;
     }
     if alpha == 255 {
-        unsafe { put_pixel(x, y, fg); }
+        unsafe {
+            put_pixel(x, y, fg);
+        }
         return;
     }
     let a = alpha as u32;
@@ -71,15 +76,25 @@ fn blend_pixel(x: usize, y: usize, fg: Color, alpha: u8) {
         let off = (y * FB_STRIDE + x) * 4;
         let v = ptr::read_volatile((FB_BASE + off) as *const u32);
         if FB_PF_RGB {
-            Color::rgb(((v >> 16) & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, (v & 0xFF) as u8)
+            Color::rgb(
+                ((v >> 16) & 0xFF) as u8,
+                ((v >> 8) & 0xFF) as u8,
+                (v & 0xFF) as u8,
+            )
         } else {
-            Color::rgb((v & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, ((v >> 16) & 0xFF) as u8)
+            Color::rgb(
+                (v & 0xFF) as u8,
+                ((v >> 8) & 0xFF) as u8,
+                ((v >> 16) & 0xFF) as u8,
+            )
         }
     };
     let r = ((fg.r() as u32 * a + bg.r() as u32 * inv) / 255) as u8;
     let g = ((fg.g() as u32 * a + bg.g() as u32 * inv) / 255) as u8;
     let b = ((fg.b() as u32 * a + bg.b() as u32 * inv) / 255) as u8;
-    unsafe { put_pixel(x, y, Color::rgb(r, g, b)); }
+    unsafe {
+        put_pixel(x, y, Color::rgb(r, g, b));
+    }
 }
 
 fn draw_ttf_scaled(mut x: usize, y: usize, s: &str, fg: Color, pixel_size: f32) {
@@ -169,7 +184,11 @@ fn draw_info_icon(ox: usize, oy: usize, size: usize, fg: Color) {
             let dot_cx = 11.0;
             let dot_cy = 16.0;
             let dot_hw = ring_w / s * 22.0 / 2.0;
-            if bx >= dot_cx - dot_hw && bx <= dot_cx + dot_hw && by >= dot_cy - dot_hw && by <= dot_cy + dot_hw {
+            if bx >= dot_cx - dot_hw
+                && bx <= dot_cx + dot_hw
+                && by >= dot_cy - dot_hw
+                && by <= dot_cy + dot_hw
+            {
                 alpha = 1.0;
             }
 
