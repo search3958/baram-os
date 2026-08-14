@@ -2170,7 +2170,36 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 }
 
                 if mouse_down {
-                    wm.on_mouse_drag(cx, cy);
+                    let mut warp_control_drag = false;
+                    if let Some(drag_id) = wm.window_at(cx, cy) {
+                        if !wm.is_interaction_blocked(drag_id) {
+                            if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(drag_id) {
+                                let rel_x = cx - wx;
+                                let rel_y = cy - wy;
+                                let tb_h = if wm.is_focusable(drag_id) {
+                                    baram_windowserver::window::title_bar_h() as i32
+                                } else {
+                                    0
+                                };
+                                if rel_y >= tb_h {
+                                    for (wid, engine) in warp_engines.iter_mut() {
+                                        if *wid == drag_id
+                                            && engine.has_pointer_capture()
+                                            && engine.pointer_move(rel_x, rel_y + scroll)
+                                        {
+                                            wm.set_content_dirty(drag_id);
+                                            warp_control_drag = true;
+                                            scene_dirty = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !warp_control_drag {
+                        wm.on_mouse_drag(cx, cy);
+                    }
                     scene_dirty = true;
                 }
 

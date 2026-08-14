@@ -276,17 +276,20 @@ impl Warp4Engine {
         }
         self.refresh_visibility();
         let roots = self.roots.clone();
-        let mut y = TITLE_BAR + 16;
-        // `height` is the window content height, while node coordinates are
-        // full-window coordinates so they can share the existing compositor.
-        let usable = (self.height - 16).max(1);
+        // `height` is the viewport below the window title bar.  Coordinates
+        // remain full-layer coordinates so the compositor can apply its
+        // window scroll offset without a second layout coordinate system.
+        // The generated HTML has no implicit document margin, so the native
+        // root starts at the content edge and uses the complete width.
+        let mut y = TITLE_BAR;
+        let usable = self.height;
         for root in roots {
-            let forced = if self.nodes[root].attr("layout_height") == "match_parent" {
+            let forced = if is_match_parent(self.nodes[root].attr("layout_height")) {
                 Some(usable)
             } else {
                 None
             };
-            let h = self.layout(root, 16, y, (self.width - 32).max(1), forced, "");
+            let h = self.layout(root, 0, y, self.width, forced, "");
             y += h;
         }
         let mut internal_overflow = 0;
@@ -296,7 +299,7 @@ impl Warp4Engine {
                     .max(self.nodes[idx].content_h.saturating_sub(self.nodes[idx].h));
             }
         }
-        self.content_height = (y + 16 + internal_overflow).max(self.height + TITLE_BAR);
+        self.content_height = (y + internal_overflow).max(self.height + TITLE_BAR);
         self.scroll = self.scroll.min(
             self.content_height
                 .saturating_sub(self.height + TITLE_BAR)
@@ -376,6 +379,12 @@ impl Warp4Engine {
                     if value { "true" } else { "false" },
                 );
             }
+        } else if self.nodes[idx].is("SeekBar") {
+            self.set_seek_progress(idx, x);
+        } else if self.nodes[idx].is("RatingBar") {
+            self.set_rating(idx, x);
+        } else if self.nodes[idx].is("Spinner") {
+            self.advance_spinner(idx);
         }
         let id = self.nodes[idx].id().to_string();
         if !id.is_empty() {
@@ -390,6 +399,38 @@ impl Warp4Engine {
             }
         }
         self.dirty = true;
+    }
+
+    /// Update a pointer-controlled widget while the primary pointer is held.
+    /// The caller keeps the window drag state separate from this capture, just
+    /// like the browser range/rating controls do.
+    pub fn pointer_move(&mut self, x: i32, y: i32) -> bool {
+        let Some(idx) = self.pressed else {
+            return false;
+        };
+        if self.nodes.get(idx).map_or(true, |n| {
+            !n.visible() || (!n.is("SeekBar") && !n.is("RatingBar"))
+        }) {
+            return false;
+        }
+        let changed = if self.nodes[idx].is("SeekBar") {
+            self.set_seek_progress(idx, x)
+        } else {
+            self.set_rating(idx, x)
+        };
+        if changed {
+            self.dirty = true;
+        }
+        let _ = y;
+        true
+    }
+
+    pub fn has_pointer_capture(&self) -> bool {
+        self.pressed.is_some_and(|idx| {
+            self.nodes
+                .get(idx)
+                .is_some_and(|n| n.is("SeekBar") || n.is("RatingBar"))
+        })
     }
 
     pub fn release(&mut self) {
@@ -463,6 +504,50 @@ impl Warp4Engine {
             current = self.nodes[i].parent;
         }
         false
+    }
+
+    fn set_seek_progress(&mut self, idx: usize, x: i32) -> bool {
+        let n = &self.nodes[idx];
+        let max = parse_i32(n.attr("max")).max(1);
+        let next = ((x - n.x).clamp(0, n.w.max(1)) * max / n.w.max(1)).clamp(0, max);
+        let current = parse_i32(n.attr("progress")).clamp(0, max);
+        if current == next {
+            return false;
+        }
+        set_attr(&mut self.nodes[idx], "progress", &next.to_string());
+        true
+    }
+
+    fn set_rating(&mut self, idx: usize, x: i32) -> bool {
+        let n = &self.nodes[idx];
+        let stars = parse_i32(n.attr("numStars")).clamp(1, 10);
+        let step = n.attr("stepSize").parse::<f32>().unwrap_or(1.0).max(0.1);
+        let raw =
+            ((x - n.x).max(0) as f32 / n.w.max(1) as f32 * stars as f32).clamp(0.0, stars as f32);
+        let next = ((raw / step + 0.5) as i32).max(0) as f32 * step;
+        let integral = (next + 0.5) as i32;
+        let value = if (next - integral as f32).abs() < 0.001 {
+            integral.to_string()
+        } else {
+            next.to_string()
+        };
+        if n.attr("rating") == value {
+            return false;
+        }
+        set_attr(&mut self.nodes[idx], "rating", &value);
+        true
+    }
+
+    fn advance_spinner(&mut self, idx: usize) {
+        let count = self.nodes[idx]
+            .attr("items")
+            .split(',')
+            .filter(|item| !item.trim().is_empty())
+            .count()
+            .max(3) as i32;
+        let current = parse_i32(self.nodes[idx].attr("selectedIndex")).max(0);
+        let next = (current + 1) % count;
+        set_attr(&mut self.nodes[idx], "selectedIndex", &next.to_string());
     }
 
     fn execute(&mut self, actions: &[Action]) {
@@ -726,7 +811,7 @@ impl Warp4Engine {
         let width_attr = self.nodes[idx].attr("layout_width");
         let weighted_width = parent_orientation == "LinearLayout"
             && parse_i32(self.nodes[idx].attr("layout_weight")) > 0
-            && width_attr == "0dp";
+            && is_zero_dimension(width_attr);
         let w = if weighted_width {
             available_w
         } else {
@@ -736,8 +821,8 @@ impl Warp4Engine {
         let tag = self.nodes[idx].tag.clone();
         let own_h = forced_h.or_else(|| {
             let raw = self.nodes[idx].attr("layout_height");
-            if raw == "match_parent" {
-                Some((self.height - TITLE_BAR).max(1))
+            if is_match_parent(raw) {
+                Some(self.height.max(1))
             } else if raw != "wrap_content" && !raw.is_empty() {
                 Some(parse_dim(raw, 0))
             } else {
@@ -805,7 +890,12 @@ impl Warp4Engine {
                     self.intrinsic_h(child, inner_w)
                 };
                 if horizontal {
-                    self.layout(child, cursor, inner_y, allocated.max(1), None, &tag);
+                    let child_h = if is_match_parent(self.nodes[child].attr("layout_height")) {
+                        Some(self.nodes[idx].content_h)
+                    } else {
+                        None
+                    };
+                    self.layout(child, cursor, inner_y, allocated.max(1), child_h, &tag);
                     let child_h = self.nodes[child].h;
                     let cross = cross_offset(
                         self.nodes[child].attr("layout_gravity"),
@@ -954,7 +1044,8 @@ impl Warp4Engine {
                     self.nodes[idx].x + pad.left + parse_dim(self.nodes[child].attr("layout_x"), 0),
                     self.nodes[idx].y + pad.top + parse_dim(self.nodes[child].attr("layout_y"), 0),
                     child_w.max(1),
-                    None,
+                    is_match_parent(self.nodes[child].attr("layout_height"))
+                        .then_some(self.nodes[idx].content_h),
                     &tag,
                 );
             }
@@ -974,32 +1065,66 @@ impl Warp4Engine {
                 self.nodes[idx].y + pad.top
             };
             let children = self.nodes[idx].children.clone();
-            let stretch = self.nodes[idx].attr("stretchColumns").contains('*');
-            let count = children
+            let table_stretch = self.nodes[idx]
+                .parent
+                .filter(|parent| self.nodes[*parent].is("TableLayout"))
+                .map(|parent| self.nodes[parent].attr("stretchColumns").to_string())
+                .unwrap_or_default();
+            let stretch_all = table_stretch.contains('*');
+            let visible_count = children
                 .iter()
                 .filter(|c| self.nodes[**c].visible())
                 .count()
                 .max(1) as i32;
-            for child in children {
+            let mut fixed_width = 0;
+            let mut stretch_count = 0;
+            for (column, child) in children.iter().enumerate() {
+                if !horizontal || !self.nodes[*child].visible() {
+                    continue;
+                }
+                let stretched = stretch_all
+                    || table_stretch
+                        .split(',')
+                        .any(|value| value.trim().parse::<usize>().ok() == Some(column));
+                let e = edges(&self.nodes[*child], "layout_margin");
+                if stretched {
+                    stretch_count += 1;
+                } else {
+                    fixed_width +=
+                        self.intrinsic_w(*child, self.nodes[idx].content_w) + e.left + e.right;
+                }
+            }
+            let stretch_width = (self.nodes[idx].content_w.saturating_sub(fixed_width)
+                / stretch_count.max(1))
+            .max(1);
+            for (column, child) in children.into_iter().enumerate() {
                 if !self.nodes[child].visible() {
                     continue;
                 }
                 let e = edges(&self.nodes[child], "layout_margin");
                 if !horizontal
-                    && stretch
+                    && self.nodes[idx].attr("stretchColumns").contains('*')
                     && self.nodes[child].is("TableRow")
                     && self.nodes[child].attr("stretchColumns").is_empty()
                 {
                     set_attr(&mut self.nodes[child], "stretchColumns", "*");
                 }
-                let allocated =
-                    if horizontal && (stretch || self.nodes[child].attr("layout_width") == "0dp") {
-                        (self.nodes[idx].content_w / count).max(1)
-                    } else if horizontal {
-                        self.intrinsic_w(child, self.nodes[idx].content_w)
+                let stretched = horizontal
+                    && (stretch_all
+                        || table_stretch
+                            .split(',')
+                            .any(|value| value.trim().parse::<usize>().ok() == Some(column)));
+                let allocated = if horizontal && stretched {
+                    if stretch_all {
+                        (self.nodes[idx].content_w / visible_count).max(1)
                     } else {
-                        self.nodes[idx].content_w
-                    };
+                        stretch_width
+                    }
+                } else if horizontal {
+                    self.intrinsic_w(child, self.nodes[idx].content_w)
+                } else {
+                    self.nodes[idx].content_w
+                };
                 if horizontal {
                     self.layout(
                         child,
@@ -1009,7 +1134,14 @@ impl Warp4Engine {
                         None,
                         &tag,
                     );
-                    cursor += self.nodes[child].w + e.left + e.right;
+                    if stretched {
+                        self.nodes[child].w = (allocated - e.left - e.right).max(1);
+                        self.nodes[child].content_w = (self.nodes[child].w
+                            - edges(&self.nodes[child], "padding").left
+                            - edges(&self.nodes[child], "padding").right)
+                            .max(1);
+                    }
+                    cursor += allocated + e.left + e.right;
                 } else {
                     self.layout(
                         child,
@@ -1035,7 +1167,8 @@ impl Warp4Engine {
                         self.nodes[idx].x + pad.left,
                         cy,
                         (self.nodes[idx].w - pad.left - pad.right).max(1),
-                        None,
+                        is_match_parent(self.nodes[child].attr("layout_height"))
+                            .then_some(self.nodes[idx].content_h),
                         &tag,
                     );
                     cy += ch;
@@ -1202,15 +1335,30 @@ impl Warp4Engine {
 
     fn intrinsic_w(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
+        let raw_width = n.attr("layout_width");
+        if !raw_width.is_empty()
+            && !is_match_parent(raw_width)
+            && raw_width != "wrap_content"
+            && !is_zero_dimension(raw_width)
+        {
+            return parse_dim(raw_width, available).max(0);
+        }
         if n.is("Space") {
             return parse_dim(n.attr("layout_width"), 0).max(0);
         }
         if !n.attr("text").is_empty() {
             let pad = edges(n, "padding");
+            let control_width = if n.is("Switch") {
+                63
+            } else if interactive(n) {
+                32
+            } else {
+                0
+            };
             return measure_size(n.attr("text"), text_size(n))
                 + pad.left
                 + pad.right
-                + if interactive(n) { 32 } else { 0 };
+                + control_width;
         }
         if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
             return (measure_size(
@@ -1223,6 +1371,17 @@ impl Warp4Engine {
             ) + 32)
                 .max(64)
                 .min(available.max(64));
+        }
+        if n.is("RatingBar") {
+            let stars = parse_i32(n.attr("numStars")).clamp(1, 10);
+            return stars * 22 + (stars - 1).max(0);
+        }
+        if n.is("Switch") {
+            return if n.attr("text").is_empty() {
+                52
+            } else {
+                63 + measure_size(n.attr("text"), text_size(n))
+            };
         }
         if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
             return available.min(240).max(80);
@@ -1249,6 +1408,14 @@ impl Warp4Engine {
     }
     fn intrinsic_h(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
+        let raw_height = n.attr("layout_height");
+        if !raw_height.is_empty()
+            && !is_match_parent(raw_height)
+            && raw_height != "wrap_content"
+            && !is_zero_dimension(raw_height)
+        {
+            return parse_dim(raw_height, available).max(0);
+        }
         if n.is("Space") {
             return parse_dim(n.attr("layout_height"), 0).max(0);
         }
@@ -1361,7 +1528,8 @@ impl Warp4Engine {
             return;
         }
         let chrome_mode = self.document_has_scroll();
-        let fixed = is_fixed(n) || (!in_scroll && chrome_mode);
+        let is_document_root = self.roots.contains(&idx);
+        let fixed = is_fixed(n) || (!in_scroll && chrome_mode && !is_document_root);
         if pass == PaintPass::Flow && fixed {
             let child_scroll = in_scroll || is_scroll_container(n);
             for &child in &n.children {
@@ -1461,45 +1629,84 @@ impl Warp4Engine {
                     },
                 );
                 if checked {
-                    layer.rect_outline(
-                        (mark_x + 6).max(0) as usize,
-                        (mark_y + 6).max(0) as usize,
-                        10,
-                        10,
-                        Color::rgb(255, 255, 255),
-                    );
+                    // A compact antialiased-free check mark.  The HTML
+                    // reference uses a 3px white diagonal; these short
+                    // segments preserve the same silhouette in the native
+                    // pixel layer.
+                    for step in 0..6 {
+                        layer.fill_rect(
+                            (mark_x + 4 + step).max(0) as usize,
+                            (mark_y + 11 + step).max(0) as usize,
+                            3,
+                            3,
+                            Color::rgb(255, 255, 255),
+                        );
+                    }
+                    for step in 0..9 {
+                        layer.fill_rect(
+                            (mark_x + 9 + step).max(0) as usize,
+                            (mark_y + 16 - step).max(0) as usize,
+                            3,
+                            3,
+                            Color::rgb(255, 255, 255),
+                        );
+                    }
                 }
             } else {
+                let outer = if checked {
+                    Color::rgb(20, 143, 189)
+                } else {
+                    Color::rgb(112, 112, 112)
+                };
                 layer.fill_circle(
                     (mark_x + 11).max(0) as usize,
                     (mark_y + 11).max(0) as usize,
                     11,
-                    if checked {
-                        Color::rgb(51, 181, 229)
-                    } else {
-                        Color::rgb(112, 112, 112)
-                    },
+                    outer,
                 );
                 layer.fill_circle(
                     (mark_x + 11).max(0) as usize,
                     (mark_y + 11).max(0) as usize,
                     8,
-                    if checked {
-                        Color::rgb(255, 255, 255)
-                    } else {
-                        Color::rgb(245, 245, 245)
-                    },
+                    Color::rgb(245, 245, 245),
                 );
+                if checked {
+                    layer.fill_circle(
+                        (mark_x + 11).max(0) as usize,
+                        (mark_y + 11).max(0) as usize,
+                        4,
+                        Color::rgb(51, 181, 229),
+                    );
+                }
             }
         } else if n.is("Switch") {
             let on = n.attr("checked") == "true";
-            let track = if on {
-                Color::rgb(51, 181, 229)
-            } else {
-                Color::rgb(189, 189, 189)
-            };
+            let track = Color::rgb(189, 189, 189);
             let sy = y + (n.h - 22).max(0) / 2;
             layer.fill_rect(x.max(0) as usize, sy.max(0) as usize, 52, 22, track);
+            layer.rect_outline(
+                x.max(0) as usize,
+                sy.max(0) as usize,
+                52,
+                22,
+                Color::rgb(139, 139, 139),
+            );
+            if on {
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    sy.max(0) as usize,
+                    28,
+                    22,
+                    Color::rgb(51, 181, 229),
+                );
+                layer.rect_outline(
+                    x.max(0) as usize,
+                    sy.max(0) as usize,
+                    52,
+                    22,
+                    Color::rgb(20, 143, 189),
+                );
+            }
             let tx = x + if on { 25 } else { 0 };
             layer.fill_rounded_rect(
                 tx.max(0) as usize,
@@ -1524,6 +1731,49 @@ impl Warp4Engine {
                 2,
                 Color::rgb(153, 153, 153),
             );
+            if n.is("Spinner") {
+                let selected = parse_i32(n.attr("selectedIndex")).max(0) as usize;
+                let value = if !n.attr("text").is_empty() {
+                    n.attr("text")
+                } else if !n.attr("value").is_empty() {
+                    n.attr("value")
+                } else if let Some(item) = n
+                    .attr("items")
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .nth(selected)
+                {
+                    item
+                } else {
+                    match selected % 3 {
+                        1 => "Item 2",
+                        2 => "Item 3",
+                        _ => "Item 1",
+                    }
+                };
+                put_str_size(
+                    layer,
+                    x + 7,
+                    y + ((h as i32 - 19).max(0) / 2),
+                    value,
+                    Color::rgb(34, 34, 34),
+                    15.0,
+                );
+                // Native equivalent of the CSS select arrow.
+                let ax = x + n.w - 14;
+                let ay = y + h as i32 / 2 - 2;
+                for row in 0..5 {
+                    let width = 2 + row * 2;
+                    layer.fill_rect(
+                        (ax - row).max(0) as usize,
+                        (ay + row).max(0) as usize,
+                        width as usize,
+                        1,
+                        Color::rgb(85, 85, 85),
+                    );
+                }
+            }
         } else if n.is("SeekBar") {
             let cy = y + h as i32 / 2;
             layer.fill_rect(
@@ -1536,6 +1786,15 @@ impl Warp4Engine {
             let max = parse_i32(n.attr("max")).max(1);
             let progress = parse_i32(n.attr("progress")).clamp(0, max);
             let px = x + w as i32 * progress / max;
+            if progress > 0 {
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    (cy - 1).max(0) as usize,
+                    (px - x).max(0) as usize,
+                    3,
+                    Color::rgb(51, 181, 229),
+                );
+            }
             layer.fill_circle(
                 px.max(0) as usize,
                 cy.max(0) as usize,
@@ -1551,7 +1810,7 @@ impl Warp4Engine {
                 } else {
                     Color::rgb(183, 183, 183)
                 };
-                put_str_size(layer, x + star * 22, y, "★", color, 22.0);
+                put_str_size(layer, x + star * 23, y, "★", color, 25.0);
             }
         } else if n.is("ProgressBar") {
             if n.attr("style").contains("progressBarStyleHorizontal") || w > 80 {
@@ -1572,12 +1831,28 @@ impl Warp4Engine {
                     Color::rgb(51, 181, 229),
                 );
             } else {
-                layer.fill_circle(
-                    (x + w as i32 / 2).max(0) as usize,
-                    (y + h as i32 / 2).max(0) as usize,
-                    12,
-                    Color::rgb(51, 181, 229),
-                );
+                let cx = (x + w as i32 / 2).max(0);
+                let cy = (y + h as i32 / 2).max(0);
+                layer.fill_circle(cx as usize, cy as usize, 14, Color::rgb(207, 207, 207));
+                layer.fill_circle(cx as usize, cy as usize, 9, Color::rgb(255, 255, 255));
+                for dy in -14..=14 {
+                    for dx in -14..=14 {
+                        let radius = dx * dx + dy * dy;
+                        if radius <= 14 * 14 && radius >= 9 * 9 && (dx >= 0 || dy <= 0) {
+                            let px = cx + dx;
+                            let py = cy + dy;
+                            if px >= 0 && py >= 0 {
+                                layer.fill_rect(
+                                    px as usize,
+                                    py as usize,
+                                    1,
+                                    1,
+                                    Color::rgb(51, 181, 229),
+                                );
+                            }
+                        }
+                    }
+                }
             }
         } else if n.is("ImageView") {
             layer.rect_outline(
@@ -1614,7 +1889,17 @@ impl Warp4Engine {
                 );
             }
         }
-        let text = n.attr("text");
+        let text = if !n.attr("text").is_empty() {
+            n.attr("text")
+        } else if n.is("ToggleButton") {
+            if n.attr("checked") == "true" {
+                n.attr("textOn")
+            } else {
+                n.attr("textOff")
+            }
+        } else {
+            ""
+        };
         if !text.is_empty() {
             let color = text_color(n);
             let size = text_size(n);
@@ -1628,13 +1913,28 @@ impl Warp4Engine {
                 x + (n.w - text_w) / 2
             } else {
                 x + pad.left
-                    + if n.is("CheckBox") || n.is("RadioButton") || n.is("Switch") {
+                    + if n.is("CheckBox") || n.is("RadioButton") {
                         32
+                    } else if n.is("Switch") {
+                        63
                     } else {
                         0
                     }
             };
-            let ty = y + ((n.h - (size * 1.25) as i32).max(0) / 2).max(pad.top);
+            let line_h = (size * 1.25) as i32;
+            let line_count = text.split('\n').count().max(1) as i32;
+            let block_h = line_h * line_count;
+            let gravity = n.attr("gravity").to_ascii_lowercase();
+            let ty = if gravity.contains("bottom") {
+                y + n.h - pad.bottom - block_h
+            } else if gravity.contains("center_vertical")
+                || gravity == "center"
+                || gravity.contains("center|vertical")
+            {
+                y + (n.h - block_h).max(0) / 2
+            } else {
+                y + pad.top
+            };
             for (line, part) in text.split('\n').enumerate() {
                 let line_y = ty + line as i32 * (size * 1.25) as i32;
                 put_str_size(layer, tx, line_y, part, color, size);
@@ -2179,6 +2479,13 @@ fn ini(s: &str, key: &str) -> Option<String> {
 fn parse_i32(s: &str) -> i32 {
     s.trim().parse().unwrap_or(0)
 }
+fn is_match_parent(s: &str) -> bool {
+    matches!(s.trim(), "match_parent" | "fill_parent")
+}
+fn is_zero_dimension(s: &str) -> bool {
+    let raw = s.trim();
+    !raw.is_empty() && parse_dim(raw, i32::MIN) == 0
+}
 fn duration_ns(s: &str) -> Option<u64> {
     let value = s.trim();
     let (number, multiplier) = if let Some(v) = value.strip_suffix("ns") {
@@ -2201,6 +2508,7 @@ fn duration_ns(s: &str) -> Option<u64> {
 }
 fn parse_dim(s: &str, default: i32) -> i32 {
     s.trim()
+        .trim_end_matches("dip")
         .trim_end_matches("dp")
         .trim_end_matches("sp")
         .trim_end_matches("px")
@@ -2333,7 +2641,14 @@ fn interactive(n: &Node) -> bool {
             || n.is("Switch")
             || n.is("CheckBox")
             || n.is("RadioButton")
-            || n.is("ToggleButton"))
+            || n.is("ToggleButton")
+            || n.is("Spinner")
+            || n.is("SeekBar")
+            || n.is("RatingBar")
+            || n.is("SearchView")
+            || n.is("NumberPicker")
+            || n.is("DatePicker")
+            || n.is("TimePicker"))
 }
 fn measure(s: &str) -> i32 {
     if ttf_font::is_available() {
@@ -2352,13 +2667,19 @@ fn measure_size(s: &str, size: f32) -> i32 {
         ttf_font::with_glyph_at_size(ch, size, |_data, _w, _h, glyph_advance, _y_off| {
             advance = glyph_advance;
         });
-        total += advance.max(8);
+        total += advance.max(1);
     }
     total
 }
 fn text_size(n: &Node) -> f32 {
     if !n.attr("textSize").is_empty() {
         return parse_dim(n.attr("textSize"), 16) as f32;
+    }
+    if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+        return 18.0;
+    }
+    if n.is("CheckBox") || n.is("RadioButton") || n.is("Switch") {
+        return 14.0;
     }
     let style = n.attr("style");
     if style.contains("SectionTitle") {
@@ -2422,7 +2743,7 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
                 }
             }
         });
-        x += advance.max(8);
+        x += advance.max(1);
     }
 }
 fn parse_color(s: &str) -> Option<Color> {

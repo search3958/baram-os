@@ -6,10 +6,10 @@
 
 extern crate alloc;
 
+use crate::window::RoundedShadow;
 use alloc::string::String;
 use alloc::vec::Vec;
 use baram_core::LayerSystem;
-use crate::window::RoundedShadow;
 
 use crate::warp3::Warp3Engine;
 
@@ -192,11 +192,7 @@ impl SoftKeyboard {
     /// Updates labels and the compact candidate shelf from OS IME state. The
     /// keyboard still emits physical layout bytes; only the OS composition
     /// engine owns the resulting text.
-    pub fn set_input_context(
-        &mut self,
-        language: KeyboardLanguage,
-        candidates: &[String],
-    ) -> bool {
+    pub fn set_input_context(&mut self, language: KeyboardLanguage, candidates: &[String]) -> bool {
         let mut changed = false;
         if self.language != language {
             self.language = language;
@@ -329,8 +325,8 @@ impl SoftKeyboard {
         let mut changed = engine_changed;
         if self.open_animating {
             let started = *self.open_started_ns.get_or_insert(now_ns);
-            let t = (now_ns.saturating_sub(started) as f32 / OPEN_DURATION_NS as f32)
-                .clamp(0.0, 1.0);
+            let t =
+                (now_ns.saturating_sub(started) as f32 / OPEN_DURATION_NS as f32).clamp(0.0, 1.0);
             let previous = self.render_y_offset;
             let remaining = 1.0 - t;
             self.render_y_offset =
@@ -367,7 +363,12 @@ impl SoftKeyboard {
         }
         let pad = crate::window::shadow_pad().max(0);
         let expand = |rect: (i32, i32, i32, i32)| {
-            (rect.0 - pad, rect.1 - pad, rect.2 + pad * 2, rect.3 + pad * 2)
+            (
+                rect.0 - pad,
+                rect.1 - pad,
+                rect.2 + pad * 2,
+                rect.3 + pad * 2,
+            )
         };
         let damage = match (self.presented_bounds, current) {
             (Some(a), Some(b)) => Some((
@@ -423,16 +424,16 @@ fn engine_for(main: &'static str) -> Warp3Engine {
 }
 
 const KEY_IDS: [&str; 26] = [
-    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "a", "s", "d", "f", "g", "h",
-    "j", "k", "l", "z", "x", "c", "v", "b", "n", "m",
+    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "a", "s", "d", "f", "g", "h", "j", "k", "l",
+    "z", "x", "c", "v", "b", "n", "m",
 ];
 const LATIN_LOWER: [&str; 26] = [
-    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "a", "s", "d", "f", "g", "h",
-    "j", "k", "l", "z", "x", "c", "v", "b", "n", "m",
+    "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "a", "s", "d", "f", "g", "h", "j", "k", "l",
+    "z", "x", "c", "v", "b", "n", "m",
 ];
 const LATIN_UPPER: [&str; 26] = [
-    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H",
-    "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M",
+    "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L",
+    "Z", "X", "C", "V", "B", "N", "M",
 ];
 const DUBEOL_LOWER: [&str; 26] = [
     "ㅂ", "ㅈ", "ㄷ", "ㄱ", "ㅅ", "ㅛ", "ㅕ", "ㅑ", "ㅐ", "ㅔ", "ㅁ", "ㄴ", "ㅇ", "ㄹ", "ㅎ", "ㅗ",

@@ -281,6 +281,19 @@ impl WarpEngine {
         }
     }
 
+    pub fn pointer_move(&mut self, x: i32, y: i32) -> bool {
+        let Some(engine) = self.warp4.as_mut() else {
+            return false;
+        };
+        engine.pointer_move(x, y)
+    }
+
+    pub fn has_pointer_capture(&self) -> bool {
+        self.warp4
+            .as_ref()
+            .is_some_and(Warp4Engine::has_pointer_capture)
+    }
+
     pub fn tick(&mut self, now_ns: u64) -> bool {
         if let Some(engine) = self.warp4.as_mut() {
             let changed = engine.tick(now_ns);
