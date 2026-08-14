@@ -119,6 +119,7 @@ pub struct Warp4Engine {
     focused: Option<usize>,
     hovered: Option<usize>,
     pressed: Option<usize>,
+    spinner_open: Option<usize>,
     width: i32,
     height: i32,
     scroll: i32,
@@ -129,6 +130,8 @@ pub struct Warp4Engine {
     wait_until_ns: Option<u64>,
     pending: Vec<Action>,
     break_requested: bool,
+    flip_elapsed_ns: u64,
+    last_tick_ns: Option<u64>,
 }
 
 impl Warp4Engine {
@@ -156,6 +159,7 @@ impl Warp4Engine {
             focused: None,
             hovered: None,
             pressed: None,
+            spinner_open: None,
             width: 0,
             height: 0,
             scroll: 0,
@@ -166,6 +170,8 @@ impl Warp4Engine {
             wait_until_ns: None,
             pending: Vec::new(),
             break_requested: false,
+            flip_elapsed_ns: 0,
+            last_tick_ns: None,
         };
         this.load_screen();
         this
@@ -185,6 +191,8 @@ impl Warp4Engine {
         let next = scroll.max(0).min(max.max(0));
         if self.scroll != next {
             self.scroll = next;
+            self.spinner_open = None;
+            self.hovered = None;
             self.dirty = true;
         }
     }
@@ -216,19 +224,58 @@ impl Warp4Engine {
     }
     pub fn tick(&mut self, now_ns: u64) -> bool {
         self.now_ns = now_ns;
-        let Some(until) = self.wait_until_ns else {
-            return false;
-        };
-        if now_ns < until {
-            return false;
+        let delta = self
+            .last_tick_ns
+            .replace(now_ns)
+            .map(|previous| now_ns.saturating_sub(previous).min(100_000_000))
+            .unwrap_or(0);
+        self.flip_elapsed_ns = self.flip_elapsed_ns.saturating_add(delta);
+
+        let mut changed = false;
+        let mut flip_interval_ns: Option<u64> = None;
+        for node in &self.nodes {
+            if (node.is("ViewFlipper") || node.is("ViewAnimator"))
+                && truth(node.attr("autoStart"))
+                && node.children.len() > 1
+            {
+                let interval_ms = parse_i32(node.attr("flipInterval")).max(16) as u64;
+                flip_interval_ns =
+                    Some(flip_interval_ns.map_or(interval_ms * 1_000_000, |current| {
+                        current.min(interval_ms * 1_000_000)
+                    }));
+            }
         }
-        self.wait_until_ns = None;
-        if self.pending.is_empty() {
-            return false;
+        if let Some(interval_ns) = flip_interval_ns {
+            if self.flip_elapsed_ns >= interval_ns {
+                self.flip_elapsed_ns %= interval_ns;
+                if let Some(idx) = self.nodes.iter().position(|node| {
+                    (node.is("ViewFlipper") || node.is("ViewAnimator"))
+                        && truth(node.attr("autoStart"))
+                        && node.children.len() > 1
+                }) {
+                    let count = self.nodes[idx].children.len() as i32;
+                    let next =
+                        (parse_i32(self.nodes[idx].attr("displayedChild")).max(0) + 1) % count;
+                    set_attr(&mut self.nodes[idx], "displayedChild", &next.to_string());
+                    self.hovered = None;
+                    self.pressed = None;
+                    self.dirty = true;
+                    changed = true;
+                }
+            }
         }
-        let pending = core::mem::take(&mut self.pending);
-        self.execute(&pending);
-        true
+
+        if let Some(until) = self.wait_until_ns {
+            if now_ns >= until {
+                self.wait_until_ns = None;
+                if !self.pending.is_empty() {
+                    let pending = core::mem::take(&mut self.pending);
+                    self.execute(&pending);
+                    changed = true;
+                }
+            }
+        }
+        changed
     }
 
     pub fn set_screen(&mut self, screen: &str) {
@@ -275,6 +322,9 @@ impl Warp4Engine {
         self.focused = None;
         self.hovered = None;
         self.pressed = None;
+        self.spinner_open = None;
+        self.flip_elapsed_ns = 0;
+        self.last_tick_ns = None;
         self.wait_until_ns = None;
         self.pending.clear();
         let mut layout = self.archive.read_text(&format!("{}.w4u", self.screen));
@@ -366,10 +416,16 @@ impl Warp4Engine {
             self.paint(layer, root, ox, oy, false, PaintPass::Flow);
             self.paint(layer, root, ox, oy, false, PaintPass::Fixed);
         }
+        if let Some(idx) = self.spinner_open {
+            self.paint_spinner_popup(layer, idx);
+        }
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
-        let next = self.hit(x, y);
+        let next = self
+            .spinner_popup_hit(x, y)
+            .map(|(idx, _)| idx)
+            .or_else(|| self.hit(x, y));
         if self.hovered != next {
             self.hovered = next;
             self.dirty = true;
@@ -377,6 +433,29 @@ impl Warp4Engine {
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
+        if let Some(open_idx) = self.spinner_open {
+            if let Some((idx, item)) = self.spinner_popup_hit(x, y) {
+                set_attr(&mut self.nodes[idx], "selectedIndex", &item.to_string());
+                self.spinner_open = None;
+                self.pressed = Some(idx);
+                self.focused = None;
+                self.run_click_actions(idx);
+                self.dirty = true;
+                return;
+            }
+            // A native dropdown dismisses when the pointer lands outside its
+            // menu. Do not leak that same click into a control underneath.
+            if self.hit(x, y) != Some(open_idx) {
+                self.spinner_open = None;
+                self.pressed = None;
+                self.dirty = true;
+                return;
+            }
+            self.spinner_open = None;
+            self.pressed = Some(open_idx);
+            self.dirty = true;
+            return;
+        }
         let Some(idx) = self.hit(x, y) else {
             self.focused = None;
             self.pressed = None;
@@ -427,20 +506,9 @@ impl Warp4Engine {
         } else if self.nodes[idx].is("RatingBar") {
             self.set_rating(idx, x);
         } else if self.nodes[idx].is("Spinner") {
-            self.advance_spinner(idx);
+            self.spinner_open = Some(idx);
         }
-        let id = self.nodes[idx].id().to_string();
-        if !id.is_empty() {
-            if let Some((_, actions)) = self
-                .script
-                .clicks
-                .iter()
-                .find(|(name, _)| name == &id)
-                .cloned()
-            {
-                self.execute(&actions);
-            }
-        }
+        self.run_click_actions(idx);
         self.dirty = true;
     }
 
@@ -520,22 +588,44 @@ impl Warp4Engine {
         let chrome_mode = self.document_has_scroll();
         while let Some(i) = current {
             let node = &self.nodes[i];
-            let inside_scroll = self.ancestor_is_scroll(i);
-            let visual_y = if is_fixed(node) || (chrome_mode && !inside_scroll) {
-                y - self.scroll
-            } else {
-                y
-            };
+            // `y` is a document coordinate (the boot compositor adds the
+            // window scroll before dispatching input). Compare it against
+            // the exact screen-space position used by `paint`, rather than
+            // maintaining a second, subtly different scroll heuristic.
+            let visual_y = y - self.scroll;
+            let node_y = node.y
+                + if self.node_is_fixed(i, chrome_mode) {
+                    0
+                } else {
+                    -self.scroll
+                };
             if x < node.x
-                || visual_y < node.y
+                || visual_y < node_y
                 || x >= node.x + node.w
-                || visual_y >= node.y + node.h
+                || visual_y >= node_y + node.h
             {
                 return false;
             }
             current = node.parent;
         }
         true
+    }
+
+    fn node_is_fixed(&self, idx: usize, chrome_mode: bool) -> bool {
+        let node = &self.nodes[idx];
+        let in_scroll = self.ancestor_is_scroll(idx);
+        let is_document_root = self.roots.contains(&idx);
+        is_fixed(node) || (!in_scroll && chrome_mode && !is_document_root)
+    }
+
+    fn node_screen_y(&self, idx: usize) -> i32 {
+        let chrome_mode = self.document_has_scroll();
+        self.nodes[idx].y
+            + if self.node_is_fixed(idx, chrome_mode) {
+                0
+            } else {
+                -self.scroll
+            }
     }
 
     fn ancestor_is_scroll(&self, idx: usize) -> bool {
@@ -581,16 +671,61 @@ impl Warp4Engine {
         true
     }
 
-    fn advance_spinner(&mut self, idx: usize) {
+    fn run_click_actions(&mut self, idx: usize) {
+        let id = self.nodes[idx].id().to_string();
+        if !id.is_empty() {
+            if let Some((_, actions)) = self
+                .script
+                .clicks
+                .iter()
+                .find(|(name, _)| name == &id)
+                .cloned()
+            {
+                self.execute(&actions);
+            }
+        }
+    }
+
+    fn spinner_item_count(&self, idx: usize) -> usize {
         let count = self.nodes[idx]
             .attr("items")
             .split(',')
             .filter(|item| !item.trim().is_empty())
-            .count()
-            .max(3) as i32;
-        let current = parse_i32(self.nodes[idx].attr("selectedIndex")).max(0);
-        let next = (current + 1) % count;
-        set_attr(&mut self.nodes[idx], "selectedIndex", &next.to_string());
+            .count();
+        count.max(3)
+    }
+
+    fn spinner_popup_rect(&self, idx: usize) -> (i32, i32, i32, i32) {
+        let node = &self.nodes[idx];
+        let row_h = 36;
+        let h = self.spinner_item_count(idx) as i32 * row_h;
+        let bottom = self.node_screen_y(idx) + node.h;
+        let layer_h = self.height + TITLE_BAR;
+        let y = if bottom + h <= layer_h {
+            bottom
+        } else {
+            (self.node_screen_y(idx) - h).max(TITLE_BAR)
+        };
+        (node.x, y, node.w.max(1), h)
+    }
+
+    fn spinner_popup_hit(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let idx = self.spinner_open?;
+        let node = self.nodes.get(idx)?;
+        if !node.visible() || !node.is("Spinner") {
+            return None;
+        }
+        let (_, popup_y, popup_w, popup_h) = self.spinner_popup_rect(idx);
+        let screen_y = y - self.scroll;
+        if x < node.x
+            || x >= node.x + popup_w
+            || screen_y < popup_y
+            || screen_y >= popup_y + popup_h
+        {
+            return None;
+        }
+        let item = ((screen_y - popup_y) / 36) as usize;
+        (item < self.spinner_item_count(idx)).then_some((idx, item))
     }
 
     fn execute(&mut self, actions: &[Action]) {
@@ -1477,6 +1612,9 @@ impl Warp4Engine {
         if n.is("SeekBar") {
             return 30;
         }
+        if n.is("RatingBar") {
+            return 32;
+        }
         if n.is("Spinner") || n.is("SearchView") || n.is("DatePicker") || n.is("TimePicker") {
             return 38;
         }
@@ -1571,18 +1709,32 @@ impl Warp4Engine {
             return;
         }
         let chrome_mode = self.document_has_scroll();
-        let is_document_root = self.roots.contains(&idx);
-        let fixed = is_fixed(n) || (!in_scroll && chrome_mode && !is_document_root);
+        let fixed = self.node_is_fixed(idx, chrome_mode);
         if pass == PaintPass::Flow && fixed {
+            let clipped_scroll = is_scroll_container(n);
+            if clipped_scroll {
+                let clip_x0 = n.x + ox;
+                let clip_y0 = n.y;
+                layer.push_clip(
+                    clip_x0.max(0) as usize,
+                    clip_y0.max(TITLE_BAR).max(0) as usize,
+                    (clip_x0 + n.w).max(0) as usize,
+                    (clip_y0 + n.h).max(0) as usize,
+                );
+            }
             let child_scroll = in_scroll || is_scroll_container(n);
             for &child in &n.children {
                 self.paint(layer, child, ox, oy, child_scroll, pass);
             }
+            if clipped_scroll {
+                layer.pop_clip();
+            }
             return;
         }
         if pass == PaintPass::Fixed && !fixed {
+            let child_scroll = in_scroll || is_scroll_container(n);
             for &child in &n.children {
-                self.paint(layer, child, ox, oy, in_scroll, pass);
+                self.paint(layer, child, ox, oy, child_scroll, pass);
             }
             return;
         }
@@ -1639,6 +1791,8 @@ impl Warp4Engine {
                 5,
                 if self.focused == Some(idx) {
                     Color::rgb(51, 181, 229)
+                } else if self.hovered == Some(idx) {
+                    Color::rgb(90, 170, 205)
                 } else {
                     Color::rgb(158, 158, 158)
                 },
@@ -1646,6 +1800,7 @@ impl Warp4Engine {
             );
         } else if n.is("CheckBox") || n.is("RadioButton") {
             let checked = n.attr("checked") == "true";
+            let hover = self.hovered == Some(idx);
             let mark_x = x + 2;
             let mark_y = y + (n.h - 22).max(0) / 2;
             if n.is("CheckBox") {
@@ -1656,6 +1811,8 @@ impl Warp4Engine {
                     22,
                     if checked {
                         Color::rgb(51, 181, 229)
+                    } else if hover {
+                        Color::rgb(210, 232, 240)
                     } else {
                         Color::rgb(230, 230, 230)
                     },
@@ -1667,6 +1824,8 @@ impl Warp4Engine {
                     22,
                     if checked {
                         Color::rgb(20, 143, 189)
+                    } else if hover {
+                        Color::rgb(51, 181, 229)
                     } else {
                         Color::rgb(116, 116, 116)
                     },
@@ -1698,6 +1857,8 @@ impl Warp4Engine {
             } else {
                 let outer = if checked {
                     Color::rgb(20, 143, 189)
+                } else if hover {
+                    Color::rgb(51, 181, 229)
                 } else {
                     Color::rgb(112, 112, 112)
                 };
@@ -1724,7 +1885,11 @@ impl Warp4Engine {
             }
         } else if n.is("Switch") {
             let on = n.attr("checked") == "true";
-            let track = Color::rgb(189, 189, 189);
+            let track = if self.hovered == Some(idx) {
+                Color::rgb(150, 190, 205)
+            } else {
+                Color::rgb(189, 189, 189)
+            };
             let sy = y + (n.h - 22).max(0) / 2;
             layer.fill_rect(x.max(0) as usize, sy.max(0) as usize, 52, 22, track);
             layer.rect_outline(
@@ -1772,7 +1937,11 @@ impl Warp4Engine {
                 (y + h as i32 - 2).max(0) as usize,
                 w,
                 2,
-                Color::rgb(153, 153, 153),
+                if self.hovered == Some(idx) {
+                    Color::rgb(51, 181, 229)
+                } else {
+                    Color::rgb(153, 153, 153)
+                },
             );
             if n.is("Spinner") {
                 let selected = parse_i32(n.attr("selectedIndex")).max(0) as usize;
@@ -1824,7 +1993,11 @@ impl Warp4Engine {
                 cy.max(0) as usize,
                 w,
                 3,
-                Color::rgb(167, 167, 167),
+                if self.hovered == Some(idx) {
+                    Color::rgb(120, 170, 190)
+                } else {
+                    Color::rgb(167, 167, 167)
+                },
             );
             let max = parse_i32(n.attr("max")).max(1);
             let progress = parse_i32(n.attr("progress")).clamp(0, max);
@@ -1841,15 +2014,18 @@ impl Warp4Engine {
             layer.fill_circle(
                 px.max(0) as usize,
                 cy.max(0) as usize,
-                9,
+                if self.hovered == Some(idx) { 10 } else { 9 },
                 Color::rgb(51, 181, 229),
             );
         } else if n.is("RatingBar") {
             let stars = parse_i32(n.attr("numStars")).max(1).min(10);
             let rating = n.attr("rating").parse::<f32>().unwrap_or(0.0);
+            let hover = self.hovered == Some(idx);
             for star in 0..stars {
                 let color = if star as f32 + 0.5 <= rating {
                     Color::rgb(51, 181, 229)
+                } else if hover {
+                    Color::rgb(130, 205, 225)
                 } else {
                     Color::rgb(183, 183, 183)
                 };
@@ -1968,7 +2144,9 @@ impl Warp4Engine {
             let line_count = text.split('\n').count().max(1) as i32;
             let block_h = line_h * line_count;
             let gravity = n.attr("gravity").to_ascii_lowercase();
-            let ty = if gravity.contains("bottom") {
+            let ty = if n.is("Button") || n.is("ToggleButton") {
+                y + (n.h - block_h).max(0) / 2
+            } else if gravity.contains("bottom") {
                 y + n.h - pad.bottom - block_h
             } else if gravity.contains("center_vertical")
                 || gravity == "center"
@@ -2049,6 +2227,56 @@ impl Warp4Engine {
                 );
             }
             layer.pop_clip();
+        }
+    }
+
+    fn paint_spinner_popup(&self, layer: &mut LayerSystem, idx: usize) {
+        let Some(node) = self.nodes.get(idx) else {
+            return;
+        };
+        if !node.visible() || !node.is("Spinner") {
+            return;
+        }
+        let (x, y, w, h) = self.spinner_popup_rect(idx);
+        layer.fill_rounded_rect(
+            x.max(0) as usize,
+            y.max(TITLE_BAR) as usize,
+            w.max(1) as usize,
+            h.max(1) as usize,
+            2,
+            Color::rgb(250, 250, 250),
+        );
+        layer.rect_outline(
+            x.max(0) as usize,
+            y.max(TITLE_BAR) as usize,
+            w.max(1) as usize,
+            h.max(1) as usize,
+            Color::rgb(110, 110, 110),
+        );
+        let selected = parse_i32(node.attr("selectedIndex")).max(0) as usize;
+        let items = node.attr("items");
+        for item in 0..self.spinner_item_count(idx) {
+            let row_y = y + item as i32 * 36;
+            if item == selected {
+                layer.fill_rect(
+                    (x + 1).max(0) as usize,
+                    row_y.max(TITLE_BAR) as usize,
+                    (w - 2).max(1) as usize,
+                    35,
+                    Color::rgb(222, 241, 248),
+                );
+            }
+            let label = items
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .nth(item)
+                .unwrap_or(match item {
+                    1 => "Item 2",
+                    2 => "Item 3",
+                    _ => "Item 1",
+                });
+            put_str_size(layer, x + 8, row_y + 9, label, Color::rgb(34, 34, 34), 15.0);
         }
     }
 
@@ -2678,6 +2906,7 @@ fn cross_offset(gravity: &str, parent_size: i32, child_size: i32, horizontal_axi
 fn interactive(n: &Node) -> bool {
     n.attr("enabled") != "false"
         && (n.is("Button")
+            || n.is("ImageButton")
             || n.is("EditText")
             || n.is("AutoCompleteTextView")
             || n.is("MultiAutoCompleteTextView")

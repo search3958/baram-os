@@ -2184,13 +2184,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 };
                                 if rel_y >= tb_h {
                                     for (wid, engine) in warp_engines.iter_mut() {
-                                        if *wid == drag_id
-                                            && engine.has_pointer_capture()
-                                            && engine.pointer_move(rel_x, rel_y + scroll)
-                                        {
-                                            wm.set_content_dirty(drag_id);
-                                            warp_control_drag = true;
-                                            scene_dirty = true;
+                                        if *wid == drag_id && engine.has_pointer_capture() {
+                                            engine.set_scroll(scroll);
+                                            if engine.pointer_move(rel_x, rel_y + scroll) {
+                                                wm.set_content_dirty(drag_id);
+                                                warp_control_drag = true;
+                                                scene_dirty = true;
+                                            }
                                             break;
                                         }
                                     }
@@ -2758,6 +2758,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 let rel_y = cursor_y - wy;
                                 let tb_h = baram_windowserver::window::title_bar_h() as i32;
                                 let prev_hover = engine.hover_idx;
+                                engine.set_scroll(scroll);
                                 if rel_y >= tb_h {
                                     let warp_y = rel_y + scroll;
                                     engine.set_hover(rel_x, warp_y);
