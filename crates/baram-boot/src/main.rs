@@ -15,9 +15,7 @@ use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
-use baram_windowserver::soft_keyboard::{
-    Key as SoftKey, KeyboardLanguage, SoftKeyboard,
-};
+use baram_windowserver::soft_keyboard::{Key as SoftKey, KeyboardLanguage, SoftKeyboard};
 use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
 use wana_kana::ConvertJapanese;
 
@@ -611,9 +609,7 @@ fn keyboard_language(mode: InputMode) -> KeyboardLanguage {
         InputMode::Hiragana => KeyboardLanguage::Japanese,
         InputMode::Korean(KoreanLayout::Dubeolsik) => KeyboardLanguage::KoreanDubeolsik,
         InputMode::Korean(KoreanLayout::HancomRoman) => KeyboardLanguage::KoreanHancomRoman,
-        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => {
-            KeyboardLanguage::KoreanChosunDubeolsik
-        }
+        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => KeyboardLanguage::KoreanChosunDubeolsik,
         InputMode::Pinyin => KeyboardLanguage::ChinesePinyin,
     }
 }
@@ -2167,6 +2163,9 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     mouse_down = false;
                     soft_keyboard.end_drag();
                     wm.on_mouse_up();
+                    for (_, engine) in warp_engines.iter_mut() {
+                        engine.release();
+                    }
                     scene_dirty = true;
                 }
 
@@ -2793,35 +2792,22 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // this clock, without a runtime-service call in the render hot path.
         let mut deferred_html_commands = alloc::vec::Vec::new();
         let runtime_window_count = wm.count();
-        let keyboard_context_changed = if let Some((_, candidates, _)) =
-            japanese_ime.conversion_view()
-        {
-            soft_keyboard.set_input_context(
-                keyboard_language(input_mode),
-                candidates,
-            )
-        } else if let Some((_, candidates, _)) = pinyin_ime.conversion_view() {
-            soft_keyboard.set_input_context(
-                keyboard_language(input_mode),
-                candidates,
-            )
-        } else if soft_keyboard.is_open() {
-            if let Some((_, candidates)) = japanese_ime.prediction_view() {
-                soft_keyboard.set_input_context(
-                    keyboard_language(input_mode),
-                    candidates,
-                )
-            } else if let Some((_, candidates)) = pinyin_ime.prediction_view() {
-                soft_keyboard.set_input_context(
-                    keyboard_language(input_mode),
-                    candidates,
-                )
+        let keyboard_context_changed =
+            if let Some((_, candidates, _)) = japanese_ime.conversion_view() {
+                soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+            } else if let Some((_, candidates, _)) = pinyin_ime.conversion_view() {
+                soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+            } else if soft_keyboard.is_open() {
+                if let Some((_, candidates)) = japanese_ime.prediction_view() {
+                    soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+                } else if let Some((_, candidates)) = pinyin_ime.prediction_view() {
+                    soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+                } else {
+                    soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
+                }
             } else {
                 soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
-            }
-        } else {
-            soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
-        };
+            };
         if keyboard_context_changed {
             scene_dirty = true;
             dirty = true;
@@ -2838,6 +2824,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 } else {
                     wm.set_content_dirty(*wid);
                 }
+                scene_dirty = true;
+                dirty = true;
+            }
+            if let Some(command) = engine.last_command.take() {
+                deferred_html_commands.push((command, engine.origin().to_string(), *wid));
+            }
+        }
+        for (wid, engine) in warp_engines.iter_mut() {
+            if engine.tick(motion_now_ns) {
+                wm.set_content_dirty(*wid);
                 scene_dirty = true;
                 dirty = true;
             }
@@ -2925,9 +2921,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         for (wid, engine) in warp_engines.iter_mut() {
-            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
+            if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
                 let content_h = wh.saturating_sub(30);
                 engine.update(ww as i32, content_h as i32);
+                engine.set_scroll(scroll);
                 wm.clamp_window_scroll(*wid, engine.content_height);
             }
         }

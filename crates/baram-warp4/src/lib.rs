@@ -38,6 +38,12 @@ struct Node {
     w: i32,
     h: i32,
     hidden: bool,
+    /// The native equivalent of the generated DOM's overflow/position state.
+    /// These are computed by the layout pass; they are deliberately kept on
+    /// the view instead of being global renderer state so nested viewports can
+    /// be clipped and hit-tested independently.
+    content_w: i32,
+    content_h: i32,
 }
 
 impl Node {
@@ -77,6 +83,7 @@ enum Action {
         body: Vec<Action>,
     },
     Call(String),
+    Break,
 }
 
 #[derive(Clone, Default)]
@@ -94,6 +101,12 @@ struct Edges {
     left: i32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PaintPass {
+    Flow,
+    Fixed,
+}
+
 pub struct Warp4Engine {
     archive: Warp4Archive,
     origin: String,
@@ -105,12 +118,17 @@ pub struct Warp4Engine {
     state: Vec<(String, String)>,
     focused: Option<usize>,
     hovered: Option<usize>,
+    pressed: Option<usize>,
     width: i32,
     height: i32,
     scroll: i32,
     pub content_height: i32,
     pub last_command: Option<String>,
     dirty: bool,
+    now_ns: u64,
+    wait_until_ns: Option<u64>,
+    pending: Vec<Action>,
+    break_requested: bool,
 }
 
 impl Warp4Engine {
@@ -137,12 +155,17 @@ impl Warp4Engine {
             state: Vec::new(),
             focused: None,
             hovered: None,
+            pressed: None,
             width: 0,
             height: 0,
             scroll: 0,
             content_height: 0,
             last_command: None,
             dirty: true,
+            now_ns: 0,
+            wait_until_ns: None,
+            pending: Vec::new(),
+            break_requested: false,
         };
         this.load_screen();
         this
@@ -158,7 +181,12 @@ impl Warp4Engine {
         &self.title
     }
     pub fn set_scroll(&mut self, scroll: i32) {
-        self.scroll = scroll.max(0);
+        let max = self.content_height.saturating_sub(self.height + TITLE_BAR);
+        let next = scroll.max(0).min(max.max(0));
+        if self.scroll != next {
+            self.scroll = next;
+            self.dirty = true;
+        }
     }
     pub fn is_animating(&self) -> bool {
         false
@@ -173,7 +201,9 @@ impl Warp4Engine {
         self.hovered
     }
     pub fn clear_hover(&mut self) {
-        self.hovered = None;
+        if self.hovered.take().is_some() {
+            self.dirty = true;
+        }
     }
     pub fn refresh_config(&mut self) {
         self.dirty = true;
@@ -184,8 +214,21 @@ impl Warp4Engine {
     pub fn take_scroll_request(&mut self) -> Option<i32> {
         None
     }
-    pub fn tick(&mut self, _now_ns: u64) -> bool {
-        false
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        self.now_ns = now_ns;
+        let Some(until) = self.wait_until_ns else {
+            return false;
+        };
+        if now_ns < until {
+            return false;
+        }
+        self.wait_until_ns = None;
+        if self.pending.is_empty() {
+            return false;
+        }
+        let pending = core::mem::take(&mut self.pending);
+        self.execute(&pending);
+        true
     }
 
     pub fn set_screen(&mut self, screen: &str) {
@@ -204,6 +247,9 @@ impl Warp4Engine {
         self.roots.clear();
         self.focused = None;
         self.hovered = None;
+        self.pressed = None;
+        self.wait_until_ns = None;
+        self.pending.clear();
         let mut layout = self.archive.read_text(&format!("{}.w4u", self.screen));
         if layout.is_empty() {
             layout = self.archive.read_text(&format!("{}.w3u", self.screen));
@@ -243,11 +289,23 @@ impl Warp4Engine {
             let h = self.layout(root, 16, y, (self.width - 32).max(1), forced, "");
             y += h;
         }
-        self.content_height = (y + 16).max(self.height);
+        let mut internal_overflow = 0;
+        for idx in 0..self.nodes.len() {
+            if is_scroll_container(&self.nodes[idx]) {
+                internal_overflow = internal_overflow
+                    .max(self.nodes[idx].content_h.saturating_sub(self.nodes[idx].h));
+            }
+        }
+        self.content_height = (y + 16 + internal_overflow).max(self.height + TITLE_BAR);
+        self.scroll = self.scroll.min(
+            self.content_height
+                .saturating_sub(self.height + TITLE_BAR)
+                .max(0),
+        );
         self.dirty = false;
     }
 
-    pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, _oy: i32) {
+    pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         if self.dirty {
             self.update(layer.width() as i32, layer.height() as i32 - TITLE_BAR);
         }
@@ -260,22 +318,30 @@ impl Warp4Engine {
         );
         let roots = self.roots.clone();
         for root in roots {
-            // The compositor supplies the window-manager scroll as `oy`.
-            // `set_scroll` remains useful for standalone callers, so both
-            // forms are combined without applying the offset twice.
-            self.paint(layer, root, ox, _oy - self.scroll);
+            // The compositor supplies the window-manager offset.  The view
+            // tree gets two passes: normal content first, then fixed/sticky
+            // chrome.  This is what the reference CSS achieves with a
+            // viewport and `position:fixed`, without ever creating HTML.
+            self.paint(layer, root, ox, oy, false, PaintPass::Flow);
+            self.paint(layer, root, ox, oy, false, PaintPass::Fixed);
         }
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
-        self.hovered = self.hit(x, y + self.scroll);
+        let next = self.hit(x, y);
+        if self.hovered != next {
+            self.hovered = next;
+            self.dirty = true;
+        }
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
-        let Some(idx) = self.hit(x, y + self.scroll) else {
+        let Some(idx) = self.hit(x, y) else {
             self.focused = None;
+            self.pressed = None;
             return;
         };
+        self.pressed = Some(idx);
         if self.nodes[idx].is("EditText")
             || self.nodes[idx].is("AutoCompleteTextView")
             || self.nodes[idx].is("MultiAutoCompleteTextView")
@@ -288,12 +354,28 @@ impl Warp4Engine {
             || self.nodes[idx].is("RadioButton")
             || self.nodes[idx].is("ToggleButton")
         {
-            let value = self.nodes[idx].attr("checked") != "true";
-            set_attr(
-                &mut self.nodes[idx],
-                "checked",
-                if value { "true" } else { "false" },
-            );
+            if self.nodes[idx].is("RadioButton") {
+                if let Some(parent) = self.nodes[idx].parent {
+                    for sibling in self.nodes[parent].children.clone() {
+                        if self.nodes[sibling].is("RadioButton") {
+                            set_attr(
+                                &mut self.nodes[sibling],
+                                "checked",
+                                if sibling == idx { "true" } else { "false" },
+                            );
+                        }
+                    }
+                } else {
+                    set_attr(&mut self.nodes[idx], "checked", "true");
+                }
+            } else {
+                let value = self.nodes[idx].attr("checked") != "true";
+                set_attr(
+                    &mut self.nodes[idx],
+                    "checked",
+                    if value { "true" } else { "false" },
+                );
+            }
         }
         let id = self.nodes[idx].id().to_string();
         if !id.is_empty() {
@@ -308,6 +390,12 @@ impl Warp4Engine {
             }
         }
         self.dirty = true;
+    }
+
+    pub fn release(&mut self) {
+        if self.pressed.take().is_some() {
+            self.dirty = true;
+        }
     }
 
     pub fn handle_key(&mut self, key: u8) {
@@ -336,12 +424,56 @@ impl Warp4Engine {
     fn hit(&self, x: i32, y: i32) -> Option<usize> {
         (0..self.nodes.len()).rev().find(|idx| {
             let n = &self.nodes[*idx];
-            n.visible() && interactive(n) && x >= n.x && y >= n.y && x < n.x + n.w && y < n.y + n.h
+            n.visible()
+                && self.active_child(*idx)
+                && (interactive(n) || self.script.clicks.iter().any(|(id, _)| id == n.id()))
+                && self.hit_visible(*idx, x, y)
         })
     }
 
+    fn hit_visible(&self, idx: usize, x: i32, y: i32) -> bool {
+        let mut current = Some(idx);
+        let chrome_mode = self.document_has_scroll();
+        while let Some(i) = current {
+            let node = &self.nodes[i];
+            let inside_scroll = self.ancestor_is_scroll(i);
+            let visual_y = if is_fixed(node) || (chrome_mode && !inside_scroll) {
+                y - self.scroll
+            } else {
+                y
+            };
+            if x < node.x
+                || visual_y < node.y
+                || x >= node.x + node.w
+                || visual_y >= node.y + node.h
+            {
+                return false;
+            }
+            current = node.parent;
+        }
+        true
+    }
+
+    fn ancestor_is_scroll(&self, idx: usize) -> bool {
+        let mut current = self.nodes[idx].parent;
+        while let Some(i) = current {
+            if is_scroll_container(&self.nodes[i]) {
+                return true;
+            }
+            current = self.nodes[i].parent;
+        }
+        false
+    }
+
     fn execute(&mut self, actions: &[Action]) {
-        for action in actions.iter().take(MAX_ACTIONS) {
+        for (pos, action) in actions.iter().take(MAX_ACTIONS).enumerate() {
+            if self.wait_until_ns.is_some() {
+                self.pending.extend_from_slice(&actions[pos..]);
+                return;
+            }
+            if self.break_requested {
+                return;
+            }
             match action {
                 Action::If {
                     left,
@@ -378,6 +510,10 @@ impl Warp4Engine {
                         self.execute(&body);
                     }
                 }
+                Action::Break => {
+                    self.break_requested = true;
+                    return;
+                }
             }
         }
     }
@@ -386,7 +522,7 @@ impl Warp4Engine {
         let value = self.value(raw);
         match name {
             "var.set" | "var.edit" | "const.set" => self.set_state(target, &value),
-            "fun" | "for" => {
+            "fun" => {
                 if let Some((_, body)) = self
                     .script
                     .functions
@@ -395,6 +531,34 @@ impl Warp4Engine {
                     .cloned()
                 {
                     self.execute(&body);
+                }
+            }
+            "for" => {
+                if let Some((_, body)) = self
+                    .script
+                    .functions
+                    .iter()
+                    .find(|(key, _)| key == &value)
+                    .cloned()
+                {
+                    for _ in 0..MAX_ACTIONS {
+                        self.break_requested = false;
+                        self.execute(&body);
+                        if self.wait_until_ns.is_some() {
+                            return;
+                        }
+                        if self.break_requested {
+                            self.break_requested = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            "break" => self.break_requested = true,
+            "print" => {}
+            "wait" => {
+                if let Some(duration) = duration_ns(&value) {
+                    self.wait_until_ns = Some(self.now_ns.saturating_add(duration));
                 }
             }
             "WarpUI.text" => {
@@ -426,6 +590,10 @@ impl Warp4Engine {
             }
             "WarpUI.screen" => self.set_screen(&value),
             name if name.starts_with("WarpUI.") => {
+                if let Some(i) = self.find(target) {
+                    let key = name.strip_prefix("WarpUI.").unwrap_or(name);
+                    set_attr(&mut self.nodes[i], key, &value);
+                }
                 if let Some(uri) = value.strip_prefix("app://") {
                     self.last_command = Some(format!("app://{uri}"));
                 }
@@ -464,30 +632,65 @@ impl Warp4Engine {
         if s == "()" {
             return String::new();
         }
-        loop {
-            let Some(start) = s.find("var[") else {
+        for _ in 0..128 {
+            let mut next = String::new();
+            let mut changed = false;
+            let chars: Vec<char> = s.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                let kind = if chars[i..].starts_with(&['v', 'a', 'r', '[']) {
+                    Some(("var", 4))
+                } else if chars[i..].starts_with(&['c', 'o', 'n', 's', 't', '[']) {
+                    Some(("const", 6))
+                } else if chars[i..].starts_with(&['c', 'a', 'l', 'c', '[']) {
+                    Some(("calc", 5))
+                } else {
+                    None
+                };
+                let Some((kind, open)) = kind else {
+                    next.push(chars[i]);
+                    i += 1;
+                    continue;
+                };
+                let mut depth = 1i32;
+                let mut end = i + open;
+                while end < chars.len() {
+                    if chars[end] == '[' {
+                        depth += 1;
+                    }
+                    if chars[end] == ']' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    end += 1;
+                }
+                if end >= chars.len() {
+                    next.push(chars[i]);
+                    i += 1;
+                    continue;
+                }
+                let inner: String = chars[i + open..end].iter().collect();
+                let expanded = self.value(&inner);
+                let replacement = if kind == "calc" {
+                    eval_calc(&expanded)
+                } else {
+                    self.state(expanded.trim())
+                };
+                if kind == "calc" || !replacement.is_empty() || self.state_contains(expanded.trim())
+                {
+                    next.push_str(&replacement);
+                    changed = true;
+                } else {
+                    next.extend(chars[i..=end].iter());
+                }
+                i = end + 1;
+            }
+            if !changed || next == s {
                 break;
-            };
-            let Some(end) = s[start + 4..].find(']') else {
-                break;
-            };
-            let end = start + 4 + end;
-            let v = self.state(&s[start + 4..end]);
-            s.replace_range(start..=end, &v);
-        }
-        loop {
-            let Some(start) = s.find("const[") else {
-                break;
-            };
-            let Some(end) = s[start + 6..].find(']') else {
-                break;
-            };
-            let end = start + 6 + end;
-            let v = self.state(&s[start + 6..end]);
-            s.replace_range(start..=end, &v);
-        }
-        if s.starts_with("calc[") && s.ends_with(']') {
-            return eval_calc(&s[5..s.len() - 1]).to_string();
+            }
+            s = next;
         }
         if s.len() >= 2
             && ((s.starts_with('"') && s.ends_with('"'))
@@ -497,6 +700,10 @@ impl Warp4Engine {
         } else {
             s
         }
+    }
+
+    fn state_contains(&self, key: &str) -> bool {
+        self.state.iter().any(|(name, _)| name == key)
     }
 
     fn refresh_visibility(&mut self) {
@@ -539,7 +746,8 @@ impl Warp4Engine {
         });
         self.nodes[idx].x = x + margin.left;
         self.nodes[idx].y = y + margin.top;
-        self.nodes[idx].w = w - margin.left - margin.right;
+        self.nodes[idx].w = (w - margin.left - margin.right).max(1);
+        self.nodes[idx].content_w = (self.nodes[idx].w - pad.left - pad.right).max(1);
         if tag == "LinearLayout" || tag == "RadioGroup" {
             let horizontal = self.nodes[idx].attr("orientation") == "horizontal";
             let inner_w = (self.nodes[idx].w - pad.left - pad.right).max(1);
@@ -570,6 +778,7 @@ impl Warp4Engine {
                 }
             });
             self.nodes[idx].h = inner_h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
             let free = (if horizontal {
                 inner_w
             } else {
@@ -596,11 +805,17 @@ impl Warp4Engine {
                     self.intrinsic_h(child, inner_w)
                 };
                 if horizontal {
-                    cursor += e.left;
                     self.layout(child, cursor, inner_y, allocated.max(1), None, &tag);
-                    cursor += allocated + e.right;
+                    let child_h = self.nodes[child].h;
+                    let cross = cross_offset(
+                        self.nodes[child].attr("layout_gravity"),
+                        self.nodes[idx].h - pad.top - pad.bottom,
+                        child_h + e.top + e.bottom,
+                        true,
+                    );
+                    self.nodes[child].y = inner_y + cross + e.top;
+                    cursor += self.nodes[child].w + e.left + e.right;
                 } else {
-                    cursor += e.top;
                     self.layout(
                         child,
                         inner_x,
@@ -609,12 +824,208 @@ impl Warp4Engine {
                         Some(allocated.max(1)),
                         &tag,
                     );
-                    cursor += allocated + e.bottom;
+                    let cross = cross_offset(
+                        self.nodes[child].attr("layout_gravity"),
+                        inner_w,
+                        self.nodes[child].w + e.left + e.right,
+                        false,
+                    );
+                    self.nodes[child].x = inner_x + cross + e.left;
+                    cursor += self.nodes[child].h + e.top + e.bottom;
+                }
+            }
+        } else if tag == "ScrollView" || tag == "HorizontalScrollView" {
+            let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
+            self.nodes[idx].h = h.max(1);
+            let inner_w = (self.nodes[idx].w - pad.left - pad.right).max(1);
+            let inner_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
+            let child = self.nodes[idx]
+                .children
+                .iter()
+                .copied()
+                .find(|c| self.nodes[*c].visible());
+            let mut content_w = inner_w;
+            let mut content_h = inner_h;
+            if let Some(child) = child {
+                let fill = self.nodes[idx].attr("fillViewport") == "true";
+                let forced = if fill && tag == "ScrollView" {
+                    Some(inner_h)
+                } else {
+                    None
+                };
+                self.layout(
+                    child,
+                    self.nodes[idx].x + pad.left,
+                    self.nodes[idx].y + pad.top,
+                    if tag == "HorizontalScrollView" {
+                        self.intrinsic_w(child, inner_w).max(inner_w)
+                    } else {
+                        inner_w
+                    },
+                    forced,
+                    &tag,
+                );
+                content_w = if tag == "HorizontalScrollView" {
+                    (self.subtree_right(child) - self.nodes[idx].x + pad.right).max(inner_w)
+                } else {
+                    inner_w
+                };
+                content_h = if tag == "ScrollView" {
+                    (self.subtree_bottom(child) - self.nodes[idx].y + pad.bottom).max(inner_h)
+                } else {
+                    inner_h
+                };
+            }
+            self.nodes[idx].content_w = content_w;
+            self.nodes[idx].content_h = content_h;
+        } else if tag == "RelativeLayout" {
+            let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
+            self.nodes[idx].h = h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
+            self.layout_relative(idx, pad);
+        } else if tag == "FrameLayout"
+            || tag == "ViewFlipper"
+            || tag == "ViewAnimator"
+            || tag == "ViewSwitcher"
+            || tag == "TextSwitcher"
+        {
+            let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
+            self.nodes[idx].h = h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
+            let children = self.nodes[idx].children.clone();
+            let active = if tag == "ViewFlipper"
+                || tag == "ViewAnimator"
+                || tag == "ViewSwitcher"
+                || tag == "TextSwitcher"
+            {
+                parse_i32(self.nodes[idx].attr("displayedChild")).max(0) as usize
+            } else {
+                usize::MAX
+            };
+            for (pos, child) in children.into_iter().enumerate() {
+                if !self.nodes[child].visible() || pos != active && active != usize::MAX {
+                    continue;
+                }
+                let child_w = dimension(
+                    self.nodes[child].attr("layout_width"),
+                    self.nodes[idx].content_w,
+                    self.intrinsic_w(child, self.nodes[idx].content_w),
+                );
+                let child_h = dimension(
+                    self.nodes[child].attr("layout_height"),
+                    self.nodes[idx].content_h,
+                    self.intrinsic_h(child, self.nodes[idx].content_w),
+                );
+                self.layout(
+                    child,
+                    self.nodes[idx].x + pad.left,
+                    self.nodes[idx].y + pad.top,
+                    child_w.max(1),
+                    Some(child_h.max(1)),
+                    &tag,
+                );
+                let e = edges(&self.nodes[child], "layout_margin");
+                let (dx, dy) = gravity_offset(
+                    self.nodes[child].attr("layout_gravity"),
+                    self.nodes[idx].content_w,
+                    self.nodes[idx].content_h,
+                    self.nodes[child].w + e.left + e.right,
+                    self.nodes[child].h + e.top + e.bottom,
+                );
+                self.nodes[child].x = self.nodes[idx].x + pad.left + dx + e.left;
+                self.nodes[child].y = self.nodes[idx].y + pad.top + dy + e.top;
+            }
+        } else if tag == "AbsoluteLayout" {
+            let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
+            self.nodes[idx].h = h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
+            let children = self.nodes[idx].children.clone();
+            for child in children {
+                if !self.nodes[child].visible() {
+                    continue;
+                }
+                let child_w = dimension(
+                    self.nodes[child].attr("layout_width"),
+                    self.nodes[idx].content_w,
+                    self.intrinsic_w(child, self.nodes[idx].content_w),
+                );
+                self.layout(
+                    child,
+                    self.nodes[idx].x + pad.left + parse_dim(self.nodes[child].attr("layout_x"), 0),
+                    self.nodes[idx].y + pad.top + parse_dim(self.nodes[child].attr("layout_y"), 0),
+                    child_w.max(1),
+                    None,
+                    &tag,
+                );
+            }
+        } else if tag == "GridLayout" {
+            let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
+            self.nodes[idx].h = h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
+            self.layout_grid(idx, pad);
+        } else if tag == "TableLayout" || tag == "TableRow" {
+            let horizontal = tag == "TableRow";
+            let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
+            self.nodes[idx].h = h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
+            let mut cursor = if horizontal {
+                self.nodes[idx].x + pad.left
+            } else {
+                self.nodes[idx].y + pad.top
+            };
+            let children = self.nodes[idx].children.clone();
+            let stretch = self.nodes[idx].attr("stretchColumns").contains('*');
+            let count = children
+                .iter()
+                .filter(|c| self.nodes[**c].visible())
+                .count()
+                .max(1) as i32;
+            for child in children {
+                if !self.nodes[child].visible() {
+                    continue;
+                }
+                let e = edges(&self.nodes[child], "layout_margin");
+                if !horizontal
+                    && stretch
+                    && self.nodes[child].is("TableRow")
+                    && self.nodes[child].attr("stretchColumns").is_empty()
+                {
+                    set_attr(&mut self.nodes[child], "stretchColumns", "*");
+                }
+                let allocated =
+                    if horizontal && (stretch || self.nodes[child].attr("layout_width") == "0dp") {
+                        (self.nodes[idx].content_w / count).max(1)
+                    } else if horizontal {
+                        self.intrinsic_w(child, self.nodes[idx].content_w)
+                    } else {
+                        self.nodes[idx].content_w
+                    };
+                if horizontal {
+                    self.layout(
+                        child,
+                        cursor,
+                        self.nodes[idx].y + pad.top,
+                        allocated,
+                        None,
+                        &tag,
+                    );
+                    cursor += self.nodes[child].w + e.left + e.right;
+                } else {
+                    self.layout(
+                        child,
+                        self.nodes[idx].x + pad.left,
+                        cursor,
+                        allocated,
+                        None,
+                        &tag,
+                    );
+                    cursor += self.nodes[child].h + e.top + e.bottom;
                 }
             }
         } else {
             let h = own_h.unwrap_or_else(|| self.intrinsic_h(idx, available_w));
             self.nodes[idx].h = h.max(1);
+            self.nodes[idx].content_h = (self.nodes[idx].h - pad.top - pad.bottom).max(1);
             let children = self.nodes[idx].children.clone();
             let mut cy = self.nodes[idx].y + pad.top;
             for child in children {
@@ -631,20 +1042,190 @@ impl Warp4Engine {
                 }
             }
         }
-        let _ = parent_orientation;
         self.nodes[idx].h + margin.top + margin.bottom
+    }
+
+    fn layout_relative(&mut self, idx: usize, pad: Edges) {
+        let parent_x = self.nodes[idx].x + pad.left;
+        let parent_y = self.nodes[idx].y + pad.top;
+        let parent_w = self.nodes[idx].content_w;
+        let parent_h = self.nodes[idx].content_h;
+        let children = self.nodes[idx].children.clone();
+        for child in &children {
+            if !self.nodes[*child].visible() {
+                continue;
+            }
+            let cw = dimension(
+                self.nodes[*child].attr("layout_width"),
+                parent_w,
+                self.intrinsic_w(*child, parent_w),
+            );
+            let ch = dimension(
+                self.nodes[*child].attr("layout_height"),
+                parent_h,
+                self.intrinsic_h(*child, parent_w),
+            );
+            self.layout(
+                *child,
+                parent_x,
+                parent_y,
+                cw.max(1),
+                Some(ch.max(1)),
+                "RelativeLayout",
+            );
+        }
+        for &child in &children {
+            if !self.nodes[child].visible() {
+                continue;
+            }
+            let n = self.nodes[child].clone();
+            let e = edges(&n, "layout_margin");
+            let mut x = e.left;
+            let mut y = e.top;
+            if truth(n.attr("layout_alignParentRight")) || truth(n.attr("layout_alignParentEnd")) {
+                x = parent_w - n.w - e.right;
+            }
+            if truth(n.attr("layout_centerHorizontal")) || truth(n.attr("layout_centerInParent")) {
+                x = (parent_w - n.w) / 2;
+            }
+            if truth(n.attr("layout_alignParentBottom")) {
+                y = parent_h - n.h - e.bottom;
+            }
+            if truth(n.attr("layout_centerVertical")) || truth(n.attr("layout_centerInParent")) {
+                y = (parent_h - n.h) / 2;
+            }
+            let sibling = |key: &str, nodes: &Vec<Node>, children: &Vec<usize>| -> Option<Node> {
+                let id = nodes[child].attr(key);
+                if id.is_empty() {
+                    return None;
+                }
+                let id = id.trim_start_matches("@+id/").trim_start_matches("@id/");
+                children
+                    .iter()
+                    .find_map(|other| (nodes[*other].id() == id).then(|| nodes[*other].clone()))
+            };
+            if let Some(ref q) = sibling("layout_below", &self.nodes, &children) {
+                y = q.y - parent_y + q.h + e.top;
+            }
+            if let Some(ref q) = sibling("layout_above", &self.nodes, &children) {
+                y = q.y - parent_y - n.h - e.bottom;
+            }
+            if let Some(ref q) = sibling("layout_toRightOf", &self.nodes, &children)
+                .or_else(|| sibling("layout_toEndOf", &self.nodes, &children))
+            {
+                x = q.x - parent_x + q.w + e.left;
+            }
+            if let Some(ref q) = sibling("layout_toLeftOf", &self.nodes, &children)
+                .or_else(|| sibling("layout_toStartOf", &self.nodes, &children))
+            {
+                x = q.x - parent_x - n.w - e.right;
+            }
+            if let Some(ref q) = sibling("layout_alignLeft", &self.nodes, &children)
+                .or_else(|| sibling("layout_alignStart", &self.nodes, &children))
+            {
+                x = q.x - parent_x + e.left;
+            }
+            if let Some(ref q) = sibling("layout_alignRight", &self.nodes, &children)
+                .or_else(|| sibling("layout_alignEnd", &self.nodes, &children))
+            {
+                x = q.x - parent_x + q.w - n.w - e.right;
+            }
+            if let Some(ref q) = sibling("layout_alignTop", &self.nodes, &children) {
+                y = q.y - parent_y + e.top;
+            }
+            if let Some(ref q) = sibling("layout_alignBottom", &self.nodes, &children) {
+                y = q.y - parent_y + q.h - n.h - e.bottom;
+            }
+            self.nodes[child].x = (parent_x + x).max(parent_x);
+            self.nodes[child].y = (parent_y + y).max(parent_y);
+        }
+    }
+
+    fn layout_grid(&mut self, idx: usize, pad: Edges) {
+        let columns = parse_i32(self.nodes[idx].attr("columnCount")).max(1);
+        let gap = 8;
+        let cell_w = ((self.nodes[idx].content_w - gap * (columns - 1)) / columns).max(1);
+        let mut row_y = self.nodes[idx].y + pad.top;
+        let mut row_h = 0;
+        let mut column = 0;
+        for child in self.nodes[idx].children.clone() {
+            if !self.nodes[child].visible() {
+                continue;
+            }
+            let explicit_col = self.nodes[child].attr("layout_column");
+            if !explicit_col.is_empty() {
+                column = parse_i32(explicit_col).max(0);
+            }
+            if column >= columns {
+                row_y += row_h + gap;
+                row_h = 0;
+                column = 0;
+            }
+            let span = parse_i32(self.nodes[child].attr("layout_columnSpan"))
+                .max(1)
+                .min(columns - column);
+            let allocated = cell_w * span + gap * (span - 1);
+            self.layout(
+                child,
+                self.nodes[idx].x + pad.left + column * (cell_w + gap),
+                row_y,
+                allocated,
+                None,
+                "GridLayout",
+            );
+            row_h = row_h.max(self.nodes[child].h);
+            column += span;
+            if column >= columns {
+                row_y += row_h + gap;
+                row_h = 0;
+                column = 0;
+            }
+        }
+    }
+
+    fn subtree_bottom(&self, idx: usize) -> i32 {
+        self.nodes[idx]
+            .children
+            .iter()
+            .fold(self.nodes[idx].y + self.nodes[idx].h, |bottom, child| {
+                bottom.max(self.subtree_bottom(*child))
+            })
+    }
+    fn subtree_right(&self, idx: usize) -> i32 {
+        self.nodes[idx]
+            .children
+            .iter()
+            .fold(self.nodes[idx].x + self.nodes[idx].w, |right, child| {
+                right.max(self.subtree_right(*child))
+            })
     }
 
     fn intrinsic_w(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
         if n.is("Space") {
-            return 0;
+            return parse_dim(n.attr("layout_width"), 0).max(0);
         }
         if !n.attr("text").is_empty() {
-            return measure(n.attr("text")) + 20;
+            let pad = edges(n, "padding");
+            return measure_size(n.attr("text"), text_size(n))
+                + pad.left
+                + pad.right
+                + if interactive(n) { 32 } else { 0 };
         }
-        if n.is("Button") || n.is("EditText") {
-            return available.min(180).max(64);
+        if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+            return (measure_size(
+                if n.is("ToggleButton") {
+                    n.attr("textOn")
+                } else {
+                    n.attr("text")
+                },
+                text_size(n),
+            ) + 32)
+                .max(64)
+                .min(available.max(64));
+        }
+        if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
+            return available.min(240).max(80);
         }
         if (n.is("LinearLayout") || n.is("RadioGroup")) && n.attr("orientation") == "horizontal" {
             let pad = edges(n, "padding");
@@ -657,31 +1238,94 @@ impl Warp4Engine {
                     .sum::<i32>())
             .min(available);
         }
+        if n.is("RelativeLayout")
+            || n.is("FrameLayout")
+            || n.is("AbsoluteLayout")
+            || n.is("GridLayout")
+        {
+            return available;
+        }
         available
     }
     fn intrinsic_h(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
         if n.is("Space") {
-            return 0;
+            return parse_dim(n.attr("layout_height"), 0).max(0);
         }
-        if n.is("Button")
-            || n.is("EditText")
-            || n.is("Switch")
-            || n.is("CheckBox")
-            || n.is("RadioButton")
-            || n.is("ToggleButton")
-        {
-            return 36;
+        if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+            return 48;
+        }
+        if n.is("EditText") || n.is("AutoCompleteTextView") {
+            return 38;
+        }
+        if n.is("MultiAutoCompleteTextView") {
+            return 58;
+        }
+        if n.is("Switch") || n.is("CheckBox") || n.is("RadioButton") {
+            return 44;
+        }
+        if n.is("SeekBar") {
+            return 30;
+        }
+        if n.is("Spinner") || n.is("SearchView") || n.is("DatePicker") || n.is("TimePicker") {
+            return 38;
         }
         if n.is("ProgressBar") {
-            return 10;
+            return if n.attr("style").contains("progressBarStyleHorizontal") {
+                6
+            } else {
+                28
+            };
         }
         if n.is("TextView") {
-            return if n.attr("text").is_empty() { 20 } else { 24 };
+            let pad = edges(n, "padding");
+            let size = text_size(n);
+            let line = (size * 1.25) as i32;
+            let chars_per_line =
+                (available.max(1) / (size.max(8.0) as i32 / 2).max(4)).max(1) as usize;
+            let lines = n
+                .attr("text")
+                .split('\n')
+                .map(|s| (s.chars().count().max(1) + chars_per_line - 1) / chars_per_line)
+                .sum::<usize>()
+                .max(1);
+            return pad.top + pad.bottom + line * lines as i32;
         }
         let pad = edges(n, "padding");
-        let child_h = if (n.is("LinearLayout") || n.is("RadioGroup"))
-            && n.attr("orientation") == "horizontal"
+        let child_h = if (n.is("LinearLayout") || n.is("RadioGroup") || n.is("TableRow"))
+            && (n.attr("orientation") == "horizontal" || n.is("TableRow"))
+        {
+            n.children
+                .iter()
+                .filter(|c| self.nodes[**c].visible())
+                .map(|c| self.intrinsic_h(*c, available))
+                .max()
+                .unwrap_or(0)
+        } else if n.is("GridLayout") {
+            let columns = parse_i32(n.attr("columnCount")).max(1) as usize;
+            let mut row_h = 0;
+            let mut rows = 0usize;
+            let mut column = 0usize;
+            for child in n.children.iter().filter(|c| self.nodes[**c].visible()) {
+                let span = parse_i32(self.nodes[*child].attr("layout_columnSpan")).max(1) as usize;
+                row_h = row_h.max(self.intrinsic_h(*child, available));
+                column += span;
+                if column >= columns {
+                    rows += 1;
+                    column = 0;
+                    row_h = 0;
+                }
+            }
+            if column > 0 {
+                rows += 1;
+            }
+            let pad = edges(n, "padding");
+            return (pad.top + pad.bottom + rows as i32 * 48 + rows.saturating_sub(1) as i32 * 8)
+                .max(1);
+        } else if n.is("FrameLayout")
+            || n.is("RelativeLayout")
+            || n.is("AbsoluteLayout")
+            || n.is("GridLayout")
         {
             n.children
                 .iter()
@@ -693,109 +1337,316 @@ impl Warp4Engine {
             n.children
                 .iter()
                 .filter(|c| self.nodes[**c].visible())
-                .map(|c| self.intrinsic_h(*c, available))
+                .map(|c| {
+                    self.intrinsic_h(*c, available)
+                        + edges(&self.nodes[*c], "layout_margin").top
+                        + edges(&self.nodes[*c], "layout_margin").bottom
+                })
                 .sum()
         };
         (pad.top + pad.bottom + child_h).max(1)
     }
 
-    fn paint(&self, layer: &mut LayerSystem, idx: usize, ox: i32, oy: i32) {
+    fn paint(
+        &self,
+        layer: &mut LayerSystem,
+        idx: usize,
+        ox: i32,
+        oy: i32,
+        in_scroll: bool,
+        pass: PaintPass,
+    ) {
         let n = &self.nodes[idx];
-        if !n.visible() {
+        if !n.visible() || !self.active_child(idx) {
+            return;
+        }
+        let chrome_mode = self.document_has_scroll();
+        let fixed = is_fixed(n) || (!in_scroll && chrome_mode);
+        if pass == PaintPass::Flow && fixed {
+            let child_scroll = in_scroll || is_scroll_container(n);
+            for &child in &n.children {
+                self.paint(layer, child, ox, oy, child_scroll, pass);
+            }
+            return;
+        }
+        if pass == PaintPass::Fixed && !fixed {
+            for &child in &n.children {
+                self.paint(layer, child, ox, oy, in_scroll, pass);
+            }
             return;
         }
         let x = n.x + ox;
-        let y = n.y + oy;
+        let y = n.y + if fixed { 0 } else { oy };
         let w = n.w.max(1) as usize;
         let h = n.h.max(1) as usize;
-        let fill = parse_color(n.attr("background")).unwrap_or(if n.is("LinearLayout") {
-            Color::rgb(245, 248, 251)
-        } else {
-            Color::TRANSPARENT
-        });
-        if fill != Color::TRANSPARENT {
-            layer.fill_rounded_rect(x.max(0) as usize, y.max(0) as usize, w, h, 6, fill);
+        if let Some(fill) = parse_color(n.attr("background")) {
+            let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
+            if radius > 0 {
+                layer.fill_rounded_rect(
+                    x.max(0) as usize,
+                    y.max(0) as usize,
+                    w,
+                    h,
+                    radius.min(w / 2).min(h / 2),
+                    fill,
+                );
+            } else {
+                layer.fill_rect(x.max(0) as usize, y.max(0) as usize, w, h, fill);
+            }
         }
-        if n.is("Button") {
+        if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
             let hover = self.hovered == Some(idx);
-            layer.fill_rounded_rect(
+            let active = self.pressed == Some(idx);
+            let fill = if active {
+                Color::rgb(189, 231, 247)
+            } else if hover {
+                Color::rgb(224, 224, 224)
+            } else {
+                Color::rgb(215, 215, 215)
+            };
+            layer.fill_rounded_rect(x.max(0) as usize, y.max(0) as usize, w, h, 2, fill);
+            layer.rect_outline(
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
                 h,
-                6,
-                if hover {
-                    Color::rgb(220, 232, 248)
+                if active {
+                    Color::rgb(0, 153, 204)
                 } else {
-                    config::get_color("ui-theme/color/btn_bg", Color::BTN_BG)
+                    Color::rgb(159, 159, 159)
                 },
             );
-        } else if n.is("EditText") {
+        } else if n.is("EditText")
+            || n.is("AutoCompleteTextView")
+            || n.is("MultiAutoCompleteTextView")
+        {
             layer.rounded_rect_outline(
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
                 h,
                 5,
-                config::get_color("ui-theme/color/border", Color::BORDER),
+                if self.focused == Some(idx) {
+                    Color::rgb(51, 181, 229)
+                } else {
+                    Color::rgb(158, 158, 158)
+                },
                 Color::rgb(255, 255, 255),
             );
+        } else if n.is("CheckBox") || n.is("RadioButton") {
+            let checked = n.attr("checked") == "true";
+            let mark_x = x + 2;
+            let mark_y = y + (n.h - 22).max(0) / 2;
+            if n.is("CheckBox") {
+                layer.fill_rect(
+                    mark_x.max(0) as usize,
+                    mark_y.max(0) as usize,
+                    22,
+                    22,
+                    if checked {
+                        Color::rgb(51, 181, 229)
+                    } else {
+                        Color::rgb(230, 230, 230)
+                    },
+                );
+                layer.rect_outline(
+                    mark_x.max(0) as usize,
+                    mark_y.max(0) as usize,
+                    22,
+                    22,
+                    if checked {
+                        Color::rgb(20, 143, 189)
+                    } else {
+                        Color::rgb(116, 116, 116)
+                    },
+                );
+                if checked {
+                    layer.rect_outline(
+                        (mark_x + 6).max(0) as usize,
+                        (mark_y + 6).max(0) as usize,
+                        10,
+                        10,
+                        Color::rgb(255, 255, 255),
+                    );
+                }
+            } else {
+                layer.fill_circle(
+                    (mark_x + 11).max(0) as usize,
+                    (mark_y + 11).max(0) as usize,
+                    11,
+                    if checked {
+                        Color::rgb(51, 181, 229)
+                    } else {
+                        Color::rgb(112, 112, 112)
+                    },
+                );
+                layer.fill_circle(
+                    (mark_x + 11).max(0) as usize,
+                    (mark_y + 11).max(0) as usize,
+                    8,
+                    if checked {
+                        Color::rgb(255, 255, 255)
+                    } else {
+                        Color::rgb(245, 245, 245)
+                    },
+                );
+            }
         } else if n.is("Switch") {
             let on = n.attr("checked") == "true";
+            let track = if on {
+                Color::rgb(51, 181, 229)
+            } else {
+                Color::rgb(189, 189, 189)
+            };
+            let sy = y + (n.h - 22).max(0) / 2;
+            layer.fill_rect(x.max(0) as usize, sy.max(0) as usize, 52, 22, track);
+            let tx = x + if on { 25 } else { 0 };
             layer.fill_rounded_rect(
-                x.max(0) as usize,
-                y.max(0) as usize,
-                42,
-                22,
-                11,
-                if on {
-                    Color::rgb(50, 120, 70)
-                } else {
-                    Color::rgb(145, 150, 155)
-                },
+                tx.max(0) as usize,
+                (y + (n.h - 28).max(0) / 2).max(0) as usize,
+                28,
+                28,
+                2,
+                Color::rgb(245, 245, 245),
             );
-            layer.fill_circle(
-                (x + (if on { 31 } else { 11 })).max(0) as usize,
-                (y + 11).max(0) as usize,
-                8,
-                Color::rgb(255, 255, 255),
+            layer.rect_outline(
+                tx.max(0) as usize,
+                (y + (n.h - 28).max(0) / 2).max(0) as usize,
+                28,
+                28,
+                Color::rgb(133, 133, 133),
             );
-        } else if n.is("ProgressBar") {
-            layer.fill_rounded_rect(
+        } else if n.is("Spinner") || n.is("SearchView") {
+            layer.fill_rect(
                 x.max(0) as usize,
-                (y + 2).max(0) as usize,
+                (y + h as i32 - 2).max(0) as usize,
                 w,
-                6,
+                2,
+                Color::rgb(153, 153, 153),
+            );
+        } else if n.is("SeekBar") {
+            let cy = y + h as i32 / 2;
+            layer.fill_rect(
+                x.max(0) as usize,
+                cy.max(0) as usize,
+                w,
                 3,
-                Color::rgb(210, 215, 220),
+                Color::rgb(167, 167, 167),
             );
             let max = parse_i32(n.attr("max")).max(1);
             let progress = parse_i32(n.attr("progress")).clamp(0, max);
-            layer.fill_rounded_rect(
-                x.max(0) as usize,
-                (y + 2).max(0) as usize,
-                (w as i32 * progress / max) as usize,
-                6,
-                3,
-                Color::rgb(55, 120, 210),
+            let px = x + w as i32 * progress / max;
+            layer.fill_circle(
+                px.max(0) as usize,
+                cy.max(0) as usize,
+                9,
+                Color::rgb(51, 181, 229),
             );
+        } else if n.is("RatingBar") {
+            let stars = parse_i32(n.attr("numStars")).max(1).min(10);
+            let rating = n.attr("rating").parse::<f32>().unwrap_or(0.0);
+            for star in 0..stars {
+                let color = if star as f32 + 0.5 <= rating {
+                    Color::rgb(51, 181, 229)
+                } else {
+                    Color::rgb(183, 183, 183)
+                };
+                put_str_size(layer, x + star * 22, y, "★", color, 22.0);
+            }
+        } else if n.is("ProgressBar") {
+            if n.attr("style").contains("progressBarStyleHorizontal") || w > 80 {
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    (y + 2).max(0) as usize,
+                    w,
+                    6,
+                    Color::rgb(208, 208, 208),
+                );
+                let max = parse_i32(n.attr("max")).max(1);
+                let progress = parse_i32(n.attr("progress")).clamp(0, max);
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    (y + 2).max(0) as usize,
+                    (w as i32 * progress / max) as usize,
+                    6,
+                    Color::rgb(51, 181, 229),
+                );
+            } else {
+                layer.fill_circle(
+                    (x + w as i32 / 2).max(0) as usize,
+                    (y + h as i32 / 2).max(0) as usize,
+                    12,
+                    Color::rgb(51, 181, 229),
+                );
+            }
+        } else if n.is("ImageView") {
+            layer.rect_outline(
+                x.max(0) as usize,
+                y.max(0) as usize,
+                w,
+                h,
+                Color::rgb(185, 185, 185),
+            );
+        } else if n.is("ListView") || n.is("ExpandableListView") {
+            for row in 0..(h / 44) {
+                let ry = y + row as i32 * 44;
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    ry.max(0) as usize,
+                    w,
+                    43,
+                    Color::rgb(255, 255, 255),
+                );
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    (ry + 43).max(0) as usize,
+                    w,
+                    1,
+                    Color::rgb(229, 229, 229),
+                );
+                put_str_size(
+                    layer,
+                    x + 12,
+                    ry + 12,
+                    &format!("Item {}", row + 1),
+                    Color::rgb(34, 34, 34),
+                    14.0,
+                );
+            }
         }
         let text = n.attr("text");
         if !text.is_empty() {
-            let color = parse_color(n.attr("textColor")).unwrap_or(if n.is("TextView") {
-                Color::rgb(40, 40, 40)
-            } else {
-                Color::TEXT
-            });
+            let color = text_color(n);
             let size = text_size(n);
-            let tx = if n.is("Button") {
-                x + (n.w - measure_size(text, size)).max(0) / 2
+            let pad = edges(n, "padding");
+            let text_w = measure_size(text, size);
+            let tx = if n.is("Button") || n.is("ToggleButton") {
+                x + (n.w - text_w).max(0) / 2
+            } else if n.attr("gravity").contains("right") || n.attr("gravity").contains("end") {
+                x + n.w - text_w - pad.right
+            } else if n.attr("gravity").contains("center") {
+                x + (n.w - text_w) / 2
             } else {
-                x + 8
+                x + pad.left
+                    + if n.is("CheckBox") || n.is("RadioButton") || n.is("Switch") {
+                        32
+                    } else {
+                        0
+                    }
             };
-            let ty = y + 8;
-            put_str_size(layer, tx, ty, text, color, size);
-        } else if n.is("EditText") && !n.attr("hint").is_empty() {
+            let ty = y + ((n.h - (size * 1.25) as i32).max(0) / 2).max(pad.top);
+            for (line, part) in text.split('\n').enumerate() {
+                let line_y = ty + line as i32 * (size * 1.25) as i32;
+                put_str_size(layer, tx, line_y, part, color, size);
+                if text_bold(n) {
+                    put_str_size(layer, tx + 1, line_y, part, color, size);
+                }
+            }
+        } else if (n.is("EditText")
+            || n.is("AutoCompleteTextView")
+            || n.is("MultiAutoCompleteTextView"))
+            && !n.attr("hint").is_empty()
+        {
             layer.put_str(
                 (x + 8).max(0) as usize,
                 (y + 8).max(0) as usize,
@@ -803,9 +1654,81 @@ impl Warp4Engine {
                 Color::MUTED,
             );
         }
-        for &child in &n.children {
-            self.paint(layer, child, ox, oy);
+        let child_scroll = in_scroll || is_scroll_container(n);
+        if is_scroll_container(n) {
+            layer.push_clip(
+                x.max(0) as usize,
+                y.max(TITLE_BAR).max(0) as usize,
+                (x + n.w).max(0) as usize,
+                (y + n.h).max(0) as usize,
+            );
         }
+        for &child in &n.children {
+            self.paint(layer, child, ox, oy, child_scroll, pass);
+        }
+        if is_scroll_container(n) {
+            if n.is("ScrollView") && n.content_h > n.h {
+                let track_h = (n.h - 2).max(1);
+                let thumb_h = (track_h * n.h / n.content_h).max(12).min(track_h);
+                let max_thumb_y = track_h - thumb_h;
+                let max_scroll = n.content_h.saturating_sub(n.h).max(1);
+                let thumb_y = max_thumb_y * self.scroll / max_scroll;
+                layer.fill_rect(
+                    (x + n.w - 6).max(0) as usize,
+                    (y + 1).max(0) as usize,
+                    6,
+                    track_h as usize,
+                    Color::rgb(245, 245, 245),
+                );
+                layer.fill_rect(
+                    (x + n.w - 6).max(0) as usize,
+                    (y + 1 + thumb_y).max(0) as usize,
+                    6,
+                    thumb_h as usize,
+                    Color::rgb(153, 153, 153),
+                );
+            } else if n.is("HorizontalScrollView") && n.content_w > n.w {
+                let track_w = (n.w - 2).max(1);
+                let thumb_w = (track_w * n.w / n.content_w).max(12).min(track_w);
+                layer.fill_rect(
+                    (x + 1).max(0) as usize,
+                    (y + n.h - 6).max(0) as usize,
+                    track_w as usize,
+                    6,
+                    Color::rgb(245, 245, 245),
+                );
+                layer.fill_rect(
+                    (x + 1).max(0) as usize,
+                    (y + n.h - 6).max(0) as usize,
+                    thumb_w as usize,
+                    6,
+                    Color::rgb(153, 153, 153),
+                );
+            }
+            layer.pop_clip();
+        }
+    }
+
+    fn document_has_scroll(&self) -> bool {
+        self.roots
+            .iter()
+            .any(|root| contains_scroll(&self.nodes, *root))
+    }
+
+    fn active_child(&self, idx: usize) -> bool {
+        let Some(parent) = self.nodes[idx].parent else {
+            return true;
+        };
+        let p = &self.nodes[parent];
+        if !(p.is("ViewFlipper")
+            || p.is("ViewAnimator")
+            || p.is("ViewSwitcher")
+            || p.is("TextSwitcher"))
+        {
+            return true;
+        }
+        let active = parse_i32(p.attr("displayedChild")).max(0) as usize;
+        p.children.iter().position(|child| *child == idx) == Some(active)
     }
 }
 
@@ -949,74 +1872,188 @@ impl XmlParser {
     }
 }
 
-fn parse_script(source: &str) -> Script {
-    let mut script = Script::default();
-    let mut stack: Vec<(String, Vec<Action>)> = Vec::new();
-    for raw in source.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-            continue;
+#[derive(Clone)]
+enum ScriptNode {
+    Raw(String),
+    Block {
+        header: String,
+        body: Vec<ScriptNode>,
+    },
+}
+
+struct ScriptParser {
+    chars: Vec<char>,
+    pos: usize,
+}
+
+impl ScriptParser {
+    fn new(source: &str) -> Self {
+        Self {
+            chars: source.chars().collect(),
+            pos: 0,
         }
-        if line.starts_with("WarpUI.OnClick") && line.ends_with('{') {
-            stack.push((
-                line["WarpUI.OnClick".len()..line.len() - 1].trim().into(),
-                Vec::new(),
-            ));
-            continue;
-        }
-        if line.starts_with("fun") && line.ends_with('{') {
-            let header = line[3..line.len() - 1].trim();
-            let name = header.trim_start_matches('(').trim_end_matches(')').trim();
-            if !name.is_empty() {
-                stack.push((format!("fun:{name}"), Vec::new()));
+    }
+    fn parse_program(&mut self, stop_on_brace: bool) -> Vec<ScriptNode> {
+        let mut nodes = Vec::new();
+        while self.pos < self.chars.len() {
+            while self.pos < self.chars.len() && self.chars[self.pos].is_whitespace() {
+                self.pos += 1;
             }
-            continue;
-        }
-        if line.starts_with("if ") && line.ends_with('{') {
-            if let Some((l, o, r)) = condition(&line[3..line.len() - 1]) {
-                stack.push((format!("if\u{1f}{l}\u{1f}{o}\u{1f}{r}"), Vec::new()));
+            if self.pos >= self.chars.len() {
+                break;
             }
-            continue;
-        }
-        if line == "}" {
-            if let Some((name, body)) = stack.pop() {
-                if let Some(rest) = name.strip_prefix("if\u{1f}") {
-                    let mut p = rest.split('\u{1f}');
-                    let a = Action::If {
-                        left: p.next().unwrap_or("").into(),
-                        op: p.next().unwrap_or("").into(),
-                        right: p.next().unwrap_or("").into(),
-                        body,
-                    };
-                    if let Some((_, parent)) = stack.last_mut() {
-                        parent.push(a);
-                    } else {
-                        script.init.push(a);
+            let start = self.pos;
+            let mut square = 0i32;
+            let mut paren = 0i32;
+            let mut consumed = false;
+            while self.pos < self.chars.len() {
+                let c = self.chars[self.pos];
+                match c {
+                    '[' => square += 1,
+                    ']' => square -= 1,
+                    '(' => paren += 1,
+                    ')' => paren -= 1,
+                    '{' if square == 0 && paren == 0 => {
+                        let header: String = self.chars[start..self.pos]
+                            .iter()
+                            .collect::<String>()
+                            .trim()
+                            .into();
+                        self.pos += 1;
+                        let body = self.parse_program(true);
+                        nodes.push(ScriptNode::Block { header, body });
+                        consumed = true;
+                        break;
                     }
-                } else if let Some(function) = name.strip_prefix("fun:") {
-                    script.functions.push((function.into(), body));
-                } else if let Some((_, parent)) = stack.last_mut() {
-                    parent.push(Action::Command {
-                        name: "WarpUI.OnClick".into(),
-                        target: name,
-                        value: String::new(),
-                    });
-                    parent.extend(body);
-                } else {
-                    script.clicks.push((name, body));
+                    '\n' if square == 0 && paren == 0 => {
+                        let raw: String = self.chars[start..self.pos]
+                            .iter()
+                            .collect::<String>()
+                            .trim()
+                            .into();
+                        self.pos += 1;
+                        if !raw.is_empty() {
+                            nodes.push(ScriptNode::Raw(raw));
+                        }
+                        consumed = true;
+                        break;
+                    }
+                    '}' if square == 0 && paren == 0 => {
+                        if stop_on_brace {
+                            self.pos += 1;
+                            return nodes;
+                        }
+                        self.pos += 1;
+                        consumed = true;
+                        break;
+                    }
+                    _ => {}
+                }
+                self.pos += 1;
+            }
+            if !consumed && self.pos >= self.chars.len() {
+                let raw: String = self.chars[start..self.pos]
+                    .iter()
+                    .collect::<String>()
+                    .trim()
+                    .into();
+                if !raw.is_empty() {
+                    nodes.push(ScriptNode::Raw(raw));
                 }
             }
-            continue;
         }
-        if let Some(action) = parse_command(line) {
-            if let Some((_, body)) = stack.last_mut() {
-                body.push(action);
-            } else {
-                script.init.push(action);
+        nodes
+    }
+}
+
+fn parse_script(source: &str) -> Script {
+    let mut parser = ScriptParser::new(source);
+    let nodes = parser.parse_program(false);
+    let mut script = Script::default();
+    for node in nodes {
+        match node {
+            ScriptNode::Raw(raw) => {
+                if let Some(action) = parse_script_raw(&raw) {
+                    script.init.push(action);
+                }
+            }
+            ScriptNode::Block { header, body } => {
+                let header = header.trim();
+                if let Some(target) = header.strip_prefix("WarpUI.OnClick") {
+                    let target = target.trim();
+                    if !target.is_empty() {
+                        script
+                            .clicks
+                            .push((target.into(), compile_script_nodes(&body)));
+                    }
+                } else if header.starts_with("fun") {
+                    let name = header[3..]
+                        .trim()
+                        .trim_start_matches('(')
+                        .trim_end_matches(')')
+                        .trim();
+                    if !name.is_empty() {
+                        script
+                            .functions
+                            .push((name.into(), compile_script_nodes(&body)));
+                    }
+                }
             }
         }
     }
     script
+}
+
+fn compile_script_nodes(nodes: &[ScriptNode]) -> Vec<Action> {
+    let mut out = Vec::new();
+    for node in nodes {
+        match node {
+            ScriptNode::Raw(raw) => {
+                if let Some(action) = parse_script_raw(raw) {
+                    out.push(action);
+                }
+            }
+            ScriptNode::Block { header, body } => {
+                if let Some(condition_text) = header.strip_prefix("if ") {
+                    if let Some((left, op, right)) = condition(condition_text.trim()) {
+                        out.push(Action::If {
+                            left,
+                            op,
+                            right,
+                            body: compile_script_nodes(body),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+fn parse_script_raw(raw: &str) -> Option<Action> {
+    let line = raw.split_once('#').map_or(raw, |(before, _)| before).trim();
+    if line.is_empty() || line.starts_with("//") {
+        return None;
+    }
+    if line == "break" {
+        return Some(Action::Break);
+    }
+    if let Some(rest) = line.strip_prefix("if ") {
+        if let Some(open) = find_top_level(rest, '(') {
+            if let Some((body, _)) = balanced(rest, open) {
+                if let Some((left, op, right)) = condition(rest[..open].trim()) {
+                    let mut parser = ScriptParser::new(&body);
+                    return Some(Action::If {
+                        left,
+                        op,
+                        right,
+                        body: compile_script_nodes(&parser.parse_program(false)),
+                    });
+                }
+            }
+        }
+    }
+    parse_command(line)
 }
 fn parse_command(line: &str) -> Option<Action> {
     let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
@@ -1059,15 +2096,60 @@ fn balanced(s: &str, open: usize) -> Option<(String, usize)> {
     }
     None
 }
+fn find_top_level(s: &str, wanted: char) -> Option<usize> {
+    let mut square = 0i32;
+    let mut paren = 0i32;
+    for (i, c) in s.char_indices() {
+        if c == wanted && square == 0 && paren == 0 {
+            return Some(i);
+        }
+        match c {
+            '[' => square += 1,
+            ']' => square -= 1,
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            _ => {}
+        }
+    }
+    None
+}
 fn condition(s: &str) -> Option<(String, String, String)> {
-    for op in ["!=", "=", "<", ">"] {
-        if let Some(i) = s.find(op) {
+    let chars: Vec<char> = s.chars().collect();
+    let mut square = 0i32;
+    let mut paren = 0i32;
+    let mut i = 0;
+    while i < chars.len() {
+        let op = if square == 0
+            && paren == 0
+            && i + 1 < chars.len()
+            && chars[i] == '!'
+            && chars[i + 1] == '='
+        {
+            Some(("!=", 2))
+        } else if square == 0 && paren == 0 && chars[i] == '=' {
+            Some(("=", 1))
+        } else if square == 0 && paren == 0 && chars[i] == '<' {
+            Some(("<", 1))
+        } else if square == 0 && paren == 0 && chars[i] == '>' {
+            Some((">", 1))
+        } else {
+            None
+        };
+        if let Some((op, width)) = op {
             return Some((
-                s[..i].trim().into(),
+                chars[..i].iter().collect::<String>().trim().into(),
                 op.into(),
-                s[i + op.len()..].trim().into(),
+                chars[i + width..].iter().collect::<String>().trim().into(),
             ));
         }
+        match chars[i] {
+            '[' => square += 1,
+            ']' => square -= 1,
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            _ => {}
+        }
+        i += 1;
     }
     None
 }
@@ -1096,6 +2178,26 @@ fn ini(s: &str, key: &str) -> Option<String> {
 }
 fn parse_i32(s: &str) -> i32 {
     s.trim().parse().unwrap_or(0)
+}
+fn duration_ns(s: &str) -> Option<u64> {
+    let value = s.trim();
+    let (number, multiplier) = if let Some(v) = value.strip_suffix("ns") {
+        (v, 1u64)
+    } else if let Some(v) = value.strip_suffix("us") {
+        (v, 1_000)
+    } else if let Some(v) = value.strip_suffix("ms") {
+        (v, 1_000_000)
+    } else if let Some(v) = value.strip_suffix('s') {
+        (v, 1_000_000_000)
+    } else if let Some(v) = value.strip_suffix('m') {
+        (v, 60_000_000_000)
+    } else if let Some(v) = value.strip_suffix('h') {
+        (v, 3_600_000_000_000)
+    } else {
+        return None;
+    };
+    let n = number.trim().parse::<f64>().ok()?;
+    Some((n * multiplier as f64).max(0.0) as u64)
 }
 fn parse_dim(s: &str, default: i32) -> i32 {
     s.trim()
@@ -1156,15 +2258,82 @@ fn edges(n: &Node, base: &str) -> Edges {
         left: parse_dim(n.attr(&format!("{base}Left")), h),
     }
 }
+fn truth(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "true" | "1" | "yes"
+    )
+}
+fn is_scroll_container(n: &Node) -> bool {
+    n.is("ScrollView")
+        || n.is("HorizontalScrollView")
+        || n.is("ListView")
+        || n.is("GridView")
+        || n.is("ExpandableListView")
+}
+fn contains_scroll(nodes: &[Node], idx: usize) -> bool {
+    is_scroll_container(&nodes[idx])
+        || nodes[idx]
+            .children
+            .iter()
+            .any(|child| contains_scroll(nodes, *child))
+}
+fn is_fixed(n: &Node) -> bool {
+    let position = n.attr("position").to_ascii_lowercase();
+    position == "fixed"
+        || position == "sticky"
+        || truth(n.attr("fixed"))
+        || truth(n.attr("sticky"))
+        || n.attr("layout_position").eq_ignore_ascii_case("fixed")
+}
+fn gravity_offset(
+    gravity: &str,
+    parent_w: i32,
+    parent_h: i32,
+    child_w: i32,
+    child_h: i32,
+) -> (i32, i32) {
+    let g = gravity.to_ascii_lowercase();
+    let x = if g.contains("center_horizontal") || g == "center" || g.contains("center|horizontal") {
+        (parent_w - child_w) / 2
+    } else if g.contains("right") || g.contains("end") {
+        parent_w - child_w
+    } else {
+        0
+    };
+    let y = if g.contains("center_vertical") || g == "center" {
+        (parent_h - child_h) / 2
+    } else if g.contains("bottom") {
+        parent_h - child_h
+    } else {
+        0
+    };
+    (x.max(0), y.max(0))
+}
+fn cross_offset(gravity: &str, parent_size: i32, child_size: i32, horizontal_axis: bool) -> i32 {
+    let g = gravity.to_ascii_lowercase();
+    if (horizontal_axis && (g.contains("center_vertical") || g == "center"))
+        || (!horizontal_axis && (g.contains("center_horizontal") || g == "center"))
+    {
+        return (parent_size - child_size).max(0) / 2;
+    }
+    if (horizontal_axis && g.contains("bottom"))
+        || (!horizontal_axis && (g.contains("right") || g.contains("end")))
+    {
+        return (parent_size - child_size).max(0);
+    }
+    0
+}
 fn interactive(n: &Node) -> bool {
-    n.is("Button")
-        || n.is("EditText")
-        || n.is("AutoCompleteTextView")
-        || n.is("MultiAutoCompleteTextView")
-        || n.is("Switch")
-        || n.is("CheckBox")
-        || n.is("RadioButton")
-        || n.is("ToggleButton")
+    n.attr("enabled") != "false"
+        && (n.is("Button")
+            || n.is("EditText")
+            || n.is("AutoCompleteTextView")
+            || n.is("MultiAutoCompleteTextView")
+            || n.is("Switch")
+            || n.is("CheckBox")
+            || n.is("RadioButton")
+            || n.is("ToggleButton"))
 }
 fn measure(s: &str) -> i32 {
     if ttf_font::is_available() {
@@ -1201,6 +2370,22 @@ fn text_size(n: &Node) -> f32 {
     } else {
         16.0
     }
+}
+fn text_color(n: &Node) -> Color {
+    if let Some(color) = parse_color(n.attr("textColor")) {
+        return color;
+    }
+    let style = n.attr("style");
+    if style.contains("SectionDescription") {
+        Color::rgb(119, 119, 119)
+    } else if style.contains("ComponentLabel") {
+        Color::rgb(85, 85, 85)
+    } else {
+        Color::rgb(34, 34, 34)
+    }
+}
+fn text_bold(n: &Node) -> bool {
+    n.attr("textStyle").contains("bold") || n.attr("style").contains("SectionTitle")
 }
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
     if !ttf_font::is_available() {
@@ -1241,29 +2426,128 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
     }
 }
 fn parse_color(s: &str) -> Option<Color> {
-    let s = s.trim().strip_prefix('#')?;
-    let v = u32::from_str_radix(s, 16).ok()?;
-    if s.len() == 6 {
+    let raw = s.trim();
+    let named = match raw.to_ascii_lowercase().as_str() {
+        "transparent" => return Some(Color::TRANSPARENT),
+        "white" => return Some(Color::rgb(255, 255, 255)),
+        "black" => return Some(Color::rgb(0, 0, 0)),
+        "gray" | "grey" => return Some(Color::rgb(128, 128, 128)),
+        "red" => return Some(Color::rgb(255, 0, 0)),
+        "green" => return Some(Color::rgb(0, 128, 0)),
+        "blue" => return Some(Color::rgb(0, 0, 255)),
+        _ => raw,
+    };
+    let hex = named.strip_prefix('#')?;
+    let hex = if hex.len() == 3 {
+        let mut expanded = String::new();
+        for c in hex.chars() {
+            expanded.push(c);
+            expanded.push(c);
+        }
+        expanded
+    } else {
+        hex.into()
+    };
+    let v = u32::from_str_radix(&hex, 16).ok()?;
+    if hex.len() == 6 {
+        Some(Color::rgb((v >> 16) as u8, (v >> 8) as u8, v as u8))
+    } else if hex.len() == 8 {
         Some(Color::rgb((v >> 16) as u8, (v >> 8) as u8, v as u8))
     } else {
         None
     }
 }
-fn eval_calc(s: &str) -> i64 {
-    let c = s.chars().filter(|c| !c.is_whitespace()).collect::<Vec<_>>();
-    let mut total = 0i64;
-    let mut current = 0i64;
-    let mut sign = 1i64;
-    for ch in c {
-        if ch.is_ascii_digit() {
-            current = current * 10 + (ch as i64 - '0' as i64);
-        } else {
-            total += sign * current;
-            current = 0;
-            sign = if ch == '-' { -1 } else { 1 };
+fn eval_calc(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut parser = CalcParser { chars, pos: 0 };
+    let value = parser.expr();
+    if (value as i64) as f64 == value {
+        (value as i64).to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+struct CalcParser {
+    chars: Vec<char>,
+    pos: usize,
+}
+impl CalcParser {
+    fn skip(&mut self) {
+        while self.pos < self.chars.len() && self.chars[self.pos].is_whitespace() {
+            self.pos += 1;
         }
     }
-    total + sign * current
+    fn expr(&mut self) -> f64 {
+        let mut value = self.term();
+        loop {
+            self.skip();
+            let op = self.chars.get(self.pos).copied();
+            if op != Some('+') && op != Some('-') {
+                break;
+            }
+            self.pos += 1;
+            let rhs = self.term();
+            value = if op == Some('+') {
+                value + rhs
+            } else {
+                value - rhs
+            };
+        }
+        value
+    }
+    fn term(&mut self) -> f64 {
+        let mut value = self.factor();
+        loop {
+            self.skip();
+            let op = self.chars.get(self.pos).copied();
+            if !matches!(op, Some('*') | Some('/') | Some('%')) {
+                break;
+            }
+            self.pos += 1;
+            let rhs = self.factor();
+            value = match op {
+                Some('*') => value * rhs,
+                Some('/') => {
+                    if rhs == 0.0 {
+                        0.0
+                    } else {
+                        value / rhs
+                    }
+                }
+                Some('%') => value % rhs,
+                _ => value,
+            };
+        }
+        value
+    }
+    fn factor(&mut self) -> f64 {
+        self.skip();
+        if self.chars.get(self.pos) == Some(&'-') {
+            self.pos += 1;
+            return -self.factor();
+        }
+        if self.chars.get(self.pos) == Some(&'(') {
+            self.pos += 1;
+            let value = self.expr();
+            self.skip();
+            if self.chars.get(self.pos) == Some(&')') {
+                self.pos += 1;
+            }
+            return value;
+        }
+        let start = self.pos;
+        while self.pos < self.chars.len()
+            && (self.chars[self.pos].is_ascii_digit() || self.chars[self.pos] == '.')
+        {
+            self.pos += 1;
+        }
+        self.chars[start..self.pos]
+            .iter()
+            .collect::<String>()
+            .parse()
+            .unwrap_or(0.0)
+    }
 }
 fn bg() -> Color {
     config::get_color("ui-theme/color/bg", Color::BG)

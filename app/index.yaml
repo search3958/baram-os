@@ -55,3 +55,7 @@ apps:
     icon: warp.png
     type: warp-4
     title: Warp 4 機能ラボ
+  warp4test.w4a:
+    icon: warp.png
+    type: warp-4
+    title: Warp 4 テスト

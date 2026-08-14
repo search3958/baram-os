@@ -6,22 +6,32 @@ use alloc::format;
 use baram_font::log_line_str;
 
 pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
+    read_file_candidates(&[path])
+}
+
+/// Read the first existing path from the same filesystem search.  Application
+/// archives use this for the `.w4a`/`.s4a` compatibility alias so a missing
+/// preferred suffix does not produce a misleading VFS error before the valid
+/// archive is tried.
+pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     // Strategy 1: try image handle's filesystem (works on QEMU)
-    if let Some(data) = try_read_from_image_fs(path) {
-        return data;
+    for path in paths {
+        if let Some(data) = try_read_from_image_fs(path) {
+            return data;
+        }
     }
 
     // Strategy 2: enumerate all SimpleFileSystem handles (more robust for real hardware)
-    try_read_from_any_fs(path)
+    try_read_from_any_fs(paths)
 }
 
 fn try_read_from_image_fs(path: &str) -> Option<alloc::vec::Vec<u8>> {
     let ih = uefi::boot::image_handle();
-    let fs = uefi::boot::get_image_file_system(ih).ok()?;
-    read_from_fs(fs, path)
+    let mut fs = uefi::boot::get_image_file_system(ih).ok()?;
+    read_from_fs(&mut fs, path)
 }
 
-fn try_read_from_any_fs(path: &str) -> alloc::vec::Vec<u8> {
+fn try_read_from_any_fs(paths: &[&str]) -> alloc::vec::Vec<u8> {
     let handles = match boot::find_handles::<uefi::proto::media::fs::SimpleFileSystem>() {
         Ok(h) => h,
         Err(_) => {
@@ -53,13 +63,17 @@ fn try_read_from_any_fs(path: &str) -> alloc::vec::Vec<u8> {
             list_dir(&mut root, "", idx);
         }
 
-        if let Some(data) = read_from_fs(fs, path) {
-            log_line_str(&format!("VFS: found '{}' on fs handle #{}", path, idx));
-            return data;
+        for path in paths {
+            if let Some(data) = read_from_fs(&mut fs, path) {
+                log_line_str(&format!("VFS: found '{}' on fs handle #{}", path, idx));
+                return data;
+            }
         }
     }
 
-    log_line_str(&format!("VFS: '{}' not found on any filesystem", path));
+    if let Some(path) = paths.first() {
+        log_line_str(&format!("VFS: '{}' not found on any filesystem", path));
+    }
     alloc::vec::Vec::new()
 }
 
@@ -90,7 +104,7 @@ fn list_dir(root: &mut uefi::proto::media::file::Directory, prefix: &str, fs_idx
 }
 
 fn read_from_fs(
-    mut fs: boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
+    fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
 ) -> Option<alloc::vec::Vec<u8>> {
     let mut root = fs.open_volume().ok()?;

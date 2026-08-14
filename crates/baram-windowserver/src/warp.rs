@@ -253,7 +253,11 @@ impl WarpEngine {
             engine.update(width, height);
             self.content_height = engine.content_height;
             self.focused_input = engine.has_focused_input().then_some(0);
-            self.focused_input_var = if self.focused_input.is_some() { "__warp4__".into() } else { String::new() };
+            self.focused_input_var = if self.focused_input.is_some() {
+                "__warp4__".into()
+            } else {
+                String::new()
+            };
             self.hover_idx = engine.hovered_node();
             return;
         }
@@ -269,6 +273,24 @@ impl WarpEngine {
         }
         self.content_height = total_h;
         self.dirty = true;
+    }
+
+    pub fn set_scroll(&mut self, scroll: i32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_scroll(scroll);
+        }
+    }
+
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        if let Some(engine) = self.warp4.as_mut() {
+            let changed = engine.tick(now_ns);
+            if changed {
+                self.dirty = true;
+                self.content_height = engine.content_height;
+            }
+            return changed;
+        }
+        false
     }
 
     pub fn set_screen(&mut self, screen: &str) {
@@ -1121,6 +1143,12 @@ impl WarpEngine {
         }
     }
 
+    pub fn release(&mut self) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.release();
+        }
+    }
+
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         if let Some(engine) = self.warp4.as_mut() {
             engine.draw_to_layer(layer, ox, oy);
@@ -1247,7 +1275,11 @@ impl WarpEngine {
             engine.click(x, y);
             self.hover_idx = engine.hovered_node();
             self.focused_input = engine.has_focused_input().then_some(0);
-            self.focused_input_var = if self.focused_input.is_some() { "__warp4__".into() } else { String::new() };
+            self.focused_input_var = if self.focused_input.is_some() {
+                "__warp4__".into()
+            } else {
+                String::new()
+            };
             self.last_command = engine.take_command();
             return;
         }

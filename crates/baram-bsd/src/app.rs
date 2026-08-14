@@ -35,9 +35,21 @@ pub type Warp4Archive = Warp3Archive;
 impl Warp3Archive {
     pub fn open(app_name: &str) -> Self {
         let path = alloc::format!("apps/{app_name}");
+        let alias = if let Some(stem) = app_name.strip_suffix(".w4a") {
+            Some(alloc::format!("apps/{stem}.s4a"))
+        } else if let Some(stem) = app_name.strip_suffix(".s4a") {
+            Some(alloc::format!("apps/{stem}.w4a"))
+        } else {
+            None
+        };
+        let paths = if let Some(alias) = alias.as_deref() {
+            alloc::vec![path.as_str(), alias]
+        } else {
+            alloc::vec![path.as_str()]
+        };
         Self {
             app_name: alloc::string::String::from(app_name),
-            data: vfs::read_file(&path),
+            data: vfs::read_file_candidates(&paths),
             embedded: None,
         }
     }
