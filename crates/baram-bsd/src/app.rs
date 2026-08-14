@@ -197,6 +197,7 @@ pub fn parse_app_uri(uri: &str) -> Option<&str> {
             || name.ends_with(".htm")
             || name.ends_with(".w3a")
             || name.ends_with(".w4a")
+            || name.ends_with(".s4a")
             || name.ends_with(".u1"))
     {
         Some(name)
@@ -263,6 +264,7 @@ mod tests {
         );
         assert_eq!(parse_app_uri("app://warp3demo.w3a"), Some("warp3demo.w3a"));
         assert_eq!(parse_app_uri("app://example.w4a"), Some("example.w4a"));
+        assert_eq!(parse_app_uri("app://example.s4a"), Some("example.s4a"));
         assert_eq!(parse_app_uri("app://config.ini"), None);
         assert_eq!(parse_app_uri("app://../config.xml"), None);
         assert_eq!(parse_app_uri("app://folder/demo.warp"), None);
