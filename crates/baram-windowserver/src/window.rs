@@ -1035,7 +1035,12 @@ impl WindowManager {
                 win.resize_sy = py;
                 win.resize_sw = win.w;
                 win.resize_sh = win.h;
-            } else {
+            } else if self
+                .windows
+                .iter()
+                .find(|w| w.id == id)
+                .map_or(false, |w| w.title_bar_hit(px, py))
+            {
                 let win = self.windows.iter_mut().find(|w| w.id == id).unwrap();
                 win.start_drag(px, py);
             }
@@ -1521,6 +1526,18 @@ impl WindowManager {
             .find(|w| w.id == id)
             .map(|w| w.button_hit(px, py))
             .unwrap_or('n')
+    }
+
+    pub fn title_bar_hit_at(&self, id: WinId, px: i32, py: i32) -> bool {
+        self.windows
+            .iter()
+            .find(|w| w.id == id)
+            .map(|w| w.title_bar_hit(px, py))
+            .unwrap_or(false)
+    }
+
+    pub fn has_pointer_capture(&self) -> bool {
+        self.windows.iter().any(|w| w.dragging || w.resizing)
     }
 
     pub fn toggle_maximize_at(&mut self, id: WinId) {

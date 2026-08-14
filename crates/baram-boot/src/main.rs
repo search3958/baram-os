@@ -1959,7 +1959,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 _ => {
                                     if wm.resize_hit_at(id, cx, cy) {
                                         wm.start_resize_at(id, cx, cy);
-                                    } else {
+                                    } else if wm.title_bar_hit_at(id, cx, cy) {
                                         wm.start_drag_at(id, cx, cy);
                                     }
                                 }
@@ -1982,6 +1982,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                         };
                                         if rel_y >= tb_h {
                                             let warp_y = rel_y + scroll;
+                                            engine.set_scroll(scroll);
                                             engine.click(rel_x, warp_y);
                                             let content_h = wh.saturating_sub(tb_h as usize);
                                             engine.update(ww as i32, content_h as i32);
@@ -2197,7 +2198,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             }
                         }
                     }
-                    if !warp_control_drag {
+                    if !warp_control_drag && wm.has_pointer_capture() {
                         wm.on_mouse_drag(cx, cy);
                     }
                     scene_dirty = true;

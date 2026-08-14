@@ -243,6 +243,33 @@ impl Warp4Engine {
     }
 
     fn load_screen(&mut self) {
+        // Rebuilding the native view tree must not reset a running app. Keep
+        // script variables and user-editable view values across navigation or
+        // any other screen reload.
+        let previous_state = self.state.clone();
+        let mut previous_attrs: Vec<(String, String, String)> = Vec::new();
+        for node in &self.nodes {
+            let id = node.id();
+            if id.is_empty() {
+                continue;
+            }
+            for key in [
+                "text",
+                "checked",
+                "progress",
+                "rating",
+                "selectedIndex",
+                "value",
+                "visibility",
+                "enabled",
+            ] {
+                let value = node.attr(key);
+                if !value.is_empty() {
+                    previous_attrs.push((id.to_string(), key.into(), value.into()));
+                }
+            }
+        }
+
         self.nodes.clear();
         self.roots.clear();
         self.focused = None;
@@ -265,6 +292,17 @@ impl Warp4Engine {
         self.script = parse_script(&source);
         let init = self.script.init.clone();
         self.execute(&init);
+        // Init provides defaults on the first load. When this is a reload,
+        // restore the values owned by the already-running application.
+        for (key, value) in previous_state {
+            self.set_state(&key, &value);
+        }
+        for (id, key, value) in previous_attrs {
+            if let Some(idx) = self.find(&id) {
+                set_attr(&mut self.nodes[idx], &key, &value);
+            }
+        }
+        self.refresh_visibility();
         self.dirty = true;
     }
 
@@ -342,6 +380,7 @@ impl Warp4Engine {
         let Some(idx) = self.hit(x, y) else {
             self.focused = None;
             self.pressed = None;
+            self.dirty = true;
             return;
         };
         self.pressed = Some(idx);
@@ -350,8 +389,12 @@ impl Warp4Engine {
             || self.nodes[idx].is("MultiAutoCompleteTextView")
         {
             self.focused = Some(idx);
+            self.dirty = true;
             return;
         }
+        // Clicking another control follows normal native focus semantics: an
+        // EditText loses focus as soon as a different view is activated.
+        self.focused = None;
         if self.nodes[idx].is("Switch")
             || self.nodes[idx].is("CheckBox")
             || self.nodes[idx].is("RadioButton")
