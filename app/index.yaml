@@ -51,3 +51,7 @@ apps:
     icon: warp.png
     type: warp-3
     title: Warp 3 機能ラボ
+  example.w4a:
+    icon: warp.png
+    type: warp-4
+    title: Warp 4 機能ラボ

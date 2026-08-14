@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:baram="http://schemas.baram.com/apk/res/baram"
+    baram:id="@+id/root"
+    baram:layout_width="match_parent"
+    baram:layout_height="match_parent"
+    baram:orientation="vertical"
+    baram:padding="16dp">
+
+    <!-- タイトルエリア -->
+    <TextView
+        style="@style/SectionTitle"
+        baram:id="@+id/title"
+        baram:layout_width="wrap_content"
+        baram:layout_height="wrap_content"
+        baram:text="Main Dashboard"
+        baram:textColor="#1A73E8"/>
+
+    <TextView
+        style="@style/SectionDescription"
+        baram:id="@+id/desc"
+        baram:layout_width="wrap_content"
+        baram:layout_height="wrap_content"
+        baram:text="Counter &amp; Quick Memo Tool"
+        baram:layout_marginBottom="16dp"/>
+
+    <!-- カウンターセクション -->
+    <LinearLayout
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:orientation="vertical"
+        baram:background="#F0F4F8"
+        baram:padding="12dp"
+        baram:layout_marginBottom="16dp">
+
+        <TextView
+            style="@style/ComponentLabel"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Counter Value:"/>
+
+        <TextView
+            baram:id="@+id/counter_text"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="0"
+            baram:textSize="32sp"
+            baram:textStyle="bold"
+            baram:textColor="#000000"
+            baram:layout_gravity="center_horizontal"
+            baram:layout_marginVertical="8dp"/>
+
+        <LinearLayout
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:orientation="horizontal"
+            baram:gravity="center">
+
+            <Button
+                baram:id="@+id/btn_minus"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="-1"
+                baram:layout_marginRight="4dp"/>
+
+            <Button
+                baram:id="@+id/btn_reset"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="Reset"
+                baram:layout_marginHorizontal="4dp"/>
+
+            <Button
+                baram:id="@+id/btn_plus"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="+1"
+                baram:layout_marginLeft="4dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 入力フォームセクション -->
+    <LinearLayout
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:orientation="vertical"
+        baram:layout_marginBottom="16dp">
+
+        <TextView
+            style="@style/ComponentLabel"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Memo Input:"/>
+
+        <EditText
+            baram:id="@+id/input_memo"
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:hint="Enter status or message..."
+            baram:singleLine="true"
+            baram:layout_marginVertical="8dp"/>
+
+        <LinearLayout
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:orientation="horizontal">
+
+            <Button
+                baram:id="@+id/btn_save"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="Save Memo"
+                baram:layout_marginRight="4dp"/>
+
+            <Button
+                baram:id="@+id/btn_clear"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="Clear"
+                baram:layout_marginLeft="4dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 表示出力用 -->
+    <TextView
+        baram:id="@+id/saved_status"
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:text="No memo saved."
+        baram:textSize="14sp"
+        baram:textColor="#666666"
+        baram:padding="8dp"
+        baram:background="#EFEFEF"/>
+
+    <Space
+        baram:layout_width="match_parent"
+        baram:layout_height="0dp"
+        baram:layout_weight="1"/>
+
+    <!-- 画面遷移ボタン -->
+    <Button
+        baram:id="@+id/btn_go_sub"
+        style="@style/ComponentBox"
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:text="Go to Sub Screen ->"/>
+
+</LinearLayout>

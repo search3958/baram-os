@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:baram="http://schemas.baram.com/apk/res/baram"
+    baram:id="@+id/sub_root"
+    baram:layout_width="match_parent"
+    baram:layout_height="match_parent"
+    baram:orientation="vertical"
+    baram:padding="16dp">
+
+    <TextView
+        style="@style/SectionTitle"
+        baram:id="@+id/sub_title"
+        baram:layout_width="wrap_content"
+        baram:layout_height="wrap_content"
+        baram:text="Sub Screen / Settings"
+        baram:textColor="#2E7D32"/>
+
+    <TextView
+        style="@style/SectionDescription"
+        baram:id="@+id/sub_desc"
+        baram:layout_width="wrap_content"
+        baram:layout_height="wrap_content"
+        baram:text="Control visibility &amp; Status"
+        baram:layout_marginBottom="16dp"/>
+
+    <!-- トグル／スイッチ状態管理 -->
+    <LinearLayout
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:orientation="vertical"
+        baram:background="#E8F5E9"
+        baram:padding="12dp"
+        baram:layout_marginBottom="16dp">
+
+        <Switch
+            baram:id="@+id/switch_toggle"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Enable Feature Panel"
+            baram:checked="true"/>
+
+        <!-- 切り替え用パネル -->
+        <LinearLayout
+            baram:id="@+id/panel_content"
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:orientation="vertical"
+            baram:layout_marginTop="8dp">
+
+            <TextView
+                baram:layout_width="wrap_content"
+                baram:layout_height="wrap_content"
+                baram:text="Panel Content Active!"
+                baram:textColor="#1B5E20"
+                baram:textStyle="bold"/>
+
+            <ProgressBar
+                style="?baram:attr/progressBarStyleHorizontal"
+                baram:layout_width="match_parent"
+                baram:layout_height="wrap_content"
+                baram:max="100"
+                baram:progress="75"
+                baram:layout_marginTop="8dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 表示コントロールボタン -->
+    <Button
+        baram:id="@+id/btn_toggle_panel"
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:text="Hide Panel"
+        baram:layout_marginBottom="16dp"/>
+
+    <Space
+        baram:layout_width="match_parent"
+        baram:layout_height="0dp"
+        baram:layout_weight="1"/>
+
+    <!-- メイン画面へ戻るボタン -->
+    <Button
+        baram:id="@+id/btn_back_main"
+        style="@style/ComponentBox"
+        baram:layout_width="match_parent"
+        baram:layout_height="wrap_content"
+        baram:text="&lt;- Back to Main Screen"/>
+
+</LinearLayout>
