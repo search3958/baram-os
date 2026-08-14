@@ -3665,7 +3665,11 @@ fn open_app(
     }
     let content_h = h.saturating_sub(baram_windowserver::window::title_bar_h());
 
-    if entry.app_type.starts_with("warp-3") {
+    if entry.app_type.starts_with("warp-4") {
+        let mut engine = baram_windowserver::warp::WarpEngine::new_warp4(&entry.name);
+        engine.update(w as i32, content_h as i32);
+        warp_engines.push((win_id, engine));
+    } else if entry.app_type.starts_with("warp-3") {
         let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(&entry.name);
         engine.update(w as i32, content_h as i32);
         html_engines.push((win_id, engine));
