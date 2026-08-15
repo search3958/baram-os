@@ -348,10 +348,10 @@ fn draw_title_bar_background(
     );
 }
 
-const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
-const MINI_ICON_SVG: &str = include_str!("../../../data/mini.svg");
-const CLOSE_ICON_SVG: &str = include_str!("../../../data/close.svg");
-const MIN_ICON_SVG: &str = include_str!("../../../data/min.svg");
+const MAX_ICON_SVG: &str = include_str!("../../../files/data/max.svg");
+const MINI_ICON_SVG: &str = include_str!("../../../files/data/mini.svg");
+const CLOSE_ICON_SVG: &str = include_str!("../../../files/data/close.svg");
+const MIN_ICON_SVG: &str = include_str!("../../../files/data/min.svg");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WinId(pub u32);

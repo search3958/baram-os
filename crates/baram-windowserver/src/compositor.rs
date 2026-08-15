@@ -23,13 +23,13 @@ const IME_STATUS_STRIP_W: usize = 160;
 const IME_MENU_W: usize = 210;
 const IME_MENU_H: usize = 264;
 const TASKBAR_STATUS_SIZE: f32 = 32.0;
-const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../data/keyboard-english.svg");
-const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../data/keyboard-japanese.svg");
-const KEYBOARD_KP2_SVG: &str = include_str!("../../../data/keyboard-kp2.svg");
-const KEYBOARD_KR2_SVG: &str = include_str!("../../../data/keyboard-kr2.svg");
-const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../data/keyboard-krcom.svg");
-const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../data/keyboard-pinyin.svg");
-const KEYBOARD_ICON_SVG: &str = include_str!("../../../data/keyboard-icon.svg");
+const KEYBOARD_ENGLISH_SVG: &str = include_str!("../../../files/data/keyboard-english.svg");
+const KEYBOARD_JAPANESE_SVG: &str = include_str!("../../../files/data/keyboard-japanese.svg");
+const KEYBOARD_KP2_SVG: &str = include_str!("../../../files/data/keyboard-kp2.svg");
+const KEYBOARD_KR2_SVG: &str = include_str!("../../../files/data/keyboard-kr2.svg");
+const KEYBOARD_KRCOM_SVG: &str = include_str!("../../../files/data/keyboard-krcom.svg");
+const KEYBOARD_PINYIN_SVG: &str = include_str!("../../../files/data/keyboard-pinyin.svg");
+const KEYBOARD_ICON_SVG: &str = include_str!("../../../files/data/keyboard-icon.svg");
 
 fn ime_icon_svg(selection: usize) -> &'static str {
     match selection {
@@ -739,7 +739,7 @@ fn get_or_decode_icon(icon_name: &str, size: usize) -> Option<&'static IconBitma
     }
 }
 
-pub const APPS_SVG: &str = include_str!("../../../data/apps.svg");
+pub const APPS_SVG: &str = include_str!("../../../files/data/apps.svg");
 
 pub struct IconBitmap {
     pub pixels: Vec<[u8; 4]>,
@@ -923,9 +923,10 @@ pub fn parse_index_yaml(yaml: &str) -> (Vec<alloc::string::String>, Vec<AppEntry
     (autostart, apps)
 }
 
-pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../data/wallpaper/baram.png");
-pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../data/wallpaper/hanul.png");
-pub const WALLPAPER_REFLECT_PNG: &[u8] = include_bytes!("../../../data/wallpaper/reflect.png");
+pub const WALLPAPER_baram_PNG: &[u8] = include_bytes!("../../../files/data/wallpaper/baram.png");
+pub const WALLPAPER_HANUL_PNG: &[u8] = include_bytes!("../../../files/data/wallpaper/hanul.png");
+pub const WALLPAPER_REFLECT_PNG: &[u8] =
+    include_bytes!("../../../files/data/wallpaper/reflect.png");
 pub const WALLPAPERS: &[&[u8]] = &[
     WALLPAPER_baram_PNG,
     WALLPAPER_HANUL_PNG,

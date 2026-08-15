@@ -98,7 +98,7 @@ ensure_pftf() {
 # ---------- step 3: create FAT image ----------
 make_image() {
     local img="$RUNTIME_DIR/$IMAGE_NAME"
-    local w3a_dir="$RUNTIME_DIR/w3a"
+    local files_archive="$RUNTIME_DIR/files.tar"
     local efi="$TARGET_DIR/$PRIMARY_BIN.efi"
     local pftf_dir="$CACHE_DIR"
 
@@ -106,10 +106,7 @@ make_image() {
     [ -f "$pftf_dir/RPI_EFI.fd" ] || die "pftf not found. Run ensure_pftf first."
 
     mkdir -p "$RUNTIME_DIR"
-    mkdir -p "$w3a_dir"
-    if [ -x "$SCRIPT_DIR/scripts/package_w3a.sh" ] && [ -d "$SCRIPT_DIR/app" ]; then
-        "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
-    fi
+    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive"
     rm -f "$img"
 
     log "Creating RPi4 disk image ($IMAGE_SIZE_MB MiB) at $img ..."
@@ -152,22 +149,10 @@ make_image() {
             mcopy -i "$img" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
+        mcopy -i "$img" "$files_archive" ::/files.tar
+        log "  copied files.tar to /"
 
         # App files
-        local app_src="$SCRIPT_DIR/app"
-        if [ -d "$app_src" ]; then
-            mmd   -i "$img" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a "$w3a_dir"/*.w4a "$w3a_dir"/*.s4a; do
-                [ -f "$f" ] && mcopy -i "$img" "$f" ::/apps/
-            done
-            if [ -d "$app_src/icon" ]; then
-                mmd   -i "$img" ::/apps/icon 2>/dev/null || true
-                for f in "$app_src/icon"/*.png; do
-                    [ -f "$f" ] && mcopy -i "$img" "$f" ::/apps/icon/
-                done
-            fi
-            log "  copied app files to /apps/"
-        fi
 
         # UEFI shell auto-boot
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$img" - ::/startup.nsh
@@ -216,20 +201,10 @@ make_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
+        cp "$files_archive" "$tmp_mount/files.tar"
+        log "  copied files.tar to /"
 
         # App files
-        local app_src="$SCRIPT_DIR/app"
-        if [ -d "$app_src" ]; then
-            mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a "$w3a_dir"/*.w4a "$w3a_dir"/*.s4a; do
-                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
-            done
-            if [ -d "$app_src/icon" ]; then
-                mkdir -p "$tmp_mount/apps/icon"
-                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
-            fi
-            log "  copied app files to /apps/"
-        fi
 
         # UEFI shell auto-boot
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"

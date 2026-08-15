@@ -34,8 +34,8 @@ struct SizedGlyphEntry {
 }
 
 pub fn init() {
-    let data = include_bytes!("../../../data/HarmonyOS_Sans_SC_Regular.ttf");
-    let korean_data = include_bytes!("../../../data/GothicA1-Medium.ttf");
+    let data = include_bytes!("../../../files/data/HarmonyOS_Sans_SC_Regular.ttf");
+    let korean_data = include_bytes!("../../../files/data/GothicA1-Medium.ttf");
     unsafe {
         FONT_DATA = Some(Vec::from(&data[..]));
         let mut info = stbtt_fontinfo::default();

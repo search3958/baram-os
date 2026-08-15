@@ -3477,7 +3477,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 nano_system::nano_entry!(baram_kernel_main);
 
 fn draw_boot_logo(screen: &mut Screen) {
-    const LOGO_PNG: &[u8] = include_bytes!("../../../data/logo.png");
+    const LOGO_PNG: &[u8] = include_bytes!("../../../files/data/logo.png");
     let Ok((header, pixels)) = png_decoder::decode(LOGO_PNG) else {
         screen.clear(Color::BLACK);
         return;

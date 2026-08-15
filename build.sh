@@ -129,12 +129,9 @@ build_efi() {
 make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
-    local w3a_dir="$RUNTIME_DIR/w3a"
+    local files_archive="$RUNTIME_DIR/files.tar"
     mkdir -p "$RUNTIME_DIR"
-    mkdir -p "$w3a_dir"
-    if [ -x "$SCRIPT_DIR/scripts/package_w3a.sh" ] && [ -d "$SCRIPT_DIR/app" ]; then
-        "$SCRIPT_DIR/scripts/package_w3a.sh" "$SCRIPT_DIR/app" "$w3a_dir"
-    fi
+    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive"
 
     if [ -f "$out" ]; then
         log "Removing existing disk image $out ..."
@@ -168,25 +165,11 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
+        mcopy -i "$out" "$files_archive" ::/files.tar
+        log "  copied files.tar to /"
         # Auto-boot script: tells the UEFI shell to run our EFI binary
         # without waiting for the 5-second startup.nsh countdown.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
-        # Copy app files to /apps/ directory
-        local app_src="$SCRIPT_DIR/app"
-        if [ -d "$app_src" ]; then
-            mmd -i "$out" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a "$w3a_dir"/*.w4a "$w3a_dir"/*.s4a; do
-                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
-            done
-            # Copy icon subdirectory
-            if [ -d "$app_src/icon" ]; then
-                mmd -i "$out" ::/apps/icon 2>/dev/null || true
-                for f in "$app_src/icon"/*.png; do
-                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
-                done
-            fi
-            log "  copied app files to /apps/"
-        fi
         log "  -> $out"
         return 0
     fi
@@ -219,19 +202,8 @@ make_fat_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        # Copy app files
-        local app_src="$SCRIPT_DIR/app"
-        if [ -d "$app_src" ]; then
-            mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a "$w3a_dir"/*.w4a "$w3a_dir"/*.s4a; do
-                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
-            done
-            if [ -d "$app_src/icon" ]; then
-                mkdir -p "$tmp_mount/apps/icon"
-                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
-            fi
-            log "  copied app files to /apps/"
-        fi
+        cp "$files_archive" "$tmp_mount/files.tar"
+        log "  copied files.tar to /"
         sync
         hdiutil detach "$tmp_mount" >/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
@@ -264,21 +236,8 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        # Copy app files to /apps/ directory
-        local app_src="$SCRIPT_DIR/app"
-        if [ -d "$app_src" ]; then
-            mmd -i "$out" ::/apps 2>/dev/null || true
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a "$w3a_dir"/*.w4a "$w3a_dir"/*.s4a; do
-                [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/
-            done
-            if [ -d "$app_src/icon" ]; then
-                mmd -i "$out" ::/apps/icon 2>/dev/null || true
-                for f in "$app_src/icon"/*.png; do
-                    [ -f "$f" ] && mcopy -i "$out" "$f" ::/apps/icon/
-                done
-            fi
-            log "  copied app files to /apps/"
-        fi
+        mcopy -i "$out" "$files_archive" ::/files.tar
+        log "  copied files.tar to /"
         log "  -> $out"
         return 0
     fi
@@ -313,19 +272,8 @@ make_fat_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        # Copy app files
-        local app_src="$SCRIPT_DIR/app"
-        if [ -d "$app_src" ]; then
-            mkdir -p "$tmp_mount/apps"
-            for f in "$app_src"/*.warp "$app_src"/*.u1 "$app_src"/*.html "$app_src"/*.css "$app_src"/index.yaml "$w3a_dir"/*.w3a "$w3a_dir"/*.w4a "$w3a_dir"/*.s4a; do
-                [ -f "$f" ] && cp "$f" "$tmp_mount/apps/"
-            done
-            if [ -d "$app_src/icon" ]; then
-                mkdir -p "$tmp_mount/apps/icon"
-                cp "$app_src/icon"/*.png "$tmp_mount/apps/icon/" 2>/dev/null || true
-            fi
-            log "  copied app files to /apps/"
-        fi
+        cp "$files_archive" "$tmp_mount/files.tar"
+        log "  copied files.tar to /"
         sync
         sudo umount "$tmp_mount" 2>/dev/null || umount "$tmp_mount" 2>/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
