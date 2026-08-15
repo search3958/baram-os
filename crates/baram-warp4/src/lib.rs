@@ -331,6 +331,16 @@ impl Warp4Engine {
         if layout.is_empty() {
             layout = self.archive.read_text(&format!("{}.w3u", self.screen));
         }
+        // A few early Warp 4 examples were distributed as plain XML instead
+        // of using the `.w4u` member name. They are the same native view-tree
+        // format; accepting the suffix here keeps those archives native while
+        // avoiding an HTML conversion path.
+        if layout.is_empty() {
+            layout = self.archive.read_text(&format!("{}.xml", self.screen));
+        }
+        if layout.is_empty() && self.screen != "main" {
+            layout = self.archive.read_text("main.xml");
+        }
         let mut parser = XmlParser::new(&layout);
         if let Some(root) = parser.parse_element(None, &mut self.nodes) {
             self.roots.push(root);
@@ -584,29 +594,34 @@ impl Warp4Engine {
     }
 
     fn hit_visible(&self, idx: usize, x: i32, y: i32) -> bool {
-        let mut current = Some(idx);
-        let chrome_mode = self.document_has_scroll();
+        // The compositor gives us document coordinates (`y` already includes
+        // the window scroll). Convert once to the viewport coordinate used by
+        // paint, then test the control itself.
+        let screen_y = y - self.scroll;
+        let node = &self.nodes[idx];
+        let node_y = self.node_screen_y(idx);
+        if x < node.x || screen_y < node_y || x >= node.x + node.w || screen_y >= node_y + node.h {
+            return false;
+        }
+
+        // Ordinary layout parents do not clip in the native painter. Only a
+        // real scroll viewport is a hit-test boundary. Checking every parent
+        // here makes a fixed child of a scrolled root appear unclickable once
+        // the root's own document rectangle has moved off-screen.
+        let mut current = node.parent;
         while let Some(i) = current {
-            let node = &self.nodes[i];
-            // `y` is a document coordinate (the boot compositor adds the
-            // window scroll before dispatching input). Compare it against
-            // the exact screen-space position used by `paint`, rather than
-            // maintaining a second, subtly different scroll heuristic.
-            let visual_y = y - self.scroll;
-            let node_y = node.y
-                + if self.node_is_fixed(i, chrome_mode) {
-                    0
-                } else {
-                    -self.scroll
-                };
-            if x < node.x
-                || visual_y < node_y
-                || x >= node.x + node.w
-                || visual_y >= node_y + node.h
-            {
-                return false;
+            let viewport = &self.nodes[i];
+            if is_scroll_container(viewport) {
+                let viewport_y = self.node_screen_y(i);
+                if x < viewport.x
+                    || screen_y < viewport_y
+                    || x >= viewport.x + viewport.w
+                    || screen_y >= viewport_y + viewport.h
+                {
+                    return false;
+                }
             }
-            current = node.parent;
+            current = viewport.parent;
         }
         true
     }
@@ -615,7 +630,8 @@ impl Warp4Engine {
         let node = &self.nodes[idx];
         let in_scroll = self.ancestor_is_scroll(idx);
         let is_document_root = self.roots.contains(&idx);
-        is_fixed(node) || (!in_scroll && chrome_mode && !is_document_root)
+        is_fixed(node)
+            || (!in_scroll && chrome_mode && (!is_document_root || is_scroll_container(node)))
     }
 
     fn node_screen_y(&self, idx: usize) -> i32 {
@@ -1713,6 +1729,34 @@ impl Warp4Engine {
         if pass == PaintPass::Flow && fixed {
             let clipped_scroll = is_scroll_container(n);
             if clipped_scroll {
+                // Paint the viewport background before its scrolling
+                // descendants. The fixed pass runs after the flow pass, so
+                // doing this later would cover a white ScrollView's content.
+                let x = n.x + ox;
+                let y = n.y;
+                if let Some(fill) = parse_color(n.attr("background")) {
+                    let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
+                    if radius > 0 {
+                        layer.fill_rounded_rect(
+                            x.max(0) as usize,
+                            y.max(TITLE_BAR).max(0) as usize,
+                            n.w.max(1) as usize,
+                            n.h.max(1) as usize,
+                            radius
+                                .min(n.w.max(1) as usize / 2)
+                                .min(n.h.max(1) as usize / 2),
+                            fill,
+                        );
+                    } else {
+                        layer.fill_rect(
+                            x.max(0) as usize,
+                            y.max(TITLE_BAR).max(0) as usize,
+                            n.w.max(1) as usize,
+                            n.h.max(1) as usize,
+                            fill,
+                        );
+                    }
+                }
                 let clip_x0 = n.x + ox;
                 let clip_y0 = n.y;
                 layer.push_clip(
@@ -1742,19 +1786,21 @@ impl Warp4Engine {
         let y = n.y + if fixed { 0 } else { oy };
         let w = n.w.max(1) as usize;
         let h = n.h.max(1) as usize;
-        if let Some(fill) = parse_color(n.attr("background")) {
-            let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
-            if radius > 0 {
-                layer.fill_rounded_rect(
-                    x.max(0) as usize,
-                    y.max(0) as usize,
-                    w,
-                    h,
-                    radius.min(w / 2).min(h / 2),
-                    fill,
-                );
-            } else {
-                layer.fill_rect(x.max(0) as usize, y.max(0) as usize, w, h, fill);
+        if !(pass == PaintPass::Fixed && fixed && is_scroll_container(n)) {
+            if let Some(fill) = parse_color(n.attr("background")) {
+                let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
+                if radius > 0 {
+                    layer.fill_rounded_rect(
+                        x.max(0) as usize,
+                        y.max(0) as usize,
+                        w,
+                        h,
+                        radius.min(w / 2).min(h / 2),
+                        fill,
+                    );
+                } else {
+                    layer.fill_rect(x.max(0) as usize, y.max(0) as usize, w, h, fill);
+                }
             }
         }
         if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
@@ -3050,6 +3096,7 @@ fn parse_color(s: &str) -> Option<Color> {
         None
     }
 }
+
 fn eval_calc(s: &str) -> String {
     let chars: Vec<char> = s.chars().collect();
     let mut parser = CalcParser { chars, pos: 0 };
