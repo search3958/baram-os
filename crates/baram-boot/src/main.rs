@@ -901,6 +901,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let setup_w = screen.width();
         let setup_h = screen.height();
         let mut setup_engine = baram_windowserver::warp::WarpEngine::new_warp4("setup.w4a");
+        setup_engine.set_chrome_visible(false);
         let mut setup_scene = LayerSystem::new(setup_w, setup_h);
         let mut setup_present = LayerSystem::new(setup_w, setup_h);
         let mut setup_surface = LayerSystem::new(528, 320);
@@ -1041,6 +1042,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     shadow.composite_onto(&mut setup_scene, setup_card.0, setup_card.1);
                 }
                 setup_engine.update(528, 320);
+                setup_surface.clear(Color::rgb(250, 250, 252));
                 setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
                 setup_scene.composit_rounded(
                     &setup_surface,
@@ -1057,6 +1059,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 // Scroll and hover changes only affect the setup card. Avoid
                 // rebuilding and copying the full blurred desktop per tick.
                 setup_engine.update(528, 320);
+                setup_surface.clear(Color::rgb(250, 250, 252));
                 setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
                 setup_scene.composit_rounded(
                     &setup_surface,
@@ -1558,8 +1561,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             let nx = (screen.width() as i32 - 400) / 2;
                             let ny = (screen.height() as i32 - 300) / 2;
                             let win_id = wm.add("マウスキー", nx, ny, 400, 300);
-                            let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(
-                                "mousekeydialog.w3a",
+                            let mut engine = baram_windowserver::html::HtmlEngine::new_warp4(
+                                "mousekeydialog.w4a",
                             );
                             engine.update(380, 260);
                             html_engines.push((win_id, engine));
@@ -3772,7 +3775,7 @@ fn handle_navigation(
         let Some(pending) = pending_permission.take() else {
             return NavigationEffect::None;
         };
-        if source_win_id != pending.dialog_win_id || origin != "ospermission.w3a" {
+        if source_win_id != pending.dialog_win_id || origin != "ospermission.w4a" {
             *pending_permission = Some(pending);
             return NavigationEffect::None;
         }
@@ -3882,7 +3885,7 @@ fn authorize_os_setting(
 
     let dialog_win_id = wm.add("操作体系設定の変更", x, y, 520, 360);
     wm.set_icon(dialog_win_id, "redstar.png");
-    let mut dialog = baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
+    let mut dialog = baram_windowserver::html::HtmlEngine::new_warp4("ospermission.w4a");
     dialog.set_warp3_text("app-name", &alloc::format!("アプリ: {origin}"));
     dialog.set_warp3_text("request-path", command);
     dialog.update(

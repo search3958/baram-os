@@ -254,6 +254,12 @@ impl WarpEngine {
         }
     }
 
+    pub fn set_chrome_visible(&mut self, visible: bool) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_chrome_visible(visible);
+        }
+    }
+
     pub fn origin(&self) -> &str {
         &self.origin
     }
@@ -289,6 +295,25 @@ impl WarpEngine {
         if let Some(engine) = self.warp4.as_mut() {
             engine.set_scroll(scroll);
         }
+    }
+
+    pub fn take_scroll_request(&mut self) -> Option<i32> {
+        self.warp4
+            .as_mut()
+            .and_then(|engine| engine.take_scroll_request())
+    }
+
+    pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
+        self.warp4
+            .as_ref()
+            .and_then(|engine| engine.window_damage())
+    }
+
+    pub fn has_focused_input(&self) -> bool {
+        self.warp4
+            .as_ref()
+            .is_some_and(|engine| engine.has_focused_input())
+            || self.focused_input.is_some()
     }
 
     pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {

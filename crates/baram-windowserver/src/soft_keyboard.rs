@@ -388,8 +388,7 @@ impl SoftKeyboard {
         if !self.surface_dirty {
             return;
         }
-        self.engine
-            .update(WIDTH as i32, (HEIGHT - crate::window::title_bar_h()) as i32);
+        self.engine.update(WIDTH as i32, HEIGHT as i32);
         self.engine.draw_to_layer(&mut self.surface, 0, 0);
         self.surface_dirty = false;
     }
@@ -424,10 +423,41 @@ fn engine_for(main: &'static str) -> WarpEngine {
     } else {
         W4_SYMBOLS
     };
-    WarpEngine::new_embedded_warp4(
+    // Keep ordinary keys explicitly black and make the action keys use the
+    // same Primary treatment as the rest of Warp4.  The keyboard layouts are
+    // embedded XML, so normalize them once while constructing the engine.
+    let source = source
+        .replace(
+            "<Button baram:id=\"@+id/candidate-mode\"",
+            "<PrimaryButton baram:id=\"@+id/candidate-mode\"",
+        )
+        .replace(
+            "<Button baram:id=\"@+id/backspace\"",
+            "<PrimaryButton baram:id=\"@+id/backspace\"",
+        )
+        .replace(
+            "<Button baram:id=\"@+id/shift\"",
+            "<PrimaryButton baram:id=\"@+id/shift\"",
+        )
+        .replace(
+            "<Button baram:id=\"@+id/enter\"",
+            "<PrimaryButton baram:id=\"@+id/enter\"",
+        )
+        .replace(
+            "<Button baram:id=\"@+id/close\"",
+            "<PrimaryButton baram:id=\"@+id/close\"",
+        )
+        .replace("<Button ", "<Button baram:textColor=\"#000000\" ")
+        .replace(
+            "<PrimaryButton ",
+            "<PrimaryButton baram:textColor=\"#FFFFFF\" ",
+        );
+    let mut engine = WarpEngine::new_embedded_warp4(
         "os-soft-keyboard",
-        &[("config.ini", W4_CONFIG), ("main.w4u", source)],
-    )
+        &[("config.ini", W4_CONFIG), ("main.w4u", source.as_str())],
+    );
+    engine.set_chrome_visible(false);
+    engine
 }
 
 const W4_CONFIG: &str = "version=4\nscreen=main\nname=Software Keyboard\n";

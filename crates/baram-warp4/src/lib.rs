@@ -166,6 +166,7 @@ pub struct Warp4Engine {
     spinner_fade: Option<SpinnerFade>,
     width: i32,
     height: i32,
+    chrome_height: i32,
     scroll: i32,
     pub content_height: i32,
     pub last_command: Option<String>,
@@ -214,6 +215,7 @@ impl Warp4Engine {
             spinner_fade: None,
             width: 0,
             height: 0,
+            chrome_height: title_bar_h(),
             scroll: 0,
             content_height: 0,
             last_command: None,
@@ -238,6 +240,17 @@ impl Warp4Engine {
     pub fn set_origin(&mut self, name: &str) {
         self.origin = name.into();
     }
+
+    /// Removes the window-manager title-bar coordinate space for surfaces
+    /// embedded directly into an OS-owned card or overlay.
+    pub fn set_chrome_visible(&mut self, visible: bool) {
+        let next = if visible { title_bar_h() } else { 0 };
+        if self.chrome_height != next {
+            self.chrome_height = next;
+            self.scroll = 0;
+            self.dirty = true;
+        }
+    }
     pub fn origin(&self) -> &str {
         &self.origin
     }
@@ -247,7 +260,7 @@ impl Warp4Engine {
     pub fn set_scroll(&mut self, scroll: i32) {
         let max = self
             .content_height
-            .saturating_sub(self.height + title_bar_h());
+            .saturating_sub(self.height + self.chrome_height);
         let next = scroll.max(0).min(max.max(0));
         if self.scroll != next {
             self.scroll = next;
@@ -499,7 +512,7 @@ impl Warp4Engine {
         // window scroll offset without a second layout coordinate system.
         // The generated HTML has no implicit document margin, so the native
         // root starts at the content edge and uses the complete width.
-        let mut y = title_bar_h();
+        let mut y = self.chrome_height;
         let usable = self.height;
         for root in roots {
             let forced = if is_match_parent(self.nodes[root].attr("layout_height")) {
@@ -517,10 +530,10 @@ impl Warp4Engine {
                     .max(self.nodes[idx].content_h.saturating_sub(self.nodes[idx].h));
             }
         }
-        self.content_height = (y + internal_overflow).max(self.height + title_bar_h());
+        self.content_height = (y + internal_overflow).max(self.height + self.chrome_height);
         self.scroll = self.scroll.min(
             self.content_height
-                .saturating_sub(self.height + title_bar_h())
+                .saturating_sub(self.height + self.chrome_height)
                 .max(0),
         );
         self.dirty = false;
@@ -528,22 +541,34 @@ impl Warp4Engine {
 
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         if self.dirty {
-            self.update(layer.width() as i32, layer.height() as i32 - title_bar_h());
+            self.update(
+                layer.width() as i32,
+                layer.height() as i32 - self.chrome_height,
+            );
         }
         layer.fill_rect(
             0,
-            title_bar_h() as usize,
+            self.chrome_height as usize,
             layer.width(),
-            layer.height().saturating_sub(title_bar_h() as usize),
+            layer.height().saturating_sub(self.chrome_height as usize),
             bg(),
         );
         let chrome_mode = self.document_has_scroll();
+        let flow_oy = oy - self.scroll;
         for &root in &self.roots {
             // The compositor supplies the window-manager offset.  The view
             // tree gets two passes: normal content first, then fixed/sticky
             // chrome.  This is what the reference CSS achieves with a
             // viewport and `position:fixed`, without ever creating HTML.
-            self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Flow);
+            self.paint(
+                layer,
+                root,
+                ox,
+                flow_oy,
+                false,
+                chrome_mode,
+                PaintPass::Flow,
+            );
             if self.fixed_subtree.get(root).copied().unwrap_or(true) {
                 self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
             }
@@ -911,11 +936,11 @@ impl Warp4Engine {
         let row_h = 36;
         let h = self.spinner_item_count(idx) as i32 * row_h + 8;
         let bottom = self.node_screen_y(idx) + node.h;
-        let layer_h = self.height + title_bar_h();
+        let layer_h = self.height + self.chrome_height;
         let y = if bottom + h <= layer_h {
             bottom
         } else {
-            (self.node_screen_y(idx) - h).max(title_bar_h())
+            (self.node_screen_y(idx) - h).max(self.chrome_height)
         };
         (node.x, y, node.w.max(1), h)
     }
@@ -2003,7 +2028,7 @@ impl Warp4Engine {
                     if radius > 0 {
                         layer.fill_rounded_rect(
                             x.max(0) as usize,
-                            y.max(title_bar_h()).max(0) as usize,
+                            y.max(self.chrome_height).max(0) as usize,
                             n.w.max(1) as usize,
                             n.h.max(1) as usize,
                             radius
@@ -2014,7 +2039,7 @@ impl Warp4Engine {
                     } else {
                         layer.fill_rect(
                             x.max(0) as usize,
-                            y.max(title_bar_h()).max(0) as usize,
+                            y.max(self.chrome_height).max(0) as usize,
                             n.w.max(1) as usize,
                             n.h.max(1) as usize,
                             fill,
@@ -2025,7 +2050,7 @@ impl Warp4Engine {
                 let clip_y0 = n.y;
                 layer.push_clip(
                     clip_x0.max(0) as usize,
-                    clip_y0.max(title_bar_h()).max(0) as usize,
+                    clip_y0.max(self.chrome_height).max(0) as usize,
                     (clip_x0 + n.w).max(0) as usize,
                     (clip_y0 + n.h).max(0) as usize,
                 );
@@ -2444,7 +2469,7 @@ impl Warp4Engine {
         if is_scroll_container(n) {
             layer.push_clip(
                 x.max(0) as usize,
-                y.max(title_bar_h()).max(0) as usize,
+                y.max(self.chrome_height).max(0) as usize,
                 (x + n.w).max(0) as usize,
                 (y + n.h).max(0) as usize,
             );
@@ -2519,7 +2544,7 @@ impl Warp4Engine {
             // Seed the temporary layer with the pixels underneath the menu so
             // fading does not turn its transparent margins into black.
             let popup_x = x.max(0) as usize;
-            let popup_y = y.max(title_bar_h()) as usize;
+            let popup_y = y.max(self.chrome_height) as usize;
             let sx = popup_x.saturating_sub(shadow_pad);
             let sy = popup_y.saturating_sub(shadow_pad);
             let ex = (sx + popup_w + shadow_pad * 2).min(layer.width());
@@ -2548,7 +2573,7 @@ impl Warp4Engine {
             return;
         }
         let x = x.max(0) as usize;
-        let y = y.max(title_bar_h()) as usize;
+        let y = y.max(self.chrome_height) as usize;
         draw_spinner_shadow(layer, x, y, popup_w, popup_h, radius);
         self.paint_spinner_popup_content(layer, x, y, popup_w, popup_h, idx);
     }

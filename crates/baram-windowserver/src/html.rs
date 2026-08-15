@@ -201,6 +201,7 @@ struct HitArea {
 
 pub struct HtmlEngine {
     warp3: Option<crate::warp3::Warp3Engine>,
+    warp4: Option<crate::warp::WarpEngine>,
     origin: String,
     nodes: Vec<Node>,
     rules: Vec<CssRule>,
@@ -225,6 +226,7 @@ impl HtmlEngine {
         }
         Self {
             warp3: None,
+            warp4: None,
             origin: String::new(),
             nodes,
             rules: parse_css(&css),
@@ -250,9 +252,39 @@ impl HtmlEngine {
         Self::from_warp3(warp3, name)
     }
 
+    pub fn new_warp4(config_name: &str) -> Self {
+        let warp4 = crate::warp::WarpEngine::new_warp4(config_name);
+        Self::from_warp4(warp4, config_name)
+    }
+
+    pub fn new_embedded_warp4(name: &str, sources: &[(&str, &str)]) -> Self {
+        let warp4 = crate::warp::WarpEngine::new_embedded_warp4(name, sources);
+        Self::from_warp4(warp4, name)
+    }
+
     fn from_warp3(warp3: crate::warp3::Warp3Engine, name: &str) -> Self {
         Self {
             warp3: Some(warp3),
+            warp4: None,
+            origin: String::from(name),
+            nodes: Vec::new(),
+            rules: Vec::new(),
+            root: 0,
+            items: Vec::new(),
+            hits: Vec::new(),
+            hovered_node: None,
+            width: 0,
+            height: 0,
+            layout_dirty: true,
+            content_height: 0,
+            last_command: None,
+        }
+    }
+
+    fn from_warp4(warp4: crate::warp::WarpEngine, name: &str) -> Self {
+        Self {
+            warp3: None,
+            warp4: Some(warp4),
             origin: String::from(name),
             nodes: Vec::new(),
             rules: Vec::new(),
@@ -270,6 +302,9 @@ impl HtmlEngine {
 
     pub fn set_origin(&mut self, app_name: &str) {
         self.origin = String::from(app_name);
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_origin(app_name);
+        }
     }
 
     pub fn origin(&self) -> &str {
@@ -280,10 +315,16 @@ impl HtmlEngine {
         if let Some(engine) = self.warp3.as_mut() {
             engine.set_text(class, value);
         }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_text(class, value);
+        }
     }
 
     pub fn set_warp3_screen(&mut self, screen: &str) {
         if let Some(engine) = self.warp3.as_mut() {
+            engine.set_screen(screen);
+        }
+        if let Some(engine) = self.warp4.as_mut() {
             engine.set_screen(screen);
         }
     }
@@ -309,6 +350,11 @@ impl HtmlEngine {
             self.content_height = engine.content_height;
             return;
         }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.update(width, height);
+            self.content_height = engine.content_height();
+            return;
+        }
         if !self.layout_dirty && self.width == width && self.height == height {
             return;
         }
@@ -326,7 +372,7 @@ impl HtmlEngine {
     }
 
     pub fn refresh_config(&mut self) {
-        if self.warp3.is_some() {
+        if self.warp3.is_some() || self.warp4.is_some() {
             return;
         }
         self.layout_dirty = true;
@@ -337,6 +383,13 @@ impl HtmlEngine {
             engine.click(x, y);
             if self.last_command.is_none() {
                 self.last_command = engine.take_command();
+            }
+            return;
+        }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.click(x, y);
+            if self.last_command.is_none() {
+                self.last_command = engine.last_command.take();
             }
             return;
         }
@@ -353,6 +406,11 @@ impl HtmlEngine {
     pub fn set_hover(&mut self, x: i32, y: i32) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.set_hover(x, y);
+            return;
+        }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_hover(x, y);
+            self.hovered_node = engine.hovered_node();
             return;
         }
         let hovered = self
@@ -372,6 +430,11 @@ impl HtmlEngine {
             engine.clear_hover();
             return;
         }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.clear_hover();
+            self.hovered_node = None;
+            return;
+        }
         if self.hovered_node.take().is_some() {
             self.layout_dirty = true;
         }
@@ -380,6 +443,11 @@ impl HtmlEngine {
     pub fn cancel_hover(&mut self) {
         if let Some(engine) = self.warp3.as_mut() {
             engine.cancel_hover();
+            return;
+        }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.clear_hover();
+            self.hovered_node = None;
             return;
         }
         if self.hovered_node.take().is_some() {
@@ -391,11 +459,18 @@ impl HtmlEngine {
         if let Some(engine) = self.warp3.as_ref() {
             return engine.hovered_node();
         }
+        if let Some(engine) = self.warp4.as_ref() {
+            return engine.hovered_node();
+        }
         self.hovered_node
     }
 
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         if let Some(engine) = self.warp3.as_mut() {
+            engine.draw_to_layer(layer, ox, oy);
+            return;
+        }
+        if let Some(engine) = self.warp4.as_mut() {
             engine.draw_to_layer(layer, ox, oy);
             return;
         }
@@ -453,17 +528,28 @@ impl HtmlEngine {
         if let Some(engine) = self.warp3.as_mut() {
             engine.set_scroll(scroll);
         }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_scroll(scroll);
+        }
     }
 
     pub fn content_height(&self) -> i32 {
         self.warp3
             .as_ref()
             .map(|engine| engine.content_height)
+            .or_else(|| {
+                self.warp4
+                    .as_ref()
+                    .map(crate::warp::WarpEngine::content_height)
+            })
             .unwrap_or(0)
     }
 
     pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
         if let Some(engine) = self.warp3.as_mut() {
+            engine.set_runtime_metrics(fps, windows, keys, mouse);
+        }
+        if let Some(engine) = self.warp4.as_mut() {
             engine.set_runtime_metrics(fps, windows, keys, mouse);
         }
     }
@@ -472,29 +558,51 @@ impl HtmlEngine {
         self.warp3
             .as_mut()
             .and_then(|engine| engine.take_scroll_request())
+            .or_else(|| {
+                self.warp4
+                    .as_mut()
+                    .and_then(|engine| engine.take_scroll_request())
+            })
     }
 
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
         self.warp3
             .as_ref()
             .and_then(|engine| engine.window_damage())
+            .or_else(|| {
+                self.warp4
+                    .as_ref()
+                    .and_then(|engine| engine.window_damage())
+            })
     }
 
     pub fn tick(&mut self, now_ns: u64) -> bool {
-        let Some(engine) = self.warp3.as_mut() else {
-            return false;
-        };
-        let changed = engine.tick(now_ns);
-        if self.last_command.is_none() {
-            self.last_command = engine.take_command();
+        if let Some(engine) = self.warp3.as_mut() {
+            let changed = engine.tick(now_ns);
+            if self.last_command.is_none() {
+                self.last_command = engine.take_command();
+            }
+            changed
+        } else if let Some(engine) = self.warp4.as_mut() {
+            let changed = engine.tick(now_ns);
+            if self.last_command.is_none() {
+                self.last_command = engine.last_command.take();
+            }
+            changed
+        } else {
+            false
         }
-        changed
     }
 
     pub fn has_focused_input(&self) -> bool {
-        self.warp3
-            .as_ref()
-            .map_or(false, |engine| engine.has_focused_input())
+        self.warp3.as_ref().map_or_else(
+            || {
+                self.warp4
+                    .as_ref()
+                    .is_some_and(|engine| engine.has_focused_input())
+            },
+            |engine| engine.has_focused_input(),
+        )
     }
 
     pub fn is_warp3(&self) -> bool {
@@ -511,10 +619,16 @@ impl HtmlEngine {
         if let Some(engine) = self.warp3.as_mut() {
             engine.handle_key(key);
         }
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.handle_key(key);
+        }
     }
 
     pub fn handle_text(&mut self, text: &str, replace_chars: usize) {
         if let Some(engine) = self.warp3.as_mut() {
+            engine.handle_text(text, replace_chars);
+        }
+        if let Some(engine) = self.warp4.as_mut() {
             engine.handle_text(text, replace_chars);
         }
     }

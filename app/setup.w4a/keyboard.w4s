@@ -1,0 +1,3 @@
+WarpUI.OnClick skip {
+    run (setup://skip)
+}

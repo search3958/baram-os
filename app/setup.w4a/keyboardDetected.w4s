@@ -1,0 +1,3 @@
+WarpUI.OnClick finish {
+    run (setup://finish)
+}
