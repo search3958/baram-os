@@ -8,3 +8,4 @@ baram-bsd = { path = "../baram-bsd" }
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font" }
 baram-graphics = { path = "../baram-graphics" }
+uefi = { workspace = true }

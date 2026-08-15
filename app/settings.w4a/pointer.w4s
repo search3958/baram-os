@@ -1,0 +1,44 @@
+BaramOS.get pointer_size (display/pointer/size)
+WarpUI.text current (現在: var[pointer_size])
+WarpUI.OnClick small {
+    BaramOS run (os://display/pointer?size=10)
+    WarpUI.text current (現在: Small)
+}
+WarpUI.OnClick medium {
+    BaramOS run (os://display/pointer?size=15)
+    WarpUI.text current (現在: Medium)
+}
+WarpUI.OnClick large {
+    BaramOS run (os://display/pointer?size=20)
+    WarpUI.text current (現在: Large)
+}
+WarpUI.OnClick trackpad1 {
+    BaramOS run (os://trackpad?speed=1.0)
+}
+WarpUI.OnClick trackpad3 {
+    BaramOS run (os://trackpad?speed=3.0)
+}
+WarpUI.OnClick trackpad5 {
+    BaramOS run (os://trackpad?speed=5.0)
+}
+WarpUI.OnClick trackpad6 {
+    BaramOS run (os://trackpad?speed=6.0)
+}
+WarpUI.OnClick trackpad8 {
+    BaramOS run (os://trackpad?speed=8.0)
+}
+WarpUI.OnClick mouse05 {
+    BaramOS run (os://mouse?speed=0.5)
+}
+WarpUI.OnClick mouse1 {
+    BaramOS run (os://mouse?speed=1.0)
+}
+WarpUI.OnClick mouse2 {
+    BaramOS run (os://mouse?speed=2.0)
+}
+WarpUI.OnClick mouse4 {
+    BaramOS run (os://mouse?speed=4.0)
+}
+WarpUI.OnClick back {
+    WarpUI.screen (main)
+}

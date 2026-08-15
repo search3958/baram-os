@@ -16,6 +16,7 @@ use baram_bsd::{app::Warp4Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::{ttf_font, LayerFontExt};
 use baram_graphics::svg;
+use uefi::runtime;
 
 const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
@@ -176,6 +177,10 @@ pub struct Warp4Engine {
     flip_elapsed_ns: u64,
     last_tick_ns: Option<u64>,
     control_animations: Vec<ControlAnimation>,
+    runtime_fps: u32,
+    runtime_windows: usize,
+    runtime_keys: u32,
+    runtime_mouse: u32,
 }
 
 impl Warp4Engine {
@@ -219,6 +224,10 @@ impl Warp4Engine {
             flip_elapsed_ns: 0,
             last_tick_ns: None,
             control_animations: Vec::new(),
+            runtime_fps: 0,
+            runtime_windows: 0,
+            runtime_keys: 0,
+            runtime_mouse: 0,
         };
         this.load_screen();
         this
@@ -255,6 +264,12 @@ impl Warp4Engine {
     }
     pub fn has_focused_input(&self) -> bool {
         self.focused.is_some()
+    }
+    pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
+        self.runtime_fps = fps;
+        self.runtime_windows = windows;
+        self.runtime_keys = keys;
+        self.runtime_mouse = mouse;
     }
     pub fn hovered_node(&self) -> Option<usize> {
         self.hovered
@@ -968,6 +983,13 @@ impl Warp4Engine {
     }
 
     fn command(&mut self, name: &str, target: &str, raw: &str) {
+        if matches!(name, "var.edit" | "var.set") && raw.trim().starts_with("append ") {
+            let suffix = self.value(raw.trim().strip_prefix("append ").unwrap_or(""));
+            let current = self.state(target);
+            self.set_state(target, &format!("{current}{suffix}"));
+            self.dirty = true;
+            return;
+        }
         let value = self.value(raw);
         match name {
             "var.set" | "var.edit" | "const.set" => self.set_state(target, &value),
@@ -1098,6 +1120,9 @@ impl Warp4Engine {
         if s == "()" {
             return String::new();
         }
+        if let Some(path) = s.strip_prefix("now://") {
+            return self.now_value(path).unwrap_or_default();
+        }
         for _ in 0..128 {
             let mut next = String::new();
             let mut changed = false;
@@ -1166,6 +1191,29 @@ impl Warp4Engine {
         } else {
             s
         }
+    }
+
+    fn now_value(&self, path: &str) -> Option<String> {
+        let time = runtime::get_time().ok()?;
+        let timezone_minutes = config::timezone_offset_minutes();
+        let utc_seconds =
+            time.hour() as i32 * 3600 + time.minute() as i32 * 60 + time.second() as i32;
+        let local_seconds = (utc_seconds + timezone_minutes * 60).rem_euclid(24 * 3600);
+        let hour = (local_seconds / 3600) as u8;
+        let minute = ((local_seconds / 60) % 60) as u8;
+        let second = (local_seconds % 60) as u8;
+        Some(match path.trim_matches('/') {
+            "fps" => self.runtime_fps.to_string(),
+            "window" | "windows" => self.runtime_windows.to_string(),
+            "key" | "keys" => self.runtime_keys.to_string(),
+            "mouse" => self.runtime_mouse.to_string(),
+            "hh" => format!("{hour:02}"),
+            "mm" => format!("{minute:02}"),
+            "ss" => format!("{second:02}"),
+            "hhmm" => format!("{hour:02}:{minute:02}"),
+            "hhmmss" => format!("{hour:02}:{minute:02}:{second:02}"),
+            _ => return None,
+        })
     }
 
     fn state_contains(&self, key: &str) -> bool {

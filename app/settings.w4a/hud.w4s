@@ -1,0 +1,6 @@
+WarpUI.OnClick toggle {
+    BaramOS run (os://display/hud?enabled=)
+}
+WarpUI.OnClick back {
+    WarpUI.screen (main)
+}

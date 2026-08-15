@@ -146,6 +146,7 @@ dependencies = [
  "baram-core",
  "baram-font",
  "baram-graphics",
+ "uefi",
 ]
 
 [[package]]

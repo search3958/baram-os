@@ -1,0 +1,12 @@
+WarpUI.OnClick wall_baram {
+    BaramOS run (os://display/wallpaper?file=baram&mode=file)
+}
+WarpUI.OnClick wall_hanul {
+    BaramOS run (os://display/wallpaper?file=hanul&mode=file)
+}
+WarpUI.OnClick wall_reflect {
+    BaramOS run (os://display/wallpaper?file=reflect&mode=file)
+}
+WarpUI.OnClick back {
+    WarpUI.screen (main)
+}

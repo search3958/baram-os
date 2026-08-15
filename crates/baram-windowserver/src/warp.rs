@@ -284,6 +284,12 @@ impl WarpEngine {
         }
     }
 
+    pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_runtime_metrics(fps, windows, keys, mouse);
+        }
+    }
+
     pub fn pointer_move(&mut self, x: i32, y: i32) -> bool {
         let Some(engine) = self.warp4.as_mut() else {
             return false;

@@ -1,0 +1,12 @@
+WarpUI.OnClick theme {
+    WarpUI.screen (theme)
+}
+WarpUI.OnClick pointer {
+    WarpUI.screen (pointer)
+}
+WarpUI.OnClick hud {
+    WarpUI.screen (hud)
+}
+WarpUI.OnClick system {
+    WarpUI.screen (system)
+}

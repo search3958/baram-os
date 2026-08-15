@@ -1,0 +1,11 @@
+fun refresh {
+    WarpUI.text fps_value (FPS: now://fps)
+    WarpUI.text time_value (now://hhmmss)
+    WarpUI.text window_value (ウィンドウ数: now://window)
+    WarpUI.text key_value (キーイベント数: now://key)
+    WarpUI.text mouse_value (マウスイベント数: now://mouse)
+}
+fun refresh
+WarpUI.OnClick refresh {
+    fun refresh
+}

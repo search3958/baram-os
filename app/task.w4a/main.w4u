@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="true">
+  <LinearLayout baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:orientation="vertical" baram:padding="16dip">
+    <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="タスクマネージャー" baram:textSize="24sp" />
+    <TextView baram:id="@+id/fps_label" baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:layout_marginTop="20dip" baram:text="FPS" />
+    <TextView baram:id="@+id/fps_value" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="-" baram:textSize="20sp" />
+    <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="システムの時刻" />
+    <TextView baram:id="@+id/time_value" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="-" baram:textSize="20sp" />
+    <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:layout_marginTop="12dip" baram:text="OS状況" />
+    <TextView baram:id="@+id/window_value" baram:layout_width="fill_parent" baram:layout_height="40dip" baram:text="ウィンドウ数: -" />
+    <TextView baram:id="@+id/key_value" baram:layout_width="fill_parent" baram:layout_height="40dip" baram:text="キーイベント数: -" />
+    <TextView baram:id="@+id/mouse_value" baram:layout_width="fill_parent" baram:layout_height="40dip" baram:text="マウスイベント数: -" />
+    <PrimaryButton baram:id="@+id/refresh" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:layout_marginTop="16dip" baram:text="内容更新" />
+  </LinearLayout>
+</ScrollView>

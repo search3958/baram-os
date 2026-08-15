@@ -1993,6 +1993,12 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                         if rel_y >= tb_h {
                                             let warp_y = rel_y + scroll;
                                             engine.set_scroll(scroll);
+                                            engine.set_runtime_metrics(
+                                                fps,
+                                                wm.count(),
+                                                key_ev_count,
+                                                mouse_ev_count,
+                                            );
                                             engine.click(rel_x, warp_y);
                                             let content_h = wh.saturating_sub(tb_h as usize);
                                             engine.update(ww as i32, content_h as i32);
@@ -2873,6 +2879,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             }
         }
         for (wid, engine) in warp_engines.iter_mut() {
+            engine.set_runtime_metrics(fps, runtime_window_count, key_ev_count, mouse_ev_count);
             if engine.tick(motion_now_ns) {
                 wm.set_content_dirty(*wid);
                 scene_dirty = true;
