@@ -1,6 +1,7 @@
 use super::cursor::{self};
 use crate::html::HtmlEngine;
 use crate::soft_keyboard::SoftKeyboard;
+use crate::text_cursor;
 use crate::warp::WarpEngine;
 use crate::window::{WinId, WindowManager};
 use alloc::vec::Vec;
@@ -83,6 +84,24 @@ fn taskbar_status_text_width(text: &str) -> usize {
                 g.advance.max(0) as usize
             } else {
                 let fallback = baram_font::ttf_font::glyph_at_size(ch, TASKBAR_STATUS_SIZE);
+                if fallback.w > 0 {
+                    fallback.advance.max(0) as usize
+                } else {
+                    8
+                }
+            }
+        })
+        .sum()
+}
+
+fn taskbar_text_width(text: &str, size: f32) -> usize {
+    text.chars()
+        .map(|ch| {
+            let glyph = baram_font::ttf_font_hud::glyph_at_size(ch, size);
+            if glyph.w > 0 {
+                glyph.advance.max(0) as usize
+            } else {
+                let fallback = baram_font::ttf_font::glyph_at_size(ch, size);
                 if fallback.w > 0 {
                     fallback.advance.max(0) as usize
                 } else {
@@ -1077,7 +1096,12 @@ fn draw_taskbar_text(
     }
 }
 
-fn draw_taskbar_search(layer: &mut LayerSystem, search_focused: bool, search_query: &str) {
+fn draw_taskbar_search(
+    layer: &mut LayerSystem,
+    search_focused: bool,
+    search_query: &str,
+    caret_visible: bool,
+) {
     let search_x = 12usize;
     let search_h = 32usize;
     let search_y = (TASKBAR_H - search_h) / 2;
@@ -1122,9 +1146,24 @@ fn draw_taskbar_search(layer: &mut LayerSystem, search_focused: bool, search_que
         text_color,
         18.0,
     );
+    if search_focused && caret_visible {
+        let caret_x = search_x as i32 + 12 + taskbar_text_width(search_query, 18.0) as i32;
+        text_cursor::draw(
+            layer,
+            caret_x,
+            search_y as i32 + 7,
+            20,
+            config::get_color("ui-theme/color/text", Color::TEXT),
+        );
+    }
 }
 
-fn redraw_taskbar_search(surface: &mut TaskbarSurface, search_focused: bool, search_query: &str) {
+fn redraw_taskbar_search(
+    surface: &mut TaskbarSurface,
+    search_focused: bool,
+    search_query: &str,
+    caret_visible: bool,
+) {
     const SEARCH_DAMAGE_W: usize = 226;
     let w = surface.layer.width();
     let copy_w = SEARCH_DAMAGE_W.min(w);
@@ -1135,7 +1174,12 @@ fn redraw_taskbar_search(surface: &mut TaskbarSurface, search_focused: bool, sea
                 .copy_from_slice(&surface.base[start..start + copy_w]);
         }
     }
-    draw_taskbar_search(&mut surface.layer, search_focused, search_query);
+    draw_taskbar_search(
+        &mut surface.layer,
+        search_focused,
+        search_query,
+        caret_visible,
+    );
     surface.search_dirty = false;
 }
 
@@ -1149,6 +1193,7 @@ fn redraw_taskbar(
     hover_ime_icon: bool,
     search_focused: bool,
     search_query: &str,
+    caret_visible: bool,
     clock_hh: u8,
     clock_mm: u8,
     battery_pct: Option<u8>,
@@ -1298,7 +1343,7 @@ fn redraw_taskbar(
         );
     }
 
-    draw_taskbar_search(layer, search_focused, search_query);
+    draw_taskbar_search(layer, search_focused, search_query, caret_visible);
     // Cache a small, exact status strip before painting the mutable IME SVG.
     // Hover therefore restores the real clock/battery pixels, never a broad
     // taskbar background approximation.
@@ -1585,6 +1630,7 @@ pub fn render_scene(
     ime_hover_dirty: bool,
     search_focused: bool,
     search_query: &str,
+    caret_visible: bool,
     launcher_scroll_y: usize,
     launcher_anim_phase: i8,
     launcher_anim_elapsed_ms: u32,
@@ -2104,13 +2150,14 @@ pub fn render_scene(
             hover_ime_icon,
             search_focused,
             search_query,
+            caret_visible,
             clock_hh,
             clock_mm,
             battery_pct,
             ime_menu_selection,
         );
     } else if taskbar_search_redraw {
-        redraw_taskbar_search(taskbar, search_focused, search_query);
+        redraw_taskbar_search(taskbar, search_focused, search_query, caret_visible);
     }
     let mut ime_status_partial = false;
     if ime_hover_dirty && !taskbar_full_redraw && !taskbar_search_redraw {
@@ -2131,6 +2178,7 @@ pub fn render_scene(
                 hover_ime_icon,
                 search_focused,
                 search_query,
+                caret_visible,
                 clock_hh,
                 clock_mm,
                 battery_pct,
@@ -2197,6 +2245,7 @@ pub fn render_frame(
     ime_hover_dirty: bool,
     search_focused: bool,
     search_query: &str,
+    caret_visible: bool,
     launcher_scroll_y: usize,
     launcher_anim_phase: i8,
     launcher_anim_elapsed_ms: u32,
@@ -2243,6 +2292,7 @@ pub fn render_frame(
         ime_hover_dirty,
         search_focused,
         search_query,
+        caret_visible,
         launcher_scroll_y,
         launcher_anim_phase,
         launcher_anim_elapsed_ms,

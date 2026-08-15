@@ -1,6 +1,7 @@
 use baram_font::LayerFontExt;
 extern crate alloc;
 
+use crate::text_cursor;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -114,6 +115,7 @@ pub struct WarpEngine {
     pub focused_input: Option<usize>,
     pub focused_input_var: alloc::string::String,
     pub content_height: i32,
+    caret_visible: bool,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -156,6 +158,7 @@ impl WarpEngine {
             focused_input: None,
             focused_input_var: alloc::string::String::new(),
             content_height: 0,
+            caret_visible: true,
         };
         loop {
             let tk = ctx.next_token();
@@ -303,7 +306,15 @@ impl WarpEngine {
             }
             return changed;
         }
-        false
+        let next_visible = self
+            .focused_input
+            .map_or(true, |_| text_cursor::visible(now_ns));
+        let changed = self.caret_visible != next_visible;
+        self.caret_visible = next_visible;
+        if changed {
+            self.dirty = true;
+        }
+        changed
     }
 
     pub fn set_screen(&mut self, screen: &str) {
@@ -1279,6 +1290,19 @@ impl WarpEngine {
                 let draw_x = base_x.max(0) as usize;
                 let draw_y = y.max(0) as usize;
                 layer.put_str(draw_x, draw_y, line, t.color);
+            }
+        }
+        if let Some(idx) = self.focused_input {
+            if self.caret_visible && self.nodes.get(idx).is_some_and(|node| node.visible) {
+                let node = &self.nodes[idx];
+                let value = self.get_state(&self.parse_out_var(idx));
+                text_cursor::draw(
+                    layer,
+                    node.x + ox + 10 + measure_text_width(&value, 16.0),
+                    node.y + oy + 7,
+                    20,
+                    config::get_color("ui-theme/color/text", Color::TEXT),
+                );
             }
         }
     }

@@ -5,6 +5,7 @@
 
 extern crate alloc;
 
+use crate::text_cursor;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -393,6 +394,7 @@ pub struct Warp3Engine {
     screen_transition_started_ns: Option<u64>,
     screen_transition_offset_y: f32,
     animation_now_ns: u64,
+    caret_visible: bool,
     shadows: Vec<ShadowMask>,
     now: NowValues,
     last_clicked_class: Option<String>,
@@ -450,6 +452,7 @@ impl Warp3Engine {
             screen_transition_started_ns: None,
             screen_transition_offset_y: 0.0,
             animation_now_ns: 0,
+            caret_visible: true,
             shadows: Vec::new(),
             now: NowValues::default(),
             last_clicked_class: None,
@@ -771,11 +774,19 @@ impl Warp3Engine {
     /// Sample control transitions from absolute monotonic time. No layout is
     /// involved; only the old/new control damage rectangle is requested.
     pub fn tick(&mut self, now_ns: u64) -> bool {
+        let next_caret_visible = self
+            .focused_input
+            .map_or(true, |_| text_cursor::visible(now_ns));
+        let caret_changed = self.caret_visible != next_caret_visible;
+        self.caret_visible = next_caret_visible;
         if self.animation_now_ns == now_ns {
-            return false;
+            return caret_changed;
         }
         self.animation_now_ns = now_ns;
-        let mut changed = false;
+        let mut changed = caret_changed;
+        if caret_changed {
+            self.invalidate_nodes(self.focused_input, None);
+        }
         if self
             .script_wait_until_ns
             .is_some_and(|deadline| now_ns >= deadline)
@@ -893,6 +904,19 @@ impl Warp3Engine {
                 let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
                 self.draw_node(layer, idx, node.x + ox, node.y + target_y as i32);
+            }
+        }
+        if let Some(idx) = self.focused_input {
+            if self.caret_visible && self.nodes.get(idx).is_some_and(|node| !node.hidden) {
+                let node = &self.nodes[idx];
+                let text = node.prop("text");
+                let caret_x = node.x + ox + 10 + measure(text);
+                let caret_y = if self.is_toolbar_tree(idx) {
+                    node.y + target_y as i32 + 7
+                } else {
+                    node.y - self.scroll + target_y as i32 + 7
+                };
+                text_cursor::draw(layer, caret_x, caret_y, 20, html_text());
             }
         }
         self.window_damage = None;

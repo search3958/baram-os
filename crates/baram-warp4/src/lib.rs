@@ -22,7 +22,7 @@ const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
 const CHECK_ICON_SVG: &str = include_str!("../../../data/check-icon.svg");
-const WARP4_CONTROL_RADIUS: usize = 16;
+const WARP4_INPUT_RADIUS: usize = 11;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
 const WARP3_BG: Color = Color::rgb(243, 243, 243);
@@ -30,7 +30,6 @@ const WARP3_SURFACE: Color = Color::rgb(251, 251, 251);
 const WARP3_TEXT: Color = Color::rgb(26, 26, 26);
 const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
 const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
-const WARP3_BORDER_HOVER: Color = Color::rgb(158, 158, 158);
 const WARP3_ACCENT: Color = Color::rgb(0, 106, 255);
 const WARP4_BG: Color = Color::rgb(250, 250, 252);
 const WARP4_PRIMARY: Color = Color::rgb(0, 106, 255);
@@ -334,6 +333,12 @@ impl Warp4Engine {
             active
         });
         if controls_animating {
+            self.dirty = true;
+            changed = true;
+        }
+        // Keep a focused text field alive while its native caret blinks.  The
+        // caret is painted independently from the field's text value.
+        if self.focused.is_some() {
             self.dirty = true;
             changed = true;
         }
@@ -1987,7 +1992,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                WARP4_CONTROL_RADIUS,
+                w.min(h) / 2,
                 if primary {
                     primary_color
                 } else if active {
@@ -2007,7 +2012,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                WARP4_CONTROL_RADIUS,
+                WARP4_INPUT_RADIUS.min(w / 2).min(h / 2),
                 WARP4_INPUT_BORDER,
                 WARP4_INPUT_BG,
             );
@@ -2331,6 +2336,18 @@ impl Warp4Engine {
                 n.attr("hint"),
                 WARP3_MUTED,
             );
+        }
+        if (n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView"))
+            && self.focused == Some(idx)
+            && (self.now_ns / 500_000_000) % 2 == 0
+        {
+            let size = text_size(n);
+            let caret_x = x + 10 + measure_size(text, size);
+            let caret_y = y + 7;
+            let caret_h = (size * 1.25).max(1.0) as usize;
+            if caret_x >= 0 && caret_y >= 0 {
+                layer.fill_rect(caret_x as usize, caret_y as usize, 1, caret_h, WARP4_BLACK);
+            }
         }
         let child_scroll = in_scroll || is_scroll_container(n);
         if is_scroll_container(n) {

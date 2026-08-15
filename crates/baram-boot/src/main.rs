@@ -1244,6 +1244,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut ui_clock = UiMonotonicClock::new();
     let mut next_present_ms: u64 = 0;
     let mut deferred_dirty = false;
+    let mut prev_text_cursor_visible = true;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_add_started_ms: Option<u64> = None;
@@ -1335,6 +1336,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         false,
         app_search_focused,
         &app_search_query,
+        baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
         app_launcher_scroll.position.max(0) as usize,
         0,
         0,
@@ -1384,6 +1386,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         false,
         app_search_focused,
         &app_search_query,
+        baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
         app_launcher_scroll.position.max(0) as usize,
         1,
         0,
@@ -1429,6 +1432,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         } else if ui_timer_fired {
             ui_time_ms = ui_time_ms.wrapping_add(1);
         }
+        let text_cursor_visible = baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000);
+        if app_search_focused && text_cursor_visible != prev_text_cursor_visible {
+            taskbar_surface.invalidate_search();
+            scene_dirty = true;
+            dirty = true;
+        }
+        prev_text_cursor_visible = text_cursor_visible;
 
         match baram_bsd::uri::check_system_commands(&mut display_state) {
             baram_bsd::uri::SystemCommand::ResetAll => {
@@ -3253,6 +3263,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     ime_hover_dirty,
                     app_search_focused,
                     &app_search_query,
+                    baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
                     app_launcher_scroll.position.max(0) as usize,
                     launcher_anim_phase,
                     launcher_anim_elapsed_ms,
@@ -3305,6 +3316,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         ime_hover_dirty,
                         app_search_focused,
                         &app_search_query,
+                        baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
                         app_launcher_scroll.position.max(0) as usize,
                         launcher_anim_phase,
                         launcher_anim_elapsed_ms,
