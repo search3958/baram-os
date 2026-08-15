@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
@@ -16,7 +17,7 @@ use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
 use baram_windowserver::soft_keyboard::{Key as SoftKey, KeyboardLanguage, SoftKeyboard};
-use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
+use baram_windowserver::window::{NativeFileDialogAction, SmoothScroll, WinId, WindowManager};
 use wana_kana::ConvertJapanese;
 
 fn kernel_key_event(event: nano_system::NanoKeyEvent) -> baram_core::KeyEvent {
@@ -1212,6 +1213,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut prev_shift_held: bool = false;
     let mut mousekey_win_id: Option<WinId> = None;
     let mut pending_os_permission: Option<PendingOsPermission> = None;
+    let mut pending_file_dialog: Option<PendingFileDialog> = None;
 
     let mouse_mode_label = if nano.input.absolute_pointer_available {
         "Absolute"
@@ -1710,9 +1712,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         scene_dirty = true;
                     } else if !show_app_launcher {
                         if let Some(id) = wm.window_at(cx, cy) {
-                            wm.scroll_window(id, window_scroll_delta);
-                            dirty = true;
-                            scene_dirty = true;
+                            if wm.is_file_dialog(id) {
+                                if wm.file_dialog_scroll(id, window_scroll_delta) {
+                                    dirty = true;
+                                    scene_dirty = true;
+                                }
+                            } else {
+                                wm.scroll_window(id, window_scroll_delta);
+                                dirty = true;
+                                scene_dirty = true;
+                            }
                         }
                     }
                 }
@@ -1962,6 +1971,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                         &mut html_engines,
                                         &mut pending_os_permission,
                                     );
+                                    cancel_file_dialog_for_closed_window(
+                                        id,
+                                        &mut wm,
+                                        &mut pending_file_dialog,
+                                    );
                                 }
                                 'm' => {
                                     wm.toggle_maximize_at(id);
@@ -1981,6 +1995,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             let _ = after;
                         }
                         if let Some(clicked_id) = wm.window_at(cx, cy) {
+                            if handle_native_file_dialog_click(
+                                clicked_id,
+                                cx,
+                                cy,
+                                &mut wm,
+                                &mut pending_file_dialog,
+                                &mut warp_engines,
+                            ) {
+                                scene_dirty = true;
+                            }
                             for (wid, engine) in warp_engines.iter_mut() {
                                 if clicked_id == *wid && !wm.is_interaction_blocked(clicked_id) {
                                     if let Some((wx, wy, ww, wh, scroll)) =
@@ -2008,42 +2032,50 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                             wm.set_content_dirty(clicked_id);
                                             scene_dirty = true;
 
-                                            if let Some(cmd) = engine.last_command.take() {
-                                                let is_hud_command = baram_bsd::uri::parse(&cmd)
-                                                    .map_or(false, |p| {
-                                                        p.path.starts_with("display/hud")
-                                                    });
-                                                let previous_hud = display_state.hud_enabled;
-                                                if authorize_os_setting(
-                                                    &cmd,
-                                                    engine.origin(),
-                                                    &mut wm,
-                                                    &mut html_engines,
-                                                    &mut pending_os_permission,
-                                                    Some(clicked_id),
-                                                    120,
-                                                    80,
-                                                ) && baram_bsd::uri::execute(
-                                                    &cmd,
-                                                    &mut display_state,
-                                                ) {
-                                                    engine.update(ww as i32, content_h as i32);
-                                                    if is_hud_command {
-                                                        hud_damage_pending |= previous_hud
-                                                            != display_state.hud_enabled;
-                                                    } else {
-                                                        wm.set_all_dirty();
-                                                        taskbar_surface.invalidate();
-                                                        cached_launcher_layer = None;
-                                                        app_launcher_scroll.reset();
-                                                        bg_cache = None;
+                                            if !engine.last_command.as_ref().is_some_and(|cmd| {
+                                                cmd.starts_with("files-upload://")
+                                            }) {
+                                                if let Some(cmd) = engine.last_command.take() {
+                                                    let is_hud_command =
+                                                        baram_bsd::uri::parse(&cmd)
+                                                            .map_or(false, |p| {
+                                                                p.path.starts_with("display/hud")
+                                                            });
+                                                    let previous_hud = display_state.hud_enabled;
+                                                    if authorize_os_setting(
+                                                        &cmd,
+                                                        engine.origin(),
+                                                        &mut wm,
+                                                        &mut html_engines,
+                                                        &mut pending_os_permission,
+                                                        Some(clicked_id),
+                                                        120,
+                                                        80,
+                                                    ) && baram_bsd::uri::execute(
+                                                        &cmd,
+                                                        &mut display_state,
+                                                    ) {
+                                                        engine.update(ww as i32, content_h as i32);
+                                                        if is_hud_command {
+                                                            hud_damage_pending |= previous_hud
+                                                                != display_state.hud_enabled;
+                                                        } else {
+                                                            wm.set_all_dirty();
+                                                            taskbar_surface.invalidate();
+                                                            cached_launcher_layer = None;
+                                                            app_launcher_scroll.reset();
+                                                            bg_cache = None;
+                                                        }
+                                                        scene_dirty = true;
                                                     }
-                                                    scene_dirty = true;
-                                                }
-                                                if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                                    if parsed.path.starts_with("display/wallpaper")
+                                                    if let Some(parsed) =
+                                                        baram_bsd::uri::parse(&cmd)
                                                     {
-                                                        if display_state.wallpaper_mode
+                                                        if parsed
+                                                            .path
+                                                            .starts_with("display/wallpaper")
+                                                        {
+                                                            if display_state.wallpaper_mode
                                                             == baram_bsd::uri::WallpaperMode::Color
                                                         {
                                                             if let Some(color) =
@@ -2069,17 +2101,20 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                                                 log_line_str("NO WALLPAPER BYTES");
                                                             }
                                                         }
-                                                        prev_wallpaper_idx =
-                                                            display_state.wallpaper_index;
-                                                        scene_dirty = true;
-                                                    } else if parsed
-                                                        .path
-                                                        .starts_with("display/pointer")
-                                                        || parsed.path.starts_with("display/hud")
-                                                    {
-                                                        scene_dirty = true;
-                                                    } else {
-                                                        scene_dirty = true;
+                                                            prev_wallpaper_idx =
+                                                                display_state.wallpaper_index;
+                                                            scene_dirty = true;
+                                                        } else if parsed
+                                                            .path
+                                                            .starts_with("display/pointer")
+                                                            || parsed
+                                                                .path
+                                                                .starts_with("display/hud")
+                                                        {
+                                                            scene_dirty = true;
+                                                        } else {
+                                                            scene_dirty = true;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -2152,6 +2187,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     &origin,
                                     source_win_id,
                                     &mut pending_os_permission,
+                                    &mut pending_file_dialog,
                                     nx,
                                     ny,
                                 ) {
@@ -2459,6 +2495,11 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 &mut html_engines,
                                 &mut pending_os_permission,
                             );
+                            cancel_file_dialog_for_closed_window(
+                                id,
+                                &mut wm,
+                                &mut pending_file_dialog,
+                            );
                         }
                         'm' => {
                             wm.toggle_maximize_at(id);
@@ -2470,6 +2511,16 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     }
                 }
                 if let Some(clicked_id) = wm.window_at(cx, cy) {
+                    if handle_native_file_dialog_click(
+                        clicked_id,
+                        cx,
+                        cy,
+                        &mut wm,
+                        &mut pending_file_dialog,
+                        &mut warp_engines,
+                    ) {
+                        scene_dirty = true;
+                    }
                     for (wid, engine) in warp_engines.iter_mut() {
                         if clicked_id == *wid && !wm.is_interaction_blocked(clicked_id) {
                             if let Some((wx, wy, ww, wh, scroll)) = wm.get_window_rect(clicked_id) {
@@ -2484,67 +2535,78 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                     wm.set_content_dirty(clicked_id);
                                     scene_dirty = true;
 
-                                    if let Some(cmd) = engine.last_command.take() {
-                                        let is_hud_command = baram_bsd::uri::parse(&cmd)
-                                            .map_or(false, |p| p.path.starts_with("display/hud"));
-                                        let previous_hud = display_state.hud_enabled;
-                                        if authorize_os_setting(
-                                            &cmd,
-                                            engine.origin(),
-                                            &mut wm,
-                                            &mut html_engines,
-                                            &mut pending_os_permission,
-                                            Some(clicked_id),
-                                            120,
-                                            80,
-                                        ) && baram_bsd::uri::execute(&cmd, &mut display_state)
-                                        {
-                                            engine.update(ww as i32, content_h as i32);
-                                            if is_hud_command {
-                                                hud_damage_pending |=
-                                                    previous_hud != display_state.hud_enabled;
-                                            } else {
-                                                wm.set_all_dirty();
-                                                taskbar_surface.invalidate();
-                                                cached_launcher_layer = None;
-                                                bg_cache = None;
+                                    if !engine
+                                        .last_command
+                                        .as_ref()
+                                        .is_some_and(|cmd| cmd.starts_with("files-upload://"))
+                                    {
+                                        if let Some(cmd) = engine.last_command.take() {
+                                            let is_hud_command = baram_bsd::uri::parse(&cmd)
+                                                .map_or(false, |p| {
+                                                    p.path.starts_with("display/hud")
+                                                });
+                                            let previous_hud = display_state.hud_enabled;
+                                            if authorize_os_setting(
+                                                &cmd,
+                                                engine.origin(),
+                                                &mut wm,
+                                                &mut html_engines,
+                                                &mut pending_os_permission,
+                                                Some(clicked_id),
+                                                120,
+                                                80,
+                                            ) && baram_bsd::uri::execute(
+                                                &cmd,
+                                                &mut display_state,
+                                            ) {
+                                                engine.update(ww as i32, content_h as i32);
+                                                if is_hud_command {
+                                                    hud_damage_pending |=
+                                                        previous_hud != display_state.hud_enabled;
+                                                } else {
+                                                    wm.set_all_dirty();
+                                                    taskbar_surface.invalidate();
+                                                    cached_launcher_layer = None;
+                                                    bg_cache = None;
+                                                }
+                                                scene_dirty = true;
                                             }
-                                            scene_dirty = true;
-                                        }
-                                        if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
-                                            if parsed.path.starts_with("display/wallpaper") {
-                                                if display_state.wallpaper_mode
-                                                    == baram_bsd::uri::WallpaperMode::Color
-                                                {
-                                                    if let Some(color) =
-                                                        display_state.wallpaper_color
+                                            if let Some(parsed) = baram_bsd::uri::parse(&cmd) {
+                                                if parsed.path.starts_with("display/wallpaper") {
+                                                    if display_state.wallpaper_mode
+                                                        == baram_bsd::uri::WallpaperMode::Color
                                                     {
-                                                        cached_wallpaper =
-                                                            Some(make_solid_wallpaper(
-                                                                color,
+                                                        if let Some(color) =
+                                                            display_state.wallpaper_color
+                                                        {
+                                                            cached_wallpaper =
+                                                                Some(make_solid_wallpaper(
+                                                                    color,
+                                                                    screen.width(),
+                                                                    screen.height(),
+                                                                ));
+                                                        }
+                                                    } else {
+                                                        if let Some(bytes) = WALLPAPERS
+                                                            .get(display_state.wallpaper_index)
+                                                        {
+                                                            cached_wallpaper = decode_wallpaper(
+                                                                bytes,
                                                                 screen.width(),
                                                                 screen.height(),
-                                                            ));
+                                                            );
+                                                        }
                                                     }
+                                                    prev_wallpaper_idx =
+                                                        display_state.wallpaper_index;
+                                                    scene_dirty = true;
+                                                } else if parsed.path.starts_with("display/pointer")
+                                                    || parsed.path.starts_with("display/hud")
+                                                {
+                                                    scene_dirty = true;
                                                 } else {
-                                                    if let Some(bytes) = WALLPAPERS
-                                                        .get(display_state.wallpaper_index)
-                                                    {
-                                                        cached_wallpaper = decode_wallpaper(
-                                                            bytes,
-                                                            screen.width(),
-                                                            screen.height(),
-                                                        );
-                                                    }
+                                                    scene_dirty = true;
                                                 }
-                                                prev_wallpaper_idx = display_state.wallpaper_index;
-                                                scene_dirty = true;
-                                            } else if parsed.path.starts_with("display/pointer")
-                                                || parsed.path.starts_with("display/hud")
-                                            {
-                                                scene_dirty = true;
-                                            } else {
-                                                scene_dirty = true;
                                             }
                                         }
                                     }
@@ -2609,6 +2671,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             &origin,
                             source_win_id,
                             &mut pending_os_permission,
+                            &mut pending_file_dialog,
                             nx,
                             ny,
                         ) {
@@ -2906,6 +2969,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 &origin,
                 source_win_id,
                 &mut pending_os_permission,
+                &mut pending_file_dialog,
                 nx,
                 ny,
             ) {
@@ -3520,6 +3584,12 @@ struct PendingOsPermission {
     source_win_id: Option<WinId>,
 }
 
+struct PendingFileDialog {
+    dialog_win_id: WinId,
+    source_win_id: WinId,
+    var_name: alloc::string::String,
+}
+
 fn rebuild_filtered_apps(
     entries: &[AppEntry],
     query: &str,
@@ -3768,9 +3838,23 @@ fn handle_navigation(
     origin: &str,
     source_win_id: WinId,
     pending_permission: &mut Option<PendingOsPermission>,
+    pending_file_dialog: &mut Option<PendingFileDialog>,
     x: i32,
     y: i32,
 ) -> NavigationEffect {
+    if command.starts_with("files-upload://") {
+        return handle_file_dialog_command(
+            command,
+            origin,
+            source_win_id,
+            pending_file_dialog,
+            wm,
+            warp_engines,
+            html_engines,
+            x,
+            y,
+        );
+    }
     if let Some(decision) = command.strip_prefix("security://") {
         let Some(pending) = pending_permission.take() else {
             return NavigationEffect::None;
@@ -3842,6 +3926,143 @@ fn handle_navigation(
     }
 
     NavigationEffect::None
+}
+
+fn handle_file_dialog_command(
+    command: &str,
+    _origin: &str,
+    source_win_id: WinId,
+    pending: &mut Option<PendingFileDialog>,
+    wm: &mut WindowManager,
+    _warp_engines: &mut Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
+    _html_engines: &mut Vec<(WinId, baram_windowserver::html::HtmlEngine)>,
+    x: i32,
+    y: i32,
+) -> NavigationEffect {
+    let command = command.trim();
+    if let Some(query) = command.strip_prefix("files-upload://open?") {
+        if pending.is_some() {
+            return NavigationEffect::None;
+        }
+        let Some(var_name) =
+            file_dialog_query(query, "var").filter(|name| is_safe_file_dialog_name(name))
+        else {
+            return NavigationEffect::None;
+        };
+        let Some(request_path) = file_dialog_query(query, "path") else {
+            return NavigationEffect::None;
+        };
+        let Some(path) = baram_bsd::vfs::parse_files_uri(request_path) else {
+            return NavigationEffect::None;
+        };
+        let dialog_win_id = wm.add("ファイルをアップロード", x, y, 560, 620);
+        wm.set_icon(dialog_win_id, "files.png");
+        wm.open_file_dialog(dialog_win_id, &path);
+        wm.set_interaction_blocked(Some(source_win_id));
+        *pending = Some(PendingFileDialog {
+            dialog_win_id,
+            source_win_id,
+            var_name: var_name.into(),
+        });
+        return NavigationEffect::AppOpened;
+    }
+    NavigationEffect::None
+}
+
+fn file_dialog_query<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    query.split('&').find_map(|part| {
+        let (name, value) = part.split_once('=')?;
+        (name == key).then_some(value)
+    })
+}
+
+fn is_safe_file_dialog_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn close_file_dialog(pending: &mut Option<PendingFileDialog>, wm: &mut WindowManager) {
+    let Some(state) = pending.take() else {
+        return;
+    };
+    wm.remove(state.dialog_win_id);
+    wm.close_file_dialog();
+    wm.set_interaction_blocked(None);
+}
+
+fn cancel_file_dialog_for_closed_window(
+    closed_win_id: WinId,
+    wm: &mut WindowManager,
+    pending: &mut Option<PendingFileDialog>,
+) {
+    let should_cancel = pending.as_ref().is_some_and(|state| {
+        state.dialog_win_id == closed_win_id || state.source_win_id == closed_win_id
+    });
+    if should_cancel {
+        close_file_dialog(pending, wm);
+    }
+}
+
+fn handle_native_file_dialog_click(
+    clicked_id: WinId,
+    cx: i32,
+    cy: i32,
+    wm: &mut WindowManager,
+    pending: &mut Option<PendingFileDialog>,
+    warp_engines: &mut Vec<(WinId, baram_windowserver::warp::WarpEngine)>,
+) -> bool {
+    if !wm.is_file_dialog(clicked_id) || wm.is_interaction_blocked(clicked_id) {
+        return false;
+    }
+    let Some((wx, wy, _ww, _wh, _scroll)) = wm.get_window_rect(clicked_id) else {
+        return false;
+    };
+    let rel_x = cx - wx;
+    let rel_y = cy - wy;
+    let title_h = baram_windowserver::window::title_bar_h() as i32;
+    if rel_y < title_h {
+        return false;
+    }
+    let action = wm.file_dialog_click(clicked_id, rel_x, rel_y - title_h);
+    match action {
+        NativeFileDialogAction::None | NativeFileDialogAction::Changed => true,
+        NativeFileDialogAction::Cancel => {
+            close_file_dialog(pending, wm);
+            true
+        }
+        NativeFileDialogAction::Confirm => {
+            let Some(state) = pending.as_ref() else {
+                return true;
+            };
+            if state.dialog_win_id != clicked_id {
+                return true;
+            }
+            let Some(file_path) = wm.file_dialog_selected_path(clicked_id) else {
+                return true;
+            };
+            let content =
+                alloc::string::String::from_utf8_lossy(&baram_bsd::vfs::read_file(&file_path))
+                    .into_owned();
+            let source_win_id = state.source_win_id;
+            let var_name = state.var_name.clone();
+            if let Some((_, engine)) = warp_engines
+                .iter_mut()
+                .find(|(wid, _)| *wid == source_win_id)
+            {
+                engine.set_state_value(&var_name, &content);
+                engine.set_text("file-content", &content);
+                let display_path = file_path
+                    .strip_prefix("files/")
+                    .map_or(file_path.as_str(), |path| path);
+                engine.set_text("file-path", &format!("files://{}", display_path));
+                wm.set_content_dirty(source_win_id);
+            }
+            close_file_dialog(pending, wm);
+            true
+        }
+    }
 }
 
 fn execute_os_setting(

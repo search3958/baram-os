@@ -1,5 +1,7 @@
+use alloc::format;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use baram_bsd::config;
+use baram_bsd::{config, vfs};
 use baram_core::Color;
 use baram_core::LayerSystem;
 
@@ -718,6 +720,225 @@ struct CachedShadow {
     h: usize,
 }
 
+const FILE_DIALOG_LIST_Y: i32 = 96;
+const FILE_DIALOG_ROW_H: i32 = 34;
+const FILE_DIALOG_FOOTER_H: i32 = 56;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum NativeFileDialogAction {
+    None,
+    Changed,
+    Cancel,
+    Confirm,
+}
+
+/// OS-owned, read-only file chooser. It deliberately has no text editor or
+/// app script behind it: the OS owns the path, selection, and buttons.
+pub struct NativeFileDialog {
+    win_id: WinId,
+    content_height: i32,
+    path: String,
+    entries: Vec<vfs::FileEntry>,
+    selected: Option<usize>,
+    scroll_start: usize,
+}
+
+impl NativeFileDialog {
+    pub fn new(win_id: WinId, path: &str, window_height: usize) -> Self {
+        let mut dialog = Self {
+            win_id,
+            content_height: window_height.saturating_sub(title_bar_h()) as i32,
+            path: path.into(),
+            entries: Vec::new(),
+            selected: None,
+            scroll_start: 0,
+        };
+        dialog.reload();
+        dialog
+    }
+
+    pub fn win_id(&self) -> WinId {
+        self.win_id
+    }
+
+    pub fn selected_path(&self) -> Option<String> {
+        let index = self.selected?;
+        let entry = self.entries.get(index)?;
+        if entry.is_dir {
+            return None;
+        }
+        Some(format!(
+            "{}/{}",
+            self.path.trim_end_matches('/'),
+            entry.name
+        ))
+    }
+
+    fn reload(&mut self) {
+        self.entries = vfs::list_files(&self.path);
+        self.selected = None;
+        self.scroll_start = 0;
+    }
+
+    fn display_path(&self) -> String {
+        if self.path.trim_end_matches('/') == "files" {
+            "files://".into()
+        } else {
+            format!(
+                "files://{}/",
+                self.path.trim_start_matches("files/").trim_end_matches('/')
+            )
+        }
+    }
+
+    fn footer_top(&self) -> i32 {
+        self.content_height - FILE_DIALOG_FOOTER_H
+    }
+
+    fn visible_rows(&self) -> usize {
+        self.footer_top().saturating_sub(FILE_DIALOG_LIST_Y).max(0) as usize
+            / FILE_DIALOG_ROW_H as usize
+    }
+
+    pub fn click(&mut self, x: i32, y: i32) -> NativeFileDialogAction {
+        if x >= 12 && x < 108 && y >= 46 && y < 82 {
+            let path = self.path.trim_end_matches('/');
+            self.path = path
+                .rsplit_once('/')
+                .map(|(parent, _)| parent.to_string())
+                .unwrap_or_else(|| "files".into());
+            self.reload();
+            return NativeFileDialogAction::Changed;
+        }
+
+        let footer_top = self.footer_top();
+        if y >= footer_top {
+            let button_w = (560 - 32) / 2;
+            let second_x = 20 + button_w;
+            if x >= 12 && x < 12 + button_w {
+                return NativeFileDialogAction::Cancel;
+            }
+            if x >= second_x && x < second_x + button_w {
+                return NativeFileDialogAction::Confirm;
+            }
+            return NativeFileDialogAction::None;
+        }
+
+        let list_bottom = FILE_DIALOG_LIST_Y + self.visible_rows() as i32 * FILE_DIALOG_ROW_H;
+        if y < FILE_DIALOG_LIST_Y || y >= list_bottom {
+            return NativeFileDialogAction::None;
+        }
+        let index = self.scroll_start + ((y - FILE_DIALOG_LIST_Y) / FILE_DIALOG_ROW_H) as usize;
+        let Some(entry) = self.entries.get(index).cloned() else {
+            return NativeFileDialogAction::None;
+        };
+        if entry.is_dir {
+            self.path = format!("{}/{}", self.path.trim_end_matches('/'), entry.name);
+            self.reload();
+        } else {
+            self.selected = Some(index);
+        }
+        NativeFileDialogAction::Changed
+    }
+
+    pub fn scroll(&mut self, delta: i32) -> bool {
+        let max_start = self.entries.len().saturating_sub(self.visible_rows());
+        let step = (delta.unsigned_abs() as usize / FILE_DIALOG_ROW_H as usize).max(1);
+        let next = if delta > 0 {
+            self.scroll_start.saturating_add(step).min(max_start)
+        } else {
+            self.scroll_start.saturating_sub(step)
+        };
+        if next == self.scroll_start {
+            return false;
+        }
+        self.scroll_start = next;
+        true
+    }
+
+    pub fn draw_to_layer(&self, layer: &mut LayerSystem, body_y: i32) {
+        let width = layer.width();
+        let height = layer.height();
+        let body_top = body_y.max(0) as usize;
+        if body_top >= height {
+            return;
+        }
+        layer.fill_rect(
+            0,
+            body_top,
+            width,
+            height - body_top,
+            Color::rgb(250, 250, 252),
+        );
+
+        layer.put_str(16, body_top + 14, &self.display_path(), Color::TEXT);
+        draw_native_button(layer, 12, body_top + 46, 96, 36, "← 戻る", false);
+        let selected = self
+            .selected
+            .and_then(|index| self.entries.get(index))
+            .map(|entry| format!("選択中: {}", entry.name))
+            .unwrap_or_else(|| "ファイルを選択してください".into());
+        layer.put_str(120, body_top + 59, &selected, Color::MUTED);
+
+        let footer_top = self.footer_top().max(0) as usize + body_top;
+        let list_y = body_top + FILE_DIALOG_LIST_Y as usize;
+        for row in 0..self.visible_rows() {
+            let index = self.scroll_start + row;
+            let y = list_y + row * FILE_DIALOG_ROW_H as usize;
+            let row_bg = if self.selected == Some(index) {
+                Color::rgb(190, 220, 250)
+            } else {
+                Color::rgb(242, 242, 245)
+            };
+            layer.fill_rounded_rect(12, y, width.saturating_sub(24), 30, 6, row_bg);
+            if let Some(entry) = self.entries.get(index) {
+                let label = if entry.is_dir {
+                    format!("[DIR] {}/", entry.name)
+                } else {
+                    format!("[FILE] {}", entry.name)
+                };
+                layer.put_str(22, y + 9, &label, Color::TEXT);
+            }
+        }
+
+        let button_y = footer_top.saturating_sub(4);
+        let button_w = width.saturating_sub(32) / 2;
+        draw_native_button(layer, 12, button_y, button_w, 40, "キャンセル", false);
+        draw_native_button(
+            layer,
+            20 + button_w,
+            button_y,
+            button_w,
+            40,
+            "アップロード",
+            true,
+        );
+    }
+}
+
+fn draw_native_button(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    label: &str,
+    primary: bool,
+) {
+    let bg = if primary {
+        Color::rgb(0, 106, 255)
+    } else {
+        Color::rgb(232, 232, 235)
+    };
+    let fg = if primary {
+        Color::BTN_TEXT
+    } else {
+        Color::TEXT
+    };
+    layer.fill_rounded_rect(x, y, width, height, 8, bg);
+    layer.put_str(x + 12, y + 12, label, fg);
+}
+
 pub struct WindowManager {
     windows: Vec<Window>,
     next_z: i32,
@@ -730,6 +951,7 @@ pub struct WindowManager {
     order_changed: bool,
     pending_damage: Option<(usize, usize, usize, usize)>,
     interaction_blocked: Option<WinId>,
+    file_dialog: Option<NativeFileDialog>,
 }
 
 impl WindowManager {
@@ -746,6 +968,7 @@ impl WindowManager {
             order_changed: false,
             pending_damage: None,
             interaction_blocked: None,
+            file_dialog: None,
         }
     }
 
@@ -759,6 +982,66 @@ impl WindowManager {
         self.focus(id);
         self.order_changed = true;
         id
+    }
+
+    pub fn open_file_dialog(&mut self, id: WinId, path: &str) {
+        if self.windows.iter().any(|window| window.id == id) {
+            let height = self
+                .windows
+                .iter()
+                .find(|window| window.id == id)
+                .map(|window| window.h)
+                .unwrap_or(620);
+            self.file_dialog = Some(NativeFileDialog::new(id, path, height));
+            self.set_content_dirty(id);
+        }
+    }
+
+    pub fn is_file_dialog(&self, id: WinId) -> bool {
+        self.file_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.win_id() == id)
+    }
+
+    pub fn file_dialog_click(&mut self, id: WinId, x: i32, y: i32) -> NativeFileDialogAction {
+        if let Some(dialog) = self
+            .file_dialog
+            .as_mut()
+            .filter(|dialog| dialog.win_id() == id)
+        {
+            let action = dialog.click(x, y);
+            self.set_content_dirty(id);
+            action
+        } else {
+            NativeFileDialogAction::None
+        }
+    }
+
+    pub fn file_dialog_selected_path(&self, id: WinId) -> Option<String> {
+        self.file_dialog
+            .as_ref()
+            .filter(|dialog| dialog.win_id() == id)
+            .and_then(NativeFileDialog::selected_path)
+    }
+
+    pub fn file_dialog_scroll(&mut self, id: WinId, delta: i32) -> bool {
+        if let Some(dialog) = self
+            .file_dialog
+            .as_mut()
+            .filter(|dialog| dialog.win_id() == id)
+        {
+            let changed = dialog.scroll(delta);
+            if changed {
+                self.set_content_dirty(id);
+            }
+            changed
+        } else {
+            false
+        }
+    }
+
+    pub fn close_file_dialog(&mut self) {
+        self.file_dialog = None;
     }
 
     pub fn set_warp4_theme(&mut self, id: WinId, enabled: bool) {
@@ -871,6 +1154,13 @@ impl WindowManager {
                 self.shadow_cache.remove(pos);
             }
             self.order_changed = true;
+        }
+        if self
+            .file_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.win_id() == id)
+        {
+            self.file_dialog = None;
         }
         if self.focused_id == Some(id) {
             self.focused_id = self.windows.last().map(|w| w.id);
@@ -1374,6 +1664,15 @@ impl WindowManager {
                             (*layer_ptr).pop_clip();
                             break;
                         }
+                    }
+                    if let Some(dialog) = self
+                        .file_dialog
+                        .as_ref()
+                        .filter(|dialog| dialog.win_id() == win_id)
+                    {
+                        (*layer_ptr).push_clip(0, chrome_h, ww, wh);
+                        dialog.draw_to_layer(&mut *layer_ptr, chrome_h as i32);
+                        (*layer_ptr).pop_clip();
                     }
                     if self.interaction_blocked == Some(win_id) {
                         draw_settings_permission_overlay(&mut *layer_ptr, ww, wh);

@@ -340,6 +340,63 @@ pub fn read_file_str(path: &str) -> alloc::string::String {
     alloc::string::String::from_utf8(bytes).unwrap_or_default()
 }
 
+#[derive(Clone)]
+pub struct FileEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+/// Convert a `files://` URI into the VFS namespace used by the archive.
+pub fn parse_files_uri(uri: &str) -> Option<String> {
+    let path = uri.trim().strip_prefix("files://")?.trim_start_matches('/');
+    let path = path.trim_end_matches('/');
+    if path.is_empty() {
+        return Some("files/".into());
+    }
+    if !is_safe_archive_path(path) {
+        return None;
+    }
+    Some(format!("files/{path}"))
+}
+
+/// List the immediate children of an archive directory. Directory entries are
+/// inferred from member prefixes because the compact TAR writer omits empty
+/// directory records when rewriting the archive.
+pub fn list_files(path: &str) -> Vec<FileEntry> {
+    let vfs_path = parse_files_uri(path).unwrap_or_else(|| path.into());
+    let prefix = if vfs_path.trim_end_matches('/') == "files" {
+        String::new()
+    } else {
+        let Some(directory) = archive_member(&vfs_path) else {
+            return Vec::new();
+        };
+        format!("{}/", directory.trim_end_matches('/'))
+    };
+    let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
+    let Some(entries) = parse_archive(&archive) else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    for entry in entries {
+        let Some(rest) = entry.name.strip_prefix(&prefix) else {
+            continue;
+        };
+        let (name, is_dir) = match rest.split_once('/') {
+            Some((name, _)) => (name, true),
+            None => (rest, false),
+        };
+        if name.is_empty() || result.iter().any(|item: &FileEntry| item.name == name) {
+            continue;
+        }
+        result.push(FileEntry {
+            name: name.into(),
+            is_dir,
+        });
+    }
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result
+}
+
 pub fn write_file(path: &str, data: &[u8]) -> bool {
     if let Some(member) = archive_member(path) {
         return write_archive_member(&member, data);

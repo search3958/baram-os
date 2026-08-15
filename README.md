@@ -9,12 +9,22 @@ Raspberry Pi 4B(マウスが動作しない)と一般的なx86_64ラップトッ
 - ソフトウェアキーボード
 - UI Scriptのサポート打ち切り
 - Warp4アプリ
+- 使用可能なファイルシステム
 
 ## ファイルシステム
 
 アプリケーションとランタイムデータは `files/app` と `files/data` にまとめています。各ビルドではこの2つを `files.tar` にパッケージし、UEFI が読める FAT ボリュームのルートへ配置します。
 
 OS の VFS は `/apps/...`、`/app/...`、`/data/...`、`/files/...` を `files.tar` のメンバーとして透過的に読み込みます。`write_file` でこれらを書き換えた場合は TAR を再生成して同じストレージへ保存するため、再起動後も変更が残ります。旧来の FAT 上の個別ファイルはアップグレード互換の読み込みフォールバックとして扱います。
+
+W4S からは次のファイル API を利用できます。
+
+```text
+BaramOS.getFile fileText (files://data/min.svg)
+BaramOS.uploadFile selectedText (files://data/)
+```
+
+`getFile` は指定ファイルの UTF-8 内容を変数へ設定します。`uploadFile` はOSが管理する読み取り専用のファイル選択ダイアログを開き、選択してアップロードしたファイルの内容を変数へ設定します。
 
 ## OSSの感謝
 ### uefi-rs

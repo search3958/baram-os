@@ -21,14 +21,15 @@ apps:
     icon: null
     type: warp-2
     title: Warp Demo
-  note.warp:
+  note.w4a:
     icon: note.png
-    type: warp-2
+    type: warp-4
     title: ノート
     tag:
       - note
       - memo
-      - text edit
+      - file
+      - viewer
   task.w4a:
     icon: manager.png
     type: warp-4
