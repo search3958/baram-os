@@ -737,7 +737,6 @@ impl LayerSystem {
         let y0f = y as f32;
         let r_f = r as f32;
         let h_f = h as f32;
-        let off = [0.25f32, 0.75f32];
 
         for py in y0..y1 {
             let row = py * stride;
@@ -746,17 +745,21 @@ impl LayerSystem {
             let in_corner_row = base_y < r_f || base_y >= h_f - r_f;
 
             if !in_corner_row {
+                // The entire straight section is opaque. Keep this as one
+                // contiguous fill so rounded controls do not pay for any
+                // alpha or geometry work in their rectangular interior.
                 self.buf[row + x0..row + x1].fill(v);
                 continue;
             }
 
             if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
                 let (span_l, span_r) = Self::pixel_span_from_bounds(left, right, w);
-                let fill_l = (x + span_l).max(x0).min(x1);
-                let fill_r = (x + span_r).max(x0).min(x1);
-                if fill_r > fill_l {
+                let fill_l = x.saturating_add(span_l).max(x0).min(x1);
+                let fill_r = x.saturating_add(span_r).max(x0).min(x1);
+                if fill_l < fill_r {
                     self.buf[row + fill_l..row + fill_r].fill(v);
                 }
+                let aa_bounds = Self::aa_row_bounds(poly, base_y);
 
                 let edge_l = x + span_l.saturating_sub(1);
                 if edge_l >= x0 && edge_l < x1 {
@@ -764,9 +767,8 @@ impl LayerSystem {
                         &mut self.buf[row + edge_l],
                         v,
                         edge_l as f32 - x0f,
-                        base_y,
-                        poly,
-                        &off,
+                        &aa_bounds,
+                        true,
                     );
                 }
                 let edge_r = x + span_r;
@@ -775,45 +777,56 @@ impl LayerSystem {
                         &mut self.buf[row + edge_r],
                         v,
                         edge_r as f32 - x0f,
-                        base_y,
-                        poly,
-                        &off,
+                        &aa_bounds,
+                        false,
                     );
                 }
             }
         }
     }
 
-    fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], _off: &[f32; 2]) {
+    #[inline(always)]
+    fn aa_row_bounds(poly: &[(f32, f32)], py: f32) -> [Option<(f32, f32)>; 4] {
+        [
+            Self::squircle_row_bounds(poly, py + 0.125),
+            Self::squircle_row_bounds(poly, py + 0.375),
+            Self::squircle_row_bounds(poly, py + 0.625),
+            Self::squircle_row_bounds(poly, py + 0.875),
+        ]
+    }
+
+    #[inline(always)]
+    fn pixel_aa(
+        dst: &mut u32,
+        fg: u32,
+        px: f32,
+        bounds: &[Option<(f32, f32)>; 4],
+        left_edge: bool,
+    ) {
         let mut hits = 0u32;
-        // Supersample the squircle boundary instead of relying on a single
-        // hard pixel edge. Only the two edge pixels of each scanline use this
-        // path, so 4x4 gives a good quality/performance balance.
-        for sy in 0..4 {
+        // Only the two edge pixels of each scanline use this path. Rather than
+        // running a full point-in-polygon test for every 4x4 sample, calculate
+        // the two scanline boundaries once per sub-row and test the relevant
+        // side only. This preserves the AA coverage while removing most of
+        // the divisions and polygon walks from rounded-rect rendering.
+        for bounds in bounds.iter().flatten() {
+            let (left, right) = *bounds;
             for sx in 0..4 {
                 let sample_x = px + (sx as f32 + 0.5) * 0.25;
-                let sample_y = py + (sy as f32 + 0.5) * 0.25;
-                if Self::point_in_polygon(sample_x, sample_y, poly) {
+                let inside = if left_edge {
+                    sample_x >= left
+                } else {
+                    sample_x <= right
+                };
+                if inside {
                     hits += 1;
                 }
             }
         }
-        if hits > 0 {
+        if hits >= 16 {
+            *dst = fg;
+        } else if hits > 0 {
             *dst = Self::blend_alpha(*dst, fg, hits as f32 * (1.0 / 16.0));
-        }
-    }
-
-    fn pixel_aa_batch(
-        dst: &mut [u32],
-        fg: u32,
-        px: [f32; 4],
-        py: f32,
-        poly: &[(f32, f32)],
-        off: &[f32; 2],
-        count: usize,
-    ) {
-        for i in 0..count.min(4) {
-            Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
         }
     }
 
@@ -1051,7 +1064,6 @@ impl LayerSystem {
 
             let end_x = w;
             let poly = Self::cached_squircle(shape_w as f32, shape_h as f32, rf);
-            let off = [0.25f32, 0.75f32];
             let base_y = shape_py as f32;
             if let Some((left, right)) = Self::squircle_row_bounds(poly, base_y + 0.5) {
                 let (shape_l, shape_r) = Self::pixel_span_from_bounds(left, right, shape_w);
@@ -1067,6 +1079,7 @@ impl LayerSystem {
                         );
                     }
                 }
+                let aa_bounds = Self::aa_row_bounds(poly, base_y);
 
                 let edge_l = span_l.saturating_sub(1);
                 if shape_l >= shape_x && edge_l < end_x {
@@ -1076,9 +1089,8 @@ impl LayerSystem {
                             &mut self.buf[dst_row + edge_l],
                             sp,
                             (shape_x + edge_l) as f32,
-                            base_y,
-                            poly,
-                            &off,
+                            &aa_bounds,
+                            true,
                         );
                     }
                 }
@@ -1090,9 +1102,8 @@ impl LayerSystem {
                             &mut self.buf[dst_row + edge_r],
                             sp,
                             (shape_x + edge_r) as f32,
-                            base_y,
-                            poly,
-                            &off,
+                            &aa_bounds,
+                            false,
                         );
                     }
                 }

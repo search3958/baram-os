@@ -22,6 +22,7 @@ const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
 const CHECK_ICON_SVG: &str = include_str!("../../../data/check-icon.svg");
+const WARP4_CONTROL_RADIUS: usize = 16;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
 const WARP3_BG: Color = Color::rgb(243, 243, 243);
@@ -31,6 +32,9 @@ const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
 const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
 const WARP3_BORDER_HOVER: Color = Color::rgb(158, 158, 158);
 const WARP3_ACCENT: Color = Color::rgb(0, 125, 255);
+const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
+const SCROLLBAR_THUMB: Color = Color::rgb(184, 184, 184);
+const SCROLLBAR_RADIUS: usize = 3;
 
 fn title_bar_h() -> i32 {
     config::get_usize("ui-theme/window/title_bar_h", 30) as i32
@@ -144,6 +148,7 @@ pub struct Warp4Engine {
     screen: String,
     nodes: Vec<Node>,
     roots: Vec<usize>,
+    fixed_subtree: Vec<bool>,
     script: Script,
     state: Vec<(String, String)>,
     focused: Option<usize>,
@@ -186,6 +191,7 @@ impl Warp4Engine {
             screen,
             nodes: Vec::new(),
             roots: Vec::new(),
+            fixed_subtree: Vec::new(),
             script: Script::default(),
             state: Vec::new(),
             focused: None,
@@ -379,6 +385,7 @@ impl Warp4Engine {
 
         self.nodes.clear();
         self.roots.clear();
+        self.fixed_subtree.clear();
         self.focused = None;
         self.hovered = None;
         self.pressed = None;
@@ -424,8 +431,28 @@ impl Warp4Engine {
                 set_attr(&mut self.nodes[idx], &key, &value);
             }
         }
+        self.rebuild_fixed_subtree();
         self.refresh_visibility();
         self.dirty = true;
+    }
+
+    fn rebuild_fixed_subtree(&mut self) {
+        self.fixed_subtree.clear();
+        self.fixed_subtree.resize(self.nodes.len(), false);
+        let roots = self.roots.clone();
+        for root in roots {
+            self.mark_fixed_subtree(root);
+        }
+    }
+
+    fn mark_fixed_subtree(&mut self, idx: usize) -> bool {
+        let mut has_fixed = is_fixed(&self.nodes[idx]);
+        let children = self.nodes[idx].children.clone();
+        for child in children {
+            has_fixed |= self.mark_fixed_subtree(child);
+        }
+        self.fixed_subtree[idx] = has_fixed;
+        has_fixed
     }
 
     pub fn update(&mut self, width: i32, height: i32) {
@@ -486,7 +513,9 @@ impl Warp4Engine {
             // chrome.  This is what the reference CSS achieves with a
             // viewport and `position:fixed`, without ever creating HTML.
             self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Flow);
-            self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
+            if self.fixed_subtree.get(root).copied().unwrap_or(true) {
+                self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
+            }
         }
         if let Some(idx) = self.spinner_open {
             self.paint_spinner_popup(layer, idx, 255);
@@ -1848,6 +1877,9 @@ impl Warp4Engine {
         chrome_mode: bool,
         pass: PaintPass,
     ) {
+        if pass == PaintPass::Fixed && !self.fixed_subtree.get(idx).copied().unwrap_or(true) {
+            return;
+        }
         let n = &self.nodes[idx];
         if !n.visible() || !self.active_child(idx) {
             return;
@@ -1938,7 +1970,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                w.min(h) / 2,
+                WARP4_CONTROL_RADIUS,
                 if active || hover {
                     WARP3_BORDER_HOVER
                 } else {
@@ -1959,7 +1991,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                w.min(h) / 2,
+                WARP4_CONTROL_RADIUS,
                 if self.focused == Some(idx) || self.hovered == Some(idx) {
                     WARP3_ACCENT
                 } else {
@@ -2311,36 +2343,44 @@ impl Warp4Engine {
                 let max_thumb_y = track_h - thumb_h;
                 let max_scroll = n.content_h.saturating_sub(n.h).max(1);
                 let thumb_y = max_thumb_y * self.scroll / max_scroll;
-                layer.fill_rect(
-                    (x + n.w - 6).max(0) as usize,
+                let bar_x = (x + n.w - 8).max(0) as usize;
+                layer.fill_rounded_rect(
+                    bar_x,
                     (y + 1).max(0) as usize,
                     6,
                     track_h as usize,
-                    WARP3_BG,
+                    SCROLLBAR_RADIUS,
+                    SCROLLBAR_TRACK,
                 );
-                layer.fill_rect(
-                    (x + n.w - 6).max(0) as usize,
+                layer.fill_rounded_rect(
+                    bar_x,
                     (y + 1 + thumb_y).max(0) as usize,
                     6,
                     thumb_h as usize,
-                    WARP3_MUTED,
+                    SCROLLBAR_RADIUS,
+                    SCROLLBAR_THUMB,
                 );
             } else if n.is("HorizontalScrollView") && n.content_w > n.w {
                 let track_w = (n.w - 2).max(1);
                 let thumb_w = (track_w * n.w / n.content_w).max(12).min(track_w);
-                layer.fill_rect(
+                let max_thumb_x = track_w - thumb_w;
+                let max_scroll = n.content_w.saturating_sub(n.w).max(1);
+                let thumb_x = max_thumb_x * self.scroll / max_scroll;
+                layer.fill_rounded_rect(
                     (x + 1).max(0) as usize,
                     (y + n.h - 6).max(0) as usize,
                     track_w as usize,
                     6,
-                    WARP3_BG,
+                    SCROLLBAR_RADIUS,
+                    SCROLLBAR_TRACK,
                 );
-                layer.fill_rect(
-                    (x + 1).max(0) as usize,
+                layer.fill_rounded_rect(
+                    (x + 1 + thumb_x).max(0) as usize,
                     (y + n.h - 6).max(0) as usize,
                     thumb_w as usize,
                     6,
-                    WARP3_MUTED,
+                    SCROLLBAR_RADIUS,
+                    SCROLLBAR_THUMB,
                 );
             }
             layer.pop_clip();
