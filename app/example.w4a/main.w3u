@@ -111,7 +111,7 @@
             baram:orientation="horizontal"
             baram:layout_marginBottom="12dp">
 
-            <Button
+            <PrimaryButton
                 baram:id="@+id/btn_save"
                 baram:layout_width="0dp"
                 baram:layout_height="wrap_content"
@@ -144,7 +144,7 @@
             baram:layout_weight="1"/>
 
         <!-- 画面遷移ボタン -->
-        <Button
+        <PrimaryButton
             baram:id="@+id/btn_go_sub"
             baram:layout_width="match_parent"
             baram:layout_height="wrap_content"

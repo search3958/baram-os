@@ -91,7 +91,7 @@
             baram:layout_weight="1"/>
 
         <!-- 戻るボタン -->
-        <Button
+        <PrimaryButton
             baram:id="@+id/btn_back_main"
             baram:layout_width="match_parent"
             baram:layout_height="wrap_content"

@@ -1711,7 +1711,7 @@ impl Warp4Engine {
                 + pad.right
                 + control_width;
         }
-        if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+        if is_button_like(n) {
             return (measure_size(
                 if n.is("ToggleButton") {
                     n.attr("textOn")
@@ -1770,7 +1770,7 @@ impl Warp4Engine {
         if n.is("Space") {
             return parse_dim(n.attr("layout_height"), 0).max(0);
         }
-        if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+        if is_button_like(n) {
             return 48;
         }
         if n.is("EditText") || n.is("AutoCompleteTextView") {
@@ -1963,21 +1963,33 @@ impl Warp4Engine {
                 }
             }
         }
-        if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+        if is_button_like(n) {
             let active = self.pressed == Some(idx);
             let hover = self.hovered == Some(idx);
+            let primary = n.is("PrimaryButton");
+            let primary_color = if active {
+                Color::rgb(0, 96, 196)
+            } else if hover {
+                Color::rgb(0, 112, 232)
+            } else {
+                WARP3_ACCENT
+            };
             layer.rounded_rect_outline(
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
                 h,
                 WARP4_CONTROL_RADIUS,
-                if active || hover {
+                if primary {
+                    primary_color
+                } else if active || hover {
                     WARP3_BORDER_HOVER
                 } else {
                     WARP3_BORDER
                 },
-                if hover {
+                if primary {
+                    primary_color
+                } else if hover {
                     Color::rgb(255, 255, 255)
                 } else {
                     WARP3_SURFACE
@@ -2259,7 +2271,7 @@ impl Warp4Engine {
             let size = text_size(n);
             let pad = edges(n, "padding");
             let text_w = measure_size(text, size);
-            let tx = if n.is("Button") || n.is("ToggleButton") {
+            let tx = if is_text_button(n) {
                 x + (n.w - text_w).max(0) / 2
             } else if n.is("EditText")
                 || n.is("AutoCompleteTextView")
@@ -2289,7 +2301,7 @@ impl Warp4Engine {
             let line_count = text.split('\n').count().max(1) as i32;
             let block_h = line_h * line_count;
             let gravity = n.attr("gravity");
-            let ty = if n.is("Button") || n.is("ToggleButton") {
+            let ty = if is_text_button(n) {
                 y + (n.h - block_h).max(0) / 2
             } else if n.is("EditText")
                 || n.is("AutoCompleteTextView")
@@ -3136,10 +3148,17 @@ fn cross_offset(gravity: &str, parent_size: i32, child_size: i32, horizontal_axi
     }
     0
 }
+fn is_button_like(n: &Node) -> bool {
+    n.is("Button") || n.is("PrimaryButton") || n.is("ImageButton") || n.is("ToggleButton")
+}
+
+fn is_text_button(n: &Node) -> bool {
+    n.is("Button") || n.is("PrimaryButton") || n.is("ToggleButton")
+}
+
 fn interactive(n: &Node) -> bool {
     n.attr("enabled") != "false"
-        && (n.is("Button")
-            || n.is("ImageButton")
+        && (is_button_like(n)
             || n.is("EditText")
             || n.is("AutoCompleteTextView")
             || n.is("MultiAutoCompleteTextView")
@@ -3180,7 +3199,7 @@ fn text_size(n: &Node) -> f32 {
     if !n.attr("textSize").is_empty() {
         return parse_dim(n.attr("textSize"), 16) as f32;
     }
-    if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
+    if is_button_like(n) {
         return 18.0;
     }
     if n.is("CheckBox") || n.is("RadioButton") || n.is("Switch") {
@@ -3200,6 +3219,9 @@ fn text_size(n: &Node) -> f32 {
 fn text_color(n: &Node) -> Color {
     if let Some(color) = parse_color(n.attr("textColor")) {
         return color;
+    }
+    if n.is("PrimaryButton") {
+        return Color::rgb(255, 255, 255);
     }
     let style = n.attr("style");
     if style.contains("SectionDescription") {
