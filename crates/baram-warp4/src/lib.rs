@@ -19,6 +19,15 @@ use baram_font::{ttf_font, LayerFontExt};
 const TITLE_BAR: i32 = 30;
 const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
+// Warp3 control palette.  Keep Warp4's native controls visually identical to
+// the established Warp3 surface instead of maintaining a second theme.
+const WARP3_BG: Color = Color::rgb(243, 243, 243);
+const WARP3_SURFACE: Color = Color::rgb(251, 251, 251);
+const WARP3_TEXT: Color = Color::rgb(26, 26, 26);
+const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
+const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
+const WARP3_BORDER_HOVER: Color = Color::rgb(158, 158, 158);
+const WARP3_ACCENT: Color = Color::rgb(0, 103, 192);
 
 #[derive(Clone, Default)]
 struct Attr {
@@ -1804,25 +1813,23 @@ impl Warp4Engine {
             }
         }
         if n.is("Button") || n.is("ImageButton") || n.is("ToggleButton") {
-            let hover = self.hovered == Some(idx);
             let active = self.pressed == Some(idx);
-            let fill = if active {
-                Color::rgb(189, 231, 247)
-            } else if hover {
-                Color::rgb(224, 224, 224)
-            } else {
-                Color::rgb(215, 215, 215)
-            };
-            layer.fill_rounded_rect(x.max(0) as usize, y.max(0) as usize, w, h, 2, fill);
-            layer.rect_outline(
+            let hover = self.hovered == Some(idx);
+            layer.rounded_rect_outline(
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
                 h,
-                if active {
-                    Color::rgb(0, 153, 204)
+                4,
+                if active || hover {
+                    WARP3_BORDER_HOVER
                 } else {
-                    Color::rgb(159, 159, 159)
+                    WARP3_BORDER
+                },
+                if hover {
+                    Color::rgb(255, 255, 255)
+                } else {
+                    WARP3_SURFACE
                 },
             );
         } else if n.is("EditText")
@@ -1835,14 +1842,12 @@ impl Warp4Engine {
                 w,
                 h,
                 5,
-                if self.focused == Some(idx) {
-                    Color::rgb(51, 181, 229)
-                } else if self.hovered == Some(idx) {
-                    Color::rgb(90, 170, 205)
+                if self.focused == Some(idx) || self.hovered == Some(idx) {
+                    WARP3_ACCENT
                 } else {
-                    Color::rgb(158, 158, 158)
+                    WARP3_BORDER
                 },
-                Color::rgb(255, 255, 255),
+                WARP3_SURFACE,
             );
         } else if n.is("CheckBox") || n.is("RadioButton") {
             let checked = n.attr("checked") == "true";
@@ -1855,25 +1860,17 @@ impl Warp4Engine {
                     mark_y.max(0) as usize,
                     22,
                     22,
-                    if checked {
-                        Color::rgb(51, 181, 229)
-                    } else if hover {
-                        Color::rgb(210, 232, 240)
-                    } else {
-                        Color::rgb(230, 230, 230)
-                    },
+                    if checked { WARP3_ACCENT } else { WARP3_SURFACE },
                 );
                 layer.rect_outline(
                     mark_x.max(0) as usize,
                     mark_y.max(0) as usize,
                     22,
                     22,
-                    if checked {
-                        Color::rgb(20, 143, 189)
-                    } else if hover {
-                        Color::rgb(51, 181, 229)
+                    if checked || hover {
+                        WARP3_ACCENT
                     } else {
-                        Color::rgb(116, 116, 116)
+                        WARP3_MUTED
                     },
                 );
                 if checked {
@@ -1902,11 +1899,11 @@ impl Warp4Engine {
                 }
             } else {
                 let outer = if checked {
-                    Color::rgb(20, 143, 189)
+                    WARP3_ACCENT
                 } else if hover {
-                    Color::rgb(51, 181, 229)
+                    WARP3_ACCENT
                 } else {
-                    Color::rgb(112, 112, 112)
+                    WARP3_MUTED
                 };
                 layer.fill_circle(
                     (mark_x + 11).max(0) as usize,
@@ -1918,64 +1915,42 @@ impl Warp4Engine {
                     (mark_x + 11).max(0) as usize,
                     (mark_y + 11).max(0) as usize,
                     8,
-                    Color::rgb(245, 245, 245),
+                    WARP3_SURFACE,
                 );
                 if checked {
                     layer.fill_circle(
                         (mark_x + 11).max(0) as usize,
                         (mark_y + 11).max(0) as usize,
                         4,
-                        Color::rgb(51, 181, 229),
+                        WARP3_ACCENT,
                     );
                 }
             }
         } else if n.is("Switch") {
             let on = n.attr("checked") == "true";
-            let track = if self.hovered == Some(idx) {
-                Color::rgb(150, 190, 205)
-            } else {
-                Color::rgb(189, 189, 189)
-            };
+            let track = if on { WARP3_ACCENT } else { WARP3_BG };
             let sy = y + (n.h - 22).max(0) / 2;
-            layer.fill_rect(x.max(0) as usize, sy.max(0) as usize, 52, 22, track);
-            layer.rect_outline(
+            layer.rounded_rect_outline(
                 x.max(0) as usize,
                 sy.max(0) as usize,
                 52,
                 22,
-                Color::rgb(139, 139, 139),
+                11,
+                if on { WARP3_ACCENT } else { WARP3_MUTED },
+                track,
             );
-            if on {
-                layer.fill_rect(
-                    x.max(0) as usize,
-                    sy.max(0) as usize,
-                    28,
-                    22,
-                    Color::rgb(51, 181, 229),
-                );
-                layer.rect_outline(
-                    x.max(0) as usize,
-                    sy.max(0) as usize,
-                    52,
-                    22,
-                    Color::rgb(20, 143, 189),
-                );
-            }
             let tx = x + if on { 25 } else { 0 };
             layer.fill_rounded_rect(
                 tx.max(0) as usize,
                 (y + (n.h - 28).max(0) / 2).max(0) as usize,
                 28,
                 28,
-                2,
-                Color::rgb(245, 245, 245),
-            );
-            layer.rect_outline(
-                tx.max(0) as usize,
-                (y + (n.h - 28).max(0) / 2).max(0) as usize,
-                28,
-                28,
-                Color::rgb(133, 133, 133),
+                14,
+                if on {
+                    Color::rgb(255, 255, 255)
+                } else {
+                    Color::rgb(102, 102, 102)
+                },
             );
         } else if n.is("Spinner") || n.is("SearchView") {
             layer.fill_rect(
@@ -1984,9 +1959,9 @@ impl Warp4Engine {
                 w,
                 2,
                 if self.hovered == Some(idx) {
-                    Color::rgb(51, 181, 229)
+                    WARP3_ACCENT
                 } else {
-                    Color::rgb(153, 153, 153)
+                    WARP3_MUTED
                 },
             );
             if n.is("Spinner") {
@@ -2015,7 +1990,7 @@ impl Warp4Engine {
                     x + 7,
                     y + ((h as i32 - 19).max(0) / 2),
                     value,
-                    Color::rgb(34, 34, 34),
+                    WARP3_TEXT,
                     15.0,
                 );
                 // Native equivalent of the CSS select arrow.
@@ -2028,7 +2003,7 @@ impl Warp4Engine {
                         (ay + row).max(0) as usize,
                         width as usize,
                         1,
-                        Color::rgb(85, 85, 85),
+                        WARP3_MUTED,
                     );
                 }
             }
@@ -2040,9 +2015,9 @@ impl Warp4Engine {
                 w,
                 3,
                 if self.hovered == Some(idx) {
-                    Color::rgb(120, 170, 190)
+                    WARP3_ACCENT
                 } else {
-                    Color::rgb(167, 167, 167)
+                    WARP3_MUTED
                 },
             );
             let max = parse_i32(n.attr("max")).max(1);
@@ -2054,14 +2029,14 @@ impl Warp4Engine {
                     (cy - 1).max(0) as usize,
                     (px - x).max(0) as usize,
                     3,
-                    Color::rgb(51, 181, 229),
+                    WARP3_ACCENT,
                 );
             }
             layer.fill_circle(
                 px.max(0) as usize,
                 cy.max(0) as usize,
                 if self.hovered == Some(idx) { 10 } else { 9 },
-                Color::rgb(51, 181, 229),
+                WARP3_ACCENT,
             );
         } else if n.is("RatingBar") {
             let stars = parse_i32(n.attr("numStars")).max(1).min(10);
@@ -2069,9 +2044,9 @@ impl Warp4Engine {
             let hover = self.hovered == Some(idx);
             for star in 0..stars {
                 let color = if star as f32 + 0.5 <= rating {
-                    Color::rgb(51, 181, 229)
+                    WARP3_ACCENT
                 } else if hover {
-                    Color::rgb(130, 205, 225)
+                    Color::rgb(158, 190, 220)
                 } else {
                     Color::rgb(183, 183, 183)
                 };
@@ -2079,21 +2054,23 @@ impl Warp4Engine {
             }
         } else if n.is("ProgressBar") {
             if n.attr("style").contains("progressBarStyleHorizontal") || w > 80 {
-                layer.fill_rect(
+                layer.fill_rounded_rect(
                     x.max(0) as usize,
                     (y + 2).max(0) as usize,
                     w,
                     6,
-                    Color::rgb(208, 208, 208),
+                    3,
+                    WARP3_BORDER,
                 );
                 let max = parse_i32(n.attr("max")).max(1);
                 let progress = parse_i32(n.attr("progress")).clamp(0, max);
-                layer.fill_rect(
+                layer.fill_rounded_rect(
                     x.max(0) as usize,
                     (y + 2).max(0) as usize,
                     (w as i32 * progress / max) as usize,
                     6,
-                    Color::rgb(51, 181, 229),
+                    3,
+                    WARP3_ACCENT,
                 );
             } else {
                 let cx = (x + w as i32 / 2).max(0);
@@ -2107,49 +2084,31 @@ impl Warp4Engine {
                             let px = cx + dx;
                             let py = cy + dy;
                             if px >= 0 && py >= 0 {
-                                layer.fill_rect(
-                                    px as usize,
-                                    py as usize,
-                                    1,
-                                    1,
-                                    Color::rgb(51, 181, 229),
-                                );
+                                layer.fill_rect(px as usize, py as usize, 1, 1, WARP3_ACCENT);
                             }
                         }
                     }
                 }
             }
         } else if n.is("ImageView") {
-            layer.rect_outline(
-                x.max(0) as usize,
-                y.max(0) as usize,
-                w,
-                h,
-                Color::rgb(185, 185, 185),
-            );
+            layer.rect_outline(x.max(0) as usize, y.max(0) as usize, w, h, WARP3_BORDER);
         } else if n.is("ListView") || n.is("ExpandableListView") {
             for row in 0..(h / 44) {
                 let ry = y + row as i32 * 44;
-                layer.fill_rect(
-                    x.max(0) as usize,
-                    ry.max(0) as usize,
-                    w,
-                    43,
-                    Color::rgb(255, 255, 255),
-                );
+                layer.fill_rect(x.max(0) as usize, ry.max(0) as usize, w, 43, WARP3_SURFACE);
                 layer.fill_rect(
                     x.max(0) as usize,
                     (ry + 43).max(0) as usize,
                     w,
                     1,
-                    Color::rgb(229, 229, 229),
+                    WARP3_BORDER,
                 );
                 put_str_size(
                     layer,
                     x + 12,
                     ry + 12,
                     &format!("Item {}", row + 1),
-                    Color::rgb(34, 34, 34),
+                    WARP3_TEXT,
                     14.0,
                 );
             }
@@ -2218,7 +2177,7 @@ impl Warp4Engine {
                 (x + 8).max(0) as usize,
                 (y + 8).max(0) as usize,
                 n.attr("hint"),
-                Color::MUTED,
+                WARP3_MUTED,
             );
         }
         let child_scroll = in_scroll || is_scroll_container(n);
@@ -2245,14 +2204,14 @@ impl Warp4Engine {
                     (y + 1).max(0) as usize,
                     6,
                     track_h as usize,
-                    Color::rgb(245, 245, 245),
+                    WARP3_BG,
                 );
                 layer.fill_rect(
                     (x + n.w - 6).max(0) as usize,
                     (y + 1 + thumb_y).max(0) as usize,
                     6,
                     thumb_h as usize,
-                    Color::rgb(153, 153, 153),
+                    WARP3_MUTED,
                 );
             } else if n.is("HorizontalScrollView") && n.content_w > n.w {
                 let track_w = (n.w - 2).max(1);
@@ -2262,14 +2221,14 @@ impl Warp4Engine {
                     (y + n.h - 6).max(0) as usize,
                     track_w as usize,
                     6,
-                    Color::rgb(245, 245, 245),
+                    WARP3_BG,
                 );
                 layer.fill_rect(
                     (x + 1).max(0) as usize,
                     (y + n.h - 6).max(0) as usize,
                     thumb_w as usize,
                     6,
-                    Color::rgb(153, 153, 153),
+                    WARP3_MUTED,
                 );
             }
             layer.pop_clip();
@@ -2290,14 +2249,14 @@ impl Warp4Engine {
             w.max(1) as usize,
             h.max(1) as usize,
             2,
-            Color::rgb(250, 250, 250),
+            WARP3_SURFACE,
         );
         layer.rect_outline(
             x.max(0) as usize,
             y.max(TITLE_BAR) as usize,
             w.max(1) as usize,
             h.max(1) as usize,
-            Color::rgb(110, 110, 110),
+            WARP3_MUTED,
         );
         let selected = parse_i32(node.attr("selectedIndex")).max(0) as usize;
         let items = node.attr("items");
@@ -2309,7 +2268,7 @@ impl Warp4Engine {
                     row_y.max(TITLE_BAR) as usize,
                     (w - 2).max(1) as usize,
                     35,
-                    Color::rgb(222, 241, 248),
+                    Color::rgb(230, 240, 248),
                 );
             }
             let label = items
@@ -2322,7 +2281,7 @@ impl Warp4Engine {
                     2 => "Item 3",
                     _ => "Item 1",
                 });
-            put_str_size(layer, x + 8, row_y + 9, label, Color::rgb(34, 34, 34), 15.0);
+            put_str_size(layer, x + 8, row_y + 9, label, WARP3_TEXT, 15.0);
         }
     }
 
@@ -3016,15 +2975,15 @@ fn text_color(n: &Node) -> Color {
     }
     let style = n.attr("style");
     if style.contains("SectionDescription") {
-        Color::rgb(119, 119, 119)
+        WARP3_MUTED
     } else if style.contains("ComponentLabel") {
-        Color::rgb(85, 85, 85)
+        WARP3_MUTED
     } else {
-        Color::rgb(34, 34, 34)
+        WARP3_TEXT
     }
 }
-fn text_bold(n: &Node) -> bool {
-    n.attr("textStyle").contains("bold") || n.attr("style").contains("SectionTitle")
+fn text_bold(_n: &Node) -> bool {
+    false
 }
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
     if !ttf_font::is_available() {

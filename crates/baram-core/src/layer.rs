@@ -921,12 +921,15 @@ impl LayerSystem {
         }
         let r = r.min(w / 2).min(h / 2);
         self.fill_rounded_rect(x, y, w, h, r, c);
-        let inner_r = if r > 2 { r - 2 } else { 0 };
+        // Keep the outline one device pixel wide.  The native Warp3/Warp4
+        // controls use a one-pixel border; a two-pixel inset makes buttons
+        // and text fields look visibly heavier than their reference UI.
+        let inner_r = r.saturating_sub(1);
         self.fill_rounded_rect(
-            x + 2,
-            y + 2,
-            w.saturating_sub(4),
-            h.saturating_sub(4),
+            x + 1,
+            y + 1,
+            w.saturating_sub(2),
+            h.saturating_sub(2),
             inner_r,
             fill,
         );
