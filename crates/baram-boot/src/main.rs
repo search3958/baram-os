@@ -3686,6 +3686,9 @@ fn open_app(
         entry.title.as_str()
     };
     let win_id = wm.add(window_title, x, y, w, h);
+    if entry.app_type.starts_with("warp-4") {
+        wm.set_warp4_theme(win_id, true);
+    }
     if is_unsupported_ui_script {
         wm.set_icon(win_id, "redstar.png");
     } else {

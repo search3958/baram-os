@@ -330,6 +330,7 @@ fn draw_title_bar_background(
     width: usize,
     height: usize,
     _skip_blur: bool,
+    warp4_theme: bool,
 ) {
     // Title bars are intentionally opaque.  Progressive backdrop blur made
     // the title surface change while the window moved and differed from the
@@ -339,7 +340,11 @@ fn draw_title_bar_background(
         y,
         width,
         height,
-        config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+        if warp4_theme {
+            Color::rgb(250, 250, 252)
+        } else {
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG)
+        },
     );
 }
 
@@ -364,6 +369,9 @@ pub struct Window {
     pub z: i32,
     pub visible: bool,
     pub focused: bool,
+    /// Warp4 owns a per-window palette; Warp3 and system windows keep the
+    /// global window-server theme.
+    pub warp4_theme: bool,
     pub chrome_visible: bool,
     pub always_on_top: bool,
     pub focusable: bool,
@@ -424,6 +432,7 @@ impl Window {
             z,
             visible: true,
             focused: false,
+            warp4_theme: false,
             chrome_visible: true,
             always_on_top: false,
             focusable: true,
@@ -750,6 +759,16 @@ impl WindowManager {
         self.focus(id);
         self.order_changed = true;
         id
+    }
+
+    pub fn set_warp4_theme(&mut self, id: WinId, enabled: bool) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            if w.warp4_theme != enabled {
+                w.warp4_theme = enabled;
+                w.content_dirty = true;
+                w.shadow_dirty = true;
+            }
+        }
     }
 
     pub fn configure_special(
@@ -1881,7 +1900,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32, skip_bl
     }
 
     let tb_h = title_bar_h().min(h_draw);
-    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur, w.warp4_theme);
 
     let base_x = x as i32 + 10;
     let btn_y = y as i32 + 10;

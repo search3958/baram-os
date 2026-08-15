@@ -31,7 +31,15 @@ const WARP3_TEXT: Color = Color::rgb(26, 26, 26);
 const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
 const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
 const WARP3_BORDER_HOVER: Color = Color::rgb(158, 158, 158);
-const WARP3_ACCENT: Color = Color::rgb(0, 125, 255);
+const WARP3_ACCENT: Color = Color::rgb(0, 106, 255);
+const WARP4_BG: Color = Color::rgb(250, 250, 252);
+const WARP4_PRIMARY: Color = Color::rgb(0, 106, 255);
+const WARP4_BUTTON_BG: Color = Color::rgb(238, 238, 239);
+const WARP4_INPUT_BG: Color = Color::rgb(255, 255, 255);
+const WARP4_INPUT_BORDER: Color = Color::rgb(242, 242, 246);
+const WARP4_RADIO_OFF: Color = Color::rgb(231, 230, 230);
+const WARP4_WHITE: Color = Color::rgb(255, 255, 255);
+const WARP4_BLACK: Color = Color::rgb(0, 0, 0);
 const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
 const SCROLLBAR_THUMB: Color = Color::rgb(184, 184, 184);
 const SCROLLBAR_RADIUS: usize = 3;
@@ -1972,9 +1980,9 @@ impl Warp4Engine {
             } else if hover {
                 Color::rgb(0, 112, 232)
             } else {
-                WARP3_ACCENT
+                WARP4_PRIMARY
             };
-            layer.rounded_rect_outline(
+            layer.fill_rounded_rect(
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
@@ -1982,17 +1990,12 @@ impl Warp4Engine {
                 WARP4_CONTROL_RADIUS,
                 if primary {
                     primary_color
-                } else if active || hover {
-                    WARP3_BORDER_HOVER
-                } else {
-                    WARP3_BORDER
-                },
-                if primary {
-                    primary_color
+                } else if active {
+                    Color::rgb(224, 224, 226)
                 } else if hover {
-                    Color::rgb(255, 255, 255)
+                    Color::rgb(244, 244, 245)
                 } else {
-                    WARP3_SURFACE
+                    WARP4_BUTTON_BG
                 },
             );
         } else if n.is("EditText")
@@ -2005,18 +2008,14 @@ impl Warp4Engine {
                 w,
                 h,
                 WARP4_CONTROL_RADIUS,
-                if self.focused == Some(idx) || self.hovered == Some(idx) {
-                    WARP3_ACCENT
-                } else {
-                    WARP3_BORDER
-                },
-                WARP3_SURFACE,
+                WARP4_INPUT_BORDER,
+                WARP4_INPUT_BG,
             );
         } else if n.is("CheckBox") || n.is("RadioButton") {
             let checked = n.attr("checked") == "true";
             let hover = self.hovered == Some(idx);
             let mark_x = x + 2;
-            let mark_y = y + (n.h - 22).max(0) / 2;
+            let mark_y = y + (n.h - if n.is("RadioButton") { 18 } else { 22 }).max(0) / 2;
             if n.is("CheckBox") {
                 let border = if checked || hover {
                     WARP3_ACCENT
@@ -2042,31 +2041,25 @@ impl Warp4Engine {
                     .iter()
                     .any(|animation| animation.idx == idx)
                 {
-                    mix_color(WARP3_MUTED, WARP3_ACCENT, amount)
-                } else if checked || hover {
-                    WARP3_ACCENT
+                    mix_color(WARP4_RADIO_OFF, WARP4_PRIMARY, amount)
+                } else if checked {
+                    WARP4_PRIMARY
                 } else {
-                    WARP3_MUTED
+                    WARP4_RADIO_OFF
                 };
                 layer.fill_circle(
-                    (mark_x + 11).max(0) as usize,
-                    (mark_y + 11).max(0) as usize,
-                    11,
+                    (mark_x + 9).max(0) as usize,
+                    (mark_y + 9).max(0) as usize,
+                    9,
                     outer,
                 );
-                layer.fill_circle(
-                    (mark_x + 11).max(0) as usize,
-                    (mark_y + 11).max(0) as usize,
-                    9,
-                    WARP3_SURFACE,
-                );
-                let inner_radius = (6.0 * amount + 0.5) as usize;
+                let inner_radius = (4.0 * amount + 0.5) as usize;
                 if inner_radius > 0 {
                     layer.fill_circle(
-                        (mark_x + 11).max(0) as usize,
-                        (mark_y + 11).max(0) as usize,
+                        (mark_x + 9).max(0) as usize,
+                        (mark_y + 9).max(0) as usize,
                         inner_radius,
-                        WARP3_ACCENT,
+                        WARP4_WHITE,
                     );
                 }
             }
@@ -2289,8 +2282,10 @@ impl Warp4Engine {
                 x + (n.w - text_w) / 2
             } else {
                 x + pad.left
-                    + if n.is("CheckBox") || n.is("RadioButton") {
+                    + if n.is("CheckBox") {
                         32
+                    } else if n.is("RadioButton") {
+                        28
                     } else if n.is("Switch") {
                         55
                     } else {
@@ -3221,7 +3216,13 @@ fn text_color(n: &Node) -> Color {
         return color;
     }
     if n.is("PrimaryButton") {
-        return Color::rgb(255, 255, 255);
+        return WARP4_WHITE;
+    }
+    if n.is("Button") {
+        return WARP4_PRIMARY;
+    }
+    if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
+        return WARP4_BLACK;
     }
     let style = n.attr("style");
     if style.contains("SectionDescription") {
@@ -3530,5 +3531,5 @@ impl CalcParser {
     }
 }
 fn bg() -> Color {
-    config::get_color("ui-theme/color/bg", Color::BG)
+    WARP4_BG
 }
