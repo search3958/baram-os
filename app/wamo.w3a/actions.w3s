@@ -27,13 +27,13 @@ run = os://display/pointer?size=15
 fun = refreshPointer
 
 [onClick = open-calc]
-run = app://calc.w3a
+run = app://calc.w4a
 
 [onClick = open-note]
 run = app://note.warp
 
 [onClick = open-settings]
-run = app://settings.w3a
+run = app://settings.w4a
 
 [onClick = wait-action]
 setText wait-result = "待機中…"

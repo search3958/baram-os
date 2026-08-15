@@ -8,6 +8,7 @@ baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font" }
 baram-graphics = { path = "../baram-graphics" }
 baram-bsd = { path = "../baram-bsd" }
+baram-warp4 = { path = "../baram-warp4" }
 uefi = { workspace = true }
 libm = { workspace = true }
 png-decoder = { path = "../png-decoder" }

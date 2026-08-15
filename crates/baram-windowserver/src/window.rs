@@ -329,12 +329,23 @@ fn draw_title_bar_background(
     y: usize,
     width: usize,
     height: usize,
-    skip_blur: bool,
+    _skip_blur: bool,
+    warp4_theme: bool,
 ) {
-    if !skip_blur {
-        draw_title_bar_blur_layer(layer, x, y, width, height);
-    }
-    draw_title_bar_overlay(layer, x, y, width, height);
+    // Title bars are intentionally opaque.  Progressive backdrop blur made
+    // the title surface change while the window moved and differed from the
+    // Warp3/Warp4 native reference, so use a stable solid fill instead.
+    layer.fill_rect(
+        x,
+        y,
+        width,
+        height,
+        if warp4_theme {
+            Color::rgb(250, 250, 252)
+        } else {
+            config::get_color("ui-theme/color/win_bg", Color::WIN_BG)
+        },
+    );
 }
 
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
@@ -358,6 +369,9 @@ pub struct Window {
     pub z: i32,
     pub visible: bool,
     pub focused: bool,
+    /// Warp4 owns a per-window palette; Warp3 and system windows keep the
+    /// global window-server theme.
+    pub warp4_theme: bool,
     pub chrome_visible: bool,
     pub always_on_top: bool,
     pub focusable: bool,
@@ -418,6 +432,7 @@ impl Window {
             z,
             visible: true,
             focused: false,
+            warp4_theme: false,
             chrome_visible: true,
             always_on_top: false,
             focusable: true,
@@ -746,6 +761,16 @@ impl WindowManager {
         id
     }
 
+    pub fn set_warp4_theme(&mut self, id: WinId, enabled: bool) {
+        if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+            if w.warp4_theme != enabled {
+                w.warp4_theme = enabled;
+                w.content_dirty = true;
+                w.shadow_dirty = true;
+            }
+        }
+    }
+
     pub fn configure_special(
         &mut self,
         id: WinId,
@@ -1035,7 +1060,12 @@ impl WindowManager {
                 win.resize_sy = py;
                 win.resize_sw = win.w;
                 win.resize_sh = win.h;
-            } else {
+            } else if self
+                .windows
+                .iter()
+                .find(|w| w.id == id)
+                .map_or(false, |w| w.title_bar_hit(px, py))
+            {
                 let win = self.windows.iter_mut().find(|w| w.id == id).unwrap();
                 win.start_drag(px, py);
             }
@@ -1523,6 +1553,18 @@ impl WindowManager {
             .unwrap_or('n')
     }
 
+    pub fn title_bar_hit_at(&self, id: WinId, px: i32, py: i32) -> bool {
+        self.windows
+            .iter()
+            .find(|w| w.id == id)
+            .map(|w| w.title_bar_hit(px, py))
+            .unwrap_or(false)
+    }
+
+    pub fn has_pointer_capture(&self) -> bool {
+        self.windows.iter().any(|w| w.dragging || w.resizing)
+    }
+
     pub fn toggle_maximize_at(&mut self, id: WinId) {
         if self.interaction_blocked == Some(id) {
             return;
@@ -1858,7 +1900,7 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32, skip_bl
     }
 
     let tb_h = title_bar_h().min(h_draw);
-    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur);
+    draw_title_bar_background(layer, x, y, w_draw, tb_h, skip_blur, w.warp4_theme);
 
     let base_x = x as i32 + 10;
     let btn_y = y as i32 + 10;

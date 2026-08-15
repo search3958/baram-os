@@ -5,6 +5,7 @@
 
 extern crate alloc;
 
+use crate::text_cursor;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -393,6 +394,7 @@ pub struct Warp3Engine {
     screen_transition_started_ns: Option<u64>,
     screen_transition_offset_y: f32,
     animation_now_ns: u64,
+    caret_visible: bool,
     shadows: Vec<ShadowMask>,
     now: NowValues,
     last_clicked_class: Option<String>,
@@ -450,6 +452,7 @@ impl Warp3Engine {
             screen_transition_started_ns: None,
             screen_transition_offset_y: 0.0,
             animation_now_ns: 0,
+            caret_visible: true,
             shadows: Vec::new(),
             now: NowValues::default(),
             last_clicked_class: None,
@@ -500,11 +503,7 @@ impl Warp3Engine {
     /// present any number of suggestions without fixed empty placeholders.
     pub fn set_candidate_items(&mut self, mode: &str, candidates: &[String]) {
         self.set_element_text("candidate-mode", mode);
-        let Some(row) = self
-            .nodes
-            .iter()
-            .position(|node| node.is("candidate-row"))
-        else {
+        let Some(row) = self.nodes.iter().position(|node| node.is("candidate-row")) else {
             return;
         };
         while self.candidate_nodes.len() < candidates.len() {
@@ -775,11 +774,19 @@ impl Warp3Engine {
     /// Sample control transitions from absolute monotonic time. No layout is
     /// involved; only the old/new control damage rectangle is requested.
     pub fn tick(&mut self, now_ns: u64) -> bool {
+        let next_caret_visible = self
+            .focused_input
+            .map_or(true, |_| text_cursor::visible(now_ns));
+        let caret_changed = self.caret_visible != next_caret_visible;
+        self.caret_visible = next_caret_visible;
         if self.animation_now_ns == now_ns {
-            return false;
+            return caret_changed;
         }
         self.animation_now_ns = now_ns;
-        let mut changed = false;
+        let mut changed = caret_changed;
+        if caret_changed {
+            self.invalidate_nodes(self.focused_input, None);
+        }
         if self
             .script_wait_until_ns
             .is_some_and(|deadline| now_ns >= deadline)
@@ -897,6 +904,19 @@ impl Warp3Engine {
                 let idx = self.toolbar_paint[paint_index];
                 let node = &self.nodes[idx];
                 self.draw_node(layer, idx, node.x + ox, node.y + target_y as i32);
+            }
+        }
+        if let Some(idx) = self.focused_input {
+            if self.caret_visible && self.nodes.get(idx).is_some_and(|node| !node.hidden) {
+                let node = &self.nodes[idx];
+                let text = node.prop("text");
+                let caret_x = node.x + ox + 10 + measure(text);
+                let caret_y = if self.is_toolbar_tree(idx) {
+                    node.y + target_y as i32 + 7
+                } else {
+                    node.y - self.scroll + target_y as i32 + 7
+                };
+                text_cursor::draw(layer, caret_x, caret_y, 20, html_text());
             }
         }
         self.window_damage = None;
@@ -1060,16 +1080,53 @@ impl Warp3Engine {
                 // remainder. Every row is then centred on the same grid.
                 let children = self.nodes[idx].children.clone();
                 let gap = 6i32;
-                let requested: Vec<i32> = children.iter().map(|child| keyboard_key_width(&self.nodes[*child])).collect();
+                let requested: Vec<i32> = children
+                    .iter()
+                    .map(|child| keyboard_key_width(&self.nodes[*child]))
+                    .collect();
                 let gaps = gap * children.len().saturating_sub(1) as i32;
-                let space_count = children.iter().filter(|child| self.nodes[**child].classes.iter().any(|class| class == "space")).count() as i32;
-                let fixed = children.iter().zip(requested.iter()).filter(|(child, _)| !self.nodes[**child].classes.iter().any(|class| class == "space")).map(|(_, key_w)| *key_w).sum::<i32>() + gaps;
-                let available_space = if space_count > 0 { ((width - fixed) / space_count).max(requested.iter().copied().min().unwrap_or(44)) } else { 0 };
-                let total = if space_count > 0 { fixed + available_space * space_count } else { fixed };
+                let space_count = children
+                    .iter()
+                    .filter(|child| {
+                        self.nodes[**child]
+                            .classes
+                            .iter()
+                            .any(|class| class == "space")
+                    })
+                    .count() as i32;
+                let fixed = children
+                    .iter()
+                    .zip(requested.iter())
+                    .filter(|(child, _)| {
+                        !self.nodes[**child]
+                            .classes
+                            .iter()
+                            .any(|class| class == "space")
+                    })
+                    .map(|(_, key_w)| *key_w)
+                    .sum::<i32>()
+                    + gaps;
+                let available_space = if space_count > 0 {
+                    ((width - fixed) / space_count)
+                        .max(requested.iter().copied().min().unwrap_or(44))
+                } else {
+                    0
+                };
+                let total = if space_count > 0 {
+                    fixed + available_space * space_count
+                } else {
+                    fixed
+                };
                 let mut cx = x + ((width - total).max(0) / 2);
                 let mut max_h = 30;
                 for (child, mut key_w) in children.into_iter().zip(requested) {
-                    if self.nodes[child].classes.iter().any(|class| class == "space") { key_w = available_space; }
+                    if self.nodes[child]
+                        .classes
+                        .iter()
+                        .any(|class| class == "space")
+                    {
+                        key_w = available_space;
+                    }
                     set_prop(&mut self.nodes[child], "key-width", &key_w.to_string());
                     set_prop(&mut self.nodes[child], "key-center", "true");
                     let h = self.layout(child, cx, y, key_w);
@@ -1530,7 +1587,15 @@ impl Warp3Engine {
             } else {
                 x + 14
             };
-            (tx, y + if node.prop("key-center") == "true" { 6 } else { 8 }, color)
+            (
+                tx,
+                y + if node.prop("key-center") == "true" {
+                    6
+                } else {
+                    8
+                },
+                color,
+            )
         } else if node.is("input") || node.is("textarea") {
             (x + 10, y + 8, fg)
         } else if node.is("card") {
@@ -2294,11 +2359,19 @@ fn rounded_fill(
 
 fn keyboard_key_width(node: &Node) -> i32 {
     let fit = fit_button_width(measure(node.prop("text")) + 28, i32::MAX);
-    if node.classes.iter().any(|class| class == "backspace" || class == "enter") {
+    if node
+        .classes
+        .iter()
+        .any(|class| class == "backspace" || class == "enter")
+    {
         fit.max(76)
     } else if node.classes.iter().any(|class| class == "shift") {
         fit.max(76)
-    } else if node.classes.iter().any(|class| class == "symbols" || class == "letters") {
+    } else if node
+        .classes
+        .iter()
+        .any(|class| class == "symbols" || class == "letters")
+    {
         fit.max(64)
     } else if node.classes.iter().any(|class| class == "close") {
         fit.max(68)
@@ -2310,7 +2383,11 @@ fn keyboard_key_width(node: &Node) -> i32 {
 fn keyboard_row_natural_width(nodes: &[Node], row: usize) -> i32 {
     let children = &nodes[row].children;
     let gap = 6 * children.len().saturating_sub(1) as i32;
-    children.iter().map(|child| keyboard_key_width(&nodes[*child])).sum::<i32>() + gap
+    children
+        .iter()
+        .map(|child| keyboard_key_width(&nodes[*child]))
+        .sum::<i32>()
+        + gap
 }
 
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {

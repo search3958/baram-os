@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="16dip" baram:layout_gap="8dip">
+  <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="設定" baram:textSize="24sp" />
+  <Button baram:id="@+id/theme" baram:layout_width="fill_parent" baram:layout_height="52dip" baram:layout_marginTop="20dip" baram:text="テーマ" />
+  <Button baram:id="@+id/pointer" baram:layout_width="fill_parent" baram:layout_height="52dip" baram:text="マウスポインター" />
+  <Button baram:id="@+id/hud" baram:layout_width="fill_parent" baram:layout_height="52dip" baram:text="HUD" />
+  <Button baram:id="@+id/system" baram:layout_width="fill_parent" baram:layout_height="52dip" baram:text="システム" />
+</LinearLayout>

@@ -1,0 +1,39 @@
+WarpUI.OnClick tz_japan {
+    BaramOS run (os://system/timezone?+09:00)
+}
+WarpUI.OnClick tz_utc {
+    BaramOS run (os://system/timezone?+00:00)
+}
+WarpUI.OnClick tz_minus12 {
+    BaramOS run (os://system/timezone?-12:00)
+}
+WarpUI.OnClick tz_minus8 {
+    BaramOS run (os://system/timezone?-08:00)
+}
+WarpUI.OnClick tz_minus5 {
+    BaramOS run (os://system/timezone?-05:00)
+}
+WarpUI.OnClick tz_plus1 {
+    BaramOS run (os://system/timezone?+01:00)
+}
+WarpUI.OnClick tz_plus3 {
+    BaramOS run (os://system/timezone?+03:00)
+}
+WarpUI.OnClick tz_plus5 {
+    BaramOS run (os://system/timezone?+05:00)
+}
+WarpUI.OnClick tz_plus8 {
+    BaramOS run (os://system/timezone?+08:00)
+}
+WarpUI.OnClick tz_plus10 {
+    BaramOS run (os://system/timezone?+10:00)
+}
+WarpUI.OnClick tz_plus12 {
+    BaramOS run (os://system/timezone?+12:00)
+}
+WarpUI.OnClick reset {
+    BaramOS run (os://system/reset?option=all)
+}
+WarpUI.OnClick back {
+    WarpUI.screen (main)
+}

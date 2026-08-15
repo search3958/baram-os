@@ -5,9 +5,9 @@ app_source="${1:?app source directory is required}"
 archive_output="${2:?archive output directory is required}"
 
 mkdir -p "$archive_output"
-find "$archive_output" -maxdepth 1 -type f -name '*.w3a' -delete
+find "$archive_output" -maxdepth 1 -type f \( -name '*.w3a' -o -name '*.w4a' -o -name '*.s4a' \) -delete
 
-for app_directory in "$app_source"/*.w3a; do
+for app_directory in "$app_source"/*.w3a "$app_source"/*.w4a "$app_source"/*.s4a; do
     [ -d "$app_directory" ] || continue
     archive_name="$(basename "$app_directory")"
     # USTAR is deliberately used instead of platform-specific extended TAR

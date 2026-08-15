@@ -27,12 +27,29 @@ pub struct Warp3Archive {
     embedded: Option<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>>,
 }
 
+/// The archive transport is shared by the native Warp runtimes.  The alias
+/// keeps the Warp 4 crate independent from Warp 3's renderer while preserving
+/// one safe TAR/VFS reader in the OS layer.
+pub type Warp4Archive = Warp3Archive;
+
 impl Warp3Archive {
     pub fn open(app_name: &str) -> Self {
         let path = alloc::format!("apps/{app_name}");
+        let alias = if let Some(stem) = app_name.strip_suffix(".w4a") {
+            Some(alloc::format!("apps/{stem}.s4a"))
+        } else if let Some(stem) = app_name.strip_suffix(".s4a") {
+            Some(alloc::format!("apps/{stem}.w4a"))
+        } else {
+            None
+        };
+        let paths = if let Some(alias) = alias.as_deref() {
+            alloc::vec![path.as_str(), alias]
+        } else {
+            alloc::vec![path.as_str()]
+        };
         Self {
             app_name: alloc::string::String::from(app_name),
-            data: vfs::read_file(&path),
+            data: vfs::read_file_candidates(&paths),
             embedded: None,
         }
     }
@@ -191,6 +208,8 @@ pub fn parse_app_uri(uri: &str) -> Option<&str> {
             || name.ends_with(".html")
             || name.ends_with(".htm")
             || name.ends_with(".w3a")
+            || name.ends_with(".w4a")
+            || name.ends_with(".s4a")
             || name.ends_with(".u1"))
     {
         Some(name)
@@ -256,6 +275,8 @@ mod tests {
             Some("web-demo.html")
         );
         assert_eq!(parse_app_uri("app://warp3demo.w3a"), Some("warp3demo.w3a"));
+        assert_eq!(parse_app_uri("app://example.w4a"), Some("example.w4a"));
+        assert_eq!(parse_app_uri("app://example.s4a"), Some("example.s4a"));
         assert_eq!(parse_app_uri("app://config.ini"), None);
         assert_eq!(parse_app_uri("app://../config.xml"), None);
         assert_eq!(parse_app_uri("app://folder/demo.warp"), None);

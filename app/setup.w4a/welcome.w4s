@@ -1,0 +1,6 @@
+WarpUI.OnClick continue {
+    run (setup://continue)
+}
+WarpUI.OnClick skip {
+    run (setup://skip)
+}

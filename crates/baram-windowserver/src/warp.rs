@@ -1,6 +1,7 @@
 use baram_font::LayerFontExt;
 extern crate alloc;
 
+use crate::text_cursor;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -8,6 +9,7 @@ use baram_bsd::config;
 use baram_core::Color;
 use baram_core::LayerSystem;
 use baram_font::ttf_font;
+use baram_warp4::Warp4Engine;
 
 const MAX_VARS: usize = 256;
 const MAX_SCREENS: usize = 64;
@@ -92,6 +94,7 @@ struct ScreenInfo {
 }
 
 pub struct WarpEngine {
+    warp4: Option<Warp4Engine>,
     origin: String,
     state: Vec<(String, String)>,
     current_screen: String,
@@ -112,6 +115,7 @@ pub struct WarpEngine {
     pub focused_input: Option<usize>,
     pub focused_input_var: alloc::string::String,
     pub content_height: i32,
+    caret_visible: bool,
 }
 
 fn measure_text_width(text: &str, _size: f32) -> i32 {
@@ -133,6 +137,7 @@ fn measure_text_width(text: &str, _size: f32) -> i32 {
 impl WarpEngine {
     pub fn new(code: &str) -> Self {
         let mut ctx = Self {
+            warp4: None,
             origin: String::new(),
             state: Vec::new(),
             current_screen: String::new(),
@@ -153,6 +158,7 @@ impl WarpEngine {
             focused_input: None,
             focused_input_var: alloc::string::String::new(),
             content_height: 0,
+            caret_visible: true,
         };
         loop {
             let tk = ctx.next_token();
@@ -227,8 +233,31 @@ impl WarpEngine {
         ctx
     }
 
+    pub fn new_warp4(app_name: &str) -> Self {
+        let mut engine = Self::new("");
+        engine.warp4 = Some(Warp4Engine::new(app_name));
+        engine.origin = app_name.to_string();
+        engine
+    }
+
+    pub fn new_embedded_warp4(name: &str, sources: &[(&str, &str)]) -> Self {
+        let mut engine = Self::new("");
+        engine.warp4 = Some(Warp4Engine::new_embedded(name, sources));
+        engine.origin = name.to_string();
+        engine
+    }
+
     pub fn set_origin(&mut self, app_name: &str) {
         self.origin = String::from(app_name);
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_origin(app_name);
+        }
+    }
+
+    pub fn set_chrome_visible(&mut self, visible: bool) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_chrome_visible(visible);
+        }
     }
 
     pub fn origin(&self) -> &str {
@@ -236,6 +265,18 @@ impl WarpEngine {
     }
 
     pub fn update(&mut self, width: i32, height: i32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.update(width, height);
+            self.content_height = engine.content_height;
+            self.focused_input = engine.has_focused_input().then_some(0);
+            self.focused_input_var = if self.focused_input.is_some() {
+                "__warp4__".into()
+            } else {
+                String::new()
+            };
+            self.hover_idx = engine.hovered_node();
+            return;
+        }
         self.parse_current_screen();
         self.texts.clear();
         let root_nodes = self.root_nodes.clone();
@@ -250,7 +291,75 @@ impl WarpEngine {
         self.dirty = true;
     }
 
+    pub fn set_scroll(&mut self, scroll: i32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_scroll(scroll);
+        }
+    }
+
+    pub fn take_scroll_request(&mut self) -> Option<i32> {
+        self.warp4
+            .as_mut()
+            .and_then(|engine| engine.take_scroll_request())
+    }
+
+    pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
+        self.warp4
+            .as_ref()
+            .and_then(|engine| engine.window_damage())
+    }
+
+    pub fn has_focused_input(&self) -> bool {
+        self.warp4
+            .as_ref()
+            .is_some_and(|engine| engine.has_focused_input())
+            || self.focused_input.is_some()
+    }
+
+    pub fn set_runtime_metrics(&mut self, fps: u32, windows: usize, keys: u32, mouse: u32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_runtime_metrics(fps, windows, keys, mouse);
+        }
+    }
+
+    pub fn pointer_move(&mut self, x: i32, y: i32) -> bool {
+        let Some(engine) = self.warp4.as_mut() else {
+            return false;
+        };
+        engine.pointer_move(x, y)
+    }
+
+    pub fn has_pointer_capture(&self) -> bool {
+        self.warp4
+            .as_ref()
+            .is_some_and(Warp4Engine::has_pointer_capture)
+    }
+
+    pub fn tick(&mut self, now_ns: u64) -> bool {
+        if let Some(engine) = self.warp4.as_mut() {
+            let changed = engine.tick(now_ns);
+            if changed {
+                self.dirty = true;
+                self.content_height = engine.content_height;
+            }
+            return changed;
+        }
+        let next_visible = self
+            .focused_input
+            .map_or(true, |_| text_cursor::visible(now_ns));
+        let changed = self.caret_visible != next_visible;
+        self.caret_visible = next_visible;
+        if changed {
+            self.dirty = true;
+        }
+        changed
+    }
+
     pub fn set_screen(&mut self, screen: &str) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_screen(screen);
+            return;
+        }
         if self.current_screen != screen {
             self.current_screen = screen.chars().take(63).collect();
             self.parse_current_screen();
@@ -263,6 +372,32 @@ impl WarpEngine {
             let node = &self.nodes[idx];
             (node.x, node.y, node.w, node.h)
         })
+    }
+
+    pub fn content_height(&self) -> i32 {
+        self.warp4
+            .as_ref()
+            .map(|engine| engine.content_height)
+            .unwrap_or(0)
+    }
+
+    pub fn hovered_node(&self) -> Option<usize> {
+        self.warp4.as_ref().and_then(Warp4Engine::hovered_node)
+    }
+
+    pub fn set_text(&mut self, id: &str, text: &str) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_text(id, text);
+        }
+    }
+
+    pub fn set_candidate_items(&mut self, mode: &str, candidates: &[String]) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_text("candidate-mode", mode);
+            for (index, candidate) in candidates.iter().take(5).enumerate() {
+                engine.set_text(&alloc::format!("candidate-{index}"), candidate);
+            }
+        }
     }
 
     fn set_state(&mut self, key: &str, val: &str) {
@@ -1049,6 +1184,11 @@ impl WarpEngine {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_hover(x, y);
+            self.hover_idx = engine.hovered_node();
+            return;
+        }
         self.parse_current_screen();
         let tb_h = crate::window::title_bar_h() as i32;
         if y < tb_h {
@@ -1080,13 +1220,28 @@ impl WarpEngine {
     }
 
     pub fn clear_hover(&mut self) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.clear_hover();
+            self.hover_idx = None;
+            return;
+        }
         if self.hover_idx.is_some() {
             self.hover_idx = None;
             self.dirty = true;
         }
     }
 
-    pub fn draw_to_layer(&self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+    pub fn release(&mut self) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.release();
+        }
+    }
+
+    pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.draw_to_layer(layer, ox, oy);
+            return;
+        }
         let layer_w = layer.width() as i32;
         let layer_h = layer.height() as i32;
         for idx in 0..self.nodes.len() {
@@ -1201,9 +1356,34 @@ impl WarpEngine {
                 layer.put_str(draw_x, draw_y, line, t.color);
             }
         }
+        if let Some(idx) = self.focused_input {
+            if self.caret_visible && self.nodes.get(idx).is_some_and(|node| node.visible) {
+                let node = &self.nodes[idx];
+                let value = self.get_state(&self.parse_out_var(idx));
+                text_cursor::draw(
+                    layer,
+                    node.x + ox + 10 + measure_text_width(&value, 16.0),
+                    node.y + oy + 7,
+                    20,
+                    config::get_color("ui-theme/color/text", Color::TEXT),
+                );
+            }
+        }
     }
 
     pub fn click(&mut self, x: i32, y: i32) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.click(x, y);
+            self.hover_idx = engine.hovered_node();
+            self.focused_input = engine.has_focused_input().then_some(0);
+            self.focused_input_var = if self.focused_input.is_some() {
+                "__warp4__".into()
+            } else {
+                String::new()
+            };
+            self.last_command = engine.take_command();
+            return;
+        }
         self.parse_current_screen();
         self.last_clicked_id = None;
         let tb_h = crate::window::title_bar_h() as i32;
@@ -1265,10 +1445,17 @@ impl WarpEngine {
     /// Returns the last clicked control id without exposing an application
     /// command or URI. OS-owned Warp surfaces use this as their input bridge.
     pub fn take_clicked_id(&mut self) -> Option<String> {
+        if let Some(engine) = self.warp4.as_mut() {
+            return engine.take_clicked_id();
+        }
         self.last_clicked_id.take()
     }
 
     pub fn handle_key(&mut self, c: u8) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.handle_key(c);
+            return;
+        }
         if c == 0x08 || c == 0x7F {
             self.handle_text("", 1);
         } else if c >= 0x20 && c < 0x7F {
@@ -1281,6 +1468,10 @@ impl WarpEngine {
 
     /// Replaces the active IME composition and accepts UTF-8 text.
     pub fn handle_text(&mut self, text: &str, replace_chars: usize) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.handle_text(text, replace_chars);
+            return;
+        }
         if self.focused_input_var.is_empty() {
             self.focused_input = None;
             return;

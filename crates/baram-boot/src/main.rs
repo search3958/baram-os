@@ -15,9 +15,7 @@ use baram_core::{Color, LayerSystem, Screen};
 use baram_font::log_line_str;
 use baram_windowserver::compositor::*;
 use baram_windowserver::cursor;
-use baram_windowserver::soft_keyboard::{
-    Key as SoftKey, KeyboardLanguage, SoftKeyboard,
-};
+use baram_windowserver::soft_keyboard::{Key as SoftKey, KeyboardLanguage, SoftKeyboard};
 use baram_windowserver::window::{SmoothScroll, WinId, WindowManager};
 use wana_kana::ConvertJapanese;
 
@@ -611,9 +609,7 @@ fn keyboard_language(mode: InputMode) -> KeyboardLanguage {
         InputMode::Hiragana => KeyboardLanguage::Japanese,
         InputMode::Korean(KoreanLayout::Dubeolsik) => KeyboardLanguage::KoreanDubeolsik,
         InputMode::Korean(KoreanLayout::HancomRoman) => KeyboardLanguage::KoreanHancomRoman,
-        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => {
-            KeyboardLanguage::KoreanChosunDubeolsik
-        }
+        InputMode::Korean(KoreanLayout::ChosunDubeolsik) => KeyboardLanguage::KoreanChosunDubeolsik,
         InputMode::Pinyin => KeyboardLanguage::ChinesePinyin,
     }
 }
@@ -904,7 +900,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let setup_w = screen.width();
         let setup_h = screen.height();
-        let mut setup_engine = baram_windowserver::html::HtmlEngine::new_warp3("setup.w3a");
+        let mut setup_engine = baram_windowserver::warp::WarpEngine::new_warp4("setup.w4a");
+        setup_engine.set_chrome_visible(false);
         let mut setup_scene = LayerSystem::new(setup_w, setup_h);
         let mut setup_present = LayerSystem::new(setup_w, setup_h);
         let mut setup_surface = LayerSystem::new(528, 320);
@@ -943,7 +940,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // just as the desktop renderer does.
         let setup_clock = UiMonotonicClock::new();
         let mut setup_next_present_ms = 0u64;
-        setup_engine.set_warp3_screen(wizard.warp3_screen());
+        setup_engine.set_screen(wizard.warp3_screen());
         setup_engine.update(528, 320);
         NanoSystem::serial_log("baram: setup layout ready\r\n");
 
@@ -1009,7 +1006,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
             if wizard.take_dirty() {
                 setup_scroll = 0;
-                setup_engine.set_warp3_screen(wizard.warp3_screen());
+                setup_engine.set_screen(wizard.warp3_screen());
                 setup_engine.update(528, 320);
                 setup_engine.set_scroll(setup_scroll);
                 setup_scene_dirty = true;
@@ -1045,6 +1042,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     shadow.composite_onto(&mut setup_scene, setup_card.0, setup_card.1);
                 }
                 setup_engine.update(528, 320);
+                setup_surface.clear(Color::rgb(250, 250, 252));
                 setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
                 setup_scene.composit_rounded(
                     &setup_surface,
@@ -1061,6 +1059,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 // Scroll and hover changes only affect the setup card. Avoid
                 // rebuilding and copying the full blurred desktop per tick.
                 setup_engine.update(528, 320);
+                setup_surface.clear(Color::rgb(250, 250, 252));
                 setup_engine.draw_to_layer(&mut setup_surface, 0, 0);
                 setup_scene.composit_rounded(
                     &setup_surface,
@@ -1248,6 +1247,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
     let mut ui_clock = UiMonotonicClock::new();
     let mut next_present_ms: u64 = 0;
     let mut deferred_dirty = false;
+    let mut prev_text_cursor_visible = true;
 
     let mut tb_add_progress: f32 = -1.0f32;
     let mut tb_add_started_ms: Option<u64> = None;
@@ -1339,6 +1339,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         false,
         app_search_focused,
         &app_search_query,
+        baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
         app_launcher_scroll.position.max(0) as usize,
         0,
         0,
@@ -1388,6 +1389,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         false,
         app_search_focused,
         &app_search_query,
+        baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
         app_launcher_scroll.position.max(0) as usize,
         1,
         0,
@@ -1433,6 +1435,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         } else if ui_timer_fired {
             ui_time_ms = ui_time_ms.wrapping_add(1);
         }
+        let text_cursor_visible = baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000);
+        if app_search_focused && text_cursor_visible != prev_text_cursor_visible {
+            taskbar_surface.invalidate_search();
+            scene_dirty = true;
+            dirty = true;
+        }
+        prev_text_cursor_visible = text_cursor_visible;
 
         match baram_bsd::uri::check_system_commands(&mut display_state) {
             baram_bsd::uri::SystemCommand::ResetAll => {
@@ -1552,8 +1561,8 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                             let nx = (screen.width() as i32 - 400) / 2;
                             let ny = (screen.height() as i32 - 300) / 2;
                             let win_id = wm.add("マウスキー", nx, ny, 400, 300);
-                            let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(
-                                "mousekeydialog.w3a",
+                            let mut engine = baram_windowserver::html::HtmlEngine::new_warp4(
+                                "mousekeydialog.w4a",
                             );
                             engine.update(380, 260);
                             html_engines.push((win_id, engine));
@@ -1963,7 +1972,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 _ => {
                                     if wm.resize_hit_at(id, cx, cy) {
                                         wm.start_resize_at(id, cx, cy);
-                                    } else {
+                                    } else if wm.title_bar_hit_at(id, cx, cy) {
                                         wm.start_drag_at(id, cx, cy);
                                     }
                                 }
@@ -1986,6 +1995,13 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                         };
                                         if rel_y >= tb_h {
                                             let warp_y = rel_y + scroll;
+                                            engine.set_scroll(scroll);
+                                            engine.set_runtime_metrics(
+                                                fps,
+                                                wm.count(),
+                                                key_ev_count,
+                                                mouse_ev_count,
+                                            );
                                             engine.click(rel_x, warp_y);
                                             let content_h = wh.saturating_sub(tb_h as usize);
                                             engine.update(ww as i32, content_h as i32);
@@ -2167,11 +2183,43 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     mouse_down = false;
                     soft_keyboard.end_drag();
                     wm.on_mouse_up();
+                    for (_, engine) in warp_engines.iter_mut() {
+                        engine.release();
+                    }
                     scene_dirty = true;
                 }
 
                 if mouse_down {
-                    wm.on_mouse_drag(cx, cy);
+                    let mut warp_control_drag = false;
+                    if let Some(drag_id) = wm.window_at(cx, cy) {
+                        if !wm.is_interaction_blocked(drag_id) {
+                            if let Some((wx, wy, _ww, _wh, scroll)) = wm.get_window_rect(drag_id) {
+                                let rel_x = cx - wx;
+                                let rel_y = cy - wy;
+                                let tb_h = if wm.is_focusable(drag_id) {
+                                    baram_windowserver::window::title_bar_h() as i32
+                                } else {
+                                    0
+                                };
+                                if rel_y >= tb_h {
+                                    for (wid, engine) in warp_engines.iter_mut() {
+                                        if *wid == drag_id && engine.has_pointer_capture() {
+                                            engine.set_scroll(scroll);
+                                            if engine.pointer_move(rel_x, rel_y + scroll) {
+                                                wm.set_content_dirty(drag_id);
+                                                warp_control_drag = true;
+                                                scene_dirty = true;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !warp_control_drag && wm.has_pointer_capture() {
+                        wm.on_mouse_drag(cx, cy);
+                    }
                     scene_dirty = true;
                 }
 
@@ -2729,6 +2777,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                                 let rel_y = cursor_y - wy;
                                 let tb_h = baram_windowserver::window::title_bar_h() as i32;
                                 let prev_hover = engine.hover_idx;
+                                engine.set_scroll(scroll);
                                 if rel_y >= tb_h {
                                     let warp_y = rel_y + scroll;
                                     engine.set_hover(rel_x, warp_y);
@@ -2793,35 +2842,22 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // this clock, without a runtime-service call in the render hot path.
         let mut deferred_html_commands = alloc::vec::Vec::new();
         let runtime_window_count = wm.count();
-        let keyboard_context_changed = if let Some((_, candidates, _)) =
-            japanese_ime.conversion_view()
-        {
-            soft_keyboard.set_input_context(
-                keyboard_language(input_mode),
-                candidates,
-            )
-        } else if let Some((_, candidates, _)) = pinyin_ime.conversion_view() {
-            soft_keyboard.set_input_context(
-                keyboard_language(input_mode),
-                candidates,
-            )
-        } else if soft_keyboard.is_open() {
-            if let Some((_, candidates)) = japanese_ime.prediction_view() {
-                soft_keyboard.set_input_context(
-                    keyboard_language(input_mode),
-                    candidates,
-                )
-            } else if let Some((_, candidates)) = pinyin_ime.prediction_view() {
-                soft_keyboard.set_input_context(
-                    keyboard_language(input_mode),
-                    candidates,
-                )
+        let keyboard_context_changed =
+            if let Some((_, candidates, _)) = japanese_ime.conversion_view() {
+                soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+            } else if let Some((_, candidates, _)) = pinyin_ime.conversion_view() {
+                soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+            } else if soft_keyboard.is_open() {
+                if let Some((_, candidates)) = japanese_ime.prediction_view() {
+                    soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+                } else if let Some((_, candidates)) = pinyin_ime.prediction_view() {
+                    soft_keyboard.set_input_context(keyboard_language(input_mode), candidates)
+                } else {
+                    soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
+                }
             } else {
                 soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
-            }
-        } else {
-            soft_keyboard.set_input_context(keyboard_language(input_mode), &[])
-        };
+            };
         if keyboard_context_changed {
             scene_dirty = true;
             dirty = true;
@@ -2838,6 +2874,17 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                 } else {
                     wm.set_content_dirty(*wid);
                 }
+                scene_dirty = true;
+                dirty = true;
+            }
+            if let Some(command) = engine.last_command.take() {
+                deferred_html_commands.push((command, engine.origin().to_string(), *wid));
+            }
+        }
+        for (wid, engine) in warp_engines.iter_mut() {
+            engine.set_runtime_metrics(fps, runtime_window_count, key_ev_count, mouse_ev_count);
+            if engine.tick(motion_now_ns) {
+                wm.set_content_dirty(*wid);
                 scene_dirty = true;
                 dirty = true;
             }
@@ -2925,9 +2972,10 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         }
 
         for (wid, engine) in warp_engines.iter_mut() {
-            if let Some((_, _, ww, wh, _)) = wm.get_window_rect(*wid) {
-                let content_h = wh.saturating_sub(30);
+            if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
+                let content_h = wh.saturating_sub(baram_windowserver::window::title_bar_h());
                 engine.update(ww as i32, content_h as i32);
+                engine.set_scroll(scroll);
                 wm.clamp_window_scroll(*wid, engine.content_height);
             }
         }
@@ -3225,6 +3273,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                     ime_hover_dirty,
                     app_search_focused,
                     &app_search_query,
+                    baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
                     app_launcher_scroll.position.max(0) as usize,
                     launcher_anim_phase,
                     launcher_anim_elapsed_ms,
@@ -3277,6 +3326,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
                         ime_hover_dirty,
                         app_search_focused,
                         &app_search_query,
+                        baram_windowserver::text_cursor::visible(ui_time_ms * 1_000_000),
                         app_launcher_scroll.position.max(0) as usize,
                         launcher_anim_phase,
                         launcher_anim_elapsed_ms,
@@ -3658,6 +3708,9 @@ fn open_app(
         entry.title.as_str()
     };
     let win_id = wm.add(window_title, x, y, w, h);
+    if entry.app_type.starts_with("warp-4") {
+        wm.set_warp4_theme(win_id, true);
+    }
     if is_unsupported_ui_script {
         wm.set_icon(win_id, "redstar.png");
     } else {
@@ -3665,7 +3718,11 @@ fn open_app(
     }
     let content_h = h.saturating_sub(baram_windowserver::window::title_bar_h());
 
-    if entry.app_type.starts_with("warp-3") {
+    if entry.app_type.starts_with("warp-4") {
+        let mut engine = baram_windowserver::warp::WarpEngine::new_warp4(&entry.name);
+        engine.update(w as i32, content_h as i32);
+        warp_engines.push((win_id, engine));
+    } else if entry.app_type.starts_with("warp-3") {
         let mut engine = baram_windowserver::html::HtmlEngine::new_warp3(&entry.name);
         engine.update(w as i32, content_h as i32);
         html_engines.push((win_id, engine));
@@ -3718,7 +3775,7 @@ fn handle_navigation(
         let Some(pending) = pending_permission.take() else {
             return NavigationEffect::None;
         };
-        if source_win_id != pending.dialog_win_id || origin != "ospermission.w3a" {
+        if source_win_id != pending.dialog_win_id || origin != "ospermission.w4a" {
             *pending_permission = Some(pending);
             return NavigationEffect::None;
         }
@@ -3828,7 +3885,7 @@ fn authorize_os_setting(
 
     let dialog_win_id = wm.add("操作体系設定の変更", x, y, 520, 360);
     wm.set_icon(dialog_win_id, "redstar.png");
-    let mut dialog = baram_windowserver::html::HtmlEngine::new_warp3("ospermission.w3a");
+    let mut dialog = baram_windowserver::html::HtmlEngine::new_warp4("ospermission.w4a");
     dialog.set_warp3_text("app-name", &alloc::format!("アプリ: {origin}"));
     dialog.set_warp3_text("request-path", command);
     dialog.update(

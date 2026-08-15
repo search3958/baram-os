@@ -1,0 +1,9 @@
+WarpUI.OnClick permission-deny {
+    run (security://deny)
+}
+WarpUI.OnClick permission-once {
+    run (security://once)
+}
+WarpUI.OnClick permission-always {
+    run (security://always)
+}

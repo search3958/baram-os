@@ -1,9 +1,0 @@
-[fun = refreshValues]
-setText fps-value = now://fps
-setText window-value = now://window
-setText key-value = now://key
-setText mouse-value = now://mouse
-setText hhmmss-value = now://hhmmss
-
-[onClick = refresh-values]
-fun = refreshValues

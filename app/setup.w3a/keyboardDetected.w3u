@@ -1,6 +1,0 @@
-config { title("初期設定") script("setup.w3s") }
-
-head { text("完了") }
-text { text("Enterキーまたは完了ボタンでセットアップを終了します") }
-
-button.finish { text("完了") type("primary") }

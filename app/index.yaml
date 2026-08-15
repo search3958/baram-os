@@ -1,17 +1,17 @@
 autostart:
-  - settings.w3a
+  - settings.w4a
 
 apps:
-  settings.w3a:
+  settings.w4a:
     icon: settings.png
-    type: warp-3
+    type: warp-4
     title: 設定
     tag:
       - settings
       - control panel
-  theme.w3a:
+  theme.w4a:
     icon: theme.png
-    type: warp-3
+    type: warp-4
     title: カスタマイズ
     tag:
       - theme
@@ -29,14 +29,14 @@ apps:
       - note
       - memo
       - text edit
-  task.w3a:
+  task.w4a:
     icon: manager.png
-    type: warp-3
+    type: warp-4
     title: タスクマネージャー
     tag: task manager
-  calc.w3a:
+  calc.w4a:
     icon: calc.png
-    type: warp-3
+    type: warp-4
     title: 計算機
     tag: calc
   webdemo.html:
@@ -51,3 +51,11 @@ apps:
     icon: warp.png
     type: warp-3
     title: Warp 3 機能ラボ
+  example.w4a:
+    icon: warp.png
+    type: warp-4
+    title: Warp 4 機能ラボ
+  warp4test.w4a:
+    icon: warp.png
+    type: warp-4
+    title: API1互換XML テスト

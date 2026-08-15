@@ -1,0 +1,71 @@
+var.set expression ()
+var.set result (0)
+fun refresh {
+    WarpUI.text expression (var[expression])
+}
+WarpUI.OnClick d0 {
+    var.edit expression (append 0)
+    fun refresh
+}
+WarpUI.OnClick d1 {
+    var.edit expression (append 1)
+    fun refresh
+}
+WarpUI.OnClick d2 {
+    var.edit expression (append 2)
+    fun refresh
+}
+WarpUI.OnClick d3 {
+    var.edit expression (append 3)
+    fun refresh
+}
+WarpUI.OnClick d4 {
+    var.edit expression (append 4)
+    fun refresh
+}
+WarpUI.OnClick d5 {
+    var.edit expression (append 5)
+    fun refresh
+}
+WarpUI.OnClick d6 {
+    var.edit expression (append 6)
+    fun refresh
+}
+WarpUI.OnClick d7 {
+    var.edit expression (append 7)
+    fun refresh
+}
+WarpUI.OnClick d8 {
+    var.edit expression (append 8)
+    fun refresh
+}
+WarpUI.OnClick d9 {
+    var.edit expression (append 9)
+    fun refresh
+}
+WarpUI.OnClick add {
+    var.edit expression (append +)
+    fun refresh
+}
+WarpUI.OnClick sub {
+    var.edit expression (append -)
+    fun refresh
+}
+WarpUI.OnClick mul {
+    var.edit expression (append *)
+    fun refresh
+}
+WarpUI.OnClick div {
+    var.edit expression (append /)
+    fun refresh
+}
+WarpUI.OnClick eq {
+    var.edit result (calc[var[expression]])
+    WarpUI.text result (var[result])
+}
+WarpUI.OnClick clear {
+    var.edit expression ()
+    var.edit result (0)
+    WarpUI.text expression ()
+    WarpUI.text result (0)
+}

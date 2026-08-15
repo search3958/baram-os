@@ -1,0 +1,27 @@
+WarpUI.OnClick wall_baram {
+    BaramOS run (os://display/wallpaper?file=baram&mode=file)
+}
+WarpUI.OnClick wall_hanul {
+    BaramOS run (os://display/wallpaper?file=hanul&mode=file)
+}
+WarpUI.OnClick wall_reflect {
+    BaramOS run (os://display/wallpaper?file=reflect&mode=file)
+}
+WarpUI.OnClick color_white {
+    BaramOS run (os://display/wallpaper?color=#FFFFFF&mode=color)
+}
+WarpUI.OnClick color_black {
+    BaramOS run (os://display/wallpaper?color=#000000&mode=color)
+}
+WarpUI.OnClick color_gray {
+    BaramOS run (os://display/wallpaper?color=#808080&mode=color)
+}
+WarpUI.OnClick color_blue {
+    BaramOS run (os://display/wallpaper?color=#0066FF&mode=color)
+}
+WarpUI.OnClick color_green {
+    BaramOS run (os://display/wallpaper?color=#00AA00&mode=color)
+}
+WarpUI.OnClick color_red {
+    BaramOS run (os://display/wallpaper?color=#FF0000&mode=color)
+}

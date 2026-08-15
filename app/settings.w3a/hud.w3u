@@ -1,8 +1,0 @@
-config { title("HUD設定") script("settings.w3s") }
-head { text("HUD設定") }
-button.back { text("戻る") type("tonal") }
-card {
-    text("HUD")
-    text { text("ステータスバーに表示されます") }
-    switch.hud-toggle { default("true") }
-}

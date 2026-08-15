@@ -1,6 +1,0 @@
-config { title("設定") script("settings.w3s") }
-head { text("設定") }
-button.nav-theme { text("テーマ") }
-button.nav-pointer { text("マウスポインター") }
-button.nav-hud { text("HUD") }
-button.nav-system { text("システム") }
