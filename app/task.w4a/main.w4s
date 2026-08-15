@@ -1,9 +1,14 @@
 fun refresh {
-    WarpUI.text fps_value (FPS: now://fps)
-    WarpUI.text time_value (now://hhmmss)
-    WarpUI.text window_value (ウィンドウ数: now://window)
-    WarpUI.text key_value (キーイベント数: now://key)
-    WarpUI.text mouse_value (マウスイベント数: now://mouse)
+    BaramOS.get fps (now://fps)
+    BaramOS.get clock (now://hhmmss)
+    BaramOS.get windows (now://window)
+    BaramOS.get keys (now://key)
+    BaramOS.get mouse (now://mouse)
+    WarpUI.text fps_value (FPS: var[fps])
+    WarpUI.text time_value (var[clock])
+    WarpUI.text window_value (ウィンドウ数: var[windows])
+    WarpUI.text key_value (キーイベント数: var[keys])
+    WarpUI.text mouse_value (マウスイベント数: var[mouse])
 }
 fun refresh
 WarpUI.OnClick refresh {

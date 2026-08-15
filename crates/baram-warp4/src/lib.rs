@@ -1046,8 +1046,12 @@ impl Warp4Engine {
                     .strip_prefix("os://")
                     .unwrap_or(value.trim())
                     .trim_start_matches("--");
-                let current = config::get_config().get(path).unwrap_or("");
-                self.set_state(target.trim(), current);
+                let current = if let Some(now_path) = path.strip_prefix("now://") {
+                    self.now_value(now_path).unwrap_or_default()
+                } else {
+                    config::get_config().get(path).unwrap_or("").to_string()
+                };
+                self.set_state(target.trim(), &current);
             }
             "WarpUI.text" => {
                 if let Some(i) = self.find(target) {
@@ -1119,9 +1123,6 @@ impl Warp4Engine {
             .to_string();
         if s == "()" {
             return String::new();
-        }
-        if let Some(path) = s.strip_prefix("now://") {
-            return self.now_value(path).unwrap_or_default();
         }
         for _ in 0..128 {
             let mut next = String::new();
@@ -1207,6 +1208,9 @@ impl Warp4Engine {
             "window" | "windows" => self.runtime_windows.to_string(),
             "key" | "keys" => self.runtime_keys.to_string(),
             "mouse" => self.runtime_mouse.to_string(),
+            "h" => hour.to_string(),
+            "m" => minute.to_string(),
+            "s" => second.to_string(),
             "hh" => format!("{hour:02}"),
             "mm" => format!("{minute:02}"),
             "ss" => format!("{second:02}"),
@@ -1268,6 +1272,13 @@ impl Warp4Engine {
             let inner_x = self.nodes[idx].x + pad.left;
             let inner_y = self.nodes[idx].y + pad.top;
             let children = self.nodes[idx].children.clone();
+            // Match Warp3's native row/section spacing when an XML layout
+            // does not specify a gap explicitly.
+            let layout_gap = parse_dim(self.nodes[idx].attr("layout_gap"), 8).max(0);
+            let visible_children = children
+                .iter()
+                .filter(|child| self.nodes[**child].visible())
+                .count();
             let mut fixed = 0;
             let mut weights = 0i32;
             for &child in &children {
@@ -1284,6 +1295,7 @@ impl Warp4Engine {
                     fixed += self.intrinsic_h(child, inner_w) + e.top + e.bottom;
                 }
             }
+            fixed += layout_gap * visible_children.saturating_sub(1) as i32;
             let inner_h = own_h.unwrap_or_else(|| {
                 if horizontal {
                     self.intrinsic_h(idx, available_w)
@@ -1333,7 +1345,7 @@ impl Warp4Engine {
                         true,
                     );
                     self.nodes[child].y = inner_y + cross + e.top;
-                    cursor += self.nodes[child].w + e.left + e.right;
+                    cursor += self.nodes[child].w + e.left + e.right + layout_gap;
                 } else {
                     self.layout(
                         child,
@@ -1350,7 +1362,7 @@ impl Warp4Engine {
                         false,
                     );
                     self.nodes[child].x = inner_x + cross + e.left;
-                    cursor += self.nodes[child].h + e.top + e.bottom;
+                    cursor += self.nodes[child].h + e.top + e.bottom + layout_gap;
                 }
             }
         } else if tag == "ScrollView" || tag == "HorizontalScrollView" {
