@@ -900,7 +900,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         let mut wizard = baram_bsd::setup::SetupWizard::new();
         let setup_w = screen.width();
         let setup_h = screen.height();
-        let mut setup_engine = baram_windowserver::html::HtmlEngine::new_warp3("setup.w3a");
+        let mut setup_engine = baram_windowserver::warp::WarpEngine::new_warp4("setup.w4a");
         let mut setup_scene = LayerSystem::new(setup_w, setup_h);
         let mut setup_present = LayerSystem::new(setup_w, setup_h);
         let mut setup_surface = LayerSystem::new(528, 320);
@@ -939,7 +939,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
         // just as the desktop renderer does.
         let setup_clock = UiMonotonicClock::new();
         let mut setup_next_present_ms = 0u64;
-        setup_engine.set_warp3_screen(wizard.warp3_screen());
+        setup_engine.set_screen(wizard.warp3_screen());
         setup_engine.update(528, 320);
         NanoSystem::serial_log("baram: setup layout ready\r\n");
 
@@ -1005,7 +1005,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
             cursor_y = cursor_y.max(0).min(screen.height() as i32 - 1);
             if wizard.take_dirty() {
                 setup_scroll = 0;
-                setup_engine.set_warp3_screen(wizard.warp3_screen());
+                setup_engine.set_screen(wizard.warp3_screen());
                 setup_engine.update(528, 320);
                 setup_engine.set_scroll(setup_scroll);
                 setup_scene_dirty = true;

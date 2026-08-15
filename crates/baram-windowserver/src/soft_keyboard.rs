@@ -1,4 +1,4 @@
-//! OS-owned, topmost software keyboard rendered by Warp 3.
+//! OS-owned, topmost software keyboard rendered by native Warp 4.
 //!
 //! This is neither a window nor an application. Its embedded Warp 3 resources
 //! never enter app discovery or the VFS, while emitted keys go straight to the
@@ -11,7 +11,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use baram_core::LayerSystem;
 
-use crate::warp3::Warp3Engine;
+use crate::warp::WarpEngine;
 
 pub const WIDTH: usize = 720;
 pub const HEIGHT: usize = 252;
@@ -78,7 +78,7 @@ enum Page {
 }
 
 pub struct SoftKeyboard {
-    engine: Warp3Engine,
+    engine: WarpEngine,
     surface: LayerSystem,
     page: Page,
     language: KeyboardLanguage,
@@ -244,7 +244,7 @@ impl SoftKeyboard {
         self.pressed_started_ns = None;
         self.engine.click(local_x, local_y);
         self.surface_dirty = true;
-        let id = self.engine.take_clicked_class()?;
+        let id = self.engine.take_clicked_id()?;
         match id.as_str() {
             "candidate-mode" => None,
             "close" => Some(Key::Close),
@@ -312,10 +312,10 @@ impl SoftKeyboard {
         if self.dragging || self.pressed {
             return false;
         }
-        let previous = self.engine.hover_token();
-        let _ = (x, y, sw, sh);
-        self.engine.clear_hover();
-        let changed = previous != self.engine.hover_token();
+        let previous = self.engine.hovered_node();
+        let (kx, ky, _, _) = self.bounds(sw, sh);
+        self.engine.set_hover(x - kx, y - ky);
+        let changed = previous != self.engine.hovered_node();
         self.surface_dirty |= changed;
         changed
     }
@@ -416,12 +416,24 @@ impl SoftKeyboard {
     }
 }
 
-fn engine_for(main: &'static str) -> Warp3Engine {
-    Warp3Engine::new_embedded(
+fn engine_for(main: &'static str) -> WarpEngine {
+    let source = if main == LOWER {
+        W4_LOWER
+    } else if main == UPPER {
+        W4_UPPER
+    } else {
+        W4_SYMBOLS
+    };
+    WarpEngine::new_embedded_warp4(
         "os-soft-keyboard",
-        &[("config.ini", CONFIG), ("main.w3u", main)],
+        &[("config.ini", W4_CONFIG), ("main.w4u", source)],
     )
 }
+
+const W4_CONFIG: &str = "version=4\nscreen=main\nname=Software Keyboard\n";
+const W4_LOWER: &str = r#"<?xml version="1.0"?><LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="6dip" baram:layout_gap="4dip"><LinearLayout baram:layout_width="fill_parent" baram:layout_height="30dip" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/candidate-mode" baram:layout_width="120dip" baram:layout_height="30dip" baram:text="English"/><Button baram:id="@+id/candidate-0" baram:layout_width="0dip" baram:layout_height="30dip" baram:layout_weight="1" baram:text=""/><Button baram:id="@+id/candidate-1" baram:layout_width="0dip" baram:layout_height="30dip" baram:layout_weight="1" baram:text=""/><Button baram:id="@+id/candidate-2" baram:layout_width="0dip" baram:layout_height="30dip" baram:layout_weight="1" baram:text=""/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/q" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="q"/><Button baram:id="@+id/w" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="w"/><Button baram:id="@+id/e" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="e"/><Button baram:id="@+id/r" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="r"/><Button baram:id="@+id/t" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="t"/><Button baram:id="@+id/y" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="y"/><Button baram:id="@+id/u" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="u"/><Button baram:id="@+id/i" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="i"/><Button baram:id="@+id/o" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="o"/><Button baram:id="@+id/p" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="p"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/a" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="a"/><Button baram:id="@+id/s" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="s"/><Button baram:id="@+id/d" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="d"/><Button baram:id="@+id/f" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="f"/><Button baram:id="@+id/g" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="g"/><Button baram:id="@+id/h" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="h"/><Button baram:id="@+id/j" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="j"/><Button baram:id="@+id/k" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="k"/><Button baram:id="@+id/l" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="l"/><Button baram:id="@+id/backspace" baram:layout_width="90dip" baram:layout_height="fill_parent" baram:text="Back"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/shift" baram:layout_width="80dip" baram:layout_height="fill_parent" baram:text="Shift"/><Button baram:id="@+id/z" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="z"/><Button baram:id="@+id/x" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="x"/><Button baram:id="@+id/c" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="c"/><Button baram:id="@+id/v" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="v"/><Button baram:id="@+id/b" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="b"/><Button baram:id="@+id/n" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="n"/><Button baram:id="@+id/m" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="m"/><Button baram:id="@+id/enter" baram:layout_width="90dip" baram:layout_height="fill_parent" baram:text="Enter"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/symbols" baram:layout_width="70dip" baram:layout_height="fill_parent" baram:text="123"/><Button baram:id="@+id/comma" baram:layout_width="55dip" baram:layout_height="fill_parent" baram:text=","/><Button baram:id="@+id/space" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="Space"/><Button baram:id="@+id/period" baram:layout_width="55dip" baram:layout_height="fill_parent" baram:text="."/><Button baram:id="@+id/close" baram:layout_width="70dip" baram:layout_height="fill_parent" baram:text="完了"/></LinearLayout></LinearLayout>"#;
+const W4_UPPER: &str = W4_LOWER;
+const W4_SYMBOLS: &str = r#"<?xml version="1.0"?><LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="6dip" baram:layout_gap="4dip"><LinearLayout baram:layout_width="fill_parent" baram:layout_height="30dip" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/candidate-mode" baram:layout_width="120dip" baram:layout_height="30dip" baram:text="Symbols"/><Button baram:id="@+id/candidate-0" baram:layout_width="0dip" baram:layout_height="30dip" baram:layout_weight="1"/><Button baram:id="@+id/candidate-1" baram:layout_width="0dip" baram:layout_height="30dip" baram:layout_weight="1"/><Button baram:id="@+id/candidate-2" baram:layout_width="0dip" baram:layout_height="30dip" baram:layout_weight="1"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/1" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="1"/><Button baram:id="@+id/2" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="2"/><Button baram:id="@+id/3" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="3"/><Button baram:id="@+id/4" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="4"/><Button baram:id="@+id/5" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="5"/><Button baram:id="@+id/6" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="6"/><Button baram:id="@+id/7" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="7"/><Button baram:id="@+id/8" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="8"/><Button baram:id="@+id/9" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="9"/><Button baram:id="@+id/0" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="0"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/minus" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="-"/><Button baram:id="@+id/slash" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="/"/><Button baram:id="@+id/colon" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text=":"/><Button baram:id="@+id/semicolon" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text=";"/><Button baram:id="@+id/lparen" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="("/><Button baram:id="@+id/rparen" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text=")"/><Button baram:id="@+id/dollar" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="$"/><Button baram:id="@+id/amp" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="&amp;"/><Button baram:id="@+id/at" baram:layout_width="90dip" baram:layout_height="fill_parent" baram:text="Back"/><Button baram:id="@+id/backspace" baram:layout_width="90dip" baram:layout_height="fill_parent" baram:text="Back"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/quote" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="'"/><Button baram:id="@+id/doublequote" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="&quot;"/><Button baram:id="@+id/question" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="?"/><Button baram:id="@+id/bang" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="!"/><Button baram:id="@+id/plus" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="+"/><Button baram:id="@+id/equals" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="="/><Button baram:id="@+id/underscore" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="_"/><Button baram:id="@+id/enter" baram:layout_width="90dip" baram:layout_height="fill_parent" baram:text="Enter"/></LinearLayout><LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal" baram:layout_gap="4dip"><Button baram:id="@+id/letters" baram:layout_width="70dip" baram:layout_height="fill_parent" baram:text="ABC"/><Button baram:id="@+id/comma" baram:layout_width="55dip" baram:layout_height="fill_parent" baram:text=","/><Button baram:id="@+id/space" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="Space"/><Button baram:id="@+id/period" baram:layout_width="55dip" baram:layout_height="fill_parent" baram:text="."/><Button baram:id="@+id/close" baram:layout_width="70dip" baram:layout_height="fill_parent" baram:text="完了"/></LinearLayout></LinearLayout>"#;
 
 const KEY_IDS: [&str; 26] = [
     "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "a", "s", "d", "f", "g", "h", "j", "k", "l",

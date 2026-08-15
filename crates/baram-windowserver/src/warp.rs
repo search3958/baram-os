@@ -240,6 +240,13 @@ impl WarpEngine {
         engine
     }
 
+    pub fn new_embedded_warp4(name: &str, sources: &[(&str, &str)]) -> Self {
+        let mut engine = Self::new("");
+        engine.warp4 = Some(Warp4Engine::new_embedded(name, sources));
+        engine.origin = name.to_string();
+        engine
+    }
+
     pub fn set_origin(&mut self, app_name: &str) {
         self.origin = String::from(app_name);
         if let Some(engine) = self.warp4.as_mut() {
@@ -340,6 +347,32 @@ impl WarpEngine {
             let node = &self.nodes[idx];
             (node.x, node.y, node.w, node.h)
         })
+    }
+
+    pub fn content_height(&self) -> i32 {
+        self.warp4
+            .as_ref()
+            .map(|engine| engine.content_height)
+            .unwrap_or(0)
+    }
+
+    pub fn hovered_node(&self) -> Option<usize> {
+        self.warp4.as_ref().and_then(Warp4Engine::hovered_node)
+    }
+
+    pub fn set_text(&mut self, id: &str, text: &str) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_text(id, text);
+        }
+    }
+
+    pub fn set_candidate_items(&mut self, mode: &str, candidates: &[String]) {
+        if let Some(engine) = self.warp4.as_mut() {
+            engine.set_text("candidate-mode", mode);
+            for (index, candidate) in candidates.iter().take(5).enumerate() {
+                engine.set_text(&alloc::format!("candidate-{index}"), candidate);
+            }
+        }
     }
 
     fn set_state(&mut self, key: &str, val: &str) {
@@ -1387,6 +1420,9 @@ impl WarpEngine {
     /// Returns the last clicked control id without exposing an application
     /// command or URI. OS-owned Warp surfaces use this as their input bridge.
     pub fn take_clicked_id(&mut self) -> Option<String> {
+        if let Some(engine) = self.warp4.as_mut() {
+            return engine.take_clicked_id();
+        }
         self.last_clicked_id.take()
     }
 

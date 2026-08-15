@@ -177,6 +177,7 @@ pub struct Warp4Engine {
     flip_elapsed_ns: u64,
     last_tick_ns: Option<u64>,
     control_animations: Vec<ControlAnimation>,
+    last_clicked_id: Option<String>,
     runtime_fps: u32,
     runtime_windows: usize,
     runtime_keys: u32,
@@ -224,6 +225,7 @@ impl Warp4Engine {
             flip_elapsed_ns: 0,
             last_tick_ns: None,
             control_animations: Vec::new(),
+            last_clicked_id: None,
             runtime_fps: 0,
             runtime_windows: 0,
             runtime_keys: 0,
@@ -644,6 +646,7 @@ impl Warp4Engine {
             return;
         };
         self.pressed = Some(idx);
+        self.last_clicked_id = Some(self.nodes[idx].id().to_string());
         if self.nodes[idx].is("EditText")
             || self.nodes[idx].is("AutoCompleteTextView")
             || self.nodes[idx].is("MultiAutoCompleteTextView")
@@ -701,6 +704,17 @@ impl Warp4Engine {
         }
         self.run_click_actions(idx);
         self.dirty = true;
+    }
+
+    pub fn take_clicked_id(&mut self) -> Option<String> {
+        self.last_clicked_id.take()
+    }
+
+    pub fn set_text(&mut self, id: &str, text: &str) {
+        if let Some(idx) = self.find(id) {
+            set_attr(&mut self.nodes[idx], "text", text);
+            self.dirty = true;
+        }
     }
 
     /// Update a pointer-controlled widget while the primary pointer is held.

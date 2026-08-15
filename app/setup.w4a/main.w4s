@@ -1,0 +1,42 @@
+WarpUI.OnClick continue {
+    run (setup://continue)
+}
+WarpUI.OnClick skip {
+    run (setup://skip)
+}
+WarpUI.OnClick finish {
+    run (setup://finish)
+}
+WarpUI.OnClick timezone_minus12 {
+    run (setup://timezone?-12:00)
+}
+WarpUI.OnClick timezone_minus8 {
+    run (setup://timezone?-08:00)
+}
+WarpUI.OnClick timezone_minus5 {
+    run (setup://timezone?-05:00)
+}
+WarpUI.OnClick timezone_minus3 {
+    run (setup://timezone?-03:00)
+}
+WarpUI.OnClick timezone_plus0 {
+    run (setup://timezone?+00:00)
+}
+WarpUI.OnClick timezone_plus1 {
+    run (setup://timezone?+01:00)
+}
+WarpUI.OnClick timezone_plus3 {
+    run (setup://timezone?+03:00)
+}
+WarpUI.OnClick timezone_plus5 {
+    run (setup://timezone?+05:00)
+}
+WarpUI.OnClick timezone_plus8 {
+    run (setup://timezone?+08:00)
+}
+WarpUI.OnClick timezone_plus9 {
+    run (setup://timezone?+09:00)
+}
+WarpUI.OnClick timezone_plus12 {
+    run (setup://timezone?+12:00)
+}
