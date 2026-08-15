@@ -479,14 +479,14 @@ impl Warp4Engine {
             layer.height().saturating_sub(title_bar_h() as usize),
             bg(),
         );
-        let roots = self.roots.clone();
-        for root in roots {
+        let chrome_mode = self.document_has_scroll();
+        for &root in &self.roots {
             // The compositor supplies the window-manager offset.  The view
             // tree gets two passes: normal content first, then fixed/sticky
             // chrome.  This is what the reference CSS achieves with a
             // viewport and `position:fixed`, without ever creating HTML.
-            self.paint(layer, root, ox, oy, false, PaintPass::Flow);
-            self.paint(layer, root, ox, oy, false, PaintPass::Fixed);
+            self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Flow);
+            self.paint(layer, root, ox, oy, false, chrome_mode, PaintPass::Fixed);
         }
         if let Some(idx) = self.spinner_open {
             self.paint_spinner_popup(layer, idx, 255);
@@ -1845,13 +1845,13 @@ impl Warp4Engine {
         ox: i32,
         oy: i32,
         in_scroll: bool,
+        chrome_mode: bool,
         pass: PaintPass,
     ) {
         let n = &self.nodes[idx];
         if !n.visible() || !self.active_child(idx) {
             return;
         }
-        let chrome_mode = self.document_has_scroll();
         let fixed = self.node_is_fixed(idx, chrome_mode);
         if pass == PaintPass::Flow && fixed {
             let clipped_scroll = is_scroll_container(n);
@@ -1895,7 +1895,7 @@ impl Warp4Engine {
             }
             let child_scroll = in_scroll || is_scroll_container(n);
             for &child in &n.children {
-                self.paint(layer, child, ox, oy, child_scroll, pass);
+                self.paint(layer, child, ox, oy, child_scroll, chrome_mode, pass);
             }
             if clipped_scroll {
                 layer.pop_clip();
@@ -1905,7 +1905,7 @@ impl Warp4Engine {
         if pass == PaintPass::Fixed && !fixed {
             let child_scroll = in_scroll || is_scroll_container(n);
             for &child in &n.children {
-                self.paint(layer, child, ox, oy, child_scroll, pass);
+                self.paint(layer, child, ox, oy, child_scroll, chrome_mode, pass);
             }
             return;
         }
@@ -1959,7 +1959,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                5,
+                w.min(h) / 2,
                 if self.focused == Some(idx) || self.hovered == Some(idx) {
                     WARP3_ACCENT
                 } else {
@@ -2236,9 +2236,11 @@ impl Warp4Engine {
                 // padding here made the value appear vertically/horizontally
                 // displaced between focused and unfocused states.
                 x + 10
-            } else if n.attr("gravity").contains("right") || n.attr("gravity").contains("end") {
+            } else if ascii_contains_ignore_case(n.attr("gravity"), "right")
+                || ascii_contains_ignore_case(n.attr("gravity"), "end")
+            {
                 x + n.w - text_w - pad.right
-            } else if n.attr("gravity").contains("center") {
+            } else if ascii_contains_ignore_case(n.attr("gravity"), "center") {
                 x + (n.w - text_w) / 2
             } else {
                 x + pad.left
@@ -2253,7 +2255,7 @@ impl Warp4Engine {
             let line_h = (size * 1.25) as i32;
             let line_count = text.split('\n').count().max(1) as i32;
             let block_h = line_h * line_count;
-            let gravity = n.attr("gravity").to_ascii_lowercase();
+            let gravity = n.attr("gravity");
             let ty = if n.is("Button") || n.is("ToggleButton") {
                 y + (n.h - block_h).max(0) / 2
             } else if n.is("EditText")
@@ -2261,11 +2263,11 @@ impl Warp4Engine {
                 || n.is("MultiAutoCompleteTextView")
             {
                 y + 8
-            } else if gravity.contains("bottom") {
+            } else if ascii_contains_ignore_case(gravity, "bottom") {
                 y + n.h - pad.bottom - block_h
-            } else if gravity.contains("center_vertical")
-                || gravity == "center"
-                || gravity.contains("center|vertical")
+            } else if ascii_contains_ignore_case(gravity, "center_vertical")
+                || gravity.eq_ignore_ascii_case("center")
+                || ascii_contains_ignore_case(gravity, "center|vertical")
             {
                 y + (n.h - block_h).max(0) / 2
             } else {
@@ -2300,7 +2302,7 @@ impl Warp4Engine {
             );
         }
         for &child in &n.children {
-            self.paint(layer, child, ox, oy, child_scroll, pass);
+            self.paint(layer, child, ox, oy, child_scroll, chrome_mode, pass);
         }
         if is_scroll_container(n) {
             if n.is("ScrollView") && n.content_h > n.h {
@@ -3006,11 +3008,22 @@ fn edges(n: &Node, base: &str) -> Edges {
     }
 }
 fn truth(value: &str) -> bool {
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "true" | "1" | "yes"
-    )
+    let value = value.trim();
+    value.eq_ignore_ascii_case("true") || value == "1" || value.eq_ignore_ascii_case("yes")
 }
+
+#[inline]
+fn ascii_contains_ignore_case(value: &str, needle: &str) -> bool {
+    let needle = needle.as_bytes();
+    !needle.is_empty()
+        && value.as_bytes().windows(needle.len()).any(|window| {
+            window
+                .iter()
+                .zip(needle.iter())
+                .all(|(a, b)| a.eq_ignore_ascii_case(b))
+        })
+}
+
 fn is_scroll_container(n: &Node) -> bool {
     n.is("ScrollView")
         || n.is("HorizontalScrollView")
@@ -3026,9 +3039,9 @@ fn contains_scroll(nodes: &[Node], idx: usize) -> bool {
             .any(|child| contains_scroll(nodes, *child))
 }
 fn is_fixed(n: &Node) -> bool {
-    let position = n.attr("position").to_ascii_lowercase();
-    position == "fixed"
-        || position == "sticky"
+    let position = n.attr("position");
+    position.eq_ignore_ascii_case("fixed")
+        || position.eq_ignore_ascii_case("sticky")
         || truth(n.attr("fixed"))
         || truth(n.attr("sticky"))
         || n.attr("layout_position").eq_ignore_ascii_case("fixed")
@@ -3040,17 +3053,23 @@ fn gravity_offset(
     child_w: i32,
     child_h: i32,
 ) -> (i32, i32) {
-    let g = gravity.to_ascii_lowercase();
-    let x = if g.contains("center_horizontal") || g == "center" || g.contains("center|horizontal") {
+    let x = if ascii_contains_ignore_case(gravity, "center_horizontal")
+        || gravity.eq_ignore_ascii_case("center")
+        || ascii_contains_ignore_case(gravity, "center|horizontal")
+    {
         (parent_w - child_w) / 2
-    } else if g.contains("right") || g.contains("end") {
+    } else if ascii_contains_ignore_case(gravity, "right")
+        || ascii_contains_ignore_case(gravity, "end")
+    {
         parent_w - child_w
     } else {
         0
     };
-    let y = if g.contains("center_vertical") || g == "center" {
+    let y = if ascii_contains_ignore_case(gravity, "center_vertical")
+        || gravity.eq_ignore_ascii_case("center")
+    {
         (parent_h - child_h) / 2
-    } else if g.contains("bottom") {
+    } else if ascii_contains_ignore_case(gravity, "bottom") {
         parent_h - child_h
     } else {
         0
@@ -3058,14 +3077,19 @@ fn gravity_offset(
     (x.max(0), y.max(0))
 }
 fn cross_offset(gravity: &str, parent_size: i32, child_size: i32, horizontal_axis: bool) -> i32 {
-    let g = gravity.to_ascii_lowercase();
-    if (horizontal_axis && (g.contains("center_vertical") || g == "center"))
-        || (!horizontal_axis && (g.contains("center_horizontal") || g == "center"))
+    if (horizontal_axis
+        && (ascii_contains_ignore_case(gravity, "center_vertical")
+            || gravity.eq_ignore_ascii_case("center")))
+        || (!horizontal_axis
+            && (ascii_contains_ignore_case(gravity, "center_horizontal")
+                || gravity.eq_ignore_ascii_case("center")))
     {
         return (parent_size - child_size).max(0) / 2;
     }
-    if (horizontal_axis && g.contains("bottom"))
-        || (!horizontal_axis && (g.contains("right") || g.contains("end")))
+    if (horizontal_axis && ascii_contains_ignore_case(gravity, "bottom"))
+        || (!horizontal_axis
+            && (ascii_contains_ignore_case(gravity, "right")
+                || ascii_contains_ignore_case(gravity, "end")))
     {
         return (parent_size - child_size).max(0);
     }
@@ -3307,16 +3331,28 @@ fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
 
 fn parse_color(s: &str) -> Option<Color> {
     let raw = s.trim();
-    let named = match raw.to_ascii_lowercase().as_str() {
-        "transparent" => return Some(Color::TRANSPARENT),
-        "white" => return Some(Color::rgb(255, 255, 255)),
-        "black" => return Some(Color::rgb(0, 0, 0)),
-        "gray" | "grey" => return Some(Color::rgb(128, 128, 128)),
-        "red" => return Some(Color::rgb(255, 0, 0)),
-        "green" => return Some(Color::rgb(0, 128, 0)),
-        "blue" => return Some(Color::rgb(0, 0, 255)),
-        _ => raw,
-    };
+    if raw.eq_ignore_ascii_case("transparent") {
+        return Some(Color::TRANSPARENT);
+    }
+    if raw.eq_ignore_ascii_case("white") {
+        return Some(Color::rgb(255, 255, 255));
+    }
+    if raw.eq_ignore_ascii_case("black") {
+        return Some(Color::rgb(0, 0, 0));
+    }
+    if raw.eq_ignore_ascii_case("gray") || raw.eq_ignore_ascii_case("grey") {
+        return Some(Color::rgb(128, 128, 128));
+    }
+    if raw.eq_ignore_ascii_case("red") {
+        return Some(Color::rgb(255, 0, 0));
+    }
+    if raw.eq_ignore_ascii_case("green") {
+        return Some(Color::rgb(0, 128, 0));
+    }
+    if raw.eq_ignore_ascii_case("blue") {
+        return Some(Color::rgb(0, 0, 255));
+    }
+    let named = raw;
     let hex = named.strip_prefix('#')?;
     let hex = if hex.len() == 3 {
         let mut expanded = String::new();

@@ -462,10 +462,9 @@ impl LayerSystem {
         let d2y = 0.18 * r + 0.90847 * (ly - r);
 
         let mut pts = alloc::vec::Vec::new();
-        // Four segments per cubic are sufficient for the shared squircle
-        // geometry; the edge coverage below is what gives it a smooth pixel
-        // boundary.
-        let segs = 4;
+        // Three segments per cubic keep the squircle silhouette while
+        // reducing point-in-polygon work for every anti-aliased edge pixel.
+        let segs = 3;
 
         for i in 0..segs {
             let t = i as f32 / segs as f32;
@@ -607,6 +606,7 @@ impl LayerSystem {
         unsafe { &POLY }
     }
 
+    #[inline]
     pub fn point_in_polygon(px: f32, py: f32, poly: &[(f32, f32)]) -> bool {
         let n = poly.len();
         if n < 3 {
