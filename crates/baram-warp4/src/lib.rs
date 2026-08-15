@@ -15,11 +15,13 @@ use alloc::vec::Vec;
 use baram_bsd::{app::Warp4Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::{ttf_font, LayerFontExt};
+use baram_graphics::svg;
 
 const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
-const SWITCH_DURATION_NS: u64 = 18_000_000;
+const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
+const CHECK_ICON_SVG: &str = include_str!("../../../data/check-icon.svg");
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
 const WARP3_BG: Color = Color::rgb(243, 243, 243);
@@ -129,6 +131,12 @@ struct ControlAnimation {
     duration_ns: u64,
 }
 
+#[derive(Clone, Copy)]
+struct SpinnerFade {
+    idx: usize,
+    started_ns: u64,
+}
+
 pub struct Warp4Engine {
     archive: Warp4Archive,
     origin: String,
@@ -142,6 +150,7 @@ pub struct Warp4Engine {
     hovered: Option<usize>,
     pressed: Option<usize>,
     spinner_open: Option<usize>,
+    spinner_fade: Option<SpinnerFade>,
     width: i32,
     height: i32,
     scroll: i32,
@@ -183,6 +192,7 @@ impl Warp4Engine {
             hovered: None,
             pressed: None,
             spinner_open: None,
+            spinner_fade: None,
             width: 0,
             height: 0,
             scroll: 0,
@@ -217,7 +227,9 @@ impl Warp4Engine {
         let next = scroll.max(0).min(max.max(0));
         if self.scroll != next {
             self.scroll = next;
-            self.spinner_open = None;
+            if let Some(idx) = self.spinner_open {
+                self.close_spinner(idx);
+            }
             self.hovered = None;
             self.dirty = true;
         }
@@ -311,6 +323,18 @@ impl Warp4Engine {
             self.dirty = true;
             changed = true;
         }
+        if let Some(fade) = self.spinner_fade {
+            if now_ns.saturating_sub(fade.started_ns) >= 140_000_000 {
+                self.spinner_fade = None;
+                // The last translucent frame must be invalidated as well so
+                // the underlying content is painted back over the popup.
+                self.dirty = true;
+                changed = true;
+            } else {
+                self.dirty = true;
+                changed = true;
+            }
+        }
         changed
     }
 
@@ -359,6 +383,7 @@ impl Warp4Engine {
         self.hovered = None;
         self.pressed = None;
         self.spinner_open = None;
+        self.spinner_fade = None;
         self.control_animations.clear();
         self.flip_elapsed_ns = 0;
         self.last_tick_ns = None;
@@ -464,19 +489,31 @@ impl Warp4Engine {
             self.paint(layer, root, ox, oy, false, PaintPass::Fixed);
         }
         if let Some(idx) = self.spinner_open {
-            self.paint_spinner_popup(layer, idx);
+            self.paint_spinner_popup(layer, idx, 255);
+        } else if let Some(fade) = self.spinner_fade {
+            let elapsed = self.now_ns.saturating_sub(fade.started_ns);
+            let remaining = 140_000_000u64.saturating_sub(elapsed);
+            let opacity = (remaining.saturating_mul(255) / 140_000_000) as u8;
+            self.paint_spinner_popup(layer, fade.idx, opacity);
         }
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
-        let next = self
-            .spinner_popup_hit(x, y)
-            .map(|(idx, _)| idx)
-            .or_else(|| self.hit(x, y));
+        let popup_hit = self.spinner_popup_hit(x, y);
+        let next = popup_hit.map(|(idx, _)| idx).or_else(|| self.hit(x, y));
         if self.hovered != next {
             self.hovered = next;
             self.dirty = true;
         }
+    }
+
+    fn close_spinner(&mut self, idx: usize) {
+        self.spinner_open = None;
+        self.spinner_fade = Some(SpinnerFade {
+            idx,
+            started_ns: self.now_ns,
+        });
+        self.dirty = true;
     }
 
     fn start_control_animation(&mut self, idx: usize, from_on: bool, to_on: bool) {
@@ -522,7 +559,7 @@ impl Warp4Engine {
         if let Some(open_idx) = self.spinner_open {
             if let Some((idx, item)) = self.spinner_popup_hit(x, y) {
                 set_attr(&mut self.nodes[idx], "selectedIndex", &item.to_string());
-                self.spinner_open = None;
+                self.close_spinner(idx);
                 self.pressed = Some(idx);
                 self.focused = None;
                 self.run_click_actions(idx);
@@ -532,12 +569,12 @@ impl Warp4Engine {
             // A native dropdown dismisses when the pointer lands outside its
             // menu. Do not leak that same click into a control underneath.
             if self.hit(x, y) != Some(open_idx) {
-                self.spinner_open = None;
+                self.close_spinner(open_idx);
                 self.pressed = None;
                 self.dirty = true;
                 return;
             }
-            self.spinner_open = None;
+            self.close_spinner(open_idx);
             self.pressed = Some(open_idx);
             self.dirty = true;
             return;
@@ -602,6 +639,7 @@ impl Warp4Engine {
             self.set_rating(idx, x);
         } else if self.nodes[idx].is("Spinner") {
             self.spinner_open = Some(idx);
+            self.spinner_fade = None;
         }
         self.run_click_actions(idx);
         self.dirty = true;
@@ -799,7 +837,7 @@ impl Warp4Engine {
     fn spinner_popup_rect(&self, idx: usize) -> (i32, i32, i32, i32) {
         let node = &self.nodes[idx];
         let row_h = 36;
-        let h = self.spinner_item_count(idx) as i32 * row_h;
+        let h = self.spinner_item_count(idx) as i32 * row_h + 8;
         let bottom = self.node_screen_y(idx) + node.h;
         let layer_h = self.height + title_bar_h();
         let y = if bottom + h <= layer_h {
@@ -825,7 +863,11 @@ impl Warp4Engine {
         {
             return None;
         }
-        let item = ((screen_y - popup_y) / 36) as usize;
+        let local_y = screen_y - popup_y - 4;
+        if local_y < 0 {
+            return None;
+        }
+        let item = (local_y / 36) as usize;
         (item < self.spinner_item_count(idx)).then_some((idx, item))
     }
 
@@ -1931,47 +1973,22 @@ impl Warp4Engine {
             let mark_x = x + 2;
             let mark_y = y + (n.h - 22).max(0) / 2;
             if n.is("CheckBox") {
-                layer.fill_rect(
+                let border = if checked || hover {
+                    WARP3_ACCENT
+                } else {
+                    WARP3_MUTED
+                };
+                layer.rounded_rect_outline(
                     mark_x.max(0) as usize,
                     mark_y.max(0) as usize,
                     22,
                     22,
+                    4,
+                    border,
                     if checked { WARP3_ACCENT } else { WARP3_SURFACE },
                 );
-                layer.rect_outline(
-                    mark_x.max(0) as usize,
-                    mark_y.max(0) as usize,
-                    22,
-                    22,
-                    if checked || hover {
-                        WARP3_ACCENT
-                    } else {
-                        WARP3_MUTED
-                    },
-                );
                 if checked {
-                    // A compact antialiased-free check mark.  The HTML
-                    // reference uses a 3px white diagonal; these short
-                    // segments preserve the same silhouette in the native
-                    // pixel layer.
-                    for step in 0..6 {
-                        layer.fill_rect(
-                            (mark_x + 4 + step).max(0) as usize,
-                            (mark_y + 11 + step).max(0) as usize,
-                            3,
-                            3,
-                            Color::rgb(255, 255, 255),
-                        );
-                    }
-                    for step in 0..9 {
-                        layer.fill_rect(
-                            (mark_x + 9 + step).max(0) as usize,
-                            (mark_y + 16 - step).max(0) as usize,
-                            3,
-                            3,
-                            Color::rgb(255, 255, 255),
-                        );
-                    }
+                    draw_check_icon(layer, mark_x + 7, mark_y + 7);
                 }
             } else {
                 let amount = self.control_amount(idx, checked);
@@ -2328,7 +2345,7 @@ impl Warp4Engine {
         }
     }
 
-    fn paint_spinner_popup(&self, layer: &mut LayerSystem, idx: usize) {
+    fn paint_spinner_popup(&self, layer: &mut LayerSystem, idx: usize, opacity: u8) {
         let Some(node) = self.nodes.get(idx) else {
             return;
         };
@@ -2336,32 +2353,74 @@ impl Warp4Engine {
             return;
         }
         let (x, y, w, h) = self.spinner_popup_rect(idx);
-        layer.fill_rounded_rect(
-            x.max(0) as usize,
-            y.max(title_bar_h()) as usize,
-            w.max(1) as usize,
-            h.max(1) as usize,
-            2,
-            WARP3_SURFACE,
-        );
-        layer.rect_outline(
-            x.max(0) as usize,
-            y.max(title_bar_h()) as usize,
-            w.max(1) as usize,
-            h.max(1) as usize,
-            WARP3_MUTED,
-        );
+        let popup_w = w.max(1) as usize;
+        let popup_h = h.max(1) as usize;
+        let radius = 8usize;
+        let shadow_pad = 16usize;
+        if opacity < 255 {
+            // Seed the temporary layer with the pixels underneath the menu so
+            // fading does not turn its transparent margins into black.
+            let popup_x = x.max(0) as usize;
+            let popup_y = y.max(title_bar_h()) as usize;
+            let sx = popup_x.saturating_sub(shadow_pad);
+            let sy = popup_y.saturating_sub(shadow_pad);
+            let ex = (sx + popup_w + shadow_pad * 2).min(layer.width());
+            let ey = (sy + popup_h + shadow_pad * 2).min(layer.height());
+            let copy_w = ex.saturating_sub(sx).max(1);
+            let copy_h = ey.saturating_sub(sy).max(1);
+            let mut popup = LayerSystem::new(copy_w, copy_h);
+            for row in 0..copy_h {
+                let src = (sy + row) * layer.width() + sx;
+                let dst = row * copy_w;
+                popup.buf_mut()[dst..dst + copy_w]
+                    .copy_from_slice(&layer.buf_ref()[src..src + copy_w]);
+            }
+            let local_x = popup_x.saturating_sub(sx).min(copy_w.saturating_sub(1));
+            let local_y = popup_y.saturating_sub(sy).min(copy_h.saturating_sub(1));
+            draw_spinner_shadow(&mut popup, local_x, local_y, popup_w, popup_h, radius);
+            self.paint_spinner_popup_content(&mut popup, local_x, local_y, popup_w, popup_h, idx);
+            layer.composit_rect_global_alpha(
+                popup.buf_ref(),
+                popup.width(),
+                popup.height(),
+                sx,
+                sy,
+                opacity,
+            );
+            return;
+        }
+        let x = x.max(0) as usize;
+        let y = y.max(title_bar_h()) as usize;
+        draw_spinner_shadow(layer, x, y, popup_w, popup_h, radius);
+        self.paint_spinner_popup_content(layer, x, y, popup_w, popup_h, idx);
+    }
+
+    fn paint_spinner_popup_content(
+        &self,
+        layer: &mut LayerSystem,
+        x: usize,
+        y: usize,
+        w: usize,
+        h: usize,
+        idx: usize,
+    ) {
+        let Some(node) = self.nodes.get(idx) else {
+            return;
+        };
+        layer.fill_rounded_rect(x, y, w, h, 8, Color::rgb(255, 255, 255));
         let selected = parse_i32(node.attr("selectedIndex")).max(0) as usize;
         let items = node.attr("items");
         for item in 0..self.spinner_item_count(idx) {
-            let row_y = y + item as i32 * 36;
-            if item == selected {
-                layer.fill_rect(
-                    (x + 1).max(0) as usize,
-                    row_y.max(title_bar_h()) as usize,
-                    (w - 2).max(1) as usize,
-                    35,
-                    Color::rgb(230, 240, 248),
+            let row_y = y + 4 + item * 36;
+            let highlighted = item == selected;
+            if highlighted {
+                layer.fill_rounded_rect(
+                    x + 4,
+                    row_y,
+                    w.saturating_sub(8),
+                    36.min(h.saturating_sub(4 + item * 36)),
+                    6,
+                    WARP3_ACCENT,
                 );
             }
             let label = items
@@ -2374,7 +2433,18 @@ impl Warp4Engine {
                     2 => "Item 3",
                     _ => "Item 1",
                 });
-            put_str_size(layer, x + 8, row_y + 9, label, WARP3_TEXT, 15.0);
+            put_str_size(
+                layer,
+                x as i32 + 16,
+                row_y as i32 + 9,
+                label,
+                if highlighted {
+                    Color::rgb(255, 255, 255)
+                } else {
+                    WARP3_TEXT
+                },
+                15.0,
+            );
         }
     }
 
@@ -3089,6 +3159,79 @@ fn mix_color(from: Color, to: Color, amount: f32) -> Color {
     )
 }
 
+fn draw_spinner_shadow(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    radius: usize,
+) {
+    // Build a smooth rounded mask and blur its alpha, matching the app-list
+    // shadow treatment without introducing a backdrop blur behind the menu.
+    let pad = 16usize;
+    let offset_y = 4usize;
+    let shadow_w = width.saturating_add(pad * 2);
+    let shadow_h = height.saturating_add(pad * 2 + offset_y);
+    let mut mask = LayerSystem::new_transparent(shadow_w, shadow_h);
+    mask.fill_rounded_rect(pad, pad + offset_y, width, height, radius, Color::BLACK);
+    let mut alpha = alloc::vec![0u8; shadow_w * shadow_h];
+    for (dst, src) in alpha.iter_mut().zip(mask.buf_ref()) {
+        *dst = if *src == Color::TRANSPARENT.0 { 0 } else { 52 };
+    }
+    blur_shadow_alpha(&mut alpha, shadow_w, shadow_h, 6);
+
+    let base_x = x.saturating_sub(pad);
+    let base_y = y.saturating_sub(pad);
+    for sy in 0..shadow_h {
+        let dy = base_y + sy;
+        if dy >= layer.height() {
+            continue;
+        }
+        for sx in 0..shadow_w {
+            let dx = base_x + sx;
+            let opacity = alpha[sy * shadow_w + sx];
+            if dx >= layer.width() || opacity == 0 {
+                continue;
+            }
+            let pos = dy * layer.width() + dx;
+            let old = layer.buf_ref()[pos];
+            layer.buf_mut()[pos] =
+                LayerSystem::blend_alpha(old, Color::BLACK.0, opacity as f32 / 255.0);
+        }
+    }
+}
+
+fn blur_shadow_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
+    if width == 0 || height == 0 || radius == 0 {
+        return;
+    }
+    let mut scratch = alloc::vec![0u8; alpha.len()];
+    let diameter = radius * 2 + 1;
+    for y in 0..height {
+        for x in 0..width {
+            let start = x.saturating_sub(radius);
+            let end = (x + radius + 1).min(width);
+            let mut sum = 0usize;
+            for px in start..end {
+                sum += alpha[y * width + px] as usize;
+            }
+            scratch[y * width + x] = (sum / diameter.min(end - start)) as u8;
+        }
+    }
+    for y in 0..height {
+        for x in 0..width {
+            let start = y.saturating_sub(radius);
+            let end = (y + radius + 1).min(height);
+            let mut sum = 0usize;
+            for py in start..end {
+                sum += scratch[py * width + x] as usize;
+            }
+            alpha[y * width + x] = (sum / diameter.min(end - start)) as u8;
+        }
+    }
+}
+
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
     if !ttf_font::is_available() {
         if x >= 0 && y >= 0 {
@@ -3127,6 +3270,40 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
         x += advance.max(1);
     }
 }
+
+fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
+    // Use the shared SVG asset as a mask, then tint it white for the checked
+    // state.  The source asset is black because it is also usable on light
+    // surfaces; the native checkbox needs the same white mark as Warp3.
+    let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, 8, 8);
+    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+    let layer_w = layer.width();
+    let layer_h = layer.height();
+    for sy in 0..8i32 {
+        let py = y + sy;
+        if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
+            continue;
+        }
+        for sx in 0..8i32 {
+            let px = x + sx;
+            if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
+                continue;
+            }
+            let alpha = pixels[(sy as usize * 8 + sx as usize) * 4 + 3];
+            if alpha == 0 {
+                continue;
+            }
+            let index = py as usize * layer_w + px as usize;
+            let background = layer.buf_ref()[index];
+            layer.buf_mut()[index] = LayerSystem::blend_alpha(
+                background,
+                Color::rgb(255, 255, 255).0,
+                alpha as f32 / 255.0,
+            );
+        }
+    }
+}
+
 fn parse_color(s: &str) -> Option<Color> {
     let raw = s.trim();
     let named = match raw.to_ascii_lowercase().as_str() {

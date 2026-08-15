@@ -145,6 +145,7 @@ dependencies = [
  "baram-bsd",
  "baram-core",
  "baram-font",
+ "baram-graphics",
 ]
 
 [[package]]

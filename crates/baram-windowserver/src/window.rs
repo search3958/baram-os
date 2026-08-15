@@ -329,12 +329,18 @@ fn draw_title_bar_background(
     y: usize,
     width: usize,
     height: usize,
-    skip_blur: bool,
+    _skip_blur: bool,
 ) {
-    if !skip_blur {
-        draw_title_bar_blur_layer(layer, x, y, width, height);
-    }
-    draw_title_bar_overlay(layer, x, y, width, height);
+    // Title bars are intentionally opaque.  Progressive backdrop blur made
+    // the title surface change while the window moved and differed from the
+    // Warp3/Warp4 native reference, so use a stable solid fill instead.
+    layer.fill_rect(
+        x,
+        y,
+        width,
+        height,
+        config::get_color("ui-theme/color/win_bg", Color::WIN_BG),
+    );
 }
 
 const MAX_ICON_SVG: &str = include_str!("../../../data/max.svg");
