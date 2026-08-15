@@ -1018,6 +1018,15 @@ impl Warp4Engine {
                     self.last_command = Some(command.into());
                 }
             }
+            "BaramOS.get" => {
+                let path = value
+                    .trim()
+                    .strip_prefix("os://")
+                    .unwrap_or(value.trim())
+                    .trim_start_matches("--");
+                let current = config::get_config().get(path).unwrap_or("");
+                self.set_state(target.trim(), current);
+            }
             "WarpUI.text" => {
                 if let Some(i) = self.find(target) {
                     set_attr(&mut self.nodes[i], "text", &value);

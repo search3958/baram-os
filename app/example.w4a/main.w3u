@@ -187,6 +187,12 @@
                 baram:layout_marginLeft="4dp"/>
         </LinearLayout>
 
+        <Button
+            baram:id="@+id/pointer_refresh"
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:text="Read Current Pointer Size" />
+
         <Space
             baram:layout_width="match_parent"
             baram:layout_height="0dp"

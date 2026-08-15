@@ -1,6 +1,8 @@
 # Native Warp 4 example actions
 var.set count (0)
 var.set memo_text ()
+BaramOS.get pointer_size (display/pointer/size)
+WarpUI.text pointer_size_status (Current pointer size: var[pointer_size])
 
 WarpUI.OnClick btn_plus {
     var.edit count (calc[var[count] + 1])
@@ -45,6 +47,11 @@ WarpUI.OnClick pointer_medium {
 WarpUI.OnClick pointer_large {
     run = os://display/pointer?size=20
     WarpUI.text pointer_size_status (Pointer size: Large)
+}
+
+WarpUI.OnClick pointer_refresh {
+    BaramOS.get pointer_size (display/pointer/size)
+    WarpUI.text pointer_size_status (Current pointer size: var[pointer_size])
 }
 
 WarpUI.OnClick btn_go_sub {
