@@ -2953,7 +2953,7 @@ fn baram_kernel_main(mut nano: NanoSystem) -> Status {
 
         for (wid, engine) in warp_engines.iter_mut() {
             if let Some((_, _, ww, wh, scroll)) = wm.get_window_rect(*wid) {
-                let content_h = wh.saturating_sub(30);
+                let content_h = wh.saturating_sub(baram_windowserver::window::title_bar_h());
                 engine.update(ww as i32, content_h as i32);
                 engine.set_scroll(scroll);
                 wm.clamp_window_scroll(*wid, engine.content_height);

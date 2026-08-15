@@ -16,9 +16,10 @@ use baram_bsd::{app::Warp4Archive, config};
 use baram_core::{Color, LayerSystem};
 use baram_font::{ttf_font, LayerFontExt};
 
-const TITLE_BAR: i32 = 30;
 const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
+const SWITCH_DURATION_NS: u64 = 18_000_000;
+const RADIO_DURATION_NS: u64 = 180_000_000;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
 const WARP3_BG: Color = Color::rgb(243, 243, 243);
@@ -27,7 +28,11 @@ const WARP3_TEXT: Color = Color::rgb(26, 26, 26);
 const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
 const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
 const WARP3_BORDER_HOVER: Color = Color::rgb(158, 158, 158);
-const WARP3_ACCENT: Color = Color::rgb(0, 103, 192);
+const WARP3_ACCENT: Color = Color::rgb(0, 125, 255);
+
+fn title_bar_h() -> i32 {
+    config::get_usize("ui-theme/window/title_bar_h", 30) as i32
+}
 
 #[derive(Clone, Default)]
 struct Attr {
@@ -116,6 +121,14 @@ enum PaintPass {
     Fixed,
 }
 
+#[derive(Clone, Copy)]
+struct ControlAnimation {
+    idx: usize,
+    to_on: bool,
+    started_ns: u64,
+    duration_ns: u64,
+}
+
 pub struct Warp4Engine {
     archive: Warp4Archive,
     origin: String,
@@ -141,6 +154,7 @@ pub struct Warp4Engine {
     break_requested: bool,
     flip_elapsed_ns: u64,
     last_tick_ns: Option<u64>,
+    control_animations: Vec<ControlAnimation>,
 }
 
 impl Warp4Engine {
@@ -181,6 +195,7 @@ impl Warp4Engine {
             break_requested: false,
             flip_elapsed_ns: 0,
             last_tick_ns: None,
+            control_animations: Vec::new(),
         };
         this.load_screen();
         this
@@ -196,7 +211,9 @@ impl Warp4Engine {
         &self.title
     }
     pub fn set_scroll(&mut self, scroll: i32) {
-        let max = self.content_height.saturating_sub(self.height + TITLE_BAR);
+        let max = self
+            .content_height
+            .saturating_sub(self.height + title_bar_h());
         let next = scroll.max(0).min(max.max(0));
         if self.scroll != next {
             self.scroll = next;
@@ -206,7 +223,7 @@ impl Warp4Engine {
         }
     }
     pub fn is_animating(&self) -> bool {
-        false
+        !self.control_animations.is_empty()
     }
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
         None
@@ -284,6 +301,16 @@ impl Warp4Engine {
                 }
             }
         }
+        let mut controls_animating = false;
+        self.control_animations.retain(|animation| {
+            let active = now_ns.saturating_sub(animation.started_ns) < animation.duration_ns;
+            controls_animating |= active;
+            active
+        });
+        if controls_animating {
+            self.dirty = true;
+            changed = true;
+        }
         changed
     }
 
@@ -332,6 +359,7 @@ impl Warp4Engine {
         self.hovered = None;
         self.pressed = None;
         self.spinner_open = None;
+        self.control_animations.clear();
         self.flip_elapsed_ns = 0;
         self.last_tick_ns = None;
         self.wait_until_ns = None;
@@ -388,7 +416,7 @@ impl Warp4Engine {
         // window scroll offset without a second layout coordinate system.
         // The generated HTML has no implicit document margin, so the native
         // root starts at the content edge and uses the complete width.
-        let mut y = TITLE_BAR;
+        let mut y = title_bar_h();
         let usable = self.height;
         for root in roots {
             let forced = if is_match_parent(self.nodes[root].attr("layout_height")) {
@@ -406,10 +434,10 @@ impl Warp4Engine {
                     .max(self.nodes[idx].content_h.saturating_sub(self.nodes[idx].h));
             }
         }
-        self.content_height = (y + internal_overflow).max(self.height + TITLE_BAR);
+        self.content_height = (y + internal_overflow).max(self.height + title_bar_h());
         self.scroll = self.scroll.min(
             self.content_height
-                .saturating_sub(self.height + TITLE_BAR)
+                .saturating_sub(self.height + title_bar_h())
                 .max(0),
         );
         self.dirty = false;
@@ -417,13 +445,13 @@ impl Warp4Engine {
 
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
         if self.dirty {
-            self.update(layer.width() as i32, layer.height() as i32 - TITLE_BAR);
+            self.update(layer.width() as i32, layer.height() as i32 - title_bar_h());
         }
         layer.fill_rect(
             0,
-            TITLE_BAR as usize,
+            title_bar_h() as usize,
             layer.width(),
-            layer.height().saturating_sub(TITLE_BAR as usize),
+            layer.height().saturating_sub(title_bar_h() as usize),
             bg(),
         );
         let roots = self.roots.clone();
@@ -448,6 +476,45 @@ impl Warp4Engine {
         if self.hovered != next {
             self.hovered = next;
             self.dirty = true;
+        }
+    }
+
+    fn start_control_animation(&mut self, idx: usize, from_on: bool, to_on: bool) {
+        if from_on == to_on {
+            return;
+        }
+        self.control_animations
+            .retain(|animation| animation.idx != idx);
+        self.control_animations.push(ControlAnimation {
+            idx,
+            to_on,
+            started_ns: self.now_ns,
+            duration_ns: if self.nodes[idx].is("Switch") {
+                SWITCH_DURATION_NS
+            } else {
+                RADIO_DURATION_NS
+            },
+        });
+        self.dirty = true;
+    }
+
+    fn control_amount(&self, idx: usize, on: bool) -> f32 {
+        let Some(animation) = self
+            .control_animations
+            .iter()
+            .rev()
+            .find(|animation| animation.idx == idx)
+        else {
+            return if on { 1.0 } else { 0.0 };
+        };
+        let t = (self.now_ns.saturating_sub(animation.started_ns) as f32
+            / animation.duration_ns.max(1) as f32)
+            .clamp(0.0, 1.0);
+        let eased = 1.0 - (1.0 - t) * (1.0 - t);
+        if animation.to_on {
+            eased
+        } else {
+            1.0 - eased
         }
     }
 
@@ -502,18 +569,27 @@ impl Warp4Engine {
                 if let Some(parent) = self.nodes[idx].parent {
                     for sibling in self.nodes[parent].children.clone() {
                         if self.nodes[sibling].is("RadioButton") {
+                            let old = self.nodes[sibling].attr("checked") == "true";
+                            let next = sibling == idx;
+                            self.start_control_animation(sibling, old, next);
                             set_attr(
                                 &mut self.nodes[sibling],
                                 "checked",
-                                if sibling == idx { "true" } else { "false" },
+                                if next { "true" } else { "false" },
                             );
                         }
                     }
                 } else {
+                    let old = self.nodes[idx].attr("checked") == "true";
+                    self.start_control_animation(idx, old, true);
                     set_attr(&mut self.nodes[idx], "checked", "true");
                 }
             } else {
-                let value = self.nodes[idx].attr("checked") != "true";
+                let old = self.nodes[idx].attr("checked") == "true";
+                let value = !old;
+                if self.nodes[idx].is("Switch") {
+                    self.start_control_animation(idx, old, value);
+                }
                 set_attr(
                     &mut self.nodes[idx],
                     "checked",
@@ -725,11 +801,11 @@ impl Warp4Engine {
         let row_h = 36;
         let h = self.spinner_item_count(idx) as i32 * row_h;
         let bottom = self.node_screen_y(idx) + node.h;
-        let layer_h = self.height + TITLE_BAR;
+        let layer_h = self.height + title_bar_h();
         let y = if bottom + h <= layer_h {
             bottom
         } else {
-            (self.node_screen_y(idx) - h).max(TITLE_BAR)
+            (self.node_screen_y(idx) - h).max(title_bar_h())
         };
         (node.x, y, node.w.max(1), h)
     }
@@ -1552,7 +1628,7 @@ impl Warp4Engine {
         if !n.attr("text").is_empty() {
             let pad = edges(n, "padding");
             let control_width = if n.is("Switch") {
-                63
+                55
             } else if interactive(n) {
                 32
             } else {
@@ -1581,9 +1657,9 @@ impl Warp4Engine {
         }
         if n.is("Switch") {
             return if n.attr("text").is_empty() {
-                52
+                44
             } else {
-                63 + measure_size(n.attr("text"), text_size(n))
+                55 + measure_size(n.attr("text"), text_size(n))
             };
         }
         if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
@@ -1748,7 +1824,7 @@ impl Warp4Engine {
                     if radius > 0 {
                         layer.fill_rounded_rect(
                             x.max(0) as usize,
-                            y.max(TITLE_BAR).max(0) as usize,
+                            y.max(title_bar_h()).max(0) as usize,
                             n.w.max(1) as usize,
                             n.h.max(1) as usize,
                             radius
@@ -1759,7 +1835,7 @@ impl Warp4Engine {
                     } else {
                         layer.fill_rect(
                             x.max(0) as usize,
-                            y.max(TITLE_BAR).max(0) as usize,
+                            y.max(title_bar_h()).max(0) as usize,
                             n.w.max(1) as usize,
                             n.h.max(1) as usize,
                             fill,
@@ -1770,7 +1846,7 @@ impl Warp4Engine {
                 let clip_y0 = n.y;
                 layer.push_clip(
                     clip_x0.max(0) as usize,
-                    clip_y0.max(TITLE_BAR).max(0) as usize,
+                    clip_y0.max(title_bar_h()).max(0) as usize,
                     (clip_x0 + n.w).max(0) as usize,
                     (clip_y0 + n.h).max(0) as usize,
                 );
@@ -1820,7 +1896,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                4,
+                8,
                 if active || hover {
                     WARP3_BORDER_HOVER
                 } else {
@@ -1898,9 +1974,14 @@ impl Warp4Engine {
                     }
                 }
             } else {
-                let outer = if checked {
-                    WARP3_ACCENT
-                } else if hover {
+                let amount = self.control_amount(idx, checked);
+                let outer = if self
+                    .control_animations
+                    .iter()
+                    .any(|animation| animation.idx == idx)
+                {
+                    mix_color(WARP3_MUTED, WARP3_ACCENT, amount)
+                } else if checked || hover {
                     WARP3_ACCENT
                 } else {
                     WARP3_MUTED
@@ -1914,43 +1995,42 @@ impl Warp4Engine {
                 layer.fill_circle(
                     (mark_x + 11).max(0) as usize,
                     (mark_y + 11).max(0) as usize,
-                    8,
+                    9,
                     WARP3_SURFACE,
                 );
-                if checked {
+                let inner_radius = (6.0 * amount + 0.5) as usize;
+                if inner_radius > 0 {
                     layer.fill_circle(
                         (mark_x + 11).max(0) as usize,
                         (mark_y + 11).max(0) as usize,
-                        4,
+                        inner_radius,
                         WARP3_ACCENT,
                     );
                 }
             }
         } else if n.is("Switch") {
             let on = n.attr("checked") == "true";
-            let track = if on { WARP3_ACCENT } else { WARP3_BG };
+            let amount = self.control_amount(idx, on);
+            let track = mix_color(WARP3_BG, WARP3_ACCENT, amount);
             let sy = y + (n.h - 22).max(0) / 2;
+            let track_w = 44usize;
             layer.rounded_rect_outline(
                 x.max(0) as usize,
                 sy.max(0) as usize,
-                52,
+                track_w,
                 22,
                 11,
-                if on { WARP3_ACCENT } else { WARP3_MUTED },
+                mix_color(WARP3_MUTED, WARP3_ACCENT, amount),
                 track,
             );
-            let tx = x + if on { 25 } else { 0 };
-            layer.fill_rounded_rect(
-                tx.max(0) as usize,
-                (y + (n.h - 28).max(0) / 2).max(0) as usize,
-                28,
-                28,
-                14,
-                if on {
-                    Color::rgb(255, 255, 255)
-                } else {
-                    Color::rgb(102, 102, 102)
-                },
+            // Warp3 uses a compact 14px knob inside the 22px track.  The
+            // previous 28px knob made the white state dominate the control.
+            let knob_x = x + 10 + ((track_w as f32 - 20.0) * amount + 0.5) as i32;
+            layer.fill_circle(
+                knob_x.max(0) as usize,
+                (sy + 11).max(0) as usize,
+                7,
+                mix_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), amount),
             );
         } else if n.is("Spinner") || n.is("SearchView") {
             layer.fill_rect(
@@ -1961,7 +2041,7 @@ impl Warp4Engine {
                 if self.hovered == Some(idx) {
                     WARP3_ACCENT
                 } else {
-                    WARP3_MUTED
+                    WARP3_BORDER
                 },
             );
             if n.is("Spinner") {
@@ -2017,7 +2097,7 @@ impl Warp4Engine {
                 if self.hovered == Some(idx) {
                     WARP3_ACCENT
                 } else {
-                    WARP3_MUTED
+                    WARP3_BORDER
                 },
             );
             let max = parse_i32(n.attr("max")).max(1);
@@ -2026,7 +2106,7 @@ impl Warp4Engine {
             if progress > 0 {
                 layer.fill_rect(
                     x.max(0) as usize,
-                    (cy - 1).max(0) as usize,
+                    cy.max(0) as usize,
                     (px - x).max(0) as usize,
                     3,
                     WARP3_ACCENT,
@@ -2131,6 +2211,14 @@ impl Warp4Engine {
             let text_w = measure_size(text, size);
             let tx = if n.is("Button") || n.is("ToggleButton") {
                 x + (n.w - text_w).max(0) / 2
+            } else if n.is("EditText")
+                || n.is("AutoCompleteTextView")
+                || n.is("MultiAutoCompleteTextView")
+            {
+                // Warp3 inputs use a fixed 10px text inset; using the XML
+                // padding here made the value appear vertically/horizontally
+                // displaced between focused and unfocused states.
+                x + 10
             } else if n.attr("gravity").contains("right") || n.attr("gravity").contains("end") {
                 x + n.w - text_w - pad.right
             } else if n.attr("gravity").contains("center") {
@@ -2140,7 +2228,7 @@ impl Warp4Engine {
                     + if n.is("CheckBox") || n.is("RadioButton") {
                         32
                     } else if n.is("Switch") {
-                        63
+                        55
                     } else {
                         0
                     }
@@ -2151,6 +2239,11 @@ impl Warp4Engine {
             let gravity = n.attr("gravity").to_ascii_lowercase();
             let ty = if n.is("Button") || n.is("ToggleButton") {
                 y + (n.h - block_h).max(0) / 2
+            } else if n.is("EditText")
+                || n.is("AutoCompleteTextView")
+                || n.is("MultiAutoCompleteTextView")
+            {
+                y + 8
             } else if gravity.contains("bottom") {
                 y + n.h - pad.bottom - block_h
             } else if gravity.contains("center_vertical")
@@ -2174,7 +2267,7 @@ impl Warp4Engine {
             && !n.attr("hint").is_empty()
         {
             layer.put_str(
-                (x + 8).max(0) as usize,
+                (x + 10).max(0) as usize,
                 (y + 8).max(0) as usize,
                 n.attr("hint"),
                 WARP3_MUTED,
@@ -2184,7 +2277,7 @@ impl Warp4Engine {
         if is_scroll_container(n) {
             layer.push_clip(
                 x.max(0) as usize,
-                y.max(TITLE_BAR).max(0) as usize,
+                y.max(title_bar_h()).max(0) as usize,
                 (x + n.w).max(0) as usize,
                 (y + n.h).max(0) as usize,
             );
@@ -2245,7 +2338,7 @@ impl Warp4Engine {
         let (x, y, w, h) = self.spinner_popup_rect(idx);
         layer.fill_rounded_rect(
             x.max(0) as usize,
-            y.max(TITLE_BAR) as usize,
+            y.max(title_bar_h()) as usize,
             w.max(1) as usize,
             h.max(1) as usize,
             2,
@@ -2253,7 +2346,7 @@ impl Warp4Engine {
         );
         layer.rect_outline(
             x.max(0) as usize,
-            y.max(TITLE_BAR) as usize,
+            y.max(title_bar_h()) as usize,
             w.max(1) as usize,
             h.max(1) as usize,
             WARP3_MUTED,
@@ -2265,7 +2358,7 @@ impl Warp4Engine {
             if item == selected {
                 layer.fill_rect(
                     (x + 1).max(0) as usize,
-                    row_y.max(TITLE_BAR) as usize,
+                    row_y.max(title_bar_h()) as usize,
                     (w - 2).max(1) as usize,
                     35,
                     Color::rgb(230, 240, 248),
@@ -2985,6 +3078,17 @@ fn text_color(n: &Node) -> Color {
 fn text_bold(_n: &Node) -> bool {
     false
 }
+
+fn mix_color(from: Color, to: Color, amount: f32) -> Color {
+    let amount = amount.clamp(0.0, 1.0);
+    let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * amount) as u8;
+    Color::rgb(
+        mix(from.r(), to.r()),
+        mix(from.g(), to.g()),
+        mix(from.b(), to.b()),
+    )
+}
+
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
     if !ttf_font::is_available() {
         if x >= 0 && y >= 0 {
