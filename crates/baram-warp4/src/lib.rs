@@ -1010,6 +1010,14 @@ impl Warp4Engine {
                     self.wait_until_ns = Some(self.now_ns.saturating_add(duration));
                 }
             }
+            "run" => {
+                // Keep the Warp 3 `run = os://...` form and also accept the
+                // compact `run (os://...)` form in native Warp 4 scripts.
+                let command = value.trim().trim_start_matches('=').trim();
+                if !command.is_empty() {
+                    self.last_command = Some(command.into());
+                }
+            }
             "WarpUI.text" => {
                 if let Some(i) = self.find(target) {
                     set_attr(&mut self.nodes[i], "text", &value);
@@ -2869,6 +2877,23 @@ fn parse_command(line: &str) -> Option<Action> {
             name: name.into(),
             target: String::new(),
             value: String::new(),
+        });
+    }
+    if name == "BaramOS" {
+        let rest = rest.strip_prefix("run").map(str::trim).unwrap_or(rest);
+        let value = rest.trim_start_matches('=').trim();
+        if value.starts_with('(') {
+            let (value, _) = balanced(value, 0)?;
+            return Some(Action::Command {
+                name: "run".into(),
+                target: String::new(),
+                value,
+            });
+        }
+        return Some(Action::Command {
+            name: "run".into(),
+            target: String::new(),
+            value: value.into(),
         });
     }
     if name == "fun" && rest.starts_with('(') {

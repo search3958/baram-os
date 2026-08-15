@@ -138,6 +138,55 @@
             baram:padding="8dp"
             baram:layout_marginBottom="24dp"/>
 
+        <!-- Warp 4 native OS command demo -->
+        <TextView
+            style="@style/ComponentLabel"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Mouse Pointer Size"
+            baram:textSize="14sp"
+            baram:textColor="#333333"/>
+
+        <TextView
+            baram:id="@+id/pointer_size_status"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Select a pointer size"
+            baram:textSize="14sp"
+            baram:textColor="#666666"
+            baram:layout_marginBottom="8dp"/>
+
+        <LinearLayout
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:orientation="horizontal"
+            baram:layout_marginBottom="24dp">
+
+            <Button
+                baram:id="@+id/pointer_small"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="Small"
+                baram:layout_marginRight="4dp"/>
+
+            <Button
+                baram:id="@+id/pointer_medium"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="Medium"
+                baram:layout_marginHorizontal="4dp"/>
+
+            <PrimaryButton
+                baram:id="@+id/pointer_large"
+                baram:layout_width="0dp"
+                baram:layout_height="wrap_content"
+                baram:layout_weight="1"
+                baram:text="Large"
+                baram:layout_marginLeft="4dp"/>
+        </LinearLayout>
+
         <Space
             baram:layout_width="match_parent"
             baram:layout_height="0dp"

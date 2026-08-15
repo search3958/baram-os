@@ -1,0 +1,52 @@
+# Native Warp 4 example actions
+var.set count (0)
+var.set memo_text ()
+
+WarpUI.OnClick btn_plus {
+    var.edit count (calc[var[count] + 1])
+    WarpUI.text counter_text (var[count])
+}
+
+WarpUI.OnClick btn_minus {
+    var.edit count (calc[var[count] - 1])
+    WarpUI.text counter_text (var[count])
+}
+
+WarpUI.OnClick btn_reset {
+    var.edit count (0)
+    WarpUI.text counter_text (0)
+}
+
+WarpUI.OnClick btn_save {
+    WarpUI.getText input_memo (memo_text)
+    if var[memo_text] != () {
+        WarpUI.text saved_status (Saved: var[memo_text])
+        WarpUI.editText input_memo ()
+    }
+}
+
+WarpUI.OnClick btn_clear {
+    var.edit memo_text ()
+    WarpUI.text saved_status (No memo saved.)
+    WarpUI.editText input_memo ()
+}
+
+# OS URI execution, matching the Warp 3 `run = os://...` syntax.
+WarpUI.OnClick pointer_small {
+    run = os://display/pointer?size=10
+    WarpUI.text pointer_size_status (Pointer size: Small)
+}
+
+WarpUI.OnClick pointer_medium {
+    BaramOS run (os://display/pointer?size=15)
+    WarpUI.text pointer_size_status (Pointer size: Medium)
+}
+
+WarpUI.OnClick pointer_large {
+    run = os://display/pointer?size=20
+    WarpUI.text pointer_size_status (Pointer size: Large)
+}
+
+WarpUI.OnClick btn_go_sub {
+    WarpUI.screen (sub.w4u)
+}
