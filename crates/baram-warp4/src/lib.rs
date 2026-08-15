@@ -431,25 +431,26 @@ impl Warp4Engine {
                 set_attr(&mut self.nodes[idx], &key, &value);
             }
         }
-        self.rebuild_fixed_subtree();
+        let chrome_mode = self.document_has_scroll();
+        self.rebuild_fixed_subtree(chrome_mode);
         self.refresh_visibility();
         self.dirty = true;
     }
 
-    fn rebuild_fixed_subtree(&mut self) {
+    fn rebuild_fixed_subtree(&mut self, chrome_mode: bool) {
         self.fixed_subtree.clear();
         self.fixed_subtree.resize(self.nodes.len(), false);
         let roots = self.roots.clone();
         for root in roots {
-            self.mark_fixed_subtree(root);
+            self.mark_fixed_subtree(root, chrome_mode);
         }
     }
 
-    fn mark_fixed_subtree(&mut self, idx: usize) -> bool {
-        let mut has_fixed = is_fixed(&self.nodes[idx]);
+    fn mark_fixed_subtree(&mut self, idx: usize, chrome_mode: bool) -> bool {
+        let mut has_fixed = self.node_is_fixed(idx, chrome_mode);
         let children = self.nodes[idx].children.clone();
         for child in children {
-            has_fixed |= self.mark_fixed_subtree(child);
+            has_fixed |= self.mark_fixed_subtree(child, chrome_mode);
         }
         self.fixed_subtree[idx] = has_fixed;
         has_fixed
