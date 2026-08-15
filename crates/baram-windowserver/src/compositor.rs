@@ -415,8 +415,10 @@ fn squircle_row_pixel_span(
     width: usize,
 ) -> Option<(usize, usize)> {
     let (left, right) = squircle_row_bounds(polygon, local_y as f32 + 0.5)?;
-    let span_l = ((left + 0.5) as usize).min(width);
-    let span_r = ((right + 0.5) as usize).min(width);
+    let span_l = libm::ceilf(left).max(0.0) as usize;
+    let span_r = libm::floorf(right).max(0.0) as usize;
+    let span_l = span_l.min(width);
+    let span_r = span_r.min(width);
     (span_l <= span_r).then_some((span_l, span_r))
 }
 

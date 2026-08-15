@@ -462,6 +462,9 @@ impl LayerSystem {
         let d2y = 0.18 * r + 0.90847 * (ly - r);
 
         let mut pts = alloc::vec::Vec::new();
+        // Four segments per cubic are sufficient for the shared squircle
+        // geometry; the edge coverage below is what gives it a smooth pixel
+        // boundary.
         let segs = 4;
 
         for i in 0..segs {
@@ -656,8 +659,11 @@ impl LayerSystem {
 
     #[inline]
     fn pixel_span_from_bounds(left: f32, right: f32, max_w: usize) -> (usize, usize) {
-        let start = libm::ceilf(left - 0.5).max(0.0) as usize;
-        let end = (libm::floorf(right - 0.5) as i32 + 1).max(0) as usize;
+        // Only classify pixels as fully covered when the whole pixel lies
+        // inside the shape. Center-based rounding makes partially covered
+        // pixels opaque and is the reason the anti-aliasing looks washed out.
+        let start = libm::ceilf(left).max(0.0) as usize;
+        let end = libm::floorf(right).max(0.0) as usize;
         (start.min(max_w), end.min(max_w))
     }
 
@@ -780,6 +786,9 @@ impl LayerSystem {
 
     fn pixel_aa(dst: &mut u32, fg: u32, px: f32, py: f32, poly: &[(f32, f32)], _off: &[f32; 2]) {
         let mut hits = 0u32;
+        // Supersample the squircle boundary instead of relying on a single
+        // hard pixel edge. Only the two edge pixels of each scanline use this
+        // path, so 4x4 gives a good quality/performance balance.
         for sy in 0..4 {
             for sx in 0..4 {
                 let sample_x = px + (sx as f32 + 0.5) * 0.25;
@@ -803,58 +812,7 @@ impl LayerSystem {
         off: &[f32; 2],
         count: usize,
     ) {
-        if count < 4 {
-            for i in 0..count {
-                Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
-            }
-            return;
-        }
-
-        let n = poly.len();
-        if n < 3 {
-            return;
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            use core::arch::x86_64::*;
-
-            let o0 = _mm_set1_ps(off[0]);
-            let o1 = _mm_set1_ps(off[1]);
-            let pxv = _mm_set_ps(px[3], px[2], px[1], px[0]);
-            let sample_x0 = _mm_add_ps(pxv, o0);
-            let sample_x1 = _mm_add_ps(pxv, o1);
-
-            let mut inside = _mm_setzero_si128();
-            let mut j = n - 1;
-            for i in 0..n {
-                let (ax, ay) = poly[i];
-                let (bx, by) = poly[j];
-                if ((ay > py) != (by > py)) {
-                    let ey = by - ay;
-                    let inv_ey = if ey.abs() > 1e-10 { 1.0 / ey } else { 0.0 };
-                    let x_int = _mm_set1_ps(ax + (py - ay) * (bx - ax) * inv_ey);
-                    let cmp0 = _mm_castps_si128(_mm_cmplt_ps(sample_x0, x_int));
-                    let cmp1 = _mm_castps_si128(_mm_cmplt_ps(sample_x1, x_int));
-                    let bits = _mm_and_si128(_mm_or_si128(cmp0, cmp1), _mm_set1_epi32(1));
-                    inside = _mm_xor_si128(inside, bits);
-                }
-                j = i;
-            }
-
-            let mut inside_arr = [0u32; 4];
-            _mm_storeu_si128(inside_arr.as_mut_ptr() as *mut __m128i, inside);
-
-            for p in 0..4 {
-                if inside_arr[p] != 0 {
-                    dst[p] = Self::blend_alpha(dst[p], fg, 0.25);
-                }
-            }
-            return;
-        }
-
-        #[cfg(not(target_arch = "x86_64"))]
-        for i in 0..count {
+        for i in 0..count.min(4) {
             Self::pixel_aa(&mut dst[i], fg, px[i], py, poly, off);
         }
     }

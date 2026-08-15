@@ -1938,7 +1938,7 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                8,
+                w.min(h) / 2,
                 if active || hover {
                     WARP3_BORDER_HOVER
                 } else {
@@ -1988,7 +1988,7 @@ impl Warp4Engine {
                     if checked { WARP3_ACCENT } else { WARP3_SURFACE },
                 );
                 if checked {
-                    draw_check_icon(layer, mark_x + 7, mark_y + 7);
+                    draw_check_icon(layer, mark_x + 5, mark_y + 5);
                 }
             } else {
                 let amount = self.control_amount(idx, checked);
@@ -3275,21 +3275,22 @@ fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
     // Use the shared SVG asset as a mask, then tint it white for the checked
     // state.  The source asset is black because it is also usable on light
     // surfaces; the native checkbox needs the same white mark as Warp3.
-    let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, 8, 8);
+    const ICON_SIZE: usize = 12;
+    let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, ICON_SIZE, ICON_SIZE);
     let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
     let layer_w = layer.width();
     let layer_h = layer.height();
-    for sy in 0..8i32 {
+    for sy in 0..ICON_SIZE as i32 {
         let py = y + sy;
         if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
             continue;
         }
-        for sx in 0..8i32 {
+        for sx in 0..ICON_SIZE as i32 {
             let px = x + sx;
             if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
                 continue;
             }
-            let alpha = pixels[(sy as usize * 8 + sx as usize) * 4 + 3];
+            let alpha = pixels[(sy as usize * ICON_SIZE + sx as usize) * 4 + 3];
             if alpha == 0 {
                 continue;
             }
