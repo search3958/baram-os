@@ -1,43 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<ScrollView
     xmlns:baram="http://schemas.baram.com/apk/res/baram"
-    baram:id="@+id/sub_root"
+    baram:id="@+id/scroll_sub"
     baram:layout_width="match_parent"
     baram:layout_height="match_parent"
-    baram:orientation="vertical"
-    baram:padding="16dp">
+    baram:fillViewport="true">
 
-    <TextView
-        style="@style/SectionTitle"
-        baram:id="@+id/sub_title"
-        baram:layout_width="wrap_content"
-        baram:layout_height="wrap_content"
-        baram:text="Sub Screen / Settings"
-        baram:textColor="#2E7D32"/>
-
-    <TextView
-        style="@style/SectionDescription"
-        baram:id="@+id/sub_desc"
-        baram:layout_width="wrap_content"
-        baram:layout_height="wrap_content"
-        baram:text="Control visibility &amp; Status"
-        baram:layout_marginBottom="16dp"/>
-
-    <!-- トグル／スイッチ状態管理 -->
     <LinearLayout
+        baram:id="@+id/sub_root"
         baram:layout_width="match_parent"
         baram:layout_height="wrap_content"
         baram:orientation="vertical"
-        baram:background="#E8F5E9"
-        baram:padding="12dp"
-        baram:layout_marginBottom="16dp">
+        baram:padding="16dp">
+
+        <!-- タイトルエリア -->
+        <TextView
+            style="@style/SectionTitle"
+            baram:id="@+id/sub_title"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Sub Screen / Settings"
+            baram:textSize="20sp"
+            baram:textStyle="bold"
+            baram:textColor="#000000"/>
+
+        <TextView
+            style="@style/SectionDescription"
+            baram:id="@+id/sub_desc"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Control visibility &amp; Status"
+            baram:textSize="14sp"
+            baram:textColor="#666666"
+            baram:layout_marginBottom="16dp"/>
+
+        <!-- 設定・トグルセクション -->
+        <TextView
+            style="@style/ComponentLabel"
+            baram:layout_width="wrap_content"
+            baram:layout_height="wrap_content"
+            baram:text="Panel Settings"
+            baram:textSize="14sp"
+            baram:textStyle="bold"
+            baram:textColor="#333333"
+            baram:layout_marginBottom="8dp"/>
 
         <Switch
             baram:id="@+id/switch_toggle"
             baram:layout_width="wrap_content"
             baram:layout_height="wrap_content"
             baram:text="Enable Feature Panel"
-            baram:checked="true"/>
+            baram:checked="true"
+            baram:layout_marginBottom="12dp"/>
+
+        <Button
+            baram:id="@+id/btn_toggle_panel"
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:text="Hide Panel"
+            baram:layout_marginBottom="16dp"/>
 
         <!-- 切り替え用パネル -->
         <LinearLayout
@@ -45,14 +66,15 @@
             baram:layout_width="match_parent"
             baram:layout_height="wrap_content"
             baram:orientation="vertical"
-            baram:layout_marginTop="8dp">
+            baram:layout_marginBottom="24dp">
 
             <TextView
                 baram:layout_width="wrap_content"
                 baram:layout_height="wrap_content"
-                baram:text="Panel Content Active!"
-                baram:textColor="#1B5E20"
-                baram:textStyle="bold"/>
+                baram:text="Panel Content Active"
+                baram:textSize="14sp"
+                baram:textStyle="bold"
+                baram:textColor="#000000"/>
 
             <ProgressBar
                 style="?baram:attr/progressBarStyleHorizontal"
@@ -62,27 +84,18 @@
                 baram:progress="75"
                 baram:layout_marginTop="8dp"/>
         </LinearLayout>
+
+        <Space
+            baram:layout_width="match_parent"
+            baram:layout_height="0dp"
+            baram:layout_weight="1"/>
+
+        <!-- 戻るボタン -->
+        <Button
+            baram:id="@+id/btn_back_main"
+            baram:layout_width="match_parent"
+            baram:layout_height="wrap_content"
+            baram:text="<- Back to Main Screen"/>
+
     </LinearLayout>
-
-    <!-- 表示コントロールボタン -->
-    <Button
-        baram:id="@+id/btn_toggle_panel"
-        baram:layout_width="match_parent"
-        baram:layout_height="wrap_content"
-        baram:text="Hide Panel"
-        baram:layout_marginBottom="16dp"/>
-
-    <Space
-        baram:layout_width="match_parent"
-        baram:layout_height="0dp"
-        baram:layout_weight="1"/>
-
-    <!-- メイン画面へ戻るボタン -->
-    <Button
-        baram:id="@+id/btn_back_main"
-        style="@style/ComponentBox"
-        baram:layout_width="match_parent"
-        baram:layout_height="wrap_content"
-        baram:text="&lt;- Back to Main Screen"/>
-
-</LinearLayout>
+</ScrollView>

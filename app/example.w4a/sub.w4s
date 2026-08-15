@@ -1,16 +1,14 @@
 # 初期設定
 var.set panel_visible (true)
-var.set panel_was_visible (true)
 
 # パネルの表示・非表示切り替え
 WarpUI.OnClick btn_toggle_panel {
-    var.edit panel_was_visible (var[panel_visible])
-    if var[panel_was_visible] = true {
+    if var[panel_visible] = true {
         WarpUI.visibility panel_content (gone)
         var.edit panel_visible (false)
         WarpUI.text btn_toggle_panel (Show Panel)
     }
-    if var[panel_was_visible] = false {
+    if var[panel_visible] = false {
         WarpUI.visibility panel_content (visible)
         var.edit panel_visible (true)
         WarpUI.text btn_toggle_panel (Hide Panel)
@@ -19,13 +17,12 @@ WarpUI.OnClick btn_toggle_panel {
 
 # スイッチタップ時にもパネル状態を変更
 WarpUI.OnClick switch_toggle {
-    var.edit panel_was_visible (var[panel_visible])
-    if var[panel_was_visible] = true {
+    if var[panel_visible] = true {
         WarpUI.visibility panel_content (gone)
         var.edit panel_visible (false)
         WarpUI.text btn_toggle_panel (Show Panel)
     }
-    if var[panel_was_visible] = false {
+    if var[panel_visible] = false {
         WarpUI.visibility panel_content (visible)
         var.edit panel_visible (true)
         WarpUI.text btn_toggle_panel (Hide Panel)

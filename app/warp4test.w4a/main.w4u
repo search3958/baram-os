@@ -81,7 +81,7 @@
             <TextView
                 baram:layout_width="fill_parent"
                 baram:layout_height="wrap_content"
-                baram:text="baram Device"
+                baram:text="Android Device"
                 baram:textColor="#222222"
                 baram:textSize="17sp" />
 
@@ -163,7 +163,7 @@
 
                     <TextView
                         baram:gravity="center_vertical"
-                        baram:text="baram Dev Phone"
+                        baram:text="Android Dev Phone"
                         baram:textColor="#222222"
                         baram:textSize="14sp" />
 
@@ -177,7 +177,7 @@
                         baram:paddingLeft="4dip"
                         baram:paddingRight="12dip"
                         baram:gravity="center_vertical"
-                        baram:text="baram"
+                        baram:text="Android"
                         baram:textColor="#777777"
                         baram:textSize="13sp" />
 

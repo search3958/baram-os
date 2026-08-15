@@ -1,5 +1,5 @@
 autostart:
-  - settings.w3a
+  - example.w4a
 
 apps:
   settings.w3a:
@@ -58,4 +58,4 @@ apps:
   warp4test.w4a:
     icon: warp.png
     type: warp-4
-    title: Warp 4 テスト
+    title: API1互換XML テスト
