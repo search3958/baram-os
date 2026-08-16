@@ -3955,8 +3955,9 @@ fn handle_file_dialog_command(
         let Some(path) = baram_bsd::vfs::parse_files_uri(request_path) else {
             return NavigationEffect::None;
         };
-        let dialog_win_id = wm.add("ファイルをアップロード", x, y, 560, 620);
+        let dialog_win_id = wm.add("ファイルをアップロード", x, y, 560, 372);
         wm.set_icon(dialog_win_id, "files.png");
+        wm.configure_special(dialog_win_id, false, true, true);
         wm.open_file_dialog(dialog_win_id, &path);
         wm.set_interaction_blocked(Some(source_win_id));
         *pending = Some(PendingFileDialog {
@@ -4021,11 +4022,7 @@ fn handle_native_file_dialog_click(
     };
     let rel_x = cx - wx;
     let rel_y = cy - wy;
-    let title_h = baram_windowserver::window::title_bar_h() as i32;
-    if rel_y < title_h {
-        return false;
-    }
-    let action = wm.file_dialog_click(clicked_id, rel_x, rel_y - title_h);
+    let action = wm.file_dialog_click(clicked_id, rel_x, rel_y);
     match action {
         NativeFileDialogAction::None | NativeFileDialogAction::Changed => true,
         NativeFileDialogAction::Cancel => {

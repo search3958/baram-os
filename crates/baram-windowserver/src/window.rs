@@ -518,7 +518,8 @@ impl Window {
     }
 
     fn title_bar_hit(&self, px: i32, py: i32) -> bool {
-        px >= self.x
+        self.chrome_visible
+            && px >= self.x
             && px < self.x + self.w as i32
             && py >= self.y
             && py < self.y + title_bar_h() as i32
@@ -855,7 +856,9 @@ impl NativeFileDialog {
         let mut dialog = Self {
             win_id,
             content_width: window_width as i32,
-            content_height: window_height.saturating_sub(title_bar_h()) as i32,
+            // Native file dialogs are borderless OS surfaces, so their
+            // content starts at the top of the window.
+            content_height: window_height as i32,
             path: path.into(),
             entries: Vec::new(),
             selected: None,
@@ -1996,7 +1999,12 @@ impl WindowManager {
                         (*layer_ptr).pop_clip();
                     }
                     if self.interaction_blocked == Some(win_id) {
-                        draw_settings_permission_overlay(&mut *layer_ptr, ww, wh);
+                        draw_settings_permission_overlay(
+                            &mut *layer_ptr,
+                            ww,
+                            wh,
+                            self.file_dialog.is_none(),
+                        );
                     }
                     // The Warp3 document reaches the top of the window and
                     // therefore sits behind the title bar. Repaint the full
@@ -2169,6 +2177,7 @@ impl WindowManager {
         self.windows
             .iter()
             .find(|w| w.id == id)
+            .filter(|w| w.chrome_visible)
             .map(|w| w.button_hit(px, py))
             .unwrap_or('n')
     }
@@ -2620,7 +2629,12 @@ fn draw_title_bar(layer: &mut LayerSystem, w: &Window, ox: i32, oy: i32, skip_bl
     }
 }
 
-fn draw_settings_permission_overlay(layer: &mut LayerSystem, width: usize, height: usize) {
+fn draw_settings_permission_overlay(
+    layer: &mut LayerSystem,
+    width: usize,
+    height: usize,
+    show_message: bool,
+) {
     let content_top = title_bar_h().min(height);
     let buffer_width = layer.width();
     let buffer_height = layer.height();
@@ -2633,6 +2647,10 @@ fn draw_settings_permission_overlay(layer: &mut LayerSystem, width: usize, heigh
             let blend = |channel: u8| ((channel as u32 * 70 + 255 * 185) / 255) as u8;
             buffer[index] = Color::rgb(blend(color.r()), blend(color.g()), blend(color.b())).0;
         }
+    }
+
+    if !show_message {
+        return;
     }
 
     let lines = [

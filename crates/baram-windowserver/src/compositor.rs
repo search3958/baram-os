@@ -1019,6 +1019,27 @@ fn ease_in_out(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// CSS-style cubic-bezier(.38, .33, .23, 1.0), used by the launcher opening
+/// transition. Solve the x component for the curve parameter, then evaluate y.
+fn ease_launcher_open(t: f32) -> f32 {
+    let x = t.clamp(0.0, 1.0);
+    let mut low = 0.0f32;
+    let mut high = 1.0f32;
+    for _ in 0..14 {
+        let u = (low + high) * 0.5;
+        let inv = 1.0 - u;
+        let curve_x = 3.0 * inv * inv * u * 0.38 + 3.0 * inv * u * u * 0.23 + u * u * u;
+        if curve_x < x {
+            low = u;
+        } else {
+            high = u;
+        }
+    }
+    let u = (low + high) * 0.5;
+    let inv = 1.0 - u;
+    3.0 * inv * inv * u * 0.33 + 3.0 * inv * u * u + u * u * u
+}
+
 fn draw_taskbar_glyph(
     layer: &mut LayerSystem,
     data: &[u8],
@@ -1797,7 +1818,7 @@ pub fn render_scene(
         let panel_radius = 18usize;
         let launcher_alpha = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            (ease_in_out(t) * 255.0) as u32
+            (ease_launcher_open(t) * 255.0) as u32
         } else if launcher_anim_phase < 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
             ((1.0 - ease_in_out(t)) * 255.0) as u32
@@ -1808,7 +1829,7 @@ pub fn render_scene(
         // changes this layer's position and global opacity.
         let launcher_offset_y = if launcher_anim_phase > 0 {
             let t = (launcher_anim_elapsed_ms as f32 / 200.0).clamp(0.0, 1.0);
-            ((1.0 - ease_in_out(t)) * 16.0) as usize
+            ((1.0 - ease_launcher_open(t)) * 16.0) as usize
         } else {
             0
         };
