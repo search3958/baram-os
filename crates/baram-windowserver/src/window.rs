@@ -722,7 +722,7 @@ struct CachedShadow {
 
 const FILE_DIALOG_LIST_Y: i32 = 96;
 const FILE_DIALOG_FOOTER_H: i32 = 56;
-const FILE_DIALOG_SMALL_CELL_H: i32 = 66;
+const FILE_DIALOG_SMALL_CELL_H: i32 = 42;
 const FILE_DIALOG_LARGE_CELL_H: i32 = 100;
 const FILE_DIALOG_GRID_COLUMNS: usize = 5;
 
@@ -760,7 +760,7 @@ fn file_icon_key(entry: &vfs::FileEntry) -> &'static str {
     } else if name.ends_with(".w3u") || name.ends_with(".w4u") || name.ends_with(".xml") {
         "files-file-appxml"
     } else if name.ends_with(".w3a") || name.ends_with(".w4a") || name.ends_with(".s4a") {
-        "files-file-warpfile"
+        "files-folder-app"
     } else if name.ends_with(".svg") {
         "files-file-svg"
     } else if name.ends_with(".png")
@@ -769,12 +769,11 @@ fn file_icon_key(entry: &vfs::FileEntry) -> &'static str {
         || name.ends_with(".gif")
     {
         "files-file-image"
-    } else if name.ends_with(".yaml") || name.ends_with(".yml") {
+    } else if name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".md"){
         "files-file-yaml"
     } else if name.ends_with(".bin") || name.ends_with(".o") {
         "files-file-bin"
     } else if name.ends_with(".txt")
-        || name.ends_with(".md")
         || name.ends_with(".rs")
         || name.ends_with(".c")
         || name.ends_with(".h")
@@ -847,7 +846,7 @@ pub struct NativeFileDialog {
     path: String,
     entries: Vec<vfs::FileEntry>,
     selected: Option<usize>,
-    scroll_start: usize,
+    scroll: SmoothScroll,
     large_view: bool,
 }
 
@@ -860,7 +859,7 @@ impl NativeFileDialog {
             path: path.into(),
             entries: Vec::new(),
             selected: None,
-            scroll_start: 0,
+            scroll: SmoothScroll::new(),
             large_view: false,
         };
         dialog.reload();
@@ -887,7 +886,8 @@ impl NativeFileDialog {
     fn reload(&mut self) {
         self.entries = vfs::list_files(&self.path);
         self.selected = None;
-        self.scroll_start = 0;
+        self.scroll.reset();
+        self.update_scroll_limit();
     }
 
     fn display_path(&self) -> String {
@@ -913,14 +913,25 @@ impl NativeFileDialog {
         }
     }
 
+    fn columns(&self) -> usize {
+        if self.large_view {
+            FILE_DIALOG_GRID_COLUMNS
+        } else {
+            1
+        }
+    }
+
     fn visible_rows(&self) -> usize {
         self.footer_top().saturating_sub(FILE_DIALOG_LIST_Y).max(0) as usize
             / self.cell_height() as usize
     }
 
-    fn max_scroll_start(&self) -> usize {
-        let rows = (self.entries.len() + FILE_DIALOG_GRID_COLUMNS - 1) / FILE_DIALOG_GRID_COLUMNS;
-        rows.saturating_sub(self.visible_rows()) * FILE_DIALOG_GRID_COLUMNS
+    fn update_scroll_limit(&mut self) {
+        let rows = (self.entries.len() + self.columns() - 1) / self.columns();
+        let content_height = rows as i32 * self.cell_height();
+        let viewport_height = self.footer_top().saturating_sub(FILE_DIALOG_LIST_Y);
+        self.scroll
+            .set_max(content_height.saturating_sub(viewport_height));
     }
 
     pub fn click(&mut self, x: i32, y: i32) -> NativeFileDialogAction {
@@ -941,13 +952,13 @@ impl NativeFileDialog {
             if x >= small_x && x < small_x + 64 {
                 if self.large_view {
                     self.large_view = false;
-                    self.scroll_start = self.scroll_start.min(self.max_scroll_start());
+                    self.update_scroll_limit();
                     return NativeFileDialogAction::Changed;
                 }
             } else if x >= large_x && x < large_x + 64 {
                 if !self.large_view {
                     self.large_view = true;
-                    self.scroll_start = self.scroll_start.min(self.max_scroll_start());
+                    self.update_scroll_limit();
                     return NativeFileDialogAction::Changed;
                 }
             }
@@ -972,18 +983,19 @@ impl NativeFileDialog {
         }
         let available_width = self.content_width.saturating_sub(24);
         let gap = 8;
-        let cell_width = (available_width - gap * (FILE_DIALOG_GRID_COLUMNS as i32 - 1))
-            / FILE_DIALOG_GRID_COLUMNS as i32;
+        let columns = self.columns();
+        let cell_width = (available_width - gap * (columns as i32 - 1)) / columns as i32;
         let local_x = x - 12;
         if local_x < 0 {
             return NativeFileDialogAction::None;
         }
         let column = (local_x / (cell_width + gap)) as usize;
-        if column >= FILE_DIALOG_GRID_COLUMNS {
+        if column >= columns {
             return NativeFileDialogAction::None;
         }
-        let row = ((y - FILE_DIALOG_LIST_Y) / self.cell_height()) as usize;
-        let index = self.scroll_start + row * FILE_DIALOG_GRID_COLUMNS + column;
+        let local_y = y - FILE_DIALOG_LIST_Y + self.scroll.position.max(0);
+        let row = (local_y / self.cell_height()) as usize;
+        let index = row * columns + column;
         let Some(entry) = self.entries.get(index).cloned() else {
             return NativeFileDialogAction::None;
         };
@@ -996,19 +1008,12 @@ impl NativeFileDialog {
         NativeFileDialogAction::Changed
     }
 
-    pub fn scroll(&mut self, delta: i32) -> bool {
-        let max_start = self.max_scroll_start();
-        let step = FILE_DIALOG_GRID_COLUMNS;
-        let next = if delta > 0 {
-            self.scroll_start.saturating_add(step).min(max_start)
-        } else {
-            self.scroll_start.saturating_sub(step)
-        };
-        if next == self.scroll_start {
-            return false;
-        }
-        self.scroll_start = next;
-        true
+    pub fn scroll_by(&mut self, delta: i32) -> bool {
+        self.scroll.scroll(delta)
+    }
+
+    pub fn tick_scroll(&mut self, now_ns: u64) -> bool {
+        self.scroll.tick(now_ns)
     }
 
     pub fn draw_to_layer(&self, layer: &mut LayerSystem, body_y: i32) {
@@ -1051,33 +1056,78 @@ impl NativeFileDialog {
         let footer_top = self.footer_top().max(0) as usize + body_top;
         let list_y = body_top + FILE_DIALOG_LIST_Y as usize;
         let gap = 8usize;
-        let cell_width = (width.saturating_sub(24 + gap * (FILE_DIALOG_GRID_COLUMNS - 1)))
-            / FILE_DIALOG_GRID_COLUMNS;
-        for row in 0..self.visible_rows() {
-            for column in 0..FILE_DIALOG_GRID_COLUMNS {
-                let index = self.scroll_start + row * FILE_DIALOG_GRID_COLUMNS + column;
+        let columns = self.columns();
+        let cell_width = (width.saturating_sub(24 + gap * (columns - 1))) / columns;
+        let offset = self.scroll.position.max(0) as usize;
+        let first_row = offset / self.cell_height() as usize;
+        let offset_in_row = offset % self.cell_height() as usize;
+        let rows_to_draw = self.visible_rows() + 2;
+        for row_offset in 0..rows_to_draw {
+            let row = first_row + row_offset;
+            for column in 0..columns {
+                let index = row * columns + column;
                 let x = 12 + column * (cell_width + gap);
-                let y = list_y + row * self.cell_height() as usize;
+                let y = list_y + row_offset * self.cell_height() as usize - offset_in_row;
                 let cell_h = self.cell_height().saturating_sub(4) as usize;
-                let row_bg = if self.selected == Some(index) {
-                    Color::rgb(190, 220, 250)
-                } else {
-                    Color::rgb(242, 242, 245)
+                let Some(entry) = self.entries.get(index) else {
+                    continue;
                 };
-                layer.fill_rounded_rect(x, y, cell_width, cell_h, 6, row_bg);
-                if let Some(entry) = self.entries.get(index) {
-                    let icon_size = if self.large_view { 64 } else { 24 };
-                    let icon_x = x + cell_width.saturating_sub(icon_size) / 2;
-                    let icon_y = y + 4;
-                    draw_native_file_icon(
-                        layer,
-                        file_icon(entry, self.large_view),
-                        icon_x,
-                        icon_y,
-                        icon_size,
+                let selected = self.selected == Some(index);
+                if !self.large_view {
+                    let row_bg = if selected {
+                        Color::BTN_PRIMARY
+                    } else {
+                        Color::rgb(242, 242, 245)
+                    };
+                    layer.fill_rounded_rect(x, y, cell_width, cell_h, 6, row_bg);
+                }
+                let icon_size = if self.large_view { 64 } else { 24 };
+                let icon_x = if self.large_view {
+                    x + cell_width.saturating_sub(icon_size) / 2
+                } else {
+                    x + 10
+                };
+                let icon_y = if self.large_view {
+                    y + 4
+                } else {
+                    y + (cell_h.saturating_sub(icon_size)) / 2
+                };
+                draw_native_file_icon(
+                    layer,
+                    file_icon(entry, self.large_view),
+                    icon_x,
+                    icon_y,
+                    icon_size,
+                );
+                let text_color = if !self.large_view && selected {
+                    Color::BTN_TEXT
+                } else {
+                    Color::TEXT
+                };
+                let label_x = if self.large_view {
+                    x + cell_width.saturating_sub(native_text_width(&entry.name)) / 2
+                } else {
+                    x + 42
+                };
+                let label_y = if self.large_view {
+                    y + cell_h.saturating_sub(16)
+                } else {
+                    y + (cell_h.saturating_sub(16)) / 2
+                };
+                if self.large_view && selected {
+                    let label_width = native_text_width(&entry.name).saturating_add(10);
+                    let label_bg_x = x + cell_width.saturating_sub(label_width) / 2;
+                    layer.fill_rounded_rect(
+                        label_bg_x,
+                        label_y.saturating_sub(4),
+                        label_width,
+                        22,
+                        5,
+                        Color::BTN_PRIMARY,
                     );
-                    let label_y = y + cell_h.saturating_sub(16);
-                    layer.put_str(x + 6, label_y, &entry.name, Color::TEXT);
+                    layer.put_str(label_bg_x + 5, label_y, &entry.name, Color::BTN_TEXT);
+                } else {
+                    layer.put_str(label_x, label_y, &entry.name, text_color);
                 }
             }
         }
@@ -1118,6 +1168,19 @@ fn draw_native_button(
     };
     layer.fill_rounded_rect(x, y, width, height, 8, bg);
     layer.put_str(x + 12, y + 12, label, fg);
+}
+
+fn native_text_width(text: &str) -> usize {
+    text.chars()
+        .map(|ch| {
+            let glyph = baram_font::ttf_font::glyph(ch);
+            if glyph.w > 0 {
+                glyph.advance.max(0) as usize
+            } else {
+                8
+            }
+        })
+        .sum()
 }
 
 fn draw_native_file_icon(layer: &mut LayerSystem, bytes: &[u8], x: usize, y: usize, size: usize) {
@@ -1247,7 +1310,7 @@ impl WindowManager {
             .as_mut()
             .filter(|dialog| dialog.win_id() == id)
         {
-            let changed = dialog.scroll(delta);
+            let changed = dialog.scroll_by(delta);
             if changed {
                 self.set_content_dirty(id);
             }
@@ -1449,6 +1512,17 @@ impl WindowManager {
         let mut changed = false;
         for window in &mut self.windows {
             changed |= window.tick_scroll(now_ns);
+        }
+        let dialog_changed = self
+            .file_dialog
+            .as_mut()
+            .map(|dialog| dialog.tick_scroll(now_ns))
+            .unwrap_or(false);
+        if dialog_changed {
+            if let Some(id) = self.file_dialog.as_ref().map(NativeFileDialog::win_id) {
+                self.set_content_dirty(id);
+            }
+            changed = true;
         }
         changed
     }
