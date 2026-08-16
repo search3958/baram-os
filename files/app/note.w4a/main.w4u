@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="16dip">
-  <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="ノート" baram:textSize="24sp" />
-  <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:layout_marginTop="4dip" baram:text="ファイルを開いて内容を表示します" baram:textColor="#777777" />
   <LinearLayout baram:layout_width="fill_parent" baram:layout_height="48dip" baram:layout_marginTop="12dip" baram:orientation="horizontal">
-    <PrimaryButton baram:id="@+id/open-file" baram:layout_width="wrap_content" baram:layout_height="fill_parent" baram:text="ファイルを開く" />
-    <TextView baram:id="@+id/file-path" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:layout_marginLeft="12dip" baram:gravity="center_vertical" baram:text="ファイルが選択されていません" baram:textColor="#777777" />
+    <Button baram:id="@+id/open-file" baram:layout_width="wrap_content" baram:layout_height="fill_parent" baram:text="화일 열기" />
+    <TextView baram:id="@+id/file-path" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:layout_marginLeft="14dip" baram:gravity="center_vertical" baram:text="ファイルが選択されていません" baram:textColor="#777777" />
   </LinearLayout>
   <ScrollView baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_marginTop="12dip" baram:layout_weight="1">
     <TextView baram:id="@+id/file-content" baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:padding="12dip" baram:text="ここにファイルの内容を表示します。" baram:textSize="15sp" />

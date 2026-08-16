@@ -24,10 +24,10 @@ apps:
   note.w4a:
     icon: note.png
     type: warp-4
-    title: ノート
+    title: プレビュー
     tag:
       - note
-      - memo
+      - preview
       - file
       - viewer
   task.w4a:
