@@ -769,7 +769,7 @@ fn file_icon_key(entry: &vfs::FileEntry) -> &'static str {
         || name.ends_with(".gif")
     {
         "files-file-image"
-    } else if name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".md"){
+    } else if name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".md") {
         "files-file-yaml"
     } else if name.ends_with(".bin") || name.ends_with(".o") {
         "files-file-bin"
@@ -1031,17 +1031,19 @@ impl NativeFileDialog {
             Color::rgb(250, 250, 252),
         );
 
-        layer.put_str(16, body_top + 14, &self.display_path(), Color::TEXT);
+        let path_text = native_truncate(&self.display_path(), width.saturating_sub(32));
+        layer.put_str(16, body_top + 14, &path_text, Color::TEXT);
         draw_native_button(layer, 12, body_top + 46, 96, 36, "戻る", false);
         let selected = self
             .selected
             .and_then(|index| self.entries.get(index))
             .map(|entry| format!("選択中: {}", entry.name))
             .unwrap_or_else(|| "ファイルを選択してください".into());
-        layer.put_str(120, body_top + 59, &selected, Color::MUTED);
 
         let small_x = width.saturating_sub(156);
         let large_x = width.saturating_sub(84);
+        let selected_text = native_truncate(&selected, small_x.saturating_sub(128));
+        layer.put_str(120, body_top + 59, &selected_text, Color::MUTED);
         draw_native_button(
             layer,
             small_x,
@@ -1104,8 +1106,13 @@ impl NativeFileDialog {
                 } else {
                     Color::TEXT
                 };
+                let label = if self.large_view {
+                    native_truncate(&entry.name, cell_width.saturating_sub(10))
+                } else {
+                    native_truncate(&entry.name, cell_width.saturating_sub(50))
+                };
                 let label_x = if self.large_view {
-                    x + cell_width.saturating_sub(native_text_width(&entry.name)) / 2
+                    x + cell_width.saturating_sub(native_text_width(&label)) / 2
                 } else {
                     x + 42
                 };
@@ -1115,7 +1122,7 @@ impl NativeFileDialog {
                     y + (cell_h.saturating_sub(16)) / 2
                 };
                 if self.large_view && selected {
-                    let label_width = native_text_width(&entry.name).saturating_add(10);
+                    let label_width = native_text_width(&label).saturating_add(10);
                     let label_bg_x = x + cell_width.saturating_sub(label_width) / 2;
                     layer.fill_rounded_rect(
                         label_bg_x,
@@ -1125,9 +1132,9 @@ impl NativeFileDialog {
                         5,
                         Color::BTN_PRIMARY,
                     );
-                    layer.put_str(label_bg_x + 5, label_y, &entry.name, Color::BTN_TEXT);
+                    layer.put_str(label_bg_x + 5, label_y, &label, Color::BTN_TEXT);
                 } else {
-                    layer.put_str(label_x, label_y, &entry.name, text_color);
+                    layer.put_str(label_x, label_y, &label, text_color);
                 }
             }
         }
@@ -1181,6 +1188,29 @@ fn native_text_width(text: &str) -> usize {
             }
         })
         .sum()
+}
+
+fn native_truncate(text: &str, max_width: usize) -> String {
+    if native_text_width(text) <= max_width {
+        return text.into();
+    }
+    let ellipsis = "...";
+    let ellipsis_width = native_text_width(ellipsis);
+    if max_width <= ellipsis_width {
+        return ellipsis.into();
+    }
+    let mut result = String::new();
+    for ch in text.chars() {
+        let next_width = native_text_width(&result)
+            .saturating_add(native_text_width(&ch.to_string()))
+            .saturating_add(ellipsis_width);
+        if next_width > max_width {
+            break;
+        }
+        result.push(ch);
+    }
+    result.push_str(ellipsis);
+    result
 }
 
 fn draw_native_file_icon(layer: &mut LayerSystem, bytes: &[u8], x: usize, y: usize, size: usize) {
