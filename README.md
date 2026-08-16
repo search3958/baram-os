@@ -20,7 +20,7 @@ OS の VFS は `/apps/...`、`/app/...`、`/data/...`、`/files/...` を `files.
 W4S からは次のファイル API を利用できます。
 
 ```text
-BaramOS.getFile fileText (files://data/min.svg)
+BaramOS.getFile fileText (files://data/ui/min.svg)
 BaramOS.uploadFile selectedText (files://data/)
 ```
 

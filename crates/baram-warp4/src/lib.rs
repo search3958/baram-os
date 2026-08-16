@@ -22,7 +22,7 @@ const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
-const CHECK_ICON_SVG: &str = include_str!("../../../files/data/check-icon.svg");
+const CHECK_ICON_SVG: &str = include_str!("../../../files/data/ui/check-icon.svg");
 const WARP4_INPUT_RADIUS: usize = 11;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
 // the established Warp3 surface instead of maintaining a second theme.
