@@ -872,7 +872,7 @@ impl NativeFileDialog {
         );
 
         layer.put_str(16, body_top + 14, &self.display_path(), Color::TEXT);
-        draw_native_button(layer, 12, body_top + 46, 96, 36, "← 戻る", false);
+        draw_native_button(layer, 12, body_top + 46, 96, 36, "戻る", false);
         let selected = self
             .selected
             .and_then(|index| self.entries.get(index))
