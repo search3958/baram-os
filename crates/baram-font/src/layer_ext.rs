@@ -1,4 +1,5 @@
 use crate::font;
+use crate::bdf_font;
 use crate::ttf_font;
 use crate::ttf_font_hud;
 use baram_core::{Color, LayerSystem};
@@ -11,6 +12,24 @@ pub trait LayerFontExt {
 
 impl LayerFontExt for LayerSystem {
     fn put_char(&mut self, x: usize, y: usize, ch: char, fg: Color) {
+        if bdf_font::is_available() {
+            let w = self.width();
+            let (clip_x0, clip_y0, clip_x1, clip_y1) = self.clip_bounds();
+            let buf = self.buf_mut();
+            if bdf_font::with_glyph(ch, |data, gw, gh, _advance, y_off| {
+                for row in 0..gh {
+                    let py = y as i32 + y_off + row;
+                    if py < clip_y0 as i32 || py >= clip_y1 as i32 { continue; }
+                    for col in 0..gw {
+                        let px = x as i32 + col;
+                        if px >= clip_x0 as i32 && px < clip_x1 as i32 && data[(row * gw + col) as usize] != 0 {
+                            buf[py as usize * w + px as usize] = fg.0;
+                        }
+                    }
+                }
+                true
+            }) { return; }
+        }
         if ttf_font::is_available() && ch as u32 >= 0x20 {
             let baseline = y as i32 + ttf_font::ascent();
             let w = self.width();
@@ -82,6 +101,13 @@ impl LayerFontExt for LayerSystem {
     }
 
     fn put_str(&mut self, mut x: usize, y: usize, s: &str, fg: Color) {
+        if bdf_font::is_available() {
+            for ch in s.chars() {
+                self.put_char(x, y, ch, fg);
+                x += bdf_font::advance(ch).max(1) as usize;
+            }
+            return;
+        }
         if ttf_font::is_available() {
             for ch in s.chars() {
                 let mut advance = 0;
@@ -109,6 +135,10 @@ impl LayerFontExt for LayerSystem {
     }
 
     fn put_str_hud(&mut self, mut x: usize, y: usize, s: &str, fg: Color) {
+        if bdf_font::is_available() {
+            self.put_str(x, y, s, fg);
+            return;
+        }
         if ttf_font_hud::is_available() {
             for ch in s.chars() {
                 let glyph = ttf_font_hud::glyph(ch);

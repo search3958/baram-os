@@ -14,7 +14,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use baram_bsd::{app::Warp4Archive, config, vfs};
 use baram_core::{Color, LayerSystem};
-use baram_font::{ttf_font, LayerFontExt};
+use baram_font::{bdf_font, ttf_font, LayerFontExt};
 use baram_graphics::svg;
 use uefi::runtime;
 
@@ -3385,6 +3385,9 @@ fn interactive(n: &Node) -> bool {
             || n.is("TimePicker"))
 }
 fn measure(s: &str) -> i32 {
+    if bdf_font::is_available() {
+        return s.chars().map(bdf_font::advance).sum();
+    }
     if ttf_font::is_available() {
         s.chars().map(ttf_font::advance).sum()
     } else {
@@ -3392,6 +3395,10 @@ fn measure(s: &str) -> i32 {
     }
 }
 fn measure_size(s: &str, size: f32) -> i32 {
+    if bdf_font::is_available() {
+        let _ = size;
+        return measure(s);
+    }
     if !ttf_font::is_available() {
         return measure(s);
     }
@@ -3536,6 +3543,13 @@ fn blur_shadow_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usiz
 }
 
 fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: Color, size: f32) {
+    if bdf_font::is_available() {
+        if x >= 0 && y >= 0 {
+            layer.put_str(x as usize, y as usize, text, color);
+        }
+        let _ = size;
+        return;
+    }
     if !ttf_font::is_available() {
         if x >= 0 && y >= 0 {
             layer.put_str(x as usize, y as usize, text, color);

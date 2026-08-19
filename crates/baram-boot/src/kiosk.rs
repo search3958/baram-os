@@ -98,8 +98,7 @@ fn draw_cursor(layer: &mut LayerSystem, x: i32, y: i32) {
 
 pub fn run(mut nano: NanoSystem) -> Status {
     config::init_config();
-    baram_font::ttf_font::init();
-    baram_font::ttf_font_hud::init();
+    baram_font::bdf_font::init(include_bytes!("../../baram-xiao/src/misaki_gothic_2nd.bdf"));
     let mut screen = match Screen::take_with_target(640, 360) {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,

@@ -4,6 +4,7 @@ extern crate alloc;
 
 pub mod font;
 pub mod font_data;
+pub mod bdf_font;
 pub mod layer_ext;
 pub mod log;
 pub mod ttf_font;
