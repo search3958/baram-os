@@ -23,7 +23,7 @@
 #    ./build.sh image     # only build + create the FAT image
 #    ./build.sh run       # only run (assumes image + firmware already exist)
 #    ./build.sh clean     # cargo clean
-#    ./build.sh x       # x86_64 build + run (PNG decoder disabled)
+#    ./build.sh x       # ARM64 Xiao kiosk build + run
 #    ./build.sh help
 #
 # =============================================================================
@@ -54,6 +54,7 @@ QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
 # Where the QEMU HMP monitor goes.  Default is `none` (no monitor).  Use
 # `stdio` to control QEMU via the terminal (e.g. `screendump`, `quit`).
 QEMU_MONITOR="${QEMU_MONITOR:-none}"
+XIAO_MODE=0
 
 # ---------- pretty logging ----------
 log()  { printf "\033[1;34m[build]\033[0m %s\n" "$*"; }
@@ -124,6 +125,22 @@ build_efi() {
     done
 }
 
+# The Xiao system is a separate ARM64 image. It deliberately builds only the
+# Nano/Warp4 kiosk entry point; the normal desktop and its subsystem binaries
+# are not part of this image.
+build_xiao() {
+    XIAO_MODE=1
+    local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
+    local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
+    log "Building ARM64 Xiao kiosk system ..."
+    cargo +nightly build --release --target aarch64-unknown-uefi \
+        --manifest-path "$SCRIPT_DIR/crates/baram-xiao/Cargo.toml"
+    test -f "$xiao_target" || die "Xiao build did not produce $xiao_target"
+    cp "$xiao_target" "$xiao_efi"
+    cp "$xiao_target" "$TARGET_DIR/$EFI_NAME"
+    log "  -> $xiao_efi ($(stat -c %s "$xiao_efi" 2>/dev/null || stat -f %z "$xiao_efi") bytes)"
+}
+
 # ---------- step 3: FAT image creation ----------
 # Try every strategy in order.  We prefer mtools (cross-platform, fast)
 # then macOS hdiutil, then Linux loop-mount.
@@ -153,14 +170,16 @@ make_fat_image() {
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
         # Create bin directory for subsystems
         mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
-        # Copy subsystem binaries
-        for name in "${SUBSYSTEM_NAMES[@]}"; do
-            local sub_bin="$TARGET_DIR/$name.efi"
-            if [ -f "$sub_bin" ]; then
-                mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
-                log "  copied $name.efi to /EFI/BOOT/bin/"
-            fi
-        done
+        if [ "$XIAO_MODE" -eq 0 ]; then
+            # Copy subsystem binaries for the normal desktop image only.
+            for name in "${SUBSYSTEM_NAMES[@]}"; do
+                local sub_bin="$TARGET_DIR/$name.efi"
+                if [ -f "$sub_bin" ]; then
+                    mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
+                    log "  copied $name.efi to /EFI/BOOT/bin/"
+                fi
+            done
+        fi
         # Copy config file
         if [ -f "$SCRIPT_DIR/config.xml" ]; then
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
@@ -188,14 +207,16 @@ make_fat_image() {
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
         # Create bin directory for subsystems
         mkdir -p "$tmp_mount/EFI/BOOT/bin"
-        # Copy subsystem binaries
-        for name in "${SUBSYSTEM_NAMES[@]}"; do
-            local sub_bin="$TARGET_DIR/$name.efi"
-            if [ -f "$sub_bin" ]; then
-                cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
-                log "  copied $name.efi to /EFI/BOOT/bin/"
-            fi
-        done
+        if [ "$XIAO_MODE" -eq 0 ]; then
+            # Copy subsystem binaries for the normal desktop image only.
+            for name in "${SUBSYSTEM_NAMES[@]}"; do
+                local sub_bin="$TARGET_DIR/$name.efi"
+                if [ -f "$sub_bin" ]; then
+                    cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
+                    log "  copied $name.efi to /EFI/BOOT/bin/"
+                fi
+            done
+        fi
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' > "$tmp_mount/startup.nsh"
         # Copy config file
@@ -222,14 +243,16 @@ make_fat_image() {
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
         # Create bin directory for subsystems
         mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
-        # Copy subsystem binaries
-        for name in "${SUBSYSTEM_NAMES[@]}"; do
-            local sub_bin="$TARGET_DIR/$name.efi"
-            if [ -f "$sub_bin" ]; then
-                mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
-                log "  copied $name.efi to /EFI/BOOT/bin/"
-            fi
-        done
+        if [ "$XIAO_MODE" -eq 0 ]; then
+            # Copy subsystem binaries for the normal desktop image only.
+            for name in "${SUBSYSTEM_NAMES[@]}"; do
+                local sub_bin="$TARGET_DIR/$name.efi"
+                if [ -f "$sub_bin" ]; then
+                    mcopy -i "$out" "$sub_bin" ::/EFI/BOOT/bin/
+                    log "  copied $name.efi to /EFI/BOOT/bin/"
+                fi
+            done
+        fi
         # Auto-boot script.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         # Copy config file
@@ -260,14 +283,16 @@ make_fat_image() {
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
         # Create bin directory for subsystems
         mkdir -p "$tmp_mount/EFI/BOOT/bin"
-        # Copy subsystem binaries
-        for name in "${SUBSYSTEM_NAMES[@]}"; do
-            local sub_bin="$TARGET_DIR/$name.efi"
-            if [ -f "$sub_bin" ]; then
-                cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
-                log "  copied $name.efi to /EFI/BOOT/bin/"
-            fi
-        done
+        if [ "$XIAO_MODE" -eq 0 ]; then
+            # Copy subsystem binaries for the normal desktop image only.
+            for name in "${SUBSYSTEM_NAMES[@]}"; do
+                local sub_bin="$TARGET_DIR/$name.efi"
+                if [ -f "$sub_bin" ]; then
+                    cp "$sub_bin" "$tmp_mount/EFI/BOOT/bin/"
+                    log "  copied $name.efi to /EFI/BOOT/bin/"
+                fi
+            done
+        fi
         # Copy config file
         if [ -f "$SCRIPT_DIR/config.xml" ]; then
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
@@ -466,9 +491,10 @@ Install QEMU:
 # ---------- subcommands ----------
 case "${1:-build-run}" in
     x)
-        # Keep the x86_64 build path in one place.  build64.sh also owns its
-        # target directory, firmware, image format, and QEMU machine.
-        exec "$SCRIPT_DIR/build64.sh"
+        build_xiao
+        make_fat_image
+        ensure_firmware
+        run_qemu
         ;;
     build)
         build_efi

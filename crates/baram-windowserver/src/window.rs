@@ -1217,14 +1217,6 @@ fn native_truncate(text: &str, max_width: usize) -> String {
 }
 
 fn draw_native_file_icon(layer: &mut LayerSystem, bytes: &[u8], x: usize, y: usize, size: usize) {
-    #[cfg(target_arch = "x86_64")]
-    {
-        let _ = (layer, bytes, x, y, size);
-        return;
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    {
     let Ok((header, pixels)) = png_decoder::decode(bytes) else {
         return;
     };
@@ -1257,7 +1249,6 @@ fn draw_native_file_icon(layer: &mut LayerSystem, bytes: &[u8], x: usize, y: usi
             let b = (sb as u32 * alpha as u32 + dst.b() as u32 * inverse) / 255;
             buffer[index] = Color::rgb(r as u8, g as u8, b as u8).0;
         }
-    }
     }
 }
 

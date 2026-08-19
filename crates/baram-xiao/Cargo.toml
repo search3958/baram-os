@@ -1,14 +1,16 @@
 [package]
-name = "baram-windowserver"
+name = "baram-xiao"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "xiao"
+path = "src/main.rs"
+
 [dependencies]
+baram-bsd = { path = "../baram-bsd" }
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font" }
-baram-graphics = { path = "../baram-graphics" }
-baram-bsd = { path = "../baram-bsd" }
 baram-warp4 = { path = "../baram-warp4" }
+nano-system = { path = "../nano-system" }
 uefi = { workspace = true }
-libm = { workspace = true }
-png-decoder = { path = "../png-decoder" }
