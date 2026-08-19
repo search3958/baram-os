@@ -9,7 +9,8 @@
 #    3. Builds the OS as bootaa64.efi (PE32+ ARM64 UEFI application).
 #    4. Prepares a FAT-formatted disk image with the EFI binary at
 #       EFI/BOOT/BOOTAA64.EFI (the standard UEFI removable-media path).
-#    5. Downloads QEMU_EFI.fd (AAVMF) firmware if it isn't already present.
+#    5. Uses the bundled BaramOS AArch64 UEFI firmware, built without the
+#       upstream AAVMF 128 MiB minimum-memory assertion.
 #    6. Boots the OS in qemu-system-aarch64 using the QEMU `virt` machine
 #       (Cortex-A72, 1 GiB RAM, USB mouse + keyboard, VGA display).
 #
@@ -39,7 +40,8 @@ PROJECT_NAME="baramos"
 EFI_NAME="bootaa64.efi"
 IMAGE_NAME="osdisk-arm64.img"
 IMAGE_SIZE_MB=64
-FIRMWARE_NAME="QEMU_EFI.fd"
+FIRMWARE_NAME="baram-aarch64-uefi.fd"
+FIRMWARE_PATH="$SCRIPT_DIR/firmware/$FIRMWARE_NAME"
 RUNTIME_DIR="$SCRIPT_DIR/runtime"
 TARGET_DIR="$SCRIPT_DIR/target/aarch64-unknown-uefi/release"
 
@@ -130,9 +132,9 @@ build_efi() {
 # are not part of this image.
 build_xiao() {
     XIAO_MODE=1
-    # AAVMF needs at least 128 MiB to initialize GOP reliably. This is the
-    # smallest practical value in the 0.1 GiB class for the Xiao image.
-    QEMU_RAM="128M"
+    # Xiao is intentionally constrained to 0.1 GiB. The bundled BaramOS UEFI
+    # firmware is patched to initialize GOP below the upstream 128 MiB floor.
+    QEMU_RAM="80M"
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."
@@ -335,63 +337,17 @@ make_fat_image() {
 
 # ---------- step 4: UEFI firmware ----------
 ensure_firmware() {
-    local fw="$RUNTIME_DIR/$FIRMWARE_NAME"
-    local fw_code="$RUNTIME_DIR/AAVMF_CODE.fd"
-    local fw_vars="$RUNTIME_DIR/AAVMF_VARS.fd"
+    if [ ! -f "$FIRMWARE_PATH" ]; then
+        die "BaramOS AArch64 UEFI firmware is missing: $FIRMWARE_PATH
 
-    # If the split firmware (AAVMF_CODE.fd + AAVMF_VARS.fd) is present, use it.
-    if [ -f "$fw_code" ] && [ -f "$fw_vars" ]; then
-        log "Firmware present (split AAVMF): $fw_code + $fw_vars"
-        return 0
+This repository requires its patched firmware for both BaramOS and Xiao;
+do not substitute the stock AAVMF firmware because it rejects RAM below
+128 MiB before GOP initialization."
     fi
-    # If a single QEMU_EFI.fd is present, we'll use that via -bios (handled below).
-    if [ -f "$fw" ] && [ "$(stat -c %s "$fw" 2>/dev/null || stat -f %z "$fw")" -gt 1000000 ]; then
-        log "Firmware present (single): $fw"
-        return 0
-    fi
-
-    log "Downloading UEFI firmware ..."
-
-    # Try a few sources in order.
-    # Source 1: GitHub mirror of AAVMF (single QEMU_EFI.fd).
-    local github_url="https://github.com/retroplasma/edk2-uefi-arm64/releases/download/r23/QEMU_EFI.fd"
-    if curl -L --fail --silent --show-error -o "$fw.tmp" "$github_url"; then
-        mv "$fw.tmp" "$fw"
-        log "  -> $fw"
-        return 0
-    fi
-    rm -f "$fw.tmp"
-
-    # Source 2: Debian qemu-efi-aarch64 .deb (contains QEMU_EFI.fd).
-    log "GitHub mirror failed; trying Debian qemu-efi-aarch64 .deb ..."
-    local deb_url2
-    deb_url2="$(apt-get download --print-uri qemu-efi-aarch64 2>/dev/null | head -1 || true)"
-    if [ -z "$deb_url2" ]; then
-        deb_url2="http://ftp.debian.org/debian/pool/main/e/edk2/qemu-efi-aarch64_2025.02-8+deb13u1_all.deb"
-    fi
-    log "  fetching $deb_url2"
-    if curl -L --fail --silent --show-error -o "$RUNTIME_DIR/qemu-efi-aarch64.deb" "$deb_url2"; then
-        (cd "$RUNTIME_DIR" && ar x qemu-efi-aarch64.deb data.tar.xz 2>/dev/null \
-            && tar xf data.tar.xz ./usr/share/qemu-efi-aarch64/QEMU_EFI.fd 2>/dev/null \
-            && mv ./usr/share/qemu-efi-aarch64/QEMU_EFI.fd "$FIRMWARE_NAME" \
-            && rm -rf ./usr data.tar.xz qemu-efi-aarch64.deb)
-        if [ -f "$fw" ]; then
-            log "  -> $fw"
-            return 0
-        fi
-    fi
-    rm -f "$RUNTIME_DIR/qemu-efi-aarch64.deb" "$RUNTIME_DIR/data.tar.xz" "$fw.tmp"
-
-    die "Could not download UEFI firmware. Manually place one of:
-  $RUNTIME_DIR/$FIRMWARE_NAME            (single QEMU_EFI.fd, used with -bios)
-  $RUNTIME_DIR/AAVMF_CODE.fd + AAVMF_VARS.fd  (split firmware, preferred)
-
-You can install it via your package manager:
-  Debian/Ubuntu : sudo apt install qemu-efi-aarch64
-                  (file at /usr/share/qemu-efi-aarch64/QEMU_EFI.fd)
-  macOS (brew)  : brew install qemu
-                  (file at /opt/homebrew/share/qemu/edk2-aarch64-code.fd)
-"
+    local firmware_size
+    firmware_size="$(stat -c %s "$FIRMWARE_PATH" 2>/dev/null || stat -f %z "$FIRMWARE_PATH")"
+    [ "$firmware_size" -gt 1000000 ] || die "UEFI firmware is unexpectedly small: $FIRMWARE_PATH"
+    log "Firmware present (BaramOS low-memory UEFI): $FIRMWARE_PATH"
 }
 
 # ---------- step 5: QEMU launch ----------
@@ -422,55 +378,33 @@ Install QEMU:
   Ubuntu : sudo apt install qemu-system-arm
   Arch   : sudo pacman -S qemu-system-aarch64
 "
-    local fw="$RUNTIME_DIR/$FIRMWARE_NAME"
-    local fw_code="$RUNTIME_DIR/AAVMF_CODE.fd"
-    local fw_vars="$RUNTIME_DIR/AAVMF_VARS.fd"
     local img="$RUNTIME_DIR/$IMAGE_NAME"
     [ -f "$img" ] || die "Disk image missing. Run './build.sh' first."
-
-    # Determine which firmware layout to use.
-    local use_split=0
-    if [ -f "$fw_code" ] && [ -f "$fw_vars" ]; then
-        use_split=1
-    elif [ ! -f "$fw" ]; then
-        die "Firmware missing. Run './build.sh' first."
-    fi
+    [ -f "$FIRMWARE_PATH" ] || die "Firmware missing: $FIRMWARE_PATH"
 
     log "Launching QEMU ..."
     log "  machine : $QEMU_MACHINE"
     log "  cpu     : $QEMU_CPU"
     log "  ram     : $QEMU_RAM"
-    if [ "$use_split" -eq 1 ]; then
-        log "  firmware: $fw_code + $fw_vars (split AAVMF)"
-    else
-        log "  firmware: $fw (single QEMU_EFI.fd)"
-    fi
+    log "  firmware: $FIRMWARE_PATH (BaramOS low-memory UEFI)"
     log "  disk    : $img"
     echo
 
     # Build the firmware args.
     local fw_args=()
-    if [ "$use_split" -eq 1 ]; then
-        fw_args+=(
-            -drive "if=pflash,format=raw,readonly=on,file=$fw_code"
-            -drive "if=pflash,format=raw,file=$fw_vars"
-        )
-    else
-        fw_args+=(-bios "$fw")
-    fi
+    fw_args+=(-bios "$FIRMWARE_PATH")
 
     # QEMU args explanation:
     #   -machine virt            : ARM virt machine (matches Raspberry Pi UEFI class)
     #   -cpu cortex-a72          : 64-bit ARM core (same family as Pi 4)
     #   -m 1G                    : 1 GiB RAM
-    #   -pflash CODE + VARS      : UEFI firmware (AAVMF) — modern split layout
-    #                              (or -bios QEMU_EFI.fd for single-file firmware)
+    #   -bios                    : BaramOS UEFI firmware with no 128 MiB floor
     #   -drive ...,format=raw    : FAT image as removable media (bootable)
     #   -device ramfb            : simple firmware framebuffer (works on every QEMU build)
     #                              alternative: -device virtio-gpu-device (better resolution,
     #                              needs virtio-gpu driver in firmware)
     #   -device qemu-xhci        : USB 3.0 host controller (required for usb-kbd / usb-mouse)
-    #   -device usb-tablet       : USB absolute pointing device (exposed by AAVMF as the
+    #   -device usb-tablet       : USB absolute pointing device (exposed by UEFI as the
     #                              EFI Absolute Pointer Protocol — best mouse support)
     #   -device usb-kbd          : USB keyboard (Simple Text Input)
     #   -display <disp>          : GUI window (use 'none' for headless)
