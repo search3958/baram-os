@@ -137,7 +137,7 @@ build_xiao() {
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
     # Xiao is intentionally constrained to 0.1 GiB. The bundled BaramOS UEFI
     # firmware is patched to initialize GOP below the upstream 128 MiB floor.
-    QEMU_RAM="${QEMU_RAM:-32M}"
+    QEMU_RAM="${QEMU_RAM:-24M}"
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."

@@ -18,6 +18,7 @@ use baram_font::{bdf_font, LayerFontExt};
 use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "ttf")]
 use baram_font::ttf_font;
+#[cfg(not(feature = "bdf"))]
 use baram_graphics::svg;
 use uefi::runtime;
 
@@ -25,6 +26,7 @@ const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
+#[cfg(not(feature = "bdf"))]
 const CHECK_ICON_SVG: &str = include_str!("../../../files/data/ui/check-icon.svg");
 const WARP4_INPUT_RADIUS: usize = 11;
 // Warp3 control palette.  Keep Warp4's native controls visually identical to
@@ -46,6 +48,112 @@ const WARP4_BLACK: Color = Color::rgb(0, 0, 0);
 const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
 const SCROLLBAR_THUMB: Color = Color::rgb(184, 184, 184);
 const SCROLLBAR_RADIUS: usize = 3;
+
+// The BDF build is the Xiao kiosk build.  It intentionally uses a hard,
+// pixel-snapped control language: no squircle geometry, coverage sampling,
+// alpha edges, or blurred shadows.  The normal TTF build keeps the existing
+// smooth renderer unchanged.
+#[cfg(feature = "bdf")]
+fn fill_ui_rounded_rect(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    radius: usize,
+    color: Color,
+) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    let radius = radius.min(2).min(w / 2).min(h / 2);
+    for row in 0..h {
+        let inset = if row < radius {
+            radius - row
+        } else if row >= h.saturating_sub(radius) {
+            radius - (h - 1 - row)
+        } else {
+            0
+        };
+        let width = w.saturating_sub(inset.saturating_mul(2));
+        if width > 0 {
+            layer.fill_rect(x + inset, y + row, width, 1, color);
+        }
+    }
+}
+
+#[cfg(not(feature = "bdf"))]
+fn fill_ui_rounded_rect(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    radius: usize,
+    color: Color,
+) {
+    layer.fill_rounded_rect(x, y, w, h, radius, color);
+}
+
+#[cfg(feature = "bdf")]
+fn outline_ui_rounded_rect(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    radius: usize,
+    border: Color,
+    fill: Color,
+) {
+    fill_ui_rounded_rect(layer, x, y, w, h, radius, border);
+    if w > 2 && h > 2 {
+        fill_ui_rounded_rect(
+            layer,
+            x + 1,
+            y + 1,
+            w - 2,
+            h - 2,
+            radius.saturating_sub(1),
+            fill,
+        );
+    }
+}
+
+#[cfg(not(feature = "bdf"))]
+fn outline_ui_rounded_rect(
+    layer: &mut LayerSystem,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    radius: usize,
+    border: Color,
+    fill: Color,
+) {
+    layer.rounded_rect_outline(x, y, w, h, radius, border, fill);
+}
+
+#[cfg(feature = "bdf")]
+fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, color: Color) {
+    let radius = radius.max(1) as i32;
+    let center_x = cx as i32;
+    let center_y = cy as i32;
+    let radius_sq = radius * radius;
+    for dy in -radius..=radius {
+        let mut span = radius;
+        while span > 0 && span * span + dy * dy > radius_sq {
+            span -= 1;
+        }
+        let left = (center_x - span).max(0) as usize;
+        layer.fill_rect(left, (center_y + dy).max(0) as usize, (span * 2 + 1) as usize, 1, color);
+    }
+}
+
+#[cfg(not(feature = "bdf"))]
+fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, color: Color) {
+    layer.fill_circle(cx, cy, radius, color);
+}
 
 // Warp4 is shared by the normal and Xiao images.  Keep the scale as explicit
 // process-local runtime state instead of a Cargo feature: a normal image must
@@ -298,6 +406,15 @@ impl Warp4Engine {
             self.hovered = None;
             self.dirty = true;
         }
+    }
+
+    /// Move the active document viewport by a fixed keyboard step.  Xiao uses
+    /// this directly for UEFI arrow-key events because those events have no
+    /// printable byte to pass through `handle_key`.
+    pub fn scroll_by(&mut self, delta: i32) -> bool {
+        let before = self.scroll;
+        self.set_scroll(self.scroll.saturating_add(delta));
+        self.scroll != before
     }
     pub fn is_animating(&self) -> bool {
         !self.control_animations.is_empty()
@@ -2088,7 +2205,8 @@ impl Warp4Engine {
                 if let Some(fill) = parse_color(n.attr("background")) {
                     let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
                     if radius > 0 {
-                        layer.fill_rounded_rect(
+                        fill_ui_rounded_rect(
+                            layer,
                             x.max(0) as usize,
                             y.max(self.chrome_height).max(0) as usize,
                             n.w.max(1) as usize,
@@ -2141,7 +2259,8 @@ impl Warp4Engine {
             if let Some(fill) = parse_color(n.attr("background")) {
                 let radius = parse_dim(n.attr("cornerRadius"), 0).max(0) as usize;
                 if radius > 0 {
-                    layer.fill_rounded_rect(
+                    fill_ui_rounded_rect(
+                        layer,
                         x.max(0) as usize,
                         y.max(0) as usize,
                         w,
@@ -2168,7 +2287,8 @@ impl Warp4Engine {
             } else {
                 WARP4_PRIMARY
             };
-            layer.fill_rounded_rect(
+            fill_ui_rounded_rect(
+                layer,
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
@@ -2190,7 +2310,8 @@ impl Warp4Engine {
             || n.is("AutoCompleteTextView")
             || n.is("MultiAutoCompleteTextView")
         {
-            layer.rounded_rect_outline(
+            outline_ui_rounded_rect(
+                layer,
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
@@ -2210,7 +2331,8 @@ impl Warp4Engine {
                 } else {
                     WARP3_MUTED
                 };
-                layer.rounded_rect_outline(
+                outline_ui_rounded_rect(
+                    layer,
                     mark_x.max(0) as usize,
                     mark_y.max(0) as usize,
                     ui_px_usize(22),
@@ -2235,7 +2357,8 @@ impl Warp4Engine {
                 } else {
                     WARP4_RADIO_OFF
                 };
-                layer.fill_circle(
+                fill_ui_circle(
+                    layer,
                     (mark_x + ui_px(9)).max(0) as usize,
                     (mark_y + ui_px(9)).max(0) as usize,
                     ui_px_usize(9),
@@ -2243,7 +2366,8 @@ impl Warp4Engine {
                 );
                 let inner_radius = (ui_size(4.0) * amount + ui_size(0.5)) as usize;
                 if inner_radius > 0 {
-                    layer.fill_circle(
+                    fill_ui_circle(
+                        layer,
                         (mark_x + ui_px(9)).max(0) as usize,
                         (mark_y + ui_px(9)).max(0) as usize,
                         inner_radius,
@@ -2257,7 +2381,8 @@ impl Warp4Engine {
             let track = mix_color(WARP3_BG, WARP3_ACCENT, amount);
             let sy = y + (n.h - ui_px(22)).max(0) / 2;
             let track_w = ui_px_usize(44);
-            layer.rounded_rect_outline(
+            outline_ui_rounded_rect(
+                layer,
                 x.max(0) as usize,
                 sy.max(0) as usize,
                 track_w,
@@ -2271,7 +2396,8 @@ impl Warp4Engine {
             let knob_x = x
                 + ui_px(10)
                 + ((track_w as f32 - ui_size(20.0)) * amount + ui_size(0.5)) as i32;
-            layer.fill_circle(
+            fill_ui_circle(
+                layer,
                 knob_x.max(0) as usize,
                 (sy + ui_px(11)).max(0) as usize,
                 ui_px_usize(7),
@@ -2358,7 +2484,8 @@ impl Warp4Engine {
                     WARP3_ACCENT,
                 );
             }
-            layer.fill_circle(
+            fill_ui_circle(
+                layer,
                 px.max(0) as usize,
                 cy.max(0) as usize,
                 ui_px_usize(if self.hovered == Some(idx) { 10 } else { 9 }).max(1),
@@ -2380,7 +2507,8 @@ impl Warp4Engine {
             }
         } else if n.is("ProgressBar") {
             if n.attr("style").contains("progressBarStyleHorizontal") || w > ui_px_usize(80) {
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     x.max(0) as usize,
                     (y + ui_px(2)).max(0) as usize,
                     w,
@@ -2390,7 +2518,8 @@ impl Warp4Engine {
                 );
                 let max = parse_i32(n.attr("max")).max(1);
                 let progress = parse_i32(n.attr("progress")).clamp(0, max);
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     x.max(0) as usize,
                     (y + ui_px(2)).max(0) as usize,
                     (w as i32 * progress / max) as usize,
@@ -2403,8 +2532,8 @@ impl Warp4Engine {
                 let cy = (y + h as i32 / 2).max(0);
                 let outer_radius = ui_px(14);
                 let inner_radius = ui_px(9);
-                layer.fill_circle(cx as usize, cy as usize, outer_radius.max(1) as usize, Color::rgb(207, 207, 207));
-                layer.fill_circle(cx as usize, cy as usize, inner_radius.max(1) as usize, Color::rgb(255, 255, 255));
+                fill_ui_circle(layer, cx as usize, cy as usize, outer_radius.max(1) as usize, Color::rgb(207, 207, 207));
+                fill_ui_circle(layer, cx as usize, cy as usize, inner_radius.max(1) as usize, Color::rgb(255, 255, 255));
                 for dy in -outer_radius..=outer_radius {
                     for dx in -outer_radius..=outer_radius {
                         let radius = dx * dx + dy * dy;
@@ -2561,7 +2690,8 @@ impl Warp4Engine {
                 let max_scroll = n.content_h.saturating_sub(n.h).max(1);
                 let thumb_y = max_thumb_y * self.scroll / max_scroll;
                 let bar_x = (x + n.w - ui_px(8)).max(0) as usize;
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     bar_x,
                     (y + ui_px(1)).max(0) as usize,
                     ui_px_usize(6).max(1),
@@ -2569,7 +2699,8 @@ impl Warp4Engine {
                     ui_px_usize(SCROLLBAR_RADIUS),
                     SCROLLBAR_TRACK,
                 );
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     bar_x,
                     (y + ui_px(1) + thumb_y).max(0) as usize,
                     ui_px_usize(6).max(1),
@@ -2583,7 +2714,8 @@ impl Warp4Engine {
                 let max_thumb_x = track_w - thumb_w;
                 let max_scroll = n.content_w.saturating_sub(n.w).max(1);
                 let thumb_x = max_thumb_x * self.scroll / max_scroll;
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     (x + ui_px(1)).max(0) as usize,
                     (y + n.h - ui_px(6)).max(0) as usize,
                     track_w as usize,
@@ -2591,7 +2723,8 @@ impl Warp4Engine {
                     ui_px_usize(SCROLLBAR_RADIUS),
                     SCROLLBAR_TRACK,
                 );
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     (x + ui_px(1) + thumb_x).max(0) as usize,
                     (y + n.h - ui_px(6)).max(0) as usize,
                     thumb_w as usize,
@@ -2614,6 +2747,21 @@ impl Warp4Engine {
         let (x, y, w, h) = self.spinner_popup_rect(idx);
         let popup_w = w.max(1) as usize;
         let popup_h = h.max(1) as usize;
+        #[cfg(feature = "bdf")]
+        {
+            let _ = opacity;
+            self.paint_spinner_popup_content(
+                layer,
+                x.max(0) as usize,
+                y.max(self.chrome_height) as usize,
+                popup_w,
+                popup_h,
+                idx,
+            );
+            return;
+        }
+        #[cfg(not(feature = "bdf"))]
+        {
         let radius = ui_px_usize(8);
         let shadow_pad = ui_px_usize(16);
         if opacity < 255 {
@@ -2652,6 +2800,7 @@ impl Warp4Engine {
         let y = y.max(self.chrome_height) as usize;
         draw_spinner_shadow(layer, x, y, popup_w, popup_h, radius);
         self.paint_spinner_popup_content(layer, x, y, popup_w, popup_h, idx);
+        }
     }
 
     fn paint_spinner_popup_content(
@@ -2666,7 +2815,7 @@ impl Warp4Engine {
         let Some(node) = self.nodes.get(idx) else {
             return;
         };
-        layer.fill_rounded_rect(x, y, w, h, ui_px_usize(8), Color::rgb(255, 255, 255));
+        fill_ui_rounded_rect(layer, x, y, w, h, ui_px_usize(8), Color::rgb(255, 255, 255));
         let selected = parse_i32(node.attr("selectedIndex")).max(0) as usize;
         let items = node.attr("items");
         for item in 0..self.spinner_item_count(idx) {
@@ -2674,7 +2823,8 @@ impl Warp4Engine {
             let row_y = y + ui_px_usize(4) + item * row_h;
             let highlighted = item == selected;
             if highlighted {
-                layer.fill_rounded_rect(
+                fill_ui_rounded_rect(
+                    layer,
                     x + ui_px_usize(4),
                     row_y,
                     w.saturating_sub(ui_px_usize(8)),
@@ -3523,6 +3673,19 @@ fn mix_color(from: Color, to: Color, amount: f32) -> Color {
     )
 }
 
+#[cfg(feature = "bdf")]
+fn draw_spinner_shadow(
+    _layer: &mut LayerSystem,
+    _x: usize,
+    _y: usize,
+    _width: usize,
+    _height: usize,
+    _radius: usize,
+) {
+    // Xiao deliberately has no translucent or blurred control shadows.
+}
+
+#[cfg(not(feature = "bdf"))]
 fn draw_spinner_shadow(
     layer: &mut LayerSystem,
     x: usize,
@@ -3566,6 +3729,7 @@ fn draw_spinner_shadow(
     }
 }
 
+#[cfg(not(feature = "bdf"))]
 fn blur_shadow_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     if width == 0 || height == 0 || radius == 0 {
         return;
@@ -3653,6 +3817,33 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
     }
 }
 
+#[cfg(feature = "bdf")]
+fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
+    // A two-segment, pixel-snapped check mark.  The BDF/Xiao path never
+    // rasterizes the SVG mask, so no fractional alpha reaches the framebuffer.
+    let size = ui_px_usize(12).max(4) as i32;
+    let stroke = ui_px_usize(2).max(1);
+    for i in 0..(size / 3).max(1) {
+        layer.fill_rect(
+            (x + size / 5 + i).max(0) as usize,
+            (y + size / 2 + i).max(0) as usize,
+            stroke,
+            stroke,
+            Color::rgb(255, 255, 255),
+        );
+    }
+    for i in 0..(size * 2 / 3).max(1) {
+        layer.fill_rect(
+            (x + size / 3 + i).max(0) as usize,
+            (y + size * 2 / 3 - i).max(0) as usize,
+            stroke,
+            stroke,
+            Color::rgb(255, 255, 255),
+        );
+    }
+}
+
+#[cfg(not(feature = "bdf"))]
 fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
     // Use the shared SVG asset as a mask, then tint it white for the checked
     // state.  The source asset is black because it is also usable on light

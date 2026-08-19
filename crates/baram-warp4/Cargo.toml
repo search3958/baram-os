@@ -9,7 +9,7 @@ ttf = ["baram-font/ttf", "baram-graphics/ttf"]
 bdf = ["baram-font/bdf", "baram-graphics/bdf"]
 
 [dependencies]
-baram-bsd = { path = "../baram-bsd" }
+baram-bsd = { path = "../baram-bsd", default-features = false }
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font", default-features = false }
 baram-graphics = { path = "../baram-graphics", default-features = false }

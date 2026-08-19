@@ -65,7 +65,20 @@ fn now_ns() -> u64 {
     }).unwrap_or(0)
 }
 
-fn key_value(event: NanoKeyEvent) -> Option<u8> { event.printable }
+// UEFI Simple Text Input scan codes: Up=1, Down=2, Right=3, Left=4.
+// Xiao intentionally treats all four arrows as document scrolling so the
+// kiosk remains usable without adding focus/navigation machinery.
+fn handle_kiosk_key(engine: &mut Warp4Engine, event: NanoKeyEvent) -> bool {
+    if let Some(key) = event.printable {
+        engine.handle_key(key);
+        return true;
+    }
+    match event.scancode {
+        1 | 4 => engine.scroll_by(-24),
+        2 | 3 => engine.scroll_by(24),
+        _ => false,
+    }
+}
 
 fn pointer_xy(event: NanoBasicPointerEvent, nano: &NanoSystem, x: &mut i32, y: &mut i32, w: usize, h: usize) -> bool {
     if let Some((px, py, max_x, max_y)) = event.absolute {
@@ -153,6 +166,8 @@ pub fn run(mut nano: NanoSystem) -> Status {
     unsafe { baram_font::log::init_screen(&screen); }
     let mut timer = nano.take_timer_event();
     let mut layer = LayerSystem::new_screen_backed(&mut screen);
+    let mut display_state = baram_bsd::uri::DisplayState::new();
+    baram_bsd::uri::load_settings_from_config(&mut display_state);
     let apps = entries();
     let sources = [("config.ini", LIST_CONFIG), ("main.w4u", LIST_XML)];
     let mut list = Some(Warp4Engine::new_embedded("__os_kiosk__", &sources));
@@ -178,8 +193,7 @@ pub fn run(mut nano: NanoSystem) -> Status {
             let mut clicked_id = None;
             if let Some(list) = list.as_mut() {
                 while let Some(event) = nano.poll_keyboard() {
-                    if let Some(key) = key_value(event) {
-                        list.handle_key(key);
+                    if handle_kiosk_key(list, event) {
                         display_changed = true;
                     }
                 }
@@ -219,8 +233,7 @@ pub fn run(mut nano: NanoSystem) -> Status {
             let mut display_changed = content_dirty;
             content_dirty = false;
             while let Some(event) = nano.poll_keyboard() {
-                if let Some(key) = key_value(event) {
-                    engine.handle_key(key);
+                if handle_kiosk_key(engine, event) {
                     display_changed = true;
                 }
             }
@@ -236,6 +249,16 @@ pub fn run(mut nano: NanoSystem) -> Status {
                 display_changed |= engine.pointer_move(x, y);
             }
             display_changed |= engine.tick(now_ns());
+            // Xiao is a single-task kiosk: an app's OS-setting command is
+            // executed immediately, without a permission window or hash
+            // lookup.  There is no second app/window to authorize against.
+            if let Some(command) = engine.take_command() {
+                if command.starts_with("os://") {
+                    let _ = baram_bsd::uri::execute(&command, &mut display_state);
+                    engine.refresh_config();
+                    display_changed = true;
+                }
+            }
             if display_changed {
                 baram_font::bdf_font::clear_cache();
                 engine.draw_to_layer(&mut layer, 0, 0);

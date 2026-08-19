@@ -3,9 +3,13 @@ name = "baram-bsd"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["security-hash"]
+security-hash = ["dep:blake3"]
+
 [dependencies]
 baram-core = { path = "../baram-core" }
 baram-font = { path = "../baram-font", default-features = false }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
-blake3 = { workspace = true }
+blake3 = { workspace = true, optional = true }
