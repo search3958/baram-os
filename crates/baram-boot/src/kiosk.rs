@@ -20,7 +20,8 @@ use baram_warp4::Warp4Engine;
 use nano_system::{NanoBasicPointerEvent, NanoKeyEvent, NanoSystem};
 
 const LIST_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="32dip" baram:layout_gap="12dip">
+<ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="false">
+<LinearLayout baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:orientation="vertical" baram:padding="32dip" baram:layout_gap="12dip">
   <TextView baram:id="title" baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="BaramOS" baram:textSize="30sp" />
   <TextView baram:id="subtitle" baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="アプリケーションを選択してください" baram:textSize="16sp" />
   <Button baram:id="app0" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
@@ -31,7 +32,32 @@ const LIST_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
   <Button baram:id="app5" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
   <Button baram:id="app6" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
   <Button baram:id="app7" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
-</LinearLayout>"#;
+  <Button baram:id="app8" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app9" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app10" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app11" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app12" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app13" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app14" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app15" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app16" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app17" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app18" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app19" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app20" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app21" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app22" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app23" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app24" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app25" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app26" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app27" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app28" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app29" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app30" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+  <Button baram:id="app31" baram:layout_width="fill_parent" baram:layout_height="48dip" baram:text="" />
+</LinearLayout>
+</ScrollView>"#;
 const LIST_CONFIG: &str = "version=4\nscreen=main\nname=BaramOS\n";
 
 struct Entry {
@@ -50,8 +76,12 @@ fn entries() -> Vec<Entry> {
             if candidate.ends_with(".w4a") {
                 name = Some(candidate.to_string());
             }
-        } else if let (Some(current), Some(value)) = (name.as_ref(), trimmed.strip_prefix("title:")) {
-            result.push(Entry { name: current.clone(), title: value.trim().to_string() });
+        } else if let (Some(current), Some(value)) = (name.as_ref(), trimmed.strip_prefix("title:"))
+        {
+            result.push(Entry {
+                name: current.clone(),
+                title: value.trim().to_string(),
+            });
             name = None;
         }
     }
@@ -59,10 +89,13 @@ fn entries() -> Vec<Entry> {
 }
 
 fn now_ns() -> u64 {
-    runtime::get_time().ok().map(|t| {
-        (t.hour() as u64 * 3_600 + t.minute() as u64 * 60 + t.second() as u64) * 1_000_000_000
-            + t.nanosecond() as u64
-    }).unwrap_or(0)
+    runtime::get_time()
+        .ok()
+        .map(|t| {
+            (t.hour() as u64 * 3_600 + t.minute() as u64 * 60 + t.second() as u64) * 1_000_000_000
+                + t.nanosecond() as u64
+        })
+        .unwrap_or(0)
 }
 
 // UEFI Simple Text Input scan codes: Up=1, Down=2, Right=3, Left=4.
@@ -80,7 +113,14 @@ fn handle_kiosk_key(engine: &mut Warp4Engine, event: NanoKeyEvent) -> bool {
     }
 }
 
-fn pointer_xy(event: NanoBasicPointerEvent, nano: &NanoSystem, x: &mut i32, y: &mut i32, w: usize, h: usize) -> bool {
+fn pointer_xy(
+    event: NanoBasicPointerEvent,
+    nano: &NanoSystem,
+    x: &mut i32,
+    y: &mut i32,
+    w: usize,
+    h: usize,
+) -> bool {
     if let Some((px, py, max_x, max_y)) = event.absolute {
         *x = ((px.saturating_mul(w as u64)) / max_x.max(1)) as i32;
         *y = ((py.saturating_mul(h as u64)) / max_y.max(1)) as i32;
@@ -158,7 +198,9 @@ pub fn run(mut nano: NanoSystem) -> Status {
     // Xiao is the only image that uses compact Warp4 metrics.  The normal
     // BaramOS binaries never call this and therefore remain at 100%.
     baram_warp4::set_ui_mode(baram_warp4::UiMode::Xiao);
-    baram_warp4::set_ui_scale_percent(50);
+    // Xiao calculates all XML layout metrics at 25%; button dimensions remain
+    // owned by each screen's XML instead of a separate hardcoded profile.
+    baram_warp4::set_ui_scale_percent(25);
     // Keep the 757 KiB BDF on the FAT volume. The parser streams it and keeps
     // only glyphs used by the current display while painting.
     baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
@@ -169,8 +211,14 @@ pub fn run(mut nano: NanoSystem) -> Status {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,
     };
-    NanoSystem::serial_log(&format!("xiao: screen {}x{}\r\n", screen.width(), screen.height()));
-    unsafe { baram_font::log::init_screen(&screen); }
+    NanoSystem::serial_log(&format!(
+        "xiao: screen {}x{}\r\n",
+        screen.width(),
+        screen.height()
+    ));
+    unsafe {
+        baram_font::log::init_screen(&screen);
+    }
     let mut timer = nano.take_timer_event();
     let mut layer = LayerSystem::new_screen_backed(&mut screen);
     let mut display_state = baram_bsd::uri::DisplayState::new();
@@ -179,11 +227,14 @@ pub fn run(mut nano: NanoSystem) -> Status {
     let sources = [("config.ini", LIST_CONFIG), ("main.w4u", LIST_XML)];
     let mut list = Some(Warp4Engine::new_embedded("__os_kiosk__", &sources));
     list.as_mut().unwrap().set_chrome_visible(false);
-    for i in 0..8 {
-        list.as_mut().unwrap().set_text(
-            &format!("app{}", i),
-            apps.get(i).map(|e| e.title.as_str()).unwrap_or(""),
-        );
+    for i in 0..32 {
+        let id = format!("app{}", i);
+        if let Some(entry) = apps.get(i) {
+            list.as_mut().unwrap().set_text(&id, &entry.title);
+            list.as_mut().unwrap().set_visible(&id, true);
+        } else {
+            list.as_mut().unwrap().set_visible(&id, false);
+        }
     }
     let mut selected: Option<Warp4Engine> = None;
     let mut x = (screen.width() / 2) as i32;
@@ -193,7 +244,9 @@ pub fn run(mut nano: NanoSystem) -> Status {
     let mut cursor_drawn = false;
     let mut content_dirty = true;
     loop {
-        if let Some(ref mut event) = timer { let _ = uefi::boot::wait_for_event(core::slice::from_mut(event)); }
+        if let Some(ref mut event) = timer {
+            let _ = uefi::boot::wait_for_event(core::slice::from_mut(event));
+        }
         if selected.is_none() {
             let mut display_changed = content_dirty;
             content_dirty = false;
@@ -205,9 +258,17 @@ pub fn run(mut nano: NanoSystem) -> Status {
                     }
                 }
                 while let Some(event) = nano.poll_pointer() {
-                    let was_down = pointer_xy(event, &nano, &mut x, &mut y, screen.width(), screen.height());
+                    let was_down = pointer_xy(
+                        event,
+                        &nano,
+                        &mut x,
+                        &mut y,
+                        screen.width(),
+                        screen.height(),
+                    );
                     if was_down {
-                        list.click(x, y);
+                        let document_y = y.saturating_add(list.scroll_position());
+                        list.click(x, document_y);
                         display_changed = true;
                     }
                     display_changed |= list.pointer_move(x, y);
@@ -244,9 +305,17 @@ pub fn run(mut nano: NanoSystem) -> Status {
                 }
             }
             while let Some(event) = nano.poll_pointer() {
-                let down = pointer_xy(event, &nano, &mut x, &mut y, screen.width(), screen.height());
+                let down = pointer_xy(
+                    event,
+                    &nano,
+                    &mut x,
+                    &mut y,
+                    screen.width(),
+                    screen.height(),
+                );
                 if down {
-                    engine.click(x, y);
+                    let document_y = y.saturating_add(engine.scroll_position());
+                    engine.click(x, document_y);
                     display_changed = true;
                 } else if engine.has_pointer_capture() {
                     engine.release();

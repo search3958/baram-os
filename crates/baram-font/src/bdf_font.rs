@@ -7,10 +7,10 @@
 
 #![allow(dead_code)]
 
+use alloc::vec::Vec;
 use uefi::boot;
 use uefi::proto::media::file::{File, FileAttribute, FileMode, RegularFile};
 use uefi::CStr16;
-use alloc::vec::Vec;
 
 #[derive(Clone, Copy)]
 enum FontSource {
@@ -52,7 +52,9 @@ pub fn init_file(path: &'static str) {
 /// Drop every cached glyph explicitly, for example when changing the font
 /// source or switching from the launcher to the selected application.
 pub fn clear_cache() {
-    unsafe { CACHE = None; }
+    unsafe {
+        CACHE = None;
+    }
 }
 
 pub fn is_available() -> bool {
@@ -64,7 +66,13 @@ where
     F: FnMut(&[u8], i32, i32, i32, i32) -> bool,
 {
     if let Some(entry) = cached_glyph(ch) {
-        return draw(&entry.bitmap[..(entry.width * entry.height) as usize], entry.width, entry.height, entry.advance, entry.y_off);
+        return draw(
+            &entry.bitmap[..(entry.width * entry.height) as usize],
+            entry.width,
+            entry.height,
+            entry.advance,
+            entry.y_off,
+        );
     }
     match unsafe { SOURCE } {
         FontSource::None => false,
@@ -77,14 +85,18 @@ where
 
 fn cached_glyph(ch: char) -> Option<GlyphCacheEntry> {
     unsafe {
-        CACHE.as_ref()?.iter().find(|entry| entry.ch == ch).map(|entry| GlyphCacheEntry {
-            ch: entry.ch,
-            width: entry.width,
-            height: entry.height,
-            advance: entry.advance,
-            y_off: entry.y_off,
-            bitmap: entry.bitmap,
-        })
+        CACHE
+            .as_ref()?
+            .iter()
+            .find(|entry| entry.ch == ch)
+            .map(|entry| GlyphCacheEntry {
+                ch: entry.ch,
+                width: entry.width,
+                height: entry.height,
+                advance: entry.advance,
+                y_off: entry.y_off,
+                bitmap: entry.bitmap,
+            })
     }
 }
 
@@ -93,7 +105,14 @@ fn cache_glyph(ch: char, bitmap: &[u8], width: i32, height: i32, advance: i32, y
     cached[..bitmap.len()].copy_from_slice(bitmap);
     unsafe {
         let cache = CACHE.get_or_insert_with(Vec::new);
-        cache.push(GlyphCacheEntry { ch, width, height, advance, y_off, bitmap: cached });
+        cache.push(GlyphCacheEntry {
+            ch,
+            width,
+            height,
+            advance,
+            y_off,
+            bitmap: cached,
+        });
     }
 }
 
@@ -102,7 +121,9 @@ where
     F: FnMut(&[u8], i32, i32, i32, i32) -> bool,
 {
     let wanted = ch as u32;
-    let Ok(text) = core::str::from_utf8(data) else { return false };
+    let Ok(text) = core::str::from_utf8(data) else {
+        return false;
+    };
     let mut encoding = u32::MAX;
     let mut advance = 8i32;
     let mut width = 0i32;
@@ -122,9 +143,17 @@ where
             bitmap_row = 0;
             in_bitmap = false;
         } else if let Some(value) = line.strip_prefix("ENCODING ") {
-            encoding = value.split_whitespace().next().and_then(parse_u32).unwrap_or(u32::MAX);
+            encoding = value
+                .split_whitespace()
+                .next()
+                .and_then(parse_u32)
+                .unwrap_or(u32::MAX);
         } else if let Some(value) = line.strip_prefix("DWIDTH ") {
-            advance = value.split_whitespace().next().and_then(parse_i32).unwrap_or(8);
+            advance = value
+                .split_whitespace()
+                .next()
+                .and_then(parse_i32)
+                .unwrap_or(8);
         } else if let Some(value) = line.strip_prefix("BBX ") {
             let mut values = value.split_whitespace().filter_map(parse_i32);
             width = values.next().unwrap_or(0).clamp(0, 8);
@@ -136,8 +165,21 @@ where
             bitmap_row = 0;
         } else if line == "ENDCHAR" {
             if encoding == wanted && width > 0 && height > 0 {
-                let drawn = draw(&bitmap[..(width * height) as usize], width, height, advance, y_off);
-                cache_glyph(ch, &bitmap[..(width * height) as usize], width, height, advance, y_off);
+                let drawn = draw(
+                    &bitmap[..(width * height) as usize],
+                    width,
+                    height,
+                    advance,
+                    y_off,
+                );
+                cache_glyph(
+                    ch,
+                    &bitmap[..(width * height) as usize],
+                    width,
+                    height,
+                    advance,
+                    y_off,
+                );
                 return drawn;
             }
             in_bitmap = false;
@@ -158,7 +200,9 @@ fn with_file_glyph<F>(path: &str, ch: char, mut draw: F) -> bool
 where
     F: FnMut(&[u8], i32, i32, i32, i32) -> bool,
 {
-    let Some(file) = open_file(path) else { return false };
+    let Some(file) = open_file(path) else {
+        return false;
+    };
     let wanted = ch as u32;
     let mut reader = BdfReader::new(file);
     let mut line = [0u8; 256];
@@ -172,7 +216,9 @@ where
     let mut in_bitmap = false;
 
     while let Some(len) = reader.line(&mut line) {
-        let Ok(line) = core::str::from_utf8(&line[..len]) else { continue };
+        let Ok(line) = core::str::from_utf8(&line[..len]) else {
+            continue;
+        };
         if line == "STARTCHAR" || line.starts_with("STARTCHAR ") {
             encoding = u32::MAX;
             advance = 8;
@@ -182,9 +228,17 @@ where
             bitmap_row = 0;
             in_bitmap = false;
         } else if let Some(value) = line.strip_prefix("ENCODING ") {
-            encoding = value.split_whitespace().next().and_then(parse_u32).unwrap_or(u32::MAX);
+            encoding = value
+                .split_whitespace()
+                .next()
+                .and_then(parse_u32)
+                .unwrap_or(u32::MAX);
         } else if let Some(value) = line.strip_prefix("DWIDTH ") {
-            advance = value.split_whitespace().next().and_then(parse_i32).unwrap_or(8);
+            advance = value
+                .split_whitespace()
+                .next()
+                .and_then(parse_i32)
+                .unwrap_or(8);
         } else if let Some(value) = line.strip_prefix("BBX ") {
             let mut values = value.split_whitespace().filter_map(parse_i32);
             width = values.next().unwrap_or(0).clamp(0, 8);
@@ -196,7 +250,25 @@ where
             bitmap_row = 0;
         } else if line == "ENDCHAR" {
             if encoding == wanted && width > 0 && height > 0 {
-                return draw(&bitmap[..(width * height) as usize], width, height, advance, y_off);
+                let drawn = draw(
+                    &bitmap[..(width * height) as usize],
+                    width,
+                    height,
+                    advance,
+                    y_off,
+                );
+                // File-backed Xiao glyphs use the same persistent display
+                // cache as embedded glyphs. Scrolling must repaint from the
+                // cached bitmap instead of rescanning the BDF on every frame.
+                cache_glyph(
+                    ch,
+                    &bitmap[..(width * height) as usize],
+                    width,
+                    height,
+                    advance,
+                    y_off,
+                );
+                return drawn;
             }
             in_bitmap = false;
         } else if in_bitmap && bitmap_row < height as usize {
@@ -221,7 +293,12 @@ struct BdfReader {
 
 impl BdfReader {
     fn new(file: RegularFile) -> Self {
-        Self { file, chunk: [0; 512], position: 0, length: 0 }
+        Self {
+            file,
+            chunk: [0; 512],
+            position: 0,
+            length: 0,
+        }
     }
 
     fn byte(&mut self) -> Option<u8> {
@@ -285,5 +362,9 @@ pub fn advance(ch: char) -> i32 {
     result
 }
 
-fn parse_u32(value: &str) -> Option<u32> { value.parse().ok() }
-fn parse_i32(value: &str) -> Option<i32> { value.parse().ok() }
+fn parse_u32(value: &str) -> Option<u32> {
+    value.parse().ok()
+}
+fn parse_i32(value: &str) -> Option<i32> {
+    value.parse().ok()
+}

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="false">
 <LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="16dip">
   <TextView baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:text="計算機" baram:textSize="24sp" />
   <TextView baram:id="@+id/expression" baram:layout_width="fill_parent" baram:layout_height="40dip" baram:layout_marginTop="16dip" baram:text="" baram:gravity="right|center_vertical" />
@@ -10,3 +11,4 @@
     <LinearLayout baram:layout_width="fill_parent" baram:layout_height="0dip" baram:layout_weight="1" baram:orientation="horizontal"><Button baram:id="@+id/d0" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="0" /><Button baram:id="@+id/eq" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="=" /><Button baram:id="@+id/add" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="+" /><PrimaryButton baram:id="@+id/clear" baram:layout_width="0dip" baram:layout_height="fill_parent" baram:layout_weight="1" baram:text="C" /></LinearLayout>
   </LinearLayout>
 </LinearLayout>
+</ScrollView>

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:fillViewport="false">
 <LinearLayout xmlns:baram="http://schemas.baram.com/apk/res/baram" baram:layout_width="fill_parent" baram:layout_height="fill_parent" baram:orientation="vertical" baram:padding="16dip">
   <LinearLayout baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:orientation="horizontal">
     <Button baram:id="@+id/open-file" baram:layout_width="wrap_content" baram:layout_height="wrap_content" baram:text="ファイルを開く..." />
@@ -8,3 +9,4 @@
     <TextView baram:id="@+id/file-content" baram:layout_width="fill_parent" baram:layout_height="wrap_content" baram:padding="12dip" baram:text="ここにファイルの内容を表示します。" baram:textSize="15sp" />
   </ScrollView>
 </LinearLayout>
+</ScrollView>

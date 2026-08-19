@@ -194,10 +194,9 @@ fn draw_ui_button(
         layer.fill_rounded_rect(x, y, w, h, radius, color);
         return;
     }
-    // Xiao's button follows the 22px System 9 reference exactly. The face is
-    // solid 221 with a black keyline and stepped 255/170/119 edges.
+    // Xiao keeps the System 9 face and edge treatment, while the XML-resolved
+    // node size controls the actual button bounds.
     let p = palette();
-    let h = p.button_height as usize;
     fill_ui_rounded_rect(layer, x, y, w, h, p.button_radius, p.button_border);
     if w <= 2 || h <= 2 {
         return;
@@ -563,6 +562,15 @@ impl Warp4Engine {
         self.set_scroll(self.scroll.saturating_add(delta));
         self.scroll != before
     }
+
+    /// Return the active document offset in layer pixels.
+    ///
+    /// Xiao feeds pointer coordinates in viewport space, while the normal
+    /// window server feeds Warp4 document coordinates. The kiosk uses this
+    /// value to convert its pointer event without duplicating scroll state.
+    pub fn scroll_position(&self) -> i32 {
+        self.scroll
+    }
     pub fn is_animating(&self) -> bool {
         !self.control_animations.is_empty()
     }
@@ -766,7 +774,7 @@ impl Warp4Engine {
                 set_attr(&mut self.nodes[idx], &key, &value);
             }
         }
-        let chrome_mode = self.document_has_scroll();
+        let chrome_mode = self.has_explicit_scroll();
         self.rebuild_fixed_subtree(chrome_mode);
         self.refresh_visibility();
         self.dirty = true;
@@ -815,6 +823,9 @@ impl Warp4Engine {
             let h = self.layout(root, 0, y, self.width, forced, "");
             y += h;
         }
+        // Scroll extent is deliberately owned by explicit XML ScrollView
+        // containers. Each application/screen opts into scrolling in its own
+        // document instead of inheriting a hidden global viewport policy.
         let mut internal_overflow = 0;
         for idx in 0..self.nodes.len() {
             if is_scroll_container(&self.nodes[idx]) {
@@ -845,8 +856,12 @@ impl Warp4Engine {
             layer.height().saturating_sub(self.chrome_height as usize),
             bg(),
         );
-        let chrome_mode = self.document_has_scroll();
-        let flow_oy = oy - self.scroll;
+        let chrome_mode = self.has_explicit_scroll();
+        // The normal window server already applies its window scroll in `oy`
+        // and also mirrors that value into this engine for hit testing. Do
+        // not apply the same offset a second time. Xiao calls this with oy=0
+        // and therefore keeps the engine-owned document scroll here.
+        let flow_oy = if oy != 0 { oy } else { -self.scroll };
         for &root in &self.roots {
             // The compositor supplies the window-manager offset.  The view
             // tree gets two passes: normal content first, then fixed/sticky
@@ -1034,6 +1049,18 @@ impl Warp4Engine {
         }
     }
 
+    pub fn set_visible(&mut self, id: &str, visible: bool) {
+        if let Some(idx) = self.find(id) {
+            set_attr(
+                &mut self.nodes[idx],
+                "visibility",
+                if visible { "visible" } else { "gone" },
+            );
+            self.nodes[idx].hidden = !visible;
+            self.dirty = true;
+        }
+    }
+
     pub fn set_selected(&mut self, id: &str, selected: bool) {
         if let Some(idx) = self.find(id) {
             set_attr(
@@ -1163,7 +1190,7 @@ impl Warp4Engine {
     }
 
     fn node_screen_y(&self, idx: usize) -> i32 {
-        let chrome_mode = self.document_has_scroll();
+        let chrome_mode = self.has_explicit_scroll();
         self.nodes[idx].y
             + if self.node_is_fixed(idx, chrome_mode) {
                 0
@@ -1593,10 +1620,6 @@ impl Warp4Engine {
     }
 
     fn own_height(&self, idx: usize, forced_h: Option<i32>) -> Option<i32> {
-        if is_xiao() && is_button_like(&self.nodes[idx]) {
-            return Some(palette().button_height);
-        }
-
         forced_h.or_else(|| {
             let raw = self.nodes[idx].attr("layout_height");
             if is_match_parent(raw) {
@@ -1610,10 +1633,6 @@ impl Warp4Engine {
     }
 
     fn resolved_height(&self, idx: usize, available: i32, intrinsic_available: i32) -> i32 {
-        if is_xiao() && is_button_like(&self.nodes[idx]) {
-            return palette().button_height;
-        }
-
         dimension(
             self.nodes[idx].attr("layout_height"),
             available,
@@ -2231,10 +2250,6 @@ impl Warp4Engine {
     }
     fn intrinsic_h(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
-        if is_xiao() && is_button_like(n) {
-            return palette().button_height;
-        }
-
         let raw_height = n.attr("layout_height");
         if !raw_height.is_empty()
             && !is_match_parent(raw_height)
@@ -2450,11 +2465,7 @@ impl Warp4Engine {
             let hover = self.hovered == Some(idx);
             let selected = n.attr("selected") == "true";
             let primary = n.is("PrimaryButton");
-            let button_h = if is_xiao() {
-                palette().button_height as usize
-            } else {
-                h
-            };
+            let button_h = h;
             let button_radius = if is_xiao() {
                 palette().button_radius
             } else {
@@ -2835,11 +2846,19 @@ impl Warp4Engine {
                         0
                     }
             };
-            let line_h = (size * 1.25) as i32;
+            let line_h = if is_xiao() && bdf_font::is_available() {
+                // Misaki Gothic is an 8px bitmap font. Use its real line box
+                // for centering instead of the 25%-scaled nominal text size.
+                8
+            } else {
+                (size * 1.25) as i32
+            };
             let line_count = text.split('\n').count().max(1) as i32;
             let block_h = line_h * line_count;
             let gravity = n.attr("gravity");
             let ty = if is_text_button(n) {
+                // Text is centered in the actual XML-resolved button bounds;
+                // the compact padding rule must not shift it vertically.
                 y + (n.h - block_h).max(0) / 2
             } else if n.is("EditText")
                 || n.is("AutoCompleteTextView")
@@ -2857,7 +2876,7 @@ impl Warp4Engine {
                 y + pad.top
             };
             for (line, part) in text.split('\n').enumerate() {
-                let line_y = ty + line as i32 * (size * 1.25) as i32;
+                let line_y = ty + line as i32 * line_h;
                 put_str_size(layer, tx, line_y, part, color, size);
                 if text_bold(n) {
                     put_str_size(layer, tx + 1, line_y, part, color, size);
@@ -3079,7 +3098,7 @@ impl Warp4Engine {
         }
     }
 
-    fn document_has_scroll(&self) -> bool {
+    fn has_explicit_scroll(&self) -> bool {
         self.roots
             .iter()
             .any(|root| contains_scroll(&self.nodes, *root))
@@ -3164,12 +3183,18 @@ fn edges(n: &Node, base: &str) -> Edges {
         left: parse_dim(n.attr(&format!("{base}Left")), h),
     };
     if is_xiao() && base == "padding" {
-        // Xiao's compact profile keeps the 22px button frame, but removes the
-        // extra XML padding that otherwise leaves a visibly large lower gap.
+        // Xiao's compact profile keeps XML-owned button geometry while
+        // reducing excess padding from legacy documents.
         edges.top = edges.top.min(ui_px(3));
         edges.bottom = edges.bottom.min(ui_px(2));
         edges.left = edges.left.min(ui_px(4));
         edges.right = edges.right.min(ui_px(4));
+        if is_button_like(n) {
+            // Button geometry comes from XML. Keep exactly 3px of vertical
+            // content inset; ui_px(3) would round to zero at 25% scale.
+            edges.top = 3;
+            edges.bottom = 3;
+        }
     }
     if is_xiao() && base == "layout_margin" {
         edges.top = edges.top.min(ui_px(6));
