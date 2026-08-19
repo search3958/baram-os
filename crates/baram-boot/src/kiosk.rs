@@ -140,10 +140,14 @@ pub fn run(mut nano: NanoSystem) -> Status {
     // only glyphs used by the current display while painting.
     baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
     baram_font::bdf_font::clear_cache();
-    let mut screen = match Screen::take_with_target(640, 360) {
+    // Xiao uses a 320x180 working surface: exactly half the previous 640x360
+    // target. Warp4 is compiled with its Xiao scale profile as well, so its
+    // layout metrics and rounded-corner geometry match this surface.
+    let mut screen = match Screen::take_with_target(320, 180) {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,
     };
+    NanoSystem::serial_log(&format!("xiao: screen {}x{}\r\n", screen.width(), screen.height()));
     unsafe { baram_font::log::init_screen(&screen); }
     let mut timer = nano.take_timer_event();
     let mut layer = LayerSystem::new(screen.width(), screen.height());

@@ -7,6 +7,7 @@ edition = "2021"
 default = ["ttf"]
 ttf = ["baram-font/ttf", "baram-graphics/ttf"]
 bdf = ["baram-font/bdf", "baram-graphics/bdf"]
+xiao = []
 
 [dependencies]
 baram-bsd = { path = "../baram-bsd" }

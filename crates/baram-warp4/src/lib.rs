@@ -46,8 +46,33 @@ const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
 const SCROLLBAR_THUMB: Color = Color::rgb(184, 184, 184);
 const SCROLLBAR_RADIUS: usize = 3;
 
+#[cfg(feature = "xiao")]
+#[inline]
+fn ui_px(value: i32) -> i32 {
+    value / 2
+}
+
+#[cfg(not(feature = "xiao"))]
+#[inline]
+fn ui_px(value: i32) -> i32 {
+    value
+}
+
+#[inline]
+fn ui_px_usize(value: usize) -> usize {
+    ui_px(value as i32).max(0) as usize
+}
+
+#[inline]
+fn ui_size(value: f32) -> f32 {
+    #[cfg(feature = "xiao")]
+    { value * 0.5 }
+    #[cfg(not(feature = "xiao"))]
+    { value }
+}
+
 fn title_bar_h() -> i32 {
-    config::get_usize("ui-theme/window/title_bar_h", 30) as i32
+    ui_px(config::get_usize("ui-theme/window/title_bar_h", 30) as i32)
 }
 
 #[derive(Clone, Default)]
@@ -951,8 +976,8 @@ impl Warp4Engine {
 
     fn spinner_popup_rect(&self, idx: usize) -> (i32, i32, i32, i32) {
         let node = &self.nodes[idx];
-        let row_h = 36;
-        let h = self.spinner_item_count(idx) as i32 * row_h + 8;
+        let row_h = ui_px(36);
+        let h = self.spinner_item_count(idx) as i32 * row_h + ui_px(8);
         let bottom = self.node_screen_y(idx) + node.h;
         let layer_h = self.height + self.chrome_height;
         let y = if bottom + h <= layer_h {
@@ -978,11 +1003,11 @@ impl Warp4Engine {
         {
             return None;
         }
-        let local_y = screen_y - popup_y - 4;
+        let local_y = screen_y - popup_y - ui_px(4);
         if local_y < 0 {
             return None;
         }
-        let item = (local_y / 36) as usize;
+        let item = (local_y / ui_px(36).max(1)) as usize;
         (item < self.spinner_item_count(idx)).then_some((idx, item))
     }
 
@@ -1346,7 +1371,7 @@ impl Warp4Engine {
             let children = self.nodes[idx].children.clone();
             // Match Warp3's native row/section spacing when an XML layout
             // does not specify a gap explicitly.
-            let layout_gap = parse_dim(self.nodes[idx].attr("layout_gap"), 8).max(0);
+            let layout_gap = parse_dim(self.nodes[idx].attr("layout_gap"), ui_px(8)).max(0);
             let visible_children = children
                 .iter()
                 .filter(|child| self.nodes[**child].visible())
@@ -1789,7 +1814,7 @@ impl Warp4Engine {
 
     fn layout_grid(&mut self, idx: usize, pad: Edges) {
         let columns = parse_i32(self.nodes[idx].attr("columnCount")).max(1);
-        let gap = 8;
+        let gap = ui_px(8);
         let cell_w = ((self.nodes[idx].content_w - gap * (columns - 1)) / columns).max(1);
         let mut row_y = self.nodes[idx].y + pad.top;
         let mut row_h = 0;
@@ -1862,9 +1887,9 @@ impl Warp4Engine {
         if !n.attr("text").is_empty() {
             let pad = edges(n, "padding");
             let control_width = if n.is("Switch") {
-                55
+                ui_px(55)
             } else if interactive(n) {
-                32
+                ui_px(32)
             } else {
                 0
             };
@@ -1881,23 +1906,23 @@ impl Warp4Engine {
                     n.attr("text")
                 },
                 text_size(n),
-            ) + 32)
-                .max(64)
-                .min(available.max(64));
+            ) + ui_px(32))
+                .max(ui_px(64))
+                .min(available.max(ui_px(64)));
         }
         if n.is("RatingBar") {
             let stars = parse_i32(n.attr("numStars")).clamp(1, 10);
-            return stars * 22 + (stars - 1).max(0);
+            return stars * ui_px(22) + (stars - 1).max(0) * ui_px(1);
         }
         if n.is("Switch") {
             return if n.attr("text").is_empty() {
-                44
+                ui_px(44)
             } else {
-                55 + measure_size(n.attr("text"), text_size(n))
+                ui_px(55) + measure_size(n.attr("text"), text_size(n))
             };
         }
         if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
-            return available.min(240).max(80);
+            return available.min(ui_px(240)).max(ui_px(80));
         }
         if (n.is("LinearLayout") || n.is("RadioGroup")) && n.attr("orientation") == "horizontal" {
             let pad = edges(n, "padding");
@@ -1933,31 +1958,31 @@ impl Warp4Engine {
             return parse_dim(n.attr("layout_height"), 0).max(0);
         }
         if is_button_like(n) {
-            return 48;
+            return ui_px(48);
         }
         if n.is("EditText") || n.is("AutoCompleteTextView") {
-            return 38;
+            return ui_px(38);
         }
         if n.is("MultiAutoCompleteTextView") {
-            return 58;
+            return ui_px(58);
         }
         if n.is("Switch") || n.is("CheckBox") || n.is("RadioButton") {
-            return 44;
+            return ui_px(44);
         }
         if n.is("SeekBar") {
-            return 30;
+            return ui_px(30);
         }
         if n.is("RatingBar") {
-            return 32;
+            return ui_px(32);
         }
         if n.is("Spinner") || n.is("SearchView") || n.is("DatePicker") || n.is("TimePicker") {
-            return 38;
+            return ui_px(38);
         }
         if n.is("ProgressBar") {
             return if n.attr("style").contains("progressBarStyleHorizontal") {
-                6
+                ui_px(6)
             } else {
-                28
+                ui_px(28)
             };
         }
         if n.is("TextView") {
@@ -1965,7 +1990,7 @@ impl Warp4Engine {
             let size = text_size(n);
             let line = (size * 1.25) as i32;
             let chars_per_line =
-                (available.max(1) / (size.max(8.0) as i32 / 2).max(4)).max(1) as usize;
+                (available.max(1) / (size.max(ui_size(8.0)) as i32 / 2).max(ui_px(4))).max(1) as usize;
             let lines = n
                 .attr("text")
                 .split('\n')
@@ -2003,7 +2028,10 @@ impl Warp4Engine {
                 rows += 1;
             }
             let pad = edges(n, "padding");
-            return (pad.top + pad.bottom + rows as i32 * 48 + rows.saturating_sub(1) as i32 * 8)
+            return (pad.top
+                + pad.bottom
+                + rows as i32 * ui_px(48)
+                + rows.saturating_sub(1) as i32 * ui_px(8))
                 .max(1);
         } else if n.is("FrameLayout")
             || n.is("RelativeLayout")
@@ -2166,15 +2194,15 @@ impl Warp4Engine {
                 y.max(0) as usize,
                 w,
                 h,
-                WARP4_INPUT_RADIUS.min(w / 2).min(h / 2),
+                ui_px_usize(WARP4_INPUT_RADIUS).min(w / 2).min(h / 2),
                 WARP4_INPUT_BORDER,
                 WARP4_INPUT_BG,
             );
         } else if n.is("CheckBox") || n.is("RadioButton") {
             let checked = n.attr("checked") == "true";
             let hover = self.hovered == Some(idx);
-            let mark_x = x + 2;
-            let mark_y = y + (n.h - if n.is("RadioButton") { 18 } else { 22 }).max(0) / 2;
+            let mark_x = x + ui_px(2);
+            let mark_y = y + (n.h - ui_px(if n.is("RadioButton") { 18 } else { 22 })).max(0) / 2;
             if n.is("CheckBox") {
                 let border = if checked || hover {
                     WARP3_ACCENT
@@ -2184,14 +2212,14 @@ impl Warp4Engine {
                 layer.rounded_rect_outline(
                     mark_x.max(0) as usize,
                     mark_y.max(0) as usize,
-                    22,
-                    22,
-                    4,
+                    ui_px_usize(22),
+                    ui_px_usize(22),
+                    ui_px_usize(4),
                     border,
                     if checked { WARP3_ACCENT } else { WARP3_SURFACE },
                 );
                 if checked {
-                    draw_check_icon(layer, mark_x + 5, mark_y + 5);
+                    draw_check_icon(layer, mark_x + ui_px(5), mark_y + ui_px(5));
                 }
             } else {
                 let amount = self.control_amount(idx, checked);
@@ -2207,16 +2235,16 @@ impl Warp4Engine {
                     WARP4_RADIO_OFF
                 };
                 layer.fill_circle(
-                    (mark_x + 9).max(0) as usize,
-                    (mark_y + 9).max(0) as usize,
-                    9,
+                    (mark_x + ui_px(9)).max(0) as usize,
+                    (mark_y + ui_px(9)).max(0) as usize,
+                    ui_px_usize(9),
                     outer,
                 );
-                let inner_radius = (4.0 * amount + 0.5) as usize;
+                let inner_radius = (ui_size(4.0) * amount + ui_size(0.5)) as usize;
                 if inner_radius > 0 {
                     layer.fill_circle(
-                        (mark_x + 9).max(0) as usize,
-                        (mark_y + 9).max(0) as usize,
+                        (mark_x + ui_px(9)).max(0) as usize,
+                        (mark_y + ui_px(9)).max(0) as usize,
                         inner_radius,
                         WARP4_WHITE,
                     );
@@ -2226,32 +2254,34 @@ impl Warp4Engine {
             let on = n.attr("checked") == "true";
             let amount = self.control_amount(idx, on);
             let track = mix_color(WARP3_BG, WARP3_ACCENT, amount);
-            let sy = y + (n.h - 22).max(0) / 2;
-            let track_w = 44usize;
+            let sy = y + (n.h - ui_px(22)).max(0) / 2;
+            let track_w = ui_px_usize(44);
             layer.rounded_rect_outline(
                 x.max(0) as usize,
                 sy.max(0) as usize,
                 track_w,
-                22,
-                11,
+                ui_px_usize(22),
+                ui_px_usize(11),
                 mix_color(WARP3_MUTED, WARP3_ACCENT, amount),
                 track,
             );
             // Warp3 uses a compact 14px knob inside the 22px track.  The
             // previous 28px knob made the white state dominate the control.
-            let knob_x = x + 10 + ((track_w as f32 - 20.0) * amount + 0.5) as i32;
+            let knob_x = x
+                + ui_px(10)
+                + ((track_w as f32 - ui_size(20.0)) * amount + ui_size(0.5)) as i32;
             layer.fill_circle(
                 knob_x.max(0) as usize,
-                (sy + 11).max(0) as usize,
-                7,
+                (sy + ui_px(11)).max(0) as usize,
+                ui_px_usize(7),
                 mix_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), amount),
             );
         } else if n.is("Spinner") || n.is("SearchView") {
             layer.fill_rect(
                 x.max(0) as usize,
-                (y + h as i32 - 2).max(0) as usize,
+                (y + h as i32 - ui_px(2)).max(0) as usize,
                 w,
-                2,
+                ui_px_usize(2).max(1),
                 if self.hovered == Some(idx) {
                     WARP3_ACCENT
                 } else {
@@ -2281,17 +2311,18 @@ impl Warp4Engine {
                 };
                 put_str_size(
                     layer,
-                    x + 7,
-                    y + ((h as i32 - 19).max(0) / 2),
+                    x + ui_px(7),
+                    y + ((h as i32 - ui_px(19)).max(0) / 2),
                     value,
                     WARP3_TEXT,
-                    15.0,
+                    ui_size(15.0),
                 );
                 // Native equivalent of the CSS select arrow.
-                let ax = x + n.w - 14;
-                let ay = y + h as i32 / 2 - 2;
-                for row in 0..5 {
-                    let width = 2 + row * 2;
+                let ax = x + n.w - ui_px(14);
+                let ay = y + h as i32 / 2 - ui_px(2);
+                for row in 0..ui_px_usize(5) {
+                    let width = ui_px_usize(2) + row * ui_px_usize(2);
+                    let row = row as i32;
                     layer.fill_rect(
                         (ax - row).max(0) as usize,
                         (ay + row).max(0) as usize,
@@ -2307,7 +2338,7 @@ impl Warp4Engine {
                 x.max(0) as usize,
                 cy.max(0) as usize,
                 w,
-                3,
+                ui_px_usize(3).max(1),
                 if self.hovered == Some(idx) {
                     WARP3_ACCENT
                 } else {
@@ -2322,14 +2353,14 @@ impl Warp4Engine {
                     x.max(0) as usize,
                     cy.max(0) as usize,
                     (px - x).max(0) as usize,
-                    3,
+                    ui_px_usize(3).max(1),
                     WARP3_ACCENT,
                 );
             }
             layer.fill_circle(
                 px.max(0) as usize,
                 cy.max(0) as usize,
-                if self.hovered == Some(idx) { 10 } else { 9 },
+                ui_px_usize(if self.hovered == Some(idx) { 10 } else { 9 }).max(1),
                 WARP3_ACCENT,
             );
         } else if n.is("RatingBar") {
@@ -2344,37 +2375,42 @@ impl Warp4Engine {
                 } else {
                     Color::rgb(183, 183, 183)
                 };
-                put_str_size(layer, x + star * 23, y, "★", color, 25.0);
+                put_str_size(layer, x + star * ui_px(23), y, "★", color, ui_size(25.0));
             }
         } else if n.is("ProgressBar") {
-            if n.attr("style").contains("progressBarStyleHorizontal") || w > 80 {
+            if n.attr("style").contains("progressBarStyleHorizontal") || w > ui_px_usize(80) {
                 layer.fill_rounded_rect(
                     x.max(0) as usize,
-                    (y + 2).max(0) as usize,
+                    (y + ui_px(2)).max(0) as usize,
                     w,
-                    6,
-                    3,
+                    ui_px_usize(6).max(1),
+                    ui_px_usize(3),
                     WARP3_BORDER,
                 );
                 let max = parse_i32(n.attr("max")).max(1);
                 let progress = parse_i32(n.attr("progress")).clamp(0, max);
                 layer.fill_rounded_rect(
                     x.max(0) as usize,
-                    (y + 2).max(0) as usize,
+                    (y + ui_px(2)).max(0) as usize,
                     (w as i32 * progress / max) as usize,
-                    6,
-                    3,
+                    ui_px_usize(6).max(1),
+                    ui_px_usize(3),
                     WARP3_ACCENT,
                 );
             } else {
                 let cx = (x + w as i32 / 2).max(0);
                 let cy = (y + h as i32 / 2).max(0);
-                layer.fill_circle(cx as usize, cy as usize, 14, Color::rgb(207, 207, 207));
-                layer.fill_circle(cx as usize, cy as usize, 9, Color::rgb(255, 255, 255));
-                for dy in -14..=14 {
-                    for dx in -14..=14 {
+                let outer_radius = ui_px(14);
+                let inner_radius = ui_px(9);
+                layer.fill_circle(cx as usize, cy as usize, outer_radius.max(1) as usize, Color::rgb(207, 207, 207));
+                layer.fill_circle(cx as usize, cy as usize, inner_radius.max(1) as usize, Color::rgb(255, 255, 255));
+                for dy in -outer_radius..=outer_radius {
+                    for dx in -outer_radius..=outer_radius {
                         let radius = dx * dx + dy * dy;
-                        if radius <= 14 * 14 && radius >= 9 * 9 && (dx >= 0 || dy <= 0) {
+                        if radius <= outer_radius * outer_radius
+                            && radius >= inner_radius * inner_radius
+                            && (dx >= 0 || dy <= 0)
+                        {
                             let px = cx + dx;
                             let py = cy + dy;
                             if px >= 0 && py >= 0 {
@@ -2387,23 +2423,24 @@ impl Warp4Engine {
         } else if n.is("ImageView") {
             layer.rect_outline(x.max(0) as usize, y.max(0) as usize, w, h, WARP3_BORDER);
         } else if n.is("ListView") || n.is("ExpandableListView") {
-            for row in 0..(h / 44) {
-                let ry = y + row as i32 * 44;
-                layer.fill_rect(x.max(0) as usize, ry.max(0) as usize, w, 43, WARP3_SURFACE);
+            let row_h = ui_px_usize(44).max(1);
+            for row in 0..(h / row_h) {
+                let ry = y + row as i32 * row_h as i32;
+                layer.fill_rect(x.max(0) as usize, ry.max(0) as usize, w, row_h.saturating_sub(1).max(1), WARP3_SURFACE);
                 layer.fill_rect(
                     x.max(0) as usize,
-                    (ry + 43).max(0) as usize,
+                    (ry + row_h.saturating_sub(1) as i32).max(0) as usize,
                     w,
                     1,
                     WARP3_BORDER,
                 );
                 put_str_size(
                     layer,
-                    x + 12,
-                    ry + 12,
+                    x + ui_px(12),
+                    ry + ui_px(12),
                     &format!("Item {}", row + 1),
                     WARP3_TEXT,
-                    14.0,
+                    ui_size(14.0),
                 );
             }
         }
@@ -2432,7 +2469,7 @@ impl Warp4Engine {
                 // Warp3 inputs use a fixed 10px text inset; using the XML
                 // padding here made the value appear vertically/horizontally
                 // displaced between focused and unfocused states.
-                x + 10
+                x + ui_px(10)
             } else if ascii_contains_ignore_case(n.attr("gravity"), "right")
                 || ascii_contains_ignore_case(n.attr("gravity"), "end")
             {
@@ -2442,11 +2479,11 @@ impl Warp4Engine {
             } else {
                 x + pad.left
                     + if n.is("CheckBox") {
-                        32
+                        ui_px(32)
                     } else if n.is("RadioButton") {
-                        28
+                        ui_px(28)
                     } else if n.is("Switch") {
-                        55
+                        ui_px(55)
                     } else {
                         0
                     }
@@ -2461,7 +2498,7 @@ impl Warp4Engine {
                 || n.is("AutoCompleteTextView")
                 || n.is("MultiAutoCompleteTextView")
             {
-                y + 8
+                y + ui_px(8)
             } else if ascii_contains_ignore_case(gravity, "bottom") {
                 y + n.h - pad.bottom - block_h
             } else if ascii_contains_ignore_case(gravity, "center_vertical")
@@ -2485,8 +2522,8 @@ impl Warp4Engine {
             && !n.attr("hint").is_empty()
         {
             layer.put_str(
-                (x + 10).max(0) as usize,
-                (y + 8).max(0) as usize,
+                (x + ui_px(10)).max(0) as usize,
+                (y + ui_px(8)).max(0) as usize,
                 n.attr("hint"),
                 WARP3_MUTED,
             );
@@ -2496,8 +2533,8 @@ impl Warp4Engine {
             && (self.now_ns / 500_000_000) % 2 == 0
         {
             let size = text_size(n);
-            let caret_x = x + 10 + measure_size(text, size);
-            let caret_y = y + 7;
+            let caret_x = x + ui_px(10) + measure_size(text, size);
+            let caret_y = y + ui_px(7);
             let caret_h = (size * 1.25).max(1.0) as usize;
             if caret_x >= 0 && caret_y >= 0 {
                 layer.fill_rect(caret_x as usize, caret_y as usize, 1, caret_h, WARP4_BLACK);
@@ -2517,48 +2554,48 @@ impl Warp4Engine {
         }
         if is_scroll_container(n) {
             if n.is("ScrollView") && n.content_h > n.h {
-                let track_h = (n.h - 2).max(1);
-                let thumb_h = (track_h * n.h / n.content_h).max(12).min(track_h);
+                let track_h = (n.h - ui_px(2)).max(1);
+                let thumb_h = (track_h * n.h / n.content_h).max(ui_px(12)).min(track_h);
                 let max_thumb_y = track_h - thumb_h;
                 let max_scroll = n.content_h.saturating_sub(n.h).max(1);
                 let thumb_y = max_thumb_y * self.scroll / max_scroll;
-                let bar_x = (x + n.w - 8).max(0) as usize;
+                let bar_x = (x + n.w - ui_px(8)).max(0) as usize;
                 layer.fill_rounded_rect(
                     bar_x,
-                    (y + 1).max(0) as usize,
-                    6,
+                    (y + ui_px(1)).max(0) as usize,
+                    ui_px_usize(6).max(1),
                     track_h as usize,
-                    SCROLLBAR_RADIUS,
+                    ui_px_usize(SCROLLBAR_RADIUS),
                     SCROLLBAR_TRACK,
                 );
                 layer.fill_rounded_rect(
                     bar_x,
-                    (y + 1 + thumb_y).max(0) as usize,
-                    6,
+                    (y + ui_px(1) + thumb_y).max(0) as usize,
+                    ui_px_usize(6).max(1),
                     thumb_h as usize,
-                    SCROLLBAR_RADIUS,
+                    ui_px_usize(SCROLLBAR_RADIUS),
                     SCROLLBAR_THUMB,
                 );
             } else if n.is("HorizontalScrollView") && n.content_w > n.w {
-                let track_w = (n.w - 2).max(1);
-                let thumb_w = (track_w * n.w / n.content_w).max(12).min(track_w);
+                let track_w = (n.w - ui_px(2)).max(1);
+                let thumb_w = (track_w * n.w / n.content_w).max(ui_px(12)).min(track_w);
                 let max_thumb_x = track_w - thumb_w;
                 let max_scroll = n.content_w.saturating_sub(n.w).max(1);
                 let thumb_x = max_thumb_x * self.scroll / max_scroll;
                 layer.fill_rounded_rect(
-                    (x + 1).max(0) as usize,
-                    (y + n.h - 6).max(0) as usize,
+                    (x + ui_px(1)).max(0) as usize,
+                    (y + n.h - ui_px(6)).max(0) as usize,
                     track_w as usize,
-                    6,
-                    SCROLLBAR_RADIUS,
+                    ui_px_usize(6).max(1),
+                    ui_px_usize(SCROLLBAR_RADIUS),
                     SCROLLBAR_TRACK,
                 );
                 layer.fill_rounded_rect(
-                    (x + 1 + thumb_x).max(0) as usize,
-                    (y + n.h - 6).max(0) as usize,
+                    (x + ui_px(1) + thumb_x).max(0) as usize,
+                    (y + n.h - ui_px(6)).max(0) as usize,
                     thumb_w as usize,
-                    6,
-                    SCROLLBAR_RADIUS,
+                    ui_px_usize(6).max(1),
+                    ui_px_usize(SCROLLBAR_RADIUS),
                     SCROLLBAR_THUMB,
                 );
             }
@@ -2576,8 +2613,8 @@ impl Warp4Engine {
         let (x, y, w, h) = self.spinner_popup_rect(idx);
         let popup_w = w.max(1) as usize;
         let popup_h = h.max(1) as usize;
-        let radius = 8usize;
-        let shadow_pad = 16usize;
+        let radius = ui_px_usize(8);
+        let shadow_pad = ui_px_usize(16);
         if opacity < 255 {
             // Seed the temporary layer with the pixels underneath the menu so
             // fading does not turn its transparent margins into black.
@@ -2628,19 +2665,20 @@ impl Warp4Engine {
         let Some(node) = self.nodes.get(idx) else {
             return;
         };
-        layer.fill_rounded_rect(x, y, w, h, 8, Color::rgb(255, 255, 255));
+        layer.fill_rounded_rect(x, y, w, h, ui_px_usize(8), Color::rgb(255, 255, 255));
         let selected = parse_i32(node.attr("selectedIndex")).max(0) as usize;
         let items = node.attr("items");
         for item in 0..self.spinner_item_count(idx) {
-            let row_y = y + 4 + item * 36;
+            let row_h = ui_px_usize(36).max(1);
+            let row_y = y + ui_px_usize(4) + item * row_h;
             let highlighted = item == selected;
             if highlighted {
                 layer.fill_rounded_rect(
-                    x + 4,
+                    x + ui_px_usize(4),
                     row_y,
-                    w.saturating_sub(8),
-                    36.min(h.saturating_sub(4 + item * 36)),
-                    6,
+                    w.saturating_sub(ui_px_usize(8)),
+                    row_h.min(h.saturating_sub(ui_px_usize(4) + item * row_h)),
+                    ui_px_usize(6),
                     WARP3_ACCENT,
                 );
             }
@@ -2656,15 +2694,15 @@ impl Warp4Engine {
                 });
             put_str_size(
                 layer,
-                x as i32 + 16,
-                row_y as i32 + 9,
+                x as i32 + ui_px(16),
+                row_y as i32 + ui_px(9),
                 label,
                 if highlighted {
                     Color::rgb(255, 255, 255)
                 } else {
                     WARP3_TEXT
                 },
-                15.0,
+                ui_size(15.0),
             );
         }
     }
@@ -3213,13 +3251,15 @@ fn duration_ns(s: &str) -> Option<u64> {
     Some((n * multiplier as f64).max(0.0) as u64)
 }
 fn parse_dim(s: &str, default: i32) -> i32 {
-    s.trim()
+    let parsed = s
+        .trim()
         .trim_end_matches("dip")
         .trim_end_matches("dp")
         .trim_end_matches("sp")
         .trim_end_matches("px")
         .parse()
-        .unwrap_or(default)
+        .ok();
+    parsed.map(ui_px).unwrap_or(default)
 }
 fn dimension(raw: &str, available: i32, intrinsic: i32) -> i32 {
     match raw {
@@ -3232,13 +3272,13 @@ fn dimension(raw: &str, available: i32, intrinsic: i32) -> i32 {
 fn edges(n: &Node, base: &str) -> Edges {
     let style = n.attr("style");
     let (style_top, style_bottom) = if base == "layout_margin" && style.contains("SectionTitle") {
-        (22, 8)
+        (ui_px(22), ui_px(8))
     } else if base == "layout_margin" && style.contains("SectionDescription") {
-        (0, 14)
+        (ui_px(0), ui_px(14))
     } else if base == "layout_margin" && style.contains("ComponentLabel") {
-        (14, 6)
+        (ui_px(14), ui_px(6))
     } else if base == "layout_margin" && style.contains("ComponentBox") {
-        (0, 3)
+        (ui_px(0), ui_px(3))
     } else {
         (0, 0)
     };
@@ -3394,10 +3434,10 @@ fn measure(s: &str) -> i32 {
     if ttf_font::is_available() {
         s.chars().map(ttf_font::advance).sum()
     } else {
-        s.len() as i32 * 8
+        s.len() as i32 * ui_px(8)
     }
     #[cfg(not(feature = "ttf"))]
-    { s.len() as i32 * 8 }
+    { s.len() as i32 * ui_px(8) }
 }
 fn measure_size(s: &str, size: f32) -> i32 {
     if bdf_font::is_available() {
@@ -3427,23 +3467,23 @@ fn measure_size(s: &str, size: f32) -> i32 {
 }
 fn text_size(n: &Node) -> f32 {
     if !n.attr("textSize").is_empty() {
-        return parse_dim(n.attr("textSize"), 16) as f32;
+        return parse_dim(n.attr("textSize"), ui_px(16)) as f32;
     }
     if is_button_like(n) {
-        return 18.0;
+        return ui_size(18.0);
     }
     if n.is("CheckBox") || n.is("RadioButton") || n.is("Switch") {
-        return 14.0;
+        return ui_size(14.0);
     }
     let style = n.attr("style");
     if style.contains("SectionTitle") {
-        24.0
+        ui_size(24.0)
     } else if style.contains("SectionDescription") {
-        13.0
+        ui_size(13.0)
     } else if style.contains("ComponentLabel") {
-        15.0
+        ui_size(15.0)
     } else {
-        16.0
+        ui_size(16.0)
     }
 }
 fn text_color(n: &Node) -> Color {
@@ -3492,8 +3532,8 @@ fn draw_spinner_shadow(
 ) {
     // Build a smooth rounded mask and blur its alpha, matching the app-list
     // shadow treatment without introducing a backdrop blur behind the menu.
-    let pad = 16usize;
-    let offset_y = 4usize;
+    let pad = ui_px_usize(16);
+    let offset_y = ui_px_usize(4);
     let shadow_w = width.saturating_add(pad * 2);
     let shadow_h = height.saturating_add(pad * 2 + offset_y);
     let mut mask = LayerSystem::new_transparent(shadow_w, shadow_h);
@@ -3502,7 +3542,7 @@ fn draw_spinner_shadow(
     for (dst, src) in alpha.iter_mut().zip(mask.buf_ref()) {
         *dst = if *src == Color::TRANSPARENT.0 { 0 } else { 52 };
     }
-    blur_shadow_alpha(&mut alpha, shadow_w, shadow_h, 6);
+    blur_shadow_alpha(&mut alpha, shadow_w, shadow_h, ui_px_usize(6));
 
     let base_x = x.saturating_sub(pad);
     let base_y = y.saturating_sub(pad);
@@ -3616,22 +3656,22 @@ fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
     // Use the shared SVG asset as a mask, then tint it white for the checked
     // state.  The source asset is black because it is also usable on light
     // surfaces; the native checkbox needs the same white mark as Warp3.
-    const ICON_SIZE: usize = 12;
-    let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, ICON_SIZE, ICON_SIZE);
+    let icon_size = ui_px_usize(12).max(1);
+    let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, icon_size, icon_size);
     let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
     let layer_w = layer.width();
     let layer_h = layer.height();
-    for sy in 0..ICON_SIZE as i32 {
+    for sy in 0..icon_size as i32 {
         let py = y + sy;
         if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
             continue;
         }
-        for sx in 0..ICON_SIZE as i32 {
+        for sx in 0..icon_size as i32 {
             let px = x + sx;
             if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
                 continue;
             }
-            let alpha = pixels[(sy as usize * ICON_SIZE + sx as usize) * 4 + 3];
+            let alpha = pixels[(sy as usize * icon_size + sx as usize) * 4 + 3];
             if alpha == 0 {
                 continue;
             }

@@ -42,6 +42,7 @@ IMAGE_NAME="osdisk-arm64.img"
 IMAGE_SIZE_MB=64
 FIRMWARE_NAME="baram-aarch64-uefi.fd"
 FIRMWARE_PATH="$SCRIPT_DIR/firmware/$FIRMWARE_NAME"
+XIAO_FIRMWARE_PATH="$SCRIPT_DIR/firmware/baram-aarch64-xiao-uefi.fd"
 RUNTIME_DIR="$SCRIPT_DIR/runtime"
 TARGET_DIR="$SCRIPT_DIR/target/aarch64-unknown-uefi/release"
 
@@ -132,6 +133,7 @@ build_efi() {
 # are not part of this image.
 build_xiao() {
     XIAO_MODE=1
+    FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
     # Xiao is intentionally constrained to 0.1 GiB. The bundled BaramOS UEFI
     # firmware is patched to initialize GOP below the upstream 128 MiB floor.
     QEMU_RAM="80M"
