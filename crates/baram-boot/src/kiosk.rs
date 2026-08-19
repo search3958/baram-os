@@ -79,26 +79,67 @@ fn pointer_xy(event: NanoBasicPointerEvent, nano: &NanoSystem, x: &mut i32, y: &
     nano.input_state.left
 }
 
-fn draw_cursor(layer: &mut LayerSystem, x: i32, y: i32) {
-    // Small OS-owned arrow cursor. Drawn after Warp4 so it remains visible
-    // over both the launcher and the selected full-screen application.
-    let x = x.max(0) as usize;
-    let y = y.max(0) as usize;
+const CURSOR_W: i32 = 12;
+const CURSOR_H: i32 = 17;
+
+fn cursor_pixel(screen: &mut Screen, x: i32, y: i32, color: Color) {
+    if x >= 0 && y >= 0 {
+        screen.put_pixel(x as usize, y as usize, color);
+    }
+}
+
+fn draw_cursor(screen: &mut Screen, x: i32, y: i32) {
+    // The cursor is an independent screen overlay. It must not dirty the
+    // backing layer, otherwise a pointer move would force a full UI flush.
+    let x = x.max(0);
+    let y = y.max(0);
     const WHITE: Color = Color::rgb(255, 255, 255);
     for row in 0..15usize {
         let width = if row < 10 { row / 2 + 1 } else { 2 };
-        layer.fill_rect(x, y + row, width + 2, 2, Color::BLACK);
+        for dy in 0..2 {
+            for dx in 0..width + 2 {
+                cursor_pixel(screen, x + dx as i32, y + row as i32 + dy, Color::BLACK);
+            }
+        }
         if width > 1 {
-            layer.fill_rect(x + 1, y + row, width - 1, 1, WHITE);
+            for dx in 0..width - 1 {
+                cursor_pixel(screen, x + 1 + dx as i32, y + row as i32, WHITE);
+            }
         }
     }
-    layer.fill_rect(x + 3, y + 10, 4, 5, Color::BLACK);
-    layer.fill_rect(x + 4, y + 10, 2, 4, WHITE);
+    for dy in 0..5 {
+        for dx in 0..4 {
+            cursor_pixel(screen, x + 3 + dx, y + 10 + dy, Color::BLACK);
+        }
+    }
+    for dy in 0..4 {
+        for dx in 0..2 {
+            cursor_pixel(screen, x + 4 + dx, y + 10 + dy, WHITE);
+        }
+    }
+}
+
+fn restore_cursor_background(screen: &mut Screen, layer: &LayerSystem, x: i32, y: i32) {
+    let x0 = x.max(0) as usize;
+    let y0 = y.max(0) as usize;
+    let x1 = (x + CURSOR_W).clamp(0, layer.width() as i32) as usize;
+    let y1 = (y + CURSOR_H).clamp(0, layer.height() as i32) as usize;
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    for row in y0..y1 {
+        let start = row * layer.width() + x0;
+        let end = row * layer.width() + x1;
+        screen.flush_layer_row_range(row, x0, &layer.buf_ref()[start..end]);
+    }
 }
 
 pub fn run(mut nano: NanoSystem) -> Status {
     config::init_config();
-    baram_font::bdf_font::init(include_bytes!("../../baram-xiao/src/misaki_gothic_2nd.bdf"));
+    // Keep the 757 KiB BDF on the FAT volume. The parser streams it and keeps
+    // only glyphs used by the current display while painting.
+    baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
+    baram_font::bdf_font::clear_cache();
     let mut screen = match Screen::take_with_target(640, 360) {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,
@@ -116,41 +157,84 @@ pub fn run(mut nano: NanoSystem) -> Status {
     let mut selected: Option<Warp4Engine> = None;
     let mut x = (screen.width() / 2) as i32;
     let mut y = (screen.height() / 2) as i32;
+    let mut cursor_x = x;
+    let mut cursor_y = y;
+    let mut cursor_drawn = false;
+    let mut content_dirty = true;
     loop {
         if let Some(ref mut event) = timer { let _ = uefi::boot::wait_for_event(core::slice::from_mut(event)); }
         if selected.is_none() {
+            let mut display_changed = content_dirty;
+            content_dirty = false;
             while let Some(event) = nano.poll_keyboard() {
-                if let Some(key) = key_value(event) { list.handle_key(key); }
+                if let Some(key) = key_value(event) {
+                    list.handle_key(key);
+                    display_changed = true;
+                }
             }
             while let Some(event) = nano.poll_pointer() {
                 let was_down = pointer_xy(event, &nano, &mut x, &mut y, screen.width(), screen.height());
-                if was_down { list.click(x, y); }
-                list.pointer_move(x, y);
+                if was_down {
+                    list.click(x, y);
+                    display_changed = true;
+                }
+                display_changed |= list.pointer_move(x, y);
             }
-            list.tick(now_ns());
+            display_changed |= list.tick(now_ns());
             if let Some(id) = list.take_clicked_id() {
                 if let Some(index) = id.strip_prefix("app").and_then(|v| v.parse::<usize>().ok()) {
                     if let Some(entry) = apps.get(index) {
+                        // The launcher glyphs are no longer displayed. Drop
+                        // them before building the full-screen app cache.
+                        baram_font::bdf_font::clear_cache();
                         let mut engine = Warp4Engine::new(&entry.name);
                         engine.set_chrome_visible(false);
                         selected = Some(engine);
+                        content_dirty = true;
+                        display_changed = true;
                     }
                 }
             }
-            list.draw_to_layer(&mut layer, 0, 0);
+            if display_changed {
+                baram_font::bdf_font::clear_cache();
+                list.draw_to_layer(&mut layer, 0, 0);
+                layer.flush(&mut screen);
+            }
         } else if let Some(engine) = selected.as_mut() {
+            let mut display_changed = content_dirty;
+            content_dirty = false;
             while let Some(event) = nano.poll_keyboard() {
-                if let Some(key) = key_value(event) { engine.handle_key(key); }
+                if let Some(key) = key_value(event) {
+                    engine.handle_key(key);
+                    display_changed = true;
+                }
             }
             while let Some(event) = nano.poll_pointer() {
                 let down = pointer_xy(event, &nano, &mut x, &mut y, screen.width(), screen.height());
-                if down { engine.click(x, y); } else { engine.release(); }
-                engine.pointer_move(x, y);
+                if down {
+                    engine.click(x, y);
+                    display_changed = true;
+                } else if engine.has_pointer_capture() {
+                    engine.release();
+                    display_changed = true;
+                }
+                display_changed |= engine.pointer_move(x, y);
             }
-            engine.tick(now_ns());
-            engine.draw_to_layer(&mut layer, 0, 0);
+            display_changed |= engine.tick(now_ns());
+            if display_changed {
+                baram_font::bdf_font::clear_cache();
+                engine.draw_to_layer(&mut layer, 0, 0);
+                layer.flush(&mut screen);
+            }
         }
-        draw_cursor(&mut layer, x, y);
-        layer.flush(&mut screen);
+        if !cursor_drawn {
+            draw_cursor(&mut screen, x, y);
+            cursor_drawn = true;
+        } else if cursor_x != x || cursor_y != y {
+            restore_cursor_background(&mut screen, &layer, cursor_x, cursor_y);
+            draw_cursor(&mut screen, x, y);
+        }
+        cursor_x = x;
+        cursor_y = y;
     }
 }

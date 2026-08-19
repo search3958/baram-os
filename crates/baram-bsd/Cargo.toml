@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 baram-core = { path = "../baram-core" }
-baram-font = { path = "../baram-font" }
+baram-font = { path = "../baram-font", default-features = false }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 blake3 = { workspace = true }

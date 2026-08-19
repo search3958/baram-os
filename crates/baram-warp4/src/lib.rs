@@ -14,7 +14,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use baram_bsd::{app::Warp4Archive, config, vfs};
 use baram_core::{Color, LayerSystem};
-use baram_font::{bdf_font, ttf_font, LayerFontExt};
+use baram_font::{bdf_font, LayerFontExt};
+#[cfg(feature = "ttf")]
+use baram_font::ttf_font;
 use baram_graphics::svg;
 use uefi::runtime;
 
@@ -3388,29 +3390,40 @@ fn measure(s: &str) -> i32 {
     if bdf_font::is_available() {
         return s.chars().map(bdf_font::advance).sum();
     }
+    #[cfg(feature = "ttf")]
     if ttf_font::is_available() {
         s.chars().map(ttf_font::advance).sum()
     } else {
         s.len() as i32 * 8
     }
+    #[cfg(not(feature = "ttf"))]
+    { s.len() as i32 * 8 }
 }
 fn measure_size(s: &str, size: f32) -> i32 {
     if bdf_font::is_available() {
         let _ = size;
         return measure(s);
     }
-    if !ttf_font::is_available() {
-        return measure(s);
+    #[cfg(feature = "ttf")]
+    {
+        if !ttf_font::is_available() {
+            return measure(s);
+        }
+        let mut total = 0;
+        for ch in s.chars() {
+            let mut advance = 0;
+            ttf_font::with_glyph_at_size(ch, size, |_data, _w, _h, glyph_advance, _y_off| {
+                advance = glyph_advance;
+            });
+            total += advance.max(1);
+        }
+        return total;
     }
-    let mut total = 0;
-    for ch in s.chars() {
-        let mut advance = 0;
-        ttf_font::with_glyph_at_size(ch, size, |_data, _w, _h, glyph_advance, _y_off| {
-            advance = glyph_advance;
-        });
-        total += advance.max(1);
+    #[cfg(not(feature = "ttf"))]
+    {
+        let _ = size;
+        measure(s)
     }
-    total
 }
 fn text_size(n: &Node) -> f32 {
     if !n.attr("textSize").is_empty() {
@@ -3550,21 +3563,23 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
         let _ = size;
         return;
     }
-    if !ttf_font::is_available() {
-        if x >= 0 && y >= 0 {
-            layer.put_str(x as usize, y as usize, text, color);
+    #[cfg(feature = "ttf")]
+    {
+        if !ttf_font::is_available() {
+            if x >= 0 && y >= 0 {
+                layer.put_str(x as usize, y as usize, text, color);
+            }
+            return;
         }
-        return;
-    }
-    let baseline = y + ttf_font::ascent_at_size(size);
-    let layer_w = layer.width();
-    let layer_h = layer.height();
-    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
-    for ch in text.chars() {
-        let mut advance = 0;
-        ttf_font::with_glyph_at_size(ch, size, |data, w, h, glyph_advance, y_off| {
-            advance = glyph_advance;
-            for row in 0..h {
+        let baseline = y + ttf_font::ascent_at_size(size);
+        let layer_w = layer.width();
+        let layer_h = layer.height();
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+        for ch in text.chars() {
+            let mut advance = 0;
+            ttf_font::with_glyph_at_size(ch, size, |data, w, h, glyph_advance, y_off| {
+                advance = glyph_advance;
+                for row in 0..h {
                 let py = baseline + y_off + row;
                 if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
                     continue;
@@ -3582,9 +3597,18 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
                             LayerSystem::blend_alpha(background, color.0, alpha);
                     }
                 }
-            }
-        });
-        x += advance.max(1);
+                }
+            });
+            x += advance.max(1);
+        }
+        return;
+    }
+    #[cfg(not(feature = "ttf"))]
+    {
+        if x >= 0 && y >= 0 {
+            layer.put_str(x as usize, y as usize, text, color);
+        }
+        let _ = (x, y, size);
     }
 }
 

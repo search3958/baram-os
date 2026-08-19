@@ -3,7 +3,12 @@ name = "baram-font"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["ttf"]
+ttf = ["dep:stb_truetype_rust"]
+bdf = []
+
 [dependencies]
 baram-core = { path = "../baram-core" }
-stb_truetype_rust = { path = "../stb_truetype_rust" }
+stb_truetype_rust = { path = "../stb_truetype_rust", optional = true }
 uefi = { workspace = true }

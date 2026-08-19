@@ -151,6 +151,10 @@ make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
     local files_archive="$RUNTIME_DIR/files.tar"
+    local xiao_bdf="$SCRIPT_DIR/crates/baram-xiao/src/misaki_gothic_2nd.bdf"
+    if [ "$XIAO_MODE" -eq 1 ] && [ ! -f "$xiao_bdf" ]; then
+        die "Xiao BDF missing: $xiao_bdf"
+    fi
     mkdir -p "$RUNTIME_DIR"
     "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive"
 
@@ -171,6 +175,10 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        if [ "$XIAO_MODE" -eq 1 ]; then
+            mcopy -i "$out" "$xiao_bdf" ::/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF
+            log "  copied xiao BDF (streamed at runtime)"
+        fi
         # Create bin directory for subsystems
         mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
         if [ "$XIAO_MODE" -eq 0 ]; then
@@ -208,6 +216,10 @@ make_fat_image() {
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+        if [ "$XIAO_MODE" -eq 1 ]; then
+            cp "$xiao_bdf" "$tmp_mount/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF"
+            log "  copied xiao BDF (streamed at runtime)"
+        fi
         # Create bin directory for subsystems
         mkdir -p "$tmp_mount/EFI/BOOT/bin"
         if [ "$XIAO_MODE" -eq 0 ]; then
@@ -244,6 +256,10 @@ make_fat_image() {
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
+        if [ "$XIAO_MODE" -eq 1 ]; then
+            mcopy -i "$out" "$xiao_bdf" ::/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF
+            log "  copied xiao BDF (streamed at runtime)"
+        fi
         # Create bin directory for subsystems
         mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
         if [ "$XIAO_MODE" -eq 0 ]; then
@@ -284,6 +300,10 @@ make_fat_image() {
             }
         mkdir -p "$tmp_mount/EFI/BOOT"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
+        if [ "$XIAO_MODE" -eq 1 ]; then
+            cp "$xiao_bdf" "$tmp_mount/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF"
+            log "  copied xiao BDF (streamed at runtime)"
+        fi
         # Create bin directory for subsystems
         mkdir -p "$tmp_mount/EFI/BOOT/bin"
         if [ "$XIAO_MODE" -eq 0 ]; then
@@ -464,6 +484,8 @@ Install QEMU:
     #   QEMU_EXTRA_ARGS          : extra args appended verbatim to the QEMU command line
     #   QEMU_SERIAL              : where serial console goes ('stdio', 'null', 'file:PATH')
     #   QEMU_MONITOR             : where HMP monitor goes ('none', 'stdio')
+    #   XIAO_ICOUNT=1            : opt into slow instruction-count timing for Xiao
+    #                              (disabled by default so pointer input stays responsive)
     local extra_args=()
     if [ -n "${QEMU_DATADIR:-}" ]; then
         extra_args+=(-L "$QEMU_DATADIR")
@@ -474,9 +496,10 @@ Install QEMU:
     fi
 
     local display_device="ramfb"
-    if [ "$XIAO_MODE" -eq 1 ]; then
-        # A deterministic instruction clock gives Xiao a low-power-device
-        # profile without changing the normal desktop's timing.
+    if [ "$XIAO_MODE" -eq 1 ] && [ "${XIAO_ICOUNT:-0}" = "1" ]; then
+        # This is intentionally opt-in. Instruction-count timing with
+        # real-time alignment can make TCG fall seconds behind while UEFI,
+        # framebuffer copies, and Warp4 are active.
         extra_args+=(-icount "shift=1,align=on")
     fi
 

@@ -10,7 +10,7 @@ path = "src/main.rs"
 [dependencies]
 baram-bsd = { path = "../baram-bsd" }
 baram-core = { path = "../baram-core" }
-baram-font = { path = "../baram-font" }
-baram-warp4 = { path = "../baram-warp4" }
+baram-font = { path = "../baram-font", default-features = false, features = ["bdf"] }
+baram-warp4 = { path = "../baram-warp4", default-features = false, features = ["bdf"] }
 nano-system = { path = "../nano-system" }
 uefi = { workspace = true }

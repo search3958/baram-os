@@ -3,9 +3,14 @@ name = "baram-warp4"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["ttf"]
+ttf = ["baram-font/ttf", "baram-graphics/ttf"]
+bdf = ["baram-font/bdf", "baram-graphics/bdf"]
+
 [dependencies]
 baram-bsd = { path = "../baram-bsd" }
 baram-core = { path = "../baram-core" }
-baram-font = { path = "../baram-font" }
-baram-graphics = { path = "../baram-graphics" }
+baram-font = { path = "../baram-font", default-features = false }
+baram-graphics = { path = "../baram-graphics", default-features = false }
 uefi = { workspace = true }

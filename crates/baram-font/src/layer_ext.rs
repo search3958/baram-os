@@ -1,6 +1,8 @@
 use crate::font;
 use crate::bdf_font;
+#[cfg(feature = "ttf")]
 use crate::ttf_font;
+#[cfg(feature = "ttf")]
 use crate::ttf_font_hud;
 use baram_core::{Color, LayerSystem};
 
@@ -30,6 +32,7 @@ impl LayerFontExt for LayerSystem {
                 true
             }) { return; }
         }
+        #[cfg(feature = "ttf")]
         if ttf_font::is_available() && ch as u32 >= 0x20 {
             let baseline = y as i32 + ttf_font::ascent();
             let w = self.width();
@@ -108,6 +111,7 @@ impl LayerFontExt for LayerSystem {
             }
             return;
         }
+        #[cfg(feature = "ttf")]
         if ttf_font::is_available() {
             for ch in s.chars() {
                 let mut advance = 0;
@@ -139,6 +143,7 @@ impl LayerFontExt for LayerSystem {
             self.put_str(x, y, s, fg);
             return;
         }
+        #[cfg(feature = "ttf")]
         if ttf_font_hud::is_available() {
             for ch in s.chars() {
                 let glyph = ttf_font_hud::glyph(ch);
