@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["ttf", "normal"]
-ttf = ["normal", "baram-font/ttf", "baram-graphics/ttf"]
+default = ["ttf"]
+ttf = ["baram-font/ttf", "baram-graphics/ttf"]
 bdf = ["baram-font/bdf", "baram-graphics/bdf"]
-normal = []
 
 [dependencies]
 baram-bsd = { path = "../baram-bsd", default-features = false }

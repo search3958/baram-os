@@ -234,6 +234,8 @@ impl WarpEngine {
     }
 
     pub fn new_warp4(app_name: &str) -> Self {
+        baram_warp4::set_ui_mode(baram_warp4::UiMode::Normal);
+        baram_warp4::set_ui_scale_percent(100);
         let mut engine = Self::new("");
         engine.warp4 = Some(Warp4Engine::new(app_name));
         engine.origin = app_name.to_string();
@@ -241,6 +243,8 @@ impl WarpEngine {
     }
 
     pub fn new_embedded_warp4(name: &str, sources: &[(&str, &str)]) -> Self {
+        baram_warp4::set_ui_mode(baram_warp4::UiMode::Normal);
+        baram_warp4::set_ui_scale_percent(100);
         let mut engine = Self::new("");
         engine.warp4 = Some(Warp4Engine::new_embedded(name, sources));
         engine.origin = name.to_string();

@@ -157,6 +157,7 @@ pub fn run(mut nano: NanoSystem) -> Status {
     config::init_config();
     // Xiao is the only image that uses compact Warp4 metrics.  The normal
     // BaramOS binaries never call this and therefore remain at 100%.
+    baram_warp4::set_ui_mode(baram_warp4::UiMode::Xiao);
     baram_warp4::set_ui_scale_percent(50);
     // Keep the 757 KiB BDF on the FAT volume. The parser streams it and keeps
     // only glyphs used by the current display while painting.

@@ -10,123 +10,42 @@
 
 extern crate alloc;
 
-#[cfg(all(feature = "normal", feature = "xiao"))]
-compile_error!("baram-warp4: normal and xiao rendering modes are mutually exclusive");
-#[cfg(not(any(feature = "normal", feature = "xiao")))]
-compile_error!("baram-warp4: select exactly one rendering mode: normal or xiao");
-
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use baram_bsd::{app::Warp4Archive, config, vfs};
 use baram_core::{Color, LayerSystem};
-use baram_font::{bdf_font, LayerFontExt};
-use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "ttf")]
 use baram_font::ttf_font;
-#[cfg(feature = "normal")]
+use baram_font::{bdf_font, LayerFontExt};
+#[cfg(feature = "ttf")]
 use baram_graphics::svg;
 use uefi::runtime;
+
+mod parser;
+mod ui;
+
+use parser::{
+    duration_ns, ini, is_match_parent, is_safe_script_name, is_zero_dimension, parse_i32,
+    parse_script, set_attr, XmlParser,
+};
+use ui::{is_xiao, palette, ui_px, ui_px_usize, ui_size};
+pub use ui::{set_ui_mode, set_ui_scale_percent, UiMode};
 
 const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
-#[cfg(feature = "normal")]
+#[cfg(feature = "ttf")]
 const CHECK_ICON_SVG: &str = include_str!("../../../files/data/ui/check-icon.svg");
 const WARP4_INPUT_RADIUS: usize = 11;
-// Warp3 control palette.  Keep Warp4's native controls visually identical to
-// the established Warp3 surface instead of maintaining a second theme.
-#[cfg(feature = "normal")]
-const WARP3_BG: Color = Color::rgb(243, 243, 243);
-#[cfg(feature = "normal")]
-const WARP3_SURFACE: Color = Color::rgb(251, 251, 251);
-#[cfg(feature = "normal")]
-const WARP3_TEXT: Color = Color::rgb(26, 26, 26);
-#[cfg(feature = "normal")]
-const WARP3_MUTED: Color = Color::rgb(93, 93, 93);
-#[cfg(feature = "normal")]
-const WARP3_BORDER: Color = Color::rgb(211, 211, 211);
-#[cfg(feature = "normal")]
-const WARP3_ACCENT: Color = Color::rgb(0, 106, 255);
-#[cfg(feature = "normal")]
-const WARP4_BG: Color = Color::rgb(250, 250, 252);
-#[cfg(feature = "normal")]
-const WARP4_PRIMARY: Color = Color::rgb(0, 106, 255);
-#[cfg(feature = "normal")]
-const WARP4_BUTTON_BG: Color = Color::rgb(238, 238, 239);
-#[cfg(feature = "normal")]
-const WARP4_INPUT_BG: Color = Color::rgb(255, 255, 255);
-#[cfg(feature = "normal")]
-const WARP4_INPUT_BORDER: Color = Color::rgb(242, 242, 246);
-#[cfg(feature = "normal")]
-const WARP4_RADIO_OFF: Color = Color::rgb(231, 230, 230);
-// Xiao uses the light-gray Platinum palette from Mac OS 8/9.  These are
-// deliberately separate constants: the normal image must never inherit the
-// compact theme through a fallback `not(feature = "xiao")` branch.
-#[cfg(feature = "xiao")]
-const WARP3_BG: Color = Color::rgb(0xD8, 0xD8, 0xD8);
-#[cfg(feature = "xiao")]
-const WARP3_SURFACE: Color = Color::rgb(0xF0, 0xF0, 0xF0);
-#[cfg(feature = "xiao")]
-const WARP3_TEXT: Color = Color::rgb(0x00, 0x00, 0x00);
-#[cfg(feature = "xiao")]
-const WARP3_MUTED: Color = Color::rgb(0x55, 0x55, 0x55);
-#[cfg(feature = "xiao")]
-const WARP3_BORDER: Color = Color::rgb(0x78, 0x78, 0x78);
-#[cfg(feature = "xiao")]
-const WARP3_ACCENT: Color = Color::rgb(0x33, 0x66, 0xCC);
-#[cfg(feature = "xiao")]
-const WARP4_BG: Color = Color::rgb(0xEE, 0xEE, 0xEE);
-#[cfg(feature = "xiao")]
-const WARP4_PRIMARY: Color = Color::rgb(0x33, 0x66, 0xCC);
-#[cfg(feature = "xiao")]
-const WARP4_INPUT_BG: Color = Color::rgb(0xFF, 0xFF, 0xFF);
-#[cfg(feature = "xiao")]
-const WARP4_INPUT_BORDER: Color = Color::rgb(0x7A, 0x7A, 0x7A);
-#[cfg(feature = "xiao")]
-const WARP4_RADIO_OFF: Color = Color::rgb(0xC8, 0xC8, 0xC8);
-#[cfg(feature = "xiao")]
-const WARP9_HIGHLIGHT: Color = Color::rgb(0xFF, 0xFF, 0xFF);
-#[cfg(feature = "xiao")]
-const WARP9_MID: Color = Color::rgb(0xD0, 0xD0, 0xD0);
-#[cfg(feature = "xiao")]
-const WARP9_SHADOW: Color = Color::rgb(0x8A, 0x8A, 0x8A);
-#[cfg(feature = "xiao")]
-const WARP9_DARK_SHADOW: Color = Color::rgb(0x5F, 0x5F, 0x5F);
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_HEIGHT: i32 = 22;
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_RADIUS: usize = 2;
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_BORDER: Color = Color::rgb(0, 0, 0);
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_INNER_EDGE: Color = Color::rgb(221, 221, 221);
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_HIGHLIGHT: Color = Color::rgb(255, 255, 255);
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_FACE: Color = Color::rgb(221, 221, 221);
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_SHADOW_1: Color = Color::rgb(119, 119, 119);
-#[cfg(feature = "xiao")]
-const XIAO_BUTTON_SHADOW_2: Color = Color::rgb(170, 170, 170);
 const WARP4_WHITE: Color = Color::rgb(255, 255, 255);
 const WARP4_BLACK: Color = Color::rgb(0, 0, 0);
-#[cfg(feature = "normal")]
-const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
-#[cfg(feature = "normal")]
-const SCROLLBAR_THUMB: Color = Color::rgb(184, 184, 184);
-#[cfg(feature = "xiao")]
-const SCROLLBAR_TRACK: Color = Color::rgb(0xC8, 0xC8, 0xC8);
-#[cfg(feature = "xiao")]
-const SCROLLBAR_THUMB: Color = Color::rgb(0x8A, 0x8A, 0x8A);
 const SCROLLBAR_RADIUS: usize = 3;
 
-// The BDF build is the Xiao kiosk build.  It intentionally uses a hard,
-// pixel-snapped control language: no squircle geometry, coverage sampling,
-// alpha edges, or blurred shadows.  The normal TTF build keeps the existing
-// smooth renderer unchanged.
-#[cfg(feature = "xiao")]
+// The renderer selects the visual profile after boot. Xiao keeps a hard,
+// pixel-snapped control language; the normal profile retains smooth native
+// primitives. Both profiles use the same parser, layout, and paint pipeline.
 fn fill_ui_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -136,26 +55,29 @@ fn fill_ui_rounded_rect(
     radius: usize,
     color: Color,
 ) {
-    if w == 0 || h == 0 {
-        return;
-    }
-    let radius = radius.min(4).min(w / 2).min(h / 2);
-    for row in 0..h {
-        let inset = if row < radius {
-            radius - row
-        } else if row >= h.saturating_sub(radius) {
-            radius - (h - 1 - row)
-        } else {
-            0
-        };
-        let width = w.saturating_sub(inset.saturating_mul(2));
-        if width > 0 {
-            layer.fill_rect(x + inset, y + row, width, 1, color);
+    if is_xiao() {
+        if w == 0 || h == 0 {
+            return;
         }
+        let radius = radius.min(4).min(w / 2).min(h / 2);
+        for row in 0..h {
+            let inset = if row < radius {
+                radius - row
+            } else if row >= h.saturating_sub(radius) {
+                radius - (h - 1 - row)
+            } else {
+                0
+            };
+            let width = w.saturating_sub(inset.saturating_mul(2));
+            if width > 0 {
+                layer.fill_rect(x + inset, y + row, width, 1, color);
+            }
+        }
+    } else {
+        layer.fill_rounded_rect(x, y, w, h, radius, color);
     }
 }
 
-#[cfg(feature = "xiao")]
 fn fill_ui_gradient_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -204,20 +126,6 @@ fn fill_ui_gradient_rounded_rect(
     }
 }
 
-#[cfg(feature = "normal")]
-fn fill_ui_rounded_rect(
-    layer: &mut LayerSystem,
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-    radius: usize,
-    color: Color,
-) {
-    layer.fill_rounded_rect(x, y, w, h, radius, color);
-}
-
-#[cfg(feature = "xiao")]
 fn outline_ui_rounded_rect(
     layer: &mut LayerSystem,
     x: usize,
@@ -228,36 +136,29 @@ fn outline_ui_rounded_rect(
     border: Color,
     fill: Color,
 ) {
-    fill_ui_rounded_rect(layer, x, y, w, h, radius, border);
-    if w > 2 && h > 2 {
-        fill_ui_rounded_rect(
-            layer,
-            x + 1,
-            y + 1,
-            w - 2,
-            h - 2,
-            radius.saturating_sub(1),
-            fill,
-        );
+    if is_xiao() {
+        fill_ui_rounded_rect(layer, x, y, w, h, radius, border);
+        if w > 2 && h > 2 {
+            fill_ui_rounded_rect(
+                layer,
+                x + 1,
+                y + 1,
+                w - 2,
+                h - 2,
+                radius.saturating_sub(1),
+                fill,
+            );
+        }
+    } else {
+        layer.rounded_rect_outline(x, y, w, h, radius, border, fill);
     }
 }
 
-#[cfg(feature = "normal")]
-fn outline_ui_rounded_rect(
-    layer: &mut LayerSystem,
-    x: usize,
-    y: usize,
-    w: usize,
-    h: usize,
-    radius: usize,
-    border: Color,
-    fill: Color,
-) {
-    layer.rounded_rect_outline(x, y, w, h, radius, border, fill);
-}
-
-#[cfg(feature = "xiao")]
 fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, color: Color) {
+    if !is_xiao() {
+        layer.fill_circle(cx, cy, radius, color);
+        return;
+    }
     let radius = radius.max(1) as i32;
     let center_x = cx as i32;
     let center_y = cy as i32;
@@ -268,98 +169,16 @@ fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, 
             span -= 1;
         }
         let left = (center_x - span).max(0) as usize;
-        layer.fill_rect(left, (center_y + dy).max(0) as usize, (span * 2 + 1) as usize, 1, color);
-    }
-}
-
-#[cfg(feature = "normal")]
-fn fill_ui_circle(layer: &mut LayerSystem, cx: usize, cy: usize, radius: usize, color: Color) {
-    layer.fill_circle(cx, cy, radius, color);
-}
-
-#[cfg(feature = "xiao")]
-fn draw_ui_button(
-    layer: &mut LayerSystem,
-    x: usize,
-    y: usize,
-    w: usize,
-    _h: usize,
-    _radius: usize,
-    _color: Color,
-    _pressed: bool,
-    _primary: bool,
-) {
-    // Xiao's button is deliberately a fixed, pixel-stepped 22px control.
-    // Every shade is a solid 8-bit gray from the reference: no gradients,
-    // alpha coverage, or state-specific palette changes.
-    let h = XIAO_BUTTON_HEIGHT as usize;
-    fill_ui_rounded_rect(
-        layer,
-        x,
-        y,
-        w,
-        h,
-        XIAO_BUTTON_RADIUS,
-        XIAO_BUTTON_BORDER,
-    );
-    if w <= 2 || h <= 2 {
-        return;
-    }
-
-    // The face starts one pixel inside the black keyline. Its stepped corner
-    // leaves the outer keyline intact at each corner.
-    fill_ui_rounded_rect(
-        layer,
-        x + 1,
-        y + 1,
-        w - 2,
-        h - 2,
-        1,
-        XIAO_BUTTON_FACE,
-    );
-    if w > 4 && h > 4 {
-        let horizontal_w = w - 4;
-        let vertical_h = h - 4;
-
-        // Top/left: first inner pixel is 221, second is 255.
-        layer.fill_rect(x + 2, y + 1, horizontal_w, 1, XIAO_BUTTON_INNER_EDGE);
-        layer.fill_rect(x + 1, y + 2, 1, vertical_h, XIAO_BUTTON_INNER_EDGE);
-        layer.fill_rect(x + 2, y + 2, horizontal_w, 1, XIAO_BUTTON_HIGHLIGHT);
-        layer.fill_rect(x + 2, y + 2, 1, vertical_h, XIAO_BUTTON_HIGHLIGHT);
-
-        // Bottom/right: first inner pixel is 119, second is 170.
         layer.fill_rect(
-            x + 2,
-            y + h - 2,
-            horizontal_w,
+            left,
+            (center_y + dy).max(0) as usize,
+            (span * 2 + 1) as usize,
             1,
-            XIAO_BUTTON_SHADOW_1,
-        );
-        layer.fill_rect(
-            x + w - 2,
-            y + 2,
-            1,
-            vertical_h,
-            XIAO_BUTTON_SHADOW_1,
-        );
-        layer.fill_rect(
-            x + 2,
-            y + h - 3,
-            horizontal_w,
-            1,
-            XIAO_BUTTON_SHADOW_2,
-        );
-        layer.fill_rect(
-            x + w - 3,
-            y + 2,
-            1,
-            vertical_h,
-            XIAO_BUTTON_SHADOW_2,
+            color,
         );
     }
 }
 
-#[cfg(feature = "normal")]
 fn draw_ui_button(
     layer: &mut LayerSystem,
     x: usize,
@@ -371,16 +190,38 @@ fn draw_ui_button(
     _pressed: bool,
     _primary: bool,
 ) {
-    layer.fill_rounded_rect(x, y, w, h, radius, color);
+    if !is_xiao() {
+        layer.fill_rounded_rect(x, y, w, h, radius, color);
+        return;
+    }
+    // Xiao's button follows the 22px System 9 reference exactly. The face is
+    // solid 221 with a black keyline and stepped 255/170/119 edges.
+    let p = palette();
+    let h = p.button_height as usize;
+    fill_ui_rounded_rect(layer, x, y, w, h, p.button_radius, p.button_border);
+    if w <= 2 || h <= 2 {
+        return;
+    }
+    fill_ui_rounded_rect(layer, x + 1, y + 1, w - 2, h - 2, 1, p.button_face);
+    if w > 4 && h > 4 {
+        let horizontal_w = w - 4;
+        let vertical_h = h - 4;
+        layer.fill_rect(x + 2, y + 1, horizontal_w, 1, p.button_inner_edge);
+        layer.fill_rect(x + 1, y + 2, 1, vertical_h, p.button_inner_edge);
+        layer.fill_rect(x + 2, y + 2, horizontal_w, 1, p.button_highlight);
+        layer.fill_rect(x + 2, y + 2, 1, vertical_h, p.button_highlight);
+        layer.fill_rect(x + 2, y + h - 2, horizontal_w, 1, p.button_shadow_1);
+        layer.fill_rect(x + w - 2, y + 2, 1, vertical_h, p.button_shadow_1);
+        layer.fill_rect(x + 2, y + h - 3, horizontal_w, 1, p.button_shadow_2);
+        layer.fill_rect(x + w - 3, y + 2, 1, vertical_h, p.button_shadow_2);
+    }
 }
 
-#[cfg(feature = "xiao")]
-fn ui_button_face(_active: bool, _selected: bool, _hover: bool, _primary: bool) -> Color {
-    XIAO_BUTTON_FACE
-}
-
-#[cfg(feature = "normal")]
 fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> Color {
+    let p = palette();
+    if is_xiao() {
+        return p.button_face;
+    }
     let primary_color = if active {
         Color::rgb(0, 96, 196)
     } else if selected {
@@ -388,7 +229,7 @@ fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> C
     } else if hover {
         Color::rgb(0, 112, 232)
     } else {
-        WARP4_PRIMARY
+        p.warp4_primary
     };
     if primary {
         primary_color
@@ -399,12 +240,12 @@ fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> C
     } else if hover {
         Color::rgb(244, 244, 245)
     } else {
-        WARP4_BUTTON_BG
+        p.warp4_button_bg
     }
 }
 
-#[cfg(feature = "xiao")]
 fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on: bool) {
+    let p = palette();
     let track_w = ui_px_usize(40).max(12);
     let track_h = ui_px_usize(20).max(8);
     let sy = (y + (h - track_h as i32).max(0) / 2).max(0) as usize;
@@ -415,9 +256,9 @@ fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on: bool) {
         track_w,
         track_h,
         ui_px_usize(5).max(2),
-        WARP3_BORDER,
-        WARP9_HIGHLIGHT,
-        WARP9_MID,
+        p.warp3_border,
+        p.warp9_highlight,
+        p.warp9_mid,
     );
     let knob_w = track_w.saturating_sub(6).min(ui_px_usize(16).max(6));
     let knob_h = track_h.saturating_sub(4).max(3);
@@ -433,37 +274,30 @@ fn draw_ui_switch(layer: &mut LayerSystem, x: i32, y: i32, h: i32, on: bool) {
         knob_w,
         knob_h,
         ui_px_usize(3).max(1),
-        WARP9_DARK_SHADOW,
-        if on { Color::rgb(0x75, 0x9A, 0xDA) } else { WARP9_HIGHLIGHT },
-        if on { WARP4_PRIMARY } else { WARP9_SHADOW },
+        p.warp9_dark_shadow,
+        if on {
+            Color::rgb(0x75, 0x9A, 0xDA)
+        } else {
+            p.warp9_highlight
+        },
+        if on { p.warp4_primary } else { p.warp9_shadow },
     );
 }
 
-#[cfg(feature = "xiao")]
 fn draw_ui_input(layer: &mut LayerSystem, x: usize, y: usize, w: usize, h: usize) {
-    // A recessed Platinum text field: gray top/left edge, white interior,
-    // and a small lower highlight. It remains pixel-snapped at low memory.
-    fill_ui_rounded_rect(layer, x, y, w, h, 4, WARP4_INPUT_BORDER);
+    let p = palette();
+    fill_ui_rounded_rect(layer, x, y, w, h, 4, p.warp4_input_border);
     if w > 2 && h > 2 {
-        fill_ui_rounded_rect(
-            layer,
-            x + 1,
-            y + 1,
-            w - 2,
-            h - 2,
-            3,
-            WARP4_INPUT_BG,
-        );
+        fill_ui_rounded_rect(layer, x + 1, y + 1, w - 2, h - 2, 3, p.warp4_input_bg);
         if w > 4 && h > 4 {
-            layer.fill_rect(x + 1, y + 1, w - 2, 1, WARP9_SHADOW);
-            layer.fill_rect(x + 1, y + h - 2, w - 2, 1, WARP9_HIGHLIGHT);
-            layer.fill_rect(x + 1, y + 1, 1, h - 2, WARP9_SHADOW);
-            layer.fill_rect(x + w - 2, y + 1, 1, h - 2, WARP9_HIGHLIGHT);
+            layer.fill_rect(x + 1, y + 1, w - 2, 1, p.warp9_shadow);
+            layer.fill_rect(x + 1, y + h - 2, w - 2, 1, p.warp9_highlight);
+            layer.fill_rect(x + 1, y + 1, 1, h - 2, p.warp9_shadow);
+            layer.fill_rect(x + w - 2, y + 1, 1, h - 2, p.warp9_highlight);
         }
     }
 }
 
-#[cfg(feature = "xiao")]
 fn draw_ui_checkbox(
     layer: &mut LayerSystem,
     x: usize,
@@ -472,11 +306,16 @@ fn draw_ui_checkbox(
     checked: bool,
     hover: bool,
 ) {
-    let border = if checked || hover { WARP4_PRIMARY } else { WARP3_MUTED };
-    let (top, bottom) = if checked {
-        (Color::rgb(0x78, 0x9E, 0xDE), WARP4_PRIMARY)
+    let p = palette();
+    let border = if checked || hover {
+        p.warp4_primary
     } else {
-        (WARP9_HIGHLIGHT, WARP9_MID)
+        p.warp3_muted
+    };
+    let (top, bottom) = if checked {
+        (Color::rgb(0x78, 0x9E, 0xDE), p.warp4_primary)
+    } else {
+        (p.warp9_highlight, p.warp9_mid)
     };
     fill_ui_gradient_rounded_rect(layer, x, y, size, size, 3, border, top, bottom);
     if checked {
@@ -486,31 +325,6 @@ fn draw_ui_checkbox(
             (y + ui_px_usize(5)) as i32,
         );
     }
-}
-
-// Warp4 is shared by the normal and Xiao images.  Keep the scale as explicit
-// process-local runtime state instead of a Cargo feature: a normal image must
-// always use 100%, while the Xiao kiosk opts into 50% before creating an app.
-static UI_SCALE_PERCENT: AtomicU32 = AtomicU32::new(100);
-
-pub fn set_ui_scale_percent(percent: u32) {
-    UI_SCALE_PERCENT.store(percent.clamp(1, 100), Ordering::Relaxed);
-}
-
-#[inline]
-fn ui_px(value: i32) -> i32 {
-    let percent = UI_SCALE_PERCENT.load(Ordering::Relaxed) as i64;
-    ((value as i64 * percent) / 100) as i32
-}
-
-#[inline]
-fn ui_px_usize(value: usize) -> usize {
-    ui_px(value as i32).max(0) as usize
-}
-
-#[inline]
-fn ui_size(value: f32) -> f32 {
-    value * (UI_SCALE_PERCENT.load(Ordering::Relaxed) as f32 / 100.0)
 }
 
 fn title_bar_h() -> i32 {
@@ -1779,9 +1593,8 @@ impl Warp4Engine {
     }
 
     fn own_height(&self, idx: usize, forced_h: Option<i32>) -> Option<i32> {
-        #[cfg(feature = "xiao")]
-        if is_button_like(&self.nodes[idx]) {
-            return Some(XIAO_BUTTON_HEIGHT);
+        if is_xiao() && is_button_like(&self.nodes[idx]) {
+            return Some(palette().button_height);
         }
 
         forced_h.or_else(|| {
@@ -1797,9 +1610,8 @@ impl Warp4Engine {
     }
 
     fn resolved_height(&self, idx: usize, available: i32, intrinsic_available: i32) -> i32 {
-        #[cfg(feature = "xiao")]
-        if is_button_like(&self.nodes[idx]) {
-            return XIAO_BUTTON_HEIGHT;
+        if is_xiao() && is_button_like(&self.nodes[idx]) {
+            return palette().button_height;
         }
 
         dimension(
@@ -1844,7 +1656,11 @@ impl Warp4Engine {
             let children = self.nodes[idx].children.clone();
             // Match Warp3's native row/section spacing when an XML layout
             // does not specify a gap explicitly.
-            let layout_gap = parse_dim(self.nodes[idx].attr("layout_gap"), ui_px(8)).max(0);
+            let layout_gap = parse_dim(
+                self.nodes[idx].attr("layout_gap"),
+                if is_xiao() { ui_px(4) } else { ui_px(8) },
+            )
+            .max(0);
             let visible_children = children
                 .iter()
                 .filter(|child| self.nodes[**child].visible())
@@ -2283,7 +2099,7 @@ impl Warp4Engine {
 
     fn layout_grid(&mut self, idx: usize, pad: Edges) {
         let columns = parse_i32(self.nodes[idx].attr("columnCount")).max(1);
-        let gap = ui_px(8);
+        let gap = if is_xiao() { ui_px(4) } else { ui_px(8) };
         let cell_w = ((self.nodes[idx].content_w - gap * (columns - 1)) / columns).max(1);
         let mut row_y = self.nodes[idx].y + pad.top;
         let mut row_h = 0;
@@ -2376,8 +2192,8 @@ impl Warp4Engine {
                 },
                 text_size(n),
             ) + ui_px(32))
-                .max(ui_px(64))
-                .min(available.max(ui_px(64)));
+            .max(ui_px(64))
+            .min(available.max(ui_px(64)));
         }
         if n.is("RatingBar") {
             let stars = parse_i32(n.attr("numStars")).clamp(1, 10);
@@ -2415,9 +2231,8 @@ impl Warp4Engine {
     }
     fn intrinsic_h(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
-        #[cfg(feature = "xiao")]
-        if is_button_like(n) {
-            return XIAO_BUTTON_HEIGHT;
+        if is_xiao() && is_button_like(n) {
+            return palette().button_height;
         }
 
         let raw_height = n.attr("layout_height");
@@ -2463,8 +2278,9 @@ impl Warp4Engine {
             let pad = edges(n, "padding");
             let size = text_size(n);
             let line = (size * 1.25) as i32;
-            let chars_per_line =
-                (available.max(1) / (size.max(ui_size(8.0)) as i32 / 2).max(ui_px(4))).max(1) as usize;
+            let chars_per_line = (available.max(1)
+                / (size.max(ui_size(8.0)) as i32 / 2).max(ui_px(4)))
+            .max(1) as usize;
             let lines = n
                 .attr("text")
                 .split('\n')
@@ -2506,7 +2322,7 @@ impl Warp4Engine {
                 + pad.bottom
                 + rows as i32 * ui_px(48)
                 + rows.saturating_sub(1) as i32 * ui_px(8))
-                .max(1);
+            .max(1);
         } else if n.is("FrameLayout")
             || n.is("RelativeLayout")
             || n.is("AbsoluteLayout")
@@ -2634,25 +2450,15 @@ impl Warp4Engine {
             let hover = self.hovered == Some(idx);
             let selected = n.attr("selected") == "true";
             let primary = n.is("PrimaryButton");
-            let button_h = {
-                #[cfg(feature = "xiao")]
-                {
-                    XIAO_BUTTON_HEIGHT as usize
-                }
-                #[cfg(feature = "normal")]
-                {
-                    h
-                }
+            let button_h = if is_xiao() {
+                palette().button_height as usize
+            } else {
+                h
             };
-            let button_radius = {
-                #[cfg(feature = "xiao")]
-                {
-                    XIAO_BUTTON_RADIUS
-                }
-                #[cfg(feature = "normal")]
-                {
-                    w.min(h) / 2
-                }
+            let button_radius = if is_xiao() {
+                palette().button_radius
+            } else {
+                w.min(h) / 2
             };
             draw_ui_button(
                 layer,
@@ -2669,54 +2475,58 @@ impl Warp4Engine {
             || n.is("AutoCompleteTextView")
             || n.is("MultiAutoCompleteTextView")
         {
-            #[cfg(feature = "xiao")]
-            draw_ui_input(layer, x.max(0) as usize, y.max(0) as usize, w, h);
-            #[cfg(feature = "normal")]
-            outline_ui_rounded_rect(
-                layer,
-                x.max(0) as usize,
-                y.max(0) as usize,
-                w,
-                h,
-                ui_px_usize(WARP4_INPUT_RADIUS).min(w / 2).min(h / 2),
-                WARP4_INPUT_BORDER,
-                WARP4_INPUT_BG,
-            );
+            if is_xiao() {
+                draw_ui_input(layer, x.max(0) as usize, y.max(0) as usize, w, h);
+            } else {
+                outline_ui_rounded_rect(
+                    layer,
+                    x.max(0) as usize,
+                    y.max(0) as usize,
+                    w,
+                    h,
+                    ui_px_usize(WARP4_INPUT_RADIUS).min(w / 2).min(h / 2),
+                    palette().warp4_input_border,
+                    palette().warp4_input_bg,
+                );
+            }
         } else if n.is("CheckBox") || n.is("RadioButton") {
             let checked = n.attr("checked") == "true";
             let hover = self.hovered == Some(idx);
             let mark_x = x + ui_px(2);
             let mark_y = y + (n.h - ui_px(if n.is("RadioButton") { 18 } else { 22 })).max(0) / 2;
             if n.is("CheckBox") {
-                #[cfg(feature = "xiao")]
-                draw_ui_checkbox(
-                    layer,
-                    mark_x.max(0) as usize,
-                    mark_y.max(0) as usize,
-                    ui_px_usize(22),
-                    checked,
-                    hover,
-                );
-                #[cfg(feature = "normal")]
-                {
-                let border = if checked || hover {
-                    WARP3_ACCENT
+                if is_xiao() {
+                    draw_ui_checkbox(
+                        layer,
+                        mark_x.max(0) as usize,
+                        mark_y.max(0) as usize,
+                        ui_px_usize(22),
+                        checked,
+                        hover,
+                    );
                 } else {
-                    WARP3_MUTED
-                };
-                outline_ui_rounded_rect(
-                    layer,
-                    mark_x.max(0) as usize,
-                    mark_y.max(0) as usize,
-                    ui_px_usize(22),
-                    ui_px_usize(22),
-                    ui_px_usize(4),
-                    border,
-                    if checked { WARP3_ACCENT } else { WARP3_SURFACE },
-                );
-                if checked {
-                    draw_check_icon(layer, mark_x + ui_px(5), mark_y + ui_px(5));
-                }
+                    let border = if checked || hover {
+                        palette().warp3_accent
+                    } else {
+                        palette().warp3_muted
+                    };
+                    outline_ui_rounded_rect(
+                        layer,
+                        mark_x.max(0) as usize,
+                        mark_y.max(0) as usize,
+                        ui_px_usize(22),
+                        ui_px_usize(22),
+                        ui_px_usize(4),
+                        border,
+                        if checked {
+                            palette().warp3_accent
+                        } else {
+                            palette().warp3_surface
+                        },
+                    );
+                    if checked {
+                        draw_check_icon(layer, mark_x + ui_px(5), mark_y + ui_px(5));
+                    }
                 }
             } else {
                 let amount = self.control_amount(idx, checked);
@@ -2725,11 +2535,11 @@ impl Warp4Engine {
                     .iter()
                     .any(|animation| animation.idx == idx)
                 {
-                    mix_color(WARP4_RADIO_OFF, WARP4_PRIMARY, amount)
+                    mix_color(palette().warp4_radio_off, palette().warp4_primary, amount)
                 } else if checked {
-                    WARP4_PRIMARY
+                    palette().warp4_primary
                 } else {
-                    WARP4_RADIO_OFF
+                    palette().warp4_radio_off
                 };
                 fill_ui_circle(
                     layer,
@@ -2750,39 +2560,35 @@ impl Warp4Engine {
                 }
             }
         } else if n.is("Switch") {
-            #[cfg(feature = "xiao")]
-            {
+            if is_xiao() {
                 draw_ui_switch(layer, x, y, n.h, n.attr("checked") == "true");
-            }
-            #[cfg(feature = "normal")]
-            {
-            let on = n.attr("checked") == "true";
-            let amount = self.control_amount(idx, on);
-            let track = mix_color(WARP3_BG, WARP3_ACCENT, amount);
-            let sy = y + (n.h - ui_px(22)).max(0) / 2;
-            let track_w = ui_px_usize(44);
-            outline_ui_rounded_rect(
-                layer,
-                x.max(0) as usize,
-                sy.max(0) as usize,
-                track_w,
-                ui_px_usize(22),
-                ui_px_usize(11),
-                mix_color(WARP3_MUTED, WARP3_ACCENT, amount),
-                track,
-            );
-            // Warp3 uses a compact 14px knob inside the 22px track.  The
-            // previous 28px knob made the white state dominate the control.
-            let knob_x = x
-                + ui_px(10)
-                + ((track_w as f32 - ui_size(20.0)) * amount + ui_size(0.5)) as i32;
-            fill_ui_circle(
-                layer,
-                knob_x.max(0) as usize,
-                (sy + ui_px(11)).max(0) as usize,
-                ui_px_usize(7),
-                mix_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), amount),
-            );
+            } else {
+                let on = n.attr("checked") == "true";
+                let amount = self.control_amount(idx, on);
+                let track = mix_color(palette().warp3_bg, palette().warp3_accent, amount);
+                let sy = y + (n.h - ui_px(22)).max(0) / 2;
+                let track_w = ui_px_usize(44);
+                outline_ui_rounded_rect(
+                    layer,
+                    x.max(0) as usize,
+                    sy.max(0) as usize,
+                    track_w,
+                    ui_px_usize(22),
+                    ui_px_usize(11),
+                    mix_color(palette().warp3_muted, palette().warp3_accent, amount),
+                    track,
+                );
+                // Warp3 uses a compact 14px knob inside the 22px track.
+                let knob_x = x
+                    + ui_px(10)
+                    + ((track_w as f32 - ui_size(20.0)) * amount + ui_size(0.5)) as i32;
+                fill_ui_circle(
+                    layer,
+                    knob_x.max(0) as usize,
+                    (sy + ui_px(11)).max(0) as usize,
+                    ui_px_usize(7),
+                    mix_color(Color::rgb(102, 102, 102), Color::rgb(255, 255, 255), amount),
+                );
             }
         } else if n.is("Spinner") || n.is("SearchView") {
             layer.fill_rect(
@@ -2791,9 +2597,9 @@ impl Warp4Engine {
                 w,
                 ui_px_usize(2).max(1),
                 if self.hovered == Some(idx) {
-                    WARP3_ACCENT
+                    palette().warp3_accent
                 } else {
-                    WARP3_BORDER
+                    palette().warp3_border
                 },
             );
             if n.is("Spinner") {
@@ -2822,7 +2628,7 @@ impl Warp4Engine {
                     x + ui_px(7),
                     y + ((h as i32 - ui_px(19)).max(0) / 2),
                     value,
-                    WARP3_TEXT,
+                    palette().warp3_text,
                     ui_size(15.0),
                 );
                 // Native equivalent of the CSS select arrow.
@@ -2836,7 +2642,7 @@ impl Warp4Engine {
                         (ay + row).max(0) as usize,
                         width as usize,
                         1,
-                        WARP3_MUTED,
+                        palette().warp3_muted,
                     );
                 }
             }
@@ -2848,9 +2654,9 @@ impl Warp4Engine {
                 w,
                 ui_px_usize(3).max(1),
                 if self.hovered == Some(idx) {
-                    WARP3_ACCENT
+                    palette().warp3_accent
                 } else {
-                    WARP3_BORDER
+                    palette().warp3_border
                 },
             );
             let max = parse_i32(n.attr("max")).max(1);
@@ -2862,7 +2668,7 @@ impl Warp4Engine {
                     cy.max(0) as usize,
                     (px - x).max(0) as usize,
                     ui_px_usize(3).max(1),
-                    WARP3_ACCENT,
+                    palette().warp3_accent,
                 );
             }
             fill_ui_circle(
@@ -2870,7 +2676,7 @@ impl Warp4Engine {
                 px.max(0) as usize,
                 cy.max(0) as usize,
                 ui_px_usize(if self.hovered == Some(idx) { 10 } else { 9 }).max(1),
-                WARP3_ACCENT,
+                palette().warp3_accent,
             );
         } else if n.is("RatingBar") {
             let stars = parse_i32(n.attr("numStars")).max(1).min(10);
@@ -2878,7 +2684,7 @@ impl Warp4Engine {
             let hover = self.hovered == Some(idx);
             for star in 0..stars {
                 let color = if star as f32 + 0.5 <= rating {
-                    WARP3_ACCENT
+                    palette().warp3_accent
                 } else if hover {
                     Color::rgb(158, 190, 220)
                 } else {
@@ -2895,7 +2701,7 @@ impl Warp4Engine {
                     w,
                     ui_px_usize(6).max(1),
                     ui_px_usize(3),
-                    WARP3_BORDER,
+                    palette().warp3_border,
                 );
                 let max = parse_i32(n.attr("max")).max(1);
                 let progress = parse_i32(n.attr("progress")).clamp(0, max);
@@ -2906,15 +2712,27 @@ impl Warp4Engine {
                     (w as i32 * progress / max) as usize,
                     ui_px_usize(6).max(1),
                     ui_px_usize(3),
-                    WARP3_ACCENT,
+                    palette().warp3_accent,
                 );
             } else {
                 let cx = (x + w as i32 / 2).max(0);
                 let cy = (y + h as i32 / 2).max(0);
                 let outer_radius = ui_px(14);
                 let inner_radius = ui_px(9);
-                fill_ui_circle(layer, cx as usize, cy as usize, outer_radius.max(1) as usize, Color::rgb(207, 207, 207));
-                fill_ui_circle(layer, cx as usize, cy as usize, inner_radius.max(1) as usize, Color::rgb(255, 255, 255));
+                fill_ui_circle(
+                    layer,
+                    cx as usize,
+                    cy as usize,
+                    outer_radius.max(1) as usize,
+                    Color::rgb(207, 207, 207),
+                );
+                fill_ui_circle(
+                    layer,
+                    cx as usize,
+                    cy as usize,
+                    inner_radius.max(1) as usize,
+                    Color::rgb(255, 255, 255),
+                );
                 for dy in -outer_radius..=outer_radius {
                     for dx in -outer_radius..=outer_radius {
                         let radius = dx * dx + dy * dy;
@@ -2925,32 +2743,50 @@ impl Warp4Engine {
                             let px = cx + dx;
                             let py = cy + dy;
                             if px >= 0 && py >= 0 {
-                                layer.fill_rect(px as usize, py as usize, 1, 1, WARP3_ACCENT);
+                                layer.fill_rect(
+                                    px as usize,
+                                    py as usize,
+                                    1,
+                                    1,
+                                    palette().warp3_accent,
+                                );
                             }
                         }
                     }
                 }
             }
         } else if n.is("ImageView") {
-            layer.rect_outline(x.max(0) as usize, y.max(0) as usize, w, h, WARP3_BORDER);
+            layer.rect_outline(
+                x.max(0) as usize,
+                y.max(0) as usize,
+                w,
+                h,
+                palette().warp3_border,
+            );
         } else if n.is("ListView") || n.is("ExpandableListView") {
             let row_h = ui_px_usize(44).max(1);
             for row in 0..(h / row_h) {
                 let ry = y + row as i32 * row_h as i32;
-                layer.fill_rect(x.max(0) as usize, ry.max(0) as usize, w, row_h.saturating_sub(1).max(1), WARP3_SURFACE);
+                layer.fill_rect(
+                    x.max(0) as usize,
+                    ry.max(0) as usize,
+                    w,
+                    row_h.saturating_sub(1).max(1),
+                    palette().warp3_surface,
+                );
                 layer.fill_rect(
                     x.max(0) as usize,
                     (ry + row_h.saturating_sub(1) as i32).max(0) as usize,
                     w,
                     1,
-                    WARP3_BORDER,
+                    palette().warp3_border,
                 );
                 put_str_size(
                     layer,
                     x + ui_px(12),
                     ry + ui_px(12),
                     &format!("Item {}", row + 1),
-                    WARP3_TEXT,
+                    palette().warp3_text,
                     ui_size(14.0),
                 );
             }
@@ -3036,7 +2872,7 @@ impl Warp4Engine {
                 (x + ui_px(10)).max(0) as usize,
                 (y + ui_px(8)).max(0) as usize,
                 n.attr("hint"),
-                WARP3_MUTED,
+                palette().warp3_muted,
             );
         }
         if (n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView"))
@@ -3078,7 +2914,7 @@ impl Warp4Engine {
                     ui_px_usize(6).max(1),
                     track_h as usize,
                     ui_px_usize(SCROLLBAR_RADIUS),
-                    SCROLLBAR_TRACK,
+                    palette().scrollbar_track,
                 );
                 fill_ui_rounded_rect(
                     layer,
@@ -3087,7 +2923,7 @@ impl Warp4Engine {
                     ui_px_usize(6).max(1),
                     thumb_h as usize,
                     ui_px_usize(SCROLLBAR_RADIUS),
-                    SCROLLBAR_THUMB,
+                    palette().scrollbar_thumb,
                 );
             } else if n.is("HorizontalScrollView") && n.content_w > n.w {
                 let track_w = (n.w - ui_px(2)).max(1);
@@ -3102,7 +2938,7 @@ impl Warp4Engine {
                     track_w as usize,
                     ui_px_usize(6).max(1),
                     ui_px_usize(SCROLLBAR_RADIUS),
-                    SCROLLBAR_TRACK,
+                    palette().scrollbar_track,
                 );
                 fill_ui_rounded_rect(
                     layer,
@@ -3111,7 +2947,7 @@ impl Warp4Engine {
                     thumb_w as usize,
                     ui_px_usize(6).max(1),
                     ui_px_usize(SCROLLBAR_RADIUS),
-                    SCROLLBAR_THUMB,
+                    palette().scrollbar_thumb,
                 );
             }
             layer.pop_clip();
@@ -3128,10 +2964,16 @@ impl Warp4Engine {
         let (x, y, w, h) = self.spinner_popup_rect(idx);
         let popup_w = w.max(1) as usize;
         let popup_h = h.max(1) as usize;
-        #[cfg(feature = "xiao")]
-        {
+        if is_xiao() {
             let _ = opacity;
-            draw_spinner_shadow(layer, x.max(0) as usize, y.max(self.chrome_height) as usize, popup_w, popup_h, ui_px_usize(4));
+            draw_spinner_shadow(
+                layer,
+                x.max(0) as usize,
+                y.max(self.chrome_height) as usize,
+                popup_w,
+                popup_h,
+                ui_px_usize(4),
+            );
             self.paint_spinner_popup_content(
                 layer,
                 x.max(0) as usize,
@@ -3142,8 +2984,6 @@ impl Warp4Engine {
             );
             return;
         }
-        #[cfg(feature = "normal")]
-        {
         let radius = ui_px_usize(8);
         let shadow_pad = ui_px_usize(16);
         if opacity < 255 {
@@ -3182,7 +3022,6 @@ impl Warp4Engine {
         let y = y.max(self.chrome_height) as usize;
         draw_spinner_shadow(layer, x, y, popup_w, popup_h, radius);
         self.paint_spinner_popup_content(layer, x, y, popup_w, popup_h, idx);
-        }
     }
 
     fn paint_spinner_popup_content(
@@ -3212,7 +3051,7 @@ impl Warp4Engine {
                     w.saturating_sub(ui_px_usize(8)),
                     row_h.min(h.saturating_sub(ui_px_usize(4) + item * row_h)),
                     ui_px_usize(6),
-                    WARP3_ACCENT,
+                    palette().warp3_accent,
                 );
             }
             let label = items
@@ -3233,7 +3072,7 @@ impl Warp4Engine {
                 if highlighted {
                     Color::rgb(255, 255, 255)
                 } else {
-                    WARP3_TEXT
+                    palette().warp3_text
                 },
                 ui_size(15.0),
             );
@@ -3263,526 +3102,6 @@ impl Warp4Engine {
     }
 }
 
-struct XmlParser {
-    chars: Vec<char>,
-    pos: usize,
-}
-impl XmlParser {
-    fn new(s: &str) -> Self {
-        Self {
-            chars: s.chars().collect(),
-            pos: 0,
-        }
-    }
-    fn parse_element(&mut self, parent: Option<usize>, nodes: &mut Vec<Node>) -> Option<usize> {
-        while self.pos < self.chars.len() && self.chars[self.pos] != '<' {
-            self.pos += 1;
-        }
-        if self.pos >= self.chars.len() {
-            return None;
-        }
-        self.pos += 1;
-        if self.chars.get(self.pos) == Some(&'?') {
-            while self.pos < self.chars.len() && self.chars[self.pos] != '>' {
-                self.pos += 1;
-            }
-            self.pos += 1;
-            return self.parse_element(parent, nodes);
-        }
-        if self.chars.get(self.pos) == Some(&'!') {
-            while self.pos < self.chars.len() && self.chars[self.pos] != '>' {
-                self.pos += 1;
-            }
-            self.pos += 1;
-            return self.parse_element(parent, nodes);
-        }
-        let tag = self.ident();
-        if tag.is_empty() {
-            return None;
-        }
-        let attrs = self.attrs();
-        let self_close = self.chars.get(self.pos.saturating_sub(2)) == Some(&'/');
-        if nodes.len() >= MAX_NODES {
-            return None;
-        }
-        let idx = nodes.len();
-        nodes.push(Node {
-            tag,
-            attrs,
-            parent,
-            ..Node::default()
-        });
-        if self_close {
-            return Some(idx);
-        }
-        loop {
-            self.skip();
-            if self.pos >= self.chars.len() {
-                break;
-            }
-            if self.chars[self.pos] == '<' && self.chars.get(self.pos + 1) == Some(&'/') {
-                while self.pos < self.chars.len() && self.chars[self.pos] != '>' {
-                    self.pos += 1;
-                }
-                self.pos += 1;
-                break;
-            }
-            if self.chars[self.pos] == '<' {
-                if let Some(c) = self.parse_element(Some(idx), nodes) {
-                    nodes[idx].children.push(c);
-                }
-            } else {
-                let start = self.pos;
-                while self.pos < self.chars.len() && self.chars[self.pos] != '<' {
-                    self.pos += 1;
-                }
-                let s: String = self.chars[start..self.pos].iter().collect();
-                let s = s.trim();
-                if !s.is_empty() {
-                    nodes[idx].text.push_str(s);
-                    set_attr(&mut nodes[idx], "text", s);
-                }
-            }
-        }
-        Some(idx)
-    }
-    fn ident(&mut self) -> String {
-        let s = self.pos;
-        while self.pos < self.chars.len()
-            && (self.chars[self.pos].is_ascii_alphanumeric()
-                || matches!(self.chars[self.pos], ':' | '_' | '-'))
-        {
-            self.pos += 1;
-        }
-        self.chars[s..self.pos].iter().collect()
-    }
-    fn attrs(&mut self) -> Vec<Attr> {
-        let mut out = Vec::new();
-        loop {
-            self.skip();
-            if self.pos >= self.chars.len() || self.chars[self.pos] == '>' {
-                self.pos += 1;
-                break;
-            }
-            if self.chars[self.pos] == '/' {
-                self.pos += 1;
-                self.skip();
-                if self.chars.get(self.pos) == Some(&'>') {
-                    self.pos += 1;
-                }
-                break;
-            }
-            let raw = self.ident();
-            self.skip();
-            if self.chars.get(self.pos) != Some(&'=') {
-                continue;
-            }
-            self.pos += 1;
-            self.skip();
-            let q = self.chars.get(self.pos).copied().unwrap_or('"');
-            if q == '"' || q == '\'' {
-                self.pos += 1;
-                let s = self.pos;
-                while self.pos < self.chars.len() && self.chars[self.pos] != q {
-                    self.pos += 1;
-                }
-                let value: String = self.chars[s..self.pos].iter().collect();
-                self.pos += 1;
-                out.push(Attr {
-                    key: raw.rsplit(':').next().unwrap_or(&raw).into(),
-                    value: decode(&value),
-                });
-            }
-        }
-        out
-    }
-    fn skip(&mut self) {
-        while self.pos < self.chars.len() && self.chars[self.pos].is_whitespace() {
-            self.pos += 1;
-        }
-    }
-}
-
-#[derive(Clone)]
-enum ScriptNode {
-    Raw(String),
-    Block {
-        header: String,
-        body: Vec<ScriptNode>,
-    },
-}
-
-struct ScriptParser {
-    chars: Vec<char>,
-    pos: usize,
-}
-
-impl ScriptParser {
-    fn new(source: &str) -> Self {
-        Self {
-            chars: source.chars().collect(),
-            pos: 0,
-        }
-    }
-    fn parse_program(&mut self, stop_on_brace: bool) -> Vec<ScriptNode> {
-        let mut nodes = Vec::new();
-        while self.pos < self.chars.len() {
-            while self.pos < self.chars.len() && self.chars[self.pos].is_whitespace() {
-                self.pos += 1;
-            }
-            if self.pos >= self.chars.len() {
-                break;
-            }
-            let start = self.pos;
-            let mut square = 0i32;
-            let mut paren = 0i32;
-            let mut consumed = false;
-            while self.pos < self.chars.len() {
-                let c = self.chars[self.pos];
-                match c {
-                    '[' => square += 1,
-                    ']' => square -= 1,
-                    '(' => paren += 1,
-                    ')' => paren -= 1,
-                    '{' if square == 0 && paren == 0 => {
-                        let header: String = self.chars[start..self.pos]
-                            .iter()
-                            .collect::<String>()
-                            .trim()
-                            .into();
-                        self.pos += 1;
-                        let body = self.parse_program(true);
-                        nodes.push(ScriptNode::Block { header, body });
-                        consumed = true;
-                        break;
-                    }
-                    '\n' if square == 0 && paren == 0 => {
-                        let raw: String = self.chars[start..self.pos]
-                            .iter()
-                            .collect::<String>()
-                            .trim()
-                            .into();
-                        self.pos += 1;
-                        if !raw.is_empty() {
-                            nodes.push(ScriptNode::Raw(raw));
-                        }
-                        consumed = true;
-                        break;
-                    }
-                    '}' if square == 0 && paren == 0 => {
-                        if stop_on_brace {
-                            self.pos += 1;
-                            return nodes;
-                        }
-                        self.pos += 1;
-                        consumed = true;
-                        break;
-                    }
-                    _ => {}
-                }
-                self.pos += 1;
-            }
-            if !consumed && self.pos >= self.chars.len() {
-                let raw: String = self.chars[start..self.pos]
-                    .iter()
-                    .collect::<String>()
-                    .trim()
-                    .into();
-                if !raw.is_empty() {
-                    nodes.push(ScriptNode::Raw(raw));
-                }
-            }
-        }
-        nodes
-    }
-}
-
-fn parse_script(source: &str) -> Script {
-    let mut parser = ScriptParser::new(source);
-    let nodes = parser.parse_program(false);
-    let mut script = Script::default();
-    for node in nodes {
-        match node {
-            ScriptNode::Raw(raw) => {
-                if let Some(action) = parse_script_raw(&raw) {
-                    script.init.push(action);
-                }
-            }
-            ScriptNode::Block { header, body } => {
-                let header = header.trim();
-                if let Some(target) = header.strip_prefix("WarpUI.OnClick") {
-                    let target = target.trim();
-                    if !target.is_empty() {
-                        script
-                            .clicks
-                            .push((target.into(), compile_script_nodes(&body)));
-                    }
-                } else if header.starts_with("fun") {
-                    let name = header[3..]
-                        .trim()
-                        .trim_start_matches('(')
-                        .trim_end_matches(')')
-                        .trim();
-                    if !name.is_empty() {
-                        script
-                            .functions
-                            .push((name.into(), compile_script_nodes(&body)));
-                    }
-                }
-            }
-        }
-    }
-    script
-}
-
-fn compile_script_nodes(nodes: &[ScriptNode]) -> Vec<Action> {
-    let mut out = Vec::new();
-    for node in nodes {
-        match node {
-            ScriptNode::Raw(raw) => {
-                if let Some(action) = parse_script_raw(raw) {
-                    out.push(action);
-                }
-            }
-            ScriptNode::Block { header, body } => {
-                if let Some(condition_text) = header.strip_prefix("if ") {
-                    if let Some((left, op, right)) = condition(condition_text.trim()) {
-                        out.push(Action::If {
-                            left,
-                            op,
-                            right,
-                            body: compile_script_nodes(body),
-                        });
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
-fn parse_script_raw(raw: &str) -> Option<Action> {
-    let line = raw.split_once('#').map_or(raw, |(before, _)| before).trim();
-    if line.is_empty() || line.starts_with("//") {
-        return None;
-    }
-    if line == "break" {
-        return Some(Action::Break);
-    }
-    if let Some(rest) = line.strip_prefix("if ") {
-        if let Some(open) = find_top_level(rest, '(') {
-            if let Some((body, _)) = balanced(rest, open) {
-                if let Some((left, op, right)) = condition(rest[..open].trim()) {
-                    let mut parser = ScriptParser::new(&body);
-                    return Some(Action::If {
-                        left,
-                        op,
-                        right,
-                        body: compile_script_nodes(&parser.parse_program(false)),
-                    });
-                }
-            }
-        }
-    }
-    parse_command(line)
-}
-fn parse_command(line: &str) -> Option<Action> {
-    let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
-    let rest = rest.trim();
-    if rest.is_empty() {
-        return Some(Action::Command {
-            name: name.into(),
-            target: String::new(),
-            value: String::new(),
-        });
-    }
-    if name == "BaramOS" {
-        if let Some(command) = parse_baram_file_command(rest) {
-            return Some(command);
-        }
-        let rest = rest.strip_prefix("run").map(str::trim).unwrap_or(rest);
-        let value = rest.trim_start_matches('=').trim();
-        if value.starts_with('(') {
-            let (value, _) = balanced(value, 0)?;
-            return Some(Action::Command {
-                name: "run".into(),
-                target: String::new(),
-                value,
-            });
-        }
-        return Some(Action::Command {
-            name: "run".into(),
-            target: String::new(),
-            value: value.into(),
-        });
-    }
-    if name == "fun" && rest.starts_with('(') {
-        let (value, _) = balanced(rest, 0)?;
-        return Some(Action::Call(value.trim().into()));
-    }
-    let (target, value) = if let Some(open) = rest.find('(') {
-        let target = rest[..open].trim();
-        let (v, _) = balanced(rest, open)?;
-        (target.into(), v)
-    } else {
-        (String::new(), rest.into())
-    };
-    Some(Action::Command {
-        name: name.into(),
-        target,
-        value,
-    })
-}
-
-fn parse_baram_file_command(rest: &str) -> Option<Action> {
-    let (operation, args) = rest.split_once(char::is_whitespace)?;
-    if operation != "getFile" && operation != "uploadFile" {
-        return None;
-    }
-    let args = args.trim();
-    let (target, value) = args.split_once(char::is_whitespace)?;
-    let target = target.trim();
-    let remainder = value.trim();
-    let open = remainder.find('(')?;
-    let (value, _) = balanced(remainder, open)?;
-    Some(Action::Command {
-        name: format!("BaramOS.{operation}"),
-        target: target.into(),
-        value,
-    })
-}
-
-fn is_safe_script_name(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-}
-
-fn balanced(s: &str, open: usize) -> Option<(String, usize)> {
-    let mut depth = 0;
-    for (i, c) in s.char_indices().skip(open) {
-        if c == '(' {
-            depth += 1;
-        } else if c == ')' {
-            depth -= 1;
-            if depth == 0 {
-                return Some((s[open + 1..i].into(), i + 1));
-            }
-        }
-    }
-    None
-}
-fn find_top_level(s: &str, wanted: char) -> Option<usize> {
-    let mut square = 0i32;
-    let mut paren = 0i32;
-    for (i, c) in s.char_indices() {
-        if c == wanted && square == 0 && paren == 0 {
-            return Some(i);
-        }
-        match c {
-            '[' => square += 1,
-            ']' => square -= 1,
-            '(' => paren += 1,
-            ')' => paren -= 1,
-            _ => {}
-        }
-    }
-    None
-}
-fn condition(s: &str) -> Option<(String, String, String)> {
-    let chars: Vec<char> = s.chars().collect();
-    let mut square = 0i32;
-    let mut paren = 0i32;
-    let mut i = 0;
-    while i < chars.len() {
-        let op = if square == 0
-            && paren == 0
-            && i + 1 < chars.len()
-            && chars[i] == '!'
-            && chars[i + 1] == '='
-        {
-            Some(("!=", 2))
-        } else if square == 0 && paren == 0 && chars[i] == '=' {
-            Some(("=", 1))
-        } else if square == 0 && paren == 0 && chars[i] == '<' {
-            Some(("<", 1))
-        } else if square == 0 && paren == 0 && chars[i] == '>' {
-            Some((">", 1))
-        } else {
-            None
-        };
-        if let Some((op, width)) = op {
-            return Some((
-                chars[..i].iter().collect::<String>().trim().into(),
-                op.into(),
-                chars[i + width..].iter().collect::<String>().trim().into(),
-            ));
-        }
-        match chars[i] {
-            '[' => square += 1,
-            ']' => square -= 1,
-            '(' => paren += 1,
-            ')' => paren -= 1,
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-fn set_attr(n: &mut Node, key: &str, value: &str) {
-    if let Some(a) = n.attrs.iter_mut().find(|a| a.key == key) {
-        a.value = value.into();
-    } else {
-        n.attrs.push(Attr {
-            key: key.into(),
-            value: value.into(),
-        });
-    }
-}
-fn decode(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-}
-fn ini(s: &str, key: &str) -> Option<String> {
-    s.lines().find_map(|l| {
-        let (a, b) = l.split_once('=')?;
-        (a.trim() == key).then(|| b.trim().into())
-    })
-}
-fn parse_i32(s: &str) -> i32 {
-    s.trim().parse().unwrap_or(0)
-}
-fn is_match_parent(s: &str) -> bool {
-    matches!(s.trim(), "match_parent" | "fill_parent")
-}
-fn is_zero_dimension(s: &str) -> bool {
-    let raw = s.trim();
-    !raw.is_empty() && parse_dim(raw, i32::MIN) == 0
-}
-fn duration_ns(s: &str) -> Option<u64> {
-    let value = s.trim();
-    let (number, multiplier) = if let Some(v) = value.strip_suffix("ns") {
-        (v, 1u64)
-    } else if let Some(v) = value.strip_suffix("us") {
-        (v, 1_000)
-    } else if let Some(v) = value.strip_suffix("ms") {
-        (v, 1_000_000)
-    } else if let Some(v) = value.strip_suffix('s') {
-        (v, 1_000_000_000)
-    } else if let Some(v) = value.strip_suffix('m') {
-        (v, 60_000_000_000)
-    } else if let Some(v) = value.strip_suffix('h') {
-        (v, 3_600_000_000_000)
-    } else {
-        return None;
-    };
-    let n = number.trim().parse::<f64>().ok()?;
-    Some((n * multiplier as f64).max(0.0) as u64)
-}
 fn parse_dim(s: &str, default: i32) -> i32 {
     let parsed = s
         .trim()
@@ -3832,7 +3151,7 @@ fn edges(n: &Node, base: &str) -> Edges {
         },
         all,
     );
-    Edges {
+    let mut edges = Edges {
         top: parse_dim(
             n.attr(&format!("{base}Top")),
             if v == 0 { style_top } else { v },
@@ -3843,7 +3162,22 @@ fn edges(n: &Node, base: &str) -> Edges {
             if v == 0 { style_bottom } else { v },
         ),
         left: parse_dim(n.attr(&format!("{base}Left")), h),
+    };
+    if is_xiao() && base == "padding" {
+        // Xiao's compact profile keeps the 22px button frame, but removes the
+        // extra XML padding that otherwise leaves a visibly large lower gap.
+        edges.top = edges.top.min(ui_px(3));
+        edges.bottom = edges.bottom.min(ui_px(2));
+        edges.left = edges.left.min(ui_px(4));
+        edges.right = edges.right.min(ui_px(4));
     }
+    if is_xiao() && base == "layout_margin" {
+        edges.top = edges.top.min(ui_px(6));
+        edges.bottom = edges.bottom.min(ui_px(4));
+        edges.left = edges.left.min(ui_px(4));
+        edges.right = edges.right.min(ui_px(4));
+    }
+    edges
 }
 fn truth(value: &str) -> bool {
     let value = value.trim();
@@ -3970,7 +3304,9 @@ fn measure(s: &str) -> i32 {
         s.len() as i32 * ui_px(8)
     }
     #[cfg(not(feature = "ttf"))]
-    { s.len() as i32 * ui_px(8) }
+    {
+        s.len() as i32 * ui_px(8)
+    }
 }
 fn measure_size(s: &str, size: f32) -> i32 {
     if bdf_font::is_available() {
@@ -4023,28 +3359,25 @@ fn text_color(n: &Node) -> Color {
     if let Some(color) = parse_color(n.attr("textColor")) {
         return color;
     }
-    #[cfg(feature = "xiao")]
-    if n.is("PrimaryButton") || n.is("Button") {
-        return WARP3_TEXT;
+    if is_xiao() && (n.is("PrimaryButton") || n.is("Button")) {
+        return palette().warp3_text;
     }
-    #[cfg(feature = "normal")]
-    if n.is("PrimaryButton") {
+    if !is_xiao() && n.is("PrimaryButton") {
         return WARP4_WHITE;
     }
-    #[cfg(feature = "normal")]
-    if n.is("Button") {
-        return WARP4_PRIMARY;
+    if !is_xiao() && n.is("Button") {
+        return palette().warp4_primary;
     }
     if n.is("EditText") || n.is("AutoCompleteTextView") || n.is("MultiAutoCompleteTextView") {
         return WARP4_BLACK;
     }
     let style = n.attr("style");
     if style.contains("SectionDescription") {
-        WARP3_MUTED
+        palette().warp3_muted
     } else if style.contains("ComponentLabel") {
-        WARP3_MUTED
+        palette().warp3_muted
     } else {
-        WARP3_TEXT
+        palette().warp3_text
     }
 }
 fn text_bold(_n: &Node) -> bool {
@@ -4061,7 +3394,6 @@ fn mix_color(from: Color, to: Color, amount: f32) -> Color {
     )
 }
 
-#[cfg(feature = "xiao")]
 fn draw_spinner_shadow(
     layer: &mut LayerSystem,
     x: usize,
@@ -4070,30 +3402,22 @@ fn draw_spinner_shadow(
     height: usize,
     radius: usize,
 ) {
-    // System 9 uses a compact, hard-edged drop shadow. Keep it to two solid
-    // pixels: enough depth to read at 320x180, without blur or alpha work.
-    fill_ui_rounded_rect(
-        layer,
-        x.saturating_add(ui_px_usize(2)),
-        y.saturating_add(ui_px_usize(2)),
-        width,
-        height,
-        radius,
-        WARP9_SHADOW,
-    );
-}
-
-#[cfg(feature = "normal")]
-fn draw_spinner_shadow(
-    layer: &mut LayerSystem,
-    x: usize,
-    y: usize,
-    width: usize,
-    height: usize,
-    radius: usize,
-) {
-    // Build a smooth rounded mask and blur its alpha, matching the app-list
-    // shadow treatment without introducing a backdrop blur behind the menu.
+    if is_xiao() {
+        // System 9 uses a compact, hard-edged drop shadow. Keep it to two solid
+        // pixels: enough depth to read at 320x180, without blur or alpha work.
+        fill_ui_rounded_rect(
+            layer,
+            x.saturating_add(ui_px_usize(2)),
+            y.saturating_add(ui_px_usize(2)),
+            width,
+            height,
+            radius,
+            palette().warp9_shadow,
+        );
+        return;
+    }
+    // The normal profile keeps the smooth native shadow and its temporary
+    // compositing layer. This branch is selected at runtime after boot.
     let pad = ui_px_usize(16);
     let offset_y = ui_px_usize(4);
     let shadow_w = width.saturating_add(pad * 2);
@@ -4127,7 +3451,6 @@ fn draw_spinner_shadow(
     }
 }
 
-#[cfg(feature = "normal")]
 fn blur_shadow_alpha(alpha: &mut [u8], width: usize, height: usize, radius: usize) {
     if width == 0 || height == 0 || radius == 0 {
         return;
@@ -4183,23 +3506,23 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
             ttf_font::with_glyph_at_size(ch, size, |data, w, h, glyph_advance, y_off| {
                 advance = glyph_advance;
                 for row in 0..h {
-                let py = baseline + y_off + row;
-                if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
-                    continue;
-                }
-                for col in 0..w {
-                    let px = x + col;
-                    if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
+                    let py = baseline + y_off + row;
+                    if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
                         continue;
                     }
-                    let alpha = data[row as usize * w as usize + col as usize] as f32 / 255.0;
-                    if alpha > 0.0 {
-                        let index = py as usize * layer_w + px as usize;
-                        let background = layer.buf_ref()[index];
-                        layer.buf_mut()[index] =
-                            LayerSystem::blend_alpha(background, color.0, alpha);
+                    for col in 0..w {
+                        let px = x + col;
+                        if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
+                            continue;
+                        }
+                        let alpha = data[row as usize * w as usize + col as usize] as f32 / 255.0;
+                        if alpha > 0.0 {
+                            let index = py as usize * layer_w + px as usize;
+                            let background = layer.buf_ref()[index];
+                            layer.buf_mut()[index] =
+                                LayerSystem::blend_alpha(background, color.0, alpha);
+                        }
                     }
-                }
                 }
             });
             x += advance.max(1);
@@ -4215,63 +3538,62 @@ fn put_str_size(layer: &mut LayerSystem, mut x: i32, y: i32, text: &str, color: 
     }
 }
 
-#[cfg(feature = "xiao")]
 fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
-    // A two-segment, pixel-snapped check mark.  The BDF/Xiao path never
-    // rasterizes the SVG mask, so no fractional alpha reaches the framebuffer.
-    let size = ui_px_usize(12).max(4) as i32;
-    let stroke = ui_px_usize(2).max(1);
-    for i in 0..(size / 3).max(1) {
-        layer.fill_rect(
-            (x + size / 5 + i).max(0) as usize,
-            (y + size / 2 + i).max(0) as usize,
-            stroke,
-            stroke,
-            Color::rgb(255, 255, 255),
-        );
-    }
-    for i in 0..(size * 2 / 3).max(1) {
-        layer.fill_rect(
-            (x + size / 3 + i).max(0) as usize,
-            (y + size * 2 / 3 - i).max(0) as usize,
-            stroke,
-            stroke,
-            Color::rgb(255, 255, 255),
-        );
-    }
-}
-
-#[cfg(feature = "normal")]
-fn draw_check_icon(layer: &mut LayerSystem, x: i32, y: i32) {
-    // Use the shared SVG asset as a mask, then tint it white for the checked
-    // state.  The source asset is black because it is also usable on light
-    // surfaces; the native checkbox needs the same white mark as Warp3.
-    let icon_size = ui_px_usize(12).max(1);
-    let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, icon_size, icon_size);
-    let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
-    let layer_w = layer.width();
-    let layer_h = layer.height();
-    for sy in 0..icon_size as i32 {
-        let py = y + sy;
-        if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
-            continue;
-        }
-        for sx in 0..icon_size as i32 {
-            let px = x + sx;
-            if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
-                continue;
-            }
-            let alpha = pixels[(sy as usize * icon_size + sx as usize) * 4 + 3];
-            if alpha == 0 {
-                continue;
-            }
-            let index = py as usize * layer_w + px as usize;
-            let background = layer.buf_ref()[index];
-            layer.buf_mut()[index] = LayerSystem::blend_alpha(
-                background,
-                Color::rgb(255, 255, 255).0,
-                alpha as f32 / 255.0,
+    if is_xiao() {
+        // The BDF/Xiao path never rasterizes an SVG mask, so no fractional
+        // alpha reaches the framebuffer.
+        let size = ui_px_usize(12).max(4) as i32;
+        let stroke = ui_px_usize(2).max(1);
+        for i in 0..(size / 3).max(1) {
+            layer.fill_rect(
+                (x + size / 5 + i).max(0) as usize,
+                (y + size / 2 + i).max(0) as usize,
+                stroke,
+                stroke,
+                Color::rgb(255, 255, 255),
             );
+        }
+        for i in 0..(size * 2 / 3).max(1) {
+            layer.fill_rect(
+                (x + size / 3 + i).max(0) as usize,
+                (y + size * 2 / 3 - i).max(0) as usize,
+                stroke,
+                stroke,
+                Color::rgb(255, 255, 255),
+            );
+        }
+        return;
+    }
+    #[cfg(feature = "ttf")]
+    {
+        // The normal profile uses the shared SVG asset as a mask.
+        let icon_size = ui_px_usize(12).max(1);
+        let pixels = svg::rasterize_svg_to_buffer(CHECK_ICON_SVG, icon_size, icon_size);
+        let (clip_x0, clip_y0, clip_x1, clip_y1) = layer.clip_bounds();
+        let layer_w = layer.width();
+        let layer_h = layer.height();
+        for sy in 0..icon_size as i32 {
+            let py = y + sy;
+            if py < clip_y0 as i32 || py >= clip_y1.min(layer_h) as i32 {
+                continue;
+            }
+            for sx in 0..icon_size as i32 {
+                let px = x + sx;
+                if px < clip_x0 as i32 || px >= clip_x1.min(layer_w) as i32 {
+                    continue;
+                }
+                let alpha = pixels[(sy as usize * icon_size + sx as usize) * 4 + 3];
+                if alpha == 0 {
+                    continue;
+                }
+                let index = py as usize * layer_w + px as usize;
+                let background = layer.buf_ref()[index];
+                layer.buf_mut()[index] = LayerSystem::blend_alpha(
+                    background,
+                    Color::rgb(255, 255, 255).0,
+                    alpha as f32 / 255.0,
+                );
+            }
         }
     }
 }
@@ -4414,5 +3736,5 @@ impl CalcParser {
     }
 }
 fn bg() -> Color {
-    WARP4_BG
+    palette().warp4_bg
 }
