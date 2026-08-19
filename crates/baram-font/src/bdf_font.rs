@@ -49,8 +49,9 @@ pub fn init_file(path: &'static str) {
     }
 }
 
-/// Drop every cached glyph explicitly, for example when changing the font
-/// source or switching from the launcher to the selected application.
+/// Drop every cached glyph explicitly when changing the font source.
+/// Normal repaint, pointer clicks, application changes, and scrolling must
+/// not call this.
 pub fn clear_cache() {
     unsafe {
         CACHE = None;
@@ -59,6 +60,55 @@ pub fn clear_cache() {
 
 pub fn is_available() -> bool {
     !matches!(unsafe { SOURCE }, FontSource::None)
+}
+
+/// Prime the small glyph cache for text that may be shown next. The BDF file
+/// remains on storage; only the individual bitmap glyphs are retained.
+pub fn preload_text(text: &str) {
+    preload_texts(&[text]);
+}
+
+/// Prime several strings with one sequential pass over a file-backed BDF.
+/// Calling `preload_text` separately for every label would otherwise reopen
+/// and rescan the font once per label.
+pub fn preload_texts(texts: &[&str]) {
+    if !is_available() {
+        return;
+    }
+    if let FontSource::File(path) = unsafe { SOURCE } {
+        let mut wanted = Vec::new();
+        for text in texts {
+            for ch in text.chars() {
+                if matches!(ch, '\n' | '\r' | '\t')
+                    || cached_glyph(ch).is_some()
+                    || wanted.iter().any(|cached| *cached == ch)
+                {
+                    continue;
+                }
+                wanted.push(ch);
+            }
+        }
+        if wanted.is_empty() {
+            return;
+        }
+        preload_file_glyphs(path, &wanted);
+        for ch in wanted {
+            if cached_glyph(ch).is_none() {
+                // A zero-size entry is a negative cache. It preserves the
+                // default advance without retaining any font data.
+                cache_glyph(ch, &[], 0, 0, 8, 0);
+            }
+        }
+        return;
+    }
+    for text in texts {
+        for ch in text.chars() {
+            if matches!(ch, '\n' | '\r' | '\t') || cached_glyph(ch).is_some() {
+                continue;
+            }
+            let _ = with_glyph(ch, |_data, _width, _height, _advance, _y_off| true);
+        }
+    }
 }
 
 pub fn with_glyph<F>(ch: char, mut draw: F) -> bool
@@ -74,13 +124,20 @@ where
             entry.y_off,
         );
     }
-    match unsafe { SOURCE } {
-        FontSource::None => false,
-        // Embedded mode is retained for non-xiao callers, but does not build
-        // a persistent cache. Xiao always uses the file-backed mode below.
+    let source = unsafe { SOURCE };
+    let drawn = match source {
+        FontSource::None => return false,
+        // Embedded mode is retained for non-xiao callers and uses the same
+        // small persistent glyph cache as the file-backed Xiao path.
         FontSource::Embedded(data) => with_embedded_glyph(data, ch, draw),
         FontSource::File(path) => with_file_glyph(path, ch, draw),
+    };
+    if !drawn {
+        // Cache misses as an empty glyph so advance()/put_str() never scan
+        // the storage-backed BDF repeatedly for the same character.
+        cache_glyph(ch, &[], 0, 0, 8, 0);
     }
+    drawn
 }
 
 fn cached_glyph(ch: char) -> Option<GlyphCacheEntry> {
@@ -100,6 +157,16 @@ fn cached_glyph(ch: char) -> Option<GlyphCacheEntry> {
     }
 }
 
+fn cached_advance(ch: char) -> Option<i32> {
+    unsafe {
+        CACHE
+            .as_ref()?
+            .iter()
+            .find(|entry| entry.ch == ch)
+            .map(|entry| entry.advance)
+    }
+}
+
 fn cache_glyph(ch: char, bitmap: &[u8], width: i32, height: i32, advance: i32, y_off: i32) {
     let mut cached = [0u8; 64];
     cached[..bitmap.len()].copy_from_slice(bitmap);
@@ -113,6 +180,78 @@ fn cache_glyph(ch: char, bitmap: &[u8], width: i32, height: i32, advance: i32, y
             y_off,
             bitmap: cached,
         });
+    }
+}
+
+fn preload_file_glyphs(path: &str, wanted: &[char]) {
+    let Some(file) = open_file(path) else {
+        return;
+    };
+    let mut reader = BdfReader::new(file);
+    let mut line = [0u8; 256];
+    let mut encoding = u32::MAX;
+    let mut advance = 8i32;
+    let mut width = 0i32;
+    let mut height = 0i32;
+    let mut y_off = 0i32;
+    let mut bitmap = [0u8; 64];
+    let mut bitmap_row = 0usize;
+    let mut in_bitmap = false;
+
+    while let Some(len) = reader.line(&mut line) {
+        let Ok(line) = core::str::from_utf8(&line[..len]) else {
+            continue;
+        };
+        if line == "STARTCHAR" || line.starts_with("STARTCHAR ") {
+            encoding = u32::MAX;
+            advance = 8;
+            width = 0;
+            height = 0;
+            y_off = 0;
+            bitmap_row = 0;
+            in_bitmap = false;
+        } else if let Some(value) = line.strip_prefix("ENCODING ") {
+            encoding = value
+                .split_whitespace()
+                .next()
+                .and_then(parse_u32)
+                .unwrap_or(u32::MAX);
+        } else if let Some(value) = line.strip_prefix("DWIDTH ") {
+            advance = value
+                .split_whitespace()
+                .next()
+                .and_then(parse_i32)
+                .unwrap_or(8);
+        } else if let Some(value) = line.strip_prefix("BBX ") {
+            let mut values = value.split_whitespace().filter_map(parse_i32);
+            width = values.next().unwrap_or(0).clamp(0, 8);
+            height = values.next().unwrap_or(0).clamp(0, 8);
+            let _x_off = values.next().unwrap_or(0);
+            y_off = values.next().unwrap_or(0);
+        } else if line == "BITMAP" {
+            in_bitmap = true;
+            bitmap_row = 0;
+        } else if line == "ENDCHAR" {
+            if let Some(&ch) = wanted.iter().find(|candidate| **candidate as u32 == encoding) {
+                cache_glyph(
+                    ch,
+                    &bitmap[..(width * height) as usize],
+                    width,
+                    height,
+                    advance,
+                    y_off,
+                );
+            }
+            in_bitmap = false;
+        } else if in_bitmap && bitmap_row < height as usize {
+            let value = u32::from_str_radix(line.trim(), 16).unwrap_or(0);
+            for col in 0..width as usize {
+                let bit = 7usize.saturating_sub(col);
+                bitmap[bitmap_row * width as usize + col] =
+                    if (value >> bit) & 1 == 1 { 255 } else { 0 };
+            }
+            bitmap_row += 1;
+        }
     }
 }
 
@@ -164,7 +303,7 @@ where
             in_bitmap = true;
             bitmap_row = 0;
         } else if line == "ENDCHAR" {
-            if encoding == wanted && width > 0 && height > 0 {
+            if encoding == wanted {
                 let drawn = draw(
                     &bitmap[..(width * height) as usize],
                     width,
@@ -249,7 +388,7 @@ where
             in_bitmap = true;
             bitmap_row = 0;
         } else if line == "ENDCHAR" {
-            if encoding == wanted && width > 0 && height > 0 {
+            if encoding == wanted {
                 let drawn = draw(
                     &bitmap[..(width * height) as usize],
                     width,
@@ -354,6 +493,9 @@ fn open_file(path: &str) -> Option<RegularFile> {
 }
 
 pub fn advance(ch: char) -> i32 {
+    if let Some(advance) = cached_advance(ch) {
+        return advance;
+    }
     let mut result = 8;
     let _ = with_glyph(ch, |_data, _w, _h, glyph_advance, _y_off| {
         result = glyph_advance;

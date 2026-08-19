@@ -453,6 +453,7 @@ pub struct Warp4Engine {
     pub content_height: i32,
     pub last_command: Option<String>,
     dirty: bool,
+    layout_dirty: bool,
     now_ns: u64,
     wait_until_ns: Option<u64>,
     pending: Vec<Action>,
@@ -502,6 +503,7 @@ impl Warp4Engine {
             content_height: 0,
             last_command: None,
             dirty: true,
+            layout_dirty: true,
             now_ns: 0,
             wait_until_ns: None,
             pending: Vec::new(),
@@ -519,6 +521,22 @@ impl Warp4Engine {
         this
     }
 
+    fn preload_text_cache(&self) {
+        if !bdf_font::is_available() {
+            return;
+        }
+        let mut texts = Vec::new();
+        for node in &self.nodes {
+            for key in ["text", "hint", "textOn", "textOff"] {
+                let text = node.attr(key);
+                if !text.is_empty() {
+                    texts.push(text);
+                }
+            }
+        }
+        bdf_font::preload_texts(&texts);
+    }
+
     pub fn set_origin(&mut self, name: &str) {
         self.origin = name.into();
     }
@@ -531,6 +549,7 @@ impl Warp4Engine {
             self.chrome_height = next;
             self.scroll = 0;
             self.dirty = true;
+            self.layout_dirty = true;
         }
     }
     pub fn origin(&self) -> &str {
@@ -778,6 +797,8 @@ impl Warp4Engine {
         self.rebuild_fixed_subtree(chrome_mode);
         self.refresh_visibility();
         self.dirty = true;
+        self.layout_dirty = true;
+        self.preload_text_cache();
     }
 
     fn rebuild_fixed_subtree(&mut self, chrome_mode: bool) {
@@ -800,9 +821,17 @@ impl Warp4Engine {
     }
 
     pub fn update(&mut self, width: i32, height: i32) {
-        self.width = width.max(1);
-        self.height = height.max(1);
-        if !self.dirty {
+        let width = width.max(1);
+        let height = height.max(1);
+        if self.width != width || self.height != height {
+            self.layout_dirty = true;
+        }
+        self.width = width;
+        self.height = height;
+        // Scrolling and hover only invalidate pixels. They do not change the
+        // XML layout, so avoid measuring the whole view tree for every frame.
+        if !self.layout_dirty {
+            self.dirty = false;
             return;
         }
         self.refresh_visibility();
@@ -840,6 +869,7 @@ impl Warp4Engine {
                 .max(0),
         );
         self.dirty = false;
+        self.layout_dirty = false;
     }
 
     pub fn draw_to_layer(&mut self, layer: &mut LayerSystem, ox: i32, oy: i32) {
@@ -1045,7 +1075,9 @@ impl Warp4Engine {
     pub fn set_text(&mut self, id: &str, text: &str) {
         if let Some(idx) = self.find(id) {
             set_attr(&mut self.nodes[idx], "text", text);
+            bdf_font::preload_text(text);
             self.dirty = true;
+            self.layout_dirty = true;
         }
     }
 
@@ -1058,6 +1090,7 @@ impl Warp4Engine {
             );
             self.nodes[idx].hidden = !visible;
             self.dirty = true;
+            self.layout_dirty = true;
         }
     }
 
@@ -1135,7 +1168,9 @@ impl Warp4Engine {
         }
         value.push_str(text);
         set_attr(&mut self.nodes[idx], "text", &value);
+        bdf_font::preload_text(&value);
         self.dirty = true;
+        self.layout_dirty = true;
     }
 
     fn hit(&self, x: i32, y: i32) -> Option<usize> {
@@ -1445,6 +1480,8 @@ impl Warp4Engine {
             "WarpUI.text" => {
                 if let Some(i) = self.find(target) {
                     set_attr(&mut self.nodes[i], "text", &value);
+                    bdf_font::preload_text(&value);
+                    self.layout_dirty = true;
                 }
             }
             "WarpUI.getText" => {
@@ -1456,11 +1493,14 @@ impl Warp4Engine {
             "WarpUI.editText" => {
                 if let Some(i) = self.find(target) {
                     set_attr(&mut self.nodes[i], "text", &value);
+                    bdf_font::preload_text(&value);
+                    self.layout_dirty = true;
                 }
             }
             "WarpUI.visibility" => {
                 if let Some(i) = self.find(target) {
                     set_attr(&mut self.nodes[i], "visibility", &value);
+                    self.layout_dirty = true;
                 }
             }
             "WarpUI.textColor" | "WarpUI.background" | "WarpUI.textSize" => {

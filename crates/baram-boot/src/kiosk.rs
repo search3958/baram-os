@@ -204,7 +204,6 @@ pub fn run(mut nano: NanoSystem) -> Status {
     // Keep the 757 KiB BDF on the FAT volume. The parser streams it and keeps
     // only glyphs used by the current display while painting.
     baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
-    baram_font::bdf_font::clear_cache();
     // Xiao uses the firmware's native 128x64 GOP mode. Warp4 uses the same
     // compact metrics for this kiosk only.
     let mut screen = match Screen::take_with_target(nano.display.width, nano.display.height) {
@@ -224,6 +223,8 @@ pub fn run(mut nano: NanoSystem) -> Status {
     let mut display_state = baram_bsd::uri::DisplayState::new();
     baram_bsd::uri::load_settings_from_config(&mut display_state);
     let apps = entries();
+    let app_titles: Vec<&str> = apps.iter().map(|entry| entry.title.as_str()).collect();
+    baram_font::bdf_font::preload_texts(&app_titles);
     let sources = [("config.ini", LIST_CONFIG), ("main.w4u", LIST_XML)];
     let mut list = Some(Warp4Engine::new_embedded("__os_kiosk__", &sources));
     list.as_mut().unwrap().set_chrome_visible(false);
@@ -283,9 +284,9 @@ pub fn run(mut nano: NanoSystem) -> Status {
             if let Some(id) = clicked_id {
                 if let Some(index) = id.strip_prefix("app").and_then(|v| v.parse::<usize>().ok()) {
                     if let Some(entry) = apps.get(index) {
-                        // The launcher glyphs are no longer displayed. Drop
-                        // them before building the full-screen app cache.
-                        baram_font::bdf_font::clear_cache();
+                        // Keep launcher glyphs while priming the selected
+                        // application's XML text. The one-way kiosk shares a
+                        // single cache for all repaint and scroll frames.
                         let mut engine = Warp4Engine::new(&entry.name);
                         engine.set_chrome_visible(false);
                         selected = Some(engine);
