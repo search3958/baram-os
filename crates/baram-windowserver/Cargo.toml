@@ -11,4 +11,6 @@ baram-bsd = { path = "../baram-bsd" }
 baram-warp4 = { path = "../baram-warp4" }
 uefi = { workspace = true }
 libm = { workspace = true }
+
+[target.'cfg(not(target_arch = "x86_64"))'.dependencies]
 png-decoder = { path = "../png-decoder" }

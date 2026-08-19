@@ -40,8 +40,10 @@ baram-bsd = { path = "../baram-bsd" }
 baram-windowserver = { path = "../baram-windowserver" }
 baram-kern = { path = "../baram-kern" }
 nano-system = { path = "../nano-system" }
-png-decoder = { path = "../png-decoder" }
 uefi = { workspace = true }
 uefi-raw = { workspace = true }
 libm = { workspace = true }
 wana_kana = { path = "../wana-kana" }
+
+[target.'cfg(not(target_arch = "x86_64"))'.dependencies]
+png-decoder = { path = "../png-decoder" }

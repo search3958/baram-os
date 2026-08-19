@@ -750,6 +750,14 @@ pub struct IconBitmap {
 }
 
 pub fn decode_icon(bytes: &[u8], size: usize) -> Option<IconBitmap> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let _ = (bytes, size);
+        return None;
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
     let (header, pixels) = png_decoder::decode(bytes).ok()?;
     let src_w = header.width as usize;
     let src_h = header.height as usize;
@@ -766,6 +774,7 @@ pub fn decode_icon(bytes: &[u8], size: usize) -> Option<IconBitmap> {
         w: size,
         h: size,
     })
+    }
 }
 
 pub struct AppEntry {
@@ -936,6 +945,14 @@ pub const WALLPAPERS: &[&[u8]] = &[
 ];
 
 pub fn decode_wallpaper(bytes: &[u8], screen_w: usize, screen_h: usize) -> Option<Vec<u32>> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let _ = (bytes, screen_w, screen_h);
+        return None;
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    {
     let (header, pixels) = png_decoder::decode(bytes).ok()?;
     let img_w = header.width as usize;
     let img_h = header.height as usize;
@@ -960,6 +977,7 @@ pub fn decode_wallpaper(bytes: &[u8], screen_w: usize, screen_h: usize) -> Optio
         }
     }
     Some(buf)
+    }
 }
 
 pub fn make_solid_wallpaper(color: u32, screen_w: usize, screen_h: usize) -> Vec<u32> {

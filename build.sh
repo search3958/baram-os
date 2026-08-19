@@ -23,6 +23,7 @@
 #    ./build.sh image     # only build + create the FAT image
 #    ./build.sh run       # only run (assumes image + firmware already exist)
 #    ./build.sh clean     # cargo clean
+#    ./build.sh x       # x86_64 build + run (PNG decoder disabled)
 #    ./build.sh help
 #
 # =============================================================================
@@ -464,6 +465,11 @@ Install QEMU:
 
 # ---------- subcommands ----------
 case "${1:-build-run}" in
+    x)
+        # Keep the x86_64 build path in one place.  build64.sh also owns its
+        # target directory, firmware, image format, and QEMU machine.
+        exec "$SCRIPT_DIR/build64.sh"
+        ;;
     build)
         build_efi
         ;;
