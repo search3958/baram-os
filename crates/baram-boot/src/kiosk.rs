@@ -267,11 +267,12 @@ pub fn run(mut nano: NanoSystem) -> Status {
                         screen.width(),
                         screen.height(),
                     );
+                    let document_y = y.saturating_add(list.scroll_position());
                     if was_down {
-                        let document_y = y.saturating_add(list.scroll_position());
                         list.click(x, document_y);
                         display_changed = true;
                     }
+                    display_changed |= list.set_hover_changed(x, document_y);
                     display_changed |= list.pointer_move(x, y);
                 }
                 display_changed |= list.tick(now_ns());
@@ -314,14 +315,15 @@ pub fn run(mut nano: NanoSystem) -> Status {
                     screen.width(),
                     screen.height(),
                 );
+                let document_y = y.saturating_add(engine.scroll_position());
                 if down {
-                    let document_y = y.saturating_add(engine.scroll_position());
                     engine.click(x, document_y);
                     display_changed = true;
                 } else if engine.has_pointer_capture() {
                     engine.release();
                     display_changed = true;
                 }
+                display_changed |= engine.set_hover_changed(x, document_y);
                 display_changed |= engine.pointer_move(x, y);
             }
             display_changed |= engine.tick(now_ns());

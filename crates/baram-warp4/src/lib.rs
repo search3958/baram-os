@@ -36,6 +36,7 @@ const MAX_NODES: usize = 2048;
 const MAX_ACTIONS: usize = 2048;
 const SWITCH_DURATION_NS: u64 = 220_000_000;
 const RADIO_DURATION_NS: u64 = 180_000_000;
+const XIAO_SCROLL_ANIMATION_NS: u64 = 125_000_000;
 #[cfg(feature = "ttf")]
 const CHECK_ICON_SVG: &str = include_str!("../../../files/data/ui/check-icon.svg");
 const WARP4_INPUT_RADIUS: usize = 11;
@@ -201,25 +202,40 @@ fn draw_ui_button(
     if w <= 2 || h <= 2 {
         return;
     }
-    fill_ui_rounded_rect(layer, x + 1, y + 1, w - 2, h - 2, 1, p.button_face);
+    fill_ui_rounded_rect(layer, x + 1, y + 1, w - 2, h - 2, 1, color);
     if w > 4 && h > 4 {
         let horizontal_w = w - 4;
         let vertical_h = h - 4;
-        layer.fill_rect(x + 2, y + 1, horizontal_w, 1, p.button_inner_edge);
-        layer.fill_rect(x + 1, y + 2, 1, vertical_h, p.button_inner_edge);
-        layer.fill_rect(x + 2, y + 2, horizontal_w, 1, p.button_highlight);
-        layer.fill_rect(x + 2, y + 2, 1, vertical_h, p.button_highlight);
-        layer.fill_rect(x + 2, y + h - 2, horizontal_w, 1, p.button_shadow_1);
-        layer.fill_rect(x + w - 2, y + 2, 1, vertical_h, p.button_shadow_1);
-        layer.fill_rect(x + 2, y + h - 3, horizontal_w, 1, p.button_shadow_2);
-        layer.fill_rect(x + w - 3, y + 2, 1, vertical_h, p.button_shadow_2);
+        if _pressed {
+            layer.fill_rect(x + 2, y + 1, horizontal_w, 1, p.button_shadow_1);
+            layer.fill_rect(x + 1, y + 2, 1, vertical_h, p.button_shadow_1);
+            layer.fill_rect(x + 2, y + 2, horizontal_w, 1, p.button_shadow_2);
+            layer.fill_rect(x + 2, y + 2, 1, vertical_h, p.button_shadow_2);
+            layer.fill_rect(x + 2, y + h - 2, horizontal_w, 1, p.button_highlight);
+            layer.fill_rect(x + w - 2, y + 2, 1, vertical_h, p.button_highlight);
+        } else {
+            layer.fill_rect(x + 2, y + 1, horizontal_w, 1, p.button_inner_edge);
+            layer.fill_rect(x + 1, y + 2, 1, vertical_h, p.button_inner_edge);
+            layer.fill_rect(x + 2, y + 2, horizontal_w, 1, p.button_highlight);
+            layer.fill_rect(x + 2, y + 2, 1, vertical_h, p.button_highlight);
+            layer.fill_rect(x + 2, y + h - 2, horizontal_w, 1, p.button_shadow_1);
+            layer.fill_rect(x + w - 2, y + 2, 1, vertical_h, p.button_shadow_1);
+            layer.fill_rect(x + 2, y + h - 3, horizontal_w, 1, p.button_shadow_2);
+            layer.fill_rect(x + w - 3, y + 2, 1, vertical_h, p.button_shadow_2);
+        }
     }
 }
 
 fn ui_button_face(active: bool, selected: bool, hover: bool, primary: bool) -> Color {
     let p = palette();
     if is_xiao() {
-        return p.button_face;
+        return if active {
+            Color::rgb(190, 190, 190)
+        } else if hover {
+            Color::rgb(235, 235, 235)
+        } else {
+            p.button_face
+        };
     }
     let primary_color = if active {
         Color::rgb(0, 96, 196)
@@ -450,6 +466,9 @@ pub struct Warp4Engine {
     height: i32,
     chrome_height: i32,
     scroll: i32,
+    scroll_target: i32,
+    scroll_start: i32,
+    scroll_started_ns: Option<u64>,
     pub content_height: i32,
     pub last_command: Option<String>,
     dirty: bool,
@@ -500,6 +519,9 @@ impl Warp4Engine {
             height: 0,
             chrome_height: title_bar_h(),
             scroll: 0,
+            scroll_target: 0,
+            scroll_start: 0,
+            scroll_started_ns: None,
             content_height: 0,
             last_command: None,
             dirty: true,
@@ -548,6 +570,9 @@ impl Warp4Engine {
         if self.chrome_height != next {
             self.chrome_height = next;
             self.scroll = 0;
+            self.scroll_target = 0;
+            self.scroll_start = 0;
+            self.scroll_started_ns = None;
             self.dirty = true;
             self.layout_dirty = true;
         }
@@ -563,8 +588,25 @@ impl Warp4Engine {
             .content_height
             .saturating_sub(self.height + self.chrome_height);
         let next = scroll.max(0).min(max.max(0));
-        if self.scroll != next {
+        if is_xiao() {
+            let changed = self.scroll_target != next || self.scroll != next;
+            if self.scroll_target != next {
+                self.scroll_start = self.scroll;
+                self.scroll_started_ns = None;
+                self.scroll_target = next;
+            }
+            if changed {
+                if let Some(idx) = self.spinner_open {
+                    self.close_spinner(idx);
+                }
+                self.hovered = None;
+                self.dirty = true;
+            }
+        } else if self.scroll != next {
             self.scroll = next;
+            self.scroll_target = next;
+            self.scroll_start = next;
+            self.scroll_started_ns = None;
             if let Some(idx) = self.spinner_open {
                 self.close_spinner(idx);
             }
@@ -577,9 +619,18 @@ impl Warp4Engine {
     /// this directly for UEFI arrow-key events because those events have no
     /// printable byte to pass through `handle_key`.
     pub fn scroll_by(&mut self, delta: i32) -> bool {
-        let before = self.scroll;
-        self.set_scroll(self.scroll.saturating_add(delta));
-        self.scroll != before
+        let before = if is_xiao() {
+            self.scroll_target
+        } else {
+            self.scroll
+        };
+        let base = if is_xiao() {
+            self.scroll_target
+        } else {
+            self.scroll
+        };
+        self.set_scroll(base.saturating_add(delta));
+        self.scroll_target != before || self.scroll != before
     }
 
     /// Return the active document offset in layer pixels.
@@ -592,6 +643,7 @@ impl Warp4Engine {
     }
     pub fn is_animating(&self) -> bool {
         !self.control_animations.is_empty()
+            || (is_xiao() && self.scroll != self.scroll_target)
     }
     pub fn window_damage(&self) -> Option<(i32, i32, i32, i32)> {
         None
@@ -632,6 +684,30 @@ impl Warp4Engine {
         self.flip_elapsed_ns = self.flip_elapsed_ns.saturating_add(delta);
 
         let mut changed = false;
+        if is_xiao() && self.scroll != self.scroll_target {
+            let started = *self
+                .scroll_started_ns
+                .get_or_insert(now_ns.saturating_sub(16_000_000));
+            let elapsed = now_ns.saturating_sub(started);
+            let t = (elapsed as f32 / XIAO_SCROLL_ANIMATION_NS as f32).clamp(0.0, 1.0);
+            let remaining = 1.0 - t;
+            let eased = 1.0 - remaining * remaining * remaining;
+            let distance = self.scroll_target - self.scroll_start;
+            let next = if t >= 1.0 {
+                self.scroll_target
+            } else {
+                self.scroll_start + (distance as f32 * eased) as i32
+            };
+            if self.scroll != next {
+                self.scroll = next;
+                self.dirty = true;
+                changed = true;
+            }
+            if t >= 1.0 {
+                self.scroll_start = self.scroll_target;
+                self.scroll_started_ns = None;
+            }
+        }
         let mut flip_interval_ns: Option<u64> = None;
         for node in &self.nodes {
             if (node.is("ViewFlipper") || node.is("ViewAnimator"))
@@ -756,6 +832,10 @@ impl Warp4Engine {
         self.control_animations.clear();
         self.flip_elapsed_ns = 0;
         self.last_tick_ns = None;
+        self.scroll = 0;
+        self.scroll_target = 0;
+        self.scroll_start = 0;
+        self.scroll_started_ns = None;
         self.wait_until_ns = None;
         self.pending.clear();
         let mut layout = self.archive.read_text(&format!("{}.w4u", self.screen));
@@ -863,11 +943,13 @@ impl Warp4Engine {
             }
         }
         self.content_height = (y + internal_overflow).max(self.height + self.chrome_height);
-        self.scroll = self.scroll.min(
-            self.content_height
-                .saturating_sub(self.height + self.chrome_height)
-                .max(0),
-        );
+        let max_scroll = self
+            .content_height
+            .saturating_sub(self.height + self.chrome_height)
+            .max(0);
+        self.scroll = self.scroll.min(max_scroll);
+        self.scroll_target = self.scroll_target.min(max_scroll);
+        self.scroll_start = self.scroll_start.min(max_scroll);
         self.dirty = false;
         self.layout_dirty = false;
     }
@@ -921,12 +1003,21 @@ impl Warp4Engine {
     }
 
     pub fn set_hover(&mut self, x: i32, y: i32) {
+        let _ = self.set_hover_changed(x, y);
+    }
+
+    /// Update hover state and report whether the visible control changed.
+    /// Xiao uses the result to redraw only when the pointer crosses a
+    /// control, keeping ordinary pointer motion on the cheap cursor overlay.
+    pub fn set_hover_changed(&mut self, x: i32, y: i32) -> bool {
         let popup_hit = self.spinner_popup_hit(x, y);
         let next = popup_hit.map(|(idx, _)| idx).or_else(|| self.hit(x, y));
         if self.hovered != next {
             self.hovered = next;
             self.dirty = true;
+            return true;
         }
+        false
     }
 
     fn close_spinner(&mut self, idx: usize) {
