@@ -15,7 +15,7 @@ use uefi::prelude::*;
 use uefi::runtime;
 
 use baram_bsd::{app, config};
-use baram_core::{LayerSystem, Screen};
+use baram_core::{Color, LayerSystem, Screen};
 use baram_warp4::Warp4Engine;
 use nano_system::{NanoBasicPointerEvent, NanoKeyEvent, NanoSystem};
 
@@ -79,11 +79,31 @@ fn pointer_xy(event: NanoBasicPointerEvent, nano: &NanoSystem, x: &mut i32, y: &
     nano.input_state.left
 }
 
+fn draw_cursor(layer: &mut LayerSystem, x: i32, y: i32) {
+    // Small OS-owned arrow cursor. Drawn after Warp4 so it remains visible
+    // over both the launcher and the selected full-screen application.
+    let x = x.max(0) as usize;
+    let y = y.max(0) as usize;
+    const WHITE: Color = Color::rgb(255, 255, 255);
+    for row in 0..15usize {
+        let width = if row < 10 { row / 2 + 1 } else { 2 };
+        layer.fill_rect(x, y + row, width + 2, 2, Color::BLACK);
+        if width > 1 {
+            layer.fill_rect(x + 1, y + row, width - 1, 1, WHITE);
+        }
+    }
+    layer.fill_rect(x + 3, y + 10, 4, 5, Color::BLACK);
+    layer.fill_rect(x + 4, y + 10, 2, 4, WHITE);
+}
+
 pub fn run(mut nano: NanoSystem) -> Status {
     config::init_config();
     baram_font::ttf_font::init();
     baram_font::ttf_font_hud::init();
-    let mut screen = match Screen::take() { Ok(s) => s, Err(_) => return Status::UNSUPPORTED };
+    let mut screen = match Screen::take_with_target(640, 360) {
+        Ok(s) => s,
+        Err(_) => return Status::UNSUPPORTED,
+    };
     unsafe { baram_font::log::init_screen(&screen); }
     let mut timer = nano.take_timer_event();
     let mut layer = LayerSystem::new(screen.width(), screen.height());
@@ -131,6 +151,7 @@ pub fn run(mut nano: NanoSystem) -> Status {
             engine.tick(now_ns());
             engine.draw_to_layer(&mut layer, 0, 0);
         }
+        draw_cursor(&mut layer, x, y);
         layer.flush(&mut screen);
     }
 }

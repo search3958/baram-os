@@ -130,6 +130,9 @@ build_efi() {
 # are not part of this image.
 build_xiao() {
     XIAO_MODE=1
+    # AAVMF needs at least 128 MiB to initialize GOP reliably. This is the
+    # smallest practical value in the 0.1 GiB class for the Xiao image.
+    QEMU_RAM="128M"
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."
@@ -470,6 +473,13 @@ Install QEMU:
         extra_args+=($QEMU_EXTRA_ARGS)
     fi
 
+    local display_device="ramfb"
+    if [ "$XIAO_MODE" -eq 1 ]; then
+        # A deterministic instruction clock gives Xiao a low-power-device
+        # profile without changing the normal desktop's timing.
+        extra_args+=(-icount "shift=1,align=on")
+    fi
+
     exec "$qemu" \
         "${extra_args[@]}" \
         -machine "$QEMU_MACHINE" \
@@ -478,7 +488,7 @@ Install QEMU:
         "${fw_args[@]}" \
         -drive "if=none,file=$img,format=raw,id=hd0,cache=none" \
         -device "virtio-blk-device,drive=hd0" \
-        -device "ramfb" \
+        -device "$display_device" \
         -device "qemu-xhci" \
         -device "usb-tablet" \
         -device "usb-mouse" \

@@ -207,6 +207,10 @@ unsafe impl Sync for Screen {}
 
 impl Screen {
     pub fn take() -> Result<Screen, Status> {
+        Self::take_with_target(1280, 720)
+    }
+
+    pub fn take_with_target(target_w: usize, target_h: usize) -> Result<Screen, Status> {
         let handle =
             boot::get_handle_for_protocol::<GraphicsOutput>().map_err(|_| Status::UNSUPPORTED)?;
         let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle)
@@ -215,20 +219,18 @@ impl Screen {
         // The compositor is tuned for a 720p working set.  Picking the
         // firmware's largest mode (often 4K) multiplies every software blend
         // and framebuffer write by up to 9x with no UI benefit.
-        const TARGET_W: usize = 1280;
-        const TARGET_H: usize = 720;
         let mut best_score = usize::MAX;
         let mut best_mode: Option<uefi::proto::console::gop::Mode> = None;
         for mode in gop.modes() {
             let (w, h) = mode.info().resolution();
             let area_delta = w
-                .abs_diff(TARGET_W)
-                .saturating_mul(TARGET_H)
-                .saturating_add(h.abs_diff(TARGET_H).saturating_mul(TARGET_W));
+                .abs_diff(target_w)
+                .saturating_mul(target_h)
+                .saturating_add(h.abs_diff(target_h).saturating_mul(target_w));
             let aspect_delta = w
-                .saturating_mul(TARGET_H)
-                .abs_diff(h.saturating_mul(TARGET_W));
-            let undersized_penalty = if w < TARGET_W || h < TARGET_H {
+                .saturating_mul(target_h)
+                .abs_diff(h.saturating_mul(target_w));
+            let undersized_penalty = if w < target_w || h < target_h {
                 usize::MAX / 4
             } else {
                 0
