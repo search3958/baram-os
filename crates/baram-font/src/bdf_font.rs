@@ -2,8 +2,8 @@
 //!
 //! The font is kept as a file on the boot volume and glyphs are scanned on
 //! demand. The BDF is never copied into a heap buffer. Only glyphs used by
-//! the current display are copied as small bitmaps (at most 8x8); the cache is
-//! explicitly dropped when the display changes.
+//! the display are copied as small bitmaps (at most 8x8); the cache survives
+//! repaint and scrolling so the same text is not rasterized again.
 
 #![allow(dead_code)]
 
@@ -49,8 +49,8 @@ pub fn init_file(path: &'static str) {
     }
 }
 
-/// Drop every glyph from the current display. The next display builds a new
-/// cache from only the characters it actually paints.
+/// Drop every cached glyph explicitly, for example when changing the font
+/// source or switching from the launcher to the selected application.
 pub fn clear_cache() {
     unsafe { CACHE = None; }
 }

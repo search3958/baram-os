@@ -81,8 +81,6 @@ const WARP4_BG: Color = Color::rgb(0xEE, 0xEE, 0xEE);
 #[cfg(feature = "xiao")]
 const WARP4_PRIMARY: Color = Color::rgb(0x33, 0x66, 0xCC);
 #[cfg(feature = "xiao")]
-const WARP4_BUTTON_BG: Color = Color::rgb(0xE7, 0xE7, 0xE7);
-#[cfg(feature = "xiao")]
 const WARP4_INPUT_BG: Color = Color::rgb(0xFF, 0xFF, 0xFF);
 #[cfg(feature = "xiao")]
 const WARP4_INPUT_BORDER: Color = Color::rgb(0x7A, 0x7A, 0x7A);
@@ -97,7 +95,21 @@ const WARP9_SHADOW: Color = Color::rgb(0x8A, 0x8A, 0x8A);
 #[cfg(feature = "xiao")]
 const WARP9_DARK_SHADOW: Color = Color::rgb(0x5F, 0x5F, 0x5F);
 #[cfg(feature = "xiao")]
-const WARP9_KEYLINE: Color = Color::rgb(0x22, 0x22, 0x22);
+const XIAO_BUTTON_HEIGHT: i32 = 22;
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_RADIUS: usize = 2;
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_BORDER: Color = Color::rgb(0, 0, 0);
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_INNER_EDGE: Color = Color::rgb(221, 221, 221);
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_HIGHLIGHT: Color = Color::rgb(255, 255, 255);
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_FACE: Color = Color::rgb(221, 221, 221);
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_SHADOW_1: Color = Color::rgb(119, 119, 119);
+#[cfg(feature = "xiao")]
+const XIAO_BUTTON_SHADOW_2: Color = Color::rgb(170, 170, 170);
 const WARP4_WHITE: Color = Color::rgb(255, 255, 255);
 const WARP4_BLACK: Color = Color::rgb(0, 0, 0);
 #[cfg(feature = "normal")]
@@ -271,45 +283,80 @@ fn draw_ui_button(
     x: usize,
     y: usize,
     w: usize,
-    h: usize,
-    radius: usize,
-    color: Color,
-    pressed: bool,
-    primary: bool,
+    _h: usize,
+    _radius: usize,
+    _color: Color,
+    _pressed: bool,
+    _primary: bool,
 ) {
-    // The reference button is a pixel-stepped Platinum bevel: dark keyline,
-    // bright upper/left rim, pale face, and a thick gray lower/right rim.
-    // Keep each band solid; this is a tiny vertical shade ramp, not AA.
-    let radius = radius.min(4);
-    let outer = if pressed { WARP9_SHADOW } else { WARP9_KEYLINE };
-    fill_ui_rounded_rect(layer, x, y, w, h, radius, outer);
-    if w > 5 && h > 6 {
-        let inner_x = x + 2;
-        let inner_y = if pressed { y + 3 } else { y + 2 };
-        let inner_w = w - 4;
-        let inner_h = h.saturating_sub(if pressed { 5 } else { 6 });
-        let face_bottom = if color.0 == WARP4_BUTTON_BG.0 {
-            Color::rgb(0xD8, 0xD8, 0xD8)
-        } else {
-            mix_color(color, WARP9_MID, 0.35)
-        };
-        fill_ui_gradient_rounded_rect(
-            layer,
-            inner_x,
-            inner_y,
-            inner_w,
-            inner_h,
-            radius.saturating_sub(2),
-            WARP9_SHADOW,
-            if pressed { WARP9_MID } else { WARP9_HIGHLIGHT },
-            if pressed { WARP9_SHADOW } else { face_bottom },
-        );
-        if !pressed && inner_w > 2 && inner_h > 2 {
-            layer.fill_rect(inner_x + 1, inner_y + 1, inner_w - 2, 1, WARP9_HIGHLIGHT);
-            layer.fill_rect(inner_x + 1, inner_y + 1, 1, inner_h - 2, WARP9_HIGHLIGHT);
-        }
+    // Xiao's button is deliberately a fixed, pixel-stepped 22px control.
+    // Every shade is a solid 8-bit gray from the reference: no gradients,
+    // alpha coverage, or state-specific palette changes.
+    let h = XIAO_BUTTON_HEIGHT as usize;
+    fill_ui_rounded_rect(
+        layer,
+        x,
+        y,
+        w,
+        h,
+        XIAO_BUTTON_RADIUS,
+        XIAO_BUTTON_BORDER,
+    );
+    if w <= 2 || h <= 2 {
+        return;
     }
-    let _ = primary;
+
+    // The face starts one pixel inside the black keyline. Its stepped corner
+    // leaves the outer keyline intact at each corner.
+    fill_ui_rounded_rect(
+        layer,
+        x + 1,
+        y + 1,
+        w - 2,
+        h - 2,
+        1,
+        XIAO_BUTTON_FACE,
+    );
+    if w > 4 && h > 4 {
+        let horizontal_w = w - 4;
+        let vertical_h = h - 4;
+
+        // Top/left: first inner pixel is 221, second is 255.
+        layer.fill_rect(x + 2, y + 1, horizontal_w, 1, XIAO_BUTTON_INNER_EDGE);
+        layer.fill_rect(x + 1, y + 2, 1, vertical_h, XIAO_BUTTON_INNER_EDGE);
+        layer.fill_rect(x + 2, y + 2, horizontal_w, 1, XIAO_BUTTON_HIGHLIGHT);
+        layer.fill_rect(x + 2, y + 2, 1, vertical_h, XIAO_BUTTON_HIGHLIGHT);
+
+        // Bottom/right: first inner pixel is 119, second is 170.
+        layer.fill_rect(
+            x + 2,
+            y + h - 2,
+            horizontal_w,
+            1,
+            XIAO_BUTTON_SHADOW_1,
+        );
+        layer.fill_rect(
+            x + w - 2,
+            y + 2,
+            1,
+            vertical_h,
+            XIAO_BUTTON_SHADOW_1,
+        );
+        layer.fill_rect(
+            x + 2,
+            y + h - 3,
+            horizontal_w,
+            1,
+            XIAO_BUTTON_SHADOW_2,
+        );
+        layer.fill_rect(
+            x + w - 3,
+            y + 2,
+            1,
+            vertical_h,
+            XIAO_BUTTON_SHADOW_2,
+        );
+    }
 }
 
 #[cfg(feature = "normal")]
@@ -328,16 +375,8 @@ fn draw_ui_button(
 }
 
 #[cfg(feature = "xiao")]
-fn ui_button_face(active: bool, selected: bool, hover: bool, _primary: bool) -> Color {
-    if active {
-        WARP9_MID
-    } else if selected {
-        Color::rgb(0xB8, 0xCC, 0xE8)
-    } else if hover {
-        Color::rgb(0xE8, 0xE8, 0xE8)
-    } else {
-        WARP4_BUTTON_BG
-    }
+fn ui_button_face(_active: bool, _selected: bool, _hover: bool, _primary: bool) -> Color {
+    XIAO_BUTTON_FACE
 }
 
 #[cfg(feature = "normal")]
@@ -1739,6 +1778,37 @@ impl Warp4Engine {
         }
     }
 
+    fn own_height(&self, idx: usize, forced_h: Option<i32>) -> Option<i32> {
+        #[cfg(feature = "xiao")]
+        if is_button_like(&self.nodes[idx]) {
+            return Some(XIAO_BUTTON_HEIGHT);
+        }
+
+        forced_h.or_else(|| {
+            let raw = self.nodes[idx].attr("layout_height");
+            if is_match_parent(raw) {
+                Some(self.height.max(1))
+            } else if raw != "wrap_content" && !raw.is_empty() {
+                Some(parse_dim(raw, 0))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn resolved_height(&self, idx: usize, available: i32, intrinsic_available: i32) -> i32 {
+        #[cfg(feature = "xiao")]
+        if is_button_like(&self.nodes[idx]) {
+            return XIAO_BUTTON_HEIGHT;
+        }
+
+        dimension(
+            self.nodes[idx].attr("layout_height"),
+            available,
+            self.intrinsic_h(idx, intrinsic_available),
+        )
+    }
+
     fn layout(
         &mut self,
         idx: usize,
@@ -1761,16 +1831,7 @@ impl Warp4Engine {
         }
         .max(1);
         let tag = self.nodes[idx].tag.clone();
-        let own_h = forced_h.or_else(|| {
-            let raw = self.nodes[idx].attr("layout_height");
-            if is_match_parent(raw) {
-                Some(self.height.max(1))
-            } else if raw != "wrap_content" && !raw.is_empty() {
-                Some(parse_dim(raw, 0))
-            } else {
-                None
-            }
-        });
+        let own_h = self.own_height(idx, forced_h);
         self.nodes[idx].x = x + margin.left;
         self.nodes[idx].y = y + margin.top;
         self.nodes[idx].w = (w - margin.left - margin.right).max(1);
@@ -1951,10 +2012,10 @@ impl Warp4Engine {
                     self.nodes[idx].content_w,
                     self.intrinsic_w(child, self.nodes[idx].content_w),
                 );
-                let child_h = dimension(
-                    self.nodes[child].attr("layout_height"),
+                let child_h = self.resolved_height(
+                    child,
                     self.nodes[idx].content_h,
-                    self.intrinsic_h(child, self.nodes[idx].content_w),
+                    self.nodes[idx].content_w,
                 );
                 self.layout(
                     child,
@@ -2143,11 +2204,7 @@ impl Warp4Engine {
                 parent_w,
                 self.intrinsic_w(*child, parent_w),
             );
-            let ch = dimension(
-                self.nodes[*child].attr("layout_height"),
-                parent_h,
-                self.intrinsic_h(*child, parent_w),
-            );
+            let ch = self.resolved_height(*child, parent_h, parent_w);
             self.layout(
                 *child,
                 parent_x,
@@ -2358,6 +2415,11 @@ impl Warp4Engine {
     }
     fn intrinsic_h(&self, idx: usize, available: i32) -> i32 {
         let n = &self.nodes[idx];
+        #[cfg(feature = "xiao")]
+        if is_button_like(n) {
+            return XIAO_BUTTON_HEIGHT;
+        }
+
         let raw_height = n.attr("layout_height");
         if !raw_height.is_empty()
             && !is_match_parent(raw_height)
@@ -2572,13 +2634,33 @@ impl Warp4Engine {
             let hover = self.hovered == Some(idx);
             let selected = n.attr("selected") == "true";
             let primary = n.is("PrimaryButton");
+            let button_h = {
+                #[cfg(feature = "xiao")]
+                {
+                    XIAO_BUTTON_HEIGHT as usize
+                }
+                #[cfg(feature = "normal")]
+                {
+                    h
+                }
+            };
+            let button_radius = {
+                #[cfg(feature = "xiao")]
+                {
+                    XIAO_BUTTON_RADIUS
+                }
+                #[cfg(feature = "normal")]
+                {
+                    w.min(h) / 2
+                }
+            };
             draw_ui_button(
                 layer,
                 x.max(0) as usize,
                 y.max(0) as usize,
                 w,
-                h,
-                w.min(h) / 2,
+                button_h,
+                button_radius,
                 ui_button_face(active, selected, hover, primary),
                 active,
                 primary,

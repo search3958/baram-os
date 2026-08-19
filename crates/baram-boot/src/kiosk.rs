@@ -208,7 +208,6 @@ pub fn run(mut nano: NanoSystem) -> Status {
                 display_changed |= list.tick(now_ns());
                 clicked_id = list.take_clicked_id();
                 if clicked_id.is_none() && display_changed {
-                    baram_font::bdf_font::clear_cache();
                     list.draw_to_layer(&mut layer, 0, 0);
                     layer.flush(&mut screen);
                 }
@@ -260,7 +259,6 @@ pub fn run(mut nano: NanoSystem) -> Status {
                 }
             }
             if display_changed {
-                baram_font::bdf_font::clear_cache();
                 engine.draw_to_layer(&mut layer, 0, 0);
                 layer.flush(&mut screen);
             }

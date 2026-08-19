@@ -52,6 +52,7 @@ QEMU_MACHINE="${QEMU_MACHINE:-virt}"
 QEMU_CPU="${QEMU_CPU:-cortex-a72}"
 QEMU_RAM="${QEMU_RAM:-0.15G}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
+QEMU_ZOOM_TO_FIT="${QEMU_ZOOM_TO_FIT:-1}"
 # Where the firmware/OS serial output goes.  Default is `stdio` so you can
 # see boot logs in the terminal.  Use `null` to silence serial.
 QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
@@ -471,6 +472,7 @@ Install QEMU:
     #   QEMU_EXTRA_ARGS          : extra args appended verbatim to the QEMU command line
     #   QEMU_SERIAL              : where serial console goes ('stdio', 'null', 'file:PATH')
     #   QEMU_MONITOR             : where HMP monitor goes ('none', 'stdio')
+    #   QEMU_ZOOM_TO_FIT        : set to 0 to disable automatic display fitting
     #   XIAO_ICOUNT=1            : opt into slow instruction-count timing for Xiao
     #                              (disabled by default so pointer input stays responsive)
     local extra_args=()
@@ -490,6 +492,28 @@ Install QEMU:
         extra_args+=(-icount "shift=1,align=on")
     fi
 
+    local display_arg="$QEMU_DISPLAY"
+    if [ "$QEMU_ZOOM_TO_FIT" = "1" ] && [ "$QEMU_DISPLAY" != "none" ]; then
+        case "$QEMU_DISPLAY" in
+            default)
+                # QEMU's generic `default` frontend does not accept the
+                # option directly. Select the native frontend explicitly so
+                # zoom-to-fit is applied to the host window.
+                if [ "$OS" = "Darwin" ]; then
+                    display_arg="cocoa,zoom-to-fit=on"
+                else
+                    display_arg="gtk,zoom-to-fit=on"
+                fi
+                ;;
+            *,zoom-to-fit=*)
+                ;;
+            *)
+                display_arg="$QEMU_DISPLAY,zoom-to-fit=on"
+                ;;
+        esac
+    fi
+    log "  display : $display_arg"
+
     exec "$qemu" \
         "${extra_args[@]}" \
         -machine "$QEMU_MACHINE" \
@@ -503,7 +527,7 @@ Install QEMU:
         -device "usb-tablet" \
         -device "usb-mouse" \
         -device "usb-kbd" \
-        -display "$QEMU_DISPLAY" \
+        -display "$display_arg" \
         -serial "$QEMU_SERIAL" \
         -monitor "$QEMU_MONITOR"
 }
