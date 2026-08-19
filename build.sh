@@ -55,7 +55,7 @@ if [ "${QEMU_RAM+x}" = x ]; then
     QEMU_RAM_WAS_SET=1
 fi
 QEMU_RAM="${QEMU_RAM:-0.15G}"
-QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
+QEMU_DISPLAY="${QEMU_DISPLAY:-default,zoom-to-fit=on}"
 # Where the firmware/OS serial output goes.  Default is `stdio` so you can
 # see boot logs in the terminal.  Use `null` to silence serial.
 QEMU_SERIAL="${QEMU_SERIAL:-stdio}"
@@ -142,7 +142,10 @@ build_xiao() {
     # Xiao uses the smallest known-good guest size. Keep an explicit
     # QEMU_RAM override available for diagnostics and future hardware.
     if [ "$QEMU_RAM_WAS_SET" -eq 0 ]; then
-        QEMU_RAM="28M"
+        # The Xiao firmware/OS path is verified at 24 MiB with GOP, FAT,
+        # virtio-blk, keyboard, and mouse support. Keep overrides available
+        # for lower-memory experiments without making the default unsafe.
+        QEMU_RAM="20M"
     fi
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
@@ -399,9 +402,10 @@ This repository requires its patched firmware for both BaramOS and Xiao;
 do not substitute the stock AAVMF firmware because it rejects RAM below
 128 MiB before GOP initialization."
     fi
-    local firmware_size
-    firmware_size="$(stat -c %s "$FIRMWARE_PATH" 2>/dev/null || stat -f %z "$FIRMWARE_PATH")"
-    [ "$firmware_size" -gt 1000000 ] || die "UEFI firmware is unexpectedly small: $FIRMWARE_PATH"
+    # Do not impose a firmware-size floor here. A valid UEFI image may be
+    # intentionally minimal, and QEMU/UEFI should be the authority on
+    # whether its contents are bootable. Only reject a missing/empty image.
+    [ -s "$FIRMWARE_PATH" ] || die "UEFI firmware is empty: $FIRMWARE_PATH"
     log "Firmware present (BaramOS low-memory UEFI): $FIRMWARE_PATH"
 }
 

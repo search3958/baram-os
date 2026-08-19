@@ -937,17 +937,22 @@ impl Warp4Engine {
             let h = self.layout(root, 0, y, self.width, forced, "");
             y += h;
         }
-        // Scroll extent is deliberately owned by explicit XML ScrollView
-        // containers. Each application/screen opts into scrolling in its own
-        // document instead of inheriting a hidden global viewport policy.
-        let mut internal_overflow = 0;
+        // Scroll extent is deliberately owned by explicit XML scroll
+        // containers.  Use each container's actual document bottom instead
+        // of adding the largest overflow to the last root: nested
+        // ScrollViews otherwise produce an incorrect end position and leave
+        // a blank strip after the viewport has moved.
+        let mut document_bottom = y;
         for idx in 0..self.nodes.len() {
             if is_scroll_container(&self.nodes[idx]) {
-                internal_overflow = internal_overflow
-                    .max(self.nodes[idx].content_h.saturating_sub(self.nodes[idx].h));
+                document_bottom = document_bottom.max(
+                    self.nodes[idx]
+                        .y
+                        .saturating_add(self.nodes[idx].content_h),
+                );
             }
         }
-        self.content_height = (y + internal_overflow).max(self.height + self.chrome_height);
+        self.content_height = document_bottom.max(self.height + self.chrome_height);
         let max_scroll = self
             .content_height
             .saturating_sub(self.height + self.chrome_height)
@@ -1318,10 +1323,14 @@ impl Warp4Engine {
 
     fn node_is_fixed(&self, idx: usize, chrome_mode: bool) -> bool {
         let node = &self.nodes[idx];
-        let in_scroll = self.ancestor_is_scroll(idx);
-        let is_document_root = self.roots.contains(&idx);
-        is_fixed(node)
-            || (!in_scroll && chrome_mode && (!is_document_root || is_scroll_container(node)))
+        // A screen can contain both a fixed toolbar and normal flow content.
+        // Treating every non-root node outside a ScrollView as fixed makes
+        // that normal content get painted twice; the second pass can cover
+        // the scrolled region with the viewport background. Explicit fixed
+        // controls and every declared scroll viewport belong in the fixed
+        // pass. The latter is important for nested ScrollViews: their frame
+        // must remain a clip window while their document moves underneath it.
+        is_fixed(node) || (chrome_mode && is_scroll_container(node))
     }
 
     fn node_screen_y(&self, idx: usize) -> i32 {
@@ -1332,17 +1341,6 @@ impl Warp4Engine {
             } else {
                 -self.scroll
             }
-    }
-
-    fn ancestor_is_scroll(&self, idx: usize) -> bool {
-        let mut current = self.nodes[idx].parent;
-        while let Some(i) = current {
-            if is_scroll_container(&self.nodes[i]) {
-                return true;
-            }
-            current = self.nodes[i].parent;
-        }
-        false
     }
 
     fn set_seek_progress(&mut self, idx: usize, x: i32) -> bool {
