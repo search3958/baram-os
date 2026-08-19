@@ -15,6 +15,7 @@ use alloc::vec::Vec;
 use baram_bsd::{app::Warp4Archive, config, vfs};
 use baram_core::{Color, LayerSystem};
 use baram_font::{bdf_font, LayerFontExt};
+use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "ttf")]
 use baram_font::ttf_font;
 use baram_graphics::svg;
@@ -46,16 +47,19 @@ const SCROLLBAR_TRACK: Color = Color::rgb(241, 241, 241);
 const SCROLLBAR_THUMB: Color = Color::rgb(184, 184, 184);
 const SCROLLBAR_RADIUS: usize = 3;
 
-#[cfg(feature = "xiao")]
-#[inline]
-fn ui_px(value: i32) -> i32 {
-    value / 2
+// Warp4 is shared by the normal and Xiao images.  Keep the scale as explicit
+// process-local runtime state instead of a Cargo feature: a normal image must
+// always use 100%, while the Xiao kiosk opts into 50% before creating an app.
+static UI_SCALE_PERCENT: AtomicU32 = AtomicU32::new(100);
+
+pub fn set_ui_scale_percent(percent: u32) {
+    UI_SCALE_PERCENT.store(percent.clamp(1, 100), Ordering::Relaxed);
 }
 
-#[cfg(not(feature = "xiao"))]
 #[inline]
 fn ui_px(value: i32) -> i32 {
-    value
+    let percent = UI_SCALE_PERCENT.load(Ordering::Relaxed) as i64;
+    ((value as i64 * percent) / 100) as i32
 }
 
 #[inline]
@@ -65,10 +69,7 @@ fn ui_px_usize(value: usize) -> usize {
 
 #[inline]
 fn ui_size(value: f32) -> f32 {
-    #[cfg(feature = "xiao")]
-    { value * 0.5 }
-    #[cfg(not(feature = "xiao"))]
-    { value }
+    value * (UI_SCALE_PERCENT.load(Ordering::Relaxed) as f32 / 100.0)
 }
 
 fn title_bar_h() -> i32 {

@@ -39,6 +39,7 @@ source "$SCRIPT_DIR/scripts/nano_targets.sh"
 PROJECT_NAME="baramos"
 EFI_NAME="bootaa64.efi"
 IMAGE_NAME="osdisk-arm64.img"
+XIAO_IMAGE_NAME="osdisk-arm64-xiao.img"
 IMAGE_SIZE_MB=64
 FIRMWARE_NAME="baram-aarch64-uefi.fd"
 FIRMWARE_PATH="$SCRIPT_DIR/firmware/$FIRMWARE_NAME"
@@ -49,7 +50,7 @@ TARGET_DIR="$SCRIPT_DIR/target/aarch64-unknown-uefi/release"
 # QEMU defaults — override via env vars if desired.
 QEMU_MACHINE="${QEMU_MACHINE:-virt}"
 QEMU_CPU="${QEMU_CPU:-cortex-a72}"
-QEMU_RAM="${QEMU_RAM:-0.25G}"
+QEMU_RAM="${QEMU_RAM:-0.15G}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-default}"
 # Where the firmware/OS serial output goes.  Default is `stdio` so you can
 # see boot logs in the terminal.  Use `null` to silence serial.
@@ -136,7 +137,7 @@ build_xiao() {
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
     # Xiao is intentionally constrained to 0.1 GiB. The bundled BaramOS UEFI
     # firmware is patched to initialize GOP below the upstream 128 MiB floor.
-    QEMU_RAM="80M"
+    QEMU_RAM="70M"
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."
@@ -152,7 +153,11 @@ build_xiao() {
 # Try every strategy in order.  We prefer mtools (cross-platform, fast)
 # then macOS hdiutil, then Linux loop-mount.
 make_fat_image() {
-    local out="$RUNTIME_DIR/$IMAGE_NAME"
+    local image_name="$IMAGE_NAME"
+    if [ "$XIAO_MODE" -eq 1 ]; then
+        image_name="$XIAO_IMAGE_NAME"
+    fi
+    local out="$RUNTIME_DIR/$image_name"
     local efi="$TARGET_DIR/$EFI_NAME"
     local files_archive="$RUNTIME_DIR/files.tar"
     local xiao_bdf="$SCRIPT_DIR/crates/baram-xiao/src/misaki_gothic_2nd.bdf"
@@ -380,7 +385,11 @@ Install QEMU:
   Ubuntu : sudo apt install qemu-system-arm
   Arch   : sudo pacman -S qemu-system-aarch64
 "
-    local img="$RUNTIME_DIR/$IMAGE_NAME"
+    local image_name="$IMAGE_NAME"
+    if [ "$XIAO_MODE" -eq 1 ]; then
+        image_name="$XIAO_IMAGE_NAME"
+    fi
+    local img="$RUNTIME_DIR/$image_name"
     [ -f "$img" ] || die "Disk image missing. Run './build.sh' first."
     [ -f "$FIRMWARE_PATH" ] || die "Firmware missing: $FIRMWARE_PATH"
 
@@ -488,6 +497,7 @@ case "${1:-build-run}" in
         log "cargo clean"
         cargo clean
         rm -rf "$RUNTIME_DIR/$IMAGE_NAME"
+        rm -rf "$RUNTIME_DIR/$XIAO_IMAGE_NAME"
         ;;
     help|-h|--help)
         sed -n '2,/^# =\+/p' "$0" | sed 's/^# \?//'

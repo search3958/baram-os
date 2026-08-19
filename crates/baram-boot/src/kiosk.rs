@@ -136,13 +136,15 @@ fn restore_cursor_background(screen: &mut Screen, layer: &LayerSystem, x: i32, y
 
 pub fn run(mut nano: NanoSystem) -> Status {
     config::init_config();
+    // Xiao is the only image that uses compact Warp4 metrics.  The normal
+    // BaramOS binaries never call this and therefore remain at 100%.
+    baram_warp4::set_ui_scale_percent(50);
     // Keep the 757 KiB BDF on the FAT volume. The parser streams it and keeps
     // only glyphs used by the current display while painting.
     baram_font::bdf_font::init_file("\\EFI\\BOOT\\MISAKI_GOTHIC_2ND.BDF");
     baram_font::bdf_font::clear_cache();
     // Xiao uses a 320x180 working surface: exactly half the previous 640x360
-    // target. Warp4 is compiled with its Xiao scale profile as well, so its
-    // layout metrics and rounded-corner geometry match this surface.
+    // target. Warp4 uses the same compact metrics for this kiosk only.
     let mut screen = match Screen::take_with_target(320, 180) {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,
