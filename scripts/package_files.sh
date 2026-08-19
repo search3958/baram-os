@@ -3,6 +3,7 @@ set -euo pipefail
 
 files_source="${1:?files source directory is required}"
 archive_output="${2:?files.tar output path is required}"
+tree_output="${3:-}"
 
 [ -d "$files_source/app" ] || { echo "missing $files_source/app" >&2; exit 1; }
 [ -d "$files_source/data" ] || { echo "missing $files_source/data" >&2; exit 1; }
@@ -28,3 +29,9 @@ done
 
 rm -f "$archive_output"
 tar --format=ustar -cf "$archive_output" -C "$stage_dir" app data
+
+if [ -n "$tree_output" ]; then
+    rm -rf "$tree_output"
+    mkdir -p "$(dirname "$tree_output")"
+    cp -R "$stage_dir" "$tree_output"
+fi

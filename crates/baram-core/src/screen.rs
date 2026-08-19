@@ -1,4 +1,5 @@
 use crate::color::Color;
+use alloc::vec::Vec;
 use core::ptr;
 use uefi::boot::{self, ScopedProtocol};
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
@@ -196,6 +197,10 @@ pub struct FramebufferInfo {
 
 pub struct Screen {
     info: FramebufferInfo,
+    // Logical pixels stay in Color's canonical ARGB layout. LayerSystem can
+    // borrow this buffer so a single-task compositor does not allocate a
+    // second full-screen Vec just to flush it back to GOP.
+    layer_buffer: Option<Vec<u32>>,
     fb_ptr: *mut u8,
     write_combining: bool,
     avx2: bool,
@@ -271,6 +276,7 @@ impl Screen {
                 stride,
                 pixel_format: pf,
             },
+            layer_buffer: None,
             fb_ptr: fb_base as *mut u8,
             write_combining,
             avx2,
@@ -287,6 +293,14 @@ impl Screen {
     #[allow(dead_code)]
     pub fn info(&self) -> FramebufferInfo {
         self.info
+    }
+
+    pub(crate) fn layer_buffer_ptr(&mut self) -> (*mut u32, usize) {
+        let len = self.info.width.saturating_mul(self.info.height);
+        let buffer = self
+            .layer_buffer
+            .get_or_insert_with(|| alloc::vec![Color::BG.0; len]);
+        (buffer.as_mut_ptr(), buffer.len())
     }
 
     pub fn clear(&mut self, c: Color) {

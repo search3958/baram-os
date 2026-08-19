@@ -145,20 +145,23 @@ pub fn run(mut nano: NanoSystem) -> Status {
     baram_font::bdf_font::clear_cache();
     // Xiao uses a 320x180 working surface: exactly half the previous 640x360
     // target. Warp4 uses the same compact metrics for this kiosk only.
-    let mut screen = match Screen::take_with_target(320, 180) {
+    let mut screen = match Screen::take_with_target(nano.display.width, nano.display.height) {
         Ok(s) => s,
         Err(_) => return Status::UNSUPPORTED,
     };
     NanoSystem::serial_log(&format!("xiao: screen {}x{}\r\n", screen.width(), screen.height()));
     unsafe { baram_font::log::init_screen(&screen); }
     let mut timer = nano.take_timer_event();
-    let mut layer = LayerSystem::new(screen.width(), screen.height());
+    let mut layer = LayerSystem::new_screen_backed(&mut screen);
     let apps = entries();
     let sources = [("config.ini", LIST_CONFIG), ("main.w4u", LIST_XML)];
-    let mut list = Warp4Engine::new_embedded("__os_kiosk__", &sources);
-    list.set_chrome_visible(false);
+    let mut list = Some(Warp4Engine::new_embedded("__os_kiosk__", &sources));
+    list.as_mut().unwrap().set_chrome_visible(false);
     for i in 0..8 {
-        list.set_text(&format!("app{}", i), apps.get(i).map(|e| e.title.as_str()).unwrap_or(""));
+        list.as_mut().unwrap().set_text(
+            &format!("app{}", i),
+            apps.get(i).map(|e| e.title.as_str()).unwrap_or(""),
+        );
     }
     let mut selected: Option<Warp4Engine> = None;
     let mut x = (screen.width() / 2) as i32;
@@ -172,22 +175,31 @@ pub fn run(mut nano: NanoSystem) -> Status {
         if selected.is_none() {
             let mut display_changed = content_dirty;
             content_dirty = false;
-            while let Some(event) = nano.poll_keyboard() {
-                if let Some(key) = key_value(event) {
-                    list.handle_key(key);
-                    display_changed = true;
+            let mut clicked_id = None;
+            if let Some(list) = list.as_mut() {
+                while let Some(event) = nano.poll_keyboard() {
+                    if let Some(key) = key_value(event) {
+                        list.handle_key(key);
+                        display_changed = true;
+                    }
+                }
+                while let Some(event) = nano.poll_pointer() {
+                    let was_down = pointer_xy(event, &nano, &mut x, &mut y, screen.width(), screen.height());
+                    if was_down {
+                        list.click(x, y);
+                        display_changed = true;
+                    }
+                    display_changed |= list.pointer_move(x, y);
+                }
+                display_changed |= list.tick(now_ns());
+                clicked_id = list.take_clicked_id();
+                if clicked_id.is_none() && display_changed {
+                    baram_font::bdf_font::clear_cache();
+                    list.draw_to_layer(&mut layer, 0, 0);
+                    layer.flush(&mut screen);
                 }
             }
-            while let Some(event) = nano.poll_pointer() {
-                let was_down = pointer_xy(event, &nano, &mut x, &mut y, screen.width(), screen.height());
-                if was_down {
-                    list.click(x, y);
-                    display_changed = true;
-                }
-                display_changed |= list.pointer_move(x, y);
-            }
-            display_changed |= list.tick(now_ns());
-            if let Some(id) = list.take_clicked_id() {
+            if let Some(id) = clicked_id {
                 if let Some(index) = id.strip_prefix("app").and_then(|v| v.parse::<usize>().ok()) {
                     if let Some(entry) = apps.get(index) {
                         // The launcher glyphs are no longer displayed. Drop
@@ -196,15 +208,12 @@ pub fn run(mut nano: NanoSystem) -> Status {
                         let mut engine = Warp4Engine::new(&entry.name);
                         engine.set_chrome_visible(false);
                         selected = Some(engine);
+                        // The kiosk is single-task. Release the launcher
+                        // engine before the selected app becomes active.
+                        list = None;
                         content_dirty = true;
-                        display_changed = true;
                     }
                 }
-            }
-            if display_changed {
-                baram_font::bdf_font::clear_cache();
-                list.draw_to_layer(&mut layer, 0, 0);
-                layer.flush(&mut screen);
             }
         } else if let Some(engine) = selected.as_mut() {
             let mut display_changed = content_dirty;

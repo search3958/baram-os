@@ -2,6 +2,7 @@ use crate::color::Color;
 use crate::screen::Screen;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 #[inline(always)]
@@ -133,10 +134,37 @@ unsafe fn blend_global_alpha_avx2(src: *const u32, dst: *mut u32, len: usize, al
     }
 }
 
+enum LayerBuffer {
+    Owned(Vec<u32>),
+    Borrowed { ptr: *mut u32, len: usize },
+}
+
+impl Deref for LayerBuffer {
+    type Target = [u32];
+
+    fn deref(&self) -> &[u32] {
+        match self {
+            Self::Owned(buffer) => buffer,
+            Self::Borrowed { ptr, len } => unsafe { core::slice::from_raw_parts(*ptr, *len) },
+        }
+    }
+}
+
+impl DerefMut for LayerBuffer {
+    fn deref_mut(&mut self) -> &mut [u32] {
+        match self {
+            Self::Owned(buffer) => buffer,
+            Self::Borrowed { ptr, len } => {
+                unsafe { core::slice::from_raw_parts_mut(*ptr, *len) }
+            }
+        }
+    }
+}
+
 pub struct LayerSystem {
     pub(crate) width: usize,
     pub(crate) height: usize,
-    pub(crate) buf: Vec<u32>,
+    buf: LayerBuffer,
     frame_count: u64,
     clip_stack: Vec<(usize, usize, usize, usize)>,
     clip: Option<(usize, usize, usize, usize)>,
@@ -152,7 +180,7 @@ impl LayerSystem {
         Self {
             width: w,
             height: h,
-            buf: vec![Color::BG.0; w * h],
+            buf: LayerBuffer::Owned(vec![Color::BG.0; w * h]),
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,
@@ -168,7 +196,29 @@ impl LayerSystem {
         Self {
             width: w,
             height: h,
-            buf: vec![Color::TRANSPARENT.0; w * h],
+            buf: LayerBuffer::Owned(vec![Color::TRANSPARENT.0; w * h]),
+            frame_count: 0,
+            clip_stack: Vec::new(),
+            clip: None,
+            dirty: true,
+            dirty_x0: 0,
+            dirty_y0: 0,
+            dirty_x1: w,
+            dirty_y1: h,
+        }
+    }
+
+    /// Use the logical pixel buffer owned by Screen. This is intended for
+    /// single-task fullscreen applications; normal compositors continue to
+    /// use independent layers through `new` and `new_transparent`.
+    pub fn new_screen_backed(screen: &mut Screen) -> Self {
+        let w = screen.width();
+        let h = screen.height();
+        let (ptr, len) = screen.layer_buffer_ptr();
+        Self {
+            width: w,
+            height: h,
+            buf: LayerBuffer::Borrowed { ptr, len },
             frame_count: 0,
             clip_stack: Vec::new(),
             clip: None,

@@ -1,5 +1,5 @@
 use uefi::boot;
-use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode};
+use uefi::proto::media::file::{Directory, File, FileAttribute, FileInfo, FileMode, RegularFile};
 use uefi::CStr16;
 
 use alloc::format;
@@ -13,9 +13,20 @@ pub fn read_file(path: &str) -> alloc::vec::Vec<u8> {
     read_file_candidates(&[path])
 }
 
-/// Read a VFS path. Mutable user files live in the FAT-readable `files.tar`
-/// archive; the old loose-file layout remains a read fallback for upgrades.
+/// Read a VFS path from the normal FAT directory tree. The legacy `files.tar`
+/// layout remains a read fallback for older disk images.
 pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
+    // The current image layout is a regular filesystem. Try it first so a
+    // lookup does not scan an archive from its beginning.
+    for path in paths {
+        if let Some(mapped) = direct_fs_path(path) {
+            if let Some(data) = try_read_from_image_fs(&mapped) {
+                return data;
+            }
+        }
+    }
+
+    // Compatibility path for existing images which still contain files.tar.
     for path in paths {
         if let Some(data) = read_from_files_archive(path) {
             return data;
@@ -27,7 +38,10 @@ pub fn read_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
 fn read_direct_file_candidates(paths: &[&str]) -> alloc::vec::Vec<u8> {
     // Strategy 1: try image handle's filesystem (works on QEMU)
     for path in paths {
-        if let Some(data) = try_read_from_image_fs(path) {
+        let Some(mapped) = direct_fs_path(path) else {
+            continue;
+        };
+        if let Some(data) = try_read_from_image_fs(&mapped) {
             return data;
         }
     }
@@ -63,16 +77,51 @@ fn is_safe_archive_path(path: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'/'))
 }
 
-fn read_from_files_archive(path: &str) -> Option<Vec<u8>> {
-    let member = archive_member(path)?;
-    let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
-    read_archive_member(&archive, &member)
+/// Map the public VFS namespace to the regular files stored on the FAT
+/// volume. `apps/foo` historically meant the archive member `app/foo`; in the
+/// directory layout it is `files/app/foo`.
+fn direct_fs_path(path: &str) -> Option<String> {
+    let path = path.trim_start_matches('/').trim_end_matches('/');
+    if path.is_empty() {
+        return Some(String::new());
+    }
+    if !is_safe_archive_path(path) {
+        return None;
+    }
+    if let Some(rest) = path.strip_prefix("apps/") {
+        return Some(format!("files/app/{rest}"));
+    }
+    if path == "apps" {
+        return Some("files/app".into());
+    }
+    if path.starts_with("files/") || path == "files" {
+        return Some(path.into());
+    }
+    if path.starts_with("app/") || path.starts_with("data/") {
+        return Some(format!("files/{path}"));
+    }
+    Some(path.into())
 }
 
-fn read_archive_member(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
-    let mut offset = 0usize;
-    while offset.checked_add(512)? <= archive.len() {
-        let header = &archive[offset..offset + 512];
+fn read_from_files_archive(path: &str) -> Option<Vec<u8>> {
+    let member = archive_member(path)?;
+    try_read_archive_member_from_image_fs(&member)
+        .or_else(|| try_read_archive_member_from_any_fs(&member))
+}
+
+/// Read one TAR member without ever materializing `files.tar`. The archive is
+/// scanned in-place with a 512-byte header and a small skip buffer; only the
+/// requested member is returned to the caller.
+fn read_archive_member_from_fs(
+    fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
+    wanted: &str,
+) -> Option<Vec<u8>> {
+    let mut file = open_regular_file(fs, FILES_ARCHIVE)?;
+    let mut header = [0u8; 512];
+    loop {
+        if !read_exact(&mut file, &mut header) {
+            return None;
+        }
         if header.iter().all(|byte| *byte == 0) {
             return None;
         }
@@ -84,17 +133,46 @@ fn read_archive_member(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
             format!("{prefix}/{name}")
         };
         let size = tar_octal(&header[124..136])?;
-        let data_start = offset + 512;
-        let data_end = data_start.checked_add(size)?;
-        if data_end > archive.len() {
-            return None;
-        }
+        let padded = size.checked_add(511)? / 512 * 512;
         let kind = header[156];
         if full_name.trim_start_matches("./") == wanted && kind != b'5' {
-            return Some(archive[data_start..data_end].to_vec());
+            let mut data = alloc::vec![0u8; size];
+            if !read_exact(&mut file, &mut data) {
+                return None;
+            }
+            return Some(data);
         }
-        let padded = size.checked_add(511)? / 512 * 512;
-        offset = data_start.checked_add(padded)?;
+        if !skip_bytes(&mut file, padded) {
+            return None;
+        }
+    }
+}
+
+fn try_read_archive_member_from_image_fs(wanted: &str) -> Option<Vec<u8>> {
+    let image = uefi::boot::image_handle();
+    let mut fs = uefi::boot::get_image_file_system(image).ok()?;
+    read_archive_member_from_fs(&mut fs, wanted)
+}
+
+fn try_read_archive_member_from_any_fs(wanted: &str) -> Option<Vec<u8>> {
+    let handles = boot::find_handles::<uefi::proto::media::fs::SimpleFileSystem>().ok()?;
+    for handle in handles {
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mut fs) = (unsafe {
+            boot::open_protocol::<uefi::proto::media::fs::SimpleFileSystem>(
+                params,
+                boot::OpenProtocolAttributes::GetProtocol,
+            )
+        }) else {
+            continue;
+        };
+        if let Some(data) = read_archive_member_from_fs(&mut fs, wanted) {
+            return Some(data);
+        }
     }
     None
 }
@@ -258,7 +336,10 @@ fn try_read_from_any_fs(paths: &[&str]) -> alloc::vec::Vec<u8> {
         }
 
         for path in paths {
-            if let Some(data) = read_from_fs(&mut fs, path) {
+            let Some(mapped) = direct_fs_path(path) else {
+                continue;
+            };
+            if let Some(data) = read_from_fs(&mut fs, &mapped) {
                 log_line_str(&format!("VFS: found '{}' on fs handle #{}", path, idx));
                 return data;
             }
@@ -301,25 +382,7 @@ fn read_from_fs(
     fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
     path: &str,
 ) -> Option<alloc::vec::Vec<u8>> {
-    let mut root = fs.open_volume().ok()?;
-
-    // UEFI paths use backslash
-    let mut buf = [0u16; 256];
-    let mut i = 0;
-    for ch in path.bytes() {
-        let c = if ch == b'/' { b'\\' } else { ch } as u16;
-        if i + 1 < buf.len() {
-            buf[i] = c;
-            i += 1;
-        }
-    }
-    buf[i] = 0;
-    let cpath = CStr16::from_u16_with_nul(&buf[..=i]).ok()?;
-
-    let handle = root
-        .open(cpath, FileMode::Read, FileAttribute::empty())
-        .ok()?;
-    let mut file = handle.into_regular_file()?;
+    let mut file = open_regular_file(fs, path)?;
     let mut info_buf = [0u8; 512];
     let file_size = match file.get_info::<uefi::proto::media::file::FileInfo>(&mut info_buf) {
         Ok(info) => info.file_size() as usize,
@@ -333,6 +396,69 @@ fn read_from_fs(
         Err(_) => {}
     }
     Some(contents)
+}
+
+fn open_regular_file(
+    fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
+    path: &str,
+) -> Option<RegularFile> {
+    let mut root = fs.open_volume().ok()?;
+    let mut buf = [0u16; 256];
+    let mut i = 0;
+    for ch in path.bytes() {
+        let c = if ch == b'/' { b'\\' } else { ch } as u16;
+        if i + 1 < buf.len() {
+            buf[i] = c;
+            i += 1;
+        }
+    }
+    buf[i] = 0;
+    let cpath = CStr16::from_u16_with_nul(&buf[..=i]).ok()?;
+    root.open(cpath, FileMode::Read, FileAttribute::empty())
+        .ok()?
+        .into_regular_file()
+}
+
+fn open_directory(
+    fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
+    path: &str,
+) -> Option<Directory> {
+    let mut root = fs.open_volume().ok()?;
+    let mut buf = [0u16; 256];
+    let mut i = 0;
+    for ch in path.bytes() {
+        let c = if ch == b'/' { b'\\' } else { ch } as u16;
+        if i + 1 < buf.len() {
+            buf[i] = c;
+            i += 1;
+        }
+    }
+    buf[i] = 0;
+    let cpath = CStr16::from_u16_with_nul(&buf[..=i]).ok()?;
+    root.open(cpath, FileMode::Read, FileAttribute::empty())
+        .ok()?
+        .into_directory()
+}
+
+fn read_exact(file: &mut RegularFile, buffer: &mut [u8]) -> bool {
+    let mut offset = 0usize;
+    while offset < buffer.len() {
+        match file.read(&mut buffer[offset..]) {
+            Ok(0) | Err(_) => return false,
+            Ok(read) => offset = offset.saturating_add(read),
+        }
+    }
+    true
+}
+
+fn skip_bytes(file: &mut RegularFile, count: usize) -> bool {
+    let Ok(position) = file.get_position() else {
+        return false;
+    };
+    let Some(position) = position.checked_add(count as u64) else {
+        return false;
+    };
+    file.set_position(position).is_ok()
 }
 
 pub fn read_file_str(path: &str) -> alloc::string::String {
@@ -364,6 +490,15 @@ pub fn parse_files_uri(uri: &str) -> Option<String> {
 /// directory records when rewriting the archive.
 pub fn list_files(path: &str) -> Vec<FileEntry> {
     let vfs_path = parse_files_uri(path).unwrap_or_else(|| path.into());
+    let direct_path = direct_fs_path(&vfs_path).unwrap_or_default();
+    let mut result = Vec::new();
+    let found = try_list_direct_from_image_fs(&direct_path, &mut result)
+        || try_list_direct_from_any_fs(&direct_path, &mut result);
+    if found {
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        return result;
+    }
+
     let prefix = if vfs_path.trim_end_matches('/') == "files" {
         String::new()
     } else {
@@ -372,32 +507,174 @@ pub fn list_files(path: &str) -> Vec<FileEntry> {
         };
         format!("{}/", directory.trim_end_matches('/'))
     };
-    let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
-    let Some(entries) = parse_archive(&archive) else {
+    let found = try_list_archive_from_image_fs(&prefix, &mut result)
+        || try_list_archive_from_any_fs(&prefix, &mut result);
+    if !found {
         return Vec::new();
-    };
-    let mut result = Vec::new();
-    for entry in entries {
-        let Some(rest) = entry.name.strip_prefix(&prefix) else {
-            continue;
-        };
-        let (name, is_dir) = match rest.split_once('/') {
-            Some((name, _)) => (name, true),
-            None => (rest, false),
-        };
-        if name.is_empty() || result.iter().any(|item: &FileEntry| item.name == name) {
-            continue;
-        }
-        result.push(FileEntry {
-            name: name.into(),
-            is_dir,
-        });
     }
     result.sort_by(|a, b| a.name.cmp(&b.name));
     result
 }
 
+fn list_direct_from_fs(
+    fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
+    path: &str,
+    result: &mut Vec<FileEntry>,
+) -> bool {
+    let Some(mut directory) = open_directory(fs, path) else {
+        return false;
+    };
+    let mut buf = [0u8; 512];
+    loop {
+        match directory.read_entry(&mut buf) {
+            Ok(Some(entry)) => {
+                let name_utf16 = entry.file_name().as_slice();
+                let mut name = String::new();
+                for &ch in name_utf16 {
+                    let c: char = ch.into();
+                    if c == '\0' {
+                        break;
+                    }
+                    name.push(c);
+                }
+                if !name.is_empty() && name != "." && name != ".." {
+                    result.push(FileEntry {
+                        name,
+                        is_dir: entry.is_directory(),
+                    });
+                }
+            }
+            Ok(None) => return true,
+            Err(_) => return false,
+        }
+    }
+}
+
+fn try_list_direct_from_image_fs(path: &str, result: &mut Vec<FileEntry>) -> bool {
+    let image = uefi::boot::image_handle();
+    let Ok(mut fs) = uefi::boot::get_image_file_system(image) else {
+        return false;
+    };
+    list_direct_from_fs(&mut fs, path, result)
+}
+
+fn try_list_direct_from_any_fs(path: &str, result: &mut Vec<FileEntry>) -> bool {
+    let Ok(handles) = boot::find_handles::<uefi::proto::media::fs::SimpleFileSystem>() else {
+        return false;
+    };
+    for handle in handles {
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mut fs) = (unsafe {
+            boot::open_protocol::<uefi::proto::media::fs::SimpleFileSystem>(
+                params,
+                boot::OpenProtocolAttributes::GetProtocol,
+            )
+        }) else {
+            continue;
+        };
+        if list_direct_from_fs(&mut fs, path, result) {
+            return true;
+        }
+    }
+    false
+}
+
+fn list_archive_from_fs(
+    fs: &mut boot::ScopedProtocol<uefi::proto::media::fs::SimpleFileSystem>,
+    prefix: &str,
+    result: &mut Vec<FileEntry>,
+) -> bool {
+    let mut file = match open_regular_file(fs, FILES_ARCHIVE) {
+        Some(file) => file,
+        None => return false,
+    };
+    let mut header = [0u8; 512];
+    loop {
+        if !read_exact(&mut file, &mut header) {
+            return false;
+        }
+        if header.iter().all(|byte| *byte == 0) {
+            return true;
+        }
+        let name = tar_string(&header[0..100]);
+        let prefix_name = tar_string(&header[345..500]);
+        let full_name = if prefix_name.is_empty() {
+            name
+        } else {
+            format!("{prefix_name}/{name}")
+        };
+        let size = match tar_octal(&header[124..136]) {
+            Some(size) => size,
+            None => return false,
+        };
+        let member = full_name.trim_start_matches("./").trim_end_matches('/');
+        if let Some(rest) = member.strip_prefix(prefix) {
+            let (entry_name, is_dir) = match rest.split_once('/') {
+                Some((entry_name, _)) => (entry_name, true),
+                None => (rest, header[156] == b'5'),
+            };
+            if !entry_name.is_empty()
+                && !result.iter().any(|item| item.name == entry_name)
+            {
+                result.push(FileEntry {
+                    name: entry_name.into(),
+                    is_dir,
+                });
+            }
+        }
+        let padded = match size.checked_add(511) {
+            Some(size) => size / 512 * 512,
+            None => return false,
+        };
+        if !skip_bytes(&mut file, padded) {
+            return false;
+        }
+    }
+}
+
+fn try_list_archive_from_image_fs(prefix: &str, result: &mut Vec<FileEntry>) -> bool {
+    let image = uefi::boot::image_handle();
+    let Ok(mut fs) = uefi::boot::get_image_file_system(image) else {
+        return false;
+    };
+    list_archive_from_fs(&mut fs, prefix, result)
+}
+
+fn try_list_archive_from_any_fs(prefix: &str, result: &mut Vec<FileEntry>) -> bool {
+    let Ok(handles) = boot::find_handles::<uefi::proto::media::fs::SimpleFileSystem>() else {
+        return false;
+    };
+    for handle in handles {
+        let params = boot::OpenProtocolParams {
+            handle,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mut fs) = (unsafe {
+            boot::open_protocol::<uefi::proto::media::fs::SimpleFileSystem>(
+                params,
+                boot::OpenProtocolAttributes::GetProtocol,
+            )
+        }) else {
+            continue;
+        };
+        if list_archive_from_fs(&mut fs, prefix, result) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn write_file(path: &str, data: &[u8]) -> bool {
+    if let Some(mapped) = direct_fs_path(path) {
+        if write_direct_file(&mapped, data) {
+            return true;
+        }
+    }
     if let Some(member) = archive_member(path) {
         return write_archive_member(&member, data);
     }
@@ -562,6 +839,11 @@ fn write_to_fs(
 }
 
 pub fn remove_file(path: &str) {
+    if let Some(mapped) = direct_fs_path(path) {
+        if remove_direct_file(&mapped) {
+            return;
+        }
+    }
     if let Some(member) = archive_member(path) {
         let archive = read_direct_file_candidates(&[FILES_ARCHIVE]);
         let Some(mut entries) = parse_archive(&archive) else {
@@ -576,6 +858,10 @@ pub fn remove_file(path: &str) {
         }
         return;
     }
+    let _ = remove_direct_file(path);
+}
+
+fn remove_direct_file(path: &str) -> bool {
     let ih = uefi::boot::image_handle();
     if let Ok(mut fs) = uefi::boot::get_image_file_system(ih) {
         if let Ok(mut root) = fs.open_volume() {
@@ -592,8 +878,10 @@ pub fn remove_file(path: &str) {
             if let Ok(cpath) = CStr16::from_u16_with_nul(&buf[..=i]) {
                 if let Ok(handle) = root.open(cpath, FileMode::Read, FileAttribute::empty()) {
                     let _ = handle.delete();
+                    return true;
                 }
             }
         }
     }
+    false
 }

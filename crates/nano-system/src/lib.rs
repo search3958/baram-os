@@ -280,11 +280,22 @@ impl NanoSystem {
     /// Initialize the freestanding platform layer without BaramOS-specific
     /// configuration, fonts, filesystems or drivers.
     pub fn start(clear_color: NanoColor) -> Result<Self, StartError> {
+        Self::start_with_target(clear_color, 1280, 720)
+    }
+
+    /// Initialize Nano System using the caller's preferred working resolution.
+    /// The selected mode is reported back in `display`, so callers can use the
+    /// actual firmware-supported size instead of assuming the requested one.
+    pub fn start_with_target(
+        clear_color: NanoColor,
+        target_width: usize,
+        target_height: usize,
+    ) -> Result<Self, StartError> {
         let _ = uefi::helpers::init();
         let _ = boot::set_watchdog_timer(0, 0, None);
 
         let mut graphics = open_display().map_err(StartError::Display)?;
-        choose_working_mode(&mut graphics);
+        choose_working_mode(&mut graphics, target_width, target_height);
         let display = display_info(&graphics);
         fill_display(&mut graphics, clear_color);
 
@@ -328,8 +339,19 @@ impl NanoSystem {
 
     /// Common security/platform gate for every executable entry point.
     pub fn launch(application: fn(NanoSystem) -> Status) -> Status {
+        Self::launch_with_target(application, 1280, 720)
+    }
+
+    /// Common entry point variant for compact or appliance-style systems.
+    /// Nano remains generic; each image chooses its preferred working size at
+    /// the entry boundary and receives the actual selected mode in `display`.
+    pub fn launch_with_target(
+        application: fn(NanoSystem) -> Status,
+        target_width: usize,
+        target_height: usize,
+    ) -> Status {
         serial_log("nano: launch\r\n");
-        match Self::start(NanoColor::BLACK) {
+        match Self::start_with_target(NanoColor::BLACK, target_width, target_height) {
             Ok(nano) => {
                 serial_log("nano: application entered\r\n");
                 application(nano)
@@ -615,6 +637,17 @@ macro_rules! nano_entry {
     };
 }
 
+/// Declare a UEFI executable with an explicit Nano working-resolution target.
+#[macro_export]
+macro_rules! nano_entry_with_target {
+    ($application:path, $width:expr, $height:expr) => {
+        #[uefi::entry]
+        fn main() -> uefi::Status {
+            $crate::NanoSystem::launch_with_target($application, $width, $height)
+        }
+    };
+}
+
 fn open_display() -> Result<ScopedProtocol<GraphicsOutput>, Status> {
     let handle =
         boot::get_handle_for_protocol::<GraphicsOutput>().map_err(|_| Status::UNSUPPORTED)?;
@@ -772,15 +805,13 @@ unsafe extern "efiapi" fn usb_pointer_callback(
     Status::SUCCESS
 }
 
-fn choose_working_mode(graphics: &mut GraphicsOutput) {
-    const TARGET_W: usize = 1280;
-    const TARGET_H: usize = 720;
+fn choose_working_mode(graphics: &mut GraphicsOutput, target_w: usize, target_h: usize) {
     let mut best_score = usize::MAX;
     let mut best_mode = None;
     for mode in graphics.modes() {
         let (width, height) = mode.info().resolution();
-        let score = width.abs_diff(TARGET_W).saturating_mul(TARGET_H)
-            + height.abs_diff(TARGET_H).saturating_mul(TARGET_W);
+        let score = width.abs_diff(target_w).saturating_mul(target_h)
+            + height.abs_diff(target_h).saturating_mul(target_w);
         if score < best_score {
             best_score = score;
             best_mode = Some(mode);

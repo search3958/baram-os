@@ -137,7 +137,7 @@ build_xiao() {
     FIRMWARE_PATH="$XIAO_FIRMWARE_PATH"
     # Xiao is intentionally constrained to 0.1 GiB. The bundled BaramOS UEFI
     # firmware is patched to initialize GOP below the upstream 128 MiB floor.
-    QEMU_RAM="70M"
+    QEMU_RAM="${QEMU_RAM:-1280M}"
     local xiao_target="$SCRIPT_DIR/target/aarch64-unknown-uefi/release/xiao.efi"
     local xiao_efi="$TARGET_DIR/bootaa64-xiao.efi"
     log "Building ARM64 Xiao kiosk system ..."
@@ -160,12 +160,13 @@ make_fat_image() {
     local out="$RUNTIME_DIR/$image_name"
     local efi="$TARGET_DIR/$EFI_NAME"
     local files_archive="$RUNTIME_DIR/files.tar"
+    local files_tree="$RUNTIME_DIR/files-tree"
     local xiao_bdf="$SCRIPT_DIR/crates/baram-xiao/src/misaki_gothic_2nd.bdf"
     if [ "$XIAO_MODE" -eq 1 ] && [ ! -f "$xiao_bdf" ]; then
         die "Xiao BDF missing: $xiao_bdf"
     fi
     mkdir -p "$RUNTIME_DIR"
-    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive"
+    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive" "$files_tree"
 
     if [ -f "$out" ]; then
         log "Removing existing disk image $out ..."
@@ -183,6 +184,9 @@ make_fat_image() {
         mformat -i "$out" -F -T $((IMAGE_SIZE_MB * 1024 * 2)) ::
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
+        mmd   -i "$out" ::/files
+        mmd   -i "$out" ::/files/app
+        mmd   -i "$out" ::/files/data
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
         if [ "$XIAO_MODE" -eq 1 ]; then
             mcopy -i "$out" "$xiao_bdf" ::/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF
@@ -205,8 +209,9 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        mcopy -i "$out" "$files_archive" ::/files.tar
-        log "  copied files.tar to /"
+        mcopy -s -i "$out" "$files_tree/app/." ::/files/app/
+        mcopy -s -i "$out" "$files_tree/data/." ::/files/data/
+        log "  copied files as regular FAT files"
         # Auto-boot script: tells the UEFI shell to run our EFI binary
         # without waiting for the 5-second startup.nsh countdown.
         printf 'fs0:\nEFI\\BOOT\\BOOTAA64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
@@ -224,6 +229,7 @@ make_fat_image() {
         # hdiutil create appends .dmg unless we use -type UDIF; rename to be safe.
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
         mkdir -p "$tmp_mount/EFI/BOOT"
+        mkdir -p "$tmp_mount/files/app" "$tmp_mount/files/data"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
         if [ "$XIAO_MODE" -eq 1 ]; then
             cp "$xiao_bdf" "$tmp_mount/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF"
@@ -248,8 +254,9 @@ make_fat_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        cp "$files_archive" "$tmp_mount/files.tar"
-        log "  copied files.tar to /"
+        cp -R "$files_tree/app/." "$tmp_mount/files/app/"
+        cp -R "$files_tree/data/." "$tmp_mount/files/data/"
+        log "  copied files as regular FAT files"
         sync
         hdiutil detach "$tmp_mount" >/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
@@ -264,6 +271,9 @@ make_fat_image() {
         mkfs.vfat -F 32 -n EFI "$out" >/dev/null
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
+        mmd   -i "$out" ::/files
+        mmd   -i "$out" ::/files/app
+        mmd   -i "$out" ::/files/data
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTAA64.EFI
         if [ "$XIAO_MODE" -eq 1 ]; then
             mcopy -i "$out" "$xiao_bdf" ::/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF
@@ -288,8 +298,9 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        mcopy -i "$out" "$files_archive" ::/files.tar
-        log "  copied files.tar to /"
+        mcopy -s -i "$out" "$files_tree/app/." ::/files/app/
+        mcopy -s -i "$out" "$files_tree/data/." ::/files/data/
+        log "  copied files as regular FAT files"
         log "  -> $out"
         return 0
     fi
@@ -308,6 +319,7 @@ make_fat_image() {
                 return 1
             }
         mkdir -p "$tmp_mount/EFI/BOOT"
+        mkdir -p "$tmp_mount/files/app" "$tmp_mount/files/data"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTAA64.EFI"
         if [ "$XIAO_MODE" -eq 1 ]; then
             cp "$xiao_bdf" "$tmp_mount/EFI/BOOT/MISAKI_GOTHIC_2ND.BDF"
@@ -330,8 +342,9 @@ make_fat_image() {
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        cp "$files_archive" "$tmp_mount/files.tar"
-        log "  copied files.tar to /"
+        cp -R "$files_tree/app/." "$tmp_mount/files/app/"
+        cp -R "$files_tree/data/." "$tmp_mount/files/data/"
+        log "  copied files as regular FAT files"
         sync
         sudo umount "$tmp_mount" 2>/dev/null || umount "$tmp_mount" 2>/dev/null || true
         rmdir "$tmp_mount" 2>/dev/null || true
