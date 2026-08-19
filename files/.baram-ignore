@@ -1,2 +1,6 @@
 xiao:
   - data/
+  - app/mousekeydialog.w4a
+  - app/ospermission.w4a
+  - app/setup.w4a
+  - app/icon/

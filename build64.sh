@@ -88,9 +88,9 @@ build_efi() {
 make_fat_image() {
     local out="$RUNTIME_DIR/$IMAGE_NAME"
     local efi="$TARGET_DIR/$EFI_NAME"
-    local files_archive="$RUNTIME_DIR/files.tar"
+    local files_tree="$RUNTIME_DIR/files-tree"
     mkdir -p "$RUNTIME_DIR"
-    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_archive"
+    "$SCRIPT_DIR/scripts/package_files.sh" "$SCRIPT_DIR/files" "$files_tree" normal
     rm -f "$out"
 
     log "Creating FAT disk image ($IMAGE_SIZE_MB MiB) at $out ..."
@@ -103,6 +103,9 @@ make_fat_image() {
         mformat -i "$out" -F -T $((IMAGE_SIZE_MB * 1024 * 2)) ::
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
+        mmd   -i "$out" ::/files
+        mmd   -i "$out" ::/files/app
+        mmd   -i "$out" ::/files/data
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
         mmd   -i "$out" ::/EFI/BOOT/bin 2>/dev/null || true
         for name in "${NANO_APP_NAMES[@]}"; do
@@ -113,8 +116,9 @@ make_fat_image() {
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        mcopy -i "$out" "$files_archive" ::/files.tar
-        log "  copied files.tar to /"
+        mcopy -s -i "$out" "$files_tree/app/." ::/files/app/
+        mcopy -s -i "$out" "$files_tree/data/." ::/files/data/
+        log "  copied files as regular FAT files"
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
@@ -127,14 +131,15 @@ make_fat_image() {
         hdiutil create -size "${IMAGE_SIZE_MB}m" -fs "MS-DOS FAT32" -volname "EFI" \
             -ov "$out" >/dev/null
         hdiutil attach -nobrowse -mountpoint "$tmp_mount" "$out" >/dev/null
-        mkdir -p "$tmp_mount/EFI/BOOT"
+        mkdir -p "$tmp_mount/EFI/BOOT" "$tmp_mount/files/app" "$tmp_mount/files/data"
         cp "$efi" "$tmp_mount/EFI/BOOT/BOOTX64.EFI"
         if [ -f "$SCRIPT_DIR/config.xml" ]; then
             cp "$SCRIPT_DIR/config.xml" "$tmp_mount/EFI/BOOT/config.xml"
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        cp "$files_archive" "$tmp_mount/files.tar"
-        log "  copied files.tar to /"
+        cp -R "$files_tree/app/." "$tmp_mount/files/app/"
+        cp -R "$files_tree/data/." "$tmp_mount/files/data/"
+        log "  copied files as regular FAT files"
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' > "$tmp_mount/startup.nsh"
         sync
         hdiutil detach "$tmp_mount" >/dev/null || true
@@ -149,13 +154,17 @@ make_fat_image() {
         mkfs.vfat -F 32 -n EFI "$out" >/dev/null
         mmd   -i "$out" ::/EFI
         mmd   -i "$out" ::/EFI/BOOT
+        mmd   -i "$out" ::/files
+        mmd   -i "$out" ::/files/app
+        mmd   -i "$out" ::/files/data
         mcopy -i "$out" "$efi" ::/EFI/BOOT/BOOTX64.EFI
         if [ -f "$SCRIPT_DIR/config.xml" ]; then
             mcopy -i "$out" "$SCRIPT_DIR/config.xml" ::/EFI/BOOT/config.xml
             log "  copied config.xml to /EFI/BOOT/"
         fi
-        mcopy -i "$out" "$files_archive" ::/files.tar
-        log "  copied files.tar to /"
+        mcopy -s -i "$out" "$files_tree/app/." ::/files/app/
+        mcopy -s -i "$out" "$files_tree/data/." ::/files/data/
+        log "  copied files as regular FAT files"
         printf 'fs0:\nEFI\\BOOT\\BOOTX64.EFI\n' | mcopy -i "$out" - ::/startup.nsh
         log "  -> $out"
         return 0
